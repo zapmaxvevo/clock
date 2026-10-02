@@ -136,6 +136,10 @@ async function attemptStart(
 ): Promise<StartAttempt | null> {
   try {
     return await db.transaction(async (tx) => {
+      // No hay fila que leer todavía: el dueño de la entrada nueva es el actor.
+      if (!can(actor, "timeEntry.own.create", ownTimeEntryResource(actor))) {
+        throw new TimeEntryError("forbidden", timeEntryMessages.forbidden);
+      }
       const current = await timeEntryRepository.findRunning(
         actor.workspaceId,
         actor.userId,
@@ -342,28 +346,43 @@ export async function getTrackerState(
   timeZone: string,
   now: Date = new Date(),
 ): Promise<TrackerState> {
-  // Las dos primeras no dependen entre sí; la ventana sí depende de las dos.
-  const [running, latestClosed] = await Promise.all([
-    timeEntryRepository.findRunning(actor.workspaceId, actor.userId),
-    timeEntryRepository.findLatestClosed(actor.workspaceId, actor.userId),
-  ]);
-  const from = windowStart(now, timeZone, latestClosed, running);
-  const closed = await timeEntryRepository.listClosedBetween(
-    actor.workspaceId,
-    actor.userId,
-    from,
-    now,
+  // Las tres lecturas salen del mismo snapshot. Con `read committed` cada
+  // sentencia ve uno nuevo, y una mutación que commitea en el medio deja
+  // estados que la sección 5 declara imposibles: `hasAnyEntry` en verdadero con
+  // la lista vacía, o la misma entrada en `running` y en `days`.
+  const { running, latestClosed, closed } = await db.transaction(
+    async (tx) => {
+      // Secuenciales a propósito: las tres comparten la única conexión de la
+      // transacción, así que lanzarlas juntas las encolaría igual y solo haría
+      // parecer que viajan en paralelo.
+      const current = await timeEntryRepository.findRunning(
+        actor.workspaceId,
+        actor.userId,
+        tx,
+      );
+      const latest = await timeEntryRepository.findLatestClosed(
+        actor.workspaceId,
+        actor.userId,
+        tx,
+      );
+      const entries = await timeEntryRepository.listClosedBetween(
+        actor.workspaceId,
+        actor.userId,
+        windowStart(now, timeZone, latest, current),
+        now,
+        tx,
+      );
+      return { running: current, latestClosed: latest, closed: entries };
+    },
+    { isolationLevel: "repeatable read" },
   );
-  // Si el timer se detuvo entre las dos lecturas, la entrada aparecería en las
-  // dos listas; la barra manda y la lista se pone al día en la revalidación.
-  const listed = closed.filter((row) => row.id !== running?.id);
 
   return {
     serverNow: now.toISOString(),
     timeZone,
     canTrack: can(actor, "timeEntry.own.create", ownTimeEntryResource(actor)),
     running: running === undefined ? null : toView(running, timeZone),
-    days: buildDays(listed, running, now, timeZone),
+    days: buildDays(closed, running, now, timeZone),
     hasAnyEntry: running !== undefined || latestClosed !== undefined,
   };
 }

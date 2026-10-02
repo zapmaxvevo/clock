@@ -79,3 +79,6 @@ jobs:
       - run: npm run test:e2e
         env:
           E2E_BASE_URL: ${{ vars.E2E_BASE_URL }}
+          # El endpoint de sesión de prueba solo se registra con este secreto
+          # cargado. Tiene que coincidir con el del entorno de preview.
+          E2E_TEST_SESSION_SECRET: ${{ secrets.E2E_TEST_SESSION_SECRET }}

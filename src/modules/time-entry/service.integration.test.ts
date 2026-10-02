@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { db } from "@/server/db";
@@ -19,6 +19,35 @@ import {
 
 const buenosAires = "America/Argentina/Buenos_Aires";
 const madrid = "Europe/Madrid";
+
+/** Lectores en paralelo con los que se tensan las carreras de lectura. */
+const READERS = 8;
+
+/**
+ * Deja `size` conexiones abiertas en el pool antes de medir una carrera. Sin
+ * esto, el handshake de cada conexión nueva es más lento que la operación que
+ * se quiere superponer y todo termina corriendo en fila. La barrera suelta las
+ * transacciones recién cuando todas llegaron, así que no hay espera fija.
+ */
+async function warmPool(size: number): Promise<void> {
+  let arrived = 0;
+  let open = () => {};
+  const gate = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  await Promise.all(
+    Array.from({ length: size }, () =>
+      db.transaction(async (tx) => {
+        await tx.execute(sql`select 1`);
+        arrived += 1;
+        if (arrived === size) {
+          open();
+        }
+        await gate;
+      }),
+    ),
+  );
+}
 
 let workspaceId: string;
 let actor: Actor;
@@ -149,6 +178,18 @@ describe("startTimer", () => {
 
     expect(mine.stopped).toBeNull();
     expect((await allEntries()).filter((row) => row.endedAt === null)).toHaveLength(2);
+  });
+
+  it("no abre nada cuando la membresía no está activa", async () => {
+    for (const status of ["inactive", "invited"] as const) {
+      await expect(
+        startTimer({ ...actor, status }, buenosAires, { description: "no va" }),
+      ).rejects.toMatchObject({
+        code: "forbidden",
+        message: timeEntryMessages.forbidden,
+      });
+    }
+    expect(await allEntries()).toHaveLength(0);
   });
 });
 
@@ -586,6 +627,33 @@ describe("getTrackerState", () => {
 
     expect(state.canTrack).toBe(false);
     expect(state.days).toHaveLength(1);
+  });
+
+  it("nunca da hasAnyEntry en verdadero con la lista vacía", async () => {
+    // `hasAnyEntry` y la lista salen de consultas distintas: con cada una en su
+    // propio snapshot, un borrado que commitea en el medio dejaba la pantalla
+    // sin lista y sin el bloque de «todavía no cargaste horas».
+    await warmPool(READERS + 1);
+
+    for (let round = 0; round < 30; round += 1) {
+      const row = await seedEntry({
+        startedAt: "2026-10-02T11:00:00Z",
+        endedAt: "2026-10-02T12:00:00Z",
+      });
+
+      const states = await Promise.all([
+        ...Array.from({ length: READERS }, () =>
+          getTrackerState(actor, buenosAires, now),
+        ),
+        deleteEntry(actor, { id: row.id }).then(() => null),
+      ]);
+
+      for (const state of states) {
+        if (state !== null) {
+          expect(state.hasAnyEntry).toBe(state.days.length > 0);
+        }
+      }
+    }
   });
 });
 

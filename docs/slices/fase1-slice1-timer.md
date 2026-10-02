@@ -60,11 +60,16 @@ Queda afuera, explícito:
   Conservar la ruta de vuelta exige tocar `src/server/session.ts` y la pantalla
   de acceso, que no son de este slice. Lo que sí se cumple: el timer activo
   sobrevive a la sesión vencida y reaparece al volver a entrar.
-- **Sin e2e con sesión.** No existe fixture de sesión en Playwright —el acceso
-  es OAuth de Google— y montarlo es un trabajo propio. Los criterios de la
-  sección 7 se verifican con `npm test` y `npm run test:integration`; los que
-  dependen del navegador —el contador, el rebote, el diálogo y los estados de
-  error— se verifican a mano sobre el preview. `e2e/` no se toca.
+- **Los e2e con sesión entraron durante el slice.** El contrato los había
+  dejado afuera por no haber fixture de sesión. Se agregó uno: un plugin de
+  Better Auth que registra `POST /api/auth/test-session/sign-in` solo cuando
+  `VERCEL_ENV` no es producción y el secreto está cargado. Los recorridos del
+  navegador viven en `e2e/tracker.spec.ts`. Quedan fuera del navegador, y
+  cubiertos por integración o por nada, los casos que piden sembrar la base o
+  mover el reloj: los cinco roles de TT-66, el desfase de reloj (TT-32), la red
+  caída (TT-89, TT-90), la membresía desactivada (TT-92), el cruce de
+  medianoche (TT-51, TT-95), las etiquetas de día (TT-44), el timer de más de
+  24 horas (TT-42) y el cambio de zona horaria (TT-106).
 - **Sin tope de duración por entrada**, por P-12 y P-08. TT-74 y TT-107 no
   existen en este slice.
 - **Sin tests de componentes con DOM.** `vitest.config.ts` corre en
@@ -642,3 +647,22 @@ Uno por comportamiento del slice. Son observables desde afuera. Los criterios
     los grupos sin tocar ningún instante guardado.
 28. **TT-42** — Un timer que lleva más de 24 horas sigue corriendo, se muestra
     en el grupo de su día de inicio y se puede detener sin error.
+
+## 9. Deuda conocida del slice
+
+Tres huecos de verificación que quedan abiertos a propósito, para que no se
+descubran como sorpresa en el slice siguiente.
+
+- **La capa de `actions.ts` no tiene cobertura automática.** `next/headers` y
+  `next/cache` no corren fuera de una petición, así que ningún test de
+  integración la ejecuta. Quedan sin verificar la traducción de `ZodError` y
+  `ForbiddenError` a `ActionResult` y que cada action pida la acción de permiso
+  que le corresponde. La regla transversal de revalidar `/` también en el
+  camino de error sí queda cubierta, por los dos e2e de pestaña desactualizada.
+- **La rama `unexpected` del reintento de `startTimer` no es alcanzable de
+  forma determinista.** Está en el ADR 0003.
+- **En el camino de creación, la guarda de workspace de `can()` es
+  estructuralmente inalcanzable**: el recurso se arma desde el propio actor, y
+  el actor sale de la sesión y no de la entrada del cliente. Lo que protege ahí
+  es `status !== "active"` más la tabla de roles. No es un agujero, pero no hay
+  test que lo cubra porque no hay caso que lo rompa.

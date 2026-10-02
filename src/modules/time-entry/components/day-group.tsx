@@ -2,8 +2,12 @@
 
 import { useEffect, useOptimistic, useRef } from "react";
 
-import { deleteEntry } from "@/modules/time-entry/actions";
-import type { DayGroupView, TimeEntryView } from "@/modules/time-entry/schema";
+import { deleteEntry, updateDescription } from "@/modules/time-entry/actions";
+import type {
+  DayGroupView,
+  TimeEntryView,
+  UpdateDescriptionInput,
+} from "@/modules/time-entry/schema";
 import { formatDuration } from "@/server/time";
 
 import { useElapsedSeconds } from "./elapsed-counter";
@@ -21,14 +25,25 @@ type DayGroupProps = {
 };
 
 /**
- * Un día de la lista con su total. El borrado vive acá y no en la fila porque
- * sacar una entrada mueve las dos cosas a la vez: la fila y el total del grupo
- * (TT-60). El total del día del timer activo suma además el transcurrido y
- * sube junto con el contador (TT-45, TT-46); la suma es en segundos y se
- * formatea una sola vez, así no acumula el truncamiento de cada fila.
+ * Un día de la lista con su total. Las dos mutaciones sobre una fila viven
+ * acá y no en la fila: el borrado mueve también el total del grupo (TT-60), y
+ * las dos pueden terminar con la fila fuera de la lista —borrada desde otra
+ * pestaña (TT-80)— así que su aviso tiene que quedar en algo que sobreviva.
+ * El total del día del timer activo suma además el transcurrido y sube junto
+ * con el contador (TT-45, TT-46); la suma es en segundos y se formatea una
+ * sola vez, así no acumula el truncamiento de cada fila.
  */
 export function DayGroup({ group, running, serverNow, canTrack }: DayGroupProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
+
+  const [edits, showEdit] = useOptimistic<
+    readonly UpdateDescriptionInput[],
+    UpdateDescriptionInput
+  >([], (current, next) => [...current.filter((edit) => edit.id !== next.id), next]);
+  const save = useEntryAction(updateDescription, {
+    optimistic: (input) => showEdit(input),
+  });
+
   const [removedIds, showRemoved] = useOptimistic<readonly string[], string>(
     [],
     (current, id) => [...current, id],
@@ -83,25 +98,41 @@ export function DayGroup({ group, running, serverNow, canTrack }: DayGroupProps)
 
       {entries.length > 0 && (
         <ul>
-          {entries.map((entry) => (
-            <EntryRow
-              key={entry.id}
-              entry={entry}
-              canTrack={canTrack}
-              onDelete={() => remove.run({ id: entry.id })}
-            />
-          ))}
+          {entries.map((entry) => {
+            const edit = edits.find((pending) => pending.id === entry.id);
+            return (
+              <EntryRow
+                key={entry.id}
+                entry={entry}
+                description={edit?.description ?? entry.description}
+                busy={save.pending && edit !== undefined}
+                canTrack={canTrack}
+                onSave={(description) => save.run({ id: entry.id, description })}
+                onDelete={() => remove.run({ id: entry.id })}
+              />
+            );
+          })}
         </ul>
       )}
 
-      {remove.failure !== null && (
-        <div className="px-3 py-2">
-          <TrackerFeedback
-            title={trackerLabels.entryNotDeleted}
-            message={remove.failure.message}
-            retryDisabled={remove.pending}
-            onRetry={retryHandlerOf(remove)}
-          />
+      {(save.failure !== null || remove.failure !== null) && (
+        <div className="flex flex-col gap-2 px-3 py-2">
+          {save.failure !== null && (
+            <TrackerFeedback
+              title={trackerLabels.descriptionNotSaved}
+              message={save.failure.message}
+              retryDisabled={save.pending}
+              onRetry={retryHandlerOf(save)}
+            />
+          )}
+          {remove.failure !== null && (
+            <TrackerFeedback
+              title={trackerLabels.entryNotDeleted}
+              message={remove.failure.message}
+              retryDisabled={remove.pending}
+              onRetry={retryHandlerOf(remove)}
+            />
+          )}
         </div>
       )}
     </section>

@@ -1,7 +1,7 @@
 "use client";
 
 import { EllipsisVerticalIcon, Trash2Icon } from "lucide-react";
-import { useEffect, useOptimistic, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -11,39 +11,43 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { updateDescription } from "@/modules/time-entry/actions";
 import type { TimeEntryView } from "@/modules/time-entry/schema";
 
 import { DeleteEntryDialog } from "./delete-entry-dialog";
 import { DescriptionField } from "./description-field";
 import { trackerLabels } from "./labels";
-import { TrackerFeedback } from "./tracker-feedback";
-import { retryHandlerOf, useEntryAction } from "./use-entry-action";
 
 type EntryRowProps = {
   readonly entry: TimeEntryView;
+  /** Descripción a mostrar: la optimista mientras la escritura está en vuelo. */
+  readonly description: string;
+  /** TT-55: con la escritura en vuelo la fila queda atenuada. */
+  readonly busy: boolean;
   /** Con la membresía desactivada la fila queda en solo lectura (TT-92). */
   readonly canTrack: boolean;
-  /** El borrado lo resuelve el grupo, que también tiene que mover el total. */
+  /**
+   * Guardar y borrar los resuelve el grupo: mueven el total y, sobre todo,
+   * sus avisos tienen que sobrevivir a que esta fila desaparezca.
+   */
+  readonly onSave: (description: string) => void;
   readonly onDelete: () => void;
 };
 
-export function EntryRow({ entry, canTrack, onDelete }: EntryRowProps) {
+export function EntryRow({
+  entry,
+  description,
+  busy,
+  canTrack,
+  onSave,
+  onDelete,
+}: EntryRowProps) {
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [draft, setDraft] = useState(entry.description);
-  const [description, showDescription] = useOptimistic(
-    entry.description,
-    (_current, next: string) => next,
-  );
+  const [draft, setDraft] = useState(description);
 
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
   const descriptionRef = useRef<HTMLButtonElement>(null);
   const wasEditing = useRef(false);
-
-  const save = useEntryAction(updateDescription, {
-    optimistic: (input) => showDescription(input.description),
-  });
 
   useEffect(() => {
     // Al cerrar la edición el input se va del árbol: el foco vuelve al botón
@@ -65,16 +69,13 @@ export function EntryRow({ entry, canTrack, onDelete }: EntryRowProps) {
     if (next === description) {
       return;
     }
-    save.run({ id: entry.id, description: next });
+    onSave(next);
   }
 
   const entryName = description === "" ? trackerLabels.noDescription : description;
 
   return (
-    <li
-      aria-busy={save.pending}
-      className={cn("border-b last:border-b-0", save.pending && "opacity-60")}
-    >
+    <li aria-busy={busy} className={cn("border-b last:border-b-0", busy && "opacity-60")}>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2">
         <div className="min-w-0 flex-1 basis-64">
           {editing ? (
@@ -134,7 +135,7 @@ export function EntryRow({ entry, canTrack, onDelete }: EntryRowProps) {
                     ref={menuTriggerRef}
                     variant="ghost"
                     size="icon-sm"
-                    disabled={save.pending}
+                    disabled={busy}
                   />
                 }
                 aria-label={`Acciones de la entrada «${entryName}»`}
@@ -161,17 +162,6 @@ export function EntryRow({ entry, canTrack, onDelete }: EntryRowProps) {
           </>
         )}
       </div>
-
-      {save.failure !== null && (
-        <div className="px-3 pb-2">
-          <TrackerFeedback
-            title={trackerLabels.descriptionNotSaved}
-            message={save.failure.message}
-            retryDisabled={save.pending}
-            onRetry={retryHandlerOf(save)}
-          />
-        </div>
-      )}
     </li>
   );
 }

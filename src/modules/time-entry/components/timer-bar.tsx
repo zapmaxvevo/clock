@@ -35,6 +35,8 @@ export function TimerBar({ running, serverNow, canTrack }: TimerBarProps) {
   );
   const [trackedId, setTrackedId] = useState<string | null>(running?.id ?? null);
   const [draft, setDraft] = useState(running?.description ?? "");
+  /** Si tecleó desde que se disparó la operación, lo escrito no se descarta. */
+  const [draftEdited, setDraftEdited] = useState(false);
   /** Última descripción enviada: el rebote y el blur no la mandan dos veces. */
   const [sentDescription, setSentDescription] = useState<string | null>(null);
 
@@ -50,11 +52,15 @@ export function TimerBar({ running, serverNow, canTrack }: TimerBarProps) {
   });
 
   // La descripción es estado local de la barra hasta que hay una entrada donde
-  // guardarla. Al cambiar la entrada abierta vuelve a tomar la del servidor.
+  // guardarla. Al cambiar la entrada abierta vuelve a tomar la del servidor,
+  // salvo que la persona haya seguido escribiendo mientras la operación
+  // viajaba: eso que tecleó es más nuevo que lo que contesta el servidor.
   if (trackedId !== (running?.id ?? null)) {
     setTrackedId(running?.id ?? null);
-    setDraft(running?.description ?? "");
     setSentDescription(null);
+    if (!draftEdited) {
+      setDraft(running?.description ?? "");
+    }
   }
 
   const switching = start.pending || stop.pending;
@@ -74,8 +80,14 @@ export function TimerBar({ running, serverNow, canTrack }: TimerBarProps) {
     save.clear();
   }
 
+  function handleDraftChange(next: string): void {
+    setDraft(next);
+    setDraftEdited(true);
+  }
+
   function handleToggle(): void {
     clearNotices();
+    setDraftEdited(false);
     if (running === null) {
       start.run({ description: draft });
       return;
@@ -101,7 +113,7 @@ export function TimerBar({ running, serverNow, canTrack }: TimerBarProps) {
         <div className="min-w-0 flex-1 basis-64">
           <DescriptionField
             value={draft}
-            onValueChange={setDraft}
+            onValueChange={handleDraftChange}
             onCommit={handleCommit}
             debounceMs={running === null ? undefined : DESCRIPTION_DEBOUNCE_MS}
             label="Descripción de la entrada"
