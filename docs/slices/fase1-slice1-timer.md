@@ -7,6 +7,9 @@ Fuente de los comportamientos: `docs/parity/time-tracker.md`, sección 11.
 Decisión de arquitectura asociada: [ADR 0003, un solo timer activo por
 usuario](../adr/0003-un-solo-timer-activo.md).
 
+Correcciones aplicadas: ronda 1 de `architecture-reviewer`
+(`correcciones-fase1-slice1.md`).
+
 Decisiones del equipo que este contrato da por tomadas y no vuelve a abrir:
 P-11 (el cliente revalida al enfocar la ventana y cada 60 segundos), P-12 y
 P-08 (no hay duración máxima por entrada en la fase 1 y el timer abandonado se
@@ -25,6 +28,22 @@ duración), TT-50, TT-54 (solo descripción), TT-55, TT-60, TT-61, TT-66, TT-71,
 TT-79, TT-80, TT-81, TT-85, TT-89, TT-90, TT-91, TT-92, TT-93, TT-94, TT-95,
 TT-100, TT-101, TT-102, TT-103.
 
+Entran además, por arrastre de los anteriores, cinco que la sección 11 no
+enumera. Cada uno es consecuencia directa de algo que sí está en la lista, así
+que no se puede entregar el slice sin ellos:
+
+- **TT-42**, el timer que lleva días corriendo: con P-12 y P-08 sin tope, es el
+  resultado de no haber puesto límite a TT-23.
+- **TT-51**, el superíndice de días en la hora de fin: TT-95 mete en la lista
+  una entrada que cruza la medianoche y hay que dibujarla.
+- **TT-86**, los días sin entradas no se dibujan: es la forma de la lista que
+  describe TT-43, no un comportamiento aparte.
+- **TT-97**, la duración se calcula sobre instantes UTC: es la consecuencia de
+  guardar `timestamptz`, visible en cualquier entrada que cruce un cambio de
+  horario.
+- **TT-106**, cambiar la zona horaria del workspace recalcula los grupos: TT-02
+  resuelve el día con esa zona, así que el comportamiento ya está decidido.
+
 Queda afuera, explícito:
 
 - Todo lo que la sección 11 ya difiere a los slices siguientes: proyecto y
@@ -34,17 +53,18 @@ Queda afuera, explícito:
   de semana (TT-47, TT-48), paginación (TT-52), continuar y duplicar (TT-57,
   TT-58), descartar desde la barra (TT-65), selección y edición masiva
   (TT-62 … TT-64).
-- **Sin «Cargar más» y sin franja de semana.** La lista trae una ventana fija
-  de 14 días, más el día de inicio del timer activo si cayó antes. TT-52 llega
-  con la paginación.
+- **Sin «Cargar más» y sin franja de semana.** La lista trae los últimos 14
+  días, extendidos hacia atrás hasta el último día con entradas y hasta el día
+  de inicio del timer activo si cayó antes; la regla exacta está en la sección 5. TT-52 llega con la paginación.
 - **TT-91 parcial.** `requireSession()` redirige a `/login` tal como está hoy.
   Conservar la ruta de vuelta exige tocar `src/server/session.ts` y la pantalla
   de acceso, que no son de este slice. Lo que sí se cumple: el timer activo
   sobrevive a la sesión vencida y reaparece al volver a entrar.
 - **Sin e2e con sesión.** No existe fixture de sesión en Playwright —el acceso
-  es OAuth de Google— y montarlo es un trabajo propio. Los criterios de
-  aceptación de la sección 7 se verifican con los tests de vitest y a mano
-  sobre el preview. `e2e/` no se toca.
+  es OAuth de Google— y montarlo es un trabajo propio. Los criterios de la
+  sección 7 se verifican con `npm test` y `npm run test:integration`; los que
+  dependen del navegador —el contador, el rebote, el diálogo y los estados de
+  error— se verifican a mano sobre el preview. `e2e/` no se toca.
 - **Sin tope de duración por entrada**, por P-12 y P-08. TT-74 y TT-107 no
   existen en este slice.
 - **Sin tests de componentes con DOM.** `vitest.config.ts` corre en
@@ -67,6 +87,10 @@ Una tabla nueva en `src/server/db/schema.ts`. Los instantes van en
 | `created_at`   | `timestamptz` | not null, `defaultNow()`                          |
 | `updated_at`   | `timestamptz` | not null, `defaultNow()`, `$onUpdate`             |
 
+`started_at` y `ended_at` los escribe la base con `now()` dentro de la
+transacción de la mutación, no el reloj del proceso; el porqué está en la
+sección 4 y en el ADR 0003.
+
 Nombres de columna `started_at` y `ended_at`, no `start` y `end`: `END` es
 palabra reservada en Postgres y obligaría a citarla en toda consulta cruda y en
 las migraciones. Los campos Drizzle y los tipos de dominio usan `startedAt` y
@@ -82,7 +106,7 @@ entre `null` y `''` al comparar o al mostrar.
   — el índice único parcial de TT-34. Garantiza un solo timer activo por
   usuario y hace fallar al perdedor de la carrera de TT-37. Ver el ADR 0003.
 - `index time_entry_workspace_user_started_idx on time_entry (workspace_id, user_id, started_at desc)`
-  — la consulta de la ventana de 14 días y la de «¿tiene alguna entrada?» de
+  — la consulta de la ventana de la lista y la de «¿tiene alguna entrada?» de
   TT-85.
 - `check time_entry_end_after_start: ended_at is null or ended_at >= started_at`
   — red de seguridad de TT-81. Es `>=` y no `>` porque TT-101 admite una
@@ -95,14 +119,18 @@ snapshot. No se toca ninguna tabla existente.
 
 ## 3. Acciones de permisos nuevas
 
-En `src/server/permissions/index.ts`, cuatro entradas a la unión `Action`:
+En `src/server/permissions/index.ts`, tres entradas a la unión `Action`:
 
 ```ts
-| "timeEntry.own.view"
 | "timeEntry.own.create"
 | "timeEntry.own.update"
 | "timeEntry.own.delete"
 ```
+
+No hay `timeEntry.own.view`. Leer las entradas propias no es una decisión de
+`can()`: es el filtro por `workspace_id` y `user_id` que describe TT-01, y
+cablearlo como permiso dejaría la pantalla en blanco —en vez de en solo
+lectura— cuando la membresía se desactiva, contra TT-92.
 
 Un `Resource` nuevo, donde `userId` es el **dueño de la entrada**, no el actor:
 
@@ -110,7 +138,12 @@ Un `Resource` nuevo, donde `userId` es el **dueño de la entrada**, no el actor:
 | { readonly kind: "timeEntry"; readonly workspaceId: string; readonly userId: string }
 ```
 
-Filas de `allowedRoles`: las cuatro acciones con los cinco roles,
+En `timeEntry.own.update` y `timeEntry.own.delete` ese `userId` sale de la fila
+leída. En `timeEntry.own.create` no hay fila todavía: el recurso se arma con el
+propio actor, `{ kind: "timeEntry", workspaceId: actor.workspaceId, userId: actor.userId }`,
+que es exactamente el dueño que va a tener la entrada nueva.
+
+Filas de `allowedRoles`: las tres acciones con los cinco roles,
 `["owner", "admin", "project_manager", "team_manager", "member"]`, por TT-66.
 El filtro de `status !== "active"` que ya tiene `can()` cubre TT-92 sin nada
 nuevo.
@@ -126,10 +159,10 @@ if (resource.kind === "timeEntry" && resource.userId !== actor.userId) {
 ```
 
 Con eso TT-79 lo resuelve `can()` y no una comprobación suelta en el service.
-Ninguna decisión de acceso vive fuera de este archivo.
+Ninguna decisión de acceso **de una mutación** vive fuera de este archivo.
 
 Casos nuevos en `src/server/permissions/permissions.test.ts`: los cinco roles
-pueden las cuatro acciones sobre una entrada propia; ninguno puede sobre una
+pueden las tres acciones sobre una entrada propia; ninguno puede sobre una
 entrada ajena del mismo workspace; una membresía `inactive` o `invited` no
 puede ninguna.
 
@@ -143,11 +176,7 @@ Resultado y errores, declarados en `src/modules/time-entry/schema.ts`:
 
 ```ts
 export type TimeEntryErrorCode =
-  | "validation"
-  | "not_found"
-  | "forbidden"
-  | "already_stopped"
-  | "unexpected";
+  "validation" | "not_found" | "forbidden" | "already_stopped" | "unexpected";
 
 export type ActionResult<T> =
   | { readonly ok: true; readonly data: T }
@@ -156,13 +185,35 @@ export type ActionResult<T> =
 
 Un mensaje por código:
 
-| Código            | Mensaje                                                          | Origen         |
-| ----------------- | ---------------------------------------------------------------- | -------------- |
-| `validation`      | el del issue de Zod, p. ej. «La descripción no puede superar los 3000 caracteres.» | TT-71          |
-| `not_found`       | «Esa entrada ya no existe.»                                      | TT-80, TT-103  |
-| `forbidden`       | «No tenés permiso para editar esta entrada.»                     | TT-79, TT-92   |
-| `already_stopped` | «Este timer ya había sido detenido.»                             | TT-41          |
-| `unexpected`      | «No se pudo guardar. Revisá la conexión y volvé a intentar.»     | TT-89, TT-90   |
+| Código            | Mensaje                                                                            | Origen        |
+| ----------------- | ---------------------------------------------------------------------------------- | ------------- |
+| `validation`      | el del issue de Zod, p. ej. «La descripción no puede superar los 3000 caracteres.» | TT-71         |
+| `not_found`       | «Esa entrada ya no existe.»                                                        | TT-80, TT-103 |
+| `forbidden`       | dos, según el caso: ver abajo                                                      | TT-79, TT-92  |
+| `already_stopped` | «Este timer ya había sido detenido.»                                               | TT-41         |
+| `unexpected`      | «No se pudo guardar. Revisá la conexión y volvé a intentar.»                       | TT-89, TT-90  |
+
+`forbidden` tiene dos mensajes porque cubre dos situaciones que la persona lee
+distinto:
+
+- «No tenés permiso para hacer esto.» cuando el rechazo no apunta a una entrada
+  ajena: `startTimer`, y cualquier action cuando la membresía está desactivada
+  (TT-92). Nombrar «esta entrada» ahí confunde, porque la entrada es suya.
+- «No tenés permiso para editar esta entrada.» cuando la entrada existe y es de
+  otra persona (TT-79).
+
+El código es el mismo y la decisión sigue siendo de `can()`. El texto lo elige
+el service, que es la única capa que tiene a la vez la fila y el actor: la
+action no lee la fila y hacérsela llegar solo para elegir una cadena agregaría
+un campo al error sin ganancia. La action traduce el error a `ActionResult` sin
+interpretarlo.
+
+| Action              | Mensaje de `forbidden`                               |
+| ------------------- | ---------------------------------------------------- |
+| `startTimer`        | «No tenés permiso para hacer esto.»                  |
+| `stopTimer`         | el neutro si la entrada es propia; TT-79 si es ajena |
+| `updateDescription` | el neutro si la entrada es propia; TT-79 si es ajena |
+| `deleteEntry`       | el neutro si la entrada es propia; TT-79 si es ajena |
 
 El service lanza `TimeEntryError` con `code`, y el `ForbiddenError` que ya
 existe; la action traduce. No se lanzan strings.
@@ -171,6 +222,13 @@ existe; la action traduce. No se lanzan strings.
 dominio.** Es lo que hace que la pestaña desactualizada de TT-41 y TT-103 se
 resincronice con el estado real sin que el resultado tenga que cargar el estado
 completo.
+
+**Los instantes los pone la base.** `started_at` y `ended_at` se escriben con
+`now()` dentro de la transacción, usando la constante `now` que ya está
+exportada —y sin uso— en `src/server/db/schema.ts`. En Postgres `now()` es la
+marca de inicio de la transacción, así que todas las sentencias de una misma
+transacción escriben el mismo valor: eso es lo que hace que el corte de TT-35
+no deje hueco. El reloj del proceso no participa de ninguna escritura.
 
 ### `startTimer` — TT-22, TT-24, TT-35, TT-37
 
@@ -184,16 +242,23 @@ startTimerInput = z.object({
 });
 ```
 
-`started_at` es el instante del **servidor**, no uno que mande el cliente: así
-el desfase de reloj de TT-32 no entra nunca a la base.
+La entrada no lleva instante: el cliente no manda `started_at` y así el desfase
+de reloj de TT-32 no entra nunca a la base.
 
 Resultado: `ActionResult<{ running: TimeEntryView; stopped: TimeEntryView | null }>`.
 `stopped` es la entrada que estaba corriendo y se cerró en el mismo instante
-(TT-35), o `null`. En la carrera de TT-37 el resultado es `ok: true` con el
-timer que sobrevivió y `stopped: null`.
+(TT-35), o `null`.
+
+La carrera de TT-37 se resuelve como dice el ADR 0003: ante la violación del
+índice, se relee el timer activo y se devuelve `ok: true` con ese timer y
+`stopped: null`; si la relectura no encuentra ninguno —el ganador lo detuvo en
+el medio— se reintenta la transacción completa **una sola vez**, y si la
+segunda vuelta vuelve a chocar y a no encontrar nada, el resultado es
+`unexpected`. `running` nunca es nulo en un resultado exitoso.
 
 Errores posibles: `validation`, `forbidden`, `unexpected`.
-Permiso: `timeEntry.own.create`. Revalida `/`.
+Permiso: `timeEntry.own.create`, con el recurso armado sobre el propio actor.
+Revalida `/`.
 
 ### `stopTimer` — TT-23, TT-41, TT-103
 
@@ -207,7 +272,8 @@ distinguir los tres desenlaces de una pestaña desactualizada.
 Resultado: `ActionResult<{ stopped: TimeEntryView }>`.
 
 Errores posibles: `not_found` (la entrada no existe, TT-103),
-`already_stopped` (existe y ya tiene `ended_at`, TT-41), `forbidden`,
+`already_stopped` (existe y ya tiene `ended_at`, TT-41), `validation` (la base
+rechaza un fin anterior al inicio, TT-81 y criterio 22), `forbidden`,
 `unexpected`. Permiso: `timeEntry.own.update`. Revalida `/`.
 
 ### `updateDescription` — TT-04, TT-27, TT-54, TT-55
@@ -248,10 +314,35 @@ Permiso: `timeEntry.own.delete`. Revalida `/`.
 El repository busca la entrada filtrando por `workspace_id` de la sesión y
 **no** por `user_id`. Si no aparece, `not_found`. Si aparece, se arma el
 `Resource` con el `user_id` de la fila y se llama a `can()`; si da falso,
-`forbidden`. Esto admite que un miembro del workspace sepa que un id existe
-aunque no sea suyo; es aceptable entre colegas del mismo workspace y es lo que
-la tabla de la sección 7 del documento de paridad pide al tener dos mensajes
-distintos.
+`forbidden` con el mensaje de TT-79.
+
+Dos consecuencias buscadas:
+
+- Un miembro del workspace puede saber que un id existe aunque no sea suyo. Es
+  aceptable entre colegas del mismo workspace y es lo que pide la tabla de la
+  sección 7 del documento de paridad al tener dos mensajes distintos.
+- **Un id de otro workspace devuelve `not_found`, no `forbidden`**, porque el
+  filtro por `workspace_id` lo deja fuera antes de que haya nada que comparar.
+  Es a propósito: entre workspaces no se filtra ni siquiera la existencia de
+  una fila.
+
+### Audit log
+
+Toda mutación escribe con `recordAudit` dentro de su transacción, con
+`entity: "time_entry"` y `entityId` igual al uuid de la fila:
+
+| Action                        | `action` del audit            | `previousValue`                  | `nextValue`                  |
+| ----------------------------- | ----------------------------- | -------------------------------- | ---------------------------- |
+| `startTimer`, entrada nueva   | `timeEntry.start`             | sin valor                        | `{ description, startedAt }` |
+| `startTimer`, cierre de TT-35 | `timeEntry.stop`              | `{ endedAt: null }`              | `{ endedAt }`                |
+| `stopTimer`                   | `timeEntry.stop`              | `{ endedAt: null }`              | `{ endedAt }`                |
+| `updateDescription`           | `timeEntry.updateDescription` | `{ description }` anterior       | `{ description }` nuevo      |
+| `deleteEntry`                 | `timeEntry.delete`            | la fila entera, tal como se leyó | sin valor                    |
+
+El arranque con otro timer corriendo escribe dos registros, uno por entrada: el
+`timeEntry.stop` de la vieja y el `timeEntry.start` de la nueva. En el borrado
+el valor previo lleva la fila completa porque es la única copia que queda: el
+borrado es físico.
 
 ## 5. Contrato de lectura
 
@@ -262,8 +353,10 @@ Server Component:
 getTrackerState(actor: Actor, timeZone: string, now?: Date): Promise<TrackerState>;
 ```
 
-`now` existe solo para los tests. La función no importa `@/server/session`: la
-página le pasa `session.actor` y `session.workspace.timezone` (TT-02, P-13).
+`now` es el único reloj de aplicación que sobrevive en el módulo, y existe solo
+para que los tests puedan fijar el día: ninguna escritura lo usa. La función no
+importa `@/server/session`: la página le pasa `session.actor` y
+`session.workspace.timezone` (TT-02, P-13).
 
 Esquemas de salida, en `src/modules/time-entry/schema.ts`, con su tipo
 inferido. **Todo lo que depende de zona horaria o de formato se calcula en el
@@ -272,55 +365,71 @@ servidor**; el cliente solo hace la cuenta del transcurrido.
 ```ts
 timeEntryView = z.object({
   id: z.uuid(),
-  description: z.string(),                 // "" = sin descripción (TT-50)
-  startedAt: z.iso.datetime(),             // ISO UTC
-  endedAt: z.iso.datetime().nullable(),    // null = corriendo
-  dayDate: z.string(),                     // "2026-10-02", día local del inicio (TT-43, TT-100)
-  startLabel: z.string(),                  // "08:00", 24 h (TT-02)
-  endLabel: z.string().nullable(),         // "02:00" | null
-  extraDays: z.number().int().min(0),      // superíndice de cruce de medianoche (TT-51, TT-95)
-  durationMinutes: z.number().int().min(0).nullable(), // null si corre
-  durationLabel: z.string().nullable(),    // "1:30" (TT-101: 0 min ⇒ "0:00")
+  description: z.string(), // "" = sin descripción (TT-50)
+  startedAt: z.iso.datetime(), // ISO UTC
+  endedAt: z.iso.datetime().nullable(), // null = corriendo
+  dayDate: z.string(), // "2026-10-02", día local del inicio (TT-43, TT-100)
+  startLabel: z.string(), // "08:00", 24 h (TT-02)
+  endLabel: z.string().nullable(), // "02:00" | null
+  extraDays: z.number().int().min(0), // superíndice de cruce de medianoche (TT-51, TT-95)
+  durationSeconds: z.number().int().min(0).nullable(), // null si corre
+  durationLabel: z.string().nullable(), // "1:30" (TT-101: menos de un minuto ⇒ "0:00")
 });
 
 dayGroupView = z.object({
-  date: z.string(),                        // "2026-10-02"
-  label: z.string(),                       // "Hoy" | "Ayer" | "mié, 01/10" | "mié, 01/10/2025" (TT-44)
-  isRunningDay: z.boolean(),               // el cliente suma acá el transcurrido (TT-46)
-  closedMinutes: z.number().int().min(0),  // suma de las entradas cerradas del grupo
-  closedTotalLabel: z.string(),            // "7:45" (TT-45)
-  entries: z.array(timeEntryView),         // cerradas, de la más reciente a la más vieja
+  date: z.string(), // "2026-10-02"
+  label: z.string(), // "Hoy" | "Ayer" | "mié, 01/10" | "mié, 01/10/2025" (TT-44)
+  isRunningDay: z.boolean(), // el cliente suma acá el transcurrido (TT-46)
+  closedSeconds: z.number().int().min(0), // suma en segundos de las entradas cerradas
+  closedTotalLabel: z.string(), // "7:45" (TT-45)
+  entries: z.array(timeEntryView), // cerradas, de la más reciente a la más vieja
 });
 
 trackerState = z.object({
-  serverNow: z.iso.datetime(),             // TT-32: el cliente cuenta sobre este desfase
+  serverNow: z.iso.datetime(), // TT-32: el cliente cuenta sobre este desfase
   timeZone: z.string(),
-  canTrack: z.boolean(),                   // can(actor, "timeEntry.own.create", …) — TT-92
-  running: timeEntryView.nullable(),       // endedAt siempre null por construcción (TT-38, TT-39)
+  canTrack: z.boolean(), // can(actor, "timeEntry.own.create", …) — TT-92
+  running: timeEntryView.nullable(), // endedAt siempre null por construcción (TT-38, TT-39)
   days: z.array(dayGroupView),
-  hasAnyEntry: z.boolean(),                // TT-85: ni entradas ni timer
+  hasAnyEntry: z.boolean(), // TT-85: ni entradas ni timer
 });
 ```
+
+**La aritmética de pantalla es en segundos y las etiquetas truncan a minuto.**
+`durationSeconds` y `closedSeconds` son exactos; `durationLabel` y
+`closedTotalLabel` salen de `formatDuration(Math.floor(segundos / 60))`. Nada
+se suma ya redondeado: el total del día formatea una sola vez, sobre la suma de
+segundos. Así una entrada de 40 segundos se muestra como `0:00` y suma sus
+segundos al total, que es lo que piden TT-101 y TT-45. `durationMinutes` de
+`src/server/time` no se toca: queda para los reportes.
 
 Reglas de armado:
 
 - Solo entradas con el `workspace_id` de la sesión y el `user_id` del actor
   (TT-01).
-- Ventana: entradas cerradas cuyo `started_at` cae en
-  `[inicio del día local de hoy − 13 días, ahora)`. Constante
-  `TRACKER_WINDOW_DAYS = 14`, exportada del módulo.
+- Ventana: entradas cerradas cuyo `started_at` cae en `[desde, ahora)`, donde
+  `desde` es el menor de estos tres instantes:
+  1. el inicio del día local de hoy menos `TRACKER_WINDOW_DAYS - 1` días;
+  2. el inicio del día local de la entrada cerrada más reciente del usuario;
+  3. el inicio del día local del timer activo, si hay uno.
+     El punto 2 es el que garantiza que **`days` nunca queda vacío si
+     `hasAnyEntry` es verdadero**: si la persona no cargó nada en las últimas dos
+     semanas, la lista salta a su último día con entradas en vez de mostrar una
+     pantalla sin estado. No hay un segundo estado vacío.
+- `TRACKER_WINDOW_DAYS = 14`, declarada en `src/modules/time-entry/schema.ts`.
 - La entrada abierta **no** aparece en `days`: vive en `running` y la dibuja la
-  barra.
+  barra. Su `endLabel` es `null`, su `durationSeconds` y su `durationLabel` son
+  `null`, y su `extraDays` es `0`: el superíndice de días es una propiedad de
+  la hora de fin, y una entrada que corre no la tiene todavía.
 - Los grupos se ordenan del más reciente al más viejo y **los días sin entradas
   no se dibujan** (TT-86). Única excepción: si hay timer activo, siempre existe
-  el grupo de `running.dayDate`, aunque esté vacío y aunque quede fuera de la
-  ventana de 14 días, para que el cliente tenga dónde sumar el transcurrido
-  (TT-42, y TT-95 con un timer que arrancó otro día).
-- `closedMinutes` suma solo las entradas cerradas. El transcurrido del timer
+  el grupo de `running.dayDate`, aunque esté vacío, para que el cliente tenga
+  dónde sumar el transcurrido (TT-42, y TT-95 con un timer que arrancó otro
+  día).
+- `closedSeconds` suma solo las entradas cerradas. El transcurrido del timer
   activo lo suma el cliente sobre el grupo con `isRunningDay`, porque cambia
   cada segundo (TT-46).
-- La duración se calcula con `durationMinutes` de `src/server/time`, sobre
-  instantes UTC (TT-97).
+- La duración se calcula sobre instantes UTC (TT-97).
 
 Lo que se agrega a `src/server/time/index.ts`, porque la convención manda que
 fechas, zonas horarias y duraciones pasen solo por ahí:
@@ -330,11 +439,17 @@ dayKey(instant: Date, timeZone: string): string;              // "2026-10-02"
 dayLabel(instant: Date, now: Date, timeZone: string): string; // "Hoy" | "Ayer" | "mié, 01/10" | con año
 formatClock(instant: Date, timeZone: string): string;         // "08:00"
 extraDays(start: Date, end: Date, timeZone: string): number;  // TT-51
+durationSeconds(start: Date, end: Date): number;              // exacta, sin redondear
 formatElapsed(seconds: number): string;                       // "h:mm:ss" para el contador (TT-17)
 ```
 
-`formatElapsed` es puro y sin dependencias de servidor: lo importa también el
-componente cliente del contador.
+`formatElapsed` se queda en `src/server/time` aunque lo importe un componente
+cliente: la convención dice que las duraciones pasan por ahí y tener dos
+formateadores de duración en el repositorio es peor que el costo que se paga.
+Ese costo es que el bundle del cliente arrastra el módulo entero, con
+`date-fns` y `@date-fns/tz`. Se acepta para este slice; si el módulo crece, se
+parte en una mitad pura y otra con zonas horarias, y eso no cambia este
+contrato.
 
 ## 6. Reparto de archivos
 
@@ -355,8 +470,17 @@ Las dos listas son disjuntas. Rutas absolutas.
 /home/maxi/program/clock/src/modules/time-entry/service.ts
 /home/maxi/program/clock/src/modules/time-entry/actions.ts
 /home/maxi/program/clock/src/modules/time-entry/schema.test.ts
-/home/maxi/program/clock/src/modules/time-entry/service.test.ts
+/home/maxi/program/clock/src/modules/time-entry/service.integration.test.ts
 ```
+
+El service se prueba contra una base real con `npm run test:integration`, sin
+`vi.mock` y sin repository inyectable: el arnés ya existe en `main`
+(`vitest.integration.config.ts`, `src/test/`) y
+`src/modules/workspace/service.integration.test.ts` es el precedente de cómo se
+escribe uno. Ahí se verifican los criterios 7, 8 y 22, que son los que dependen
+del índice único parcial y del `check`, y que ningún doble de prueba puede
+cubrir. No hay `service.test.ts` de unidad: no quedaría nada que probar sin
+base que no sea la forma del esquema Zod, que ya cubre `schema.test.ts`.
 
 ### frontend-dev
 
@@ -378,19 +502,34 @@ Las dos listas son disjuntas. Rutas absolutas.
 /home/maxi/program/clock/src/components/ui/input.tsx
 /home/maxi/program/clock/src/components/ui/dialog.tsx
 /home/maxi/program/clock/src/components/ui/alert.tsx
+/home/maxi/program/clock/package.json
+/home/maxi/program/clock/package-lock.json
+/home/maxi/program/clock/components.json
 ```
 
-Nadie toca `src/server/session.ts`, `src/app/(app)/layout.tsx`,
-`src/components/layout/`, `vitest.config.ts`, `playwright.config.ts` ni `e2e/`.
+`package.json`, `package-lock.json` y `components.json` son de `frontend-dev`
+porque las primitivas de `src/components/ui/` se agregan con el CLI de shadcn,
+que las edita. `backend-dev` no suma dependencias en este slice; si necesitara
+una, la pide antes de tocar esos archivos.
+
+### Lo que no toca ninguno de los dos
+
+Ni `backend-dev` ni `frontend-dev` editan `src/server/session.ts`,
+`src/app/(app)/layout.tsx`, `src/components/layout/`, `vitest.config.ts`,
+`vitest.integration.config.ts`, `src/test/`, `playwright.config.ts` ni `e2e/`.
+No es una lista exhaustiva de archivos prohibidos: la regla es que cada uno se
+queda en su lista, y cualquier archivo que no esté en ninguna de las dos se
+pide antes de tocarlo.
 
 ### Handshake de orden
 
 El primer commit de `backend-dev` es `src/modules/time-entry/schema.ts` con los
-esquemas Zod, los tipos de salida y los códigos de error, más las cinco
-funciones nuevas de `src/server/time/index.ts` y las firmas de `service.ts` y
-`actions.ts`. Con eso `frontend-dev` compila desde el minuto cero contra los
-tipos definitivos. Las listas de arriba ya reflejan que `frontend-dev`
-**importa** de `schema.ts`, `service.ts` y `actions.ts` pero no los edita.
+esquemas Zod, los tipos de salida, los códigos de error y
+`TRACKER_WINDOW_DAYS`, más las seis funciones nuevas de
+`src/server/time/index.ts` y las firmas de `service.ts` y `actions.ts`. Con eso
+`frontend-dev` compila desde el minuto cero contra los tipos definitivos. Las
+listas de arriba ya reflejan que `frontend-dev` **importa** de `schema.ts`,
+`service.ts` y `actions.ts` pero no los edita.
 
 ### Responsabilidades que no se leen en el nombre del archivo
 
@@ -401,6 +540,13 @@ tipos definitivos. Las listas de arriba ya reflejan que `frontend-dev`
   `Date.now()` del momento de montaje y de `startedAt`, devuelve los segundos
   transcurridos corrigiendo el desfase de reloj (TT-32), y se formatea con
   `formatElapsed`. Es puro y tiene test.
+- `day-group.tsx` dibuja el total del día. Formatea con `formatDuration` de
+  `src/server/time` y nunca con una cuenta propia: en un grupo cualquiera
+  muestra `formatDuration(Math.floor(closedSeconds / 60))`, y en el grupo con
+  `isRunningDay` suma primero los segundos transcurridos que le da
+  `elapsed.ts` y formatea después, `formatDuration(Math.floor((closedSeconds + transcurrido) / 60))`,
+  para que el total no acumule el truncamiento de cada fila y suba junto con el
+  contador (TT-45, TT-46).
 - `description-field.tsx` cubre TT-04: con el timer corriendo guarda con rebote
   de 500 ms mientras se escribe, y además al perder el foco y con Enter; sin
   timer corriendo el texto es estado local de la barra hasta que se toca
@@ -409,7 +555,8 @@ tipos definitivos. Las listas de arriba ya reflejan que `frontend-dev`
 
 ## 7. Criterios de aceptación
 
-Uno por comportamiento del slice. Son observables desde afuera.
+Uno por comportamiento del slice. Son observables desde afuera. Los criterios
+7, 8 y 22 los cubre `service.integration.test.ts`.
 
 1. **TT-22, TT-24** — Con la barra vacía, tocar «Iniciar» crea una entrada con
    `started_at` en ese instante y `ended_at` nulo, y el botón pasa a «Detener»
@@ -422,8 +569,8 @@ Uno por comportamiento del slice. Son observables desde afuera.
    detener no hay salto entre lo que mostraba y la duración guardada.
 4. **TT-23, TT-101** — «Detener» escribe `ended_at` con el instante del clic y
    la entrada aparece en el grupo del día de su `started_at`. Detener en el
-   mismo minuto en que se arrancó guarda la entrada y la lista la muestra como
-   `0:00`.
+   mismo minuto en que se arrancó guarda la entrada, la lista la muestra como
+   `0:00` y sus segundos siguen contando en el total del día.
 5. **TT-03, TT-05, TT-71** — El campo acepta texto libre con el marcador
    «¿En qué estás trabajando?»; más de 3000 caracteres se rechazan con «La
    descripción no puede superar los 3000 caracteres.» y nada se guarda.
@@ -431,9 +578,9 @@ Uno por comportamiento del slice. Son observables desde afuera.
    guarda sobre la entrada abierta 500 ms después de dejar de escribir, y
    también al salir del campo o con Enter, sin detener el timer y sin mostrar
    estado de guardado.
-7. **TT-34, TT-35** — Con un timer corriendo, tocar «Iniciar» deja exactamente
-   una fila con `ended_at` nulo; el `ended_at` de la vieja y el `started_at` de
-   la nueva son el mismo valor, y la vieja aparece en la lista.
+7. **TT-34, TT-35, TT-36** — Con un timer corriendo, tocar «Iniciar» deja
+   exactamente una fila con `ended_at` nulo; el `ended_at` de la vieja y el
+   `started_at` de la nueva son el mismo valor, y la vieja aparece en la lista.
 8. **TT-37, TT-102** — Dos arranques simultáneos del mismo usuario dejan un
    solo timer activo; las dos pestañas terminan mostrando ese mismo timer y
    ninguna muestra un error.
@@ -479,14 +626,17 @@ Uno por comportamiento del slice. Son observables desde afuera.
     con «La hora de fin tiene que ser posterior a la de inicio.», y la
     restricción de la base impide la fila aunque se intente escribir directo.
 23. **TT-85** — Sin ninguna entrada y sin timer, la lista muestra «Todavía no
-    cargaste horas» con «Escribí en qué estás trabajando y tocá Iniciar.»
+    cargaste horas» con «Escribí en qué estás trabajando y tocá Iniciar.» Con
+    entradas más viejas que la ventana, en cambio, la lista salta al último día
+    con entradas y nunca queda en blanco.
 24. **TT-89, TT-90** — Con la red caída, «Iniciar», «Detener» y el guardado de
     la descripción devuelven el control a su estado anterior y muestran «No se
     pudo guardar. Revisá la conexión y volvé a intentar.» con «Reintentar».
 25. **TT-91** — Con la sesión vencida, la pantalla lleva al acceso; al volver a
     entrar, el timer que estaba corriendo sigue abierto y la barra lo retoma.
 26. **TT-92** — Con la membresía desactivada, la pantalla queda en solo lectura
-    con un aviso y toda action responde 403.
+    con un aviso y toda action responde 403 con «No tenés permiso para hacer
+    esto.»
 27. **TT-02, TT-106** — Las horas se muestran en 24 h y las fechas como
     `dd/MM`, resueltas con la zona horaria del workspace; cambiarla recalcula
     los grupos sin tocar ningún instante guardado.

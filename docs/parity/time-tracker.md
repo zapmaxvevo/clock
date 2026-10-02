@@ -25,7 +25,7 @@ Clockify y la referencia pública de su API:
 - https://docs.clockify.me/ (endpoints de time entry)
 
 **No pude entrar al workspace real del equipo**: no tengo credenciales de
-Clockify en este entorno. Todo lo que está marcado como *no verificado* abajo
+Clockify en este entorno. Todo lo que está marcado como _no verificado_ abajo
 describe lo que se ve en el producto pero no aparece en la documentación
 pública, y hay que confirmarlo abriendo el workspace del equipo antes de
 implementarlo. No lo di por cierto en ningún punto bloqueante.
@@ -37,21 +37,21 @@ formato decimal de duración) no se releva: queda listado en
 
 ## Vocabulario
 
-| Clockify           | Clock (interfaz en español) |
-| ------------------ | --------------------------- |
-| Time Tracker       | Rastreador                  |
-| Time entry         | Entrada                     |
-| Running timer      | Timer activo                |
-| Description        | Descripción                 |
-| Project / Task     | Proyecto / Tarea            |
-| Tags               | Etiquetas                   |
-| Billable           | Facturable                  |
-| Timer mode         | Modo timer                  |
-| Manual mode        | Modo manual                 |
-| Continue           | Continuar                   |
-| Duplicate          | Duplicar                    |
-| Split              | Dividir                     |
-| Discard            | Descartar                   |
+| Clockify       | Clock (interfaz en español) |
+| -------------- | --------------------------- |
+| Time Tracker   | Rastreador                  |
+| Time entry     | Entrada                     |
+| Running timer  | Timer activo                |
+| Description    | Descripción                 |
+| Project / Task | Proyecto / Tarea            |
+| Tags           | Etiquetas                   |
+| Billable       | Facturable                  |
+| Timer mode     | Modo timer                  |
+| Manual mode    | Modo manual                 |
+| Continue       | Continuar                   |
+| Duplicate      | Duplicar                    |
+| Split          | Dividir                     |
+| Discard        | Descartar                   |
 
 `adaptar`: la interfaz va en español, así que toda la copia visible se traduce.
 No vuelvo a justificar la traducción en cada comportamiento; se asume en todos.
@@ -262,7 +262,7 @@ El timer anterior se detiene en el mismo instante en que arranca el nuevo: el
 `end` del viejo y el `start` del nuevo son el mismo valor, en una sola
 transacción. La entrada cerrada aparece en la lista y la barra queda con el
 timer nuevo.
-*No verificado en documentación pública*: la documentación afirma «un timer
+_No verificado en documentación pública_: la documentación afirma «un timer
 activo por usuario» pero no describe el detalle del instante de corte.
 Confirmar en el workspace del equipo si Clockify deja un hueco entre las dos.
 
@@ -325,7 +325,7 @@ Suma de las duraciones de las entradas del grupo, en formato `h:mm`, rotulada
 «Total».
 
 **TT-46 El total del día incluye el timer activo** — `adaptar`
-*No verificado en documentación pública*. Acá el total del día en curso suma el
+_No verificado en documentación pública_. Acá el total del día en curso suma el
 transcurrido del timer activo y se actualiza con el contador. Justificación:
 sin esta suma el total del día de hoy queda visiblemente por debajo de lo
 trabajado; si el workspace del equipo muestra lo contrario, se corrige.
@@ -334,7 +334,7 @@ trabajado; si el workspace del equipo muestra lo contrario, se corrige.
 Arriba de los grupos de día, una franja por semana con el rótulo
 «Esta semana» / «Semana anterior» / el rango de fechas, y el total de la semana
 a la derecha, en `h:mm`.
-*No verificado en documentación pública*: la franja se ve en el producto pero
+_No verificado en documentación pública_: la franja se ve en el producto pero
 no está descrita en el centro de ayuda. Confirmar en el workspace del equipo.
 
 **TT-48 Corte de la semana** — `adaptar`
@@ -392,7 +392,7 @@ original, con `start` ahora y `end` nulo. No reabre la entrada original.
 **TT-58 Duplicar** — `replicar`
 Menú de tres puntos → «Duplicar». Crea una copia cerrada con los mismos campos
 y las mismas horas de inicio y fin, en el mismo día.
-*No verificado en documentación pública*: existe el endpoint de duplicado en la
+_No verificado en documentación pública_: existe el endpoint de duplicado en la
 API pero el centro de ayuda no describe qué horas recibe la copia. Confirmar en
 el workspace del equipo antes de implementar.
 
@@ -424,7 +424,7 @@ encabezado de día marca todas las entradas del día.
 Documentado: con entradas seleccionadas se pueden cambiar en bloque la
 descripción, el proyecto y la tarea, las etiquetas (agregando a las existentes
 o reemplazándolas), la facturabilidad, y la hora y la fecha.
-*No verificado*: la documentación dice que la edición masiva del reporte
+_No verificado_: la documentación dice que la edición masiva del reporte
 detallado es de plan pago, y no aclara si la del rastreador está en Free.
 Confirmar en el workspace del equipo (P-07).
 
@@ -438,7 +438,7 @@ decisión pendiente sobre el deshacer.
 El menú de tres puntos de la barra con el timer corriendo ofrece «Descartar»:
 borra la entrada abierta sin guardarla y deja la barra vacía. Pide confirmación
 porque no se puede deshacer.
-*No verificado en documentación pública*: la opción se ve en el producto pero
+_No verificado en documentación pública_: la opción se ve en el producto pero
 no está descrita en el centro de ayuda. Confirmar en el workspace del equipo.
 
 **TT-66 Permisos sobre las acciones** — `replicar`
@@ -460,21 +460,21 @@ Los mensajes son nuestros: la copia de Clockify está en inglés y la interfaz v
 en español, así que todos los textos de esta sección son `adaptar`. Lo que se
 replica es la regla, no la frase.
 
-| ID    | Regla                                                         | Mensaje                                                          | Marca      |
-| ----- | ------------------------------------------------------------- | ---------------------------------------------------------------- | ---------- |
-| TT-68 | Descripción opcional                                          | —                                                                | `replicar` |
-| TT-69 | Proyecto opcional                                             | —                                                                | `replicar` |
-| TT-70 | Tarea solo con proyecto                                       | «Elegí un proyecto antes que una tarea.»                         | `replicar` |
-| TT-71 | Descripción de hasta 3000 caracteres                          | «La descripción no puede superar los 3000 caracteres.»           | `adaptar`  |
-| TT-72 | `end` anterior a `start` se interpreta como el día siguiente  | —                                                                | `replicar` |
-| TT-73 | Duración cero no se guarda en modo manual                     | «La entrada tiene que durar al menos un minuto.»                  | `adaptar`  |
-| TT-74 | Duración máxima por entrada                                   | «Una entrada no puede durar más de 24 horas.»                     | `adaptar`  |
-| TT-75 | `start` de un timer activo no puede ser futuro                | «La hora de inicio no puede ser posterior a ahora.»              | `adaptar`  |
-| TT-76 | Fecha futura en modo manual                                   | «No se pueden cargar horas en una fecha futura.»                 | `adaptar`  |
-| TT-77 | Proyecto inexistente, archivado o sin acceso                  | «Ese proyecto ya no está disponible.»                            | `adaptar`  |
-| TT-78 | Etiqueta inexistente o archivada                              | «Esa etiqueta ya no está disponible.»                            | `adaptar`  |
-| TT-79 | Entrada de otra persona o de otro workspace                   | «No tenés permiso para editar esta entrada.»                     | `replicar` |
-| TT-80 | Entrada ya borrada                                            | «Esa entrada ya no existe.»                                      | `adaptar`  |
+| ID    | Regla                                                        | Mensaje                                                | Marca      |
+| ----- | ------------------------------------------------------------ | ------------------------------------------------------ | ---------- |
+| TT-68 | Descripción opcional                                         | —                                                      | `replicar` |
+| TT-69 | Proyecto opcional                                            | —                                                      | `replicar` |
+| TT-70 | Tarea solo con proyecto                                      | «Elegí un proyecto antes que una tarea.»               | `replicar` |
+| TT-71 | Descripción de hasta 3000 caracteres                         | «La descripción no puede superar los 3000 caracteres.» | `adaptar`  |
+| TT-72 | `end` anterior a `start` se interpreta como el día siguiente | —                                                      | `replicar` |
+| TT-73 | Duración cero no se guarda en modo manual                    | «La entrada tiene que durar al menos un minuto.»       | `adaptar`  |
+| TT-74 | Duración máxima por entrada                                  | «Una entrada no puede durar más de 24 horas.»          | `adaptar`  |
+| TT-75 | `start` de un timer activo no puede ser futuro               | «La hora de inicio no puede ser posterior a ahora.»    | `adaptar`  |
+| TT-76 | Fecha futura en modo manual                                  | «No se pueden cargar horas en una fecha futura.»       | `adaptar`  |
+| TT-77 | Proyecto inexistente, archivado o sin acceso                 | «Ese proyecto ya no está disponible.»                  | `adaptar`  |
+| TT-78 | Etiqueta inexistente o archivada                             | «Esa etiqueta ya no está disponible.»                  | `adaptar`  |
+| TT-79 | Entrada de otra persona o de otro workspace                  | «No tenés permiso para editar esta entrada.»           | `replicar` |
+| TT-80 | Entrada ya borrada                                           | «Esa entrada ya no existe.»                            | `adaptar`  |
 
 Justificaciones de las filas `adaptar`:
 
@@ -560,23 +560,23 @@ lectura con un aviso. Justificación: `membership_status` es nuestro modelo.
 
 ## 10. Casos borde
 
-| ID     | Caso                                                              | Comportamiento esperado                                                                                                             |
-| ------ | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| TT-93  | Entrada sin proyecto                                              | Válida en todo el recorrido: se crea, se lista, se edita, se continúa, se duplica y suma a los totales. Ver TT-24, TT-50.             |
-| TT-94  | Descripción vacía                                                 | Válida. La fila muestra «Sin descripción». Continuar y duplicar la mantienen vacía.                                                    |
-| TT-95  | Timer cruzando la medianoche                                      | La entrada queda en el grupo del día de su `start`. El fin lleva el superíndice de días (TT-51). El total del día de inicio la suma entera. |
-| TT-96  | Timer cruzando el fin de semana                                   | Igual: la entrada cuenta entera en la semana de su `start`, no se parte entre semanas.                                                 |
-| TT-97  | Cambio de horario de verano dentro de la entrada                  | La duración se calcula sobre instantes UTC, así que es la real; las horas mostradas son las locales de cada extremo y pueden no cuadrar con la resta visual. |
-| TT-98  | Duración negativa                                                 | Imposible de guardar. Ver TT-81.                                                                                                       |
-| TT-99  | Fecha futura                                                      | Rechazada en modo manual (TT-76) y en el inicio del timer activo (TT-75). **Decisión propia, no relevada** (P-10).                      |
-| TT-100 | Entrada que empieza exactamente a las 00:00                       | Pertenece al día que empieza, no al anterior.                                                                                          |
-| TT-101 | Detener en el mismo minuto en que se arrancó                      | La entrada se guarda con la duración real en segundos; la lista la muestra como `0:00` y suma sus segundos al total del día.            |
-| TT-102 | Dos pestañas arrancando a la vez                                  | Queda un solo timer. Ver TT-37.                                                                                                        |
-| TT-103 | Borrar la entrada que está corriendo desde otra pestaña           | La pestaña con la barra descubre que no existe al reintentar, limpia la barra y avisa «El timer ya no existe.»                          |
-| TT-104 | Proyecto archivado mientras la entrada ya lo tiene asignado       | La entrada conserva el proyecto y lo muestra; el selector no lo ofrece para entradas nuevas.                                            |
-| TT-105 | Etiqueta borrada mientras la entrada la tiene                     | La etiqueta desaparece de la entrada. **No verificado**: Clockify podría conservarla; depende del módulo de etiquetas.                  |
-| TT-106 | Cambio de zona horaria del workspace con entradas cargadas        | Los instantes no se tocan; los grupos de día se recalculan y una entrada puede cambiar de día.                                          |
-| TT-107 | Timer que lleva más de 24 horas corriendo                         | Sigue corriendo (TT-42). El tope de TT-74 aplica al guardar, así que detenerlo da error: hay que decidir el tope antes (P-08, P-12).     |
+| ID     | Caso                                                        | Comportamiento esperado                                                                                                                                      |
+| ------ | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| TT-93  | Entrada sin proyecto                                        | Válida en todo el recorrido: se crea, se lista, se edita, se continúa, se duplica y suma a los totales. Ver TT-24, TT-50.                                    |
+| TT-94  | Descripción vacía                                           | Válida. La fila muestra «Sin descripción». Continuar y duplicar la mantienen vacía.                                                                          |
+| TT-95  | Timer cruzando la medianoche                                | La entrada queda en el grupo del día de su `start`. El fin lleva el superíndice de días (TT-51). El total del día de inicio la suma entera.                  |
+| TT-96  | Timer cruzando el fin de semana                             | Igual: la entrada cuenta entera en la semana de su `start`, no se parte entre semanas.                                                                       |
+| TT-97  | Cambio de horario de verano dentro de la entrada            | La duración se calcula sobre instantes UTC, así que es la real; las horas mostradas son las locales de cada extremo y pueden no cuadrar con la resta visual. |
+| TT-98  | Duración negativa                                           | Imposible de guardar. Ver TT-81.                                                                                                                             |
+| TT-99  | Fecha futura                                                | Rechazada en modo manual (TT-76) y en el inicio del timer activo (TT-75). **Decisión propia, no relevada** (P-10).                                           |
+| TT-100 | Entrada que empieza exactamente a las 00:00                 | Pertenece al día que empieza, no al anterior.                                                                                                                |
+| TT-101 | Detener en el mismo minuto en que se arrancó                | La entrada se guarda con la duración real en segundos; la lista la muestra como `0:00` y suma sus segundos al total del día.                                 |
+| TT-102 | Dos pestañas arrancando a la vez                            | Queda un solo timer. Ver TT-37.                                                                                                                              |
+| TT-103 | Borrar la entrada que está corriendo desde otra pestaña     | La pestaña con la barra descubre que no existe al reintentar, limpia la barra y avisa «El timer ya no existe.»                                               |
+| TT-104 | Proyecto archivado mientras la entrada ya lo tiene asignado | La entrada conserva el proyecto y lo muestra; el selector no lo ofrece para entradas nuevas.                                                                 |
+| TT-105 | Etiqueta borrada mientras la entrada la tiene               | La etiqueta desaparece de la entrada. **No verificado**: Clockify podría conservarla; depende del módulo de etiquetas.                                       |
+| TT-106 | Cambio de zona horaria del workspace con entradas cargadas  | Los instantes no se tocan; los grupos de día se recalculan y una entrada puede cambiar de día.                                                               |
+| TT-107 | Timer que lleva más de 24 horas corriendo                   | Sigue corriendo (TT-42). El tope de TT-74 aplica al guardar, así que detenerlo da error: hay que decidir el tope antes (P-08, P-12).                         |
 
 TT-107 es una contradicción abierta entre el tope de duración propuesto y el
 timer sin límite: no la resuelvo acá porque las dos piezas son decisiones del
@@ -590,33 +590,33 @@ editarle la descripción y borrarla.
 
 Entra en el primer slice:
 
-| ID               | Qué                                                             |
-| ---------------- | --------------------------------------------------------------- |
-| TT-01            | La pantalla muestra solo las entradas propias                    |
-| TT-02            | Zona horaria del workspace, 24 h, `dd/MM`                        |
-| TT-03, TT-04     | Campo de descripción y su guardado                               |
-| TT-05, TT-71     | Largo máximo de la descripción                                   |
-| TT-17            | Contador en modo timer                                           |
-| TT-22, TT-23     | Iniciar y detener                                                |
-| TT-24            | Arrancar con la barra vacía                                      |
-| TT-27 (parcial)  | Editar la descripción con el timer corriendo                     |
-| TT-31, TT-32     | Contador en el cliente y desfase de reloj                        |
-| TT-34 … TT-37    | Un solo timer activo y el arranque con otro corriendo            |
-| TT-38 … TT-41    | Recarga, segundo dispositivo, detener dos veces                  |
-| TT-43, TT-44     | Agrupación por día y rótulo del encabezado                       |
-| TT-45, TT-46     | Total del día, incluyendo el timer activo                        |
-| TT-49 (parcial)  | Fila con descripción, horas y duración                           |
-| TT-50            | «Sin descripción» y «Sin proyecto»                               |
-| TT-54 (parcial)  | Edición en línea de la descripción                               |
-| TT-55            | Guardado de la edición en línea                                  |
-| TT-60, TT-61     | Borrar con confirmación                                          |
-| TT-66            | Permisos sobre las entradas propias                              |
-| TT-79, TT-80     | Entrada ajena y entrada ya borrada                               |
-| TT-81            | Red de seguridad contra duración negativa                        |
-| TT-85            | Estado vacío inicial                                             |
-| TT-89 … TT-92    | Errores de red, sesión y permiso                                 |
-| TT-93 … TT-95    | Sin proyecto, sin descripción, cruce de medianoche               |
-| TT-100 … TT-103  | Medianoche exacta, entrada de cero minutos, dos pestañas, borrado remoto |
+| ID              | Qué                                                                      |
+| --------------- | ------------------------------------------------------------------------ |
+| TT-01           | La pantalla muestra solo las entradas propias                            |
+| TT-02           | Zona horaria del workspace, 24 h, `dd/MM`                                |
+| TT-03, TT-04    | Campo de descripción y su guardado                                       |
+| TT-05, TT-71    | Largo máximo de la descripción                                           |
+| TT-17           | Contador en modo timer                                                   |
+| TT-22, TT-23    | Iniciar y detener                                                        |
+| TT-24           | Arrancar con la barra vacía                                              |
+| TT-27 (parcial) | Editar la descripción con el timer corriendo                             |
+| TT-31, TT-32    | Contador en el cliente y desfase de reloj                                |
+| TT-34 … TT-37   | Un solo timer activo y el arranque con otro corriendo                    |
+| TT-38 … TT-41   | Recarga, segundo dispositivo, detener dos veces                          |
+| TT-43, TT-44    | Agrupación por día y rótulo del encabezado                               |
+| TT-45, TT-46    | Total del día, incluyendo el timer activo                                |
+| TT-49 (parcial) | Fila con descripción, horas y duración                                   |
+| TT-50           | «Sin descripción» y «Sin proyecto»                                       |
+| TT-54 (parcial) | Edición en línea de la descripción                                       |
+| TT-55           | Guardado de la edición en línea                                          |
+| TT-60, TT-61    | Borrar con confirmación                                                  |
+| TT-66           | Permisos sobre las entradas propias                                      |
+| TT-79, TT-80    | Entrada ajena y entrada ya borrada                                       |
+| TT-81           | Red de seguridad contra duración negativa                                |
+| TT-85           | Estado vacío inicial                                                     |
+| TT-89 … TT-92   | Errores de red, sesión y permiso                                         |
+| TT-93 … TT-95   | Sin proyecto, sin descripción, cruce de medianoche                       |
+| TT-100 … TT-103 | Medianoche exacta, entrada de cero minutos, dos pestañas, borrado remoto |
 
 Queda para los slices siguientes de la fase 1: selector de proyecto y tarea
 (TT-06 … TT-11), etiquetas (TT-12), facturable (TT-14, TT-15), modo manual
@@ -632,19 +632,19 @@ Ninguno de estos puntos se puede relevar en el plan Free o no está en la
 documentación pública. No los inventé: van con una propuesta cuando la tengo,
 pero necesitan una decisión.
 
-| ID   | Punto                                                                                                           |
-| ---- | ---------------------------------------------------------------------------------------------------------------- |
+| ID   | Punto                                                                                                                                                                                     |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | P-01 | Campos obligatorios (`requireProject`, `requireTask`, `requireDescription`, `requireTag`) y `forceTimer`: existen en el esquema pero son de plan pago. ¿Se implementan, y con qué reglas? |
-| P-02 | Aprobaciones y bloqueo de períodos: definen cuándo una entrada deja de ser editable. Sin ellas no hay bloqueo.     |
-| P-03 | Redondeo (`roundingMinutes`): en Clockify es pago y solo afecta reportes. ¿Se mantiene fuera del rastreador?        |
-| P-04 | Entradas superpuestas: ¿se permiten en silencio, se avisa o se rechazan?                                           |
-| P-05 | Dividir entrada: funcionalidad paga. ¿Entra en el alcance y con qué reglas de corte?                               |
-| P-06 | Deshacer el borrado 20 segundos (necesita borrado lógico) o diálogo de confirmación como se propone en TT-61.      |
-| P-07 | Edición masiva en el rastreador: no sé si está en Free. Confirmar en el workspace y decidir si entra en la fase 1.  |
-| P-08 | Duración máxima de una entrada. Propuse 24 horas; el valor es arbitrario.                                          |
-| P-09 | Agrupación de entradas similares en una fila colapsable.                                                           |
-| P-10 | Entradas con fecha futura: propuse rechazarlas; no pude verificar qué hace Clockify.                               |
-| P-11 | Intervalo de sincronización entre dispositivos. Propuse revalidar al enfocar y cada 60 segundos.                    |
-| P-12 | Timer abandonado: ¿se corta solo, se avisa, se deja correr? Choca con P-08 (ver TT-107).                            |
-| P-13 | Zona horaria, formato de hora y fecha, e inicio de semana por usuario: no están en el esquema. ¿Se agregan en la fase 1 o se usa el workspace? |
-| P-14 | Verificar en el workspace real del equipo lo marcado como *no verificado*: TT-35, TT-46, TT-47, TT-58, TT-63, TT-65, TT-105. |
+| P-02 | Aprobaciones y bloqueo de períodos: definen cuándo una entrada deja de ser editable. Sin ellas no hay bloqueo.                                                                            |
+| P-03 | Redondeo (`roundingMinutes`): en Clockify es pago y solo afecta reportes. ¿Se mantiene fuera del rastreador?                                                                              |
+| P-04 | Entradas superpuestas: ¿se permiten en silencio, se avisa o se rechazan?                                                                                                                  |
+| P-05 | Dividir entrada: funcionalidad paga. ¿Entra en el alcance y con qué reglas de corte?                                                                                                      |
+| P-06 | Deshacer el borrado 20 segundos (necesita borrado lógico) o diálogo de confirmación como se propone en TT-61.                                                                             |
+| P-07 | Edición masiva en el rastreador: no sé si está en Free. Confirmar en el workspace y decidir si entra en la fase 1.                                                                        |
+| P-08 | Duración máxima de una entrada. Propuse 24 horas; el valor es arbitrario.                                                                                                                 |
+| P-09 | Agrupación de entradas similares en una fila colapsable.                                                                                                                                  |
+| P-10 | Entradas con fecha futura: propuse rechazarlas; no pude verificar qué hace Clockify.                                                                                                      |
+| P-11 | Intervalo de sincronización entre dispositivos. Propuse revalidar al enfocar y cada 60 segundos.                                                                                          |
+| P-12 | Timer abandonado: ¿se corta solo, se avisa, se deja correr? Choca con P-08 (ver TT-107).                                                                                                  |
+| P-13 | Zona horaria, formato de hora y fecha, e inicio de semana por usuario: no están en el esquema. ¿Se agregan en la fase 1 o se usa el workspace?                                            |
+| P-14 | Verificar en el workspace real del equipo lo marcado como _no verificado_: TT-35, TT-46, TT-47, TT-58, TT-63, TT-65, TT-105.                                                              |

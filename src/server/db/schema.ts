@@ -2,6 +2,7 @@ import { relations, sql } from "drizzle-orm";
 import {
   boolean,
   char,
+  check,
   index,
   integer,
   pgEnum,
@@ -9,6 +10,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -125,6 +127,50 @@ export const externalInvite = pgTable(
   ],
 );
 
+/**
+ * Una carga de horas. La duración no se almacena: se calcula sobre los dos
+ * instantes, que escribe la base con now() dentro de la transacción.
+ */
+export const timeEntry = pgTable(
+  "time_entry",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** La cadena vacía es la única representación de «sin descripción». */
+    description: text("description").notNull().default(""),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    /** Nulo mientras el timer corre. */
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    // Un solo timer activo por usuario. Ver el ADR 0003.
+    uniqueIndex("time_entry_running_unq")
+      .on(table.workspaceId, table.userId)
+      .where(sql`${table.endedAt} is null`),
+    index("time_entry_workspace_user_started_idx").on(
+      table.workspaceId,
+      table.userId,
+      table.startedAt.desc(),
+    ),
+    // Es >= y no > porque una entrada de duración cero es válida.
+    check(
+      "time_entry_end_after_start",
+      sql`${table.endedAt} is null or ${table.endedAt} >= ${table.startedAt}`,
+    ),
+    check("time_entry_description_len", sql`char_length(${table.description}) <= 3000`),
+  ],
+);
+
 export const auditLog = pgTable(
   "audit_log",
   {
@@ -153,6 +199,14 @@ export const workspaceRelations = relations(workspace, ({ one, many }) => ({
     references: [workspaceSettings.workspaceId],
   }),
   memberships: many(membership),
+}));
+
+export const timeEntryRelations = relations(timeEntry, ({ one }) => ({
+  workspace: one(workspace, {
+    fields: [timeEntry.workspaceId],
+    references: [workspace.id],
+  }),
+  user: one(user, { fields: [timeEntry.userId], references: [user.id] }),
 }));
 
 export const membershipRelations = relations(membership, ({ one }) => ({

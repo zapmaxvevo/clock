@@ -11,6 +11,7 @@ import {
 import { db } from "@/server/db";
 import * as schema from "@/server/db/schema";
 import { env } from "@/server/env";
+import { testSessionPlugins } from "@/server/test-session";
 
 function policy(): AccessPolicy {
   const config = env();
@@ -34,6 +35,7 @@ export const auth = betterAuth({
     defaultCookieAttributes: { httpOnly: true, sameSite: "lax" },
   },
   emailAndPassword: { enabled: false },
+  plugins: testSessionPlugins(),
   socialProviders: {
     google: {
       clientId: env().GOOGLE_CLIENT_ID,
