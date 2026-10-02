@@ -687,6 +687,17 @@ conductas que hay que volver a comprobar ante cualquier cambio en la barra:
 - El total del día que sube junto con el contador (TT-46, criterio 15).
 - La fila atenuada mientras la escritura viaja (TT-54, criterio 18).
 
+### Dos rarezas conocidas de los e2e
+
+- En los logs del servidor aparece `Error: The destination stream closed early.`
+  aun en corridas verdes. Lo producen los dos tests que cortan una petición a
+  propósito: el del fallo de red, que aborta una escritura, y el del total del
+  día, que retiene una revalidación. No es un fallo; si aparece en el log de un
+  preview, sale de ahí.
+- En local, dos `next build` simultáneos sobre el mismo `.next` se pisan y el
+  `webServer` de Playwright puede no arrancar. No afecta a CI, que corre contra
+  el preview con `E2E_BASE_URL` y no levanta servidor.
+
 ### Un test que sigue siendo probabilístico
 
 El test que protege el snapshot consistente de `getTrackerState` detecta la
