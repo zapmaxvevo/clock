@@ -62,8 +62,10 @@ Queda afuera, explícito:
   sobrevive a la sesión vencida y reaparece al volver a entrar.
 - **Los e2e con sesión entraron durante el slice.** El contrato los había
   dejado afuera por no haber fixture de sesión. Se agregó uno: un plugin de
-  Better Auth que registra `POST /api/auth/test-session/sign-in` solo cuando
-  `VERCEL_ENV` no es producción y el secreto está cargado. Los recorridos del
+  Better Auth que registra `POST /api/auth/test-session/sign-in` solo con
+  `ALLOW_TEST_SESSION=true`, un secreto de 32 caracteres o más y `VERCEL_ENV`
+  distinto de producción, y que rompe el arranque si alguna de esas dos
+  variables llega al entorno de producción. Los recorridos del
   navegador viven en `e2e/tracker.spec.ts`. Quedan fuera del navegador, y
   cubiertos por integración o por nada, los casos que piden sembrar la base o
   mover el reloj: los cinco roles de TT-66, el desfase de reloj (TT-32), la red
@@ -577,8 +579,12 @@ Uno por comportamiento del slice. Son observables desde afuera. Los criterios
    mismo minuto en que se arrancó guarda la entrada, la lista la muestra como
    `0:00` y sus segundos siguen contando en el total del día.
 5. **TT-03, TT-05, TT-71** — El campo acepta texto libre con el marcador
-   «¿En qué estás trabajando?»; más de 3000 caracteres se rechazan con «La
-   descripción no puede superar los 3000 caracteres.» y nada se guarda.
+   «¿En qué estás trabajando?» y **corta la entrada en 3000 caracteres**, como
+   pide TT-05: pegar más deja los primeros 3000 y guarda esos. El mensaje «La
+   descripción no puede superar los 3000 caracteres.» es la red del servidor y
+   del `check` de la base, no alcanzable desde esta pantalla. La versión
+   anterior de este criterio prometía rechazo con aviso, que contradice a
+   TT-05.
 6. **TT-04, TT-27** — Con el timer corriendo, escribir en la descripción la
    guarda sobre la entrada abierta 500 ms después de dejar de escribir, y
    también al salir del campo o con Enter, sin detener el timer y sin mostrar
@@ -666,3 +672,45 @@ descubran como sorpresa en el slice siguiente.
   el actor sale de la sesión y no de la entrada del cliente. Lo que protege ahí
   es `status !== "active"` más la tabla de roles. No es un agujero, pero no hay
   test que lo cubra porque no hay caso que lo rompa.
+
+### Lo que ningún test atrapa
+
+`test-reviewer` rompió el código una conducta por vez y encontró que cuatro
+comportamientos del alcance pasaban desapercibidos. Los cuatro **funcionan**
+—`parity-reviewer` los verificó en el navegador— y ya tienen recorrido de
+Playwright propio; se dejan listados porque el hueco existió y porque son las
+conductas que hay que volver a comprobar ante cualquier cambio en la barra:
+
+- El guardado con rebote de 500 ms sobre la entrada abierta (TT-04, criterio 6).
+- La revalidación al recuperar el foco y cada 60 segundos (TT-39, TT-40,
+  criterio 10).
+- El total del día que sube junto con el contador (TT-46, criterio 15).
+- La fila atenuada mientras la escritura viaja (TT-54, criterio 18).
+
+### Un test que sigue siendo probabilístico
+
+El test que protege el snapshot consistente de `getTrackerState` detecta la
+regresión 8 de cada 10 corridas con 200 rondas, y 6 de cada 10 con 30. Volverlo
+determinista pide una costura en el service para pausar entre su segunda y su
+tercera consulta, y no vale meter un punto de inyección en código de producción
+para eso. Si alguna vez falla en CI sin que nadie haya tocado el aislamiento,
+el sospechoso es el test y no el service.
+
+Los otros tres tests de carrera del slice sí son deterministas: el de membresía
+perdedora, el del bloqueo de bootstrap y el del índice único de TT-37.
+
+### Deuda de seguridad
+
+- El rate limit de Better Auth es en memoria y por instancia, así que en
+  serverless casi no limita. Importa para fuerza bruta contra el callback de
+  Google y, en un preview público, contra el endpoint de sesión de prueba. La
+  mitigación de hoy es que ese secreto sea largo y aleatorio.
+- `ensureWorkspaceContext` crea la membresía de cualquiera que pase el login.
+  Revocar poniendo la membresía en `inactive` funciona; revocar **borrándola**
+  no, porque el siguiente login la recrea. No es explotable hoy, pero es
+  condición del slice que traiga `team.manage`.
+- La CSP mantiene `script-src 'unsafe-inline'` (ADR 0002). Aceptable mientras
+  no haya ningún sink: hoy no hay `dangerouslySetInnerHTML`, `innerHTML` ni
+  `eval`, y todo el contenido de usuario sale escapado por React. El
+  middleware con nonce tiene que llegar **antes** del primer slice que
+  renderice markdown, HTML de usuario o embeba algo de terceros.

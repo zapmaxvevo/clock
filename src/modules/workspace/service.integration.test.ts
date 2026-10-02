@@ -1,39 +1,13 @@
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
 import { db } from "@/server/db";
 import { membership, workspace, workspaceSettings } from "@/server/db/schema";
+import { warmPool, waitForBlockedBackend } from "@/test/concurrency";
 import { seedUser } from "@/test/factories";
 
 import { workspaceRepository } from "./repository";
 import { ensureWorkspaceContext } from "./service";
-
-/**
- * Deja `size` conexiones abiertas en el pool antes de medir una carrera. Sin
- * esto, el handshake de la segunda conexión es más lento que la primera
- * transacción entera y las dos llamadas terminan corriendo una después de la
- * otra. La barrera suelta las transacciones recién cuando todas llegaron, así
- * que no hay ninguna espera fija.
- */
-async function warmPool(size: number): Promise<void> {
-  let arrived = 0;
-  let open = () => {};
-  const gate = new Promise<void>((resolve) => {
-    open = resolve;
-  });
-  await Promise.all(
-    Array.from({ length: size }, () =>
-      db.transaction(async (tx) => {
-        await tx.execute(sql`select 1`);
-        arrived += 1;
-        if (arrived === size) {
-          open();
-        }
-        await gate;
-      }),
-    ),
-  );
-}
 
 describe("ensureWorkspaceContext", () => {
   it("crea el workspace y deja como owner a la cuenta configurada", async () => {
@@ -78,27 +52,6 @@ describe("ensureWorkspaceContext", () => {
 
     expect(context.actor.role).toBe("member");
     expect(context.workspace.ownerId).toBe(ownerId);
-  });
-
-  it("deja una sola membresía con dos primeros ingresos en paralelo", async () => {
-    // El layout y la página llaman requireSession() en el mismo render, así
-    // que el primer ingreso de alguien nuevo corre dos veces en paralelo.
-    const ownerId = await seedUser("owner@empresa.com");
-    await ensureWorkspaceContext({ id: ownerId, email: "owner@empresa.com" });
-    const otherId = await seedUser("ana@empresa.com");
-    await warmPool(2);
-
-    const contexts = await Promise.all([
-      ensureWorkspaceContext({ id: otherId, email: "ana@empresa.com" }),
-      ensureWorkspaceContext({ id: otherId, email: "ana@empresa.com" }),
-    ]);
-
-    expect(contexts[0].membership.id).toBe(contexts[1].membership.id);
-    expect(contexts[0].actor.role).toBe("member");
-    expect(await db.select().from(workspace)).toHaveLength(1);
-    expect(
-      await db.select().from(membership).where(eq(membership.userId, otherId)),
-    ).toHaveLength(1);
   });
 
   it("crea un solo workspace con dos personas entrando por primera vez a la vez", async () => {
@@ -153,8 +106,8 @@ describe("ensureWorkspaceContext", () => {
   });
 });
 
-describe("workspaceRepository.createMembership", () => {
-  it("es idempotente: la segunda llamada devuelve la fila que ya está", async () => {
+describe("entrar dos veces deja una sola membresía", () => {
+  it("la segunda alta devuelve la fila que ya está", async () => {
     const ownerId = await seedUser("owner@empresa.com");
     const context = await ensureWorkspaceContext({
       id: ownerId,
@@ -173,6 +126,66 @@ describe("workspaceRepository.createMembership", () => {
     const second = await db.transaction((tx) =>
       workspaceRepository.createMembership(tx, values),
     );
+
+    expect(second.id).toBe(first.id);
+    expect(
+      await db.select().from(membership).where(eq(membership.userId, otherId)),
+    ).toHaveLength(1);
+  });
+
+  it("el alta que pierde la carrera se queda con la fila de la que ganó", async () => {
+    // El layout y la página llaman requireSession() en el mismo render, así
+    // que el primer ingreso de alguien nuevo corre dos veces en paralelo.
+    const ownerId = await seedUser("owner@empresa.com");
+    const context = await ensureWorkspaceContext({
+      id: ownerId,
+      email: "owner@empresa.com",
+    });
+    const otherId = await seedUser("ana@empresa.com");
+    const values = {
+      workspaceId: context.workspace.id,
+      userId: otherId,
+      role: "member",
+    } as const;
+    await warmPool(2);
+
+    // Las dos barreras son necesarias y ninguna se puede sacar.
+    //
+    // `winnerReady` fija el orden: la perdedora no intenta su insert hasta que
+    // la ganadora ya hizo el suyo. Lanzar las dos transacciones a la vez no
+    // alcanza, porque abrirse a la vez no es intercalarse: la que llega
+    // primero termina antes de que la otra inserte y entonces no choca con
+    // nada. Peor todavía si la que termina primero es la perdedora, porque la
+    // ganadora encuentra la fila ya commiteada, no se traba, y la espera de
+    // abajo no se cumple nunca: el test cuelga hasta el timeout.
+    //
+    // `winnerMayCommit` sostiene la fila sin commitear hasta que la perdedora
+    // esté efectivamente trabada en el índice único, que es la situación que
+    // se quiere probar. Soltarla antes deja a la perdedora chocando contra una
+    // fila ya visible, que es el caso secuencial de arriba y no una carrera.
+    let winnerInserted = () => {};
+    const winnerReady = new Promise<void>((resolve) => {
+      winnerInserted = resolve;
+    });
+    let releaseWinner = () => {};
+    const winnerMayCommit = new Promise<void>((resolve) => {
+      releaseWinner = resolve;
+    });
+    const winner = db.transaction(async (tx) => {
+      const row = await workspaceRepository.createMembership(tx, values);
+      winnerInserted();
+      await winnerMayCommit;
+      return row;
+    });
+
+    await winnerReady;
+    const loser = db.transaction((tx) =>
+      workspaceRepository.createMembership(tx, values),
+    );
+    await waitForBlockedBackend();
+    releaseWinner();
+
+    const [first, second] = await Promise.all([winner, loser]);
 
     expect(second.id).toBe(first.id);
     expect(

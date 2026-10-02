@@ -94,7 +94,6 @@ describe("trackerState", () => {
         label: "Hoy",
         isRunningDay: false,
         closedSeconds: 5400,
-        closedTotalLabel: "1:30",
         entries: [entry],
       },
     ],

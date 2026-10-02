@@ -26,6 +26,9 @@ const localServerEnv = {
   GOOGLE_WORKSPACE_DOMAINS: TEST_EMAIL_DOMAIN,
   WORKSPACE_OWNER_EMAIL: `owner@${TEST_EMAIL_DOMAIN}`,
   CRON_SECRET: process.env.CRON_SECRET ?? "desarrollo-local-cron-secret",
+  // El endpoint de sesión de prueba es opt-in explícito: sin esta variable no
+  // se registra y la suite con sesión responde 404.
+  ALLOW_TEST_SESSION: "true",
   E2E_TEST_SESSION_SECRET: TEST_SESSION_SECRET,
 };
 

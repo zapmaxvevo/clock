@@ -12,20 +12,22 @@ precargan en todos los subagentes: no se repiten acá.
 
 ## Comandos
 
-| Comando               | Para qué                             |
-| --------------------- | ------------------------------------ |
-| `npm run dev`         | Servidor de desarrollo               |
-| `npm run build`       | Build de producción                  |
-| `npm run lint`        | ESLint                               |
-| `npm run format`      | Prettier sobre todo el repositorio   |
-| `npm run typecheck`   | `next typegen` y `tsc --noEmit`      |
-| `npm test`            | Vitest, unidad e integración         |
-| `npm run test:e2e`    | Playwright contra `E2E_BASE_URL`     |
-| `npm run db:generate` | Nueva migración a partir del esquema |
-| `npm run db:migrate`  | Aplica migraciones pendientes        |
-| `npm run auth:schema` | Regenera las tablas de Better Auth   |
+| Comando                    | Para qué                             |
+| -------------------------- | ------------------------------------ |
+| `npm run dev`              | Servidor de desarrollo               |
+| `npm run build`            | Build de producción                  |
+| `npm run lint`             | ESLint                               |
+| `npm run format`           | Prettier sobre todo el repositorio   |
+| `npm run typecheck`        | `next typegen` y `tsc --noEmit`      |
+| `npm test`                 | Vitest, solo unidad                  |
+| `npm run test:integration` | Vitest contra un Postgres real       |
+| `npm run test:all`         | Unidad e integración                 |
+| `npm run test:e2e`         | Playwright contra `E2E_BASE_URL`     |
+| `npm run db:generate`      | Nueva migración a partir del esquema |
+| `npm run db:migrate`       | Aplica migraciones pendientes        |
+| `npm run auth:schema`      | Regenera las tablas de Better Auth   |
 
-Antes de dar por terminado un cambio: `npm run lint && npm run typecheck && npm test`.
+Antes de dar por terminado un cambio: `npm run lint && npm run typecheck && npm run test:all`.
 
 ## Estructura
 

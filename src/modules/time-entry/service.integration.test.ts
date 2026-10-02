@@ -1,10 +1,9 @@
-import { and, asc, eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { db } from "@/server/db";
-import { auditLog, timeEntry } from "@/server/db/schema";
 import type { Actor } from "@/server/permissions";
-import { seedMember, seedWorkspace } from "@/test/factories";
+import { warmPool } from "@/test/concurrency";
+import { buenosAires, seedMember, seedTimeEntry, seedWorkspace } from "@/test/factories";
+import { allTimeEntries, auditFor } from "@/test/queries";
 
 import { timeEntryRepository } from "./repository";
 import { timeEntryMessages } from "./schema";
@@ -17,76 +16,16 @@ import {
   updateDescription,
 } from "./service";
 
-const buenosAires = "America/Argentina/Buenos_Aires";
 const madrid = "Europe/Madrid";
 
 /** Lectores en paralelo con los que se tensan las carreras de lectura. */
 const READERS = 8;
-
-/**
- * Deja `size` conexiones abiertas en el pool antes de medir una carrera. Sin
- * esto, el handshake de cada conexión nueva es más lento que la operación que
- * se quiere superponer y todo termina corriendo en fila. La barrera suelta las
- * transacciones recién cuando todas llegaron, así que no hay espera fija.
- */
-async function warmPool(size: number): Promise<void> {
-  let arrived = 0;
-  let open = () => {};
-  const gate = new Promise<void>((resolve) => {
-    open = resolve;
-  });
-  await Promise.all(
-    Array.from({ length: size }, () =>
-      db.transaction(async (tx) => {
-        await tx.execute(sql`select 1`);
-        arrived += 1;
-        if (arrived === size) {
-          open();
-        }
-        await gate;
-      }),
-    ),
-  );
-}
 
 let workspaceId: string;
 let actor: Actor;
 
 function actorFor(userId: string, overrides: Partial<Actor> = {}): Actor {
   return { userId, workspaceId, role: "member", status: "active", ...overrides };
-}
-
-/** Entrada con instantes fijos. No pasa por el service: es el estado de partida. */
-async function seedEntry(values: {
-  userId?: string;
-  workspaceId?: string;
-  description?: string;
-  startedAt: string;
-  endedAt?: string;
-}) {
-  const [row] = await db
-    .insert(timeEntry)
-    .values({
-      workspaceId: values.workspaceId ?? workspaceId,
-      userId: values.userId ?? actor.userId,
-      description: values.description ?? "",
-      startedAt: new Date(values.startedAt),
-      endedAt: values.endedAt === undefined ? null : new Date(values.endedAt),
-    })
-    .returning();
-  return row;
-}
-
-async function allEntries() {
-  return db.select().from(timeEntry).orderBy(asc(timeEntry.startedAt));
-}
-
-async function auditFor(entityId: string) {
-  return db
-    .select()
-    .from(auditLog)
-    .where(and(eq(auditLog.entity, "time_entry"), eq(auditLog.entityId, entityId)))
-    .orderBy(asc(auditLog.createdAt));
 }
 
 beforeEach(async () => {
@@ -99,18 +38,21 @@ describe("startTimer", () => {
   it("abre una entrada con el instante de la base y sin fin", async () => {
     const before = new Date();
     const result = await startTimer(actor, buenosAires, { description: "  revisión  " });
+    const after = new Date();
 
     expect(result.running.endedAt).toBeNull();
     expect(result.running.durationSeconds).toBeNull();
     expect(result.running.durationLabel).toBeNull();
     expect(result.running.extraDays).toBe(0);
     expect(result.stopped).toBeNull();
-    // El instante lo pone la base, no el proceso: solo se verifica que sea de ahora.
-    expect(new Date(result.running.startedAt).getTime()).toBeGreaterThanOrEqual(
-      before.getTime() - 60_000,
-    );
+    // El instante lo pone la base, no el proceso: cae dentro de la ventana del
+    // llamado, con holgura para el desfase entre el reloj del proceso y el de
+    // Postgres. Sin la cota de arriba, un `started_at` del año 2300 pasaría.
+    const startedAt = new Date(result.running.startedAt).getTime();
+    expect(startedAt).toBeGreaterThanOrEqual(before.getTime() - 60_000);
+    expect(startedAt).toBeLessThanOrEqual(after.getTime() + 60_000);
 
-    const rows = await allEntries();
+    const rows = await allTimeEntries();
     expect(rows).toHaveLength(1);
     expect(rows[0].endedAt).toBeNull();
     expect(rows[0].description).toBe("  revisión  ");
@@ -123,7 +65,7 @@ describe("startTimer", () => {
     expect(second.stopped?.id).toBe(first.running.id);
     expect(second.stopped?.endedAt).toBe(second.running.startedAt);
 
-    const rows = await allEntries();
+    const rows = await allTimeEntries();
     expect(rows).toHaveLength(2);
     expect(rows.filter((row) => row.endedAt === null)).toHaveLength(1);
   });
@@ -132,14 +74,14 @@ describe("startTimer", () => {
     const first = await startTimer(actor, buenosAires, { description: "uno" });
     const second = await startTimer(actor, buenosAires, { description: "dos" });
 
-    const closed = await auditFor(first.running.id);
+    const closed = await auditFor("time_entry", first.running.id);
     expect(closed.map((row) => row.action)).toEqual([
       "timeEntry.start",
       "timeEntry.stop",
     ]);
     expect(closed[1].previousValue).toBe(JSON.stringify({ endedAt: null }));
 
-    const opened = await auditFor(second.running.id);
+    const opened = await auditFor("time_entry", second.running.id);
     expect(opened.map((row) => row.action)).toEqual(["timeEntry.start"]);
     expect(opened[0].actorId).toBe(actor.userId);
   });
@@ -151,7 +93,7 @@ describe("startTimer", () => {
       ),
     );
 
-    const running = (await allEntries()).filter((row) => row.endedAt === null);
+    const running = (await allTimeEntries()).filter((row) => row.endedAt === null);
     expect(running).toHaveLength(1);
     for (const result of results) {
       expect(result.running.endedAt).toBeNull();
@@ -160,10 +102,14 @@ describe("startTimer", () => {
     expect(results.some((result) => result.running.id === running[0].id)).toBe(true);
   });
 
-  it("el índice único impide una segunda entrada abierta escrita directo", async () => {
+  it("no deja dos timers corriendo a la vez, ni escribiendo directo en la base", async () => {
     await startTimer(actor, buenosAires, { description: "uno" });
 
-    const second = seedEntry({ startedAt: new Date().toISOString() });
+    const second = seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: new Date().toISOString(),
+    });
     await expect(second).rejects.toThrow();
     await expect(second.catch((error: unknown) => error)).resolves.toSatisfy(
       (error: unknown) => timeEntryRepository.isRunningConflict(error),
@@ -177,7 +123,9 @@ describe("startTimer", () => {
     const mine = await startTimer(actor, buenosAires, { description: "mío" });
 
     expect(mine.stopped).toBeNull();
-    expect((await allEntries()).filter((row) => row.endedAt === null)).toHaveLength(2);
+    expect((await allTimeEntries()).filter((row) => row.endedAt === null)).toHaveLength(
+      2,
+    );
   });
 
   it("no abre nada cuando la membresía no está activa", async () => {
@@ -189,7 +137,7 @@ describe("startTimer", () => {
         message: timeEntryMessages.forbidden,
       });
     }
-    expect(await allEntries()).toHaveLength(0);
+    expect(await allTimeEntries()).toHaveLength(0);
   });
 });
 
@@ -203,12 +151,14 @@ describe("stopTimer", () => {
     // Detener en el mismo minuto deja la entrada guardada y la muestra en 0:00.
     expect(result.stopped.durationLabel).toBe("0:00");
 
-    const rows = await allEntries();
+    const rows = await allTimeEntries();
     expect(rows[0].endedAt).not.toBeNull();
   });
 
   it("rechaza detener una entrada que ya estaba cerrada", async () => {
-    const row = await seedEntry({
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
       startedAt: "2026-10-01T11:00:00Z",
       endedAt: "2026-10-01T12:00:00Z",
     });
@@ -217,7 +167,7 @@ describe("stopTimer", () => {
       code: "already_stopped",
       message: timeEntryMessages.alreadyStopped,
     });
-    const rows = await allEntries();
+    const rows = await allTimeEntries();
     expect(rows[0].endedAt?.toISOString()).toBe("2026-10-01T12:00:00.000Z");
   });
 
@@ -229,7 +179,7 @@ describe("stopTimer", () => {
 
   it("responde que no existe cuando el id es de otro workspace", async () => {
     const other = await seedWorkspace();
-    const row = await seedEntry({
+    const row = await seedTimeEntry({
       workspaceId: other.workspaceId,
       userId: other.ownerId,
       startedAt: "2026-10-01T11:00:00Z",
@@ -242,13 +192,17 @@ describe("stopTimer", () => {
 
   it("rechaza la entrada de otra persona del workspace sin tocarla", async () => {
     const otherId = await seedMember(workspaceId, "member");
-    const row = await seedEntry({ userId: otherId, startedAt: "2026-10-01T11:00:00Z" });
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: otherId,
+      startedAt: "2026-10-01T11:00:00Z",
+    });
 
     await expect(stopTimer(actor, buenosAires, { id: row.id })).rejects.toMatchObject({
       code: "forbidden",
       message: timeEntryMessages.forbiddenOtherOwner,
     });
-    expect((await allEntries())[0].endedAt).toBeNull();
+    expect((await allTimeEntries())[0].endedAt).toBeNull();
   });
 
   it("rechaza con el mensaje neutro cuando la membresía no está activa", async () => {
@@ -265,25 +219,36 @@ describe("stopTimer", () => {
 
   it("rechaza cerrar antes del inicio, que es lo que impide la restricción de la base", async () => {
     const future = new Date(Date.now() + 3_600_000).toISOString();
-    const row = await seedEntry({ startedAt: future });
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: future,
+    });
 
     await expect(stopTimer(actor, buenosAires, { id: row.id })).rejects.toMatchObject({
       code: "validation",
       message: timeEntryMessages.endBeforeStart,
     });
-    expect((await allEntries())[0].endedAt).toBeNull();
+    expect((await allTimeEntries())[0].endedAt).toBeNull();
   });
 });
 
-describe("restricciones de la tabla", () => {
+describe("límites que valen aunque se escriba sin pasar por el service", () => {
   it("no acepta una fila con fin anterior al inicio escrita directo", async () => {
     await expect(
-      seedEntry({ startedAt: "2026-10-01T12:00:00Z", endedAt: "2026-10-01T11:00:00Z" }),
+      seedTimeEntry({
+        workspaceId,
+        userId: actor.userId,
+        startedAt: "2026-10-01T12:00:00Z",
+        endedAt: "2026-10-01T11:00:00Z",
+      }),
     ).rejects.toThrow();
   });
 
   it("acepta una entrada de duración cero", async () => {
-    const row = await seedEntry({
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
       startedAt: "2026-10-01T12:00:00Z",
       endedAt: "2026-10-01T12:00:00Z",
     });
@@ -292,7 +257,12 @@ describe("restricciones de la tabla", () => {
 
   it("no acepta una descripción de más de 3000 caracteres", async () => {
     await expect(
-      seedEntry({ startedAt: "2026-10-01T12:00:00Z", description: "a".repeat(3001) }),
+      seedTimeEntry({
+        workspaceId,
+        userId: actor.userId,
+        startedAt: "2026-10-01T12:00:00Z",
+        description: "a".repeat(3001),
+      }),
     ).rejects.toThrow();
   });
 });
@@ -308,13 +278,15 @@ describe("updateDescription", () => {
 
     expect(result.entry.description).toBe("revisión de PR");
     expect(result.entry.endedAt).toBeNull();
-    const audit = await auditFor(started.running.id);
+    const audit = await auditFor("time_entry", started.running.id);
     expect(audit.at(-1)?.action).toBe("timeEntry.updateDescription");
     expect(audit.at(-1)?.previousValue).toBe(JSON.stringify({ description: "" }));
   });
 
   it("guarda la descripción sobre una entrada cerrada", async () => {
-    const row = await seedEntry({
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
       description: "vieja",
       startedAt: "2026-10-01T11:00:00Z",
       endedAt: "2026-10-01T12:00:00Z",
@@ -331,7 +303,8 @@ describe("updateDescription", () => {
 
   it("rechaza la entrada de otra persona y no la cambia", async () => {
     const otherId = await seedMember(workspaceId, "member");
-    const row = await seedEntry({
+    const row = await seedTimeEntry({
+      workspaceId,
       userId: otherId,
       description: "ajena",
       startedAt: "2026-10-01T11:00:00Z",
@@ -344,13 +317,15 @@ describe("updateDescription", () => {
       code: "forbidden",
       message: timeEntryMessages.forbiddenOtherOwner,
     });
-    expect((await allEntries())[0].description).toBe("ajena");
+    expect((await allTimeEntries())[0].description).toBe("ajena");
   });
 });
 
 describe("deleteEntry", () => {
   it("borra la fila y deja su contenido en el audit log", async () => {
-    const row = await seedEntry({
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
       description: "para borrar",
       startedAt: "2026-10-01T11:00:00Z",
       endedAt: "2026-10-01T12:00:00Z",
@@ -359,8 +334,8 @@ describe("deleteEntry", () => {
     const result = await deleteEntry(actor, { id: row.id });
 
     expect(result.id).toBe(row.id);
-    expect(await allEntries()).toHaveLength(0);
-    const audit = await auditFor(row.id);
+    expect(await allTimeEntries()).toHaveLength(0);
+    const audit = await auditFor("time_entry", row.id);
     expect(audit).toHaveLength(1);
     expect(audit[0].action).toBe("timeEntry.delete");
     expect(audit[0].nextValue).toBeNull();
@@ -375,18 +350,22 @@ describe("deleteEntry", () => {
 
     await deleteEntry(actor, { id: started.running.id });
 
-    expect(await allEntries()).toHaveLength(0);
+    expect(await allTimeEntries()).toHaveLength(0);
   });
 
   it("rechaza la entrada de otra persona y no la borra", async () => {
     const otherId = await seedMember(workspaceId, "member");
-    const row = await seedEntry({ userId: otherId, startedAt: "2026-10-01T11:00:00Z" });
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: otherId,
+      startedAt: "2026-10-01T11:00:00Z",
+    });
 
     await expect(deleteEntry(actor, { id: row.id })).rejects.toMatchObject({
       code: "forbidden",
       message: timeEntryMessages.forbiddenOtherOwner,
     });
-    expect(await allEntries()).toHaveLength(1);
+    expect(await allTimeEntries()).toHaveLength(1);
   });
 
   it("responde que no existe cuando el id no está", async () => {
@@ -412,12 +391,15 @@ describe("getTrackerState", () => {
 
   it("muestra solo las entradas propias", async () => {
     const otherId = await seedMember(workspaceId, "member");
-    await seedEntry({
+    await seedTimeEntry({
+      workspaceId,
       userId: otherId,
       startedAt: "2026-10-02T11:00:00Z",
       endedAt: "2026-10-02T12:00:00Z",
     });
-    await seedEntry({
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
       description: "mía",
       startedAt: "2026-10-02T13:00:00Z",
       endedAt: "2026-10-02T14:00:00Z",
@@ -430,17 +412,23 @@ describe("getTrackerState", () => {
   });
 
   it("agrupa por día local y ordena de lo más reciente a lo más viejo", async () => {
-    await seedEntry({
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
       description: "ayer tarde",
       startedAt: "2026-10-02T01:00:00Z", // 22:00 del 1 de octubre en Buenos Aires
       endedAt: "2026-10-02T02:00:00Z",
     });
-    await seedEntry({
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
       description: "temprano",
       startedAt: "2026-10-02T11:00:00Z",
       endedAt: "2026-10-02T12:00:00Z",
     });
-    await seedEntry({
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
       description: "recién",
       startedAt: "2026-10-02T13:00:00Z",
       endedAt: "2026-10-02T14:00:00Z",
@@ -458,7 +446,9 @@ describe("getTrackerState", () => {
   });
 
   it("pone la entrada que arranca a la medianoche exacta en el día que empieza", async () => {
-    await seedEntry({
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
       startedAt: "2026-10-02T03:00:00Z", // 00:00 del 2 de octubre en Buenos Aires
       endedAt: "2026-10-02T04:00:00Z",
     });
@@ -469,12 +459,16 @@ describe("getTrackerState", () => {
     expect(state.days[0].entries[0].startLabel).toBe("00:00");
   });
 
-  it("suma los totales del día en segundos y los formatea una sola vez", async () => {
-    await seedEntry({
+  it("suma el total del día en segundos exactos aunque cada fila trunque a 0:00", async () => {
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
       startedAt: "2026-10-02T11:00:00Z",
       endedAt: "2026-10-02T11:00:40Z",
     });
-    await seedEntry({
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
       startedAt: "2026-10-02T12:00:00Z",
       endedAt: "2026-10-02T12:00:40Z",
     });
@@ -486,11 +480,12 @@ describe("getTrackerState", () => {
       "0:00",
     ]);
     expect(state.days[0].closedSeconds).toBe(80);
-    expect(state.days[0].closedTotalLabel).toBe("0:01");
   });
 
   it("deja la entrada que cruza la medianoche en su día de inicio con el superíndice", async () => {
-    await seedEntry({
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
       startedAt: "2026-10-01T11:00:00Z", // 08:00 del 1 de octubre
       endedAt: "2026-10-02T05:00:00Z", // 02:00 del 2 de octubre
     });
@@ -507,7 +502,9 @@ describe("getTrackerState", () => {
   });
 
   it("recalcula los grupos al cambiar la zona horaria del workspace", async () => {
-    await seedEntry({
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
       startedAt: "2026-10-02T01:00:00Z", // 22:00 del 1 en Buenos Aires, 03:00 del 2 en Madrid
       endedAt: "2026-10-02T02:00:00Z",
     });
@@ -519,11 +516,16 @@ describe("getTrackerState", () => {
     expect(local.days[0].entries[0].startLabel).toBe("22:00");
     expect(remote.days[0].date).toBe("2026-10-02");
     expect(remote.days[0].entries[0].startLabel).toBe("03:00");
-    expect(await allEntries()).toHaveLength(1);
+    expect(await allTimeEntries()).toHaveLength(1);
   });
 
   it("deja el timer activo fuera de la lista pero crea su grupo vacío", async () => {
-    await seedEntry({ description: "corriendo", startedAt: "2026-09-30T11:00:00Z" });
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      description: "corriendo",
+      startedAt: "2026-09-30T11:00:00Z",
+    });
 
     const state = await getTrackerState(actor, buenosAires, now);
 
@@ -539,11 +541,15 @@ describe("getTrackerState", () => {
   });
 
   it("no dibuja los días sin entradas", async () => {
-    await seedEntry({
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
       startedAt: "2026-10-02T11:00:00Z",
       endedAt: "2026-10-02T12:00:00Z",
     });
-    await seedEntry({
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
       startedAt: "2026-09-29T11:00:00Z",
       endedAt: "2026-09-29T12:00:00Z",
     });
@@ -554,17 +560,23 @@ describe("getTrackerState", () => {
   });
 
   it("corta en catorce días cuando hay entradas recientes", async () => {
-    await seedEntry({
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
       description: "de hoy",
       startedAt: "2026-10-02T11:00:00Z",
       endedAt: "2026-10-02T12:00:00Z",
     });
-    await seedEntry({
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
       description: "del borde",
       startedAt: "2026-09-19T11:00:00Z",
       endedAt: "2026-09-19T12:00:00Z",
     });
-    await seedEntry({
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
       description: "fuera de la ventana",
       startedAt: "2026-09-18T11:00:00Z",
       endedAt: "2026-09-18T12:00:00Z",
@@ -576,7 +588,9 @@ describe("getTrackerState", () => {
   });
 
   it("extiende la ventana hasta el último día con entradas", async () => {
-    await seedEntry({
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
       description: "de hace meses",
       startedAt: "2026-07-15T11:00:00Z",
       endedAt: "2026-07-15T12:00:00Z",
@@ -591,8 +605,15 @@ describe("getTrackerState", () => {
   });
 
   it("extiende la ventana hasta el día en que arrancó el timer activo", async () => {
-    await seedEntry({ description: "de hace días", startedAt: "2026-08-20T11:00:00Z" });
-    await seedEntry({
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      description: "de hace días",
+      startedAt: "2026-08-20T11:00:00Z",
+    });
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
       description: "cerrada vieja",
       startedAt: "2026-08-21T11:00:00Z",
       endedAt: "2026-08-21T12:00:00Z",
@@ -605,7 +626,11 @@ describe("getTrackerState", () => {
   });
 
   it("deja detener un timer que lleva días corriendo", async () => {
-    const row = await seedEntry({ startedAt: "2026-09-30T11:00:00Z" });
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-09-30T11:00:00Z",
+    });
 
     const result = await stopTimer(actor, buenosAires, { id: row.id });
 
@@ -614,7 +639,9 @@ describe("getTrackerState", () => {
   });
 
   it("deja la pantalla en solo lectura con la membresía desactivada", async () => {
-    await seedEntry({
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
       startedAt: "2026-10-02T11:00:00Z",
       endedAt: "2026-10-02T12:00:00Z",
     });
@@ -635,8 +662,10 @@ describe("getTrackerState", () => {
     // sin lista y sin el bloque de «todavía no cargaste horas».
     await warmPool(READERS + 1);
 
-    for (let round = 0; round < 30; round += 1) {
-      const row = await seedEntry({
+    for (let round = 0; round < 200; round += 1) {
+      const row = await seedTimeEntry({
+        workspaceId,
+        userId: actor.userId,
         startedAt: "2026-10-02T11:00:00Z",
         endedAt: "2026-10-02T12:00:00Z",
       });
@@ -657,7 +686,7 @@ describe("getTrackerState", () => {
   });
 });
 
-describe("TimeEntryError", () => {
+describe("el error que llega a quien llama", () => {
   it("lleva el código del dominio y no un string suelto", async () => {
     const error = await deleteEntry(actor, {
       id: "0b5e8d5e-3c2f-4b7a-9f1a-2c3d4e5f6a7b",

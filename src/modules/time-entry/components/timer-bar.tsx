@@ -33,12 +33,15 @@ export function TimerBar({ running, serverNow, canTrack }: TimerBarProps) {
     "idle",
     (_current, next) => next,
   );
-  const [trackedId, setTrackedId] = useState<string | null>(running?.id ?? null);
   const [draft, setDraft] = useState(running?.description ?? "");
-  /** Si tecleó desde que se disparó la operación, lo escrito no se descarta. */
-  const [draftEdited, setDraftEdited] = useState(false);
-  /** Última descripción enviada: el rebote y el blur no la mandan dos veces. */
-  const [sentDescription, setSentDescription] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  /** Lo último que mostró el servidor, para notar cuándo cambia de verdad. */
+  const [serverState, setServerState] = useState({
+    id: running?.id ?? null,
+    description: running?.description ?? "",
+  });
+  /** Descripción del guardado en vuelo: el rebote y el blur no lo repiten. */
+  const [inFlightDescription, setInFlightDescription] = useState<string | null>(null);
 
   const start = useEntryAction(startTimer, {
     optimistic: () => showPhase("starting"),
@@ -51,15 +54,18 @@ export function TimerBar({ running, serverNow, canTrack }: TimerBarProps) {
     onFailure: () => setDraft(running?.description ?? ""),
   });
 
-  // La descripción es estado local de la barra hasta que hay una entrada donde
-  // guardarla. Al cambiar la entrada abierta vuelve a tomar la del servidor,
-  // salvo que la persona haya seguido escribiendo mientras la operación
-  // viajaba: eso que tecleó es más nuevo que lo que contesta el servidor.
-  if (trackedId !== (running?.id ?? null)) {
-    setTrackedId(running?.id ?? null);
-    setSentDescription(null);
-    if (!draftEdited) {
-      setDraft(running?.description ?? "");
+  const serverId = running?.id ?? null;
+  const serverDescription = running?.description ?? "";
+
+  // La descripción del campo sigue a la del servidor, que puede cambiar sin
+  // que cambie la entrada: otro dispositivo la editó y la revalidación la
+  // trajo (TT-39, TT-40). Lo tecleado solo gana mientras el campo tiene el
+  // foco o su guardado viaja; en ese caso el valor nuevo se da por visto
+  // igual, así no vuelve a pisar el campo cuando se sale de él.
+  if (serverState.id !== serverId || serverState.description !== serverDescription) {
+    setServerState({ id: serverId, description: serverDescription });
+    if (!editing && !save.pending) {
+      setDraft(serverDescription);
     }
   }
 
@@ -80,14 +86,8 @@ export function TimerBar({ running, serverNow, canTrack }: TimerBarProps) {
     save.clear();
   }
 
-  function handleDraftChange(next: string): void {
-    setDraft(next);
-    setDraftEdited(true);
-  }
-
   function handleToggle(): void {
     clearNotices();
-    setDraftEdited(false);
     if (running === null) {
       start.run({ description: draft });
       return;
@@ -96,14 +96,18 @@ export function TimerBar({ running, serverNow, canTrack }: TimerBarProps) {
   }
 
   function handleCommit(next: string): void {
-    if (running === null) {
+    // El servidor guarda la descripción sin espacios en los bordes, así que
+    // un texto que solo difiere en eso no es un cambio que valga una escritura.
+    if (running === null || next.trim() === serverDescription) {
       return;
     }
-    if (next === running.description || next === sentDescription) {
+    // Lo único que se descarta es el pedido repetido que ya está viajando: el
+    // rebote y la salida del campo mandan el mismo valor dos veces.
+    if (save.pending && next === inFlightDescription) {
       return;
     }
     clearNotices();
-    setSentDescription(next);
+    setInFlightDescription(next);
     save.run({ id: running.id, description: next });
   }
 
@@ -113,7 +117,8 @@ export function TimerBar({ running, serverNow, canTrack }: TimerBarProps) {
         <div className="min-w-0 flex-1 basis-64">
           <DescriptionField
             value={draft}
-            onValueChange={handleDraftChange}
+            onValueChange={setDraft}
+            onFocusChange={setEditing}
             onCommit={handleCommit}
             debounceMs={running === null ? undefined : DESCRIPTION_DEBOUNCE_MS}
             label="Descripción de la entrada"

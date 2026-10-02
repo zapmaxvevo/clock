@@ -1,11 +1,12 @@
-import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { db } from "@/server/db";
-import { membership, timeEntry } from "@/server/db/schema";
+import { membership } from "@/server/db/schema";
 import type { Actor, MembershipStatus, Role } from "@/server/permissions";
-import { seedMember, seedWorkspace } from "@/test/factories";
+import { buenosAires, seedMember, seedTimeEntry, seedWorkspace } from "@/test/factories";
+import { timeEntriesOf, timeEntryById } from "@/test/queries";
 
+import { timeEntryRepository } from "./repository";
 import { timeEntryMessages } from "./schema";
 import {
   deleteEntry,
@@ -15,7 +16,6 @@ import {
   updateDescription,
 } from "./service";
 
-const buenosAires = "America/Argentina/Buenos_Aires";
 /** Las 12:00 del 2 de octubre de 2026 en Buenos Aires. */
 const trackerNow = new Date("2026-10-02T15:00:00Z");
 
@@ -46,39 +46,6 @@ async function seedActor(
   return { userId, workspaceId, role, status };
 }
 
-/** Entrada escrita directo: es el estado de partida, no pasa por el service. */
-async function seedEntry(values: {
-  userId: string;
-  workspaceId?: string;
-  description?: string;
-  startedAt: string;
-  endedAt?: string;
-}) {
-  const [row] = await db
-    .insert(timeEntry)
-    .values({
-      workspaceId: values.workspaceId ?? workspaceId,
-      userId: values.userId,
-      description: values.description ?? "",
-      startedAt: new Date(values.startedAt),
-      endedAt: values.endedAt === undefined ? null : new Date(values.endedAt),
-    })
-    .returning();
-  return row;
-}
-
-async function entryById(id: string) {
-  const rows = await db.select().from(timeEntry).where(eq(timeEntry.id, id)).limit(1);
-  return rows.at(0);
-}
-
-async function entriesOf(scopeId: string, userId: string) {
-  return db
-    .select()
-    .from(timeEntry)
-    .where(and(eq(timeEntry.workspaceId, scopeId), eq(timeEntry.userId, userId)));
-}
-
 describe.each(roles)("rol %s", (role) => {
   /**
    * El recurso del arranque se arma desde el propio actor, así que las dos
@@ -92,7 +59,7 @@ describe.each(roles)("rol %s", (role) => {
 
       const result = await startTimer(actor, buenosAires, { description: "trabajo" });
 
-      const row = await entryById(result.running.id);
+      const row = await timeEntryById(result.running.id);
       expect(row?.userId).toBe(actor.userId);
       expect(row?.workspaceId).toBe(workspaceId);
       expect(row?.endedAt).toBeNull();
@@ -110,7 +77,7 @@ describe.each(roles)("rol %s", (role) => {
         message: timeEntryMessages.forbidden,
       });
 
-      expect(await entriesOf(workspaceId, actor.userId)).toEqual([]);
+      expect(await timeEntriesOf(workspaceId, actor.userId)).toEqual([]);
     });
 
     it.each(notActive)(
@@ -138,7 +105,7 @@ describe.each(roles)("rol %s", (role) => {
       const result = await stopTimer(actor, buenosAires, { id: started.running.id });
 
       expect(result.stopped.description).toBe("revisión");
-      const row = await entryById(started.running.id);
+      const row = await timeEntryById(started.running.id);
       expect(row?.description).toBe("revisión");
       expect(row?.endedAt).not.toBeNull();
     });
@@ -146,7 +113,8 @@ describe.each(roles)("rol %s", (role) => {
     it("no toca la entrada de otra persona del workspace", async () => {
       const actor = await seedActor(role);
       const otherId = await seedMember(workspaceId, "member");
-      const row = await seedEntry({
+      const row = await seedTimeEntry({
+        workspaceId,
         userId: otherId,
         description: "ajena",
         startedAt: "2026-10-02T11:00:00Z",
@@ -163,7 +131,7 @@ describe.each(roles)("rol %s", (role) => {
         message: timeEntryMessages.forbiddenOtherOwner,
       });
 
-      const after = await entryById(row.id);
+      const after = await timeEntryById(row.id);
       expect(after?.description).toBe("ajena");
       expect(after?.endedAt).toBeNull();
     });
@@ -172,7 +140,8 @@ describe.each(roles)("rol %s", (role) => {
       "no toca ni su propia entrada con la membresía %s",
       async (status) => {
         const actor = await seedActor(role, status);
-        const row = await seedEntry({
+        const row = await seedTimeEntry({
+          workspaceId,
           userId: actor.userId,
           description: "propia",
           startedAt: "2026-10-02T11:00:00Z",
@@ -191,7 +160,7 @@ describe.each(roles)("rol %s", (role) => {
           },
         );
 
-        const after = await entryById(row.id);
+        const after = await timeEntryById(row.id);
         expect(after?.description).toBe("propia");
         expect(after?.endedAt).toBeNull();
       },
@@ -201,7 +170,8 @@ describe.each(roles)("rol %s", (role) => {
   describe("timeEntry.own.delete", () => {
     it("borra su propia entrada", async () => {
       const actor = await seedActor(role);
-      const row = await seedEntry({
+      const row = await seedTimeEntry({
+        workspaceId,
         userId: actor.userId,
         startedAt: "2026-10-02T11:00:00Z",
         endedAt: "2026-10-02T12:00:00Z",
@@ -210,13 +180,14 @@ describe.each(roles)("rol %s", (role) => {
       const result = await deleteEntry(actor, { id: row.id });
 
       expect(result.id).toBe(row.id);
-      expect(await entryById(row.id)).toBeUndefined();
+      expect(await timeEntryById(row.id)).toBeUndefined();
     });
 
     it("no borra la entrada de otra persona del workspace", async () => {
       const actor = await seedActor(role);
       const otherId = await seedMember(workspaceId, "member");
-      const row = await seedEntry({
+      const row = await seedTimeEntry({
+        workspaceId,
         userId: otherId,
         description: "ajena",
         startedAt: "2026-10-02T11:00:00Z",
@@ -226,14 +197,15 @@ describe.each(roles)("rol %s", (role) => {
         code: "forbidden",
         message: timeEntryMessages.forbiddenOtherOwner,
       });
-      expect(await entryById(row.id)).toBeDefined();
+      expect(await timeEntryById(row.id)).toBeDefined();
     });
 
     it.each(notActive)(
       "no borra ni su propia entrada con la membresía %s",
       async (status) => {
         const actor = await seedActor(role, status);
-        const row = await seedEntry({
+        const row = await seedTimeEntry({
+          workspaceId,
           userId: actor.userId,
           startedAt: "2026-10-02T11:00:00Z",
         });
@@ -242,7 +214,7 @@ describe.each(roles)("rol %s", (role) => {
           code: "forbidden",
           message: timeEntryMessages.forbidden,
         });
-        expect(await entryById(row.id)).toBeDefined();
+        expect(await timeEntryById(row.id)).toBeDefined();
       },
     );
   });
@@ -257,7 +229,8 @@ describe("aislamiento entre workspaces", () => {
       role: "owner",
       status: "active",
     };
-    const row = await seedEntry({
+    const row = await seedTimeEntry({
+      workspaceId,
       userId: ownerId,
       description: "de este workspace",
       startedAt: "2026-10-02T11:00:00Z",
@@ -276,7 +249,7 @@ describe("aislamiento entre workspaces", () => {
       message: timeEntryMessages.notFound,
     });
 
-    const after = await entryById(row.id);
+    const after = await timeEntryById(row.id);
     expect(after?.description).toBe("de este workspace");
     expect(after?.endedAt).toBeNull();
   });
@@ -292,7 +265,8 @@ describe("aislamiento entre workspaces", () => {
       role: "member",
       status: "active",
     };
-    const row = await seedEntry({
+    const row = await seedTimeEntry({
+      workspaceId,
       userId: ownerId,
       description: "propia pero de otro workspace",
       startedAt: "2026-10-02T11:00:00Z",
@@ -308,7 +282,7 @@ describe("aislamiento entre workspaces", () => {
       code: "not_found",
     });
 
-    const after = await entryById(row.id);
+    const after = await timeEntryById(row.id);
     expect(after?.description).toBe("propia pero de otro workspace");
     expect(after?.endedAt).toBeNull();
   });
@@ -324,13 +298,15 @@ describe("aislamiento entre workspaces", () => {
       role: "member",
       status: "active",
     };
-    await seedEntry({
+    await seedTimeEntry({
+      workspaceId,
       userId: ownerId,
       description: "cerrada",
       startedAt: "2026-10-02T11:00:00Z",
       endedAt: "2026-10-02T12:00:00Z",
     });
-    await seedEntry({
+    await seedTimeEntry({
+      workspaceId,
       userId: ownerId,
       description: "corriendo",
       startedAt: "2026-10-02T13:00:00Z",
@@ -361,7 +337,8 @@ describe("aislamiento entre workspaces", () => {
       role: "member",
       status: "active",
     };
-    await seedEntry({
+    await seedTimeEntry({
+      workspaceId,
       userId: ownerId,
       description: "corriendo acá",
       startedAt: "2026-10-02T11:00:00Z",
@@ -372,8 +349,8 @@ describe("aislamiento entre workspaces", () => {
     });
 
     expect(started.stopped).toBeNull();
-    const here = await entriesOf(workspaceId, ownerId);
-    const there = await entriesOf(other.workspaceId, ownerId);
+    const here = await timeEntriesOf(workspaceId, ownerId);
+    const there = await timeEntriesOf(other.workspaceId, ownerId);
     expect(here).toHaveLength(1);
     expect(here[0].endedAt).toBeNull();
     expect(there).toHaveLength(1);
@@ -384,13 +361,15 @@ describe("aislamiento entre workspaces", () => {
 describe("membresía que dejó de estar activa", () => {
   it.each(notActive)("con %s sigue leyendo sus entradas y su timer", async (status) => {
     const actor = await seedActor("member", status);
-    await seedEntry({
+    await seedTimeEntry({
+      workspaceId,
       userId: actor.userId,
       description: "cerrada",
       startedAt: "2026-10-02T11:00:00Z",
       endedAt: "2026-10-02T12:00:00Z",
     });
-    await seedEntry({
+    await seedTimeEntry({
+      workspaceId,
       userId: actor.userId,
       description: "corriendo",
       startedAt: "2026-10-02T13:00:00Z",
@@ -404,5 +383,84 @@ describe("membresía que dejó de estar activa", () => {
     expect(
       state.days.flatMap((day) => day.entries).map((entry) => entry.description),
     ).toEqual(["cerrada"]);
+  });
+});
+
+describe("el filtro por dueño del repository", () => {
+  // Defensa en profundidad: hoy el service nunca llega acá con una entrada
+  // ajena, porque `readOwnEntry` la rechaza antes. El filtro es para cuando
+  // exista una acción sobre entradas de otra persona. Cada caso termina con el
+  // dueño real, para que se vea que lo que frenó la escritura fue el dueño y
+  // no un id o un workspace equivocados.
+  it("no borra la entrada de otra persona", async () => {
+    const otherId = await seedMember(workspaceId, "member");
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: otherId,
+      description: "ajena",
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+
+    const ajeno = await db.transaction((tx) =>
+      timeEntryRepository.deleteById(tx, { workspaceId, userId: ownerId, id: row.id }),
+    );
+
+    expect(ajeno).toBeUndefined();
+    expect(await timeEntryById(row.id)).toBeDefined();
+    const propio = await db.transaction((tx) =>
+      timeEntryRepository.deleteById(tx, { workspaceId, userId: otherId, id: row.id }),
+    );
+    expect(propio?.id).toBe(row.id);
+    expect(await timeEntryById(row.id)).toBeUndefined();
+  });
+
+  it("no cambia la descripción de la entrada de otra persona", async () => {
+    const otherId = await seedMember(workspaceId, "member");
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: otherId,
+      description: "ajena",
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+
+    const ajeno = await db.transaction((tx) =>
+      timeEntryRepository.updateDescription(
+        tx,
+        { workspaceId, userId: ownerId, id: row.id },
+        "mía",
+      ),
+    );
+
+    expect(ajeno).toBeUndefined();
+    expect((await timeEntryById(row.id))?.description).toBe("ajena");
+    const propio = await db.transaction((tx) =>
+      timeEntryRepository.updateDescription(
+        tx,
+        { workspaceId, userId: otherId, id: row.id },
+        "de su dueña",
+      ),
+    );
+    expect(propio?.description).toBe("de su dueña");
+  });
+
+  it("no detiene el timer de otra persona", async () => {
+    const otherId = await seedMember(workspaceId, "member");
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: otherId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+
+    const ajeno = await db.transaction((tx) =>
+      timeEntryRepository.stopById(tx, { workspaceId, userId: ownerId, id: row.id }),
+    );
+
+    expect(ajeno).toBeUndefined();
+    expect((await timeEntryById(row.id))?.endedAt).toBeNull();
+    const propio = await db.transaction((tx) =>
+      timeEntryRepository.stopById(tx, { workspaceId, userId: otherId, id: row.id }),
+    );
+    expect(propio?.endedAt).not.toBeNull();
+    expect((await timeEntryById(row.id))?.endedAt).not.toBeNull();
   });
 });

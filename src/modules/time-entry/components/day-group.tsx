@@ -71,12 +71,9 @@ export function DayGroup({ group, running, serverNow, canTrack }: DayGroupProps)
   const runningStartedAt =
     group.isRunningDay && running !== null ? running.startedAt : null;
   const elapsed = useElapsedSeconds(runningStartedAt, serverNow);
-  const totalLabel =
-    runningStartedAt === null && removedSeconds === 0
-      ? group.closedTotalLabel
-      : formatDuration(
-          Math.floor((Math.max(0, group.closedSeconds - removedSeconds) + elapsed) / 60),
-        );
+  const totalLabel = formatDuration(
+    Math.floor((Math.max(0, group.closedSeconds - removedSeconds) + elapsed) / 60),
+  );
   const headingId = `dia-${group.date}`;
 
   return (

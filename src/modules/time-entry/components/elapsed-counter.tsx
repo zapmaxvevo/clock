@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 
-import { cn } from "@/lib/utils";
 import { formatElapsed } from "@/server/time";
 
 import { elapsedSeconds } from "./elapsed";
@@ -42,17 +41,16 @@ type ElapsedCounterProps = {
   /** null con el timer parado: el contador muestra 0:00:00 (TT-17). */
   readonly startedAt: string | null;
   readonly serverNow: string;
-  readonly className?: string;
 };
 
-export function ElapsedCounter({ startedAt, serverNow, className }: ElapsedCounterProps) {
+export function ElapsedCounter({ startedAt, serverNow }: ElapsedCounterProps) {
   const seconds = useElapsedSeconds(startedAt, serverNow);
 
   return (
     <span
       role="timer"
       aria-label="Tiempo transcurrido"
-      className={cn("font-mono text-lg tabular-nums", className)}
+      className="font-mono text-lg tabular-nums"
     >
       {formatElapsed(seconds)}
     </span>

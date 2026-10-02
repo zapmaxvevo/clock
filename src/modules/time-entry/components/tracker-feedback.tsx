@@ -4,10 +4,10 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
 type TrackerFeedbackProps = {
+  /** Nombra el campo o la operación que falló (TT-90). */
+  readonly title: string;
   /** Mensaje del resultado tipado de la action. */
   readonly message: string;
-  /** Nombra el campo o la operación que falló (TT-90). */
-  readonly title?: string;
   readonly onRetry?: () => void;
   readonly retryDisabled?: boolean;
 };
@@ -17,15 +17,15 @@ type TrackerFeedbackProps = {
  * color no es lo único que distingue el estado.
  */
 export function TrackerFeedback({
-  message,
   title,
+  message,
   onRetry,
   retryDisabled = false,
 }: TrackerFeedbackProps) {
   return (
     <Alert variant="destructive">
       <CircleAlertIcon aria-hidden="true" />
-      {title === undefined ? null : <AlertTitle>{title}</AlertTitle>}
+      <AlertTitle>{title}</AlertTitle>
       <AlertDescription>{message}</AlertDescription>
       {onRetry === undefined ? null : (
         <div className="mt-2">

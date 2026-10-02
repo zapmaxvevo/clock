@@ -12,6 +12,7 @@ import {
   formatElapsed,
   roundMinutes,
   startOfDayBefore,
+  startOfLocalDay,
   weekBounds,
 } from "./index";
 
@@ -103,6 +104,30 @@ describe("roundMinutes", () => {
   });
 });
 
+describe("startOfLocalDay", () => {
+  it("corta en la medianoche de la zona del usuario, no en la de UTC", () => {
+    expect(
+      startOfLocalDay(new Date("2026-10-02T12:00:00Z"), buenosAires).toISOString(),
+    ).toBe("2026-10-02T03:00:00.000Z");
+    expect(startOfLocalDay(new Date("2026-10-02T12:00:00Z"), madrid).toISOString()).toBe(
+      "2026-10-01T22:00:00.000Z",
+    );
+  });
+
+  it("es idempotente sobre un instante que ya es medianoche local", () => {
+    const start = startOfLocalDay(new Date("2026-10-02T12:00:00Z"), buenosAires);
+    expect(startOfLocalDay(start, buenosAires).toISOString()).toBe(start.toISOString());
+  });
+
+  it("coincide con el inicio que devuelve dayBounds", () => {
+    for (const instant of ["2026-03-29T12:00:00Z", "2026-07-15T10:00:00Z"]) {
+      expect(startOfLocalDay(new Date(instant), madrid).toISOString()).toBe(
+        dayBounds(new Date(instant), madrid).start.toISOString(),
+      );
+    }
+  });
+});
+
 describe("startOfDayBefore", () => {
   it("resuelve el inicio del día anterior en la zona del usuario", () => {
     expect(
@@ -121,6 +146,13 @@ describe("startOfDayBefore", () => {
     expect(
       startOfDayBefore(new Date("2026-10-02T12:00:00Z"), 0, buenosAires).toISOString(),
     ).toBe("2026-10-02T03:00:00.000Z");
+  });
+
+  it("retrocede varios días cruzando un cambio de horario", () => {
+    // Del 1 de abril al 27 de marzo de 2026 en Madrid hay un día de 23 horas.
+    expect(
+      startOfDayBefore(new Date("2026-04-01T10:00:00Z"), 5, madrid).toISOString(),
+    ).toBe("2026-03-26T23:00:00.000Z");
   });
 });
 

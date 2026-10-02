@@ -3,7 +3,6 @@
 import { useEffect, useRef } from "react";
 
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
 import { DESCRIPTION_MAX } from "@/modules/time-entry/schema";
 
 import { DESCRIPTION_PLACEHOLDER } from "./labels";
@@ -17,11 +16,12 @@ type DescriptionFieldProps = {
   readonly debounceMs?: number;
   /** Esc descarta y devuelve el campo al valor anterior (TT-55). */
   readonly onCancel?: () => void;
+  /** Avisa si el campo tiene el foco: con foco, lo tecleado no se pisa. */
+  readonly onFocusChange?: (focused: boolean) => void;
   readonly label: string;
   readonly placeholder?: string;
   readonly disabled?: boolean;
   readonly autoFocus?: boolean;
-  readonly className?: string;
 };
 
 export function DescriptionField({
@@ -30,11 +30,11 @@ export function DescriptionField({
   onCommit,
   debounceMs,
   onCancel,
+  onFocusChange,
   label,
   placeholder = DESCRIPTION_PLACEHOLDER,
   disabled = false,
   autoFocus = false,
-  className,
 }: DescriptionFieldProps) {
   const pendingCommit = useRef<number | null>(null);
 
@@ -70,10 +70,12 @@ export function DescriptionField({
       autoFocus={autoFocus}
       // TT-05: el campo corta en el mismo largo que valida el esquema.
       maxLength={DESCRIPTION_MAX}
-      className={cn("h-9", className)}
+      className="h-9"
       onChange={(event) => handleChange(event.target.value)}
+      onFocus={() => onFocusChange?.(true)}
       onBlur={() => {
         cancelPendingCommit();
+        onFocusChange?.(false);
         onCommit(value);
       }}
       onKeyDown={(event) => {

@@ -9,9 +9,10 @@ import {
   formatClock,
   formatDuration,
   startOfDayBefore,
+  startOfLocalDay,
 } from "@/server/time";
 
-import { timeEntryRepository, type TimeEntryRow } from "./repository";
+import { timeEntryRepository, type EntryTarget, type TimeEntryRow } from "./repository";
 import {
   timeEntryMessages,
   TRACKER_WINDOW_DAYS,
@@ -99,13 +100,18 @@ async function readOwnEntry(
   return row;
 }
 
+/** La fila, tal como se leyó y autorizó. Es lo único que identifica una escritura. */
+function targetOf(row: TimeEntryRow): EntryTarget {
+  return { workspaceId: row.workspaceId, userId: row.userId, id: row.id };
+}
+
 /** Cierra la entrada abierta dentro de la transacción y deja constancia. */
 async function closeRunning(
   tx: Transaction,
   actor: Actor,
   row: TimeEntryRow,
 ): Promise<TimeEntryRow | undefined> {
-  const stopped = await timeEntryRepository.stopById(tx, actor.workspaceId, row.id);
+  const stopped = await timeEntryRepository.stopById(tx, targetOf(row));
   if (stopped === undefined) {
     return undefined;
   }
@@ -232,8 +238,7 @@ export async function updateDescription(
     const row = await readOwnEntry(tx, actor, "timeEntry.own.update", input.id);
     const next = await timeEntryRepository.updateDescription(
       tx,
-      actor.workspaceId,
-      row.id,
+      targetOf(row),
       input.description,
     );
     if (next === undefined) {
@@ -259,7 +264,7 @@ export async function deleteEntry(
 ): Promise<DeleteEntryResult> {
   return db.transaction(async (tx) => {
     const row = await readOwnEntry(tx, actor, "timeEntry.own.delete", input.id);
-    const removed = await timeEntryRepository.deleteById(tx, actor.workspaceId, row.id);
+    const removed = await timeEntryRepository.deleteById(tx, targetOf(row));
     if (removed === undefined) {
       throw new TimeEntryError("not_found", timeEntryMessages.notFound);
     }
@@ -289,10 +294,10 @@ function windowStart(
 ): Date {
   const candidates = [startOfDayBefore(now, TRACKER_WINDOW_DAYS - 1, timeZone)];
   if (latestClosed !== undefined) {
-    candidates.push(startOfDayBefore(latestClosed.startedAt, 0, timeZone));
+    candidates.push(startOfLocalDay(latestClosed.startedAt, timeZone));
   }
   if (running !== undefined) {
-    candidates.push(startOfDayBefore(running.startedAt, 0, timeZone));
+    candidates.push(startOfLocalDay(running.startedAt, timeZone));
   }
   return new Date(Math.min(...candidates.map((date) => date.getTime())));
 }
@@ -330,8 +335,6 @@ function buildDays(
         label: dayLabel(group.instant, now, timeZone),
         isRunningDay: date === runningDay,
         closedSeconds,
-        // Una sola conversión a minutos, sobre la suma exacta en segundos.
-        closedTotalLabel: formatDuration(Math.floor(closedSeconds / 60)),
         entries: group.entries,
       };
     });

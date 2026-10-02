@@ -69,8 +69,8 @@ export const dayGroupView = z.object({
   label: z.string(),
   /** El cliente suma acá el transcurrido del timer activo. */
   isRunningDay: z.boolean(),
+  /** Exacto. El total con formato lo arma el cliente, que suma el transcurrido. */
   closedSeconds: z.number().int().min(0),
-  closedTotalLabel: z.string(),
   /** Solo entradas cerradas, de la más reciente a la más vieja. */
   entries: z.array(timeEntryView),
 });

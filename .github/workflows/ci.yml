@@ -82,3 +82,6 @@ jobs:
           # El endpoint de sesión de prueba solo se registra con este secreto
           # cargado. Tiene que coincidir con el del entorno de preview.
           E2E_TEST_SESSION_SECRET: ${{ secrets.E2E_TEST_SESSION_SECRET }}
+          # Opt-in explícito del endpoint de sesión de prueba. Sin esta
+          # variable no se registra, aunque el secreto esté cargado.
+          ALLOW_TEST_SESSION: "true"

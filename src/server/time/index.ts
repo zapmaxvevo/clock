@@ -12,9 +12,9 @@ export type Interval = { readonly start: Date; readonly end: Date };
  * guardan en UTC; la zona horaria del usuario decide dónde cae el corte.
  */
 export function dayBounds(instant: Date, timeZone: string): Interval {
-  const local = new TZDate(instant, timeZone);
-  const start = startOfDay(local);
-  return { start: new Date(start.getTime()), end: new Date(addDays(start, 1).getTime()) };
+  const start = startOfLocalDay(instant, timeZone);
+  const end = addDays(new TZDate(start, timeZone), 1);
+  return { start, end: new Date(end.getTime()) };
 }
 
 export function weekBounds(
@@ -49,10 +49,15 @@ export function roundMinutes(minutes: number, step: number): number {
   return Math.ceil(minutes / step) * step;
 }
 
+/** Inicio del día local en que cae el instante. */
+export function startOfLocalDay(instant: Date, timeZone: string): Date {
+  return new Date(startOfDay(new TZDate(instant, timeZone)).getTime());
+}
+
 /** Inicio del día local que cae `days` días antes del día de `instant`. */
 export function startOfDayBefore(instant: Date, days: number, timeZone: string): Date {
-  const local = new TZDate(instant, timeZone);
-  return new Date(startOfDay(subDays(local, days)).getTime());
+  const start = new TZDate(startOfLocalDay(instant, timeZone), timeZone);
+  return new Date(subDays(start, days).getTime());
 }
 
 /** Día local del instante, como "2026-10-02". Es la clave de agrupación. */
@@ -81,8 +86,8 @@ export function formatClock(instant: Date, timeZone: string): string {
 
 /** Días locales que la entrada agrega sobre su día de inicio. 0 si no cruza la medianoche. */
 export function extraDays(start: Date, end: Date, timeZone: string): number {
-  const from = startOfDayBefore(start, 0, timeZone).getTime();
-  const to = startOfDayBefore(end, 0, timeZone).getTime();
+  const from = startOfLocalDay(start, timeZone).getTime();
+  const to = startOfLocalDay(end, timeZone).getTime();
   return Math.max(0, Math.round((to - from) / 86_400_000));
 }
 

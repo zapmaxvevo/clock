@@ -1,4 +1,4 @@
-import type { Browser, Locator, Page } from "@playwright/test";
+import type { Browser, Locator, Page, Request } from "@playwright/test";
 
 import { expect, signIn, test } from "./session";
 
@@ -31,6 +31,31 @@ function editDescriptionButton(scope: Locator, description: string): Locator {
   return scope.getByRole("button", { name: `${description} — editar la descripción` });
 }
 
+/** El «Total» del encabezado del grupo, que lleva la etiqueta y el valor. */
+function dayTotal(group: Locator): Locator {
+  return group.getByText(/^Total \d+:\d{2}$/);
+}
+
+/**
+ * Canales del color de fondo. El tema los define en oklch y el canvas los
+ * lleva a sRGB pintando un píxel, así la afirmación es «es rojo» y no el
+ * valor exacto de la paleta.
+ */
+async function backgroundRgb(
+  element: Locator,
+): Promise<{ red: number; green: number; blue: number }> {
+  return element.evaluate((node) => {
+    const context = document.createElement("canvas").getContext("2d");
+    if (context === null) {
+      throw new Error("El canvas no está disponible para normalizar el color.");
+    }
+    context.fillStyle = window.getComputedStyle(node).backgroundColor;
+    context.fillRect(0, 0, 1, 1);
+    const { data } = context.getImageData(0, 0, 1, 1);
+    return { red: data[0], green: data[1], blue: data[2] };
+  });
+}
+
 /** Lee el contador en segundos, para compararlo sin depender del formato. */
 async function elapsedOf(counter: Locator): Promise<number> {
   const text = (await counter.textContent()) ?? "";
@@ -41,12 +66,17 @@ async function elapsedOf(counter: Locator): Promise<number> {
   return parts[0] * 3600 + parts[1] * 60 + parts[2];
 }
 
-/** Arranca un timer con la descripción dada y espera a que la barra lo muestre. */
+/**
+ * Arranca un timer y espera a que la barra tenga la entrada abierta. El botón
+ * pasa a «Detener» con la vista optimista, antes de que el servidor escriba;
+ * el grupo del día del timer activo, en cambio, solo lo dibuja el servidor.
+ */
 async function startTimer(page: Page, description: string): Promise<void> {
   const bar = trackerBar(page);
   await descriptionInput(bar).fill(description);
   await bar.getByRole("button", { name: "Iniciar" }).click();
   await expect(bar.getByRole("button", { name: "Detener" })).toBeVisible();
+  await expect(todayGroup(page)).toBeVisible();
 }
 
 /**
@@ -71,16 +101,22 @@ async function deleteEntry(page: Page, description: string): Promise<void> {
 }
 
 /**
- * Borra y espera a que el servidor haya escrito. Quedando otra entrada en el
- * día, la lista se ve igual con el borrado optimista que con el escrito: la
- * respuesta de la action es la única señal de que esta pestaña ya terminó.
+ * Corre algo que dispara una server action y espera su respuesta. Se usa
+ * donde la pantalla no distingue la vista optimista de lo ya escrito, y donde
+ * hace falta saber que una pestaña terminó antes de que otra siga.
  */
-async function deleteEntryAndSettle(page: Page, description: string): Promise<void> {
+async function withServerAction(page: Page, act: () => Promise<void>): Promise<void> {
   const settled = page.waitForResponse(
     (response) => response.request().headers()["next-action"] !== undefined,
   );
-  await deleteEntry(page, description);
-  await settled;
+  await act();
+  const response = await settled;
+  expect(response.ok(), `la action respondió ${response.status()}`).toBeTruthy();
+}
+
+/** Borra y espera a que el servidor haya escrito. */
+async function deleteEntryAndSettle(page: Page, description: string): Promise<void> {
+  await withServerAction(page, () => deleteEntry(page, description));
 }
 
 /**
@@ -114,7 +150,7 @@ test("sin entradas ni timer, la pantalla invita a empezar", async ({ page }) => 
   );
 });
 
-test("el timer arranca sin proyecto, cuenta y sobrevive a la recarga", async ({
+test("el timer arranca sin proyecto, cuenta sola y sobrevive a la recarga", async ({
   page,
 }) => {
   await page.goto("/");
@@ -123,19 +159,102 @@ test("el timer arranca sin proyecto, cuenta y sobrevive a la recarga", async ({
   const bar = trackerBar(page);
   await expect(bar.getByText("Sin proyecto")).toBeVisible();
 
+  // TT-24: con el timer corriendo, el botón de detener es rojo. El color
+  // llega por una transición, así que se espera a que el rojo domine en vez
+  // de medir el primer cuadro.
+  await expect
+    .poll(async () => {
+      const { red, green, blue } = await backgroundRgb(
+        bar.getByRole("button", { name: "Detener" }),
+      );
+      return red > green && red > blue;
+    })
+    .toBe(true);
+
   const counter = elapsedCounter(bar);
   await expect
     .poll(() => elapsedOf(counter), { timeout: COUNTER_TIMEOUT_MS })
     .toBeGreaterThanOrEqual(2);
+
+  // TT-31: el contador avanza sin pedirle nada al servidor. Se empieza a
+  // contar peticiones con la pantalla ya asentada, para no contar las de la
+  // carga.
+  const beforeCount = await elapsedOf(counter);
+  const requests: string[] = [];
+  const record = (request: Request): void => {
+    requests.push(request.url());
+  };
+  page.on("request", record);
+  await expect
+    .poll(() => elapsedOf(counter), { timeout: COUNTER_TIMEOUT_MS })
+    .toBeGreaterThanOrEqual(beforeCount + 2);
+  page.off("request", record);
+  expect(requests).toEqual([]);
+
   const beforeReload = await elapsedOf(counter);
 
-  // TT-38: la barra vuelve ya con la descripción y el contador en su valor.
+  // TT-38 y criterio 9: la barra vuelve ya con la descripción y el contador en
+  // su valor, sin pasar por 0:00:00. Una sola lectura, apenas vuelve la
+  // recarga: una que reintentara se cumpliría igual con el contador en cero.
   await page.reload();
   const reloaded = elapsedCounter(trackerBar(page));
-  await expect(reloaded).not.toHaveText("0:00:00");
+  expect(await elapsedOf(reloaded)).toBeGreaterThanOrEqual(beforeReload);
   await expect(trackerBar(page).getByRole("button", { name: "Detener" })).toBeVisible();
   await expect(descriptionInput(trackerBar(page))).toHaveValue("revisar la paridad");
-  expect(await elapsedOf(reloaded)).toBeGreaterThanOrEqual(beforeReload);
+});
+
+test("el total del día sube junto con el contador", async ({ page }) => {
+  // El total se muestra en h:mm, así que el primer cambio visible llega al
+  // minuto de transcurrido. El reloj emulado lo adelanta: el test no espera
+  // ese minuto y tampoco lo simula con una pausa.
+  await page.clock.install();
+  await page.goto("/");
+  await startTimer(page, "timer que suma al total");
+
+  const today = todayGroup(page);
+  await expect(dayTotal(today)).toHaveText("Total 0:00");
+
+  // El salto del reloj dispara también la revalidación de los 60 segundos,
+  // que traería un `serverNow` nuevo y devolvería el contador a cero. Se la
+  // retiene para que lo observado sea el transcurrido del cliente; de esa
+  // revalidación se ocupa su propio recorrido.
+  let release = (): void => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(
+    (url) => url.pathname === "/",
+    async (route) => {
+      await held;
+      await route.continue();
+    },
+  );
+
+  await page.clock.fastForward(61_000);
+
+  // TT-46: el total del día del timer activo incluye el transcurrido y sube
+  // junto con el contador, y se queda ahí.
+  await expect(dayTotal(today)).toHaveText("Total 0:01");
+  await expect(elapsedCounter(trackerBar(page))).toHaveText(/^0:01:\d{2}$/);
+  await expect(dayTotal(today)).toHaveText("Total 0:01");
+  release();
+});
+
+test("una entrada sin descripción se muestra como «Sin descripción»", async ({
+  page,
+}) => {
+  await page.goto("/");
+
+  const bar = trackerBar(page);
+  await bar.getByRole("button", { name: "Iniciar" }).click();
+  await expect(bar.getByRole("button", { name: "Detener" })).toBeVisible();
+  await stopTimer(page, "Sin descripción");
+
+  // TT-50, TT-93 y TT-94: la fila nombra lo que falta y sigue siendo normal.
+  const row = entryRow(todayGroup(page), "Sin descripción");
+  await expect(editDescriptionButton(todayGroup(page), "Sin descripción")).toBeVisible();
+  await expect(row).toContainText("Sin proyecto");
+  await expect(row).toContainText(/\d{1,2}:\d{2} – \d{1,2}:\d{2}\s*0:00/);
 });
 
 test("detener el timer deja la entrada en el día con su duración", async ({ page }) => {
@@ -160,6 +279,23 @@ test("la descripción de una entrada se edita en la fila y queda guardada", asyn
   await startTimer(page, "borrador del informe");
   await stopTimer(page, "borrador del informe");
 
+  // La escritura se retiene hasta haber visto la fila atenuada. Sin eso el
+  // estado en vuelo dura lo que tarde el servidor y la afirmación quedaría
+  // atada a esa carrera (TT-54).
+  let release = (): void => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(
+    (url) => url.pathname === "/",
+    async (route) => {
+      if (route.request().headers()["next-action"] !== undefined) {
+        await held;
+      }
+      await route.continue();
+    },
+  );
+
   const today = todayGroup(page);
   await editDescriptionButton(today, "borrador del informe").click();
 
@@ -169,13 +305,14 @@ test("la descripción de una entrada se edita en la fila y queda guardada", asyn
   await field.fill("informe corregido");
   await field.press("Enter");
 
+  const row = entryRow(today, "informe corregido");
+  await expect(row).toHaveAttribute("aria-busy", "true");
+  release();
+
   await expect(editDescriptionButton(today, "informe corregido")).toBeVisible();
-  // La fila queda atenuada mientras la escritura viaja (TT-54): cuando deja de
-  // estarlo el servidor ya respondió y la recarga lee el estado guardado.
-  await expect(entryRow(today, "informe corregido")).toHaveAttribute(
-    "aria-busy",
-    "false",
-  );
+  // Cuando la fila deja de estar atenuada el servidor ya respondió, y la
+  // recarga lee el estado guardado.
+  await expect(row).toHaveAttribute("aria-busy", "false");
 
   await page.reload();
   await expect(
@@ -351,4 +488,175 @@ test("editar una entrada borrada avisa y la saca de la lista", async ({
   await expect(entryRow(today, "entrada que sobrevive")).toBeVisible();
 
   await otherPage.context().close();
+});
+
+test("el rebote guarda la descripción del timer sin tocar nada más", async ({ page }) => {
+  // Con el reloj emulado el rebote corre solo cuando el test lo adelanta, así
+  // que el guardado no puede venir de ningún otro disparo.
+  await page.clock.install();
+  await page.goto("/");
+  await startTimer(page, "texto inicial");
+
+  const field = descriptionInput(trackerBar(page));
+  await field.fill("guardado por rebote");
+
+  // TT-04: 500 ms después de la última tecla, sin salir del campo ni Enter.
+  await withServerAction(page, () => page.clock.fastForward(600));
+
+  await page.reload();
+  const bar = trackerBar(page);
+  await expect(descriptionInput(bar)).toHaveValue("guardado por rebote");
+  // El guardado no detiene el timer (TT-27).
+  await expect(bar.getByRole("button", { name: "Detener" })).toBeVisible();
+});
+
+test("Enter y salir del campo también guardan la descripción", async ({ page }) => {
+  // El reloj queda detenido: el rebote nunca corre, así que lo que guarde
+  // tiene que venir de Enter o de la salida del campo.
+  await page.clock.install();
+  await page.goto("/");
+  await startTimer(page, "texto inicial");
+
+  const field = descriptionInput(trackerBar(page));
+
+  await field.fill("guardado con enter");
+  await withServerAction(page, () => field.press("Enter"));
+
+  await field.fill("guardado al salir");
+  await withServerAction(page, () => field.blur());
+
+  await page.reload();
+  await expect(descriptionInput(trackerBar(page))).toHaveValue("guardado al salir");
+});
+
+test("el otro dispositivo se pone al día al recuperar el foco", async ({
+  page,
+  email,
+  browser,
+}) => {
+  await page.goto("/");
+  await startTimer(page, "texto inicial");
+
+  // TT-39: el segundo dispositivo muestra el mismo timer corriendo.
+  const otherPage = await openSecondTab(browser, email);
+  const otherBar = trackerBar(otherPage);
+  await expect(otherBar.getByRole("button", { name: "Detener" })).toBeVisible();
+  const otherField = descriptionInput(otherBar);
+  await expect(otherField).toHaveValue("texto inicial");
+
+  await otherField.fill("editado en el otro");
+  await withServerAction(otherPage, () => otherField.press("Enter"));
+
+  // Esta pestaña sigue con el texto viejo hasta que recupera el foco. En
+  // headless `bringToFront()` no dispara el evento, así que se despacha.
+  const field = descriptionInput(trackerBar(page));
+  await expect(field).toHaveValue("texto inicial");
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+
+  // TT-40: se pone al día sin que nadie recargue.
+  await expect(field).toHaveValue("editado en el otro");
+
+  await otherPage.context().close();
+});
+
+test("la pantalla se pone al día sola dentro de los 60 segundos", async ({
+  page,
+  email,
+  browser,
+}) => {
+  await page.clock.install();
+  await page.goto("/");
+  await startTimer(page, "texto inicial");
+
+  const otherPage = await openSecondTab(browser, email);
+  const otherField = descriptionInput(trackerBar(otherPage));
+  await expect(otherField).toHaveValue("texto inicial");
+  await otherField.fill("editado en el otro");
+  await withServerAction(otherPage, () => otherField.press("Enter"));
+
+  const field = descriptionInput(trackerBar(page));
+  await expect(field).toHaveValue("texto inicial");
+
+  // TT-40: sin foco y sin recarga, la revalidación periódica la pone al día.
+  await page.clock.fastForward(61_000);
+  await expect(field).toHaveValue("editado en el otro");
+
+  await otherPage.context().close();
+});
+
+test("lo tecleado con el foco puesto sobrevive a una revalidación", async ({
+  page,
+  email,
+  browser,
+}) => {
+  // El reloj detenido saca del medio el rebote: si el campo conserva lo
+  // tecleado no es porque una escritura lo haya fijado.
+  await page.clock.install();
+  await page.goto("/");
+  await startTimer(page, "entrada previa");
+  await stopTimer(page, "entrada previa");
+  await startTimer(page, "texto inicial");
+
+  // El otro dispositivo cambia dos cosas: la descripción del timer y la
+  // lista. La lista es la que deja ver que la revalidación llegó y se aplicó.
+  const otherPage = await openSecondTab(browser, email);
+  await deleteEntryAndSettle(otherPage, "entrada previa");
+  const otherField = descriptionInput(trackerBar(otherPage));
+  await expect(otherField).toHaveValue("texto inicial");
+  await otherField.fill("editado en el otro");
+  await withServerAction(otherPage, () => otherField.press("Enter"));
+
+  const field = descriptionInput(trackerBar(page));
+  await field.fill("lo que estoy escribiendo");
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+
+  await expect(entryRow(todayGroup(page), "entrada previa")).toHaveCount(0);
+  await expect(field).toHaveValue("lo que estoy escribiendo");
+
+  // Y al salir del campo tampoco lo pisa: el valor que llegó ya quedó dado
+  // por visto.
+  await withServerAction(page, () => field.blur());
+  await expect(field).toHaveValue("lo que estoy escribiendo");
+
+  await otherPage.context().close();
+});
+
+test("reescribir el mismo texto después de un fallo de red lo guarda", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.goto("/");
+  await startTimer(page, "texto inicial");
+
+  // La red se cae solo para la escritura, y solo la primera vez.
+  let failing = true;
+  await page.route(
+    (url) => url.pathname === "/",
+    async (route) => {
+      if (failing && route.request().headers()["next-action"] !== undefined) {
+        await route.abort();
+        return;
+      }
+      await route.continue();
+    },
+  );
+
+  const field = descriptionInput(trackerBar(page));
+  await field.fill("mismo texto");
+  await field.press("Enter");
+
+  // TT-89 y TT-90: el campo vuelve al valor del servidor y aparece el aviso.
+  await expect(page.getByText("No se pudo guardar la descripción.")).toBeVisible();
+  await expect(
+    page.getByText("No se pudo guardar. Revisá la conexión y volvé a intentar."),
+  ).toBeVisible();
+  await expect(field).toHaveValue("texto inicial");
+
+  // El mismo texto otra vez sí se manda: nada lo recuerda como ya enviado.
+  failing = false;
+  await field.fill("mismo texto");
+  await withServerAction(page, () => field.press("Enter"));
+
+  await page.reload();
+  await expect(descriptionInput(trackerBar(page))).toHaveValue("mismo texto");
 });

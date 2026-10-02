@@ -5,6 +5,26 @@ import { now, timeEntry } from "@/server/db/schema";
 
 export type TimeEntryRow = typeof timeEntry.$inferSelect;
 
+/**
+ * La fila sobre la que escribe una mutación. Los tres valores salen de la fila
+ * que el service ya leyó y autorizó, nunca de la entrada del cliente: repetir
+ * el `user_id` en el `WHERE` evita que la escritura dependa de que el llamador
+ * haya hecho su parte.
+ */
+export type EntryTarget = {
+  readonly workspaceId: string;
+  readonly userId: string;
+  readonly id: string;
+};
+
+function isTarget(target: EntryTarget) {
+  return and(
+    eq(timeEntry.workspaceId, target.workspaceId),
+    eq(timeEntry.userId, target.userId),
+    eq(timeEntry.id, target.id),
+  );
+}
+
 type Executor = Transaction | typeof db;
 
 /** Postgres: violación de restricción única. */
@@ -130,50 +150,38 @@ export const timeEntryRepository = {
 
   /**
    * Cierra la entrada con el mismo `now()` de la transacción. Devuelve
-   * `undefined` si ya estaba cerrada o si no es de este workspace.
+   * `undefined` si ya estaba cerrada o si no es la fila que se leyó.
    */
   async stopById(
     tx: Transaction,
-    workspaceId: string,
-    id: string,
+    target: EntryTarget,
   ): Promise<TimeEntryRow | undefined> {
     const rows = await tx
       .update(timeEntry)
       .set({ endedAt: now })
-      .where(
-        and(
-          eq(timeEntry.workspaceId, workspaceId),
-          eq(timeEntry.id, id),
-          isNull(timeEntry.endedAt),
-        ),
-      )
+      .where(and(isTarget(target), isNull(timeEntry.endedAt)))
       .returning();
     return rows.at(0);
   },
 
   async updateDescription(
     tx: Transaction,
-    workspaceId: string,
-    id: string,
+    target: EntryTarget,
     description: string,
   ): Promise<TimeEntryRow | undefined> {
     const rows = await tx
       .update(timeEntry)
       .set({ description })
-      .where(and(eq(timeEntry.workspaceId, workspaceId), eq(timeEntry.id, id)))
+      .where(isTarget(target))
       .returning();
     return rows.at(0);
   },
 
   async deleteById(
     tx: Transaction,
-    workspaceId: string,
-    id: string,
+    target: EntryTarget,
   ): Promise<TimeEntryRow | undefined> {
-    const rows = await tx
-      .delete(timeEntry)
-      .where(and(eq(timeEntry.workspaceId, workspaceId), eq(timeEntry.id, id)))
-      .returning();
+    const rows = await tx.delete(timeEntry).where(isTarget(target)).returning();
     return rows.at(0);
   },
 

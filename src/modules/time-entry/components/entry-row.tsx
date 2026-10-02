@@ -153,7 +153,9 @@ export function EntryRow({
               </DropdownMenuContent>
             </DropdownMenu>
             <DeleteEntryDialog
-              entry={entry}
+              name={entryName}
+              startLabel={entry.startLabel}
+              endLabel={entry.endLabel}
               open={confirmingDelete}
               onOpenChange={setConfirmingDelete}
               onConfirm={onDelete}

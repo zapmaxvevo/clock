@@ -1,14 +1,10 @@
-import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { db } from "@/server/db";
-import { auditLog, timeEntry } from "@/server/db/schema";
 import type { Actor } from "@/server/permissions";
-import { seedMember, seedWorkspace } from "@/test/factories";
+import { buenosAires, seedMember, seedTimeEntry, seedWorkspace } from "@/test/factories";
+import { auditFor, timeEntryById } from "@/test/queries";
 
 import { deleteEntry, startTimer, stopTimer, updateDescription } from "./service";
-
-const buenosAires = "America/Argentina/Buenos_Aires";
 
 let workspaceId: string;
 let actor: Actor;
@@ -24,55 +20,15 @@ beforeEach(async () => {
   };
 });
 
-/** Entrada escrita directo: es el estado de partida, no pasa por el service. */
-async function seedEntry(values: {
-  userId?: string;
-  description?: string;
-  startedAt: string;
-  endedAt?: string;
-}) {
-  const [row] = await db
-    .insert(timeEntry)
-    .values({
-      workspaceId,
-      userId: values.userId ?? actor.userId,
-      description: values.description ?? "",
-      startedAt: new Date(values.startedAt),
-      endedAt: values.endedAt === undefined ? null : new Date(values.endedAt),
-    })
-    .returning();
-  return row;
-}
-
-/**
- * Todos los registros del módulo. No se ordenan: los dos que escribe un mismo
- * arranque comparten el `now()` de su transacción.
- */
-async function auditRows() {
-  return db.select().from(auditLog).where(eq(auditLog.entity, "time_entry"));
-}
-
-async function auditFor(entityId: string) {
-  return db
-    .select()
-    .from(auditLog)
-    .where(and(eq(auditLog.entity, "time_entry"), eq(auditLog.entityId, entityId)));
-}
-
 function parsed(value: string | null): unknown {
   return value === null ? null : (JSON.parse(value) as unknown);
-}
-
-async function entryById(id: string) {
-  const rows = await db.select().from(timeEntry).where(eq(timeEntry.id, id)).limit(1);
-  return rows.at(0);
 }
 
 describe("audit log de las mutaciones", () => {
   it("el arranque deja un registro con la descripción y el inicio", async () => {
     const result = await startTimer(actor, buenosAires, { description: "revisión" });
 
-    const rows = await auditRows();
+    const rows = await auditFor("time_entry");
     expect(rows).toHaveLength(1);
     expect(rows[0].action).toBe("timeEntry.start");
     expect(rows[0].entity).toBe("time_entry");
@@ -90,7 +46,7 @@ describe("audit log de las mutaciones", () => {
     const first = await startTimer(actor, buenosAires, { description: "uno" });
     const second = await startTimer(actor, buenosAires, { description: "dos" });
 
-    const rows = await auditRows();
+    const rows = await auditFor("time_entry");
     expect(rows).toHaveLength(3);
     expect(new Set(rows.map((row) => `${row.action}:${row.entityId}`))).toEqual(
       new Set([
@@ -121,8 +77,8 @@ describe("audit log de las mutaciones", () => {
 
     const result = await stopTimer(actor, buenosAires, { id: started.running.id });
 
-    const stored = await entryById(started.running.id);
-    const rows = await auditFor(started.running.id);
+    const stored = await timeEntryById(started.running.id);
+    const rows = await auditFor("time_entry", started.running.id);
     const stop = rows.find((row) => row.action === "timeEntry.stop");
     expect(rows).toHaveLength(2);
     expect(stop?.workspaceId).toBe(workspaceId);
@@ -135,7 +91,9 @@ describe("audit log de las mutaciones", () => {
   });
 
   it("editar la descripción deja el valor anterior y el nuevo", async () => {
-    const row = await seedEntry({
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
       description: "antes",
       startedAt: "2026-10-01T11:00:00Z",
       endedAt: "2026-10-01T12:00:00Z",
@@ -143,7 +101,7 @@ describe("audit log de las mutaciones", () => {
 
     await updateDescription(actor, buenosAires, { id: row.id, description: "después" });
 
-    const rows = await auditFor(row.id);
+    const rows = await auditFor("time_entry", row.id);
     expect(rows).toHaveLength(1);
     expect(rows[0].action).toBe("timeEntry.updateDescription");
     expect(parsed(rows[0].previousValue)).toEqual({ description: "antes" });
@@ -151,7 +109,9 @@ describe("audit log de las mutaciones", () => {
   });
 
   it("el borrado deja la fila entera como valor previo", async () => {
-    const row = await seedEntry({
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
       description: "para borrar",
       startedAt: "2026-10-01T11:00:00Z",
       endedAt: "2026-10-01T12:00:00Z",
@@ -159,7 +119,7 @@ describe("audit log de las mutaciones", () => {
 
     await deleteEntry(actor, { id: row.id });
 
-    const rows = await auditFor(row.id);
+    const rows = await auditFor("time_entry", row.id);
     expect(rows).toHaveLength(1);
     expect(rows[0].action).toBe("timeEntry.delete");
     expect(rows[0].nextValue).toBeNull();
@@ -177,11 +137,15 @@ describe("audit log de las mutaciones", () => {
   });
 
   it("el borrado de una entrada abierta guarda su fin nulo", async () => {
-    const row = await seedEntry({ startedAt: "2026-10-01T11:00:00Z" });
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-01T11:00:00Z",
+    });
 
     await deleteEntry(actor, { id: row.id });
 
-    const rows = await auditFor(row.id);
+    const rows = await auditFor("time_entry", row.id);
     expect(parsed(rows[0].previousValue)).toMatchObject({ endedAt: null });
   });
 });
@@ -189,7 +153,11 @@ describe("audit log de las mutaciones", () => {
 describe("mutaciones rechazadas", () => {
   it("la entrada de otra persona no deja registro", async () => {
     const otherId = await seedMember(workspaceId, "member");
-    const row = await seedEntry({ userId: otherId, startedAt: "2026-10-01T11:00:00Z" });
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: otherId,
+      startedAt: "2026-10-01T11:00:00Z",
+    });
 
     await expect(
       updateDescription(actor, buenosAires, { id: row.id, description: "mía" }),
@@ -197,7 +165,7 @@ describe("mutaciones rechazadas", () => {
     await expect(deleteEntry(actor, { id: row.id })).rejects.toThrow();
     await expect(stopTimer(actor, buenosAires, { id: row.id })).rejects.toThrow();
 
-    expect(await auditRows()).toEqual([]);
+    expect(await auditFor("time_entry")).toEqual([]);
   });
 
   it("el id inexistente no deja registro", async () => {
@@ -205,7 +173,7 @@ describe("mutaciones rechazadas", () => {
       deleteEntry(actor, { id: "0b5e8d5e-3c2f-4b7a-9f1a-2c3d4e5f6a7b" }),
     ).rejects.toThrow();
 
-    expect(await auditRows()).toEqual([]);
+    expect(await auditFor("time_entry")).toEqual([]);
   });
 
   it("detener una entrada ya cerrada no agrega un segundo registro", async () => {
@@ -216,19 +184,23 @@ describe("mutaciones rechazadas", () => {
       stopTimer(actor, buenosAires, { id: started.running.id }),
     ).rejects.toMatchObject({ code: "already_stopped" });
 
-    const rows = await auditFor(started.running.id);
+    const rows = await auditFor("time_entry", started.running.id);
     expect(rows.filter((row) => row.action === "timeEntry.stop")).toHaveLength(1);
   });
 
   it("el fin anterior al inicio deshace también el registro", async () => {
     const future = new Date(Date.now() + 3_600_000).toISOString();
-    const row = await seedEntry({ startedAt: future });
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: future,
+    });
 
     await expect(stopTimer(actor, buenosAires, { id: row.id })).rejects.toMatchObject({
       code: "validation",
     });
 
-    expect(await auditRows()).toEqual([]);
-    expect((await entryById(row.id))?.endedAt).toBeNull();
+    expect(await auditFor("time_entry")).toEqual([]);
+    expect((await timeEntryById(row.id))?.endedAt).toBeNull();
   });
 });

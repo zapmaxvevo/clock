@@ -12,12 +12,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { TimeEntryView } from "@/modules/time-entry/schema";
-
-import { trackerLabels } from "./labels";
 
 type DeleteEntryDialogProps = {
-  readonly entry: TimeEntryView;
+  /** Cómo nombrar la entrada: el mismo texto que muestra la fila. */
+  readonly name: string;
+  readonly startLabel: string;
+  readonly endLabel: string | null;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly onConfirm: () => void;
@@ -27,17 +27,16 @@ type DeleteEntryDialogProps = {
 
 /** TT-60 y TT-61: el borrado es físico, así que se confirma y no se deshace. */
 export function DeleteEntryDialog({
-  entry,
+  name,
+  startLabel,
+  endLabel,
   open,
   onOpenChange,
   onConfirm,
   finalFocus,
 }: DeleteEntryDialogProps) {
-  const name = entry.description === "" ? trackerLabels.noDescription : entry.description;
   const span =
-    entry.endLabel === null
-      ? `desde las ${entry.startLabel}`
-      : `de ${entry.startLabel} a ${entry.endLabel}`;
+    endLabel === null ? `desde las ${startLabel}` : `de ${startLabel} a ${endLabel}`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
