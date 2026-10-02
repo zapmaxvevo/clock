@@ -31,7 +31,9 @@ export const auth = betterAuth({
     updateAge: 60 * 60 * 24,
   },
   advanced: {
-    useSecureCookies: env().NODE_ENV === "production",
+    // Por el esquema de la URL y no por NODE_ENV: todo build corre en
+    // «production», incluido el que se sirve por http en local.
+    useSecureCookies: env().BETTER_AUTH_URL.startsWith("https://"),
     defaultCookieAttributes: { httpOnly: true, sameSite: "lax" },
   },
   emailAndPassword: { enabled: false },

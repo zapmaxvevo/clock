@@ -6,10 +6,13 @@ import { z } from "zod";
 /**
  * Sesión de prueba para los e2e, que no pasan por el login de Google.
  *
- * Solo existe cuando E2E_TEST_SESSION_SECRET está definido y el entorno no es
- * producción: en Vercel esa variable no se carga, así que el endpoint no se
- * registra. El secreto va en la cabecera, de modo que tenerlo habilitado por
- * error tampoco alcanza para entrar.
+ * El endpoint se registra solo si se cumplen dos condiciones: que
+ * E2E_TEST_SESSION_SECRET esté cargada, y que el entorno de Vercel no sea
+ * producción. El discriminante es VERCEL_ENV y no NODE_ENV porque todo build
+ * corre con NODE_ENV en «production», incluido el del preview, donde los e2e
+ * sí necesitan entrar. En producción la variable no se carga y además la
+ * segunda condición lo apaga igual. El secreto viaja en la cabecera, así que
+ * dejarlo habilitado por error tampoco alcanza para entrar.
  */
 const signInBody = z.object({
   email: z.email(),
@@ -19,7 +22,7 @@ const signInBody = z.object({
 export function testSessionEnabled(): boolean {
   const secret = process.env.E2E_TEST_SESSION_SECRET;
   return (
-    process.env.NODE_ENV !== "production" && secret !== undefined && secret.length > 0
+    process.env.VERCEL_ENV !== "production" && secret !== undefined && secret.length > 0
   );
 }
 
