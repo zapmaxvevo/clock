@@ -1,0 +1,5 @@
+.next
+node_modules
+drizzle
+src/server/db/auth-schema.ts
+package-lock.json

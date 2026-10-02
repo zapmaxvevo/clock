@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(git push:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(vercel:*)",
+      "Bash(npx vercel:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh release:*)",
+      "Read(./.env)",
+      "Read(./.env.*)"
+    ],
+    "ask": [
+      "Bash(npm publish:*)",
+      "Bash(drizzle-kit push:*)",
+      "Bash(npm run db:migrate:*)"
+    ]
+  }
+}

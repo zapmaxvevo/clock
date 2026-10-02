@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+        env:
+          # Valores de relleno: el build no se conecta a nada, solo valida el
+          # esquema de entorno.
+          DATABASE_URL: postgresql://user:pass@localhost:5432/clock
+          BETTER_AUTH_SECRET: ci-secret-de-al-menos-32-caracteres-xx
+          BETTER_AUTH_URL: http://localhost:3000
+          GOOGLE_CLIENT_ID: ci
+          GOOGLE_CLIENT_SECRET: ci
+          GOOGLE_WORKSPACE_DOMAINS: ejemplo.com
+          WORKSPACE_OWNER_EMAIL: owner@ejemplo.com
+          CRON_SECRET: ci-cron-secret-largo
+      - run: npm audit --audit-level=high
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: verify
+    if: vars.E2E_BASE_URL != ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+        env:
+          E2E_BASE_URL: ${{ vars.E2E_BASE_URL }}
