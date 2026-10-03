@@ -60,6 +60,17 @@ El reintento es uno solo y no se encadena: lo que lo agota son dos carreras
 seguidas con una detención en el medio, y seguir reintentando contra un cliente
 que arranca y detiene en bucle alarga la petición sin acercarse a un resultado.
 
+> **Nota del 2026-10-03.** El
+> [ADR 0007](0007-el-cliente-elige-el-id-de-las-altas.md), en estado
+> propuesto, enmienda esta sección en dos puntos. Antepone a esta resolución la
+> búsqueda de una entrada propia con el id que eligió el cliente: al principio
+> de cada vuelta y antes de releer al ganador. Y **la violación del índice deja
+> de ser la única señal de carrera**: dos intentos simultáneos del mismo pedido
+> chocan en la clave primaria, `time_entry_pkey`, y esa búsqueda es la que los
+> resuelve. Los tres pasos de arriba y el tope de dos vueltas no cambian; pasan
+> a ser el gancho de `time-entry` sobre `createOnce`. El algoritmo completo está
+> en ese ADR.
+
 ## Consecuencias
 
 - El invariante vive en la base, así que ningún camino futuro —importación,
@@ -76,6 +87,16 @@ que arranca y detiene en bucle alarga la petición sin acercarse a un resultado.
   Con la opción 2 la segunda petición habría esperado al commit de la primera,
   lo que en funciones con tiempo máximo de ejecución agrega un modo de falla
   por timeout.
+
+  > **Nota del 2026-10-03.** Este punto es inexacto, y lo precisa la revisión
+  > del ADR 0007. El perdedor **sí espera**: si había un timer previo, su cierre
+  > espera el bloqueo de esa fila, que tomó el ganador al cerrarla; si no había,
+  > su insert espera el commit de la tupla del ganador con la que choca. Recién
+  > después falla. La espera dura lo que la transacción del ganador, que es
+  > corta, así que la diferencia con la opción 2 es menor que la que dice este
+  > punto: lo que la opción 1 evita es tomar un bloqueo a propósito en cada
+  > arranque, no esperar cuando dos arranques se cruzan.
+
 - El perdedor de la carrera pierde su descripción: queda corriendo el timer del
   ganador. Es lo que pide TT-37 —la interfaz se sincroniza con el estado real—
   y lo que evita que dos pestañas dejen dos entradas abiertas.
@@ -84,6 +105,15 @@ que arranca y detiene en bucle alarga la petición sin acercarse a un resultado.
   primera entrada y abren una segunda de duración casi cero. La interfaz lo
   evita deshabilitando el botón mientras la escritura está en vuelo; la base no
   lo puede distinguir de un arranque legítimo.
+
+  > **Nota del 2026-10-03.** Enmendado por el
+  > [ADR 0007](0007-el-cliente-elige-el-id-de-las-altas.md), en estado
+  > propuesto: un **reintento** del mismo pedido lleva el mismo id y ya no
+  > cierra la entrada que abrió el primer intento, y tampoco lo hace un
+  > «Iniciar» apretado otra vez mientras se ve el aviso de falla por red, que
+  > reusa el id pendiente. Lo de arriba sigue valiendo para **dos clics que
+  > generan dos ids**, que son dos pedidos distintos.
+
 - La opción 3 queda descartada: sin restricción, la carrera de TT-37 deja dos
   filas con `ended_at` nulo y la lectura del timer activo pasa a ser ambigua
   para siempre, sin forma de reparar los datos a posteriori.
@@ -96,3 +126,10 @@ encuentra al ganador. Las dos ramas que agregó la ronda 1 de revisión
 termina en `unexpected`— no se ejercitan. Forzarlas de forma determinista
 necesita un seam de prueba que el contrato descartó a propósito (sin `vi.mock`
 y sin repository inyectable), así que queda anotado en vez de abrir esa puerta.
+
+> **Nota del 2026-10-03.** Desde el slice 2b la parte de las vueltas sale de
+> esta deuda: `createOnce` (ADR 0007) recibe sus dependencias como funciones, y
+> su test de unidad cubre la otra vuelta que pide el gancho y el error que sale
+> al agotarse las dos, sin `vi.mock`. Lo que sigue sin test determinista es que
+> el gancho de `time-entry` pida la otra vuelta contra una base real, porque eso
+> exige que el ganador detenga su timer entre el choque y la relectura.
