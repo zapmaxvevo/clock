@@ -11,8 +11,13 @@ import type { TrackerMode } from "./tracker-mode";
 
 type TrackerScreenProps = {
   readonly actor: Actor;
-  /** Zona horaria (TT-02) y creación del workspace, el piso de la barra manual. */
+  /**
+   * Zona horaria (TT-02), creación del workspace —el piso de la barra manual— y
+   * primer día de la semana de la persona (TT-48).
+   */
   readonly workspace: TrackerWorkspace;
+  /** El `desde` de la URL ya validado, o `null` (ADR 0008). */
+  readonly from: string | null;
   /** Modo recordado en la cookie, para no dibujar el otro y después saltar. */
   readonly initialMode: TrackerMode;
 };
@@ -20,9 +25,10 @@ type TrackerScreenProps = {
 export async function TrackerScreen({
   actor,
   workspace,
+  from,
   initialMode,
 }: TrackerScreenProps) {
-  const state = await getTrackerState(actor, workspace);
+  const state = await getTrackerState(actor, workspace, { from });
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
@@ -45,19 +51,22 @@ export async function TrackerScreen({
         timeZone={state.timeZone}
         todayKey={state.todayKey}
         minDayKey={state.minDayKey}
+        reachFrom={state.reachFrom}
         canTrack={state.canTrack}
         initialMode={initialMode}
       />
 
       {state.hasAnyEntry ? (
         <EntryList
-          days={state.days}
+          weeks={state.weeks}
           running={state.running}
           serverNow={state.serverNow}
           canTrack={state.canTrack}
           todayKey={state.todayKey}
           minDayKey={state.minDayKey}
           lastEntryId={state.lastEntryId}
+          reachFrom={state.reachFrom}
+          loadMoreFrom={state.loadMoreFrom}
         />
       ) : (
         <TrackerEmpty />

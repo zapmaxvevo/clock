@@ -23,10 +23,10 @@ export const trackerLabels = {
     "Esta entrada dura más de un día; sus horarios no se pueden editar acá.",
   /** TT-28: el botón superpuesto al contador. */
   editRunningStart: "Editar la hora de inicio",
-  /** TT-108: una entrada guardada en un día que la lista no dibuja. */
-  outsideWindowTitle: "La entrada se guardó, pero todavía no se ve en la lista.",
-  outsideWindowMessage: (dayLabel: string): string =>
-    `Quedó en el día ${dayLabel}, anterior al tramo que la lista muestra.`,
+  /** TT-52: el enlace que suma la próxima semana con entradas. */
+  loadMore: "Cargar más",
+  /** TT-47: el rótulo del total de la franja de una semana. */
+  weekTotal: "Total",
   /** TT-51: lo que el superíndice `+1` le dice a un lector de pantalla. */
   endsNextDay: " (termina un día después)",
   /** TT-57, TT-58 y TT-65: el aviso nombra la operación que falló. */
