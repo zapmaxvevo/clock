@@ -11,31 +11,81 @@ export type Actor = {
   readonly status: MembershipStatus;
 };
 
-/**
- * Acciones que existen hoy. Cada fase agrega las suyas a esta unión y una fila
- * a la tabla de `can`, y no se decide permiso en ningún otro lugar.
- */
-export type Action =
-  | "workspace.settings.update"
-  | "workspace.transfer"
-  | "workspace.delete"
-  | "team.view"
-  | "team.manage"
-  | "member.invite"
-  | "timeEntry.own.create"
-  | "timeEntry.own.update"
-  | "timeEntry.own.delete";
+export type WorkspaceResource = {
+  readonly kind: "workspace";
+  readonly workspaceId: string;
+};
 
-export type Resource =
-  | { readonly kind: "workspace"; readonly workspaceId: string }
-  | {
-      readonly kind: "membership";
-      readonly workspaceId: string;
-      readonly userId: string;
-      readonly role: Role;
-    }
-  /** `userId` es el dueño de la entrada, no quien actúa. */
-  | { readonly kind: "timeEntry"; readonly workspaceId: string; readonly userId: string };
+export type MembershipResource = {
+  readonly kind: "membership";
+  readonly workspaceId: string;
+  readonly userId: string;
+  readonly role: Role;
+};
+
+export type TimeEntryResource = {
+  readonly kind: "timeEntry";
+  readonly workspaceId: string;
+  /** El dueño de la entrada, no quien actúa. */
+  readonly userId: string;
+};
+
+export type ProjectResource = {
+  readonly kind: "project";
+  readonly workspaceId: string;
+  readonly isPublic: boolean;
+  /** La fila de `project_member` de quien actúa, o `null` si no es miembro. */
+  readonly viewer: { readonly isManager: boolean } | null;
+};
+
+/**
+ * Cada acción y la clase de recurso que recibe. Cada fase agrega las suyas acá
+ * y una fila a las tablas de `can`, y no se decide permiso en ningún otro
+ * lugar.
+ */
+type ResourceByAction = {
+  "workspace.settings.update": WorkspaceResource;
+  "workspace.transfer": WorkspaceResource;
+  "workspace.delete": WorkspaceResource;
+  "team.view": WorkspaceResource;
+  "team.manage": WorkspaceResource | MembershipResource;
+  "member.invite": WorkspaceResource;
+  "timeEntry.own.create": TimeEntryResource;
+  "timeEntry.own.update": TimeEntryResource;
+  "timeEntry.own.delete": TimeEntryResource;
+  // En la fase 1 `whoCreatesProjects` no entra en la decisión (P-18). Cuando
+  // entre, estas dos declaran un recurso propio que lo lleva: ADR 0009.
+  "client.create": WorkspaceResource;
+  "project.create": WorkspaceResource;
+  "project.view": ProjectResource;
+  "project.track": ProjectResource;
+  "task.create": ProjectResource;
+};
+
+export type Action = keyof ResourceByAction;
+export type ResourceFor<A extends Action> = ResourceByAction[A];
+export type Resource = ResourceByAction[Action];
+
+/**
+ * La misma tabla que `ResourceByAction`, para comprobarla en tiempo de
+ * ejecución: cubre lo que el tipo no ve, como un `as` o un `Resource` ancho.
+ */
+const resourceKinds = {
+  "workspace.settings.update": ["workspace"],
+  "workspace.transfer": ["workspace"],
+  "workspace.delete": ["workspace"],
+  "team.view": ["workspace"],
+  "team.manage": ["workspace", "membership"],
+  "member.invite": ["workspace"],
+  "timeEntry.own.create": ["timeEntry"],
+  "timeEntry.own.update": ["timeEntry"],
+  "timeEntry.own.delete": ["timeEntry"],
+  "client.create": ["workspace"],
+  "project.create": ["workspace"],
+  "project.view": ["project"],
+  "project.track": ["project"],
+  "task.create": ["project"],
+} satisfies { [A in Action]: readonly ResourceFor<A>["kind"][] };
 
 const everyone: readonly Role[] = [
   "owner",
@@ -55,17 +105,58 @@ const allowedRoles: Record<Action, readonly Role[]> = {
   "timeEntry.own.create": everyone,
   "timeEntry.own.update": everyone,
   "timeEntry.own.delete": everyone,
+  "client.create": everyone,
+  "project.create": everyone,
+  "project.view": everyone,
+  "project.track": everyone,
+  "task.create": everyone,
 };
+
+/**
+ * Lo que da algo sobre un proyecto es ser owner o admin, o la fila de
+ * `project_member`; el resto de los roles decide como `member` (PR-57).
+ */
+function isWorkspaceAdmin(actor: Actor): boolean {
+  return actor.role === "owner" || actor.role === "admin";
+}
+
+function allowsOnProject(
+  actor: Actor,
+  action: Action,
+  project: ProjectResource,
+): boolean {
+  switch (action) {
+    // PR-61: owner y admin ven también los privados de los que no son miembros.
+    case "project.view":
+      return project.isPublic || project.viewer !== null || isWorkspaceAdmin(actor);
+    // TT-08: para cargar horas en un privado hay que ser miembro; el rol no alcanza.
+    case "project.track":
+      return project.isPublic || project.viewer !== null;
+    // PR-40.
+    case "task.create":
+      return isWorkspaceAdmin(actor) || project.viewer?.isManager === true;
+    default:
+      return false;
+  }
+}
 
 /**
  * Única decisión de acceso del servidor. La interfaz la llama para ocultar
  * controles y cada action la vuelve a llamar antes de tocar datos.
  */
-export function can(actor: Actor, action: Action, resource: Resource): boolean {
+export function can<A extends Action>(
+  actor: Actor,
+  action: A,
+  resource: ResourceFor<A>,
+): boolean {
   if (actor.status !== "active") {
     return false;
   }
   if (resource.workspaceId !== actor.workspaceId) {
+    return false;
+  }
+  const kinds: readonly string[] = resourceKinds[action];
+  if (!kinds.includes(resource.kind)) {
     return false;
   }
   if (!allowedRoles[action].includes(actor.role)) {
@@ -84,6 +175,9 @@ export function can(actor: Actor, action: Action, resource: Resource): boolean {
   ) {
     return false;
   }
+  if (resource.kind === "project") {
+    return allowsOnProject(actor, action, resource);
+  }
   return true;
 }
 
@@ -97,7 +191,11 @@ export class ForbiddenError extends Error {
 }
 
 /** Variante que corta la operación. La usan las server actions. */
-export function assertCan(actor: Actor, action: Action, resource: Resource): void {
+export function assertCan<A extends Action>(
+  actor: Actor,
+  action: A,
+  resource: ResourceFor<A>,
+): void {
   if (!can(actor, action, resource)) {
     throw new ForbiddenError(action);
   }

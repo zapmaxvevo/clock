@@ -53,8 +53,11 @@ src/
     permissions/       can(actor, action, resource)
     time/              zonas horarias, semanas, duración, redondeo
     audit.ts
+    action.ts          ActionResult, DomainError, failure y handle de las actions
+    create-once.ts     altas idempotentes con el id que elige el cliente (ADR 0007)
     env.ts             variables de entorno validadas con Zod
   components/ui/       primitivas compartidas (shadcn/ui)
+  lib/text.ts          predicados de texto que comparten servidor y navegador
 e2e/                   Playwright
 drizzle/               migraciones SQL versionadas
 docs/parity/           especificación de paridad por módulo
