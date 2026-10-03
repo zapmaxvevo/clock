@@ -15,6 +15,7 @@ import {
   clockDifferenceMinutes,
   crossesMidnight,
   dayKeyLabel,
+  earliestDayKey,
   instantFromLocal,
   isAfterYear9999,
   isClock,
@@ -97,6 +98,24 @@ function daysOfYear(year: number): string[] {
   }
   return days;
 }
+
+describe("earliestDayKey", () => {
+  it("devuelve el día más viejo, sin importar el orden", () => {
+    expect(earliestDayKey("2026-10-01", "2025-12-31", "2026-09-30")).toBe("2025-12-31");
+    expect(earliestDayKey("2026-09-30", "2026-10-01")).toBe("2026-09-30");
+    expect(earliestDayKey("2026-10-01", "2026-09-30")).toBe("2026-09-30");
+  });
+
+  it("con una sola clave o con claves iguales, esa", () => {
+    expect(earliestDayKey("2026-10-01")).toBe("2026-10-01");
+    expect(earliestDayKey("2026-10-01", "2026-10-01")).toBe("2026-10-01");
+  });
+
+  it("sin claves, null", () => {
+    const none: readonly string[] = [];
+    expect(earliestDayKey(...none)).toBeNull();
+  });
+});
 
 describe("weekStartKey", () => {
   it("corta en el lunes o en el domingo según el primer día de la persona (TT-48)", () => {

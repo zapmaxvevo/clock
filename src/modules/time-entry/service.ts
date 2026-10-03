@@ -10,6 +10,7 @@ import {
   dayKey,
   dayLabel,
   durationSeconds,
+  earliestDayKey,
   extraDays,
   formatClock,
   formatDuration,
@@ -886,11 +887,6 @@ export async function updateRunningStart(
   return { running: toView(updated, workspace) };
 }
 
-/** El menor de varios días: las claves se ordenan como el calendario. */
-function earliestKey(first: string, ...rest: readonly string[]): string {
-  return rest.reduce((earliest, key) => (key < earliest ? key : earliest), first);
-}
-
 type WindowFloors = {
   /** Primer día de la semana más vieja que se dibuja. */
   readonly windowFrom: string;
@@ -924,13 +920,13 @@ function windowFloors(
   if (from !== null) {
     candidates.push(from);
   }
-  const earliest = earliestKey(...candidates);
+  const earliest = earliestDayKey(...candidates);
   const floor = workspaceFloorDayKey(workspace);
   const reachDay = earliest < floor ? floor : earliest;
   const windowDay =
     running === undefined
       ? reachDay
-      : earliestKey(reachDay, dayKey(running.startedAt, timeZone));
+      : earliestDayKey(reachDay, dayKey(running.startedAt, timeZone));
   return {
     windowFrom: weekStartKey(windowDay, workspace.weekStart),
     reachFrom: weekStartKey(reachDay, workspace.weekStart),

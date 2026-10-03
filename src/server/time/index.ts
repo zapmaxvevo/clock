@@ -190,6 +190,19 @@ export function dayKeyLabel(dayKey: string, todayKey: string): string {
   return format(civil, sameYear ? "EEE, dd/MM" : "EEE, dd/MM/yyyy", { locale: es });
 }
 
+/**
+ * El menor de varios días. Las claves "AAAA-MM-DD" se ordenan como el
+ * calendario, así que la comparación es de cadenas. Sin claves, `null`.
+ */
+export function earliestDayKey(first: string, ...rest: readonly string[]): string;
+export function earliestDayKey(...keys: readonly string[]): string | null;
+export function earliestDayKey(...keys: readonly string[]): string | null {
+  return keys.reduce<string | null>(
+    (earliest, key) => (earliest === null || key < earliest ? key : earliest),
+    null,
+  );
+}
+
 const WEEK_STARTS: readonly WeekStart[] = [0, 1, 2, 3, 4, 5, 6];
 
 /** El número de la columna como `WeekStart`; lanza si no está entre 0 y 6. */
