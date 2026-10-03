@@ -915,7 +915,9 @@ function windowFloors(
   from: string | null,
 ): WindowFloors {
   const timeZone = workspace.timezone;
-  const candidates = [addDaysToKey(todayKey, -(TRACKER_WINDOW_DAYS - 1))];
+  const candidates: [string, ...string[]] = [
+    addDaysToKey(todayKey, -(TRACKER_WINDOW_DAYS - 1)),
+  ];
   if (latestPast !== undefined) {
     candidates.push(dayKey(latestPast.startedAt, timeZone));
   }

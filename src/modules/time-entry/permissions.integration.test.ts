@@ -22,6 +22,7 @@ import {
   updateDescription,
   updateEntryTimes,
   updateRunningStart,
+  type TrackerWorkspace,
 } from "./service";
 
 /** Las 12:00 del 2 de octubre de 2026 en Buenos Aires. */
@@ -37,7 +38,11 @@ const roles: readonly Role[] = [
 const notActive: readonly MembershipStatus[] = ["inactive", "invited"];
 
 /** El workspace tal como lo recibe el service. El piso no estorba a estos casos. */
-const workspace = { timezone: buenosAires, createdAt: new Date("2020-01-01T00:00:00Z") };
+const workspace: TrackerWorkspace = {
+  timezone: buenosAires,
+  createdAt: new Date("2020-01-01T00:00:00Z"),
+  weekStart: 1,
+};
 
 /** El trío de la edición de horas sobre las entradas cerradas sembradas acá. */
 const timesValues = { date: "2026-10-01", start: "09:00", end: "10:30" } as const;
@@ -79,7 +84,7 @@ describe.each(roles)("rol %s", (role) => {
     it("arranca su propio timer", async () => {
       const actor = await seedActor(role);
 
-      const result = await startTimer(actor, buenosAires, {
+      const result = await startTimer(actor, workspace, {
         id: randomUUID(),
         description: "trabajo",
       });
@@ -88,14 +93,14 @@ describe.each(roles)("rol %s", (role) => {
       expect(row?.userId).toBe(actor.userId);
       expect(row?.workspaceId).toBe(workspaceId);
       expect(row?.endedAt).toBeNull();
-      const state = await getTrackerState(actor, workspace, trackerNow);
+      const state = await getTrackerState(actor, workspace, { from: null }, trackerNow);
       expect(state.canTrack).toBe(true);
     });
 
     it("agrega tiempo a mano sobre una entrada propia", async () => {
       const actor = await seedActor(role);
 
-      const result = await createManualEntry(actor, workspace, manualValues, trackerNow);
+      const result = await createManualEntry(actor, workspace, manualValues);
 
       const row = await timeEntryById(result.created.id);
       expect(row?.userId).toBe(actor.userId);
@@ -107,7 +112,7 @@ describe.each(roles)("rol %s", (role) => {
       const actor = await seedActor(role, status);
 
       await expect(
-        createManualEntry(actor, workspace, manualValues, trackerNow),
+        createManualEntry(actor, workspace, manualValues),
       ).rejects.toMatchObject({
         code: "forbidden",
         message: timeEntryMessages.forbidden,
@@ -119,7 +124,7 @@ describe.each(roles)("rol %s", (role) => {
       const actor = await seedActor(role, status);
 
       await expect(
-        startTimer(actor, buenosAires, { id: randomUUID(), description: "no va" }),
+        startTimer(actor, workspace, { id: randomUUID(), description: "no va" }),
       ).rejects.toMatchObject({
         code: "forbidden",
         message: timeEntryMessages.forbidden,
@@ -133,7 +138,7 @@ describe.each(roles)("rol %s", (role) => {
       async (status) => {
         const actor = await seedActor(role, status);
 
-        const state = await getTrackerState(actor, workspace, trackerNow);
+        const state = await getTrackerState(actor, workspace, { from: null }, trackerNow);
 
         // La vista, no la mutación: el mismo `can()` que corta el arranque.
         expect(state.canTrack).toBe(false);
@@ -144,16 +149,16 @@ describe.each(roles)("rol %s", (role) => {
   describe("timeEntry.own.update", () => {
     it("edita y detiene su propia entrada", async () => {
       const actor = await seedActor(role);
-      const started = await startTimer(actor, buenosAires, {
+      const started = await startTimer(actor, workspace, {
         id: randomUUID(),
         description: "",
       });
 
-      await updateDescription(actor, buenosAires, {
+      await updateDescription(actor, workspace, {
         id: started.running.id,
         description: "revisión",
       });
-      const result = await stopTimer(actor, buenosAires, { id: started.running.id });
+      const result = await stopTimer(actor, workspace, { id: started.running.id });
 
       expect(result.stopped.description).toBe("revisión");
       const row = await timeEntryById(started.running.id);
@@ -172,12 +177,12 @@ describe.each(roles)("rol %s", (role) => {
       });
 
       await expect(
-        updateDescription(actor, buenosAires, { id: row.id, description: "mía" }),
+        updateDescription(actor, workspace, { id: row.id, description: "mía" }),
       ).rejects.toMatchObject({
         code: "forbidden",
         message: timeEntryMessages.forbiddenOtherOwner,
       });
-      await expect(stopTimer(actor, buenosAires, { id: row.id })).rejects.toMatchObject({
+      await expect(stopTimer(actor, workspace, { id: row.id })).rejects.toMatchObject({
         code: "forbidden",
         message: timeEntryMessages.forbiddenOtherOwner,
       });
@@ -199,17 +204,15 @@ describe.each(roles)("rol %s", (role) => {
         });
 
         await expect(
-          updateDescription(actor, buenosAires, { id: row.id, description: "otra" }),
+          updateDescription(actor, workspace, { id: row.id, description: "otra" }),
         ).rejects.toMatchObject({
           code: "forbidden",
           message: timeEntryMessages.forbidden,
         });
-        await expect(stopTimer(actor, buenosAires, { id: row.id })).rejects.toMatchObject(
-          {
-            code: "forbidden",
-            message: timeEntryMessages.forbidden,
-          },
-        );
+        await expect(stopTimer(actor, workspace, { id: row.id })).rejects.toMatchObject({
+          code: "forbidden",
+          message: timeEntryMessages.forbidden,
+        });
 
         const after = await timeEntryById(row.id);
         expect(after?.description).toBe("propia");
@@ -231,12 +234,7 @@ describe.each(roles)("rol %s", (role) => {
         startedAt: "2026-10-02T11:00:00Z",
       });
 
-      await updateEntryTimes(
-        actor,
-        workspace,
-        { id: closed.id, ...timesValues },
-        trackerNow,
-      );
+      await updateEntryTimes(actor, workspace, { id: closed.id, ...timesValues });
       await updateRunningStart(
         actor,
         workspace,
@@ -268,7 +266,7 @@ describe.each(roles)("rol %s", (role) => {
       });
 
       await expect(
-        updateEntryTimes(actor, workspace, { id: closed.id, ...timesValues }, trackerNow),
+        updateEntryTimes(actor, workspace, { id: closed.id, ...timesValues }),
       ).rejects.toMatchObject({
         code: "forbidden",
         message: timeEntryMessages.forbiddenOtherOwner,
@@ -310,12 +308,7 @@ describe.each(roles)("rol %s", (role) => {
         });
 
         await expect(
-          updateEntryTimes(
-            actor,
-            workspace,
-            { id: closed.id, ...timesValues },
-            trackerNow,
-          ),
+          updateEntryTimes(actor, workspace, { id: closed.id, ...timesValues }),
         ).rejects.toMatchObject({
           code: "forbidden",
           message: timeEntryMessages.forbidden,
@@ -419,11 +412,11 @@ describe.each(roles)("rol %s", (role) => {
       const actor = await seedActor(role);
       const source = await seedSource(actor.userId);
 
-      const copy = await duplicateEntry(actor, buenosAires, {
+      const copy = await duplicateEntry(actor, workspace, {
         id: randomUUID(),
         sourceId: source.id,
       });
-      const continued = await continueEntry(actor, buenosAires, {
+      const continued = await continueEntry(actor, workspace, {
         id: randomUUID(),
         sourceId: source.id,
       });
@@ -445,10 +438,10 @@ describe.each(roles)("rol %s", (role) => {
       };
 
       await expect(
-        continueEntry(actor, buenosAires, { id: randomUUID(), sourceId: source.id }),
+        continueEntry(actor, workspace, { id: randomUUID(), sourceId: source.id }),
       ).rejects.toMatchObject(expected);
       await expect(
-        duplicateEntry(actor, buenosAires, { id: randomUUID(), sourceId: source.id }),
+        duplicateEntry(actor, workspace, { id: randomUUID(), sourceId: source.id }),
       ).rejects.toMatchObject(expected);
       await expect(discardTimer(actor, { id: running.id })).rejects.toMatchObject(
         expected,
@@ -466,10 +459,10 @@ describe.each(roles)("rol %s", (role) => {
         const expected = { code: "forbidden", message: timeEntryMessages.forbidden };
 
         await expect(
-          continueEntry(actor, buenosAires, { id: randomUUID(), sourceId: source.id }),
+          continueEntry(actor, workspace, { id: randomUUID(), sourceId: source.id }),
         ).rejects.toMatchObject(expected);
         await expect(
-          duplicateEntry(actor, buenosAires, { id: randomUUID(), sourceId: source.id }),
+          duplicateEntry(actor, workspace, { id: randomUUID(), sourceId: source.id }),
         ).rejects.toMatchObject(expected);
         await expect(discardTimer(actor, { id: running.id })).rejects.toMatchObject(
           expected,
@@ -497,12 +490,12 @@ describe("aislamiento entre workspaces", () => {
     });
 
     // Entre workspaces no se filtra ni siquiera la existencia de la fila.
-    await expect(stopTimer(outsider, buenosAires, { id: row.id })).rejects.toMatchObject({
+    await expect(stopTimer(outsider, workspace, { id: row.id })).rejects.toMatchObject({
       code: "not_found",
       message: timeEntryMessages.notFound,
     });
     await expect(
-      updateDescription(outsider, buenosAires, { id: row.id, description: "mía" }),
+      updateDescription(outsider, workspace, { id: row.id, description: "mía" }),
     ).rejects.toMatchObject({ code: "not_found", message: timeEntryMessages.notFound });
     await expect(deleteEntry(outsider, { id: row.id })).rejects.toMatchObject({
       code: "not_found",
@@ -532,11 +525,11 @@ describe("aislamiento entre workspaces", () => {
       startedAt: "2026-10-02T11:00:00Z",
     });
 
-    await expect(stopTimer(elsewhere, buenosAires, { id: row.id })).rejects.toMatchObject(
-      { code: "not_found" },
-    );
+    await expect(stopTimer(elsewhere, workspace, { id: row.id })).rejects.toMatchObject({
+      code: "not_found",
+    });
     await expect(
-      updateDescription(elsewhere, buenosAires, { id: row.id, description: "mía" }),
+      updateDescription(elsewhere, workspace, { id: row.id, description: "mía" }),
     ).rejects.toMatchObject({ code: "not_found" });
     await expect(deleteEntry(elsewhere, { id: row.id })).rejects.toMatchObject({
       code: "not_found",
@@ -572,18 +565,26 @@ describe("aislamiento entre workspaces", () => {
       startedAt: "2026-10-02T13:00:00Z",
     });
 
-    const outside = await getTrackerState(elsewhere, workspace, trackerNow);
+    const outside = await getTrackerState(
+      elsewhere,
+      workspace,
+      { from: null },
+      trackerNow,
+    );
     const inside = await getTrackerState(
       { userId: ownerId, workspaceId, role: "owner", status: "active" },
       workspace,
+      { from: null },
       trackerNow,
     );
 
     expect(outside.hasAnyEntry).toBe(false);
-    expect(outside.days).toEqual([]);
+    expect(outside.weeks).toEqual([]);
     expect(outside.running).toBeNull();
     expect(inside.running?.description).toBe("corriendo");
-    expect(inside.days.flatMap((day) => day.entries)).toHaveLength(1);
+    expect(
+      inside.weeks.flatMap((week) => week.days).flatMap((day) => day.entries),
+    ).toHaveLength(1);
   });
 
   it("un actor de otro workspace agrega su entrada a mano allá y no acá", async () => {
@@ -597,7 +598,7 @@ describe("aislamiento entre workspaces", () => {
 
     // El workspace que recibe el service solo aporta la zona y el piso; de
     // dónde es la fila lo decide el actor.
-    const result = await createManualEntry(outsider, workspace, manualValues, trackerNow);
+    const result = await createManualEntry(outsider, workspace, manualValues);
 
     const row = await timeEntryById(result.created.id);
     expect(row?.workspaceId).toBe(other.workspaceId);
@@ -606,10 +607,11 @@ describe("aislamiento entre workspaces", () => {
     const here = await getTrackerState(
       { userId: ownerId, workspaceId, role: "owner", status: "active" },
       workspace,
+      { from: null },
       trackerNow,
     );
     expect(here.hasAnyEntry).toBe(false);
-    expect(here.days).toEqual([]);
+    expect(here.weeks).toEqual([]);
   });
 
   it("la entrada a mano del mismo usuario cae en el workspace de la sesión", async () => {
@@ -631,12 +633,7 @@ describe("aislamiento entre workspaces", () => {
       endedAt: "2026-10-02T12:00:00Z",
     });
 
-    const result = await createManualEntry(
-      elsewhere,
-      workspace,
-      manualValues,
-      trackerNow,
-    );
+    const result = await createManualEntry(elsewhere, workspace, manualValues);
 
     expect((await timeEntryById(result.created.id))?.workspaceId).toBe(other.workspaceId);
     const here = await timeEntriesOf(workspaceId, ownerId);
@@ -646,10 +643,14 @@ describe("aislamiento entre workspaces", () => {
     const state = await getTrackerState(
       { userId: ownerId, workspaceId, role: "owner", status: "active" },
       workspace,
+      { from: null },
       trackerNow,
     );
     expect(
-      state.days.flatMap((day) => day.entries).map((entry) => entry.id),
+      state.weeks
+        .flatMap((week) => week.days)
+        .flatMap((day) => day.entries)
+        .map((entry) => entry.id),
     ).not.toContain(result.created.id);
   });
 
@@ -673,7 +674,7 @@ describe("aislamiento entre workspaces", () => {
 
     // El corte de TT-30 mira el timer del workspace de la sesión, no el de
     // cualquier workspace de la persona.
-    const result = await createManualEntry(actor, workspace, manualValues, trackerNow);
+    const result = await createManualEntry(actor, workspace, manualValues);
 
     expect((await timeEntryById(result.created.id))?.workspaceId).toBe(workspaceId);
     expect((await timeEntryById(running.id))?.endedAt).toBeNull();
@@ -697,7 +698,7 @@ describe("aislamiento entre workspaces", () => {
       startedAt: "2026-10-02T11:00:00Z",
     });
 
-    const started = await startTimer(elsewhere, buenosAires, {
+    const started = await startTimer(elsewhere, workspace, {
       id: randomUUID(),
       description: "corriendo allá",
     });
@@ -734,12 +735,7 @@ describe("aislamiento entre workspaces en la edición de horas", () => {
     });
 
     await expect(
-      updateEntryTimes(
-        outsider,
-        workspace,
-        { id: closed.id, ...timesValues },
-        trackerNow,
-      ),
+      updateEntryTimes(outsider, workspace, { id: closed.id, ...timesValues }),
     ).rejects.toMatchObject({ code: "not_found", message: timeEntryMessages.notFound });
     await expect(
       updateRunningStart(
@@ -776,13 +772,16 @@ describe("membresía que dejó de estar activa", () => {
       startedAt: "2026-10-02T13:00:00Z",
     });
 
-    const state = await getTrackerState(actor, workspace, trackerNow);
+    const state = await getTrackerState(actor, workspace, { from: null }, trackerNow);
 
     expect(state.canTrack).toBe(false);
     expect(state.hasAnyEntry).toBe(true);
     expect(state.running?.description).toBe("corriendo");
     expect(
-      state.days.flatMap((day) => day.entries).map((entry) => entry.description),
+      state.weeks
+        .flatMap((week) => week.days)
+        .flatMap((day) => day.entries)
+        .map((entry) => entry.description),
     ).toEqual(["cerrada"]);
   });
 });
@@ -800,7 +799,7 @@ describe("el permiso va antes que la fila propia (ADR 0007)", () => {
       });
 
       await expect(
-        startTimer(actor, buenosAires, { id: own.id, description: "propia" }),
+        startTimer(actor, workspace, { id: own.id, description: "propia" }),
       ).rejects.toMatchObject({
         code: "forbidden",
         message: timeEntryMessages.forbidden,
@@ -828,11 +827,11 @@ describe("el permiso va antes que la fila propia en continuar y duplicar (ADR 00
       });
       const values = { id: own.id, sourceId: source.id };
 
-      await expect(continueEntry(actor, buenosAires, values)).rejects.toMatchObject({
+      await expect(continueEntry(actor, workspace, values)).rejects.toMatchObject({
         code: "forbidden",
         message: timeEntryMessages.forbidden,
       });
-      await expect(duplicateEntry(actor, buenosAires, values)).rejects.toMatchObject({
+      await expect(duplicateEntry(actor, workspace, values)).rejects.toMatchObject({
         code: "forbidden",
         message: timeEntryMessages.forbidden,
       });
@@ -864,10 +863,10 @@ describe("aislamiento entre workspaces en continuar, duplicar y descartar", () =
     const missing = { code: "not_found", message: timeEntryMessages.notFound };
 
     await expect(
-      continueEntry(outsider, buenosAires, { id: randomUUID(), sourceId: source.id }),
+      continueEntry(outsider, workspace, { id: randomUUID(), sourceId: source.id }),
     ).rejects.toMatchObject(missing);
     await expect(
-      duplicateEntry(outsider, buenosAires, { id: randomUUID(), sourceId: source.id }),
+      duplicateEntry(outsider, workspace, { id: randomUUID(), sourceId: source.id }),
     ).rejects.toMatchObject(missing);
     // Lo que se pidió es que ese timer no esté: para quien no lo ve, no está.
     await expect(discardTimer(outsider, { id: running.id })).resolves.toEqual({

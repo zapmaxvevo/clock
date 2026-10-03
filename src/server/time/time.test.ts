@@ -21,11 +21,16 @@ import {
   parseClockInput,
   parseDayKey,
   parseDurationInput,
+  parseWeekStart,
   shiftClock,
   startOfDayBefore,
+  startOfDayKey,
   startOfLocalDay,
   toDayKey,
   weekBounds,
+  weekKeyLabel,
+  weekStartKey,
+  type WeekStart,
 } from "./index";
 
 const buenosAires = "America/Argentina/Buenos_Aires";
@@ -73,6 +78,179 @@ describe("weekBounds", () => {
   it("arranca el domingo cuando el usuario lo configura así", () => {
     const { start } = weekBounds(new Date("2026-10-02T12:00:00Z"), buenosAires, 0);
     expect(start.toISOString()).toBe("2026-09-27T03:00:00.000Z");
+  });
+});
+
+const santiago = "America/Santiago";
+const allWeekStarts: readonly WeekStart[] = [0, 1, 2, 3, 4, 5, 6];
+
+/** Día de la semana de una clave, calculado aparte de `weekStartKey`. */
+function weekdayOf(key: string): number {
+  return new Date(`${key}T12:00:00Z`).getUTCDay();
+}
+
+/** Las claves de todos los días de un año. */
+function daysOfYear(year: number): string[] {
+  const days: string[] = [];
+  for (let key = `${year}-01-01`; key.startsWith(`${year}`); key = addDaysToKey(key, 1)) {
+    days.push(key);
+  }
+  return days;
+}
+
+describe("weekStartKey", () => {
+  it("corta en el lunes o en el domingo según el primer día de la persona (TT-48)", () => {
+    // El domingo 04/10/2026 cierra la semana del lunes 28/09 y abre la del domingo.
+    expect(weekStartKey("2026-10-04", 1)).toBe("2026-09-28");
+    expect(weekStartKey("2026-10-04", 0)).toBe("2026-10-04");
+    expect(weekStartKey("2026-09-28", 1)).toBe("2026-09-28");
+    expect(weekStartKey("2026-10-03", 6)).toBe("2026-10-03");
+  });
+
+  it("cruza el mes y el año", () => {
+    expect(weekStartKey("2026-01-01", 1)).toBe("2025-12-29");
+    expect(weekStartKey("2026-03-01", 1)).toBe("2026-02-23");
+  });
+
+  it("deja tal cual una clave que no es un día", () => {
+    expect(weekStartKey("2026-02-30", 1)).toBe("2026-02-30");
+  });
+});
+
+describe("startOfDayKey", () => {
+  it("es la medianoche local de un día común", () => {
+    expect(startOfDayKey("2026-10-02", buenosAires).toISOString()).toBe(
+      "2026-10-02T03:00:00.000Z",
+    );
+  });
+
+  it("es la 01:00 el día en que Santiago no tiene 00:00", () => {
+    // El 06/09/2026 Santiago salta de las 00:00 a las 01:00.
+    const start = startOfDayKey("2026-09-06", santiago);
+    expect(start.toISOString()).toBe("2026-09-06T04:00:00.000Z");
+    expect(dayKey(start, santiago)).toBe("2026-09-06");
+    expect(dayKey(new Date(start.getTime() - 1), santiago)).toBe("2026-09-05");
+  });
+
+  it("lanza en un día que no existe en la zona", () => {
+    // Samoa pasó del 29 al 31 de diciembre de 2011.
+    expect(() => startOfDayKey("2011-12-30", "Pacific/Apia")).toThrow(RangeError);
+  });
+
+  it("lanza en un día cuyo adelanto de hora arranca a las 12:00", () => {
+    expect(() => startOfDayKey("2000-01-15", "Africa/Khartoum")).toThrow(RangeError);
+  });
+
+  // Falla conocida heredada de `startOfLocalDay` (contrato del slice 5, §8): el
+  // instante cae en el día, pero 60 minutos después de su primer instante real,
+  // así que el milisegundo anterior también es del mismo día. Si una versión
+  // nueva de date-fns la corrige, estos casos avisan.
+  it.each([
+    ["Australia/Sydney", "1990-03-04"],
+    ["America/Argentina/Salta", "1991-10-20"],
+  ])(
+    "falla conocida: en %s el %s el milisegundo anterior sigue en el día",
+    (zone, key) => {
+      const start = startOfDayKey(key, zone);
+      expect(dayKey(start, zone)).toBe(key);
+      expect(dayKey(new Date(start.getTime() - 1), zone)).toBe(key);
+    },
+  );
+});
+
+describe("los cortes de semana sobre todos los días de 2026 (TT-97)", () => {
+  const days = daysOfYear(2026);
+
+  it.each([madrid, buenosAires, santiago])(
+    "%s: startOfDayKey cae en su día y el milisegundo anterior en el día previo",
+    (zone) => {
+      const failures = days.filter((key) => {
+        const start = startOfDayKey(key, zone);
+        return (
+          dayKey(start, zone) !== key ||
+          dayKey(new Date(start.getTime() - 1), zone) !== addDaysToKey(key, -1)
+        );
+      });
+      expect(failures).toEqual([]);
+    },
+  );
+
+  it.each([madrid, buenosAires, santiago])(
+    "%s: weekBounds de cualquier instante del día da la semana de weekStartKey",
+    (zone) => {
+      const failures: string[] = [];
+      for (const weekStart of allWeekStarts) {
+        for (const key of days) {
+          const first = weekStartKey(key, weekStart);
+          const offset = parseDayKey(key) === null ? -1 : daysBetween(first, key);
+          const start = startOfDayKey(first, zone).getTime();
+          const end = startOfDayKey(addDaysToKey(first, 7), zone).getTime();
+          const firstInstant = startOfDayKey(key, zone);
+          const lastInstant = new Date(
+            startOfDayKey(addDaysToKey(key, 1), zone).getTime() - 1,
+          );
+          const cuts = [firstInstant, lastInstant].map((instant) =>
+            weekBounds(instant, zone, weekStart),
+          );
+          const consistent =
+            weekdayOf(first) === weekStart &&
+            offset >= 0 &&
+            offset <= 6 &&
+            cuts.every(
+              (cut) => cut.start.getTime() === start && cut.end.getTime() === end,
+            );
+          if (!consistent) {
+            failures.push(`${weekStart} ${key}`);
+          }
+        }
+      }
+      expect(failures).toEqual([]);
+    },
+  );
+});
+
+/** Días civiles entre dos claves, aparte de las funciones bajo prueba. */
+function daysBetween(from: string, to: string): number {
+  return Math.round(
+    (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000,
+  );
+}
+
+describe("weekKeyLabel", () => {
+  it("rotula esta semana y la anterior", () => {
+    expect(weekKeyLabel("2026-09-28", "2026-10-02", 1)).toBe("Esta semana");
+    expect(weekKeyLabel("2026-09-21", "2026-10-02", 1)).toBe("Semana anterior");
+  });
+
+  it("mide esta semana con el primer día de la persona", () => {
+    expect(weekKeyLabel("2026-09-27", "2026-10-02", 0)).toBe("Esta semana");
+    expect(weekKeyLabel("2026-09-20", "2026-10-02", 0)).toBe("Semana anterior");
+    // El domingo 04/10 abre semana con domingo y cierra la del lunes 28/09.
+    expect(weekKeyLabel("2026-09-27", "2026-10-04", 0)).toBe("Semana anterior");
+    expect(weekKeyLabel("2026-09-28", "2026-10-04", 1)).toBe("Esta semana");
+  });
+
+  it("rotula con el rango una semana más vieja y una futura (TT-47)", () => {
+    expect(weekKeyLabel("2026-09-14", "2026-10-02", 1)).toBe("14/09 – 20/09");
+    expect(weekKeyLabel("2026-10-05", "2026-10-02", 1)).toBe("05/10 – 11/10");
+  });
+
+  it("lleva el año en los dos extremos si alguno no es del año de hoy", () => {
+    expect(weekKeyLabel("2025-12-29", "2026-03-10", 1)).toBe("29/12/2025 – 04/01/2026");
+    expect(weekKeyLabel("2026-12-28", "2026-03-10", 1)).toBe("28/12/2026 – 03/01/2027");
+    expect(weekKeyLabel("2025-06-02", "2026-03-10", 1)).toBe("02/06/2025 – 08/06/2025");
+  });
+});
+
+describe("parseWeekStart", () => {
+  it("devuelve los siete valores tal cual", () => {
+    expect(allWeekStarts.map((value) => parseWeekStart(value))).toEqual([
+      0, 1, 2, 3, 4, 5, 6,
+    ]);
+  });
+
+  it.each([7, -1, 1.5, Number.NaN])("lanza con %s", (value) => {
+    expect(() => parseWeekStart(value)).toThrow(RangeError);
   });
 });
 

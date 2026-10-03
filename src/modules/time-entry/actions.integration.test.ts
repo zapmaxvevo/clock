@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { db } from "@/server/db";
@@ -1046,6 +1046,132 @@ describe("continueEntry, duplicateEntry y discardTimer", () => {
       }
       expect(mocks.revalidated).toEqual(results.map(() => "/"));
       expect(await allTimeEntries()).toEqual(rows);
+    },
+  );
+});
+
+describe("weekStart en las vistas, con el primer día de la persona de la sesión", () => {
+  const longAgo = "2020-01-01T00:00:00Z";
+  const unknownId = "11111111-1111-4111-8111-111111111111";
+
+  /** Abre la sesión, crea su membresía y le fija el primer día de la semana. */
+  async function signInWithWeekStart(weekStart: number) {
+    const seeded = await signInOn({ createdAt: longAgo });
+    await actions.discardTimer({ id: unknownId });
+    await db
+      .update(membership)
+      .set({ weekStart })
+      .where(
+        and(
+          eq(membership.workspaceId, seeded.workspaceId),
+          eq(membership.userId, sessionUserId()),
+        ),
+      );
+    mocks.revalidated.length = 0;
+    return seeded;
+  }
+
+  /**
+   * La semana de una vista, medida aparte del service: empieza el día de la
+   * semana pedido y a no más de seis días antes del día de la entrada.
+   */
+  function weekOf(view: { readonly dayDate: string; readonly weekStart: string }) {
+    const offset =
+      (Date.parse(`${view.dayDate}T00:00:00Z`) -
+        Date.parse(`${view.weekStart}T00:00:00Z`)) /
+      86_400_000;
+    return {
+      weekday: new Date(`${view.weekStart}T12:00:00Z`).getUTCDay(),
+      inRange: offset >= 0 && offset <= 6,
+    };
+  }
+
+  /** Los domingos del caso y su semana con lunes (1) y con domingo (0). */
+  const weeks = {
+    "2026-10-04": { 1: "2026-09-28", 0: "2026-10-04" },
+    "2026-09-27": { 1: "2026-09-21", 0: "2026-09-27" },
+    "2026-09-20": { 1: "2026-09-14", 0: "2026-09-20" },
+  } as const;
+
+  it.each([1, 0] as const)(
+    "con %i, cada action que devuelve vistas trae la semana de cada una",
+    async (weekStart) => {
+      await signInWithWeekStart(weekStart);
+
+      const manual = await actions.createManualEntry({
+        date: "2026-10-04",
+        start: "08:00",
+        end: "09:00",
+      });
+      if (!manual.ok) throw new Error(manual.message);
+      expect(Object.keys(manual.data)).toEqual(["created"]);
+      expect(manual.data.created.weekStart).toBe(weeks["2026-10-04"][weekStart]);
+
+      const moved = await actions.updateEntryTimes({
+        id: manual.data.created.id,
+        date: "2026-09-27",
+        start: "08:00",
+        end: "09:00",
+      });
+      if (!moved.ok) throw new Error(moved.message);
+      expect(Object.keys(moved.data)).toEqual(["entry"]);
+      expect(moved.data.entry.weekStart).toBe(weeks["2026-09-27"][weekStart]);
+
+      const duplicated = await actions.duplicateEntry({
+        id: randomUUID(),
+        sourceId: manual.data.created.id,
+      });
+      if (!duplicated.ok) throw new Error(duplicated.message);
+      expect(duplicated.data.created.weekStart).toBe(weeks["2026-09-27"][weekStart]);
+
+      const timerId = randomUUID();
+      const started = await actions.startTimer({ id: timerId });
+      if (!started.ok) throw new Error(started.message);
+      expect(weekOf(started.data.running)).toEqual({ weekday: weekStart, inRange: true });
+
+      const restarted = await actions.updateRunningStart({
+        id: timerId,
+        date: "2026-09-20",
+        start: "08:00",
+      });
+      if (!restarted.ok) throw new Error(restarted.message);
+      expect(restarted.data.running.weekStart).toBe(weeks["2026-09-20"][weekStart]);
+
+      const described = await actions.updateDescription({
+        id: timerId,
+        description: "algo",
+      });
+      if (!described.ok) throw new Error(described.message);
+      expect(described.data.entry.weekStart).toBe(weeks["2026-09-20"][weekStart]);
+
+      // Continuar cierra el timer del 20/09: el cerrado trae la semana de su inicio.
+      const continued = await actions.continueEntry({
+        id: randomUUID(),
+        sourceId: manual.data.created.id,
+      });
+      if (!continued.ok) throw new Error(continued.message);
+      expect(continued.data.stopped?.weekStart).toBe(weeks["2026-09-20"][weekStart]);
+      expect(weekOf(continued.data.running)).toEqual({
+        weekday: weekStart,
+        inRange: true,
+      });
+
+      const stopped = await actions.stopTimer({ id: continued.data.running.id });
+      if (!stopped.ok) throw new Error(stopped.message);
+      expect(weekOf(stopped.data.stopped)).toEqual({ weekday: weekStart, inRange: true });
+
+      // El reintento del primer arranque responde su fila, ya cerrada, con su semana.
+      const replayed = await actions.startTimer({ id: timerId });
+      expect(replayed).toEqual({
+        ok: true,
+        data: {
+          running: expect.objectContaining({
+            id: timerId,
+            weekStart: weeks["2026-09-20"][weekStart],
+          }),
+          stopped: null,
+        },
+      });
     },
   );
 });

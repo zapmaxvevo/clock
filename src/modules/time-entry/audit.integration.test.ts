@@ -20,6 +20,7 @@ import {
   updateDescription,
   updateEntryTimes,
   updateRunningStart,
+  type TrackerWorkspace,
 } from "./service";
 
 let workspaceId: string;
@@ -37,7 +38,11 @@ beforeEach(async () => {
 });
 
 /** El workspace tal como lo recibe el service. El piso no estorba a estos casos. */
-const workspace = { timezone: buenosAires, createdAt: new Date("2020-01-01T00:00:00Z") };
+const workspace: TrackerWorkspace = {
+  timezone: buenosAires,
+  createdAt: new Date("2020-01-01T00:00:00Z"),
+  weekStart: 1,
+};
 
 function parsed(value: string | null): unknown {
   return value === null ? null : (JSON.parse(value) as unknown);
@@ -45,7 +50,7 @@ function parsed(value: string | null): unknown {
 
 describe("audit log de las mutaciones", () => {
   it("el arranque deja un registro con la descripción y el inicio", async () => {
-    const result = await startTimer(actor, buenosAires, {
+    const result = await startTimer(actor, workspace, {
       id: randomUUID(),
       description: "revisión",
     });
@@ -65,11 +70,11 @@ describe("audit log de las mutaciones", () => {
   });
 
   it("el arranque que cierra el timer anterior deja un registro por entrada", async () => {
-    const first = await startTimer(actor, buenosAires, {
+    const first = await startTimer(actor, workspace, {
       id: randomUUID(),
       description: "uno",
     });
-    const second = await startTimer(actor, buenosAires, {
+    const second = await startTimer(actor, workspace, {
       id: randomUUID(),
       description: "dos",
     });
@@ -102,10 +107,10 @@ describe("audit log de las mutaciones", () => {
 
   it("el reintento de un arranque ya aplicado no deja registro", async () => {
     const id = randomUUID();
-    await startTimer(actor, buenosAires, { id, description: "uno" });
+    await startTimer(actor, workspace, { id, description: "uno" });
     const before = await auditFor("time_entry");
 
-    await startTimer(actor, buenosAires, { id, description: "uno" });
+    await startTimer(actor, workspace, { id, description: "uno" });
 
     expect(await auditFor("time_entry")).toEqual(before);
     expect((await auditFor("time_entry", id)).map((row) => row.action)).toEqual([
@@ -114,12 +119,12 @@ describe("audit log de las mutaciones", () => {
   });
 
   it("detener deja el registro con el fin que escribió la base", async () => {
-    const started = await startTimer(actor, buenosAires, {
+    const started = await startTimer(actor, workspace, {
       id: randomUUID(),
       description: "tarea",
     });
 
-    const result = await stopTimer(actor, buenosAires, { id: started.running.id });
+    const result = await stopTimer(actor, workspace, { id: started.running.id });
 
     const stored = await timeEntryById(started.running.id);
     const rows = await auditFor("time_entry", started.running.id);
@@ -143,7 +148,7 @@ describe("audit log de las mutaciones", () => {
       endedAt: "2026-10-01T12:00:00Z",
     });
 
-    await updateDescription(actor, buenosAires, { id: row.id, description: "después" });
+    await updateDescription(actor, workspace, { id: row.id, description: "después" });
 
     const rows = await auditFor("time_entry", row.id);
     expect(rows).toHaveLength(1);
@@ -204,10 +209,10 @@ describe("mutaciones rechazadas", () => {
     });
 
     await expect(
-      updateDescription(actor, buenosAires, { id: row.id, description: "mía" }),
+      updateDescription(actor, workspace, { id: row.id, description: "mía" }),
     ).rejects.toThrow();
     await expect(deleteEntry(actor, { id: row.id })).rejects.toThrow();
-    await expect(stopTimer(actor, buenosAires, { id: row.id })).rejects.toThrow();
+    await expect(stopTimer(actor, workspace, { id: row.id })).rejects.toThrow();
 
     expect(await auditFor("time_entry")).toEqual([]);
   });
@@ -221,14 +226,14 @@ describe("mutaciones rechazadas", () => {
   });
 
   it("detener una entrada ya cerrada no agrega un segundo registro", async () => {
-    const started = await startTimer(actor, buenosAires, {
+    const started = await startTimer(actor, workspace, {
       id: randomUUID(),
       description: "tarea",
     });
-    await stopTimer(actor, buenosAires, { id: started.running.id });
+    await stopTimer(actor, workspace, { id: started.running.id });
 
     await expect(
-      stopTimer(actor, buenosAires, { id: started.running.id }),
+      stopTimer(actor, workspace, { id: started.running.id }),
     ).rejects.toMatchObject({ code: "already_stopped" });
 
     const rows = await auditFor("time_entry", started.running.id);
@@ -285,7 +290,7 @@ describe("audit log de la parada con el inicio por delante del now() de la base"
       startedAt: future,
     });
 
-    await stopTimer(actor, buenosAires, { id: row.id });
+    await stopTimer(actor, workspace, { id: row.id });
 
     const rows = await auditFor("time_entry", row.id);
     expect(rows.map((entry) => entry.action)).toEqual(["timeEntry.stop"]);
@@ -448,7 +453,7 @@ describe("audit log de la entrada manual", () => {
   });
 
   it("la creación negada por el timer corriendo deja solo el registro del arranque", async () => {
-    const started = await startTimer(actor, buenosAires, {
+    const started = await startTimer(actor, workspace, {
       id: randomUUID(),
       description: "corriendo",
     });
@@ -469,9 +474,10 @@ describe("audit log de la entrada manual", () => {
   });
 
   it("la creación negada por el piso del workspace no deja registro ni fila", async () => {
-    const reciente = {
+    const reciente: TrackerWorkspace = {
       timezone: buenosAires,
       createdAt: new Date("2026-09-01T12:00:00Z"),
+      weekStart: 1,
     };
 
     await expect(
@@ -492,9 +498,10 @@ describe("audit log de la entrada manual", () => {
 
   it("la creación negada por la hora que no existe no deja registro ni fila", async () => {
     // El 29/03/2026 Madrid salta de las 02:00 a las 03:00.
-    const madrid = {
+    const madrid: TrackerWorkspace = {
       timezone: "Europe/Madrid",
       createdAt: new Date("2020-01-01T00:00:00Z"),
+      weekStart: 1,
     };
 
     await expect(
@@ -514,15 +521,15 @@ describe("audit log de la entrada manual", () => {
   });
 
   it("ningún otro camino del módulo escribe timeEntry.createManual", async () => {
-    const started = await startTimer(actor, buenosAires, {
+    const started = await startTimer(actor, workspace, {
       id: randomUUID(),
       description: "con timer",
     });
-    await updateDescription(actor, buenosAires, {
+    await updateDescription(actor, workspace, {
       id: started.running.id,
       description: "editada",
     });
-    await stopTimer(actor, buenosAires, { id: started.running.id });
+    await stopTimer(actor, workspace, { id: started.running.id });
     await deleteEntry(actor, { id: started.running.id });
 
     const actions = (await auditFor("time_entry")).map((row) => row.action);
@@ -568,11 +575,11 @@ describe("audit log de la entrada manual", () => {
       start: "08:00",
       end: "09:00",
     });
-    const started = await startTimer(actor, buenosAires, {
+    const started = await startTimer(actor, workspace, {
       id: randomUUID(),
       description: "con timer",
     });
-    await stopTimer(actor, buenosAires, { id: started.running.id });
+    await stopTimer(actor, workspace, { id: started.running.id });
 
     const actions = (await auditFor("time_entry")).map((row) => row.action);
     expect(actions.filter((action) => action === "timeEntry.createManual")).toHaveLength(
@@ -603,7 +610,7 @@ describe("audit log de continuar, duplicar y descartar", () => {
       startedAt: "2026-10-02T11:00:00Z",
     });
 
-    const result = await continueEntry(actor, buenosAires, {
+    const result = await continueEntry(actor, workspace, {
       id: randomUUID(),
       sourceId: source.id,
     });
@@ -628,7 +635,7 @@ describe("audit log de continuar, duplicar y descartar", () => {
   it("duplicar deja timeEntry.duplicate con la original y los dos instantes", async () => {
     const source = await seedSource();
 
-    const { created } = await duplicateEntry(actor, buenosAires, {
+    const { created } = await duplicateEntry(actor, workspace, {
       id: randomUUID(),
       sourceId: source.id,
     });
@@ -678,12 +685,12 @@ describe("audit log de continuar, duplicar y descartar", () => {
     const source = await seedSource();
     const continued = randomUUID();
     const duplicated = randomUUID();
-    await continueEntry(actor, buenosAires, { id: continued, sourceId: source.id });
-    await duplicateEntry(actor, buenosAires, { id: duplicated, sourceId: source.id });
+    await continueEntry(actor, workspace, { id: continued, sourceId: source.id });
+    await duplicateEntry(actor, workspace, { id: duplicated, sourceId: source.id });
     await discardTimer(actor, { id: continued });
     const before = await auditFor("time_entry");
 
-    await duplicateEntry(actor, buenosAires, { id: duplicated, sourceId: source.id });
+    await duplicateEntry(actor, workspace, { id: duplicated, sourceId: source.id });
     await discardTimer(actor, { id: continued });
 
     expect(await auditFor("time_entry")).toEqual(before);
@@ -692,10 +699,10 @@ describe("audit log de continuar, duplicar y descartar", () => {
   it("continuar resuelto por la fila propia no deja registro", async () => {
     const source = await seedSource();
     const id = randomUUID();
-    await continueEntry(actor, buenosAires, { id, sourceId: source.id });
+    await continueEntry(actor, workspace, { id, sourceId: source.id });
     const before = await auditFor("time_entry");
 
-    await continueEntry(actor, buenosAires, { id, sourceId: source.id });
+    await continueEntry(actor, workspace, { id, sourceId: source.id });
 
     expect(await auditFor("time_entry")).toEqual(before);
   });
@@ -706,7 +713,7 @@ describe("audit log de continuar, duplicar y descartar", () => {
       userId: actor.userId,
       startedAt: "2026-10-02T11:00:00Z",
     });
-    await stopTimer(actor, buenosAires, { id: row.id });
+    await stopTimer(actor, workspace, { id: row.id });
 
     await expect(discardTimer(actor, { id: row.id })).rejects.toMatchObject({
       code: "already_stopped",
@@ -718,11 +725,11 @@ describe("audit log de continuar, duplicar y descartar", () => {
 
   it("ningún otro camino del módulo escribe continue, duplicate ni discard", async () => {
     const source = await seedSource();
-    const started = await startTimer(actor, buenosAires, {
+    const started = await startTimer(actor, workspace, {
       id: randomUUID(),
       description: "arranque",
     });
-    await stopTimer(actor, buenosAires, { id: started.running.id });
+    await stopTimer(actor, workspace, { id: started.running.id });
     await createManualEntry(actor, workspace, {
       description: "",
       date: "2026-10-01",
