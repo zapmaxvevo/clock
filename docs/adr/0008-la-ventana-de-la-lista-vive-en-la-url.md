@@ -1,6 +1,6 @@
 # 0008. La ventana de la lista vive en la URL
 
-Fecha: 2026-10-03. Estado: propuesto.
+Fecha: 2026-10-03. Estado: aceptado.
 Origen: contrato del slice 5
 ([`fase1-slice5-semana-y-paginacion.md`](../slices/fase1-slice5-semana-y-paginacion.md)).
 

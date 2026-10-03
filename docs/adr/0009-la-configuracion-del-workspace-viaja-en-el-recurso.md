@@ -1,6 +1,6 @@
 # 0009. La configuración del workspace viaja en el recurso
 
-Fecha: 2026-10-03. Estado: propuesto.
+Fecha: 2026-10-03. Estado: aceptado.
 Origen: la decisión abierta que el
 [ADR 0004](0004-nucleo-de-proyectos-en-fase-1.md) y el
 [mapa de la fase 1](../slices/fase1-mapa.md) le dejan al contrato del slice 9
