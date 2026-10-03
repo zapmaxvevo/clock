@@ -33,9 +33,14 @@ function domainOf(email: string): string {
 }
 
 /**
- * Decide sobre el perfil de Google. El claim `hd` se compara cuando viene, y
- * el dominio del email se compara siempre: `hd` falta en cuentas personales y
- * no puede ser la única comprobación.
+ * Decide sobre el perfil de Google.
+ *
+ * La vía de dominio exige las dos cosas: que el email pertenezca a un dominio
+ * habilitado y que el claim `hd` lo confirme. Exigir `hd` es el punto: una
+ * cuenta de Google de consumo con un email del dominio —las «no gestionadas»,
+ * creadas antes de que el dominio pasara a Workspace— no lo trae, y sin esa
+ * comprobación entraría como si fuera del equipo. Quien no es del Workspace
+ * entra solo por la lista de invitados.
  */
 export function decideGoogleAccess(
   profile: GoogleProfile,
@@ -54,8 +59,7 @@ export function decideGoogleAccess(
   const hostedDomain =
     profile.hd === null || profile.hd === undefined ? "" : normalize(profile.hd);
   const belongsToDomain =
-    domains.includes(domainOf(email)) &&
-    (hostedDomain.length === 0 || domains.includes(hostedDomain));
+    domains.includes(domainOf(email)) && domains.includes(hostedDomain);
 
   if (belongsToDomain) {
     return { allowed: true };

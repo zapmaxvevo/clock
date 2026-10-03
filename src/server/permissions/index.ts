@@ -21,7 +21,10 @@ export type Action =
   | "workspace.delete"
   | "team.view"
   | "team.manage"
-  | "member.invite";
+  | "member.invite"
+  | "timeEntry.own.create"
+  | "timeEntry.own.update"
+  | "timeEntry.own.delete";
 
 export type Resource =
   | { readonly kind: "workspace"; readonly workspaceId: string }
@@ -30,15 +33,28 @@ export type Resource =
       readonly workspaceId: string;
       readonly userId: string;
       readonly role: Role;
-    };
+    }
+  /** `userId` es el dueño de la entrada, no quien actúa. */
+  | { readonly kind: "timeEntry"; readonly workspaceId: string; readonly userId: string };
+
+const everyone: readonly Role[] = [
+  "owner",
+  "admin",
+  "project_manager",
+  "team_manager",
+  "member",
+];
 
 const allowedRoles: Record<Action, readonly Role[]> = {
   "workspace.settings.update": ["owner", "admin"],
   "workspace.transfer": ["owner"],
   "workspace.delete": ["owner"],
-  "team.view": ["owner", "admin", "project_manager", "team_manager", "member"],
+  "team.view": everyone,
   "team.manage": ["owner", "admin"],
   "member.invite": ["owner", "admin"],
+  "timeEntry.own.create": everyone,
+  "timeEntry.own.update": everyone,
+  "timeEntry.own.delete": everyone,
 };
 
 /**
@@ -53,6 +69,11 @@ export function can(actor: Actor, action: Action, resource: Resource): boolean {
     return false;
   }
   if (!allowedRoles[action].includes(actor.role)) {
+    return false;
+  }
+  // Las acciones ".own" son sobre entradas propias. Las entradas ajenas son del
+  // reporte detallado, que decide con sus propias acciones.
+  if (resource.kind === "timeEntry" && resource.userId !== actor.userId) {
     return false;
   }
   // La membresía del owner solo la toca el owner.

@@ -58,6 +58,51 @@ describe("can", () => {
   });
 });
 
+describe("can sobre una entrada de horas", () => {
+  const roles = ["owner", "admin", "project_manager", "team_manager", "member"] as const;
+  const actions = [
+    "timeEntry.own.create",
+    "timeEntry.own.update",
+    "timeEntry.own.delete",
+  ] as const;
+  const own = { kind: "timeEntry", workspaceId, userId: "u1" } as const;
+  const other = { kind: "timeEntry", workspaceId, userId: "u2" } as const;
+
+  it("deja a los cinco roles crear, editar y borrar las propias", () => {
+    for (const role of roles) {
+      for (const action of actions) {
+        expect(can(actor(role), action, own)).toBe(true);
+      }
+    }
+  });
+
+  it("no deja a ningún rol tocar la entrada de otra persona del workspace", () => {
+    for (const role of roles) {
+      for (const action of actions) {
+        expect(can(actor(role), action, other)).toBe(false);
+      }
+    }
+  });
+
+  it("niega todo a una membresía que no está activa", () => {
+    for (const status of ["inactive", "invited"] as const) {
+      for (const action of actions) {
+        expect(can(actor("member", { status }), action, own)).toBe(false);
+      }
+    }
+  });
+
+  it("niega cuando la entrada es de otro workspace", () => {
+    expect(
+      can(actor("owner"), "timeEntry.own.update", {
+        kind: "timeEntry",
+        workspaceId: "22222222-2222-2222-2222-222222222222",
+        userId: "u1",
+      }),
+    ).toBe(false);
+  });
+});
+
 describe("assertCan", () => {
   it("lanza ForbiddenError cuando can devuelve false", () => {
     expect(() => assertCan(actor("member"), "team.manage", workspace)).toThrow(

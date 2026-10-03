@@ -11,6 +11,10 @@ import {
 import { db } from "@/server/db";
 import * as schema from "@/server/db/schema";
 import { env } from "@/server/env";
+import {
+  assertTestSessionNotInProduction,
+  testSessionPlugins,
+} from "@/server/test-session";
 
 function policy(): AccessPolicy {
   const config = env();
@@ -19,6 +23,8 @@ function policy(): AccessPolicy {
     invitedEmails: config.EXTERNAL_INVITE_EMAILS,
   };
 }
+
+assertTestSessionNotInProduction();
 
 export const auth = betterAuth({
   appName: "Clock",
@@ -30,17 +36,25 @@ export const auth = betterAuth({
     updateAge: 60 * 60 * 24,
   },
   advanced: {
-    useSecureCookies: env().NODE_ENV === "production",
+    // Por el esquema de la URL y no por NODE_ENV: todo build corre en
+    // «production», incluido el que se sirve por http en local.
+    useSecureCookies: env().BETTER_AUTH_URL.startsWith("https://"),
     defaultCookieAttributes: { httpOnly: true, sameSite: "lax" },
   },
   emailAndPassword: { enabled: false },
+  plugins: testSessionPlugins(),
   socialProviders: {
     google: {
       clientId: env().GOOGLE_CLIENT_ID,
       clientSecret: env().GOOGLE_CLIENT_SECRET,
-      // Sugerencia de interfaz para el selector de cuenta. El control real
-      // está en mapProfileToUser y en el hook de sesión.
-      hd: env().GOOGLE_WORKSPACE_DOMAINS[0],
+      // Sin la opción `hd` de Better Auth a propósito. No es una sugerencia de
+      // interfaz: la librería verifica ese claim contra un único dominio
+      // exacto y rechaza antes de llamar a mapProfileToUser, de modo que
+      // dejaría afuera a todo dominio de GOOGLE_WORKSPACE_DOMAINS que no sea
+      // el primero y a todos los invitados externos, que no traen `hd`.
+      // El control vive entero en decideGoogleAccess, que exige el claim para
+      // la vía de dominio, y en el hook de sesión, que lo revalida en cada
+      // inicio.
       mapProfileToUser: (profile) => {
         const decision = decideGoogleAccess(
           {

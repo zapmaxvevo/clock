@@ -32,6 +32,27 @@ describe("decideGoogleAccess", () => {
     ).toEqual({ allowed: false, reason: "email_no_verificado" });
   });
 
+  it("rechaza una cuenta de consumo con email del dominio pero sin hd", () => {
+    // Las cuentas «no gestionadas», creadas antes de que el dominio pasara a
+    // Workspace, tienen el email del dominio y no traen el claim.
+    expect(
+      decideGoogleAccess({ email: "ana@empresa.com", email_verified: true }, policy),
+    ).toEqual({ allowed: false, reason: "dominio_no_habilitado" });
+  });
+
+  it("acepta un segundo dominio habilitado, no solo el primero", () => {
+    const dosDominios = {
+      domains: ["empresa.com", "otra-empresa.com"],
+      invitedEmails: [],
+    };
+    expect(
+      decideGoogleAccess(
+        { email: "leo@otra-empresa.com", email_verified: true, hd: "otra-empresa.com" },
+        dosDominios,
+      ),
+    ).toEqual({ allowed: true });
+  });
+
   it("rechaza cuando el claim hd contradice al dominio del email", () => {
     expect(
       decideGoogleAccess(

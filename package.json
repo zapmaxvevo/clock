@@ -17,7 +17,9 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
-    "auth:schema": "better-auth generate --config src/server/auth.ts --output src/server/db/auth-schema.ts -y"
+    "auth:schema": "better-auth generate --config src/server/auth.ts --output src/server/db/auth-schema.ts -y",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:all": "npm test && npm run test:integration"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

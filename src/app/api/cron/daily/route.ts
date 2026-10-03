@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { env } from "@/server/env";
+import { bearerToken, secretEquals } from "@/server/secret-compare";
 
 export const dynamic = "force-dynamic";
 
@@ -10,8 +11,9 @@ export const dynamic = "force-dynamic";
  * recordatorios y los reportes programados se agregan acá, en ese orden.
  */
 export async function GET(request: Request): Promise<NextResponse> {
-  const header = request.headers.get("authorization");
-  if (header !== `Bearer ${env().CRON_SECRET}`) {
+  if (
+    !secretEquals(bearerToken(request.headers.get("authorization")), env().CRON_SECRET)
+  ) {
     return NextResponse.json({ error: "no autorizado" }, { status: 401 });
   }
 
