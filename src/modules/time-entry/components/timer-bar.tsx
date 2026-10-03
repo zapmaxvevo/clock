@@ -1,7 +1,7 @@
 "use client";
 
 import { EllipsisVerticalIcon, PlayIcon, SquareIcon, Trash2Icon } from "lucide-react";
-import { useRef, useState, type ReactNode, type RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -13,7 +13,6 @@ import {
 import { cn } from "@/lib/utils";
 import type { TimeEntryView, UpdateRunningStartInput } from "@/modules/time-entry/schema";
 
-import { DiscardTimerDialog } from "./discard-timer-dialog";
 import { ElapsedCounter } from "./elapsed-counter";
 import { trackerLabels } from "./labels";
 import { RunningStartEditor } from "./running-start-editor";
@@ -47,12 +46,10 @@ type TimerBarProps = {
   readonly onSaveStart: (input: UpdateRunningStartInput) => void;
   /** Hay un guardado del inicio en vuelo: la barra queda atenuada. */
   readonly savingStart: boolean;
-  /** TT-65: al confirmar el descarte, el foco va al campo de descripción. */
-  readonly descriptionRef: RefObject<HTMLInputElement | null>;
-  /** TT-65: descarta el timer elegido al abrir la confirmación. */
-  readonly onDiscard: (id: string) => void;
-  /** Hay un guardado de la descripción en vuelo: el descarte no se confirma. */
-  readonly savingDescription: boolean;
+  /** El botón del menú: al cancelar el descarte, el foco vuelve a él. */
+  readonly menuTriggerRef: RefObject<HTMLButtonElement | null>;
+  /** TT-65: abre la confirmación del descarte sobre el timer en pantalla. */
+  readonly onRequestDiscard: (id: string) => void;
   /** TT-26: con los atajos activos, «Iniciar» y «Detener» los anuncian. */
   readonly shortcutsEnabled: boolean;
 };
@@ -60,8 +57,9 @@ type TimerBarProps = {
 /**
  * Barra del modo timer: el contador, el botón de arrancar y detener (TT-17,
  * TT-22, TT-23), el editor del inicio (TT-28) y el menú con el descarte
- * (TT-65). Los pedidos y sus avisos son del contenedor: si la barra cambia de
- * modo sin que nadie lo pida, el desenlace sigue a la vista.
+ * (TT-65). Los pedidos, sus avisos y la confirmación del descarte son del
+ * contenedor: si la barra cambia de modo sin que nadie lo pida, el desenlace
+ * sigue a la vista.
  */
 export function TimerBar({
   descriptionField,
@@ -76,17 +74,10 @@ export function TimerBar({
   onToggle,
   onSaveStart,
   savingStart,
-  descriptionRef,
-  onDiscard,
-  savingDescription,
+  menuTriggerRef,
+  onRequestDiscard,
   shortcutsEnabled,
 }: TimerBarProps) {
-  /**
-   * El timer que se descarta, fijado al abrir la confirmación: si mientras el
-   * diálogo está abierto llega otro timer, confirmar no lo borra (§4.3).
-   */
-  const [discardId, setDiscardId] = useState<string | null>(null);
-  const menuTriggerRef = useRef<HTMLButtonElement>(null);
   /** Lo que solo existe sobre el timer abierto: el editor del inicio y el menú. */
   const runningControls = canTrack && isRunning && running !== null;
 
@@ -146,32 +137,13 @@ export function TimerBar({
             <DropdownMenuItem
               variant="destructive"
               disabled={switching}
-              onClick={() => setDiscardId(running.id)}
+              onClick={() => onRequestDiscard(running.id)}
             >
               <Trash2Icon aria-hidden="true" />
               Descartar
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-      )}
-      {/* Fuera del condicional: al confirmar, el menú se va con el timer y el diálogo cierra igual. */}
-      {canTrack && (
-        <DiscardTimerDialog
-          open={discardId !== null}
-          onOpenChange={(open) => {
-            if (!open) {
-              setDiscardId(null);
-            }
-          }}
-          onConfirm={() => {
-            if (discardId !== null) {
-              onDiscard(discardId);
-            }
-          }}
-          confirmDisabled={savingDescription}
-          finalFocus={menuTriggerRef}
-          fallbackFocus={descriptionRef}
-        />
       )}
     </div>
   );

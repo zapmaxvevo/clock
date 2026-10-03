@@ -149,6 +149,35 @@ async function holdRefreshes(page: Page): Promise<() => void> {
 }
 
 /**
+ * Retiene toda server action hasta que se llame a lo que devuelve: el pedido
+ * sale, y el servidor recién lo recibe cuando el test lo suelta.
+ */
+async function holdActions(page: Page): Promise<() => void> {
+  let release = (): void => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(isTrackerPage, async (route) => {
+    if (isAction(route.request())) {
+      await held;
+    }
+    await route.fallback();
+  });
+  return release;
+}
+
+/** Confirma el descarte con el pedido retenido y espera el foco en la descripción. */
+async function confirmDiscardHeld(page: Page): Promise<() => void> {
+  const release = await holdActions(page);
+  const sent = page.waitForRequest(isAction);
+  await openDiscard(page);
+  await discardDialog(page).getByRole("button", { name: "Descartar" }).click();
+  await sent;
+  await expect(descriptionInput(trackerBar(page))).toBeFocused();
+  return release;
+}
+
+/**
  * Continúa con la respuesta perdida y espera el aviso. La barra sigue
  * detenida: el timer nuevo llega con la revalidación, y está retenida o
  * todavía no corrió.
@@ -403,6 +432,92 @@ test("descartar un timer que otra pestaña detuvo avisa y deja la entrada cerrad
   await otherPage.context().close();
 });
 
+test("lo tecleado mientras viaja el descarte se queda aunque se salga del campo", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await startTimer(page, "timer a descartar");
+  const bar = trackerBar(page);
+
+  const release = await confirmDiscardHeld(page);
+  await descriptionInput(bar).fill("próxima tarea");
+  await focusBody(page);
+
+  // m-1 de la segunda revisión: lo tecleado no es del timer descartado.
+  await withServerAction(page, async () => release());
+  await expect(bar.getByRole("button", { name: "Iniciar" })).toBeVisible();
+  await expect(descriptionInput(bar)).toHaveValue("próxima tarea");
+  await expect(entriesNamed(page, "timer a descartar")).toHaveCount(0);
+});
+
+test("lo tecleado mientras viaja un descarte que termina en ya detenido se queda", async ({
+  page,
+  email,
+  browser,
+}) => {
+  await page.goto("/");
+  await startTimer(page, "detenido mientras se descarta");
+
+  const otherPage = await openSecondTab(browser, email);
+  await stopTimer(otherPage, "detenido mientras se descarta");
+
+  const bar = trackerBar(page);
+  const release = await confirmDiscardHeld(page);
+  await descriptionInput(bar).fill("próxima tarea");
+  await focusBody(page);
+
+  await withServerAction(page, async () => release());
+  await expect(failureNotice(page, DISCARD_FAILED)).toContainText(
+    "Este timer ya había sido detenido.",
+  );
+  await expect(descriptionInput(bar)).toHaveValue("próxima tarea");
+  await expect(entryRow(todayGroup(page), "detenido mientras se descarta")).toBeVisible();
+
+  await otherPage.context().close();
+});
+
+test("si otra pestaña detiene un timer forzado con el diálogo de descarte abierto, cancelar devuelve el foco a la barra manual", async ({
+  page,
+  email,
+  browser,
+}) => {
+  await page.goto("/");
+  await closedEntry(page, "entrada de origen");
+  await chooseMode(page, "manual");
+
+  const bar = trackerBar(page);
+  await descriptionInput(bar).fill("texto retenido");
+  await withServerAction(page, () =>
+    continueButton(todayGroup(page), "entrada de origen").click(),
+  );
+  await expect(bar.getByRole("button", { name: "Detener" })).toBeVisible();
+
+  const dialog = await openDiscard(page);
+
+  const otherPage = await openSecondTab(browser, email);
+  await withServerAction(otherPage, () =>
+    trackerBar(otherPage).getByRole("button", { name: "Detener" }).click(),
+  );
+
+  // Esta pestaña se pone al día con el diálogo abierto, que deja la barra
+  // fuera del árbol accesible: se busca incluyendo lo oculto.
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  const hiddenBar = page.getByRole("region", { name: "Rastreador", includeHidden: true });
+  await expect(
+    hiddenBar.getByRole("button", { name: "Agregar", includeHidden: true }),
+  ).toBeVisible();
+
+  // m-2 de la segunda revisión: el diálogo sigue, y al cerrarlo el foco va a
+  // la descripción de la barra manual, porque el menú ya no está.
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancelar" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(descriptionInput(bar)).toBeFocused();
+  await expect(descriptionInput(bar)).toHaveValue("texto retenido");
+
+  await otherPage.context().close();
+});
+
 test("confirmar el descarte después de que otra pestaña continuó otra entrada no borra el timer nuevo", async ({
   page,
   email,
@@ -464,16 +579,7 @@ test("mientras viaja el guardado de la descripción, confirmar el descarte está
   await startTimer(page, "descripción vieja");
 
   // El guardado se retiene hasta que el test lo suelta.
-  let release = (): void => {};
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  await page.route(isTrackerPage, async (route) => {
-    if (isAction(route.request())) {
-      await held;
-    }
-    await route.fallback();
-  });
+  const release = await holdActions(page);
 
   // Abrir el menú saca el foco del campo, y su salida manda el guardado.
   const bar = trackerBar(page);

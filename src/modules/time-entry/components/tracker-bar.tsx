@@ -13,10 +13,16 @@ import {
 import type { TimeEntryView, UpdateRunningStartInput } from "@/modules/time-entry/schema";
 
 import { DescriptionField } from "./description-field";
+import { DiscardTimerDialog } from "./discard-timer-dialog";
 import { OutsideWindowNotice } from "./entry-list";
 import { trackerLabels } from "./labels";
 import { ManualBar } from "./manual-bar";
 import { ModeSwitch } from "./mode-switch";
+import {
+  draftAfterDiscard,
+  resolvesDiscard,
+  type PendingDiscard,
+} from "./pending-discard";
 import { ShortcutsDialog } from "./shortcuts-dialog";
 import { reset, sameDraft } from "./time-draft";
 import { TimerBar, type Phase } from "./timer-bar";
@@ -54,10 +60,11 @@ type TrackerBarProps = {
  * La barra del rastreador: elige qué modo se dibuja y es dueña de todo lo que
  * tiene que sobrevivir a un cambio de modo. Un timer que arranca o se detiene
  * en otra pestaña cambia la barra de modo sin que nadie lo pida (TT-30), así
- * que la descripción, el borrador manual, los pedidos y sus avisos viven acá
- * y no en la barra de cada modo. El conmutador y los atajos `n`, `s` y `m`
- * también: así el conmutador no cambia de lugar ni pierde el foco al
- * conmutar, y cada atajo ve el mismo estado que su control.
+ * que la descripción, el borrador manual, los pedidos, sus avisos y la
+ * confirmación del descarte viven acá y no en la barra de cada modo. El
+ * conmutador y los atajos `n`, `s` y `m` también: así el conmutador no cambia
+ * de lugar ni pierde el foco al conmutar, y cada atajo ve el mismo estado que
+ * su control.
  *
  * `useTrackerRefresh()` se llama acá y no adentro de la barra del timer: si
  * viviera ahí, la revalidación de P-11 dejaría de correr en modo manual.
@@ -100,8 +107,20 @@ export function TrackerBar({
   const [heldDescription, setHeldDescription] = useState<string | null>(null);
   /** Día de la entrada que quedó más atrás del tramo que la lista dibuja. */
   const [outsideWindowDay, setOutsideWindowDay] = useState<string | null>(null);
+  /**
+   * El timer que se descarta, fijado al abrir la confirmación: si mientras el
+   * diálogo está abierto llega otro timer, confirmar no lo borra (§4.3).
+   */
+  const [discardId, setDiscardId] = useState<string | null>(null);
+  /**
+   * El descarte confirmado, hasta que la vista lo resuelve: la descripción
+   * que se va con el timer es la que había al confirmar.
+   */
+  const [pendingDiscard, setPendingDiscard] = useState<PendingDiscard | null>(null);
   const descriptionRef = useRef<HTMLInputElement>(null);
   const addRef = useRef<HTMLButtonElement>(null);
+  /** El botón de menú de la barra del timer, adonde vuelve el foco al cancelar. */
+  const menuTriggerRef = useRef<HTMLButtonElement>(null);
   /**
    * TT-65: al confirmar el descarte el diálogo deja el foco en la descripción.
    * Mientras el descarte viaja, si el foco queda sin dueño vuelve a ella: el
@@ -123,17 +142,6 @@ export function TrackerBar({
   });
   const discard = useEntryAction(discardTimer, {
     optimistic: () => showPhase("discarding"),
-    onSuccess: () => {
-      // La descripción se va con el timer (TT-65). El seguimiento de la vista
-      // no la limpia porque el campo tiene el foco desde que se confirmó. Este
-      // `draft` es el del render que mandó el pedido: lo tecleado mientras
-      // viajaba no es del timer descartado y se queda. Con el modo manual
-      // elegido, la barra vuelve a manual y repone el texto retenido por su
-      // propio camino (B-1).
-      if (mode === "timer") {
-        setDraft((current) => (current === draft ? "" : current));
-      }
-    },
   });
   /**
    * TT-28: sin vista optimista; el contador salta cuando llega la vista nueva.
@@ -186,6 +194,7 @@ export function TrackerBar({
     // vino de otra pestaña, lo cerraría sin que nadie lo pida (ADR 0007).
     if (serverState.id !== serverId) {
       start.clear();
+      setPendingDiscard(null);
       // Lo mismo con el inicio: «Reintentar» apuntaría a un timer que ya no
       // está. Un `already_stopped` llega en el mismo render que la vista sin
       // el timer y es justamente lo que hay que mostrar, así que se queda.
@@ -206,6 +215,10 @@ export function TrackerBar({
       setDraft(heldDescription ?? serverDescription);
       setHeldDescription(null);
       setEditing(false);
+    } else if (resolvesDiscard(pendingDiscard, serverState.id, serverId)) {
+      // TT-65: la descripción se va con el timer descartado, con el foco en el
+      // campo o no, y también si el descarte terminó en `already_stopped`.
+      setDraft(draftAfterDiscard(pendingDiscard, draft));
     } else if (!editing && !save.pending) {
       setDraft(serverDescription);
     }
@@ -238,7 +251,10 @@ export function TrackerBar({
     }
   }, [phase, isManual]);
 
-  /** Un aviso describe el desenlace de una operación: la siguiente lo deja viejo. */
+  /**
+   * Un aviso describe el desenlace de una operación y un descarte confirmado
+   * espera el suyo: la operación siguiente deja viejos a los dos.
+   */
   function clearNotices(): void {
     save.clear();
     start.clear();
@@ -247,6 +263,7 @@ export function TrackerBar({
     discard.clear();
     add.clear();
     setOutsideWindowDay(null);
+    setPendingDiscard(null);
   }
 
   function handleCommit(next: string): void {
@@ -290,17 +307,26 @@ export function TrackerBar({
   function handleDiscard(id: string): void {
     clearNotices();
     focusAfterDiscard.current = true;
+    setPendingDiscard({ id, draft });
     discard.run({ id });
   }
 
-  /** El reintento deja el foco donde lo deja el descarte: el aviso se va. */
+  /**
+   * El reintento deja el foco donde lo deja el descarte: el aviso se va. Y
+   * vuelve a fijar el descarte que bajó con el aviso, con lo que muestra la
+   * descripción al reintentar.
+   */
   function retryDiscard(): (() => void) | undefined {
     const retry = retryOf(discard);
+    const retried = pendingDiscard;
     return retry === undefined
       ? undefined
       : () => {
           focusAfterDiscard.current = true;
           retry();
+          if (retried !== null) {
+            setPendingDiscard({ id: retried.id, draft });
+          }
         };
   }
 
@@ -396,10 +422,33 @@ export function TrackerBar({
             onToggle={handleToggle}
             onSaveStart={handleSaveStart}
             savingStart={saveStart.pending}
-            descriptionRef={descriptionRef}
-            onDiscard={handleDiscard}
-            savingDescription={save.pending}
+            menuTriggerRef={menuTriggerRef}
+            onRequestDiscard={setDiscardId}
             shortcutsEnabled={shortcutsEnabled}
+          />
+        )}
+        {/*
+         * Fuera del condicional de modo: al confirmar, el menú se va con el
+         * timer; y si otra pestaña lo detiene con el modo manual elegido, la
+         * barra vuelve a manual con el diálogo abierto, que sigue acá y
+         * devuelve el foco a la descripción.
+         */}
+        {canTrack && (
+          <DiscardTimerDialog
+            open={discardId !== null}
+            onOpenChange={(open) => {
+              if (!open) {
+                setDiscardId(null);
+              }
+            }}
+            onConfirm={() => {
+              if (discardId !== null) {
+                handleDiscard(discardId);
+              }
+            }}
+            confirmDisabled={save.pending}
+            finalFocus={menuTriggerRef}
+            fallbackFocus={descriptionRef}
           />
         )}
 
