@@ -70,7 +70,15 @@ export function EntryList({
   /** La semana cuyo encabezado toma el foco, hasta que lo toma. */
   const [focusWeek, setFocusWeek] = useState<string | null>(null);
   const clearFocusWeek = useCallback(() => setFocusWeek(null), []);
-  const clearRequestedWeek = useCallback(() => setRequestedWeek(null), []);
+  /** La navegación de «Cargar más» viaja: el aviso de carga lo anuncia. */
+  const [loadingMore, setLoadingMore] = useState(false);
+  // Si la navegación termina sin llegar a la URL pedida, la semana se baja.
+  const handleLoadPending = useCallback((pending: boolean) => {
+    setLoadingMore(pending);
+    if (!pending) {
+      setRequestedWeek(null);
+    }
+  }, []);
   // La navegación llegó cuando la URL lleva la semana pedida. Si esa semana
   // no se dibujó —sus entradas se borraron entre el render y el clic, y TT-86
   // no la dibuja—, el foco va a la semana más vieja de la lista.
@@ -190,39 +198,47 @@ export function EntryList({
           onNavigate={() => setRequestedWeek(loadMoreFrom)}
           className={buttonVariants({ variant: "outline", className: "self-center" })}
         >
-          <LoadMoreLabel onSettled={clearRequestedWeek} />
+          <LoadMoreLabel onPendingChange={handleLoadPending} />
         </Link>
       )}
+      {/*
+       * Fuera del enlace, para no cambiar su nombre, y fuera del condicional:
+       * montado desde el principio para que se anuncie, y sigue montado
+       * cuando la última página se lleva el enlace.
+       */}
+      <p role="status" className="sr-only">
+        {loadingMore ? trackerLabels.loadingMore : ""}
+      </p>
     </div>
   );
 }
 
 type LoadMoreLabelProps = {
-  /** La navegación del enlace terminó, haya llegado o no a su URL. */
-  readonly onSettled: () => void;
+  /**
+   * La navegación del enlace empezó o terminó, haya llegado o no a su URL.
+   * Si el enlace se va con la navegación en vuelo, avisa que terminó.
+   */
+  readonly onPendingChange: (pending: boolean) => void;
 };
 
 /**
- * El texto de «Cargar más» (TT-52). Mientras su navegación viaja se atenúa y
- * anuncia que carga; el enlace no se deshabilita, así no pierde el foco.
+ * El texto de «Cargar más» (TT-52). Mientras su navegación viaja se atenúa; el
+ * enlace no se deshabilita, así no pierde el foco.
  */
-function LoadMoreLabel({ onSettled }: LoadMoreLabelProps) {
+function LoadMoreLabel({ onPendingChange }: LoadMoreLabelProps) {
   const { pending } = useLinkStatus();
   const wasPending = useRef(false);
 
   useEffect(() => {
-    if (wasPending.current && !pending) {
-      onSettled();
+    if (wasPending.current !== pending) {
+      onPendingChange(pending);
     }
     wasPending.current = pending;
-  }, [pending, onSettled]);
+  }, [pending, onPendingChange]);
+
+  useEffect(() => () => onPendingChange(false), [onPendingChange]);
 
   return (
-    <>
-      <span className={pending ? "opacity-60" : undefined}>{trackerLabels.loadMore}</span>
-      <span role="status" className="sr-only">
-        {pending ? trackerLabels.loadingMore : ""}
-      </span>
-    </>
+    <span className={pending ? "opacity-60" : undefined}>{trackerLabels.loadMore}</span>
   );
 }

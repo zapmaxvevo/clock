@@ -38,8 +38,8 @@ type ReachWeekProviderProps = {
  * llegó: con dos mutaciones en vuelo, la respuesta de la segunda no
  * reemplaza un `desde` pedido por uno posterior. El `router.replace` va en
  * una transición; si termina sin que la semana llegue —la navegación se
- * descartó, por ejemplo por la revalidación de otra action—, se vuelve a
- * pedir.
+ * descartó, por ejemplo, por un clic en «Cargar más» o el botón Atrás—, se
+ * vuelve a pedir.
  */
 export function ReachWeekProvider({ reachFrom, children }: ReachWeekProviderProps) {
   const router = useRouter();

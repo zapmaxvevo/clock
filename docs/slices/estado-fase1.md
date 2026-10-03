@@ -12,29 +12,18 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-03.
 | 2b — Reintento de «Iniciar»                | En `main`                                          |
 | 3 — Corregir horas y fecha                 | En `main`                                          |
 | 4 — Continuar, duplicar, descartar, atajos | En `main`                                          |
-| 5 — Semana y paginación                    | Contrato cerrado tras dos rondas; sin implementar  |
+| 5 — Semana y paginación                    | En `main`                                          |
 | 9 — Núcleo de proyectos                    | Contrato con dos rondas aplicadas; sin implementar |
 | 6, 7, 8, 10–13                             | Sin contrato                                       |
 
-Los merges de 2b, 3 y 4 son locales: **hay que correr `git push origin main`**
-(el sistema de permisos de Claude lo bloquea; lo corre el usuario). No quedan
-agentes corriendo ni trabajo sin commitear.
+Los slices 1 a 5 y los menores del descarte del slice 4 están en `main`, local:
+**falta `git push origin main`**. No quedan agentes con trabajo pendiente.
 
 ## Lo primero de la sesión siguiente
 
-1. **Dos menores del slice 4**, ya decididos en
-   `correcciones-fase1-slice4-revisiones.md`, sección «Segunda revisión de
-   frontend — pendiente para la sesión siguiente»: lo tecleado durante un
-   descarte que se pierde si se sale del campo antes de la respuesta, y el
-   diálogo de descarte que se desmonta sin devolver el foco con el modo manual
-   forzado. Un `frontend-dev`, después la suite e2e, y un commit `fix` sobre
-   `main` en una rama propia.
-2. **Implementar el slice 5** (`fase1-slice5-semana-y-paginacion.md`) con el
-   pipeline de abajo. Trae la única migración del tramo
-   (`membership.week_start`) y el ADR 0008. El contrato se escribió antes de
-   implementar 3 y 4: avisar a los agentes que el árbol es posterior y que el
-   código manda en los detalles de forma.
-3. Después, el **slice 9** y los contratos del 6, 7 y 8 (`fase1-mapa.md`).
+1. El **slice 9** (`fase1-slice9-nucleo-de-proyectos.md`) con el pipeline de abajo;
+   necesita Postgres 15 o posterior en Neon.
+2. Los contratos del 6, 7 y 8 (`fase1-mapa.md`).
 
 ## Decisiones pendientes del usuario
 
@@ -42,6 +31,10 @@ agentes corriendo ni trabajo sin commitear.
   (en `dependencies` solo por su CSS). Recomendación: pasar `shadcn` a
   `devDependencies` y auditar con `--omit=dev`. Mientras siga rojo, el job de e2e
   de CI no corre.
+- **ADR 0008, línea 61**: dice que «Cargar más» funciona sin JavaScript y no es así
+  (sin JS `/` queda en el esqueleto). Propuesta: corregirla como TT-52.
+- **`.env` local**: `npm run db:migrate` falla en silencio con el `DATABASE_URL` del
+  `.env`; la base de e2e se migró con la URL de `e2e/environment.ts`.
 - **Postgres de Neon**: el slice 9 necesita 15 o posterior (`on delete set null
 (col)`).
 - **Sesión en el workspace de Clockify** para cerrar lo no verificado: P-14 en
@@ -74,6 +67,8 @@ agentes corriendo ni trabajo sin commitear.
   real con `route.fetch()` + `route.abort()`; editores en portal se buscan en
   `page`; esperar el foco del disparador tras cerrar un calendario; 11 s entre
   corridas completas.
+- **Reloj emulado**: con `page.clock.install()`, `TZDate` no se puede extender y los
+  rótulos de fecha del cliente salen un día antes; instalarlo después de sembrar y recargar.
 - **Foco**: un control con foco que pasa a `disabled` lo pierde a `body`; usar
   `aria-disabled` y no actuar.
 - **Documentos de correcciones**: son históricos y no se reescriben.

@@ -61,3 +61,15 @@ Abajo, la resolución decidida de cada hallazgo y su dueño.
   le propone corregirla como en TT-52.
 - `npm audit` sigue rojo, igual que en `main`; seguridad lo señala fuera del diff. Sigue como
   decisión pendiente del usuario.
+
+## Segunda revisión de frontend
+
+Aprobó la ronda sobre `d0642b4..ccb37a7` y cerró m-1, m-2 y m-3. Contrastó las carreras
+con Next 16.3.8: el reintento del proveedor no entra en bucle, porque cada reintento exige
+otra navegación que descarte la anterior, y el foco no salta sin pedido. Dos menores, que
+se aplican antes del merge:
+
+| ID  | Hallazgo                                                                                                                       | Resolución                                                                                                                                                                                             |
+| --- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| n-1 | El `role="status"` de «Cargando…» vive dentro del `<a>`: cambia el nombre accesible del enlace y el anuncio depende del lector | El atenuado queda en `LoadMoreLabel`; el `pending` sube por callback y `EntryList` dibuja el `<p role="status">` como hermano del `Link`, montado siempre. `aria-busy` no lo reemplaza: no se anuncia. |
+| n-2 | El comentario de `reach-week.tsx` pone como ejemplo de navegación descartada «la revalidación de otra action»                  | «por ejemplo, un clic en "Cargar más" o el botón Atrás»: en Next, una navegación descarta la action pendiente, no al revés.                                                                            |
