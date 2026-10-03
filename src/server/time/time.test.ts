@@ -24,7 +24,6 @@ import {
   parseDurationInput,
   parseWeekStart,
   shiftClock,
-  startOfDayBefore,
   startOfDayKey,
   startOfLocalDay,
   toDayKey,
@@ -83,6 +82,7 @@ describe("weekBounds", () => {
 });
 
 const santiago = "America/Santiago";
+const azores = "Atlantic/Azores";
 const allWeekStarts: readonly WeekStart[] = [0, 1, 2, 3, 4, 5, 6];
 
 /** Día de la semana de una clave, calculado aparte de `weekStartKey`. */
@@ -156,31 +156,41 @@ describe("startOfDayKey", () => {
     expect(() => startOfDayKey("2011-12-30", "Pacific/Apia")).toThrow(RangeError);
   });
 
-  it("lanza en un día cuyo adelanto de hora arranca a las 12:00", () => {
-    expect(() => startOfDayKey("2000-01-15", "Africa/Khartoum")).toThrow(RangeError);
+  it("es la 00:00 en un día cuyo adelanto de hora arranca a las 12:00", () => {
+    const start = startOfDayKey("2000-01-15", "Africa/Khartoum");
+    expect(start.toISOString()).toBe("2000-01-14T22:00:00.000Z");
+    expect(dayKey(new Date(start.getTime() - 1), "Africa/Khartoum")).toBe("2000-01-14");
   });
 
-  // Falla conocida heredada de `startOfLocalDay` (contrato del slice 5, §8): el
-  // instante cae en el día, pero 60 minutos después de su primer instante real,
-  // así que el milisegundo anterior también es del mismo día. Si una versión
-  // nueva de date-fns la corrige, estos casos avisan.
-  it.each([
-    ["Australia/Sydney", "1990-03-04"],
-    ["America/Argentina/Salta", "1991-10-20"],
-  ])(
-    "falla conocida: en %s el %s el milisegundo anterior sigue en el día",
-    (zone, key) => {
-      const start = startOfDayKey(key, zone);
-      expect(dayKey(start, zone)).toBe(key);
-      expect(dayKey(new Date(start.getTime() - 1), zone)).toBe(key);
-    },
-  );
+  it("es la primera de las dos 00:00 el día en que Azores atrasa de 01:00 a 00:00", () => {
+    const start = startOfDayKey("2026-10-25", azores);
+    expect(start.toISOString()).toBe("2026-10-25T00:00:00.000Z");
+    expect(dayKey(new Date(start.getTime() - 1), azores)).toBe("2026-10-24");
+  });
+
+  it("es la 00:00 que `startOfLocalDay` corría una hora en Sydney 1990", () => {
+    const start = startOfDayKey("1990-03-04", "Australia/Sydney");
+    expect(start.toISOString()).toBe("1990-03-03T13:00:00.000Z");
+    expect(dayKey(new Date(start.getTime() - 1), "Australia/Sydney")).toBe("1990-03-03");
+  });
+
+  // Falla conocida heredada de `startOfLocalDay` (contrato del slice 5, §8),
+  // que queda solo en los días sin 00:00: el instante cae en el día, pero 60
+  // minutos después de su primer instante real, así que el milisegundo anterior
+  // también es del mismo día. Si una versión nueva de date-fns la corrige, este
+  // caso avisa.
+  it("falla conocida: en America/Argentina/Salta el 1991-10-20 el milisegundo anterior sigue en el día", () => {
+    const zone = "America/Argentina/Salta";
+    const start = startOfDayKey("1991-10-20", zone);
+    expect(dayKey(start, zone)).toBe("1991-10-20");
+    expect(dayKey(new Date(start.getTime() - 1), zone)).toBe("1991-10-20");
+  });
 });
 
 describe("los cortes de semana sobre todos los días de 2026 (TT-97)", () => {
   const days = daysOfYear(2026);
 
-  it.each([madrid, buenosAires, santiago])(
+  it.each([madrid, buenosAires, santiago, azores])(
     "%s: startOfDayKey cae en su día y el milisegundo anterior en el día previo",
     (zone) => {
       const failures = days.filter((key) => {
@@ -194,7 +204,7 @@ describe("los cortes de semana sobre todos los días de 2026 (TT-97)", () => {
     },
   );
 
-  it.each([madrid, buenosAires, santiago])(
+  it.each([madrid, buenosAires, santiago, azores])(
     "%s: weekBounds de cualquier instante del día da la semana de weekStartKey",
     (zone) => {
       const failures: string[] = [];
@@ -346,34 +356,6 @@ describe("startOfLocalDay", () => {
         dayBounds(new Date(instant), madrid).start.toISOString(),
       );
     }
-  });
-});
-
-describe("startOfDayBefore", () => {
-  it("resuelve el inicio del día anterior en la zona del usuario", () => {
-    expect(
-      startOfDayBefore(new Date("2026-10-02T12:00:00Z"), 1, buenosAires).toISOString(),
-    ).toBe("2026-10-01T03:00:00.000Z");
-  });
-
-  it("cuenta días de calendario y no bloques de 24 horas", () => {
-    // El 29 de marzo de 2026 Madrid dura 23 horas.
-    expect(
-      startOfDayBefore(new Date("2026-03-30T10:00:00Z"), 1, madrid).toISOString(),
-    ).toBe("2026-03-28T23:00:00.000Z");
-  });
-
-  it("con 0 días devuelve el inicio del día del instante", () => {
-    expect(
-      startOfDayBefore(new Date("2026-10-02T12:00:00Z"), 0, buenosAires).toISOString(),
-    ).toBe("2026-10-02T03:00:00.000Z");
-  });
-
-  it("retrocede varios días cruzando un cambio de horario", () => {
-    // Del 1 de abril al 27 de marzo de 2026 en Madrid hay un día de 23 horas.
-    expect(
-      startOfDayBefore(new Date("2026-04-01T10:00:00Z"), 5, madrid).toISOString(),
-    ).toBe("2026-03-26T23:00:00.000Z");
   });
 });
 

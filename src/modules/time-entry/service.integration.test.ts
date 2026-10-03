@@ -3767,6 +3767,36 @@ function seedClosedOf(userId: string, startedAt: string, endedAt: string) {
   return seedTimeEntry({ workspaceId, userId, startedAt, endedAt });
 }
 
+/** Lleva la creación del workspace del test a 2020, para que el piso no estorbe. */
+async function backdateWorkspace() {
+  await db
+    .update(workspaceTable)
+    .set({ createdAt: new Date("2020-01-01T00:00:00Z") })
+    .where(eq(workspaceTable.id, workspaceId));
+}
+
+/** Fija el primer día de la semana de una persona del workspace del test. */
+async function setWeekStart(userId: string, weekStart: number) {
+  await db
+    .update(membership)
+    .set({ weekStart })
+    .where(and(eq(membership.workspaceId, workspaceId), eq(membership.userId, userId)));
+}
+
+/** El workspace del rastreador como lo arma la sesión de esa persona. */
+async function trackerWorkspaceFor(userId: string) {
+  const row = await workspaceRepository.findFirstWorkspace();
+  const member = await workspaceRepository.findMembership(workspaceId, userId);
+  if (row === undefined || member === undefined) {
+    throw new Error("Falta el workspace o la membresía sembrados.");
+  }
+  return trackerWorkspaceOf({
+    workspace: row,
+    membership: member,
+    actor: actorFor(userId),
+  });
+}
+
 /** Las semanas de la lista con sus días, para comparar de un vistazo. */
 function weekDays(state: TrackerState) {
   return state.weeks.map((week) => ({
@@ -3778,6 +3808,63 @@ function weekDays(state: TrackerState) {
 describe("getTrackerState: la lista en semanas (TT-47, TT-48, TT-52)", () => {
   /** Las 12:00 del viernes 2 de octubre de 2026 en Buenos Aires. */
   const now = new Date("2026-10-02T15:00:00Z");
+
+  it.each([
+    {
+      weekStart: 0,
+      floor: "2026-09-13",
+      weeks: [
+        { start: "2026-09-27", days: ["2026-10-01"] },
+        { start: "2026-09-13", days: ["2026-09-17", "2026-09-13"] },
+      ],
+      loadMoreFrom: "2026-08-30",
+    },
+    {
+      weekStart: 6,
+      floor: "2026-09-12",
+      weeks: [
+        { start: "2026-09-26", days: ["2026-10-01"] },
+        { start: "2026-09-12", days: ["2026-09-17", "2026-09-13"] },
+      ],
+      loadMoreFrom: "2026-09-05",
+    },
+  ])(
+    "con weekStart $weekStart de la membresía, la ventana y «Cargar más» cortan en ese día",
+    async ({ weekStart, floor, weeks, loadMoreFrom }) => {
+      // Jueves 1/10: trece días atrás es el viernes 18/09.
+      const thursday = new Date("2026-10-01T15:00:00Z");
+      await backdateWorkspace();
+      await setWeekStart(actor.userId, weekStart);
+      await seedClosedOf(actor.userId, "2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
+      await seedClosedOf(actor.userId, "2026-09-13T13:00:00Z", "2026-09-13T15:00:00Z");
+      await seedClosedOf(actor.userId, "2026-09-17T13:00:00Z", "2026-09-17T14:00:00Z");
+      const older = await seedClosedOf(
+        actor.userId,
+        "2026-09-05T13:00:00Z",
+        "2026-09-05T14:00:00Z",
+      );
+      const workspace = await trackerWorkspaceFor(actor.userId);
+
+      const state = await getTrackerState(actor, workspace, { from: null }, thursday);
+
+      expect(state.windowFrom).toBe(floor);
+      expect(state.reachFrom).toBe(floor);
+      expect(weekDays(state)).toEqual(weeks);
+      expect(state.weeks[1].closedSeconds).toBe(3 * 3600);
+      expect(state.loadMoreFrom).toBe(loadMoreFrom);
+
+      const loaded = await getTrackerState(
+        actor,
+        workspace,
+        { from: loadMoreFrom },
+        thursday,
+      );
+      expect(
+        daysOf(loaded).flatMap((day) => day.entries.map((entry) => entry.id)),
+      ).toContain(older.id);
+      expect(loaded.weeks.at(-1)?.start).toBe(loadMoreFrom);
+    },
+  );
 
   it("TT-48: con lunes, el domingo cierra la semana; con domingo, la abre", async () => {
     await seedClosedOf(actor.userId, "2026-09-27T13:00:00Z", "2026-09-27T14:00:00Z");
@@ -3812,32 +3899,10 @@ describe("getTrackerState: la lista en semanas (TT-47, TT-48, TT-52)", () => {
 
   it("PF-01: dos personas del mismo workspace ven la misma fecha en semanas distintas", async () => {
     const otherId = await seedMember(workspaceId, "member");
-    await db
-      .update(workspaceTable)
-      .set({ createdAt: new Date("2020-01-01T00:00:00Z") })
-      .where(eq(workspaceTable.id, workspaceId));
-    await db
-      .update(membership)
-      .set({ weekStart: 0 })
-      .where(
-        and(eq(membership.workspaceId, workspaceId), eq(membership.userId, otherId)),
-      );
+    await backdateWorkspace();
+    await setWeekStart(otherId, 0);
     await seedClosedOf(actor.userId, "2026-09-27T13:00:00Z", "2026-09-27T14:00:00Z");
     await seedClosedOf(otherId, "2026-09-27T13:00:00Z", "2026-09-27T14:00:00Z");
-
-    /** El workspace del rastreador como lo arma la sesión de esa persona. */
-    async function trackerWorkspaceFor(userId: string) {
-      const row = await workspaceRepository.findFirstWorkspace();
-      const member = await workspaceRepository.findMembership(workspaceId, userId);
-      if (row === undefined || member === undefined) {
-        throw new Error("Falta el workspace o la membresía sembrados.");
-      }
-      return trackerWorkspaceOf({
-        workspace: row,
-        membership: member,
-        actor: actorFor(userId),
-      });
-    }
 
     const own = await getTrackerState(
       actor,
@@ -4080,12 +4145,54 @@ describe("getTrackerState: la lista en semanas (TT-47, TT-48, TT-52)", () => {
     // Escrita directo contra la tabla: la aplicación no la deja crear.
     await seedClosedOf(actor.userId, "2026-08-04T13:00:00Z", "2026-08-04T14:00:00Z");
 
-    const first = await getTrackerState(actor, reciente, { from: null }, now);
-    expect(first.loadMoreFrom).toBe("2026-08-03");
+    const state = await getTrackerState(actor, reciente, { from: null }, now);
 
-    const followed = await getTrackerState(actor, reciente, { from: "2026-08-03" }, now);
-    expect(followed.windowFrom).toBe("2026-08-17");
-    expect(followed.loadMoreFrom).toBeNull();
+    expect(state.windowFrom).toBe("2026-09-14");
+    expect(state.loadMoreFrom).toBeNull();
+  });
+
+  it.each([
+    { weekStart: 1, day: "2026-08-17" },
+    { weekStart: 0, day: "2026-08-16" },
+  ] as const)(
+    "«Cargar más» sí ofrece una entrada de la semana de creación anterior al día de creación, con weekStart $weekStart",
+    async ({ weekStart, day }) => {
+      // Creado el jueves 20/08; el primer día de su semana es anterior y la ventana lo alcanza.
+      const reciente = workspaceOf(buenosAires, "2026-08-20T15:00:00Z", weekStart);
+      await seedClosedOf(actor.userId, "2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
+      const early = await seedClosedOf(
+        actor.userId,
+        `${day}T13:00:00Z`,
+        `${day}T14:00:00Z`,
+      );
+
+      const state = await getTrackerState(actor, reciente, { from: null }, now);
+      expect(state.loadMoreFrom).toBe(day);
+
+      const loaded = await getTrackerState(actor, reciente, { from: day }, now);
+      expect(
+        daysOf(loaded).flatMap((group) => group.entries.map((entry) => entry.id)),
+      ).toContain(early.id);
+      expect(loaded.loadMoreFrom).toBeNull();
+    },
+  );
+
+  it("«Cargar más» no ofrece la semana que la ventana ya dibuja aunque el inicio del día esté corrido", async () => {
+    // Salta, 20/10/1991: el día no tiene 00:00 y `startOfLocalDay` ubica su
+    // inicio una hora tarde (falla conocida del contrato, §8). Una entrada en
+    // esa hora es de ese día pero empieza antes del instante inferior.
+    const salta = workspaceOf("America/Argentina/Salta", "1991-01-01T12:00:00Z", 0);
+    await seedClosedOf(actor.userId, "1991-10-20T04:30:00Z", "1991-10-20T05:30:00Z");
+
+    const state = await getTrackerState(
+      actor,
+      salta,
+      { from: null },
+      new Date("1991-11-15T15:00:00Z"),
+    );
+
+    expect(state.windowFrom).toBe("1991-10-20");
+    expect(state.loadMoreFrom).toBeNull();
   });
 
   it("lastEntryId sigue siendo la cerrada más reciente con la ventana extendida por desde", async () => {

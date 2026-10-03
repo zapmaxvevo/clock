@@ -131,18 +131,22 @@ function hasEditableTimes(row: TimeEntryRow, timeZone: string): boolean {
   return end.day === endDayOf(start.day, start.clock, end.clock);
 }
 
+/** La semana de la persona en que cae un instante: su primer día, como clave. */
+function weekOf(instant: Date, workspace: TrackerWorkspace): string {
+  return weekStartKey(dayKey(instant, workspace.timezone), workspace.weekStart);
+}
+
 function toView(row: TimeEntryRow, workspace: TrackerWorkspace): TimeEntryView {
   const timeZone = workspace.timezone;
   const endedAt = row.endedAt;
   const seconds = endedAt === null ? null : durationSeconds(row.startedAt, endedAt);
-  const day = dayKey(row.startedAt, timeZone);
   return {
     id: row.id,
     description: row.description,
     startedAt: row.startedAt.toISOString(),
     endedAt: endedAt === null ? null : endedAt.toISOString(),
-    dayDate: day,
-    weekStart: weekStartKey(day, workspace.weekStart),
+    dayDate: dayKey(row.startedAt, timeZone),
+    weekStart: weekOf(row.startedAt, workspace),
     startLabel: formatClock(row.startedAt, timeZone),
     endLabel: endedAt === null ? null : formatClock(endedAt, timeZone),
     extraDays: endedAt === null ? 0 : extraDays(row.startedAt, endedAt, timeZone),
@@ -1002,10 +1006,7 @@ function buildWeeks(
   todayKey: string,
   workspace: TrackerWorkspace,
 ): WeekGroupView[] {
-  const runningWeek =
-    running === undefined
-      ? null
-      : weekStartKey(dayKey(running.startedAt, workspace.timezone), workspace.weekStart);
+  const runningWeek = running === undefined ? null : weekOf(running.startedAt, workspace);
   const byStart = new Map<string, DayGroupView[]>();
   for (const day of days) {
     const start = weekStartKey(day.date, workspace.weekStart);
@@ -1021,6 +1022,29 @@ function buildWeeks(
     closedSeconds: weekDays.reduce((total, day) => total + day.closedSeconds, 0),
     days: weekDays,
   }));
+}
+
+/**
+ * El `desde` de «Cargar más»: la semana de la entrada más reciente anterior a
+ * la ventana (TT-52, TT-86). `null` si no hay ninguna; si es anterior a la
+ * semana de creación del workspace, porque ese `desde` se recortaría a la misma
+ * ventana; o si su semana no queda antes de `windowFrom`, la red de seguridad
+ * contra un inicio de día mal ubicado: el enlace no extendería nada.
+ */
+function loadMoreFromOf(
+  older: TimeEntryRow | undefined,
+  windowFrom: string,
+  floorWeek: string,
+  workspace: TrackerWorkspace,
+): string | null {
+  if (older === undefined) {
+    return null;
+  }
+  if (dayKey(older.startedAt, workspace.timezone) < floorWeek) {
+    return null;
+  }
+  const week = weekOf(older.startedAt, workspace);
+  return week < windowFrom ? week : null;
 }
 
 /**
@@ -1075,8 +1099,8 @@ export async function getTrackerState(
           tx,
         );
         // La próxima semana con entradas, para «Cargar más» (TT-52, TT-86). Con
-        // la ventana ya en la semana de creación del workspace no hay adónde
-        // ir: un `desde` anterior se recortaría a esta misma ventana.
+        // la ventana ya en la semana de creación del workspace, `loadMoreFromOf`
+        // daría `null` con cualquier fila: la consulta se ahorra.
         const next =
           window.windowFrom > floorWeek
             ? await timeEntryRepository.findLatestClosedBefore(
@@ -1114,10 +1138,7 @@ export async function getTrackerState(
     ),
     windowFrom: floors.windowFrom,
     reachFrom: floors.reachFrom,
-    loadMoreFrom:
-      older === undefined
-        ? null
-        : weekStartKey(dayKey(older.startedAt, timeZone), workspace.weekStart),
+    loadMoreFrom: loadMoreFromOf(older, floors.windowFrom, floorWeek, workspace),
     hasAnyEntry: running !== undefined || latestClosed !== undefined,
   };
 }

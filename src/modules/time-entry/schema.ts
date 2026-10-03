@@ -2,7 +2,10 @@ import { z } from "zod";
 
 import { isClock, parseDayKey } from "@/server/time";
 
-/** Días que trae la lista del rastreador antes de extenderse hacia atrás y redondearse a semanas. */
+/**
+ * Días que trae la lista del rastreador antes de extenderse hacia atrás y
+ * redondearse a semanas.
+ */
 export const TRACKER_WINDOW_DAYS = 14;
 
 /** Largo máximo de la descripción. Lo valida Zod y lo repite un `check` de la base. */
@@ -215,7 +218,11 @@ export const trackerState = z.object({
   lastEntryId: z.uuid().nullable(),
   /** Solo semanas con entradas o con el timer activo, de la más nueva a la más vieja. */
   weeks: z.array(weekGroupView),
-  /** El piso de la ventana que se dibuja: primer día de su semana más vieja. */
+  /**
+   * El piso de la ventana que se dibuja: primer día de su semana más vieja.
+   * Ningún componente lo lee; es el observable con que los tests fijan la
+   * ventana sin depender de qué semanas tienen entradas (contrato, §5.3).
+   */
   windowFrom: z.string(),
   /**
    * El piso que la ventana tendría sin el timer activo. Es contra el que el

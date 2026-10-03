@@ -1,5 +1,5 @@
 import { TZDate, tzOffset } from "@date-fns/tz";
-import { addDays, format, startOfDay, subDays } from "date-fns";
+import { addDays, format, startOfDay } from "date-fns";
 import { es } from "date-fns/locale";
 
 /** Día de la semana en que arranca la semana del usuario. 0 = domingo. */
@@ -55,12 +55,6 @@ export function roundMinutes(minutes: number, step: number): number {
 /** Inicio del día local en que cae el instante. */
 export function startOfLocalDay(instant: Date, timeZone: string): Date {
   return new Date(startOfDay(new TZDate(instant, timeZone)).getTime());
-}
-
-/** Inicio del día local que cae `days` días antes del día de `instant`. */
-export function startOfDayBefore(instant: Date, days: number, timeZone: string): Date {
-  const start = new TZDate(startOfLocalDay(instant, timeZone), timeZone);
-  return new Date(subDays(start, days).getTime());
 }
 
 /** Día local del instante, como "2026-10-02". Es la clave de agrupación. */
@@ -225,12 +219,16 @@ export function weekStartKey(dayKey: string, weekStart: WeekStart): string {
 }
 
 /**
- * El primer instante del día local: `startOfLocalDay` del mediodía de ese día.
- * Parte del mediodía para no construir una 00:00 que puede no existir. Lanza
- * si las 12:00 de ese día no existen en la zona, en vez de devolver un instante
- * de otro día.
+ * El primer instante del día local: la primera vez que marca las 00:00. Si
+ * las 00:00 no existieron por un adelanto de hora, `startOfLocalDay` del
+ * mediodía, y si tampoco existió el mediodía, lanza en vez de devolver un
+ * instante de otro día.
  */
 export function startOfDayKey(dayKey: string, timeZone: string): Date {
+  const midnights = localInstants(dayKey, "00:00", timeZone);
+  if (midnights.length > 0) {
+    return new Date(Math.min(...midnights));
+  }
   const noon = instantFromLocal(dayKey, "12:00", timeZone);
   if (noon === null) {
     throw new RangeError(`El día ${dayKey} no tiene mediodía en ${timeZone}.`);
@@ -379,19 +377,14 @@ export function shiftClock(time: string, minutes: number): string {
 }
 
 /**
- * El instante que corresponde a una hora de pared en una zona. Devuelve `null`
- * cuando esa hora no existió ese día por el cambio de horario; la hora que
- * ocurre dos veces se resuelve con el segundo instante. Ver el ADR 0005.
+ * Los instantes en que una zona marca esa hora de pared ese día: ninguno si no
+ * existió por el cambio de horario, dos si ocurrió dos veces.
  */
-export function instantFromLocal(
-  dayKey: string,
-  clock: string,
-  timeZone: string,
-): Date | null {
+function localInstants(dayKey: string, clock: string, timeZone: string): number[] {
   const date = parseDayKey(dayKey);
   const minutes = clockToMinutes(clock);
   if (date === null || minutes === null) {
-    return null;
+    return [];
   }
   // La hora de pared leída como si fuera UTC. El instante buscado está a un
   // desplazamiento de distancia, y ese desplazamiento es alguno de los que rigen
@@ -406,8 +399,21 @@ export function instantFromLocal(
   // Un candidato vale si en ese instante rige justo el desplazamiento que lo
   // produjo. Ninguno es la hora que no existe; dos son la que ocurre dos veces.
   // Nada de esto pasa por la zona del proceso.
-  const matches = [...offsets]
+  return [...offsets]
     .filter((offset) => tzOffset(timeZone, new Date(wall - offset * 60_000)) === offset)
     .map((offset) => wall - offset * 60_000);
+}
+
+/**
+ * El instante que corresponde a una hora de pared en una zona. Devuelve `null`
+ * cuando esa hora no existió ese día por el cambio de horario; la hora que
+ * ocurre dos veces se resuelve con el segundo instante. Ver el ADR 0005.
+ */
+export function instantFromLocal(
+  dayKey: string,
+  clock: string,
+  timeZone: string,
+): Date | null {
+  const matches = localInstants(dayKey, clock, timeZone);
   return matches.length === 0 ? null : new Date(Math.max(...matches));
 }
