@@ -17,12 +17,19 @@ type ClockFieldProps = {
   readonly onCommit: (text: string) => string | null;
   readonly label: string;
   readonly disabled?: boolean;
+  /** Esc: el texto vuelve al valor canónico y se avisa. Sin él, Esc no hace nada. */
+  readonly onCancel?: () => void;
+  /**
+   * Enter, después de normalizar: corre si el valor se aceptó o si el campo no
+   * tenía cambios, y no si se rechazó. La noción de grupo es de quien lo usa.
+   */
+  readonly onSubmit?: () => void;
 };
 
 /**
- * Campo de texto tolerante de la barra manual: el mismo para el inicio, el fin
- * y la duración. Normaliza al salir del campo y con Enter, nunca mientras se
- * teclea, y no llama a ninguna action. Cuando el texto no se puede interpretar
+ * Campo de texto tolerante de hora o duración: el de la barra manual, el del
+ * editor de horario de una fila y el del inicio del timer. Normaliza al salir
+ * del campo y con Enter, nunca mientras se teclea, y no llama a ninguna action. Cuando el texto no se puede interpretar
  * el campo vuelve al valor anterior —que es la información— y además se marca
  * por un instante (TT-21).
  */
@@ -31,17 +38,24 @@ export function ClockField({
   onCommit,
   label,
   disabled = false,
+  onCancel,
+  onSubmit,
 }: ClockFieldProps) {
   const [text, setText] = useState(value);
   const [shownValue, setShownValue] = useState(value);
   const [rejected, setRejected] = useState(false);
+  const [focused, setFocused] = useState(false);
   const flash = useRef<number | null>(null);
 
-  // El valor canónico puede cambiar desde otro campo: mover el inicio cambia
-  // la duración, y la duración mueve el fin (TT-18).
+  // El valor canónico puede cambiar desde afuera: mover el inicio cambia la
+  // duración, la duración mueve el fin (TT-18), y un agregado exitoso reinicia
+  // el borrador (TT-25). Lo que se está escribiendo y todavía no se confirmó
+  // gana: al salir del campo o con Enter se confirma sobre el valor nuevo.
   if (shownValue !== value) {
     setShownValue(value);
-    setText(value);
+    if (!focused || text === shownValue) {
+      setText(value);
+    }
   }
 
   useEffect(() => {
@@ -64,16 +78,18 @@ export function ClockField({
     }, REJECTED_FLASH_MS);
   }
 
-  function commit(): void {
+  /** `false` si el texto se rechazó; sin cambios cuenta como aceptado. */
+  function commit(): boolean {
     if (text === value) {
-      return;
+      return true;
     }
     const accepted = onCommit(text);
     if (accepted === null) {
       rejectText();
-      return;
+      return false;
     }
     setText(accepted);
+    return true;
   }
 
   return (
@@ -86,11 +102,23 @@ export function ClockField({
       disabled={disabled}
       className="w-20 text-center tabular-nums"
       onChange={(event) => setText(event.target.value)}
-      onBlur={commit}
+      onFocus={() => setFocused(true)}
+      onBlur={() => {
+        setFocused(false);
+        commit();
+      }}
       onKeyDown={(event) => {
         if (event.key === "Enter") {
           event.preventDefault();
-          commit();
+          if (commit()) {
+            onSubmit?.();
+          }
+          return;
+        }
+        if (event.key === "Escape" && onCancel !== undefined) {
+          event.preventDefault();
+          setText(value);
+          onCancel();
         }
       }}
     />

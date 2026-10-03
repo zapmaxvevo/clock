@@ -38,6 +38,10 @@ import {
   type TrackerState,
   type UpdateDescriptionInput,
   type UpdateDescriptionResult,
+  type UpdateEntryTimesInput,
+  type UpdateEntryTimesResult,
+  type UpdateRunningStartInput,
+  type UpdateRunningStartResult,
 } from "./schema";
 
 /** Error de dominio del módulo. La action lo traduce a un resultado tipado. */
@@ -68,6 +72,40 @@ function workspaceFloorDayKey(workspace: TrackerWorkspace): string {
   return dayKey(workspace.createdAt, workspace.timezone);
 }
 
+/** El día local y la hora de pared de un extremo: lo que la fila muestra de él. */
+type WallLabel = { readonly day: string; readonly clock: string };
+
+function labelOf(instant: Date, timeZone: string): WallLabel {
+  return { day: dayKey(instant, timeZone), clock: formatClock(instant, timeZone) };
+}
+
+function sameLabel(instant: Date, label: WallLabel, timeZone: string): boolean {
+  const own = labelOf(instant, timeZone);
+  return own.day === label.day && own.clock === label.clock;
+}
+
+/**
+ * Día local del fin que el trío `{ date, start, end }` describe: el siguiente
+ * si el fin es menor que el inicio (TT-72), el mismo si no.
+ */
+function endDayOf(date: string, start: string, end: string): string {
+  return crossesMidnight(start, end) ? addDaysToKey(date, 1) : date;
+}
+
+/**
+ * TT-110: el trío de la fila vuelve a dar el mismo fin. Inicio y fin vuelven
+ * siempre a su hora de pared, así que lo único que el trío puede perder es el
+ * día del fin. Una entrada que corre no edita sus horarios (TT-111).
+ */
+function hasEditableTimes(row: TimeEntryRow, timeZone: string): boolean {
+  if (row.endedAt === null) {
+    return false;
+  }
+  const start = labelOf(row.startedAt, timeZone);
+  const end = labelOf(row.endedAt, timeZone);
+  return end.day === endDayOf(start.day, start.clock, end.clock);
+}
+
 function toView(row: TimeEntryRow, timeZone: string): TimeEntryView {
   const endedAt = row.endedAt;
   const seconds = endedAt === null ? null : durationSeconds(row.startedAt, endedAt);
@@ -82,6 +120,7 @@ function toView(row: TimeEntryRow, timeZone: string): TimeEntryView {
     extraDays: endedAt === null ? 0 : extraDays(row.startedAt, endedAt, timeZone),
     durationSeconds: seconds,
     durationLabel: seconds === null ? null : formatDuration(Math.floor(seconds / 60)),
+    editableTimes: hasEditableTimes(row, timeZone),
   };
 }
 
@@ -262,17 +301,26 @@ export async function startTimer(
     running: toView(row, timeZone),
     stopped: null,
   });
-  return createEntryOnce(actor, input.id, {
-    attempt: async () => {
-      const started = await attemptStart(actor, input.id, input.description);
-      return {
-        running: toView(started.running, timeZone),
-        stopped: started.stopped === null ? null : toView(started.stopped, timeZone),
-      };
-    },
-    replayed: runningOnly,
-    winner: runningOnly,
-  });
+  try {
+    return await createEntryOnce(actor, input.id, {
+      attempt: async () => {
+        const started = await attemptStart(actor, input.id, input.description);
+        return {
+          running: toView(started.running, timeZone),
+          stopped: started.stopped === null ? null : toView(started.stopped, timeZone),
+        };
+      },
+      replayed: runningOnly,
+      winner: runningOnly,
+    });
+  } catch (error) {
+    // Red de seguridad: con el piso de `stopById` el `check` no salta por el
+    // cierre del timer anterior, pero si salta no es un problema de red.
+    if (timeEntryRepository.isEndBeforeStart(error)) {
+      throw new TimeEntryError("validation", timeEntryMessages.endBeforeStart);
+    }
+    throw error;
+  }
 }
 
 export async function stopTimer(
@@ -389,9 +437,7 @@ export async function createManualEntry(
     }
     // El fin es la hora tecleada y no el inicio más la duración: con un cambio
     // de horario en el medio las dos cosas no coinciden.
-    const endDay = crossesMidnight(input.start, input.end)
-      ? addDaysToKey(input.date, 1)
-      : input.date;
+    const endDay = endDayOf(input.date, input.start, input.end);
     // El día siguiente al 9999-12-31 no tiene clave de cuatro cifras: es la
     // fecha la que no sirve, no la hora.
     if (parseDayKey(endDay) === null) {
@@ -430,22 +476,210 @@ export async function createManualEntry(
       },
     });
 
-    // Con la fila ya insertada: la más reciente puede ser esta misma. Solo se
-    // compara contra el extremo inferior, porque el superior se estira hasta
-    // el día de la entrada más nueva y la recién creada nunca lo supera. El
-    // inferior se calcula igual que en `getTrackerState`.
-    const latestPast = await timeEntryRepository.findLatestClosedBefore(
-      actor.workspaceId,
-      actor.userId,
-      now,
-      tx,
-    );
-    const from = windowStart(now, timeZone, latestPast, undefined);
     return {
       created: toView(created, timeZone),
-      outsideWindow: created.startedAt.getTime() < from.getTime(),
+      outsideWindow: await startsBeforeWindow(tx, actor, created, now, timeZone),
     };
   });
+}
+
+/**
+ * TT-108: la fila, ya escrita, empieza antes del tramo que la lista dibuja. Se
+ * lee después de escribir porque la fila puede ser la que estira la ventana.
+ * Solo se compara contra el extremo inferior: el superior se estira hasta el
+ * día de la entrada más nueva, y una fila recién escrita nunca lo supera. El
+ * extremo se calcula igual que en `getTrackerState`.
+ */
+async function startsBeforeWindow(
+  tx: Transaction,
+  actor: Actor,
+  row: TimeEntryRow,
+  now: Date,
+  timeZone: string,
+): Promise<boolean> {
+  const latestPast = await timeEntryRepository.findLatestClosedBefore(
+    actor.workspaceId,
+    actor.userId,
+    now,
+    tx,
+  );
+  const running = await timeEntryRepository.findRunning(
+    actor.workspaceId,
+    actor.userId,
+    tx,
+  );
+  const from = windowStart(now, timeZone, latestPast, running);
+  return row.startedAt.getTime() < from.getTime();
+}
+
+type ClosedEntryRow = TimeEntryRow & { readonly endedAt: Date };
+
+function isClosed(row: TimeEntryRow): row is ClosedEntryRow {
+  return row.endedAt !== null;
+}
+
+/**
+ * Conservación del ADR 0006 sobre un extremo: el instante guardado si su
+ * rótulo es el pedido; si no, la conversión de la hora de pared. `null` si esa
+ * hora no existe (TT-112).
+ */
+function resolveExtreme(stored: Date, label: WallLabel, timeZone: string): Date | null {
+  return sameLabel(stored, label, timeZone)
+    ? stored
+    : instantFromLocal(label.day, label.clock, timeZone);
+}
+
+function lastsAMinute(times: { startedAt: Date; endedAt: Date }): boolean {
+  return durationSeconds(times.startedAt, times.endedAt) >= 60;
+}
+
+/**
+ * Los instantes de un trío pedido sobre una entrada cerrada, con la regla del
+ * ADR 0006: conservar lo que no cambió, descartarlo si el par queda corto y
+ * validar la duración sobre instantes. Lanza `TimeEntryError` con el código de
+ * cada rechazo.
+ */
+function resolveEntryTimes(
+  row: ClosedEntryRow,
+  input: UpdateEntryTimesInput,
+  timeZone: string,
+): { startedAt: Date; endedAt: Date } {
+  const start: WallLabel = { day: input.date, clock: input.start };
+  const end: WallLabel = {
+    day: endDayOf(input.date, input.start, input.end),
+    clock: input.end,
+  };
+  // El día siguiente al 9999-12-31 no tiene clave de cuatro cifras: es la
+  // fecha la que no sirve, no la hora.
+  if (parseDayKey(end.day) === null) {
+    throw new TimeEntryError("validation", timeEntryMessages.invalidDate);
+  }
+  const startConverted = instantFromLocal(start.day, start.clock, timeZone);
+  const endConverted = instantFromLocal(end.day, end.clock, timeZone);
+  if (startConverted === null || endConverted === null) {
+    throw new TimeEntryError("validation", timeEntryMessages.nonexistentClock);
+  }
+  const converted = { startedAt: startConverted, endedAt: endConverted };
+  const conserved = {
+    startedAt: sameLabel(row.startedAt, start, timeZone) ? row.startedAt : startConverted,
+    endedAt: sameLabel(row.endedAt, end, timeZone) ? row.endedAt : endConverted,
+  };
+  // Un extremo conservado junto a uno convertido puede quedar fuera de orden
+  // en la hora repetida, o a segundos del otro: el par convertido entero es
+  // monótono.
+  const times = lastsAMinute(conserved) ? conserved : converted;
+  // Un día de cuatro cifras al oeste de Greenwich puede caer en el año 10000
+  // UTC, que la base no interpreta. Solo lo alcanza un extremo convertido.
+  if (isAfterYear9999(times.startedAt) || isAfterYear9999(times.endedAt)) {
+    throw new TimeEntryError("validation", timeEntryMessages.invalidDate);
+  }
+  if (!lastsAMinute(times)) {
+    throw new TimeEntryError("validation", timeEntryMessages.tooShort);
+  }
+  return times;
+}
+
+/**
+ * Corrige el horario de una entrada cerrada desde el trío de la fila. Un
+ * extremo cuyo día y hora no cambiaron conserva su instante (ADR 0006).
+ */
+export async function updateEntryTimes(
+  actor: Actor,
+  workspace: TrackerWorkspace,
+  input: UpdateEntryTimesInput,
+  now: Date = new Date(),
+): Promise<UpdateEntryTimesResult> {
+  const timeZone = workspace.timezone;
+
+  return db.transaction(async (tx) => {
+    const row = await readOwnEntry(tx, actor, "timeEntry.own.update", input.id);
+    if (!isClosed(row)) {
+      throw new TimeEntryError("timer_running", timeEntryMessages.runningEntryTimes);
+    }
+    // El trío no puede expresar esta entrada: guardarlo la truncaría.
+    if (!hasEditableTimes(row, timeZone)) {
+      throw new TimeEntryError("validation", timeEntryMessages.multiDayTimes);
+    }
+    const times = resolveEntryTimes(row, input, timeZone);
+    if (dayKey(times.startedAt, timeZone) < workspaceFloorDayKey(workspace)) {
+      throw new TimeEntryError("validation", timeEntryMessages.beforeWorkspace);
+    }
+
+    const updated = await timeEntryRepository.updateTimes(tx, targetOf(row), times);
+    if (updated === undefined) {
+      throw new TimeEntryError("timer_running", timeEntryMessages.runningEntryTimes);
+    }
+    await recordAudit(tx, {
+      workspaceId: actor.workspaceId,
+      actorId: actor.userId,
+      action: "timeEntry.updateTimes",
+      entity: AUDIT_ENTITY,
+      entityId: updated.id,
+      previousValue: { startedAt: row.startedAt, endedAt: row.endedAt },
+      nextValue: { startedAt: updated.startedAt, endedAt: updated.endedAt },
+    });
+
+    return {
+      entry: toView(updated, timeZone),
+      outsideWindow: await startsBeforeWindow(tx, actor, updated, now, timeZone),
+    };
+  });
+}
+
+/**
+ * Corrige desde cuándo corre el timer activo (TT-28). El día viaja con la hora:
+ * un timer puede llevar días corriendo (TT-42).
+ */
+export async function updateRunningStart(
+  actor: Actor,
+  workspace: TrackerWorkspace,
+  input: UpdateRunningStartInput,
+  now: Date = new Date(),
+): Promise<UpdateRunningStartResult> {
+  const timeZone = workspace.timezone;
+
+  const updated = await db.transaction(async (tx) => {
+    const row = await readOwnEntry(tx, actor, "timeEntry.own.update", input.id);
+    if (row.endedAt !== null) {
+      throw new TimeEntryError("already_stopped", timeEntryMessages.alreadyStopped);
+    }
+    // Conservar evita que reguardar el inicio sin cambios lo mueva al segundo
+    // instante de la hora repetida (ADR 0006).
+    const startedAt = resolveExtreme(
+      row.startedAt,
+      { day: input.date, clock: input.start },
+      timeZone,
+    );
+    if (startedAt === null) {
+      throw new TimeEntryError("validation", timeEntryMessages.nonexistentClock);
+    }
+    if (startedAt.getTime() > now.getTime()) {
+      throw new TimeEntryError("validation", timeEntryMessages.futureTime);
+    }
+    if (dayKey(startedAt, timeZone) < workspaceFloorDayKey(workspace)) {
+      throw new TimeEntryError("validation", timeEntryMessages.beforeWorkspace);
+    }
+
+    const next = await timeEntryRepository.updateStartOfRunning(
+      tx,
+      targetOf(row),
+      startedAt,
+    );
+    if (next === undefined) {
+      throw new TimeEntryError("already_stopped", timeEntryMessages.alreadyStopped);
+    }
+    await recordAudit(tx, {
+      workspaceId: actor.workspaceId,
+      actorId: actor.userId,
+      action: "timeEntry.updateStart",
+      entity: AUDIT_ENTITY,
+      entityId: next.id,
+      previousValue: { startedAt: row.startedAt },
+      nextValue: { startedAt: next.startedAt },
+    });
+    return next;
+  });
+  return { running: toView(updated, timeZone) };
 }
 
 /**

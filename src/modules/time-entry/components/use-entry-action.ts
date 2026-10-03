@@ -58,16 +58,22 @@ export function useEntryAction<Input, Data>(
     setFailure(null);
     startTransition(async () => {
       options.optimistic?.(input);
+      // Lo que se actualiza después del `await` va en su propia transición:
+      // así entra en el mismo commit que descarta la vista optimista, y el
+      // aviso de error no se ve junto a los valores que ya no valen.
       try {
         const result = await action(input);
         if (!result.ok) {
-          fail({ code: result.code, message: result.message });
+          const failure = { code: result.code, message: result.message };
+          startTransition(() => fail(failure));
           return;
         }
-        options.onSuccess?.(result.data, input);
+        startTransition(() => options.onSuccess?.(result.data, input));
       } catch {
         // La action no llegó a responder: red caída o servidor inalcanzable.
-        fail({ code: "unexpected", message: timeEntryMessages.unexpected });
+        startTransition(() =>
+          fail({ code: "unexpected", message: timeEntryMessages.unexpected }),
+        );
       }
     });
   }

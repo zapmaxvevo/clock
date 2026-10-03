@@ -7,10 +7,16 @@ import { db, type Transaction } from "@/server/db";
 import { membership } from "@/server/db/schema";
 import { constraintOf, UNIQUE_VIOLATION } from "@/server/db/constraint-error";
 import { ForbiddenError, type Actor } from "@/server/permissions";
-import { addDaysToKey } from "@/server/time";
+import {
+  addDaysToKey,
+  dayKey,
+  formatClock,
+  instantFromLocal,
+  shiftClock,
+} from "@/server/time";
 import { warmPool } from "@/test/concurrency";
 import { buenosAires, seedMember, seedTimeEntry, seedWorkspace } from "@/test/factories";
-import { allTimeEntries, auditFor, timeEntriesOf } from "@/test/queries";
+import { allTimeEntries, auditFor, timeEntriesOf, timeEntryById } from "@/test/queries";
 
 import { timeEntryRepository } from "./repository";
 import { timeEntryMessages, type StartTimerResult } from "./schema";
@@ -22,6 +28,8 @@ import {
   stopTimer,
   TimeEntryError,
   updateDescription,
+  updateEntryTimes,
+  updateRunningStart,
 } from "./service";
 
 const madrid = "Europe/Madrid";
@@ -577,20 +585,45 @@ describe("stopTimer", () => {
       message: timeEntryMessages.forbidden,
     });
   });
+});
 
-  it("rechaza cerrar antes del inicio, que es lo que impide la restricción de la base", async () => {
-    const future = new Date(Date.now() + 3_600_000).toISOString();
-    const row = await seedTimeEntry({
+describe("TT-101: la parada de un timer cuyo inicio quedó después del now() de la base", () => {
+  /** Un timer abierto con el inicio una hora por delante del reloj de la base. */
+  function seedFutureRunning() {
+    return seedTimeEntry({
       workspaceId,
       userId: actor.userId,
-      startedAt: future,
+      startedAt: new Date(Date.now() + 3_600_000),
+    });
+  }
+
+  it("stopTimer lo cierra sin error, con el fin igual al inicio", async () => {
+    const row = await seedFutureRunning();
+
+    const result = await stopTimer(actor, buenosAires, { id: row.id });
+
+    expect(result.stopped.endedAt).toBe(row.startedAt.toISOString());
+    expect(result.stopped.durationSeconds).toBe(0);
+    const after = await timeEntryById(row.id);
+    expect(after?.endedAt?.toISOString()).toBe(row.startedAt.toISOString());
+  });
+
+  it("el cierre que hace startTimer también, y el nuevo queda abierto", async () => {
+    const row = await seedFutureRunning();
+
+    const result = await startTimer(actor, buenosAires, {
+      id: randomUUID(),
+      description: "siguiente",
     });
 
-    await expect(stopTimer(actor, buenosAires, { id: row.id })).rejects.toMatchObject({
-      code: "validation",
-      message: timeEntryMessages.endBeforeStart,
-    });
-    expect((await allTimeEntries())[0].endedAt).toBeNull();
+    expect(result.stopped?.id).toBe(row.id);
+    expect(result.stopped?.endedAt).toBe(row.startedAt.toISOString());
+    expect(result.stopped?.durationSeconds).toBe(0);
+    const rows = await timeEntriesOf(workspaceId, actor.userId);
+    expect(rows.filter((entry) => entry.endedAt === null)).toHaveLength(1);
+    expect((await timeEntryById(row.id))?.endedAt?.toISOString()).toBe(
+      row.startedAt.toISOString(),
+    );
   });
 });
 
@@ -1487,5 +1520,1372 @@ describe("createManualEntry con cambio de horario", () => {
       expect(row.endedAt).not.toBeNull();
       expect(row.endedAt?.getTime() ?? 0).toBeGreaterThan(row.startedAt.getTime());
     }
+  });
+});
+
+/**
+ * Como `raceThroughBarrier`, pero los corredores entran a la cola del bloqueo
+ * de a uno: cada uno arranca recién cuando el anterior ya está trabado. Postgres
+ * le da la fila a quien la pidió primero, así que el orden de la cola es el de
+ * la lista.
+ */
+async function queueBehindBarrier(
+  hold: (tx: Transaction) => Promise<unknown>,
+  racers: readonly (() => Promise<unknown>)[],
+): Promise<PromiseSettledResult<unknown>[]> {
+  let holding = () => {};
+  const held = new Promise<void>((resolve) => {
+    holding = resolve;
+  });
+  let release = () => {};
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const barrier = db
+    .transaction(async (tx) => {
+      await hold(tx);
+      holding();
+      await released;
+      tx.rollback();
+    })
+    .catch((error: unknown) => {
+      if (!(error instanceof TransactionRollbackError)) {
+        throw error;
+      }
+    });
+  await Promise.race([held, barrier]);
+
+  const running: Promise<unknown>[] = [];
+  const waiting = new AbortController();
+  try {
+    for (const racer of racers) {
+      const current = racer();
+      running.push(current);
+      const finishedEarly = current.then(() => {
+        throw new Error("Un corredor terminó sin trabarse en la barrera.");
+      });
+      await Promise.race([
+        untilLockWaiters(running.length, waiting.signal),
+        finishedEarly,
+      ]);
+    }
+  } finally {
+    waiting.abort();
+    release();
+    await barrier;
+  }
+  return Promise.allSettled(running);
+}
+
+/** Toma el bloqueo de la fila, como lo hace `readOwnEntry`. */
+function lockRow(id: string) {
+  return (tx: Transaction) =>
+    tx.execute(sql`select id from time_entry where id = ${id} for update`);
+}
+
+/** Una entrada cerrada del actor, con los dos instantes tal como se escriben. */
+function seedClosed(startedAt: string, endedAt: string, userId?: string) {
+  return seedTimeEntry({
+    workspaceId,
+    userId: userId ?? actor.userId,
+    startedAt,
+    endedAt,
+  });
+}
+
+/** Los dos instantes de la fila en ISO, o `undefined` si ya no está. */
+async function instantsOf(id: string) {
+  const row = await timeEntryById(id);
+  return row === undefined
+    ? undefined
+    : {
+        startedAt: row.startedAt.toISOString(),
+        endedAt: row.endedAt === null ? null : row.endedAt.toISOString(),
+      };
+}
+
+async function auditActionsOf(id: string) {
+  return (await auditFor("time_entry", id)).map((row) => row.action);
+}
+
+describe("updateEntryTimes", () => {
+  /** Las 12:00 del 2 de octubre de 2026 en Buenos Aires. */
+  const now = new Date("2026-10-02T15:00:00Z");
+  const workspace = workspaceOf(buenosAires);
+
+  it("guarda el trío nuevo y devuelve la vista con las horas de pared pedidas", async () => {
+    const row = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
+
+    const result = await updateEntryTimes(
+      actor,
+      workspace,
+      { id: row.id, date: "2026-10-01", start: "09:15", end: "11:45" },
+      now,
+    );
+
+    expect(result.outsideWindow).toBe(false);
+    expect(result.entry).toMatchObject({
+      id: row.id,
+      startedAt: "2026-10-01T12:15:00.000Z",
+      endedAt: "2026-10-01T14:45:00.000Z",
+      dayDate: "2026-10-01",
+      startLabel: "09:15",
+      endLabel: "11:45",
+      durationSeconds: 150 * 60,
+      durationLabel: "2:30",
+      extraDays: 0,
+      editableTimes: true,
+    });
+    expect(await instantsOf(row.id)).toEqual({
+      startedAt: "2026-10-01T12:15:00.000Z",
+      endedAt: "2026-10-01T14:45:00.000Z",
+    });
+  });
+
+  it("TT-56, TT-45: cambiar la fecha la mueve de grupo y recalcula los dos totales", async () => {
+    const moved = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
+    await seedClosed("2026-10-01T14:00:00Z", "2026-10-01T16:00:00Z");
+    await seedClosed("2026-09-30T15:00:00Z", "2026-09-30T16:00:00Z");
+
+    const before = await getTrackerState(actor, workspace, now);
+    const totalOf = (state: typeof before, date: string) =>
+      state.days.find((group) => group.date === date)?.closedSeconds;
+    expect(totalOf(before, "2026-10-01")).toBe(3 * 3600);
+    expect(totalOf(before, "2026-09-30")).toBe(3600);
+
+    const result = await updateEntryTimes(
+      actor,
+      workspace,
+      { id: moved.id, date: "2026-09-30", start: "08:00", end: "09:00" },
+      now,
+    );
+
+    expect(result.entry.dayDate).toBe("2026-09-30");
+    const after = await getTrackerState(actor, workspace, now);
+    expect(totalOf(after, "2026-10-01")).toBe(2 * 3600);
+    expect(totalOf(after, "2026-09-30")).toBe(2 * 3600);
+    const group = after.days.find((day) => day.date === "2026-09-30");
+    expect(group?.entries.map((entry) => entry.id)).toContain(moved.id);
+  });
+
+  it("TT-72, TT-51: un fin menor que el inicio cruza la medianoche", async () => {
+    const row = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
+
+    const result = await updateEntryTimes(
+      actor,
+      workspace,
+      { id: row.id, date: "2026-10-01", start: "23:00", end: "02:00" },
+      now,
+    );
+
+    expect(result.entry).toMatchObject({
+      startedAt: "2026-10-02T02:00:00.000Z",
+      endedAt: "2026-10-02T05:00:00.000Z",
+      dayDate: "2026-10-01",
+      durationSeconds: 3 * 3600,
+      extraDays: 1,
+      editableTimes: true,
+    });
+  });
+
+  it("TT-73: dos horas iguales fuera de la hora repetida se rechazan sin tocar la fila", async () => {
+    const row = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
+
+    for (const values of [
+      { start: "10:00", end: "10:00" },
+      // El inicio conservado y el fin igual a él: el descarte recalcula los dos
+      // y siguen siendo iguales.
+      { start: "08:00", end: "08:00" },
+    ]) {
+      await expect(
+        updateEntryTimes(
+          actor,
+          workspace,
+          { id: row.id, date: "2026-10-01", ...values },
+          now,
+        ),
+      ).rejects.toMatchObject({
+        code: "validation",
+        message: timeEntryMessages.tooShort,
+      });
+    }
+
+    expect(await instantsOf(row.id)).toEqual({
+      startedAt: "2026-10-01T11:00:00.000Z",
+      endedAt: "2026-10-01T12:00:00.000Z",
+    });
+    expect(await auditActionsOf(row.id)).toEqual([]);
+  });
+
+  it("TT-73: un minuto de distancia entre las dos horas es el mínimo y se acepta", async () => {
+    const row = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
+
+    const result = await updateEntryTimes(
+      actor,
+      workspace,
+      { id: row.id, date: "2026-10-01", start: "10:00", end: "10:01" },
+      now,
+    );
+
+    expect(result.entry.durationSeconds).toBe(60);
+  });
+
+  it("TT-82: una edición que deja dos entradas superpuestas se guarda y las dos suman", async () => {
+    await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T13:00:00Z");
+    const row = await seedClosed("2026-10-01T17:00:00Z", "2026-10-01T18:00:00Z");
+
+    await updateEntryTimes(
+      actor,
+      workspace,
+      { id: row.id, date: "2026-10-01", start: "09:00", end: "11:00" },
+      now,
+    );
+
+    const state = await getTrackerState(actor, workspace, now);
+    const day = state.days.find((group) => group.date === "2026-10-01");
+    expect(day?.entries).toHaveLength(2);
+    expect(day?.closedSeconds).toBe(4 * 3600);
+  });
+
+  it("rechaza un día anterior a la creación del workspace y acepta el mismo día", async () => {
+    const reciente = workspaceOf(buenosAires, "2026-09-01T12:00:00Z");
+    const row = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
+
+    await expect(
+      updateEntryTimes(
+        actor,
+        reciente,
+        { id: row.id, date: "2026-08-31", start: "08:00", end: "09:00" },
+        now,
+      ),
+    ).rejects.toMatchObject({
+      code: "validation",
+      message: timeEntryMessages.beforeWorkspace,
+    });
+    expect(await instantsOf(row.id)).toEqual({
+      startedAt: "2026-10-01T11:00:00.000Z",
+      endedAt: "2026-10-01T12:00:00.000Z",
+    });
+
+    const result = await updateEntryTimes(
+      actor,
+      reciente,
+      { id: row.id, date: "2026-09-01", start: "08:00", end: "09:00" },
+      now,
+    );
+    expect(result.entry.dayDate).toBe("2026-09-01");
+  });
+
+  it("acepta mover una entrada cerrada al futuro: no hay cota superior (P-10)", async () => {
+    const row = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
+
+    const result = await updateEntryTimes(
+      actor,
+      workspace,
+      { id: row.id, date: "2026-12-24", start: "08:00", end: "09:00" },
+      now,
+    );
+
+    expect(result.entry.dayDate).toBe("2026-12-24");
+    expect(result.outsideWindow).toBe(false);
+  });
+});
+
+describe("updateEntryTimes: outsideWindow (TT-108)", () => {
+  const now = new Date("2026-10-02T15:00:00Z");
+  const workspace = workspaceOf(buenosAires);
+  const toAugust = { date: "2026-08-01", start: "08:00", end: "09:00" };
+
+  it("es verdadero sin timer cuando la movida queda por debajo de la ventana", async () => {
+    await seedClosed("2026-10-02T11:00:00Z", "2026-10-02T12:00:00Z");
+    const row = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
+
+    const result = await updateEntryTimes(
+      actor,
+      workspace,
+      { id: row.id, ...toAugust },
+      now,
+    );
+
+    expect(result.outsideWindow).toBe(true);
+    const state = await getTrackerState(actor, workspace, now);
+    expect(state.days.map((group) => group.date)).toEqual(["2026-10-02"]);
+  });
+
+  it("es falso con un timer que arrancó antes, porque su día extiende la ventana", async () => {
+    await seedClosed("2026-10-02T11:00:00Z", "2026-10-02T12:00:00Z");
+    const row = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-07-31T12:00:00Z",
+    });
+
+    const result = await updateEntryTimes(
+      actor,
+      workspace,
+      { id: row.id, ...toAugust },
+      now,
+    );
+
+    expect(result.outsideWindow).toBe(false);
+    const state = await getTrackerState(actor, workspace, now);
+    expect(state.days.map((group) => group.date)).toContain("2026-08-01");
+  });
+
+  it("es falso con una futura presente: la movida, sola entre las pasadas, extiende la ventana", async () => {
+    await seedClosed("2026-10-20T11:00:00Z", "2026-10-20T12:00:00Z");
+    const row = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
+
+    const result = await updateEntryTimes(
+      actor,
+      workspace,
+      { id: row.id, ...toAugust },
+      now,
+    );
+
+    // Leída antes del update, la más reciente de las pasadas sería la del 1/10;
+    // contada la futura, el extremo sería el de los catorce días. Las dos
+    // darían el aviso sobre una entrada que la lista muestra.
+    expect(result.outsideWindow).toBe(false);
+    const state = await getTrackerState(actor, workspace, now);
+    expect(state.days.map((group) => group.date)).toEqual(["2026-10-20", "2026-08-01"]);
+  });
+
+  it("es verdadero cuando la movida era la más reciente de las pasadas y deja de serlo", async () => {
+    await seedClosed("2026-09-01T11:00:00Z", "2026-09-01T12:00:00Z");
+    const row = await seedClosed("2026-09-10T11:00:00Z", "2026-09-10T12:00:00Z");
+
+    const result = await updateEntryTimes(
+      actor,
+      workspace,
+      { id: row.id, date: "2026-08-15", start: "08:00", end: "09:00" },
+      now,
+    );
+
+    expect(result.outsideWindow).toBe(true);
+    const state = await getTrackerState(actor, workspace, now);
+    expect(state.days.map((group) => group.date)).toEqual(["2026-09-01"]);
+  });
+
+  it("es falso cuando la movida sigue siendo la más reciente de las pasadas: se mide después del update", async () => {
+    await seedClosed("2026-09-01T11:00:00Z", "2026-09-01T12:00:00Z");
+    const row = await seedClosed("2026-09-10T11:00:00Z", "2026-09-10T12:00:00Z");
+
+    const result = await updateEntryTimes(
+      actor,
+      workspace,
+      { id: row.id, date: "2026-09-05", start: "08:00", end: "09:00" },
+      now,
+    );
+
+    // Medida antes del update, la ventana arrancaría el 10/09 y el 05/09 quedaría afuera.
+    expect(result.outsideWindow).toBe(false);
+    const state = await getTrackerState(actor, workspace, now);
+    expect(state.days.map((group) => group.date)).toEqual(["2026-09-05"]);
+  });
+});
+
+describe("updateEntryTimes con cambio de horario (Europe/Madrid)", () => {
+  const now = new Date("2026-11-02T12:00:00Z");
+  const workspace = workspaceOf(madrid);
+
+  it("TT-97: las horas de pared que se editaron y la duración real, 240 y 120 minutos", async () => {
+    const autumn = await seedClosed("2026-10-20T08:00:00Z", "2026-10-20T09:00:00Z");
+    const spring = await seedClosed("2026-03-20T08:00:00Z", "2026-03-20T09:00:00Z");
+
+    // 25/10: de 01:00 en +02:00 a 04:00 en +01:00.
+    const fall = await updateEntryTimes(
+      actor,
+      workspace,
+      { id: autumn.id, date: "2026-10-25", start: "01:00", end: "04:00" },
+      now,
+    );
+    expect(fall.entry).toMatchObject({
+      startedAt: "2026-10-24T23:00:00.000Z",
+      endedAt: "2026-10-25T03:00:00.000Z",
+      startLabel: "01:00",
+      endLabel: "04:00",
+      dayDate: "2026-10-25",
+      durationSeconds: 240 * 60,
+    });
+
+    // 29/03: de 01:00 en +01:00 a 04:00 en +02:00.
+    const rise = await updateEntryTimes(
+      actor,
+      workspace,
+      { id: spring.id, date: "2026-03-29", start: "01:00", end: "04:00" },
+      now,
+    );
+    expect(rise.entry).toMatchObject({
+      startedAt: "2026-03-29T00:00:00.000Z",
+      endedAt: "2026-03-29T02:00:00.000Z",
+      startLabel: "01:00",
+      endLabel: "04:00",
+      durationSeconds: 120 * 60,
+    });
+  });
+
+  it("TT-112: rechaza la hora que no existe en el inicio y en el fin, sin tocar la fila", async () => {
+    const row = await seedClosed("2026-03-20T08:00:00Z", "2026-03-20T09:00:00Z");
+
+    for (const values of [
+      { start: "02:30", end: "04:00" },
+      { start: "01:30", end: "02:30" },
+    ]) {
+      await expect(
+        updateEntryTimes(
+          actor,
+          workspace,
+          { id: row.id, date: "2026-03-29", ...values },
+          now,
+        ),
+      ).rejects.toMatchObject({
+        code: "validation",
+        message: timeEntryMessages.nonexistentClock,
+      });
+    }
+    expect(await instantsOf(row.id)).toEqual({
+      startedAt: "2026-03-20T08:00:00.000Z",
+      endedAt: "2026-03-20T09:00:00.000Z",
+    });
+  });
+
+  it("TT-81: ningún trío alrededor de los dos cambios deja el fin antes del inicio", async () => {
+    // Las horas de 01:00 a 04:00 cada veinte minutos, contra dos entradas
+    // sembradas en la primera ocurrencia de la hora repetida y una alrededor de
+    // la hora que no existe.
+    const clocks = Array.from({ length: 10 }, (_, index) =>
+      shiftClock("01:00", index * 20),
+    );
+    const seeds = [
+      {
+        date: "2026-10-25",
+        startedAt: "2026-10-24T23:50:00Z",
+        endedAt: "2026-10-25T00:50:00Z",
+      },
+      {
+        date: "2026-10-25",
+        startedAt: "2026-10-25T00:30:00Z",
+        endedAt: "2026-10-25T02:15:00Z",
+      },
+      {
+        date: "2026-03-29",
+        startedAt: "2026-03-29T00:10:00Z",
+        endedAt: "2026-03-29T01:20:00Z",
+      },
+    ];
+    let accepted = 0;
+    for (const seed of seeds) {
+      for (const start of clocks) {
+        for (const end of clocks) {
+          const row = await seedClosed(seed.startedAt, seed.endedAt);
+          try {
+            await updateEntryTimes(
+              actor,
+              workspace,
+              { id: row.id, date: seed.date, start, end },
+              now,
+            );
+            accepted += 1;
+          } catch (error) {
+            // Solo rechazos de dominio: un `check` violado saldría como otro error.
+            const code = error instanceof TimeEntryError ? error.code : String(error);
+            expect([start, end, code]).toEqual([start, end, "validation"]);
+          }
+          const after = await timeEntryById(row.id);
+          const duration =
+            (after?.endedAt?.getTime() ?? 0) - (after?.startedAt.getTime() ?? 0);
+          expect([start, end, duration >= 0]).toEqual([start, end, true]);
+          await deleteEntry(actor, { id: row.id });
+        }
+      }
+    }
+    expect(accepted).toBeGreaterThan(0);
+    // Trescientas ediciones contra la base: el tope general de 20 s queda justo.
+  }, 60_000);
+
+  it("TT-81: instantFromLocal es estrictamente creciente en los seis días de los dos cambios", () => {
+    const days = [
+      "2026-03-28",
+      "2026-03-29",
+      "2026-03-30",
+      "2026-10-24",
+      "2026-10-25",
+      "2026-10-26",
+    ];
+    for (const day of days) {
+      const instants = Array.from({ length: 24 * 60 }, (_, minute) =>
+        instantFromLocal(day, shiftClock("00:00", minute), madrid),
+      ).filter((instant) => instant !== null);
+      // Solo el 29/03 pierde una hora: de 02:00 a 02:59 no existe.
+      expect([day, instants.length]).toEqual([
+        day,
+        day === "2026-03-29" ? 24 * 60 - 60 : 24 * 60,
+      ]);
+      for (let index = 1; index < instants.length; index += 1) {
+        expect([day, index, instants[index] > instants[index - 1]]).toEqual([
+          day,
+          index,
+          true,
+        ]);
+      }
+      const nextMidnight = instantFromLocal(addDaysToKey(day, 1), "00:00", madrid);
+      const lastMinute = instants.at(-1);
+      expect([
+        day,
+        nextMidnight !== null && lastMinute !== undefined && nextMidnight > lastMinute,
+      ]).toEqual([day, true]);
+    }
+  });
+});
+
+describe("ADR 0006: conservación y descarte", () => {
+  const now = new Date("2026-11-02T12:00:00Z");
+
+  it("descarta lo conservado en la hora repetida cuando el par queda fuera de orden", async () => {
+    // 01:50 a 02:50 con el fin en la primera ocurrencia.
+    const row = await seedClosed("2026-10-24T23:50:00Z", "2026-10-25T00:50:00Z");
+
+    const result = await updateEntryTimes(
+      actor,
+      workspaceOf(madrid),
+      { id: row.id, date: "2026-10-25", start: "02:10", end: "02:50" },
+      now,
+    );
+
+    expect(result.entry.startedAt).toBe("2026-10-25T01:10:00.000Z");
+    expect(result.entry.endedAt).toBe("2026-10-25T01:50:00.000Z");
+    expect(result.entry.durationSeconds).toBe(40 * 60);
+  });
+
+  it("conserva el inicio en la primera ocurrencia al cambiar el fin", async () => {
+    // 02:30 en la primera ocurrencia a 03:15.
+    const row = await seedClosed("2026-10-25T00:30:00Z", "2026-10-25T02:15:00Z");
+
+    const result = await updateEntryTimes(
+      actor,
+      workspaceOf(madrid),
+      { id: row.id, date: "2026-10-25", start: "02:30", end: "02:45" },
+      now,
+    );
+
+    expect(result.entry.startedAt).toBe("2026-10-25T00:30:00.000Z");
+    expect(result.entry.endedAt).toBe("2026-10-25T01:45:00.000Z");
+    expect(result.entry.durationSeconds).toBe(75 * 60);
+  });
+
+  it("acepta dos horas iguales que duran 60 minutos reales en la hora repetida", async () => {
+    const row = await seedClosed("2026-10-25T00:30:00Z", "2026-10-25T02:15:00Z");
+
+    const result = await updateEntryTimes(
+      actor,
+      workspaceOf(madrid),
+      { id: row.id, date: "2026-10-25", start: "02:30", end: "02:30" },
+      now,
+    );
+
+    expect(result.entry.startedAt).toBe("2026-10-25T00:30:00.000Z");
+    expect(result.entry.endedAt).toBe("2026-10-25T01:30:00.000Z");
+    expect(result.entry.durationSeconds).toBe(60 * 60);
+  });
+
+  it("conserva los segundos del extremo que no cambió", async () => {
+    // 10:00:40 a 10:30:15 en Buenos Aires.
+    const row = await seedClosed("2026-10-01T13:00:40Z", "2026-10-01T13:30:15Z");
+
+    const result = await updateEntryTimes(
+      actor,
+      workspaceOf(buenosAires),
+      { id: row.id, date: "2026-10-01", start: "10:00", end: "11:00" },
+      now,
+    );
+
+    expect(result.entry.startedAt).toBe("2026-10-01T13:00:40.000Z");
+    expect(result.entry.endedAt).toBe("2026-10-01T14:00:00.000Z");
+  });
+
+  it("recalcula los dos cuando el conservado dejaría el par en segundos", async () => {
+    const row = await seedClosed("2026-10-01T13:00:40Z", "2026-10-01T13:30:15Z");
+
+    const result = await updateEntryTimes(
+      actor,
+      workspaceOf(buenosAires),
+      { id: row.id, date: "2026-10-01", start: "10:00", end: "10:01" },
+      now,
+    );
+
+    expect(result.entry.startedAt).toBe("2026-10-01T13:00:00.000Z");
+    expect(result.entry.endedAt).toBe("2026-10-01T13:01:00.000Z");
+  });
+
+  describe("el timer en la primera ocurrencia", () => {
+    /** Las 02:40 de la primera pasada. */
+    const firstPass = new Date("2026-10-25T00:40:00Z");
+
+    it("reguardar el inicio sin cambios lo conserva y no cae en futureTime", async () => {
+      const row = await seedTimeEntry({
+        workspaceId,
+        userId: actor.userId,
+        startedAt: "2026-10-25T00:20:00Z",
+      });
+
+      const result = await updateRunningStart(
+        actor,
+        workspaceOf(madrid),
+        { id: row.id, date: "2026-10-25", start: "02:20" },
+        firstPass,
+      );
+
+      expect(result.running.startedAt).toBe("2026-10-25T00:20:00.000Z");
+      expect(result.running.endedAt).toBeNull();
+    });
+
+    it("un inicio cambiado va al segundo instante, que todavía no pasó", async () => {
+      const row = await seedTimeEntry({
+        workspaceId,
+        userId: actor.userId,
+        startedAt: "2026-10-25T00:20:00Z",
+      });
+
+      await expect(
+        updateRunningStart(
+          actor,
+          workspaceOf(madrid),
+          { id: row.id, date: "2026-10-25", start: "02:10" },
+          firstPass,
+        ),
+      ).rejects.toMatchObject({
+        code: "validation",
+        message: timeEntryMessages.futureTime,
+      });
+      expect(await instantsOf(row.id)).toEqual({
+        startedAt: "2026-10-25T00:20:00.000Z",
+        endedAt: null,
+      });
+      expect(await auditActionsOf(row.id)).toEqual([]);
+    });
+  });
+});
+
+describe("updateEntryTimes: fechas en el borde del calendario", () => {
+  const now = new Date("2026-10-02T15:00:00Z");
+
+  it.each([
+    ["el día de fin sin clave", { start: "23:00", end: "01:00" }],
+    ["el fin en el año 10000 UTC", { start: "20:00", end: "22:00" }],
+  ])("rechaza %s con invalidDate y sin tocar la fila", async (_, values) => {
+    const row = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
+
+    await expect(
+      updateEntryTimes(
+        actor,
+        workspaceOf(buenosAires),
+        { id: row.id, date: "9999-12-31", ...values },
+        now,
+      ),
+    ).rejects.toMatchObject({
+      code: "validation",
+      message: timeEntryMessages.invalidDate,
+    });
+    expect(await instantsOf(row.id)).toEqual({
+      startedAt: "2026-10-01T11:00:00.000Z",
+      endedAt: "2026-10-01T12:00:00.000Z",
+    });
+  });
+});
+
+describe("updateRunningStart", () => {
+  /** Las 12:00 del 2 de octubre de 2026 en Buenos Aires. */
+  const now = new Date("2026-10-02T15:00:00Z");
+  const workspace = workspaceOf(buenosAires);
+
+  /** El timer activo del actor, arrancado a las 08:00 de hoy. */
+  function seedTimer() {
+    return seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+  }
+
+  it("TT-28: mueve el inicio y la entrada sigue corriendo", async () => {
+    const row = await seedTimer();
+
+    const result = await updateRunningStart(
+      actor,
+      workspace,
+      { id: row.id, date: "2026-10-02", start: "07:30" },
+      now,
+    );
+
+    expect(result.running).toMatchObject({
+      id: row.id,
+      startedAt: "2026-10-02T10:30:00.000Z",
+      endedAt: null,
+      startLabel: "07:30",
+      editableTimes: false,
+    });
+    expect(await instantsOf(row.id)).toEqual({
+      startedAt: "2026-10-02T10:30:00.000Z",
+      endedAt: null,
+    });
+  });
+
+  it("TT-29, TT-75: un inicio posterior a now se rechaza y el timer queda como estaba", async () => {
+    const row = await seedTimer();
+
+    await expect(
+      updateRunningStart(
+        actor,
+        workspace,
+        { id: row.id, date: "2026-10-02", start: "12:01" },
+        now,
+      ),
+    ).rejects.toMatchObject({
+      code: "validation",
+      message: timeEntryMessages.futureTime,
+    });
+    await expect(
+      updateRunningStart(
+        actor,
+        workspace,
+        { id: row.id, date: "2026-10-03", start: "08:00" },
+        now,
+      ),
+    ).rejects.toMatchObject({
+      code: "validation",
+      message: timeEntryMessages.futureTime,
+    });
+
+    expect(await instantsOf(row.id)).toEqual({
+      startedAt: "2026-10-02T11:00:00.000Z",
+      endedAt: null,
+    });
+    expect(await auditActionsOf(row.id)).toEqual([]);
+  });
+
+  it("acepta el inicio exactamente en now", async () => {
+    const row = await seedTimer();
+
+    const result = await updateRunningStart(
+      actor,
+      workspace,
+      { id: row.id, date: "2026-10-02", start: "12:00" },
+      now,
+    );
+
+    expect(result.running.startedAt).toBe(now.toISOString());
+  });
+
+  it("TT-112: rechaza una hora de inicio que no existe", async () => {
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-03-29T03:00:00Z",
+    });
+
+    await expect(
+      updateRunningStart(
+        actor,
+        workspaceOf(madrid),
+        { id: row.id, date: "2026-03-29", start: "02:30" },
+        new Date("2026-03-29T10:00:00Z"),
+      ),
+    ).rejects.toMatchObject({
+      code: "validation",
+      message: timeEntryMessages.nonexistentClock,
+    });
+    expect((await instantsOf(row.id))?.startedAt).toBe("2026-03-29T03:00:00.000Z");
+  });
+
+  it("rechaza un día anterior a la creación del workspace y acepta el mismo día", async () => {
+    const reciente = workspaceOf(buenosAires, "2026-09-01T12:00:00Z");
+    const row = await seedTimer();
+
+    await expect(
+      updateRunningStart(
+        actor,
+        reciente,
+        { id: row.id, date: "2026-08-31", start: "23:59" },
+        now,
+      ),
+    ).rejects.toMatchObject({
+      code: "validation",
+      message: timeEntryMessages.beforeWorkspace,
+    });
+    expect((await instantsOf(row.id))?.startedAt).toBe("2026-10-02T11:00:00.000Z");
+
+    const result = await updateRunningStart(
+      actor,
+      reciente,
+      { id: row.id, date: "2026-09-01", start: "00:00" },
+      now,
+    );
+    expect(result.running.dayDate).toBe("2026-09-01");
+  });
+
+  it("TT-28, TT-46: mover el inicio a un día anterior cambia el día del timer activo", async () => {
+    await seedClosed("2026-10-02T12:00:00Z", "2026-10-02T13:00:00Z");
+    await seedClosed("2026-10-01T12:00:00Z", "2026-10-01T13:00:00Z");
+    const row = await seedTimer();
+
+    const before = await getTrackerState(actor, workspace, now);
+    expect(before.days.find((group) => group.isRunningDay)?.date).toBe("2026-10-02");
+
+    await updateRunningStart(
+      actor,
+      workspace,
+      { id: row.id, date: "2026-10-01", start: "20:00" },
+      now,
+    );
+
+    const after = await getTrackerState(actor, workspace, now);
+    const flags = after.days.map((group) => [group.date, group.isRunningDay]);
+    expect(flags).toEqual([
+      ["2026-10-02", false],
+      ["2026-10-01", true],
+    ]);
+    expect(after.running?.dayDate).toBe("2026-10-01");
+  });
+});
+
+describe("desenlaces con una pestaña desactualizada (§4.3)", () => {
+  const now = new Date("2026-10-02T15:00:00Z");
+  const workspace = workspaceOf(buenosAires);
+  const trio = { date: "2026-10-01", start: "09:00", end: "10:00" };
+
+  it("updateEntryTimes sobre una entrada borrada responde not_found sin escribir", async () => {
+    const row = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
+    await deleteEntry(actor, { id: row.id });
+
+    await expect(
+      updateEntryTimes(actor, workspace, { id: row.id, ...trio }, now),
+    ).rejects.toMatchObject({ code: "not_found", message: timeEntryMessages.notFound });
+    expect(await allTimeEntries()).toEqual([]);
+    expect(await auditActionsOf(row.id)).toEqual(["timeEntry.delete"]);
+  });
+
+  it("TT-111: updateEntryTimes sobre la entrada que corre responde timer_running sin escribir", async () => {
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+
+    await expect(
+      updateEntryTimes(actor, workspace, { id: row.id, ...trio }, now),
+    ).rejects.toMatchObject({
+      code: "timer_running",
+      message: timeEntryMessages.runningEntryTimes,
+    });
+    expect(await instantsOf(row.id)).toEqual({
+      startedAt: "2026-10-02T11:00:00.000Z",
+      endedAt: null,
+    });
+    expect(await auditActionsOf(row.id)).toEqual([]);
+  });
+
+  it("TT-111: la entrada que corre gana sobre un trío que por sí solo sería inválido", async () => {
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+
+    await expect(
+      updateEntryTimes(
+        actor,
+        workspace,
+        { id: row.id, date: "2026-10-01", start: "10:00", end: "10:00" },
+        now,
+      ),
+    ).rejects.toMatchObject({
+      code: "timer_running",
+      message: timeEntryMessages.runningEntryTimes,
+    });
+    expect((await instantsOf(row.id))?.endedAt).toBeNull();
+  });
+
+  it("el timer detenido gana sobre un inicio que por sí solo sería futuro", async () => {
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+    await stopTimer(actor, buenosAires, { id: row.id });
+
+    await expect(
+      updateRunningStart(
+        actor,
+        workspace,
+        { id: row.id, date: "2026-10-03", start: "08:00" },
+        now,
+      ),
+    ).rejects.toMatchObject({
+      code: "already_stopped",
+      message: timeEntryMessages.alreadyStopped,
+    });
+    expect((await instantsOf(row.id))?.startedAt).toBe("2026-10-02T11:00:00.000Z");
+  });
+
+  it("updateRunningStart sobre un timer ya detenido responde already_stopped sin escribir", async () => {
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+    const stopped = await stopTimer(actor, buenosAires, { id: row.id });
+
+    await expect(
+      updateRunningStart(
+        actor,
+        workspace,
+        { id: row.id, date: "2026-10-02", start: "07:00" },
+        now,
+      ),
+    ).rejects.toMatchObject({
+      code: "already_stopped",
+      message: timeEntryMessages.alreadyStopped,
+    });
+    expect(await instantsOf(row.id)).toEqual({
+      startedAt: "2026-10-02T11:00:00.000Z",
+      endedAt: stopped.stopped.endedAt,
+    });
+    expect(await auditActionsOf(row.id)).toEqual(["timeEntry.stop"]);
+  });
+
+  it("updateRunningStart sobre una entrada borrada responde not_found sin escribir", async () => {
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+    await deleteEntry(actor, { id: row.id });
+
+    await expect(
+      updateRunningStart(
+        actor,
+        workspace,
+        { id: row.id, date: "2026-10-02", start: "07:00" },
+        now,
+      ),
+    ).rejects.toMatchObject({ code: "not_found", message: timeEntryMessages.notFound });
+    expect(await allTimeEntries()).toEqual([]);
+  });
+
+  it("TT-79: las dos sobre la entrada de otra persona responden forbidden sin escribir", async () => {
+    const otherId = await seedMember(workspaceId, "member");
+    const closed = await seedClosed(
+      "2026-10-01T11:00:00Z",
+      "2026-10-01T12:00:00Z",
+      otherId,
+    );
+    const running = await seedTimeEntry({
+      workspaceId,
+      userId: otherId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+
+    await expect(
+      updateEntryTimes(actor, workspace, { id: closed.id, ...trio }, now),
+    ).rejects.toMatchObject({
+      code: "forbidden",
+      message: timeEntryMessages.forbiddenOtherOwner,
+    });
+    await expect(
+      updateRunningStart(
+        actor,
+        workspace,
+        { id: running.id, date: "2026-10-02", start: "07:00" },
+        now,
+      ),
+    ).rejects.toMatchObject({
+      code: "forbidden",
+      message: timeEntryMessages.forbiddenOtherOwner,
+    });
+
+    expect(await instantsOf(closed.id)).toEqual({
+      startedAt: "2026-10-01T11:00:00.000Z",
+      endedAt: "2026-10-01T12:00:00.000Z",
+    });
+    expect((await instantsOf(running.id))?.startedAt).toBe("2026-10-02T11:00:00.000Z");
+    expect(await auditFor("time_entry")).toEqual([]);
+  });
+
+  it("TT-80: un id que no existe responde not_found por las dos", async () => {
+    const id = "0b5e8d5e-3c2f-4b7a-9f1a-2c3d4e5f6a7b";
+
+    await expect(
+      updateEntryTimes(actor, workspace, { id, ...trio }, now),
+    ).rejects.toMatchObject({ code: "not_found", message: timeEntryMessages.notFound });
+    await expect(
+      updateRunningStart(
+        actor,
+        workspace,
+        { id, date: "2026-10-02", start: "07:00" },
+        now,
+      ),
+    ).rejects.toMatchObject({ code: "not_found", message: timeEntryMessages.notFound });
+  });
+
+  it("la parada que esperaba el bloqueo de updateRunningStart se escribe con el inicio nuevo", async () => {
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: new Date(Date.now() - 3_600_000),
+    });
+    // Un inicio posterior al now() con que va a arrancar la parada. El `now` de
+    // la aplicación va por delante, como un reloj adelantado respecto del de la
+    // base: es lo que deja pasar `futureTime`.
+    const moved = new Date(Math.ceil((Date.now() + 2 * 3_600_000) / 60_000) * 60_000);
+    const appNow = new Date(moved.getTime() + 3_600_000);
+
+    const [started, stopped] = await queueBehindBarrier(lockRow(row.id), [
+      () =>
+        updateRunningStart(
+          actor,
+          workspace,
+          {
+            id: row.id,
+            date: dayKey(moved, buenosAires),
+            start: formatClock(moved, buenosAires),
+          },
+          appNow,
+        ),
+      () => stopTimer(actor, buenosAires, { id: row.id }),
+    ]);
+
+    expect(started.status).toBe("fulfilled");
+    expect(stopped).toMatchObject({
+      status: "fulfilled",
+      value: {
+        stopped: { startedAt: moved.toISOString(), endedAt: moved.toISOString() },
+      },
+    });
+    expect(await instantsOf(row.id)).toEqual({
+      startedAt: moved.toISOString(),
+      endedAt: moved.toISOString(),
+    });
+    expect(await auditActionsOf(row.id)).toEqual([
+      "timeEntry.updateStart",
+      "timeEntry.stop",
+    ]);
+  });
+
+  it("el arranque que esperaba el bloqueo de updateRunningStart cierra con el inicio nuevo", async () => {
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: new Date(Date.now() - 3_600_000),
+    });
+    const moved = new Date(Math.ceil((Date.now() + 2 * 3_600_000) / 60_000) * 60_000);
+    const appNow = new Date(moved.getTime() + 3_600_000);
+    const nextId = randomUUID();
+
+    const [started, restarted] = await queueBehindBarrier(lockRow(row.id), [
+      () =>
+        updateRunningStart(
+          actor,
+          workspace,
+          {
+            id: row.id,
+            date: dayKey(moved, buenosAires),
+            start: formatClock(moved, buenosAires),
+          },
+          appNow,
+        ),
+      () => startTimer(actor, buenosAires, { id: nextId, description: "siguiente" }),
+    ]);
+
+    expect(started.status).toBe("fulfilled");
+    expect(restarted).toMatchObject({
+      status: "fulfilled",
+      value: {
+        running: { id: nextId, endedAt: null },
+        stopped: { id: row.id, endedAt: moved.toISOString() },
+      },
+    });
+    expect(await instantsOf(row.id)).toEqual({
+      startedAt: moved.toISOString(),
+      endedAt: moved.toISOString(),
+    });
+    const open = (await timeEntriesOf(workspaceId, actor.userId)).filter(
+      (entry) => entry.endedAt === null,
+    );
+    expect(open.map((entry) => entry.id)).toEqual([nextId]);
+  });
+});
+
+describe("TT-89: aplicar dos veces el mismo pedido deja el mismo estado (§4.4)", () => {
+  const now = new Date("2026-11-02T12:00:00Z");
+
+  it.each([
+    [
+      "con un extremo conservado con segundos",
+      buenosAires,
+      { startedAt: "2026-10-01T13:00:40Z", endedAt: "2026-10-01T13:30:15Z" },
+      { date: "2026-10-01", start: "10:00", end: "11:00" },
+    ],
+    [
+      "con el descarte en la hora repetida",
+      madrid,
+      { startedAt: "2026-10-24T23:50:00Z", endedAt: "2026-10-25T00:50:00Z" },
+      { date: "2026-10-25", start: "02:10", end: "02:50" },
+    ],
+    [
+      "con la fecha cambiada",
+      buenosAires,
+      { startedAt: "2026-10-01T13:00:40Z", endedAt: "2026-10-01T13:30:15Z" },
+      { date: "2026-09-28", start: "10:00", end: "10:30" },
+    ],
+  ])("updateEntryTimes %s", async (_, timezone, seed, trio) => {
+    const row = await seedClosed(seed.startedAt, seed.endedAt);
+
+    const first = await updateEntryTimes(
+      actor,
+      workspaceOf(timezone),
+      { id: row.id, ...trio },
+      now,
+    );
+    const once = await instantsOf(row.id);
+    const second = await updateEntryTimes(
+      actor,
+      workspaceOf(timezone),
+      { id: row.id, ...trio },
+      now,
+    );
+
+    expect(second.entry).toEqual(first.entry);
+    expect(await instantsOf(row.id)).toEqual(once);
+    expect(await timeEntriesOf(workspaceId, actor.userId)).toHaveLength(1);
+  });
+
+  it("updateRunningStart", async () => {
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-02T11:00:40Z",
+    });
+    const input = { id: row.id, date: "2026-10-02", start: "07:30" };
+
+    const first = await updateRunningStart(actor, workspaceOf(buenosAires), input, now);
+    const second = await updateRunningStart(actor, workspaceOf(buenosAires), input, now);
+
+    expect(second.running).toEqual(first.running);
+    expect(await instantsOf(row.id)).toEqual({
+      startedAt: "2026-10-02T10:30:00.000Z",
+      endedAt: null,
+    });
+  });
+});
+
+describe("TT-110: editableTimes", () => {
+  it("es el round-trip del trío al minuto, no un umbral de duración", async () => {
+    const now = new Date("2026-10-10T15:00:00Z");
+    const cases = [
+      // [descripción, inicio, fin, editable]
+      ["25 h", "2026-10-01T13:00:00Z", "2026-10-02T14:00:00Z", false],
+      ["24 h justas", "2026-10-02T13:00:00Z", "2026-10-03T13:00:00Z", false],
+      ["48 h", "2026-10-03T13:00:00Z", "2026-10-05T13:00:00Z", false],
+      ["23 h 59 min 40 s", "2026-10-05T13:00:50Z", "2026-10-06T13:00:30Z", false],
+      [
+        "23 h 30 que cruza la medianoche",
+        "2026-10-06T13:00:00Z",
+        "2026-10-07T12:30:00Z",
+        true,
+      ],
+      ["30 s en el mismo minuto", "2026-10-07T20:00:10Z", "2026-10-07T20:00:40Z", true],
+      [
+        "30 s que cambian de minuto",
+        "2026-10-08T20:00:50Z",
+        "2026-10-08T20:01:20Z",
+        true,
+      ],
+      ["23 h 59 min de reloj", "2026-10-08T13:00:00Z", "2026-10-09T12:59:00Z", true],
+    ] as const;
+    const ids = new Map<string, string>();
+    for (const [name, startedAt, endedAt] of cases) {
+      ids.set(name, (await seedClosed(startedAt, endedAt)).id);
+    }
+
+    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    const views = new Map(
+      state.days.flatMap((group) => group.entries).map((entry) => [entry.id, entry]),
+    );
+    for (const [name, , , editable] of cases) {
+      expect([name, views.get(ids.get(name) ?? "")?.editableTimes]).toEqual([
+        name,
+        editable,
+      ]);
+    }
+  });
+
+  it("es falso en la entrada que corre (TT-111)", async () => {
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      new Date("2026-10-02T11:30:00Z"),
+    );
+
+    expect(state.running?.editableTimes).toBe(false);
+  });
+
+  it("cruzando un cambio de horario, mide la distancia de reloj y no la duración", async () => {
+    // Cada caso se lee con un `now` del día siguiente a su fin, para que caiga
+    // en la ventana.
+    const cases = [
+      // 23 h 30 de reloj que cruzan el atraso: 24 h 30 reales, editable.
+      ["23 h 30 de reloj, atraso", "2026-10-24T08:00:00Z", "2026-10-25T08:30:00Z", true],
+      // 24 h 30 de reloj que cruzan el adelanto: 23 h 30 reales, solo lectura.
+      [
+        "24 h 30 de reloj, adelanto",
+        "2026-03-28T09:00:00Z",
+        "2026-03-29T08:30:00Z",
+        false,
+      ],
+      // 02:40 en la primera pasada a 02:20 en la segunda: el trío lo leería
+      // como una entrada que termina al día siguiente.
+      [
+        "distancia negativa en la hora repetida",
+        "2026-10-25T00:40:00Z",
+        "2026-10-25T01:20:00Z",
+        false,
+      ],
+    ] as const;
+    for (const [name, startedAt, endedAt, editable] of cases) {
+      const row = await seedClosed(startedAt, endedAt);
+      const now = new Date(new Date(endedAt).getTime() + 24 * 3_600_000);
+
+      const state = await getTrackerState(actor, workspaceOf(madrid), now);
+
+      const view = state.days
+        .flatMap((group) => group.entries)
+        .find((entry) => entry.id === row.id);
+      expect([name, view?.editableTimes]).toEqual([name, editable]);
+    }
+  });
+
+  it("lo que updateEntryTimes escribe siempre vuelve editable", async () => {
+    const row = await seedClosed("2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
+
+    const result = await updateEntryTimes(
+      actor,
+      workspaceOf(buenosAires),
+      { id: row.id, date: "2026-10-01", start: "22:00", end: "21:59" },
+      new Date("2026-10-10T15:00:00Z"),
+    );
+
+    expect(result.entry.durationSeconds).toBe((24 * 60 - 1) * 60);
+    expect(result.entry.editableTimes).toBe(true);
+  });
+
+  it("updateEntryTimes rechaza la entrada que el trío no puede expresar, sin truncarla", async () => {
+    // 50 h: el trío de su vista es 10:00 – 12:00 del 1/10, y guardarlo la
+    // dejaría en dos horas.
+    const row = await seedClosed("2026-10-01T13:00:00Z", "2026-10-03T15:00:00Z");
+
+    await expect(
+      updateEntryTimes(
+        actor,
+        workspaceOf(buenosAires),
+        { id: row.id, date: "2026-10-01", start: "10:00", end: "12:00" },
+        new Date("2026-10-10T15:00:00Z"),
+      ),
+    ).rejects.toMatchObject({
+      code: "validation",
+      message: timeEntryMessages.multiDayTimes,
+    });
+    expect(await instantsOf(row.id)).toEqual({
+      startedAt: "2026-10-01T13:00:00.000Z",
+      endedAt: "2026-10-03T15:00:00.000Z",
+    });
+    expect(await auditActionsOf(row.id)).toEqual([]);
+  });
+});
+
+describe("las guardas de las dos escrituras nuevas del repository", () => {
+  // Inalcanzables a través del service, que ya leyó la fila con FOR UPDATE y
+  // comprobó lo mismo: por eso se llama al repository directo.
+  it("updateTimes no escribe sobre una entrada abierta", async () => {
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+    const target = { workspaceId, userId: actor.userId, id: row.id };
+    const times = {
+      startedAt: new Date("2026-10-01T11:00:00Z"),
+      endedAt: new Date("2026-10-01T12:00:00Z"),
+    };
+
+    const written = await db.transaction((tx) =>
+      timeEntryRepository.updateTimes(tx, target, times),
+    );
+
+    expect(written).toBeUndefined();
+    expect(await instantsOf(row.id)).toEqual({
+      startedAt: "2026-10-02T11:00:00.000Z",
+      endedAt: null,
+    });
+    const closed = await seedClosed("2026-10-03T11:00:00Z", "2026-10-03T12:00:00Z");
+    const propio = await db.transaction((tx) =>
+      timeEntryRepository.updateTimes(tx, { ...target, id: closed.id }, times),
+    );
+    expect(propio?.startedAt.toISOString()).toBe("2026-10-01T11:00:00.000Z");
+  });
+
+  it("updateStartOfRunning no escribe sobre una entrada cerrada", async () => {
+    const row = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
+    const target = { workspaceId, userId: actor.userId, id: row.id };
+    const startedAt = new Date("2026-10-01T10:00:00Z");
+
+    const written = await db.transaction((tx) =>
+      timeEntryRepository.updateStartOfRunning(tx, target, startedAt),
+    );
+
+    expect(written).toBeUndefined();
+    expect(await instantsOf(row.id)).toEqual({
+      startedAt: "2026-10-01T11:00:00.000Z",
+      endedAt: "2026-10-01T12:00:00.000Z",
+    });
+    const running = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+    const propio = await db.transaction((tx) =>
+      timeEntryRepository.updateStartOfRunning(
+        tx,
+        { ...target, id: running.id },
+        startedAt,
+      ),
+    );
+    expect(propio?.startedAt.toISOString()).toBe("2026-10-01T10:00:00.000Z");
+  });
+
+  it("el check sigue rechazando un fin anterior al inicio escrito directo (TT-81)", async () => {
+    const row = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
+
+    const failure = await db
+      .transaction((tx) =>
+        timeEntryRepository.updateTimes(
+          tx,
+          { workspaceId, userId: actor.userId, id: row.id },
+          {
+            startedAt: new Date("2026-10-01T12:00:00Z"),
+            endedAt: new Date("2026-10-01T11:00:00Z"),
+          },
+        ),
+      )
+      .catch((error: unknown) => error);
+
+    expect(timeEntryRepository.isEndBeforeStart(failure)).toBe(true);
   });
 });

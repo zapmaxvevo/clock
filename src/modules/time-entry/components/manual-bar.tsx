@@ -1,7 +1,7 @@
 "use client";
 
 import { PlusIcon } from "lucide-react";
-import { useId, type ReactNode } from "react";
+import { useId, type ReactNode, type Ref } from "react";
 
 import { Button } from "@/components/ui/button";
 import { timeEntryMessages } from "@/modules/time-entry/schema";
@@ -11,15 +11,17 @@ import { ClockField } from "./clock-field";
 import { DateField } from "./date-field";
 import { trackerLabels } from "./labels";
 import {
+  commitChange,
   draftDuration,
   draftExtraDays,
   withDate,
   withDuration,
   withEnd,
   withStart,
-  type ManualDraft,
-  type ManualDraftChange,
-} from "./manual-draft";
+  type ManualField,
+  type TimeDraft,
+  type TimeDraftChange,
+} from "./time-draft";
 
 type ManualBarProps = {
   /** El campo de descripción es del contenedor: conmutar de modo no lo pierde. */
@@ -28,8 +30,8 @@ type ManualBarProps = {
    * El borrador también es del contenedor: si un timer de otra pestaña obliga
    * a la barra a pasar al modo timer, lo tecleado sigue ahí al volver (TT-30).
    */
-  readonly draft: ManualDraft;
-  readonly onDraftChange: (draft: ManualDraft) => void;
+  readonly draft: TimeDraft;
+  readonly onDraftChange: (draft: TimeDraft) => void;
   /** Día de hoy en la zona del workspace. */
   readonly todayKey: string;
   /** Piso del workspace, el primer día que se puede elegir. */
@@ -38,11 +40,13 @@ type ManualBarProps = {
   /** Hay un agregado en vuelo. */
   readonly adding: boolean;
   readonly onAdd: () => void;
+  /** El contenedor mira si el foco quedó acá para devolverlo a la descripción (TT-25). */
+  readonly addRef?: Ref<HTMLButtonElement>;
 };
 
 /**
  * Barra del modo manual (TT-18, TT-25). No decide nada sobre el borrador: lo
- * pide entero a `manual-draft.ts` y entrega lo que le devuelve. El pedido y
+ * pide entero a `time-draft.ts` y entrega lo que le devuelve. El pedido y
  * sus avisos son del contenedor, por el mismo motivo que el borrador.
  */
 export function ManualBar({
@@ -54,6 +58,7 @@ export function ManualBar({
   canTrack,
   adding,
   onAdd,
+  addRef,
 }: ManualBarProps) {
   const tooShortId = useId();
 
@@ -70,14 +75,10 @@ export function ManualBar({
   const unavailable = tooShort || adding;
 
   function commit(
-    change: ManualDraftChange,
-    shown: (next: ManualDraft) => string,
+    change: TimeDraftChange<ManualField>,
+    shown: (next: TimeDraft) => string,
   ): string | null {
-    if (change.rejected !== null) {
-      return null;
-    }
-    onDraftChange(change.draft);
-    return shown(change.draft);
+    return commitChange(change, onDraftChange, shown);
   }
 
   function handleAdd(): void {
@@ -98,7 +99,7 @@ export function ManualBar({
           <ClockField
             value={draft.start}
             onCommit={(text) => commit(withStart(draft, text), (next) => next.start)}
-            label="Hora de inicio"
+            label={trackerLabels.startTime}
             disabled={!canTrack}
           />
           <span aria-hidden="true" className="text-muted-foreground">
@@ -108,7 +109,7 @@ export function ManualBar({
             <ClockField
               value={draft.end}
               onCommit={(text) => commit(withEnd(draft, text), (next) => next.end)}
-              label="Hora de fin"
+              label={trackerLabels.endTime}
               disabled={!canTrack}
             />
             {extraDays > 0 && (
@@ -140,6 +141,7 @@ export function ManualBar({
         </div>
 
         <Button
+          ref={addRef}
           type="button"
           variant="success"
           disabled={!canTrack}

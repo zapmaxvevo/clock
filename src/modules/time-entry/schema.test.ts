@@ -8,6 +8,8 @@ import {
   timeEntryMessages,
   trackerState,
   updateDescriptionInput,
+  updateEntryTimesInput,
+  updateRunningStartInput,
   TRACKER_WINDOW_DAYS,
 } from "./schema";
 
@@ -128,6 +130,7 @@ describe("trackerState", () => {
     extraDays: 0,
     durationSeconds: 5400,
     durationLabel: "1:30",
+    editableTimes: true,
   };
 
   const state = {
@@ -161,8 +164,21 @@ describe("trackerState", () => {
       extraDays: 0,
       durationSeconds: null,
       durationLabel: null,
+      editableTimes: false,
     };
     expect(trackerState.parse({ ...state, running }).running).toEqual(running);
+  });
+
+  it("exige editableTimes en cada entrada", () => {
+    const withoutFlag = Object.fromEntries(
+      Object.entries(entry).filter(([key]) => key !== "editableTimes"),
+    );
+    expect(
+      trackerState.safeParse({
+        ...state,
+        days: [{ ...state.days[0], entries: [withoutFlag] }],
+      }).success,
+    ).toBe(false);
   });
 
   it("rechaza una duración negativa y un superíndice negativo", () => {
@@ -253,6 +269,80 @@ describe("createManualEntryInput", () => {
     expect(result.success).toBe(false);
     expect(result.error?.issues.at(0)?.message).toBe(
       timeEntryMessages.descriptionTooLong,
+    );
+  });
+});
+
+describe("updateEntryTimesInput", () => {
+  const valid = { id, date: "2026-10-02", start: "08:00", end: "10:30" };
+
+  it("acepta el trío completo en forma canónica", () => {
+    expect(updateEntryTimesInput.parse(valid)).toEqual(valid);
+  });
+
+  it("exige los tres campos: no es un parche", () => {
+    for (const field of ["date", "start", "end"] as const) {
+      const partial = Object.fromEntries(
+        Object.entries(valid).filter(([key]) => key !== field),
+      );
+      expect([field, updateEntryTimesInput.safeParse(partial).success]).toEqual([
+        field,
+        false,
+      ]);
+    }
+  });
+
+  it("exige un id con forma de uuid", () => {
+    expect(updateEntryTimesInput.safeParse({ ...valid, id: "no-es-uuid" }).success).toBe(
+      false,
+    );
+  });
+
+  it("rechaza un día que no existe con el mensaje de fecha", () => {
+    const result = updateEntryTimesInput.safeParse({ ...valid, date: "2026-02-30" });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.at(0)?.message).toBe(timeEntryMessages.invalidDate);
+  });
+
+  it("rechaza una hora que no es canónica con el mensaje de hora", () => {
+    for (const end of ["9:00", "0900", "24:00", ""]) {
+      const result = updateEntryTimesInput.safeParse({ ...valid, end });
+      expect([end, result.success]).toEqual([end, false]);
+      expect(result.error?.issues.at(0)?.message).toBe(timeEntryMessages.invalidClock);
+    }
+  });
+
+  it("acepta un fin menor que el inicio y dos horas iguales: los decide el servidor", () => {
+    expect(
+      updateEntryTimesInput.safeParse({ ...valid, start: "23:00", end: "02:00" }).success,
+    ).toBe(true);
+    expect(
+      updateEntryTimesInput.safeParse({ ...valid, start: "08:00", end: "08:00" }).success,
+    ).toBe(true);
+  });
+});
+
+describe("updateRunningStartInput", () => {
+  const valid = { id, date: "2026-10-02", start: "08:00" };
+
+  it("acepta el día y la hora del inicio", () => {
+    expect(updateRunningStartInput.parse(valid)).toEqual(valid);
+  });
+
+  it("exige el día además de la hora", () => {
+    expect(updateRunningStartInput.safeParse({ id, start: "08:00" }).success).toBe(false);
+  });
+
+  it("rechaza un día que no existe y una hora no canónica", () => {
+    const date = updateRunningStartInput.safeParse({ ...valid, date: "2026-02-30" });
+    expect(date.error?.issues.at(0)?.message).toBe(timeEntryMessages.invalidDate);
+    const start = updateRunningStartInput.safeParse({ ...valid, start: "8:00" });
+    expect(start.error?.issues.at(0)?.message).toBe(timeEntryMessages.invalidClock);
+  });
+
+  it("no recibe un fin", () => {
+    expect(updateRunningStartInput.parse({ ...valid, end: "09:00" })).not.toHaveProperty(
+      "end",
     );
   });
 });

@@ -15,6 +15,8 @@ import {
   stopTimerInput,
   timeEntryMessages,
   updateDescriptionInput,
+  updateEntryTimesInput,
+  updateRunningStartInput,
   type ActionResult,
   type CreateManualEntryInput,
   type CreateManualEntryResult,
@@ -26,6 +28,10 @@ import {
   type StopTimerResult,
   type UpdateDescriptionInput,
   type UpdateDescriptionResult,
+  type UpdateEntryTimesInput,
+  type UpdateEntryTimesResult,
+  type UpdateRunningStartInput,
+  type UpdateRunningStartResult,
 } from "./schema";
 
 function failure<T>(error: unknown): ActionResult<T> {
@@ -114,5 +120,25 @@ export async function createManualEntry(
     // El service necesita la fecha de creación del workspace para el piso, y
     // la sesión ya la tiene: no hay consulta nueva.
     return service.createManualEntry(session.actor, session.workspace, values);
+  });
+}
+
+export async function updateEntryTimes(
+  input: UpdateEntryTimesInput,
+): Promise<ActionResult<UpdateEntryTimesResult>> {
+  return handle(async (session) => {
+    const values = updateEntryTimesInput.parse(input);
+    assertCan(session.actor, "timeEntry.own.update", ownTimeEntryResource(session.actor));
+    return service.updateEntryTimes(session.actor, session.workspace, values);
+  });
+}
+
+export async function updateRunningStart(
+  input: UpdateRunningStartInput,
+): Promise<ActionResult<UpdateRunningStartResult>> {
+  return handle(async (session) => {
+    const values = updateRunningStartInput.parse(input);
+    assertCan(session.actor, "timeEntry.own.update", ownTimeEntryResource(session.actor));
+    return service.updateRunningStart(session.actor, session.workspace, values);
   });
 }

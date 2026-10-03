@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, isNotNull, isNull, lt } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNotNull, isNull, lt, sql } from "drizzle-orm";
 
 import { db, type Transaction } from "@/server/db";
 import {
@@ -195,8 +195,10 @@ export const timeEntryRepository = {
   },
 
   /**
-   * Cierra la entrada con el mismo `now()` de la transacción. Devuelve
-   * `undefined` si ya estaba cerrada o si no es la fila que se leyó.
+   * Cierra la entrada con el mismo `now()` de la transacción, con piso en su
+   * inicio: desde que el inicio de un timer se puede editar, puede quedar
+   * después de ese `now()` (TT-101). Devuelve `undefined` si ya estaba cerrada
+   * o si no es la fila que se leyó.
    */
   async stopById(
     tx: Transaction,
@@ -204,7 +206,35 @@ export const timeEntryRepository = {
   ): Promise<TimeEntryRow | undefined> {
     const rows = await tx
       .update(timeEntry)
-      .set({ endedAt: now })
+      .set({ endedAt: sql`greatest(${now}, ${timeEntry.startedAt})` })
+      .where(and(isTarget(target), isNull(timeEntry.endedAt)))
+      .returning();
+    return rows.at(0);
+  },
+
+  /** Solo una fila cerrada. `undefined` si la entrada está corriendo. */
+  async updateTimes(
+    tx: Transaction,
+    target: EntryTarget,
+    times: { startedAt: Date; endedAt: Date },
+  ): Promise<TimeEntryRow | undefined> {
+    const rows = await tx
+      .update(timeEntry)
+      .set(times)
+      .where(and(isTarget(target), isNotNull(timeEntry.endedAt)))
+      .returning();
+    return rows.at(0);
+  },
+
+  /** Solo una fila abierta. `undefined` si ya la cerraron. */
+  async updateStartOfRunning(
+    tx: Transaction,
+    target: EntryTarget,
+    startedAt: Date,
+  ): Promise<TimeEntryRow | undefined> {
+    const rows = await tx
+      .update(timeEntry)
+      .set({ startedAt })
       .where(and(isTarget(target), isNull(timeEntry.endedAt)))
       .returning();
     return rows.at(0);

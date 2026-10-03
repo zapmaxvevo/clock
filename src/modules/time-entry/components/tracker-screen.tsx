@@ -4,7 +4,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { getTrackerState, type TrackerWorkspace } from "@/modules/time-entry/service";
 import type { Actor } from "@/server/permissions";
 
-import { DayGroup } from "./day-group";
+import { EntryList } from "./entry-list";
 import { TrackerBar } from "./tracker-bar";
 import { TrackerEmpty } from "./tracker-empty";
 import type { TrackerMode } from "./tracker-mode";
@@ -50,17 +50,14 @@ export async function TrackerScreen({
       />
 
       {state.hasAnyEntry ? (
-        <div className="flex flex-col gap-4">
-          {state.days.map((group) => (
-            <DayGroup
-              key={group.date}
-              group={group}
-              running={state.running}
-              serverNow={state.serverNow}
-              canTrack={state.canTrack}
-            />
-          ))}
-        </div>
+        <EntryList
+          days={state.days}
+          running={state.running}
+          serverNow={state.serverNow}
+          canTrack={state.canTrack}
+          todayKey={state.todayKey}
+          minDayKey={state.minDayKey}
+        />
       ) : (
         <TrackerEmpty />
       )}
