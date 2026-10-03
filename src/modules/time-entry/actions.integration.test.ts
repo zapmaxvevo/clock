@@ -5,10 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { db } from "@/server/db";
 import { membership, workspace } from "@/server/db/schema";
-import { buenosAires, seedUser, seedWorkspace } from "@/test/factories";
+import {
+  buenosAires,
+  seedTimeEntry,
+  seedUser,
+  seedWorkspace,
+  type SeededWorkspace,
+} from "@/test/factories";
 import { allTimeEntries } from "@/test/queries";
 
-import { timeEntryMessages } from "./schema";
+import { timeEntryMessages, type StartTimerInput } from "./schema";
 
 /**
  * La capa de actions no se puede ejecutar como está: `next/headers` y
@@ -99,6 +105,13 @@ async function signInOn(options: { timezone?: string; createdAt?: string } = {})
   return seeded;
 }
 
+function sessionUserId(): string {
+  if (mocks.sessionUser === null) {
+    throw new Error("El test no abrió sesión.");
+  }
+  return mocks.sessionUser.id;
+}
+
 beforeEach(() => {
   mocks.sessionUser = null;
   mocks.revalidated.length = 0;
@@ -111,12 +124,16 @@ afterEach(() => {
 
 describe("sin sesión", () => {
   it("manda al login en vez de ejecutar la action", async () => {
-    await expect(actions.startTimer({})).rejects.toBeInstanceOf(RedirectError);
+    await expect(actions.startTimer({ id: randomUUID() })).rejects.toBeInstanceOf(
+      RedirectError,
+    );
     expect(mocks.redirects).toEqual(["/login"]);
   });
 
   it("no revalida nada, porque no llegó a entrar al recorrido", async () => {
-    await expect(actions.startTimer({})).rejects.toBeInstanceOf(RedirectError);
+    await expect(actions.startTimer({ id: randomUUID() })).rejects.toBeInstanceOf(
+      RedirectError,
+    );
     expect(mocks.revalidated).toEqual([]);
   });
 });
@@ -125,7 +142,10 @@ describe("traducción del error al resultado tipado", () => {
   it("un error de Zod sale como validation con el mensaje del issue", async () => {
     await signIn();
 
-    const result = await actions.startTimer({ description: "a".repeat(3001) });
+    const result = await actions.startTimer({
+      id: randomUUID(),
+      description: "a".repeat(3001),
+    });
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -148,13 +168,13 @@ describe("traducción del error al resultado tipado", () => {
 
   it("la falta de permiso sale con el mensaje neutro y no con el de entrada ajena", async () => {
     const userId = await signIn();
-    await actions.startTimer({});
+    await actions.startTimer({ id: randomUUID() });
     await db
       .update(membership)
       .set({ status: "inactive" })
       .where(eq(membership.userId, userId));
 
-    const result = await actions.startTimer({});
+    const result = await actions.startTimer({ id: randomUUID() });
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -167,7 +187,7 @@ describe("la revalidación corre siempre", () => {
   it("después de una mutación exitosa", async () => {
     await signIn();
 
-    const result = await actions.startTimer({ description: "algo" });
+    const result = await actions.startTimer({ id: randomUUID(), description: "algo" });
 
     expect(result.ok).toBe(true);
     expect(mocks.revalidated).toContain("/");
@@ -198,7 +218,7 @@ describe("la revalidación corre siempre", () => {
 
   it("después de un rechazo de la entrada manual: la pestaña vuelve a ver el timer", async () => {
     await signIn();
-    await actions.startTimer({});
+    await actions.startTimer({ id: randomUUID() });
     mocks.revalidated.length = 0;
 
     const result = await actions.createManualEntry({
@@ -217,7 +237,7 @@ describe("la revalidación corre siempre", () => {
 describe("cada action exige su permiso antes de tocar nada", () => {
   it("las cuatro del tracker y la manual niegan con la membresía desactivada", async () => {
     const userId = await signIn();
-    await actions.startTimer({});
+    await actions.startTimer({ id: randomUUID() });
     await db
       .update(membership)
       .set({ status: "inactive" })
@@ -225,7 +245,7 @@ describe("cada action exige su permiso antes de tocar nada", () => {
 
     const id = "11111111-1111-4111-8111-111111111111";
     const results = [
-      await actions.startTimer({}),
+      await actions.startTimer({ id: randomUUID() }),
       await actions.stopTimer({ id }),
       await actions.updateDescription({ id, description: "x" }),
       await actions.deleteEntry({ id }),
@@ -242,6 +262,67 @@ describe("cada action exige su permiso antes de tocar nada", () => {
       expect(result.code).toBe("forbidden");
     }
   });
+});
+
+describe("el id que elige el cliente para «Iniciar»", () => {
+  it.each([
+    ["sin id", {}],
+    ["con un texto que no es uuid", { id: "no-es-uuid" }],
+    ["con el uuid nulo", { id: "00000000-0000-0000-0000-000000000000" }],
+    ["con un uuid v7", { id: "01890a5d-ac96-774b-bcce-b302099a8057" }],
+  ])("%s responde validation, no escribe y revalida", async (_, input) => {
+    await signIn();
+
+    // Lo que puede mandar un cliente que no respeta el tipo.
+    const result = await actions.startTimer(input as StartTimerInput);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("validation");
+    expect(mocks.revalidated).toContain("/");
+    expect(await allTimeEntries()).toHaveLength(0);
+  });
+
+  /** El dueño de la entrada ajena, armado después de que la sesión entró. */
+  const foreignOwners = {
+    "otra persona del workspace": (seeded: SeededWorkspace) => Promise.resolve(seeded),
+    "otra persona de otro workspace": () => seedWorkspace(buenosAires),
+    // Mismo usuario: lo único que la deja afuera es el filtro por workspace.
+    "la misma persona en otro workspace": async () => {
+      const other = await seedWorkspace(buenosAires);
+      const userId = sessionUserId();
+      await db
+        .insert(membership)
+        .values({ workspaceId: other.workspaceId, userId, role: "member" });
+      return { workspaceId: other.workspaceId, ownerId: userId };
+    },
+  };
+
+  it.each(Object.entries(foreignOwners))(
+    "el id de una entrada de %s responde forbidden con el mensaje neutro",
+    async (_, ownerOf) => {
+      const seeded = await signInOn();
+      const mine = await actions.startTimer({ id: randomUUID(), description: "mío" });
+      expect(mine.ok).toBe(true);
+      const foreignOwner = await ownerOf(seeded);
+      const foreign = await seedTimeEntry({
+        workspaceId: foreignOwner.workspaceId,
+        userId: foreignOwner.ownerId,
+        startedAt: "2026-10-02T09:00:00Z",
+        endedAt: "2026-10-02T10:00:00Z",
+      });
+      const rows = await allTimeEntries();
+
+      const result = await actions.startTimer({ id: foreign.id, description: "ajeno" });
+
+      expect(result).toEqual({
+        ok: false,
+        code: "forbidden",
+        message: timeEntryMessages.forbidden,
+      });
+      expect(await allTimeEntries()).toEqual(rows);
+    },
+  );
 });
 
 describe("la action convierte con el workspace de la sesión", () => {

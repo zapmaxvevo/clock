@@ -1,5 +1,6 @@
 import { db, type Transaction } from "@/server/db";
 import { recordAudit } from "@/server/audit";
+import { createOnce, type ConflictOutcome } from "@/server/create-once";
 import { can, type Action, type Actor } from "@/server/permissions";
 import {
   addDaysToKey,
@@ -151,80 +152,127 @@ async function closeRunning(
   return stopped;
 }
 
+/**
+ * La vuelta del timer abierto del ADR 0003: ante el choque del índice responde
+ * el timer que ganó y, si el ganador ya lo detuvo, pide otra vuelta.
+ */
+function runningConflictHook<Result>(
+  actor: Actor,
+  winner: (row: TimeEntryRow) => Result,
+): (error: unknown) => Promise<ConflictOutcome<Result>> {
+  return async (error) => {
+    if (!timeEntryRepository.isRunningConflict(error)) {
+      throw error;
+    }
+    const running = await timeEntryRepository.findRunning(
+      actor.workspaceId,
+      actor.userId,
+    );
+    return running === undefined
+      ? { kind: "retry" }
+      : { kind: "resolved", result: winner(running) };
+  };
+}
+
+/**
+ * El permiso de `timeEntry.own.create` y después `createOnce`, con la fila
+ * propia por workspace y usuario y, si se pasa `winner`, la vuelta del timer
+ * abierto del ADR 0003.
+ */
+async function createEntryOnce<Result>(
+  actor: Actor,
+  id: string,
+  creation: {
+    readonly attempt: () => Promise<Result>;
+    readonly replayed: (row: TimeEntryRow) => Result;
+    readonly winner?: (row: TimeEntryRow) => Result;
+  },
+): Promise<Result> {
+  // Antes que la fila propia: sin esto, una membresía desactivada recibiría
+  // éxito por mandar el id de una entrada suya que ya existe.
+  if (!can(actor, "timeEntry.own.create", ownTimeEntryResource(actor))) {
+    throw new TimeEntryError("forbidden", timeEntryMessages.forbidden);
+  }
+  const { winner } = creation;
+  return createOnce<TimeEntryRow, Result>({
+    id,
+    findOwn: (ownId) =>
+      timeEntryRepository.findOwnById(actor.workspaceId, actor.userId, ownId),
+    attempt: creation.attempt,
+    replayed: creation.replayed,
+    idConstraint: timeEntryRepository.idConstraint,
+    action: "timeEntry.own.create",
+    onOtherConflict:
+      winner === undefined ? undefined : runningConflictHook(actor, winner),
+  });
+}
+
 type StartAttempt = {
   readonly running: TimeEntryRow;
   readonly stopped: TimeEntryRow | null;
 };
 
 /**
- * Cierra el timer anterior y abre el nuevo con el mismo `now()`. Devuelve
- * `null` cuando otro arranque simultáneo ganó la carrera del índice único.
+ * Cierra el timer anterior y abre el nuevo con el mismo `now()`. Un choque con
+ * otro arranque sale como error de la base: lo resuelve `createEntryOnce`.
  */
 async function attemptStart(
   actor: Actor,
+  id: string,
   description: string,
-): Promise<StartAttempt | null> {
-  try {
-    return await db.transaction(async (tx) => {
-      // No hay fila que leer todavía: el dueño de la entrada nueva es el actor.
-      if (!can(actor, "timeEntry.own.create", ownTimeEntryResource(actor))) {
-        throw new TimeEntryError("forbidden", timeEntryMessages.forbidden);
-      }
-      const current = await timeEntryRepository.findRunning(
-        actor.workspaceId,
-        actor.userId,
-        tx,
-      );
-      const stopped =
-        current === undefined ? undefined : await closeRunning(tx, actor, current);
-      const running = await timeEntryRepository.insertRunning(tx, {
-        workspaceId: actor.workspaceId,
-        userId: actor.userId,
-        description,
-      });
-      await recordAudit(tx, {
-        workspaceId: actor.workspaceId,
-        actorId: actor.userId,
-        action: "timeEntry.start",
-        entity: AUDIT_ENTITY,
-        entityId: running.id,
-        nextValue: { description: running.description, startedAt: running.startedAt },
-      });
-      return { running, stopped: stopped ?? null };
+): Promise<StartAttempt> {
+  return db.transaction(async (tx) => {
+    const current = await timeEntryRepository.findRunning(
+      actor.workspaceId,
+      actor.userId,
+      tx,
+    );
+    const stopped =
+      current === undefined ? undefined : await closeRunning(tx, actor, current);
+    const running = await timeEntryRepository.insertRunning(tx, {
+      id,
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+      description,
     });
-  } catch (error) {
-    if (timeEntryRepository.isRunningConflict(error)) {
-      return null;
-    }
-    throw error;
-  }
+    await recordAudit(tx, {
+      workspaceId: actor.workspaceId,
+      actorId: actor.userId,
+      action: "timeEntry.start",
+      entity: AUDIT_ENTITY,
+      entityId: running.id,
+      nextValue: { description: running.description, startedAt: running.startedAt },
+    });
+    return { running, stopped: stopped ?? null };
+  });
 }
 
 /**
  * Arranca un timer. Si ya había uno corriendo lo cierra en el mismo instante;
- * si otro arranque ganó la carrera, devuelve el timer del ganador. Ver ADR 0003.
+ * si otro arranque ganó la carrera, devuelve el timer del ganador (ADR 0003).
+ * Un reintento con el mismo id responde la fila que creó el primer intento, sin
+ * escribir (ADR 0007).
  */
 export async function startTimer(
   actor: Actor,
   timeZone: string,
   input: StartTimerValues,
 ): Promise<StartTimerResult> {
-  // Dos vueltas: el reintento cubre que el ganador detenga su timer entre el
-  // choque y la relectura. Más vueltas no acercan a un resultado.
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const started = await attemptStart(actor, input.description);
-    if (started !== null) {
+  const runningOnly = (row: TimeEntryRow): StartTimerResult => ({
+    running: toView(row, timeZone),
+    stopped: null,
+  });
+  return createEntryOnce(actor, input.id, {
+    attempt: async () => {
+      const started = await attemptStart(actor, input.id, input.description);
       return {
         running: toView(started.running, timeZone),
         stopped: started.stopped === null ? null : toView(started.stopped, timeZone),
       };
-    }
-    const winner = await timeEntryRepository.findRunning(actor.workspaceId, actor.userId);
-    if (winner !== undefined) {
-      return { running: toView(winner, timeZone), stopped: null };
-    }
-  }
-  throw new TimeEntryError("unexpected", timeEntryMessages.unexpected);
+    },
+    replayed: runningOnly,
+    winner: runningOnly,
+  });
 }
 
 export async function stopTimer(

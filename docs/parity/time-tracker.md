@@ -822,15 +822,26 @@ lista, sin botón de «Reintentar». Lo tecleado se conserva, como en TT-89.
 
 Justificación: el alta manual es la única operación del módulo que **solo
 crea**. Si el pedido llegó al servidor y lo que se perdió fue la respuesta,
-reintentar crea una segunda entrada idéntica, y nada la frena: no choca contra
-el índice único del timer abierto, como sí haría un segundo arranque (TT-37), y
-TT-82 acepta la superposición sin decir nada. Un reintento que a veces duplica
-es peor que no ofrecerlo.
+reintentar crea una segunda entrada idéntica, y nada la frena: el pedido no
+lleva un id elegido por el cliente que deje reconocer que ya se aplicó, como sí
+lo lleva «Iniciar»
+([ADR 0007](../adr/0007-el-cliente-elige-el-id-de-las-altas.md)), y TT-82
+acepta la superposición sin decir nada. Un reintento que a veces duplica es
+peor que no ofrecerlo.
 
 El resto de las operaciones del módulo sí ofrece «Reintentar», porque repetirlas
-es inofensivo: arrancar choca con el índice único, detener sobre una entrada ya
-cerrada da TT-41, y editar y borrar apuntan a un identificador que ya existe, así
-que el segundo intento produce el mismo estado que el primero.
+es inofensivo: arrancar es seguro de reintentar porque el pedido lleva un id que
+elige el cliente (ADR 0007), y el reintento de un arranque ya aplicado responde
+el mismo timer sin escribir, sin cerrar ni abrir nada de más; detener sobre una
+entrada ya cerrada da TT-41, y editar y borrar apuntan a un identificador que ya
+existe, así que el segundo intento produce el mismo estado que el primero.
+
+_Corregido el 2026-10-03, decisión del equipo_: los dos párrafos anteriores
+decían que un arranque repetido choca con el índice único del timer abierto. El
+índice solo frena dos arranques simultáneos, no un reintento que llega después:
+reintentar un «Iniciar» cuya respuesta se perdió cerraba el timer recién creado
+y dejaba una entrada de segundos. Lo que distingue al alta manual no es el
+índice, sino que no lleva id del cliente. La regla del alta manual no cambia.
 
 **TT-90 El aviso nombra la acción que falló** — `adaptar`
 Un aviso tiene dos partes: un título que nombra lo que no se pudo hacer —«No se

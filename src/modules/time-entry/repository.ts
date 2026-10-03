@@ -1,6 +1,11 @@
 import { and, asc, desc, eq, gte, isNotNull, isNull, lt } from "drizzle-orm";
 
 import { db, type Transaction } from "@/server/db";
+import {
+  CHECK_VIOLATION,
+  hasConstraint,
+  UNIQUE_VIOLATION,
+} from "@/server/db/constraint-error";
 import { now, timeEntry } from "@/server/db/schema";
 
 export type TimeEntryRow = typeof timeEntry.$inferSelect;
@@ -27,28 +32,6 @@ function isTarget(target: EntryTarget) {
 
 type Executor = Transaction | typeof db;
 
-/** Postgres: violación de restricción única. */
-const UNIQUE_VIOLATION = "23505";
-/** Postgres: violación de una restricción `check`. */
-const CHECK_VIOLATION = "23514";
-
-/** El driver expone `code` y `constraint`; drizzle lo envuelve y lo deja en `cause`. */
-function hasConstraint(error: unknown, code: string, constraint: string): boolean {
-  let current: unknown = error;
-  while (typeof current === "object" && current !== null) {
-    const candidate = current as {
-      code?: unknown;
-      constraint?: unknown;
-      cause?: unknown;
-    };
-    if (candidate.code === code && candidate.constraint === constraint) {
-      return true;
-    }
-    current = candidate.cause;
-  }
-  return false;
-}
-
 /**
  * Único lugar con acceso a datos del módulo. Toda consulta filtra por el
  * `workspace_id` de la sesión.
@@ -71,6 +54,21 @@ export const timeEntryRepository = {
       .where(and(eq(timeEntry.workspaceId, workspaceId), eq(timeEntry.id, id)))
       .limit(1)
       .for("update");
+    return rows.at(0);
+  },
+
+  /** Sin bloqueo. Filtra por workspace y por usuario: solo encuentra filas propias. */
+  async findOwnById(
+    workspaceId: string,
+    userId: string,
+    id: string,
+    tx: Executor = db,
+  ): Promise<TimeEntryRow | undefined> {
+    const rows = await tx
+      .select()
+      .from(timeEntry)
+      .where(isTarget({ workspaceId, userId, id }))
+      .limit(1);
     return rows.at(0);
   },
 
@@ -162,10 +160,13 @@ export const timeEntryRepository = {
       .orderBy(desc(timeEntry.startedAt), asc(timeEntry.id));
   },
 
-  /** El inicio lo escribe la base: `now()` es la marca de inicio de la transacción. */
+  /**
+   * El inicio lo escribe la base: `now()` es la marca de inicio de la
+   * transacción. El id lo eligió el cliente (ADR 0007).
+   */
   async insertRunning(
     tx: Transaction,
-    values: { workspaceId: string; userId: string; description: string },
+    values: { id: string; workspaceId: string; userId: string; description: string },
   ): Promise<TimeEntryRow> {
     const [created] = await tx
       .insert(timeEntry)
@@ -229,6 +230,9 @@ export const timeEntryRepository = {
     const rows = await tx.delete(timeEntry).where(isTarget(target)).returning();
     return rows.at(0);
   },
+
+  /** La clave primaria de `time_entry`, para `createOnce`. */
+  idConstraint: "time_entry_pkey" as const,
 
   /** La carrera de dos arranques simultáneos. El service solo ve el booleano. */
   isRunningConflict(error: unknown): boolean {

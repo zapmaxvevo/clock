@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { db } from "@/server/db";
@@ -68,7 +70,10 @@ describe.each(roles)("rol %s", (role) => {
     it("arranca su propio timer", async () => {
       const actor = await seedActor(role);
 
-      const result = await startTimer(actor, buenosAires, { description: "trabajo" });
+      const result = await startTimer(actor, buenosAires, {
+        id: randomUUID(),
+        description: "trabajo",
+      });
 
       const row = await timeEntryById(result.running.id);
       expect(row?.userId).toBe(actor.userId);
@@ -105,7 +110,7 @@ describe.each(roles)("rol %s", (role) => {
       const actor = await seedActor(role, status);
 
       await expect(
-        startTimer(actor, buenosAires, { description: "no va" }),
+        startTimer(actor, buenosAires, { id: randomUUID(), description: "no va" }),
       ).rejects.toMatchObject({
         code: "forbidden",
         message: timeEntryMessages.forbidden,
@@ -130,7 +135,10 @@ describe.each(roles)("rol %s", (role) => {
   describe("timeEntry.own.update", () => {
     it("edita y detiene su propia entrada", async () => {
       const actor = await seedActor(role);
-      const started = await startTimer(actor, buenosAires, { description: "" });
+      const started = await startTimer(actor, buenosAires, {
+        id: randomUUID(),
+        description: "",
+      });
 
       await updateDescription(actor, buenosAires, {
         id: started.running.id,
@@ -472,6 +480,7 @@ describe("aislamiento entre workspaces", () => {
     });
 
     const started = await startTimer(elsewhere, buenosAires, {
+      id: randomUUID(),
       description: "corriendo allá",
     });
 
@@ -511,6 +520,29 @@ describe("membresía que dejó de estar activa", () => {
       state.days.flatMap((day) => day.entries).map((entry) => entry.description),
     ).toEqual(["cerrada"]);
   });
+});
+
+describe("el permiso va antes que la fila propia (ADR 0007)", () => {
+  it.each(notActive)(
+    "con %s, el id de una entrada propia que existe da forbidden y no la entrada",
+    async (status) => {
+      const actor = await seedActor("member", status);
+      const own = await seedTimeEntry({
+        workspaceId,
+        userId: actor.userId,
+        description: "propia",
+        startedAt: "2026-10-02T11:00:00Z",
+      });
+
+      await expect(
+        startTimer(actor, buenosAires, { id: own.id, description: "propia" }),
+      ).rejects.toMatchObject({
+        code: "forbidden",
+        message: timeEntryMessages.forbidden,
+      });
+      expect(await timeEntriesOf(workspaceId, actor.userId)).toEqual([own]);
+    },
+  );
 });
 
 describe("el filtro por dueño del repository", () => {

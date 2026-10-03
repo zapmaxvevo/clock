@@ -15,20 +15,21 @@ const id = "0b5e8d5e-3c2f-4b7a-9f1a-2c3d4e5f6a7b";
 
 describe("startTimerInput", () => {
   it("deja arrancar sin descripción", () => {
-    expect(startTimerInput.parse({})).toEqual({ description: "" });
+    expect(startTimerInput.parse({ id })).toEqual({ id, description: "" });
   });
 
   it("recorta los espacios de los extremos", () => {
-    expect(startTimerInput.parse({ description: "  reunión  " })).toEqual({
+    expect(startTimerInput.parse({ id, description: "  reunión  " })).toEqual({
+      id,
       description: "reunión",
     });
   });
 
   it("acepta exactamente 3000 caracteres y rechaza uno más", () => {
-    expect(startTimerInput.safeParse({ description: "a".repeat(3000) }).success).toBe(
+    expect(startTimerInput.safeParse({ id, description: "a".repeat(3000) }).success).toBe(
       true,
     );
-    const tooLong = startTimerInput.safeParse({ description: "a".repeat(3001) });
+    const tooLong = startTimerInput.safeParse({ id, description: "a".repeat(3001) });
     expect(tooLong.success).toBe(false);
     expect(tooLong.error?.issues.at(0)?.message).toBe(
       timeEntryMessages.descriptionTooLong,
@@ -37,8 +38,27 @@ describe("startTimerInput", () => {
 
   it("no cuenta como largo lo que el recorte saca", () => {
     expect(
-      startTimerInput.safeParse({ description: `  ${"a".repeat(3000)}  ` }).success,
+      startTimerInput.safeParse({ id, description: `  ${"a".repeat(3000)}  ` }).success,
     ).toBe(true);
+  });
+
+  it("acepta el id que genera crypto.randomUUID()", () => {
+    const generated = crypto.randomUUID();
+    expect(startTimerInput.parse({ id: generated })).toEqual({
+      id: generated,
+      description: "",
+    });
+  });
+
+  it.each([
+    ["sin id", {}],
+    ["con un texto que no es uuid", { id: "no-es-uuid" }],
+    ["con el uuid nulo", { id: "00000000-0000-0000-0000-000000000000" }],
+    ["con un uuid v7", { id: "01890a5d-ac96-774b-bcce-b302099a8057" }],
+  ])("rechaza el arranque %s", (_, input) => {
+    const result = startTimerInput.safeParse(input);
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.at(0)?.path).toEqual(["id"]);
   });
 });
 
@@ -46,7 +66,7 @@ describe("el carácter nulo en la descripción", () => {
   const withNull = "antes\u0000después";
 
   it.each([
-    ["startTimerInput", startTimerInput, {}],
+    ["startTimerInput", startTimerInput, { id }],
     ["updateDescriptionInput", updateDescriptionInput, { id }],
     [
       "createManualEntryInput",
@@ -63,7 +83,7 @@ describe("el carácter nulo en la descripción", () => {
 
   it("deja pasar el resto de los caracteres de control", () => {
     expect(
-      startTimerInput.safeParse({ description: "tab\tsalto\nfin\u0001" }).success,
+      startTimerInput.safeParse({ id, description: "tab\tsalto\nfin\u0001" }).success,
     ).toBe(true);
   });
 });

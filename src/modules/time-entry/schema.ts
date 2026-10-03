@@ -37,8 +37,12 @@ const description = z
     timeEntryMessages.descriptionNullCharacter,
   );
 
+/** Id de una entrada nueva, elegido por el cliente: ver el ADR 0007. */
+const newEntryId = z.uuidv4();
+
 /** El cliente no manda instantes: el inicio lo pone la base. */
 export const startTimerInput = z.object({
+  id: newEntryId,
   description: description.default(""),
 });
 
@@ -147,6 +151,11 @@ export type ActionResult<T> =
   | { readonly ok: false; readonly code: TimeEntryErrorCode; readonly message: string };
 
 export type StartTimerResult = {
+  /**
+   * El timer que quedó corriendo. En un reintento resuelto por el ADR 0007, la
+   * fila que creó el primer intento, en el estado en que esté: puede estar
+   * cerrada.
+   */
   readonly running: TimeEntryView;
   /** La entrada que estaba corriendo y se cerró en el mismo instante. */
   readonly stopped: TimeEntryView | null;
