@@ -14,6 +14,7 @@ import type { TimeEntryView, UpdateRunningStartInput } from "@/modules/time-entr
 
 import { DescriptionField } from "./description-field";
 import { DiscardTimerDialog } from "./discard-timer-dialog";
+import { startedWeeks } from "./entry-week";
 import { trackerLabels } from "./labels";
 import { ManualBar } from "./manual-bar";
 import { ModeSwitch } from "./mode-switch";
@@ -22,6 +23,7 @@ import {
   resolvesDiscard,
   type PendingDiscard,
 } from "./pending-discard";
+import { useReachWeek } from "./reach-week";
 import { ShortcutsDialog } from "./shortcuts-dialog";
 import { reset, sameDraft } from "./time-draft";
 import { TimerBar, type Phase } from "./timer-bar";
@@ -33,7 +35,6 @@ import {
   type EntryActionHandle,
 } from "./use-entry-action";
 import { useNewEntryId } from "./use-new-entry-id";
-import { useReachWeek } from "./use-reach-week";
 import { useTrackerRefresh } from "./use-tracker-refresh";
 import { useTrackerShortcuts } from "./use-tracker-shortcuts";
 
@@ -51,8 +52,6 @@ type TrackerBarProps = {
   readonly todayKey: string;
   /** Piso del workspace, el primer día que la barra manual puede elegir. */
   readonly minDayKey: string;
-  /** El piso de la ventana sin el timer activo, contra el que compara P-15. */
-  readonly reachFrom: string;
   readonly canTrack: boolean;
   /** Modo recordado, leído de la cookie en el servidor (TT-16). */
   readonly initialMode: TrackerMode;
@@ -81,12 +80,11 @@ export function TrackerBar({
   timeZone,
   todayKey,
   minDayKey,
-  reachFrom,
   canTrack,
   initialMode,
 }: TrackerBarProps) {
   useTrackerRefresh();
-  const reachWeek = useReachWeek(reachFrom);
+  const reachWeek = useReachWeek();
 
   const [mode, setMode] = useState<TrackerMode>(initialMode);
   /**
@@ -142,12 +140,7 @@ export function TrackerBar({
   });
   const start = useEntryAction(startTimer, {
     optimistic: () => showPhase("starting"),
-    onSuccess: (data) =>
-      reachWeek(
-        data.stopped === null
-          ? [data.running.weekStart]
-          : [data.running.weekStart, data.stopped.weekStart],
-      ),
+    onSuccess: (data) => reachWeek(startedWeeks(data)),
   });
   const newStartId = useNewEntryId(start.failure);
   const stop = useEntryAction(stopTimer, {

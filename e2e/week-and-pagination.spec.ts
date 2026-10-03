@@ -20,6 +20,7 @@ import {
   elapsedCounter,
   elapsedOf,
   entryRow,
+  openSecondTab,
   pickDate,
   setClock,
   startTimer,
@@ -67,6 +68,10 @@ function dayGroup(page: Page, day: CivilDay, today: CivilDay): Locator {
   return page.getByRole("region", { name: dayLabel(day, today), exact: true });
 }
 
+/**
+ * El enlace de «Cargar más». Sin `exact`: mientras la navegación viaja, su
+ * nombre suma el «Cargando…» que lleva adentro.
+ */
 function loadMoreLink(page: Page): Locator {
   return page.getByRole("link", { name: "Cargar más" });
 }
@@ -131,6 +136,82 @@ async function seedPastWeeks(
   await expect(entryRow(todayGroup(page), "entrada de hoy")).toBeVisible();
 }
 
+/**
+ * Instala el reloj emulado y recarga, para que los temporizadores de la
+ * pantalla —el contador y la revalidación de P-11— nazcan sobre él. Va
+ * después de sembrar con la barra manual: el `Date` emulado no se puede
+ * extender, así que `TZDate` pierde su zona y el rótulo del botón de fecha,
+ * que pasa por `dayKeyLabel`, nombra el día anterior al elegido.
+ */
+async function installClock(page: Page): Promise<void> {
+  await page.clock.install();
+  await page.reload();
+}
+
+/**
+ * Arranca un timer y espera a que la barra muestre la vista del servidor. El
+ * grupo de hoy que espera `startTimer` no alcanza cuando ya había una entrada
+ * de hoy, y la respuesta tampoco: hasta que se aplica, la barra muestra la
+ * vista optimista, con el contador quieto en cero. El contador que corre es
+ * la vista del servidor.
+ */
+async function startTimerAndSettle(page: Page, description: string): Promise<void> {
+  await startTimer(page, description);
+  const counter = elapsedCounter(trackerBar(page));
+  await expect.poll(() => elapsedOf(counter)).toBeGreaterThanOrEqual(1);
+}
+
+/**
+ * Mueve el inicio del timer activo con el editor del contador, que se dibuja
+ * en un portal. Al cerrarse el calendario el foco vuelve a su disparador, y
+ * recién ahí se sigue con la hora.
+ */
+async function moveRunningStart(
+  page: Page,
+  day: CivilDay,
+  today: CivilDay,
+  time: string,
+): Promise<void> {
+  await page.getByRole("button", { name: "Editar la hora de inicio" }).click();
+  const editor = page.getByRole("dialog", { name: "Inicio del timer" });
+  await pickDate(page, editor, day, today);
+  await expect(dateButton(editor)).toBeFocused();
+  await editor.getByRole("textbox", { name: "Hora de inicio" }).fill(time);
+  await page.keyboard.press("Tab");
+  await withServerAction(page, () =>
+    editor.getByRole("button", { name: "Guardar" }).click(),
+  );
+}
+
+/**
+ * Sigue «Cargar más» y espera a que la URL lleve el `desde` pedido y a que
+ * se vaya el «Cargando…» que el enlace anuncia mientras la navegación viaja.
+ * El foco se mueve cuando el `desde` llega a la URL: quien llama lo afirma.
+ */
+async function followLoadMore(
+  page: Page,
+  link: Locator,
+  target: CivilDay,
+): Promise<void> {
+  await link.click();
+  await expect(page).toHaveURL(withFrom(target));
+  await expect(page.getByRole("status").filter({ hasText: "Cargando…" })).toHaveCount(0);
+}
+
+/** Todas las filas con una descripción, en cualquier día del alcance. */
+function entriesNamed(scope: Page | Locator, description: string): Locator {
+  return scope.getByRole("listitem").filter({ hasText: description });
+}
+
+/** Borra una entrada desde el menú de su fila, en cualquier día (TT-60). */
+async function deleteEntryIn(page: Page, description: string): Promise<void> {
+  await page
+    .getByRole("button", { name: `Acciones de la entrada «${description}»` })
+    .click();
+  await page.getByRole("menuitem", { name: "Borrar" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Borrar" }).click();
+}
+
 test("la lista agrupa por semana, cada una con su rótulo y su total, y los días adentro", async ({
   page,
 }) => {
@@ -187,31 +268,29 @@ test("la lista agrupa por semana, cada una con su rótulo y su total, y los día
   ).toBeVisible();
 });
 
-test("el total de esta semana sube junto con el contador del timer", async ({ page }) => {
-  // El total se muestra en h:mm: el reloj emulado adelanta el minuto que
-  // hace falta para verlo cambiar, como en el total del día.
-  await page.clock.install();
+test("el total de esta semana sube junto con el contador del timer y el de la anterior no", async ({
+  page,
+}) => {
   const today = todayIn(await workspaceTimeZone());
+  const lastWeek = addDays(weekStartOf(today), -7);
 
   await page.goto("/");
   await chooseMode(page, "manual");
+  await addEntry(page, "semana pasada", addDays(lastWeek, 2), today, "09:00", "10:00");
   await addEntry(page, "entrada de hoy", today, today, "00:00", "00:01");
-  await chooseMode(page, "timer");
-  await startTimer(page, "timer que suma a la semana");
 
-  /*
-   * `startTimer` toma el grupo de hoy como señal de que el arranque ya está
-   * dibujado, pero acá ese grupo ya estaba por la entrada cerrada. Que llegue
-   * la respuesta tampoco alcanza: hasta que se aplica, la barra muestra la
-   * vista optimista, con el contador quieto en cero. Si el salto del reloj
-   * cae ahí, la revalidación retenida de abajo deja el arranque sin aplicar.
-   * El contador que corre es la vista del servidor.
-   */
+  // El total se muestra en h:mm: el reloj emulado adelanta el minuto que
+  // hace falta para verlo cambiar, como en el total del día. Se instala
+  // después de sembrar, porque rompe el calendario (ver `installClock`).
+  await installClock(page);
+  await chooseMode(page, "timer");
+  await startTimerAndSettle(page, "timer que suma a la semana");
   const counter = elapsedCounter(trackerBar(page));
-  await expect.poll(() => elapsedOf(counter)).toBeGreaterThanOrEqual(1);
 
   const current = weekGroup(page, weekStartOf(today), today);
+  const previous = weekGroup(page, lastWeek, today);
   await expect(weekTotal(current)).toHaveText("Total 0:01");
+  await expect(weekTotal(previous)).toHaveText("Total 1:00");
 
   // El salto del reloj dispara también la revalidación de P-11, que traería
   // un `serverNow` nuevo; se la retiene para observar el transcurrido del
@@ -234,6 +313,8 @@ test("el total de esta semana sube junto con el contador del timer", async ({ pa
   await expect(counter).toHaveText(/^0:01:\d{2}$/);
   await expect(weekTotal(current)).toHaveText("Total 0:02");
   await expect(dayTotal(todayGroup(page))).toHaveText("Total 0:02");
+  // El transcurrido se suma solo a la semana del timer.
+  await expect(weekTotal(previous)).toHaveText("Total 1:00");
   release();
 });
 
@@ -273,8 +354,7 @@ test("Cargar más salta a la próxima semana con entradas, le da el foco y desap
   // de la ventana, no a la inmediatamente anterior.
   const loadMore = loadMoreLink(page);
   await expect(loadMore).toHaveAttribute("href", `/?desde=${dayKeyOf(fiveWeeksAgo)}`);
-  await loadMore.click();
-  await expect(page).toHaveURL(withFrom(fiveWeeksAgo));
+  await followLoadMore(page, loadMore, fiveWeeksAgo);
 
   await expect(page.getByRole("heading", { level: 2 })).toHaveText([
     "Esta semana",
@@ -293,8 +373,7 @@ test("Cargar más salta a la próxima semana con entradas, le da el foco y desap
 
   // Otra vez, salteando la sexta semana, que está vacía.
   await expect(loadMore).toHaveAttribute("href", `/?desde=${dayKeyOf(sevenWeeksAgo)}`);
-  await loadMore.click();
-  await expect(page).toHaveURL(withFrom(sevenWeeksAgo));
+  await followLoadMore(page, loadMore, sevenWeeksAgo);
   await expect(page.getByRole("heading", { level: 2 })).toHaveText([
     "Esta semana",
     weekLabel(fiveWeeksAgo, today),
@@ -309,7 +388,7 @@ test("Cargar más salta a la próxima semana con entradas, le da el foco y desap
   await expect(loadMore).toHaveCount(0);
 });
 
-test("lo cargado sobrevive a la edición de una entrada vieja y a la recarga", async ({
+test("lo cargado sobrevive a la edición de una entrada vieja, a la revalidación periódica y a la recarga", async ({
   page,
 }) => {
   const today = todayIn(await workspaceTimeZone());
@@ -319,11 +398,12 @@ test("lo cargado sobrevive a la edición de una entrada vieja y a la recarga", a
   await seedPastWeeks(page, today, fiveWeeksAgo, [
     { description: "informe viejo", day: oldDay, start: "09:00", end: "10:00" },
   ]);
+  // Para adelantar la revalidación de P-11 sin esperar sus 60 segundos.
+  await installClock(page);
 
   const loadMore = loadMoreLink(page);
   await expect(loadMore).toHaveAttribute("href", `/?desde=${dayKeyOf(fiveWeeksAgo)}`);
-  await loadMore.click();
-  await expect(page).toHaveURL(withFrom(fiveWeeksAgo));
+  await followLoadMore(page, loadMore, fiveWeeksAgo);
   const loaded = weekGroup(page, fiveWeeksAgo, today);
   await expect(editDescriptionButton(loaded, "informe viejo")).toBeVisible();
 
@@ -334,11 +414,34 @@ test("lo cargado sobrevive a la edición de una entrada vieja y a la recarga", a
   await field.fill("informe viejo corregido");
   await withServerAction(page, () => field.press("Enter"));
 
+  /*
+   * La fila está atenuada desde la vista optimista hasta que se aplica la
+   * revalidación. Antes de eso, lo que sigue afirmaría sobre la pantalla
+   * vieja, que todavía tiene la semana cargada aunque la revalidación la
+   * fuera a sacar.
+   */
+  const row = entryRow(loaded, "informe viejo corregido");
+  await expect(row).toBeVisible();
+  await expect(row).not.toHaveAttribute("aria-busy", "true");
   await expect(editDescriptionButton(loaded, "informe viejo corregido")).toBeVisible();
   await expect(page).toHaveURL(withFrom(fiveWeeksAgo));
   await expect(weekHeading(page, fiveWeeksAgo, today)).toBeVisible();
 
-  // La recarga tampoco achica la ventana.
+  // La revalidación periódica de P-11 vuelve a pedir la misma URL, con su
+  // `desde`, así que tampoco achica la ventana.
+  const refreshed = page.waitForResponse(
+    (response) =>
+      response.request().method() === "GET" &&
+      new URL(response.url()).pathname === "/" &&
+      response.request().headers()["rsc"] !== undefined,
+  );
+  await page.clock.fastForward(60_000);
+  const refresh = await refreshed;
+  expect(new URL(refresh.url()).searchParams.get("desde")).toBe(dayKeyOf(fiveWeeksAgo));
+  await expect(page).toHaveURL(withFrom(fiveWeeksAgo));
+  await expect(editDescriptionButton(loaded, "informe viejo corregido")).toBeVisible();
+
+  // La recarga tampoco.
   await page.reload();
   await expect(page).toHaveURL(withFrom(fiveWeeksAgo));
   await expect(
@@ -348,6 +451,128 @@ test("lo cargado sobrevive a la edición de una entrada vieja y a la recarga", a
     "Esta semana",
     weekLabel(fiveWeeksAgo, today),
   ]);
+});
+
+test("si la semana del enlace se vació en otra pestaña, el foco va a la semana más vieja", async ({
+  page,
+  email,
+  browser,
+}) => {
+  const today = todayIn(await workspaceTimeZone());
+  const lastWeek = addDays(weekStartOf(today), -7);
+  const fiveWeeksAgo = addDays(weekStartOf(today), -35);
+
+  await seedPastWeeks(page, today, fiveWeeksAgo, [
+    {
+      description: "semana pasada",
+      day: addDays(lastWeek, 2),
+      start: "09:00",
+      end: "10:00",
+    },
+    {
+      description: "se borra en otra pestaña",
+      day: addDays(fiveWeeksAgo, 1),
+      start: "09:00",
+      end: "10:00",
+    },
+  ]);
+  const loadMore = loadMoreLink(page);
+  await expect(loadMore).toHaveAttribute("href", `/?desde=${dayKeyOf(fiveWeeksAgo)}`);
+
+  // Otra pestaña de la misma persona borra la única entrada de esa semana.
+  // Esta no se entera: su enlace sigue apuntando a la semana vacía.
+  const other = await openSecondTab(browser, email);
+  await other.goto(`/?desde=${dayKeyOf(fiveWeeksAgo)}`);
+  await withServerAction(other, () => deleteEntryIn(other, "se borra en otra pestaña"));
+  await expect(entriesNamed(other, "se borra en otra pestaña")).toHaveCount(0);
+  await other.context().close();
+
+  /*
+   * Criterio 8: la URL lleva el `desde` pedido, pero la semana no llega
+   * (TT-86) y el foco va al encabezado de la más vieja de la lista. Los `h2`
+   * son los mismos que antes del clic, así que el foco es lo que dice que la
+   * navegación ya se aplicó.
+   */
+  await followLoadMore(page, loadMore, fiveWeeksAgo);
+  await expect(weekHeading(page, lastWeek, today)).toBeFocused();
+  await expect(page.getByRole("heading", { level: 2 })).toHaveText([
+    "Esta semana",
+    "Semana anterior",
+  ]);
+  await expect(loadMore).toHaveCount(0);
+});
+
+test("duplicar una entrada que se ve solo por el timer extiende la lista hasta su semana", async ({
+  page,
+}) => {
+  const today = todayIn(await workspaceTimeZone());
+  const fiveWeeksAgo = addDays(weekStartOf(today), -35);
+  const oldDay = addDays(fiveWeeksAgo, 1);
+
+  /*
+   * Todo se siembra con la ventana extendida hasta la semana vieja, para que
+   * ni el alta ni mover el inicio naveguen. Después, sin `desde`, la entrada
+   * vieja se ve solo porque el timer activo empezó ese mismo día.
+   */
+  await page.goto(`/?desde=${dayKeyOf(fiveWeeksAgo)}`);
+  await chooseMode(page, "manual");
+  await addEntry(page, "vieja a duplicar", oldDay, today, "09:00", "10:00");
+  await addEntry(page, "cerrada hoy", today, today, "00:00", "00:01");
+  await chooseMode(page, "timer");
+  await startTimerAndSettle(page, "timer de hace cinco semanas");
+  await moveRunningStart(page, oldDay, today, "11:00");
+  await page.goto("/");
+  await expect(page).toHaveURL(withFrom(null));
+  const origin = dayGroup(page, oldDay, today);
+  await expect(entriesNamed(origin, "vieja a duplicar")).toHaveCount(1);
+
+  // La copia cae en el día de la original (TT-58), anterior a lo que la
+  // ventana sería sin el timer: la regla de P-15 la sostiene en la URL.
+  await withServerAction(page, async () => {
+    await page
+      .getByRole("button", { name: "Acciones de la entrada «vieja a duplicar»" })
+      .click();
+    await page.getByRole("menuitem", { name: "Duplicar" }).click();
+  });
+  await expect(page).toHaveURL(withFrom(fiveWeeksAgo));
+  await expect(entriesNamed(origin, "vieja a duplicar")).toHaveCount(2);
+});
+
+test("continuar con un timer viejo corriendo extiende la lista hasta la semana del timer que se cierra", async ({
+  page,
+}) => {
+  const today = todayIn(await workspaceTimeZone());
+  const fiveWeeksAgo = addDays(weekStartOf(today), -35);
+  const oldDay = addDays(fiveWeeksAgo, 1);
+
+  // Como al duplicar: se siembra con la ventana extendida, y la página se
+  // vuelve a cargar sin `desde` con el timer ya atrás.
+  await page.goto(`/?desde=${dayKeyOf(fiveWeeksAgo)}`);
+  await chooseMode(page, "manual");
+  await addEntry(page, "cerrada hoy", today, today, "00:00", "00:01");
+  await chooseMode(page, "timer");
+  await startTimerAndSettle(page, "timer de hace cinco semanas");
+  await moveRunningStart(page, oldDay, today, "09:00");
+  await page.goto("/");
+  await expect(page).toHaveURL(withFrom(null));
+
+  /*
+   * Continuar devuelve dos vistas: el timer nuevo, de esta semana, y el que
+   * cierra, de hace cinco. La regla toma la más vieja: la URL pasa a llevarla
+   * y la entrada cerrada está en su día.
+   */
+  const bar = trackerBar(page);
+  await withServerAction(page, () =>
+    todayGroup(page)
+      .getByRole("button", { name: "Continuar «cerrada hoy»", exact: true })
+      .click(),
+  );
+  await expect(descriptionInput(bar)).toHaveValue("cerrada hoy");
+  await expect(bar.getByRole("button", { name: "Detener" })).toBeVisible();
+  await expect(page).toHaveURL(withFrom(fiveWeeksAgo));
+  await expect(
+    entryRow(dayGroup(page, oldDay, today), "timer de hace cinco semanas"),
+  ).toBeVisible();
 });
 
 test("detener un timer que ya estaba cinco semanas atrás al cargar la página extiende la lista hasta su semana", async ({
@@ -361,20 +586,8 @@ test("detener un timer que ya estaba cinco semanas atrás al cargar la página e
   await chooseMode(page, "manual");
   await addEntry(page, "cerrada hoy", today, today, "00:00", "00:01");
   await chooseMode(page, "timer");
-  await startTimer(page, "timer de hace cinco semanas");
-
-  // El inicio se mueve con el editor del contador, que se dibuja en un
-  // portal. Al cerrarse el calendario el foco vuelve a su disparador, y
-  // recién ahí se sigue con la hora.
-  await page.getByRole("button", { name: "Editar la hora de inicio" }).click();
-  const editor = page.getByRole("dialog", { name: "Inicio del timer" });
-  await pickDate(page, editor, startDay, today);
-  await expect(dateButton(editor)).toBeFocused();
-  await editor.getByRole("textbox", { name: "Hora de inicio" }).fill("09:00");
-  await page.keyboard.press("Tab");
-  await withServerAction(page, () =>
-    editor.getByRole("button", { name: "Guardar" }).click(),
-  );
+  await startTimerAndSettle(page, "timer de hace cinco semanas");
+  await moveRunningStart(page, startDay, today, "09:00");
 
   // La vista del timer también pasa por la regla de P-15: la URL pasa a
   // sostener su semana. Esperarlo evita que esa navegación llegue después de

@@ -1,18 +1,20 @@
 "use client";
 
-import Link from "next/link";
-import { useCallback, useOptimistic, useState } from "react";
+import Link, { useLinkStatus } from "next/link";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useOptimistic, useRef, useState } from "react";
 
 import { buttonVariants } from "@/components/ui/button";
 import { continueEntry } from "@/modules/time-entry/actions";
 import type { TimeEntryView, WeekGroupView } from "@/modules/time-entry/schema";
 
 import { DayGroup, type MovedEntry } from "./day-group";
+import { startedWeeks } from "./entry-week";
 import { trackerLabels } from "./labels";
+import { useReachWeek } from "./reach-week";
 import { TrackerFeedback } from "./tracker-feedback";
 import { retryHandlerOf, useEntryAction } from "./use-entry-action";
 import { useNewEntryId } from "./use-new-entry-id";
-import { useReachWeek } from "./use-reach-week";
 import { useTrackerShortcuts } from "./use-tracker-shortcuts";
 import { WeekGroup } from "./week-group";
 
@@ -28,8 +30,6 @@ type EntryListProps = {
   readonly minDayKey: string;
   /** La entrada que continúa el atajo «c», o `null` si no hay ninguna. */
   readonly lastEntryId: string | null;
-  /** El piso de la ventana sin el timer activo, contra el que compara P-15. */
-  readonly reachFrom: string;
   /** El `desde` de «Cargar más», o `null` si no queda nada más atrás (TT-52). */
   readonly loadMoreFrom: string | null;
 };
@@ -42,7 +42,7 @@ type EntryListProps = {
  * (P-15)—, y el foco después de «Cargar más».
  *
  * Aplica la regla de P-15 a lo que avisan los grupos y al resultado de
- * continuar: la semana de cada entrada devuelta se compara con `reachFrom`.
+ * continuar, con `useReachWeek`.
  *
  * También es dueña de continuar (TT-57): lo usan todas las filas y el atajo
  * «c», que es de la lista porque es la que conoce las filas. Por lo mismo
@@ -57,24 +57,24 @@ export function EntryList({
   todayKey,
   minDayKey,
   lastEntryId,
-  reachFrom,
   loadMoreFrom,
 }: EntryListProps) {
   /** La fila que el foco sigue a su grupo nuevo, hasta que lo toma. */
   const [moved, setMoved] = useState<MovedEntry | null>(null);
   const clearMoved = useCallback(() => setMoved(null), []);
-  const reachWeek = useReachWeek(reachFrom);
+  const reachWeek = useReachWeek();
+  const desde = useSearchParams().get("desde");
 
   /** La semana que pidió «Cargar más», mientras su navegación viaja. */
   const [requestedWeek, setRequestedWeek] = useState<string | null>(null);
   /** La semana cuyo encabezado toma el foco, hasta que lo toma. */
   const [focusWeek, setFocusWeek] = useState<string | null>(null);
   const clearFocusWeek = useCallback(() => setFocusWeek(null), []);
-  // La ventana nueva incluye la semana pedida, así que su `loadMoreFrom` es
-  // otro: cuando cambia, la navegación terminó. Si la semana pedida no llegó
-  // —sus entradas se borraron entre el render y el clic, y TT-86 no la
-  // dibuja—, el foco va a la semana más vieja de la lista.
-  if (requestedWeek !== null && loadMoreFrom !== requestedWeek) {
+  const clearRequestedWeek = useCallback(() => setRequestedWeek(null), []);
+  // La navegación llegó cuando la URL lleva la semana pedida. Si esa semana
+  // no se dibujó —sus entradas se borraron entre el render y el clic, y TT-86
+  // no la dibuja—, el foco va a la semana más vieja de la lista.
+  if (requestedWeek !== null && desde === requestedWeek) {
     setRequestedWeek(null);
     setFocusWeek(
       weeks.some((week) => week.start === requestedWeek)
@@ -90,12 +90,7 @@ export function EntryList({
   );
   const continuation = useEntryAction(continueEntry, {
     optimistic: (input) => showContinuing(input.sourceId),
-    onSuccess: (data) =>
-      reachWeek(
-        data.stopped === null
-          ? [data.running.weekStart]
-          : [data.running.weekStart, data.stopped.weekStart],
-      ),
+    onSuccess: (data) => reachWeek(startedWeeks(data)),
   });
   const nextContinueId = useNewEntryId(continuation.failure);
 
@@ -184,10 +179,9 @@ export function EntryList({
       ))}
 
       {/*
-       * Un enlace y no un botón: navega, así que funciona sin JavaScript, se
-       * abre aparte y «Atrás» vuelve. Sin `prefetch={true}`: guardaría en la
-       * caché del router una ventana armada antes de la próxima mutación
-       * (ADR 0008).
+       * Un enlace y no un botón: navega, así que se abre aparte y «Atrás»
+       * vuelve. Sin `prefetch={true}`: guardaría en la caché del router una
+       * ventana armada antes de la próxima mutación (ADR 0008).
        */}
       {loadMoreFrom !== null && (
         <Link
@@ -196,9 +190,39 @@ export function EntryList({
           onNavigate={() => setRequestedWeek(loadMoreFrom)}
           className={buttonVariants({ variant: "outline", className: "self-center" })}
         >
-          {trackerLabels.loadMore}
+          <LoadMoreLabel onSettled={clearRequestedWeek} />
         </Link>
       )}
     </div>
+  );
+}
+
+type LoadMoreLabelProps = {
+  /** La navegación del enlace terminó, haya llegado o no a su URL. */
+  readonly onSettled: () => void;
+};
+
+/**
+ * El texto de «Cargar más» (TT-52). Mientras su navegación viaja se atenúa y
+ * anuncia que carga; el enlace no se deshabilita, así no pierde el foco.
+ */
+function LoadMoreLabel({ onSettled }: LoadMoreLabelProps) {
+  const { pending } = useLinkStatus();
+  const wasPending = useRef(false);
+
+  useEffect(() => {
+    if (wasPending.current && !pending) {
+      onSettled();
+    }
+    wasPending.current = pending;
+  }, [pending, onSettled]);
+
+  return (
+    <>
+      <span className={pending ? "opacity-60" : undefined}>{trackerLabels.loadMore}</span>
+      <span role="status" className="sr-only">
+        {pending ? trackerLabels.loadingMore : ""}
+      </span>
+    </>
   );
 }

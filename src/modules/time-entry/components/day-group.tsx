@@ -14,9 +14,7 @@ import type {
   UpdateDescriptionInput,
   UpdateEntryTimesInput,
 } from "@/modules/time-entry/schema";
-import { formatDuration } from "@/server/time";
 
-import { useElapsedSeconds } from "./elapsed-counter";
 import { EntryRow } from "./entry-row";
 import { trackerLabels } from "./labels";
 import { TrackerFeedback } from "./tracker-feedback";
@@ -25,6 +23,7 @@ import {
   useEntryAction,
   type EntryActionHandle,
 } from "./use-entry-action";
+import { useGroupTotalLabel } from "./use-group-total";
 import { useNewEntryId } from "./use-new-entry-id";
 
 type DayGroupProps = {
@@ -199,16 +198,13 @@ export function DayGroup({
   }, [removing]);
 
   const entries = group.entries.filter((entry) => !removedIds.includes(entry.id));
-  const removedSeconds = group.entries
-    .filter((entry) => removedIds.includes(entry.id))
-    .reduce((total, entry) => total + (entry.durationSeconds ?? 0), 0);
-
-  const runningStartedAt =
-    group.isRunningDay && running !== null ? running.startedAt : null;
-  const elapsed = useElapsedSeconds(runningStartedAt, serverNow);
-  const totalLabel = formatDuration(
-    Math.floor((Math.max(0, group.closedSeconds - removedSeconds) + elapsed) / 60),
-  );
+  const totalLabel = useGroupTotalLabel({
+    closedSeconds: group.closedSeconds,
+    entries: group.entries,
+    removedIds,
+    runningStartedAt: group.isRunningDay && running !== null ? running.startedAt : null,
+    serverNow,
+  });
   const headingId = `dia-${group.date}`;
 
   return (

@@ -25,6 +25,8 @@ export const trackerLabels = {
   editRunningStart: "Editar la hora de inicio",
   /** TT-52: el enlace que suma la próxima semana con entradas. */
   loadMore: "Cargar más",
+  /** TT-52: lo que anuncia el enlace mientras su navegación viaja. */
+  loadingMore: "Cargando…",
   /** TT-47: el rótulo del total de la franja de una semana. */
   weekTotal: "Total",
   /** TT-51: lo que el superíndice `+1` le dice a un lector de pantalla. */

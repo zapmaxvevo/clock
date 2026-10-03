@@ -5,6 +5,7 @@ import { getTrackerState, type TrackerWorkspace } from "@/modules/time-entry/ser
 import type { Actor } from "@/server/permissions";
 
 import { EntryList } from "./entry-list";
+import { ReachWeekProvider } from "./reach-week";
 import { TrackerBar } from "./tracker-bar";
 import { TrackerEmpty } from "./tracker-empty";
 import type { TrackerMode } from "./tracker-mode";
@@ -45,32 +46,32 @@ export async function TrackerScreen({
         </Alert>
       )}
 
-      <TrackerBar
-        running={state.running}
-        serverNow={state.serverNow}
-        timeZone={state.timeZone}
-        todayKey={state.todayKey}
-        minDayKey={state.minDayKey}
-        reachFrom={state.reachFrom}
-        canTrack={state.canTrack}
-        initialMode={initialMode}
-      />
-
-      {state.hasAnyEntry ? (
-        <EntryList
-          weeks={state.weeks}
+      <ReachWeekProvider reachFrom={state.reachFrom}>
+        <TrackerBar
           running={state.running}
           serverNow={state.serverNow}
-          canTrack={state.canTrack}
+          timeZone={state.timeZone}
           todayKey={state.todayKey}
           minDayKey={state.minDayKey}
-          lastEntryId={state.lastEntryId}
-          reachFrom={state.reachFrom}
-          loadMoreFrom={state.loadMoreFrom}
+          canTrack={state.canTrack}
+          initialMode={initialMode}
         />
-      ) : (
-        <TrackerEmpty />
-      )}
+
+        {state.hasAnyEntry ? (
+          <EntryList
+            weeks={state.weeks}
+            running={state.running}
+            serverNow={state.serverNow}
+            canTrack={state.canTrack}
+            todayKey={state.todayKey}
+            minDayKey={state.minDayKey}
+            lastEntryId={state.lastEntryId}
+            loadMoreFrom={state.loadMoreFrom}
+          />
+        ) : (
+          <TrackerEmpty />
+        )}
+      </ReachWeekProvider>
     </div>
   );
 }

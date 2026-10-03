@@ -3,10 +3,9 @@
 import { useEffect, useRef, type ReactNode } from "react";
 
 import type { TimeEntryView, WeekGroupView } from "@/modules/time-entry/schema";
-import { formatDuration } from "@/server/time";
 
-import { useElapsedSeconds } from "./elapsed-counter";
 import { trackerLabels } from "./labels";
+import { useGroupTotalLabel } from "./use-group-total";
 
 type WeekGroupProps = {
   readonly week: WeekGroupView;
@@ -45,16 +44,13 @@ export function WeekGroup({
     }
   }, [takeFocus, onFocused]);
 
-  const removedSeconds = week.days
-    .flatMap((day) => day.entries)
-    .filter((entry) => removedIds.includes(entry.id))
-    .reduce((total, entry) => total + (entry.durationSeconds ?? 0), 0);
-  const runningStartedAt =
-    week.isRunningWeek && running !== null ? running.startedAt : null;
-  const elapsed = useElapsedSeconds(runningStartedAt, serverNow);
-  const totalLabel = formatDuration(
-    Math.floor((Math.max(0, week.closedSeconds - removedSeconds) + elapsed) / 60),
-  );
+  const totalLabel = useGroupTotalLabel({
+    closedSeconds: week.closedSeconds,
+    entries: week.days.flatMap((day) => day.entries),
+    removedIds,
+    runningStartedAt: week.isRunningWeek && running !== null ? running.startedAt : null,
+    serverNow,
+  });
   const headingId = `semana-${week.start}`;
 
   return (
