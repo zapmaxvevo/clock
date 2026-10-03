@@ -29,6 +29,18 @@ export const trackerLabels = {
     `Quedó en el día ${dayLabel}, anterior al tramo que la lista muestra.`,
   /** TT-51: lo que el superíndice `+1` le dice a un lector de pantalla. */
   endsNextDay: " (termina un día después)",
+  /** TT-57, TT-58 y TT-65: el aviso nombra la operación que falló. */
+  entryNotContinued: "No se pudo continuar la entrada.",
+  entryNotDuplicated: "No se pudo duplicar la entrada.",
+  timerNotDiscarded: "No se pudo descartar el timer.",
+  /** TT-65: la confirmación del descarte. */
+  discardTitle: "¿Descartar el timer?",
+  discardDescription: "Se borra el tiempo que lleva corriendo y no se puede deshacer.",
+  /** TT-26: el diálogo que lista los atajos y los apaga (WCAG 2.1.4). */
+  shortcutsTitle: "Atajos de teclado",
+  shortcutsToggle: "Usar atajos de una tecla",
+  shortcutsHint:
+    "No funcionan mientras escribís en un campo ni con un menú o un diálogo abierto.",
 } as const;
 
 /** TT-03: marcador del campo de descripción. */

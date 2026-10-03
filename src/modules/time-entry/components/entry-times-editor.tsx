@@ -150,6 +150,7 @@ export function EntryTimesEditor({
       ref={groupRef}
       role="group"
       aria-label="Horario de la entrada"
+      data-tracker-shortcuts="off"
       className="flex flex-wrap items-center gap-2"
       onBlur={handleBlur}
       onKeyDown={handleKeyDown}

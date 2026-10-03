@@ -1,9 +1,10 @@
 "use client";
 
-import { useOptimistic, useRef, useState } from "react";
+import { useEffect, useOptimistic, useRef, useState } from "react";
 
 import {
   createManualEntry,
+  discardTimer,
   startTimer,
   stopTimer,
   updateDescription,
@@ -16,19 +17,25 @@ import { OutsideWindowNotice } from "./entry-list";
 import { trackerLabels } from "./labels";
 import { ManualBar } from "./manual-bar";
 import { ModeSwitch } from "./mode-switch";
+import { ShortcutsDialog } from "./shortcuts-dialog";
 import { reset, sameDraft } from "./time-draft";
 import { TimerBar, type Phase } from "./timer-bar";
 import { TrackerFeedback } from "./tracker-feedback";
-import type { TrackerMode } from "./tracker-mode";
+import { trackerModeCookie, type TrackerMode } from "./tracker-mode";
 import {
   retryHandlerOf,
   useEntryAction,
   type EntryActionHandle,
 } from "./use-entry-action";
+import { useNewEntryId } from "./use-new-entry-id";
 import { useTrackerRefresh } from "./use-tracker-refresh";
+import { useTrackerShortcuts } from "./use-tracker-shortcuts";
 
 /** TT-04: cuánto espera el guardado automático después de la última tecla. */
 const DESCRIPTION_DEBOUNCE_MS = 500;
+
+/** «Iniciar» no parte de ninguna entrada: su id pendiente va con una clave fija. */
+const START_KEY = "start";
 
 type TrackerBarProps = {
   readonly running: TimeEntryView | null;
@@ -47,9 +54,10 @@ type TrackerBarProps = {
  * La barra del rastreador: elige qué modo se dibuja y es dueña de todo lo que
  * tiene que sobrevivir a un cambio de modo. Un timer que arranca o se detiene
  * en otra pestaña cambia la barra de modo sin que nadie lo pida (TT-30), así
- * que la descripción, el borrador manual, los cuatro pedidos y sus avisos
- * viven acá y no en la barra de cada modo. El conmutador también: así no
- * cambia de lugar ni pierde el foco al conmutar.
+ * que la descripción, el borrador manual, los pedidos y sus avisos viven acá
+ * y no en la barra de cada modo. El conmutador y los atajos `n`, `s` y `m`
+ * también: así el conmutador no cambia de lugar ni pierde el foco al
+ * conmutar, y cada atajo ve el mismo estado que su control.
  *
  * `useTrackerRefresh()` se llama acá y no adentro de la barra del timer: si
  * viviera ahí, la revalidación de P-11 dejaría de correr en modo manual.
@@ -94,8 +102,13 @@ export function TrackerBar({
   const [outsideWindowDay, setOutsideWindowDay] = useState<string | null>(null);
   const descriptionRef = useRef<HTMLInputElement>(null);
   const addRef = useRef<HTMLButtonElement>(null);
-  /** Id del último pedido de arranque, el que «Iniciar» reusa (ADR 0007). */
-  const startIdRef = useRef<string | null>(null);
+  /**
+   * TT-65: al confirmar el descarte el diálogo deja el foco en la descripción.
+   * Mientras el descarte viaja, si el foco queda sin dueño vuelve a ella: el
+   * campo se vuelve a montar cuando la barra pasa a manual, el diálogo se fue
+   * antes de cerrarse, o «Reintentar» se fue con su aviso.
+   */
+  const focusAfterDiscard = useRef(false);
 
   const save = useEntryAction(updateDescription, {
     // TT-90: si el guardado falla, el campo vuelve al valor que tiene el servidor.
@@ -104,8 +117,23 @@ export function TrackerBar({
   const start = useEntryAction(startTimer, {
     optimistic: () => showPhase("starting"),
   });
+  const newStartId = useNewEntryId(start.failure);
   const stop = useEntryAction(stopTimer, {
     optimistic: () => showPhase("stopping"),
+  });
+  const discard = useEntryAction(discardTimer, {
+    optimistic: () => showPhase("discarding"),
+    onSuccess: () => {
+      // La descripción se va con el timer (TT-65). El seguimiento de la vista
+      // no la limpia porque el campo tiene el foco desde que se confirmó. Este
+      // `draft` es el del render que mandó el pedido: lo tecleado mientras
+      // viajaba no es del timer descartado y se queda. Con el modo manual
+      // elegido, la barra vuelve a manual y repone el texto retenido por su
+      // propio camino (B-1).
+      if (mode === "timer") {
+        setDraft((current) => (current === draft ? "" : current));
+      }
+    },
   });
   /**
    * TT-28: sin vista optimista; el contador salta cuando llega la vista nueva.
@@ -188,7 +216,27 @@ export function TrackerBar({
   const isManual = mode === "manual" && running === null;
   const switching = phase !== "idle";
   const isRunning =
-    phase === "starting" ? true : phase === "stopping" ? false : running !== null;
+    phase === "starting"
+      ? true
+      : phase === "stopping" || phase === "discarding"
+        ? false
+        : running !== null;
+  const timerControls = canTrack && !isManual && !switching;
+  /** TT-30: con un timer corriendo o una operación de la barra en vuelo. */
+  const modeSwitchDisabled = isRunning || switching || add.pending;
+
+  useEffect(() => {
+    if (!focusAfterDiscard.current) {
+      return;
+    }
+    const focused = document.activeElement;
+    if (focused === null || focused === document.body) {
+      descriptionRef.current?.focus();
+    }
+    if (phase === "idle") {
+      focusAfterDiscard.current = false;
+    }
+  }, [phase, isManual]);
 
   /** Un aviso describe el desenlace de una operación: la siguiente lo deja viejo. */
   function clearNotices(): void {
@@ -196,6 +244,7 @@ export function TrackerBar({
     start.clear();
     stop.clear();
     saveStart.clear();
+    discard.clear();
     add.clear();
     setOutsideWindowDay(null);
   }
@@ -204,6 +253,12 @@ export function TrackerBar({
     // El servidor guarda la descripción sin espacios en los bordes, así que
     // un texto que solo difiere en eso no es un cambio que valga una escritura.
     if (running === null || next.trim() === serverDescription) {
+      return;
+    }
+    // Con el descarte en vuelo, el guardado iría contra un timer que se está
+    // borrando. Si el descarte falla, lo tecleado sigue en el campo y se
+    // guarda con la próxima confirmación.
+    if (phase === "discarding") {
       return;
     }
     // Lo único que se descarta es el pedido repetido que ya está viajando: el
@@ -216,29 +271,37 @@ export function TrackerBar({
     save.run({ id: running.id, description: next });
   }
 
-  /**
-   * ADR 0007: con el aviso de falla por red de «Iniciar» a la vista, el pedido
-   * anterior pudo haberse aplicado, y repetirlo con su id no abre otro timer.
-   * En cualquier otro caso el clic es un pedido nuevo.
-   */
-  function nextStartId(): string {
-    const pendingId = start.failure?.code === "unexpected" ? startIdRef.current : null;
-    const id = pendingId ?? crypto.randomUUID();
-    startIdRef.current = id;
-    return id;
-  }
-
   function handleToggle(): void {
     if (running === null) {
-      // Antes de bajar los avisos: el que se ve es el que dice si hay un
-      // pedido pendiente.
-      const id = nextStartId();
+      const id = newStartId(START_KEY);
       clearNotices();
       start.run({ id, description: draft });
       return;
     }
     clearNotices();
     stop.run({ id: running.id });
+  }
+
+  /**
+   * TT-65: el id es el del timer que estaba en pantalla al abrir el diálogo.
+   * Si mientras tanto otra pestaña lo detuvo o continuó otra entrada, el
+   * servidor responde con el desenlace (§4.3) en vez de borrar el timer nuevo.
+   */
+  function handleDiscard(id: string): void {
+    clearNotices();
+    focusAfterDiscard.current = true;
+    discard.run({ id });
+  }
+
+  /** El reintento deja el foco donde lo deja el descarte: el aviso se va. */
+  function retryDiscard(): (() => void) | undefined {
+    const retry = retryOf(discard);
+    return retry === undefined
+      ? undefined
+      : () => {
+          focusAfterDiscard.current = true;
+          retry();
+        };
   }
 
   function handleSaveStart(input: UpdateRunningStartInput): void {
@@ -268,6 +331,9 @@ export function TrackerBar({
   }
 
   function handleModeChange(next: TrackerMode): void {
+    // TT-16: la próxima visita llega dibujada en el modo elegido, por el
+    // conmutador o por el atajo.
+    document.cookie = trackerModeCookie(next);
     clearNotices();
     // Elegir el modo manual arranca un borrador nuevo, con la hora de ahora.
     if (next === "manual") {
@@ -275,6 +341,18 @@ export function TrackerBar({
     }
     setMode(next);
   }
+
+  // TT-26: cada atajo es su control visible y habilitado, y nada si no está.
+  // Con la membresía desactivada no hay ninguno (TT-92).
+  const shortcutsEnabled =
+    useTrackerShortcuts({
+      start: timerControls && !isRunning ? handleToggle : undefined,
+      stop: timerControls && isRunning ? handleToggle : undefined,
+      toggleMode:
+        canTrack && !modeSwitchDisabled
+          ? () => handleModeChange(isManual ? "timer" : "manual")
+          : undefined,
+    }) && canTrack;
 
   const descriptionField = (
     <DescriptionField
@@ -318,6 +396,10 @@ export function TrackerBar({
             onToggle={handleToggle}
             onSaveStart={handleSaveStart}
             savingStart={saveStart.pending}
+            descriptionRef={descriptionRef}
+            onDiscard={handleDiscard}
+            savingDescription={save.pending}
+            shortcutsEnabled={shortcutsEnabled}
           />
         )}
 
@@ -335,6 +417,15 @@ export function TrackerBar({
             message={stop.failure.message}
             retryDisabled={switching}
             onRetry={retryOf(stop)}
+          />
+        )}
+
+        {discard.failure !== null && (
+          <TrackerFeedback
+            title={trackerLabels.timerNotDiscarded}
+            message={discard.failure.message}
+            retryDisabled={switching}
+            onRetry={retryDiscard()}
           />
         )}
 
@@ -383,13 +474,15 @@ export function TrackerBar({
 
       {/* Mismo borde y relleno que la fila de la barra: queda centrado con su primera línea. */}
       <div className="border border-transparent py-2">
-        <div className="flex h-9 items-center">
+        <div className="flex h-9 items-center gap-1">
           <ModeSwitch
             mode={isManual ? "manual" : "timer"}
             onModeChange={handleModeChange}
             timerRunning={isRunning}
-            busy={switching || add.pending}
+            disabled={modeSwitchDisabled}
+            shortcutsEnabled={shortcutsEnabled}
           />
+          {canTrack && <ShortcutsDialog />}
         </div>
       </div>
     </section>

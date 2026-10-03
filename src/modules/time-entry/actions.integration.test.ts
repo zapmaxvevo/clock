@@ -294,6 +294,21 @@ describe("cada action exige su permiso antes de tocar nada", () => {
   });
 });
 
+/** El dueño de la entrada ajena, armado después de que la sesión entró. */
+const foreignOwners = {
+  "otra persona del workspace": (seeded: SeededWorkspace) => Promise.resolve(seeded),
+  "otra persona de otro workspace": () => seedWorkspace(buenosAires),
+  // Mismo usuario: lo único que la deja afuera es el filtro por workspace.
+  "la misma persona en otro workspace": async () => {
+    const other = await seedWorkspace(buenosAires);
+    const userId = sessionUserId();
+    await db
+      .insert(membership)
+      .values({ workspaceId: other.workspaceId, userId, role: "member" });
+    return { workspaceId: other.workspaceId, ownerId: userId };
+  },
+};
+
 describe("el id que elige el cliente para «Iniciar»", () => {
   it.each([
     ["sin id", {}],
@@ -312,21 +327,6 @@ describe("el id que elige el cliente para «Iniciar»", () => {
     expect(mocks.revalidated).toContain("/");
     expect(await allTimeEntries()).toHaveLength(0);
   });
-
-  /** El dueño de la entrada ajena, armado después de que la sesión entró. */
-  const foreignOwners = {
-    "otra persona del workspace": (seeded: SeededWorkspace) => Promise.resolve(seeded),
-    "otra persona de otro workspace": () => seedWorkspace(buenosAires),
-    // Mismo usuario: lo único que la deja afuera es el filtro por workspace.
-    "la misma persona en otro workspace": async () => {
-      const other = await seedWorkspace(buenosAires);
-      const userId = sessionUserId();
-      await db
-        .insert(membership)
-        .values({ workspaceId: other.workspaceId, userId, role: "member" });
-      return { workspaceId: other.workspaceId, ownerId: userId };
-    },
-  };
 
   it.each(Object.entries(foreignOwners))(
     "el id de una entrada de %s responde forbidden con el mensaje neutro",
@@ -809,6 +809,243 @@ describe("updateEntryTimes y updateRunningStart", () => {
         "2026-10-01T11:00:00.000Z",
         "2026-10-02T11:00:00.000Z",
       ]);
+    },
+  );
+});
+
+describe("continueEntry, duplicateEntry y discardTimer", () => {
+  const longAgo = "2020-01-01T00:00:00Z";
+  const unknownId = "11111111-1111-4111-8111-111111111111";
+
+  /** Una entrada cerrada de la persona de la sesión, la original de las altas. */
+  function seedOwnSource(seeded: SeededWorkspace) {
+    return seedTimeEntry({
+      workspaceId: seeded.workspaceId,
+      userId: sessionUserId(),
+      description: "original",
+      startedAt: "2026-10-01T11:00:00Z",
+      endedAt: "2026-10-01T12:00:00Z",
+    });
+  }
+
+  /** El timer activo de la persona de la sesión. */
+  function seedOwnRunning(seeded: SeededWorkspace) {
+    return seedTimeEntry({
+      workspaceId: seeded.workspaceId,
+      userId: sessionUserId(),
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+  }
+
+  /** Abre la sesión y crea su membresía, que crea la primera action. */
+  async function signInWithMembership() {
+    const seeded = await signInOn({ createdAt: longAgo });
+    await actions.discardTimer({ id: unknownId });
+    mocks.revalidated.length = 0;
+    return seeded;
+  }
+
+  it("las tres aplican y revalidan", async () => {
+    const seeded = await signInWithMembership();
+    const source = await seedOwnSource(seeded);
+
+    const duplicated = await actions.duplicateEntry({
+      id: randomUUID(),
+      sourceId: source.id,
+    });
+    const continued = await actions.continueEntry({
+      id: randomUUID(),
+      sourceId: source.id,
+    });
+    expect(duplicated.ok).toBe(true);
+    expect(continued.ok).toBe(true);
+    if (!continued.ok) return;
+    expect(continued.data.running.description).toBe("original");
+    const discarded = await actions.discardTimer({ id: continued.data.running.id });
+
+    expect(discarded).toEqual({ ok: true, data: { id: continued.data.running.id } });
+    expect(mocks.revalidated).toEqual(["/", "/", "/"]);
+    expect(await allTimeEntries()).toHaveLength(2);
+  });
+
+  describe.each(["continueEntry", "duplicateEntry"] as const)("%s", (name) => {
+    const create = (input: { id: string; sourceId: string }) => actions[name](input);
+
+    it.each([
+      ["un id que no es uuid v4", () => "01890a5d-ac96-774b-bcce-b302099a8057"],
+      ["un id que no es uuid", () => "no-es-uuid"],
+    ])("con %s responde validation, no escribe y revalida", async (_, idOf) => {
+      const seeded = await signInWithMembership();
+      const source = await seedOwnSource(seeded);
+
+      const result = await create({ id: idOf(), sourceId: source.id });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.code).toBe("validation");
+      expect(mocks.revalidated).toEqual(["/"]);
+      expect(await allTimeEntries()).toHaveLength(1);
+    });
+
+    it.each([
+      ["el mismo id", (id: string) => id],
+      ["el mismo id con otras mayúsculas", (id: string) => id.toUpperCase()],
+    ])(
+      "con %s que la original responde el rechazo explícito y no escribe",
+      async (_, sameAs) => {
+        const seeded = await signInWithMembership();
+        const source = await seedOwnSource(seeded);
+
+        const result = await create({ id: source.id, sourceId: sameAs(source.id) });
+
+        expect(result).toEqual({
+          ok: false,
+          code: "validation",
+          message: timeEntryMessages.sameEntryId,
+        });
+        expect(mocks.revalidated).toEqual(["/"]);
+        expect(await allTimeEntries()).toEqual([source]);
+      },
+    );
+
+    it("TT-79, TT-80: la original ajena y la que no existe, con su texto, y revalida", async () => {
+      const seeded = await signInWithMembership();
+      const other = await seedUser();
+      await db
+        .insert(membership)
+        .values({ workspaceId: seeded.workspaceId, userId: other, role: "member" });
+      const foreign = await seedTimeEntry({
+        workspaceId: seeded.workspaceId,
+        userId: other,
+        startedAt: "2026-10-01T11:00:00Z",
+        endedAt: "2026-10-01T12:00:00Z",
+      });
+
+      const forbidden = await create({ id: randomUUID(), sourceId: foreign.id });
+      const missing = await create({ id: randomUUID(), sourceId: unknownId });
+
+      expect(forbidden).toEqual({
+        ok: false,
+        code: "forbidden",
+        message: timeEntryMessages.forbiddenOtherOwner,
+      });
+      expect(missing).toEqual({
+        ok: false,
+        code: "not_found",
+        message: timeEntryMessages.notFound,
+      });
+      expect(mocks.revalidated).toEqual(["/", "/"]);
+      expect(await allTimeEntries()).toEqual([foreign]);
+    });
+
+    it.each(Object.entries(foreignOwners))(
+      "ADR 0007: el id de una entrada de %s responde forbidden con el mensaje neutro",
+      async (_, ownerOf) => {
+        const seeded = await signInWithMembership();
+        const source = await seedOwnSource(seeded);
+        const running = await seedOwnRunning(seeded);
+        const foreignOwner = await ownerOf(seeded);
+        const foreign = await seedTimeEntry({
+          workspaceId: foreignOwner.workspaceId,
+          userId: foreignOwner.ownerId,
+          startedAt: "2026-10-02T09:00:00Z",
+          endedAt: "2026-10-02T10:00:00Z",
+        });
+        const rows = await allTimeEntries();
+
+        const result = await create({ id: foreign.id, sourceId: source.id });
+
+        expect(result).toEqual({
+          ok: false,
+          code: "forbidden",
+          message: timeEntryMessages.forbidden,
+        });
+        expect(await allTimeEntries()).toEqual(rows);
+        expect(
+          (await allTimeEntries()).find((row) => row.id === running.id)?.endedAt,
+        ).toBeNull();
+      },
+    );
+  });
+
+  it("duplicar la entrada que corre conserva el código y el mensaje, y revalida", async () => {
+    const seeded = await signInWithMembership();
+    const running = await seedOwnRunning(seeded);
+
+    const result = await actions.duplicateEntry({
+      id: randomUUID(),
+      sourceId: running.id,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      code: "timer_running",
+      message: timeEntryMessages.runningEntryTimes,
+    });
+    expect(mocks.revalidated).toEqual(["/"]);
+    expect(await allTimeEntries()).toEqual([running]);
+  });
+
+  it("TT-65: descartar un timer que otra pestaña detuvo llega como already_stopped tipado", async () => {
+    const seeded = await signInWithMembership();
+    const running = await seedOwnRunning(seeded);
+    await actions.stopTimer({ id: running.id });
+    mocks.revalidated.length = 0;
+
+    const result = await actions.discardTimer({ id: running.id });
+
+    expect(result).toEqual({
+      ok: false,
+      code: "already_stopped",
+      message: timeEntryMessages.alreadyStopped,
+    });
+    expect(mocks.revalidated).toEqual(["/"]);
+    expect(await allTimeEntries()).toHaveLength(1);
+  });
+
+  it("descartar con un id que no es uuid responde validation y revalida", async () => {
+    await signInWithMembership();
+
+    const result = await actions.discardTimer({ id: "no-es-uuid" });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("validation");
+    expect(mocks.revalidated).toEqual(["/"]);
+  });
+
+  it.each(["inactive", "invited"] as const)(
+    "TT-92: con la membresía %s las tres responden el mensaje neutro, también con el id de una entrada propia",
+    async (status) => {
+      const seeded = await signInWithMembership();
+      const source = await seedOwnSource(seeded);
+      const running = await seedOwnRunning(seeded);
+      await db
+        .update(membership)
+        .set({ status })
+        .where(eq(membership.userId, sessionUserId()));
+      const rows = await allTimeEntries();
+
+      const results = [
+        await actions.continueEntry({ id: randomUUID(), sourceId: source.id }),
+        await actions.duplicateEntry({ id: randomUUID(), sourceId: source.id }),
+        // El id de una entrada propia que existe: sin el permiso antes de la
+        // fila propia, respondería esa fila como si la hubiera creado.
+        await actions.continueEntry({ id: running.id, sourceId: source.id }),
+        await actions.duplicateEntry({ id: running.id, sourceId: source.id }),
+        await actions.discardTimer({ id: running.id }),
+        await actions.discardTimer({ id: unknownId }),
+      ];
+
+      for (const result of results) {
+        expect(result).toEqual({
+          ok: false,
+          code: "forbidden",
+          message: timeEntryMessages.forbidden,
+        });
+      }
+      expect(mocks.revalidated).toEqual(results.map(() => "/"));
+      expect(await allTimeEntries()).toEqual(rows);
     },
   );
 });

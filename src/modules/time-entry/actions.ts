@@ -9,8 +9,11 @@ import { requireSession, type SessionContext } from "@/server/session";
 import * as service from "./service";
 import { ownTimeEntryResource, TimeEntryError } from "./service";
 import {
+  continueEntryInput,
   createManualEntryInput,
   deleteEntryInput,
+  discardTimerInput,
+  duplicateEntryInput,
   startTimerInput,
   stopTimerInput,
   timeEntryMessages,
@@ -18,10 +21,16 @@ import {
   updateEntryTimesInput,
   updateRunningStartInput,
   type ActionResult,
+  type ContinueEntryInput,
+  type ContinueEntryResult,
   type CreateManualEntryInput,
   type CreateManualEntryResult,
   type DeleteEntryInput,
   type DeleteEntryResult,
+  type DiscardTimerInput,
+  type DiscardTimerResult,
+  type DuplicateEntryInput,
+  type DuplicateEntryResult,
   type StartTimerInput,
   type StartTimerResult,
   type StopTimerInput,
@@ -140,5 +149,35 @@ export async function updateRunningStart(
     const values = updateRunningStartInput.parse(input);
     assertCan(session.actor, "timeEntry.own.update", ownTimeEntryResource(session.actor));
     return service.updateRunningStart(session.actor, session.workspace, values);
+  });
+}
+
+export async function continueEntry(
+  input: ContinueEntryInput,
+): Promise<ActionResult<ContinueEntryResult>> {
+  return handle(async (session) => {
+    const values = continueEntryInput.parse(input);
+    assertCan(session.actor, "timeEntry.own.create", ownTimeEntryResource(session.actor));
+    return service.continueEntry(session.actor, session.workspace.timezone, values);
+  });
+}
+
+export async function duplicateEntry(
+  input: DuplicateEntryInput,
+): Promise<ActionResult<DuplicateEntryResult>> {
+  return handle(async (session) => {
+    const values = duplicateEntryInput.parse(input);
+    assertCan(session.actor, "timeEntry.own.create", ownTimeEntryResource(session.actor));
+    return service.duplicateEntry(session.actor, session.workspace.timezone, values);
+  });
+}
+
+export async function discardTimer(
+  input: DiscardTimerInput,
+): Promise<ActionResult<DiscardTimerResult>> {
+  return handle(async (session) => {
+    const values = discardTimerInput.parse(input);
+    assertCan(session.actor, "timeEntry.own.delete", ownTimeEntryResource(session.actor));
+    return service.discardTimer(session.actor, values);
   });
 }

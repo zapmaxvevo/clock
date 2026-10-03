@@ -24,11 +24,17 @@ import { timeEntryRepository, type EntryTarget, type TimeEntryRow } from "./repo
 import {
   timeEntryMessages,
   TRACKER_WINDOW_DAYS,
+  type ContinueEntryInput,
+  type ContinueEntryResult,
   type CreateManualEntryResult,
   type CreateManualEntryValues,
   type DeleteEntryInput,
   type DeleteEntryResult,
   type DayGroupView,
+  type DiscardTimerInput,
+  type DiscardTimerResult,
+  type DuplicateEntryInput,
+  type DuplicateEntryResult,
   type StartTimerValues,
   type StartTimerResult,
   type StopTimerInput,
@@ -134,16 +140,16 @@ export function ownTimeEntryResource(actor: Actor) {
 }
 
 /**
- * Lee la entrada y decide el acceso sobre su dueño real. Un id de otro
- * workspace nunca llega acá: el repository ya lo dejó fuera.
+ * Lo que comparten las lecturas de una entrada existente: `not_found` si no
+ * hay fila (TT-80), `forbidden` con el texto de TT-79 si `can()` la niega sobre
+ * su dueño real. Un id de otro workspace nunca llega acá: el repository ya lo
+ * dejó fuera.
  */
-async function readOwnEntry(
-  tx: Transaction,
+function authorizeEntry(
   actor: Actor,
   action: Action,
-  id: string,
-): Promise<TimeEntryRow> {
-  const row = await timeEntryRepository.findByIdForUpdate(tx, actor.workspaceId, id);
+  row: TimeEntryRow | undefined,
+): TimeEntryRow {
   if (row === undefined) {
     throw new TimeEntryError("not_found", timeEntryMessages.notFound);
   }
@@ -162,6 +168,37 @@ async function readOwnEntry(
     );
   }
   return row;
+}
+
+/** La entrada que escribe una mutación. Con bloqueo: se escribe lo que se leyó. */
+async function readOwnEntry(
+  tx: Transaction,
+  actor: Actor,
+  action: Action,
+  id: string,
+): Promise<TimeEntryRow> {
+  return authorizeEntry(
+    actor,
+    action,
+    await timeEntryRepository.findByIdForUpdate(tx, actor.workspaceId, id),
+  );
+}
+
+/**
+ * La entrada de la que parte un alta. Sin bloqueo: no se escribe y su dueño no
+ * cambia, y con el bloqueo dos «Continuar» de la misma entrada se pondrían en
+ * fila y el segundo cerraría con 0 s el timer que acaba de abrir el primero.
+ */
+async function readSourceEntry(
+  tx: Transaction,
+  actor: Actor,
+  id: string,
+): Promise<TimeEntryRow> {
+  return authorizeEntry(
+    actor,
+    "timeEntry.own.create",
+    await timeEntryRepository.findById(actor.workspaceId, id, tx),
+  );
 }
 
 /** La fila, tal como se leyó y autorizó. Es lo único que identifica una escritura. */
@@ -246,76 +283,16 @@ async function createEntryOnce<Result>(
   });
 }
 
-type StartAttempt = {
-  readonly running: TimeEntryRow;
-  readonly stopped: TimeEntryRow | null;
-};
-
 /**
- * Cierra el timer anterior y abre el nuevo con el mismo `now()`. Un choque con
- * otro arranque sale como error de la base: lo resuelve `createEntryOnce`.
+ * La red de seguridad de TT-81 en las escrituras que cierran un timer: con el
+ * piso de `stopById` el `check` no salta, pero si salta no es un problema de red.
  */
-async function attemptStart(
-  actor: Actor,
-  id: string,
-  description: string,
-): Promise<StartAttempt> {
-  return db.transaction(async (tx) => {
-    const current = await timeEntryRepository.findRunning(
-      actor.workspaceId,
-      actor.userId,
-      tx,
-    );
-    const stopped =
-      current === undefined ? undefined : await closeRunning(tx, actor, current);
-    const running = await timeEntryRepository.insertRunning(tx, {
-      id,
-      workspaceId: actor.workspaceId,
-      userId: actor.userId,
-      description,
-    });
-    await recordAudit(tx, {
-      workspaceId: actor.workspaceId,
-      actorId: actor.userId,
-      action: "timeEntry.start",
-      entity: AUDIT_ENTITY,
-      entityId: running.id,
-      nextValue: { description: running.description, startedAt: running.startedAt },
-    });
-    return { running, stopped: stopped ?? null };
-  });
-}
-
-/**
- * Arranca un timer. Si ya había uno corriendo lo cierra en el mismo instante;
- * si otro arranque ganó la carrera, devuelve el timer del ganador (ADR 0003).
- * Un reintento con el mismo id responde la fila que creó el primer intento, sin
- * escribir (ADR 0007).
- */
-export async function startTimer(
-  actor: Actor,
-  timeZone: string,
-  input: StartTimerValues,
-): Promise<StartTimerResult> {
-  const runningOnly = (row: TimeEntryRow): StartTimerResult => ({
-    running: toView(row, timeZone),
-    stopped: null,
-  });
+async function translatingEndBeforeStart<Result>(
+  work: () => Promise<Result>,
+): Promise<Result> {
   try {
-    return await createEntryOnce(actor, input.id, {
-      attempt: async () => {
-        const started = await attemptStart(actor, input.id, input.description);
-        return {
-          running: toView(started.running, timeZone),
-          stopped: started.stopped === null ? null : toView(started.stopped, timeZone),
-        };
-      },
-      replayed: runningOnly,
-      winner: runningOnly,
-    });
+    return await work();
   } catch (error) {
-    // Red de seguridad: con el piso de `stopById` el `check` no salta por el
-    // cierre del timer anterior, pero si salta no es un problema de red.
     if (timeEntryRepository.isEndBeforeStart(error)) {
       throw new TimeEntryError("validation", timeEntryMessages.endBeforeStart);
     }
@@ -323,13 +300,216 @@ export async function startTimer(
   }
 }
 
+/** Los campos que la entrada nueva toma de la original. Hoy, la descripción. */
+type EntryFields = { readonly description: string };
+
+/**
+ * La única función que decide qué se copia de la original, para continuar y
+ * para duplicar. Los slices 10 y 11 le suman proyecto, tarea, etiquetas y
+ * facturable.
+ */
+function continuedFields(source: TimeEntryRow): EntryFields {
+  return { description: source.description };
+}
+
+type OpenedEntry = {
+  readonly running: TimeEntryRow;
+  readonly stopped: TimeEntryRow | null;
+};
+
+/**
+ * Cierra el timer abierto, si hay, y abre la entrada nueva con el mismo
+ * `now()` (ADR 0003). Un choque con otro arranque sale como error de la base:
+ * lo resuelve `createEntryOnce`. Cada operación escribe su propio registro.
+ */
+async function closeAndOpen(
+  tx: Transaction,
+  actor: Actor,
+  entry: { readonly id: string; readonly fields: EntryFields },
+): Promise<OpenedEntry> {
+  const current = await timeEntryRepository.findRunning(
+    actor.workspaceId,
+    actor.userId,
+    tx,
+  );
+  const stopped =
+    current === undefined ? undefined : await closeRunning(tx, actor, current);
+  const running = await timeEntryRepository.insertRunning(tx, {
+    id: entry.id,
+    workspaceId: actor.workspaceId,
+    userId: actor.userId,
+    ...entry.fields,
+  });
+  return { running, stopped: stopped ?? null };
+}
+
+/**
+ * El arranque idempotente que comparten «Iniciar» y «Continuar»: `open` es la
+ * transacción del alta, que cierra el timer abierto y escribe su registro. Un
+ * reintento con el mismo id responde la fila que creó el primer intento, sin
+ * escribir (ADR 0007); si otro arranque ganó la carrera, el timer del ganador
+ * (ADR 0003).
+ */
+async function startEntryOnce(
+  actor: Actor,
+  timeZone: string,
+  id: string,
+  open: (tx: Transaction) => Promise<OpenedEntry>,
+): Promise<StartTimerResult> {
+  const runningOnly = (row: TimeEntryRow): StartTimerResult => ({
+    running: toView(row, timeZone),
+    stopped: null,
+  });
+  return translatingEndBeforeStart(() =>
+    createEntryOnce(actor, id, {
+      attempt: async () => {
+        const opened = await db.transaction(open);
+        return {
+          running: toView(opened.running, timeZone),
+          stopped: opened.stopped === null ? null : toView(opened.stopped, timeZone),
+        };
+      },
+      replayed: runningOnly,
+      winner: runningOnly,
+    }),
+  );
+}
+
+/** Arranca un timer. Si ya había uno corriendo lo cierra en el mismo instante. */
+export async function startTimer(
+  actor: Actor,
+  timeZone: string,
+  input: StartTimerValues,
+): Promise<StartTimerResult> {
+  return startEntryOnce(actor, timeZone, input.id, async (tx) => {
+    const opened = await closeAndOpen(tx, actor, {
+      id: input.id,
+      fields: { description: input.description },
+    });
+    await recordAudit(tx, {
+      workspaceId: actor.workspaceId,
+      actorId: actor.userId,
+      action: "timeEntry.start",
+      entity: AUDIT_ENTITY,
+      entityId: opened.running.id,
+      nextValue: {
+        description: opened.running.description,
+        startedAt: opened.running.startedAt,
+      },
+    });
+    return opened;
+  });
+}
+
+/**
+ * Abre un timer nuevo con los campos de una entrada existente (TT-57). Es un
+ * arranque: cierra el timer que corría en el mismo instante, y perder la
+ * carrera contra otro arranque responde el timer del ganador.
+ */
+export async function continueEntry(
+  actor: Actor,
+  timeZone: string,
+  input: ContinueEntryInput,
+): Promise<ContinueEntryResult> {
+  return startEntryOnce(actor, timeZone, input.id, async (tx) => {
+    const source = await readSourceEntry(tx, actor, input.sourceId);
+    const opened = await closeAndOpen(tx, actor, {
+      id: input.id,
+      fields: continuedFields(source),
+    });
+    await recordAudit(tx, {
+      workspaceId: actor.workspaceId,
+      actorId: actor.userId,
+      action: "timeEntry.continue",
+      entity: AUDIT_ENTITY,
+      entityId: opened.running.id,
+      nextValue: {
+        sourceId: source.id,
+        description: opened.running.description,
+        startedAt: opened.running.startedAt,
+      },
+    });
+    return opened;
+  });
+}
+
+/**
+ * TT-58: qué instantes recibe la copia. Hoy, los mismos de la original.
+ * Pendiente de verificación en el workspace del equipo (P-14).
+ *
+ * Con esta regla la copia no necesita ningún control de rango. No puede quedar
+ * debajo del piso del workspace ni pasar el año 9999: son instantes que ya se
+ * guardaron. Y no puede quedar fuera de la lista donde está la original: cae
+ * en su mismo día, y agregarla no mueve el extremo inferior de la ventana,
+ * porque empieza en el mismo instante que una fila que ya estaba. Si la
+ * original se ve, la copia también; si la ventana la dejó afuera, se van las
+ * dos.
+ *
+ * Las alternativas consideradas tampoco necesitan `outsideWindow` ni el piso:
+ * la contigua (`startedAt = source.endedAt`) cae después de la original, y la
+ * de las mismas horas de pared hoy cae en hoy, que la lista siempre dibuja y
+ * que nunca es anterior a la creación del workspace. La contigua suma el tope
+ * de `isAfterYear9999`, y la de hoy, el rechazo de `nonexistentClock`
+ * (ADR 0005) y el `now` y la zona como parámetros. Solo una regla que pusiera
+ * la copia en un día anterior al de la original y anterior a hoy necesitaría
+ * `outsideWindow`, como el alta manual.
+ */
+function duplicateTimes(source: ClosedEntryRow): { startedAt: Date; endedAt: Date } {
+  return { startedAt: source.startedAt, endedAt: source.endedAt };
+}
+
+/**
+ * Agrega una entrada cerrada con los campos y las horas de otra (TT-58). Solo
+ * crea: una fila cerrada no choca con el índice del timer, así que no hay
+ * ganador que responder. Un reintento con el mismo id responde la copia del
+ * primer intento (ADR 0007).
+ */
+export async function duplicateEntry(
+  actor: Actor,
+  timeZone: string,
+  input: DuplicateEntryInput,
+): Promise<DuplicateEntryResult> {
+  return createEntryOnce(actor, input.id, {
+    attempt: () =>
+      db.transaction(async (tx) => {
+        const source = await readSourceEntry(tx, actor, input.sourceId);
+        // Solo lo produce un pedido armado a mano: la abierta no es una fila.
+        if (!isClosed(source)) {
+          throw new TimeEntryError("timer_running", timeEntryMessages.runningEntryTimes);
+        }
+        const created = await timeEntryRepository.insertClosed(tx, {
+          id: input.id,
+          workspaceId: actor.workspaceId,
+          userId: actor.userId,
+          ...continuedFields(source),
+          ...duplicateTimes(source),
+        });
+        await recordAudit(tx, {
+          workspaceId: actor.workspaceId,
+          actorId: actor.userId,
+          action: "timeEntry.duplicate",
+          entity: AUDIT_ENTITY,
+          entityId: created.id,
+          nextValue: {
+            sourceId: source.id,
+            description: created.description,
+            startedAt: created.startedAt,
+            endedAt: created.endedAt,
+          },
+        });
+        return { created: toView(created, timeZone) };
+      }),
+    replayed: (row) => ({ created: toView(row, timeZone) }),
+  });
+}
+
 export async function stopTimer(
   actor: Actor,
   timeZone: string,
   input: StopTimerInput,
 ): Promise<StopTimerResult> {
-  try {
-    const stopped = await db.transaction(async (tx) => {
+  const stopped = await translatingEndBeforeStart(() =>
+    db.transaction(async (tx) => {
       const row = await readOwnEntry(tx, actor, "timeEntry.own.update", input.id);
       if (row.endedAt !== null) {
         throw new TimeEntryError("already_stopped", timeEntryMessages.alreadyStopped);
@@ -339,14 +519,9 @@ export async function stopTimer(
         throw new TimeEntryError("already_stopped", timeEntryMessages.alreadyStopped);
       }
       return closed;
-    });
-    return { stopped: toView(stopped, timeZone) };
-  } catch (error) {
-    if (timeEntryRepository.isEndBeforeStart(error)) {
-      throw new TimeEntryError("validation", timeEntryMessages.endBeforeStart);
-    }
-    throw error;
-  }
+    }),
+  );
+  return { stopped: toView(stopped, timeZone) };
 }
 
 export async function updateDescription(
@@ -392,6 +567,51 @@ export async function deleteEntry(
       workspaceId: actor.workspaceId,
       actorId: actor.userId,
       action: "timeEntry.delete",
+      entity: AUDIT_ENTITY,
+      entityId: removed.id,
+      // El borrado es físico: esta es la única copia que queda de la fila.
+      previousValue: removed,
+    });
+    return { id: removed.id };
+  });
+}
+
+/**
+ * Borra el timer que corre sin guardarlo (TT-65). Lo que se pidió es que el
+ * timer no esté: si la fila ya no existe, es éxito sin escribir. Un timer que
+ * otra pestaña ya cerró no se borra, porque es un registro que alguien quiso
+ * conservar y el borrado no se deshace (P-06).
+ */
+export async function discardTimer(
+  actor: Actor,
+  input: DiscardTimerInput,
+): Promise<DiscardTimerResult> {
+  // Antes de la fila: sin esto, una membresía desactivada recibiría éxito por
+  // un id que no existe.
+  if (!can(actor, "timeEntry.own.delete", ownTimeEntryResource(actor))) {
+    throw new TimeEntryError("forbidden", timeEntryMessages.forbidden);
+  }
+  return db.transaction(async (tx) => {
+    const found = await timeEntryRepository.findByIdForUpdate(
+      tx,
+      actor.workspaceId,
+      input.id,
+    );
+    if (found === undefined) {
+      return { id: input.id };
+    }
+    const row = authorizeEntry(actor, "timeEntry.own.delete", found);
+    if (row.endedAt !== null) {
+      throw new TimeEntryError("already_stopped", timeEntryMessages.alreadyStopped);
+    }
+    const removed = await timeEntryRepository.deleteRunningById(tx, targetOf(row));
+    if (removed === undefined) {
+      throw new TimeEntryError("already_stopped", timeEntryMessages.alreadyStopped);
+    }
+    await recordAudit(tx, {
+      workspaceId: actor.workspaceId,
+      actorId: actor.userId,
+      action: "timeEntry.discard",
       entity: AUDIT_ENTITY,
       entityId: removed.id,
       // El borrado es físico: esta es la única copia que queda de la fila.
@@ -775,7 +995,7 @@ export async function getTrackerState(
   // sentencia ve uno nuevo, y una mutación que commitea en el medio deja
   // estados que la sección 5 declara imposibles: `hasAnyEntry` en verdadero con
   // la lista vacía, o la misma entrada en `running` y en `days`.
-  const { running, latestClosed, closed } = await db.transaction(
+  const { running, latestClosed, latestPast, closed } = await db.transaction(
     async (tx) => {
       // Secuenciales a propósito: todas comparten la única conexión de la
       // transacción, así que lanzarlas juntas las encolaría igual y solo haría
@@ -792,7 +1012,7 @@ export async function getTrackerState(
         actor.userId,
         tx,
       );
-      const latestPast = await timeEntryRepository.findLatestClosedBefore(
+      const past = await timeEntryRepository.findLatestClosedBefore(
         actor.workspaceId,
         actor.userId,
         now,
@@ -801,11 +1021,16 @@ export async function getTrackerState(
       const entries = await timeEntryRepository.listClosedBetween(
         actor.workspaceId,
         actor.userId,
-        windowStart(now, timeZone, latestPast, current),
+        windowStart(now, timeZone, past, current),
         windowEnd(now, timeZone, latest),
         tx,
       );
-      return { running: current, latestClosed: latest, closed: entries };
+      return {
+        running: current,
+        latestClosed: latest,
+        latestPast: past,
+        closed: entries,
+      };
     },
     { isolationLevel: "repeatable read" },
   );
@@ -817,6 +1042,7 @@ export async function getTrackerState(
     minDayKey: workspaceFloorDayKey(workspace),
     canTrack: can(actor, "timeEntry.own.create", ownTimeEntryResource(actor)),
     running: running === undefined ? null : toView(running, timeZone),
+    lastEntryId: latestPast === undefined ? null : latestPast.id,
     days: buildDays(closed, running, now, timeZone),
     hasAnyEntry: running !== undefined || latestClosed !== undefined,
   };

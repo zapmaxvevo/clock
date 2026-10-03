@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  continueEntryInput,
   createManualEntryInput,
   deleteEntryInput,
+  discardTimerInput,
+  duplicateEntryInput,
   startTimerInput,
   stopTimerInput,
   timeEntryMessages,
@@ -140,6 +143,7 @@ describe("trackerState", () => {
     minDayKey: "2026-09-01",
     canTrack: true,
     running: null,
+    lastEntryId: id,
     days: [
       {
         date: "2026-10-02",
@@ -154,6 +158,16 @@ describe("trackerState", () => {
 
   it("acepta un estado completo", () => {
     expect(trackerState.parse(state)).toEqual(state);
+  });
+
+  it("acepta lastEntryId nulo y exige que esté, con forma de uuid", () => {
+    expect(trackerState.parse({ ...state, lastEntryId: null }).lastEntryId).toBeNull();
+    const { lastEntryId, ...missing } = state;
+    expect(lastEntryId).toBe(id);
+    expect(trackerState.safeParse(missing).success).toBe(false);
+    expect(trackerState.safeParse({ ...state, lastEntryId: "no-es-uuid" }).success).toBe(
+      false,
+    );
   });
 
   it("acepta el timer activo sin fin, sin duración y sin superíndice", () => {
@@ -344,5 +358,49 @@ describe("updateRunningStartInput", () => {
     expect(updateRunningStartInput.parse({ ...valid, end: "09:00" })).not.toHaveProperty(
       "end",
     );
+  });
+});
+
+describe.each([
+  ["continueEntryInput", continueEntryInput],
+  ["duplicateEntryInput", duplicateEntryInput],
+] as const)("%s", (_, input) => {
+  const sourceId = "7d0e9a52-1f3b-4c8d-a2e6-5b9c0d1e2f3a";
+
+  it("acepta el id nuevo y el de la original", () => {
+    expect(input.parse({ id, sourceId })).toEqual({ id, sourceId });
+  });
+
+  it("acepta como original cualquier uuid: la fila ya existe y no la eligió este cliente", () => {
+    const v7 = "01890a5d-ac96-774b-bcce-b302099a8057";
+    expect(input.parse({ id, sourceId: v7 })).toEqual({ id, sourceId: v7 });
+  });
+
+  it.each([
+    ["sin id", { sourceId }],
+    ["con un texto que no es uuid", { id: "no-es-uuid", sourceId }],
+    ["con el uuid nulo", { id: "00000000-0000-0000-0000-000000000000", sourceId }],
+    ["con un uuid v7", { id: "01890a5d-ac96-774b-bcce-b302099a8057", sourceId }],
+    ["sin la original", { id }],
+    ["con una original que no es uuid", { id, sourceId: "no-es-uuid" }],
+  ])("rechaza el pedido %s", (__, values) => {
+    expect(input.safeParse(values).success).toBe(false);
+  });
+
+  it.each([
+    ["el mismo id", id],
+    ["el mismo id con otras mayúsculas", id.toUpperCase()],
+  ])("rechaza %s que la original con su mensaje", (__, same) => {
+    const result = input.safeParse({ id, sourceId: same });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.at(0)?.message).toBe(timeEntryMessages.sameEntryId);
+  });
+});
+
+describe("discardTimerInput", () => {
+  it("solo acepta un uuid", () => {
+    expect(discardTimerInput.parse({ id })).toEqual({ id });
+    expect(discardTimerInput.safeParse({ id: "no-es-uuid" }).success).toBe(false);
+    expect(discardTimerInput.safeParse({}).success).toBe(false);
   });
 });

@@ -57,6 +57,23 @@ export const timeEntryRepository = {
     return rows.at(0);
   },
 
+  /**
+   * Busca por id sin bloqueo y sin filtrar por usuario, como `findByIdForUpdate`:
+   * quién es el dueño lo decide `can()` sobre la fila leída.
+   */
+  async findById(
+    workspaceId: string,
+    id: string,
+    tx: Executor = db,
+  ): Promise<TimeEntryRow | undefined> {
+    const rows = await tx
+      .select()
+      .from(timeEntry)
+      .where(and(eq(timeEntry.workspaceId, workspaceId), eq(timeEntry.id, id)))
+      .limit(1);
+    return rows.at(0);
+  },
+
   /** Sin bloqueo. Filtra por workspace y por usuario: solo encuentra filas propias. */
   async findOwnById(
     workspaceId: string,
@@ -113,7 +130,9 @@ export const timeEntryRepository = {
 
   /**
    * La entrada cerrada más reciente que empezó antes de `before`. Es la que
-   * estira hacia atrás la lista: una entrada futura no cuenta para eso.
+   * estira hacia atrás la lista: una entrada futura no cuenta para eso. Es
+   * también la que continúa el atajo «c», así que desempata como
+   * `listClosedBetween`: con dos del mismo inicio, la que la lista dibuja primero.
    */
   async findLatestClosedBefore(
     workspaceId: string,
@@ -132,7 +151,7 @@ export const timeEntryRepository = {
           lt(timeEntry.startedAt, before),
         ),
       )
-      .orderBy(desc(timeEntry.startedAt))
+      .orderBy(desc(timeEntry.startedAt), asc(timeEntry.id))
       .limit(1);
     return rows.at(0);
   },
@@ -176,13 +195,15 @@ export const timeEntryRepository = {
   },
 
   /**
-   * Gemelo de `insertRunning` para la entrada manual: acá los dos instantes
-   * llegan como valores, porque nacen de una hora de pared tecleada y no de
-   * `now()`. Ver el ADR 0005.
+   * Gemelo de `insertRunning` para las entradas cerradas: acá los dos instantes
+   * llegan como valores, porque nacen de una hora de pared tecleada (ADR 0005)
+   * o de otra fila, y no de `now()`. El id lo trae duplicar, que lo eligió el
+   * cliente (ADR 0007); el alta manual no lo manda.
    */
   async insertClosed(
     tx: Transaction,
     values: {
+      id?: string;
       workspaceId: string;
       userId: string;
       description: string;
@@ -258,6 +279,18 @@ export const timeEntryRepository = {
     target: EntryTarget,
   ): Promise<TimeEntryRow | undefined> {
     const rows = await tx.delete(timeEntry).where(isTarget(target)).returning();
+    return rows.at(0);
+  },
+
+  /** Solo una fila abierta. `undefined` si ya la cerraron. */
+  async deleteRunningById(
+    tx: Transaction,
+    target: EntryTarget,
+  ): Promise<TimeEntryRow | undefined> {
+    const rows = await tx
+      .delete(timeEntry)
+      .where(and(isTarget(target), isNull(timeEntry.endedAt)))
+      .returning();
     return rows.at(0);
   },
 

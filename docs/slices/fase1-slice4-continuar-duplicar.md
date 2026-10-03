@@ -121,10 +121,13 @@ verificación en el workspace del equipo (P-14)**.
 Lo que tocaría cambiarla, dicho entero:
 
 - **La función.** La regla vive en una sola función privada de `service.ts`,
-  `duplicateTimes(source, { now, timeZone })`, que ya recibe el contexto que
-  necesitaría cualquier alternativa razonable: la copia contigua a la original
-  (`startedAt = source.endedAt`) o las mismas horas de pared hoy, con
-  `instantFromLocal` y las reglas del ADR 0005.
+  `duplicateTimes(source)`. Una alternativa razonable —la copia contigua a la
+  original (`startedAt = source.endedAt`) o las mismas horas de pared hoy, con
+  `instantFromLocal` y las reglas del ADR 0005— le suma `now` y la zona como
+  parámetros. _Corregido el 2026-10-03 por la revisión de código_: la versión
+  anterior fijaba esa firma de antemano, con un parámetro sin usar; la función
+  es privada y de un solo llamador, así que sumarlo cuando haga falta cuesta lo
+  mismo.
 - **El criterio 6**, que es el único que afirma las horas. El criterio 7 y el
   recorrido e2e 4 afirman solo «una fila más con esa descripción en la lista,
   y la original intacta», sin grupo ni total, así que valen con cualquiera de
@@ -393,7 +396,7 @@ que sin gancho: una fila cerrada no choca con el índice único (ADR 0007). Con:
   1. `readSourceEntry(tx, actor, input.sourceId)`.
   2. Si `source.endedAt === null`, `timer_running` con `runningEntryTimes`.
      Solo lo produce un pedido armado a mano: la abierta no es una fila.
-  3. `{ startedAt, endedAt } = duplicateTimes(source, { now, timeZone })`.
+  3. `{ startedAt, endedAt } = duplicateTimes(source)`.
   4. `insertClosed` con `id: input.id`, `continuedFields(source)` y esos dos
      instantes.
   5. `recordAudit` con `timeEntry.duplicate`.
@@ -613,7 +616,7 @@ instalado. Es la única primitiva que falta, y se pide en el handshake.
 ### Lo que no toca ninguno de los dos
 
 `src/server/` entero —incluidos `create-once.ts` y `db/constraint-error.ts`, que
-son del 2b y que el slice 9 también usa—, `drizzle/`, `src/app/`, `src/test/`,
+son del 2b y que el slice 9 también usa—, `drizzle/`, `src/app/`,
 `e2e/`, `package.json`, `package-lock.json`, `components.json` y, fuera de
 `switch.tsx`, nada de `src/components/ui/`. Los documentos de slices anteriores
 y de correcciones son históricos y no se reescriben.
@@ -621,6 +624,22 @@ y de correcciones son históricos y no se reescriben.
 Los recorridos de navegador van en `e2e/continue-duplicate.spec.ts`
 **(nuevo)**. **Dueño: `tests-slice4`.** Los specs y helpers existentes no se
 modifican; los helpers que falten viven en el spec nuevo.
+
+_Corregido el 2026-10-03 por las revisiones_. Excepciones autorizadas a lo
+anterior:
+
+- `src/test/concurrency.ts`: la barrera de los tests de carrera se mudó ahí
+  desde `service.integration.test.ts` (`waitForBlockedBackends`,
+  `raceThroughBarrier`, `queueBehindBarrier`), porque también la usa el slice 9.
+  Entra al reparto de `backend-dev`, junto con
+  `src/modules/workspace/service.integration.test.ts`.
+- `components/use-new-entry-id.ts` (nuevo): la regla del id pendiente del ADR
+  0007, una sola vez para iniciar, continuar y duplicar. Entra al reparto de
+  `frontend-dev`.
+- Tres ajustes en specs existentes, sin cambiar lo que afirman:
+  `entry-times.spec.ts:259-261` (el control siguiente de la fila pasa a ser
+  «Continuar»), y la espera de la respuesta del servidor en
+  `manual-entry.spec.ts:372-374` y `tracker.spec.ts:487`.
 
 ### Handshake de orden
 

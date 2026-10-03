@@ -102,7 +102,7 @@ export function RunningStartEditor({
         }
         aria-label={trackerLabels.editRunningStart}
       />
-      <PopoverContent align="end" className="w-auto">
+      <PopoverContent align="end" className="w-auto" data-tracker-shortcuts="off">
         <PopoverHeader>
           <PopoverTitle>Inicio del timer</PopoverTitle>
         </PopoverHeader>

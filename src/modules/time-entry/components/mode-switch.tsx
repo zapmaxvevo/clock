@@ -6,27 +6,38 @@ import { useId } from "react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { timeEntryMessages } from "@/modules/time-entry/schema";
 
-import { parseTrackerMode, trackerModeCookie, type TrackerMode } from "./tracker-mode";
+import { parseTrackerMode, type TrackerMode } from "./tracker-mode";
 
 type ModeSwitchProps = {
   readonly mode: TrackerMode;
   readonly onModeChange: (mode: TrackerMode) => void;
-  /** Con un timer corriendo no se puede agregar tiempo a mano (TT-30). */
+  /** Con un timer corriendo no se puede agregar tiempo a mano (TT-30): se dice por qué. */
   readonly timerRunning: boolean;
-  /** Hay una operación de la barra en vuelo: conmutar ahora la dejaría sin su desenlace. */
-  readonly busy: boolean;
+  /**
+   * Lo decide la barra, que también atiende «m»: con un timer corriendo o una
+   * operación de la barra en vuelo, que conmutar dejaría sin su desenlace.
+   */
+  readonly disabled: boolean;
+  /** TT-26: con los atajos activos, «m» conmuta y los dos botones lo anuncian. */
+  readonly shortcutsEnabled: boolean;
 };
 
 /**
- * Conmutador de modo (TT-16). Escribe la cookie que recuerda el modo, para
- * que la próxima visita ya llegue dibujada en el que se eligió. Cuando el
+ * Conmutador de modo (TT-16). La cookie que recuerda el modo la escribe la
+ * barra, que también conmuta con el atajo «m». Cuando el
  * motivo de que esté inactivo es un timer, se dice con un texto visible y no
  * con un tooltip: un control deshabilitado no recibe foco ni puntero, así que
  * un tooltip ahí no se puede leer con el teclado.
  */
-export function ModeSwitch({ mode, onModeChange, timerRunning, busy }: ModeSwitchProps) {
+export function ModeSwitch({
+  mode,
+  onModeChange,
+  timerRunning,
+  disabled,
+  shortcutsEnabled,
+}: ModeSwitchProps) {
   const helpId = useId();
-  const disabled = timerRunning || busy;
+  const keyShortcut = shortcutsEnabled ? "M" : undefined;
 
   function handleChange(values: string[]): void {
     const next = values[0];
@@ -38,7 +49,6 @@ export function ModeSwitch({ mode, onModeChange, timerRunning, busy }: ModeSwitc
     if (chosen === mode) {
       return;
     }
-    document.cookie = trackerModeCookie(chosen);
     onModeChange(chosen);
   }
 
@@ -65,10 +75,18 @@ export function ModeSwitch({ mode, onModeChange, timerRunning, busy }: ModeSwitc
         size="sm"
         spacing={0}
       >
-        <ToggleGroupItem value="timer" aria-label="Modo timer">
+        <ToggleGroupItem
+          value="timer"
+          aria-label="Modo timer"
+          aria-keyshortcuts={keyShortcut}
+        >
           <ClockIcon aria-hidden="true" />
         </ToggleGroupItem>
-        <ToggleGroupItem value="manual" aria-label="Modo manual">
+        <ToggleGroupItem
+          value="manual"
+          aria-label="Modo manual"
+          aria-keyshortcuts={keyShortcut}
+        >
           <ListIcon aria-hidden="true" />
         </ToggleGroupItem>
       </ToggleGroup>

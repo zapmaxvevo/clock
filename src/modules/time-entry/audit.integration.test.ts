@@ -10,8 +10,11 @@ import { auditFor, timeEntriesOf, timeEntryById } from "@/test/queries";
 
 import { timeEntryMessages } from "./schema";
 import {
+  continueEntry,
   createManualEntry,
   deleteEntry,
+  discardTimer,
+  duplicateEntry,
   startTimer,
   stopTimer,
   updateDescription,
@@ -577,5 +580,160 @@ describe("audit log de la entrada manual", () => {
     );
     expect(actions).toContain("timeEntry.start");
     expect(actions).toContain("timeEntry.stop");
+  });
+});
+
+describe("audit log de continuar, duplicar y descartar", () => {
+  /** Una entrada cerrada del actor, la original de continuar y duplicar. */
+  function seedSource() {
+    return seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      description: "diseño",
+      startedAt: "2026-10-01T11:00:00Z",
+      endedAt: "2026-10-01T12:00:00Z",
+    });
+  }
+
+  it("continuar deja timeEntry.continue con la original, y el stop del timer que cerró", async () => {
+    const source = await seedSource();
+    const previous = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+
+    const result = await continueEntry(actor, buenosAires, {
+      id: randomUUID(),
+      sourceId: source.id,
+    });
+
+    const opened = await auditFor("time_entry", result.running.id);
+    expect(opened).toHaveLength(1);
+    expect(opened[0].action).toBe("timeEntry.continue");
+    expect(opened[0].workspaceId).toBe(workspaceId);
+    expect(opened[0].actorId).toBe(actor.userId);
+    expect(opened[0].previousValue).toBeNull();
+    expect(parsed(opened[0].nextValue)).toEqual({
+      sourceId: source.id,
+      description: "diseño",
+      startedAt: result.running.startedAt,
+    });
+    const closed = await auditFor("time_entry", previous.id);
+    expect(closed.map((row) => row.action)).toEqual(["timeEntry.stop"]);
+    expect(parsed(closed[0].nextValue)).toEqual({ endedAt: result.running.startedAt });
+    expect(await auditFor("time_entry", source.id)).toEqual([]);
+  });
+
+  it("duplicar deja timeEntry.duplicate con la original y los dos instantes", async () => {
+    const source = await seedSource();
+
+    const { created } = await duplicateEntry(actor, buenosAires, {
+      id: randomUUID(),
+      sourceId: source.id,
+    });
+
+    const rows = await auditFor("time_entry");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].action).toBe("timeEntry.duplicate");
+    expect(rows[0].entityId).toBe(created.id);
+    expect(rows[0].actorId).toBe(actor.userId);
+    expect(rows[0].previousValue).toBeNull();
+    expect(parsed(rows[0].nextValue)).toEqual({
+      sourceId: source.id,
+      description: "diseño",
+      startedAt: "2026-10-01T11:00:00.000Z",
+      endedAt: "2026-10-01T12:00:00.000Z",
+    });
+  });
+
+  it("descartar deja timeEntry.discard con la fila entera como valor previo", async () => {
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      description: "para descartar",
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+
+    await discardTimer(actor, { id: row.id });
+
+    const rows = await auditFor("time_entry", row.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].action).toBe("timeEntry.discard");
+    expect(rows[0].nextValue).toBeNull();
+    // Es la única copia que queda: el borrado es físico.
+    expect(parsed(rows[0].previousValue)).toEqual({
+      id: row.id,
+      workspaceId,
+      userId: actor.userId,
+      description: "para descartar",
+      startedAt: "2026-10-02T11:00:00.000Z",
+      endedAt: null,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    });
+  });
+
+  it("duplicar y descartar repetidos sobre un pedido ya aplicado no dejan registro", async () => {
+    const source = await seedSource();
+    const continued = randomUUID();
+    const duplicated = randomUUID();
+    await continueEntry(actor, buenosAires, { id: continued, sourceId: source.id });
+    await duplicateEntry(actor, buenosAires, { id: duplicated, sourceId: source.id });
+    await discardTimer(actor, { id: continued });
+    const before = await auditFor("time_entry");
+
+    await duplicateEntry(actor, buenosAires, { id: duplicated, sourceId: source.id });
+    await discardTimer(actor, { id: continued });
+
+    expect(await auditFor("time_entry")).toEqual(before);
+  });
+
+  it("continuar resuelto por la fila propia no deja registro", async () => {
+    const source = await seedSource();
+    const id = randomUUID();
+    await continueEntry(actor, buenosAires, { id, sourceId: source.id });
+    const before = await auditFor("time_entry");
+
+    await continueEntry(actor, buenosAires, { id, sourceId: source.id });
+
+    expect(await auditFor("time_entry")).toEqual(before);
+  });
+
+  it("el descarte de un timer ya detenido no deja registro", async () => {
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+    await stopTimer(actor, buenosAires, { id: row.id });
+
+    await expect(discardTimer(actor, { id: row.id })).rejects.toMatchObject({
+      code: "already_stopped",
+    });
+
+    const actions = (await auditFor("time_entry", row.id)).map((entry) => entry.action);
+    expect(actions).toEqual(["timeEntry.stop"]);
+  });
+
+  it("ningún otro camino del módulo escribe continue, duplicate ni discard", async () => {
+    const source = await seedSource();
+    const started = await startTimer(actor, buenosAires, {
+      id: randomUUID(),
+      description: "arranque",
+    });
+    await stopTimer(actor, buenosAires, { id: started.running.id });
+    await createManualEntry(actor, workspace, {
+      description: "",
+      date: "2026-10-01",
+      start: "13:00",
+      end: "14:00",
+    });
+    await deleteEntry(actor, { id: source.id });
+
+    const actions = (await auditFor("time_entry")).map((row) => row.action);
+    expect(actions).not.toContain("timeEntry.continue");
+    expect(actions).not.toContain("timeEntry.duplicate");
+    expect(actions).not.toContain("timeEntry.discard");
   });
 });

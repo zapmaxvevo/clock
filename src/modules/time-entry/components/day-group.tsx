@@ -4,6 +4,7 @@ import { useEffect, useOptimistic, useRef } from "react";
 
 import {
   deleteEntry,
+  duplicateEntry,
   updateDescription,
   updateEntryTimes,
 } from "@/modules/time-entry/actions";
@@ -24,6 +25,7 @@ import {
   useEntryAction,
   type EntryActionHandle,
 } from "./use-entry-action";
+import { useNewEntryId } from "./use-new-entry-id";
 
 type DayGroupProps = {
   readonly group: DayGroupView;
@@ -47,6 +49,19 @@ type DayGroupProps = {
   /** La fila de este grupo que tiene que tomar el foco al montarse. */
   readonly focusEntryId: string | null;
   readonly onEntryFocused: () => void;
+  /** TT-57: continuar es de la lista, que también lo dispara con «c». */
+  readonly onContinue: (sourceId: string) => void;
+  /** La entrada cuya continuación está en vuelo. */
+  readonly continuingId: string | null;
+  /** La fila que anuncia el atajo «c», o `null` con los atajos apagados. */
+  readonly shortcutEntryId: string | null;
+  /**
+   * Las entradas cuyo borrado viaja, de toda la lista: la lista las necesita
+   * para que «c» no continúe una fila que se está yendo.
+   */
+  readonly removedIds: readonly string[];
+  /** Vista optimista del borrado: se llama dentro de la transición del grupo. */
+  readonly showRemoved: (id: string) => void;
 };
 
 /** Una entrada que la edición llevó a otro día. */
@@ -79,10 +94,10 @@ function focusIsOnEntry(id: string): boolean {
 }
 
 /**
- * Un día de la lista con su total. Las tres mutaciones sobre una fila viven
- * acá y no en la fila: el borrado mueve también el total del grupo (TT-60),
- * la edición del horario puede llevarse la fila a otro día (TT-56), y las tres
- * pueden terminar con la fila fuera de la lista —borrada desde otra pestaña
+ * Un día de la lista con su total. Las mutaciones sobre una fila viven acá y
+ * no en la fila: el borrado y la copia mueven también el total del grupo
+ * (TT-60, TT-58), la edición del horario puede llevarse la fila a otro día
+ * (TT-56), y todas pueden terminar con la fila fuera de la lista —borrada desde otra pestaña
  * (TT-80)— así que su aviso tiene que quedar en algo que sobreviva. El de una
  * fila movida fuera del tramo dibujado no es del grupo sino de la lista: si la
  * fila era la única del día, el grupo se va con ella.
@@ -102,6 +117,11 @@ export function DayGroup({
   onMoved,
   focusEntryId,
   onEntryFocused,
+  onContinue,
+  continuingId,
+  shortcutEntryId,
+  removedIds,
+  showRemoved,
 }: DayGroupProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
 
@@ -113,10 +133,6 @@ export function DayGroup({
     optimistic: (input) => showEdit(input),
   });
 
-  const [removedIds, showRemoved] = useOptimistic<readonly string[], string>(
-    [],
-    (current, id) => [...current, id],
-  );
   const remove = useEntryAction(deleteEntry, {
     optimistic: (input) => showRemoved(input.id),
   });
@@ -141,9 +157,24 @@ export function DayGroup({
     },
   });
 
-  /** Una operación nueva deja viejo el aviso de TT-108 de la lista. */
+  /** TT-58: la copia aparece con la revalidación; no hay fila optimista. */
+  const duplicate = useEntryAction(duplicateEntry);
+  const nextDuplicateId = useNewEntryId(duplicate.failure);
+
+  function handleDuplicate(sourceId: string): void {
+    const id = nextDuplicateId(sourceId);
+    onOperationStart();
+    duplicate.run({ id, sourceId });
+  }
+
+  /**
+   * Una operación nueva deja viejos el aviso de TT-108 de la lista y el de
+   * duplicar: mientras ese aviso se ve, repetir «Duplicar» reusa el id
+   * pendiente, y quien quiera otra copia la pide después de que baje (§8).
+   */
   function run<Input>(handle: EntryActionHandle<Input>, input: Input): void {
     onOperationStart();
+    duplicate.clear();
     handle.run(input);
   }
 
@@ -153,11 +184,12 @@ export function DayGroup({
       ? undefined
       : () => {
           onOperationStart();
+          duplicate.clear();
           retry();
         };
   }
 
-  const removing = removedIds.length > 0;
+  const removing = group.entries.some((entry) => removedIds.includes(entry.id));
   const wasRemoving = useRef(false);
   useEffect(() => {
     // La fila borrada se lleva el foco con ella: aterriza en el encabezado del
@@ -226,6 +258,10 @@ export function DayGroup({
                   })
                 }
                 onDelete={() => run(remove, { id: entry.id })}
+                onContinue={() => onContinue(entry.id)}
+                continuing={continuingId === entry.id}
+                continueShortcut={shortcutEntryId === entry.id}
+                onDuplicate={() => handleDuplicate(entry.id)}
                 focusTimesOnMount={focusEntryId === entry.id}
                 onTimesFocused={onEntryFocused}
               />
@@ -236,7 +272,8 @@ export function DayGroup({
 
       {(save.failure !== null ||
         remove.failure !== null ||
-        saveTimes.failure !== null) && (
+        saveTimes.failure !== null ||
+        duplicate.failure !== null) && (
         <div className="flex flex-col gap-2 px-3 py-2">
           {save.failure !== null && (
             <TrackerFeedback
@@ -252,6 +289,14 @@ export function DayGroup({
               message={saveTimes.failure.message}
               retryDisabled={saveTimes.pending}
               onRetry={retryOf(saveTimes)}
+            />
+          )}
+          {duplicate.failure !== null && (
+            <TrackerFeedback
+              title={trackerLabels.entryNotDuplicated}
+              message={duplicate.failure.message}
+              retryDisabled={duplicate.pending}
+              onRetry={retryOf(duplicate)}
             />
           )}
           {remove.failure !== null && (
