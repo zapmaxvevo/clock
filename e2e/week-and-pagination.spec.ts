@@ -68,12 +68,8 @@ function dayGroup(page: Page, day: CivilDay, today: CivilDay): Locator {
   return page.getByRole("region", { name: dayLabel(day, today), exact: true });
 }
 
-/**
- * El enlace de «Cargar más». Sin `exact`: mientras la navegación viaja, su
- * nombre suma el «Cargando…» que lleva adentro.
- */
 function loadMoreLink(page: Page): Locator {
-  return page.getByRole("link", { name: "Cargar más" });
+  return page.getByRole("link", { name: "Cargar más", exact: true });
 }
 
 /** La URL lleva exactamente ese `desde` (ADR 0008). */
@@ -185,7 +181,7 @@ async function moveRunningStart(
 
 /**
  * Sigue «Cargar más» y espera a que la URL lleve el `desde` pedido y a que
- * se vaya el «Cargando…» que el enlace anuncia mientras la navegación viaja.
+ * se vaya el «Cargando…» que la lista anuncia mientras la navegación viaja.
  * El foco se mueve cuando el `desde` llega a la URL: quien llama lo afirma.
  */
 async function followLoadMore(
