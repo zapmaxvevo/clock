@@ -1,6 +1,12 @@
 "use client";
 
-import { CalendarIcon, EllipsisVerticalIcon, Trash2Icon } from "lucide-react";
+import {
+  CalendarIcon,
+  CopyIcon,
+  EllipsisVerticalIcon,
+  PlayIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -41,6 +47,14 @@ type EntryRowProps = {
   readonly onSave: (description: string) => void;
   readonly onSaveTimes: (times: TimeDraft) => void;
   readonly onDelete: () => void;
+  /** TT-57: continuar es de la lista, que también lo dispara con «c». */
+  readonly onContinue: () => void;
+  /** La continuación de esta entrada está en vuelo: el botón no acepta otra. */
+  readonly continuing: boolean;
+  /** Es la entrada que continúa «c» y los atajos están activos. */
+  readonly continueShortcut: boolean;
+  /** TT-58: la copia es del grupo, como el borrado. */
+  readonly onDuplicate: () => void;
   /**
    * La fila llegó a este grupo desde otro día con el foco en ella: al montarse
    * lo toma su botón de horas, y avisa con `onTimesFocused`.
@@ -74,6 +88,10 @@ export function EntryRow({
   onSave,
   onSaveTimes,
   onDelete,
+  onContinue,
+  continuing,
+  continueShortcut,
+  onDuplicate,
   focusTimesOnMount,
   onTimesFocused,
 }: EntryRowProps) {
@@ -264,6 +282,29 @@ export function EntryRow({
         {canTrack && (
           <>
             {/*
+             * TT-57 y TT-110: también con horarios de solo lectura. Inactivo
+             * con `aria-disabled` y no con `disabled`: el foco se queda en el
+             * botón mientras su continuación viaja, y salir del editor de
+             * horas con Tab cae acá aunque otra escritura de la fila esté en
+             * vuelo, como en «Acciones».
+             */}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label={`Continuar «${entryName}»`}
+              aria-disabled={continuing}
+              aria-busy={continuing}
+              aria-keyshortcuts={continueShortcut ? "C" : undefined}
+              onClick={() => {
+                if (!continuing) {
+                  onContinue();
+                }
+              }}
+            >
+              <PlayIcon aria-hidden="true" />
+            </Button>
+            {/*
              * Con una escritura en vuelo el menú no abre, pero el disparador
              * no se deshabilita: salir del editor de horas con Tab cae acá en
              * el mismo render en que la escritura arranca, y un botón
@@ -287,6 +328,10 @@ export function EntryRow({
                 <EllipsisVerticalIcon aria-hidden="true" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-auto min-w-40">
+                <DropdownMenuItem disabled={busy} onClick={onDuplicate}>
+                  <CopyIcon aria-hidden="true" />
+                  Duplicar
+                </DropdownMenuItem>
                 <DropdownMenuItem
                   variant="destructive"
                   // Un clic en «Acciones» con el calendario del editor abierto

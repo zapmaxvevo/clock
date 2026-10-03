@@ -11,8 +11,11 @@ import { timeEntriesOf, timeEntryById } from "@/test/queries";
 import { timeEntryRepository } from "./repository";
 import { timeEntryMessages } from "./schema";
 import {
+  continueEntry,
   createManualEntry,
   deleteEntry,
+  discardTimer,
+  duplicateEntry,
   getTrackerState,
   startTimer,
   stopTimer,
@@ -390,6 +393,91 @@ describe.each(roles)("rol %s", (role) => {
       },
     );
   });
+
+  /**
+   * Continuar y duplicar consultan `timeEntry.own.create` dos veces: sobre el
+   * actor y sobre el dueño de la original. Descartar, `timeEntry.own.delete`
+   * sobre el dueño del timer.
+   */
+  describe("continuar, duplicar y descartar", () => {
+    /** Una entrada cerrada de `userId`, la original de continuar y duplicar. */
+    function seedSource(userId: string) {
+      return seedTimeEntry({
+        workspaceId,
+        userId,
+        description: "original",
+        startedAt: "2026-10-01T11:00:00Z",
+        endedAt: "2026-10-01T12:00:00Z",
+      });
+    }
+
+    function seedRunningOf(userId: string) {
+      return seedTimeEntry({ workspaceId, userId, startedAt: "2026-10-02T11:00:00Z" });
+    }
+
+    it("continúa, duplica y descarta lo propio", async () => {
+      const actor = await seedActor(role);
+      const source = await seedSource(actor.userId);
+
+      const copy = await duplicateEntry(actor, buenosAires, {
+        id: randomUUID(),
+        sourceId: source.id,
+      });
+      const continued = await continueEntry(actor, buenosAires, {
+        id: randomUUID(),
+        sourceId: source.id,
+      });
+      const discarded = await discardTimer(actor, { id: continued.running.id });
+
+      expect((await timeEntryById(copy.created.id))?.userId).toBe(actor.userId);
+      expect(discarded.id).toBe(continued.running.id);
+      expect(await timeEntriesOf(workspaceId, actor.userId)).toHaveLength(2);
+    });
+
+    it("no continúa, no duplica ni descarta lo de otra persona del workspace", async () => {
+      const actor = await seedActor(role);
+      const otherId = await seedMember(workspaceId, "member");
+      const source = await seedSource(otherId);
+      const running = await seedRunningOf(otherId);
+      const expected = {
+        code: "forbidden",
+        message: timeEntryMessages.forbiddenOtherOwner,
+      };
+
+      await expect(
+        continueEntry(actor, buenosAires, { id: randomUUID(), sourceId: source.id }),
+      ).rejects.toMatchObject(expected);
+      await expect(
+        duplicateEntry(actor, buenosAires, { id: randomUUID(), sourceId: source.id }),
+      ).rejects.toMatchObject(expected);
+      await expect(discardTimer(actor, { id: running.id })).rejects.toMatchObject(
+        expected,
+      );
+      expect(await timeEntriesOf(workspaceId, otherId)).toEqual([source, running]);
+      expect(await timeEntriesOf(workspaceId, actor.userId)).toEqual([]);
+    });
+
+    it.each(notActive)(
+      "con la membresía %s no continúa, no duplica ni descarta ni lo propio",
+      async (status) => {
+        const actor = await seedActor(role, status);
+        const source = await seedSource(actor.userId);
+        const running = await seedRunningOf(actor.userId);
+        const expected = { code: "forbidden", message: timeEntryMessages.forbidden };
+
+        await expect(
+          continueEntry(actor, buenosAires, { id: randomUUID(), sourceId: source.id }),
+        ).rejects.toMatchObject(expected);
+        await expect(
+          duplicateEntry(actor, buenosAires, { id: randomUUID(), sourceId: source.id }),
+        ).rejects.toMatchObject(expected);
+        await expect(discardTimer(actor, { id: running.id })).rejects.toMatchObject(
+          expected,
+        );
+        expect(await timeEntriesOf(workspaceId, actor.userId)).toEqual([source, running]);
+      },
+    );
+  });
 });
 
 describe("aislamiento entre workspaces", () => {
@@ -722,6 +810,75 @@ describe("el permiso va antes que la fila propia (ADR 0007)", () => {
   );
 });
 
+describe("el permiso va antes que la fila propia en continuar y duplicar (ADR 0007)", () => {
+  it.each(notActive)(
+    "con %s, el id de una entrada propia que existe da forbidden y no la entrada",
+    async (status) => {
+      const actor = await seedActor("member", status);
+      const source = await seedTimeEntry({
+        workspaceId,
+        userId: actor.userId,
+        startedAt: "2026-10-01T11:00:00Z",
+        endedAt: "2026-10-01T12:00:00Z",
+      });
+      const own = await seedTimeEntry({
+        workspaceId,
+        userId: actor.userId,
+        startedAt: "2026-10-02T11:00:00Z",
+      });
+      const values = { id: own.id, sourceId: source.id };
+
+      await expect(continueEntry(actor, buenosAires, values)).rejects.toMatchObject({
+        code: "forbidden",
+        message: timeEntryMessages.forbidden,
+      });
+      await expect(duplicateEntry(actor, buenosAires, values)).rejects.toMatchObject({
+        code: "forbidden",
+        message: timeEntryMessages.forbidden,
+      });
+      expect(await timeEntriesOf(workspaceId, actor.userId)).toEqual([source, own]);
+    },
+  );
+});
+
+describe("aislamiento entre workspaces en continuar, duplicar y descartar", () => {
+  it("un actor de otro workspace recibe not_found al continuar y duplicar, y el descarte no borra", async () => {
+    const other = await seedWorkspace(buenosAires);
+    const outsider: Actor = {
+      userId: other.ownerId,
+      workspaceId: other.workspaceId,
+      role: "owner",
+      status: "active",
+    };
+    const source = await seedTimeEntry({
+      workspaceId,
+      userId: ownerId,
+      startedAt: "2026-10-01T11:00:00Z",
+      endedAt: "2026-10-01T12:00:00Z",
+    });
+    const running = await seedTimeEntry({
+      workspaceId,
+      userId: ownerId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+    const missing = { code: "not_found", message: timeEntryMessages.notFound };
+
+    await expect(
+      continueEntry(outsider, buenosAires, { id: randomUUID(), sourceId: source.id }),
+    ).rejects.toMatchObject(missing);
+    await expect(
+      duplicateEntry(outsider, buenosAires, { id: randomUUID(), sourceId: source.id }),
+    ).rejects.toMatchObject(missing);
+    // Lo que se pidió es que ese timer no esté: para quien no lo ve, no está.
+    await expect(discardTimer(outsider, { id: running.id })).resolves.toEqual({
+      id: running.id,
+    });
+
+    expect(await timeEntriesOf(workspaceId, ownerId)).toEqual([source, running]);
+    expect(await timeEntriesOf(other.workspaceId, other.ownerId)).toEqual([]);
+  });
+});
+
 describe("el filtro por dueño del repository", () => {
   // Defensa en profundidad: hoy el service nunca llega acá con una entrada
   // ajena, porque `readOwnEntry` la rechaza antes. El filtro es para cuando
@@ -737,16 +894,16 @@ describe("el filtro por dueño del repository", () => {
       startedAt: "2026-10-02T11:00:00Z",
     });
 
-    const ajeno = await db.transaction((tx) =>
+    const foreign = await db.transaction((tx) =>
       timeEntryRepository.deleteById(tx, { workspaceId, userId: ownerId, id: row.id }),
     );
 
-    expect(ajeno).toBeUndefined();
+    expect(foreign).toBeUndefined();
     expect(await timeEntryById(row.id)).toBeDefined();
-    const propio = await db.transaction((tx) =>
+    const own = await db.transaction((tx) =>
       timeEntryRepository.deleteById(tx, { workspaceId, userId: otherId, id: row.id }),
     );
-    expect(propio?.id).toBe(row.id);
+    expect(own?.id).toBe(row.id);
     expect(await timeEntryById(row.id)).toBeUndefined();
   });
 
@@ -759,7 +916,7 @@ describe("el filtro por dueño del repository", () => {
       startedAt: "2026-10-02T11:00:00Z",
     });
 
-    const ajeno = await db.transaction((tx) =>
+    const foreign = await db.transaction((tx) =>
       timeEntryRepository.updateDescription(
         tx,
         { workspaceId, userId: ownerId, id: row.id },
@@ -767,16 +924,16 @@ describe("el filtro por dueño del repository", () => {
       ),
     );
 
-    expect(ajeno).toBeUndefined();
+    expect(foreign).toBeUndefined();
     expect((await timeEntryById(row.id))?.description).toBe("ajena");
-    const propio = await db.transaction((tx) =>
+    const own = await db.transaction((tx) =>
       timeEntryRepository.updateDescription(
         tx,
         { workspaceId, userId: otherId, id: row.id },
         "de su dueña",
       ),
     );
-    expect(propio?.description).toBe("de su dueña");
+    expect(own?.description).toBe("de su dueña");
   });
 
   it("no detiene el timer de otra persona", async () => {
@@ -787,16 +944,16 @@ describe("el filtro por dueño del repository", () => {
       startedAt: "2026-10-02T11:00:00Z",
     });
 
-    const ajeno = await db.transaction((tx) =>
+    const foreign = await db.transaction((tx) =>
       timeEntryRepository.stopById(tx, { workspaceId, userId: ownerId, id: row.id }),
     );
 
-    expect(ajeno).toBeUndefined();
+    expect(foreign).toBeUndefined();
     expect((await timeEntryById(row.id))?.endedAt).toBeNull();
-    const propio = await db.transaction((tx) =>
+    const own = await db.transaction((tx) =>
       timeEntryRepository.stopById(tx, { workspaceId, userId: otherId, id: row.id }),
     );
-    expect(propio?.endedAt).not.toBeNull();
+    expect(own?.endedAt).not.toBeNull();
     expect((await timeEntryById(row.id))?.endedAt).not.toBeNull();
   });
 
@@ -813,7 +970,7 @@ describe("el filtro por dueño del repository", () => {
       endedAt: new Date("2026-10-01T13:00:00Z"),
     };
 
-    const ajeno = await db.transaction((tx) =>
+    const foreign = await db.transaction((tx) =>
       timeEntryRepository.updateTimes(
         tx,
         { workspaceId, userId: ownerId, id: row.id },
@@ -821,18 +978,47 @@ describe("el filtro por dueño del repository", () => {
       ),
     );
 
-    expect(ajeno).toBeUndefined();
+    expect(foreign).toBeUndefined();
     expect((await timeEntryById(row.id))?.startedAt.toISOString()).toBe(
       "2026-10-01T11:00:00.000Z",
     );
-    const propio = await db.transaction((tx) =>
+    const own = await db.transaction((tx) =>
       timeEntryRepository.updateTimes(
         tx,
         { workspaceId, userId: otherId, id: row.id },
         times,
       ),
     );
-    expect(propio?.startedAt.toISOString()).toBe("2026-10-01T12:00:00.000Z");
+    expect(own?.startedAt.toISOString()).toBe("2026-10-01T12:00:00.000Z");
+  });
+
+  it("no descarta el timer de otra persona", async () => {
+    const otherId = await seedMember(workspaceId, "member");
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: otherId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+
+    const foreign = await db.transaction((tx) =>
+      timeEntryRepository.deleteRunningById(tx, {
+        workspaceId,
+        userId: ownerId,
+        id: row.id,
+      }),
+    );
+
+    expect(foreign).toBeUndefined();
+    expect(await timeEntryById(row.id)).toBeDefined();
+    const own = await db.transaction((tx) =>
+      timeEntryRepository.deleteRunningById(tx, {
+        workspaceId,
+        userId: otherId,
+        id: row.id,
+      }),
+    );
+    expect(own?.id).toBe(row.id);
+    expect(await timeEntryById(row.id)).toBeUndefined();
   });
 
   it("no corrige el inicio del timer de otra persona", async () => {
@@ -844,7 +1030,7 @@ describe("el filtro por dueño del repository", () => {
     });
     const startedAt = new Date("2026-10-02T10:00:00Z");
 
-    const ajeno = await db.transaction((tx) =>
+    const foreign = await db.transaction((tx) =>
       timeEntryRepository.updateStartOfRunning(
         tx,
         { workspaceId, userId: ownerId, id: row.id },
@@ -852,17 +1038,17 @@ describe("el filtro por dueño del repository", () => {
       ),
     );
 
-    expect(ajeno).toBeUndefined();
+    expect(foreign).toBeUndefined();
     expect((await timeEntryById(row.id))?.startedAt.toISOString()).toBe(
       "2026-10-02T11:00:00.000Z",
     );
-    const propio = await db.transaction((tx) =>
+    const own = await db.transaction((tx) =>
       timeEntryRepository.updateStartOfRunning(
         tx,
         { workspaceId, userId: otherId, id: row.id },
         startedAt,
       ),
     );
-    expect(propio?.startedAt.toISOString()).toBe("2026-10-02T10:00:00.000Z");
+    expect(own?.startedAt.toISOString()).toBe("2026-10-02T10:00:00.000Z");
   });
 });

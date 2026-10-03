@@ -365,9 +365,13 @@ test("un timer que llega con la descripción manual enfocada muestra la suya y n
   await page.keyboard.type("a medio escribir");
 
   // Otro dispositivo de la misma persona arranca un timer. Esta pestaña sigue
-  // en manual y con el foco en el campo hasta que se pone al día.
+  // en manual y con el foco en el campo hasta que se pone al día. El grupo de
+  // hoy ya está dibujado, así que se espera la respuesta del arranque: sin
+  // eso, el refresco de abajo podría leer el estado de antes del timer.
   const otherPage = await openSecondTab(browser, email);
-  await startTimer(otherPage, "timer del otro dispositivo");
+  await withServerAction(otherPage, () =>
+    startTimer(otherPage, "timer del otro dispositivo"),
+  );
   await expect(bar.getByRole("button", { name: "Agregar" })).toBeVisible();
   await expect(field).toBeFocused();
 

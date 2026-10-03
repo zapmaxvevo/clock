@@ -69,6 +69,12 @@ aparecen en más de un lugar:
 | Un timer activo empezaría en el futuro | «No se pueden cargar horas que todavía no pasaron.» | TT-29, TT-75                                                          |
 | Hay un timer corriendo                 | «Detené el timer para agregar tiempo a mano.»       | TT-30, y su validación                                                |
 | La hora de pared cae en el salto       | «Esa hora no existe por el cambio de horario.»      | TT-112: `createManualEntry`, `updateEntryTimes`, `updateRunningStart` |
+| El timer ya se detuvo                  | «Este timer ya había sido detenido.»                | TT-41, TT-65                                                          |
+| La entrada pedida es la que corre      | «Esta entrada es la que está corriendo.»            | TT-111, TT-58 al duplicar la entrada que corre                        |
+
+_Agregado el 2026-10-03_: las filas de «Este timer ya había sido detenido.» y
+de «Esta entrada es la que está corriendo.», que desde el slice 4 aparecen en
+más de un lugar.
 
 **Qué hace que dos casos sean la misma causa**: que coincidan el hecho que
 bloquea y lo que hay que hacer para destrabarlo. Si el remedio es distinto, el
@@ -240,6 +246,31 @@ Clockify usa `n` nuevo timer, `c` continuar el último, `s` detener, `m`
 conmutar modo manual. Se replican los cuatro, activos solo cuando el foco no
 está en un campo de texto. Justificación: con el foco en la descripción, las
 letras tienen que escribirse.
+
+_Agregado el 2026-10-03_. Diseño propio, fijado en el
+[contrato del slice 4](../slices/fase1-slice4-continuar-duplicar.md):
+
+- **Dónde más no se disparan.** Además de con el foco en un campo de texto, los
+  atajos no hacen nada con una tecla modificadora apretada (Ctrl, Meta, Alt o
+  Shift), con la tecla mantenida, durante una composición de texto (IME), y con
+  el foco dentro de un diálogo, un menú abierto, el calendario o uno de los
+  editores de horas de la fila y del inicio del timer (TT-28, TT-54).
+- **Se pueden apagar** — divergencia `adaptar`. El diálogo «Atajos de
+  teclado», que abre el botón del mismo nombre al lado del conmutador de modo,
+  lista los cuatro atajos y tiene el interruptor «Usar atajos de una tecla».
+  La preferencia se guarda en `localStorage`, por navegador, como el modo de
+  TT-16: no viaja entre dispositivos. Con el almacenamiento del sitio
+  bloqueado no se pueden apagar, porque la preferencia que no se puede leer
+  vale «activos». Justificación: WCAG 2.1.4 pide que un atajo de una sola
+  tecla se pueda desactivar o reasignar, y Clockify no documenta ninguna forma
+  de hacerlo.
+- **Qué es «el último» para `c`.** La entrada cerrada más reciente que ya
+  empezó: no una con fecha futura (P-10, TT-76) ni el timer activo, que no es
+  una entrada cerrada (TT-111). Con dos que empiezan en el mismo instante, la
+  que la lista dibuja primero. Sin entradas cerradas que ya empezaron, `c` no
+  hace nada.
+  _No verificado_: la documentación de Clockify dice solo «continue last», sin
+  precisar cuál. Confirmar en el workspace del equipo (P-14).
 
 ### 2.7 Comportamiento de cada campo mientras el timer corre
 
@@ -610,8 +641,19 @@ original, con `start` ahora y `end` nulo. No reabre la entrada original.
 Menú de tres puntos → «Duplicar». Crea una copia cerrada con los mismos campos
 y las mismas horas de inicio y fin, en el mismo día.
 _No verificado en documentación pública_: existe el endpoint de duplicado en la
-API pero el centro de ayuda no describe qué horas recibe la copia. Confirmar en
-el workspace del equipo antes de implementar.
+API pero el centro de ayuda no describe qué horas recibe la copia. La regla
+vigente —la copia con exactamente los mismos instantes que la original,
+segundos incluidos— está implementada como provisional y sigue pendiente de
+verificación en el workspace del equipo (P-14).
+_Corregido el 2026-10-03, decisión del equipo_: decía «Confirmar en el
+workspace del equipo antes de implementar.»; se implementó sin esa
+confirmación, con la regla provisional.
+
+_Agregado el 2026-10-03_. Diseño propio: un pedido de duplicar la entrada que
+corre, que solo llega armado a mano porque la abierta no es una fila (TT-111),
+se rechaza sin escribir con «Esta entrada es la que está corriendo.», el texto
+de TT-111: el hecho es el mismo —la entrada pedida es la abierta— y el remedio
+también.
 
 **TT-59 Dividir** — `fuera de alcance`
 La documentación la marca como funcionalidad de plan pago: no se puede relevar
@@ -658,6 +700,15 @@ borra la entrada abierta sin guardarla y deja la barra vacía. Pide confirmació
 porque no se puede deshacer.
 _No verificado en documentación pública_: la opción se ve en el producto pero
 no está descrita en el centro de ayuda. Confirmar en el workspace del equipo.
+
+_Agregado el 2026-10-03_. Diseño propio, fijado en el
+[contrato del slice 4](../slices/fase1-slice4-continuar-duplicar.md): **descartar
+un timer que otra pestaña ya detuvo no lo borra.** Responde «Este timer ya
+había sido detenido.», el texto de TT-41, y la entrada cerrada sigue en la
+lista. Clockify no documenta este cruce. Justificación: una entrada cerrada es
+un registro que otra pestaña decidió guardar, y el borrado no se deshace
+(P-06); si la persona igual la quiere fuera, la borra desde la lista, con su
+confirmación.
 
 **TT-66 Permisos sobre las acciones** — `replicar`
 En el rastreador la persona actúa siempre sobre sus propias entradas, así que
@@ -820,21 +871,23 @@ Decidido por el equipo el 2026-10-02: cuando `createManualEntry` falla por red,
 el aviso dice **«No sabemos si la entrada se guardó.»** y manda a mirar la
 lista, sin botón de «Reintentar». Lo tecleado se conserva, como en TT-89.
 
-Justificación: el alta manual es la única operación del módulo que **solo
-crea**. Si el pedido llegó al servidor y lo que se perdió fue la respuesta,
-reintentar crea una segunda entrada idéntica, y nada la frena: el pedido no
-lleva un id elegido por el cliente que deje reconocer que ya se aplicó, como sí
-lo lleva «Iniciar»
+Justificación: el alta manual es la única operación del módulo que crea una
+entrada **sin un id elegido por el cliente**. Si el pedido llegó al servidor y
+lo que se perdió fue la respuesta, reintentar crea una segunda entrada
+idéntica, y nada la frena: sin ese id no hay cómo reconocer que el pedido ya se
+aplicó, como sí lo hay en «Iniciar», «Continuar» y «Duplicar»
 ([ADR 0007](../adr/0007-el-cliente-elige-el-id-de-las-altas.md)), y TT-82
 acepta la superposición sin decir nada. Un reintento que a veces duplica es
 peor que no ofrecerlo.
 
 El resto de las operaciones del módulo sí ofrece «Reintentar», porque repetirlas
-es inofensivo: arrancar es seguro de reintentar porque el pedido lleva un id que
-elige el cliente (ADR 0007), y el reintento de un arranque ya aplicado responde
-el mismo timer sin escribir, sin cerrar ni abrir nada de más; detener sobre una
-entrada ya cerrada da TT-41, y editar y borrar apuntan a un identificador que ya
-existe, así que el segundo intento produce el mismo estado que el primero.
+es inofensivo: arrancar, continuar y duplicar son seguros de reintentar porque
+el pedido lleva un id que elige el cliente (ADR 0007), y el reintento de uno ya
+aplicado responde la misma entrada sin escribir, sin cerrar, abrir ni copiar
+nada de más; detener sobre una entrada ya cerrada da TT-41; descartar un timer
+que ya no existe termina sin error, porque lo pedido —que el timer no esté— ya
+se cumple (TT-65); y editar y borrar apuntan a un identificador que ya existe,
+así que el segundo intento produce el mismo estado que el primero.
 
 _Corregido el 2026-10-03, decisión del equipo_: los dos párrafos anteriores
 decían que un arranque repetido choca con el índice único del timer abierto. El
@@ -842,6 +895,10 @@ decían que un arranque repetido choca con el índice único del timer abierto. 
 reintentar un «Iniciar» cuya respuesta se perdió cerraba el timer recién creado
 y dejaba una entrada de segundos. Lo que distingue al alta manual no es el
 índice, sino que no lleva id del cliente. La regla del alta manual no cambia.
+_Corregido el 2026-10-03, decisión del equipo_: decía que el alta manual era
+«la única operación del módulo que solo crea», que dejó de ser cierto con
+duplicar, que también solo crea; y el párrafo de las operaciones que sí ofrecen
+«Reintentar» no nombraba continuar, duplicar ni descartar.
 
 **TT-90 El aviso nombra la acción que falló** — `adaptar`
 Un aviso tiene dos partes: un título que nombra lo que no se pudo hacer —«No se
@@ -931,15 +988,37 @@ TT-16, TT-18, TT-19, TT-20, TT-21, TT-25, TT-30, TT-72, TT-73, TT-76, TT-82,
 TT-108, TT-109 y TT-112 en el alta manual. Contrato:
 [fase1-slice2-modo-manual.md](../slices/fase1-slice2-modo-manual.md).
 
+### Slice 2b — el reintento de «Iniciar»
+
+Sin comportamientos propios: hace cumplir TT-89 y TT-90 en «Iniciar» con el id
+elegido por el cliente del
+[ADR 0007](../adr/0007-el-cliente-elige-el-id-de-las-altas.md), y de ahí sale la
+corrección de la justificación de TT-109. Contrato:
+[fase1-slice2b-reintento-de-iniciar.md](../slices/fase1-slice2b-reintento-de-iniciar.md).
+
+### Slice 3 — horas y fecha
+
+TT-28, TT-29, TT-54 (horas y fecha), TT-55, TT-56, TT-75, TT-81, TT-110,
+TT-111 y TT-112 en las dos ediciones de horas. Contrato:
+[fase1-slice3-horas-y-fecha.md](../slices/fase1-slice3-horas-y-fecha.md).
+
+### Slice 4 — continuar, duplicar, descartar y atajos
+
+TT-26, TT-57, TT-58 y TT-65. Continuar y duplicar copian por ahora solo la
+descripción; proyecto, tarea, etiquetas y facturable se suman cuando existan
+esos campos. Contrato:
+[fase1-slice4-continuar-duplicar.md](../slices/fase1-slice4-continuar-duplicar.md).
+
 ### Lo que queda
 
 Selector de proyecto y tarea (TT-06 … TT-11), etiquetas (TT-12), facturable
-(TT-14, TT-15), atajos (TT-26), edición del inicio del timer activo (TT-28,
-TT-29, TT-75), edición en línea de horas y fecha con sus dos excepciones
-(TT-54, TT-56, TT-110, TT-111), TT-112 en las dos ediciones de horas, total y
-encabezado de semana (TT-47, TT-48), «Cargar más» y el extremo nuevo de la
-ventana (TT-52), continuar y duplicar (TT-57, TT-58), descartar (TT-65), y
-selección y edición masiva (TT-62 … TT-64).
+(TT-14, TT-15), total y encabezado de semana (TT-47, TT-48), «Cargar más» y el
+extremo nuevo de la ventana (TT-52), y selección y edición masiva (TT-62 …
+TT-64).
+
+_Corregido el 2026-10-03, decisión del equipo_: esta lista incluía lo que ya
+implementaron los slices 3 y 4, que ahora tienen su sección, y no nombraba el
+slice 2b.
 
 ## Pendientes de definición del equipo
 
@@ -958,7 +1037,7 @@ pero necesitan una decisión.
 | P-05 | Dividir entrada: funcionalidad paga. ¿Entra en el alcance y con qué reglas de corte?                                                                                                      |
 | P-07 | Edición masiva en el rastreador: no sé si está en Free. Confirmar en el workspace y decidir si entra en la fase 1.                                                                        |
 | P-09 | Agrupación de entradas similares en una fila colapsable. El interruptor vive en el perfil (PF-26).                                                                                        |
-| P-14 | Verificar en el workspace real del equipo lo marcado como _no verificado_: TT-16, TT-35, TT-44, TT-46, TT-47, TT-58, TT-63, TT-65, TT-105, TT-108, TT-111, TT-112.                        |
+| P-14 | Verificar en el workspace real del equipo lo marcado como _no verificado_: TT-16, TT-26, TT-35, TT-44, TT-46, TT-47, TT-58, TT-63, TT-65, TT-105, TT-108, TT-111, TT-112.                 |
 
 ### Cerrados
 

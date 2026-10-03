@@ -253,11 +253,11 @@ test("editar el inicio y el fin seguidos guarda una sola vez y actualiza la dura
   await expect(row.getByRole("textbox", { name: "Duración" })).toHaveCount(0);
 
   // Salir del editor confirma el trío, y el foco sigue al control que viene
-  // después en la fila aunque esté inactivo mientras la escritura viaja.
+  // después en la fila mientras la escritura viaja.
   await page.keyboard.press("Tab");
   await expect(row).toHaveAttribute("aria-busy", "true");
   await expect(
-    row.getByRole("button", { name: "Acciones de la entrada «entrada a corregir»" }),
+    row.getByRole("button", { name: "Continuar «entrada a corregir»", exact: true }),
   ).toBeFocused();
   await expect.poll(() => writes.length).toBe(1);
   release();

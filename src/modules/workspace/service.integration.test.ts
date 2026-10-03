@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { db } from "@/server/db";
 import { membership, workspace, workspaceSettings } from "@/server/db/schema";
-import { warmPool, waitForBlockedBackend } from "@/test/concurrency";
+import { warmPool, waitForBlockedBackends } from "@/test/concurrency";
 import { seedUser } from "@/test/factories";
 
 import { workspaceRepository } from "./repository";
@@ -182,8 +182,13 @@ describe("entrar dos veces deja una sola membresía", () => {
     const loser = db.transaction((tx) =>
       workspaceRepository.createMembership(tx, values),
     );
-    await waitForBlockedBackend();
-    releaseWinner();
+    try {
+      await waitForBlockedBackends({ count: 1 });
+    } finally {
+      // Si la espera vence, la ganadora igual tiene que terminar: sin esto su
+      // transacción queda abierta y retiene la conexión.
+      releaseWinner();
+    }
 
     const [first, second] = await Promise.all([winner, loser]);
 

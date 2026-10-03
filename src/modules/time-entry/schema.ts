@@ -26,6 +26,7 @@ export const timeEntryMessages = {
   futureTime: "No se pueden cargar horas que todavía no pasaron.",
   runningEntryTimes: "Esta entrada es la que está corriendo.",
   multiDayTimes: "Esta entrada dura más de un día; sus horarios no se pueden editar acá.",
+  sameEntryId: "La entrada nueva no puede usar el id de la original.",
   unexpected: "No se pudo guardar. Revisá la conexión y volvé a intentar.",
 } as const;
 
@@ -101,6 +102,30 @@ export const updateRunningStartInput = z.object({
   start: clockInput,
 });
 
+/**
+ * El id nuevo no puede ser el de la original. Se compara sin distinguir
+ * mayúsculas porque la base sí los iguala.
+ */
+function isNewId(input: { readonly id: string; readonly sourceId: string }): boolean {
+  return input.id.toLowerCase() !== input.sourceId.toLowerCase();
+}
+
+/** Un alta que parte de una entrada existente: continuar y duplicar. */
+const fromSourceInput = z
+  .object({
+    /** Id de la entrada que se crea, elegido por el cliente (ADR 0007). */
+    id: newEntryId,
+    /** La entrada de la que parte. */
+    sourceId: z.uuid(),
+  })
+  .refine(isNewId, timeEntryMessages.sameEntryId);
+
+export const continueEntryInput = fromSourceInput;
+
+export const duplicateEntryInput = fromSourceInput;
+
+export const discardTimerInput = z.object({ id: z.uuid() });
+
 export type StartTimerInput = z.input<typeof startTimerInput>;
 /** Lo que recibe el service: `description` ya validada y con su default. */
 export type StartTimerValues = z.output<typeof startTimerInput>;
@@ -112,6 +137,9 @@ export type CreateManualEntryInput = z.input<typeof createManualEntryInput>;
 export type CreateManualEntryValues = z.output<typeof createManualEntryInput>;
 export type UpdateEntryTimesInput = z.infer<typeof updateEntryTimesInput>;
 export type UpdateRunningStartInput = z.infer<typeof updateRunningStartInput>;
+export type ContinueEntryInput = z.infer<typeof continueEntryInput>;
+export type DuplicateEntryInput = z.infer<typeof duplicateEntryInput>;
+export type DiscardTimerInput = z.infer<typeof discardTimerInput>;
 
 /**
  * Todo lo que depende de zona horaria o de formato se resuelve en el servidor.
@@ -161,6 +189,8 @@ export const trackerState = z.object({
   minDayKey: z.string(),
   canTrack: z.boolean(),
   running: timeEntryView.nullable(),
+  /** La entrada que continúa el atajo «c»: la cerrada más reciente que ya empezó. */
+  lastEntryId: z.uuid().nullable(),
   days: z.array(dayGroupView),
   hasAnyEntry: z.boolean(),
 });
@@ -211,3 +241,10 @@ export type UpdateEntryTimesResult = {
 };
 
 export type UpdateRunningStartResult = { readonly running: TimeEntryView };
+
+/** Continuar es un arranque: responde lo mismo que «Iniciar». */
+export type ContinueEntryResult = StartTimerResult;
+
+export type DuplicateEntryResult = { readonly created: TimeEntryView };
+
+export type DiscardTimerResult = { readonly id: string };

@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 
-import { sql, TransactionRollbackError } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { db, type Transaction } from "@/server/db";
-import { membership } from "@/server/db/schema";
+import { membership, timeEntry } from "@/server/db/schema";
 import { constraintOf, UNIQUE_VIOLATION } from "@/server/db/constraint-error";
 import { ForbiddenError, type Actor } from "@/server/permissions";
 import {
@@ -14,15 +14,22 @@ import {
   instantFromLocal,
   shiftClock,
 } from "@/server/time";
-import { warmPool } from "@/test/concurrency";
+import { queueBehindBarrier, raceThroughBarrier, warmPool } from "@/test/concurrency";
 import { buenosAires, seedMember, seedTimeEntry, seedWorkspace } from "@/test/factories";
 import { allTimeEntries, auditFor, timeEntriesOf, timeEntryById } from "@/test/queries";
 
 import { timeEntryRepository } from "./repository";
-import { timeEntryMessages, type StartTimerResult } from "./schema";
 import {
+  timeEntryMessages,
+  type ContinueEntryResult,
+  type StartTimerResult,
+} from "./schema";
+import {
+  continueEntry,
   createManualEntry,
   deleteEntry,
+  discardTimer,
+  duplicateEntry,
   getTrackerState,
   startTimer,
   stopTimer,
@@ -47,82 +54,6 @@ function actorFor(userId: string, overrides: Partial<Actor> = {}): Actor {
 /** El workspace tal como lo recibe el service: la zona y el piso de carga. */
 function workspaceOf(timezone: string, createdAt = "2020-01-01T00:00:00Z") {
   return { timezone, createdAt: new Date(createdAt) };
-}
-
-/** Tope de la espera de la barrera: pasado, el test falla en vez de colgarse. */
-const BARRIER_TIMEOUT_MS = 10_000;
-
-/** Sesiones de la base del test trabadas pidiendo un lock. */
-async function lockWaiters(): Promise<number> {
-  const result = await db.execute(sql`
-    select count(*)::int as n
-    from pg_stat_activity
-    where datname = current_database() and wait_event_type = 'Lock'
-  `);
-  return (result.rows[0] as { n: number }).n;
-}
-
-/** Deja de consultar cuando `signal` se aborta: la carrera ya se resolvió por otro lado. */
-async function untilLockWaiters(count: number, signal: AbortSignal): Promise<void> {
-  const deadline = Date.now() + BARRIER_TIMEOUT_MS;
-  while (!signal.aborted && (await lockWaiters()) < count) {
-    if (Date.now() > deadline) {
-      throw new Error(`No hubo ${count} sesiones esperando un lock a tiempo.`);
-    }
-    await new Promise((resolve) => setImmediate(resolve));
-  }
-}
-
-/**
- * Obliga a las operaciones a cruzarse en la base. Una tercera conexión toma un
- * bloqueo con `hold` y lo sostiene hasta que `pg_stat_activity` muestra una
- * espera por `Lock` por cada operación; recién ahí lo suelta, con `rollback`
- * para que lo que haya escrito la barrera no quede. Sin ella, `Promise.all`
- * casi nunca cruza las transacciones y el resultado dependería del azar.
- */
-async function raceThroughBarrier<T>(
-  hold: (tx: Transaction) => Promise<unknown>,
-  racers: readonly (() => Promise<T>)[],
-): Promise<T[]> {
-  let holding = () => {};
-  const held = new Promise<void>((resolve) => {
-    holding = resolve;
-  });
-  let release = () => {};
-  const released = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const barrier = db
-    .transaction(async (tx) => {
-      await hold(tx);
-      holding();
-      await released;
-      tx.rollback();
-    })
-    .catch((error: unknown) => {
-      if (!(error instanceof TransactionRollbackError)) {
-        throw error;
-      }
-    });
-  await Promise.race([held, barrier]);
-
-  const running = racers.map((racer) => racer());
-  const settled = Promise.allSettled(running);
-  // Un corredor que termina mientras la barrera sostiene el bloqueo no se trabó:
-  // la espera se corta ahí, con su error o con este.
-  const finishedEarly = Promise.race(running).then(() => {
-    throw new Error("Un corredor terminó sin trabarse en la barrera.");
-  });
-  const waiting = new AbortController();
-  try {
-    await Promise.race([untilLockWaiters(racers.length, waiting.signal), finishedEarly]);
-  } finally {
-    waiting.abort();
-    release();
-    await barrier;
-    await settled;
-  }
-  return Promise.all(running);
 }
 
 /** Una entrada abierta del actor, sembrada como timer previo de un arranque. */
@@ -1523,60 +1454,6 @@ describe("createManualEntry con cambio de horario", () => {
   });
 });
 
-/**
- * Como `raceThroughBarrier`, pero los corredores entran a la cola del bloqueo
- * de a uno: cada uno arranca recién cuando el anterior ya está trabado. Postgres
- * le da la fila a quien la pidió primero, así que el orden de la cola es el de
- * la lista.
- */
-async function queueBehindBarrier(
-  hold: (tx: Transaction) => Promise<unknown>,
-  racers: readonly (() => Promise<unknown>)[],
-): Promise<PromiseSettledResult<unknown>[]> {
-  let holding = () => {};
-  const held = new Promise<void>((resolve) => {
-    holding = resolve;
-  });
-  let release = () => {};
-  const released = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const barrier = db
-    .transaction(async (tx) => {
-      await hold(tx);
-      holding();
-      await released;
-      tx.rollback();
-    })
-    .catch((error: unknown) => {
-      if (!(error instanceof TransactionRollbackError)) {
-        throw error;
-      }
-    });
-  await Promise.race([held, barrier]);
-
-  const running: Promise<unknown>[] = [];
-  const waiting = new AbortController();
-  try {
-    for (const racer of racers) {
-      const current = racer();
-      running.push(current);
-      const finishedEarly = current.then(() => {
-        throw new Error("Un corredor terminó sin trabarse en la barrera.");
-      });
-      await Promise.race([
-        untilLockWaiters(running.length, waiting.signal),
-        finishedEarly,
-      ]);
-    }
-  } finally {
-    waiting.abort();
-    release();
-    await barrier;
-  }
-  return Promise.allSettled(running);
-}
-
 /** Toma el bloqueo de la fila, como lo hace `readOwnEntry`. */
 function lockRow(id: string) {
   return (tx: Transaction) =>
@@ -2835,10 +2712,10 @@ describe("las guardas de las dos escrituras nuevas del repository", () => {
       endedAt: null,
     });
     const closed = await seedClosed("2026-10-03T11:00:00Z", "2026-10-03T12:00:00Z");
-    const propio = await db.transaction((tx) =>
+    const own = await db.transaction((tx) =>
       timeEntryRepository.updateTimes(tx, { ...target, id: closed.id }, times),
     );
-    expect(propio?.startedAt.toISOString()).toBe("2026-10-01T11:00:00.000Z");
+    expect(own?.startedAt.toISOString()).toBe("2026-10-01T11:00:00.000Z");
   });
 
   it("updateStartOfRunning no escribe sobre una entrada cerrada", async () => {
@@ -2860,14 +2737,14 @@ describe("las guardas de las dos escrituras nuevas del repository", () => {
       userId: actor.userId,
       startedAt: "2026-10-02T11:00:00Z",
     });
-    const propio = await db.transaction((tx) =>
+    const own = await db.transaction((tx) =>
       timeEntryRepository.updateStartOfRunning(
         tx,
         { ...target, id: running.id },
         startedAt,
       ),
     );
-    expect(propio?.startedAt.toISOString()).toBe("2026-10-01T10:00:00.000Z");
+    expect(own?.startedAt.toISOString()).toBe("2026-10-01T10:00:00.000Z");
   });
 
   it("el check sigue rechazando un fin anterior al inicio escrito directo (TT-81)", async () => {
@@ -2887,5 +2764,746 @@ describe("las guardas de las dos escrituras nuevas del repository", () => {
       .catch((error: unknown) => error);
 
     expect(timeEntryRepository.isEndBeforeStart(failure)).toBe(true);
+  });
+});
+
+/** Las filas del actor como pares `[id, abierta]`, de la más vieja a la más nueva. */
+async function ownRowsOpenness() {
+  return (await timeEntriesOf(workspaceId, actor.userId)).map((row) => [
+    row.id,
+    row.endedAt === null,
+  ]);
+}
+
+/** Una entrada cerrada del actor, la original de continuar y duplicar. */
+function seedSource(description = "diseño") {
+  return seedTimeEntry({
+    workspaceId,
+    userId: actor.userId,
+    description,
+    startedAt: "2026-10-01T11:00:07.250Z",
+    endedAt: "2026-10-01T12:34:56.500Z",
+  });
+}
+
+describe("continueEntry (TT-57)", () => {
+  it("abre una entrada nueva con la descripción de la original y no la toca", async () => {
+    const source = await seedSource();
+    const id = randomUUID();
+
+    const result = await continueEntry(actor, buenosAires, { id, sourceId: source.id });
+
+    expect(result.stopped).toBeNull();
+    expect(result.running).toMatchObject({
+      id,
+      description: "diseño",
+      endedAt: null,
+      durationSeconds: null,
+    });
+    expect(await timeEntryById(source.id)).toEqual(source);
+    expect(await ownRowsOpenness()).toEqual([
+      [source.id, false],
+      [id, true],
+    ]);
+  });
+
+  it("TT-36: cierra el timer que corría en el mismo instante en que abre el nuevo", async () => {
+    const source = await seedSource();
+    const previous = await seedRunning();
+
+    const result = await continueEntry(actor, buenosAires, {
+      id: randomUUID(),
+      sourceId: source.id,
+    });
+
+    expect(result.stopped?.id).toBe(previous.id);
+    expect(result.stopped?.endedAt).toBe(result.running.startedAt);
+    const closed = await timeEntryById(previous.id);
+    expect(closed?.endedAt?.toISOString()).toBe(result.running.startedAt);
+    expect(
+      (await timeEntriesOf(workspaceId, actor.userId)).filter(
+        (row) => row.endedAt === null,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("TT-101: un timer con el inicio por delante del now() cierra en su inicio", async () => {
+    const source = await seedSource();
+    const ahead = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: new Date(Date.now() + 3_600_000),
+    });
+
+    const result = await continueEntry(actor, buenosAires, {
+      id: randomUUID(),
+      sourceId: source.id,
+    });
+
+    expect(result.stopped?.id).toBe(ahead.id);
+    expect(result.stopped?.endedAt).toBe(ahead.startedAt.toISOString());
+    expect(result.stopped?.durationSeconds).toBe(0);
+    expect(new Date(result.running.startedAt).getTime()).toBeLessThan(
+      ahead.startedAt.getTime(),
+    );
+  });
+
+  it("continuar el timer abierto lo cierra y abre otro igual", async () => {
+    const previous = await seedRunning("en curso");
+    const id = randomUUID();
+
+    const result = await continueEntry(actor, buenosAires, { id, sourceId: previous.id });
+
+    expect(result.stopped?.id).toBe(previous.id);
+    expect(result.running).toMatchObject({ id, description: "en curso", endedAt: null });
+    expect(await ownRowsOpenness()).toEqual([
+      [previous.id, false],
+      [id, true],
+    ]);
+  });
+
+  it("TT-80: una original que no existe responde not_found y deja el timer abierto", async () => {
+    const previous = await seedRunning();
+    const rows = await allTimeEntries();
+
+    await expect(
+      continueEntry(actor, buenosAires, {
+        id: randomUUID(),
+        sourceId: "11111111-1111-4111-8111-111111111111",
+      }),
+    ).rejects.toMatchObject({ code: "not_found", message: timeEntryMessages.notFound });
+
+    expect(await allTimeEntries()).toEqual(rows);
+    expect((await timeEntryById(previous.id))?.endedAt).toBeNull();
+  });
+
+  it("TT-79: la original de otra persona responde forbidden con su texto y no escribe", async () => {
+    const previous = await seedRunning();
+    const otherId = await seedMember(workspaceId, "member");
+    const foreign = await seedSource();
+    await db
+      .update(timeEntry)
+      .set({ userId: otherId })
+      .where(eq(timeEntry.id, foreign.id));
+    const rows = await allTimeEntries();
+    const audit = await auditFor("time_entry");
+
+    await expect(
+      continueEntry(actor, buenosAires, { id: randomUUID(), sourceId: foreign.id }),
+    ).rejects.toMatchObject({
+      code: "forbidden",
+      message: timeEntryMessages.forbiddenOtherOwner,
+    });
+
+    expect(await allTimeEntries()).toEqual(rows);
+    expect(await auditFor("time_entry")).toEqual(audit);
+    expect((await timeEntryById(previous.id))?.endedAt).toBeNull();
+  });
+
+  it("la original de otro workspace no se distingue de una que no existe", async () => {
+    const other = await seedWorkspace(buenosAires);
+    const foreign = await seedTimeEntry({
+      workspaceId: other.workspaceId,
+      userId: other.ownerId,
+      startedAt: "2026-10-01T11:00:00Z",
+      endedAt: "2026-10-01T12:00:00Z",
+    });
+
+    await expect(
+      continueEntry(actor, buenosAires, { id: randomUUID(), sourceId: foreign.id }),
+    ).rejects.toMatchObject({ code: "not_found", message: timeEntryMessages.notFound });
+    expect(await timeEntriesOf(workspaceId, actor.userId)).toEqual([]);
+  });
+});
+
+describe("continueEntry con el id que eligió el cliente (ADR 0007)", () => {
+  it("el reintento en secuencia responde la misma fila y no escribe nada", async () => {
+    const source = await seedSource();
+    const previous = await seedRunning();
+    const id = randomUUID();
+    const first = await continueEntry(actor, buenosAires, { id, sourceId: source.id });
+    expect(first.stopped?.id).toBe(previous.id);
+    const rows = await allTimeEntries();
+    const audit = await auditFor("time_entry");
+
+    const retry = await continueEntry(actor, buenosAires, { id, sourceId: source.id });
+
+    expect(retry).toEqual({ running: first.running, stopped: null });
+    expect(await allTimeEntries()).toEqual(rows);
+    expect(await auditFor("time_entry")).toEqual(audit);
+  });
+
+  it("un reintento cuya continuación ya se detuvo la responde cerrada y no escribe", async () => {
+    const source = await seedSource();
+    const id = randomUUID();
+    await continueEntry(actor, buenosAires, { id, sourceId: source.id });
+    const { stopped } = await stopTimer(actor, buenosAires, { id });
+    const rows = await allTimeEntries();
+    const audit = await auditFor("time_entry");
+
+    const retry = await continueEntry(actor, buenosAires, { id, sourceId: source.id });
+
+    expect(retry).toEqual({ running: stopped, stopped: null });
+    expect(await allTimeEntries()).toEqual(rows);
+    expect(await auditFor("time_entry")).toEqual(audit);
+  });
+
+  /** Lo que tiene que quedar de dos continuaciones del mismo pedido sobre un timer previo. */
+  async function expectContinuedOnce(id: string, sourceId: string, previousId: string) {
+    expect(await ownRowsOpenness()).toEqual([
+      [sourceId, false],
+      [previousId, false],
+      [id, true],
+    ]);
+    const audit = await auditFor("time_entry");
+    expect(audit.map((row) => [row.action, row.entityId]).sort()).toEqual(
+      [
+        ["timeEntry.continue", id],
+        ["timeEntry.stop", previousId],
+      ].sort(),
+    );
+  }
+
+  it("el reintento en paralelo deja una sola fila y un solo cierre", async () => {
+    const source = await seedSource();
+    const previous = await seedRunning();
+    const id = randomUUID();
+    await warmPool(2);
+
+    const results = await Promise.all([
+      continueEntry(actor, buenosAires, { id, sourceId: source.id }),
+      continueEntry(actor, buenosAires, { id, sourceId: source.id }),
+    ]);
+
+    expect(results.map((result) => result.running.id)).toEqual([id, id]);
+    await expectContinuedOnce(id, source.id, previous.id);
+  });
+
+  it("el reintento en paralelo, obligado a cruzarse, también", async () => {
+    const source = await seedSource();
+    const previous = await seedRunning();
+    const id = randomUUID();
+
+    const results = await raceThroughBarrier(
+      (tx) => timeEntryRepository.findByIdForUpdate(tx, workspaceId, previous.id),
+      [
+        () => continueEntry(actor, buenosAires, { id, sourceId: source.id }),
+        () => continueEntry(actor, buenosAires, { id, sourceId: source.id }),
+      ],
+    );
+
+    expect(results.map((result) => result.running.id)).toEqual([id, id]);
+    expect(results.filter((result) => result.stopped?.id === previous.id)).toHaveLength(
+      1,
+    );
+    await expectContinuedOnce(id, source.id, previous.id);
+  });
+
+  describe("TT-37: carreras de continuar con ids distintos que se cruzan", () => {
+    /** El que creó y el que responde al ganador, con el mismo timer. */
+    function creatorAndWinner(
+      ids: readonly string[],
+      results: readonly ContinueEntryResult[],
+    ) {
+      const [first, second] = results;
+      expect(first.running.id).toBe(second.running.id);
+      const creator = ids.findIndex((id) => id === first.running.id);
+      expect(creator).not.toBe(-1);
+      return { created: results[creator], answered: results[1 - creator] };
+    }
+
+    /** Un solo timer, la previa como única cerrada nueva y ninguna de 0 s. */
+    async function expectOneTimer(
+      sourceId: string,
+      previousId: string,
+      runningId: string,
+    ) {
+      expect(await ownRowsOpenness()).toEqual([
+        [sourceId, false],
+        [previousId, false],
+        [runningId, true],
+      ]);
+      for (const row of await timeEntriesOf(workspaceId, actor.userId)) {
+        if (row.endedAt !== null) {
+          expect(row.endedAt.getTime()).toBeGreaterThan(row.startedAt.getTime());
+        }
+      }
+    }
+
+    it("continuar y arrancar a la vez dejan un solo timer", async () => {
+      const source = await seedSource();
+      const previous = await seedRunning();
+      const ids = [randomUUID(), randomUUID()];
+
+      const results = await raceThroughBarrier(
+        (tx) => timeEntryRepository.findByIdForUpdate(tx, workspaceId, previous.id),
+        [
+          () => continueEntry(actor, buenosAires, { id: ids[0], sourceId: source.id }),
+          () => startTimer(actor, buenosAires, { id: ids[1], description: "nuevo" }),
+        ],
+      );
+
+      const { created, answered } = creatorAndWinner(ids, results);
+      expect(created.stopped?.id).toBe(previous.id);
+      expect(answered.stopped).toBeNull();
+      await expectOneTimer(source.id, previous.id, created.running.id);
+    });
+
+    it("dos «Continuar» de la misma entrada no dejan una entrada de 0 s", async () => {
+      const source = await seedSource();
+      const previous = await seedRunning();
+      const ids = [randomUUID(), randomUUID()];
+
+      const results = await raceThroughBarrier(
+        (tx) => timeEntryRepository.findByIdForUpdate(tx, workspaceId, previous.id),
+        ids.map(
+          (id) => () => continueEntry(actor, buenosAires, { id, sourceId: source.id }),
+        ),
+      );
+
+      const { created, answered } = creatorAndWinner(ids, results);
+      expect(created.stopped?.id).toBe(previous.id);
+      expect(answered.stopped).toBeNull();
+      expect(created.running.description).toBe("diseño");
+      await expectOneTimer(source.id, previous.id, created.running.id);
+    });
+  });
+});
+
+/** Dónde vive la entrada ajena cuyo id se reusa: lo único que la separa del actor. */
+const foreignOwners = {
+  "otra persona del workspace": async () => ({
+    workspaceId,
+    userId: await seedMember(workspaceId, "member"),
+  }),
+  "otra persona de otro workspace": async () => {
+    const other = await seedWorkspace(buenosAires);
+    return { workspaceId: other.workspaceId, userId: other.ownerId };
+  },
+  // Mismo usuario: lo único que la deja afuera es el filtro por workspace.
+  "la misma persona en otro workspace": async () => {
+    const other = await seedWorkspace(buenosAires);
+    await db.insert(membership).values({
+      workspaceId: other.workspaceId,
+      userId: actor.userId,
+      role: "member",
+    });
+    return { workspaceId: other.workspaceId, userId: actor.userId };
+  },
+};
+
+describe("continueEntry y duplicateEntry con el id de una fila ajena (ADR 0007)", () => {
+  const creations = {
+    continueEntry: (id: string, sourceId: string) =>
+      continueEntry(actor, buenosAires, { id, sourceId }),
+    duplicateEntry: (id: string, sourceId: string) =>
+      duplicateEntry(actor, buenosAires, { id, sourceId }),
+  };
+
+  describe.each(Object.entries(creations))("%s", (_, create) => {
+    it.each(Object.entries(foreignOwners))(
+      "con el id de %s responde forbidden, no escribe y deja abierto el timer propio",
+      async (__, ownerOf) => {
+        const source = await seedSource();
+        const mine = await seedRunning("mío");
+        const foreign = await seedTimeEntry({
+          ...(await ownerOf()),
+          startedAt: "2026-10-02T09:00:00Z",
+          endedAt: "2026-10-02T10:00:00Z",
+        });
+        const rows = await allTimeEntries();
+        const audit = await auditFor("time_entry");
+
+        const error = await create(foreign.id, source.id).catch(
+          (caught: unknown) => caught,
+        );
+
+        expect(error).toBeInstanceOf(ForbiddenError);
+        expect(error).toMatchObject({ code: "forbidden" });
+        expect(await allTimeEntries()).toEqual(rows);
+        expect(await auditFor("time_entry")).toEqual(audit);
+        expect((await timeEntryById(mine.id))?.endedAt).toBeNull();
+      },
+    );
+
+    it.each(["inactive", "invited"] as const)(
+      "con la membresía %s responde forbidden aunque el id sea de una entrada propia",
+      async (status) => {
+        const source = await seedSource();
+        const own = await seedClosed("2026-10-02T09:00:00Z", "2026-10-02T10:00:00Z");
+        const rows = await allTimeEntries();
+        actor = { ...actor, status };
+
+        await expect(create(own.id, source.id)).rejects.toMatchObject({
+          code: "forbidden",
+          message: timeEntryMessages.forbidden,
+        });
+        expect(await allTimeEntries()).toEqual(rows);
+      },
+    );
+  });
+});
+
+describe("duplicateEntry (TT-58)", () => {
+  it("P-14: la copia tiene exactamente los instantes de la original", async () => {
+    const source = await seedSource();
+
+    const { created } = await duplicateEntry(actor, buenosAires, {
+      id: randomUUID(),
+      sourceId: source.id,
+    });
+
+    expect(created.startedAt).toBe("2026-10-01T11:00:07.250Z");
+    expect(created.endedAt).toBe("2026-10-01T12:34:56.500Z");
+    expect(await instantsOf(created.id)).toEqual({
+      startedAt: "2026-10-01T11:00:07.250Z",
+      endedAt: "2026-10-01T12:34:56.500Z",
+    });
+  });
+
+  it("agrega una fila con la descripción de la original y deja la original intacta", async () => {
+    const source = await seedSource();
+    const id = randomUUID();
+
+    const { created } = await duplicateEntry(actor, buenosAires, {
+      id,
+      sourceId: source.id,
+    });
+
+    expect(created).toMatchObject({ id, description: "diseño", dayDate: "2026-10-01" });
+    expect(await timeEntryById(source.id)).toEqual(source);
+    const rows = await timeEntriesOf(workspaceId, actor.userId);
+    expect(rows.map((row) => [row.id, row.description]).sort()).toEqual(
+      [
+        [source.id, "diseño"],
+        [id, "diseño"],
+      ].sort(),
+    );
+  });
+
+  it("el reintento con el mismo id responde la copia y no crea otra", async () => {
+    const source = await seedSource();
+    const id = randomUUID();
+    const first = await duplicateEntry(actor, buenosAires, { id, sourceId: source.id });
+    const rows = await allTimeEntries();
+    const audit = await auditFor("time_entry");
+
+    const retry = await duplicateEntry(actor, buenosAires, { id, sourceId: source.id });
+
+    expect(retry).toEqual(first);
+    expect(await allTimeEntries()).toEqual(rows);
+    expect(await auditFor("time_entry")).toEqual(audit);
+  });
+
+  it("el reintento en paralelo deja una sola copia", async () => {
+    const source = await seedSource();
+    const id = randomUUID();
+    await warmPool(2);
+
+    const results = await Promise.all([
+      duplicateEntry(actor, buenosAires, { id, sourceId: source.id }),
+      duplicateEntry(actor, buenosAires, { id, sourceId: source.id }),
+    ]);
+
+    expect(results.map((result) => result.created.id)).toEqual([id, id]);
+    expect(await timeEntriesOf(workspaceId, actor.userId)).toHaveLength(2);
+    expect(
+      (await auditFor("time_entry")).filter(
+        (row) => row.action === "timeEntry.duplicate",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("dos pedidos con ids distintos son dos copias", async () => {
+    const source = await seedSource();
+
+    await duplicateEntry(actor, buenosAires, { id: randomUUID(), sourceId: source.id });
+    await duplicateEntry(actor, buenosAires, { id: randomUUID(), sourceId: source.id });
+
+    expect(await timeEntriesOf(workspaceId, actor.userId)).toHaveLength(3);
+  });
+
+  it("con un timer corriendo crea la copia y no lo toca", async () => {
+    const source = await seedSource();
+    const running = await seedRunning();
+
+    await duplicateEntry(actor, buenosAires, { id: randomUUID(), sourceId: source.id });
+
+    expect(await timeEntryById(running.id)).toEqual(running);
+  });
+
+  it("la entrada que corre responde timer_running con su texto y no escribe", async () => {
+    const running = await seedRunning();
+    const rows = await allTimeEntries();
+    const audit = await auditFor("time_entry");
+
+    await expect(
+      duplicateEntry(actor, buenosAires, { id: randomUUID(), sourceId: running.id }),
+    ).rejects.toMatchObject({
+      code: "timer_running",
+      message: timeEntryMessages.runningEntryTimes,
+    });
+    expect(await allTimeEntries()).toEqual(rows);
+    expect(await auditFor("time_entry")).toEqual(audit);
+  });
+
+  it("TT-79, TT-80: la original ajena y la que no existe, con su texto", async () => {
+    const otherId = await seedMember(workspaceId, "member");
+    const foreign = await seedClosed(
+      "2026-10-01T11:00:00Z",
+      "2026-10-01T12:00:00Z",
+      otherId,
+    );
+    const rows = await allTimeEntries();
+
+    await expect(
+      duplicateEntry(actor, buenosAires, { id: randomUUID(), sourceId: foreign.id }),
+    ).rejects.toMatchObject({
+      code: "forbidden",
+      message: timeEntryMessages.forbiddenOtherOwner,
+    });
+    await expect(
+      duplicateEntry(actor, buenosAires, {
+        id: randomUUID(),
+        sourceId: "11111111-1111-4111-8111-111111111111",
+      }),
+    ).rejects.toMatchObject({ code: "not_found", message: timeEntryMessages.notFound });
+    expect(await allTimeEntries()).toEqual(rows);
+  });
+});
+
+describe("discardTimer (TT-65)", () => {
+  it("borra el timer que corre", async () => {
+    const running = await seedRunning();
+
+    const result = await discardTimer(actor, { id: running.id });
+
+    expect(result).toEqual({ id: running.id });
+    expect(await timeEntryById(running.id)).toBeUndefined();
+  });
+
+  it("un timer que otra pestaña detuvo responde already_stopped y la entrada se queda", async () => {
+    const running = await seedRunning();
+    await stopTimer(actor, buenosAires, { id: running.id });
+    const rows = await allTimeEntries();
+
+    await expect(discardTimer(actor, { id: running.id })).rejects.toMatchObject({
+      code: "already_stopped",
+      message: timeEntryMessages.alreadyStopped,
+    });
+    expect(await allTimeEntries()).toEqual(rows);
+  });
+
+  it("uno que otra pestaña cerró al arrancar o continuar, igual, y el nuevo sigue", async () => {
+    const source = await seedSource();
+    const running = await seedRunning();
+    const started = await startTimer(actor, buenosAires, {
+      id: randomUUID(),
+      description: "otro",
+    });
+    const continued = await continueEntry(actor, buenosAires, {
+      id: randomUUID(),
+      sourceId: source.id,
+    });
+    const rows = await allTimeEntries();
+
+    for (const closed of [running.id, started.running.id]) {
+      await expect(discardTimer(actor, { id: closed })).rejects.toMatchObject({
+        code: "already_stopped",
+        message: timeEntryMessages.alreadyStopped,
+      });
+    }
+    expect(await allTimeEntries()).toEqual(rows);
+    expect((await timeEntryById(continued.running.id))?.endedAt).toBeNull();
+  });
+
+  it("uno que otra pestaña borró es éxito sin escribir nada", async () => {
+    const running = await seedRunning();
+    await deleteEntry(actor, { id: running.id });
+    const audit = await auditFor("time_entry");
+
+    const result = await discardTimer(actor, { id: running.id });
+
+    expect(result).toEqual({ id: running.id });
+    expect(await auditFor("time_entry")).toEqual(audit);
+  });
+
+  it("el reintento de un descarte aplicado es éxito", async () => {
+    const running = await seedRunning();
+    await discardTimer(actor, { id: running.id });
+
+    await expect(discardTimer(actor, { id: running.id })).resolves.toEqual({
+      id: running.id,
+    });
+  });
+
+  it("detenido mientras el descarte esperaba la fila, responde already_stopped", async () => {
+    const running = await seedRunning();
+
+    const [stopped, discarded] = await queueBehindBarrier(lockRow(running.id), [
+      () => stopTimer(actor, buenosAires, { id: running.id }),
+      () => discardTimer(actor, { id: running.id }),
+    ]);
+
+    expect(stopped.status).toBe("fulfilled");
+    expect(discarded).toMatchObject({
+      status: "rejected",
+      reason: { code: "already_stopped" },
+    });
+    expect((await timeEntryById(running.id))?.endedAt).not.toBeNull();
+  });
+
+  it("borrado mientras el descarte esperaba la fila, es éxito sin aviso", async () => {
+    const running = await seedRunning();
+
+    const [deleted, discarded] = await queueBehindBarrier(lockRow(running.id), [
+      () => deleteEntry(actor, { id: running.id }),
+      () => discardTimer(actor, { id: running.id }),
+    ]);
+
+    expect(deleted.status).toBe("fulfilled");
+    expect(discarded).toEqual({ status: "fulfilled", value: { id: running.id } });
+    expect(await timeEntryById(running.id)).toBeUndefined();
+    expect(await auditActionsOf(running.id)).toEqual(["timeEntry.delete"]);
+  });
+
+  it("con el inicio movido mientras esperaba la fila, lo descarta igual", async () => {
+    const running = await seedRunning();
+
+    const [moved, discarded] = await queueBehindBarrier(lockRow(running.id), [
+      () =>
+        updateRunningStart(
+          actor,
+          workspaceOf(buenosAires),
+          { id: running.id, date: "2026-10-02", start: "07:00" },
+          new Date("2026-10-02T15:00:00Z"),
+        ),
+      () => discardTimer(actor, { id: running.id }),
+    ]);
+
+    expect(moved.status).toBe("fulfilled");
+    expect(discarded).toEqual({ status: "fulfilled", value: { id: running.id } });
+    expect(await timeEntryById(running.id)).toBeUndefined();
+  });
+
+  it("TT-79: el timer de otra persona responde forbidden con su texto y se queda", async () => {
+    const otherId = await seedMember(workspaceId, "member");
+    const foreign = await seedTimeEntry({
+      workspaceId,
+      userId: otherId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+
+    await expect(discardTimer(actor, { id: foreign.id })).rejects.toMatchObject({
+      code: "forbidden",
+      message: timeEntryMessages.forbiddenOtherOwner,
+    });
+    expect(await timeEntryById(foreign.id)).toEqual(foreign);
+  });
+
+  it("el timer de otro workspace no se borra ni se distingue de uno que no existe", async () => {
+    const other = await seedWorkspace(buenosAires);
+    const foreign = await seedTimeEntry({
+      workspaceId: other.workspaceId,
+      userId: other.ownerId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+
+    await expect(discardTimer(actor, { id: foreign.id })).resolves.toEqual({
+      id: foreign.id,
+    });
+    expect(await timeEntryById(foreign.id)).toEqual(foreign);
+  });
+
+  it.each(["inactive", "invited"] as const)(
+    "con la membresía %s responde forbidden, también con un id que no existe",
+    async (status) => {
+      const running = await seedRunning();
+      const inactive = { ...actor, status };
+
+      for (const id of [running.id, "11111111-1111-4111-8111-111111111111"]) {
+        await expect(discardTimer(inactive, { id })).rejects.toMatchObject({
+          code: "forbidden",
+          message: timeEntryMessages.forbidden,
+        });
+      }
+      expect(await timeEntryById(running.id)).toEqual(running);
+    },
+  );
+});
+
+describe("getTrackerState: lastEntryId", () => {
+  /** Las 12:00 del 2 de octubre de 2026 en Buenos Aires. */
+  const now = new Date("2026-10-02T15:00:00Z");
+
+  it("es null sin entradas cerradas", async () => {
+    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    expect(state.lastEntryId).toBeNull();
+  });
+
+  it("es la cerrada más reciente que ya empezó, no una futura ni el timer activo", async () => {
+    await seedClosed("2026-09-30T11:00:00Z", "2026-09-30T12:00:00Z");
+    const latest = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
+    await seedClosed("2026-10-03T11:00:00Z", "2026-10-03T12:00:00Z");
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-02T14:00:00Z",
+    });
+
+    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+
+    expect(state.lastEntryId).toBe(latest.id);
+  });
+
+  it("es null si la única cerrada es futura", async () => {
+    await seedClosed("2026-10-03T11:00:00Z", "2026-10-03T12:00:00Z");
+
+    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+
+    expect(state.lastEntryId).toBeNull();
+  });
+
+  it("con dos que empiezan en el mismo instante, es la que la lista dibuja primero", async () => {
+    const ids = [
+      "ffffffff-ffff-4fff-bfff-ffffffffffff",
+      "00000000-0000-4000-8000-000000000001",
+    ];
+    for (const id of ids) {
+      await db.insert(timeEntry).values({
+        id,
+        workspaceId,
+        userId: actor.userId,
+        startedAt: new Date("2026-10-01T11:00:00Z"),
+        endedAt: new Date("2026-10-01T12:00:00Z"),
+      });
+    }
+
+    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+
+    expect(state.days[0].entries.map((entry) => entry.id)).toEqual([ids[1], ids[0]]);
+    expect(state.lastEntryId).toBe(ids[1]);
+  });
+});
+
+describe("la guarda de deleteRunningById", () => {
+  // Inalcanzable a través del service, que ya leyó la fila con FOR UPDATE y
+  // comprobó lo mismo: por eso se llama al repository directo.
+  it("no borra una entrada cerrada", async () => {
+    const closed = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
+    const target = { workspaceId, userId: actor.userId, id: closed.id };
+
+    const removed = await db.transaction((tx) =>
+      timeEntryRepository.deleteRunningById(tx, target),
+    );
+
+    expect(removed).toBeUndefined();
+    expect(await timeEntryById(closed.id)).toEqual(closed);
+    const running = await seedRunning();
+    const own = await db.transaction((tx) =>
+      timeEntryRepository.deleteRunningById(tx, { ...target, id: running.id }),
+    );
+    expect(own?.id).toBe(running.id);
+    expect(await timeEntryById(running.id)).toBeUndefined();
   });
 });

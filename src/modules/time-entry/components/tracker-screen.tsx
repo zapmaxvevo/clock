@@ -57,6 +57,7 @@ export async function TrackerScreen({
           canTrack={state.canTrack}
           todayKey={state.todayKey}
           minDayKey={state.minDayKey}
+          lastEntryId={state.lastEntryId}
         />
       ) : (
         <TrackerEmpty />

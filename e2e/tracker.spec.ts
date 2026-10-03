@@ -484,7 +484,9 @@ test("lo tecleado con el foco puesto sobrevive a una revalidación", async ({
   await page.goto("/");
   await startTimer(page, "entrada previa");
   await stopTimer(page, "entrada previa");
-  await startTimer(page, "texto inicial");
+  // El grupo de hoy ya está dibujado: se espera la respuesta del arranque
+  // antes de que la otra pestaña lea el estado.
+  await withServerAction(page, () => startTimer(page, "texto inicial"));
 
   // El otro dispositivo cambia dos cosas: la descripción del timer y la
   // lista. La lista es la que deja ver que la revalidación llegó y se aplicó.
