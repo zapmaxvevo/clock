@@ -405,29 +405,39 @@ importa para planificar el slice.
 **Una propiedad que juega a favor.** El slice 1 decidió que todo lo que depende
 de zona horaria o de formato se resuelve en el servidor y viaja ya formateado
 en `TimeEntryView` —`startLabel`, `endLabel`, `durationLabel`, `dayDate`— y en
-`DayGroupView.label`. Eso quiere decir que cambiar los formatos **no toca los
-componentes**, salvo el que formatea en el cliente. El cambio es casi todo en
-`src/server/time` y en el service.
+`DayGroupView.label` y `WeekGroupView.label`. Eso quiere decir que cambiar los
+formatos **no toca los componentes**, salvo los dos que formatean en el
+cliente. El cambio es casi todo en `src/server/time` y en el service.
 
-| Qué                                                     | Por qué lo mueve el perfil                                                                                                                                                             |
-| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/server/db/schema.ts` y una migración               | Preferencias por persona en **tabla propia** y `week_start` en `membership`. **La tabla `user` es de Better Auth** y se regenera con `npm run auth:schema`: no se le agregan columnas. |
-| `src/server/auth.ts`                                    | El mapeo `{ name: profile.name, image: profile.picture }` no puede pisar el nombre editado en cada inicio de sesión. Es condición previa de PF-07; el detalle está en PF-08.           |
-| `src/server/session.ts`                                 | `SessionContext` tiene que traer las preferencias, para que ninguna action las vuelva a buscar.                                                                                        |
-| `src/app/(app)/page.tsx`                                | Hoy pasa `session.workspace.timezone`; pasa a pasar la de la persona.                                                                                                                  |
-| `src/modules/time-entry/actions.ts`                     | Las cuatro actions pasan `session.workspace.timezone` al service. Mismo cambio, cuatro veces.                                                                                          |
-| `src/server/time/index.ts` · `formatClock`              | Hoy fija `HH:mm`. Pasa a depender del formato de hora (PF-13).                                                                                                                         |
-| `src/server/time/index.ts` · `dayLabel` y `dayKeyLabel` | Hoy fijan `EEE, dd/MM`. Pasan a depender del formato de fecha (PF-12).                                                                                                                 |
-| `src/server/time/index.ts` · `formatDuration`           | Hoy fija `h:mm`. Pasa a depender del formato de duración (PF-20).                                                                                                                      |
-| `src/server/time/index.ts` · `formatElapsed`            | **No se toca**: el contador sigue en `h:mm:ss` (PF-22).                                                                                                                                |
-| `src/server/time/index.ts` · `weekBounds`               | Recibe `weekStartsOn` por parámetro y hoy **nadie se lo puede dar**. Es el bloqueo que el perfil levanta.                                                                              |
-| `src/server/time/index.ts` · `parseClockInput`          | Hoy rechaza `1pm` siempre. Con formato de 12 horas tiene que aceptarlo (PF-14).                                                                                                        |
-| `src/modules/time-entry/components/day-group.tsx`       | Llama a `formatDuration` en el cliente para el total del día.                                                                                                                          |
-| `src/components/layout/user-menu.tsx`                   | Foto, menú desplegable y enlace al perfil (PF-10, PF-30).                                                                                                                              |
-| `src/app/(app)/layout.tsx` y `src/app/globals.css`      | El tema: la clase `dark` ya existe, falta encenderla antes del primer pintado (PF-23, PF-24).                                                                                          |
-| `src/server/permissions/index.ts`                       | Una acción nueva para el perfil propio. El primer día de la semana puede reusar `team.manage` (PF-17).                                                                                 |
-| `src/server/time/time.test.ts`                          | Los casos de formato dan por sentados los formatos fijos de hoy.                                                                                                                       |
-| `docs/parity/time-tracker.md`                           | TT-02, TT-20, TT-44, TT-48 y P-13 se reabren por diseño: dicen «del workspace» y pasan a decir «de la persona».                                                                        |
+| Qué                                                     | Por qué lo mueve el perfil                                                                                                                                                        |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/server/db/schema.ts` y una migración               | Preferencias por persona en **tabla propia**; `week_start` ya está en `membership`. **`user` es de Better Auth** y la regenera `npm run auth:schema`: no lleva columnas nuestras. |
+| `src/server/auth.ts`                                    | El mapeo `{ name: profile.name, image: profile.picture }` no puede pisar el nombre editado en cada inicio de sesión. Es condición previa de PF-07; el detalle está en PF-08.      |
+| `src/server/session.ts`                                 | `SessionContext` tiene que traer las preferencias, para que ninguna action las vuelva a buscar.                                                                                   |
+| `src/app/(app)/page.tsx`                                | Desde el slice 5 pasa `trackerWorkspaceOf(session)` y la zona se lee ahí: el perfil cambia esa función de `time-entry/service.ts`, no esta ruta.                                  |
+| `src/modules/time-entry/actions.ts`                     | Desde el slice 5, las ocho actions que necesitan la zona pasan `trackerWorkspaceOf(session)`, que es donde se lee. El perfil cambia esa función y ninguna action.                 |
+| `src/server/time/index.ts` · `formatClock`              | Hoy fija `HH:mm`. Pasa a depender del formato de hora (PF-13).                                                                                                                    |
+| `src/server/time/index.ts` · `dayLabel` y `dayKeyLabel` | Hoy fijan `EEE, dd/MM`. Pasan a depender del formato de fecha (PF-12).                                                                                                            |
+| `src/server/time/index.ts` · `weekKeyLabel`             | Hoy fija `dd/MM` en el rango de la semana. Pasa a depender del formato de fecha (PF-12).                                                                                          |
+| `src/server/time/index.ts` · `formatDuration`           | Hoy fija `h:mm`. Pasa a depender del formato de duración (PF-20).                                                                                                                 |
+| `src/server/time/index.ts` · `formatElapsed`            | **No se toca**: el contador sigue en `h:mm:ss` (PF-22).                                                                                                                           |
+| `src/server/time/index.ts` · `weekBounds`               | Ya no es un bloqueo: desde el slice 5 el primer día sale de `weekStartOf` (PF-01) y la semana se corta sobre claves de día. El rastreador no la llama: usa `weekStartKey`.        |
+| `src/server/time/index.ts` · `parseClockInput`          | Hoy rechaza `1pm` siempre. Con formato de 12 horas tiene que aceptarlo (PF-14).                                                                                                   |
+| `src/modules/time-entry/components/day-group.tsx`       | Llama a `formatDuration` en el cliente para el total del día.                                                                                                                     |
+| `src/modules/time-entry/components/week-group.tsx`      | Llama a `formatDuration` en el cliente para el total de la semana (PF-20).                                                                                                        |
+| `src/components/layout/user-menu.tsx`                   | Foto, menú desplegable y enlace al perfil (PF-10, PF-30).                                                                                                                         |
+| `src/app/(app)/layout.tsx` y `src/app/globals.css`      | El tema: la clase `dark` ya existe, falta encenderla antes del primer pintado (PF-23, PF-24).                                                                                     |
+| `src/server/permissions/index.ts`                       | Una acción nueva para el perfil propio. El primer día de la semana puede reusar `team.manage` (PF-17).                                                                            |
+| `src/server/time/time.test.ts`                          | Los casos de formato dan por sentados los formatos fijos de hoy.                                                                                                                  |
+| `docs/parity/time-tracker.md`                           | TT-02, TT-20, TT-44 y P-13 se reabren por diseño: dicen «del workspace» y pasan a decir «de la persona». TT-48 ya es de la persona desde el slice 5.                              |
+
+_Corregido el 2026-10-03, slice 5_: las filas de `page.tsx` y de `actions.ts`
+decían que pasaban `session.workspace.timezone` y que el perfil tenía que
+cambiar cada lugar; la de `weekBounds` decía que nadie podía darle el primer
+día de la semana, que desde el slice 5 sale de `membership.week_start`. La del
+esquema pedía esa columna, que ya existe, y la de `time-tracker.md` contaba a
+TT-48 entre los que se reabren. Se agregan `weekKeyLabel` y `week-group.tsx`, y
+`WeekGroupView.label` en el párrafo de arriba, que el slice 5 creó.
 
 **Lo que no se toca.** La base sigue guardando instantes en UTC, así que ningún
 dato se migra. `workspace.timezone` se queda para el cron (PF-05).
