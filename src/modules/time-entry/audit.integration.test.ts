@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { db } from "@/server/db";
@@ -35,7 +37,10 @@ function parsed(value: string | null): unknown {
 
 describe("audit log de las mutaciones", () => {
   it("el arranque deja un registro con la descripción y el inicio", async () => {
-    const result = await startTimer(actor, buenosAires, { description: "revisión" });
+    const result = await startTimer(actor, buenosAires, {
+      id: randomUUID(),
+      description: "revisión",
+    });
 
     const rows = await auditFor("time_entry");
     expect(rows).toHaveLength(1);
@@ -52,8 +57,14 @@ describe("audit log de las mutaciones", () => {
   });
 
   it("el arranque que cierra el timer anterior deja un registro por entrada", async () => {
-    const first = await startTimer(actor, buenosAires, { description: "uno" });
-    const second = await startTimer(actor, buenosAires, { description: "dos" });
+    const first = await startTimer(actor, buenosAires, {
+      id: randomUUID(),
+      description: "uno",
+    });
+    const second = await startTimer(actor, buenosAires, {
+      id: randomUUID(),
+      description: "dos",
+    });
 
     const rows = await auditFor("time_entry");
     expect(rows).toHaveLength(3);
@@ -81,8 +92,24 @@ describe("audit log de las mutaciones", () => {
     });
   });
 
+  it("el reintento de un arranque ya aplicado no deja registro", async () => {
+    const id = randomUUID();
+    await startTimer(actor, buenosAires, { id, description: "uno" });
+    const before = await auditFor("time_entry");
+
+    await startTimer(actor, buenosAires, { id, description: "uno" });
+
+    expect(await auditFor("time_entry")).toEqual(before);
+    expect((await auditFor("time_entry", id)).map((row) => row.action)).toEqual([
+      "timeEntry.start",
+    ]);
+  });
+
   it("detener deja el registro con el fin que escribió la base", async () => {
-    const started = await startTimer(actor, buenosAires, { description: "tarea" });
+    const started = await startTimer(actor, buenosAires, {
+      id: randomUUID(),
+      description: "tarea",
+    });
 
     const result = await stopTimer(actor, buenosAires, { id: started.running.id });
 
@@ -186,7 +213,10 @@ describe("mutaciones rechazadas", () => {
   });
 
   it("detener una entrada ya cerrada no agrega un segundo registro", async () => {
-    const started = await startTimer(actor, buenosAires, { description: "tarea" });
+    const started = await startTimer(actor, buenosAires, {
+      id: randomUUID(),
+      description: "tarea",
+    });
     await stopTimer(actor, buenosAires, { id: started.running.id });
 
     await expect(
@@ -292,7 +322,10 @@ describe("audit log de la entrada manual", () => {
   });
 
   it("la creación negada por el timer corriendo deja solo el registro del arranque", async () => {
-    const started = await startTimer(actor, buenosAires, { description: "corriendo" });
+    const started = await startTimer(actor, buenosAires, {
+      id: randomUUID(),
+      description: "corriendo",
+    });
 
     await expect(
       createManualEntry(actor, workspace, {
@@ -355,7 +388,10 @@ describe("audit log de la entrada manual", () => {
   });
 
   it("ningún otro camino del módulo escribe timeEntry.createManual", async () => {
-    const started = await startTimer(actor, buenosAires, { description: "con timer" });
+    const started = await startTimer(actor, buenosAires, {
+      id: randomUUID(),
+      description: "con timer",
+    });
     await updateDescription(actor, buenosAires, {
       id: started.running.id,
       description: "editada",
@@ -406,7 +442,10 @@ describe("audit log de la entrada manual", () => {
       start: "08:00",
       end: "09:00",
     });
-    const started = await startTimer(actor, buenosAires, { description: "con timer" });
+    const started = await startTimer(actor, buenosAires, {
+      id: randomUUID(),
+      description: "con timer",
+    });
     await stopTimer(actor, buenosAires, { id: started.running.id });
 
     const actions = (await auditFor("time_entry")).map((row) => row.action);

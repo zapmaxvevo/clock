@@ -1,6 +1,6 @@
 # 0007. El cliente elige el id de la entrada que crea
 
-Fecha: 2026-10-03. Estado: propuesto.
+Fecha: 2026-10-03. Estado: aceptado.
 Origen: contrato del slice 4
 ([`fase1-slice4-continuar-duplicar.md`](../slices/fase1-slice4-continuar-duplicar.md)),
 corregido por las rondas 1 y 2 de `architecture-reviewer`

@@ -93,6 +93,8 @@ export function TrackerBar({
   const [outsideWindowDay, setOutsideWindowDay] = useState<string | null>(null);
   const sectionRef = useRef<HTMLElement>(null);
   const descriptionRef = useRef<HTMLInputElement>(null);
+  /** Id del último pedido de arranque, el que «Iniciar» reusa (ADR 0007). */
+  const startIdRef = useRef<string | null>(null);
 
   const save = useEntryAction(updateDescription, {
     // TT-90: si el guardado falla, el campo vuelve al valor que tiene el servidor.
@@ -141,6 +143,12 @@ export function TrackerBar({
   // igual, así no vuelve a pisar el campo cuando se sale de él.
   if (serverState.id !== serverId || serverState.description !== serverDescription) {
     setServerState({ id: serverId, description: serverDescription });
+    // Con otro timer en pantalla, reintentar el arranque ya no tiene sentido:
+    // si es el que creó el pedido cuya respuesta se perdió, no haría nada, y si
+    // vino de otra pestaña, lo cerraría sin que nadie lo pida (ADR 0007).
+    if (serverState.id !== serverId) {
+      start.clear();
+    }
     // Con el modo elegido en manual, un timer que llega o se va cambia la
     // barra de modo y el campo se vuelve a montar sin pasar por su blur: lo
     // tecleado no es de esa entrada y la guarda de edición no aplica.
@@ -191,12 +199,28 @@ export function TrackerBar({
     save.run({ id: running.id, description: next });
   }
 
+  /**
+   * ADR 0007: con el aviso de falla por red de «Iniciar» a la vista, el pedido
+   * anterior pudo haberse aplicado, y repetirlo con su id no abre otro timer.
+   * En cualquier otro caso el clic es un pedido nuevo.
+   */
+  function nextStartId(): string {
+    const pendingId = start.failure?.code === "unexpected" ? startIdRef.current : null;
+    const id = pendingId ?? crypto.randomUUID();
+    startIdRef.current = id;
+    return id;
+  }
+
   function handleToggle(): void {
-    clearNotices();
     if (running === null) {
-      start.run({ description: draft });
+      // Antes de bajar los avisos: el que se ve es el que dice si hay un
+      // pedido pendiente.
+      const id = nextStartId();
+      clearNotices();
+      start.run({ id, description: draft });
       return;
     }
+    clearNotices();
     stop.run({ id: running.id });
   }
 
@@ -278,11 +302,11 @@ export function TrackerBar({
         {add.failure !== null &&
           (add.failure.code === "unexpected" ? (
             /*
-             * Agregar es la única operación del módulo que crea sin rebotar
-             * contra nada: si se pierde la respuesta, la fila puede estar
-             * creada y reintentar la duplicaría en silencio, porque TT-82
-             * acepta la superposición. Por eso acá no se ofrece «Reintentar»
-             * y el aviso manda a mirar la lista.
+             * Agregar es la única alta del módulo sin id elegido por el
+             * cliente (ADR 0007): si se pierde la respuesta, la fila puede
+             * estar creada y reintentar la duplicaría en silencio, porque
+             * TT-82 acepta la superposición. Por eso acá no se ofrece
+             * «Reintentar» y el aviso manda a mirar la lista.
              */
             <TrackerFeedback
               title="No sabemos si la entrada se guardó."

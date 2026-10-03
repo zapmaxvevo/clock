@@ -600,6 +600,12 @@ Dueño: `tests-slice2b`. Cada recorrido usa una persona propia del spec.
 
 ## 8. Deuda conocida del slice
 
+- **Un id ajeno ya borrado se puede reusar.** Quien conozca el UUID de una
+  entrada de otra persona que ya no existe puede crear una propia con ese id, y
+  los registros de `audit_log` con ese `entity_id` mezclarían la historia de dos
+  dueños. Hoy nadie lee ese registro y los ids ajenos no se exponen; el visor de
+  auditoría, cuando exista, filtra por `workspace_id` y actor, no solo por
+  `entity_id` (auditoría de seguridad del slice).
 - **El doble clic con dos ids sigue dejando una entrada de duración casi
   cero**, si los dos pedidos no se cruzan en la base. Es la parte de la
   consecuencia del ADR 0003 que el 0007 no supera; la interfaz lo sigue
