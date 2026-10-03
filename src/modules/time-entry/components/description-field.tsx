@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type Ref } from "react";
 
 import { Input } from "@/components/ui/input";
 import { DESCRIPTION_MAX } from "@/modules/time-entry/schema";
@@ -8,6 +8,7 @@ import { DESCRIPTION_MAX } from "@/modules/time-entry/schema";
 import { DESCRIPTION_PLACEHOLDER } from "./labels";
 
 type DescriptionFieldProps = {
+  readonly ref?: Ref<HTMLInputElement>;
   readonly value: string;
   readonly onValueChange: (value: string) => void;
   /** Guarda el valor. Lo llaman el rebote, la salida del campo y Enter. */
@@ -25,6 +26,7 @@ type DescriptionFieldProps = {
 };
 
 export function DescriptionField({
+  ref,
   value,
   onValueChange,
   onCommit,
@@ -62,6 +64,7 @@ export function DescriptionField({
 
   return (
     <Input
+      ref={ref}
       type="text"
       value={value}
       aria-label={label}

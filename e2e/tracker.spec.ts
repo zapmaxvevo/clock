@@ -1,137 +1,26 @@
-import type { Browser, Locator, Page, Request } from "@playwright/test";
+import type { Request } from "@playwright/test";
 
-import { expect, signIn, test } from "./session";
+import { expect, test } from "./session";
+import {
+  backgroundRgb,
+  dayTotal,
+  deleteEntry,
+  deleteEntryAndSettle,
+  descriptionInput,
+  editDescriptionButton,
+  elapsedCounter,
+  elapsedOf,
+  entryRow,
+  openSecondTab,
+  startTimer,
+  stopTimer,
+  todayGroup,
+  trackerBar,
+  withServerAction,
+} from "./tracker-page";
 
 /** Cuánto se le da al contador para llegar a un valor, sin esperas fijas. */
 const COUNTER_TIMEOUT_MS = 15_000;
-
-function trackerBar(page: Page): Locator {
-  return page.getByRole("region", { name: "Rastreador" });
-}
-
-function descriptionInput(scope: Locator): Locator {
-  return scope.getByRole("textbox", { name: "Descripción de la entrada" });
-}
-
-function elapsedCounter(scope: Locator): Locator {
-  return scope.getByRole("timer", { name: "Tiempo transcurrido" });
-}
-
-/** El grupo del día de hoy, que la lista encabeza con «Hoy» (TT-44). */
-function todayGroup(page: Page): Locator {
-  return page.getByRole("region", { name: "Hoy" });
-}
-
-function entryRow(scope: Locator, description: string): Locator {
-  return scope.getByRole("listitem").filter({ hasText: description });
-}
-
-/** La descripción de una fila es un botón que la vuelve editable (TT-54). */
-function editDescriptionButton(scope: Locator, description: string): Locator {
-  return scope.getByRole("button", { name: `${description} — editar la descripción` });
-}
-
-/** El «Total» del encabezado del grupo, que lleva la etiqueta y el valor. */
-function dayTotal(group: Locator): Locator {
-  return group.getByText(/^Total \d+:\d{2}$/);
-}
-
-/**
- * Canales del color de fondo. El tema los define en oklch y el canvas los
- * lleva a sRGB pintando un píxel, así la afirmación es «es rojo» y no el
- * valor exacto de la paleta.
- */
-async function backgroundRgb(
-  element: Locator,
-): Promise<{ red: number; green: number; blue: number }> {
-  return element.evaluate((node) => {
-    const context = document.createElement("canvas").getContext("2d");
-    if (context === null) {
-      throw new Error("El canvas no está disponible para normalizar el color.");
-    }
-    context.fillStyle = window.getComputedStyle(node).backgroundColor;
-    context.fillRect(0, 0, 1, 1);
-    const { data } = context.getImageData(0, 0, 1, 1);
-    return { red: data[0], green: data[1], blue: data[2] };
-  });
-}
-
-/** Lee el contador en segundos, para compararlo sin depender del formato. */
-async function elapsedOf(counter: Locator): Promise<number> {
-  const text = (await counter.textContent()) ?? "";
-  const parts = text.trim().split(":").map(Number);
-  if (parts.length !== 3 || parts.some(Number.isNaN)) {
-    throw new Error(`El contador no se pudo leer: «${text}»`);
-  }
-  return parts[0] * 3600 + parts[1] * 60 + parts[2];
-}
-
-/**
- * Arranca un timer y espera a que la barra tenga la entrada abierta. El botón
- * pasa a «Detener» con la vista optimista, antes de que el servidor escriba;
- * el grupo del día del timer activo, en cambio, solo lo dibuja el servidor.
- */
-async function startTimer(page: Page, description: string): Promise<void> {
-  const bar = trackerBar(page);
-  await descriptionInput(bar).fill(description);
-  await bar.getByRole("button", { name: "Iniciar" }).click();
-  await expect(bar.getByRole("button", { name: "Detener" })).toBeVisible();
-  await expect(todayGroup(page)).toBeVisible();
-}
-
-/**
- * Detiene el timer y espera a que la entrada esté en la lista. La barra pasa
- * a «Iniciar» con la vista optimista, antes de que el servidor escriba; la
- * fila del día es lo que dice que ya escribió y revalidó.
- */
-async function stopTimer(page: Page, description: string): Promise<void> {
-  const bar = trackerBar(page);
-  await bar.getByRole("button", { name: "Detener" }).click();
-  await expect(bar.getByRole("button", { name: "Iniciar" })).toBeVisible();
-  await expect(entryRow(todayGroup(page), description)).toBeVisible();
-}
-
-/** Borra una entrada desde el menú de su fila y confirma el diálogo (TT-60). */
-async function deleteEntry(page: Page, description: string): Promise<void> {
-  await todayGroup(page)
-    .getByRole("button", { name: `Acciones de la entrada «${description}»` })
-    .click();
-  await page.getByRole("menuitem", { name: "Borrar" }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "Borrar" }).click();
-}
-
-/**
- * Corre algo que dispara una server action y espera su respuesta. Se usa
- * donde la pantalla no distingue la vista optimista de lo ya escrito, y donde
- * hace falta saber que una pestaña terminó antes de que otra siga.
- */
-async function withServerAction(page: Page, act: () => Promise<void>): Promise<void> {
-  const settled = page.waitForResponse(
-    (response) => response.request().headers()["next-action"] !== undefined,
-  );
-  await act();
-  const response = await settled;
-  expect(response.ok(), `la action respondió ${response.status()}`).toBeTruthy();
-}
-
-/** Borra y espera a que el servidor haya escrito. */
-async function deleteEntryAndSettle(page: Page, description: string): Promise<void> {
-  await withServerAction(page, () => deleteEntry(page, description));
-}
-
-/**
- * Segunda pestaña con la misma sesión, en su propio contexto. La pestaña del
- * test nunca pierde el foco mientras esta trabaja, así que se queda con el
- * estado que leyó al entrar: es la pestaña desactualizada que hace falta para
- * TT-35, TT-41 y TT-103.
- */
-async function openSecondTab(browser: Browser, email: string): Promise<Page> {
-  const context = await browser.newContext();
-  await signIn(context, email);
-  const page = await context.newPage();
-  await page.goto("/");
-  return page;
-}
 
 test("sin entradas ni timer, la pantalla invita a empezar", async ({ page }) => {
   await page.goto("/");

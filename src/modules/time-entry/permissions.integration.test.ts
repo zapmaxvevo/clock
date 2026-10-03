@@ -9,6 +9,7 @@ import { timeEntriesOf, timeEntryById } from "@/test/queries";
 import { timeEntryRepository } from "./repository";
 import { timeEntryMessages } from "./schema";
 import {
+  createManualEntry,
   deleteEntry,
   getTrackerState,
   startTimer,
@@ -27,6 +28,16 @@ const roles: readonly Role[] = [
   "member",
 ];
 const notActive: readonly MembershipStatus[] = ["inactive", "invited"];
+
+/** El workspace tal como lo recibe el service. El piso no estorba a estos casos. */
+const workspace = { timezone: buenosAires, createdAt: new Date("2020-01-01T00:00:00Z") };
+
+const manualValues = {
+  description: "a mano",
+  date: "2026-10-02",
+  start: "08:00",
+  end: "09:00",
+} as const;
 
 let workspaceId: string;
 let ownerId: string;
@@ -63,8 +74,31 @@ describe.each(roles)("rol %s", (role) => {
       expect(row?.userId).toBe(actor.userId);
       expect(row?.workspaceId).toBe(workspaceId);
       expect(row?.endedAt).toBeNull();
-      const state = await getTrackerState(actor, buenosAires, trackerNow);
+      const state = await getTrackerState(actor, workspace, trackerNow);
       expect(state.canTrack).toBe(true);
+    });
+
+    it("agrega tiempo a mano sobre una entrada propia", async () => {
+      const actor = await seedActor(role);
+
+      const result = await createManualEntry(actor, workspace, manualValues, trackerNow);
+
+      const row = await timeEntryById(result.created.id);
+      expect(row?.userId).toBe(actor.userId);
+      expect(row?.workspaceId).toBe(workspaceId);
+      expect(row?.endedAt).not.toBeNull();
+    });
+
+    it.each(notActive)("no agrega nada a mano con la membresía %s", async (status) => {
+      const actor = await seedActor(role, status);
+
+      await expect(
+        createManualEntry(actor, workspace, manualValues, trackerNow),
+      ).rejects.toMatchObject({
+        code: "forbidden",
+        message: timeEntryMessages.forbidden,
+      });
+      expect(await timeEntriesOf(workspaceId, actor.userId)).toHaveLength(0);
     });
 
     it.each(notActive)("no abre nada con la membresía %s", async (status) => {
@@ -85,7 +119,7 @@ describe.each(roles)("rol %s", (role) => {
       async (status) => {
         const actor = await seedActor(role, status);
 
-        const state = await getTrackerState(actor, buenosAires, trackerNow);
+        const state = await getTrackerState(actor, workspace, trackerNow);
 
         // La vista, no la mutación: el mismo `can()` que corta el arranque.
         expect(state.canTrack).toBe(false);
@@ -312,10 +346,10 @@ describe("aislamiento entre workspaces", () => {
       startedAt: "2026-10-02T13:00:00Z",
     });
 
-    const outside = await getTrackerState(elsewhere, buenosAires, trackerNow);
+    const outside = await getTrackerState(elsewhere, workspace, trackerNow);
     const inside = await getTrackerState(
       { userId: ownerId, workspaceId, role: "owner", status: "active" },
-      buenosAires,
+      workspace,
       trackerNow,
     );
 
@@ -324,6 +358,99 @@ describe("aislamiento entre workspaces", () => {
     expect(outside.running).toBeNull();
     expect(inside.running?.description).toBe("corriendo");
     expect(inside.days.flatMap((day) => day.entries)).toHaveLength(1);
+  });
+
+  it("un actor de otro workspace agrega su entrada a mano allá y no acá", async () => {
+    const other = await seedWorkspace(buenosAires);
+    const outsider: Actor = {
+      userId: other.ownerId,
+      workspaceId: other.workspaceId,
+      role: "owner",
+      status: "active",
+    };
+
+    // El workspace que recibe el service solo aporta la zona y el piso; de
+    // dónde es la fila lo decide el actor.
+    const result = await createManualEntry(outsider, workspace, manualValues, trackerNow);
+
+    const row = await timeEntryById(result.created.id);
+    expect(row?.workspaceId).toBe(other.workspaceId);
+    expect(row?.userId).toBe(other.ownerId);
+    expect(await timeEntriesOf(workspaceId, ownerId)).toEqual([]);
+    const here = await getTrackerState(
+      { userId: ownerId, workspaceId, role: "owner", status: "active" },
+      workspace,
+      trackerNow,
+    );
+    expect(here.hasAnyEntry).toBe(false);
+    expect(here.days).toEqual([]);
+  });
+
+  it("la entrada a mano del mismo usuario cae en el workspace de la sesión", async () => {
+    const other = await seedWorkspace(buenosAires);
+    await db
+      .insert(membership)
+      .values({ workspaceId: other.workspaceId, userId: ownerId, role: "member" });
+    const elsewhere: Actor = {
+      userId: ownerId,
+      workspaceId: other.workspaceId,
+      role: "member",
+      status: "active",
+    };
+    await seedTimeEntry({
+      workspaceId,
+      userId: ownerId,
+      description: "de acá",
+      startedAt: "2026-10-02T11:00:00Z",
+      endedAt: "2026-10-02T12:00:00Z",
+    });
+
+    const result = await createManualEntry(
+      elsewhere,
+      workspace,
+      manualValues,
+      trackerNow,
+    );
+
+    expect((await timeEntryById(result.created.id))?.workspaceId).toBe(other.workspaceId);
+    const here = await timeEntriesOf(workspaceId, ownerId);
+    expect(here.map((row) => row.description)).toEqual(["de acá"]);
+    const there = await timeEntriesOf(other.workspaceId, ownerId);
+    expect(there.map((row) => row.id)).toEqual([result.created.id]);
+    const state = await getTrackerState(
+      { userId: ownerId, workspaceId, role: "owner", status: "active" },
+      workspace,
+      trackerNow,
+    );
+    expect(
+      state.days.flatMap((day) => day.entries).map((entry) => entry.id),
+    ).not.toContain(result.created.id);
+  });
+
+  it("un timer corriendo en otro workspace no frena el agregado a mano acá", async () => {
+    const other = await seedWorkspace(buenosAires);
+    await db
+      .insert(membership)
+      .values({ workspaceId: other.workspaceId, userId: ownerId, role: "member" });
+    const running = await seedTimeEntry({
+      workspaceId: other.workspaceId,
+      userId: ownerId,
+      description: "corriendo allá",
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+    const actor: Actor = {
+      userId: ownerId,
+      workspaceId,
+      role: "owner",
+      status: "active",
+    };
+
+    // El corte de TT-30 mira el timer del workspace de la sesión, no el de
+    // cualquier workspace de la persona.
+    const result = await createManualEntry(actor, workspace, manualValues, trackerNow);
+
+    expect((await timeEntryById(result.created.id))?.workspaceId).toBe(workspaceId);
+    expect((await timeEntryById(running.id))?.endedAt).toBeNull();
   });
 
   it("arrancar en un workspace no cierra el timer activo del otro", async () => {
@@ -375,7 +502,7 @@ describe("membresía que dejó de estar activa", () => {
       startedAt: "2026-10-02T13:00:00Z",
     });
 
-    const state = await getTrackerState(actor, buenosAires, trackerNow);
+    const state = await getTrackerState(actor, workspace, trackerNow);
 
     expect(state.canTrack).toBe(false);
     expect(state.hasAnyEntry).toBe(true);

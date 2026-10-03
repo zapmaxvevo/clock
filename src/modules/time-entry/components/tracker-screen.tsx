@@ -1,21 +1,28 @@
 import { InfoIcon } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { getTrackerState } from "@/modules/time-entry/service";
+import { getTrackerState, type TrackerWorkspace } from "@/modules/time-entry/service";
 import type { Actor } from "@/server/permissions";
 
 import { DayGroup } from "./day-group";
-import { TimerBar } from "./timer-bar";
+import { TrackerBar } from "./tracker-bar";
 import { TrackerEmpty } from "./tracker-empty";
+import type { TrackerMode } from "./tracker-mode";
 
 type TrackerScreenProps = {
   readonly actor: Actor;
-  /** Zona horaria del workspace: resuelve los días y los formatos (TT-02). */
-  readonly timeZone: string;
+  /** Zona horaria (TT-02) y creación del workspace, el piso de la barra manual. */
+  readonly workspace: TrackerWorkspace;
+  /** Modo recordado en la cookie, para no dibujar el otro y después saltar. */
+  readonly initialMode: TrackerMode;
 };
 
-export async function TrackerScreen({ actor, timeZone }: TrackerScreenProps) {
-  const state = await getTrackerState(actor, timeZone);
+export async function TrackerScreen({
+  actor,
+  workspace,
+  initialMode,
+}: TrackerScreenProps) {
+  const state = await getTrackerState(actor, workspace);
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
@@ -32,10 +39,14 @@ export async function TrackerScreen({ actor, timeZone }: TrackerScreenProps) {
         </Alert>
       )}
 
-      <TimerBar
+      <TrackerBar
         running={state.running}
         serverNow={state.serverNow}
+        timeZone={state.timeZone}
+        todayKey={state.todayKey}
+        minDayKey={state.minDayKey}
         canTrack={state.canTrack}
+        initialMode={initialMode}
       />
 
       {state.hasAnyEntry ? (
