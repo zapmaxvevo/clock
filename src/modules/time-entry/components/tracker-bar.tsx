@@ -7,19 +7,24 @@ import {
   startTimer,
   stopTimer,
   updateDescription,
+  updateRunningStart,
 } from "@/modules/time-entry/actions";
-import type { TimeEntryView } from "@/modules/time-entry/schema";
-import { dayKeyLabel } from "@/server/time";
+import type { TimeEntryView, UpdateRunningStartInput } from "@/modules/time-entry/schema";
 
 import { DescriptionField } from "./description-field";
+import { OutsideWindowNotice } from "./entry-list";
 import { trackerLabels } from "./labels";
 import { ManualBar } from "./manual-bar";
-import { reset, type ManualDraft } from "./manual-draft";
 import { ModeSwitch } from "./mode-switch";
+import { reset, sameDraft } from "./time-draft";
 import { TimerBar, type Phase } from "./timer-bar";
 import { TrackerFeedback } from "./tracker-feedback";
 import type { TrackerMode } from "./tracker-mode";
-import { retryHandlerOf, useEntryAction } from "./use-entry-action";
+import {
+  retryHandlerOf,
+  useEntryAction,
+  type EntryActionHandle,
+} from "./use-entry-action";
 import { useTrackerRefresh } from "./use-tracker-refresh";
 
 /** TT-04: cuánto espera el guardado automático después de la última tecla. */
@@ -37,10 +42,6 @@ type TrackerBarProps = {
   /** Modo recordado, leído de la cookie en el servidor (TT-16). */
   readonly initialMode: TrackerMode;
 };
-
-function sameDraft(left: ManualDraft, right: ManualDraft): boolean {
-  return left.date === right.date && left.start === right.start && left.end === right.end;
-}
 
 /**
  * La barra del rastreador: elige qué modo se dibuja y es dueña de todo lo que
@@ -91,8 +92,8 @@ export function TrackerBar({
   const [heldDescription, setHeldDescription] = useState<string | null>(null);
   /** Día de la entrada que quedó más atrás del tramo que la lista dibuja. */
   const [outsideWindowDay, setOutsideWindowDay] = useState<string | null>(null);
-  const sectionRef = useRef<HTMLElement>(null);
   const descriptionRef = useRef<HTMLInputElement>(null);
+  const addRef = useRef<HTMLButtonElement>(null);
   /** Id del último pedido de arranque, el que «Iniciar» reusa (ADR 0007). */
   const startIdRef = useRef<string | null>(null);
 
@@ -107,6 +108,12 @@ export function TrackerBar({
     optimistic: () => showPhase("stopping"),
   });
   /**
+   * TT-28: sin vista optimista; el contador salta cuando llega la vista nueva.
+   * Vive acá con el arranque y la parada, así su aviso sobrevive a que la
+   * barra cambie de modo y lo baja la operación siguiente.
+   */
+  const saveStart = useEntryAction(updateRunningStart);
+  /**
    * Agregar limpia la barra solo cuando el servidor confirmó, así una falla
    * de red deja lo tecleado donde está (TT-89). No ofrece «Reintentar»: ver
    * el aviso de respuesta perdida (TT-109).
@@ -120,13 +127,16 @@ export function TrackerBar({
         sameDraft(current, input) ? reset(serverNow, timeZone) : current,
       );
       setOutsideWindowDay(data.outsideWindow ? input.date : null);
-      // TT-25: la barra queda lista para la próxima entrada, salvo que la
-      // persona ya se haya ido a otro control de la pantalla.
+      // TT-25: la barra queda lista para la próxima entrada si el foco sigue
+      // donde lo dejó el agregado. Si la persona ya está en otro control —una
+      // hora de la barra, por ejemplo—, moverlo confirmaría lo que está
+      // escribiendo a medias.
       const focused = document.activeElement;
       if (
         focused === null ||
         focused === document.body ||
-        sectionRef.current?.contains(focused) === true
+        focused === addRef.current ||
+        focused === descriptionRef.current
       ) {
         descriptionRef.current?.focus();
       }
@@ -148,6 +158,12 @@ export function TrackerBar({
     // vino de otra pestaña, lo cerraría sin que nadie lo pida (ADR 0007).
     if (serverState.id !== serverId) {
       start.clear();
+      // Lo mismo con el inicio: «Reintentar» apuntaría a un timer que ya no
+      // está. Un `already_stopped` llega en el mismo render que la vista sin
+      // el timer y es justamente lo que hay que mostrar, así que se queda.
+      if (saveStart.failure?.code === "unexpected") {
+        saveStart.clear();
+      }
     }
     // Con el modo elegido en manual, un timer que llega o se va cambia la
     // barra de modo y el campo se vuelve a montar sin pasar por su blur: lo
@@ -179,6 +195,7 @@ export function TrackerBar({
     save.clear();
     start.clear();
     stop.clear();
+    saveStart.clear();
     add.clear();
     setOutsideWindowDay(null);
   }
@@ -224,6 +241,22 @@ export function TrackerBar({
     stop.run({ id: running.id });
   }
 
+  function handleSaveStart(input: UpdateRunningStartInput): void {
+    clearNotices();
+    saveStart.run(input);
+  }
+
+  /** Un reintento también es una operación nueva: baja los demás avisos. */
+  function retryOf<Input>(handle: EntryActionHandle<Input>): (() => void) | undefined {
+    const retry = retryHandlerOf(handle);
+    return retry === undefined
+      ? undefined
+      : () => {
+          clearNotices();
+          retry();
+        };
+  }
+
   function handleAdd(): void {
     clearNotices();
     add.run({
@@ -257,7 +290,7 @@ export function TrackerBar({
   );
 
   return (
-    <section ref={sectionRef} aria-label="Rastreador" className="flex items-start gap-3">
+    <section aria-label="Rastreador" className="flex items-start gap-3">
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         {isManual ? (
           <ManualBar
@@ -269,16 +302,22 @@ export function TrackerBar({
             canTrack={canTrack}
             adding={add.pending}
             onAdd={handleAdd}
+            addRef={addRef}
           />
         ) : (
           <TimerBar
             descriptionField={descriptionField}
             isRunning={isRunning}
             counterStart={isRunning && running !== null ? running.startedAt : null}
+            running={running}
             serverNow={serverNow}
+            todayKey={todayKey}
+            minDayKey={minDayKey}
             canTrack={canTrack}
             switching={switching}
             onToggle={handleToggle}
+            onSaveStart={handleSaveStart}
+            savingStart={saveStart.pending}
           />
         )}
 
@@ -287,7 +326,7 @@ export function TrackerBar({
             title="No se pudo iniciar el timer."
             message={start.failure.message}
             retryDisabled={switching}
-            onRetry={retryHandlerOf(start)}
+            onRetry={retryOf(start)}
           />
         )}
         {stop.failure !== null && (
@@ -295,7 +334,16 @@ export function TrackerBar({
             title="No se pudo detener el timer."
             message={stop.failure.message}
             retryDisabled={switching}
-            onRetry={retryHandlerOf(stop)}
+            onRetry={retryOf(stop)}
+          />
+        )}
+
+        {saveStart.failure !== null && (
+          <TrackerFeedback
+            title={trackerLabels.runningStartNotSaved}
+            message={saveStart.failure.message}
+            retryDisabled={saveStart.pending || switching}
+            onRetry={retryOf(saveStart)}
           />
         )}
 
@@ -320,11 +368,7 @@ export function TrackerBar({
           ))}
 
         {outsideWindowDay !== null && (
-          <TrackerFeedback
-            tone="info"
-            title="La entrada se guardó, pero todavía no se ve en la lista."
-            message={`Quedó en el día ${dayKeyLabel(outsideWindowDay, todayKey)}, anterior al tramo que la lista muestra.`}
-          />
+          <OutsideWindowNotice day={outsideWindowDay} todayKey={todayKey} />
         )}
 
         {save.failure !== null && (
@@ -332,7 +376,7 @@ export function TrackerBar({
             title={trackerLabels.descriptionNotSaved}
             message={save.failure.message}
             retryDisabled={save.pending}
-            onRetry={retryHandlerOf(save)}
+            onRetry={retryOf(save)}
           />
         )}
       </div>

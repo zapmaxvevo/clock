@@ -413,8 +413,12 @@ No se comprueba superposición (TT-82). Tampoco se vuelve a comprobar
 resultante cae en el `endDay` del paso 3 —el recalculado por construcción, el
 conservado porque su rótulo coincidió—, y una entrada cerrada no cambia de largo
 por ningún otro camino. Ninguna pestaña puede mostrar entonces como editable
-una entrada que no lo es; un pedido armado a mano sobre una entrada propia que
-no pasa la regla la trunca, y es la misma persona que podría borrarla.
+una entrada que no lo es. Lo que sí se comprueba es la fila **guardada**: si
+su `editableTimes` es falso, `validation` con el texto de TT-110, después de
+`isClosed`. La interfaz nunca manda ese pedido; el control cierra el camino de
+un pedido armado a mano que truncaría una entrada de más de un día.
+_Corregido el 2026-10-03 por la auditoría de seguridad_: la versión anterior lo
+aceptaba porque «es la misma persona que podría borrarla».
 
 Errores posibles: `validation`, `not_found`, `forbidden`, `timer_running`,
 `unexpected`. Permiso: `timeEntry.own.update`. Revalida `/`.
@@ -878,8 +882,11 @@ que los helpers del slice 1 sigan sirviendo.
 - **`entry-row.tsx`** obedece `editableTimes` y `canTrack`, y dibuja tres
   estados:
   - **Editable.** Las horas —`08:00 – 10:30`, con su `+1`— son un botón cuyo
-    nombre accesible es el texto visible más « — editar el horario» en
-    `sr-only`, el mismo recurso que ya usa el botón de la descripción. Al lado,
+    nombre accesible es el texto visible más « — editar el horario», dado por
+    `aria-label` y no por un `sr-only`: el texto oculto se mezcla con el
+    `textContent` de la fila y rompe afirmaciones de los e2e de los slices 1 y
+    2 (_corregido el 2026-10-03_). El nombre empieza por el texto visible, así
+    que cumple WCAG 2.5.3. Al lado,
     un botón con ícono de calendario y nombre accesible «Cambiar la fecha de la
     entrada «nombre»», con el nombre de la entrada como en el menú de acciones.
     Los dos abren `entry-times-editor` en el lugar de las horas: el primero con
@@ -1017,9 +1024,16 @@ transcurrido">` queda como está, visible y sin `aria-hidden`. Es lo que un
   vuelta, y meterlo ahí obligaría a modelar un fin opcional que nadie usa. Al
   confirmar, la barra queda atenuada hasta que responde el servidor; el contador
   salta al transcurrido nuevo cuando llega la vista nueva, sin recargar.
-- **`timer-bar.tsx`** hospeda ese editor y su action, y dibuja el aviso de
-  falla con `trackerLabels.runningStartNotSaved`. Recibe `todayKey` y
-  `minDayKey` de `tracker-bar.tsx`.
+- **`timer-bar.tsx`** hospeda ese editor y recibe `onSaveStart` y
+  `savingStart`; la action `updateRunningStart` y su aviso de falla, con
+  `trackerLabels.runningStartNotSaved`, viven en `tracker-bar.tsx`, como el
+  arranque y la parada. Así el aviso no se pierde cuando `TimerBar` se desmonta
+  y la operación siguiente lo baja (_corregido el 2026-10-03 por la revisión
+  de frontend_). Recibe `todayKey` y `minDayKey` de `tracker-bar.tsx`.
+- **`src/components/ui/calendar.tsx`** y **`use-entry-action.ts`** entran al
+  reparto de frontend por la misma revisión: las piezas del calendario salen
+  del render, para que redibujar no remonte los días ni robe el foco, y el aviso
+  de error y la reversión optimista llegan en un mismo commit.
 - **`tracker-screen.tsx`** compone `EntryList` con `state.todayKey` y
   `state.minDayKey` en vez de mapear los `DayGroup`. **`tracker-bar.tsx`** les
   pasa esos dos valores a `TimerBar` además de a `ManualBar`, importa `reset` de
@@ -1282,9 +1296,10 @@ Huecos de verificación, nombrados para que no aparezcan de sorpresa:
   (criterio 15) no tienen test de navegador.** El 403 sí lo tienen, por partida
   doble: en el service y en la capa de action. Mismo recorte que en los dos
   slices anteriores con TT-92.
-- **La traducción de `isEndBeforeStart` en `startTimer` no tiene test que la
-  alcance.** Con `greatest` en `stopById` el `check` no puede saltar por ese
-  camino; la traducción es una red, igual que el `check` mismo.
+- **Las traducciones de `isEndBeforeStart` en `startTimer` y en `stopTimer` no
+  tienen test que las alcance.** Con `greatest` en `stopById` el `check` no
+  puede saltar por ninguno de los dos caminos; las traducciones son una red,
+  igual que el `check` mismo.
 
 La deuda de cobertura de `actions.ts` que arrastraban los slices 1 y 2 **ya no
 existe**: `actions.integration.test.ts` cubre esa capa y las dos actions de este

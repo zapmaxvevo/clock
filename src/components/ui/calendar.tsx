@@ -5,8 +5,9 @@ import { cn } from "cn";
 import {
   DayPicker,
   getDefaultClassNames,
+  useDayPicker,
+  type CustomComponents,
   type DayButton,
-  type Locale,
 } from "react-day-picker";
 
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -125,37 +126,10 @@ function Calendar({
         ...classNames,
       }}
       components={{
-        Root: ({ className, rootRef, ...props }) => {
-          return (
-            <div
-              data-slot="calendar"
-              ref={rootRef}
-              className={cn(className)}
-              {...props}
-            />
-          );
-        },
-        Chevron: ({ className, orientation, ...props }) => {
-          if (orientation === "left") {
-            return <ChevronLeftIcon className={cn("size-4", className)} {...props} />;
-          }
-
-          if (orientation === "right") {
-            return <ChevronRightIcon className={cn("size-4", className)} {...props} />;
-          }
-
-          return <ChevronDownIcon className={cn("size-4", className)} {...props} />;
-        },
-        DayButton: ({ ...props }) => <CalendarDayButton locale={locale} {...props} />,
-        WeekNumber: ({ children, ...props }) => {
-          return (
-            <td {...props}>
-              <div className="flex size-(--cell-size) items-center justify-center text-center">
-                {children}
-              </div>
-            </td>
-          );
-        },
+        Root: CalendarRoot,
+        Chevron: CalendarChevron,
+        DayButton: CalendarDayButton,
+        WeekNumber: CalendarWeekNumber,
         ...components,
       }}
       {...props}
@@ -163,14 +137,53 @@ function Calendar({
   );
 }
 
+/*
+ * Las piezas del calendario se declaran acá y no dentro del render de
+ * `Calendar`: un componente declarado en el render es un tipo nuevo en cada
+ * render, y React vuelve a montar todo lo que cuelga de él. Al volver a
+ * montarse, el día con foco lo retoma (el efecto de `CalendarDayButton`), así
+ * que cualquier redibujo del calendario abierto le quitaba el foco al control
+ * que la persona acababa de tocar.
+ */
+
+const CalendarRoot: CustomComponents["Root"] = ({ className, rootRef, ...props }) => {
+  return <div data-slot="calendar" ref={rootRef} className={cn(className)} {...props} />;
+};
+
+const CalendarChevron: CustomComponents["Chevron"] = ({
+  className,
+  orientation,
+  ...props
+}) => {
+  if (orientation === "left") {
+    return <ChevronLeftIcon className={cn("size-4", className)} {...props} />;
+  }
+
+  if (orientation === "right") {
+    return <ChevronRightIcon className={cn("size-4", className)} {...props} />;
+  }
+
+  return <ChevronDownIcon className={cn("size-4", className)} {...props} />;
+};
+
+const CalendarWeekNumber: CustomComponents["WeekNumber"] = ({ children, ...props }) => {
+  return (
+    <td {...props}>
+      <div className="flex size-(--cell-size) items-center justify-center text-center">
+        {children}
+      </div>
+    </td>
+  );
+};
+
 function CalendarDayButton({
   className,
   day,
   modifiers,
-  locale,
   ...props
-}: React.ComponentProps<typeof DayButton> & { locale?: Partial<Locale> }) {
+}: React.ComponentProps<typeof DayButton>) {
   const defaultClassNames = getDefaultClassNames();
+  const { locale } = useDayPicker().dayPickerProps;
 
   const ref = React.useRef<HTMLButtonElement>(null);
   React.useEffect(() => {

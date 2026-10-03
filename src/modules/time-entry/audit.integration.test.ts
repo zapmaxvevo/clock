@@ -15,6 +15,8 @@ import {
   startTimer,
   stopTimer,
   updateDescription,
+  updateEntryTimes,
+  updateRunningStart,
 } from "./service";
 
 let workspaceId: string;
@@ -30,6 +32,9 @@ beforeEach(async () => {
     status: "active",
   };
 });
+
+/** El workspace tal como lo recibe el service. El piso no estorba a estos casos. */
+const workspace = { timezone: buenosAires, createdAt: new Date("2020-01-01T00:00:00Z") };
 
 function parsed(value: string | null): unknown {
   return value === null ? null : (JSON.parse(value) as unknown);
@@ -227,29 +232,147 @@ describe("mutaciones rechazadas", () => {
     expect(rows.filter((row) => row.action === "timeEntry.stop")).toHaveLength(1);
   });
 
-  it("el fin anterior al inicio deshace también el registro", async () => {
-    const future = new Date(Date.now() + 3_600_000).toISOString();
+  it("la edición de horas rechazada no deja registro", async () => {
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-01T11:00:00Z",
+      endedAt: "2026-10-01T12:00:00Z",
+    });
+    const timer = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+
+    await expect(
+      updateEntryTimes(actor, workspace, {
+        id: row.id,
+        date: "2026-10-01",
+        start: "09:00",
+        end: "09:00",
+      }),
+    ).rejects.toMatchObject({ code: "validation" });
+    await expect(
+      updateRunningStart(actor, workspace, {
+        id: row.id,
+        date: "2026-10-01",
+        start: "07:00",
+      }),
+    ).rejects.toMatchObject({ code: "already_stopped" });
+    await expect(
+      updateEntryTimes(actor, workspace, {
+        id: timer.id,
+        date: "2026-10-01",
+        start: "09:00",
+        end: "10:00",
+      }),
+    ).rejects.toMatchObject({ code: "timer_running" });
+
+    expect(await auditFor("time_entry")).toEqual([]);
+  });
+});
+
+describe("audit log de la parada con el inicio por delante del now() de la base", () => {
+  it("registra el fin que de verdad quedó escrito, igual al inicio", async () => {
+    const future = new Date(Date.now() + 3_600_000);
     const row = await seedTimeEntry({
       workspaceId,
       userId: actor.userId,
       startedAt: future,
     });
 
-    await expect(stopTimer(actor, buenosAires, { id: row.id })).rejects.toMatchObject({
-      code: "validation",
+    await stopTimer(actor, buenosAires, { id: row.id });
+
+    const rows = await auditFor("time_entry", row.id);
+    expect(rows.map((entry) => entry.action)).toEqual(["timeEntry.stop"]);
+    expect(parsed(rows[0].previousValue)).toEqual({ endedAt: null });
+    expect(parsed(rows[0].nextValue)).toEqual({ endedAt: future.toISOString() });
+    expect((await timeEntryById(row.id))?.endedAt?.toISOString()).toBe(
+      future.toISOString(),
+    );
+  });
+});
+
+describe("audit log de la edición de horas", () => {
+  it("updateEntryTimes deja timeEntry.updateTimes con los dos instantes de antes y de después", async () => {
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-01T13:00:40Z",
+      endedAt: "2026-10-01T13:30:15Z",
     });
 
-    expect(await auditFor("time_entry")).toEqual([]);
-    expect((await timeEntryById(row.id))?.endedAt).toBeNull();
+    await updateEntryTimes(actor, workspace, {
+      id: row.id,
+      date: "2026-10-01",
+      start: "10:00",
+      end: "11:00",
+    });
+
+    const rows = await auditFor("time_entry", row.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].action).toBe("timeEntry.updateTimes");
+    expect(rows[0].workspaceId).toBe(workspaceId);
+    expect(rows[0].actorId).toBe(actor.userId);
+    expect(parsed(rows[0].previousValue)).toEqual({
+      startedAt: "2026-10-01T13:00:40.000Z",
+      endedAt: "2026-10-01T13:30:15.000Z",
+    });
+    // El inicio conservado conserva también sus segundos en el registro.
+    expect(parsed(rows[0].nextValue)).toEqual({
+      startedAt: "2026-10-01T13:00:40.000Z",
+      endedAt: "2026-10-01T14:00:00.000Z",
+    });
+  });
+
+  it("updateRunningStart deja timeEntry.updateStart con el inicio de antes y de después", async () => {
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+
+    await updateRunningStart(actor, workspace, {
+      id: row.id,
+      date: "2026-10-02",
+      start: "07:30",
+    });
+
+    const rows = await auditFor("time_entry", row.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].action).toBe("timeEntry.updateStart");
+    expect(rows[0].workspaceId).toBe(workspaceId);
+    expect(rows[0].actorId).toBe(actor.userId);
+    expect(parsed(rows[0].previousValue)).toEqual({
+      startedAt: "2026-10-02T11:00:00.000Z",
+    });
+    expect(parsed(rows[0].nextValue)).toEqual({ startedAt: "2026-10-02T10:30:00.000Z" });
+  });
+
+  it("el reintento deja dos registros con el mismo valor nuevo", async () => {
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-01T11:00:00Z",
+      endedAt: "2026-10-01T12:00:00Z",
+    });
+    const input = { id: row.id, date: "2026-10-01", start: "09:00", end: "10:00" };
+
+    await updateEntryTimes(actor, workspace, input);
+    await updateEntryTimes(actor, workspace, input);
+
+    const rows = await auditFor("time_entry", row.id);
+    expect(rows.map((entry) => entry.action)).toEqual([
+      "timeEntry.updateTimes",
+      "timeEntry.updateTimes",
+    ]);
+    expect(parsed(rows[1].previousValue)).toEqual(parsed(rows[0].nextValue));
+    expect(parsed(rows[1].nextValue)).toEqual(parsed(rows[0].nextValue));
   });
 });
 
 describe("audit log de la entrada manual", () => {
-  const workspace = {
-    timezone: buenosAires,
-    createdAt: new Date("2020-01-01T00:00:00Z"),
-  };
-
   it("deja un registro propio con la descripción y los dos instantes", async () => {
     const result = await createManualEntry(actor, workspace, {
       description: "reunión",

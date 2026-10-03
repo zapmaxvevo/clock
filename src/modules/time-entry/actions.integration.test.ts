@@ -262,6 +262,36 @@ describe("cada action exige su permiso antes de tocar nada", () => {
       expect(result.code).toBe("forbidden");
     }
   });
+
+  it("las dos de horas niegan con el mensaje neutro antes de buscar la fila", async () => {
+    const userId = await signIn();
+    await actions.startTimer({ id: randomUUID() });
+    await db
+      .update(membership)
+      .set({ status: "inactive" })
+      .where(eq(membership.userId, userId));
+
+    // Con un id que no existe: sin el permiso de la action, el service
+    // respondería not_found.
+    const id = "11111111-1111-4111-8111-111111111111";
+    const results = [
+      await actions.updateEntryTimes({
+        id,
+        date: "2026-10-01",
+        start: "09:00",
+        end: "10:00",
+      }),
+      await actions.updateRunningStart({ id, date: "2026-10-01", start: "09:00" }),
+    ];
+
+    for (const result of results) {
+      expect(result).toEqual({
+        ok: false,
+        code: "forbidden",
+        message: timeEntryMessages.forbidden,
+      });
+    }
+  });
 });
 
 describe("el id que elige el cliente para «Iniciar»", () => {
@@ -517,4 +547,268 @@ describe("lo que pasa la forma pero la base no puede guardar", () => {
     expect(result.message).toBe(timeEntryMessages.invalidDate);
     expect(await allTimeEntries()).toEqual([]);
   });
+});
+
+describe("updateEntryTimes y updateRunningStart", () => {
+  const longAgo = "2020-01-01T00:00:00Z";
+  const unknownId = "11111111-1111-4111-8111-111111111111";
+
+  /** Una entrada cerrada de la persona de la sesión, el 1/10 de 08:00 a 09:00. */
+  function seedOwnClosed(seeded: SeededWorkspace) {
+    return seedTimeEntry({
+      workspaceId: seeded.workspaceId,
+      userId: sessionUserId(),
+      startedAt: "2026-10-01T11:00:00Z",
+      endedAt: "2026-10-01T12:00:00Z",
+    });
+  }
+
+  /** El timer activo de la persona de la sesión, arrancado el 2/10 a las 08:00. */
+  function seedOwnRunning(seeded: SeededWorkspace) {
+    return seedTimeEntry({
+      workspaceId: seeded.workspaceId,
+      userId: sessionUserId(),
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+  }
+
+  it("guardan con la zona del workspace de la sesión y revalidan", async () => {
+    const seeded = await signInOn({ timezone: madrid, createdAt: longAgo });
+    const closed = await seedOwnClosed(seeded);
+    const running = await seedOwnRunning(seeded);
+
+    const times = await actions.updateEntryTimes({
+      id: closed.id,
+      date: "2026-07-01",
+      start: "12:00",
+      end: "13:30",
+    });
+    expect(mocks.revalidated).toEqual(["/"]);
+    const start = await actions.updateRunningStart({
+      id: running.id,
+      date: "2026-10-02",
+      start: "09:00",
+    });
+
+    expect(times.ok && times.data.entry.startedAt).toBe("2026-07-01T10:00:00.000Z");
+    expect(start.ok && start.data.running.startedAt).toBe("2026-10-02T07:00:00.000Z");
+    expect(mocks.revalidated).toEqual(["/", "/"]);
+  });
+
+  it("un error de Zod del trío sale como validation con el mensaje del issue", async () => {
+    await signInOn({ createdAt: longAgo });
+
+    const results = [
+      [
+        timeEntryMessages.invalidClock,
+        await actions.updateEntryTimes({
+          id: unknownId,
+          date: "2026-10-01",
+          start: "8:00",
+          end: "10:00",
+        }),
+      ],
+      [
+        timeEntryMessages.invalidDate,
+        await actions.updateEntryTimes({
+          id: unknownId,
+          date: "2026-02-30",
+          start: "08:00",
+          end: "10:00",
+        }),
+      ],
+      [
+        timeEntryMessages.invalidClock,
+        await actions.updateRunningStart({
+          id: unknownId,
+          date: "2026-10-01",
+          start: "0800",
+        }),
+      ],
+      [
+        timeEntryMessages.invalidDate,
+        await actions.updateRunningStart({
+          id: unknownId,
+          date: "01/10/2026",
+          start: "08:00",
+        }),
+      ],
+    ] as const;
+
+    for (const [message, result] of results) {
+      expect(result).toEqual({ ok: false, code: "validation", message });
+    }
+    expect(mocks.revalidated).toEqual(["/", "/", "/", "/"]);
+  });
+
+  it("un error de dominio conserva su código y su mensaje, y revalida", async () => {
+    const seeded = await signInOn({ createdAt: longAgo });
+    const closed = await seedOwnClosed(seeded);
+    const running = await seedOwnRunning(seeded);
+
+    const tooShort = await actions.updateEntryTimes({
+      id: closed.id,
+      date: "2026-10-01",
+      start: "10:00",
+      end: "10:00",
+    });
+    const onRunning = await actions.updateEntryTimes({
+      id: running.id,
+      date: "2026-10-01",
+      start: "09:00",
+      end: "10:00",
+    });
+    const missing = await actions.updateRunningStart({
+      id: unknownId,
+      date: "2026-10-02",
+      start: "07:00",
+    });
+
+    expect(tooShort).toEqual({
+      ok: false,
+      code: "validation",
+      message: timeEntryMessages.tooShort,
+    });
+    expect(onRunning).toEqual({
+      ok: false,
+      code: "timer_running",
+      message: timeEntryMessages.runningEntryTimes,
+    });
+    expect(missing).toEqual({
+      ok: false,
+      code: "not_found",
+      message: timeEntryMessages.notFound,
+    });
+    expect(mocks.revalidated).toEqual(["/", "/", "/"]);
+  });
+
+  it("el piso es el del workspace de la sesión", async () => {
+    const seeded = await signInOn({ createdAt: "2026-09-01T12:00:00Z" });
+    const closed = await seedOwnClosed(seeded);
+    const running = await seedOwnRunning(seeded);
+
+    const times = await actions.updateEntryTimes({
+      id: closed.id,
+      date: "2026-08-31",
+      start: "08:00",
+      end: "09:00",
+    });
+    const start = await actions.updateRunningStart({
+      id: running.id,
+      date: "2026-08-31",
+      start: "08:00",
+    });
+
+    for (const result of [times, start]) {
+      expect(result).toEqual({
+        ok: false,
+        code: "validation",
+        message: timeEntryMessages.beforeWorkspace,
+      });
+    }
+  });
+
+  it("TT-41: el timer que otra pestaña detuvo llega como already_stopped tipado", async () => {
+    const seeded = await signInOn({ createdAt: longAgo });
+    const running = await seedOwnRunning(seeded);
+    await actions.stopTimer({ id: running.id });
+    mocks.revalidated.length = 0;
+
+    const result = await actions.updateRunningStart({
+      id: running.id,
+      date: "2026-10-02",
+      start: "07:00",
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      code: "already_stopped",
+      message: timeEntryMessages.alreadyStopped,
+    });
+    expect(mocks.revalidated).toEqual(["/"]);
+    const rows = await allTimeEntries();
+    expect(rows[0].startedAt.toISOString()).toBe("2026-10-02T11:00:00.000Z");
+  });
+
+  it("TT-79, TT-80: la entrada ajena y la que no existe, con su texto", async () => {
+    const seeded = await signInOn({ createdAt: longAgo });
+    const other = await seedUser();
+    await db
+      .insert(membership)
+      .values({ workspaceId: seeded.workspaceId, userId: other, role: "member" });
+    const foreign = await seedTimeEntry({
+      workspaceId: seeded.workspaceId,
+      userId: other,
+      startedAt: "2026-10-01T11:00:00Z",
+      endedAt: "2026-10-01T12:00:00Z",
+    });
+
+    const forbidden = await actions.updateEntryTimes({
+      id: foreign.id,
+      date: "2026-10-01",
+      start: "09:00",
+      end: "10:00",
+    });
+    const missing = await actions.updateEntryTimes({
+      id: unknownId,
+      date: "2026-10-01",
+      start: "09:00",
+      end: "10:00",
+    });
+
+    expect(forbidden).toEqual({
+      ok: false,
+      code: "forbidden",
+      message: timeEntryMessages.forbiddenOtherOwner,
+    });
+    expect(missing).toEqual({
+      ok: false,
+      code: "not_found",
+      message: timeEntryMessages.notFound,
+    });
+  });
+
+  it.each(["inactive", "invited"] as const)(
+    "TT-92: con la membresía %s responden el mensaje neutro y no escriben",
+    async (status) => {
+      const seeded = await signInOn({ createdAt: longAgo });
+      const closed = await seedOwnClosed(seeded);
+      const running = await seedOwnRunning(seeded);
+      // La primera action crea la membresía; recién ahí se le cambia el estado.
+      await actions.updateDescription({ id: closed.id, description: "" });
+      await db
+        .update(membership)
+        .set({ status })
+        .where(eq(membership.userId, sessionUserId()));
+      mocks.revalidated.length = 0;
+
+      const results = [
+        await actions.updateEntryTimes({
+          id: closed.id,
+          date: "2026-10-01",
+          start: "09:00",
+          end: "10:00",
+        }),
+        await actions.updateRunningStart({
+          id: running.id,
+          date: "2026-10-02",
+          start: "07:00",
+        }),
+      ];
+
+      for (const result of results) {
+        expect(result).toEqual({
+          ok: false,
+          code: "forbidden",
+          message: timeEntryMessages.forbidden,
+        });
+      }
+      expect(mocks.revalidated).toEqual(["/", "/"]);
+      const rows = await allTimeEntries();
+      expect(rows.map((row) => row.startedAt.toISOString())).toEqual([
+        "2026-10-01T11:00:00.000Z",
+        "2026-10-02T11:00:00.000Z",
+      ]);
+    },
+  );
 });

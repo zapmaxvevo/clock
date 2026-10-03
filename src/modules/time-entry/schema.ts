@@ -23,6 +23,9 @@ export const timeEntryMessages = {
   beforeWorkspace: "No se pueden cargar horas anteriores a la creación del workspace.",
   invalidDate: "Fecha inválida.",
   invalidClock: "Hora inválida.",
+  futureTime: "No se pueden cargar horas que todavía no pasaron.",
+  runningEntryTimes: "Esta entrada es la que está corriendo.",
+  multiDayTimes: "Esta entrada dura más de un día; sus horarios no se pueden editar acá.",
   unexpected: "No se pudo guardar. Revisá la conexión y volvé a intentar.",
 } as const;
 
@@ -78,6 +81,26 @@ export const createManualEntryInput = z.object({
   end: clockInput,
 });
 
+/**
+ * El trío completo y no el campo que cambió: los tres se interpretan juntos.
+ * Ver el ADR 0006 para el extremo que no cambió.
+ */
+export const updateEntryTimesInput = z.object({
+  id: z.uuid(),
+  /** Día local del inicio. Mismo formato y misma refinación que el alta manual. */
+  date: dayKeyInput,
+  start: clockInput,
+  /** Menor que el inicio significa el día siguiente (TT-72). */
+  end: clockInput,
+});
+
+export const updateRunningStartInput = z.object({
+  id: z.uuid(),
+  /** Día local del inicio: un timer puede llevar días corriendo (TT-42). */
+  date: dayKeyInput,
+  start: clockInput,
+});
+
 export type StartTimerInput = z.input<typeof startTimerInput>;
 /** Lo que recibe el service: `description` ya validada y con su default. */
 export type StartTimerValues = z.output<typeof startTimerInput>;
@@ -87,6 +110,8 @@ export type DeleteEntryInput = z.infer<typeof deleteEntryInput>;
 export type CreateManualEntryInput = z.input<typeof createManualEntryInput>;
 /** Lo que recibe el service: `description` ya validada y con su default. */
 export type CreateManualEntryValues = z.output<typeof createManualEntryInput>;
+export type UpdateEntryTimesInput = z.infer<typeof updateEntryTimesInput>;
+export type UpdateRunningStartInput = z.infer<typeof updateRunningStartInput>;
 
 /**
  * Todo lo que depende de zona horaria o de formato se resuelve en el servidor.
@@ -107,6 +132,12 @@ export const timeEntryView = z.object({
   extraDays: z.number().int().min(0),
   durationSeconds: z.number().int().min(0).nullable(),
   durationLabel: z.string().nullable(),
+  /**
+   * El trío de la vista, interpretado con la regla de `updateEntryTimes`, vuelve
+   * a dar el mismo fin. En falso la fila muestra sus horarios en solo lectura
+   * (TT-110). Siempre falso en una entrada que corre (TT-111).
+   */
+  editableTimes: z.boolean(),
 });
 
 export const dayGroupView = z.object({
@@ -172,3 +203,11 @@ export type CreateManualEntryResult = {
   /** La entrada quedó fuera del tramo que la lista dibuja. */
   readonly outsideWindow: boolean;
 };
+
+export type UpdateEntryTimesResult = {
+  readonly entry: TimeEntryView;
+  /** La entrada quedó por debajo del tramo que la lista dibuja (TT-108). */
+  readonly outsideWindow: boolean;
+};
+
+export type UpdateRunningStartResult = { readonly running: TimeEntryView };

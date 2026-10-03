@@ -17,6 +17,8 @@ import {
   startTimer,
   stopTimer,
   updateDescription,
+  updateEntryTimes,
+  updateRunningStart,
 } from "./service";
 
 /** Las 12:00 del 2 de octubre de 2026 en Buenos Aires. */
@@ -33,6 +35,10 @@ const notActive: readonly MembershipStatus[] = ["inactive", "invited"];
 
 /** El workspace tal como lo recibe el service. El piso no estorba a estos casos. */
 const workspace = { timezone: buenosAires, createdAt: new Date("2020-01-01T00:00:00Z") };
+
+/** El trío de la edición de horas sobre las entradas cerradas sembradas acá. */
+const timesValues = { date: "2026-10-01", start: "09:00", end: "10:30" } as const;
+const runningStartValues = { date: "2026-10-02", start: "07:00" } as const;
 
 const manualValues = {
   description: "a mano",
@@ -205,6 +211,130 @@ describe.each(roles)("rol %s", (role) => {
         const after = await timeEntryById(row.id);
         expect(after?.description).toBe("propia");
         expect(after?.endedAt).toBeNull();
+      },
+    );
+
+    it("corrige las horas de su entrada cerrada y el inicio de su timer", async () => {
+      const actor = await seedActor(role);
+      const closed = await seedTimeEntry({
+        workspaceId,
+        userId: actor.userId,
+        startedAt: "2026-10-01T11:00:00Z",
+        endedAt: "2026-10-01T12:00:00Z",
+      });
+      const running = await seedTimeEntry({
+        workspaceId,
+        userId: actor.userId,
+        startedAt: "2026-10-02T11:00:00Z",
+      });
+
+      await updateEntryTimes(
+        actor,
+        workspace,
+        { id: closed.id, ...timesValues },
+        trackerNow,
+      );
+      await updateRunningStart(
+        actor,
+        workspace,
+        { id: running.id, ...runningStartValues },
+        trackerNow,
+      );
+
+      expect((await timeEntryById(closed.id))?.startedAt.toISOString()).toBe(
+        "2026-10-01T12:00:00.000Z",
+      );
+      expect((await timeEntryById(running.id))?.startedAt.toISOString()).toBe(
+        "2026-10-02T10:00:00.000Z",
+      );
+    });
+
+    it("no corrige las horas ni el inicio de otra persona del workspace", async () => {
+      const actor = await seedActor(role);
+      const otherId = await seedMember(workspaceId, "member");
+      const closed = await seedTimeEntry({
+        workspaceId,
+        userId: otherId,
+        startedAt: "2026-10-01T11:00:00Z",
+        endedAt: "2026-10-01T12:00:00Z",
+      });
+      const running = await seedTimeEntry({
+        workspaceId,
+        userId: otherId,
+        startedAt: "2026-10-02T11:00:00Z",
+      });
+
+      await expect(
+        updateEntryTimes(actor, workspace, { id: closed.id, ...timesValues }, trackerNow),
+      ).rejects.toMatchObject({
+        code: "forbidden",
+        message: timeEntryMessages.forbiddenOtherOwner,
+      });
+      await expect(
+        updateRunningStart(
+          actor,
+          workspace,
+          { id: running.id, ...runningStartValues },
+          trackerNow,
+        ),
+      ).rejects.toMatchObject({
+        code: "forbidden",
+        message: timeEntryMessages.forbiddenOtherOwner,
+      });
+
+      expect((await timeEntryById(closed.id))?.startedAt.toISOString()).toBe(
+        "2026-10-01T11:00:00.000Z",
+      );
+      expect((await timeEntryById(running.id))?.startedAt.toISOString()).toBe(
+        "2026-10-02T11:00:00.000Z",
+      );
+    });
+
+    it.each(notActive)(
+      "no corrige ni sus propias horas con la membresía %s",
+      async (status) => {
+        const actor = await seedActor(role, status);
+        const closed = await seedTimeEntry({
+          workspaceId,
+          userId: actor.userId,
+          startedAt: "2026-10-01T11:00:00Z",
+          endedAt: "2026-10-01T12:00:00Z",
+        });
+        const running = await seedTimeEntry({
+          workspaceId,
+          userId: actor.userId,
+          startedAt: "2026-10-02T11:00:00Z",
+        });
+
+        await expect(
+          updateEntryTimes(
+            actor,
+            workspace,
+            { id: closed.id, ...timesValues },
+            trackerNow,
+          ),
+        ).rejects.toMatchObject({
+          code: "forbidden",
+          message: timeEntryMessages.forbidden,
+        });
+        await expect(
+          updateRunningStart(
+            actor,
+            workspace,
+            { id: running.id, ...runningStartValues },
+            trackerNow,
+          ),
+        ).rejects.toMatchObject({
+          code: "forbidden",
+          message: timeEntryMessages.forbidden,
+        });
+
+        expect((await timeEntryById(closed.id))?.startedAt.toISOString()).toBe(
+          "2026-10-01T11:00:00.000Z",
+        );
+        expect((await timeEntryById(running.id))?.startedAt.toISOString()).toBe(
+          "2026-10-02T11:00:00.000Z",
+        );
       },
     );
   });
@@ -494,6 +624,53 @@ describe("aislamiento entre workspaces", () => {
   });
 });
 
+describe("aislamiento entre workspaces en la edición de horas", () => {
+  it("un actor de otro workspace recibe not_found por las dos y no escribe", async () => {
+    const other = await seedWorkspace(buenosAires);
+    const outsider: Actor = {
+      userId: other.ownerId,
+      workspaceId: other.workspaceId,
+      role: "owner",
+      status: "active",
+    };
+    const closed = await seedTimeEntry({
+      workspaceId,
+      userId: ownerId,
+      startedAt: "2026-10-01T11:00:00Z",
+      endedAt: "2026-10-01T12:00:00Z",
+    });
+    const running = await seedTimeEntry({
+      workspaceId,
+      userId: ownerId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+
+    await expect(
+      updateEntryTimes(
+        outsider,
+        workspace,
+        { id: closed.id, ...timesValues },
+        trackerNow,
+      ),
+    ).rejects.toMatchObject({ code: "not_found", message: timeEntryMessages.notFound });
+    await expect(
+      updateRunningStart(
+        outsider,
+        workspace,
+        { id: running.id, ...runningStartValues },
+        trackerNow,
+      ),
+    ).rejects.toMatchObject({ code: "not_found", message: timeEntryMessages.notFound });
+
+    expect((await timeEntryById(closed.id))?.startedAt.toISOString()).toBe(
+      "2026-10-01T11:00:00.000Z",
+    );
+    expect((await timeEntryById(running.id))?.startedAt.toISOString()).toBe(
+      "2026-10-02T11:00:00.000Z",
+    );
+  });
+});
+
 describe("membresía que dejó de estar activa", () => {
   it.each(notActive)("con %s sigue leyendo sus entradas y su timer", async (status) => {
     const actor = await seedActor("member", status);
@@ -621,5 +798,71 @@ describe("el filtro por dueño del repository", () => {
     );
     expect(propio?.endedAt).not.toBeNull();
     expect((await timeEntryById(row.id))?.endedAt).not.toBeNull();
+  });
+
+  it("no corrige las horas de la entrada de otra persona", async () => {
+    const otherId = await seedMember(workspaceId, "member");
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: otherId,
+      startedAt: "2026-10-01T11:00:00Z",
+      endedAt: "2026-10-01T12:00:00Z",
+    });
+    const times = {
+      startedAt: new Date("2026-10-01T12:00:00Z"),
+      endedAt: new Date("2026-10-01T13:00:00Z"),
+    };
+
+    const ajeno = await db.transaction((tx) =>
+      timeEntryRepository.updateTimes(
+        tx,
+        { workspaceId, userId: ownerId, id: row.id },
+        times,
+      ),
+    );
+
+    expect(ajeno).toBeUndefined();
+    expect((await timeEntryById(row.id))?.startedAt.toISOString()).toBe(
+      "2026-10-01T11:00:00.000Z",
+    );
+    const propio = await db.transaction((tx) =>
+      timeEntryRepository.updateTimes(
+        tx,
+        { workspaceId, userId: otherId, id: row.id },
+        times,
+      ),
+    );
+    expect(propio?.startedAt.toISOString()).toBe("2026-10-01T12:00:00.000Z");
+  });
+
+  it("no corrige el inicio del timer de otra persona", async () => {
+    const otherId = await seedMember(workspaceId, "member");
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: otherId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+    const startedAt = new Date("2026-10-02T10:00:00Z");
+
+    const ajeno = await db.transaction((tx) =>
+      timeEntryRepository.updateStartOfRunning(
+        tx,
+        { workspaceId, userId: ownerId, id: row.id },
+        startedAt,
+      ),
+    );
+
+    expect(ajeno).toBeUndefined();
+    expect((await timeEntryById(row.id))?.startedAt.toISOString()).toBe(
+      "2026-10-02T11:00:00.000Z",
+    );
+    const propio = await db.transaction((tx) =>
+      timeEntryRepository.updateStartOfRunning(
+        tx,
+        { workspaceId, userId: otherId, id: row.id },
+        startedAt,
+      ),
+    );
+    expect(propio?.startedAt.toISOString()).toBe("2026-10-02T10:00:00.000Z");
   });
 });

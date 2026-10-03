@@ -4,7 +4,12 @@ import { useEffect, useState } from "react";
 
 import { formatElapsed } from "@/server/time";
 
-import { elapsedSeconds } from "./elapsed";
+import {
+  currentElapsedSeconds,
+  elapsedSeconds,
+  measurementFor,
+  type Measurement,
+} from "./elapsed";
 
 /**
  * Segundos transcurridos de una entrada abierta, redibujados una vez por
@@ -12,29 +17,48 @@ import { elapsedSeconds } from "./elapsed";
  * `serverNow`, así la recarga ya dibuja el contador en su valor y no pasa por
  * cero (TT-38); lo único que mide el cliente es cuánto pasó desde que empezó a
  * contar, que es lo que lo deja a salvo del desfase de reloj (TT-32).
+ *
+ * Cuándo empieza una medición y qué parte de lo medido vale lo deciden
+ * `measurementFor` y `currentElapsedSeconds`, con el `serverNow` como única
+ * referencia: un inicio corregido con el mismo `serverNow` no tira lo medido.
  */
 export function useElapsedSeconds(startedAt: string | null, serverNow: string): number {
-  const baseline = `${serverNow}|${startedAt ?? ""}`;
-  const [measured, setMeasured] = useState({ baseline, sinceMountMs: 0 });
+  const [measured, setMeasured] = useState<{
+    readonly measurement: Measurement;
+    readonly nowMs: number;
+  } | null>(null);
+  const running = startedAt !== null;
 
   useEffect(() => {
-    if (startedAt === null) {
+    if (!running) {
       return;
     }
     const measuringFromMs = Date.now();
     const interval = window.setInterval(() => {
-      setMeasured({ baseline, sinceMountMs: Date.now() - measuringFromMs });
+      setMeasured((previous) => ({
+        measurement: measurementFor(
+          previous?.measurement ?? null,
+          serverNow,
+          measuringFromMs,
+        ),
+        nowMs: Date.now(),
+      }));
     }, 1_000);
     return () => window.clearInterval(interval);
-  }, [baseline, startedAt]);
+  }, [serverNow, running]);
 
   if (startedAt === null) {
     return 0;
   }
-  // Con una referencia nueva del servidor lo medido ya no sirve: se cuenta
-  // desde cero hasta el primer tic.
-  const sinceMountMs = measured.baseline === baseline ? measured.sinceMountMs : 0;
-  return elapsedSeconds({ startedAt, serverNow, sinceMountMs });
+  // Hasta el primer tic no hay nada medido: se cuenta desde el serverNow.
+  if (measured === null) {
+    return elapsedSeconds({ startedAt, serverNow, sinceMountMs: 0 });
+  }
+  return currentElapsedSeconds(measured.measurement, {
+    startedAt,
+    serverNow,
+    nowMs: measured.nowMs,
+  });
 }
 
 type ElapsedCounterProps = {
