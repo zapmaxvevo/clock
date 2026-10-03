@@ -1,0 +1,2 @@
+ALTER TABLE "membership" ADD COLUMN "week_start" smallint DEFAULT 1 NOT NULL;--> statement-breakpoint
+ALTER TABLE "membership" ADD CONSTRAINT "membership_week_start_range" CHECK ("membership"."week_start" between 0 and 6);

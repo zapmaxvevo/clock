@@ -7,6 +7,7 @@ import {
   integer,
   pgEnum,
   pgTable,
+  smallint,
   text,
   timestamp,
   unique,
@@ -92,6 +93,8 @@ export const membership = pgTable(
     role: workspaceRole("role").notNull().default("member"),
     status: membershipStatus("status").notNull().default("active"),
     weeklyCapacityMinutes: integer("weekly_capacity_minutes").notNull().default(2400),
+    /** Primer día de la semana de la persona: 0 domingo … 6 sábado, como `WeekStart`. */
+    weekStart: smallint("week_start").notNull().default(1),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
@@ -101,6 +104,7 @@ export const membership = pgTable(
   (table) => [
     unique("membership_workspace_user_unq").on(table.workspaceId, table.userId),
     index("membership_workspace_idx").on(table.workspaceId),
+    check("membership_week_start_range", sql`${table.weekStart} between 0 and 6`),
   ],
 );
 

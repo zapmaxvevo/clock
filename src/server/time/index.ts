@@ -1,5 +1,5 @@
 import { TZDate, tzOffset } from "@date-fns/tz";
-import { addDays, format, startOfDay, startOfWeek, subDays } from "date-fns";
+import { addDays, format, startOfDay, subDays } from "date-fns";
 import { es } from "date-fns/locale";
 
 /** Día de la semana en que arranca la semana del usuario. 0 = domingo. */
@@ -17,14 +17,17 @@ export function dayBounds(instant: Date, timeZone: string): Interval {
   return { start, end: new Date(end.getTime()) };
 }
 
+/** La semana se corta sobre claves de día, que no tienen cambio de horario. */
 export function weekBounds(
   instant: Date,
   timeZone: string,
   weekStartsOn: WeekStart,
 ): Interval {
-  const local = new TZDate(instant, timeZone);
-  const start = startOfWeek(local, { weekStartsOn });
-  return { start: new Date(start.getTime()), end: new Date(addDays(start, 7).getTime()) };
+  const first = weekStartKey(dayKey(instant, timeZone), weekStartsOn);
+  return {
+    start: startOfDayKey(first, timeZone),
+    end: startOfDayKey(addDaysToKey(first, 7), timeZone),
+  };
 }
 
 /** Duración en minutos entre dos instantes. Un timer activo mide hasta ahora. */
@@ -185,6 +188,73 @@ export function dayKeyLabel(dayKey: string, todayKey: string): string {
   const civil = new TZDate(Date.UTC(date.year, date.month - 1, date.day), "UTC");
   const sameYear = today !== null && today.year === date.year;
   return format(civil, sameYear ? "EEE, dd/MM" : "EEE, dd/MM/yyyy", { locale: es });
+}
+
+const WEEK_STARTS: readonly WeekStart[] = [0, 1, 2, 3, 4, 5, 6];
+
+/** El número de la columna como `WeekStart`; lanza si no está entre 0 y 6. */
+export function parseWeekStart(value: number): WeekStart {
+  const weekStart = WEEK_STARTS.find((candidate) => candidate === value);
+  if (weekStart === undefined) {
+    throw new RangeError(`Primer día de la semana fuera de rango: ${value}.`);
+  }
+  return weekStart;
+}
+
+/** Primer día de la semana que contiene ese día. Aritmética civil, sin zona. */
+export function weekStartKey(dayKey: string, weekStart: WeekStart): string {
+  const date = parseDayKey(dayKey);
+  if (date === null) {
+    return dayKey;
+  }
+  const weekday = new Date(Date.UTC(date.year, date.month - 1, date.day)).getUTCDay();
+  return addDaysToKey(dayKey, -((weekday - weekStart + 7) % 7));
+}
+
+/**
+ * El primer instante del día local: `startOfLocalDay` del mediodía de ese día.
+ * Parte del mediodía para no construir una 00:00 que puede no existir. Lanza
+ * si las 12:00 de ese día no existen en la zona, en vez de devolver un instante
+ * de otro día.
+ */
+export function startOfDayKey(dayKey: string, timeZone: string): Date {
+  const noon = instantFromLocal(dayKey, "12:00", timeZone);
+  if (noon === null) {
+    throw new RangeError(`El día ${dayKey} no tiene mediodía en ${timeZone}.`);
+  }
+  return startOfLocalDay(noon, timeZone);
+}
+
+function civilLabel(date: CivilDate, withYear: boolean): string {
+  const day = `${pad(date.day)}/${pad(date.month)}`;
+  return withYear ? `${day}/${date.year.toString().padStart(4, "0")}` : day;
+}
+
+/**
+ * «Esta semana», «Semana anterior», o «28/09 – 04/10». Si alguno de los dos
+ * extremos no es del año de `todayKey`, los dos llevan el año:
+ * «29/12/2025 – 04/01/2026». Una semana futura lleva su rango (TT-47).
+ */
+export function weekKeyLabel(
+  weekStart: string,
+  todayKey: string,
+  weekStartsOn: WeekStart,
+): string {
+  const current = weekStartKey(todayKey, weekStartsOn);
+  if (weekStart === current) {
+    return "Esta semana";
+  }
+  if (weekStart === addDaysToKey(current, -7)) {
+    return "Semana anterior";
+  }
+  const first = parseDayKey(weekStart);
+  const last = parseDayKey(addDaysToKey(weekStart, 6));
+  const today = parseDayKey(todayKey);
+  if (first === null || last === null || today === null) {
+    return weekStart;
+  }
+  const withYear = first.year !== today.year || last.year !== today.year;
+  return `${civilLabel(first, withYear)} – ${civilLabel(last, withYear)}`;
 }
 
 function clockToMinutes(clock: string): number | null {

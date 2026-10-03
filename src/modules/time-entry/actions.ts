@@ -7,7 +7,7 @@ import { assertCan, ForbiddenError } from "@/server/permissions";
 import { requireSession, type SessionContext } from "@/server/session";
 
 import * as service from "./service";
-import { ownTimeEntryResource, TimeEntryError } from "./service";
+import { ownTimeEntryResource, TimeEntryError, trackerWorkspaceOf } from "./service";
 import {
   continueEntryInput,
   createManualEntryInput,
@@ -86,7 +86,7 @@ export async function startTimer(
   return handle(async (session) => {
     const values = startTimerInput.parse(input);
     assertCan(session.actor, "timeEntry.own.create", ownTimeEntryResource(session.actor));
-    return service.startTimer(session.actor, session.workspace.timezone, values);
+    return service.startTimer(session.actor, trackerWorkspaceOf(session), values);
   });
 }
 
@@ -96,7 +96,7 @@ export async function stopTimer(
   return handle(async (session) => {
     const values = stopTimerInput.parse(input);
     assertCan(session.actor, "timeEntry.own.update", ownTimeEntryResource(session.actor));
-    return service.stopTimer(session.actor, session.workspace.timezone, values);
+    return service.stopTimer(session.actor, trackerWorkspaceOf(session), values);
   });
 }
 
@@ -106,7 +106,7 @@ export async function updateDescription(
   return handle(async (session) => {
     const values = updateDescriptionInput.parse(input);
     assertCan(session.actor, "timeEntry.own.update", ownTimeEntryResource(session.actor));
-    return service.updateDescription(session.actor, session.workspace.timezone, values);
+    return service.updateDescription(session.actor, trackerWorkspaceOf(session), values);
   });
 }
 
@@ -128,7 +128,7 @@ export async function createManualEntry(
     assertCan(session.actor, "timeEntry.own.create", ownTimeEntryResource(session.actor));
     // El service necesita la fecha de creación del workspace para el piso, y
     // la sesión ya la tiene: no hay consulta nueva.
-    return service.createManualEntry(session.actor, session.workspace, values);
+    return service.createManualEntry(session.actor, trackerWorkspaceOf(session), values);
   });
 }
 
@@ -138,7 +138,7 @@ export async function updateEntryTimes(
   return handle(async (session) => {
     const values = updateEntryTimesInput.parse(input);
     assertCan(session.actor, "timeEntry.own.update", ownTimeEntryResource(session.actor));
-    return service.updateEntryTimes(session.actor, session.workspace, values);
+    return service.updateEntryTimes(session.actor, trackerWorkspaceOf(session), values);
   });
 }
 
@@ -148,7 +148,7 @@ export async function updateRunningStart(
   return handle(async (session) => {
     const values = updateRunningStartInput.parse(input);
     assertCan(session.actor, "timeEntry.own.update", ownTimeEntryResource(session.actor));
-    return service.updateRunningStart(session.actor, session.workspace, values);
+    return service.updateRunningStart(session.actor, trackerWorkspaceOf(session), values);
   });
 }
 
@@ -158,7 +158,7 @@ export async function continueEntry(
   return handle(async (session) => {
     const values = continueEntryInput.parse(input);
     assertCan(session.actor, "timeEntry.own.create", ownTimeEntryResource(session.actor));
-    return service.continueEntry(session.actor, session.workspace.timezone, values);
+    return service.continueEntry(session.actor, trackerWorkspaceOf(session), values);
   });
 }
 
@@ -168,7 +168,7 @@ export async function duplicateEntry(
   return handle(async (session) => {
     const values = duplicateEntryInput.parse(input);
     assertCan(session.actor, "timeEntry.own.create", ownTimeEntryResource(session.actor));
-    return service.duplicateEntry(session.actor, session.workspace.timezone, values);
+    return service.duplicateEntry(session.actor, trackerWorkspaceOf(session), values);
   });
 }
 
