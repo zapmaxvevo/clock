@@ -9,6 +9,7 @@ import {
   startTimerInput,
   stopTimerInput,
   timeEntryMessages,
+  trackerSearchParams,
   trackerState,
   updateDescriptionInput,
   updateEntryTimesInput,
@@ -128,6 +129,7 @@ describe("trackerState", () => {
     startedAt: "2026-10-02T11:00:00.000Z",
     endedAt: "2026-10-02T12:30:00.000Z",
     dayDate: "2026-10-02",
+    weekStart: "2026-09-28",
     startLabel: "08:00",
     endLabel: "09:30",
     extraDays: 0,
@@ -135,6 +137,27 @@ describe("trackerState", () => {
     durationLabel: "1:30",
     editableTimes: true,
   };
+
+  /** Una semana con un solo día, que lleva las entradas que se le pasen. */
+  function weeksWith(entries: readonly object[]) {
+    return [
+      {
+        start: "2026-09-28",
+        label: "Esta semana",
+        isRunningWeek: false,
+        closedSeconds: 5400,
+        days: [
+          {
+            date: "2026-10-02",
+            label: "Hoy",
+            isRunningDay: false,
+            closedSeconds: 5400,
+            entries,
+          },
+        ],
+      },
+    ];
+  }
 
   const state = {
     serverNow: "2026-10-02T15:00:00.000Z",
@@ -144,15 +167,10 @@ describe("trackerState", () => {
     canTrack: true,
     running: null,
     lastEntryId: id,
-    days: [
-      {
-        date: "2026-10-02",
-        label: "Hoy",
-        isRunningDay: false,
-        closedSeconds: 5400,
-        entries: [entry],
-      },
-    ],
+    weeks: weeksWith([entry]),
+    windowFrom: "2026-09-14",
+    reachFrom: "2026-09-14",
+    loadMoreFrom: "2026-08-31",
     hasAnyEntry: true,
   };
 
@@ -188,24 +206,49 @@ describe("trackerState", () => {
       Object.entries(entry).filter(([key]) => key !== "editableTimes"),
     );
     expect(
-      trackerState.safeParse({
-        ...state,
-        days: [{ ...state.days[0], entries: [withoutFlag] }],
-      }).success,
+      trackerState.safeParse({ ...state, weeks: weeksWith([withoutFlag]) }).success,
     ).toBe(false);
+  });
+
+  it("exige weekStart en cada entrada", () => {
+    const withoutWeek = Object.fromEntries(
+      Object.entries(entry).filter(([key]) => key !== "weekStart"),
+    );
+    expect(
+      trackerState.safeParse({ ...state, weeks: weeksWith([withoutWeek]) }).success,
+    ).toBe(false);
+  });
+
+  it("acepta loadMoreFrom nulo y exige los dos pisos", () => {
+    expect(trackerState.parse({ ...state, loadMoreFrom: null }).loadMoreFrom).toBeNull();
+    for (const key of ["windowFrom", "reachFrom", "loadMoreFrom"]) {
+      const missing = Object.fromEntries(
+        Object.entries(state).filter(([other]) => other !== key),
+      );
+      expect([key, trackerState.safeParse(missing).success]).toEqual([key, false]);
+    }
+  });
+
+  it("exige el total de la semana entero y no negativo", () => {
+    for (const closedSeconds of [-1, 1.5]) {
+      const [week] = weeksWith([entry]);
+      expect(
+        trackerState.safeParse({ ...state, weeks: [{ ...week, closedSeconds }] }).success,
+      ).toBe(false);
+    }
   });
 
   it("rechaza una duración negativa y un superíndice negativo", () => {
     expect(
       trackerState.safeParse({
         ...state,
-        days: [{ ...state.days[0], entries: [{ ...entry, durationSeconds: -1 }] }],
+        weeks: weeksWith([{ ...entry, durationSeconds: -1 }]),
       }).success,
     ).toBe(false);
     expect(
       trackerState.safeParse({
         ...state,
-        days: [{ ...state.days[0], entries: [{ ...entry, extraDays: -1 }] }],
+        weeks: weeksWith([{ ...entry, extraDays: -1 }]),
       }).success,
     ).toBe(false);
   });
@@ -214,6 +257,38 @@ describe("trackerState", () => {
     expect(trackerState.safeParse({ ...state, serverNow: "02/10/2026" }).success).toBe(
       false,
     );
+  });
+});
+
+describe("trackerSearchParams", () => {
+  it("acepta un día válido", () => {
+    expect(trackerSearchParams.safeParse({ desde: "2026-09-07" })).toEqual({
+      success: true,
+      data: { desde: "2026-09-07" },
+    });
+  });
+
+  it("no pasa sin desde, con un día que no existe ni con otro formato", () => {
+    for (const params of [
+      {},
+      { desde: "2026-02-30" },
+      { desde: "07/09/2026" },
+      { desde: "" },
+    ]) {
+      expect(trackerSearchParams.safeParse(params).success).toBe(false);
+    }
+  });
+
+  it("no pasa con desde repetido, que Next entrega como arreglo", () => {
+    expect(
+      trackerSearchParams.safeParse({ desde: ["2026-09-07", "2026-08-31"] }).success,
+    ).toBe(false);
+  });
+
+  it("un parámetro ajeno no arrastra a desde", () => {
+    expect(
+      trackerSearchParams.safeParse({ desde: "2026-09-07", otro: ["a", "b"] }).success,
+    ).toBe(true);
   });
 });
 

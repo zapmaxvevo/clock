@@ -57,6 +57,10 @@ export function addDays(civil: CivilDay, days: number): CivilDay {
   };
 }
 
+function pad(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
 function sameDay(left: CivilDay, right: CivilDay): boolean {
   return left.year === right.year && left.month === right.month && left.day === right.day;
 }
@@ -77,12 +81,50 @@ export function dayLabel(civil: CivilDay, today: CivilDay): string {
   if (sameDay(civil, addDays(today, -1))) {
     return "Ayer";
   }
-  const pad = (value: number): string => String(value).padStart(2, "0");
   const weekday = WEEKDAYS[utcOf(civil).getUTCDay()];
   const date = `${pad(civil.day)}/${pad(civil.month)}`;
   return civil.year === today.year
     ? `${weekday}, ${date}`
     : `${weekday}, ${date}/${civil.year}`;
+}
+
+/** El día como lo escribe la URL en `desde`: «2026-09-28». */
+export function dayKeyOf({ year, month, day }: CivilDay): string {
+  return `${year}-${pad(month)}-${pad(day)}`;
+}
+
+/**
+ * Lunes, el primer día de la semana de toda membresía nueva (PF-16), con el
+ * domingo en cero como `membership.week_start`. Los recorridos no lo cambian.
+ */
+const MONDAY = 1;
+
+/** Primer día de la semana que contiene a `civil` (TT-48). */
+export function weekStartOf(civil: CivilDay): CivilDay {
+  const weekday = utcOf(civil).getUTCDay();
+  return addDays(civil, -((weekday - MONDAY + 7) % 7));
+}
+
+/**
+ * Rótulo con que la pantalla nombra una semana (TT-47): «Esta semana»,
+ * «Semana anterior», o el rango «28/09 – 04/10», que lleva el año en los dos
+ * extremos si alguno no es del año de hoy.
+ */
+export function weekLabel(start: CivilDay, today: CivilDay): string {
+  const current = weekStartOf(today);
+  if (sameDay(start, current)) {
+    return "Esta semana";
+  }
+  if (sameDay(start, addDays(current, -7))) {
+    return "Semana anterior";
+  }
+  const end = addDays(start, 6);
+  const withYear = start.year !== today.year || end.year !== today.year;
+  const format = (civil: CivilDay): string =>
+    withYear
+      ? `${pad(civil.day)}/${pad(civil.month)}/${civil.year}`
+      : `${pad(civil.day)}/${pad(civil.month)}`;
+  return `${format(start)} – ${format(end)}`;
 }
 
 /**

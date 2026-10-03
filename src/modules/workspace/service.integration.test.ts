@@ -2,12 +2,13 @@ import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
 import { db } from "@/server/db";
+import { CHECK_VIOLATION, constraintOf } from "@/server/db/constraint-error";
 import { membership, workspace, workspaceSettings } from "@/server/db/schema";
 import { warmPool, waitForBlockedBackends } from "@/test/concurrency";
 import { seedUser } from "@/test/factories";
 
 import { workspaceRepository } from "./repository";
-import { ensureWorkspaceContext } from "./service";
+import { ensureWorkspaceContext, weekStartOf } from "./service";
 
 describe("ensureWorkspaceContext", () => {
   it("crea el workspace y deja como owner a la cuenta configurada", async () => {
@@ -196,5 +197,83 @@ describe("entrar dos veces deja una sola membresía", () => {
     expect(
       await db.select().from(membership).where(eq(membership.userId, otherId)),
     ).toHaveLength(1);
+  });
+});
+
+describe("membership.week_start", () => {
+  it("una membresía nace con lunes", async () => {
+    const userId = await seedUser("owner@empresa.com");
+
+    const context = await ensureWorkspaceContext({
+      id: userId,
+      email: "owner@empresa.com",
+    });
+
+    expect(context.membership.weekStart).toBe(1);
+    const [row] = await db
+      .select({ weekStart: membership.weekStart })
+      .from(membership)
+      .where(eq(membership.id, context.membership.id));
+    expect(row.weekStart).toBe(1);
+  });
+
+  it.each([7, -1])("el check rechaza %i", async (value) => {
+    const userId = await seedUser("owner@empresa.com");
+    const context = await ensureWorkspaceContext({
+      id: userId,
+      email: "owner@empresa.com",
+    });
+
+    const error = await db
+      .update(membership)
+      .set({ weekStart: value })
+      .where(eq(membership.id, context.membership.id))
+      .catch((caught: unknown) => caught);
+
+    expect(constraintOf(error, CHECK_VIOLATION)).toBe("membership_week_start_range");
+  });
+});
+
+describe("weekStartOf", () => {
+  it("devuelve el valor de la membresía de quien pide", async () => {
+    const ownerId = await seedUser("owner@empresa.com");
+    const owner = await ensureWorkspaceContext({
+      id: ownerId,
+      email: "owner@empresa.com",
+    });
+    const otherId = await seedUser("ana@empresa.com");
+    const other = await ensureWorkspaceContext({ id: otherId, email: "ana@empresa.com" });
+    await db
+      .update(membership)
+      .set({ weekStart: 6 })
+      .where(eq(membership.id, owner.membership.id));
+    await db
+      .update(membership)
+      .set({ weekStart: 0 })
+      .where(eq(membership.id, other.membership.id));
+
+    const ownerAgain = await ensureWorkspaceContext({
+      id: ownerId,
+      email: "owner@empresa.com",
+    });
+    const otherAgain = await ensureWorkspaceContext({
+      id: otherId,
+      email: "ana@empresa.com",
+    });
+
+    expect(weekStartOf(ownerAgain)).toBe(6);
+    expect(weekStartOf(otherAgain)).toBe(0);
+  });
+
+  it("lanza con un valor fuera de rango", async () => {
+    const userId = await seedUser("owner@empresa.com");
+    const context = await ensureWorkspaceContext({
+      id: userId,
+      email: "owner@empresa.com",
+    });
+
+    expect(() =>
+      weekStartOf({ ...context, membership: { ...context.membership, weekStart: 7 } }),
+    ).toThrow(RangeError);
   });
 });

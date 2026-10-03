@@ -109,17 +109,28 @@ export function TimerBar({
         )}
       </div>
 
+      {/*
+       * Inactivo con `aria-disabled` y no con `disabled` mientras la parada o
+       * el arranque viajan: el foco se queda en el botón, también cuando la
+       * parada extiende la ventana (P-15) y la página se dibuja dos veces.
+       */}
       <Button
         type="button"
         variant={isRunning ? "default" : "success"}
-        disabled={!canTrack || switching}
-        onClick={onToggle}
+        disabled={!canTrack}
+        aria-disabled={switching}
+        onClick={() => {
+          if (!switching) {
+            onToggle();
+          }
+        }}
         aria-keyshortcuts={shortcutsEnabled ? (isRunning ? "S" : "N") : undefined}
-        className={
+        className={cn(
+          "aria-disabled:active:translate-y-0",
           isRunning
-            ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            : undefined
-        }
+            ? "bg-destructive text-destructive-foreground hover:bg-destructive/90 aria-disabled:hover:bg-destructive"
+            : "aria-disabled:hover:bg-success",
+        )}
       >
         {isRunning ? <SquareIcon aria-hidden="true" /> : <PlayIcon aria-hidden="true" />}
         {isRunning ? "Detener" : "Iniciar"}

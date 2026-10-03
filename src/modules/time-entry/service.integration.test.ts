@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { db, type Transaction } from "@/server/db";
-import { membership, timeEntry } from "@/server/db/schema";
+import { membership, timeEntry, workspace as workspaceTable } from "@/server/db/schema";
 import { constraintOf, UNIQUE_VIOLATION } from "@/server/db/constraint-error";
 import { ForbiddenError, type Actor } from "@/server/permissions";
 import {
@@ -13,16 +13,21 @@ import {
   formatClock,
   instantFromLocal,
   shiftClock,
+  type WeekStart,
 } from "@/server/time";
 import { queueBehindBarrier, raceThroughBarrier, warmPool } from "@/test/concurrency";
 import { buenosAires, seedMember, seedTimeEntry, seedWorkspace } from "@/test/factories";
 import { allTimeEntries, auditFor, timeEntriesOf, timeEntryById } from "@/test/queries";
 
+import { workspaceRepository } from "@/modules/workspace/repository";
+
 import { timeEntryRepository } from "./repository";
 import {
   timeEntryMessages,
   type ContinueEntryResult,
+  type DayGroupView,
   type StartTimerResult,
+  type TrackerState,
 } from "./schema";
 import {
   continueEntry,
@@ -34,9 +39,11 @@ import {
   startTimer,
   stopTimer,
   TimeEntryError,
+  trackerWorkspaceOf,
   updateDescription,
   updateEntryTimes,
   updateRunningStart,
+  type TrackerWorkspace,
 } from "./service";
 
 const madrid = "Europe/Madrid";
@@ -51,9 +58,18 @@ function actorFor(userId: string, overrides: Partial<Actor> = {}): Actor {
   return { userId, workspaceId, role: "member", status: "active", ...overrides };
 }
 
-/** El workspace tal como lo recibe el service: la zona y el piso de carga. */
-function workspaceOf(timezone: string, createdAt = "2020-01-01T00:00:00Z") {
-  return { timezone, createdAt: new Date(createdAt) };
+/** El workspace tal como lo recibe el service: la zona, el piso de carga y el primer día de la semana. */
+function workspaceOf(
+  timezone: string,
+  createdAt = "2020-01-01T00:00:00Z",
+  weekStart: WeekStart = 1,
+): TrackerWorkspace {
+  return { timezone, createdAt: new Date(createdAt), weekStart };
+}
+
+/** Los días de la lista, sin las semanas que los agrupan. */
+function daysOf(state: TrackerState): DayGroupView[] {
+  return state.weeks.flatMap((week) => week.days);
 }
 
 /** Una entrada abierta del actor, sembrada como timer previo de un arranque. */
@@ -75,7 +91,7 @@ beforeEach(async () => {
 describe("startTimer", () => {
   it("abre una entrada con el instante de la base y sin fin", async () => {
     const before = new Date();
-    const result = await startTimer(actor, buenosAires, {
+    const result = await startTimer(actor, workspaceOf(buenosAires), {
       id: randomUUID(),
       description: "  revisión  ",
     });
@@ -100,11 +116,11 @@ describe("startTimer", () => {
   });
 
   it("cierra el timer anterior en el mismo instante en que abre el nuevo", async () => {
-    const first = await startTimer(actor, buenosAires, {
+    const first = await startTimer(actor, workspaceOf(buenosAires), {
       id: randomUUID(),
       description: "uno",
     });
-    const second = await startTimer(actor, buenosAires, {
+    const second = await startTimer(actor, workspaceOf(buenosAires), {
       id: randomUUID(),
       description: "dos",
     });
@@ -118,11 +134,11 @@ describe("startTimer", () => {
   });
 
   it("escribe un registro de auditoría por cada entrada que toca", async () => {
-    const first = await startTimer(actor, buenosAires, {
+    const first = await startTimer(actor, workspaceOf(buenosAires), {
       id: randomUUID(),
       description: "uno",
     });
-    const second = await startTimer(actor, buenosAires, {
+    const second = await startTimer(actor, workspaceOf(buenosAires), {
       id: randomUUID(),
       description: "dos",
     });
@@ -142,7 +158,7 @@ describe("startTimer", () => {
   it("deja un solo timer activo con varios arranques simultáneos", async () => {
     const results = await Promise.all(
       Array.from({ length: 5 }, (_, index) =>
-        startTimer(actor, buenosAires, {
+        startTimer(actor, workspaceOf(buenosAires), {
           id: randomUUID(),
           description: `pestaña ${index}`,
         }),
@@ -159,7 +175,10 @@ describe("startTimer", () => {
   });
 
   it("no deja dos timers corriendo a la vez, ni escribiendo directo en la base", async () => {
-    await startTimer(actor, buenosAires, { id: randomUUID(), description: "uno" });
+    await startTimer(actor, workspaceOf(buenosAires), {
+      id: randomUUID(),
+      description: "uno",
+    });
 
     const second = seedTimeEntry({
       workspaceId,
@@ -174,12 +193,12 @@ describe("startTimer", () => {
 
   it("no choca con el timer de otra persona del mismo workspace", async () => {
     const otherId = await seedMember(workspaceId, "member");
-    await startTimer(actorFor(otherId), buenosAires, {
+    await startTimer(actorFor(otherId), workspaceOf(buenosAires), {
       id: randomUUID(),
       description: "de otro",
     });
 
-    const mine = await startTimer(actor, buenosAires, {
+    const mine = await startTimer(actor, workspaceOf(buenosAires), {
       id: randomUUID(),
       description: "mío",
     });
@@ -193,7 +212,7 @@ describe("startTimer", () => {
   it("no abre nada cuando la membresía no está activa", async () => {
     for (const status of ["inactive", "invited"] as const) {
       await expect(
-        startTimer({ ...actor, status }, buenosAires, {
+        startTimer({ ...actor, status }, workspaceOf(buenosAires), {
           id: randomUUID(),
           description: "no va",
         }),
@@ -210,13 +229,19 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
   it("el reintento en secuencia responde la misma fila y no escribe nada", async () => {
     const previous = await seedRunning();
     const id = randomUUID();
-    const first = await startTimer(actor, buenosAires, { id, description: "tarea" });
+    const first = await startTimer(actor, workspaceOf(buenosAires), {
+      id,
+      description: "tarea",
+    });
     expect(first.running.id).toBe(id);
     expect(first.stopped?.id).toBe(previous.id);
     const rows = await allTimeEntries();
     const audit = await auditFor("time_entry");
 
-    const retry = await startTimer(actor, buenosAires, { id, description: "tarea" });
+    const retry = await startTimer(actor, workspaceOf(buenosAires), {
+      id,
+      description: "tarea",
+    });
 
     expect(retry).toEqual({ running: first.running, stopped: null });
     expect(await allTimeEntries()).toEqual(rows);
@@ -225,12 +250,15 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
 
   it("un reintento cuyo timer ya se detuvo responde la entrada cerrada y no escribe", async () => {
     const id = randomUUID();
-    await startTimer(actor, buenosAires, { id, description: "tarea" });
-    const { stopped } = await stopTimer(actor, buenosAires, { id });
+    await startTimer(actor, workspaceOf(buenosAires), { id, description: "tarea" });
+    const { stopped } = await stopTimer(actor, workspaceOf(buenosAires), { id });
     const rows = await allTimeEntries();
     const audit = await auditFor("time_entry");
 
-    const retry = await startTimer(actor, buenosAires, { id, description: "tarea" });
+    const retry = await startTimer(actor, workspaceOf(buenosAires), {
+      id,
+      description: "tarea",
+    });
 
     expect(retry.running.id).toBe(id);
     expect(retry.running.endedAt).not.toBeNull();
@@ -264,8 +292,8 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
     await warmPool(2);
 
     const results = await Promise.all([
-      startTimer(actor, buenosAires, { id, description: "tarea" }),
-      startTimer(actor, buenosAires, { id, description: "tarea" }),
+      startTimer(actor, workspaceOf(buenosAires), { id, description: "tarea" }),
+      startTimer(actor, workspaceOf(buenosAires), { id, description: "tarea" }),
     ]);
 
     expect(results.map((result) => result.running.id)).toEqual([id, id]);
@@ -279,8 +307,8 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
     const results = await raceThroughBarrier(
       (tx) => timeEntryRepository.findByIdForUpdate(tx, workspaceId, previous.id),
       [
-        () => startTimer(actor, buenosAires, { id, description: "tarea" }),
-        () => startTimer(actor, buenosAires, { id, description: "tarea" }),
+        () => startTimer(actor, workspaceOf(buenosAires), { id, description: "tarea" }),
+        () => startTimer(actor, workspaceOf(buenosAires), { id, description: "tarea" }),
       ],
     );
 
@@ -294,7 +322,10 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
   describe("TT-37: dos ids distintos que se cruzan", () => {
     const ids = [randomUUID(), randomUUID()] as const;
     const startBoth = () =>
-      ids.map((id) => () => startTimer(actor, buenosAires, { id, description: id }));
+      ids.map(
+        (id) => () =>
+          startTimer(actor, workspaceOf(buenosAires), { id, description: id }),
+      );
 
     /** El que creó y el que responde al ganador, con el mismo timer. */
     function creatorAndWinner(results: readonly StartTimerResult[]) {
@@ -371,7 +402,7 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
     it.each(Object.entries(foreignOwners))(
       "de %s responde forbidden, no escribe y deja abierto el timer propio",
       async (_, ownerOf) => {
-        const mine = await startTimer(actor, buenosAires, {
+        const mine = await startTimer(actor, workspaceOf(buenosAires), {
           id: randomUUID(),
           description: "mío",
         });
@@ -383,7 +414,7 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
         const rows = await allTimeEntries();
         const audit = await auditFor("time_entry");
 
-        const error = await startTimer(actor, buenosAires, {
+        const error = await startTimer(actor, workspaceOf(buenosAires), {
           id: foreign.id,
           description: "ajeno",
         }).catch((caught: unknown) => caught);
@@ -437,11 +468,13 @@ describe("las restricciones que reconoce el repository", () => {
 
 describe("stopTimer", () => {
   it("cierra la entrada y devuelve su duración", async () => {
-    const started = await startTimer(actor, buenosAires, {
+    const started = await startTimer(actor, workspaceOf(buenosAires), {
       id: randomUUID(),
       description: "tarea",
     });
-    const result = await stopTimer(actor, buenosAires, { id: started.running.id });
+    const result = await stopTimer(actor, workspaceOf(buenosAires), {
+      id: started.running.id,
+    });
 
     expect(result.stopped.endedAt).not.toBeNull();
     expect(result.stopped.durationSeconds).toBeGreaterThanOrEqual(0);
@@ -460,7 +493,9 @@ describe("stopTimer", () => {
       endedAt: "2026-10-01T12:00:00Z",
     });
 
-    await expect(stopTimer(actor, buenosAires, { id: row.id })).rejects.toMatchObject({
+    await expect(
+      stopTimer(actor, workspaceOf(buenosAires), { id: row.id }),
+    ).rejects.toMatchObject({
       code: "already_stopped",
       message: timeEntryMessages.alreadyStopped,
     });
@@ -470,7 +505,9 @@ describe("stopTimer", () => {
 
   it("responde que no existe cuando el id no está", async () => {
     await expect(
-      stopTimer(actor, buenosAires, { id: "0b5e8d5e-3c2f-4b7a-9f1a-2c3d4e5f6a7b" }),
+      stopTimer(actor, workspaceOf(buenosAires), {
+        id: "0b5e8d5e-3c2f-4b7a-9f1a-2c3d4e5f6a7b",
+      }),
     ).rejects.toMatchObject({ code: "not_found", message: timeEntryMessages.notFound });
   });
 
@@ -482,7 +519,9 @@ describe("stopTimer", () => {
       startedAt: "2026-10-01T11:00:00Z",
     });
 
-    await expect(stopTimer(actor, buenosAires, { id: row.id })).rejects.toMatchObject({
+    await expect(
+      stopTimer(actor, workspaceOf(buenosAires), { id: row.id }),
+    ).rejects.toMatchObject({
       code: "not_found",
     });
   });
@@ -495,7 +534,9 @@ describe("stopTimer", () => {
       startedAt: "2026-10-01T11:00:00Z",
     });
 
-    await expect(stopTimer(actor, buenosAires, { id: row.id })).rejects.toMatchObject({
+    await expect(
+      stopTimer(actor, workspaceOf(buenosAires), { id: row.id }),
+    ).rejects.toMatchObject({
       code: "forbidden",
       message: timeEntryMessages.forbiddenOtherOwner,
     });
@@ -503,14 +544,14 @@ describe("stopTimer", () => {
   });
 
   it("rechaza con el mensaje neutro cuando la membresía no está activa", async () => {
-    const started = await startTimer(actor, buenosAires, {
+    const started = await startTimer(actor, workspaceOf(buenosAires), {
       id: randomUUID(),
       description: "tarea",
     });
     const inactive = { ...actor, status: "inactive" } as const;
 
     await expect(
-      stopTimer(inactive, buenosAires, { id: started.running.id }),
+      stopTimer(inactive, workspaceOf(buenosAires), { id: started.running.id }),
     ).rejects.toMatchObject({
       code: "forbidden",
       message: timeEntryMessages.forbidden,
@@ -531,7 +572,7 @@ describe("TT-101: la parada de un timer cuyo inicio quedó después del now() de
   it("stopTimer lo cierra sin error, con el fin igual al inicio", async () => {
     const row = await seedFutureRunning();
 
-    const result = await stopTimer(actor, buenosAires, { id: row.id });
+    const result = await stopTimer(actor, workspaceOf(buenosAires), { id: row.id });
 
     expect(result.stopped.endedAt).toBe(row.startedAt.toISOString());
     expect(result.stopped.durationSeconds).toBe(0);
@@ -542,7 +583,7 @@ describe("TT-101: la parada de un timer cuyo inicio quedó después del now() de
   it("el cierre que hace startTimer también, y el nuevo queda abierto", async () => {
     const row = await seedFutureRunning();
 
-    const result = await startTimer(actor, buenosAires, {
+    const result = await startTimer(actor, workspaceOf(buenosAires), {
       id: randomUUID(),
       description: "siguiente",
     });
@@ -594,12 +635,12 @@ describe("límites que valen aunque se escriba sin pasar por el service", () => 
 
 describe("updateDescription", () => {
   it("guarda la descripción sobre la entrada abierta sin detenerla", async () => {
-    const started = await startTimer(actor, buenosAires, {
+    const started = await startTimer(actor, workspaceOf(buenosAires), {
       id: randomUUID(),
       description: "",
     });
 
-    const result = await updateDescription(actor, buenosAires, {
+    const result = await updateDescription(actor, workspaceOf(buenosAires), {
       id: started.running.id,
       description: "revisión de PR",
     });
@@ -620,7 +661,7 @@ describe("updateDescription", () => {
       endedAt: "2026-10-01T12:00:00Z",
     });
 
-    const result = await updateDescription(actor, buenosAires, {
+    const result = await updateDescription(actor, workspaceOf(buenosAires), {
       id: row.id,
       description: "nueva",
     });
@@ -640,7 +681,10 @@ describe("updateDescription", () => {
     });
 
     await expect(
-      updateDescription(actor, buenosAires, { id: row.id, description: "mía" }),
+      updateDescription(actor, workspaceOf(buenosAires), {
+        id: row.id,
+        description: "mía",
+      }),
     ).rejects.toMatchObject({
       code: "forbidden",
       message: timeEntryMessages.forbiddenOtherOwner,
@@ -674,7 +718,7 @@ describe("deleteEntry", () => {
   });
 
   it("borra también la entrada abierta", async () => {
-    const started = await startTimer(actor, buenosAires, {
+    const started = await startTimer(actor, workspaceOf(buenosAires), {
       id: randomUUID(),
       description: "abierta",
     });
@@ -711,10 +755,15 @@ describe("getTrackerState", () => {
   const now = new Date("2026-10-02T15:00:00Z");
 
   it("deja el estado vacío cuando no hay nada cargado", async () => {
-    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      now,
+    );
 
     expect(state.hasAnyEntry).toBe(false);
-    expect(state.days).toEqual([]);
+    expect(daysOf(state)).toEqual([]);
     expect(state.running).toBeNull();
     expect(state.canTrack).toBe(true);
     expect(state.serverNow).toBe(now.toISOString());
@@ -724,8 +773,18 @@ describe("getTrackerState", () => {
     // Las 23:00 del 2 de octubre en Buenos Aires: en UTC ya es el 3.
     const lateNight = new Date("2026-10-03T02:00:00Z");
 
-    const local = await getTrackerState(actor, workspaceOf(buenosAires), lateNight);
-    const remote = await getTrackerState(actor, workspaceOf(madrid), lateNight);
+    const local = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      lateNight,
+    );
+    const remote = await getTrackerState(
+      actor,
+      workspaceOf(madrid),
+      { from: null },
+      lateNight,
+    );
 
     expect(local.todayKey).toBe("2026-10-02");
     expect(remote.todayKey).toBe("2026-10-03");
@@ -735,24 +794,20 @@ describe("getTrackerState", () => {
     // Las 23:00 del 1 de setiembre en Buenos Aires, que en UTC ya son del 2.
     const reciente = workspaceOf(buenosAires, "2026-09-02T02:00:00Z");
 
-    const state = await getTrackerState(actor, reciente, now);
+    const state = await getTrackerState(actor, reciente, { from: null }, now);
     expect(state.minDayKey).toBe("2026-09-01");
 
     const values = { description: "", start: "08:00", end: "09:00" };
-    const floor = await createManualEntry(
-      actor,
-      reciente,
-      { ...values, date: state.minDayKey },
-      now,
-    );
+    const floor = await createManualEntry(actor, reciente, {
+      ...values,
+      date: state.minDayKey,
+    });
     expect(floor.created.dayDate).toBe(state.minDayKey);
     await expect(
-      createManualEntry(
-        actor,
-        reciente,
-        { ...values, date: addDaysToKey(state.minDayKey, -1) },
-        now,
-      ),
+      createManualEntry(actor, reciente, {
+        ...values,
+        date: addDaysToKey(state.minDayKey, -1),
+      }),
     ).rejects.toMatchObject({
       code: "validation",
       message: timeEntryMessages.beforeWorkspace,
@@ -775,10 +830,15 @@ describe("getTrackerState", () => {
       endedAt: "2026-10-02T14:00:00Z",
     });
 
-    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      now,
+    );
 
-    expect(state.days).toHaveLength(1);
-    expect(state.days[0].entries.map((entry) => entry.description)).toEqual(["mía"]);
+    expect(daysOf(state)).toHaveLength(1);
+    expect(daysOf(state)[0].entries.map((entry) => entry.description)).toEqual(["mía"]);
   });
 
   it("agrupa por día local y ordena de lo más reciente a lo más viejo", async () => {
@@ -804,15 +864,20 @@ describe("getTrackerState", () => {
       endedAt: "2026-10-02T14:00:00Z",
     });
 
-    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      now,
+    );
 
-    expect(state.days.map((day) => day.date)).toEqual(["2026-10-02", "2026-10-01"]);
-    expect(state.days.map((day) => day.label)).toEqual(["Hoy", "Ayer"]);
-    expect(state.days[0].entries.map((entry) => entry.description)).toEqual([
+    expect(daysOf(state).map((day) => day.date)).toEqual(["2026-10-02", "2026-10-01"]);
+    expect(daysOf(state).map((day) => day.label)).toEqual(["Hoy", "Ayer"]);
+    expect(daysOf(state)[0].entries.map((entry) => entry.description)).toEqual([
       "recién",
       "temprano",
     ]);
-    expect(state.days[0].entries[0].startLabel).toBe("10:00");
+    expect(daysOf(state)[0].entries[0].startLabel).toBe("10:00");
   });
 
   it("pone la entrada que arranca a la medianoche exacta en el día que empieza", async () => {
@@ -823,10 +888,15 @@ describe("getTrackerState", () => {
       endedAt: "2026-10-02T04:00:00Z",
     });
 
-    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      now,
+    );
 
-    expect(state.days.map((day) => day.date)).toEqual(["2026-10-02"]);
-    expect(state.days[0].entries[0].startLabel).toBe("00:00");
+    expect(daysOf(state).map((day) => day.date)).toEqual(["2026-10-02"]);
+    expect(daysOf(state)[0].entries[0].startLabel).toBe("00:00");
   });
 
   it("suma el total del día en segundos exactos aunque cada fila trunque a 0:00", async () => {
@@ -843,13 +913,18 @@ describe("getTrackerState", () => {
       endedAt: "2026-10-02T12:00:40Z",
     });
 
-    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      now,
+    );
 
-    expect(state.days[0].entries.map((entry) => entry.durationLabel)).toEqual([
+    expect(daysOf(state)[0].entries.map((entry) => entry.durationLabel)).toEqual([
       "0:00",
       "0:00",
     ]);
-    expect(state.days[0].closedSeconds).toBe(80);
+    expect(daysOf(state)[0].closedSeconds).toBe(80);
   });
 
   it("deja la entrada que cruza la medianoche en su día de inicio con el superíndice", async () => {
@@ -860,12 +935,17 @@ describe("getTrackerState", () => {
       endedAt: "2026-10-02T05:00:00Z", // 02:00 del 2 de octubre
     });
 
-    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      now,
+    );
 
-    expect(state.days).toHaveLength(1);
-    expect(state.days[0].date).toBe("2026-10-01");
-    expect(state.days[0].closedSeconds).toBe(18 * 3600);
-    const [entry] = state.days[0].entries;
+    expect(daysOf(state)).toHaveLength(1);
+    expect(daysOf(state)[0].date).toBe("2026-10-01");
+    expect(daysOf(state)[0].closedSeconds).toBe(18 * 3600);
+    const [entry] = daysOf(state)[0].entries;
     expect(entry.startLabel).toBe("08:00");
     expect(entry.endLabel).toBe("02:00");
     expect(entry.extraDays).toBe(1);
@@ -879,13 +959,18 @@ describe("getTrackerState", () => {
       endedAt: "2026-10-02T02:00:00Z",
     });
 
-    const local = await getTrackerState(actor, workspaceOf(buenosAires), now);
-    const remote = await getTrackerState(actor, workspaceOf(madrid), now);
+    const local = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      now,
+    );
+    const remote = await getTrackerState(actor, workspaceOf(madrid), { from: null }, now);
 
-    expect(local.days[0].date).toBe("2026-10-01");
-    expect(local.days[0].entries[0].startLabel).toBe("22:00");
-    expect(remote.days[0].date).toBe("2026-10-02");
-    expect(remote.days[0].entries[0].startLabel).toBe("03:00");
+    expect(daysOf(local)[0].date).toBe("2026-10-01");
+    expect(daysOf(local)[0].entries[0].startLabel).toBe("22:00");
+    expect(daysOf(remote)[0].date).toBe("2026-10-02");
+    expect(daysOf(remote)[0].entries[0].startLabel).toBe("03:00");
     expect(await allTimeEntries()).toHaveLength(1);
   });
 
@@ -897,17 +982,22 @@ describe("getTrackerState", () => {
       startedAt: "2026-09-30T11:00:00Z",
     });
 
-    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      now,
+    );
 
     expect(state.running?.description).toBe("corriendo");
     expect(state.running?.endedAt).toBeNull();
     expect(state.running?.durationSeconds).toBeNull();
     expect(state.hasAnyEntry).toBe(true);
-    const runningDay = state.days.find((day) => day.isRunningDay);
+    const runningDay = daysOf(state).find((day) => day.isRunningDay);
     expect(runningDay?.date).toBe("2026-09-30");
     expect(runningDay?.entries).toEqual([]);
     expect(runningDay?.closedSeconds).toBe(0);
-    expect(state.days.flatMap((day) => day.entries)).toEqual([]);
+    expect(daysOf(state).flatMap((day) => day.entries)).toEqual([]);
   });
 
   it("no dibuja los días sin entradas", async () => {
@@ -924,12 +1014,17 @@ describe("getTrackerState", () => {
       endedAt: "2026-09-29T12:00:00Z",
     });
 
-    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      now,
+    );
 
-    expect(state.days.map((day) => day.date)).toEqual(["2026-10-02", "2026-09-29"]);
+    expect(daysOf(state).map((day) => day.date)).toEqual(["2026-10-02", "2026-09-29"]);
   });
 
-  it("corta en catorce días cuando hay entradas recientes", async () => {
+  it("TT-52: corta en catorce días redondeados a la semana entera", async () => {
     await seedTimeEntry({
       workspaceId,
       userId: actor.userId,
@@ -937,24 +1032,33 @@ describe("getTrackerState", () => {
       startedAt: "2026-10-02T11:00:00Z",
       endedAt: "2026-10-02T12:00:00Z",
     });
+    // Catorce días atrás es el sábado 19/09; su semana empieza el lunes 14/09.
     await seedTimeEntry({
       workspaceId,
       userId: actor.userId,
       description: "del borde",
-      startedAt: "2026-09-19T11:00:00Z",
-      endedAt: "2026-09-19T12:00:00Z",
+      startedAt: "2026-09-14T03:00:00Z",
+      endedAt: "2026-09-14T04:00:00Z",
     });
     await seedTimeEntry({
       workspaceId,
       userId: actor.userId,
       description: "fuera de la ventana",
-      startedAt: "2026-09-18T11:00:00Z",
-      endedAt: "2026-09-18T12:00:00Z",
+      startedAt: "2026-09-14T02:59:00Z",
+      endedAt: "2026-09-14T04:00:00Z",
     });
 
-    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      now,
+    );
 
-    expect(state.days.map((day) => day.date)).toEqual(["2026-10-02", "2026-09-19"]);
+    expect(daysOf(state).map((day) => day.date)).toEqual(["2026-10-02", "2026-09-14"]);
+    expect(state.windowFrom).toBe("2026-09-14");
+    expect(state.reachFrom).toBe("2026-09-14");
+    expect(state.loadMoreFrom).toBe("2026-09-07");
   });
 
   it("extiende la ventana hasta el último día con entradas", async () => {
@@ -966,12 +1070,17 @@ describe("getTrackerState", () => {
       endedAt: "2026-07-15T12:00:00Z",
     });
 
-    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      now,
+    );
 
     expect(state.hasAnyEntry).toBe(true);
-    expect(state.days).toHaveLength(1);
-    expect(state.days[0].date).toBe("2026-07-15");
-    expect(state.days[0].label).toBe("mié, 15/07");
+    expect(daysOf(state)).toHaveLength(1);
+    expect(daysOf(state)[0].date).toBe("2026-07-15");
+    expect(daysOf(state)[0].label).toBe("mié, 15/07");
   });
 
   it("extiende la ventana hasta el día en que arrancó el timer activo", async () => {
@@ -989,10 +1098,15 @@ describe("getTrackerState", () => {
       endedAt: "2026-08-21T12:00:00Z",
     });
 
-    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      now,
+    );
 
-    expect(state.days.map((day) => day.date)).toEqual(["2026-08-21", "2026-08-20"]);
-    expect(state.days.find((day) => day.isRunningDay)?.date).toBe("2026-08-20");
+    expect(daysOf(state).map((day) => day.date)).toEqual(["2026-08-21", "2026-08-20"]);
+    expect(daysOf(state).find((day) => day.isRunningDay)?.date).toBe("2026-08-20");
   });
 
   it("deja detener un timer que lleva días corriendo", async () => {
@@ -1002,7 +1116,7 @@ describe("getTrackerState", () => {
       startedAt: "2026-09-30T11:00:00Z",
     });
 
-    const result = await stopTimer(actor, buenosAires, { id: row.id });
+    const result = await stopTimer(actor, workspaceOf(buenosAires), { id: row.id });
 
     expect(result.stopped.durationSeconds).toBeGreaterThan(24 * 3600);
     expect(result.stopped.extraDays).toBeGreaterThan(0);
@@ -1019,11 +1133,12 @@ describe("getTrackerState", () => {
     const state = await getTrackerState(
       { ...actor, status: "inactive" },
       workspaceOf(buenosAires),
+      { from: null },
       now,
     );
 
     expect(state.canTrack).toBe(false);
-    expect(state.days).toHaveLength(1);
+    expect(daysOf(state)).toHaveLength(1);
   });
 
   it("nunca da hasAnyEntry en verdadero con la lista vacía", async () => {
@@ -1042,14 +1157,14 @@ describe("getTrackerState", () => {
 
       const states = await Promise.all([
         ...Array.from({ length: READERS }, () =>
-          getTrackerState(actor, workspaceOf(buenosAires), now),
+          getTrackerState(actor, workspaceOf(buenosAires), { from: null }, now),
         ),
         deleteEntry(actor, { id: row.id }).then(() => null),
       ]);
 
       for (const state of states) {
         if (state !== null) {
-          expect(state.hasAnyEntry).toBe(state.days.length > 0);
+          expect(state.hasAnyEntry).toBe(daysOf(state).length > 0);
         }
       }
     }
@@ -1072,14 +1187,13 @@ describe("createManualEntry", () => {
   const workspace = workspaceOf(buenosAires);
 
   it("crea una entrada cerrada con las horas de pared que se teclearon", async () => {
-    const result = await createManualEntry(
-      actor,
-      workspace,
-      { description: "  reunión  ", date: "2026-10-02", start: "08:00", end: "10:30" },
-      now,
-    );
+    const result = await createManualEntry(actor, workspace, {
+      description: "  reunión  ",
+      date: "2026-10-02",
+      start: "08:00",
+      end: "10:30",
+    });
 
-    expect(result.outsideWindow).toBe(false);
     expect(result.created.startedAt).toBe("2026-10-02T11:00:00.000Z");
     expect(result.created.endedAt).toBe("2026-10-02T13:30:00.000Z");
     expect(result.created.startLabel).toBe("08:00");
@@ -1095,26 +1209,31 @@ describe("createManualEntry", () => {
   });
 
   it("aparece en el grupo de su día y mueve ese total, que puede no ser hoy", async () => {
-    await createManualEntry(
+    await createManualEntry(actor, workspace, {
+      description: "",
+      date: "2026-09-28",
+      start: "09:00",
+      end: "11:00",
+    });
+
+    const state = await getTrackerState(
       actor,
-      workspace,
-      { description: "", date: "2026-09-28", start: "09:00", end: "11:00" },
+      workspaceOf(buenosAires),
+      { from: null },
       now,
     );
-
-    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
-    const day = state.days.find((group) => group.date === "2026-09-28");
+    const day = daysOf(state).find((group) => group.date === "2026-09-28");
     expect(day?.closedSeconds).toBe(2 * 3600);
     expect(day?.entries).toHaveLength(1);
   });
 
   it("cruza la medianoche cuando el fin es menor que el inicio", async () => {
-    const result = await createManualEntry(
-      actor,
-      workspace,
-      { description: "", date: "2026-09-30", start: "23:00", end: "02:00" },
-      now,
-    );
+    const result = await createManualEntry(actor, workspace, {
+      description: "",
+      date: "2026-09-30",
+      start: "23:00",
+      end: "02:00",
+    });
 
     expect(result.created.durationSeconds).toBe(3 * 3600);
     expect(result.created.durationLabel).toBe("3:00");
@@ -1123,21 +1242,29 @@ describe("createManualEntry", () => {
     expect(result.created.startedAt).toBe("2026-10-01T02:00:00.000Z");
     expect(result.created.endedAt).toBe("2026-10-01T05:00:00.000Z");
 
-    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
-    const day = state.days.find((group) => group.date === "2026-09-30");
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      now,
+    );
+    const day = daysOf(state).find((group) => group.date === "2026-09-30");
     expect(day?.closedSeconds).toBe(3 * 3600);
   });
 
   it("rechaza agregar con un timer corriendo y no inserta nada", async () => {
-    await startTimer(actor, buenosAires, { id: randomUUID(), description: "corriendo" });
+    await startTimer(actor, workspaceOf(buenosAires), {
+      id: randomUUID(),
+      description: "corriendo",
+    });
 
     await expect(
-      createManualEntry(
-        actor,
-        workspace,
-        { description: "", date: "2026-10-02", start: "08:00", end: "09:00" },
-        now,
-      ),
+      createManualEntry(actor, workspace, {
+        description: "",
+        date: "2026-10-02",
+        start: "08:00",
+        end: "09:00",
+      }),
     ).rejects.toMatchObject({
       code: "timer_running",
       message: timeEntryMessages.timerRunning,
@@ -1147,23 +1274,23 @@ describe("createManualEntry", () => {
 
   it("rechaza una entrada de duración cero", async () => {
     await expect(
-      createManualEntry(
-        actor,
-        workspace,
-        { description: "", date: "2026-10-02", start: "08:00", end: "08:00" },
-        now,
-      ),
+      createManualEntry(actor, workspace, {
+        description: "",
+        date: "2026-10-02",
+        start: "08:00",
+        end: "08:00",
+      }),
     ).rejects.toMatchObject({ code: "validation", message: timeEntryMessages.tooShort });
     expect(await allTimeEntries()).toHaveLength(0);
   });
 
   it("acepta la entrada de un minuto, que es el mínimo", async () => {
-    const result = await createManualEntry(
-      actor,
-      workspace,
-      { description: "", date: "2026-10-02", start: "08:00", end: "08:01" },
-      now,
-    );
+    const result = await createManualEntry(actor, workspace, {
+      description: "",
+      date: "2026-10-02",
+      start: "08:00",
+      end: "08:01",
+    });
     expect(result.created.durationSeconds).toBe(60);
   });
 
@@ -1171,12 +1298,12 @@ describe("createManualEntry", () => {
     const reciente = workspaceOf(buenosAires, "2026-09-01T12:00:00Z");
 
     await expect(
-      createManualEntry(
-        actor,
-        reciente,
-        { description: "", date: "2026-08-31", start: "08:00", end: "09:00" },
-        now,
-      ),
+      createManualEntry(actor, reciente, {
+        description: "",
+        date: "2026-08-31",
+        start: "08:00",
+        end: "09:00",
+      }),
     ).rejects.toMatchObject({
       code: "validation",
       message: timeEntryMessages.beforeWorkspace,
@@ -1187,83 +1314,93 @@ describe("createManualEntry", () => {
   it("acepta el mismo día en que se creó el workspace", async () => {
     const reciente = workspaceOf(buenosAires, "2026-09-01T12:00:00Z");
 
-    const result = await createManualEntry(
-      actor,
-      reciente,
-      { description: "", date: "2026-09-01", start: "08:00", end: "09:00" },
-      now,
-    );
+    const result = await createManualEntry(actor, reciente, {
+      description: "",
+      date: "2026-09-01",
+      start: "08:00",
+      end: "09:00",
+    });
     expect(result.created.dayDate).toBe("2026-09-01");
   });
 
   it("permite dos entradas superpuestas y las dos suman al total", async () => {
     const values = { description: "", date: "2026-10-02", start: "08:00", end: "10:00" };
-    await createManualEntry(actor, workspace, values, now);
-    await createManualEntry(
+    await createManualEntry(actor, workspace, values);
+    await createManualEntry(actor, workspace, {
+      ...values,
+      start: "09:00",
+      end: "11:00",
+    });
+
+    const state = await getTrackerState(
       actor,
-      workspace,
-      { ...values, start: "09:00", end: "11:00" },
+      workspaceOf(buenosAires),
+      { from: null },
       now,
     );
-
-    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
-    const day = state.days.find((group) => group.date === "2026-10-02");
+    const day = daysOf(state).find((group) => group.date === "2026-10-02");
     expect(day?.entries).toHaveLength(2);
     expect(day?.closedSeconds).toBe(4 * 3600);
   });
 
-  it("informa la entrada que queda por debajo del tramo visible", async () => {
-    const result = await createManualEntry(
-      actor,
-      workspace,
-      { description: "", date: "2026-07-15", start: "08:00", end: "09:00" },
-      now,
-    );
+  it("P-15: la entrada debajo de la ventana trae su semana, y con ella de `desde` se ve en su día", async () => {
+    await createManualEntry(actor, workspace, {
+      description: "",
+      date: "2026-07-15",
+      start: "08:00",
+      end: "09:00",
+    });
+    await createManualEntry(actor, workspace, {
+      description: "",
+      date: "2026-10-01",
+      start: "08:00",
+      end: "09:00",
+    });
 
-    expect(result.outsideWindow).toBe(false);
-    // Sola, la entrada vieja extiende la ventana y se ve. Con una reciente que
-    // vuelva a acercar el extremo inferior, la vieja queda afuera.
-    const second = await createManualEntry(
-      actor,
-      workspace,
-      { description: "", date: "2026-10-01", start: "08:00", end: "09:00" },
-      now,
-    );
-    expect(second.outsideWindow).toBe(false);
+    const old = await createManualEntry(actor, workspace, {
+      description: "",
+      date: "2026-07-16",
+      start: "08:00",
+      end: "09:00",
+    });
+    expect(old.created.weekStart).toBe("2026-07-13");
 
-    const third = await createManualEntry(
-      actor,
-      workspace,
-      { description: "", date: "2026-07-16", start: "08:00", end: "09:00" },
-      now,
-    );
-    expect(third.outsideWindow).toBe(true);
+    const state = await getTrackerState(actor, workspace, { from: null }, now);
+    expect(daysOf(state).map((group) => group.date)).toEqual(["2026-10-01"]);
+    expect(old.created.weekStart < state.reachFrom).toBe(true);
 
-    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
-    expect(state.days.map((group) => group.date)).toEqual(["2026-10-01"]);
+    const reached = await getTrackerState(actor, workspace, { from: "2026-07-13" }, now);
+    expect(daysOf(reached).map((group) => group.date)).toEqual([
+      "2026-10-01",
+      "2026-07-16",
+      "2026-07-15",
+    ]);
+    expect(reached.reachFrom).toBe("2026-07-13");
   });
 
-  it("acepta una fecha futura, la muestra y no la marca como fuera de ventana", async () => {
-    const result = await createManualEntry(
+  it("acepta una fecha futura y la muestra en su semana, rotulada con el rango (TT-47)", async () => {
+    const result = await createManualEntry(actor, workspace, {
+      description: "la semana que viene",
+      date: "2026-10-10",
+      start: "08:00",
+      end: "09:00",
+    });
+
+    expect(result.created.dayDate).toBe("2026-10-10");
+    expect(result.created.weekStart).toBe("2026-10-05");
+
+    const state = await getTrackerState(
       actor,
-      workspace,
-      {
-        description: "la semana que viene",
-        date: "2026-10-10",
-        start: "08:00",
-        end: "09:00",
-      },
+      workspaceOf(buenosAires),
+      { from: null },
       now,
     );
-
-    expect(result.outsideWindow).toBe(false);
-    expect(result.created.dayDate).toBe("2026-10-10");
-
-    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
     // Se ordenan de lo más reciente a lo más viejo, así que queda por encima de hoy.
-    expect(state.days[0].date).toBe("2026-10-10");
-    expect(state.days[0].label).toBe("sáb, 10/10");
-    expect(state.days[0].entries).toHaveLength(1);
+    expect(daysOf(state)[0].date).toBe("2026-10-10");
+    expect(daysOf(state)[0].label).toBe("sáb, 10/10");
+    expect(daysOf(state)[0].entries).toHaveLength(1);
+    expect(state.weeks[0].start).toBe("2026-10-05");
+    expect(state.weeks[0].label).toBe("05/10 – 11/10");
   });
 
   it("muestra una entrada futura que ya estaba en la base", async () => {
@@ -1274,76 +1411,120 @@ describe("createManualEntry", () => {
       endedAt: "2026-10-20T12:00:00Z",
     });
 
-    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
-    expect(state.days[0].date).toBe("2026-10-20");
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      now,
+    );
+    expect(daysOf(state)[0].date).toBe("2026-10-20");
     expect(state.hasAnyEntry).toBe(true);
   });
 
   it("no esconde la entrada vieja que se veía al agregar una futura", async () => {
-    await createManualEntry(
+    await createManualEntry(actor, workspace, {
+      description: "",
+      date: "2026-09-04",
+      start: "08:00",
+      end: "09:00",
+    });
+    const before = await getTrackerState(
       actor,
-      workspace,
-      { description: "", date: "2026-09-04", start: "08:00", end: "09:00" },
+      workspaceOf(buenosAires),
+      { from: null },
       now,
     );
-    const before = await getTrackerState(actor, workspaceOf(buenosAires), now);
-    expect(before.days.map((group) => group.date)).toEqual(["2026-09-04"]);
+    expect(daysOf(before).map((group) => group.date)).toEqual(["2026-09-04"]);
 
-    const future = await createManualEntry(
+    const future = await createManualEntry(actor, workspace, {
+      description: "",
+      date: "2026-10-05",
+      start: "08:00",
+      end: "09:00",
+    });
+    expect(future.created.weekStart).toBe("2026-10-05");
+
+    const after = await getTrackerState(
       actor,
-      workspace,
-      { description: "", date: "2026-10-05", start: "08:00", end: "09:00" },
+      workspaceOf(buenosAires),
+      { from: null },
       now,
     );
-    expect(future.outsideWindow).toBe(false);
+    expect(daysOf(after).map((group) => group.date)).toEqual([
+      "2026-10-05",
+      "2026-09-04",
+    ]);
 
-    const after = await getTrackerState(actor, workspaceOf(buenosAires), now);
-    expect(after.days.map((group) => group.date)).toEqual(["2026-10-05", "2026-09-04"]);
-
-    // Con la futura en la base, una pasada anterior a la vieja sí queda afuera,
-    // y el aviso coincide con lo que muestra la lista.
-    const older = await createManualEntry(
+    // Con la futura en la base, una pasada de la misma semana que la vieja se
+    // ve, porque la ventana es de semanas enteras; una de la semana anterior
+    // queda afuera, y su semana es anterior a `reachFrom`.
+    const sameWeek = await createManualEntry(actor, workspace, {
+      description: "",
+      date: "2026-09-03",
+      start: "08:00",
+      end: "09:00",
+    });
+    const previousWeek = await createManualEntry(actor, workspace, {
+      description: "",
+      date: "2026-08-28",
+      start: "08:00",
+      end: "09:00",
+    });
+    const last = await getTrackerState(
       actor,
-      workspace,
-      { description: "", date: "2026-09-03", start: "08:00", end: "09:00" },
+      workspaceOf(buenosAires),
+      { from: null },
       now,
     );
-    expect(older.outsideWindow).toBe(true);
-    const last = await getTrackerState(actor, workspaceOf(buenosAires), now);
-    expect(last.days.map((group) => group.date)).toEqual(["2026-10-05", "2026-09-04"]);
+    expect(daysOf(last).map((group) => group.date)).toEqual([
+      "2026-10-05",
+      "2026-09-04",
+      "2026-09-03",
+    ]);
+    expect(last.reachFrom).toBe("2026-08-31");
+    expect(sameWeek.created.weekStart).toBe(last.reachFrom);
+    expect(previousWeek.created.weekStart).toBe("2026-08-24");
   });
 
-  it("mide el aviso contra la última entrada pasada aunque haya una futura", async () => {
-    await createManualEntry(
-      actor,
-      workspace,
-      { description: "", date: "2026-10-10", start: "08:00", end: "09:00" },
-      now,
-    );
+  it("mide el piso contra la última entrada pasada aunque haya una futura", async () => {
+    await createManualEntry(actor, workspace, {
+      description: "",
+      date: "2026-10-10",
+      start: "08:00",
+      end: "09:00",
+    });
 
-    const older = await createManualEntry(
-      actor,
-      workspace,
-      { description: "", date: "2026-09-04", start: "08:00", end: "09:00" },
-      now,
-    );
+    const older = await createManualEntry(actor, workspace, {
+      description: "",
+      date: "2026-09-04",
+      start: "08:00",
+      end: "09:00",
+    });
 
     // La lista estira su extremo inferior hasta la entrada pasada más reciente,
     // que es esta misma. Medida contra la futura, quedaría fuera de los catorce
-    // días y el aviso contradiría a la lista.
-    expect(older.outsideWindow).toBe(false);
-    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
-    expect(state.days.map((group) => group.date)).toEqual(["2026-10-10", "2026-09-04"]);
+    // días.
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      now,
+    );
+    expect(daysOf(state).map((group) => group.date)).toEqual([
+      "2026-10-10",
+      "2026-09-04",
+    ]);
+    expect(state.reachFrom).toBe(older.created.weekStart);
   });
 
   it("rechaza como fecha inválida el día siguiente que no tiene clave", async () => {
     await expect(
-      createManualEntry(
-        actor,
-        workspace,
-        { description: "", date: "9999-12-31", start: "23:00", end: "01:00" },
-        now,
-      ),
+      createManualEntry(actor, workspace, {
+        description: "",
+        date: "9999-12-31",
+        start: "23:00",
+        end: "01:00",
+      }),
     ).rejects.toMatchObject({
       code: "validation",
       message: timeEntryMessages.invalidDate,
@@ -1352,36 +1533,43 @@ describe("createManualEntry", () => {
   });
 
   it("no dibuja los días vacíos que quedan entre hoy y la entrada futura", async () => {
-    await createManualEntry(
-      actor,
-      workspace,
-      { description: "", date: "2026-11-02", start: "08:00", end: "09:00" },
-      now,
-    );
-    await createManualEntry(
-      actor,
-      workspace,
-      { description: "", date: "2026-10-02", start: "08:00", end: "09:00" },
-      now,
-    );
+    await createManualEntry(actor, workspace, {
+      description: "",
+      date: "2026-11-02",
+      start: "08:00",
+      end: "09:00",
+    });
+    await createManualEntry(actor, workspace, {
+      description: "",
+      date: "2026-10-02",
+      start: "08:00",
+      end: "09:00",
+    });
 
-    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
-    expect(state.days.map((group) => group.date)).toEqual(["2026-11-02", "2026-10-02"]);
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      now,
+    );
+    expect(daysOf(state).map((group) => group.date)).toEqual([
+      "2026-11-02",
+      "2026-10-02",
+    ]);
   });
 });
 
 describe("createManualEntry con cambio de horario", () => {
-  const now = new Date("2026-10-02T15:00:00Z");
   const workspace = workspaceOf(madrid);
 
   it("guarda la hora de pared ambigua con el segundo instante", async () => {
     // El 25/10/2026 Madrid pasa de +02:00 a +01:00: las 02:30 ocurren dos veces.
-    const result = await createManualEntry(
-      actor,
-      workspace,
-      { description: "", date: "2026-10-25", start: "02:30", end: "04:00" },
-      now,
-    );
+    const result = await createManualEntry(actor, workspace, {
+      description: "",
+      date: "2026-10-25",
+      start: "02:30",
+      end: "04:00",
+    });
 
     expect(result.created.startedAt).toBe("2026-10-25T01:30:00.000Z");
     expect(result.created.startLabel).toBe("02:30");
@@ -1398,12 +1586,11 @@ describe("createManualEntry con cambio de horario", () => {
       { start: "01:30", end: "02:30" },
     ]) {
       await expect(
-        createManualEntry(
-          actor,
-          workspace,
-          { description: "", date: "2026-03-29", ...values },
-          now,
-        ),
+        createManualEntry(actor, workspace, {
+          description: "",
+          date: "2026-03-29",
+          ...values,
+        }),
       ).rejects.toMatchObject({
         code: "validation",
         message: timeEntryMessages.nonexistentClock,
@@ -1413,12 +1600,12 @@ describe("createManualEntry con cambio de horario", () => {
   });
 
   it("mide la duración real en el día que pierde una hora", async () => {
-    const result = await createManualEntry(
-      actor,
-      workspace,
-      { description: "", date: "2026-03-29", start: "01:30", end: "03:30" },
-      now,
-    );
+    const result = await createManualEntry(actor, workspace, {
+      description: "",
+      date: "2026-03-29",
+      start: "01:30",
+      end: "03:30",
+    });
 
     // De 01:30 a 03:30 de pared, pero el reloj saltó: una hora real.
     expect(result.created.durationSeconds).toBe(3600);
@@ -1435,12 +1622,9 @@ describe("createManualEntry con cambio de horario", () => {
       { date: "2026-10-25", start: "02:30", end: "04:00" },
     ];
     for (const values of attempts) {
-      await createManualEntry(
-        actor,
-        workspace,
-        { description: "", ...values },
-        now,
-      ).catch(() => null);
+      await createManualEntry(actor, workspace, { description: "", ...values }).catch(
+        () => null,
+      );
     }
 
     const rows = await allTimeEntries();
@@ -1493,19 +1677,20 @@ describe("updateEntryTimes", () => {
   it("guarda el trío nuevo y devuelve la vista con las horas de pared pedidas", async () => {
     const row = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
 
-    const result = await updateEntryTimes(
-      actor,
-      workspace,
-      { id: row.id, date: "2026-10-01", start: "09:15", end: "11:45" },
-      now,
-    );
+    const result = await updateEntryTimes(actor, workspace, {
+      id: row.id,
+      date: "2026-10-01",
+      start: "09:15",
+      end: "11:45",
+    });
 
-    expect(result.outsideWindow).toBe(false);
+    expect(result).toEqual({ entry: expect.any(Object) });
     expect(result.entry).toMatchObject({
       id: row.id,
       startedAt: "2026-10-01T12:15:00.000Z",
       endedAt: "2026-10-01T14:45:00.000Z",
       dayDate: "2026-10-01",
+      weekStart: "2026-09-28",
       startLabel: "09:15",
       endLabel: "11:45",
       durationSeconds: 150 * 60,
@@ -1524,36 +1709,36 @@ describe("updateEntryTimes", () => {
     await seedClosed("2026-10-01T14:00:00Z", "2026-10-01T16:00:00Z");
     await seedClosed("2026-09-30T15:00:00Z", "2026-09-30T16:00:00Z");
 
-    const before = await getTrackerState(actor, workspace, now);
+    const before = await getTrackerState(actor, workspace, { from: null }, now);
     const totalOf = (state: typeof before, date: string) =>
-      state.days.find((group) => group.date === date)?.closedSeconds;
+      daysOf(state).find((group) => group.date === date)?.closedSeconds;
     expect(totalOf(before, "2026-10-01")).toBe(3 * 3600);
     expect(totalOf(before, "2026-09-30")).toBe(3600);
 
-    const result = await updateEntryTimes(
-      actor,
-      workspace,
-      { id: moved.id, date: "2026-09-30", start: "08:00", end: "09:00" },
-      now,
-    );
+    const result = await updateEntryTimes(actor, workspace, {
+      id: moved.id,
+      date: "2026-09-30",
+      start: "08:00",
+      end: "09:00",
+    });
 
     expect(result.entry.dayDate).toBe("2026-09-30");
-    const after = await getTrackerState(actor, workspace, now);
+    const after = await getTrackerState(actor, workspace, { from: null }, now);
     expect(totalOf(after, "2026-10-01")).toBe(2 * 3600);
     expect(totalOf(after, "2026-09-30")).toBe(2 * 3600);
-    const group = after.days.find((day) => day.date === "2026-09-30");
+    const group = daysOf(after).find((day) => day.date === "2026-09-30");
     expect(group?.entries.map((entry) => entry.id)).toContain(moved.id);
   });
 
   it("TT-72, TT-51: un fin menor que el inicio cruza la medianoche", async () => {
     const row = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
 
-    const result = await updateEntryTimes(
-      actor,
-      workspace,
-      { id: row.id, date: "2026-10-01", start: "23:00", end: "02:00" },
-      now,
-    );
+    const result = await updateEntryTimes(actor, workspace, {
+      id: row.id,
+      date: "2026-10-01",
+      start: "23:00",
+      end: "02:00",
+    });
 
     expect(result.entry).toMatchObject({
       startedAt: "2026-10-02T02:00:00.000Z",
@@ -1575,12 +1760,7 @@ describe("updateEntryTimes", () => {
       { start: "08:00", end: "08:00" },
     ]) {
       await expect(
-        updateEntryTimes(
-          actor,
-          workspace,
-          { id: row.id, date: "2026-10-01", ...values },
-          now,
-        ),
+        updateEntryTimes(actor, workspace, { id: row.id, date: "2026-10-01", ...values }),
       ).rejects.toMatchObject({
         code: "validation",
         message: timeEntryMessages.tooShort,
@@ -1597,12 +1777,12 @@ describe("updateEntryTimes", () => {
   it("TT-73: un minuto de distancia entre las dos horas es el mínimo y se acepta", async () => {
     const row = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
 
-    const result = await updateEntryTimes(
-      actor,
-      workspace,
-      { id: row.id, date: "2026-10-01", start: "10:00", end: "10:01" },
-      now,
-    );
+    const result = await updateEntryTimes(actor, workspace, {
+      id: row.id,
+      date: "2026-10-01",
+      start: "10:00",
+      end: "10:01",
+    });
 
     expect(result.entry.durationSeconds).toBe(60);
   });
@@ -1611,15 +1791,15 @@ describe("updateEntryTimes", () => {
     await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T13:00:00Z");
     const row = await seedClosed("2026-10-01T17:00:00Z", "2026-10-01T18:00:00Z");
 
-    await updateEntryTimes(
-      actor,
-      workspace,
-      { id: row.id, date: "2026-10-01", start: "09:00", end: "11:00" },
-      now,
-    );
+    await updateEntryTimes(actor, workspace, {
+      id: row.id,
+      date: "2026-10-01",
+      start: "09:00",
+      end: "11:00",
+    });
 
-    const state = await getTrackerState(actor, workspace, now);
-    const day = state.days.find((group) => group.date === "2026-10-01");
+    const state = await getTrackerState(actor, workspace, { from: null }, now);
+    const day = daysOf(state).find((group) => group.date === "2026-10-01");
     expect(day?.entries).toHaveLength(2);
     expect(day?.closedSeconds).toBe(4 * 3600);
   });
@@ -1629,12 +1809,12 @@ describe("updateEntryTimes", () => {
     const row = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
 
     await expect(
-      updateEntryTimes(
-        actor,
-        reciente,
-        { id: row.id, date: "2026-08-31", start: "08:00", end: "09:00" },
-        now,
-      ),
+      updateEntryTimes(actor, reciente, {
+        id: row.id,
+        date: "2026-08-31",
+        start: "08:00",
+        end: "09:00",
+      }),
     ).rejects.toMatchObject({
       code: "validation",
       message: timeEntryMessages.beforeWorkspace,
@@ -1644,52 +1824,58 @@ describe("updateEntryTimes", () => {
       endedAt: "2026-10-01T12:00:00.000Z",
     });
 
-    const result = await updateEntryTimes(
-      actor,
-      reciente,
-      { id: row.id, date: "2026-09-01", start: "08:00", end: "09:00" },
-      now,
-    );
+    const result = await updateEntryTimes(actor, reciente, {
+      id: row.id,
+      date: "2026-09-01",
+      start: "08:00",
+      end: "09:00",
+    });
     expect(result.entry.dayDate).toBe("2026-09-01");
   });
 
   it("acepta mover una entrada cerrada al futuro: no hay cota superior (P-10)", async () => {
     const row = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
 
-    const result = await updateEntryTimes(
-      actor,
-      workspace,
-      { id: row.id, date: "2026-12-24", start: "08:00", end: "09:00" },
-      now,
-    );
+    const result = await updateEntryTimes(actor, workspace, {
+      id: row.id,
+      date: "2026-12-24",
+      start: "08:00",
+      end: "09:00",
+    });
 
     expect(result.entry.dayDate).toBe("2026-12-24");
-    expect(result.outsideWindow).toBe(false);
+    expect(result.entry.weekStart).toBe("2026-12-21");
   });
 });
 
-describe("updateEntryTimes: outsideWindow (TT-108)", () => {
+describe("updateEntryTimes: la semana de la entrada (P-15)", () => {
   const now = new Date("2026-10-02T15:00:00Z");
   const workspace = workspaceOf(buenosAires);
   const toAugust = { date: "2026-08-01", start: "08:00", end: "09:00" };
 
-  it("es verdadero sin timer cuando la movida queda por debajo de la ventana", async () => {
+  it("sin timer, la movida debajo de la ventana trae una semana anterior a reachFrom", async () => {
     await seedClosed("2026-10-02T11:00:00Z", "2026-10-02T12:00:00Z");
     const row = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
 
-    const result = await updateEntryTimes(
+    const result = await updateEntryTimes(actor, workspace, { id: row.id, ...toAugust });
+
+    expect(result.entry.weekStart).toBe("2026-07-27");
+    const state = await getTrackerState(actor, workspace, { from: null }, now);
+    expect(daysOf(state).map((group) => group.date)).toEqual(["2026-10-02"]);
+    expect(state.reachFrom).toBe("2026-09-14");
+    const reached = await getTrackerState(
       actor,
       workspace,
-      { id: row.id, ...toAugust },
+      { from: result.entry.weekStart },
       now,
     );
-
-    expect(result.outsideWindow).toBe(true);
-    const state = await getTrackerState(actor, workspace, now);
-    expect(state.days.map((group) => group.date)).toEqual(["2026-10-02"]);
+    expect(daysOf(reached).map((group) => group.date)).toEqual([
+      "2026-10-02",
+      "2026-08-01",
+    ]);
   });
 
-  it("es falso con un timer que arrancó antes, porque su día extiende la ventana", async () => {
+  it("con un timer que arrancó antes, la movida se ve por el timer y su semana sigue antes de reachFrom", async () => {
     await seedClosed("2026-10-02T11:00:00Z", "2026-10-02T12:00:00Z");
     const row = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
     await seedTimeEntry({
@@ -1698,73 +1884,67 @@ describe("updateEntryTimes: outsideWindow (TT-108)", () => {
       startedAt: "2026-07-31T12:00:00Z",
     });
 
-    const result = await updateEntryTimes(
-      actor,
-      workspace,
-      { id: row.id, ...toAugust },
-      now,
-    );
+    const result = await updateEntryTimes(actor, workspace, { id: row.id, ...toAugust });
 
-    expect(result.outsideWindow).toBe(false);
-    const state = await getTrackerState(actor, workspace, now);
-    expect(state.days.map((group) => group.date)).toContain("2026-08-01");
+    const state = await getTrackerState(actor, workspace, { from: null }, now);
+    expect(daysOf(state).map((group) => group.date)).toContain("2026-08-01");
+    expect(state.windowFrom).toBe("2026-07-27");
+    expect(state.reachFrom).toBe("2026-09-14");
+    expect(result.entry.weekStart < state.reachFrom).toBe(true);
   });
 
-  it("es falso con una futura presente: la movida, sola entre las pasadas, extiende la ventana", async () => {
+  it("con una futura presente, la movida, sola entre las pasadas, es el piso", async () => {
     await seedClosed("2026-10-20T11:00:00Z", "2026-10-20T12:00:00Z");
     const row = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
 
-    const result = await updateEntryTimes(
-      actor,
-      workspace,
-      { id: row.id, ...toAugust },
-      now,
-    );
+    const result = await updateEntryTimes(actor, workspace, { id: row.id, ...toAugust });
 
-    // Leída antes del update, la más reciente de las pasadas sería la del 1/10;
-    // contada la futura, el extremo sería el de los catorce días. Las dos
-    // darían el aviso sobre una entrada que la lista muestra.
-    expect(result.outsideWindow).toBe(false);
-    const state = await getTrackerState(actor, workspace, now);
-    expect(state.days.map((group) => group.date)).toEqual(["2026-10-20", "2026-08-01"]);
+    const state = await getTrackerState(actor, workspace, { from: null }, now);
+    expect(daysOf(state).map((group) => group.date)).toEqual([
+      "2026-10-20",
+      "2026-08-01",
+    ]);
+    expect(state.reachFrom).toBe(result.entry.weekStart);
   });
 
-  it("es verdadero cuando la movida era la más reciente de las pasadas y deja de serlo", async () => {
+  it("la movida que era la más reciente de las pasadas y deja de serlo cae antes de reachFrom", async () => {
     await seedClosed("2026-09-01T11:00:00Z", "2026-09-01T12:00:00Z");
     const row = await seedClosed("2026-09-10T11:00:00Z", "2026-09-10T12:00:00Z");
 
-    const result = await updateEntryTimes(
-      actor,
-      workspace,
-      { id: row.id, date: "2026-08-15", start: "08:00", end: "09:00" },
-      now,
-    );
+    const result = await updateEntryTimes(actor, workspace, {
+      id: row.id,
+      date: "2026-08-15",
+      start: "08:00",
+      end: "09:00",
+    });
 
-    expect(result.outsideWindow).toBe(true);
-    const state = await getTrackerState(actor, workspace, now);
-    expect(state.days.map((group) => group.date)).toEqual(["2026-09-01"]);
+    expect(result.entry.weekStart).toBe("2026-08-10");
+    const state = await getTrackerState(actor, workspace, { from: null }, now);
+    expect(daysOf(state).map((group) => group.date)).toEqual(["2026-09-01"]);
+    expect(state.reachFrom).toBe("2026-08-31");
   });
 
-  it("es falso cuando la movida sigue siendo la más reciente de las pasadas: se mide después del update", async () => {
+  it("la movida que sigue siendo la más reciente de las pasadas es el piso, con su semana entera", async () => {
     await seedClosed("2026-09-01T11:00:00Z", "2026-09-01T12:00:00Z");
     const row = await seedClosed("2026-09-10T11:00:00Z", "2026-09-10T12:00:00Z");
 
-    const result = await updateEntryTimes(
-      actor,
-      workspace,
-      { id: row.id, date: "2026-09-05", start: "08:00", end: "09:00" },
-      now,
-    );
+    const result = await updateEntryTimes(actor, workspace, {
+      id: row.id,
+      date: "2026-09-05",
+      start: "08:00",
+      end: "09:00",
+    });
 
-    // Medida antes del update, la ventana arrancaría el 10/09 y el 05/09 quedaría afuera.
-    expect(result.outsideWindow).toBe(false);
-    const state = await getTrackerState(actor, workspace, now);
-    expect(state.days.map((group) => group.date)).toEqual(["2026-09-05"]);
+    const state = await getTrackerState(actor, workspace, { from: null }, now);
+    expect(daysOf(state).map((group) => group.date)).toEqual([
+      "2026-09-05",
+      "2026-09-01",
+    ]);
+    expect(state.reachFrom).toBe(result.entry.weekStart);
   });
 });
 
 describe("updateEntryTimes con cambio de horario (Europe/Madrid)", () => {
-  const now = new Date("2026-11-02T12:00:00Z");
   const workspace = workspaceOf(madrid);
 
   it("TT-97: las horas de pared que se editaron y la duración real, 240 y 120 minutos", async () => {
@@ -1772,12 +1952,12 @@ describe("updateEntryTimes con cambio de horario (Europe/Madrid)", () => {
     const spring = await seedClosed("2026-03-20T08:00:00Z", "2026-03-20T09:00:00Z");
 
     // 25/10: de 01:00 en +02:00 a 04:00 en +01:00.
-    const fall = await updateEntryTimes(
-      actor,
-      workspace,
-      { id: autumn.id, date: "2026-10-25", start: "01:00", end: "04:00" },
-      now,
-    );
+    const fall = await updateEntryTimes(actor, workspace, {
+      id: autumn.id,
+      date: "2026-10-25",
+      start: "01:00",
+      end: "04:00",
+    });
     expect(fall.entry).toMatchObject({
       startedAt: "2026-10-24T23:00:00.000Z",
       endedAt: "2026-10-25T03:00:00.000Z",
@@ -1788,12 +1968,12 @@ describe("updateEntryTimes con cambio de horario (Europe/Madrid)", () => {
     });
 
     // 29/03: de 01:00 en +01:00 a 04:00 en +02:00.
-    const rise = await updateEntryTimes(
-      actor,
-      workspace,
-      { id: spring.id, date: "2026-03-29", start: "01:00", end: "04:00" },
-      now,
-    );
+    const rise = await updateEntryTimes(actor, workspace, {
+      id: spring.id,
+      date: "2026-03-29",
+      start: "01:00",
+      end: "04:00",
+    });
     expect(rise.entry).toMatchObject({
       startedAt: "2026-03-29T00:00:00.000Z",
       endedAt: "2026-03-29T02:00:00.000Z",
@@ -1811,12 +1991,7 @@ describe("updateEntryTimes con cambio de horario (Europe/Madrid)", () => {
       { start: "01:30", end: "02:30" },
     ]) {
       await expect(
-        updateEntryTimes(
-          actor,
-          workspace,
-          { id: row.id, date: "2026-03-29", ...values },
-          now,
-        ),
+        updateEntryTimes(actor, workspace, { id: row.id, date: "2026-03-29", ...values }),
       ).rejects.toMatchObject({
         code: "validation",
         message: timeEntryMessages.nonexistentClock,
@@ -1858,12 +2033,12 @@ describe("updateEntryTimes con cambio de horario (Europe/Madrid)", () => {
         for (const end of clocks) {
           const row = await seedClosed(seed.startedAt, seed.endedAt);
           try {
-            await updateEntryTimes(
-              actor,
-              workspace,
-              { id: row.id, date: seed.date, start, end },
-              now,
-            );
+            await updateEntryTimes(actor, workspace, {
+              id: row.id,
+              date: seed.date,
+              start,
+              end,
+            });
             accepted += 1;
           } catch (error) {
             // Solo rechazos de dominio: un `check` violado saldría como otro error.
@@ -1918,18 +2093,16 @@ describe("updateEntryTimes con cambio de horario (Europe/Madrid)", () => {
 });
 
 describe("ADR 0006: conservación y descarte", () => {
-  const now = new Date("2026-11-02T12:00:00Z");
-
   it("descarta lo conservado en la hora repetida cuando el par queda fuera de orden", async () => {
     // 01:50 a 02:50 con el fin en la primera ocurrencia.
     const row = await seedClosed("2026-10-24T23:50:00Z", "2026-10-25T00:50:00Z");
 
-    const result = await updateEntryTimes(
-      actor,
-      workspaceOf(madrid),
-      { id: row.id, date: "2026-10-25", start: "02:10", end: "02:50" },
-      now,
-    );
+    const result = await updateEntryTimes(actor, workspaceOf(madrid), {
+      id: row.id,
+      date: "2026-10-25",
+      start: "02:10",
+      end: "02:50",
+    });
 
     expect(result.entry.startedAt).toBe("2026-10-25T01:10:00.000Z");
     expect(result.entry.endedAt).toBe("2026-10-25T01:50:00.000Z");
@@ -1940,12 +2113,12 @@ describe("ADR 0006: conservación y descarte", () => {
     // 02:30 en la primera ocurrencia a 03:15.
     const row = await seedClosed("2026-10-25T00:30:00Z", "2026-10-25T02:15:00Z");
 
-    const result = await updateEntryTimes(
-      actor,
-      workspaceOf(madrid),
-      { id: row.id, date: "2026-10-25", start: "02:30", end: "02:45" },
-      now,
-    );
+    const result = await updateEntryTimes(actor, workspaceOf(madrid), {
+      id: row.id,
+      date: "2026-10-25",
+      start: "02:30",
+      end: "02:45",
+    });
 
     expect(result.entry.startedAt).toBe("2026-10-25T00:30:00.000Z");
     expect(result.entry.endedAt).toBe("2026-10-25T01:45:00.000Z");
@@ -1955,12 +2128,12 @@ describe("ADR 0006: conservación y descarte", () => {
   it("acepta dos horas iguales que duran 60 minutos reales en la hora repetida", async () => {
     const row = await seedClosed("2026-10-25T00:30:00Z", "2026-10-25T02:15:00Z");
 
-    const result = await updateEntryTimes(
-      actor,
-      workspaceOf(madrid),
-      { id: row.id, date: "2026-10-25", start: "02:30", end: "02:30" },
-      now,
-    );
+    const result = await updateEntryTimes(actor, workspaceOf(madrid), {
+      id: row.id,
+      date: "2026-10-25",
+      start: "02:30",
+      end: "02:30",
+    });
 
     expect(result.entry.startedAt).toBe("2026-10-25T00:30:00.000Z");
     expect(result.entry.endedAt).toBe("2026-10-25T01:30:00.000Z");
@@ -1971,12 +2144,12 @@ describe("ADR 0006: conservación y descarte", () => {
     // 10:00:40 a 10:30:15 en Buenos Aires.
     const row = await seedClosed("2026-10-01T13:00:40Z", "2026-10-01T13:30:15Z");
 
-    const result = await updateEntryTimes(
-      actor,
-      workspaceOf(buenosAires),
-      { id: row.id, date: "2026-10-01", start: "10:00", end: "11:00" },
-      now,
-    );
+    const result = await updateEntryTimes(actor, workspaceOf(buenosAires), {
+      id: row.id,
+      date: "2026-10-01",
+      start: "10:00",
+      end: "11:00",
+    });
 
     expect(result.entry.startedAt).toBe("2026-10-01T13:00:40.000Z");
     expect(result.entry.endedAt).toBe("2026-10-01T14:00:00.000Z");
@@ -1985,12 +2158,12 @@ describe("ADR 0006: conservación y descarte", () => {
   it("recalcula los dos cuando el conservado dejaría el par en segundos", async () => {
     const row = await seedClosed("2026-10-01T13:00:40Z", "2026-10-01T13:30:15Z");
 
-    const result = await updateEntryTimes(
-      actor,
-      workspaceOf(buenosAires),
-      { id: row.id, date: "2026-10-01", start: "10:00", end: "10:01" },
-      now,
-    );
+    const result = await updateEntryTimes(actor, workspaceOf(buenosAires), {
+      id: row.id,
+      date: "2026-10-01",
+      start: "10:00",
+      end: "10:01",
+    });
 
     expect(result.entry.startedAt).toBe("2026-10-01T13:00:00.000Z");
     expect(result.entry.endedAt).toBe("2026-10-01T13:01:00.000Z");
@@ -2046,8 +2219,6 @@ describe("ADR 0006: conservación y descarte", () => {
 });
 
 describe("updateEntryTimes: fechas en el borde del calendario", () => {
-  const now = new Date("2026-10-02T15:00:00Z");
-
   it.each([
     ["el día de fin sin clave", { start: "23:00", end: "01:00" }],
     ["el fin en el año 10000 UTC", { start: "20:00", end: "22:00" }],
@@ -2055,12 +2226,11 @@ describe("updateEntryTimes: fechas en el borde del calendario", () => {
     const row = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
 
     await expect(
-      updateEntryTimes(
-        actor,
-        workspaceOf(buenosAires),
-        { id: row.id, date: "9999-12-31", ...values },
-        now,
-      ),
+      updateEntryTimes(actor, workspaceOf(buenosAires), {
+        id: row.id,
+        date: "9999-12-31",
+        ...values,
+      }),
     ).rejects.toMatchObject({
       code: "validation",
       message: timeEntryMessages.invalidDate,
@@ -2207,8 +2377,8 @@ describe("updateRunningStart", () => {
     await seedClosed("2026-10-01T12:00:00Z", "2026-10-01T13:00:00Z");
     const row = await seedTimer();
 
-    const before = await getTrackerState(actor, workspace, now);
-    expect(before.days.find((group) => group.isRunningDay)?.date).toBe("2026-10-02");
+    const before = await getTrackerState(actor, workspace, { from: null }, now);
+    expect(daysOf(before).find((group) => group.isRunningDay)?.date).toBe("2026-10-02");
 
     await updateRunningStart(
       actor,
@@ -2217,8 +2387,8 @@ describe("updateRunningStart", () => {
       now,
     );
 
-    const after = await getTrackerState(actor, workspace, now);
-    const flags = after.days.map((group) => [group.date, group.isRunningDay]);
+    const after = await getTrackerState(actor, workspace, { from: null }, now);
+    const flags = daysOf(after).map((group) => [group.date, group.isRunningDay]);
     expect(flags).toEqual([
       ["2026-10-02", false],
       ["2026-10-01", true],
@@ -2237,7 +2407,7 @@ describe("desenlaces con una pestaña desactualizada (§4.3)", () => {
     await deleteEntry(actor, { id: row.id });
 
     await expect(
-      updateEntryTimes(actor, workspace, { id: row.id, ...trio }, now),
+      updateEntryTimes(actor, workspace, { id: row.id, ...trio }),
     ).rejects.toMatchObject({ code: "not_found", message: timeEntryMessages.notFound });
     expect(await allTimeEntries()).toEqual([]);
     expect(await auditActionsOf(row.id)).toEqual(["timeEntry.delete"]);
@@ -2251,7 +2421,7 @@ describe("desenlaces con una pestaña desactualizada (§4.3)", () => {
     });
 
     await expect(
-      updateEntryTimes(actor, workspace, { id: row.id, ...trio }, now),
+      updateEntryTimes(actor, workspace, { id: row.id, ...trio }),
     ).rejects.toMatchObject({
       code: "timer_running",
       message: timeEntryMessages.runningEntryTimes,
@@ -2271,12 +2441,12 @@ describe("desenlaces con una pestaña desactualizada (§4.3)", () => {
     });
 
     await expect(
-      updateEntryTimes(
-        actor,
-        workspace,
-        { id: row.id, date: "2026-10-01", start: "10:00", end: "10:00" },
-        now,
-      ),
+      updateEntryTimes(actor, workspace, {
+        id: row.id,
+        date: "2026-10-01",
+        start: "10:00",
+        end: "10:00",
+      }),
     ).rejects.toMatchObject({
       code: "timer_running",
       message: timeEntryMessages.runningEntryTimes,
@@ -2290,7 +2460,7 @@ describe("desenlaces con una pestaña desactualizada (§4.3)", () => {
       userId: actor.userId,
       startedAt: "2026-10-02T11:00:00Z",
     });
-    await stopTimer(actor, buenosAires, { id: row.id });
+    await stopTimer(actor, workspaceOf(buenosAires), { id: row.id });
 
     await expect(
       updateRunningStart(
@@ -2312,7 +2482,7 @@ describe("desenlaces con una pestaña desactualizada (§4.3)", () => {
       userId: actor.userId,
       startedAt: "2026-10-02T11:00:00Z",
     });
-    const stopped = await stopTimer(actor, buenosAires, { id: row.id });
+    const stopped = await stopTimer(actor, workspaceOf(buenosAires), { id: row.id });
 
     await expect(
       updateRunningStart(
@@ -2365,7 +2535,7 @@ describe("desenlaces con una pestaña desactualizada (§4.3)", () => {
     });
 
     await expect(
-      updateEntryTimes(actor, workspace, { id: closed.id, ...trio }, now),
+      updateEntryTimes(actor, workspace, { id: closed.id, ...trio }),
     ).rejects.toMatchObject({
       code: "forbidden",
       message: timeEntryMessages.forbiddenOtherOwner,
@@ -2394,7 +2564,7 @@ describe("desenlaces con una pestaña desactualizada (§4.3)", () => {
     const id = "0b5e8d5e-3c2f-4b7a-9f1a-2c3d4e5f6a7b";
 
     await expect(
-      updateEntryTimes(actor, workspace, { id, ...trio }, now),
+      updateEntryTimes(actor, workspace, { id, ...trio }),
     ).rejects.toMatchObject({ code: "not_found", message: timeEntryMessages.notFound });
     await expect(
       updateRunningStart(
@@ -2430,7 +2600,7 @@ describe("desenlaces con una pestaña desactualizada (§4.3)", () => {
           },
           appNow,
         ),
-      () => stopTimer(actor, buenosAires, { id: row.id }),
+      () => stopTimer(actor, workspaceOf(buenosAires), { id: row.id }),
     ]);
 
     expect(started.status).toBe("fulfilled");
@@ -2472,7 +2642,11 @@ describe("desenlaces con una pestaña desactualizada (§4.3)", () => {
           },
           appNow,
         ),
-      () => startTimer(actor, buenosAires, { id: nextId, description: "siguiente" }),
+      () =>
+        startTimer(actor, workspaceOf(buenosAires), {
+          id: nextId,
+          description: "siguiente",
+        }),
     ]);
 
     expect(started.status).toBe("fulfilled");
@@ -2519,19 +2693,15 @@ describe("TT-89: aplicar dos veces el mismo pedido deja el mismo estado (§4.4)"
   ])("updateEntryTimes %s", async (_, timezone, seed, trio) => {
     const row = await seedClosed(seed.startedAt, seed.endedAt);
 
-    const first = await updateEntryTimes(
-      actor,
-      workspaceOf(timezone),
-      { id: row.id, ...trio },
-      now,
-    );
+    const first = await updateEntryTimes(actor, workspaceOf(timezone), {
+      id: row.id,
+      ...trio,
+    });
     const once = await instantsOf(row.id);
-    const second = await updateEntryTimes(
-      actor,
-      workspaceOf(timezone),
-      { id: row.id, ...trio },
-      now,
-    );
+    const second = await updateEntryTimes(actor, workspaceOf(timezone), {
+      id: row.id,
+      ...trio,
+    });
 
     expect(second.entry).toEqual(first.entry);
     expect(await instantsOf(row.id)).toEqual(once);
@@ -2586,9 +2756,16 @@ describe("TT-110: editableTimes", () => {
       ids.set(name, (await seedClosed(startedAt, endedAt)).id);
     }
 
-    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      now,
+    );
     const views = new Map(
-      state.days.flatMap((group) => group.entries).map((entry) => [entry.id, entry]),
+      daysOf(state)
+        .flatMap((group) => group.entries)
+        .map((entry) => [entry.id, entry]),
     );
     for (const [name, , , editable] of cases) {
       expect([name, views.get(ids.get(name) ?? "")?.editableTimes]).toEqual([
@@ -2608,6 +2785,7 @@ describe("TT-110: editableTimes", () => {
     const state = await getTrackerState(
       actor,
       workspaceOf(buenosAires),
+      { from: null },
       new Date("2026-10-02T11:30:00Z"),
     );
 
@@ -2640,9 +2818,14 @@ describe("TT-110: editableTimes", () => {
       const row = await seedClosed(startedAt, endedAt);
       const now = new Date(new Date(endedAt).getTime() + 24 * 3_600_000);
 
-      const state = await getTrackerState(actor, workspaceOf(madrid), now);
+      const state = await getTrackerState(
+        actor,
+        workspaceOf(madrid),
+        { from: null },
+        now,
+      );
 
-      const view = state.days
+      const view = daysOf(state)
         .flatMap((group) => group.entries)
         .find((entry) => entry.id === row.id);
       expect([name, view?.editableTimes]).toEqual([name, editable]);
@@ -2652,12 +2835,12 @@ describe("TT-110: editableTimes", () => {
   it("lo que updateEntryTimes escribe siempre vuelve editable", async () => {
     const row = await seedClosed("2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
 
-    const result = await updateEntryTimes(
-      actor,
-      workspaceOf(buenosAires),
-      { id: row.id, date: "2026-10-01", start: "22:00", end: "21:59" },
-      new Date("2026-10-10T15:00:00Z"),
-    );
+    const result = await updateEntryTimes(actor, workspaceOf(buenosAires), {
+      id: row.id,
+      date: "2026-10-01",
+      start: "22:00",
+      end: "21:59",
+    });
 
     expect(result.entry.durationSeconds).toBe((24 * 60 - 1) * 60);
     expect(result.entry.editableTimes).toBe(true);
@@ -2669,12 +2852,12 @@ describe("TT-110: editableTimes", () => {
     const row = await seedClosed("2026-10-01T13:00:00Z", "2026-10-03T15:00:00Z");
 
     await expect(
-      updateEntryTimes(
-        actor,
-        workspaceOf(buenosAires),
-        { id: row.id, date: "2026-10-01", start: "10:00", end: "12:00" },
-        new Date("2026-10-10T15:00:00Z"),
-      ),
+      updateEntryTimes(actor, workspaceOf(buenosAires), {
+        id: row.id,
+        date: "2026-10-01",
+        start: "10:00",
+        end: "12:00",
+      }),
     ).rejects.toMatchObject({
       code: "validation",
       message: timeEntryMessages.multiDayTimes,
@@ -2791,7 +2974,10 @@ describe("continueEntry (TT-57)", () => {
     const source = await seedSource();
     const id = randomUUID();
 
-    const result = await continueEntry(actor, buenosAires, { id, sourceId: source.id });
+    const result = await continueEntry(actor, workspaceOf(buenosAires), {
+      id,
+      sourceId: source.id,
+    });
 
     expect(result.stopped).toBeNull();
     expect(result.running).toMatchObject({
@@ -2811,7 +2997,7 @@ describe("continueEntry (TT-57)", () => {
     const source = await seedSource();
     const previous = await seedRunning();
 
-    const result = await continueEntry(actor, buenosAires, {
+    const result = await continueEntry(actor, workspaceOf(buenosAires), {
       id: randomUUID(),
       sourceId: source.id,
     });
@@ -2835,7 +3021,7 @@ describe("continueEntry (TT-57)", () => {
       startedAt: new Date(Date.now() + 3_600_000),
     });
 
-    const result = await continueEntry(actor, buenosAires, {
+    const result = await continueEntry(actor, workspaceOf(buenosAires), {
       id: randomUUID(),
       sourceId: source.id,
     });
@@ -2852,7 +3038,10 @@ describe("continueEntry (TT-57)", () => {
     const previous = await seedRunning("en curso");
     const id = randomUUID();
 
-    const result = await continueEntry(actor, buenosAires, { id, sourceId: previous.id });
+    const result = await continueEntry(actor, workspaceOf(buenosAires), {
+      id,
+      sourceId: previous.id,
+    });
 
     expect(result.stopped?.id).toBe(previous.id);
     expect(result.running).toMatchObject({ id, description: "en curso", endedAt: null });
@@ -2867,7 +3056,7 @@ describe("continueEntry (TT-57)", () => {
     const rows = await allTimeEntries();
 
     await expect(
-      continueEntry(actor, buenosAires, {
+      continueEntry(actor, workspaceOf(buenosAires), {
         id: randomUUID(),
         sourceId: "11111111-1111-4111-8111-111111111111",
       }),
@@ -2889,7 +3078,10 @@ describe("continueEntry (TT-57)", () => {
     const audit = await auditFor("time_entry");
 
     await expect(
-      continueEntry(actor, buenosAires, { id: randomUUID(), sourceId: foreign.id }),
+      continueEntry(actor, workspaceOf(buenosAires), {
+        id: randomUUID(),
+        sourceId: foreign.id,
+      }),
     ).rejects.toMatchObject({
       code: "forbidden",
       message: timeEntryMessages.forbiddenOtherOwner,
@@ -2910,7 +3102,10 @@ describe("continueEntry (TT-57)", () => {
     });
 
     await expect(
-      continueEntry(actor, buenosAires, { id: randomUUID(), sourceId: foreign.id }),
+      continueEntry(actor, workspaceOf(buenosAires), {
+        id: randomUUID(),
+        sourceId: foreign.id,
+      }),
     ).rejects.toMatchObject({ code: "not_found", message: timeEntryMessages.notFound });
     expect(await timeEntriesOf(workspaceId, actor.userId)).toEqual([]);
   });
@@ -2921,12 +3116,18 @@ describe("continueEntry con el id que eligió el cliente (ADR 0007)", () => {
     const source = await seedSource();
     const previous = await seedRunning();
     const id = randomUUID();
-    const first = await continueEntry(actor, buenosAires, { id, sourceId: source.id });
+    const first = await continueEntry(actor, workspaceOf(buenosAires), {
+      id,
+      sourceId: source.id,
+    });
     expect(first.stopped?.id).toBe(previous.id);
     const rows = await allTimeEntries();
     const audit = await auditFor("time_entry");
 
-    const retry = await continueEntry(actor, buenosAires, { id, sourceId: source.id });
+    const retry = await continueEntry(actor, workspaceOf(buenosAires), {
+      id,
+      sourceId: source.id,
+    });
 
     expect(retry).toEqual({ running: first.running, stopped: null });
     expect(await allTimeEntries()).toEqual(rows);
@@ -2936,12 +3137,15 @@ describe("continueEntry con el id que eligió el cliente (ADR 0007)", () => {
   it("un reintento cuya continuación ya se detuvo la responde cerrada y no escribe", async () => {
     const source = await seedSource();
     const id = randomUUID();
-    await continueEntry(actor, buenosAires, { id, sourceId: source.id });
-    const { stopped } = await stopTimer(actor, buenosAires, { id });
+    await continueEntry(actor, workspaceOf(buenosAires), { id, sourceId: source.id });
+    const { stopped } = await stopTimer(actor, workspaceOf(buenosAires), { id });
     const rows = await allTimeEntries();
     const audit = await auditFor("time_entry");
 
-    const retry = await continueEntry(actor, buenosAires, { id, sourceId: source.id });
+    const retry = await continueEntry(actor, workspaceOf(buenosAires), {
+      id,
+      sourceId: source.id,
+    });
 
     expect(retry).toEqual({ running: stopped, stopped: null });
     expect(await allTimeEntries()).toEqual(rows);
@@ -2971,8 +3175,8 @@ describe("continueEntry con el id que eligió el cliente (ADR 0007)", () => {
     await warmPool(2);
 
     const results = await Promise.all([
-      continueEntry(actor, buenosAires, { id, sourceId: source.id }),
-      continueEntry(actor, buenosAires, { id, sourceId: source.id }),
+      continueEntry(actor, workspaceOf(buenosAires), { id, sourceId: source.id }),
+      continueEntry(actor, workspaceOf(buenosAires), { id, sourceId: source.id }),
     ]);
 
     expect(results.map((result) => result.running.id)).toEqual([id, id]);
@@ -2987,8 +3191,8 @@ describe("continueEntry con el id que eligió el cliente (ADR 0007)", () => {
     const results = await raceThroughBarrier(
       (tx) => timeEntryRepository.findByIdForUpdate(tx, workspaceId, previous.id),
       [
-        () => continueEntry(actor, buenosAires, { id, sourceId: source.id }),
-        () => continueEntry(actor, buenosAires, { id, sourceId: source.id }),
+        () => continueEntry(actor, workspaceOf(buenosAires), { id, sourceId: source.id }),
+        () => continueEntry(actor, workspaceOf(buenosAires), { id, sourceId: source.id }),
       ],
     );
 
@@ -3038,8 +3242,16 @@ describe("continueEntry con el id que eligió el cliente (ADR 0007)", () => {
       const results = await raceThroughBarrier(
         (tx) => timeEntryRepository.findByIdForUpdate(tx, workspaceId, previous.id),
         [
-          () => continueEntry(actor, buenosAires, { id: ids[0], sourceId: source.id }),
-          () => startTimer(actor, buenosAires, { id: ids[1], description: "nuevo" }),
+          () =>
+            continueEntry(actor, workspaceOf(buenosAires), {
+              id: ids[0],
+              sourceId: source.id,
+            }),
+          () =>
+            startTimer(actor, workspaceOf(buenosAires), {
+              id: ids[1],
+              description: "nuevo",
+            }),
         ],
       );
 
@@ -3057,7 +3269,8 @@ describe("continueEntry con el id que eligió el cliente (ADR 0007)", () => {
       const results = await raceThroughBarrier(
         (tx) => timeEntryRepository.findByIdForUpdate(tx, workspaceId, previous.id),
         ids.map(
-          (id) => () => continueEntry(actor, buenosAires, { id, sourceId: source.id }),
+          (id) => () =>
+            continueEntry(actor, workspaceOf(buenosAires), { id, sourceId: source.id }),
         ),
       );
 
@@ -3095,9 +3308,9 @@ const foreignOwners = {
 describe("continueEntry y duplicateEntry con el id de una fila ajena (ADR 0007)", () => {
   const creations = {
     continueEntry: (id: string, sourceId: string) =>
-      continueEntry(actor, buenosAires, { id, sourceId }),
+      continueEntry(actor, workspaceOf(buenosAires), { id, sourceId }),
     duplicateEntry: (id: string, sourceId: string) =>
-      duplicateEntry(actor, buenosAires, { id, sourceId }),
+      duplicateEntry(actor, workspaceOf(buenosAires), { id, sourceId }),
   };
 
   describe.each(Object.entries(creations))("%s", (_, create) => {
@@ -3148,7 +3361,7 @@ describe("duplicateEntry (TT-58)", () => {
   it("P-14: la copia tiene exactamente los instantes de la original", async () => {
     const source = await seedSource();
 
-    const { created } = await duplicateEntry(actor, buenosAires, {
+    const { created } = await duplicateEntry(actor, workspaceOf(buenosAires), {
       id: randomUUID(),
       sourceId: source.id,
     });
@@ -3165,7 +3378,7 @@ describe("duplicateEntry (TT-58)", () => {
     const source = await seedSource();
     const id = randomUUID();
 
-    const { created } = await duplicateEntry(actor, buenosAires, {
+    const { created } = await duplicateEntry(actor, workspaceOf(buenosAires), {
       id,
       sourceId: source.id,
     });
@@ -3184,11 +3397,17 @@ describe("duplicateEntry (TT-58)", () => {
   it("el reintento con el mismo id responde la copia y no crea otra", async () => {
     const source = await seedSource();
     const id = randomUUID();
-    const first = await duplicateEntry(actor, buenosAires, { id, sourceId: source.id });
+    const first = await duplicateEntry(actor, workspaceOf(buenosAires), {
+      id,
+      sourceId: source.id,
+    });
     const rows = await allTimeEntries();
     const audit = await auditFor("time_entry");
 
-    const retry = await duplicateEntry(actor, buenosAires, { id, sourceId: source.id });
+    const retry = await duplicateEntry(actor, workspaceOf(buenosAires), {
+      id,
+      sourceId: source.id,
+    });
 
     expect(retry).toEqual(first);
     expect(await allTimeEntries()).toEqual(rows);
@@ -3201,8 +3420,8 @@ describe("duplicateEntry (TT-58)", () => {
     await warmPool(2);
 
     const results = await Promise.all([
-      duplicateEntry(actor, buenosAires, { id, sourceId: source.id }),
-      duplicateEntry(actor, buenosAires, { id, sourceId: source.id }),
+      duplicateEntry(actor, workspaceOf(buenosAires), { id, sourceId: source.id }),
+      duplicateEntry(actor, workspaceOf(buenosAires), { id, sourceId: source.id }),
     ]);
 
     expect(results.map((result) => result.created.id)).toEqual([id, id]);
@@ -3217,8 +3436,14 @@ describe("duplicateEntry (TT-58)", () => {
   it("dos pedidos con ids distintos son dos copias", async () => {
     const source = await seedSource();
 
-    await duplicateEntry(actor, buenosAires, { id: randomUUID(), sourceId: source.id });
-    await duplicateEntry(actor, buenosAires, { id: randomUUID(), sourceId: source.id });
+    await duplicateEntry(actor, workspaceOf(buenosAires), {
+      id: randomUUID(),
+      sourceId: source.id,
+    });
+    await duplicateEntry(actor, workspaceOf(buenosAires), {
+      id: randomUUID(),
+      sourceId: source.id,
+    });
 
     expect(await timeEntriesOf(workspaceId, actor.userId)).toHaveLength(3);
   });
@@ -3227,7 +3452,10 @@ describe("duplicateEntry (TT-58)", () => {
     const source = await seedSource();
     const running = await seedRunning();
 
-    await duplicateEntry(actor, buenosAires, { id: randomUUID(), sourceId: source.id });
+    await duplicateEntry(actor, workspaceOf(buenosAires), {
+      id: randomUUID(),
+      sourceId: source.id,
+    });
 
     expect(await timeEntryById(running.id)).toEqual(running);
   });
@@ -3238,7 +3466,10 @@ describe("duplicateEntry (TT-58)", () => {
     const audit = await auditFor("time_entry");
 
     await expect(
-      duplicateEntry(actor, buenosAires, { id: randomUUID(), sourceId: running.id }),
+      duplicateEntry(actor, workspaceOf(buenosAires), {
+        id: randomUUID(),
+        sourceId: running.id,
+      }),
     ).rejects.toMatchObject({
       code: "timer_running",
       message: timeEntryMessages.runningEntryTimes,
@@ -3257,13 +3488,16 @@ describe("duplicateEntry (TT-58)", () => {
     const rows = await allTimeEntries();
 
     await expect(
-      duplicateEntry(actor, buenosAires, { id: randomUUID(), sourceId: foreign.id }),
+      duplicateEntry(actor, workspaceOf(buenosAires), {
+        id: randomUUID(),
+        sourceId: foreign.id,
+      }),
     ).rejects.toMatchObject({
       code: "forbidden",
       message: timeEntryMessages.forbiddenOtherOwner,
     });
     await expect(
-      duplicateEntry(actor, buenosAires, {
+      duplicateEntry(actor, workspaceOf(buenosAires), {
         id: randomUUID(),
         sourceId: "11111111-1111-4111-8111-111111111111",
       }),
@@ -3284,7 +3518,7 @@ describe("discardTimer (TT-65)", () => {
 
   it("un timer que otra pestaña detuvo responde already_stopped y la entrada se queda", async () => {
     const running = await seedRunning();
-    await stopTimer(actor, buenosAires, { id: running.id });
+    await stopTimer(actor, workspaceOf(buenosAires), { id: running.id });
     const rows = await allTimeEntries();
 
     await expect(discardTimer(actor, { id: running.id })).rejects.toMatchObject({
@@ -3297,11 +3531,11 @@ describe("discardTimer (TT-65)", () => {
   it("uno que otra pestaña cerró al arrancar o continuar, igual, y el nuevo sigue", async () => {
     const source = await seedSource();
     const running = await seedRunning();
-    const started = await startTimer(actor, buenosAires, {
+    const started = await startTimer(actor, workspaceOf(buenosAires), {
       id: randomUUID(),
       description: "otro",
     });
-    const continued = await continueEntry(actor, buenosAires, {
+    const continued = await continueEntry(actor, workspaceOf(buenosAires), {
       id: randomUUID(),
       sourceId: source.id,
     });
@@ -3341,7 +3575,7 @@ describe("discardTimer (TT-65)", () => {
     const running = await seedRunning();
 
     const [stopped, discarded] = await queueBehindBarrier(lockRow(running.id), [
-      () => stopTimer(actor, buenosAires, { id: running.id }),
+      () => stopTimer(actor, workspaceOf(buenosAires), { id: running.id }),
       () => discardTimer(actor, { id: running.id }),
     ]);
 
@@ -3437,7 +3671,12 @@ describe("getTrackerState: lastEntryId", () => {
   const now = new Date("2026-10-02T15:00:00Z");
 
   it("es null sin entradas cerradas", async () => {
-    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      now,
+    );
     expect(state.lastEntryId).toBeNull();
   });
 
@@ -3451,7 +3690,12 @@ describe("getTrackerState: lastEntryId", () => {
       startedAt: "2026-10-02T14:00:00Z",
     });
 
-    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      now,
+    );
 
     expect(state.lastEntryId).toBe(latest.id);
   });
@@ -3459,7 +3703,12 @@ describe("getTrackerState: lastEntryId", () => {
   it("es null si la única cerrada es futura", async () => {
     await seedClosed("2026-10-03T11:00:00Z", "2026-10-03T12:00:00Z");
 
-    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      now,
+    );
 
     expect(state.lastEntryId).toBeNull();
   });
@@ -3479,9 +3728,14 @@ describe("getTrackerState: lastEntryId", () => {
       });
     }
 
-    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      now,
+    );
 
-    expect(state.days[0].entries.map((entry) => entry.id)).toEqual([ids[1], ids[0]]);
+    expect(daysOf(state)[0].entries.map((entry) => entry.id)).toEqual([ids[1], ids[0]]);
     expect(state.lastEntryId).toBe(ids[1]);
   });
 });
@@ -3506,4 +3760,550 @@ describe("la guarda de deleteRunningById", () => {
     expect(own?.id).toBe(running.id);
     expect(await timeEntryById(running.id)).toBeUndefined();
   });
+});
+
+/** Una entrada cerrada de una persona del workspace del test. */
+function seedClosedOf(userId: string, startedAt: string, endedAt: string) {
+  return seedTimeEntry({ workspaceId, userId, startedAt, endedAt });
+}
+
+/** Lleva la creación del workspace del test a 2020, para que el piso no estorbe. */
+async function backdateWorkspace() {
+  await db
+    .update(workspaceTable)
+    .set({ createdAt: new Date("2020-01-01T00:00:00Z") })
+    .where(eq(workspaceTable.id, workspaceId));
+}
+
+/** Fija el primer día de la semana de una persona del workspace del test. */
+async function setWeekStart(userId: string, weekStart: number) {
+  await db
+    .update(membership)
+    .set({ weekStart })
+    .where(and(eq(membership.workspaceId, workspaceId), eq(membership.userId, userId)));
+}
+
+/** El workspace del rastreador como lo arma la sesión de esa persona. */
+async function trackerWorkspaceFor(userId: string) {
+  const row = await workspaceRepository.findFirstWorkspace();
+  const member = await workspaceRepository.findMembership(workspaceId, userId);
+  if (row === undefined || member === undefined) {
+    throw new Error("Falta el workspace o la membresía sembrados.");
+  }
+  return trackerWorkspaceOf({
+    workspace: row,
+    membership: member,
+    actor: actorFor(userId),
+  });
+}
+
+/** Las semanas de la lista con sus días, para comparar de un vistazo. */
+function weekDays(state: TrackerState) {
+  return state.weeks.map((week) => ({
+    start: week.start,
+    days: week.days.map((day) => day.date),
+  }));
+}
+
+describe("getTrackerState: la lista en semanas (TT-47, TT-48, TT-52)", () => {
+  /** Las 12:00 del viernes 2 de octubre de 2026 en Buenos Aires. */
+  const now = new Date("2026-10-02T15:00:00Z");
+
+  it.each([
+    {
+      weekStart: 0,
+      floor: "2026-09-13",
+      weeks: [
+        { start: "2026-09-27", days: ["2026-10-01"] },
+        { start: "2026-09-13", days: ["2026-09-17", "2026-09-13"] },
+      ],
+      loadMoreFrom: "2026-08-30",
+    },
+    {
+      weekStart: 6,
+      floor: "2026-09-12",
+      weeks: [
+        { start: "2026-09-26", days: ["2026-10-01"] },
+        { start: "2026-09-12", days: ["2026-09-17", "2026-09-13"] },
+      ],
+      loadMoreFrom: "2026-09-05",
+    },
+  ])(
+    "con weekStart $weekStart de la membresía, la ventana y «Cargar más» cortan en ese día",
+    async ({ weekStart, floor, weeks, loadMoreFrom }) => {
+      // Jueves 1/10: trece días atrás es el viernes 18/09.
+      const thursday = new Date("2026-10-01T15:00:00Z");
+      await backdateWorkspace();
+      await setWeekStart(actor.userId, weekStart);
+      await seedClosedOf(actor.userId, "2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
+      await seedClosedOf(actor.userId, "2026-09-13T13:00:00Z", "2026-09-13T15:00:00Z");
+      await seedClosedOf(actor.userId, "2026-09-17T13:00:00Z", "2026-09-17T14:00:00Z");
+      const older = await seedClosedOf(
+        actor.userId,
+        "2026-09-05T13:00:00Z",
+        "2026-09-05T14:00:00Z",
+      );
+      const workspace = await trackerWorkspaceFor(actor.userId);
+
+      const state = await getTrackerState(actor, workspace, { from: null }, thursday);
+
+      expect(state.windowFrom).toBe(floor);
+      expect(state.reachFrom).toBe(floor);
+      expect(weekDays(state)).toEqual(weeks);
+      expect(state.weeks[1].closedSeconds).toBe(3 * 3600);
+      expect(state.loadMoreFrom).toBe(loadMoreFrom);
+
+      const loaded = await getTrackerState(
+        actor,
+        workspace,
+        { from: loadMoreFrom },
+        thursday,
+      );
+      expect(
+        daysOf(loaded).flatMap((day) => day.entries.map((entry) => entry.id)),
+      ).toContain(older.id);
+      expect(loaded.weeks.at(-1)?.start).toBe(loadMoreFrom);
+    },
+  );
+
+  it("TT-48: con lunes, el domingo cierra la semana; con domingo, la abre", async () => {
+    await seedClosedOf(actor.userId, "2026-09-27T13:00:00Z", "2026-09-27T14:00:00Z");
+    await seedClosedOf(actor.userId, "2026-09-28T13:00:00Z", "2026-09-28T14:00:00Z");
+
+    const monday = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires, undefined, 1),
+      { from: null },
+      now,
+    );
+    const sunday = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires, undefined, 0),
+      { from: null },
+      now,
+    );
+
+    expect(weekDays(monday)).toEqual([
+      { start: "2026-09-28", days: ["2026-09-28"] },
+      { start: "2026-09-21", days: ["2026-09-27"] },
+    ]);
+    expect(weekDays(sunday)).toEqual([
+      { start: "2026-09-27", days: ["2026-09-28", "2026-09-27"] },
+    ]);
+    expect(monday.weeks.map((week) => week.label)).toEqual([
+      "Esta semana",
+      "Semana anterior",
+    ]);
+    expect(sunday.weeks.map((week) => week.label)).toEqual(["Esta semana"]);
+  });
+
+  it("PF-01: dos personas del mismo workspace ven la misma fecha en semanas distintas", async () => {
+    const otherId = await seedMember(workspaceId, "member");
+    await backdateWorkspace();
+    await setWeekStart(otherId, 0);
+    await seedClosedOf(actor.userId, "2026-09-27T13:00:00Z", "2026-09-27T14:00:00Z");
+    await seedClosedOf(otherId, "2026-09-27T13:00:00Z", "2026-09-27T14:00:00Z");
+
+    const own = await getTrackerState(
+      actor,
+      await trackerWorkspaceFor(actor.userId),
+      { from: null },
+      now,
+    );
+    const other = await getTrackerState(
+      actorFor(otherId),
+      await trackerWorkspaceFor(otherId),
+      { from: null },
+      now,
+    );
+
+    expect(own.weeks.map((week) => week.start)).toEqual(["2026-09-21"]);
+    expect(other.weeks.map((week) => week.start)).toEqual(["2026-09-27"]);
+    expect(own.weeks[0].days[0].entries[0].weekStart).toBe("2026-09-21");
+    expect(other.weeks[0].days[0].entries[0].weekStart).toBe("2026-09-27");
+  });
+
+  it("TT-47: de la más nueva a la más vieja, con su rótulo", async () => {
+    await seedClosedOf(actor.userId, "2026-09-15T13:00:00Z", "2026-09-15T14:00:00Z");
+    await seedClosedOf(actor.userId, "2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
+    await seedClosedOf(actor.userId, "2026-09-22T13:00:00Z", "2026-09-22T14:00:00Z");
+
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      now,
+    );
+
+    expect(state.weeks.map((week) => [week.start, week.label])).toEqual([
+      ["2026-09-28", "Esta semana"],
+      ["2026-09-21", "Semana anterior"],
+      ["2026-09-14", "14/09 – 20/09"],
+    ]);
+  });
+
+  it("TT-47: el total de la semana es la suma exacta de sus días, en segundos", async () => {
+    await seedClosedOf(actor.userId, "2026-09-28T13:00:00Z", "2026-09-28T14:00:01Z");
+    await seedClosedOf(actor.userId, "2026-09-30T13:00:00Z", "2026-09-30T13:30:00Z");
+    await seedClosedOf(actor.userId, "2026-09-30T15:00:00Z", "2026-09-30T15:00:59Z");
+    await seedClosedOf(actor.userId, "2026-09-25T13:00:00Z", "2026-09-25T13:10:00Z");
+
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      now,
+    );
+
+    expect(state.weeks.map((week) => week.closedSeconds)).toEqual([
+      3601 + 1800 + 59,
+      600,
+    ]);
+    expect(state.weeks[0].days.map((day) => day.closedSeconds)).toEqual([1859, 3601]);
+  });
+
+  it("TT-46: la semana del timer activo está marcada y existe aunque no tenga cerradas", async () => {
+    await seedClosedOf(actor.userId, "2026-09-25T13:00:00Z", "2026-09-25T14:00:00Z");
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-02T13:00:00Z",
+    });
+
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      now,
+    );
+
+    expect(
+      state.weeks.map((week) => [week.start, week.isRunningWeek, week.closedSeconds]),
+    ).toEqual([
+      ["2026-09-28", true, 0],
+      ["2026-09-21", false, 3600],
+    ]);
+  });
+
+  it("TT-96: la entrada que cruza al lunes cuenta entera en la semana de su inicio", async () => {
+    // Domingo 27/09 de 23:00 a lunes 28/09 a la 01:00 en Buenos Aires.
+    await seedClosedOf(actor.userId, "2026-09-28T02:00:00Z", "2026-09-28T04:00:00Z");
+    await seedClosedOf(actor.userId, "2026-09-29T13:00:00Z", "2026-09-29T14:00:00Z");
+
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      now,
+    );
+
+    expect(state.weeks.map((week) => [week.start, week.closedSeconds])).toEqual([
+      ["2026-09-28", 3600],
+      ["2026-09-21", 7200],
+    ]);
+  });
+
+  it("TT-97: la semana del cambio de horario de Madrid suma las duraciones reales y corta en sus medianoches", async () => {
+    const madridNow = new Date("2026-11-02T12:00:00Z");
+    // Lunes 19/10 a las 00:00 en +02:00: el primer instante de la semana más vieja.
+    await seedClosedOf(actor.userId, "2026-10-18T22:00:00Z", "2026-10-18T23:00:00Z");
+    // Domingo 25/10 de 01:00 (+02:00) a 04:00 (+01:00): cuatro horas reales.
+    await seedClosedOf(actor.userId, "2026-10-24T23:00:00Z", "2026-10-25T03:00:00Z");
+    // Domingo 25/10 a las 23:59 en +01:00, todavía en esa semana.
+    await seedClosedOf(actor.userId, "2026-10-25T22:59:00Z", "2026-10-25T23:00:00Z");
+    // Lunes 26/10 a las 00:00 en +01:00, ya en la siguiente.
+    await seedClosedOf(actor.userId, "2026-10-25T23:00:00Z", "2026-10-25T23:30:00Z");
+    // Domingo 18/10 a las 23:59 en +02:00: fuera de la ventana.
+    await seedClosedOf(actor.userId, "2026-10-18T21:59:00Z", "2026-10-18T22:00:00Z");
+
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(madrid),
+      { from: null },
+      madridNow,
+    );
+
+    expect(state.windowFrom).toBe("2026-10-19");
+    expect(state.weeks.map((week) => [week.start, week.closedSeconds])).toEqual([
+      ["2026-10-26", 1800],
+      ["2026-10-19", 3600 + 4 * 3600 + 60],
+    ]);
+    expect(state.loadMoreFrom).toBe("2026-10-12");
+  });
+
+  it("con hoy domingo, los catorce días con hoy empiezan el lunes de hace dos semanas", async () => {
+    // Domingo 4/10: trece días atrás es el lunes 21/09; el domingo 20/09 ya es el día quince.
+    const sunday = new Date("2026-10-04T15:00:00Z");
+    await seedClosedOf(actor.userId, "2026-10-04T13:00:00Z", "2026-10-04T14:00:00Z");
+    await seedClosedOf(actor.userId, "2026-09-21T13:00:00Z", "2026-09-21T14:00:00Z");
+    await seedClosedOf(actor.userId, "2026-09-20T13:00:00Z", "2026-09-20T14:00:00Z");
+
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      sunday,
+    );
+
+    expect(state.windowFrom).toBe("2026-09-21");
+    expect(daysOf(state).map((day) => day.date)).toEqual(["2026-10-04", "2026-09-21"]);
+    expect(state.loadMoreFrom).toBe("2026-09-14");
+  });
+
+  it("la semana más vieja está entera aunque el piso por omisión caiga a mitad de semana", async () => {
+    // Jueves 1/10: trece días atrás es el viernes 18/09, de la semana del lunes 14/09.
+    const thursday = new Date("2026-10-01T15:00:00Z");
+    await seedClosedOf(actor.userId, "2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
+    await seedClosedOf(actor.userId, "2026-09-14T13:00:00Z", "2026-09-14T15:00:00Z");
+    await seedClosedOf(actor.userId, "2026-09-17T13:00:00Z", "2026-09-17T14:00:00Z");
+
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      thursday,
+    );
+
+    expect(weekDays(state)).toEqual([
+      { start: "2026-09-28", days: ["2026-10-01"] },
+      { start: "2026-09-14", days: ["2026-09-17", "2026-09-14"] },
+    ]);
+    expect(state.weeks[1].closedSeconds).toBe(3 * 3600);
+  });
+
+  it("TT-52, TT-86: «Cargar más» salta a la próxima semana con entradas y se apaga sin nada atrás", async () => {
+    await seedClosedOf(actor.userId, "2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
+    await seedClosedOf(actor.userId, "2026-08-12T13:00:00Z", "2026-08-12T14:00:00Z");
+    await seedClosedOf(actor.userId, "2026-07-01T13:00:00Z", "2026-07-01T14:00:00Z");
+    const workspace = workspaceOf(buenosAires);
+
+    const first = await getTrackerState(actor, workspace, { from: null }, now);
+    expect(first.loadMoreFrom).toBe("2026-08-10");
+
+    const second = await getTrackerState(actor, workspace, { from: "2026-08-10" }, now);
+    expect(weekDays(second)).toEqual([
+      { start: "2026-09-28", days: ["2026-10-01"] },
+      { start: "2026-08-10", days: ["2026-08-12"] },
+    ]);
+    expect(second.loadMoreFrom).toBe("2026-06-29");
+
+    const third = await getTrackerState(actor, workspace, { from: "2026-06-29" }, now);
+    expect(third.weeks.map((week) => week.start)).toEqual([
+      "2026-09-28",
+      "2026-08-10",
+      "2026-06-29",
+    ]);
+    expect(third.loadMoreFrom).toBeNull();
+  });
+
+  it("desde a mitad de semana trae la semana entera", async () => {
+    await seedClosedOf(actor.userId, "2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
+    await seedClosedOf(actor.userId, "2026-08-10T13:00:00Z", "2026-08-10T14:00:00Z");
+
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: "2026-08-14" },
+      now,
+    );
+
+    expect(state.windowFrom).toBe("2026-08-10");
+    expect(daysOf(state).map((day) => day.date)).toContain("2026-08-10");
+  });
+
+  it("un desde posterior al piso por omisión no achica la ventana", async () => {
+    await seedClosedOf(actor.userId, "2026-09-15T13:00:00Z", "2026-09-15T14:00:00Z");
+
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: "2026-09-30" },
+      now,
+    );
+
+    expect(state.reachFrom).toBe("2026-09-14");
+    expect(daysOf(state).map((day) => day.date)).toEqual(["2026-09-15"]);
+  });
+
+  it("un desde anterior a la creación del workspace se recorta a su semana", async () => {
+    // Creado el jueves 20/08: su semana empieza el lunes 17/08.
+    const reciente = workspaceOf(buenosAires, "2026-08-20T15:00:00Z");
+    await seedClosedOf(actor.userId, "2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
+    await seedClosedOf(actor.userId, "2026-08-21T13:00:00Z", "2026-08-21T14:00:00Z");
+
+    const state = await getTrackerState(actor, reciente, { from: "2026-01-05" }, now);
+
+    expect(state.windowFrom).toBe("2026-08-17");
+    expect(state.reachFrom).toBe("2026-08-17");
+    expect(state.loadMoreFrom).toBeNull();
+    expect(daysOf(state).map((day) => day.date)).toEqual(["2026-10-01", "2026-08-21"]);
+  });
+
+  it("«Cargar más» no ofrece volver a una entrada anterior a la creación del workspace", async () => {
+    const reciente = workspaceOf(buenosAires, "2026-08-20T15:00:00Z");
+    await seedClosedOf(actor.userId, "2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
+    // Escrita directo contra la tabla: la aplicación no la deja crear.
+    await seedClosedOf(actor.userId, "2026-08-04T13:00:00Z", "2026-08-04T14:00:00Z");
+
+    const state = await getTrackerState(actor, reciente, { from: null }, now);
+
+    expect(state.windowFrom).toBe("2026-09-14");
+    expect(state.loadMoreFrom).toBeNull();
+  });
+
+  it.each([
+    { weekStart: 1, day: "2026-08-17" },
+    { weekStart: 0, day: "2026-08-16" },
+  ] as const)(
+    "«Cargar más» sí ofrece una entrada de la semana de creación anterior al día de creación, con weekStart $weekStart",
+    async ({ weekStart, day }) => {
+      // Creado el jueves 20/08; el primer día de su semana es anterior y la ventana lo alcanza.
+      const reciente = workspaceOf(buenosAires, "2026-08-20T15:00:00Z", weekStart);
+      await seedClosedOf(actor.userId, "2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
+      const early = await seedClosedOf(
+        actor.userId,
+        `${day}T13:00:00Z`,
+        `${day}T14:00:00Z`,
+      );
+
+      const state = await getTrackerState(actor, reciente, { from: null }, now);
+      expect(state.loadMoreFrom).toBe(day);
+
+      const loaded = await getTrackerState(actor, reciente, { from: day }, now);
+      expect(
+        daysOf(loaded).flatMap((group) => group.entries.map((entry) => entry.id)),
+      ).toContain(early.id);
+      expect(loaded.loadMoreFrom).toBeNull();
+    },
+  );
+
+  it("«Cargar más» no ofrece la semana que la ventana ya dibuja aunque el inicio del día esté corrido", async () => {
+    // Salta, 20/10/1991: el día no tiene 00:00 y `startOfLocalDay` ubica su
+    // inicio una hora tarde (falla conocida del contrato, §8). Una entrada en
+    // esa hora es de ese día pero empieza antes del instante inferior.
+    const salta = workspaceOf("America/Argentina/Salta", "1991-01-01T12:00:00Z", 0);
+    await seedClosedOf(actor.userId, "1991-10-20T04:30:00Z", "1991-10-20T05:30:00Z");
+
+    const state = await getTrackerState(
+      actor,
+      salta,
+      { from: null },
+      new Date("1991-11-15T15:00:00Z"),
+    );
+
+    expect(state.windowFrom).toBe("1991-10-20");
+    expect(state.loadMoreFrom).toBeNull();
+  });
+
+  it("lastEntryId sigue siendo la cerrada más reciente con la ventana extendida por desde", async () => {
+    await seedClosedOf(actor.userId, "2026-08-12T13:00:00Z", "2026-08-12T14:00:00Z");
+    const latest = await seedClosedOf(
+      actor.userId,
+      "2026-10-01T13:00:00Z",
+      "2026-10-01T14:00:00Z",
+    );
+    await seedClosedOf(actor.userId, "2026-10-20T13:00:00Z", "2026-10-20T14:00:00Z");
+
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: "2026-08-10" },
+      now,
+    );
+
+    expect(state.lastEntryId).toBe(latest.id);
+    expect(
+      daysOf(state).flatMap((day) => day.entries.map((entry) => entry.id)),
+    ).toContain(latest.id);
+  });
+
+  it("P-15: con el timer cinco semanas atrás, windowFrom lo incluye, reachFrom no, y al detenerlo trae su semana", async () => {
+    await seedClosedOf(actor.userId, "2026-10-02T12:00:00Z", "2026-10-02T13:00:00Z");
+    // Miércoles 26/08, de la semana del lunes 24/08.
+    const timer = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-08-26T13:00:00Z",
+    });
+    const workspace = workspaceOf(buenosAires);
+
+    const running = await getTrackerState(actor, workspace, { from: null }, now);
+    expect(running.windowFrom).toBe("2026-08-24");
+    expect(running.reachFrom).toBe("2026-09-14");
+    expect(running.weeks.at(-1)).toMatchObject({
+      start: "2026-08-24",
+      isRunningWeek: true,
+    });
+
+    const { stopped } = await stopTimer(actor, workspace, { id: timer.id });
+    expect(stopped.weekStart).toBe("2026-08-24");
+
+    const after = await getTrackerState(actor, workspace, { from: null }, now);
+    expect(daysOf(after).map((day) => day.date)).toEqual(["2026-10-02"]);
+    const reached = await getTrackerState(
+      actor,
+      workspace,
+      { from: stopped.weekStart },
+      now,
+    );
+    expect(daysOf(reached).find((day) => day.date === "2026-08-26")?.entries[0].id).toBe(
+      timer.id,
+    );
+  });
+});
+
+describe("weekStart en las vistas del service (criterio 13)", () => {
+  it.each([
+    [1, "2026-09-21"],
+    [0, "2026-09-27"],
+  ] as const)(
+    "con %i, el cerrado de un arranque trae la semana de su inicio",
+    async (weekStart, expected) => {
+      // Domingo 27/09 a las 10:00 en Buenos Aires.
+      await seedTimeEntry({
+        workspaceId,
+        userId: actor.userId,
+        startedAt: "2026-09-27T13:00:00Z",
+      });
+
+      const result = await startTimer(
+        actor,
+        workspaceOf(buenosAires, undefined, weekStart),
+        {
+          id: randomUUID(),
+          description: "",
+        },
+      );
+
+      expect(result.stopped?.dayDate).toBe("2026-09-27");
+      expect(result.stopped?.weekStart).toBe(expected);
+    },
+  );
+
+  it.each([
+    [1, "2026-09-21"],
+    [0, "2026-09-27"],
+  ] as const)(
+    "con %i, la lista y el timer activo traen la semana de su día",
+    async (weekStart, expected) => {
+      await seedClosedOf(actor.userId, "2026-09-27T12:00:00Z", "2026-09-27T13:00:00Z");
+      await seedTimeEntry({
+        workspaceId,
+        userId: actor.userId,
+        startedAt: "2026-09-27T14:00:00Z",
+      });
+
+      const state = await getTrackerState(
+        actor,
+        workspaceOf(buenosAires, undefined, weekStart),
+        { from: null },
+        new Date("2026-10-02T15:00:00Z"),
+      );
+
+      expect(state.running?.weekStart).toBe(expected);
+      expect(
+        daysOf(state).flatMap((day) => day.entries.map((entry) => entry.weekStart)),
+      ).toEqual([expected]);
+    },
+  );
 });

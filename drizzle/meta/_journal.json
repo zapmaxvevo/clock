@@ -15,6 +15,13 @@
       "when": 1790975831815,
       "tag": "0001_time_entry",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791059934841,
+      "tag": "0002_membership_week_start",
+      "breakpoints": true
     }
   ]
 }

@@ -14,9 +14,7 @@ import type {
   UpdateDescriptionInput,
   UpdateEntryTimesInput,
 } from "@/modules/time-entry/schema";
-import { formatDuration } from "@/server/time";
 
-import { useElapsedSeconds } from "./elapsed-counter";
 import { EntryRow } from "./entry-row";
 import { trackerLabels } from "./labels";
 import { TrackerFeedback } from "./tracker-feedback";
@@ -25,6 +23,7 @@ import {
   useEntryAction,
   type EntryActionHandle,
 } from "./use-entry-action";
+import { useGroupTotalLabel } from "./use-group-total";
 import { useNewEntryId } from "./use-new-entry-id";
 
 type DayGroupProps = {
@@ -37,13 +36,11 @@ type DayGroupProps = {
   readonly todayKey: string;
   /** Piso del workspace, el primer día al que se puede mover una entrada. */
   readonly minDayKey: string;
-  /** Cualquier operación nueva deja viejo el aviso de TT-108 de la lista. */
-  readonly onOperationStart: () => void;
   /**
-   * TT-108: la edición dejó la entrada en un día que la lista no dibuja.
-   * `takeFocus` si el foco estaba en la fila, que ya no se va a ver.
+   * P-15: la semana de la entrada que devolvió una mutación del grupo. La
+   * lista la compara con la ventana y la extiende si hace falta.
    */
-  readonly onOutsideWindow: (day: string, takeFocus: boolean) => void;
+  readonly onEntryWeek: (weekStart: string) => void;
   /** TT-56: la entrada pasó a otro día con el foco en ella; la lista la sigue. */
   readonly onMoved: (moved: MovedEntry) => void;
   /** La fila de este grupo que tiene que tomar el foco al montarse. */
@@ -98,9 +95,10 @@ function focusIsOnEntry(id: string): boolean {
  * no en la fila: el borrado y la copia mueven también el total del grupo
  * (TT-60, TT-58), la edición del horario puede llevarse la fila a otro día
  * (TT-56), y todas pueden terminar con la fila fuera de la lista —borrada desde otra pestaña
- * (TT-80)— así que su aviso tiene que quedar en algo que sobreviva. El de una
- * fila movida fuera del tramo dibujado no es del grupo sino de la lista: si la
- * fila era la única del día, el grupo se va con ella.
+ * (TT-80)— así que su aviso tiene que quedar en algo que sobreviva. La semana
+ * de la entrada que devuelven la edición del horario, la de la descripción y
+ * la copia sube a la lista, que es la que conoce la ventana (P-15) y la que
+ * sigue en pantalla si el grupo se va con su única fila.
  * El total del día del timer activo suma además el transcurrido y sube junto
  * con el contador (TT-45, TT-46); la suma es en segundos y se formatea una
  * sola vez, así no acumula el truncamiento de cada fila.
@@ -112,8 +110,7 @@ export function DayGroup({
   canTrack,
   todayKey,
   minDayKey,
-  onOperationStart,
-  onOutsideWindow,
+  onEntryWeek,
   onMoved,
   focusEntryId,
   onEntryFocused,
@@ -131,6 +128,7 @@ export function DayGroup({
   >([], replaceById);
   const save = useEntryAction(updateDescription, {
     optimistic: (input) => showEdit(input),
+    onSuccess: (data) => onEntryWeek(data.entry.weekStart),
   });
 
   const remove = useEntryAction(deleteEntry, {
@@ -140,6 +138,8 @@ export function DayGroup({
   /**
    * TT-55: la fila no cambia de grupo de forma optimista. Queda atenuada en su
    * día con el trío confirmado, y la revalidación la dibuja donde corresponda.
+   * Si es un día de una semana que la ventana no dibuja, la lista la extiende
+   * y el foco sigue a la fila igual.
    */
   const [timeEdits, showTimeEdit] = useOptimistic<
     readonly UpdateEntryTimesInput[],
@@ -148,32 +148,30 @@ export function DayGroup({
   const saveTimes = useEntryAction(updateEntryTimes, {
     optimistic: (input) => showTimeEdit(input),
     onSuccess: (data, input) => {
-      const takeFocus = focusIsOnEntry(input.id);
-      if (data.outsideWindow) {
-        onOutsideWindow(input.date, takeFocus);
-      } else if (takeFocus && data.entry.dayDate !== group.date) {
+      if (focusIsOnEntry(input.id) && data.entry.dayDate !== group.date) {
         onMoved({ id: input.id, date: data.entry.dayDate });
       }
+      onEntryWeek(data.entry.weekStart);
     },
   });
 
   /** TT-58: la copia aparece con la revalidación; no hay fila optimista. */
-  const duplicate = useEntryAction(duplicateEntry);
+  const duplicate = useEntryAction(duplicateEntry, {
+    onSuccess: (data) => onEntryWeek(data.created.weekStart),
+  });
   const nextDuplicateId = useNewEntryId(duplicate.failure);
 
   function handleDuplicate(sourceId: string): void {
     const id = nextDuplicateId(sourceId);
-    onOperationStart();
     duplicate.run({ id, sourceId });
   }
 
   /**
-   * Una operación nueva deja viejos el aviso de TT-108 de la lista y el de
-   * duplicar: mientras ese aviso se ve, repetir «Duplicar» reusa el id
-   * pendiente, y quien quiera otra copia la pide después de que baje (§8).
+   * Una operación nueva deja viejo el aviso de duplicar: mientras ese aviso se
+   * ve, repetir «Duplicar» reusa el id pendiente, y quien quiera otra copia la
+   * pide después de que baje (§8).
    */
   function run<Input>(handle: EntryActionHandle<Input>, input: Input): void {
-    onOperationStart();
     duplicate.clear();
     handle.run(input);
   }
@@ -183,7 +181,6 @@ export function DayGroup({
     return retry === undefined
       ? undefined
       : () => {
-          onOperationStart();
           duplicate.clear();
           retry();
         };
@@ -201,29 +198,26 @@ export function DayGroup({
   }, [removing]);
 
   const entries = group.entries.filter((entry) => !removedIds.includes(entry.id));
-  const removedSeconds = group.entries
-    .filter((entry) => removedIds.includes(entry.id))
-    .reduce((total, entry) => total + (entry.durationSeconds ?? 0), 0);
-
-  const runningStartedAt =
-    group.isRunningDay && running !== null ? running.startedAt : null;
-  const elapsed = useElapsedSeconds(runningStartedAt, serverNow);
-  const totalLabel = formatDuration(
-    Math.floor((Math.max(0, group.closedSeconds - removedSeconds) + elapsed) / 60),
-  );
+  const totalLabel = useGroupTotalLabel({
+    closedSeconds: group.closedSeconds,
+    entries: group.entries,
+    removedIds,
+    runningStartedAt: group.isRunningDay && running !== null ? running.startedAt : null,
+    serverNow,
+  });
   const headingId = `dia-${group.date}`;
 
   return (
     <section aria-labelledby={headingId} className="rounded-lg border">
       <header className="bg-muted/40 flex items-center justify-between gap-4 border-b px-3 py-2">
-        <h2
+        <h3
           id={headingId}
           ref={headingRef}
           tabIndex={-1}
           className="focus:ring-ring rounded-md text-sm font-medium focus:ring-3 focus:outline-none"
         >
           {group.label}
-        </h2>
+        </h3>
         <p className="text-sm">
           <span className="text-muted-foreground">Total</span>{" "}
           <span className="font-medium tabular-nums">{totalLabel}</span>

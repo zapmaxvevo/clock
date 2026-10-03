@@ -4,9 +4,11 @@ import { workspaceTimeZone } from "./database";
 import {
   addDays,
   calendarDayName,
+  dayKeyOf,
   dayLabel,
   monthsBetween,
   todayIn,
+  weekStartOf,
   type CivilDay,
 } from "./days";
 import { expect, test } from "./session";
@@ -437,7 +439,7 @@ test("el inicio del timer se corrige desde el contador, sin días futuros, y el 
   await expect(trackerBar(page).getByRole("button", { name: "Detener" })).toBeVisible();
 });
 
-test("mover la única entrada de un día treinta días atrás la guarda y avisa arriba de la lista", async ({
+test("mover la única entrada de un día treinta días atrás extiende la lista hasta su semana", async ({
   page,
 }) => {
   const today = todayIn(await workspaceTimeZone());
@@ -450,11 +452,12 @@ test("mover la única entrada de un día treinta días atrás la guarda y avisa 
   /*
    * La ventana de la lista se estira hacia atrás hasta el día de la entrada
    * cerrada más nueva que ya empezó. Si la movida lo fuera, la ventana la
-   * seguiría hasta su día nuevo y no habría aviso; una entrada de hoy la
-   * deja afuera. Va de 00:00 a 00:01 porque una entrada que todavía no
-   * empezó no cuenta, y esas horas ya pasaron a cualquier hora de la
-   * corrida, salvo durante el primer minuto del día del workspace. El usuario
-   * es propio del test, así que nadie más le agrega entradas a esos días.
+   * seguiría sola hasta su día nuevo y no habría nada que extender; una
+   * entrada de hoy la deja afuera. Va de 00:00 a 00:01 porque una entrada que
+   * todavía no empezó no cuenta, y esas horas ya pasaron a cualquier hora de
+   * la corrida, salvo durante el primer minuto del día del workspace. El
+   * usuario es propio del test, así que nadie más le agrega entradas a esos
+   * días.
    */
   await addManualEntry(page, "entrada de hoy", "00:00", "00:01");
   await expect(entryRow(todayGroup(page), "entrada de hoy")).toBeVisible();
@@ -478,26 +481,20 @@ test("mover la única entrada de un día treinta días atrás la guarda y avisa 
     monthAgo,
   );
 
-  // Criterio 12: el aviso de TT-108 nombra el día, con los textos del alta
-  // manual, aunque el grupo de origen ya no esté.
-  const notice = page
-    .getByRole("status")
-    .filter({ hasText: "La entrada se guardó, pero todavía no se ve en la lista." });
-  await expect(notice).toContainText(
-    `Quedó en el día ${dayLabel(monthAgo, today)}, anterior al tramo que la lista muestra.`,
+  // Criterio 12 y P-15: la URL pasa a llevar la semana del día nuevo y la
+  // fila está en su grupo, con sus mismas horas, aunque el de origen se fue.
+  await expect(page).toHaveURL(
+    (url) =>
+      url.pathname === "/" &&
+      url.searchParams.get("desde") === dayKeyOf(weekStartOf(monthAgo)),
   );
+  const moved = entryRow(dayGroup(page, monthAgo, today), "única de ayer");
+  await expect(timesButton(moved, "09:00", "10:00")).toBeVisible();
   await expect(origin).toHaveCount(0);
-  await expect(
-    page.getByRole("listitem").filter({ hasText: "única de ayer" }),
-  ).toHaveCount(0);
+  await expect(entryRow(todayGroup(page), "entrada de hoy")).toBeVisible();
 
-  // Arriba de la lista: antes del primer grupo, que es el de hoy.
-  const noticeBox = await notice.boundingBox();
-  const firstGroupBox = await todayGroup(page).boundingBox();
-  if (noticeBox === null || firstGroupBox === null) {
-    throw new Error("El aviso y el grupo de hoy tienen que estar dibujados.");
-  }
-  expect(noticeBox.y).toBeLessThan(firstGroupBox.y);
+  // TT-108 se retiró: ningún aviso de que la entrada no se ve.
+  await expect(page.getByText("todavía no se ve en la lista")).toHaveCount(0);
 });
 
 test("con la red caída el horario de la fila vuelve y Reintentar lo guarda una sola vez", async ({

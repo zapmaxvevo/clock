@@ -1,5 +1,12 @@
 import { workspaceTimeZone } from "./database";
-import { addDays, calendarDayName, dayLabel, todayIn } from "./days";
+import {
+  addDays,
+  calendarDayName,
+  dayKeyOf,
+  dayLabel,
+  todayIn,
+  weekStartOf,
+} from "./days";
 import { expect, test } from "./session";
 import {
   chooseMode,
@@ -149,12 +156,12 @@ test("con el fin igual al inicio, Agregar está inactivo", async ({ page }) => {
   ).toBeVisible();
 });
 
-test("una entrada de hace treinta días se guarda y avisa que no se ve", async ({
+test("una entrada de hace sesenta días extiende la lista hasta su semana, sin aviso", async ({
   page,
 }) => {
   // El hoy que importa es el del workspace, que es el que dibuja la barra.
   const today = todayIn(await workspaceTimeZone());
-  const monthAgo = addDays(today, -30);
+  const twoMonthsAgo = addDays(today, -60);
 
   await page.goto("/");
   await chooseMode(page, "manual");
@@ -164,12 +171,12 @@ test("una entrada de hace treinta días se guarda y avisa que no se ve", async (
   /*
    * La ventana de la lista se estira hacia atrás hasta el día de la entrada
    * cerrada más nueva que ya empezó, así que si la vieja fuera la única, la
-   * ventana la alcanzaría y no habría aviso. Una entrada de hoy, del mismo
-   * usuario del test, la deja afuera. Va de 00:00 a 00:01 porque una entrada
-   * que todavía no empezó no cuenta para la ventana, y esas son las primeras
-   * horas del día: a cualquier hora de la corrida ya pasaron, salvo durante
-   * el primer minuto del día del workspace. Se carga por la interfaz: es lo que
-   * haría la persona y no toca nada que otro test lea.
+   * ventana la alcanzaría sola y no habría nada que extender. Una entrada de
+   * hoy, del mismo usuario del test, la deja afuera. Va de 00:00 a 00:01
+   * porque una entrada que todavía no empezó no cuenta para la ventana, y esas
+   * son las primeras horas del día: a cualquier hora de la corrida ya pasaron,
+   * salvo durante el primer minuto del día del workspace. Se carga por la
+   * interfaz: es lo que haría la persona y no toca nada que otro test lea.
    */
   await descriptionInput(bar).fill("entrada de hoy");
   await setClock(bar, "Hora de inicio", "00:00");
@@ -177,26 +184,32 @@ test("una entrada de hace treinta días se guarda y avisa que no se ve", async (
   await withServerAction(page, () => add.click());
   await expect(entryRow(todayGroup(page), "entrada de hoy")).toBeVisible();
 
-  await descriptionInput(bar).fill("entrada de hace un mes");
-  await pickDate(page, bar, monthAgo, today);
+  await descriptionInput(bar).fill("entrada de hace dos meses");
+  await pickDate(page, bar, twoMonthsAgo, today);
   await setClock(bar, "Hora de inicio", "09:00");
   await setClock(bar, "Hora de fin", "10:00");
   await withServerAction(page, () => add.click());
 
-  // Criterio 11: la entrada se creó —la barra volvió al borrador inicial— y
-  // el aviso informativo nombra el día en que quedó.
-  const notice = page
-    .getByRole("status")
-    .filter({ hasText: "La entrada se guardó, pero todavía no se ve en la lista." });
-  await expect(notice).toContainText(
-    `Quedó en el día ${dayLabel(monthAgo, today)}, anterior al tramo que la lista muestra.`,
+  // Criterio 11 y P-15: la URL pasa a llevar la semana de la entrada, que
+  // está en su día, y la barra volvió al borrador inicial.
+  await expect(page).toHaveURL(
+    (url) =>
+      url.pathname === "/" &&
+      url.searchParams.get("desde") === dayKeyOf(weekStartOf(twoMonthsAgo)),
   );
-  await expect(notice.getByRole("button", { name: "Reintentar" })).toHaveCount(0);
+  const group = page.getByRole("region", {
+    name: dayLabel(twoMonthsAgo, today),
+    exact: true,
+  });
+  await expect(entryRow(group, "entrada de hace dos meses")).toContainText(
+    /09:00 – 10:00\s*1:00/,
+  );
+  await expect(entryRow(todayGroup(page), "entrada de hoy")).toBeVisible();
   await expect(descriptionInput(bar)).toHaveValue("");
   await expect(dateButton(bar)).toHaveText("Hoy");
-  await expect(
-    page.getByRole("listitem").filter({ hasText: "entrada de hace un mes" }),
-  ).toHaveCount(0);
+
+  // TT-108 se retiró: ningún aviso de que la entrada no se ve.
+  await expect(page.getByText("todavía no se ve en la lista")).toHaveCount(0);
 });
 
 test("con la red caída, el alta manual no ofrece Reintentar: es la única operación del módulo sin reintento", async ({

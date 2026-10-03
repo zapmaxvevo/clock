@@ -1,5 +1,5 @@
 import { TZDate, tzOffset } from "@date-fns/tz";
-import { addDays, format, startOfDay, startOfWeek, subDays } from "date-fns";
+import { addDays, format, startOfDay } from "date-fns";
 import { es } from "date-fns/locale";
 
 /** Día de la semana en que arranca la semana del usuario. 0 = domingo. */
@@ -17,14 +17,17 @@ export function dayBounds(instant: Date, timeZone: string): Interval {
   return { start, end: new Date(end.getTime()) };
 }
 
+/** La semana se corta sobre claves de día, que no tienen cambio de horario. */
 export function weekBounds(
   instant: Date,
   timeZone: string,
   weekStartsOn: WeekStart,
 ): Interval {
-  const local = new TZDate(instant, timeZone);
-  const start = startOfWeek(local, { weekStartsOn });
-  return { start: new Date(start.getTime()), end: new Date(addDays(start, 7).getTime()) };
+  const first = weekStartKey(dayKey(instant, timeZone), weekStartsOn);
+  return {
+    start: startOfDayKey(first, timeZone),
+    end: startOfDayKey(addDaysToKey(first, 7), timeZone),
+  };
 }
 
 /** Duración en minutos entre dos instantes. Un timer activo mide hasta ahora. */
@@ -52,12 +55,6 @@ export function roundMinutes(minutes: number, step: number): number {
 /** Inicio del día local en que cae el instante. */
 export function startOfLocalDay(instant: Date, timeZone: string): Date {
   return new Date(startOfDay(new TZDate(instant, timeZone)).getTime());
-}
-
-/** Inicio del día local que cae `days` días antes del día de `instant`. */
-export function startOfDayBefore(instant: Date, days: number, timeZone: string): Date {
-  const start = new TZDate(startOfLocalDay(instant, timeZone), timeZone);
-  return new Date(subDays(start, days).getTime());
 }
 
 /** Día local del instante, como "2026-10-02". Es la clave de agrupación. */
@@ -187,6 +184,90 @@ export function dayKeyLabel(dayKey: string, todayKey: string): string {
   return format(civil, sameYear ? "EEE, dd/MM" : "EEE, dd/MM/yyyy", { locale: es });
 }
 
+/**
+ * El menor de varios días. Las claves "AAAA-MM-DD" se ordenan como el
+ * calendario, así que la comparación es de cadenas. Sin claves, `null`.
+ */
+export function earliestDayKey(first: string, ...rest: readonly string[]): string;
+export function earliestDayKey(...keys: readonly string[]): string | null;
+export function earliestDayKey(...keys: readonly string[]): string | null {
+  return keys.reduce<string | null>(
+    (earliest, key) => (earliest === null || key < earliest ? key : earliest),
+    null,
+  );
+}
+
+const WEEK_STARTS: readonly WeekStart[] = [0, 1, 2, 3, 4, 5, 6];
+
+/** El número de la columna como `WeekStart`; lanza si no está entre 0 y 6. */
+export function parseWeekStart(value: number): WeekStart {
+  const weekStart = WEEK_STARTS.find((candidate) => candidate === value);
+  if (weekStart === undefined) {
+    throw new RangeError(`Primer día de la semana fuera de rango: ${value}.`);
+  }
+  return weekStart;
+}
+
+/** Primer día de la semana que contiene ese día. Aritmética civil, sin zona. */
+export function weekStartKey(dayKey: string, weekStart: WeekStart): string {
+  const date = parseDayKey(dayKey);
+  if (date === null) {
+    return dayKey;
+  }
+  const weekday = new Date(Date.UTC(date.year, date.month - 1, date.day)).getUTCDay();
+  return addDaysToKey(dayKey, -((weekday - weekStart + 7) % 7));
+}
+
+/**
+ * El primer instante del día local: la primera vez que marca las 00:00. Si
+ * las 00:00 no existieron por un adelanto de hora, `startOfLocalDay` del
+ * mediodía, y si tampoco existió el mediodía, lanza en vez de devolver un
+ * instante de otro día.
+ */
+export function startOfDayKey(dayKey: string, timeZone: string): Date {
+  const midnights = localInstants(dayKey, "00:00", timeZone);
+  if (midnights.length > 0) {
+    return new Date(Math.min(...midnights));
+  }
+  const noon = instantFromLocal(dayKey, "12:00", timeZone);
+  if (noon === null) {
+    throw new RangeError(`El día ${dayKey} no tiene mediodía en ${timeZone}.`);
+  }
+  return startOfLocalDay(noon, timeZone);
+}
+
+function civilLabel(date: CivilDate, withYear: boolean): string {
+  const day = `${pad(date.day)}/${pad(date.month)}`;
+  return withYear ? `${day}/${date.year.toString().padStart(4, "0")}` : day;
+}
+
+/**
+ * «Esta semana», «Semana anterior», o «28/09 – 04/10». Si alguno de los dos
+ * extremos no es del año de `todayKey`, los dos llevan el año:
+ * «29/12/2025 – 04/01/2026». Una semana futura lleva su rango (TT-47).
+ */
+export function weekKeyLabel(
+  weekStart: string,
+  todayKey: string,
+  weekStartsOn: WeekStart,
+): string {
+  const current = weekStartKey(todayKey, weekStartsOn);
+  if (weekStart === current) {
+    return "Esta semana";
+  }
+  if (weekStart === addDaysToKey(current, -7)) {
+    return "Semana anterior";
+  }
+  const first = parseDayKey(weekStart);
+  const last = parseDayKey(addDaysToKey(weekStart, 6));
+  const today = parseDayKey(todayKey);
+  if (first === null || last === null || today === null) {
+    return weekStart;
+  }
+  const withYear = first.year !== today.year || last.year !== today.year;
+  return `${civilLabel(first, withYear)} – ${civilLabel(last, withYear)}`;
+}
+
 function clockToMinutes(clock: string): number | null {
   const match = CLOCK.exec(clock);
   return match === null ? null : Number(match[1]) * 60 + Number(match[2]);
@@ -296,19 +377,14 @@ export function shiftClock(time: string, minutes: number): string {
 }
 
 /**
- * El instante que corresponde a una hora de pared en una zona. Devuelve `null`
- * cuando esa hora no existió ese día por el cambio de horario; la hora que
- * ocurre dos veces se resuelve con el segundo instante. Ver el ADR 0005.
+ * Los instantes en que una zona marca esa hora de pared ese día: ninguno si no
+ * existió por el cambio de horario, dos si ocurrió dos veces.
  */
-export function instantFromLocal(
-  dayKey: string,
-  clock: string,
-  timeZone: string,
-): Date | null {
+function localInstants(dayKey: string, clock: string, timeZone: string): number[] {
   const date = parseDayKey(dayKey);
   const minutes = clockToMinutes(clock);
   if (date === null || minutes === null) {
-    return null;
+    return [];
   }
   // La hora de pared leída como si fuera UTC. El instante buscado está a un
   // desplazamiento de distancia, y ese desplazamiento es alguno de los que rigen
@@ -323,8 +399,21 @@ export function instantFromLocal(
   // Un candidato vale si en ese instante rige justo el desplazamiento que lo
   // produjo. Ninguno es la hora que no existe; dos son la que ocurre dos veces.
   // Nada de esto pasa por la zona del proceso.
-  const matches = [...offsets]
+  return [...offsets]
     .filter((offset) => tzOffset(timeZone, new Date(wall - offset * 60_000)) === offset)
     .map((offset) => wall - offset * 60_000);
+}
+
+/**
+ * El instante que corresponde a una hora de pared en una zona. Devuelve `null`
+ * cuando esa hora no existió ese día por el cambio de horario; la hora que
+ * ocurre dos veces se resuelve con el segundo instante. Ver el ADR 0005.
+ */
+export function instantFromLocal(
+  dayKey: string,
+  clock: string,
+  timeZone: string,
+): Date | null {
+  const matches = localInstants(dayKey, clock, timeZone);
   return matches.length === 0 ? null : new Date(Math.max(...matches));
 }

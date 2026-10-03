@@ -499,9 +499,13 @@ sin «Reintentar», porque repetir duplica.
 
 Si la fecha del diálogo se cambió a un día fuera del período visible, la
 entrada se guarda igual y aparece un aviso informativo que nombra el día, con
-un enlace para ir a ese período (sección 13). No es TT-108: ese aviso habla de
-los días que la lista dibuja, y acá la causa y el remedio son otros
-—cambiar de semana—, así que el texto es otro.
+un enlace para ir a ese período (sección 13). En el rastreador no hay un
+equivalente: ahí la ventana de la lista se extiende sola hasta la semana de la
+entrada y no hay aviso (TT-108, P-15). Acá el período visible lo elige la
+persona y el remedio es cambiar de semana, así que el aviso y su texto son
+propios del calendario.
+_Corregido el 2026-10-03, slice 5_: decía «No es TT-108: ese aviso habla de los
+días que la lista dibuja», y el aviso de TT-108 se retiró.
 
 **CAL-47 Crear con un timer corriendo** — `adaptar`
 Propuesta: se rechaza, con el texto de TT-30, «Detené el timer para agregar
@@ -630,12 +634,19 @@ Clockify reintenta solo; acá no hay cola.
 Con el arrastre en curso, `Esc` devuelve el bloque a su lugar sin escribir.
 Justificación: diseño propio.
 
-**CAL-64 El aviso de TT-108 no aplica** — `adaptar`
-`updateEntryTimes` devuelve `outsideWindow` cuando la entrada queda antes del
-tramo que la lista del rastreador dibuja. El calendario lo ignora: el bloque
-movido está en el período visible, porque ahí se soltó. Justificación: el aviso
-describe otra pantalla. La entrada puede seguir sin verse en la lista del
-rastreador, y eso es TT-108 y lo resuelve TT-52 allá.
+**CAL-64 La extensión de la ventana de TT-108 no aplica** — `adaptar`
+`updateEntryTimes` devuelve `{ entry }`, y `entry.weekStart` es la semana de la
+entrada según el primer día de la persona (TT-48). En el rastreador, esa semana
+extiende la ventana de la lista hasta ella cuando es anterior a la que la
+pantalla dibuja (TT-108, P-15). El calendario no aplica esa regla: el bloque
+movido está en el período visible, porque ahí se soltó. Si después se abre el
+rastreador, la entrada aparece si cae dentro de la ventana que esa pantalla
+calcula, y si no, se alcanza con «Cargar más» (TT-52). Justificación: la regla
+compara contra el piso de la lista del rastreador, que es de otra pantalla; el
+calendario tiene su propio aviso para la entrada que queda fuera del período
+(CAL-46).
+_Corregido el 2026-10-03, slice 5_: decía que `updateEntryTimes` devolvía
+`outsideWindow` para el aviso de TT-108, que el slice 5 retiró.
 
 ## 10. El diálogo de una entrada
 

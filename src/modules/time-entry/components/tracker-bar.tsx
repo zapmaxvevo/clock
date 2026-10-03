@@ -14,7 +14,7 @@ import type { TimeEntryView, UpdateRunningStartInput } from "@/modules/time-entr
 
 import { DescriptionField } from "./description-field";
 import { DiscardTimerDialog } from "./discard-timer-dialog";
-import { OutsideWindowNotice } from "./entry-list";
+import { startedWeeks } from "./entry-week";
 import { trackerLabels } from "./labels";
 import { ManualBar } from "./manual-bar";
 import { ModeSwitch } from "./mode-switch";
@@ -23,6 +23,7 @@ import {
   resolvesDiscard,
   type PendingDiscard,
 } from "./pending-discard";
+import { useReachWeek } from "./reach-week";
 import { ShortcutsDialog } from "./shortcuts-dialog";
 import { reset, sameDraft } from "./time-draft";
 import { TimerBar, type Phase } from "./timer-bar";
@@ -68,6 +69,10 @@ type TrackerBarProps = {
  *
  * `useTrackerRefresh()` se llama acá y no adentro de la barra del timer: si
  * viviera ahí, la revalidación de P-11 dejaría de correr en modo manual.
+ *
+ * Todas las mutaciones de la barra que devuelven vistas pasan sus semanas por
+ * la regla de P-15, también la del inicio del timer: una entrada que queda
+ * antes de la ventana la extiende hasta su semana.
  */
 export function TrackerBar({
   running,
@@ -79,6 +84,7 @@ export function TrackerBar({
   initialMode,
 }: TrackerBarProps) {
   useTrackerRefresh();
+  const reachWeek = useReachWeek();
 
   const [mode, setMode] = useState<TrackerMode>(initialMode);
   /**
@@ -105,8 +111,6 @@ export function TrackerBar({
    * el timer se detiene.
    */
   const [heldDescription, setHeldDescription] = useState<string | null>(null);
-  /** Día de la entrada que quedó más atrás del tramo que la lista dibuja. */
-  const [outsideWindowDay, setOutsideWindowDay] = useState<string | null>(null);
   /**
    * El timer que se descarta, fijado al abrir la confirmación: si mientras el
    * diálogo está abierto llega otro timer, confirmar no lo borra (§4.3).
@@ -132,13 +136,16 @@ export function TrackerBar({
   const save = useEntryAction(updateDescription, {
     // TT-90: si el guardado falla, el campo vuelve al valor que tiene el servidor.
     onFailure: () => setDraft(running?.description ?? ""),
+    onSuccess: (data) => reachWeek([data.entry.weekStart]),
   });
   const start = useEntryAction(startTimer, {
     optimistic: () => showPhase("starting"),
+    onSuccess: (data) => reachWeek(startedWeeks(data)),
   });
   const newStartId = useNewEntryId(start.failure);
   const stop = useEntryAction(stopTimer, {
     optimistic: () => showPhase("stopping"),
+    onSuccess: (data) => reachWeek([data.stopped.weekStart]),
   });
   const discard = useEntryAction(discardTimer, {
     optimistic: () => showPhase("discarding"),
@@ -148,7 +155,9 @@ export function TrackerBar({
    * Vive acá con el arranque y la parada, así su aviso sobrevive a que la
    * barra cambie de modo y lo baja la operación siguiente.
    */
-  const saveStart = useEntryAction(updateRunningStart);
+  const saveStart = useEntryAction(updateRunningStart, {
+    onSuccess: (data) => reachWeek([data.running.weekStart]),
+  });
   /**
    * Agregar limpia la barra solo cuando el servidor confirmó, así una falla
    * de red deja lo tecleado donde está (TT-89). No ofrece «Reintentar»: ver
@@ -162,7 +171,7 @@ export function TrackerBar({
       setManualDraft((current) =>
         sameDraft(current, input) ? reset(serverNow, timeZone) : current,
       );
-      setOutsideWindowDay(data.outsideWindow ? input.date : null);
+      reachWeek([data.created.weekStart]);
       // TT-25: la barra queda lista para la próxima entrada si el foco sigue
       // donde lo dejó el agregado. Si la persona ya está en otro control —una
       // hora de la barra, por ejemplo—, moverlo confirmaría lo que está
@@ -262,7 +271,6 @@ export function TrackerBar({
     saveStart.clear();
     discard.clear();
     add.clear();
-    setOutsideWindowDay(null);
     setPendingDiscard(null);
   }
 
@@ -506,10 +514,6 @@ export function TrackerBar({
               message={add.failure.message}
             />
           ))}
-
-        {outsideWindowDay !== null && (
-          <OutsideWindowNotice day={outsideWindowDay} todayKey={todayKey} />
-        )}
 
         {save.failure !== null && (
           <TrackerFeedback

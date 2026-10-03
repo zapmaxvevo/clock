@@ -1,6 +1,7 @@
 import { db, type Transaction } from "@/server/db";
 import { env } from "@/server/env";
 import type { Actor } from "@/server/permissions";
+import { parseWeekStart, type WeekStart } from "@/server/time";
 
 import { workspaceRepository, type MembershipRow, type WorkspaceRow } from "./repository";
 
@@ -9,6 +10,14 @@ export type WorkspaceContext = {
   readonly membership: MembershipRow;
   readonly actor: Actor;
 };
+
+/**
+ * Primer día de la semana de quien pide: el de su membresía (PF-01, TT-48).
+ * Es la única lectura del dato: ningún consumidor lee la columna directo.
+ */
+export function weekStartOf(context: WorkspaceContext): WeekStart {
+  return parseWeekStart(context.membership.weekStart);
+}
 
 const DEFAULT_WORKSPACE_NAME = "Workspace";
 const DEFAULT_TIMEZONE = "America/Argentina/Buenos_Aires";

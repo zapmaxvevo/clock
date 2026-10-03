@@ -395,20 +395,52 @@ workspace del equipo (P-14).
 
 **TT-52 Ventana y paginación de la lista** — `adaptar`
 Clockify carga más entradas al bajar y así alcanza cualquier día del pasado.
-Acá la pantalla trae los últimos 14 días, extendidos hacia atrás hasta el día
-de la última entrada cerrada y hasta el día del timer activo —de los dos, el
-más viejo—, y un botón «Cargar más» agrega una semana por clic. La extensión
-hacia atrás es lo que evita que la lista aparezca vacía habiendo entradas
-viejas; el botón todavía no existe. Justificación: el scroll infinito en un
-Server Component paginado complica la revalidación sin aportar a la fase 1.
+Acá la lista se dibuja en semanas enteras y crece hacia atrás con un enlace
+«Cargar más». Justificación: el scroll infinito en un Server Component paginado
+complica la revalidación sin aportar a la fase 1; con la ventana en la URL, la
+recarga y la revalidación la conservan
+([ADR 0008](../adr/0008-la-ventana-de-la-lista-vive-en-la-url.md)).
+
+- **La ventana son semanas enteras.** El día de partida es el menor entre el de
+  hace 13 días, el de la última entrada cerrada que ya empezó y el `desde` de la
+  URL, si viene; nunca anterior al día de creación del workspace. Ese día baja
+  hasta el primer día de su semana (TT-48), así que la semana más vieja de la
+  lista está entera y su total es el de verdad. Mientras hay un timer activo, la
+  ventana baja además hasta la semana de su inicio. La extensión hacia atrás es
+  lo que evita que la lista aparezca vacía habiendo entradas viejas.
+- **«Cargar más» es un enlace que salta las semanas vacías.** Va al final de la
+  lista y lleva a `/?desde=<semana>`, con la semana más reciente que tiene
+  entradas antes de la ventana, y no con la inmediatamente anterior: cada clic
+  agrega una semana con algo adentro, y las vacías del medio no se dibujan
+  (TT-86). Sin nada más atrás, el enlace no aparece. Por ser un enlace se puede
+  abrir aparte, y «Atrás» vuelve a la ventana anterior.
+- **El foco después de cargar más** va al encabezado de la semana agregada. Si
+  esa semana no llega —sus entradas se borraron entre el dibujo y el clic—, va
+  al encabezado de la semana más vieja de la lista.
+- **No limita filas**: agrega semanas enteras y no pagina dentro de la ventana.
+- **Al recargar, la ventana es la misma**, porque vive en la URL. Tampoco la
+  achican la revalidación periódica (P-11) ni la que sigue a una edición.
+- **Un `desde` inválido se ignora**, sin error: uno que no es un día del
+  calendario o que llega repetido. Uno anterior a la creación del workspace se
+  recorta a la semana de esa creación, y uno posterior al piso por omisión no
+  achica la ventana.
+
+_Corregido el 2026-10-03, slice 5_: decía que la ventana eran los últimos 14
+días, sin redondear a la semana, y que «Cargar más» sería un botón que agrega
+la semana inmediatamente anterior en cada clic. Lo fija el
+[contrato del slice 5](../slices/fase1-slice5-semana-y-paginacion.md).
+_Corregido el 2026-10-03, revisión de paridad del slice 5_: decía que el enlace
+funciona sin JavaScript. Sin JavaScript, `/` se queda en el esqueleto de carga,
+porque la pantalla se transmite dentro de un `<Suspense>` desde el slice 1.
 
 **El extremo nuevo de la ventana es el día de la entrada más nueva, que puede
 ser posterior a hoy.** Con TT-76 aceptando fechas futuras, una ventana que
 termina en «ahora» deja una entrada futura invisible para siempre, y «Cargar
-más» no la alcanza nunca porque solo agrega días hacia atrás. Es el único punto
-del documento donde aceptar la fecha futura obliga a cambiar algo ya escrito.
+más» no la alcanza nunca porque solo agrega semanas hacia atrás. Es el único
+punto del documento donde aceptar la fecha futura obliga a cambiar algo ya
+escrito.
 
-**TT-108 Entrada que queda en un día que la lista no muestra** — `adaptar`
+**TT-108 Entrada que queda en un día que la lista no muestra** — `replicar`
 _ID fuera de orden: este comportamiento se agregó después del resto._
 En Clockify el problema no se plantea: la documentación del modo manual dice
 que la entrada «will be added to the appropriate day header (whether the date
@@ -416,37 +448,47 @@ is in the past or the future)», y como la lista pagina desde el principio, ese
 día siempre se alcanza bajando. No hay salto automático ni aviso documentado.
 _No verificado_: si la lista hace scroll hasta la entrada recién creada.
 
-Acá, mientras «Cargar más» no exista (TT-52), una entrada que queda con una
-fecha fuera de la ventana se guarda y no se puede ver. Pasa con dos acciones:
-crearla en modo manual con esa fecha, y mover una fila a ese día cambiándole la
-fecha (TT-56). Pasa solo hacia atrás, con una fecha vieja: hacia adelante la
-ventana se extiende hasta el día de la entrada más nueva (párrafo anterior),
-así que una fecha futura siempre se ve. _Corregido el 2026-10-03, decisión del
-equipo_: antes decía que también pasaba hacia adelante. El comportamiento es:
+Acá pasa lo mismo desde el slice 5 (P-15): **una mutación que deja una entrada
+en una semana más vieja que la ventana extiende la ventana hasta esa semana**.
+La URL pasa a llevar el `desde` de esa semana, sin sumar un paso al historial,
+y la lista se dibuja con la entrada en su día. No hay aviso ni desplazamiento
+automático: a la entrada se llega bajando, como en Clockify.
 
-- La entrada se guarda igual. No se valida la fecha contra la ventana: cargar
-  horas de un mes atrás es un caso legítimo y bloquearlo sería inventar una
-  regla que Clockify no tiene.
-- Aparece un aviso informativo —sin ícono de error y sin «Reintentar»— que
-  nombra el día en que quedó la entrada y aclara que está fuera de los días que
-  la lista muestra. **Lo muestra la barra cuando la entrada se crea, y la lista
-  cuando se mueve una fila** (TT-56), en un lugar que no depende de ningún día,
-  porque el grupo del que salió la fila puede desaparecer con ella. El texto es
-  el mismo en los dos casos.
-- **Cuando llegue TT-52 el aviso se retira** y la ventana pasa a extenderse
-  hasta incluir el día de la entrada recién creada, que es la misma regla con
-  la que ya se extiende hasta el último día con entradas. Ahí el comportamiento
-  vuelve a ser el de Clockify: la entrada está en su día y se llega bajando.
-  Decidido por el equipo el 2026-10-02 (P-15): el slice que implemente TT-52 lo
-  encuentra resuelto y no tiene que volver a abrirlo.
+- **Vale para toda mutación que devuelve la entrada**: crearla en modo manual
+  con una fecha vieja (TT-25), moverle la fecha a una fila (TT-56), y detener
+  un timer cuyo inicio ya estaba antes de la ventana, que mientras corría se
+  dibujaba por TT-52 y al cerrarse saldría de la lista. Lo mismo al cerrarlo
+  iniciando o continuando otro (TT-35, TT-36). Moverle el inicio al timer
+  (TT-28) o editarle la descripción también llevan su semana a la URL, para que
+  la lista lo siga mostrando cuando se detenga.
+- **La entrada se guarda igual.** No se valida la fecha contra la ventana:
+  cargar horas de un mes atrás es un caso legítimo y bloquearlo sería inventar
+  una regla que Clockify no tiene.
+- **Hacia adelante no cambia nada**: la ventana ya llega hasta el día de la
+  entrada más nueva (TT-52), así que una fecha futura siempre se ve.
+- **Dos mutaciones seguidas no achican la ventana**: si la respuesta de la
+  segunda llega antes de que se dibuje la extensión que pidió la primera, la
+  ventana queda en la más vieja de las semanas pedidas.
+- **Dos bordes en que una entrada sale de la lista sin extender la ventana**, y
+  se alcanza con «Cargar más» (TT-52): el reintento de un «Iniciar» o un
+  «Continuar» cuya respuesta se perdió, que no informa el timer que cerró el
+  primer intento ([ADR 0007](../adr/0007-el-cliente-elige-el-id-de-las-altas.md));
+  y un timer que ya estaba antes de la ventana al cargar la página y se detiene
+  desde otra pestaña.
 
+**El aviso del slice 2 se retiró.** Mientras no existía «Cargar más», una
+entrada así se guardaba y no se podía ver, y un aviso informativo —en la barra
+al crearla, en la lista al mover una fila— nombraba el día en que había
+quedado. El aviso y sus dos textos ya no existen. Decidido por el equipo el
+2026-10-02 (P-15).
+
+_Corregido el 2026-10-03, slice 5 (P-15)_: era `adaptar`, por el aviso
+temporal. La ventana se extiende hasta **la semana** de la entrada y no solo
+hasta su día, porque la lista se dibuja en semanas enteras (TT-52); y no solo
+al crearla, como dice P-15, sino con cualquier mutación que la devuelva.
 _Corregido el 2026-10-03, decisión del equipo_: el título y el texto hablaban
 solo de la entrada creada y del aviso en la barra; mover una fila con la
 edición en línea produce el mismo caso, y su aviso lo muestra la lista.
-
-Justificación: el aviso es una divergencia deliberada y temporal. Clockify no
-avisa porque no lo necesita; sin paginación, no avisar significa que la entrada
-desaparece sin señal.
 
 **TT-45 Total del día** — `replicar`
 Suma de las duraciones de las entradas del grupo, en formato `h:mm`, rotulada
@@ -468,10 +510,40 @@ suma en «Esta semana» como cualquier otra.
 _No verificado en documentación pública_: la franja se ve en el producto pero
 no está descrita en el centro de ayuda. Confirmar en el workspace del equipo.
 
+_Agregado el 2026-10-03_. Lo que fija el
+[contrato del slice 5](../slices/fase1-slice5-semana-y-paginacion.md):
+
+- **El rango** va del primer al último día de la semana: `28/09 – 04/10`. Si
+  alguno de los dos extremos no es del año en curso, los dos llevan el año:
+  `29/12/2025 – 04/01/2026`. «Esta semana» es la que contiene hoy según el
+  primer día de la semana de la persona (TT-48), y «Semana anterior», la
+  inmediatamente anterior.
+- **El rótulo de una semana futura es su rango**, igual que el de cualquier
+  semana que no sea esta ni la anterior: no hay un rótulo propio para la semana
+  que viene. Va arriba de «Esta semana», por el mismo orden que los días
+  (TT-43). Diseño propio. _No verificado_: si Clockify rotula distinto la
+  semana que viene; confirmar en el workspace del equipo (P-14), como el de
+  mañana en TT-44.
+- **El total** es la suma exacta en segundos de las entradas de la semana,
+  formateada una sola vez, como el del día (TT-45). El de la semana del timer
+  activo suma el transcurrido y sube con el contador, como el del día (TT-46).
+  Una entrada cuenta entera en la semana del día de su inicio (TT-96).
+- **Encabezados**: cada semana es un encabezado de nivel 2, y cada día, uno de
+  nivel 3 dentro de su semana.
+
 **TT-48 Corte de la semana** — `adaptar`
-El corte sale de `weekBounds` de `src/server/time` con el inicio de semana del
-workspace. En Clockify el inicio de semana es por persona y lo fija un admin.
-Justificación: no hay campo por usuario (P-13).
+La semana corta en el primer día de la semana de la persona, que se guarda en
+su membresía y se lee solo con `weekStartOf` (PF-01, PF-16): lunes por
+omisión. El corte se calcula con `weekStartKey` de `src/server/time`, sobre el
+día local de la entrada. Como en Clockify, el valor es por persona y por
+workspace, y dos personas pueden ver la misma fecha en semanas distintas.
+Justificación: todavía no hay dónde cambiarlo. En Clockify lo edita un admin
+desde el perfil de la persona en la pantalla de equipo (PF-17), que acá no
+existe; mientras tanto se cambia con una sentencia sobre la base, como explica
+el [contrato del slice 5](../slices/fase1-slice5-semana-y-paginacion.md).
+_Corregido el 2026-10-03, slice 5_: decía que el corte salía de `weekBounds`
+con el inicio de semana del workspace, porque no había campo por persona
+(P-13). El rastreador no llama a `weekBounds`.
 
 **TT-49 Contenido de una fila** — `replicar`
 De izquierda a derecha: descripción, proyecto con su punto de color y la tarea,
@@ -838,9 +910,14 @@ trabajando y tocá Iniciar.» Justificación: copia propia en español, sin
 ilustración.
 
 **TT-86 Semana sin entradas pero con entradas más viejas** — `replicar`
-La semana vacía no se dibuja: la lista salta al último día con entradas, y para
-eso la ventana se extiende hacia atrás hasta ese día (TT-52). No hay días
-vacíos intermedios.
+La semana vacía no se dibuja: la lista salta a la última semana con entradas,
+y para eso la ventana se extiende hacia atrás hasta la semana de ese día
+(TT-52). «Cargar más» hace lo mismo: salta las semanas vacías del medio. No hay
+días ni semanas vacíos intermedios; la única semana sin entradas cerradas que
+se dibuja es la del timer activo, por TT-46.
+_Corregido el 2026-10-03, slice 5_: decía que la ventana se extendía hasta ese
+día; desde TT-52 llega hasta el primer día de su semana, y el salto vale
+también al cargar más.
 
 **TT-87 Workspace sin proyectos** — `adaptar`
 El selector de proyecto abre con «No hay proyectos todavía» y, si el rol lo
@@ -1009,16 +1086,25 @@ descripción; proyecto, tarea, etiquetas y facturable se suman cuando existan
 esos campos. Contrato:
 [fase1-slice4-continuar-duplicar.md](../slices/fase1-slice4-continuar-duplicar.md).
 
+### Slice 5 — semana y paginación
+
+TT-47, TT-48 y TT-52, y el retiro del aviso de TT-108 (P-15), con TT-46, TT-86,
+TT-96 y TT-97 verificados sobre las semanas. El primer día de la semana por
+persona entra como dato (PF-01, PF-16, PF-18), sin pantalla para cambiarlo.
+Contrato:
+[fase1-slice5-semana-y-paginacion.md](../slices/fase1-slice5-semana-y-paginacion.md).
+
 ### Lo que queda
 
 Selector de proyecto y tarea (TT-06 … TT-11), etiquetas (TT-12), facturable
-(TT-14, TT-15), total y encabezado de semana (TT-47, TT-48), «Cargar más» y el
-extremo nuevo de la ventana (TT-52), y selección y edición masiva (TT-62 …
-TT-64).
+(TT-14, TT-15), y selección y edición masiva (TT-62 … TT-64).
 
 _Corregido el 2026-10-03, decisión del equipo_: esta lista incluía lo que ya
 implementaron los slices 3 y 4, que ahora tienen su sección, y no nombraba el
 slice 2b.
+_Corregido el 2026-10-03, slice 5_: salen de esta lista el total y el
+encabezado de semana (TT-47, TT-48) y «Cargar más» con el extremo nuevo de la
+ventana (TT-52), que ahora tienen su sección.
 
 ## Pendientes de definición del equipo
 
@@ -1052,3 +1138,12 @@ Se dejan con su identificador porque los contratos de slice los citan.
 | P-12 | Un timer abandonado se deja correr: no hay corte automático (TT-42).                                                                                                                                                                                                   |
 | P-13 | Zona horaria y formatos salen del workspace en toda la fase 1 (TT-02, TT-48). El perfil por persona es un slice aparte y no los mueve.                                                                                                                                 |
 | P-15 | Cuando llegue TT-52 se retira el aviso de TT-108 y la ventana se extiende hasta el día de la entrada recién creada. Decidido el 2026-10-02.                                                                                                                            |
+
+_Corregido el 2026-10-03, slice 5_: en P-13, el primer día de la semana ya no
+sale del workspace. Pasó a `membership`, por persona (PF-01, M4 de la ronda 1
+del slice 5); ver TT-48. La zona horaria y los formatos siguen saliendo del
+workspace.
+_Corregido el 2026-10-03, slice 5_: en P-15, con la ventana en semanas enteras
+(TT-52), «hasta el día» se cumple llegando a la semana de ese día. Y la regla
+vale para toda mutación que devuelve una entrada, no solo para el alta
+(TT-108).

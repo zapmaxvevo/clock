@@ -2,7 +2,10 @@ import { z } from "zod";
 
 import { isClock, parseDayKey } from "@/server/time";
 
-/** Días que trae la lista del rastreador antes de extenderse hacia atrás. */
+/**
+ * Días que trae la lista del rastreador antes de extenderse hacia atrás y
+ * redondearse a semanas.
+ */
 export const TRACKER_WINDOW_DAYS = 14;
 
 /** Largo máximo de la descripción. Lo valida Zod y lo repite un `check` de la base. */
@@ -63,6 +66,13 @@ export const deleteEntryInput = z.object({ id: z.uuid() });
 const dayKeyInput = z
   .string()
   .refine((value) => parseDayKey(value) !== null, timeEntryMessages.invalidDate);
+
+/**
+ * Los parámetros de búsqueda de `/` (ADR 0008). Se usa solo con `safeParse`:
+ * un `desde` que falta, que no es un día válido o que llega repetido
+ * (`?desde=a&desde=b`, un arreglo) no pasa, y la pantalla lo ignora.
+ */
+export const trackerSearchParams = z.object({ desde: dayKeyInput });
 
 /** Hora de pared canónica. Los formatos tolerantes los normaliza el cliente. */
 const clockInput = z.string().refine(isClock, timeEntryMessages.invalidClock);
@@ -154,6 +164,8 @@ export const timeEntryView = z.object({
   endedAt: z.iso.datetime().nullable(),
   /** Día local del inicio, "2026-10-02". */
   dayDate: z.string(),
+  /** Primer día de la semana de `dayDate`, según el primer día de la persona: "2026-09-28". */
+  weekStart: z.string(),
   startLabel: z.string(),
   endLabel: z.string().nullable(),
   /** Superíndice de días del cruce de medianoche. 0 en una entrada que corre. */
@@ -179,6 +191,19 @@ export const dayGroupView = z.object({
   entries: z.array(timeEntryView),
 });
 
+export const weekGroupView = z.object({
+  /** Primer día de la semana, "2026-09-28". */
+  start: z.string(),
+  /** «Esta semana», «Semana anterior» o el rango (TT-47). */
+  label: z.string(),
+  /** El cliente suma acá el transcurrido del timer activo (TT-46). */
+  isRunningWeek: z.boolean(),
+  /** Exacto, en segundos: la suma de los `closedSeconds` de sus días. */
+  closedSeconds: z.number().int().min(0),
+  /** Solo días con entradas, del más reciente al más viejo. */
+  days: z.array(dayGroupView),
+});
+
 export const trackerState = z.object({
   /** Referencia contra la que el cliente corrige el desfase de su reloj. */
   serverNow: z.iso.datetime(),
@@ -191,12 +216,27 @@ export const trackerState = z.object({
   running: timeEntryView.nullable(),
   /** La entrada que continúa el atajo «c»: la cerrada más reciente que ya empezó. */
   lastEntryId: z.uuid().nullable(),
-  days: z.array(dayGroupView),
+  /** Solo semanas con entradas o con el timer activo, de la más nueva a la más vieja. */
+  weeks: z.array(weekGroupView),
+  /**
+   * El piso de la ventana que se dibuja: primer día de su semana más vieja.
+   * Ningún componente lo lee; es el observable con que los tests fijan la
+   * ventana sin depender de qué semanas tienen entradas (contrato, §5.3).
+   */
+  windowFrom: z.string(),
+  /**
+   * El piso que la ventana tendría sin el timer activo. Es contra el que el
+   * cliente compara la semana de una entrada después de una mutación (P-15).
+   */
+  reachFrom: z.string(),
+  /** El `desde` de «Cargar más», o `null` si no queda nada más atrás. */
+  loadMoreFrom: z.string().nullable(),
   hasAnyEntry: z.boolean(),
 });
 
 export type TimeEntryView = z.infer<typeof timeEntryView>;
 export type DayGroupView = z.infer<typeof dayGroupView>;
+export type WeekGroupView = z.infer<typeof weekGroupView>;
 export type TrackerState = z.infer<typeof trackerState>;
 
 export type TimeEntryErrorCode =
@@ -228,17 +268,9 @@ export type UpdateDescriptionResult = { readonly entry: TimeEntryView };
 
 export type DeleteEntryResult = { readonly id: string };
 
-export type CreateManualEntryResult = {
-  readonly created: TimeEntryView;
-  /** La entrada quedó fuera del tramo que la lista dibuja. */
-  readonly outsideWindow: boolean;
-};
+export type CreateManualEntryResult = { readonly created: TimeEntryView };
 
-export type UpdateEntryTimesResult = {
-  readonly entry: TimeEntryView;
-  /** La entrada quedó por debajo del tramo que la lista dibuja (TT-108). */
-  readonly outsideWindow: boolean;
-};
+export type UpdateEntryTimesResult = { readonly entry: TimeEntryView };
 
 export type UpdateRunningStartResult = { readonly running: TimeEntryView };
 
