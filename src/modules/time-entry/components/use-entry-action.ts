@@ -13,13 +13,15 @@ export type EntryActionFailure = {
   readonly message: string;
 };
 
-type Options<Input> = {
+type Options<Input, Data> = {
   /**
    * Se aplica dentro de la transición, así la vista optimista vive hasta que
    * el servidor responde y revalida. Si la action falla, React la descarta y
    * la pantalla vuelve sola al estado anterior.
    */
   readonly optimistic?: (input: Input) => void;
+  /** Corre dentro de la transición, con lo que se mandó y lo que contestó. */
+  readonly onSuccess?: (data: Data, input: Input) => void;
   readonly onFailure?: (failure: EntryActionFailure) => void;
 };
 
@@ -40,7 +42,7 @@ export type EntryActionHandle<Input> = {
  */
 export function useEntryAction<Input, Data>(
   action: (input: Input) => Promise<ActionResult<Data>>,
-  options: Options<Input> = {},
+  options: Options<Input, Data> = {},
 ): EntryActionHandle<Input> {
   const [pending, startTransition] = useTransition();
   const [failure, setFailure] = useState<EntryActionFailure | null>(null);
@@ -60,7 +62,9 @@ export function useEntryAction<Input, Data>(
         const result = await action(input);
         if (!result.ok) {
           fail({ code: result.code, message: result.message });
+          return;
         }
+        options.onSuccess?.(result.data, input);
       } catch {
         // La action no llegó a responder: red caída o servidor inalcanzable.
         fail({ code: "unexpected", message: timeEntryMessages.unexpected });

@@ -2,12 +2,19 @@ import { db, type Transaction } from "@/server/db";
 import { recordAudit } from "@/server/audit";
 import { can, type Action, type Actor } from "@/server/permissions";
 import {
+  addDaysToKey,
+  clockDifferenceMinutes,
+  crossesMidnight,
+  dayBounds,
   dayKey,
   dayLabel,
   durationSeconds,
   extraDays,
   formatClock,
   formatDuration,
+  instantFromLocal,
+  isAfterYear9999,
+  parseDayKey,
   startOfDayBefore,
   startOfLocalDay,
 } from "@/server/time";
@@ -16,6 +23,8 @@ import { timeEntryRepository, type EntryTarget, type TimeEntryRow } from "./repo
 import {
   timeEntryMessages,
   TRACKER_WINDOW_DAYS,
+  type CreateManualEntryResult,
+  type CreateManualEntryValues,
   type DeleteEntryInput,
   type DeleteEntryResult,
   type DayGroupView,
@@ -42,6 +51,21 @@ export class TimeEntryError extends Error {
 }
 
 const AUDIT_ENTITY = "time_entry";
+
+/** Lo que el módulo usa del workspace de la sesión: la zona y el piso de carga. */
+export type TrackerWorkspace = {
+  readonly timezone: string;
+  readonly createdAt: Date;
+};
+
+/**
+ * Primer día en que se pueden cargar horas: el día local de creación del
+ * workspace. La validación del service y el calendario de la barra lo toman de
+ * acá, así que los dos dicen lo mismo.
+ */
+function workspaceFloorDayKey(workspace: TrackerWorkspace): string {
+  return dayKey(workspace.createdAt, workspace.timezone);
+}
 
 function toView(row: TimeEntryRow, timeZone: string): TimeEntryView {
   const endedAt = row.endedAt;
@@ -282,24 +306,139 @@ export async function deleteEntry(
 }
 
 /**
+ * Agrega una entrada ya cerrada a partir de dos horas de pared. Es la única
+ * escritura del módulo cuyos instantes no salen de `now()` de la base: nacen
+ * de lo que la persona tecleó. Ver el ADR 0005.
+ */
+export async function createManualEntry(
+  actor: Actor,
+  workspace: TrackerWorkspace,
+  input: CreateManualEntryValues,
+  now: Date = new Date(),
+): Promise<CreateManualEntryResult> {
+  const timeZone = workspace.timezone;
+
+  return db.transaction(async (tx) => {
+    if (!can(actor, "timeEntry.own.create", ownTimeEntryResource(actor))) {
+      throw new TimeEntryError("forbidden", timeEntryMessages.forbidden);
+    }
+    // La interfaz ya lo impide; esto cubre a la pestaña desactualizada.
+    const running = await timeEntryRepository.findRunning(
+      actor.workspaceId,
+      actor.userId,
+      tx,
+    );
+    if (running !== undefined) {
+      throw new TimeEntryError("timer_running", timeEntryMessages.timerRunning);
+    }
+
+    const startedAt = instantFromLocal(input.date, input.start, timeZone);
+    if (startedAt === null) {
+      throw new TimeEntryError("validation", timeEntryMessages.nonexistentClock);
+    }
+    if (clockDifferenceMinutes(input.start, input.end) === 0) {
+      throw new TimeEntryError("validation", timeEntryMessages.tooShort);
+    }
+    // El fin es la hora tecleada y no el inicio más la duración: con un cambio
+    // de horario en el medio las dos cosas no coinciden.
+    const endDay = crossesMidnight(input.start, input.end)
+      ? addDaysToKey(input.date, 1)
+      : input.date;
+    // El día siguiente al 9999-12-31 no tiene clave de cuatro cifras: es la
+    // fecha la que no sirve, no la hora.
+    if (parseDayKey(endDay) === null) {
+      throw new TimeEntryError("validation", timeEntryMessages.invalidDate);
+    }
+    const endedAt = instantFromLocal(endDay, input.end, timeZone);
+    if (endedAt === null) {
+      throw new TimeEntryError("validation", timeEntryMessages.nonexistentClock);
+    }
+    // Un día de cuatro cifras al oeste de Greenwich puede caer en el año 10000
+    // UTC, que viaja a la base como "+010000-…" y la base no lo interpreta.
+    if (isAfterYear9999(startedAt) || isAfterYear9999(endedAt)) {
+      throw new TimeEntryError("validation", timeEntryMessages.invalidDate);
+    }
+    if (dayKey(startedAt, timeZone) < workspaceFloorDayKey(workspace)) {
+      throw new TimeEntryError("validation", timeEntryMessages.beforeWorkspace);
+    }
+
+    const created = await timeEntryRepository.insertClosed(tx, {
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+      description: input.description,
+      startedAt,
+      endedAt,
+    });
+    await recordAudit(tx, {
+      workspaceId: actor.workspaceId,
+      actorId: actor.userId,
+      action: "timeEntry.createManual",
+      entity: AUDIT_ENTITY,
+      entityId: created.id,
+      nextValue: {
+        description: created.description,
+        startedAt: created.startedAt,
+        endedAt: created.endedAt,
+      },
+    });
+
+    // Con la fila ya insertada: la más reciente puede ser esta misma. Solo se
+    // compara contra el extremo inferior, porque el superior se estira hasta
+    // el día de la entrada más nueva y la recién creada nunca lo supera. El
+    // inferior se calcula igual que en `getTrackerState`.
+    const latestPast = await timeEntryRepository.findLatestClosedBefore(
+      actor.workspaceId,
+      actor.userId,
+      now,
+      tx,
+    );
+    const from = windowStart(now, timeZone, latestPast, undefined);
+    return {
+      created: toView(created, timeZone),
+      outsideWindow: created.startedAt.getTime() < from.getTime(),
+    };
+  });
+}
+
+/**
  * Instante desde el que arranca la lista: el menor entre el inicio de la
- * ventana, el día de la última entrada cerrada y el día del timer activo. El
- * segundo es el que evita que la lista quede vacía habiendo entradas viejas.
+ * ventana, el día de la última entrada cerrada que empezó antes de `now` y el
+ * día del timer activo. El segundo es el que evita que la lista quede vacía
+ * habiendo entradas viejas; una entrada futura no puede ocupar su lugar,
+ * porque acercaría el extremo y escondería las viejas.
  */
 function windowStart(
   now: Date,
   timeZone: string,
-  latestClosed: TimeEntryRow | undefined,
+  latestPast: TimeEntryRow | undefined,
   running: TimeEntryRow | undefined,
 ): Date {
   const candidates = [startOfDayBefore(now, TRACKER_WINDOW_DAYS - 1, timeZone)];
-  if (latestClosed !== undefined) {
-    candidates.push(startOfLocalDay(latestClosed.startedAt, timeZone));
+  if (latestPast !== undefined) {
+    candidates.push(startOfLocalDay(latestPast.startedAt, timeZone));
   }
   if (running !== undefined) {
     candidates.push(startOfLocalDay(running.startedAt, timeZone));
   }
   return new Date(Math.min(...candidates.map((date) => date.getTime())));
+}
+
+/**
+ * Instante hasta el que llega la lista. Se estira hasta el fin del día de la
+ * entrada cerrada más nueva cuando esa entrada es futura: con `now` de tope,
+ * una entrada posterior a hoy no se vería nunca. Es el fin del día y no el
+ * instante porque la consulta usa `<` en la cota superior.
+ */
+function windowEnd(
+  now: Date,
+  timeZone: string,
+  latestClosed: TimeEntryRow | undefined,
+): Date {
+  if (latestClosed === undefined) {
+    return now;
+  }
+  const endOfDay = dayBounds(latestClosed.startedAt, timeZone).end;
+  return endOfDay.getTime() > now.getTime() ? endOfDay : now;
 }
 
 function buildDays(
@@ -346,16 +485,17 @@ function buildDays(
  */
 export async function getTrackerState(
   actor: Actor,
-  timeZone: string,
+  workspace: TrackerWorkspace,
   now: Date = new Date(),
 ): Promise<TrackerState> {
-  // Las tres lecturas salen del mismo snapshot. Con `read committed` cada
+  const timeZone = workspace.timezone;
+  // Las lecturas salen del mismo snapshot. Con `read committed` cada
   // sentencia ve uno nuevo, y una mutación que commitea en el medio deja
   // estados que la sección 5 declara imposibles: `hasAnyEntry` en verdadero con
   // la lista vacía, o la misma entrada en `running` y en `days`.
   const { running, latestClosed, closed } = await db.transaction(
     async (tx) => {
-      // Secuenciales a propósito: las tres comparten la única conexión de la
+      // Secuenciales a propósito: todas comparten la única conexión de la
       // transacción, así que lanzarlas juntas las encolaría igual y solo haría
       // parecer que viajan en paralelo.
       const current = await timeEntryRepository.findRunning(
@@ -363,16 +503,24 @@ export async function getTrackerState(
         actor.userId,
         tx,
       );
+      // La más nueva de todas estira el extremo superior; la más reciente de
+      // las pasadas, el inferior.
       const latest = await timeEntryRepository.findLatestClosed(
         actor.workspaceId,
         actor.userId,
         tx,
       );
+      const latestPast = await timeEntryRepository.findLatestClosedBefore(
+        actor.workspaceId,
+        actor.userId,
+        now,
+        tx,
+      );
       const entries = await timeEntryRepository.listClosedBetween(
         actor.workspaceId,
         actor.userId,
-        windowStart(now, timeZone, latest, current),
-        now,
+        windowStart(now, timeZone, latestPast, current),
+        windowEnd(now, timeZone, latest),
         tx,
       );
       return { running: current, latestClosed: latest, closed: entries };
@@ -383,6 +531,8 @@ export async function getTrackerState(
   return {
     serverNow: now.toISOString(),
     timeZone,
+    todayKey: dayKey(now, timeZone),
+    minDayKey: workspaceFloorDayKey(workspace),
     canTrack: can(actor, "timeEntry.own.create", ownTimeEntryResource(actor)),
     running: running === undefined ? null : toView(running, timeZone),
     days: buildDays(closed, running, now, timeZone),

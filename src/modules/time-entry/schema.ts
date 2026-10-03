@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { isClock, parseDayKey } from "@/server/time";
+
 /** Días que trae la lista del rastreador antes de extenderse hacia atrás. */
 export const TRACKER_WINDOW_DAYS = 14;
 
@@ -9,18 +11,31 @@ export const DESCRIPTION_MAX = 3000;
 /** Textos que la interfaz muestra tal cual. Un código puede tener más de uno. */
 export const timeEntryMessages = {
   descriptionTooLong: "La descripción no puede superar los 3000 caracteres.",
+  descriptionNullCharacter: "La descripción tiene un carácter que no se puede guardar.",
   notFound: "Esa entrada ya no existe.",
   forbidden: "No tenés permiso para hacer esto.",
   forbiddenOtherOwner: "No tenés permiso para editar esta entrada.",
   alreadyStopped: "Este timer ya había sido detenido.",
   endBeforeStart: "La hora de fin tiene que ser posterior a la de inicio.",
+  timerRunning: "Detené el timer para agregar tiempo a mano.",
+  tooShort: "La entrada tiene que durar al menos un minuto.",
+  nonexistentClock: "Esa hora no existe por el cambio de horario.",
+  beforeWorkspace: "No se pueden cargar horas anteriores a la creación del workspace.",
+  invalidDate: "Fecha inválida.",
+  invalidClock: "Hora inválida.",
   unexpected: "No se pudo guardar. Revisá la conexión y volvé a intentar.",
 } as const;
 
+// Postgres no guarda el carácter nulo en un `text`: sin este control, la
+// descripción que lo trae llega a la base y vuelve como `unexpected`.
 const description = z
   .string()
   .trim()
-  .max(DESCRIPTION_MAX, timeEntryMessages.descriptionTooLong);
+  .max(DESCRIPTION_MAX, timeEntryMessages.descriptionTooLong)
+  .refine(
+    (value) => !value.includes("\u0000"),
+    timeEntryMessages.descriptionNullCharacter,
+  );
 
 /** El cliente no manda instantes: el inicio lo pone la base. */
 export const startTimerInput = z.object({
@@ -36,12 +51,38 @@ export const updateDescriptionInput = z.object({
 
 export const deleteEntryInput = z.object({ id: z.uuid() });
 
+/** Día del calendario. La forma sola no alcanza: "2026-02-30" la cumple y no existe. */
+const dayKeyInput = z
+  .string()
+  .refine((value) => parseDayKey(value) !== null, timeEntryMessages.invalidDate);
+
+/** Hora de pared canónica. Los formatos tolerantes los normaliza el cliente. */
+const clockInput = z.string().refine(isClock, timeEntryMessages.invalidClock);
+
+/**
+ * La hora de pared viaja como hora de pared y el servidor la convierte con la
+ * zona del workspace. La duración no viaja: se deriva de las dos horas, así no
+ * puede llegar una que no se corresponda. Ver el ADR 0005.
+ */
+export const createManualEntryInput = z.object({
+  description: description.default(""),
+  /** Día local del inicio, en la zona horaria del workspace. */
+  date: dayKeyInput,
+  /** Hora de pared del inicio, 24 h. */
+  start: clockInput,
+  /** Hora de pared del fin. Menor que el inicio significa el día siguiente (TT-72). */
+  end: clockInput,
+});
+
 export type StartTimerInput = z.input<typeof startTimerInput>;
 /** Lo que recibe el service: `description` ya validada y con su default. */
 export type StartTimerValues = z.output<typeof startTimerInput>;
 export type StopTimerInput = z.infer<typeof stopTimerInput>;
 export type UpdateDescriptionInput = z.infer<typeof updateDescriptionInput>;
 export type DeleteEntryInput = z.infer<typeof deleteEntryInput>;
+export type CreateManualEntryInput = z.input<typeof createManualEntryInput>;
+/** Lo que recibe el service: `description` ya validada y con su default. */
+export type CreateManualEntryValues = z.output<typeof createManualEntryInput>;
 
 /**
  * Todo lo que depende de zona horaria o de formato se resuelve en el servidor.
@@ -79,6 +120,10 @@ export const trackerState = z.object({
   /** Referencia contra la que el cliente corrige el desfase de su reloj. */
   serverNow: z.iso.datetime(),
   timeZone: z.string(),
+  /** Día de hoy en la zona del workspace. */
+  todayKey: z.string(),
+  /** Día local de creación del workspace: el primero que admite carga. */
+  minDayKey: z.string(),
   canTrack: z.boolean(),
   running: timeEntryView.nullable(),
   days: z.array(dayGroupView),
@@ -90,7 +135,12 @@ export type DayGroupView = z.infer<typeof dayGroupView>;
 export type TrackerState = z.infer<typeof trackerState>;
 
 export type TimeEntryErrorCode =
-  "validation" | "not_found" | "forbidden" | "already_stopped" | "unexpected";
+  | "validation"
+  | "not_found"
+  | "forbidden"
+  | "already_stopped"
+  | "timer_running"
+  | "unexpected";
 
 export type ActionResult<T> =
   | { readonly ok: true; readonly data: T }
@@ -107,3 +157,9 @@ export type StopTimerResult = { readonly stopped: TimeEntryView };
 export type UpdateDescriptionResult = { readonly entry: TimeEntryView };
 
 export type DeleteEntryResult = { readonly id: string };
+
+export type CreateManualEntryResult = {
+  readonly created: TimeEntryView;
+  /** La entrada quedó fuera del tramo que la lista dibuja. */
+  readonly outsideWindow: boolean;
+};

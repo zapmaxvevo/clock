@@ -9,12 +9,15 @@ import { requireSession, type SessionContext } from "@/server/session";
 import * as service from "./service";
 import { ownTimeEntryResource, TimeEntryError } from "./service";
 import {
+  createManualEntryInput,
   deleteEntryInput,
   startTimerInput,
   stopTimerInput,
   timeEntryMessages,
   updateDescriptionInput,
   type ActionResult,
+  type CreateManualEntryInput,
+  type CreateManualEntryResult,
   type DeleteEntryInput,
   type DeleteEntryResult,
   type StartTimerInput,
@@ -99,5 +102,17 @@ export async function deleteEntry(
     const values = deleteEntryInput.parse(input);
     assertCan(session.actor, "timeEntry.own.delete", ownTimeEntryResource(session.actor));
     return service.deleteEntry(session.actor, values);
+  });
+}
+
+export async function createManualEntry(
+  input: CreateManualEntryInput,
+): Promise<ActionResult<CreateManualEntryResult>> {
+  return handle(async (session) => {
+    const values = createManualEntryInput.parse(input);
+    assertCan(session.actor, "timeEntry.own.create", ownTimeEntryResource(session.actor));
+    // El service necesita la fecha de creación del workspace para el piso, y
+    // la sesión ya la tiene: no hay consulta nueva.
+    return service.createManualEntry(session.actor, session.workspace, values);
   });
 }

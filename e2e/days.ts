@@ -1,0 +1,96 @@
+/**
+ * Cuentas de días civiles para los recorridos que eligen fechas. Se arman acá
+ * y no con `src/server/time`: un test que calcula lo esperado con el mismo
+ * código que lo produce no puede encontrarle un error.
+ */
+
+/** Un día civil, con el mes de 1 a 12. */
+export type CivilDay = {
+  readonly year: number;
+  readonly month: number;
+  readonly day: number;
+};
+
+/** Nombres que usa el calendario, el de `date-fns` en español. */
+const MONTHS = [
+  "enero",
+  "febrero",
+  "marzo",
+  "abril",
+  "mayo",
+  "junio",
+  "julio",
+  "agosto",
+  "septiembre",
+  "octubre",
+  "noviembre",
+  "diciembre",
+];
+
+/** Abreviaturas del rótulo de la fecha, las de `date-fns` en español. */
+const WEEKDAYS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
+
+/** Hoy en una zona horaria, que no tiene por qué ser la del proceso. */
+export function todayIn(timeZone: string): CivilDay {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  }).formatToParts(new Date());
+  const part = (type: Intl.DateTimeFormatPartTypes): number =>
+    Number(parts.find((candidate) => candidate.type === type)?.value);
+  return { year: part("year"), month: part("month"), day: part("day") };
+}
+
+function utcOf({ year, month, day }: CivilDay): Date {
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+export function addDays(civil: CivilDay, days: number): CivilDay {
+  const date = utcOf(civil);
+  date.setUTCDate(date.getUTCDate() + days);
+  return {
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate(),
+  };
+}
+
+function sameDay(left: CivilDay, right: CivilDay): boolean {
+  return left.year === right.year && left.month === right.month && left.day === right.day;
+}
+
+/** Meses que hay que avanzar desde `from` para llegar a `to`; negativo, atrás. */
+export function monthsBetween(from: CivilDay, to: CivilDay): number {
+  return (to.year - from.year) * 12 + (to.month - from.month);
+}
+
+/**
+ * Rótulo con que la pantalla nombra un día (TT-44): «Hoy», «Ayer», o el día
+ * de la semana con la fecha, que lleva el año solo si no es el de hoy.
+ */
+export function dayLabel(civil: CivilDay, today: CivilDay): string {
+  if (sameDay(civil, today)) {
+    return "Hoy";
+  }
+  if (sameDay(civil, addDays(today, -1))) {
+    return "Ayer";
+  }
+  const pad = (value: number): string => String(value).padStart(2, "0");
+  const weekday = WEEKDAYS[utcOf(civil).getUTCDay()];
+  const date = `${pad(civil.day)}/${pad(civil.month)}`;
+  return civil.year === today.year
+    ? `${weekday}, ${date}`
+    : `${weekday}, ${date}/${civil.year}`;
+}
+
+/**
+ * Lo que identifica a un día en el nombre accesible de su botón del
+ * calendario: «sábado, 5 de septiembre de 2026», que además puede llevar
+ * marcas de hoy y de elegido. La coma de adelante evita que el 5 encuentre
+ * al 15 y al 25.
+ */
+export function calendarDayName(civil: CivilDay): RegExp {
+  return new RegExp(`, ${civil.day} de ${MONTHS[civil.month - 1]} de ${civil.year}\\b`);
+}

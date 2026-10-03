@@ -44,3 +44,28 @@ export const TEST_SESSION_SECRET = testSessionSecret();
  * habilitado se pasa E2E_EMAIL_DOMAIN.
  */
 export const TEST_EMAIL_DOMAIN = process.env.E2E_EMAIL_DOMAIN ?? "empresa.com";
+
+/** La base del servidor local cuando DATABASE_URL no viene del entorno. */
+export const LOCAL_DATABASE_URL = "postgresql://clock:clock@localhost:5432/clock";
+
+/**
+ * Base que lee el servidor de los e2e, para lo que los tests escriben por
+ * fuera de la interfaz. Contra el servidor local es la misma que la
+ * configuración le pasa al `webServer`. Contra un preview no hay valor por
+ * defecto que sirva: llega en E2E_DATABASE_URL, y sin ella la suite se corta
+ * con el motivo en vez de escribir en una base que el preview no lee. Es una
+ * función y no una constante porque la configuración importa este archivo y
+ * no necesita la base.
+ */
+export function testDatabaseUrl(): string {
+  if (process.env.E2E_BASE_URL === undefined) {
+    return process.env.DATABASE_URL ?? LOCAL_DATABASE_URL;
+  }
+  const configured = process.env.E2E_DATABASE_URL;
+  if (configured === undefined) {
+    throw new Error(
+      "Contra un preview, E2E_DATABASE_URL tiene que traer la cadena de conexión de la base de ese preview.",
+    );
+  }
+  return configured;
+}

@@ -1,0 +1,439 @@
+import { randomUUID } from "node:crypto";
+
+import { eq } from "drizzle-orm";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { db } from "@/server/db";
+import { membership, workspace } from "@/server/db/schema";
+import { buenosAires, seedUser, seedWorkspace } from "@/test/factories";
+import { allTimeEntries } from "@/test/queries";
+
+import { timeEntryMessages } from "./schema";
+
+/**
+ * La capa de actions no se puede ejecutar como está: `next/headers` y
+ * `next/cache` exigen contexto de petición, y `auth.api.getSession` necesita
+ * una cookie firmada. Se reemplazan esas tres puertas y el resto corre de
+ * verdad: `requireSession`, `ensureWorkspaceContext`, `can()`, el service y la
+ * base. Lo que se verifica acá es lo que ningún otro test alcanza —la
+ * traducción de errores a `ActionResult`, qué permiso pide cada action, y que
+ * la revalidación ocurra también en el camino de error—.
+ *
+ * De la entrada manual, además: que la action le pase al service el workspace
+ * de la sesión —su zona horaria y su fecha de creación—, que el piso del
+ * workspace se compare por día local y no por instante, y que una fecha u
+ * hora imposible salga como `validation` y no como `unexpected`.
+ */
+const mocks = vi.hoisted(() => ({
+  sessionUser: null as null | { id: string; email: string },
+  revalidated: [] as string[],
+  redirects: [] as string[],
+}));
+
+class RedirectError extends Error {
+  constructor(readonly to: string) {
+    super(`redirect ${to}`);
+  }
+}
+
+vi.mock("next/headers", () => ({
+  headers: async () => new Headers(),
+}));
+
+vi.mock("next/cache", () => ({
+  revalidatePath: (path: string) => {
+    mocks.revalidated.push(path);
+  },
+}));
+
+vi.mock("next/navigation", () => ({
+  redirect: (path: string) => {
+    mocks.redirects.push(path);
+    throw new RedirectError(path);
+  },
+}));
+
+vi.mock("@/server/auth", () => ({
+  auth: {
+    api: {
+      getSession: async () =>
+        mocks.sessionUser === null
+          ? null
+          : {
+              user: {
+                id: mocks.sessionUser.id,
+                email: mocks.sessionUser.email,
+                name: "Persona de prueba",
+                image: null,
+              },
+            },
+    },
+  },
+}));
+
+const actions = await import("./actions");
+
+const ownerEmail = "owner@empresa.com";
+const madrid = "Europe/Madrid";
+
+async function signIn(email = ownerEmail): Promise<string> {
+  const id = await seedUser(email);
+  mocks.sessionUser = { id, email };
+  return id;
+}
+
+/**
+ * Workspace con la zona y la fecha de creación que el caso necesita, y una
+ * sesión adentro. La membresía la crea `ensureWorkspaceContext` al entrar.
+ */
+async function signInOn(options: { timezone?: string; createdAt?: string } = {}) {
+  const seeded = await seedWorkspace(options.timezone ?? buenosAires);
+  if (options.createdAt !== undefined) {
+    await db
+      .update(workspace)
+      .set({ createdAt: new Date(options.createdAt) })
+      .where(eq(workspace.id, seeded.workspaceId));
+  }
+  const email = `${randomUUID()}@empresa.com`;
+  mocks.sessionUser = { id: await seedUser(email), email };
+  return seeded;
+}
+
+beforeEach(() => {
+  mocks.sessionUser = null;
+  mocks.revalidated.length = 0;
+  mocks.redirects.length = 0;
+});
+
+afterEach(() => {
+  mocks.sessionUser = null;
+});
+
+describe("sin sesión", () => {
+  it("manda al login en vez de ejecutar la action", async () => {
+    await expect(actions.startTimer({})).rejects.toBeInstanceOf(RedirectError);
+    expect(mocks.redirects).toEqual(["/login"]);
+  });
+
+  it("no revalida nada, porque no llegó a entrar al recorrido", async () => {
+    await expect(actions.startTimer({})).rejects.toBeInstanceOf(RedirectError);
+    expect(mocks.revalidated).toEqual([]);
+  });
+});
+
+describe("traducción del error al resultado tipado", () => {
+  it("un error de Zod sale como validation con el mensaje del issue", async () => {
+    await signIn();
+
+    const result = await actions.startTimer({ description: "a".repeat(3001) });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("validation");
+    expect(result.message).toBe("La descripción no puede superar los 3000 caracteres.");
+  });
+
+  it("un error de dominio conserva su código y su mensaje", async () => {
+    await signIn();
+
+    const result = await actions.stopTimer({
+      id: "11111111-1111-4111-8111-111111111111",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("not_found");
+    expect(result.message).toBe("Esa entrada ya no existe.");
+  });
+
+  it("la falta de permiso sale con el mensaje neutro y no con el de entrada ajena", async () => {
+    const userId = await signIn();
+    await actions.startTimer({});
+    await db
+      .update(membership)
+      .set({ status: "inactive" })
+      .where(eq(membership.userId, userId));
+
+    const result = await actions.startTimer({});
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("forbidden");
+    expect(result.message).toBe("No tenés permiso para hacer esto.");
+  });
+});
+
+describe("la revalidación corre siempre", () => {
+  it("después de una mutación exitosa", async () => {
+    await signIn();
+
+    const result = await actions.startTimer({ description: "algo" });
+
+    expect(result.ok).toBe(true);
+    expect(mocks.revalidated).toContain("/");
+  });
+
+  it("después de un error de dominio: es lo que resincroniza la pestaña vieja", async () => {
+    await signIn();
+
+    const result = await actions.deleteEntry({
+      id: "11111111-1111-4111-8111-111111111111",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(mocks.revalidated).toContain("/");
+  });
+
+  it("después de un error de validación", async () => {
+    await signIn();
+
+    const result = await actions.updateDescription({
+      id: "11111111-1111-4111-8111-111111111111",
+      description: "a".repeat(3001),
+    });
+
+    expect(result.ok).toBe(false);
+    expect(mocks.revalidated).toContain("/");
+  });
+
+  it("después de un rechazo de la entrada manual: la pestaña vuelve a ver el timer", async () => {
+    await signIn();
+    await actions.startTimer({});
+    mocks.revalidated.length = 0;
+
+    const result = await actions.createManualEntry({
+      date: "2026-10-01",
+      start: "09:00",
+      end: "10:00",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("timer_running");
+    expect(mocks.revalidated).toContain("/");
+  });
+});
+
+describe("cada action exige su permiso antes de tocar nada", () => {
+  it("las cuatro del tracker y la manual niegan con la membresía desactivada", async () => {
+    const userId = await signIn();
+    await actions.startTimer({});
+    await db
+      .update(membership)
+      .set({ status: "inactive" })
+      .where(eq(membership.userId, userId));
+
+    const id = "11111111-1111-4111-8111-111111111111";
+    const results = [
+      await actions.startTimer({}),
+      await actions.stopTimer({ id }),
+      await actions.updateDescription({ id, description: "x" }),
+      await actions.deleteEntry({ id }),
+      await actions.createManualEntry({
+        date: "2026-10-01",
+        start: "09:00",
+        end: "10:00",
+      }),
+    ];
+
+    for (const result of results) {
+      expect(result.ok).toBe(false);
+      if (result.ok) continue;
+      expect(result.code).toBe("forbidden");
+    }
+  });
+});
+
+describe("la action convierte con el workspace de la sesión", () => {
+  it("usa su zona horaria y no la del proceso", async () => {
+    const seeded = await signInOn({
+      timezone: madrid,
+      createdAt: "2020-01-01T00:00:00Z",
+    });
+
+    const result = await actions.createManualEntry({
+      description: "reunión",
+      date: "2026-07-01",
+      start: "12:00",
+      end: "13:30",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // El 1/7/2026 Madrid está en +02:00.
+    expect(result.data.created.startedAt).toBe("2026-07-01T10:00:00.000Z");
+    expect(result.data.created.endedAt).toBe("2026-07-01T11:30:00.000Z");
+    expect(result.data.created.startLabel).toBe("12:00");
+
+    const rows = await allTimeEntries();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].workspaceId).toBe(seeded.workspaceId);
+    expect(rows[0].userId).toBe(mocks.sessionUser?.id);
+  });
+});
+
+describe("el piso del workspace se mide por día local", () => {
+  /**
+   * Las 23:00 del 1 de setiembre en Buenos Aires, que en UTC ya son del 2. El
+   * día local de creación es el 1: con una comparación por instante, o por día
+   * UTC, los dos casos que acá se aceptan quedarían rechazados.
+   */
+  const createdAt = "2026-09-02T02:00:00Z";
+
+  it("acepta el mismo día aunque la hora sea anterior a la creación", async () => {
+    await signInOn({ createdAt });
+
+    const result = await actions.createManualEntry({
+      description: "temprano",
+      date: "2026-09-01",
+      start: "10:00",
+      end: "11:00",
+    });
+
+    // Instante anterior a la creación y día UTC anterior; día local, el mismo.
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.created.startedAt).toBe("2026-09-01T13:00:00.000Z");
+    expect(await allTimeEntries()).toHaveLength(1);
+  });
+
+  it("acepta ese día entero, desde su primer minuto", async () => {
+    await signInOn({ createdAt });
+
+    const result = await actions.createManualEntry({
+      date: "2026-09-01",
+      start: "00:00",
+      end: "00:01",
+    });
+
+    // El otro de los dos: el primer minuto del día de creación, casi un día
+    // entero antes de ese instante y todavía del lado aceptado.
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.created.startedAt).toBe("2026-09-01T03:00:00.000Z");
+    expect(result.data.created.durationSeconds).toBe(60);
+  });
+
+  it("rechaza el día anterior hasta su último minuto y no deja fila", async () => {
+    await signInOn({ createdAt });
+
+    const result = await actions.createManualEntry({
+      date: "2026-08-31",
+      start: "23:00",
+      end: "23:59",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("validation");
+    expect(result.message).toBe(timeEntryMessages.beforeWorkspace);
+    expect(await allTimeEntries()).toEqual([]);
+  });
+});
+
+describe("la hora de pared del cambio de horario", () => {
+  // El 29/3/2026 Madrid salta de las 02:00 a las 03:00; el 25/10 las 02:30
+  // ocurren dos veces.
+  const enMadrid = { timezone: madrid, createdAt: "2020-01-01T00:00:00Z" };
+
+  it.each([
+    ["en el inicio", { date: "2026-03-29", start: "02:30", end: "04:00" }],
+    ["en el fin", { date: "2026-03-29", start: "01:30", end: "02:30" }],
+  ])(
+    "la hora que no existe %s sale como validation y no deja fila",
+    async (_, values) => {
+      await signInOn(enMadrid);
+
+      const result = await actions.createManualEntry(values);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      // El error es de la persona, no una falla del servidor: con `unexpected`
+      // la interfaz ofrecería «Reintentar» para algo que nunca va a funcionar.
+      expect(result.code).toBe("validation");
+      expect(result.message).toBe(timeEntryMessages.nonexistentClock);
+      expect(await allTimeEntries()).toEqual([]);
+    },
+  );
+
+  it("la hora ambigua se acepta y se guarda con el segundo instante", async () => {
+    await signInOn(enMadrid);
+
+    const result = await actions.createManualEntry({
+      date: "2026-10-25",
+      start: "02:30",
+      end: "04:00",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.created.startedAt).toBe("2026-10-25T01:30:00.000Z");
+    expect(result.data.created.startLabel).toBe("02:30");
+    const rows = await allTimeEntries();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].startedAt.toISOString()).toBe("2026-10-25T01:30:00.000Z");
+  });
+});
+
+describe("la forma canónica se revalida en el servidor", () => {
+  it.each([
+    ["un día que no existe", { date: "2026-02-30" }, timeEntryMessages.invalidDate],
+    ["una fecha con otro formato", { date: "01/09/2026" }, timeEntryMessages.invalidDate],
+    ["una hora sin normalizar", { start: "9:45" }, timeEntryMessages.invalidClock],
+    ["una hora de 24 h", { end: "24:00" }, timeEntryMessages.invalidClock],
+    ["un texto tolerante", { start: "1h30m" }, timeEntryMessages.invalidClock],
+  ])("%s sale como validation y no deja fila", async (_, patch, message) => {
+    await signInOn();
+
+    const result = await actions.createManualEntry({
+      date: "2026-09-01",
+      start: "08:00",
+      end: "09:00",
+      ...patch,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("validation");
+    expect(result.message).toBe(message);
+    expect(await allTimeEntries()).toEqual([]);
+  });
+});
+
+describe("lo que pasa la forma pero la base no puede guardar", () => {
+  it("una descripción con el carácter nulo sale como validation", async () => {
+    // Un workspace viejo: sin el control del esquema, la entrada llegaría a la base.
+    await signInOn({ createdAt: "2020-01-01T00:00:00Z" });
+
+    const result = await actions.createManualEntry({
+      description: "antes\u0000después",
+      date: "2026-09-01",
+      start: "08:00",
+      end: "09:00",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("validation");
+    expect(result.message).toBe(timeEntryMessages.descriptionNullCharacter);
+    expect(await allTimeEntries()).toEqual([]);
+  });
+
+  it("el 9999-12-31 a la noche en Buenos Aires ya es el año 10000 en UTC", async () => {
+    await signInOn();
+
+    const result = await actions.createManualEntry({
+      date: "9999-12-31",
+      start: "23:00",
+      end: "23:30",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    // La fecha es de la persona y no se puede guardar: con `unexpected` la
+    // interfaz ofrecería «Reintentar» para algo que nunca va a funcionar.
+    expect(result.code).toBe("validation");
+    expect(result.message).toBe(timeEntryMessages.invalidDate);
+    expect(await allTimeEntries()).toEqual([]);
+  });
+});

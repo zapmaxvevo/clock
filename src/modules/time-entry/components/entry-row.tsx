@@ -115,7 +115,7 @@ export function EntryRow({
               +{entry.extraDays}
               <span className="sr-only">
                 {entry.extraDays === 1
-                  ? " (termina un día después)"
+                  ? trackerLabels.endsNextDay
                   : ` (termina ${entry.extraDays} días después)`}
               </span>
             </sup>

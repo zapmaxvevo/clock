@@ -1,6 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 
-import { TEST_EMAIL_DOMAIN, TEST_SESSION_SECRET } from "./e2e/environment";
+import {
+  LOCAL_DATABASE_URL,
+  TEST_EMAIL_DOMAIN,
+  TEST_SESSION_SECRET,
+} from "./e2e/environment";
 
 /**
  * Los e2e corren contra el preview de Vercel del pull request, que llega en
@@ -16,8 +20,7 @@ const baseURL = previewURL ?? "http://localhost:3000";
  * TEST_EMAIL_DOMAIN, que es el mismo que usan los emails de prueba.
  */
 const localServerEnv = {
-  DATABASE_URL:
-    process.env.DATABASE_URL ?? "postgresql://clock:clock@localhost:5432/clock",
+  DATABASE_URL: process.env.DATABASE_URL ?? LOCAL_DATABASE_URL,
   BETTER_AUTH_SECRET:
     process.env.BETTER_AUTH_SECRET ?? "desarrollo-local-secreto-de-32-caracteres-min",
   BETTER_AUTH_URL: baseURL,

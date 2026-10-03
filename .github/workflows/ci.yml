@@ -67,6 +67,9 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     needs: [verify, integration]
+    # Los secretos de e2e viven en este environment y no a nivel repositorio:
+    # E2E_DATABASE_URL escribe en la base del preview.
+    environment: preview
     if: vars.E2E_BASE_URL != ''
     steps:
       - uses: actions/checkout@v4
@@ -85,3 +88,6 @@ jobs:
           # Opt-in explícito del endpoint de sesión de prueba. Sin esta
           # variable no se registra, aunque el secreto esté cargado.
           ALLOW_TEST_SESSION: "true"
+          # El setup de Playwright atrasa la creación del workspace en la base
+          # del preview, que lleva solo datos sintéticos.
+          E2E_DATABASE_URL: ${{ secrets.E2E_DATABASE_URL }}

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import type { Actor } from "@/server/permissions";
+import { addDaysToKey } from "@/server/time";
 import { warmPool } from "@/test/concurrency";
 import { buenosAires, seedMember, seedTimeEntry, seedWorkspace } from "@/test/factories";
 import { allTimeEntries, auditFor } from "@/test/queries";
@@ -8,6 +9,7 @@ import { allTimeEntries, auditFor } from "@/test/queries";
 import { timeEntryRepository } from "./repository";
 import { timeEntryMessages } from "./schema";
 import {
+  createManualEntry,
   deleteEntry,
   getTrackerState,
   startTimer,
@@ -26,6 +28,11 @@ let actor: Actor;
 
 function actorFor(userId: string, overrides: Partial<Actor> = {}): Actor {
   return { userId, workspaceId, role: "member", status: "active", ...overrides };
+}
+
+/** El workspace tal como lo recibe el service: la zona y el piso de carga. */
+function workspaceOf(timezone: string, createdAt = "2020-01-01T00:00:00Z") {
+  return { timezone, createdAt: new Date(createdAt) };
 }
 
 beforeEach(async () => {
@@ -380,13 +387,52 @@ describe("getTrackerState", () => {
   const now = new Date("2026-10-02T15:00:00Z");
 
   it("deja el estado vacío cuando no hay nada cargado", async () => {
-    const state = await getTrackerState(actor, buenosAires, now);
+    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
 
     expect(state.hasAnyEntry).toBe(false);
     expect(state.days).toEqual([]);
     expect(state.running).toBeNull();
     expect(state.canTrack).toBe(true);
     expect(state.serverNow).toBe(now.toISOString());
+  });
+
+  it("resuelve el día de hoy en la zona del workspace", async () => {
+    // Las 23:00 del 2 de octubre en Buenos Aires: en UTC ya es el 3.
+    const lateNight = new Date("2026-10-03T02:00:00Z");
+
+    const local = await getTrackerState(actor, workspaceOf(buenosAires), lateNight);
+    const remote = await getTrackerState(actor, workspaceOf(madrid), lateNight);
+
+    expect(local.todayKey).toBe("2026-10-02");
+    expect(remote.todayKey).toBe("2026-10-03");
+  });
+
+  it("da como piso el día local de creación, el mismo que acepta la validación", async () => {
+    // Las 23:00 del 1 de setiembre en Buenos Aires, que en UTC ya son del 2.
+    const reciente = workspaceOf(buenosAires, "2026-09-02T02:00:00Z");
+
+    const state = await getTrackerState(actor, reciente, now);
+    expect(state.minDayKey).toBe("2026-09-01");
+
+    const values = { description: "", start: "08:00", end: "09:00" };
+    const floor = await createManualEntry(
+      actor,
+      reciente,
+      { ...values, date: state.minDayKey },
+      now,
+    );
+    expect(floor.created.dayDate).toBe(state.minDayKey);
+    await expect(
+      createManualEntry(
+        actor,
+        reciente,
+        { ...values, date: addDaysToKey(state.minDayKey, -1) },
+        now,
+      ),
+    ).rejects.toMatchObject({
+      code: "validation",
+      message: timeEntryMessages.beforeWorkspace,
+    });
   });
 
   it("muestra solo las entradas propias", async () => {
@@ -405,7 +451,7 @@ describe("getTrackerState", () => {
       endedAt: "2026-10-02T14:00:00Z",
     });
 
-    const state = await getTrackerState(actor, buenosAires, now);
+    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
 
     expect(state.days).toHaveLength(1);
     expect(state.days[0].entries.map((entry) => entry.description)).toEqual(["mía"]);
@@ -434,7 +480,7 @@ describe("getTrackerState", () => {
       endedAt: "2026-10-02T14:00:00Z",
     });
 
-    const state = await getTrackerState(actor, buenosAires, now);
+    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
 
     expect(state.days.map((day) => day.date)).toEqual(["2026-10-02", "2026-10-01"]);
     expect(state.days.map((day) => day.label)).toEqual(["Hoy", "Ayer"]);
@@ -453,7 +499,7 @@ describe("getTrackerState", () => {
       endedAt: "2026-10-02T04:00:00Z",
     });
 
-    const state = await getTrackerState(actor, buenosAires, now);
+    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
 
     expect(state.days.map((day) => day.date)).toEqual(["2026-10-02"]);
     expect(state.days[0].entries[0].startLabel).toBe("00:00");
@@ -473,7 +519,7 @@ describe("getTrackerState", () => {
       endedAt: "2026-10-02T12:00:40Z",
     });
 
-    const state = await getTrackerState(actor, buenosAires, now);
+    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
 
     expect(state.days[0].entries.map((entry) => entry.durationLabel)).toEqual([
       "0:00",
@@ -490,7 +536,7 @@ describe("getTrackerState", () => {
       endedAt: "2026-10-02T05:00:00Z", // 02:00 del 2 de octubre
     });
 
-    const state = await getTrackerState(actor, buenosAires, now);
+    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
 
     expect(state.days).toHaveLength(1);
     expect(state.days[0].date).toBe("2026-10-01");
@@ -509,8 +555,8 @@ describe("getTrackerState", () => {
       endedAt: "2026-10-02T02:00:00Z",
     });
 
-    const local = await getTrackerState(actor, buenosAires, now);
-    const remote = await getTrackerState(actor, madrid, now);
+    const local = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    const remote = await getTrackerState(actor, workspaceOf(madrid), now);
 
     expect(local.days[0].date).toBe("2026-10-01");
     expect(local.days[0].entries[0].startLabel).toBe("22:00");
@@ -527,7 +573,7 @@ describe("getTrackerState", () => {
       startedAt: "2026-09-30T11:00:00Z",
     });
 
-    const state = await getTrackerState(actor, buenosAires, now);
+    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
 
     expect(state.running?.description).toBe("corriendo");
     expect(state.running?.endedAt).toBeNull();
@@ -554,7 +600,7 @@ describe("getTrackerState", () => {
       endedAt: "2026-09-29T12:00:00Z",
     });
 
-    const state = await getTrackerState(actor, buenosAires, now);
+    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
 
     expect(state.days.map((day) => day.date)).toEqual(["2026-10-02", "2026-09-29"]);
   });
@@ -582,7 +628,7 @@ describe("getTrackerState", () => {
       endedAt: "2026-09-18T12:00:00Z",
     });
 
-    const state = await getTrackerState(actor, buenosAires, now);
+    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
 
     expect(state.days.map((day) => day.date)).toEqual(["2026-10-02", "2026-09-19"]);
   });
@@ -596,7 +642,7 @@ describe("getTrackerState", () => {
       endedAt: "2026-07-15T12:00:00Z",
     });
 
-    const state = await getTrackerState(actor, buenosAires, now);
+    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
 
     expect(state.hasAnyEntry).toBe(true);
     expect(state.days).toHaveLength(1);
@@ -619,7 +665,7 @@ describe("getTrackerState", () => {
       endedAt: "2026-08-21T12:00:00Z",
     });
 
-    const state = await getTrackerState(actor, buenosAires, now);
+    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
 
     expect(state.days.map((day) => day.date)).toEqual(["2026-08-21", "2026-08-20"]);
     expect(state.days.find((day) => day.isRunningDay)?.date).toBe("2026-08-20");
@@ -648,7 +694,7 @@ describe("getTrackerState", () => {
 
     const state = await getTrackerState(
       { ...actor, status: "inactive" },
-      buenosAires,
+      workspaceOf(buenosAires),
       now,
     );
 
@@ -672,7 +718,7 @@ describe("getTrackerState", () => {
 
       const states = await Promise.all([
         ...Array.from({ length: READERS }, () =>
-          getTrackerState(actor, buenosAires, now),
+          getTrackerState(actor, workspaceOf(buenosAires), now),
         ),
         deleteEntry(actor, { id: row.id }).then(() => null),
       ]);
@@ -693,5 +739,393 @@ describe("el error que llega a quien llama", () => {
     }).catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(TimeEntryError);
+  });
+});
+
+describe("createManualEntry", () => {
+  /** Las 12:00 del 2 de octubre de 2026 en Buenos Aires. */
+  const now = new Date("2026-10-02T15:00:00Z");
+  const workspace = workspaceOf(buenosAires);
+
+  it("crea una entrada cerrada con las horas de pared que se teclearon", async () => {
+    const result = await createManualEntry(
+      actor,
+      workspace,
+      { description: "  reunión  ", date: "2026-10-02", start: "08:00", end: "10:30" },
+      now,
+    );
+
+    expect(result.outsideWindow).toBe(false);
+    expect(result.created.startedAt).toBe("2026-10-02T11:00:00.000Z");
+    expect(result.created.endedAt).toBe("2026-10-02T13:30:00.000Z");
+    expect(result.created.startLabel).toBe("08:00");
+    expect(result.created.endLabel).toBe("10:30");
+    expect(result.created.durationLabel).toBe("2:30");
+    expect(result.created.dayDate).toBe("2026-10-02");
+    expect(result.created.extraDays).toBe(0);
+
+    const rows = await allTimeEntries();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].endedAt).not.toBeNull();
+    expect(rows[0].description).toBe("  reunión  ");
+  });
+
+  it("aparece en el grupo de su día y mueve ese total, que puede no ser hoy", async () => {
+    await createManualEntry(
+      actor,
+      workspace,
+      { description: "", date: "2026-09-28", start: "09:00", end: "11:00" },
+      now,
+    );
+
+    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    const day = state.days.find((group) => group.date === "2026-09-28");
+    expect(day?.closedSeconds).toBe(2 * 3600);
+    expect(day?.entries).toHaveLength(1);
+  });
+
+  it("cruza la medianoche cuando el fin es menor que el inicio", async () => {
+    const result = await createManualEntry(
+      actor,
+      workspace,
+      { description: "", date: "2026-09-30", start: "23:00", end: "02:00" },
+      now,
+    );
+
+    expect(result.created.durationSeconds).toBe(3 * 3600);
+    expect(result.created.durationLabel).toBe("3:00");
+    expect(result.created.dayDate).toBe("2026-09-30");
+    expect(result.created.extraDays).toBe(1);
+    expect(result.created.startedAt).toBe("2026-10-01T02:00:00.000Z");
+    expect(result.created.endedAt).toBe("2026-10-01T05:00:00.000Z");
+
+    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    const day = state.days.find((group) => group.date === "2026-09-30");
+    expect(day?.closedSeconds).toBe(3 * 3600);
+  });
+
+  it("rechaza agregar con un timer corriendo y no inserta nada", async () => {
+    await startTimer(actor, buenosAires, { description: "corriendo" });
+
+    await expect(
+      createManualEntry(
+        actor,
+        workspace,
+        { description: "", date: "2026-10-02", start: "08:00", end: "09:00" },
+        now,
+      ),
+    ).rejects.toMatchObject({
+      code: "timer_running",
+      message: timeEntryMessages.timerRunning,
+    });
+    expect(await allTimeEntries()).toHaveLength(1);
+  });
+
+  it("rechaza una entrada de duración cero", async () => {
+    await expect(
+      createManualEntry(
+        actor,
+        workspace,
+        { description: "", date: "2026-10-02", start: "08:00", end: "08:00" },
+        now,
+      ),
+    ).rejects.toMatchObject({ code: "validation", message: timeEntryMessages.tooShort });
+    expect(await allTimeEntries()).toHaveLength(0);
+  });
+
+  it("acepta la entrada de un minuto, que es el mínimo", async () => {
+    const result = await createManualEntry(
+      actor,
+      workspace,
+      { description: "", date: "2026-10-02", start: "08:00", end: "08:01" },
+      now,
+    );
+    expect(result.created.durationSeconds).toBe(60);
+  });
+
+  it("rechaza una fecha anterior a la creación del workspace", async () => {
+    const reciente = workspaceOf(buenosAires, "2026-09-01T12:00:00Z");
+
+    await expect(
+      createManualEntry(
+        actor,
+        reciente,
+        { description: "", date: "2026-08-31", start: "08:00", end: "09:00" },
+        now,
+      ),
+    ).rejects.toMatchObject({
+      code: "validation",
+      message: timeEntryMessages.beforeWorkspace,
+    });
+    expect(await allTimeEntries()).toHaveLength(0);
+  });
+
+  it("acepta el mismo día en que se creó el workspace", async () => {
+    const reciente = workspaceOf(buenosAires, "2026-09-01T12:00:00Z");
+
+    const result = await createManualEntry(
+      actor,
+      reciente,
+      { description: "", date: "2026-09-01", start: "08:00", end: "09:00" },
+      now,
+    );
+    expect(result.created.dayDate).toBe("2026-09-01");
+  });
+
+  it("permite dos entradas superpuestas y las dos suman al total", async () => {
+    const values = { description: "", date: "2026-10-02", start: "08:00", end: "10:00" };
+    await createManualEntry(actor, workspace, values, now);
+    await createManualEntry(
+      actor,
+      workspace,
+      { ...values, start: "09:00", end: "11:00" },
+      now,
+    );
+
+    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    const day = state.days.find((group) => group.date === "2026-10-02");
+    expect(day?.entries).toHaveLength(2);
+    expect(day?.closedSeconds).toBe(4 * 3600);
+  });
+
+  it("informa la entrada que queda por debajo del tramo visible", async () => {
+    const result = await createManualEntry(
+      actor,
+      workspace,
+      { description: "", date: "2026-07-15", start: "08:00", end: "09:00" },
+      now,
+    );
+
+    expect(result.outsideWindow).toBe(false);
+    // Sola, la entrada vieja extiende la ventana y se ve. Con una reciente que
+    // vuelva a acercar el extremo inferior, la vieja queda afuera.
+    const second = await createManualEntry(
+      actor,
+      workspace,
+      { description: "", date: "2026-10-01", start: "08:00", end: "09:00" },
+      now,
+    );
+    expect(second.outsideWindow).toBe(false);
+
+    const third = await createManualEntry(
+      actor,
+      workspace,
+      { description: "", date: "2026-07-16", start: "08:00", end: "09:00" },
+      now,
+    );
+    expect(third.outsideWindow).toBe(true);
+
+    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    expect(state.days.map((group) => group.date)).toEqual(["2026-10-01"]);
+  });
+
+  it("acepta una fecha futura, la muestra y no la marca como fuera de ventana", async () => {
+    const result = await createManualEntry(
+      actor,
+      workspace,
+      {
+        description: "la semana que viene",
+        date: "2026-10-10",
+        start: "08:00",
+        end: "09:00",
+      },
+      now,
+    );
+
+    expect(result.outsideWindow).toBe(false);
+    expect(result.created.dayDate).toBe("2026-10-10");
+
+    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    // Se ordenan de lo más reciente a lo más viejo, así que queda por encima de hoy.
+    expect(state.days[0].date).toBe("2026-10-10");
+    expect(state.days[0].label).toBe("sáb, 10/10");
+    expect(state.days[0].entries).toHaveLength(1);
+  });
+
+  it("muestra una entrada futura que ya estaba en la base", async () => {
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-20T11:00:00Z",
+      endedAt: "2026-10-20T12:00:00Z",
+    });
+
+    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    expect(state.days[0].date).toBe("2026-10-20");
+    expect(state.hasAnyEntry).toBe(true);
+  });
+
+  it("no esconde la entrada vieja que se veía al agregar una futura", async () => {
+    await createManualEntry(
+      actor,
+      workspace,
+      { description: "", date: "2026-09-04", start: "08:00", end: "09:00" },
+      now,
+    );
+    const before = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    expect(before.days.map((group) => group.date)).toEqual(["2026-09-04"]);
+
+    const future = await createManualEntry(
+      actor,
+      workspace,
+      { description: "", date: "2026-10-05", start: "08:00", end: "09:00" },
+      now,
+    );
+    expect(future.outsideWindow).toBe(false);
+
+    const after = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    expect(after.days.map((group) => group.date)).toEqual(["2026-10-05", "2026-09-04"]);
+
+    // Con la futura en la base, una pasada anterior a la vieja sí queda afuera,
+    // y el aviso coincide con lo que muestra la lista.
+    const older = await createManualEntry(
+      actor,
+      workspace,
+      { description: "", date: "2026-09-03", start: "08:00", end: "09:00" },
+      now,
+    );
+    expect(older.outsideWindow).toBe(true);
+    const last = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    expect(last.days.map((group) => group.date)).toEqual(["2026-10-05", "2026-09-04"]);
+  });
+
+  it("mide el aviso contra la última entrada pasada aunque haya una futura", async () => {
+    await createManualEntry(
+      actor,
+      workspace,
+      { description: "", date: "2026-10-10", start: "08:00", end: "09:00" },
+      now,
+    );
+
+    const older = await createManualEntry(
+      actor,
+      workspace,
+      { description: "", date: "2026-09-04", start: "08:00", end: "09:00" },
+      now,
+    );
+
+    // La lista estira su extremo inferior hasta la entrada pasada más reciente,
+    // que es esta misma. Medida contra la futura, quedaría fuera de los catorce
+    // días y el aviso contradiría a la lista.
+    expect(older.outsideWindow).toBe(false);
+    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    expect(state.days.map((group) => group.date)).toEqual(["2026-10-10", "2026-09-04"]);
+  });
+
+  it("rechaza como fecha inválida el día siguiente que no tiene clave", async () => {
+    await expect(
+      createManualEntry(
+        actor,
+        workspace,
+        { description: "", date: "9999-12-31", start: "23:00", end: "01:00" },
+        now,
+      ),
+    ).rejects.toMatchObject({
+      code: "validation",
+      message: timeEntryMessages.invalidDate,
+    });
+    expect(await allTimeEntries()).toHaveLength(0);
+  });
+
+  it("no dibuja los días vacíos que quedan entre hoy y la entrada futura", async () => {
+    await createManualEntry(
+      actor,
+      workspace,
+      { description: "", date: "2026-11-02", start: "08:00", end: "09:00" },
+      now,
+    );
+    await createManualEntry(
+      actor,
+      workspace,
+      { description: "", date: "2026-10-02", start: "08:00", end: "09:00" },
+      now,
+    );
+
+    const state = await getTrackerState(actor, workspaceOf(buenosAires), now);
+    expect(state.days.map((group) => group.date)).toEqual(["2026-11-02", "2026-10-02"]);
+  });
+});
+
+describe("createManualEntry con cambio de horario", () => {
+  const now = new Date("2026-10-02T15:00:00Z");
+  const workspace = workspaceOf(madrid);
+
+  it("guarda la hora de pared ambigua con el segundo instante", async () => {
+    // El 25/10/2026 Madrid pasa de +02:00 a +01:00: las 02:30 ocurren dos veces.
+    const result = await createManualEntry(
+      actor,
+      workspace,
+      { description: "", date: "2026-10-25", start: "02:30", end: "04:00" },
+      now,
+    );
+
+    expect(result.created.startedAt).toBe("2026-10-25T01:30:00.000Z");
+    expect(result.created.startLabel).toBe("02:30");
+    expect(result.created.endLabel).toBe("04:00");
+    // Desde el segundo instante de las 02:30 hasta las 04:00 (03:00 UTC) hay
+    // una hora y media; desde el primero (00:30 UTC) habría dos y media.
+    expect(result.created.durationSeconds).toBe(90 * 60);
+  });
+
+  it("rechaza la hora de pared que no existe, en el inicio y en el fin", async () => {
+    // El 29/03/2026 Madrid salta de las 02:00 a las 03:00.
+    for (const values of [
+      { start: "02:30", end: "04:00" },
+      { start: "01:30", end: "02:30" },
+    ]) {
+      await expect(
+        createManualEntry(
+          actor,
+          workspace,
+          { description: "", date: "2026-03-29", ...values },
+          now,
+        ),
+      ).rejects.toMatchObject({
+        code: "validation",
+        message: timeEntryMessages.nonexistentClock,
+      });
+    }
+    expect(await allTimeEntries()).toHaveLength(0);
+  });
+
+  it("mide la duración real en el día que pierde una hora", async () => {
+    const result = await createManualEntry(
+      actor,
+      workspace,
+      { description: "", date: "2026-03-29", start: "01:30", end: "03:30" },
+      now,
+    );
+
+    // De 01:30 a 03:30 de pared, pero el reloj saltó: una hora real.
+    expect(result.created.durationSeconds).toBe(3600);
+    expect(result.created.durationLabel).toBe("1:00");
+    expect(result.created.startLabel).toBe("01:30");
+    expect(result.created.endLabel).toBe("03:30");
+  });
+
+  it("nunca deja una fila con el fin anterior al inicio", async () => {
+    const attempts = [
+      { date: "2026-03-29", start: "02:00", end: "03:00" },
+      { date: "2026-03-29", start: "02:30", end: "02:45" },
+      { date: "2026-03-29", start: "01:30", end: "03:30" },
+      { date: "2026-10-25", start: "02:30", end: "04:00" },
+    ];
+    for (const values of attempts) {
+      await createManualEntry(
+        actor,
+        workspace,
+        { description: "", ...values },
+        now,
+      ).catch(() => null);
+    }
+
+    const rows = await allTimeEntries();
+    // Las dos primeras tocan la hora que no existe y se rechazan; las otras dos
+    // se guardan. Lo que ninguna puede dejar es un fin anterior al inicio.
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.endedAt).not.toBeNull();
+      expect(row.endedAt?.getTime() ?? 0).toBeGreaterThan(row.startedAt.getTime());
+    }
   });
 });

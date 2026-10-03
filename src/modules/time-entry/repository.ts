@@ -113,6 +113,32 @@ export const timeEntryRepository = {
     return rows.at(0);
   },
 
+  /**
+   * La entrada cerrada más reciente que empezó antes de `before`. Es la que
+   * estira hacia atrás la lista: una entrada futura no cuenta para eso.
+   */
+  async findLatestClosedBefore(
+    workspaceId: string,
+    userId: string,
+    before: Date,
+    tx: Executor = db,
+  ): Promise<TimeEntryRow | undefined> {
+    const rows = await tx
+      .select()
+      .from(timeEntry)
+      .where(
+        and(
+          eq(timeEntry.workspaceId, workspaceId),
+          eq(timeEntry.userId, userId),
+          isNotNull(timeEntry.endedAt),
+          lt(timeEntry.startedAt, before),
+        ),
+      )
+      .orderBy(desc(timeEntry.startedAt))
+      .limit(1);
+    return rows.at(0);
+  },
+
   /** Entradas cerradas cuyo inicio cae en `[from, to)`, de la más reciente a la más vieja. */
   async listClosedBetween(
     workspaceId: string,
@@ -145,6 +171,25 @@ export const timeEntryRepository = {
       .insert(timeEntry)
       .values({ ...values, startedAt: now })
       .returning();
+    return created;
+  },
+
+  /**
+   * Gemelo de `insertRunning` para la entrada manual: acá los dos instantes
+   * llegan como valores, porque nacen de una hora de pared tecleada y no de
+   * `now()`. Ver el ADR 0005.
+   */
+  async insertClosed(
+    tx: Transaction,
+    values: {
+      workspaceId: string;
+      userId: string;
+      description: string;
+      startedAt: Date;
+      endedAt: Date;
+    },
+  ): Promise<TimeEntryRow> {
+    const [created] = await tx.insert(timeEntry).values(values).returning();
     return created;
   },
 
