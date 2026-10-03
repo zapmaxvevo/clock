@@ -30,7 +30,8 @@ type DiscardTimerDialogProps = {
   /**
    * Adónde va el foco al confirmar, porque el disparador se va con el timer,
    * y al cancelar si el disparador ya no está: otra pestaña detuvo el timer
-   * con el diálogo abierto.
+   * con el diálogo abierto. La descripción está en los dos modos, así que
+   * vale también si la barra volvió a manual.
    */
   readonly fallbackFocus: RefObject<HTMLElement | null>;
 };
