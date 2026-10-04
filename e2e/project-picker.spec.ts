@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { Locator, Page, Request } from "@playwright/test";
 
 import { archiveProject, markTaskDone, seedProject } from "./database";
-import { withServerAction } from "./network";
+import { holdActionResponses, withServerAction } from "./network";
 import { expect, test } from "./session";
 import {
   backgroundRgb,
@@ -57,6 +57,10 @@ function uniqueSuffix(): string {
   return randomUUID().slice(0, 8);
 }
 
+function isTrackerPage(url: URL): boolean {
+  return url.pathname === "/";
+}
+
 function isAction(request: Request): boolean {
   return request.headers()["next-action"] !== undefined;
 }
@@ -95,7 +99,7 @@ function projectDot(picker: Locator): Locator {
  * Carga una entrada de hoy desde la barra manual con un proyecto y espera su
  * fila. Va de 00:00 a 00:01, que ya pasó a cualquier hora de la corrida. La
  * barra vuelve al borrador inicial después de la respuesta, con la
- * descripción vacía.
+ * descripción vacía y sin proyecto (TT-25).
  */
 async function addManualEntry(
   page: Page,
@@ -114,6 +118,7 @@ async function addManualEntry(
   );
   await expect(entryRow(todayGroup(page), description)).toBeVisible();
   await expect(descriptionInput(bar)).toHaveValue("");
+  await expect(projectPicker(bar)).toHaveText(NO_SELECTION);
 }
 
 test("la barra busca sin acentos, elige una tarea con su proyecto y el timer la conserva", async ({
@@ -166,13 +171,15 @@ test("la barra busca sin acentos, elige una tarea con su proyecto y el timer la 
   await expect(projectPicker(bar)).toHaveText(NO_SELECTION);
 });
 
-test("con el timer corriendo, «Sin proyecto» se guarda sobre la entrada abierta sin detenerla", async ({
+test("con el timer corriendo, otro proyecto y «Sin proyecto» se guardan sobre la entrada abierta sin detenerla", async ({
   page,
 }) => {
   const suffix = uniqueSuffix();
   const project = `Corriendo ${suffix}`;
+  const other = `Cambiado ${suffix}`;
   const description = `timer con proyecto ${suffix}`;
   await seedProject({ name: project });
+  await seedProject({ name: other });
 
   await page.goto("/");
   const bar = trackerBar(page);
@@ -180,7 +187,15 @@ test("con el timer corriendo, «Sin proyecto» se guarda sobre la entrada abiert
   await startTimer(page, description);
   await expect(projectPicker(bar)).toHaveText(project);
 
-  // TT-27 y TT-10: el cambio viaja sobre la entrada que corre.
+  // TT-27: el cambio viaja sobre la entrada que corre, y una carga nueva lo
+  // trae del servidor.
+  await withServerAction(page, () => pickProject(page, bar, other, suffix));
+  await expect(projectPicker(bar)).toHaveText(other);
+  await page.reload();
+  await expect(bar.getByRole("button", { name: "Detener" })).toBeVisible();
+  await expect(projectPicker(bar)).toHaveText(other);
+
+  // TT-10: quitarle el proyecto también.
   await withServerAction(page, () => pickProject(page, bar, NO_PROJECT));
   await expect(projectPicker(bar)).toHaveText(NO_SELECTION);
 
@@ -189,6 +204,42 @@ test("con el timer corriendo, «Sin proyecto» se guarda sobre la entrada abiert
   await expect(descriptionInput(bar)).toHaveValue(description);
   await expect(projectPicker(bar)).toHaveText(NO_SELECTION);
   await expect(entryRow(page.getByRole("main"), description)).toHaveCount(0);
+});
+
+test("mientras viaja «Detener», la barra muestra el último proyecto del timer y al llegar la respuesta queda sin proyecto", async ({
+  page,
+}) => {
+  const suffix = uniqueSuffix();
+  const first = `Primero ${suffix}`;
+  const second = `Segundo ${suffix}`;
+  const description = `timer que se detiene ${suffix}`;
+  await seedProject({ name: first });
+  await seedProject({ name: second });
+
+  await page.goto("/");
+  const bar = trackerBar(page);
+  await pickProject(page, bar, first, suffix);
+  await startTimer(page, description);
+  await withServerAction(page, () => pickProject(page, bar, second, suffix));
+  await expect(projectPicker(bar)).toHaveText(second);
+
+  // La respuesta de «Detener» se retiene: el servidor ya cerró la entrada y
+  // la barra muestra la vista optimista, con el proyecto que tenía el timer y
+  // no el que se eligió al iniciarlo.
+  const release = await holdActionResponses(page, isTrackerPage);
+  const sent = page.waitForRequest(isAction);
+  await bar.getByRole("button", { name: "Detener" }).click();
+  await sent;
+  await expect(bar.getByRole("button", { name: "Iniciar" })).toBeVisible();
+  await expect(projectPicker(bar)).toHaveText(second);
+
+  // TT-65: con la respuesta, la entrada pasa a la lista con su proyecto y la
+  // barra queda sin proyecto.
+  release();
+  const row = entryRow(todayGroup(page), description);
+  await expect(row).toBeVisible();
+  await expect(projectPicker(row)).toHaveText(second);
+  await expect(projectPicker(bar)).toHaveText(NO_SELECTION);
 });
 
 test("la fila cambia de proyecto, deja el foco en su selector y muestra el punto del nuevo", async ({

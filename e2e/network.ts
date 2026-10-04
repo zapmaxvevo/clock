@@ -1,7 +1,7 @@
 /**
  * La red entre el navegador y el servidor, para los recorridos de cualquier
- * pantalla: esperar una server action, perder su respuesta, retener las
- * revalidaciones y abrir otra pestaña de la misma persona. Ninguna función
+ * pantalla: esperar una server action, perder o retener su respuesta, retener
+ * las revalidaciones y abrir otra pestaña de la misma persona. Ninguna función
  * sabe de qué pantalla se trata; la que filtra pedidos recibe el predicado de
  * la URL.
  */
@@ -67,6 +67,32 @@ export async function loseActionResponses(
   };
   await page.route(matches, handler);
   return () => page.unroute(matches, handler);
+}
+
+/**
+ * Retiene la respuesta de toda server action a las URLs de `matches` hasta que
+ * se llame a lo que devuelve. El pedido llega entero al servidor, que lo
+ * aplica, y el navegador recibe la respuesta recién al soltarla: es el tramo
+ * en que la pantalla muestra la vista optimista de una operación ya escrita.
+ */
+export async function holdActionResponses(
+  page: Page,
+  matches: UrlPredicate,
+): Promise<() => void> {
+  let release = (): void => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(matches, async (route) => {
+    if (route.request().headers()["next-action"] === undefined) {
+      await route.fallback();
+      return;
+    }
+    const response = await route.fetch();
+    await held;
+    await route.fulfill({ response });
+  });
+  return release;
 }
 
 /**
