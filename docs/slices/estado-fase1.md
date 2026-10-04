@@ -5,30 +5,46 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-03 (noche)
 
 ## Dónde estamos
 
-| Slice                                      | Estado                                           |
-| ------------------------------------------ | ------------------------------------------------ |
-| 1 — Timer sin proyecto                     | En `main`                                        |
-| 2 — Modo manual                            | En `main`                                        |
-| 2b — Reintento de «Iniciar»                | En `main`                                        |
-| 3 — Corregir horas y fecha                 | En `main`                                        |
-| 4 — Continuar, duplicar, descartar, atajos | En `main`                                        |
-| 5 — Semana y paginación                    | En `main`                                        |
-| 9 — Núcleo de proyectos                    | En `main`                                        |
-| 10 — Selector de proyecto y tarea          | En implementación en `fase1/slice-10-selector`   |
-| 7 — Perfil                                 | Contrato con ronda 1 aplicada; va después del 10 |
-| 6 — Selección y acciones en masa           | Contrato con ronda 1 aplicada; va después del 7  |
-| 7b — Perfil: nombre editable y tema        | Sin contrato                                     |
-| 8, 11–13                                   | Sin contrato                                     |
+| Slice                                      | Estado                                                           |
+| ------------------------------------------ | ---------------------------------------------------------------- |
+| 1 — Timer sin proyecto                     | En `main`                                                        |
+| 2 — Modo manual                            | En `main`                                                        |
+| 2b — Reintento de «Iniciar»                | En `main`                                                        |
+| 3 — Corregir horas y fecha                 | En `main`                                                        |
+| 4 — Continuar, duplicar, descartar, atajos | En `main`                                                        |
+| 5 — Semana y paginación                    | En `main`                                                        |
+| 9 — Núcleo de proyectos                    | En `main`                                                        |
+| 10 — Selector de proyecto y tarea          | Implementado en `fase1/slice-10-selector`; faltan las revisiones |
+| 7 — Perfil                                 | Contrato con ronda 1 aplicada; va después del 10                 |
+| 6 — Selección y acciones en masa           | Contrato con ronda 1 aplicada; va después del 7                  |
+| 7b — Perfil: nombre editable y tema        | Sin contrato                                                     |
+| 8, 11–13                                   | Sin contrato                                                     |
 
 Los slices 1 a 5 y 9 están en `main`, local: **falta `git push origin main`**. El slice
-10 corre con `backend-s10`, `frontend-s10` y `e2e-s10` en `fase1/slice-10-selector`; los
-contratos del 6 y del 7 y los ADR 0010 a 0012 (aceptados) viajan en esa rama.
+10 está **implementado y commiteado** en `fase1/slice-10-selector` (sin mergear), en verde:
+503 de unidad, 629 de integración y 81 de 81 en e2e. En esa rama viajan también los
+contratos del 6 y del 7 y los ADR 0010 a 0012, aceptados. No quedan agentes corriendo ni
+trabajo sin commitear.
 
 ## Lo primero de la sesión siguiente
 
-1. **Terminar el slice 10** con el pipeline de abajo. Su handshake empieza por la migración
-   de `time-entry` a `src/server/action.ts`, `useAction` y `useNewId` (dos commits sin
-   cambio de conducta).
+1. **Terminar el slice 10** en `fase1/slice-10-selector`: lanzar las seis revisiones
+   (backend, frontend, seguridad, código, tests, paridad), escribir
+   `correcciones-fase1-slice10-revisiones.md`, ronda de correcciones, segunda revisión de
+   frontend si hace falta, corrida final y merge a `main`. Commits del slice: `6551d98`,
+   `f3313c7`, `b13575b`, `b429e54`, `8712732`. Datos para los revisores:
+   - desvíos del backend: el commit de firmas trae toda la implementación; `samePair`,
+     `isTaskWithoutProject` y `ProjectPair` que el contrato no nombra; las vistas tras una
+     escritura se releen con el join en la misma transacción (sin CTE); tocó
+     `entry-week.test.ts`. Mutantes equivalentes declarados: `startTimer` validando
+     después de cerrar el timer, y los joins sin workspace.
+   - desvíos del frontend: `input-group.tsx` copiado de la salida de shadcn (el CLI pisaba
+     `button.tsx`); `triggerRef` y `onOpenChange` en el selector; bloqueo del typeahead
+     sobre el disparador cerrado; «Sin proyecto» se ofrece con el catálogo vacío; región
+     de vacíos propia.
+   - `e2e/tracker.spec.ts:48` cambió a «Proyecto» por TT-06 (autorizado).
+   - el log de dev muestra un hydration mismatch en `AppLayout`
+     (`src/app/(app)/layout.tsx`): sin investigar.
 2. **Orden decidido: 10 → 7 → 6.** Antes de implementar el 7 y el 6, una ronda corta del
    `architecture-reviewer` contra el árbol con el 10 adentro (sus contratos lo piden en §0).
 3. El contrato del **8** (calendario), cuando el 7 esté en `main`; después el 7b, 11, 12, 13.
