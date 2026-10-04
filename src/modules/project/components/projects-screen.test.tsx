@@ -8,7 +8,7 @@ import type {
   ProjectView,
 } from "@/modules/project/schema";
 
-import { ProjectsScreen } from "./projects-screen";
+import { ProjectsScreen, ProjectsSkeleton } from "./projects-screen";
 
 /** Dobles escritos a mano: el marcado inicial no llama a ninguna action. */
 function unreachable<T>(): Promise<ActionResult<T>> {
@@ -148,5 +148,20 @@ describe("ProjectsScreen", () => {
     const markup = render(emptyCatalog);
 
     expect(markup).toMatch(/<p role="status"[^>]*><\/p>/);
+  });
+
+  it("deja montada y vacía la región de avisos de un diálogo que sale del árbol", () => {
+    const markup = render(emptyCatalog);
+
+    expect(markup).toMatch(/<div role="alert" tabindex="-1"[^>]*><\/div>/);
+  });
+
+  it("el esqueleto de carga dice qué carga, sin `aria-busy`", () => {
+    const markup = renderToStaticMarkup(<ProjectsSkeleton />);
+
+    expect(markup).toMatch(
+      /^<div role="status"[^>]*><span class="sr-only">Cargando los proyectos<\/span>/,
+    );
+    expect(markup).not.toContain("aria-busy");
   });
 });

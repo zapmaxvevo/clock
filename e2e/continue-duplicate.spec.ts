@@ -1,17 +1,21 @@
-import type { Browser, Locator, Page, Request, Route } from "@playwright/test";
+import type { Browser, Locator, Page, Request } from "@playwright/test";
 
+import {
+  holdRefreshes,
+  loseActionResponses,
+  openSecondTab,
+  withServerAction,
+} from "./network";
 import { expect, test } from "./session";
 import {
   chooseMode,
   descriptionInput,
   elapsedCounter,
   entryRow,
-  openSecondTab,
   startTimer,
   stopTimer,
   todayGroup,
   trackerBar,
-  withServerAction,
 } from "./tracker-page";
 
 /**
@@ -109,43 +113,6 @@ async function focusBody(page: Page): Promise<void> {
   await expect
     .poll(() => page.evaluate(() => document.activeElement === document.body))
     .toBe(true);
-}
-
-/**
- * Pierde la respuesta de toda server action hasta que se llame a lo que
- * devuelve. El pedido llega entero al servidor, que lo aplica, y recién
- * cuando el servidor contestó el navegador recibe una falla de red.
- */
-async function loseActionResponses(page: Page): Promise<() => Promise<void>> {
-  const handler = async (route: Route): Promise<void> => {
-    if (!isAction(route.request())) {
-      await route.fallback();
-      return;
-    }
-    await route.fetch();
-    await route.abort();
-  };
-  await page.route(isTrackerPage, handler);
-  return () => page.unroute(isTrackerPage, handler);
-}
-
-/**
- * Retiene las revalidaciones por `GET` a `/` hasta que se llame a lo que
- * devuelve. Una que llegara antes traería lo que creó el primer intento y
- * bajaría el aviso, y el recorrido no llegaría a repetir el pedido.
- */
-async function holdRefreshes(page: Page): Promise<() => void> {
-  let release = (): void => {};
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  await page.route(isTrackerPage, async (route) => {
-    if (route.request().method() === "GET") {
-      await held;
-    }
-    await route.fallback();
-  });
-  return release;
 }
 
 /**
@@ -291,8 +258,8 @@ test("reintentar una continuación cuya respuesta se perdió deja un solo timer"
 }) => {
   await page.goto("/");
   await closedEntry(page, "continuación perdida");
-  const releaseRefreshes = await holdRefreshes(page);
-  const restoreResponses = await loseActionResponses(page);
+  const releaseRefreshes = await holdRefreshes(page, isTrackerPage);
+  const restoreResponses = await loseActionResponses(page, isTrackerPage);
 
   // TT-89: el aviso nombra la operación y ofrece reintentar.
   await continueLosingResponse(page, "continuación perdida");
@@ -766,7 +733,7 @@ test("cuando la revalidación trae la continuación, el aviso de continuar baja"
   await page.clock.install();
   await page.goto("/");
   await closedEntry(page, "continuación que llega");
-  await loseActionResponses(page);
+  await loseActionResponses(page, isTrackerPage);
 
   await continueLosingResponse(page, "continuación que llega");
 
@@ -786,8 +753,8 @@ test("apretar continuar otra vez con el aviso a la vista no abre otro timer", as
 }) => {
   await page.goto("/");
   await closedEntry(page, "continuar otra vez");
-  const releaseRefreshes = await holdRefreshes(page);
-  const restoreResponses = await loseActionResponses(page);
+  const releaseRefreshes = await holdRefreshes(page, isTrackerPage);
+  const restoreResponses = await loseActionResponses(page, isTrackerPage);
 
   await continueLosingResponse(page, "continuar otra vez");
   await expectContinuedElsewhere(browser, email, "continuar otra vez");
@@ -815,8 +782,8 @@ test("apretar Duplicar otra vez con el aviso a la vista deja una sola copia", as
 }) => {
   await page.goto("/");
   await closedEntry(page, "duplicar otra vez");
-  const releaseRefreshes = await holdRefreshes(page);
-  const restoreResponses = await loseActionResponses(page);
+  const releaseRefreshes = await holdRefreshes(page, isTrackerPage);
+  const restoreResponses = await loseActionResponses(page, isTrackerPage);
 
   await duplicateFromMenu(page, "duplicar otra vez");
   const notice = failureNotice(page, DUPLICATE_FAILED);

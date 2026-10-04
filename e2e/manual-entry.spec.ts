@@ -7,6 +7,7 @@ import {
   todayIn,
   weekStartOf,
 } from "./days";
+import { openSecondTab, withServerAction } from "./network";
 import { expect, test } from "./session";
 import {
   chooseMode,
@@ -16,13 +17,11 @@ import {
   descriptionInput,
   entryRow,
   modeSwitch,
-  openSecondTab,
   pickDate,
   setClock,
   startTimer,
   todayGroup,
   trackerBar,
-  withServerAction,
 } from "./tracker-page";
 
 /** El motivo de TT-30, que acompaña al conmutador inactivo. */

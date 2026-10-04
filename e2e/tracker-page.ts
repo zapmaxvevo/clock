@@ -4,10 +4,10 @@
  * texto accesible: la pantalla se repartió en varios componentes y ningún
  * localizador tiene que depender de en cuál quedó cada cosa.
  */
-import { expect, type Browser, type Locator, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 import { calendarDayName, dayLabel, monthsBetween, type CivilDay } from "./days";
-import { signIn } from "./session";
+import { withServerAction } from "./network";
 
 export function trackerBar(page: Page): Locator {
   return page.getByRole("region", { name: "Rastreador" });
@@ -104,43 +104,12 @@ export async function deleteEntry(page: Page, description: string): Promise<void
   await page.getByRole("dialog").getByRole("button", { name: "Borrar" }).click();
 }
 
-/**
- * Corre algo que dispara una server action y espera su respuesta. Se usa
- * donde la pantalla no distingue la vista optimista de lo ya escrito, y donde
- * hace falta saber que una pestaña terminó antes de que otra siga.
- */
-export async function withServerAction(
-  page: Page,
-  act: () => Promise<void>,
-): Promise<void> {
-  const settled = page.waitForResponse(
-    (response) => response.request().headers()["next-action"] !== undefined,
-  );
-  await act();
-  const response = await settled;
-  expect(response.ok(), `la action respondió ${response.status()}`).toBeTruthy();
-}
-
 /** Borra y espera a que el servidor haya escrito. */
 export async function deleteEntryAndSettle(
   page: Page,
   description: string,
 ): Promise<void> {
   await withServerAction(page, () => deleteEntry(page, description));
-}
-
-/**
- * Segunda pestaña con la misma sesión, en su propio contexto. La pestaña del
- * test nunca pierde el foco mientras esta trabaja, así que se queda con el
- * estado que leyó al entrar: es la pestaña desactualizada que hace falta para
- * TT-35, TT-41 y TT-103.
- */
-export async function openSecondTab(browser: Browser, email: string): Promise<Page> {
-  const context = await browser.newContext();
-  await signIn(context, email);
-  const page = await context.newPage();
-  await page.goto("/");
-  return page;
 }
 
 /** Conmutador de modo de la barra (TT-16). */

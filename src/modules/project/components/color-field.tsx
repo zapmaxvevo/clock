@@ -3,7 +3,7 @@
 import { useId } from "react";
 
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { PALETTE, type PaletteKey } from "@/modules/project/palette";
+import { isPaletteKey, PALETTE, type PaletteKey } from "@/modules/project/palette";
 
 import { projectLabels } from "./labels";
 
@@ -32,9 +32,8 @@ export function ColorField({ value, onValueChange }: ColorFieldProps) {
         aria-describedby={hintId}
         value={value}
         onValueChange={(next) => {
-          const color = PALETTE.find((candidate) => candidate.key === next);
-          if (color !== undefined) {
-            onValueChange(color.key);
+          if (typeof next === "string" && isPaletteKey(next)) {
+            onValueChange(next);
           }
         }}
         className="flex flex-wrap gap-2"

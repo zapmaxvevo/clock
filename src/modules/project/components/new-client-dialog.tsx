@@ -11,8 +11,9 @@ import { projectMessages, type ProjectActions } from "@/modules/project/schema";
 
 import { CreateDialog } from "./create-dialog";
 import { clientCreatedLabel, projectLabels } from "./labels";
+import { useProjectNotices } from "./project-notices";
 
-/** ADR 0007: la clave fija del alta de cliente. */
+/** ADR 0007: la clave fija del alta de cliente; también nombra su aviso. */
 const NEW_ID_KEY = "client";
 
 const emptyDraft = { name: "", address: "", note: "" };
@@ -29,9 +30,16 @@ export function NewClientDialog({ createClient }: NewClientDialogProps) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(emptyDraft);
   const [announcement, setAnnouncement] = useState("");
+  const { report } = useProjectNotices();
 
   const create = useAction(createClient, {
     unreachableMessage: projectMessages.unexpected,
+    onFailure: (failure) =>
+      report({
+        key: NEW_ID_KEY,
+        title: projectLabels.clientNotCreated,
+        message: failure.message,
+      }),
     onSuccess: (data) => {
       setAnnouncement(clientCreatedLabel(data.client.name));
       setDraft(emptyDraft);
@@ -54,6 +62,7 @@ export function NewClientDialog({ createClient }: NewClientDialogProps) {
   return (
     <>
       <CreateDialog
+        noticeKey={NEW_ID_KEY}
         title={projectLabels.newClient}
         triggerVariant="outline"
         open={open}
@@ -77,6 +86,7 @@ export function NewClientDialog({ createClient }: NewClientDialogProps) {
           <Label htmlFor={addressId}>{projectLabels.address}</Label>
           <Textarea
             id={addressId}
+            className="max-h-40"
             value={draft.address}
             onChange={(event) => setDraft({ ...draft, address: event.target.value })}
           />
@@ -85,6 +95,7 @@ export function NewClientDialog({ createClient }: NewClientDialogProps) {
           <Label htmlFor={noteId}>{projectLabels.note}</Label>
           <Textarea
             id={noteId}
+            className="max-h-40"
             value={draft.note}
             onChange={(event) => setDraft({ ...draft, note: event.target.value })}
           />
@@ -92,9 +103,13 @@ export function NewClientDialog({ createClient }: NewClientDialogProps) {
       </CreateDialog>
       {/*
         PR-62: un cliente sin proyectos no aparece en la lista; el alta se
-        confirma acá, fuera del diálogo, para que sobreviva a su cierre.
+        confirma acá, fuera del diálogo, para que sobreviva a su cierre. Va en
+        su propia línea, después de los botones de la cabecera.
       */}
-      <p role="status" className="text-muted-foreground text-sm">
+      <p
+        role="status"
+        className="text-muted-foreground order-last basis-full text-right text-sm"
+      >
         {announcement}
       </p>
     </>

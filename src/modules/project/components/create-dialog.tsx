@@ -18,8 +18,14 @@ import {
 import type { ActionFailure } from "@/hooks/use-action";
 
 import { projectLabels } from "./labels";
+import { useProjectNotices, useSurvivingNotice } from "./project-notices";
 
 type CreateDialogProps = {
+  /**
+   * Identifica el diálogo ante `ProjectNoticesProvider`; es la misma clave con
+   * la que su `onFailure` reporta el aviso.
+   */
+  readonly noticeKey: string;
   /** El texto del botón de apertura, que es también el título del diálogo. */
   readonly title: string;
   /** El nombre accesible del botón de apertura, si el texto solo no alcanza. */
@@ -47,6 +53,7 @@ type CreateDialogProps = {
  * cerrarse, por éxito o por la persona.
  */
 export function CreateDialog({
+  noticeKey,
   title,
   triggerName,
   triggerIcon,
@@ -63,6 +70,21 @@ export function CreateDialog({
 }: CreateDialogProps) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const saveRef = useRef<HTMLButtonElement>(null);
+  const { dismiss, focusTargetFor } = useProjectNotices();
+  useSurvivingNotice(noticeKey, failure !== null);
+
+  function handleOpenChange(next: boolean): void {
+    // Con un pedido en vuelo el diálogo no se cierra: la respuesta tardía
+    // cerraría el diálogo que se abriera después o volvería a armar su id.
+    if (!next && pending) {
+      return;
+    }
+    // Abrir un diálogo es una operación nueva: baja el aviso de la pantalla.
+    if (next) {
+      dismiss();
+    }
+    onOpenChange(next);
+  }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
@@ -75,7 +97,7 @@ export function CreateDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger
         ref={triggerRef}
         render={<Button variant={triggerVariant} size="sm" />}
@@ -84,7 +106,13 @@ export function CreateDialog({
         {triggerIcon}
         {title}
       </DialogTrigger>
-      <DialogContent finalFocus={triggerRef}>
+      {/* PR-54: con una dirección o nota larga, «Guardar» y el aviso siguen al alcance. */}
+      <DialogContent
+        // Si el diálogo sale del árbol con su aviso, el disparador ya no está y
+        // el foco sigue al aviso, a la región de la pantalla.
+        finalFocus={() => triggerRef.current ?? focusTargetFor(noticeKey)}
+        className="max-h-[calc(100dvh-2rem)] overflow-y-auto"
+      >
         <form noValidate onSubmit={handleSubmit} className="grid gap-4">
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
@@ -119,7 +147,10 @@ export function CreateDialog({
             </Alert>
           )}
           <DialogFooter>
-            <DialogClose render={<Button type="button" variant="outline" />}>
+            <DialogClose
+              render={<Button type="button" variant="outline" />}
+              aria-disabled={pending || undefined}
+            >
               {projectLabels.cancel}
             </DialogClose>
             <Button ref={saveRef} type="submit" aria-disabled={pending || undefined}>

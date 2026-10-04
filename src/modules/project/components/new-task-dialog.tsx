@@ -11,6 +11,7 @@ import { projectMessages, type ProjectActions } from "@/modules/project/schema";
 
 import { CreateDialog } from "./create-dialog";
 import { newTaskLabel, projectLabels } from "./labels";
+import { useProjectNotices } from "./project-notices";
 
 /** ADR 0007: la clave fija del alta de tarea; cada proyecto tiene su diálogo. */
 const NEW_ID_KEY = "task";
@@ -30,9 +31,18 @@ export function NewTaskDialog({
   const nameId = useId();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
+  const { report } = useProjectNotices();
+  // Hay un diálogo de tarea por proyecto: el aviso se nombra con el proyecto.
+  const noticeKey = `task:${projectId}`;
 
   const create = useAction(createTask, {
     unreachableMessage: projectMessages.unexpected,
+    onFailure: (failure) =>
+      report({
+        key: noticeKey,
+        title: projectLabels.taskNotCreated,
+        message: failure.message,
+      }),
     onSuccess: () => {
       setName("");
       setOpen(false);
@@ -53,6 +63,7 @@ export function NewTaskDialog({
 
   return (
     <CreateDialog
+      noticeKey={noticeKey}
       title={projectLabels.newTask}
       triggerName={newTaskLabel(projectName)}
       triggerIcon={<PlusIcon aria-hidden="true" />}

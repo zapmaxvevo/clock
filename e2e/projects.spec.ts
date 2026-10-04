@@ -1,9 +1,15 @@
 import { randomUUID } from "node:crypto";
 
-import type { Browser, Locator, Page, Route } from "@playwright/test";
+import type { Browser, Locator, Page } from "@playwright/test";
 
+import { archiveProject, revokeProjectManager } from "./database";
+import {
+  holdRefreshes,
+  loseActionResponses,
+  openSecondTab,
+  withServerAction,
+} from "./network";
 import { expect, signIn, TEST_EMAIL_DOMAIN, test } from "./session";
-import { openSecondTab, withServerAction } from "./tracker-page";
 
 /**
  * Recorridos del slice 9: la pantalla de proyectos, sus tres altas y el
@@ -26,6 +32,15 @@ const PROJECT_NAME_TAKEN = "Ya hay un proyecto con ese nombre para ese cliente."
 
 /** TT-89 y PR-90: el aviso de la falla de red, el único con «Reintentar». */
 const SAVE_FAILED = "No se pudo guardar. Revisá la conexión y volvé a intentar.";
+
+/** PR-72. */
+const PROJECT_UNAVAILABLE = "Ese proyecto ya no está disponible.";
+
+/** PR-84. */
+const FORBIDDEN = "No tenés permiso para hacer esto.";
+
+/** El título del aviso de «Nueva tarea», que nombra la operación (TT-90). */
+const TASK_NOT_CREATED = "No se pudo crear la tarea.";
 
 /** Sufijo único del recorrido, para que la próxima corrida no choque con esta. */
 function uniqueSuffix(): string {
@@ -172,47 +187,37 @@ async function createTask(page: Page, projectName: string, name: string): Promis
 }
 
 /**
- * Pierde la respuesta de toda server action de `/proyectos` hasta que se
- * llame a lo que devuelve. El pedido llega entero al servidor, que lo aplica,
- * y recién cuando el servidor contestó el navegador recibe una falla de red:
- * es una respuesta perdida de verdad, no un pedido que nunca salió.
- */
-async function loseActionResponses(page: Page): Promise<() => Promise<void>> {
-  const handler = async (route: Route): Promise<void> => {
-    if (route.request().headers()["next-action"] === undefined) {
-      await route.fallback();
-      return;
-    }
-    await route.fetch();
-    await route.abort();
-  };
-  await page.route(isProjectsPage, handler);
-  return () => page.unroute(isProjectsPage, handler);
-}
-
-/**
- * Retiene las revalidaciones por `GET` a `/proyectos` hasta que se llame a lo
- * que devuelve. Una que llegara antes traería el proyecto del primer intento y
- * podría bajar el aviso, y el recorrido no llegaría a reintentar.
- */
-async function holdRefreshes(page: Page): Promise<() => void> {
-  let release = (): void => {};
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  await page.route(isProjectsPage, async (route) => {
-    if (route.request().method() === "GET") {
-      await held;
-    }
-    await route.fallback();
-  });
-  return release;
-}
-
-/**
  * Guarda «Nuevo proyecto» con la respuesta perdida y espera el aviso. El
  * diálogo sigue abierto, con el nombre como estaba.
  */
+/**
+ * Abre «Nueva tarea» de un proyecto sin cliente y escribe el nombre, sin
+ * guardar: el recorrido cambia el estado por debajo antes de apretar
+ * «Guardar».
+ */
+async function fillTaskDialog(
+  page: Page,
+  projectName: string,
+  name: string,
+): Promise<Locator> {
+  const project = projectItem(clientGroup(page, NO_CLIENT), projectName);
+  await newTaskButton(project, projectName).click();
+  const dialog = dialogNamed(page, "Nueva tarea");
+  await nameField(dialog).fill(name);
+  return dialog;
+}
+
+/**
+ * El aviso de una tarea que no se creó, ya fuera del diálogo: la pantalla lo
+ * muestra cuando la revalidación sacó al diálogo del árbol (PR-72, PR-84).
+ */
+function screenTaskNotice(page: Page, message: string): Locator {
+  return page
+    .getByRole("alert")
+    .filter({ hasText: TASK_NOT_CREATED })
+    .filter({ hasText: message });
+}
+
 async function createProjectLosingResponse(page: Page, name: string): Promise<Locator> {
   const dialog = await fillProjectDialog(page, { name, client: null });
   await saveButton(dialog).click();
@@ -234,8 +239,10 @@ async function expectAppliedElsewhere(
   email: string,
   name: string,
 ): Promise<void> {
-  const otherPage = await openSecondTab(browser, email);
-  await openProjects(otherPage);
+  const otherPage = await openSecondTab(browser, email, PROJECTS_PATH);
+  await expect(
+    otherPage.getByRole("heading", { level: 1, name: "Proyectos" }),
+  ).toBeVisible();
   await expect(projectItem(clientGroup(otherPage, NO_CLIENT), name)).toBeVisible();
   await otherPage.context().close();
 }
@@ -331,6 +338,53 @@ test("el responsable crea una tarea y otra persona member no ve «Nueva tarea»"
   await otherContext.close();
 });
 
+test("si el proyecto se archiva con «Nueva tarea» abierto, el aviso de PR-72 queda a la vista con el foco", async ({
+  page,
+}) => {
+  const suffix = uniqueSuffix();
+  const project = `Proyecto que se archiva ${suffix}`;
+
+  await openProjects(page);
+  await createProject(page, { name: project, client: null });
+  const dialog = await fillTaskDialog(page, project, `Tarea tardía ${suffix}`);
+
+  // Otra persona lo archiva mientras el diálogo está abierto. La revalidación
+  // del alta trae un catálogo sin el proyecto, y con él se va el diálogo.
+  await archiveProject(project);
+  await withServerAction(page, () => saveButton(dialog).click());
+
+  await expect(dialog).toBeHidden();
+  await expect(projectsNamed(page, project)).toHaveCount(0);
+  const notice = screenTaskNotice(page, PROJECT_UNAVAILABLE);
+  await expect(notice).toBeVisible();
+  await expect(notice).toBeFocused();
+});
+
+test("si la persona deja de ser responsable con «Nueva tarea» abierto, el aviso de PR-84 queda a la vista con el foco", async ({
+  page,
+  email,
+}) => {
+  const suffix = uniqueSuffix();
+  const project = `Proyecto sin responsable ${suffix}`;
+
+  await openProjects(page);
+  await createProject(page, { name: project, client: null });
+  const dialog = await fillTaskDialog(page, project, `Tarea sin permiso ${suffix}`);
+
+  // El proyecto sigue a la vista, pero la revalidación lo trae sin «Nueva
+  // tarea», y el diálogo sale del árbol.
+  await revokeProjectManager(email, project);
+  await withServerAction(page, () => saveButton(dialog).click());
+
+  await expect(dialog).toBeHidden();
+  const seen = projectItem(clientGroup(page, NO_CLIENT), project);
+  await expect(seen).toBeVisible();
+  await expect(newTaskButton(seen, project)).toHaveCount(0);
+  const notice = screenTaskNotice(page, FORBIDDEN);
+  await expect(notice).toBeVisible();
+  await expect(notice).toBeFocused();
+});
+
 test("un proyecto con un nombre que ya existe para ese cliente muestra PR-77 y el diálogo sigue abierto", async ({
   page,
 }) => {
@@ -346,6 +400,8 @@ test("un proyecto con un nombre que ya existe para ese cliente muestra PR-77 y e
   await withServerAction(page, () => saveButton(dialog).click());
 
   await expect(dialogNotice(dialog, PROJECT_NAME_TAKEN)).toBeVisible();
+  // TT-89: un nombre repetido ya describe el estado real y no se reintenta.
+  await expect(dialog.getByRole("button", { name: "Reintentar" })).toHaveCount(0);
   await expect(dialog).toBeVisible();
   await expect(nameField(dialog)).toHaveValue(project);
   await expect(dialogNotice(dialog, SAVE_FAILED)).toHaveCount(0);
@@ -359,8 +415,8 @@ test("reintentar un alta de proyecto cuya respuesta se perdió deja un solo proy
   const project = `Proyecto reintentado ${uniqueSuffix()}`;
 
   await openProjects(page);
-  const releaseRefreshes = await holdRefreshes(page);
-  const restoreResponses = await loseActionResponses(page);
+  const releaseRefreshes = await holdRefreshes(page, isProjectsPage);
+  const restoreResponses = await loseActionResponses(page, isProjectsPage);
 
   // PR-90: el aviso de la falla de red ofrece reintentar.
   const dialog = await createProjectLosingResponse(page, project);
@@ -392,8 +448,8 @@ test("apretar Guardar otra vez con el aviso a la vista no crea otro proyecto", a
   const project = `Proyecto guardado otra vez ${uniqueSuffix()}`;
 
   await openProjects(page);
-  const releaseRefreshes = await holdRefreshes(page);
-  const restoreResponses = await loseActionResponses(page);
+  const releaseRefreshes = await holdRefreshes(page, isProjectsPage);
+  const restoreResponses = await loseActionResponses(page, isProjectsPage);
 
   const dialog = await createProjectLosingResponse(page, project);
   await expectAppliedElsewhere(browser, email, project);

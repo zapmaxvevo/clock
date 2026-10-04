@@ -24,8 +24,9 @@ import {
 import { ColorField } from "./color-field";
 import { CreateDialog } from "./create-dialog";
 import { projectLabels } from "./labels";
+import { useProjectNotices } from "./project-notices";
 
-/** ADR 0007: la clave fija del alta de proyecto. */
+/** ADR 0007: la clave fija del alta de proyecto; también nombra su aviso. */
 const NEW_ID_KEY = "project";
 
 type ProjectDraft = {
@@ -53,9 +54,16 @@ export function NewProjectDialog({ createProject, clients }: NewProjectDialogPro
   const noteId = useId();
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(emptyDraft);
+  const { report } = useProjectNotices();
 
   const create = useAction(createProject, {
     unreachableMessage: projectMessages.unexpected,
+    onFailure: (failure) =>
+      report({
+        key: NEW_ID_KEY,
+        title: projectLabels.projectNotCreated,
+        message: failure.message,
+      }),
     onSuccess: () => {
       setDraft(emptyDraft);
       setOpen(false);
@@ -81,6 +89,7 @@ export function NewProjectDialog({ createProject, clients }: NewProjectDialogPro
 
   return (
     <CreateDialog
+      noticeKey={NEW_ID_KEY}
       title={projectLabels.newProject}
       open={open}
       onOpenChange={handleOpenChange}
@@ -126,6 +135,7 @@ export function NewProjectDialog({ createProject, clients }: NewProjectDialogPro
         <Label htmlFor={noteId}>{projectLabels.note}</Label>
         <Textarea
           id={noteId}
+          className="max-h-40"
           value={draft.note}
           onChange={(event) => setDraft({ ...draft, note: event.target.value })}
         />
