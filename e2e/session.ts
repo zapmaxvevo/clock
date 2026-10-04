@@ -4,18 +4,33 @@ import { expect, test as base, type BrowserContext } from "@playwright/test";
 
 import { TEST_EMAIL_DOMAIN, TEST_SESSION_SECRET } from "./environment";
 
+/** Intentos de entrar antes de dar el 429 por definitivo. */
+const SIGN_IN_ATTEMPTS = 5;
+
 /**
  * Entra sin pasar por el login de Google. El endpoint de sesión de prueba
  * solo se registra fuera de producción y exige el secreto en la cabecera. La
  * cookie queda en el contexto, así que todas las pestañas que se abran
  * después comparten la sesión.
+ *
+ * Better Auth limita los pedidos por IP en un build de producción, y todos
+ * los workers salen de la misma: con la suite entera en paralelo, algunos
+ * inicios de sesión reciben 429. No es una regla de la app que el test
+ * afirme, así que se espera lo que indica `X-Retry-After` y se reintenta.
  */
 export async function signIn(context: BrowserContext, email: string): Promise<void> {
-  const response = await context.request.post("/api/auth/test-session/sign-in", {
-    headers: { "x-test-session": TEST_SESSION_SECRET },
-    data: { email, name: "Persona de prueba" },
-  });
-  expect(response.status(), await response.text()).toBe(200);
+  for (let attempt = 1; ; attempt += 1) {
+    const response = await context.request.post("/api/auth/test-session/sign-in", {
+      headers: { "x-test-session": TEST_SESSION_SECRET },
+      data: { email, name: "Persona de prueba" },
+    });
+    if (response.status() !== 429 || attempt === SIGN_IN_ATTEMPTS) {
+      expect(response.status(), await response.text()).toBe(200);
+      return;
+    }
+    const seconds = Number(response.headers()["x-retry-after"] ?? "1");
+    await new Promise((resolve) => setTimeout(resolve, Math.max(seconds, 1) * 1000));
+  }
 }
 
 function slugOf(title: string): string {
