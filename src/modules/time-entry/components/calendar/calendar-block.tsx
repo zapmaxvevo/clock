@@ -12,6 +12,7 @@ import { formatDuration, weekdayLabel } from "@/server/time";
 
 import { useElapsedSeconds } from "../elapsed-counter";
 import { entryNameOf } from "../labels";
+import { NO_GESTURES, type SegmentGestures } from "./calendar-gestures";
 import type { PlacedBlock, Segment } from "./calendar-layout";
 import { calendarLabels } from "./labels";
 
@@ -28,6 +29,8 @@ type CalendarBlockProps = {
   readonly onOpen: () => void;
   /** El botón del bloque, adonde vuelve el foco al cerrar su diálogo. */
   readonly buttonRef?: Ref<HTMLButtonElement>;
+  /** Los gestos que ofrece este segmento (slice 8b). */
+  readonly gestures?: SegmentGestures;
 };
 
 /** «Proyecto» o «Proyecto: Tarea», o `null` sin proyecto. */
@@ -68,6 +71,7 @@ export function CalendarBlock({
   dialogOpen,
   onOpen,
   buttonRef,
+  gestures = NO_GESTURES,
 }: CalendarBlockProps) {
   const { date } = useDisplayFormats();
   /** El timer que corre termina «en curso» (CAL-38). */
@@ -157,7 +161,9 @@ export function CalendarBlock({
         style={style}
         onClick={onOpen}
       >
+        {gestures.start && <BlockHandle edge="start" />}
         {content}
+        {gestures.end && <BlockHandle edge="end" />}
       </TooltipTrigger>
       <TooltipContent className="flex-col items-start gap-0.5">
         <span className="whitespace-pre-wrap">{name}</span>
@@ -167,5 +173,22 @@ export function CalendarBlock({
         {project !== null && <span>{project}</span>}
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+/**
+ * El asa de un extremo (CAL-52): no es un control ni está en el orden de
+ * `Tab`, porque el diálogo hace lo mismo (WCAG 2.5.7). El cursor la señala.
+ */
+function BlockHandle({ edge }: { readonly edge: "start" | "end" }) {
+  return (
+    <span
+      aria-hidden="true"
+      data-block-handle={edge}
+      className={cn(
+        "absolute inset-x-0 h-1.5 cursor-ns-resize",
+        edge === "start" ? "top-0" : "bottom-0",
+      )}
+    />
   );
 }

@@ -19,8 +19,14 @@ import type {
   CalendarState,
   TimeEntryView,
 } from "@/modules/time-entry/schema";
-import { clockLabel, MINUTES_PER_DAY, minutesToClock } from "@/server/time";
+import {
+  clockLabel,
+  clockToMinutes,
+  MINUTES_PER_DAY,
+  minutesToClock,
+} from "@/server/time";
 
+import type { TimeDraft } from "../time-draft";
 import { useGroupTotalLabel } from "../use-group-total";
 import { CalendarBlock } from "./calendar-block";
 import {
@@ -279,6 +285,8 @@ type DayColumnProps = Pick<
 > & {
   readonly day: CalendarDayView;
   readonly items: readonly ColumnItem[];
+  /** La selección del alta que se está arrastrando en esta columna (CAL-44). */
+  readonly selection?: TimeDraft | null;
 };
 
 /**
@@ -296,6 +304,7 @@ function DayColumn({
   dialogOpen,
   onOpen,
   onSlot,
+  selection = null,
 }: DayColumnProps) {
   const scale = minuteHeight(zoom);
 
@@ -363,6 +372,7 @@ function DayColumn({
           }
         />
       ))}
+      {selection !== null && <CalendarSelection times={selection} zoom={zoom} />}
       {now.date === day.date && (
         // CAL-35: decorativa, fuera del árbol de accesibilidad; sobre los
         // bloques, debajo del enfocado, del eje y de los encabezados.
@@ -373,6 +383,32 @@ function DayColumn({
           style={{ top: now.minute * scale }}
         />
       )}
+    </div>
+  );
+}
+
+/** CAL-44: las franjas que cubre el alta que se arrastra, con su rango. */
+function CalendarSelection({
+  times,
+  zoom,
+}: {
+  readonly times: TimeDraft;
+  readonly zoom: CalendarZoom;
+}) {
+  const { time } = useDisplayFormats();
+  const scale = minuteHeight(zoom);
+  const from = clockToMinutes(times.start) ?? 0;
+  // Un fin de 24:00 se escribe «00:00» (TT-72).
+  const to =
+    times.end === "00:00" ? MINUTES_PER_DAY : (clockToMinutes(times.end) ?? from);
+  return (
+    <div
+      aria-hidden="true"
+      data-calendar-selection=""
+      className="bg-primary/15 border-primary pointer-events-none absolute inset-x-0.5 z-10 rounded-md border px-1.5 py-0.5 text-xs"
+      style={{ top: from * scale, height: (to - from) * scale }}
+    >
+      {clockLabel(times.start, time)} – {clockLabel(times.end, time)}
     </div>
   );
 }
