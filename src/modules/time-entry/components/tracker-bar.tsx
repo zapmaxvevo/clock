@@ -2,6 +2,8 @@
 
 import { useEffect, useOptimistic, useRef, useState } from "react";
 
+import { retryHandlerOf, useAction, type ActionHandle } from "@/hooks/use-action";
+import { useNewId } from "@/hooks/use-new-id";
 import {
   createManualEntry,
   discardTimer,
@@ -10,7 +12,11 @@ import {
   updateDescription,
   updateRunningStart,
 } from "@/modules/time-entry/actions";
-import type { TimeEntryView, UpdateRunningStartInput } from "@/modules/time-entry/schema";
+import {
+  timeEntryMessages,
+  type TimeEntryView,
+  type UpdateRunningStartInput,
+} from "@/modules/time-entry/schema";
 
 import { DescriptionField } from "./description-field";
 import { DiscardTimerDialog } from "./discard-timer-dialog";
@@ -29,12 +35,6 @@ import { reset, sameDraft } from "./time-draft";
 import { TimerBar, type Phase } from "./timer-bar";
 import { TrackerFeedback } from "./tracker-feedback";
 import { trackerModeCookie, type TrackerMode } from "./tracker-mode";
-import {
-  retryHandlerOf,
-  useEntryAction,
-  type EntryActionHandle,
-} from "./use-entry-action";
-import { useNewEntryId } from "./use-new-entry-id";
 import { useTrackerRefresh } from "./use-tracker-refresh";
 import { useTrackerShortcuts } from "./use-tracker-shortcuts";
 
@@ -133,21 +133,25 @@ export function TrackerBar({
    */
   const focusAfterDiscard = useRef(false);
 
-  const save = useEntryAction(updateDescription, {
+  const save = useAction(updateDescription, {
+    unreachableMessage: timeEntryMessages.unexpected,
     // TT-90: si el guardado falla, el campo vuelve al valor que tiene el servidor.
     onFailure: () => setDraft(running?.description ?? ""),
     onSuccess: (data) => reachWeek([data.entry.weekStart]),
   });
-  const start = useEntryAction(startTimer, {
+  const start = useAction(startTimer, {
+    unreachableMessage: timeEntryMessages.unexpected,
     optimistic: () => showPhase("starting"),
     onSuccess: (data) => reachWeek(startedWeeks(data)),
   });
-  const newStartId = useNewEntryId(start.failure);
-  const stop = useEntryAction(stopTimer, {
+  const newStartId = useNewId(start.failure);
+  const stop = useAction(stopTimer, {
+    unreachableMessage: timeEntryMessages.unexpected,
     optimistic: () => showPhase("stopping"),
     onSuccess: (data) => reachWeek([data.stopped.weekStart]),
   });
-  const discard = useEntryAction(discardTimer, {
+  const discard = useAction(discardTimer, {
+    unreachableMessage: timeEntryMessages.unexpected,
     optimistic: () => showPhase("discarding"),
   });
   /**
@@ -155,7 +159,8 @@ export function TrackerBar({
    * Vive acá con el arranque y la parada, así su aviso sobrevive a que la
    * barra cambie de modo y lo baja la operación siguiente.
    */
-  const saveStart = useEntryAction(updateRunningStart, {
+  const saveStart = useAction(updateRunningStart, {
+    unreachableMessage: timeEntryMessages.unexpected,
     onSuccess: (data) => reachWeek([data.running.weekStart]),
   });
   /**
@@ -163,7 +168,8 @@ export function TrackerBar({
    * de red deja lo tecleado donde está (TT-89). No ofrece «Reintentar»: ver
    * el aviso de respuesta perdida (TT-109).
    */
-  const add = useEntryAction(createManualEntry, {
+  const add = useAction(createManualEntry, {
+    unreachableMessage: timeEntryMessages.unexpected,
     onSuccess: (data, input) => {
       // Lo que se tecleó mientras el pedido viajaba no es parte de la entrada
       // creada: se limpia solo lo que sigue igual a lo que se mandó.
@@ -344,7 +350,7 @@ export function TrackerBar({
   }
 
   /** Un reintento también es una operación nueva: baja los demás avisos. */
-  function retryOf<Input>(handle: EntryActionHandle<Input>): (() => void) | undefined {
+  function retryOf<Input>(handle: ActionHandle<Input>): (() => void) | undefined {
     const retry = retryHandlerOf(handle);
     return retry === undefined
       ? undefined
