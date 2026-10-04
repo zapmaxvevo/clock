@@ -80,6 +80,8 @@ import {
   type UpdateEntryProjectResult,
   type UpdateEntryTimesInput,
   type UpdateEntryTimesResult,
+  type UpdateEntryResult,
+  type UpdateEntryValues,
   type UpdateRunningStartInput,
   type UpdateRunningStartResult,
   type WeekGroupView,
@@ -1074,6 +1076,19 @@ export async function updateRunningStart(
 }
 
 /**
+ * El guardado del diálogo de una entrada (ADR 0013): los grupos de campos que
+ * la persona tocó, todo o nada, con las reglas de las mutaciones de un campo.
+ */
+export async function updateEntry(
+  actor: Actor,
+  workspace: TrackerWorkspace,
+  input: UpdateEntryValues,
+  now: Date = new Date(),
+): Promise<UpdateEntryResult> {
+  throw new Error("updateEntry sin implementar.");
+}
+
+/**
  * Evalúa cada id pedido, en el orden pedido, sin escribir. Un `TimeEntryError`
  * es el rechazo de esa fila y cualquier otro error sale tal cual. Con algún
  * rechazo no se aplica nada: lanza `RejectedError` con todos (ADR 0011).
@@ -1679,6 +1694,7 @@ export async function getCalendarState(
   return {
     serverNow: now.toISOString(),
     todayKey,
+    minDayKey: workspaceFloorDayKey(workspace),
     nowMinute: minuteOfDayIn(now, timeZone),
     canTrack: can(actor, "timeEntry.own.create", ownTimeEntryResource(actor)),
     mode: period.mode,
