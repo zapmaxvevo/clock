@@ -6,8 +6,10 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEvent,
   type ReactNode,
   type Ref,
+  type RefObject,
 } from "react";
 
 import { useDisplayFormats } from "@/components/layout/display-formats";
@@ -25,7 +27,9 @@ import {
   chronological,
   entrySegments,
   initialScrollMinute,
+  isMissing,
   layoutColumn,
+  minuteAt,
   minuteHeight,
   runningSegments,
   SLOT_HEIGHT_PX,
@@ -48,6 +52,15 @@ type CalendarGridProps = {
   readonly dialogOpen: boolean;
   /** Un clic, `Enter` o `Espacio` en un bloque (CAL-74). */
   readonly onOpen: (id: string) => void;
+  /** Las entradas cuyo borrado viaja: no se dibujan ni suman (TT-60). */
+  readonly removedIds: readonly string[];
+  /** CAL-43: el clic en una franja libre; `null` sin permiso de carga (CAL-05). */
+  readonly onSlot: ((date: string, minute: number) => void) | null;
+  /** La entrada cuyo botón toma el foco cuando se dibuja (§5.5). */
+  readonly focusEntryId: string | null;
+  readonly onEntryFocused: () => void;
+  /** La región de la pantalla: el foco pasa al bloque solo desde ella o desde `body`. */
+  readonly regionRef: RefObject<HTMLElement | null>;
 };
 
 /** Lo que una columna dibuja de una entrada. */
@@ -71,10 +84,12 @@ const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 function columnItems(
   state: CalendarState,
   now: NowPosition,
+  removedIds: readonly string[],
 ): ReadonlyMap<string, readonly ColumnItem[]> {
   const dates = state.days.map((day) => day.date);
   const byDay = new Map<string, ColumnItem[]>(dates.map((date) => [date, []]));
-  for (const entry of chronological(state.entries, state.running)) {
+  const entries = state.entries.filter((entry) => !removedIds.includes(entry.id));
+  for (const entry of chronological(entries, state.running)) {
     const segments =
       entry === state.running
         ? runningSegments(entry, now, dates)
@@ -107,12 +122,45 @@ export function CalendarGrid({
   openerRef,
   dialogOpen,
   onOpen,
+  removedIds,
+  onSlot,
+  focusEntryId,
+  onEntryFocused,
+  regionRef,
 }: CalendarGridProps) {
   const { time } = useDisplayFormats();
   const scrollRef = useRef<HTMLDivElement>(null);
   const scale = minuteHeight(zoom);
   const dates = state.days.map((day) => day.date);
-  const items = columnItems(state, now);
+  const items = columnItems(state, now, removedIds);
+
+  // §5.5: el bloque de la entrada editada, creada, detenida o copiada toma el
+  // foco cuando se dibuja —en este render o después de la revalidación—, si el
+  // foco quedó en la región o en `body`. El diálogo que se cierra lo deja en la
+  // región después de su animación, así que también se espera a que llegue.
+  useEffect(() => {
+    const region = regionRef.current;
+    if (focusEntryId === null || region === null) {
+      return;
+    }
+    function focusBlock(): void {
+      const active = document.activeElement;
+      if (active !== null && active !== document.body && active !== region) {
+        return;
+      }
+      const button = region?.querySelector<HTMLButtonElement>(
+        `button[data-entry-block="${focusEntryId}"]`,
+      );
+      if (button === null || button === undefined) {
+        return;
+      }
+      button.focus();
+      onEntryFocused();
+    }
+    focusBlock();
+    region.addEventListener("focus", focusBlock);
+    return () => region.removeEventListener("focus", focusBlock);
+  }, [focusEntryId, onEntryFocused, regionRef, state]);
 
   // Solo al montar: una revalidación no mueve lo que la persona desplazó.
   const [initialScroll] = useState(() => initialScrollMinute(now, dates) * scale);
@@ -148,7 +196,7 @@ export function CalendarGrid({
           {corner}
         </div>
         {state.days.map((day) => (
-          <DayHeader key={day.date} day={day} state={state} />
+          <DayHeader key={day.date} day={day} state={state} removedIds={removedIds} />
         ))}
 
         <div
@@ -181,6 +229,7 @@ export function CalendarGrid({
             openerRef={openerRef}
             dialogOpen={dialogOpen}
             onOpen={onOpen}
+            onSlot={onSlot}
           />
         ))}
       </div>
@@ -196,11 +245,13 @@ function headerId(date: string): string {
 function DayHeader({
   day,
   state,
+  removedIds,
 }: {
   readonly day: CalendarDayView;
   readonly state: CalendarState;
+  readonly removedIds: readonly string[];
 }) {
-  const total = useGroupTotalLabel(dayTotalOf(day, state, []));
+  const total = useGroupTotalLabel(dayTotalOf(day, state, removedIds));
   return (
     <div
       id={headerId(day.date)}
@@ -224,7 +275,7 @@ function DayHeader({
 
 type DayColumnProps = Pick<
   CalendarGridProps,
-  "state" | "now" | "zoom" | "openerId" | "openerRef" | "dialogOpen" | "onOpen"
+  "state" | "now" | "zoom" | "openerId" | "openerRef" | "dialogOpen" | "onOpen" | "onSlot"
 > & {
   readonly day: CalendarDayView;
   readonly items: readonly ColumnItem[];
@@ -244,14 +295,40 @@ function DayColumn({
   openerRef,
   dialogOpen,
   onOpen,
+  onSlot,
 }: DayColumnProps) {
   const scale = minuteHeight(zoom);
+
+  /**
+   * CAL-43: el fondo de la columna abre el alta en la franja tocada. Sin efecto
+   * sobre un bloque, un día anterior al piso o un minuto que no existe (CAL-30,
+   * CAL-48). No es un control (CAL-76): el alta por teclado es «Agregar entrada».
+   */
+  function handleClick(event: MouseEvent<HTMLDivElement>): void {
+    if (onSlot === null || day.beforeWorkspace) {
+      return;
+    }
+    if (event.target instanceof Element && event.target.closest("[data-entry-block]")) {
+      return;
+    }
+    const offset = event.clientY - event.currentTarget.getBoundingClientRect().top;
+    const minute = minuteAt(offset, zoom);
+    if (isMissing(minute, day.missingMinutes)) {
+      return;
+    }
+    onSlot(day.date, minute);
+  }
+
   return (
     <div
       role="group"
       aria-labelledby={headerId(day.date)}
       data-calendar-day={day.date}
-      className="relative border-r last:border-r-0"
+      onClick={handleClick}
+      className={cn(
+        "relative border-r last:border-r-0",
+        onSlot !== null && !day.beforeWorkspace && "cursor-pointer",
+      )}
       style={{
         height: MINUTES_PER_DAY * scale,
         backgroundImage: "linear-gradient(to bottom, var(--border) 1px, transparent 1px)",

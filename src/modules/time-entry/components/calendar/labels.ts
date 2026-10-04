@@ -39,7 +39,6 @@ export const calendarLabels = {
   loading: "Cargando el calendario",
   /** CAL-87. */
   loadFailed: "No se pudo cargar el calendario.",
-  retry: "Reintentar",
   /** CAL-15: las flechas de la barra. */
   previousWeek: "Semana anterior",
   nextWeek: "Semana siguiente",
@@ -67,4 +66,25 @@ export const calendarLabels = {
   duration: "Duración",
   runningEnd: "Fin: en curso",
   close: "Cerrar",
+  /** CAL-74: el alta por teclado, al final de la barra. */
+  addEntry: "Agregar entrada",
+  /** CAL-43, CAL-65: los títulos de los modos de edición. */
+  addTitle: "Agregar entrada",
+  editTitle: "Editar entrada",
+  add: "Agregar",
+  save: "Guardar",
+  /** CAL-40, P-06. */
+  stop: "Detener",
+  saveBeforeStop: "Guardá los cambios antes de detener el timer.",
+  entryNotSaved: "No se pudo guardar la entrada.",
+  /** TT-109: el lugar donde mirar es el calendario, no la lista. */
+  addLostMessage:
+    "Se perdió la respuesta del servidor. Antes de volver a agregarla, fijate en el calendario: puede haberse creado.",
+  /** CAL-46: la entrada guardada no tiene ningún segmento en el período. */
+  outsideWeek: (day: string) =>
+    `La entrada quedó el ${day}, fuera de la semana que estás viendo.`,
+  outsideDay: (day: string) =>
+    `La entrada quedó el ${day}, fuera del día que estás viendo.`,
+  goToWeek: "Ir a esa semana",
+  goToDay: "Ir a ese día",
 } as const;

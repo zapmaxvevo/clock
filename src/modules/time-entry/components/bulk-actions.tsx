@@ -292,7 +292,7 @@ export function BulkActions({
               aria-describedby={overLimit ? limitId : undefined}
               onClick={openDelete}
             >
-              {trackerLabels.bulkDelete}
+              {trackerLabels.delete}
             </Button>
             <Button
               type="button"

@@ -103,7 +103,7 @@ function BulkDeleteForm({ fieldRef, count, onConfirm }: BulkDeleteFormProps) {
         </DialogClose>
         {/* Inactivo con `aria-disabled`: el foco no se pierde mientras se escribe. */}
         <Button type="submit" variant="destructive" aria-disabled={!valid}>
-          {trackerLabels.bulkDelete}
+          {trackerLabels.delete}
         </Button>
       </DialogFooter>
     </form>
