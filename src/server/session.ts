@@ -1,10 +1,8 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
-import {
-  ensureWorkspaceContext,
-  type WorkspaceContext,
-} from "@/modules/workspace/service";
+import { preferencesOf, type ProfileContext } from "@/modules/profile/service";
+import { ensureWorkspaceContext } from "@/modules/workspace/service";
 import { auth } from "@/server/auth";
 
 export type CurrentUser = {
@@ -14,7 +12,7 @@ export type CurrentUser = {
   readonly image: string | null;
 };
 
-export type SessionContext = WorkspaceContext & { readonly user: CurrentUser };
+export type SessionContext = ProfileContext & { readonly user: CurrentUser };
 
 /**
  * Punto central de autenticación del servidor. Toda lectura y toda mutación
@@ -25,12 +23,14 @@ export async function currentSession(): Promise<SessionContext | null> {
   if (session === null) {
     return null;
   }
-  const context = await ensureWorkspaceContext({
-    id: session.user.id,
-    email: session.user.email,
-  });
+  // Dos lecturas independientes, fuera de toda transacción común.
+  const [context, preferences] = await Promise.all([
+    ensureWorkspaceContext({ id: session.user.id, email: session.user.email }),
+    preferencesOf(session.user.id),
+  ]);
   return {
     ...context,
+    preferences,
     user: {
       id: session.user.id,
       name: session.user.name,

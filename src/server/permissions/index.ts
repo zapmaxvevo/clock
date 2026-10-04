@@ -30,6 +30,14 @@ export type TimeEntryResource = {
   readonly userId: string;
 };
 
+export type ProfileResource = {
+  readonly kind: "profile";
+  /** La membresía con que se actúa: una no activa no edita su perfil (PF-34). */
+  readonly workspaceId: string;
+  /** El dueño del perfil, no quien actúa. */
+  readonly userId: string;
+};
+
 export type ProjectResource = {
   readonly kind: "project";
   readonly workspaceId: string;
@@ -60,6 +68,7 @@ type ResourceByAction = {
   "project.view": ProjectResource;
   "project.track": ProjectResource;
   "task.create": ProjectResource;
+  "profile.own.update": ProfileResource;
 };
 
 export type Action = keyof ResourceByAction;
@@ -85,6 +94,7 @@ const resourceKinds = {
   "project.view": ["project"],
   "project.track": ["project"],
   "task.create": ["project"],
+  "profile.own.update": ["profile"],
 } satisfies { [A in Action]: readonly ResourceFor<A>["kind"][] };
 
 const everyone: readonly Role[] = [
@@ -110,6 +120,7 @@ const allowedRoles: Record<Action, readonly Role[]> = {
   "project.view": everyone,
   "project.track": everyone,
   "task.create": everyone,
+  "profile.own.update": everyone,
 };
 
 /**
@@ -163,9 +174,12 @@ export function can<A extends Action>(
   if (!allowedRoles[action].includes(actor.role)) {
     return false;
   }
-  // Las acciones ".own" son sobre entradas propias. Las entradas ajenas son del
-  // reporte detallado, que decide con sus propias acciones.
-  if (resource.kind === "timeEntry" && resource.userId !== actor.userId) {
+  // Las acciones ".own" son sobre lo propio. Las entradas ajenas son del
+  // reporte detallado y el perfil ajeno, de la pantalla de equipo (PF-17).
+  if (
+    (resource.kind === "timeEntry" || resource.kind === "profile") &&
+    resource.userId !== actor.userId
+  ) {
     return false;
   }
   // La membresía del owner solo la toca el owner.

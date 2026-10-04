@@ -30,6 +30,7 @@ import {
 } from "@/test/concurrency";
 import {
   buenosAires,
+  defaultFormats,
   seedClient,
   seedMember,
   seedProject,
@@ -40,6 +41,7 @@ import {
 import { allTimeEntries, auditFor, timeEntriesOf, timeEntryById } from "@/test/queries";
 
 import { projectMessages } from "@/modules/project/schema";
+import { preferencesOf } from "@/modules/profile/service";
 import { workspaceRepository } from "@/modules/workspace/repository";
 
 import { timeEntryRepository } from "./repository";
@@ -86,7 +88,7 @@ function workspaceOf(
   createdAt = "2020-01-01T00:00:00Z",
   weekStart: WeekStart = 1,
 ): TrackerWorkspace {
-  return { timezone, createdAt: new Date(createdAt), weekStart };
+  return { timezone, createdAt: new Date(createdAt), weekStart, formats: defaultFormats };
 }
 
 /** Los días de la lista, sin las semanas que los agrupan. */
@@ -3962,6 +3964,7 @@ async function trackerWorkspaceFor(userId: string) {
     workspace: row,
     membership: member,
     actor: actorFor(userId),
+    preferences: await preferencesOf(userId),
   });
 }
 

@@ -7,6 +7,7 @@ import { membership } from "@/server/db/schema";
 import type { Actor, MembershipStatus, Role } from "@/server/permissions";
 import {
   buenosAires,
+  defaultFormats,
   seedMember,
   seedProject,
   seedTimeEntry,
@@ -51,6 +52,7 @@ const workspace: TrackerWorkspace = {
   timezone: buenosAires,
   createdAt: new Date("2020-01-01T00:00:00Z"),
   weekStart: 1,
+  formats: defaultFormats,
 };
 
 /** El trío de la edición de horas sobre las entradas cerradas sembradas acá. */

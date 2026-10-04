@@ -1,11 +1,32 @@
 import { TZDate, tzOffset } from "@date-fns/tz";
-import { addDays, format, startOfDay } from "date-fns";
+import { addDays, format as formatDate, startOfDay } from "date-fns";
 import { es } from "date-fns/locale";
 
 /** Día de la semana en que arranca la semana del usuario. 0 = domingo. */
 export type WeekStart = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
 export type Interval = { readonly start: Date; readonly end: Date };
+
+export const TIME_FORMATS = ["24h", "12h"] as const;
+export type TimeFormat = (typeof TIME_FORMATS)[number];
+
+export const DATE_FORMATS = [
+  "dd/MM/yyyy",
+  "dd-MM-yyyy",
+  "yyyy-MM-dd",
+  "MM/dd/yyyy",
+] as const;
+export type DateFormat = (typeof DATE_FORMATS)[number];
+
+/** Cómo ve las horas quien mira (PF-12, PF-13). */
+export type DisplayFormats = { readonly time: TimeFormat; readonly date: DateFormat };
+
+/** Todo lo que hace falta para cortar y rotular el tiempo de una persona. */
+export type TimeSettings = {
+  readonly timezone: string;
+  readonly weekStart: WeekStart;
+  readonly formats: DisplayFormats;
+};
 
 /**
  * Único lugar donde se resuelven días, semanas y duraciones. Los instantes se
@@ -59,17 +80,22 @@ export function startOfLocalDay(instant: Date, timeZone: string): Date {
 
 /** Día local del instante, como "2026-10-02". Es la clave de agrupación. */
 export function dayKey(instant: Date, timeZone: string): string {
-  return format(new TZDate(instant, timeZone), "yyyy-MM-dd");
+  return formatDate(new TZDate(instant, timeZone), "yyyy-MM-dd");
 }
 
 /** Rótulo del encabezado de un día: "Hoy", "Ayer" o "jue, 01/10", con año si es de otro. */
-export function dayLabel(instant: Date, now: Date, timeZone: string): string {
-  return dayKeyLabel(dayKey(instant, timeZone), dayKey(now, timeZone));
+export function dayLabel(
+  instant: Date,
+  now: Date,
+  timeZone: string,
+  format: DateFormat,
+): string {
+  return dayKeyLabel(dayKey(instant, timeZone), dayKey(now, timeZone), format);
 }
 
 /** Hora local en 24 h, como "08:00". */
 export function formatClock(instant: Date, timeZone: string): string {
-  return format(new TZDate(instant, timeZone), "HH:mm");
+  return formatDate(new TZDate(instant, timeZone), "HH:mm");
 }
 
 /** Días locales que la entrada agrega sobre su día de inicio. 0 si no cruza la medianoche. */
@@ -161,11 +187,53 @@ export function addDaysToKey(dayKey: string, days: number): string {
   });
 }
 
+type DatePart = "day" | "month" | "year";
+
+/** El orden de las partes y el separador de cada formato de fecha. */
+const DATE_LAYOUTS: Record<
+  DateFormat,
+  { readonly order: readonly DatePart[]; readonly separator: string }
+> = {
+  "dd/MM/yyyy": { order: ["day", "month", "year"], separator: "/" },
+  "dd-MM-yyyy": { order: ["day", "month", "year"], separator: "-" },
+  "yyyy-MM-dd": { order: ["year", "month", "day"], separator: "-" },
+  "MM/dd/yyyy": { order: ["month", "day", "year"], separator: "/" },
+};
+
+/**
+ * Una fecha civil en el formato de la persona: "03/10/2026", o "03/10" sin
+ * año. La forma sin año es la de los rótulos del año en curso.
+ */
+export function formatDayKey(
+  dayKey: string,
+  format: DateFormat,
+  withYear: boolean,
+): string {
+  const date = parseDayKey(dayKey);
+  if (date === null) {
+    return dayKey;
+  }
+  const parts: Record<DatePart, string> = {
+    day: pad(date.day),
+    month: pad(date.month),
+    year: date.year.toString().padStart(4, "0"),
+  };
+  const layout = DATE_LAYOUTS[format];
+  return layout.order
+    .filter((part) => withYear || part !== "year")
+    .map((part) => parts[part])
+    .join(layout.separator);
+}
+
 /**
  * Rótulo de un día ya resuelto. Es la única implementación del "Hoy" / "Ayer" /
  * "mié, 01/10": lo usan el encabezado de la lista y el botón del calendario.
  */
-export function dayKeyLabel(dayKey: string, todayKey: string): string {
+export function dayKeyLabel(
+  dayKey: string,
+  todayKey: string,
+  format: DateFormat,
+): string {
   if (dayKey === todayKey) {
     return "Hoy";
   }
@@ -181,7 +249,8 @@ export function dayKeyLabel(dayKey: string, todayKey: string): string {
   // dónde corra el proceso.
   const civil = new TZDate(Date.UTC(date.year, date.month - 1, date.day), "UTC");
   const sameYear = today !== null && today.year === date.year;
-  return format(civil, sameYear ? "EEE, dd/MM" : "EEE, dd/MM/yyyy", { locale: es });
+  const weekday = formatDate(civil, "EEE", { locale: es });
+  return `${weekday}, ${formatDayKey(dayKey, format, !sameYear)}`;
 }
 
 /**
@@ -236,11 +305,6 @@ export function startOfDayKey(dayKey: string, timeZone: string): Date {
   return startOfLocalDay(noon, timeZone);
 }
 
-function civilLabel(date: CivilDate, withYear: boolean): string {
-  const day = `${pad(date.day)}/${pad(date.month)}`;
-  return withYear ? `${day}/${date.year.toString().padStart(4, "0")}` : day;
-}
-
 /**
  * «Esta semana», «Semana anterior», o «28/09 – 04/10». Si alguno de los dos
  * extremos no es del año de `todayKey`, los dos llevan el año:
@@ -250,6 +314,7 @@ export function weekKeyLabel(
   weekStart: string,
   todayKey: string,
   weekStartsOn: WeekStart,
+  format: DateFormat,
 ): string {
   const current = weekStartKey(todayKey, weekStartsOn);
   if (weekStart === current) {
@@ -258,14 +323,15 @@ export function weekKeyLabel(
   if (weekStart === addDaysToKey(current, -7)) {
     return "Semana anterior";
   }
+  const lastKey = addDaysToKey(weekStart, 6);
   const first = parseDayKey(weekStart);
-  const last = parseDayKey(addDaysToKey(weekStart, 6));
+  const last = parseDayKey(lastKey);
   const today = parseDayKey(todayKey);
   if (first === null || last === null || today === null) {
     return weekStart;
   }
   const withYear = first.year !== today.year || last.year !== today.year;
-  return `${civilLabel(first, withYear)} – ${civilLabel(last, withYear)}`;
+  return `${formatDayKey(weekStart, format, withYear)} – ${formatDayKey(lastKey, format, withYear)}`;
 }
 
 function clockToMinutes(clock: string): number | null {
@@ -283,15 +349,31 @@ function minutesToClock(minutes: number): string {
   return `${pad(Math.floor(safe / 60))}:${pad(safe % 60)}`;
 }
 
+/** Una hora canónica "HH:mm" como se muestra: "13:05" o "1:05 PM". */
+export function clockLabel(clock: string, format: TimeFormat): string {
+  const minutes = clockToMinutes(clock);
+  if (format === "24h" || minutes === null) {
+    return clock;
+  }
+  const hours = Math.floor(minutes / 60);
+  const suffix = hours < 12 ? "AM" : "PM";
+  return `${hours % 12 === 0 ? 12 : hours % 12}:${pad(minutes % 60)} ${suffix}`;
+}
+
 /**
- * Lo que la persona teclea en un campo de hora, llevado a "HH:mm" de 24 h.
- * `null` es «no se puede interpretar», que la interfaz revierte.
+ * El sufijo de 12 h al final del texto: `a`, `am`, `p` o `pm`, con o sin
+ * puntos y espacios, en mayúsculas o minúsculas (PF-14).
  */
-export function parseClockInput(text: string): string | null {
-  const clean = text.trim().replace(/\./g, ":");
+const MERIDIEM = /^(.*?)\s*([ap])\.?\s*(?:m\.?)?$/i;
+
+type ClockParts = { readonly hours: number; readonly minutes: number };
+
+/** "9", "0345", "9:45" o "9.45", sin acotar las horas ni los minutos. */
+function clockParts(text: string): ClockParts | null {
+  const clean = text.replace(/\./g, ":");
   const separated = /^(\d{1,2}):(\d{1,2})$/.exec(clean);
   if (separated !== null) {
-    return buildClock(Number(separated[1]), Number(separated[2]));
+    return { hours: Number(separated[1]), minutes: Number(separated[2]) };
   }
   const digits = /^(\d{1,4})$/.exec(clean);
   if (digits === null) {
@@ -299,17 +381,42 @@ export function parseClockInput(text: string): string | null {
   }
   const value = digits[1];
   if (value.length <= 2) {
-    return buildClock(Number(value), 0);
+    return { hours: Number(value), minutes: 0 };
   }
   const cut = value.length - 2;
-  return buildClock(Number(value.slice(0, cut)), Number(value.slice(cut)));
+  return { hours: Number(value.slice(0, cut)), minutes: Number(value.slice(cut)) };
 }
 
-function buildClock(hours: number, minutes: number): string | null {
-  if (hours > 23 || minutes > 59) {
+/**
+ * Lo que la persona teclea en un campo de hora, llevado a "HH:mm" de 24 h.
+ * `null` es «no se puede interpretar», que la interfaz revierte. El sufijo
+ * `am` / `pm` solo vale con 12 h, y ahí la hora va de 1 a 12 (TT-20).
+ */
+export function parseClockInput(text: string, format: TimeFormat): string | null {
+  const clean = text.trim();
+  const meridiem = MERIDIEM.exec(clean);
+  if (meridiem === null) {
+    return buildClock(clockParts(clean));
+  }
+  if (format === "24h") {
     return null;
   }
-  return `${pad(hours)}:${pad(minutes)}`;
+  return buildMeridiemClock(clockParts(meridiem[1]), meridiem[2].toLowerCase() === "p");
+}
+
+function buildClock(parts: ClockParts | null): string | null {
+  if (parts === null || parts.hours > 23 || parts.minutes > 59) {
+    return null;
+  }
+  return `${pad(parts.hours)}:${pad(parts.minutes)}`;
+}
+
+function buildMeridiemClock(parts: ClockParts | null, afternoon: boolean): string | null {
+  if (parts === null || parts.hours < 1 || parts.hours > 12 || parts.minutes > 59) {
+    return null;
+  }
+  const hours = (parts.hours % 12) + (afternoon ? 12 : 0);
+  return `${pad(hours)}:${pad(parts.minutes)}`;
 }
 
 /**
@@ -416,4 +523,45 @@ export function instantFromLocal(
 ): Date | null {
   const matches = localInstants(dayKey, clock, timeZone);
   return matches.length === 0 ? null : new Date(Math.max(...matches));
+}
+
+/**
+ * La forma canónica de una zona según el entorno, o `null` si el entorno no la
+ * conoce. `America/Argentina/Buenos_Aires` da `America/Buenos_Aires`.
+ */
+export function canonicalTimeZone(value: string): string | null {
+  try {
+    return new Intl.DateTimeFormat("en-US", { timeZone: value }).resolvedOptions()
+      .timeZone;
+  } catch {
+    return null;
+  }
+}
+
+/** Las zonas que ofrece el entorno, en su forma canónica y en orden alfabético. */
+export function supportedTimeZones(): readonly string[] {
+  return [...Intl.supportedValuesOf("timeZone")].sort();
+}
+
+/**
+ * La forma canónica de la zona está en la lista del entorno. Es la validación
+ * de la entrada (PF-35): la lista no nombra los alias, como el valor de
+ * omisión, y compararlos como texto los rechazaría.
+ */
+export function isSupportedTimeZone(value: string): boolean {
+  const canonical = canonicalTimeZone(value);
+  return canonical !== null && supportedTimeZones().includes(canonical);
+}
+
+/** El entorno sabe convertir con esa zona, esté o no en su lista. */
+export function isUsableTimeZone(value: string): boolean {
+  return canonicalTimeZone(value) !== null;
+}
+
+/** El desplazamiento de la zona en ese instante: "UTC−03:00", "UTC+05:45". */
+export function utcOffsetLabel(timeZone: string, at: Date): string {
+  const offset = tzOffset(timeZone, at);
+  const sign = offset < 0 ? "\u2212" : "+";
+  const absolute = Math.abs(offset);
+  return `UTC${sign}${pad(Math.floor(absolute / 60))}:${pad(absolute % 60)}`;
 }

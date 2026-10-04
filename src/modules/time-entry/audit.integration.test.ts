@@ -7,6 +7,7 @@ import { membership } from "@/server/db/schema";
 import type { Actor } from "@/server/permissions";
 import {
   buenosAires,
+  defaultFormats,
   seedMember,
   seedProject,
   seedTask,
@@ -50,6 +51,7 @@ const workspace: TrackerWorkspace = {
   timezone: buenosAires,
   createdAt: new Date("2020-01-01T00:00:00Z"),
   weekStart: 1,
+  formats: defaultFormats,
 };
 
 function parsed(value: string | null): unknown {
@@ -528,6 +530,7 @@ describe("audit log de la entrada manual", () => {
       timezone: buenosAires,
       createdAt: new Date("2026-09-01T12:00:00Z"),
       weekStart: 1,
+      formats: defaultFormats,
     };
 
     await expect(
@@ -554,6 +557,7 @@ describe("audit log de la entrada manual", () => {
       timezone: "Europe/Madrid",
       createdAt: new Date("2020-01-01T00:00:00Z"),
       weekStart: 1,
+      formats: defaultFormats,
     };
 
     await expect(

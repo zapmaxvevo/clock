@@ -247,27 +247,43 @@ function daysBetween(from: string, to: string): number {
 
 describe("weekKeyLabel", () => {
   it("rotula esta semana y la anterior", () => {
-    expect(weekKeyLabel("2026-09-28", "2026-10-02", 1)).toBe("Esta semana");
-    expect(weekKeyLabel("2026-09-21", "2026-10-02", 1)).toBe("Semana anterior");
+    expect(weekKeyLabel("2026-09-28", "2026-10-02", 1, "dd/MM/yyyy")).toBe("Esta semana");
+    expect(weekKeyLabel("2026-09-21", "2026-10-02", 1, "dd/MM/yyyy")).toBe(
+      "Semana anterior",
+    );
   });
 
   it("mide esta semana con el primer día de la persona", () => {
-    expect(weekKeyLabel("2026-09-27", "2026-10-02", 0)).toBe("Esta semana");
-    expect(weekKeyLabel("2026-09-20", "2026-10-02", 0)).toBe("Semana anterior");
+    expect(weekKeyLabel("2026-09-27", "2026-10-02", 0, "dd/MM/yyyy")).toBe("Esta semana");
+    expect(weekKeyLabel("2026-09-20", "2026-10-02", 0, "dd/MM/yyyy")).toBe(
+      "Semana anterior",
+    );
     // El domingo 04/10 abre semana con domingo y cierra la del lunes 28/09.
-    expect(weekKeyLabel("2026-09-27", "2026-10-04", 0)).toBe("Semana anterior");
-    expect(weekKeyLabel("2026-09-28", "2026-10-04", 1)).toBe("Esta semana");
+    expect(weekKeyLabel("2026-09-27", "2026-10-04", 0, "dd/MM/yyyy")).toBe(
+      "Semana anterior",
+    );
+    expect(weekKeyLabel("2026-09-28", "2026-10-04", 1, "dd/MM/yyyy")).toBe("Esta semana");
   });
 
   it("rotula con el rango una semana más vieja y una futura (TT-47)", () => {
-    expect(weekKeyLabel("2026-09-14", "2026-10-02", 1)).toBe("14/09 – 20/09");
-    expect(weekKeyLabel("2026-10-05", "2026-10-02", 1)).toBe("05/10 – 11/10");
+    expect(weekKeyLabel("2026-09-14", "2026-10-02", 1, "dd/MM/yyyy")).toBe(
+      "14/09 – 20/09",
+    );
+    expect(weekKeyLabel("2026-10-05", "2026-10-02", 1, "dd/MM/yyyy")).toBe(
+      "05/10 – 11/10",
+    );
   });
 
   it("lleva el año en los dos extremos si alguno no es del año de hoy", () => {
-    expect(weekKeyLabel("2025-12-29", "2026-03-10", 1)).toBe("29/12/2025 – 04/01/2026");
-    expect(weekKeyLabel("2026-12-28", "2026-03-10", 1)).toBe("28/12/2026 – 03/01/2027");
-    expect(weekKeyLabel("2025-06-02", "2026-03-10", 1)).toBe("02/06/2025 – 08/06/2025");
+    expect(weekKeyLabel("2025-12-29", "2026-03-10", 1, "dd/MM/yyyy")).toBe(
+      "29/12/2025 – 04/01/2026",
+    );
+    expect(weekKeyLabel("2026-12-28", "2026-03-10", 1, "dd/MM/yyyy")).toBe(
+      "28/12/2026 – 03/01/2027",
+    );
+    expect(weekKeyLabel("2025-06-02", "2026-03-10", 1, "dd/MM/yyyy")).toBe(
+      "02/06/2025 – 08/06/2025",
+    );
   });
 });
 
@@ -375,25 +391,31 @@ describe("dayLabel", () => {
   const now = new Date("2026-10-02T15:00:00Z");
 
   it("rotula hoy y ayer", () => {
-    expect(dayLabel(new Date("2026-10-02T09:00:00Z"), now, buenosAires)).toBe("Hoy");
-    expect(dayLabel(new Date("2026-10-01T09:00:00Z"), now, buenosAires)).toBe("Ayer");
+    expect(
+      dayLabel(new Date("2026-10-02T09:00:00Z"), now, buenosAires, "dd/MM/yyyy"),
+    ).toBe("Hoy");
+    expect(
+      dayLabel(new Date("2026-10-01T09:00:00Z"), now, buenosAires, "dd/MM/yyyy"),
+    ).toBe("Ayer");
   });
 
   it("usa día de la semana y dd/MM dentro del año en curso", () => {
-    expect(dayLabel(new Date("2026-09-30T09:00:00Z"), now, buenosAires)).toBe(
-      "mié, 30/09",
-    );
+    expect(
+      dayLabel(new Date("2026-09-30T09:00:00Z"), now, buenosAires, "dd/MM/yyyy"),
+    ).toBe("mié, 30/09");
   });
 
   it("agrega el año cuando el día cae fuera del año en curso", () => {
-    expect(dayLabel(new Date("2025-12-31T09:00:00Z"), now, buenosAires)).toBe(
-      "mié, 31/12/2025",
-    );
+    expect(
+      dayLabel(new Date("2025-12-31T09:00:00Z"), now, buenosAires, "dd/MM/yyyy"),
+    ).toBe("mié, 31/12/2025");
   });
 
   it("decide hoy y ayer con la zona horaria, no con UTC", () => {
     // Las 00:30 UTC del 3 de octubre siguen siendo el 2 en Buenos Aires.
-    expect(dayLabel(new Date("2026-10-03T00:30:00Z"), now, buenosAires)).toBe("Hoy");
+    expect(
+      dayLabel(new Date("2026-10-03T00:30:00Z"), now, buenosAires, "dd/MM/yyyy"),
+    ).toBe("Hoy");
   });
 });
 
@@ -545,17 +567,17 @@ describe("addDaysToKey", () => {
 
 describe("dayKeyLabel", () => {
   it("rotula hoy, ayer y el resto", () => {
-    expect(dayKeyLabel("2026-10-02", "2026-10-02")).toBe("Hoy");
-    expect(dayKeyLabel("2026-10-01", "2026-10-02")).toBe("Ayer");
-    expect(dayKeyLabel("2026-09-30", "2026-10-02")).toBe("mié, 30/09");
+    expect(dayKeyLabel("2026-10-02", "2026-10-02", "dd/MM/yyyy")).toBe("Hoy");
+    expect(dayKeyLabel("2026-10-01", "2026-10-02", "dd/MM/yyyy")).toBe("Ayer");
+    expect(dayKeyLabel("2026-09-30", "2026-10-02", "dd/MM/yyyy")).toBe("mié, 30/09");
   });
 
   it("agrega el año fuera del año en curso", () => {
-    expect(dayKeyLabel("2025-12-31", "2026-10-02")).toBe("mié, 31/12/2025");
+    expect(dayKeyLabel("2025-12-31", "2026-10-02", "dd/MM/yyyy")).toBe("mié, 31/12/2025");
   });
 
   it("no inventa un rótulo para el día siguiente", () => {
-    expect(dayKeyLabel("2026-10-03", "2026-10-02")).toBe("sáb, 03/10");
+    expect(dayKeyLabel("2026-10-03", "2026-10-02", "dd/MM/yyyy")).toBe("sáb, 03/10");
   });
 });
 
@@ -580,13 +602,13 @@ describe("parseClockInput", () => {
       ["1pm", null],
     ];
     for (const [text, expected] of table) {
-      expect([text, parseClockInput(text)]).toEqual([text, expected]);
+      expect([text, parseClockInput(text, "24h")]).toEqual([text, expected]);
     }
   });
 
   it("acepta espacios alrededor y rechaza lo vacío", () => {
-    expect(parseClockInput("  08:00  ")).toBe("08:00");
-    expect(parseClockInput("")).toBeNull();
+    expect(parseClockInput("  08:00  ", "24h")).toBe("08:00");
+    expect(parseClockInput("", "24h")).toBeNull();
   });
 });
 
@@ -743,8 +765,8 @@ describe("claves de día en un huso negativo", () => {
   });
 
   it("no corre el día al rotular", () => {
-    expect(dayKeyLabel("2026-10-02", "2026-10-05")).toBe("vie, 02/10");
-    expect(dayKeyLabel("2026-10-02", "2026-10-02")).toBe("Hoy");
+    expect(dayKeyLabel("2026-10-02", "2026-10-05", "dd/MM/yyyy")).toBe("vie, 02/10");
+    expect(dayKeyLabel("2026-10-02", "2026-10-02", "dd/MM/yyyy")).toBe("Hoy");
   });
 
   it("no corre el día al sumar", () => {

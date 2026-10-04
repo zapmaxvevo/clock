@@ -1,4 +1,5 @@
 import { samePair, type ProjectPair } from "@/lib/project-pair";
+import { normalizeSearch } from "@/lib/text";
 import type {
   ClientView,
   ProjectSelection,
@@ -36,14 +37,6 @@ export type PickerView = {
 export const NO_SELECTION: ProjectSelection = { project: null, task: null };
 
 const NONE: PickerOption = { key: "none", selection: NO_SELECTION };
-
-/**
- * TT-07: la búsqueda no distingue mayúsculas ni acentos. `NFD` separa cada
- * letra de su marca diacrítica, y la marca se descarta.
- */
-function normalizeSearch(text: string): string {
-  return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim();
-}
 
 function matches(name: string, query: string): boolean {
   return normalizeSearch(name).includes(query);
