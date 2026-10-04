@@ -16,11 +16,6 @@ import {
   type CreateTaskResult,
 } from "./schema";
 
-/**
- * El permiso lo consulta el service antes de `createOnce` (ADR 0007): el de
- * `task.create` necesita el proyecto leído, y las tres altas lo piden en el
- * mismo lugar.
- */
 const options = {
   paths: ["/proyectos"],
   messages: {
@@ -28,6 +23,10 @@ const options = {
     unexpected: projectMessages.unexpected,
   },
 } as const;
+
+// Las tres altas: el permiso lo consulta el service antes de `createOnce`
+// (ADR 0007). El de `task.create` necesita el proyecto leído, y las tres lo
+// piden en el mismo lugar.
 
 export async function createClient(
   input: CreateClientInput,

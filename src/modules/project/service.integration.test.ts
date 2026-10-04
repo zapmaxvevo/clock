@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { db, type Transaction } from "@/server/db";
 import {
   client,
+  membership,
   project,
   projectMember,
   task,
@@ -656,6 +657,84 @@ describe("reintentar (criterio 10: §4.4, PR-90, PR-91, PR-108)", () => {
   it("una fila sin creador, después de borrar su membresía, ya no es propia de nadie", async () => {
     const orphan = await seedClient({ workspaceId, createdBy: null });
     await expectForbidden(createClient(member, clientValues({ id: orphan.id })));
+  });
+
+  describe("una fila propia de otro workspace no es propia acá", () => {
+    /** La misma persona, también miembro de otro workspace. */
+    async function otherWorkspaceOfMember(): Promise<string> {
+      const other = await seedWorkspace();
+      await db.insert(membership).values({
+        workspaceId: other.workspaceId,
+        userId: member.userId,
+        role: "member",
+      });
+      return other.workspaceId;
+    }
+
+    it("createClient responde forbidden con el id de un cliente suyo de allá", async () => {
+      const otherId = await otherWorkspaceOfMember();
+      const theirs = await seedClient({ workspaceId: otherId, createdBy: member.userId });
+      await expectForbidden(createClient(member, clientValues({ id: theirs.id })));
+      expect(await clientRows()).toEqual([]);
+    });
+
+    it("createProject responde forbidden con el id de un proyecto suyo de allá", async () => {
+      const otherId = await otherWorkspaceOfMember();
+      const theirs = await seedProject({
+        workspaceId: otherId,
+        createdBy: member.userId,
+        members: [{ userId: member.userId, isManager: true }],
+      });
+      await expectForbidden(createProject(member, projectValues({ id: theirs.id })));
+      expect(await projectRows()).toEqual([]);
+    });
+
+    it("createTask responde forbidden con el id de una tarea suya de allá", async () => {
+      const otherId = await otherWorkspaceOfMember();
+      const there = await seedProject({ workspaceId: otherId });
+      const theirs = await seedTask({
+        workspaceId: otherId,
+        projectId: there.id,
+        createdBy: member.userId,
+      });
+      const here = await seedProject({
+        workspaceId,
+        members: [{ userId: member.userId, isManager: true }],
+      });
+      await expectForbidden(createTask(member, taskValues(here.id, { id: theirs.id })));
+      expect(await taskRows()).toEqual([]);
+    });
+  });
+
+  it("una tarea propia de otro proyecto no se responde: forbidden, y no se mueve", async () => {
+    const managed = [{ userId: member.userId, isManager: true }];
+    const web = await seedProject({ workspaceId, members: managed });
+    const app = await seedProject({ workspaceId, members: managed });
+    const values = taskValues(web.id);
+    await createTask(member, values);
+
+    await expectForbidden(createTask(member, { ...values, projectId: app.id }));
+
+    const rows = await taskRows();
+    expect(rows.map((row) => [row.id, row.projectId])).toEqual([[values.id, web.id]]);
+  });
+
+  it("un proyecto propio que ya no ve, o archivado, responde forbidden como un id ocupado", async () => {
+    const hidden = await seedProject({
+      workspaceId,
+      isPublic: false,
+      createdBy: member.userId,
+    });
+    const archived = await seedProject({
+      workspaceId,
+      archived: true,
+      createdBy: member.userId,
+      members: [{ userId: member.userId, isManager: true }],
+    });
+
+    await expectForbidden(createProject(member, projectValues({ id: hidden.id })));
+    await expectForbidden(createProject(member, projectValues({ id: archived.id })));
+    expect(await projectRows()).toHaveLength(2);
   });
 
   it("con la membresía inactiva, createClient y createProject responden forbidden aunque el id sea de una fila propia", async () => {

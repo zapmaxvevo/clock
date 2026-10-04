@@ -58,7 +58,7 @@ src/
     env.ts             variables de entorno validadas con Zod
   components/ui/       primitivas compartidas (shadcn/ui)
   hooks/               hooks de cliente que comparten los módulos: useAction, useNewId
-  lib/text.ts          predicados de texto que comparten servidor y navegador
+  lib/                 utilidades puras que comparten servidor y navegador
 e2e/                   Playwright
 drizzle/               migraciones SQL versionadas
 docs/parity/           especificación de paridad por módulo
@@ -69,7 +69,8 @@ docs/adr/              decisiones de arquitectura
 
 1. La server action obtiene la sesión con `requireSession()`. Sin sesión, 401.
 2. Valida la entrada con el esquema Zod del módulo.
-3. Consulta `can(actor, action, resource)`. Sin permiso, 403.
+3. Consulta `can(actor, action, resource)`. Sin permiso, 403. En un alta con
+   `createOnce`, lo consulta el service antes de llamarla (ADR 0007).
 4. Llama al service, que aplica las reglas de negocio.
 5. El service usa el repository dentro de una transacción y escribe el audit log.
 6. La action revalida las rutas afectadas y devuelve un resultado tipado.

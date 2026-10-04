@@ -30,6 +30,8 @@ import {
   type SeededWorkspace,
 } from "@/test/factories";
 
+import { workspaceRepository } from "@/modules/workspace/repository";
+
 import { PALETTE_KEYS } from "./palette";
 
 /**
@@ -261,12 +263,15 @@ describe("borrados (criterio 2)", () => {
   it("borrar el workspace entero se lleva todo lo de proyectos", async () => {
     const member = await seedMember(ours.workspaceId, "member");
     const owner = await seedClient({ workspaceId: ours.workspaceId, createdBy: member });
+    // El par de PR-111: borrar solo el cliente choca; borrar el workspace, no.
     const web = await seedProject({
       workspaceId: ours.workspaceId,
       clientId: owner.id,
+      name: "Web",
       createdBy: member,
       members: [{ userId: member, isManager: true }],
     });
+    await seedProject({ workspaceId: ours.workspaceId, clientId: null, name: "web" });
     const design = await seedTask({
       workspaceId: ours.workspaceId,
       projectId: web.id,
@@ -512,14 +517,14 @@ describe("whoCreatesProjects (criterio 11, PR-59)", () => {
     expect(rows.map((row) => row.whoCreatesProjects)).toEqual(["everyone", "everyone"]);
   });
 
-  it("un workspace nuevo nace con everyone", async () => {
+  it("un workspace creado por el repository de workspace nace con everyone", async () => {
     const ownerId = await seedUser();
-    const [created] = await db
-      .insert(workspace)
-      .values({ name: "Nuevo", ownerId })
-      .returning();
-    await db.execute(
-      sql`insert into workspace_settings (workspace_id) values (${created.id})`,
+    const created = await db.transaction((tx) =>
+      workspaceRepository.createWorkspace(tx, {
+        name: "Nuevo",
+        ownerId,
+        timezone: "America/Argentina/Buenos_Aires",
+      }),
     );
     const [settings] = await db
       .select()

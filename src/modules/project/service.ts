@@ -5,6 +5,7 @@ import { db } from "@/server/db";
 import {
   assertCan,
   can,
+  ForbiddenError,
   type Actor,
   type ProjectResource,
   type WorkspaceResource,
@@ -32,7 +33,6 @@ import {
   type TaskView,
 } from "./schema";
 
-/** Error de dominio del módulo. La action lo traduce con su código y su mensaje. */
 export class ProjectError extends DomainError {
   constructor(code: ActionErrorCode, message: string) {
     super(code, message);
@@ -211,9 +211,18 @@ export async function createProject(
             const viewed = { ...created, viewer: { isManager: member.isManager } };
             return { project: toProjectView(actor, viewed, []) };
           }),
-        // El reintento responde sin tareas: el diálogo solo la usa para
-        // cerrarse y la revalidación de `/proyectos` trae las reales.
-        replayed: (row) => ({ project: toProjectView(actor, row, []) }),
+        // Un proyecto propio que ya no se ve, o archivado, responde como el alta
+        // con un id ocupado. El reintento responde sin tareas: el diálogo solo
+        // la usa para cerrarse y la revalidación de `/proyectos` trae las reales.
+        replayed: (row) => {
+          if (
+            row.archivedAt !== null ||
+            !can(actor, "project.view", projectResource(row))
+          ) {
+            throw new ForbiddenError("project.create");
+          }
+          return { project: toProjectView(actor, row, []) };
+        },
       }),
   );
 }
@@ -248,7 +257,7 @@ export async function createTask(
         action: "task.create",
         idConstraint: projectRepository.taskIdConstraint,
         findOwn: (id) =>
-          projectRepository.findOwnTask(actor.workspaceId, actor.userId, id),
+          projectRepository.findOwnTask(actor.workspaceId, actor.userId, owner.id, id),
         attempt: () =>
           db.transaction(async (tx) => {
             // Sin asignados: la tabla vacía es «cualquiera» (P-23).

@@ -5,12 +5,12 @@ import { hasConstraint, UNIQUE_VIOLATION } from "@/server/db/constraint-error";
 import { client, project, projectMember, task } from "@/server/db/schema";
 
 export type ClientRow = typeof client.$inferSelect;
-export type ProjectRow = typeof project.$inferSelect;
+type ProjectRow = typeof project.$inferSelect;
 export type TaskRow = typeof task.$inferSelect;
-export type ProjectMemberRow = typeof projectMember.$inferSelect;
+type ProjectMemberRow = typeof projectMember.$inferSelect;
 
 /** La fila de `project_member` de quien pide, o `null` si no es miembro. */
-export type Viewer = { readonly isManager: boolean } | null;
+type Viewer = { readonly isManager: boolean } | null;
 
 /** Un proyecto con la fila de `project_member` de quien pide. */
 export type ProjectWithViewer = ProjectRow & { readonly viewer: Viewer };
@@ -170,10 +170,15 @@ export const projectRepository = {
     return row === undefined ? undefined : withViewer(row);
   },
 
-  /** Sin bloqueo. Solo encuentra una tarea creada por `userId` en ese workspace. */
+  /**
+   * Sin bloqueo. Solo encuentra una tarea creada por `userId` en ese workspace
+   * y en ese proyecto: una propia de otro proyecto no se responde, choca con
+   * `task_pkey`.
+   */
   async findOwnTask(
     workspaceId: string,
     userId: string,
+    projectId: string,
     id: string,
   ): Promise<TaskRow | undefined> {
     const rows = await db
@@ -182,6 +187,7 @@ export const projectRepository = {
       .where(
         and(
           eq(task.workspaceId, workspaceId),
+          eq(task.projectId, projectId),
           eq(task.id, id),
           eq(task.createdBy, userId),
         ),

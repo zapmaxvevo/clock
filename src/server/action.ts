@@ -28,7 +28,7 @@ export type ActionMessages = {
   readonly unexpected: string;
 };
 
-export function failure<T, Code extends string = ActionErrorCode>(
+function failure<T, Code extends string = ActionErrorCode>(
   error: unknown,
   messages: ActionMessages,
 ): ActionResult<T, Code | ActionErrorCode> {

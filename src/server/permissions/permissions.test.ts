@@ -229,13 +229,6 @@ describe("can sobre proyectos", () => {
 });
 
 describe("can con un recurso de otra clase", () => {
-  const managed = {
-    kind: "project",
-    workspaceId,
-    isPublic: true,
-    viewer: { isManager: true },
-  } as const;
-
   it("las acciones de proyecto niegan un recurso workspace, aunque actúe el owner", () => {
     // @ts-expect-error: task.create pide un recurso project; el par no compila.
     expect(can(actor("owner"), "task.create", workspace)).toBe(false);
@@ -245,11 +238,18 @@ describe("can con un recurso de otra clase", () => {
     expect(can(actor("owner"), "project.track", workspace)).toBe(false);
   });
 
-  it("client.create y project.create niegan un recurso project", () => {
+  it("client.create y project.create niegan un recurso membership o timeEntry, que ninguna otra regla mira", () => {
+    const ownMembership = {
+      kind: "membership",
+      workspaceId,
+      userId: "u1",
+      role: "member",
+    } as const;
+    const ownEntry = { kind: "timeEntry", workspaceId, userId: "u1" } as const;
     // @ts-expect-error: client.create pide un recurso workspace.
-    expect(can(actor("owner"), "client.create", managed)).toBe(false);
+    expect(can(actor("owner"), "client.create", ownMembership)).toBe(false);
     // @ts-expect-error: project.create pide un recurso workspace.
-    expect(can(actor("owner"), "project.create", managed)).toBe(false);
+    expect(can(actor("owner"), "project.create", ownEntry)).toBe(false);
   });
 
   it("timeEntry.own.update niega un recurso workspace, que antes concedía", () => {

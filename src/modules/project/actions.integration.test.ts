@@ -291,3 +291,34 @@ describe("createTask", () => {
     });
   });
 });
+
+describe("un error que no es de dominio", () => {
+  it("handle responde unexpected con el mensaje del módulo, lo registra y revalida /proyectos", async () => {
+    await signInAs("member");
+    const { handle } = await import("@/server/action");
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const cause = new Error("la base se cayó");
+
+    const result = await handle(
+      async () => {
+        throw cause;
+      },
+      {
+        paths: ["/proyectos"],
+        messages: {
+          forbidden: projectMessages.forbidden,
+          unexpected: projectMessages.unexpected,
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      code: "unexpected",
+      message: projectMessages.unexpected,
+    });
+    expect(logged).toHaveBeenCalledWith(cause);
+    logged.mockRestore();
+    expect(mocks.revalidated).toEqual(["/proyectos"]);
+  });
+});

@@ -142,7 +142,8 @@ function allowsOnProject(
 
 /**
  * Única decisión de acceso del servidor. La interfaz la llama para ocultar
- * controles y cada action la vuelve a llamar antes de tocar datos.
+ * controles y cada mutación la vuelve a llamar, en la action o en el service,
+ * antes de tocar datos.
  */
 export function can<A extends Action>(
   actor: Actor,
@@ -190,7 +191,7 @@ export class ForbiddenError extends Error {
   }
 }
 
-/** Variante que corta la operación. La usan las server actions. */
+/** Variante que corta la operación. */
 export function assertCan<A extends Action>(
   actor: Actor,
   action: A,
