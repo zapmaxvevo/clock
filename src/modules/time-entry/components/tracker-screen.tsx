@@ -1,5 +1,6 @@
 import { InfoIcon } from "lucide-react";
 
+import { DisplayFormatsProvider } from "@/components/layout/display-formats";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { TrackingCatalogProvider } from "@/modules/project/components/tracking-catalog";
 import { getTrackingCatalog } from "@/modules/project/service";
@@ -15,8 +16,8 @@ import type { TrackerMode } from "./tracker-mode";
 type TrackerScreenProps = {
   readonly actor: Actor;
   /**
-   * Zona horaria (TT-02), creación del workspace —el piso de la barra manual— y
-   * primer día de la semana de la persona (TT-48).
+   * Zona horaria (TT-02), formatos y primer día de la semana de la persona
+   * (TT-48), y creación del workspace, el piso de la barra manual.
    */
   readonly workspace: TrackerWorkspace;
   /** El `desde` de la URL ya validado, o `null` (ADR 0008). */
@@ -53,34 +54,38 @@ export async function TrackerScreen({
         </Alert>
       )}
 
-      <TrackingCatalogProvider catalog={catalog}>
-        <ReachWeekProvider reachFrom={state.reachFrom}>
-          <TrackerBar
-            running={state.running}
-            serverNow={state.serverNow}
-            timeZone={state.timeZone}
-            todayKey={state.todayKey}
-            minDayKey={state.minDayKey}
-            canTrack={state.canTrack}
-            initialMode={initialMode}
-          />
-
-          {state.hasAnyEntry ? (
-            <EntryList
-              weeks={state.weeks}
+      {/* Los formatos de esta misma lectura, no los del layout: una navegación
+          del cliente puede conservar el layout con los formatos de antes. */}
+      <DisplayFormatsProvider formats={workspace.formats}>
+        <TrackingCatalogProvider catalog={catalog}>
+          <ReachWeekProvider reachFrom={state.reachFrom}>
+            <TrackerBar
               running={state.running}
               serverNow={state.serverNow}
-              canTrack={state.canTrack}
+              timeZone={state.timeZone}
               todayKey={state.todayKey}
               minDayKey={state.minDayKey}
-              lastEntryId={state.lastEntryId}
-              loadMoreFrom={state.loadMoreFrom}
+              canTrack={state.canTrack}
+              initialMode={initialMode}
             />
-          ) : (
-            <TrackerEmpty />
-          )}
-        </ReachWeekProvider>
-      </TrackingCatalogProvider>
+
+            {state.hasAnyEntry ? (
+              <EntryList
+                weeks={state.weeks}
+                running={state.running}
+                serverNow={state.serverNow}
+                canTrack={state.canTrack}
+                todayKey={state.todayKey}
+                minDayKey={state.minDayKey}
+                lastEntryId={state.lastEntryId}
+                loadMoreFrom={state.loadMoreFrom}
+              />
+            ) : (
+              <TrackerEmpty />
+            )}
+          </ReachWeekProvider>
+        </TrackingCatalogProvider>
+      </DisplayFormatsProvider>
     </div>
   );
 }

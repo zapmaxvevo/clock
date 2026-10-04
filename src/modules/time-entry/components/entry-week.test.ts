@@ -83,6 +83,8 @@ function viewIn(weekStart: string): TimeEntryView {
     weekStart,
     startLabel: "09:00",
     endLabel: null,
+    startClock: "09:00",
+    endClock: null,
     extraDays: 0,
     durationSeconds: null,
     durationLabel: null,

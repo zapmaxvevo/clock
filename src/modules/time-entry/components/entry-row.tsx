@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { useDisplayFormats } from "@/components/layout/display-formats";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -20,7 +21,7 @@ import { cn } from "@/lib/utils";
 import { ProjectPicker } from "@/modules/project/components/project-picker";
 import type { ProjectSelection } from "@/modules/project/schema";
 import type { TimeEntryView } from "@/modules/time-entry/schema";
-import { formatDuration } from "@/server/time";
+import { clockLabel, formatDuration } from "@/server/time";
 
 import { DeleteEntryDialog } from "./delete-entry-dialog";
 import { DescriptionField } from "./description-field";
@@ -103,6 +104,7 @@ export function EntryRow({
   focusTimesOnMount,
   onTimesFocused,
 }: EntryRowProps) {
+  const { time } = useDisplayFormats();
   const [editing, setEditing] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -148,8 +150,8 @@ export function EntryRow({
   // Las filas del grupo son todas cerradas: el fin siempre está.
   const viewTimes = fromView({
     dayDate: entry.dayDate,
-    startLabel: entry.startLabel,
-    endLabel: entry.endLabel ?? entry.startLabel,
+    startClock: entry.startClock,
+    endClock: entry.endClock ?? entry.startClock,
   });
   /** Un trío que no es el de la vista: el borrador abierto o el que viaja. */
   const shownTimes = timesEditing !== null ? timesDraft : pendingTimes;
@@ -183,7 +185,9 @@ export function EntryRow({
   }
 
   const entryName = description === "" ? trackerLabels.noDescription : description;
-  const timesLabel = `${times.start} – ${times.end}`;
+  // Una sola expresión en reposo, en edición y en vuelo: las horas canónicas
+  // nunca se muestran sin pasar por el formato de la persona.
+  const timesLabel = `${clockLabel(times.start, time)} – ${clockLabel(times.end, time)}`;
   // El superíndice y la duración de un trío que no es el de la vista salen de
   // sus horas de pared.
   const extraDays = shownTimes === null ? entry.extraDays : draftExtraDays(shownTimes);

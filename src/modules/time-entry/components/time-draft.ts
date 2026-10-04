@@ -6,6 +6,7 @@ import {
   parseClockInput,
   parseDurationInput,
   shiftClock,
+  type TimeFormat,
 } from "@/server/time";
 
 /**
@@ -15,8 +16,9 @@ import {
  * test: ellos solo guardan el resultado de estas funciones.
  *
  * Las tres cadenas son canónicas: el día como "2026-10-02" y las dos horas
- * como "HH:mm" de 24 h. Los formatos tolerantes que la persona teclea los
- * interpretan los intérpretes de `src/server/time` (TT-19, TT-20).
+ * como "HH:mm" de 24 h, también con el formato de 12 h. El formato de la
+ * persona entra solo al interpretar lo que teclea, con los intérpretes de
+ * `src/server/time` (TT-19, TT-20), y al mostrar, con `clockLabel`.
  */
 export type TimeDraft = {
   readonly date: string;
@@ -37,7 +39,7 @@ export type TimeDraftChange<Field extends ManualField = TimeField> = {
 };
 
 /**
- * Borrador inicial: hoy y la hora actual del workspace, sin duración. Lo usa
+ * Borrador inicial: hoy y la hora actual de la persona, sin duración. Lo usa
  * la barra al montarse y después de un agregado exitoso (TT-25).
  */
 export function reset(serverNow: string, timeZone: string): TimeDraft {
@@ -46,13 +48,13 @@ export function reset(serverNow: string, timeZone: string): TimeDraft {
   return { date: dayKey(instant, timeZone), start: clock, end: clock };
 }
 
-/** El trío de una entrada cerrada, tal como lo trae la vista (§5). */
+/** El trío de una entrada cerrada, con las horas canónicas de la vista y no sus rótulos. */
 export function fromView(entry: {
   readonly dayDate: string;
-  readonly startLabel: string;
-  readonly endLabel: string;
+  readonly startClock: string;
+  readonly endClock: string;
 }): TimeDraft {
-  return { date: entry.dayDate, start: entry.startLabel, end: entry.endLabel };
+  return { date: entry.dayDate, start: entry.startClock, end: entry.endClock };
 }
 
 /** Mismo día y mismas dos horas: confirmar ese trío no es un cambio. */
@@ -88,8 +90,12 @@ export function draftExtraDays(draft: TimeDraft): number {
 }
 
 /** TT-18: mover el inicio conserva el fin y la duración se recalcula sola. */
-export function withStart(draft: TimeDraft, text: string): TimeDraftChange {
-  const start = parseClockInput(text);
+export function withStart(
+  draft: TimeDraft,
+  text: string,
+  format: TimeFormat,
+): TimeDraftChange {
+  const start = parseClockInput(text, format);
   if (start === null) {
     return { draft, rejected: "start" };
   }
@@ -97,8 +103,12 @@ export function withStart(draft: TimeDraft, text: string): TimeDraftChange {
 }
 
 /** TT-18: mover el fin conserva el inicio. */
-export function withEnd(draft: TimeDraft, text: string): TimeDraftChange {
-  const end = parseClockInput(text);
+export function withEnd(
+  draft: TimeDraft,
+  text: string,
+  format: TimeFormat,
+): TimeDraftChange {
+  const end = parseClockInput(text, format);
   if (end === null) {
     return { draft, rejected: "end" };
   }

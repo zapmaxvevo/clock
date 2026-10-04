@@ -3,11 +3,12 @@
 import { PlusIcon } from "lucide-react";
 import { useId, type ReactNode, type Ref } from "react";
 
+import { useDisplayFormats } from "@/components/layout/display-formats";
 import { Button } from "@/components/ui/button";
 import { timeEntryMessages } from "@/modules/time-entry/schema";
-import { formatDuration } from "@/server/time";
+import { clockLabel, formatDuration } from "@/server/time";
 
-import { ClockField } from "./clock-field";
+import { ClockField, clockInputMode } from "./clock-field";
 import { DateField } from "./date-field";
 import { trackerLabels } from "./labels";
 import {
@@ -34,7 +35,7 @@ type ManualBarProps = {
    */
   readonly draft: TimeDraft;
   readonly onDraftChange: (draft: TimeDraft) => void;
-  /** Día de hoy en la zona del workspace. */
+  /** Día de hoy en la zona de la persona. */
   readonly todayKey: string;
   /** Piso del workspace, el primer día que se puede elegir. */
   readonly minDayKey: string;
@@ -64,6 +65,7 @@ export function ManualBar({
   addRef,
 }: ManualBarProps) {
   const tooShortId = useId();
+  const { time } = useDisplayFormats();
 
   const minutes = draftDuration(draft);
   const extraDays = draftExtraDays(draft);
@@ -100,9 +102,12 @@ export function ManualBar({
 
         <div className="flex items-center gap-2">
           <ClockField
-            value={draft.start}
-            onCommit={(text) => commit(withStart(draft, text), (next) => next.start)}
+            value={clockLabel(draft.start, time)}
+            onCommit={(text) =>
+              commit(withStart(draft, text, time), (next) => clockLabel(next.start, time))
+            }
             label={trackerLabels.startTime}
+            inputMode={clockInputMode(time)}
             disabled={!canTrack}
           />
           <span aria-hidden="true" className="text-muted-foreground">
@@ -110,9 +115,12 @@ export function ManualBar({
           </span>
           <span className="flex items-start">
             <ClockField
-              value={draft.end}
-              onCommit={(text) => commit(withEnd(draft, text), (next) => next.end)}
+              value={clockLabel(draft.end, time)}
+              onCommit={(text) =>
+                commit(withEnd(draft, text, time), (next) => clockLabel(next.end, time))
+              }
               label={trackerLabels.endTime}
+              inputMode={clockInputMode(time)}
               disabled={!canTrack}
             />
             {extraDays > 0 && (

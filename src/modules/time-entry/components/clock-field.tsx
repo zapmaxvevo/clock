@@ -3,21 +3,37 @@
 import { useEffect, useRef, useState } from "react";
 
 import { Input } from "@/components/ui/input";
+import type { TimeFormat } from "@/server/time";
 
 /** Cuánto dura la marca del valor que no se pudo interpretar (TT-21). */
 const REJECTED_FLASH_MS = 1_200;
 
+/**
+ * El teclado de un campo de hora en un teléfono: con 12 h tiene que dejar
+ * escribir `am` y `pm` (PF-14); con 24 h basta el numérico.
+ */
+export function clockInputMode(format: TimeFormat): ClockInputMode {
+  return format === "12h" ? "text" : "numeric";
+}
+
+type ClockInputMode = "numeric" | "text";
+
 type ClockFieldProps = {
-  /** Valor canónico que muestra el campo cuando no se está escribiendo. */
+  /**
+   * Lo que muestra el campo cuando no se está escribiendo: el rótulo de la
+   * hora en el formato de la persona, o la duración.
+   */
   readonly value: string;
   /**
-   * Interpreta lo tecleado. Devuelve el valor canónico que quedó, o `null` si
-   * no se pudo interpretar: ahí el campo vuelve al anterior.
+   * Interpreta lo tecleado. Devuelve el rótulo del valor que quedó, o `null`
+   * si no se pudo interpretar: ahí el campo vuelve al anterior.
    */
   readonly onCommit: (text: string) => string | null;
   readonly label: string;
+  /** La duración y las horas en 24 h usan el numérico; ver `clockInputMode`. */
+  readonly inputMode?: ClockInputMode;
   readonly disabled?: boolean;
-  /** Esc: el texto vuelve al valor canónico y se avisa. Sin él, Esc no hace nada. */
+  /** Esc: el texto vuelve al valor mostrado y se avisa. Sin él, Esc no hace nada. */
   readonly onCancel?: () => void;
   /**
    * Enter, después de normalizar: corre si el valor se aceptó o si el campo no
@@ -37,6 +53,7 @@ export function ClockField({
   value,
   onCommit,
   label,
+  inputMode = "numeric",
   disabled = false,
   onCancel,
   onSubmit,
@@ -47,7 +64,7 @@ export function ClockField({
   const [focused, setFocused] = useState(false);
   const flash = useRef<number | null>(null);
 
-  // El valor canónico puede cambiar desde afuera: mover el inicio cambia la
+  // El valor mostrado puede cambiar desde afuera: mover el inicio cambia la
   // duración, la duración mueve el fin (TT-18), y un agregado exitoso reinicia
   // el borrador (TT-25). Lo que se está escribiendo y todavía no se confirmó
   // gana: al salir del campo o con Enter se confirma sobre el valor nuevo.
@@ -95,7 +112,7 @@ export function ClockField({
   return (
     <Input
       type="text"
-      inputMode="numeric"
+      inputMode={inputMode}
       value={text}
       aria-label={label}
       aria-invalid={rejected}
