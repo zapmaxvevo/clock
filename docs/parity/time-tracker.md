@@ -234,10 +234,15 @@ entrada. Justificación: las tarifas quedan pendientes (P-01).
 **TT-16 Conmutador de modo** — `adaptar`
 A la derecha de la barra, dos íconos: reloj (modo timer) y lista (modo manual).
 El modo elegido se recuerda entre visitas. Acá se recuerda por navegador, en
-una cookie, y no por persona: no viaja entre dispositivos. Justificación: no
-hay perfil todavía; cuando exista es un campo más.
+una cookie, y no por persona: no viaja entre dispositivos. Justificación: es
+una preferencia de cómo se carga en ese navegador, no un dato de la cuenta, y
+llevarla al perfil pide una migración y una mutación más sin cambiar nada de
+lo que se ve; la cookie además se lee en el servidor sin consultar la base.
 _No verificado en documentación pública_: que Clockify lo recuerde por cuenta y
 no por navegador es una suposición, no un relevamiento.
+_Corregido el 2026-10-04_: la justificación decía «no hay perfil todavía;
+cuando exista es un campo más». El perfil existe desde el slice 7 y el modo
+queda en la cookie por decisión del equipo; no entra en el 7b.
 
 **TT-17 Modo timer: campo de duración** — `replicar`
 Con el timer parado muestra `0:00:00`. Con el timer corriendo cuenta hacia
