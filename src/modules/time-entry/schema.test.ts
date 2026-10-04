@@ -21,13 +21,20 @@ const id = "0b5e8d5e-3c2f-4b7a-9f1a-2c3d4e5f6a7b";
 
 describe("startTimerInput", () => {
   it("deja arrancar sin descripción", () => {
-    expect(startTimerInput.parse({ id })).toEqual({ id, description: "" });
+    expect(startTimerInput.parse({ id })).toEqual({
+      id,
+      description: "",
+      projectId: null,
+      taskId: null,
+    });
   });
 
   it("recorta los espacios de los extremos", () => {
     expect(startTimerInput.parse({ id, description: "  reunión  " })).toEqual({
       id,
       description: "reunión",
+      projectId: null,
+      taskId: null,
     });
   });
 
@@ -53,6 +60,8 @@ describe("startTimerInput", () => {
     expect(startTimerInput.parse({ id: generated })).toEqual({
       id: generated,
       description: "",
+      projectId: null,
+      taskId: null,
     });
   });
 
@@ -136,6 +145,8 @@ describe("trackerState", () => {
     durationSeconds: 5400,
     durationLabel: "1:30",
     editableTimes: true,
+    project: null,
+    task: null,
   };
 
   /** Una semana con un solo día, que lleva las entradas que se le pasen. */
@@ -302,7 +313,12 @@ describe("createManualEntryInput", () => {
   const valid = { date: "2026-10-02", start: "08:00", end: "10:30" };
 
   it("acepta la forma canónica y deja la descripción vacía por defecto", () => {
-    expect(createManualEntryInput.parse(valid)).toEqual({ ...valid, description: "" });
+    expect(createManualEntryInput.parse(valid)).toEqual({
+      ...valid,
+      description: "",
+      projectId: null,
+      taskId: null,
+    });
   });
 
   it("rechaza un día que tiene la forma pero no existe", () => {

@@ -15,6 +15,7 @@ import {
   stopTimerInput,
   timeEntryMessages,
   updateDescriptionInput,
+  updateEntryProjectInput,
   updateEntryTimesInput,
   updateRunningStartInput,
   type ContinueEntryInput,
@@ -34,6 +35,8 @@ import {
   type TimeEntryErrorCode,
   type UpdateDescriptionInput,
   type UpdateDescriptionResult,
+  type UpdateEntryProjectInput,
+  type UpdateEntryProjectResult,
   type UpdateEntryTimesInput,
   type UpdateEntryTimesResult,
   type UpdateRunningStartInput,
@@ -74,6 +77,16 @@ export async function updateDescription(
     const values = updateDescriptionInput.parse(input);
     assertCan(session.actor, "timeEntry.own.update", ownTimeEntryResource(session.actor));
     return service.updateDescription(session.actor, trackerWorkspaceOf(session), values);
+  }, options);
+}
+
+export async function updateEntryProject(
+  input: UpdateEntryProjectInput,
+): Result<UpdateEntryProjectResult> {
+  return handle(async (session) => {
+    const values = updateEntryProjectInput.parse(input);
+    assertCan(session.actor, "timeEntry.own.update", ownTimeEntryResource(session.actor));
+    return service.updateEntryProject(session.actor, trackerWorkspaceOf(session), values);
   }, options);
 }
 

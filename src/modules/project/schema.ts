@@ -14,6 +14,7 @@ export const LONG_TEXT_MAX = 3000;
 /** Textos que la interfaz muestra tal cual (`proyectos.md`, §9). */
 export const projectMessages = {
   projectUnavailable: "Ese proyecto ya no está disponible.",
+  taskUnavailable: "Esa tarea ya no está disponible.",
   clientUnavailable: "Ese cliente ya no está disponible.",
   nameRequired: "El nombre no puede estar vacío.",
   nameTooLong: "El nombre no puede superar los 100 caracteres.",
@@ -100,6 +101,40 @@ export type ProjectCatalog = {
   readonly clients: readonly ClientView[];
   /** Proyectos que quien pide puede ver, agrupados por cliente. «Sin cliente» al final. */
   readonly groups: readonly ProjectGroupView[];
+};
+
+/** Lo que una entrada muestra de su proyecto. */
+export type ProjectRef = {
+  readonly id: string;
+  readonly name: string;
+  readonly color: PaletteKey;
+};
+
+export type TaskRef = { readonly id: string; readonly name: string };
+
+/** Lo que elige el selector. `task` no nulo implica `project` no nulo (TT-11). */
+export type ProjectSelection = {
+  readonly project: ProjectRef | null;
+  readonly task: TaskRef | null;
+};
+
+export type TrackingProjectView = ProjectRef & {
+  /** Tareas activas, en orden alfabético (PR-99). Vacío: se elige el proyecto solo (PR-87). */
+  readonly tasks: readonly TaskRef[];
+};
+
+export type TrackingGroupView = {
+  /** `null` es «Sin cliente», que va al final (PR-14, PR-97). */
+  readonly client: ClientView | null;
+  readonly projects: readonly TrackingProjectView[];
+};
+
+/** El catálogo del selector de proyecto del rastreador. */
+export type TrackingCatalog = {
+  /** TT-87: el enlace a `/proyectos` del selector vacío. */
+  readonly canCreateProject: boolean;
+  /** Proyectos activos en los que quien pide puede cargar horas (TT-08), por cliente. */
+  readonly groups: readonly TrackingGroupView[];
 };
 
 export type CreateClientResult = { readonly client: ClientView };

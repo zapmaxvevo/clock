@@ -49,6 +49,8 @@ const timesValues = { date: "2026-10-01", start: "09:00", end: "10:30" } as cons
 const runningStartValues = { date: "2026-10-02", start: "07:00" } as const;
 
 const manualValues = {
+  projectId: null,
+  taskId: null,
   description: "a mano",
   date: "2026-10-02",
   start: "08:00",
@@ -85,6 +87,8 @@ describe.each(roles)("rol %s", (role) => {
       const actor = await seedActor(role);
 
       const result = await startTimer(actor, workspace, {
+        projectId: null,
+        taskId: null,
         id: randomUUID(),
         description: "trabajo",
       });
@@ -124,7 +128,12 @@ describe.each(roles)("rol %s", (role) => {
       const actor = await seedActor(role, status);
 
       await expect(
-        startTimer(actor, workspace, { id: randomUUID(), description: "no va" }),
+        startTimer(actor, workspace, {
+          projectId: null,
+          taskId: null,
+          id: randomUUID(),
+          description: "no va",
+        }),
       ).rejects.toMatchObject({
         code: "forbidden",
         message: timeEntryMessages.forbidden,
@@ -150,6 +159,8 @@ describe.each(roles)("rol %s", (role) => {
     it("edita y detiene su propia entrada", async () => {
       const actor = await seedActor(role);
       const started = await startTimer(actor, workspace, {
+        projectId: null,
+        taskId: null,
         id: randomUUID(),
         description: "",
       });
@@ -699,6 +710,8 @@ describe("aislamiento entre workspaces", () => {
     });
 
     const started = await startTimer(elsewhere, workspace, {
+      projectId: null,
+      taskId: null,
       id: randomUUID(),
       description: "corriendo allá",
     });
@@ -799,7 +812,12 @@ describe("el permiso va antes que la fila propia (ADR 0007)", () => {
       });
 
       await expect(
-        startTimer(actor, workspace, { id: own.id, description: "propia" }),
+        startTimer(actor, workspace, {
+          projectId: null,
+          taskId: null,
+          id: own.id,
+          description: "propia",
+        }),
       ).rejects.toMatchObject({
         code: "forbidden",
         message: timeEntryMessages.forbidden,

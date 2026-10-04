@@ -64,6 +64,8 @@ export type SeedTimeEntryValues = {
   readonly startedAt: string | Date;
   /** Ausente o nulo deja la entrada abierta, que es el timer activo. */
   readonly endedAt?: string | Date | null;
+  readonly projectId?: string | null;
+  readonly taskId?: string | null;
 };
 
 /**
@@ -80,6 +82,8 @@ export async function seedTimeEntry(values: SeedTimeEntryValues) {
       description: values.description ?? "",
       startedAt: new Date(values.startedAt),
       endedAt: endedAt === null ? null : new Date(endedAt),
+      projectId: values.projectId ?? null,
+      taskId: values.taskId ?? null,
     })
     .returning();
   return row;

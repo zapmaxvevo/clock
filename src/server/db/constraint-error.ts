@@ -2,6 +2,8 @@
 export const UNIQUE_VIOLATION = "23505";
 /** Postgres: violación de una restricción `check`. */
 export const CHECK_VIOLATION = "23514";
+/** Postgres: violación de clave foránea. */
+export const FOREIGN_KEY_VIOLATION = "23503";
 
 type DriverError = { code?: unknown; constraint?: unknown; cause?: unknown };
 

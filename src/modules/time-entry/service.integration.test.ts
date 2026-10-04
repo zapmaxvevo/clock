@@ -92,6 +92,8 @@ describe("startTimer", () => {
   it("abre una entrada con el instante de la base y sin fin", async () => {
     const before = new Date();
     const result = await startTimer(actor, workspaceOf(buenosAires), {
+      projectId: null,
+      taskId: null,
       id: randomUUID(),
       description: "  revisión  ",
     });
@@ -117,10 +119,14 @@ describe("startTimer", () => {
 
   it("cierra el timer anterior en el mismo instante en que abre el nuevo", async () => {
     const first = await startTimer(actor, workspaceOf(buenosAires), {
+      projectId: null,
+      taskId: null,
       id: randomUUID(),
       description: "uno",
     });
     const second = await startTimer(actor, workspaceOf(buenosAires), {
+      projectId: null,
+      taskId: null,
       id: randomUUID(),
       description: "dos",
     });
@@ -135,10 +141,14 @@ describe("startTimer", () => {
 
   it("escribe un registro de auditoría por cada entrada que toca", async () => {
     const first = await startTimer(actor, workspaceOf(buenosAires), {
+      projectId: null,
+      taskId: null,
       id: randomUUID(),
       description: "uno",
     });
     const second = await startTimer(actor, workspaceOf(buenosAires), {
+      projectId: null,
+      taskId: null,
       id: randomUUID(),
       description: "dos",
     });
@@ -159,6 +169,8 @@ describe("startTimer", () => {
     const results = await Promise.all(
       Array.from({ length: 5 }, (_, index) =>
         startTimer(actor, workspaceOf(buenosAires), {
+          projectId: null,
+          taskId: null,
           id: randomUUID(),
           description: `pestaña ${index}`,
         }),
@@ -176,6 +188,8 @@ describe("startTimer", () => {
 
   it("no deja dos timers corriendo a la vez, ni escribiendo directo en la base", async () => {
     await startTimer(actor, workspaceOf(buenosAires), {
+      projectId: null,
+      taskId: null,
       id: randomUUID(),
       description: "uno",
     });
@@ -194,11 +208,15 @@ describe("startTimer", () => {
   it("no choca con el timer de otra persona del mismo workspace", async () => {
     const otherId = await seedMember(workspaceId, "member");
     await startTimer(actorFor(otherId), workspaceOf(buenosAires), {
+      projectId: null,
+      taskId: null,
       id: randomUUID(),
       description: "de otro",
     });
 
     const mine = await startTimer(actor, workspaceOf(buenosAires), {
+      projectId: null,
+      taskId: null,
       id: randomUUID(),
       description: "mío",
     });
@@ -213,6 +231,8 @@ describe("startTimer", () => {
     for (const status of ["inactive", "invited"] as const) {
       await expect(
         startTimer({ ...actor, status }, workspaceOf(buenosAires), {
+          projectId: null,
+          taskId: null,
           id: randomUUID(),
           description: "no va",
         }),
@@ -230,6 +250,8 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
     const previous = await seedRunning();
     const id = randomUUID();
     const first = await startTimer(actor, workspaceOf(buenosAires), {
+      projectId: null,
+      taskId: null,
       id,
       description: "tarea",
     });
@@ -239,6 +261,8 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
     const audit = await auditFor("time_entry");
 
     const retry = await startTimer(actor, workspaceOf(buenosAires), {
+      projectId: null,
+      taskId: null,
       id,
       description: "tarea",
     });
@@ -250,12 +274,19 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
 
   it("un reintento cuyo timer ya se detuvo responde la entrada cerrada y no escribe", async () => {
     const id = randomUUID();
-    await startTimer(actor, workspaceOf(buenosAires), { id, description: "tarea" });
+    await startTimer(actor, workspaceOf(buenosAires), {
+      projectId: null,
+      taskId: null,
+      id,
+      description: "tarea",
+    });
     const { stopped } = await stopTimer(actor, workspaceOf(buenosAires), { id });
     const rows = await allTimeEntries();
     const audit = await auditFor("time_entry");
 
     const retry = await startTimer(actor, workspaceOf(buenosAires), {
+      projectId: null,
+      taskId: null,
       id,
       description: "tarea",
     });
@@ -292,8 +323,18 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
     await warmPool(2);
 
     const results = await Promise.all([
-      startTimer(actor, workspaceOf(buenosAires), { id, description: "tarea" }),
-      startTimer(actor, workspaceOf(buenosAires), { id, description: "tarea" }),
+      startTimer(actor, workspaceOf(buenosAires), {
+        projectId: null,
+        taskId: null,
+        id,
+        description: "tarea",
+      }),
+      startTimer(actor, workspaceOf(buenosAires), {
+        projectId: null,
+        taskId: null,
+        id,
+        description: "tarea",
+      }),
     ]);
 
     expect(results.map((result) => result.running.id)).toEqual([id, id]);
@@ -307,8 +348,20 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
     const results = await raceThroughBarrier(
       (tx) => timeEntryRepository.findByIdForUpdate(tx, workspaceId, previous.id),
       [
-        () => startTimer(actor, workspaceOf(buenosAires), { id, description: "tarea" }),
-        () => startTimer(actor, workspaceOf(buenosAires), { id, description: "tarea" }),
+        () =>
+          startTimer(actor, workspaceOf(buenosAires), {
+            projectId: null,
+            taskId: null,
+            id,
+            description: "tarea",
+          }),
+        () =>
+          startTimer(actor, workspaceOf(buenosAires), {
+            projectId: null,
+            taskId: null,
+            id,
+            description: "tarea",
+          }),
       ],
     );
 
@@ -324,7 +377,12 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
     const startBoth = () =>
       ids.map(
         (id) => () =>
-          startTimer(actor, workspaceOf(buenosAires), { id, description: id }),
+          startTimer(actor, workspaceOf(buenosAires), {
+            projectId: null,
+            taskId: null,
+            id,
+            description: id,
+          }),
       );
 
     /** El que creó y el que responde al ganador, con el mismo timer. */
@@ -358,6 +416,8 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
       const results = await raceThroughBarrier(
         (tx) =>
           timeEntryRepository.insertRunning(tx, {
+            projectId: null,
+            taskId: null,
             id: randomUUID(),
             workspaceId,
             userId: actor.userId,
@@ -403,6 +463,8 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
       "de %s responde forbidden, no escribe y deja abierto el timer propio",
       async (_, ownerOf) => {
         const mine = await startTimer(actor, workspaceOf(buenosAires), {
+          projectId: null,
+          taskId: null,
           id: randomUUID(),
           description: "mío",
         });
@@ -415,6 +477,8 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
         const audit = await auditFor("time_entry");
 
         const error = await startTimer(actor, workspaceOf(buenosAires), {
+          projectId: null,
+          taskId: null,
           id: foreign.id,
           description: "ajeno",
         }).catch((caught: unknown) => caught);
@@ -442,6 +506,8 @@ describe("las restricciones que reconoce el repository", () => {
     const error = await db
       .transaction((tx) =>
         timeEntryRepository.insertRunning(tx, {
+          projectId: null,
+          taskId: null,
           id: existing.id,
           workspaceId,
           userId: actor.userId,
@@ -469,6 +535,8 @@ describe("las restricciones que reconoce el repository", () => {
 describe("stopTimer", () => {
   it("cierra la entrada y devuelve su duración", async () => {
     const started = await startTimer(actor, workspaceOf(buenosAires), {
+      projectId: null,
+      taskId: null,
       id: randomUUID(),
       description: "tarea",
     });
@@ -545,6 +613,8 @@ describe("stopTimer", () => {
 
   it("rechaza con el mensaje neutro cuando la membresía no está activa", async () => {
     const started = await startTimer(actor, workspaceOf(buenosAires), {
+      projectId: null,
+      taskId: null,
       id: randomUUID(),
       description: "tarea",
     });
@@ -584,6 +654,8 @@ describe("TT-101: la parada de un timer cuyo inicio quedó después del now() de
     const row = await seedFutureRunning();
 
     const result = await startTimer(actor, workspaceOf(buenosAires), {
+      projectId: null,
+      taskId: null,
       id: randomUUID(),
       description: "siguiente",
     });
@@ -636,6 +708,8 @@ describe("límites que valen aunque se escriba sin pasar por el service", () => 
 describe("updateDescription", () => {
   it("guarda la descripción sobre la entrada abierta sin detenerla", async () => {
     const started = await startTimer(actor, workspaceOf(buenosAires), {
+      projectId: null,
+      taskId: null,
       id: randomUUID(),
       description: "",
     });
@@ -719,6 +793,8 @@ describe("deleteEntry", () => {
 
   it("borra también la entrada abierta", async () => {
     const started = await startTimer(actor, workspaceOf(buenosAires), {
+      projectId: null,
+      taskId: null,
       id: randomUUID(),
       description: "abierta",
     });
@@ -799,12 +875,16 @@ describe("getTrackerState", () => {
 
     const values = { description: "", start: "08:00", end: "09:00" };
     const floor = await createManualEntry(actor, reciente, {
+      projectId: null,
+      taskId: null,
       ...values,
       date: state.minDayKey,
     });
     expect(floor.created.dayDate).toBe(state.minDayKey);
     await expect(
       createManualEntry(actor, reciente, {
+        projectId: null,
+        taskId: null,
         ...values,
         date: addDaysToKey(state.minDayKey, -1),
       }),
@@ -1188,6 +1268,8 @@ describe("createManualEntry", () => {
 
   it("crea una entrada cerrada con las horas de pared que se teclearon", async () => {
     const result = await createManualEntry(actor, workspace, {
+      projectId: null,
+      taskId: null,
       description: "  reunión  ",
       date: "2026-10-02",
       start: "08:00",
@@ -1210,6 +1292,8 @@ describe("createManualEntry", () => {
 
   it("aparece en el grupo de su día y mueve ese total, que puede no ser hoy", async () => {
     await createManualEntry(actor, workspace, {
+      projectId: null,
+      taskId: null,
       description: "",
       date: "2026-09-28",
       start: "09:00",
@@ -1229,6 +1313,8 @@ describe("createManualEntry", () => {
 
   it("cruza la medianoche cuando el fin es menor que el inicio", async () => {
     const result = await createManualEntry(actor, workspace, {
+      projectId: null,
+      taskId: null,
       description: "",
       date: "2026-09-30",
       start: "23:00",
@@ -1254,12 +1340,16 @@ describe("createManualEntry", () => {
 
   it("rechaza agregar con un timer corriendo y no inserta nada", async () => {
     await startTimer(actor, workspaceOf(buenosAires), {
+      projectId: null,
+      taskId: null,
       id: randomUUID(),
       description: "corriendo",
     });
 
     await expect(
       createManualEntry(actor, workspace, {
+        projectId: null,
+        taskId: null,
         description: "",
         date: "2026-10-02",
         start: "08:00",
@@ -1275,6 +1365,8 @@ describe("createManualEntry", () => {
   it("rechaza una entrada de duración cero", async () => {
     await expect(
       createManualEntry(actor, workspace, {
+        projectId: null,
+        taskId: null,
         description: "",
         date: "2026-10-02",
         start: "08:00",
@@ -1286,6 +1378,8 @@ describe("createManualEntry", () => {
 
   it("acepta la entrada de un minuto, que es el mínimo", async () => {
     const result = await createManualEntry(actor, workspace, {
+      projectId: null,
+      taskId: null,
       description: "",
       date: "2026-10-02",
       start: "08:00",
@@ -1299,6 +1393,8 @@ describe("createManualEntry", () => {
 
     await expect(
       createManualEntry(actor, reciente, {
+        projectId: null,
+        taskId: null,
         description: "",
         date: "2026-08-31",
         start: "08:00",
@@ -1315,6 +1411,8 @@ describe("createManualEntry", () => {
     const reciente = workspaceOf(buenosAires, "2026-09-01T12:00:00Z");
 
     const result = await createManualEntry(actor, reciente, {
+      projectId: null,
+      taskId: null,
       description: "",
       date: "2026-09-01",
       start: "08:00",
@@ -1324,7 +1422,14 @@ describe("createManualEntry", () => {
   });
 
   it("permite dos entradas superpuestas y las dos suman al total", async () => {
-    const values = { description: "", date: "2026-10-02", start: "08:00", end: "10:00" };
+    const values = {
+      projectId: null,
+      taskId: null,
+      description: "",
+      date: "2026-10-02",
+      start: "08:00",
+      end: "10:00",
+    };
     await createManualEntry(actor, workspace, values);
     await createManualEntry(actor, workspace, {
       ...values,
@@ -1345,12 +1450,16 @@ describe("createManualEntry", () => {
 
   it("P-15: la entrada debajo de la ventana trae su semana, y con ella de `desde` se ve en su día", async () => {
     await createManualEntry(actor, workspace, {
+      projectId: null,
+      taskId: null,
       description: "",
       date: "2026-07-15",
       start: "08:00",
       end: "09:00",
     });
     await createManualEntry(actor, workspace, {
+      projectId: null,
+      taskId: null,
       description: "",
       date: "2026-10-01",
       start: "08:00",
@@ -1358,6 +1467,8 @@ describe("createManualEntry", () => {
     });
 
     const old = await createManualEntry(actor, workspace, {
+      projectId: null,
+      taskId: null,
       description: "",
       date: "2026-07-16",
       start: "08:00",
@@ -1380,6 +1491,8 @@ describe("createManualEntry", () => {
 
   it("acepta una fecha futura y la muestra en su semana, rotulada con el rango (TT-47)", async () => {
     const result = await createManualEntry(actor, workspace, {
+      projectId: null,
+      taskId: null,
       description: "la semana que viene",
       date: "2026-10-10",
       start: "08:00",
@@ -1423,6 +1536,8 @@ describe("createManualEntry", () => {
 
   it("no esconde la entrada vieja que se veía al agregar una futura", async () => {
     await createManualEntry(actor, workspace, {
+      projectId: null,
+      taskId: null,
       description: "",
       date: "2026-09-04",
       start: "08:00",
@@ -1437,6 +1552,8 @@ describe("createManualEntry", () => {
     expect(daysOf(before).map((group) => group.date)).toEqual(["2026-09-04"]);
 
     const future = await createManualEntry(actor, workspace, {
+      projectId: null,
+      taskId: null,
       description: "",
       date: "2026-10-05",
       start: "08:00",
@@ -1459,12 +1576,16 @@ describe("createManualEntry", () => {
     // ve, porque la ventana es de semanas enteras; una de la semana anterior
     // queda afuera, y su semana es anterior a `reachFrom`.
     const sameWeek = await createManualEntry(actor, workspace, {
+      projectId: null,
+      taskId: null,
       description: "",
       date: "2026-09-03",
       start: "08:00",
       end: "09:00",
     });
     const previousWeek = await createManualEntry(actor, workspace, {
+      projectId: null,
+      taskId: null,
       description: "",
       date: "2026-08-28",
       start: "08:00",
@@ -1488,6 +1609,8 @@ describe("createManualEntry", () => {
 
   it("mide el piso contra la última entrada pasada aunque haya una futura", async () => {
     await createManualEntry(actor, workspace, {
+      projectId: null,
+      taskId: null,
       description: "",
       date: "2026-10-10",
       start: "08:00",
@@ -1495,6 +1618,8 @@ describe("createManualEntry", () => {
     });
 
     const older = await createManualEntry(actor, workspace, {
+      projectId: null,
+      taskId: null,
       description: "",
       date: "2026-09-04",
       start: "08:00",
@@ -1520,6 +1645,8 @@ describe("createManualEntry", () => {
   it("rechaza como fecha inválida el día siguiente que no tiene clave", async () => {
     await expect(
       createManualEntry(actor, workspace, {
+        projectId: null,
+        taskId: null,
         description: "",
         date: "9999-12-31",
         start: "23:00",
@@ -1534,12 +1661,16 @@ describe("createManualEntry", () => {
 
   it("no dibuja los días vacíos que quedan entre hoy y la entrada futura", async () => {
     await createManualEntry(actor, workspace, {
+      projectId: null,
+      taskId: null,
       description: "",
       date: "2026-11-02",
       start: "08:00",
       end: "09:00",
     });
     await createManualEntry(actor, workspace, {
+      projectId: null,
+      taskId: null,
       description: "",
       date: "2026-10-02",
       start: "08:00",
@@ -1565,6 +1696,8 @@ describe("createManualEntry con cambio de horario", () => {
   it("guarda la hora de pared ambigua con el segundo instante", async () => {
     // El 25/10/2026 Madrid pasa de +02:00 a +01:00: las 02:30 ocurren dos veces.
     const result = await createManualEntry(actor, workspace, {
+      projectId: null,
+      taskId: null,
       description: "",
       date: "2026-10-25",
       start: "02:30",
@@ -1587,6 +1720,8 @@ describe("createManualEntry con cambio de horario", () => {
     ]) {
       await expect(
         createManualEntry(actor, workspace, {
+          projectId: null,
+          taskId: null,
           description: "",
           date: "2026-03-29",
           ...values,
@@ -1601,6 +1736,8 @@ describe("createManualEntry con cambio de horario", () => {
 
   it("mide la duración real en el día que pierde una hora", async () => {
     const result = await createManualEntry(actor, workspace, {
+      projectId: null,
+      taskId: null,
       description: "",
       date: "2026-03-29",
       start: "01:30",
@@ -1622,9 +1759,12 @@ describe("createManualEntry con cambio de horario", () => {
       { date: "2026-10-25", start: "02:30", end: "04:00" },
     ];
     for (const values of attempts) {
-      await createManualEntry(actor, workspace, { description: "", ...values }).catch(
-        () => null,
-      );
+      await createManualEntry(actor, workspace, {
+        projectId: null,
+        taskId: null,
+        description: "",
+        ...values,
+      }).catch(() => null);
     }
 
     const rows = await allTimeEntries();
@@ -2644,6 +2784,8 @@ describe("desenlaces con una pestaña desactualizada (§4.3)", () => {
         ),
       () =>
         startTimer(actor, workspaceOf(buenosAires), {
+          projectId: null,
+          taskId: null,
           id: nextId,
           description: "siguiente",
         }),
@@ -3249,6 +3391,8 @@ describe("continueEntry con el id que eligió el cliente (ADR 0007)", () => {
             }),
           () =>
             startTimer(actor, workspaceOf(buenosAires), {
+              projectId: null,
+              taskId: null,
               id: ids[1],
               description: "nuevo",
             }),
@@ -3532,6 +3676,8 @@ describe("discardTimer (TT-65)", () => {
     const source = await seedSource();
     const running = await seedRunning();
     const started = await startTimer(actor, workspaceOf(buenosAires), {
+      projectId: null,
+      taskId: null,
       id: randomUUID(),
       description: "otro",
     });
@@ -4269,10 +4415,7 @@ describe("weekStart en las vistas del service (criterio 13)", () => {
       const result = await startTimer(
         actor,
         workspaceOf(buenosAires, undefined, weekStart),
-        {
-          id: randomUUID(),
-          description: "",
-        },
+        { projectId: null, taskId: null, id: randomUUID(), description: "" },
       );
 
       expect(result.stopped?.dayDate).toBe("2026-09-27");
