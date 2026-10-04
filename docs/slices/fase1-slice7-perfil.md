@@ -499,12 +499,16 @@ export async function updatePreference(
 ): Promise<UpdatePreferenceResult>;
 ```
 
-1. `assertCan(actor, "profile.own.update", ownProfileResource(actor))`. Sin
-   permiso, `ForbiddenError`, que `failure` traduce a `forbidden` con el texto
-   de TT-79.
+1. **La action** consulta
+   `assertCan(actor, "profile.own.update", ownProfileResource(actor))` antes de
+   llamar al service, como en `time-entry` (ronda de revisiones). Sin permiso,
+   `ForbiddenError`, que `failure` traduce a `forbidden` con el texto de TT-79.
 2. En una transacción:
-   1. lee la fila de `actor.userId` con `for update`; si no hay, el valor
-      anterior es nulo;
+   1. asegura la fila con `insert … on conflict (user_id) do nothing` y la lee
+      con `for update`; las columnas nulas son el valor anterior nulo. Sin ese
+      `insert`, dos primeros pedidos simultáneos no se bloquean (Postgres no
+      bloquea una fila que no existe) y el segundo audita un valor anterior
+      falso;
    2. **si el valor guardado es el pedido, no escribe ni deja registro**:
       reintentar un cambio que ya se aplicó es un éxito sin efecto (TT-89). Un
       nulo no es igual a su predeterminado: elegir explícitamente el valor por
@@ -519,8 +523,10 @@ export async function updatePreference(
 
 **Es seguro de reintentar sin el ADR 0007**: no es un alta con id, y escribir
 dos veces el mismo valor deja el mismo estado. Dos pedidos simultáneos de la
-misma persona con claves distintas dejan las dos columnas escritas: el `for
-update` y el `on conflict` los ponen en fila sobre la misma clave primaria.
+misma persona se ponen en fila sobre la fila asegurada en el paso 2.1: con
+claves distintas quedan las dos columnas escritas, y con la misma clave el
+segundo ve el valor del primero, que es el anterior que audita (o sale sin
+efecto si es igual).
 
 ### 4.3 La revalidación y `handle`
 
@@ -980,6 +986,7 @@ Rutas absolutas. **(nuevo)** marca lo que crea el slice.
 
 ```
 /home/maxi/program/clock/src/server/db/schema.ts
+/home/maxi/program/clock/src/server/auth.ts                                         (ronda de revisiones: disabledPaths)
 /home/maxi/program/clock/drizzle/0007_user_preference.sql                          (nuevo, generado)
 /home/maxi/program/clock/drizzle/meta/0007_snapshot.json                           (nuevo, generado)
 /home/maxi/program/clock/drizzle/meta/_journal.json
@@ -1040,6 +1047,10 @@ Rutas absolutas. **(nuevo)** marca lo que crea el slice.
 /home/maxi/program/clock/src/app/(app)/layout.tsx
 /home/maxi/program/clock/src/app/(app)/perfil/page.tsx                                (nuevo)
 /home/maxi/program/clock/src/components/layout/display-formats.tsx                    (nuevo)
+/home/maxi/program/clock/src/components/action-feedback.tsx                           (nuevo, ronda de revisiones)
+/home/maxi/program/clock/src/components/combobox-typeahead.ts                         (nuevo, ronda de revisiones)
+/home/maxi/program/clock/src/modules/profile/components/user-menu.tsx                 (movido desde components/layout, ronda de revisiones)
+/home/maxi/program/clock/src/modules/profile/components/user-avatar.tsx               (nuevo, ronda de revisiones)
 /home/maxi/program/clock/src/components/layout/display-formats.test.tsx               (nuevo)
 /home/maxi/program/clock/src/components/layout/user-menu.tsx
 /home/maxi/program/clock/src/components/ui/avatar.tsx                                 (nuevo, generado)
@@ -1474,6 +1485,14 @@ que es la forma canónica que lista el entorno (`America/Buenos_Aires` en Node
    idempotencia, que ya cubre el criterio 9.
 
 ## 8. Deuda conocida del slice
+
+- **Que los dos `Select` no abran sin permiso no tiene test**: el test de
+  componente usa `renderToStaticMarkup`, que no abre controles, y el e2e no
+  siembra membresías inactivas. El servidor responde `forbidden` igual. Se
+  cubre cuando haya un entorno DOM o el rol de e2e pueda escribir `membership`.
+- **Los nombres viejos de CLDR**: la lista de zonas trae `Asia/Calcutta` o
+  `Asia/Katmandu`, así que «kolkata» no encuentra nada. Una tabla de alias queda
+  fuera del slice.
 
 - **El nombre editable y el tema** son del 7b (§1). Hasta entonces el nombre
   es el de Google y el tema sigue al CSS de hoy.
