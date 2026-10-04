@@ -15,10 +15,18 @@ import {
   type WeekGroupView,
 } from "@/modules/time-entry/schema";
 
+import { BulkActions, type SelectedEntry } from "./bulk-actions";
 import { DayGroup, type MovedEntry } from "./day-group";
 import { startedWeeks } from "./entry-week";
 import { trackerLabels } from "./labels";
 import { useReachWeek } from "./reach-week";
+import {
+  keepVisible,
+  toggleDay,
+  toggleEntry,
+  withoutIds,
+  type Selection,
+} from "./selection";
 import { useTrackerShortcuts } from "./use-tracker-shortcuts";
 import { WeekGroup } from "./week-group";
 
@@ -52,6 +60,11 @@ type EntryListProps = {
  * «c», que es de la lista porque es la que conoce las filas. Por lo mismo
  * guarda la vista optimista del borrado de todos los grupos: «c» no continúa
  * una fila que se está yendo.
+ *
+ * Es dueña de la selección (TT-62), que tiene que sobrevivir a «Cargar más», a
+ * P-15 y a la revalidación, y de las filas que ocupa una operación en masa. La
+ * selección se recorta en cada render a las filas que la lista dibuja: nunca
+ * se edita ni se borra una fila que no está en pantalla.
  */
 export function EntryList({
   weeks,
@@ -112,6 +125,44 @@ export function EntryList({
     (current, id) => [...current, id],
   );
 
+  /** TT-62: los ids elegidos, de la pestaña y de este momento. */
+  const [selection, setSelection] = useState<Selection>([]);
+  /** TT-55: las filas que ocupa una operación en masa, mientras viaja. */
+  const [bulkBusyIds, showBusy] = useOptimistic<readonly string[], readonly string[]>(
+    [],
+    (_current, ids) => ids,
+  );
+  const selectionLocked = bulkBusyIds.length > 0;
+
+  // Las filas de un borrado en vuelo siguen en `weeks` hasta la revalidación:
+  // no se recortan, y si el borrado falla vuelven elegidas.
+  const shownEntries = new Map<string, SelectedEntry>(
+    weeks.flatMap((week) =>
+      week.days.flatMap((group) =>
+        group.entries.map((entry): [string, SelectedEntry] => [
+          entry.id,
+          {
+            id: entry.id,
+            name:
+              entry.description === "" ? trackerLabels.noDescription : entry.description,
+            dayLabel: group.label,
+            startLabel: entry.startLabel,
+            endLabel: entry.endLabel ?? entry.startLabel,
+          },
+        ]),
+      ),
+    ),
+  );
+  const visibleSelection = keepVisible(selection, new Set(shownEntries.keys()));
+  if (visibleSelection !== selection) {
+    setSelection(visibleSelection);
+  }
+  // TT-92: sin permiso no hay casillas ni barra. La región queda montada, con
+  // el aviso de una operación que la revalidación dejó sin permiso.
+  const selectedEntries = canTrack
+    ? visibleSelection.flatMap((id) => shownEntries.get(id) ?? [])
+    : [];
+
   // ADR 0007: con otro timer en pantalla, reintentar la continuación ya no
   // tiene sentido. Si es la que creó el pedido cuya respuesta se perdió, el
   // pedido se aplicó; si vino de otra pestaña, reintentar la cerraría. Un
@@ -149,6 +200,17 @@ export function EntryList({
 
   return (
     <div className="flex flex-col gap-4">
+      <BulkActions
+        entries={selectedEntries}
+        todayKey={todayKey}
+        minDayKey={minDayKey}
+        showRemoved={showRemoved}
+        showBusy={showBusy}
+        onDrop={(ids) => setSelection((current) => withoutIds(current, ids))}
+        onClear={() => setSelection([])}
+        onEntryWeeks={reachWeek}
+      />
+
       {continuation.failure !== null && (
         <ActionFeedback
           title={trackerLabels.entryNotContinued}
@@ -186,6 +248,13 @@ export function EntryList({
               shortcutEntryId={shortcutsEnabled && canTrack ? lastEntryId : null}
               removedIds={removedIds}
               showRemoved={showRemoved}
+              selection={visibleSelection}
+              onToggleEntry={(id) => setSelection((current) => toggleEntry(current, id))}
+              onToggleDay={(dayIds) =>
+                setSelection((current) => toggleDay(current, dayIds))
+              }
+              bulkBusyIds={bulkBusyIds}
+              selectionLocked={selectionLocked}
             />
           ))}
         </WeekGroup>
