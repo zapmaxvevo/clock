@@ -44,7 +44,7 @@ aceptado y `main` mergeado.
    corridas al salir `extraDaysText`. De las revisiones del 8 pasan al 8c: `error.tsx` con
    `ActionFeedback` cuando `message` sea opcional, y fuera `calendarLabels.retry` (C-m4); si
    el 8c encarece el redibujo por segundo de `useElapsedSeconds`, aislar la línea y el bloque
-   del timer (F-n4); el tooltip que queda abierto detrás del diálogo si no se resolvió (P-n1).
+   del timer (F-n4); un e2e que afirme que no queda tooltip con el diálogo abierto (F2-n2).
    Deuda chica sin slice: un `DayCalendar` compartido entre `DateField` y `PeriodPicker`, un
    `stepToDay` común a los e2e, y `preferenceCookie` en `src/lib`. El 8b, después del 8c.
 3. Para el contrato del **7b**: TT-16 justifica guardar el modo timer/manual en una cookie

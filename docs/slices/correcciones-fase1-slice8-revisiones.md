@@ -78,3 +78,14 @@ solo. Es decisión del usuario; queda en el estado de la fase.
 - **e2e-tester**: T-M1, T-m5, T-n6 y C-m10.
 - **team-lead**: §5.5, §5.6, §5.7 y §8 del contrato (P-m2, C-m2, B-n3); CAL-33; el estado de la
   fase (C-m4, F-n4, deudas).
+
+## Segunda revisión de frontend
+
+Sobre `ce5e7e5..694982a`: aprobado con un menor. El contraste mide de 6,58:1 a 7,4:1 en
+tema claro y de 7,8:1 a 8,77:1 en oscuro; la línea queda bajo los encabezados; el orden de
+llegada y `DayColumn` sin cambios de conducta.
+
+| Origen | Hallazgo                                                                                                                                                       | Resolución                                                                                                                                           |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F2-m1  | `columnItems` (`calendar-grid.tsx:75-79`) ordena el timer por `startedAt` sin test: sin el `sort` el timer vuelve al final de la columna (criterio 14, CAL-76) | `chronological(entries, running)` pura en `calendar-layout.ts`, con desempate por `id` como la lectura, y sus casos en `calendar-layout.test.ts`.    |
+| F2-n2  | `Tooltip disabled={dialogOpen}` (P-n1) no tiene test automático                                                                                                | El 8c, al tocar el recorrido del diálogo, afirma que no queda `[data-slot=tooltip-content]` con el diálogo abierto. Anotado en el estado de la fase. |
