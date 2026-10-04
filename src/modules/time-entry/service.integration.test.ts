@@ -55,6 +55,7 @@ import { timeEntryRepository } from "./repository";
 import {
   timeEntryMessages,
   type BulkEditChanges,
+  type CalendarState,
   type ContinueEntryResult,
   type DayGroupView,
   type StartTimerResult,
@@ -68,6 +69,7 @@ import {
   deleteEntry,
   discardTimer,
   duplicateEntry,
+  getCalendarState,
   getTrackerState,
   startTimer,
   stopTimer,
@@ -6485,5 +6487,441 @@ describe("las guardas de las escrituras de las operaciones en masa", () => {
     );
 
     expect(found.map((row) => row.id)).toEqual([...ids].reverse());
+  });
+});
+
+/** El período de la vista, sin los datos de cada día. */
+function periodOf(state: CalendarState) {
+  return {
+    mode: state.mode,
+    periodStart: state.periodStart,
+    periodLabel: state.periodLabel,
+    previousStart: state.previousStart,
+    nextStart: state.nextStart,
+    todayStart: state.todayStart,
+    dayModeStart: state.dayModeStart,
+    weekModeStart: state.weekModeStart,
+    days: state.days.map((day) => day.date),
+  };
+}
+
+describe("getCalendarState: el período (criterios 2 y 3, CAL-15 a CAL-18)", () => {
+  /** Las 12:00 del viernes 2 de octubre de 2026 en Buenos Aires. */
+  const now = new Date("2026-10-02T15:00:00Z");
+
+  function read(
+    mode: "week" | "day",
+    day: string | null,
+    workspace = workspaceOf(buenosAires),
+  ) {
+    return getCalendarState(actor, workspace, { mode, day }, now);
+  }
+
+  it("sin día, la semana que contiene hoy desde el primer día de la persona", async () => {
+    expect(periodOf(await read("week", null))).toEqual({
+      mode: "week",
+      periodStart: "2026-09-28",
+      periodLabel: "Esta semana",
+      previousStart: "2026-09-21",
+      nextStart: "2026-10-05",
+      todayStart: "2026-09-28",
+      dayModeStart: "2026-10-02",
+      weekModeStart: "2026-09-28",
+      days: [
+        "2026-09-28",
+        "2026-09-29",
+        "2026-09-30",
+        "2026-10-01",
+        "2026-10-02",
+        "2026-10-03",
+        "2026-10-04",
+      ],
+    });
+  });
+
+  it("un día de mitad de semana da la semana que lo contiene, y «Día» abre su primer día", async () => {
+    expect(periodOf(await read("week", "2026-09-23"))).toMatchObject({
+      periodStart: "2026-09-21",
+      periodLabel: "Semana anterior",
+      previousStart: "2026-09-14",
+      nextStart: "2026-09-28",
+      todayStart: "2026-09-28",
+      dayModeStart: "2026-09-21",
+      weekModeStart: "2026-09-21",
+    });
+    expect((await read("week", "2026-09-10")).periodLabel).toBe("07/09 – 13/09");
+  });
+
+  it("corta la semana en el domingo si la persona lo eligió (TT-48)", async () => {
+    const state = await read(
+      "week",
+      "2026-10-01",
+      workspaceOf(buenosAires, undefined, 0),
+    );
+
+    expect(state.periodStart).toBe("2026-09-27");
+    expect(state.days.map((day) => day.date).at(-1)).toBe("2026-10-03");
+    expect(state.todayStart).toBe("2026-09-27");
+  });
+
+  it("la vista día es un día, con «Hoy», «Ayer» o el día y las flechas de a uno", async () => {
+    expect(periodOf(await read("day", null))).toEqual({
+      mode: "day",
+      periodStart: "2026-10-02",
+      periodLabel: "Hoy",
+      previousStart: "2026-10-01",
+      nextStart: "2026-10-03",
+      todayStart: "2026-10-02",
+      dayModeStart: "2026-10-02",
+      weekModeStart: "2026-09-28",
+      days: ["2026-10-02"],
+    });
+    expect((await read("day", "2026-10-01")).periodLabel).toBe("Ayer");
+    expect(periodOf(await read("day", "2026-09-23"))).toMatchObject({
+      periodLabel: "mié, 23/09",
+      todayStart: "2026-10-02",
+      dayModeStart: "2026-09-23",
+      weekModeStart: "2026-09-21",
+    });
+  });
+
+  it("un período sin anterior o sin siguiente de cuatro cifras da el actual (CAL-17)", async () => {
+    for (const mode of ["week", "day"] as const) {
+      const current = periodOf(await read(mode, null));
+      expect(periodOf(await read(mode, "9999-12-31"))).toEqual(current);
+      expect(periodOf(await read(mode, "0100-01-01"))).toEqual(current);
+    }
+  });
+
+  it("el borde se mide por un período: el día anterior al último y el posterior al primero se navegan", async () => {
+    expect((await read("day", "9999-12-30")).periodStart).toBe("9999-12-30");
+    expect((await read("day", "0100-01-02")).periodStart).toBe("0100-01-02");
+    // El 9999-12-31 es viernes: la semana siguiente a la del lunes 20 ya no
+    // tiene clave. Del otro lado, la anterior a la del lunes 0100-01-04 tampoco.
+    expect((await read("week", "9999-12-13")).periodStart).toBe("9999-12-13");
+    expect((await read("week", "9999-12-20")).periodStart).toBe("2026-09-28");
+    expect((await read("week", "0100-01-11")).periodStart).toBe("0100-01-11");
+    expect((await read("week", "0100-01-04")).periodStart).toBe("2026-09-28");
+  });
+
+  it("un período con un día que falta entero en la zona da el actual: Apia, 2011-12-30", async () => {
+    const apia = workspaceOf("Pacific/Apia");
+    const current = periodOf(await read("week", null, apia));
+
+    expect(periodOf(await read("week", "2011-12-30", apia))).toEqual(current);
+    // En la vista día también lo es el día anterior: su fin es el 30.
+    expect(periodOf(await read("day", "2011-12-29", apia))).toEqual(
+      periodOf(await read("day", null, apia)),
+    );
+    expect((await read("day", "2011-12-31", apia)).periodStart).toBe("2011-12-31");
+  });
+});
+
+describe("getCalendarState: la lectura (criterio 4, CAL-02, CAL-28)", () => {
+  const now = new Date("2026-10-02T15:00:00Z");
+  /** La semana anterior en Buenos Aires: del 21/09 a las 03:00 UTC al 28/09 a las 03:00 UTC. */
+  const previousWeek = { mode: "week", day: "2026-09-21" } as const;
+
+  function seedOwn(description: string, startedAt: string, endedAt: string) {
+    return seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      description,
+      startedAt,
+      endedAt,
+    });
+  }
+
+  it("trae las cerradas propias que se superponen con el período, y el timer aparte", async () => {
+    const otherId = await seedMember(workspaceId, "member");
+    await seedClosedOf(otherId, "2026-09-23T12:00:00Z", "2026-09-23T13:00:00Z");
+    await seedOwn("empieza antes", "2026-09-21T02:00:00Z", "2026-09-21T04:00:00Z");
+    await seedOwn("termina después", "2026-09-28T01:00:00Z", "2026-09-28T05:00:00Z");
+    await seedOwn(
+      "termina en el principio",
+      "2026-09-21T02:00:00Z",
+      "2026-09-21T03:00:00Z",
+    );
+    await seedOwn("empieza en el final", "2026-09-28T03:00:00Z", "2026-09-28T04:00:00Z");
+    await seedOwn("cero en el principio", "2026-09-21T03:00:00Z", "2026-09-21T03:00:00Z");
+    await seedOwn("adentro", "2026-09-23T12:00:00Z", "2026-09-23T13:00:00Z");
+    const running = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      description: "timer",
+      // Justo en el principio: la rama de la duración cero no lo trae.
+      startedAt: "2026-09-21T03:00:00Z",
+    });
+
+    const state = await getCalendarState(
+      actor,
+      workspaceOf(buenosAires),
+      previousWeek,
+      now,
+    );
+
+    expect(state.entries.map((entry) => entry.description)).toEqual([
+      "empieza antes",
+      "cero en el principio",
+      "adentro",
+      "termina después",
+    ]);
+    expect(state.running?.id).toBe(running.id);
+  });
+
+  it("el timer viaja aunque no toque el período", async () => {
+    const running = await seedRunning();
+
+    const state = await getCalendarState(
+      actor,
+      workspaceOf(buenosAires),
+      { mode: "week", day: "2026-09-07" },
+      now,
+    );
+
+    expect(state.running?.id).toBe(running.id);
+    expect(state.entries).toEqual([]);
+  });
+
+  it("no trae las de otro workspace", async () => {
+    const other = await seedWorkspace(buenosAires);
+    await seedTimeEntry({
+      workspaceId: other.workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-09-23T12:00:00Z",
+      endedAt: "2026-09-23T13:00:00Z",
+    });
+
+    const state = await getCalendarState(
+      actor,
+      workspaceOf(buenosAires),
+      previousWeek,
+      now,
+    );
+
+    expect(state.entries).toEqual([]);
+  });
+
+  it("ordena por inicio y después por id (CAL-76)", async () => {
+    const first = await seedOwn("a", "2026-09-22T12:00:00Z", "2026-09-22T13:00:00Z");
+    const second = await seedOwn("b", "2026-09-22T12:00:00Z", "2026-09-22T12:30:00Z");
+    const earlier = await seedOwn("c", "2026-09-22T11:00:00Z", "2026-09-22T11:30:00Z");
+
+    const state = await getCalendarState(
+      actor,
+      workspaceOf(buenosAires),
+      previousWeek,
+      now,
+    );
+
+    expect(state.entries.map((entry) => entry.id)).toEqual([
+      earlier.id,
+      ...[first.id, second.id].sort(),
+    ]);
+  });
+
+  it("cada entrada viene con su proyecto y su tarea", async () => {
+    const seeded = await seedProject({ workspaceId, color: "green" });
+    const seededTask = await seedTask({ workspaceId, projectId: seeded.id });
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-09-23T12:00:00Z",
+      endedAt: "2026-09-23T13:00:00Z",
+      projectId: seeded.id,
+      taskId: seededTask.id,
+    });
+
+    const state = await getCalendarState(
+      actor,
+      workspaceOf(buenosAires),
+      previousWeek,
+      now,
+    );
+
+    expect(state.entries.map((entry) => [entry.project, entry.task])).toEqual([
+      [
+        { id: seeded.id, name: seeded.name, color: "green" },
+        { id: seededTask.id, name: seededTask.name },
+      ],
+    ]);
+  });
+});
+
+describe("getCalendarState: los totales (criterio 5, CAL-31 a CAL-33, P-02)", () => {
+  const now = new Date("2026-10-02T15:00:00Z");
+
+  it("cada día suma entera la cerrada que empieza en él, y el período da lo mismo que el rastreador", async () => {
+    // Jueves 24/09, de 22:00 a 02:00 en Buenos Aires.
+    await seedClosedOf(actor.userId, "2026-09-25T01:00:00Z", "2026-09-25T05:00:00Z");
+    // Martes 22/09, dos de una hora.
+    await seedClosedOf(actor.userId, "2026-09-22T12:00:00Z", "2026-09-22T13:00:00Z");
+    await seedClosedOf(actor.userId, "2026-09-22T12:00:00Z", "2026-09-22T13:00:00Z");
+    // Domingo 20/09 de 23:00 a 01:00: se ve el lunes y suma en la semana anterior.
+    await seedClosedOf(actor.userId, "2026-09-21T02:00:00Z", "2026-09-21T04:00:00Z");
+    // El timer no suma en el total cerrado.
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-09-24T12:00:00Z",
+    });
+    const workspace = workspaceOf(buenosAires);
+
+    const calendar = await getCalendarState(
+      actor,
+      workspace,
+      { mode: "week", day: "2026-09-21" },
+      now,
+    );
+    const tracker = await getTrackerState(actor, workspace, { from: "2026-09-14" }, now);
+
+    expect(
+      Object.fromEntries(calendar.days.map((day) => [day.date, day.closedSeconds])),
+    ).toEqual({
+      "2026-09-21": 0,
+      "2026-09-22": 7200,
+      "2026-09-23": 0,
+      "2026-09-24": 14400,
+      "2026-09-25": 0,
+      "2026-09-26": 0,
+      "2026-09-27": 0,
+    });
+    expect(calendar.entries).toHaveLength(4);
+    expect(calendar.closedSeconds).toBe(21600);
+    expect(tracker.weeks.find((week) => week.start === "2026-09-21")?.closedSeconds).toBe(
+      calendar.closedSeconds,
+    );
+  });
+});
+
+describe("getCalendarState: zona, formatos y días (criterios 7, 10, 11 y 15)", () => {
+  const now = new Date("2026-10-02T15:00:00Z");
+
+  it("rotula cada columna con el formato de fecha de la persona, nunca «Hoy» ni «Ayer» (CAL-09)", async () => {
+    const week = { mode: "week", day: null } as const;
+    const plain = await getCalendarState(actor, workspaceOf(buenosAires), week, now);
+    const american = await getCalendarState(
+      actor,
+      { ...workspaceOf(buenosAires), formats: { time: "12h", date: "MM/dd/yyyy" } },
+      week,
+      now,
+    );
+
+    expect(plain.days.map((day) => [day.label, day.isToday])).toEqual([
+      ["lun, 28/09", false],
+      ["mar, 29/09", false],
+      ["mié, 30/09", false],
+      ["jue, 01/10", false],
+      ["vie, 02/10", true],
+      ["sáb, 03/10", false],
+      ["dom, 04/10", false],
+    ]);
+    expect(american.days.map((day) => day.label).slice(3, 5)).toEqual([
+      "jue, 10/01",
+      "vie, 10/02",
+    ]);
+  });
+
+  it("lleva el año en las columnas de otro año", async () => {
+    const state = await getCalendarState(
+      actor,
+      workspaceOf(buenosAires),
+      { mode: "week", day: "2025-12-31" },
+      now,
+    );
+
+    expect(state.days.map((day) => day.label).slice(2, 4)).toEqual([
+      "mié, 31/12/2025",
+      "jue, 01/01",
+    ]);
+  });
+
+  it("con otra zona, la misma entrada cae en otra columna y a otra hora, y la línea de ahora se mueve", async () => {
+    // El jueves 01/10 a las 20:30 en Buenos Aires: el viernes 02/10 a la 01:30 en Madrid.
+    await seedClosedOf(actor.userId, "2026-10-01T23:30:00Z", "2026-10-02T00:30:00Z");
+    const week = { mode: "week", day: null } as const;
+
+    const local = await getCalendarState(actor, workspaceOf(buenosAires), week, now);
+    const remote = await getCalendarState(actor, workspaceOf(madrid), week, now);
+
+    expect(local.entries.map((entry) => [entry.dayDate, entry.startClock])).toEqual([
+      ["2026-10-01", "20:30"],
+    ]);
+    expect(remote.entries.map((entry) => [entry.dayDate, entry.startClock])).toEqual([
+      ["2026-10-02", "01:30"],
+    ]);
+    expect(local.days.find((day) => day.date === "2026-10-01")?.closedSeconds).toBe(3600);
+    expect(remote.days.find((day) => day.date === "2026-10-02")?.closedSeconds).toBe(
+      3600,
+    );
+    expect([local.nowMinute, remote.nowMinute]).toEqual([12 * 60, 17 * 60]);
+  });
+
+  it("da los minutos que faltan del día del adelanto de Madrid y ninguno en los demás (CAL-30)", async () => {
+    const state = await getCalendarState(
+      actor,
+      workspaceOf(madrid),
+      { mode: "week", day: "2026-03-29" },
+      now,
+    );
+
+    expect(state.periodStart).toBe("2026-03-23");
+    expect(state.days.map((day) => [day.date, day.missingMinutes])).toEqual([
+      ["2026-03-23", []],
+      ["2026-03-24", []],
+      ["2026-03-25", []],
+      ["2026-03-26", []],
+      ["2026-03-27", []],
+      ["2026-03-28", []],
+      ["2026-03-29", [{ from: 120, to: 180 }]],
+    ]);
+  });
+
+  it("atenúa los días anteriores al piso del workspace (CAL-48, CAL-85)", async () => {
+    // El 30/09 a las 12:00 en Buenos Aires.
+    const recent = workspaceOf(buenosAires, "2026-09-30T15:00:00Z");
+
+    const current = await getCalendarState(
+      actor,
+      recent,
+      { mode: "week", day: null },
+      now,
+    );
+    const previous = await getCalendarState(
+      actor,
+      recent,
+      { mode: "week", day: "2026-09-21" },
+      now,
+    );
+
+    expect(current.days.map((day) => [day.date, day.beforeWorkspace])).toEqual([
+      ["2026-09-28", true],
+      ["2026-09-29", true],
+      ["2026-09-30", false],
+      ["2026-10-01", false],
+      ["2026-10-02", false],
+      ["2026-10-03", false],
+      ["2026-10-04", false],
+    ]);
+    expect(previous.days.every((day) => day.beforeWorkspace)).toBe(true);
+  });
+
+  it("con la membresía desactivada, canTrack en falso y la grilla con sus entradas (TT-92)", async () => {
+    await seedClosedOf(actor.userId, "2026-10-01T12:00:00Z", "2026-10-01T13:00:00Z");
+    const week = { mode: "week", day: null } as const;
+
+    const active = await getCalendarState(actor, workspaceOf(buenosAires), week, now);
+    const inactive = await getCalendarState(
+      { ...actor, status: "inactive" },
+      workspaceOf(buenosAires),
+      week,
+      now,
+    );
+
+    expect(active.canTrack).toBe(true);
+    expect(inactive.canTrack).toBe(false);
+    expect(inactive.entries).toHaveLength(1);
+    expect(inactive.serverNow).toBe(now.toISOString());
+    expect(inactive.todayKey).toBe("2026-10-02");
   });
 });
