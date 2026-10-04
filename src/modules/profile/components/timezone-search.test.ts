@@ -29,6 +29,11 @@ describe("matchingTimeZones", () => {
     expect(namesFor("buenos aires")).toEqual(["America/Buenos_Aires"]);
   });
 
+  it("lee el `_` de la búsqueda como espacio, como en el nombre", () => {
+    expect(namesFor("Buenos_Aires")).toEqual(["America/Buenos_Aires"]);
+    expect(namesFor("america/buenos_aires")).toEqual(["America/Buenos_Aires"]);
+  });
+
   it("no distingue acentos", () => {
     expect(namesFor("Bogotá")).toEqual(["America/Bogota"]);
   });
