@@ -93,8 +93,9 @@ export function trackerWorkspaceOf(context: ProfileContext): TrackerWorkspace {
 
 /**
  * Primer día en que se pueden cargar horas: el día de creación del workspace
- * en la zona de la persona, la misma con que se convierte la hora tecleada. La validación del service y el calendario de la barra lo toman de
- * acá, así que los dos dicen lo mismo.
+ * en la zona de la persona, la misma con que se convierte la hora tecleada.
+ * La validación del service y el calendario de la barra lo toman de acá, así
+ * que los dos dicen lo mismo.
  */
 function workspaceFloorDayKey(workspace: TrackerWorkspace): string {
   return dayKey(workspace.createdAt, workspace.timezone);

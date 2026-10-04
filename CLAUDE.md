@@ -48,15 +48,15 @@ src/
   server/
     auth.ts            configuración de Better Auth
     access.ts          regla de dominio e invitados, función pura
-    session.ts         sesión y contexto de workspace
+    session.ts         sesión, contexto de workspace y preferencias
     db/                esquema y cliente
     permissions/       can(actor, action, resource)
-    time/              zonas horarias, semanas, duración, redondeo
+    time/              zonas horarias, semanas, duración, formatos, redondeo
     audit.ts
     action.ts          ActionResult, DomainError, failure y handle de las actions
     create-once.ts     altas idempotentes con el id que elige el cliente (ADR 0007)
     env.ts             variables de entorno validadas con Zod
-  components/ui/       primitivas compartidas (shadcn/ui)
+  components/          piezas de interfaz que comparten los módulos; `ui/` es la salida de shadcn
   hooks/               hooks de cliente que comparten los módulos: useAction, useNewId
   lib/                 utilidades puras que comparten servidor y navegador
 e2e/                   Playwright

@@ -22,7 +22,10 @@ export class DomainError<Code extends string = ActionErrorCode> extends Error {
   }
 }
 
-/** Una ruta suelta, o una ruta con su tipo para revalidar todo lo que cuelga de un layout. */
+/**
+ * Una ruta suelta, o una ruta con el tipo de `revalidatePath`: con `layout`,
+ * todo lo que cuelga de ella.
+ */
 export type RevalidationTarget =
   string | { readonly path: string; readonly type: "layout" | "page" };
 
