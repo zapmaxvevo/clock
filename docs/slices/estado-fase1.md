@@ -5,36 +5,40 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-04.
 
 ## Dónde estamos
 
-| Slice                                      | Estado                                             |
-| ------------------------------------------ | -------------------------------------------------- |
-| 1 — Timer sin proyecto                     | En `main`                                          |
-| 2 — Modo manual                            | En `main`                                          |
-| 2b — Reintento de «Iniciar»                | En `main`                                          |
-| 3 — Corregir horas y fecha                 | En `main`                                          |
-| 4 — Continuar, duplicar, descartar, atajos | En `main`                                          |
-| 5 — Semana y paginación                    | En `main`                                          |
-| 9 — Núcleo de proyectos                    | En `main`                                          |
-| 10 — Selector de proyecto y tarea          | En `main`                                          |
-| 7 — Perfil                                 | En `main`                                          |
-| 6 — Selección y acciones en masa           | En `main` (local): falta `git push origin main`    |
-| 7b — Perfil: nombre editable y tema        | Sin contrato                                       |
-| 8 — Calendario                             | Contrato en revisión en `fase1/slice-8-calendario` |
-| 8b — Calendario: arrastre                  | Esbozo en §8 del contrato del 8                    |
-| 11–13                                      | Sin contrato                                       |
+| Slice                                      | Estado                                                       |
+| ------------------------------------------ | ------------------------------------------------------------ |
+| 1 — Timer sin proyecto                     | En `main`                                                    |
+| 2 — Modo manual                            | En `main`                                                    |
+| 2b — Reintento de «Iniciar»                | En `main`                                                    |
+| 3 — Corregir horas y fecha                 | En `main`                                                    |
+| 4 — Continuar, duplicar, descartar, atajos | En `main`                                                    |
+| 5 — Semana y paginación                    | En `main`                                                    |
+| 9 — Núcleo de proyectos                    | En `main`                                                    |
+| 10 — Selector de proyecto y tarea          | En `main`                                                    |
+| 7 — Perfil                                 | En `main`                                                    |
+| 6 — Selección y acciones en masa           | En `main`                                                    |
+| 7b — Perfil: nombre editable y tema        | Sin contrato                                                 |
+| 8 — Calendario: lectura                    | Contrato con ronda 1 aplicada, en `fase1/slice-8-calendario` |
+| 8c — Calendario: escritura                 | Contrato con ronda 1 aplicada; va después del 8              |
+| 8b — Calendario: arrastre                  | Esbozo en §8 del contrato del 8c; va después del 8c          |
+| 11–13                                      | Sin contrato                                                 |
 
-Los slices 1 a 5, 7, 9 y 10 están en `origin/main`. El
-slice 6 pasó las seis revisiones (`correcciones-fase1-slice6-revisiones.md`) y su ronda de
-correcciones, y está mergeado en `main` local: **falta `git push origin main`**. Corrida
-final: 657 de unidad, 779 de integración y 99 de 99 en e2e (16 fallas por el 429 del
-endpoint de sesión, que pasan con `--last-failed`). No quedan agentes corriendo ni trabajo
-sin commitear.
+Los slices 1 a 7, 9 y 10 están en `origin/main`. En `main` local, sin subir, está el
+arreglo del 429 (`5743aeb`): el inicio de sesión de e2e reintenta según `X-Retry-After`, y
+la suite completa pasa 99 de 99 de una (**falta `git push origin main`**). La rama
+`fase1/slice-8-calendario` tiene los contratos del 8 y del 8c con la ronda 1 aplicada
+(`correcciones-fase1-slice8.md`), el ADR 0013 aceptado y `main` mergeado. No quedan agentes
+corriendo ni trabajo sin commitear.
 
 ## Lo primero de la sesión siguiente
 
-1. **El contrato del 8** (calendario): `parity-analyst` ya tiene `docs/parity/calendario.md`;
-   sigue el `architect`. Después el 7b, 11, 12, 13.
-2. **Decisión del usuario sobre el 429** (ver «Decisiones pendientes»): ya son 16 fallas por
-   corrida completa y crece con cada slice.
+1. **Ronda 2 corta del `architecture-reviewer`** sobre `fase1-slice8-calendario.md` (8,
+   lectura). Que mire lo que el `architect` agregó por su cuenta en la ronda 1: el
+   `openerId` del foco al cerrar el diálogo, «Duplicar» y «Borrar» a `trackerLabels`, CAL-92
+   repartido entre 8 y 8c, `moveRunningStartToMidnight` en `e2e/database.ts`, y el recorrido 3
+   que falla en los primeros tres minutos del día. Después, el pipeline del 8.
+2. **El 8c** (escritura) arranca con el 8 en `main` y una ronda corta del
+   `architecture-reviewer` contra ese árbol (lo pide su §0). El 8b, después del 8c.
 3. Para el contrato del **7b**: TT-16 justifica guardar el modo timer/manual en una cookie
    porque «no hay perfil todavía»; el perfil existe y no lo incluye. Decidir si entra al 7b o
    se reescribe la justificación. El 7b edita el nombre con su propia action:
@@ -83,9 +87,6 @@ null (col)`) antes de desplegar.
   a un día; qué cambia «Time»; si aplica en parte; «DELETE» y mayúsculas), P-09 de `perfil.md` (formas de 12 h y de fecha, búsqueda de zonas, `UTC`), P-12 de
   `timesheet.md`, P-07 de
   `calendario.md`, y PR-40/PR-58 de `proyectos.md` (quién crea tareas).
-- **El 429 del endpoint de sesión de prueba crece con la suite**: seis fallas en la corrida
-  del 7 (88 tests) y dieciséis en la del 6 (99 tests), que pasan al repetir. Opciones: subir el límite solo con
-  `ALLOW_TEST_SESSION`, o que cada worker reuse su sesión. Toca un control de seguridad.
 - **«Reintentar» en el alta manual**: con el ADR 0007 se le podría devolver y
   retirar TT-109. Es un cambio de paridad chico; queda propuesto.
 - **Rol de Neon para e2e**: `E2E_DATABASE_URL` en el environment `preview` de
@@ -111,7 +112,7 @@ null (col)`) antes de desplegar.
   del servidor (`withServerAction`) y no un estado ya dibujado; respuesta perdida
   real con `route.fetch()` + `route.abort()`; editores en portal se buscan en
   `page`; esperar el foco del disparador tras cerrar un calendario; 11 s entre
-  corridas completas.
+  corridas completas; el 429 del límite por IP lo absorbe `signIn` con `X-Retry-After`.
 - **Reloj emulado**: con `page.clock.install()`, `TZDate` no se puede extender y los
   rótulos de fecha del cliente salen un día antes; instalarlo después de sembrar y recargar.
 - **Avisos que sobreviven**: si la revalidación puede desmontar el componente que muestra
