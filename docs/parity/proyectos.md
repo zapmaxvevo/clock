@@ -678,10 +678,12 @@ reusan tal cual por la regla de una redacción por causa.
 
 **PR-85 Workspace sin proyectos** — `adaptar`
 Ya está relevado desde el rastreador (TT-87): el selector abre con «No hay
-proyectos todavía» y, si el rol lo permite, un enlace a la pantalla de
-proyectos. La pantalla de proyectos vacía muestra «Todavía no hay proyectos» y
+proyectos todavía» y, si `project.create` lo permite, el enlace «Ir a
+Proyectos». La pantalla de proyectos vacía muestra «Todavía no hay proyectos» y
 el botón de crear, que con PR-59 ve cualquier membresía activa. Justificación:
 copia propia.
+_Corregido el 2026-10-04_: decía «si el rol lo permite, un enlace a la pantalla
+de proyectos»; se alinea con TT-87.
 
 **PR-86 Workspace sin clientes** — `adaptar`
 El campo de cliente del diálogo de proyecto queda vacío y sigue siendo opcional

@@ -43,9 +43,6 @@ corriendo ni trabajo sin commitear.
    porque «no hay perfil todavía»; el perfil existe y no lo incluye. Decidir si entra al 7b o
    se reescribe la justificación. El 7b edita el nombre con su propia action:
    `/api/auth/update-user` quedó cerrado en el 7 (`disabledPaths`).
-4. Pendientes chicos de paridad que dejó el 10: PR-85 sigue diciendo «si el rol lo
-   permite» (TT-87 ya dice `project.create`), y TT-104 no menciona que el proyecto
-   archivado se quita con «Sin proyecto».
 
 El hydration mismatch de `AppLayout` quedó cerrado: es el `MetadataWrapper` de Next durante
 una recarga en caliente y no se reproduce.
