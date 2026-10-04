@@ -2,7 +2,9 @@
 
 Fecha: 2026-10-03. Estado: propuesto.
 Origen: contrato del slice 10
-([`fase1-slice10-selector-de-proyecto.md`](../slices/fase1-slice10-selector-de-proyecto.md)).
+([`fase1-slice10-selector-de-proyecto.md`](../slices/fase1-slice10-selector-de-proyecto.md)),
+corregido por la ronda 1 de `architecture-reviewer`
+([`correcciones-fase1-slice10.md`](../slices/correcciones-fase1-slice10.md)).
 
 ## Contexto
 
@@ -51,21 +53,39 @@ La opción 3.
 
 - **Una regla tiene un solo dueño**: el módulo de la entidad sobre la que se
   decide. Otro módulo la consulta llamando a una función exportada del
-  `service.ts` del dueño, que lanza el `DomainError` del dueño con su código y
-  su mensaje. Ninguna decisión de acceso se copia: la función llama a `can()`
-  como cualquier otra lectura del módulo.
-- **La función recibe la transacción de quien la llama** (`tx: Transaction`),
-  para que la validación y la escritura que la usa vean el mismo estado y se
-  deshagan juntas. Es la primera función de un service que recibe `tx`; las
-  demás siguen abriendo la suya.
+  `service.ts` del dueño, que lanza el `DomainError` del dueño con su mensaje.
+  Ninguna decisión de acceso se copia: la función llama a `can()` como
+  cualquier otra lectura del módulo.
+- **La función exportada lanza solo códigos de `ActionErrorCode`**
+  (`validation`, `not_found`, `forbidden`). Los códigos propios de un módulo
+  —`already_stopped`, `timer_running`— no cruzan a otro: quien llama no tendría
+  cómo traducirlos sin conocer el módulo del que vienen.
+- **La función recibe la transacción de quien la llama** (`tx: Transaction`) y
+  **solo lee con ella**: no abre otra transacción, no usa `db` y no escribe.
+  Lo que el `tx` da es esto:
+  - **un rechazo deshace todo lo anterior** de la operación que llama, por
+    ejemplo el cierre del timer que hacen `startTimer` y `continueEntry` antes
+    de insertar;
+  - **una sola conexión** para la validación y la escritura;
+  - **la escritura queda protegida por la clave foránea**, que es la que
+    garantiza que la referencia exista al momento de escribir.
+
+  Lo que **no** da es coherencia de snapshot: con `read committed`, cada
+  sentencia ve su propio estado, y lo que la validación leyó puede cambiar
+  antes de la escritura. Si una operación necesita que no cambie, el bloqueo lo
+  decide el contrato de quien llama, no la función exportada. Es la primera
+  función de un service que recibe `tx`; las demás siguen abriendo la suya.
 - **Lo que solo se muestra se lee en un join**, en el repository del módulo que
   dibuja: las columnas que la vista necesita —nombre, color, nombre de la
   tarea— y ninguna condición de acceso, de archivado ni de estado. Si alguna vez
   lo que se muestra depende de una regla, deja de ser «solo mostrar» y pasa por
   el service del dueño.
-- **Las dependencias tienen una sola dirección por par de módulos.** `time-entry`
-  importa de `project`; `project` no importa nada de `time-entry`. Un ciclo
-  entre services es la señal de que una regla está en el módulo equivocado.
+- **Las dependencias tienen una sola dirección por par de módulos, y vale para
+  el módulo entero**: `service.ts`, `schema.ts` y `components/`. `time-entry`
+  importa de `project`; `project` no importa nada de `time-entry`. Un
+  componente de `time-entry` puede usar los componentes de `project` —el
+  selector de proyecto—, nunca al revés. Un ciclo entre módulos es la señal de
+  que una regla o una pieza está en el módulo equivocado.
 - **Los catálogos que un módulo ofrece a la pantalla de otro** —el selector de
   proyecto del rastreador— los arma el dueño, con su filtro de `can()`, y los
   pide el Server Component que compone la pantalla, como cualquier lectura.
@@ -83,9 +103,13 @@ La opción 3.
   `project` y `task` que muestra. Renombrar una de esas columnas toca dos
   repositories. Se acepta: son tres columnas, y la alternativa es una segunda
   consulta por cada lectura de la lista.
+- Una función exportada a otro módulo que necesitara escribir, o garantizar que
+  lo leído no cambie, no entra en esta regla: se discute en el contrato que la
+  pida, con el bloqueo explícito.
 - Los tests de integración de `time-entry` siembran proyectos y tareas con las
   fábricas de `src/test/factories.ts`, que ya existen desde el slice 9.
 - `CLAUDE.md` suma una línea en «Recorrido de una mutación»: un service puede
-  llamar a la función de validación de otro módulo, dentro de su transacción.
+  llamar a la función de validación de otro módulo, que solo lee con la
+  transacción que recibe.
 - El slice 11 (etiquetas), el 13 (timesheet) y el calendario siguen el mismo
   camino: validan contra el service del dueño y muestran con un join.
