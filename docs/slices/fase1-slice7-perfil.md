@@ -1378,10 +1378,8 @@ que es la forma canónica que lista el entorno (`America/Buenos_Aires` en Node
   (§5.7). **Decisión abierta para el equipo**: si se lo quiere antes, es una
   columna en `workspace_settings` sin pantalla, como `week_start` en el slice 5.
 - **El predeterminado de la zona es un valor y no un vínculo** con
-  `workspace.timezone` (§2.1). Es la lectura de P-03 que respeta PF-05;
-  **queda para que el equipo lo confirme**. Si prefiere el vínculo, cambia una
-  línea de `resolvePreferences` y el criterio 7 deja de afirmar que
-  `workspace.timezone` no influye.
+  `workspace.timezone` (§2.1). Es la lectura de P-03 que respeta PF-05, y el
+  usuario la confirmó el 2026-10-03. La paridad reescribe P-03 y PF-11.
 - **Las formas de 12 h y las cortas de fecha son decisiones nuestras** (§5.1),
   sin verificar contra Clockify. Se suman a la lista P-09 de `perfil.md`.
 - **La búsqueda por escritura del selector de zonas compara desde el inicio

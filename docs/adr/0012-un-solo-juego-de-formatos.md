@@ -1,6 +1,6 @@
 # 0012. Un solo juego de formatos, en el servidor y en el cliente
 
-Fecha: 2026-10-03. Estado: propuesto.
+Fecha: 2026-10-03. Estado: aceptado.
 Origen: el contrato del slice 7
 ([`fase1-slice7-perfil.md`](../slices/fase1-slice7-perfil.md)), que trae la
 zona horaria y los formatos de fecha y de hora por persona (P-13 del

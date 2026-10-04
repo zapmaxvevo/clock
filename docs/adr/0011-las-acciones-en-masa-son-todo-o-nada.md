@@ -1,6 +1,6 @@
 # 0011. Las acciones en masa son todo o nada
 
-Fecha: 2026-10-03. Estado: propuesto.
+Fecha: 2026-10-03. Estado: aceptado.
 Origen: contrato del slice 6
 ([`fase1-slice6-seleccion-y-masa.md`](../slices/fase1-slice6-seleccion-y-masa.md)).
 Revisado en la ronda 1 de ese contrato

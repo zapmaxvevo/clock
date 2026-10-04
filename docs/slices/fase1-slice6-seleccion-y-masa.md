@@ -11,7 +11,7 @@ aplicadas: ronda 1 de `architecture-reviewer`
 hallazgos. Decisiones de arquitectura asociadas:
 
 - [ADR 0011, las acciones en masa son todo o nada](../adr/0011-las-acciones-en-masa-son-todo-o-nada.md):
-  nace acá, **propuesto**; aprobarlo es decisión del usuario.
+  nace acá, **aceptado**.
 - [ADR 0005](../adr/0005-hora-de-pared-en-la-entrada-manual.md) y
   [ADR 0006](../adr/0006-conservar-el-extremo-sin-cambios.md): la edición
   masiva de hora y fecha es su consumidor previsto («la edición masiva de hora
