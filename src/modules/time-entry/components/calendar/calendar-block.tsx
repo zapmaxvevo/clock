@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties, ReactNode, Ref } from "react";
+import type { CSSProperties, PointerEvent, ReactNode, Ref } from "react";
 
 import { useDisplayFormats } from "@/components/layout/display-formats";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -12,7 +12,7 @@ import { formatDuration, weekdayLabel } from "@/server/time";
 
 import { useElapsedSeconds } from "../elapsed-counter";
 import { entryNameOf } from "../labels";
-import { NO_GESTURES, type SegmentGestures } from "./calendar-gestures";
+import type { EntryGestureKind, SegmentGestures } from "./calendar-gestures";
 import type { PlacedBlock, Segment } from "./calendar-layout";
 import { calendarLabels } from "./labels";
 
@@ -29,8 +29,17 @@ type CalendarBlockProps = {
   readonly onOpen: () => void;
   /** El botón del bloque, adonde vuelve el foco al cerrar su diálogo. */
   readonly buttonRef?: Ref<HTMLButtonElement>;
-  /** Los gestos que ofrece este segmento (slice 8b). */
-  readonly gestures?: SegmentGestures;
+  /** Los gestos que ofrece este segmento; `NO_GESTURES` mientras viaja su pedido. */
+  readonly gestures: SegmentGestures;
+  /** El pedido de su horario viaja: atenuado, `aria-busy`, inactivo (CAL-62). */
+  readonly busy: boolean;
+  /** Se dibuja en el lugar candidato del gesto en curso. */
+  readonly dragging: boolean;
+  /** Apretar el cuerpo o un asa; la grilla decide si empieza un gesto. */
+  readonly onGestureStart: (
+    kind: EntryGestureKind,
+    event: PointerEvent<HTMLElement>,
+  ) => void;
 };
 
 /** «Proyecto» o «Proyecto: Tarea», o `null` sin proyecto. */
@@ -71,7 +80,10 @@ export function CalendarBlock({
   dialogOpen,
   onOpen,
   buttonRef,
-  gestures = NO_GESTURES,
+  gestures,
+  busy,
+  dragging,
+  onGestureStart,
 }: CalendarBlockProps) {
   const { date } = useDisplayFormats();
   /** El timer que corre termina «en curso» (CAL-38). */
@@ -136,7 +148,15 @@ export function CalendarBlock({
     "absolute flex flex-col items-start gap-0.5 overflow-hidden rounded-md *:max-w-full *:shrink-0 border border-l-[3px] px-1.5 py-0.5 text-left text-xs leading-tight text-foreground",
     entry.project === null && "bg-muted border-border",
     running && "border-dotted",
+    gestures.move && "cursor-grab",
+    busy && "opacity-60",
+    // Sin `transition` de posición ni de tamaño: nada se anima (CAL-78).
+    dragging && "ring-ring z-10 ring-2",
     "focus-visible:ring-ring focus-visible:z-10 focus-visible:ring-3 focus-visible:outline-none",
+    // El bloque enfocado no queda bajo los encabezados ni el eje, que son
+    // pegajosos (WCAG 2.4.11). En el contenedor, el margen alcanzaría también a
+    // la esquina del zoom, y enfocarla desplazaría la grilla.
+    "scroll-mt-14 scroll-ml-[6.5rem]",
   );
   const style: CSSProperties = {
     ...colorStyle(entry),
@@ -157,15 +177,28 @@ export function CalendarBlock({
           )
         }
         data-entry-block={entry.id}
+        aria-busy={busy || undefined}
+        aria-disabled={busy || undefined}
         className={className}
         style={style}
-        onClick={onOpen}
+        onClick={() => {
+          if (!busy) {
+            onOpen();
+          }
+        }}
+        onPointerDown={(event) => {
+          const kind = gestureKindAt(event.target, gestures);
+          if (kind !== null) {
+            onGestureStart(kind, event);
+          }
+        }}
       >
         {gestures.start && <BlockHandle edge="start" />}
         {content}
         {gestures.end && <BlockHandle edge="end" />}
       </TooltipTrigger>
-      <TooltipContent className="flex-col items-start gap-0.5">
+      {/* El detalle solo informa: no tapa el borde del bloque que se aprieta. */}
+      <TooltipContent className="pointer-events-none flex-col items-start gap-0.5">
         <span className="whitespace-pre-wrap">{name}</span>
         <span className="tabular-nums">
           {times} · {duration}
@@ -191,4 +224,19 @@ function BlockHandle({ edge }: { readonly edge: "start" | "end" }) {
       )}
     />
   );
+}
+
+/** El gesto que empieza donde bajó el puntero: un asa, o el cuerpo si se mueve. */
+function gestureKindAt(
+  target: EventTarget,
+  gestures: SegmentGestures,
+): EntryGestureKind | null {
+  const handle =
+    target instanceof Element
+      ? target.closest("[data-block-handle]")?.getAttribute("data-block-handle")
+      : null;
+  if (handle === "start" || handle === "end") {
+    return handle;
+  }
+  return gestures.move ? "move" : null;
 }

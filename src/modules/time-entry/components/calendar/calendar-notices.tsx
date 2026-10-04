@@ -53,6 +53,8 @@ type CalendarNoticesProps = {
   readonly stop: ActionHandle<never>;
   readonly duplicate: ActionHandle<never>;
   readonly remove: ActionHandle<never>;
+  /** El pedido de horario de un gesto (CAL-62). */
+  readonly moveTimes: ActionHandle<never>;
   readonly outside: TimeEntryView | null;
   readonly outsideLabel: (entry: TimeEntryView) => string;
   readonly mode: CalendarState["mode"];
@@ -69,6 +71,7 @@ export function CalendarNotices({
   stop,
   duplicate,
   remove,
+  moveTimes,
   outside,
   outsideLabel,
   mode,
@@ -112,6 +115,16 @@ export function CalendarNotices({
         title={trackerLabels.entryNotDuplicated}
         message={duplicate.failure.message}
         onRetry={retryOf(duplicate)}
+      />
+    ),
+    // CAL-62: la misma mutación y la misma causa que en la fila; «Reintentar»
+    // reenvía el mismo trío, solo por red (TT-89).
+    moveTimes.failure !== null && (
+      <ActionFeedback
+        key="moveTimes"
+        title={trackerLabels.entryTimesNotSaved}
+        message={moveTimes.failure.message}
+        onRetry={retryOf(moveTimes)}
       />
     ),
     remove.failure !== null && (

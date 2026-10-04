@@ -8,6 +8,7 @@ import type { TimeEntryView } from "@/modules/time-entry/schema";
 import type { DisplayFormats } from "@/server/time";
 
 import { CalendarBlock } from "./calendar-block";
+import { NO_GESTURES, type SegmentGestures } from "./calendar-gestures";
 import type { Segment } from "./calendar-layout";
 
 const catalog: TrackingCatalog = { canCreateProject: false, groups: [] };
@@ -95,6 +96,8 @@ function render(
   options: {
     readonly formats?: DisplayFormats;
     readonly segment?: Segment;
+    readonly gestures?: SegmentGestures;
+    readonly busy?: boolean;
   } = {},
 ): string {
   return renderToStaticMarkup(
@@ -108,6 +111,10 @@ function render(
           todayKey="2026-10-04"
           dialogOpen={false}
           onOpen={() => undefined}
+          gestures={options.gestures ?? NO_GESTURES}
+          busy={options.busy ?? false}
+          dragging={false}
+          onGestureStart={() => undefined}
         />
       </TrackingCatalogProvider>
     </DisplayFormatsProvider>,
@@ -201,5 +208,44 @@ describe("CalendarBlock, los segmentos (CAL-26, CAL-76)", () => {
     });
     expect(later).toContain("Guardia");
     expect(later).not.toContain("22:00");
+  });
+});
+
+describe("CalendarBlock, los gestos (CAL-52, CAL-58, CAL-62)", () => {
+  function handlesOf(markup: string): readonly string[] {
+    return [...markup.matchAll(/<span[^>]*data-block-handle="([a-z]+)"[^>]*>/g)].map(
+      (match) => match[1],
+    );
+  }
+
+  it("sin gestos no tiene asas ni cursor de arrastre", () => {
+    const markup = render(morning);
+    expect(handlesOf(markup)).toEqual([]);
+    expect(blockOf(markup)).not.toContain("cursor-grab");
+  });
+
+  it("con los gestos que ofrece, sus asas ocultas y el cursor de arrastre", () => {
+    const markup = render(morning, { gestures: { move: true, start: true, end: true } });
+    expect(handlesOf(markup)).toEqual(["start", "end"]);
+    expect(markup).toMatch(/<span aria-hidden="true" data-block-handle="start"/);
+    expect(markup).not.toMatch(/data-block-handle="[a-z]+"[^>]*tabindex/);
+    expect(blockOf(markup)).toContain("cursor-grab");
+  });
+
+  it("cada asa por separado", () => {
+    expect(
+      handlesOf(render(morning, { gestures: { move: false, start: true, end: false } })),
+    ).toEqual(["start"]);
+    expect(
+      handlesOf(render(morning, { gestures: { move: false, start: false, end: true } })),
+    ).toEqual(["end"]);
+  });
+
+  it("con el pedido de su horario en vuelo, atenuado, ocupado e inactivo (TT-55)", () => {
+    const block = blockOf(render(morning, { busy: true }));
+    expect(block).toContain('aria-busy="true"');
+    expect(block).toContain('aria-disabled="true"');
+    expect(block).toContain("opacity-60");
+    expect(blockOf(render(morning))).not.toContain("aria-busy");
   });
 });

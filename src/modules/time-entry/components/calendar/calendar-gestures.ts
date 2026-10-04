@@ -1,8 +1,18 @@
 import type { CalendarDayView, TimeEntryView } from "@/modules/time-entry/schema";
-import type { TimeFormat } from "@/server/time";
+import {
+  addDaysToKey,
+  clockDifferenceMinutes,
+  clockLabel,
+  clockToMinutes,
+  formatDuration,
+  MINUTES_PER_DAY,
+  minutesToClock,
+  shiftClock,
+  type TimeFormat,
+} from "@/server/time";
 
-import type { TimeDraft } from "../time-draft";
-import type { Segment } from "./calendar-layout";
+import { draftDuration, draftExtraDays, type TimeDraft } from "../time-draft";
+import { isMissing, minuteHeight, slotDraft, type Segment } from "./calendar-layout";
 import type { CalendarZoom } from "./calendar-zoom";
 
 /**
@@ -60,17 +70,40 @@ export type SegmentGestures = {
 
 export const NO_GESTURES: SegmentGestures = { move: false, start: false, end: false };
 
-const PENDING = "Sin implementar: slice 8b.";
-
+/**
+ * `segmentGestures`: sin permiso, en el timer y en la entrada que el trío no
+ * expresa, nada. El cuerpo mueve con distancia de reloj (CAL-90); el asa de
+ * inicio está en el segmento del día de inicio, y la de fin en el que termina
+ * donde termina la entrada, que con un fin a las 00:00 es el del día anterior.
+ */
 export function segmentGestures(
   entry: TimeEntryView,
   segment: Segment,
   canTrack: boolean,
 ): SegmentGestures {
-  void entry;
-  void segment;
-  void canTrack;
-  throw new Error(PENDING);
+  if (!canTrack || entry.endClock === null || !entry.editableTimes) {
+    return NO_GESTURES;
+  }
+  const endDay = addDaysToKey(entry.dayDate, entry.extraDays);
+  const endMinute = clockToMinutes(entry.endClock) ?? 0;
+  const endsHere =
+    endMinute === 0 && entry.extraDays > 0
+      ? segment.date === addDaysToKey(endDay, -1) && segment.to === MINUTES_PER_DAY
+      : segment.date === endDay && segment.to === endMinute;
+  return {
+    move: clockDifferenceMinutes(entry.startClock, entry.endClock) > 0,
+    start: segment.startsHere,
+    end: endsHere,
+  };
+}
+
+/** El trío de una entrada cerrada; la que corre no tiene gestos. */
+function tripleOf(entry: TimeEntryView): TimeDraft {
+  return {
+    date: entry.dayDate,
+    start: entry.startClock,
+    end: entry.endClock ?? entry.startClock,
+  };
 }
 
 /** El gesto sobre una entrada, tomado en `pointer`. */
@@ -80,18 +113,61 @@ export function entryGesture(
   days: readonly string[],
   pointer: GridMinute,
 ): EntryGesture {
-  void kind;
-  void entry;
-  void days;
-  void pointer;
-  throw new Error(PENDING);
+  const original = tripleOf(entry);
+  const index = days.indexOf(entry.dayDate);
+  // Con `editableTimes` dura menos de un día: si su día no está a la vista,
+  // empezó el anterior al primero.
+  const start =
+    (index === -1 ? -1 : index) * MINUTES_PER_DAY +
+    (clockToMinutes(entry.startClock) ?? 0);
+  return {
+    kind,
+    entryId: entry.id,
+    original,
+    start,
+    span: clockDifferenceMinutes(original.start, original.end),
+    grab: kind === "move" ? pointer - start : 0,
+  };
 }
 
 /** El trío del que parte el gesto: el de la entrada, o el de un clic (`slotDraft`). */
 export function initialCandidate(gesture: Gesture, grid: GestureGrid): TimeDraft {
-  void gesture;
-  void grid;
-  throw new Error(PENDING);
+  if (gesture.kind !== "create") {
+    return gesture.original;
+  }
+  const day = grid.days[gesture.dayIndex];
+  return slotDraft(day.date, gesture.anchor, grid.zoom, day.missingMinutes);
+}
+
+/** La recta del período con las marcas del zoom (§5.1). */
+function lineOf(grid: GestureGrid) {
+  const { zoom, days } = grid;
+  const end = days.length * MINUTES_PER_DAY;
+  const firstOpen = days.findIndex((day) => !day.beforeWorkspace);
+  const floor =
+    grid.minDayKey < days[0].date
+      ? -Infinity
+      : (firstOpen === -1 ? days.length : firstOpen) * MINUTES_PER_DAY;
+  return {
+    end,
+    floor,
+    round: (x: number) => Math.round(x / zoom) * zoom,
+    nextMark: (x: number) => Math.floor(x / zoom) * zoom + zoom,
+    lastMark: (x: number) => Math.ceil(x / zoom) * zoom - zoom,
+    dayOf: (p: GridMinute) => addDaysToKey(days[0].date, Math.floor(p / MINUTES_PER_DAY)),
+    /** Un punto de un día visible que no existe; los días de afuera no se miran (§8). */
+    missing: (p: GridMinute) => {
+      const index = Math.floor(p / MINUTES_PER_DAY);
+      const day = days[index];
+      return (
+        day !== undefined && isMissing(p - index * MINUTES_PER_DAY, day.missingMinutes)
+      );
+    },
+  };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }
 
 /**
@@ -105,10 +181,97 @@ export function candidateAt(
   pointer: GridMinute,
   grid: GestureGrid,
 ): TimeDraft | null {
-  void gesture;
-  void pointer;
-  void grid;
-  throw new Error(PENDING);
+  const line = lineOf(grid);
+  switch (gesture.kind) {
+    case "move": {
+      const { original, start, span, grab } = gesture;
+      const home = line.round(start);
+      const wanted = line.round(pointer - grab);
+      if (wanted === home) {
+        return original;
+      }
+      // Al menos un minuto en el período, y nunca antes del piso (CAL-48, CAL-61).
+      const s = clamp(
+        wanted,
+        Math.max(line.floor, line.nextMark(-span)),
+        line.end - grid.zoom,
+      );
+      if (line.missing(s) || line.missing(s + span)) {
+        return null;
+      }
+      const startClock = minutesToClock(s);
+      return {
+        date: line.dayOf(s),
+        start: startClock,
+        end: shiftClock(startClock, span),
+      };
+    }
+    case "start": {
+      const { original, start, span } = gesture;
+      const end = start + span;
+      const wanted = line.round(pointer);
+      if (wanted === line.round(start)) {
+        return original;
+      }
+      // Entre 24 horas antes del fin y la última marca anterior a él (CAL-55, CAL-56).
+      const s = clamp(
+        wanted,
+        Math.max(line.floor, line.nextMark(end - MINUTES_PER_DAY)),
+        line.lastMark(end),
+      );
+      if (line.missing(s)) {
+        return null;
+      }
+      // El fin no cambia de rótulo y conserva su instante (ADR 0006).
+      return { date: line.dayOf(s), start: minutesToClock(s), end: original.end };
+    }
+    case "end": {
+      const { original, start, span } = gesture;
+      const wanted = line.round(pointer);
+      if (wanted === line.round(start + span)) {
+        return original;
+      }
+      const f = clamp(
+        wanted,
+        line.nextMark(start),
+        line.lastMark(start + MINUTES_PER_DAY),
+      );
+      if (line.missing(f)) {
+        return null;
+      }
+      // Un fin anterior al inicio es del día siguiente (TT-72).
+      return { date: original.date, start: original.start, end: minutesToClock(f) };
+    }
+    case "create": {
+      const { dayIndex, anchor } = gesture;
+      const base = dayIndex * MINUTES_PER_DAY;
+      const longest = MINUTES_PER_DAY - grid.zoom;
+      const slot = clamp(
+        Math.floor((pointer - base) / grid.zoom) * grid.zoom,
+        0,
+        longest,
+      );
+      let from = Math.min(anchor, slot);
+      let to = Math.max(anchor, slot) + grid.zoom;
+      // Más de 24 horas menos una franja: se recorta del lado del puntero.
+      if (to - from > longest) {
+        if (slot >= anchor) {
+          to = from + longest;
+        } else {
+          from = to - longest;
+        }
+      }
+      if (line.missing(base + from) || line.missing(base + to)) {
+        return null;
+      }
+      return {
+        date: grid.days[dayIndex].date,
+        start: minutesToClock(from),
+        // Un fin de 24:00 se escribe «00:00» (TT-72).
+        end: minutesToClock(to),
+      };
+    }
+  }
 }
 
 /** La entrada dibujada con otro trío: la del gesto y la del pedido en vuelo (ADR 0012). */
@@ -117,10 +280,18 @@ export function movedView(
   times: TimeDraft,
   format: TimeFormat,
 ): TimeEntryView {
-  void entry;
-  void times;
-  void format;
-  throw new Error(PENDING);
+  const minutes = draftDuration(times);
+  return {
+    ...entry,
+    dayDate: times.date,
+    startClock: times.start,
+    endClock: times.end,
+    extraDays: draftExtraDays(times),
+    startLabel: clockLabel(times.start, format),
+    endLabel: clockLabel(times.end, format),
+    durationSeconds: minutes * 60,
+    durationLabel: formatDuration(minutes),
+  };
 }
 
 /** El punto bajo el puntero en una columna, acotado a ella (CAL-61). */
@@ -129,10 +300,9 @@ export function gridMinuteAt(
   offsetPx: number,
   zoom: CalendarZoom,
 ): GridMinute {
-  void dayIndex;
-  void offsetPx;
-  void zoom;
-  throw new Error(PENDING);
+  return (
+    dayIndex * MINUTES_PER_DAY + clamp(offsetPx / minuteHeight(zoom), 0, MINUTES_PER_DAY)
+  );
 }
 
 /** ADR 0014: el botón principal del mouse. */
@@ -141,23 +311,22 @@ export function startsGesture(pointer: {
   readonly button: number;
   readonly isPrimary: boolean;
 }): boolean {
-  void pointer;
-  throw new Error(PENDING);
+  return pointer.pointerType === "mouse" && pointer.button === 0 && pointer.isPrimary;
 }
 
 export const DRAG_THRESHOLD_PX = 4;
 
 /** Desde acá el gesto deja de ser un clic. */
 export function passedThreshold(dx: number, dy: number): boolean {
-  void dx;
-  void dy;
-  throw new Error(PENDING);
+  return Math.hypot(dx, dy) >= DRAG_THRESHOLD_PX;
 }
 
 export const AUTOSCROLL_EDGE_PX = 32;
 
 /** Píxeles por cuadro hacia un borde a esa distancia: 0 fuera de la banda, hasta 16 en el borde. */
 export function autoScrollStep(distanceToEdge: number): number {
-  void distanceToEdge;
-  throw new Error(PENDING);
+  if (distanceToEdge >= AUTOSCROLL_EDGE_PX) {
+    return 0;
+  }
+  return Math.ceil((AUTOSCROLL_EDGE_PX - Math.max(distanceToEdge, 0)) / 2);
 }

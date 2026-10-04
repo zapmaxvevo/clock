@@ -10,7 +10,14 @@ export function nextRefreshGate(
   gate: RefreshGate,
   event: RefreshEvent,
 ): { readonly gate: RefreshGate; readonly refresh: boolean } {
-  void gate;
-  void event;
-  throw new Error("Sin implementar: slice 8b.");
+  switch (event) {
+    case "trigger":
+      return gate.paused
+        ? { gate: { paused: true, pending: true }, refresh: false }
+        : { gate, refresh: true };
+    case "pause":
+      return { gate: { paused: true, pending: gate.pending }, refresh: false };
+    case "resume":
+      return { gate: { paused: false, pending: false }, refresh: gate.pending };
+  }
 }
