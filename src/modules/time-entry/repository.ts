@@ -69,8 +69,11 @@ export type ClosedEntryFields = ClosedFields & { readonly pair?: ProjectPair };
 /** Lo que escribe `updateRunningEntry`. */
 export type RunningEntryFields = Omit<ClosedEntryFields, "endedAt">;
 
+/** Las columnas de una escritura de una fila cerrada: el par va entero o no va. */
+type ClosedColumns = ClosedFields | (ClosedFields & ProjectPair);
+
 /** Las columnas de una escritura: el par se abre en sus dos columnas, juntas. */
-function columnsOf({ pair, ...fields }: ClosedEntryFields) {
+function columnsOf({ pair, ...fields }: ClosedEntryFields): ClosedColumns {
   return pair === undefined
     ? fields
     : { ...fields, projectId: pair.projectId, taskId: pair.taskId };
@@ -421,12 +424,10 @@ export const timeEntryRepository = {
     target: EntryTarget,
     fields: ClosedEntryFields,
   ): Promise<EntryWithRefs | undefined> {
-    const rows = await tx
-      .update(timeEntry)
-      .set(columnsOf(fields))
-      .where(and(isTarget(target), isNotNull(timeEntry.endedAt)))
-      .returning();
-    return rereadIfWritten(tx, rows.at(0));
+    return rereadIfWritten(
+      tx,
+      await timeEntryRepository.updateClosedFields(tx, target, columnsOf(fields)),
+    );
   },
 
   /**
@@ -474,13 +475,14 @@ export const timeEntryRepository = {
   },
 
   /**
-   * Cualquier subconjunto de los tres campos, solo en una fila cerrada. Sin
-   * relectura: el proyecto y la tarea no cambian, y el service ya los leyó.
+   * Cualquier subconjunto de los tres campos, y el par entero si viene, solo en
+   * una fila cerrada. Sin relectura: la masiva no cambia el proyecto ni la
+   * tarea, y el service ya los leyó.
    */
   async updateClosedFields(
     tx: Transaction,
     target: EntryTarget,
-    fields: ClosedFields,
+    fields: ClosedColumns,
   ): Promise<TimeEntryRow | undefined> {
     const rows = await tx
       .update(timeEntry)

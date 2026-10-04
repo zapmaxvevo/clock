@@ -689,12 +689,11 @@ export async function updateEntryProject(
   return translatingPairConstraints(() =>
     db.transaction(async (tx) => {
       const row = await readOwnEntry(tx, actor, "timeEntry.own.update", input.id);
-      const requested = pairOf(input);
-      if (samePair(row, requested)) {
+      const { pair } = await assignedPair(tx, actor, row, pairOf(input));
+      if (pair === undefined) {
         return { entry: toView(row, workspace) };
       }
-      await assertAssignable(tx, actor, pairOf(row), requested);
-      const next = await timeEntryRepository.updateProject(tx, targetOf(row), requested);
+      const next = await timeEntryRepository.updateProject(tx, targetOf(row), pair);
       if (next === undefined) {
         throw new TimeEntryError("not_found", timeEntryMessages.notFound);
       }

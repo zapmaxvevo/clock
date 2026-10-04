@@ -7193,8 +7193,26 @@ describe("updateEntry: el par (criterio 5, TT-77, ADR 0010)", () => {
   const ws = workspaceOf(buenosAires);
 
   it("con un par no disponible responde lo de updateEntryProject y no escribe nada", async () => {
-    const pairs = await seedUnavailablePairs();
-    for (const pair of Object.values(pairs)) {
+    const foreign = await seedWorkspace(buenosAires);
+    const foreignProject = await seedProject({ workspaceId: foreign.workspaceId });
+    const { web } = await seedTrackable("Público");
+    const elsewhere = await seedProject({ workspaceId, name: "Otro", color: "blue" });
+    const pairs = [
+      ...Object.values(await seedUnavailablePairs()),
+      {
+        // Un proyecto de otro workspace (S-n1).
+        projectId: foreignProject.id,
+        taskId: null,
+        message: projectMessages.projectUnavailable,
+      },
+      {
+        // Una tarea de otro proyecto (S-n1).
+        projectId: web.id,
+        taskId: (await seedTask({ workspaceId, projectId: elsewhere.id })).id,
+        message: projectMessages.taskUnavailable,
+      },
+    ];
+    for (const pair of pairs) {
       const dialogRow = await seedEntryWith(NO_PAIR, { description: "antes" });
       const singleRow = await seedEntryWith(NO_PAIR, { description: "antes" });
       const before = await editableSnapshotOf(dialogRow.id);
@@ -7242,7 +7260,12 @@ describe("updateEntry: el par (criterio 5, TT-77, ADR 0010)", () => {
         projectId: pair.projectId,
         taskId: pair.taskId,
       });
-      expect(await auditFor("time_entry", entry.id)).toHaveLength(1);
+      const audits = await auditFor("time_entry", entry.id);
+      expect(audits).toHaveLength(1);
+      // Sin el par: el mismo par no se escribe.
+      expect(JSON.parse(audits[0].nextValue ?? "null")).toEqual({
+        description: "después",
+      });
     }
   });
 
