@@ -38,12 +38,19 @@ type ClockFieldProps = {
    * tenía cambios, y no si se rechazó. La noción de grupo es de quien lo usa.
    */
   readonly onSubmit?: () => void;
+  /**
+   * Cada cambio del texto: lo tecleado, el rótulo que deja confirmar y el
+   * valor al que vuelve con un rechazo o con Esc. No avisa cuando el valor de
+   * afuera reemplaza al texto: quien lo cambió ya lo sabe.
+   */
+  readonly onTextChange?: (text: string) => void;
 };
 
 /**
  * Campo de texto tolerante de hora o duración: el de la barra manual, el del
- * editor de horario de una fila y el del inicio del timer. Normaliza al salir
- * del campo y con Enter, nunca mientras se teclea, y no llama a ninguna action. Cuando el texto no se puede interpretar
+ * editor de horario de una fila, el del inicio del timer y los del diálogo de
+ * edición masiva. Normaliza al salir del campo y con Enter, nunca mientras se
+ * teclea, y no llama a ninguna action. Cuando el texto no se puede interpretar
  * el campo vuelve al valor anterior —que es la información— y además se marca
  * por un instante (TT-21).
  */
@@ -56,12 +63,18 @@ export function ClockField({
   disabled = false,
   onCancel,
   onSubmit,
+  onTextChange,
 }: ClockFieldProps) {
   const [text, setText] = useState(value);
   const [shownValue, setShownValue] = useState(value);
   const [rejected, setRejected] = useState(false);
   const [focused, setFocused] = useState(false);
   const flash = useRef<number | null>(null);
+
+  function changeText(next: string): void {
+    setText(next);
+    onTextChange?.(next);
+  }
 
   // El valor mostrado puede cambiar desde afuera: mover el inicio cambia la
   // duración, la duración mueve el fin (TT-18), y un agregado exitoso reinicia
@@ -83,7 +96,7 @@ export function ClockField({
   }, []);
 
   function rejectText(): void {
-    setText(value);
+    changeText(value);
     setRejected(true);
     if (flash.current !== null) {
       window.clearTimeout(flash.current);
@@ -104,7 +117,7 @@ export function ClockField({
       rejectText();
       return false;
     }
-    setText(accepted);
+    changeText(accepted);
     return true;
   }
 
@@ -118,7 +131,7 @@ export function ClockField({
       aria-invalid={rejected}
       disabled={disabled}
       className={cn("text-center tabular-nums", format === "12h" ? "w-26" : "w-20")}
-      onChange={(event) => setText(event.target.value)}
+      onChange={(event) => changeText(event.target.value)}
       onFocus={() => setFocused(true)}
       onBlur={() => {
         setFocused(false);
@@ -134,7 +147,7 @@ export function ClockField({
         }
         if (event.key === "Escape" && onCancel !== undefined) {
           event.preventDefault();
-          setText(value);
+          changeText(value);
           onCancel();
         }
       }}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { ActionFeedback } from "@/components/action-feedback";
 import { Button } from "@/components/ui/button";
@@ -75,6 +75,7 @@ export function BulkActions({
   const editRef = useRef<HTMLButtonElement>(null);
   const deleteRef = useRef<HTMLButtonElement>(null);
   const saveRef = useRef<HTMLButtonElement>(null);
+  const limitId = useId();
   /** El control que toma el foco en el render siguiente, cuando aparece o queda. */
   const pendingFocus = useRef<FocusTarget | null>(null);
 
@@ -201,9 +202,19 @@ export function BulkActions({
     clear();
   }
 
+  /**
+   * §4.7: el reintento reenvía el pedido con los ids de entonces, así que se
+   * ofrece solo mientras todas esas entradas sigan elegidas. Si alguna se fue
+   * o la persona la soltó, el aviso queda sin «Reintentar», como el de
+   * continuar: nunca se toca una fila que no se ve.
+   */
+  const selectedIds = new Set(entries.map((entry) => entry.id));
+  const stillSelected = (sent: readonly SelectedEntry[]) =>
+    sent.every((entry) => selectedIds.has(entry.id));
+
   // «Reintentar» se va con su aviso: el foco pasa antes a lo que sigue en
   // pantalla. «Guardar» queda inactivo mientras la edición viaja y lo conserva.
-  const editRetry = retryHandlerOf(edit);
+  const editRetry = stillSelected(editSent) ? retryHandlerOf(edit) : undefined;
   const retryEdit =
     editRetry === undefined
       ? undefined
@@ -211,7 +222,7 @@ export function BulkActions({
           (editOpen ? saveRef : regionRef).current?.focus();
           editRetry();
         };
-  const deleteRetry = retryHandlerOf(remove);
+  const deleteRetry = stillSelected(deleteSent) ? retryHandlerOf(remove) : undefined;
   const retryDelete =
     deleteRetry === undefined
       ? undefined
@@ -222,35 +233,23 @@ export function BulkActions({
 
   const editFeedback =
     edit.failure === null ? null : (
-      <ActionFeedback
+      <BulkFailure
         title={trackerLabels.entriesNotEdited}
-        message={edit.failure.message}
+        failure={edit.failure}
+        sent={editSent}
         onRetry={retryEdit}
-      >
-        {hasRejections(edit.failure) ? (
-          <RejectionList
-            rejections={edit.failure.rejections}
-            sent={editSent}
-            onDrop={(ids) => dropRejected(ids, edit.clear)}
-          />
-        ) : undefined}
-      </ActionFeedback>
+        onDrop={(ids) => dropRejected(ids, edit.clear)}
+      />
     );
   const deleteFeedback =
     remove.failure === null ? null : (
-      <ActionFeedback
+      <BulkFailure
         title={trackerLabels.entriesNotDeleted}
-        message={remove.failure.message}
+        failure={remove.failure}
+        sent={deleteSent}
         onRetry={retryDelete}
-      >
-        {hasRejections(remove.failure) ? (
-          <RejectionList
-            rejections={remove.failure.rejections}
-            sent={deleteSent}
-            onDrop={(ids) => dropRejected(ids, remove.clear)}
-          />
-        ) : undefined}
-      </ActionFeedback>
+        onDrop={(ids) => dropRejected(ids, remove.clear)}
+      />
     );
 
   const status = remove.pending
@@ -279,6 +278,7 @@ export function BulkActions({
               variant="outline"
               size="sm"
               aria-disabled={pending || overLimit}
+              aria-describedby={overLimit ? limitId : undefined}
               onClick={openEdit}
             >
               {trackerLabels.bulkEdit}
@@ -289,6 +289,7 @@ export function BulkActions({
               variant="outline"
               size="sm"
               aria-disabled={pending || overLimit}
+              aria-describedby={overLimit ? limitId : undefined}
               onClick={openDelete}
             >
               {trackerLabels.bulkDelete}
@@ -306,7 +307,9 @@ export function BulkActions({
         )}
       </div>
       {barShown && overLimit && (
-        <p className="text-muted-foreground text-sm">{timeEntryMessages.bulkTooMany}</p>
+        <p id={limitId} className="text-muted-foreground text-sm">
+          {timeEntryMessages.bulkTooMany}
+        </p>
       )}
       {!editOpen && editFeedback}
       {deleteFeedback}
@@ -322,7 +325,7 @@ export function BulkActions({
         onCancel={cancelEdit}
         onSave={saveEdit}
         cancelFocus={editRef}
-        regionFocus={regionRef}
+        fallbackFocus={regionRef}
       />
       <BulkDeleteDialog
         count={count}
@@ -330,9 +333,31 @@ export function BulkActions({
         onCancel={() => setDeleteOpen(false)}
         onConfirm={confirmDelete}
         cancelFocus={deleteRef}
-        confirmFocus={regionRef}
+        fallbackFocus={regionRef}
       />
     </section>
+  );
+}
+
+type BulkFailureProps = {
+  /** Nombra la operación que falló (TT-90). */
+  readonly title: string;
+  readonly failure: ActionFailure;
+  /** Cómo nombraba la pantalla cada fila al mandar el pedido. */
+  readonly sent: readonly SelectedEntry[];
+  /** Sin él, no hay «Reintentar». */
+  readonly onRetry: (() => void) | undefined;
+  readonly onDrop: (ids: readonly string[]) => void;
+};
+
+/** El aviso de una operación en masa que falló, con sus rechazos si los trae. */
+function BulkFailure({ title, failure, sent, onRetry, onDrop }: BulkFailureProps) {
+  return (
+    <ActionFeedback title={title} message={failure.message} onRetry={onRetry}>
+      {hasRejections(failure) ? (
+        <RejectionList rejections={failure.rejections} sent={sent} onDrop={onDrop} />
+      ) : undefined}
+    </ActionFeedback>
   );
 }
 

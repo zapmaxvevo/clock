@@ -5,6 +5,7 @@ import {
   confirmsDelete,
   emptyBulkChanges,
   toChanges,
+  withBulkClock,
 } from "./bulk-changes";
 
 describe("toChanges", () => {
@@ -42,6 +43,40 @@ describe("toChanges", () => {
       start: "09:30",
       end: "10:00",
     });
+  });
+});
+
+describe("withBulkClock", () => {
+  const withStart = { ...emptyBulkChanges, description: "Revisión", start: "09:30" };
+
+  it("interpreta lo tecleado y deja el resto del borrador", () => {
+    expect(withBulkClock(withStart, "end", "1015", "24h")).toEqual({
+      ...withStart,
+      end: "10:15",
+    });
+  });
+
+  it("guarda la hora canónica aunque la persona escriba en 12 h", () => {
+    expect(withBulkClock(emptyBulkChanges, "start", "2:05 pm", "12h")).toEqual({
+      ...emptyBulkChanges,
+      start: "14:05",
+    });
+  });
+
+  it("vaciada, o con solo espacios, la hora vuelve a «sin cambios»", () => {
+    expect(withBulkClock(withStart, "start", "", "24h")).toEqual({
+      ...withStart,
+      start: "",
+    });
+    expect(withBulkClock(withStart, "start", "   ", "24h")).toEqual({
+      ...withStart,
+      start: "",
+    });
+  });
+
+  it("lo que no se puede interpretar no toca el borrador", () => {
+    expect(withBulkClock(withStart, "start", "abc", "24h")).toBeNull();
+    expect(withBulkClock(withStart, "start", "2 pm", "24h")).toBeNull();
   });
 });
 

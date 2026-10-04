@@ -17,18 +17,19 @@ import { Label } from "@/components/ui/label";
 
 import { confirmsDelete } from "./bulk-changes";
 import { bulkDeleteTitle, trackerLabels } from "./labels";
+import { useDialogReturnFocus } from "./use-dialog-return-focus";
 
 type BulkDeleteDialogProps = {
   readonly count: number;
   readonly open: boolean;
   /** Cancelar, Esc o un clic afuera: el foco vuelve a `cancelFocus`, o a la región si ya no está. */
   readonly onCancel: () => void;
-  /** La palabra vale. Quien lo abrió lo cierra en el acto, y el foco va a `confirmFocus`. */
+  /** La palabra vale. Quien lo abrió lo cierra en el acto, y el foco va a `fallbackFocus`. */
   readonly onConfirm: () => void;
   /** «Borrar» de la barra. */
   readonly cancelFocus: RefObject<HTMLElement | null>;
   /** La región de acciones en masa, que sigue en pantalla mientras el borrado viaja. */
-  readonly confirmFocus: RefObject<HTMLElement | null>;
+  readonly fallbackFocus: RefObject<HTMLElement | null>;
 };
 
 /**
@@ -41,38 +42,17 @@ export function BulkDeleteDialog({
   onCancel,
   onConfirm,
   cancelFocus,
-  confirmFocus,
+  fallbackFocus,
 }: BulkDeleteDialogProps) {
-  /** Cómo se cerró: cancelado vuelve a «Borrar»; confirmado, a la región. */
-  const cancelled = useRef(false);
   const fieldRef = useRef<HTMLInputElement>(null);
-
-  function changeOpen(next: boolean): void {
-    if (next) {
-      return;
-    }
-    cancelled.current = true;
-    onCancel();
-  }
-
-  /**
-   * El foco lo mueve el diálogo y no Base UI, que pasa al primer control
-   * tabulable de lo que se le devuelve: con la región, que no es tabulable,
-   * caería en «Editar» de la barra. Va en una microtarea, como el de Base UI,
-   * cuando lo de afuera del modal ya dejó de estar inerte. Si la barra se fue
-   * con el diálogo abierto, a la región.
-   */
-  function finalFocus(): false {
-    const target = cancelled.current
-      ? (cancelFocus.current ?? confirmFocus.current)
-      : confirmFocus.current;
-    cancelled.current = false;
-    queueMicrotask(() => target?.focus());
-    return false;
-  }
+  const { onOpenChange, finalFocus } = useDialogReturnFocus({
+    cancelFocus,
+    fallbackFocus,
+    onCancel,
+  });
 
   return (
-    <Dialog open={open} onOpenChange={changeOpen}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent initialFocus={fieldRef} finalFocus={finalFocus}>
         <BulkDeleteForm fieldRef={fieldRef} count={count} onConfirm={onConfirm} />
       </DialogContent>

@@ -23,12 +23,18 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DESCRIPTION_MAX, type BulkEditChanges } from "@/modules/time-entry/schema";
-import { clockLabel, parseClockInput } from "@/server/time";
+import { clockLabel } from "@/server/time";
 
-import { emptyBulkChanges, toChanges, type BulkChangesDraft } from "./bulk-changes";
+import {
+  emptyBulkChanges,
+  toChanges,
+  withBulkClock,
+  type BulkChangesDraft,
+} from "./bulk-changes";
 import { ClockField } from "./clock-field";
 import { DateField } from "./date-field";
 import { bulkEditTitle, clockPlaceholder, trackerLabels } from "./labels";
+import { useDialogReturnFocus } from "./use-dialog-return-focus";
 
 type BulkEditDialogProps = {
   readonly count: number;
@@ -50,7 +56,7 @@ type BulkEditDialogProps = {
   /** «Editar» de la barra, adonde vuelve el foco al cancelar. */
   readonly cancelFocus: RefObject<HTMLElement | null>;
   /** La región de acciones en masa: el foco va ahí si el diálogo se cierra por otra cosa. */
-  readonly regionFocus: RefObject<HTMLElement | null>;
+  readonly fallbackFocus: RefObject<HTMLElement | null>;
 };
 
 /**
@@ -69,37 +75,17 @@ export function BulkEditDialog({
   onCancel,
   onSave,
   cancelFocus,
-  regionFocus,
+  fallbackFocus,
 }: BulkEditDialogProps) {
-  /** Cómo se cerró: cancelado vuelve a «Editar»; si no, a la región. */
-  const cancelled = useRef(false);
   const descriptionRef = useRef<HTMLInputElement>(null);
-
-  function changeOpen(next: boolean): void {
-    if (next) {
-      return;
-    }
-    cancelled.current = true;
-    onCancel();
-  }
-
-  /**
-   * El foco lo mueve el diálogo y no Base UI, que pasa al primer control
-   * tabulable de lo que se le devuelve: con la región, que no es tabulable,
-   * caería en «Editar». Va en una microtarea, como el de Base UI, cuando lo
-   * de afuera del modal ya dejó de estar inerte.
-   */
-  function finalFocus(): false {
-    const target = cancelled.current
-      ? (cancelFocus.current ?? regionFocus.current)
-      : regionFocus.current;
-    cancelled.current = false;
-    queueMicrotask(() => target?.focus());
-    return false;
-  }
+  const { onOpenChange, finalFocus } = useDialogReturnFocus({
+    cancelFocus,
+    fallbackFocus,
+    onCancel,
+  });
 
   return (
-    <Dialog open={open} onOpenChange={changeOpen}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent initialFocus={descriptionRef} finalFocus={finalFocus}>
         <BulkEditForm
           descriptionRef={descriptionRef}
@@ -143,24 +129,31 @@ function BulkEditForm({
    * el borrador nuevo llegue a un render: el guardado lee el de acá.
    */
   const draftRef = useRef(draft);
+  /**
+   * El texto de cada hora, confirmado o no. Una hora escrita y sin confirmar
+   * cuenta para «Guardar»: al tomar el foco, el campo la confirma antes de
+   * que el formulario se envíe.
+   */
+  const [clockTexts, setClockTexts] = useState({ start: "", end: "" });
+
+  const clockText = (clock: string) => (clock === "" ? "" : clockLabel(clock, time));
 
   function change(next: BulkChangesDraft): void {
     draftRef.current = next;
     setDraft(next);
   }
 
-  /** Vaciada, la hora vuelve a «sin cambios»; si no, se interpreta con el formato de la persona. */
   function commitClock(field: "start" | "end", text: string): string | null {
-    if (text.trim() === "") {
-      change({ ...draftRef.current, [field]: "" });
-      return "";
-    }
-    const clock = parseClockInput(text, time);
-    if (clock === null) {
+    const next = withBulkClock(draftRef.current, field, text, time);
+    if (next === null) {
       return null;
     }
-    change({ ...draftRef.current, [field]: clock });
-    return clockLabel(clock, time);
+    change(next);
+    return clockText(next[field]);
+  }
+
+  function changeClockText(field: "start" | "end", text: string): void {
+    setClockTexts((current) => ({ ...current, [field]: text }));
   }
 
   function clearDate(): void {
@@ -182,7 +175,8 @@ function BulkEditForm({
     save();
   }
 
-  const clockText = (clock: string) => (clock === "" ? "" : clockLabel(clock, time));
+  const typedClock = clockTexts.start.trim() !== "" || clockTexts.end.trim() !== "";
+  const idle = pending || (toChanges(draft) === null && !typedClock);
 
   return (
     // Enter en la descripción envía el formulario y guarda.
@@ -239,6 +233,7 @@ function BulkEditForm({
             <ClockField
               value={clockText(draft.start)}
               onCommit={(text) => commitClock("start", text)}
+              onTextChange={(text) => changeClockText("start", text)}
               onSubmit={save}
               label={trackerLabels.startTime}
               format={time}
@@ -252,6 +247,7 @@ function BulkEditForm({
             <ClockField
               value={clockText(draft.end)}
               onCommit={(text) => commitClock("end", text)}
+              onTextChange={(text) => changeClockText("end", text)}
               onSubmit={save}
               label={trackerLabels.endTime}
               format={time}
@@ -267,11 +263,7 @@ function BulkEditForm({
         <DialogClose render={<Button type="button" variant="outline" />}>
           Cancelar
         </DialogClose>
-        <Button
-          ref={saveRef}
-          type="submit"
-          aria-disabled={pending || toChanges(draft) === null}
-        >
+        <Button ref={saveRef} type="submit" aria-disabled={idle}>
           Guardar
         </Button>
       </DialogFooter>

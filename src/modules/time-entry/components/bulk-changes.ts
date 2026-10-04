@@ -1,4 +1,5 @@
 import type { BulkEditChanges } from "@/modules/time-entry/schema";
+import { parseClockInput, type TimeFormat } from "@/server/time";
 
 /**
  * TT-63: el borrador del diálogo de edición masiva. Un campo vacío no cambia
@@ -35,6 +36,24 @@ export function toChanges(draft: BulkChangesDraft): BulkEditChanges | null {
     ...(draft.end === "" ? {} : { end: draft.end }),
   };
   return Object.keys(changes).length === 0 ? null : changes;
+}
+
+/**
+ * Lo tecleado en una hora del borrador. Vaciada vuelve a «sin cambios»; si no,
+ * se interpreta con el formato de la persona. `null` si no se puede
+ * interpretar: el borrador queda como estaba.
+ */
+export function withBulkClock(
+  draft: BulkChangesDraft,
+  field: "start" | "end",
+  text: string,
+  format: TimeFormat,
+): BulkChangesDraft | null {
+  if (text.trim() === "") {
+    return { ...draft, [field]: "" };
+  }
+  const clock = parseClockInput(text, format);
+  return clock === null ? null : { ...draft, [field]: clock };
 }
 
 /** TT-64: la palabra que confirma el borrado masivo. */
