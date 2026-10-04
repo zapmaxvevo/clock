@@ -14,7 +14,7 @@ import {
 import type { UpdateRunningStartInput } from "@/modules/time-entry/schema";
 import { clockLabel, parseClockInput } from "@/server/time";
 
-import { ClockField, clockInputMode } from "./clock-field";
+import { ClockField } from "./clock-field";
 import { DateField } from "./date-field";
 import { trackerLabels } from "./labels";
 
@@ -130,7 +130,7 @@ export function RunningStartEditor({
               }}
               onSubmit={save}
               label={trackerLabels.startTime}
-              inputMode={clockInputMode(time)}
+              format={time}
             />
             <DateField
               value={pair.date}

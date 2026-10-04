@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { timeEntryMessages } from "@/modules/time-entry/schema";
 import { clockLabel, formatDuration } from "@/server/time";
 
-import { ClockField, clockInputMode } from "./clock-field";
+import { ClockField } from "./clock-field";
 import { DateField } from "./date-field";
 import { trackerLabels } from "./labels";
 import {
@@ -107,7 +107,7 @@ export function ManualBar({
               commit(withStart(draft, text, time), (next) => clockLabel(next.start, time))
             }
             label={trackerLabels.startTime}
-            inputMode={clockInputMode(time)}
+            format={time}
             disabled={!canTrack}
           />
           <span aria-hidden="true" className="text-muted-foreground">
@@ -120,7 +120,7 @@ export function ManualBar({
                 commit(withEnd(draft, text, time), (next) => clockLabel(next.end, time))
               }
               label={trackerLabels.endTime}
-              inputMode={clockInputMode(time)}
+              format={time}
               disabled={!canTrack}
             />
             {extraDays > 0 && (

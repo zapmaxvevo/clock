@@ -5,7 +5,7 @@ import { useEffect, useRef, type FocusEvent, type KeyboardEvent } from "react";
 import { useDisplayFormats } from "@/components/layout/display-formats";
 import { clockLabel } from "@/server/time";
 
-import { ClockField, clockInputMode } from "./clock-field";
+import { ClockField } from "./clock-field";
 import { DateField } from "./date-field";
 import { trackerLabels } from "./labels";
 import {
@@ -169,7 +169,7 @@ export function EntryTimesEditor({
         onCancel={cancel}
         onSubmit={() => confirm(true)}
         label={trackerLabels.startTime}
-        inputMode={clockInputMode(time)}
+        format={time}
       />
       <span aria-hidden="true" className="text-muted-foreground">
         –
@@ -185,7 +185,7 @@ export function EntryTimesEditor({
           onCancel={cancel}
           onSubmit={() => confirm(true)}
           label={trackerLabels.endTime}
-          inputMode={clockInputMode(time)}
+          format={time}
         />
         {extraDays > 0 && (
           <sup className="text-muted-foreground ml-0.5 text-xs">

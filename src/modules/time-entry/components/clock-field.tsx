@@ -3,20 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import type { TimeFormat } from "@/server/time";
 
 /** Cuánto dura la marca del valor que no se pudo interpretar (TT-21). */
 const REJECTED_FLASH_MS = 1_200;
-
-/**
- * El teclado de un campo de hora en un teléfono: con 12 h tiene que dejar
- * escribir `am` y `pm` (PF-14); con 24 h basta el numérico.
- */
-export function clockInputMode(format: TimeFormat): ClockInputMode {
-  return format === "12h" ? "text" : "numeric";
-}
-
-type ClockInputMode = "numeric" | "text";
 
 type ClockFieldProps = {
   /**
@@ -30,8 +21,13 @@ type ClockFieldProps = {
    */
   readonly onCommit: (text: string) => string | null;
   readonly label: string;
-  /** La duración y las horas en 24 h usan el numérico; ver `clockInputMode`. */
-  readonly inputMode?: ClockInputMode;
+  /**
+   * El formato de la hora que muestra; sin él, el campo es de duración. Con
+   * 12 h el teclado de un teléfono tiene que dejar escribir `am` y `pm`
+   * (PF-14), y el campo, mostrar «12:00 AM» entero; con 24 h y en la
+   * duración bastan el numérico y el ancho de «23:59».
+   */
+  readonly format?: TimeFormat;
   readonly disabled?: boolean;
   /** Esc: el texto vuelve al valor mostrado y se avisa. Sin él, Esc no hace nada. */
   readonly onCancel?: () => void;
@@ -53,7 +49,7 @@ export function ClockField({
   value,
   onCommit,
   label,
-  inputMode = "numeric",
+  format,
   disabled = false,
   onCancel,
   onSubmit,
@@ -112,12 +108,12 @@ export function ClockField({
   return (
     <Input
       type="text"
-      inputMode={inputMode}
+      inputMode={format === "12h" ? "text" : "numeric"}
       value={text}
       aria-label={label}
       aria-invalid={rejected}
       disabled={disabled}
-      className="w-20 text-center tabular-nums"
+      className={cn("text-center tabular-nums", format === "12h" ? "w-26" : "w-20")}
       onChange={(event) => setText(event.target.value)}
       onFocus={() => setFocused(true)}
       onBlur={() => {
