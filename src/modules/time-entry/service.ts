@@ -41,6 +41,10 @@ import {
 import {
   timeEntryMessages,
   TRACKER_WINDOW_DAYS,
+  type BulkDeleteEntriesResult,
+  type BulkDeleteEntriesValues,
+  type BulkEditEntriesResult,
+  type BulkEditEntriesValues,
   type ContinueEntryInput,
   type ContinueEntryResult,
   type CreateManualEntryResult,
@@ -1016,6 +1020,33 @@ export async function updateRunningStart(
     return next;
   });
   return { running: toView(updated, workspace) };
+}
+
+/**
+ * TT-63: la descripción, la fecha y las horas de varias entradas cerradas,
+ * todo o nada (ADR 0011). Cada fila pasa por la regla de `updateEntryTimes`.
+ */
+export async function bulkEditEntries(
+  actor: Actor,
+  workspace: TrackerWorkspace,
+  input: BulkEditEntriesValues,
+): Promise<BulkEditEntriesResult> {
+  throw new Error(
+    `bulkEditEntries sin implementar (${actor.userId}, ${workspace.timezone}, ${input.ids.length}).`,
+  );
+}
+
+/**
+ * TT-64: borra varias entradas cerradas, todo o nada (ADR 0011). Una que ya
+ * no existe no es un rechazo.
+ */
+export async function bulkDeleteEntries(
+  actor: Actor,
+  input: BulkDeleteEntriesValues,
+): Promise<BulkDeleteEntriesResult> {
+  throw new Error(
+    `bulkDeleteEntries sin implementar (${actor.userId}, ${input.ids.length}).`,
+  );
 }
 
 type WindowFloors = {

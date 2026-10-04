@@ -35,6 +35,13 @@ export const timeEntryMessages = {
   multiDayTimes: "Esta entrada dura más de un día; sus horarios no se pueden editar acá.",
   sameEntryId: "La entrada nueva no puede usar el id de la original.",
   taskNeedsProject: "Elegí un proyecto antes que una tarea.",
+  bulkEmpty: "Elegí al menos una entrada.",
+  bulkTooMany: "Se pueden elegir hasta 200 entradas a la vez.",
+  bulkNoChanges: "Elegí al menos un cambio.",
+  bulkEditRejected:
+    "Ninguna entrada cambió: algunas de las elegidas no se pueden editar.",
+  bulkDeleteRejected:
+    "No se borró ninguna entrada: algunas de las elegidas no se pueden borrar.",
   unexpected: "No se pudo guardar. Revisá la conexión y volvé a intentar.",
 } as const;
 
@@ -160,6 +167,47 @@ export const updateEntryProjectInput = z
   })
   .refine(hasProjectForTask, taskNeedsProject);
 
+/** Tope de entradas de una operación en masa (TT-63, TT-64). */
+export const BULK_MAX = 200;
+
+/**
+ * Los ids de una operación en masa. Se normalizan a minúsculas y sin repetir:
+ * la base los iguala, y repetir uno no cambia lo pedido.
+ */
+const entryIds = z
+  .array(z.uuid())
+  .min(1, timeEntryMessages.bulkEmpty)
+  .max(BULK_MAX, timeEntryMessages.bulkTooMany)
+  .transform((ids) => [...new Set(ids.map((id) => id.toLowerCase()))]);
+
+/**
+ * Lo que cambia en cada entrada. Un campo ausente no cambia; uno presente
+ * reemplaza, también con "" en la descripción. Estricto: un campo que este
+ * slice no conoce —el proyecto, antes del slice 12— se rechaza en vez de
+ * ignorarse, con el texto de `unexpected` y no con el de Zod, que está en
+ * inglés: ninguna interfaz lo manda.
+ */
+export const bulkEditChanges = z
+  .strictObject(
+    {
+      description: description.optional(),
+      /** Día local del inicio. */
+      date: dayKeyInput.optional(),
+      start: clockInput.optional(),
+      /** Menor que el inicio que quede significa el día siguiente (TT-72). */
+      end: clockInput.optional(),
+    },
+    { error: timeEntryMessages.unexpected },
+  )
+  .refine(
+    (changes) => Object.values(changes).some((value) => value !== undefined),
+    timeEntryMessages.bulkNoChanges,
+  );
+
+export const bulkEditEntriesInput = z.object({ ids: entryIds, changes: bulkEditChanges });
+
+export const bulkDeleteEntriesInput = z.object({ ids: entryIds });
+
 export type StartTimerInput = z.input<typeof startTimerInput>;
 /** Lo que recibe el service: `description` ya validada y con su default. */
 export type StartTimerValues = z.output<typeof startTimerInput>;
@@ -175,6 +223,12 @@ export type ContinueEntryInput = z.infer<typeof continueEntryInput>;
 export type DuplicateEntryInput = z.infer<typeof duplicateEntryInput>;
 export type DiscardTimerInput = z.infer<typeof discardTimerInput>;
 export type UpdateEntryProjectInput = z.infer<typeof updateEntryProjectInput>;
+export type BulkEditChanges = z.output<typeof bulkEditChanges>;
+export type BulkEditEntriesInput = z.input<typeof bulkEditEntriesInput>;
+/** Lo que recibe el service: los ids ya normalizados. */
+export type BulkEditEntriesValues = z.output<typeof bulkEditEntriesInput>;
+export type BulkDeleteEntriesInput = z.input<typeof bulkDeleteEntriesInput>;
+export type BulkDeleteEntriesValues = z.output<typeof bulkDeleteEntriesInput>;
 
 /**
  * Todo lo que depende de zona horaria o de formato se resuelve en el servidor.
@@ -278,7 +332,8 @@ export type DayGroupView = z.infer<typeof dayGroupView>;
 export type WeekGroupView = z.infer<typeof weekGroupView>;
 export type TrackerState = z.infer<typeof trackerState>;
 
-export type TimeEntryErrorCode = ActionErrorCode | "already_stopped" | "timer_running";
+export type TimeEntryErrorCode =
+  ActionErrorCode | "already_stopped" | "timer_running" | "rejected";
 
 export type StartTimerResult = {
   /**
@@ -311,3 +366,9 @@ export type DuplicateEntryResult = { readonly created: TimeEntryView };
 export type DiscardTimerResult = { readonly id: string };
 
 export type UpdateEntryProjectResult = { readonly entry: TimeEntryView };
+
+/** Las vistas de todas las entradas pedidas, en el orden pedido: cambien o no. */
+export type BulkEditEntriesResult = { readonly entries: readonly TimeEntryView[] };
+
+/** Los ids pedidos: los que se borraron y los que ya no estaban (ADR 0011). */
+export type BulkDeleteEntriesResult = { readonly ids: readonly string[] };

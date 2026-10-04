@@ -6,6 +6,8 @@ import { assertCan } from "@/server/permissions";
 import * as service from "./service";
 import { ownTimeEntryResource, trackerWorkspaceOf } from "./service";
 import {
+  bulkDeleteEntriesInput,
+  bulkEditEntriesInput,
   continueEntryInput,
   createManualEntryInput,
   deleteEntryInput,
@@ -18,6 +20,10 @@ import {
   updateEntryProjectInput,
   updateEntryTimesInput,
   updateRunningStartInput,
+  type BulkDeleteEntriesInput,
+  type BulkDeleteEntriesResult,
+  type BulkEditEntriesInput,
+  type BulkEditEntriesResult,
   type ContinueEntryInput,
   type ContinueEntryResult,
   type CreateManualEntryInput,
@@ -155,5 +161,25 @@ export async function discardTimer(input: DiscardTimerInput): Result<DiscardTime
     const values = discardTimerInput.parse(input);
     assertCan(session.actor, "timeEntry.own.delete", ownTimeEntryResource(session.actor));
     return service.discardTimer(session.actor, values);
+  }, options);
+}
+
+export async function bulkEditEntries(
+  input: BulkEditEntriesInput,
+): Result<BulkEditEntriesResult> {
+  return handle(async (session) => {
+    const values = bulkEditEntriesInput.parse(input);
+    assertCan(session.actor, "timeEntry.own.update", ownTimeEntryResource(session.actor));
+    return service.bulkEditEntries(session.actor, trackerWorkspaceOf(session), values);
+  }, options);
+}
+
+export async function bulkDeleteEntries(
+  input: BulkDeleteEntriesInput,
+): Result<BulkDeleteEntriesResult> {
+  return handle(async (session) => {
+    const values = bulkDeleteEntriesInput.parse(input);
+    assertCan(session.actor, "timeEntry.own.delete", ownTimeEntryResource(session.actor));
+    return service.bulkDeleteEntries(session.actor, values);
   }, options);
 }
