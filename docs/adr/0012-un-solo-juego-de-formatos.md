@@ -90,6 +90,7 @@ La opción 3, con los formatos por contexto (b).
   El segundo nivel existe porque Next 16 conserva los layouts compartidos en
   una navegación del cliente: después de cambiar una preferencia, el layout
   puede seguir con los formatos viejos mientras la página llega fresca.
+
 - **El hook lanza fuera del proveedor.** Un valor por omisión escondería que
   falta.
 - **Un cambio de preferencia revalida el layout raíz** (PF-33), y cada pantalla
