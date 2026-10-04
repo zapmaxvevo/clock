@@ -139,10 +139,39 @@ Cuando no hay proyecto elegido muestra «Proyecto» con ícono de carpeta y sin
 color. Con proyecto elegido muestra el punto de color del proyecto y su nombre,
 y si hay tarea, «Proyecto: Tarea».
 
-**TT-07 Buscador del selector** — `replicar`
+**TT-07 Buscador del selector** — `adaptar`
 Al abrir, un popover con un buscador arriba y la lista de proyectos agrupados
-por cliente. Los proyectos con tareas se expanden para elegir una tarea. El
-buscador filtra por nombre de proyecto, de cliente y de tarea.
+por cliente, con «Sin cliente» al final (PR-97). En Clockify los proyectos con
+tareas se expanden para elegir una tarea; acá **las tareas se listan siempre
+debajo de su proyecto**, con sangría y sin un control para expandirlas. Un
+proyecto sin tareas no trae opciones de tarea (PR-87). El buscador filtra por
+nombre de proyecto, de cliente y de tarea.
+Justificación: un elemento que se expande dentro de un `listbox` no tiene rol
+accesible, y la alternativa —una grilla con una celda de expansión por fila—
+cuesta un patrón de teclado propio para workspaces que, en el plan Free, son
+chicos (PR-110). Si con proyectos de muchas tareas la lista pesa, la grilla es
+el camino.
+
+_Agregado el 2026-10-04_. Diseño propio, fijado en el
+[contrato del slice 10](../slices/fase1-slice10-selector-de-proyecto.md): la
+documentación no describe cómo busca el selector.
+
+- **La búsqueda no distingue mayúsculas ni acentos**: «diseno» encuentra
+  «Diseño».
+- **Lo que trae cada coincidencia.** Un cliente que coincide trae todos sus
+  proyectos con todas sus tareas; un proyecto que coincide, todas sus tareas;
+  una tarea que coincide, su proyecto con las tareas que coinciden.
+- **«Sin proyecto» (TT-10) es la primera opción y solo aparece con la búsqueda
+  vacía.** Con el catálogo vacío también se ofrece (TT-87).
+- **La búsqueda es en el navegador, sobre el catálogo entero** que trae la
+  pantalla (PR-110 de [la paridad de proyectos](proyectos.md)).
+- **Sin coincidencias**, el selector muestra «Ningún proyecto coincide con la
+  búsqueda.»
+- **La selección actual se marca**, salvo que no esté en el catálogo —el
+  proyecto archivado de una entrada (TT-104)—: ahí no se marca ninguna.
+
+_Corregido el 2026-10-04, slice 10 (decisión del equipo)_: era `replicar` y
+decía que los proyectos con tareas se expanden para elegir una tarea.
 
 **TT-08 Solo proyectos a los que el usuario tiene acceso** — `replicar`
 La lista muestra los proyectos activos del workspace a los que la persona está
@@ -709,6 +738,17 @@ Documentado: el botón de reproducción **crea una entrada nueva** con la
 descripción, el proyecto, la tarea, las etiquetas y la facturabilidad de la
 original, con `start` ahora y `end` nulo. No reabre la entrada original.
 
+_Agregado el 2026-10-04_. Diseño propio, _no verificado_ (P-14), fijado en el
+[contrato del slice 10](../slices/fase1-slice10-selector-de-proyecto.md):
+**continuar una entrada cuyo proyecto o tarea ya no está disponible se rechaza
+y no crea nada.** Vale para un proyecto archivado, uno privado del que la
+persona ya no es miembro y una tarea hecha. La respuesta es
+«Ese proyecto ya no está disponible.» (TT-77) o «Esa tarea ya no está
+disponible.» (PR-74 de [la paridad de proyectos](proyectos.md)), y el timer que
+corría sigue corriendo. La documentación no cubre el caso. Justificación: la
+alternativa, copiar sin el proyecto, cambia la entrada en silencio. Si el
+workspace del equipo muestra que Clockify copia sin el proyecto, se cambia.
+
 **TT-58 Duplicar** — `replicar`
 Menú de tres puntos → «Duplicar». Crea una copia cerrada con los mismos campos
 y las mismas horas de inicio y fin, en el mismo día.
@@ -726,6 +766,10 @@ corre, que solo llega armado a mano porque la abierta no es una fila (TT-111),
 se rechaza sin escribir con «Esta entrada es la que está corriendo.», el texto
 de TT-111: el hecho es el mismo —la entrada pedida es la abierta— y el remedio
 también.
+
+_Agregado el 2026-10-04_. Diseño propio, _no verificado_ (P-14): **duplicar una
+entrada cuyo proyecto o tarea ya no está disponible se rechaza** con TT-77 o
+PR-74 y no crea nada, por la misma razón que al continuar (TT-57).
 
 **TT-59 Dividir** — `fuera de alcance`
 La documentación la marca como funcionalidad de plan pago: no se puede relevar
@@ -920,9 +964,19 @@ día; desde TT-52 llega hasta el primer día de su semana, y el salto vale
 también al cargar más.
 
 **TT-87 Workspace sin proyectos** — `adaptar`
-El selector de proyecto abre con «No hay proyectos todavía» y, si el rol lo
-permite, un enlace a la pantalla de proyectos. Justificación: en Clockify ahí
-va «Crear proyecto», que es TT-09 y está fuera de alcance.
+El selector de proyecto abre con «No hay proyectos todavía» y, si
+`project.create` lo permite, el enlace «Ir a Proyectos», que lleva a
+`/proyectos`. En la fase 1 lo permite a toda membresía activa (PR-59).
+Justificación: en Clockify ahí va «Crear proyecto», que es TT-09 y está fuera
+de alcance.
+
+**«Sin proyecto» se ofrece también con el catálogo vacío.** Diseño propio: es
+la única forma de quitarle a una entrada un proyecto archivado cuando no queda
+ningún proyecto activo que ofrecer (TT-10 con TT-104).
+
+_Corregido el 2026-10-04, slice 10_: decía «si el rol lo permite, un enlace a
+la pantalla de proyectos», sin el texto del enlace ni la acción que lo
+habilita, y no decía qué pasa con «Sin proyecto».
 
 **TT-88 Workspace sin etiquetas** — `adaptar`
 El selector de etiquetas abre con «No hay etiquetas todavía». Misma
@@ -1094,10 +1148,34 @@ persona entra como dato (PF-01, PF-16, PF-18), sin pantalla para cambiarlo.
 Contrato:
 [fase1-slice5-semana-y-paginacion.md](../slices/fase1-slice5-semana-y-paginacion.md).
 
+### Slice 10 — selector de proyecto y tarea
+
+TT-06, TT-07, TT-08, TT-10, TT-11, TT-70, TT-77, TT-87 y TT-104, y TT-49 y
+TT-50 en lo que toca al proyecto: el punto de color, el proyecto y la tarea en
+la fila, y «Sin proyecto» en gris y sin punto. De
+[la paridad de proyectos](proyectos.md), los 24 de su §14.1. Va antes que los
+slices 6 y 7. Contrato:
+[fase1-slice10-selector-de-proyecto.md](../slices/fase1-slice10-selector-de-proyecto.md).
+
+- **TT-27 y TT-54 quedan completos en lo que toca a proyecto y tarea**: se
+  cambian con el timer corriendo, sin detenerlo, y desde la fila. Les faltan
+  las etiquetas y el facturable.
+- **Continuar y duplicar copian el proyecto y la tarea** (TT-57, TT-58), y se
+  rechazan si ya no están disponibles. La recarga y el segundo dispositivo
+  muestran el proyecto y la tarea del timer (TT-38, TT-39).
+- **TT-92 y TT-93 se verifican por el camino nuevo**: con la membresía
+  desactivada el proyecto se muestra y no se cambia, y una entrada sin proyecto
+  sigue siendo válida en todo el recorrido.
+- **Lo que el slice decide**: TT-07 pasa a `adaptar`; la búsqueda, «Sin
+  proyecto» con el catálogo vacío y el texto y el enlace de TT-87 son diseño
+  propio; el rechazo al continuar y al duplicar es diseño propio _no
+  verificado_ (P-14).
+- **TT-09**, crear un proyecto desde el selector, sigue fuera de alcance.
+
 ### Lo que queda
 
-Selector de proyecto y tarea (TT-06 … TT-11), etiquetas (TT-12), facturable
-(TT-14, TT-15), y selección y edición masiva (TT-62 … TT-64).
+Etiquetas (TT-12), facturable (TT-14, TT-15), y selección y edición masiva
+(TT-62 … TT-64).
 
 _Corregido el 2026-10-03, decisión del equipo_: esta lista incluía lo que ya
 implementaron los slices 3 y 4, que ahora tienen su sección, y no nombraba el
@@ -1105,6 +1183,9 @@ slice 2b.
 _Corregido el 2026-10-03, slice 5_: salen de esta lista el total y el
 encabezado de semana (TT-47, TT-48) y «Cargar más» con el extremo nuevo de la
 ventana (TT-52), que ahora tienen su sección.
+_Corregido el 2026-10-04, slice 10_: sale de esta lista el selector de proyecto
+y tarea (TT-06 … TT-11), que ahora tiene su sección; TT-09 sigue fuera de
+alcance.
 
 ## Pendientes de definición del equipo
 
@@ -1123,7 +1204,7 @@ pero necesitan una decisión.
 | P-05 | Dividir entrada: funcionalidad paga. ¿Entra en el alcance y con qué reglas de corte?                                                                                                      |
 | P-07 | Edición masiva en el rastreador: no sé si está en Free. Confirmar en el workspace y decidir si entra en la fase 1.                                                                        |
 | P-09 | Agrupación de entradas similares en una fila colapsable. El interruptor vive en el perfil (PF-26).                                                                                        |
-| P-14 | Verificar en el workspace real del equipo lo marcado como _no verificado_: TT-16, TT-26, TT-35, TT-44, TT-46, TT-47, TT-58, TT-63, TT-65, TT-105, TT-108, TT-111, TT-112.                 |
+| P-14 | Verificar en el workspace real del equipo lo marcado como _no verificado_: TT-16, TT-26, TT-35, TT-44, TT-46, TT-47, TT-57, TT-58, TT-63, TT-65, TT-105, TT-108, TT-111, TT-112.          |
 
 ### Cerrados
 

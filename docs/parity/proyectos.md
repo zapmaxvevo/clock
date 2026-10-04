@@ -689,8 +689,11 @@ El campo de cliente del diálogo de proyecto queda vacío y sigue siendo opciona
 pantalla de clientes vacía muestra «Todavía no hay clientes».
 
 **PR-87 Proyecto sin tareas** — `replicar`
-El proyecto no se expande en el selector (TT-07) y se elige directo. No hay
-ningún aviso: la tarea es opcional.
+El proyecto se elige directo en el selector y no trae opciones de tarea debajo
+(TT-07). No hay ningún aviso: la tarea es opcional.
+_Corregido el 2026-10-04, slice 10_: decía que el proyecto no se expande. Desde
+que TT-07 lista las tareas siempre debajo de su proyecto, no hay nada que
+expandir.
 
 **PR-88 Workspace sin etiquetas** — `adaptar`
 Ya relevado en TT-88.
@@ -736,24 +739,38 @@ documenta; en un Server Component el filtro en la URL es además lo más barato.
 
 ## 13. Casos borde
 
-| ID     | Caso                                                    | Comportamiento esperado                                                                                                              |
-| ------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| PR-96  | Entrada sin proyecto                                    | Válida en todo el recorrido (TT-93). Nada de este módulo la invalida                                                                 |
-| PR-97  | Proyecto sin cliente                                    | Válido. Va al grupo «Sin cliente» del selector (PR-14)                                                                               |
-| PR-98  | Proyecto archivado con cliente activo, y al revés       | Los dos estados son independientes (PR-06). Un proyecto activo de un cliente archivado se sigue pudiendo elegir                      |
-| PR-99  | Tarea hecha de un proyecto activo                       | El proyecto se elige, la tarea no aparece (PR-38)                                                                                    |
-| PR-100 | Tarea activa de un proyecto archivado                   | Ninguno de los dos aparece en el selector: el acceso lo corta el proyecto                                                            |
-| PR-101 | Cambiar el cliente de un proyecto que ya tiene entradas | Se permite. Las entradas no se tocan; cambia el grupo del selector y de los reportes. _No verificado_                                |
-| PR-102 | Renombrar un proyecto que ya tiene entradas             | Se permite. La fila de la entrada muestra el nombre nuevo: la entrada guarda la referencia, no el texto                              |
-| PR-103 | Cambiar el color de un proyecto                         | Cambia el punto de todas sus entradas, pasadas incluidas (TT-49)                                                                     |
-| PR-104 | Mover una tarea a otro proyecto                         | No existe: la tarea pertenece a un proyecto y no se reasigna (PR-35)                                                                 |
-| PR-105 | Entrada cuya tarea es de otro proyecto                  | Estado imposible. Lo rechaza la validación (PR-74) y conviene un `check` en la base                                                  |
-| PR-106 | Archivar un proyecto con un timer corriendo que lo usa  | El timer sigue corriendo y conserva el proyecto (PR-63). Detenerlo no falla. _No verificado_                                         |
-| PR-107 | Borrar un proyecto con un timer corriendo que lo usa    | El timer sigue corriendo y pierde el proyecto (PR-64). La barra lo refleja al revalidar. _No verificado_                             |
-| PR-108 | Dos personas creando el mismo nombre a la vez           | Una gana; la otra recibe el mensaje de colisión (PR-91)                                                                              |
-| PR-109 | Nombre con espacios al principio o al final             | Se recortan antes de validar y de guardar (PR-49)                                                                                    |
-| PR-110 | Workspace con muchos proyectos                          | El selector busca en el servidor y pagina. Sin número relevado: el límite de cinco personas del plan Free acota el volumen esperable |
-| PR-111 | Borrar un cliente con un proyecto homónimo sin cliente  | Se rechaza y no cambia nada. Decisión del equipo del 2026-10-03, detallada debajo de la tabla                                        |
+| ID     | Caso                                                    | Comportamiento esperado                                                                                                        |
+| ------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| PR-96  | Entrada sin proyecto                                    | Válida en todo el recorrido (TT-93). Nada de este módulo la invalida                                                           |
+| PR-97  | Proyecto sin cliente                                    | Válido. Va al grupo «Sin cliente» del selector (PR-14)                                                                         |
+| PR-98  | Proyecto archivado con cliente activo, y al revés       | Los dos estados son independientes (PR-06). Un proyecto activo de un cliente archivado se sigue pudiendo elegir                |
+| PR-99  | Tarea hecha de un proyecto activo                       | El proyecto se elige, la tarea no aparece (PR-38)                                                                              |
+| PR-100 | Tarea activa de un proyecto archivado                   | Ninguno de los dos aparece en el selector: el acceso lo corta el proyecto                                                      |
+| PR-101 | Cambiar el cliente de un proyecto que ya tiene entradas | Se permite. Las entradas no se tocan; cambia el grupo del selector y de los reportes. _No verificado_                          |
+| PR-102 | Renombrar un proyecto que ya tiene entradas             | Se permite. La fila de la entrada muestra el nombre nuevo: la entrada guarda la referencia, no el texto                        |
+| PR-103 | Cambiar el color de un proyecto                         | Cambia el punto de todas sus entradas, pasadas incluidas (TT-49)                                                               |
+| PR-104 | Mover una tarea a otro proyecto                         | No existe: la tarea pertenece a un proyecto y no se reasigna (PR-35)                                                           |
+| PR-105 | Entrada cuya tarea es de otro proyecto                  | Estado imposible. Lo rechaza la validación (PR-74) y conviene un `check` en la base                                            |
+| PR-106 | Archivar un proyecto con un timer corriendo que lo usa  | El timer sigue corriendo y conserva el proyecto (PR-63). Detenerlo no falla. _No verificado_                                   |
+| PR-107 | Borrar un proyecto con un timer corriendo que lo usa    | El timer sigue corriendo y pierde el proyecto (PR-64). La barra lo refleja al revalidar. _No verificado_                       |
+| PR-108 | Dos personas creando el mismo nombre a la vez           | Una gana; la otra recibe el mensaje de colisión (PR-91)                                                                        |
+| PR-109 | Nombre con espacios al principio o al final             | Se recortan antes de validar y de guardar (PR-49)                                                                              |
+| PR-110 | Workspace con muchos proyectos                          | Hasta el umbral del slice 9, catálogo entero y búsqueda en el cliente; pasado el umbral, en el servidor y paginado. Ver debajo |
+| PR-111 | Borrar un cliente con un proyecto homónimo sin cliente  | Se rechaza y no cambia nada. Decisión del equipo del 2026-10-03, detallada debajo de la tabla                                  |
+
+**PR-110** — `adaptar`. _Corregido el 2026-10-04, slice 10_: decía que el
+selector busca en el servidor y pagina, que es lo que hace Clockify, sin número
+relevado de a partir de cuántos proyectos. Acá la pantalla trae el catálogo
+entero del selector —los proyectos activos en los que la persona puede cargar
+horas, con sus tareas activas— y la búsqueda filtra en el navegador sobre ese
+catálogo (TT-07). El umbral es el del slice 9: cientos de proyectos y miles de
+tareas. Pasado ese umbral, el selector busca en el servidor y pagina, como
+Clockify, y la lectura deja de traer las tareas de todos los proyectos (§8 del
+[contrato del slice 10](../slices/fase1-slice10-selector-de-proyecto.md)).
+Justificación: el límite de cinco personas del plan Free acota el volumen
+esperable por debajo de ese umbral. El costo es que el catálogo viaja entero en
+cada dibujo de la pantalla, también en la revalidación de cada 60 segundos
+(P-11 de `time-tracker.md`).
 
 **PR-111** — `adaptar`. _Agregado el 2026-10-03, decisión del equipo_, tomada
 en la revisión del contrato del slice 9 (M-2). Al borrar un cliente, PR-09 deja
