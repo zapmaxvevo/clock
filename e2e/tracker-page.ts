@@ -281,7 +281,7 @@ export function preferenceControl(
   return page.getByRole("combobox", { name: new RegExp(`^${label}`) });
 }
 
-function escapeRegExp(text: string): string {
+export function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
@@ -376,4 +376,71 @@ export async function chooseDay(
   await calendar.getByRole("button", { name: calendarDayName(target) }).click();
   await expect(calendar).toBeHidden();
   await expect(dateButton(scope)).toBeFocused();
+}
+
+/**
+ * La región de las acciones en masa (TT-62), siempre montada aunque no haya
+ * selección: es el destino del foco cuando lo que lo tenía se va. Con un
+ * diálogo modal abierto, Base UI marca con `aria-hidden` todo lo de afuera; la
+ * región se busca igual, porque el recorrido la mira también detrás del
+ * diálogo.
+ */
+export function bulkRegion(page: Page): Locator {
+  return page.getByRole("region", {
+    name: "Acciones en masa",
+    exact: true,
+    includeHidden: true,
+  });
+}
+
+/**
+ * El único estado de la región: la cantidad elegida, «Borrando…» y el
+ * resultado de la última operación.
+ */
+export function bulkStatus(page: Page): Locator {
+  return bulkRegion(page).getByRole("status", { includeHidden: true });
+}
+
+/** Un botón de la barra, que vive dentro de la región. */
+export function bulkButton(
+  page: Page,
+  name: "Editar" | "Borrar" | "Quitar selección",
+): Locator {
+  return bulkRegion(page).getByRole("button", { name, exact: true });
+}
+
+/**
+ * La casilla de una fila: la descripción y sus horas como las muestra la
+ * fila, en el formato de la persona (TT-62). Las horas pueden ser un patrón,
+ * para una entrada cuyo fin depende de la hora de la corrida.
+ */
+export function entryCheckbox(
+  scope: Locator,
+  description: string,
+  times: string | RegExp,
+): Locator {
+  const prefix = `Seleccionar «${description}», `;
+  return typeof times === "string"
+    ? scope.getByRole("checkbox", { name: `${prefix}${times}`, exact: true })
+    : scope.getByRole("checkbox", {
+        name: new RegExp(`^${escapeRegExp(prefix)}${times.source}$`),
+      });
+}
+
+/** La casilla del encabezado de un día, por el rótulo del día (TT-44). */
+export function dayCheckbox(scope: Locator, label: string): Locator {
+  return scope.getByRole("checkbox", {
+    name: `Seleccionar las entradas del día ${label}`,
+    exact: true,
+  });
+}
+
+/** El diálogo de edición masiva, «Editar N entradas». Va en un portal. */
+export function bulkEditDialog(page: Page): Locator {
+  return page.getByRole("dialog", { name: /^Editar (1 entrada|\d+ entradas)$/ });
+}
+
+/** El diálogo de borrado masivo, «¿Borrar N entradas?». Va en un portal. */
+export function bulkDeleteDialog(page: Page): Locator {
+  return page.getByRole("dialog", { name: /^¿Borrar (1 entrada|\d+ entradas)\?$/ });
 }
