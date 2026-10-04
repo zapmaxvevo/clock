@@ -72,7 +72,7 @@ solo. El orden es de dependencia, no de tamaño.
 | 3     | Corregir horas y fecha de una entrada         | 2, 2b           |
 | 4     | Continuar, duplicar, descartar y atajos       | 2, 2b, 3        |
 | 5     | Semana y paginación                           | 2, 3            |
-| 6     | Selección y acciones en masa                  | 3               |
+| 6     | Selección y acciones en masa                  | 3, 4, 5, 9      |
 | 7     | Perfil                                        | 5               |
 | 8     | Calendario                                    | 3, 5, 7         |
 | 9     | Núcleo de proyectos, clientes y tareas        | 2, 2b           |
