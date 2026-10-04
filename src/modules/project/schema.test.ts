@@ -1,0 +1,160 @@
+import { describe, expect, it } from "vitest";
+import type { z } from "zod";
+
+import {
+  createClientInput,
+  createProjectInput,
+  createTaskInput,
+  projectMessages,
+} from "./schema";
+
+const id = "6f1c2a4e-3b5d-4e7f-8a9b-0c1d2e3f4a5b";
+const nilUuid = "00000000-0000-0000-0000-000000000000";
+const uuidV7 = "01926b8e-7c3a-7d4e-9f00-112233445566";
+
+function messageOf(result: z.ZodSafeParseResult<unknown>): string | undefined {
+  return result.success ? undefined : result.error.issues.at(0)?.message;
+}
+
+describe("el nombre, en las tres altas (PR-54, PR-75, PR-76, PR-109)", () => {
+  const cases = [
+    ["cliente", (name: string) => createClientInput.safeParse({ id, name })],
+    [
+      "proyecto",
+      (name: string) =>
+        createProjectInput.safeParse({ id, name, clientId: null, color: null }),
+    ],
+    ["tarea", (name: string) => createTaskInput.safeParse({ id, projectId: id, name })],
+  ] as const;
+
+  for (const [entity, parse] of cases) {
+    describe(entity, () => {
+      it("recorta los espacios de los extremos", () => {
+        const result = parse("  Acme  ");
+        expect(result.success && result.data.name).toBe("Acme");
+      });
+
+      it("rechaza vacío o solo espacios con PR-75", () => {
+        expect(messageOf(parse(""))).toBe(projectMessages.nameRequired);
+        expect(messageOf(parse("   "))).toBe(projectMessages.nameRequired);
+      });
+
+      it("acepta 100 caracteres y rechaza 101 con PR-76", () => {
+        expect(parse("a".repeat(100)).success).toBe(true);
+        expect(messageOf(parse("a".repeat(101)))).toBe(projectMessages.nameTooLong);
+      });
+
+      it("cuenta el largo después de recortar", () => {
+        expect(parse(` ${"a".repeat(100)} `).success).toBe(true);
+      });
+
+      it("rechaza el carácter nulo", () => {
+        expect(messageOf(parse("Ac\u0000me"))).toBe(projectMessages.nullCharacter);
+      });
+    });
+  }
+});
+
+describe("createClientInput", () => {
+  it("deja la dirección y la nota en vacío si no llegan", () => {
+    expect(createClientInput.parse({ id, name: "Acme" })).toEqual({
+      id,
+      name: "Acme",
+      address: "",
+      note: "",
+    });
+  });
+
+  it("acepta hasta 3000 caracteres de dirección y de nota (PR-54)", () => {
+    const long = "a".repeat(3000);
+    expect(
+      createClientInput.safeParse({ id, name: "Acme", address: long, note: long })
+        .success,
+    ).toBe(true);
+    expect(
+      messageOf(createClientInput.safeParse({ id, name: "Acme", address: `${long}a` })),
+    ).toBe(projectMessages.addressTooLong);
+    expect(
+      messageOf(createClientInput.safeParse({ id, name: "Acme", note: `${long}a` })),
+    ).toBe(projectMessages.noteTooLong);
+  });
+
+  it("recorta la dirección y la nota, y rechaza el carácter nulo en ellas", () => {
+    const parsed = createClientInput.parse({
+      id,
+      name: "Acme",
+      address: " Calle 1 ",
+      note: " x ",
+    });
+    expect(parsed.address).toBe("Calle 1");
+    expect(parsed.note).toBe("x");
+    expect(
+      messageOf(createClientInput.safeParse({ id, name: "Acme", note: "\u0000" })),
+    ).toBe(projectMessages.nullCharacter);
+  });
+
+  it("exige un id UUID v4 (ADR 0007)", () => {
+    expect(createClientInput.safeParse({ id: nilUuid, name: "Acme" }).success).toBe(
+      false,
+    );
+    expect(createClientInput.safeParse({ id: uuidV7, name: "Acme" }).success).toBe(false);
+    expect(createClientInput.safeParse({ id: "no-es-un-id", name: "Acme" }).success).toBe(
+      false,
+    );
+  });
+});
+
+describe("createProjectInput", () => {
+  const base = { id, name: "Web", clientId: null, color: null };
+
+  it("acepta sin cliente y sin color", () => {
+    expect(createProjectInput.parse(base)).toEqual({ ...base, note: "" });
+  });
+
+  it("acepta una clave de la paleta y rechaza otra cosa", () => {
+    expect(createProjectInput.safeParse({ ...base, color: "teal" }).success).toBe(true);
+    expect(createProjectInput.safeParse({ ...base, color: "#DC2626" }).success).toBe(
+      false,
+    );
+    expect(createProjectInput.safeParse({ ...base, color: "magenta" }).success).toBe(
+      false,
+    );
+  });
+
+  it("exige que cliente y color lleguen, aunque sea como null", () => {
+    expect(createProjectInput.safeParse({ id, name: "Web" }).success).toBe(false);
+  });
+
+  it("acepta cualquier UUID como cliente y rechaza lo que no lo es", () => {
+    expect(createProjectInput.safeParse({ ...base, clientId: uuidV7 }).success).toBe(
+      true,
+    );
+    expect(createProjectInput.safeParse({ ...base, clientId: "acme" }).success).toBe(
+      false,
+    );
+  });
+
+  it("rechaza una nota de más de 3000 caracteres", () => {
+    expect(
+      messageOf(createProjectInput.safeParse({ ...base, note: "a".repeat(3001) })),
+    ).toBe(projectMessages.noteTooLong);
+  });
+
+  it("exige un id UUID v4", () => {
+    expect(createProjectInput.safeParse({ ...base, id: nilUuid }).success).toBe(false);
+  });
+});
+
+describe("createTaskInput", () => {
+  it("exige el proyecto como UUID y un id v4", () => {
+    expect(
+      createTaskInput.safeParse({ id, projectId: "web", name: "Diseño" }).success,
+    ).toBe(false);
+    expect(
+      createTaskInput.safeParse({ id: uuidV7, projectId: id, name: "Diseño" }).success,
+    ).toBe(false);
+    expect(
+      createTaskInput.safeParse({ id, projectId: uuidV7, name: "Diseño" }).success,
+    ).toBe(true);
+  });
+});

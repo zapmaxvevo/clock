@@ -1,0 +1,123 @@
+import { z } from "zod";
+
+import { noNullCharacter } from "@/lib/text";
+import type { ActionResult } from "@/server/action";
+
+import { PALETTE_KEYS, type PaletteKey } from "./palette";
+
+/** Largo máximo del nombre de cliente, proyecto y tarea (P-20). Lo repite un `check`. */
+export const NAME_MAX = 100;
+
+/** Largo máximo de la dirección y la nota. Lo repite un `check`. */
+export const LONG_TEXT_MAX = 3000;
+
+/** Textos que la interfaz muestra tal cual (`proyectos.md`, §9). */
+export const projectMessages = {
+  projectUnavailable: "Ese proyecto ya no está disponible.",
+  clientUnavailable: "Ese cliente ya no está disponible.",
+  nameRequired: "El nombre no puede estar vacío.",
+  nameTooLong: "El nombre no puede superar los 100 caracteres.",
+  projectNameTaken: "Ya hay un proyecto con ese nombre para ese cliente.",
+  clientNameTaken: "Ya hay un cliente con ese nombre.",
+  taskNameTaken: "Ya hay una tarea con ese nombre en el proyecto.",
+  forbidden: "No tenés permiso para hacer esto.",
+  addressTooLong: "La dirección no puede superar los 3000 caracteres.",
+  noteTooLong: "La nota no puede superar los 3000 caracteres.",
+  nullCharacter: "El texto tiene un carácter que no se puede guardar.",
+  unexpected: "No se pudo guardar. Revisá la conexión y volvé a intentar.",
+} as const;
+
+const name = z
+  .string()
+  .trim()
+  .min(1, projectMessages.nameRequired)
+  .max(NAME_MAX, projectMessages.nameTooLong)
+  .refine(noNullCharacter, projectMessages.nullCharacter);
+
+const longText = (tooLong: string) =>
+  z
+    .string()
+    .trim()
+    .max(LONG_TEXT_MAX, tooLong)
+    .refine(noNullCharacter, projectMessages.nullCharacter);
+
+export const createClientInput = z.object({
+  /** ADR 0007: lo genera el cliente, uno por acción de la persona. */
+  id: z.uuidv4(),
+  name,
+  address: longText(projectMessages.addressTooLong).default(""),
+  note: longText(projectMessages.noteTooLong).default(""),
+});
+
+export const createProjectInput = z.object({
+  id: z.uuidv4(),
+  name,
+  clientId: z.uuid().nullable(),
+  /** Una clave de la paleta, o `null` para que la asigne el servidor. */
+  color: z.enum(PALETTE_KEYS).nullable(),
+  note: longText(projectMessages.noteTooLong).default(""),
+});
+
+export const createTaskInput = z.object({
+  id: z.uuidv4(),
+  projectId: z.uuid(),
+  name,
+});
+
+export type CreateClientInput = z.input<typeof createClientInput>;
+/** Lo que recibe el service: los textos ya recortados y con su default. */
+export type CreateClientValues = z.output<typeof createClientInput>;
+export type CreateProjectInput = z.input<typeof createProjectInput>;
+export type CreateProjectValues = z.output<typeof createProjectInput>;
+export type CreateTaskInput = z.input<typeof createTaskInput>;
+export type CreateTaskValues = z.output<typeof createTaskInput>;
+
+export type ClientView = { readonly id: string; readonly name: string };
+
+/** Sin estado: la lectura solo devuelve tareas activas. */
+export type TaskView = { readonly id: string; readonly name: string };
+
+export type ProjectView = {
+  readonly id: string;
+  readonly name: string;
+  readonly color: PaletteKey;
+  readonly isPublic: boolean;
+  readonly canCreateTask: boolean;
+  /** Tareas activas, en orden alfabético. */
+  readonly tasks: readonly TaskView[];
+};
+
+export type ProjectGroupView = {
+  /** `null` es el grupo «Sin cliente». */
+  readonly client: ClientView | null;
+  readonly projects: readonly ProjectView[];
+};
+
+export type ProjectCatalog = {
+  readonly canCreateClient: boolean;
+  readonly canCreateProject: boolean;
+  /** Clientes activos del workspace, para el diálogo de proyecto. Orden alfabético. */
+  readonly clients: readonly ClientView[];
+  /** Proyectos que quien pide puede ver, agrupados por cliente. «Sin cliente» al final. */
+  readonly groups: readonly ProjectGroupView[];
+};
+
+export type CreateClientResult = { readonly client: ClientView };
+
+/** Un proyecto recién creado, o el de un reintento, llega con `tasks` vacío. */
+export type CreateProjectResult = { readonly project: ProjectView };
+
+export type CreateTaskResult = { readonly task: TaskView };
+
+/** Las tres actions, como las recibe la pantalla por props desde `page.tsx`. */
+export type ProjectActions = {
+  readonly createClient: (
+    input: CreateClientInput,
+  ) => Promise<ActionResult<CreateClientResult>>;
+  readonly createProject: (
+    input: CreateProjectInput,
+  ) => Promise<ActionResult<CreateProjectResult>>;
+  readonly createTask: (
+    input: CreateTaskInput,
+  ) => Promise<ActionResult<CreateTaskResult>>;
+};

@@ -10,6 +10,7 @@ import {
   weekStartOf,
   type CivilDay,
 } from "./days";
+import { openSecondTab, withServerAction } from "./network";
 import { expect, test } from "./session";
 import {
   chooseMode,
@@ -20,13 +21,11 @@ import {
   elapsedCounter,
   elapsedOf,
   entryRow,
-  openSecondTab,
   pickDate,
   setClock,
   startTimer,
   todayGroup,
   trackerBar,
-  withServerAction,
 } from "./tracker-page";
 
 /**

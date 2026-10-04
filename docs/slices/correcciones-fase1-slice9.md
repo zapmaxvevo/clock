@@ -124,3 +124,38 @@ ADR 0007 y el §4 del 2b: `id`, `action`, `findOwn`, `attempt`, `replayed`,
 | R2-m4 | El criterio 10 dice que el desenlace es el mismo se crucen o no, como el criterio 2 del 2b; la rama «23505 de otra restricción con fila propia» se cubre en `create-once.test.ts`.            |
 | R2-m5 | ADR 0009: el campo y el `viewer` van en el recurso que declaran `project.create` y `client.create` vía `ResourceByAction`, no en la variante `workspace` compartida.                          |
 | R2-m6 | El reparto suma actualizar la sección «Estructura» de `CLAUDE.md` con `src/hooks/`, `src/lib/text.ts`, `src/server/action.ts` y `src/server/create-once.ts`, en el mismo commit que los crea. |
+
+# Ronda 3
+
+Salida de `architecture-reviewer` contra el árbol con los slices 3, 4 y 5 en `main`: sin
+bloqueantes, dos mayores y seis menores. Las resoluciones de las rondas 1 y 2 están
+aplicadas, salvo R2-m6 a medias. La firma de `createOnce` de §4.4 coincide con
+`src/server/create-once.ts`; el esquema de §2 se ejecutó otra vez contra Postgres 17.11 y el
+test de componente de R2-M3 se comprobó en el entorno `node`. Abajo, la resolución decidida.
+
+## Mayores
+
+| ID    | Resolución                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R3-M1 | Los diálogos siguen el ADR 0007: mientras el aviso `unexpected` del diálogo está visible, «Guardar» reusa el id pendiente; el id se renueva con éxito, al cerrar el diálogo o cuando baja el aviso. Si la persona cambió los campos, responde la fila del primer intento y la revalidación muestra el nombre real. §4 suma a las piezas compartidas el equivalente de `useNewEntryId`; el criterio 10 y el recorrido e2e 4 suman «Guardar» apretado de nuevo con el aviso visible. |
+| R3-M2 | Opción (a): en `createTask`, una membresía no activa responde PR-72 («Ese proyecto ya no está disponible»), porque no ve ningún proyecto. Los criterios 10 y 15 acotan el `forbidden` de membresía inactiva a `createClient` y `createProject`, y suman el caso de `createTask` con su desenlace.                                                                                                                                                                                  |
+
+## Menores
+
+| ID    | Resolución                                                                                                                                                                                                            |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R3-m1 | El criterio 10 prueba la simultaneidad con `raceThroughBarrier` y un `hold` sobre la fila de `workspace` tomada `for update`, para el mismo id y para PR-108.                                                         |
+| R3-m2 | Migraciones `0003_<nombre>` generada y `0004_<nombre>` con `--custom --name=…`, con nombres fijos en el contrato. El párrafo de §0 sobre el paralelo con el 5 pasa a «las del 9 son la 0003 y la 0004, sobre `main`». |
+| R3-m3 | El criterio 9 suma PR-62 (un cliente cuyo único proyecto es privado e invisible no forma grupo para ese `member`); el criterio 6 cita PR-86 con un workspace sin clientes; el criterio 12 cita PR-04.                 |
+| R3-m4 | El recorrido e2e 4 comprueba desde otra pestaña que el primer intento se aplicó antes de «Reintentar», como `expectAppliedElsewhere` de `start-retry.spec.ts`.                                                        |
+| R3-m5 | El anuncio de alta nombra la entidad («Cliente «X» creado»); el texto vive en `labels.ts`. El recorrido 1 afirma el anuncio del segundo alta con su nombre.                                                           |
+| R3-m6 | Una sola instancia del diálogo de proyecto, en la cabecera. El vacío de PR-85 muestra el texto y el criterio 13 se refiere a ese botón.                                                                               |
+| R2-m6 | `src/server/create-once.ts` entra a la sección «Estructura» de `CLAUDE.md` sin condición.                                                                                                                             |
+
+La lista «solo forma» de la revisión (variantes de `Resource` con nombre, `authorizeEntry`, el
+permiso antes de `createOnce` en el service, `useAction` con `onSuccess`, `seedMember`,
+`auditFor`, los helpers de e2e copiados con `/proyectos`, el comentario de `app-nav.tsx`,
+`PageProps<"/proyectos">`) se les pasa a los implementadores: manda el código.
+
+Nota para el equipo: la base de e2e acumula proyectos y clientes en cada corrida y en la fase 1
+nadie puede borrarlos; a la larga pasa el umbral de §8 en la base local y en la del preview.

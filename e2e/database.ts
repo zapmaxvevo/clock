@@ -82,3 +82,49 @@ export async function workspaceTimeZone(): Promise<string> {
     return row.timezone;
   });
 }
+
+/**
+ * Cambia una fila y comprueba que cambió exactamente una. Los nombres que
+ * reciben estas funciones llevan el sufijo único del recorrido, así que otra
+ * cantidad es un error del test, no algo que se pueda dejar pasar.
+ */
+async function updateOne(sql: string, values: readonly string[]): Promise<void> {
+  await withDatabase(async (client) => {
+    const result = await client.query(sql, [...values]);
+    if (result.rowCount !== 1) {
+      throw new Error(`Se esperaba cambiar una fila y cambiaron ${result.rowCount}.`);
+    }
+  });
+}
+
+/**
+ * Archiva un proyecto del workspace de los e2e por su nombre. La fase 1 no
+ * tiene pantalla para archivar: es el estado que deja otra persona mientras
+ * el recorrido tiene un diálogo abierto.
+ */
+export async function archiveProject(name: string): Promise<void> {
+  await updateOne(
+    `update project
+        set archived_at = now()
+      where workspace_id = ${FIRST_WORKSPACE}
+        and name = $1`,
+    [name],
+  );
+}
+
+/**
+ * Le quita a una persona la marca de responsable de un proyecto, que en la
+ * fase 1 tampoco tiene pantalla. Sigue siendo miembro, y el proyecto, público.
+ */
+export async function revokeProjectManager(email: string, name: string): Promise<void> {
+  await updateOne(
+    `update project_member
+        set is_manager = false
+      where workspace_id = ${FIRST_WORKSPACE}
+        and project_id = (select id from project
+                           where workspace_id = ${FIRST_WORKSPACE}
+                             and name = $2)
+        and user_id = (select id from "user" where email = $1)`,
+    [email, name],
+  );
+}

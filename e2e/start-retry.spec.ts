@@ -1,13 +1,13 @@
-import type { Browser, Locator, Page, Route } from "@playwright/test";
+import type { Browser, Locator, Page } from "@playwright/test";
 
-import { expect, test } from "./session";
 import {
-  descriptionInput,
+  holdRefreshes,
+  loseActionResponses,
   openSecondTab,
-  todayGroup,
-  trackerBar,
   withServerAction,
-} from "./tracker-page";
+} from "./network";
+import { expect, test } from "./session";
+import { descriptionInput, todayGroup, trackerBar } from "./tracker-page";
 
 /**
  * Recorridos del reintento de «Iniciar» (slice 2b, ADR 0007). En los tres, el
@@ -23,44 +23,6 @@ function isTrackerPage(url: URL): boolean {
 /** El aviso de falla de «Iniciar», que es un `alert` de la barra. */
 function startNotice(page: Page): Locator {
   return page.getByRole("alert").filter({ hasText: "No se pudo iniciar el timer." });
-}
-
-/**
- * Pierde la respuesta de toda server action hasta que se llame a lo que
- * devuelve. El pedido llega entero al servidor, que lo aplica, y recién
- * cuando el servidor contestó el navegador recibe una falla de red: es una
- * respuesta perdida de verdad, no un pedido que nunca salió.
- */
-async function loseActionResponses(page: Page): Promise<() => Promise<void>> {
-  const handler = async (route: Route): Promise<void> => {
-    if (route.request().headers()["next-action"] === undefined) {
-      await route.fallback();
-      return;
-    }
-    await route.fetch();
-    await route.abort();
-  };
-  await page.route(isTrackerPage, handler);
-  return () => page.unroute(isTrackerPage, handler);
-}
-
-/**
- * Retiene las revalidaciones por `GET` a `/` hasta que se llame a lo que
- * devuelve. Una que llegara antes traería el timer del primer intento y
- * bajaría el aviso, y el recorrido no llegaría a reintentar.
- */
-async function holdRefreshes(page: Page): Promise<() => void> {
-  let release = (): void => {};
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  await page.route(isTrackerPage, async (route) => {
-    if (route.request().method() === "GET") {
-      await held;
-    }
-    await route.fallback();
-  });
-  return release;
 }
 
 /**
@@ -117,8 +79,8 @@ test("reintentar un arranque cuya respuesta se perdió deja un solo timer", asyn
   browser,
 }) => {
   await page.goto("/");
-  const releaseRefreshes = await holdRefreshes(page);
-  const restoreResponses = await loseActionResponses(page);
+  const releaseRefreshes = await holdRefreshes(page, isTrackerPage);
+  const restoreResponses = await loseActionResponses(page, isTrackerPage);
 
   // Criterio 9 y TT-89: el aviso nombra la operación y ofrece reintentar.
   await startLosingResponse(page, "respuesta perdida");
@@ -148,7 +110,7 @@ test("cuando la revalidación trae el timer del primer intento, el aviso de Inic
   // lo adelanta: hasta entonces nada trae el timer y el aviso sigue a la vista.
   await page.clock.install();
   await page.goto("/");
-  await loseActionResponses(page);
+  await loseActionResponses(page, isTrackerPage);
 
   await startLosingResponse(page, "aviso que baja");
 
@@ -167,8 +129,8 @@ test("apretar Iniciar otra vez con el aviso a la vista no abre otro timer", asyn
   browser,
 }) => {
   await page.goto("/");
-  const releaseRefreshes = await holdRefreshes(page);
-  const restoreResponses = await loseActionResponses(page);
+  const releaseRefreshes = await holdRefreshes(page, isTrackerPage);
+  const restoreResponses = await loseActionResponses(page, isTrackerPage);
 
   await startLosingResponse(page, "Iniciar otra vez");
   await expectAppliedElsewhere(browser, email, "Iniciar otra vez");

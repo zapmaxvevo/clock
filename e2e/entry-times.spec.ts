@@ -11,6 +11,7 @@ import {
   weekStartOf,
   type CivilDay,
 } from "./days";
+import { withServerAction } from "./network";
 import { expect, test } from "./session";
 import {
   chooseMode,
@@ -26,7 +27,6 @@ import {
   startTimer,
   todayGroup,
   trackerBar,
-  withServerAction,
 } from "./tracker-page";
 
 /**

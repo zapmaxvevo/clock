@@ -22,6 +22,20 @@
       "when": 1791059934841,
       "tag": "0002_membership_week_start",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791070534524,
+      "tag": "0003_projects",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791070539277,
+      "tag": "0004_projects_set_null_backfill",
+      "breakpoints": true
     }
   ]
 }

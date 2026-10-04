@@ -5,8 +5,10 @@ Contrato del noveno slice vertical de la fase 1. Crea el módulo `project` en
 
 - **Fuente de los comportamientos:** `docs/parity/proyectos.md` (PR-nn).
 - **Lugar en el plan:** [mapa de la fase 1](fase1-mapa.md).
-- **Correcciones aplicadas:** rondas 1 y 2,
-  [`correcciones-fase1-slice9.md`](correcciones-fase1-slice9.md).
+- **Correcciones aplicadas:** rondas 1, 2 y 3,
+  [`correcciones-fase1-slice9.md`](correcciones-fase1-slice9.md), y las de las
+  revisiones,
+  [`correcciones-fase1-slice9-revisiones.md`](correcciones-fase1-slice9-revisiones.md).
 - **Decisiones de arquitectura asociadas:**
   - [ADR 0004, núcleo de proyectos en la fase 1](../adr/0004-nucleo-de-proyectos-en-fase-1.md): fija el borde del slice.
   - [ADR 0007, el cliente elige el id de la entrada que crea](../adr/0007-el-cliente-elige-el-id-de-las-altas.md): este slice lo aplica a sus tres altas, con la plomería que deja el slice 2b.
@@ -50,10 +52,9 @@ slice es su §14.1.
 
 Y dos condiciones de entorno:
 
-- **El orden de las migraciones.** El slice 5 suma una migración. Si el 9 se
-  trabaja en paralelo con él, las migraciones del 9 se generan de nuevo sobre la
-  rama ya rebasada, para que `drizzle/meta/_journal.json` quede en orden. El
-  diario no se edita a mano.
+- **El orden de las migraciones.** Las del 9 son la 0003 y la 0004, sobre
+  `main`, que ya trae la 0002 del slice 5. Los nombres están en §2. El diario
+  `drizzle/meta/_journal.json` no se edita a mano.
 - **Postgres 15 o posterior** en todos los entornos, por la cláusula
   `on delete set null (columna)` de §2.2. CI corre Postgres 17. Antes del merge,
   el equipo verifica la versión del proyecto de Neon.
@@ -120,20 +121,23 @@ fase 2, solo en parte y como dice su §14.3:
 | `CLAUDE.md`                         | La sección «Estructura» suma los archivos compartidos nuevos (§6).                          | —                                   |
 
 `time-entry` no cambia: sigue con sus copias de `ActionResult`, `failure`,
-`handle`, el `refine` del carácter nulo y `useEntryAction` hasta que un slice
-toque sus actions. Los llamados de `time-entry` a `can()` ya cumplen el par
-tipado de §3.
+`handle`, el `refine` del carácter nulo, `useEntryAction` y `useNewEntryId`
+hasta que un slice toque sus actions. Los llamados de `time-entry` a `can()` ya
+cumplen el par tipado de §3.
 
 ## 2. Cambios de esquema
 
-Dos migraciones, en este orden:
+Dos migraciones, en este orden y con estos nombres:
 
-1. **La generada**, con `npm run db:generate` a partir de `schema.ts`. El nombre
-   lo pone drizzle-kit.
-2. **Una escrita a mano**, creada con `npm run db:generate -- --custom`, para lo
+1. **`0003_projects`, la generada**, con
+   `npm run db:generate -- --name=projects` a partir de `schema.ts`.
+2. **`0004_projects_set_null_backfill`, escrita a mano**, creada con
+   `npm run db:generate -- --custom --name=projects_set_null_backfill`, para lo
    que drizzle-kit no puede expresar: las cuatro claves con `set null (columna)`
-   de §2.2 y el relleno de `whoCreatesProjects` de §2.5. El nombre también lo
-   pone drizzle-kit.
+   de §2.2 y el relleno de `whoCreatesProjects` de §2.5.
+
+Los nombres son fijos porque el test del criterio 11 busca la segunda por su
+etiqueta en `drizzle/meta/_journal.json`.
 
 Las dos son solo de expansión:
 
@@ -368,6 +372,10 @@ registros, que no tienen clave foránea hacia estas tablas.
 4. El valor por omisión de `whoCreatesProjects`, de vuelta a `admins`.
 5. Las filas de `workspace_settings`, de vuelta a `admins`. Nadie pudo haberlas
    cambiado en la fase 1, así que es el valor que tenían.
+6. Las filas de la 0003 y la 0004 en `drizzle.__drizzle_migrations`: las que
+   tienen como `created_at` el `when` de sus entradas en
+   `drizzle/meta/_journal.json`. Sin este paso, el migrador las da por
+   aplicadas y un despliegue posterior del slice no vuelve a crear nada.
 
 ## 3. Permisos
 
@@ -521,11 +529,16 @@ depende del módulo se extrae ahora, y el 9 lo usa desde el primer commit:
 | `noNullCharacter(value)`            | `src/lib/text.ts`         | El predicado del `refine` del carácter nulo. Va en `src/lib` porque lo importan esquemas que también carga el navegador.      |
 | `useAction(action, options)`        | `src/hooks/use-action.ts` | El hook con transición, aviso y reintento, con el último pedido guardado entero; recibe el mensaje de red caída por opción.   |
 | `retryHandlerOf(handle)`            | `src/hooks/use-action.ts` | «Reintentar» solo con `unexpected` (TT-89).                                                                                   |
+| `useNewId(failure)`                 | `src/hooks/use-new-id.ts` | El equivalente de `useNewEntryId`: con el aviso `unexpected` visible, la misma clave reusa el id pendiente; si no, uno nuevo. |
 
 - `messages` es `{ forbidden, unexpected }` del módulo. Los textos son los
   mismos en los dos módulos por la regla de una redacción por causa, pero cada
   módulo los declara.
 - El hook importa `ActionResult` como tipo y nada más de `src/server/`.
+- **`useNewId` tiene la firma y la regla de `useNewEntryId`**: recibe el aviso
+  de `useAction` y devuelve `(key) => id`. El id se pide en el manejador, antes
+  de `run`, que baja el aviso: el que se ve es el que dice si hay un pedido
+  pendiente. Cómo lo usan los diálogos está en §6.
 - `time-entry` migra a estas piezas en el próximo slice que toque sus actions.
   Hasta entonces conviven las dos versiones; es deuda del mapa (§5).
 
@@ -665,6 +678,14 @@ Los códigos son `validation`, `not_found`, `forbidden` y `unexpected`.
 6. Si `createOnce` deja salir un choque con `task_name_unq`, responde
    `validation` con `taskNameTaken`.
 
+**Una membresía no activa responde PR-72, no PR-84.** `can()` corta primero por
+el estado de la membresía (§3.2), así que quien no está activo no ve ningún
+proyecto, y el paso 2 responde antes de llegar al 3. Es la decisión, no un
+accidente del orden: `forbidden` diría que el proyecto existe, que es lo que el
+paso 2 evita. Vale también con el `id` de una tarea propia, porque el paso 2
+corre antes de `createOnce`. `createClient` y `createProject`, que no leen nada
+antes del permiso, responden `forbidden` (criterios 10 y 15).
+
 ### 4.4 Reintentar
 
 Las tres actions ofrecen «Reintentar» con `unexpected` (TT-89, PR-90). Usan la
@@ -683,11 +704,11 @@ export async function createOnce<Row, Result>(
 Cada alta la llama **con los tipos explícitos**, para que un `replayed` que no
 devuelve lo mismo que `attempt` no compile:
 
-| Alta            | Llamado                                          | `action`         | `idConstraint` | `findOwn`        | `replayed`                                   |
-| --------------- | ------------------------------------------------ | ---------------- | -------------- | ---------------- | -------------------------------------------- |
-| `createClient`  | `createOnce<ClientRow, CreateClientResult>`      | `client.create`  | `client_pkey`  | `findOwnClient`  | `{ client: toClientView(row) }`              |
-| `createProject` | `createOnce<OwnProjectRow, CreateProjectResult>` | `project.create` | `project_pkey` | `findOwnProject` | `{ project: toProjectView(actor, row, []) }` |
-| `createTask`    | `createOnce<TaskRow, CreateTaskResult>`          | `task.create`    | `task_pkey`    | `findOwnTask`    | `{ task: toTaskView(row) }`                  |
+| Alta            | Llamado                                              | `action`         | `idConstraint` | `findOwn`        | `replayed`                                   |
+| --------------- | ---------------------------------------------------- | ---------------- | -------------- | ---------------- | -------------------------------------------- |
+| `createClient`  | `createOnce<ClientRow, CreateClientResult>`          | `client.create`  | `client_pkey`  | `findOwnClient`  | `{ client: toClientView(row) }`              |
+| `createProject` | `createOnce<ProjectWithViewer, CreateProjectResult>` | `project.create` | `project_pkey` | `findOwnProject` | `{ project: toProjectView(actor, row, []) }` |
+| `createTask`    | `createOnce<TaskRow, CreateTaskResult>`              | `task.create`    | `task_pkey`    | `findOwnTask`    | `{ task: toTaskView(row) }`                  |
 
 - **`id`** es el `input.id` validado.
 - **`action` es la misma acción que el alta pasó a `can()`** antes de llamar a
@@ -697,14 +718,27 @@ devuelve lo mismo que `attempt` no compile:
 - **`findOwn`** va en el repository del módulo: la fila de la misma tabla, del
   mismo workspace, con ese id y con `created_by` igual a quien actúa, leída sin
   bloqueo y fuera de toda transacción.
+  - **`findOwnTask` filtra además por `project_id`**, con el proyecto leído en
+    el paso 1 de §4.3. Una tarea propia de otro proyecto no es la fila de este
+    pedido: sin fila propia, el `attempt` choca con `task_pkey` y sale
+    `forbidden` (supuesto 3).
 - **`replayed` arma la vista a partir de la fila propia:**
   - `ClientView` y `TaskView` salen directo de la fila, sin otra consulta.
   - `ProjectView` necesita además la fila de `project_member` de quien actúa, y
     por eso `findOwnProject` hace `left join` de esa fila y devuelve
-    `OwnProjectRow`: las columnas del proyecto más
-    `viewer: { isManager } | null`. Con eso `toProjectView` calcula
-    `canCreateTask` con `can(actor, "task.create", recurso)`, igual que la
-    lectura de §5. La revisión lo probó así contra Postgres.
+    `ProjectWithViewer`: las columnas del proyecto más
+    `viewer: { isManager } | null`, el mismo tipo que devuelven `findProject`
+    (§4.3) y la lectura de §5. Con eso `toProjectView` calcula `canCreateTask`
+    con `can(actor, "task.create", recurso)`, igual que la lectura de §5. La
+    revisión lo probó así contra Postgres.
+- **El reintento de un proyecto vuelve a mirar si lo ve.** El `replayed` de
+  `createProject` arma el `ProjectResource` de la fila; si
+  `can(actor, "project.view", recurso)` es falso o `archivedAt` no es nulo,
+  lanza `ForbiddenError("project.create")`, que es lo que responde el alta con
+  un id que no es de una fila propia. Un proyecto propio que la persona ya no
+  ve no se responde como éxito. En la fase 1 no se alcanza: el proyecto nace
+  público, con quien lo crea como responsable, y nada lo archiva. Es la red
+  para cuando la fase 2 traiga los privados y el archivado.
 - **El reintento de un proyecto responde `tasks: []`**, por decisión: aunque el
   proyecto haya sumado tareas entre el primer intento y el reintento, el
   diálogo solo usa la respuesta para cerrarse, y la pantalla revalida
@@ -776,7 +810,9 @@ export type ProjectView = {
 **Tres consultas, dentro de un snapshot `repeatable read`**, como
 `getTrackerState`:
 
-1. los clientes activos del workspace;
+1. todos los clientes del workspace, archivados incluidos; el catálogo separa
+   los activos para `clients`, y un proyecto activo de un cliente archivado
+   sigue en el grupo de su cliente;
 2. los proyectos activos del workspace, con la fila de `project_member` de quien
    pide (`left join`);
 3. las tareas activas de los proyectos activos del workspace (adelanta de PR-38
@@ -817,7 +853,7 @@ solo destino, y PR-111 para el borrado de cliente rechazado. Corregido el
 
 ```
 /home/maxi/program/clock/src/server/db/schema.ts
-/home/maxi/program/clock/drizzle/                                   (dos migraciones nuevas, generadas)
+/home/maxi/program/clock/drizzle/                                   (0003 y 0004, nuevas, §2)
 /home/maxi/program/clock/src/server/permissions/index.ts
 /home/maxi/program/clock/src/server/permissions/permissions.test.ts
 /home/maxi/program/clock/src/server/action.ts                                 (nuevo)
@@ -842,9 +878,9 @@ solo destino, y PR-111 para el borrado de cliente rechazado. Corregido el
 - **`src/test/factories.ts`** suma `seedClient`, `seedProject` y `seedTask`, con
   el archivado y la membresía de proyecto como opciones, para este slice y para
   el 10.
-- **`CLAUDE.md`**: la sección «Estructura» suma `src/server/action.ts` y
-  `src/lib/text.ts` **en el mismo commit que los crea**, y
-  `src/server/create-once.ts` si el slice 2b no lo sumó.
+- **`CLAUDE.md`**: la sección «Estructura» suma `src/server/action.ts`,
+  `src/lib/text.ts` y `src/server/create-once.ts` **en el mismo commit que crea
+  los dos primeros**. El slice 2b no sumó el tercero.
 - `src/server/create-once.ts` y `src/server/db/constraint-error.ts` son del
   slice 2b: se importan y no se tocan.
 
@@ -854,6 +890,7 @@ solo destino, y PR-111 para el borrado de cliente rechazado. Corregido el
 /home/maxi/program/clock/src/app/(app)/proyectos/page.tsx                        (nuevo)
 /home/maxi/program/clock/src/components/layout/app-nav.tsx
 /home/maxi/program/clock/src/hooks/use-action.ts                                 (nuevo)
+/home/maxi/program/clock/src/hooks/use-new-id.ts                                 (nuevo)
 /home/maxi/program/clock/src/modules/project/components/projects-screen.tsx      (nuevo)
 /home/maxi/program/clock/src/modules/project/components/projects-screen.test.tsx (nuevo)
 /home/maxi/program/clock/src/modules/project/components/new-client-dialog.tsx    (nuevo)
@@ -907,7 +944,8 @@ que crea `use-action.ts`.
 
 1. **Primer commit de `backend-dev`:**
    - `palette.ts`;
-   - `src/server/action.ts` y `src/lib/text.ts`, con sus líneas en `CLAUDE.md`;
+   - `src/server/action.ts` y `src/lib/text.ts`, con sus líneas y la de
+     `src/server/create-once.ts` en `CLAUDE.md`;
    - los esquemas, tipos, vistas y `ProjectActions` de `schema.ts`;
    - las firmas de las tres actions y de `getProjectCatalog`;
    - las acciones nuevas, `ProjectResource` y el par tipado en `permissions`.
@@ -916,8 +954,8 @@ que crea `use-action.ts`.
    - `color-field.tsx`, contra `palette.ts`;
    - `labels.ts`;
    - el ítem de navegación.
-3. Con el primer commit en la rama, `frontend-dev` sigue con `use-action.ts`, la
-   pantalla, los diálogos y su test.
+3. Con el primer commit en la rama, `frontend-dev` sigue con `use-action.ts`,
+   `use-new-id.ts`, la pantalla, los diálogos y su test.
 
 ### Responsabilidades que no se leen en el nombre del archivo
 
@@ -935,20 +973,29 @@ createTask }} />`.
   `actions: ProjectActions` por props, sin estado ni efectos, y no importa
   `actions.ts` ni nada que llegue a la sesión o a la base. Dibuja:
   - el título «Proyectos»;
-  - el diálogo de cliente y el de proyecto, cada uno solo si su `canCreate…` es
-    verdadero;
+  - en la cabecera, el diálogo de cliente y el de proyecto, cada uno solo si su
+    `canCreate…` es verdadero. **Hay una sola instancia de cada uno**: dos
+    darían dos botones con el mismo nombre accesible y dos ids pendientes;
   - un encabezado por cliente;
   - por cada proyecto, su punto de color, su nombre, sus tareas y el diálogo de
     tarea si `canCreateTask`;
-  - sin proyectos, «Todavía no hay proyectos» con el diálogo de proyecto
-    (PR-85).
-- **Solo los diálogos y el hook son `"use client"`.** Cada diálogo recibe su
+  - sin proyectos, el texto «Todavía no hay proyectos» (PR-85). El botón de
+    crear es el «Nuevo proyecto» de la cabecera; el vacío no suma otro.
+- **Solo los diálogos y los hooks son `"use client"`.** Cada diálogo recibe su
   action por prop, desde `ProjectsScreen`, y trae su propio botón de apertura.
 - **`use-action.ts`** sigue el patrón de `useEntryAction`, sin importarlo:
   - guarda el último pedido entero, así «Reintentar» reenvía el mismo `id`;
-  - expone el estado pendiente y el aviso.
+  - expone el estado pendiente, el aviso y `clear`, que lo baja.
 - **Los tres diálogos** son formularios con su action:
-  - generan el `id` con `crypto.randomUUID()` una vez por envío;
+  - piden el `id` a `useNewId` en el manejador de «Guardar», antes de `run`,
+    con una clave fija por diálogo (ADR 0007). **Mientras el aviso
+    `unexpected` está visible, «Guardar» reusa el id pendiente**, igual que
+    «Reintentar». El id se renueva con éxito, al cerrar el diálogo, que baja el
+    aviso con `clear`, o cuando el aviso baja por otra causa;
+  - si la persona cambió los campos antes de apretar «Guardar» otra vez, el
+    servidor responde la fila del primer intento, con los datos de entonces, y
+    la revalidación de `/proyectos` muestra el nombre real. Es la consecuencia
+    que el ADR 0007 acepta para «Iniciar»;
   - con éxito, se cierran y devuelven el foco al botón que los abrió;
   - con error, quedan abiertos y muestran el aviso arriba del botón de guardar,
     con «Reintentar» si el error es `unexpected`.
@@ -958,17 +1005,19 @@ createTask }} />`.
     clientes activos), «Color» y «Nota». Dejarlo sin cliente es válido (PR-14,
     PR-86, PR-97).
   - **Nueva tarea:** «Nombre». El proyecto viene fijo.
-- **Crear un cliente confirma en una región `aria-live`**: «Cliente creado». Un
-  cliente sin proyectos no aparece en la lista (PR-62), y sin la confirmación
-  el éxito no se ve ni se anuncia. La región vive en `new-client-dialog.tsx`,
-  junto a su botón de apertura, y sobrevive al cierre del diálogo.
+- **Crear un cliente confirma en una región `aria-live`**, con el nombre:
+  «Cliente «Acme» creado». Un cliente sin proyectos no aparece en la lista
+  (PR-62), y sin la confirmación el éxito no se ve ni se anuncia. La región vive
+  en `new-client-dialog.tsx`, junto a su botón de apertura, y sobrevive al
+  cierre del diálogo.
 - **`color-field.tsx`** es un grupo de opciones con los doce colores, cada uno
   con su nombre accesible de §2.4. Si no se elige ninguno, el servidor asigna
   uno, y la ayuda del campo lo explica: «Si no elegís uno, se asigna
   automáticamente.»
 - **`labels.ts`** guarda los textos de la pantalla: «Proyectos», «Nuevo
   cliente», «Nuevo proyecto», «Nueva tarea», «Sin cliente», «Todavía no hay
-  proyectos», «Cliente creado», los nombres de los campos y la ayuda del color.
+  proyectos», el anuncio de alta como función del nombre («Cliente «…»
+  creado»), los nombres de los campos y la ayuda del color.
 
 ## 7. Criterios de aceptación
 
@@ -1001,11 +1050,12 @@ createTask }} />`.
    - Cualquier membresía activa, `member` incluido, crea un cliente con nombre,
      dirección y nota.
    - Un nombre repetido responde PR-78.
-6. **Crear un proyecto** (PR-12 … PR-17, PR-19, PR-30, PR-58, PR-97).
+6. **Crear un proyecto** (PR-12 … PR-17, PR-19, PR-30, PR-58, PR-86, PR-97).
    - Cualquier membresía activa, `member` incluido, crea un proyecto público,
      sin facturable por defecto, con su nota y con o sin cliente, y queda como
      su responsable.
-   - Sin cliente es válido.
+   - Sin cliente es válido, también en un workspace que no tiene ningún cliente
+     (PR-86).
    - Sin color elegido, recibe el siguiente de la paleta.
    - Con un cliente archivado o de otro workspace, responde PR-83.
    - Con un nombre repetido para ese cliente, responde PR-77.
@@ -1028,37 +1078,47 @@ createTask }} />`.
    - **Y una acción existente también**: `timeEntry.own.update` con
      `{ kind: "workspace" }`, que hoy concede, deja de hacerlo.
    - El par incorrecto no compila; el test lo fuerza con un `as` comentado.
-9. **El filtro de lectura** (PR-61, PR-93).
+9. **El filtro de lectura** (PR-61, PR-62, PR-93).
    - `getProjectCatalog` devuelve exactamente los proyectos que acepta
      `can(…, "project.view", …)`.
    - Con un proyecto privado sembrado, un `member` que no es miembro no lo ve, ni
      ve sus tareas, y un admin sí.
+   - Un cliente cuyo único proyecto es ese privado no forma grupo para ese
+     `member`, y para el admin sí (PR-62).
 10. **Reintentar** (§4.4, PR-90, PR-91, PR-108).
     - Repetir un alta con el mismo `id` devuelve la misma fila sin escribir.
     - Un `id` de una fila de otra persona responde `forbidden`.
-    - Una membresía `inactive` con el `id` de una fila propia responde
-      `forbidden`.
+    - En `createClient` y `createProject`, una membresía `inactive` con el `id`
+      de una fila propia responde `forbidden`. En `createTask` responde PR-72,
+      como cualquier proyecto que no ve (§4.3).
     - Dos intentos simultáneos del mismo pedido dejan una fila, y los dos la
       responden sin el error de nombre repetido. **El desenlace es el mismo se
       crucen o no en la base**: si no se cruzan, el segundo encuentra la fila
       propia en la primera lectura.
     - Dos personas que crean a la vez el mismo nombre, con distinto `id`, dejan
       una fila; la otra recibe el mensaje de nombre repetido (PR-108).
+    - **«Guardar» apretado otra vez con el aviso `unexpected` visible reusa el
+      id pendiente**: deja una sola fila y no muestra el aviso de nombre
+      repetido, igual que «Reintentar».
 11. **`whoCreatesProjects`** (PR-59).
     - Una fila sembrada con `admins` pasa a `everyone` al ejecutar la sentencia
       de relleno de la migración escrita a mano.
     - Un workspace nuevo nace con `everyone`.
-12. **La pantalla** (PR-14, PR-97, y el orden de PR-31).
+12. **La pantalla** (PR-04, PR-14, PR-97, y el orden de PR-31).
     - «Proyectos» en la navegación lleva a `/proyectos`.
+    - Cada entidad se crea desde un solo lugar: «Nuevo cliente» y «Nuevo
+      proyecto» en la cabecera, una vez cada uno, y «Nueva tarea» en cada
+      proyecto (PR-04).
     - La pantalla muestra los grupos por cliente en orden alfabético, con «Sin
       cliente» al final.
     - Cada proyecto muestra su punto de color y sus tareas.
-    - Crear un cliente anuncia «Cliente creado».
+    - Crear un cliente anuncia «Cliente «…» creado», con el nombre del que se
+      acaba de crear.
 13. **El vacío** (PR-85).
     - Con un workspace sin proyectos visibles, `getProjectCatalog` devuelve
       `groups` vacío.
-    - Con `groups` vacío, la pantalla muestra «Todavía no hay proyectos» y el
-      botón de crear.
+    - Con `groups` vacío, la pantalla muestra «Todavía no hay proyectos», y el
+      botón de crear es el «Nuevo proyecto» de la cabecera, el único.
 14. **Auditoría.**
     - Cada alta deja `client.create`, `project.create` o `task.create` con la
       fila creada.
@@ -1066,7 +1126,10 @@ createTask }} />`.
 15. **La capa de action.** Las tres actions:
     - traducen el `ZodError` con su mensaje;
     - conservan el código y el mensaje del error de dominio;
-    - responden PR-84 cuando falta el permiso;
+    - responden PR-84 cuando falta el permiso: `createClient` y `createProject`
+      con una membresía inactiva, y `createTask` con un `member` que no es
+      responsable;
+    - con una membresía inactiva, `createTask` responde PR-72 (§4.3);
     - revalidan `/proyectos`, también con error.
 
 ### Con qué se verifica cada criterio
@@ -1078,27 +1141,35 @@ createTask }} />`.
 | 3        | integración          | `schema.integration.test.ts`                              | cada índice con mayúsculas distintas, con y sin cliente, y con una fila archivada                                   |
 | 4        | unidad + integración | `schema.test.ts`; `schema.integration.test.ts`            | los esquemas Zod; los `checks` de la base, con inserts directos                                                     |
 | 5        | integración          | `service.integration.test.ts`                             | la fila creada por un `member` y el rechazo por nombre                                                              |
-| 6        | integración          | `service.integration.test.ts`                             | la fila con su nota, el miembro responsable, el color asignado, el alta sin cliente y los dos rechazos              |
+| 6        | integración          | `service.integration.test.ts`                             | la fila con su nota, el responsable, el color asignado, el alta en un workspace sin clientes y los dos rechazos     |
 | 7        | integración          | `service.integration.test.ts`                             | los cuatro desenlaces, por rol y por estado del proyecto                                                            |
 | 8        | unidad               | `permissions.test.ts`                                     | la tabla completa de las cinco acciones, los recursos de otra clase y el caso de `timeEntry.own.update`             |
-| 9        | integración          | `service.integration.test.ts`                             | el catálogo contra `can()`, sobre los mismos proyectos sembrados                                                    |
-| 10       | integración + e2e    | `service.integration.test.ts`; `e2e/projects.spec.ts`     | los cinco casos, los simultáneos con `Promise.all`; y una respuesta perdida de verdad con `route.fetch()`           |
+| 9        | integración          | `service.integration.test.ts`                             | el catálogo contra `can()` sobre los mismos proyectos sembrados, y el cliente sin grupo de PR-62                    |
+| 10       | integración + e2e    | `service.integration.test.ts`; `e2e/projects.spec.ts`     | cada caso; los simultáneos con `raceThroughBarrier`; una respuesta perdida, con «Reintentar» y con «Guardar»        |
 | 11       | integración          | `schema.integration.test.ts`                              | la sentencia de relleno sobre una fila sembrada con `admins`, y el valor de un workspace nuevo                      |
-| 12       | e2e                  | `e2e/projects.spec.ts`                                    | la navegación, los grupos, el orden y el anuncio                                                                    |
+| 12       | e2e                  | `e2e/projects.spec.ts`                                    | la navegación, los botones de crear, los grupos, el orden y el anuncio con el nombre                                |
 | 13       | integración + unidad | `service.integration.test.ts`; `projects-screen.test.tsx` | el catálogo de un workspace sembrado sin proyectos; el marcado del vacío con `groups` vacío y dobles de las actions |
 | 14       | integración          | `service.integration.test.ts`                             | los tres registros, y ninguno en el reintento                                                                       |
-| 15       | integración          | `actions.integration.test.ts`                             | las traducciones y la revalidación de `/proyectos`                                                                  |
+| 15       | integración          | `actions.integration.test.ts`                             | las traducciones, los desenlaces de la membresía inactiva y la revalidación de `/proyectos`                         |
 
 **El criterio 10 no prueba las ramas de `createOnce`.** La rama «`23505` de otra
 restricción con fila propia», que con dos intentos reales depende de qué
 restricción informe la base, está cubierta en `src/server/create-once.test.ts`
 del slice 2b. Acá se prueba el desenlace observable con la base de verdad.
 
+**Los simultáneos del criterio 10 se cruzan con `raceThroughBarrier`** de
+`src/test/concurrency.ts`, para el mismo `id` y para PR-108. Un `Promise.all`
+suelto casi nunca cruza las transacciones. El `hold` toma la fila de
+`workspace` con `for update`. Los dos intentos quedan trabados antes de terminar
+su insert —uno en la comprobación de la clave hacia `workspace`, que pide esa
+fila con `for key share`; el otro detrás del primero, en el índice único— y la
+barrera los suelta recién entonces.
+
 **El criterio 11 no se prueba con la base de `global-setup`**, que ya nace
 migrada y sin filas viejas. El test siembra una fila de `workspace_settings` con
 `admins` y ejecuta la sentencia `update` de la migración escrita a mano, leída
-del archivo: la que encuentra por su etiqueta en `drizzle/meta/_journal.json` y
-separa por `--> statement-breakpoint`.
+del archivo: la que encuentra por su etiqueta, `0004_projects_set_null_backfill`,
+en `drizzle/meta/_journal.json`, y separa por `--> statement-breakpoint`.
 
 **El vacío y el criterio 12 no dependen de la base del preview.** El e2e corre
 sobre un solo workspace compartido por todos los tests, en paralelo y sobre una
@@ -1116,9 +1187,11 @@ afirmaciones de orden comparan solo los grupos y los proyectos que creó el
 propio recorrido, nunca la lista entera.
 
 1. **Criterio 12.**
-   1. Entrar por «Proyectos» en la navegación.
-   2. Crear dos clientes, `B <sufijo>` y `A <sufijo>`, y ver el anuncio «Cliente
-      creado» después de cada uno.
+   1. Entrar por «Proyectos» en la navegación, y ver un solo «Nuevo cliente» y
+      un solo «Nuevo proyecto» (PR-04).
+   2. Crear dos clientes, `B <sufijo>` y `A <sufijo>`, y ver el anuncio después
+      de cada uno. El segundo tiene que nombrar a `A <sufijo>`: así un anuncio
+      que quedó del primero no hace pasar el paso.
    3. Crear un proyecto con cada cliente y uno sin cliente.
    4. Ver que el grupo de `A <sufijo>` está antes que el de `B <sufijo>`, que los
       dos están antes que «Sin cliente», y que el proyecto sin cliente está en
@@ -1131,8 +1204,17 @@ propio recorrido, nunca la lista entera.
 4. **Criterio 10.**
    1. Perder de verdad la respuesta de «Nuevo proyecto», con `route.fetch()` y
       después `route.abort()`.
-   2. Reintentar.
-   3. Ver un solo proyecto con ese nombre, sin el aviso de nombre repetido.
+   2. Comprobar desde otra pestaña de la misma persona que el primer intento se
+      aplicó, como `expectAppliedElsewhere` de `e2e/start-retry.spec.ts`. Sin
+      eso, un pedido que no llegó al servidor haría pasar el recorrido sin
+      probar nada: el reintento sería la primera alta.
+   3. Reintentar.
+   4. Ver un solo proyecto con ese nombre, sin el aviso de nombre repetido.
+
+   **Una variante, con su propia persona**, hace los mismos pasos, pero en el 3
+   aprieta «Guardar» con el aviso todavía visible, en vez de «Reintentar». Si
+   el id no se reusara, el segundo pedido chocaría con el primero y mostraría
+   PR-77.
 
 ## 8. Deuda conocida del slice
 
@@ -1150,15 +1232,26 @@ propio recorrido, nunca la lista entera.
 - **`project.track` no tiene consumidor** hasta el slice 10.
 - **La regla de los asignados de tarea no se aplica** hasta la fase 2 (P-23). La
   tabla existe vacía, y toda tarea se comporta como «cualquiera».
+- **El nombre repetido revela que existe un proyecto privado.** PR-50 cuenta
+  todos los proyectos del workspace, también los que quien crea no ve: con el
+  nombre de un privado del mismo cliente, o sin cliente, el alta responde
+  PR-77. Se acepta, porque es la regla de Clockify y en la fase 1 todo proyecto
+  nace público (P-17), así que no hay privados que revelar. La fase 2 lo decide
+  cuando traiga los privados.
 - **PR-40 está sin verificar** (P-33), y con él la parte de PR-58 sobre tareas.
   Este contrato decide que crean tareas el owner, los admins y el responsable
   del proyecto, en línea con PR-56. Si el workspace del equipo muestra que
   cualquier miembro crea tareas, cambian una fila de `can()` y un criterio.
+- **Una membresía no activa ve «Todavía no hay proyectos»** en un workspace con
+  proyectos: `can()` le niega `project.view` en todos (§3.2) y `groups` llega
+  vacío. Va junto a la deuda del slice 1 (§3.3): cuando llegue `team.manage`, la
+  membresía no activa tiene un texto propio. Hoy no se alcanza desde la
+  interfaz.
 - **Dos borrados que la base rechaza** esperan a la fase 2: el de un proyecto
   con tareas usadas en entradas, que se hace en dos sentencias (§2.3), y el de
   un cliente con un nombre de proyecto repetido, que se traduce al mensaje de
   PR-111 (§2.2).
 - **`time-entry` sigue con sus copias** de `ActionResult`, `failure`, `handle`,
-  el `refine` del carácter nulo y `useEntryAction` hasta el próximo slice que
-  toque sus actions (mapa, §5).
+  el `refine` del carácter nulo, `useEntryAction` y `useNewEntryId` hasta el
+  próximo slice que toque sus actions (mapa, §5).
 - **La versión de Postgres de Neon** tiene que ser 15 o posterior (§0).

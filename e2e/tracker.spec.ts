@@ -1,5 +1,6 @@
 import type { Request } from "@playwright/test";
 
+import { openSecondTab, withServerAction } from "./network";
 import { expect, test } from "./session";
 import {
   backgroundRgb,
@@ -11,12 +12,10 @@ import {
   elapsedCounter,
   elapsedOf,
   entryRow,
-  openSecondTab,
   startTimer,
   stopTimer,
   todayGroup,
   trackerBar,
-  withServerAction,
 } from "./tracker-page";
 
 /** Cuánto se le da al contador para llegar a un valor, sin esperas fijas. */
