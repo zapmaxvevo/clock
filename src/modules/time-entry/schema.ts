@@ -99,6 +99,14 @@ const dayKeyInput = z
  */
 export const trackerSearchParams = z.object({ desde: dayKeyInput });
 
+/** Los parámetros de `/calendario` (CAL-17), cada uno con su `safeParse`. */
+export const calendarWeekParams = z.object({ semana: dayKeyInput });
+export const calendarModeParams = z.object({ vista: z.literal("dia") });
+
+export const CALENDAR_MODES = ["week", "day"] as const;
+/** La vista de la grilla. No se llama `CalendarView`, que es el componente. */
+export type CalendarMode = (typeof CALENDAR_MODES)[number];
+
 /** Hora de pared canónica. Los formatos tolerantes los normaliza el cliente. */
 const clockInput = z.string().refine(isClock, timeEntryMessages.invalidClock);
 
@@ -327,10 +335,60 @@ export const trackerState = z.object({
   hasAnyEntry: z.boolean(),
 });
 
+/** Minutos de reloj de un día, `[from, to)`, entre 0 y 1440. */
+const minuteRange = z.object({
+  from: z.number().int().min(0).max(1440),
+  to: z.number().int().min(0).max(1440),
+});
+
+export const calendarDayView = z.object({
+  /** "2026-10-01". */
+  date: z.string(),
+  /** «jue, 01/10», con año si no es el de hoy (CAL-09). Nunca «Hoy» ni «Ayer». */
+  label: z.string(),
+  isToday: z.boolean(),
+  /** Anterior a la creación del workspace: atenuado (CAL-48). */
+  beforeWorkspace: z.boolean(),
+  /** Exacto: lo que suman las entradas cerradas que empiezan ese día (CAL-32, P-02). */
+  closedSeconds: z.number().int().min(0),
+  /** Lo que no existe ese día por el cambio de horario (CAL-30). */
+  missingMinutes: z.array(minuteRange),
+});
+
+export const calendarState = z.object({
+  /** Referencia del desfase de TT-32. */
+  serverNow: z.iso.datetime(),
+  todayKey: z.string(),
+  /** Minuto del día de `serverNow` en la zona de la persona: la línea de ahora. */
+  nowMinute: z.number().int().min(0).max(1439),
+  canTrack: z.boolean(),
+  mode: z.enum(CALENDAR_MODES),
+  /** Primer día del período, ya normalizado. */
+  periodStart: z.string(),
+  /** «Esta semana», «Semana anterior» o el rango (TT-47); en la vista día, «Hoy», «Ayer» o el día. */
+  periodLabel: z.string(),
+  previousStart: z.string(),
+  nextStart: z.string(),
+  /** El período que contiene hoy, para «Hoy». */
+  todayStart: z.string(),
+  /** Lo que abren «Día» y «Semana» (§1). */
+  dayModeStart: z.string(),
+  weekModeStart: z.string(),
+  days: z.array(calendarDayView),
+  /** Las cerradas propias que se superponen con el período, por inicio y después por id. */
+  entries: z.array(timeEntryView),
+  /** El timer que corre, esté o no a la vista: el cliente decide qué segmentos dibuja. */
+  running: timeEntryView.nullable(),
+  /** Suma de `closedSeconds` de los días: el total del período sin el timer (CAL-33). */
+  closedSeconds: z.number().int().min(0),
+});
+
 export type TimeEntryView = z.infer<typeof timeEntryView>;
 export type DayGroupView = z.infer<typeof dayGroupView>;
 export type WeekGroupView = z.infer<typeof weekGroupView>;
 export type TrackerState = z.infer<typeof trackerState>;
+export type CalendarDayView = z.infer<typeof calendarDayView>;
+export type CalendarState = z.infer<typeof calendarState>;
 
 export type TimeEntryErrorCode =
   ActionErrorCode | "already_stopped" | "timer_running" | "rejected";

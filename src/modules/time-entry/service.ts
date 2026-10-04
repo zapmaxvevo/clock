@@ -47,6 +47,8 @@ import {
   type BulkEditChanges,
   type BulkEditEntriesResult,
   type BulkEditEntriesValues,
+  type CalendarMode,
+  type CalendarState,
   type ContinueEntryInput,
   type ContinueEntryResult,
   type CreateManualEntryResult,
@@ -1525,4 +1527,23 @@ export async function getTrackerState(
     loadMoreFrom: loadMoreFromOf(older, floors.windowFrom, floorWeek, workspace),
     hasAnyEntry: running !== undefined || latestClosed !== undefined,
   };
+}
+
+export type CalendarRequest = {
+  readonly mode: CalendarMode;
+  /** El `semana` de la URL ya validado, o `null`. */
+  readonly day: string | null;
+};
+
+/**
+ * Estado del calendario (CAL-02): las cerradas propias que se superponen con el
+ * período y el timer aparte. `now` existe para que los tests fijen el día.
+ */
+export async function getCalendarState(
+  actor: Actor,
+  workspace: TrackerWorkspace,
+  request: CalendarRequest,
+  now: Date = new Date(),
+): Promise<CalendarState> {
+  throw new Error("getCalendarState sin implementar.");
 }

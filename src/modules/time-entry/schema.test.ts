@@ -5,6 +5,9 @@ import {
   bulkDeleteEntriesInput,
   bulkEditChanges,
   bulkEditEntriesInput,
+  calendarModeParams,
+  calendarState,
+  calendarWeekParams,
   continueEntryInput,
   createManualEntryInput,
   deleteEntryInput,
@@ -444,6 +447,145 @@ describe("trackerSearchParams", () => {
     expect(
       trackerSearchParams.safeParse({ desde: "2026-09-07", otro: ["a", "b"] }).success,
     ).toBe(true);
+  });
+});
+
+describe("calendarWeekParams", () => {
+  it("acepta un día válido, sea o no inicio de semana", () => {
+    expect(calendarWeekParams.safeParse({ semana: "2026-10-01" })).toEqual({
+      success: true,
+      data: { semana: "2026-10-01" },
+    });
+  });
+
+  it("no pasa sin semana, con un día que no existe ni con otro formato", () => {
+    for (const params of [
+      {},
+      { semana: "2026-02-30" },
+      { semana: "01/10/2026" },
+      { semana: "" },
+    ]) {
+      expect(calendarWeekParams.safeParse(params).success).toBe(false);
+    }
+  });
+
+  it("no pasa con semana repetida, que Next entrega como arreglo (ADR 0008)", () => {
+    expect(
+      calendarWeekParams.safeParse({ semana: ["2026-10-01", "2026-09-24"] }).success,
+    ).toBe(false);
+  });
+});
+
+describe("calendarModeParams", () => {
+  it("acepta solo vista=dia", () => {
+    expect(calendarModeParams.safeParse({ vista: "dia" }).success).toBe(true);
+    for (const params of [
+      {},
+      { vista: "semana" },
+      { vista: "Dia" },
+      { vista: ["dia", "dia"] },
+    ]) {
+      expect(calendarModeParams.safeParse(params).success).toBe(false);
+    }
+  });
+});
+
+describe("calendarState", () => {
+  const entry = {
+    id,
+    description: "",
+    startedAt: "2026-10-01T11:00:00.000Z",
+    endedAt: "2026-10-01T12:30:00.000Z",
+    dayDate: "2026-10-01",
+    weekStart: "2026-09-28",
+    startLabel: "08:00",
+    endLabel: "09:30",
+    startClock: "08:00",
+    endClock: "09:30",
+    extraDays: 0,
+    durationSeconds: 5400,
+    durationLabel: "1:30",
+    editableTimes: true,
+    project: null,
+    task: null,
+  };
+
+  const day = {
+    date: "2026-10-01",
+    label: "jue, 01/10",
+    isToday: false,
+    beforeWorkspace: false,
+    closedSeconds: 5400,
+    missingMinutes: [],
+  };
+
+  const state = {
+    serverNow: "2026-10-02T15:00:00.000Z",
+    todayKey: "2026-10-02",
+    nowMinute: 720,
+    canTrack: true,
+    mode: "week",
+    periodStart: "2026-09-28",
+    periodLabel: "Esta semana",
+    previousStart: "2026-09-21",
+    nextStart: "2026-10-05",
+    todayStart: "2026-09-28",
+    dayModeStart: "2026-10-02",
+    weekModeStart: "2026-09-28",
+    days: [day],
+    entries: [entry],
+    running: null,
+    closedSeconds: 5400,
+  };
+
+  it("acepta un estado completo", () => {
+    expect(calendarState.parse(state)).toEqual(state);
+  });
+
+  it("acepta la vista día y un timer", () => {
+    const running = {
+      ...entry,
+      endedAt: null,
+      endLabel: null,
+      endClock: null,
+      durationSeconds: null,
+      durationLabel: null,
+      editableTimes: false,
+    };
+    expect(calendarState.safeParse({ ...state, mode: "day", running }).success).toBe(
+      true,
+    );
+  });
+
+  it("rechaza una vista que no es semana ni día", () => {
+    expect(calendarState.safeParse({ ...state, mode: "month" }).success).toBe(false);
+  });
+
+  it("acota el minuto de ahora al día", () => {
+    expect(calendarState.safeParse({ ...state, nowMinute: 1439 }).success).toBe(true);
+    expect(calendarState.safeParse({ ...state, nowMinute: 1440 }).success).toBe(false);
+    expect(calendarState.safeParse({ ...state, nowMinute: -1 }).success).toBe(false);
+    expect(calendarState.safeParse({ ...state, nowMinute: 1.5 }).success).toBe(false);
+  });
+
+  it("acota los minutos que faltan entre 0 y 1440, enteros", () => {
+    const withMissing = (from: number, to: number) => ({
+      ...state,
+      days: [{ ...day, missingMinutes: [{ from, to }] }],
+    });
+    expect(calendarState.safeParse(withMissing(0, 1440)).success).toBe(true);
+    expect(calendarState.safeParse(withMissing(120, 180)).success).toBe(true);
+    expect(calendarState.safeParse(withMissing(-1, 60)).success).toBe(false);
+    expect(calendarState.safeParse(withMissing(0, 1441)).success).toBe(false);
+    expect(calendarState.safeParse(withMissing(0, 60.5)).success).toBe(false);
+  });
+
+  it("rechaza totales negativos", () => {
+    expect(calendarState.safeParse({ ...state, closedSeconds: -1 }).success).toBe(false);
+    expect(
+      calendarState.safeParse({ ...state, days: [{ ...day, closedSeconds: -1 }] })
+        .success,
+    ).toBe(false);
   });
 });
 
