@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { eq } from "drizzle-orm";
+import { eq, TransactionRollbackError } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { db, type Transaction } from "@/server/db";
@@ -34,12 +34,15 @@ import {
   type CreateProjectInput,
   type CreateTaskInput,
   type ProjectCatalog,
+  type TrackingCatalog,
 } from "./schema";
 import {
+  assertTrackable,
   createClient,
   createProject,
   createTask,
   getProjectCatalog,
+  getTrackingCatalog,
   ProjectError,
 } from "./service";
 
@@ -899,5 +902,234 @@ describe("auditoría (criterio 14)", () => {
     await seedClient({ workspaceId, name: "Acme" });
     await failureOf(createClient(member, clientValues({ name: "Acme" })));
     expect(await auditFor("client")).toEqual([]);
+  });
+});
+
+describe("getTrackingCatalog: el catálogo del selector (criterio 3: TT-08, PR-23, PR-87, PR-98 … PR-100)", () => {
+  async function seedTrackingWorkspace() {
+    const acme = await seedClient({ workspaceId, name: "acme" });
+    const gone = await seedClient({ workspaceId, name: "Archivado", archived: true });
+    const web = await seedProject({
+      workspaceId,
+      clientId: acme.id,
+      name: "Web",
+      color: "pink",
+    });
+    const app = await seedProject({ workspaceId, clientId: acme.id, name: "app" });
+    const vault = await seedProject({ workspaceId, name: "Bóveda", isPublic: false });
+    const joined = await seedProject({
+      workspaceId,
+      name: "Interno",
+      isPublic: false,
+      members: [{ userId: member.userId, isManager: false }],
+    });
+    const inherited = await seedProject({
+      workspaceId,
+      clientId: gone.id,
+      name: "Heredado",
+    });
+    const old = await seedProject({ workspaceId, name: "Viejo", archived: true });
+    await seedTask({ workspaceId, projectId: web.id, name: "maquetado" });
+    await seedTask({ workspaceId, projectId: web.id, name: "Diseño" });
+    await seedTask({ workspaceId, projectId: web.id, name: "Hecha", status: "done" });
+    await seedTask({ workspaceId, projectId: vault.id, name: "Secreta" });
+    await seedTask({ workspaceId, projectId: old.id, name: "Del archivado" });
+    return { acme, gone, web, app, vault, joined, inherited, old };
+  }
+
+  const names = (catalog: TrackingCatalog) =>
+    catalog.groups.map((group) => [
+      group.client?.name ?? null,
+      group.projects.map((view) => view.name),
+    ]);
+
+  const projectsOf = (catalog: TrackingCatalog) =>
+    catalog.groups.flatMap((group) => group.projects);
+
+  it("devuelve exactamente los proyectos activos que acepta can(…, project.track, …)", async () => {
+    await seedTrackingWorkspace();
+    const projects = await projectRows();
+    const members = await db.select().from(projectMember);
+
+    for (const actor of [owner, admin, member, await seedActor("project_manager")]) {
+      const expected = projects
+        .filter((row) => {
+          const own = members.find(
+            (item) => item.projectId === row.id && item.userId === actor.userId,
+          );
+          return (
+            row.archivedAt === null &&
+            can(actor, "project.track", {
+              kind: "project",
+              workspaceId: row.workspaceId,
+              isPublic: row.isPublic,
+              viewer: own === undefined ? null : { isManager: own.isManager },
+            })
+          );
+        })
+        .map((row) => row.id)
+        .sort();
+      const seen = projectsOf(await getTrackingCatalog(actor)).map((view) => view.id);
+      expect(seen.sort()).toEqual(expected);
+    }
+  });
+
+  it("un admin que no es miembro no ve el privado, aunque lo vea en getProjectCatalog; el miembro member sí", async () => {
+    const seeded = await seedTrackingWorkspace();
+
+    const forAdmin = projectsOf(await getTrackingCatalog(admin)).map((view) => view.id);
+    expect(forAdmin).not.toContain(seeded.vault.id);
+    expect(forAdmin).not.toContain(seeded.joined.id);
+    const viewed = (await getProjectCatalog(admin)).groups.flatMap((group) =>
+      group.projects.map((view) => view.id),
+    );
+    expect(viewed).toContain(seeded.vault.id);
+
+    const forMember = projectsOf(await getTrackingCatalog(member)).map((view) => view.id);
+    expect(forMember).toContain(seeded.joined.id);
+    expect(forMember).not.toContain(seeded.vault.id);
+    const outsider = await seedActor("member");
+    expect(
+      projectsOf(await getTrackingCatalog(outsider)).map((view) => view.id),
+    ).not.toContain(seeded.joined.id);
+  });
+
+  it("agrupa por cliente en orden alfabético, con el cliente archivado y «Sin cliente» al final", async () => {
+    await seedTrackingWorkspace();
+    expect(names(await getTrackingCatalog(member))).toEqual([
+      ["acme", ["app", "Web"]],
+      ["Archivado", ["Heredado"]],
+      [null, ["Interno"]],
+    ]);
+  });
+
+  it("trae las tareas activas en orden alfabético, sin las hechas ni las del archivado", async () => {
+    const seeded = await seedTrackingWorkspace();
+    const catalog = await getTrackingCatalog(owner);
+    const web = projectsOf(catalog).find((view) => view.id === seeded.web.id);
+    expect(web).toEqual({
+      id: seeded.web.id,
+      name: "Web",
+      color: "pink",
+      tasks: [
+        { id: expect.any(String), name: "Diseño" },
+        { id: expect.any(String), name: "maquetado" },
+      ],
+    });
+    expect(projectsOf(catalog).find((view) => view.id === seeded.app.id)?.tasks).toEqual(
+      [],
+    );
+    const allTasks = projectsOf(catalog).flatMap((view) =>
+      view.tasks.map((item) => item.name),
+    );
+    expect(allTasks).not.toContain("Del archivado");
+    expect(allTasks).not.toContain("Hecha");
+    expect(projectsOf(catalog).map((view) => view.id)).not.toContain(seeded.old.id);
+  });
+
+  it("habilita el enlace a Proyectos con can(project.create) y una membresía inactiva no ve nada", async () => {
+    await seedTrackingWorkspace();
+    expect((await getTrackingCatalog(member)).canCreateProject).toBe(true);
+    expect(await getTrackingCatalog({ ...member, status: "inactive" })).toEqual({
+      canCreateProject: false,
+      groups: [],
+    });
+  });
+
+  it("no mezcla proyectos de otro workspace", async () => {
+    const other = await seedWorkspace();
+    await seedProject({ workspaceId: other.workspaceId });
+    expect(await getTrackingCatalog(owner)).toEqual({
+      canCreateProject: true,
+      groups: [],
+    });
+  });
+});
+
+describe("assertTrackable (ADR 0010: PR-23, PR-74, TT-08, TT-77)", () => {
+  function check(actor: Actor, target: { projectId: string; taskId: string | null }) {
+    return db.transaction((tx) => assertTrackable(tx, actor, target));
+  }
+
+  async function expectUnavailable(
+    work: Promise<unknown>,
+    message: string = projectMessages.projectUnavailable,
+  ): Promise<void> {
+    await expectProjectError(work, "not_found", message);
+  }
+
+  it("acepta un proyecto público activo y su tarea activa", async () => {
+    const web = await seedProject({ workspaceId });
+    const design = await seedTask({ workspaceId, projectId: web.id });
+    await check(member, { projectId: web.id, taskId: null });
+    await check(member, { projectId: web.id, taskId: design.id });
+  });
+
+  it("acepta los ids en mayúsculas", async () => {
+    const web = await seedProject({ workspaceId });
+    const design = await seedTask({ workspaceId, projectId: web.id });
+    await check(member, {
+      projectId: web.id.toUpperCase(),
+      taskId: design.id.toUpperCase(),
+    });
+  });
+
+  it("rechaza con TT-77 el archivado, el inexistente y el de otro workspace", async () => {
+    const old = await seedProject({ workspaceId, archived: true });
+    const other = await seedWorkspace();
+    const foreign = await seedProject({ workspaceId: other.workspaceId });
+    await expectUnavailable(check(owner, { projectId: old.id, taskId: null }));
+    await expectUnavailable(check(owner, { projectId: randomUUID(), taskId: null }));
+    await expectUnavailable(check(owner, { projectId: foreign.id, taskId: null }));
+  });
+
+  it("rechaza con TT-77 el privado a quien no es miembro, también al owner y al admin (PR-17)", async () => {
+    const vault = await seedProject({
+      workspaceId,
+      isPublic: false,
+      members: [{ userId: member.userId }],
+    });
+    await check(member, { projectId: vault.id, taskId: null });
+    for (const actor of [owner, admin, await seedActor("member")]) {
+      await expectUnavailable(check(actor, { projectId: vault.id, taskId: null }));
+    }
+  });
+
+  it("rechaza con TT-77 a una membresía inactiva, aunque el proyecto sea público", async () => {
+    const web = await seedProject({ workspaceId });
+    await expectUnavailable(
+      check({ ...member, status: "inactive" }, { projectId: web.id, taskId: null }),
+    );
+  });
+
+  it("rechaza con PR-74 la tarea hecha, la inexistente y la de otro proyecto", async () => {
+    const web = await seedProject({ workspaceId });
+    const app = await seedProject({ workspaceId });
+    const done = await seedTask({ workspaceId, projectId: web.id, status: "done" });
+    const elsewhere = await seedTask({ workspaceId, projectId: app.id });
+    for (const taskId of [done.id, randomUUID(), elsewhere.id]) {
+      await expectUnavailable(
+        check(member, { projectId: web.id, taskId }),
+        projectMessages.taskUnavailable,
+      );
+    }
+  });
+
+  it("mira el proyecto antes que la tarea: con el proyecto archivado responde TT-77", async () => {
+    const old = await seedProject({ workspaceId, archived: true });
+    const design = await seedTask({ workspaceId, projectId: old.id });
+    await expectUnavailable(check(member, { projectId: old.id, taskId: design.id }));
+  });
+
+  it("lee con la transacción que recibe: ve lo que la transacción escribió antes", async () => {
+    const web = await seedProject({ workspaceId, archived: true });
+    // El rollback deja la base como estaba: el test no escribe nada.
+    await expect(
+      db.transaction(async (tx: Transaction) => {
+        await tx.update(project).set({ archivedAt: null }).where(eq(project.id, web.id));
+        await assertTrackable(tx, member, { projectId: web.id, taskId: null });
+        tx.rollback();
+      }),
+    ).rejects.toBeInstanceOf(TransactionRollbackError);
   });
 });

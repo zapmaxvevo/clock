@@ -4,7 +4,14 @@ import { and, eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { db, type Transaction } from "@/server/db";
-import { membership, timeEntry, workspace as workspaceTable } from "@/server/db/schema";
+import {
+  client,
+  membership,
+  project,
+  projectMember,
+  timeEntry,
+  workspace as workspaceTable,
+} from "@/server/db/schema";
 import { constraintOf, UNIQUE_VIOLATION } from "@/server/db/constraint-error";
 import { ForbiddenError, type Actor } from "@/server/permissions";
 import {
@@ -16,9 +23,18 @@ import {
   type WeekStart,
 } from "@/server/time";
 import { queueBehindBarrier, raceThroughBarrier, warmPool } from "@/test/concurrency";
-import { buenosAires, seedMember, seedTimeEntry, seedWorkspace } from "@/test/factories";
+import {
+  buenosAires,
+  seedClient,
+  seedMember,
+  seedProject,
+  seedTask,
+  seedTimeEntry,
+  seedWorkspace,
+} from "@/test/factories";
 import { allTimeEntries, auditFor, timeEntriesOf, timeEntryById } from "@/test/queries";
 
+import { projectMessages } from "@/modules/project/schema";
 import { workspaceRepository } from "@/modules/workspace/repository";
 
 import { timeEntryRepository } from "./repository";
@@ -41,6 +57,7 @@ import {
   TimeEntryError,
   trackerWorkspaceOf,
   updateDescription,
+  updateEntryProject,
   updateEntryTimes,
   updateRunningStart,
   type TrackerWorkspace,
@@ -4449,4 +4466,710 @@ describe("weekStart en las vistas del service (criterio 13)", () => {
       ).toEqual([expected]);
     },
   );
+});
+
+// Slice 10: el proyecto y la tarea de una entrada.
+
+type Pair = { readonly projectId: string | null; readonly taskId: string | null };
+
+/** Una entrada del actor con un par, cerrada salvo que se pida abierta. */
+function seedEntryWith(
+  pair: Pair,
+  options: { running?: boolean; description?: string } = {},
+) {
+  return seedTimeEntry({
+    workspaceId,
+    userId: actor.userId,
+    description: options.description ?? "con proyecto",
+    startedAt: options.running === true ? "2026-10-02T11:00:00Z" : "2026-10-01T11:00:00Z",
+    endedAt: options.running === true ? null : "2026-10-01T12:00:00Z",
+    ...pair,
+  });
+}
+
+async function pairOfRow(id: string): Promise<Pair | undefined> {
+  const row = await timeEntryById(id);
+  return row === undefined ? undefined : { projectId: row.projectId, taskId: row.taskId };
+}
+
+/** Un proyecto público activo con una tarea, en el que el actor puede cargar horas. */
+async function seedTrackable(name = "Web") {
+  const web = await seedProject({ workspaceId, name, color: "green" });
+  const design = await seedTask({ workspaceId, projectId: web.id, name: "Diseño" });
+  return { web, design };
+}
+
+/**
+ * Los tres estados del criterio 7: una entrada que ya tiene un proyecto que
+ * no se puede asignar como nuevo. El actor es owner y no es miembro del
+ * privado: el rol no alcanza (PR-17).
+ */
+async function seedUnavailablePairs() {
+  const archived = await seedProject({
+    workspaceId,
+    name: "Archivado",
+    color: "red",
+    archived: true,
+  });
+  const vault = await seedProject({
+    workspaceId,
+    name: "Bóveda",
+    color: "violet",
+    isPublic: false,
+  });
+  const web = await seedProject({ workspaceId, name: "Web", color: "green" });
+  return {
+    archivado: {
+      projectId: archived.id,
+      taskId: (await seedTask({ workspaceId, projectId: archived.id })).id,
+      otherTaskId: (await seedTask({ workspaceId, projectId: archived.id })).id,
+      message: projectMessages.projectUnavailable,
+    },
+    "privado sin acceso": {
+      projectId: vault.id,
+      taskId: (await seedTask({ workspaceId, projectId: vault.id })).id,
+      otherTaskId: (await seedTask({ workspaceId, projectId: vault.id })).id,
+      message: projectMessages.projectUnavailable,
+    },
+    "tarea hecha": {
+      projectId: web.id,
+      taskId: (await seedTask({ workspaceId, projectId: web.id, status: "done" })).id,
+      otherTaskId: (await seedTask({ workspaceId, projectId: web.id, status: "done" }))
+        .id,
+      message: projectMessages.taskUnavailable,
+    },
+  };
+}
+
+describe("las altas con proyecto (criterio 4: TT-06, TT-22, TT-25)", () => {
+  const ws = workspaceOf(buenosAires);
+
+  it("startTimer guarda el par pedido y la vista lo trae", async () => {
+    const { web, design } = await seedTrackable();
+    const result = await startTimer(actor, ws, {
+      id: randomUUID(),
+      description: "",
+      projectId: web.id,
+      taskId: design.id,
+    });
+    expect(await pairOfRow(result.running.id)).toEqual({
+      projectId: web.id,
+      taskId: design.id,
+    });
+    expect(result.running.project).toEqual({ id: web.id, name: "Web", color: "green" });
+    expect(result.running.task).toEqual({ id: design.id, name: "Diseño" });
+  });
+
+  it("createManualEntry guarda el par pedido, también el proyecto sin tarea", async () => {
+    const { web, design } = await seedTrackable();
+    const withTask = await createManualEntry(actor, ws, {
+      description: "",
+      date: "2026-10-01",
+      start: "08:00",
+      end: "09:00",
+      projectId: web.id,
+      taskId: design.id,
+    });
+    const withoutTask = await createManualEntry(actor, ws, {
+      description: "",
+      date: "2026-10-01",
+      start: "10:00",
+      end: "11:00",
+      projectId: web.id,
+      taskId: null,
+    });
+    expect(await pairOfRow(withTask.created.id)).toEqual({
+      projectId: web.id,
+      taskId: design.id,
+    });
+    expect(withTask.created.task).toEqual({ id: design.id, name: "Diseño" });
+    expect(await pairOfRow(withoutTask.created.id)).toEqual({
+      projectId: web.id,
+      taskId: null,
+    });
+    expect(withoutTask.created.project).toEqual({
+      id: web.id,
+      name: "Web",
+      color: "green",
+    });
+    expect(withoutTask.created.task).toBeNull();
+  });
+
+  it("la entrada sin proyecto sigue siendo válida (TT-93)", async () => {
+    const result = await startTimer(actor, ws, {
+      id: randomUUID(),
+      description: "",
+      projectId: null,
+      taskId: null,
+    });
+    expect(result.running.project).toBeNull();
+    expect(result.running.task).toBeNull();
+  });
+
+  /** Los pares que ninguna alta acepta, con el mensaje que responde cada uno. */
+  async function rejectedPairs() {
+    const unavailable = await seedUnavailablePairs();
+    const other = await seedWorkspace();
+    const foreign = await seedProject({ workspaceId: other.workspaceId });
+    const { web } = await seedTrackable("Activo");
+    const app = await seedProject({ workspaceId, name: "Otro" });
+    const elsewhere = await seedTask({ workspaceId, projectId: app.id });
+    const tt77 = projectMessages.projectUnavailable;
+    const pr74 = projectMessages.taskUnavailable;
+    return [
+      ["archivado", { projectId: unavailable.archivado.projectId, taskId: null }, tt77],
+      [
+        "privado sin acceso",
+        { projectId: unavailable["privado sin acceso"].projectId, taskId: null },
+        tt77,
+      ],
+      ["inexistente", { projectId: randomUUID(), taskId: null }, tt77],
+      ["de otro workspace", { projectId: foreign.id, taskId: null }, tt77],
+      [
+        "con una tarea hecha",
+        {
+          projectId: unavailable["tarea hecha"].projectId,
+          taskId: unavailable["tarea hecha"].taskId,
+        },
+        pr74,
+      ],
+      ["con una tarea inexistente", { projectId: web.id, taskId: randomUUID() }, pr74],
+      [
+        "con una tarea de otro proyecto",
+        { projectId: web.id, taskId: elsewhere.id },
+        pr74,
+      ],
+    ] as const;
+  }
+
+  it("startTimer rechaza cada par no disponible sin escribir y sin cerrar el timer que corría", async () => {
+    const previous = await seedRunning();
+    for (const [label, pair, message] of await rejectedPairs()) {
+      const id = randomUUID();
+      await expect(
+        startTimer(actor, ws, { id, description: "", ...pair }),
+        label,
+      ).rejects.toMatchObject({ code: "not_found", message });
+      expect(await timeEntryById(id), label).toBeUndefined();
+      expect((await timeEntryById(previous.id))?.endedAt, label).toBeNull();
+    }
+    expect(await allTimeEntries()).toHaveLength(1);
+    expect(await auditFor("time_entry")).toEqual([]);
+  });
+
+  it("createManualEntry rechaza cada par no disponible sin escribir", async () => {
+    for (const [label, pair, message] of await rejectedPairs()) {
+      await expect(
+        createManualEntry(actor, ws, {
+          description: "",
+          date: "2026-10-01",
+          start: "08:00",
+          end: "09:00",
+          ...pair,
+        }),
+        label,
+      ).rejects.toMatchObject({ code: "not_found", message });
+    }
+    expect(await allTimeEntries()).toHaveLength(0);
+    expect(await auditFor("time_entry")).toEqual([]);
+  });
+
+  it("valida el par después de las horas: una hora imposible responde por la hora", async () => {
+    await expect(
+      createManualEntry(actor, ws, {
+        description: "",
+        date: "2026-10-01",
+        start: "08:00",
+        end: "08:00",
+        projectId: randomUUID(),
+        taskId: null,
+      }),
+    ).rejects.toMatchObject({ code: "validation", message: timeEntryMessages.tooShort });
+  });
+
+  it("el reintento de una alta con proyecto responde la vista con su proyecto, sin volver a validar", async () => {
+    const { web, design } = await seedTrackable();
+    const values = {
+      id: randomUUID(),
+      description: "",
+      projectId: web.id,
+      taskId: design.id,
+    };
+    const first = await startTimer(actor, ws, values);
+    await db
+      .update(project)
+      .set({ archivedAt: new Date() })
+      .where(eq(project.id, web.id));
+    const retry = await startTimer(actor, ws, values);
+    expect(retry.running).toEqual(first.running);
+    expect(retry.running.project?.id).toBe(web.id);
+    expect(await allTimeEntries()).toHaveLength(1);
+  });
+});
+
+describe("updateEntryProject (criterio 6: TT-10, TT-11, TT-27, TT-54)", () => {
+  const ws = workspaceOf(buenosAires);
+
+  it("cambia el par de una entrada cerrada y responde la vista", async () => {
+    const { web, design } = await seedTrackable();
+    const entry = await seedEntryWith({ projectId: null, taskId: null });
+    const result = await updateEntryProject(actor, ws, {
+      id: entry.id,
+      projectId: web.id,
+      taskId: design.id,
+    });
+    expect(await pairOfRow(entry.id)).toEqual({ projectId: web.id, taskId: design.id });
+    expect(result.entry.project).toEqual({ id: web.id, name: "Web", color: "green" });
+    expect(result.entry.task).toEqual({ id: design.id, name: "Diseño" });
+    expect(result.entry.endedAt).toBe(entry.endedAt?.toISOString());
+  });
+
+  it("cambia el par de la entrada que corre sin detenerla (TT-27)", async () => {
+    const { web } = await seedTrackable();
+    const running = await seedEntryWith(
+      { projectId: null, taskId: null },
+      { running: true },
+    );
+    const result = await updateEntryProject(actor, ws, {
+      id: running.id,
+      projectId: web.id,
+      taskId: null,
+    });
+    expect(result.entry.endedAt).toBeNull();
+    expect(result.entry.project?.id).toBe(web.id);
+    expect(await timeEntryById(running.id)).toMatchObject({
+      projectId: web.id,
+      endedAt: null,
+      startedAt: running.startedAt,
+    });
+  });
+
+  it("funciona sobre una entrada con horarios de solo lectura (TT-110)", async () => {
+    const { web } = await seedTrackable();
+    const long = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-09-28T11:00:00Z",
+      endedAt: "2026-10-01T12:00:00Z",
+    });
+    const result = await updateEntryProject(actor, ws, {
+      id: long.id,
+      projectId: web.id,
+      taskId: null,
+    });
+    expect(result.entry.editableTimes).toBe(false);
+    expect(result.entry.project?.id).toBe(web.id);
+  });
+
+  it("«Sin proyecto» deja los dos nulos", async () => {
+    const { web, design } = await seedTrackable();
+    const entry = await seedEntryWith({ projectId: web.id, taskId: design.id });
+    const result = await updateEntryProject(actor, ws, {
+      id: entry.id,
+      projectId: null,
+      taskId: null,
+    });
+    expect(await pairOfRow(entry.id)).toEqual({ projectId: null, taskId: null });
+    expect(result.entry.project).toBeNull();
+    expect(result.entry.task).toBeNull();
+  });
+
+  it("el mismo par responde la vista sin escribir y sin registro, también con otras mayúsculas", async () => {
+    const { web, design } = await seedTrackable();
+    const entry = await seedEntryWith({ projectId: web.id, taskId: design.id });
+    for (const pair of [
+      { projectId: web.id, taskId: design.id },
+      { projectId: web.id.toUpperCase(), taskId: design.id.toUpperCase() },
+    ]) {
+      const result = await updateEntryProject(actor, ws, { id: entry.id, ...pair });
+      expect(result.entry.project?.id).toBe(web.id);
+      expect(result.entry.task?.id).toBe(design.id);
+    }
+    expect((await timeEntryById(entry.id))?.updatedAt).toEqual(entry.updatedAt);
+    expect(await auditFor("time_entry", entry.id)).toEqual([]);
+  });
+
+  it("una entrada ajena responde TT-79 con el texto que la nombra, sin tocarla", async () => {
+    const { web } = await seedTrackable();
+    const otherId = await seedMember(workspaceId, "member");
+    const foreign = await seedTimeEntry({
+      workspaceId,
+      userId: otherId,
+      startedAt: "2026-10-01T11:00:00Z",
+      endedAt: "2026-10-01T12:00:00Z",
+    });
+    await expect(
+      updateEntryProject(actor, ws, { id: foreign.id, projectId: web.id, taskId: null }),
+    ).rejects.toMatchObject({
+      code: "forbidden",
+      message: timeEntryMessages.forbiddenOtherOwner,
+    });
+    expect(await pairOfRow(foreign.id)).toEqual({ projectId: null, taskId: null });
+  });
+
+  it("una entrada inexistente o de otro workspace responde TT-80", async () => {
+    const { web } = await seedTrackable();
+    const other = await seedWorkspace();
+    const foreign = await seedTimeEntry({
+      workspaceId: other.workspaceId,
+      userId: other.ownerId,
+      startedAt: "2026-10-01T11:00:00Z",
+      endedAt: "2026-10-01T12:00:00Z",
+    });
+    for (const id of [randomUUID(), foreign.id]) {
+      await expect(
+        updateEntryProject(actor, ws, { id, projectId: web.id, taskId: null }),
+      ).rejects.toMatchObject({ code: "not_found", message: timeEntryMessages.notFound });
+    }
+    expect(await pairOfRow(foreign.id)).toEqual({ projectId: null, taskId: null });
+  });
+
+  it("una membresía inactiva recibe forbidden aunque la entrada sea suya", async () => {
+    const { web } = await seedTrackable();
+    const entry = await seedEntryWith({ projectId: null, taskId: null });
+    await expect(
+      updateEntryProject({ ...actor, status: "inactive" }, ws, {
+        id: entry.id,
+        projectId: web.id,
+        taskId: null,
+      }),
+    ).rejects.toMatchObject({ code: "forbidden", message: timeEntryMessages.forbidden });
+    expect(await pairOfRow(entry.id)).toEqual({ projectId: null, taskId: null });
+  });
+
+  it("rechaza un proyecto nuevo no disponible sin cambiar nada", async () => {
+    const unavailable = await seedUnavailablePairs();
+    const entry = await seedEntryWith({ projectId: null, taskId: null });
+    await expect(
+      updateEntryProject(actor, ws, {
+        id: entry.id,
+        projectId: unavailable.archivado.projectId,
+        taskId: null,
+      }),
+    ).rejects.toMatchObject({
+      code: "not_found",
+      message: projectMessages.projectUnavailable,
+    });
+    expect(await pairOfRow(entry.id)).toEqual({ projectId: null, taskId: null });
+    expect(await auditFor("time_entry", entry.id)).toEqual([]);
+  });
+});
+
+describe("la regla del par sobre una entrada que ya tiene proyecto (criterio 7: TT-104, PR-63, PR-65, PR-71, PR-106)", () => {
+  const ws = workspaceOf(buenosAires);
+
+  it("detenerla, editar la descripción, los horarios y el inicio funciona y conserva el par", async () => {
+    for (const [label, state] of Object.entries(await seedUnavailablePairs())) {
+      const pair = { projectId: state.projectId, taskId: state.taskId };
+      const running = await seedEntryWith(pair, { running: true });
+      const started = await updateRunningStart(
+        actor,
+        ws,
+        { id: running.id, date: "2026-10-02", start: "07:30" },
+        new Date("2026-10-02T15:00:00Z"),
+      );
+      expect(started.running.project?.id, label).toBe(state.projectId);
+      const stopped = await stopTimer(actor, ws, { id: running.id });
+      expect(stopped.stopped.task?.id, label).toBe(state.taskId);
+      const described = await updateDescription(actor, ws, {
+        id: running.id,
+        description: "otra",
+      });
+      expect(described.entry.project?.id, label).toBe(state.projectId);
+      expect(await pairOfRow(running.id), label).toEqual(pair);
+
+      const closed = await seedEntryWith(pair);
+      const timed = await updateEntryTimes(actor, ws, {
+        id: closed.id,
+        date: "2026-10-01",
+        start: "07:00",
+        end: "08:00",
+      });
+      expect(timed.entry.task?.id, label).toBe(state.taskId);
+      expect(await pairOfRow(closed.id), label).toEqual(pair);
+    }
+  });
+
+  it("borrarla funciona", async () => {
+    for (const state of Object.values(await seedUnavailablePairs())) {
+      const entry = await seedEntryWith({
+        projectId: state.projectId,
+        taskId: state.taskId,
+      });
+      await deleteEntry(actor, { id: entry.id });
+      expect(await timeEntryById(entry.id)).toBeUndefined();
+    }
+  });
+
+  it("volver a pedir el mismo par responde la vista sin escribir", async () => {
+    for (const [label, state] of Object.entries(await seedUnavailablePairs())) {
+      const pair = { projectId: state.projectId, taskId: state.taskId };
+      const entry = await seedEntryWith(pair);
+      const result = await updateEntryProject(actor, ws, { id: entry.id, ...pair });
+      expect(result.entry.project?.id, label).toBe(state.projectId);
+      expect((await timeEntryById(entry.id))?.updatedAt, label).toEqual(entry.updatedAt);
+    }
+  });
+
+  it("quitarle la tarea, o el proyecto, funciona", async () => {
+    for (const [label, state] of Object.entries(await seedUnavailablePairs())) {
+      const pair = { projectId: state.projectId, taskId: state.taskId };
+      const withoutTask = await seedEntryWith(pair);
+      const result = await updateEntryProject(actor, ws, {
+        id: withoutTask.id,
+        projectId: state.projectId,
+        taskId: null,
+      });
+      expect(result.entry.project?.id, label).toBe(state.projectId);
+      expect(result.entry.task, label).toBeNull();
+      expect(await pairOfRow(withoutTask.id), label).toEqual({
+        projectId: state.projectId,
+        taskId: null,
+      });
+
+      const withoutProject = await seedEntryWith(pair);
+      await updateEntryProject(actor, ws, {
+        id: withoutProject.id,
+        projectId: null,
+        taskId: null,
+      });
+      expect(await pairOfRow(withoutProject.id), label).toEqual({
+        projectId: null,
+        taskId: null,
+      });
+    }
+  });
+
+  it("cambiarle la tarea responde TT-77 o PR-74 y no cambia nada", async () => {
+    for (const [label, state] of Object.entries(await seedUnavailablePairs())) {
+      const pair = { projectId: state.projectId, taskId: state.taskId };
+      const entry = await seedEntryWith(pair);
+      await expect(
+        updateEntryProject(actor, ws, {
+          id: entry.id,
+          projectId: state.projectId,
+          taskId: state.otherTaskId,
+        }),
+        label,
+      ).rejects.toMatchObject({ code: "not_found", message: state.message });
+      expect(await pairOfRow(entry.id), label).toEqual(pair);
+      expect((await timeEntryById(entry.id))?.updatedAt, label).toEqual(entry.updatedAt);
+    }
+  });
+
+  it("sumarle una tarea a la entrada con el proyecto y sin tarea también se valida", async () => {
+    for (const [label, state] of Object.entries(await seedUnavailablePairs())) {
+      const pair = { projectId: state.projectId, taskId: null };
+      const entry = await seedEntryWith(pair);
+      await expect(
+        updateEntryProject(actor, ws, {
+          id: entry.id,
+          projectId: state.projectId,
+          taskId: state.taskId,
+        }),
+        label,
+      ).rejects.toMatchObject({ code: "not_found", message: state.message });
+      expect(await pairOfRow(entry.id), label).toEqual(pair);
+    }
+  });
+});
+
+describe("continuar y duplicar con proyecto (criterio 8: TT-57, TT-58)", () => {
+  const ws = workspaceOf(buenosAires);
+
+  it("continuar copia el proyecto y la tarea de la original", async () => {
+    const { web, design } = await seedTrackable();
+    const source = await seedEntryWith({ projectId: web.id, taskId: design.id });
+    const result = await continueEntry(actor, ws, {
+      id: randomUUID(),
+      sourceId: source.id,
+    });
+    expect(await pairOfRow(result.running.id)).toEqual({
+      projectId: web.id,
+      taskId: design.id,
+    });
+    expect(result.running.project).toEqual({ id: web.id, name: "Web", color: "green" });
+    expect(result.running.task).toEqual({ id: design.id, name: "Diseño" });
+  });
+
+  it("duplicar copia el proyecto y la tarea de la original", async () => {
+    const { web, design } = await seedTrackable();
+    const source = await seedEntryWith({ projectId: web.id, taskId: design.id });
+    const result = await duplicateEntry(actor, ws, {
+      id: randomUUID(),
+      sourceId: source.id,
+    });
+    expect(await pairOfRow(result.created.id)).toEqual({
+      projectId: web.id,
+      taskId: design.id,
+    });
+    expect(result.created.task).toEqual({ id: design.id, name: "Diseño" });
+  });
+
+  it("continuar desde una original no disponible no escribe nada y no cierra el timer que corría", async () => {
+    const previous = await seedRunning();
+    for (const [label, state] of Object.entries(await seedUnavailablePairs())) {
+      const source = await seedEntryWith({
+        projectId: state.projectId,
+        taskId: state.taskId,
+      });
+      const id = randomUUID();
+      await expect(
+        continueEntry(actor, ws, { id, sourceId: source.id }),
+        label,
+      ).rejects.toMatchObject({ code: "not_found", message: state.message });
+      expect(await timeEntryById(id), label).toBeUndefined();
+      expect((await timeEntryById(previous.id))?.endedAt, label).toBeNull();
+    }
+    expect(await auditFor("time_entry")).toEqual([]);
+  });
+
+  it("duplicar desde una original no disponible no escribe nada", async () => {
+    for (const [label, state] of Object.entries(await seedUnavailablePairs())) {
+      const source = await seedEntryWith({
+        projectId: state.projectId,
+        taskId: state.taskId,
+      });
+      const id = randomUUID();
+      await expect(
+        duplicateEntry(actor, ws, { id, sourceId: source.id }),
+        label,
+      ).rejects.toMatchObject({ code: "not_found", message: state.message });
+      expect(await timeEntryById(id), label).toBeUndefined();
+    }
+    expect(await allTimeEntries()).toHaveLength(3);
+    expect(await auditFor("time_entry")).toEqual([]);
+  });
+
+  it("una original con el proyecto disponible y sin tarea se continúa sin tarea", async () => {
+    const { web } = await seedTrackable();
+    const source = await seedEntryWith({ projectId: web.id, taskId: null });
+    const result = await continueEntry(actor, ws, {
+      id: randomUUID(),
+      sourceId: source.id,
+    });
+    expect(result.running.project?.id).toBe(web.id);
+    expect(result.running.task).toBeNull();
+  });
+});
+
+describe("la vista con su proyecto (criterio 9: TT-49, TT-50, PR-71, PR-101 … PR-103)", () => {
+  const ws = workspaceOf(buenosAires);
+  const now = new Date("2026-10-02T15:00:00Z");
+
+  it("getTrackerState trae project y task en el timer y en cada entrada de la lista", async () => {
+    const { web, design } = await seedTrackable();
+    const running = await seedEntryWith(
+      { projectId: web.id, taskId: null },
+      { running: true },
+    );
+    const closed = await seedEntryWith({ projectId: web.id, taskId: design.id });
+    const bare = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-09-30T11:00:00Z",
+      endedAt: "2026-09-30T12:00:00Z",
+    });
+
+    const state = await getTrackerState(actor, ws, { from: null }, now);
+    expect(state.running?.id).toBe(running.id);
+    expect(state.running?.project).toEqual({ id: web.id, name: "Web", color: "green" });
+    expect(state.running?.task).toBeNull();
+    const entries = daysOf(state).flatMap((day) => day.entries);
+    expect(entries.find((entry) => entry.id === closed.id)).toMatchObject({
+      project: { id: web.id, name: "Web", color: "green" },
+      task: { id: design.id, name: "Diseño" },
+    });
+    expect(entries.find((entry) => entry.id === bare.id)).toMatchObject({
+      project: null,
+      task: null,
+    });
+  });
+
+  it("stopped y la vista de cada edición traen el par", async () => {
+    const { web, design } = await seedTrackable();
+    const previous = await seedEntryWith(
+      { projectId: web.id, taskId: design.id },
+      { running: true },
+    );
+    const started = await startTimer(actor, ws, {
+      id: randomUUID(),
+      description: "",
+      projectId: null,
+      taskId: null,
+    });
+    expect(started.stopped?.id).toBe(previous.id);
+    expect(started.stopped?.project?.id).toBe(web.id);
+    expect(started.stopped?.task?.id).toBe(design.id);
+  });
+
+  it("con el nombre o el color cambiados por SQL trae los nuevos; con el cliente cambiado, nada cambia", async () => {
+    const { web, design } = await seedTrackable();
+    const entry = await seedEntryWith({ projectId: web.id, taskId: design.id });
+    const before = await updateDescription(actor, ws, { id: entry.id, description: "a" });
+
+    const acme = await seedClient({ workspaceId });
+    await db.update(project).set({ clientId: acme.id }).where(eq(project.id, web.id));
+    const moved = await updateDescription(actor, ws, { id: entry.id, description: "a" });
+    expect(moved.entry.project).toEqual(before.entry.project);
+    expect(moved.entry.task).toEqual(before.entry.task);
+
+    await db
+      .update(project)
+      .set({ name: "Sitio", color: "amber" })
+      .where(eq(project.id, web.id));
+    await db.update(client).set({ name: "Otro" }).where(eq(client.id, acme.id));
+    const state = await getTrackerState(actor, ws, { from: null }, now);
+    const listed = daysOf(state)
+      .flatMap((day) => day.entries)
+      .find((view) => view.id === entry.id);
+    expect(listed?.project).toEqual({ id: web.id, name: "Sitio", color: "amber" });
+  });
+
+  it("una entrada con un privado del que la persona dejó de ser miembro lo muestra con su nombre y color", async () => {
+    const vault = await seedProject({
+      workspaceId,
+      name: "Bóveda",
+      color: "violet",
+      isPublic: false,
+      members: [{ userId: actor.userId }],
+    });
+    const created = await createManualEntry(actor, ws, {
+      description: "",
+      date: "2026-10-01",
+      start: "08:00",
+      end: "09:00",
+      projectId: vault.id,
+      taskId: null,
+    });
+    expect(created.created.project).toEqual({
+      id: vault.id,
+      name: "Bóveda",
+      color: "violet",
+    });
+
+    await db.delete(projectMember).where(eq(projectMember.projectId, vault.id));
+    const state = await getTrackerState(actor, ws, { from: null }, now);
+    const listed = daysOf(state)
+      .flatMap((day) => day.entries)
+      .find((view) => view.id === created.created.id);
+    expect(listed?.project).toEqual({ id: vault.id, name: "Bóveda", color: "violet" });
+  });
+
+  it("un color fuera de la paleta no sale en la vista: se lanza", async () => {
+    const { web } = await seedTrackable();
+    const entry = await seedEntryWith({ projectId: web.id, taskId: null });
+    await db.execute(sql`alter table project drop constraint project_color_palette`);
+    try {
+      await db.update(project).set({ color: "#ff0000" }).where(eq(project.id, web.id));
+      await expect(
+        updateDescription(actor, ws, { id: entry.id, description: "b" }),
+      ).rejects.toThrow(/fuera de la paleta/);
+    } finally {
+      await db.update(project).set({ color: "green" }).where(eq(project.id, web.id));
+      await db.execute(
+        sql`alter table project add constraint project_color_palette check (color in ('red', 'orange', 'amber', 'lime', 'green', 'teal', 'cyan', 'blue', 'indigo', 'violet', 'pink', 'slate'))`,
+      );
+    }
+  });
 });

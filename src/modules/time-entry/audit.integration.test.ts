@@ -5,7 +5,14 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/server/db";
 import { membership } from "@/server/db/schema";
 import type { Actor } from "@/server/permissions";
-import { buenosAires, seedMember, seedTimeEntry, seedWorkspace } from "@/test/factories";
+import {
+  buenosAires,
+  seedMember,
+  seedProject,
+  seedTask,
+  seedTimeEntry,
+  seedWorkspace,
+} from "@/test/factories";
 import { auditFor, timeEntriesOf, timeEntryById } from "@/test/queries";
 
 import { timeEntryMessages } from "./schema";
@@ -18,6 +25,7 @@ import {
   startTimer,
   stopTimer,
   updateDescription,
+  updateEntryProject,
   updateEntryTimes,
   updateRunningStart,
   type TrackerWorkspace,
@@ -806,5 +814,123 @@ describe("audit log de continuar, duplicar y descartar", () => {
     expect(actions).not.toContain("timeEntry.continue");
     expect(actions).not.toContain("timeEntry.duplicate");
     expect(actions).not.toContain("timeEntry.discard");
+  });
+});
+
+describe("audit log del proyecto y la tarea (criterio 13)", () => {
+  async function seedPair() {
+    const web = await seedProject({ workspaceId });
+    const design = await seedTask({ workspaceId, projectId: web.id });
+    return { projectId: web.id, taskId: design.id };
+  }
+
+  function seedEntry(pair: { projectId: string | null; taskId: string | null }) {
+    return seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      description: "original",
+      startedAt: "2026-10-01T11:00:00Z",
+      endedAt: "2026-10-01T12:00:00Z",
+      ...pair,
+    });
+  }
+
+  it("updateEntryProject deja timeEntry.updateProject con el par anterior y el nuevo", async () => {
+    const pair = await seedPair();
+    const entry = await seedEntry({ projectId: pair.projectId, taskId: null });
+
+    await updateEntryProject(actor, workspace, { id: entry.id, ...pair });
+    await updateEntryProject(actor, workspace, {
+      id: entry.id,
+      projectId: null,
+      taskId: null,
+    });
+
+    const rows = await auditFor("time_entry", entry.id);
+    expect(
+      rows.map((row) => ({
+        action: row.action,
+        actorId: row.actorId,
+        previousValue: parsed(row.previousValue),
+        nextValue: parsed(row.nextValue),
+      })),
+    ).toEqual(
+      expect.arrayContaining([
+        {
+          action: "timeEntry.updateProject",
+          actorId: actor.userId,
+          previousValue: { projectId: pair.projectId, taskId: null },
+          nextValue: pair,
+        },
+        {
+          action: "timeEntry.updateProject",
+          actorId: actor.userId,
+          previousValue: pair,
+          nextValue: { projectId: null, taskId: null },
+        },
+      ]),
+    );
+    expect(rows).toHaveLength(2);
+  });
+
+  it("el pedido sin cambios no deja registro", async () => {
+    const pair = await seedPair();
+    const entry = await seedEntry(pair);
+    await updateEntryProject(actor, workspace, { id: entry.id, ...pair });
+    expect(await auditFor("time_entry", entry.id)).toEqual([]);
+  });
+
+  it("el cambio rechazado no deja registro", async () => {
+    const old = await seedProject({ workspaceId, archived: true });
+    const entry = await seedEntry({ projectId: null, taskId: null });
+    await expect(
+      updateEntryProject(actor, workspace, {
+        id: entry.id,
+        projectId: old.id,
+        taskId: null,
+      }),
+    ).rejects.toMatchObject({ code: "not_found" });
+    expect(await auditFor("time_entry")).toEqual([]);
+  });
+
+  it("las cuatro altas guardan el par en su nextValue", async () => {
+    const pair = await seedPair();
+    const source = await seedEntry(pair);
+
+    // La manual primero: con un timer corriendo se rechaza.
+    const manual = await createManualEntry(actor, workspace, {
+      description: "",
+      date: "2026-09-30",
+      start: "08:00",
+      end: "09:00",
+      ...pair,
+    });
+    const started = await startTimer(actor, workspace, {
+      id: randomUUID(),
+      description: "",
+      ...pair,
+    });
+    const continued = await continueEntry(actor, workspace, {
+      id: randomUUID(),
+      sourceId: source.id,
+    });
+    const duplicated = await duplicateEntry(actor, workspace, {
+      id: randomUUID(),
+      sourceId: source.id,
+    });
+
+    for (const [action, id] of [
+      ["timeEntry.start", started.running.id],
+      ["timeEntry.createManual", manual.created.id],
+      ["timeEntry.continue", continued.running.id],
+      ["timeEntry.duplicate", duplicated.created.id],
+    ] as const) {
+      const rows = await auditFor("time_entry", id);
+      const created = rows.find((row) => row.action === action);
+      expect([action, parsed(created?.nextValue ?? null)]).toEqual([
+        action,
+        expect.objectContaining(pair),
+      ]);
+    }
   });
 });

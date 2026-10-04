@@ -5,8 +5,16 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/server/db";
 import { membership } from "@/server/db/schema";
 import type { Actor, MembershipStatus, Role } from "@/server/permissions";
-import { buenosAires, seedMember, seedTimeEntry, seedWorkspace } from "@/test/factories";
+import {
+  buenosAires,
+  seedMember,
+  seedProject,
+  seedTimeEntry,
+  seedWorkspace,
+} from "@/test/factories";
 import { timeEntriesOf, timeEntryById } from "@/test/queries";
+
+import { projectMessages } from "@/modules/project/schema";
 
 import { timeEntryRepository } from "./repository";
 import { timeEntryMessages } from "./schema";
@@ -20,6 +28,7 @@ import {
   startTimer,
   stopTimer,
   updateDescription,
+  updateEntryProject,
   updateEntryTimes,
   updateRunningStart,
   type TrackerWorkspace,
@@ -1067,5 +1076,144 @@ describe("el filtro por dueño del repository", () => {
       ),
     );
     expect(own?.startedAt.toISOString()).toBe("2026-10-02T10:00:00.000Z");
+  });
+});
+
+describe("quién asigna qué proyecto (§3: TT-08, PR-17)", () => {
+  function seedOwnEntry(userId: string) {
+    return seedTimeEntry({
+      workspaceId,
+      userId,
+      startedAt: "2026-10-01T11:00:00Z",
+      endedAt: "2026-10-01T12:00:00Z",
+    });
+  }
+
+  it.each(roles)(
+    "%s asigna un público, y un privado solo si es miembro",
+    async (role) => {
+      const actor = await seedActor(role);
+      const open = await seedProject({ workspaceId });
+      const vault = await seedProject({ workspaceId, isPublic: false });
+      const joined = await seedProject({
+        workspaceId,
+        isPublic: false,
+        members: [{ userId: actor.userId }],
+      });
+      const entry = await seedOwnEntry(actor.userId);
+
+      for (const target of [open, joined]) {
+        const result = await updateEntryProject(actor, workspace, {
+          id: entry.id,
+          projectId: target.id,
+          taskId: null,
+        });
+        expect(result.entry.project?.id).toBe(target.id);
+      }
+      await expect(
+        updateEntryProject(actor, workspace, {
+          id: entry.id,
+          projectId: vault.id,
+          taskId: null,
+        }),
+      ).rejects.toMatchObject({
+        code: "not_found",
+        message: projectMessages.projectUnavailable,
+      });
+      expect((await timeEntryById(entry.id))?.projectId).toBe(joined.id);
+    },
+  );
+
+  it.each(roles)(
+    "%s no cambia el proyecto de la entrada de otra persona",
+    async (role) => {
+      const actor = await seedActor(role);
+      const open = await seedProject({ workspaceId });
+      const otherId = await seedMember(workspaceId, "member");
+      const foreign = await seedOwnEntry(otherId);
+      await expect(
+        updateEntryProject(actor, workspace, {
+          id: foreign.id,
+          projectId: open.id,
+          taskId: null,
+        }),
+      ).rejects.toMatchObject({
+        code: "forbidden",
+        message: timeEntryMessages.forbiddenOtherOwner,
+      });
+      expect((await timeEntryById(foreign.id))?.projectId).toBeNull();
+    },
+  );
+
+  it.each(notActive)(
+    "con la membresía %s no cambia el proyecto, tampoco a «Sin proyecto»",
+    async (status) => {
+      const actor = await seedActor("member", status);
+      const open = await seedProject({
+        workspaceId,
+        members: [{ userId: actor.userId }],
+      });
+      const entry = await seedTimeEntry({
+        workspaceId,
+        userId: actor.userId,
+        startedAt: "2026-10-01T11:00:00Z",
+        endedAt: "2026-10-01T12:00:00Z",
+        projectId: open.id,
+      });
+      for (const projectId of [null, open.id]) {
+        await expect(
+          updateEntryProject(actor, workspace, { id: entry.id, projectId, taskId: null }),
+        ).rejects.toMatchObject({
+          code: "forbidden",
+          message: timeEntryMessages.forbidden,
+        });
+      }
+      expect((await timeEntryById(entry.id))?.projectId).toBe(open.id);
+    },
+  );
+
+  it("un actor de otro workspace recibe not_found y no escribe", async () => {
+    const other = await seedWorkspace(buenosAires);
+    const elsewhere: Actor = {
+      userId: other.ownerId,
+      workspaceId: other.workspaceId,
+      role: "owner",
+      status: "active",
+    };
+    const theirs = await seedProject({ workspaceId: other.workspaceId });
+    const entry = await seedOwnEntry(ownerId);
+    await expect(
+      updateEntryProject(elsewhere, workspace, {
+        id: entry.id,
+        projectId: theirs.id,
+        taskId: null,
+      }),
+    ).rejects.toMatchObject({ code: "not_found", message: timeEntryMessages.notFound });
+    expect((await timeEntryById(entry.id))?.projectId).toBeNull();
+  });
+
+  it("el filtro por dueño del repository no cambia el proyecto de la entrada de otra persona", async () => {
+    const open = await seedProject({ workspaceId });
+    const otherId = await seedMember(workspaceId, "member");
+    const row = await seedOwnEntry(otherId);
+    const pair = { projectId: open.id, taskId: null };
+
+    const foreign = await db.transaction((tx) =>
+      timeEntryRepository.updateProject(
+        tx,
+        { workspaceId, userId: ownerId, id: row.id },
+        pair,
+      ),
+    );
+    expect(foreign).toBeUndefined();
+    expect((await timeEntryById(row.id))?.projectId).toBeNull();
+    const own = await db.transaction((tx) =>
+      timeEntryRepository.updateProject(
+        tx,
+        { workspaceId, userId: otherId, id: row.id },
+        pair,
+      ),
+    );
+    expect(own?.project?.id).toBe(open.id);
   });
 });

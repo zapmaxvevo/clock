@@ -12,6 +12,7 @@ import {
   trackerSearchParams,
   trackerState,
   updateDescriptionInput,
+  updateEntryProjectInput,
   updateEntryTimesInput,
   updateRunningStartInput,
   TRACKER_WINDOW_DAYS,
@@ -74,6 +75,94 @@ describe("startTimerInput", () => {
     const result = startTimerInput.safeParse(input);
     expect(result.success).toBe(false);
     expect(result.error?.issues.at(0)?.path).toEqual(["id"]);
+  });
+});
+
+describe("TT-70: la tarea no viaja sin su proyecto (criterio 5)", () => {
+  const projectId = "6f1c1a52-3c55-4a43-9d0e-0d6b7d0f4d11";
+  const taskId = "9a7c2b1e-4d3f-4e8a-8b6c-5d4e3f2a1b0c";
+
+  const inputs = [
+    ["startTimerInput", startTimerInput, { id }],
+    [
+      "createManualEntryInput",
+      createManualEntryInput,
+      { date: "2026-10-02", start: "08:00", end: "09:00" },
+    ],
+    ["updateEntryProjectInput", updateEntryProjectInput, { id }],
+  ] as const;
+
+  it.each(inputs)(
+    "%s rechaza la tarea sin proyecto con su mensaje",
+    (_, schema, rest) => {
+      const result = schema.safeParse({ ...rest, projectId: null, taskId });
+      expect(result.success).toBe(false);
+      expect(result.error?.issues).toEqual([
+        expect.objectContaining({
+          message: timeEntryMessages.taskNeedsProject,
+          path: ["taskId"],
+        }),
+      ]);
+    },
+  );
+
+  it.each(inputs)(
+    "%s acepta el proyecto con y sin tarea, y los dos nulos",
+    (_, schema, rest) => {
+      for (const pair of [
+        { projectId, taskId },
+        { projectId, taskId: null },
+        { projectId: null, taskId: null },
+      ]) {
+        expect(schema.parse({ ...rest, ...pair })).toMatchObject(pair);
+      }
+    },
+  );
+
+  it("las altas rechazan la tarea sola aunque falte projectId", () => {
+    for (const [schema, rest] of [
+      [startTimerInput, { id }],
+      [createManualEntryInput, { date: "2026-10-02", start: "08:00", end: "09:00" }],
+    ] as const) {
+      const result = schema.safeParse({ ...rest, taskId });
+      expect(result.error?.issues.at(0)?.message).toBe(
+        timeEntryMessages.taskNeedsProject,
+      );
+    }
+  });
+
+  it("los ids del par tienen forma de uuid", () => {
+    expect(startTimerInput.safeParse({ id, projectId: "web" }).success).toBe(false);
+    expect(
+      createManualEntryInput.safeParse({
+        date: "2026-10-02",
+        start: "08:00",
+        end: "09:00",
+        projectId,
+        taskId: "diseño",
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("updateEntryProjectInput", () => {
+  it("exige el par entero: la action fija los dos valores", () => {
+    expect(updateEntryProjectInput.safeParse({ id, projectId: null }).success).toBe(
+      false,
+    );
+    expect(updateEntryProjectInput.safeParse({ id, taskId: null }).success).toBe(false);
+    expect(updateEntryProjectInput.parse({ id, projectId: null, taskId: null })).toEqual({
+      id,
+      projectId: null,
+      taskId: null,
+    });
+  });
+
+  it("exige un id de entrada con forma de uuid", () => {
+    expect(
+      updateEntryProjectInput.safeParse({ id: "1", projectId: null, taskId: null })
+        .success,
+    ).toBe(false);
   });
 });
 
@@ -218,6 +307,31 @@ describe("trackerState", () => {
     );
     expect(
       trackerState.safeParse({ ...state, weeks: weeksWith([withoutFlag]) }).success,
+    ).toBe(false);
+  });
+
+  it("acepta el proyecto y la tarea de la entrada, y exige que estén", () => {
+    const withProject = {
+      ...entry,
+      project: { id, name: "Web", color: "pink" },
+      task: { id, name: "Diseño" },
+    };
+    expect(
+      trackerState.parse({ ...state, weeks: weeksWith([withProject]) }).weeks[0].days[0]
+        .entries[0],
+    ).toEqual(withProject);
+    for (const key of ["project", "task"]) {
+      const missing = Object.fromEntries(
+        Object.entries(entry).filter(([other]) => other !== key),
+      );
+      expect([
+        key,
+        trackerState.safeParse({ ...state, weeks: weeksWith([missing]) }).success,
+      ]).toEqual([key, false]);
+    }
+    const offPalette = { ...withProject, project: { id, name: "Web", color: "#ff0000" } };
+    expect(
+      trackerState.safeParse({ ...state, weeks: weeksWith([offPalette]) }).success,
     ).toBe(false);
   });
 

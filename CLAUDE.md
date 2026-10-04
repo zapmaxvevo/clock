@@ -78,6 +78,10 @@ docs/adr/              decisiones de arquitectura
 Las lecturas van por el service desde Server Components. Un service no importa
 de `app/` ni de `components/`; un componente no importa un repository.
 
+Un service puede llamar a la función de validación que exporta el service de
+otro módulo, que solo lee con la transacción que recibe; lo que solo se muestra
+de otro módulo se lee con un `join` en el repository propio (ADR 0010).
+
 ## Límites del entorno
 
 El proyecto corre en el plan Hobby de Vercel: una sola corrida de cron por día
