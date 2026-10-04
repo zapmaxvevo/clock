@@ -8,9 +8,11 @@ parte de TT-63 que no depende de proyectos —descripción, hora y fecha en
 bloque—. Lugar en el plan: [mapa de la fase 1](fase1-mapa.md). Correcciones
 aplicadas: ronda 1 de `architecture-reviewer`
 ([`correcciones-fase1-slice6.md`](correcciones-fase1-slice6.md)), todos los
-hallazgos, y ronda 2, contra el árbol con el 10 mergeado
+hallazgos; ronda 2, contra el árbol con el 10 mergeado
 ([`correcciones-fase1-slice6-ronda2.md`](correcciones-fase1-slice6-ronda2.md)),
-todos los menores. Decisiones de arquitectura asociadas:
+todos los menores; y paso 0 del handshake, contra el árbol con el 7 mergeado
+([`correcciones-fase1-slice6-paso0.md`](correcciones-fase1-slice6-paso0.md)),
+todos los hallazgos. Decisiones de arquitectura asociadas:
 
 - [ADR 0011, las acciones en masa son todo o nada](../adr/0011-las-acciones-en-masa-son-todo-o-nada.md):
   nace acá, **aceptado**.
@@ -54,33 +56,37 @@ entrada que devuelve una mutación (P-15); el orden de implementación es
   este slice ya no la hace; las lecturas que devuelven la entrada con su
   proyecto y su tarea (su §5.2); el `ProjectPicker` de
   `project/components/project-picker.tsx`, que la fila dibuja y que lee el
-  catálogo con `useTrackingCatalog` (`project-picker.tsx:110`); y
+  catálogo con `useTrackingCatalog` (`project-picker.tsx:97`); y
   `day-group.tsx` como dueño del cambio de proyecto de sus filas, que guarda
   con `saveEntryProject` de `time-entry/components/entry-project.ts`.
 - **Del 7**: las horas canónicas `startClock` y `endClock` en la vista, los
   rótulos `startLabel` y `endLabel` con el formato de la persona, `clockLabel`,
-  `parseClockInput` con formato, `useDisplayFormats` y `TrackerWorkspace` con
-  `formats` (su §5).
+  `parseClockInput` con formato, `useDisplayFormats`, `ClockField` con
+  `format`, `TrackerWorkspace` con `formats` (su §5) y el aviso de dos partes
+  `ActionFeedback` de `src/components/action-feedback.tsx`, que sus
+  correcciones sacaron de `time-entry` para compartirlo con el perfil.
 
-**Supuestos de forma sobre el 10 y el 7.** El 10 ya está en `main`, y la ronda
-2 confirmó o corrigió contra el árbol los supuestos que vienen de él. El 7
-todavía puede cambiar en su implementación: este contrato depende de estos
-nombres y formas, y **antes de implementar pasa una ronda corta de
-`architecture-reviewer` contra el árbol con el 7 en `main`** (paso 0 del
-handshake, §6) que confirma o corrige acá los que vienen del 7:
+**Supuestos de forma sobre el 10 y el 7.** Los dos están en `main`. La ronda 2
+confirmó o corrigió contra el árbol los supuestos que vienen del 10, y **el
+paso 0 del handshake (§6) está hecho**: la ronda corta de
+`architecture-reviewer` contra el árbol con el 7 mergeado (`420555f`) confirmó
+o corrigió los que vienen del 7, y sus hallazgos están aplicados en este
+contrato
+([`correcciones-fase1-slice6-paso0.md`](correcciones-fase1-slice6-paso0.md)).
+La tabla queda con los nombres y las líneas de ese árbol:
 
-| Supuesto                                                                                                          | De dónde          |
-| ----------------------------------------------------------------------------------------------------------------- | ----------------- |
-| `EntryWithRefs = TimeEntryRow & EntryRefs`, el tipo de las lecturas (`repository.ts:31-41`)                       | 10, §5.2          |
-| `project.color` llega como `string` y lo estrecha `projectRefOf` en `toView` (`service.ts:151-156`)               | 10, §5.2          |
-| Las lecturas con bloqueo usan `left join` y `for update of time_entry`                                            | 10, §5.2          |
-| `toView(row: EntryWithRefs, workspace: TrackerWorkspace)` arma `project` y `task` de la fila                      | 10, §5.2; 7, §5.4 |
-| `TimeEntryErrorCode = ActionErrorCode \| "already_stopped" \| "timer_running"`                                    | 10, §4.1          |
-| `TrackerWorkspace = TimeSettings & { createdAt }`, con `timezone`, `weekStart` y `formats`                        | 7, §5.4           |
-| `timeEntryView` lleva `startClock`, `endClock`, `startLabel` y `endLabel`                                         | 7, §5.4           |
-| `ClockField` recibe el rótulo (`clockLabel`) y su `onCommit` devuelve el rótulo aceptado; el borrador es canónico | 7, §6             |
-| `DateField` rotula con `useDisplayFormats`                                                                        | 7, §6             |
-| La fila lee el catálogo por `ProjectPicker` (`project-picker.tsx:110`) y los formatos con `useDisplayFormats`     | 10, §6; 7, §5.5   |
+| Supuesto                                                                                                                                      | De dónde          |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| `EntryWithRefs = TimeEntryRow & EntryRefs`, el tipo de las lecturas (`repository.ts:31-41`)                                                   | 10, §5.2          |
+| `project.color` llega como `string` y lo estrecha `projectRefOf` (`service.ts:144-149`) en `toView` (`:173`)                                  | 10, §5.2          |
+| Las lecturas con bloqueo usan `left join` y `for update of time_entry`                                                                        | 10, §5.2          |
+| `toView(row: EntryWithRefs, workspace: TrackerWorkspace)` arma `project` y `task` de la fila                                                  | 10, §5.2; 7, §5.4 |
+| `TimeEntryErrorCode = ActionErrorCode \| "already_stopped" \| "timer_running"`                                                                | 10, §4.1          |
+| `TrackerWorkspace = TimeSettings & { createdAt }`, con `timezone`, `weekStart` y `formats`                                                    | 7, §5.4           |
+| `timeEntryView` lleva `startClock`, `endClock`, `startLabel` y `endLabel`                                                                     | 7, §5.4           |
+| `ClockField` recibe el rótulo (`value`), `format?: TimeFormat`, y su `onCommit` devuelve el rótulo aceptado o `null`; el borrador es canónico | 7, §6             |
+| `DateField` rotula con `useDisplayFormats` y su nombre accesible es fijo, «Fecha de la entrada: …» (`date-field.tsx:109`)                     | 7, §6             |
+| La fila lee el catálogo por `ProjectPicker` (`project-picker.tsx:97`) y los formatos con `useDisplayFormats`                                  | 10, §6; 7, §5.5   |
 
 **`EntryRow` no es un tipo de datos**: es el componente de `entry-row.tsx`. El
 tipo de las lecturas es `EntryWithRefs`, con el proyecto y la tarea de
@@ -162,28 +168,29 @@ facturable. P-07 sigue en «Abiertos».
 
 ### Consecuencias sobre código ya entregado
 
-| Archivo                   | Qué cambia                                                                                                                                                   | Qué hay que volver a probar                                                     |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
-| `src/server/action.ts`    | Suma `Rejection`, `RejectedError` y el campo `rejections` del error; `failure` reconoce `RejectedError` antes que `DomainError` y copia el campo (ADR 0011). | `project/actions.integration.test.ts`; `time-entry/actions.integration.test.ts` |
-| `src/hooks/use-action.ts` | `ActionFailure` suma `rejections` y el hook lo conserva.                                                                                                     | `e2e/projects.spec.ts` y los e2e del rastreador                                 |
-| `src/server/audit.ts`     | Suma `recordAudits`, varias filas en una sentencia.                                                                                                          | —                                                                               |
-| `schema.ts`               | `TimeEntryErrorCode` suma `"rejected"`; tres esquemas y dos resultados nuevos; textos.                                                                       | `schema.test.ts` entero                                                         |
-| `service.ts`              | La regla de horas de `updateEntryTimes` pasa a `entryTimesFor`, que la edición masiva también llama; `tripleOf`; dos funciones nuevas.                       | TT-28, TT-56, TT-110, TT-111, TT-112, ADR 0006                                  |
-| `repository.ts`           | Tres funciones nuevas.                                                                                                                                       | —                                                                               |
-| `actions.ts`              | Dos actions nuevas.                                                                                                                                          | `actions.integration.test.ts` entero                                            |
-| `day-group.tsx`           | La casilla del día; las filas ocupadas suman las de la lista; el foco va al encabezado solo por el borrado de una fila propia, no por el masivo (§5.4).      | TT-58, TT-60, el selector del 10 en la fila                                     |
-| `entry-row.tsx`           | La casilla, primera de la fila.                                                                                                                              | TT-49, TT-54, TT-57                                                             |
-| `entry-list.tsx`          | Dueña de la selección y de las filas ocupadas por una edición masiva; dibuja `BulkActions`; aplica P-15 a la edición masiva.                                 | TT-52 (foco de «Cargar más»), TT-57, TT-26 «c»                                  |
-| `clock-field.tsx`         | `placeholder` opcional, al lado de la prop del modo de teclado que suma el 7.                                                                                | TT-18, TT-28, TT-54                                                             |
-| `date-field.tsx`          | `value` admite `null` y `placeholder` lo rotula.                                                                                                             | TT-18, TT-56                                                                    |
-| `tracker-feedback.tsx`    | `children` opcional, debajo del mensaje, para la lista de rechazos.                                                                                          | TT-90                                                                           |
-| `labels.ts`               | Textos de §6.                                                                                                                                                | —                                                                               |
+| Archivo                   | Qué cambia                                                                                                                                                   | Qué hay que volver a probar                                                |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| `src/server/action.ts`    | Suma `Rejection`, `RejectedError` y el campo `rejections` del error; `failure` reconoce `RejectedError` antes que `DomainError` y copia el campo (ADR 0011). | `actions.integration.test.ts` de `project`, `time-entry` y `profile`       |
+| `src/hooks/use-action.ts` | `ActionFailure` suma `rejections` y el hook lo conserva.                                                                                                     | `e2e/projects.spec.ts` y los e2e del rastreador                            |
+| `src/server/audit.ts`     | Suma `recordAudits`, varias filas en una sentencia.                                                                                                          | —                                                                          |
+| `schema.ts`               | `TimeEntryErrorCode` suma `"rejected"`; tres esquemas y dos resultados nuevos; textos.                                                                       | `schema.test.ts` entero                                                    |
+| `service.ts`              | La regla de horas de `updateEntryTimes` pasa a `entryTimesFor`, que la edición masiva también llama; `tripleOf`; dos funciones nuevas.                       | TT-28, TT-56, TT-110, TT-111, TT-112, ADR 0006                             |
+| `repository.ts`           | Tres funciones nuevas.                                                                                                                                       | —                                                                          |
+| `actions.ts`              | Dos actions nuevas.                                                                                                                                          | `actions.integration.test.ts` entero                                       |
+| `day-group.tsx`           | La casilla del día; las filas ocupadas suman las de la lista; el foco va al encabezado solo por el borrado de una fila propia, no por el masivo (§5.4).      | TT-58, TT-60, el selector del 10 en la fila                                |
+| `entry-row.tsx`           | La casilla, primera de la fila.                                                                                                                              | TT-49, TT-54, TT-57                                                        |
+| `entry-list.tsx`          | Dueña de la selección y de las filas ocupadas por una edición masiva; dibuja `BulkActions`; aplica P-15 a la edición masiva.                                 | TT-52 (foco de «Cargar más»), TT-57, TT-26 «c»                             |
+| `clock-field.tsx`         | `placeholder` opcional, al lado de `format`.                                                                                                                 | TT-18, TT-28, TT-54; `scrollWidth <= clientWidth` en `e2e/profile.spec.ts` |
+| `date-field.tsx`          | `value` admite `null`, que `placeholder` rotula sin llamar a `dayKeyLabel`; `label` opcional, con el texto de hoy, «Fecha de la entrada», por omisión.       | TT-18, TT-56                                                               |
+| `action-feedback.tsx`     | En `src/components/`: `children` opcional, en la columna del texto (`col-start-2`), debajo del mensaje y arriba de «Reintentar», para los rechazos.          | TT-90 del rastreador y del perfil; `e2e/profile.spec.ts`                   |
+| `labels.ts`               | Textos de §6.                                                                                                                                                | —                                                                          |
 
 **Los e2e del rastreador** son los de `e2e/` que recorren `/`:
 `tracker.spec.ts`, `start-retry.spec.ts`, `continue-duplicate.spec.ts`,
-`entry-times.spec.ts`, `manual-entry.spec.ts`, `week-and-pagination.spec.ts` y
-`project-picker.spec.ts`. Desde el 10, las mutaciones de la barra y de la lista
-pasan por `useAction`.
+`entry-times.spec.ts`, `manual-entry.spec.ts`, `week-and-pagination.spec.ts`,
+`project-picker.spec.ts` y `profile.spec.ts`, que desde el 7 también recorre
+`/`. Desde el 10, las mutaciones de la barra y de la lista pasan por
+`useAction`; desde el 7, también las de los controles del perfil.
 
 ## 2. Cambios de esquema
 
@@ -584,9 +591,13 @@ ellos.
 ### 5.2 Qué ve la persona
 
 - **Una casilla al principio de cada fila**, siempre visible, con el nombre
-  accesible «Seleccionar «{descripción o Sin descripción}», {inicio} – {fin}»,
-  con `startLabel` y `endLabel`: las horas en el formato de la persona. La hora
-  va en el nombre porque dos entradas pueden tener la misma descripción.
+  accesible «Seleccionar «{descripción o Sin descripción}», {horas}». {horas}
+  es el `timesLabel` de la fila (`entry-row.tsx:150-158`, `:188-190`), la misma
+  expresión en reposo, en edición y en vuelo, con las horas en el formato de la
+  persona; no `startLabel` ni `endLabel`, que son los de la vista. La hora va
+  en el nombre porque dos entradas pueden tener la misma descripción. El aviso
+  de rechazos sí nombra con los rótulos de la vista que viajan en el pedido
+  (§5.3).
 - **Una casilla en el encabezado de cada día**, antes del rótulo, con el nombre
   «Seleccionar las entradas del día {rótulo}». Marcada si todas las filas del
   día están elegidas, mixta (`aria-checked="mixed"`) si algunas, vacía si
@@ -598,15 +609,18 @@ ellos.
   «Se pueden elegir hasta 200 entradas a la vez.» a la vista.
 - **El diálogo «Editar N entradas»**: «Descripción», «Fecha», «Hora de inicio»
   y «Hora de fin», todos vacíos al abrir, con la ayuda «Lo que dejes vacío no
-  cambia.» La fecha elegida tiene al lado «Quitar la fecha», que la vuelve a
-  «Sin cambios». «Cancelar» y «Guardar»; «Guardar» queda inactivo mientras no
-  haya ningún campo con algo.
+  cambia.» La fecha es un `DateField` con `value={null}`, que no llama a
+  `dayKeyLabel` y se rotula con `placeholder`, «Sin cambios»; su nombre
+  accesible usa el `label` «Fecha», no el «Fecha de la entrada: …» fijo de hoy
+  (`date-field.tsx:109`). La fecha elegida tiene al lado «Quitar la fecha», que
+  la vuelve a «Sin cambios». «Cancelar» y «Guardar»; «Guardar» queda inactivo
+  mientras no haya ningún campo con algo.
 - **Las horas del diálogo siguen el formato de la persona** (PF-13, PF-14),
-  como el editor de la fila: el `ClockField` interpreta lo tecleado con
-  `parseClockInput(texto, formats.time)` y muestra `clockLabel` de lo aceptado;
-  el borrador guarda la hora canónica. **El `placeholder` depende del formato**:
-  «hh:mm» con 24 h y «h:mm AM» con 12 h. La fecha se rotula con
-  `formats.date`, como en `DateField`.
+  como el editor de la fila: cada `ClockField` recibe `format={formats.time}`,
+  su `onCommit` interpreta lo tecleado con `parseClockInput(texto, formats.time)`
+  y devuelve `clockLabel` de lo aceptado; el borrador guarda la hora canónica.
+  **El `placeholder` depende del formato**: «hh:mm» con 24 h y «h:mm AM» con
+  12 h. La fecha se rotula con `formats.date`, como en `DateField`.
 - **El diálogo «¿Borrar N entradas?»**: «No se puede deshacer.», el campo
   «Escribí BORRAR para confirmar», «Cancelar» y «Borrar». «Borrar» queda
   inactivo hasta que el campo dice «BORRAR», sin distinguir mayúsculas ni
@@ -675,7 +689,12 @@ desmontar sube a algo que sobrevive**.
 - **El diálogo de edición**: al abrir, el foco va a «Descripción». «Cancelar» y
   Esc devuelven el foco a «Editar». Con éxito se cierra con el foco en la
   región. Con error queda abierto, con el aviso arriba de los botones y el
-  foco donde estaba. Enter en un campo de texto guarda.
+  foco donde estaba. Enter en un campo de texto guarda. En un `ClockField`,
+  Enter llama a `onCommit` y a `onSubmit` en el mismo evento
+  (`clock-field.tsx:123-129`), antes de que el borrador nuevo llegue a un
+  render: el guardado lee el borrador de una `ref` que actualiza el
+  `onCommit`, como `entry-times-editor.tsx:61-66`. Los campos no reciben
+  `disabled` mientras la edición viaja.
 - **El diálogo de borrado**: al abrir, el foco va al campo. «Cancelar» y Esc
   vuelven a «Borrar». Al confirmar se cierra en el acto, con el foco en la
   región, y el borrado viaja.
@@ -684,6 +703,14 @@ desmontar sube a algo que sobrevive**.
   diálogo sale del árbol con el aviso a la vista —la selección quedó vacía
   porque todas sus filas se fueron—, el aviso pasa a la región y el foco con
   él.
+- **«Reintentar» se va con su aviso.** `run` baja el aviso antes de mandar
+  (`src/hooks/use-action.ts:57-59`), así que el botón con el foco sale del
+  árbol y el foco caería a `body`. El `onRetry` que recibe `ActionFeedback`
+  mueve el foco y después reintenta, como
+  `profile/components/preference-field.tsx:123-131`: en el borrado, a la
+  región; en la edición, a «Guardar», que queda `aria-disabled` mientras la
+  edición viaja y conserva el foco. Si el aviso de la edición ya pasó a la
+  región, a la región. No se pasa `retryDisabled`, que es `disabled` nativo.
 - **«Quitar esas entradas de la selección»** quita los ids rechazados y baja
   el aviso. El foco va a «Guardar» si el diálogo sigue abierto, a «Borrar» si
   la barra sigue en pantalla y, si la selección quedó vacía, a la región.
@@ -758,6 +785,7 @@ deleteClosedByIds(
 
 ```
 /home/maxi/program/clock/src/components/ui/checkbox.tsx                           (nuevo, generado)
+/home/maxi/program/clock/src/components/action-feedback.tsx
 /home/maxi/program/clock/src/hooks/use-action.ts
 /home/maxi/program/clock/src/modules/time-entry/components/selection.ts           (nuevo)
 /home/maxi/program/clock/src/modules/time-entry/components/selection.test.ts      (nuevo)
@@ -772,7 +800,6 @@ deleteClosedByIds(
 /home/maxi/program/clock/src/modules/time-entry/components/entry-row.test.tsx     (nuevo)
 /home/maxi/program/clock/src/modules/time-entry/components/clock-field.tsx
 /home/maxi/program/clock/src/modules/time-entry/components/date-field.tsx
-/home/maxi/program/clock/src/modules/time-entry/components/tracker-feedback.tsx
 /home/maxi/program/clock/src/modules/time-entry/components/labels.ts
 ```
 
@@ -803,17 +830,20 @@ tiene que registrar».
 ### Lo que no toca nadie
 
 `src/server/permissions/`, `src/server/session.ts`, `src/server/db/`,
-`drizzle/`, `src/server/time/`, `src/modules/project/` —el campo opcional de
-`ActionResult` no le cambia nada—, `getTrackerState`, `tracker-screen.tsx`,
-`tracker-bar.tsx`, `page.tsx`, `reach-week.tsx`, `entry-week.ts`,
-`time-draft.ts`. Los contratos y correcciones de slices anteriores son
-históricos y no se reescriben.
+`drizzle/`, `src/server/time/`, `src/modules/project/` y
+`src/modules/profile/` —el campo opcional de `ActionResult` no les cambia nada,
+y `profile` usa `ActionFeedback` sin `children`—, `getTrackerState`,
+`tracker-screen.tsx`, `tracker-bar.tsx`, `page.tsx`, `reach-week.tsx`,
+`entry-week.ts`, `time-draft.ts`. Los contratos y correcciones de slices
+anteriores son históricos y no se reescriben.
 
 ### Handshake de orden
 
-0. **Antes de arrancar**, la ronda corta de `architecture-reviewer` contra el
-   árbol con el 7 en `main`, sobre los supuestos de §0 que vienen del 7. Sigue
-   abierto: los del 10 ya los confirmó la ronda 2.
+0. **Hecho.** La ronda corta de `architecture-reviewer` contra el árbol con el
+   7 en `main` (`420555f`) confirmó o corrigió los supuestos de §0 que vienen
+   del 7, y sus hallazgos están aplicados en este contrato
+   ([`correcciones-fase1-slice6-paso0.md`](correcciones-fase1-slice6-paso0.md)).
+   Los del 10 los había confirmado la ronda 2.
 1. **Primer commit de `backend-dev`**: lo de §4.1 —`Rejection`,
    `RejectedError`, el campo `rejections`, `failure` con `RejectedError`
    primero, `"rejected"` en la unión y `recordAudits`—; los esquemas, tipos y
@@ -878,14 +908,21 @@ históricos y no se reescriben.
   transición, en el `optimistic` de `useAction`.
 - **`bulk-edit-dialog.tsx`** y **`bulk-delete-dialog.tsx`** (nuevos) dibujan
   los diálogos de §5.2 con la primitiva `Dialog`. El de edición usa
-  `ClockField` y `DateField` como los deja el 7, con `useDisplayFormats`: el
-  campo de hora recibe `clockLabel` de la canónica, interpreta con
-  `parseClockInput(texto, formats.time)` y devuelve desde `onCommit` el rótulo
-  de lo aceptado; vaciado, devuelve "" y el borrador lo guarda como «sin
-  cambios». El `placeholder` sale de `clockPlaceholder(formats.time)`, y el
-  modo de teclado que el 7 agrega a `clock-field.tsx` se pasa según
-  `formats.time`, como en los otros campos de hora. El campo de descripción
-  lleva el largo de TT-71. No llaman a ninguna action.
+  `ClockField` y `DateField` con `useDisplayFormats`. Cada campo de hora
+  recibe en `value` el `clockLabel` de la canónica; su `onCommit` interpreta
+  con `parseClockInput(texto, formats.time)` y devuelve el rótulo de lo
+  aceptado, o `null` si no se pudo interpretar; vaciado, devuelve "" y el
+  borrador lo guarda como «sin cambios». El `placeholder` sale de
+  `clockPlaceholder(formats.time)`, y el campo recibe `format={formats.time}`,
+  como en `entry-times-editor.tsx`: de ahí `ClockField` deriva el modo de
+  teclado y el ancho. El `DateField` recibe `value={null}` sin fecha elegida,
+  `placeholder` «Sin cambios» y `label` «Fecha». **El borrador vive en una
+  `ref`** que cada `onCommit` actualiza y que «Guardar» lee, como `draftRef` en
+  `entry-times-editor.tsx:61-66`: Enter en un `ClockField` llama a `onCommit` y
+  a `onSubmit` en el mismo evento (`clock-field.tsx:123-129`), y el estado de
+  ese render todavía tiene el valor anterior. Los campos no reciben `disabled`
+  mientras la edición viaja (§5.4). El campo de descripción lleva el largo de
+  TT-71. No llaman a ninguna action.
 - **`entry-list.tsx`** es dueña de la selección y de `useOptimistic` de las
   filas ocupadas (§5.3): recorta la selección en cada render, se la pasa a cada
   `DayGroup` con los avisos de elegir una fila y un día y con las filas
@@ -896,8 +933,8 @@ históricos y no se reescriben.
   lo está por una mutación del grupo —las de hoy y el cambio de proyecto del
   10, que guarda con `saveEntryProject`— o por la lista. El foco a su
   encabezado queda condicionado a su propio `remove` en vuelo (§5.4).
-- **`entry-row.tsx`** dibuja la casilla primera, con el nombre de §5.2, solo
-  con `canTrack`.
+- **`entry-row.tsx`** dibuja la casilla primera, con el nombre de §5.2 —su
+  `timesLabel`—, solo con `canTrack`.
 - **`entry-row.test.tsx`** (nuevo) es un test de componente con
   `renderToStaticMarkup`, sin dependencias nuevas. **El modelo es
   `project/components/project-picker.test.tsx`**, que ya dibuja el selector
@@ -910,8 +947,11 @@ históricos y no se reescriben.
   armada a mano, como `project-picker.test.tsx`, y no importa
   `entry-project.ts`, que sí importa `actions.ts`. Afirma la casilla con su
   nombre con `canTrack` en verdadero, y su ausencia en falso.
-- **`tracker-feedback.tsx`** acepta `children`, que se dibuja debajo del
-  mensaje y arriba de «Reintentar», para la lista de rechazos.
+- **`src/components/action-feedback.tsx`**, el aviso de dos partes que
+  comparten el rastreador y `profile/components/preference-field.tsx`, acepta
+  `children` opcional, que se dibuja en la columna del texto (`col-start-2`),
+  debajo del mensaje y arriba de «Reintentar», para la lista de rechazos. Sin
+  `children` dibuja lo mismo que hoy.
 - **`use-action.ts`** conserva `rejections` en el `ActionFailure` cuando el
   resultado lo trae.
 - **`labels.ts`** suma:
@@ -1005,8 +1045,10 @@ históricos y no se reescriben.
     de la selección» las saca, y guardar de nuevo aplica el cambio al resto.
 19. **El foco** — Después de una edición o un borrado exitosos, el foco está en
     la región y el estado anuncia el resultado. Cancelar un diálogo vuelve a su
-    botón. Ningún control con foco pasa a `disabled`. El borrado masivo no
-    lleva el foco a ningún encabezado de día; el de una fila, sí, como antes.
+    botón. Después de «Reintentar», el foco está en la región en el borrado y
+    en «Guardar» en la edición, nunca en `body`. Ningún control con foco pasa a
+    `disabled`. El borrado masivo no lleva el foco a ningún encabezado de día;
+    el de una fila, sí, como antes.
 20. **Lo existente sigue verde** — La suite de unidad, integración y e2e que
     hay en `main` al arrancar pasa sin cambiar afirmaciones, también después de
     sacar `entryTimesFor` de `updateEntryTimes` y de condicionar el foco del
@@ -1038,7 +1080,7 @@ históricos y no se reescriben.
 | 16       | integración                | `permissions.integration.test.ts`                                                      | las dos funciones con membresía `inactive` e ids inexistentes, y con una entrada ajena                                         |
 | 17       | integración                | `actions.integration.test.ts`                                                          | la traducción, el permiso, `rejections` en el resultado y la revalidación                                                      |
 | 18       | e2e                        | `e2e/bulk-actions.spec.ts`                                                             | los recorridos 4 y 8                                                                                                           |
-| 19       | e2e                        | `e2e/bulk-actions.spec.ts`                                                             | el foco en la región en los recorridos 2 y 5, y en el encabezado del día al final del 5                                        |
+| 19       | e2e                        | `e2e/bulk-actions.spec.ts`                                                             | el foco en la región en los recorridos 2, 5 y 6 —en el 6, después de «Reintentar»—, y en el encabezado del día al final del 5  |
 | 20       | unidad + integración + e2e | las suites existentes                                                                  | en verde con el slice entero, sin cambiar afirmaciones                                                                         |
 | 21       | integración                | `service.integration.test.ts`                                                          | con `raceThroughBarrier`: las dos respuestas `ok` y las filas con lo que pidió la que terminó última                           |
 | 22       | e2e                        | `e2e/bulk-actions.spec.ts`                                                             | el recorrido 9                                                                                                                 |
@@ -1100,12 +1142,13 @@ omisión.
    borraron 2 entradas.». Después, borrar la tercera desde su menú y ver el foco
    en el encabezado de su día: la condición nueva de §5.4 no rompió el borrado
    de una fila, que hoy no tiene e2e de foco.
-6. **Borrar con la respuesta perdida** (criterio 14). Perder de verdad la
+6. **Borrar con la respuesta perdida** (criterios 14 y 19). Perder de verdad la
    respuesta del borrado, con `route.fetch()` y después `route.abort()`.
    Comprobar desde otra pestaña de la misma persona que el primer intento se
    aplicó, como `expectAppliedElsewhere` de `e2e/start-retry.spec.ts`: sin eso,
    un pedido que no llegó haría pasar el recorrido sin probar nada.
-   «Reintentar» y ver el éxito, sin aviso de error.
+   «Reintentar» y ver el foco en la región —no en `body`—, el éxito y ningún
+   aviso de error.
 7. **La selección sobrevive a «Cargar más»** (criterio 3). Con una entrada de
    esta semana y otra de hace cinco, elegir la de esta semana, «Cargar más», y
    ver «1 entrada seleccionada» y su casilla marcada.
@@ -1144,9 +1187,6 @@ omisión.
   Los dos casos solo llegan armados a mano.
 - **TT-92 se verifica en la fila y no en la pantalla**: no hay e2e con una
   membresía desactivada, como tampoco lo hay hoy para el resto de TT-92.
-- **Los supuestos de forma sobre el 7** (§0) se confirman en el paso 0 del
-  handshake, con el 7 en `main`; lo que cambie se corrige acá antes de
-  arrancar. Los del 10 ya los confirmó la ronda 2.
 - **Los componentes de `time-entry` siguen importando `actions.ts`**, a
   diferencia de los de `project`, que las reciben por props. No es parte de la
   deuda del mapa y este slice no lo cambia.
