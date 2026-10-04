@@ -8,6 +8,7 @@ import { membership, workspace } from "@/server/db/schema";
 import {
   buenosAires,
   seedMember,
+  seedPreferences,
   seedProject,
   seedTask,
   seedTimeEntry,
@@ -31,14 +32,14 @@ import { timeEntryMessages, type StartTimerInput } from "./schema";
  * traducción de errores a `ActionResult`, qué permiso pide cada action, y que
  * la revalidación ocurra también en el camino de error—.
  *
- * De la entrada manual, además: que la action le pase al service el workspace
- * de la sesión —su zona horaria y su fecha de creación—, que el piso del
+ * De la entrada manual, además: que la action le pase al service la zona de
+ * la persona de la sesión y la fecha de creación del workspace, que el piso del
  * workspace se compare por día local y no por instante, y que una fecha u
  * hora imposible salga como `validation` y no como `unexpected`.
  */
 const mocks = vi.hoisted(() => ({
   sessionUser: null as null | { id: string; email: string },
-  revalidated: [] as string[],
+  revalidated: [] as (string | { path: string; type: string })[],
   redirects: [] as string[],
 }));
 
@@ -53,8 +54,8 @@ vi.mock("next/headers", () => ({
 }));
 
 vi.mock("next/cache", () => ({
-  revalidatePath: (path: string) => {
-    mocks.revalidated.push(path);
+  revalidatePath: (path: string, type?: string) => {
+    mocks.revalidated.push(type === undefined ? path : { path, type });
   },
 }));
 
@@ -95,11 +96,18 @@ async function signIn(email = ownerEmail): Promise<string> {
 }
 
 /**
- * Workspace con la zona y la fecha de creación que el caso necesita, y una
- * sesión adentro. La membresía la crea `ensureWorkspaceContext` al entrar.
+ * Workspace con la fecha de creación que el caso necesita, y una sesión
+ * adentro, de una persona con la zona del caso (`seedPreferences`). La
+ * membresía la crea `ensureWorkspaceContext` al entrar.
  */
-async function signInOn(options: { timezone?: string; createdAt?: string } = {}) {
-  const seeded = await seedWorkspace(options.timezone ?? buenosAires);
+async function signInOn(
+  options: {
+    personTimezone?: string;
+    workspaceTimezone?: string;
+    createdAt?: string;
+  } = {},
+) {
+  const seeded = await seedWorkspace(options.workspaceTimezone ?? buenosAires);
   if (options.createdAt !== undefined) {
     await db
       .update(workspace)
@@ -107,7 +115,11 @@ async function signInOn(options: { timezone?: string; createdAt?: string } = {})
       .where(eq(workspace.id, seeded.workspaceId));
   }
   const email = `${randomUUID()}@empresa.com`;
-  mocks.sessionUser = { id: await seedUser(email), email };
+  const id = await seedUser(email);
+  if (options.personTimezone !== undefined) {
+    await seedPreferences(id, { timezone: options.personTimezone });
+  }
+  mocks.sessionUser = { id, email };
   return seeded;
 }
 
@@ -361,10 +373,10 @@ describe("el id que elige el cliente para «Iniciar»", () => {
   );
 });
 
-describe("la action convierte con el workspace de la sesión", () => {
-  it("usa su zona horaria y no la del proceso", async () => {
+describe("la action convierte con la zona de la persona de la sesión (criterio 7, ADR 0005)", () => {
+  it("usa la zona de la persona, y no la del workspace ni la del proceso", async () => {
     const seeded = await signInOn({
-      timezone: madrid,
+      personTimezone: madrid,
       createdAt: "2020-01-01T00:00:00Z",
     });
 
@@ -386,6 +398,36 @@ describe("la action convierte con el workspace de la sesión", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].workspaceId).toBe(seeded.workspaceId);
     expect(rows[0].userId).toBe(mocks.sessionUser?.id);
+  });
+
+  it("sin zona elegida usa el predeterminado aunque el workspace esté en otra zona (PF-05)", async () => {
+    await signInOn({ workspaceTimezone: madrid, createdAt: "2020-01-01T00:00:00Z" });
+
+    const result = await actions.createManualEntry({
+      date: "2026-07-01",
+      start: "12:00",
+      end: "13:30",
+    });
+
+    expect(result.ok && result.data.created.startedAt).toBe("2026-07-01T15:00:00.000Z");
+  });
+
+  it("los rótulos de la respuesta salen con los formatos de la persona", async () => {
+    await signInOn({ createdAt: "2020-01-01T00:00:00Z" });
+    await seedPreferences(sessionUserId(), { timeFormat: "12h" });
+
+    const result = await actions.createManualEntry({
+      date: "2026-07-01",
+      start: "12:00",
+      end: "13:30",
+    });
+
+    expect(result.ok && result.data.created).toMatchObject({
+      startLabel: "12:00 PM",
+      endLabel: "1:30 PM",
+      startClock: "12:00",
+      endClock: "13:30",
+    });
   });
 });
 
@@ -451,7 +493,7 @@ describe("el piso del workspace se mide por día local", () => {
 describe("la hora de pared del cambio de horario", () => {
   // El 29/3/2026 Madrid salta de las 02:00 a las 03:00; el 25/10 las 02:30
   // ocurren dos veces.
-  const enMadrid = { timezone: madrid, createdAt: "2020-01-01T00:00:00Z" };
+  const enMadrid = { personTimezone: madrid, createdAt: "2020-01-01T00:00:00Z" };
 
   it.each([
     ["en el inicio", { date: "2026-03-29", start: "02:30", end: "04:00" }],
@@ -578,8 +620,8 @@ describe("updateEntryTimes y updateRunningStart", () => {
     });
   }
 
-  it("guardan con la zona del workspace de la sesión y revalidan", async () => {
-    const seeded = await signInOn({ timezone: madrid, createdAt: longAgo });
+  it("guardan con la zona de la persona de la sesión y revalidan", async () => {
+    const seeded = await signInOn({ personTimezone: madrid, createdAt: longAgo });
     const closed = await seedOwnClosed(seeded);
     const running = await seedOwnRunning(seeded);
 

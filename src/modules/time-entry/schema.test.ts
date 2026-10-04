@@ -230,6 +230,8 @@ describe("trackerState", () => {
     weekStart: "2026-09-28",
     startLabel: "08:00",
     endLabel: "09:30",
+    startClock: "08:00",
+    endClock: "09:30",
     extraDays: 0,
     durationSeconds: 5400,
     durationLabel: "1:30",
@@ -293,12 +295,36 @@ describe("trackerState", () => {
       ...entry,
       endedAt: null,
       endLabel: null,
+      endClock: null,
       extraDays: 0,
       durationSeconds: null,
       durationLabel: null,
       editableTimes: false,
     };
     expect(trackerState.parse({ ...state, running }).running).toEqual(running);
+  });
+
+  it("exige las horas canónicas de cada entrada, que no son los rótulos", () => {
+    const twelveHour = { ...entry, startLabel: "8:00 AM", endLabel: "9:30 AM" };
+    expect(
+      trackerState.parse({ ...state, weeks: weeksWith([twelveHour]) }).weeks[0].days[0]
+        .entries[0],
+    ).toEqual(twelveHour);
+    for (const key of ["startClock", "endClock"]) {
+      const missing = Object.fromEntries(
+        Object.entries(entry).filter(([other]) => other !== key),
+      );
+      expect([
+        key,
+        trackerState.safeParse({ ...state, weeks: weeksWith([missing]) }).success,
+      ]).toEqual([key, false]);
+    }
+    expect(
+      trackerState.safeParse({
+        ...state,
+        weeks: weeksWith([{ ...entry, startClock: null }]),
+      }).success,
+    ).toBe(false);
   });
 
   it("exige editableTimes en cada entrada", () => {
