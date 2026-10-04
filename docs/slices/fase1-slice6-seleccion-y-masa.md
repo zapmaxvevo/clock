@@ -447,7 +447,7 @@ membresía, la entrada mal formada, el tope— responde con su código y sin lis
 
 - **El orden del id** en `findManyByIdsForUpdate` es el que evita que dos
   operaciones en masa sobre filas compartidas se esperen en círculo (ADR
-  XXXX). Se revisa en el código; no tiene un test que lo haga fallar, porque
+  0011). Se revisa en el código; no tiene un test que lo haga fallar, porque
   el recorrido del índice ya suele bloquear en ese orden.
 - **Sentencias**: una lectura, a lo sumo una escritura por fila que cambia
   —una sola en el borrado— y una inserción de auditoría. Con el tope de 200
