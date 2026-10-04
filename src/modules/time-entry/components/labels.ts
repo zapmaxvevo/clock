@@ -1,5 +1,3 @@
-import { projectLabels } from "@/modules/project/components/labels";
-
 /**
  * Textos de la pantalla del rastreador que dicen algo del dominio: los que
  * comparten varios componentes y los que nombran una regla de paridad. Los
@@ -12,8 +10,6 @@ export const trackerLabels = {
   endTime: "Hora de fin",
   /** TT-50 y TT-94: una entrada sin descripción. */
   noDescription: "Sin descripción",
-  /** TT-50 y TT-93: la misma redacción que la opción del selector. */
-  noProject: projectLabels.noProject,
   /** TT-90: el aviso nombra el campo que no se guardó. */
   descriptionNotSaved: "No se pudo guardar la descripción.",
   projectNotSaved: "No se pudo cambiar el proyecto.",

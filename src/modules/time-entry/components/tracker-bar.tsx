@@ -4,6 +4,7 @@ import { useEffect, useOptimistic, useRef, useState } from "react";
 
 import { retryHandlerOf, useAction, type ActionHandle } from "@/hooks/use-action";
 import { useNewId } from "@/hooks/use-new-id";
+import { samePair } from "@/lib/project-pair";
 import { projectLabels } from "@/modules/project/components/labels";
 import { NO_SELECTION, selectionIds } from "@/modules/project/components/picker-model";
 import { ProjectPicker } from "@/modules/project/components/project-picker";
@@ -14,7 +15,6 @@ import {
   startTimer,
   stopTimer,
   updateDescription,
-  updateEntryProject,
   updateRunningStart,
 } from "@/modules/time-entry/actions";
 import {
@@ -25,6 +25,7 @@ import {
 
 import { DescriptionField } from "./description-field";
 import { DiscardTimerDialog } from "./discard-timer-dialog";
+import { saveEntryProject, selectionOf } from "./entry-project";
 import { startedWeeks } from "./entry-week";
 import { trackerLabels } from "./labels";
 import { ManualBar } from "./manual-bar";
@@ -49,15 +50,9 @@ const DESCRIPTION_DEBOUNCE_MS = 500;
 /** «Iniciar» no parte de ninguna entrada: su id pendiente va con una clave fija. */
 const START_KEY = "start";
 
-/** El cambio de proyecto del timer, con la selección entera para la vista optimista. */
-type RunningProjectChange = { readonly id: string; readonly selection: ProjectSelection };
-
-function saveRunningProject({ id, selection }: RunningProjectChange) {
-  return updateEntryProject({ id, ...selectionIds(selection) });
-}
-
-function selectionOf(entry: TimeEntryView | null): ProjectSelection {
-  return entry === null ? NO_SELECTION : { project: entry.project, task: entry.task };
+/** El par del timer; sin timer, «Sin proyecto». */
+function runningSelection(running: TimeEntryView | null): ProjectSelection {
+  return running === null ? NO_SELECTION : selectionOf(running);
 }
 
 type TrackerBarProps = {
@@ -121,9 +116,10 @@ export function TrackerBar({
   });
   /**
    * El proyecto y la tarea sin timer: viajan con «Iniciar» y con «Agregar».
-   * Con el timer corriendo la barra muestra los de la entrada abierta.
+   * Con un timer en la vista la barra muestra los de la entrada abierta,
+   * también mientras viaja «Detener» o «Descartar».
    */
-  const [pairDraft, setPairDraft] = useState(() => selectionOf(running));
+  const [pairDraft, setPairDraft] = useState(() => runningSelection(running));
   /** Lo mismo que `heldDescription`, para el par. */
   const [heldPair, setHeldPair] = useState<ProjectSelection | null>(null);
   /** TT-27 y TT-90: lo elegido mientras el cambio viaja; si falla, vuelve el del servidor. */
@@ -189,7 +185,7 @@ export function TrackerBar({
     unreachableMessage: timeEntryMessages.unexpected,
     optimistic: () => showPhase("discarding"),
   });
-  const saveProject = useAction(saveRunningProject, {
+  const saveProject = useAction(saveEntryProject, {
     unreachableMessage: timeEntryMessages.unexpected,
     optimistic: (input) => showRunningPairEdit(input.selection),
     onSuccess: (data) => reachWeek([data.entry.weekStart]),
@@ -214,12 +210,11 @@ export function TrackerBar({
       // Lo que se tecleó mientras el pedido viajaba no es parte de la entrada
       // creada: se limpia solo lo que sigue igual a lo que se mandó.
       setDraft((current) => (current === input.description ? "" : current));
-      setPairDraft((current) => {
-        const sent = selectionIds(current);
-        return sent.projectId === input.projectId && sent.taskId === input.taskId
-          ? NO_SELECTION
-          : current;
-      });
+      // El esquema acepta el par ausente, que es «sin proyecto».
+      const sent = { projectId: input.projectId ?? null, taskId: input.taskId ?? null };
+      setPairDraft((current) =>
+        samePair(selectionIds(current), sent) ? NO_SELECTION : current,
+      );
       setManualDraft((current) =>
         sameDraft(current, input) ? reset(serverNow, timeZone) : current,
       );
@@ -242,7 +237,7 @@ export function TrackerBar({
 
   const serverId = running?.id ?? null;
   const serverDescription = running?.description ?? "";
-  const serverPair = selectionOf(running);
+  const serverPair = runningSelection(running);
 
   // La descripción del campo sigue a la del servidor, que puede cambiar sin
   // que cambie la entrada: otro dispositivo la editó y la revalidación la
@@ -308,8 +303,12 @@ export function TrackerBar({
   const timerControls = canTrack && !isManual && !switching;
   /** TT-30: con un timer corriendo o una operación de la barra en vuelo. */
   const modeSwitchDisabled = isRunning || switching || add.pending;
-  /** Con el timer abierto, el par es el de la entrada; si no, el borrador. */
-  const editsRunningPair = isRunning && running !== null;
+  /**
+   * Con un timer en la vista, el par es el de la entrada, con lo elegido
+   * mientras viaja (TT-27): también mientras viaja «Detener» o «Descartar»,
+   * que no lo cambian. Sin timer, o mientras viaja «Iniciar», el borrador.
+   */
+  const editsRunningPair = running !== null && phase !== "starting";
   const shownPair = editsRunningPair ? (runningPairEdit ?? serverPair) : pairDraft;
 
   useEffect(() => {

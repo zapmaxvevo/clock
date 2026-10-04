@@ -1,3 +1,4 @@
+import { samePair, type ProjectPair } from "@/lib/project-pair";
 import type {
   ClientView,
   ProjectSelection,
@@ -40,7 +41,7 @@ const NONE: PickerOption = { key: "none", selection: NO_SELECTION };
  * TT-07: la búsqueda no distingue mayúsculas ni acentos. `NFD` separa cada
  * letra de su marca diacrítica, y la marca se descarta.
  */
-export function normalizeSearch(text: string): string {
+function normalizeSearch(text: string): string {
   return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim();
 }
 
@@ -112,19 +113,12 @@ export function pickerView(catalog: TrackingCatalog, search: string): PickerView
   };
 }
 
-function sameId(a: string | undefined, b: string | undefined): boolean {
-  return a?.toLowerCase() === b?.toLowerCase();
-}
-
 /** El mismo par. Los ids se comparan sin distinguir mayúsculas, como en la base. */
 export function sameSelection(a: ProjectSelection, b: ProjectSelection): boolean {
-  return sameId(a.project?.id, b.project?.id) && sameId(a.task?.id, b.task?.id);
+  return samePair(selectionIds(a), selectionIds(b));
 }
 
 /** Los ids que viajan a la action: la selección sin sus nombres ni su color. */
-export function selectionIds(selection: ProjectSelection): {
-  readonly projectId: string | null;
-  readonly taskId: string | null;
-} {
+export function selectionIds(selection: ProjectSelection): ProjectPair {
   return { projectId: selection.project?.id ?? null, taskId: selection.task?.id ?? null };
 }

@@ -4,13 +4,10 @@ import { useEffect, useOptimistic, useRef } from "react";
 
 import { retryHandlerOf, useAction, type ActionHandle } from "@/hooks/use-action";
 import { useNewId } from "@/hooks/use-new-id";
-import { selectionIds } from "@/modules/project/components/picker-model";
-import type { ProjectSelection } from "@/modules/project/schema";
 import {
   deleteEntry,
   duplicateEntry,
   updateDescription,
-  updateEntryProject,
   updateEntryTimes,
 } from "@/modules/time-entry/actions";
 import {
@@ -21,6 +18,7 @@ import {
   type UpdateEntryTimesInput,
 } from "@/modules/time-entry/schema";
 
+import { saveEntryProject, selectionOf, type EntryProjectChange } from "./entry-project";
 import { EntryRow } from "./entry-row";
 import { trackerLabels } from "./labels";
 import { TrackerFeedback } from "./tracker-feedback";
@@ -67,13 +65,6 @@ export type MovedEntry = {
   /** Día local del grupo nuevo. */
   readonly date: string;
 };
-
-/** El cambio de proyecto de una fila, con la selección entera para la vista optimista. */
-type EntryProjectChange = { readonly id: string; readonly selection: ProjectSelection };
-
-function saveEntryProject({ id, selection }: EntryProjectChange) {
-  return updateEntryProject({ id, ...selectionIds(selection) });
-}
 
 /** Reductor de las vistas optimistas por fila: la edición nueva reemplaza a la anterior. */
 function replaceById<Edit extends { readonly id: string }>(
@@ -257,9 +248,7 @@ export function DayGroup({
                 key={entry.id}
                 entry={entry}
                 description={edit?.description ?? entry.description}
-                project={
-                  projectEdit?.selection ?? { project: entry.project, task: entry.task }
-                }
+                project={projectEdit?.selection ?? selectionOf(entry)}
                 busy={
                   (save.pending && edit !== undefined) ||
                   (saveTimes.pending && timeEdit !== undefined) ||

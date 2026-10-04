@@ -2,7 +2,7 @@
 
 import { FolderIcon, SearchIcon } from "lucide-react";
 import Link from "next/link";
-import { useState, type KeyboardEvent, type Ref } from "react";
+import { useEffect, useState, type KeyboardEvent, type ReactNode, type Ref } from "react";
 
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -187,10 +187,9 @@ export function ProjectPicker({
             <SearchIcon aria-hidden="true" />
           </InputGroupAddon>
         </ComboboxInput>
-        {/* Montada siempre, así el lector de pantalla anuncia el vacío al aparecer. */}
-        <div role="status" className="text-muted-foreground px-2 text-center text-sm">
+        <StatusRegion>
           {view.empty !== null && <EmptyMessage empty={view.empty} />}
-        </div>
+        </StatusRegion>
         <ComboboxList>
           {view.none !== null && (
             <ComboboxItem value={view.none} className="text-muted-foreground">
@@ -237,6 +236,26 @@ function PickerItem({ option }: { readonly option: PickerOption }) {
     >
       <span className="truncate">{task.name}</span>
     </ComboboxItem>
+  );
+}
+
+/**
+ * El vacío del selector. Un lector de pantalla anuncia los cambios de una
+ * región `status`, no el texto con el que nace, y la región nace al abrir el
+ * popup: se monta vacía y el texto entra un cuadro después, cuando la región
+ * ya está en el árbol de accesibilidad, así el vacío de TT-87 se anuncia al
+ * abrir. Después sigue montada y anuncia cada cambio de la búsqueda.
+ */
+function StatusRegion({ children }: { readonly children: ReactNode }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(frame);
+  }, []);
+  return (
+    <div role="status" className="text-muted-foreground px-2 text-center text-sm">
+      {mounted && children}
+    </div>
   );
 }
 
