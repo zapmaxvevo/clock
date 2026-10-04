@@ -5,39 +5,40 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-04.
 
 ## Dónde estamos
 
-| Slice                                      | Estado                                                            |
-| ------------------------------------------ | ----------------------------------------------------------------- |
-| 1 — Timer sin proyecto                     | En `main`                                                         |
-| 2 — Modo manual                            | En `main`                                                         |
-| 2b — Reintento de «Iniciar»                | En `main`                                                         |
-| 3 — Corregir horas y fecha                 | En `main`                                                         |
-| 4 — Continuar, duplicar, descartar, atajos | En `main`                                                         |
-| 5 — Semana y paginación                    | En `main`                                                         |
-| 9 — Núcleo de proyectos                    | En `main`                                                         |
-| 10 — Selector de proyecto y tarea          | En `main`                                                         |
-| 7 — Perfil                                 | Contrato con ronda 2 aplicada; en curso en `fase1/slice-7-perfil` |
-| 6 — Selección y acciones en masa           | Contrato con ronda 2 aplicada; va después del 7                   |
-| 7b — Perfil: nombre editable y tema        | Sin contrato                                                      |
-| 8, 11–13                                   | Sin contrato                                                      |
+| Slice                                      | Estado                                          |
+| ------------------------------------------ | ----------------------------------------------- |
+| 1 — Timer sin proyecto                     | En `main`                                       |
+| 2 — Modo manual                            | En `main`                                       |
+| 2b — Reintento de «Iniciar»                | En `main`                                       |
+| 3 — Corregir horas y fecha                 | En `main`                                       |
+| 4 — Continuar, duplicar, descartar, atajos | En `main`                                       |
+| 5 — Semana y paginación                    | En `main`                                       |
+| 9 — Núcleo de proyectos                    | En `main`                                       |
+| 10 — Selector de proyecto y tarea          | En `main`                                       |
+| 7 — Perfil                                 | En `main` (local): falta `git push origin main` |
+| 6 — Selección y acciones en masa           | Contrato con ronda 2 aplicada; sigue ahora      |
+| 7b — Perfil: nombre editable y tema        | Sin contrato                                    |
+| 8, 11–13                                   | Sin contrato                                    |
 
-Los slices 1 a 5, 9 y 10 están en `origin/main`. El slice 10 pasó las seis revisiones
-(`correcciones-fase1-slice10-revisiones.md`) y su ronda de correcciones. Corrida final: 504 de unidad, 634 de
-integración y 81 de 82 en e2e; la que falló fue un 429 del endpoint de sesión y su spec
-pasa entero al repetirlo. Con el 10 viajaron los contratos del 6 y del 7 y los ADR 0010 a 0012. No
-quedan agentes corriendo ni trabajo sin commitear.
+Los slices 1 a 5, 9 y 10 están en `origin/main`. El slice 7 pasó las seis revisiones
+(`correcciones-fase1-slice7-revisiones.md`) y su ronda de correcciones, y está mergeado en
+`main` local: **falta `git push origin main`**. Corrida final: 614 de unidad, 709 de
+integración y 88 de 88 en e2e (seis fallas por el 429 del endpoint de sesión, que pasan al
+repetirlas con `--last-failed`). No quedan agentes corriendo ni trabajo sin commitear.
 
 ## Lo primero de la sesión siguiente
 
-1. **Pipeline del 7** en `fase1/slice-7-perfil`. La ronda corta del `architecture-reviewer`
-   contra el árbol con el 10 ya se hizo y se aplicó a los dos contratos
-   (`correcciones-fase1-slice7-ronda2.md`, `correcciones-fase1-slice6-ronda2.md`): la zona
-   del perfil pasa a `Combobox` con búsqueda por cualquier parte del nombre.
-2. **Orden decidido: 7 → 6.** El contrato del **8** (calendario), cuando el 7 esté en
-   `main`; después el 7b, 11, 12, 13.
-3. Pendientes chicos de paridad que dejó el 10: PR-85 sigue diciendo «si el rol lo
+1. **Pipeline del 6** (selección y acciones en masa). Antes, el paso 0 de su handshake:
+   confirmar contra el código del 7 los supuestos de su §0 (l. 72-75), que la ronda 2
+   dejó abiertos.
+2. El contrato del **8** (calendario); después el 7b, 11, 12, 13.
+3. Para el contrato del **7b**: TT-16 justifica guardar el modo timer/manual en una cookie
+   porque «no hay perfil todavía»; el perfil existe y no lo incluye. Decidir si entra al 7b o
+   se reescribe la justificación. El 7b edita el nombre con su propia action:
+   `/api/auth/update-user` quedó cerrado en el 7 (`disabledPaths`).
+4. Pendientes chicos de paridad que dejó el 10: PR-85 sigue diciendo «si el rol lo
    permite» (TT-87 ya dice `project.create`), y TT-104 no menciona que el proyecto
-   archivado se quita con «Sin proyecto». Alinearlos en el próximo paso de
-   `parity-analyst`.
+   archivado se quita con «Sin proyecto».
 
 El hydration mismatch de `AppLayout` quedó cerrado: es el `MetadataWrapper` de Next durante
 una recarga en caliente y no se reproduce.
@@ -66,8 +67,12 @@ null (col)`) antes de desplegar.
 - **Sesión en el workspace de Clockify** para cerrar lo no verificado: P-14 en
   `time-tracker.md` (fila de la entrada que corre, hora inexistente, horas de la
   copia al duplicar, «la última» de `c`, continuar o duplicar con un proyecto no
-  disponible, TT-57 y TT-58), P-12 de `timesheet.md`, P-07 de
+  disponible, TT-57 y TT-58), P-09 de `perfil.md` (formas de 12 h y de fecha, búsqueda de zonas, `UTC`), P-12 de
+  `timesheet.md`, P-07 de
   `calendario.md`, y PR-40/PR-58 de `proyectos.md` (quién crea tareas).
+- **El 429 del endpoint de sesión de prueba crece con la suite**: seis fallas en la corrida
+  del 7 (88 tests), que pasan al repetir. Opciones: subir el límite solo con
+  `ALLOW_TEST_SESSION`, o que cada worker reuse su sesión. Toca un control de seguridad.
 - **«Reintentar» en el alta manual**: con el ADR 0007 se le podría devolver y
   retirar TT-109. Es un cambio de paridad chico; queda propuesto.
 - **Rol de Neon para e2e**: `E2E_DATABASE_URL` en el environment `preview` de
