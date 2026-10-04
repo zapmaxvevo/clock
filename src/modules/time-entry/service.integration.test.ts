@@ -6098,6 +6098,39 @@ describe("bulkEditEntries: todo o nada (criterio 10, ADR 0011)", () => {
     expect(await Promise.all(rows.map((row) => snapshotOf(row.id)))).toEqual(before);
   });
 
+  it("la ajena que corre y la ajena de más de un día se rechazan como ajenas: ni su estado ni su horario se filtran", async () => {
+    const otherId = await seedMember(workspaceId, "member");
+    const foreignRunning = await seedTimeEntry({
+      workspaceId,
+      userId: otherId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+    // 10:00 del 1 a 11:00 del 3, en Buenos Aires.
+    const foreignMultiDay = await seedClosed(
+      "2026-10-01T13:00:00Z",
+      "2026-10-03T14:00:00Z",
+      otherId,
+    );
+    const seeded = [foreignRunning, foreignMultiDay];
+    const before = await Promise.all(seeded.map((row) => snapshotOf(row.id)));
+
+    const error = await rejectionOf(
+      bulkEditEntries(actor, workspaceOf(buenosAires), {
+        ids: [foreignRunning.id, foreignMultiDay.id],
+        changes: { start: "08:00" },
+      }),
+    );
+
+    expect(error.rejections).toEqual(
+      seeded.map((row) => ({
+        id: row.id,
+        code: "forbidden",
+        message: timeEntryMessages.forbiddenOtherOwner,
+      })),
+    );
+    expect(await Promise.all(seeded.map((row) => snapshotOf(row.id)))).toEqual(before);
+  });
+
   it("la entrada que corre es un rechazo también si el cambio es solo la descripción (TT-111)", async () => {
     const running = await seedTimeEntry({
       workspaceId,
@@ -6211,6 +6244,28 @@ describe("bulkDeleteEntries (criterio 11, TT-64)", () => {
     for (const row of [own, foreign, running]) {
       expect(await timeEntryById(row.id)).toBeDefined();
     }
+  });
+
+  it("la ajena que corre se rechaza como ajena: su estado no se filtra", async () => {
+    const otherId = await seedMember(workspaceId, "member");
+    const foreignRunning = await seedTimeEntry({
+      workspaceId,
+      userId: otherId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+
+    const error = await rejectionOf(
+      bulkDeleteEntries(actor, { ids: [foreignRunning.id] }),
+    );
+
+    expect(error.rejections).toEqual([
+      {
+        id: foreignRunning.id,
+        code: "forbidden",
+        message: timeEntryMessages.forbiddenOtherOwner,
+      },
+    ]);
+    expect(await timeEntryById(foreignRunning.id)).toBeDefined();
   });
 
   it("no borra la entrada de otro workspace, que para este no existe", async () => {
