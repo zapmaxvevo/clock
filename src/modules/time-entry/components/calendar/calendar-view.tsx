@@ -307,7 +307,7 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
           corner={<ZoomControls zoom={zoom} onChange={changeZoom} />}
           openerId={entry?.id ?? null}
           openerRef={openerRef}
-          dialogOpen={open}
+          dialogOpen={open || confirmingDelete}
           onOpen={openEntry}
           onSlot={state.canTrack ? openSlot : null}
           focusEntryId={focusEntryId}
