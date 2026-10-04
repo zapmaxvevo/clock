@@ -43,6 +43,19 @@ export function todayIn(timeZone: string): CivilDay {
   return { year: part("year"), month: part("month"), day: part("day") };
 }
 
+/** Minutos de reloj desde las 00:00 en una zona horaria, de 0 a 1439. */
+export function minuteOfDayIn(timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour: "numeric",
+    minute: "numeric",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
+  const part = (type: Intl.DateTimeFormatPartTypes): number =>
+    Number(parts.find((candidate) => candidate.type === type)?.value);
+  return part("hour") * 60 + part("minute");
+}
+
 function utcOf({ year, month, day }: CivilDay): Date {
   return new Date(Date.UTC(year, month - 1, day));
 }
@@ -81,6 +94,15 @@ export function dayLabel(civil: CivilDay, today: CivilDay): string {
   if (sameDay(civil, addDays(today, -1))) {
     return "Ayer";
   }
+  return weekdayLabel(civil, today);
+}
+
+/**
+ * Rótulo de un día sin «Hoy» ni «Ayer»: el día de la semana con la fecha, que
+ * lleva el año solo si no es el de hoy. Es el de cada columna del calendario
+ * y el que nombra el día en un bloque (CAL-09, CAL-75).
+ */
+export function weekdayLabel(civil: CivilDay, today: CivilDay): string {
   const weekday = WEEKDAYS[utcOf(civil).getUTCDay()];
   const date = `${pad(civil.day)}/${pad(civil.month)}`;
   return civil.year === today.year
@@ -135,4 +157,17 @@ export function weekLabel(start: CivilDay, today: CivilDay): string {
  */
 export function calendarDayName(civil: CivilDay): RegExp {
   return new RegExp(`, ${civil.day} de ${MONTHS[civil.month - 1]} de ${civil.year}\\b`);
+}
+
+/**
+ * El mes que muestra el calendario abierto, por el nombre de su grilla:
+ * «septiembre 2026», el de `date-fns` en español. Devuelve su primer día.
+ */
+export function monthOfCaption(caption: string): CivilDay {
+  const match = /^(\p{L}+) (\d{4})$/u.exec(caption.trim());
+  const month = match === null ? -1 : MONTHS.indexOf(match[1].toLowerCase());
+  if (match === null || month === -1) {
+    throw new Error(`El mes del calendario no se pudo leer: «${caption}»`);
+  }
+  return { year: Number(match[2]), month: month + 1, day: 1 };
 }
