@@ -30,29 +30,33 @@ const MONTHS = [
 /** Abreviaturas del rótulo de la fecha, las de `date-fns` en español. */
 const WEEKDAYS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
 
+/**
+ * Las partes de este instante en una zona horaria, como números: lo que
+ * `Intl` arma con `options`, sin pasar por `src/server/time`.
+ */
+function partsIn(
+  timeZone: string,
+  options: Intl.DateTimeFormatOptions,
+): (type: Intl.DateTimeFormatPartTypes) => number {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone, ...options }).formatToParts(
+    new Date(),
+  );
+  return (type) => Number(parts.find((candidate) => candidate.type === type)?.value);
+}
+
 /** Hoy en una zona horaria, que no tiene por qué ser la del proceso. */
 export function todayIn(timeZone: string): CivilDay {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-  }).formatToParts(new Date());
-  const part = (type: Intl.DateTimeFormatPartTypes): number =>
-    Number(parts.find((candidate) => candidate.type === type)?.value);
+  const part = partsIn(timeZone, { year: "numeric", month: "numeric", day: "numeric" });
   return { year: part("year"), month: part("month"), day: part("day") };
 }
 
 /** Minutos de reloj desde las 00:00 en una zona horaria, de 0 a 1439. */
 export function minuteOfDayIn(timeZone: string): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
+  const part = partsIn(timeZone, {
     hour: "numeric",
     minute: "numeric",
     hourCycle: "h23",
-  }).formatToParts(new Date());
-  const part = (type: Intl.DateTimeFormatPartTypes): number =>
-    Number(parts.find((candidate) => candidate.type === type)?.value);
+  });
   return part("hour") * 60 + part("minute");
 }
 

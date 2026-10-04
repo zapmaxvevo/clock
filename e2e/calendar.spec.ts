@@ -20,7 +20,9 @@ import {
   followPeriodLink,
   goToCalendarByNav,
   headerLook,
+  minuteHeight,
   nowLine,
+  nowLineMetrics,
   blockDetail,
   periodLink,
   periodTotal,
@@ -28,6 +30,7 @@ import {
   rangeButton,
   runningBlockName,
   segmentText,
+  todayHeader,
   zoomButton,
   zoomIn,
 } from "./calendar-page";
@@ -50,6 +53,7 @@ import {
   dateButton,
   dayTotal,
   descriptionInput,
+  duplicateFromMenu,
   elapsedCounter,
   escapeRegExp,
   pickDate,
@@ -113,14 +117,6 @@ async function addEntry(
   await expect(dateButton(bar)).toHaveText("Hoy");
 }
 
-/** Duplica desde el menú de la fila (TT-58). El menú abierto vive en un portal. */
-async function duplicateFromMenu(page: Page, description: string): Promise<void> {
-  await page
-    .getByRole("button", { name: `Acciones de la entrada «${description}»` })
-    .click();
-  await page.getByRole("menuitem", { name: "Duplicar" }).click();
-}
-
 /**
  * El total de una semana de `/`, por el rótulo de su franja (TT-47). Está en
  * su encabezado, antes que los días, así que es el primero de la franja.
@@ -145,6 +141,13 @@ async function minutesOf(total: Locator): Promise<number> {
 /** Un total en `h:mm` (PF-20). */
 function durationText(minutes: number): string {
   return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
+/** El alto de un bloque llega al esperado, con un margen de dos píxeles. */
+async function expectHeight(element: Locator, pixels: number): Promise<void> {
+  await expect
+    .poll(async () => Math.abs((await boxOf(element)).height - pixels))
+    .toBeLessThanOrEqual(2);
 }
 
 /** La caja de un elemento dibujado; sin caja, el elemento no está en pantalla. */
@@ -200,6 +203,8 @@ test("el calendario se abre desde la navegación, navega por semanas y días y d
       new RegExp(`^${escapeRegExp(weekdayLabel(day, today))}`),
     );
   }
+  await expect(todayHeader(page)).toHaveCount(1);
+  await expect(todayHeader(page)).toContainText(weekdayLabel(today, today));
   expect(await headerLook(dayColumn(page, today, today))).not.toBe(
     await headerLook(dayColumn(page, otherDay, today)),
   );
@@ -211,10 +216,28 @@ test("el calendario se abre desde la navegación, navega por semanas y días y d
   await expect(nowLine(calendarRegion(page))).toHaveCount(1);
   await expect(nowLine(dayColumn(page, today, today))).toBeInViewport();
 
+  // CAL-14 y CAL-35, sin depender de que la hora quede a la vista: la grilla
+  // abre desplazada una hora por encima de ahora, así que la línea queda una
+  // franja (48 px a «1 h») debajo del encabezado. El desplazamiento no baja de
+  // cero antes de la 01:00, ni pasa del final de la grilla a la noche: ahí la
+  // línea queda más abajo, en la posición que dan esos topes.
+  const hourScale = minuteHeight("1 h");
+  await expect
+    .poll(async () => {
+      const minute = minuteOfDayIn(PERSON_TIMEZONE);
+      const { belowHeader, maxScroll } = await nowLineMetrics(
+        dayColumn(page, today, today),
+      );
+      const scroll = Math.min(Math.max(0, (minute - 60) * hourScale), maxScroll);
+      return Math.abs(belowHeader - (minute * hourScale - scroll));
+    })
+    .toBeLessThanOrEqual(NOW_LINE_TOLERANCE_PX);
+
   // Criterio 3: «Semana anterior» lleva a su semana con la URL normalizada.
   await followPeriodLink(page, "Semana anterior", lastWeek, "week", "Semana anterior");
   await expect(periodLink(page, "Hoy")).not.toHaveAttribute("aria-current");
   await expect(nowLine(page)).toHaveCount(0);
+  await expect(todayHeader(page)).toHaveCount(0);
 
   // Criterio 7: el bloque, dibujado con las 12 h que eligió la otra pestaña.
   const wednesday = dayColumn(page, lastWednesday, today);
@@ -335,11 +358,18 @@ test("el calendario se abre desde la navegación, navega por semanas y días y d
 
   // Criterio 16 (CAL-11, CAL-12): el zoom arranca en una hora, «Alejar» no
   // actúa en su extremo, «Acercar» pasa a 30 minutos y sobrevive a la recarga.
+  // El tamaño de la franja cambia la grilla: el bloque de una hora mide una
+  // franja a «1 h» y dos a «30 min», también después de recargar, cuando el
+  // zoom llega desde la cookie.
+  await page.goto(calendarHref(lastWeek));
   await expectZoom(page, "1 h");
   await expect(zoomButton(page, "Alejar")).toHaveAttribute("aria-disabled", "true");
+  await expectHeight(block, 60 * minuteHeight("1 h"));
   await zoomIn(page, "30 min");
+  await expectHeight(block, 60 * minuteHeight("30 min"));
   await page.reload();
   await expectZoom(page, "30 min");
+  await expectHeight(block, 60 * minuteHeight("30 min"));
 });
 
 test("los totales son los de la lista, la entrada de medianoche se parte en dos columnas y las superpuestas van lado a lado", async ({
@@ -555,6 +585,17 @@ test("el timer se dibuja en la columna de hoy hasta la línea de ahora y suma en
       return Math.abs(block.y + block.height - (line.y + line.height / 2));
     })
     .toBeLessThan(NOW_LINE_TOLERANCE_PX);
+
+  // Criterio 12 (CAL-36): la línea está en la hora real de la persona, no solo
+  // donde termina el bloque, que sale del mismo minuto. A «5 min» un minuto
+  // mide 9,6 px; se toleran dos.
+  const fiveMinuteScale = minuteHeight("5 min");
+  await expect
+    .poll(async () => {
+      const { fromColumnTop } = await nowLineMetrics(todayColumn);
+      return Math.abs(fromColumnTop - minuteOfDayIn(PERSON_TIMEZONE) * fiveMinuteScale);
+    })
+    .toBeLessThanOrEqual(2 * fiveMinuteScale);
 
   // Criterio 12: sin hoy en el período no hay línea.
   await followPeriodLink(

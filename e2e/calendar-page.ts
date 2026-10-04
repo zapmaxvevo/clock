@@ -259,6 +259,59 @@ export function nowLine(scope: Page | Locator): Locator {
   return scope.locator("[data-calendar-now]");
 }
 
+/** Lo que mide una franja en píxeles, a cualquier zoom (§5.5). */
+export const SLOT_HEIGHT_PX = 48;
+
+/** Lo que mide un minuto en la grilla con ese tamaño de franja. */
+export function minuteHeight(size: ZoomSize): number {
+  const minutes = size === "1 h" ? 60 : Number.parseInt(size, 10);
+  return SLOT_HEIGHT_PX / minutes;
+}
+
+/**
+ * El encabezado de hoy, que lo marca con `aria-current="date"` (CAL-09). No
+ * tiene rol propio: es el rótulo de su columna.
+ */
+export function todayHeader(page: Page): Locator {
+  return calendarRegion(page).locator('[aria-current="date"]');
+}
+
+/** Dónde queda la línea de ahora de una columna, en píxeles. */
+export type NowLineMetrics = {
+  /** Del borde inferior del encabezado de la columna al centro de la línea. */
+  readonly belowHeader: number;
+  /** Del borde superior de la columna al centro de la línea: el minuto a escala. */
+  readonly fromColumnTop: number;
+  /** Lo más que se puede desplazar la grilla: el tope del desplazamiento inicial. */
+  readonly maxScroll: number;
+};
+
+/**
+ * Mide la línea de ahora de `column`. El encabezado es el que nombra a la
+ * columna (`aria-labelledby`), y la grilla, el primer ancestro que se
+ * desplaza. La línea se centra en su minuto, así que se mide su centro.
+ */
+export async function nowLineMetrics(column: Locator): Promise<NowLineMetrics> {
+  return column.evaluate((node) => {
+    const line = node.querySelector("[data-calendar-now]");
+    const header = document.getElementById(node.getAttribute("aria-labelledby") ?? "");
+    let scroller = node.parentElement;
+    while (scroller !== null && scroller.scrollHeight <= scroller.clientHeight) {
+      scroller = scroller.parentElement;
+    }
+    if (line === null || header === null || scroller === null) {
+      throw new Error("La columna no tiene línea de ahora, encabezado o grilla.");
+    }
+    const box = line.getBoundingClientRect();
+    const center = box.top + box.height / 2;
+    return {
+      belowHeader: center - header.getBoundingClientRect().bottom,
+      fromColumnTop: center - node.getBoundingClientRect().top,
+      maxScroll: scroller.scrollHeight - scroller.clientHeight,
+    };
+  });
+}
+
 /**
  * El detalle de un bloque (CAL-23, CAL-77). Es un `Tooltip` de Base UI, que
  * no le da rol al recuadro ni lo asocia al botón: se encuentra por su texto,
