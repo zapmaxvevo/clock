@@ -76,7 +76,9 @@ function failure<T, Code extends string = ActionErrorCode>(
   if (error instanceof DomainError) {
     const result = { ok: false, code: error.code, message: error.message } as const;
     // `RejectedError` es un `DomainError`: sin reconocerlo acá, el rechazo
-    // saldría sin la lista.
+    // saldría sin la lista. Esta pregunta la resuelve antes de responder, que es
+    // lo que pide el ADR 0011. Una rama propia, delante de esta, vería el código
+    // `rejected` fuera de `Code` y obligaría a afirmar el tipo del resultado.
     return error instanceof RejectedError
       ? { ...result, rejections: error.rejections }
       : result;

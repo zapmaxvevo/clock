@@ -53,7 +53,7 @@ src/
     permissions/       can(actor, action, resource)
     time/              zonas horarias, semanas, duración, formatos, redondeo
     audit.ts
-    action.ts          ActionResult, DomainError, failure y handle de las actions
+    action.ts          ActionResult, DomainError, RejectedError (ADR 0011), failure y handle de las actions
     create-once.ts     altas idempotentes con el id que elige el cliente (ADR 0007)
     env.ts             variables de entorno validadas con Zod
   components/          piezas de interfaz que comparten los módulos; `ui/` es la salida de shadcn
