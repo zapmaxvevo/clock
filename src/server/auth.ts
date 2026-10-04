@@ -42,6 +42,9 @@ export const auth = betterAuth({
     defaultCookieAttributes: { httpOnly: true, sameSite: "lax" },
   },
   emailAndPassword: { enabled: false },
+  // El nombre y la foto no se editan por la API de Better Auth (PF-09): sin
+  // esto, cualquier sesión los reescribe y llegan al avatar.
+  disabledPaths: ["/update-user"],
   plugins: testSessionPlugins(),
   socialProviders: {
     google: {

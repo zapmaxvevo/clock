@@ -15,6 +15,16 @@ export type CurrentUser = {
 export type SessionContext = ProfileContext & { readonly user: CurrentUser };
 
 /**
+ * La foto sale de Google (PF-09): una que no viene de su servidor de imágenes
+ * no se muestra, y quedan las iniciales (PF-44).
+ */
+const GOOGLE_PHOTO_PREFIX = "https://lh3.googleusercontent.com/";
+
+function googlePhotoOf(image: string | null | undefined): string | null {
+  return image?.startsWith(GOOGLE_PHOTO_PREFIX) === true ? image : null;
+}
+
+/**
  * Punto central de autenticación del servidor. Toda lectura y toda mutación
  * arranca por acá, y ninguna repite la comprobación por su cuenta.
  */
@@ -35,7 +45,7 @@ export async function currentSession(): Promise<SessionContext | null> {
       id: session.user.id,
       name: session.user.name,
       email: session.user.email,
-      image: session.user.image ?? null,
+      image: googlePhotoOf(session.user.image),
     },
   };
 }
