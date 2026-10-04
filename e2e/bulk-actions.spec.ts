@@ -547,14 +547,25 @@ test("borrar dos entradas confirma con la palabra, y el borrado de una fila sigu
   await field.fill("borrar");
   await expectActive(confirm);
 
-  // Enter en el campo confirma; el diálogo se cierra en el acto.
-  await withServerAction(page, () => field.press("Enter"));
+  /*
+   * Enter en el campo confirma: el diálogo se cierra en el acto y el borrado
+   * viaja con el foco en la región (§5.4). La respuesta se retiene para
+   * mirarlo mientras viaja: al terminar, la región toma el foco de todos
+   * modos, y un encabezado de día que lo hubiera robado en el camino ya no se
+   * vería.
+   */
+  const releaseDelete = await holdActionResponses(page, isTrackerPage);
+  const deleted = page.waitForResponse((response) => isAction(response.request()));
+  await field.press("Enter");
   await expect(dialog).toBeHidden();
-
-  // Criterio 19: las dos fuera, el foco en la región —no en el encabezado
-  // del día, que sigue en pantalla— y el resultado anunciado.
   await expect(entryRow(todays, "se borra uno")).toHaveCount(0);
   await expect(entryRow(todays, "se borra dos")).toHaveCount(0);
+  await expect(bulkStatus(page)).toHaveText("Borrando…");
+  // Criterio 19: la región, no el encabezado del día, que sigue en pantalla.
+  await expect(bulkRegion(page)).toBeFocused();
+  releaseDelete();
+  expect((await deleted).ok()).toBeTruthy();
+
   await expect(bulkStatus(page)).toHaveText("Se borraron 2 entradas.");
   await expect(bulkRegion(page)).toBeFocused();
   await expect(entryRow(todays, "se borra sola")).toBeVisible();
@@ -614,14 +625,19 @@ test("un borrado cuya respuesta se perdió se reintenta y termina bien, con el f
 
   await expectDeletedElsewhere(browser, email, "testigo", ["perdida uno", "perdida dos"]);
 
-  // Criterios 14 y 19: el reintento termina bien y el foco, que se iba con
-  // «Reintentar», queda en la región.
+  /*
+   * Criterios 14 y 19: «Reintentar» se va con su aviso, y el foco tiene que
+   * quedar en la región y no en `body`. Se mira con la respuesta retenida:
+   * al terminar bien, la región toma el foco de todos modos.
+   */
   await restoreResponses();
-  await withServerAction(page, async () => {
-    await retry.click();
-    releaseRefreshes();
-  });
+  const releaseRetry = await holdActionResponses(page, isTrackerPage);
+  const retried = page.waitForResponse((response) => isAction(response.request()));
+  await retry.click();
   await expect(bulkRegion(page)).toBeFocused();
+  releaseRefreshes();
+  releaseRetry();
+  expect((await retried).ok()).toBeTruthy();
   await expect(bulkStatus(page)).toHaveText("Se borraron 2 entradas.");
   await expect(bulkNotice(page, ENTRIES_NOT_DELETED)).toHaveCount(0);
   await expect(entryRow(todays, "perdida")).toHaveCount(0);
@@ -629,7 +645,9 @@ test("un borrado cuya respuesta se perdió se reintenta y termina bien, con el f
   await expect(bulkRegion(page)).toBeFocused();
 });
 
-test("la selección sobrevive a Cargar más", async ({ page }) => {
+test("la selección sobrevive a Cargar más, y lo que Atrás deja de mostrar sale y no vuelve", async ({
+  page,
+}) => {
   const today = todayIn(PERSON_TIMEZONE);
   const fiveWeeksAgo = addDays(weekStartOf(today), -35);
   const oldDay = addDays(fiveWeeksAgo, 1);
@@ -656,9 +674,26 @@ test("la selección sobrevive a Cargar más", async ({ page }) => {
   // Criterio 3: la navegación no desmonta la lista, y la selección sigue.
   await expect(bulkStatus(page)).toHaveText("1 entrada seleccionada");
   await expect(chosen).toBeChecked();
-  await expect(
-    entryCheckbox(old, "de hace cinco semanas", "09:00 – 10:00"),
-  ).not.toBeChecked();
+  const oldCheckbox = entryCheckbox(old, "de hace cinco semanas", "09:00 – 10:00");
+  await expect(oldCheckbox).not.toBeChecked();
+
+  /*
+   * §5.3: «Atrás» achica la ventana y la vieja deja de verse, así que sale de
+   * la selección. Al volver a verse con «Adelante» no vuelve elegida: nunca
+   * se edita ni se borra una fila que no estaba en pantalla.
+   */
+  await oldCheckbox.click();
+  await expect(bulkStatus(page)).toHaveText("2 entradas seleccionadas");
+  await page.goBack();
+  await expect(page).toHaveURL((url) => url.searchParams.get("desde") === null);
+  await expect(old).toHaveCount(0);
+  await expect(bulkStatus(page)).toHaveText("1 entrada seleccionada");
+  await page.goForward();
+  await expect(page).toHaveURL(withFrom(fiveWeeksAgo));
+  await expect(oldCheckbox).toBeVisible();
+  await expect(oldCheckbox).not.toBeChecked();
+  await expect(chosen).toBeChecked();
+  await expect(bulkStatus(page)).toHaveText("1 entrada seleccionada");
 });
 
 test("una entrada borrada en otra pestaña frena la edición, sale de la selección y el resto se edita", async ({
