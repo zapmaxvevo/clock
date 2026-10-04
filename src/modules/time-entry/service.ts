@@ -8,7 +8,6 @@ import {
   addDaysToKey,
   clockDifferenceMinutes,
   clockLabel,
-  clockToMinutes,
   crossesMidnight,
   dayBounds,
   dayKey,
@@ -21,6 +20,8 @@ import {
   formatDuration,
   instantFromLocal,
   isAfterYear9999,
+  MINUTES_PER_DAY,
+  minuteOfDayIn,
   nonexistentMinutes,
   parseDayKey,
   startOfDayKey,
@@ -1570,7 +1571,7 @@ function periodOf(
 
 function isWholeDayMissing(day: string, timeZone: string): boolean {
   return nonexistentMinutes(day, timeZone).some(
-    (range) => range.from === 0 && range.to === 24 * 60,
+    (range) => range.from === 0 && range.to === MINUTES_PER_DAY,
   );
 }
 
@@ -1592,27 +1593,24 @@ function isNavigable(period: CalendarPeriod, timeZone: string): boolean {
   return ![...period.days, period.end].some((day) => isWholeDayMissing(day, timeZone));
 }
 
-/** El período pedido, o el que contiene hoy si el pedido no se puede navegar. */
-function calendarPeriodOf(
+/**
+ * El período que se muestra —el pedido, o el que contiene hoy si el pedido no
+ * se puede navegar— y el que contiene hoy, el destino de «Hoy».
+ */
+function calendarPeriodsOf(
   request: CalendarRequest,
   todayKey: string,
   workspace: TrackerWorkspace,
-): CalendarPeriod {
+): { readonly shown: CalendarPeriod; readonly current: CalendarPeriod } {
   const current = periodOf(todayKey, request.mode, workspace.weekStart);
   if (request.day === null) {
-    return current;
+    return { shown: current, current };
   }
   const requested = periodOf(request.day, request.mode, workspace.weekStart);
-  return isNavigable(requested, workspace.timezone) ? requested : current;
-}
-
-/** Minuto del día de un instante en la zona: la línea de ahora (CAL-35). */
-function minuteOfDay(instant: Date, timeZone: string): number {
-  const minute = clockToMinutes(formatClock(instant, timeZone));
-  if (minute === null) {
-    throw new Error(`La hora de ${instant.toISOString()} no es canónica.`);
-  }
-  return minute;
+  return {
+    shown: isNavigable(requested, workspace.timezone) ? requested : current,
+    current,
+  };
 }
 
 /**
@@ -1651,7 +1649,7 @@ export async function getCalendarState(
 ): Promise<CalendarState> {
   const timeZone = workspace.timezone;
   const todayKey = dayKey(now, timeZone);
-  const period = calendarPeriodOf(request, todayKey, workspace);
+  const { shown: period, current } = calendarPeriodsOf(request, todayKey, workspace);
   const from = startOfDayKey(period.start, timeZone);
   const to = startOfDayKey(period.end, timeZone);
   // El mismo snapshot para las dos lecturas, como en `getTrackerState`: una
@@ -1676,13 +1674,12 @@ export async function getCalendarState(
     { isolationLevel: "repeatable read" },
   );
 
-  const length = PERIOD_LENGTH[period.mode];
   const entries = closed.map((row) => toView(row, workspace));
   const days = calendarDays(period, entries, todayKey, workspace);
   return {
     serverNow: now.toISOString(),
     todayKey,
-    nowMinute: minuteOfDay(now, timeZone),
+    nowMinute: minuteOfDayIn(now, timeZone),
     canTrack: can(actor, "timeEntry.own.create", ownTimeEntryResource(actor)),
     mode: period.mode,
     periodStart: period.start,
@@ -1695,9 +1692,9 @@ export async function getCalendarState(
             workspace.formats.date,
           )
         : dayKeyLabel(period.start, todayKey, workspace.formats.date),
-    previousStart: addDaysToKey(period.start, -length),
-    nextStart: addDaysToKey(period.start, length),
-    todayStart: periodOf(todayKey, period.mode, workspace.weekStart).start,
+    previousStart: addDaysToKey(period.start, -PERIOD_LENGTH[period.mode]),
+    nextStart: period.end,
+    todayStart: current.start,
     dayModeStart: period.days.includes(todayKey) ? todayKey : period.start,
     weekModeStart: weekStartKey(period.start, workspace.weekStart),
     days,

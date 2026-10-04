@@ -20,6 +20,8 @@ import {
   instantFromLocal,
   isAfterYear9999,
   isClock,
+  MINUTES_PER_DAY,
+  minuteOfDayIn,
   minutesToClock,
   nonexistentMinutes,
   parseClockInput,
@@ -439,6 +441,26 @@ describe("formatClock", () => {
   });
 });
 
+describe("minuteOfDayIn", () => {
+  it("cuenta los minutos del día en la zona pedida, no en UTC", () => {
+    const instant = new Date("2026-10-02T15:00:00Z");
+    expect(minuteOfDayIn(instant, buenosAires)).toBe(12 * 60);
+    expect(minuteOfDayIn(instant, madrid)).toBe(17 * 60);
+  });
+
+  it("va de 0 a la medianoche local a 1439 en su último minuto", () => {
+    expect(minuteOfDayIn(new Date("2026-10-02T03:00:00Z"), buenosAires)).toBe(0);
+    expect(minuteOfDayIn(new Date("2026-10-02T02:59:59Z"), buenosAires)).toBe(
+      MINUTES_PER_DAY - 1,
+    );
+  });
+
+  it("después del adelanto de Madrid sigue el reloj, no lo transcurrido", () => {
+    // El 29/03/2026 a las 01:00 UTC Madrid pasa de las 02:00 a las 03:00.
+    expect(minuteOfDayIn(new Date("2026-03-29T01:00:00Z"), madrid)).toBe(180);
+  });
+});
+
 describe("extraDays", () => {
   it("es 0 cuando la entrada no cruza la medianoche", () => {
     expect(
@@ -685,6 +707,19 @@ describe("nonexistentMinutes", () => {
     expectGap("2011-12-30", apia, 0, 1440);
     expect(nonexistentMinutes("2011-12-29", apia)).toEqual([]);
     expect(nonexistentMinutes("2011-12-31", apia)).toEqual([]);
+  });
+
+  it("da la hora del adelanto de Chatham, a más de 13 h de UTC", () => {
+    // El 26/09/2026 a las 14:00 UTC Chatham pasa de +12:45 a +13:45.
+    const chatham = "Pacific/Chatham";
+    expect(nonexistentMinutes("2026-09-27", chatham)).toEqual([{ from: 165, to: 225 }]);
+    expectGap("2026-09-27", chatham, 165, 225);
+  });
+
+  it("no da nada en un atraso de fracción de minuto: Lima, 1890-01-01", () => {
+    // A las 05:09 UTC Lima pasa de −05:08:12 a −05:08:36, desplazamientos de la
+    // hora media local con segundos.
+    expect(nonexistentMinutes("1890-01-01", "America/Lima")).toEqual([]);
   });
 
   it("no da nada con una clave que no es un día", () => {

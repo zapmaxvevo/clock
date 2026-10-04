@@ -98,6 +98,12 @@ export function formatClock(instant: Date, timeZone: string): string {
   return formatDate(new TZDate(instant, timeZone), "HH:mm");
 }
 
+/** Minutos de reloj desde las 00:00 del día local del instante, de 0 a 1439. */
+export function minuteOfDayIn(instant: Date, timeZone: string): number {
+  const local = new TZDate(instant, timeZone);
+  return local.getHours() * 60 + local.getMinutes();
+}
+
 /** Días locales que la entrada agrega sobre su día de inicio. 0 si no cruza la medianoche. */
 export function extraDays(start: Date, end: Date, timeZone: string): number {
   const from = startOfLocalDay(start, timeZone).getTime();

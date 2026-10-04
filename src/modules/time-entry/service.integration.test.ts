@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { and, eq, sql } from "drizzle-orm";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { RejectedError } from "@/server/action";
 import { db, type Transaction } from "@/server/db";
@@ -6703,9 +6703,19 @@ describe("getCalendarState: la lectura (criterio 4, CAL-02, CAL-28)", () => {
   });
 
   it("ordena por inicio y después por id (CAL-76)", async () => {
-    const first = await seedOwn("a", "2026-09-22T12:00:00Z", "2026-09-22T13:00:00Z");
-    const second = await seedOwn("b", "2026-09-22T12:00:00Z", "2026-09-22T12:30:00Z");
-    const earlier = await seedOwn("c", "2026-09-22T11:00:00Z", "2026-09-22T11:30:00Z");
+    const earlier = await seedOwn(
+      "antes",
+      "2026-09-22T11:00:00Z",
+      "2026-09-22T11:30:00Z",
+    );
+    // Seis del mismo inicio: con ids al azar, un orden que no sea por id no
+    // coincide con el ordenado más que por casualidad.
+    const tied = [];
+    for (let index = 0; index < 6; index += 1) {
+      tied.push(
+        await seedOwn(`${index}`, "2026-09-22T12:00:00Z", "2026-09-22T13:00:00Z"),
+      );
+    }
 
     const state = await getCalendarState(
       actor,
@@ -6716,8 +6726,41 @@ describe("getCalendarState: la lectura (criterio 4, CAL-02, CAL-28)", () => {
 
     expect(state.entries.map((entry) => entry.id)).toEqual([
       earlier.id,
-      ...[first.id, second.id].sort(),
+      ...tied.map((row) => row.id).sort(),
     ]);
+  });
+
+  it("nunca da la misma entrada como timer y como cerrada", async () => {
+    // El timer y las cerradas salen de consultas distintas. La parada se mete
+    // entre las dos, en otra conexión: con cada consulta en su propio snapshot,
+    // la segunda ve cerrada la entrada que la primera vio corriendo.
+    const running = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: new Date(Date.now() - 60_000).toISOString(),
+    });
+    const workspace = workspaceOf(buenosAires);
+    const week = { mode: "week", day: null } as const;
+    const listClosed = timeEntryRepository.listClosedOverlapping;
+    const stopInBetween = vi
+      .spyOn(timeEntryRepository, "listClosedOverlapping")
+      .mockImplementation(async (...args) => {
+        await stopTimer(actor, workspace, { id: running.id });
+        return listClosed(...args);
+      });
+
+    try {
+      const state = await getCalendarState(actor, workspace, week);
+
+      expect(stopInBetween).toHaveBeenCalledOnce();
+      expect(state.running?.id).toBe(running.id);
+      expect(state.entries.map((entry) => entry.id)).not.toContain(running.id);
+    } finally {
+      stopInBetween.mockRestore();
+    }
+    const after = await getCalendarState(actor, workspace, week);
+    expect(after.running).toBeNull();
+    expect(after.entries.map((entry) => entry.id)).toContain(running.id);
   });
 
   it("cada entrada viene con su proyecto y su tarea", async () => {
