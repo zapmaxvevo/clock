@@ -32,6 +32,7 @@ import {
   startTimer,
   stopTimer,
   updateDescription,
+  updateEntry,
   updateEntryProject,
   updateEntryTimes,
   updateRunningStart,
@@ -1002,7 +1003,7 @@ describe("el filtro por dueño del repository", () => {
     };
 
     const foreign = await db.transaction((tx) =>
-      timeEntryRepository.updateTimes(
+      timeEntryRepository.updateClosedEntry(
         tx,
         { workspaceId, userId: ownerId, id: row.id },
         times,
@@ -1014,7 +1015,7 @@ describe("el filtro por dueño del repository", () => {
       "2026-10-01T11:00:00.000Z",
     );
     const own = await db.transaction((tx) =>
-      timeEntryRepository.updateTimes(
+      timeEntryRepository.updateClosedEntry(
         tx,
         { workspaceId, userId: otherId, id: row.id },
         times,
@@ -1062,10 +1063,10 @@ describe("el filtro por dueño del repository", () => {
     const startedAt = new Date("2026-10-02T10:00:00Z");
 
     const foreign = await db.transaction((tx) =>
-      timeEntryRepository.updateStartOfRunning(
+      timeEntryRepository.updateRunningEntry(
         tx,
         { workspaceId, userId: ownerId, id: row.id },
-        startedAt,
+        { startedAt },
       ),
     );
 
@@ -1074,10 +1075,10 @@ describe("el filtro por dueño del repository", () => {
       "2026-10-02T11:00:00.000Z",
     );
     const own = await db.transaction((tx) =>
-      timeEntryRepository.updateStartOfRunning(
+      timeEntryRepository.updateRunningEntry(
         tx,
         { workspaceId, userId: otherId, id: row.id },
-        startedAt,
+        { startedAt },
       ),
     );
     expect(own?.startedAt.toISOString()).toBe("2026-10-02T10:00:00.000Z");
@@ -1332,5 +1333,147 @@ describe("operaciones en masa (criterio 16, TT-66)", () => {
       ids: [row.id],
     });
     expect(await timeEntryById(row.id)).toMatchObject({ description: "de acá" });
+  });
+});
+
+describe("el guardado del diálogo (updateEntry, criterio 7, TT-66)", () => {
+  function seedClosedOf(userId: string, description = "") {
+    return seedTimeEntry({
+      workspaceId,
+      userId,
+      description,
+      startedAt: "2026-10-01T11:00:00Z",
+      endedAt: "2026-10-01T12:00:00Z",
+    });
+  }
+
+  it.each(roles)("%s guarda su entrada cerrada y su timer", async (role) => {
+    const actor = await seedActor(role);
+    const closed = await seedClosedOf(actor.userId);
+    const running = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+
+    const fromClosed = await updateEntry(actor, workspace, {
+      id: closed.id,
+      changes: { description: "cerrada", times: timesValues },
+    });
+    const fromRunning = await updateEntry(
+      actor,
+      workspace,
+      {
+        id: running.id,
+        changes: { description: "corriendo", runningStart: runningStartValues },
+      },
+      trackerNow,
+    );
+
+    expect(fromClosed.entry).toMatchObject({
+      description: "cerrada",
+      startedAt: "2026-10-01T12:00:00.000Z",
+      endedAt: "2026-10-01T13:30:00.000Z",
+    });
+    expect(fromRunning.entry).toMatchObject({
+      description: "corriendo",
+      startedAt: "2026-10-02T10:00:00.000Z",
+      endedAt: null,
+    });
+  });
+
+  it.each(roles)(
+    "%s recibe el texto de TT-79 por la ajena que corre y por la de más de un día, antes que su estado o su horario",
+    async (role) => {
+      const actor = await seedActor(role);
+      const otherId = await seedMember(workspaceId, "member");
+      const foreignRunning = await seedTimeEntry({
+        workspaceId,
+        userId: otherId,
+        description: "ajena",
+        startedAt: "2026-10-02T11:00:00Z",
+      });
+      const foreignMultiDay = await seedTimeEntry({
+        workspaceId,
+        userId: otherId,
+        description: "ajena",
+        startedAt: "2026-09-29T11:00:00Z",
+        endedAt: "2026-10-01T12:00:00Z",
+      });
+
+      for (const row of [foreignRunning, foreignMultiDay]) {
+        await expect(
+          updateEntry(actor, workspace, {
+            id: row.id,
+            changes: { description: "mía", times: timesValues },
+          }),
+        ).rejects.toMatchObject({
+          code: "forbidden",
+          message: timeEntryMessages.forbiddenOtherOwner,
+        });
+        expect(await timeEntryById(row.id)).toEqual(row);
+      }
+    },
+  );
+
+  it.each(notActive)(
+    "con la membresía %s no guarda ni su propia entrada",
+    async (status) => {
+      const actor = await seedActor("member", status);
+      const own = await seedClosedOf(actor.userId, "propia");
+
+      await expect(
+        updateEntry(actor, workspace, { id: own.id, changes: { description: "otra" } }),
+      ).rejects.toMatchObject({
+        code: "forbidden",
+        message: timeEntryMessages.forbidden,
+      });
+      expect(await timeEntryById(own.id)).toEqual(own);
+    },
+  );
+
+  it("un actor de otro workspace recibe not_found y no escribe", async () => {
+    const other = await seedWorkspace(buenosAires);
+    const outsider: Actor = {
+      userId: other.ownerId,
+      workspaceId: other.workspaceId,
+      role: "owner",
+      status: "active",
+    };
+    const row = await seedClosedOf(ownerId, "de acá");
+
+    await expect(
+      updateEntry(outsider, workspace, { id: row.id, changes: { description: "x" } }),
+    ).rejects.toMatchObject({ code: "not_found", message: timeEntryMessages.notFound });
+    expect(await timeEntryById(row.id)).toEqual(row);
+  });
+
+  it("el filtro por dueño del repository no escribe el par en la entrada de otra persona", async () => {
+    const otherId = await seedMember(workspaceId, "member");
+    const web = await seedProject({ workspaceId });
+    const closed = await seedClosedOf(otherId);
+    const running = await seedTimeEntry({
+      workspaceId,
+      userId: otherId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+    const pair = { projectId: web.id, taskId: null };
+
+    const foreign = await db.transaction(async (tx) => [
+      await timeEntryRepository.updateClosedEntry(
+        tx,
+        { workspaceId, userId: ownerId, id: closed.id },
+        { pair },
+      ),
+      await timeEntryRepository.updateRunningEntry(
+        tx,
+        { workspaceId, userId: ownerId, id: running.id },
+        { pair },
+      ),
+    ]);
+
+    expect(foreign).toEqual([undefined, undefined]);
+    expect(await timeEntryById(closed.id)).toEqual(closed);
+    expect(await timeEntryById(running.id)).toEqual(running);
   });
 });

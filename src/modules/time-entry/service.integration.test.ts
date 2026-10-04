@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { RejectedError } from "@/server/action";
+import { DomainError, RejectedError } from "@/server/action";
 import { db, type Transaction } from "@/server/db";
 import {
   client,
@@ -76,6 +76,7 @@ import {
   TimeEntryError,
   trackerWorkspaceOf,
   updateDescription,
+  updateEntry,
   updateEntryProject,
   updateEntryTimes,
   updateRunningStart,
@@ -1374,28 +1375,30 @@ describe("createManualEntry", () => {
     expect(day?.closedSeconds).toBe(3 * 3600);
   });
 
-  it("rechaza agregar con un timer corriendo y no inserta nada", async () => {
-    await startTimer(actor, workspaceOf(buenosAires), {
+  it("con un timer corriendo agrega la entrada y el timer sigue abierto (P-01)", async () => {
+    const started = await startTimer(actor, workspaceOf(buenosAires), {
       projectId: null,
       taskId: null,
       id: randomUUID(),
       description: "corriendo",
     });
 
-    await expect(
-      createManualEntry(actor, workspace, {
-        projectId: null,
-        taskId: null,
-        description: "",
-        date: "2026-10-02",
-        start: "08:00",
-        end: "09:00",
-      }),
-    ).rejects.toMatchObject({
-      code: "timer_running",
-      message: timeEntryMessages.timerRunning,
+    const result = await createManualEntry(actor, workspace, {
+      projectId: null,
+      taskId: null,
+      description: "a mano",
+      date: "2026-10-02",
+      start: "08:00",
+      end: "09:00",
     });
-    expect(await allTimeEntries()).toHaveLength(1);
+
+    expect(result.created).toMatchObject({
+      description: "a mano",
+      startedAt: "2026-10-02T11:00:00.000Z",
+      endedAt: "2026-10-02T12:00:00.000Z",
+    });
+    expect(await allTimeEntries()).toHaveLength(2);
+    expect((await timeEntryById(started.running.id))?.endedAt).toBeNull();
   });
 
   it("rechaza una entrada de duración cero", async () => {
@@ -3051,7 +3054,7 @@ describe("TT-110: editableTimes", () => {
 describe("las guardas de las dos escrituras nuevas del repository", () => {
   // Inalcanzables a través del service, que ya leyó la fila con FOR UPDATE y
   // comprobó lo mismo: por eso se llama al repository directo.
-  it("updateTimes no escribe sobre una entrada abierta", async () => {
+  it("updateClosedEntry no escribe sobre una entrada abierta", async () => {
     const row = await seedTimeEntry({
       workspaceId,
       userId: actor.userId,
@@ -3064,7 +3067,7 @@ describe("las guardas de las dos escrituras nuevas del repository", () => {
     };
 
     const written = await db.transaction((tx) =>
-      timeEntryRepository.updateTimes(tx, target, times),
+      timeEntryRepository.updateClosedEntry(tx, target, times),
     );
 
     expect(written).toBeUndefined();
@@ -3074,18 +3077,18 @@ describe("las guardas de las dos escrituras nuevas del repository", () => {
     });
     const closed = await seedClosed("2026-10-03T11:00:00Z", "2026-10-03T12:00:00Z");
     const own = await db.transaction((tx) =>
-      timeEntryRepository.updateTimes(tx, { ...target, id: closed.id }, times),
+      timeEntryRepository.updateClosedEntry(tx, { ...target, id: closed.id }, times),
     );
     expect(own?.startedAt.toISOString()).toBe("2026-10-01T11:00:00.000Z");
   });
 
-  it("updateStartOfRunning no escribe sobre una entrada cerrada", async () => {
+  it("updateRunningEntry no escribe sobre una entrada cerrada", async () => {
     const row = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
     const target = { workspaceId, userId: actor.userId, id: row.id };
     const startedAt = new Date("2026-10-01T10:00:00Z");
 
     const written = await db.transaction((tx) =>
-      timeEntryRepository.updateStartOfRunning(tx, target, startedAt),
+      timeEntryRepository.updateRunningEntry(tx, target, { startedAt }),
     );
 
     expect(written).toBeUndefined();
@@ -3099,10 +3102,10 @@ describe("las guardas de las dos escrituras nuevas del repository", () => {
       startedAt: "2026-10-02T11:00:00Z",
     });
     const own = await db.transaction((tx) =>
-      timeEntryRepository.updateStartOfRunning(
+      timeEntryRepository.updateRunningEntry(
         tx,
         { ...target, id: running.id },
-        startedAt,
+        { startedAt },
       ),
     );
     expect(own?.startedAt.toISOString()).toBe("2026-10-01T10:00:00.000Z");
@@ -3113,7 +3116,7 @@ describe("las guardas de las dos escrituras nuevas del repository", () => {
 
     const failure = await db
       .transaction((tx) =>
-        timeEntryRepository.updateTimes(
+        timeEntryRepository.updateClosedEntry(
           tx,
           { workspaceId, userId: actor.userId, id: row.id },
           {
@@ -4496,6 +4499,8 @@ describe("weekStart en las vistas del service (criterio 13)", () => {
 // Slice 10: el proyecto y la tarea de una entrada.
 
 type Pair = { readonly projectId: string | null; readonly taskId: string | null };
+
+const NO_PAIR: Pair = { projectId: null, taskId: null };
 
 /** Una entrada del actor con un par, cerrada salvo que se pida abierta. */
 function seedEntryWith(
@@ -6966,5 +6971,629 @@ describe("getCalendarState: zona, formatos y días (criterios 7, 10, 11 y 15)", 
     expect(inactive.entries).toHaveLength(1);
     expect(inactive.serverNow).toBe(now.toISOString());
     expect(inactive.todayKey).toBe("2026-10-02");
+  });
+});
+
+/** La fila entera que puede tocar `updateEntry`, con su par. */
+async function editableSnapshotOf(id: string) {
+  const snapshot = await snapshotOf(id);
+  return snapshot === undefined ? undefined : { ...snapshot, pair: await pairOfRow(id) };
+}
+
+/** El desenlace de una edición de una fila: los instantes que quedaron, o el código y el texto del rechazo. */
+async function editOutcomeOf(id: string, work: () => Promise<unknown>) {
+  try {
+    await work();
+    return await instantsOf(id);
+  } catch (error) {
+    // El par lo rechaza `project` con su propio error de dominio.
+    if (error instanceof DomainError) {
+      return { code: error.code, message: error.message };
+    }
+    throw error;
+  }
+}
+
+/** Un timer de esa persona del workspace del test. */
+function seedRunningOf(userId: string, startedAt: string, description = "corriendo") {
+  return seedTimeEntry({ workspaceId, userId, description, startedAt });
+}
+
+describe("updateEntry: el trío es el de updateEntryTimes (criterio 3, ADR 0013)", () => {
+  it.each(sameRuleCases)("$label", async (example) => {
+    const workspace = workspaceOf(example.zone, example.createdAt);
+    const dialogRow = await seedClosed(example.startedAt, example.endedAt);
+    const singleRow = await seedClosed(example.startedAt, example.endedAt);
+    const startedAt = new Date(example.startedAt);
+    const own = {
+      date: dayKey(startedAt, example.zone),
+      start: formatClock(startedAt, example.zone),
+      end: formatClock(new Date(example.endedAt), example.zone),
+    };
+    const times = { ...own, ...example.changes };
+    // Con un trío igual al de la fila `updateEntry` no evalúa y la de una fila sí.
+    expect(times).not.toEqual(own);
+
+    const dialog = await editOutcomeOf(dialogRow.id, () =>
+      updateEntry(actor, workspace, { id: dialogRow.id, changes: { times } }),
+    );
+    const single = await editOutcomeOf(singleRow.id, () =>
+      updateEntryTimes(actor, workspace, { id: singleRow.id, ...times }),
+    );
+
+    expect(dialog).toEqual(single);
+    if (example.rejects === undefined) {
+      expect(dialog).not.toEqual({
+        startedAt: startedAt.toISOString(),
+        endedAt: new Date(example.endedAt).toISOString(),
+      });
+    } else {
+      expect(dialog).toEqual({ code: "validation", message: example.rejects });
+    }
+  });
+});
+
+type RunningRuleCase = {
+  readonly label: string;
+  readonly zone: string;
+  readonly createdAt?: string;
+  readonly startedAt: string;
+  readonly now: string;
+  readonly runningStart: { readonly date: string; readonly start: string };
+  readonly rejects?: string;
+};
+
+const runningRuleCases: readonly RunningRuleCase[] = [
+  {
+    label: "otra hora del mismo día",
+    zone: buenosAires,
+    startedAt: "2026-10-02T11:00:00Z",
+    now: "2026-10-02T15:00:00Z",
+    runningStart: { date: "2026-10-02", start: "07:00" },
+  },
+  {
+    label: "otro día (TT-42)",
+    zone: buenosAires,
+    startedAt: "2026-10-02T11:00:00Z",
+    now: "2026-10-02T15:00:00Z",
+    runningStart: { date: "2026-09-30", start: "22:00" },
+  },
+  {
+    label: "un inicio guardado con segundos",
+    zone: buenosAires,
+    startedAt: "2026-10-02T11:00:40Z",
+    now: "2026-10-02T15:00:00Z",
+    runningStart: { date: "2026-10-02", start: "08:30" },
+  },
+  {
+    label: "un inicio en el futuro (TT-29, TT-75)",
+    zone: buenosAires,
+    startedAt: "2026-10-02T11:00:00Z",
+    now: "2026-10-02T15:00:00Z",
+    runningStart: { date: "2026-10-02", start: "12:30" },
+    rejects: timeEntryMessages.futureTime,
+  },
+  {
+    label: "la hora que no existe (TT-112)",
+    zone: madrid,
+    startedAt: "2026-03-29T05:00:00Z",
+    now: "2026-03-29T10:00:00Z",
+    runningStart: { date: "2026-03-29", start: "02:30" },
+    rejects: timeEntryMessages.nonexistentClock,
+  },
+  {
+    label: "la hora repetida, con el segundo instante (ADR 0005)",
+    zone: madrid,
+    startedAt: "2026-10-25T03:00:00Z",
+    now: "2026-10-25T10:00:00Z",
+    runningStart: { date: "2026-10-25", start: "02:30" },
+  },
+  {
+    label: "antes de la creación del workspace",
+    zone: buenosAires,
+    createdAt: "2026-09-01T12:00:00Z",
+    startedAt: "2026-10-02T11:00:00Z",
+    now: "2026-10-02T15:00:00Z",
+    runningStart: { date: "2026-08-31", start: "08:00" },
+    rejects: timeEntryMessages.beforeWorkspace,
+  },
+];
+
+describe("updateEntry: el inicio del timer es el de updateRunningStart (criterio 4, ADR 0013)", () => {
+  it.each(runningRuleCases)("$label", async (example) => {
+    const workspace = workspaceOf(example.zone, example.createdAt);
+    const now = new Date(example.now);
+    // Cada persona tiene un solo timer: la copia es de otra.
+    const other = actorFor(await seedMember(workspaceId, "member"));
+    const dialogRow = await seedRunningOf(actor.userId, example.startedAt);
+    const singleRow = await seedRunningOf(other.userId, example.startedAt);
+    const stored = new Date(example.startedAt);
+    // Con el mismo rótulo `updateEntry` no evalúa y la de una fila sí.
+    expect(example.runningStart).not.toEqual({
+      date: dayKey(stored, example.zone),
+      start: formatClock(stored, example.zone),
+    });
+
+    const dialog = await editOutcomeOf(dialogRow.id, () =>
+      updateEntry(
+        actor,
+        workspace,
+        { id: dialogRow.id, changes: { runningStart: example.runningStart } },
+        now,
+      ),
+    );
+    const single = await editOutcomeOf(singleRow.id, () =>
+      updateRunningStart(
+        other,
+        workspace,
+        { id: singleRow.id, ...example.runningStart },
+        now,
+      ),
+    );
+
+    expect(dialog).toEqual(single);
+    if (example.rejects === undefined) {
+      expect(dialog).not.toEqual({ startedAt: stored.toISOString(), endedAt: null });
+    } else {
+      expect(dialog).toEqual({ code: "validation", message: example.rejects });
+    }
+  });
+
+  it("un inicio con el mismo rótulo no se evalúa: el que quedó después de now no se rechaza", async () => {
+    // TT-101: el inicio de un timer puede quedar después del now() de la aplicación.
+    const running = await seedRunningOf(actor.userId, "2026-10-02T18:00:00Z");
+    const now = new Date("2026-10-02T15:00:00Z");
+
+    const result = await updateEntry(
+      actor,
+      workspaceOf(buenosAires),
+      {
+        id: running.id,
+        changes: {
+          description: "nueva",
+          runningStart: { date: "2026-10-02", start: "15:00" },
+        },
+      },
+      now,
+    );
+
+    expect(result.entry).toMatchObject({
+      description: "nueva",
+      startedAt: "2026-10-02T18:00:00.000Z",
+      endedAt: null,
+    });
+  });
+
+  it("guarda la descripción y el inicio juntos, sin detener el timer (CAL-40)", async () => {
+    const running = await seedRunningOf(actor.userId, "2026-10-02T11:00:00Z");
+
+    const result = await updateEntry(
+      actor,
+      workspaceOf(buenosAires),
+      {
+        id: running.id,
+        changes: {
+          description: "otra",
+          runningStart: { date: "2026-10-02", start: "07:15" },
+        },
+      },
+      new Date("2026-10-02T15:00:00Z"),
+    );
+
+    expect(result.entry).toMatchObject({
+      description: "otra",
+      startedAt: "2026-10-02T10:15:00.000Z",
+      endedAt: null,
+    });
+    expect(await auditFor("time_entry", running.id)).toHaveLength(1);
+  });
+});
+
+describe("updateEntry: el par (criterio 5, TT-77, ADR 0010)", () => {
+  const ws = workspaceOf(buenosAires);
+
+  it("con un par no disponible responde lo de updateEntryProject y no escribe nada", async () => {
+    const pairs = await seedUnavailablePairs();
+    for (const pair of Object.values(pairs)) {
+      const dialogRow = await seedEntryWith(NO_PAIR, { description: "antes" });
+      const singleRow = await seedEntryWith(NO_PAIR, { description: "antes" });
+      const before = await editableSnapshotOf(dialogRow.id);
+      const requested = { projectId: pair.projectId, taskId: pair.taskId };
+
+      const dialog = await editOutcomeOf(dialogRow.id, () =>
+        updateEntry(actor, ws, {
+          id: dialogRow.id,
+          changes: { description: "después", project: requested },
+        }),
+      );
+      const single = await editOutcomeOf(singleRow.id, () =>
+        updateEntryProject(actor, ws, { id: singleRow.id, ...requested }),
+      );
+
+      expect(dialog).toEqual(single);
+      expect(dialog).toEqual({ code: "not_found", message: pair.message });
+      expect(await editableSnapshotOf(dialogRow.id)).toEqual(before);
+      expect(await auditFor("time_entry", dialogRow.id)).toEqual([]);
+    }
+  });
+
+  it("con el mismo par no consulta a project: la que tiene un par que ya no se asigna guarda su descripción", async () => {
+    const pairs = await seedUnavailablePairs();
+    for (const pair of Object.values(pairs)) {
+      const entry = await seedEntryWith(
+        { projectId: pair.projectId, taskId: pair.taskId },
+        { description: "antes" },
+      );
+
+      const result = await updateEntry(actor, ws, {
+        id: entry.id,
+        changes: {
+          description: "después",
+          // Con otras mayúsculas también es el mismo.
+          project: {
+            projectId: pair.projectId.toUpperCase(),
+            taskId: pair.taskId.toUpperCase(),
+          },
+        },
+      });
+
+      expect(result.entry.description).toBe("después");
+      expect(await pairOfRow(entry.id)).toEqual({
+        projectId: pair.projectId,
+        taskId: pair.taskId,
+      });
+      expect(await auditFor("time_entry", entry.id)).toHaveLength(1);
+    }
+  });
+
+  it("cambia el par de la cerrada y de la que corre, entero, y responde las referencias nuevas", async () => {
+    const { web, design } = await seedTrackable();
+    const other = await seedProject({ workspaceId, name: "Otro", color: "blue" });
+    const closed = await seedEntryWith({ projectId: web.id, taskId: design.id });
+    const running = await seedEntryWith(NO_PAIR, { running: true });
+
+    const fromClosed = await updateEntry(actor, ws, {
+      id: closed.id,
+      changes: { project: { projectId: other.id, taskId: null } },
+    });
+    const fromRunning = await updateEntry(actor, ws, {
+      id: running.id,
+      changes: { project: { projectId: web.id, taskId: design.id } },
+    });
+
+    expect(await pairOfRow(closed.id)).toEqual({ projectId: other.id, taskId: null });
+    expect(fromClosed.entry.project).toEqual({
+      id: other.id,
+      name: "Otro",
+      color: "blue",
+    });
+    expect(fromClosed.entry.task).toBeNull();
+    expect(await pairOfRow(running.id)).toEqual({ projectId: web.id, taskId: design.id });
+    expect(fromRunning.entry.project?.id).toBe(web.id);
+    expect(fromRunning.entry.task).toEqual({ id: design.id, name: "Diseño" });
+    expect(fromRunning.entry.endedAt).toBeNull();
+  });
+});
+
+describe("updateEntry: todo o nada (criterio 6, ADR 0013)", () => {
+  const ws = workspaceOf(buenosAires);
+  /** 08:00 a 09:00 del 1/10 en Buenos Aires. */
+  const own = { date: "2026-10-01", start: "08:00", end: "09:00" } as const;
+
+  it("descripción, par y trío válidos quedan escritos con una sola constancia", async () => {
+    const { web } = await seedTrackable();
+    const entry = await seedEntryWith(NO_PAIR, { description: "antes" });
+
+    const result = await updateEntry(actor, ws, {
+      id: entry.id,
+      changes: {
+        description: "después",
+        project: { projectId: web.id, taskId: null },
+        times: { ...own, end: "09:30" },
+      },
+    });
+
+    expect(result.entry).toMatchObject({
+      description: "después",
+      startedAt: "2026-10-01T11:00:00.000Z",
+      endedAt: "2026-10-01T12:30:00.000Z",
+      project: { id: web.id },
+    });
+    expect(await editableSnapshotOf(entry.id)).toMatchObject({
+      description: "después",
+      endedAt: "2026-10-01T12:30:00.000Z",
+      pair: { projectId: web.id, taskId: null },
+    });
+    expect((await auditFor("time_entry", entry.id)).map((row) => row.action)).toEqual([
+      "timeEntry.update",
+    ]);
+  });
+
+  it("con un trío rechazado no escribe la descripción ni el par", async () => {
+    const { web } = await seedTrackable();
+    const entry = await seedEntryWith(NO_PAIR, { description: "antes" });
+    const before = await editableSnapshotOf(entry.id);
+
+    await expect(
+      updateEntry(actor, ws, {
+        id: entry.id,
+        changes: {
+          description: "después",
+          project: { projectId: web.id, taskId: null },
+          times: { ...own, end: "08:00" },
+        },
+      }),
+    ).rejects.toMatchObject({ code: "validation", message: timeEntryMessages.tooShort });
+
+    expect(await editableSnapshotOf(entry.id)).toEqual(before);
+    expect(await auditFor("time_entry", entry.id)).toEqual([]);
+  });
+
+  it("con un par rechazado no escribe la descripción ni el trío", async () => {
+    const { archivado } = await seedUnavailablePairs();
+    const entry = await seedEntryWith(NO_PAIR, { description: "antes" });
+    const before = await editableSnapshotOf(entry.id);
+
+    await expect(
+      updateEntry(actor, ws, {
+        id: entry.id,
+        changes: {
+          description: "después",
+          project: { projectId: archivado.projectId, taskId: null },
+          times: { ...own, end: "09:30" },
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "not_found",
+      message: projectMessages.projectUnavailable,
+    });
+
+    expect(await editableSnapshotOf(entry.id)).toEqual(before);
+    expect(await auditFor("time_entry", entry.id)).toEqual([]);
+  });
+
+  it("con un horario inválido y un proyecto no disponible responde el del horario", async () => {
+    const { archivado } = await seedUnavailablePairs();
+    const project = { projectId: archivado.projectId, taskId: null };
+    const closed = await seedEntryWith(NO_PAIR);
+    const running = await seedEntryWith(NO_PAIR, { running: true });
+
+    await expect(
+      updateEntry(actor, ws, {
+        id: closed.id,
+        changes: { project, times: { ...own, end: "08:00" } },
+      }),
+    ).rejects.toMatchObject({ code: "validation", message: timeEntryMessages.tooShort });
+    await expect(
+      updateEntry(
+        actor,
+        ws,
+        {
+          id: running.id,
+          changes: { project, runningStart: { date: "2026-10-02", start: "13:00" } },
+        },
+        new Date("2026-10-02T15:00:00Z"),
+      ),
+    ).rejects.toMatchObject({
+      code: "validation",
+      message: timeEntryMessages.futureTime,
+    });
+  });
+});
+
+describe("updateEntry: el estado de la fila (criterio 7)", () => {
+  const ws = workspaceOf(buenosAires);
+
+  it("un trío sobre la entrada que corre responde timer_running y no escribe la descripción (TT-111)", async () => {
+    const running = await seedRunningOf(actor.userId, "2026-10-02T11:00:00Z");
+    const before = await editableSnapshotOf(running.id);
+
+    await expect(
+      updateEntry(actor, ws, {
+        id: running.id,
+        changes: {
+          description: "otra",
+          times: { date: "2026-10-02", start: "07:00", end: "08:00" },
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "timer_running",
+      message: timeEntryMessages.runningEntryTimes,
+    });
+    expect(await editableSnapshotOf(running.id)).toEqual(before);
+  });
+
+  it("un inicio de timer sobre una cerrada responde already_stopped y no escribe la descripción (CAL-41)", async () => {
+    const closed = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
+    const before = await editableSnapshotOf(closed.id);
+
+    await expect(
+      updateEntry(actor, ws, {
+        id: closed.id,
+        changes: {
+          description: "otra",
+          runningStart: { date: "2026-10-01", start: "07:00" },
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "already_stopped",
+      message: timeEntryMessages.alreadyStopped,
+    });
+    expect(await editableSnapshotOf(closed.id)).toEqual(before);
+  });
+
+  it("la ajena que corre y la ajena de más de un día se rechazan como ajenas antes que por su estado o su horario", async () => {
+    const otherId = await seedMember(workspaceId, "member");
+    const foreignRunning = await seedRunningOf(otherId, "2026-10-02T11:00:00Z");
+    // 10:00 del 1 a 11:00 del 3, en Buenos Aires.
+    const foreignMultiDay = await seedClosed(
+      "2026-10-01T13:00:00Z",
+      "2026-10-03T14:00:00Z",
+      otherId,
+    );
+    const times = { date: "2026-10-01", start: "08:00", end: "09:00" };
+
+    for (const row of [foreignRunning, foreignMultiDay]) {
+      const before = await editableSnapshotOf(row.id);
+      await expect(
+        updateEntry(actor, ws, { id: row.id, changes: { times } }),
+      ).rejects.toMatchObject({
+        code: "forbidden",
+        message: timeEntryMessages.forbiddenOtherOwner,
+      });
+      expect(await editableSnapshotOf(row.id)).toEqual(before);
+    }
+    await expect(
+      updateEntry(actor, ws, {
+        id: foreignMultiDay.id,
+        changes: { runningStart: { date: "2026-10-01", start: "08:00" } },
+      }),
+    ).rejects.toMatchObject({
+      code: "forbidden",
+      message: timeEntryMessages.forbiddenOtherOwner,
+    });
+  });
+
+  it("la que no existe responde not_found (TT-80)", async () => {
+    await expect(
+      updateEntry(actor, ws, { id: randomUUID(), changes: { description: "x" } }),
+    ).rejects.toMatchObject({ code: "not_found", message: timeEntryMessages.notFound });
+  });
+});
+
+describe("updateEntry: la entrada de más de un día (criterio 8, TT-110)", () => {
+  it("guarda su descripción con su mismo trío, sin rechazarla ni reescribir los instantes", async () => {
+    // 10:00 del 1 a 11:00 del 3, en Buenos Aires.
+    const long = await seedClosed("2026-10-01T13:00:00Z", "2026-10-03T14:00:00Z");
+
+    const result = await updateEntry(actor, workspaceOf(buenosAires), {
+      id: long.id,
+      changes: {
+        description: "larga",
+        times: { date: "2026-10-01", start: "10:00", end: "11:00" },
+      },
+    });
+
+    expect(result.entry.description).toBe("larga");
+    expect(result.entry.editableTimes).toBe(false);
+    expect(await instantsOf(long.id)).toEqual({
+      startedAt: "2026-10-01T13:00:00.000Z",
+      endedAt: "2026-10-03T14:00:00.000Z",
+    });
+    expect(await auditFor("time_entry", long.id)).toHaveLength(1);
+  });
+});
+
+describe("updateEntry: punto fijo (criterio 9, TT-89)", () => {
+  const ws = workspaceOf(buenosAires);
+
+  it("repetir un guardado aplicado no escribe, no registra y responde la misma vista", async () => {
+    const { web } = await seedTrackable();
+    const entry = await seedEntryWith(NO_PAIR, { description: "antes" });
+    const input = {
+      id: entry.id,
+      changes: {
+        description: "después",
+        project: { projectId: web.id, taskId: null },
+        times: { date: "2026-10-01", start: "08:15", end: "09:00" },
+      },
+    };
+
+    const first = await updateEntry(actor, ws, input);
+    const written = await editableSnapshotOf(entry.id);
+    const second = await updateEntry(actor, ws, input);
+
+    expect(second).toEqual(first);
+    expect(await editableSnapshotOf(entry.id)).toEqual(written);
+    expect(await auditFor("time_entry", entry.id)).toHaveLength(1);
+  });
+
+  it("sin cambios reales no escribe ni registra, también en el timer", async () => {
+    const closed = await seedEntryWith(NO_PAIR, { description: "igual" });
+    const running = await seedRunningOf(actor.userId, "2026-10-02T11:00:00Z", "igual");
+    const before = await Promise.all(
+      [closed, running].map((row) => editableSnapshotOf(row.id)),
+    );
+
+    const fromClosed = await updateEntry(actor, ws, {
+      id: closed.id,
+      changes: {
+        description: "igual",
+        project: NO_PAIR,
+        times: { date: "2026-10-01", start: "08:00", end: "09:00" },
+      },
+    });
+    const fromRunning = await updateEntry(
+      actor,
+      ws,
+      {
+        id: running.id,
+        changes: {
+          description: "igual",
+          project: NO_PAIR,
+          runningStart: { date: "2026-10-02", start: "08:00" },
+        },
+      },
+      new Date("2026-10-02T15:00:00Z"),
+    );
+
+    expect(fromClosed.entry.description).toBe("igual");
+    expect(fromRunning.entry.endedAt).toBeNull();
+    expect(
+      await Promise.all([closed, running].map((row) => editableSnapshotOf(row.id))),
+    ).toEqual(before);
+    expect(await auditFor("time_entry")).toEqual([]);
+  });
+});
+
+describe("updateEntry: el timer detenido en otra pestaña (criterio 16, CAL-41)", () => {
+  it("la descripción y el par se aplican a la entrada ya cerrada; el inicio responde already_stopped", async () => {
+    const ws = workspaceOf(buenosAires);
+    const { web } = await seedTrackable();
+    const started = await startTimer(actor, ws, {
+      projectId: null,
+      taskId: null,
+      id: randomUUID(),
+      description: "corriendo",
+    });
+    await stopTimer(actor, ws, { id: started.running.id });
+
+    const result = await updateEntry(actor, ws, {
+      id: started.running.id,
+      changes: { description: "cerrada", project: { projectId: web.id, taskId: null } },
+    });
+
+    expect(result.entry.description).toBe("cerrada");
+    expect(result.entry.project?.id).toBe(web.id);
+    expect(result.entry.endedAt).not.toBeNull();
+    const startedAt = new Date(started.running.startedAt);
+    await expect(
+      updateEntry(actor, ws, {
+        id: started.running.id,
+        changes: {
+          runningStart: {
+            date: dayKey(startedAt, buenosAires),
+            start: shiftClock(formatClock(startedAt, buenosAires), -60),
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "already_stopped",
+      message: timeEntryMessages.alreadyStopped,
+    });
+  });
+});
+
+describe("getCalendarState: minDayKey (§5.1 del 8c)", () => {
+  it("es el día de creación del workspace en la zona de la persona", async () => {
+    // Las 23:00 del 1 de setiembre en Buenos Aires, que en UTC ya son del 2.
+    const state = await getCalendarState(
+      actor,
+      workspaceOf(buenosAires, "2026-09-02T02:00:00Z"),
+      { mode: "week", day: null },
+      new Date("2026-10-02T15:00:00Z"),
+    );
+
+    expect(state.minDayKey).toBe("2026-09-01");
   });
 });

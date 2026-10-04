@@ -39,10 +39,12 @@ import { timeSettingsOf, type ProfileContext } from "@/modules/profile/service";
 import { pairToCheck } from "./assignment";
 import {
   timeEntryRepository,
+  type ClosedEntryFields,
   type ClosedFields,
   type EntryRefs,
   type EntryTarget,
   type EntryWithRefs,
+  type RunningEntryFields,
   type TimeEntryRow,
 } from "./repository";
 import {
@@ -795,15 +797,6 @@ export async function createManualEntry(
       if (!can(actor, "timeEntry.own.create", ownTimeEntryResource(actor))) {
         throw new TimeEntryError("forbidden", timeEntryMessages.forbidden);
       }
-      // La interfaz ya lo impide; esto cubre a la pestaña desactualizada.
-      const running = await timeEntryRepository.findRunning(
-        actor.workspaceId,
-        actor.userId,
-        tx,
-      );
-      if (running !== undefined) {
-        throw new TimeEntryError("timer_running", timeEntryMessages.timerRunning);
-      }
 
       const startedAt = instantFromLocal(input.date, input.start, timeZone);
       if (startedAt === null) {
@@ -1001,7 +994,7 @@ export async function updateEntryTimes(
     );
     const times = entryTimesFor(row, input, workspace);
 
-    const updated = await timeEntryRepository.updateTimes(tx, targetOf(row), times);
+    const updated = await timeEntryRepository.updateClosedEntry(tx, targetOf(row), times);
     if (updated === undefined) {
       throw new TimeEntryError("timer_running", timeEntryMessages.runningEntryTimes);
     }
@@ -1020,6 +1013,38 @@ export async function updateEntryTimes(
 }
 
 /**
+ * La regla del inicio del timer que corre (TT-28, TT-29, TT-112, ADR 0006
+ * paso 1): conserva el instante si el rótulo no cambió, si no lo convierte.
+ * Lanza `TimeEntryError` con `nonexistentClock`, `futureTime` o
+ * `beforeWorkspace`.
+ */
+function runningStartFor(
+  row: TimeEntryRow,
+  requested: { readonly date: string; readonly start: string },
+  workspace: TrackerWorkspace,
+  now: Date,
+): Date {
+  const timeZone = workspace.timezone;
+  // Conservar evita que reguardar el inicio sin cambios lo mueva al segundo
+  // instante de la hora repetida (ADR 0006).
+  const startedAt = resolveExtreme(
+    row.startedAt,
+    { day: requested.date, clock: requested.start },
+    timeZone,
+  );
+  if (startedAt === null) {
+    throw new TimeEntryError("validation", timeEntryMessages.nonexistentClock);
+  }
+  if (startedAt.getTime() > now.getTime()) {
+    throw new TimeEntryError("validation", timeEntryMessages.futureTime);
+  }
+  if (dayKey(startedAt, timeZone) < workspaceFloorDayKey(workspace)) {
+    throw new TimeEntryError("validation", timeEntryMessages.beforeWorkspace);
+  }
+  return startedAt;
+}
+
+/**
  * Corrige desde cuándo corre el timer activo (TT-28). El día viaja con la hora:
  * un timer puede llevar días corriendo (TT-42).
  */
@@ -1029,35 +1054,16 @@ export async function updateRunningStart(
   input: UpdateRunningStartInput,
   now: Date = new Date(),
 ): Promise<UpdateRunningStartResult> {
-  const timeZone = workspace.timezone;
-
   const updated = await db.transaction(async (tx) => {
     const row = await readOwnEntry(tx, actor, "timeEntry.own.update", input.id);
     if (row.endedAt !== null) {
       throw new TimeEntryError("already_stopped", timeEntryMessages.alreadyStopped);
     }
-    // Conservar evita que reguardar el inicio sin cambios lo mueva al segundo
-    // instante de la hora repetida (ADR 0006).
-    const startedAt = resolveExtreme(
-      row.startedAt,
-      { day: input.date, clock: input.start },
-      timeZone,
-    );
-    if (startedAt === null) {
-      throw new TimeEntryError("validation", timeEntryMessages.nonexistentClock);
-    }
-    if (startedAt.getTime() > now.getTime()) {
-      throw new TimeEntryError("validation", timeEntryMessages.futureTime);
-    }
-    if (dayKey(startedAt, timeZone) < workspaceFloorDayKey(workspace)) {
-      throw new TimeEntryError("validation", timeEntryMessages.beforeWorkspace);
-    }
+    const startedAt = runningStartFor(row, input, workspace, now);
 
-    const next = await timeEntryRepository.updateStartOfRunning(
-      tx,
-      targetOf(row),
+    const next = await timeEntryRepository.updateRunningEntry(tx, targetOf(row), {
       startedAt,
-    );
+    });
     if (next === undefined) {
       throw new TimeEntryError("already_stopped", timeEntryMessages.alreadyStopped);
     }
@@ -1075,9 +1081,108 @@ export async function updateRunningStart(
   return { running: toView(updated, workspace) };
 }
 
+type UpdateEntryChangeValues = UpdateEntryValues["changes"];
+
+/**
+ * Lo que `updateEntry` cambia de una entrada cerrada, sin el par: la
+ * descripción y el trío con la regla de la masiva, que es la de
+ * `updateEntryTimes`. El inicio de un timer sobre ella es CAL-41.
+ */
+function closedEntryEdit(
+  row: ClosedEntryRow,
+  changes: UpdateEntryChangeValues,
+  workspace: TrackerWorkspace,
+): ClosedFields {
+  if (changes.runningStart !== undefined) {
+    throw new TimeEntryError("already_stopped", timeEntryMessages.alreadyStopped);
+  }
+  return editedFields(
+    row,
+    { description: changes.description, ...changes.times },
+    workspace,
+  );
+}
+
+/**
+ * Lo que `updateEntry` cambia del timer que corre, sin el par: la descripción
+ * y el inicio con la regla de `updateRunningStart`. Un inicio con el mismo
+ * rótulo no se evalúa (ADR 0013). El trío sobre él es TT-111.
+ */
+function runningEntryEdit(
+  row: TimeEntryRow,
+  changes: UpdateEntryChangeValues,
+  workspace: TrackerWorkspace,
+  now: Date,
+): RunningEntryFields {
+  if (changes.times !== undefined) {
+    throw new TimeEntryError("timer_running", timeEntryMessages.runningEntryTimes);
+  }
+  const start = changes.runningStart;
+  const startedAt =
+    start === undefined ||
+    sameLabel(row.startedAt, { day: start.date, clock: start.start }, workspace.timezone)
+      ? null
+      : runningStartFor(row, start, workspace, now);
+  return {
+    ...descriptionChange(row, changes.description),
+    ...(startedAt === null ? {} : { startedAt }),
+  };
+}
+
+/**
+ * El par pedido, si cambia y `project` lo deja asignar (TT-77, ADR 0010).
+ * Vacío si no viene o es el mismo: entonces no se consulta.
+ */
+async function assignedPair(
+  tx: Transaction,
+  actor: Actor,
+  row: ProjectPair,
+  requested: ProjectPair | undefined,
+): Promise<{ readonly pair?: ProjectPair }> {
+  if (requested === undefined || samePair(row, requested)) {
+    return {};
+  }
+  const pair = pairOf(requested);
+  await assertAssignable(tx, actor, pairOf(row), pair);
+  return { pair };
+}
+
+/**
+ * La única escritura de `updateEntry` y su constancia. Sin campos, la fila tal
+ * cual: ni escritura ni constancia, así el reintento llega a un punto fijo.
+ */
+async function writeEntryEdit<Fields extends RunningEntryFields>(
+  tx: Transaction,
+  actor: Actor,
+  row: EntryWithRefs,
+  fields: Fields,
+  write: (fields: Fields) => Promise<EntryWithRefs | undefined>,
+  lost: () => TimeEntryError,
+): Promise<EntryWithRefs> {
+  if (Object.keys(fields).length === 0) {
+    return row;
+  }
+  const written = await write(fields);
+  if (written === undefined) {
+    throw lost();
+  }
+  await recordAudit(tx, {
+    workspaceId: actor.workspaceId,
+    actorId: actor.userId,
+    action: "timeEntry.update",
+    entity: AUDIT_ENTITY,
+    entityId: written.id,
+    previousValue: valuesOf(row, fields),
+    nextValue: valuesOf(written, fields),
+  });
+  return written;
+}
+
 /**
  * El guardado del diálogo de una entrada (ADR 0013): los grupos de campos que
- * la persona tocó, todo o nada, con las reglas de las mutaciones de un campo.
+ * la persona tocó, todo o nada. Cada grupo pasa por la regla de su mutación de
+ * un campo, en este orden: el estado de la fila, la descripción y el horario,
+ * y el par. Lo que no cambió no se escribe.
  */
 export async function updateEntry(
   actor: Actor,
@@ -1085,7 +1190,36 @@ export async function updateEntry(
   input: UpdateEntryValues,
   now: Date = new Date(),
 ): Promise<UpdateEntryResult> {
-  throw new Error("updateEntry sin implementar.");
+  const { changes } = input;
+  const entry = await translatingPairConstraints(() =>
+    db.transaction(async (tx) => {
+      const row = await readOwnEntry(tx, actor, "timeEntry.own.update", input.id);
+      const target = targetOf(row);
+      if (isClosed(row)) {
+        const fields = closedEntryEdit(row, changes, workspace);
+        const pair = await assignedPair(tx, actor, row, changes.project);
+        return writeEntryEdit(
+          tx,
+          actor,
+          row,
+          { ...fields, ...pair },
+          (written) => timeEntryRepository.updateClosedEntry(tx, target, written),
+          () => new TimeEntryError("timer_running", timeEntryMessages.runningEntryTimes),
+        );
+      }
+      const fields = runningEntryEdit(row, changes, workspace, now);
+      const pair = await assignedPair(tx, actor, row, changes.project);
+      return writeEntryEdit(
+        tx,
+        actor,
+        row,
+        { ...fields, ...pair },
+        (written) => timeEntryRepository.updateRunningEntry(tx, target, written),
+        () => new TimeEntryError("already_stopped", timeEntryMessages.alreadyStopped),
+      );
+    }),
+  );
+  return { entry: toView(entry, workspace) };
 }
 
 /**
@@ -1160,6 +1294,16 @@ function requestedTriple(
   return sameTriple(requested, current) ? null : requested;
 }
 
+/** La descripción pedida, si viene y difiere de la de la fila. */
+function descriptionChange(
+  row: TimeEntryRow,
+  description: string | undefined,
+): { readonly description?: string } {
+  return description === undefined || description === row.description
+    ? {}
+    : { description };
+}
+
 /** Los campos que cambian en una fila cerrada; los instantes, con la regla de `updateEntryTimes`. */
 function editedFields(
   row: ClosedEntryRow,
@@ -1169,9 +1313,7 @@ function editedFields(
   const triple = requestedTriple(row, changes, workspace.timezone);
   const times = triple === null ? null : entryTimesFor(row, triple, workspace);
   return {
-    ...(changes.description === undefined || changes.description === row.description
-      ? {}
-      : { description: changes.description }),
+    ...descriptionChange(row, changes.description),
     ...(times === null || times.startedAt.getTime() === row.startedAt.getTime()
       ? {}
       : { startedAt: times.startedAt }),
@@ -1182,9 +1324,12 @@ function editedFields(
 }
 
 /** Los valores de la fila en los campos que cambiaron, para la constancia. */
-function valuesOf(row: TimeEntryRow, fields: ClosedFields) {
+function valuesOf(row: TimeEntryRow, fields: ClosedEntryFields) {
   return {
     ...(fields.description === undefined ? {} : { description: row.description }),
+    ...(fields.pair === undefined
+      ? {}
+      : { projectId: row.projectId, taskId: row.taskId }),
     ...(fields.startedAt === undefined ? {} : { startedAt: row.startedAt }),
     ...(fields.endedAt === undefined ? {} : { endedAt: row.endedAt }),
   };

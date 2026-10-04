@@ -21,7 +21,11 @@ import { allTimeEntries, timeEntryById } from "@/test/queries";
 import { projectMessages } from "@/modules/project/schema";
 
 import { timeEntryRepository } from "./repository";
-import { timeEntryMessages, type StartTimerInput } from "./schema";
+import {
+  timeEntryMessages,
+  type StartTimerInput,
+  type UpdateEntryChanges,
+} from "./schema";
 
 /**
  * La capa de actions no se puede ejecutar como está: `next/headers` y
@@ -85,6 +89,11 @@ vi.mock("@/server/auth", () => ({
 }));
 
 const actions = await import("./actions");
+
+/** Lo que revalidan `calls` llamadas a actions del módulo: las dos pantallas cada una (§4.7). */
+function revalidatedFor(calls: number): string[] {
+  return Array.from({ length: calls }, () => ["/", "/calendario"]).flat();
+}
 
 const ownerEmail = "owner@empresa.com";
 const madrid = "Europe/Madrid";
@@ -234,22 +243,68 @@ describe("la revalidación corre siempre", () => {
     expect(mocks.revalidated).toContain("/");
   });
 
-  it("después de un rechazo de la entrada manual: la pestaña vuelve a ver el timer", async () => {
+  it("después de un rechazo de dominio de la entrada manual", async () => {
     await signIn();
-    await actions.startTimer({ id: randomUUID() });
-    mocks.revalidated.length = 0;
 
     const result = await actions.createManualEntry({
       date: "2026-10-01",
       start: "09:00",
-      end: "10:00",
+      end: "09:00",
     });
 
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.code).toBe("timer_running");
+    expect(result).toEqual({
+      ok: false,
+      code: "validation",
+      message: timeEntryMessages.tooShort,
+    });
     expect(mocks.revalidated).toContain("/");
   });
+
+  // Cada una con un pedido que no pasa su esquema: la revalidación corre igual.
+  const rejectedCalls = {
+    startTimer: () => actions.startTimer({ id: "no-es-uuid" }),
+    stopTimer: () => actions.stopTimer({ id: "no-es-uuid" }),
+    updateDescription: () =>
+      actions.updateDescription({ id: "no-es-uuid", description: "" }),
+    updateEntryProject: () =>
+      actions.updateEntryProject({ id: "no-es-uuid", projectId: null, taskId: null }),
+    deleteEntry: () => actions.deleteEntry({ id: "no-es-uuid" }),
+    createManualEntry: () =>
+      actions.createManualEntry({ date: "2026-02-30", start: "09:00", end: "10:00" }),
+    updateEntryTimes: () =>
+      actions.updateEntryTimes({
+        id: "no-es-uuid",
+        date: "2026-10-01",
+        start: "09:00",
+        end: "10:00",
+      }),
+    updateRunningStart: () =>
+      actions.updateRunningStart({
+        id: "no-es-uuid",
+        date: "2026-10-01",
+        start: "09:00",
+      }),
+    updateEntry: () =>
+      actions.updateEntry({ id: "no-es-uuid", changes: { description: "" } }),
+    continueEntry: () => actions.continueEntry({ id: "no-es-uuid", sourceId: "x" }),
+    duplicateEntry: () => actions.duplicateEntry({ id: "no-es-uuid", sourceId: "x" }),
+    discardTimer: () => actions.discardTimer({ id: "no-es-uuid" }),
+    bulkEditEntries: () =>
+      actions.bulkEditEntries({ ids: [], changes: { description: "" } }),
+    bulkDeleteEntries: () => actions.bulkDeleteEntries({ ids: [] }),
+  } satisfies Record<keyof typeof actions, () => Promise<{ readonly ok: boolean }>>;
+
+  it.each(Object.entries(rejectedCalls))(
+    "%s revalida el rastreador y el calendario también con error (§4.7)",
+    async (_, call) => {
+      await signIn();
+
+      const result = await call();
+
+      expect(result.ok).toBe(false);
+      expect(mocks.revalidated).toEqual(revalidatedFor(1));
+    },
+  );
 });
 
 describe("cada action exige su permiso antes de tocar nada", () => {
@@ -281,7 +336,7 @@ describe("cada action exige su permiso antes de tocar nada", () => {
     }
   });
 
-  it("las dos de horas niegan con el mensaje neutro antes de buscar la fila", async () => {
+  it("las de horas y el guardado del diálogo niegan con el mensaje neutro antes de buscar la fila", async () => {
     const userId = await signIn();
     await actions.startTimer({ id: randomUUID() });
     await db
@@ -300,6 +355,7 @@ describe("cada action exige su permiso antes de tocar nada", () => {
         end: "10:00",
       }),
       await actions.updateRunningStart({ id, date: "2026-10-01", start: "09:00" }),
+      await actions.updateEntry({ id, changes: { description: "x" } }),
     ];
 
     for (const result of results) {
@@ -631,7 +687,7 @@ describe("updateEntryTimes y updateRunningStart", () => {
       start: "12:00",
       end: "13:30",
     });
-    expect(mocks.revalidated).toEqual(["/"]);
+    expect(mocks.revalidated).toEqual(revalidatedFor(1));
     const start = await actions.updateRunningStart({
       id: running.id,
       date: "2026-10-02",
@@ -640,7 +696,7 @@ describe("updateEntryTimes y updateRunningStart", () => {
 
     expect(times.ok && times.data.entry.startedAt).toBe("2026-07-01T10:00:00.000Z");
     expect(start.ok && start.data.running.startedAt).toBe("2026-10-02T07:00:00.000Z");
-    expect(mocks.revalidated).toEqual(["/", "/"]);
+    expect(mocks.revalidated).toEqual(revalidatedFor(2));
   });
 
   it("un error de Zod del trío sale como validation con el mensaje del issue", async () => {
@@ -686,7 +742,7 @@ describe("updateEntryTimes y updateRunningStart", () => {
     for (const [message, result] of results) {
       expect(result).toEqual({ ok: false, code: "validation", message });
     }
-    expect(mocks.revalidated).toEqual(["/", "/", "/", "/"]);
+    expect(mocks.revalidated).toEqual(revalidatedFor(4));
   });
 
   it("un error de dominio conserva su código y su mensaje, y revalida", async () => {
@@ -727,7 +783,7 @@ describe("updateEntryTimes y updateRunningStart", () => {
       code: "not_found",
       message: timeEntryMessages.notFound,
     });
-    expect(mocks.revalidated).toEqual(["/", "/", "/"]);
+    expect(mocks.revalidated).toEqual(revalidatedFor(3));
   });
 
   it("el piso es el del workspace de la sesión", async () => {
@@ -773,7 +829,7 @@ describe("updateEntryTimes y updateRunningStart", () => {
       code: "already_stopped",
       message: timeEntryMessages.alreadyStopped,
     });
-    expect(mocks.revalidated).toEqual(["/"]);
+    expect(mocks.revalidated).toEqual(revalidatedFor(1));
     const rows = await allTimeEntries();
     expect(rows[0].startedAt.toISOString()).toBe("2026-10-02T11:00:00.000Z");
   });
@@ -851,7 +907,7 @@ describe("updateEntryTimes y updateRunningStart", () => {
           message: timeEntryMessages.forbidden,
         });
       }
-      expect(mocks.revalidated).toEqual(["/", "/"]);
+      expect(mocks.revalidated).toEqual(revalidatedFor(2));
       const rows = await allTimeEntries();
       expect(rows.map((row) => row.startedAt.toISOString())).toEqual([
         "2026-10-01T11:00:00.000Z",
@@ -912,7 +968,7 @@ describe("continueEntry, duplicateEntry y discardTimer", () => {
     const discarded = await actions.discardTimer({ id: continued.data.running.id });
 
     expect(discarded).toEqual({ ok: true, data: { id: continued.data.running.id } });
-    expect(mocks.revalidated).toEqual(["/", "/", "/"]);
+    expect(mocks.revalidated).toEqual(revalidatedFor(3));
     expect(await allTimeEntries()).toHaveLength(2);
   });
 
@@ -931,7 +987,7 @@ describe("continueEntry, duplicateEntry y discardTimer", () => {
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.code).toBe("validation");
-      expect(mocks.revalidated).toEqual(["/"]);
+      expect(mocks.revalidated).toEqual(revalidatedFor(1));
       expect(await allTimeEntries()).toHaveLength(1);
     });
 
@@ -951,7 +1007,7 @@ describe("continueEntry, duplicateEntry y discardTimer", () => {
           code: "validation",
           message: timeEntryMessages.sameEntryId,
         });
-        expect(mocks.revalidated).toEqual(["/"]);
+        expect(mocks.revalidated).toEqual(revalidatedFor(1));
         expect(await allTimeEntries()).toEqual([source]);
       },
     );
@@ -982,7 +1038,7 @@ describe("continueEntry, duplicateEntry y discardTimer", () => {
         code: "not_found",
         message: timeEntryMessages.notFound,
       });
-      expect(mocks.revalidated).toEqual(["/", "/"]);
+      expect(mocks.revalidated).toEqual(revalidatedFor(2));
       expect(await allTimeEntries()).toEqual([foreign]);
     });
 
@@ -1030,7 +1086,7 @@ describe("continueEntry, duplicateEntry y discardTimer", () => {
       code: "timer_running",
       message: timeEntryMessages.runningEntryTimes,
     });
-    expect(mocks.revalidated).toEqual(["/"]);
+    expect(mocks.revalidated).toEqual(revalidatedFor(1));
     expect(await allTimeEntries()).toEqual([running]);
   });
 
@@ -1047,7 +1103,7 @@ describe("continueEntry, duplicateEntry y discardTimer", () => {
       code: "already_stopped",
       message: timeEntryMessages.alreadyStopped,
     });
-    expect(mocks.revalidated).toEqual(["/"]);
+    expect(mocks.revalidated).toEqual(revalidatedFor(1));
     expect(await allTimeEntries()).toHaveLength(1);
   });
 
@@ -1059,7 +1115,7 @@ describe("continueEntry, duplicateEntry y discardTimer", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.code).toBe("validation");
-    expect(mocks.revalidated).toEqual(["/"]);
+    expect(mocks.revalidated).toEqual(revalidatedFor(1));
   });
 
   it.each(["inactive", "invited"] as const)(
@@ -1092,7 +1148,7 @@ describe("continueEntry, duplicateEntry y discardTimer", () => {
           message: timeEntryMessages.forbidden,
         });
       }
-      expect(mocks.revalidated).toEqual(results.map(() => "/"));
+      expect(mocks.revalidated).toEqual(revalidatedFor(results.length));
       expect(await allTimeEntries()).toEqual(rows);
     },
   );
@@ -1278,7 +1334,7 @@ describe("updateEntryProject y el par en las altas (criterio 12)", () => {
     if (!result.ok) return;
     expect(result.data.entry.project).toEqual({ id: web.id, name: "Web", color: "pink" });
     expect(result.data.entry.task).toEqual({ id: design.id, name: design.name });
-    expect(mocks.revalidated).toEqual(["/"]);
+    expect(mocks.revalidated).toEqual(revalidatedFor(1));
   });
 
   it("exige su permiso antes de tocar nada: con la membresía desactivada responde el mensaje neutro, también con un id que no existe", async () => {
@@ -1296,7 +1352,7 @@ describe("updateEntryProject y el par en las altas (criterio 12)", () => {
       projectId: null,
       taskId: null,
     });
-    expect(mocks.revalidated).toEqual(["/", "/"]);
+    expect(mocks.revalidated).toEqual(revalidatedFor(2));
   });
 
   it("traduce el ZodError: la tarea sin proyecto y un id que no es uuid salen como validation, y revalida", async () => {
@@ -1318,7 +1374,7 @@ describe("updateEntryProject y el par en las altas (criterio 12)", () => {
       taskId: null,
     });
     expect(malformed).toMatchObject({ ok: false, code: "validation" });
-    expect(mocks.revalidated).toEqual(["/", "/"]);
+    expect(mocks.revalidated).toEqual(revalidatedFor(2));
   });
 
   it("conserva el código y el mensaje del TimeEntryError: TT-80 y TT-79", async () => {
@@ -1377,7 +1433,7 @@ describe("updateEntryProject y el par en las altas (criterio 12)", () => {
         taskId: done.id,
       }),
     ).toEqual({ ok: false, code: "not_found", message: projectMessages.taskUnavailable });
-    expect(mocks.revalidated).toEqual(["/", "/"]);
+    expect(mocks.revalidated).toEqual(revalidatedFor(2));
   });
 
   it("responde unexpected con un error cualquiera, lo registra y revalida", async () => {
@@ -1403,7 +1459,7 @@ describe("updateEntryProject y el par en las altas (criterio 12)", () => {
       write.mockRestore();
       logged.mockRestore();
     }
-    expect(mocks.revalidated).toEqual(["/"]);
+    expect(mocks.revalidated).toEqual(revalidatedFor(1));
   });
 
   it("startTimer, createManualEntry, continueEntry y duplicateEntry responden TT-77 con not_found", async () => {
@@ -1440,7 +1496,7 @@ describe("updateEntryProject y el par en las altas (criterio 12)", () => {
       await actions.duplicateEntry({ id: randomUUID(), sourceId: source.id }),
     ).toEqual(tt77);
     expect(await allTimeEntries()).toHaveLength(1);
-    expect(mocks.revalidated).toEqual(["/", "/", "/", "/"]);
+    expect(mocks.revalidated).toEqual(revalidatedFor(4));
   });
 
   it("las altas guardan el par pedido", async () => {
@@ -1507,7 +1563,7 @@ describe("bulkEditEntries y bulkDeleteEntries (criterio 17)", () => {
     });
     expect(remove).toEqual({ ok: true, data: { ids: [removed.id] } });
     expect(await timeEntryById(removed.id)).toBeUndefined();
-    expect(mocks.revalidated).toEqual(["/", "/"]);
+    expect(mocks.revalidated).toEqual(revalidatedFor(2));
   });
 
   it("los ids llegan al service en minúsculas y sin repetir", async () => {
@@ -1556,7 +1612,7 @@ describe("bulkEditEntries y bulkDeleteEntries (criterio 17)", () => {
       expect(result).toEqual({ ok: false, code: "validation", message });
     }
     expect(await timeEntryById(entry.id)).toMatchObject({ description: "original" });
-    expect(mocks.revalidated).toEqual(["/", "/", "/", "/", "/"]);
+    expect(mocks.revalidated).toEqual(revalidatedFor(5));
   });
 
   it("exigen su permiso antes de tocar nada: con la membresía desactivada responden forbidden sin lista, también con un id que no existe", async () => {
@@ -1584,7 +1640,7 @@ describe("bulkEditEntries y bulkDeleteEntries (criterio 17)", () => {
       expect(await actions.bulkDeleteEntries({ ids })).toEqual(forbidden);
     }
     expect(await timeEntryById(entry.id)).toMatchObject({ description: "original" });
-    expect(mocks.revalidated).toEqual(["/", "/", "/", "/"]);
+    expect(mocks.revalidated).toEqual(revalidatedFor(4));
   });
 
   it("devuelven rejected con la lista intacta, en el orden pedido, y revalidan", async () => {
@@ -1632,7 +1688,7 @@ describe("bulkEditEntries y bulkDeleteEntries (criterio 17)", () => {
       ],
     });
     expect(await timeEntryById(own.id)).toMatchObject({ description: "original" });
-    expect(mocks.revalidated).toEqual(["/", "/"]);
+    expect(mocks.revalidated).toEqual(revalidatedFor(2));
   });
 
   it("un error de dominio de una fila sola no trae lista", async () => {
@@ -1646,5 +1702,92 @@ describe("bulkEditEntries y bulkDeleteEntries (criterio 17)", () => {
         end: "10:00",
       }),
     ).toEqual({ ok: false, code: "not_found", message: timeEntryMessages.notFound });
+  });
+});
+
+describe("updateEntry (ADR 0013)", () => {
+  const longAgo = "2020-01-01T00:00:00Z";
+  const unknownId = "11111111-1111-4111-8111-111111111111";
+
+  /** Una entrada cerrada de la persona de la sesión, el 1/10 de 08:00 a 09:00 en Madrid. */
+  function seedOwnClosed(seeded: SeededWorkspace) {
+    return seedTimeEntry({
+      workspaceId: seeded.workspaceId,
+      userId: sessionUserId(),
+      description: "antes",
+      startedAt: "2026-10-01T06:00:00Z",
+      endedAt: "2026-10-01T07:00:00Z",
+    });
+  }
+
+  it("guarda los grupos juntos con la zona de la persona de la sesión y revalida", async () => {
+    const seeded = await signInOn({ personTimezone: madrid, createdAt: longAgo });
+    const closed = await seedOwnClosed(seeded);
+
+    const result = await actions.updateEntry({
+      id: closed.id,
+      changes: {
+        description: "  después  ",
+        times: { date: "2026-10-01", start: "08:00", end: "09:30" },
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.entry).toMatchObject({
+      description: "después",
+      startedAt: "2026-10-01T06:00:00.000Z",
+      endedAt: "2026-10-01T07:30:00.000Z",
+    });
+    expect(mocks.revalidated).toEqual(revalidatedFor(1));
+  });
+
+  it("sin grupos responde validation con bulkNoChanges, y un grupo desconocido con unexpected", async () => {
+    await signInOn({ createdAt: longAgo });
+
+    const empty = await actions.updateEntry({ id: unknownId, changes: {} });
+    // Lo que puede mandar un cliente que no respeta el tipo.
+    const unknown = await actions.updateEntry({
+      id: unknownId,
+      changes: { tags: [] } as UpdateEntryChanges,
+    });
+
+    expect(empty).toEqual({
+      ok: false,
+      code: "validation",
+      message: timeEntryMessages.bulkNoChanges,
+    });
+    expect(unknown).toEqual({
+      ok: false,
+      code: "validation",
+      message: timeEntryMessages.unexpected,
+    });
+    expect(mocks.revalidated).toEqual(revalidatedFor(2));
+  });
+
+  it("un error de dominio conserva su código y su mensaje, y revalida", async () => {
+    const seeded = await signInOn({ createdAt: longAgo });
+    const closed = await seedOwnClosed(seeded);
+
+    const missing = await actions.updateEntry({
+      id: unknownId,
+      changes: { description: "x" },
+    });
+    const stopped = await actions.updateEntry({
+      id: closed.id,
+      changes: { runningStart: { date: "2026-10-01", start: "07:00" } },
+    });
+
+    expect(missing).toEqual({
+      ok: false,
+      code: "not_found",
+      message: timeEntryMessages.notFound,
+    });
+    expect(stopped).toEqual({
+      ok: false,
+      code: "already_stopped",
+      message: timeEntryMessages.alreadyStopped,
+    });
+    expect(mocks.revalidated).toEqual(revalidatedFor(2));
   });
 });

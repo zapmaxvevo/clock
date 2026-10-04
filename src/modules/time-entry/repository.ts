@@ -14,6 +14,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 
+import type { ProjectPair } from "@/lib/project-pair";
 import { db, type Transaction } from "@/server/db";
 import {
   CHECK_VIOLATION,
@@ -61,6 +62,19 @@ export type ClosedFields = {
   readonly startedAt?: Date;
   readonly endedAt?: Date;
 };
+
+/** Lo que escribe `updateClosedEntry`: lo de `ClosedFields` y el par, siempre entero. */
+export type ClosedEntryFields = ClosedFields & { readonly pair?: ProjectPair };
+
+/** Lo que escribe `updateRunningEntry`. */
+export type RunningEntryFields = Omit<ClosedEntryFields, "endedAt">;
+
+/** Las columnas de una escritura: el par se abre en sus dos columnas, juntas. */
+function columnsOf({ pair, ...fields }: ClosedEntryFields) {
+  return pair === undefined
+    ? fields
+    : { ...fields, projectId: pair.projectId, taskId: pair.taskId };
+}
 
 function isTarget(target: EntryTarget) {
   return and(
@@ -398,27 +412,35 @@ export const timeEntryRepository = {
     return rereadIfWritten(tx, rows.at(0));
   },
 
-  /** Solo una fila cerrada. `undefined` si la entrada está corriendo. */
-  async updateTimes(
+  /**
+   * Los campos que cambian de una fila cerrada, releída con sus referencias:
+   * el par pudo cambiar. `undefined` si la entrada está corriendo.
+   */
+  async updateClosedEntry(
     tx: Transaction,
     target: EntryTarget,
-    times: { startedAt: Date; endedAt: Date },
-  ): Promise<EntryWithRefs | undefined> {
-    return rereadIfWritten(
-      tx,
-      await timeEntryRepository.updateClosedFields(tx, target, times),
-    );
-  },
-
-  /** Solo una fila abierta. `undefined` si ya la cerraron. */
-  async updateStartOfRunning(
-    tx: Transaction,
-    target: EntryTarget,
-    startedAt: Date,
+    fields: ClosedEntryFields,
   ): Promise<EntryWithRefs | undefined> {
     const rows = await tx
       .update(timeEntry)
-      .set({ startedAt })
+      .set(columnsOf(fields))
+      .where(and(isTarget(target), isNotNull(timeEntry.endedAt)))
+      .returning();
+    return rereadIfWritten(tx, rows.at(0));
+  },
+
+  /**
+   * Los campos que cambian de la fila abierta, releída con sus referencias.
+   * `undefined` si ya la cerraron.
+   */
+  async updateRunningEntry(
+    tx: Transaction,
+    target: EntryTarget,
+    fields: RunningEntryFields,
+  ): Promise<EntryWithRefs | undefined> {
+    const rows = await tx
+      .update(timeEntry)
+      .set(columnsOf(fields))
       .where(and(isTarget(target), isNull(timeEntry.endedAt)))
       .returning();
     return rereadIfWritten(tx, rows.at(0));

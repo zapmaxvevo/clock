@@ -52,8 +52,12 @@ import {
   type UpdateRunningStartResult,
 } from "./schema";
 
+/**
+ * Las dos pantallas que muestran entradas: `revalidatePath` actualiza solo la
+ * que se está viendo, y el calendario usa varias de estas actions.
+ */
 const options = {
-  paths: ["/"],
+  paths: ["/", "/calendario"],
   messages: {
     forbidden: timeEntryMessages.forbidden,
     unexpected: timeEntryMessages.unexpected,
