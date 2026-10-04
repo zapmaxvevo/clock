@@ -5,38 +5,33 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-04.
 
 ## Dónde estamos
 
-| Slice                                      | Estado                                                |
-| ------------------------------------------ | ----------------------------------------------------- |
-| 1 — Timer sin proyecto                     | En `main`                                             |
-| 2 — Modo manual                            | En `main`                                             |
-| 2b — Reintento de «Iniciar»                | En `main`                                             |
-| 3 — Corregir horas y fecha                 | En `main`                                             |
-| 4 — Continuar, duplicar, descartar, atajos | En `main`                                             |
-| 5 — Semana y paginación                    | En `main`                                             |
-| 9 — Núcleo de proyectos                    | En `main`                                             |
-| 10 — Selector de proyecto y tarea          | En `main`                                             |
-| 7 — Perfil                                 | En `main`                                             |
-| 6 — Selección y acciones en masa           | En `main`                                             |
-| 7b — Perfil: nombre editable y tema        | Sin contrato                                          |
-| 8 — Calendario: lectura                    | Implementado; ronda de correcciones de las revisiones |
-| 8c — Calendario: escritura                 | Contrato con ronda 1 aplicada; va después del 8       |
-| 8b — Calendario: arrastre                  | Esbozo en §8 del contrato del 8c; va después del 8c   |
-| 11–13                                      | Sin contrato                                          |
+| Slice                                      | Estado                                              |
+| ------------------------------------------ | --------------------------------------------------- |
+| 1 — Timer sin proyecto                     | En `main`                                           |
+| 2 — Modo manual                            | En `main`                                           |
+| 2b — Reintento de «Iniciar»                | En `main`                                           |
+| 3 — Corregir horas y fecha                 | En `main`                                           |
+| 4 — Continuar, duplicar, descartar, atajos | En `main`                                           |
+| 5 — Semana y paginación                    | En `main`                                           |
+| 9 — Núcleo de proyectos                    | En `main`                                           |
+| 10 — Selector de proyecto y tarea          | En `main`                                           |
+| 7 — Perfil                                 | En `main`                                           |
+| 6 — Selección y acciones en masa           | En `main`                                           |
+| 7b — Perfil: nombre editable y tema        | Sin contrato                                        |
+| 8 — Calendario: lectura                    | En `main`                                           |
+| 8c — Calendario: escritura                 | Contrato con ronda 1 aplicada; va después del 8     |
+| 8b — Calendario: arrastre                  | Esbozo en §8 del contrato del 8c; va después del 8c |
+| 11–13                                      | Sin contrato                                        |
 
-Los slices 1 a 7, 9 y 10 están en `origin/main`, con el arreglo del 429 (`5743aeb`): el
-inicio de sesión de e2e reintenta según `X-Retry-After`, y la suite completa pasa 99 de 99
-de una. La rama `fase1/slice-8-calendario` tiene el contrato del 8 aprobado (rondas 1 y 2
-aplicadas), el del 8c con la ronda 1 aplicada (`correcciones-fase1-slice8.md`), el ADR 0013
-aceptado y `main` mergeado.
+Los slices 1 a 10 están en `main`; el 8 (calendario en lectura) se mergeó el 2026-10-04
+con lint, typecheck, 757 de unidad, 799 de integración y 102 de 102 e2e en verde
+(**falta `git push origin main`**). Contratos del 8c con la ronda 1 aplicada
+(`correcciones-fase1-slice8.md`) y ADR 0013 aceptado, en `main`. No quedan agentes
+corriendo ni trabajo sin commitear.
 
 ## Lo primero de la sesión siguiente
 
-1. **Pipeline del 8** (lectura): implementado (`22e0f20`, `0ebbeb6`, `dd7821e`, `ce5e7e5`) y
-   con las seis revisiones hechas; las decisiones están en
-   `correcciones-fase1-slice8-revisiones.md`. Falta la ronda de correcciones (backend,
-   frontend y e2e en paralelo), la segunda revisión de frontend si la ronda fue grande, la
-   corrida final de e2e y el merge.
-2. **El 8c** (escritura) arranca con el 8 en `main` y una ronda corta del
+1. **El 8c** (escritura) arranca con el 8 en `main` y una ronda corta del
    `architecture-reviewer` contra ese árbol (lo pide su §0). Que mire también: su §0 (l.78)
    no nombra el `open: boolean` aparte de `CalendarView` (m3 de la ronda 2 del 8); su
    recorrido 3 compara el borde del timer de las 00:00 con la línea de ahora y necesita el
@@ -47,7 +42,7 @@ aceptado y `main` mergeado.
    del timer (F-n4); un e2e que afirme que no queda tooltip con el diálogo abierto (F2-n2).
    Deuda chica sin slice: un `DayCalendar` compartido entre `DateField` y `PeriodPicker`, un
    `stepToDay` común a los e2e, y `preferenceCookie` en `src/lib`. El 8b, después del 8c.
-3. Para el contrato del **7b**: TT-16 justifica guardar el modo timer/manual en una cookie
+2. Para el contrato del **7b**: TT-16 justifica guardar el modo timer/manual en una cookie
    porque «no hay perfil todavía»; el perfil existe y no lo incluye. Decidir si entra al 7b o
    se reescribe la justificación. El 7b edita el nombre con su propia action:
    `/api/auth/update-user` quedó cerrado en el 7 (`disabledPaths`).
