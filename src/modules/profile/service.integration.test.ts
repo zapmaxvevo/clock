@@ -285,6 +285,30 @@ describe("updatePreference (criterio 9: PF-32)", () => {
     expect(await auditOf(userId)).toHaveLength(2);
   });
 
+  it("dos pedidos simultáneos de la misma clave registran cada uno el valor que encontró", async () => {
+    await seedPreferences(userId, { timezone: "Europe/Madrid" });
+
+    await raceThroughBarrier(holdRow, [
+      () => updatePreference(actorFor(userId), { key: "timezone", value: "Asia/Tokyo" }),
+      () =>
+        updatePreference(actorFor(userId), {
+          key: "timezone",
+          value: "America/New_York",
+        }),
+    ]);
+
+    // El bloqueo los pone en fila: el segundo lee lo que escribió el primero.
+    const rows = await auditFor("user_preference", userId);
+    const stored = JSON.stringify({ timezone: "Europe/Madrid" });
+    const first = rows.find((row) => row.previousValue === stored);
+    const second = rows.find((row) => row !== first);
+    expect(rows).toHaveLength(2);
+    expect(second?.previousValue).toBe(first?.nextValue);
+    expect(JSON.stringify({ timezone: (await rowOf(userId))?.timezone })).toBe(
+      second?.nextValue,
+    );
+  });
+
   it("dos primeros pedidos simultáneos de claves distintas crean una fila con las dos columnas", async () => {
     // La barrera inserta la fila sin confirmarla: los dos pedidos no la ven y
     // se traban al insertar contra su clave primaria.
