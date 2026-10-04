@@ -19,7 +19,8 @@ import {
   type UpdateEntryTimesInput,
 } from "@/modules/time-entry/schema";
 
-import { saveEntryProject, selectionOf, type EntryProjectChange } from "./entry-project";
+import { saveEntryProject, type EntryProjectChange } from "./entry-project";
+import { selectionOf } from "./entry-selection";
 import { EntryRow } from "./entry-row";
 import { selectDayLabel, trackerLabels } from "./labels";
 import { dayCheckState, type Selection } from "./selection";

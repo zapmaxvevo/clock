@@ -104,6 +104,14 @@ export async function deleteEntry(page: Page, description: string): Promise<void
   await page.getByRole("dialog").getByRole("button", { name: "Borrar" }).click();
 }
 
+/** Duplica desde el menú de la fila (TT-58). El menú abierto vive en un portal. */
+export async function duplicateFromMenu(page: Page, description: string): Promise<void> {
+  await page
+    .getByRole("button", { name: `Acciones de la entrada «${description}»` })
+    .click();
+  await page.getByRole("menuitem", { name: "Duplicar" }).click();
+}
+
 /** Borra y espera a que el servidor haya escrito. */
 export async function deleteEntryAndSettle(
   page: Page,

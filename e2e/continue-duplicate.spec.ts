@@ -10,6 +10,7 @@ import { expect, test } from "./session";
 import {
   chooseMode,
   descriptionInput,
+  duplicateFromMenu,
   elapsedCounter,
   entryRow,
   startTimer,
@@ -84,14 +85,6 @@ async function openDiscard(page: Page): Promise<Locator> {
   const dialog = discardDialog(page);
   await expect(dialog).toBeVisible();
   return dialog;
-}
-
-/** Duplica desde el menú de la fila. El menú abierto vive en un portal. */
-async function duplicateFromMenu(page: Page, description: string): Promise<void> {
-  await page
-    .getByRole("button", { name: `Acciones de la entrada «${description}»` })
-    .click();
-  await page.getByRole("menuitem", { name: "Duplicar" }).click();
 }
 
 /** Una entrada cerrada de hoy, que ya empezó: arranca un timer y lo detiene. */

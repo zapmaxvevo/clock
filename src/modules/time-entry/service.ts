@@ -11,6 +11,7 @@ import {
   crossesMidnight,
   dayBounds,
   dayKey,
+  dayKeyLabel,
   dayLabel,
   durationSeconds,
   earliestDayKey,
@@ -19,11 +20,16 @@ import {
   formatDuration,
   instantFromLocal,
   isAfterYear9999,
+  MINUTES_PER_DAY,
+  minuteOfDayIn,
+  nonexistentMinutes,
   parseDayKey,
   startOfDayKey,
+  weekdayLabel,
   weekKeyLabel,
   weekStartKey,
   type TimeSettings,
+  type WeekStart,
 } from "@/server/time";
 import { isPaletteKey } from "@/modules/project/palette";
 import { projectMessages, type ProjectRef } from "@/modules/project/schema";
@@ -47,6 +53,9 @@ import {
   type BulkEditChanges,
   type BulkEditEntriesResult,
   type BulkEditEntriesValues,
+  type CalendarDayView,
+  type CalendarMode,
+  type CalendarState,
   type ContinueEntryInput,
   type ContinueEntryResult,
   type CreateManualEntryResult,
@@ -1524,5 +1533,173 @@ export async function getTrackerState(
     reachFrom: floors.reachFrom,
     loadMoreFrom: loadMoreFromOf(older, floors.windowFrom, floorWeek, workspace),
     hasAnyEntry: running !== undefined || latestClosed !== undefined,
+  };
+}
+
+export type CalendarRequest = {
+  readonly mode: CalendarMode;
+  /** El `semana` de la URL ya validado, o `null`. */
+  readonly day: string | null;
+};
+
+/** Días de cada vista: lo que mueven las flechas (CAL-15). */
+const PERIOD_LENGTH: Record<CalendarMode, number> = { week: 7, day: 1 };
+
+type CalendarPeriod = {
+  readonly mode: CalendarMode;
+  readonly start: string;
+  readonly days: readonly string[];
+  /** El día siguiente al último: su inicio es la cota superior de la lectura. */
+  readonly end: string;
+};
+
+/** El período de la vista que contiene ese día: su semana, o el día solo. */
+function periodOf(
+  anchor: string,
+  mode: CalendarMode,
+  weekStart: WeekStart,
+): CalendarPeriod {
+  const start = mode === "week" ? weekStartKey(anchor, weekStart) : anchor;
+  const length = PERIOD_LENGTH[mode];
+  return {
+    mode,
+    start,
+    days: Array.from({ length }, (_, index) => addDaysToKey(start, index)),
+    end: addDaysToKey(start, length),
+  };
+}
+
+function isWholeDayMissing(day: string, timeZone: string): boolean {
+  return nonexistentMinutes(day, timeZone).some(
+    (range) => range.from === 0 && range.to === MINUTES_PER_DAY,
+  );
+}
+
+/**
+ * CAL-17: el período tiene anterior y siguiente con claves de cuatro cifras,
+ * y ningún día suyo, ni el siguiente al último, falta entero en la zona: sin
+ * eso `startOfDayKey` lanza por un parámetro de la URL. Con el siguiente
+ * dentro del 9999, el inicio del día posterior al último tampoco pasa de ese
+ * año en UTC: ninguna zona se aparta 24 h.
+ */
+function isNavigable(period: CalendarPeriod, timeZone: string): boolean {
+  const length = PERIOD_LENGTH[period.mode];
+  if (
+    parseDayKey(addDaysToKey(period.start, -length)) === null ||
+    parseDayKey(addDaysToKey(period.end, length - 1)) === null
+  ) {
+    return false;
+  }
+  return ![...period.days, period.end].some((day) => isWholeDayMissing(day, timeZone));
+}
+
+/**
+ * El período que se muestra —el pedido, o el que contiene hoy si el pedido no
+ * se puede navegar— y el que contiene hoy, el destino de «Hoy».
+ */
+function calendarPeriodsOf(
+  request: CalendarRequest,
+  todayKey: string,
+  workspace: TrackerWorkspace,
+): { readonly shown: CalendarPeriod; readonly current: CalendarPeriod } {
+  const current = periodOf(todayKey, request.mode, workspace.weekStart);
+  if (request.day === null) {
+    return { shown: current, current };
+  }
+  const requested = periodOf(request.day, request.mode, workspace.weekStart);
+  return {
+    shown: isNavigable(requested, workspace.timezone) ? requested : current,
+    current,
+  };
+}
+
+/**
+ * Cada día suma entera la entrada cerrada que empieza en él, aunque termine
+ * en otro (CAL-32, P-02): el mismo corte que el rastreador.
+ */
+function calendarDays(
+  period: CalendarPeriod,
+  entries: readonly TimeEntryView[],
+  todayKey: string,
+  workspace: TrackerWorkspace,
+): CalendarDayView[] {
+  const floor = workspaceFloorDayKey(workspace);
+  return period.days.map((date) => ({
+    date,
+    label: weekdayLabel(date, todayKey, workspace.formats.date),
+    isToday: date === todayKey,
+    beforeWorkspace: date < floor,
+    closedSeconds: entries
+      .filter((entry) => entry.dayDate === date)
+      .reduce((total, entry) => total + (entry.durationSeconds ?? 0), 0),
+    missingMinutes: [...nonexistentMinutes(date, workspace.timezone)],
+  }));
+}
+
+/**
+ * Estado del calendario (CAL-02): las cerradas propias que se superponen con el
+ * período y el timer aparte. `request.day` es el `semana` de la URL, ya
+ * validado. `now` existe para que los tests fijen el día.
+ */
+export async function getCalendarState(
+  actor: Actor,
+  workspace: TrackerWorkspace,
+  request: CalendarRequest,
+  now: Date = new Date(),
+): Promise<CalendarState> {
+  const timeZone = workspace.timezone;
+  const todayKey = dayKey(now, timeZone);
+  const { shown: period, current } = calendarPeriodsOf(request, todayKey, workspace);
+  const from = startOfDayKey(period.start, timeZone);
+  const to = startOfDayKey(period.end, timeZone);
+  // El mismo snapshot para las dos lecturas, como en `getTrackerState`: una
+  // parada que commitea en el medio dejaría la entrada como timer y como
+  // cerrada a la vez.
+  const { running, closed } = await db.transaction(
+    async (tx) => {
+      const current = await timeEntryRepository.findRunning(
+        actor.workspaceId,
+        actor.userId,
+        tx,
+      );
+      const entries = await timeEntryRepository.listClosedOverlapping(
+        actor.workspaceId,
+        actor.userId,
+        from,
+        to,
+        tx,
+      );
+      return { running: current, closed: entries };
+    },
+    { isolationLevel: "repeatable read" },
+  );
+
+  const entries = closed.map((row) => toView(row, workspace));
+  const days = calendarDays(period, entries, todayKey, workspace);
+  return {
+    serverNow: now.toISOString(),
+    todayKey,
+    nowMinute: minuteOfDayIn(now, timeZone),
+    canTrack: can(actor, "timeEntry.own.create", ownTimeEntryResource(actor)),
+    mode: period.mode,
+    periodStart: period.start,
+    periodLabel:
+      period.mode === "week"
+        ? weekKeyLabel(
+            period.start,
+            todayKey,
+            workspace.weekStart,
+            workspace.formats.date,
+          )
+        : dayKeyLabel(period.start, todayKey, workspace.formats.date),
+    previousStart: addDaysToKey(period.start, -PERIOD_LENGTH[period.mode]),
+    nextStart: period.end,
+    todayStart: current.start,
+    dayModeStart: period.days.includes(todayKey) ? todayKey : period.start,
+    weekModeStart: weekStartKey(period.start, workspace.weekStart),
+    days,
+    entries,
+    running: running === undefined ? null : toView(running, workspace),
+    closedSeconds: days.reduce((total, day) => total + day.closedSeconds, 0),
   };
 }

@@ -188,7 +188,7 @@ function BulkEditForm({
 
       <div className="grid gap-3">
         <div className="grid gap-2">
-          <Label htmlFor={descriptionId}>{trackerLabels.bulkDescription}</Label>
+          <Label htmlFor={descriptionId}>{trackerLabels.description}</Label>
           <Input
             ref={descriptionRef}
             id={descriptionId}
@@ -206,13 +206,13 @@ function BulkEditForm({
         <div className="grid gap-2">
           {/* El nombre del selector ya empieza con «Fecha». */}
           <span aria-hidden="true" className="text-sm leading-none font-medium">
-            {trackerLabels.bulkDate}
+            {trackerLabels.date}
           </span>
           <div ref={dateRef} className="flex flex-wrap items-center gap-2">
             <DateField
               value={draft.date}
               placeholder={trackerLabels.noChange}
-              label={trackerLabels.bulkDate}
+              label={trackerLabels.date}
               onChange={(date) => change({ ...draftRef.current, date })}
               todayKey={todayKey}
               minDayKey={minDayKey}

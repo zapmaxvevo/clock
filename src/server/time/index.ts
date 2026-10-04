@@ -98,6 +98,12 @@ export function formatClock(instant: Date, timeZone: string): string {
   return formatDate(new TZDate(instant, timeZone), "HH:mm");
 }
 
+/** Minutos de reloj desde las 00:00 del día local del instante, de 0 a 1439. */
+export function minuteOfDayIn(instant: Date, timeZone: string): number {
+  const local = new TZDate(instant, timeZone);
+  return local.getHours() * 60 + local.getMinutes();
+}
+
 /** Días locales que la entrada agrega sobre su día de inicio. 0 si no cruza la medianoche. */
 export function extraDays(start: Date, end: Date, timeZone: string): number {
   const from = startOfLocalDay(start, timeZone).getTime();
@@ -136,7 +142,8 @@ export type CivilDate = {
 
 const DAY_KEY = /^(\d{4})-(\d{2})-(\d{2})$/;
 const CLOCK = /^([01]\d|2[0-3]):([0-5]\d)$/;
-const MINUTES_PER_DAY = 24 * 60;
+/** Minutos de reloj de un día de 24 h: el fin de la grilla y de un `MinuteRange`. */
+export const MINUTES_PER_DAY = 24 * 60;
 const DAY_MS = MINUTES_PER_DAY * 60_000;
 
 function pad(value: number): string {
@@ -240,6 +247,19 @@ export function dayKeyLabel(
   if (dayKey === addDaysToKey(todayKey, -1)) {
     return "Ayer";
   }
+  return weekdayLabel(dayKey, todayKey, format);
+}
+
+/**
+ * El rótulo de una columna: día de la semana abreviado y fecha en el formato
+ * de la persona, «jue, 01/10», con año si no es el de `todayKey`. Es la parte
+ * de `dayKeyLabel` que no es «Hoy» ni «Ayer».
+ */
+export function weekdayLabel(
+  dayKey: string,
+  todayKey: string,
+  format: DateFormat,
+): string {
   const date = parseDayKey(dayKey);
   const today = parseDayKey(todayKey);
   if (date === null) {
@@ -334,7 +354,8 @@ export function weekKeyLabel(
   return `${formatDayKey(weekStart, format, withYear)} – ${formatDayKey(lastKey, format, withYear)}`;
 }
 
-function clockToMinutes(clock: string): number | null {
+/** Minutos desde las 00:00 de una hora canónica "HH:mm", o `null`. */
+export function clockToMinutes(clock: string): number | null {
   const match = CLOCK.exec(clock);
   return match === null ? null : Number(match[1]) * 60 + Number(match[2]);
 }
@@ -344,7 +365,8 @@ export function isClock(text: string): boolean {
   return clockToMinutes(text) !== null;
 }
 
-function minutesToClock(minutes: number): string {
+/** La hora canónica de un minuto del día, dando la vuelta a las 24 h. */
+export function minutesToClock(minutes: number): string {
   const safe = ((minutes % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
   return `${pad(Math.floor(safe / 60))}:${pad(safe % 60)}`;
 }
@@ -523,6 +545,59 @@ export function instantFromLocal(
 ): Date | null {
   const matches = localInstants(dayKey, clock, timeZone);
   return matches.length === 0 ? null : new Date(Math.max(...matches));
+}
+
+/** Minutos de reloj de un día, `[from, to)`. */
+export type MinuteRange = { readonly from: number; readonly to: number };
+
+/**
+ * Ninguna zona se apartó más de 16 h de UTC, ni siquiera con su hora media
+ * local: el instante en que el reloj marca cualquier minuto del día cae a esta
+ * distancia de su hora de pared leída como UTC.
+ */
+const MAX_OFFSET_MS = 16 * 60 * 60_000;
+
+/**
+ * Los minutos de reloj que no existen ese día en esa zona, `[from, to)`. Vacío
+ * en un día de 24 h o de 25 h. En un día más corto, el hueco se ubica por
+ * búsqueda binaria del instante en que cambia el desplazamiento, sin probar
+ * minuto por minuto. Un día que falta entero da `[{ from: 0, to: 1440 }]`.
+ */
+export function nonexistentMinutes(
+  dayKey: string,
+  timeZone: string,
+): readonly MinuteRange[] {
+  const date = parseDayKey(dayKey);
+  if (date === null) {
+    return [];
+  }
+  const wall = Date.UTC(date.year, date.month - 1, date.day);
+  // Los instantes que pueden marcar algún minuto del día. Como `localInstants`,
+  // supone a lo sumo un cambio de horario en ese tramo.
+  let before = wall - MAX_OFFSET_MS;
+  let after = wall + DAY_MS + MAX_OFFSET_MS;
+  const offsetBefore = tzOffset(timeZone, new Date(before));
+  const offsetAfter = tzOffset(timeZone, new Date(after));
+  // Solo un adelanto deja horas sin marcar; un atraso las repite.
+  if (offsetAfter <= offsetBefore) {
+    return [];
+  }
+  while (after - before > 60_000) {
+    const middle = before + Math.floor((after - before) / 120_000) * 60_000;
+    if (tzOffset(timeZone, new Date(middle)) === offsetBefore) {
+      before = middle;
+    } else {
+      after = middle;
+    }
+  }
+  // En el instante del cambio el reloj salta de `offsetBefore` a `offsetAfter`:
+  // lo que queda entre las dos horas de pared no se marca nunca. El salto puede
+  // ser del día anterior o del siguiente, y entonces el recorte lo vacía. Un
+  // desplazamiento con segundos, de la hora media local, se redondea hacia
+  // afuera.
+  const from = Math.max(0, Math.floor((after - wall) / 60_000 + offsetBefore));
+  const to = Math.min(MINUTES_PER_DAY, Math.ceil((after - wall) / 60_000 + offsetAfter));
+  return from < to ? [{ from, to }] : [];
 }
 
 /**

@@ -8,7 +8,10 @@ import { useDisplayFormats } from "@/components/layout/display-formats";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { dayKeyLabel, parseDayKey, toDayKey } from "@/server/time";
+import { dayKeyLabel } from "@/server/time";
+
+import { civilDate, dayKeyOfCivilDate } from "./civil-date";
+import { trackerLabels } from "./labels";
 
 type DateFieldProps = {
   /** Día canónico elegido, "2026-10-02", o `null` sin ninguno: se ve `placeholder`. */
@@ -43,17 +46,6 @@ type DateFieldProps = {
 type OpenChangeDetails = Parameters<
   NonNullable<ComponentProps<typeof Popover>["onOpenChange"]>
 >[1];
-
-/**
- * El calendario trabaja con fechas civiles, no con instantes: esta fecha es la
- * medianoche local del navegador y solo sirve para dibujar. Lo que sale del
- * componente es la clave del día, armada por `toDayKey` con los tres números
- * de la fecha elegida.
- */
-function civilDate(dayKey: string): Date | undefined {
-  const civil = parseDayKey(dayKey);
-  return civil === null ? undefined : new Date(civil.year, civil.month - 1, civil.day);
-}
 
 /** TT-18, TT-56: el selector de fecha, con su ícono de calendario. */
 export function DateField({
@@ -90,11 +82,7 @@ export function DateField({
     if (next === undefined) {
       return;
     }
-    const chosen = toDayKey({
-      year: next.getFullYear(),
-      month: next.getMonth() + 1,
-      day: next.getDate(),
-    });
+    const chosen = dayKeyOfCivilDate(next);
     if (chosen !== value) {
       onChange(chosen);
     }
@@ -131,8 +119,8 @@ export function DateField({
           defaultMonth={selected ?? civilDate(todayKey)}
           disabled={outside.length === 0 ? undefined : outside}
           labels={{
-            labelPrevious: () => "Mes anterior",
-            labelNext: () => "Mes siguiente",
+            labelPrevious: () => trackerLabels.previousMonth,
+            labelNext: () => trackerLabels.nextMonth,
           }}
           onSelect={handleSelect}
           autoFocus

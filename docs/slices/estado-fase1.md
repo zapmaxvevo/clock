@@ -5,44 +5,59 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-04.
 
 ## Dónde estamos
 
-| Slice                                      | Estado                                          |
-| ------------------------------------------ | ----------------------------------------------- |
-| 1 — Timer sin proyecto                     | En `main`                                       |
-| 2 — Modo manual                            | En `main`                                       |
-| 2b — Reintento de «Iniciar»                | En `main`                                       |
-| 3 — Corregir horas y fecha                 | En `main`                                       |
-| 4 — Continuar, duplicar, descartar, atajos | En `main`                                       |
-| 5 — Semana y paginación                    | En `main`                                       |
-| 9 — Núcleo de proyectos                    | En `main`                                       |
-| 10 — Selector de proyecto y tarea          | En `main`                                       |
-| 7 — Perfil                                 | En `main`                                       |
-| 6 — Selección y acciones en masa           | En `main` (local): falta `git push origin main` |
-| 7b — Perfil: nombre editable y tema        | Sin contrato                                    |
-| 8, 11–13                                   | Sin contrato                                    |
+| Slice                                      | Estado                                              |
+| ------------------------------------------ | --------------------------------------------------- |
+| 1 — Timer sin proyecto                     | En `main`                                           |
+| 2 — Modo manual                            | En `main`                                           |
+| 2b — Reintento de «Iniciar»                | En `main`                                           |
+| 3 — Corregir horas y fecha                 | En `main`                                           |
+| 4 — Continuar, duplicar, descartar, atajos | En `main`                                           |
+| 5 — Semana y paginación                    | En `main`                                           |
+| 9 — Núcleo de proyectos                    | En `main`                                           |
+| 10 — Selector de proyecto y tarea          | En `main`                                           |
+| 7 — Perfil                                 | En `main`                                           |
+| 6 — Selección y acciones en masa           | En `main`                                           |
+| 7b — Perfil: nombre editable y tema        | Sin contrato                                        |
+| 8 — Calendario: lectura                    | En `main`                                           |
+| 8c — Calendario: escritura                 | Contrato con ronda 1 aplicada; va después del 8     |
+| 8b — Calendario: arrastre                  | Esbozo en §8 del contrato del 8c; va después del 8c |
+| 11–13                                      | Sin contrato                                        |
 
-Los slices 1 a 5, 7, 9 y 10 están en `origin/main`. El
-slice 6 pasó las seis revisiones (`correcciones-fase1-slice6-revisiones.md`) y su ronda de
-correcciones, y está mergeado en `main` local: **falta `git push origin main`**. Corrida
-final: 657 de unidad, 779 de integración y 99 de 99 en e2e (16 fallas por el 429 del
-endpoint de sesión, que pasan con `--last-failed`). No quedan agentes corriendo ni trabajo
-sin commitear.
+Los slices 1 a 10 están en `main`; el 8 (calendario en lectura) se mergeó el 2026-10-04
+con lint, typecheck, 757 de unidad, 799 de integración y 102 de 102 e2e en verde
+(**falta `git push origin main`**). Contratos del 8c con la ronda 1 aplicada
+(`correcciones-fase1-slice8.md`) y ADR 0013 aceptado, en `main`. No quedan agentes
+corriendo ni trabajo sin commitear.
 
 ## Lo primero de la sesión siguiente
 
-1. **El contrato del 8** (calendario): `parity-analyst` ya tiene `docs/parity/calendario.md`;
-   sigue el `architect`. Después el 7b, 11, 12, 13.
-2. **Decisión del usuario sobre el 429** (ver «Decisiones pendientes»): ya son 16 fallas por
-   corrida completa y crece con cada slice.
-3. Para el contrato del **7b**: TT-16 justifica guardar el modo timer/manual en una cookie
+1. **El 8c** (escritura) arranca con el 8 en `main` y una ronda corta del
+   `architecture-reviewer` contra ese árbol (lo pide su §0). Que mire también: su §0 (l.78)
+   no nombra el `open: boolean` aparte de `CalendarView` (m3 de la ronda 2 del 8); su
+   recorrido 3 compara el borde del timer de las 00:00 con la línea de ahora y necesita el
+   mismo `test.skip` cerca de la medianoche que el 8 (m2); las citas a `entry-row.tsx`
+   corridas al salir `extraDaysText`. De las revisiones del 8 pasan al 8c: `error.tsx` con
+   `ActionFeedback` cuando `message` sea opcional, y fuera `calendarLabels.retry` (C-m4); si
+   el 8c encarece el redibujo por segundo de `useElapsedSeconds`, aislar la línea y el bloque
+   del timer (F-n4); un e2e que afirme que no queda tooltip con el diálogo abierto (F2-n2).
+   Deuda chica sin slice: un `DayCalendar` compartido entre `DateField` y `PeriodPicker`, un
+   `stepToDay` común a los e2e, y `preferenceCookie` en `src/lib`. El 8b, después del 8c.
+2. Para el contrato del **7b**: TT-16 justifica guardar el modo timer/manual en una cookie
    porque «no hay perfil todavía»; el perfil existe y no lo incluye. Decidir si entra al 7b o
    se reescribe la justificación. El 7b edita el nombre con su propia action:
    `/api/auth/update-user` quedó cerrado en el 7 (`disabledPaths`).
-4. Pendientes chicos de paridad que dejó el 10: PR-85 sigue diciendo «si el rol lo
-   permite» (TT-87 ya dice `project.create`), y TT-104 no menciona que el proyecto
-   archivado se quita con «Sin proyecto».
 
 El hydration mismatch de `AppLayout` quedó cerrado: es el `MetadataWrapper` de Next durante
 una recarga en caliente y no se reproduce.
+
+Decisiones del usuario del 2026-10-04 para el calendario: P-04 «Guardar» todo o nada con
+botón; P-01 crear desde la grilla **se permite** con un timer corriendo; P-02 la entrada que
+cruza la medianoche suma entera en el día de inicio; P-06 «Detener» en el diálogo del timer.
+P-03 (arrastrar el inicio del timer) y P-05 (solo días laborables) quedan fuera del 8, con
+su propuesta. Sobre el contrato del 8: ADR 0013 (`updateEntry`) aceptado; P-01 sin excepción por
+origen (el servidor deja de rechazar el alta manual con timer abierto, TT-30 queda en la
+interfaz del rastreador); corte 8 (clic y teclado) / 8b (arrastre) aprobado; «Detener»
+inactivo con cambios sin guardar.
 
 Decisiones del usuario del 2026-10-03: ADR 0010, 0011 y 0012 aceptados; TT-07 con las tareas
 siempre listadas; continuar o duplicar con un proyecto no disponible se rechaza; la zona por
@@ -55,10 +70,15 @@ del 10.
 
 ## Decisiones pendientes del usuario
 
-- **`npm audit` en CI**: rojo también en `main`, por `braces` vía `shadcn`
-  (en `dependencies` solo por su CSS). Recomendación: pasar `shadcn` a
-  `devDependencies` y auditar con `--omit=dev`. Mientras siga rojo, el job de e2e
-  de CI no corre.
+- **`npm audit` en CI**: rojo también en `main`, por `braces` vía `fast-glob`, desde
+  `shadcn` (en `dependencies` solo por su CSS) y `eslint-config-next`. Con `--omit=dev`
+  quedan igual 7 high (auditoría del 8), así que pasar `shadcn` a `devDependencies` no
+  alcanza solo: además, subir cuando salga un `braces` corregido, un `overrides`, o aceptar
+  la excepción en CI. Mientras siga rojo, el job de e2e de CI no corre.
+- **`CLAUDE.md`, «Recorrido de una mutación», paso 1**: dice «Sin sesión, 401», y
+  `requireSession` redirige a `/login` también en las actions (`session.ts:57`,
+  `action.ts:113`). TT-91 ya se corrigió a lo implementado. Recomendación: corregir esa
+  línea de `CLAUDE.md`.
 - **ADR 0008, línea 61**: dice que «Cargar más» funciona sin JavaScript y no es así
   (sin JS `/` queda en el esqueleto). Propuesta: corregirla como TT-52.
 - **`.env` local**: `npm run db:migrate` falla en silencio con el `DATABASE_URL` del
@@ -72,9 +92,6 @@ null (col)`) antes de desplegar.
   a un día; qué cambia «Time»; si aplica en parte; «DELETE» y mayúsculas), P-09 de `perfil.md` (formas de 12 h y de fecha, búsqueda de zonas, `UTC`), P-12 de
   `timesheet.md`, P-07 de
   `calendario.md`, y PR-40/PR-58 de `proyectos.md` (quién crea tareas).
-- **El 429 del endpoint de sesión de prueba crece con la suite**: seis fallas en la corrida
-  del 7 (88 tests) y dieciséis en la del 6 (99 tests), que pasan al repetir. Opciones: subir el límite solo con
-  `ALLOW_TEST_SESSION`, o que cada worker reuse su sesión. Toca un control de seguridad.
 - **«Reintentar» en el alta manual**: con el ADR 0007 se le podría devolver y
   retirar TT-109. Es un cambio de paridad chico; queda propuesto.
 - **Rol de Neon para e2e**: `E2E_DATABASE_URL` en el environment `preview` de
@@ -100,7 +117,7 @@ null (col)`) antes de desplegar.
   del servidor (`withServerAction`) y no un estado ya dibujado; respuesta perdida
   real con `route.fetch()` + `route.abort()`; editores en portal se buscan en
   `page`; esperar el foco del disparador tras cerrar un calendario; 11 s entre
-  corridas completas.
+  corridas completas; el 429 del límite por IP lo absorbe `signIn` con `X-Retry-After`.
 - **Reloj emulado**: con `page.clock.install()`, `TZDate` no se puede extender y los
   rótulos de fecha del cliente salen un día antes; instalarlo después de sembrar y recargar.
 - **Avisos que sobreviven**: si la revalidación puede desmontar el componente que muestra

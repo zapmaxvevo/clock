@@ -26,6 +26,9 @@ export const trackerLabels = {
     "Esta entrada dura más de un día; sus horarios no se pueden editar acá.",
   /** TT-28: el botón superpuesto al contador. */
   editRunningStart: "Editar la hora de inicio",
+  /** Los botones de los calendarios de mes, el de la fecha y el del rango. */
+  previousMonth: "Mes anterior",
+  nextMonth: "Mes siguiente",
   /** TT-52: el enlace que suma la próxima semana con entradas. */
   loadMore: "Cargar más",
   /** TT-52: lo que anuncia el enlace mientras su navegación viaja. */
@@ -51,9 +54,9 @@ export const trackerLabels = {
   bulkEdit: "Editar",
   bulkDelete: "Borrar",
   clearSelection: "Quitar selección",
-  /** TT-63: los campos del diálogo de edición masiva; vacíos no cambian. */
-  bulkDescription: "Descripción",
-  bulkDate: "Fecha",
+  /** Los campos del diálogo de edición masiva (TT-63) y del de una entrada del calendario. */
+  description: "Descripción",
+  date: "Fecha",
   bulkEditHint: "Lo que dejes vacío no cambia.",
   noChange: "Sin cambios",
   clearDate: "Quitar la fecha",
@@ -79,6 +82,18 @@ export function entryNameOf(description: string): string {
 /** El nombre accesible del selector de la fila, como el de su menú de acciones. */
 export function entryProjectLabel(entryName: string): string {
   return `Proyecto de la entrada «${entryName}»`;
+}
+
+/** Lo que el superíndice `+1` le dice a un lector de pantalla. */
+export function extraDaysText(extraDays: number): string {
+  return extraDays === 1
+    ? trackerLabels.endsNextDay
+    : ` (termina ${extraDays} días después)`;
+}
+
+/** El horario de una entrada en una frase: «de 09:00 a 10:30», o «desde las 09:00» si corre. */
+export function entrySpanText(startLabel: string, endLabel: string | null): string {
+  return endLabel === null ? `desde las ${startLabel}` : `de ${startLabel} a ${endLabel}`;
 }
 
 /** Una cantidad de entradas con el verbo o el sustantivo en singular o plural. */

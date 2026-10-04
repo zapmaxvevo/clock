@@ -3,6 +3,7 @@ import {
   asc,
   desc,
   eq,
+  gt,
   gte,
   inArray,
   isNotNull,
@@ -303,6 +304,34 @@ export const timeEntryRepository = {
         lt(timeEntry.startedAt, to),
       ),
     ).orderBy(desc(timeEntry.startedAt), asc(timeEntry.id));
+    return rows.map(toEntryWithRefs);
+  },
+
+  /**
+   * Las entradas cerradas de la persona que se superponen con `[from, to)`:
+   * empiezan antes de `to` y terminan después de `from`, o empiezan justo en
+   * `from`, así una de duración cero en ese instante entra. Una que empezó antes
+   * y termina exactamente en `from` no se superpone (CAL-26, CAL-94). Con su
+   * proyecto y su tarea, por inicio ascendente y después por id: el orden de
+   * `Tab` (CAL-76).
+   */
+  async listClosedOverlapping(
+    workspaceId: string,
+    userId: string,
+    from: Date,
+    to: Date,
+    tx: Executor = db,
+  ): Promise<readonly EntryWithRefs[]> {
+    const rows = await selectWithRefs(
+      tx,
+      and(
+        eq(timeEntry.workspaceId, workspaceId),
+        eq(timeEntry.userId, userId),
+        isNotNull(timeEntry.endedAt),
+        lt(timeEntry.startedAt, to),
+        or(gt(timeEntry.endedAt, from), eq(timeEntry.startedAt, from)),
+      ),
+    ).orderBy(asc(timeEntry.startedAt), asc(timeEntry.id));
     return rows.map(toEntryWithRefs);
   },
 

@@ -311,10 +311,17 @@ que reescribirlo cuando el formato fuera elegible; el slice 7 lo reescribió.
 **PF-15 Inicio del día** — `fuera de alcance`
 La documentación nombra el ajuste —«the start of your day»— y **no explica qué
 hace**. No lo releva nadie a partir de un nombre.
-Justificación: no se puede implementar lo que no se entendió. Queda apuntado al
-slice del calendario, que es el que lo va a necesitar si resulta ser un ajuste
-de esa vista (P-02).
+Justificación: no se puede implementar lo que no se entendió. El slice del
+calendario no lo necesitó: la grilla abre con las 08:00 arriba como constante
+del cliente, no como preferencia (CAL-14). Si la verificación muestra que
+«inicio del día» es esa hora, se cambia solo la constante por este ajuste
+(P-02).
 _No verificado_: qué cambia este ajuste.
+
+_Corregido el 2026-10-04, slice 8_: decía que quedaba apuntado al slice del
+calendario, que lo iba a necesitar si resultaba ser un ajuste de esa vista. El
+slice 8 dejó la hora como constante, por decisión del usuario, y P-02 depende
+ahora de la respuesta de CAL-14 en calendario P-07.
 
 ## 4. Primer día de la semana
 
@@ -610,10 +617,14 @@ se cita como `perfil P-nn`.
 
 ### Abiertos
 
-| ID   | Punto                                                                                                                                                                                                       |
-| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P-02 | «Inicio del día» (PF-15): la documentación lo nombra y no lo explica. Queda apuntado al slice del calendario, que es quien lo va a necesitar. Si ahí resulta que no toca nada de la fase 1, se cierra solo. |
-| P-09 | La lista de verificación contra el workspace real. Está abajo, entera, para resolverla en una sentada.                                                                                                      |
+| ID   | Punto                                                                                                                                                                                                                                                                                                                                                                               |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P-02 | «Inicio del día» (PF-15): la documentación lo nombra y no lo explica. El slice 8 no lo necesitó: la grilla del calendario abre con las 08:00 arriba como constante (CAL-14). Depende de la respuesta de CAL-14 en calendario P-07: si «inicio del día» es la hora a la que abre la grilla, se cambia la constante por la preferencia; si no toca nada de la fase 1, se cierra solo. |
+| P-09 | La lista de verificación contra el workspace real. Está abajo, entera, para resolverla en una sentada.                                                                                                                                                                                                                                                                              |
+
+_Corregido el 2026-10-04, slice 8_: P-02 decía que quedaba apuntado al slice
+del calendario, «que es quien lo va a necesitar». El slice 8 no lo cerró: dejó
+la hora como constante, por decisión del usuario.
 
 ### P-09, la lista de verificación
 

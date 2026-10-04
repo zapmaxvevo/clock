@@ -29,6 +29,7 @@ import { EntryTimesEditor } from "./entry-times-editor";
 import {
   entryNameOf,
   entryProjectLabel,
+  extraDaysText,
   selectEntryLabel,
   trackerLabels,
 } from "./labels";
@@ -87,13 +88,6 @@ type TimesEditing = {
   readonly how: "times" | "date";
   readonly initial: TimeDraft;
 };
-
-/** Lo que el superíndice `+1` le dice a un lector de pantalla. */
-function extraDaysText(extraDays: number): string {
-  return extraDays === 1
-    ? trackerLabels.endsNextDay
-    : ` (termina ${extraDays} días después)`;
-}
 
 export function EntryRow({
   entry,

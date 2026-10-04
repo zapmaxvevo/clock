@@ -1,13 +1,11 @@
-import { InfoIcon } from "lucide-react";
-
 import { DisplayFormatsProvider } from "@/components/layout/display-formats";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { TrackingCatalogProvider } from "@/modules/project/components/tracking-catalog";
 import { getTrackingCatalog } from "@/modules/project/service";
 import { getTrackerState, type TrackerWorkspace } from "@/modules/time-entry/service";
 import type { Actor } from "@/server/permissions";
 
 import { EntryList } from "./entry-list";
+import { InactiveMembershipNotice } from "./inactive-membership-notice";
 import { ReachWeekProvider } from "./reach-week";
 import { TrackerBar } from "./tracker-bar";
 import { TrackerEmpty } from "./tracker-empty";
@@ -43,16 +41,7 @@ export async function TrackerScreen({
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
       <h1 className="sr-only">Rastreador de tiempo</h1>
 
-      {!state.canTrack && (
-        <Alert>
-          <InfoIcon aria-hidden="true" />
-          <AlertTitle>Tu acceso al workspace está desactivado.</AlertTitle>
-          <AlertDescription>
-            Podés ver tus horas, pero no cargar ni modificar entradas. Pedile a quien
-            administra el workspace que vuelva a activar tu membresía.
-          </AlertDescription>
-        </Alert>
-      )}
+      {!state.canTrack && <InactiveMembershipNotice />}
 
       {/* Los formatos de esta misma lectura, no los del layout: una navegación
           del cliente puede conservar el layout con los formatos de antes. */}

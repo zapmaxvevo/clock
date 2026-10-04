@@ -101,8 +101,9 @@ Igual que en `proyectos.md`, conviene no confundirlas al leer:
 2. **Decisión del equipo.** Lo que el equipo ya resolvió en otro lugar y este
    documento da por hecho. Va con la fuente. **No es paridad**: el reviewer la
    compara contra lo que dice acá, no contra Clockify. Son estas:
-   - El calendario va antes del núcleo de proyectos, y el color por proyecto
-     llega con el slice 10 sin rehacer la grilla (mapa, slice 8).
+   - El color por proyecto no rehace la grilla: decide cómo se pinta un bloque,
+     no dónde va ni cuánto mide (mapa, slice 8). El calendario llegó después
+     del slice 10 y lo dibuja desde el primer despliegue (sección 18).
    - Mover y estirar un bloque es la misma mutación de horas que la edición en
      línea, `updateEntryTimes`, con el trío `{ date, start, end }` (mapa,
      slice 8; contrato del slice 3). Y con ella, sus reglas: la hora de pared
@@ -181,11 +182,17 @@ el inicio de semana de la persona (CAL-18), y una fila por franja.
 _No verificado_: que sea la vista con la que abre la página.
 
 **CAL-07 Vista día** — `replicar`
-La misma grilla con una sola columna, y la navegación de a un día. Un selector
-«Día / Semana» arriba de la grilla, con semana por defecto.
+La misma grilla con una sola columna, y la navegación de a un día. Arriba de la
+grilla, el selector de vista son dos enlaces, «Semana» y «Día», con semana por
+defecto: «Día» abre hoy si la semana visible lo contiene y si no su primer día;
+«Semana» abre la semana del día que se ve. En la vista día no hay total de
+semana (CAL-33).
 _No verificado_: la documentación no nombra vistas. Si Clockify no tiene vista
 día, este comportamiento se borra; si la tiene con otro nombre o en otro lugar,
 se corrige.
+_Corregido el 2026-10-04, slice 8_: decía «Un selector «Día / Semana»», sin
+decir qué día abre cada opción. El slice 8 lo construyó como dos enlaces, con
+«Semana» primero.
 
 **CAL-08 Vista mes** — `fuera de alcance`
 Ninguna fuente la menciona. Justificación: una vista mensual no es la misma
@@ -222,12 +229,20 @@ acá quedaron para la fase 2 (PF-19). Ocultar sábado y domingo fijos sería
 inventar una regla que Clockify no tiene. Ver calendario P-05.
 
 **CAL-14 Posición inicial del desplazamiento** — `adaptar`
-Propuesta: al abrir, la grilla se desplaza para que se vea la línea de ahora si
-el período visible contiene hoy, y a las 08:00 si no. Justificación: ninguna
-fuente lo dice y 24 franjas de una hora no entran en una pantalla.
-Es probable que esto sea lo que gobierna «inicio del día» del perfil (PF-15,
-perfil P-02, que quedó apuntado a este slice). Si la verificación lo confirma,
-la hora fija de esta propuesta pasa a ser ese ajuste.
+Al abrir, si el período visible contiene hoy, la grilla queda con la línea de
+ahora una hora por debajo del borde superior —arriba de todo antes de la
+01:00—; si no, con las 08:00 arriba. Se vuelve a desplazar al cambiar de
+período o de vista, y no con una revalidación. **Las 08:00 son una constante
+del cliente, no una preferencia** (decisión del usuario del 2026-10-04).
+Justificación: ninguna fuente lo dice y 24 franjas de una hora no entran en una
+pantalla.
+_No verificado_: a qué hora abre Clockify la grilla. Puede ser lo que gobierna
+«inicio del día» del perfil (PF-15, perfil P-02): si la verificación lo confirma
+(P-07), se cambia solo la constante por esa preferencia.
+_Corregido el 2026-10-04, slice 8_: decía «se desplaza para que se vea la línea
+de ahora», sin decir dónde queda, y que si la verificación lo confirmaba la hora
+fija pasaba a ser el ajuste del perfil. El slice 8 deja la constante; PF-15
+sigue `fuera de alcance` y perfil P-02, abierto y atado a esta respuesta.
 
 ## 3. Navegación
 
@@ -246,11 +261,23 @@ contiene. Sin cota en ninguna dirección: navegar no escribe nada. Justificació
 no documentado; reusa una pieza que ya existe.
 
 **CAL-17 El período visible viaja en la URL** — `adaptar`
-Propuesta: `/calendario?semana=AAAA-MM-DD`, con el primer día del período, y
-`&vista=dia` en la vista día. Una fecha que no es inicio de semana se normaliza
-a la semana que la contiene; una fecha inválida lleva a la semana actual.
-Justificación: es el mismo criterio que PR-95; en un Server Component la URL es
-el estado más barato, y así recargar, volver atrás y compartir funcionan.
+`/calendario?semana=AAAA-MM-DD`, con el primer día del período, y `&vista=dia`
+en la vista día; cualquier otro `vista` es la vista semana. **La URL no se
+reescribe**: un `semana` que no es inicio de semana se interpreta como la
+semana que lo contiene. Las flechas, «Hoy» y el selector de vista enlazan
+siempre al inicio normalizado; el selector del rango (CAL-16) lleva al día
+elegido y el servidor dibuja su período. Un `semana` inválido o repetido lleva
+al período actual de la vista pedida, y también uno cuyo período no se puede
+navegar: el anterior o el siguiente quedan fuera de los años de cuatro cifras,
+o algún día del período, o el siguiente al último, falta entero en la zona de
+la persona (`Pacific/Apia`, 2011-12-30). Justificación: es el mismo criterio
+que PR-95; en un Server Component la URL es el estado más barato, y así
+recargar, volver atrás y compartir funcionan. Un parámetro de la URL no puede
+llevar la página a su error (CAL-87).
+_Corregido el 2026-10-04, slice 8_: decía que la fecha se normalizaba, que se
+puede leer como reescribir la URL, y que una fecha inválida llevaba a «la semana
+actual», también en la vista día. No nombraba el parámetro repetido ni el
+período que no se puede navegar.
 
 **CAL-18 El inicio de semana es el de la persona** — `replicar`
 Decisión del equipo (PF-01, PF-16). La página del calendario dice «You can
@@ -274,19 +301,35 @@ slots.» El borde superior va a la hora de pared del inicio y el inferior a la
 del fin, en la columna de su día.
 
 **CAL-21 Contenido del bloque** — `adaptar`
-La descripción, o «Sin descripción» en gris (TT-50), el horario `HH:mm – HH:mm`
-y la duración. Un bloque que no tiene alto para todo muestra solo la
-descripción, recortada. Con el slice 10 se suma el proyecto y la tarea; con el
-slice 11, el ícono de facturable. Justificación: el contenido exacto no está
-documentado; es el de la fila del rastreador (TT-49).
+En el segmento del día de inicio, en este orden: la descripción, o «Sin
+descripción» en gris (TT-50); el proyecto, o «Proyecto: Tarea», con su punto de
+color, si lo hay; y el horario `{inicio} – {fin}` con el superíndice de días
+(TT-51) y la duración, con las horas en el formato de la persona (PF-13). El
+timer muestra «{inicio} – en curso» y el transcurrido en `h:mm`. Los otros
+segmentos de la misma entrada muestran solo la descripción (CAL-26). Un bloque
+que no tiene alto para todo muestra lo que entra, en ese orden, recortado. Con
+el slice 11 se suma el ícono de facturable. Justificación: el contenido exacto
+no está documentado; es el de la fila del rastreador (TT-49).
+_Corregido el 2026-10-04, slice 8_: decía que el horario iba `HH:mm – HH:mm`,
+que un bloque sin alto mostraba solo la descripción y que el proyecto y la
+tarea se sumaban con el slice 10, que ya estaba en `main`. No decía qué
+muestran los otros segmentos ni el bloque del timer.
 
 **CAL-22 Color del bloque** — `replicar`
-Sin proyecto, el color neutro del tema. Con el slice 10, el color del proyecto
-(PR-15), y cambiar el color de un proyecto cambia todos sus bloques (PR-103).
-**El color es solo el relleno del bloque**: no decide la posición, el tamaño ni
-el orden, así que el slice 10 no toca la grilla.
+Con proyecto, el relleno es el color del proyecto (PR-15) en tono claro
+—mezclado al 20 % con el fondo—, con un borde izquierdo en el color pleno, y el
+texto en el color de primer plano del tema. Sin proyecto, el relleno neutro del
+tema, con su borde. Cambiar el color de un proyecto cambia todos sus bloques
+(PR-103). **El color no decide la posición, el tamaño ni el orden del
+bloque**: la geometría de la grilla no depende del proyecto (sección 18). El
+tono claro y el borde son diseño propio: los tonos 600 de la paleta no dan
+contraste AA con texto blanco, y el borde deja a la vista el color pleno del
+proyecto.
 _No verificado_: que Clockify pinte el bloque con el color del proyecto se ve en
 el producto pero no está escrito, y no sé de qué color pinta uno sin proyecto.
+_Corregido el 2026-10-04, slice 8_: decía que el color era solo el relleno del
+bloque y que llegaba con el slice 10; el slice 8 lo dibuja desde el primer
+despliegue, en tono claro y con el borde izquierdo en el color pleno.
 
 **CAL-23 Detalle al pasar el puntero** — `replicar`
 Documentado: «You can hover over a time block to see full entry details». Un
@@ -372,11 +415,14 @@ calendario P-02.
 
 **CAL-33 Total de la semana** — `replicar`
 Documentado en la página de producto: «See the total tracked time across the
-week.» Arriba de la grilla, al lado del rótulo del rango. Con el corte de
+week.» Arriba de la grilla, en la barra del rango, alineado a la derecha como el
+encabezado de semana del rastreador. Con el corte de
 semana de la persona, y por eso es el mismo número que el encabezado de esa
 semana en el rastreador (TT-47, TT-48).
 _No verificado_: dónde lo pone Clockify. En la vista día, propuesta: el total
 del día, sin el de la semana.
+_Corregido el 2026-10-04, slice 8_: decía «al lado del rótulo del rango»; va a
+la derecha de la misma barra.
 
 **CAL-34 El timer activo suma** — `adaptar`
 Igual que TT-46: al total del día de su inicio y al de la semana, y los dos se
@@ -390,11 +436,18 @@ la columna de hoy, a la altura de la hora actual en la zona de la persona, con
 el color de acento del tema.
 
 **CAL-36 Avanza sola** — `adaptar`
-Se redibuja en el cliente cada minuto, con el reloj corregido por el desfase de
-TT-32, sin pedirle nada al servidor. A la medianoche pasa a la columna
-siguiente; si hoy era la última columna visible, desaparece, y la grilla no
-cambia de período sola. Justificación: no documentado; mismo mecanismo que el
-contador del timer (TT-31).
+La línea avanza en el cliente con el tiempo transcurrido desde el minuto que
+mandó el servidor, corregido por el desfase de TT-32, sin pedirle nada al
+servidor y sin convertir instantes con la zona (ADR 0012); cada revalidación la
+vuelve a anclar (P-11). A la medianoche pasa a la columna siguiente; si hoy era
+la última columna visible, desaparece, y la grilla no cambia de período sola.
+En el minuto siguiente a un cambio de horario puede quedar corrida una hora
+hasta la próxima revalidación, a lo sumo 60 s. Justificación: no documentado;
+mismo mecanismo que el contador del timer (TT-31).
+_Corregido el 2026-10-04, slice 8_: decía que se redibujaba cada minuto «con el
+reloj corregido», sin decir de dónde sale la hora. El cliente no conoce la
+zona, así que la línea es aritmética sobre el minuto del servidor, y un cambio
+de horario la deja corrida hasta revalidar.
 
 **CAL-37 Solo con hoy a la vista** — `replicar`
 Si el período visible no contiene hoy, no hay línea.
@@ -654,12 +707,31 @@ _Corregido el 2026-10-03, slice 5_: decía que `updateEntryTimes` devolvía
 Documentado: «click on the block to open the full view of the time entry». Es
 el mismo diálogo del alta (CAL-45), con los valores de la entrada. La versión
 para el timer activo está en CAL-40.
+_Agregado el 2026-10-04, slice 8_: hasta el slice 8c el diálogo es de solo
+lectura para todos, decisión nuestra para el primer despliegue: así cada bloque
+es un botón con destino antes de que exista la escritura. Se titula «Entrada»,
+o «Timer en curso» para la entrada que corre, y abajo tiene solo «Cerrar». Lo
+abren un clic, `Enter` o `Espacio` sobre el bloque, o un clic en cualquier otro
+segmento de la misma entrada (CAL-26, CAL-74). Al abrir, el foco va a
+«Cerrar»; al cerrar —«Cerrar», `Esc` o un clic afuera— vuelve al botón del
+bloque, o a la región «Calendario» si una revalidación lo sacó. Muestra la
+entrada como estaba al abrirlo: una revalidación no lo cambia ni lo cierra
+(CAL-72). Desde el 8c, el título «Entrada» queda para la membresía desactivada
+(CAL-05, TT-92).
 
 **CAL-66 Campos** — `replicar`
 Descripción, fecha, inicio, fin y duración, con los mismos campos tolerantes del
 modo manual (TT-18 a TT-21). Proyecto y tarea con el slice 10; etiquetas y
 facturable con el 11. Fecha, inicio y fin en solo lectura cuando
 `editableTimes` es falso (CAL-58).
+_Agregado el 2026-10-04, slice 8_: en el diálogo de solo lectura (CAL-65) los
+campos son texto, en este orden: «Descripción», o «Sin descripción» en gris;
+«Proyecto», con su punto y la tarea, o «Sin proyecto» en gris; «Fecha», con el
+rótulo del rastreador («Hoy», «Ayer» o «mié, 01/10»); «Hora de inicio»; «Hora
+de fin», con el superíndice de días (TT-51); y «Duración». En el timer, en
+lugar del fin y la duración, «Fin: en curso» con el transcurrido en `h:mm:ss`,
+que avanza (TT-31, PF-22). Las horas siguen el formato de la persona (PF-13).
+Ningún control edita: los campos tolerantes llegan con el 8c.
 
 **CAL-67 «Guardar», todo o nada** — `adaptar`
 Propuesta: un botón «Guardar» aplica todos los cambios del diálogo juntos, o
@@ -834,16 +906,30 @@ Se dibuja entero atenuado, por CAL-48. Justificación: la de CAL-48.
 ## 15. Estados de error
 
 **CAL-86 Red, sesión y membresía** — `adaptar`
-Valen TT-89 a TT-92 sin cambios: aviso de dos partes con «Reintentar» solo por
-red, salvo en el alta (TT-109); sesión vencida a la pantalla de acceso
-conservando `/calendario` con su período como ruta de vuelta; membresía
-desactivada en solo lectura (CAL-05). Justificación: la de cada TT.
+Valen TT-89, TT-90 y TT-92: aviso de dos partes con «Reintentar» solo por red,
+salvo en el alta (TT-109), y membresía desactivada en solo lectura, con el
+aviso permanente de TT-92 arriba de la grilla (CAL-05). Con la sesión vencida,
+`requireSession` lleva a la pantalla de acceso y, al volver a entrar, el acceso
+lleva siempre a `/`: **no hay ruta de vuelta** a `/calendario` ni al período
+que se veía. Es lo de toda la aplicación; TT-91 la pide y tampoco se cumple en
+`/`. Justificación: la de cada TT; la ruta de vuelta después del acceso no
+existe en ninguna pantalla y no le toca al calendario construirla.
+_Corregido el 2026-10-04, slice 8_: decía que la sesión vencida llevaba a la
+pantalla de acceso conservando `/calendario` con su período como ruta de
+vuelta. El slice 8 entra sin ella. En el 8 la pantalla no escribe, así que
+todavía no hay avisos de dos partes: llegan con el 8c, que es el que tiene
+actions.
 
 **CAL-87 Falla al leer el período** — `adaptar`
-La grilla se arma en el servidor. Si la lectura falla, la página muestra el
-error del shell con un botón que vuelve a pedirla, sin dibujar una grilla vacía
-que se confunda con CAL-84. Justificación: un período vacío y uno que no cargó
-no pueden verse igual.
+La grilla se arma en el servidor. Mientras carga, la página muestra un
+esqueleto anunciado como «Cargando el calendario». Si la lectura falla,
+`/calendario` muestra su propia pantalla de error, «No se pudo cargar el
+calendario.», con un botón «Reintentar» que vuelve a pedirla, sin dibujar una
+grilla vacía que se confunda con CAL-84. Justificación: un período vacío y uno
+que no cargó no pueden verse igual.
+_Corregido el 2026-10-04, slice 8_: decía que la página mostraba el error del
+shell. El shell no tiene pantalla de error; `/calendario` es la primera ruta
+que tiene la suya.
 
 ## 16. Al recargar
 
@@ -912,29 +998,34 @@ CAL-58). Justificación: la de TT-110.
 
 ## 18. Qué depende de proyectos, etiquetas o facturable
 
-El slice 8 va antes del núcleo de proyectos (slices 9 a 11). Lo que cambia
-cuando llegan:
+El slice 8 llegó con el núcleo de proyectos ya en `main` (slices 9 y 10), así
+que el color del proyecto en el bloque (CAL-22), y el proyecto y la tarea en el
+bloque, el detalle, el diálogo de solo lectura y el nombre accesible (CAL-21,
+CAL-23, CAL-66, CAL-75) entraron con él. Lo que falta:
 
-- **Slice 10.** El color del proyecto en el relleno del bloque (CAL-22), y el
-  proyecto y la tarea en el bloque, el detalle y los dos diálogos (CAL-21,
-  CAL-23, CAL-45, CAL-66). Toca el relleno y suma un campo al diálogo. **No
-  toca la grilla**: posición, altura, superposición y gestos no dependen del
-  proyecto.
+- **Slice 8c.** El proyecto y la tarea en el diálogo de alta y editables en el
+  de una entrada (CAL-45, CAL-66).
 - **Slice 11.** Etiquetas y facturable en el detalle y los diálogos, y el ícono
   de facturable en el bloque. Dos campos más del diálogo.
 - **Slice 12.** Nada.
 
-**Todo lo demás de este documento es construible en el slice 8 con entradas sin
-proyecto.** Una entrada sin proyecto se dibuja con el color neutro y es válida
-en todo el recorrido (CAL-91).
+**El proyecto no toca la geometría de la grilla**: posición, altura,
+superposición y gestos no dependen de él. Una entrada sin proyecto se dibuja con
+el relleno neutro y es válida en todo el recorrido (CAL-91).
 
 Dos dependencias que no son de proyectos y conviene tener a la vista:
 
-- **CAL-69, duplicar, es TT-58, del slice 4.** El mapa no pone el slice 4 entre
-  las dependencias del 8. Si el 4 no está mergeado cuando arranque el 8, el
-  menú sale sin «Duplicar» y se agrega después.
-- **CAL-18, CAL-19, CAL-31 y CAL-33 leen del perfil** (slice 7), que ya es
-  dependencia declarada.
+- **CAL-69, duplicar, es TT-58, del slice 4**, que ya está en `main`. Duplicar
+  desde el diálogo llega con el 8c.
+- **CAL-18, CAL-19, CAL-31 y CAL-33 leen del perfil** (slice 7), que también
+  está en `main`.
+
+_Corregido el 2026-10-04, slice 8_: decía que el slice 8 iba antes del núcleo de
+proyectos, que el 10 sumaba después el color, el proyecto y la tarea sin tocar
+la grilla, y que todo lo demás se construía con entradas sin proyecto; lo
+mismo decía la primera decisión del equipo de «Tres clases de comportamiento».
+El 10 ya estaba en `main` cuando arrancó el 8. La dependencia del slice 4 dejó
+de ser condicional.
 
 ## 19. Impacto sobre lo ya construido
 
@@ -963,6 +1054,76 @@ relevamiento obliga.
 **Lo que no se toca**: el esquema, los permisos y las reglas del ADR 0005 y del
 ADR 0006. El calendario no agrega columnas ni acciones de permiso.
 
+## 20. Reparto por slices
+
+El calendario se entrega en tres slices, cada uno desplegable solo: el 8 lee,
+el 8c escribe y el 8b arrastra. El orden completo está en
+[el mapa de la fase 1](../slices/fase1-mapa.md).
+
+### Slice 8 — calendario en lectura
+
+CAL-01, CAL-02, CAL-04, CAL-06, CAL-07, CAL-09 a CAL-12, CAL-14 a CAL-19,
+CAL-20 a CAL-30 en su dibujo, CAL-31 a CAL-38, la primera oración de CAL-41, el
+atenuado de CAL-48, CAL-65 y CAL-66 en solo lectura, CAL-74 en los bloques,
+CAL-75 a CAL-78, CAL-84, CAL-85, CAL-86 sin la ruta de vuelta, CAL-87, CAL-88,
+la primera oración de CAL-89, CAL-90 y CAL-92 en su dibujo, CAL-91 y CAL-93 a
+CAL-96. De CAL-05, lo que se ve: la grilla en solo lectura y el aviso de TT-92.
+Contrato: [fase1-slice8-calendario.md](../slices/fase1-slice8-calendario.md).
+
+- **La grilla lee las entradas que se superponen con el período** (CAL-28): la
+  que empezó antes y la que termina después están; la que empezó antes y
+  termina justo al principio, no. El timer viaja aparte.
+- **Los totales son los de la lista** (CAL-31 a CAL-34, P-02): el total de la
+  semana es el mismo número que el encabezado de esa semana en `/`, y el timer
+  suma al día y al período de su inicio.
+- **Cada bloque es un botón con destino**: abre el diálogo en solo lectura
+  (CAL-65, CAL-66), así el 8 se despliega antes que la escritura.
+- **TT-92 se verifica por el camino nuevo**: la membresía desactivada ve la
+  grilla entera, con sus entradas, y el aviso permanente arriba.
+- **Sin actions propias, la revalidación es la de TT-40**: las actions de
+  `time-entry` revalidan solo `/`, así que volver al calendario con «Atrás»
+  después de cargar horas en `/` puede mostrar la copia anterior hasta la
+  próxima revalidación, a lo sumo 60 s (P-11).
+- **Lo que el slice decide**, todo diseño propio _no verificado_ (P-07):
+  - **CAL-07, CAL-14, CAL-17, CAL-21, CAL-22, CAL-36, CAL-65, CAL-66 y
+    CAL-87**, en su entrada.
+  - **CAL-11.** «Acercar» y «Alejar» en la esquina superior izquierda de la
+    grilla, con el tamaño de franja a la vista («1 h», «30 min», «15 min», «5
+    min»); en su extremo quedan inactivos.
+  - **CAL-15.** En la vista día, las flechas dicen «Día anterior» y «Día
+    siguiente», y el rango se rotula «Hoy», «Ayer» o «mié, 01/10».
+  - **CAL-16.** El rango abre un calendario de mes sin cota; elegir un día
+    lleva a su período.
+  - **CAL-23 y CAL-77.** El detalle aparece al pasar el puntero y al enfocar, y
+    se cierra con `Esc`. En pantallas táctiles no aparece; el diálogo muestra
+    lo mismo.
+  - **CAL-26 y CAL-76.** De una entrada con varios segmentos visibles, solo el
+    primero es un botón en el orden de `Tab`; los otros abren el mismo diálogo
+    con el puntero y quedan ocultos para el lector de pantalla.
+  - **CAL-38.** El bloque del timer se distingue de los cerrados por el borde
+    punteado.
+  - **CAL-75.** El nombre accesible suma al final el proyecto, o «Proyecto:
+    Tarea», cuando lo hay. El del timer es «…, desde las {inicio}, en curso».
+
+### Lo que queda
+
+- **Slice 8c, la escritura**
+  ([fase1-slice8c-calendario-escritura.md](../slices/fase1-slice8c-calendario-escritura.md)):
+  crear desde la grilla y con «Agregar entrada» (CAL-43, CAL-45 a CAL-47, el
+  clic sin efecto de CAL-48 y de la franja que no existe de CAL-30, CAL-49 y el
+  botón de CAL-74); el diálogo editable, con «Guardar», «Detener», duplicar y
+  borrar (CAL-40, CAL-58 en su parte de diálogo, CAL-65 a CAL-70, CAL-72); la
+  segunda oración de CAL-41; los avisos de dos partes de CAL-86; CAL-92 por el
+  diálogo; CAL-97 a CAL-99; y los controles de escritura de CAL-05. Ahí se
+  registran P-01, P-04 y P-06.
+- **Slice 8b, el arrastre** (esbozo en §8 del contrato del 8c, después del 8c):
+  crear arrastrando (CAL-44), mover y estirar (CAL-50 a CAL-57), las asas de
+  CAL-58, CAL-59 a CAL-64, el «ni soltar» de CAL-30 y CAL-48, la segunda
+  oración de CAL-89, «se estira» de CAL-90 y CAL-100.
+- **Fuera de los tres**: P-03 (CAL-39) y P-05 (CAL-13), abiertos con su
+  propuesta. La ruta de vuelta después del acceso (CAL-86, TT-91) no existe en
+  ninguna pantalla.
+
 ## Pendientes de definición del equipo
 
 Numeración propia de este documento. Para no confundirla con la del
@@ -971,7 +1132,7 @@ rastreador, de proyectos y del perfil, se cita como `calendario P-nn`.
 ### Abiertos
 
 Todos tienen una propuesta escrita en el comportamiento que citan. Ninguno
-bloquea el arranque del contrato, pero los cuatro primeros cambian lo que el
+bloquea el arranque del contrato, pero los tres primeros cambian lo que el
 contrato tiene que decir.
 
 - **P-01 Crear con un timer corriendo** (CAL-47). Propuesta: se rechaza con el
@@ -979,10 +1140,6 @@ contrato tiene que decir.
   claro que lo bloquee. Si se permite, `createManualEntry` necesita una
   excepción por origen, y la misma entrada se podría crear desde una pantalla y
   no desde la otra.
-- **P-02 Total del día de una entrada que cruza la medianoche** (CAL-32).
-  Propuesta: entera en el día de inicio, como la lista, para que las dos
-  pantallas no den dos totales distintos del mismo día. La alternativa es
-  partirla por segmento, que coincide con lo dibujado y no con la lista.
 - **P-03 Arrastrar el inicio del timer activo** (CAL-39). Propuesta: en el
   slice 8 no; el inicio se corrige desde el diálogo. Agregar el asa después no
   cambia ninguna otra regla.
@@ -999,10 +1156,15 @@ contrato tiene que decir.
   obliga a volver al rastreador.
 - **P-07** La lista de verificación contra el workspace real, abajo.
 
+_Corregido el 2026-10-04, slice 8_: P-02 pasó a «Cerrados».
+
 Y uno que no es de este documento pero se cruza: **perfil P-02**, «inicio del
-día» (PF-15), quedó apuntado a este slice. Si la verificación de CAL-14 muestra
-que es la hora a la que abre la grilla, se cierra ahí; si no tiene que ver con
-el calendario, se cierra solo, como prevé el perfil.
+día» (PF-15). El slice 8 no lo cierra: la grilla abre con las 08:00 arriba como
+constante del cliente (CAL-14). Si la verificación de CAL-14 muestra que esa
+hora es «inicio del día», se cambia solo la constante por la preferencia; si no
+tiene que ver con el calendario, se cierra solo, como prevé el perfil.
+_Corregido el 2026-10-04, slice 8_: decía que perfil P-02 quedaba apuntado a
+este slice y se cerraba en él si la verificación lo confirmaba.
 
 ### calendario P-07, la lista de verificación
 
@@ -1063,3 +1225,15 @@ divergencia de las que este documento propone.
 - **CAL-73** — Con la página del calendario abierta y el foco fuera de un
   campo, ¿hacen algo `n`, `c`, `s` y `m`?
 - **CAL-84** — ¿Qué muestra una semana sin entradas?
+
+### Cerrados
+
+Se dejan con su identificador porque el documento y los contratos los citan.
+
+- **P-02 Total del día de una entrada que cruza la medianoche** (CAL-32). Cada
+  entrada cerrada suma entera en el día de su inicio, como en la lista; la
+  columna siguiente dibuja horas que su total no cuenta. CAL-32 queda como
+  estaba. Vale también para el período: una entrada que empezó antes del
+  primer día dibuja su segmento y no suma a ningún total visible, y el timer
+  suma solo en la columna y el período de su día de inicio (CAL-34, CAL-93).
+  Decisión del usuario del 2026-10-04; la construye el slice 8.

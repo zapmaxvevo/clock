@@ -1254,10 +1254,17 @@ guardó vuelve además a su valor anterior. Justificación: el título es nuestr
 Clockify no muestra este aviso porque reintenta solo.
 
 **TT-91 Sesión vencida** — `adaptar`
-La action devuelve 401 y la interfaz lleva a la pantalla de acceso conservando
-la ruta de vuelta. Un timer activo no se pierde: sigue abierto en la base y
-reaparece al volver a entrar. Justificación: es comportamiento de nuestra
-autenticación, no de Clockify.
+Una página o una action que encuentra la sesión vencida lleva a la pantalla de
+acceso. **No hay ruta de vuelta**: al volver a entrar, el acceso lleva siempre
+a `/`, desde cualquier pantalla. Un timer activo no se pierde: sigue abierto en
+la base y reaparece al volver a entrar. Justificación: es comportamiento de
+nuestra autenticación, no de Clockify; la ruta de vuelta después del acceso no
+existe en ninguna pantalla.
+_Corregido el 2026-10-04, slice 8_: decía que la action devolvía 401 y que la
+interfaz llevaba a la pantalla de acceso conservando la ruta de vuelta.
+`requireSession` redirige a `/login` en las páginas y en las actions
+(`src/server/session.ts`, `src/server/action.ts`), y el acceso vuelve siempre a
+`/` (`google-sign-in-button.tsx`). Es lo mismo que CAL-86.
 
 **TT-92 Membresía desactivada mientras la sesión está abierta** — `adaptar`
 `can` devuelve falso y la pantalla queda en solo lectura, con un aviso
@@ -1282,7 +1289,7 @@ modelo.
 | TT-101 | Detener en el mismo minuto en que se arrancó                | La entrada se guarda con la duración real en segundos; la lista la muestra como `0:00` y suma sus segundos al total del día. La duración cero solo la rechaza el modo manual (TT-73), no la base.                                                                                      |
 | TT-102 | Dos pestañas arrancando a la vez                            | Queda un solo timer. Ver TT-37.                                                                                                                                                                                                                                                        |
 | TT-103 | Borrar la entrada que está corriendo desde otra pestaña     | La pestaña con la barra descubre que no existe al reintentar, limpia la barra y avisa «No se pudo detener el timer.» con «Esa entrada ya no existe.», el mismo texto de TT-80.                                                                                                         |
-| TT-104 | Proyecto archivado mientras la entrada ya lo tiene asignado | La entrada conserva el proyecto y lo muestra; el selector no lo ofrece para entradas nuevas.                                                                                                                                                                                           |
+| TT-104 | Proyecto archivado mientras la entrada ya lo tiene asignado | La entrada conserva el proyecto y lo muestra; el selector no lo ofrece para entradas nuevas. Se quita con «Sin proyecto» (TT-10), que se ofrece aun con el catálogo vacío (TT-87).                                                                                                     |
 | TT-105 | Etiqueta borrada mientras la entrada la tiene               | La etiqueta desaparece de la entrada. **No verificado**: Clockify podría conservarla; depende del módulo de etiquetas.                                                                                                                                                                 |
 | TT-106 | Cambio de zona horaria de la persona con entradas cargadas  | Los instantes no se tocan; los grupos de día se recalculan y una entrada puede cambiar de día.                                                                                                                                                                                         |
 | TT-107 | Timer que lleva más de 24 horas corriendo                   | Sigue corriendo y al detenerlo se guarda entero (TT-42, TT-74). No hay tope. Una vez cerrada, si el trío no la puede expresar, sus horarios no se editan desde la fila (TT-110).                                                                                                       |

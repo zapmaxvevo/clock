@@ -13,12 +13,17 @@ import {
   roundMinutes,
   addDaysToKey,
   clockDifferenceMinutes,
+  clockToMinutes,
   crossesMidnight,
   dayKeyLabel,
   earliestDayKey,
   instantFromLocal,
   isAfterYear9999,
   isClock,
+  MINUTES_PER_DAY,
+  minuteOfDayIn,
+  minutesToClock,
+  nonexistentMinutes,
   parseClockInput,
   parseDayKey,
   parseDurationInput,
@@ -30,6 +35,7 @@ import {
   weekBounds,
   weekKeyLabel,
   weekStartKey,
+  weekdayLabel,
   canonicalTimeZone,
   clockLabel,
   formatDayKey,
@@ -435,6 +441,26 @@ describe("formatClock", () => {
   });
 });
 
+describe("minuteOfDayIn", () => {
+  it("cuenta los minutos del día en la zona pedida, no en UTC", () => {
+    const instant = new Date("2026-10-02T15:00:00Z");
+    expect(minuteOfDayIn(instant, buenosAires)).toBe(12 * 60);
+    expect(minuteOfDayIn(instant, madrid)).toBe(17 * 60);
+  });
+
+  it("va de 0 a la medianoche local a 1439 en su último minuto", () => {
+    expect(minuteOfDayIn(new Date("2026-10-02T03:00:00Z"), buenosAires)).toBe(0);
+    expect(minuteOfDayIn(new Date("2026-10-02T02:59:59Z"), buenosAires)).toBe(
+      MINUTES_PER_DAY - 1,
+    );
+  });
+
+  it("después del adelanto de Madrid sigue el reloj, no lo transcurrido", () => {
+    // El 29/03/2026 a las 01:00 UTC Madrid pasa de las 02:00 a las 03:00.
+    expect(minuteOfDayIn(new Date("2026-03-29T01:00:00Z"), madrid)).toBe(180);
+  });
+});
+
 describe("extraDays", () => {
   it("es 0 cuando la entrada no cruza la medianoche", () => {
     expect(
@@ -587,6 +613,117 @@ describe("dayKeyLabel", () => {
 
   it("no inventa un rótulo para el día siguiente", () => {
     expect(dayKeyLabel("2026-10-03", "2026-10-02", "dd/MM/yyyy")).toBe("sáb, 03/10");
+  });
+});
+
+describe("weekdayLabel", () => {
+  it("rotula con el día de la semana también hoy y ayer", () => {
+    expect(weekdayLabel("2026-10-02", "2026-10-02", "dd/MM/yyyy")).toBe("vie, 02/10");
+    expect(weekdayLabel("2026-10-01", "2026-10-02", "dd/MM/yyyy")).toBe("jue, 01/10");
+  });
+
+  it("devuelve la clave tal cual si no es un día", () => {
+    expect(weekdayLabel("2026-02-30", "2026-10-02", "dd/MM/yyyy")).toBe("2026-02-30");
+  });
+});
+
+describe("clockToMinutes", () => {
+  it("cuenta los minutos desde las 00:00", () => {
+    expect(clockToMinutes("00:00")).toBe(0);
+    expect(clockToMinutes("13:05")).toBe(785);
+    expect(clockToMinutes("23:59")).toBe(1439);
+  });
+
+  it("da null con una hora que no es canónica", () => {
+    expect(clockToMinutes("8:00")).toBeNull();
+    expect(clockToMinutes("24:00")).toBeNull();
+  });
+});
+
+describe("minutesToClock", () => {
+  it("arma la hora canónica y da la vuelta a las 24 h", () => {
+    expect(minutesToClock(0)).toBe("00:00");
+    expect(minutesToClock(785)).toBe("13:05");
+    expect(minutesToClock(1440)).toBe("00:00");
+    expect(minutesToClock(-1)).toBe("23:59");
+  });
+});
+
+describe("nonexistentMinutes", () => {
+  /**
+   * Cada minuto del hueco no tiene instante, y el anterior y el siguiente, si
+   * son del mismo día, sí.
+   */
+  function expectGap(dayKey: string, timeZone: string, from: number, to: number) {
+    for (let minute = from; minute < to; minute += 1) {
+      expect(instantFromLocal(dayKey, minutesToClock(minute), timeZone)).toBeNull();
+    }
+    if (from > 0) {
+      expect(instantFromLocal(dayKey, minutesToClock(from - 1), timeZone)).not.toBeNull();
+    }
+    if (to < 1440) {
+      expect(instantFromLocal(dayKey, minutesToClock(to), timeZone)).not.toBeNull();
+    }
+  }
+
+  it("da la hora del adelanto de Madrid", () => {
+    // El 29/03/2026 a las 01:00 UTC Madrid pasa de +01:00 a +02:00.
+    expect(nonexistentMinutes("2026-03-29", madrid)).toEqual([{ from: 120, to: 180 }]);
+    expectGap("2026-03-29", madrid, 120, 180);
+  });
+
+  it("no da nada en el día del atraso de Madrid, que tiene 25 horas", () => {
+    expect(nonexistentMinutes("2026-10-25", madrid)).toEqual([]);
+  });
+
+  it("no da nada en los días vecinos del adelanto", () => {
+    expect(nonexistentMinutes("2026-03-28", madrid)).toEqual([]);
+    expect(nonexistentMinutes("2026-03-30", madrid)).toEqual([]);
+  });
+
+  it("no da nada en Buenos Aires, sin cambio de horario", () => {
+    expect(nonexistentMinutes("2026-03-29", buenosAires)).toEqual([]);
+    expect(nonexistentMinutes("2026-10-25", buenosAires)).toEqual([]);
+  });
+
+  it("da los 30 minutos del adelanto de Lord Howe", () => {
+    // El 03/10/2026 a las 15:30 UTC Lord Howe pasa de +10:30 a +11:00.
+    const lordHowe = "Australia/Lord_Howe";
+    expect(nonexistentMinutes("2026-10-04", lordHowe)).toEqual([{ from: 120, to: 150 }]);
+    expectGap("2026-10-04", lordHowe, 120, 150);
+  });
+
+  it("da la primera hora del día en que Santiago adelanta a la medianoche", () => {
+    // El 06/09/2026 a las 04:00 UTC Santiago pasa de -04:00 a -03:00.
+    const santiago = "America/Santiago";
+    expect(nonexistentMinutes("2026-09-06", santiago)).toEqual([{ from: 0, to: 60 }]);
+    expectGap("2026-09-06", santiago, 0, 60);
+  });
+
+  it("da el día entero que Apia saltó", () => {
+    // El 30/12/2011 a las 10:00 UTC Apia pasa de -10:00 a +14:00.
+    const apia = "Pacific/Apia";
+    expect(nonexistentMinutes("2011-12-30", apia)).toEqual([{ from: 0, to: 1440 }]);
+    expectGap("2011-12-30", apia, 0, 1440);
+    expect(nonexistentMinutes("2011-12-29", apia)).toEqual([]);
+    expect(nonexistentMinutes("2011-12-31", apia)).toEqual([]);
+  });
+
+  it("da la hora del adelanto de Chatham, a más de 13 h de UTC", () => {
+    // El 26/09/2026 a las 14:00 UTC Chatham pasa de +12:45 a +13:45.
+    const chatham = "Pacific/Chatham";
+    expect(nonexistentMinutes("2026-09-27", chatham)).toEqual([{ from: 165, to: 225 }]);
+    expectGap("2026-09-27", chatham, 165, 225);
+  });
+
+  it("no da nada en un atraso de fracción de minuto: Lima, 1890-01-01", () => {
+    // A las 05:09 UTC Lima pasa de −05:08:12 a −05:08:36, desplazamientos de la
+    // hora media local con segundos.
+    expect(nonexistentMinutes("1890-01-01", "America/Lima")).toEqual([]);
+  });
+
+  it("no da nada con una clave que no es un día", () => {
+    expect(nonexistentMinutes("2026-02-30", madrid)).toEqual([]);
   });
 });
 
@@ -947,6 +1084,16 @@ describe("los rótulos de día y de semana en los cuatro formatos (TT-44, TT-47)
     expect(weekKeyLabel("2026-09-14", "2026-10-02", 1, format)).toBe(sameYear);
     // La semana cruza el año: las dos puntas llevan el año.
     expect(weekKeyLabel("2025-12-29", "2026-10-02", 1, format)).toBe(otherYear);
+  });
+
+  it.each<[DateFormat, string, string]>([
+    ["dd/MM/yyyy", "jue, 01/10", "mié, 31/12/2025"],
+    ["dd-MM-yyyy", "jue, 01-10", "mié, 31-12-2025"],
+    ["yyyy-MM-dd", "jue, 10-01", "mié, 2025-12-31"],
+    ["MM/dd/yyyy", "jue, 10/01", "mié, 12/31/2025"],
+  ])("weekdayLabel con %s", (format, sameYear, otherYear) => {
+    expect(weekdayLabel("2026-10-01", "2026-10-05", format)).toBe(sameYear);
+    expect(weekdayLabel("2025-12-31", "2026-10-05", format)).toBe(otherYear);
   });
 
   it("dayLabel rotula con el formato de quien mira", () => {
