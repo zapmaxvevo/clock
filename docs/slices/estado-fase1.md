@@ -5,32 +5,33 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-04.
 
 ## Dónde estamos
 
-| Slice                                      | Estado                                          |
-| ------------------------------------------ | ----------------------------------------------- |
-| 1 — Timer sin proyecto                     | En `main`                                       |
-| 2 — Modo manual                            | En `main`                                       |
-| 2b — Reintento de «Iniciar»                | En `main`                                       |
-| 3 — Corregir horas y fecha                 | En `main`                                       |
-| 4 — Continuar, duplicar, descartar, atajos | En `main`                                       |
-| 5 — Semana y paginación                    | En `main`                                       |
-| 9 — Núcleo de proyectos                    | En `main`                                       |
-| 10 — Selector de proyecto y tarea          | En `main` (local): falta `git push origin main` |
-| 7 — Perfil                                 | Contrato con ronda 1 aplicada; sigue ahora      |
-| 6 — Selección y acciones en masa           | Contrato con ronda 1 aplicada; va después del 7 |
-| 7b — Perfil: nombre editable y tema        | Sin contrato                                    |
-| 8, 11–13                                   | Sin contrato                                    |
+| Slice                                      | Estado                                                            |
+| ------------------------------------------ | ----------------------------------------------------------------- |
+| 1 — Timer sin proyecto                     | En `main`                                                         |
+| 2 — Modo manual                            | En `main`                                                         |
+| 2b — Reintento de «Iniciar»                | En `main`                                                         |
+| 3 — Corregir horas y fecha                 | En `main`                                                         |
+| 4 — Continuar, duplicar, descartar, atajos | En `main`                                                         |
+| 5 — Semana y paginación                    | En `main`                                                         |
+| 9 — Núcleo de proyectos                    | En `main`                                                         |
+| 10 — Selector de proyecto y tarea          | En `main`                                                         |
+| 7 — Perfil                                 | Contrato con ronda 2 aplicada; en curso en `fase1/slice-7-perfil` |
+| 6 — Selección y acciones en masa           | Contrato con ronda 2 aplicada; va después del 7                   |
+| 7b — Perfil: nombre editable y tema        | Sin contrato                                                      |
+| 8, 11–13                                   | Sin contrato                                                      |
 
-Los slices 1 a 5 y 9 están en `origin/main`. El slice 10 pasó las seis revisiones
-(`correcciones-fase1-slice10-revisiones.md`) y su ronda de correcciones, y está mergeado en
-`main` local: **falta `git push origin main`**. Corrida final: 504 de unidad, 634 de
+Los slices 1 a 5, 9 y 10 están en `origin/main`. El slice 10 pasó las seis revisiones
+(`correcciones-fase1-slice10-revisiones.md`) y su ronda de correcciones. Corrida final: 504 de unidad, 634 de
 integración y 81 de 82 en e2e; la que falló fue un 429 del endpoint de sesión y su spec
 pasa entero al repetirlo. Con el 10 viajaron los contratos del 6 y del 7 y los ADR 0010 a 0012. No
 quedan agentes corriendo ni trabajo sin commitear.
 
 ## Lo primero de la sesión siguiente
 
-1. **Ronda corta del `architecture-reviewer`** sobre los contratos del 7 y del 6 contra el
-   árbol con el 10 adentro (sus contratos lo piden en §0). Después, el pipeline del 7.
+1. **Pipeline del 7** en `fase1/slice-7-perfil`. La ronda corta del `architecture-reviewer`
+   contra el árbol con el 10 ya se hizo y se aplicó a los dos contratos
+   (`correcciones-fase1-slice7-ronda2.md`, `correcciones-fase1-slice6-ronda2.md`): la zona
+   del perfil pasa a `Combobox` con búsqueda por cualquier parte del nombre.
 2. **Orden decidido: 7 → 6.** El contrato del **8** (calendario), cuando el 7 esté en
    `main`; después el 7b, 11, 12, 13.
 3. Pendientes chicos de paridad que dejó el 10: PR-85 sigue diciendo «si el rol lo

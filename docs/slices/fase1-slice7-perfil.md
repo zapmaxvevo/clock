@@ -9,7 +9,9 @@ horaria y los formatos el módulo `time-entry` y la pantalla `/`.
 - **Lugar en el plan:** [mapa de la fase 1](fase1-mapa.md), slice 7. Cierra
   P-13 del rastreador.
 - **Correcciones aplicadas:** ronda 1,
-  [`correcciones-fase1-slice7.md`](correcciones-fase1-slice7.md).
+  [`correcciones-fase1-slice7.md`](correcciones-fase1-slice7.md), y ronda 2,
+  contra el árbol con el 10 mergeado,
+  [`correcciones-fase1-slice7-ronda2.md`](correcciones-fase1-slice7-ronda2.md).
 - **Decisiones de arquitectura asociadas:**
   - [ADR 0012, un solo juego de formatos en el servidor y en el cliente](../adr/0012-un-solo-juego-de-formatos.md):
     nace acá. Fija cómo llegan las preferencias a lo que se formatea en el
@@ -20,6 +22,9 @@ horaria y los formatos el módulo `time-entry` y la pantalla `/`.
     que ese ADR anticipó.
   - [ADR 0006](../adr/0006-conservar-el-extremo-sin-cambios.md): no cambia. La
     conservación compara horas canónicas, no rótulos.
+  - [ADR 0010, un módulo consulta las reglas de otro por su service](../adr/0010-un-modulo-consulta-las-reglas-de-otro-por-su-service.md):
+    no cambia. `time-entry` importa de `profile`; `profile` no importa nada de
+    `time-entry` ni de `project` (§5.3).
 
 El contrato da por tomadas estas decisiones del equipo (`perfil.md`):
 
@@ -53,21 +58,35 @@ slices 5, 9 y 10 mergeados.
   `src/hooks/use-action.ts`—, las primitivas `select`, `label` y `radio-group`
   de `src/components/ui/`, y el test de componente con `renderToStaticMarkup`
   de `projects-screen.test.tsx`. El módulo `profile` nace usándolas.
-- **Del 10** ([contrato](fase1-slice10-selector-de-proyecto.md)):
-  - **ocupa las migraciones `0005` y `0006`**. La de este slice tiene etiqueta
-    fija y número no fijo: es la siguiente libre (§2);
-  - **paga la deuda del mapa (§5)**: `time-entry` ya usa `handle`, `useAction`
-    y `useNewId` compartidos cuando este arranca, y `actions.ts` revalida con
+- **Del 10** ([contrato](fase1-slice10-selector-de-proyecto.md)), ya en
+  `main`:
+  - **ocupó las migraciones `0005` y `0006`**: la de este slice es la `0007`
+    (§2);
+  - **pagó la deuda del mapa (§5)**: `time-entry` usa `handle`, `useAction` y
+    `useNewId` compartidos, y `actions.ts` revalida con
     `handle(work, { paths: ["/"], messages })`, que el cambio de §4.3 no
     altera;
-  - toca los mismos archivos que este: `time-entry/service.ts` y
-    `schema.ts` (la vista suma el proyecto), `entry-row.tsx`, `manual-bar.tsx`,
-    `timer-bar.tsx` y `tracker-screen.tsx`, donde monta el proveedor del
-    catálogo. El de formatos va al lado (§5.5).
+  - **la vista trae el par**: `TimeEntryView` lleva `project` y `task`, que
+    arma `toView(row: EntryWithRefs, workspace)` en
+    `time-entry/service.ts:159`. Los rótulos con formato de §5.4 entran en esa
+    misma función;
+  - **monta el catálogo**: `TrackingCatalogProvider` de
+    `project/components/tracking-catalog.tsx`, en `tracker-screen.tsx:56`. El
+    proveedor de formatos va al lado (§5.5);
+  - **toca los mismos archivos que este**: `time-entry/service.ts`,
+    `schema.ts`, `entry-row.tsx`, `manual-bar.tsx` y `tracker-screen.tsx`.
+    `timer-bar.tsx` no está entre ellos: le pasa a `RunningStartEditor` la
+    vista entera (`running={running}`), así que el cambio de §6 en el editor
+    no lo toca;
+  - **dejó el `Combobox`** de `src/components/ui/combobox.tsx` (Base UI), que
+    usa `project/components/project-picker.tsx`, y `normalizeSearch`, privada
+    en `project/components/picker-model.ts:44`. Este slice los usa para el
+    selector de zona (§6).
 
-**Antes de implementar, una ronda corta del `architecture-reviewer` contra el
-árbol con el 10 mergeado** (lección del slice 9 en `estado-fase1.md`): este
-contrato se escribió antes de que el 10 existiera en código.
+**La ronda corta del `architecture-reviewer` contra el árbol con el 10
+mergeado se hizo** (lección del slice 9 en `estado-fase1.md`), y este contrato
+ya la incorpora:
+[`correcciones-fase1-slice7-ronda2.md`](correcciones-fase1-slice7-ronda2.md).
 
 **El 6 entra después y se adapta él** a lo que este deja: `toView` y
 `TimeEntryView` (§5.4), `parseClockInput`, `dayKeyLabel` y `weekKeyLabel`
@@ -130,6 +149,9 @@ Entran por arrastre, verificándose por el camino nuevo:
   como la opción equivalente (§5.1, §5.6). La de omisión,
   `America/Argentina/Buenos_Aires`, aparece como la que el entorno lista para
   esa zona.
+- **El selector de zona busca por cualquier parte del nombre**, sin distinguir
+  mayúsculas ni acentos, como el selector de proyecto (TT-07): `tokyo`
+  encuentra `Asia/Tokyo` y `buenos`, `America/Buenos_Aires` (§6).
 - **El aviso de PF-46** usa el título de TT-92 y una línea propia del perfil
   (§6, `labels.ts`).
 - **La zona guardada cuya forma canónica el entorno deja de listar sigue
@@ -183,6 +205,11 @@ correcciones de §10 de `perfil.md` que lista la tabla de consecuencias.
 | `.claude/skills/code-conventions/SKILL.md`                             | La excepción de las tablas de la cuenta a la regla del `workspace_id` (§2.1).                                                                                                                           | —                                                             |
 | `docs/parity/perfil.md` y `docs/parity/time-tracker.md`                | Lo de «Lo que el slice decide»; las filas de §10 de `perfil.md` que este contrato corrige (§6).                                                                                                         | —                                                             |
 
+**`src/lib/text.ts` suma `initialsOf` (§5.6) y recibe `normalizeSearch`**, que
+deja de ser privada de `src/modules/project/components/picker-model.ts`. En
+`picker-model.ts` solo cambia el import, y `picker-model.test.ts` tiene que
+seguir verde sin tocarlo (§6).
+
 **El slice 9 no tiene nada que adaptar.** `/proyectos` no muestra ninguna
 fecha, hora ni duración: dibuja nombres, colores y tareas. Lo único sensible al
 idioma es el orden alfabético (`Intl.Collator("es")` en
@@ -198,10 +225,11 @@ totales dependen del formato de duración, que no entra (§1, «Queda afuera»).
 ## 2. Cambios de esquema
 
 **Una tabla nueva, `user_preference`**, en una migración generada con
-`npm run db:generate -- --name=user_preference`. **La etiqueta es fija y el
-número no**: con el 10 mergeado antes, que ocupa la `0005` y la `0006`, esta es
-la siguiente libre, `drizzle/<n>_user_preference.sql` con su snapshot. El
-diario `drizzle/meta/_journal.json` no se edita a mano.
+`npm run db:generate -- --name=user_preference`. **Es la `0007`**: el 10 ocupó
+la `0005` y la `0006`. Salen `drizzle/0007_user_preference.sql` y
+`drizzle/meta/0007_snapshot.json`; si el generador asigna otro número, entró
+otra migración en `main` después de este contrato y se para antes de seguir.
+El diario `drizzle/meta/_journal.json` no se edita a mano.
 
 ```ts
 // src/server/db/schema.ts
@@ -756,6 +784,20 @@ El módulo `workspace` no se entera: `ensureWorkspaceContext` no cambia, y quien
 compone es `session.ts`. La dependencia queda `time-entry → profile →
 workspace`, sin ciclos.
 
+**`profile` no importa nada de `time-entry` ni de `project`**: ni su service,
+ni su schema, ni sus componentes. Es la regla de una sola dirección por par de
+módulos del ADR 0010, que vale para el módulo entero. `profile` importa de
+`workspace` (`weekStartOf`, `WorkspaceContext`), de `src/server/time` y de
+`src/lib/`; lo que comparte con el selector de proyecto, `normalizeSearch`,
+pasa a `src/lib/text.ts` para que el selector de zona no dependa de
+`project/components` (§6).
+
+**`timeSettingsOf` es una función pura, como `weekStartOf`**: arma un valor a
+partir del contexto que recibe, sin consultas y sin `tx`. No es una función de
+validación del ADR 0010 —las que reciben la transacción de quien llama, solo
+leen con ella y lanzan el error del dueño—, y `time-entry` la usa por
+`trackerWorkspaceOf` sin pasarle nada más que el contexto.
+
 ### 5.4 El único punto de lectura en el servidor
 
 ```ts
@@ -831,8 +873,8 @@ export function useDisplayFormats(): DisplayFormats;
 - **Cada pantalla que muestra horas o fechas monta también el proveedor**, con
   los formatos de su propia lectura. El rastreador lo monta en
   `tracker-screen.tsx` con `workspace.formats`, que ya llegan en
-  `TrackerWorkspace`, al lado del proveedor del catálogo del slice 10. Gana el
-  más cercano.
+  `TrackerWorkspace`, al lado de `TrackingCatalogProvider`. Gana el más
+  cercano.
   - **Por qué**: Next 16 conserva los layouts compartidos en una navegación
     del cliente. Después de cambiar una preferencia en `/perfil` y navegar a
     `/`, el layout puede seguir con los formatos viejos mientras la página
@@ -938,8 +980,8 @@ Rutas absolutas. **(nuevo)** marca lo que crea el slice.
 
 ```
 /home/maxi/program/clock/src/server/db/schema.ts
-/home/maxi/program/clock/drizzle/<n>_user_preference.sql                           (nuevo, generado)
-/home/maxi/program/clock/drizzle/meta/<n>_snapshot.json                            (nuevo, generado)
+/home/maxi/program/clock/drizzle/0007_user_preference.sql                          (nuevo, generado)
+/home/maxi/program/clock/drizzle/meta/0007_snapshot.json                           (nuevo, generado)
 /home/maxi/program/clock/drizzle/meta/_journal.json
 /home/maxi/program/clock/src/server/time/index.ts
 /home/maxi/program/clock/src/server/time/time.test.ts
@@ -949,6 +991,7 @@ Rutas absolutas. **(nuevo)** marca lo que crea el slice.
 /home/maxi/program/clock/src/server/session.ts
 /home/maxi/program/clock/src/lib/text.ts
 /home/maxi/program/clock/src/lib/text.test.ts                                       (nuevo)
+/home/maxi/program/clock/src/modules/project/components/picker-model.ts
 /home/maxi/program/clock/src/modules/profile/schema.ts                              (nuevo)
 /home/maxi/program/clock/src/modules/profile/schema.test.ts                         (nuevo)
 /home/maxi/program/clock/src/modules/profile/repository.ts                          (nuevo)
@@ -969,11 +1012,16 @@ Rutas absolutas. **(nuevo)** marca lo que crea el slice.
 /home/maxi/program/clock/.claude/skills/code-conventions/SKILL.md
 ```
 
-- Los archivos de `drizzle/` salen del generador y no se editan a mano. `<n>`
-  es el número que asigne el generador (§2).
+- Los archivos de `drizzle/` salen del generador y no se editan a mano (§2).
 - **`.claude/skills/code-conventions/SKILL.md`** suma, en la sección «Capas»,
   la excepción de §2.1: las tablas de la cuenta, sin `workspace_id`, filtran
   por el `user_id` de la sesión. Va **en el mismo commit que crea la tabla**.
+- **`src/lib/text.ts`** suma `initialsOf` y recibe `normalizeSearch`, que pasa
+  de privada en `picker-model.ts` a exportada acá, con el mismo cuerpo y el
+  mismo comentario de TT-07. **En `picker-model.ts` solo cambia el import**, y
+  los dos cambios van en el mismo commit para que el árbol compile en cada
+  paso. `text.test.ts` suma los casos de `normalizeSearch`: mayúsculas,
+  acentos y espacios en los extremos.
 - **`src/test/factories.ts`** suma `seedPreferences(userId, valores)`, que
   escribe la fila con las columnas que se le pasen.
 - **Los tests de `time-entry` que hoy siembran un workspace en Madrid** para
@@ -998,6 +1046,8 @@ Rutas absolutas. **(nuevo)** marca lo que crea el slice.
 /home/maxi/program/clock/src/modules/profile/components/profile-screen.tsx            (nuevo)
 /home/maxi/program/clock/src/modules/profile/components/profile-screen.test.tsx       (nuevo)
 /home/maxi/program/clock/src/modules/profile/components/preference-field.tsx          (nuevo)
+/home/maxi/program/clock/src/modules/profile/components/timezone-search.ts            (nuevo)
+/home/maxi/program/clock/src/modules/profile/components/timezone-search.test.ts       (nuevo)
 /home/maxi/program/clock/src/modules/profile/components/labels.ts                     (nuevo)
 /home/maxi/program/clock/src/modules/time-entry/components/tracker-screen.tsx
 /home/maxi/program/clock/src/modules/time-entry/components/time-draft.ts
@@ -1016,6 +1066,8 @@ Rutas absolutas. **(nuevo)** marca lo que crea el slice.
   `package-lock.json` entran en esta lista solo para ese cambio.
 - **`entry-week.test.ts`** solo ajusta su vista de prueba a los dos campos
   nuevos de `TimeEntryView`.
+- **`combobox.tsx` e `input-group.tsx`** de `src/components/ui/` ya existen
+  desde el 10 y no cambian.
 
 ### tests-slice7
 
@@ -1066,7 +1118,7 @@ Antes del merge:
   `formatDuration`, `formatElapsed`, `instantFromLocal`, `weekStartKey`,
   `startOfDayKey` y `weekBounds`.
 - `use-group-total.ts`, `day-group.tsx`, `week-group.tsx`,
-  `elapsed-counter.tsx`.
+  `elapsed-counter.tsx`, `timer-bar.tsx`.
 - `src/app/globals.css`: el tema es del 7b.
 - Los documentos de slices anteriores y de correcciones, que son históricos.
 
@@ -1082,13 +1134,14 @@ Antes del merge:
      `ProfileView`;
    - `startClock` y `endClock` en `timeEntryView`, y `formats` en
      `TrackerWorkspace`;
-   - `initialsOf`;
+   - `initialsOf`, y `normalizeSearch` en `src/lib/text.ts` con el import de
+     `picker-model.ts`;
    - la acción nueva en `permissions`.
 2. **`frontend-dev` arranca en paralelo** con `avatar.tsx`,
    `display-formats.tsx` y su test, `labels.ts` y el menú de usuario.
-3. Con el primer commit en la rama, el resto: la pantalla, el proveedor de
-   `tracker-screen.tsx`, los campos de hora, `time-draft.ts` y
-   `date-field.tsx`.
+3. Con el primer commit en la rama, el resto: la pantalla, `timezone-search.ts`
+   y su test, el proveedor de `tracker-screen.tsx`, los campos de hora,
+   `time-draft.ts` y `date-field.tsx`.
 
 ### Responsabilidades que no se leen en el nombre del archivo
 
@@ -1097,9 +1150,9 @@ Antes del merge:
   `UserMenu` el nombre, el correo y la foto de la sesión. No arma ningún
   formato.
 - **`tracker-screen.tsx`** monta `DisplayFormatsProvider` con
-  `workspace.formats` alrededor de la barra y la lista, junto al proveedor del
-  catálogo del slice 10 (§5.5). No lee preferencias: los formatos llegan en el
-  `TrackerWorkspace` que ya recibe.
+  `workspace.formats` alrededor de la barra y la lista, junto a
+  `TrackingCatalogProvider` (§5.5). No lee preferencias: los formatos llegan en
+  el `TrackerWorkspace` que ya recibe.
 - **`src/app/(app)/perfil/page.tsx`** solo compone: la sesión,
   `getProfileView(session, session.user)` y
   `<ProfileScreen view={…} actions={{ updatePreference }} />`. Es el único
@@ -1115,9 +1168,11 @@ Antes del merge:
   - **el formato de duración** como texto fijo, con la nota «Lo define el
     workspace.» (PF-02);
   - con `canEdit` en falso, el aviso de PF-46 arriba de las preferencias.
-- **`preference-field.tsx`** es el único `"use client"` de la pantalla: un
-  `Select` de `components/ui` con su rótulo, las opciones con su ejemplo y
-  `useAction(actions.updatePreference, …)`.
+- **`preference-field.tsx`** es el único `"use client"` de la pantalla. Dibuja
+  el control según la clave —un `Combobox` para la zona, un `Select` de
+  `components/ui` para cada formato—, con su rótulo, las opciones con su
+  ejemplo y `useAction(actions.updatePreference, …)`. Lo que sigue vale para
+  los tres salvo donde se nombra uno.
   - **El valor elegido de la zona es `view.timezoneOption`**, no
     `preferences.timezone`: con el predeterminado, el texto guardado no es el
     de ninguna opción (§5.1).
@@ -1128,13 +1183,49 @@ Antes del merge:
     «Reintentar» solo con `unexpected` (`retryHandlerOf`).
   - **No usa `disabled`** mientras guarda ni cuando `canEdit` es falso: un
     control con foco que pasa a `disabled` pierde el foco a `body`. Con
-    `canEdit` en falso lleva `aria-disabled` y no abre. Pasa en la práctica:
-    una membresía desactivada que intenta un cambio recibe `forbidden`, y la
-    revalidación trae `canEdit` en falso con el foco todavía en el control.
-  - El selector de zona lleva unas cuatrocientas opciones y usa la búsqueda
-    por escritura de `Select`, que compara desde el inicio del texto: se llega
-    tecleando el nombre completo desde la región (`America/B…`). Buscar por
-    una parte del nombre queda como deuda (§8).
+    `canEdit` en falso, los dos `Select` llevan `aria-disabled` y no abren; la
+    zona pasa a texto (abajo). Pasa en la práctica: una membresía desactivada
+    que intenta un cambio recibe `forbidden`, y la revalidación trae `canEdit`
+    en falso con el foco todavía en el control.
+  - **La zona es un `Combobox`** de `src/components/ui/combobox.tsx`, armado
+    como el `ProjectPicker` de `project/components/project-picker.tsx`: un
+    disparador con rol `combobox` que muestra la opción elegida con su
+    desplazamiento y abre el popup con el buscador y la lista de unas
+    cuatrocientas zonas, cada una con su desplazamiento.
+    - **Filtra por cualquier parte del nombre, sin distinguir mayúsculas ni
+      acentos**: `Tokyo` y `tokyo` encuentran `Asia/Tokyo`, y `buenos`,
+      `America/Buenos_Aires`. La primitiva recibe la lista ya filtrada por
+      `matchingTimeZones` (`filter={null}`), como el `ProjectPicker` con
+      `picker-model.ts`.
+    - **Una tecla imprimible sobre el disparador cerrado no elige ninguna
+      opción**, como el `preventTypeahead` del `ProjectPicker`: la zona no
+      cambia sin abrir el selector.
+    - **El buscador** se rotula «Buscar zona horaria» y, sin coincidencias, la
+      lista dice «Ninguna zona horaria coincide con la búsqueda.».
+    - **Con `canEdit` en falso, la zona es texto**: el nombre de
+      `view.timezoneOption` y su desplazamiento, sin disparador, como el
+      `ProjectPicker` con `readOnly` (TT-92). La consecuencia sobre el foco
+      está en §8.
+- **`timezone-search.ts`** es el filtro del selector de zona, puro:
+
+  ```ts
+  // src/modules/profile/components/timezone-search.ts
+  type TimeZoneChoices = ProfileView["options"]["timezones"];
+
+  /**
+   * Las zonas cuyo nombre contiene la búsqueda, comparadas las dos con
+   * `normalizeSearch` y con `_` leído como espacio, en el orden recibido.
+   * Con la búsqueda vacía, todas.
+   */
+  export function matchingTimeZones(
+    zones: TimeZoneChoices,
+    search: string,
+  ): TimeZoneChoices;
+  ```
+
+  Importa `normalizeSearch` de `src/lib/text.ts` y el tipo `ProfileView` con
+  `import type`; nada de `project` (§5.3).
+
 - **`display-formats.tsx`** tiene el proveedor y el hook (§5.5), y nada más.
 - **`user-menu.tsx`** (PF-10, PF-30): el disparador es la foto o las
   iniciales, con el nombre accesible «Menú de la cuenta». Dentro de un
@@ -1151,7 +1242,8 @@ Antes del merge:
   del valor aceptado. El borrador sigue guardando la canónica. El campo de
   duración no cambia.
 - **`running-start-editor.tsx`** arma su par inicial con `running.startClock`,
-  no con `startLabel`.
+  no con `startLabel`: su prop `running` pasa a pedir `startClock` en lugar de
+  `startLabel`. `timer-bar.tsx` ya le pasa la vista entera y no cambia.
 - **`clock-field.tsx`** recibe por prop el modo de teclado: con 12 h, uno que
   deje escribir `am` y `pm` en un teléfono; con 24 h y en la duración, el
   numérico de hoy.
@@ -1187,6 +1279,10 @@ Antes del merge:
   | `inactiveTitle`   | «Tu acceso al workspace está desactivado.» (TT-92)                                                                         |
   | `inactiveMessage` | «Podés ver tu perfil, pero no cambiarlo. Pedile a quien administra el workspace que vuelva a activar tu membresía.»        |
   | `menu`            | «Perfil», «Salir»; el disparador, «Menú de la cuenta»                                                                      |
+
+  Suma además, para el selector de zona, `timezoneSearch` («Buscar zona
+  horaria») y `timezoneEmpty` («Ninguna zona horaria coincide con la
+  búsqueda.»).
 
 ## 7. Criterios de aceptación
 
@@ -1261,12 +1357,14 @@ Antes del merge:
     membresía con su nota y el formato de duración con su nota. Las zonas son
     las del entorno más la efectiva si su forma canónica falta, cada una con su
     desplazamiento, y la elegida es la equivalente a la efectiva; los formatos,
-    con su ejemplo.
+    con su ejemplo. El selector de zona encuentra una zona por cualquier parte
+    de su nombre, sin distinguir mayúsculas ni acentos.
 16. **Una falla al guardar** (PF-32, PF-36) — El control vuelve al valor
     anterior y aparece el aviso de dos partes con «Reintentar». Reintentar
     guarda. Recargar muestra lo guardado.
-17. **La membresía no activa** (PF-46) — Los valores se ven, los controles no
-    abren y no usan `disabled`, y está el aviso.
+17. **La membresía no activa** (PF-46) — Los valores se ven; la zona es texto
+    sin disparador, los dos `Select` no abren y no usan `disabled`, y está el
+    aviso.
 18. **El menú de usuario** (PF-10, PF-30, PF-44) — El disparador muestra la foto
     o las iniciales; adentro están el nombre, el correo, «Perfil» y «Salir».
     `initialsOf` da dos letras con dos palabras, una con una, y la del correo
@@ -1308,7 +1406,18 @@ del componente, como el vacío del slice 9.
 
 **El test de componente** sigue el patrón de `projects-screen.test.tsx`:
 `renderToStaticMarkup`, una vista armada a mano y un `ProfileActions` con
-dobles escritos a mano, sin `vi.mock`.
+dobles escritos a mano, sin `vi.mock`. Con `canEdit` en verdadero afirma el
+disparador de la zona, con rol `combobox` y el nombre de `timezoneOption`; con
+`canEdit` en falso, ese nombre como texto y ningún `combobox`, y los dos
+`Select` con `aria-disabled` y sin `disabled` (criterios 15 y 17).
+
+**El filtro del selector de zona** (criterio 15) se prueba en unidad, en
+`timezone-search.test.ts`: `tokyo` y `TOKYO` encuentran `Asia/Tokyo`; `buenos`
+encuentra `America/Buenos_Aires` por la mitad del nombre, y `buenos aires`
+también (el `_` se lee como espacio); `Bogotá` encuentra
+`America/Bogota`; la búsqueda vacía devuelve todas, en el orden recibido. Los
+casos de `normalizeSearch` están en `src/lib/text.test.ts`, y
+`picker-model.test.ts` sigue verde sin cambios.
 
 **El criterio 9 cruza los simultáneos con `raceThroughBarrier`** de
 `src/test/concurrency.ts`, como el slice 9: un `Promise.all` suelto casi nunca
@@ -1320,7 +1429,7 @@ Dueño: `tests-slice7`. Cada recorrido usa una persona propia, que nace con los
 predeterminados. Las horas «de hoy» son siempre pasadas (`00:00–00:01` en la
 zona de Buenos Aires); toda espera es por la respuesta del servidor
 (`withServerAction`), no por un estado ya dibujado; las opciones de un `Select`
-se buscan en `page`, porque se dibujan en un portal.
+y del selector de zona se buscan en `page`, porque se dibujan en un portal.
 
 **La opción de Buenos Aires no se escribe a mano**: el test la calcula con
 `new Intl.DateTimeFormat("en-US", { timeZone: "America/Argentina/Buenos_Aires" }).resolvedOptions().timeZone`,
@@ -1344,11 +1453,12 @@ que es la forma canónica que lista el entorno (`America/Buenos_Aires` en Node
    selector de fecha de la barra manual y ver el mismo rótulo en el botón. Los
    rótulos esperados los calcula el test a partir del día civil, con los
    ayudantes de `e2e/days.ts`.
-4. **Criterio 7, PF-38.** Cargar una entrada de hoy, `00:00` a `00:01`. Elegir
-   `Asia/Tokyo` y ver la fila como `12:00 – 12:01`. **El grupo donde aparece
-   lo calcula el test**: es el mismo día civil, que en Tokio puede ser «Hoy» o
-   «Ayer» según la hora a la que corra (`todayIn("Asia/Tokyo")`). Volver a
-   Buenos Aires eligiendo la opción de Buenos Aires y ver la fila como al
+4. **Criterios 7 y 15, PF-38.** Cargar una entrada de hoy, `00:00` a `00:01`.
+   Abrir el selector de zona, escribir «Tokyo», elegir `Asia/Tokyo` y ver la
+   fila como `12:00 – 12:01`. **El grupo donde aparece lo calcula el test**: es
+   el mismo día civil, que en Tokio puede ser «Hoy» o «Ayer» según la hora a la
+   que corra (`todayIn("Asia/Tokyo")`). Volver a Buenos Aires escribiendo
+   «Buenos» y eligiendo la opción de Buenos Aires, y ver la fila como al
    principio. Tokio y Buenos Aires no tienen cambio de horario, así que las
    horas esperadas son fijas.
 5. **Criterio 16.**
@@ -1382,11 +1492,13 @@ que es la forma canónica que lista el entorno (`America/Buenos_Aires` en Node
   usuario la confirmó el 2026-10-03. La paridad reescribe P-03 y PF-11.
 - **Las formas de 12 h y las cortas de fecha son decisiones nuestras** (§5.1),
   sin verificar contra Clockify. Se suman a la lista P-09 de `perfil.md`.
-- **La búsqueda por escritura del selector de zonas compara desde el inicio
-  del texto**: `Buenos` no encuentra `America/Buenos_Aires`; hay que teclear
-  desde la región. Un selector con búsqueda por cualquier parte del nombre,
-  como el de Clockify, pide una primitiva de combobox que hoy no está en
-  `components/ui`.
+- **La zona en solo lectura es texto, sin disparador** (§6), como el
+  `ProjectPicker` con `readOnly`. Si la revalidación trae `canEdit` en falso
+  con el foco en el disparador de la zona —una membresía desactivada que
+  intenta un cambio—, el disparador sale del árbol y el foco cae a `body`. Los
+  dos `Select` no tienen el problema: siguen montados con `aria-disabled`. Es
+  el mismo caso que tiene hoy el selector de proyecto del rastreador cuando
+  `canTrack` pasa a falso.
 - **El calendario emergente del selector de fecha arranca la semana por el
   idioma** (lunes), no por el primer día de la persona. El slice 8 va a
   necesitar el primer día en el cliente; cuando lo traiga, el selector lo usa.
