@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { db, type Transaction } from "@/server/db";
 import { membership, userPreference } from "@/server/db/schema";
-import { ForbiddenError, type Actor, type MembershipStatus } from "@/server/permissions";
+import type { Actor, MembershipStatus } from "@/server/permissions";
 import {
   canonicalTimeZone,
   DATE_FORMATS,
@@ -43,8 +43,9 @@ const unlistedZone = "Etc/GMT+3";
 let workspaceId: string;
 let userId: string;
 
-function actorFor(id: string, status: MembershipStatus = "active"): Actor {
-  return { userId: id, workspaceId, role: "member", status };
+/** El permiso lo consulta la action: el service recibe siempre una membresía activa. */
+function actorFor(id: string): Actor {
+  return { userId: id, workspaceId, role: "member", status: "active" };
 }
 
 async function rowOf(id: string) {
@@ -309,6 +310,52 @@ describe("updatePreference (criterio 9: PF-32)", () => {
     );
   });
 
+  describe("dos primeros pedidos simultáneos de la misma clave", () => {
+    // La barrera inserta la fila sin confirmarla y la descarta: los dos pedidos
+    // llegan sin fila y se traban al asegurarla.
+    const holdInsert = (tx: Transaction) => tx.insert(userPreference).values({ userId });
+
+    it("con el mismo valor, el segundo sale sin efecto: un solo registro", async () => {
+      await raceThroughBarrier(holdInsert, [
+        () =>
+          updatePreference(actorFor(userId), { key: "timezone", value: "Asia/Tokyo" }),
+        () =>
+          updatePreference(actorFor(userId), { key: "timezone", value: "Asia/Tokyo" }),
+      ]);
+
+      expect((await rowOf(userId))?.timezone).toBe("Asia/Tokyo");
+      expect(await auditOf(userId)).toEqual([
+        expect.objectContaining({
+          previousValue: { timezone: null },
+          nextValue: { timezone: "Asia/Tokyo" },
+        }),
+      ]);
+    });
+
+    it("con valores distintos, el segundo registra como anterior el valor del primero", async () => {
+      await raceThroughBarrier(holdInsert, [
+        () =>
+          updatePreference(actorFor(userId), { key: "timezone", value: "Asia/Tokyo" }),
+        () =>
+          updatePreference(actorFor(userId), {
+            key: "timezone",
+            value: "America/New_York",
+          }),
+      ]);
+
+      const rows = await auditFor("user_preference", userId);
+      const first = rows.find(
+        (row) => row.previousValue === JSON.stringify({ timezone: null }),
+      );
+      const second = rows.find((row) => row !== first);
+      expect(rows).toHaveLength(2);
+      expect(second?.previousValue).toBe(first?.nextValue);
+      expect(JSON.stringify({ timezone: (await rowOf(userId))?.timezone })).toBe(
+        second?.nextValue,
+      );
+    });
+  });
+
   it("dos primeros pedidos simultáneos de claves distintas crean una fila con las dos columnas", async () => {
     // La barrera inserta la fila sin confirmarla: los dos pedidos no la ven y
     // se traban al insertar contra su clave primaria.
@@ -325,46 +372,6 @@ describe("updatePreference (criterio 9: PF-32)", () => {
       timeFormat: "12h",
       dateFormat: "yyyy-MM-dd",
     });
-  });
-});
-
-describe("updatePreference: el permiso (criterio 11: PF-34, PF-46)", () => {
-  it.each(["inactive", "invited"] as const)(
-    "una membresía %s recibe ForbiddenError y no escribe ni deja registro",
-    async (status) => {
-      await expect(
-        updatePreference(actorFor(userId, status), { key: "timeFormat", value: "12h" }),
-      ).rejects.toBeInstanceOf(ForbiddenError);
-      expect(await rowOf(userId)).toBeUndefined();
-      expect(await auditOf(userId)).toEqual([]);
-    },
-  );
-
-  it("una membresía inactive no cambia una fila que ya existe, tampoco con el valor guardado", async () => {
-    await seedPreferences(userId, { timeFormat: "24h" });
-    for (const value of ["24h", "12h"] as const) {
-      await expect(
-        updatePreference(actorFor(userId, "inactive"), { key: "timeFormat", value }),
-      ).rejects.toBeInstanceOf(ForbiddenError);
-    }
-    expect((await rowOf(userId))?.timeFormat).toBe("24h");
-  });
-
-  it("los cinco roles cambian sus preferencias", async () => {
-    for (const role of [
-      "owner",
-      "admin",
-      "project_manager",
-      "team_manager",
-      "member",
-    ] as const) {
-      const id = await seedMember(workspaceId, role);
-      await updatePreference(
-        { userId: id, workspaceId, role, status: "active" },
-        { key: "timeFormat", value: "12h" },
-      );
-      expect([role, (await rowOf(id))?.timeFormat]).toEqual([role, "12h"]);
-    }
   });
 });
 

@@ -5,8 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { db } from "@/server/db";
 import { membership, userPreference } from "@/server/db/schema";
-import type { MembershipStatus } from "@/server/permissions";
-import { seedUser, seedWorkspace, type SeededWorkspace } from "@/test/factories";
+import type { MembershipStatus, Role } from "@/server/permissions";
+import {
+  seedPreferences,
+  seedUser,
+  seedWorkspace,
+  type SeededWorkspace,
+} from "@/test/factories";
 import { auditFor } from "@/test/queries";
 
 import { profileMessages, type UpdatePreferenceInput } from "./schema";
@@ -71,13 +76,13 @@ const wholeTree = { path: "/", type: "layout" };
 
 let seeded: SeededWorkspace;
 
-/** Una sesión en el workspace sembrado, con la membresía ya creada en ese estado. */
-async function signInAs(status: MembershipStatus = "active") {
+/** Una sesión en el workspace sembrado, con la membresía ya creada en ese estado y rol. */
+async function signInAs(status: MembershipStatus = "active", role: Role = "member") {
   const email = `${randomUUID()}@empresa.com`;
   const id = await seedUser(email);
   await db
     .insert(membership)
-    .values({ workspaceId: seeded.workspaceId, userId: id, role: "member", status });
+    .values({ workspaceId: seeded.workspaceId, userId: id, role, status });
   mocks.sessionUser = { id, email };
   return id;
 }
@@ -132,7 +137,7 @@ describe("updatePreference (criterio 12)", () => {
     expect(mocks.revalidated).toEqual([wholeTree]);
   });
 
-  it("la sesión siguiente trae lo guardado: el siguiente pedido responde las dos claves", async () => {
+  it("el segundo pedido conserva la clave del primero", async () => {
     await signInAs();
     await actions.updatePreference({ key: "timezone", value: "Asia/Tokyo" });
 
@@ -159,6 +164,15 @@ describe("updatePreference (criterio 12)", () => {
 
     expect(result.ok).toBe(true);
     expect((await rowOf(userId))?.timezone).toBe("America/Argentina/Buenos_Aires");
+  });
+
+  it("acepta UTC aunque el entorno no la liste (PF-11)", async () => {
+    const userId = await signInAs();
+
+    const result = await actions.updatePreference({ key: "timezone", value: "UTC" });
+
+    expect(result.ok && result.data.preferences.timezone).toBe("UTC");
+    expect((await rowOf(userId))?.timezone).toBe("UTC");
   });
 
   it.each([
@@ -223,6 +237,38 @@ describe("updatePreference (criterio 12)", () => {
       expect(mocks.revalidated).toEqual([wholeTree]);
     },
   );
+
+  it("una membresía inactive no cambia una fila que ya existe, tampoco con el valor guardado", async () => {
+    const userId = await signInAs("inactive");
+    await seedPreferences(userId, { timeFormat: "24h" });
+
+    for (const value of ["24h", "12h"] as const) {
+      const result = await actions.updatePreference({ key: "timeFormat", value });
+      expect([value, result.ok || result.code]).toEqual([value, "forbidden"]);
+    }
+    expect((await rowOf(userId))?.timeFormat).toBe("24h");
+    expect(await auditFor("user_preference")).toEqual([]);
+  });
+
+  it("los cinco roles cambian sus preferencias (PF-34)", async () => {
+    for (const role of [
+      "owner",
+      "admin",
+      "project_manager",
+      "team_manager",
+      "member",
+    ] as const) {
+      const userId = await signInAs("active", role);
+
+      const result = await actions.updatePreference({ key: "timeFormat", value: "12h" });
+
+      expect([role, result.ok, (await rowOf(userId))?.timeFormat]).toEqual([
+        role,
+        true,
+        "12h",
+      ]);
+    }
+  });
 
   it("una membresía inactive con un pedido inválido responde la validación, que corre antes del permiso", async () => {
     await signInAs("inactive");

@@ -1,7 +1,7 @@
 import { initialsOf } from "@/lib/text";
 import { recordAudit } from "@/server/audit";
 import { db } from "@/server/db";
-import { assertCan, can, type Actor } from "@/server/permissions";
+import { can, type Actor } from "@/server/permissions";
 import {
   canonicalTimeZone,
   clockLabel,
@@ -206,16 +206,18 @@ function columnOf(input: UpdatePreferenceInput): PreferenceColumn {
 }
 
 /**
- * PF-11 a PF-13, PF-32, PF-34, PF-35. Pedir el valor ya guardado es un éxito
- * sin efecto (TT-89); un nulo no es igual a su predeterminado, porque elegirlo
- * explícitamente deja de seguir al predeterminado.
+ * PF-11 a PF-13, PF-32, PF-35. El permiso (PF-34) lo consulta la action. Pedir
+ * el valor ya guardado es un éxito sin efecto (TT-89); un nulo no es igual a
+ * su predeterminado, porque elegirlo explícitamente deja de seguir al
+ * predeterminado.
  */
 export async function updatePreference(
   actor: Actor,
   input: UpdatePreferenceInput,
 ): Promise<UpdatePreferenceResult> {
-  assertCan(actor, "profile.own.update", ownProfileResource(actor));
   return db.transaction(async (tx) => {
+    // La fila asegurada pone en fila a los pedidos de la persona, también al primero.
+    await profileRepository.ensurePreferences(tx, actor.userId);
     const row = await profileRepository.findPreferencesForUpdate(tx, actor.userId);
     const previous = row?.[input.key] ?? null;
     if (previous === input.value) {

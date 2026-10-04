@@ -538,9 +538,14 @@ export function canonicalTimeZone(value: string): string | null {
   }
 }
 
-/** Las zonas que ofrece el entorno, en su forma canónica y en orden alfabético. */
+/**
+ * Las zonas que ofrece el entorno, en su forma canónica y en orden alfabético.
+ * Suma `UTC` si el entorno no la lista, como Node 25: es su propia forma
+ * canónica y sin ella no se podría elegir (PF-11).
+ */
 export function supportedTimeZones(): readonly string[] {
-  return [...Intl.supportedValuesOf("timeZone")].sort();
+  const listed = Intl.supportedValuesOf("timeZone");
+  return (listed.includes("UTC") ? [...listed] : [...listed, "UTC"]).sort();
 }
 
 /**

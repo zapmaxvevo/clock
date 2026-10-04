@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
   dayBounds,
@@ -995,6 +995,24 @@ describe("las zonas por su forma canónica (PF-35)", () => {
     expect(zones.length).toBeGreaterThan(300);
     expect([...zones].sort()).toEqual(zones);
     expect(zones.filter((zone) => canonicalTimeZone(zone) !== zone)).toEqual([]);
+  });
+
+  it("UTC está en la lista aunque el entorno no la nombre, y sus alias la eligen (PF-11)", () => {
+    expect(supportedTimeZones()).toContain("UTC");
+    expect(isSupportedTimeZone("UTC")).toBe(true);
+    expect(isSupportedTimeZone("Etc/UTC")).toBe(true);
+    expect(isSupportedTimeZone("GMT")).toBe(true);
+  });
+
+  it("UTC aparece una sola vez si el entorno ya la lista", () => {
+    const listed = vi
+      .spyOn(Intl, "supportedValuesOf")
+      .mockReturnValue(["UTC", "Asia/Tokyo"]);
+    try {
+      expect(supportedTimeZones()).toEqual(["Asia/Tokyo", "UTC"]);
+    } finally {
+      listed.mockRestore();
+    }
   });
 });
 

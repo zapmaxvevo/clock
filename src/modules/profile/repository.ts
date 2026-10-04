@@ -11,8 +11,6 @@ export type PreferenceColumn =
   | { readonly timeFormat: string }
   | { readonly dateFormat: string };
 
-type Executor = Transaction | typeof db;
-
 /**
  * Único lugar con acceso a datos del módulo. `user_preference` es de la cuenta
  * y no tiene workspace: toda consulta filtra por el `user_id` de la sesión, que
@@ -20,16 +18,25 @@ type Executor = Transaction | typeof db;
  */
 export const profileRepository = {
   /** Sin bloqueo. `undefined` es «nunca eligió nada». */
-  async findPreferences(
-    userId: string,
-    tx: Executor = db,
-  ): Promise<UserPreferenceRow | undefined> {
-    const rows = await tx
+  async findPreferences(userId: string): Promise<UserPreferenceRow | undefined> {
+    const rows = await db
       .select()
       .from(userPreference)
       .where(eq(userPreference.userId, userId))
       .limit(1);
     return rows.at(0);
+  },
+
+  /**
+   * Crea la fila vacía si falta, para que `findPreferencesForUpdate` tenga qué
+   * bloquear: Postgres no bloquea una fila que no existe, y sin ella dos
+   * primeros pedidos simultáneos leerían los dos «sin fila».
+   */
+  async ensurePreferences(tx: Transaction, userId: string): Promise<void> {
+    await tx
+      .insert(userPreference)
+      .values({ userId })
+      .onConflictDoNothing({ target: userPreference.userId });
   },
 
   /** Con bloqueo: el pedido escribe sobre lo que leyó. */
