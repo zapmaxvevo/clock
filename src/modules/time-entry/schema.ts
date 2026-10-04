@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { sameId, type ProjectPair } from "@/lib/project-pair";
 import { noNullCharacter } from "@/lib/text";
 import type { ActionErrorCode } from "@/server/action";
 import { isClock, parseDayKey } from "@/server/time";
@@ -45,12 +46,6 @@ const description = z
 
 /** Id de una entrada nueva, elegido por el cliente: ver el ADR 0007. */
 const newEntryId = z.uuidv4();
-
-/** El proyecto y la tarea de una entrada. Nulo es «sin proyecto» y «sin tarea». */
-export type ProjectPair = {
-  readonly projectId: string | null;
-  readonly taskId: string | null;
-};
 
 /** TT-11 y TT-70: la tarea no viaja sola. */
 function hasProjectForTask(pair: ProjectPair): boolean {
@@ -135,12 +130,9 @@ export const updateRunningStartInput = z.object({
   start: clockInput,
 });
 
-/**
- * El id nuevo no puede ser el de la original. Se compara sin distinguir
- * mayúsculas porque la base sí los iguala.
- */
+/** El id nuevo no puede ser el de la original, ni con otras mayúsculas. */
 function isNewId(input: { readonly id: string; readonly sourceId: string }): boolean {
-  return input.id.toLowerCase() !== input.sourceId.toLowerCase();
+  return !sameId(input.id, input.sourceId);
 }
 
 /** Un alta que parte de una entrada existente: continuar y duplicar. */

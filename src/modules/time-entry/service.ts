@@ -1,3 +1,4 @@
+import { samePair, type ProjectPair } from "@/lib/project-pair";
 import { DomainError } from "@/server/action";
 import { db, type Transaction } from "@/server/db";
 import { recordAudit } from "@/server/audit";
@@ -28,7 +29,7 @@ import { projectMessages, type ProjectRef } from "@/modules/project/schema";
 import { assertTrackable } from "@/modules/project/service";
 import { weekStartOf, type WorkspaceContext } from "@/modules/workspace/service";
 
-import { pairToCheck, samePair } from "./assignment";
+import { pairToCheck } from "./assignment";
 import {
   timeEntryRepository,
   type EntryRefs,
@@ -50,7 +51,6 @@ import {
   type DiscardTimerResult,
   type DuplicateEntryInput,
   type DuplicateEntryResult,
-  type ProjectPair,
   type StartTimerValues,
   type StartTimerResult,
   type StopTimerInput,

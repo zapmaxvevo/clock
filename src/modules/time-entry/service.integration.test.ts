@@ -22,7 +22,12 @@ import {
   shiftClock,
   type WeekStart,
 } from "@/server/time";
-import { queueBehindBarrier, raceThroughBarrier, warmPool } from "@/test/concurrency";
+import {
+  queueBehindBarrier,
+  raceThroughBarrier,
+  waitForBlockedBackends,
+  warmPool,
+} from "@/test/concurrency";
 import {
   buenosAires,
   seedClient,
@@ -5053,6 +5058,104 @@ describe("continuar y duplicar con proyecto (criterio 8: TT-57, TT-58)", () => {
   });
 });
 
+/**
+ * Corre `work` mientras otra transacción sostiene `for update` sobre la fila
+ * `id`. Responde con lo que termine `work`, su error incluido, o con
+ * `"blocked"` si se trabó esperando el bloqueo. Al final suelta el bloqueo y
+ * espera a `work`, que no queda corriendo en el test siguiente.
+ */
+async function outcomeWhileLocked(id: string, work: () => Promise<unknown>) {
+  let holding = () => {};
+  const held = new Promise<void>((resolve) => {
+    holding = resolve;
+  });
+  let release = () => {};
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const holder = db.transaction(async (tx) => {
+    await lockRow(id)(tx);
+    holding();
+    await released;
+  });
+  await Promise.race([held, holder]);
+  const running = work().then(
+    () => "resolved",
+    (error: unknown) => error,
+  );
+  const waiting = new AbortController();
+  try {
+    return await Promise.race([
+      running,
+      waitForBlockedBackends({ count: 1, signal: waiting.signal }).then(() => "blocked"),
+    ]);
+  } finally {
+    waiting.abort();
+    release();
+    await holder;
+    await running;
+  }
+}
+
+describe("las altas validan el par antes de escribir (§4.4)", () => {
+  const ws = workspaceOf(buenosAires);
+  const tt77 = { code: "not_found", message: projectMessages.projectUnavailable };
+
+  /** Las tres altas con un proyecto archivado: la de «Iniciar» lo pide, las otras lo copian. */
+  async function archivedCreations() {
+    const archived = await seedProject({ workspaceId, archived: true });
+    const source = await seedEntryWith({ projectId: archived.id, taskId: null });
+    return {
+      startTimer: (id: string) =>
+        startTimer(actor, ws, {
+          id,
+          description: "",
+          projectId: archived.id,
+          taskId: null,
+        }),
+      continueEntry: (id: string) =>
+        continueEntry(actor, ws, { id, sourceId: source.id }),
+      duplicateEntry: (id: string) =>
+        duplicateEntry(actor, ws, { id, sourceId: source.id }),
+    };
+  }
+
+  it.each(["startTimer", "continueEntry", "duplicateEntry"] as const)(
+    "%s con el id de una entrada de otro miembro responde TT-77, no forbidden, y no escribe",
+    async (name) => {
+      const create = (await archivedCreations())[name];
+      const previous = await seedRunning();
+      const foreign = await seedTimeEntry({
+        workspaceId,
+        userId: await seedMember(workspaceId, "member"),
+        startedAt: "2026-10-02T09:00:00Z",
+        endedAt: "2026-10-02T10:00:00Z",
+      });
+      const rows = await allTimeEntries();
+
+      await expect(create(foreign.id)).rejects.toMatchObject(tt77);
+      expect(await allTimeEntries()).toEqual(rows);
+      expect(await auditFor("time_entry")).toEqual([]);
+      expect((await timeEntryById(previous.id))?.endedAt).toBeNull();
+    },
+  );
+
+  it.each(["startTimer", "continueEntry"] as const)(
+    "%s responde TT-77 sin esperar el bloqueo del timer abierto",
+    async (name) => {
+      const create = (await archivedCreations())[name];
+      const previous = await seedRunning();
+      const rows = await allTimeEntries();
+
+      const outcome = await outcomeWhileLocked(previous.id, () => create(randomUUID()));
+
+      expect(outcome).toMatchObject(tt77);
+      expect(await allTimeEntries()).toEqual(rows);
+      expect((await timeEntryById(previous.id))?.endedAt).toBeNull();
+    },
+  );
+});
+
 describe("la vista con su proyecto (criterio 9: TT-49, TT-50, PR-71, PR-101 … PR-103)", () => {
   const ws = workspaceOf(buenosAires);
   const now = new Date("2026-10-02T15:00:00Z");
@@ -5060,7 +5163,7 @@ describe("la vista con su proyecto (criterio 9: TT-49, TT-50, PR-71, PR-101 … 
   it("getTrackerState trae project y task en el timer y en cada entrada de la lista", async () => {
     const { web, design } = await seedTrackable();
     const running = await seedEntryWith(
-      { projectId: web.id, taskId: null },
+      { projectId: web.id, taskId: design.id },
       { running: true },
     );
     const closed = await seedEntryWith({ projectId: web.id, taskId: design.id });
@@ -5074,7 +5177,7 @@ describe("la vista con su proyecto (criterio 9: TT-49, TT-50, PR-71, PR-101 … 
     const state = await getTrackerState(actor, ws, { from: null }, now);
     expect(state.running?.id).toBe(running.id);
     expect(state.running?.project).toEqual({ id: web.id, name: "Web", color: "green" });
-    expect(state.running?.task).toBeNull();
+    expect(state.running?.task).toEqual({ id: design.id, name: "Diseño" });
     const entries = daysOf(state).flatMap((day) => day.entries);
     expect(entries.find((entry) => entry.id === closed.id)).toMatchObject({
       project: { id: web.id, name: "Web", color: "green" },
@@ -5086,7 +5189,7 @@ describe("la vista con su proyecto (criterio 9: TT-49, TT-50, PR-71, PR-101 … 
     });
   });
 
-  it("stopped y la vista de cada edición traen el par", async () => {
+  it("el `stopped` de un arranque trae el par", async () => {
     const { web, design } = await seedTrackable();
     const previous = await seedEntryWith(
       { projectId: web.id, taskId: design.id },
@@ -5159,6 +5262,12 @@ describe("la vista con su proyecto (criterio 9: TT-49, TT-50, PR-71, PR-101 … 
   it("un color fuera de la paleta no sale en la vista: se lanza", async () => {
     const { web } = await seedTrackable();
     const entry = await seedEntryWith({ projectId: web.id, taskId: null });
+    const constraint = await db.execute(sql`
+      select pg_get_constraintdef(oid) as definition
+      from pg_constraint
+      where conrelid = 'project'::regclass and conname = 'project_color_palette'
+    `);
+    const { definition } = constraint.rows[0] as { definition: string };
     await db.execute(sql`alter table project drop constraint project_color_palette`);
     try {
       await db.update(project).set({ color: "#ff0000" }).where(eq(project.id, web.id));
@@ -5168,7 +5277,7 @@ describe("la vista con su proyecto (criterio 9: TT-49, TT-50, PR-71, PR-101 … 
     } finally {
       await db.update(project).set({ color: "green" }).where(eq(project.id, web.id));
       await db.execute(
-        sql`alter table project add constraint project_color_palette check (color in ('red', 'orange', 'amber', 'lime', 'green', 'teal', 'cyan', 'blue', 'indigo', 'violet', 'pink', 'slate'))`,
+        sql.raw(`alter table project add constraint project_color_palette ${definition}`),
       );
     }
   });
