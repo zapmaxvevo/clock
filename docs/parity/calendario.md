@@ -473,14 +473,19 @@ entrada cerrada— vale igual acá, por CAL-39.
 **CAL-39 El bloque del timer activo no se arrastra ni se estira** — `adaptar`
 Propuesta. Su fin no es un dato sino «ahora», que se mueve mientras se
 arrastra: mover el bloque entero significaría elegirle un fin, y una entrada
-abierta no tiene. La única mutación sobre sus horas es `updateRunningStart`
-(TT-28), y se llega desde el diálogo (CAL-40). Un pedido de `updateEntryTimes`
-que llegue igual sobre ella recibe «Esta entrada es la que está corriendo.»
-(TT-111). Justificación: la mutación que existe edita solo el inicio, y un asa
-que corrige el inicio sobre un bloque cuyo borde inferior avanza mientras se
-arrastra es un gesto que se puede agregar después sin cambiar nada más. Ver
-calendario P-03.
+abierta no tiene. Su inicio se corrige desde el diálogo (CAL-40), que lo guarda
+con `updateEntry` y la regla de `updateRunningStart` (TT-28), la misma del
+editor del contador del rastreador. Un horario completo —el trío de
+`updateEntryTimes` o el de `updateEntry`— que llegue igual sobre ella recibe
+«Esta entrada es la que está corriendo.» (TT-111). Justificación: la regla que
+existe edita solo el inicio, y un asa que corrige el inicio sobre un bloque
+cuyo borde inferior avanza mientras se arrastra es un gesto que se puede
+agregar después sin cambiar nada más. Ver calendario P-03.
 _No verificado_: si Clockify deja arrastrarlo.
+_Corregido el 2026-10-04, slice 8c_: decía que la única mutación sobre sus
+horas era `updateRunningStart`. Desde el 8c, `updateEntry` también cambia el
+inicio, con la misma regla, y rechaza el trío sobre la entrada que corre igual
+que `updateEntryTimes`.
 
 **CAL-40 El diálogo del timer activo** — `adaptar`
 Clic sobre el bloque abre el diálogo «Timer en curso» con:
@@ -567,12 +572,19 @@ _No verificado_: si Clockify permite crear arrastrando, y si cruza columnas.
 
 **CAL-45 Diálogo de alta** — `replicar`
 Documentado: «Duration, Start/End Time, Date, Description, Project, Tag, and
-Billable», y el botón «Add». En el slice 8: descripción, fecha, inicio, fin y
-duración, con el botón «Agregar». Proyecto y tarea llegan con el slice 10;
-etiquetas y facturable, con el 11, en el mismo diálogo. Los campos de hora y de
-duración son los del modo manual, con sus formatos y su rechazo (TT-18 a
-TT-21): editar la duración mueve el fin, editar inicio o fin recalcula la
-duración.
+Billable», y el botón «Add». Acá, con el título «Agregar entrada»:
+descripción, proyecto y tarea, fecha, inicio, fin y duración, con «Cancelar» y
+«Agregar»; etiquetas y facturable llegan con el slice 11, en el mismo diálogo.
+Los campos de hora y de duración son los del modo manual, con sus formatos y su
+rechazo (TT-18 a TT-21): editar la duración mueve el fin, editar inicio o fin
+recalcula la duración. La fecha no ofrece días anteriores a la creación del
+workspace. Enter en la descripción o en un campo de hora también agrega. Con
+duración cero, «Agregar» queda inactivo, con «La entrada tiene que durar al
+menos un minuto.» a la vista (TT-73).
+_Corregido el 2026-10-04, slice 8c_: decía «En el slice 8: descripción, fecha,
+inicio, fin y duración» y que el proyecto y la tarea llegaban con el slice 10.
+El alta llegó con el 8c, que ya trae proyecto y tarea. Se suman el título, los
+botones, el piso de la fecha, Enter y «Agregar» inactivo con duración cero.
 
 **CAL-46 «Agregar» es el alta manual** — `replicar`
 Crea con `createManualEntry` y valen todas sus reglas: TT-72 (fin menor que el
@@ -1220,7 +1232,8 @@ P-01, P-04 y P-06. Contrato:
   cierran el diálogo, en la pantalla, debajo de la barra. «Reintentar» solo por
   red y nunca en el alta. Una operación nueva baja los anteriores.
 - **Lo que el slice decide**, diseño propio _no verificado_ (P-07):
-  - **CAL-40, CAL-41, CAL-46, CAL-47 y CAL-67**, en su entrada.
+  - **CAL-39, CAL-40, CAL-41, CAL-45, CAL-46, CAL-47 y CAL-67**, en su
+    entrada.
   - **CAL-43.** El clic en una franja propone su inicio y una franja de largo;
     si el fin cae en minutos que no existen, pasa al primer minuto que existe
     después. No hace nada en un minuto que no existe, en un día anterior a la
