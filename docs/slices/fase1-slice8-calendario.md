@@ -18,9 +18,10 @@ Contrato del octavo slice vertical de la fase 1. Módulo `time-entry`, en
 Fuente de los comportamientos: `docs/parity/calendario.md` (CAL-01 a CAL-100),
 escrito el 2026-10-02, antes de los slices 6, 7, 9 y 10; este contrato lo
 contrasta con el árbol y corrige lo que quedó viejo (§0). Lugar en el plan:
-[mapa de la fase 1](fase1-mapa.md), «Slice 8 — Calendario». Revisión:
-[ronda 1 de `architecture-reviewer`](correcciones-fase1-slice8.md). Decisiones
-de arquitectura asociadas:
+[mapa de la fase 1](fase1-mapa.md), «Slice 8 — Calendario». Revisión de
+`architecture-reviewer`: [ronda 1](correcciones-fase1-slice8.md) y
+[ronda 2](correcciones-fase1-slice8-ronda2.md). Decisiones de arquitectura
+asociadas:
 
 - [ADR 0010](../adr/0010-un-modulo-consulta-las-reglas-de-otro-por-su-service.md):
   el calendario vive en `time-entry` (§1, «Dónde vive»).
@@ -61,7 +62,7 @@ Resueltas el 2026-10-04:
 ## 0. Precondición de arranque
 
 **El slice 8 se escribe para el árbol con los slices 1 a 7, 9 y 10 en `main`**
-(`dd78cd5`, rama `fase1/slice-8-calendario`). El mapa dice «depende de 3, 5 y
+(`f41e68f`, rama `fase1/slice-8-calendario`). El mapa dice «depende de 3, 5 y
 7»; para la lectura no alcanza:
 
 - **Del 3**: `editableTimes`, `startClock` y `endClock` en la vista, que el
@@ -81,7 +82,7 @@ Resueltas el 2026-10-04:
 - **§19**: `editableTimes`, `startClock` y `endClock` ya viajan en la vista; el
   esquema de la base no cambia. Lo que §19 dice de las mutaciones es del 8c.
 
-**Supuestos sobre el árbol**, con archivo y línea en `dd78cd5`:
+**Supuestos sobre el árbol**, con archivo y línea en `f41e68f`:
 
 | Supuesto                                                                                                                          | Dónde                                                      |
 | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
@@ -98,20 +99,24 @@ Resueltas el 2026-10-04:
 | `DateField` exige `minDayKey` y arma la fecha civil con una función local                                                         | `date-field.tsx:24`, `:53-56`                              |
 | El texto del superíndice de más de un día es una función local de la fila                                                         | `entry-row.tsx:92-96`                                      |
 | `ProjectPicker` llama a `useTrackingCatalog` antes de mirar `readOnly`, y con `readOnly` dibuja el punto y el nombre              | `project-picker.tsx:97`, `:101-107`                        |
+| `ProjectPicker` exige `onChange`, también con `readOnly`                                                                          | `project-picker.tsx:36`                                    |
 | `selectionOf(entry)` arma la selección del selector desde la vista                                                                | `entry-project.ts:21`                                      |
 | `useDialogReturnFocus` mueve el foco a mano: Base UI enfoca el primer tabulable del destino de `finalFocus`                       | `use-dialog-return-focus.ts:18-53`                         |
 | `useElapsedSeconds(startedAt, serverNow)` y `useGroupTotalLabel`; el tipo `GroupTotal` no se exporta                              | `elapsed-counter.tsx:25`, `use-group-total.ts:8-18`, `:26` |
-| `ElapsedCounter` dibuja el transcurrido con `role="timer"`                                                                        | `elapsed-counter.tsx:70`                                   |
+| `ElapsedCounter` dibuja el transcurrido con `role="timer"`                                                                        | `elapsed-counter.tsx:75`                                   |
 | `useTrackerRefresh` revalida al enfocar, al volver a ser visible y cada 60 s                                                      | `use-tracker-refresh.ts:14-35`                             |
 | `TrackerScreen`: `<h1 className="sr-only">`, el aviso de TT-92 escrito adentro y los formatos de la misma lectura                 | `tracker-screen.tsx:44`, `:46-55`, `:57-59`                |
-| La navegación tiene «Inicio» y «Proyectos»                                                                                        | `src/components/layout/app-nav.tsx:9-12`                   |
+| La navegación tiene «Inicio» y «Proyectos», como literales                                                                        | `src/components/layout/app-nav.tsx:9-12`                   |
 | Sin sesión, `requireSession` lleva a `/login`, y el acceso vuelve siempre a `/`                                                   | `src/server/session.ts:57`; `google-sign-in-button.tsx:15` |
-| Cada test e2e abre su sesión; `openSecondTab` abre otra en un contexto nuevo                                                      | `e2e/session.ts:45-53`; `e2e/network.ts:38-48`             |
-| `e2e/database.ts` escribe solo lo que la interfaz no puede producir                                                               | `e2e/database.ts:1-5`                                      |
+| Cada test e2e abre su sesión; `openSecondTab` abre otra en un contexto nuevo                                                      | `e2e/session.ts:60-68`; `e2e/network.ts:38-48`             |
+| El editor de TT-28 lleva el inicio del timer a 00:00: «Editar la hora de inicio», `00:00`, Tab, «Guardar»                         | `e2e/entry-times.spec.ts:410-415`, `:573-576`              |
+| `todayIn(timeZone)` arma hoy en una zona con `Intl`, sin `src/server/time`                                                        | `e2e/days.ts:1-5`, `:34`                                   |
 
 **El paso 0 del handshake (§6)** es la ronda ordinaria de
-`architecture-reviewer`: el contrato se escribe sobre el árbol actual. La ronda 1
-está aplicada ([correcciones](correcciones-fase1-slice8.md)).
+`architecture-reviewer`: el contrato se escribe sobre el árbol actual. Las
+rondas 1 y 2 están aplicadas ([ronda 1](correcciones-fase1-slice8.md),
+[ronda 2](correcciones-fase1-slice8-ronda2.md)); la ronda 2 lo aprobó con
+menores.
 
 ## 1. Alcance
 
@@ -251,7 +256,7 @@ y la lista «Lo que queda» en `calendario.md`.
 | `time-entry/schema.ts`                     | Los parámetros y el estado del calendario.                                                                                                       | `schema.test.ts` entero                    |
 | `time-entry/service.ts`                    | `getCalendarState` nueva.                                                                                                                        | —                                          |
 | `time-entry/repository.ts`                 | `listClosedOverlapping` nueva.                                                                                                                   | —                                          |
-| `src/components/layout/app-nav.tsx`        | Suma «Calendario» después de «Inicio».                                                                                                           | `e2e/profile.spec.ts` (`goToTrackerByNav`) |
+| `src/components/layout/app-nav.tsx`        | Suma «Calendario» después de «Inicio», como literal.                                                                                             | `e2e/profile.spec.ts` (`goToTrackerByNav`) |
 | `time-entry/components/date-field.tsx`     | La fecha civil sale de `civil-date.ts`, que comparte con el selector del rango.                                                                  | TT-18, TT-56, el diálogo de la masiva      |
 | `time-entry/components/tracker-screen.tsx` | El aviso de TT-92 pasa a `InactiveMembershipNotice`, que comparte con el calendario.                                                             | `tracker.spec.ts`                          |
 | `time-entry/components/labels.ts`          | Suma `extraDaysText`, movida de `entry-row.tsx:92-96` sin cambios: la usan la fila, el bloque y el diálogo.                                      | TT-51 en la fila                           |
@@ -264,11 +269,11 @@ auditoría no se tocan.
 ## 2. Cambios de esquema
 
 **Ninguno.** La lectura nueva usa `time_entry_workspace_user_started_idx` para
-la cota superior (`started_at < to`) y filtra la inferior (`ended_at > from`).
-Sin duración máxima (TT-74) no hay cota inferior para el inicio que se pueda
-usar en ese índice, así que **en cualquier período, también el actual, la
-consulta recorre toda la historia de la persona anterior a `to`**. El costo, su
-umbral y las dos salidas están en §8.
+la cota superior (`started_at < to`) y filtra la inferior (`ended_at > from or
+started_at = from`). Sin duración máxima (TT-74) no hay cota inferior para el
+inicio que se pueda usar en ese índice, así que **en cualquier período, también
+el actual, la consulta recorre toda la historia de la persona anterior a
+`to`**. El costo, su umbral y las dos salidas están en §8.
 
 ## 3. Acciones de permisos nuevas
 
@@ -423,9 +428,11 @@ calendario y `closedSeconds` de la semana en `TrackerState` dan lo mismo
 // src/modules/time-entry/repository.ts
 /**
  * Las entradas cerradas de la persona que se superponen con `[from, to)`:
- * empiezan antes de `to` y terminan después de `from`. Una que termina
- * exactamente en `from` no se superpone (CAL-26, CAL-94). Con su proyecto y su
- * tarea, por inicio ascendente y después por id: el orden de `Tab` (CAL-76).
+ * empiezan antes de `to` y terminan después de `from`, o empiezan justo en
+ * `from`, así una de duración cero en ese instante entra. Una que empezó antes
+ * y termina exactamente en `from` no se superpone (CAL-26, CAL-94). Con su
+ * proyecto y su tarea, por inicio ascendente y después por id: el orden de
+ * `Tab` (CAL-76).
  */
 listClosedOverlapping(
   workspaceId: string,
@@ -437,7 +444,8 @@ listClosedOverlapping(
 ```
 
 Filtra por `workspace_id` y `user_id` de la sesión, `ended_at is not null`,
-`started_at < to` y `ended_at > from`, con `selectWithRefs`.
+`started_at < to` y `(ended_at > from or started_at = from)`, con
+`selectWithRefs`.
 
 ### 5.3 Lo que suma `src/server/time`
 
@@ -565,7 +573,10 @@ export function entrySegments(
 - Para cada día del período entre `dayDate` y `addDaysToKey(dayDate,
 extraDays)`: `from` es el minuto del inicio en el día de inicio y 0 en los
   demás; `to` es el minuto del fin en el día del fin y 1440 en los demás.
-- **Una entrada que termina a las 00:00 no dibuja nada en ese día** (CAL-26).
+- **En un día posterior al de inicio (`extraDays > 0`), una entrada que termina
+  a las 00:00 no dibuja nada en ese día** (CAL-26). En el día de inicio la regla
+  no aplica: una entrada de duración cero de 00:00 a 00:00 da un segmento
+  `[0, 0]`, que se dibuja con la altura mínima.
 - **`to = max(to, from)`**: en la hora repetida, una entrada de 02:30 en la
   primera pasada a 02:15 en la segunda tiene el fin de reloj antes que el
   inicio; se dibuja con la altura mínima (CAL-92).
@@ -694,15 +705,17 @@ escribe la cookie y no navega.
 
 `EntryDialog`, con la primitiva `Dialog`; el cuerpo es un componente aparte,
 `EntryDialogBody`, para que el test lo dibuje sin el portal, como
-`BulkEditForm`. **No llama a ninguna action.** Guarda la entrada que se abrió:
-una revalidación con la entrada cambiada o borrada no lo cierra ni lo cambia
-(CAL-72, en su dibujo).
+`BulkEditForm`. **No llama a ninguna action.** Muestra la entrada que
+`CalendarView` guardó al abrirlo (§5.8): una revalidación con la entrada
+cambiada o borrada no lo cierra ni lo cambia (CAL-72, en su dibujo).
 
 - **Título**: «Entrada» para una cerrada, «Timer en curso» para la que corre.
 - **Contenido**, una lista de definiciones:
   - «Descripción»: la descripción, o «Sin descripción» en gris.
   - «Proyecto»: `ProjectPicker` con `readOnly`, `variant="row"`,
-    `value={selectionOf(entry)}` y `label={entryProjectLabel(nombre)}`.
+    `value={selectionOf(entry)}`, `label={entryProjectLabel(nombre)}` y un
+    `onChange` que no hace nada: la prop es obligatoria también con `readOnly`
+    (`project-picker.tsx:36`).
   - «Fecha»: `dayKeyLabel(entry.dayDate, todayKey, formats.date)`.
   - «Hora de inicio» y «Hora de fin» (`trackerLabels.startTime`, `endTime`),
     con `clockLabel`; el fin con su superíndice `+N` y `extraDaysText` para el
@@ -717,6 +730,12 @@ una revalidación con la entrada cambiada o borrada no lo cierra ni lo cambia
 - **Abrir**: un bloque abre su diálogo con clic, `Enter` o `Espacio` (CAL-74);
   un segmento oculto, con el puntero. Al abrir, el foco va a «Cerrar», el único
   control.
+- **Abierto o cerrado**: `CalendarView` guarda `open: boolean` aparte de la
+  entrada del diálogo. Cerrar pone `open` en `false`; la entrada, igual que
+  `openerId`, no se limpia al cerrar y se reemplaza cuando se abre otro
+  diálogo. Si `open` se derivara de la entrada y esta pasara a `null` al
+  cerrar, `EntryDialogBody` quedaría vacío durante la animación de salida
+  (`src/components/ui/dialog.tsx:53`, 100 ms).
 - **Quién abrió**: `CalendarView` guarda `openerId`, el id de la última entrada
   cuyo diálogo se abrió, y un `openerRef` que la grilla pasa como `ref` al botón
   del bloque de esa entrada —el primer segmento visible, también cuando se
@@ -804,30 +823,18 @@ Antes de escribir `page.tsx` y `error.tsx`, la guía de Next del árbol
 /home/maxi/program/clock/e2e/calendar.spec.ts   (nuevo)
 /home/maxi/program/clock/e2e/calendar-page.ts   (nuevo)
 /home/maxi/program/clock/e2e/days.ts
-/home/maxi/program/clock/e2e/database.ts
 ```
 
 `calendar-page.ts` reúne los localizadores de la pantalla; `days.ts` suma lo que
 falte para armar días y semanas de la persona. Los de `tracker-page.ts` se
-importan, no se copian. `database.ts` suma:
+importan, no se copian. `days.ts` suma además, junto a `todayIn` y con
+`Intl.DateTimeFormat` como ella, el minuto del día que decide el salto del
+recorrido 3:
 
 ```ts
-/**
- * Lleva el inicio del timer abierto de la persona a las 00:00 de hoy en
- * `timeZone`. La interfaz lo puede hacer con el editor del inicio (TT-28),
- * pero el recorrido del calendario es de lectura y no depende de un editor de
- * otra pantalla. Corta si la persona no tiene exactamente un timer abierto.
- */
-export async function moveRunningStartToMidnight(
-  email: string,
-  timeZone: string,
-): Promise<void>;
+/** Minutos de reloj desde las 00:00 en una zona horaria, de 0 a 1439. */
+export function minuteOfDayIn(timeZone: string): number;
 ```
-
-con `updateOne` y la medianoche calculada en la base
-(`date_trunc('day', now() at time zone $2) at time zone $2`). El comentario de
-cabecera del archivo suma «o lo que un recorrido de lectura necesita de
-partida».
 
 ### parity-analyst
 
@@ -855,15 +862,16 @@ componentes del rastreador salvo `date-field.tsx`, `tracker-screen.tsx`,
 `tracker-bar.tsx`, `mode-switch.tsx`, `manual-bar.tsx`, `entry-list.tsx`,
 `day-group.tsx`, `time-draft.ts`, `clock-field.tsx`, `entry-project.ts`,
 `use-dialog-return-focus.ts`, `use-tracker-refresh.ts`, `elapsed.ts`,
-`elapsed-counter.tsx`, `delete-entry-dialog.tsx`. Los e2e existentes no cambian.
-Los contratos y correcciones anteriores son históricos. El mapa y el estado de
-la fase los actualiza team-lead.
+`elapsed-counter.tsx`, `delete-entry-dialog.tsx`. Los e2e existentes no cambian,
+tampoco `e2e/database.ts`. Los contratos y correcciones anteriores son
+históricos. El mapa y el estado de la fase los actualiza team-lead.
 
 ### Handshake de orden
 
-0. **Antes de implementar**: `architecture-reviewer` hasta aprobar. La ronda 1
-   está aplicada ([correcciones](correcciones-fase1-slice8.md)); sigue la
-   ronda 2. Las decisiones del usuario están resueltas.
+0. **Antes de implementar**: `architecture-reviewer` hasta aprobar. Las rondas 1
+   y 2 están aplicadas ([ronda 1](correcciones-fase1-slice8.md),
+   [ronda 2](correcciones-fase1-slice8-ronda2.md)); la ronda 2 lo aprobó con
+   menores. Las decisiones del usuario están resueltas.
 1. **Primer commit de `backend-dev`**: lo de §5.3 en `src/server/time` con sus
    tests; los esquemas y tipos de §5.1; la firma de `getCalendarState`. La suite
    existente sigue verde. Avisa a `frontend-dev`.
@@ -919,9 +927,9 @@ la fase los actualiza team-lead.
   inicio del timer solo si su `dayDate` está en el período (CAL-93).
 
 - **`calendar-view.tsx`** es el dueño de la pantalla en el cliente: el diálogo
-  abierto (la entrada), `openerId` y `openerRef`, la región y su `ref`, el zoom
-  con su cookie y `useTrackerRefresh`. Arma `nowPosition` una vez y se lo pasa
-  a la grilla.
+  (`open` y la entrada abierta, que no se limpia al cerrar), `openerId` y
+  `openerRef`, la región y su `ref`, el zoom con su cookie y
+  `useTrackerRefresh`. Arma `nowPosition` una vez y se lo pasa a la grilla.
 - **`calendar-grid.tsx`** dibuja eje, encabezados con su total, columnas,
   franjas atenuadas, bloques y línea de ahora a partir de `calendar-layout.ts`
   y `calendar-totals.ts`. Avisa el clic en un bloque (`onOpen(id)`) y pasa
@@ -947,11 +955,13 @@ la fase los actualiza team-lead.
   tal cual de `entry-row.tsx:92-96`.
 - **`use-group-total.ts`** exporta `GroupTotal`, para que `calendar-totals.ts`
   devuelva ese tipo sin copiarlo.
+- **`app-nav.tsx`** suma `{ href: "/calendario", label: "Calendario" }` a
+  `items`, después de «Inicio», con el texto literal como «Inicio» y
+  «Proyectos»: ningún archivo de `src/components/` importa de un módulo.
 - **`calendar/labels.ts`**, `calendarLabels`:
 
   | Clave          | Texto                                                 |
   | -------------- | ----------------------------------------------------- |
-  | `nav`          | «Calendario»                                          |
   | `heading`      | «Calendario»                                          |
   | `region`       | «Calendario»                                          |
   | `loading`      | «Cargando el calendario»                              |
@@ -998,9 +1008,10 @@ la fase los actualiza team-lead.
    «Semana anterior» o las fechas, y en la vista día «Hoy», «Ayer» o el día.
 4. **CAL-02, CAL-28, la lectura** — `entries` trae las cerradas propias que se
    superponen con el período: la que empezó antes y la que termina después
-   están; la que termina exactamente al principio y la que empieza exactamente
-   al final, no; la de otra persona, no. El timer viaja aparte y nunca en
-   `entries`.
+   están; la que empezó antes y termina exactamente al principio y la que
+   empieza exactamente al final, no; la de duración cero que empieza
+   exactamente al principio, sí; la de otra persona, no. El timer viaja aparte
+   y nunca en `entries`.
 5. **CAL-31 a CAL-33, P-02** — Cada día suma las cerradas que empiezan en él;
    una de 22:00 a 02:00 suma entera al día de inicio y nada al siguiente; el
    total de la semana es el mismo número que `closedSeconds` de esa semana en
@@ -1018,8 +1029,9 @@ la fase los actualiza team-lead.
    calendario por la navegación dibuja el bloque en 12 h.
 8. **CAL-26, CAL-27, CAL-94, segmentos** — `entrySegments` da un segmento por
    día tocado, recortado al período, y ninguno para una entrada fuera de él; la
-   que termina a las 00:00 no dibuja en el día siguiente; la de más de un día
-   tiene días de alto completo; la hora repetida no da altura negativa.
+   que termina a las 00:00 no dibuja en el día siguiente; la de duración cero
+   de 00:00 a 00:00 da un segmento en su día; la de más de un día tiene días de
+   alto completo; la hora repetida no da altura negativa.
 9. **CAL-24, CAL-25** — `layoutColumn` reparte el ancho entre las que se pisan,
    también por la altura mínima, y deja a las demás en ancho completo.
 10. **CAL-30** — `nonexistentMinutes` da los casos de §5.3; la grilla atenúa
@@ -1054,7 +1066,7 @@ la fase los actualiza team-lead.
 | 1        | e2e                        | `e2e/calendar.spec.ts`                                                         | el recorrido 1                                                                   |
 | 2        | integración + e2e          | `service.integration.test.ts`; `e2e/calendar.spec.ts`                          | `periodStart`, `days` y `mode` con cada parámetro, Apia incluida; el recorrido 1 |
 | 3        | integración + unidad + e2e | `service.integration.test.ts`; `calendar-href.test.ts`; `e2e/calendar.spec.ts` | los enlaces y rótulos de la vista; la URL; el recorrido 1                        |
-| 4        | integración                | `service.integration.test.ts`                                                  | los seis bordes, con una entrada ajena sembrada y el timer                       |
+| 4        | integración                | `service.integration.test.ts`                                                  | los siete casos, con una entrada ajena sembrada y el timer                       |
 | 5        | integración + e2e          | `service.integration.test.ts`; `e2e/calendar.spec.ts`                          | los totales contra `getTrackerState` con el mismo `now`; el recorrido 2          |
 | 6        | unidad + e2e               | `calendar-totals.test.ts`; `e2e/calendar.spec.ts`                              | la entrada de cada columna y del período; el recorrido 3                         |
 | 7        | integración + unidad + e2e | `service.integration.test.ts`; `time.test.ts`; `e2e/calendar.spec.ts`          | `label` con dos formatos; la misma entrada con dos zonas; el recorrido 1         |
@@ -1109,9 +1121,15 @@ falta un día anterior en la semana. Las respuestas se esperan con
    foco en el botón del jueves. Las dos del martes son dos bloques con el mismo
    nombre, lado a lado (cajas sin superponerse); `Tab` desde el primero llega
    al segundo; `Enter` abre su diálogo y «Cerrar» devuelve el foco.
-3. **El timer** (criterios 6, 12, 13). Arrancar un timer en `/` y llevar su
-   inicio a las 00:00 de hoy con `moveRunningStartToMidnight`. Recargar `/` y
-   leer el total de hoy y el de esta semana. Entrar al calendario por la
+3. **El timer** (criterios 6, 12, 13). Al principio, `test.skip(...)` con el
+   motivo escrito si el minuto local de la persona —`minuteOfDayIn` con la zona
+   por omisión del perfil (P-03), una constante del spec como `PERSON_TIMEZONE`
+   en `e2e/bulk-actions.spec.ts:58`, y no `workspaceTimeZone()`— es menor que 5 o mayor que 1435: el total, la
+   línea y el bloque se anclan en el `serverNow`, así que el reloj emulado no
+   sirve. Arrancar un timer en `/` y llevar su inicio a las 00:00 de hoy con el
+   editor de TT-28: «Editar la hora de inicio», `00:00` en «Hora de inicio»,
+   Tab y «Guardar», con la respuesta esperada con `withServerAction`. Recargar
+   `/` y leer el total de hoy y el de esta semana. Entrar al calendario por la
    navegación: el bloque «…en curso» en la columna de hoy y la línea de ahora
    solo en esa columna; el total de la columna y el de la semana no son
    «0:00», y cada uno es el de `/` o un minuto más. «Acercar» hasta «5 min»: el
@@ -1123,14 +1141,15 @@ falta un día anterior en la semana. Las respuestas se esperan con
 ## 8. Deuda conocida del slice
 
 - **La lectura recorre la historia de la persona en cualquier período.**
-  `started_at < to and ended_at > from` usa el índice solo para la cota
-  superior, así que en la semana actual lee todas las entradas cerradas de la
-  persona, y en una vieja, todas las anteriores a esa semana. Con diez entradas
-  por día hábil son unas 2500 por año y por persona. Si el plan de la consulta
-  pasa de 20 ms en la base de producción, hay dos salidas, cada una en una
-  migración propia: un índice btree sobre `(workspace_id, user_id, ended_at)`,
-  que acota por `ended_at > from` y sirve sobre todo a los períodos recientes,
-  o un índice por rango (`tstzrange` con GiST), que acota los dos extremos.
+  `started_at < to and (ended_at > from or started_at = from)` usa el índice
+  solo para la cota superior, así que en la semana actual lee todas las
+  entradas cerradas de la persona, y en una vieja, todas las anteriores a esa
+  semana. Con diez entradas por día hábil son unas 2500 por año y por persona.
+  Si el plan de la consulta pasa de 20 ms en la base de producción, hay dos
+  salidas, cada una en una migración propia: un índice btree sobre
+  `(workspace_id, user_id, ended_at)`, que acota la rama `ended_at > from` y
+  sirve sobre todo a los períodos recientes, o un índice por rango
+  (`tstzrange` con GiST), que acota los dos extremos.
 - **`error.tsx` no tiene test automático.** `renderToStaticMarkup` no ejercita
   `retry`, y forzar una falla de lectura en e2e pide una ruta de prueba que el
   proyecto no tiene. La revisión de frontend lo comprueba a mano.
@@ -1159,8 +1178,11 @@ falta un día anterior en la semana. Las respuestas se esperan con
   `calendar-layout.test.ts` y los tests de integración con Madrid.
 - **TT-92 se verifica en el servicio y en el componente**, no en pantalla, como
   en el 6.
-- **El recorrido 3 tiene una ventana**: corrido en los primeros tres minutos
-  del día, el timer de las 00:00 suma `0:00` o mide la altura mínima. Es la
-  misma ventana que las horas de hoy de los e2e (`00:00–00:01`).
+- **El recorrido 3 se salta cerca de la medianoche**: con el minuto local de la
+  persona menor que 5 o mayor que 1435, `test.skip` lo anota con su motivo. Es
+  un salto, no una falla: en los primeros minutos del día el timer de las 00:00
+  suma `0:00` o mide la altura mínima, y al final del día el test puede cruzar
+  la medianoche. El reloj emulado no lo resuelve, porque el total, la línea y
+  el bloque se anclan en el `serverNow`.
 - **Sin verificar en Clockify** (calendario P-07): lo de §1 marcado como
   decisión nuestra, en especial el diálogo de solo lectura.
