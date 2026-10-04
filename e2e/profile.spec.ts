@@ -137,6 +137,35 @@ async function documentIsMarked(page: Page): Promise<boolean> {
   return page.evaluate(() => "e2eSinRecargar" in window);
 }
 
+/** Un ancho de teléfono, debajo del corte `md`. */
+const PHONE_VIEWPORT = { width: 390, height: 844 };
+
+/**
+ * Afirma que cada campo deja ver su valor entero en un teléfono. Debajo de
+ * `md` el texto de los campos sube a 16 px, y es ahí donde un ancho fijo
+ * recorta «12:00 AM»: un input que recorta tiene un `scrollWidth` mayor que
+ * su ancho visible. Se consulta con `expect.poll`, porque hasta que carga la
+ * fuente el ancho del texto es el de la de reserva. Al terminar, la ventana
+ * vuelve a su tamaño.
+ */
+async function expectWholeValuesOnPhone(
+  page: Page,
+  fields: readonly Locator[],
+): Promise<void> {
+  const viewport = page.viewportSize();
+  await page.setViewportSize(PHONE_VIEWPORT);
+  for (const field of fields) {
+    await expect
+      .poll(() => field.evaluate((node) => node.scrollWidth <= node.clientWidth), {
+        message: `${String(field)} recorta su valor`,
+      })
+      .toBe(true);
+  }
+  if (viewport !== null) {
+    await page.setViewportSize(viewport);
+  }
+}
+
 test("el menú de la cuenta lleva al perfil, que muestra la identidad y los predeterminados", async ({
   page,
   email,
@@ -201,12 +230,18 @@ test("con 12 horas el rastreador cambia sin recargar, y el editor de la fila ace
 
   // Criterio 4: los campos de la barra también muestran 12 h.
   const bar = trackerBar(page);
-  await expect(clockField(bar, "Hora de inicio")).toHaveValue(TWELVE_HOUR_CLOCK);
+  const barStart = clockField(bar, "Hora de inicio");
+  await expect(barStart).toHaveValue(TWELVE_HOUR_CLOCK);
   await expect(clockField(bar, "Hora de fin")).toHaveValue(TWELVE_HOUR_CLOCK);
+  await setClock(bar, "Hora de inicio", "12:00 am");
+  await expect(barStart).toHaveValue("12:00 AM");
 
   // Criterios 4 y 5: el editor de la fila muestra 12 h y acepta el sufijo.
+  // Ni su campo ni el de la barra recortan la hora más ancha.
   await timesButton(row, "12:00 AM", "12:01 AM").click();
-  await expect(clockField(row, "Hora de inicio")).toHaveValue("12:00 AM");
+  const rowStart = clockField(row, "Hora de inicio");
+  await expect(rowStart).toHaveValue("12:00 AM");
+  await expectWholeValuesOnPhone(page, [barStart, rowStart]);
   const end = clockField(row, "Hora de fin");
   await expect(end).toHaveValue("12:01 AM");
   await end.fill("12:02 am");
@@ -221,6 +256,32 @@ test("con 12 horas el rastreador cambia sin recargar, y el editor de la fila ace
   const reloaded = entryRow(todayGroup(page), "entrada en 12 horas");
   await expect(timesButton(reloaded, "12:00 AM", "12:02 AM")).toBeVisible();
   await expect(durationOf(reloaded, "0:02")).toBeVisible();
+});
+
+test("lo que otra pestaña elige en el perfil llega al rastreador al volver por la navegación", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await addTodayEntry(page, "entrada de otra pestaña");
+  await openProfileFromMenu(page);
+  await markDocument(page);
+
+  // Otra pestaña de la misma sesión elige 12 h y se cierra. Esta no se
+  // entera: su layout sigue con los formatos que leyó al entrar.
+  const other = await page.context().newPage();
+  await other.goto("/perfil");
+  await chooseFormat(other, "Formato de hora", "12 horas");
+  await other.close();
+
+  // La navegación conserva el layout: el rastreador tiene que dibujar con los
+  // formatos de su propia lectura, no con los del layout.
+  await goToTrackerByNav(page);
+  const row = entryRow(todayGroup(page), "entrada de otra pestaña");
+  await expect(timesButton(row, "12:00 AM", "12:01 AM")).toBeVisible();
+  await expect(clockField(trackerBar(page), "Hora de inicio")).toHaveValue(
+    TWELVE_HOUR_CLOCK,
+  );
+  expect(await documentIsMarked(page)).toBe(true);
 });
 
 test("con yyyy-MM-dd el encabezado de un día y el selector de fecha muestran el mismo rótulo", async ({
