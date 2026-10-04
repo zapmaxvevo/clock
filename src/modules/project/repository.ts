@@ -156,11 +156,12 @@ export const projectRepository = {
 
   /** El proyecto con la fila de miembro de `userId`, sea quien sea su creador. */
   async findProject(
+    tx: Executor,
     workspaceId: string,
     userId: string,
     id: string,
   ): Promise<ProjectWithViewer | undefined> {
-    const rows = await db
+    const rows = await tx
       .select({ project, isManager: projectMember.isManager })
       .from(project)
       .leftJoin(projectMember, viewerOf(userId))
@@ -190,6 +191,27 @@ export const projectRepository = {
           eq(task.projectId, projectId),
           eq(task.id, id),
           eq(task.createdBy, userId),
+        ),
+      )
+      .limit(1);
+    return rows.at(0);
+  },
+
+  /** La tarea de ese proyecto, en cualquier estado. Una de otro proyecto no se encuentra. */
+  async findTask(
+    tx: Transaction,
+    workspaceId: string,
+    projectId: string,
+    id: string,
+  ): Promise<TaskRow | undefined> {
+    const rows = await tx
+      .select()
+      .from(task)
+      .where(
+        and(
+          eq(task.workspaceId, workspaceId),
+          eq(task.projectId, projectId),
+          eq(task.id, id),
         ),
       )
       .limit(1);

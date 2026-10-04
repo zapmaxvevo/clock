@@ -1,13 +1,10 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-import { z } from "zod";
-
-import { assertCan, ForbiddenError } from "@/server/permissions";
-import { requireSession, type SessionContext } from "@/server/session";
+import { handle, type ActionResult } from "@/server/action";
+import { assertCan } from "@/server/permissions";
 
 import * as service from "./service";
-import { ownTimeEntryResource, TimeEntryError, trackerWorkspaceOf } from "./service";
+import { ownTimeEntryResource, trackerWorkspaceOf } from "./service";
 import {
   continueEntryInput,
   createManualEntryInput,
@@ -18,9 +15,9 @@ import {
   stopTimerInput,
   timeEntryMessages,
   updateDescriptionInput,
+  updateEntryProjectInput,
   updateEntryTimesInput,
   updateRunningStartInput,
-  type ActionResult,
   type ContinueEntryInput,
   type ContinueEntryResult,
   type CreateManualEntryInput,
@@ -35,149 +32,128 @@ import {
   type StartTimerResult,
   type StopTimerInput,
   type StopTimerResult,
+  type TimeEntryErrorCode,
   type UpdateDescriptionInput,
   type UpdateDescriptionResult,
+  type UpdateEntryProjectInput,
+  type UpdateEntryProjectResult,
   type UpdateEntryTimesInput,
   type UpdateEntryTimesResult,
   type UpdateRunningStartInput,
   type UpdateRunningStartResult,
 } from "./schema";
 
-function failure<T>(error: unknown): ActionResult<T> {
-  if (error instanceof TimeEntryError) {
-    return { ok: false, code: error.code, message: error.message };
-  }
-  if (error instanceof ForbiddenError) {
-    return { ok: false, code: "forbidden", message: timeEntryMessages.forbidden };
-  }
-  if (error instanceof z.ZodError) {
-    const issue = error.issues.at(0);
-    return {
-      ok: false,
-      code: "validation",
-      message: issue?.message ?? timeEntryMessages.unexpected,
-    };
-  }
-  console.error(error);
-  return { ok: false, code: "unexpected", message: timeEntryMessages.unexpected };
-}
+const options = {
+  paths: ["/"],
+  messages: {
+    forbidden: timeEntryMessages.forbidden,
+    unexpected: timeEntryMessages.unexpected,
+  },
+} as const;
 
-/**
- * Recorrido común: sesión, trabajo del módulo y resultado tipado. La
- * revalidación corre también cuando hay error de dominio, para que una pestaña
- * desactualizada se resincronice con el estado real.
- */
-async function handle<T>(
-  work: (session: SessionContext) => Promise<T>,
-): Promise<ActionResult<T>> {
-  const session = await requireSession();
-  try {
-    return { ok: true, data: await work(session) };
-  } catch (error) {
-    return failure(error);
-  } finally {
-    revalidatePath("/");
-  }
-}
+/** El resultado de una action del módulo, con sus códigos propios. */
+type Result<T> = Promise<ActionResult<T, TimeEntryErrorCode>>;
 
-export async function startTimer(
-  input: StartTimerInput,
-): Promise<ActionResult<StartTimerResult>> {
+export async function startTimer(input: StartTimerInput): Result<StartTimerResult> {
   return handle(async (session) => {
     const values = startTimerInput.parse(input);
     assertCan(session.actor, "timeEntry.own.create", ownTimeEntryResource(session.actor));
     return service.startTimer(session.actor, trackerWorkspaceOf(session), values);
-  });
+  }, options);
 }
 
-export async function stopTimer(
-  input: StopTimerInput,
-): Promise<ActionResult<StopTimerResult>> {
+export async function stopTimer(input: StopTimerInput): Result<StopTimerResult> {
   return handle(async (session) => {
     const values = stopTimerInput.parse(input);
     assertCan(session.actor, "timeEntry.own.update", ownTimeEntryResource(session.actor));
     return service.stopTimer(session.actor, trackerWorkspaceOf(session), values);
-  });
+  }, options);
 }
 
 export async function updateDescription(
   input: UpdateDescriptionInput,
-): Promise<ActionResult<UpdateDescriptionResult>> {
+): Result<UpdateDescriptionResult> {
   return handle(async (session) => {
     const values = updateDescriptionInput.parse(input);
     assertCan(session.actor, "timeEntry.own.update", ownTimeEntryResource(session.actor));
     return service.updateDescription(session.actor, trackerWorkspaceOf(session), values);
-  });
+  }, options);
 }
 
-export async function deleteEntry(
-  input: DeleteEntryInput,
-): Promise<ActionResult<DeleteEntryResult>> {
+export async function updateEntryProject(
+  input: UpdateEntryProjectInput,
+): Result<UpdateEntryProjectResult> {
+  return handle(async (session) => {
+    const values = updateEntryProjectInput.parse(input);
+    assertCan(session.actor, "timeEntry.own.update", ownTimeEntryResource(session.actor));
+    return service.updateEntryProject(session.actor, trackerWorkspaceOf(session), values);
+  }, options);
+}
+
+export async function deleteEntry(input: DeleteEntryInput): Result<DeleteEntryResult> {
   return handle(async (session) => {
     const values = deleteEntryInput.parse(input);
     assertCan(session.actor, "timeEntry.own.delete", ownTimeEntryResource(session.actor));
     return service.deleteEntry(session.actor, values);
-  });
+  }, options);
 }
 
 export async function createManualEntry(
   input: CreateManualEntryInput,
-): Promise<ActionResult<CreateManualEntryResult>> {
+): Result<CreateManualEntryResult> {
   return handle(async (session) => {
     const values = createManualEntryInput.parse(input);
     assertCan(session.actor, "timeEntry.own.create", ownTimeEntryResource(session.actor));
     // El service necesita la fecha de creación del workspace para el piso, y
     // la sesión ya la tiene: no hay consulta nueva.
     return service.createManualEntry(session.actor, trackerWorkspaceOf(session), values);
-  });
+  }, options);
 }
 
 export async function updateEntryTimes(
   input: UpdateEntryTimesInput,
-): Promise<ActionResult<UpdateEntryTimesResult>> {
+): Result<UpdateEntryTimesResult> {
   return handle(async (session) => {
     const values = updateEntryTimesInput.parse(input);
     assertCan(session.actor, "timeEntry.own.update", ownTimeEntryResource(session.actor));
     return service.updateEntryTimes(session.actor, trackerWorkspaceOf(session), values);
-  });
+  }, options);
 }
 
 export async function updateRunningStart(
   input: UpdateRunningStartInput,
-): Promise<ActionResult<UpdateRunningStartResult>> {
+): Result<UpdateRunningStartResult> {
   return handle(async (session) => {
     const values = updateRunningStartInput.parse(input);
     assertCan(session.actor, "timeEntry.own.update", ownTimeEntryResource(session.actor));
     return service.updateRunningStart(session.actor, trackerWorkspaceOf(session), values);
-  });
+  }, options);
 }
 
 export async function continueEntry(
   input: ContinueEntryInput,
-): Promise<ActionResult<ContinueEntryResult>> {
+): Result<ContinueEntryResult> {
   return handle(async (session) => {
     const values = continueEntryInput.parse(input);
     assertCan(session.actor, "timeEntry.own.create", ownTimeEntryResource(session.actor));
     return service.continueEntry(session.actor, trackerWorkspaceOf(session), values);
-  });
+  }, options);
 }
 
 export async function duplicateEntry(
   input: DuplicateEntryInput,
-): Promise<ActionResult<DuplicateEntryResult>> {
+): Result<DuplicateEntryResult> {
   return handle(async (session) => {
     const values = duplicateEntryInput.parse(input);
     assertCan(session.actor, "timeEntry.own.create", ownTimeEntryResource(session.actor));
     return service.duplicateEntry(session.actor, trackerWorkspaceOf(session), values);
-  });
+  }, options);
 }
 
-export async function discardTimer(
-  input: DiscardTimerInput,
-): Promise<ActionResult<DiscardTimerResult>> {
+export async function discardTimer(input: DiscardTimerInput): Result<DiscardTimerResult> {
   return handle(async (session) => {
     const values = discardTimerInput.parse(input);
     assertCan(session.actor, "timeEntry.own.delete", ownTimeEntryResource(session.actor));
     return service.discardTimer(session.actor, values);
-  });
+  }, options);
 }

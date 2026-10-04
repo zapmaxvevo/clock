@@ -1,6 +1,10 @@
 import { z } from "zod";
 
+import { sameId, type ProjectPair } from "@/lib/project-pair";
+import { noNullCharacter } from "@/lib/text";
+import type { ActionErrorCode } from "@/server/action";
 import { isClock, parseDayKey } from "@/server/time";
+import { PALETTE_KEYS } from "@/modules/project/palette";
 
 /**
  * Días que trae la lista del rastreador antes de extenderse hacia atrás y
@@ -30,28 +34,39 @@ export const timeEntryMessages = {
   runningEntryTimes: "Esta entrada es la que está corriendo.",
   multiDayTimes: "Esta entrada dura más de un día; sus horarios no se pueden editar acá.",
   sameEntryId: "La entrada nueva no puede usar el id de la original.",
+  taskNeedsProject: "Elegí un proyecto antes que una tarea.",
   unexpected: "No se pudo guardar. Revisá la conexión y volvé a intentar.",
 } as const;
 
-// Postgres no guarda el carácter nulo en un `text`: sin este control, la
-// descripción que lo trae llega a la base y vuelve como `unexpected`.
 const description = z
   .string()
   .trim()
   .max(DESCRIPTION_MAX, timeEntryMessages.descriptionTooLong)
-  .refine(
-    (value) => !value.includes("\u0000"),
-    timeEntryMessages.descriptionNullCharacter,
-  );
+  .refine(noNullCharacter, timeEntryMessages.descriptionNullCharacter);
 
 /** Id de una entrada nueva, elegido por el cliente: ver el ADR 0007. */
 const newEntryId = z.uuidv4();
 
+/** TT-11 y TT-70: la tarea no viaja sola. */
+function hasProjectForTask(pair: ProjectPair): boolean {
+  return pair.taskId === null || pair.projectId !== null;
+}
+
+const taskNeedsProject = {
+  message: timeEntryMessages.taskNeedsProject,
+  path: ["taskId"],
+};
+
+/** En las altas el par es opcional: una barra sin proyecto manda lo mismo que antes. */
+const newEntryPair = {
+  projectId: z.uuid().nullable().default(null),
+  taskId: z.uuid().nullable().default(null),
+};
+
 /** El cliente no manda instantes: el inicio lo pone la base. */
-export const startTimerInput = z.object({
-  id: newEntryId,
-  description: description.default(""),
-});
+export const startTimerInput = z
+  .object({ id: newEntryId, description: description.default(""), ...newEntryPair })
+  .refine(hasProjectForTask, taskNeedsProject);
 
 export const stopTimerInput = z.object({ id: z.uuid() });
 
@@ -82,15 +97,18 @@ const clockInput = z.string().refine(isClock, timeEntryMessages.invalidClock);
  * zona del workspace. La duración no viaja: se deriva de las dos horas, así no
  * puede llegar una que no se corresponda. Ver el ADR 0005.
  */
-export const createManualEntryInput = z.object({
-  description: description.default(""),
-  /** Día local del inicio, en la zona horaria del workspace. */
-  date: dayKeyInput,
-  /** Hora de pared del inicio, 24 h. */
-  start: clockInput,
-  /** Hora de pared del fin. Menor que el inicio significa el día siguiente (TT-72). */
-  end: clockInput,
-});
+export const createManualEntryInput = z
+  .object({
+    description: description.default(""),
+    /** Día local del inicio, en la zona horaria del workspace. */
+    date: dayKeyInput,
+    /** Hora de pared del inicio, 24 h. */
+    start: clockInput,
+    /** Hora de pared del fin. Menor que el inicio significa el día siguiente (TT-72). */
+    end: clockInput,
+    ...newEntryPair,
+  })
+  .refine(hasProjectForTask, taskNeedsProject);
 
 /**
  * El trío completo y no el campo que cambió: los tres se interpretan juntos.
@@ -112,12 +130,9 @@ export const updateRunningStartInput = z.object({
   start: clockInput,
 });
 
-/**
- * El id nuevo no puede ser el de la original. Se compara sin distinguir
- * mayúsculas porque la base sí los iguala.
- */
+/** El id nuevo no puede ser el de la original, ni con otras mayúsculas. */
 function isNewId(input: { readonly id: string; readonly sourceId: string }): boolean {
-  return input.id.toLowerCase() !== input.sourceId.toLowerCase();
+  return !sameId(input.id, input.sourceId);
 }
 
 /** Un alta que parte de una entrada existente: continuar y duplicar. */
@@ -136,6 +151,15 @@ export const duplicateEntryInput = fromSourceInput;
 
 export const discardTimerInput = z.object({ id: z.uuid() });
 
+/** El par entero y obligatorio: la action fija los dos valores, no «el que cambió». */
+export const updateEntryProjectInput = z
+  .object({
+    id: z.uuid(),
+    projectId: z.uuid().nullable(),
+    taskId: z.uuid().nullable(),
+  })
+  .refine(hasProjectForTask, taskNeedsProject);
+
 export type StartTimerInput = z.input<typeof startTimerInput>;
 /** Lo que recibe el service: `description` ya validada y con su default. */
 export type StartTimerValues = z.output<typeof startTimerInput>;
@@ -150,6 +174,7 @@ export type UpdateRunningStartInput = z.infer<typeof updateRunningStartInput>;
 export type ContinueEntryInput = z.infer<typeof continueEntryInput>;
 export type DuplicateEntryInput = z.infer<typeof duplicateEntryInput>;
 export type DiscardTimerInput = z.infer<typeof discardTimerInput>;
+export type UpdateEntryProjectInput = z.infer<typeof updateEntryProjectInput>;
 
 /**
  * Todo lo que depende de zona horaria o de formato se resuelve en el servidor.
@@ -178,6 +203,15 @@ export const timeEntryView = z.object({
    * (TT-110). Siempre falso en una entrada que corre (TT-111).
    */
   editableTimes: z.boolean(),
+  /**
+   * El proyecto de la entrada, con su nombre y su color de ahora, esté
+   * archivado o no (TT-104, PR-102). Con la forma de `ProjectRef`.
+   */
+  project: z
+    .object({ id: z.uuid(), name: z.string(), color: z.enum(PALETTE_KEYS) })
+    .nullable(),
+  /** Con la forma de `TaskRef`. Nulo si la entrada no tiene tarea. */
+  task: z.object({ id: z.uuid(), name: z.string() }).nullable(),
 });
 
 export const dayGroupView = z.object({
@@ -239,17 +273,7 @@ export type DayGroupView = z.infer<typeof dayGroupView>;
 export type WeekGroupView = z.infer<typeof weekGroupView>;
 export type TrackerState = z.infer<typeof trackerState>;
 
-export type TimeEntryErrorCode =
-  | "validation"
-  | "not_found"
-  | "forbidden"
-  | "already_stopped"
-  | "timer_running"
-  | "unexpected";
-
-export type ActionResult<T> =
-  | { readonly ok: true; readonly data: T }
-  | { readonly ok: false; readonly code: TimeEntryErrorCode; readonly message: string };
+export type TimeEntryErrorCode = ActionErrorCode | "already_stopped" | "timer_running";
 
 export type StartTimerResult = {
   /**
@@ -280,3 +304,5 @@ export type ContinueEntryResult = StartTimerResult;
 export type DuplicateEntryResult = { readonly created: TimeEntryView };
 
 export type DiscardTimerResult = { readonly id: string };
+
+export type UpdateEntryProjectResult = { readonly entry: TimeEntryView };

@@ -1,6 +1,6 @@
 # 0012. Un solo juego de formatos, en el servidor y en el cliente
 
-Fecha: 2026-10-03. Estado: propuesto.
+Fecha: 2026-10-03. Estado: aceptado.
 Origen: el contrato del slice 7
 ([`fase1-slice7-perfil.md`](../slices/fase1-slice7-perfil.md)), que trae la
 zona horaria y los formatos de fecha y de hora por persona (P-13 del
@@ -90,6 +90,7 @@ La opción 3, con los formatos por contexto (b).
   El segundo nivel existe porque Next 16 conserva los layouts compartidos en
   una navegación del cliente: después de cambiar una preferencia, el layout
   puede seguir con los formatos viejos mientras la página llega fresca.
+
 - **El hook lanza fuera del proveedor.** Un valor por omisión escondería que
   falta.
 - **Un cambio de preferencia revalida el layout raíz** (PF-33), y cada pantalla

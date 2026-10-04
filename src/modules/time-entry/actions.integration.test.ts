@@ -7,13 +7,19 @@ import { db } from "@/server/db";
 import { membership, workspace } from "@/server/db/schema";
 import {
   buenosAires,
+  seedMember,
+  seedProject,
+  seedTask,
   seedTimeEntry,
   seedUser,
   seedWorkspace,
   type SeededWorkspace,
 } from "@/test/factories";
-import { allTimeEntries } from "@/test/queries";
+import { allTimeEntries, timeEntryById } from "@/test/queries";
 
+import { projectMessages } from "@/modules/project/schema";
+
+import { timeEntryRepository } from "./repository";
 import { timeEntryMessages, type StartTimerInput } from "./schema";
 
 /**
@@ -1174,4 +1180,243 @@ describe("weekStart en las vistas, con el primer día de la persona de la sesió
       });
     },
   );
+});
+
+describe("updateEntryProject y el par en las altas (criterio 12)", () => {
+  const longAgo = "2020-01-01T00:00:00Z";
+  const unknownId = "11111111-1111-4111-8111-111111111111";
+
+  /** Abre la sesión y crea su membresía, que crea la primera action. */
+  async function signInWithMembership() {
+    const seeded = await signInOn({ createdAt: longAgo });
+    await actions.discardTimer({ id: unknownId });
+    mocks.revalidated.length = 0;
+    return seeded;
+  }
+
+  function seedOwnEntry(seeded: SeededWorkspace) {
+    return seedTimeEntry({
+      workspaceId: seeded.workspaceId,
+      userId: sessionUserId(),
+      description: "original",
+      startedAt: "2026-10-01T11:00:00Z",
+      endedAt: "2026-10-01T12:00:00Z",
+    });
+  }
+
+  async function deactivate(seeded: SeededWorkspace) {
+    await db
+      .update(membership)
+      .set({ status: "inactive" })
+      .where(
+        and(
+          eq(membership.workspaceId, seeded.workspaceId),
+          eq(membership.userId, sessionUserId()),
+        ),
+      );
+  }
+
+  it("aplica, responde la vista con el proyecto y revalida /", async () => {
+    const seeded = await signInWithMembership();
+    const web = await seedProject({
+      workspaceId: seeded.workspaceId,
+      name: "Web",
+      color: "pink",
+    });
+    const design = await seedTask({ workspaceId: seeded.workspaceId, projectId: web.id });
+    const entry = await seedOwnEntry(seeded);
+
+    const result = await actions.updateEntryProject({
+      id: entry.id,
+      projectId: web.id,
+      taskId: design.id,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.entry.project).toEqual({ id: web.id, name: "Web", color: "pink" });
+    expect(result.data.entry.task).toEqual({ id: design.id, name: design.name });
+    expect(mocks.revalidated).toEqual(["/"]);
+  });
+
+  it("exige su permiso antes de tocar nada: con la membresía desactivada responde el mensaje neutro, también con un id que no existe", async () => {
+    const seeded = await signInWithMembership();
+    const web = await seedProject({ workspaceId: seeded.workspaceId });
+    const entry = await seedOwnEntry(seeded);
+    await deactivate(seeded);
+
+    for (const id of [entry.id, unknownId]) {
+      expect(
+        await actions.updateEntryProject({ id, projectId: web.id, taskId: null }),
+      ).toEqual({ ok: false, code: "forbidden", message: timeEntryMessages.forbidden });
+    }
+    expect(await timeEntryById(entry.id)).toMatchObject({
+      projectId: null,
+      taskId: null,
+    });
+    expect(mocks.revalidated).toEqual(["/", "/"]);
+  });
+
+  it("traduce el ZodError: la tarea sin proyecto y un id que no es uuid salen como validation, y revalida", async () => {
+    await signInWithMembership();
+    expect(
+      await actions.updateEntryProject({
+        id: unknownId,
+        projectId: null,
+        taskId: unknownId,
+      }),
+    ).toEqual({
+      ok: false,
+      code: "validation",
+      message: timeEntryMessages.taskNeedsProject,
+    });
+    const malformed = await actions.updateEntryProject({
+      id: unknownId,
+      projectId: "web",
+      taskId: null,
+    });
+    expect(malformed).toMatchObject({ ok: false, code: "validation" });
+    expect(mocks.revalidated).toEqual(["/", "/"]);
+  });
+
+  it("conserva el código y el mensaje del TimeEntryError: TT-80 y TT-79", async () => {
+    const seeded = await signInWithMembership();
+    const web = await seedProject({ workspaceId: seeded.workspaceId });
+    const otherId = await seedMember(seeded.workspaceId, "member");
+    const foreign = await seedTimeEntry({
+      workspaceId: seeded.workspaceId,
+      userId: otherId,
+      startedAt: "2026-10-01T11:00:00Z",
+      endedAt: "2026-10-01T12:00:00Z",
+    });
+
+    expect(
+      await actions.updateEntryProject({
+        id: unknownId,
+        projectId: web.id,
+        taskId: null,
+      }),
+    ).toEqual({ ok: false, code: "not_found", message: timeEntryMessages.notFound });
+    expect(
+      await actions.updateEntryProject({
+        id: foreign.id,
+        projectId: web.id,
+        taskId: null,
+      }),
+    ).toEqual({
+      ok: false,
+      code: "forbidden",
+      message: timeEntryMessages.forbiddenOtherOwner,
+    });
+  });
+
+  it("conserva el código y el mensaje del ProjectError de otro módulo, y revalida", async () => {
+    const seeded = await signInWithMembership();
+    const old = await seedProject({ workspaceId: seeded.workspaceId, archived: true });
+    const web = await seedProject({ workspaceId: seeded.workspaceId });
+    const done = await seedTask({
+      workspaceId: seeded.workspaceId,
+      projectId: web.id,
+      status: "done",
+    });
+    const entry = await seedOwnEntry(seeded);
+
+    expect(
+      await actions.updateEntryProject({ id: entry.id, projectId: old.id, taskId: null }),
+    ).toEqual({
+      ok: false,
+      code: "not_found",
+      message: projectMessages.projectUnavailable,
+    });
+    expect(
+      await actions.updateEntryProject({
+        id: entry.id,
+        projectId: web.id,
+        taskId: done.id,
+      }),
+    ).toEqual({ ok: false, code: "not_found", message: projectMessages.taskUnavailable });
+    expect(mocks.revalidated).toEqual(["/", "/"]);
+  });
+
+  it("responde unexpected con un error cualquiera, lo registra y revalida", async () => {
+    const seeded = await signInWithMembership();
+    const web = await seedProject({ workspaceId: seeded.workspaceId });
+    const entry = await seedOwnEntry(seeded);
+    const cause = new Error("la base se cayó");
+    const write = vi
+      .spyOn(timeEntryRepository, "updateProject")
+      .mockRejectedValueOnce(cause);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      expect(
+        await actions.updateEntryProject({
+          id: entry.id,
+          projectId: web.id,
+          taskId: null,
+        }),
+      ).toEqual({ ok: false, code: "unexpected", message: timeEntryMessages.unexpected });
+      expect(logged).toHaveBeenCalledWith(cause);
+    } finally {
+      write.mockRestore();
+      logged.mockRestore();
+    }
+    expect(mocks.revalidated).toEqual(["/"]);
+  });
+
+  it("startTimer, createManualEntry, continueEntry y duplicateEntry responden TT-77 con not_found", async () => {
+    const seeded = await signInWithMembership();
+    const old = await seedProject({ workspaceId: seeded.workspaceId, archived: true });
+    const source = await seedTimeEntry({
+      workspaceId: seeded.workspaceId,
+      userId: sessionUserId(),
+      startedAt: "2026-10-01T11:00:00Z",
+      endedAt: "2026-10-01T12:00:00Z",
+      projectId: old.id,
+    });
+    const tt77 = {
+      ok: false,
+      code: "not_found",
+      message: projectMessages.projectUnavailable,
+    };
+
+    expect(
+      await actions.startTimer({ id: randomUUID(), projectId: old.id, taskId: null }),
+    ).toEqual(tt77);
+    expect(
+      await actions.createManualEntry({
+        date: "2026-10-01",
+        start: "08:00",
+        end: "09:00",
+        projectId: old.id,
+      }),
+    ).toEqual(tt77);
+    expect(
+      await actions.continueEntry({ id: randomUUID(), sourceId: source.id }),
+    ).toEqual(tt77);
+    expect(
+      await actions.duplicateEntry({ id: randomUUID(), sourceId: source.id }),
+    ).toEqual(tt77);
+    expect(await allTimeEntries()).toHaveLength(1);
+    expect(mocks.revalidated).toEqual(["/", "/", "/", "/"]);
+  });
+
+  it("las altas guardan el par pedido", async () => {
+    const seeded = await signInWithMembership();
+    const web = await seedProject({ workspaceId: seeded.workspaceId });
+    const design = await seedTask({ workspaceId: seeded.workspaceId, projectId: web.id });
+
+    const started = await actions.startTimer({
+      id: randomUUID(),
+      projectId: web.id,
+      taskId: design.id,
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    expect(started.data.running.task?.id).toBe(design.id);
+    expect(await timeEntryById(started.data.running.id)).toMatchObject({
+      projectId: web.id,
+      taskId: design.id,
+    });
+  });
 });

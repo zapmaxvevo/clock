@@ -1,7 +1,7 @@
 import { DomainError, type ActionErrorCode } from "@/server/action";
 import { recordAudit } from "@/server/audit";
 import { createOnce } from "@/server/create-once";
-import { db } from "@/server/db";
+import { db, type Transaction } from "@/server/db";
 import {
   assertCan,
   can,
@@ -28,9 +28,11 @@ import {
   type CreateTaskResult,
   type CreateTaskValues,
   type ProjectCatalog,
-  type ProjectGroupView,
+  type ProjectRef,
   type ProjectView,
   type TaskView,
+  type TrackingCatalog,
+  type TrackingProjectView,
 } from "./schema";
 
 export class ProjectError extends DomainError {
@@ -236,6 +238,7 @@ export async function createTask(
   input: CreateTaskValues,
 ): Promise<CreateTaskResult> {
   const owner = await projectRepository.findProject(
+    db,
     actor.workspaceId,
     actor.userId,
     input.projectId,
@@ -283,6 +286,45 @@ export async function createTask(
   );
 }
 
+/**
+ * PR-23, PR-74, TT-08, TT-77. Lanza `ProjectError("not_found", …)` si la
+ * persona no puede cargar horas en ese proyecto o esa tarea. Solo lee, con la
+ * transacción de quien la llama (ADR 0010).
+ */
+export async function assertTrackable(
+  tx: Transaction,
+  actor: Actor,
+  target: { readonly projectId: string; readonly taskId: string | null },
+): Promise<void> {
+  const owner = await projectRepository.findProject(
+    tx,
+    actor.workspaceId,
+    actor.userId,
+    target.projectId,
+  );
+  // Uno que la persona no puede usar responde como uno que no existe: cualquier
+  // otra respuesta revelaría el privado.
+  if (
+    owner === undefined ||
+    owner.archivedAt !== null ||
+    !can(actor, "project.track", projectResource(owner))
+  ) {
+    throw new ProjectError("not_found", projectMessages.projectUnavailable);
+  }
+  if (target.taskId === null) {
+    return;
+  }
+  const found = await projectRepository.findTask(
+    tx,
+    actor.workspaceId,
+    owner.id,
+    target.taskId,
+  );
+  if (found === undefined || found.status === "done") {
+    throw new ProjectError("not_found", projectMessages.taskUnavailable);
+  }
+}
+
 // Sin distinguir mayúsculas, como `lower(name)` en los índices de unicidad.
 const byName = new Intl.Collator("es", { sensitivity: "accent" });
 
@@ -294,12 +336,25 @@ function alphabetical<T extends { readonly id: string; readonly name: string }>(
   );
 }
 
+type CatalogRead<Project> = {
+  /** Todos los clientes del workspace, archivados incluidos. */
+  readonly clients: readonly ClientRow[];
+  readonly groups: readonly {
+    readonly client: ClientView | null;
+    readonly projects: readonly Project[];
+  }[];
+};
+
 /**
- * La pantalla `/proyectos`. Tres consultas en un mismo snapshot y el armado en
- * memoria: el filtro de acceso es `can()` sobre cada proyecto (PR-61, PR-93),
- * sin una segunda versión en SQL que pueda desalinearse.
+ * Tres consultas en un mismo snapshot y el armado en memoria: el filtro de
+ * acceso es `can()` con `access` sobre cada proyecto (PR-61, PR-93), sin una
+ * segunda versión en SQL que pueda desalinearse.
  */
-export async function getProjectCatalog(actor: Actor): Promise<ProjectCatalog> {
+async function readCatalog<Project>(
+  actor: Actor,
+  access: "project.view" | "project.track",
+  toProject: (row: ProjectWithViewer, tasks: readonly TaskView[]) => Project,
+): Promise<CatalogRead<Project>> {
   const read = await db.transaction(
     async (tx) => ({
       clients: await projectRepository.listClients(tx, actor.workspaceId),
@@ -313,37 +368,67 @@ export async function getProjectCatalog(actor: Actor): Promise<ProjectCatalog> {
     { isolationLevel: "repeatable read" },
   );
 
-  const visible = read.projects.filter((row) =>
-    can(actor, "project.view", projectResource(row)),
-  );
+  const allowed = read.projects.filter((row) => can(actor, access, projectResource(row)));
   // Las tareas de un proyecto descartado no salen del service.
-  const tasksByProject = new Map<string, TaskRow[]>(visible.map((row) => [row.id, []]));
+  const tasksByProject = new Map<string, TaskRow[]>(allowed.map((row) => [row.id, []]));
   for (const row of read.tasks) {
     tasksByProject.get(row.projectId)?.push(row);
   }
-  const byClient = new Map<string | null, ProjectView[]>();
-  for (const row of alphabetical(visible)) {
+  const byClient = new Map<string | null, Project[]>();
+  for (const row of alphabetical(allowed)) {
     const tasks = alphabetical(tasksByProject.get(row.id) ?? []).map(toTaskView);
     const group = byClient.get(row.clientId) ?? [];
-    group.push(toProjectView(actor, row, tasks));
+    group.push(toProject(row, tasks));
     byClient.set(row.clientId, group);
   }
-  // Un cliente sin proyectos visibles no forma grupo (PR-62).
-  const clientGroups: ProjectGroupView[] = alphabetical(
+  // Un cliente sin proyectos que mostrar no forma grupo (PR-62).
+  const clientGroups = alphabetical(
     read.clients.filter((row) => byClient.has(row.id)),
   ).map((row) => ({ client: toClientView(row), projects: byClient.get(row.id) ?? [] }));
   const withoutClient = byClient.get(null);
 
+  return {
+    clients: read.clients,
+    // «Sin cliente» al final (PR-14, PR-97).
+    groups:
+      withoutClient === undefined
+        ? clientGroups
+        : [...clientGroups, { client: null, projects: withoutClient }],
+  };
+}
+
+/** La pantalla `/proyectos`: los proyectos que la persona ve. */
+export async function getProjectCatalog(actor: Actor): Promise<ProjectCatalog> {
+  const read = await readCatalog(actor, "project.view", (row, tasks) =>
+    toProjectView(actor, row, tasks),
+  );
   return {
     canCreateClient: can(actor, "client.create", workspaceResource(actor)),
     canCreateProject: can(actor, "project.create", workspaceResource(actor)),
     clients: alphabetical(read.clients.filter((row) => row.archivedAt === null)).map(
       toClientView,
     ),
-    // «Sin cliente» al final (PR-14, PR-97).
-    groups:
-      withoutClient === undefined
-        ? clientGroups
-        : [...clientGroups, { client: null, projects: withoutClient }],
+    groups: read.groups,
+  };
+}
+
+function toProjectRef(row: ProjectWithViewer): ProjectRef {
+  return { id: row.id, name: row.name, color: paletteKeyOf(row) };
+}
+
+/**
+ * El selector del rastreador: los proyectos en los que la persona puede cargar
+ * horas. Un admin no ve acá un privado del que no es miembro, aunque lo vea en
+ * `/proyectos` (PR-17).
+ */
+export async function getTrackingCatalog(actor: Actor): Promise<TrackingCatalog> {
+  const read = await readCatalog(
+    actor,
+    "project.track",
+    (row, tasks): TrackingProjectView => ({ ...toProjectRef(row), tasks }),
+  );
+  return {
+    canCreateProject: can(actor, "project.create", workspaceResource(actor)),
+    groups: read.groups,
   };
 }

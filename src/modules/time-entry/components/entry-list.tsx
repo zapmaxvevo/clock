@@ -5,16 +5,20 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useOptimistic, useRef, useState } from "react";
 
 import { buttonVariants } from "@/components/ui/button";
+import { retryHandlerOf, useAction } from "@/hooks/use-action";
+import { useNewId } from "@/hooks/use-new-id";
 import { continueEntry } from "@/modules/time-entry/actions";
-import type { TimeEntryView, WeekGroupView } from "@/modules/time-entry/schema";
+import {
+  timeEntryMessages,
+  type TimeEntryView,
+  type WeekGroupView,
+} from "@/modules/time-entry/schema";
 
 import { DayGroup, type MovedEntry } from "./day-group";
 import { startedWeeks } from "./entry-week";
 import { trackerLabels } from "./labels";
 import { useReachWeek } from "./reach-week";
 import { TrackerFeedback } from "./tracker-feedback";
-import { retryHandlerOf, useEntryAction } from "./use-entry-action";
-import { useNewEntryId } from "./use-new-entry-id";
 import { useTrackerShortcuts } from "./use-tracker-shortcuts";
 import { WeekGroup } from "./week-group";
 
@@ -96,11 +100,12 @@ export function EntryList({
     null,
     (_current, sourceId) => sourceId,
   );
-  const continuation = useEntryAction(continueEntry, {
+  const continuation = useAction(continueEntry, {
+    unreachableMessage: timeEntryMessages.unexpected,
     optimistic: (input) => showContinuing(input.sourceId),
     onSuccess: (data) => reachWeek(startedWeeks(data)),
   });
-  const nextContinueId = useNewEntryId(continuation.failure);
+  const nextContinueId = useNewId(continuation.failure);
 
   const [removedIds, showRemoved] = useOptimistic<readonly string[], string>(
     [],

@@ -17,19 +17,23 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { ProjectPicker } from "@/modules/project/components/project-picker";
+import type { ProjectSelection } from "@/modules/project/schema";
 import type { TimeEntryView } from "@/modules/time-entry/schema";
 import { formatDuration } from "@/server/time";
 
 import { DeleteEntryDialog } from "./delete-entry-dialog";
 import { DescriptionField } from "./description-field";
 import { EntryTimesEditor } from "./entry-times-editor";
-import { trackerLabels } from "./labels";
+import { entryProjectLabel, trackerLabels } from "./labels";
 import { draftDuration, draftExtraDays, fromView, type TimeDraft } from "./time-draft";
 
 type EntryRowProps = {
   readonly entry: TimeEntryView;
   /** Descripción a mostrar: la optimista mientras la escritura está en vuelo. */
   readonly description: string;
+  /** El proyecto y la tarea a mostrar, también optimistas. */
+  readonly project: ProjectSelection;
   /** TT-55: con la escritura en vuelo la fila queda atenuada. */
   readonly busy: boolean;
   /** Con la membresía desactivada la fila queda en solo lectura (TT-92). */
@@ -45,6 +49,8 @@ type EntryRowProps = {
    * sus avisos tienen que sobrevivir a que esta fila desaparezca.
    */
   readonly onSave: (description: string) => void;
+  /** TT-54: el selector solo avisa si el par elegido no es el que la fila ya tiene. */
+  readonly onChangeProject: (selection: ProjectSelection) => void;
   readonly onSaveTimes: (times: TimeDraft) => void;
   readonly onDelete: () => void;
   /** TT-57: continuar es de la lista, que también lo dispara con «c». */
@@ -80,12 +86,14 @@ function extraDaysText(extraDays: number): string {
 export function EntryRow({
   entry,
   description,
+  project,
   busy,
   canTrack,
   pendingTimes,
   todayKey,
   minDayKey,
   onSave,
+  onChangeProject,
   onSaveTimes,
   onDelete,
   onContinue,
@@ -221,7 +229,15 @@ export function EntryRow({
           )}
         </div>
 
-        <span className="text-muted-foreground text-sm">{trackerLabels.noProject}</span>
+        {/* TT-49 y TT-92: con la membresía desactivada, el proyecto como texto. */}
+        <ProjectPicker
+          value={project}
+          onChange={onChangeProject}
+          variant="row"
+          label={entryProjectLabel(entryName)}
+          pending={busy}
+          readOnly={!canTrack}
+        />
 
         {timesEditing !== null && timesDraft !== null ? (
           <EntryTimesEditor

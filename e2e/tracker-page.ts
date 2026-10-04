@@ -172,3 +172,61 @@ export async function setClock(
   await field.fill(text);
   await field.press("Enter");
 }
+
+/** El nombre accesible del buscador del selector de proyecto (TT-07). */
+const PROJECT_SEARCH = "Buscar proyecto, cliente o tarea";
+
+/**
+ * El disparador del selector de proyecto de `scope`: «Proyecto» en la barra
+ * y «Proyecto de la entrada «…»» en una fila (TT-06, TT-49). Dentro de cada
+ * uno hay uno solo.
+ */
+export function projectPicker(scope: Locator): Locator {
+  return scope.getByRole("combobox", { name: /^Proyecto( de la entrada «.*»)?$/ });
+}
+
+/** El buscador del selector abierto. El popup va en un portal. */
+export function projectSearch(page: Page): Locator {
+  return page.getByRole("combobox", { name: PROJECT_SEARCH, exact: true });
+}
+
+/** El popup del selector abierto, el diálogo que lleva el buscador. */
+export function projectPopup(page: Page): Locator {
+  return page.getByRole("dialog").filter({ has: projectSearch(page) });
+}
+
+/**
+ * Una opción del selector abierto: el nombre del proyecto, «Proyecto: Tarea»
+ * o «Sin proyecto».
+ */
+export function projectOption(page: Page, name: string): Locator {
+  return projectPopup(page).getByRole("option", { name, exact: true });
+}
+
+/** Abre el selector de `scope` y espera el foco en el buscador. */
+export async function openProjectPicker(page: Page, scope: Locator): Promise<void> {
+  await projectPicker(scope).click();
+  await expect(projectSearch(page)).toBeFocused();
+}
+
+/**
+ * Elige una opción del selector de `scope` y espera a que se cierre con el
+ * foco de vuelta en su disparador. Antes escribe `search` en el buscador: la
+ * base de los e2e acumula proyectos de todas las corridas, y el sufijo del
+ * recorrido deja a la vista solo los suyos. «Sin proyecto» se elige con la
+ * búsqueda vacía, que es la única que lo ofrece.
+ */
+export async function pickProject(
+  page: Page,
+  scope: Locator,
+  option: string,
+  search = "",
+): Promise<void> {
+  await openProjectPicker(page, scope);
+  if (search !== "") {
+    await projectSearch(page).fill(search);
+  }
+  await projectOption(page, option).click();
+  await expect(projectPopup(page)).toBeHidden();
+  await expect(projectPicker(scope)).toBeFocused();
+}

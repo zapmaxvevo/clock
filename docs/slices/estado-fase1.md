@@ -1,32 +1,54 @@
 # Estado de la fase 1
 
 Registro vivo de por dónde va la ejecución. Se actualiza al cerrar cada paso;
-quien retome el trabajo empieza acá. Última actualización: 2026-10-03.
+quien retome el trabajo empieza acá. Última actualización: 2026-10-04.
 
 ## Dónde estamos
 
-| Slice                                      | Estado       |
-| ------------------------------------------ | ------------ |
-| 1 — Timer sin proyecto                     | En `main`    |
-| 2 — Modo manual                            | En `main`    |
-| 2b — Reintento de «Iniciar»                | En `main`    |
-| 3 — Corregir horas y fecha                 | En `main`    |
-| 4 — Continuar, duplicar, descartar, atajos | En `main`    |
-| 5 — Semana y paginación                    | En `main`    |
-| 9 — Núcleo de proyectos                    | En `main`    |
-| 6, 7, 8, 10–13                             | Sin contrato |
+| Slice                                      | Estado                                          |
+| ------------------------------------------ | ----------------------------------------------- |
+| 1 — Timer sin proyecto                     | En `main`                                       |
+| 2 — Modo manual                            | En `main`                                       |
+| 2b — Reintento de «Iniciar»                | En `main`                                       |
+| 3 — Corregir horas y fecha                 | En `main`                                       |
+| 4 — Continuar, duplicar, descartar, atajos | En `main`                                       |
+| 5 — Semana y paginación                    | En `main`                                       |
+| 9 — Núcleo de proyectos                    | En `main`                                       |
+| 10 — Selector de proyecto y tarea          | En `main` (local): falta `git push origin main` |
+| 7 — Perfil                                 | Contrato con ronda 1 aplicada; sigue ahora      |
+| 6 — Selección y acciones en masa           | Contrato con ronda 1 aplicada; va después del 7 |
+| 7b — Perfil: nombre editable y tema        | Sin contrato                                    |
+| 8, 11–13                                   | Sin contrato                                    |
 
-Los slices 1 a 5 y 9 están en `main`, local: **falta `git push origin main`**. No quedan
-agentes con trabajo pendiente.
+Los slices 1 a 5 y 9 están en `origin/main`. El slice 10 pasó las seis revisiones
+(`correcciones-fase1-slice10-revisiones.md`) y su ronda de correcciones, y está mergeado en
+`main` local: **falta `git push origin main`**. Corrida final: 504 de unidad, 634 de
+integración y 81 de 82 en e2e; la que falló fue un 429 del endpoint de sesión y su spec
+pasa entero al repetirlo. Con el 10 viajaron los contratos del 6 y del 7 y los ADR 0010 a 0012. No
+quedan agentes corriendo ni trabajo sin commitear.
 
 ## Lo primero de la sesión siguiente
 
-1. Los contratos del 6, 7 y 8 (`fase1-mapa.md`), con el pipeline de abajo. El 10 depende del 9,
-   que ya está.
+1. **Ronda corta del `architecture-reviewer`** sobre los contratos del 7 y del 6 contra el
+   árbol con el 10 adentro (sus contratos lo piden en §0). Después, el pipeline del 7.
+2. **Orden decidido: 7 → 6.** El contrato del **8** (calendario), cuando el 7 esté en
+   `main`; después el 7b, 11, 12, 13.
+3. Pendientes chicos de paridad que dejó el 10: PR-85 sigue diciendo «si el rol lo
+   permite» (TT-87 ya dice `project.create`), y TT-104 no menciona que el proyecto
+   archivado se quita con «Sin proyecto». Alinearlos en el próximo paso de
+   `parity-analyst`.
+
+El hydration mismatch de `AppLayout` quedó cerrado: es el `MetadataWrapper` de Next durante
+una recarga en caliente y no se reproduce.
+
+Decisiones del usuario del 2026-10-03: ADR 0010, 0011 y 0012 aceptados; TT-07 con las tareas
+siempre listadas; continuar o duplicar con un proyecto no disponible se rechaza; la zona por
+omisión del perfil es un valor fijo (`America/Argentina/Buenos_Aires`), no la del workspace.
 
 Deuda anotada: no hay ningún `error.tsx` en `src/app`; un error de lectura cae en la página
 genérica de Next. La base de e2e acumula clientes y proyectos que en la fase 1 no se pueden
-borrar (umbral de §8 del contrato del 9).
+borrar (umbral de §8 del contrato del 9), más los `rev-*` y sintéticos de las revisiones
+del 10.
 
 ## Decisiones pendientes del usuario
 
@@ -42,7 +64,8 @@ borrar (umbral de §8 del contrato del 9).
 null (col)`) antes de desplegar.
 - **Sesión en el workspace de Clockify** para cerrar lo no verificado: P-14 en
   `time-tracker.md` (fila de la entrada que corre, hora inexistente, horas de la
-  copia al duplicar, «la última» de `c`), P-12 de `timesheet.md`, P-07 de
+  copia al duplicar, «la última» de `c`, continuar o duplicar con un proyecto no
+  disponible, TT-57 y TT-58), P-12 de `timesheet.md`, P-07 de
   `calendario.md`, y PR-40/PR-58 de `proyectos.md` (quién crea tareas).
 - **«Reintentar» en el alta manual**: con el ADR 0007 se le podría devolver y
   retirar TT-109. Es un cambio de paridad chico; queda propuesto.
@@ -74,6 +97,9 @@ null (col)`) antes de desplegar.
   rótulos de fecha del cliente salen un día antes; instalarlo después de sembrar y recargar.
 - **Avisos que sobreviven**: si la revalidación puede desmontar el componente que muestra
   un error, el aviso sube a algo que sobrevive (región de la pantalla con foco).
+- **Altas con id del cliente**: el caso que distingue el orden de una validación respecto
+  de la escritura es el id de una fila ajena (choca con la clave primaria y sale
+  `forbidden`); en el 10 un mutante dado por equivalente cayó así.
 - **Contratos viejos**: antes de implementar un contrato escrito antes de otros slices, una
   ronda corta del `architecture-reviewer` contra el árbol (en el 9 encontró dos mayores).
 - **Foco**: un control con foco que pasa a `disabled` lo pierde a `body`; usar
@@ -86,6 +112,6 @@ null (col)`) antes de desplegar.
 
 - Plan y orden: `fase1-mapa.md`.
 - Contratos: `fase1-slice<n>-*.md`; correcciones: `correcciones-fase1-slice<n>*.md`.
-- ADR: `docs/adr/0001`–`0009` (todos aceptados).
+- ADR: `docs/adr/0001`–`0012` (todos aceptados).
 - Paridad: `docs/parity/` (time-tracker, perfil, proyectos, calendario,
   timesheet).

@@ -11,7 +11,8 @@ import type { ActionFailure } from "./use-action";
  * lleva un id nuevo. El id se pide en el manejador, antes de `run`, que baja
  * el aviso: el que se ve es el que dice si hay un pedido pendiente.
  *
- * La clave es fija por formulario de alta, como la de «Iniciar».
+ * La clave es la entrada de la que parte el alta (continuar y duplicar) o una
+ * fija para la que no parte de ninguna, como «Iniciar».
  */
 export function useNewId(failure: ActionFailure | null): (key: string) => string {
   const last = useRef<{ readonly key: string; readonly id: string } | null>(null);

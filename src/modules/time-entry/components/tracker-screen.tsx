@@ -1,6 +1,8 @@
 import { InfoIcon } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { TrackingCatalogProvider } from "@/modules/project/components/tracking-catalog";
+import { getTrackingCatalog } from "@/modules/project/service";
 import { getTrackerState, type TrackerWorkspace } from "@/modules/time-entry/service";
 import type { Actor } from "@/server/permissions";
 
@@ -29,7 +31,12 @@ export async function TrackerScreen({
   from,
   initialMode,
 }: TrackerScreenProps) {
-  const state = await getTrackerState(actor, workspace, { from });
+  // No comparten snapshot: un proyecto creado entre las dos lecturas aparece
+  // en una sola, y la próxima revalidación lo pone en las dos.
+  const [state, catalog] = await Promise.all([
+    getTrackerState(actor, workspace, { from }),
+    getTrackingCatalog(actor),
+  ]);
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
@@ -46,32 +53,34 @@ export async function TrackerScreen({
         </Alert>
       )}
 
-      <ReachWeekProvider reachFrom={state.reachFrom}>
-        <TrackerBar
-          running={state.running}
-          serverNow={state.serverNow}
-          timeZone={state.timeZone}
-          todayKey={state.todayKey}
-          minDayKey={state.minDayKey}
-          canTrack={state.canTrack}
-          initialMode={initialMode}
-        />
-
-        {state.hasAnyEntry ? (
-          <EntryList
-            weeks={state.weeks}
+      <TrackingCatalogProvider catalog={catalog}>
+        <ReachWeekProvider reachFrom={state.reachFrom}>
+          <TrackerBar
             running={state.running}
             serverNow={state.serverNow}
-            canTrack={state.canTrack}
+            timeZone={state.timeZone}
             todayKey={state.todayKey}
             minDayKey={state.minDayKey}
-            lastEntryId={state.lastEntryId}
-            loadMoreFrom={state.loadMoreFrom}
+            canTrack={state.canTrack}
+            initialMode={initialMode}
           />
-        ) : (
-          <TrackerEmpty />
-        )}
-      </ReachWeekProvider>
+
+          {state.hasAnyEntry ? (
+            <EntryList
+              weeks={state.weeks}
+              running={state.running}
+              serverNow={state.serverNow}
+              canTrack={state.canTrack}
+              todayKey={state.todayKey}
+              minDayKey={state.minDayKey}
+              lastEntryId={state.lastEntryId}
+              loadMoreFrom={state.loadMoreFrom}
+            />
+          ) : (
+            <TrackerEmpty />
+          )}
+        </ReachWeekProvider>
+      </TrackingCatalogProvider>
     </div>
   );
 }

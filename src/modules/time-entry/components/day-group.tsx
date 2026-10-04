@@ -2,29 +2,27 @@
 
 import { useEffect, useOptimistic, useRef } from "react";
 
+import { retryHandlerOf, useAction, type ActionHandle } from "@/hooks/use-action";
+import { useNewId } from "@/hooks/use-new-id";
 import {
   deleteEntry,
   duplicateEntry,
   updateDescription,
   updateEntryTimes,
 } from "@/modules/time-entry/actions";
-import type {
-  DayGroupView,
-  TimeEntryView,
-  UpdateDescriptionInput,
-  UpdateEntryTimesInput,
+import {
+  timeEntryMessages,
+  type DayGroupView,
+  type TimeEntryView,
+  type UpdateDescriptionInput,
+  type UpdateEntryTimesInput,
 } from "@/modules/time-entry/schema";
 
+import { saveEntryProject, selectionOf, type EntryProjectChange } from "./entry-project";
 import { EntryRow } from "./entry-row";
 import { trackerLabels } from "./labels";
 import { TrackerFeedback } from "./tracker-feedback";
-import {
-  retryHandlerOf,
-  useEntryAction,
-  type EntryActionHandle,
-} from "./use-entry-action";
 import { useGroupTotalLabel } from "./use-group-total";
-import { useNewEntryId } from "./use-new-entry-id";
 
 type DayGroupProps = {
   readonly group: DayGroupView;
@@ -126,12 +124,25 @@ export function DayGroup({
     readonly UpdateDescriptionInput[],
     UpdateDescriptionInput
   >([], replaceById);
-  const save = useEntryAction(updateDescription, {
+  const save = useAction(updateDescription, {
+    unreachableMessage: timeEntryMessages.unexpected,
     optimistic: (input) => showEdit(input),
     onSuccess: (data) => onEntryWeek(data.entry.weekStart),
   });
 
-  const remove = useEntryAction(deleteEntry, {
+  /** TT-54: el par elegido se ve en la fila mientras viaja, y vuelve si falla. */
+  const [projectEdits, showProjectEdit] = useOptimistic<
+    readonly EntryProjectChange[],
+    EntryProjectChange
+  >([], replaceById);
+  const saveProject = useAction(saveEntryProject, {
+    unreachableMessage: timeEntryMessages.unexpected,
+    optimistic: (input) => showProjectEdit(input),
+    onSuccess: (data) => onEntryWeek(data.entry.weekStart),
+  });
+
+  const remove = useAction(deleteEntry, {
+    unreachableMessage: timeEntryMessages.unexpected,
     optimistic: (input) => showRemoved(input.id),
   });
 
@@ -145,7 +156,8 @@ export function DayGroup({
     readonly UpdateEntryTimesInput[],
     UpdateEntryTimesInput
   >([], replaceById);
-  const saveTimes = useEntryAction(updateEntryTimes, {
+  const saveTimes = useAction(updateEntryTimes, {
+    unreachableMessage: timeEntryMessages.unexpected,
     optimistic: (input) => showTimeEdit(input),
     onSuccess: (data, input) => {
       if (focusIsOnEntry(input.id) && data.entry.dayDate !== group.date) {
@@ -156,10 +168,11 @@ export function DayGroup({
   });
 
   /** TT-58: la copia aparece con la revalidación; no hay fila optimista. */
-  const duplicate = useEntryAction(duplicateEntry, {
+  const duplicate = useAction(duplicateEntry, {
+    unreachableMessage: timeEntryMessages.unexpected,
     onSuccess: (data) => onEntryWeek(data.created.weekStart),
   });
-  const nextDuplicateId = useNewEntryId(duplicate.failure);
+  const nextDuplicateId = useNewId(duplicate.failure);
 
   function handleDuplicate(sourceId: string): void {
     const id = nextDuplicateId(sourceId);
@@ -171,12 +184,12 @@ export function DayGroup({
    * ve, repetir «Duplicar» reusa el id pendiente, y quien quiera otra copia la
    * pide después de que baje (§8).
    */
-  function run<Input>(handle: EntryActionHandle<Input>, input: Input): void {
+  function run<Input>(handle: ActionHandle<Input>, input: Input): void {
     duplicate.clear();
     handle.run(input);
   }
 
-  function retryOf<Input>(handle: EntryActionHandle<Input>): (() => void) | undefined {
+  function retryOf<Input>(handle: ActionHandle<Input>): (() => void) | undefined {
     const retry = retryHandlerOf(handle);
     return retry === undefined
       ? undefined
@@ -229,20 +242,26 @@ export function DayGroup({
           {entries.map((entry) => {
             const edit = edits.find((pending) => pending.id === entry.id);
             const timeEdit = timeEdits.find((pending) => pending.id === entry.id);
+            const projectEdit = projectEdits.find((pending) => pending.id === entry.id);
             return (
               <EntryRow
                 key={entry.id}
                 entry={entry}
                 description={edit?.description ?? entry.description}
+                project={projectEdit?.selection ?? selectionOf(entry)}
                 busy={
                   (save.pending && edit !== undefined) ||
-                  (saveTimes.pending && timeEdit !== undefined)
+                  (saveTimes.pending && timeEdit !== undefined) ||
+                  (saveProject.pending && projectEdit !== undefined)
                 }
                 canTrack={canTrack}
                 pendingTimes={timeEdit ?? null}
                 todayKey={todayKey}
                 minDayKey={minDayKey}
                 onSave={(description) => run(save, { id: entry.id, description })}
+                onChangeProject={(selection) =>
+                  run(saveProject, { id: entry.id, selection })
+                }
                 onSaveTimes={(times) =>
                   run(saveTimes, {
                     id: entry.id,
@@ -265,6 +284,7 @@ export function DayGroup({
       )}
 
       {(save.failure !== null ||
+        saveProject.failure !== null ||
         remove.failure !== null ||
         saveTimes.failure !== null ||
         duplicate.failure !== null) && (
@@ -275,6 +295,14 @@ export function DayGroup({
               message={save.failure.message}
               retryDisabled={save.pending}
               onRetry={retryOf(save)}
+            />
+          )}
+          {saveProject.failure !== null && (
+            <TrackerFeedback
+              title={trackerLabels.projectNotSaved}
+              message={saveProject.failure.message}
+              retryDisabled={saveProject.pending}
+              onRetry={retryOf(saveProject)}
             />
           )}
           {saveTimes.failure !== null && (

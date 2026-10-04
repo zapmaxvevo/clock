@@ -12,6 +12,7 @@ import {
   elapsedCounter,
   elapsedOf,
   entryRow,
+  projectPicker,
   startTimer,
   stopTimer,
   todayGroup,
@@ -45,7 +46,8 @@ test("el timer arranca sin proyecto, cuenta sola y sobrevive a la recarga", asyn
   await startTimer(page, "revisar la paridad");
 
   const bar = trackerBar(page);
-  await expect(bar.getByText("Sin proyecto")).toBeVisible();
+  // TT-06: sin proyecto, el selector de la barra dice «Proyecto».
+  await expect(projectPicker(bar)).toHaveText("Proyecto");
 
   // TT-24: con el timer corriendo, el botón de detener es rojo. El color
   // llega por una transición, así que se espera a que el rojo domine en vez

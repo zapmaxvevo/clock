@@ -1,3 +1,5 @@
+import { samePair, type ProjectPair } from "@/lib/project-pair";
+import { DomainError } from "@/server/action";
 import { db, type Transaction } from "@/server/db";
 import { recordAudit } from "@/server/audit";
 import { createOnce, type ConflictOutcome } from "@/server/create-once";
@@ -22,9 +24,19 @@ import {
   weekStartKey,
   type WeekStart,
 } from "@/server/time";
+import { isPaletteKey } from "@/modules/project/palette";
+import { projectMessages, type ProjectRef } from "@/modules/project/schema";
+import { assertTrackable } from "@/modules/project/service";
 import { weekStartOf, type WorkspaceContext } from "@/modules/workspace/service";
 
-import { timeEntryRepository, type EntryTarget, type TimeEntryRow } from "./repository";
+import { pairToCheck } from "./assignment";
+import {
+  timeEntryRepository,
+  type EntryRefs,
+  type EntryTarget,
+  type EntryWithRefs,
+  type TimeEntryRow,
+} from "./repository";
 import {
   timeEntryMessages,
   TRACKER_WINDOW_DAYS,
@@ -48,6 +60,8 @@ import {
   type TrackerState,
   type UpdateDescriptionInput,
   type UpdateDescriptionResult,
+  type UpdateEntryProjectInput,
+  type UpdateEntryProjectResult,
   type UpdateEntryTimesInput,
   type UpdateEntryTimesResult,
   type UpdateRunningStartInput,
@@ -56,12 +70,9 @@ import {
 } from "./schema";
 
 /** Error de dominio del módulo. La action lo traduce a un resultado tipado. */
-export class TimeEntryError extends Error {
-  constructor(
-    readonly code: TimeEntryErrorCode,
-    message: string,
-  ) {
-    super(message);
+export class TimeEntryError extends DomainError<TimeEntryErrorCode> {
+  constructor(code: TimeEntryErrorCode, message: string) {
+    super(code, message);
     this.name = "TimeEntryError";
   }
 }
@@ -136,7 +147,16 @@ function weekOf(instant: Date, workspace: TrackerWorkspace): string {
   return weekStartKey(dayKey(instant, workspace.timezone), workspace.weekStart);
 }
 
-function toView(row: TimeEntryRow, workspace: TrackerWorkspace): TimeEntryView {
+/** El `check` de la base no deja guardar otra cosa; si pasa, no es la paleta. */
+function projectRefOf(project: NonNullable<EntryRefs["project"]>): ProjectRef {
+  if (!isPaletteKey(project.color)) {
+    throw new Error(`El proyecto ${project.id} tiene un color fuera de la paleta.`);
+  }
+  return { id: project.id, name: project.name, color: project.color };
+}
+
+/** Recibe la fila con sus referencias: una lectura sin el join no compila (§5.2). */
+function toView(row: EntryWithRefs, workspace: TrackerWorkspace): TimeEntryView {
   const timeZone = workspace.timezone;
   const endedAt = row.endedAt;
   const seconds = endedAt === null ? null : durationSeconds(row.startedAt, endedAt);
@@ -153,6 +173,8 @@ function toView(row: TimeEntryRow, workspace: TrackerWorkspace): TimeEntryView {
     durationSeconds: seconds,
     durationLabel: seconds === null ? null : formatDuration(Math.floor(seconds / 60)),
     editableTimes: hasEditableTimes(row, timeZone),
+    project: row.project === null ? null : projectRefOf(row.project),
+    task: row.task === null ? null : { id: row.task.id, name: row.task.name },
   };
 }
 
@@ -174,8 +196,8 @@ export function ownTimeEntryResource(actor: Actor) {
 function authorizeEntry(
   actor: Actor,
   action: Action,
-  row: TimeEntryRow | undefined,
-): TimeEntryRow {
+  row: EntryWithRefs | undefined,
+): EntryWithRefs {
   if (row === undefined) {
     throw new TimeEntryError("not_found", timeEntryMessages.notFound);
   }
@@ -202,7 +224,7 @@ async function readOwnEntry(
   actor: Actor,
   action: Action,
   id: string,
-): Promise<TimeEntryRow> {
+): Promise<EntryWithRefs> {
   return authorizeEntry(
     actor,
     action,
@@ -219,7 +241,7 @@ async function readSourceEntry(
   tx: Transaction,
   actor: Actor,
   id: string,
-): Promise<TimeEntryRow> {
+): Promise<EntryWithRefs> {
   return authorizeEntry(
     actor,
     "timeEntry.own.create",
@@ -237,7 +259,7 @@ async function closeRunning(
   tx: Transaction,
   actor: Actor,
   row: TimeEntryRow,
-): Promise<TimeEntryRow | undefined> {
+): Promise<EntryWithRefs | undefined> {
   const stopped = await timeEntryRepository.stopById(tx, targetOf(row));
   if (stopped === undefined) {
     return undefined;
@@ -260,7 +282,7 @@ async function closeRunning(
  */
 function runningConflictHook<Result>(
   actor: Actor,
-  winner: (row: TimeEntryRow) => Result,
+  winner: (row: EntryWithRefs) => Result,
 ): (error: unknown) => Promise<ConflictOutcome<Result>> {
   return async (error) => {
     if (!timeEntryRepository.isRunningConflict(error)) {
@@ -286,8 +308,8 @@ async function createEntryOnce<Result>(
   id: string,
   creation: {
     readonly attempt: () => Promise<Result>;
-    readonly replayed: (row: TimeEntryRow) => Result;
-    readonly winner?: (row: TimeEntryRow) => Result;
+    readonly replayed: (row: EntryWithRefs) => Result;
+    readonly winner?: (row: EntryWithRefs) => Result;
   },
 ): Promise<Result> {
   // Antes que la fila propia: sin esto, una membresía desactivada recibiría
@@ -296,7 +318,7 @@ async function createEntryOnce<Result>(
     throw new TimeEntryError("forbidden", timeEntryMessages.forbidden);
   }
   const { winner } = creation;
-  return createOnce<TimeEntryRow, Result>({
+  return createOnce<EntryWithRefs, Result>({
     id,
     findOwn: (ownId) =>
       timeEntryRepository.findOwnById(actor.workspaceId, actor.userId, ownId),
@@ -326,21 +348,68 @@ async function translatingEndBeforeStart<Result>(
   }
 }
 
-/** Los campos que la entrada nueva toma de la original. Hoy, la descripción. */
-type EntryFields = { readonly description: string };
+/**
+ * Las redes de la base para el par: el proyecto o la tarea que se borran entre
+ * `assertTrackable` y la escritura (en la fase 1 nada borra), y el `check` que
+ * Zod ya cubre.
+ */
+async function translatingPairConstraints<Result>(
+  work: () => Promise<Result>,
+): Promise<Result> {
+  try {
+    return await work();
+  } catch (error) {
+    if (timeEntryRepository.isMissingProject(error)) {
+      throw new TimeEntryError("not_found", projectMessages.projectUnavailable);
+    }
+    if (timeEntryRepository.isMissingTask(error)) {
+      throw new TimeEntryError("not_found", projectMessages.taskUnavailable);
+    }
+    if (timeEntryRepository.isTaskWithoutProject(error)) {
+      throw new TimeEntryError("validation", timeEntryMessages.taskNeedsProject);
+    }
+    throw error;
+  }
+}
+
+/** El par de una entrada nueva: nada que conservar. */
+const NO_PROJECT: ProjectPair = { projectId: null, taskId: null };
+
+/**
+ * La regla del par (§4.3): si el pedido asigna algo nuevo, lo decide
+ * `project` (ADR 0010) con la transacción de la operación, así un rechazo
+ * deshace todo lo que la operación hizo antes.
+ */
+async function assertAssignable(
+  tx: Transaction,
+  actor: Actor,
+  current: ProjectPair,
+  requested: ProjectPair,
+): Promise<void> {
+  const target = pairToCheck(current, requested);
+  if (target !== null) {
+    await assertTrackable(tx, actor, target);
+  }
+}
+
+function pairOf(row: ProjectPair): ProjectPair {
+  return { projectId: row.projectId, taskId: row.taskId };
+}
+
+/** Los campos que la entrada nueva toma de la original. */
+type EntryFields = ProjectPair & { readonly description: string };
 
 /**
  * La única función que decide qué se copia de la original, para continuar y
- * para duplicar. Los slices 10 y 11 le suman proyecto, tarea, etiquetas y
- * facturable.
+ * para duplicar. El slice 11 le suma etiquetas y facturable.
  */
 function continuedFields(source: TimeEntryRow): EntryFields {
-  return { description: source.description };
+  return { description: source.description, ...pairOf(source) };
 }
 
 type OpenedEntry = {
-  readonly running: TimeEntryRow;
-  readonly stopped: TimeEntryRow | null;
+  readonly running: EntryWithRefs;
+  readonly stopped: EntryWithRefs | null;
 };
 
 /**
@@ -382,22 +451,24 @@ async function startEntryOnce(
   id: string,
   open: (tx: Transaction) => Promise<OpenedEntry>,
 ): Promise<StartTimerResult> {
-  const runningOnly = (row: TimeEntryRow): StartTimerResult => ({
+  const runningOnly = (row: EntryWithRefs): StartTimerResult => ({
     running: toView(row, workspace),
     stopped: null,
   });
   return translatingEndBeforeStart(() =>
-    createEntryOnce(actor, id, {
-      attempt: async () => {
-        const opened = await db.transaction(open);
-        return {
-          running: toView(opened.running, workspace),
-          stopped: opened.stopped === null ? null : toView(opened.stopped, workspace),
-        };
-      },
-      replayed: runningOnly,
-      winner: runningOnly,
-    }),
+    translatingPairConstraints(() =>
+      createEntryOnce(actor, id, {
+        attempt: async () => {
+          const opened = await db.transaction(open);
+          return {
+            running: toView(opened.running, workspace),
+            stopped: opened.stopped === null ? null : toView(opened.stopped, workspace),
+          };
+        },
+        replayed: runningOnly,
+        winner: runningOnly,
+      }),
+    ),
   );
 }
 
@@ -408,9 +479,12 @@ export async function startTimer(
   input: StartTimerValues,
 ): Promise<StartTimerResult> {
   return startEntryOnce(actor, workspace, input.id, async (tx) => {
+    const pair = pairOf(input);
+    // Antes de cerrar el timer abierto: un rechazo no lo cierra.
+    await assertAssignable(tx, actor, NO_PROJECT, pair);
     const opened = await closeAndOpen(tx, actor, {
       id: input.id,
-      fields: { description: input.description },
+      fields: { description: input.description, ...pair },
     });
     await recordAudit(tx, {
       workspaceId: actor.workspaceId,
@@ -420,6 +494,8 @@ export async function startTimer(
       entityId: opened.running.id,
       nextValue: {
         description: opened.running.description,
+        projectId: opened.running.projectId,
+        taskId: opened.running.taskId,
         startedAt: opened.running.startedAt,
       },
     });
@@ -439,10 +515,11 @@ export async function continueEntry(
 ): Promise<ContinueEntryResult> {
   return startEntryOnce(actor, workspace, input.id, async (tx) => {
     const source = await readSourceEntry(tx, actor, input.sourceId);
-    const opened = await closeAndOpen(tx, actor, {
-      id: input.id,
-      fields: continuedFields(source),
-    });
+    const fields = continuedFields(source);
+    // Antes de cerrar el timer abierto: con un proyecto que ya no está
+    // disponible no se crea nada y el timer sigue corriendo (§4.4).
+    await assertAssignable(tx, actor, NO_PROJECT, fields);
+    const opened = await closeAndOpen(tx, actor, { id: input.id, fields });
     await recordAudit(tx, {
       workspaceId: actor.workspaceId,
       actorId: actor.userId,
@@ -452,6 +529,8 @@ export async function continueEntry(
       nextValue: {
         sourceId: source.id,
         description: opened.running.description,
+        projectId: opened.running.projectId,
+        taskId: opened.running.taskId,
         startedAt: opened.running.startedAt,
       },
     });
@@ -495,38 +574,47 @@ export async function duplicateEntry(
   workspace: TrackerWorkspace,
   input: DuplicateEntryInput,
 ): Promise<DuplicateEntryResult> {
-  return createEntryOnce(actor, input.id, {
-    attempt: () =>
-      db.transaction(async (tx) => {
-        const source = await readSourceEntry(tx, actor, input.sourceId);
-        // Solo lo produce un pedido armado a mano: la abierta no es una fila.
-        if (!isClosed(source)) {
-          throw new TimeEntryError("timer_running", timeEntryMessages.runningEntryTimes);
-        }
-        const created = await timeEntryRepository.insertClosed(tx, {
-          id: input.id,
-          workspaceId: actor.workspaceId,
-          userId: actor.userId,
-          ...continuedFields(source),
-          ...duplicateTimes(source),
-        });
-        await recordAudit(tx, {
-          workspaceId: actor.workspaceId,
-          actorId: actor.userId,
-          action: "timeEntry.duplicate",
-          entity: AUDIT_ENTITY,
-          entityId: created.id,
-          nextValue: {
-            sourceId: source.id,
-            description: created.description,
-            startedAt: created.startedAt,
-            endedAt: created.endedAt,
-          },
-        });
-        return { created: toView(created, workspace) };
-      }),
-    replayed: (row) => ({ created: toView(row, workspace) }),
-  });
+  return translatingPairConstraints(() =>
+    createEntryOnce(actor, input.id, {
+      attempt: () =>
+        db.transaction(async (tx) => {
+          const source = await readSourceEntry(tx, actor, input.sourceId);
+          // Solo lo produce un pedido armado a mano: la abierta no es una fila.
+          if (!isClosed(source)) {
+            throw new TimeEntryError(
+              "timer_running",
+              timeEntryMessages.runningEntryTimes,
+            );
+          }
+          const fields = continuedFields(source);
+          await assertAssignable(tx, actor, NO_PROJECT, fields);
+          const created = await timeEntryRepository.insertClosed(tx, {
+            id: input.id,
+            workspaceId: actor.workspaceId,
+            userId: actor.userId,
+            ...fields,
+            ...duplicateTimes(source),
+          });
+          await recordAudit(tx, {
+            workspaceId: actor.workspaceId,
+            actorId: actor.userId,
+            action: "timeEntry.duplicate",
+            entity: AUDIT_ENTITY,
+            entityId: created.id,
+            nextValue: {
+              sourceId: source.id,
+              description: created.description,
+              projectId: created.projectId,
+              taskId: created.taskId,
+              startedAt: created.startedAt,
+              endedAt: created.endedAt,
+            },
+          });
+          return { created: toView(created, workspace) };
+        }),
+      replayed: (row) => ({ created: toView(row, workspace) }),
+    }),
+  );
 }
 
 export async function stopTimer(
@@ -577,6 +665,41 @@ export async function updateDescription(
     return next;
   });
   return { entry: toView(updated, workspace) };
+}
+
+/**
+ * TT-10, TT-11, TT-27, TT-54. Fija el par sobre la entrada leída, corra o no.
+ * El pedido que deja el mismo par responde la vista sin escribir.
+ */
+export async function updateEntryProject(
+  actor: Actor,
+  workspace: TrackerWorkspace,
+  input: UpdateEntryProjectInput,
+): Promise<UpdateEntryProjectResult> {
+  return translatingPairConstraints(() =>
+    db.transaction(async (tx) => {
+      const row = await readOwnEntry(tx, actor, "timeEntry.own.update", input.id);
+      const requested = pairOf(input);
+      if (samePair(row, requested)) {
+        return { entry: toView(row, workspace) };
+      }
+      await assertAssignable(tx, actor, pairOf(row), requested);
+      const next = await timeEntryRepository.updateProject(tx, targetOf(row), requested);
+      if (next === undefined) {
+        throw new TimeEntryError("not_found", timeEntryMessages.notFound);
+      }
+      await recordAudit(tx, {
+        workspaceId: actor.workspaceId,
+        actorId: actor.userId,
+        action: "timeEntry.updateProject",
+        entity: AUDIT_ENTITY,
+        entityId: next.id,
+        previousValue: pairOf(row),
+        nextValue: pairOf(next),
+      });
+      return { entry: toView(next, workspace) };
+    }),
+  );
 }
 
 export async function deleteEntry(
@@ -659,70 +782,77 @@ export async function createManualEntry(
 ): Promise<CreateManualEntryResult> {
   const timeZone = workspace.timezone;
 
-  return db.transaction(async (tx) => {
-    if (!can(actor, "timeEntry.own.create", ownTimeEntryResource(actor))) {
-      throw new TimeEntryError("forbidden", timeEntryMessages.forbidden);
-    }
-    // La interfaz ya lo impide; esto cubre a la pestaña desactualizada.
-    const running = await timeEntryRepository.findRunning(
-      actor.workspaceId,
-      actor.userId,
-      tx,
-    );
-    if (running !== undefined) {
-      throw new TimeEntryError("timer_running", timeEntryMessages.timerRunning);
-    }
+  return translatingPairConstraints(() =>
+    db.transaction(async (tx) => {
+      if (!can(actor, "timeEntry.own.create", ownTimeEntryResource(actor))) {
+        throw new TimeEntryError("forbidden", timeEntryMessages.forbidden);
+      }
+      // La interfaz ya lo impide; esto cubre a la pestaña desactualizada.
+      const running = await timeEntryRepository.findRunning(
+        actor.workspaceId,
+        actor.userId,
+        tx,
+      );
+      if (running !== undefined) {
+        throw new TimeEntryError("timer_running", timeEntryMessages.timerRunning);
+      }
 
-    const startedAt = instantFromLocal(input.date, input.start, timeZone);
-    if (startedAt === null) {
-      throw new TimeEntryError("validation", timeEntryMessages.nonexistentClock);
-    }
-    if (clockDifferenceMinutes(input.start, input.end) === 0) {
-      throw new TimeEntryError("validation", timeEntryMessages.tooShort);
-    }
-    // El fin es la hora tecleada y no el inicio más la duración: con un cambio
-    // de horario en el medio las dos cosas no coinciden.
-    const endDay = endDayOf(input.date, input.start, input.end);
-    // El día siguiente al 9999-12-31 no tiene clave de cuatro cifras: es la
-    // fecha la que no sirve, no la hora.
-    if (parseDayKey(endDay) === null) {
-      throw new TimeEntryError("validation", timeEntryMessages.invalidDate);
-    }
-    const endedAt = instantFromLocal(endDay, input.end, timeZone);
-    if (endedAt === null) {
-      throw new TimeEntryError("validation", timeEntryMessages.nonexistentClock);
-    }
-    // Un día de cuatro cifras al oeste de Greenwich puede caer en el año 10000
-    // UTC, que viaja a la base como "+010000-…" y la base no lo interpreta.
-    if (isAfterYear9999(startedAt) || isAfterYear9999(endedAt)) {
-      throw new TimeEntryError("validation", timeEntryMessages.invalidDate);
-    }
-    if (dayKey(startedAt, timeZone) < workspaceFloorDayKey(workspace)) {
-      throw new TimeEntryError("validation", timeEntryMessages.beforeWorkspace);
-    }
+      const startedAt = instantFromLocal(input.date, input.start, timeZone);
+      if (startedAt === null) {
+        throw new TimeEntryError("validation", timeEntryMessages.nonexistentClock);
+      }
+      if (clockDifferenceMinutes(input.start, input.end) === 0) {
+        throw new TimeEntryError("validation", timeEntryMessages.tooShort);
+      }
+      // El fin es la hora tecleada y no el inicio más la duración: con un cambio
+      // de horario en el medio las dos cosas no coinciden.
+      const endDay = endDayOf(input.date, input.start, input.end);
+      // El día siguiente al 9999-12-31 no tiene clave de cuatro cifras: es la
+      // fecha la que no sirve, no la hora.
+      if (parseDayKey(endDay) === null) {
+        throw new TimeEntryError("validation", timeEntryMessages.invalidDate);
+      }
+      const endedAt = instantFromLocal(endDay, input.end, timeZone);
+      if (endedAt === null) {
+        throw new TimeEntryError("validation", timeEntryMessages.nonexistentClock);
+      }
+      // Un día de cuatro cifras al oeste de Greenwich puede caer en el año 10000
+      // UTC, que viaja a la base como "+010000-…" y la base no lo interpreta.
+      if (isAfterYear9999(startedAt) || isAfterYear9999(endedAt)) {
+        throw new TimeEntryError("validation", timeEntryMessages.invalidDate);
+      }
+      if (dayKey(startedAt, timeZone) < workspaceFloorDayKey(workspace)) {
+        throw new TimeEntryError("validation", timeEntryMessages.beforeWorkspace);
+      }
+      const pair = pairOf(input);
+      await assertAssignable(tx, actor, NO_PROJECT, pair);
 
-    const created = await timeEntryRepository.insertClosed(tx, {
-      workspaceId: actor.workspaceId,
-      userId: actor.userId,
-      description: input.description,
-      startedAt,
-      endedAt,
-    });
-    await recordAudit(tx, {
-      workspaceId: actor.workspaceId,
-      actorId: actor.userId,
-      action: "timeEntry.createManual",
-      entity: AUDIT_ENTITY,
-      entityId: created.id,
-      nextValue: {
-        description: created.description,
-        startedAt: created.startedAt,
-        endedAt: created.endedAt,
-      },
-    });
+      const created = await timeEntryRepository.insertClosed(tx, {
+        workspaceId: actor.workspaceId,
+        userId: actor.userId,
+        description: input.description,
+        ...pair,
+        startedAt,
+        endedAt,
+      });
+      await recordAudit(tx, {
+        workspaceId: actor.workspaceId,
+        actorId: actor.userId,
+        action: "timeEntry.createManual",
+        entity: AUDIT_ENTITY,
+        entityId: created.id,
+        nextValue: {
+          description: created.description,
+          projectId: created.projectId,
+          taskId: created.taskId,
+          startedAt: created.startedAt,
+          endedAt: created.endedAt,
+        },
+      });
 
-    return { created: toView(created, workspace) };
-  });
+      return { created: toView(created, workspace) };
+    }),
+  );
 }
 
 type ClosedEntryRow = TimeEntryRow & { readonly endedAt: Date };
@@ -956,8 +1086,8 @@ function windowEnd(
 }
 
 function buildDays(
-  rows: readonly TimeEntryRow[],
-  running: TimeEntryRow | undefined,
+  rows: readonly EntryWithRefs[],
+  running: EntryWithRefs | undefined,
   now: Date,
   workspace: TrackerWorkspace,
 ): DayGroupView[] {
