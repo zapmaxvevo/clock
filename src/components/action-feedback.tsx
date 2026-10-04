@@ -1,4 +1,5 @@
 import { CircleAlertIcon, InfoIcon } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,8 @@ type ActionFeedbackProps = {
   readonly tone?: "error" | "info";
   readonly onRetry?: () => void;
   readonly retryDisabled?: boolean;
+  /** Lo que detalla el mensaje, como los rechazos de una operación en masa. */
+  readonly children?: ReactNode;
 };
 
 /**
@@ -25,6 +28,7 @@ export function ActionFeedback({
   tone = "error",
   onRetry,
   retryDisabled = false,
+  children,
 }: ActionFeedbackProps) {
   return (
     <Alert
@@ -40,6 +44,7 @@ export function ActionFeedback({
       )}
       <AlertTitle>{title}</AlertTitle>
       <AlertDescription>{message}</AlertDescription>
+      {children === undefined ? null : <div className="col-start-2 mt-2">{children}</div>}
       {onRetry === undefined ? null : (
         // En la columna del texto: en la del ícono, la ensancharía.
         <div className="col-start-2 mt-2">

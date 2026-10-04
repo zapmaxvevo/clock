@@ -28,6 +28,8 @@ type ClockFieldProps = {
    * duración bastan el numérico y el ancho de «23:59».
    */
   readonly format?: TimeFormat;
+  /** Lo que se ve con el campo vacío, donde vacío quiere decir algo. */
+  readonly placeholder?: string;
   readonly disabled?: boolean;
   /** Esc: el texto vuelve al valor mostrado y se avisa. Sin él, Esc no hace nada. */
   readonly onCancel?: () => void;
@@ -50,6 +52,7 @@ export function ClockField({
   onCommit,
   label,
   format,
+  placeholder,
   disabled = false,
   onCancel,
   onSubmit,
@@ -110,6 +113,7 @@ export function ClockField({
       type="text"
       inputMode={format === "12h" ? "text" : "numeric"}
       value={text}
+      placeholder={placeholder}
       aria-label={label}
       aria-invalid={rejected}
       disabled={disabled}
