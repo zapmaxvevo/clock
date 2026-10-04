@@ -30,8 +30,9 @@ commitear.
 
 ## Lo primero de la sesión siguiente
 
-1. **El 8b** (arrastre): sin contrato; el esbozo está en §8 del contrato del 8c. Lo
-   arranca el `architect` contra `main`, seguido de una ronda del `architecture-reviewer`.
+1. **El 8b** (arrastre): contrato en `fase1-slice8b-calendario-arrastre.md` y ADR 0014
+   aceptado (Pointer Events propios, solo con mouse); P-03 fuera. En curso, la ronda del
+   `architecture-reviewer`; después, su pipeline (frontend, e2e y paridad, sin backend).
    Ojo con lo que dejó el 8c: la guarda de `focusBlock` en `calendar-grid.tsx` es la que hoy
    impide un detalle detrás de la confirmación de «Borrar» (T-n6 de
    `correcciones-fase1-slice8c-revisiones.md`), y `slotAt` decide el clic en una franja.
@@ -133,6 +134,6 @@ Lo que sigue siendo del usuario, porque necesita sus cuentas o su máquina:
 
 - Plan y orden: `fase1-mapa.md`.
 - Contratos: `fase1-slice<n>-*.md`; correcciones: `correcciones-fase1-slice<n>*.md`.
-- ADR: `docs/adr/0001`–`0012` (todos aceptados).
+- ADR: `docs/adr/0001`–`0014` (todos aceptados).
 - Paridad: `docs/parity/` (time-tracker, perfil, proyectos, calendario,
   timesheet).
