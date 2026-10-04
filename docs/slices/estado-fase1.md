@@ -1,28 +1,41 @@
 # Estado de la fase 1
 
 Registro vivo de por dónde va la ejecución. Se actualiza al cerrar cada paso;
-quien retome el trabajo empieza acá. Última actualización: 2026-10-03.
+quien retome el trabajo empieza acá. Última actualización: 2026-10-03 (noche).
 
 ## Dónde estamos
 
-| Slice                                      | Estado       |
-| ------------------------------------------ | ------------ |
-| 1 — Timer sin proyecto                     | En `main`    |
-| 2 — Modo manual                            | En `main`    |
-| 2b — Reintento de «Iniciar»                | En `main`    |
-| 3 — Corregir horas y fecha                 | En `main`    |
-| 4 — Continuar, duplicar, descartar, atajos | En `main`    |
-| 5 — Semana y paginación                    | En `main`    |
-| 9 — Núcleo de proyectos                    | En `main`    |
-| 6, 7, 8, 10–13                             | Sin contrato |
+| Slice                                      | Estado                                           |
+| ------------------------------------------ | ------------------------------------------------ |
+| 1 — Timer sin proyecto                     | En `main`                                        |
+| 2 — Modo manual                            | En `main`                                        |
+| 2b — Reintento de «Iniciar»                | En `main`                                        |
+| 3 — Corregir horas y fecha                 | En `main`                                        |
+| 4 — Continuar, duplicar, descartar, atajos | En `main`                                        |
+| 5 — Semana y paginación                    | En `main`                                        |
+| 9 — Núcleo de proyectos                    | En `main`                                        |
+| 10 — Selector de proyecto y tarea          | En implementación en `fase1/slice-10-selector`   |
+| 7 — Perfil                                 | Contrato con ronda 1 aplicada; va después del 10 |
+| 6 — Selección y acciones en masa           | Contrato con ronda 1 aplicada; va después del 7  |
+| 7b — Perfil: nombre editable y tema        | Sin contrato                                     |
+| 8, 11–13                                   | Sin contrato                                     |
 
-Los slices 1 a 5 y 9 están en `main`, local: **falta `git push origin main`**. No quedan
-agentes con trabajo pendiente.
+Los slices 1 a 5 y 9 están en `main`, local: **falta `git push origin main`**. El slice
+10 corre con `backend-s10`, `frontend-s10` y `e2e-s10` en `fase1/slice-10-selector`; los
+contratos del 6 y del 7 y los ADR 0010 a 0012 (aceptados) viajan en esa rama.
 
 ## Lo primero de la sesión siguiente
 
-1. Los contratos del 6, 7 y 8 (`fase1-mapa.md`), con el pipeline de abajo. El 10 depende del 9,
-   que ya está.
+1. **Terminar el slice 10** con el pipeline de abajo. Su handshake empieza por la migración
+   de `time-entry` a `src/server/action.ts`, `useAction` y `useNewId` (dos commits sin
+   cambio de conducta).
+2. **Orden decidido: 10 → 7 → 6.** Antes de implementar el 7 y el 6, una ronda corta del
+   `architecture-reviewer` contra el árbol con el 10 adentro (sus contratos lo piden en §0).
+3. El contrato del **8** (calendario), cuando el 7 esté en `main`; después el 7b, 11, 12, 13.
+
+Decisiones del usuario del 2026-10-03: ADR 0010, 0011 y 0012 aceptados; TT-07 con las tareas
+siempre listadas; continuar o duplicar con un proyecto no disponible se rechaza; la zona por
+omisión del perfil es un valor fijo (`America/Argentina/Buenos_Aires`), no la del workspace.
 
 Deuda anotada: no hay ningún `error.tsx` en `src/app`; un error de lectura cae en la página
 genérica de Next. La base de e2e acumula clientes y proyectos que en la fase 1 no se pueden
@@ -86,6 +99,6 @@ null (col)`) antes de desplegar.
 
 - Plan y orden: `fase1-mapa.md`.
 - Contratos: `fase1-slice<n>-*.md`; correcciones: `correcciones-fase1-slice<n>*.md`.
-- ADR: `docs/adr/0001`–`0009` (todos aceptados).
+- ADR: `docs/adr/0001`–`0012` (todos aceptados).
 - Paridad: `docs/parity/` (time-tracker, perfil, proyectos, calendario,
   timesheet).
