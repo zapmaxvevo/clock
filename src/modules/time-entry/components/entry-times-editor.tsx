@@ -2,6 +2,9 @@
 
 import { useEffect, useRef, type FocusEvent, type KeyboardEvent } from "react";
 
+import { useDisplayFormats } from "@/components/layout/display-formats";
+import { clockLabel } from "@/server/time";
+
 import { ClockField } from "./clock-field";
 import { DateField } from "./date-field";
 import { trackerLabels } from "./labels";
@@ -21,7 +24,7 @@ type EntryTimesEditorProps = {
   /** El borrador vigente. Es de la fila, que deriva de él la duración visible. */
   readonly draft: TimeDraft;
   readonly onDraftChange: (draft: TimeDraft) => void;
-  /** Día de hoy en la zona del workspace. */
+  /** Día de hoy en la zona de la persona. */
   readonly todayKey: string;
   /** Piso del workspace. No hay techo: una entrada cerrada puede ir al futuro (P-10). */
   readonly minDayKey: string;
@@ -53,6 +56,7 @@ export function EntryTimesEditor({
   onConfirm,
   onClose,
 }: EntryTimesEditorProps) {
+  const { time } = useDisplayFormats();
   const groupRef = useRef<HTMLDivElement>(null);
   /**
    * El blur de un campo normaliza su valor y, en el mismo evento, el foco
@@ -156,26 +160,32 @@ export function EntryTimesEditor({
       onKeyDown={handleKeyDown}
     >
       <ClockField
-        value={draft.start}
+        value={clockLabel(draft.start, time)}
         onCommit={(text) =>
-          commitChange(withStart(draftRef.current, text), change, (next) => next.start)
+          commitChange(withStart(draftRef.current, text, time), change, (next) =>
+            clockLabel(next.start, time),
+          )
         }
         onCancel={cancel}
         onSubmit={() => confirm(true)}
         label={trackerLabels.startTime}
+        format={time}
       />
       <span aria-hidden="true" className="text-muted-foreground">
         –
       </span>
       <span className="flex items-start">
         <ClockField
-          value={draft.end}
+          value={clockLabel(draft.end, time)}
           onCommit={(text) =>
-            commitChange(withEnd(draftRef.current, text), change, (next) => next.end)
+            commitChange(withEnd(draftRef.current, text, time), change, (next) =>
+              clockLabel(next.end, time),
+            )
           }
           onCancel={cancel}
           onSubmit={() => confirm(true)}
           label={trackerLabels.endTime}
+          format={time}
         />
         {extraDays > 0 && (
           <sup className="text-muted-foreground ml-0.5 text-xs">

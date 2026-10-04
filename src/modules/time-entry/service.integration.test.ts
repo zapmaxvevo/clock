@@ -30,8 +30,10 @@ import {
 } from "@/test/concurrency";
 import {
   buenosAires,
+  defaultFormats,
   seedClient,
   seedMember,
+  seedPreferences,
   seedProject,
   seedTask,
   seedTimeEntry,
@@ -40,6 +42,12 @@ import {
 import { allTimeEntries, auditFor, timeEntriesOf, timeEntryById } from "@/test/queries";
 
 import { projectMessages } from "@/modules/project/schema";
+import {
+  preferencesOf,
+  timeSettingsOf,
+  updatePreference,
+  type ProfileContext,
+} from "@/modules/profile/service";
 import { workspaceRepository } from "@/modules/workspace/repository";
 
 import { timeEntryRepository } from "./repository";
@@ -86,7 +94,7 @@ function workspaceOf(
   createdAt = "2020-01-01T00:00:00Z",
   weekStart: WeekStart = 1,
 ): TrackerWorkspace {
-  return { timezone, createdAt: new Date(createdAt), weekStart };
+  return { timezone, createdAt: new Date(createdAt), weekStart, formats: defaultFormats };
 }
 
 /** Los días de la lista, sin las semanas que los agrupan. */
@@ -867,7 +875,7 @@ describe("getTrackerState", () => {
     expect(state.serverNow).toBe(now.toISOString());
   });
 
-  it("resuelve el día de hoy en la zona del workspace", async () => {
+  it("resuelve el día de hoy en la zona de la persona", async () => {
     // Las 23:00 del 2 de octubre en Buenos Aires: en UTC ya es el 3.
     const lateNight = new Date("2026-10-03T02:00:00Z");
 
@@ -1053,7 +1061,7 @@ describe("getTrackerState", () => {
     expect(entry.extraDays).toBe(1);
   });
 
-  it("recalcula los grupos al cambiar la zona horaria del workspace", async () => {
+  it("recalcula los grupos al cambiar la zona horaria de la persona", async () => {
     await seedTimeEntry({
       workspaceId,
       userId: actor.userId,
@@ -3951,18 +3959,24 @@ async function setWeekStart(userId: string, weekStart: number) {
     .where(and(eq(membership.workspaceId, workspaceId), eq(membership.userId, userId)));
 }
 
-/** El workspace del rastreador como lo arma la sesión de esa persona. */
-async function trackerWorkspaceFor(userId: string) {
+/** El contexto de la sesión de esa persona, con sus preferencias, como lo arma `currentSession`. */
+async function profileContextFor(userId: string): Promise<ProfileContext> {
   const row = await workspaceRepository.findFirstWorkspace();
   const member = await workspaceRepository.findMembership(workspaceId, userId);
   if (row === undefined || member === undefined) {
     throw new Error("Falta el workspace o la membresía sembrados.");
   }
-  return trackerWorkspaceOf({
+  return {
     workspace: row,
     membership: member,
     actor: actorFor(userId),
-  });
+    preferences: await preferencesOf(userId),
+  };
+}
+
+/** El workspace del rastreador como lo arma la sesión de esa persona. */
+async function trackerWorkspaceFor(userId: string) {
+  return trackerWorkspaceOf(await profileContextFor(userId));
 }
 
 /** Las semanas de la lista con sus días, para comparar de un vistazo. */
@@ -5280,5 +5294,263 @@ describe("la vista con su proyecto (criterio 9: TT-49, TT-50, PR-71, PR-101 … 
         sql.raw(`alter table project add constraint project_color_palette ${definition}`),
       );
     }
+  });
+});
+
+describe("la zona y los formatos de la persona (slice 7)", () => {
+  const tokyo = "Asia/Tokyo";
+  /** Las 12:00 del viernes 2 de octubre de 2026 en Buenos Aires. */
+  const now = new Date("2026-10-02T15:00:00Z");
+
+  /** Lo que cada fila muestra: los rótulos de semana, de día y de hora. */
+  function labelsOf(state: TrackerState) {
+    return state.weeks.map((week) => ({
+      week: week.label,
+      days: week.days.map((day) => ({
+        day: day.label,
+        entries: day.entries.map((entry) => [entry.startLabel, entry.endLabel]),
+      })),
+    }));
+  }
+
+  /** Dos entradas cerradas: ayer y una de una semana vieja de la ventana. */
+  async function seedTwoWeeks(userId: string) {
+    await seedClosedOf(userId, "2026-10-01T16:05:00Z", "2026-10-01T17:30:00Z");
+    await seedClosedOf(userId, "2026-09-21T12:00:00Z", "2026-09-21T13:00:00Z");
+  }
+
+  it("trackerWorkspaceOf es timeSettingsOf más la creación del workspace (criterio 19)", async () => {
+    await backdateWorkspace();
+    await setWeekStart(actor.userId, 0);
+    await seedPreferences(actor.userId, {
+      timezone: tokyo,
+      timeFormat: "12h",
+      dateFormat: "MM/dd/yyyy",
+    });
+    const context = await profileContextFor(actor.userId);
+
+    expect(trackerWorkspaceOf(context)).toEqual({
+      ...timeSettingsOf(context),
+      createdAt: new Date("2020-01-01T00:00:00Z"),
+    });
+    expect(timeSettingsOf(context)).toEqual({
+      timezone: tokyo,
+      weekStart: 0,
+      formats: { time: "12h", date: "MM/dd/yyyy" },
+    });
+  });
+
+  it("sin fila, getTrackerState da los mismos rótulos que antes del slice con el workspace en Buenos Aires (criterio 3)", async () => {
+    await backdateWorkspace();
+    await seedTwoWeeks(actor.userId);
+
+    const state = await getTrackerState(
+      actor,
+      await trackerWorkspaceFor(actor.userId),
+      { from: null },
+      now,
+    );
+
+    expect(labelsOf(state)).toEqual([
+      { week: "Esta semana", days: [{ day: "Ayer", entries: [["13:05", "14:30"]] }] },
+      {
+        week: "Semana anterior",
+        days: [{ day: "lun, 21/09", entries: [["09:00", "10:00"]] }],
+      },
+    ]);
+  });
+
+  it("con 12 h y otro formato de fecha, los rótulos cambian y las horas canónicas no (criterio 4)", async () => {
+    await backdateWorkspace();
+    await seedTwoWeeks(actor.userId);
+    await seedClosedOf(actor.userId, "2026-09-14T03:00:00Z", "2026-09-14T15:59:00Z");
+    await seedPreferences(actor.userId, { timeFormat: "12h", dateFormat: "yyyy-MM-dd" });
+
+    const state = await getTrackerState(
+      actor,
+      await trackerWorkspaceFor(actor.userId),
+      { from: null },
+      now,
+    );
+
+    expect(labelsOf(state)).toEqual([
+      {
+        week: "Esta semana",
+        days: [{ day: "Ayer", entries: [["1:05 PM", "2:30 PM"]] }],
+      },
+      {
+        week: "Semana anterior",
+        days: [{ day: "lun, 09-21", entries: [["9:00 AM", "10:00 AM"]] }],
+      },
+      {
+        week: "09-14 – 09-20",
+        days: [{ day: "lun, 09-14", entries: [["12:00 AM", "12:59 PM"]] }],
+      },
+    ]);
+    const entries = daysOf(state).flatMap((day) => day.entries);
+    expect(entries.map((entry) => [entry.startClock, entry.endClock])).toEqual([
+      ["13:05", "14:30"],
+      ["09:00", "10:00"],
+      ["00:00", "12:59"],
+    ]);
+  });
+
+  it("el timer corriendo trae su hora canónica y su rótulo en 12 h", async () => {
+    await backdateWorkspace();
+    await seedPreferences(actor.userId, { timeFormat: "12h" });
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-02T16:05:00Z",
+    });
+
+    const state = await getTrackerState(
+      actor,
+      await trackerWorkspaceFor(actor.userId),
+      { from: null },
+      new Date("2026-10-02T17:00:00Z"),
+    );
+
+    expect(state.running).toMatchObject({
+      startLabel: "1:05 PM",
+      startClock: "13:05",
+      endLabel: null,
+      endClock: null,
+    });
+  });
+
+  it("dos personas en zonas distintas ven la misma hora de inicio en su zona y su día (criterio 7, PF-04)", async () => {
+    await backdateWorkspace();
+    const other = await seedMember(workspaceId, "member");
+    await seedPreferences(other, { timezone: tokyo });
+    // Las 00:00 del jueves 1 en Buenos Aires son las 12:00 del 1 en Tokio, y las
+    // 22:00 del 1 en Buenos Aires son las 10:00 del 2 en Tokio.
+    for (const userId of [actor.userId, other]) {
+      await seedClosedOf(userId, "2026-10-01T03:00:00Z", "2026-10-01T03:01:00Z");
+      await seedClosedOf(userId, "2026-10-02T01:00:00Z", "2026-10-02T01:30:00Z");
+    }
+
+    const inBuenosAires = await getTrackerState(
+      actor,
+      await trackerWorkspaceFor(actor.userId),
+      { from: null },
+      now,
+    );
+    const inTokyo = await getTrackerState(
+      actorFor(other),
+      await trackerWorkspaceFor(other),
+      { from: null },
+      now,
+    );
+
+    const viewOf = (state: TrackerState) =>
+      daysOf(state).map((day) => ({
+        date: day.date,
+        entries: day.entries.map((entry) => entry.startLabel),
+      }));
+    expect(viewOf(inBuenosAires)).toEqual([
+      { date: "2026-10-01", entries: ["22:00", "00:00"] },
+    ]);
+    expect(viewOf(inTokyo)).toEqual([
+      { date: "2026-10-02", entries: ["10:00"] },
+      { date: "2026-10-01", entries: ["12:00"] },
+    ]);
+    expect(inBuenosAires.todayKey).toBe("2026-10-02");
+    expect(inTokyo.todayKey).toBe("2026-10-03");
+  });
+
+  it("el piso es el día de creación del workspace en la zona de la persona (criterio 7)", async () => {
+    // Las 21:00 del 1 de setiembre en Buenos Aires son las 09:00 del 2 en Tokio.
+    await db
+      .update(workspaceTable)
+      .set({ createdAt: new Date("2026-09-02T00:00:00Z") })
+      .where(eq(workspaceTable.id, workspaceId));
+    const other = await seedMember(workspaceId, "member");
+    await seedPreferences(other, { timezone: tokyo });
+    const values = {
+      projectId: null,
+      taskId: null,
+      description: "",
+      date: "2026-09-01",
+      start: "08:00",
+      end: "09:00",
+    };
+
+    const local = await trackerWorkspaceFor(actor.userId);
+    const remote = await trackerWorkspaceFor(other);
+    expect((await getTrackerState(actor, local, { from: null }, now)).minDayKey).toBe(
+      "2026-09-01",
+    );
+    expect(
+      (await getTrackerState(actorFor(other), remote, { from: null }, now)).minDayKey,
+    ).toBe("2026-09-02");
+
+    await expect(createManualEntry(actor, local, values)).resolves.toBeDefined();
+    await expect(
+      createManualEntry(actorFor(other), remote, values),
+    ).rejects.toMatchObject({
+      code: "validation",
+      message: timeEntryMessages.beforeWorkspace,
+    });
+  });
+
+  it("cambiar workspace.timezone no cambia ninguna vista (criterio 7, PF-05)", async () => {
+    await backdateWorkspace();
+    await seedTwoWeeks(actor.userId);
+    const before = await getTrackerState(
+      actor,
+      await trackerWorkspaceFor(actor.userId),
+      { from: null },
+      now,
+    );
+
+    await db
+      .update(workspaceTable)
+      .set({ timezone: tokyo })
+      .where(eq(workspaceTable.id, workspaceId));
+    const after = await getTrackerState(
+      actor,
+      await trackerWorkspaceFor(actor.userId),
+      { from: null },
+      now,
+    );
+
+    expect(after).toEqual(before);
+  });
+
+  it("cambiar la zona con un timer corriendo no toca su inicio y lo pasa al día de la zona nueva (criterio 8, PF-39)", async () => {
+    await backdateWorkspace();
+    // Las 22:00 del 1 en Buenos Aires: las 10:00 del 2 en Tokio.
+    const running = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-02T01:00:00Z",
+    });
+
+    const before = await getTrackerState(
+      actor,
+      await trackerWorkspaceFor(actor.userId),
+      { from: null },
+      now,
+    );
+    await updatePreference(actor, { key: "timezone", value: tokyo });
+    const after = await getTrackerState(
+      actor,
+      await trackerWorkspaceFor(actor.userId),
+      { from: null },
+      now,
+    );
+
+    expect(before.running).toMatchObject({
+      startedAt: "2026-10-02T01:00:00.000Z",
+      dayDate: "2026-10-01",
+      startClock: "22:00",
+    });
+    expect(after.running).toMatchObject({
+      startedAt: "2026-10-02T01:00:00.000Z",
+      dayDate: "2026-10-02",
+      startClock: "10:00",
+    });
+    expect(await timeEntryById(running.id)).toEqual(running);
   });
 });

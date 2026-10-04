@@ -2,6 +2,7 @@
 
 import { useEffect, useOptimistic, useRef, useState } from "react";
 
+import { ActionFeedback } from "@/components/action-feedback";
 import { retryHandlerOf, useAction, type ActionHandle } from "@/hooks/use-action";
 import { useNewId } from "@/hooks/use-new-id";
 import { samePair } from "@/lib/project-pair";
@@ -39,7 +40,6 @@ import { useReachWeek } from "./reach-week";
 import { ShortcutsDialog } from "./shortcuts-dialog";
 import { reset, sameDraft } from "./time-draft";
 import { TimerBar, type Phase } from "./timer-bar";
-import { TrackerFeedback } from "./tracker-feedback";
 import { trackerModeCookie, type TrackerMode } from "./tracker-mode";
 import { useTrackerRefresh } from "./use-tracker-refresh";
 import { useTrackerShortcuts } from "./use-tracker-shortcuts";
@@ -565,7 +565,7 @@ export function TrackerBar({
         )}
 
         {start.failure !== null && (
-          <TrackerFeedback
+          <ActionFeedback
             title="No se pudo iniciar el timer."
             message={start.failure.message}
             retryDisabled={switching}
@@ -573,7 +573,7 @@ export function TrackerBar({
           />
         )}
         {stop.failure !== null && (
-          <TrackerFeedback
+          <ActionFeedback
             title="No se pudo detener el timer."
             message={stop.failure.message}
             retryDisabled={switching}
@@ -582,7 +582,7 @@ export function TrackerBar({
         )}
 
         {discard.failure !== null && (
-          <TrackerFeedback
+          <ActionFeedback
             title={trackerLabels.timerNotDiscarded}
             message={discard.failure.message}
             retryDisabled={switching}
@@ -591,7 +591,7 @@ export function TrackerBar({
         )}
 
         {saveStart.failure !== null && (
-          <TrackerFeedback
+          <ActionFeedback
             title={trackerLabels.runningStartNotSaved}
             message={saveStart.failure.message}
             retryDisabled={saveStart.pending || switching}
@@ -608,19 +608,19 @@ export function TrackerBar({
              * TT-82 acepta la superposición. Por eso acá no se ofrece
              * «Reintentar» y el aviso manda a mirar la lista.
              */
-            <TrackerFeedback
+            <ActionFeedback
               title="No sabemos si la entrada se guardó."
               message="Se perdió la respuesta del servidor. Antes de volver a agregarla, fijate en la lista: puede haberse creado."
             />
           ) : (
-            <TrackerFeedback
+            <ActionFeedback
               title="No se pudo agregar la entrada."
               message={add.failure.message}
             />
           ))}
 
         {saveProject.failure !== null && (
-          <TrackerFeedback
+          <ActionFeedback
             title={trackerLabels.projectNotSaved}
             message={saveProject.failure.message}
             retryDisabled={saveProject.pending || switching}
@@ -629,7 +629,7 @@ export function TrackerBar({
         )}
 
         {save.failure !== null && (
-          <TrackerFeedback
+          <ActionFeedback
             title={trackerLabels.descriptionNotSaved}
             message={save.failure.message}
             retryDisabled={save.pending}

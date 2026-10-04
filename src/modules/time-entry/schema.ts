@@ -94,13 +94,13 @@ const clockInput = z.string().refine(isClock, timeEntryMessages.invalidClock);
 
 /**
  * La hora de pared viaja como hora de pared y el servidor la convierte con la
- * zona del workspace. La duración no viaja: se deriva de las dos horas, así no
+ * zona de la persona. La duración no viaja: se deriva de las dos horas, así no
  * puede llegar una que no se corresponda. Ver el ADR 0005.
  */
 export const createManualEntryInput = z
   .object({
     description: description.default(""),
-    /** Día local del inicio, en la zona horaria del workspace. */
+    /** Día local del inicio, en la zona horaria de la persona. */
     date: dayKeyInput,
     /** Hora de pared del inicio, 24 h. */
     start: clockInput,
@@ -191,8 +191,13 @@ export const timeEntryView = z.object({
   dayDate: z.string(),
   /** Primer día de la semana de `dayDate`, según el primer día de la persona: "2026-09-28". */
   weekStart: z.string(),
+  /** Hora del inicio en el formato de la persona: "13:05" o "1:05 PM". */
   startLabel: z.string(),
   endLabel: z.string().nullable(),
+  /** Hora canónica del inicio, "HH:mm" de 24 h: la del trío (ADR 0005). */
+  startClock: z.string(),
+  /** Hora canónica del fin, o `null` mientras corre. */
+  endClock: z.string().nullable(),
   /** Superíndice de días del cruce de medianoche. 0 en una entrada que corre. */
   extraDays: z.number().int().min(0),
   durationSeconds: z.number().int().min(0).nullable(),
@@ -242,9 +247,9 @@ export const trackerState = z.object({
   /** Referencia contra la que el cliente corrige el desfase de su reloj. */
   serverNow: z.iso.datetime(),
   timeZone: z.string(),
-  /** Día de hoy en la zona del workspace. */
+  /** Día de hoy en la zona de la persona. */
   todayKey: z.string(),
-  /** Día local de creación del workspace: el primero que admite carga. */
+  /** Día de creación del workspace en la zona de la persona: el primero que admite carga. */
   minDayKey: z.string(),
   canTrack: z.boolean(),
   running: timeEntryView.nullable(),

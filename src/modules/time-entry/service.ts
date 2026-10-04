@@ -7,6 +7,7 @@ import { can, type Action, type Actor } from "@/server/permissions";
 import {
   addDaysToKey,
   clockDifferenceMinutes,
+  clockLabel,
   crossesMidnight,
   dayBounds,
   dayKey,
@@ -22,12 +23,12 @@ import {
   startOfDayKey,
   weekKeyLabel,
   weekStartKey,
-  type WeekStart,
+  type TimeSettings,
 } from "@/server/time";
 import { isPaletteKey } from "@/modules/project/palette";
 import { projectMessages, type ProjectRef } from "@/modules/project/schema";
 import { assertTrackable } from "@/modules/project/service";
-import { weekStartOf, type WorkspaceContext } from "@/modules/workspace/service";
+import { timeSettingsOf, type ProfileContext } from "@/modules/profile/service";
 
 import { pairToCheck } from "./assignment";
 import {
@@ -79,30 +80,22 @@ export class TimeEntryError extends DomainError<TimeEntryErrorCode> {
 
 const AUDIT_ENTITY = "time_entry";
 
-/** Lo que el módulo usa del contexto de la sesión. */
-export type TrackerWorkspace = {
-  readonly timezone: string;
-  readonly createdAt: Date;
-  /** Sale de `weekStartOf`, nunca de la membresía directo. */
-  readonly weekStart: WeekStart;
-};
-
 /**
- * Único lugar por el que la zona y el primer día de la semana entran al
- * módulo. Cuando la persona tenga zona propia, cambia esta función.
+ * Lo que el módulo usa del contexto de la sesión: la zona, los formatos y el
+ * primer día de la semana de la persona, y la creación del workspace.
  */
-export function trackerWorkspaceOf(context: WorkspaceContext): TrackerWorkspace {
-  return {
-    timezone: context.workspace.timezone,
-    createdAt: context.workspace.createdAt,
-    weekStart: weekStartOf(context),
-  };
+export type TrackerWorkspace = TimeSettings & { readonly createdAt: Date };
+
+/** Único lugar por el que la zona, los formatos y el primer día entran al módulo. */
+export function trackerWorkspaceOf(context: ProfileContext): TrackerWorkspace {
+  return { ...timeSettingsOf(context), createdAt: context.workspace.createdAt };
 }
 
 /**
- * Primer día en que se pueden cargar horas: el día local de creación del
- * workspace. La validación del service y el calendario de la barra lo toman de
- * acá, así que los dos dicen lo mismo.
+ * Primer día en que se pueden cargar horas: el día de creación del workspace
+ * en la zona de la persona, la misma con que se convierte la hora tecleada.
+ * La validación del service y el calendario de la barra lo toman de acá, así
+ * que los dos dicen lo mismo.
  */
 function workspaceFloorDayKey(workspace: TrackerWorkspace): string {
   return dayKey(workspace.createdAt, workspace.timezone);
@@ -160,6 +153,8 @@ function toView(row: EntryWithRefs, workspace: TrackerWorkspace): TimeEntryView 
   const timeZone = workspace.timezone;
   const endedAt = row.endedAt;
   const seconds = endedAt === null ? null : durationSeconds(row.startedAt, endedAt);
+  const startClock = formatClock(row.startedAt, timeZone);
+  const endClock = endedAt === null ? null : formatClock(endedAt, timeZone);
   return {
     id: row.id,
     description: row.description,
@@ -167,8 +162,10 @@ function toView(row: EntryWithRefs, workspace: TrackerWorkspace): TimeEntryView 
     endedAt: endedAt === null ? null : endedAt.toISOString(),
     dayDate: dayKey(row.startedAt, timeZone),
     weekStart: weekOf(row.startedAt, workspace),
-    startLabel: formatClock(row.startedAt, timeZone),
-    endLabel: endedAt === null ? null : formatClock(endedAt, timeZone),
+    startLabel: clockLabel(startClock, workspace.formats.time),
+    endLabel: endClock === null ? null : clockLabel(endClock, workspace.formats.time),
+    startClock,
+    endClock,
     extraDays: endedAt === null ? 0 : extraDays(row.startedAt, endedAt, timeZone),
     durationSeconds: seconds,
     durationLabel: seconds === null ? null : formatDuration(Math.floor(seconds / 60)),
@@ -1116,7 +1113,7 @@ function buildDays(
       );
       return {
         date,
-        label: dayLabel(group.instant, now, timeZone),
+        label: dayLabel(group.instant, now, timeZone, workspace.formats.date),
         isRunningDay: date === runningDay,
         closedSeconds,
         entries: group.entries,
@@ -1147,7 +1144,7 @@ function buildWeeks(
 
   return [...byStart.entries()].map(([start, weekDays]) => ({
     start,
-    label: weekKeyLabel(start, todayKey, workspace.weekStart),
+    label: weekKeyLabel(start, todayKey, workspace.weekStart, workspace.formats.date),
     isRunningWeek: start === runningWeek,
     closedSeconds: weekDays.reduce((total, day) => total + day.closedSeconds, 0),
     days: weekDays,

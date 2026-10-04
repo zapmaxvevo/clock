@@ -24,7 +24,7 @@ import { projectMessages } from "./schema";
  */
 const mocks = vi.hoisted(() => ({
   sessionUser: null as null | { id: string; email: string },
-  revalidated: [] as string[],
+  revalidated: [] as (string | { path: string; type: string })[],
   redirects: [] as string[],
 }));
 
@@ -39,8 +39,8 @@ vi.mock("next/headers", () => ({
 }));
 
 vi.mock("next/cache", () => ({
-  revalidatePath: (path: string) => {
-    mocks.revalidated.push(path);
+  revalidatePath: (path: string, type?: string) => {
+    mocks.revalidated.push(type === undefined ? path : { path, type });
   },
 }));
 

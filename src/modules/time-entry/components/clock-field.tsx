@@ -3,21 +3,33 @@
 import { useEffect, useRef, useState } from "react";
 
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
+import type { TimeFormat } from "@/server/time";
 
 /** Cuánto dura la marca del valor que no se pudo interpretar (TT-21). */
 const REJECTED_FLASH_MS = 1_200;
 
 type ClockFieldProps = {
-  /** Valor canónico que muestra el campo cuando no se está escribiendo. */
+  /**
+   * Lo que muestra el campo cuando no se está escribiendo: el rótulo de la
+   * hora en el formato de la persona, o la duración.
+   */
   readonly value: string;
   /**
-   * Interpreta lo tecleado. Devuelve el valor canónico que quedó, o `null` si
-   * no se pudo interpretar: ahí el campo vuelve al anterior.
+   * Interpreta lo tecleado. Devuelve el rótulo del valor que quedó, o `null`
+   * si no se pudo interpretar: ahí el campo vuelve al anterior.
    */
   readonly onCommit: (text: string) => string | null;
   readonly label: string;
+  /**
+   * El formato de la hora que muestra; sin él, el campo es de duración. Con
+   * 12 h el teclado de un teléfono tiene que dejar escribir `am` y `pm`
+   * (PF-14), y el campo, mostrar «12:00 AM» entero; con 24 h y en la
+   * duración bastan el numérico y el ancho de «23:59».
+   */
+  readonly format?: TimeFormat;
   readonly disabled?: boolean;
-  /** Esc: el texto vuelve al valor canónico y se avisa. Sin él, Esc no hace nada. */
+  /** Esc: el texto vuelve al valor mostrado y se avisa. Sin él, Esc no hace nada. */
   readonly onCancel?: () => void;
   /**
    * Enter, después de normalizar: corre si el valor se aceptó o si el campo no
@@ -37,6 +49,7 @@ export function ClockField({
   value,
   onCommit,
   label,
+  format,
   disabled = false,
   onCancel,
   onSubmit,
@@ -47,7 +60,7 @@ export function ClockField({
   const [focused, setFocused] = useState(false);
   const flash = useRef<number | null>(null);
 
-  // El valor canónico puede cambiar desde afuera: mover el inicio cambia la
+  // El valor mostrado puede cambiar desde afuera: mover el inicio cambia la
   // duración, la duración mueve el fin (TT-18), y un agregado exitoso reinicia
   // el borrador (TT-25). Lo que se está escribiendo y todavía no se confirmó
   // gana: al salir del campo o con Enter se confirma sobre el valor nuevo.
@@ -95,12 +108,12 @@ export function ClockField({
   return (
     <Input
       type="text"
-      inputMode="numeric"
+      inputMode={format === "12h" ? "text" : "numeric"}
       value={text}
       aria-label={label}
       aria-invalid={rejected}
       disabled={disabled}
-      className="w-20 text-center tabular-nums"
+      className={cn("text-center tabular-nums", format === "12h" ? "w-26" : "w-20")}
       onChange={(event) => setText(event.target.value)}
       onFocus={() => setFocused(true)}
       onBlur={() => {

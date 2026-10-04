@@ -37,6 +37,9 @@ cumplir y un hallazgo contra esta lista es bloqueante.
   service.
 - El repository es el único lugar con acceso a datos, y toda consulta filtra por
   `workspace_id` tomado de la sesión, nunca de la entrada del cliente.
+- Las tablas de la cuenta, sin `workspace_id` (como `user_preference`), son la
+  excepción: filtran por el `user_id` de la sesión, nunca por uno que llegue en
+  la entrada.
 - Un service no importa de `app/` ni de `components/`. Un componente no importa
   un repository.
 - Fechas, zonas horarias y duraciones solo a través de `src/server/time`.

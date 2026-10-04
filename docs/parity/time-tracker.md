@@ -94,17 +94,29 @@ un admin. Ver o editar entradas ajenas pasa por el reporte detallado, que es de
 otra fase. El repositorio filtra por `workspace_id` de la sesión y por
 `user_id` del actor.
 
-**TT-02 Zona horaria y formatos** — `adaptar`
+**TT-02 Zona horaria y formatos** — `replicar`
 Clockify resuelve el día, el formato de hora (12 h/24 h) y el formato de fecha
 con ajustes por usuario, y el inicio de semana con un ajuste que fija el admin
-en el perfil de la persona. Acá se usa la zona horaria del workspace, formato
-24 h y fecha `dd/MM`, y los cortes de día y semana salen de `src/server/time`.
-Justificación: el modelo de datos no tiene los campos por usuario; el equipo
-cerró P-13 a favor del workspace para toda la fase 1 y dejó el perfil para su
-propio slice. Cómo viaja una hora tecleada desde el navegador hasta el instante
-guardado está en el
-[ADR 0005](../adr/0005-hora-de-pared-en-la-entrada-manual.md), y el relevamiento
-de los ajustes está en [la paridad del perfil](perfil.md).
+en el perfil de la persona. Acá también: la zona horaria, el formato de hora y
+el de fecha son los que la persona elige en `/perfil` (PF-11, PF-12 y PF-13 de
+[la paridad del perfil](perfil.md)), y el primer día de la semana es el de su
+membresía (TT-48). Los cortes de día y de semana salen de `src/server/time` con
+la zona de la persona. Quien nunca tocó su perfil ve los predeterminados de
+perfil P-03 —`America/Argentina/Buenos_Aires`, 24 h y `dd/MM/yyyy`—, que dan
+los mismos rótulos que antes del slice 7. `workspace.timezone` no cambia nada
+de esta pantalla: solo fija el día de los trabajos de cron (PF-05).
+Cómo viaja una hora tecleada desde el navegador hasta el instante guardado está
+en el [ADR 0005](../adr/0005-hora-de-pared-en-la-entrada-manual.md), que no
+cambia: la hora viaja como `HH:mm` de 24 h aunque la persona vea 12 h, y lo
+único distinto es con qué zona se convierte. Cómo llegan los formatos a lo que
+se dibuja en el navegador está en el
+[ADR 0012](../adr/0012-un-solo-juego-de-formatos.md).
+
+_Corregido el 2026-10-04, slice 7_: era `adaptar` y decía que se usaban la zona
+horaria del workspace, formato 24 h y fecha `dd/MM`, porque el modelo de datos
+no tenía los campos por usuario y el equipo había cerrado P-13 a favor del
+workspace. Lo fija el
+[contrato del slice 7](../slices/fase1-slice7-perfil.md), que cierra P-13.
 
 ## 2. La barra del rastreador
 
@@ -240,9 +252,48 @@ de duración del workspace; está explicado en PF-21 de
 
 **TT-20 Formatos aceptados en los campos de hora** — `adaptar`
 Clockify acepta `0345` → 03:45, `9.45` → 9:45, `1pm` → 13:00, `1` → 01:00. Se
-replican `0345`, `9.45`, `9:45` y `1` → 01:00; no se acepta `am`/`pm`.
-Justificación: la interfaz es 24 h (TT-02), así que `pm` no tiene lugar donde
-mostrarse.
+replican todos, y lo que se acepta depende del formato de hora de la persona
+(PF-13 y PF-14 de [la paridad del perfil](perfil.md)):
+
+- **Sin sufijo, la misma regla en los dos formatos**: `1` → 01:00, `0345` →
+  03:45, `930` → 09:30, `9.45` y `9:45` → 09:45, `13:00` → 13:00. Con 12 h, un
+  texto sin sufijo se lee como hora de 24 h.
+- **Con 24 h, todo sufijo se rechaza**: `1pm` no se acepta, porque `pm` no
+  tiene dónde mostrarse.
+- **Con 12 h se acepta el sufijo** `a`, `am`, `p` o `pm`, en mayúsculas o
+  minúsculas, con o sin puntos, con o sin espacio antes y con o sin espacio
+  entre las dos letras. Con sufijo, la hora tiene que ir de 1 a 12.
+
+| Texto                                    | 24 h      | 12 h      |
+| ---------------------------------------- | --------- | --------- |
+| `1pm`, `1 PM`, `1p`, `1 p.m.`, `1 p. m.` | rechazado | `13:00`   |
+| `9am`, `9 a. m.`                         | rechazado | `09:00`   |
+| `1:30pm`, `130pm`                        | rechazado | `13:30`   |
+| `1:05 PM`                                | rechazado | `13:05`   |
+| `12am`                                   | rechazado | `00:00`   |
+| `12pm`                                   | rechazado | `12:00`   |
+| `13pm`, `0am`                            | rechazado | rechazado |
+
+- **Lo que el campo muestra, el campo lo acepta.** Con 12 h, el campo muestra
+  `h:mm AM` / `h:mm PM` (`12:00 AM`, `1:05 PM`, PF-13), y ese texto vuelve a dar
+  la misma hora para los 1440 minutos del día: salir de un campo sin cambiarlo
+  nunca rechaza su propio valor.
+- **Con 12 h, el teclado del teléfono deja escribir letras**; con 24 h, y en el
+  campo de duración, sigue el numérico.
+- **Vale en los tres campos de hora**: la barra manual (TT-18), el editor de la
+  fila (TT-54) y el del inicio del timer (TT-28). Lo rechazado vuelve al valor
+  anterior, como cualquier texto que no se puede interpretar (TT-21).
+
+Justificación: el `1pm` de Clockify se replica con 12 h y se rechaza con 24 h,
+donde no hay forma de mostrarlo; las variantes con puntos y espacios
+(`1 p. m.`) son nuestras, por la forma en español. Diseño propio, fijado en el
+[contrato del slice 7](../slices/fase1-slice7-perfil.md).
+_No verificado_: si Clockify acepta `1pm` también con el formato de 24 h, y qué
+hace con `12am` y `13pm`. Confirmar en el workspace del equipo (P-14).
+
+_Corregido el 2026-10-04, slice 7_: decía que no se aceptaba `am`/`pm` porque
+la interfaz era de 24 h (TT-02). Con el formato de hora elegible, esa
+justificación vale solo para las 24 h.
 
 **TT-21 Entrada de texto inválida en duración u hora** — `adaptar`
 Clockify descarta lo que no puede interpretar y vuelve al valor anterior sin
@@ -414,13 +465,29 @@ la misma regla y queda arriba del grupo de hoy.
 
 **TT-44 Rótulo del encabezado de día** — `adaptar`
 Clockify rotula «Today», «Yesterday» y, para el resto, el día de la semana con
-la fecha. Acá: «Hoy», «Ayer» y, para el resto, `mié, 01/10`, con el año cuando
-el día cae fuera del año en curso. Justificación: formato de fecha en español.
-El rótulo tiene una sola implementación y la comparten el encabezado de día y
-el botón del selector de fecha de la barra manual.
+la fecha. Acá: «Hoy», «Ayer» y, para el resto, el día de la semana abreviado y
+la fecha en el formato de la persona (PF-12): `sáb, 03/10` con `dd/MM/yyyy`,
+`sáb, 10-03` con `yyyy-MM-dd`. La fecha va en la forma corta, sin año, cuando
+el día es del año en curso, y en la larga, con año, cuando no. Justificación:
+formato de fecha en español. El rótulo tiene una sola implementación y la
+comparten el encabezado de día y el botón del selector de fecha de la barra
+manual.
+
+| Formato      | Con año      | Sin año |
+| ------------ | ------------ | ------- |
+| `dd/MM/yyyy` | `03/10/2026` | `03/10` |
+| `dd-MM-yyyy` | `03-10-2026` | `03-10` |
+| `yyyy-MM-dd` | `2026-10-03` | `10-03` |
+| `MM/dd/yyyy` | `10/03/2026` | `10/03` |
+
+Las formas cortas son decisión nuestra, sin verificar (perfil P-09). Con el
+predeterminado, `dd/MM/yyyy`, el rótulo es el de antes del slice 7.
 _No verificado_: un día posterior a hoy se rotula con su fecha. Si Clockify
 usa un rótulo propio para mañana, no está documentado; confirmar en el
 workspace del equipo (P-14).
+
+_Corregido el 2026-10-04, slice 7_: daba la fecha siempre como `mié, 01/10`;
+desde el slice 7 sigue el formato de fecha de la persona.
 
 **TT-52 Ventana y paginación de la lista** — `adaptar`
 Clockify carga más entradas al bajar y así alcanza cualquier día del pasado.
@@ -544,9 +611,10 @@ _Agregado el 2026-10-03_. Lo que fija el
 
 - **El rango** va del primer al último día de la semana: `28/09 – 04/10`. Si
   alguno de los dos extremos no es del año en curso, los dos llevan el año:
-  `29/12/2025 – 04/01/2026`. «Esta semana» es la que contiene hoy según el
-  primer día de la semana de la persona (TT-48), y «Semana anterior», la
-  inmediatamente anterior.
+  `29/12/2025 – 04/01/2026`. Las dos puntas van en el formato de fecha de la
+  persona, con las formas de TT-44: `09-28 – 10-04` con `yyyy-MM-dd`. «Esta
+  semana» es la que contiene hoy según el primer día de la semana de la persona
+  (TT-48), y «Semana anterior», la inmediatamente anterior.
 - **El rótulo de una semana futura es su rango**, igual que el de cualquier
   semana que no sea esta ni la anterior: no hay un rótulo propio para la semana
   que viene. Va arriba de «Esta semana», por el mismo orden que los días
@@ -559,6 +627,9 @@ _Agregado el 2026-10-03_. Lo que fija el
   Una entrada cuenta entera en la semana del día de su inicio (TT-96).
 - **Encabezados**: cada semana es un encabezado de nivel 2, y cada día, uno de
   nivel 3 dentro de su semana.
+
+_Corregido el 2026-10-04, slice 7_: el rango daba las fechas siempre como
+`dd/MM`; desde el slice 7 sigue el formato de fecha de la persona.
 
 **TT-48 Corte de la semana** — `adaptar`
 La semana corta en el primer día de la semana de la persona, que se guarda en
@@ -1069,8 +1140,12 @@ modelo.
 | TT-103 | Borrar la entrada que está corriendo desde otra pestaña     | La pestaña con la barra descubre que no existe al reintentar, limpia la barra y avisa «No se pudo detener el timer.» con «Esa entrada ya no existe.», el mismo texto de TT-80.                                                                                                         |
 | TT-104 | Proyecto archivado mientras la entrada ya lo tiene asignado | La entrada conserva el proyecto y lo muestra; el selector no lo ofrece para entradas nuevas.                                                                                                                                                                                           |
 | TT-105 | Etiqueta borrada mientras la entrada la tiene               | La etiqueta desaparece de la entrada. **No verificado**: Clockify podría conservarla; depende del módulo de etiquetas.                                                                                                                                                                 |
-| TT-106 | Cambio de zona horaria del workspace con entradas cargadas  | Los instantes no se tocan; los grupos de día se recalculan y una entrada puede cambiar de día.                                                                                                                                                                                         |
+| TT-106 | Cambio de zona horaria de la persona con entradas cargadas  | Los instantes no se tocan; los grupos de día se recalculan y una entrada puede cambiar de día.                                                                                                                                                                                         |
 | TT-107 | Timer que lleva más de 24 horas corriendo                   | Sigue corriendo y al detenerlo se guarda entero (TT-42, TT-74). No hay tope. Una vez cerrada, si el trío no la puede expresar, sus horarios no se editan desde la fila (TT-110).                                                                                                       |
+
+_Corregido el 2026-10-04, slice 7_: TT-106 hablaba de la zona horaria del
+workspace. Desde el slice 7 la que agrupa la lista es la de la persona (TT-02,
+PF-38), y cambiar `workspace.timezone` no mueve nada de esta pantalla (PF-05).
 
 ## 11. Reparto por slices
 
@@ -1172,6 +1247,35 @@ slices 6 y 7. Contrato:
   verificado_ (P-14).
 - **TT-09**, crear un proyecto desde el selector, sigue fuera de alcance.
 
+### Slice 7 — perfil
+
+TT-02, TT-20, TT-44 y TT-106 pasan a ser de la persona, y TT-47 con ellos en el
+rango de la semana. De [la paridad del perfil](perfil.md), PF-01 a PF-06, PF-09
+a PF-14, PF-16, PF-30 a PF-39, PF-43, PF-44 y PF-46. Va después del 10 y antes
+del 6. Cierra P-13. Contrato:
+[fase1-slice7-perfil.md](../slices/fase1-slice7-perfil.md).
+
+- **La zona, la hora y la fecha de la lista son las de la persona** (TT-02,
+  TT-44, TT-47): dos personas en zonas distintas ven la misma entrada en horas
+  y días distintos (PF-04), y cambiar la zona puede mover una entrada de día
+  sin tocar ningún instante (TT-106, PF-38, PF-39). Quien nunca tocó su perfil
+  ve los mismos rótulos que antes del slice.
+- **Los campos de hora siguen el formato de la persona** (TT-20): con 12 h
+  muestran y aceptan `am` y `pm` en la barra manual, en el editor de la fila y
+  en el del inicio del timer (TT-18, TT-28, TT-54).
+- **El cambio se ve sin recargar** (PF-33): cambiar un formato en `/perfil` y
+  volver a `/` por la navegación muestra la lista y sus editores en el formato
+  nuevo.
+- **No cambian** el contador, que sigue en `h:mm:ss` (TT-17, PF-22), ni los
+  totales y la duración de cada fila, que siguen en `h:mm` porque el formato de
+  duración no entró (TT-45, PF-20).
+- **Lo que el slice decide**: TT-02 pasa a `replicar`; las formas de 12 h, las
+  variantes del sufijo de TT-20 y las formas cortas de fecha de TT-44 son
+  diseño propio _no verificado_ (P-14, perfil P-09).
+- **El calendario emergente del selector de fecha arranca la semana en lunes**,
+  por el idioma, y no por el primer día de la persona (TT-48). Lo trae el
+  slice 8, que va a necesitar el primer día en el cliente.
+
 ### Lo que queda
 
 Etiquetas (TT-12), facturable (TT-14, TT-15), y selección y edición masiva
@@ -1204,7 +1308,7 @@ pero necesitan una decisión.
 | P-05 | Dividir entrada: funcionalidad paga. ¿Entra en el alcance y con qué reglas de corte?                                                                                                      |
 | P-07 | Edición masiva en el rastreador: no sé si está en Free. Confirmar en el workspace y decidir si entra en la fase 1.                                                                        |
 | P-09 | Agrupación de entradas similares en una fila colapsable. El interruptor vive en el perfil (PF-26).                                                                                        |
-| P-14 | Verificar en el workspace real del equipo lo marcado como _no verificado_: TT-16, TT-26, TT-35, TT-44, TT-46, TT-47, TT-57, TT-58, TT-63, TT-65, TT-105, TT-108, TT-111, TT-112.          |
+| P-14 | Verificar en el workspace real del equipo lo marcado como _no verificado_: TT-16, TT-20, TT-26, TT-35, TT-44, TT-46, TT-47, TT-57, TT-58, TT-63, TT-65, TT-105, TT-108, TT-111, TT-112.   |
 
 ### Cerrados
 
@@ -1217,7 +1321,7 @@ Se dejan con su identificador porque los contratos de slice los citan.
 | P-10 | La fecha futura se acepta, como en Clockify (TT-76, TT-99). El slice 2 llegó a implementar el rechazo y el equipo lo revirtió el 2026-10-02: inventaba una pared que la herramienta no tiene. Si alguna vez se quiere, entra como mejora deliberada y no como paridad. |
 | P-11 | La pantalla revalida al enfocar, al volver a ser visible y cada 60 segundos mientras está visible (TT-40).                                                                                                                                                             |
 | P-12 | Un timer abandonado se deja correr: no hay corte automático (TT-42).                                                                                                                                                                                                   |
-| P-13 | Zona horaria y formatos salen del workspace en toda la fase 1 (TT-02, TT-48). El perfil por persona es un slice aparte y no los mueve.                                                                                                                                 |
+| P-13 | Zona horaria y formatos son de la persona desde el slice 7 (TT-02): los elige en `/perfil`, y el primer día de la semana es el de su membresía (TT-48). `workspace.timezone` solo fija el día del cron (PF-05).                                                        |
 | P-15 | Cuando llegue TT-52 se retira el aviso de TT-108 y la ventana se extiende hasta el día de la entrada recién creada. Decidido el 2026-10-02.                                                                                                                            |
 
 _Corregido el 2026-10-03, slice 5_: en P-13, el primer día de la semana ya no
@@ -1228,3 +1332,8 @@ _Corregido el 2026-10-03, slice 5_: en P-15, con la ventana en semanas enteras
 (TT-52), «hasta el día» se cumple llegando a la semana de ese día. Y la regla
 vale para toda mutación que devuelve una entrada, no solo para el alta
 (TT-108).
+_Corregido el 2026-10-04, slice 7_: P-13 decía que la zona horaria y los
+formatos salían del workspace en toda la fase 1 y que el perfil no los movía.
+El equipo puso el perfil en la fase 1, con el orden 10 → 7 → 6, y el slice 7
+los pasó a la persona; la nota anterior, del slice 5, describe el estado de ese
+momento.

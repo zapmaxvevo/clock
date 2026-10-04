@@ -22,6 +22,21 @@ export class DomainError<Code extends string = ActionErrorCode> extends Error {
   }
 }
 
+/**
+ * Una ruta suelta, o una ruta con el tipo de `revalidatePath`: con `layout`,
+ * todo lo que cuelga de ella.
+ */
+export type RevalidationTarget =
+  string | { readonly path: string; readonly type: "layout" | "page" };
+
+function revalidate(target: RevalidationTarget): void {
+  if (typeof target === "string") {
+    revalidatePath(target);
+    return;
+  }
+  revalidatePath(target.path, target.type);
+}
+
 /** Los textos de cada módulo para las causas que no traen mensaje propio. */
 export type ActionMessages = {
   readonly forbidden: string;
@@ -57,7 +72,10 @@ function failure<T, Code extends string = ActionErrorCode>(
  */
 export async function handle<T, Code extends string = ActionErrorCode>(
   work: (session: SessionContext) => Promise<T>,
-  options: { readonly paths: readonly string[]; readonly messages: ActionMessages },
+  options: {
+    readonly paths: readonly RevalidationTarget[];
+    readonly messages: ActionMessages;
+  },
 ): Promise<ActionResult<T, Code | ActionErrorCode>> {
   const session = await requireSession();
   try {
@@ -65,8 +83,8 @@ export async function handle<T, Code extends string = ActionErrorCode>(
   } catch (error) {
     return failure<T, Code>(error, options.messages);
   } finally {
-    for (const path of options.paths) {
-      revalidatePath(path);
+    for (const target of options.paths) {
+      revalidate(target);
     }
   }
 }

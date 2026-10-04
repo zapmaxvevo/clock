@@ -277,6 +277,55 @@ describe("can con un recurso de otra clase", () => {
   });
 });
 
+describe("can sobre el perfil (PF-34)", () => {
+  const roles = ["owner", "admin", "project_manager", "team_manager", "member"] as const;
+  const own = { kind: "profile", workspaceId, userId: "u1" } as const;
+  const other = { kind: "profile", workspaceId, userId: "u2" } as const;
+
+  it("deja a los cinco roles editar el perfil propio", () => {
+    for (const role of roles) {
+      expect([role, can(actor(role), "profile.own.update", own)]).toEqual([role, true]);
+    }
+  });
+
+  it("no deja a ningún rol editar el perfil de otra persona, tampoco al owner", () => {
+    for (const role of roles) {
+      expect([role, can(actor(role), "profile.own.update", other)]).toEqual([
+        role,
+        false,
+      ]);
+    }
+  });
+
+  it("niega a una membresía inactive o invited", () => {
+    for (const status of ["inactive", "invited"] as const) {
+      expect(can(actor("owner", { status }), "profile.own.update", own)).toBe(false);
+    }
+  });
+
+  it("niega cuando el recurso lleva otro workspace que la membresía con que se actúa", () => {
+    expect(
+      can(actor("owner"), "profile.own.update", {
+        ...own,
+        workspaceId: "22222222-2222-2222-2222-222222222222",
+      }),
+    ).toBe(false);
+  });
+
+  it("niega un recurso de otra clase, también un workspace con el owner y una entrada propia", () => {
+    // @ts-expect-error: profile.own.update pide un recurso profile.
+    expect(can(actor("owner"), "profile.own.update", workspace)).toBe(false);
+    const ownEntry = { kind: "timeEntry", workspaceId, userId: "u1" } as const;
+    // @ts-expect-error: profile.own.update pide un recurso profile.
+    expect(can(actor("owner"), "profile.own.update", ownEntry)).toBe(false);
+  });
+
+  it("las acciones de las entradas niegan un recurso profile propio", () => {
+    // @ts-expect-error: timeEntry.own.update pide un recurso timeEntry.
+    expect(can(actor("owner"), "timeEntry.own.update", own)).toBe(false);
+  });
+});
+
 describe("assertCan", () => {
   it("lanza ForbiddenError cuando can devuelve false", () => {
     expect(() => assertCan(actor("member"), "team.manage", workspace)).toThrow(

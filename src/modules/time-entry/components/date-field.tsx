@@ -4,6 +4,7 @@ import { CalendarIcon } from "lucide-react";
 import { useRef, useState, type ComponentProps } from "react";
 import { es } from "react-day-picker/locale";
 
+import { useDisplayFormats } from "@/components/layout/display-formats";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -13,7 +14,7 @@ type DateFieldProps = {
   /** Día canónico elegido, "2026-10-02". */
   readonly value: string;
   readonly onChange: (dayKey: string) => void;
-  /** Día de hoy en la zona del workspace: el rótulo «Hoy» / «Ayer» y la marca del calendario. */
+  /** Día de hoy en la zona de la persona: el rótulo «Hoy» / «Ayer» y la marca del calendario. */
   readonly todayKey: string;
   /** Piso del workspace: antes de ese día no se pueden cargar horas. */
   readonly minDayKey: string;
@@ -68,7 +69,8 @@ export function DateField({
    * calendario abierto lo dejaría adentro.
    */
   const returnFocus = useRef(true);
-  const label = dayKeyLabel(value, todayKey);
+  const { date } = useDisplayFormats();
+  const label = dayKeyLabel(value, todayKey, date);
 
   function changeOpen(next: boolean, details?: OpenChangeDetails): void {
     returnFocus.current =
@@ -117,7 +119,7 @@ export function DateField({
         <Calendar
           mode="single"
           locale={es}
-          // TT-02: «hoy» es el del workspace, no el del navegador.
+          // TT-02: «hoy» es el de la zona de la persona, no el del navegador.
           today={civilDate(todayKey)}
           selected={selected}
           defaultMonth={selected}

@@ -16,13 +16,13 @@ import {
 
 /**
  * Ni UTC ni la zona de quien corre los tests: con cualquiera de las dos, un
- * `reset` que ignorara la zona del workspace daría lo mismo y pasaría.
+ * `reset` que ignorara la zona de la persona daría lo mismo y pasaría.
  */
 const tokyo = "Asia/Tokyo";
 const draft: TimeDraft = { date: "2026-10-02", start: "09:00", end: "11:30" };
 
 describe("reset", () => {
-  it("arranca en el día y la hora del workspace, sin duración", () => {
+  it("arranca en el día y la hora de la persona, sin duración", () => {
     // 2026-10-02T03:30:00Z son las 12:30 del 2 de octubre en Tokio.
     expect(reset("2026-10-02T03:30:00.000Z", tokyo)).toEqual({
       date: "2026-10-02",
@@ -66,32 +66,60 @@ describe("derivados del borrador", () => {
 
 describe("withStart", () => {
   it("interpreta el formato tolerante y conserva el fin", () => {
-    expect(withStart(draft, "0345")).toEqual({
+    expect(withStart(draft, "0345", "24h")).toEqual({
       draft: { date: "2026-10-02", start: "03:45", end: "11:30" },
       rejected: null,
     });
   });
 
   it("mover el inicio recalcula la duración", () => {
-    const { draft: next } = withStart(draft, "10:00");
+    const { draft: next } = withStart(draft, "10:00", "24h");
     expect(draftDuration(next)).toBe(90);
   });
 
   it("un texto que no se puede interpretar deja el borrador igual y marca el campo", () => {
-    expect(withStart(draft, "1pm")).toEqual({ draft, rejected: "start" });
+    expect(withStart(draft, "1pm", "24h")).toEqual({ draft, rejected: "start" });
+  });
+
+  it("con 12 h acepta el sufijo y guarda la hora canónica (PF-14)", () => {
+    expect(withStart(draft, "1:30pm", "12h")).toEqual({
+      draft: { date: "2026-10-02", start: "13:30", end: "11:30" },
+      rejected: null,
+    });
+    expect(withStart(draft, "12 am", "12h").draft.start).toBe("00:00");
+  });
+
+  it("con 12 h sigue aceptando la hora sin sufijo", () => {
+    expect(withStart(draft, "0345", "12h").draft.start).toBe("03:45");
+    expect(withStart(draft, "13:00", "12h").draft.start).toBe("13:00");
+  });
+
+  it("con 12 h rechaza una hora de 12 h fuera de rango", () => {
+    expect(withStart(draft, "13pm", "12h")).toEqual({ draft, rejected: "start" });
   });
 });
 
 describe("withEnd", () => {
   it("interpreta el formato tolerante y conserva el inicio", () => {
-    expect(withEnd(draft, "9.45")).toEqual({
+    expect(withEnd(draft, "9.45", "24h")).toEqual({
       draft: { date: "2026-10-02", start: "09:00", end: "09:45" },
       rejected: null,
     });
   });
 
   it("un texto ilegible deja el borrador igual y marca el fin", () => {
-    expect(withEnd(draft, "25:00")).toEqual({ draft, rejected: "end" });
+    expect(withEnd(draft, "25:00", "24h")).toEqual({ draft, rejected: "end" });
+  });
+
+  it("con 12 h, «12:02 am» guarda las 00:02 (criterio 5)", () => {
+    expect(withEnd(draft, "12:02 am", "12h")).toEqual({
+      draft: { date: "2026-10-02", start: "09:00", end: "00:02" },
+      rejected: null,
+    });
+  });
+
+  it("con 24 h rechaza todo sufijo", () => {
+    expect(withEnd(draft, "9am", "24h")).toEqual({ draft, rejected: "end" });
   });
 });
 
@@ -135,10 +163,19 @@ describe("withDate", () => {
 
 describe("fromView", () => {
   /** Los tres campos de la vista que el editor de la fila necesita (§5). */
-  const view = { dayDate: "2026-10-02", startLabel: "08:00", endLabel: "10:30" };
+  const view = { dayDate: "2026-10-02", startClock: "08:00", endClock: "10:30" };
 
-  it("arma el trío con el día y las dos horas tal como los trae la vista", () => {
+  it("arma el trío con el día y las dos horas canónicas de la vista", () => {
     expect(fromView(view)).toEqual({ date: "2026-10-02", start: "08:00", end: "10:30" });
+  });
+
+  it("lee las horas canónicas y no los rótulos, también con 12 h", () => {
+    const shown12h = { ...view, startLabel: "8:00 AM", endLabel: "10:30 AM" };
+    expect(fromView(shown12h)).toEqual({
+      date: "2026-10-02",
+      start: "08:00",
+      end: "10:30",
+    });
   });
 
   it("deriva la duración de las dos horas de pared", () => {
@@ -147,7 +184,7 @@ describe("fromView", () => {
   });
 
   it("una entrada que cruza la medianoche vuelve a dar el día siguiente", () => {
-    const next = fromView({ ...view, startLabel: "22:00", endLabel: "01:15" });
+    const next = fromView({ ...view, startClock: "22:00", endClock: "01:15" });
     expect(draftDuration(next)).toBe(195);
     expect(draftExtraDays(next)).toBe(1);
   });
@@ -159,30 +196,30 @@ function clock(minutes: number): string {
 }
 
 describe("el borrador de la fila", () => {
-  const row = fromView({ dayDate: "2026-10-02", startLabel: "08:00", endLabel: "10:30" });
+  const row = fromView({ dayDate: "2026-10-02", startClock: "08:00", endClock: "10:30" });
 
   it("acepta los mismos formatos que la barra manual (TT-19, TT-20)", () => {
-    expect(withStart(row, "7").draft.start).toBe("07:00");
-    expect(withStart(row, "0745").draft.start).toBe("07:45");
-    expect(withStart(row, "7.45").draft.start).toBe("07:45");
-    expect(withEnd(row, "11:15").draft.end).toBe("11:15");
+    expect(withStart(row, "7", "24h").draft.start).toBe("07:00");
+    expect(withStart(row, "0745", "24h").draft.start).toBe("07:45");
+    expect(withStart(row, "7.45", "24h").draft.start).toBe("07:45");
+    expect(withEnd(row, "11:15", "24h").draft.end).toBe("11:15");
   });
 
   it("un valor rechazado deja el borrador igual (TT-21)", () => {
-    expect(withStart(row, "1pm")).toEqual({ draft: row, rejected: "start" });
-    expect(withEnd(row, "25:00")).toEqual({ draft: row, rejected: "end" });
+    expect(withStart(row, "1pm", "24h")).toEqual({ draft: row, rejected: "start" });
+    expect(withEnd(row, "25:00", "24h")).toEqual({ draft: row, rejected: "end" });
   });
 
   it("cada transición recalcula la duración", () => {
-    const moved = withStart(row, "09:00").draft;
+    const moved = withStart(row, "09:00", "24h").draft;
     expect(draftDuration(moved)).toBe(90);
-    const stretched = withEnd(moved, "12:00").draft;
+    const stretched = withEnd(moved, "12:00", "24h").draft;
     expect(draftDuration(stretched)).toBe(180);
     expect(draftDuration(withDate(stretched, "2026-09-30"))).toBe(180);
   });
 
   it("dejar el fin por debajo del inicio lo manda al día siguiente (TT-72)", () => {
-    const next = withEnd(row, "07:00").draft;
+    const next = withEnd(row, "07:00", "24h").draft;
     expect(draftDuration(next)).toBe(23 * 60);
     expect(draftExtraDays(next)).toBe(1);
   });
@@ -220,7 +257,7 @@ describe("commitChange", () => {
   it("con el valor aceptado entrega el borrador y devuelve lo que el campo muestra", () => {
     const applied: TimeDraft[] = [];
     const shown = commitChange(
-      withStart(draft, "0745"),
+      withStart(draft, "0745", "24h"),
       (next) => applied.push(next),
       (next) => next.start,
     );

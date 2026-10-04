@@ -112,9 +112,9 @@ a su huso.
 **PF-05 Clockify no tiene zona horaria de workspace** — `adaptar`
 No encontré ningún ajuste de zona horaria a nivel de workspace en la
 documentación: la zona horaria es siempre de la persona. Nuestro
-`workspace.timezone` no tiene equivalente y hoy cumple dos papeles distintos:
-decidir el día de los trabajos de cron y, provisoriamente, formatear la
-interfaz de todo el mundo (P-13 del rastreador, TT-02).
+`workspace.timezone` no tiene equivalente y hasta el slice 7 cumplía dos papeles
+distintos: decidir el día de los trabajos de cron y, provisoriamente, formatear
+la interfaz de todo el mundo (P-13 del rastreador, TT-02).
 
 Decidido por el equipo el 2026-10-02: **`workspace.timezone` se queda, con un
 solo trabajo.** Cuando llegue el perfil, la zona horaria de la interfaz sale de
@@ -127,6 +127,11 @@ Justificación del `adaptar`: el ajuste no existe en Clockify y nosotros lo
 conservamos para una restricción propia.
 _No verificado_: que no exista el ajuste es una ausencia en la documentación,
 no una afirmación de la documentación. Confirmar en el workspace.
+
+_Corregido el 2026-10-04, slice 7_: decía que `workspace.timezone` «hoy»
+formatea la interfaz. Desde el slice 7 la zona de la interfaz es la de la
+persona (PF-11), cambiar `workspace.timezone` no cambia ninguna pantalla, y el
+predeterminado de la persona es un valor y no un vínculo con esta columna.
 
 ## 2. Identidad: nombre, foto, correo
 
@@ -171,6 +176,13 @@ a Blob, que no tiene ninguna otra necesidad en la fase 1 y arrastra validación
 de tipo y de tamaño. La divergencia se levanta cuando exista otra necesidad de
 subir archivos: el logo del workspace, que es de la fase 2.
 
+_Agregado el 2026-10-04, slice 7_: **la identidad no se cambia desde la
+aplicación por ningún camino.** Better Auth traía una ruta propia,
+`/api/auth/update-user`, que dejaba a cualquier sesión escribir su nombre y su
+foto; el slice 7 la cierra. Y la foto solo se muestra si su dirección es de
+`lh3.googleusercontent.com`: con cualquier otra se ven las iniciales (PF-44).
+El nombre editable del slice 7b no va a pasar por esa ruta (PF-07, PF-08).
+
 **PF-10 La foto se muestra donde hoy solo hay nombre** — `adaptar`
 El menú de usuario del encabezado muestra hoy el nombre y el correo como
 atributo `title`. Con el perfil pasa a mostrar la foto, y el nombre y el correo
@@ -182,32 +194,119 @@ llega en la sesión (`image`) y no se usa en ningún lado.
 **PF-11 Zona horaria** — `replicar`
 Un selector con las zonas horarias, bajo «Hora y fecha». Afecta a cómo se
 muestran todas las horas y a dónde cae el corte de cada día y de cada semana.
-Predeterminado decidido por el equipo el 2026-10-02, **como decisión nuestra y
-no como relevamiento**: la zona horaria del workspace
-(`America/Argentina/Buenos_Aires`), para que activar el perfil no mueva ningún
-día de lugar. Nadie se encuentra con sus entradas cambiadas de día el día que
-la pantalla de perfil se despliega.
+Predeterminado decidido por el equipo el 2026-10-02 y confirmado el
+2026-10-03, **como decisión nuestra y no como relevamiento**: el valor fijo
+`America/Argentina/Buenos_Aires`, **no un vínculo con `workspace.timezone`**.
+Hoy los dos coinciden, así que activar el perfil no movió ningún día de lugar;
+y como es un valor, si la zona del workspace cambia para el cron, nadie que no
+haya elegido una zona se mueve de día (PF-05). El predeterminado no se guarda:
+quien nunca eligió no tiene valor guardado y ve el de omisión.
 _No verificado_: si Clockify la detecta del navegador al crear la cuenta.
+
+_Agregado el 2026-10-04_. Diseño propio, fijado en el
+[contrato del slice 7](../slices/fase1-slice7-perfil.md): la documentación no
+describe el selector.
+
+- **Las zonas se comparan por su forma canónica**, no por el texto. La lista
+  del entorno nombra cada zona por su forma canónica de CLDR y no trae los
+  alias: no está `America/Argentina/Buenos_Aires`, sino
+  `America/Buenos_Aires`, que el entorno resuelve como la misma zona. Por eso
+  el predeterminado aparece elegido como `America/Buenos_Aires`. Una zona se
+  guarda tal como se eligió, sin normalizarla.
+- **Las opciones** son las zonas que lista el entorno, más `UTC`, que se agrega
+  aunque el entorno no la liste, en orden alfabético y cada una con su
+  desplazamiento de ese momento (`UTC−03:00`, `UTC+05:45`). Las `Etc/GMT±n` no
+  se ofrecen. La lista sale del servidor, para que lo que se ofrece sea lo que
+  se acepta (PF-35).
+- **El buscador encuentra por cualquier parte del nombre, sin distinguir
+  mayúsculas ni acentos y con `_` leído como espacio**, en la búsqueda y en el
+  nombre, como el selector de proyecto (TT-07): `tokyo` encuentra
+  `Asia/Tokyo`; `buenos`, `buenos aires`, `Buenos_Aires` —tal como se ve en el
+  selector— y `america/buenos_aires` encuentran `America/Buenos_Aires`;
+  `Bogotá` encuentra `America/Bogota`. Se rotula «Buscar zona horaria» y, sin
+  coincidencias, la lista dice «Ninguna zona horaria coincide con la
+  búsqueda.»
+- **Una tecla sobre el selector cerrado no cambia la zona**: hay que abrirlo y
+  elegir.
+- **Una zona guardada que el entorno deja de listar sigue valiendo** mientras
+  la sepa convertir, y aparece entre las opciones. Una que ya no sabe
+  convertir cae al predeterminado, en vez de dejar a la persona sin pantalla.
+  La lista depende de la versión de Node, que puede sumar, renombrar o cambiar
+  la forma canónica de una zona.
+- **Límite conocido: los nombres viejos de CLDR.** La lista trae
+  `Asia/Calcutta` y `Asia/Katmandu`, que son las formas canónicas de CLDR, y no
+  `Asia/Kolkata` ni `Asia/Kathmandu`: «kolkata» no encuentra nada. Una tabla de
+  alias quedó fuera del slice 7.
+
+_Corregido el 2026-10-04, slice 7 (decisión del equipo)_: el predeterminado
+decía «la zona horaria del workspace», con el valor entre paréntesis, y se
+podía leer como un vínculo con `workspace.timezone` que le devolvería a esa
+columna el segundo trabajo que PF-05 le sacó.
 
 **PF-12 Formato de fecha** — `replicar`
 Un selector bajo «Hora y fecha». La documentación lo nombra pero **no enumera
 las opciones**, así que la lista no se pudo relevar. Lista propuesta, que cubre
 lo que la aplicación necesita: `dd/MM/yyyy`, `dd-MM-yyyy`, `yyyy-MM-dd` y
-`MM/DD/YYYY`.
+`MM/dd/yyyy`. Cada opción muestra de ejemplo el día de hoy en la zona de la
+persona, con año.
 Predeterminado decidido por el equipo el 2026-10-02: `dd/MM/yyyy`.
 _No verificado_: qué opciones ofrece Clockify y con cuál arranca.
 
+_Agregado el 2026-10-04_. Decisión nuestra, sin verificar, fijada en el
+[contrato del slice 7](../slices/fase1-slice7-perfil.md): **cada formato tiene
+una forma corta, sin año**, que usan los rótulos de día y de semana del año en
+curso (TT-44, TT-47); los de otro año usan la larga.
+
+| Formato      | Con año      | Sin año |
+| ------------ | ------------ | ------- |
+| `dd/MM/yyyy` | `03/10/2026` | `03/10` |
+| `dd-MM-yyyy` | `03-10-2026` | `03-10` |
+| `yyyy-MM-dd` | `2026-10-03` | `10-03` |
+| `MM/dd/yyyy` | `10/03/2026` | `10/03` |
+
+Con el predeterminado, los rótulos salen idénticos a los de antes del slice 7.
+
+_Corregido el 2026-10-04, slice 7_: el cuarto formato decía `MM/DD/YYYY`; es
+`MM/dd/yyyy`, con la notación de los otros tres.
+
 **PF-13 Formato de hora** — `replicar`
-Dos valores documentados: 12 horas y 24 horas.
-Predeterminado decidido por el equipo el 2026-10-02: 24 horas, que es lo que
-hoy hace `formatClock` y lo que asume TT-20 al rechazar `1pm`.
+Dos valores documentados: 12 horas y 24 horas. Cada opción muestra de ejemplo
+la una de la tarde: «24 horas» con `13:00` y «12 horas» con `1:00 PM`.
+Predeterminado decidido por el equipo el 2026-10-02: 24 horas, que es lo que la
+aplicación mostraba antes del perfil.
+
+_Agregado el 2026-10-04_. Decisión nuestra, sin verificar, fijada en el
+[contrato del slice 7](../slices/fase1-slice7-perfil.md): con 12 horas la hora
+se muestra `h:mm AM` / `h:mm PM`, sin cero a la izquierda y con las doce como
+`12`.
+
+| Hora  | 24 horas | 12 horas   |
+| ----- | -------- | ---------- |
+| 00:00 | `00:00`  | `12:00 AM` |
+| 00:59 | `00:59`  | `12:59 AM` |
+| 09:05 | `09:05`  | `9:05 AM`  |
+| 12:00 | `12:00`  | `12:00 PM` |
+| 13:05 | `13:05`  | `1:05 PM`  |
+| 23:59 | `23:59`  | `11:59 PM` |
+
+Vale para las horas de cada fila y para los campos de hora de la barra manual,
+del editor de la fila y del inicio del timer (TT-20). El contador del timer
+corriendo no es una hora sino un transcurrido, y sigue en `h:mm:ss` (PF-22).
+
+_Corregido el 2026-10-04, slice 7_: decía que 24 horas era lo que hacía
+`formatClock` y lo que asumía TT-20 al rechazar `1pm`. `formatClock` sigue
+dando la hora canónica de 24 h; la que se muestra sale de `clockLabel` (§10), y
+TT-20 se reescribió (PF-14).
 
 **PF-14 Con 12 horas, los campos de hora aceptan `am` y `pm`** — `adaptar`
-TT-20 rechaza `1pm` justificándose en que la interfaz es de 24 horas. Esa
-justificación se cae en cuanto el formato sea elegible: con 12 horas
-seleccionadas hay que aceptar `1pm` → 13:00, como Clockify, y seguir
-rechazándolo con 24 horas. Justificación: es la regla de Clockify condicionada
-a un ajuste que hoy no existe; cuando exista, TT-20 hay que reescribirlo.
+Con 12 horas seleccionadas se acepta `1pm` → 13:00, como Clockify, y con 24
+horas se sigue rechazando. Las formas aceptadas —con las variantes de puntos y
+espacios del español, como `1 p. m.`— y los rechazos —`13pm`, `0am`— están en
+TT-20. Lo que un campo muestra, ese campo lo acepta. Justificación: es la regla
+de Clockify condicionada al formato de hora; las variantes son nuestras.
+
+_Corregido el 2026-10-04, slice 7_: decía que TT-20 rechazaba `1pm` y que había
+que reescribirlo cuando el formato fuera elegible; el slice 7 lo reescribió.
 
 **PF-15 Inicio del día** — `fuera de alcance`
 La documentación nombra el ajuste —«the start of your day»— y **no explica qué
@@ -352,12 +451,25 @@ preferencias, en solo lectura, con una nota de que lo administra el equipo
 (PF-01), y el formato de duración también, con la nota de que es del workspace
 (PF-02).
 
+_Agregado el 2026-10-04, slice 7_: hasta el slice 7b, el nombre está en solo
+lectura, como la foto y el correo, bajo «Datos de la cuenta» y con la nota «El
+nombre, la foto y el correo salen de tu cuenta de Google.»; y el tema no está
+(PF-07, PF-23). El primer día de la semana lleva la nota «Lo administra el
+equipo.», y el formato de duración se muestra como «Compacto (h:mm)» con «Lo
+define el workspace.»
+
 **PF-32 Cada cambio se guarda solo** — `adaptar`
 No hay botón de guardar: cada control guarda al cambiar, y el nombre al perder
 el foco o con Enter, como el resto de la aplicación (TT-04, TT-55). Si falla,
 el control vuelve al valor anterior y aparece el aviso de dos partes de TT-90.
 Justificación: Clockify no documenta el mecanismo; esta es la convención que el
 rastreador ya fijó.
+
+_Agregado el 2026-10-04, slice 7_: el título del aviso nombra el ajuste —«No se
+pudo cambiar la zona horaria.», «No se pudo cambiar el formato de fecha.», «No
+se pudo cambiar el formato de hora.»— y «Reintentar» aparece solo con la falla
+de red, como en TT-89. Elegir el valor que ya estaba guardado no escribe nada,
+así que reintentar un cambio que ya se aplicó es inofensivo.
 
 **PF-33 El cambio se ve en toda la aplicación de inmediato** — `replicar`
 Al cambiar la zona horaria o un formato, el rastreador y cualquier otra
@@ -373,20 +485,31 @@ persona es de la pantalla de equipo y solo para owner y admin (PF-17).
 **PF-35 Validaciones** — `adaptar`
 Clockify no documenta ninguna. Las que hacen falta, con los textos propios:
 
-| Caso                                         | Mensaje                                          |
-| -------------------------------------------- | ------------------------------------------------ |
-| Nombre vacío                                 | «Escribí un nombre.»                             |
-| Nombre de más de 100 caracteres              | «El nombre no puede superar los 100 caracteres.» |
-| Zona horaria que no está en la lista de IANA | «Esa zona horaria no existe.»                    |
-| Formato de fecha o de hora desconocido       | «Ese formato no está disponible.»                |
-| Día de la semana fuera de los siete          | «Ese día no existe.»                             |
-| Sin permiso para cambiar el primer día       | «No tenés permiso para hacer esto.» (TT-79)      |
+| Caso                                                                           | Mensaje                                          |
+| ------------------------------------------------------------------------------ | ------------------------------------------------ |
+| Nombre vacío                                                                   | «Escribí un nombre.»                             |
+| Nombre de más de 100 caracteres                                                | «El nombre no puede superar los 100 caracteres.» |
+| Zona horaria cuya forma canónica no está entre las opciones, o que no es texto | «Esa zona horaria no existe.»                    |
+| Formato de fecha o de hora desconocido, o un ajuste que no existe              | «Ese formato no está disponible.»                |
+| Día de la semana fuera de los siete                                            | «Ese día no existe.»                             |
+| Membresía no activa que cambia un ajuste propio                                | «No tenés permiso para hacer esto.» (TT-79)      |
+| Sin permiso para cambiar el primer día                                         | «No tenés permiso para hacer esto.» (TT-79)      |
 
 Justificación: son validaciones de un payload cerrado, no reglas de producto.
-La lista de zonas horarias sale del entorno, no de una tabla nuestra.
+La lista de zonas horarias sale del entorno, no de una tabla nuestra, más
+`UTC`, que se suma si el entorno no la lista (PF-11). Como se compara la forma
+canónica, el predeterminado `America/Argentina/Buenos_Aires` se acepta aunque
+la lista no lo nombre literalmente.
 **Los dos límites del nombre —no vacío y 100 caracteres— son decisión del
 equipo del 2026-10-02, no relevamiento**: Clockify no documenta ninguno, igual
 que pasa con los predeterminados.
+
+_Corregido el 2026-10-04, slice 7_: la fila de la zona decía «que no está en la
+lista de IANA». La lista es la del entorno, comparada por forma canónica; sin
+esa comparación se rechazaba el propio predeterminado, y sin agregar `UTC` la
+action la rechazaba aunque el selector la necesitara. Se suman la fila de la
+membresía no activa y el ajuste que no existe, que solo llega en un pedido
+armado a mano.
 
 **PF-36 Estado de error y recarga** — `replicar`
 Al recargar, la pantalla muestra los valores guardados; no hay borrador que
@@ -399,37 +522,43 @@ Una persona que nunca tocó nada ve los predeterminados.
 
 ## 10. Impacto sobre lo ya construido
 
-Lo que hay que volver a tocar cuando el perfil llegue. Es la sección que
-importa para planificar el slice.
+Lo que el perfil tocó de lo ya construido, y lo que queda para el slice 7b y
+para el formato de duración. Es la sección que importa para planificar los
+slices que siguen.
 
 **Una propiedad que juega a favor.** El slice 1 decidió que todo lo que depende
 de zona horaria o de formato se resuelve en el servidor y viaja ya formateado
 en `TimeEntryView` —`startLabel`, `endLabel`, `durationLabel`, `dayDate`— y en
 `DayGroupView.label` y `WeekGroupView.label`. Eso quiere decir que cambiar los
-formatos **no toca los componentes**, salvo los dos que formatean en el
-cliente. El cambio es casi todo en `src/server/time` y en el service.
+formatos **no toca los componentes**, salvo los que formatean en el cliente,
+que leen los formatos con `useDisplayFormats` y las mismas funciones de
+`src/server/time` que el servidor
+([ADR 0012](../adr/0012-un-solo-juego-de-formatos.md)). El cambio es casi todo
+en `src/server/time` y en el service.
 
-| Qué                                                     | Por qué lo mueve el perfil                                                                                                                                                        |
-| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/server/db/schema.ts` y una migración               | Preferencias por persona en **tabla propia**; `week_start` ya está en `membership`. **`user` es de Better Auth** y la regenera `npm run auth:schema`: no lleva columnas nuestras. |
-| `src/server/auth.ts`                                    | El mapeo `{ name: profile.name, image: profile.picture }` no puede pisar el nombre editado en cada inicio de sesión. Es condición previa de PF-07; el detalle está en PF-08.      |
-| `src/server/session.ts`                                 | `SessionContext` tiene que traer las preferencias, para que ninguna action las vuelva a buscar.                                                                                   |
-| `src/app/(app)/page.tsx`                                | Desde el slice 5 pasa `trackerWorkspaceOf(session)` y la zona se lee ahí: el perfil cambia esa función de `time-entry/service.ts`, no esta ruta.                                  |
-| `src/modules/time-entry/actions.ts`                     | Desde el slice 5, las ocho actions que necesitan la zona pasan `trackerWorkspaceOf(session)`, que es donde se lee. El perfil cambia esa función y ninguna action.                 |
-| `src/server/time/index.ts` · `formatClock`              | Hoy fija `HH:mm`. Pasa a depender del formato de hora (PF-13).                                                                                                                    |
-| `src/server/time/index.ts` · `dayLabel` y `dayKeyLabel` | Hoy fijan `EEE, dd/MM`. Pasan a depender del formato de fecha (PF-12).                                                                                                            |
-| `src/server/time/index.ts` · `weekKeyLabel`             | Hoy fija `dd/MM` en el rango de la semana. Pasa a depender del formato de fecha (PF-12).                                                                                          |
-| `src/server/time/index.ts` · `formatDuration`           | Hoy fija `h:mm`. Pasa a depender del formato de duración (PF-20).                                                                                                                 |
-| `src/server/time/index.ts` · `formatElapsed`            | **No se toca**: el contador sigue en `h:mm:ss` (PF-22).                                                                                                                           |
-| `src/server/time/index.ts` · `weekBounds`               | Ya no es un bloqueo: desde el slice 5 el primer día sale de `weekStartOf` (PF-01) y la semana se corta sobre claves de día. El rastreador no la llama: usa `weekStartKey`.        |
-| `src/server/time/index.ts` · `parseClockInput`          | Hoy rechaza `1pm` siempre. Con formato de 12 horas tiene que aceptarlo (PF-14).                                                                                                   |
-| `src/modules/time-entry/components/day-group.tsx`       | Llama a `formatDuration` en el cliente para el total del día.                                                                                                                     |
-| `src/modules/time-entry/components/week-group.tsx`      | Llama a `formatDuration` en el cliente para el total de la semana (PF-20).                                                                                                        |
-| `src/components/layout/user-menu.tsx`                   | Foto, menú desplegable y enlace al perfil (PF-10, PF-30).                                                                                                                         |
-| `src/app/(app)/layout.tsx` y `src/app/globals.css`      | El tema: la clase `dark` ya existe, falta encenderla antes del primer pintado (PF-23, PF-24).                                                                                     |
-| `src/server/permissions/index.ts`                       | Una acción nueva para el perfil propio. El primer día de la semana puede reusar `team.manage` (PF-17).                                                                            |
-| `src/server/time/time.test.ts`                          | Los casos de formato dan por sentados los formatos fijos de hoy.                                                                                                                  |
-| `docs/parity/time-tracker.md`                           | TT-02, TT-20, TT-44 y P-13 se reabren por diseño: dicen «del workspace» y pasan a decir «de la persona». TT-48 ya es de la persona desde el slice 5.                              |
+| Qué                                                                     | Por qué lo mueve el perfil                                                                                                                                                                                                                       |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/server/db/schema.ts` y una migración                               | Preferencias por persona en **tabla propia**, `user_preference`, desde el slice 7; `week_start` ya está en `membership`. **`user` es de Better Auth** y la regenera `npm run auth:schema`: no lleva columnas nuestras.                           |
+| `src/server/auth.ts`                                                    | El mapeo `{ name: profile.name, image: profile.picture }` no puede pisar el nombre editado en cada inicio de sesión. Es condición previa de PF-07 y queda para el slice 7b; el detalle está en PF-08.                                            |
+| `src/server/session.ts`                                                 | `SessionContext` trae las preferencias, que lee `preferencesOf` en paralelo con el contexto del workspace: ninguna action las vuelve a buscar.                                                                                                   |
+| `src/app/(app)/page.tsx`                                                | Desde el slice 5 pasa `trackerWorkspaceOf(session)` y la zona se lee ahí: el perfil cambió esa función de `time-entry/service.ts`, no esta ruta.                                                                                                 |
+| `src/modules/time-entry/actions.ts`                                     | Desde el slice 5, las ocho actions que necesitan la zona pasan `trackerWorkspaceOf(session)`, que es donde se lee. El perfil cambió esa función y ninguna action.                                                                                |
+| `src/modules/time-entry/service.ts` · `trackerWorkspaceOf`              | Sale de `timeSettingsOf` del módulo `profile`, el único punto de lectura de la zona, los formatos y el primer día, y deja de leer `workspace.timezone`.                                                                                          |
+| `src/server/time/index.ts` · `formatClock`                              | **No cambia**: es la hora canónica, `HH:mm` de 24 h, la del trío de una fila y la de la conservación del ADR 0006. La que se muestra sale de `clockLabel`, que recibe el formato de hora (PF-13).                                                |
+| `src/server/time/index.ts` · `dayLabel` y `dayKeyLabel`                 | Reciben el formato de fecha: el día abreviado con la forma corta, o la larga en otro año (PF-12).                                                                                                                                                |
+| `src/server/time/index.ts` · `weekKeyLabel`                             | Recibe el formato de fecha para el rango de la semana (PF-12).                                                                                                                                                                                   |
+| `src/server/time/index.ts` · `formatDuration`                           | Hoy fija `h:mm`. Pasa a depender del formato de duración (PF-20), que no entró en el slice 7.                                                                                                                                                    |
+| `src/server/time/index.ts` · `formatElapsed`                            | **No se toca**: el contador sigue en `h:mm:ss` (PF-22).                                                                                                                                                                                          |
+| `src/server/time/index.ts` · `weekBounds`                               | Ya no es un bloqueo: desde el slice 5 el primer día sale de `weekStartOf` (PF-01) y la semana se corta sobre claves de día. El rastreador no la llama: usa `weekStartKey`.                                                                       |
+| `src/server/time/index.ts` · `parseClockInput`                          | Recibe el formato de hora: con 12 horas acepta `1pm` y con 24 lo rechaza (PF-14, TT-20).                                                                                                                                                         |
+| `src/modules/time-entry/components/use-group-total.ts`                  | Arma con `formatDuration`, en el cliente, el total del día y el de la semana que dibujan `day-group.tsx` y `week-group.tsx`. `entry-row.tsx` y `manual-bar.tsx` la llaman para la duración del borrador. Esperan el formato de duración (PF-20). |
+| `entry-row.tsx`, `date-field.tsx` y `time-draft.ts`                     | Formatean en el cliente con la hora o la fecha: el rango de la fila sale de `clockLabel` sobre las horas canónicas, el botón del selector de fecha de `dayKeyLabel`, y el borrador interpreta con `parseClockInput`.                             |
+| `manual-bar.tsx`, `entry-times-editor.tsx` y `running-start-editor.tsx` | Los tres campos de hora muestran `clockLabel` y aceptan según el formato de hora (TT-20).                                                                                                                                                        |
+| `src/modules/profile/components/user-menu.tsx`                          | Foto o iniciales, menú desplegable y enlace al perfil (PF-10, PF-30, PF-44). Estaba en `src/components/layout/` y pasó al módulo.                                                                                                                |
+| `src/app/(app)/layout.tsx` y `src/app/globals.css`                      | El layout monta el proveedor de formatos de base. El tema queda para el slice 7b: la clase `dark` ya existe, falta encenderla antes del primer pintado (PF-23, PF-24).                                                                           |
+| `src/server/permissions/index.ts`                                       | `profile.own.update`, para los cinco roles sobre el perfil propio (PF-34). El primer día de la semana puede reusar `team.manage` cuando se edite (PF-17).                                                                                        |
+| `src/server/time/time.test.ts`                                          | Los casos de formato cubren los dos formatos de hora y los cuatro de fecha, y con los predeterminados dan los rótulos de antes.                                                                                                                  |
+| `docs/parity/time-tracker.md`                                           | TT-02, TT-20, TT-44, TT-106 y P-13 dicen «de la persona» desde el slice 7. TT-48 ya lo era desde el slice 5.                                                                                                                                     |
 
 _Corregido el 2026-10-03, slice 5_: las filas de `page.tsx` y de `actions.ts`
 decían que pasaban `session.workspace.timezone` y que el perfil tenía que
@@ -438,6 +567,15 @@ día de la semana, que desde el slice 5 sale de `membership.week_start`. La del
 esquema pedía esa columna, que ya existe, y la de `time-tracker.md` contaba a
 TT-48 entre los que se reabren. Se agregan `weekKeyLabel` y `week-group.tsx`, y
 `WeekGroupView.label` en el párrafo de arriba, que el slice 5 creó.
+_Corregido el 2026-10-04, slice 7_: la fila de `formatClock` decía que pasaba a
+depender del formato de hora, que habría hecho viajar el trío como `1:05 PM`;
+la de `day-group.tsx` y `week-group.tsx` decía que llamaban a `formatDuration`,
+que llama `use-group-total.ts`. Faltaban los que formatean en el cliente con la
+hora o la fecha —`date-field.tsx`, `entry-row.tsx`, `time-draft.ts` y los tres
+campos de hora— y `trackerWorkspaceOf`. La de `session.ts` dice cómo llegan las
+preferencias, la de `auth.ts` y la del tema quedan para el 7b, y el menú cambió
+de lugar. El párrafo de arriba decía que formateaban en el cliente solo dos
+componentes.
 
 **Lo que no se toca.** La base sigue guardando instantes en UTC, así que ningún
 dato se migra. `workspace.timezone` se queda para el cron (PF-05).
@@ -448,17 +586,22 @@ anticipó.
 
 ## 11. Casos borde
 
-| ID    | Caso                                             | Comportamiento esperado                                                                                                    |
-| ----- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| PF-38 | Cambiar la zona horaria con entradas ya cargadas | Ningún instante se toca. Los grupos de día se recalculan y una entrada puede cambiar de día, igual que TT-106.             |
-| PF-39 | Cambiar la zona horaria con un timer corriendo   | El timer sigue corriendo y el transcurrido no cambia: se mide entre instantes. Lo que puede cambiar es en qué día aparece. |
-| PF-40 | Cambiar el primer día de la semana               | Ninguna entrada se mueve; los totales de la semana se recalculan y una entrada puede pasar de una semana a otra.           |
-| PF-41 | Un admin cambia el primer día de otra persona    | Esa persona lo ve al recargar. No hay aviso, igual que cualquier otro cambio hecho desde otro dispositivo (TT-40).         |
-| PF-42 | Cambiar el formato de duración                   | Es del workspace: lo ve todo el equipo. Ninguna duración guardada cambia, solo cómo se escribe.                            |
-| PF-43 | Zona horaria con cambio de horario de verano     | Vale lo mismo que TT-97 y el ADR 0005: la duración es la real y puede no coincidir con la resta visual de las dos horas.   |
-| PF-44 | Persona sin foto en Google                       | Se muestran las iniciales del nombre. `image` ya es nulable en la sesión.                                                  |
-| PF-45 | El nombre cambia en Google                       | Si la persona nunca lo editó, llega el de Google en el siguiente inicio de sesión. Si lo editó, gana el editado (PF-08).   |
-| PF-46 | Membresía desactivada                            | La pantalla de perfil queda en solo lectura con el aviso de TT-92. Los valores se siguen viendo.                           |
+| ID    | Caso                                             | Comportamiento esperado                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ----- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| PF-38 | Cambiar la zona horaria con entradas ya cargadas | Ningún instante se toca. Los grupos de día se recalculan y una entrada puede cambiar de día, igual que TT-106.                                                                                                                                                                                                                                                                                                                                                                       |
+| PF-39 | Cambiar la zona horaria con un timer corriendo   | El timer sigue corriendo y el transcurrido no cambia: se mide entre instantes. Lo que puede cambiar es en qué día aparece.                                                                                                                                                                                                                                                                                                                                                           |
+| PF-40 | Cambiar el primer día de la semana               | Ninguna entrada se mueve; los totales de la semana se recalculan y una entrada puede pasar de una semana a otra.                                                                                                                                                                                                                                                                                                                                                                     |
+| PF-41 | Un admin cambia el primer día de otra persona    | Esa persona lo ve al recargar. No hay aviso, igual que cualquier otro cambio hecho desde otro dispositivo (TT-40).                                                                                                                                                                                                                                                                                                                                                                   |
+| PF-42 | Cambiar el formato de duración                   | Es del workspace: lo ve todo el equipo. Ninguna duración guardada cambia, solo cómo se escribe.                                                                                                                                                                                                                                                                                                                                                                                      |
+| PF-43 | Zona horaria con cambio de horario de verano     | Vale lo mismo que TT-97 y el ADR 0005: la duración es la real y puede no coincidir con la resta visual de las dos horas.                                                                                                                                                                                                                                                                                                                                                             |
+| PF-44 | Persona sin foto en Google                       | Se muestran las iniciales: las primeras letras de las dos primeras palabras del nombre, en mayúsculas, o la primera del correo si el nombre está vacío. También cuando la foto no viene de `lh3.googleusercontent.com` (PF-09). `image` ya es nulable en la sesión.                                                                                                                                                                                                                  |
+| PF-45 | El nombre cambia en Google                       | Si la persona nunca lo editó, llega el de Google en el siguiente inicio de sesión. Si lo editó, gana el editado (PF-08).                                                                                                                                                                                                                                                                                                                                                             |
+| PF-46 | Membresía desactivada                            | La pantalla de perfil queda en solo lectura y los valores se siguen viendo: la zona pasa a texto, con su desplazamiento, y los dos formatos no abren. Arriba de las preferencias, un aviso con el título de TT-92, «Tu acceso al workspace está desactivado.», y una línea propia: «Podés ver tu perfil, pero no cambiarlo. Pedile a quien administra el workspace que vuelva a activar tu membresía.» Un pedido que llega igual recibe «No tenés permiso para hacer esto.» (PF-35). |
+
+_Corregido el 2026-10-04, slice 7_: PF-46 remitía al aviso de TT-92, cuya
+segunda línea habla de cargar y modificar entradas; el perfil usa el título de
+TT-92 y una línea propia. PF-44 suma la regla de las iniciales y la foto que no
+viene de Google.
 
 ## Pendientes de definición del equipo
 
@@ -481,7 +624,15 @@ mirar en cada caso. Es lo único que necesita una cuenta de Clockify a mano.
 - **PF-05** — Que no exista ningún ajuste de zona horaria a nivel de workspace.
   Es una ausencia, no una afirmación de la documentación.
 - **PF-11** — Si la zona horaria se detecta del navegador al crear la cuenta.
-- **PF-12** — Qué opciones de formato de fecha ofrece y cuál viene puesta.
+  Y, para el selector, que es diseño propio: cómo busca el de Clockify y si
+  ofrece `UTC`.
+- **PF-12** — Qué opciones de formato de fecha ofrece y cuál viene puesta. Y si
+  los rótulos del año en curso omiten el año, y con qué forma corta: las
+  nuestras son decisión del equipo (PF-12, TT-44, TT-47).
+- **PF-13, PF-14** — Cómo muestra la hora con 12 horas (`1:05 PM`, `12:00 AM`)
+  y qué acepta un campo de hora con cada formato: si `1pm` vale también con 24
+  horas y qué hace con `12am` y `13pm`. Las formas nuestras son decisión del
+  equipo (PF-13, TT-20).
 - **PF-11, PF-12, PF-13, PF-16, PF-23** — Con qué valores arrancan la zona
   horaria, el formato de fecha, el de hora, el primer día de la semana y el
   tema. Los predeterminados nuestros ya están decididos (P-03); esto es para
@@ -492,16 +643,26 @@ mirar en cada caso. Es lo único que necesita una cuenta de Clockify a mano.
 - **PF-23** — Si existe «seguir al sistema» como tercera opción de tema.
 - **PF-26** — Si «agrupar entradas similares» viene encendido o apagado.
 
+_Agregado el 2026-10-04, slice 7_: el selector de zona de PF-11, las formas
+cortas de fecha de PF-12 y las formas de 12 horas de PF-13 y PF-14, que el
+slice 7 fijó como decisiones nuestras.
+
 ### Cerrados
 
 Se dejan con su identificador porque el documento y los contratos los citan.
 
-| ID   | Decisión                                                                                                                                                                                                                                             |
-| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P-01 | Formato de duración: compacto `h:mm` como predeterminado, completo `hh:mm:ss` como la otra opción, decimal `fuera de alcance` por ser de plan pago (PF-20). Decidido el 2026-10-02.                                                                  |
-| P-03 | Predeterminados fijados el 2026-10-02, **como decisión del equipo y no como relevamiento**: zona horaria la del workspace (PF-11), fecha `dd/MM/yyyy`, hora de 24 horas, primer día de la semana lunes, tema «seguir al sistema», duración compacta. |
-| P-04 | El tema «seguir al sistema» entra y es el predeterminado, anotado como divergencia si Clockify no lo tiene (PF-23). Decidido el 2026-10-02.                                                                                                          |
-| P-05 | El nombre es editable dentro de la aplicación (PF-07) y la foto sale de Google en solo lectura (PF-09), por el costo de la subida de archivos. Decidido el 2026-10-02.                                                                               |
-| P-06 | El contador del timer sigue en `h:mm:ss`; el formato manda en los totales y en las filas (PF-22). Decidido el 2026-10-02, con la suposición anotada porque no se pudo verificar.                                                                     |
-| P-07 | Días laborables y capacidad semanal quedan fuera del perfil y van a la pantalla de equipo, en la fase 2 (PF-19). Decidido el 2026-10-02.                                                                                                             |
-| P-08 | `workspace.timezone` se queda y pasa a tener un solo trabajo: fijar el día de los trabajos de cron. La zona horaria de la interfaz sale de la persona (PF-05). Decidido el 2026-10-02.                                                               |
+| ID   | Decisión                                                                                                                                                                                                                                                                                                                        |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P-01 | Formato de duración: compacto `h:mm` como predeterminado, completo `hh:mm:ss` como la otra opción, decimal `fuera de alcance` por ser de plan pago (PF-20). Decidido el 2026-10-02.                                                                                                                                             |
+| P-03 | Predeterminados fijados el 2026-10-02, **como decisión del equipo y no como relevamiento**: zona horaria `America/Argentina/Buenos_Aires` como valor fijo y no como vínculo con `workspace.timezone` (PF-11), fecha `dd/MM/yyyy`, hora de 24 horas, primer día de la semana lunes, tema «seguir al sistema», duración compacta. |
+| P-04 | El tema «seguir al sistema» entra y es el predeterminado, anotado como divergencia si Clockify no lo tiene (PF-23). Decidido el 2026-10-02.                                                                                                                                                                                     |
+| P-05 | El nombre es editable dentro de la aplicación (PF-07) y la foto sale de Google en solo lectura (PF-09), por el costo de la subida de archivos. Decidido el 2026-10-02.                                                                                                                                                          |
+| P-06 | El contador del timer sigue en `h:mm:ss`; el formato manda en los totales y en las filas (PF-22). Decidido el 2026-10-02, con la suposición anotada porque no se pudo verificar.                                                                                                                                                |
+| P-07 | Días laborables y capacidad semanal quedan fuera del perfil y van a la pantalla de equipo, en la fase 2 (PF-19). Decidido el 2026-10-02.                                                                                                                                                                                        |
+| P-08 | `workspace.timezone` se queda y pasa a tener un solo trabajo: fijar el día de los trabajos de cron. La zona horaria de la interfaz sale de la persona (PF-05). Decidido el 2026-10-02.                                                                                                                                          |
+
+_Corregido el 2026-10-04, slice 7 (decisión del equipo)_: P-03 decía «zona
+horaria la del workspace». Leída como vínculo, cambiar la zona del cron movería
+de día a todo el que no eligió, contra P-08; el equipo confirmó el 2026-10-03
+que es el valor `America/Argentina/Buenos_Aires`, que hoy coincide con la del
+workspace.

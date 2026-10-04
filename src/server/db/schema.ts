@@ -118,6 +118,44 @@ export const membership = pgTable(
 );
 
 /**
+ * Preferencias de la persona, de la cuenta y no del workspace (PF-03). Nunca
+ * columnas de `user`: esa tabla la regenera `npm run auth:schema`. Una fila
+ * que falta, o una columna en nulo, es «sin elegir»: vale el predeterminado,
+ * que resuelve `resolvePreferences` de `src/modules/profile/service.ts`.
+ */
+export const userPreference = pgTable(
+  "user_preference",
+  {
+    userId: text("user_id")
+      .primaryKey()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** Zona IANA. La lista válida es la del entorno, no una tabla (PF-35). */
+    timezone: text("timezone"),
+    timeFormat: text("time_format"),
+    dateFormat: text("date_format"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    check(
+      "user_preference_timezone_len",
+      sql`char_length(${table.timezone}) between 1 and 64`,
+    ),
+    check(
+      "user_preference_time_format_known",
+      sql`${table.timeFormat} in ('24h', '12h')`,
+    ),
+    check(
+      "user_preference_date_format_known",
+      sql`${table.dateFormat} in ('dd/MM/yyyy', 'dd-MM-yyyy', 'yyyy-MM-dd', 'MM/dd/yyyy')`,
+    ),
+  ],
+);
+
+/**
  * Invitación a alguien fuera del dominio de Google Workspace. La lista inicial
  * llega por EXTERNAL_INVITE_EMAILS y a partir de ahí se administra desde la app.
  */

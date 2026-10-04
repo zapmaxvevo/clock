@@ -8,7 +8,9 @@ parte de TT-63 que no depende de proyectos —descripción, hora y fecha en
 bloque—. Lugar en el plan: [mapa de la fase 1](fase1-mapa.md). Correcciones
 aplicadas: ronda 1 de `architecture-reviewer`
 ([`correcciones-fase1-slice6.md`](correcciones-fase1-slice6.md)), todos los
-hallazgos. Decisiones de arquitectura asociadas:
+hallazgos, y ronda 2, contra el árbol con el 10 mergeado
+([`correcciones-fase1-slice6-ronda2.md`](correcciones-fase1-slice6-ronda2.md)),
+todos los menores. Decisiones de arquitectura asociadas:
 
 - [ADR 0011, las acciones en masa son todo o nada](../adr/0011-las-acciones-en-masa-son-todo-o-nada.md):
   nace acá, **aceptado**.
@@ -50,30 +52,39 @@ entrada que devuelve una mutación (P-15); el orden de implementación es
   `src/lib/text.ts`, `src/hooks/use-action.ts`, `src/hooks/use-new-id.ts`—.
 - **Del 10**: la migración de `time-entry` a esas piezas (su §4.1), así que
   este slice ya no la hace; las lecturas que devuelven la entrada con su
-  proyecto y su tarea (su §5.2); `useTrackingCatalog`, que la fila necesita
-  para dibujar su selector; y `day-group.tsx` como dueño de
-  `updateEntryProject` de sus filas.
+  proyecto y su tarea (su §5.2); el `ProjectPicker` de
+  `project/components/project-picker.tsx`, que la fila dibuja y que lee el
+  catálogo con `useTrackingCatalog` (`project-picker.tsx:110`); y
+  `day-group.tsx` como dueño del cambio de proyecto de sus filas, que guarda
+  con `saveEntryProject` de `time-entry/components/entry-project.ts`.
 - **Del 7**: las horas canónicas `startClock` y `endClock` en la vista, los
   rótulos `startLabel` y `endLabel` con el formato de la persona, `clockLabel`,
   `parseClockInput` con formato, `useDisplayFormats` y `TrackerWorkspace` con
   `formats` (su §5).
 
-**Supuestos de forma sobre el 10 y el 7.** Esos contratos todavía pueden
-cambiar en su implementación. Este depende de estos nombres y formas, y **antes
-de implementar pasa una ronda corta de `architecture-reviewer` contra el árbol
-real** que los confirma o los corrige acá:
+**Supuestos de forma sobre el 10 y el 7.** El 10 ya está en `main`, y la ronda
+2 confirmó o corrigió contra el árbol los supuestos que vienen de él. El 7
+todavía puede cambiar en su implementación: este contrato depende de estos
+nombres y formas, y **antes de implementar pasa una ronda corta de
+`architecture-reviewer` contra el árbol con el 7 en `main`** (paso 0 del
+handshake, §6) que confirma o corrige acá los que vienen del 7:
 
 | Supuesto                                                                                                          | De dónde          |
 | ----------------------------------------------------------------------------------------------------------------- | ----------------- |
-| `EntryRow = TimeEntryRow & { project: ProjectRef \| null; task: TaskRef \| null }`, el tipo de las lecturas       | 10, §5.2          |
+| `EntryWithRefs = TimeEntryRow & EntryRefs`, el tipo de las lecturas (`repository.ts:31-41`)                       | 10, §5.2          |
+| `project.color` llega como `string` y lo estrecha `projectRefOf` en `toView` (`service.ts:151-156`)               | 10, §5.2          |
 | Las lecturas con bloqueo usan `left join` y `for update of time_entry`                                            | 10, §5.2          |
-| `toView(row: EntryRow, workspace: TrackerWorkspace)` arma `project` y `task` de la fila                           | 10, §5.2; 7, §5.4 |
+| `toView(row: EntryWithRefs, workspace: TrackerWorkspace)` arma `project` y `task` de la fila                      | 10, §5.2; 7, §5.4 |
 | `TimeEntryErrorCode = ActionErrorCode \| "already_stopped" \| "timer_running"`                                    | 10, §4.1          |
 | `TrackerWorkspace = TimeSettings & { createdAt }`, con `timezone`, `weekStart` y `formats`                        | 7, §5.4           |
 | `timeEntryView` lleva `startClock`, `endClock`, `startLabel` y `endLabel`                                         | 7, §5.4           |
 | `ClockField` recibe el rótulo (`clockLabel`) y su `onCommit` devuelve el rótulo aceptado; el borrador es canónico | 7, §6             |
 | `DateField` rotula con `useDisplayFormats`                                                                        | 7, §6             |
-| `EntryRow` del componente lee `useTrackingCatalog` y `useDisplayFormats`, cada uno con su proveedor               | 10, §6; 7, §5.5   |
+| La fila lee el catálogo por `ProjectPicker` (`project-picker.tsx:110`) y los formatos con `useDisplayFormats`     | 10, §6; 7, §5.5   |
+
+**`EntryRow` no es un tipo de datos**: es el componente de `entry-row.tsx`. El
+tipo de las lecturas es `EntryWithRefs`, con el proyecto y la tarea de
+`EntryRefs` tal como salen del `left join`, y el color sin estrechar.
 
 **P-07 sigue abierto**: no está verificado si la edición masiva del rastreador
 es del plan Free. Este contrato se escribe como si entrara; la decisión de
@@ -151,22 +162,28 @@ facturable. P-07 sigue en «Abiertos».
 
 ### Consecuencias sobre código ya entregado
 
-| Archivo                   | Qué cambia                                                                                                                                                   | Qué hay que volver a probar                    |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------- |
-| `src/server/action.ts`    | Suma `Rejection`, `RejectedError` y el campo `rejections` del error; `failure` reconoce `RejectedError` antes que `DomainError` y copia el campo (ADR 0011). | `project/actions.integration.test.ts`          |
-| `src/hooks/use-action.ts` | `ActionFailure` suma `rejections` y el hook lo conserva.                                                                                                     | `e2e/projects.spec.ts`                         |
-| `src/server/audit.ts`     | Suma `recordAudits`, varias filas en una sentencia.                                                                                                          | —                                              |
-| `schema.ts`               | `TimeEntryErrorCode` suma `"rejected"`; tres esquemas y dos resultados nuevos; textos.                                                                       | `schema.test.ts` entero                        |
-| `service.ts`              | La regla de horas de `updateEntryTimes` pasa a `entryTimesFor`, que la edición masiva también llama; `tripleOf`; dos funciones nuevas.                       | TT-28, TT-56, TT-110, TT-111, TT-112, ADR 0006 |
-| `repository.ts`           | Tres funciones nuevas.                                                                                                                                       | —                                              |
-| `actions.ts`              | Dos actions nuevas.                                                                                                                                          | `actions.integration.test.ts` entero           |
-| `day-group.tsx`           | La casilla del día; las filas ocupadas suman las de la lista; el foco va al encabezado solo por el borrado de una fila propia, no por el masivo (§5.4).      | TT-58, TT-60, el selector del 10 en la fila    |
-| `entry-row.tsx`           | La casilla, primera de la fila.                                                                                                                              | TT-49, TT-54, TT-57                            |
-| `entry-list.tsx`          | Dueña de la selección y de las filas ocupadas por una edición masiva; dibuja `BulkActions`; aplica P-15 a la edición masiva.                                 | TT-52 (foco de «Cargar más»), TT-57, TT-26 «c» |
-| `clock-field.tsx`         | `placeholder` opcional.                                                                                                                                      | TT-18, TT-28, TT-54                            |
-| `date-field.tsx`          | `value` admite `null` y `placeholder` lo rotula.                                                                                                             | TT-18, TT-56                                   |
-| `tracker-feedback.tsx`    | `children` opcional, debajo del mensaje, para la lista de rechazos.                                                                                          | TT-90                                          |
-| `labels.ts`               | Textos de §6.                                                                                                                                                | —                                              |
+| Archivo                   | Qué cambia                                                                                                                                                   | Qué hay que volver a probar                                                     |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| `src/server/action.ts`    | Suma `Rejection`, `RejectedError` y el campo `rejections` del error; `failure` reconoce `RejectedError` antes que `DomainError` y copia el campo (ADR 0011). | `project/actions.integration.test.ts`; `time-entry/actions.integration.test.ts` |
+| `src/hooks/use-action.ts` | `ActionFailure` suma `rejections` y el hook lo conserva.                                                                                                     | `e2e/projects.spec.ts` y los e2e del rastreador                                 |
+| `src/server/audit.ts`     | Suma `recordAudits`, varias filas en una sentencia.                                                                                                          | —                                                                               |
+| `schema.ts`               | `TimeEntryErrorCode` suma `"rejected"`; tres esquemas y dos resultados nuevos; textos.                                                                       | `schema.test.ts` entero                                                         |
+| `service.ts`              | La regla de horas de `updateEntryTimes` pasa a `entryTimesFor`, que la edición masiva también llama; `tripleOf`; dos funciones nuevas.                       | TT-28, TT-56, TT-110, TT-111, TT-112, ADR 0006                                  |
+| `repository.ts`           | Tres funciones nuevas.                                                                                                                                       | —                                                                               |
+| `actions.ts`              | Dos actions nuevas.                                                                                                                                          | `actions.integration.test.ts` entero                                            |
+| `day-group.tsx`           | La casilla del día; las filas ocupadas suman las de la lista; el foco va al encabezado solo por el borrado de una fila propia, no por el masivo (§5.4).      | TT-58, TT-60, el selector del 10 en la fila                                     |
+| `entry-row.tsx`           | La casilla, primera de la fila.                                                                                                                              | TT-49, TT-54, TT-57                                                             |
+| `entry-list.tsx`          | Dueña de la selección y de las filas ocupadas por una edición masiva; dibuja `BulkActions`; aplica P-15 a la edición masiva.                                 | TT-52 (foco de «Cargar más»), TT-57, TT-26 «c»                                  |
+| `clock-field.tsx`         | `placeholder` opcional, al lado de la prop del modo de teclado que suma el 7.                                                                                | TT-18, TT-28, TT-54                                                             |
+| `date-field.tsx`          | `value` admite `null` y `placeholder` lo rotula.                                                                                                             | TT-18, TT-56                                                                    |
+| `tracker-feedback.tsx`    | `children` opcional, debajo del mensaje, para la lista de rechazos.                                                                                          | TT-90                                                                           |
+| `labels.ts`               | Textos de §6.                                                                                                                                                | —                                                                               |
+
+**Los e2e del rastreador** son los de `e2e/` que recorren `/`:
+`tracker.spec.ts`, `start-retry.spec.ts`, `continue-duplicate.spec.ts`,
+`entry-times.spec.ts`, `manual-entry.spec.ts`, `week-and-pagination.spec.ts` y
+`project-picker.spec.ts`. Desde el 10, las mutaciones de la barra y de la lista
+pasan por `useAction`.
 
 ## 2. Cambios de esquema
 
@@ -410,10 +427,12 @@ El algoritmo, en una transacción:
    cambiaron —`description`, `startedAt`, `endedAt`—.
 7. Devuelve `{ entries }`: la vista de cada id pedido, en el orden pedido.
    **La de una fila escrita es la fila que devolvió `updateClosedFields` con el
-   `project` y la `task` de la leída en el paso 2**, que el 6 no cambia; la de
-   una fila sin cambios es la leída. No hay relectura después de escribir, a
-   diferencia de las mutaciones de una fila del 10: la lectura del paso 2 ya
-   trae las referencias, bajo bloqueo, y nada en la transacción las mueve.
+   `project` y la `task` de la leída en el paso 2**, que el 6 no cambia:
+   `{ ...escrita, project: leída.project, task: leída.task }`, de tipo
+   `EntryWithRefs`, que `toView` recibe como cualquier lectura. La de una fila
+   sin cambios es la leída. No hay relectura después de escribir, a diferencia
+   de las mutaciones de una fila del 10: la lectura del paso 2 ya trae las
+   referencias, bajo bloqueo, y nada en la transacción las mueve.
 
 ### 4.4 `bulkDeleteEntries`
 
@@ -532,10 +551,13 @@ membresía, la entrada mal formada, el tope— responde con su código y sin lis
 - **La constancia `timeEntry.bulkEdit`** suma los campos nuevos a
   `previousValue` y `nextValue`.
 - **El diálogo gana secciones** (§5.2), cada una con su «sin cambios»: el
-  selector de proyecto del 10 arranca en «Sin cambios» y ofrece «Sin proyecto»
-  como opción aparte; las etiquetas, «Agregar» o «Reemplazar»; el facturable,
-  tres estados. El borrador de `bulk-changes.ts` gana los campos y `toChanges`
-  los traduce con la misma regla.
+  selector de proyecto arranca en «Sin cambios» y ofrece «Sin proyecto» como
+  opción aparte; las etiquetas, «Agregar» o «Reemplazar»; el facturable, tres
+  estados. El borrador de `bulk-changes.ts` gana los campos y `toChanges` los
+  traduce con la misma regla.
+  - **El estado «Sin cambios» no existe hoy** en
+    `project/components/project-picker.tsx`: el 12 extiende o envuelve ese
+    selector. No cambia nada del 6.
 
 ### 4.9 P-15
 
@@ -711,7 +733,7 @@ findManyByIdsForUpdate(
   tx: Transaction,
   workspaceId: string,
   ids: readonly string[],
-): Promise<readonly EntryRow[]>;
+): Promise<readonly EntryWithRefs[]>;
 
 /** Cualquier subconjunto de los tres campos, solo en una fila cerrada. */
 updateClosedFields(
@@ -790,7 +812,8 @@ históricos y no se reescriben.
 ### Handshake de orden
 
 0. **Antes de arrancar**, la ronda corta de `architecture-reviewer` contra el
-   árbol con el 10 y el 7 mergeados, sobre los supuestos de §0.
+   árbol con el 7 en `main`, sobre los supuestos de §0 que vienen del 7. Sigue
+   abierto: los del 10 ya los confirmó la ronda 2.
 1. **Primer commit de `backend-dev`**: lo de §4.1 —`Rejection`,
    `RejectedError`, el campo `rejections`, `failure` con `RejectedError`
    primero, `"rejected"` en la unión y `recordAudits`—; los esquemas, tipos y
@@ -859,8 +882,10 @@ históricos y no se reescriben.
   campo de hora recibe `clockLabel` de la canónica, interpreta con
   `parseClockInput(texto, formats.time)` y devuelve desde `onCommit` el rótulo
   de lo aceptado; vaciado, devuelve "" y el borrador lo guarda como «sin
-  cambios». El `placeholder` sale de `clockPlaceholder(formats.time)`. El campo
-  de descripción lleva el largo de TT-71. No llaman a ninguna action.
+  cambios». El `placeholder` sale de `clockPlaceholder(formats.time)`, y el
+  modo de teclado que el 7 agrega a `clock-field.tsx` se pasa según
+  `formats.time`, como en los otros campos de hora. El campo de descripción
+  lleva el largo de TT-71. No llaman a ninguna action.
 - **`entry-list.tsx`** es dueña de la selección y de `useOptimistic` de las
   filas ocupadas (§5.3): recorta la selección en cada render, se la pasa a cada
   `DayGroup` con los avisos de elegir una fila y un día y con las filas
@@ -868,18 +893,23 @@ históricos y no se reescriben.
   las semanas que avisa (§4.9). Las casillas solo existen con `canTrack`.
 - **`day-group.tsx`** dibuja la casilla del día con `dayCheckState` sobre sus
   filas visibles, y pasa a cada fila si está elegida. Una fila está ocupada si
-  lo está por una mutación del grupo —las de hoy y `updateEntryProject` del
-  10— o por la lista. El foco a su encabezado queda condicionado a su propio
-  `remove` en vuelo (§5.4).
+  lo está por una mutación del grupo —las de hoy y el cambio de proyecto del
+  10, que guarda con `saveEntryProject`— o por la lista. El foco a su
+  encabezado queda condicionado a su propio `remove` en vuelo (§5.4).
 - **`entry-row.tsx`** dibuja la casilla primera, con el nombre de §5.2, solo
   con `canTrack`.
-- **`entry-row.test.tsx`** (nuevo) es un test de componente como
-  `projects-screen.test.tsx` del slice 9: `renderToStaticMarkup`, sin
-  dependencias nuevas. `EntryRow` no importa `actions.ts`, así que se puede
-  dibujar en el entorno de unidad, **envuelta en los proveedores que existan en
-  `main` al implementar**: el del catálogo de `useTrackingCatalog` (10) y
-  `DisplayFormatsProvider` (7). Afirma la casilla con su nombre con `canTrack`
-  en verdadero, y su ausencia en falso.
+- **`entry-row.test.tsx`** (nuevo) es un test de componente con
+  `renderToStaticMarkup`, sin dependencias nuevas. **El modelo es
+  `project/components/project-picker.test.tsx`**, que ya dibuja el selector
+  envuelto en `TrackingCatalogProvider`. `EntryRow` no importa `actions.ts`
+  —el guardado del proyecto, `saveEntryProject`, es de `day-group.tsx`—, así
+  que se puede dibujar en el entorno de unidad, envuelta en
+  `TrackingCatalogProvider` (10) y `DisplayFormatsProvider` (7): el
+  `ProjectPicker` que la fila dibuja lee el catálogo, y la fila, los formatos.
+  **La prop `project: ProjectSelection` es obligatoria**: el test le pasa una
+  armada a mano, como `project-picker.test.tsx`, y no importa
+  `entry-project.ts`, que sí importa `actions.ts`. Afirma la casilla con su
+  nombre con `canTrack` en verdadero, y su ausencia en falso.
 - **`tracker-feedback.tsx`** acepta `children`, que se dibuja debajo del
   mensaje y arriba de «Reintentar», para la lista de rechazos.
 - **`use-action.ts`** conserva `rejections` en el `ActionFailure` cuando el
@@ -1114,8 +1144,9 @@ omisión.
   Los dos casos solo llegan armados a mano.
 - **TT-92 se verifica en la fila y no en la pantalla**: no hay e2e con una
   membresía desactivada, como tampoco lo hay hoy para el resto de TT-92.
-- **Los supuestos de forma sobre el 10 y el 7** (§0) se confirman en la ronda
-  corta previa a implementar; lo que cambie se corrige acá antes de arrancar.
+- **Los supuestos de forma sobre el 7** (§0) se confirman en el paso 0 del
+  handshake, con el 7 en `main`; lo que cambie se corrige acá antes de
+  arrancar. Los del 10 ya los confirmó la ronda 2.
 - **Los componentes de `time-entry` siguen importando `actions.ts`**, a
   diferencia de los de `project`, que las reciben por props. No es parte de la
   deuda del mapa y este slice no lo cambia.

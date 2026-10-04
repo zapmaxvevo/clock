@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 
+import { useDisplayFormats } from "@/components/layout/display-formats";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -11,25 +12,26 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import type { UpdateRunningStartInput } from "@/modules/time-entry/schema";
-import { parseClockInput } from "@/server/time";
+import { clockLabel, parseClockInput } from "@/server/time";
 
 import { ClockField } from "./clock-field";
 import { DateField } from "./date-field";
 import { trackerLabels } from "./labels";
 
+/** El día y la hora de inicio, canónicos: el formato entra solo al mostrar y al interpretar. */
 type RunningStart = {
   readonly date: string;
   readonly start: string;
 };
 
 type RunningStartEditorProps = {
-  /** La entrada que corre, con su día y su hora de inicio ya formateados. */
+  /** La entrada que corre, con su día y su hora canónica de inicio. */
   readonly running: {
     readonly id: string;
     readonly dayDate: string;
-    readonly startLabel: string;
+    readonly startClock: string;
   };
-  /** Día de hoy en la zona del workspace: el techo del selector (TT-29). */
+  /** Día de hoy en la zona de la persona: el techo del selector (TT-29). */
   readonly todayKey: string;
   /** Piso del workspace. */
   readonly minDayKey: string;
@@ -56,8 +58,9 @@ export function RunningStartEditor({
   disabled,
   onSave,
 }: RunningStartEditorProps) {
+  const { time } = useDisplayFormats();
   const [open, setOpen] = useState(false);
-  const initial: RunningStart = { date: running.dayDate, start: running.startLabel };
+  const initial: RunningStart = { date: running.dayDate, start: running.startClock };
   const [pair, setPair] = useState(initial);
   /** Enter en la hora confirma con el valor recién normalizado, no con el del render. */
   const pairRef = useRef(pair);
@@ -115,17 +118,19 @@ export function RunningStartEditor({
         >
           <div className="flex items-center gap-2">
             <ClockField
-              value={pair.start}
+              value={clockLabel(pair.start, time)}
               onCommit={(text) => {
                 // El mismo intérprete tolerante que la barra manual (TT-19, TT-21).
-                const start = parseClockInput(text);
-                if (start !== null) {
-                  change({ ...pairRef.current, start });
+                const start = parseClockInput(text, time);
+                if (start === null) {
+                  return null;
                 }
-                return start;
+                change({ ...pairRef.current, start });
+                return clockLabel(start, time);
               }}
               onSubmit={save}
               label={trackerLabels.startTime}
+              format={time}
             />
             <DateField
               value={pair.date}
