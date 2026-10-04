@@ -1,5 +1,7 @@
 import { AppNav } from "@/components/layout/app-nav";
+import { DisplayFormatsProvider } from "@/components/layout/display-formats";
 import { UserMenu } from "@/components/layout/user-menu";
+import { timeSettingsOf } from "@/modules/profile/service";
 import { requireSession } from "@/server/session";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
@@ -12,9 +14,17 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
           <span className="font-semibold">{session.workspace.name}</span>
           <AppNav />
         </div>
-        <UserMenu name={session.user.name} email={session.user.email} />
+        <UserMenu
+          name={session.user.name}
+          email={session.user.email}
+          image={session.user.image}
+        />
       </header>
-      <main className="flex-1 px-6 py-8">{children}</main>
+      <main className="flex-1 px-6 py-8">
+        <DisplayFormatsProvider formats={timeSettingsOf(session).formats}>
+          {children}
+        </DisplayFormatsProvider>
+      </main>
     </div>
   );
 }
