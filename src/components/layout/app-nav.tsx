@@ -5,8 +5,11 @@ import { usePathname } from "next/navigation";
 
 import { cn } from "@/lib/utils";
 
-/** Cada fase agrega su entrada acá. Hoy solo existe el inicio. */
-const items = [{ href: "/", label: "Inicio" }] as const;
+/** Cada fase agrega su entrada acá. */
+const items = [
+  { href: "/", label: "Inicio" },
+  { href: "/proyectos", label: "Proyectos" },
+] as const;
 
 export function AppNav() {
   const pathname = usePathname();

@@ -57,6 +57,7 @@ src/
     create-once.ts     altas idempotentes con el id que elige el cliente (ADR 0007)
     env.ts             variables de entorno validadas con Zod
   components/ui/       primitivas compartidas (shadcn/ui)
+  hooks/               hooks de cliente que comparten los módulos: useAction, useNewId
   lib/text.ts          predicados de texto que comparten servidor y navegador
 e2e/                   Playwright
 drizzle/               migraciones SQL versionadas
