@@ -23,9 +23,9 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-04.
 | 8b — Calendario: arrastre                  | Esbozo en §8 del contrato del 8c; va después del 8c          |
 | 11–13                                      | Sin contrato                                                 |
 
-Los slices 1 a 7, 9 y 10 están en `origin/main`. En `main` local, sin subir, está el
-arreglo del 429 (`5743aeb`): el inicio de sesión de e2e reintenta según `X-Retry-After`, y
-la suite completa pasa 99 de 99 de una (**falta `git push origin main`**). La rama
+Los slices 1 a 7, 9 y 10 están en `origin/main`, con el arreglo del 429 (`5743aeb`): el
+inicio de sesión de e2e reintenta según `X-Retry-After`, y la suite completa pasa 99 de 99
+de una. La rama
 `fase1/slice-8-calendario` tiene los contratos del 8 y del 8c con la ronda 1 aplicada
 (`correcciones-fase1-slice8.md`), el ADR 0013 aceptado y `main` mergeado. No quedan agentes
 corriendo ni trabajo sin commitear.
