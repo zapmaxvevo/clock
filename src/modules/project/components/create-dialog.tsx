@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleAlertIcon } from "lucide-react";
+import { CircleAlertIcon, XIcon } from "lucide-react";
 import { useRef, type FormEvent, type ReactNode } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -112,6 +112,7 @@ export function CreateDialog({
         // el foco sigue al aviso, a la región de la pantalla.
         finalFocus={() => triggerRef.current ?? focusTargetFor(noticeKey)}
         className="max-h-[calc(100dvh-2rem)] overflow-y-auto"
+        showCloseButton={false}
       >
         <form noValidate onSubmit={handleSubmit} className="grid gap-4">
           <DialogHeader>
@@ -158,6 +159,25 @@ export function CreateDialog({
             </Button>
           </DialogFooter>
         </form>
+        {/*
+          La X de la primitiva se vería habilitada con el cierre bloqueado.
+          Esta queda montada y con `aria-disabled` mientras el pedido viaja:
+          desmontarla con el foco encima lo dejaría en `body`.
+        */}
+        <DialogClose
+          render={
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="absolute top-2 right-2"
+            />
+          }
+          aria-disabled={pending || undefined}
+        >
+          <XIcon aria-hidden="true" />
+          <span className="sr-only">Cerrar</span>
+        </DialogClose>
       </DialogContent>
     </Dialog>
   );

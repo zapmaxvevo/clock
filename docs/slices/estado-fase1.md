@@ -5,25 +5,30 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-03.
 
 ## Dónde estamos
 
-| Slice                                      | Estado                                             |
-| ------------------------------------------ | -------------------------------------------------- |
-| 1 — Timer sin proyecto                     | En `main`                                          |
-| 2 — Modo manual                            | En `main`                                          |
-| 2b — Reintento de «Iniciar»                | En `main`                                          |
-| 3 — Corregir horas y fecha                 | En `main`                                          |
-| 4 — Continuar, duplicar, descartar, atajos | En `main`                                          |
-| 5 — Semana y paginación                    | En `main`                                          |
-| 9 — Núcleo de proyectos                    | Contrato con dos rondas aplicadas; sin implementar |
-| 6, 7, 8, 10–13                             | Sin contrato                                       |
+| Slice                                      | Estado       |
+| ------------------------------------------ | ------------ |
+| 1 — Timer sin proyecto                     | En `main`    |
+| 2 — Modo manual                            | En `main`    |
+| 2b — Reintento de «Iniciar»                | En `main`    |
+| 3 — Corregir horas y fecha                 | En `main`    |
+| 4 — Continuar, duplicar, descartar, atajos | En `main`    |
+| 5 — Semana y paginación                    | En `main`    |
+| 9 — Núcleo de proyectos                    | En `main`    |
+| 6, 7, 8, 10–13                             | Sin contrato |
 
-Los slices 1 a 5 y los menores del descarte del slice 4 están en `main`, local:
-**falta `git push origin main`**. No quedan agentes con trabajo pendiente.
+Los slices 1 a 5 y 9 están en `main`, local: **falta `git push origin main`**. No quedan
+agentes con trabajo pendiente.
 
 ## Lo primero de la sesión siguiente
 
-1. El **slice 9** (`fase1-slice9-nucleo-de-proyectos.md`) con el pipeline de abajo;
-   necesita Postgres 15 o posterior en Neon.
-2. Los contratos del 6, 7 y 8 (`fase1-mapa.md`).
+1. Un `fix` chico: `TrackerFeedback` tiene «Reintentar» en la columna del ícono del
+   `Alert` (el mismo defecto que se corrigió en `create-dialog.tsx` con `col-start-2`).
+2. Los contratos del 6, 7 y 8 (`fase1-mapa.md`), con el pipeline de abajo. El 10 depende del 9,
+   que ya está.
+
+Deuda anotada: no hay ningún `error.tsx` en `src/app`; un error de lectura cae en la página
+genérica de Next. La base de e2e acumula clientes y proyectos que en la fase 1 no se pueden
+borrar (umbral de §8 del contrato del 9).
 
 ## Decisiones pendientes del usuario
 
@@ -35,8 +40,8 @@ Los slices 1 a 5 y los menores del descarte del slice 4 están en `main`, local:
   (sin JS `/` queda en el esqueleto). Propuesta: corregirla como TT-52.
 - **`.env` local**: `npm run db:migrate` falla en silencio con el `DATABASE_URL` del
   `.env`; la base de e2e se migró con la URL de `e2e/environment.ts`.
-- **Postgres de Neon**: el slice 9 necesita 15 o posterior (`on delete set null
-(col)`).
+- **Postgres de Neon**: el slice 9, ya en `main`, necesita 15 o posterior (`on delete set
+null (col)`) antes de desplegar.
 - **Sesión en el workspace de Clockify** para cerrar lo no verificado: P-14 en
   `time-tracker.md` (fila de la entrada que corre, hora inexistente, horas de la
   copia al duplicar, «la última» de `c`), P-12 de `timesheet.md`, P-07 de
@@ -69,6 +74,10 @@ Los slices 1 a 5 y los menores del descarte del slice 4 están en `main`, local:
   corridas completas.
 - **Reloj emulado**: con `page.clock.install()`, `TZDate` no se puede extender y los
   rótulos de fecha del cliente salen un día antes; instalarlo después de sembrar y recargar.
+- **Avisos que sobreviven**: si la revalidación puede desmontar el componente que muestra
+  un error, el aviso sube a algo que sobrevive (región de la pantalla con foco).
+- **Contratos viejos**: antes de implementar un contrato escrito antes de otros slices, una
+  ronda corta del `architecture-reviewer` contra el árbol (en el 9 encontró dos mayores).
 - **Foco**: un control con foco que pasa a `disabled` lo pierde a `body`; usar
   `aria-disabled` y no actuar.
 - **Documentos de correcciones**: son históricos y no se reescriben.

@@ -58,3 +58,15 @@ decidida de cada hallazgo y su dueño.
 - No hay ningún `error.tsx` en `src/app`: un error de lectura cae en la página genérica de
   Next. Se anota en el estado de la fase como deuda del proyecto.
 - `npm audit` sigue rojo, igual que en `main`: decisión pendiente del usuario.
+
+## Segunda revisión de frontend
+
+Aprobó la ronda sobre `6d4270d..6a9d90a`. Contrastó el traspaso del aviso con base-ui 1.8.0 y
+el reducer de server actions de Next: no ocurre en un desmontaje normal ni en Strict Mode,
+el foco de base-ui y el de la región apuntan al mismo elemento, la región vacía queda fuera
+del árbol de accesibilidad y el cierre bloqueado cubre Escape, el clic afuera, «Cancelar» y la
+X. Un menor, que se aplica antes del merge:
+
+| ID  | Hallazgo                                                                               | Resolución                                                                                                                                                 |
+| --- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| n-1 | La X por defecto de `DialogContent` se ve habilitada mientras el cierre está bloqueado | `showCloseButton={false}` y una X propia en `CreateDialog` con `aria-disabled` mientras hay un pedido pendiente, sin desmontarla. La primitiva no se toca. |
