@@ -1,6 +1,6 @@
 # 0010. Un módulo consulta las reglas de otro por su service
 
-Fecha: 2026-10-03. Estado: propuesto.
+Fecha: 2026-10-03. Estado: aceptado.
 Origen: contrato del slice 10
 ([`fase1-slice10-selector-de-proyecto.md`](../slices/fase1-slice10-selector-de-proyecto.md)),
 corregido por la ronda 1 de `architecture-reviewer`

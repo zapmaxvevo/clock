@@ -11,7 +11,7 @@ Contrato del décimo slice vertical de la fase 1. Módulos `time-entry` y
 - **Decisiones de arquitectura asociadas:**
   - [ADR 0004, núcleo de proyectos en la fase 1](../adr/0004-nucleo-de-proyectos-en-fase-1.md): fija el borde.
   - [ADR 0007, el cliente elige el id de la entrada que crea](../adr/0007-el-cliente-elige-el-id-de-las-altas.md): las altas que ganan proyecto siguen su regla.
-  - [ADR 0010, un módulo consulta las reglas de otro por su service](../adr/0010-un-modulo-consulta-las-reglas-de-otro-por-su-service.md): **propuesto**, nace acá.
+  - [ADR 0010, un módulo consulta las reglas de otro por su service](../adr/0010-un-modulo-consulta-las-reglas-de-otro-por-su-service.md): **aceptado**, nace acá.
 - **Contrato del que hereda:** [slice 9](fase1-slice9-nucleo-de-proyectos.md),
   §2.3 «Lo que el slice 10 necesita y este deja listo».
 

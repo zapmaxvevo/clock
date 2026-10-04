@@ -5,6 +5,8 @@ Origen: el contrato del slice 7
 ([`fase1-slice7-perfil.md`](../slices/fase1-slice7-perfil.md)), que trae la
 zona horaria y los formatos de fecha y de hora por persona (P-13 del
 rastreador, PF-11 a PF-14 de `docs/parity/perfil.md`).
+Revisado en la ronda 1 de ese contrato
+([`correcciones-fase1-slice7.md`](../slices/correcciones-fase1-slice7.md)).
 
 ## Contexto
 
@@ -57,8 +59,7 @@ Para la opción 3, cómo llegan los formatos al cliente:
 - **a. Por props, dentro del estado de cada pantalla.** Cada pantalla los
   repite en su estado y los baja por cada componente hasta el campo que los
   usa.
-- **b. Por un contexto de React montado en el layout del shell**, con los
-  formatos que el layout lee de la sesión.
+- **b. Por un contexto de React**, con los formatos que se leen de la sesión.
 
 ## Decisión
 
@@ -78,26 +79,46 @@ La opción 3, con los formatos por contexto (b).
 - **Las preferencias se leen en un solo lugar de cada lado.** En el servidor,
   `timeSettingsOf` de `src/modules/profile/service.ts`, que junta la zona y los
   formatos de la persona con el primer día de la semana de `weekStartOf`. En el
-  cliente, `useDisplayFormats`, que lee un `DisplayFormatsProvider` montado en
-  `src/app/(app)/layout.tsx` con `timeSettingsOf(session).formats`.
+  cliente, `useDisplayFormats`, que lee el `DisplayFormatsProvider` más
+  cercano.
+- **Dos niveles de proveedor, los dos alimentados por `timeSettingsOf`:**
+  - **el del layout del shell** (`src/app/(app)/layout.tsx`), que es la base;
+  - **el de cada pantalla que muestra horas o fechas**, con los formatos de su
+    propia lectura. El rastreador lo monta en `tracker-screen.tsx` con los
+    formatos que ya trae su `TrackerWorkspace`. Gana el más cercano.
+
+  El segundo nivel existe porque Next 16 conserva los layouts compartidos en
+  una navegación del cliente: después de cambiar una preferencia, el layout
+  puede seguir con los formatos viejos mientras la página llega fresca.
 - **El hook lanza fuera del proveedor.** Un valor por omisión escondería que
   falta.
-- **Un cambio de preferencia revalida el layout raíz**, que le da el valor
-  nuevo al proveedor y a todas las pantallas a la vez (PF-33).
+- **Un cambio de preferencia revalida el layout raíz** (PF-33), y cada pantalla
+  que muestra horas trae los formatos nuevos en su propia lectura.
 
 ## Consecuencias
 
 - **La misma fila dice lo mismo en reposo y en edición**, porque los dos textos
-  salen de la misma función con los mismos formatos, leídos de la misma sesión
-  en el mismo render.
+  salen de la misma función con los mismos formatos, y esos formatos son los
+  de la misma lectura de la pantalla: el servidor rotula con los de su
+  `TrackerWorkspace` y el cliente formatea con el proveedor que la pantalla
+  monta con esos mismos formatos. **El proveedor del layout no da esa
+  garantía por sí solo**: en una navegación del cliente puede quedar con los
+  formatos anteriores a un cambio. Por eso no alcanza con montarlo una vez en
+  el shell.
 - **El payload de las actions no cambia.** La hora sigue viajando como `HH:mm`
   de 24 h aunque la persona vea 12 h: el cliente interpreta lo tecleado con
   `parseClockInput(texto, formato)` y manda la forma canónica. El ADR 0005 se
   mantiene entero, y el ADR 0006 sigue comparando horas canónicas.
+- **`src/server/time` tiene que seguir siendo importable desde el navegador.**
+  Las funciones de formato y el intérprete corren en el cliente, así que el
+  módulo se mantiene puro: sin `server-only`, sin `db` y sin `env`, y sin
+  importar nada que los arrastre. Lo que necesite el servidor y no el cliente
+  va en otro módulo. El nombre del directorio dice dónde nació, no dónde corre.
 - **Calendario y timesheet no eligen**: su service recibe un `TimeSettings` de
-  `timeSettingsOf`, y sus componentes leen `useDisplayFormats`. Ninguna
-  pantalla nueva lee `context.preferences`, `membership.weekStart` ni
-  `workspace.timezone` para mostrar algo.
+  `timeSettingsOf`, su pantalla monta el proveedor con esos formatos, y sus
+  componentes leen `useDisplayFormats`. Ninguna pantalla nueva lee
+  `context.preferences`, `membership.weekStart` ni `workspace.timezone` para
+  mostrar algo.
 - **Un formato nuevo es local.** El formato de duración, cuando sea un ajuste
   del workspace, se suma a `DisplayFormats` y se resuelve en `timeSettingsOf`;
   los consumidores ya reciben el objeto.
@@ -109,8 +130,10 @@ La opción 3, con los formatos por contexto (b).
   se arma el valor, con una sola implementación. El comentario de
   `timeEntryView` en `src/modules/time-entry/schema.ts` pasa a decir eso.
 - **El precio** es un valor canónico al lado de cada rótulo que el cliente
-  pueda rehacer, y una prop más en los campos de hora para el teclado de 12 h.
+  pueda rehacer, un proveedor más en cada pantalla que muestra horas, y una
+  prop más en los campos de hora para el teclado de 12 h.
 - **Por qué no por props**: los formatos tendrían que viajar en el estado de
   cada pantalla y atravesar cada componente intermedio hasta el campo, y cada
-  pantalla nueva repetiría el cableado. El contexto los pone una vez en el
-  shell, que ya es el lugar donde la sesión entra a la interfaz.
+  pantalla nueva repetiría el cableado. Con el contexto, cada pantalla monta un
+  proveedor una vez, en su raíz, con lo que ya leyó, y el layout cubre lo que
+  no pertenece a ninguna.

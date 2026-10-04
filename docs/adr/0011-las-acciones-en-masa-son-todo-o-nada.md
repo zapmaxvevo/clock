@@ -3,6 +3,8 @@
 Fecha: 2026-10-03. Estado: propuesto.
 Origen: contrato del slice 6
 ([`fase1-slice6-seleccion-y-masa.md`](../slices/fase1-slice6-seleccion-y-masa.md)).
+Revisado en la ronda 1 de ese contrato
+([`correcciones-fase1-slice6.md`](../slices/correcciones-fase1-slice6.md)).
 
 ## Contexto
 
@@ -56,9 +58,9 @@ Las restricciones que la decisión no puede romper:
 
 La opción 1.
 
-- **Una transacción por pedido.** Lee todas las filas con `for update`, en el
-  orden de su id, y evalúa cada una con la misma regla que usa la operación de
-  una fila: la misma función, no una copia.
+- **Una transacción por pedido.** Lee y bloquea todas las filas en una sola
+  sentencia, en el orden de su id, y evalúa cada una con la misma regla que
+  usa la operación de una fila: la misma función, no una copia.
 - **Si alguna fila no admite el cambio, no se escribe ninguna.** La respuesta
   es un error de código `rejected` que lleva cada fila rechazada con su id, su
   código y el texto de su causa, que es el mismo de la operación de una fila.
@@ -100,9 +102,10 @@ export class RejectedError<
 
 `ActionResult` suma a su rama de error un campo opcional,
 `rejections?: readonly Rejection<Code>[]`, que `failure` copia de un
-`RejectedError`. `ActionFailure`, en `src/hooks/use-action.ts`, suma el mismo
-campo y el hook lo conserva. El código `rejected` no entra en
-`ActionErrorCode`: lo suma a su unión el módulo que tenga operaciones en masa.
+`RejectedError`. `failure` lo reconoce antes que `DomainError`, que es su clase
+base. `ActionFailure`, en `src/hooks/use-action.ts`, suma el mismo campo y el
+hook lo conserva. El código `rejected` no entra en `ActionErrorCode`: lo suma a
+su unión el módulo que tenga operaciones en masa.
 
 ## Por qué
 
@@ -132,11 +135,23 @@ campo y el hook lo conserva. El código `rejected` no entra en
   Las filas que no cambian no se escriben ni dejan registro. **Ninguna
   operación en masa necesita el id elegido por el cliente** del ADR 0007,
   porque ninguna crea filas.
-- **Sin interbloqueos entre operaciones en masa**: todas bloquean en el orden
-  del id, así que dos pedidos sobre filas compartidas se ponen en fila en vez
-  de esperarse en círculo. Las operaciones de una fila bloquean una sola y
-  tampoco pueden cerrar un ciclo con ellas. Es una propiedad del orden de la
-  consulta y se mira en la revisión; no tiene un test que la haga fallar.
+- **El orden de los bloqueos es regla, no detalle de implementación**:
+  - **Toda operación que bloquee más de una fila de `time_entry` lo hace en una
+    sola sentencia con `order by id`**, y con `for update of time_entry` si la
+    sentencia tiene un join. El `order by` deja el ordenamiento debajo del
+    bloqueo en el plan, así que las filas se bloquean en ese orden y no en el
+    del recorrido, que nadie garantiza. Bloquear fila por fila, o en el orden
+    pedido, está prohibido.
+  - **Las operaciones de una fila bloquean una sola**, y es una invariante: una
+    operación que bloquea una sola fila no puede cerrar un ciclo con otra.
+    Si una operación de una fila pasara a bloquear dos, entra en la regla de
+    arriba.
+  - Con las dos, dos pedidos sobre filas compartidas se ponen en fila en vez de
+    esperarse en círculo. Lo afirma un test de integración del slice 6: dos
+    ediciones masivas sobre los mismos ids, en orden opuesto y cruzadas con una
+    barrera, responden `ok` las dos. El mutante que bloquea con un
+    `for update` por fila en el orden pedido termina en `40P01`; la revisión lo
+    ejecutó en Postgres 17.11 con 5000 filas y 200 ids.
 - **Un pedido tiene tope de filas**, que fija cada contrato. Una transacción
   sostiene los bloqueos de todas sus filas hasta terminar, y la escritura es
   una sentencia por fila que cambia.
