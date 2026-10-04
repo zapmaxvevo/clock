@@ -107,6 +107,9 @@ null (col)`) antes de desplegar.
   membresía inactiva: en el slice 3 el argumento no se sostuvo y en el 4 sí.
 - **Los agentes comparten el scratchpad**: cada uno trabaja en un subdirectorio
   propio; ya hubo archivos pisados.
+- **Los mutantes van en una copia, nunca en el árbol compartido**: en el 8c un mutante
+  de prueba entró en un commit del team-lead (`0bd76aa`, corregido en `a5ab4a2`). Antes de
+  commitear, `git diff` de cada archivo y confirmar que nadie está mutando.
 - **E2E**: horas «de hoy» siempre pasadas (`00:00–00:01`); esperar la respuesta
   del servidor (`withServerAction`) y no un estado ya dibujado; respuesta perdida
   real con `route.fetch()` + `route.abort()`; editores en portal se buscan en
