@@ -5727,6 +5727,13 @@ const sameRuleCases: readonly SameRuleCase[] = [
     changes: { end: "01:30" },
   },
   {
+    label: "la entrada que ya cruzaba la medianoche, con otro inicio",
+    zone: buenosAires,
+    startedAt: "2026-10-02T02:00:00Z",
+    endedAt: "2026-10-02T04:00:00Z",
+    changes: { start: "22:30" },
+  },
+  {
     label: "la hora repetida: descarta lo conservado que queda fuera de orden",
     zone: madrid,
     startedAt: "2026-10-24T23:50:00Z",
@@ -5904,6 +5911,27 @@ describe("bulkEditEntries: un campo ausente no cambia (criterio 8)", () => {
       startedAt: "2026-10-01T14:30:00.000Z",
       endedAt: "2026-10-02T14:00:00.000Z",
       extraDays: 1,
+    });
+  });
+
+  it("con la persona en 12 h, el trío de la fila sale de la hora canónica y no del rótulo", async () => {
+    const twelveHours: TrackerWorkspace = {
+      ...workspace,
+      formats: { ...defaultFormats, time: "12h" },
+    };
+    // 10:00 a 11:00 en Buenos Aires: «10:00 AM» y «11:00 AM» en sus rótulos.
+    const row = await seedClosed("2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
+
+    const result = await bulkEditEntries(actor, twelveHours, {
+      ids: [row.id],
+      changes: { start: "09:00" },
+    });
+
+    expect(result.entries[0]).toMatchObject({
+      startedAt: "2026-10-01T12:00:00.000Z",
+      endedAt: "2026-10-01T14:00:00.000Z",
+      startLabel: "9:00 AM",
+      endLabel: "11:00 AM",
     });
   });
 
@@ -6377,23 +6405,30 @@ describe("las guardas de las escrituras de las operaciones en masa", () => {
 
   it("findManyByIdsForUpdate trae las filas pedidas del workspace en el orden del id", async () => {
     const other = await seedWorkspace(buenosAires);
-    const rows = [
-      await seedClosed("2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z"),
-      await seedClosed("2026-09-30T13:00:00Z", "2026-09-30T14:00:00Z"),
-      await seedClosed("2026-09-29T13:00:00Z", "2026-09-29T14:00:00Z"),
-    ];
+    // Insertadas de mayor a menor id: el orden físico es el inverso del pedido.
+    const ids = Array.from({ length: 4 }, () => randomUUID()).sort((left, right) =>
+      left < right ? 1 : -1,
+    );
+    for (const id of ids) {
+      await db.insert(timeEntry).values({
+        id,
+        workspaceId,
+        userId: actor.userId,
+        startedAt: new Date("2026-10-01T13:00:00Z"),
+        endedAt: new Date("2026-10-01T14:00:00Z"),
+      });
+    }
     const elsewhere = await seedTimeEntry({
       workspaceId: other.workspaceId,
       userId: other.ownerId,
       startedAt: "2026-10-01T13:00:00Z",
       endedAt: "2026-10-01T14:00:00Z",
     });
-    const requested = [...rows.map((row) => row.id), elsewhere.id].reverse();
 
     const found = await db.transaction((tx) =>
-      timeEntryRepository.findManyByIdsForUpdate(tx, workspaceId, requested),
+      timeEntryRepository.findManyByIdsForUpdate(tx, workspaceId, [...ids, elsewhere.id]),
     );
 
-    expect(found.map((row) => row.id)).toEqual(rows.map((row) => row.id).sort());
+    expect(found.map((row) => row.id)).toEqual([...ids].reverse());
   });
 });

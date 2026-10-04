@@ -1015,6 +1015,17 @@ describe("audit log de las operaciones en masa (ADR 0011)", () => {
     });
   });
 
+  it("la edición que cambia solo el fin no registra el inicio conservado", async () => {
+    // 10:00:40 a 11:00; el fin pasa a las 11:30 y el inicio conserva sus segundos.
+    const row = await seedOwn("", "2026-10-01T13:00:40Z", "2026-10-01T14:00:00Z");
+
+    await bulkEditEntries(actor, workspace, { ids: [row.id], changes: { end: "11:30" } });
+
+    const [record] = await auditFor("time_entry", row.id);
+    expect(parsed(record.previousValue)).toEqual({ endedAt: "2026-10-01T14:00:00.000Z" });
+    expect(parsed(record.nextValue)).toEqual({ endedAt: "2026-10-01T14:30:00.000Z" });
+  });
+
   it("la edición rechazada no deja registro de ninguna fila (criterio 10)", async () => {
     const valid = await seedOwn("vieja", "2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
     const running = await seedOwn("", "2026-10-02T13:00:00Z", null);
