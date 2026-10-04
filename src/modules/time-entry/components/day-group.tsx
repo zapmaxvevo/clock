@@ -2,6 +2,7 @@
 
 import { useEffect, useOptimistic, useRef } from "react";
 
+import { ActionFeedback } from "@/components/action-feedback";
 import { retryHandlerOf, useAction, type ActionHandle } from "@/hooks/use-action";
 import { useNewId } from "@/hooks/use-new-id";
 import {
@@ -21,7 +22,6 @@ import {
 import { saveEntryProject, selectionOf, type EntryProjectChange } from "./entry-project";
 import { EntryRow } from "./entry-row";
 import { trackerLabels } from "./labels";
-import { TrackerFeedback } from "./tracker-feedback";
 import { useGroupTotalLabel } from "./use-group-total";
 
 type DayGroupProps = {
@@ -290,7 +290,7 @@ export function DayGroup({
         duplicate.failure !== null) && (
         <div className="flex flex-col gap-2 px-3 py-2">
           {save.failure !== null && (
-            <TrackerFeedback
+            <ActionFeedback
               title={trackerLabels.descriptionNotSaved}
               message={save.failure.message}
               retryDisabled={save.pending}
@@ -298,7 +298,7 @@ export function DayGroup({
             />
           )}
           {saveProject.failure !== null && (
-            <TrackerFeedback
+            <ActionFeedback
               title={trackerLabels.projectNotSaved}
               message={saveProject.failure.message}
               retryDisabled={saveProject.pending}
@@ -306,7 +306,7 @@ export function DayGroup({
             />
           )}
           {saveTimes.failure !== null && (
-            <TrackerFeedback
+            <ActionFeedback
               title={trackerLabels.entryTimesNotSaved}
               message={saveTimes.failure.message}
               retryDisabled={saveTimes.pending}
@@ -314,7 +314,7 @@ export function DayGroup({
             />
           )}
           {duplicate.failure !== null && (
-            <TrackerFeedback
+            <ActionFeedback
               title={trackerLabels.entryNotDuplicated}
               message={duplicate.failure.message}
               retryDisabled={duplicate.pending}
@@ -322,7 +322,7 @@ export function DayGroup({
             />
           )}
           {remove.failure !== null && (
-            <TrackerFeedback
+            <ActionFeedback
               title={trackerLabels.entryNotDeleted}
               message={remove.failure.message}
               retryDisabled={remove.pending}

@@ -3,7 +3,7 @@ import { CircleAlertIcon, InfoIcon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
-type TrackerFeedbackProps = {
+type ActionFeedbackProps = {
   /** Nombra el campo o la operación de la que informa (TT-90). */
   readonly title: string;
   /** Mensaje del resultado tipado de la action, o el del aviso informativo. */
@@ -19,13 +19,13 @@ type TrackerFeedbackProps = {
  * salió bien con algo que contar. El ícono y el texto llevan la información;
  * el color no es lo único que distingue el estado.
  */
-export function TrackerFeedback({
+export function ActionFeedback({
   title,
   message,
   tone = "error",
   onRetry,
   retryDisabled = false,
-}: TrackerFeedbackProps) {
+}: ActionFeedbackProps) {
   return (
     <Alert
       variant={tone === "error" ? "destructive" : "default"}

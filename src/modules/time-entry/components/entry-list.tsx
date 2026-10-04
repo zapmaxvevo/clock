@@ -4,6 +4,7 @@ import Link, { useLinkStatus } from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useOptimistic, useRef, useState } from "react";
 
+import { ActionFeedback } from "@/components/action-feedback";
 import { buttonVariants } from "@/components/ui/button";
 import { retryHandlerOf, useAction } from "@/hooks/use-action";
 import { useNewId } from "@/hooks/use-new-id";
@@ -18,7 +19,6 @@ import { DayGroup, type MovedEntry } from "./day-group";
 import { startedWeeks } from "./entry-week";
 import { trackerLabels } from "./labels";
 import { useReachWeek } from "./reach-week";
-import { TrackerFeedback } from "./tracker-feedback";
 import { useTrackerShortcuts } from "./use-tracker-shortcuts";
 import { WeekGroup } from "./week-group";
 
@@ -150,7 +150,7 @@ export function EntryList({
   return (
     <div className="flex flex-col gap-4">
       {continuation.failure !== null && (
-        <TrackerFeedback
+        <ActionFeedback
           title={trackerLabels.entryNotContinued}
           message={continuation.failure.message}
           retryDisabled={continuation.pending}
