@@ -9,6 +9,7 @@ import {
   task,
   timeEntry,
   user,
+  userPreference,
   workspace,
   workspaceSettings,
 } from "@/server/db/schema";
@@ -58,6 +59,20 @@ export async function seedMember(workspaceId: string, role: Role): Promise<strin
   const userId = await seedUser();
   await db.insert(membership).values({ workspaceId, userId, role });
   return userId;
+}
+
+/** Las columnas de preferencia que se siembran; las que faltan quedan en nulo. */
+export type SeedPreferenceValues = Partial<
+  Pick<typeof userPreference.$inferInsert, "timezone" | "timeFormat" | "dateFormat">
+>;
+
+/** La fila de preferencias de una persona, escrita directo con las columnas que se pasen. */
+export async function seedPreferences(userId: string, values: SeedPreferenceValues) {
+  const [row] = await db
+    .insert(userPreference)
+    .values({ userId, ...values })
+    .returning();
+  return row;
 }
 
 /** Entrada de horas escrita directo contra la tabla. */

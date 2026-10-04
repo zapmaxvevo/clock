@@ -30,6 +30,15 @@ import {
   weekBounds,
   weekKeyLabel,
   weekStartKey,
+  canonicalTimeZone,
+  clockLabel,
+  formatDayKey,
+  isSupportedTimeZone,
+  isUsableTimeZone,
+  supportedTimeZones,
+  TIME_FORMATS,
+  utcOffsetLabel,
+  type DateFormat,
   type WeekStart,
 } from "./index";
 
@@ -829,5 +838,186 @@ describe("hora de pared con el proceso en una zona con cambio de horario", () =>
     expect(instantFromLocal("2026-10-25", "02:30", "Europe/London")?.toISOString()).toBe(
       "2026-10-25T02:30:00.000Z",
     );
+  });
+});
+
+describe("clockLabel (PF-13)", () => {
+  it.each([
+    ["00:00", "00:00", "12:00 AM"],
+    ["00:59", "00:59", "12:59 AM"],
+    ["09:05", "09:05", "9:05 AM"],
+    ["12:00", "12:00", "12:00 PM"],
+    ["13:05", "13:05", "1:05 PM"],
+    ["23:59", "23:59", "11:59 PM"],
+  ])("%s se muestra %s en 24 h y %s en 12 h", (clock, in24, in12) => {
+    expect(clockLabel(clock, "24h")).toBe(in24);
+    expect(clockLabel(clock, "12h")).toBe(in12);
+  });
+});
+
+describe("parseClockInput con el formato (PF-14, TT-20)", () => {
+  it.each([
+    ["1", "01:00", "01:00"],
+    ["0345", "03:45", "03:45"],
+    ["9.45", "09:45", "09:45"],
+    ["13:00", "13:00", "13:00"],
+    ["1pm", null, "13:00"],
+    ["1 PM", null, "13:00"],
+    ["1p", null, "13:00"],
+    ["1 p.m.", null, "13:00"],
+    ["1 p. m.", null, "13:00"],
+    ["9 a. m.", null, "09:00"],
+    ["1:30pm", null, "13:30"],
+    ["130pm", null, "13:30"],
+    ["1:05 PM", null, "13:05"],
+    ["12am", null, "00:00"],
+    ["12pm", null, "12:00"],
+    ["9am", null, "09:00"],
+    ["13pm", null, null],
+    ["0am", null, null],
+  ])("%j da %j con 24 h y %j con 12 h", (text, in24, in12) => {
+    expect(parseClockInput(text, "24h")).toBe(in24);
+    expect(parseClockInput(text, "12h")).toBe(in12);
+  });
+
+  it("con 12 h acepta el sufijo en mayúsculas, con puntos y con espacio entre las letras", () => {
+    for (const text of ["1PM", "1 P.M.", "1 p m", "1P", "  1 pm  "]) {
+      expect([text, parseClockInput(text, "12h")]).toEqual([text, "13:00"]);
+    }
+    expect(parseClockInput("12:02 am", "12h")).toBe("00:02");
+  });
+
+  it("con 12 h rechaza lo que no es una hora con sufijo", () => {
+    for (const text of ["pm", "1 xm", "1:60pm", "1 pmm", "", "1 m"]) {
+      expect([text, parseClockInput(text, "12h")]).toEqual([text, null]);
+    }
+  });
+
+  it("lo que el campo muestra, el campo lo acepta: los 1440 minutos en los dos formatos", () => {
+    const mismatches: string[] = [];
+    for (const format of TIME_FORMATS) {
+      for (let minute = 0; minute < 24 * 60; minute += 1) {
+        const clock = shiftClock("00:00", minute);
+        if (parseClockInput(clockLabel(clock, format), format) !== clock) {
+          mismatches.push(`${format} ${clock}`);
+        }
+      }
+    }
+    expect(mismatches).toEqual([]);
+  });
+});
+
+describe("formatDayKey (PF-12)", () => {
+  it.each<[DateFormat, string, string]>([
+    ["dd/MM/yyyy", "03/10/2026", "03/10"],
+    ["dd-MM-yyyy", "03-10-2026", "03-10"],
+    ["yyyy-MM-dd", "2026-10-03", "10-03"],
+    ["MM/dd/yyyy", "10/03/2026", "10/03"],
+  ])("%s da %s con año y %s sin año", (format, withYear, withoutYear) => {
+    expect(formatDayKey("2026-10-03", format, true)).toBe(withYear);
+    expect(formatDayKey("2026-10-03", format, false)).toBe(withoutYear);
+  });
+
+  it("devuelve la clave tal cual si no es un día", () => {
+    expect(formatDayKey("2026-02-30", "MM/dd/yyyy", true)).toBe("2026-02-30");
+  });
+});
+
+describe("los rótulos de día y de semana en los cuatro formatos (TT-44, TT-47)", () => {
+  it.each<[DateFormat, string, string]>([
+    ["dd/MM/yyyy", "sáb, 03/10", "mié, 31/12/2025"],
+    ["dd-MM-yyyy", "sáb, 03-10", "mié, 31-12-2025"],
+    ["yyyy-MM-dd", "sáb, 10-03", "mié, 2025-12-31"],
+    ["MM/dd/yyyy", "sáb, 10/03", "mié, 12/31/2025"],
+  ])("dayKeyLabel con %s", (format, sameYear, otherYear) => {
+    expect(dayKeyLabel("2026-10-05", "2026-10-05", format)).toBe("Hoy");
+    expect(dayKeyLabel("2026-10-04", "2026-10-05", format)).toBe("Ayer");
+    expect(dayKeyLabel("2026-10-03", "2026-10-05", format)).toBe(sameYear);
+    expect(dayKeyLabel("2025-12-31", "2026-10-05", format)).toBe(otherYear);
+  });
+
+  it.each<[DateFormat, string, string]>([
+    ["dd/MM/yyyy", "14/09 – 20/09", "29/12/2025 – 04/01/2026"],
+    ["dd-MM-yyyy", "14-09 – 20-09", "29-12-2025 – 04-01-2026"],
+    ["yyyy-MM-dd", "09-14 – 09-20", "2025-12-29 – 2026-01-04"],
+    ["MM/dd/yyyy", "09/14 – 09/20", "12/29/2025 – 01/04/2026"],
+  ])("weekKeyLabel con %s", (format, sameYear, otherYear) => {
+    expect(weekKeyLabel("2026-09-28", "2026-10-02", 1, format)).toBe("Esta semana");
+    expect(weekKeyLabel("2026-09-21", "2026-10-02", 1, format)).toBe("Semana anterior");
+    expect(weekKeyLabel("2026-09-14", "2026-10-02", 1, format)).toBe(sameYear);
+    // La semana cruza el año: las dos puntas llevan el año.
+    expect(weekKeyLabel("2025-12-29", "2026-10-02", 1, format)).toBe(otherYear);
+  });
+
+  it("dayLabel rotula con el formato de quien mira", () => {
+    const now = new Date("2026-10-05T15:00:00Z");
+    expect(
+      dayLabel(new Date("2026-10-03T15:00:00Z"), now, buenosAires, "MM/dd/yyyy"),
+    ).toBe("sáb, 10/03");
+  });
+});
+
+describe("las zonas por su forma canónica (PF-35)", () => {
+  const fallback = "America/Argentina/Buenos_Aires";
+
+  it("el valor de omisión no está escrito en la lista, pero su forma canónica sí", () => {
+    expect(supportedTimeZones()).not.toContain(fallback);
+    const canonical = canonicalTimeZone(fallback);
+    expect(canonical).not.toBeNull();
+    expect(supportedTimeZones()).toContain(canonical);
+    expect(isSupportedTimeZone(fallback)).toBe(true);
+  });
+
+  it("canonicalTimeZone resuelve el alias y da null con lo que el entorno no conoce", () => {
+    expect(canonicalTimeZone("Asia/Tokyo")).toBe("Asia/Tokyo");
+    expect(canonicalTimeZone("US/Eastern")).toBe("America/New_York");
+    expect(canonicalTimeZone("Marte/Olympus_Mons")).toBeNull();
+    expect(canonicalTimeZone("")).toBeNull();
+  });
+
+  it("isSupportedTimeZone acepta una zona de la lista y un alias, y rechaza lo desconocido", () => {
+    expect(isSupportedTimeZone("Asia/Tokyo")).toBe(true);
+    expect(isSupportedTimeZone("US/Eastern")).toBe(true);
+    expect(isSupportedTimeZone("Marte/Olympus_Mons")).toBe(false);
+    expect(isSupportedTimeZone("")).toBe(false);
+  });
+
+  it("una zona que el entorno convierte pero no lista es usable y no es aceptada", () => {
+    const unlisted = "Etc/GMT+3";
+    expect(supportedTimeZones()).not.toContain(canonicalTimeZone(unlisted));
+    expect(isUsableTimeZone(unlisted)).toBe(true);
+    expect(isSupportedTimeZone(unlisted)).toBe(false);
+    expect(isUsableTimeZone("Marte/Olympus_Mons")).toBe(false);
+  });
+
+  it("supportedTimeZones viene en orden alfabético y cada zona es su propia forma canónica", () => {
+    const zones = supportedTimeZones();
+    expect(zones.length).toBeGreaterThan(300);
+    expect([...zones].sort()).toEqual(zones);
+    expect(zones.filter((zone) => canonicalTimeZone(zone) !== zone)).toEqual([]);
+  });
+});
+
+describe("utcOffsetLabel", () => {
+  it("da el desplazamiento de la zona en ese instante, con el signo menos tipográfico", () => {
+    const july = new Date("2026-07-01T12:00:00Z");
+    const january = new Date("2026-01-15T12:00:00Z");
+    expect(utcOffsetLabel(buenosAires, july)).toBe("UTC\u221203:00");
+    expect(utcOffsetLabel("Asia/Kathmandu", july)).toBe("UTC+05:45");
+    expect(utcOffsetLabel("Africa/Abidjan", july)).toBe("UTC+00:00");
+    expect(utcOffsetLabel(madrid, july)).toBe("UTC+02:00");
+    expect(utcOffsetLabel(madrid, january)).toBe("UTC+01:00");
+    expect(utcOffsetLabel("America/St_Johns", january)).toBe("UTC\u221203:30");
+  });
+});
+
+describe("los predeterminados reproducen los rótulos de antes del perfil", () => {
+  // Los casos de `dayKeyLabel`, `dayLabel` y `weekKeyLabel` de más arriba son
+  // los de antes del perfil, con `dd/MM/yyyy`.
+  it("clockLabel con 24 h es la hora canónica", () => {
+    for (let minute = 0; minute < 24 * 60; minute += 1) {
+      const clock = shiftClock("00:00", minute);
+      expect(clockLabel(clock, "24h")).toBe(clock);
+    }
   });
 });

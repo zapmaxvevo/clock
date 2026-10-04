@@ -1,8 +1,17 @@
-import type { Actor } from "@/server/permissions";
+import { initialsOf } from "@/lib/text";
+import { recordAudit } from "@/server/audit";
+import { db } from "@/server/db";
+import { assertCan, can, type Actor } from "@/server/permissions";
 import {
+  canonicalTimeZone,
+  clockLabel,
   DATE_FORMATS,
+  dayKey,
+  formatDayKey,
   isUsableTimeZone,
+  supportedTimeZones,
   TIME_FORMATS,
+  utcOffsetLabel,
   type DateFormat,
   type TimeFormat,
   type TimeSettings,
@@ -10,7 +19,11 @@ import {
 } from "@/server/time";
 import { weekStartOf, type WorkspaceContext } from "@/modules/workspace/service";
 
-import { profileRepository, type UserPreferenceRow } from "./repository";
+import {
+  profileRepository,
+  type PreferenceColumn,
+  type UserPreferenceRow,
+} from "./repository";
 import type {
   Preferences,
   UpdatePreferenceInput,
@@ -132,21 +145,96 @@ export type ProfileView = {
   };
 };
 
+/**
+ * La opción del selector que equivale a la zona: la que lista el entorno para
+ * su forma canónica, o la zona misma si el entorno ya no la lista (§5.2).
+ */
+function timeZoneOptionOf(timeZone: string, listed: readonly string[]): string {
+  const canonical = canonicalTimeZone(timeZone);
+  return canonical !== null && listed.includes(canonical) ? canonical : timeZone;
+}
+
 /** Sin consultas: todo está en la sesión o en el entorno. */
 export function getProfileView(
   context: ProfileContext,
   user: ProfileUser,
   now: Date = new Date(),
 ): ProfileView {
-  throw new Error(
-    `getProfileView sin implementar (${context.actor.userId}, ${user.email}, ${now.toISOString()}).`,
-  );
+  const settings = timeSettingsOf(context);
+  const listed = supportedTimeZones();
+  const timezoneOption = timeZoneOptionOf(settings.timezone, listed);
+  const zones = listed.includes(timezoneOption)
+    ? listed
+    : [...listed, timezoneOption].sort();
+  const todayKey = dayKey(now, settings.timezone);
+  return {
+    identity: { ...user, initials: initialsOf(user.name, user.email) },
+    preferences: context.preferences,
+    timezoneOption,
+    weekStart: settings.weekStart,
+    canEdit: can(context.actor, "profile.own.update", ownProfileResource(context.actor)),
+    options: {
+      timezones: zones.map((zone) => ({
+        value: zone,
+        example: utcOffsetLabel(zone, now),
+      })),
+      timeFormats: TIME_FORMATS.map((format) => ({
+        value: format,
+        example: clockLabel("13:00", format),
+      })),
+      dateFormats: DATE_FORMATS.map((format) => ({
+        value: format,
+        example: formatDayKey(todayKey, format, true),
+      })),
+    },
+  };
 }
 
-/** PF-11 a PF-13, PF-32, PF-34, PF-35. */
+const AUDIT_ACTION = "profile.updatePreference";
+const AUDIT_ENTITY = "user_preference";
+
+/** La columna que escribe el pedido, con su valor. */
+function columnOf(input: UpdatePreferenceInput): PreferenceColumn {
+  switch (input.key) {
+    case "timezone":
+      return { timezone: input.value };
+    case "timeFormat":
+      return { timeFormat: input.value };
+    case "dateFormat":
+      return { dateFormat: input.value };
+  }
+}
+
+/**
+ * PF-11 a PF-13, PF-32, PF-34, PF-35. Pedir el valor ya guardado es un éxito
+ * sin efecto (TT-89); un nulo no es igual a su predeterminado, porque elegirlo
+ * explícitamente deja de seguir al predeterminado.
+ */
 export async function updatePreference(
   actor: Actor,
   input: UpdatePreferenceInput,
 ): Promise<UpdatePreferenceResult> {
-  throw new Error(`updatePreference sin implementar (${actor.userId}, ${input.key}).`);
+  assertCan(actor, "profile.own.update", ownProfileResource(actor));
+  return db.transaction(async (tx) => {
+    const row = await profileRepository.findPreferencesForUpdate(tx, actor.userId);
+    const previous = row?.[input.key] ?? null;
+    if (previous === input.value) {
+      return { preferences: resolvePreferences(row) };
+    }
+    const written = await profileRepository.writePreference(
+      tx,
+      actor.userId,
+      columnOf(input),
+    );
+    await recordAudit(tx, {
+      workspaceId: actor.workspaceId,
+      actorId: actor.userId,
+      action: AUDIT_ACTION,
+      entity: AUDIT_ENTITY,
+      entityId: actor.userId,
+      previousValue: { [input.key]: previous },
+      nextValue: { [input.key]: input.value },
+    });
+    return { preferences: resolvePreferences(written) };
+  });
 }
