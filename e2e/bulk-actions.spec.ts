@@ -234,6 +234,33 @@ function confirmField(dialog: Locator): Locator {
 }
 
 /**
+ * Empieza a anotar los encabezados que reciben el foco. Mirar el foco en un
+ * instante no alcanza para el borrado masivo: un encabezado de día que lo
+ * toma con la vista optimista y lo pierde enseguida, cuando el diálogo termina
+ * de cerrarse y lo pasa a la región, ya no se ve al afirmar, pero un lector de
+ * pantalla lo anunció.
+ */
+async function recordFocusedHeadings(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const log: string[] = [];
+    Object.assign(window, { e2eFocusedHeadings: log });
+    document.addEventListener("focusin", (event) => {
+      const target = event.target;
+      if (target instanceof HTMLElement && /^H[1-6]$/.test(target.tagName)) {
+        log.push(target.textContent ?? "");
+      }
+    });
+  });
+}
+
+/** Los encabezados que recibieron el foco desde `recordFocusedHeadings`. */
+async function focusedHeadings(page: Page): Promise<readonly string[]> {
+  return page.evaluate(
+    () => (window as unknown as { e2eFocusedHeadings: string[] }).e2eFocusedHeadings,
+  );
+}
+
+/**
  * Arranca un timer y espera a que la barra muestre la vista del servidor: el
  * contador que corre. Hasta que se aplica, la barra muestra la optimista, con
  * el contador quieto en cero.
@@ -556,13 +583,16 @@ test("borrar dos entradas confirma con la palabra, y el borrado de una fila sigu
    */
   const releaseDelete = await holdActionResponses(page, isTrackerPage);
   const deleted = page.waitForResponse((response) => isAction(response.request()));
+  await recordFocusedHeadings(page);
   await field.press("Enter");
   await expect(dialog).toBeHidden();
   await expect(entryRow(todays, "se borra uno")).toHaveCount(0);
   await expect(entryRow(todays, "se borra dos")).toHaveCount(0);
   await expect(bulkStatus(page)).toHaveText("Borrando…");
-  // Criterio 19: la región, no el encabezado del día, que sigue en pantalla.
+  // Criterio 19: la región, y ningún encabezado de día en el camino, aunque
+  // el de hoy sigue en pantalla.
   await expect(bulkRegion(page)).toBeFocused();
+  expect(await focusedHeadings(page)).toEqual([]);
   releaseDelete();
   expect((await deleted).ok()).toBeTruthy();
 
