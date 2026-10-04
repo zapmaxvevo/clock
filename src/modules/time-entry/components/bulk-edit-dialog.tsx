@@ -83,12 +83,19 @@ export function BulkEditDialog({
     onCancel();
   }
 
-  function finalFocus(): HTMLElement | null {
+  /**
+   * El foco lo mueve el diálogo y no Base UI, que pasa al primer control
+   * tabulable de lo que se le devuelve: con la región, que no es tabulable,
+   * caería en «Editar». Va en una microtarea, como el de Base UI, cuando lo
+   * de afuera del modal ya dejó de estar inerte.
+   */
+  function finalFocus(): false {
     const target = cancelled.current
       ? (cancelFocus.current ?? regionFocus.current)
       : regionFocus.current;
     cancelled.current = false;
-    return target;
+    queueMicrotask(() => target?.focus());
+    return false;
   }
 
   return (

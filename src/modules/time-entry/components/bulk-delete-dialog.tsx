@@ -55,13 +55,20 @@ export function BulkDeleteDialog({
     onCancel();
   }
 
-  function finalFocus(): HTMLElement | null {
-    // Si la barra se fue con el diálogo abierto, a la región.
+  /**
+   * El foco lo mueve el diálogo y no Base UI, que pasa al primer control
+   * tabulable de lo que se le devuelve: con la región, que no es tabulable,
+   * caería en «Editar» de la barra. Va en una microtarea, como el de Base UI,
+   * cuando lo de afuera del modal ya dejó de estar inerte. Si la barra se fue
+   * con el diálogo abierto, a la región.
+   */
+  function finalFocus(): false {
     const target = cancelled.current
       ? (cancelFocus.current ?? confirmFocus.current)
       : confirmFocus.current;
     cancelled.current = false;
-    return target;
+    queueMicrotask(() => target?.focus());
+    return false;
   }
 
   return (
