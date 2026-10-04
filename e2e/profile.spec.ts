@@ -389,6 +389,8 @@ test("si el cambio de formato no llega al servidor el control vuelve, y Reintent
   await withServerAction(page, () => retry.click());
   await expect(notice).toBeHidden();
   await expect(control).toContainText("yyyy-MM-dd");
+  // «Reintentar» se fue con el aviso: el foco queda en el control, no en body.
+  await expect(control).toBeFocused();
 
   await page.reload();
   await expect(preferenceControl(page, "Formato de fecha")).toContainText("yyyy-MM-dd");
