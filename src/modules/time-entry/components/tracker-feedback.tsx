@@ -41,7 +41,8 @@ export function TrackerFeedback({
       <AlertTitle>{title}</AlertTitle>
       <AlertDescription>{message}</AlertDescription>
       {onRetry === undefined ? null : (
-        <div className="mt-2">
+        // En la columna del texto: en la del ícono, la ensancharía.
+        <div className="col-start-2 mt-2">
           <Button
             type="button"
             variant="outline"

@@ -21,9 +21,7 @@ agentes con trabajo pendiente.
 
 ## Lo primero de la sesión siguiente
 
-1. Un `fix` chico: `TrackerFeedback` tiene «Reintentar» en la columna del ícono del
-   `Alert` (el mismo defecto que se corrigió en `create-dialog.tsx` con `col-start-2`).
-2. Los contratos del 6, 7 y 8 (`fase1-mapa.md`), con el pipeline de abajo. El 10 depende del 9,
+1. Los contratos del 6, 7 y 8 (`fase1-mapa.md`), con el pipeline de abajo. El 10 depende del 9,
    que ya está.
 
 Deuda anotada: no hay ningún `error.tsx` en `src/app`; un error de lectura cae en la página
