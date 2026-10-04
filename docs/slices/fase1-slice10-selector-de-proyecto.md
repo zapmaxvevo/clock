@@ -653,6 +653,7 @@ Rutas absolutas. **(nuevo)** marca lo que crea el slice.
 /home/maxi/program/clock/src/modules/time-entry/schema.test.ts
 /home/maxi/program/clock/src/modules/time-entry/assignment.ts                  (nuevo)
 /home/maxi/program/clock/src/modules/time-entry/assignment.test.ts             (nuevo)
+/home/maxi/program/clock/src/lib/project-pair.ts                               (nuevo, ronda de revisiones)
 /home/maxi/program/clock/src/modules/time-entry/repository.ts
 /home/maxi/program/clock/src/modules/time-entry/service.ts
 /home/maxi/program/clock/src/modules/time-entry/actions.ts
@@ -680,6 +681,8 @@ Rutas absolutas. **(nuevo)** marca lo que crea el slice.
 
 ```
 /home/maxi/program/clock/src/components/ui/combobox.tsx                              (nuevo, generado)
+/home/maxi/program/clock/src/components/ui/input-group.tsx                           (nuevo, generado, dependencia de combobox.tsx)
+/home/maxi/program/clock/src/modules/time-entry/components/entry-project.ts          (nuevo, ronda de revisiones)
 /home/maxi/program/clock/src/modules/project/components/project-picker.tsx           (nuevo)
 /home/maxi/program/clock/src/modules/project/components/project-picker.test.tsx      (nuevo)
 /home/maxi/program/clock/src/modules/project/components/tracking-catalog.tsx         (nuevo)
@@ -705,7 +708,10 @@ Rutas absolutas. **(nuevo)** marca lo que crea el slice.
   `projects-screen.test.tsx`: `renderToStaticMarkup`, sin `vi.mock`, con el
   selector envuelto en `TrackingCatalogProvider` y un catálogo armado a mano
   (criterio 16).
-- `src/hooks/` no cambia: se usa como está.
+- `src/hooks/` no cambia: se usa como está. Única excepción, de la ronda de
+  revisiones: el comentario de `use-new-id.ts` sobre la clave.
+- **`time-entry/components/labels.ts`**: `trackerLabels.noProject` sale; el
+  selector usa `projectLabels.noProject`.
 
 ### tests-slice10
 
@@ -735,7 +741,8 @@ tiene que registrar».
 ### Lo que no toca nadie
 
 - `src/server/permissions/`: no hay acciones nuevas (§3).
-- `src/server/action.ts`, `src/hooks/`, `src/lib/text.ts`: se usan como están.
+- `src/server/action.ts`, `src/hooks/`, `src/lib/text.ts`: se usan como están
+  (salvo el comentario de `use-new-id.ts`, ver `frontend-dev`).
 - `src/server/create-once.ts`, `src/server/session.ts`, `src/server/time/`.
 - `src/modules/workspace/`.
 - `src/modules/project/actions.ts` y la pantalla `/proyectos`.
@@ -797,7 +804,8 @@ tiene que registrar».
     usa**: el selector no sabe qué es una entrada;
   - `pending`, que lo deja con `aria-disabled` mientras el cambio viaja;
   - `readOnly`, que lo dibuja como texto, sin `combobox`: el punto y el nombre,
-    o lo que muestra sin selección.
+    o «Sin proyecto» sin selección, en las dos variantes («Proyecto» es el
+    rótulo de un control, no un texto).
 
   **El `Combobox` de Base UI va con `filter={null}`** y recibe como ítems la
   salida de `picker-model.ts`: si filtrara también la primitiva, un cliente que
