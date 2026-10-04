@@ -626,7 +626,7 @@ export function layoutColumn<
 >(items: readonly Item[], zoom: CalendarZoom): readonly PlacedBlock<Item>[];
 ```
 
-Se ordena por `from` y después por `key`. La altura es la de reloj con el mínimo
+Se ordena por `from` y, a igual `from`, por el orden de llegada (el de `entries`, por inicio e id), no por `key`; el DOM sigue ese mismo orden, también en la hora repetida de un atraso (CAL-76). _Corregido en las revisiones (P-m2)_: desempataba por `key`. La altura es la de reloj con el mínimo
 de CAL-24. Un grupo es un conjunto conectado por superposición **de lo
 dibujado**, con la altura mínima incluida, así ningún bloque tapa a otro. Dentro
 del grupo cada bloque toma el primer carril libre, y todos los del grupo miden
@@ -644,7 +644,7 @@ minutos de `missingMinutes` se dibujan atenuados (CAL-30, CAL-48, CAL-85).
   inicio}, de {inicio} a {fin}{superíndice}, {duración}{, Proyecto o Proyecto:
   Tarea}». El superíndice es `extraDaysText(extraDays)`, el texto de TT-51 que
   la fila ya usa, movido a `labels.ts`. Para el timer: «…, desde las {inicio},
-  en curso». Las horas, con `clockLabel` y el formato de la persona.
+  en curso». Las horas, `startLabel` y `endLabel` de la vista, que salen de los mismos formatos (C-m2 de las revisiones).
 - **Los otros segmentos** son `div` con el mismo `data-entry-block`,
   `aria-hidden`, sin `tabIndex`, que abren el mismo diálogo con el puntero.
 - **Contenido, lo que entre en este orden**: la descripción (o «Sin
@@ -718,7 +718,7 @@ cambiada o borrada no lo cierra ni lo cambia (CAL-72, en su dibujo).
     (`project-picker.tsx:36`).
   - «Fecha»: `dayKeyLabel(entry.dayDate, todayKey, formats.date)`.
   - «Hora de inicio» y «Hora de fin» (`trackerLabels.startTime`, `endTime`),
-    con `clockLabel`; el fin con su superíndice `+N` y `extraDaysText` para el
+    con `startLabel` y `endLabel` de la vista (C-m2); el fin con su superíndice `+N` y `extraDaysText` para el
     lector de pantalla.
   - «Duración»: `durationLabel` de la vista.
   - En el timer, en lugar del fin y la duración: «Fin: en curso» y
@@ -1162,8 +1162,9 @@ falta un día anterior en la semana. Las respuestas se esperan con
   las actions de `time-entry` revalidan solo `"/"`: volver al calendario con
   «Atrás» después de cargar horas en `/` puede mostrar la copia del router
   hasta la próxima revalidación, a lo sumo 60 s.
-- **El enlace al período anterior o siguiente puede no ser navegable** (el
-  límite de los años, o la semana de Apia de 2011): lleva al período actual.
+- **El enlace al período anterior o siguiente, o el de «Semana» desde la vista
+  día, puede no ser navegable** (el límite de los años, o la semana de Apia de
+  2011): lleva al período actual.
 - **La línea de ahora puede quedar corrida una hora** durante el minuto que
   sigue a un cambio de horario, hasta la próxima revalidación.
 - **El tooltip no existe en pantallas táctiles**: el detalle está en el diálogo.

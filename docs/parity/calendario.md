@@ -415,11 +415,14 @@ calendario P-02.
 
 **CAL-33 Total de la semana** — `replicar`
 Documentado en la página de producto: «See the total tracked time across the
-week.» Arriba de la grilla, al lado del rótulo del rango. Con el corte de
+week.» Arriba de la grilla, en la barra del rango, alineado a la derecha como el
+encabezado de semana del rastreador. Con el corte de
 semana de la persona, y por eso es el mismo número que el encabezado de esa
 semana en el rastreador (TT-47, TT-48).
 _No verificado_: dónde lo pone Clockify. En la vista día, propuesta: el total
 del día, sin el de la semana.
+_Corregido el 2026-10-04, slice 8_: decía «al lado del rótulo del rango»; va a
+la derecha de la misma barra.
 
 **CAL-34 El timer activo suma** — `adaptar`
 Igual que TT-46: al total del día de su inicio y al de la semana, y los dos se
