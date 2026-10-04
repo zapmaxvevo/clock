@@ -1,10 +1,11 @@
 "use client";
 
-import { CircleAlertIcon, SearchIcon } from "lucide-react";
-import { useId, useOptimistic, useState, type KeyboardEvent } from "react";
+import { SearchIcon } from "lucide-react";
+import { useId, useOptimistic, useRef, useState, type ReactNode, type Ref } from "react";
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { ActionFeedback } from "@/components/action-feedback";
+import { preventTypeahead } from "@/components/combobox-typeahead";
+import { buttonVariants } from "@/components/ui/button";
 import {
   Combobox,
   ComboboxContent,
@@ -67,10 +68,12 @@ const triggerWidth = "w-full sm:w-80";
  *
  * Nunca usa `disabled`: un control con foco que pasa a `disabled` lo pierde a
  * `body`, y una membresía desactivada que intenta un cambio vuelve con
- * `canEdit` en falso y el foco todavía en el control.
+ * `canEdit` en falso y el foco todavía en el control. La zona sin permiso
+ * es un `FixedSetting`: sin disparador, no hay control que rotular.
  */
 export function PreferenceField(props: PreferenceFieldProps) {
   const controlId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const [shown, show] = useOptimistic<string, string>(props.value, (_, next) => next);
   const save = useAction(props.updatePreference, {
     unreachableMessage: profileMessages.unexpected,
@@ -83,9 +86,9 @@ export function PreferenceField(props: PreferenceFieldProps) {
         return (
           <TimeZonePicker
             id={controlId}
+            triggerRef={triggerRef}
             value={shown}
             options={props.options}
-            canEdit={props.canEdit}
             onChange={(value) => save.run({ key: "timezone", value })}
           />
         );
@@ -93,6 +96,7 @@ export function PreferenceField(props: PreferenceFieldProps) {
         return (
           <FormatSelect
             id={controlId}
+            triggerRef={triggerRef}
             value={shown}
             options={props.options}
             nameOf={(value) => timeFormatNames[value]}
@@ -104,6 +108,7 @@ export function PreferenceField(props: PreferenceFieldProps) {
         return (
           <FormatSelect
             id={controlId}
+            triggerRef={triggerRef}
             value={shown}
             options={props.options}
             nameOf={(value) => value}
@@ -114,27 +119,61 @@ export function PreferenceField(props: PreferenceFieldProps) {
     }
   }
 
-  const onRetry = retryHandlerOf(save);
+  const retry = retryHandlerOf(save);
+  const onRetry =
+    retry === undefined
+      ? undefined
+      : () => {
+          // «Reintentar» se va con su aviso: el foco pasa antes al control,
+          // que sigue en la pantalla.
+          triggerRef.current?.focus();
+          retry();
+        };
 
   return (
     <div className="grid gap-2">
-      <Label htmlFor={controlId}>{profileLabels[props.preference]}</Label>
-      {control()}
+      {props.preference === "timezone" && !props.canEdit ? (
+        <FixedSetting
+          label={profileLabels.timezone}
+          value={
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="truncate">{shown}</span>
+              <ZoneOffset value={shown} options={props.options} />
+            </span>
+          }
+        />
+      ) : (
+        <>
+          <Label htmlFor={controlId}>{profileLabels[props.preference]}</Label>
+          {control()}
+        </>
+      )}
       {save.failure !== null && (
-        <Alert variant="destructive">
-          <CircleAlertIcon aria-hidden="true" />
-          <AlertTitle>{failureTitles[props.preference]}</AlertTitle>
-          <AlertDescription>{save.failure.message}</AlertDescription>
-          {onRetry !== undefined && (
-            <div className="col-start-2 mt-2">
-              <Button type="button" variant="outline" size="sm" onClick={onRetry}>
-                {profileLabels.retry}
-              </Button>
-            </div>
-          )}
-        </Alert>
+        <ActionFeedback
+          title={failureTitles[props.preference]}
+          message={save.failure.message}
+          onRetry={onRetry}
+        />
       )}
     </div>
+  );
+}
+
+type FixedSettingProps = {
+  readonly label: string;
+  readonly value: ReactNode;
+  /** Quién lo decide, ya que acá no se cambia (PF-01, PF-02). */
+  readonly note?: string;
+};
+
+/** Un ajuste que se muestra y no se edita en esta pantalla. */
+export function FixedSetting({ label, value, note }: FixedSettingProps) {
+  return (
+    <dl className="grid gap-1 text-sm">
+      <dt className="font-medium">{label}</dt>
+      <dd>{value}</dd>
+      {note !== undefined && <dd className="text-muted-foreground">{note}</dd>}
+    </dl>
   );
 }
 
@@ -145,6 +184,7 @@ function choiceText(name: string, example: string): string {
 
 type FormatSelectProps<Value extends string> = {
   readonly id: string;
+  readonly triggerRef: Ref<HTMLButtonElement>;
   readonly value: string;
   readonly options: readonly { readonly value: Value; readonly example: string }[];
   readonly nameOf: (value: Value) => string;
@@ -159,6 +199,7 @@ type FormatSelectProps<Value extends string> = {
  */
 function FormatSelect<Value extends string>({
   id,
+  triggerRef,
   value,
   options,
   nameOf,
@@ -196,6 +237,7 @@ function FormatSelect<Value extends string>({
       onOpenChange={changeOpen}
     >
       <SelectTrigger
+        ref={triggerRef}
         id={id}
         aria-disabled={!canEdit || undefined}
         className={cn(
@@ -217,49 +259,43 @@ function FormatSelect<Value extends string>({
   );
 }
 
-/**
- * Una tecla imprimible sobre el disparador cerrado elegiría la zona que
- * empieza con esa letra (typeahead de la primitiva): la zona cambiaría sin
- * abrir el selector.
- */
-function preventTypeahead(
-  event: KeyboardEvent<HTMLButtonElement> & { preventBaseUIHandler: () => void },
-): void {
-  if (event.key.length === 1 && event.key !== " ") {
-    event.preventBaseUIHandler();
-  }
+/** El desplazamiento de la zona elegida, o nada si no es ninguna opción. */
+function ZoneOffset({
+  value,
+  options,
+}: {
+  readonly value: string;
+  readonly options: Options["timezones"];
+}) {
+  const selected = options.find((option) => option.value === value);
+  return selected === undefined ? null : (
+    <span className="text-muted-foreground shrink-0">{selected.example}</span>
+  );
 }
 
 type TimeZonePickerProps = {
   readonly id: string;
+  readonly triggerRef: Ref<HTMLButtonElement>;
   readonly value: string;
   readonly options: Options["timezones"];
-  readonly canEdit: boolean;
   readonly onChange: (value: string) => void;
 };
 
 /**
  * La zona horaria: un disparador con rol `combobox` que abre el buscador y la
  * lista, cada zona con su desplazamiento. Filtra solo `matchingTimeZones`.
- * Sin permiso es texto, sin disparador (TT-92).
+ * Solo con permiso: sin él, `PreferenceField` la muestra fija (TT-92).
  */
-function TimeZonePicker({ id, value, options, canEdit, onChange }: TimeZonePickerProps) {
+function TimeZonePicker({
+  id,
+  triggerRef,
+  value,
+  options,
+  onChange,
+}: TimeZonePickerProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const selected = options.find((option) => option.value === value) ?? null;
-  const offset =
-    selected === null ? null : (
-      <span className="text-muted-foreground shrink-0">{selected.example}</span>
-    );
-
-  if (!canEdit) {
-    return (
-      <span id={id} className="flex min-w-0 items-center gap-2 text-sm">
-        <span className="truncate">{value}</span>
-        {offset}
-      </span>
-    );
-  }
 
   function changeOpen(next: boolean): void {
     if (!next) {
@@ -289,6 +325,7 @@ function TimeZonePicker({ id, value, options, canEdit, onChange }: TimeZonePicke
       onOpenChange={changeOpen}
     >
       <ComboboxTrigger
+        ref={triggerRef}
         id={id}
         onKeyDown={preventTypeahead}
         className={cn(
@@ -298,7 +335,7 @@ function TimeZonePicker({ id, value, options, canEdit, onChange }: TimeZonePicke
         )}
       >
         <span className="min-w-0 flex-1 truncate text-left">{value}</span>
-        {offset}
+        <ZoneOffset value={value} options={options} />
       </ComboboxTrigger>
       <ComboboxContent className="w-80">
         <ComboboxInput

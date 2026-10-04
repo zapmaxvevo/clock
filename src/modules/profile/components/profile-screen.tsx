@@ -1,13 +1,12 @@
 import { InfoIcon } from "lucide-react";
-import type { ReactNode } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { ProfileActions } from "@/modules/profile/schema";
 import type { ProfileView } from "@/modules/profile/service";
 
 import { dayNames, profileLabels } from "./labels";
-import { PreferenceField } from "./preference-field";
+import { FixedSetting, PreferenceField } from "./preference-field";
+import { UserAvatar } from "./user-avatar";
 
 type ProfileScreenProps = {
   readonly view: ProfileView;
@@ -32,13 +31,7 @@ export function ProfileScreen({ view, actions }: ProfileScreenProps) {
           {profileLabels.identity}
         </h2>
         <div className="flex items-center gap-4">
-          <Avatar size="lg">
-            {identity.image !== null && (
-              // El nombre está al lado: la foto no repite nada.
-              <AvatarImage src={identity.image} alt="" referrerPolicy="no-referrer" />
-            )}
-            <AvatarFallback aria-hidden="true">{identity.initials}</AvatarFallback>
-          </Avatar>
+          <UserAvatar image={identity.image} initials={identity.initials} size="lg" />
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
             <dt className="text-muted-foreground">{profileLabels.name}</dt>
             <dd>{identity.name}</dd>
@@ -104,23 +97,5 @@ export function ProfileScreen({ view, actions }: ProfileScreenProps) {
         </div>
       </section>
     </div>
-  );
-}
-
-type FixedSettingProps = {
-  readonly label: string;
-  readonly value: ReactNode;
-  /** Quién lo decide, ya que acá no se cambia (PF-01, PF-02). */
-  readonly note: string;
-};
-
-/** Un ajuste que se muestra y no se edita en esta pantalla. */
-function FixedSetting({ label, value, note }: FixedSettingProps) {
-  return (
-    <dl className="grid gap-1 text-sm">
-      <dt className="font-medium">{label}</dt>
-      <dd>{value}</dd>
-      <dd className="text-muted-foreground">{note}</dd>
-    </dl>
   );
 }

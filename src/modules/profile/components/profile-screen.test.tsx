@@ -53,9 +53,9 @@ function render(overrides: Partial<ProfileView> = {}): string {
   );
 }
 
-/** El texto visible, sin etiquetas ni lo que la primitiva deja dentro de un ícono. */
+/** El texto visible, sin etiquetas. */
 function textOf(markup: string): string {
-  return markup.replace(/<svg.*?<\/svg>/g, "").replace(/<[^>]*>/g, "");
+  return markup.replace(/<[^>]*>/g, "");
 }
 
 /** La sección de la identidad, sin las preferencias. */
@@ -142,7 +142,7 @@ describe("ProfileScreen", () => {
     expect(markup).not.toMatch(disabledAttribute);
   });
 
-  it("sin permiso, el aviso de PF-46 y la zona como texto, sin combobox", () => {
+  it("sin permiso, el aviso de PF-46 y la zona como ajuste fijo, sin combobox", () => {
     const markup = render({ canEdit: false });
     const text = textOf(markup);
 
@@ -151,7 +151,9 @@ describe("ProfileScreen", () => {
       "Podés ver tu perfil, pero no cambiarlo. Pedile a quien administra el workspace que vuelva a activar tu membresía.",
     );
     expect(timezoneTriggerOf(markup)).toBeUndefined();
-    expect(text).toContain("America/Buenos_AiresUTC−03:00");
+    expect(controlIdFor(markup, "Zona horaria")).toBeUndefined();
+    const zone = markup.match(/<dt[^>]*>Zona horaria<\/dt><dd[^>]*>.*?<\/dd>/)?.[0] ?? "";
+    expect(textOf(zone)).toBe("Zona horariaAmerica/Buenos_AiresUTC−03:00");
   });
 
   it("sin permiso, los dos formatos siguen montados con aria-disabled y sin disabled", () => {

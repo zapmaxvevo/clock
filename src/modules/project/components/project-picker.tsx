@@ -2,8 +2,9 @@
 
 import { FolderIcon, SearchIcon } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState, type KeyboardEvent, type ReactNode, type Ref } from "react";
+import { useEffect, useState, type ReactNode, type Ref } from "react";
 
+import { preventTypeahead } from "@/components/combobox-typeahead";
 import { buttonVariants } from "@/components/ui/button";
 import {
   Combobox,
@@ -79,20 +80,6 @@ function SelectionText({ selection }: { readonly selection: ProjectSelection }) 
 }
 
 /**
- * Una tecla imprimible sobre el disparador cerrado elegiría la opción que
- * empieza con esa letra (typeahead de la primitiva): un proyecto cambiaría
- * sin abrir el selector. Los atajos del rastreador escuchan en el documento
- * y no se ven afectados.
- */
-function preventTypeahead(
-  event: KeyboardEvent<HTMLButtonElement> & { preventBaseUIHandler: () => void },
-): void {
-  if (event.key.length === 1 && event.key !== " ") {
-    event.preventBaseUIHandler();
-  }
-}
-
-/**
  * El selector de proyecto y tarea (TT-06 … TT-11): un disparador con rol
  * `combobox` que abre un diálogo con el buscador y la lista. No guarda la
  * selección: la recibe y avisa el cambio. Filtra solo `picker-model.ts`.
@@ -162,6 +149,8 @@ export function ProjectPicker({
         ref={triggerRef}
         aria-label={label}
         aria-disabled={pending || undefined}
+        // Sin el typeahead un proyecto no cambia sin abrir el selector. Los
+        // atajos del rastreador escuchan en el documento y no se ven afectados.
         onKeyDown={preventTypeahead}
         className={cn(
           buttonVariants({ variant: "ghost", size: "sm" }),

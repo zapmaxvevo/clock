@@ -1,6 +1,6 @@
 import { AppNav } from "@/components/layout/app-nav";
 import { DisplayFormatsProvider } from "@/components/layout/display-formats";
-import { UserMenu } from "@/components/layout/user-menu";
+import { UserMenu } from "@/modules/profile/components/user-menu";
 import { timeSettingsOf } from "@/modules/profile/service";
 import { requireSession } from "@/server/session";
 

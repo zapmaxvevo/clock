@@ -31,7 +31,6 @@ export const profileLabels = {
   inactiveTitle: "Tu acceso al workspace está desactivado.",
   inactiveMessage:
     "Podés ver tu perfil, pero no cambiarlo. Pedile a quien administra el workspace que vuelva a activar tu membresía.",
-  retry: "Reintentar",
 } as const;
 
 export const timeFormatNames = {
