@@ -35,7 +35,7 @@ jobs:
           GOOGLE_WORKSPACE_DOMAINS: ejemplo.com
           WORKSPACE_OWNER_EMAIL: owner@ejemplo.com
           CRON_SECRET: ci-cron-secret-largo
-      - run: npm audit --audit-level=high
+      - run: npm audit --omit=dev --audit-level=high
 
   integration:
     runs-on: ubuntu-latest

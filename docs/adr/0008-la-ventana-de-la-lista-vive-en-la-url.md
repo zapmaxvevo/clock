@@ -58,7 +58,7 @@ La opción 3.
   hay aviso. El piso se compara sin el timer porque el timer lo extiende solo
   mientras corre: una entrada que hoy se ve gracias a él deja de verse en
   cuanto se detiene, y la URL es lo único que la sostiene después.
-- «Cargar más» es un `<Link>`: funciona sin JavaScript y se anuncia como enlace.
+- «Cargar más» es un `<Link>` y se anuncia como enlace. _Corregido el 2026-10-04_: decía que funciona sin JavaScript; sin JavaScript `/` queda en el esqueleto (TT-52).
   **No lleva `prefetch={true}`**: el prefetch completo guardaría en la caché del
   router del cliente el árbol de una ventana armado antes de la próxima
   mutación, y el clic podría dibujar esa ventana vieja en vez de pedir una
