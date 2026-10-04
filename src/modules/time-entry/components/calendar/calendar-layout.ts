@@ -1,4 +1,4 @@
-import type { TimeEntryView } from "@/modules/time-entry/schema";
+import type { CalendarDayView, TimeEntryView } from "@/modules/time-entry/schema";
 import {
   addDaysToKey,
   clockToMinutes,
@@ -88,6 +88,17 @@ export function entrySegments(
   );
 }
 
+/**
+ * CAL-46: la entrada no tiene ningún segmento en el período. Una que empezó
+ * antes y lo cruza tiene segmentos, así que no está afuera.
+ */
+export function isOutsidePeriod(
+  entry: Pick<TimeEntryView, "dayDate" | "startClock" | "endClock" | "extraDays">,
+  days: readonly string[],
+): boolean {
+  return entrySegments(entry, days).length === 0;
+}
+
 /** Los segmentos del timer, con el fin en la línea de ahora (CAL-38, CAL-93). */
 export function runningSegments(
   running: Pick<TimeEntryView, "dayDate" | "startClock">,
@@ -136,6 +147,24 @@ export function isMissing(minute: number, ranges: readonly MinuteRange[]): boole
 export function minuteAt(offsetPx: number, zoom: CalendarZoom): number {
   const slot = Math.floor(offsetPx / SLOT_HEIGHT_PX);
   return Math.min(Math.max(slot, 0), MINUTES_PER_DAY / zoom - 1) * zoom;
+}
+
+/**
+ * CAL-43: el minuto de la franja tocada en una columna, o `null` si el clic no
+ * abre nada: sin permiso de carga (CAL-05), en un día anterior al piso (CAL-48)
+ * o en un minuto que no existe por el cambio de horario (CAL-30).
+ */
+export function slotAt(
+  day: Pick<CalendarDayView, "beforeWorkspace" | "missingMinutes">,
+  offsetPx: number,
+  zoom: CalendarZoom,
+  canTrack: boolean,
+): number | null {
+  if (!canTrack || day.beforeWorkspace) {
+    return null;
+  }
+  const minute = minuteAt(offsetPx, zoom);
+  return isMissing(minute, day.missingMinutes) ? null : minute;
 }
 
 /**

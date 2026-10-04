@@ -66,10 +66,9 @@ export const calendarLabels = {
   duration: "Duración",
   runningEnd: "Fin: en curso",
   close: "Cerrar",
-  /** CAL-74: el alta por teclado, al final de la barra. */
+  /** CAL-74: el alta por teclado, al final de la barra, y el título de su diálogo (CAL-43). */
   addEntry: "Agregar entrada",
-  /** CAL-43, CAL-65: los títulos de los modos de edición. */
-  addTitle: "Agregar entrada",
+  /** CAL-65: el título del diálogo de una entrada cerrada. */
   editTitle: "Editar entrada",
   add: "Agregar",
   save: "Guardar",

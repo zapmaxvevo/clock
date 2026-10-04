@@ -1,14 +1,6 @@
 "use client";
 
-import { CopyIcon, EllipsisVerticalIcon, Trash2Icon } from "lucide-react";
-import {
-  useId,
-  useRef,
-  useState,
-  type FormEvent,
-  type ReactNode,
-  type RefObject,
-} from "react";
+import { useId, useRef, useState, type FormEvent, type RefObject } from "react";
 
 import { ActionFeedback } from "@/components/action-feedback";
 import { useDisplayFormats } from "@/components/layout/display-formats";
@@ -21,36 +13,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
 import { ProjectPicker } from "@/modules/project/components/project-picker";
 import {
   DESCRIPTION_MAX,
-  timeEntryMessages,
   type CreateManualEntryInput,
   type TimeEntryView,
   type UpdateEntryChanges,
 } from "@/modules/time-entry/schema";
-import { clockLabel, dayKeyLabel, formatDuration } from "@/server/time";
+import { clockLabel, formatDuration } from "@/server/time";
 
 import { ClockField } from "../clock-field";
 import { DateField } from "../date-field";
 import { ElapsedCounter } from "../elapsed-counter";
-import { selectionOf } from "../entry-selection";
-import {
-  entryActionsLabel,
-  entryNameOf,
-  entryProjectLabel,
-  extraDaysText,
-  trackerLabels,
-} from "../labels";
+import { entryNameOf, entryProjectLabel, extraDaysText, trackerLabels } from "../labels";
 import {
   commitChange,
   draftDuration,
@@ -73,6 +50,8 @@ import {
   runningChangesOf,
   type EntryDialogDraft,
 } from "./entry-dialog-draft";
+import { EditorActions } from "./entry-dialog-actions";
+import { EntryDialogBody, MultiDayTimes } from "./entry-dialog-body";
 import { calendarLabels } from "./labels";
 
 /** Lo que muestra el diálogo: una entrada que se abrió o un alta (§5.5). */
@@ -350,7 +329,7 @@ function EntryEditor({
   const stopBlocked = running && (changesOfDraft(draft) !== null || typedStart);
   const title =
     subject.kind === "add"
-      ? calendarLabels.addTitle
+      ? calendarLabels.addEntry
       : running
         ? calendarLabels.runningTitle
         : calendarLabels.editTitle;
@@ -446,90 +425,6 @@ function EntryEditor({
         onDelete={onDelete}
       />
     </form>
-  );
-}
-
-type EditorActionsProps = {
-  readonly mode: "edit" | "running" | "add";
-  readonly name: string;
-  readonly pending: boolean;
-  /** «Agregar» con duración cero (TT-73). */
-  readonly tooShort: boolean;
-  /** «Detener» con cambios sin guardar (§1, decisión 4). */
-  readonly stopBlocked: boolean;
-  readonly submitRef: RefObject<HTMLButtonElement | null>;
-  readonly onStop: () => void;
-  readonly onDuplicate: () => void;
-  readonly onDelete: () => void;
-};
-
-/**
- * Los botones de abajo y el texto que explica el inactivo. Inactivo es
- * `aria-disabled` y no actuar, nunca `disabled`: un control con foco que pasa
- * a `disabled` lo pierde a `body`.
- */
-export function EditorActions({
-  mode,
-  name,
-  pending,
-  tooShort,
-  stopBlocked,
-  submitRef,
-  onStop,
-  onDuplicate,
-  onDelete,
-}: EditorActionsProps) {
-  const hintId = useId();
-  const hint =
-    mode === "add" && tooShort
-      ? timeEntryMessages.tooShort
-      : mode === "running" && stopBlocked
-        ? calendarLabels.saveBeforeStop
-        : null;
-
-  return (
-    <>
-      {hint !== null && (
-        <p id={hintId} className="text-muted-foreground text-sm">
-          {hint}
-        </p>
-      )}
-      <DialogFooter className="sm:justify-between">
-        <div className="flex gap-2">
-          {mode === "edit" && (
-            <EntryMenu name={name} onDuplicate={onDuplicate} onDelete={onDelete} />
-          )}
-          {mode === "running" && (
-            <Button
-              type="button"
-              variant="outline"
-              aria-disabled={stopBlocked}
-              aria-describedby={stopBlocked ? hintId : undefined}
-              onClick={() => {
-                if (!stopBlocked) {
-                  onStop();
-                }
-              }}
-            >
-              {calendarLabels.stop}
-            </Button>
-          )}
-        </div>
-        <div className="flex flex-col-reverse gap-2 sm:flex-row">
-          <DialogClose render={<Button type="button" variant="outline" />}>
-            Cancelar
-          </DialogClose>
-          <Button
-            ref={submitRef}
-            type="submit"
-            aria-disabled={pending || (mode === "add" && tooShort)}
-            aria-describedby={mode === "add" && tooShort ? hintId : undefined}
-          >
-            {mode === "add" ? calendarLabels.add : calendarLabels.save}
-          </Button>
-        </div>
-      </DialogFooter>
-    </>
   );
 }
 
@@ -679,176 +574,5 @@ function RunningStartFields({
         <ElapsedCounter startedAt={startedAt} serverNow={serverNow} />
       </p>
     </div>
-  );
-}
-
-/** CAL-58, TT-110: el horario de una entrada de más de un día, como texto. */
-function MultiDayTimes({
-  entry,
-  todayKey,
-}: {
-  readonly entry: TimeEntryView;
-  readonly todayKey: string;
-}) {
-  const { date } = useDisplayFormats();
-
-  return (
-    <div className="grid gap-2">
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
-        <Field label={trackerLabels.date}>
-          {dayKeyLabel(entry.dayDate, todayKey, date)}
-        </Field>
-        <Field label={trackerLabels.startTime}>
-          <span className="tabular-nums">{entry.startLabel}</span>
-        </Field>
-        <Field label={trackerLabels.endTime}>
-          <EndLabel entry={entry} />
-        </Field>
-        <Field label={calendarLabels.duration}>
-          <span className="tabular-nums">{entry.durationLabel}</span>
-        </Field>
-      </dl>
-      <p className="text-muted-foreground text-sm">
-        {trackerLabels.multiDayTimesReadOnly}
-      </p>
-    </div>
-  );
-}
-
-/** CAL-68: «Duplicar» y «Borrar» de una entrada cerrada. */
-function EntryMenu({
-  name,
-  onDuplicate,
-  onDelete,
-}: {
-  readonly name: string;
-  readonly onDuplicate: () => void;
-  readonly onDelete: () => void;
-}) {
-  /**
-   * Elegir una acción cierra el diálogo, y el dueño lleva el foco. Sin esto el
-   * menú, que se desmonta con el diálogo, lo devolvería al último elemento
-   * enfocado antes, el bloque que abrió el diálogo, y pisaría el del dueño.
-   */
-  const chosen = useRef(false);
-
-  function choose(action: () => void): void {
-    chosen.current = true;
-    action();
-  }
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={<Button type="button" variant="ghost" size="icon" />}
-        aria-label={entryActionsLabel(name)}
-      >
-        <EllipsisVerticalIcon aria-hidden="true" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="start"
-        className="w-auto min-w-40"
-        finalFocus={() => !chosen.current}
-      >
-        <DropdownMenuItem onClick={() => choose(onDuplicate)}>
-          <CopyIcon aria-hidden="true" />
-          {trackerLabels.duplicate}
-        </DropdownMenuItem>
-        <DropdownMenuItem variant="destructive" onClick={() => choose(onDelete)}>
-          <Trash2Icon aria-hidden="true" />
-          {trackerLabels.delete}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-type EntryDialogBodyProps = {
-  readonly entry: TimeEntryView;
-  readonly serverNow: string;
-  readonly todayKey: string;
-};
-
-/** Los campos de la entrada como texto, en una lista de definiciones (CAL-05, TT-92). */
-export function EntryDialogBody({ entry, serverNow, todayKey }: EntryDialogBodyProps) {
-  const { date } = useDisplayFormats();
-  const name = entryNameOf(entry.description);
-
-  return (
-    <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
-      <Field label={trackerLabels.description}>
-        <span
-          className={cn(
-            "whitespace-pre-wrap",
-            entry.description === "" && "text-muted-foreground",
-          )}
-        >
-          {name}
-        </span>
-      </Field>
-      <Field label={calendarLabels.project}>
-        <ProjectPicker
-          readOnly
-          variant="row"
-          value={selectionOf(entry)}
-          label={entryProjectLabel(name)}
-          // Obligatoria también en solo lectura; acá no hay cambio que avisar.
-          onChange={() => undefined}
-        />
-      </Field>
-      <Field label={trackerLabels.date}>
-        {dayKeyLabel(entry.dayDate, todayKey, date)}
-      </Field>
-      <Field label={trackerLabels.startTime}>
-        <span className="tabular-nums">{entry.startLabel}</span>
-      </Field>
-      {entry.endClock === null ? (
-        <>
-          <dt className="text-muted-foreground">{calendarLabels.runningEnd}</dt>
-          <dd>
-            <ElapsedCounter startedAt={entry.startedAt} serverNow={serverNow} />
-          </dd>
-        </>
-      ) : (
-        <>
-          <Field label={trackerLabels.endTime}>
-            <EndLabel entry={entry} />
-          </Field>
-          <Field label={calendarLabels.duration}>
-            <span className="tabular-nums">{entry.durationLabel}</span>
-          </Field>
-        </>
-      )}
-    </dl>
-  );
-}
-
-/** El fin con su superíndice `+N`, que el lector de pantalla lee como texto (TT-51). */
-function EndLabel({ entry }: { readonly entry: TimeEntryView }) {
-  return (
-    <span className="tabular-nums">
-      {entry.endLabel}
-      {entry.extraDays > 0 && (
-        <sup className="ml-0.5">
-          +{entry.extraDays}
-          <span className="sr-only">{extraDaysText(entry.extraDays)}</span>
-        </sup>
-      )}
-    </span>
-  );
-}
-
-function Field({
-  label,
-  children,
-}: {
-  readonly label: string;
-  readonly children: ReactNode;
-}) {
-  return (
-    <>
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="min-w-0">{children}</dd>
-    </>
   );
 }

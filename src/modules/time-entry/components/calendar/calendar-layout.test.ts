@@ -8,11 +8,13 @@ import {
   entrySegments,
   initialScrollMinute,
   isMissing,
+  isOutsidePeriod,
   layoutColumn,
   MIN_BLOCK_HEIGHT_PX,
   minuteAt,
   nowPosition,
   runningSegments,
+  slotAt,
   slotDraft,
 } from "./calendar-layout";
 
@@ -456,5 +458,48 @@ describe("addEntryDraft", () => {
       start: "10:00",
       end: "11:00",
     });
+  });
+});
+
+describe("slotAt", () => {
+  const plain = { beforeWorkspace: false, missingMinutes: [] };
+  const madridSpring = {
+    beforeWorkspace: false,
+    missingMinutes: [{ from: 120, to: 180 }],
+  };
+
+  it("con permiso de carga, el minuto de la franja tocada", () => {
+    expect(slotAt(plain, 10 * 48 + 30, 60, true)).toBe(600);
+    expect(slotAt(plain, 3 * 48 + 5, 15, true)).toBe(45);
+  });
+
+  it("sin permiso de carga no abre nada (CAL-05)", () => {
+    expect(slotAt(plain, 10 * 48, 60, false)).toBeNull();
+  });
+
+  it("en un día anterior al piso no abre nada (CAL-48)", () => {
+    expect(slotAt({ ...plain, beforeWorkspace: true }, 10 * 48, 60, true)).toBeNull();
+  });
+
+  it("en un minuto que no existe no abre nada; en los de al lado, sí (CAL-30, Madrid)", () => {
+    expect(slotAt(madridSpring, 2 * 48 + 10, 60, true)).toBeNull();
+    expect(slotAt(madridSpring, 5 * 48, 30, true)).toBeNull();
+    expect(slotAt(madridSpring, 1 * 48 + 10, 60, true)).toBe(60);
+    expect(slotAt(madridSpring, 3 * 48, 60, true)).toBe(180);
+  });
+});
+
+describe("isOutsidePeriod", () => {
+  it("la que empieza y termina en el período está adentro", () => {
+    expect(isOutsidePeriod(closed("2026-09-30", "09:00", "10:00"), week)).toBe(false);
+  });
+
+  it("la que empezó el domingo anterior y tiene segmento el lunes está adentro (CAL-46)", () => {
+    expect(isOutsidePeriod(closed("2026-09-27", "22:00", "02:00", 1), week)).toBe(false);
+  });
+
+  it("la de otra semana está afuera, también la que termina justo al empezar el período", () => {
+    expect(isOutsidePeriod(closed("2026-09-09", "09:00", "10:00"), week)).toBe(true);
+    expect(isOutsidePeriod(closed("2026-09-27", "22:00", "00:00", 1), week)).toBe(true);
   });
 });

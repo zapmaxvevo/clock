@@ -27,12 +27,11 @@ import {
   chronological,
   entrySegments,
   initialScrollMinute,
-  isMissing,
   layoutColumn,
-  minuteAt,
   minuteHeight,
   runningSegments,
   SLOT_HEIGHT_PX,
+  slotAt,
   type NowPosition,
   type Segment,
 } from "./calendar-layout";
@@ -54,8 +53,8 @@ type CalendarGridProps = {
   readonly onOpen: (id: string) => void;
   /** Las entradas cuyo borrado viaja: no se dibujan ni suman (TT-60). */
   readonly removedIds: readonly string[];
-  /** CAL-43: el clic en una franja libre; `null` sin permiso de carga (CAL-05). */
-  readonly onSlot: ((date: string, minute: number) => void) | null;
+  /** CAL-43: el clic en una franja libre; `slotAt` decide si abre algo. */
+  readonly onSlot: (date: string, minute: number) => void;
   /** La entrada cuyo botón toma el foco cuando se dibuja (§5.5). */
   readonly focusEntryId: string | null;
   readonly onEntryFocused: () => void;
@@ -143,23 +142,24 @@ export function CalendarGrid({
     if (focusEntryId === null || region === null) {
       return;
     }
+    const scope: HTMLElement = region;
     function focusBlock(): void {
       const active = document.activeElement;
-      if (active !== null && active !== document.body && active !== region) {
+      if (active !== null && active !== document.body && active !== scope) {
         return;
       }
-      const button = region?.querySelector<HTMLButtonElement>(
+      const button = scope.querySelector<HTMLButtonElement>(
         `button[data-entry-block="${focusEntryId}"]`,
       );
-      if (button === null || button === undefined) {
+      if (button === null) {
         return;
       }
       button.focus();
       onEntryFocused();
     }
     focusBlock();
-    region.addEventListener("focus", focusBlock);
-    return () => region.removeEventListener("focus", focusBlock);
+    scope.addEventListener("focus", focusBlock);
+    return () => scope.removeEventListener("focus", focusBlock);
   }, [focusEntryId, onEntryFocused, regionRef, state]);
 
   // Solo al montar: una revalidación no mueve lo que la persona desplazó.
@@ -300,23 +300,19 @@ function DayColumn({
   const scale = minuteHeight(zoom);
 
   /**
-   * CAL-43: el fondo de la columna abre el alta en la franja tocada. Sin efecto
-   * sobre un bloque, un día anterior al piso o un minuto que no existe (CAL-30,
-   * CAL-48). No es un control (CAL-76): el alta por teclado es «Agregar entrada».
+   * CAL-43: el fondo de la columna abre el alta en la franja tocada; sobre un
+   * bloque no. No es un control (CAL-76): el alta por teclado es «Agregar
+   * entrada».
    */
   function handleClick(event: MouseEvent<HTMLDivElement>): void {
-    if (onSlot === null || day.beforeWorkspace) {
-      return;
-    }
     if (event.target instanceof Element && event.target.closest("[data-entry-block]")) {
       return;
     }
     const offset = event.clientY - event.currentTarget.getBoundingClientRect().top;
-    const minute = minuteAt(offset, zoom);
-    if (isMissing(minute, day.missingMinutes)) {
-      return;
+    const minute = slotAt(day, offset, zoom, state.canTrack);
+    if (minute !== null) {
+      onSlot(day.date, minute);
     }
-    onSlot(day.date, minute);
   }
 
   return (
@@ -327,7 +323,7 @@ function DayColumn({
       onClick={handleClick}
       className={cn(
         "relative border-r last:border-r-0",
-        onSlot !== null && !day.beforeWorkspace && "cursor-pointer",
+        state.canTrack && !day.beforeWorkspace && "cursor-pointer",
       )}
       style={{
         height: MINUTES_PER_DAY * scale,

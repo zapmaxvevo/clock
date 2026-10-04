@@ -8,12 +8,9 @@ import type { TrackingCatalog } from "@/modules/project/schema";
 import type { TimeEntryView } from "@/modules/time-entry/schema";
 import type { DisplayFormats } from "@/server/time";
 
-import {
-  EditorActions,
-  EntryDialogBody,
-  EntryDialogContent,
-  type DialogSubject,
-} from "./entry-dialog";
+import { EntryDialogContent, type DialogSubject } from "./entry-dialog";
+import { EditorActions } from "./entry-dialog-actions";
+import { EntryDialogBody } from "./entry-dialog-body";
 
 const catalog: TrackingCatalog = {
   canCreateProject: true,

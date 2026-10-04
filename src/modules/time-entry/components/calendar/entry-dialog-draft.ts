@@ -1,4 +1,8 @@
-import { sameSelection, selectionIds } from "@/modules/project/components/picker-model";
+import {
+  NO_SELECTION,
+  sameSelection,
+  selectionIds,
+} from "@/modules/project/components/picker-model";
 import type { ProjectSelection } from "@/modules/project/schema";
 import type {
   CreateManualEntryInput,
@@ -20,8 +24,6 @@ export type EntryDialogDraft = {
   /** En el timer, solo `date` y `start` cuentan. */
   readonly times: TimeDraft;
 };
-
-const NO_SELECTION: ProjectSelection = { project: null, task: null };
 
 /** El borrador de una entrada que se abre, con las horas canónicas de la vista. */
 export function draftOfEntry(entry: TimeEntryView): EntryDialogDraft {

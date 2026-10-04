@@ -1,19 +1,10 @@
 "use client";
 
-import Link from "next/link";
-import {
-  useCallback,
-  useEffect,
-  useOptimistic,
-  useRef,
-  useState,
-  type RefObject,
-} from "react";
+import { useCallback, useEffect, useOptimistic, useRef, useState } from "react";
 
-import { ActionFeedback } from "@/components/action-feedback";
 import { useDisplayFormats } from "@/components/layout/display-formats";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { retryHandlerOf, useAction, type ActionHandle } from "@/hooks/use-action";
+import { useAction, type ActionHandle } from "@/hooks/use-action";
 import { useNewId } from "@/hooks/use-new-id";
 import {
   createManualEntry,
@@ -33,23 +24,25 @@ import { weekdayLabel } from "@/server/time";
 
 import { DeleteEntryDialog } from "../delete-entry-dialog";
 import { useElapsedSeconds } from "../elapsed-counter";
-import { entryNameOf, trackerLabels } from "../labels";
+import { entryNameOf } from "../labels";
 import { useTrackerRefresh } from "../use-tracker-refresh";
 import { CalendarGrid } from "./calendar-grid";
-import { calendarHref } from "./calendar-href";
-import { addEntryDraft, entrySegments, nowPosition, slotDraft } from "./calendar-layout";
+import {
+  addEntryDraft,
+  isOutsidePeriod,
+  nowPosition,
+  slotDraft,
+} from "./calendar-layout";
 import { CalendarToolbar, ZoomControls } from "./calendar-toolbar";
 import { calendarZoomCookie, type CalendarZoom } from "./calendar-zoom";
-import { EntryDialog, type DialogSubject, type EntryDialogFailure } from "./entry-dialog";
+import { CalendarNotices, CLOSING_CODES, dialogFailureOf } from "./calendar-notices";
+import { EntryDialog, type DialogSubject } from "./entry-dialog";
 import { calendarLabels } from "./labels";
 
 type CalendarViewProps = {
   readonly state: CalendarState;
   readonly initialZoom: CalendarZoom;
 };
-
-/** Las fallas de «Guardar» que cierran el diálogo: no hay nada que corregir en él. */
-const CLOSING_CODES: readonly string[] = ["not_found", "already_stopped"];
 
 /**
  * El dueño de la pantalla del calendario en el cliente: el zoom con su
@@ -73,6 +66,17 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
   const [focusEntryId, setFocusEntryId] = useState<string | null>(null);
   /** CAL-46: la entrada guardada o creada que quedó fuera del período. */
   const [outside, setOutside] = useState<TimeEntryView | null>(null);
+  /**
+   * El aviso de CAL-46 habla del período que se ve: otro período, por la
+   * navegación o por su enlace, lo baja. Los avisos de error se quedan, porque
+   * hablan de una operación.
+   */
+  const period = `${state.mode}:${state.periodStart}`;
+  const [outsidePeriod, setOutsidePeriod] = useState(period);
+  if (outsidePeriod !== period) {
+    setOutsidePeriod(period);
+    setOutside(null);
+  }
   const clearFocusEntry = useCallback(() => setFocusEntryId(null), []);
   const [removedIds, showRemoved] = useOptimistic<readonly string[], string>(
     [],
@@ -103,7 +107,7 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
 
   /** CAL-46: sin segmentos en el período, la entrada no se ve; si no, toma el foco. */
   function landed(entry: TimeEntryView): void {
-    if (entrySegments(entry, days).length === 0) {
+    if (isOutsidePeriod(entry, days)) {
       setOutside(entry);
       return;
     }
@@ -154,6 +158,9 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
 
   function run<Input>(handle: ActionHandle<Input>, input: Input): void {
     clearNotices();
+    // El foco pendiente es de la operación anterior: no se lo lleva un foco
+    // posterior en la región.
+    setFocusEntryId(null);
     handle.run(input);
   }
 
@@ -183,6 +190,7 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
       save.clear();
     }
     create.clear();
+    setFocusEntryId(null);
     setSubject(next);
     setOpen(true);
   }
@@ -285,7 +293,7 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
           addButtonRef={addButtonRef}
           onAdd={openAdd}
         />
-        <Notices
+        <CalendarNotices
           save={save}
           stop={stop}
           duplicate={duplicate}
@@ -307,9 +315,12 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
           corner={<ZoomControls zoom={zoom} onChange={changeZoom} />}
           openerId={entry?.id ?? null}
           openerRef={openerRef}
+          // `|| confirmingDelete` es defensa: con la confirmación abierta, el fondo
+          // del modal tapa la grilla y ningún detalle se abre, así que ningún test
+          // lo distingue de `open` (T-n6).
           dialogOpen={open || confirmingDelete}
           onOpen={openEntry}
-          onSlot={state.canTrack ? openSlot : null}
+          onSlot={openSlot}
           focusEntryId={focusEntryId}
           onEntryFocused={clearFocusEntry}
           regionRef={regionRef}
@@ -347,141 +358,5 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
         />
       )}
     </TooltipProvider>
-  );
-}
-
-/** El aviso del diálogo, con la falla del pedido del modo abierto (§5.4). */
-function dialogFailureOf(
-  subject: DialogSubject | null,
-  save: ActionHandle<never>,
-  create: ActionHandle<never>,
-): EntryDialogFailure | null {
-  if (subject?.kind === "add") {
-    if (create.failure === null) {
-      return null;
-    }
-    // TT-109: el alta no tiene id del cliente; no se sabe si quedó escrita.
-    return create.failure.code === "unexpected"
-      ? {
-          title: trackerLabels.addLostTitle,
-          message: calendarLabels.addLostMessage,
-          retryable: false,
-        }
-      : {
-          title: trackerLabels.entryNotAdded,
-          message: create.failure.message,
-          retryable: false,
-        };
-  }
-  if (save.failure === null || CLOSING_CODES.includes(save.failure.code)) {
-    return null;
-  }
-  return {
-    title: calendarLabels.entryNotSaved,
-    message: save.failure.message,
-    retryable: save.failure.code === "unexpected",
-  };
-}
-
-type NoticesProps = {
-  readonly save: ActionHandle<never>;
-  readonly stop: ActionHandle<never>;
-  readonly duplicate: ActionHandle<never>;
-  readonly remove: ActionHandle<never>;
-  readonly outside: TimeEntryView | null;
-  readonly outsideLabel: (entry: TimeEntryView) => string;
-  readonly mode: CalendarState["mode"];
-  readonly regionRef: RefObject<HTMLElement | null>;
-  readonly clearNotices: () => void;
-};
-
-/**
- * Los avisos que sobreviven al diálogo, en la región de la pantalla (§5.4).
- * «Reintentar» se va con su aviso: el foco pasa antes a la región.
- */
-function Notices({
-  save,
-  stop,
-  duplicate,
-  remove,
-  outside,
-  outsideLabel,
-  mode,
-  regionRef,
-  clearNotices,
-}: NoticesProps) {
-  function retryOf(handle: ActionHandle<never>): (() => void) | undefined {
-    const retry = retryHandlerOf(handle);
-    return retry === undefined
-      ? undefined
-      : () => {
-          regionRef.current?.focus();
-          clearNotices();
-          retry();
-        };
-  }
-
-  const savedFailure =
-    save.failure !== null && CLOSING_CODES.includes(save.failure.code)
-      ? save.failure
-      : null;
-  const notices = [
-    savedFailure !== null && (
-      <ActionFeedback
-        key="save"
-        title={calendarLabels.entryNotSaved}
-        message={savedFailure.message}
-      />
-    ),
-    stop.failure !== null && (
-      <ActionFeedback
-        key="stop"
-        title={trackerLabels.timerNotStopped}
-        message={stop.failure.message}
-        onRetry={retryOf(stop)}
-      />
-    ),
-    duplicate.failure !== null && (
-      <ActionFeedback
-        key="duplicate"
-        title={trackerLabels.entryNotDuplicated}
-        message={duplicate.failure.message}
-        onRetry={retryOf(duplicate)}
-      />
-    ),
-    remove.failure !== null && (
-      <ActionFeedback
-        key="remove"
-        title={trackerLabels.entryNotDeleted}
-        message={remove.failure.message}
-        onRetry={retryOf(remove)}
-      />
-    ),
-    outside !== null && (
-      <ActionFeedback
-        key="outside"
-        tone="info"
-        title={
-          mode === "day"
-            ? calendarLabels.outsideDay(outsideLabel(outside))
-            : calendarLabels.outsideWeek(outsideLabel(outside))
-        }
-      >
-        <Link
-          href={
-            mode === "day"
-              ? calendarHref("day", outside.dayDate)
-              : calendarHref("week", outside.weekStart)
-          }
-          className="underline underline-offset-4"
-        >
-          {mode === "day" ? calendarLabels.goToDay : calendarLabels.goToWeek}
-        </Link>
-      </ActionFeedback>
-    ),
-  ].filter(Boolean);
-
-  return notices.length === 0 ? null : (
-    <div className="flex flex-col gap-2">{notices}</div>
   );
 }
