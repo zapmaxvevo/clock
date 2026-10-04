@@ -67,7 +67,7 @@ docs/adr/              decisiones de arquitectura
 
 ## Recorrido de una mutación
 
-1. La server action obtiene la sesión con `requireSession()`. Sin sesión, 401.
+1. La server action obtiene la sesión con `requireSession()`. Sin sesión, redirige a `/login`.
 2. Valida la entrada con el esquema Zod del módulo.
 3. Consulta `can(actor, action, resource)`. Sin permiso, 403. En un alta con
    `createOnce`, lo consulta el service antes de llamarla (ADR 0007).
