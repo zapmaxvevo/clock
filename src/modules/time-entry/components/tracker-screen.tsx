@@ -69,20 +69,20 @@ export async function TrackerScreen({
               initialMode={initialMode}
             />
 
-            {state.hasAnyEntry ? (
-              <EntryList
-                weeks={state.weeks}
-                running={state.running}
-                serverNow={state.serverNow}
-                canTrack={state.canTrack}
-                todayKey={state.todayKey}
-                minDayKey={state.minDayKey}
-                lastEntryId={state.lastEntryId}
-                loadMoreFrom={state.loadMoreFrom}
-              />
-            ) : (
-              <TrackerEmpty />
-            )}
+            {/* Montada aunque no quede nada: la región de acciones en masa
+                sobrevive al borrado de todas las entradas, con el foco y el
+                resultado. Sin semanas, dibuja solo la región y su estado. */}
+            <EntryList
+              weeks={state.weeks}
+              running={state.running}
+              serverNow={state.serverNow}
+              canTrack={state.canTrack}
+              todayKey={state.todayKey}
+              minDayKey={state.minDayKey}
+              lastEntryId={state.lastEntryId}
+              loadMoreFrom={state.loadMoreFrom}
+            />
+            {!state.hasAnyEntry && <TrackerEmpty />}
           </ReachWeekProvider>
         </TrackingCatalogProvider>
       </DisplayFormatsProvider>
