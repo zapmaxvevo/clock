@@ -6,7 +6,9 @@ Contrato del noveno slice vertical de la fase 1. Crea el módulo `project` en
 - **Fuente de los comportamientos:** `docs/parity/proyectos.md` (PR-nn).
 - **Lugar en el plan:** [mapa de la fase 1](fase1-mapa.md).
 - **Correcciones aplicadas:** rondas 1, 2 y 3,
-  [`correcciones-fase1-slice9.md`](correcciones-fase1-slice9.md).
+  [`correcciones-fase1-slice9.md`](correcciones-fase1-slice9.md), y las de las
+  revisiones,
+  [`correcciones-fase1-slice9-revisiones.md`](correcciones-fase1-slice9-revisiones.md).
 - **Decisiones de arquitectura asociadas:**
   - [ADR 0004, núcleo de proyectos en la fase 1](../adr/0004-nucleo-de-proyectos-en-fase-1.md): fija el borde del slice.
   - [ADR 0007, el cliente elige el id de la entrada que crea](../adr/0007-el-cliente-elige-el-id-de-las-altas.md): este slice lo aplica a sus tres altas, con la plomería que deja el slice 2b.
@@ -370,6 +372,10 @@ registros, que no tienen clave foránea hacia estas tablas.
 4. El valor por omisión de `whoCreatesProjects`, de vuelta a `admins`.
 5. Las filas de `workspace_settings`, de vuelta a `admins`. Nadie pudo haberlas
    cambiado en la fase 1, así que es el valor que tenían.
+6. Las filas de la 0003 y la 0004 en `drizzle.__drizzle_migrations`: las que
+   tienen como `created_at` el `when` de sus entradas en
+   `drizzle/meta/_journal.json`. Sin este paso, el migrador las da por
+   aplicadas y un despliegue posterior del slice no vuelve a crear nada.
 
 ## 3. Permisos
 
@@ -698,11 +704,11 @@ export async function createOnce<Row, Result>(
 Cada alta la llama **con los tipos explícitos**, para que un `replayed` que no
 devuelve lo mismo que `attempt` no compile:
 
-| Alta            | Llamado                                          | `action`         | `idConstraint` | `findOwn`        | `replayed`                                   |
-| --------------- | ------------------------------------------------ | ---------------- | -------------- | ---------------- | -------------------------------------------- |
-| `createClient`  | `createOnce<ClientRow, CreateClientResult>`      | `client.create`  | `client_pkey`  | `findOwnClient`  | `{ client: toClientView(row) }`              |
-| `createProject` | `createOnce<OwnProjectRow, CreateProjectResult>` | `project.create` | `project_pkey` | `findOwnProject` | `{ project: toProjectView(actor, row, []) }` |
-| `createTask`    | `createOnce<TaskRow, CreateTaskResult>`          | `task.create`    | `task_pkey`    | `findOwnTask`    | `{ task: toTaskView(row) }`                  |
+| Alta            | Llamado                                              | `action`         | `idConstraint` | `findOwn`        | `replayed`                                   |
+| --------------- | ---------------------------------------------------- | ---------------- | -------------- | ---------------- | -------------------------------------------- |
+| `createClient`  | `createOnce<ClientRow, CreateClientResult>`          | `client.create`  | `client_pkey`  | `findOwnClient`  | `{ client: toClientView(row) }`              |
+| `createProject` | `createOnce<ProjectWithViewer, CreateProjectResult>` | `project.create` | `project_pkey` | `findOwnProject` | `{ project: toProjectView(actor, row, []) }` |
+| `createTask`    | `createOnce<TaskRow, CreateTaskResult>`              | `task.create`    | `task_pkey`    | `findOwnTask`    | `{ task: toTaskView(row) }`                  |
 
 - **`id`** es el `input.id` validado.
 - **`action` es la misma acción que el alta pasó a `can()`** antes de llamar a
@@ -712,14 +718,27 @@ devuelve lo mismo que `attempt` no compile:
 - **`findOwn`** va en el repository del módulo: la fila de la misma tabla, del
   mismo workspace, con ese id y con `created_by` igual a quien actúa, leída sin
   bloqueo y fuera de toda transacción.
+  - **`findOwnTask` filtra además por `project_id`**, con el proyecto leído en
+    el paso 1 de §4.3. Una tarea propia de otro proyecto no es la fila de este
+    pedido: sin fila propia, el `attempt` choca con `task_pkey` y sale
+    `forbidden` (supuesto 3).
 - **`replayed` arma la vista a partir de la fila propia:**
   - `ClientView` y `TaskView` salen directo de la fila, sin otra consulta.
   - `ProjectView` necesita además la fila de `project_member` de quien actúa, y
     por eso `findOwnProject` hace `left join` de esa fila y devuelve
-    `OwnProjectRow`: las columnas del proyecto más
-    `viewer: { isManager } | null`. Con eso `toProjectView` calcula
-    `canCreateTask` con `can(actor, "task.create", recurso)`, igual que la
-    lectura de §5. La revisión lo probó así contra Postgres.
+    `ProjectWithViewer`: las columnas del proyecto más
+    `viewer: { isManager } | null`, el mismo tipo que devuelven `findProject`
+    (§4.3) y la lectura de §5. Con eso `toProjectView` calcula `canCreateTask`
+    con `can(actor, "task.create", recurso)`, igual que la lectura de §5. La
+    revisión lo probó así contra Postgres.
+- **El reintento de un proyecto vuelve a mirar si lo ve.** El `replayed` de
+  `createProject` arma el `ProjectResource` de la fila; si
+  `can(actor, "project.view", recurso)` es falso o `archivedAt` no es nulo,
+  lanza `ForbiddenError("project.create")`, que es lo que responde el alta con
+  un id que no es de una fila propia. Un proyecto propio que la persona ya no
+  ve no se responde como éxito. En la fase 1 no se alcanza: el proyecto nace
+  público, con quien lo crea como responsable, y nada lo archiva. Es la red
+  para cuando la fase 2 traiga los privados y el archivado.
 - **El reintento de un proyecto responde `tasks: []`**, por decisión: aunque el
   proyecto haya sumado tareas entre el primer intento y el reintento, el
   diálogo solo usa la respuesta para cerrarse, y la pantalla revalida
@@ -791,7 +810,9 @@ export type ProjectView = {
 **Tres consultas, dentro de un snapshot `repeatable read`**, como
 `getTrackerState`:
 
-1. los clientes activos del workspace;
+1. todos los clientes del workspace, archivados incluidos; el catálogo separa
+   los activos para `clients`, y un proyecto activo de un cliente archivado
+   sigue en el grupo de su cliente;
 2. los proyectos activos del workspace, con la fila de `project_member` de quien
    pide (`left join`);
 3. las tareas activas de los proyectos activos del workspace (adelanta de PR-38
@@ -1211,10 +1232,21 @@ propio recorrido, nunca la lista entera.
 - **`project.track` no tiene consumidor** hasta el slice 10.
 - **La regla de los asignados de tarea no se aplica** hasta la fase 2 (P-23). La
   tabla existe vacía, y toda tarea se comporta como «cualquiera».
+- **El nombre repetido revela que existe un proyecto privado.** PR-50 cuenta
+  todos los proyectos del workspace, también los que quien crea no ve: con el
+  nombre de un privado del mismo cliente, o sin cliente, el alta responde
+  PR-77. Se acepta, porque es la regla de Clockify y en la fase 1 todo proyecto
+  nace público (P-17), así que no hay privados que revelar. La fase 2 lo decide
+  cuando traiga los privados.
 - **PR-40 está sin verificar** (P-33), y con él la parte de PR-58 sobre tareas.
   Este contrato decide que crean tareas el owner, los admins y el responsable
   del proyecto, en línea con PR-56. Si el workspace del equipo muestra que
   cualquier miembro crea tareas, cambian una fila de `can()` y un criterio.
+- **Una membresía no activa ve «Todavía no hay proyectos»** en un workspace con
+  proyectos: `can()` le niega `project.view` en todos (§3.2) y `groups` llega
+  vacío. Va junto a la deuda del slice 1 (§3.3): cuando llegue `team.manage`, la
+  membresía no activa tiene un texto propio. Hoy no se alcanza desde la
+  interfaz.
 - **Dos borrados que la base rechaza** esperan a la fase 2: el de un proyecto
   con tareas usadas en entradas, que se hace en dos sentencias (§2.3), y el de
   un cliente con un nombre de proyecto repetido, que se traduce al mensaje de
