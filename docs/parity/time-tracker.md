@@ -384,8 +384,16 @@ un contador que corre hacia atrás no.
 `replicar`
 Documentado: no se puede agregar tiempo a mano con un timer activo. El
 conmutador de modo queda inactivo y el texto «Detené el timer para agregar
-tiempo a mano.» lo explica. Es el mismo texto con el que responde la validación
-del servidor cuando el pedido llega igual desde una pestaña desactualizada.
+tiempo a mano.» lo explica. Es una regla de la interfaz del rastreador, no del
+servidor: `createManualEntry` acepta el alta con un timer abierto, venga de
+donde venga (calendario P-01), y la entrada cerrada que se superpone con el
+timer es válida (TT-82). Una pestaña desactualizada, que todavía no vio un
+timer arrancado en otro lado —hasta 60 s, por P-11—, agrega la entrada.
+_Corregido el 2026-10-04, slice 8c_: decía que era el mismo texto con el que
+respondía la validación del servidor cuando el pedido llegaba igual desde una
+pestaña desactualizada. El slice 8c sacó ese rechazo: crear desde el
+calendario con un timer corriendo se permite (calendario P-01), y el servidor
+no distingue de dónde viene el alta.
 
 **TT-31 El contador avanza en el cliente** — `replicar`
 El cliente calcula el transcurrido desde `start` y lo redibuja cada segundo. El
