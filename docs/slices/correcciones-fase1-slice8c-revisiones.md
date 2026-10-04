@@ -64,3 +64,11 @@ no disponible. Resolución: sumar esos dos pares al bucle de «con un par no dis
 - **frontend-dev**: T-M2, T-m3, T-m5, el comentario de T-n6, F-n1, C-m4, C-m5, C-n2, C-n3 y P-m1.
 - **e2e-tester**: T-M1 y la afirmación de P-m1.
 - **team-lead**: el estado de la fase (C-m1, C-n1, C-n4).
+
+## Segunda revisión de frontend
+
+Sobre `2de0ca5..e4aaad1`: aprobado sin hallazgos. La partición de C-m5 es el mismo código,
+P-m1 limpia el aviso en el render cuando cambia `${mode}:${periodStart}` (una revalidación no
+lo baja) y F-n1 queda resuelto. Ya no hay doble guarda del permiso en la grilla: la única es el
+`state.canTrack` que la grilla le pasa a `slotAt`, que está probada; no hace falta otro test,
+porque una segunda guarda taparía el mutante de la primera.
