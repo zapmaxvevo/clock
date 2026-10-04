@@ -81,6 +81,13 @@ export function entryProjectLabel(entryName: string): string {
   return `Proyecto de la entrada «${entryName}»`;
 }
 
+/** Lo que el superíndice `+1` le dice a un lector de pantalla. */
+export function extraDaysText(extraDays: number): string {
+  return extraDays === 1
+    ? trackerLabels.endsNextDay
+    : ` (termina ${extraDays} días después)`;
+}
+
 /** Una cantidad de entradas con el verbo o el sustantivo en singular o plural. */
 function countOf(count: number, one: string, many: string): string {
   return count === 1 ? one : `${count} ${many}`;

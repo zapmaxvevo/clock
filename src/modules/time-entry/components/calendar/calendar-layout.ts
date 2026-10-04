@@ -1,0 +1,203 @@
+import type { TimeEntryView } from "@/modules/time-entry/schema";
+import { addDaysToKey, clockToMinutes, type MinuteRange } from "@/server/time";
+
+import type { CalendarZoom } from "./calendar-zoom";
+
+/**
+ * La geometría de la grilla del calendario, en funciones puras y sin zona
+ * (ADR 0012): la vista ya trae el día y las horas de reloj, y partir una
+ * entrada en días es aritmética civil.
+ */
+
+/** Alto de una franja, sea del tamaño que sea (CAL-11). */
+export const SLOT_HEIGHT_PX = 48;
+/** CAL-24: una entrada corta se ve y se puede tocar. */
+export const MIN_BLOCK_HEIGHT_PX = 22;
+/** CAL-14: lo que queda arriba en un período sin hoy. Constante hasta verificar PF-15. */
+export const DEFAULT_SCROLL_CLOCK = "08:00";
+
+export const MINUTES_PER_DAY = 1440;
+
+/** Píxeles de un minuto de reloj con ese zoom. */
+export function minuteHeight(zoom: CalendarZoom): number {
+  return SLOT_HEIGHT_PX / zoom;
+}
+
+/** Lo que una entrada dibuja en un día del período (CAL-26 a CAL-28). */
+export type Segment = {
+  readonly date: string;
+  /** Minutos de reloj, `[from, to]`, entre 0 y 1440. */
+  readonly from: number;
+  readonly to: number;
+  /** Es el día de inicio: lleva el horario con su superíndice (CAL-26). */
+  readonly startsHere: boolean;
+  /** Es el primero visible: es el botón (CAL-76). */
+  readonly firstVisible: boolean;
+};
+
+/** Un instante de la grilla: el día y el minuto de reloj. */
+type GridPoint = { readonly date: string; readonly minute: number };
+
+function segmentsBetween(
+  start: GridPoint,
+  end: GridPoint,
+  days: readonly string[],
+): readonly Segment[] {
+  const segments: Segment[] = [];
+  for (const date of days) {
+    if (date < start.date || date > end.date) {
+      continue;
+    }
+    const startsHere = date === start.date;
+    // Una entrada que termina a las 00:00 no dibuja nada en ese día; en el de
+    // inicio sí, aunque dure cero.
+    if (!startsHere && date === end.date && end.minute === 0) {
+      continue;
+    }
+    const from = startsHere ? start.minute : 0;
+    const to = date === end.date ? end.minute : MINUTES_PER_DAY;
+    segments.push({
+      date,
+      from,
+      // En la hora repetida el fin de reloj puede quedar antes del inicio (CAL-92).
+      to: Math.max(to, from),
+      startsHere,
+      firstVisible: segments.length === 0,
+    });
+  }
+  return segments;
+}
+
+/**
+ * Un segmento por día del período que la entrada toca. Sin segmentos, la
+ * entrada está fuera del período: es la definición que usan el 8c y el 8b.
+ */
+export function entrySegments(
+  entry: Pick<TimeEntryView, "dayDate" | "startClock" | "endClock" | "extraDays">,
+  days: readonly string[],
+): readonly Segment[] {
+  return segmentsBetween(
+    { date: entry.dayDate, minute: clockToMinutes(entry.startClock) ?? 0 },
+    {
+      date: addDaysToKey(entry.dayDate, entry.extraDays),
+      minute: clockToMinutes(entry.endClock ?? "") ?? MINUTES_PER_DAY,
+    },
+    days,
+  );
+}
+
+/** Los segmentos del timer, con el fin en la línea de ahora (CAL-38, CAL-93). */
+export function runningSegments(
+  running: Pick<TimeEntryView, "dayDate" | "startClock">,
+  now: NowPosition,
+  days: readonly string[],
+): readonly Segment[] {
+  const start = {
+    date: running.dayDate,
+    minute: clockToMinutes(running.startClock) ?? 0,
+  };
+  // Un ahora anterior al inicio, por el redondeo al minuto, deja el bloque en cero.
+  const end = now.date < start.date ? start : now;
+  return segmentsBetween(start, end, days);
+}
+
+export type NowPosition = { readonly date: string; readonly minute: number };
+
+/** El minuto del servidor más lo transcurrido, pasando de día a la medianoche. */
+export function nowPosition(
+  anchor: {
+    readonly todayKey: string;
+    readonly nowMinute: number;
+    readonly serverNow: string;
+  },
+  elapsedSeconds: number,
+): NowPosition {
+  // Los segundos que `serverNow` ya llevaba de su minuto: todas las zonas en
+  // uso se apartan de UTC en minutos enteros.
+  const secondsIntoMinute = new Date(anchor.serverNow).getUTCSeconds();
+  const minutes =
+    anchor.nowMinute + Math.floor((secondsIntoMinute + elapsedSeconds) / 60);
+  const days = Math.floor(minutes / MINUTES_PER_DAY);
+  return {
+    date: addDaysToKey(anchor.todayKey, days),
+    minute: minutes - days * MINUTES_PER_DAY,
+  };
+}
+
+/** Un minuto que no existe ese día por el cambio de horario (CAL-30). */
+export function isMissing(minute: number, ranges: readonly MinuteRange[]): boolean {
+  return ranges.some((range) => minute >= range.from && minute < range.to);
+}
+
+/** CAL-14: el minuto que queda arriba al montar. */
+export function initialScrollMinute(now: NowPosition, days: readonly string[]): number {
+  if (days.includes(now.date)) {
+    return Math.max(0, now.minute - 60);
+  }
+  return clockToMinutes(DEFAULT_SCROLL_CLOCK) ?? 0;
+}
+
+export type PlacedBlock<Item> = {
+  readonly item: Item;
+  readonly top: number;
+  readonly height: number;
+  readonly lane: number;
+  readonly lanes: number;
+};
+
+/** Por código, como ordena la base los ids: sin reglas del idioma. */
+function compareKeys(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+type Drawn<Item> = { readonly item: Item; readonly top: number; readonly height: number };
+
+function bottomOf<Item>(blocks: readonly Drawn<Item>[]): number {
+  return Math.max(...blocks.map((block) => block.top + block.height));
+}
+
+/** Cada bloque del grupo toma el primer carril que ya quedó libre. */
+function placeGroup<Item>(group: readonly Drawn<Item>[]): readonly PlacedBlock<Item>[] {
+  const laneBottoms: number[] = [];
+  const lanes = group.map((block) => {
+    const free = laneBottoms.findIndex((bottom) => bottom <= block.top);
+    const lane = free === -1 ? laneBottoms.length : free;
+    laneBottoms[lane] = block.top + block.height;
+    return lane;
+  });
+  return group.map((block, index) => ({
+    ...block,
+    lane: lanes[index],
+    lanes: laneBottoms.length,
+  }));
+}
+
+/**
+ * CAL-25: los bloques de una columna, con carriles para los que se pisan. Un
+ * grupo es un conjunto conectado por superposición de lo dibujado, con la
+ * altura mínima incluida, así ningún bloque tapa a otro; dentro del grupo cada
+ * bloque toma el primer carril libre y todos miden `1 / lanes` del ancho.
+ */
+export function layoutColumn<
+  Item extends { readonly key: string; readonly from: number; readonly to: number },
+>(items: readonly Item[], zoom: CalendarZoom): readonly PlacedBlock<Item>[] {
+  const scale = minuteHeight(zoom);
+  const drawn = [...items]
+    .sort((a, b) => a.from - b.from || compareKeys(a.key, b.key))
+    .map((item) => ({
+      item,
+      top: item.from * scale,
+      height: Math.max((item.to - item.from) * scale, MIN_BLOCK_HEIGHT_PX),
+    }));
+
+  const groups: Drawn<Item>[][] = [];
+  for (const block of drawn) {
+    const current = groups.at(-1);
+    if (current !== undefined && block.top < bottomOf(current)) {
+      current.push(block);
+    } else {
+      groups.push([block]);
+    }
+  }
+  return groups.flatMap(placeGroup);
+}

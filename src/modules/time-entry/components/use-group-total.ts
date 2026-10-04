@@ -5,7 +5,7 @@ import { formatDuration } from "@/server/time";
 
 import { useElapsedSeconds } from "./elapsed-counter";
 
-type GroupTotal = {
+export type GroupTotal = {
   /** Exacto, en segundos, como lo da el servidor. */
   readonly closedSeconds: number;
   /** Las entradas cerradas del grupo. */

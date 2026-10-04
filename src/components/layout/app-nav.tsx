@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 /** Cada fase agrega su entrada acá. */
 const items = [
   { href: "/", label: "Inicio" },
+  { href: "/calendario", label: "Calendario" },
   { href: "/proyectos", label: "Proyectos" },
 ] as const;
 
