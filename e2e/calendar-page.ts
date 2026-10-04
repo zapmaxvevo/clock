@@ -526,11 +526,32 @@ export function addEntryButton(page: Page): Locator {
   });
 }
 
+/** Un punto de la pantalla, en píxeles del viewport, el de `page.mouse`. */
+export type ScreenPoint = { readonly x: number; readonly y: number };
+
 /**
- * Hace clic en la franja de `clock` de un día (CAL-43): el fondo de la
- * columna, un poco por debajo del borde de la franja. Las franjas no son
- * controles, así que el lugar se calcula con la escala del zoom.
+ * El punto de pantalla de una franja (CAL-43): el centro de la columna, dos
+ * píxeles debajo del borde de la franja de `clock`. Las franjas no son
+ * controles, así que el lugar se calcula con la escala del zoom. Es un punto
+ * del viewport: para usarlo con `page.mouse`, la franja tiene que estar a la
+ * vista en la grilla.
  */
+export async function slotPoint(
+  page: Page,
+  day: CivilDay,
+  today: CivilDay,
+  clock: string,
+  size: ZoomSize = "1 h",
+): Promise<ScreenPoint> {
+  const [hours, minutes] = clock.split(":").map(Number);
+  const box = await boxOf(dayColumn(page, day, today));
+  return {
+    x: box.x + box.width / 2,
+    y: box.y + (hours * 60 + minutes) * minuteHeight(size) + 2,
+  };
+}
+
+/** Hace clic en la franja de `clock` de un día, con el fondo de la columna. */
 export async function clickSlot(
   page: Page,
   day: CivilDay,
@@ -538,15 +559,138 @@ export async function clickSlot(
   clock: string,
   size: ZoomSize = "1 h",
 ): Promise<void> {
-  const [hours, minutes] = clock.split(":").map(Number);
   const column = dayColumn(page, day, today);
-  const box = await column.boundingBox();
+  const box = await boxOf(column);
+  const point = await slotPoint(page, day, today, clock, size);
+  await column.click({ position: { x: point.x - box.x, y: point.y - box.y } });
+}
+
+/** La caja de un elemento dibujado, en píxeles del viewport. */
+export async function boxOf(
+  element: Locator,
+): Promise<{ x: number; y: number; width: number; height: number }> {
+  const box = await element.boundingBox();
   if (box === null) {
-    throw new Error("La columna no está dibujada.");
+    throw new Error("El elemento no tiene caja: no está dibujado.");
   }
-  await column.click({
-    position: { x: box.width / 2, y: (hours * 60 + minutes) * minuteHeight(size) + 2 },
-  });
+  return box;
+}
+
+/** El centro de un elemento, para apretarlo con `page.mouse`. */
+export async function centerOf(element: Locator): Promise<ScreenPoint> {
+  const box = await boxOf(element);
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
+
+/**
+ * Un asa del bloque (§5.3 del 8b): decorativa (`aria-hidden`), así que se
+ * busca por su atributo, adentro del botón del bloque.
+ */
+export function blockHandle(block: Locator, edge: "start" | "end"): Locator {
+  return block.locator(`[data-block-handle="${edge}"]`);
+}
+
+/**
+ * La selección del alta mientras se arrastra (CAL-44), decorativa, en la
+ * región o en una columna.
+ */
+export function calendarSelection(scope: Locator): Locator {
+  return scope.locator("[data-calendar-selection]");
+}
+
+/** Lo que importa del área que se desplaza: su desplazamiento y su caja. */
+export type GridScroller = {
+  readonly scrollTop: number;
+  readonly maxScroll: number;
+  readonly top: number;
+  readonly bottom: number;
+};
+
+/**
+ * La grilla que se desplaza: el primer ancestro de las columnas con algo que
+ * desplazar. No tiene rol ni nombre; se llega desde una columna.
+ */
+export async function gridScroller(page: Page): Promise<GridScroller> {
+  return dayColumns(page)
+    .first()
+    .evaluate((node) => {
+      let scroller = node.parentElement;
+      while (scroller !== null && scroller.scrollHeight <= scroller.clientHeight) {
+        scroller = scroller.parentElement;
+      }
+      if (scroller === null) {
+        throw new Error("Las columnas no están en un área que se desplace.");
+      }
+      const box = scroller.getBoundingClientRect();
+      return {
+        scrollTop: scroller.scrollTop,
+        maxScroll: scroller.scrollHeight - scroller.clientHeight,
+        top: box.top,
+        bottom: box.bottom,
+      };
+    });
+}
+
+/**
+ * Desplaza la grilla para que `clock` quede arriba, debajo de los
+ * encabezados, o lo más cerca que permita el final. Es preparación del
+ * recorrido: lo que se afirma es la posición de las cosas, no el desplazamiento.
+ */
+export async function scrollGridTo(
+  page: Page,
+  clock: string,
+  size: ZoomSize = "1 h",
+): Promise<void> {
+  const [hours, minutes] = clock.split(":").map(Number);
+  const top = (hours * 60 + minutes) * minuteHeight(size);
+  await dayColumns(page)
+    .first()
+    .evaluate((node, scrollTop) => {
+      let scroller = node.parentElement;
+      while (scroller !== null && scroller.scrollHeight <= scroller.clientHeight) {
+        scroller = scroller.parentElement;
+      }
+      scroller?.scrollTo({ top: scrollTop });
+    }, top);
+  await settle(page);
+}
+
+/**
+ * Un paso que sincroniza con la página: dos cuadros de animación. Va antes de
+ * afirmar una ausencia —ningún pedido, ningún diálogo—, nunca una espera fija.
+ */
+export async function settle(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
+  );
+}
+
+/** Pasos de movimiento de cada tramo de un arrastre: al menos cinco (§6 del 8b). */
+const DRAG_STEPS = 8;
+
+/** Lleva el puntero a `from` y aprieta el botón principal. */
+export async function pressAt(page: Page, from: ScreenPoint): Promise<void> {
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+}
+
+/** Mueve el puntero, con el botón como esté, en varios pasos. */
+export async function moveTo(page: Page, to: ScreenPoint): Promise<void> {
+  await page.mouse.move(to.x, to.y, { steps: DRAG_STEPS });
+}
+
+/** Un arrastre entero con el botón principal: apretar, mover en pasos y soltar. */
+export async function dragBetween(
+  page: Page,
+  from: ScreenPoint,
+  to: ScreenPoint,
+): Promise<void> {
+  await pressAt(page, from);
+  await moveTo(page, to);
+  await page.mouse.up();
 }
 
 /**
