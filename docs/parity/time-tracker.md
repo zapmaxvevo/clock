@@ -1254,10 +1254,17 @@ guardó vuelve además a su valor anterior. Justificación: el título es nuestr
 Clockify no muestra este aviso porque reintenta solo.
 
 **TT-91 Sesión vencida** — `adaptar`
-La action devuelve 401 y la interfaz lleva a la pantalla de acceso conservando
-la ruta de vuelta. Un timer activo no se pierde: sigue abierto en la base y
-reaparece al volver a entrar. Justificación: es comportamiento de nuestra
-autenticación, no de Clockify.
+Una página o una action que encuentra la sesión vencida lleva a la pantalla de
+acceso. **No hay ruta de vuelta**: al volver a entrar, el acceso lleva siempre
+a `/`, desde cualquier pantalla. Un timer activo no se pierde: sigue abierto en
+la base y reaparece al volver a entrar. Justificación: es comportamiento de
+nuestra autenticación, no de Clockify; la ruta de vuelta después del acceso no
+existe en ninguna pantalla.
+_Corregido el 2026-10-04, slice 8_: decía que la action devolvía 401 y que la
+interfaz llevaba a la pantalla de acceso conservando la ruta de vuelta.
+`requireSession` redirige a `/login` en las páginas y en las actions
+(`src/server/session.ts`, `src/server/action.ts`), y el acceso vuelve siempre a
+`/` (`google-sign-in-button.tsx`). Es lo mismo que CAL-86.
 
 **TT-92 Membresía desactivada mientras la sesión está abierta** — `adaptar`
 `can` devuelve falso y la pantalla queda en solo lectura, con un aviso
