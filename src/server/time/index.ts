@@ -136,7 +136,8 @@ export type CivilDate = {
 
 const DAY_KEY = /^(\d{4})-(\d{2})-(\d{2})$/;
 const CLOCK = /^([01]\d|2[0-3]):([0-5]\d)$/;
-const MINUTES_PER_DAY = 24 * 60;
+/** Minutos de reloj de un día de 24 h: el fin de la grilla y de un `MinuteRange`. */
+export const MINUTES_PER_DAY = 24 * 60;
 const DAY_MS = MINUTES_PER_DAY * 60_000;
 
 function pad(value: number): string {
