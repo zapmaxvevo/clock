@@ -15,7 +15,7 @@ Fuente de los comportamientos: `docs/parity/calendario.md` (CAL-01 a CAL-100).
 Decisiones de arquitectura asociadas:
 
 - [ADR 0014, los gestos del calendario son Pointer Events propios, solo con mouse](../adr/0014-los-gestos-del-calendario-son-pointer-events-propios.md),
-  **propuesto**: lo aprueba el usuario (abajo, decisión 1).
+  **aceptado** el 2026-10-04 (abajo, decisión 1).
 - [ADR 0005](../adr/0005-hora-de-pared-en-la-entrada-manual.md) y
   [ADR 0006](../adr/0006-conservar-el-extremo-sin-cambios.md): el gesto produce
   horas de pared y el servidor las convierte; el extremo que no cambió de
