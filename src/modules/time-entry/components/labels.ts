@@ -1,3 +1,5 @@
+import type { TimeFormat } from "@/server/time";
+
 /**
  * Textos de la pantalla del rastreador que dicen algo del dominio: los que
  * comparten varios componentes y los que nombran una regla de paridad. Los
@@ -42,6 +44,26 @@ export const trackerLabels = {
   shortcutsToggle: "Usar atajos de una tecla",
   shortcutsHint:
     "No funcionan mientras escribís en un campo ni con un menú o un diálogo abierto.",
+  /** TT-62 a TT-64: la región de la barra, siempre montada. */
+  bulkRegion: "Acciones en masa",
+  bulkEdit: "Editar",
+  bulkDelete: "Borrar",
+  clearSelection: "Quitar selección",
+  /** TT-63: los campos del diálogo de edición masiva; vacíos no cambian. */
+  bulkDescription: "Descripción",
+  bulkDate: "Fecha",
+  bulkEditHint: "Lo que dejes vacío no cambia.",
+  noChange: "Sin cambios",
+  clearDate: "Quitar la fecha",
+  /** TT-64: el borrado masivo se confirma escribiendo la palabra. */
+  bulkDeleteWarning: "No se puede deshacer.",
+  bulkDeleteConfirm: "Escribí BORRAR para confirmar",
+  deleting: "Borrando…",
+  /** TT-90: el aviso nombra la operación en masa que falló. */
+  entriesNotEdited: "No se pudieron editar las entradas.",
+  entriesNotDeleted: "No se pudieron borrar las entradas.",
+  /** ADR 0011: saca de la selección las entradas que frenaron el pedido. */
+  dropRejected: "Quitar esas entradas de la selección",
 } as const;
 
 /** TT-03: marcador del campo de descripción. */
@@ -50,4 +72,44 @@ export const DESCRIPTION_PLACEHOLDER = "¿En qué estás trabajando?";
 /** El nombre accesible del selector de la fila, como el de su menú de acciones. */
 export function entryProjectLabel(entryName: string): string {
   return `Proyecto de la entrada «${entryName}»`;
+}
+
+/** Una cantidad de entradas con el verbo o el sustantivo en singular o plural. */
+function countOf(count: number, one: string, many: string): string {
+  return count === 1 ? one : `${count} ${many}`;
+}
+
+/** TT-62: la casilla de una fila; la hora la distingue de otra con la misma descripción. */
+export function selectEntryLabel(entryName: string, timesLabel: string): string {
+  return `Seleccionar «${entryName}», ${timesLabel}`;
+}
+
+/** TT-62: la casilla del encabezado de un día. */
+export function selectDayLabel(dayLabel: string): string {
+  return `Seleccionar las entradas del día ${dayLabel}`;
+}
+
+export function selectedCountLabel(count: number): string {
+  return countOf(count, "1 entrada seleccionada", "entradas seleccionadas");
+}
+
+export function bulkEditTitle(count: number): string {
+  return `Editar ${countOf(count, "1 entrada", "entradas")}`;
+}
+
+export function bulkDeleteTitle(count: number): string {
+  return `¿Borrar ${countOf(count, "1 entrada", "entradas")}?`;
+}
+
+export function entriesEditedLabel(count: number): string {
+  return count === 1 ? "Se editó 1 entrada." : `Se editaron ${count} entradas.`;
+}
+
+export function entriesDeletedLabel(count: number): string {
+  return count === 1 ? "Se borró 1 entrada." : `Se borraron ${count} entradas.`;
+}
+
+/** PF-14: el marcador de un campo de hora vacío sigue el formato de la persona. */
+export function clockPlaceholder(format: TimeFormat): string {
+  return format === "12h" ? "h:mm AM" : "hh:mm";
 }
