@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { RejectedError } from "@/server/action";
 import { db } from "@/server/db";
 import { membership } from "@/server/db/schema";
 import type { Actor, MembershipStatus, Role } from "@/server/permissions";
@@ -20,6 +21,8 @@ import { projectMessages } from "@/modules/project/schema";
 import { timeEntryRepository } from "./repository";
 import { timeEntryMessages } from "./schema";
 import {
+  bulkDeleteEntries,
+  bulkEditEntries,
   continueEntry,
   createManualEntry,
   deleteEntry,
@@ -1217,5 +1220,117 @@ describe("quién asigna qué proyecto (§3: TT-08, PR-17)", () => {
       ),
     );
     expect(own?.project?.id).toBe(open.id);
+  });
+});
+
+/**
+ * Las operaciones en masa consultan `can()` dos veces, como `discardTimer`:
+ * sobre el actor antes de leer, y sobre el dueño de cada fila leída (§3).
+ */
+describe("operaciones en masa (criterio 16, TT-66)", () => {
+  function seedClosedOf(userId: string, description = "") {
+    return seedTimeEntry({
+      workspaceId,
+      userId,
+      description,
+      startedAt: "2026-10-01T13:00:00Z",
+      endedAt: "2026-10-01T14:00:00Z",
+    });
+  }
+
+  it.each(roles)("%s edita y borra en masa sus propias entradas", async (role) => {
+    const actor = await seedActor(role);
+    const edited = await seedClosedOf(actor.userId);
+    const removed = await seedClosedOf(actor.userId);
+
+    const result = await bulkEditEntries(actor, workspace, {
+      ids: [edited.id],
+      changes: { description: "nueva" },
+    });
+    await bulkDeleteEntries(actor, { ids: [removed.id] });
+
+    expect(result.entries[0].description).toBe("nueva");
+    expect(await timeEntryById(removed.id)).toBeUndefined();
+  });
+
+  it.each(roles)(
+    "%s recibe un rechazo con el texto de TT-79 por la entrada de otra persona",
+    async (role) => {
+      const actor = await seedActor(role);
+      const otherId = await seedMember(workspaceId, "member");
+      const own = await seedClosedOf(actor.userId);
+      const foreign = await seedClosedOf(otherId, "ajena");
+      const rejection = {
+        id: foreign.id,
+        code: "forbidden",
+        message: timeEntryMessages.forbiddenOtherOwner,
+      };
+
+      const edit = bulkEditEntries(actor, workspace, {
+        ids: [own.id, foreign.id],
+        changes: { description: "nueva" },
+      });
+      await expect(edit).rejects.toBeInstanceOf(RejectedError);
+      await expect(edit).rejects.toMatchObject({ rejections: [rejection] });
+      const remove = bulkDeleteEntries(actor, { ids: [own.id, foreign.id] });
+      await expect(remove).rejects.toBeInstanceOf(RejectedError);
+      await expect(remove).rejects.toMatchObject({ rejections: [rejection] });
+
+      expect(await timeEntryById(foreign.id)).toMatchObject({ description: "ajena" });
+      expect(await timeEntryById(own.id)).toMatchObject({ description: "" });
+    },
+  );
+
+  it.each(notActive)(
+    "con la membresía %s las dos responden forbidden sin lista, también con ids que no existen",
+    async (status) => {
+      const actor = await seedActor("member", status);
+      const own = await seedClosedOf(actor.userId);
+      const missing = randomUUID();
+
+      for (const ids of [[own.id], [missing], [own.id, missing]]) {
+        for (const work of [
+          () => bulkEditEntries(actor, workspace, { ids, changes: { description: "x" } }),
+          () => bulkDeleteEntries(actor, { ids }),
+        ]) {
+          const error: unknown = await work().then(
+            () => null,
+            (reason: unknown) => reason,
+          );
+          expect(error).not.toBeInstanceOf(RejectedError);
+          expect(error).toMatchObject({
+            code: "forbidden",
+            message: timeEntryMessages.forbidden,
+          });
+        }
+      }
+      expect(await timeEntryById(own.id)).toMatchObject({ description: "" });
+    },
+  );
+
+  it("un actor de otro workspace no alcanza la entrada: not_found al editar, y el borrado no la toca", async () => {
+    const other = await seedWorkspace(buenosAires);
+    const outsider: Actor = {
+      userId: other.ownerId,
+      workspaceId: other.workspaceId,
+      role: "owner",
+      status: "active",
+    };
+    const row = await seedClosedOf(ownerId, "de acá");
+
+    await expect(
+      bulkEditEntries(outsider, workspace, {
+        ids: [row.id],
+        changes: { description: "x" },
+      }),
+    ).rejects.toMatchObject({
+      rejections: [
+        { id: row.id, code: "not_found", message: timeEntryMessages.notFound },
+      ],
+    });
+    expect(await bulkDeleteEntries(outsider, { ids: [row.id] })).toEqual({
+      ids: [row.id],
+    });
+    expect(await timeEntryById(row.id)).toMatchObject({ description: "de acá" });
   });
 });
