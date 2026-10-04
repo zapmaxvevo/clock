@@ -483,28 +483,58 @@ calendario P-03.
 _No verificado_: si Clockify deja arrastrarlo.
 
 **CAL-40 El diálogo del timer activo** — `adaptar`
-Clic sobre el bloque abre el diálogo de la entrada (sección 10) con:
+Clic sobre el bloque abre el diálogo «Timer en curso» con:
 
-- la descripción, editable;
+- la descripción y el proyecto con su tarea, editables;
 - el inicio, día y hora, editable con las reglas de TT-28, TT-29 y TT-75 —un
   inicio en el futuro se rechaza con «No se pueden cargar horas que todavía no
-  pasaron.»—, TT-112 y el piso del workspace. Es la misma action que el editor
-  del contador del rastreador, `updateRunningStart`;
-- el fin como «En curso», sin campo;
-- propuesta: un botón «Detener», que es `stopTimer` sin cambios.
+  pasaron.», y el selector de fecha no ofrece días posteriores a hoy—, TT-112 y
+  el piso del workspace. Es la regla de `updateRunningStart`, la del editor del
+  contador del rastreador;
+- el fin como «Fin: en curso», sin campo, con el transcurrido;
+- abajo, «Detener», «Cancelar» y «Guardar», sin menú.
 
+«Guardar» aplica juntos los cambios, como en una entrada cerrada (CAL-67).
+«Detener» es `stopTimer` sin cambios: cierra el diálogo y el bloque queda
+cerrado, con el foco en él; si falla, el aviso queda en la pantalla. **Con
+cambios sin guardar —también una hora tecleada y todavía no confirmada—,
+«Detener» queda inactivo**, con «Guardá los cambios antes de detener el timer.»
+a la vista: guardar y detener serían dos escrituras, y «Guardar» es todo o
+nada. El diálogo del timer no tiene menú: duplicar la entrada que corre se
+rechaza (TT-58) y descartarla es del rastreador (TT-65).
 Justificación: la entrada abierta tiene menos que editar que una cerrada, y sin
 barra del timer en esta pantalla, sin «Detener» habría que volver al rastreador
-para pararlo. Ver calendario P-06.
+para pararlo (calendario P-06).
 _No verificado_: qué ofrece el diálogo de Clockify sobre la entrada que corre,
 y si su página de calendario tiene una barra de timer.
+_Corregido el 2026-10-04, slice 8c_: decía que el inicio se guardaba con
+`updateRunningStart` y proponía «Detener». Con P-04 el diálogo guarda con
+`updateEntry`, con la misma regla del inicio, y P-06 cerró «Detener», inactivo
+mientras haya cambios sin guardar. Se suman el proyecto, los botones y que el
+diálogo no tiene menú.
 
 **CAL-41 Timer detenido o borrado en otra pestaña** — `adaptar`
 La grilla se pone al día con la revalidación de TT-40 —al enfocar, al volver a
 ser visible y cada 60 segundos— y puede seguir dibujando el bloque creciendo
-hasta un minuto. Una acción sobre él antes de eso recibe «Este timer ya había
-sido detenido.» (TT-41) o «Esa entrada ya no existe.» (TT-80, TT-103).
-Justificación: la de TT-40.
+hasta un minuto. Si antes de eso se usa su diálogo:
+
+- «Guardar» con solo la descripción o el proyecto se aplica a la entrada, ya
+  cerrada: el diálogo se cierra y el bloque se dibuja cerrado. La descripción y
+  el par no dependen del estado de la entrada en ninguna mutación.
+- «Guardar» con el inicio entre los cambios recibe «Este timer ya había sido
+  detenido.» (TT-41): el diálogo se cierra y el aviso, «No se pudo guardar la
+  entrada.», queda en la pantalla.
+- «Detener» recibe «Este timer ya había sido detenido.» (TT-41), con el aviso
+  en la pantalla.
+- Si otra pestaña la borró, «Esa entrada ya no existe.» (TT-80, TT-103), con el
+  diálogo cerrado (CAL-72).
+
+Justificación: la de TT-40; el diálogo se cierra porque no queda nada que
+corregir en él.
+_Corregido el 2026-10-04, slice 8c_: decía que cualquier acción sobre el timer
+detenido recibía «Este timer ya había sido detenido.». Con «Guardar» todo o
+nada, la descripción y el proyecto se aplican igual a la entrada cerrada; solo
+el inicio y «Detener» se rechazan.
 
 **CAL-42 Arrancar o continuar un timer desde un bloque** — `fuera de alcance`
 Clockify documenta el botón de reproducción solo sobre eventos de calendarios
@@ -547,28 +577,48 @@ duración.
 **CAL-46 «Agregar» es el alta manual** — `replicar`
 Crea con `createManualEntry` y valen todas sus reglas: TT-72 (fin menor que el
 inicio es el día siguiente), TT-73, TT-76, TT-112 y el piso del workspace del
-ADR 0005. Si falla por red vale TT-109: «No sabemos si la entrada se guardó.»,
-sin «Reintentar», porque repetir duplica.
+ADR 0005. Si falla por red vale TT-109, sin «Reintentar» porque repetir
+duplica: «No sabemos si la entrada se guardó.», con «Se perdió la respuesta del
+servidor. Antes de volver a agregarla, fijate en el calendario: puede haberse
+creado.» Es la causa de la barra, con el lugar donde mirar.
 
-Si la fecha del diálogo se cambió a un día fuera del período visible, la
-entrada se guarda igual y aparece un aviso informativo que nombra el día, con
-un enlace para ir a ese período (sección 13). En el rastreador no hay un
-equivalente: ahí la ventana de la lista se extiende sola hasta la semana de la
-entrada y no hay aviso (TT-108, P-15). Acá el período visible lo elige la
-persona y el remedio es cambiar de semana, así que el aviso y su texto son
-propios del calendario.
+Si la entrada creada o guardada no tiene ningún segmento en el período visible
+—por ejemplo, porque se le cambió la fecha a otra semana—, se guarda igual y
+aparece un aviso informativo arriba de la grilla: «La entrada quedó el {día},
+fuera de la semana que estás viendo.», con el enlace «Ir a esa semana»; en la
+vista día, «…fuera del día que estás viendo.», con «Ir a ese día». El día se
+nombra con el rótulo de columna («sáb, 03/10»), nunca «Hoy» ni «Ayer». Una
+entrada que empezó antes del período y lo cruza tiene segmentos y no lleva
+aviso. La operación siguiente lo baja. En el rastreador no hay un equivalente:
+ahí la ventana de la lista se extiende sola hasta la semana de la entrada y no
+hay aviso (TT-108, P-15). Acá el período visible lo elige la persona y el
+remedio es cambiar de período, así que el aviso y su texto son propios del
+calendario.
 _Corregido el 2026-10-03, slice 5_: decía «No es TT-108: ese aviso habla de los
 días que la lista dibuja», y el aviso de TT-108 se retiró.
+_Corregido el 2026-10-04, slice 8c_: decía «si la fecha del diálogo se cambió a
+un día fuera del período visible». El criterio es que la entrada no tenga
+ningún segmento en el período, y el aviso vale también para «Guardar». Se
+suman el texto de TT-109 del calendario, el enlace de la vista día y cómo se
+nombra el día.
 
 **CAL-47 Crear con un timer corriendo** — `adaptar`
-Propuesta: se rechaza, con el texto de TT-30, «Detené el timer para agregar
-tiempo a mano.» El clic en una franja libre abre el diálogo con ese aviso y
-«Agregar» deshabilitado. Es la validación que `createManualEntry` ya hace.
-Clockify documenta: «Make sure to stop an active timer before creating a time
-entry in the calendar to avoid overlaps that cause conflict», que se lee como
-una recomendación y no como un bloqueo. Justificación: abrir una excepción haría
-que la misma entrada se pueda crear desde el calendario y no desde el modo
-manual. **Es una divergencia si Clockify lo permite.** Ver calendario P-01.
+Se permite, sin aviso: el clic en una franja libre y «Agregar entrada» abren
+el alta igual, y «Agregar» crea la entrada cerrada mientras el timer sigue
+corriendo. Es `createManualEntry` sin excepción por origen: el servidor acepta
+el alta con un timer abierto venga de donde venga, y la entrada cerrada que se
+superpone con el timer es válida (TT-82). TT-30 sigue como regla de la
+interfaz del rastreador, cuyo conmutador comparte lugar con el timer. Clockify
+documenta: «Make sure to stop an active timer before creating a time entry in
+the calendar to avoid overlaps that cause conflict», que se lee como una
+recomendación y no como un bloqueo. Justificación de `adaptar`: Clockify
+recomienda detener el timer antes y no documenta que lo impida; acá no se
+recomienda nada (calendario P-01).
+_No verificado_: si Clockify lo deja.
+_Corregido el 2026-10-04, slice 8c_: proponía rechazarlo con el texto de TT-30
+y «Agregar» deshabilitado, como divergencia si Clockify lo permitía. P-01 lo
+invirtió: se permite, y el servidor dejó de rechazar el alta manual con un
+timer abierto.
 
 **CAL-48 Días anteriores a la creación del workspace** — `adaptar`
 Se dibujan atenuados y no admiten crear ni soltar un bloque. Un pedido que
@@ -734,20 +784,34 @@ que avanza (TT-31, PF-22). Las horas siguen el formato de la persona (PF-13).
 Ningún control edita: los campos tolerantes llegan con el 8c.
 
 **CAL-67 «Guardar», todo o nada** — `adaptar`
-Propuesta: un botón «Guardar» aplica todos los cambios del diálogo juntos, o
-ninguno. Cerrar el diálogo con cambios sin guardar los descarta sin preguntar.
+Un botón «Guardar» aplica juntos los grupos de campos que la persona tocó
+—descripción, proyecto y tarea, horario—, o ninguno. Enter en la descripción o
+en un campo de hora también guarda. Sin cambios, «Guardar» cierra el diálogo
+sin pedido. Cerrar el diálogo con cambios sin guardar —«Cancelar», `Esc` o un
+clic afuera— los descarta sin preguntar. Lo que no cambió no se escribe, así
+que guardar dos veces lo mismo no hace nada. Cada grupo pasa por la regla de su
+mutación de un campo, con sus textos (sección 13): con un horario rechazado no
+se guarda la descripción, y con un horario inválido y un proyecto no disponible
+se ve el rechazo del horario.
+
+Si «Guardar» falla, el diálogo queda abierto con el aviso «No se pudo guardar
+la entrada.» y la causa; por red ofrece «Reintentar», que guarda el borrador
+actual: si la persona editó después del fallo, se manda lo editado. Si falla
+porque la entrada ya no existe o el timer ya se detuvo, el diálogo se cierra y
+el aviso queda en la pantalla (CAL-41, CAL-72).
+
 La página de dividir describe una ventana de edición que se confirma con
 «Save», así que el botón es lo que Clockify hace, al menos ahí. Justificación de
 `adaptar`: **diverge a propósito del guardado por campo de la fila (TT-55)**,
 porque un diálogo con varios campos y un botón que guardara solo algunos se
-lee como roto.
-
-Tiene una consecuencia de construcción que no es de paridad y que el contrato
-del slice tiene que resolver: hoy la descripción y las horas se escriben con dos
-mutaciones distintas (`updateDescription`, `updateEntryTimes`), y dos pedidos
-seguidos no son todo o nada. Ver calendario P-04.
+lee como roto. Se escribe en una sola mutación, `updateEntry`
+([ADR 0013](../adr/0013-el-dialogo-de-una-entrada-guarda-en-una-mutacion.md)).
 _No verificado_: si el diálogo de Clockify guarda con botón o por campo, y qué
 hace al cerrarse con cambios.
+_Corregido el 2026-10-04, slice 8c_: era propuesta, con la consecuencia de
+construcción abierta en P-04: dos mutaciones seguidas no son todo o nada. P-04
+la cerró y el ADR 0013 la resolvió con `updateEntry`. Se suman lo que pasa sin
+cambios, con Enter, cuando falla y con «Reintentar».
 
 **CAL-68 Menú de la entrada** — `replicar`
 Documentado en la página de dividir: «the three-dot menu at the bottom left
@@ -853,10 +917,8 @@ Justificación: no hay apps en el alcance del proyecto.
 El calendario no tiene reglas de validación propias: todas son las de las
 mutaciones que llama, y sus textos se reusan tal cual.
 
-- Crear con un timer corriendo: «Detené el timer para agregar tiempo a mano.»
-  (TT-30). En CAL-47.
 - Menos de un minuto: «La entrada tiene que durar al menos un minuto.» (TT-73).
-  En CAL-56.
+  En CAL-56 y en «Agregar» con duración cero.
 - Inicio del timer activo en el futuro: «No se pueden cargar horas que todavía
   no pasaron.» (TT-75). En CAL-40.
 - Hora que no existe por el cambio de horario: «Esa hora no existe por el
@@ -877,18 +939,32 @@ Títulos de aviso (TT-90), también reusados:
 - Mover o estirar: «No se pudo guardar el horario de la entrada.»
 - Agregar desde el diálogo: «No se pudo agregar la entrada.» y, por red, el de
   TT-109.
-- Corregir el inicio del timer: «No se pudo guardar el inicio del timer.»
 - Detener desde el diálogo: «No se pudo detener el timer.»
+- Duplicar: «No se pudo duplicar la entrada.»
 - Borrar: «No se pudo borrar la entrada.»
 
 Textos nuevos, uno por causa nueva:
 
 - **CAL-46**, la entrada creada o editada quedó fuera del período visible:
   «La entrada quedó el `<día>`, fuera de la semana que estás viendo.», con el
-  enlace «Ir a esa semana». En la vista día, «fuera del día que estás viendo».
+  enlace «Ir a esa semana». En la vista día, «fuera del día que estás viendo»,
+  con «Ir a ese día».
+- **CAL-46 y TT-109**, se perdió la respuesta del alta: «Se perdió la respuesta
+  del servidor. Antes de volver a agregarla, fijate en el calendario: puede
+  haberse creado.» Es la causa de la barra, que dice «fijate en la lista»;
+  cambia el lugar donde mirar.
 - **CAL-67**, falló «Guardar» del diálogo: «No se pudo guardar la entrada.» Es
   nuevo porque nombra otra acción: el diálogo guarda la entrada entera, no solo
-  su horario ni solo su descripción.
+  su horario ni solo su descripción. Vale también para el timer: el diálogo no
+  usa «No se pudo guardar el inicio del timer.»
+- **CAL-40**, «Detener» con cambios sin guardar: «Guardá los cambios antes de
+  detener el timer.»
+
+_Corregido el 2026-10-04, slice 8c_: listaba «Detené el timer para agregar
+tiempo a mano.» (TT-30) como un texto del calendario, que desde P-01 no lo usa,
+y «No se pudo guardar el inicio del timer.» como título del diálogo del timer,
+que guarda con «Guardar» (CAL-67). Se suman el título de duplicar, el texto de
+TT-109 del calendario, «Ir a ese día» y el de «Detener».
 
 ## 14. Estados vacíos
 
@@ -1029,30 +1105,41 @@ de ser condicional.
 
 ## 19. Impacto sobre lo ya construido
 
-Lo que el contrato del slice 8 va a tener que mirar. No es diseño: es lo que el
-relevamiento obliga.
+Lo que el calendario obligó a mirar de lo que ya estaba construido, y qué slice
+lo resolvió.
 
-- **Una lectura nueva del módulo `time-entry`.** El calendario necesita las
-  entradas que se superponen con el período, más el timer activo (CAL-28);
-  `getTrackerState` lee por día de inicio y con otra ventana.
-- **`editableTimes`** ya existe en `TimeEntryView` y es lo que decide si un
-  bloque tiene asas (CAL-58). Ningún componente lo recalcula.
-- **`updateDescription` y `updateEntryTimes`.** Si P-04 se cierra a favor del
-  todo o nada, hace falta una forma de escribir las dos cosas en una
-  transacción, que hoy no existe.
-- **`createManualEntry`** no cambia: el alta del calendario es esta action, con
-  TT-30 incluido salvo que P-01 diga otra cosa.
-- **La conversión de los gestos al trío** sale de horas de pared ajustadas al
-  zoom y de `shiftClock`, sin aritmética de instantes en el cliente
-  (ADR 0005).
+- **Una lectura nueva del módulo `time-entry`** (slice 8): `getCalendarState`
+  lee las entradas que se superponen con el período, más el timer activo
+  (CAL-28); `getTrackerState` lee por día de inicio y con otra ventana.
+- **`editableTimes`** ya existía en `TimeEntryView` y decide si el diálogo deja
+  editar el horario (CAL-58, slice 8c) y si un bloque tiene asas (slice 8b).
+  Ningún componente lo recalcula.
+- **`updateEntry`** (slice 8c, ADR 0013): «Guardar» del diálogo escribe la
+  descripción, el par y el horario en una sola mutación, con las reglas de
+  `updateDescription`, `updateEntryProject`, `updateEntryTimes` y
+  `updateRunningStart`, que siguen como estaban.
+- **`createManualEntry` dejó de rechazar el alta con un timer abierto** (slice
+  8c, P-01): el alta del calendario es esta action, sin excepción por origen, y
+  TT-30 quedó como regla de la interfaz del rastreador.
+- **Las actions de `time-entry` revalidan `/` y `/calendario`** (slice 8c),
+  también cuando fallan: la pantalla desde la que se escribe se pone al día,
+  sea cual sea.
+- **La conversión de los gestos al trío** (slice 8b) sale de horas de pared
+  ajustadas al zoom y de `shiftClock`, sin aritmética de instantes en el
+  cliente (ADR 0005).
 - **Las franjas que no existen** (CAL-30): el cliente no sabe de husos
-  (ADR 0005), así que qué hora del día no existe tiene que llegar del servidor
-  junto con el período.
+  (ADR 0005), así que los minutos que no existen llegan del servidor con cada
+  día del período (slice 8).
 - **`src/components/layout/app-nav.tsx`** suma la entrada «Calendario»
-  (CAL-01).
+  (CAL-01, slice 8).
 
 **Lo que no se toca**: el esquema, los permisos y las reglas del ADR 0005 y del
 ADR 0006. El calendario no agrega columnas ni acciones de permiso.
+_Corregido el 2026-10-04, slice 8c_: decía que `createManualEntry` no cambiaba
+y que el todo o nada pedía una forma de escribir en una transacción que no
+existía. El 8c construyó `updateEntry` y sacó de `createManualEntry` el rechazo
+de TT-30; faltaba la revalidación de `/calendario`. Cada punto dice ahora qué
+slice lo resolvió.
 
 ## 20. Reparto por slices
 
@@ -1084,6 +1171,8 @@ Contrato: [fase1-slice8-calendario.md](../slices/fase1-slice8-calendario.md).
   `time-entry` revalidan solo `/`, así que volver al calendario con «Atrás»
   después de cargar horas en `/` puede mostrar la copia anterior hasta la
   próxima revalidación, a lo sumo 60 s (P-11).
+  _Corregido el 2026-10-04, slice 8c_: desde el 8c las actions revalidan
+  también `/calendario` (sección 19).
 - **Lo que el slice decide**, todo diseño propio _no verificado_ (P-07):
   - **CAL-07, CAL-14, CAL-17, CAL-21, CAL-22, CAL-36, CAL-65, CAL-66 y
     CAL-87**, en su entrada.
@@ -1105,24 +1194,62 @@ Contrato: [fase1-slice8-calendario.md](../slices/fase1-slice8-calendario.md).
   - **CAL-75.** El nombre accesible suma al final el proyecto, o «Proyecto:
     Tarea», cuando lo hay. El del timer es «…, desde las {inicio}, en curso».
 
+### Slice 8c — calendario, escritura
+
+CAL-40, la segunda oración de CAL-41, CAL-43, CAL-45 a CAL-47 (CAL-47
+invertido por P-01), el clic sin efecto de CAL-30 y CAL-48, CAL-49, CAL-58 en
+su parte de diálogo, CAL-65 a CAL-70 editables, CAL-72, el botón «Agregar
+entrada» de CAL-74, los avisos de dos partes de CAL-86, CAL-92 por el diálogo y
+CAL-97 a CAL-99 sobre el diálogo. De CAL-05, los controles de escritura de los
+cinco roles. CAL-39 se cumple sin hacer nada: ningún bloque se arrastra. Cierra
+P-01, P-04 y P-06. Contrato:
+[fase1-slice8c-calendario-escritura.md](../slices/fase1-slice8c-calendario-escritura.md).
+
+- **El diálogo pasa por las reglas de la fila y del contador**: TT-28, TT-29,
+  TT-73, TT-75, TT-77, TT-110, TT-111, TT-112 y el piso del ADR 0005, con sus
+  textos. Los campos de hora y de duración son los del modo manual (TT-18 a
+  TT-21), en el formato de la persona (PF-13, PF-14).
+- **Duplicar y borrar desde el menú del diálogo** son TT-58, TT-60 y TT-61, sin
+  cambios. Descartar el timer (TT-65) sigue en el rastreador.
+- **TT-66, TT-79, TT-80 y TT-92 se verifican por el camino nuevo**: los cinco
+  roles editan sus entradas desde el diálogo; la ajena y la que ya no existe
+  responden su texto; una membresía desactivada abre el diálogo en solo
+  lectura y no tiene alta.
+- **Los avisos** (TT-89, TT-90, TT-109): los de «Guardar» y «Agregar» van en el
+  diálogo; los de «Detener», «Duplicar» y «Borrar», y los de «Guardar» que
+  cierran el diálogo, en la pantalla, debajo de la barra. «Reintentar» solo por
+  red y nunca en el alta. Una operación nueva baja los anteriores.
+- **Lo que el slice decide**, diseño propio _no verificado_ (P-07):
+  - **CAL-40, CAL-41, CAL-46, CAL-47 y CAL-67**, en su entrada.
+  - **CAL-43.** El clic en una franja propone su inicio y una franja de largo;
+    si el fin cae en minutos que no existen, pasa al primer minuto que existe
+    después. No hace nada en un minuto que no existe, en un día anterior a la
+    creación del workspace o sin permiso de carga.
+  - **CAL-74.** «Agregar entrada», al final de la barra, propone hoy si está a
+    la vista y si no el primer día del período, nunca antes del piso; la hora
+    es la franja de ahora si el día es hoy, y las 08:00 si no.
+  - **CAL-65.** Los títulos son «Editar entrada», «Timer en curso» y «Agregar
+    entrada», y al abrir el foco va a «Descripción». «Entrada», en solo
+    lectura, queda para la membresía desactivada.
+  - **CAL-68.** «Duplicar» y «Borrar» del menú cierran el diálogo al elegirse;
+    su aviso, si fallan, queda en la pantalla. El foco va a la copia, o a la
+    región al confirmar el borrado; cancelar la confirmación lo devuelve al
+    bloque.
+  - **TT-89 en el diálogo.** «Reintentar» de un «Guardar» que falló por red
+    guarda el borrador actual, no el del pedido que falló.
+
 ### Lo que queda
 
-- **Slice 8c, la escritura**
-  ([fase1-slice8c-calendario-escritura.md](../slices/fase1-slice8c-calendario-escritura.md)):
-  crear desde la grilla y con «Agregar entrada» (CAL-43, CAL-45 a CAL-47, el
-  clic sin efecto de CAL-48 y de la franja que no existe de CAL-30, CAL-49 y el
-  botón de CAL-74); el diálogo editable, con «Guardar», «Detener», duplicar y
-  borrar (CAL-40, CAL-58 en su parte de diálogo, CAL-65 a CAL-70, CAL-72); la
-  segunda oración de CAL-41; los avisos de dos partes de CAL-86; CAL-92 por el
-  diálogo; CAL-97 a CAL-99; y los controles de escritura de CAL-05. Ahí se
-  registran P-01, P-04 y P-06.
-- **Slice 8b, el arrastre** (esbozo en §8 del contrato del 8c, después del 8c):
-  crear arrastrando (CAL-44), mover y estirar (CAL-50 a CAL-57), las asas de
-  CAL-58, CAL-59 a CAL-64, el «ni soltar» de CAL-30 y CAL-48, la segunda
-  oración de CAL-89, «se estira» de CAL-90 y CAL-100.
+- **Slice 8b, el arrastre** (esbozo en §8 del contrato del 8c): crear
+  arrastrando (CAL-44), mover y estirar (CAL-50 a CAL-57), las asas de CAL-58,
+  CAL-59 a CAL-64, el «ni soltar» de CAL-30 y CAL-48, la segunda oración de
+  CAL-89, «se estira» de CAL-90 y CAL-100.
 - **Fuera de los tres**: P-03 (CAL-39) y P-05 (CAL-13), abiertos con su
   propuesta. La ruta de vuelta después del acceso (CAL-86, TT-91) no existe en
-  ninguna pantalla.
+  ninguna pantalla. «Reintentar» en el alta (TT-109) sigue pendiente.
+
+_Corregido el 2026-10-04, slice 8c_: sale de esta lista la escritura, que ahora
+tiene su sección.
 
 ## Pendientes de definición del equipo
 
@@ -1131,32 +1258,20 @@ rastreador, de proyectos y del perfil, se cita como `calendario P-nn`.
 
 ### Abiertos
 
-Todos tienen una propuesta escrita en el comportamiento que citan. Ninguno
-bloquea el arranque del contrato, pero los tres primeros cambian lo que el
-contrato tiene que decir.
+Todos tienen una propuesta escrita en el comportamiento que citan, y ninguno
+bloquea un contrato.
 
-- **P-01 Crear con un timer corriendo** (CAL-47). Propuesta: se rechaza con el
-  texto de TT-30, como el modo manual. Clockify lo desaconseja, pero no está
-  claro que lo bloquee. Si se permite, `createManualEntry` necesita una
-  excepción por origen, y la misma entrada se podría crear desde una pantalla y
-  no desde la otra.
 - **P-03 Arrastrar el inicio del timer activo** (CAL-39). Propuesta: en el
   slice 8 no; el inicio se corrige desde el diálogo. Agregar el asa después no
   cambia ninguna otra regla.
-- **P-04 «Guardar» todo o nada en el diálogo** (CAL-67). Propuesta: sí, con
-  botón, como Clockify. Obliga a escribir descripción y horario en una
-  transacción, que hoy son dos mutaciones. La alternativa —que cada campo del
-  diálogo se guarde solo, como la fila— reusa todo lo que hay y diverge del
-  diálogo de Clockify.
 - **P-05 Mostrar solo días laborables** (CAL-13). Propuesta: fuera hasta que
   existan los días laborables por persona (PF-19, fase 2). La alternativa
   —ocultar sábado y domingo fijos— es una regla que Clockify no tiene.
-- **P-06 «Detener» en el diálogo del timer activo** (CAL-40). Propuesta: sí,
-  con `stopTimer` sin cambios. Sin él, parar el timer desde el calendario
-  obliga a volver al rastreador.
 - **P-07** La lista de verificación contra el workspace real, abajo.
 
 _Corregido el 2026-10-04, slice 8_: P-02 pasó a «Cerrados».
+_Corregido el 2026-10-04, slice 8c_: P-01, P-04 y P-06 pasaron a «Cerrados».
+Decía que los tres primeros cambiaban lo que el contrato tenía que decir.
 
 Y uno que no es de este documento pero se cruza: **perfil P-02**, «inicio del
 día» (PF-15). El slice 8 no lo cierra: la grilla abre con las 08:00 arriba como
@@ -1230,6 +1345,10 @@ divergencia de las que este documento propone.
 
 Se dejan con su identificador porque el documento y los contratos los citan.
 
+- **P-01 Crear con un timer corriendo** (CAL-47). Se permite, sin aviso y sin
+  excepción por origen: `createManualEntry` dejó de rechazar el alta con un
+  timer abierto, y TT-30 quedó como regla de la interfaz del rastreador.
+  Decisión del usuario del 2026-10-04; la construye el slice 8c.
 - **P-02 Total del día de una entrada que cruza la medianoche** (CAL-32). Cada
   entrada cerrada suma entera en el día de su inicio, como en la lista; la
   columna siguiente dibuja horas que su total no cuenta. CAL-32 queda como
@@ -1237,3 +1356,12 @@ Se dejan con su identificador porque el documento y los contratos los citan.
   primer día dibuja su segmento y no suma a ningún total visible, y el timer
   suma solo en la columna y el período de su día de inicio (CAL-34, CAL-93).
   Decisión del usuario del 2026-10-04; la construye el slice 8.
+- **P-04 «Guardar» todo o nada en el diálogo** (CAL-67). Sí, con botón:
+  «Guardar» aplica juntos los grupos de campos que la persona tocó, con
+  `updateEntry` (ADR 0013); sin cambios cierra sin pedido, y cerrar con
+  cambios los descarta. Decisión del usuario del 2026-10-04; la construye el
+  slice 8c.
+- **P-06 «Detener» en el diálogo del timer activo** (CAL-40). Sí, con
+  `stopTimer` sin cambios, inactivo mientras haya cambios sin guardar, con
+  «Guardá los cambios antes de detener el timer.». Decisión del usuario del
+  2026-10-04; la construye el slice 8c.
