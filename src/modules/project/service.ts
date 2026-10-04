@@ -10,7 +10,7 @@ import {
   type WorkspaceResource,
 } from "@/server/permissions";
 
-import { nextPaletteColor, PALETTE_KEYS, type PaletteKey } from "./palette";
+import { isPaletteKey, nextPaletteColor, type PaletteKey } from "./palette";
 import {
   projectRepository,
   type ClientRow,
@@ -52,11 +52,6 @@ function projectResource(row: ProjectWithViewer): ProjectResource {
     isPublic: row.isPublic,
     viewer: row.viewer,
   };
-}
-
-function isPaletteKey(value: string): value is PaletteKey {
-  const keys: readonly string[] = PALETTE_KEYS;
-  return keys.includes(value);
 }
 
 /** El `check` de la base no deja guardar otra cosa; si pasa, no es la paleta. */

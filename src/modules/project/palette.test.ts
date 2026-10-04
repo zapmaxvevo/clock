@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { nextPaletteColor, PALETTE, PALETTE_KEYS, paletteColor } from "./palette";
+import {
+  isPaletteKey,
+  nextPaletteColor,
+  PALETTE,
+  PALETTE_KEYS,
+  paletteColor,
+} from "./palette";
 
 describe("la paleta (P-30)", () => {
   it("tiene doce colores distintos, en el orden de las claves", () => {
@@ -24,5 +30,14 @@ describe("nextPaletteColor (PR-15)", () => {
   it("vuelve a empezar después del último", () => {
     expect(nextPaletteColor(12)).toBe("red");
     expect(nextPaletteColor(25)).toBe("orange");
+  });
+});
+
+describe("isPaletteKey", () => {
+  it("acepta las doce claves y nada más", () => {
+    expect(PALETTE_KEYS.every(isPaletteKey)).toBe(true);
+    expect(isPaletteKey("#DC2626")).toBe(false);
+    expect(isPaletteKey("Red")).toBe(false);
+    expect(isPaletteKey("")).toBe(false);
   });
 });

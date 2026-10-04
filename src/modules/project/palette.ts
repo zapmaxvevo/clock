@@ -20,6 +20,12 @@ export const PALETTE_KEYS = [
 
 export type PaletteKey = (typeof PALETTE_KEYS)[number];
 
+/** Estrecha un texto a una clave de la paleta, en el servidor y en el navegador. */
+export function isPaletteKey(value: string): value is PaletteKey {
+  const keys: readonly string[] = PALETTE_KEYS;
+  return keys.includes(value);
+}
+
 export type PaletteColor = {
   readonly key: PaletteKey;
   /** Nombre accesible del color. */
