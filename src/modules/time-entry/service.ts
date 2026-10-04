@@ -33,6 +33,7 @@ import { timeSettingsOf, type ProfileContext } from "@/modules/profile/service";
 import { pairToCheck } from "./assignment";
 import {
   timeEntryRepository,
+  type ClosedFields,
   type EntryRefs,
   type EntryTarget,
   type EntryWithRefs,
@@ -580,14 +581,8 @@ export async function duplicateEntry(
     createEntryOnce(actor, input.id, {
       attempt: () =>
         db.transaction(async (tx) => {
-          const source = await readSourceEntry(tx, actor, input.sourceId);
-          // Solo lo produce un pedido armado a mano: la abierta no es una fila.
-          if (!isClosed(source)) {
-            throw new TimeEntryError(
-              "timer_running",
-              timeEntryMessages.runningEntryTimes,
-            );
-          }
+          // La abierta solo llega en un pedido armado a mano: no es una fila.
+          const source = requireClosed(await readSourceEntry(tx, actor, input.sourceId));
           const fields = continuedFields(source);
           await assertAssignable(tx, actor, NO_PROJECT, fields);
           const created = await timeEntryRepository.insertClosed(tx, {
@@ -863,6 +858,14 @@ function isClosed(row: TimeEntryRow): row is ClosedEntryRow {
   return row.endedAt !== null;
 }
 
+/** La fila, si está cerrada; la que corre se rechaza con `timer_running`: todavía no tiene fin. */
+function requireClosed<Row extends TimeEntryRow>(row: Row): Row & ClosedEntryRow {
+  if (!isClosed(row)) {
+    throw new TimeEntryError("timer_running", timeEntryMessages.runningEntryTimes);
+  }
+  return row;
+}
+
 /**
  * Conservación del ADR 0006 sobre un extremo: el instante guardado si su
  * rótulo es el pedido; si no, la conversión de la hora de pared. `null` si esa
@@ -982,10 +985,9 @@ export async function updateEntryTimes(
   input: UpdateEntryTimesInput,
 ): Promise<UpdateEntryTimesResult> {
   return db.transaction(async (tx) => {
-    const row = await readOwnEntry(tx, actor, "timeEntry.own.update", input.id);
-    if (!isClosed(row)) {
-      throw new TimeEntryError("timer_running", timeEntryMessages.runningEntryTimes);
-    }
+    const row = requireClosed(
+      await readOwnEntry(tx, actor, "timeEntry.own.update", input.id),
+    );
     const times = entryTimesFor(row, input, workspace);
 
     const updated = await timeEntryRepository.updateTimes(tx, targetOf(row), times);
@@ -1107,21 +1109,6 @@ async function lockEntries(
   return new Map(rows.map((row) => [row.id, row]));
 }
 
-/** La entrada que corre no es una fila: ninguna operación en masa la toca (TT-111). */
-function closedOrReject(row: EntryWithRefs): EntryWithRefs & ClosedEntryRow {
-  if (!isClosed(row)) {
-    throw new TimeEntryError("timer_running", timeEntryMessages.runningEntryTimes);
-  }
-  return row;
-}
-
-/** Lo que una edición masiva escribe en una fila: solo lo que cambia. */
-type ClosedFields = {
-  readonly description?: string;
-  readonly startedAt?: Date;
-  readonly endedAt?: Date;
-};
-
 /**
  * El trío pedido: el de la fila con los campos que vienen reemplazados. `null`
  * si no viene ninguno, o si queda igual al de la fila: como el editor de la
@@ -1199,7 +1186,7 @@ export async function bulkEditEntries(
     const plans = evaluateAll(
       input.ids,
       (id) => {
-        const row = closedOrReject(
+        const row = requireClosed(
           authorizeEntry(actor, "timeEntry.own.update", found.get(id)),
         );
         return { row, fields: editedFields(row, input.changes, workspace) };
@@ -1261,7 +1248,7 @@ export async function bulkDeleteEntries(
         const row = found.get(id);
         return row === undefined
           ? null
-          : closedOrReject(authorizeEntry(actor, "timeEntry.own.delete", row));
+          : requireClosed(authorizeEntry(actor, "timeEntry.own.delete", row));
       },
       timeEntryMessages.bulkDeleteRejected,
     );

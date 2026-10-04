@@ -15,6 +15,9 @@ export const TRACKER_WINDOW_DAYS = 14;
 /** Largo máximo de la descripción. Lo valida Zod y lo repite un `check` de la base. */
 export const DESCRIPTION_MAX = 3000;
 
+/** Tope de entradas de una operación en masa (TT-63, TT-64). */
+export const BULK_MAX = 200;
+
 /** Textos que la interfaz muestra tal cual. Un código puede tener más de uno. */
 export const timeEntryMessages = {
   descriptionTooLong: "La descripción no puede superar los 3000 caracteres.",
@@ -36,7 +39,7 @@ export const timeEntryMessages = {
   sameEntryId: "La entrada nueva no puede usar el id de la original.",
   taskNeedsProject: "Elegí un proyecto antes que una tarea.",
   bulkEmpty: "Elegí al menos una entrada.",
-  bulkTooMany: "Se pueden elegir hasta 200 entradas a la vez.",
+  bulkTooMany: `Se pueden elegir hasta ${BULK_MAX} entradas a la vez.`,
   bulkNoChanges: "Elegí al menos un cambio.",
   bulkEditRejected:
     "Ninguna entrada cambió: algunas de las elegidas no se pueden editar.",
@@ -166,9 +169,6 @@ export const updateEntryProjectInput = z
     taskId: z.uuid().nullable(),
   })
   .refine(hasProjectForTask, taskNeedsProject);
-
-/** Tope de entradas de una operación en masa (TT-63, TT-64). */
-export const BULK_MAX = 200;
 
 /**
  * Los ids de una operación en masa. Se normalizan a minúsculas y sin repetir:

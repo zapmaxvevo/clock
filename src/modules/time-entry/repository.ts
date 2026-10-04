@@ -54,6 +54,13 @@ export type EntryTarget = {
   readonly id: string;
 };
 
+/** Lo que se escribe en una fila cerrada: solo lo que cambia. */
+export type ClosedFields = {
+  readonly description?: string;
+  readonly startedAt?: Date;
+  readonly endedAt?: Date;
+};
+
 function isTarget(target: EntryTarget) {
   return and(
     eq(timeEntry.workspaceId, target.workspaceId),
@@ -368,12 +375,10 @@ export const timeEntryRepository = {
     target: EntryTarget,
     times: { startedAt: Date; endedAt: Date },
   ): Promise<EntryWithRefs | undefined> {
-    const rows = await tx
-      .update(timeEntry)
-      .set(times)
-      .where(and(isTarget(target), isNotNull(timeEntry.endedAt)))
-      .returning();
-    return rereadIfWritten(tx, rows.at(0));
+    return rereadIfWritten(
+      tx,
+      await timeEntryRepository.updateClosedFields(tx, target, times),
+    );
   },
 
   /** Solo una fila abierta. `undefined` si ya la cerraron. */
@@ -424,7 +429,7 @@ export const timeEntryRepository = {
   async updateClosedFields(
     tx: Transaction,
     target: EntryTarget,
-    fields: { description?: string; startedAt?: Date; endedAt?: Date },
+    fields: ClosedFields,
   ): Promise<TimeEntryRow | undefined> {
     const rows = await tx
       .update(timeEntry)
