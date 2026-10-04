@@ -41,6 +41,8 @@ const overnight: TimeEntryView = {
   startedAt: "2026-10-02T01:00:00.000Z",
   endedAt: "2026-10-02T05:00:00.000Z",
   dayDate: "2026-10-01",
+  startLabel: "22:00",
+  endLabel: "02:00",
   startClock: "22:00",
   endClock: "02:00",
   extraDays: 1,
@@ -62,6 +64,7 @@ const running: TimeEntryView = {
   startedAt: "2026-10-02T03:00:00.000Z",
   endedAt: null,
   dayDate: "2026-10-02",
+  startLabel: "00:00",
   startClock: "00:00",
   endClock: null,
   endLabel: null,
@@ -70,6 +73,11 @@ const running: TimeEntryView = {
   editableTimes: false,
   project: { id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", name: "Web", color: "teal" },
 };
+
+/** La vista como la arma el servidor para quien eligió 12 h. */
+function in12h(entry: TimeEntryView, startLabel: string, endLabel: string | null) {
+  return { ...entry, startLabel, endLabel };
+}
 
 function segmentOf(entry: TimeEntryView, overrides: Partial<Segment> = {}): Segment {
   return {
@@ -98,6 +106,7 @@ function render(
           placement={{ top: 0, height: 48, lane: 0, lanes: 1 }}
           serverNow={serverNow}
           todayKey="2026-10-04"
+          dialogOpen={false}
           onOpen={() => undefined}
         />
       </TrackingCatalogProvider>
@@ -119,19 +128,25 @@ describe("CalendarBlock, el nombre accesible (CAL-75)", () => {
     expect(nameOf(render(morning))).toBe("Informe, mié, 30/09, de 09:00 a 10:30, 1:30");
   });
 
-  it("con 12 h elegidas, las horas van en ese formato", () => {
-    expect(nameOf(render(morning, { formats: H12 }))).toBe(
+  it("las horas son los rótulos de la vista: con 12 h, en ese formato", () => {
+    expect(nameOf(render(in12h(morning, "9:00 AM", "10:30 AM"), { formats: H12 }))).toBe(
       "Informe, mié, 30/09, de 9:00 AM a 10:30 AM, 1:30",
     );
+  });
+
+  it("el día sale con el formato de fecha de la persona", () => {
+    expect(
+      nameOf(render(morning, { formats: { time: "24h", date: "MM/dd/yyyy" } })),
+    ).toBe("Informe, mié, 09/30, de 09:00 a 10:30, 1:30");
   });
 
   it("la que cruza la medianoche dice que termina un día después", () => {
     expect(nameOf(render(overnight))).toBe(
       "Guardia, jue, 01/10, de 22:00 a 02:00 (termina un día después), 4:00",
     );
-    expect(nameOf(render(overnight, { formats: H12 }))).toBe(
-      "Guardia, jue, 01/10, de 10:00 PM a 2:00 AM (termina un día después), 4:00",
-    );
+    expect(
+      nameOf(render(in12h(overnight, "10:00 PM", "2:00 AM"), { formats: H12 })),
+    ).toBe("Guardia, jue, 01/10, de 10:00 PM a 2:00 AM (termina un día después), 4:00");
   });
 
   it("suma el proyecto y la tarea, y nombra la que no tiene descripción", () => {
@@ -144,7 +159,7 @@ describe("CalendarBlock, el nombre accesible (CAL-75)", () => {
     expect(nameOf(render(running))).toBe(
       "Soporte, vie, 02/10, desde las 00:00, en curso, Web",
     );
-    expect(nameOf(render(running, { formats: H12 }))).toBe(
+    expect(nameOf(render(in12h(running, "12:00 AM", null), { formats: H12 }))).toBe(
       "Soporte, vie, 02/10, desde las 12:00 AM, en curso, Web",
     );
   });

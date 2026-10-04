@@ -11,6 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { dayKeyLabel } from "@/server/time";
 
 import { civilDate, dayKeyOfCivilDate } from "./civil-date";
+import { trackerLabels } from "./labels";
 
 type DateFieldProps = {
   /** Día canónico elegido, "2026-10-02", o `null` sin ninguno: se ve `placeholder`. */
@@ -118,8 +119,8 @@ export function DateField({
           defaultMonth={selected ?? civilDate(todayKey)}
           disabled={outside.length === 0 ? undefined : outside}
           labels={{
-            labelPrevious: () => "Mes anterior",
-            labelNext: () => "Mes siguiente",
+            labelPrevious: () => trackerLabels.previousMonth,
+            labelNext: () => trackerLabels.nextMonth,
           }}
           onSelect={handleSelect}
           autoFocus

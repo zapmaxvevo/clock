@@ -17,7 +17,7 @@ import type {
   CalendarState,
   TimeEntryView,
 } from "@/modules/time-entry/schema";
-import { clockLabel, minutesToClock } from "@/server/time";
+import { clockLabel, MINUTES_PER_DAY, minutesToClock } from "@/server/time";
 
 import { useGroupTotalLabel } from "../use-group-total";
 import { CalendarBlock } from "./calendar-block";
@@ -25,14 +25,13 @@ import {
   entrySegments,
   initialScrollMinute,
   layoutColumn,
-  MINUTES_PER_DAY,
   minuteHeight,
   runningSegments,
   SLOT_HEIGHT_PX,
   type NowPosition,
   type Segment,
 } from "./calendar-layout";
-import { dayTotalOf, NO_REMOVED_IDS } from "./calendar-totals";
+import { dayTotalOf } from "./calendar-totals";
 import type { CalendarZoom } from "./calendar-zoom";
 
 type CalendarGridProps = {
@@ -44,6 +43,8 @@ type CalendarGridProps = {
   /** La entrada del último diálogo abierto: su botón recibe `openerRef`. */
   readonly openerId: string | null;
   readonly openerRef: Ref<HTMLButtonElement>;
+  /** Con el diálogo abierto, los detalles de los bloques se cierran. */
+  readonly dialogOpen: boolean;
   /** Un clic, `Enter` o `Espacio` en un bloque (CAL-74). */
   readonly onOpen: (id: string) => void;
 };
@@ -65,14 +66,28 @@ const DIMMED_STYLE: CSSProperties = {
 
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 
-/** Las entradas de cada día del período, con sus segmentos. */
+/**
+ * Las entradas de cada día del período, con sus segmentos, en orden
+ * cronológico (CAL-76): `entries` ya viene por inicio y después por id, y el
+ * timer entra en el lugar de su inicio.
+ */
 function columnItems(
   state: CalendarState,
   now: NowPosition,
 ): ReadonlyMap<string, readonly ColumnItem[]> {
   const dates = state.days.map((day) => day.date);
   const byDay = new Map<string, ColumnItem[]>(dates.map((date) => [date, []]));
-  const add = (entry: TimeEntryView, segments: readonly Segment[]) => {
+  const timeline =
+    state.running === null
+      ? state.entries
+      : [...state.entries, state.running].sort(
+          (a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt),
+        );
+  for (const entry of timeline) {
+    const segments =
+      entry === state.running
+        ? runningSegments(entry, now, dates)
+        : entrySegments(entry, dates);
     for (const segment of segments) {
       byDay.get(segment.date)?.push({
         key: entry.id,
@@ -82,12 +97,6 @@ function columnItems(
         segment,
       });
     }
-  };
-  for (const entry of state.entries) {
-    add(entry, entrySegments(entry, dates));
-  }
-  if (state.running !== null) {
-    add(state.running, runningSegments(state.running, now, dates));
   }
   return byDay;
 }
@@ -105,6 +114,7 @@ export function CalendarGrid({
   corner,
   openerId,
   openerRef,
+  dialogOpen,
   onOpen,
 }: CalendarGridProps) {
   const { time } = useDisplayFormats();
@@ -134,7 +144,8 @@ export function CalendarGrid({
   return (
     <div
       ref={scrollRef}
-      className="relative max-h-[calc(100dvh-14rem)] min-h-96 overflow-auto rounded-lg border"
+      // El foco no queda bajo los encabezados ni el eje, que son pegajosos (WCAG 2.4.11).
+      className="relative max-h-[calc(100dvh-14rem)] min-h-96 scroll-pt-14 scroll-pl-[6.5rem] overflow-auto rounded-lg border"
     >
       <div
         className="grid"
@@ -168,62 +179,18 @@ export function CalendarGrid({
           ))}
         </div>
         {state.days.map((day) => (
-          <div
+          <DayColumn
             key={day.date}
-            role="group"
-            aria-labelledby={headerId(day.date)}
-            data-calendar-day={day.date}
-            className="relative border-r last:border-r-0"
-            style={{
-              height,
-              backgroundImage:
-                "linear-gradient(to bottom, var(--border) 1px, transparent 1px)",
-              backgroundSize: `100% ${SLOT_HEIGHT_PX}px`,
-            }}
-          >
-            {day.beforeWorkspace && (
-              <div aria-hidden="true" className="absolute inset-0" style={DIMMED_STYLE} />
-            )}
-            {day.missingMinutes.map((range) => (
-              <div
-                key={range.from}
-                aria-hidden="true"
-                className="absolute inset-x-0"
-                style={{
-                  ...DIMMED_STYLE,
-                  top: range.from * scale,
-                  height: (range.to - range.from) * scale,
-                }}
-              />
-            ))}
-            {layoutColumn(items.get(day.date) ?? [], zoom).map(
-              ({ item, ...placement }) => (
-                <CalendarBlock
-                  key={item.key}
-                  entry={item.entry}
-                  segment={item.segment}
-                  placement={placement}
-                  serverNow={state.serverNow}
-                  todayKey={state.todayKey}
-                  onOpen={() => onOpen(item.entry.id)}
-                  buttonRef={
-                    item.segment.firstVisible && item.entry.id === openerId
-                      ? openerRef
-                      : undefined
-                  }
-                />
-              ),
-            )}
-            {now.date === day.date && (
-              // CAL-35: decorativa, fuera del árbol de accesibilidad.
-              <div
-                aria-hidden="true"
-                data-calendar-now=""
-                className="bg-destructive pointer-events-none absolute inset-x-0 z-30 h-0.5 -translate-y-1/2"
-                style={{ top: now.minute * scale }}
-              />
-            )}
-          </div>
+            day={day}
+            items={items.get(day.date) ?? []}
+            state={state}
+            now={now}
+            zoom={zoom}
+            openerId={openerId}
+            openerRef={openerRef}
+            dialogOpen={dialogOpen}
+            onOpen={onOpen}
+          />
         ))}
       </div>
     </div>
@@ -242,7 +209,7 @@ function DayHeader({
   readonly day: CalendarDayView;
   readonly state: CalendarState;
 }) {
-  const total = useGroupTotalLabel(dayTotalOf(day, state, NO_REMOVED_IDS));
+  const total = useGroupTotalLabel(dayTotalOf(day, state, []));
   return (
     <div
       id={headerId(day.date)}
@@ -260,6 +227,88 @@ function DayHeader({
         {day.label}
       </span>
       <span className="text-muted-foreground text-xs tabular-nums">{total}</span>
+    </div>
+  );
+}
+
+type DayColumnProps = Pick<
+  CalendarGridProps,
+  "state" | "now" | "zoom" | "openerId" | "openerRef" | "dialogOpen" | "onOpen"
+> & {
+  readonly day: CalendarDayView;
+  readonly items: readonly ColumnItem[];
+};
+
+/**
+ * La columna de un día, con lo atenuado (CAL-30, CAL-48), los bloques y la
+ * línea de ahora si es la de hoy (CAL-35).
+ */
+function DayColumn({
+  day,
+  items,
+  state,
+  now,
+  zoom,
+  openerId,
+  openerRef,
+  dialogOpen,
+  onOpen,
+}: DayColumnProps) {
+  const scale = minuteHeight(zoom);
+  return (
+    <div
+      role="group"
+      aria-labelledby={headerId(day.date)}
+      data-calendar-day={day.date}
+      className="relative border-r last:border-r-0"
+      style={{
+        height: MINUTES_PER_DAY * scale,
+        backgroundImage: "linear-gradient(to bottom, var(--border) 1px, transparent 1px)",
+        backgroundSize: `100% ${SLOT_HEIGHT_PX}px`,
+      }}
+    >
+      {day.beforeWorkspace && (
+        <div aria-hidden="true" className="absolute inset-0" style={DIMMED_STYLE} />
+      )}
+      {day.missingMinutes.map((range) => (
+        <div
+          key={range.from}
+          aria-hidden="true"
+          className="absolute inset-x-0"
+          style={{
+            ...DIMMED_STYLE,
+            top: range.from * scale,
+            height: (range.to - range.from) * scale,
+          }}
+        />
+      ))}
+      {layoutColumn(items, zoom).map(({ item, ...placement }) => (
+        <CalendarBlock
+          key={item.key}
+          entry={item.entry}
+          segment={item.segment}
+          placement={placement}
+          serverNow={state.serverNow}
+          todayKey={state.todayKey}
+          dialogOpen={dialogOpen}
+          onOpen={() => onOpen(item.entry.id)}
+          buttonRef={
+            item.segment.firstVisible && item.entry.id === openerId
+              ? openerRef
+              : undefined
+          }
+        />
+      ))}
+      {now.date === day.date && (
+        // CAL-35: decorativa, fuera del árbol de accesibilidad; sobre los
+        // bloques, debajo del enfocado, del eje y de los encabezados.
+        <div
+          aria-hidden="true"
+          data-calendar-now=""
+          className="bg-primary pointer-events-none absolute inset-x-0 z-[5] h-0.5 -translate-y-1/2"
+          style={{ top: now.minute * scale }}
+        />
+      )}
     </div>
   );
 }

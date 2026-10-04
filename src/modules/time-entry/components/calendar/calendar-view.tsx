@@ -80,6 +80,7 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
           corner={<ZoomControls zoom={zoom} onChange={changeZoom} />}
           openerId={dialogEntry?.id ?? null}
           openerRef={openerRef}
+          dialogOpen={open}
           onOpen={openEntry}
         />
       </section>

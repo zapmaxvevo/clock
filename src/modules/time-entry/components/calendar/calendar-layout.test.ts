@@ -218,7 +218,7 @@ describe("layoutColumn", () => {
 
   it("dos que se pisan van lado a lado; la que sigue después, en ancho completo", () => {
     const placed = layoutColumn(
-      [item("b", 540, 600), item("a", 540, 600), item("c", 600, 660)],
+      [item("a", 540, 600), item("b", 540, 600), item("c", 600, 660)],
       60,
     );
     expect(lanesOf(placed)).toEqual([
@@ -277,11 +277,32 @@ describe("layoutColumn", () => {
     ]);
   });
 
-  it("ordena por inicio y después por clave, sin importar el orden de llegada", () => {
+  it("dos del mismo minuto siguen el orden de llegada, no el de la clave (CAL-76)", () => {
+    // `entries` llega por inicio y después por id; la clave puede ordenar al revés.
+    const placed = layoutColumn([item("z", 540, 600), item("a", 540, 600)], 60);
+    expect(lanesOf(placed)).toEqual([
+      ["z", 0, 2],
+      ["a", 1, 2],
+    ]);
+  });
+
+  it("en la hora repetida de un atraso el DOM sigue el orden de llegada, no el reloj", () => {
+    // 02:30 en la primera pasada y 02:15 en la segunda: la segunda empezó
+    // después aunque su reloj marque antes.
     const placed = layoutColumn(
-      [item("z", 600, 660), item("b", 540, 560), item("a", 540, 560)],
+      [item("primera", 150, 165), item("segunda", 135, 140), item("despues", 240, 300)],
       60,
     );
-    expect(placed.map((block) => block.item.key)).toEqual(["a", "b", "z"]);
+    expect(placed.map((block) => block.item.key)).toEqual([
+      "primera",
+      "segunda",
+      "despues",
+    ]);
+    // Los carriles se reparten por el reloj: la de las 02:15 queda en el primero.
+    expect(lanesOf(placed)).toEqual([
+      ["primera", 1, 2],
+      ["segunda", 0, 2],
+      ["despues", 0, 1],
+    ]);
   });
 });

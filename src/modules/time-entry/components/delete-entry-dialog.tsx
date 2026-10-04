@@ -13,6 +13,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+import { entrySpanText } from "./labels";
+
 type DeleteEntryDialogProps = {
   /** Cómo nombrar la entrada: el mismo texto que muestra la fila. */
   readonly name: string;
@@ -35,8 +37,7 @@ export function DeleteEntryDialog({
   onConfirm,
   finalFocus,
 }: DeleteEntryDialogProps) {
-  const span =
-    endLabel === null ? `desde las ${startLabel}` : `de ${startLabel} a ${endLabel}`;
+  const span = entrySpanText(startLabel, endLabel);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

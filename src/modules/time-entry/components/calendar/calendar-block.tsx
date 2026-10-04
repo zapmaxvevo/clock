@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { projectTaskLabel } from "@/modules/project/components/labels";
 import { paletteColor } from "@/modules/project/palette";
 import type { TimeEntryView } from "@/modules/time-entry/schema";
-import { clockLabel, formatDuration, weekdayLabel } from "@/server/time";
+import { formatDuration, weekdayLabel } from "@/server/time";
 
 import { useElapsedSeconds } from "../elapsed-counter";
 import { entryNameOf } from "../labels";
@@ -23,6 +23,8 @@ type CalendarBlockProps = {
   readonly serverNow: string;
   /** Día de hoy en la zona de la persona: el año del rótulo del día. */
   readonly todayKey: string;
+  /** Con el diálogo abierto el detalle se cierra: no queda detrás del fondo. */
+  readonly dialogOpen: boolean;
   readonly onOpen: () => void;
   /** El botón del bloque, adonde vuelve el foco al cerrar su diálogo. */
   readonly buttonRef?: Ref<HTMLButtonElement>;
@@ -63,18 +65,19 @@ export function CalendarBlock({
   placement,
   serverNow,
   todayKey,
+  dialogOpen,
   onOpen,
   buttonRef,
 }: CalendarBlockProps) {
-  const { time, date } = useDisplayFormats();
+  const { date } = useDisplayFormats();
   /** El timer que corre termina «en curso» (CAL-38). */
   const running = entry.endClock === null;
   const elapsed = useElapsedSeconds(running ? entry.startedAt : null, serverNow);
 
   const name = entryNameOf(entry.description);
   const project = projectText(entry);
-  const start = clockLabel(entry.startClock, time);
-  const end = entry.endClock === null ? null : clockLabel(entry.endClock, time);
+  const start = entry.startLabel;
+  const end = entry.endLabel;
   const duration = running
     ? formatDuration(Math.floor(elapsed / 60))
     : (entry.durationLabel ?? "");
@@ -98,7 +101,8 @@ export function CalendarBlock({
       <span
         className={cn(
           "truncate font-medium",
-          entry.description === "" && "text-muted-foreground font-normal",
+          // CAL-22: sobre el relleno, el gris del tema no llega a 4,5:1.
+          entry.description === "" && "text-foreground/70 font-normal",
         )}
       >
         {name}
@@ -115,7 +119,7 @@ export function CalendarBlock({
         </span>
       )}
       {segment.startsHere && (
-        <span className="text-muted-foreground tabular-nums">
+        <span className="text-foreground/70 truncate tabular-nums">
           {times} · {duration}
         </span>
       )}
@@ -139,7 +143,7 @@ export function CalendarBlock({
   };
 
   return (
-    <Tooltip>
+    <Tooltip disabled={dialogOpen}>
       <TooltipTrigger
         render={
           segment.firstVisible ? (

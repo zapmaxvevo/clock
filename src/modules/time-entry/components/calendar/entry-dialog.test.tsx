@@ -52,6 +52,8 @@ const overnight: TimeEntryView = {
   startedAt: "2026-10-02T01:00:00.000Z",
   endedAt: "2026-10-04T05:00:00.000Z",
   dayDate: "2026-10-01",
+  startLabel: "22:00",
+  endLabel: "02:00",
   startClock: "22:00",
   endClock: "02:00",
   extraDays: 2,
@@ -67,6 +69,7 @@ const running: TimeEntryView = {
   startedAt: "2026-10-04T13:00:00.000Z",
   endedAt: null,
   dayDate: "2026-10-04",
+  startLabel: "10:00",
   startClock: "10:00",
   endClock: null,
   endLabel: null,
@@ -117,8 +120,13 @@ describe("EntryDialogBody (CAL-65, CAL-66)", () => {
     expectNoControls(markup);
   });
 
-  it("con 12 h elegidas, las horas van en ese formato", () => {
-    const fields = fieldsOf(render(closed, { time: "12h", date: "dd/MM/yyyy" }));
+  it("las horas son los rótulos de la vista: con 12 h, en ese formato", () => {
+    const fields = fieldsOf(
+      render(
+        { ...closed, startLabel: "9:00 AM", endLabel: "10:30 AM" },
+        { time: "12h", date: "dd/MM/yyyy" },
+      ),
+    );
     expect(fields).toContainEqual(["Hora de inicio", "9:00 AM"]);
     expect(fields).toContainEqual(["Hora de fin", "10:30 AM"]);
   });

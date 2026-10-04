@@ -26,7 +26,8 @@ import {
 
 import { DescriptionField } from "./description-field";
 import { DiscardTimerDialog } from "./discard-timer-dialog";
-import { saveEntryProject, selectionOf } from "./entry-project";
+import { saveEntryProject } from "./entry-project";
+import { selectionOf } from "./entry-selection";
 import { startedWeeks } from "./entry-week";
 import { trackerLabels } from "./labels";
 import { ManualBar } from "./manual-bar";

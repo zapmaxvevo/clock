@@ -11,6 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import type { CalendarMode } from "@/modules/time-entry/schema";
 
 import { civilDate, dayKeyOfCivilDate } from "../civil-date";
+import { trackerLabels } from "../labels";
 import { calendarHref } from "./calendar-href";
 import { calendarLabels } from "./labels";
 
@@ -65,8 +66,8 @@ export function PeriodPicker({
           selected={selected}
           defaultMonth={selected}
           labels={{
-            labelPrevious: () => "Mes anterior",
-            labelNext: () => "Mes siguiente",
+            labelPrevious: () => trackerLabels.previousMonth,
+            labelNext: () => trackerLabels.nextMonth,
           }}
           onSelect={handleSelect}
           autoFocus

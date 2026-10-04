@@ -1,8 +1,8 @@
-import { extraDaysText } from "../labels";
+import { entrySpanText, extraDaysText } from "../labels";
 import type { CalendarZoom } from "./calendar-zoom";
 
 /** Lo que nombra un bloque de la grilla (CAL-75), ya en el formato de la persona. */
-export type BlockLabelParts = {
+type BlockLabelParts = {
   /** La descripción, o «Sin descripción». */
   readonly name: string;
   /** El día de inicio, «jue, 01/10». */
@@ -23,8 +23,8 @@ const RUNNING = "en curso";
 function blockLabel({ name, day, start, end, project }: BlockLabelParts): string {
   const times =
     end === null
-      ? `desde las ${start}, ${RUNNING}`
-      : `de ${start} a ${end.clock}${end.extraDays > 0 ? extraDaysText(end.extraDays) : ""}, ${end.duration}`;
+      ? `${entrySpanText(start, null)}, ${RUNNING}`
+      : `${entrySpanText(start, end.clock)}${end.extraDays > 0 ? extraDaysText(end.extraDays) : ""}, ${end.duration}`;
   return [name, day, times, ...(project === null ? [] : [project])].join(", ");
 }
 
@@ -51,8 +51,6 @@ export const calendarLabels = {
   /** CAL-07: el selector de la vista. */
   weekView: "Semana",
   dayView: "Día",
-  /** CAL-33: el total del período. */
-  total: "Total",
   /** CAL-11. */
   zoomIn: "Acercar",
   zoomOut: "Alejar",
@@ -65,9 +63,7 @@ export const calendarLabels = {
   /** CAL-65 y CAL-66: el diálogo de solo lectura. */
   entryTitle: "Entrada",
   runningTitle: "Timer en curso",
-  description: "Descripción",
   project: "Proyecto",
-  date: "Fecha",
   duration: "Duración",
   runningEnd: "Fin: en curso",
   close: "Cerrar",

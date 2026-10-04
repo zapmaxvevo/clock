@@ -1,5 +1,10 @@
 import type { TimeEntryView } from "@/modules/time-entry/schema";
-import { addDaysToKey, clockToMinutes, type MinuteRange } from "@/server/time";
+import {
+  addDaysToKey,
+  clockToMinutes,
+  MINUTES_PER_DAY,
+  type MinuteRange,
+} from "@/server/time";
 
 import type { CalendarZoom } from "./calendar-zoom";
 
@@ -15,8 +20,6 @@ export const SLOT_HEIGHT_PX = 48;
 export const MIN_BLOCK_HEIGHT_PX = 22;
 /** CAL-14: lo que queda arriba en un período sin hoy. Constante hasta verificar PF-15. */
 export const DEFAULT_SCROLL_CLOCK = "08:00";
-
-export const MINUTES_PER_DAY = 1440;
 
 /** Píxeles de un minuto de reloj con ese zoom. */
 export function minuteHeight(zoom: CalendarZoom): number {
@@ -35,12 +38,9 @@ export type Segment = {
   readonly firstVisible: boolean;
 };
 
-/** Un instante de la grilla: el día y el minuto de reloj. */
-type GridPoint = { readonly date: string; readonly minute: number };
-
 function segmentsBetween(
-  start: GridPoint,
-  end: GridPoint,
+  start: NowPosition,
+  end: NowPosition,
   days: readonly string[],
 ): readonly Segment[] {
   const segments: Segment[] = [];
@@ -101,6 +101,7 @@ export function runningSegments(
   return segmentsBetween(start, end, days);
 }
 
+/** Un punto de la grilla, el día y el minuto de reloj: la línea de ahora y los extremos de un segmento. */
 export type NowPosition = { readonly date: string; readonly minute: number };
 
 /** El minuto del servidor más lo transcurrido, pasando de día a la medianoche. */
@@ -145,19 +146,22 @@ export type PlacedBlock<Item> = {
   readonly lanes: number;
 };
 
-/** Por código, como ordena la base los ids: sin reglas del idioma. */
-function compareKeys(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
-
-type Drawn<Item> = { readonly item: Item; readonly top: number; readonly height: number };
+type Drawn<Item> = {
+  readonly item: Item;
+  /** El orden de llegada. */
+  readonly order: number;
+  readonly top: number;
+  readonly height: number;
+};
 
 function bottomOf<Item>(blocks: readonly Drawn<Item>[]): number {
   return Math.max(...blocks.map((block) => block.top + block.height));
 }
 
 /** Cada bloque del grupo toma el primer carril que ya quedó libre. */
-function placeGroup<Item>(group: readonly Drawn<Item>[]): readonly PlacedBlock<Item>[] {
+function placeGroup<Item>(
+  group: readonly Drawn<Item>[],
+): readonly (PlacedBlock<Item> & { readonly order: number })[] {
   const laneBottoms: number[] = [];
   const lanes = group.map((block) => {
     const free = laneBottoms.findIndex((bottom) => bottom <= block.top);
@@ -177,18 +181,24 @@ function placeGroup<Item>(group: readonly Drawn<Item>[]): readonly PlacedBlock<I
  * grupo es un conjunto conectado por superposición de lo dibujado, con la
  * altura mínima incluida, así ningún bloque tapa a otro; dentro del grupo cada
  * bloque toma el primer carril libre y todos miden `1 / lanes` del ancho.
+ *
+ * Los ítems llegan en orden cronológico —el de `entries`, por inicio y
+ * después por id— y salen en ese mismo orden, que es el del DOM y el de `Tab`
+ * (CAL-76): en la hora repetida de un atraso el reloj no lo refleja. Los
+ * carriles se asignan por `from` y, a igual `from`, por ese orden.
  */
 export function layoutColumn<
   Item extends { readonly key: string; readonly from: number; readonly to: number },
 >(items: readonly Item[], zoom: CalendarZoom): readonly PlacedBlock<Item>[] {
   const scale = minuteHeight(zoom);
-  const drawn = [...items]
-    .sort((a, b) => a.from - b.from || compareKeys(a.key, b.key))
-    .map((item) => ({
+  const drawn = items
+    .map((item, order) => ({
       item,
+      order,
       top: item.from * scale,
       height: Math.max((item.to - item.from) * scale, MIN_BLOCK_HEIGHT_PX),
-    }));
+    }))
+    .sort((a, b) => a.top - b.top || a.order - b.order);
 
   const groups: Drawn<Item>[][] = [];
   for (const block of drawn) {
@@ -199,5 +209,8 @@ export function layoutColumn<
       groups.push([block]);
     }
   }
-  return groups.flatMap(placeGroup);
+  return groups
+    .flatMap(placeGroup)
+    .sort((a, b) => a.order - b.order)
+    .map(({ item, top, height, lane, lanes }) => ({ item, top, height, lane, lanes }));
 }

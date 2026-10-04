@@ -15,9 +15,10 @@ import {
 import { cn } from "@/lib/utils";
 import { ProjectPicker } from "@/modules/project/components/project-picker";
 import type { TimeEntryView } from "@/modules/time-entry/schema";
-import { clockLabel, dayKeyLabel } from "@/server/time";
+import { dayKeyLabel } from "@/server/time";
 
 import { ElapsedCounter } from "../elapsed-counter";
+import { selectionOf } from "../entry-selection";
 import { entryNameOf, entryProjectLabel, extraDaysText, trackerLabels } from "../labels";
 import { useDialogReturnFocus } from "../use-dialog-return-focus";
 import { calendarLabels } from "./labels";
@@ -56,7 +57,7 @@ export function EntryDialog({
     fallbackFocus: regionRef,
     onCancel: onClose,
   });
-  const running = entry?.endedAt === null;
+  const running = entry?.endClock === null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -91,12 +92,12 @@ type EntryDialogBodyProps = {
 
 /** Los campos de la entrada como texto, en una lista de definiciones. */
 export function EntryDialogBody({ entry, serverNow, todayKey }: EntryDialogBodyProps) {
-  const { time, date } = useDisplayFormats();
+  const { date } = useDisplayFormats();
   const name = entryNameOf(entry.description);
 
   return (
     <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
-      <Field label={calendarLabels.description}>
+      <Field label={trackerLabels.description}>
         <span
           className={cn(
             "whitespace-pre-wrap",
@@ -110,19 +111,17 @@ export function EntryDialogBody({ entry, serverNow, todayKey }: EntryDialogBodyP
         <ProjectPicker
           readOnly
           variant="row"
-          // El par a mano y no `selectionOf`: `entry-project.ts` importa la action
-          // del cambio de proyecto, y este diálogo no llama a ninguna.
-          value={{ project: entry.project, task: entry.task }}
+          value={selectionOf(entry)}
           label={entryProjectLabel(name)}
           // Obligatoria también en solo lectura; acá no hay cambio que avisar.
           onChange={() => undefined}
         />
       </Field>
-      <Field label={calendarLabels.date}>
+      <Field label={trackerLabels.date}>
         {dayKeyLabel(entry.dayDate, todayKey, date)}
       </Field>
       <Field label={trackerLabels.startTime}>
-        <span className="tabular-nums">{clockLabel(entry.startClock, time)}</span>
+        <span className="tabular-nums">{entry.startLabel}</span>
       </Field>
       {entry.endClock === null ? (
         <>
@@ -135,7 +134,7 @@ export function EntryDialogBody({ entry, serverNow, todayKey }: EntryDialogBodyP
         <>
           <Field label={trackerLabels.endTime}>
             <span className="tabular-nums">
-              {clockLabel(entry.endClock, time)}
+              {entry.endLabel}
               {entry.extraDays > 0 && (
                 <sup className="ml-0.5">
                   +{entry.extraDays}

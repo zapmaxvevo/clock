@@ -7,9 +7,10 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { CalendarState } from "@/modules/time-entry/schema";
 
+import { trackerLabels } from "../labels";
 import { useGroupTotalLabel } from "../use-group-total";
 import { calendarHref } from "./calendar-href";
-import { NO_REMOVED_IDS, periodTotalOf } from "./calendar-totals";
+import { periodTotalOf } from "./calendar-totals";
 import { zoomedIn, zoomedOut, type CalendarZoom } from "./calendar-zoom";
 import { calendarLabels } from "./labels";
 import { PeriodPicker } from "./period-picker";
@@ -104,10 +105,10 @@ function ModeLink({
 
 /** CAL-33, CAL-34: con el timer del período, sube junto con su contador. */
 function PeriodTotal({ state }: { readonly state: CalendarState }) {
-  const total = useGroupTotalLabel(periodTotalOf(state, NO_REMOVED_IDS));
+  const total = useGroupTotalLabel(periodTotalOf(state, []));
   return (
     <p className="ml-auto text-sm">
-      <span className="text-muted-foreground">{calendarLabels.total}</span>{" "}
+      <span className="text-muted-foreground">{trackerLabels.weekTotal}</span>{" "}
       <span className="font-medium tabular-nums">{total}</span>
     </p>
   );

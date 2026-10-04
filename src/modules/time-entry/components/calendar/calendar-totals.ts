@@ -2,9 +2,6 @@ import type { CalendarDayView, CalendarState } from "@/modules/time-entry/schema
 
 import type { GroupTotal } from "../use-group-total";
 
-/** Lo que el 8 no borra: los totales no descuentan nada. El 8c pasa los ids del borrado optimista. */
-export const NO_REMOVED_IDS: readonly string[] = [];
-
 /**
  * La columna de un día (CAL-31, CAL-32, CAL-34): las cerradas que empiezan
  * ese día, y el timer solo en la columna de su día de inicio (P-02).

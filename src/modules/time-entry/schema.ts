@@ -103,7 +103,7 @@ export const trackerSearchParams = z.object({ desde: dayKeyInput });
 export const calendarWeekParams = z.object({ semana: dayKeyInput });
 export const calendarModeParams = z.object({ vista: z.literal("dia") });
 
-export const CALENDAR_MODES = ["week", "day"] as const;
+const CALENDAR_MODES = ["week", "day"] as const;
 /** La vista de la grilla. No se llama `CalendarView`, que es el componente. */
 export type CalendarMode = (typeof CALENDAR_MODES)[number];
 
