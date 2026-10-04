@@ -46,11 +46,10 @@ function SelectTrigger({
       {...props}
     >
       {children}
-      <SelectPrimitive.Icon
-        render={
-          <ChevronDownIcon className="pointer-events-none size-4 text-muted-foreground" />
-        }
-      />
+      {/* El ícono va como hijo: con `render`, el «▼» de la primitiva queda dentro del `<svg>`. */}
+      <SelectPrimitive.Icon>
+        <ChevronDownIcon className="pointer-events-none size-4 text-muted-foreground" />
+      </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   );
 }
