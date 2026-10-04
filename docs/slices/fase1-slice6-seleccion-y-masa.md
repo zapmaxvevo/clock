@@ -536,7 +536,10 @@ membresía, la entrada mal formada, el tope— responde con su código y sin lis
   eso no es un rechazo.
 - Por eso las dos ofrecen «Reintentar» con `unexpected` (TT-89), sin id del
   cliente. El reintento reenvía el último pedido entero, con los ids de
-  entonces.
+  entonces, **y se ofrece solo mientras todas esas entradas sigan en
+  pantalla** (§5.3: nunca se toca una fila que no se ve). Si alguna se fue o la
+  persona la soltó, el aviso queda sin «Reintentar», como la continuación
+  (ronda de revisiones).
 
 ### 4.8 Lo que el slice 12 suma, sin que este lo construya
 
@@ -785,6 +788,7 @@ deleteClosedByIds(
 
 ```
 /home/maxi/program/clock/src/components/ui/checkbox.tsx                           (nuevo, generado)
+/home/maxi/program/clock/src/modules/time-entry/components/tracker-screen.tsx      (ronda de revisiones)
 /home/maxi/program/clock/src/components/action-feedback.tsx
 /home/maxi/program/clock/src/hooks/use-action.ts
 /home/maxi/program/clock/src/modules/time-entry/components/selection.ts           (nuevo)
@@ -833,7 +837,7 @@ tiene que registrar».
 `drizzle/`, `src/server/time/`, `src/modules/project/` y
 `src/modules/profile/` —el campo opcional de `ActionResult` no les cambia nada,
 y `profile` usa `ActionFeedback` sin `children`—, `getTrackerState`,
-`tracker-screen.tsx`, `tracker-bar.tsx`, `page.tsx`, `reach-week.tsx`,
+`tracker-bar.tsx`, `page.tsx`, `reach-week.tsx`,
 `entry-week.ts`, `time-draft.ts`. Los contratos y correcciones de slices
 anteriores son históricos y no se reescriben.
 
@@ -1060,30 +1064,30 @@ anteriores son históricos y no se reescriben.
 
 ### Con qué se verifica cada criterio
 
-| Criterio | Tipo                       | Archivo                                                                                | Qué afirma                                                                                                                     |
-| -------- | -------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| 1        | e2e                        | `e2e/bulk-actions.spec.ts`                                                             | la casilla por su nombre, la barra con la cantidad, la barra que se va                                                         |
-| 2        | unidad + e2e               | `selection.test.ts`; `e2e/bulk-actions.spec.ts`                                        | `toggleDay` y `dayCheckState` con ninguna, algunas y todas; y el estado mixto por su `aria-checked`                            |
-| 3        | unidad + e2e               | `selection.test.ts`; `e2e/bulk-actions.spec.ts`                                        | `keepVisible` con y sin cambios, y su referencia; y los recorridos 7 y 8                                                       |
-| 4        | unidad                     | `entry-row.test.tsx`                                                                   | la fila con `canTrack` en falso, sin casilla, y en verdadero, con ella                                                         |
-| 5        | unidad                     | `schema.test.ts`                                                                       | 0, 200 y 201 ids; repetidos con distinta mayúscula                                                                             |
-| 6        | integración                | `service.integration.test.ts`; `audit.integration.test.ts`                             | las descripciones escritas y una constancia por fila escrita, ninguna por la que ya la tenía; `project` y `task` en las vistas |
-| 7        | integración                | `service.integration.test.ts`                                                          | por cada caso, la edición masiva contra `updateEntryTimes` sobre una copia sembrada igual                                      |
-| 8        | unidad + integración       | `schema.test.ts`; `bulk-changes.test.ts`; `service.integration.test.ts`                | el objeto estricto, con su texto, y el vacío; `toChanges` con vacíos y espacios; el fin conservado y el cruce de TT-72         |
-| 9        | integración                | `service.integration.test.ts`                                                          | la entrada de más de un día con su propia fecha, sin escribir                                                                  |
-| 10       | integración                | `service.integration.test.ts`; `audit.integration.test.ts`                             | cada causa de §4.5 mezclada con filas válidas: nada escrito, nada registrado, la lista entera y en orden                       |
-| 11       | integración                | `service.integration.test.ts`; `audit.integration.test.ts`                             | el borrado con constancias; el id que no existe; la ajena y la abierta sin borrar nada                                         |
-| 12       | unidad + e2e               | `bulk-changes.test.ts`; `e2e/bulk-actions.spec.ts`                                     | `confirmsDelete`; y el botón inactivo y activo                                                                                 |
-| 13       | e2e                        | `e2e/bulk-actions.spec.ts`                                                             | el recorrido 3                                                                                                                 |
-| 14       | integración + e2e          | `service.integration.test.ts`; `audit.integration.test.ts`; `e2e/bulk-actions.spec.ts` | el segundo intento sin escrituras ni constancias; y el recorrido 6                                                             |
-| 15       | integración                | `service.integration.test.ts`                                                          | con `queueBehindBarrier`: el borrado primero, la edición después                                                               |
-| 16       | integración                | `permissions.integration.test.ts`                                                      | las dos funciones con membresía `inactive` e ids inexistentes, y con una entrada ajena                                         |
-| 17       | integración                | `actions.integration.test.ts`                                                          | la traducción, el permiso, `rejections` en el resultado y la revalidación                                                      |
-| 18       | e2e                        | `e2e/bulk-actions.spec.ts`                                                             | los recorridos 4 y 8                                                                                                           |
-| 19       | e2e                        | `e2e/bulk-actions.spec.ts`                                                             | el foco en la región en los recorridos 2, 5 y 6 —en el 6, después de «Reintentar»—, y en el encabezado del día al final del 5  |
-| 20       | unidad + integración + e2e | las suites existentes                                                                  | en verde con el slice entero, sin cambiar afirmaciones                                                                         |
-| 21       | integración                | `service.integration.test.ts`                                                          | con `raceThroughBarrier`: las dos respuestas `ok` y las filas con lo que pidió la que terminó última                           |
-| 22       | e2e                        | `e2e/bulk-actions.spec.ts`                                                             | el recorrido 9                                                                                                                 |
+| Criterio | Tipo                       | Archivo                                                                                | Qué afirma                                                                                                                                                     |
+| -------- | -------------------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1        | e2e                        | `e2e/bulk-actions.spec.ts`                                                             | la casilla por su nombre, la barra con la cantidad, la barra que se va                                                                                         |
+| 2        | unidad + e2e               | `selection.test.ts`; `e2e/bulk-actions.spec.ts`                                        | `toggleDay` y `dayCheckState` con ninguna, algunas y todas; y el estado mixto por su `aria-checked`                                                            |
+| 3        | unidad + e2e               | `selection.test.ts`; `e2e/bulk-actions.spec.ts`                                        | `keepVisible` con y sin cambios, y su referencia; y los recorridos 7 y 8                                                                                       |
+| 4        | unidad                     | `entry-row.test.tsx`                                                                   | la fila con `canTrack` en falso, sin casilla, y en verdadero, con ella                                                                                         |
+| 5        | unidad + e2e               | `schema.test.ts`; `e2e/bulk-actions.spec.ts`                                           | 0, 200 y 201 ids; repetidos con distinta mayúscula; en pantalla, 201 elegidas dejan «Editar» y «Borrar» inactivos con el motivo asociado (ronda de revisiones) |
+| 6        | integración                | `service.integration.test.ts`; `audit.integration.test.ts`                             | las descripciones escritas y una constancia por fila escrita, ninguna por la que ya la tenía; `project` y `task` en las vistas                                 |
+| 7        | integración                | `service.integration.test.ts`                                                          | por cada caso, la edición masiva contra `updateEntryTimes` sobre una copia sembrada igual                                                                      |
+| 8        | unidad + integración       | `schema.test.ts`; `bulk-changes.test.ts`; `service.integration.test.ts`                | el objeto estricto, con su texto, y el vacío; `toChanges` con vacíos y espacios; el fin conservado y el cruce de TT-72                                         |
+| 9        | integración                | `service.integration.test.ts`                                                          | la entrada de más de un día con su propia fecha, sin escribir                                                                                                  |
+| 10       | integración                | `service.integration.test.ts`; `audit.integration.test.ts`                             | cada causa de §4.5 mezclada con filas válidas: nada escrito, nada registrado, la lista entera y en orden                                                       |
+| 11       | integración                | `service.integration.test.ts`; `audit.integration.test.ts`                             | el borrado con constancias; el id que no existe; la ajena y la abierta sin borrar nada                                                                         |
+| 12       | unidad + e2e               | `bulk-changes.test.ts`; `e2e/bulk-actions.spec.ts`                                     | `confirmsDelete`; y el botón inactivo y activo                                                                                                                 |
+| 13       | e2e                        | `e2e/bulk-actions.spec.ts`                                                             | el recorrido 3                                                                                                                                                 |
+| 14       | integración + e2e          | `service.integration.test.ts`; `audit.integration.test.ts`; `e2e/bulk-actions.spec.ts` | el segundo intento sin escrituras ni constancias; y el recorrido 6                                                                                             |
+| 15       | integración                | `service.integration.test.ts`                                                          | con `queueBehindBarrier`: el borrado primero, la edición después                                                                                               |
+| 16       | integración                | `permissions.integration.test.ts`                                                      | las dos funciones con membresía `inactive` e ids inexistentes, y con una entrada ajena                                                                         |
+| 17       | integración                | `actions.integration.test.ts`                                                          | la traducción, el permiso, `rejections` en el resultado y la revalidación                                                                                      |
+| 18       | e2e                        | `e2e/bulk-actions.spec.ts`                                                             | los recorridos 4 y 8                                                                                                                                           |
+| 19       | e2e                        | `e2e/bulk-actions.spec.ts`                                                             | el foco en la región en los recorridos 2, 5 y 6 —en el 6, después de «Reintentar»—, y en el encabezado del día al final del 5                                  |
+| 20       | unidad + integración + e2e | las suites existentes                                                                  | en verde con el slice entero, sin cambiar afirmaciones                                                                                                         |
+| 21       | integración                | `service.integration.test.ts`                                                          | con `raceThroughBarrier`: las dos respuestas `ok` y las filas con lo que pidió la que terminó última                                                           |
+| 22       | e2e                        | `e2e/bulk-actions.spec.ts`                                                             | el recorrido 9                                                                                                                                                 |
 
 **El criterio 7 es el que prueba que la regla no se duplicó.** Siembra dos
 copias de cada entrada, edita una con `bulkEditEntries` y la otra con
@@ -1163,6 +1167,10 @@ omisión.
    «Hora de inicio», guardar y ver la entrada de 1:15 PM a 2:00 PM.
 
 ## 8. Deuda conocida del slice
+
+- **`EntryTriple` y `sameTriple`** (`service.ts`) repiten `TimeDraft` y
+  `sameDraft` de `time-draft.ts`. Llevarlos a `src/lib/` toca las dos capas y no
+  cambia conducta; queda para el próximo slice que toque las horas.
 
 - **P-07 sin verificar.** Si la edición masiva del rastreador es paga en
   Clockify, el slice queda como mejora deliberada: TT-62 a TT-64 pasan a
