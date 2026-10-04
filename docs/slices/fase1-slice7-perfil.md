@@ -9,7 +9,7 @@ horaria y los formatos el módulo `time-entry` y la pantalla `/`.
 - **Lugar en el plan:** [mapa de la fase 1](fase1-mapa.md), slice 7. Cierra
   P-13 del rastreador.
 - **Decisiones de arquitectura asociadas:**
-  - [ADR propuesto, un solo juego de formatos en el servidor y en el cliente](../adr/XXXX-un-solo-juego-de-formatos.md):
+  - [ADR propuesto, un solo juego de formatos en el servidor y en el cliente](../adr/0012-un-solo-juego-de-formatos.md):
     nace acá. Fija cómo llegan las preferencias a lo que se formatea en el
     cliente.
   - [ADR 0005, la hora de pared viaja como hora de pared](../adr/0005-hora-de-pared-en-la-entrada-manual.md):
@@ -39,11 +39,11 @@ El contrato da por tomadas estas decisiones del equipo (`perfil.md`):
 **Arranca con los slices 5 y 9 mergeados.** Los dos están en `main`.
 
 - **Del 5:** `weekStartOf` de `src/modules/workspace/service.ts`,
-  `TrackerWorkspace` y `trackerWorkspaceOf` de `src/modules/time-entry/service.ts`,
-  y `weekKeyLabel` de `src/server/time`. El §2 de su contrato le fija a este
-  slice tres restricciones, que se cumplen tal cual: `membership.week_start` no
-  cambia, se lee solo con `weekStartOf`, y la zona entra al rastreador solo por
-  `trackerWorkspaceOf`.
+  `TrackerWorkspace` y `trackerWorkspaceOf` de
+  `src/modules/time-entry/service.ts`, y `weekKeyLabel` de `src/server/time`.
+  El §2 de su contrato le fija a este slice tres restricciones, que se cumplen
+  tal cual: `membership.week_start` no cambia, se lee solo con `weekStartOf`, y
+  la zona entra al rastreador solo por `trackerWorkspaceOf`.
 - **Del 9:** las piezas compartidas de las actions —`handle`, `ActionResult` y
   `DomainError` de `src/server/action.ts`, `useAction` y `retryHandlerOf` de
   `src/hooks/use-action.ts`—, las primitivas `select`, `label` y `radio-group`
@@ -113,13 +113,13 @@ Entran por arrastre, verificándose por el camino nuevo:
   `America/Argentina/Buenos_Aires`, no un vínculo con `workspace.timezone`: si
   la zona del workspace cambia por el cron, nadie se mueve de día (PF-05).
 - **El formato de hora en 12 h se muestra `h:mm AM` / `h:mm PM`**: `1:05 PM`,
-  `12:00 AM`. Lista de entradas aceptadas en §5.1.
+  `12:00 AM`. La lista de entradas aceptadas está en §5.1.
 - **Cada formato de fecha tiene una forma corta sin año**, que es la que usan
   los rótulos de día y de semana del año en curso (§5.1).
 - **El aviso de PF-46** usa el título de TT-92 y una línea propia del perfil
   (§6, `labels.ts`).
 - **La zona guardada que el entorno deja de listar sigue valiendo** mientras el
-  entorno la sepa convertir, y aparece entre las opciones (§5.6).
+  entorno la sepa convertir, y aparece entre las opciones (§5.2, §5.6).
 
 **Lo registra `parity-analyst` antes del merge** (§6), junto con las
 correcciones de §10 de `perfil.md` que lista la tabla de consecuencias.
@@ -138,7 +138,7 @@ correcciones de §10 de `perfil.md` que lista la tabla de consecuencias.
   workspace sin pantalla hasta la de ajustes de la fase 2, y hoy existe un solo
   valor, el compacto. `formatDuration` no cambia, y la pantalla lo muestra como
   texto fijo. Cuando exista el ajuste, entra por `DisplayFormats` y por el
-  mismo punto de lectura (§5.2, §8).
+  mismo punto de lectura (§5.7, §8).
 - **Cambiar el primer día de la semana** (PF-17): es de la pantalla de equipo,
   con `team.manage`, que espera la deuda de `ensureWorkspaceContext` del mapa
   (§5).
@@ -149,24 +149,24 @@ correcciones de §10 de `perfil.md` que lista la tabla de consecuencias.
 
 ### Consecuencias sobre código ya entregado
 
-| Archivo                                                 | Qué cambia                                                                                                                         | Qué hay que volver a probar                                       |
-| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `src/server/db/schema.ts`                               | La tabla `user_preference` (§2).                                                                                                   | —                                                                 |
-| `src/server/time/index.ts`                              | Los tipos de formato, `clockLabel`, `formatDayKey`, las zonas; `dayKeyLabel`, `dayLabel`, `weekKeyLabel` y `parseClockInput` reciben el formato (§5.1). `formatClock` no cambia. | `time.test.ts` entero                                             |
-| `src/server/session.ts`                                 | `SessionContext` suma `preferences` (§5.3).                                                                                        | Toda action, por los arneses de `actions.integration.test.ts`     |
-| `src/server/action.ts`                                  | `handle` acepta un destino de revalidación de layout (§4.3).                                                                       | Los `actions.integration.test.ts` de `project` y `time-entry`     |
-| `src/server/permissions/index.ts`                       | `profile.own.update` y `ProfileResource` (§3).                                                                                     | `permissions.test.ts` entero                                      |
-| `src/modules/time-entry/service.ts`                     | `trackerWorkspaceOf` sale de `timeSettingsOf`; `TrackerWorkspace` suma `formats`; `toView`, `buildDays` y `buildWeeks` rotulan con los formatos (§5.4). | `service.integration.test.ts` entero                              |
-| `src/modules/time-entry/schema.ts`                      | `timeEntryView` suma `startClock` y `endClock`; los comentarios que dicen «del workspace» pasan a «de la persona».                | `schema.test.ts`                                                  |
-| Los tests de integración de `time-entry`                | Los `TrackerWorkspace` armados a mano suman `formats`; los casos que siembran un workspace en Madrid pasan a sembrar la zona de la persona (§6). | Los cuatro archivos                                               |
-| `src/modules/time-entry/components/time-draft.ts`       | `fromView` lee `startClock` y `endClock`; `withStart` y `withEnd` reciben el `TimeFormat`.                                         | `time-draft.test.ts`                                              |
-| `entry-row.tsx`                                         | El rótulo del trío en edición o en vuelo sale de `clockLabel`.                                                                     | TT-54, TT-55, TT-110                                              |
-| `entry-times-editor.tsx`, `manual-bar.tsx`, `running-start-editor.tsx` | Los campos de hora muestran `clockLabel` y aceptan según el formato.                                                               | TT-18 a TT-21, TT-28                                              |
-| `clock-field.tsx`                                       | Con 12 h, el teclado del campo deja escribir letras.                                                                               | TT-21                                                             |
-| `date-field.tsx`                                        | El rótulo sale de `dayKeyLabel` con el formato de `useDisplayFormats`.                                                             | TT-44, TT-56                                                      |
-| `src/app/(app)/layout.tsx`                              | El proveedor de formatos; `UserMenu` recibe la foto.                                                                               | —                                                                 |
-| `src/components/layout/user-menu.tsx`                   | Foto o iniciales, desplegable y enlace al perfil.                                                                                  | Salir                                                             |
-| `docs/parity/perfil.md` y `docs/parity/time-tracker.md` | Lo de «Lo que el slice decide»; las filas de §10 de `perfil.md` que este contrato corrige (§6).                                    | —                                                                 |
+| Archivo                                                                | Qué cambia                                                                                                                                                                        | Qué hay que volver a probar                                   |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `src/server/db/schema.ts`                                              | La tabla `user_preference` (§2).                                                                                                                                                  | —                                                             |
+| `src/server/time/index.ts`                                             | Los tipos de formato, `clockLabel`, `formatDayKey` y las zonas; `dayKeyLabel`, `dayLabel`, `weekKeyLabel` y `parseClockInput` reciben el formato (§5.1). `formatClock` no cambia. | `time.test.ts` entero                                         |
+| `src/server/session.ts`                                                | `SessionContext` suma `preferences` (§5.3).                                                                                                                                       | Toda action, por los arneses de `actions.integration.test.ts` |
+| `src/server/action.ts`                                                 | `handle` acepta un destino de revalidación de layout (§4.3).                                                                                                                      | Los `actions.integration.test.ts` de `project` y `time-entry` |
+| `src/server/permissions/index.ts`                                      | `profile.own.update` y `ProfileResource` (§3).                                                                                                                                    | `permissions.test.ts` entero                                  |
+| `src/modules/time-entry/service.ts`                                    | `trackerWorkspaceOf` sale de `timeSettingsOf`; `TrackerWorkspace` suma `formats`; `toView`, `buildDays` y `buildWeeks` rotulan con los formatos (§5.4).                           | `service.integration.test.ts` entero                          |
+| `src/modules/time-entry/schema.ts`                                     | `timeEntryView` suma `startClock` y `endClock`; los comentarios que dicen «del workspace» pasan a «de la persona».                                                                | `schema.test.ts`                                              |
+| Los tests de integración de `time-entry`                               | Los `TrackerWorkspace` armados a mano suman `formats`; los casos que siembran un workspace en Madrid pasan a sembrar la zona de la persona (§6).                                  | Los cuatro archivos                                           |
+| `src/modules/time-entry/components/time-draft.ts`                      | `fromView` lee `startClock` y `endClock`; `withStart` y `withEnd` reciben el `TimeFormat`.                                                                                        | `time-draft.test.ts`                                          |
+| `entry-row.tsx`                                                        | El rótulo del trío en edición o en vuelo sale de `clockLabel`.                                                                                                                    | TT-54, TT-55, TT-110                                          |
+| `entry-times-editor.tsx`, `manual-bar.tsx`, `running-start-editor.tsx` | Los campos de hora muestran `clockLabel` y aceptan según el formato.                                                                                                              | TT-18 a TT-21, TT-28                                          |
+| `clock-field.tsx`                                                      | Con 12 h, el teclado del campo deja escribir letras.                                                                                                                              | TT-21                                                         |
+| `date-field.tsx`                                                       | El rótulo sale de `dayKeyLabel` con el formato de `useDisplayFormats`.                                                                                                            | TT-44, TT-56                                                  |
+| `src/app/(app)/layout.tsx`                                             | El proveedor de formatos; `UserMenu` recibe la foto.                                                                                                                              | —                                                             |
+| `src/components/layout/user-menu.tsx`                                  | Foto o iniciales, desplegable y enlace al perfil.                                                                                                                                 | «Salir»                                                       |
+| `docs/parity/perfil.md` y `docs/parity/time-tracker.md`                | Lo de «Lo que el slice decide»; las filas de §10 de `perfil.md` que este contrato corrige (§6).                                                                                   | —                                                             |
 
 **El slice 9 no tiene nada que adaptar.** `/proyectos` no muestra ninguna
 fecha, hora ni duración: dibuja nombres, colores y tareas. Lo único sensible al
@@ -211,8 +211,14 @@ export const userPreference = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    check("user_preference_timezone_len", sql`char_length(${table.timezone}) between 1 and 64`),
-    check("user_preference_time_format_known", sql`${table.timeFormat} in ('24h', '12h')`),
+    check(
+      "user_preference_timezone_len",
+      sql`char_length(${table.timezone}) between 1 and 64`,
+    ),
+    check(
+      "user_preference_time_format_known",
+      sql`${table.timeFormat} in ('24h', '12h')`,
+    ),
     check(
       "user_preference_date_format_known",
       sql`${table.dateFormat} in ('dd/MM/yyyy', 'dd-MM-yyyy', 'yyyy-MM-dd', 'MM/dd/yyyy')`,
@@ -253,7 +259,8 @@ Las listas de los dos `check` repiten `TIME_FORMATS` y `DATE_FORMATS` de
   convención pide que toda consulta filtre por el `workspace_id` de la sesión.
   Esta tabla no tiene workspace, por PF-03: el repository filtra por el
   `user_id` de la sesión, nunca por uno que llegue en la entrada. Ninguna
-  firma del repository recibe un `userId` que no salga de `actor.userId`.
+  firma del repository recibe un `userId` que no salga de `actor.userId` o de
+  la sesión.
 - **Columnas nulas y fila opcional, con los predeterminados en el código.**
   Las alternativas eran dos:
   - **Columnas `not null` con valor por omisión en la base y una fila por
@@ -308,7 +315,7 @@ migración.
   `overrideUserInfoOnSignIn`, lo actualiza en cada ingreso, sin pisar nunca el
   editado. Hoy esa opción no está puesta (`src/server/auth.ts`), y por eso un
   cambio de nombre o de foto en Google no llega nunca (§8).
-- **El tema va en `user_preference`**, `theme text null` con `check`, nulo es
+- **El tema va en `user_preference`**, `theme text null` con `check`; nulo es
   «seguir al sistema» (PF-23).
 - Las dos columnas entran con la migración del 7b, nulas, sin relleno. Las
   resuelve `resolvePreferences`, como las de este slice.
@@ -317,9 +324,9 @@ migración.
 
 ### 3.1 La acción nueva
 
-| Acción               | Recurso   | Roles en la tabla | Regla además del rol                                 |
-| -------------------- | --------- | ----------------- | ---------------------------------------------------- |
-| `profile.own.update` | `profile` | los cinco         | el `userId` del recurso es quien actúa (PF-34)       |
+| Acción               | Recurso   | Roles en la tabla | Regla además del rol                           |
+| -------------------- | --------- | ----------------- | ---------------------------------------------- |
+| `profile.own.update` | `profile` | los cinco         | el `userId` del recurso es quien actúa (PF-34) |
 
 ```ts
 // src/server/permissions/index.ts
@@ -346,12 +353,12 @@ export type ProfileResource = {
   La decisión pasa por la membresía con que se actúa: `can()` corta primero por
   su estado, y una membresía no activa no edita nada (PF-34, PF-46). Es la
   misma razón por la que `timeEntry` lleva el workspace.
-- **El recurso lo arma una sola función**,
-  `ownProfileResource(actor)` de `src/modules/profile/service.ts`, como
-  `ownTimeEntryResource` en `time-entry`.
+- **El recurso lo arma una sola función**, `ownProfileResource(actor)` de
+  `src/modules/profile/service.ts`, como `ownTimeEntryResource` en
+  `time-entry`.
 - **Leer el perfil no tiene acción**: cualquier sesión ve el suyo, y la
   pantalla usa `can(actor, "profile.own.update", …)` para decidir si los
-  controles editan (`canEdit`, §5.5).
+  controles editan (`canEdit`, §5.6).
 - **El primer día de la semana no suma ninguna acción**: se muestra, no se
   edita (§1).
 
@@ -472,8 +479,7 @@ también el destino con tipo, sin cambiar ningún llamado existente:
 ```ts
 // src/server/action.ts
 export type RevalidationTarget =
-  | string
-  | { readonly path: string; readonly type: "layout" | "page" };
+  string | { readonly path: string; readonly type: "layout" | "page" };
 
 // handle(work, { paths: readonly RevalidationTarget[], messages })
 ```
@@ -486,7 +492,10 @@ registran el par.
 // src/modules/profile/actions.ts
 const options = {
   paths: [{ path: "/", type: "layout" }],
-  messages: { forbidden: profileMessages.forbidden, unexpected: profileMessages.unexpected },
+  messages: {
+    forbidden: profileMessages.forbidden,
+    unexpected: profileMessages.unexpected,
+  },
 } as const;
 
 export async function updatePreference(
@@ -526,7 +535,12 @@ vez:
 export const TIME_FORMATS = ["24h", "12h"] as const;
 export type TimeFormat = (typeof TIME_FORMATS)[number];
 
-export const DATE_FORMATS = ["dd/MM/yyyy", "dd-MM-yyyy", "yyyy-MM-dd", "MM/dd/yyyy"] as const;
+export const DATE_FORMATS = [
+  "dd/MM/yyyy",
+  "dd-MM-yyyy",
+  "yyyy-MM-dd",
+  "MM/dd/yyyy",
+] as const;
 export type DateFormat = (typeof DATE_FORMATS)[number];
 
 /** Cómo ve las horas quien mira (PF-12, PF-13). */
@@ -543,11 +557,20 @@ export type TimeSettings = {
 export function clockLabel(clock: string, format: TimeFormat): string;
 
 /** Una fecha civil en el formato de la persona: "03/10/2026", o "03/10" sin año. */
-export function formatDayKey(dayKey: string, format: DateFormat, withYear: boolean): string;
+export function formatDayKey(
+  dayKey: string,
+  format: DateFormat,
+  withYear: boolean,
+): string;
 
 // Cambian de firma: suman el formato al final.
 export function dayKeyLabel(dayKey: string, todayKey: string, format: DateFormat): string;
-export function dayLabel(instant: Date, now: Date, timeZone: string, format: DateFormat): string;
+export function dayLabel(
+  instant: Date,
+  now: Date,
+  timeZone: string,
+  format: DateFormat,
+): string;
 export function weekKeyLabel(
   weekStart: string,
   todayKey: string,
@@ -610,8 +633,8 @@ hora tiene que estar entre 1 y 12:
 
 **Lo que el campo muestra, el campo lo acepta**: para los 1440 minutos del
 día y los dos formatos, `parseClockInput(clockLabel(c, f), f) === c`. Sin esa
-propiedad, salir de un campo de 12 h sin tocarlo, o tocando un dígito,
-rechazaría su propio valor.
+propiedad, salir de un campo de 12 h después de tocar un dígito rechazaría su
+propio valor.
 
 **Las fechas** (PF-12). La forma corta, sin año, es la que usan los rótulos del
 año en curso; la larga, los de otro año, igual que hoy. Decisión nuestra, sin
@@ -690,7 +713,7 @@ workspace`, sin ciclos.
 // src/modules/profile/service.ts
 /**
  * Zona, formatos y primer día de la semana con que quien pide ve el tiempo.
- * Única lectura de `context.preferences` para mostrar, y el primer día sale de
+ * Única lectura de `context.preferences` para mostrar; el primer día sale de
  * `weekStartOf`, nunca de la membresía directo.
  */
 export function timeSettingsOf(context: ProfileContext): TimeSettings;
@@ -702,10 +725,10 @@ export function trackerWorkspaceOf(context: ProfileContext): TrackerWorkspace;
 ```
 
 - `timeSettingsOf` arma `{ timezone: preferences.timezone, weekStart:
-  weekStartOf(context), formats: { time: preferences.timeFormat, date:
-  preferences.dateFormat } }`.
+weekStartOf(context), formats: { time: preferences.timeFormat, date:
+preferences.dateFormat } }`.
 - `trackerWorkspaceOf` es `{ ...timeSettingsOf(context), createdAt:
-  context.workspace.createdAt }`. Deja de leer `context.workspace.timezone`, y
+context.workspace.createdAt }`. Deja de leer `context.workspace.timezone`, y
   su comentario deja de anunciar el cambio que este slice hace.
 - **`TrackerWorkspace` conserva su nombre y su campo `timezone`**: renombrarlos
   tocaría una docena de lugares de `service.ts` sin cambiar nada. Su
@@ -732,6 +755,7 @@ En `time-entry/service.ts`:
   mismo el fin. `startClock = formatClock(startedAt, zona)`. **El cliente arma
   el trío con `startClock` y `endClock`, nunca con los rótulos**: `fromView` y
   el editor del inicio del timer pasan a leerlos (§6).
+
 - **`buildDays`** llama a `dayLabel(…, formats.date)`; **`buildWeeks`**, a
   `weekKeyLabel(…, formats.date)`.
 - `durationLabel` no cambia: sale de `formatDuration`, que no depende de la
@@ -760,9 +784,10 @@ export function useDisplayFormats(): DisplayFormats;
   valor por omisión escondería que falta, y la persona con 12 h vería 24 h en
   una pantalla nueva sin que ningún test lo note.
 - **Lo usan los componentes que formatean en el cliente** y ningún otro:
-  `date-field.tsx`, `entry-row.tsx`, los tres que dibujan campos de hora
-  (`manual-bar.tsx`, `entry-times-editor.tsx`, `running-start-editor.tsx`) y
-  la pantalla de perfil. La tabla de §6 dice qué hace cada uno.
+  `date-field.tsx`, `entry-row.tsx` y los tres que dibujan campos de hora
+  (`manual-bar.tsx`, `entry-times-editor.tsx`, `running-start-editor.tsx`). La
+  pantalla de perfil no lo necesita: sus ejemplos llegan armados en la vista
+  (§5.6).
 - **La zona no viaja por el contexto.** El cliente no convierte instantes: el
   único que usa la zona es `reset` de `time-draft.ts`, con el
   `TrackerState.timeZone` que ya recibe y que desde este slice es el de la
@@ -814,9 +839,9 @@ export type ProfileView = {
   `13:00` y `1:00 PM`.
 - **Los formatos de fecha** traen de ejemplo el día de hoy en la zona de la
   persona, con año: `03/10/2026`, `2026-10-03`.
-- **Las iniciales** salen de `initialsOf(name)` de `src/lib/text.ts` (PF-44):
-  las primeras letras de las dos primeras palabras, en mayúsculas, o la
-  primera del correo si el nombre está vacío.
+- **Las iniciales** salen de `initialsOf(name, email)` de `src/lib/text.ts`
+  (PF-44): las primeras letras de las dos primeras palabras del nombre, en
+  mayúsculas, o la primera del correo si el nombre está vacío.
 
 ### 5.7 Lo que reciben el calendario y el timesheet
 
@@ -953,15 +978,17 @@ Antes del merge:
   - `session.ts`: las preferencias entran en `SessionContext` por
     `preferencesOf`; la fila de `auth.ts` queda para el 7b.
 - **El texto de PF-46**, con el aviso de §6 (`labels.ts`).
+- **P-09 de `perfil.md`** suma las formas de 12 h y las cortas de fecha de
+  §5.1, que son decisiones nuestras.
 
 ### Lo que no toca nadie
 
 - `src/modules/time-entry/actions.ts` (§0).
 - `src/modules/workspace/`.
 - `src/server/auth.ts` y `src/server/db/auth-schema.ts`.
-- `src/server/time` fuera de lo que lista §5.1: `formatClock`,
-  `formatDuration`, `formatElapsed`, `instantFromLocal` y las funciones de
-  semana no cambian.
+- En `src/server/time`, lo que §5.1 no nombra: `formatClock`,
+  `formatDuration`, `formatElapsed`, `instantFromLocal`, `weekStartKey`,
+  `startOfDayKey` y `weekBounds`.
 - `use-group-total.ts`, `day-group.tsx`, `week-group.tsx`,
   `elapsed-counter.tsx`.
 - `src/app/globals.css`: el tema es del 7b.
@@ -1016,8 +1043,8 @@ Antes del merge:
     «Reintentar» solo con `unexpected` (`retryHandlerOf`).
   - **No usa `disabled`** mientras guarda ni cuando `canEdit` es falso: un
     control con foco que pasa a `disabled` pierde el foco a `body`. Con
-    `canEdit` en falso lleva `aria-disabled` y no abre. Pasa en la práctica: una
-    membresía desactivada que intenta un cambio recibe `forbidden`, y la
+    `canEdit` en falso lleva `aria-disabled` y no abre. Pasa en la práctica:
+    una membresía desactivada que intenta un cambio recibe `forbidden`, y la
     revalidación trae `canEdit` en falso con el foco todavía en el control.
   - El selector de zona lleva unas cuatrocientas opciones; la búsqueda por
     escritura de `Select` alcanza, porque cada opción empieza por el nombre de
@@ -1047,28 +1074,28 @@ Antes del merge:
 - **`date-field.tsx`**: `dayKeyLabel(value, todayKey, formats.date)`.
 - **`labels.ts`** del perfil:
 
-  | Clave                | Texto                                                                                                            |
-  | -------------------- | ---------------------------------------------------------------------------------------------------------------- |
-  | `title`              | «Perfil»                                                                                                         |
-  | `identity`           | «Datos de la cuenta»                                                                                             |
-  | `identityNote`       | «El nombre, la foto y el correo salen de tu cuenta de Google.»                                                   |
-  | `name`, `email`      | «Nombre», «Correo»                                                                                               |
-  | `preferences`        | «Preferencias»                                                                                                   |
-  | `timeAndDate`        | «Hora y fecha»                                                                                                   |
-  | `timezone`           | «Zona horaria»                                                                                                   |
-  | `dateFormat`         | «Formato de fecha»                                                                                               |
-  | `timeFormat`         | «Formato de hora»                                                                                                |
-  | `timeFormatNames`    | `24h` → «24 horas», `12h` → «12 horas»                                                                           |
-  | `weekStart`          | «Primer día de la semana»                                                                                        |
-  | `weekStartNote`      | «Lo administra el equipo.»                                                                                       |
-  | `dayNames`           | «Domingo» … «Sábado», con domingo en 0 como `WeekStart`                                                          |
-  | `durationFormat`     | «Formato de duración»                                                                                            |
-  | `durationValue`      | «Compacto (h:mm)»                                                                                                |
-  | `durationNote`       | «Lo define el workspace.»                                                                                        |
-  | `failureTitles`      | «No se pudo cambiar la zona horaria.», «No se pudo cambiar el formato de fecha.», «No se pudo cambiar el formato de hora.» |
-  | `inactiveTitle`      | «Tu acceso al workspace está desactivado.» (TT-92)                                                               |
-  | `inactiveMessage`    | «Podés ver tu perfil, pero no cambiarlo. Pedile a quien administra el workspace que vuelva a activar tu membresía.» |
-  | `menu`, `menuLabel`  | «Perfil», «Salir»; «Menú de la cuenta»                                                                            |
+  | Clave             | Texto                                                                                                                      |
+  | ----------------- | -------------------------------------------------------------------------------------------------------------------------- |
+  | `title`           | «Perfil»                                                                                                                   |
+  | `identity`        | «Datos de la cuenta»                                                                                                       |
+  | `identityNote`    | «El nombre, la foto y el correo salen de tu cuenta de Google.»                                                             |
+  | `name`, `email`   | «Nombre», «Correo»                                                                                                         |
+  | `preferences`     | «Preferencias»                                                                                                             |
+  | `timeAndDate`     | «Hora y fecha»                                                                                                             |
+  | `timezone`        | «Zona horaria»                                                                                                             |
+  | `dateFormat`      | «Formato de fecha»                                                                                                         |
+  | `timeFormat`      | «Formato de hora»                                                                                                          |
+  | `timeFormatNames` | `24h` → «24 horas», `12h` → «12 horas»                                                                                     |
+  | `weekStart`       | «Primer día de la semana»                                                                                                  |
+  | `weekStartNote`   | «Lo administra el equipo.»                                                                                                 |
+  | `dayNames`        | «Domingo» … «Sábado», con domingo en 0 como `WeekStart`                                                                    |
+  | `durationFormat`  | «Formato de duración»                                                                                                      |
+  | `durationValue`   | «Compacto (h:mm)»                                                                                                          |
+  | `durationNote`    | «Lo define el workspace.»                                                                                                  |
+  | `failureTitles`   | «No se pudo cambiar la zona horaria.», «No se pudo cambiar el formato de fecha.», «No se pudo cambiar el formato de hora.» |
+  | `inactiveTitle`   | «Tu acceso al workspace está desactivado.» (TT-92)                                                                         |
+  | `inactiveMessage` | «Podés ver tu perfil, pero no cambiarlo. Pedile a quien administra el workspace que vuelva a activar tu membresía.»        |
+  | `menu`            | «Perfil», «Salir»; el disparador, «Menú de la cuenta»                                                                      |
 
 ## 7. Criterios de aceptación
 
@@ -1101,8 +1128,8 @@ Antes del merge:
 7. **La zona de la persona** (PF-04, PF-11, PF-38, TT-02) — Con el workspace en
    Buenos Aires:
    - dos personas, una en Buenos Aires y otra en `Asia/Tokyo`, ven una entrada
-     de las 00:00 de Buenos Aires a las 00:00 y a las 12:00, cada una en el día
-     de su zona;
+     que empieza a las 00:00 de Buenos Aires a las 00:00 y a las 12:00, cada
+     una en el día de su zona;
    - una persona en `Europe/Madrid` carga en modo manual y la entrada se
      convierte con Madrid (ADR 0005);
    - el piso es el día de creación del workspace en la zona de la persona;
@@ -1150,32 +1177,32 @@ Antes del merge:
 19. **Un solo punto de lectura** — `trackerWorkspaceOf` devuelve
     `timeSettingsOf` más `createdAt`; el primer día de `timeSettingsOf` es el de
     `weekStartOf`; `useDisplayFormats` lanza sin proveedor; ningún archivo fuera
-    de `profile/service.ts` lee `context.preferences`, y ninguno fuera del cron
-    lee `workspace.timezone`.
+    de `profile/service.ts` lee `context.preferences`, y ninguno de
+    `src/modules/` ni de `src/app/` lee `workspace.timezone` para mostrar algo.
 
 ### Con qué se verifica cada criterio
 
-| Criterio | Tipo                       | Archivo                                                                                       | Qué afirma                                                                                                                         |
-| -------- | -------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| 1        | integración                | `profile/schema.integration.test.ts`                                                          | los tres rechazos del `check`, los nulos y la cascada, con inserts directos                                                        |
-| 2        | integración                | `profile/service.integration.test.ts`                                                         | `preferencesOf` sin fila y con fila parcial; `resolvePreferences` con una zona inventada, con un alias y con un formato fuera de lista |
-| 3        | unidad + integración       | `time.test.ts`; `time-entry/service.integration.test.ts`                                      | los casos de rótulos de hoy con los predeterminados; las vistas de una persona sin fila                                            |
-| 4        | unidad + integración + e2e | `time.test.ts`; `time-entry/service.integration.test.ts`; `e2e/profile.spec.ts`               | la tabla de `clockLabel`; las vistas con 12 h; el recorrido 2                                                                      |
-| 5        | unidad + e2e               | `time.test.ts`; `time-draft.test.ts`; `e2e/profile.spec.ts`                                   | la tabla y la ida y vuelta; `withStart` y `withEnd` con 12 h; el recorrido 2                                                       |
-| 6        | unidad + e2e               | `time.test.ts`; `e2e/profile.spec.ts`                                                         | las tablas de fecha y de rangos en los cuatro formatos; el recorrido 3                                                             |
-| 7        | integración + e2e          | `time-entry/service.integration.test.ts`; `time-entry/actions.integration.test.ts`; `e2e/profile.spec.ts` | las dos personas, el piso y el `workspace.timezone` cambiado; el alta en Madrid por la action; el recorrido 4                       |
-| 8        | integración                | `time-entry/service.integration.test.ts`                                                      | la vista del timer antes y después de cambiar la zona                                                                              |
-| 9        | integración                | `profile/service.integration.test.ts`                                                         | cada caso; los simultáneos con `raceThroughBarrier`                                                                                |
-| 10       | unidad + integración       | `profile/schema.test.ts`; `profile/actions.integration.test.ts`                               | el esquema con cada rechazo; los mensajes por la action                                                                            |
-| 11       | unidad + integración       | `permissions.test.ts`; `profile/service.integration.test.ts`                                  | la tabla de la acción; `forbidden` con una membresía inactiva                                                                      |
-| 12       | integración                | `profile/actions.integration.test.ts`; los de `time-entry` y `project`                        | las traducciones y el par revalidado; las rutas de siempre en los otros dos                                                        |
-| 13       | integración                | `profile/service.integration.test.ts`                                                         | el registro de cada clave, y ninguno sin cambio                                                                                    |
-| 14       | e2e                        | `e2e/profile.spec.ts`                                                                         | el recorrido 2                                                                                                                     |
-| 15       | integración + unidad + e2e | `profile/service.integration.test.ts`; `profile-screen.test.tsx`; `e2e/profile.spec.ts`       | `getProfileView`; el marcado con una vista armada a mano; el recorrido 1                                                           |
-| 16       | e2e                        | `e2e/profile.spec.ts`                                                                         | el recorrido 5                                                                                                                     |
-| 17       | integración + unidad       | `profile/service.integration.test.ts`; `profile-screen.test.tsx`                              | `canEdit` en falso; el aviso y los controles sin `disabled`                                                                        |
-| 18       | unidad + e2e               | `src/lib/text.test.ts`; `e2e/profile.spec.ts`                                                 | `initialsOf`; el recorrido 1                                                                                                       |
-| 19       | integración + unidad + revisión | `time-entry/service.integration.test.ts`; `display-formats.test.tsx`; revisión de código | `trackerWorkspaceOf` contra `timeSettingsOf`; el hook sin proveedor; la búsqueda de lecturas directas                              |
+| Criterio | Tipo                            | Archivo                                                                                                   | Qué afirma                                                                                                                             |
+| -------- | ------------------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| 1        | integración                     | `profile/schema.integration.test.ts`                                                                      | los tres rechazos del `check`, los nulos y la cascada, con inserts directos                                                            |
+| 2        | integración                     | `profile/service.integration.test.ts`                                                                     | `preferencesOf` sin fila y con fila parcial; `resolvePreferences` con una zona inventada, con un alias y con un formato fuera de lista |
+| 3        | unidad + integración            | `time.test.ts`; `time-entry/service.integration.test.ts`                                                  | los casos de rótulos de hoy con los predeterminados; las vistas de una persona sin fila                                                |
+| 4        | unidad + integración + e2e      | `time.test.ts`; `time-entry/service.integration.test.ts`; `e2e/profile.spec.ts`                           | la tabla de `clockLabel`; las vistas con 12 h; el recorrido 2                                                                          |
+| 5        | unidad + e2e                    | `time.test.ts`; `time-draft.test.ts`; `e2e/profile.spec.ts`                                               | la tabla y la ida y vuelta; `withStart` y `withEnd` con 12 h; el recorrido 2                                                           |
+| 6        | unidad + e2e                    | `time.test.ts`; `e2e/profile.spec.ts`                                                                     | las tablas de fecha y de rangos en los cuatro formatos; el recorrido 3                                                                 |
+| 7        | integración + e2e               | `time-entry/service.integration.test.ts`; `time-entry/actions.integration.test.ts`; `e2e/profile.spec.ts` | las dos personas, el piso y el `workspace.timezone` cambiado; el alta en Madrid por la action; el recorrido 4                          |
+| 8        | integración                     | `time-entry/service.integration.test.ts`                                                                  | la vista del timer antes y después de cambiar la zona                                                                                  |
+| 9        | integración                     | `profile/service.integration.test.ts`                                                                     | cada caso; los simultáneos con `raceThroughBarrier`                                                                                    |
+| 10       | unidad + integración            | `profile/schema.test.ts`; `profile/actions.integration.test.ts`                                           | el esquema con cada rechazo; los mensajes por la action                                                                                |
+| 11       | unidad + integración            | `permissions.test.ts`; `profile/service.integration.test.ts`                                              | la tabla de la acción; `forbidden` con una membresía inactiva                                                                          |
+| 12       | integración                     | `profile/actions.integration.test.ts`; los de `time-entry` y `project`                                    | las traducciones y el par revalidado; las rutas de siempre en los otros dos                                                            |
+| 13       | integración                     | `profile/service.integration.test.ts`                                                                     | el registro de cada clave, y ninguno sin cambio                                                                                        |
+| 14       | e2e                             | `e2e/profile.spec.ts`                                                                                     | el recorrido 2                                                                                                                         |
+| 15       | integración + unidad + e2e      | `profile/service.integration.test.ts`; `profile-screen.test.tsx`; `e2e/profile.spec.ts`                   | `getProfileView`; el marcado con una vista armada a mano; el recorrido 1                                                               |
+| 16       | e2e                             | `e2e/profile.spec.ts`                                                                                     | el recorrido 5                                                                                                                         |
+| 17       | integración + unidad            | `profile/service.integration.test.ts`; `profile-screen.test.tsx`                                          | `canEdit` en falso; el aviso y los controles sin `disabled`                                                                            |
+| 18       | unidad + e2e                    | `src/lib/text.test.ts`; `e2e/profile.spec.ts`                                                             | `initialsOf`; el recorrido 1                                                                                                           |
+| 19       | integración + unidad + revisión | `time-entry/service.integration.test.ts`; `display-formats.test.tsx`; revisión de código                  | `trackerWorkspaceOf` contra `timeSettingsOf`; el hook sin proveedor; la búsqueda de lecturas directas                                  |
 
 **La membresía no activa no se prueba en e2e.** El rol de la base de e2e no
 puede cambiar el estado de una membresía; se cubre en integración y en el test
@@ -1183,9 +1210,11 @@ del componente, como el vacío del slice 9.
 
 **El test de componente** sigue el patrón de `projects-screen.test.tsx`:
 `renderToStaticMarkup`, una vista armada a mano y un `ProfileActions` con
-dobles escritos a mano, sin `vi.mock`. Como `PreferenceField` usa
-`useDisplayFormats` indirectamente, el test envuelve en
-`DisplayFormatsProvider`.
+dobles escritos a mano, sin `vi.mock`.
+
+**El criterio 9 cruza los simultáneos con `raceThroughBarrier`** de
+`src/test/concurrency.ts`, como el slice 9: un `Promise.all` suelto casi nunca
+cruza las transacciones.
 
 ### Recorridos obligatorios de `e2e/profile.spec.ts`
 
