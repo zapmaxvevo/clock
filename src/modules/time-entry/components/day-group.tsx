@@ -21,7 +21,9 @@ import {
 
 import { saveEntryProject, selectionOf, type EntryProjectChange } from "./entry-project";
 import { EntryRow } from "./entry-row";
-import { trackerLabels } from "./labels";
+import { selectDayLabel, trackerLabels } from "./labels";
+import { dayCheckState, type Selection } from "./selection";
+import { SelectionCheckbox } from "./selection-checkbox";
 import { useGroupTotalLabel } from "./use-group-total";
 
 type DayGroupProps = {
@@ -57,6 +59,15 @@ type DayGroupProps = {
   readonly removedIds: readonly string[];
   /** Vista optimista del borrado: se llama dentro de la transición del grupo. */
   readonly showRemoved: (id: string) => void;
+  /** TT-62: la selección de la lista, ya recortada a lo que se ve. */
+  readonly selection: Selection;
+  readonly onToggleEntry: (id: string) => void;
+  /** La casilla del día, con las filas que el día dibuja. */
+  readonly onToggleDay: (dayIds: readonly string[]) => void;
+  /** TT-55: las filas que ocupa una edición masiva en vuelo. */
+  readonly bulkBusyIds: readonly string[];
+  /** Una operación en masa viaja: las casillas no cambian. */
+  readonly selectionLocked: boolean;
 };
 
 /** Una entrada que la edición llevó a otro día. */
@@ -117,6 +128,11 @@ export function DayGroup({
   shortcutEntryId,
   removedIds,
   showRemoved,
+  selection,
+  onToggleEntry,
+  onToggleDay,
+  bulkBusyIds,
+  selectionLocked,
 }: DayGroupProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
 
@@ -199,7 +215,9 @@ export function DayGroup({
         };
   }
 
-  const removing = group.entries.some((entry) => removedIds.includes(entry.id));
+  // Solo el borrado de una fila propia: el masivo deja el foco en su región.
+  const removing =
+    remove.pending && group.entries.some((entry) => removedIds.includes(entry.id));
   const wasRemoving = useRef(false);
   useEffect(() => {
     // La fila borrada se lleva el foco con ella: aterriza en el encabezado del
@@ -219,18 +237,31 @@ export function DayGroup({
     serverNow,
   });
   const headingId = `dia-${group.date}`;
+  const entryIds = entries.map((entry) => entry.id);
+  const dayState = dayCheckState(selection, entryIds);
 
   return (
     <section aria-labelledby={headingId} className="rounded-lg border">
       <header className="bg-muted/40 flex items-center justify-between gap-4 border-b px-3 py-2">
-        <h3
-          id={headingId}
-          ref={headingRef}
-          tabIndex={-1}
-          className="focus:ring-ring rounded-md text-sm font-medium focus:ring-3 focus:outline-none"
-        >
-          {group.label}
-        </h3>
+        <div className="flex items-center gap-4">
+          {canTrack && entryIds.length > 0 && (
+            <SelectionCheckbox
+              checked={dayState === "all"}
+              indeterminate={dayState === "some"}
+              label={selectDayLabel(group.label)}
+              locked={selectionLocked}
+              onToggle={() => onToggleDay(entryIds)}
+            />
+          )}
+          <h3
+            id={headingId}
+            ref={headingRef}
+            tabIndex={-1}
+            className="focus:ring-ring rounded-md text-sm font-medium focus:ring-3 focus:outline-none"
+          >
+            {group.label}
+          </h3>
+        </div>
         <p className="text-sm">
           <span className="text-muted-foreground">Total</span>{" "}
           <span className="font-medium tabular-nums">{totalLabel}</span>
@@ -252,9 +283,13 @@ export function DayGroup({
                 busy={
                   (save.pending && edit !== undefined) ||
                   (saveTimes.pending && timeEdit !== undefined) ||
-                  (saveProject.pending && projectEdit !== undefined)
+                  (saveProject.pending && projectEdit !== undefined) ||
+                  bulkBusyIds.includes(entry.id)
                 }
                 canTrack={canTrack}
+                selected={selection.includes(entry.id)}
+                onToggleSelected={() => onToggleEntry(entry.id)}
+                selectionLocked={selectionLocked}
                 pendingTimes={timeEdit ?? null}
                 todayKey={todayKey}
                 minDayKey={minDayKey}

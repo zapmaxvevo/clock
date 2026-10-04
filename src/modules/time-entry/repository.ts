@@ -4,9 +4,11 @@ import {
   desc,
   eq,
   gte,
+  inArray,
   isNotNull,
   isNull,
   lt,
+  or,
   sql,
   type SQL,
 } from "drizzle-orm";
@@ -50,6 +52,13 @@ export type EntryTarget = {
   readonly workspaceId: string;
   readonly userId: string;
   readonly id: string;
+};
+
+/** Lo que se escribe en una fila cerrada: solo lo que cambia. */
+export type ClosedFields = {
+  readonly description?: string;
+  readonly startedAt?: Date;
+  readonly endedAt?: Date;
 };
 
 function isTarget(target: EntryTarget) {
@@ -158,6 +167,28 @@ export const timeEntryRepository = {
       .for("update", { of: timeEntry });
     const row = rows.at(0);
     return row === undefined ? undefined : toEntryWithRefs(row);
+  },
+
+  /**
+   * Las filas pedidas del workspace, de cualquier dueño —quién lo es lo decide
+   * `can()`—, con su proyecto y su tarea por `left join`, como las lecturas del
+   * slice 10. Una sola sentencia con `order by time_entry.id` y
+   * `for update of time_entry`: el orden es el que evita que dos operaciones en
+   * masa se esperen en círculo (ADR 0011), y el `of` deja sin bloquear el lado
+   * nulable del join.
+   */
+  async findManyByIdsForUpdate(
+    tx: Transaction,
+    workspaceId: string,
+    ids: readonly string[],
+  ): Promise<readonly EntryWithRefs[]> {
+    const rows = await selectWithRefs(
+      tx,
+      and(eq(timeEntry.workspaceId, workspaceId), inArray(timeEntry.id, [...ids])),
+    )
+      .orderBy(asc(timeEntry.id))
+      .for("update", { of: timeEntry });
+    return rows.map(toEntryWithRefs);
   },
 
   /**
@@ -344,12 +375,10 @@ export const timeEntryRepository = {
     target: EntryTarget,
     times: { startedAt: Date; endedAt: Date },
   ): Promise<EntryWithRefs | undefined> {
-    const rows = await tx
-      .update(timeEntry)
-      .set(times)
-      .where(and(isTarget(target), isNotNull(timeEntry.endedAt)))
-      .returning();
-    return rereadIfWritten(tx, rows.at(0));
+    return rereadIfWritten(
+      tx,
+      await timeEntryRepository.updateClosedFields(tx, target, times),
+    );
   },
 
   /** Solo una fila abierta. `undefined` si ya la cerraron. */
@@ -391,6 +420,43 @@ export const timeEntryRepository = {
       .where(isTarget(target))
       .returning();
     return rereadIfWritten(tx, rows.at(0));
+  },
+
+  /**
+   * Cualquier subconjunto de los tres campos, solo en una fila cerrada. Sin
+   * relectura: el proyecto y la tarea no cambian, y el service ya los leyó.
+   */
+  async updateClosedFields(
+    tx: Transaction,
+    target: EntryTarget,
+    fields: ClosedFields,
+  ): Promise<TimeEntryRow | undefined> {
+    const rows = await tx
+      .update(timeEntry)
+      .set(fields)
+      .where(and(isTarget(target), isNotNull(timeEntry.endedAt)))
+      .returning();
+    return rows.at(0);
+  },
+
+  /**
+   * Las filas cerradas de esos destinos, en una sentencia. Los destinos salen de
+   * `targetOf` sobre las filas que el service ya leyó y autorizó, así que el
+   * `WHERE` repite su `workspace_id` y su `user_id`, como `isTarget`. Devuelve las
+   * borradas; el service compara con las autorizadas.
+   */
+  async deleteClosedByIds(
+    tx: Transaction,
+    targets: readonly EntryTarget[],
+  ): Promise<readonly TimeEntryRow[]> {
+    // Sin destinos, `or()` no pone condición y el `delete` vaciaría la tabla.
+    if (targets.length === 0) {
+      return [];
+    }
+    return tx
+      .delete(timeEntry)
+      .where(and(or(...targets.map(isTarget)), isNotNull(timeEntry.endedAt)))
+      .returning();
   },
 
   async deleteById(

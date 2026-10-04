@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { RejectedError } from "@/server/action";
 import { db, type Transaction } from "@/server/db";
 import {
   client,
@@ -53,12 +54,15 @@ import { workspaceRepository } from "@/modules/workspace/repository";
 import { timeEntryRepository } from "./repository";
 import {
   timeEntryMessages,
+  type BulkEditChanges,
   type ContinueEntryResult,
   type DayGroupView,
   type StartTimerResult,
   type TrackerState,
 } from "./schema";
 import {
+  bulkDeleteEntries,
+  bulkEditEntries,
   continueEntry,
   createManualEntry,
   deleteEntry,
@@ -5552,5 +5556,934 @@ describe("la zona y los formatos de la persona (slice 7)", () => {
       startClock: "10:00",
     });
     expect(await timeEntryById(running.id)).toEqual(running);
+  });
+});
+
+/** El `RejectedError` de una operación en masa; si termina bien o lanza otra cosa, falla. */
+async function rejectionOf(work: Promise<unknown>): Promise<RejectedError> {
+  try {
+    await work;
+  } catch (error) {
+    if (error instanceof RejectedError) {
+      return error;
+    }
+    throw error;
+  }
+  throw new Error("La operación en masa no se rechazó.");
+}
+
+/** Lo que dejó la fila sembrada: sus instantes, su descripción y su `updatedAt`. */
+async function snapshotOf(id: string) {
+  const row = await timeEntryById(id);
+  return row === undefined
+    ? undefined
+    : {
+        description: row.description,
+        startedAt: row.startedAt.toISOString(),
+        endedAt: row.endedAt === null ? null : row.endedAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+      };
+}
+
+describe("bulkEditEntries: la descripción (criterio 6, TT-63)", () => {
+  const workspace = workspaceOf(buenosAires);
+
+  it("cambia en todas las pedidas y responde las vistas en el orden pedido, no en el del id", async () => {
+    const rows = [
+      await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z"),
+      await seedClosed("2026-09-30T11:00:00Z", "2026-09-30T12:00:00Z"),
+      await seedClosed("2026-09-29T11:00:00Z", "2026-09-29T12:00:00Z"),
+    ];
+    const ids = rows.map((row) => row.id).sort((left, right) => (left < right ? 1 : -1));
+
+    const result = await bulkEditEntries(actor, workspace, {
+      ids,
+      changes: { description: "nueva" },
+    });
+
+    expect(result.entries.map((entry) => entry.id)).toEqual(ids);
+    expect(result.entries.map((entry) => entry.description)).toEqual([
+      "nueva",
+      "nueva",
+      "nueva",
+    ]);
+    for (const row of rows) {
+      expect(await timeEntryById(row.id)).toMatchObject({
+        description: "nueva",
+        startedAt: row.startedAt,
+        endedAt: row.endedAt,
+      });
+    }
+  });
+
+  it("una entrada que ya la tenía no se escribe", async () => {
+    const same = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      description: "nueva",
+      startedAt: "2026-10-01T11:00:00Z",
+      endedAt: "2026-10-01T12:00:00Z",
+    });
+    const other = await seedClosed("2026-09-30T11:00:00Z", "2026-09-30T12:00:00Z");
+
+    const result = await bulkEditEntries(actor, workspace, {
+      ids: [same.id, other.id],
+      changes: { description: "nueva" },
+    });
+
+    expect(result.entries.map((entry) => entry.description)).toEqual(["nueva", "nueva"]);
+    expect((await timeEntryById(same.id))?.updatedAt).toEqual(same.updatedAt);
+    expect((await timeEntryById(other.id))?.updatedAt).not.toEqual(other.updatedAt);
+  });
+
+  it("la descripción vacía reemplaza: el servidor la acepta", async () => {
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      description: "algo",
+      startedAt: "2026-10-01T11:00:00Z",
+      endedAt: "2026-10-01T12:00:00Z",
+    });
+
+    await bulkEditEntries(actor, workspace, {
+      ids: [row.id],
+      changes: { description: "" },
+    });
+
+    expect((await timeEntryById(row.id))?.description).toBe("");
+  });
+
+  it("la vista de una entrada con proyecto y tarea los conserva, escrita o no", async () => {
+    const web = await seedProject({ workspaceId, name: "Web", color: "pink" });
+    const design = await seedTask({ workspaceId, projectId: web.id, name: "Diseño" });
+    const withPair = (description: string, startedAt: string, endedAt: string) =>
+      seedTimeEntry({
+        workspaceId,
+        userId: actor.userId,
+        description,
+        startedAt,
+        endedAt,
+        projectId: web.id,
+        taskId: design.id,
+      });
+    const written = await withPair(
+      "vieja",
+      "2026-10-01T11:00:00Z",
+      "2026-10-01T12:00:00Z",
+    );
+    const untouched = await withPair(
+      "nueva",
+      "2026-09-30T11:00:00Z",
+      "2026-09-30T12:00:00Z",
+    );
+
+    const result = await bulkEditEntries(actor, workspace, {
+      ids: [written.id, untouched.id],
+      changes: { description: "nueva" },
+    });
+
+    for (const entry of result.entries) {
+      expect(entry.project).toEqual({ id: web.id, name: "Web", color: "pink" });
+      expect(entry.task).toEqual({ id: design.id, name: "Diseño" });
+    }
+    expect(await timeEntryById(written.id)).toMatchObject({
+      projectId: web.id,
+      taskId: design.id,
+    });
+  });
+});
+
+/** Un caso del criterio 7: la fila sembrada, lo que se pide, y el rechazo esperado si lo hay. */
+type SameRuleCase = {
+  readonly label: string;
+  readonly zone: string;
+  readonly createdAt?: string;
+  readonly startedAt: string;
+  readonly endedAt: string;
+  readonly changes: BulkEditChanges;
+  readonly rejects?: string;
+};
+
+const sameRuleCases: readonly SameRuleCase[] = [
+  {
+    label: "el inicio en Buenos Aires",
+    zone: buenosAires,
+    startedAt: "2026-10-01T13:00:00Z",
+    endedAt: "2026-10-01T14:00:00Z",
+    changes: { start: "09:15" },
+  },
+  {
+    label: "la fecha sola",
+    zone: buenosAires,
+    startedAt: "2026-10-01T13:00:00Z",
+    endedAt: "2026-10-01T14:00:00Z",
+    changes: { date: "2026-09-15" },
+  },
+  {
+    label: "el fin que cruza la medianoche (TT-72)",
+    zone: buenosAires,
+    startedAt: "2026-10-01T23:00:00Z",
+    endedAt: "2026-10-02T00:00:00Z",
+    changes: { end: "01:30" },
+  },
+  {
+    label: "la entrada que ya cruzaba la medianoche, con otro inicio",
+    zone: buenosAires,
+    startedAt: "2026-10-02T02:00:00Z",
+    endedAt: "2026-10-02T04:00:00Z",
+    changes: { start: "22:30" },
+  },
+  {
+    label: "la hora repetida: descarta lo conservado que queda fuera de orden",
+    zone: madrid,
+    startedAt: "2026-10-24T23:50:00Z",
+    endedAt: "2026-10-25T00:50:00Z",
+    changes: { start: "02:10" },
+  },
+  {
+    label: "la hora repetida: conserva el inicio en la primera ocurrencia",
+    zone: madrid,
+    startedAt: "2026-10-25T00:30:00Z",
+    endedAt: "2026-10-25T02:15:00Z",
+    changes: { end: "02:45" },
+  },
+  {
+    label: "la hora repetida: dos horas iguales que duran 60 minutos reales",
+    zone: madrid,
+    startedAt: "2026-10-25T00:30:00Z",
+    endedAt: "2026-10-25T02:15:00Z",
+    changes: { end: "02:30" },
+  },
+  {
+    label: "la hora que no existe en el inicio (TT-112)",
+    zone: madrid,
+    startedAt: "2026-03-20T08:00:00Z",
+    endedAt: "2026-03-20T09:00:00Z",
+    changes: { date: "2026-03-29", start: "02:30" },
+    rejects: timeEntryMessages.nonexistentClock,
+  },
+  {
+    label: "la hora que no existe en el fin (TT-112)",
+    zone: madrid,
+    startedAt: "2026-03-20T08:00:00Z",
+    endedAt: "2026-03-20T09:00:00Z",
+    changes: { date: "2026-03-29", start: "01:30", end: "02:30" },
+    rejects: timeEntryMessages.nonexistentClock,
+  },
+  {
+    label: "los segundos del extremo que no cambia (ADR 0006)",
+    zone: buenosAires,
+    startedAt: "2026-10-01T13:00:40Z",
+    endedAt: "2026-10-01T13:30:15Z",
+    changes: { end: "11:00" },
+  },
+  {
+    label: "el conservado que dejaría el par en segundos (ADR 0006)",
+    zone: buenosAires,
+    startedAt: "2026-10-01T13:00:40Z",
+    endedAt: "2026-10-01T13:30:15Z",
+    changes: { end: "10:01" },
+  },
+  {
+    label: "el par de menos de un minuto (TT-73)",
+    zone: buenosAires,
+    startedAt: "2026-10-01T13:00:00Z",
+    endedAt: "2026-10-01T14:00:00Z",
+    changes: { end: "10:00" },
+    rejects: timeEntryMessages.tooShort,
+  },
+  {
+    label: "antes de la creación del workspace",
+    zone: buenosAires,
+    createdAt: "2026-06-01T12:00:00Z",
+    startedAt: "2026-10-01T13:00:00Z",
+    endedAt: "2026-10-01T14:00:00Z",
+    changes: { date: "2026-05-31" },
+    rejects: timeEntryMessages.beforeWorkspace,
+  },
+  {
+    label: "el día siguiente al 9999-12-31",
+    zone: buenosAires,
+    startedAt: "9999-12-31T13:00:00Z",
+    endedAt: "9999-12-31T14:00:00Z",
+    changes: { end: "09:00" },
+    rejects: timeEntryMessages.invalidDate,
+  },
+  {
+    label: "la entrada de más de un día (TT-110)",
+    zone: buenosAires,
+    startedAt: "2026-10-01T13:00:00Z",
+    endedAt: "2026-10-03T14:00:00Z",
+    changes: { start: "09:00" },
+    rejects: timeEntryMessages.multiDayTimes,
+  },
+];
+
+describe("bulkEditEntries: hora y fecha son la fila repetida (criterio 7)", () => {
+  /** El desenlace de una edición: los instantes que quedaron, o el código y el texto del rechazo. */
+  async function outcomeOf(id: string, work: () => Promise<unknown>) {
+    try {
+      await work();
+      return await instantsOf(id);
+    } catch (error) {
+      if (error instanceof RejectedError) {
+        expect(error.rejections.map((rejection) => rejection.id)).toEqual([id]);
+        const [rejection] = error.rejections;
+        return { code: rejection.code, message: rejection.message };
+      }
+      if (error instanceof TimeEntryError) {
+        return { code: error.code, message: error.message };
+      }
+      throw error;
+    }
+  }
+
+  it.each(sameRuleCases)("$label", async (example) => {
+    const workspace = workspaceOf(example.zone, example.createdAt);
+    const bulkRow = await seedClosed(example.startedAt, example.endedAt);
+    const singleRow = await seedClosed(example.startedAt, example.endedAt);
+    const startedAt = new Date(example.startedAt);
+    const own = {
+      date: dayKey(startedAt, example.zone),
+      start: formatClock(startedAt, example.zone),
+      end: formatClock(new Date(example.endedAt), example.zone),
+    };
+    const combined = { ...own, ...example.changes };
+    // Con un trío igual al de la fila la masiva no evalúa y la de una fila sí.
+    expect(combined).not.toEqual(own);
+
+    const bulk = await outcomeOf(bulkRow.id, () =>
+      bulkEditEntries(actor, workspace, { ids: [bulkRow.id], changes: example.changes }),
+    );
+    const single = await outcomeOf(singleRow.id, () =>
+      updateEntryTimes(actor, workspace, { id: singleRow.id, ...combined }),
+    );
+
+    expect(bulk).toEqual(single);
+    if (example.rejects === undefined) {
+      expect(bulk).not.toEqual({
+        startedAt: startedAt.toISOString(),
+        endedAt: new Date(example.endedAt).toISOString(),
+      });
+    } else {
+      expect(bulk).toEqual({ code: "validation", message: example.rejects });
+      expect(await instantsOf(bulkRow.id)).toEqual({
+        startedAt: startedAt.toISOString(),
+        endedAt: new Date(example.endedAt).toISOString(),
+      });
+    }
+  });
+});
+
+describe("bulkEditEntries: un campo ausente no cambia (criterio 8)", () => {
+  const workspace = workspaceOf(buenosAires);
+
+  it("cambiar solo el inicio deja el fin de cada entrada como estaba", async () => {
+    // 09:00 a 10:00 y 14:00 a 16:00 en Buenos Aires.
+    const early = await seedClosed("2026-10-01T12:00:00Z", "2026-10-01T13:00:00Z");
+    const late = await seedClosed("2026-09-30T17:00:00Z", "2026-09-30T19:00:00Z");
+
+    const result = await bulkEditEntries(actor, workspace, {
+      ids: [early.id, late.id],
+      changes: { start: "08:30" },
+    });
+
+    expect(result.entries.map((entry) => [entry.startedAt, entry.endedAt])).toEqual([
+      ["2026-10-01T11:30:00.000Z", "2026-10-01T13:00:00.000Z"],
+      ["2026-09-30T11:30:00.000Z", "2026-09-30T19:00:00.000Z"],
+    ]);
+    expect(await instantsOf(late.id)).toEqual({
+      startedAt: "2026-09-30T11:30:00.000Z",
+      endedAt: "2026-09-30T19:00:00.000Z",
+    });
+  });
+
+  it("TT-72: si el fin queda antes del inicio nuevo, termina al día siguiente", async () => {
+    // 10:00 a 11:00; el inicio pasa a las 11:30.
+    const row = await seedClosed("2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
+
+    const result = await bulkEditEntries(actor, workspace, {
+      ids: [row.id],
+      changes: { start: "11:30" },
+    });
+
+    expect(result.entries[0]).toMatchObject({
+      startedAt: "2026-10-01T14:30:00.000Z",
+      endedAt: "2026-10-02T14:00:00.000Z",
+      extraDays: 1,
+    });
+  });
+
+  it("con la persona en 12 h, el trío de la fila sale de la hora canónica y no del rótulo", async () => {
+    const twelveHours: TrackerWorkspace = {
+      ...workspace,
+      formats: { ...defaultFormats, time: "12h" },
+    };
+    // 10:00 a 11:00 en Buenos Aires: «10:00 AM» y «11:00 AM» en sus rótulos.
+    const row = await seedClosed("2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
+
+    const result = await bulkEditEntries(actor, twelveHours, {
+      ids: [row.id],
+      changes: { start: "09:00" },
+    });
+
+    expect(result.entries[0]).toMatchObject({
+      startedAt: "2026-10-01T12:00:00.000Z",
+      endedAt: "2026-10-01T14:00:00.000Z",
+      startLabel: "9:00 AM",
+      endLabel: "11:00 AM",
+    });
+  });
+
+  it("cambiar solo la descripción no toca los instantes, ni los segundos", async () => {
+    const row = await seedClosed("2026-10-01T13:00:40Z", "2026-10-01T13:30:15Z");
+
+    await bulkEditEntries(actor, workspace, {
+      ids: [row.id],
+      changes: { description: "x" },
+    });
+
+    expect(await instantsOf(row.id)).toEqual({
+      startedAt: "2026-10-01T13:00:40.000Z",
+      endedAt: "2026-10-01T13:30:15.000Z",
+    });
+  });
+});
+
+describe("bulkEditEntries: una fila cuyo trío no cambia no se reescribe (criterio 9)", () => {
+  const workspace = workspaceOf(buenosAires);
+
+  it("la entrada de más de un día con su propia fecha no es un rechazo y no cambia", async () => {
+    const multiDay = await seedClosed("2026-10-01T13:00:00Z", "2026-10-03T14:00:00Z");
+    const moved = await seedClosed("2026-09-30T13:00:00Z", "2026-09-30T14:00:00Z");
+
+    const result = await bulkEditEntries(actor, workspace, {
+      ids: [multiDay.id, moved.id],
+      changes: { date: "2026-10-01" },
+    });
+
+    expect(result.entries[0]).toMatchObject({
+      id: multiDay.id,
+      startedAt: "2026-10-01T13:00:00.000Z",
+      endedAt: "2026-10-03T14:00:00.000Z",
+      editableTimes: false,
+    });
+    expect((await timeEntryById(multiDay.id))?.updatedAt).toEqual(multiDay.updatedAt);
+    expect(result.entries[1]).toMatchObject({ id: moved.id, dayDate: "2026-10-01" });
+  });
+
+  it("el trío pedido igual al de la fila no se reescribe aunque traiga los tres campos", async () => {
+    // 10:00:40 a 10:30:15: reescribirlo perdería los segundos.
+    const row = await seedClosed("2026-10-01T13:00:40Z", "2026-10-01T13:30:15Z");
+
+    await bulkEditEntries(actor, workspace, {
+      ids: [row.id],
+      changes: { date: "2026-10-01", start: "10:00", end: "10:30" },
+    });
+
+    expect(await snapshotOf(row.id)).toEqual({
+      description: "",
+      startedAt: "2026-10-01T13:00:40.000Z",
+      endedAt: "2026-10-01T13:30:15.000Z",
+      updatedAt: row.updatedAt.toISOString(),
+    });
+  });
+});
+
+describe("bulkEditEntries: todo o nada (criterio 10, ADR 0011)", () => {
+  it("cada causa de §4.5, mezclada con filas válidas: nada escrito y la lista entera en el orden pedido", async () => {
+    const workspace = workspaceOf(madrid);
+    const otherId = await seedMember(workspaceId, "member");
+    // En Madrid; el inicio pedido es 02:30.
+    const validA = await seedClosed("2026-10-01T08:00:00Z", "2026-10-01T09:00:00Z");
+    const validB = await seedClosed("2026-09-30T08:00:00Z", "2026-09-30T09:00:00Z");
+    const foreign = await seedClosed(
+      "2026-10-01T08:00:00Z",
+      "2026-10-01T09:00:00Z",
+      otherId,
+    );
+    const running = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-02T08:00:00Z",
+    });
+    // 10:00 del 1 a 11:00 del 3.
+    const multiDay = await seedClosed("2026-10-01T08:00:00Z", "2026-10-03T09:00:00Z");
+    // 00:10 a 00:20 del 29/03: las 02:30 de ese día no existen.
+    const nonexistent = await seedClosed("2026-03-28T23:10:00Z", "2026-03-28T23:20:00Z");
+    // 01:00 a 02:30: con el inicio a las 02:30 dura cero.
+    const short = await seedClosed("2026-10-01T23:00:00Z", "2026-10-02T00:30:00Z");
+    // 01:00 a 02:00 del 9999-12-31: el fin pasa al día siguiente, que no existe.
+    const lastDay = await seedClosed("9999-12-31T00:00:00Z", "9999-12-31T01:00:00Z");
+    // 10:00 a 11:00 del 30/12/2019, antes de la creación del workspace.
+    const tooEarly = await seedClosed("2019-12-30T09:00:00Z", "2019-12-30T10:00:00Z");
+    const missing = randomUUID();
+    const seeded = [
+      validA,
+      validB,
+      foreign,
+      running,
+      multiDay,
+      nonexistent,
+      short,
+      lastDay,
+      tooEarly,
+    ];
+    const before = await Promise.all(seeded.map((row) => snapshotOf(row.id)));
+
+    const error = await rejectionOf(
+      bulkEditEntries(actor, workspace, {
+        ids: [
+          validA.id,
+          missing,
+          foreign.id,
+          running.id,
+          multiDay.id,
+          validB.id,
+          nonexistent.id,
+          short.id,
+          lastDay.id,
+          tooEarly.id,
+        ],
+        changes: { description: "nueva", start: "02:30" },
+      }),
+    );
+
+    expect(error.code).toBe("rejected");
+    expect(error.message).toBe(timeEntryMessages.bulkEditRejected);
+    expect(error.rejections).toEqual([
+      { id: missing, code: "not_found", message: timeEntryMessages.notFound },
+      {
+        id: foreign.id,
+        code: "forbidden",
+        message: timeEntryMessages.forbiddenOtherOwner,
+      },
+      {
+        id: running.id,
+        code: "timer_running",
+        message: timeEntryMessages.runningEntryTimes,
+      },
+      { id: multiDay.id, code: "validation", message: timeEntryMessages.multiDayTimes },
+      {
+        id: nonexistent.id,
+        code: "validation",
+        message: timeEntryMessages.nonexistentClock,
+      },
+      { id: short.id, code: "validation", message: timeEntryMessages.tooShort },
+      { id: lastDay.id, code: "validation", message: timeEntryMessages.invalidDate },
+      { id: tooEarly.id, code: "validation", message: timeEntryMessages.beforeWorkspace },
+    ]);
+    expect(await Promise.all(seeded.map((row) => snapshotOf(row.id)))).toEqual(before);
+  });
+
+  it("con una sola fila rechazada no cambia ninguna de las otras", async () => {
+    const workspace = workspaceOf(buenosAires);
+    const rows = [
+      await seedClosed("2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z"),
+      await seedClosed("2026-09-30T13:00:00Z", "2026-09-30T14:00:00Z"),
+    ];
+    const multiDay = await seedClosed("2026-10-01T13:00:00Z", "2026-10-03T14:00:00Z");
+    const before = await Promise.all(rows.map((row) => snapshotOf(row.id)));
+
+    const error = await rejectionOf(
+      bulkEditEntries(actor, workspace, {
+        ids: [rows[0].id, multiDay.id, rows[1].id],
+        changes: { start: "08:00" },
+      }),
+    );
+
+    expect(error.rejections).toEqual([
+      { id: multiDay.id, code: "validation", message: timeEntryMessages.multiDayTimes },
+    ]);
+    expect(await Promise.all(rows.map((row) => snapshotOf(row.id)))).toEqual(before);
+  });
+
+  it("la ajena que corre y la ajena de más de un día se rechazan como ajenas: ni su estado ni su horario se filtran", async () => {
+    const otherId = await seedMember(workspaceId, "member");
+    const foreignRunning = await seedTimeEntry({
+      workspaceId,
+      userId: otherId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+    // 10:00 del 1 a 11:00 del 3, en Buenos Aires.
+    const foreignMultiDay = await seedClosed(
+      "2026-10-01T13:00:00Z",
+      "2026-10-03T14:00:00Z",
+      otherId,
+    );
+    const seeded = [foreignRunning, foreignMultiDay];
+    const before = await Promise.all(seeded.map((row) => snapshotOf(row.id)));
+
+    const error = await rejectionOf(
+      bulkEditEntries(actor, workspaceOf(buenosAires), {
+        ids: [foreignRunning.id, foreignMultiDay.id],
+        changes: { start: "08:00" },
+      }),
+    );
+
+    expect(error.rejections).toEqual(
+      seeded.map((row) => ({
+        id: row.id,
+        code: "forbidden",
+        message: timeEntryMessages.forbiddenOtherOwner,
+      })),
+    );
+    expect(await Promise.all(seeded.map((row) => snapshotOf(row.id)))).toEqual(before);
+  });
+
+  it("la entrada que corre es un rechazo también si el cambio es solo la descripción (TT-111)", async () => {
+    const running = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      description: "corriendo",
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+
+    const error = await rejectionOf(
+      bulkEditEntries(actor, workspaceOf(buenosAires), {
+        ids: [running.id],
+        changes: { description: "otra" },
+      }),
+    );
+
+    expect(error.rejections).toEqual([
+      {
+        id: running.id,
+        code: "timer_running",
+        message: timeEntryMessages.runningEntryTimes,
+      },
+    ]);
+    expect((await timeEntryById(running.id))?.description).toBe("corriendo");
+  });
+
+  it("la entrada de otro workspace es una que no existe", async () => {
+    const other = await seedWorkspace(buenosAires);
+    const foreign = await seedTimeEntry({
+      workspaceId: other.workspaceId,
+      userId: other.ownerId,
+      description: "allá",
+      startedAt: "2026-10-01T13:00:00Z",
+      endedAt: "2026-10-01T14:00:00Z",
+    });
+
+    const error = await rejectionOf(
+      bulkEditEntries(actor, workspaceOf(buenosAires), {
+        ids: [foreign.id],
+        changes: { description: "acá" },
+      }),
+    );
+
+    expect(error.rejections).toEqual([
+      { id: foreign.id, code: "not_found", message: timeEntryMessages.notFound },
+    ]);
+    expect((await timeEntryById(foreign.id))?.description).toBe("allá");
+  });
+});
+
+describe("bulkDeleteEntries (criterio 11, TT-64)", () => {
+  it("borra todas las pedidas y responde los ids pedidos", async () => {
+    const rows = [
+      await seedClosed("2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z"),
+      await seedClosed("2026-09-30T13:00:00Z", "2026-09-30T14:00:00Z"),
+      await seedClosed("2026-09-29T13:00:00Z", "2026-09-29T14:00:00Z"),
+    ];
+    const kept = await seedClosed("2026-09-28T13:00:00Z", "2026-09-28T14:00:00Z");
+    const ids = rows.map((row) => row.id);
+
+    const result = await bulkDeleteEntries(actor, { ids });
+
+    expect(result).toEqual({ ids });
+    for (const row of rows) {
+      expect(await timeEntryById(row.id)).toBeUndefined();
+    }
+    expect(await timeEntryById(kept.id)).toBeDefined();
+  });
+
+  it("una que ya no existe no es un rechazo: se borran las otras", async () => {
+    const row = await seedClosed("2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
+    const missing = randomUUID();
+
+    const result = await bulkDeleteEntries(actor, { ids: [missing, row.id] });
+
+    expect(result).toEqual({ ids: [missing, row.id] });
+    expect(await timeEntryById(row.id)).toBeUndefined();
+  });
+
+  it("la ajena y la que corre rechazan el pedido, en el orden pedido, y no se borra ninguna", async () => {
+    const otherId = await seedMember(workspaceId, "member");
+    const own = await seedClosed("2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
+    const foreign = await seedClosed(
+      "2026-10-01T13:00:00Z",
+      "2026-10-01T14:00:00Z",
+      otherId,
+    );
+    const running = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+
+    const error = await rejectionOf(
+      bulkDeleteEntries(actor, { ids: [running.id, own.id, randomUUID(), foreign.id] }),
+    );
+
+    expect(error.code).toBe("rejected");
+    expect(error.message).toBe(timeEntryMessages.bulkDeleteRejected);
+    expect(error.rejections).toEqual([
+      {
+        id: running.id,
+        code: "timer_running",
+        message: timeEntryMessages.runningEntryTimes,
+      },
+      {
+        id: foreign.id,
+        code: "forbidden",
+        message: timeEntryMessages.forbiddenOtherOwner,
+      },
+    ]);
+    for (const row of [own, foreign, running]) {
+      expect(await timeEntryById(row.id)).toBeDefined();
+    }
+  });
+
+  it("la ajena que corre se rechaza como ajena: su estado no se filtra", async () => {
+    const otherId = await seedMember(workspaceId, "member");
+    const foreignRunning = await seedTimeEntry({
+      workspaceId,
+      userId: otherId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+
+    const error = await rejectionOf(
+      bulkDeleteEntries(actor, { ids: [foreignRunning.id] }),
+    );
+
+    expect(error.rejections).toEqual([
+      {
+        id: foreignRunning.id,
+        code: "forbidden",
+        message: timeEntryMessages.forbiddenOtherOwner,
+      },
+    ]);
+    expect(await timeEntryById(foreignRunning.id)).toBeDefined();
+  });
+
+  it("no borra la entrada de otro workspace, que para este no existe", async () => {
+    const other = await seedWorkspace(buenosAires);
+    const foreign = await seedTimeEntry({
+      workspaceId: other.workspaceId,
+      userId: other.ownerId,
+      startedAt: "2026-10-01T13:00:00Z",
+      endedAt: "2026-10-01T14:00:00Z",
+    });
+
+    expect(await bulkDeleteEntries(actor, { ids: [foreign.id] })).toEqual({
+      ids: [foreign.id],
+    });
+    expect(await timeEntryById(foreign.id)).toBeDefined();
+  });
+});
+
+describe("reintentar una operación en masa aplicada (criterio 14, TT-89)", () => {
+  it("la edición repetida no escribe y responde las mismas vistas", async () => {
+    const workspace = workspaceOf(buenosAires);
+    const rows = [
+      await seedClosed("2026-10-01T13:00:40Z", "2026-10-01T14:00:00Z"),
+      await seedClosed("2026-09-30T13:00:00Z", "2026-09-30T14:00:15Z"),
+    ];
+    const request = {
+      ids: rows.map((row) => row.id),
+      changes: { description: "nueva", date: "2026-09-29", start: "09:00" },
+    };
+
+    const first = await bulkEditEntries(actor, workspace, request);
+    const applied = await Promise.all(rows.map((row) => snapshotOf(row.id)));
+    const second = await bulkEditEntries(actor, workspace, request);
+
+    expect(second).toEqual(first);
+    expect(await Promise.all(rows.map((row) => snapshotOf(row.id)))).toEqual(applied);
+  });
+
+  it("el borrado repetido responde éxito", async () => {
+    const row = await seedClosed("2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
+
+    await bulkDeleteEntries(actor, { ids: [row.id] });
+
+    expect(await bulkDeleteEntries(actor, { ids: [row.id] })).toEqual({ ids: [row.id] });
+  });
+});
+
+describe("las operaciones en masa en la base, cruzadas", () => {
+  it("criterio 15: el borrado de una fila encolado antes de la edición masiva la deja en not_found, sin cambiar las otras", async () => {
+    const workspace = workspaceOf(buenosAires);
+    const shared = await seedClosed("2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
+    const other = await seedClosed("2026-09-30T13:00:00Z", "2026-09-30T14:00:00Z");
+    const before = await snapshotOf(other.id);
+
+    const [removed, edited] = await queueBehindBarrier(lockRow(shared.id), [
+      () => deleteEntry(actor, { id: shared.id }),
+      () =>
+        bulkEditEntries(actor, workspace, {
+          ids: [other.id, shared.id],
+          changes: { description: "nueva" },
+        }),
+    ]);
+
+    expect(removed.status).toBe("fulfilled");
+    expect(edited.status).toBe("rejected");
+    if (edited.status !== "rejected") return;
+    expect(edited.reason).toBeInstanceOf(RejectedError);
+    expect(edited.reason).toMatchObject({
+      rejections: [
+        { id: shared.id, code: "not_found", message: timeEntryMessages.notFound },
+      ],
+    });
+    expect(await snapshotOf(other.id)).toEqual(before);
+  });
+
+  it("criterio 21: dos ediciones masivas sobre los mismos ids, en orden opuesto, responden las dos", async () => {
+    const workspace = workspaceOf(buenosAires);
+    const seeded = [
+      await seedClosed("2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z"),
+      await seedClosed("2026-09-30T13:00:00Z", "2026-09-30T14:00:00Z"),
+      await seedClosed("2026-09-29T13:00:00Z", "2026-09-29T14:00:00Z"),
+    ];
+    const [a, b, c] = seeded.map((row) => row.id).sort();
+    await warmPool(3);
+    const finished: string[] = [];
+    const edit = (ids: string[], description: string) => async () => {
+      const result = await bulkEditEntries(actor, workspace, {
+        ids,
+        changes: { description },
+      });
+      finished.push(description);
+      return result;
+    };
+
+    const results = await raceThroughBarrier(lockRow(b), [
+      edit([a, b, c], "uno"),
+      edit([c, b, a], "dos"),
+    ]);
+
+    expect(results.map((result) => result.entries.map((entry) => entry.id))).toEqual([
+      [a, b, c],
+      [c, b, a],
+    ]);
+    expect(finished).toHaveLength(2);
+    const last = finished[1];
+    for (const id of [a, b, c]) {
+      expect((await timeEntryById(id))?.description).toBe(last);
+    }
+  });
+});
+
+describe("las guardas de las escrituras de las operaciones en masa", () => {
+  it("updateClosedFields no escribe una entrada abierta ni la de otra persona", async () => {
+    const otherId = await seedMember(workspaceId, "member");
+    const running = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+    const foreign = await seedClosed(
+      "2026-10-01T13:00:00Z",
+      "2026-10-01T14:00:00Z",
+      otherId,
+    );
+
+    const results = await db.transaction(async (tx) => [
+      await timeEntryRepository.updateClosedFields(
+        tx,
+        { workspaceId, userId: actor.userId, id: running.id },
+        { description: "x" },
+      ),
+      await timeEntryRepository.updateClosedFields(
+        tx,
+        { workspaceId, userId: actor.userId, id: foreign.id },
+        { description: "x" },
+      ),
+    ]);
+
+    expect(results).toEqual([undefined, undefined]);
+    expect((await timeEntryById(running.id))?.description).toBe("");
+    expect((await timeEntryById(foreign.id))?.description).toBe("");
+  });
+
+  it("deleteClosedByIds sin destinos no borra nada", async () => {
+    const row = await seedClosed("2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
+
+    const removed = await db.transaction((tx) =>
+      timeEntryRepository.deleteClosedByIds(tx, []),
+    );
+
+    expect(removed).toEqual([]);
+    expect(await timeEntryById(row.id)).toBeDefined();
+  });
+
+  it("deleteClosedByIds no borra una entrada abierta, ni la de otra persona, ni la de otro workspace", async () => {
+    const otherId = await seedMember(workspaceId, "member");
+    const other = await seedWorkspace(buenosAires);
+    const own = await seedClosed("2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
+    const running = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+    const foreign = await seedClosed(
+      "2026-10-01T13:00:00Z",
+      "2026-10-01T14:00:00Z",
+      otherId,
+    );
+    const elsewhere = await seedTimeEntry({
+      workspaceId: other.workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-01T13:00:00Z",
+      endedAt: "2026-10-01T14:00:00Z",
+    });
+
+    const removed = await db.transaction((tx) =>
+      timeEntryRepository.deleteClosedByIds(
+        tx,
+        [own, running, foreign, elsewhere].map((row) => ({
+          workspaceId,
+          userId: actor.userId,
+          id: row.id,
+        })),
+      ),
+    );
+
+    expect(removed.map((row) => row.id)).toEqual([own.id]);
+    for (const row of [running, foreign, elsewhere]) {
+      expect(await timeEntryById(row.id)).toBeDefined();
+    }
+  });
+
+  it("findManyByIdsForUpdate trae las filas pedidas del workspace en el orden del id", async () => {
+    const other = await seedWorkspace(buenosAires);
+    // Insertadas de mayor a menor id: el orden físico es el inverso del pedido.
+    const ids = Array.from({ length: 4 }, () => randomUUID()).sort((left, right) =>
+      left < right ? 1 : -1,
+    );
+    for (const id of ids) {
+      await db.insert(timeEntry).values({
+        id,
+        workspaceId,
+        userId: actor.userId,
+        startedAt: new Date("2026-10-01T13:00:00Z"),
+        endedAt: new Date("2026-10-01T14:00:00Z"),
+      });
+    }
+    const elsewhere = await seedTimeEntry({
+      workspaceId: other.workspaceId,
+      userId: other.ownerId,
+      startedAt: "2026-10-01T13:00:00Z",
+      endedAt: "2026-10-01T14:00:00Z",
+    });
+
+    const found = await db.transaction((tx) =>
+      timeEntryRepository.findManyByIdsForUpdate(tx, workspaceId, [...ids, elsewhere.id]),
+    );
+
+    expect(found.map((row) => row.id)).toEqual([...ids].reverse());
   });
 });

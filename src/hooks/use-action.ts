@@ -2,11 +2,13 @@
 
 import { useRef, useState, useTransition } from "react";
 
-import type { ActionResult } from "@/server/action";
+import type { ActionResult, Rejection } from "@/server/action";
 
 export type ActionFailure<Code extends string = string> = {
   readonly code: Code;
   readonly message: string;
+  /** Las filas que impidieron una operación en masa, si el resultado las trae (ADR 0011). */
+  readonly rejections?: readonly Rejection<Code>[];
 };
 
 type Options<Input, Data, Code extends string> = {
@@ -65,7 +67,11 @@ export function useAction<Input, Data, Code extends string>(
       try {
         const result = await action(input);
         if (!result.ok) {
-          const failure = { code: result.code, message: result.message };
+          const failure: ActionFailure<Code> = {
+            code: result.code,
+            message: result.message,
+            ...(result.rejections === undefined ? {} : { rejections: result.rejections }),
+          };
           startTransition(() => fail(failure));
           return;
         }

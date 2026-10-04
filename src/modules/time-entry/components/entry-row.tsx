@@ -26,7 +26,13 @@ import { clockLabel, formatDuration } from "@/server/time";
 import { DeleteEntryDialog } from "./delete-entry-dialog";
 import { DescriptionField } from "./description-field";
 import { EntryTimesEditor } from "./entry-times-editor";
-import { entryProjectLabel, trackerLabels } from "./labels";
+import {
+  entryNameOf,
+  entryProjectLabel,
+  selectEntryLabel,
+  trackerLabels,
+} from "./labels";
+import { SelectionCheckbox } from "./selection-checkbox";
 import { draftDuration, draftExtraDays, fromView, type TimeDraft } from "./time-draft";
 
 type EntryRowProps = {
@@ -37,8 +43,13 @@ type EntryRowProps = {
   readonly project: ProjectSelection;
   /** TT-55: con la escritura en vuelo la fila queda atenuada. */
   readonly busy: boolean;
-  /** Con la membresía desactivada la fila queda en solo lectura (TT-92). */
+  /** Con la membresía desactivada la fila queda en solo lectura y sin casilla (TT-92). */
   readonly canTrack: boolean;
+  /** TT-62: la fila está en la selección de la lista. */
+  readonly selected: boolean;
+  readonly onToggleSelected: () => void;
+  /** Una operación en masa viaja: la casilla no cambia, y no pierde el foco. */
+  readonly selectionLocked: boolean;
   /** TT-55: el trío confirmado, que la fila muestra mientras su escritura viaja. */
   readonly pendingTimes: TimeDraft | null;
   /** Día de hoy en la zona del workspace. */
@@ -90,6 +101,9 @@ export function EntryRow({
   project,
   busy,
   canTrack,
+  selected,
+  onToggleSelected,
+  selectionLocked,
   pendingTimes,
   todayKey,
   minDayKey,
@@ -184,7 +198,7 @@ export function EntryRow({
     onSave(next);
   }
 
-  const entryName = description === "" ? trackerLabels.noDescription : description;
+  const entryName = entryNameOf(description);
   // Una sola expresión en reposo, en edición y en vuelo: las horas canónicas
   // nunca se muestran sin pasar por el formato de la persona.
   const timesLabel = `${clockLabel(times.start, time)} – ${clockLabel(times.end, time)}`;
@@ -204,6 +218,14 @@ export function EntryRow({
       className={cn("border-b last:border-b-0", busy && "opacity-60")}
     >
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2">
+        {canTrack && (
+          <SelectionCheckbox
+            checked={selected}
+            label={selectEntryLabel(entryName, timesLabel)}
+            locked={selectionLocked}
+            onToggle={onToggleSelected}
+          />
+        )}
         <div className="min-w-0 flex-1 basis-64">
           {editing ? (
             <DescriptionField

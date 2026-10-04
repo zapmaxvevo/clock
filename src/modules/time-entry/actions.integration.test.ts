@@ -1462,3 +1462,189 @@ describe("updateEntryProject y el par en las altas (criterio 12)", () => {
     });
   });
 });
+
+describe("bulkEditEntries y bulkDeleteEntries (criterio 17)", () => {
+  const longAgo = "2020-01-01T00:00:00Z";
+  const unknownId = "11111111-1111-4111-8111-111111111111";
+
+  /** Abre la sesión y crea su membresía, que crea la primera action. */
+  async function signInWithMembership() {
+    const seeded = await signInOn({ createdAt: longAgo });
+    await actions.discardTimer({ id: unknownId });
+    mocks.revalidated.length = 0;
+    return seeded;
+  }
+
+  function seedOwnEntry(seeded: SeededWorkspace, startedAt = "2026-10-01T13:00:00Z") {
+    return seedTimeEntry({
+      workspaceId: seeded.workspaceId,
+      userId: sessionUserId(),
+      description: "original",
+      startedAt,
+      endedAt: new Date(new Date(startedAt).getTime() + 3_600_000),
+    });
+  }
+
+  it("aplican, responden sus datos y revalidan /", async () => {
+    const seeded = await signInWithMembership();
+    const edited = await seedOwnEntry(seeded);
+    const removed = await seedOwnEntry(seeded, "2026-09-30T13:00:00Z");
+
+    const edit = await actions.bulkEditEntries({
+      ids: [edited.id],
+      changes: { description: "nueva", start: "09:00" },
+    });
+    const remove = await actions.bulkDeleteEntries({ ids: [removed.id] });
+
+    expect(edit.ok).toBe(true);
+    if (!edit.ok) return;
+    expect(edit.data.entries).toHaveLength(1);
+    expect(edit.data.entries[0]).toMatchObject({
+      id: edited.id,
+      description: "nueva",
+      startLabel: "09:00",
+      startedAt: "2026-10-01T12:00:00.000Z",
+    });
+    expect(remove).toEqual({ ok: true, data: { ids: [removed.id] } });
+    expect(await timeEntryById(removed.id)).toBeUndefined();
+    expect(mocks.revalidated).toEqual(["/", "/"]);
+  });
+
+  it("los ids llegan al service en minúsculas y sin repetir", async () => {
+    const seeded = await signInWithMembership();
+    const entry = await seedOwnEntry(seeded);
+    const upper = entry.id.toUpperCase();
+
+    const edit = await actions.bulkEditEntries({
+      ids: [upper, entry.id],
+      changes: { description: "nueva" },
+    });
+    const remove = await actions.bulkDeleteEntries({ ids: [upper, entry.id] });
+
+    expect(edit.ok).toBe(true);
+    if (!edit.ok) return;
+    expect(edit.data.entries.map((view) => view.id)).toEqual([entry.id]);
+    expect(remove).toEqual({ ok: true, data: { ids: [entry.id] } });
+    expect(await timeEntryById(entry.id)).toBeUndefined();
+  });
+
+  it("traducen el ZodError con su mensaje, sin lista, y revalidan", async () => {
+    const seeded = await signInWithMembership();
+    const entry = await seedOwnEntry(seeded);
+    const tooMany = Array.from({ length: 201 }, () => randomUUID());
+    // Un campo que el slice no conoce, como lo mandaría una pestaña del 12.
+    const withProject = { description: "x", projectId: null };
+
+    const cases = [
+      [await actions.bulkDeleteEntries({ ids: [] }), timeEntryMessages.bulkEmpty],
+      [await actions.bulkDeleteEntries({ ids: tooMany }), timeEntryMessages.bulkTooMany],
+      [
+        await actions.bulkEditEntries({ ids: [entry.id], changes: {} }),
+        timeEntryMessages.bulkNoChanges,
+      ],
+      [
+        await actions.bulkEditEntries({ ids: [entry.id], changes: withProject }),
+        timeEntryMessages.unexpected,
+      ],
+      [
+        await actions.bulkEditEntries({ ids: [entry.id], changes: { start: "9:00" } }),
+        timeEntryMessages.invalidClock,
+      ],
+    ] as const;
+
+    for (const [result, message] of cases) {
+      expect(result).toEqual({ ok: false, code: "validation", message });
+    }
+    expect(await timeEntryById(entry.id)).toMatchObject({ description: "original" });
+    expect(mocks.revalidated).toEqual(["/", "/", "/", "/", "/"]);
+  });
+
+  it("exigen su permiso antes de tocar nada: con la membresía desactivada responden forbidden sin lista, también con un id que no existe", async () => {
+    const seeded = await signInWithMembership();
+    const entry = await seedOwnEntry(seeded);
+    await db
+      .update(membership)
+      .set({ status: "inactive" })
+      .where(
+        and(
+          eq(membership.workspaceId, seeded.workspaceId),
+          eq(membership.userId, sessionUserId()),
+        ),
+      );
+
+    for (const ids of [[entry.id], [unknownId]]) {
+      const forbidden = {
+        ok: false,
+        code: "forbidden",
+        message: timeEntryMessages.forbidden,
+      };
+      expect(
+        await actions.bulkEditEntries({ ids, changes: { description: "x" } }),
+      ).toEqual(forbidden);
+      expect(await actions.bulkDeleteEntries({ ids })).toEqual(forbidden);
+    }
+    expect(await timeEntryById(entry.id)).toMatchObject({ description: "original" });
+    expect(mocks.revalidated).toEqual(["/", "/", "/", "/"]);
+  });
+
+  it("devuelven rejected con la lista intacta, en el orden pedido, y revalidan", async () => {
+    const seeded = await signInWithMembership();
+    const own = await seedOwnEntry(seeded);
+    const otherId = await seedMember(seeded.workspaceId, "member");
+    const foreign = await seedTimeEntry({
+      workspaceId: seeded.workspaceId,
+      userId: otherId,
+      startedAt: "2026-10-01T13:00:00Z",
+      endedAt: "2026-10-01T14:00:00Z",
+    });
+
+    const edit = await actions.bulkEditEntries({
+      ids: [foreign.id, own.id, unknownId],
+      changes: { description: "nueva" },
+    });
+    const remove = await actions.bulkDeleteEntries({
+      ids: [unknownId, own.id, foreign.id],
+    });
+
+    expect(edit).toEqual({
+      ok: false,
+      code: "rejected",
+      message: timeEntryMessages.bulkEditRejected,
+      rejections: [
+        {
+          id: foreign.id,
+          code: "forbidden",
+          message: timeEntryMessages.forbiddenOtherOwner,
+        },
+        { id: unknownId, code: "not_found", message: timeEntryMessages.notFound },
+      ],
+    });
+    expect(remove).toEqual({
+      ok: false,
+      code: "rejected",
+      message: timeEntryMessages.bulkDeleteRejected,
+      rejections: [
+        {
+          id: foreign.id,
+          code: "forbidden",
+          message: timeEntryMessages.forbiddenOtherOwner,
+        },
+      ],
+    });
+    expect(await timeEntryById(own.id)).toMatchObject({ description: "original" });
+    expect(mocks.revalidated).toEqual(["/", "/"]);
+  });
+
+  it("un error de dominio de una fila sola no trae lista", async () => {
+    await signInWithMembership();
+
+    expect(
+      await actions.updateEntryTimes({
+        id: unknownId,
+        date: "2026-10-01",
+        start: "09:00",
+        end: "10:00",
+      }),
+    ).toEqual({ ok: false, code: "not_found", message: timeEntryMessages.notFound });
+  });
+});

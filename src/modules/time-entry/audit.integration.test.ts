@@ -18,6 +18,8 @@ import { auditFor, timeEntriesOf, timeEntryById } from "@/test/queries";
 
 import { timeEntryMessages } from "./schema";
 import {
+  bulkDeleteEntries,
+  bulkEditEntries,
   continueEntry,
   createManualEntry,
   deleteEntry,
@@ -936,5 +938,192 @@ describe("audit log del proyecto y la tarea (criterio 13)", () => {
         expect.objectContaining(pair),
       ]);
     }
+  });
+});
+
+describe("audit log de las operaciones en masa (ADR 0011)", () => {
+  function seedOwn(description: string, startedAt: string, endedAt: string | null) {
+    return seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      description,
+      startedAt,
+      endedAt,
+    });
+  }
+
+  it("la edición deja timeEntry.bulkEdit por fila escrita, con solo los campos que cambiaron (criterio 6)", async () => {
+    // 10:00 a 11:00 en Buenos Aires; el inicio pasa a las 09:00 y el fin se conserva.
+    const changed = await seedOwn(
+      "vieja",
+      "2026-10-01T13:00:00Z",
+      "2026-10-01T14:00:00Z",
+    );
+    // Ya tiene la descripción y el inicio pedidos.
+    const same = await seedOwn("nueva", "2026-09-30T12:00:00Z", "2026-09-30T14:00:00Z");
+    // Solo cambia la descripción.
+    const describedOnly = await seedOwn(
+      "otra",
+      "2026-09-29T12:00:00Z",
+      "2026-09-29T13:00:00Z",
+    );
+
+    await bulkEditEntries(actor, workspace, {
+      ids: [changed.id, same.id, describedOnly.id],
+      changes: { description: "nueva", start: "09:00" },
+    });
+
+    const rows = await auditFor("time_entry");
+    expect(rows).toHaveLength(2);
+    const [record] = await auditFor("time_entry", changed.id);
+    expect(record).toMatchObject({
+      action: "timeEntry.bulkEdit",
+      entity: "time_entry",
+      workspaceId,
+      actorId: actor.userId,
+    });
+    expect(parsed(record.previousValue)).toEqual({
+      description: "vieja",
+      startedAt: "2026-10-01T13:00:00.000Z",
+    });
+    expect(parsed(record.nextValue)).toEqual({
+      description: "nueva",
+      startedAt: "2026-10-01T12:00:00.000Z",
+    });
+    const [described] = await auditFor("time_entry", describedOnly.id);
+    expect(parsed(described.previousValue)).toEqual({ description: "otra" });
+    expect(parsed(described.nextValue)).toEqual({ description: "nueva" });
+    expect(await auditFor("time_entry", same.id)).toEqual([]);
+  });
+
+  it("la edición que cambia los dos extremos los registra a los dos", async () => {
+    const row = await seedOwn("", "2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
+
+    await bulkEditEntries(actor, workspace, {
+      ids: [row.id],
+      changes: { date: "2026-09-30" },
+    });
+
+    const [record] = await auditFor("time_entry", row.id);
+    expect(parsed(record.previousValue)).toEqual({
+      startedAt: "2026-10-01T13:00:00.000Z",
+      endedAt: "2026-10-01T14:00:00.000Z",
+    });
+    expect(parsed(record.nextValue)).toEqual({
+      startedAt: "2026-09-30T13:00:00.000Z",
+      endedAt: "2026-09-30T14:00:00.000Z",
+    });
+  });
+
+  it("la edición que cambia solo el fin no registra el inicio conservado", async () => {
+    // 10:00:40 a 11:00; el fin pasa a las 11:30 y el inicio conserva sus segundos.
+    const row = await seedOwn("", "2026-10-01T13:00:40Z", "2026-10-01T14:00:00Z");
+
+    await bulkEditEntries(actor, workspace, { ids: [row.id], changes: { end: "11:30" } });
+
+    const [record] = await auditFor("time_entry", row.id);
+    expect(parsed(record.previousValue)).toEqual({ endedAt: "2026-10-01T14:00:00.000Z" });
+    expect(parsed(record.nextValue)).toEqual({ endedAt: "2026-10-01T14:30:00.000Z" });
+  });
+
+  it("la edición rechazada no deja registro de ninguna fila (criterio 10)", async () => {
+    const valid = await seedOwn("vieja", "2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
+    const running = await seedOwn("", "2026-10-02T13:00:00Z", null);
+
+    await expect(
+      bulkEditEntries(actor, workspace, {
+        ids: [valid.id, running.id],
+        changes: { description: "nueva" },
+      }),
+    ).rejects.toMatchObject({ code: "rejected" });
+
+    expect(await auditFor("time_entry")).toEqual([]);
+  });
+
+  it("el borrado deja timeEntry.bulkDelete por fila borrada, con la fila entera (criterio 11)", async () => {
+    const rows = [
+      await seedOwn("una", "2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z"),
+      await seedOwn("otra", "2026-09-30T13:00:00Z", "2026-09-30T14:00:00Z"),
+    ];
+
+    await bulkDeleteEntries(actor, { ids: [...rows.map((row) => row.id), randomUUID()] });
+
+    expect(await auditFor("time_entry")).toHaveLength(2);
+    for (const row of rows) {
+      const [record] = await auditFor("time_entry", row.id);
+      expect(record).toMatchObject({
+        action: "timeEntry.bulkDelete",
+        workspaceId,
+        actorId: actor.userId,
+        nextValue: null,
+      });
+      // Es la única copia que queda: el borrado es físico.
+      expect(parsed(record.previousValue)).toEqual({
+        id: row.id,
+        workspaceId,
+        userId: actor.userId,
+        description: row.description,
+        projectId: null,
+        taskId: null,
+        startedAt: row.startedAt.toISOString(),
+        endedAt: row.endedAt?.toISOString(),
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+      });
+    }
+  });
+
+  it("el borrado rechazado no deja registro (criterio 11)", async () => {
+    const otherId = await seedMember(workspaceId, "member");
+    const own = await seedOwn("", "2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
+    const foreign = await seedTimeEntry({
+      workspaceId,
+      userId: otherId,
+      startedAt: "2026-10-01T13:00:00Z",
+      endedAt: "2026-10-01T14:00:00Z",
+    });
+
+    await expect(
+      bulkDeleteEntries(actor, { ids: [own.id, foreign.id] }),
+    ).rejects.toMatchObject({ code: "rejected" });
+
+    expect(await auditFor("time_entry")).toEqual([]);
+  });
+
+  it("repetir una edición o un borrado aplicados no deja registro nuevo (criterio 14)", async () => {
+    const edited = await seedOwn("vieja", "2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
+    const removed = await seedOwn("", "2026-09-30T13:00:00Z", "2026-09-30T14:00:00Z");
+    const edit = {
+      ids: [edited.id],
+      changes: { description: "nueva", date: "2026-09-29", start: "08:00", end: "09:30" },
+    };
+
+    await bulkEditEntries(actor, workspace, edit);
+    await bulkDeleteEntries(actor, { ids: [removed.id] });
+    await bulkEditEntries(actor, workspace, edit);
+    await bulkDeleteEntries(actor, { ids: [removed.id] });
+
+    expect((await auditFor("time_entry")).map((row) => row.action).sort()).toEqual([
+      "timeEntry.bulkDelete",
+      "timeEntry.bulkEdit",
+    ]);
+  });
+
+  it("la membresía desactivada no deja registro", async () => {
+    const row = await seedOwn("", "2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
+    const inactive: Actor = { ...actor, status: "inactive" };
+
+    await expect(
+      bulkEditEntries(inactive, workspace, {
+        ids: [row.id],
+        changes: { description: "x" },
+      }),
+    ).rejects.toMatchObject({ code: "forbidden" });
+    await expect(bulkDeleteEntries(inactive, { ids: [row.id] })).rejects.toMatchObject({
+      code: "forbidden",
+    });
+
+    expect(await auditFor("time_entry")).toEqual([]);
+    expect(await timeEntryById(row.id)).toBeDefined();
   });
 });

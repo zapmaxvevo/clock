@@ -76,6 +76,11 @@ _Agregado el 2026-10-03_: las filas de «Este timer ya había sido detenido.» y
 de «Esta entrada es la que está corriendo.», que desde el slice 4 aparecen en
 más de un lugar.
 
+_Agregado el 2026-10-04, slice 6_: las operaciones en masa (TT-63, TT-64)
+rechazan cada entrada con el texto de su operación de una fila, así que todas
+sus causas aparecen también ahí. No se repiten en la tabla; la lista está en
+TT-63.
+
 **Qué hace que dos casos sean la misma causa**: que coincidan el hecho que
 bloquea y lo que hay que hacer para destrabarlo. Si el remedio es distinto, el
 texto tiene que ser distinto, aunque el hecho se parezca. El par TT-30 y TT-111
@@ -862,10 +867,56 @@ borrado es físico y la única copia de la fila queda en el audit log.
 Justificación: el deshacer necesita borrado lógico y un barrido posterior. El
 equipo cerró P-06 a favor del diálogo para la fase 1.
 
-**TT-62 Selección múltiple** — `replicar`
-Cada fila tiene una casilla al pasar el puntero. Al marcar una, aparece la
-barra de acciones en masa con la cantidad seleccionada. La casilla del
-encabezado de día marca todas las entradas del día.
+**TT-62 Selección múltiple** — `adaptar`
+Documentado (consultado el 2026-10-04): en el rastreador se aprieta el ícono de
+edición en masa que está junto al total de un día, se marcan las casillas de
+las entradas y se elige la acción. La documentación no dice si las casillas se
+ven siempre, al pasar el puntero o solo después de apretar el ícono, ni si la
+selección puede juntar entradas de más de un día.
+
+Acá, fijado en el
+[contrato del slice 6](../slices/fase1-slice6-seleccion-y-masa.md):
+
+- **Cada fila tiene una casilla, siempre visible**, primera de la fila (TT-49),
+  con el nombre accesible «Seleccionar «{descripción o Sin descripción}»,
+  {horas}»: la hora va en el nombre porque dos entradas pueden tener la misma
+  descripción.
+- **El encabezado de cada día tiene una casilla**, antes del rótulo, con tres
+  estados: marcada si están elegidas todas las entradas del día, mixta si
+  algunas y vacía si ninguna. Marcada, las suelta todas; mixta o vacía, elige
+  las que faltan.
+- **Con la primera entrada elegida aparece la barra de acciones en masa**,
+  arriba de la lista y fija al desplazarse, con «1 entrada seleccionada» /
+  «N entradas seleccionadas» y los botones «Editar», «Borrar» y «Quitar
+  selección». Al soltar la última, la barra se va.
+- **La selección puede juntar entradas de días y semanas distintos.** Diseño
+  propio, _no verificado_ (P-14): la documentación describe la selección desde
+  el total de un día.
+- **La selección es de la pestaña**: sobrevive a «Cargar más», a la
+  revalidación, también la periódica de TT-40, y a la extensión de la ventana
+  de P-15 (TT-108), y **se pierde al recargar**. No va en la URL: una URL
+  compartida con una selección invitaría a borrar en otra pestaña algo que no
+  se está mirando.
+- **Una entrada que sale de la lista sale de la selección, y no vuelve**: la
+  que se borró en otra pestaña, o la de una semana que dejó de verse porque
+  «Atrás» achicó la ventana (TT-52). Nunca se edita ni se borra una entrada que
+  no está en pantalla.
+- **Al editar o borrar con éxito, la selección se vacía y la barra se va; si la
+  operación falla, la selección se conserva.** Diseño propio, _no verificado_
+  (P-14).
+- **Con la membresía desactivada** no hay casillas ni barra (TT-92).
+- **No hay rango con Shift, casilla por semana ni «seleccionar todo»**: la
+  documentación no los nombra.
+
+Justificación del `adaptar`: las casillas están siempre visibles, sin pasar el
+puntero ni apretar antes un ícono. En una pantalla táctil no hay puntero que
+pase, y una casilla que aparece con el puntero o con el foco no se descubre
+recorriendo con el teclado.
+
+_Corregido el 2026-10-04, slice 6_: era `replicar` y decía «Cada fila tiene una
+casilla al pasar el puntero», que la documentación consultada hoy no dice;
+tampoco decía qué hace la casilla del día con una parte del día elegida ni qué
+pasa con la selección al recargar.
 
 **TT-63 Edición masiva** — `replicar`
 Documentado: con entradas seleccionadas se pueden cambiar en bloque la
@@ -873,13 +924,106 @@ descripción, el proyecto y la tarea, las etiquetas (agregando a las existentes
 o reemplazándolas), la facturabilidad, y la hora y la fecha.
 _No verificado_: la documentación dice que la edición masiva del reporte
 detallado es de plan pago, y no aclara si la del rastreador está en Free.
-Confirmar en el workspace del equipo (P-07).
+Confirmar en el workspace del equipo (P-07). La página, consultada de nuevo el
+2026-10-04, no nombra ningún plan. Decisión del equipo: el slice 6 arrancó sin
+esa confirmación; si resulta paga, TT-62 a TT-64 quedan como mejora
+deliberada, `adaptar`.
+
+_Agregado el 2026-10-04, slice 6_. Lo que fija el
+[contrato del slice 6](../slices/fase1-slice6-seleccion-y-masa.md) para la
+descripción, la hora y la fecha. El proyecto, la tarea, las etiquetas y el
+facturable en bloque quedan para el slice 12, después del 11, que trae las
+etiquetas y el facturable; hasta entonces, el proyecto y la tarea de cada
+entrada no cambian y la entrada los conserva.
+
+- **El diálogo «Editar N entradas»** tiene «Descripción», «Fecha», «Hora de
+  inicio» y «Hora de fin», todos vacíos al abrir, con la ayuda «Lo que dejes
+  vacío no cambia.» Las horas se escriben y se muestran en el formato de la
+  persona, como en la fila (TT-20; PF-13 y PF-14 de
+  [la paridad del perfil](perfil.md)). «Guardar» queda inactivo mientras
+  ningún campo tiene algo. La documentación nombra un solo campo, «Time», y no
+  dice si cambia el inicio, el fin o los dos: _no verificado_ (P-14).
+- **Un campo vacío no cambia.** Por eso desde el diálogo no se puede vaciar la
+  descripción de varias entradas a la vez; el servidor sí lo acepta, y
+  ofrecerlo es un control más en el diálogo. Diseño propio, _no verificado_
+  (P-14).
+- **La hora y la fecha se reemplazan, no se desplazan.** Lo pedido se combina
+  con el trío de cada entrada (TT-110): cambiar solo el inicio deja el fin de
+  cada una como estaba, y la que termina antes de su nuevo inicio pasa a
+  terminar al día siguiente (TT-72), como en la fila; cambiar solo la fecha
+  lleva cada entrada a ese día con sus horas. Una entrada cuyo trío pedido es el
+  que ya tiene no cambia ni se evalúa: a una de más de un día no se la rechaza
+  por pedirle la fecha que ya tiene. Diseño propio, _no verificado_ (P-14): la
+  documentación no dice si Clockify reemplaza o desplaza.
+- **Cada entrada pasa por las reglas de su edición individual**, con el mismo
+  texto: ya no existe (TT-80), es de otra persona (TT-79), es la que corre
+  (TT-111, también si el cambio es solo la descripción), dura más de un día y
+  cambia su horario (TT-110), la hora no existe ese día (TT-112), queda en
+  menos de un minuto (TT-73), o cae antes de la creación del workspace
+  ([ADR 0005](../adr/0005-hora-de-pared-en-la-entrada-manual.md)). La ajena y
+  la que corre solo llegan con un pedido armado a mano.
+- **Todo o nada**
+  ([ADR 0011](../adr/0011-las-acciones-en-masa-son-todo-o-nada.md)). Si
+  alguna entrada no admite el cambio, no cambia ninguna. El aviso dice «No se
+  pudieron editar las entradas.» (TT-90) con «Ninguna entrada cambió: algunas
+  de las elegidas no se pueden editar.», nombra cada entrada rechazada con su
+  causa —«{descripción o Sin descripción}, {día}, {inicio} – {fin}: {causa}»—,
+  también la que ya no existe, con lo que la pantalla mostraba al mandar, y
+  ofrece «Quitar esas entradas de la selección» para volver a guardar con el
+  resto. Diseño propio, _no verificado_ (P-14): la documentación no dice si
+  Clockify aplica en parte. Justificación: sin deshacer (P-06), una edición
+  parcial deja la lista mezclada y sin marca de qué cambió.
+- **Hasta 200 entradas por operación.** Con más elegidas, «Editar» y «Borrar»
+  quedan inactivos con «Se pueden elegir hasta 200 entradas a la vez.» a la
+  vista, y el servidor responde el mismo texto. Justificación: límite propio;
+  Clockify no documenta ninguno, y 200 es lo que cabe en una transacción corta
+  y cubre un mes de entradas de una persona.
+- **Mientras viaja**, las entradas elegidas quedan atenuadas, como en TT-55. Al
+  terminar bien, «Se editó 1 entrada.» / «Se editaron N entradas.». Una
+  entrada llevada a una semana más vieja que la ventana la extiende hasta esa
+  semana (TT-108).
+- **«Reintentar»** se ofrece con la falla de red (TT-89): el segundo intento
+  encuentra cada entrada con lo pedido y no escribe nada. Se ofrece solo
+  mientras todas las entradas del pedido sigan en pantalla; si alguna se fue o
+  la persona la soltó, el aviso queda sin «Reintentar», que reenviaría
+  entradas que ya no se ven o ya no están elegidas.
 
 **TT-64 Borrado masivo** — `adaptar`
 Clockify pide escribir `DELETE` en el diálogo y después deja deshacer 20
 segundos. Acá el diálogo pide escribir `BORRAR` y, en línea con TT-61, no hay
 deshacer. Justificación: traducción de la palabra de confirmación y la misma
 decisión sobre el deshacer.
+
+_Agregado el 2026-10-04, slice 6_. Lo que fija el
+[contrato del slice 6](../slices/fase1-slice6-seleccion-y-masa.md):
+
+- **El diálogo «¿Borrar N entradas?»** dice «No se puede deshacer.» y tiene el
+  campo «Escribí BORRAR para confirmar». «Borrar» queda inactivo hasta que el
+  campo dice «BORRAR», **sin distinguir mayúsculas ni espacios en los
+  extremos**: «borrar» vale. Enter en el campo confirma si el texto vale.
+  Diseño propio, _no verificado_ (P-14): la documentación no dice si Clockify
+  distingue mayúsculas en `DELETE`. Justificación: la palabra frena el borrado
+  por descuido, y una mayúscula de menos no lo es.
+- **Al confirmar**, el diálogo se cierra y las entradas salen de la lista
+  mientras el pedido viaja, como en el borrado de una fila, con «Borrando…»; si
+  falla, vuelven, y vuelven elegidas. Al terminar bien, «Se borró 1 entrada.» /
+  «Se borraron N entradas.». Borrar todas las entradas deja a la vista el
+  estado vacío de TT-85.
+- **Todo o nada, como TT-63**: una entrada ajena (TT-79) o la que corre
+  (TT-111) frena el pedido y no se borra ninguna. El aviso dice «No se pudieron
+  borrar las entradas.» con «No se borró ninguna entrada: algunas de las
+  elegidas no se pueden borrar.» y la lista de TT-63. Las dos causas solo
+  llegan con un pedido armado a mano.
+- **Una entrada que ya no existe no es un rechazo**
+  ([ADR 0011](../adr/0011-las-acciones-en-masa-son-todo-o-nada.md)): lo
+  pedido, que no esté, ya se cumple. Es la regla de descartar un timer que ya
+  no existe (TT-65), y la que hace seguro el reintento: el segundo intento no
+  encuentra lo que borró el primero y termina bien.
+- **El borrado de una fila no mira si la entrada corre, y el masivo la
+  rechaza.** Los dos casos solo llegan armados a mano; el masivo no extiende a
+  la entrada que corre un borrado que no pasa por la confirmación de descartar
+  (TT-65).
+- El tope de 200 y «Reintentar» son los de TT-63.
 
 **TT-65 Descartar el timer activo** — `replicar`
 El menú de tres puntos de la barra con el timer corriendo ofrece «Descartar»:
@@ -1276,10 +1420,44 @@ del 6. Cierra P-13. Contrato:
   por el idioma, y no por el primer día de la persona (TT-48). Lo trae el
   slice 8, que va a necesitar el primer día en el cliente.
 
+### Slice 6 — selección y acciones en masa
+
+TT-62, TT-64 y la parte de TT-63 que no depende de proyectos: la descripción,
+la hora y la fecha en bloque. Entran por arrastre, verificados por el camino
+nuevo, TT-55, TT-66, TT-73, TT-79, TT-80, TT-92, TT-110, TT-111, TT-112 y la
+regla de P-15 (TT-108), y de [la paridad del perfil](perfil.md), PF-13 y PF-14
+en las horas del diálogo. Va después del 7 y cierra el orden 10 → 7 → 6, que
+decidió el equipo. De acá sale el
+[ADR 0011](../adr/0011-las-acciones-en-masa-son-todo-o-nada.md), que aceptó el
+equipo. Contrato:
+[fase1-slice6-seleccion-y-masa.md](../slices/fase1-slice6-seleccion-y-masa.md).
+
+- **Una operación en masa es la de una fila, repetida**: cada entrada pasa por
+  las reglas y los textos de su edición o su borrado individual, y los cinco
+  roles editan y borran en masa sus propias entradas (TT-66).
+- **Todo o nada** (ADR 0011): una entrada que no admite el cambio frena el
+  pedido entero, y el aviso la nombra con su causa y ofrece quitarla de la
+  selección. En el borrado, la entrada que ya no existe no es un rechazo.
+- **La hora y la fecha se reemplazan, no se desplazan**: se combinan con el
+  trío de cada entrada, con TT-72 para el fin que queda antes del nuevo inicio,
+  y el campo vacío del diálogo no cambia.
+- **La selección es de la pestaña**: sobrevive a «Cargar más», a la
+  revalidación y a la extensión de la ventana, y no a una recarga.
+- **Lo que el slice decide**: TT-62 pasa a `adaptar` por la casilla siempre
+  visible; el todo o nada, el campo vacío que no cambia, el reemplazo de hora y
+  fecha, la selección entre días, la selección que se vacía al terminar bien y
+  «BORRAR» sin distinguir mayúsculas son diseño propio _no verificado_ (P-14);
+  el tope de 200 entradas es un límite propio. P-07 sigue abierto.
+- **Proyecto, tarea, etiquetas y facturable en bloque** quedan para el slice
+  12, después del 11, que trae las etiquetas y el facturable.
+- **Afuera**: elegir un rango con Shift, la casilla por semana y «seleccionar
+  todo», que la documentación no nombra; continuar y duplicar en masa, que
+  Clockify no documenta; y deshacer (P-06).
+
 ### Lo que queda
 
-Etiquetas (TT-12), facturable (TT-14, TT-15), y selección y edición masiva
-(TT-62 … TT-64).
+Etiquetas (TT-12), facturable (TT-14, TT-15), y la edición masiva de proyecto,
+tarea, etiquetas y facturable (el resto de TT-63).
 
 _Corregido el 2026-10-03, decisión del equipo_: esta lista incluía lo que ya
 implementaron los slices 3 y 4, que ahora tienen su sección, y no nombraba el
@@ -1290,6 +1468,9 @@ ventana (TT-52), que ahora tienen su sección.
 _Corregido el 2026-10-04, slice 10_: sale de esta lista el selector de proyecto
 y tarea (TT-06 … TT-11), que ahora tiene su sección; TT-09 sigue fuera de
 alcance.
+_Corregido el 2026-10-04, slice 6_: salen de esta lista la selección (TT-62),
+el borrado masivo (TT-64) y la edición masiva de descripción, hora y fecha
+(TT-63), que ahora tienen su sección; de TT-63 queda lo que trae el slice 12.
 
 ## Pendientes de definición del equipo
 
@@ -1299,16 +1480,19 @@ Ninguno de estos puntos se puede relevar en el plan Free o no está en la
 documentación pública. No los inventé: van con una propuesta cuando la tengo,
 pero necesitan una decisión.
 
-| ID   | Punto                                                                                                                                                                                     |
-| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P-01 | Campos obligatorios (`requireProject`, `requireTask`, `requireDescription`, `requireTag`) y `forceTimer`: existen en el esquema pero son de plan pago. ¿Se implementan, y con qué reglas? |
-| P-02 | Aprobaciones y bloqueo de períodos: definen cuándo una entrada deja de ser editable. Sin ellas no hay bloqueo.                                                                            |
-| P-03 | Redondeo (`roundingMinutes`): en Clockify es pago y solo afecta reportes. ¿Se mantiene fuera del rastreador?                                                                              |
-| P-04 | Entradas superpuestas: ¿se permiten en silencio, se avisa o se rechazan?                                                                                                                  |
-| P-05 | Dividir entrada: funcionalidad paga. ¿Entra en el alcance y con qué reglas de corte?                                                                                                      |
-| P-07 | Edición masiva en el rastreador: no sé si está en Free. Confirmar en el workspace y decidir si entra en la fase 1.                                                                        |
-| P-09 | Agrupación de entradas similares en una fila colapsable. El interruptor vive en el perfil (PF-26).                                                                                        |
-| P-14 | Verificar en el workspace real del equipo lo marcado como _no verificado_: TT-16, TT-20, TT-26, TT-35, TT-44, TT-46, TT-47, TT-57, TT-58, TT-63, TT-65, TT-105, TT-108, TT-111, TT-112.   |
+| ID   | Punto                                                                                                                                                                                                 |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P-01 | Campos obligatorios (`requireProject`, `requireTask`, `requireDescription`, `requireTag`) y `forceTimer`: existen en el esquema pero son de plan pago. ¿Se implementan, y con qué reglas?             |
+| P-02 | Aprobaciones y bloqueo de períodos: definen cuándo una entrada deja de ser editable. Sin ellas no hay bloqueo.                                                                                        |
+| P-03 | Redondeo (`roundingMinutes`): en Clockify es pago y solo afecta reportes. ¿Se mantiene fuera del rastreador?                                                                                          |
+| P-04 | Entradas superpuestas: ¿se permiten en silencio, se avisa o se rechazan?                                                                                                                              |
+| P-05 | Dividir entrada: funcionalidad paga. ¿Entra en el alcance y con qué reglas de corte?                                                                                                                  |
+| P-07 | Edición masiva en el rastreador: no sé si está en Free. Confirmar en el workspace. El slice 6 se construyó como si entrara: si es paga, TT-62 a TT-64 quedan como mejora deliberada (TT-63).          |
+| P-09 | Agrupación de entradas similares en una fila colapsable. El interruptor vive en el perfil (PF-26).                                                                                                    |
+| P-14 | Verificar en el workspace real del equipo lo marcado como _no verificado_: TT-16, TT-20, TT-26, TT-35, TT-44, TT-46, TT-47, TT-57, TT-58, TT-62, TT-63, TT-64, TT-65, TT-105, TT-108, TT-111, TT-112. |
+
+_Corregido el 2026-10-04, slice 6_: P-07 decía «decidir si entra en la fase 1»;
+entró con el slice 6. P-14 suma TT-62 y TT-64.
 
 ### Cerrados
 

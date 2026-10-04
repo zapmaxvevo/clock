@@ -11,8 +11,12 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { dayKeyLabel, parseDayKey, toDayKey } from "@/server/time";
 
 type DateFieldProps = {
-  /** Día canónico elegido, "2026-10-02". */
-  readonly value: string;
+  /** Día canónico elegido, "2026-10-02", o `null` sin ninguno: se ve `placeholder`. */
+  readonly value: string | null;
+  /** Lo que se ve sin día elegido. */
+  readonly placeholder?: string;
+  /** El comienzo del nombre accesible, al que sigue el día que se ve. */
+  readonly label?: string;
   readonly onChange: (dayKey: string) => void;
   /** Día de hoy en la zona de la persona: el rótulo «Hoy» / «Ayer» y la marca del calendario. */
   readonly todayKey: string;
@@ -54,6 +58,8 @@ function civilDate(dayKey: string): Date | undefined {
 /** TT-18, TT-56: el selector de fecha, con su ícono de calendario. */
 export function DateField({
   value,
+  placeholder = "",
+  label = "Fecha de la entrada",
   onChange,
   todayKey,
   minDayKey,
@@ -70,7 +76,7 @@ export function DateField({
    */
   const returnFocus = useRef(true);
   const { date } = useDisplayFormats();
-  const label = dayKeyLabel(value, todayKey, date);
+  const shown = value === null ? placeholder : dayKeyLabel(value, todayKey, date);
 
   function changeOpen(next: boolean, details?: OpenChangeDetails): void {
     returnFocus.current =
@@ -94,7 +100,7 @@ export function DateField({
     }
   }
 
-  const selected = civilDate(value);
+  const selected = value === null ? undefined : civilDate(value);
   const floor = civilDate(minDayKey);
   const ceiling = maxDayKey === undefined ? undefined : civilDate(maxDayKey);
   const outside = [
@@ -106,10 +112,10 @@ export function DateField({
     <Popover open={open} onOpenChange={changeOpen}>
       <PopoverTrigger
         render={<Button variant="outline" size="sm" disabled={disabled} />}
-        aria-label={`Fecha de la entrada: ${label}`}
+        aria-label={`${label}: ${shown}`}
       >
         <CalendarIcon aria-hidden="true" />
-        {label}
+        {shown}
       </PopoverTrigger>
       <PopoverContent
         className="w-auto p-0"
@@ -122,7 +128,7 @@ export function DateField({
           // TT-02: «hoy» es el de la zona de la persona, no el del navegador.
           today={civilDate(todayKey)}
           selected={selected}
-          defaultMonth={selected}
+          defaultMonth={selected ?? civilDate(todayKey)}
           disabled={outside.length === 0 ? undefined : outside}
           labels={{
             labelPrevious: () => "Mes anterior",

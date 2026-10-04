@@ -7,9 +7,22 @@ import { requireSession, type SessionContext } from "@/server/session";
 /** Los códigos que puede devolver cualquier action. Un módulo los amplía. */
 export type ActionErrorCode = "validation" | "not_found" | "forbidden" | "unexpected";
 
+/** Una fila que impidió una operación en masa (ADR 0011). */
+export type Rejection<Code extends string = ActionErrorCode> = {
+  readonly id: string;
+  readonly code: Code;
+  readonly message: string;
+};
+
 export type ActionResult<T, Code extends string = ActionErrorCode> =
   | { readonly ok: true; readonly data: T }
-  | { readonly ok: false; readonly code: Code; readonly message: string };
+  | {
+      readonly ok: false;
+      readonly code: Code;
+      readonly message: string;
+      /** Solo con `rejected`: cada fila que impidió la operación en masa. */
+      readonly rejections?: readonly Rejection<Code>[];
+    };
 
 /** Error de dominio de un módulo. La action lo traduce con su código y su mensaje. */
 export class DomainError<Code extends string = ActionErrorCode> extends Error {
@@ -19,6 +32,19 @@ export class DomainError<Code extends string = ActionErrorCode> extends Error {
   ) {
     super(message);
     this.name = "DomainError";
+  }
+}
+
+/** La operación en masa no se aplicó: lleva cada fila que la impidió (ADR 0011). */
+export class RejectedError<
+  Code extends string = ActionErrorCode,
+> extends DomainError<"rejected"> {
+  constructor(
+    message: string,
+    readonly rejections: readonly Rejection<Code>[],
+  ) {
+    super("rejected", message);
+    this.name = "RejectedError";
   }
 }
 
@@ -48,7 +74,14 @@ function failure<T, Code extends string = ActionErrorCode>(
   messages: ActionMessages,
 ): ActionResult<T, Code | ActionErrorCode> {
   if (error instanceof DomainError) {
-    return { ok: false, code: error.code, message: error.message };
+    const result = { ok: false, code: error.code, message: error.message } as const;
+    // `RejectedError` es un `DomainError`: sin reconocerlo acá, el rechazo
+    // saldría sin la lista. Esta pregunta la resuelve antes de responder, que es
+    // lo que pide el ADR 0011. Una rama propia, delante de esta, vería el código
+    // `rejected` fuera de `Code` y obligaría a afirmar el tipo del resultado.
+    return error instanceof RejectedError
+      ? { ...result, rejections: error.rejections }
+      : result;
   }
   if (error instanceof ForbiddenError) {
     return { ok: false, code: "forbidden", message: messages.forbidden };

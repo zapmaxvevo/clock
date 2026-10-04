@@ -1,7 +1,7 @@
 import { samePair, type ProjectPair } from "@/lib/project-pair";
-import { DomainError } from "@/server/action";
+import { DomainError, RejectedError, type Rejection } from "@/server/action";
 import { db, type Transaction } from "@/server/db";
-import { recordAudit } from "@/server/audit";
+import { recordAudit, recordAudits, type AuditEntry } from "@/server/audit";
 import { createOnce, type ConflictOutcome } from "@/server/create-once";
 import { can, type Action, type Actor } from "@/server/permissions";
 import {
@@ -33,6 +33,7 @@ import { timeSettingsOf, type ProfileContext } from "@/modules/profile/service";
 import { pairToCheck } from "./assignment";
 import {
   timeEntryRepository,
+  type ClosedFields,
   type EntryRefs,
   type EntryTarget,
   type EntryWithRefs,
@@ -41,6 +42,11 @@ import {
 import {
   timeEntryMessages,
   TRACKER_WINDOW_DAYS,
+  type BulkDeleteEntriesResult,
+  type BulkDeleteEntriesValues,
+  type BulkEditChanges,
+  type BulkEditEntriesResult,
+  type BulkEditEntriesValues,
   type ContinueEntryInput,
   type ContinueEntryResult,
   type CreateManualEntryResult,
@@ -575,14 +581,8 @@ export async function duplicateEntry(
     createEntryOnce(actor, input.id, {
       attempt: () =>
         db.transaction(async (tx) => {
-          const source = await readSourceEntry(tx, actor, input.sourceId);
-          // Solo lo produce un pedido armado a mano: la abierta no es una fila.
-          if (!isClosed(source)) {
-            throw new TimeEntryError(
-              "timer_running",
-              timeEntryMessages.runningEntryTimes,
-            );
-          }
+          // La abierta solo llega en un pedido armado a mano: no es una fila.
+          const source = requireClosed(await readSourceEntry(tx, actor, input.sourceId));
           const fields = continuedFields(source);
           await assertAssignable(tx, actor, NO_PROJECT, fields);
           const created = await timeEntryRepository.insertClosed(tx, {
@@ -858,6 +858,14 @@ function isClosed(row: TimeEntryRow): row is ClosedEntryRow {
   return row.endedAt !== null;
 }
 
+/** La fila, si está cerrada; la que corre se rechaza con `timer_running`: todavía no tiene fin. */
+function requireClosed<Row extends TimeEntryRow>(row: Row): Row & ClosedEntryRow {
+  if (!isClosed(row)) {
+    throw new TimeEntryError("timer_running", timeEntryMessages.runningEntryTimes);
+  }
+  return row;
+}
+
 /**
  * Conservación del ADR 0006 sobre un extremo: el instante guardado si su
  * rótulo es el pedido; si no, la conversión de la hora de pared. `null` si esa
@@ -867,6 +875,31 @@ function resolveExtreme(stored: Date, label: WallLabel, timeZone: string): Date 
   return sameLabel(stored, label, timeZone)
     ? stored
     : instantFromLocal(label.day, label.clock, timeZone);
+}
+
+/** El trío de la fila: día local del inicio y horas de pared canónicas, `HH:mm` de 24 h. */
+type EntryTriple = {
+  readonly date: string;
+  readonly start: string;
+  readonly end: string;
+};
+
+/**
+ * El trío canónico de la fila: `dayKey` del inicio, y `formatClock` del inicio
+ * y del fin en la zona de la persona. Es el mismo `dayDate`, `startClock` y
+ * `endClock` de su vista, y nunca sale de `startLabel` ni de `endLabel`, que
+ * son de presentación y pueden venir en 12 h.
+ */
+function tripleOf(row: ClosedEntryRow, timeZone: string): EntryTriple {
+  return {
+    date: dayKey(row.startedAt, timeZone),
+    start: formatClock(row.startedAt, timeZone),
+    end: formatClock(row.endedAt, timeZone),
+  };
+}
+
+function sameTriple(left: EntryTriple, right: EntryTriple): boolean {
+  return left.date === right.date && left.start === right.start && left.end === right.end;
 }
 
 function lastsAMinute(times: { startedAt: Date; endedAt: Date }): boolean {
@@ -881,7 +914,7 @@ function lastsAMinute(times: { startedAt: Date; endedAt: Date }): boolean {
  */
 function resolveEntryTimes(
   row: ClosedEntryRow,
-  input: UpdateEntryTimesInput,
+  input: EntryTriple,
   timeZone: string,
 ): { startedAt: Date; endedAt: Date } {
   const start: WallLabel = { day: input.date, clock: input.start };
@@ -920,6 +953,29 @@ function resolveEntryTimes(
 }
 
 /**
+ * La regla de horas de una fila (slice 3, ADR 0006): de la entrada cerrada y
+ * el trío pedido, los instantes a escribir. La comparten la edición de una
+ * fila y la masiva. Lanza `TimeEntryError` con `multiDayTimes`, `invalidDate`,
+ * `nonexistentClock`, `tooShort` o `beforeWorkspace`.
+ */
+function entryTimesFor(
+  row: ClosedEntryRow,
+  triple: EntryTriple,
+  workspace: TrackerWorkspace,
+): { readonly startedAt: Date; readonly endedAt: Date } {
+  const timeZone = workspace.timezone;
+  // El trío no puede expresar esta entrada: guardarlo la truncaría.
+  if (!hasEditableTimes(row, timeZone)) {
+    throw new TimeEntryError("validation", timeEntryMessages.multiDayTimes);
+  }
+  const times = resolveEntryTimes(row, triple, timeZone);
+  if (dayKey(times.startedAt, timeZone) < workspaceFloorDayKey(workspace)) {
+    throw new TimeEntryError("validation", timeEntryMessages.beforeWorkspace);
+  }
+  return times;
+}
+
+/**
  * Corrige el horario de una entrada cerrada desde el trío de la fila. Un
  * extremo cuyo día y hora no cambiaron conserva su instante (ADR 0006).
  */
@@ -928,21 +984,11 @@ export async function updateEntryTimes(
   workspace: TrackerWorkspace,
   input: UpdateEntryTimesInput,
 ): Promise<UpdateEntryTimesResult> {
-  const timeZone = workspace.timezone;
-
   return db.transaction(async (tx) => {
-    const row = await readOwnEntry(tx, actor, "timeEntry.own.update", input.id);
-    if (!isClosed(row)) {
-      throw new TimeEntryError("timer_running", timeEntryMessages.runningEntryTimes);
-    }
-    // El trío no puede expresar esta entrada: guardarlo la truncaría.
-    if (!hasEditableTimes(row, timeZone)) {
-      throw new TimeEntryError("validation", timeEntryMessages.multiDayTimes);
-    }
-    const times = resolveEntryTimes(row, input, timeZone);
-    if (dayKey(times.startedAt, timeZone) < workspaceFloorDayKey(workspace)) {
-      throw new TimeEntryError("validation", timeEntryMessages.beforeWorkspace);
-    }
+    const row = requireClosed(
+      await readOwnEntry(tx, actor, "timeEntry.own.update", input.id),
+    );
+    const times = entryTimesFor(row, input, workspace);
 
     const updated = await timeEntryRepository.updateTimes(tx, targetOf(row), times);
     if (updated === undefined) {
@@ -1016,6 +1062,217 @@ export async function updateRunningStart(
     return next;
   });
   return { running: toView(updated, workspace) };
+}
+
+/**
+ * Evalúa cada id pedido, en el orden pedido, sin escribir. Un `TimeEntryError`
+ * es el rechazo de esa fila y cualquier otro error sale tal cual. Con algún
+ * rechazo no se aplica nada: lanza `RejectedError` con todos (ADR 0011).
+ */
+function evaluateAll<Plan>(
+  ids: readonly string[],
+  evaluate: (id: string) => Plan | null,
+  rejectedMessage: string,
+): Plan[] {
+  const plans: Plan[] = [];
+  const rejections: Rejection<TimeEntryErrorCode>[] = [];
+  for (const id of ids) {
+    try {
+      const plan = evaluate(id);
+      if (plan !== null) {
+        plans.push(plan);
+      }
+    } catch (error) {
+      if (!(error instanceof TimeEntryError)) {
+        throw error;
+      }
+      rejections.push({ id, code: error.code, message: error.message });
+    }
+  }
+  if (rejections.length > 0) {
+    throw new RejectedError(rejectedMessage, rejections);
+  }
+  return plans;
+}
+
+/** Las filas leídas de una operación en masa, por id. */
+async function lockEntries(
+  tx: Transaction,
+  actor: Actor,
+  ids: readonly string[],
+): Promise<ReadonlyMap<string, EntryWithRefs>> {
+  const rows = await timeEntryRepository.findManyByIdsForUpdate(
+    tx,
+    actor.workspaceId,
+    ids,
+  );
+  return new Map(rows.map((row) => [row.id, row]));
+}
+
+/**
+ * El trío pedido: el de la fila con los campos que vienen reemplazados. `null`
+ * si no viene ninguno, o si queda igual al de la fila: como el editor de la
+ * fila, que no manda un trío sin cambios, así una entrada de más de un día no
+ * se rechaza por pedirle la fecha que ya tiene.
+ */
+function requestedTriple(
+  row: ClosedEntryRow,
+  changes: BulkEditChanges,
+  timeZone: string,
+): EntryTriple | null {
+  if (
+    changes.date === undefined &&
+    changes.start === undefined &&
+    changes.end === undefined
+  ) {
+    return null;
+  }
+  const current = tripleOf(row, timeZone);
+  const requested = {
+    date: changes.date ?? current.date,
+    start: changes.start ?? current.start,
+    end: changes.end ?? current.end,
+  };
+  return sameTriple(requested, current) ? null : requested;
+}
+
+/** Los campos que cambian en una fila cerrada; los instantes, con la regla de `updateEntryTimes`. */
+function editedFields(
+  row: ClosedEntryRow,
+  changes: BulkEditChanges,
+  workspace: TrackerWorkspace,
+): ClosedFields {
+  const triple = requestedTriple(row, changes, workspace.timezone);
+  const times = triple === null ? null : entryTimesFor(row, triple, workspace);
+  return {
+    ...(changes.description === undefined || changes.description === row.description
+      ? {}
+      : { description: changes.description }),
+    ...(times === null || times.startedAt.getTime() === row.startedAt.getTime()
+      ? {}
+      : { startedAt: times.startedAt }),
+    ...(times === null || times.endedAt.getTime() === row.endedAt.getTime()
+      ? {}
+      : { endedAt: times.endedAt }),
+  };
+}
+
+/** Los valores de la fila en los campos que cambiaron, para la constancia. */
+function valuesOf(row: TimeEntryRow, fields: ClosedFields) {
+  return {
+    ...(fields.description === undefined ? {} : { description: row.description }),
+    ...(fields.startedAt === undefined ? {} : { startedAt: row.startedAt }),
+    ...(fields.endedAt === undefined ? {} : { endedAt: row.endedAt }),
+  };
+}
+
+/**
+ * TT-63: la descripción, la fecha y las horas de varias entradas cerradas,
+ * todo o nada (ADR 0011). Cada fila pasa por la regla de `updateEntryTimes`;
+ * una que no cambia no se escribe ni deja constancia.
+ */
+export async function bulkEditEntries(
+  actor: Actor,
+  workspace: TrackerWorkspace,
+  input: BulkEditEntriesValues,
+): Promise<BulkEditEntriesResult> {
+  // Antes de leer: una membresía desactivada recibe `forbidden` para todo el
+  // pedido, y no un rechazo por fila.
+  if (!can(actor, "timeEntry.own.update", ownTimeEntryResource(actor))) {
+    throw new TimeEntryError("forbidden", timeEntryMessages.forbidden);
+  }
+  return db.transaction(async (tx) => {
+    const found = await lockEntries(tx, actor, input.ids);
+    const plans = evaluateAll(
+      input.ids,
+      (id) => {
+        const row = requireClosed(
+          authorizeEntry(actor, "timeEntry.own.update", found.get(id)),
+        );
+        return { row, fields: editedFields(row, input.changes, workspace) };
+      },
+      timeEntryMessages.bulkEditRejected,
+    );
+
+    const entries: EntryWithRefs[] = [];
+    const audits: AuditEntry[] = [];
+    for (const { row, fields } of plans) {
+      if (Object.keys(fields).length === 0) {
+        entries.push(row);
+        continue;
+      }
+      const written = await timeEntryRepository.updateClosedFields(
+        tx,
+        targetOf(row),
+        fields,
+      );
+      if (written === undefined) {
+        throw new Error(`La entrada ${row.id} no se escribió con su bloqueo tomado.`);
+      }
+      // El 6 no cambia el proyecto: las referencias leídas bajo bloqueo siguen valiendo.
+      entries.push({ ...written, project: row.project, task: row.task });
+      audits.push({
+        workspaceId: actor.workspaceId,
+        actorId: actor.userId,
+        action: "timeEntry.bulkEdit",
+        entity: AUDIT_ENTITY,
+        entityId: written.id,
+        previousValue: valuesOf(row, fields),
+        nextValue: valuesOf(written, fields),
+      });
+    }
+    await recordAudits(tx, audits);
+    return { entries: entries.map((entry) => toView(entry, workspace)) };
+  });
+}
+
+/**
+ * TT-64: borra varias entradas cerradas, todo o nada (ADR 0011). Una que ya
+ * no existe no es un rechazo: lo pedido ya se cumple, y así el reintento de un
+ * borrado aplicado responde éxito.
+ */
+export async function bulkDeleteEntries(
+  actor: Actor,
+  input: BulkDeleteEntriesValues,
+): Promise<BulkDeleteEntriesResult> {
+  // Antes de leer: sin esto, una membresía desactivada recibiría éxito por
+  // ids que no existen.
+  if (!can(actor, "timeEntry.own.delete", ownTimeEntryResource(actor))) {
+    throw new TimeEntryError("forbidden", timeEntryMessages.forbidden);
+  }
+  return db.transaction(async (tx) => {
+    const found = await lockEntries(tx, actor, input.ids);
+    const authorized = evaluateAll(
+      input.ids,
+      (id) => {
+        const row = found.get(id);
+        return row === undefined
+          ? null
+          : requireClosed(authorizeEntry(actor, "timeEntry.own.delete", row));
+      },
+      timeEntryMessages.bulkDeleteRejected,
+    );
+    const removed = await timeEntryRepository.deleteClosedByIds(
+      tx,
+      authorized.map(targetOf),
+    );
+    if (removed.length !== authorized.length) {
+      throw new Error("El borrado masivo no coincide con las filas bloqueadas.");
+    }
+    await recordAudits(
+      tx,
+      removed.map((row) => ({
+        workspaceId: actor.workspaceId,
+        actorId: actor.userId,
+        action: "timeEntry.bulkDelete",
+        entity: AUDIT_ENTITY,
+        entityId: row.id,
+        // El borrado es físico: esta es la única copia que queda de la fila.
+        previousValue: row,
+      })),
+    );
+    return { ids: input.ids };
+  });
 }
 
 type WindowFloors = {

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  BULK_MAX,
+  bulkDeleteEntriesInput,
+  bulkEditChanges,
+  bulkEditEntriesInput,
   continueEntryInput,
   createManualEntryInput,
   deleteEntryInput,
@@ -633,5 +637,99 @@ describe("discardTimerInput", () => {
     expect(discardTimerInput.parse({ id })).toEqual({ id });
     expect(discardTimerInput.safeParse({ id: "no-es-uuid" }).success).toBe(false);
     expect(discardTimerInput.safeParse({}).success).toBe(false);
+  });
+});
+
+/** `count` uuid distintos, con la forma que genera el cliente. */
+function idsOf(count: number): string[] {
+  return Array.from({ length: count }, () => crypto.randomUUID());
+}
+
+describe.each([
+  ["bulkEditEntriesInput", bulkEditEntriesInput, { changes: { description: "x" } }],
+  ["bulkDeleteEntriesInput", bulkDeleteEntriesInput, {}],
+] as const)("los ids de %s (criterio 5)", (_, schema, rest) => {
+  it("rechaza cero ids con bulkEmpty", () => {
+    const result = schema.safeParse({ ids: [], ...rest });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.at(0)?.message).toBe(timeEntryMessages.bulkEmpty);
+  });
+
+  it("acepta el tope y rechaza uno más con bulkTooMany", () => {
+    expect(BULK_MAX).toBe(200);
+    expect(schema.safeParse({ ids: idsOf(200), ...rest }).success).toBe(true);
+    const tooMany = schema.safeParse({ ids: idsOf(201), ...rest });
+    expect(tooMany.success).toBe(false);
+    expect(tooMany.error?.issues.at(0)?.message).toBe(timeEntryMessages.bulkTooMany);
+  });
+
+  it("normaliza a minúsculas y quita los repetidos, con o sin la misma mayúscula", () => {
+    const [first, second] = idsOf(2);
+    const result = schema.parse({
+      ids: [first.toUpperCase(), second, first, second],
+      ...rest,
+    });
+    expect(result.ids).toEqual([first, second]);
+  });
+
+  it("rechaza un id que no es uuid", () => {
+    const result = schema.safeParse({ ids: ["no-es-uuid"], ...rest });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.at(0)?.path).toEqual(["ids", 0]);
+  });
+});
+
+describe("bulkEditChanges (criterio 8)", () => {
+  it("deja cada campo opcional y conserva la descripción vacía, que reemplaza", () => {
+    expect(bulkEditChanges.parse({ description: "" })).toEqual({ description: "" });
+    expect(bulkEditChanges.parse({ start: "09:00" })).toEqual({ start: "09:00" });
+    expect(
+      bulkEditChanges.parse({
+        description: "  reunión  ",
+        date: "2026-10-01",
+        start: "09:00",
+        end: "08:00",
+      }),
+    ).toEqual({
+      description: "reunión",
+      date: "2026-10-01",
+      start: "09:00",
+      end: "08:00",
+    });
+  });
+
+  it("rechaza un pedido sin ningún cambio con bulkNoChanges", () => {
+    for (const changes of [{}, { description: undefined }]) {
+      const result = bulkEditChanges.safeParse(changes);
+      expect(result.success).toBe(false);
+      expect(result.error?.issues.at(0)?.message).toBe(timeEntryMessages.bulkNoChanges);
+    }
+  });
+
+  it("rechaza un campo que no conoce con el texto de unexpected, no con el de Zod", () => {
+    const result = bulkEditChanges.safeParse({ description: "x", projectId: null });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.at(0)?.message).toBe(timeEntryMessages.unexpected);
+  });
+
+  it("valida cada campo con las reglas de la fila", () => {
+    const cases = [
+      [{ description: "a".repeat(3001) }, timeEntryMessages.descriptionTooLong],
+      [{ description: "a\u0000b" }, timeEntryMessages.descriptionNullCharacter],
+      [{ date: "2026-02-30" }, timeEntryMessages.invalidDate],
+      [{ start: "9:00" }, timeEntryMessages.invalidClock],
+      [{ end: "1:15 PM" }, timeEntryMessages.invalidClock],
+    ] as const;
+    for (const [changes, message] of cases) {
+      const result = bulkEditChanges.safeParse(changes);
+      expect(result.success).toBe(false);
+      expect(result.error?.issues.at(0)?.message).toBe(message);
+    }
+  });
+
+  it("bulkEditEntriesInput exige los cambios", () => {
+    const result = bulkEditEntriesInput.safeParse({ ids: idsOf(1) });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.at(0)?.path).toEqual(["changes"]);
   });
 });
