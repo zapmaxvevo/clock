@@ -11,9 +11,10 @@ el 8b, cada gesto de arrastre tiene su camino por el diálogo, que es el que
 exige WCAG 2.5.7 (CAL-74).
 
 Fuente de los comportamientos: `docs/parity/calendario.md` (CAL-01 a CAL-100).
-Revisión del contrato original: [ronda 1 de
-`architecture-reviewer`](correcciones-fase1-slice8.md). Decisiones de
-arquitectura asociadas:
+Revisiones del contrato: [ronda 1 de
+`architecture-reviewer`](correcciones-fase1-slice8.md) y [ronda 2, contra el
+árbol con el 8 en `main` (`339f6c3`)](correcciones-fase1-slice8c-ronda2.md).
+Decisiones de arquitectura asociadas:
 
 - [ADR 0013, el diálogo de una entrada guarda en una sola mutación](../adr/0013-el-dialogo-de-una-entrada-guarda-en-una-mutacion.md),
   aceptado: `updateEntry` se construye acá.
@@ -47,45 +48,65 @@ Resueltas el 2026-10-04 (registro completo en el contrato del 8):
    que recibe solo los grupos de campos que la persona tocó y los evalúa con
    las mismas funciones que las mutaciones de un campo.
 2. **P-01 sin excepción por origen.** `createManualEntry` deja de rechazar el
-   alta con un timer abierto (`service.ts:787-795`): una entrada cerrada que se
+   alta con un timer abierto (`service.ts:796-804`): una entrada cerrada que se
    superpone con el timer es válida (TT-82), venga de donde venga. TT-30 sigue
-   en el rastreador como regla de su interfaz (`tracker-bar.tsx:293-305`), y el
-   e2e que lo fija no cambia. Una pestaña del rastreador en modo manual que
-   todavía no vio un timer arrancado en otro lado —hasta 60 s, por P-11—
-   agrega la entrada en vez de responder «Detené el timer para agregar tiempo
-   a mano.».
+   en el rastreador como regla de su interfaz (`tracker-bar.tsx:294-306`), y el
+   e2e que lo fija (`manual-entry.spec.ts:82-129`) no cambia. Una pestaña del
+   rastreador en modo manual que todavía no vio un timer arrancado en otro
+   lado —hasta 60 s, por P-11— agrega la entrada en vez de responder «Detené
+   el timer para agregar tiempo a mano.».
 3. **El arrastre va en el 8b**, después de este slice.
 4. **«Detener» queda inactivo con cambios sin guardar**, con el texto «Guardá
    los cambios antes de detener el timer.». Detener es `stopTimer` sin cambios
    (P-06), y guardar y detener juntos serían dos escrituras que P-04 no deja
    encadenar.
-5. **Las 08:00 son una constante**: las usa también «Agregar entrada» cuando el
-   día no es hoy.
+5. **Las 08:00 son una constante**, `DEFAULT_SCROLL_CLOCK` del 8
+   (`calendar-layout.ts:22`): la usa también «Agregar entrada» cuando el día no
+   es hoy.
 
 ## 0. Precondición de arranque
 
 **El 8c arranca con el slice 8 en `main`.** Este contrato se escribió sobre el
-árbol de `dd78cd5` y sobre el contrato del 8 antes de que se implementara, así
-que **antes de implementar necesita una ronda corta de `architecture-reviewer`
-contra el árbol con el 8 adentro**: las citas de abajo y los nombres que el 8
-deja pueden haberse corrido.
+árbol de `dd78cd5` y sobre el contrato del 8 antes de que se implementara. La
+[ronda 2 de `architecture-reviewer`](correcciones-fase1-slice8c-ronda2.md) lo
+revisó contra el árbol con el 8 adentro, `339f6c3` en la rama
+`fase1/slice-8c-escritura`, y lo aprueba con sus correcciones aplicadas: las
+citas de abajo y los nombres que deja el 8 son los de ese árbol.
 
-**Lo que deja el 8**, con los nombres de su contrato:
+**Lo que deja el 8**, con los nombres del árbol:
 
-- `getCalendarState` y `calendarState` sin `minDayKey`; `CalendarMode`.
+- `getCalendarState` y `calendarState` sin `minDayKey` (`schema.ts:358`);
+  `CalendarMode`.
 - `CalendarScreen` con `getTrackingCatalog`, `DisplayFormatsProvider`,
-  `TrackingCatalogProvider` e `InactiveMembershipNotice`.
-- `CalendarView` con el diálogo abierto, `openerId` (que no se limpia al
-  cerrar) y `openerRef`, la región y su `ref`, el zoom y `useTrackerRefresh`.
-- `EntryDialog` y `EntryDialogBody` en solo lectura, con `useDialogReturnFocus`.
+  `TrackingCatalogProvider` e `InactiveMembershipNotice`; le pasa el estado
+  entero a `CalendarView`.
+- `CalendarView` con `open` (`calendar-view.tsx:29`) y `dialogEntry`, la
+  entrada como estaba al abrir, que no se limpia al cerrar (`:35`). `openerId`
+  no es estado: se deriva de `dialogEntry` (`:81`). Además `openerRef`, la
+  región y su `ref`, el zoom, `useTrackerRefresh`, el tic de
+  `useElapsedSeconds`, que redibuja la vista cada segundo (`:43`), y
+  `dialogOpen={open}`, que cierra los detalles de los bloques (`:83`).
+- `CalendarGrid` con una `DayColumn` por día, y `openerId`, `openerRef`,
+  `dialogOpen` y `onOpen`.
+- `EntryDialog` y `EntryDialogBody` en solo lectura, con `useDialogReturnFocus`
+  (su `cancelFocus` es la prop `openerRef`); `selectionOf` en
+  `entry-selection.ts`.
 - `calendar-layout.ts` (`entrySegments`, `runningSegments`, `nowPosition`,
-  `layoutColumn`, `isMissing`, `initialScrollMinute`), `calendar-totals.ts`
+  `layoutColumn`, `chronological`, `isMissing`, `initialScrollMinute` y
+  `DEFAULT_SCROLL_CLOCK`, las 08:00, en `:22`), `calendar-totals.ts`
   (`dayTotalOf`, `periodTotalOf` con `removedIds`), `calendar-href.ts`,
-  `calendarLabels`.
-- `minutesToClock`, `clockToMinutes`, `weekdayLabel`, `nonexistentMinutes` y
-  `MinuteRange` exportados de `src/server/time`.
+  `calendarLabels`, y `trackerLabels.description` y `trackerLabels.date`.
+- `minutesToClock`, `clockToMinutes`, `weekdayLabel`, `nonexistentMinutes`,
+  `MinuteRange`, `MINUTES_PER_DAY` y `minuteOfDayIn` exportados de
+  `src/server/time`.
 - La definición de «fuera del período»: `entrySegments(entry, days).length ===
 0` (§5.5 del 8).
+- `calendario/error.tsx`, con su `Alert` y «Reintentar» escritos a mano
+  (`error.tsx:17-25`), porque `ActionFeedback` exige `message`.
+- `e2e/calendar.spec.ts`, que con una persona con `canTrack` afirma el diálogo
+  de solo lectura (`:267-275`, `:467-479`, `:496-510` y `:615-622`, con
+  `expectReadOnlyDialog` de `calendar-page.ts:369-374`); `e2e/calendar-page.ts`
+  y `e2e/days.ts`.
 
 **Del árbol anterior al 8**:
 
@@ -107,36 +128,36 @@ deja pueden haberse corrido.
   con P-04 el diálogo guarda con `updateEntry`, que usa la misma regla (§4.4).
 - **CAL-47** propone rechazar con TT-30: P-01 lo invierte.
 
-**Supuestos sobre el árbol**, con archivo y línea en `dd78cd5`; la ronda corta
-los confirma con el 8 adentro:
+**Supuestos sobre el árbol**, con archivo y línea en `339f6c3`, confirmados por
+la ronda 2:
 
 | Supuesto                                                                                                                                 | Dónde                                                                                                                       |
 | ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `readOwnEntry` lee con `for update of time_entry` y autoriza con `authorizeEntry`: `not_found`, o `forbidden` con TT-79 sobre la ajena   | `service.ts:199-236`                                                                                                        |
-| `assertAssignable(tx, actor, current, requested)` llama a `assertTrackable` solo si el par asigna algo nuevo; `pairOf`                   | `service.ts:386-400`                                                                                                        |
-| `createManualEntry` rechaza con `timer_running` si `findRunning` encuentra el timer                                                      | `service.ts:787-795`                                                                                                        |
-| `requireClosed`, `resolveExtreme`, `tripleOf`, `sameTriple`, `entryTimesFor`                                                             | `service.ts:862`, `:874`, `:893`, `:901`, `:961`                                                                            |
-| La regla del inicio del timer vive dentro de `updateRunningStart`: `resolveExtreme`, `nonexistentClock`, `futureTime` contra `now`, piso | `service.ts:1028-1043`                                                                                                      |
-| `editedFields(row, changes, workspace)` devuelve `ClosedFields`; `valuesOf` arma la constancia                                           | `service.ts:1140-1167`                                                                                                      |
-| `ClosedFields` es `{ description?, startedAt?, endedAt? }`                                                                               | `repository.ts:57-62`                                                                                                       |
-| `updateTimes` es `rereadIfWritten(updateClosedFields(…))`; `updateStartOfRunning` escribe solo `startedAt`                               | `repository.ts:372-396`                                                                                                     |
-| `updateClosedFields` escribe un subconjunto de los tres campos en una fila cerrada, sin relectura: la usa la masiva                      | `repository.ts:425-440`                                                                                                     |
+| `readOwnEntry` lee con `for update of time_entry` y autoriza con `authorizeEntry`: `not_found`, o `forbidden` con TT-79 sobre la ajena   | `service.ts:202-246`                                                                                                        |
+| `assertAssignable(tx, actor, current, requested)` llama a `assertTrackable` solo si el par asigna algo nuevo; `pairOf`                   | `service.ts:390-409`                                                                                                        |
+| `createManualEntry` rechaza con `timer_running` si `findRunning` encuentra el timer                                                      | `service.ts:796-804`                                                                                                        |
+| `requireClosed`, `resolveExtreme`, `tripleOf`, `sameTriple`, `entryTimesFor`                                                             | `service.ts:871`, `:883`, `:902`, `:910`, `:970`                                                                            |
+| La regla del inicio del timer vive dentro de `updateRunningStart`: `resolveExtreme`, `nonexistentClock`, `futureTime` contra `now`, piso | `service.ts:1037-1052`                                                                                                      |
+| `editedFields(row, changes, workspace)` devuelve `ClosedFields`; `valuesOf` arma la constancia                                           | `service.ts:1149-1176`                                                                                                      |
+| `ClosedFields` es `{ description?, startedAt?, endedAt? }`                                                                               | `repository.ts:58-63`                                                                                                       |
+| `updateTimes` es `rereadIfWritten(updateClosedFields(…))`; `updateStartOfRunning` escribe solo `startedAt`                               | `repository.ts:401-425`                                                                                                     |
+| `updateClosedFields` escribe un subconjunto de los tres campos en una fila cerrada, sin relectura: la usa la masiva                      | `repository.ts:454-469`                                                                                                     |
 | `ProjectPair` y `samePair`                                                                                                               | `src/lib/project-pair.ts:2`, `:19`                                                                                          |
 | Las actions de `time-entry` revalidan solo `"/"`                                                                                         | `actions.ts:52-58`                                                                                                          |
-| `clockInput`, `description`, `hasProjectForTask`, `taskNeedsProject`                                                                     | `schema.ts:103`, `:51`, `:61`, `:65`                                                                                        |
+| `clockInput`, `description`, `hasProjectForTask`, `taskNeedsProject`                                                                     | `schema.ts:111`, `:51`, `:61`, `:65`                                                                                        |
 | `revalidatePath` en una server action actualiza la pantalla solo si se está viendo la ruta revalidada                                    | `node_modules/next/dist/docs/…/revalidatePath.md:19`                                                                        |
-| La barra impone TT-30 en la interfaz: con un timer, modo timer y conmutador inactivo                                                     | `tracker-bar.tsx:293-305`                                                                                                   |
-| Los textos «No se pudo detener el timer.», «No sabemos si la entrada se guardó.» y «No se pudo agregar la entrada.» están escritos       | `tracker-bar.tsx:577`, `:612`, `:617`                                                                                       |
-| El menú de la fila escribe su nombre, «Duplicar» y «Borrar»                                                                              | `entry-row.tsx:368`, `:375`, `:386`                                                                                         |
+| La barra impone TT-30 en la interfaz: con un timer, modo timer y conmutador inactivo                                                     | `tracker-bar.tsx:294-306`                                                                                                   |
+| Los textos «No se pudo detener el timer.», «No sabemos si la entrada se guardó.» y «No se pudo agregar la entrada.» están escritos       | `tracker-bar.tsx:578`, `:613`, `:618`                                                                                       |
+| El menú de la fila escribe su nombre, «Duplicar» y «Borrar»                                                                              | `entry-row.tsx:362`, `:369`, `:380`                                                                                         |
 | Enter en `ClockField` llama a `onCommit` y a `onSubmit` en el mismo evento; `onTextChange` avisa cada cambio del texto                   | `clock-field.tsx:140-146`, `:42-46`                                                                                         |
 | El guardado de la masiva lee el borrador de una `ref`, mira `pending` y cuenta la hora tecleada sin confirmar                            | `bulk-edit-dialog.tsx:131-137`, `:165-171`                                                                                  |
 | El borrador del trío y sus transiciones (`fromView`, `sameDraft`, `withStart`, `withEnd`, `withDuration`, `withDate`, `draftDuration`)   | `time-draft.ts:45-133`                                                                                                      |
 | «Agregar» de la barra manual es `aria-disabled` con duración cero y decide con el borrador ya actualizado                                | `manual-bar.tsx:73-94`                                                                                                      |
 | `useAction`: `run` baja el aviso antes del pedido; `retry` reenvía `lastInput`; `retryHandlerOf` solo con `unexpected`; `useNewId`       | `src/hooks/use-action.ts:59-61`, `:87-93`, `:107`; `use-new-id.ts:17`                                                       |
-| El foco que se va con lo que se borra se mueve a mano con un efecto                                                                      | `day-group.tsx:221-229`                                                                                                     |
-| `DeleteEntryDialog` recibe `finalFocus` como `RefObject`                                                                                 | `delete-entry-dialog.tsx:24-25`, `:43`                                                                                      |
+| El foco que se va con lo que se borra se mueve a mano con un efecto                                                                      | `day-group.tsx:222-230`                                                                                                     |
+| `DeleteEntryDialog` recibe `finalFocus` como `RefObject`                                                                                 | `delete-entry-dialog.tsx:26-27`, `:44`                                                                                      |
 | `ActionFeedback` exige `message`                                                                                                         | `src/components/action-feedback.tsx:11`                                                                                     |
-| La afirmación de TT-30 en el servicio, la auditoría y las actions                                                                        | `service.integration.test.ts:1375-1397`; `audit.integration.test.ts:505-528`, `:906`; `actions.integration.test.ts:237-252` |
+| La afirmación de TT-30 en el servicio, la auditoría y las actions                                                                        | `service.integration.test.ts:1377-1399`; `audit.integration.test.ts:505-528`, `:906`; `actions.integration.test.ts:238-252` |
 
 ## 1. Alcance
 
@@ -203,7 +224,7 @@ Entran por arrastre, verificándose por el camino nuevo:
   largo; si el fin cae en minutos que no existen, pasa al primer minuto que
   existe después. «Agregar entrada» propone hoy si está a la vista y si no el
   primer día del período, nunca antes del piso; la hora es la franja de ahora
-  si el día es hoy, y las 08:00 si no.
+  si el día es hoy, y las 08:00 (`DEFAULT_SCROLL_CLOCK`) si no.
 - **CAL-46.** Una entrada está fuera del período si no tiene ningún segmento en
   él (`entrySegments(entry, days).length === 0`). El aviso nombra el día de
   inicio con el rótulo de columna («sáb, 03/10»), nunca «Hoy» ni «Ayer». En la
@@ -235,19 +256,38 @@ Entran por arrastre, verificándose por el camino nuevo:
 | Archivo                                 | Qué cambia                                                                                                                                                                                                                       | Qué hay que volver a probar                                          |
 | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | `time-entry/schema.ts`                  | `updateEntryInput` y su resultado; `minDayKey` en `calendarState`.                                                                                                                                                               | `schema.test.ts` entero                                              |
+| `time-entry/schema.test.ts`             | El fixture `state` de `calendarState` (`:522-539`) suma `minDayKey`, que `parse` exige: es un cambio de fixture, ninguna afirmación cambia.                                                                                      | —                                                                    |
 | `time-entry/service.ts`                 | `createManualEntry` sin el rechazo de TT-30; `runningStartFor` sale de `updateRunningStart`; `valuesOf` suma el par; `updateEntry` nueva; `getCalendarState` suma `minDayKey`.                                                   | TT-18, TT-28, TT-29, TT-72, TT-75, TT-112, ADR 0006, la masiva del 6 |
 | `time-entry/repository.ts`              | Suma `ClosedEntryFields` y `RunningEntryFields`; `updateTimes` pasa a `updateClosedEntry`; `updateStartOfRunning` pasa a `updateRunningEntry`, con campos. `updateClosedFields` no cambia.                                       | `updateEntryTimes`, `updateRunningStart`, `bulkEditEntries`          |
 | `time-entry/actions.ts`                 | Revalida `"/"` y `"/calendario"`; suma `updateEntry`.                                                                                                                                                                            | `actions.integration.test.ts` entero                                 |
-| `service.integration.test.ts`           | El caso de `:1375-1397` pasa a afirmar que el alta con el timer abierto crea la entrada y el timer sigue corriendo.                                                                                                              | —                                                                    |
+| `service.integration.test.ts`           | El caso de `:1377-1399` pasa a afirmar que el alta con el timer abierto crea la entrada y el timer sigue corriendo.                                                                                                              | —                                                                    |
 | `audit.integration.test.ts`             | El caso de `:505-528` pasa a afirmar las dos constancias, `timeEntry.start` y `timeEntry.createManual`. El comentario de `:906` («con un timer corriendo se rechaza») sale: el orden ya no importa; sus afirmaciones no cambian. | —                                                                    |
-| `actions.integration.test.ts`           | El caso de `:237-252` usa otro rechazo de dominio (`tooShort`); cada `toEqual(["/", …])` pasa a la lista de dos rutas por llamada.                                                                                               | —                                                                    |
-| `src/components/action-feedback.tsx`    | `message` opcional: sin él, no hay descripción.                                                                                                                                                                                  | TT-90 del rastreador, del perfil y de la masiva                      |
-| `time-entry/components/labels.ts`       | `trackerLabels` suma `timerNotStopped`, `addLostTitle`, `entryNotAdded`, `duplicate` y `delete`; suma `entryActionsLabel(entryName)`. Son los textos que hoy están escritos en la barra y en la fila.                            | —                                                                    |
-| `time-entry/components/tracker-bar.tsx` | `:577`, `:612` y `:617` usan `trackerLabels`, una línea por texto. El mensaje de `:613` («fijate en la lista») se queda.                                                                                                         | `manual-entry.spec.ts`, `tracker.spec.ts`                            |
-| `time-entry/components/entry-row.tsx`   | `:368` usa `entryActionsLabel`; `:375` y `:386`, `trackerLabels.duplicate` y `delete`. Una línea por texto.                                                                                                                      | TT-58 y TT-60 en la fila                                             |
+| `actions.integration.test.ts`           | El caso de `:238-252` usa otro rechazo de dominio (`tooShort`); cada `toEqual(["/", …])` pasa a la lista de dos rutas por llamada.                                                                                               | —                                                                    |
+| `src/components/action-feedback.tsx`    | `message` opcional: sin él, no hay descripción.                                                                                                                                                                                  | TT-90 del rastreador, del perfil y de la masiva; el error de CAL-87  |
+| `src/app/(app)/calendario/error.tsx`    | El `Alert` a mano (`:17-25`) pasa a `ActionFeedback` con `title={calendarLabels.loadFailed}` y `onRetry={() => retry()}`, sin `message`; sale `calendarLabels.retry`.                                                            | CAL-87: el aviso y «Reintentar»                                      |
+| `time-entry/components/labels.ts`       | `trackerLabels` suma `timerNotStopped`, `addLostTitle`, `entryNotAdded`, `duplicate` y `entryActionsLabel(entryName)`, textos hoy escritos en la barra y en la fila; `bulkDelete` pasa a `delete`, el mismo «Borrar».            | —                                                                    |
+| `time-entry/components/tracker-bar.tsx` | `:578`, `:613` y `:618` usan `trackerLabels`, una línea por texto. El mensaje de `:614` («fijate en la lista») se queda.                                                                                                         | `manual-entry.spec.ts`, `tracker.spec.ts`                            |
+| `time-entry/components/entry-row.tsx`   | `:362` usa `entryActionsLabel`; `:369` y `:380`, `trackerLabels.duplicate` y `delete`. Una línea por texto.                                                                                                                      | TT-58 y TT-60 en la fila                                             |
+| `components/bulk-actions.tsx`           | `:295` usa `trackerLabels.delete` en lugar de `bulkDelete`; el texto no cambia.                                                                                                                                                  | `bulk-actions.spec.ts`                                               |
+| `components/bulk-delete-dialog.tsx`     | `:106` usa `trackerLabels.delete` en lugar de `bulkDelete`; el texto no cambia.                                                                                                                                                  | `bulk-actions.spec.ts`                                               |
+| `e2e/calendar.spec.ts`                  | Los pasos del diálogo con `canTrack` (`:267-275`, `:467-479`, `:496-510`, `:615-622`) afirman el modo de edición; las constantes del timer pasan a `calendar-page.ts`. Ver abajo.                                                | —                                                                    |
+
+**`e2e/calendar.spec.ts` y `e2e/calendar-page.ts`.** La persona de los e2e tiene
+`canTrack`, así que en el 8c el bloque abre el diálogo editable. Los pasos que
+lo abren (`:267-275`, `:467-479`, `:496-510` y `:615-622`) afirman el modo de
+edición: el título («Editar entrada» o «Timer en curso»), el foco inicial en
+«Descripción» y los valores en los campos. «Cerrar»/`Esc` pasa a
+«Cancelar»/`Esc`, con el foco de vuelta en el bloque. La unión de `entryDialog`
+en `calendar-page.ts` suma «Editar entrada» y «Agregar entrada», y
+`expectReadOnlyDialog` sale si queda sin uso: TT-92 se prueba en el componente
+(§8). `PERSON_TIMEZONE`, `NEAR_MIDNIGHT_MINUTES` y `NOW_LINE_TOLERANCE_PX`
+(`calendar.spec.ts:80`, `:90`, `:93`) pasan a `calendar-page.ts`, y los importan
+los dos specs (§7, recorrido 3).
 
 **Ninguna otra afirmación de un test existente cambia.** Las de arriba son las
-únicas, y cada una tiene su motivo en P-01 o en la revalidación de §4.7.
+únicas, y cada una tiene su motivo en P-01, en la revalidación de §4.7 o en el
+diálogo editable con `canTrack` (CAL-05). El fixture de `schema.test.ts` cambia
+por `minDayKey` sin cambiar lo que afirma.
 
 ## 2. Cambios de esquema
 
@@ -278,7 +318,7 @@ con error. Y un cambio de conducta en `createManualEntry`.
 
 ### 4.1 `createManualEntry` sin el rechazo de TT-30 (P-01)
 
-Salen las líneas `service.ts:787-795`: la lectura de `findRunning` y el
+Salen las líneas `service.ts:796-804`: la lectura de `findRunning` y el
 `TimeEntryError("timer_running", timerRunning)`. El resto de la función no
 cambia: permiso, conversión de horas de pared, `tooShort`, `invalidDate`,
 `nonexistentClock`, piso, par y constancia `timeEntry.createManual`.
@@ -387,7 +427,7 @@ Dentro de `translatingPairConstraints`, en una transacción:
    - La descripción y el par no dependen del estado (§1, CAL-41).
 3. **La descripción y el horario**:
    - Cerrada: `editedFields(row, { description, ...times }, workspace)`, la
-     función de la masiva (`service.ts:1140`), con los dos grupos en la forma
+     función de la masiva (`service.ts:1149`), con los dos grupos en la forma
      de `BulkEditChanges`. La descripción cambia si viene y difiere de la fila.
      Si el trío pedido es igual a `tripleOf(row)`, el horario no cambia y no se
      evalúa; si no, `entryTimesFor` con sus rechazos (`multiDayTimes`,
@@ -428,7 +468,7 @@ de la masiva, que a su vez llama a `entryTimesFor`, que es la de
 ### 4.4 `runningStartFor`
 
 Lo que hoy hace `updateRunningStart` entre la lectura y la escritura
-(`service.ts:1028-1043`) pasa a una función privada:
+(`service.ts:1037-1052`) pasa a una función privada:
 
 ```ts
 /**
@@ -594,7 +634,10 @@ export function slotDraft(
   missingMinutes: readonly MinuteRange[],
 ): TimeDraft;
 
-/** CAL-74: hoy si está a la vista, si no el primer día, nunca antes del piso. */
+/**
+ * CAL-74: hoy si está a la vista, si no el primer día, nunca antes del piso.
+ * La hora es la franja de ahora si el día es hoy, y si no `DEFAULT_SCROLL_CLOCK`.
+ */
 export function addEntryDraft(
   days: readonly string[],
   now: NowPosition,
@@ -731,13 +774,33 @@ draftRef.current))` (o `runningChangesOf`). **No es `useAction.retry`**, que
 
 - **Abrir**: un bloque abre su diálogo con clic, `Enter` o `Espacio` (CAL-74).
   Al abrir un modo de edición, el foco va a «Descripción»; el de solo lectura,
-  a «Cerrar». Quien abrió: el botón del bloque (`openerRef` sobre `openerId`,
-  del 8), «Agregar entrada» (`addButtonRef`), o nadie si fue un clic en una
-  franja (`openerId` en `null`). `useDialogReturnFocus` recibe como
-  `cancelFocus` el `ref` de quien abrió.
+  a «Cerrar».
+- **El sujeto del diálogo** reemplaza a `dialogEntry` del 8:
+
+  ```ts
+  type DialogSubject =
+    | { readonly kind: "entry"; readonly entry: TimeEntryView }
+    | {
+        readonly kind: "add";
+        readonly draft: TimeDraft;
+        readonly opener: "button" | "slot";
+      };
+  ```
+
+  `CalendarView` lo guarda junto a `open`, en `null` antes del primer diálogo.
+  Se reemplaza al abrir y no se limpia al cerrar, como `dialogEntry`. Lo demás
+  se deriva de él:
+  - `openerId` es `subject?.kind === "entry" ? subject.entry.id : null`. Un
+    alta nunca deja el `ref` del bloque en la última entrada abierta.
+  - `cancelFocus`, el `ref` adonde vuelve el foco al cancelar: `openerRef`, el
+    botón del bloque, para una entrada; `addButtonRef` para un alta desde
+    «Agregar entrada»; un `ref` nulo para un alta desde una franja, que no es
+    un control (CAL-76). `EntryDialog` lo recibe en lugar de `openerRef` y se
+    lo pasa a `useDialogReturnFocus`.
+
 - **Cancelar, `Esc`, clic afuera** (CAL-49): sin pedido, con
-  `useDialogReturnFocus` como en el 8: el foco vuelve a quien abrió, o a la
-  región si no hay o ya no está.
+  `useDialogReturnFocus` como en el 8: el foco vuelve a `cancelFocus`, o a la
+  región si es nulo o ya no está.
 - **El dueño cierra el diálogo** —éxito de «Guardar» o «Agregar», o «Detener»,
   «Duplicar» o «Borrar» elegidos— y `useDialogReturnFocus` lleva el foco a la
   región (`fallbackFocus`). Nunca se cierra «sin mover el foco».
@@ -749,13 +812,13 @@ draftRef.current))` (o `runningChangesOf`). **No es `useAction.retry`**, que
   avisa para que se limpie. Si la entrada quedó fuera del período (la misma
   definición de CAL-46), el foco se queda en la región, con el aviso.
 - **«Borrar» del menú**: el dueño cierra `EntryDialog` (foco a la región) y abre
-  `DeleteEntryDialog` con `finalFocus={openerRef}`. `openerId` sigue siendo esa
+  `DeleteEntryDialog` con `finalFocus={openerRef}`. El sujeto sigue siendo esa
   entrada mientras dura la confirmación —no se limpia al cerrar (§5.8 del 8)—,
-  así el `ref` apunta al bloque entre un diálogo y otro. Cancelar el borrado
-  devuelve el foco al botón del bloque. Si ese botón ya no está —una
-  revalidación lo sacó—, `openerRef` queda en `null` y un efecto de
+  así `openerId` y el `ref` apuntan al bloque entre un diálogo y otro. Cancelar
+  el borrado devuelve el foco al botón del bloque. Si ese botón ya no está
+  —una revalidación lo sacó—, `openerRef` queda en `null` y un efecto de
   `CalendarView` mueve el foco a la región al cerrarse la confirmación, como
-  `day-group.tsx:221-229`. Confirmar saca el bloque de forma optimista y el
+  `day-group.tsx:222-230`. Confirmar saca el bloque de forma optimista y el
   mismo efecto deja el foco en la región.
 - **`Tab`** recorre la barra, el zoom y los bloques en orden de columna y de
   inicio (CAL-76). Los atajos del rastreador no se montan (CAL-73).
@@ -789,10 +852,12 @@ Rutas absolutas; **(nuevo)** marca lo que el slice crea.
 
 ```
 /home/maxi/program/clock/src/components/action-feedback.tsx
+/home/maxi/program/clock/src/app/(app)/calendario/error.tsx
 /home/maxi/program/clock/src/modules/time-entry/components/labels.ts
 /home/maxi/program/clock/src/modules/time-entry/components/tracker-bar.tsx
 /home/maxi/program/clock/src/modules/time-entry/components/entry-row.tsx
-/home/maxi/program/clock/src/modules/time-entry/components/calendar/calendar-screen.tsx
+/home/maxi/program/clock/src/modules/time-entry/components/bulk-actions.tsx
+/home/maxi/program/clock/src/modules/time-entry/components/bulk-delete-dialog.tsx
 /home/maxi/program/clock/src/modules/time-entry/components/calendar/calendar-view.tsx
 /home/maxi/program/clock/src/modules/time-entry/components/calendar/calendar-toolbar.tsx
 /home/maxi/program/clock/src/modules/time-entry/components/calendar/calendar-grid.tsx
@@ -805,18 +870,21 @@ Rutas absolutas; **(nuevo)** marca lo que el slice crea.
 /home/maxi/program/clock/src/modules/time-entry/components/calendar/labels.ts
 ```
 
-`tracker-bar.tsx` y `entry-row.tsx` entran solo con las líneas de §1: una por
-texto, sin otro cambio.
+`tracker-bar.tsx`, `entry-row.tsx`, `bulk-actions.tsx` y `bulk-delete-dialog.tsx`
+entran solo con las líneas de §1: una por texto, sin otro cambio. `error.tsx`,
+solo con el cambio de §1.
 
 ### tests-slice8
 
 ```
 /home/maxi/program/clock/e2e/calendar-edit.spec.ts   (nuevo)
+/home/maxi/program/clock/e2e/calendar.spec.ts
 /home/maxi/program/clock/e2e/calendar-page.ts
 ```
 
 `calendar-page.ts`, el del 8, suma los localizadores del diálogo de edición y
-de los avisos.
+de los avisos, y las tres constantes que salen de `calendar.spec.ts`.
+`calendar.spec.ts` cambia solo lo que dice §1.
 
 ### parity-analyst
 
@@ -836,34 +904,41 @@ TS-39 sobre `createManualEntry`.
 
 `src/server/permissions/`, `src/server/db/`, `drizzle/`, `src/server/time/`,
 `src/server/session.ts`, `src/server/action.ts`, `src/server/audit.ts`,
-`src/hooks/`, `src/modules/project/`, `src/modules/profile/`, `src/app/`, y los
-componentes del rastreador salvo `labels.ts`, `tracker-bar.tsx` y
-`entry-row.tsx`, con los cambios de §1: `mode-switch.tsx`, `manual-bar.tsx`,
-`entry-list.tsx`, `day-group.tsx`, `date-field.tsx`, `clock-field.tsx`,
-`time-draft.ts`, `use-dialog-return-focus.ts`, `use-tracker-refresh.ts`,
-`use-group-total.ts`, `elapsed.ts`, `elapsed-counter.tsx`,
-`delete-entry-dialog.tsx`. De lo que dejó el 8, no cambian `calendar-block.tsx`,
-`calendar-totals.ts`, `calendar-zoom.ts`, `calendar-href.ts`,
-`period-picker.tsx` ni `e2e/calendar.spec.ts`. Los e2e existentes no cambian.
-Los contratos y correcciones anteriores son históricos. El mapa y el estado de
-la fase los actualiza team-lead.
+`src/hooks/`, `src/modules/project/`, `src/modules/profile/`, `src/app/` salvo
+`(app)/calendario/error.tsx` con el cambio de §1, y los componentes del
+rastreador salvo `labels.ts`, `tracker-bar.tsx`, `entry-row.tsx`,
+`bulk-actions.tsx` y `bulk-delete-dialog.tsx`, con los cambios de §1:
+`mode-switch.tsx`, `manual-bar.tsx`, `entry-list.tsx`, `day-group.tsx`,
+`date-field.tsx`, `clock-field.tsx`, `time-draft.ts`,
+`use-dialog-return-focus.ts`, `use-tracker-refresh.ts`, `use-group-total.ts`,
+`elapsed.ts`, `elapsed-counter.tsx`, `delete-entry-dialog.tsx`. De lo que dejó
+el 8, no cambian `calendar-screen.tsx`, que ya pasa `minDayKey` dentro del
+estado, `calendar-block.tsx`, `calendar-totals.ts`, `calendar-zoom.ts`,
+`calendar-href.ts` ni `period-picker.tsx`. De los e2e existentes, solo cambian
+`e2e/calendar.spec.ts` y `e2e/calendar-page.ts`, con lo de §1. Los contratos y
+correcciones anteriores son históricos. El mapa y el estado de la fase los
+actualiza team-lead.
 
 ### Handshake de orden
 
 0. **Antes de implementar**: el 8 en `main`, y la ronda corta de
-   `architecture-reviewer` contra ese árbol (§0) hasta aprobar. Las decisiones
-   del usuario están resueltas.
+   `architecture-reviewer` contra ese árbol (§0), hecha: la
+   [ronda 2](correcciones-fase1-slice8c-ronda2.md) aprueba con sus correcciones
+   aplicadas. Las decisiones del usuario están resueltas.
 1. **Primer commit de `backend-dev`**: los esquemas y tipos de §4.2,
-   `minDayKey` en `calendarState`, y las firmas de `updateEntry` (action y
-   service). La suite existente sigue verde. Avisa a `frontend-dev`.
+   `minDayKey` en `calendarState` con el fixture de `schema.test.ts`, y las
+   firmas de `updateEntry` (action y service). La suite existente sigue verde.
+   Avisa a `frontend-dev`.
 2. **`frontend-dev` arranca en paralelo** por lo que no depende del servidor:
-   los textos de `labels.ts` con las líneas de `tracker-bar.tsx` y
-   `entry-row.tsx`, `ActionFeedback` sin `message`, y `minuteAt`, `slotDraft` y
+   los textos de `labels.ts` con las líneas de `tracker-bar.tsx`,
+   `entry-row.tsx`, `bulk-actions.tsx` y `bulk-delete-dialog.tsx`,
+   `ActionFeedback` sin `message` con `error.tsx`, y `minuteAt`, `slotDraft` y
    `addEntryDraft` con sus tests. **Primero de todo**, una prueba de que
    `ProjectPicker` y `DateField` abren, eligen y devuelven el foco dentro de un
    `Dialog` de Base UI; si no, se avisa antes de seguir, porque cambia §5.3.
-3. **`tests-slice8` arranca en paralelo** con el spec, y confirma que falla por
-   la funcionalidad y no por el arnés.
+3. **`tests-slice8` arranca en paralelo** con el spec nuevo y los cambios de
+   `calendar.spec.ts` y `calendar-page.ts` (§1), y confirma que fallan por la
+   funcionalidad y no por el arnés.
 4. Con el primer commit en la rama, `frontend-dev` sigue con
    `entry-dialog-draft.ts` y sus tests, y después el diálogo y la pantalla.
    `backend-dev` sigue con P-01 y sus tres tests, la revalidación y las
@@ -895,23 +970,26 @@ la fase los actualiza team-lead.
   export function createInputOf(draft: EntryDialogDraft): CreateManualEntryInput;
   ```
 
+  `draftOfEntry` toma el par con `selectionOf` de `entry-selection.ts`.
   `changesOf` nunca manda el trío de una entrada con `editableTimes` en falso.
   El slice 11 suma sus grupos acá.
 
 - **`calendar-view.tsx`** suma a lo del 8: los cinco `useAction`, la vista
-  optimista del borrado, el modo del diálogo abierto (entrada o borrador
-  inicial), la confirmación del borrado, la falla del diálogo como
-  `EntryDialogFailure`, los avisos de la región, `focusEntryId`,
-  `addButtonRef`, qué `ref` recibe `useDialogReturnFocus` como `cancelFocus`
-  según quién abrió, y el efecto que mueve el foco a la región cuando el
-  bloque ya no está.
+  optimista del borrado, el sujeto del diálogo en lugar de `dialogEntry`, con
+  `openerId` y `cancelFocus` derivados (§5.5), la confirmación del borrado
+  (`confirmingDelete`), la falla del diálogo como `EntryDialogFailure`, los
+  avisos de la región, `focusEntryId`, `addButtonRef` y el efecto que mueve el
+  foco a la región cuando el bloque ya no está. A la grilla le pasa
+  `dialogOpen={open || confirmingDelete}`: con la confirmación abierta, `open`
+  es falso, y con `dialogOpen={open}` (`calendar-view.tsx:83`) los detalles de
+  los bloques volverían a abrirse detrás de ella.
 - **`calendar-grid.tsx`** suma el clic en una franja (`onSlot(date, minute)`) y
   enfoca el bloque de `focusEntryId` según §5.5.
 - **`calendar-toolbar.tsx`** suma «Agregar entrada» con `addButtonRef`.
-- **`calendar-screen.tsx`** pasa `minDayKey`.
-- **`entry-dialog.tsx`** dibuja los modos de §5.3. Avisa `onSave(changes)`,
-  `onAdd(input)`, `onStop()`, `onDuplicate()`, `onDelete()`, y recibe
-  `failure: EntryDialogFailure | null` y `pending`.
+- **`entry-dialog.tsx`** dibuja los modos de §5.3 según el sujeto. Avisa
+  `onSave(changes)`, `onAdd(input)`, `onStop()`, `onDuplicate()`,
+  `onDelete()`, y recibe `failure: EntryDialogFailure | null`, `pending` y
+  `cancelFocus` (§5.5).
 - **`entry-dialog.test.tsx`** suma el cuerpo de edición con `editableTimes` en
   falso, el del timer con «Detener» `aria-disabled` y su texto, y el de solo
   lectura con `canTrack` en falso.
@@ -919,14 +997,17 @@ la fase los actualiza team-lead.
 
   | Clave             | Texto                                 | Hoy en                |
   | ----------------- | ------------------------------------- | --------------------- |
-  | `timerNotStopped` | «No se pudo detener el timer.»        | `tracker-bar.tsx:577` |
-  | `addLostTitle`    | «No sabemos si la entrada se guardó.» | `tracker-bar.tsx:612` |
-  | `entryNotAdded`   | «No se pudo agregar la entrada.»      | `tracker-bar.tsx:617` |
-  | `duplicate`       | «Duplicar»                            | `entry-row.tsx:375`   |
-  | `delete`          | «Borrar»                              | `entry-row.tsx:386`   |
+  | `timerNotStopped` | «No se pudo detener el timer.»        | `tracker-bar.tsx:578` |
+  | `addLostTitle`    | «No sabemos si la entrada se guardó.» | `tracker-bar.tsx:613` |
+  | `entryNotAdded`   | «No se pudo agregar la entrada.»      | `tracker-bar.tsx:618` |
+  | `duplicate`       | «Duplicar»                            | `entry-row.tsx:369`   |
+  | `delete`          | «Borrar»                              | `entry-row.tsx:380`   |
 
   y `entryActionsLabel(entryName)`, «Acciones de la entrada «{nombre}»», que
-  hoy está escrito en `entry-row.tsx:368`, al lado de `entryProjectLabel`.
+  hoy está escrito en `entry-row.tsx:362`, al lado de `entryProjectLabel`.
+  `delete` es una sola clave para la barra masiva y los dos menús: reemplaza a
+  `bulkDelete` (`labels.ts:55`), que ya es «Borrar», en `bulk-actions.tsx:295`
+  y `bulk-delete-dialog.tsx:106`.
 
 - **`calendar/labels.ts`** suma a `calendarLabels`:
 
@@ -946,12 +1027,17 @@ la fase los actualiza team-lead.
   | `goToWeek`       | «Ir a esa semana»                                                                                                  |
   | `goToDay`        | «Ir a ese día»                                                                                                     |
 
+  y pierde `retry`, que queda sin uso cuando `error.tsx` pasa a
+  `ActionFeedback` (§1).
+
   Los textos que ya existen se importan de donde están y no se copian:
-  `trackerLabels.startTime`, `endTime`, `noDescription`, `endsNextDay`,
-  `multiDayTimesReadOnly`, `entryNotDuplicated`, `entryNotDeleted`,
-  `timerNotStopped`, `addLostTitle`, `entryNotAdded`, `duplicate`, `delete`;
-  `entryNameOf`, `entryProjectLabel`, `entryActionsLabel` y `extraDaysText`;
-  `timeEntryMessages.tooShort`.
+  `trackerLabels.description`, `date`, `startTime`, `endTime`,
+  `noDescription`, `endsNextDay`, `multiDayTimesReadOnly`,
+  `entryNotDuplicated`, `entryNotDeleted`, `timerNotStopped`, `addLostTitle`,
+  `entryNotAdded`, `duplicate`, `delete`; `entryNameOf`, `entryProjectLabel`,
+  `entryActionsLabel` y `extraDaysText`; `timeEntryMessages.tooShort`. De
+  `calendarLabels` siguen los del 8: `runningTitle`, `runningEnd`, `project` y
+  `duration`.
 
 ## 7. Criterios de aceptación
 
@@ -998,7 +1084,8 @@ la fase los actualiza team-lead.
     texto asociado.
 11. **CAL-68 a CAL-70** — «Duplicar» deja dos bloques lado a lado y el foco en la
     copia; cancelar «Borrar» devuelve el foco al bloque; confirmarlo saca el
-    bloque y deja el foco en la región.
+    bloque y deja el foco en la región. Con el diálogo o la confirmación del
+    borrado abiertos, ningún bloque muestra su detalle.
 12. **CAL-72** — Con la entrada borrada en otra pestaña, «Guardar» cierra el
     diálogo y la pantalla muestra «No se pudo guardar la entrada.» con «Esa
     entrada ya no existe.», con el foco en la región.
@@ -1015,7 +1102,8 @@ la fase los actualiza team-lead.
 17. **Revalidación** — Cada action de `time-entry` revalida `"/"` y
     `"/calendario"`, también con error.
 18. **Lo existente sigue verde** — La suite de unidad, integración y e2e de
-    `main` pasa, cambiando solo las afirmaciones listadas en §1.
+    `main` pasa, cambiando solo lo que lista §1: sus afirmaciones, el fixture
+    de `schema.test.ts` y los pasos del diálogo de `e2e/calendar.spec.ts`.
 
 ### Con qué se verifica cada criterio
 
@@ -1038,7 +1126,7 @@ la fase los actualiza team-lead.
 | 15       | unidad                     | `calendar-layout.test.ts`                                                               | `isMissing` y el piso que usa la grilla para no abrir                                            |
 | 16       | integración                | `service.integration.test.ts`                                                           | la descripción y el par sobre la cerrada; el inicio con `already_stopped`                        |
 | 17       | integración                | `actions.integration.test.ts`                                                           | las dos rutas en cada action, también con error; `updateEntry` con su traducción y su permiso    |
-| 18       | unidad + integración + e2e | las suites existentes                                                                   | en verde, con solo las afirmaciones de §1 cambiadas                                              |
+| 18       | unidad + integración + e2e | las suites existentes; `e2e/calendar.spec.ts`                                           | en verde, con solo lo de §1 cambiado: afirmaciones, el fixture y los pasos del diálogo           |
 
 **Los criterios 3 y 4 son los que prueban que la regla no se duplicó**, con el
 patrón del criterio 7 del slice 6: dos copias de cada entrada, una editada con
@@ -1084,21 +1172,27 @@ futuro y nunca falta un día anterior en la semana. Las respuestas se esperan co
    y poner el inicio igual al fin, «Guardar»: el aviso «No se pudo guardar la
    entrada.» con «La entrada tiene que durar al menos un minuto.» en el
    diálogo. «Cancelar»: el bloque conserva la descripción anterior.
-3. **El timer** (criterios 2, 10). Arrancar un timer en `/` con «en curso». En
-   la semana anterior del calendario, crear una entrada con un clic: se crea
-   (P-01). Volver a esta semana y abrir el bloque del timer: cambiar la
-   descripción y ver «Detener» con `aria-disabled="true"` y «Guardá los cambios
-   antes de detener el timer.». Volver la descripción a la original: «Detener»
-   ya no está inactivo; teclear «00:00» en «Hora de inicio» sin confirmar:
-   inactivo otra vez. Cambiar la descripción, Enter en «Hora de inicio» y
-   «Guardar»: el bloque con la descripción nueva y «00:00 – en curso», con el
-   borde inferior en la línea de ahora como en el recorrido 3 del 8. Abrirlo y
-   «Detener»: el bloque ya no dice «en curso» y tiene el foco.
-4. **Duplicar y borrar** (criterio 11). Abrir una entrada, «Acciones de la
-   entrada», «Duplicar»: dos bloques con el mismo nombre, uno al lado del otro
-   y el foco en la copia. Abrir la copia, «Borrar», «Cancelar»: el foco en el
-   botón de la copia. «Borrar» otra vez y confirmar: queda un bloque y el foco
-   está en la región «Calendario».
+3. **El timer** (criterios 2, 10). Empieza con el mismo `test.skip` y el mismo
+   motivo que el recorrido del timer del 8 (`calendar.spec.ts:516-520`), a
+   menos de `NEAR_MIDNIGHT_MINUTES` de la medianoche de `PERSON_TIMEZONE`.
+   Arrancar un timer en `/` con «en curso». En la semana anterior del
+   calendario, crear una entrada con un clic: se crea (P-01). Volver a esta
+   semana y abrir el bloque del timer: cambiar la descripción y ver «Detener»
+   con `aria-disabled="true"` y «Guardá los cambios antes de detener el
+   timer.». Volver la descripción a la original: «Detener» ya no está
+   inactivo; teclear «00:00» en «Hora de inicio» sin confirmar: inactivo otra
+   vez. Cambiar la descripción y Enter en «Hora de inicio»: se guarda y el
+   diálogo se cierra. El bloque con la descripción nueva y «00:00 – en curso»,
+   con el borde inferior en la línea de ahora, dentro de
+   `NOW_LINE_TOLERANCE_PX`, como en el recorrido 3 del 8. Abrirlo y «Detener»:
+   el bloque ya no dice «en curso» y tiene el foco.
+4. **Duplicar y borrar** (criterio 11). Abrir una entrada con un clic: con el
+   diálogo abierto, la página no tiene ningún `[data-slot=tooltip-content]`.
+   «Acciones de la entrada», «Duplicar»: dos bloques con el mismo nombre, uno
+   al lado del otro y el foco en la copia. Abrir la copia y «Borrar»: con la
+   confirmación abierta, tampoco hay `[data-slot=tooltip-content]`.
+   «Cancelar»: el foco en el botón de la copia. «Borrar» otra vez y confirmar:
+   queda un bloque y el foco está en la región «Calendario».
 5. **Respuesta perdida y entrada que ya no existe** (criterios 9, 12). Abrir una
    entrada, cambiar la descripción a «B», perder la respuesta de «Guardar» con
    `loseActionResponses` y retener las revalidaciones con `holdRefreshes`: el
@@ -1131,6 +1225,13 @@ futuro y nunca falta un día anterior en la semana. Las respuestas se esperan co
 - **CAL-92 no tiene e2e**: el workspace de los e2e está en Buenos Aires. Lo
   cubren los tests de integración con Madrid (criterio 3).
 - **TT-92 se verifica en el componente**, no en pantalla, como en el 6.
+- **El recorrido 3 se saltea cerca de la medianoche** de la persona, como el
+  recorrido del timer del 8: el reloj emulado no sirve, porque el total, la
+  línea y el bloque se anclan en el `serverNow`.
+- **El tic de `useElapsedSeconds` redibuja toda la vista cada segundo**
+  (`calendar-view.tsx:43`), y en el 8c eso incluye el formulario del diálogo.
+  Si se nota, el tic y `nowPosition` bajan a `CalendarGrid`, o `EntryDialog`
+  va con `memo`, para que el reloj no redibuje el diálogo.
 - **Sin verificar en Clockify** (calendario P-07): lo de §1 marcado como
   decisión nuestra, en especial el diálogo del timer y «Detener».
 

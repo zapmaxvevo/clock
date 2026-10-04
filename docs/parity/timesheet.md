@@ -489,11 +489,14 @@ lo contiene (TS-50).
 Justificación: TT-30 es documentado para el modo manual de la barra, cuyo
 conmutador comparte lugar con el timer; el timesheet es otra pantalla y
 bloquearla entera mientras corre un timer la volvería inútil para quien deja el
-timer andando todo el día. **Tiene un arrastre en el código**:
-`createManualEntry` rechaza con `timer_running` cuando hay un timer abierto, así
-que la creación desde una celda no puede reusarla tal cual, que es otra razón
-para la mutación propia de TS-32.
+timer andando todo el día. Desde el slice 8c, `createManualEntry` acepta el
+alta con un timer abierto (calendario P-01), así que ese rechazo ya no es un
+motivo para la mutación propia de TS-32, que se sostiene por los suyos.
 _No verificado_: qué hace Clockify (P-12).
+_Corregido el 2026-10-04, slice 8c_: decía que `createManualEntry` rechazaba
+con `timer_running` cuando había un timer abierto, y que eso era otra razón
+para la mutación propia de TS-32. El slice 8c sacó ese rechazo: TT-30 quedó
+como regla de la interfaz del rastreador.
 
 ## 6. El detalle de una celda
 

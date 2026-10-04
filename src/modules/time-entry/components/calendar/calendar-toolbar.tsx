@@ -1,7 +1,14 @@
 "use client";
 
-import { ChevronLeftIcon, ChevronRightIcon, ZoomInIcon, ZoomOutIcon } from "lucide-react";
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  PlusIcon,
+  ZoomInIcon,
+  ZoomOutIcon,
+} from "lucide-react";
 import Link from "next/link";
+import type { Ref } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -17,10 +24,23 @@ import { PeriodPicker } from "./period-picker";
 
 type CalendarToolbarProps = {
   readonly state: CalendarState;
+  /** Las entradas cuyo borrado viaja: salen del total de forma optimista. */
+  readonly removedIds: readonly string[];
+  /** «Agregar entrada», adonde vuelve el foco al cancelar su alta. */
+  readonly addButtonRef: Ref<HTMLButtonElement>;
+  readonly onAdd: () => void;
 };
 
-/** CAL-15 a CAL-17, CAL-33: la navegación del período, la vista y el total. */
-export function CalendarToolbar({ state }: CalendarToolbarProps) {
+/**
+ * CAL-15 a CAL-17, CAL-33, CAL-74: la navegación del período, la vista, el
+ * total y, con permiso de carga, «Agregar entrada».
+ */
+export function CalendarToolbar({
+  state,
+  removedIds,
+  addButtonRef,
+  onAdd,
+}: CalendarToolbarProps) {
   const isWeek = state.mode === "week";
   const isTodayPeriod = state.periodStart === state.todayStart;
 
@@ -74,7 +94,15 @@ export function CalendarToolbar({ state }: CalendarToolbarProps) {
         />
       </div>
 
-      {isWeek && <PeriodTotal state={state} />}
+      <div className="ml-auto flex items-center gap-3">
+        {isWeek && <PeriodTotal state={state} removedIds={removedIds} />}
+        {state.canTrack && (
+          <Button ref={addButtonRef} type="button" onClick={onAdd}>
+            <PlusIcon aria-hidden="true" />
+            {calendarLabels.addEntry}
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
@@ -104,10 +132,16 @@ function ModeLink({
 }
 
 /** CAL-33, CAL-34: con el timer del período, sube junto con su contador. */
-function PeriodTotal({ state }: { readonly state: CalendarState }) {
-  const total = useGroupTotalLabel(periodTotalOf(state, []));
+function PeriodTotal({
+  state,
+  removedIds,
+}: {
+  readonly state: CalendarState;
+  readonly removedIds: readonly string[];
+}) {
+  const total = useGroupTotalLabel(periodTotalOf(state, removedIds));
   return (
-    <p className="ml-auto text-sm">
+    <p className="text-sm">
       <span className="text-muted-foreground">{trackerLabels.weekTotal}</span>{" "}
       <span className="font-medium tabular-nums">{total}</span>
     </p>

@@ -27,6 +27,7 @@ import { DeleteEntryDialog } from "./delete-entry-dialog";
 import { DescriptionField } from "./description-field";
 import { EntryTimesEditor } from "./entry-times-editor";
 import {
+  entryActionsLabel,
   entryNameOf,
   entryProjectLabel,
   extraDaysText,
@@ -359,14 +360,14 @@ export function EntryRow({
                     aria-disabled={busy}
                   />
                 }
-                aria-label={`Acciones de la entrada «${entryName}»`}
+                aria-label={entryActionsLabel(entryName)}
               >
                 <EllipsisVerticalIcon aria-hidden="true" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-auto min-w-40">
                 <DropdownMenuItem disabled={busy} onClick={onDuplicate}>
                   <CopyIcon aria-hidden="true" />
-                  Duplicar
+                  {trackerLabels.duplicate}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   variant="destructive"
@@ -377,7 +378,7 @@ export function EntryRow({
                   onClick={() => setConfirmingDelete(true)}
                 >
                   <Trash2Icon aria-hidden="true" />
-                  Borrar
+                  {trackerLabels.delete}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

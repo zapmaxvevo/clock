@@ -1,11 +1,13 @@
-import type { TimeEntryView } from "@/modules/time-entry/schema";
+import type { CalendarDayView, TimeEntryView } from "@/modules/time-entry/schema";
 import {
   addDaysToKey,
   clockToMinutes,
   MINUTES_PER_DAY,
+  minutesToClock,
   type MinuteRange,
 } from "@/server/time";
 
+import type { TimeDraft } from "../time-draft";
 import type { CalendarZoom } from "./calendar-zoom";
 
 /**
@@ -86,6 +88,17 @@ export function entrySegments(
   );
 }
 
+/**
+ * CAL-46: la entrada no tiene ningún segmento en el período. Una que empezó
+ * antes y lo cruza tiene segmentos, así que no está afuera.
+ */
+export function isOutsidePeriod(
+  entry: Pick<TimeEntryView, "dayDate" | "startClock" | "endClock" | "extraDays">,
+  days: readonly string[],
+): boolean {
+  return entrySegments(entry, days).length === 0;
+}
+
 /** Los segmentos del timer, con el fin en la línea de ahora (CAL-38, CAL-93). */
 export function runningSegments(
   running: Pick<TimeEntryView, "dayDate" | "startClock">,
@@ -128,6 +141,71 @@ export function nowPosition(
 /** Un minuto que no existe ese día por el cambio de horario (CAL-30). */
 export function isMissing(minute: number, ranges: readonly MinuteRange[]): boolean {
   return ranges.some((range) => minute >= range.from && minute < range.to);
+}
+
+/** El minuto de una posición vertical, ajustado hacia abajo a la franja. */
+export function minuteAt(offsetPx: number, zoom: CalendarZoom): number {
+  const slot = Math.floor(offsetPx / SLOT_HEIGHT_PX);
+  return Math.min(Math.max(slot, 0), MINUTES_PER_DAY / zoom - 1) * zoom;
+}
+
+/**
+ * CAL-43: el minuto de la franja tocada en una columna, o `null` si el clic no
+ * abre nada: sin permiso de carga (CAL-05), en un día anterior al piso (CAL-48)
+ * o en un minuto que no existe por el cambio de horario (CAL-30).
+ */
+export function slotAt(
+  day: Pick<CalendarDayView, "beforeWorkspace" | "missingMinutes">,
+  offsetPx: number,
+  zoom: CalendarZoom,
+  canTrack: boolean,
+): number | null {
+  if (!canTrack || day.beforeWorkspace) {
+    return null;
+  }
+  const minute = minuteAt(offsetPx, zoom);
+  return isMissing(minute, day.missingMinutes) ? null : minute;
+}
+
+/**
+ * CAL-43: la franja tocada y una franja de largo. Si el fin cae dentro de un
+ * hueco de `missingMinutes`, pasa al final del hueco: el primer minuto que
+ * existe después (Madrid, 01:00 a zoom 60 en el día del adelanto: 01:00–03:00).
+ * Un fin que pasa de las 24:00 es la hora del día siguiente, como en el trío
+ * (TT-72).
+ */
+export function slotDraft(
+  date: string,
+  minute: number,
+  zoom: CalendarZoom,
+  missingMinutes: readonly MinuteRange[],
+): TimeDraft {
+  const end = minute + zoom;
+  const gap = missingMinutes.find((range) => end >= range.from && end < range.to);
+  return {
+    date,
+    start: minutesToClock(minute),
+    end: minutesToClock(gap === undefined ? end : gap.to),
+  };
+}
+
+/**
+ * CAL-74: hoy si está a la vista, si no el primer día, nunca antes del piso.
+ * La hora es la franja de ahora si el día es hoy, y si no `DEFAULT_SCROLL_CLOCK`.
+ */
+export function addEntryDraft(
+  days: readonly string[],
+  now: NowPosition,
+  minDayKey: string,
+  zoom: CalendarZoom,
+): TimeDraft {
+  const shown = days.includes(now.date) ? now.date : days[0];
+  const date = shown < minDayKey ? minDayKey : shown;
+  const start =
+    date === now.date
+      ? Math.floor(now.minute / zoom) * zoom
+      : (clockToMinutes(DEFAULT_SCROLL_CLOCK) ?? 0);
+  return { date, start: minutesToClock(start), end: minutesToClock(start + zoom) };
 }
 
 /** CAL-14: el minuto que queda arriba al montar. */

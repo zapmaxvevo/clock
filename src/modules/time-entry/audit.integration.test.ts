@@ -28,6 +28,7 @@ import {
   startTimer,
   stopTimer,
   updateDescription,
+  updateEntry,
   updateEntryProject,
   updateEntryTimes,
   updateRunningStart,
@@ -502,7 +503,7 @@ describe("audit log de la entrada manual", () => {
     expect(await timeEntriesOf(workspaceId, actor.userId)).toEqual([]);
   });
 
-  it("la creación negada por el timer corriendo deja solo el registro del arranque", async () => {
+  it("la creación con un timer corriendo deja el registro del arranque y el de la entrada (P-01)", async () => {
     const started = await startTimer(actor, workspace, {
       projectId: null,
       taskId: null,
@@ -510,21 +511,21 @@ describe("audit log de la entrada manual", () => {
       description: "corriendo",
     });
 
-    await expect(
-      createManualEntry(actor, workspace, {
-        projectId: null,
-        taskId: null,
-        description: "a mano",
-        date: "2026-10-02",
-        start: "08:00",
-        end: "09:00",
-      }),
-    ).rejects.toMatchObject({ code: "timer_running" });
+    const manual = await createManualEntry(actor, workspace, {
+      projectId: null,
+      taskId: null,
+      description: "a mano",
+      date: "2026-10-02",
+      start: "08:00",
+      end: "09:00",
+    });
 
     const rows = await auditFor("time_entry");
-    expect(rows.map((row) => row.action)).toEqual(["timeEntry.start"]);
-    expect(rows[0].entityId).toBe(started.running.id);
-    expect(await timeEntriesOf(workspaceId, actor.userId)).toHaveLength(1);
+    expect(rows.map((row) => [row.action, row.entityId])).toEqual([
+      ["timeEntry.start", started.running.id],
+      ["timeEntry.createManual", manual.created.id],
+    ]);
+    expect(await timeEntriesOf(workspaceId, actor.userId)).toHaveLength(2);
   });
 
   it("la creación negada por el piso del workspace no deja registro ni fila", async () => {
@@ -903,7 +904,6 @@ describe("audit log del proyecto y la tarea (criterio 13)", () => {
     const pair = await seedPair();
     const source = await seedEntry(pair);
 
-    // La manual primero: con un timer corriendo se rechaza.
     const manual = await createManualEntry(actor, workspace, {
       description: "",
       date: "2026-09-30",
@@ -1125,5 +1125,135 @@ describe("audit log de las operaciones en masa (ADR 0011)", () => {
 
     expect(await auditFor("time_entry")).toEqual([]);
     expect(await timeEntryById(row.id)).toBeDefined();
+  });
+});
+
+describe("audit log del guardado del diálogo (ADR 0013)", () => {
+  async function seedProjectWithTask() {
+    const web = await seedProject({ workspaceId });
+    const design = await seedTask({ workspaceId, projectId: web.id });
+    return { projectId: web.id, taskId: design.id };
+  }
+
+  /** 10:00 a 10:30:15 del 1/10 en Buenos Aires, con segundos en el inicio. */
+  function seedClosed() {
+    return seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      description: "antes",
+      startedAt: "2026-10-01T13:00:40Z",
+      endedAt: "2026-10-01T13:30:15Z",
+    });
+  }
+
+  /** Las constancias de una entrada, para comparar de un vistazo. */
+  async function auditsOf(id: string) {
+    return (await auditFor("time_entry", id)).map((row) => ({
+      action: row.action,
+      workspaceId: row.workspaceId,
+      actorId: row.actorId,
+      previousValue: parsed(row.previousValue),
+      nextValue: parsed(row.nextValue),
+    }));
+  }
+
+  it("deja una sola constancia timeEntry.update con solo los campos escritos", async () => {
+    const pair = await seedProjectWithTask();
+    const row = await seedClosed();
+
+    await updateEntry(actor, workspace, {
+      id: row.id,
+      changes: {
+        description: "después",
+        project: pair,
+        // El inicio no cambia: conserva sus segundos y no entra en la constancia.
+        times: { date: "2026-10-01", start: "10:00", end: "11:00" },
+      },
+    });
+
+    expect(await auditsOf(row.id)).toEqual([
+      {
+        action: "timeEntry.update",
+        workspaceId,
+        actorId: actor.userId,
+        previousValue: {
+          description: "antes",
+          projectId: null,
+          taskId: null,
+          endedAt: "2026-10-01T13:30:15.000Z",
+        },
+        nextValue: {
+          description: "después",
+          ...pair,
+          endedAt: "2026-10-01T14:00:00.000Z",
+        },
+      },
+    ]);
+  });
+
+  it("en el timer, la descripción y el inicio; con solo la descripción, solo ella", async () => {
+    const running = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      description: "antes",
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+    const closed = await seedClosed();
+
+    await updateEntry(
+      actor,
+      workspace,
+      {
+        id: running.id,
+        changes: {
+          description: "después",
+          runningStart: { date: "2026-10-02", start: "07:30" },
+        },
+      },
+      new Date("2026-10-02T15:00:00Z"),
+    );
+    await updateEntry(actor, workspace, {
+      id: closed.id,
+      changes: { description: "sola" },
+    });
+
+    expect(await auditsOf(running.id)).toEqual([
+      expect.objectContaining({
+        action: "timeEntry.update",
+        previousValue: { description: "antes", startedAt: "2026-10-02T11:00:00.000Z" },
+        nextValue: { description: "después", startedAt: "2026-10-02T10:30:00.000Z" },
+      }),
+    ]);
+    expect(await auditsOf(closed.id)).toEqual([
+      expect.objectContaining({
+        previousValue: { description: "antes" },
+        nextValue: { description: "sola" },
+      }),
+    ]);
+  });
+
+  it("un pedido rechazado, uno sin cambios y el reintento de uno aplicado no dejan constancia", async () => {
+    const row = await seedClosed();
+    const input = { id: row.id, changes: { description: "después" } };
+
+    await expect(
+      updateEntry(actor, workspace, {
+        id: row.id,
+        changes: {
+          description: "otra",
+          times: { date: "2026-10-01", start: "10:00", end: "10:00" },
+        },
+      }),
+    ).rejects.toMatchObject({ code: "validation" });
+    await updateEntry(actor, workspace, {
+      id: row.id,
+      changes: { description: "antes" },
+    });
+    await updateEntry(actor, workspace, input);
+    await updateEntry(actor, workspace, input);
+
+    expect((await auditsOf(row.id)).map((audit) => audit.nextValue)).toEqual([
+      { description: "después" },
+    ]);
   });
 });

@@ -17,6 +17,7 @@ import {
   stopTimerInput,
   timeEntryMessages,
   updateDescriptionInput,
+  updateEntryInput,
   updateEntryProjectInput,
   updateEntryTimesInput,
   updateRunningStartInput,
@@ -41,16 +42,22 @@ import {
   type TimeEntryErrorCode,
   type UpdateDescriptionInput,
   type UpdateDescriptionResult,
+  type UpdateEntryInput,
   type UpdateEntryProjectInput,
   type UpdateEntryProjectResult,
+  type UpdateEntryResult,
   type UpdateEntryTimesInput,
   type UpdateEntryTimesResult,
   type UpdateRunningStartInput,
   type UpdateRunningStartResult,
 } from "./schema";
 
+/**
+ * Las dos pantallas que muestran entradas: `revalidatePath` actualiza solo la
+ * que se está viendo, y el calendario usa varias de estas actions.
+ */
 const options = {
-  paths: ["/"],
+  paths: ["/", "/calendario"],
   messages: {
     forbidden: timeEntryMessages.forbidden,
     unexpected: timeEntryMessages.unexpected,
@@ -133,6 +140,15 @@ export async function updateRunningStart(
     const values = updateRunningStartInput.parse(input);
     assertCan(session.actor, "timeEntry.own.update", ownTimeEntryResource(session.actor));
     return service.updateRunningStart(session.actor, trackerWorkspaceOf(session), values);
+  }, options);
+}
+
+/** El «Guardar» del diálogo de una entrada: los grupos tocados, todo o nada (ADR 0013). */
+export async function updateEntry(input: UpdateEntryInput): Result<UpdateEntryResult> {
+  return handle(async (session) => {
+    const values = updateEntryInput.parse(input);
+    assertCan(session.actor, "timeEntry.own.update", ownTimeEntryResource(session.actor));
+    return service.updateEntry(session.actor, trackerWorkspaceOf(session), values);
   }, options);
 }
 

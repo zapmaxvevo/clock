@@ -216,6 +216,54 @@ export const bulkEditEntriesInput = z.object({ ids: entryIds, changes: bulkEditC
 
 export const bulkDeleteEntriesInput = z.object({ ids: entryIds });
 
+/** El par entero, como en `updateEntryProject`: la tarea no viaja sola (TT-70). */
+const entryPair = z
+  .strictObject(
+    { projectId: z.uuid().nullable(), taskId: z.uuid().nullable() },
+    { error: timeEntryMessages.unexpected },
+  )
+  .refine(hasProjectForTask, taskNeedsProject);
+
+/** El trío de una entrada cerrada, entero: los tres se interpretan juntos (ADR 0006). */
+const entryTriple = z.strictObject(
+  { date: dayKeyInput, start: clockInput, end: clockInput },
+  { error: timeEntryMessages.unexpected },
+);
+
+/** Día y hora del inicio del timer que corre (TT-28, TT-42). */
+const runningStart = z.strictObject(
+  { date: dayKeyInput, start: clockInput },
+  { error: timeEntryMessages.unexpected },
+);
+
+/**
+ * Los grupos de campos que la persona tocó en el diálogo (ADR 0013). Ausente
+ * no cambia; presente reemplaza, también "" en la descripción. Estricto en
+ * cada nivel: un grupo o una clave que este slice no conoce —las etiquetas,
+ * antes del 11— se rechaza con el texto de `unexpected`. `times` es de una
+ * entrada cerrada y `runningStart` de la que corre: nunca los dos.
+ */
+export const updateEntryChanges = z
+  .strictObject(
+    {
+      description: description.optional(),
+      project: entryPair.optional(),
+      times: entryTriple.optional(),
+      runningStart: runningStart.optional(),
+    },
+    { error: timeEntryMessages.unexpected },
+  )
+  .refine(
+    (changes) => Object.values(changes).some((value) => value !== undefined),
+    timeEntryMessages.bulkNoChanges,
+  )
+  .refine(
+    (changes) => changes.times === undefined || changes.runningStart === undefined,
+    timeEntryMessages.unexpected,
+  );
+
+export const updateEntryInput = z.object({ id: z.uuid(), changes: updateEntryChanges });
+
 export type StartTimerInput = z.input<typeof startTimerInput>;
 /** Lo que recibe el service: `description` ya validada y con su default. */
 export type StartTimerValues = z.output<typeof startTimerInput>;
@@ -237,6 +285,10 @@ export type BulkEditEntriesInput = z.input<typeof bulkEditEntriesInput>;
 export type BulkEditEntriesValues = z.output<typeof bulkEditEntriesInput>;
 export type BulkDeleteEntriesInput = z.input<typeof bulkDeleteEntriesInput>;
 export type BulkDeleteEntriesValues = z.output<typeof bulkDeleteEntriesInput>;
+export type UpdateEntryChanges = z.input<typeof updateEntryChanges>;
+export type UpdateEntryInput = z.input<typeof updateEntryInput>;
+/** Lo que recibe el service: la descripción ya recortada. */
+export type UpdateEntryValues = z.output<typeof updateEntryInput>;
 
 /**
  * Todo lo que depende de zona horaria o de formato se resuelve en el servidor.
@@ -359,6 +411,8 @@ export const calendarState = z.object({
   /** Referencia del desfase de TT-32. */
   serverNow: z.iso.datetime(),
   todayKey: z.string(),
+  /** Día de creación del workspace en la zona de la persona: el piso del alta. */
+  minDayKey: z.string(),
   /** Minuto del día de `serverNow` en la zona de la persona: la línea de ahora. */
   nowMinute: z.number().int().min(0).max(1439),
   canTrack: z.boolean(),
@@ -430,3 +484,6 @@ export type BulkEditEntriesResult = { readonly entries: readonly TimeEntryView[]
 
 /** Los ids pedidos: los que se borraron y los que ya no estaban (ADR 0011). */
 export type BulkDeleteEntriesResult = { readonly ids: readonly string[] };
+
+/** La entrada como quedó, se haya escrito o no (ADR 0013). */
+export type UpdateEntryResult = { readonly entry: TimeEntryView };

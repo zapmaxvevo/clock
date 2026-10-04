@@ -19,6 +19,8 @@ import {
   trackerSearchParams,
   trackerState,
   updateDescriptionInput,
+  updateEntryChanges,
+  updateEntryInput,
   updateEntryProjectInput,
   updateEntryTimesInput,
   updateRunningStartInput,
@@ -522,6 +524,7 @@ describe("calendarState", () => {
   const state = {
     serverNow: "2026-10-02T15:00:00.000Z",
     todayKey: "2026-10-02",
+    minDayKey: "2026-09-01",
     nowMinute: 720,
     canTrack: true,
     mode: "week",
@@ -873,5 +876,130 @@ describe("bulkEditChanges (criterio 8)", () => {
     const result = bulkEditEntriesInput.safeParse({ ids: idsOf(1) });
     expect(result.success).toBe(false);
     expect(result.error?.issues.at(0)?.path).toEqual(["changes"]);
+  });
+});
+
+describe("updateEntryChanges (ADR 0013)", () => {
+  const projectId = "1c6e8d5e-3c2f-4b7a-9f1a-2c3d4e5f6a7b";
+  const taskId = "2d7e8d5e-3c2f-4b7a-9f1a-2c3d4e5f6a7b";
+
+  /** El primer texto del rechazo, o `null` si pasa. */
+  function messageOf(changes: unknown): string | null {
+    const result = updateEntryChanges.safeParse(changes);
+    return result.success ? null : (result.error.issues.at(0)?.message ?? "");
+  }
+
+  it("acepta cada grupo solo y conserva la descripción vacía, que reemplaza", () => {
+    expect(updateEntryChanges.parse({ description: "" })).toEqual({ description: "" });
+    expect(updateEntryChanges.parse({ description: "  reunión  " })).toEqual({
+      description: "reunión",
+    });
+    expect(updateEntryChanges.parse({ project: { projectId, taskId } })).toEqual({
+      project: { projectId, taskId },
+    });
+    expect(
+      updateEntryChanges.parse({ project: { projectId: null, taskId: null } }),
+    ).toEqual({ project: { projectId: null, taskId: null } });
+    expect(
+      updateEntryChanges.parse({
+        times: { date: "2026-10-01", start: "22:00", end: "02:00" },
+      }),
+    ).toEqual({ times: { date: "2026-10-01", start: "22:00", end: "02:00" } });
+    expect(
+      updateEntryChanges.parse({ runningStart: { date: "2026-10-01", start: "08:00" } }),
+    ).toEqual({ runningStart: { date: "2026-10-01", start: "08:00" } });
+  });
+
+  it("acepta varios grupos juntos", () => {
+    const changes = {
+      description: "x",
+      project: { projectId, taskId: null },
+      times: { date: "2026-10-01", start: "09:00", end: "10:00" },
+    };
+    expect(updateEntryChanges.parse(changes)).toEqual(changes);
+  });
+
+  it("rechaza un pedido sin ningún grupo con bulkNoChanges", () => {
+    expect(messageOf({})).toBe(timeEntryMessages.bulkNoChanges);
+    expect(messageOf({ description: undefined })).toBe(timeEntryMessages.bulkNoChanges);
+  });
+
+  it("rechaza el trío y el inicio del timer juntos con unexpected", () => {
+    expect(
+      messageOf({
+        times: { date: "2026-10-01", start: "09:00", end: "10:00" },
+        runningStart: { date: "2026-10-01", start: "09:00" },
+      }),
+    ).toBe(timeEntryMessages.unexpected);
+  });
+
+  it("rechaza un grupo o una clave que no conoce, en cada nivel, con unexpected", () => {
+    for (const changes of [
+      { description: "x", tags: [] },
+      { project: { projectId, taskId: null, billable: true } },
+      { times: { date: "2026-10-01", start: "09:00", end: "10:00", extra: 1 } },
+      { runningStart: { date: "2026-10-01", start: "09:00", end: "10:00" } },
+    ]) {
+      expect(messageOf(changes)).toBe(timeEntryMessages.unexpected);
+    }
+  });
+
+  it("exige cada grupo entero", () => {
+    for (const changes of [
+      { project: { projectId } },
+      { times: { date: "2026-10-01", start: "09:00" } },
+      { runningStart: { start: "09:00" } },
+    ]) {
+      expect(updateEntryChanges.safeParse(changes).success).toBe(false);
+    }
+  });
+
+  it("no deja viajar la tarea sin su proyecto (TT-70)", () => {
+    const result = updateEntryChanges.safeParse({
+      project: { projectId: null, taskId },
+    });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.at(0)?.message).toBe(timeEntryMessages.taskNeedsProject);
+    expect(result.error?.issues.at(0)?.path).toEqual(["project", "taskId"]);
+  });
+
+  it("valida cada campo con las reglas de la fila", () => {
+    const cases = [
+      [{ description: "a".repeat(3001) }, timeEntryMessages.descriptionTooLong],
+      [{ description: "a\u0000b" }, timeEntryMessages.descriptionNullCharacter],
+      [
+        { times: { date: "2026-02-30", start: "09:00", end: "10:00" } },
+        timeEntryMessages.invalidDate,
+      ],
+      [
+        { times: { date: "2026-10-01", start: "9:00", end: "10:00" } },
+        timeEntryMessages.invalidClock,
+      ],
+      [
+        { runningStart: { date: "2026-10-01", start: "1:15 PM" } },
+        timeEntryMessages.invalidClock,
+      ],
+      [
+        { runningStart: { date: "01/10/2026", start: "09:00" } },
+        timeEntryMessages.invalidDate,
+      ],
+    ] as const;
+    for (const [changes, message] of cases) {
+      expect(messageOf(changes)).toBe(message);
+    }
+  });
+
+  it("updateEntryInput exige un id con forma de uuid y los cambios", () => {
+    expect(
+      updateEntryInput.safeParse({ id: "no-es-uuid", changes: { description: "x" } })
+        .success,
+    ).toBe(false);
+    const result = updateEntryInput.safeParse({ id });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.at(0)?.path).toEqual(["changes"]);
+    expect(updateEntryInput.parse({ id, changes: { description: " x " } })).toEqual({
+      id,
+      changes: { description: "x" },
+    });
   });
 });

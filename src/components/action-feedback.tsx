@@ -7,8 +7,11 @@ import { Button } from "@/components/ui/button";
 type ActionFeedbackProps = {
   /** Nombra el campo o la operación de la que informa (TT-90). */
   readonly title: string;
-  /** Mensaje del resultado tipado de la action, o el del aviso informativo. */
-  readonly message: string;
+  /**
+   * Mensaje del resultado tipado de la action, o el del aviso informativo.
+   * Sin él, el título dice todo y no hay descripción.
+   */
+  readonly message?: string;
   /** `info` es para lo que salió bien y hay que contar igual. */
   readonly tone?: "error" | "info";
   readonly onRetry?: () => void;
@@ -43,7 +46,7 @@ export function ActionFeedback({
         <InfoIcon aria-hidden="true" />
       )}
       <AlertTitle>{title}</AlertTitle>
-      <AlertDescription>{message}</AlertDescription>
+      {message === undefined ? null : <AlertDescription>{message}</AlertDescription>}
       {children === undefined ? null : <div className="col-start-2 mt-2">{children}</div>}
       {onRetry === undefined ? null : (
         // En la columna del texto: en la del ícono, la ensancharía.

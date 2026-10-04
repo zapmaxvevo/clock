@@ -5,27 +5,30 @@ import {
   calendarHref,
   calendarNavLink,
   calendarRegion,
-  closeButton,
   closedBlockName,
   columnName,
   dayColumn,
   dayColumns,
-  dialogValues,
+  dialogButton,
   entryBlock,
   entryBlocks,
   entryDialog,
+  expectEditDialog,
   expectPeriod,
-  expectReadOnlyDialog,
   expectZoom,
   followPeriodLink,
   goToCalendarByNav,
   headerLook,
   minuteHeight,
+  NEAR_MIDNIGHT_MINUTES,
+  NEAR_MIDNIGHT_REASON,
+  NOW_LINE_TOLERANCE_PX,
   nowLine,
   nowLineMetrics,
   blockDetail,
   periodLink,
   periodTotal,
+  PERSON_TIMEZONE,
   pickPeriodDay,
   rangeButton,
   runningBlockName,
@@ -64,8 +67,11 @@ import {
 } from "./tracker-page";
 
 /**
- * Recorridos del slice 8: el calendario en solo lectura (§7 del contrato,
- * «Recorridos obligatorios»). Tres tests, uno por recorrido, porque cada uno
+ * Recorridos del slice 8: el calendario en lectura (§7 del contrato,
+ * «Recorridos obligatorios»). La persona tiene `canTrack`, así que desde el
+ * 8c cada bloque abre el diálogo de edición; estos recorridos solo miran sus
+ * valores y cancelan, y la escritura está en `calendar-edit.spec.ts`. Tres
+ * tests, uno por recorrido, porque cada uno
  * abre una sola sesión y el endpoint de sesión ya responde 429 con la suite
  * completa; la segunda pestaña es otra página del mismo contexto, que comparte
  * la cookie. Las entradas cerradas se cargan en `/` con el modo manual y van
@@ -76,21 +82,8 @@ import {
  * la línea de ahora y el bloque del timer se anclan en el `serverNow`.
  */
 
-/** La zona por omisión de la persona (P-03): la que fija qué día es hoy. */
-const PERSON_TIMEZONE = "America/Argentina/Buenos_Aires";
-
 /** El total de una semana o de un día en `/`: la etiqueta y el valor. */
 const TOTAL = /^Total \d+:\d{2}$/;
-
-/**
- * Minutos del final de un día en que el recorrido del timer no se puede
- * afirmar: al principio el timer de las 00:00 suma «0:00» o mide la altura
- * mínima, y al final el test puede cruzar la medianoche.
- */
-const NEAR_MIDNIGHT_MINUTES = 5;
-
-/** Diferencia máxima, en píxeles, entre el borde del timer y la línea de ahora. */
-const NOW_LINE_TOLERANCE_PX = 2;
 
 /**
  * Carga una entrada desde la barra manual, ya abierta, y espera a que el
@@ -261,18 +254,18 @@ test("el calendario se abre desde la navegación, navega por semanas y días y d
   await expect(region.getByText("8:00 AM", { exact: true })).toBeInViewport();
   await expect(region.getByText("6:00 AM", { exact: true })).not.toBeInViewport();
 
-  // CAL-74: el bloque abre su diálogo con un clic, y las horas del diálogo
-  // también van en 12 h. `Esc` devuelve el foco al bloque.
+  // CAL-74: el bloque abre su diálogo de edición con un clic, y las horas de
+  // sus campos también van en 12 h (PF-13). `Esc` cancela y devuelve el foco
+  // al bloque.
   await block.click();
-  const dialog = entryDialog(page, "Entrada");
-  await expectReadOnlyDialog(dialog);
-  await expect(dialogValues(dialog)).toContainText([
+  const dialog = entryDialog(page, "Editar entrada");
+  await expectEditDialog(dialog, {
     description,
-    dayLabel(lastWednesday, today),
-    "9:00 AM",
-    "10:00 AM",
-    "1:00",
-  ]);
+    date: dayLabel(lastWednesday, today),
+    start: "9:00 AM",
+    end: "10:00 AM",
+    duration: "1:00",
+  });
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   await expect(block).toBeFocused();
@@ -459,21 +452,20 @@ test("los totales son los de la lista, la entrada de medianoche se parte en dos 
   expect(apart, "los dos bloques del martes se pisan").toBe(true);
 
   // Criterios 13 y 14: `Tab` va del primero al segundo; `Enter` abre su
-  // diálogo, y «Cerrar» devuelve el foco al botón.
+  // diálogo de edición, y «Cancelar» devuelve el foco al botón.
   await overlaps.nth(0).focus();
   await page.keyboard.press("Tab");
   await expect(overlaps.nth(1)).toBeFocused();
   await page.keyboard.press("Enter");
-  const tuesdayDialog = entryDialog(page, "Entrada");
-  await expectReadOnlyDialog(tuesdayDialog);
-  await expect(dialogValues(tuesdayDialog)).toContainText([
-    overlap,
-    dayLabel(tuesday, today),
-    "09:00",
-    "10:00",
-    "1:00",
-  ]);
-  await closeButton(tuesdayDialog).click();
+  const tuesdayDialog = entryDialog(page, "Editar entrada");
+  await expectEditDialog(tuesdayDialog, {
+    description: overlap,
+    date: dayLabel(tuesday, today),
+    start: "09:00",
+    end: "10:00",
+    duration: "1:00",
+  });
+  await dialogButton(tuesdayDialog, "Cancelar").click();
   await expect(tuesdayDialog).toBeHidden();
   await expect(overlaps.nth(1)).toBeFocused();
 
@@ -490,21 +482,18 @@ test("los totales son los de la lista, la entrada de medianoche se parte en dos 
   await expect(midnightBlock).toBeFocused();
 
   // Criterio 13: un clic en el segmento del viernes abre el diálogo de la
-  // entrada entera, con el fin del día siguiente; `Esc` devuelve el foco al
-  // botón, que está en el jueves.
+  // entrada entera, con el fin del día siguiente y su superíndice; `Esc`
+  // devuelve el foco al botón, que está en el jueves.
   await segmentText(fridayColumn, midnight).click();
-  const midnightDialog = entryDialog(page, "Entrada");
-  await expectReadOnlyDialog(midnightDialog);
-  await expect(dialogValues(midnightDialog)).toContainText([
-    midnight,
-    dayLabel(thursday, today),
-    "22:00",
-    "02:00",
-    "4:00",
-  ]);
-  await expect(dialogValues(midnightDialog).filter({ hasText: "02:00" })).toContainText(
-    "+1",
-  );
+  const midnightDialog = entryDialog(page, "Editar entrada");
+  await expectEditDialog(midnightDialog, {
+    description: midnight,
+    date: dayLabel(thursday, today),
+    start: "22:00",
+    end: "02:00",
+    duration: "4:00",
+  });
+  await expect(midnightDialog).toContainText("+1");
   await page.keyboard.press("Escape");
   await expect(midnightDialog).toBeHidden();
   await expect(midnightBlock).toBeFocused();
@@ -516,7 +505,7 @@ test("el timer se dibuja en la columna de hoy hasta la línea de ahora y suma en
   const minute = minuteOfDayIn(PERSON_TIMEZONE);
   test.skip(
     minute < NEAR_MIDNIGHT_MINUTES || minute > 1440 - NEAR_MIDNIGHT_MINUTES,
-    "A menos de cinco minutos de la medianoche de la persona el timer de las 00:00 suma «0:00» o el recorrido cruza de día; el reloj emulado no sirve, porque el total, la línea y el bloque se anclan en el serverNow.",
+    NEAR_MIDNIGHT_REASON,
   );
   const today = todayIn(PERSON_TIMEZONE);
   const thisWeek = weekStartOf(today);
@@ -613,10 +602,8 @@ test("el timer se dibuja en la columna de hoy hasta la línea de ahora y suma en
   await timer.focus();
   await page.keyboard.press("Space");
   const dialog = entryDialog(page, "Timer en curso");
-  await expectReadOnlyDialog(dialog);
-  await expect(dialog).toContainText("Fin: en curso");
+  await expectEditDialog(dialog, { description, date: "Hoy", start: "00:00" });
   await expect(elapsedCounter(dialog)).toBeVisible();
-  await expect(dialogValues(dialog)).toContainText([description, "Hoy", "00:00"]);
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   await expect(timer).toBeFocused();

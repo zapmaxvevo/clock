@@ -41,6 +41,10 @@ export const trackerLabels = {
   entryNotContinued: "No se pudo continuar la entrada.",
   entryNotDuplicated: "No se pudo duplicar la entrada.",
   timerNotDiscarded: "No se pudo descartar el timer.",
+  timerNotStopped: "No se pudo detener el timer.",
+  entryNotAdded: "No se pudo agregar la entrada.",
+  /** TT-109: el alta no tiene id del cliente, así que no se sabe si quedó escrita. */
+  addLostTitle: "No sabemos si la entrada se guardó.",
   /** TT-65: la confirmación del descarte. */
   discardTitle: "¿Descartar el timer?",
   discardDescription: "Se borra el tiempo que lleva corriendo y no se puede deshacer.",
@@ -52,7 +56,10 @@ export const trackerLabels = {
   /** TT-62 a TT-64: la región de la barra, siempre montada. */
   bulkRegion: "Acciones en masa",
   bulkEdit: "Editar",
-  bulkDelete: "Borrar",
+  /** TT-60 y TT-64: la barra en masa y los menús de la fila y del diálogo del calendario. */
+  delete: "Borrar",
+  /** TT-58: el menú de la fila y el del diálogo del calendario. */
+  duplicate: "Duplicar",
   clearSelection: "Quitar selección",
   /** Los campos del diálogo de edición masiva (TT-63) y del de una entrada del calendario. */
   description: "Descripción",
@@ -94,6 +101,11 @@ export function extraDaysText(extraDays: number): string {
 /** El horario de una entrada en una frase: «de 09:00 a 10:30», o «desde las 09:00» si corre. */
 export function entrySpanText(startLabel: string, endLabel: string | null): string {
   return endLabel === null ? `desde las ${startLabel}` : `de ${startLabel} a ${endLabel}`;
+}
+
+/** El menú de acciones de una entrada, en la fila y en el diálogo del calendario. */
+export function entryActionsLabel(entryName: string): string {
+  return `Acciones de la entrada «${entryName}»`;
 }
 
 /** Una cantidad de entradas con el verbo o el sustantivo en singular o plural. */

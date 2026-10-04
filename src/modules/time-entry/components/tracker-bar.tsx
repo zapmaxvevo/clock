@@ -575,7 +575,7 @@ export function TrackerBar({
         )}
         {stop.failure !== null && (
           <ActionFeedback
-            title="No se pudo detener el timer."
+            title={trackerLabels.timerNotStopped}
             message={stop.failure.message}
             retryDisabled={switching}
             onRetry={retryOf(stop)}
@@ -610,12 +610,12 @@ export function TrackerBar({
              * «Reintentar» y el aviso manda a mirar la lista.
              */
             <ActionFeedback
-              title="No sabemos si la entrada se guardó."
+              title={trackerLabels.addLostTitle}
               message="Se perdió la respuesta del servidor. Antes de volver a agregarla, fijate en la lista: puede haberse creado."
             />
           ) : (
             <ActionFeedback
-              title="No se pudo agregar la entrada."
+              title={trackerLabels.entryNotAdded}
               message={add.failure.message}
             />
           ))}

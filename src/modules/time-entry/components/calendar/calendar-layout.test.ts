@@ -3,14 +3,19 @@ import { describe, expect, it } from "vitest";
 import type { TimeEntryView } from "@/modules/time-entry/schema";
 
 import {
+  addEntryDraft,
   chronological,
   entrySegments,
   initialScrollMinute,
   isMissing,
+  isOutsidePeriod,
   layoutColumn,
   MIN_BLOCK_HEIGHT_PX,
+  minuteAt,
   nowPosition,
   runningSegments,
+  slotAt,
+  slotDraft,
 } from "./calendar-layout";
 
 /** La semana del lunes 2026-09-28 al domingo 2026-10-04. */
@@ -351,5 +356,150 @@ describe("chronological", () => {
   it("con el mismo instante desempata por id, como la lectura del repository", () => {
     const timer = view("1a000000-0000-4000-8000-000000000000", closed.startedAt, true);
     expect(chronological([closed, later], timer)).toEqual([timer, closed, later]);
+  });
+});
+
+describe("minuteAt", () => {
+  it("ajusta hacia abajo a la franja: a 1 h, cualquier punto de la franja es su inicio", () => {
+    expect(minuteAt(0, 60)).toBe(0);
+    expect(minuteAt(10 * 48, 60)).toBe(600);
+    expect(minuteAt(10 * 48 + 47.9, 60)).toBe(600);
+    expect(minuteAt(11 * 48, 60)).toBe(660);
+  });
+
+  it("con otro zoom, cada franja de 48 px son esos minutos", () => {
+    expect(minuteAt(3 * 48 + 20, 15)).toBe(45);
+    expect(minuteAt(7 * 48, 5)).toBe(35);
+  });
+
+  it("no sale del día por arriba ni por abajo", () => {
+    expect(minuteAt(-5, 60)).toBe(0);
+    expect(minuteAt(24 * 48, 60)).toBe(1380);
+    expect(minuteAt(288 * 48 + 10, 5)).toBe(1435);
+  });
+});
+
+describe("slotDraft", () => {
+  it("propone la franja tocada y una franja de largo", () => {
+    expect(slotDraft("2026-09-30", 600, 60, [])).toEqual({
+      date: "2026-09-30",
+      start: "10:00",
+      end: "11:00",
+    });
+    expect(slotDraft("2026-09-30", 615, 15, [])).toEqual({
+      date: "2026-09-30",
+      start: "10:15",
+      end: "10:30",
+    });
+  });
+
+  it("con el fin dentro de un hueco, pasa al primer minuto que existe (Madrid, adelanto)", () => {
+    const madridSpring = [{ from: 120, to: 180 }];
+    expect(slotDraft("2026-03-29", 60, 60, madridSpring)).toEqual({
+      date: "2026-03-29",
+      start: "01:00",
+      end: "03:00",
+    });
+    expect(slotDraft("2026-03-29", 105, 30, madridSpring).end).toBe("03:00");
+  });
+
+  it("un fin justo al final del hueco ya existe y queda", () => {
+    expect(slotDraft("2026-03-29", 150, 30, [{ from: 120, to: 180 }]).end).toBe("03:00");
+    expect(slotDraft("2026-03-29", 0, 60, [{ from: 120, to: 180 }]).end).toBe("01:00");
+  });
+
+  it("la última franja termina a las 00:00, que es el día siguiente en el trío", () => {
+    expect(slotDraft("2026-09-30", 1380, 60, [])).toEqual({
+      date: "2026-09-30",
+      start: "23:00",
+      end: "00:00",
+    });
+  });
+});
+
+describe("addEntryDraft", () => {
+  const now = { date: "2026-10-02", minute: 617 };
+
+  it("con hoy a la vista, propone hoy y la franja de ahora", () => {
+    expect(addEntryDraft(week, now, "2026-01-01", 60)).toEqual({
+      date: "2026-10-02",
+      start: "10:00",
+      end: "11:00",
+    });
+    expect(addEntryDraft(week, now, "2026-01-01", 15)).toEqual({
+      date: "2026-10-02",
+      start: "10:15",
+      end: "10:30",
+    });
+  });
+
+  it("sin hoy a la vista, el primer día del período a las 08:00", () => {
+    const later = { date: "2026-10-12", minute: 617 };
+    expect(addEntryDraft(week, later, "2026-01-01", 30)).toEqual({
+      date: "2026-09-28",
+      start: "08:00",
+      end: "08:30",
+    });
+  });
+
+  it("nunca antes del piso del workspace", () => {
+    const later = { date: "2026-10-12", minute: 617 };
+    expect(addEntryDraft(week, later, "2026-09-30", 60)).toEqual({
+      date: "2026-09-30",
+      start: "08:00",
+      end: "09:00",
+    });
+  });
+
+  it("si el piso es hoy, propone la franja de ahora", () => {
+    const earlier = ["2026-09-21", "2026-09-22"];
+    expect(addEntryDraft(earlier, now, "2026-10-02", 60)).toEqual({
+      date: "2026-10-02",
+      start: "10:00",
+      end: "11:00",
+    });
+  });
+});
+
+describe("slotAt", () => {
+  const plain = { beforeWorkspace: false, missingMinutes: [] };
+  const madridSpring = {
+    beforeWorkspace: false,
+    missingMinutes: [{ from: 120, to: 180 }],
+  };
+
+  it("con permiso de carga, el minuto de la franja tocada", () => {
+    expect(slotAt(plain, 10 * 48 + 30, 60, true)).toBe(600);
+    expect(slotAt(plain, 3 * 48 + 5, 15, true)).toBe(45);
+  });
+
+  it("sin permiso de carga no abre nada (CAL-05)", () => {
+    expect(slotAt(plain, 10 * 48, 60, false)).toBeNull();
+  });
+
+  it("en un día anterior al piso no abre nada (CAL-48)", () => {
+    expect(slotAt({ ...plain, beforeWorkspace: true }, 10 * 48, 60, true)).toBeNull();
+  });
+
+  it("en un minuto que no existe no abre nada; en los de al lado, sí (CAL-30, Madrid)", () => {
+    expect(slotAt(madridSpring, 2 * 48 + 10, 60, true)).toBeNull();
+    expect(slotAt(madridSpring, 5 * 48, 30, true)).toBeNull();
+    expect(slotAt(madridSpring, 1 * 48 + 10, 60, true)).toBe(60);
+    expect(slotAt(madridSpring, 3 * 48, 60, true)).toBe(180);
+  });
+});
+
+describe("isOutsidePeriod", () => {
+  it("la que empieza y termina en el período está adentro", () => {
+    expect(isOutsidePeriod(closed("2026-09-30", "09:00", "10:00"), week)).toBe(false);
+  });
+
+  it("la que empezó el domingo anterior y tiene segmento el lunes está adentro (CAL-46)", () => {
+    expect(isOutsidePeriod(closed("2026-09-27", "22:00", "02:00", 1), week)).toBe(false);
+  });
+
+  it("la de otra semana está afuera, también la que termina justo al empezar el período", () => {
+    expect(isOutsidePeriod(closed("2026-09-09", "09:00", "10:00"), week)).toBe(true);
+    expect(isOutsidePeriod(closed("2026-09-27", "22:00", "00:00", 1), week)).toBe(true);
   });
 });

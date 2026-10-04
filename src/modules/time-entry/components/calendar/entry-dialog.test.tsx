@@ -2,12 +2,15 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { DisplayFormatsProvider } from "@/components/layout/display-formats";
+import { Dialog } from "@/components/ui/dialog";
 import { TrackingCatalogProvider } from "@/modules/project/components/tracking-catalog";
 import type { TrackingCatalog } from "@/modules/project/schema";
 import type { TimeEntryView } from "@/modules/time-entry/schema";
 import type { DisplayFormats } from "@/server/time";
 
-import { EntryDialogBody } from "./entry-dialog";
+import { EntryDialogContent, type DialogSubject } from "./entry-dialog";
+import { EditorActions } from "./entry-dialog-actions";
+import { EntryDialogBody } from "./entry-dialog-body";
 
 const catalog: TrackingCatalog = {
   canCreateProject: true,
@@ -159,5 +162,194 @@ describe("EntryDialogBody (CAL-65, CAL-66)", () => {
     expect(markup).toContain('role="timer"');
     expect(fields.at(-1)?.[1]).toBe("2:00:00");
     expectNoControls(markup);
+  });
+});
+
+const noop = () => undefined;
+
+/** El contenido del diálogo sin el portal, dentro de su raíz, que da el contexto. */
+function renderContent(
+  subject: DialogSubject,
+  canTrack = true,
+  formats: DisplayFormats = { time: "24h", date: "dd/MM/yyyy" },
+): string {
+  return renderToStaticMarkup(
+    <DisplayFormatsProvider formats={formats}>
+      <TrackingCatalogProvider catalog={catalog}>
+        <Dialog open>
+          <EntryDialogContent
+            subject={subject}
+            canTrack={canTrack}
+            serverNow={serverNow}
+            todayKey="2026-10-04"
+            minDayKey="2026-01-01"
+            pending={false}
+            failure={null}
+            closeRef={{ current: null }}
+            descriptionRef={{ current: null }}
+            onUnchanged={noop}
+            onSave={noop}
+            onAdd={noop}
+            onStop={noop}
+            onDuplicate={noop}
+            onDelete={noop}
+          />
+        </Dialog>
+      </TrackingCatalogProvider>
+    </DisplayFormatsProvider>,
+  );
+}
+
+/** Un control por su nombre accesible: su etiqueta de apertura. */
+function controlNamed(markup: string, name: string): string | null {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return (
+    markup.match(new RegExp(`<(input|button)[^>]*aria-label="${escaped}"[^>]*>`))?.[0] ??
+    null
+  );
+}
+
+function textOf(markup: string): string {
+  return markup.replace(/<[^>]*>/g, "");
+}
+
+describe("EntryDialogContent: los modos según el permiso y el sujeto (CAL-05, CAL-65)", () => {
+  it("sin permiso de carga, la entrada se abre en solo lectura (TT-92)", () => {
+    const markup = renderContent({ kind: "entry", entry: closed }, false);
+    expect(textOf(markup)).toContain("Entrada");
+    expect(fieldsOf(markup).map(([term]) => term)).toContain("Hora de fin");
+    expect(markup).not.toMatch(/<(input|textarea|select)\b/);
+    expect(markup).not.toContain('role="combobox"');
+    expect(textOf(markup)).toContain("Cerrar");
+    expect(textOf(markup)).not.toContain("Guardar");
+  });
+
+  it("con permiso de carga, una cerrada se edita: título, campos y menú", () => {
+    const markup = renderContent({ kind: "entry", entry: closed });
+    expect(textOf(markup)).toContain("Editar entrada");
+    expect(markup).toMatch(/<input[^>]*value="Informe"/);
+    expect(controlNamed(markup, "Hora de inicio")).toContain('value="09:00"');
+    expect(controlNamed(markup, "Hora de fin")).toContain('value="10:30"');
+    expect(controlNamed(markup, "Duración")).toContain('value="1:30"');
+    expect(controlNamed(markup, "Acciones de la entrada «Informe»")).not.toBeNull();
+    expect(textOf(markup)).toContain("Guardar");
+    expect(textOf(markup)).not.toContain("Detener");
+  });
+
+  it("mientras el trío no cambió, la duración es la del servidor, que mide instantes (TT-97)", () => {
+    const withSeconds = {
+      ...closed,
+      startedAt: "2026-10-02T12:00:40.000Z",
+      durationSeconds: 5_360,
+      durationLabel: "1:29",
+    };
+    const markup = renderContent({ kind: "entry", entry: withSeconds });
+    expect(controlNamed(markup, "Duración")).toContain('value="1:29"');
+  });
+
+  it("con 12 h elegidas, las horas del editor van en ese formato (PF-13)", () => {
+    const markup = renderContent({ kind: "entry", entry: closed }, true, {
+      time: "12h",
+      date: "dd/MM/yyyy",
+    });
+    expect(controlNamed(markup, "Hora de inicio")).toContain('value="9:00 AM"');
+    expect(controlNamed(markup, "Hora de fin")).toContain('value="10:30 AM"');
+  });
+
+  it("de más de un día, el horario es texto con su aviso; la descripción se edita (CAL-58)", () => {
+    const markup = renderContent({ kind: "entry", entry: overnight });
+    expect(markup).toMatch(/<input[^>]*value=""/);
+    expect(controlNamed(markup, "Hora de inicio")).toBeNull();
+    expect(controlNamed(markup, "Hora de fin")).toBeNull();
+    expect(controlNamed(markup, "Duración")).toBeNull();
+    expect(fieldsOf(markup)).toContainEqual([
+      "Hora de fin",
+      "02:00+2 (termina 2 días después)",
+    ]);
+    expect(textOf(markup)).toContain(
+      "Esta entrada dura más de un día; sus horarios no se pueden editar acá.",
+    );
+    expect(markup).toContain('role="combobox"');
+  });
+
+  it("el timer edita el inicio, muestra el fin en curso y no tiene menú (CAL-40)", () => {
+    const markup = renderContent({ kind: "entry", entry: running });
+    expect(textOf(markup)).toContain("Timer en curso");
+    expect(controlNamed(markup, "Hora de inicio")).toContain('value="10:00"');
+    expect(controlNamed(markup, "Hora de fin")).toBeNull();
+    expect(textOf(markup)).toContain("Fin: en curso");
+    expect(markup).toContain('role="timer"');
+    expect(textOf(markup)).toContain("Detener");
+    expect(markup).not.toContain("Acciones de la entrada");
+  });
+
+  it("el alta lleva el trío propuesto y «Agregar», sin menú (CAL-43)", () => {
+    const markup = renderContent({
+      kind: "add",
+      draft: { date: "2026-09-30", start: "10:00", end: "11:00" },
+      opener: "slot",
+    });
+    expect(textOf(markup)).toContain("Agregar entrada");
+    expect(controlNamed(markup, "Hora de inicio")).toContain('value="10:00"');
+    expect(controlNamed(markup, "Hora de fin")).toContain('value="11:00"');
+    expect(controlNamed(markup, "Duración")).toContain('value="1:00"');
+    expect(textOf(markup)).toContain("Agregar");
+    expect(markup).not.toContain("Acciones de la entrada");
+  });
+
+  it("un alta de duración cero deja «Agregar» inactivo con el motivo asociado (TT-73)", () => {
+    const markup = renderContent({
+      kind: "add",
+      draft: { date: "2026-09-30", start: "10:00", end: "10:00" },
+      opener: "button",
+    });
+    const add = markup.match(/<button[^>]*type="submit"[^>]*>/)?.[0] ?? "";
+    expect(add).toContain('aria-disabled="true"');
+    const hint = add.match(/aria-describedby="([^"]*)"/)?.[1];
+    expect(markup).toContain(
+      `id="${hint}" class="text-muted-foreground text-sm">La entrada tiene que durar al menos un minuto.`,
+    );
+  });
+});
+
+describe("EditorActions: «Detener» con cambios sin guardar (P-06)", () => {
+  function renderActions(stopBlocked: boolean): string {
+    return renderToStaticMarkup(
+      <Dialog open>
+        <EditorActions
+          mode="running"
+          name="Informe"
+          pending={false}
+          tooShort={false}
+          stopBlocked={stopBlocked}
+          submitRef={{ current: null }}
+          onStop={noop}
+          onDuplicate={noop}
+          onDelete={noop}
+        />
+      </Dialog>,
+    );
+  }
+
+  function stopButton(markup: string): string {
+    return markup.match(/<button[^>]*>Detener<\/button>/)?.[0] ?? "";
+  }
+
+  it("con cambios queda inactivo, sin `disabled`, con el texto asociado y a la vista", () => {
+    const markup = renderActions(true);
+    const stop = stopButton(markup);
+    expect(stop).toContain('aria-disabled="true"');
+    expect(stop).not.toMatch(/\sdisabled=/);
+    const hint = stop.match(/aria-describedby="([^"]*)"/)?.[1];
+    expect(markup).toContain(
+      `id="${hint}" class="text-muted-foreground text-sm">Guardá los cambios antes de detener el timer.`,
+    );
+  });
+
+  it("sin cambios está activo y no muestra el texto", () => {
+    const markup = renderActions(false);
+    expect(stopButton(markup)).toContain('aria-disabled="false"');
+    expect(stopButton(markup)).not.toContain("aria-describedby");
+    expect(markup).not.toContain("Guardá los cambios");
   });
 });
