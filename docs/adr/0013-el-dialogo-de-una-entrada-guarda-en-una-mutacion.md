@@ -4,7 +4,10 @@ Fecha: 2026-10-04. Estado: aceptado (2026-10-04).
 Origen: contrato del slice 8
 ([`fase1-slice8-calendario.md`](../slices/fase1-slice8-calendario.md)), a partir
 de la decisión del usuario sobre calendario P-04 (2026-10-04): el diálogo de una
-entrada guarda todo o nada con un botón «Guardar», como Clockify.
+entrada guarda todo o nada con un botón «Guardar», como Clockify. En la ronda 1
+de su revisión ([correcciones](../slices/correcciones-fase1-slice8.md)) el
+contrato se partió: `updateEntry` se construye en el slice 8c
+([`fase1-slice8c-calendario-escritura.md`](../slices/fase1-slice8c-calendario-escritura.md)).
 
 ## Contexto
 
