@@ -5,21 +5,22 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-04.
 
 ## Dónde estamos
 
-| Slice                                      | Estado                                          |
-| ------------------------------------------ | ----------------------------------------------- |
-| 1 — Timer sin proyecto                     | En `main`                                       |
-| 2 — Modo manual                            | En `main`                                       |
-| 2b — Reintento de «Iniciar»                | En `main`                                       |
-| 3 — Corregir horas y fecha                 | En `main`                                       |
-| 4 — Continuar, duplicar, descartar, atajos | En `main`                                       |
-| 5 — Semana y paginación                    | En `main`                                       |
-| 9 — Núcleo de proyectos                    | En `main`                                       |
-| 10 — Selector de proyecto y tarea          | En `main`                                       |
-| 7 — Perfil                                 | En `main`                                       |
-| 6 — Selección y acciones en masa           | En `main` (local): falta `git push origin main` |
-| 7b — Perfil: nombre editable y tema        | Sin contrato                                    |
-| 8 — Calendario                             | Contrato en curso en `fase1/slice-8-calendario` |
-| 11–13                                      | Sin contrato                                    |
+| Slice                                      | Estado                                             |
+| ------------------------------------------ | -------------------------------------------------- |
+| 1 — Timer sin proyecto                     | En `main`                                          |
+| 2 — Modo manual                            | En `main`                                          |
+| 2b — Reintento de «Iniciar»                | En `main`                                          |
+| 3 — Corregir horas y fecha                 | En `main`                                          |
+| 4 — Continuar, duplicar, descartar, atajos | En `main`                                          |
+| 5 — Semana y paginación                    | En `main`                                          |
+| 9 — Núcleo de proyectos                    | En `main`                                          |
+| 10 — Selector de proyecto y tarea          | En `main`                                          |
+| 7 — Perfil                                 | En `main`                                          |
+| 6 — Selección y acciones en masa           | En `main` (local): falta `git push origin main`    |
+| 7b — Perfil: nombre editable y tema        | Sin contrato                                       |
+| 8 — Calendario                             | Contrato en revisión en `fase1/slice-8-calendario` |
+| 8b — Calendario: arrastre                  | Esbozo en §8 del contrato del 8                    |
+| 11–13                                      | Sin contrato                                       |
 
 Los slices 1 a 5, 7, 9 y 10 están en `origin/main`. El
 slice 6 pasó las seis revisiones (`correcciones-fase1-slice6-revisiones.md`) y su ronda de
@@ -49,7 +50,10 @@ Decisiones del usuario del 2026-10-04 para el calendario: P-04 «Guardar» todo 
 botón; P-01 crear desde la grilla **se permite** con un timer corriendo; P-02 la entrada que
 cruza la medianoche suma entera en el día de inicio; P-06 «Detener» en el diálogo del timer.
 P-03 (arrastrar el inicio del timer) y P-05 (solo días laborables) quedan fuera del 8, con
-su propuesta.
+su propuesta. Sobre el contrato del 8: ADR 0013 (`updateEntry`) aceptado; P-01 sin excepción por
+origen (el servidor deja de rechazar el alta manual con timer abierto, TT-30 queda en la
+interfaz del rastreador); corte 8 (clic y teclado) / 8b (arrastre) aprobado; «Detener»
+inactivo con cambios sin guardar.
 
 Decisiones del usuario del 2026-10-03: ADR 0010, 0011 y 0012 aceptados; TT-07 con las tareas
 siempre listadas; continuar o duplicar con un proyecto no disponible se rechaza; la zona por

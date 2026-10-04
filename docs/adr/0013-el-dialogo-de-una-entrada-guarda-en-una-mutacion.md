@@ -1,6 +1,6 @@
 # 0013. El diálogo de una entrada guarda en una sola mutación
 
-Fecha: 2026-10-04. Estado: propuesto.
+Fecha: 2026-10-04. Estado: aceptado (2026-10-04).
 Origen: contrato del slice 8
 ([`fase1-slice8-calendario.md`](../slices/fase1-slice8-calendario.md)), a partir
 de la decisión del usuario sobre calendario P-04 (2026-10-04): el diálogo de una
