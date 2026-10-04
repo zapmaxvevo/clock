@@ -1,3 +1,4 @@
+import { DomainError } from "@/server/action";
 import { db, type Transaction } from "@/server/db";
 import { recordAudit } from "@/server/audit";
 import { createOnce, type ConflictOutcome } from "@/server/create-once";
@@ -56,12 +57,9 @@ import {
 } from "./schema";
 
 /** Error de dominio del módulo. La action lo traduce a un resultado tipado. */
-export class TimeEntryError extends Error {
-  constructor(
-    readonly code: TimeEntryErrorCode,
-    message: string,
-  ) {
-    super(message);
+export class TimeEntryError extends DomainError<TimeEntryErrorCode> {
+  constructor(code: TimeEntryErrorCode, message: string) {
+    super(code, message);
     this.name = "TimeEntryError";
   }
 }

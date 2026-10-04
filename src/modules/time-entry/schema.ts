@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { noNullCharacter } from "@/lib/text";
+import type { ActionErrorCode } from "@/server/action";
 import { isClock, parseDayKey } from "@/server/time";
 
 /**
@@ -33,16 +35,11 @@ export const timeEntryMessages = {
   unexpected: "No se pudo guardar. Revisá la conexión y volvé a intentar.",
 } as const;
 
-// Postgres no guarda el carácter nulo en un `text`: sin este control, la
-// descripción que lo trae llega a la base y vuelve como `unexpected`.
 const description = z
   .string()
   .trim()
   .max(DESCRIPTION_MAX, timeEntryMessages.descriptionTooLong)
-  .refine(
-    (value) => !value.includes("\u0000"),
-    timeEntryMessages.descriptionNullCharacter,
-  );
+  .refine(noNullCharacter, timeEntryMessages.descriptionNullCharacter);
 
 /** Id de una entrada nueva, elegido por el cliente: ver el ADR 0007. */
 const newEntryId = z.uuidv4();
@@ -239,17 +236,7 @@ export type DayGroupView = z.infer<typeof dayGroupView>;
 export type WeekGroupView = z.infer<typeof weekGroupView>;
 export type TrackerState = z.infer<typeof trackerState>;
 
-export type TimeEntryErrorCode =
-  | "validation"
-  | "not_found"
-  | "forbidden"
-  | "already_stopped"
-  | "timer_running"
-  | "unexpected";
-
-export type ActionResult<T> =
-  | { readonly ok: true; readonly data: T }
-  | { readonly ok: false; readonly code: TimeEntryErrorCode; readonly message: string };
+export type TimeEntryErrorCode = ActionErrorCode | "already_stopped" | "timer_running";
 
 export type StartTimerResult = {
   /**
