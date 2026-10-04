@@ -34,6 +34,7 @@ import {
   pickDialogDay,
   runningBlockName,
   screenNotice,
+  zoomIn,
 } from "./calendar-page";
 import { seedProject } from "./database";
 import {
@@ -207,6 +208,10 @@ test("un clic en una franja agrega la entrada, y guardarla en otra semana avisa 
       }),
     ),
   ).toBeInViewport();
+
+  // P-m1: el aviso habla del período que se veía, así que en la semana de la
+  // entrada ya no está.
+  await expect(notice).toHaveCount(0);
 });
 
 test("guardar aplica descripción, proyecto y horario juntos, y un horario rechazado no guarda nada", async ({
@@ -349,11 +354,21 @@ test("con el timer corriendo se crea desde la grilla, y el diálogo del timer gu
   );
   await expect(renamedBlock).toBeFocused();
   await expect(renamedBlock).toContainText("00:00 – en curso");
+
+  // A «5 min» un minuto mide 9,6 px y la altura mínima deja de mandar a los
+  // tres minutos, como en el recorrido 3 del 8: a «1 h», durante la primera
+  // media hora del día el bloque mide la mínima y su borde no dice dónde
+  // termina.
+  await zoomIn(page, "30 min");
+  await zoomIn(page, "15 min");
+  await zoomIn(page, "5 min");
   await expect
     .poll(() => bottomToNowLine(renamedBlock, todayColumn))
     .toBeLessThan(NOW_LINE_TOLERANCE_PX);
 
-  // «Detener» sin cambios detiene: el bloque ya no corre y tiene el foco.
+  // «Detener» sin cambios detiene: el bloque ya no corre y tiene el foco. El
+  // zoom se lo llevó, así que se le devuelve antes de abrir.
+  await renamedBlock.focus();
   await page.keyboard.press("Enter");
   await expect(dialogDescription(dialog)).toBeFocused();
   await withServerAction(page, () => stop.click());
