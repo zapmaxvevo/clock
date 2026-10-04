@@ -14,7 +14,6 @@ import { cn } from "@/lib/utils";
 import type { TimeEntryView, UpdateRunningStartInput } from "@/modules/time-entry/schema";
 
 import { ElapsedCounter } from "./elapsed-counter";
-import { trackerLabels } from "./labels";
 import { RunningStartEditor } from "./running-start-editor";
 
 /**
@@ -27,6 +26,8 @@ export type Phase = "idle" | "starting" | "stopping" | "discarding";
 type TimerBarProps = {
   /** El campo de descripción es del contenedor: conmutar de modo no lo pierde. */
   readonly descriptionField: ReactNode;
+  /** El selector de proyecto también, con el par que viaja con la barra. */
+  readonly projectPicker: ReactNode;
   /** Con la vista optimista: corre desde el clic en «Iniciar» hasta el de «Detener». */
   readonly isRunning: boolean;
   /** Inicio de la entrada abierta que cuenta el contador, o `null` parado. */
@@ -63,6 +64,7 @@ type TimerBarProps = {
  */
 export function TimerBar({
   descriptionField,
+  projectPicker,
   isRunning,
   counterStart,
   running,
@@ -94,7 +96,7 @@ export function TimerBar({
     >
       <div className="min-w-0 flex-1 basis-64">{descriptionField}</div>
 
-      <span className="text-muted-foreground text-sm">{trackerLabels.noProject}</span>
+      {projectPicker}
 
       <div className="relative">
         <ElapsedCounter startedAt={counterStart} serverNow={serverNow} />

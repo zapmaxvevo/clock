@@ -1,6 +1,7 @@
 /**
- * Textos de la pantalla de proyectos. Los mensajes de error de las actions no
- * viven acá: salen de `projectMessages`, en el esquema del módulo.
+ * Textos de la pantalla de proyectos y del selector de proyecto. Los mensajes
+ * de error de las actions no viven acá: salen de `projectMessages`, en el
+ * esquema del módulo.
  */
 export const projectLabels = {
   title: "Proyectos",
@@ -29,6 +30,17 @@ export const projectLabels = {
   cancel: "Cancelar",
   /** Lo que anuncia la pantalla mientras el catálogo carga en el servidor. */
   loading: "Cargando los proyectos",
+  /** TT-06: el disparador del selector de la barra, sin selección. */
+  pickerEmpty: "Proyecto",
+  /** TT-10 y TT-50: la opción del selector y la entrada sin proyecto. */
+  noProject: "Sin proyecto",
+  /** TT-07: el buscador del selector. */
+  pickerSearch: "Buscar proyecto, cliente o tarea",
+  /** TT-87: el selector de un workspace sin proyectos. */
+  pickerNoProjects: "No hay proyectos todavía",
+  pickerGoToProjects: "Ir a Proyectos",
+  /** TT-07: la búsqueda del selector sin coincidencias. */
+  pickerNoMatches: "Ningún proyecto coincide con la búsqueda.",
 } as const;
 
 /**
@@ -52,4 +64,9 @@ export function tasksLabel(projectName: string): string {
 /** El punto de color no depende solo del color: dice cuál es. */
 export function colorDotLabel(colorName: string): string {
   return `${projectLabels.color}: ${colorName}`;
+}
+
+/** TT-06: el proyecto con su tarea, en el disparador y en la opción de la tarea. */
+export function projectTaskLabel(projectName: string, taskName: string): string {
+  return `${projectName}: ${taskName}`;
 }

@@ -4,12 +4,17 @@ import { useEffect, useOptimistic, useRef, useState } from "react";
 
 import { retryHandlerOf, useAction, type ActionHandle } from "@/hooks/use-action";
 import { useNewId } from "@/hooks/use-new-id";
+import { projectLabels } from "@/modules/project/components/labels";
+import { NO_SELECTION, selectionIds } from "@/modules/project/components/picker-model";
+import { ProjectPicker } from "@/modules/project/components/project-picker";
+import type { ProjectSelection } from "@/modules/project/schema";
 import {
   createManualEntry,
   discardTimer,
   startTimer,
   stopTimer,
   updateDescription,
+  updateEntryProject,
   updateRunningStart,
 } from "@/modules/time-entry/actions";
 import {
@@ -44,6 +49,17 @@ const DESCRIPTION_DEBOUNCE_MS = 500;
 /** «Iniciar» no parte de ninguna entrada: su id pendiente va con una clave fija. */
 const START_KEY = "start";
 
+/** El cambio de proyecto del timer, con la selección entera para la vista optimista. */
+type RunningProjectChange = { readonly id: string; readonly selection: ProjectSelection };
+
+function saveRunningProject({ id, selection }: RunningProjectChange) {
+  return updateEntryProject({ id, ...selectionIds(selection) });
+}
+
+function selectionOf(entry: TimeEntryView | null): ProjectSelection {
+  return entry === null ? NO_SELECTION : { project: entry.project, task: entry.task };
+}
+
 type TrackerBarProps = {
   readonly running: TimeEntryView | null;
   readonly serverNow: string;
@@ -63,6 +79,7 @@ type TrackerBarProps = {
  * en otra pestaña cambia la barra de modo sin que nadie lo pida (TT-30), así
  * que la descripción, el borrador manual, los pedidos, sus avisos y la
  * confirmación del descarte viven acá y no en la barra de cada modo. El
+ * proyecto y la tarea siguen las mismas reglas que la descripción. El
  * conmutador y los atajos `n`, `s` y `m` también: así el conmutador no cambia
  * de lugar ni pierde el foco al conmutar, y cada atajo ve el mismo estado que
  * su control.
@@ -102,6 +119,18 @@ export function TrackerBar({
     id: running?.id ?? null,
     description: running?.description ?? "",
   });
+  /**
+   * El proyecto y la tarea sin timer: viajan con «Iniciar» y con «Agregar».
+   * Con el timer corriendo la barra muestra los de la entrada abierta.
+   */
+  const [pairDraft, setPairDraft] = useState(() => selectionOf(running));
+  /** Lo mismo que `heldDescription`, para el par. */
+  const [heldPair, setHeldPair] = useState<ProjectSelection | null>(null);
+  /** TT-27 y TT-90: lo elegido mientras el cambio viaja; si falla, vuelve el del servidor. */
+  const [runningPairEdit, showRunningPairEdit] = useOptimistic<
+    ProjectSelection | null,
+    ProjectSelection
+  >(null, (_current, next) => next);
   /** Descripción del guardado en vuelo: el rebote y el blur no lo repiten. */
   const [inFlightDescription, setInFlightDescription] = useState<string | null>(null);
   const [manualDraft, setManualDraft] = useState(() => reset(serverNow, timeZone));
@@ -132,6 +161,12 @@ export function TrackerBar({
    * antes de cerrarse, o «Reintentar» se fue con su aviso.
    */
   const focusAfterDiscard = useRef(false);
+  /**
+   * El selector abierto cuando la barra cambia de modo se va sin elegir; si el
+   * foco queda sin dueño, vuelve al disparador de la barra nueva.
+   */
+  const pickerTriggerRef = useRef<HTMLButtonElement>(null);
+  const pickerOpen = useRef(false);
 
   const save = useAction(updateDescription, {
     unreachableMessage: timeEntryMessages.unexpected,
@@ -154,6 +189,11 @@ export function TrackerBar({
     unreachableMessage: timeEntryMessages.unexpected,
     optimistic: () => showPhase("discarding"),
   });
+  const saveProject = useAction(saveRunningProject, {
+    unreachableMessage: timeEntryMessages.unexpected,
+    optimistic: (input) => showRunningPairEdit(input.selection),
+    onSuccess: (data) => reachWeek([data.entry.weekStart]),
+  });
   /**
    * TT-28: sin vista optimista; el contador salta cuando llega la vista nueva.
    * Vive acá con el arranque y la parada, así su aviso sobrevive a que la
@@ -174,6 +214,12 @@ export function TrackerBar({
       // Lo que se tecleó mientras el pedido viajaba no es parte de la entrada
       // creada: se limpia solo lo que sigue igual a lo que se mandó.
       setDraft((current) => (current === input.description ? "" : current));
+      setPairDraft((current) => {
+        const sent = selectionIds(current);
+        return sent.projectId === input.projectId && sent.taskId === input.taskId
+          ? NO_SELECTION
+          : current;
+      });
       setManualDraft((current) =>
         sameDraft(current, input) ? reset(serverNow, timeZone) : current,
       );
@@ -196,6 +242,7 @@ export function TrackerBar({
 
   const serverId = running?.id ?? null;
   const serverDescription = running?.description ?? "";
+  const serverPair = selectionOf(running);
 
   // La descripción del campo sigue a la del servidor, que puede cambiar sin
   // que cambie la entrada: otro dispositivo la editó y la revalidación la
@@ -210,6 +257,12 @@ export function TrackerBar({
     if (serverState.id !== serverId) {
       start.clear();
       setPendingDiscard(null);
+      // El par sigue al timer nuevo, o queda sin proyecto al detenerse
+      // (TT-65); los casos forzados de abajo lo retienen y lo devuelven.
+      setPairDraft(serverPair);
+      if (saveProject.failure?.code === "unexpected") {
+        saveProject.clear();
+      }
       // Lo mismo con el inicio: «Reintentar» apuntaría a un timer que ya no
       // está. Un `already_stopped` llega en el mismo render que la vista sin
       // el timer y es justamente lo que hay que mostrar, así que se queda.
@@ -225,10 +278,13 @@ export function TrackerBar({
     if (forcedIn) {
       setHeldDescription(draft);
       setDraft(serverDescription);
+      setHeldPair(pairDraft);
       setEditing(false);
     } else if (forcedOut) {
       setDraft(heldDescription ?? serverDescription);
       setHeldDescription(null);
+      setPairDraft(heldPair ?? serverPair);
+      setHeldPair(null);
       setEditing(false);
     } else if (resolvesDiscard(pendingDiscard, serverState.id, serverId)) {
       // TT-65: la descripción se va con el timer descartado, con el foco en el
@@ -252,6 +308,9 @@ export function TrackerBar({
   const timerControls = canTrack && !isManual && !switching;
   /** TT-30: con un timer corriendo o una operación de la barra en vuelo. */
   const modeSwitchDisabled = isRunning || switching || add.pending;
+  /** Con el timer abierto, el par es el de la entrada; si no, el borrador. */
+  const editsRunningPair = isRunning && running !== null;
+  const shownPair = editsRunningPair ? (runningPairEdit ?? serverPair) : pairDraft;
 
   useEffect(() => {
     if (!focusAfterDiscard.current) {
@@ -266,6 +325,17 @@ export function TrackerBar({
     }
   }, [phase, isManual]);
 
+  useEffect(() => {
+    if (!pickerOpen.current) {
+      return;
+    }
+    pickerOpen.current = false;
+    const focused = document.activeElement;
+    if (focused === null || focused === document.body) {
+      pickerTriggerRef.current?.focus();
+    }
+  }, [isManual]);
+
   /**
    * Un aviso describe el desenlace de una operación y un descarte confirmado
    * espera el suyo: la operación siguiente deja viejos a los dos.
@@ -275,6 +345,7 @@ export function TrackerBar({
     start.clear();
     stop.clear();
     saveStart.clear();
+    saveProject.clear();
     discard.clear();
     add.clear();
     setPendingDiscard(null);
@@ -306,7 +377,7 @@ export function TrackerBar({
     if (running === null) {
       const id = newStartId(START_KEY);
       clearNotices();
-      start.run({ id, description: draft });
+      start.run({ id, description: draft, ...selectionIds(pairDraft) });
       return;
     }
     clearNotices();
@@ -367,7 +438,18 @@ export function TrackerBar({
       date: manualDraft.date,
       start: manualDraft.start,
       end: manualDraft.end,
+      ...selectionIds(pairDraft),
     });
+  }
+
+  /** TT-27: con el timer abierto el cambio se guarda en él; sin timer, es el borrador. */
+  function handleProjectChange(selection: ProjectSelection): void {
+    if (!editsRunningPair) {
+      setPairDraft(selection);
+      return;
+    }
+    clearNotices();
+    saveProject.run({ id: running.id, selection });
   }
 
   function handleModeChange(next: TrackerMode): void {
@@ -407,12 +489,28 @@ export function TrackerBar({
     />
   );
 
+  const projectPicker = (
+    <ProjectPicker
+      value={shownPair}
+      onChange={handleProjectChange}
+      variant="bar"
+      label={projectLabels.pickerEmpty}
+      pending={saveProject.pending || switching}
+      readOnly={!canTrack}
+      triggerRef={pickerTriggerRef}
+      onOpenChange={(open) => {
+        pickerOpen.current = open;
+      }}
+    />
+  );
+
   return (
     <section aria-label="Rastreador" className="flex items-start gap-3">
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         {isManual ? (
           <ManualBar
             descriptionField={descriptionField}
+            projectPicker={projectPicker}
             draft={manualDraft}
             onDraftChange={setManualDraft}
             todayKey={todayKey}
@@ -425,6 +523,7 @@ export function TrackerBar({
         ) : (
           <TimerBar
             descriptionField={descriptionField}
+            projectPicker={projectPicker}
             isRunning={isRunning}
             counterStart={isRunning && running !== null ? running.startedAt : null}
             running={running}
@@ -520,6 +619,15 @@ export function TrackerBar({
               message={add.failure.message}
             />
           ))}
+
+        {saveProject.failure !== null && (
+          <TrackerFeedback
+            title={trackerLabels.projectNotSaved}
+            message={saveProject.failure.message}
+            retryDisabled={saveProject.pending || switching}
+            onRetry={retryOf(saveProject)}
+          />
+        )}
 
         {save.failure !== null && (
           <TrackerFeedback

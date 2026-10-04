@@ -26,6 +26,8 @@ import {
 type ManualBarProps = {
   /** El campo de descripción es del contenedor: conmutar de modo no lo pierde. */
   readonly descriptionField: ReactNode;
+  /** El selector de proyecto también, con el par que viaja con la barra. */
+  readonly projectPicker: ReactNode;
   /**
    * El borrador también es del contenedor: si un timer de otra pestaña obliga
    * a la barra a pasar al modo timer, lo tecleado sigue ahí al volver (TT-30).
@@ -51,6 +53,7 @@ type ManualBarProps = {
  */
 export function ManualBar({
   descriptionField,
+  projectPicker,
   draft,
   onDraftChange,
   todayKey,
@@ -93,7 +96,7 @@ export function ManualBar({
       <div className="flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2">
         <div className="min-w-0 flex-1 basis-64">{descriptionField}</div>
 
-        <span className="text-muted-foreground text-sm">{trackerLabels.noProject}</span>
+        {projectPicker}
 
         <div className="flex items-center gap-2">
           <ClockField

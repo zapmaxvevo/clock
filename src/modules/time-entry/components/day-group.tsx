@@ -4,10 +4,13 @@ import { useEffect, useOptimistic, useRef } from "react";
 
 import { retryHandlerOf, useAction, type ActionHandle } from "@/hooks/use-action";
 import { useNewId } from "@/hooks/use-new-id";
+import { selectionIds } from "@/modules/project/components/picker-model";
+import type { ProjectSelection } from "@/modules/project/schema";
 import {
   deleteEntry,
   duplicateEntry,
   updateDescription,
+  updateEntryProject,
   updateEntryTimes,
 } from "@/modules/time-entry/actions";
 import {
@@ -64,6 +67,13 @@ export type MovedEntry = {
   /** Día local del grupo nuevo. */
   readonly date: string;
 };
+
+/** El cambio de proyecto de una fila, con la selección entera para la vista optimista. */
+type EntryProjectChange = { readonly id: string; readonly selection: ProjectSelection };
+
+function saveEntryProject({ id, selection }: EntryProjectChange) {
+  return updateEntryProject({ id, ...selectionIds(selection) });
+}
 
 /** Reductor de las vistas optimistas por fila: la edición nueva reemplaza a la anterior. */
 function replaceById<Edit extends { readonly id: string }>(
@@ -126,6 +136,17 @@ export function DayGroup({
   const save = useAction(updateDescription, {
     unreachableMessage: timeEntryMessages.unexpected,
     optimistic: (input) => showEdit(input),
+    onSuccess: (data) => onEntryWeek(data.entry.weekStart),
+  });
+
+  /** TT-54: el par elegido se ve en la fila mientras viaja, y vuelve si falla. */
+  const [projectEdits, showProjectEdit] = useOptimistic<
+    readonly EntryProjectChange[],
+    EntryProjectChange
+  >([], replaceById);
+  const saveProject = useAction(saveEntryProject, {
+    unreachableMessage: timeEntryMessages.unexpected,
+    optimistic: (input) => showProjectEdit(input),
     onSuccess: (data) => onEntryWeek(data.entry.weekStart),
   });
 
@@ -230,20 +251,28 @@ export function DayGroup({
           {entries.map((entry) => {
             const edit = edits.find((pending) => pending.id === entry.id);
             const timeEdit = timeEdits.find((pending) => pending.id === entry.id);
+            const projectEdit = projectEdits.find((pending) => pending.id === entry.id);
             return (
               <EntryRow
                 key={entry.id}
                 entry={entry}
                 description={edit?.description ?? entry.description}
+                project={
+                  projectEdit?.selection ?? { project: entry.project, task: entry.task }
+                }
                 busy={
                   (save.pending && edit !== undefined) ||
-                  (saveTimes.pending && timeEdit !== undefined)
+                  (saveTimes.pending && timeEdit !== undefined) ||
+                  (saveProject.pending && projectEdit !== undefined)
                 }
                 canTrack={canTrack}
                 pendingTimes={timeEdit ?? null}
                 todayKey={todayKey}
                 minDayKey={minDayKey}
                 onSave={(description) => run(save, { id: entry.id, description })}
+                onChangeProject={(selection) =>
+                  run(saveProject, { id: entry.id, selection })
+                }
                 onSaveTimes={(times) =>
                   run(saveTimes, {
                     id: entry.id,
@@ -266,6 +295,7 @@ export function DayGroup({
       )}
 
       {(save.failure !== null ||
+        saveProject.failure !== null ||
         remove.failure !== null ||
         saveTimes.failure !== null ||
         duplicate.failure !== null) && (
@@ -276,6 +306,14 @@ export function DayGroup({
               message={save.failure.message}
               retryDisabled={save.pending}
               onRetry={retryOf(save)}
+            />
+          )}
+          {saveProject.failure !== null && (
+            <TrackerFeedback
+              title={trackerLabels.projectNotSaved}
+              message={saveProject.failure.message}
+              retryDisabled={saveProject.pending}
+              onRetry={retryOf(saveProject)}
             />
           )}
           {saveTimes.failure !== null && (

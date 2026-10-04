@@ -1,0 +1,260 @@
+"use client";
+
+import { FolderIcon, SearchIcon } from "lucide-react";
+import Link from "next/link";
+import { useState, type KeyboardEvent, type Ref } from "react";
+
+import { buttonVariants } from "@/components/ui/button";
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxGroup,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxLabel,
+  ComboboxList,
+  ComboboxTrigger,
+} from "@/components/ui/combobox";
+import { InputGroupAddon } from "@/components/ui/input-group";
+import { cn } from "@/lib/utils";
+import { paletteColor } from "@/modules/project/palette";
+import type { ProjectRef, ProjectSelection } from "@/modules/project/schema";
+
+import { projectLabels, projectTaskLabel } from "./labels";
+import {
+  pickerView,
+  sameSelection,
+  type PickerEmpty,
+  type PickerGroup,
+  type PickerOption,
+} from "./picker-model";
+import { useTrackingCatalog } from "./tracking-catalog";
+
+type ProjectPickerProps = {
+  readonly value: ProjectSelection;
+  readonly onChange: (selection: ProjectSelection) => void;
+  /** Sin selección, la barra dice «Proyecto» (TT-06) y la fila «Sin proyecto» (TT-50). */
+  readonly variant: "bar" | "row";
+  /** El nombre accesible del disparador, armado por quien lo usa. */
+  readonly label: string;
+  /** Con el cambio en vuelo el disparador queda inactivo y no abre. */
+  readonly pending?: boolean;
+  /** TT-92: el proyecto como texto, sin disparador. */
+  readonly readOnly?: boolean;
+  readonly triggerRef?: Ref<HTMLButtonElement>;
+  readonly onOpenChange?: (open: boolean) => void;
+};
+
+/** Lo que nombra una opción y lo que muestra el disparador con selección. */
+function selectionLabel({ project, task }: ProjectSelection): string {
+  if (project === null) {
+    return projectLabels.noProject;
+  }
+  return task === null ? project.name : projectTaskLabel(project.name, task.name);
+}
+
+/** El punto es decorativo: el nombre ya dice cuál es el proyecto. */
+function ProjectDot({ project }: { readonly project: ProjectRef }) {
+  return (
+    <span
+      aria-hidden="true"
+      data-slot="project-dot"
+      className="size-2 shrink-0 rounded-full"
+      style={{ backgroundColor: paletteColor(project.color).value }}
+    />
+  );
+}
+
+/** El punto y el nombre, o «Proyecto: Tarea». */
+function SelectionText({ selection }: { readonly selection: ProjectSelection }) {
+  if (selection.project === null) {
+    return <span className="text-muted-foreground">{projectLabels.noProject}</span>;
+  }
+  return (
+    <>
+      <ProjectDot project={selection.project} />
+      <span className="truncate">{selectionLabel(selection)}</span>
+    </>
+  );
+}
+
+/**
+ * Una tecla imprimible sobre el disparador cerrado elegiría la opción que
+ * empieza con esa letra (typeahead de la primitiva): un proyecto cambiaría
+ * sin abrir el selector. Los atajos del rastreador escuchan en el documento
+ * y no se ven afectados.
+ */
+function preventTypeahead(
+  event: KeyboardEvent<HTMLButtonElement> & { preventBaseUIHandler: () => void },
+): void {
+  if (event.key.length === 1 && event.key !== " ") {
+    event.preventBaseUIHandler();
+  }
+}
+
+/**
+ * El selector de proyecto y tarea (TT-06 … TT-11): un disparador con rol
+ * `combobox` que abre un diálogo con el buscador y la lista. No guarda la
+ * selección: la recibe y avisa el cambio. Filtra solo `picker-model.ts`.
+ */
+export function ProjectPicker({
+  value,
+  onChange,
+  variant,
+  label,
+  pending = false,
+  readOnly = false,
+  triggerRef,
+  onOpenChange,
+}: ProjectPickerProps) {
+  const catalog = useTrackingCatalog();
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
+  if (readOnly) {
+    return (
+      <span className="flex min-w-0 items-center gap-1.5 text-sm">
+        <SelectionText selection={value} />
+      </span>
+    );
+  }
+
+  const view = pickerView(catalog, search);
+  // «Sin proyecto» va en un grupo propio solo para la primitiva, que pide que
+  // todos los ítems estén agrupados; se dibuja sin grupo.
+  const items: readonly PickerGroup[] =
+    view.none === null
+      ? view.groups
+      : [{ key: "none", client: null, items: [view.none] }, ...view.groups];
+  const current: PickerOption = { key: "current", selection: value };
+
+  function changeOpen(next: boolean): void {
+    if (next && pending) {
+      return;
+    }
+    setOpen(next);
+    onOpenChange?.(next);
+  }
+
+  function choose(option: PickerOption | null): void {
+    if (option === null || sameSelection(option.selection, value)) {
+      return;
+    }
+    onChange(option.selection);
+  }
+
+  return (
+    <Combobox<PickerOption>
+      items={items}
+      filter={null}
+      value={current}
+      onValueChange={choose}
+      isItemEqualToValue={(item, selected) =>
+        sameSelection(item.selection, selected.selection)
+      }
+      itemToStringLabel={(option) => selectionLabel(option.selection)}
+      inputValue={search}
+      onInputValueChange={setSearch}
+      open={open}
+      onOpenChange={changeOpen}
+    >
+      <ComboboxTrigger
+        ref={triggerRef}
+        aria-label={label}
+        aria-disabled={pending || undefined}
+        onKeyDown={preventTypeahead}
+        className={cn(
+          buttonVariants({ variant: "ghost", size: "sm" }),
+          "max-w-64 min-w-0 justify-start font-normal aria-disabled:opacity-60",
+        )}
+      >
+        {value.project === null && variant === "bar" ? (
+          <>
+            <FolderIcon aria-hidden="true" className="text-muted-foreground" />
+            <span className="text-muted-foreground">{projectLabels.pickerEmpty}</span>
+          </>
+        ) : (
+          <SelectionText selection={value} />
+        )}
+      </ComboboxTrigger>
+      <ComboboxContent className="w-80">
+        <ComboboxInput
+          showTrigger={false}
+          aria-label={projectLabels.pickerSearch}
+          placeholder={projectLabels.pickerSearch}
+        >
+          <InputGroupAddon>
+            <SearchIcon aria-hidden="true" />
+          </InputGroupAddon>
+        </ComboboxInput>
+        {/* Montada siempre, así el lector de pantalla anuncia el vacío al aparecer. */}
+        <div role="status" className="text-muted-foreground px-2 text-center text-sm">
+          {view.empty !== null && <EmptyMessage empty={view.empty} />}
+        </div>
+        <ComboboxList>
+          {view.none !== null && (
+            <ComboboxItem value={view.none} className="text-muted-foreground">
+              {projectLabels.noProject}
+            </ComboboxItem>
+          )}
+          {view.groups.map((group) => (
+            <ComboboxGroup key={group.key}>
+              <ComboboxLabel>
+                {group.client?.name ?? projectLabels.noClient}
+              </ComboboxLabel>
+              {group.items.map((option) => (
+                <PickerItem key={option.key} option={option} />
+              ))}
+            </ComboboxGroup>
+          ))}
+        </ComboboxList>
+      </ComboboxContent>
+    </Combobox>
+  );
+}
+
+/** Un proyecto con su punto, o una tarea con sangría debajo de su proyecto. */
+function PickerItem({ option }: { readonly option: PickerOption }) {
+  const { project, task } = option.selection;
+  if (project === null) {
+    return null;
+  }
+  if (task === null) {
+    return (
+      <ComboboxItem value={option}>
+        <ProjectDot project={project} />
+        <span className="truncate">{project.name}</span>
+      </ComboboxItem>
+    );
+  }
+  // El nombre accesible es «Proyecto: Tarea»; a la vista, la sangría dice de
+  // qué proyecto es.
+  return (
+    <ComboboxItem
+      value={option}
+      aria-label={projectTaskLabel(project.name, task.name)}
+      className="pl-6"
+    >
+      <span className="truncate">{task.name}</span>
+    </ComboboxItem>
+  );
+}
+
+function EmptyMessage({ empty }: { readonly empty: PickerEmpty }) {
+  if (empty.kind === "noMatches") {
+    return <p className="py-2">{projectLabels.pickerNoMatches}</p>;
+  }
+  return (
+    <div className="flex flex-col items-center gap-1 py-2">
+      <p>{projectLabels.pickerNoProjects}</p>
+      {empty.canCreateProject && (
+        <Link
+          href="/proyectos"
+          className={buttonVariants({ variant: "link", size: "sm" })}
+        >
+          {projectLabels.pickerGoToProjects}
+        </Link>
+      )}
+    </div>
+  );
+}

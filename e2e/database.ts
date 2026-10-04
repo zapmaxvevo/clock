@@ -128,3 +128,101 @@ export async function revokeProjectManager(email: string, name: string): Promise
     [email, name],
   );
 }
+
+/** Lo que siembra `seedProject`. Los nombres llevan el sufijo del recorrido. */
+export type SeedProject = {
+  readonly name: string;
+  /** Un cliente nuevo con ese nombre, o «Sin cliente» si falta. */
+  readonly client?: string;
+  /** Una clave de la paleta; la base rechaza cualquier otra. */
+  readonly color?: string;
+  /** La fase 1 crea todo público (P-17): privado es lo que solo se siembra. */
+  readonly isPublic?: boolean;
+  /** Tareas activas del proyecto. */
+  readonly tasks?: readonly string[];
+  /**
+   * Emails de quienes son miembros del proyecto. Cada persona tiene que haber
+   * entrado antes a la aplicación, que es lo que le crea la membresía.
+   */
+  readonly members?: readonly string[];
+};
+
+/**
+ * Siembra un proyecto en el workspace de los e2e, con su cliente, sus tareas
+ * y sus miembros, en una transacción. Es lo que la fase 1 no puede producir
+ * por la interfaz: un proyecto privado, o uno con miembros que no son quien
+ * lo creó. Cada fila tiene que insertarse exactamente una vez; si una persona
+ * no tiene membresía, se corta sin dejar nada.
+ */
+export async function seedProject(project: SeedProject): Promise<void> {
+  await withDatabase(async (client) => {
+    async function insertOne(sql: string, values: readonly unknown[]): Promise<string> {
+      const result = await client.query<{ id: string }>(sql, [...values]);
+      const row = result.rows.at(0);
+      if (result.rowCount !== 1 || row === undefined) {
+        throw new Error(`Se esperaba insertar una fila e insertaron ${result.rowCount}.`);
+      }
+      return row.id;
+    }
+
+    await client.query("begin");
+    try {
+      const clientId =
+        project.client === undefined
+          ? null
+          : await insertOne(
+              `insert into client (workspace_id, name)
+               values (${FIRST_WORKSPACE}, $1)
+               returning id`,
+              [project.client],
+            );
+      const projectId = await insertOne(
+        `insert into project (workspace_id, client_id, name, color, is_public)
+         values (${FIRST_WORKSPACE}, $1, $2, $3, $4)
+         returning id`,
+        [clientId, project.name, project.color ?? "blue", project.isPublic ?? true],
+      );
+      for (const task of project.tasks ?? []) {
+        await insertOne(
+          `insert into task (workspace_id, project_id, name)
+           values (${FIRST_WORKSPACE}, $1, $2)
+           returning id`,
+          [projectId, task],
+        );
+      }
+      for (const email of project.members ?? []) {
+        await insertOne(
+          `insert into project_member (workspace_id, project_id, user_id)
+           select membership.workspace_id, $1, membership.user_id
+             from membership
+             join "user" on "user".id = membership.user_id
+            where membership.workspace_id = ${FIRST_WORKSPACE}
+              and "user".email = $2
+           returning project_id as id`,
+          [projectId, email],
+        );
+      }
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    }
+  });
+}
+
+/**
+ * Marca una tarea como hecha. La fase 1 no tiene pantalla para eso: es el
+ * estado que deja otra persona.
+ */
+export async function markTaskDone(projectName: string, taskName: string): Promise<void> {
+  await updateOne(
+    `update task
+        set status = 'done'
+      where workspace_id = ${FIRST_WORKSPACE}
+        and project_id = (select id from project
+                           where workspace_id = ${FIRST_WORKSPACE}
+                             and name = $1)
+        and name = $2`,
+    [projectName, taskName],
+  );
+}
