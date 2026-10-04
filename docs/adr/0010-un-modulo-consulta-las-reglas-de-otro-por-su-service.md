@@ -75,6 +75,7 @@ La opción 3.
   antes de la escritura. Si una operación necesita que no cambie, el bloqueo lo
   decide el contrato de quien llama, no la función exportada. Es la primera
   función de un service que recibe `tx`; las demás siguen abriendo la suya.
+
 - **Lo que solo se muestra se lee en un join**, en el repository del módulo que
   dibuja: las columnas que la vista necesita —nombre, color, nombre de la
   tarea— y ninguna condición de acceso, de archivado ni de estado. Si alguna vez

@@ -6,6 +6,8 @@ Contrato del décimo slice vertical de la fase 1. Módulos `time-entry` y
 - **Fuente de los comportamientos:** `docs/parity/time-tracker.md` (TT-nn) y
   `docs/parity/proyectos.md` (PR-nn), su §14.1.
 - **Lugar en el plan:** [mapa de la fase 1](fase1-mapa.md).
+- **Correcciones aplicadas:** ronda 1,
+  [`correcciones-fase1-slice10.md`](correcciones-fase1-slice10.md).
 - **Decisiones de arquitectura asociadas:**
   - [ADR 0004, núcleo de proyectos en la fase 1](../adr/0004-nucleo-de-proyectos-en-fase-1.md): fija el borde.
   - [ADR 0007, el cliente elige el id de la entrada que crea](../adr/0007-el-cliente-elige-el-id-de-las-altas.md): las altas que ganan proyecto siguen su regla.
@@ -22,6 +24,8 @@ El contrato da por tomadas estas decisiones del equipo:
 - Quien queda fuera de un proyecto privado sigue viendo sus entradas con el
   nombre y el color del proyecto (P-27, PR-71).
 - Crear un proyecto desde el selector queda fuera de la fase 1 (TT-09).
+- **El 10 se implementa antes que el 6 y el 7**, y trae la migración de
+  `time-entry` a las piezas compartidas (orden decidido en la ronda 1).
 
 ## 0. Precondición de arranque
 
@@ -30,17 +34,28 @@ El contrato da por tomadas estas decisiones del equipo:
 - **Postgres 15 o posterior** en todos los entornos, por la misma cláusula
   `on delete set null (columna)` que ya pide el 9. Sigue pendiente verificarlo
   en Neon (`estado-fase1.md`).
-- **Los slices 6 y 7 tienen contrato en paralelo.** Puntos de contacto:
-  - **Slice 6** toca `entry-row.tsx`, `day-group.tsx`, `entry-list.tsx` y suma
-    actions a `time-entry`. Si se mergea antes, la migración de §4.1 cubre
-    también sus usos de `useEntryAction`, `useNewEntryId` y `handle`: la regla
-    es «todo lo que haya en el módulo al arrancar». Si este va antes, el 6
-    arranca sobre las piezas compartidas.
-  - **Slice 7** cambia el esquema. Si se mergea antes, las migraciones de §2 se
-    generan de nuevo después del rebase; sus etiquetas son fijas, el número no.
+- **El 10 va primero; el 6 y el 7 se adaptan a él.** Los tres tienen contrato y
+  comparten archivos y firmas de `time-entry`. Lo que el 10 cambia y los otros
+  dos tienen que tomar como punto de partida:
+  - **La migración de §4.1**: `useAction`, `useNewId`, `handle` y `failure` de
+    las piezas compartidas, y `TimeEntryError` como `DomainError`. El 6 suma
+    sus actions y sus hooks directamente sobre ellas.
+  - **`timeEntryView`** gana `project` y `task` (§4.2), y **`toView`** recibe
+    la fila con sus referencias, `EntryWithRefs` (§5.2). Toda vista nueva del 6
+    o del 7 los trae.
+  - **`time-entry/service.ts`**: las altas validan el par y las lecturas de una
+    entrada traen sus referencias, con la regla de §5.2.
+  - **`entry-row.tsx`** dibuja el selector en el lugar de «Sin proyecto», y
+    **`manual-bar.tsx`** también.
+  - **Las migraciones**: las del 10 son la `0005` y la `0006`. La del 7 se
+    genera después, sobre ellas.
+
+  El slice que entra segundo en cada archivo es el que se adapta; con el orden
+  decidido, son el 6 y el 7.
+
 - **Antes de implementar, una ronda corta del `architecture-reviewer` contra el
-  árbol** (lección del slice 9 en `estado-fase1.md`), sobre todo si el 6 entró
-  antes.
+  árbol** (lección del slice 9 en `estado-fase1.md`), si entre este contrato y
+  el arranque entró algo más a `main`.
 
 ## 1. Alcance
 
@@ -69,6 +84,8 @@ Entran por arrastre, verificándose por el camino nuevo:
 - **TT-57 y TT-58**: continuar y duplicar copian proyecto y tarea.
 - **TT-38 y TT-39**: recargar o abrir en otro dispositivo muestra el proyecto
   del timer.
+- **TT-92**: con la membresía desactivada, el proyecto se muestra y no se
+  cambia.
 - **TT-93**: la entrada sin proyecto sigue siendo válida en todo el recorrido.
 
 ### Lo que el slice decide y que la paridad tiene que registrar
@@ -113,17 +130,18 @@ Lo registra `parity-analyst` antes del merge (§6):
 
 | Archivo                                              | Qué cambia                                                                                                                   | Qué hay que volver a probar                        |
 | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| `src/server/db/schema.ts`                            | `time_entry.project_id`, `task_id`, dos claves, un `check` y un índice (§2).                                                 | La creación de entradas de todos los slices        |
+| `src/server/db/schema.ts`                            | `time_entry.project_id`, `task_id`, dos claves, un `check` y un índice parcial (§2).                                         | La creación de entradas de todos los slices        |
 | `src/server/db/constraint-error.ts`                  | Suma `FOREIGN_KEY_VIOLATION`.                                                                                                | —                                                  |
 | `time-entry/schema.ts`                               | Los inputs de alta ganan el par; `updateEntryProjectInput`; la vista gana `project` y `task`; los tipos de resultado (§4.1). | `schema.test.ts` entero                            |
-| `time-entry/repository.ts`                           | Las lecturas devuelven la entrada con sus referencias; las altas reciben el par; `updateProject` (§5.2).                     | Todo test de integración del módulo                |
+| `time-entry/repository.ts`                           | Las lecturas devuelven `EntryWithRefs`; las altas reciben el par; `updateProject` (§5.2).                                    | Todo test de integración del módulo                |
 | `time-entry/service.ts`                              | `TimeEntryError` extiende `DomainError`; las altas validan el par; `updateEntryProject`; las vistas con proyecto (§4).       | `service.integration.test.ts` entero               |
 | `time-entry/actions.ts`                              | `handle` y `failure` compartidos (§4.1); `updateEntryProject`.                                                               | `actions.integration.test.ts` entero               |
 | `time-entry` `permissions` y `audit` tests           | Las llamadas al service con el par.                                                                                          | Los dos archivos enteros                           |
 | `tracker-bar.tsx`, `day-group.tsx`, `entry-list.tsx` | `useAction` y `useNewId` en vez de las copias; el selector y su mutación.                                                    | TT-22 … TT-30, TT-55 … TT-58, TT-65, TT-89, TT-109 |
-| `timer-bar.tsx`, `manual-bar.tsx`, `entry-row.tsx`   | El selector en el lugar de «Sin proyecto».                                                                                   | TT-25, TT-28, TT-49, TT-110                        |
+| `timer-bar.tsx`, `manual-bar.tsx`, `entry-row.tsx`   | El selector en el lugar de «Sin proyecto».                                                                                   | TT-25, TT-28, TT-49, TT-92, TT-110                 |
 | `tracker-screen.tsx`                                 | Lee el catálogo del selector y lo provee.                                                                                    | TT-85, TT-92                                       |
 | `project/service.ts`, `project/schema.ts`            | `getTrackingCatalog`, `assertTrackable`, `taskUnavailable`, `ProjectRef`.                                                    | `service.integration.test.ts` del módulo           |
+| `project/repository.ts`                              | `findProject` recibe el ejecutor; `findTask(tx, …)` nuevo por workspace, proyecto e id (§4.3).                               | `createTask` del slice 9                           |
 | `src/test/factories.ts`                              | `seedTimeEntry` acepta `projectId` y `taskId`.                                                                               | —                                                  |
 | `CLAUDE.md`                                          | Una línea del ADR 0010 en «Recorrido de una mutación», si se acepta.                                                         | —                                                  |
 
@@ -158,7 +176,7 @@ Las restricciones son las que fija el §2.3 del 9, con nombre explícito:
 | `time_entry_project_fk`                 | `(workspace_id, project_id)` → `project (workspace_id, id)`                   | `set null (project_id)` |
 | `time_entry_task_fk`                    | `(workspace_id, project_id, task_id)` → `task (workspace_id, project_id, id)` | `set null (task_id)`    |
 | `time_entry_task_needs_project`         | `check (task_id is null or project_id is not null)`                           | —                       |
-| `time_entry_workspace_project_task_idx` | índice `(workspace_id, project_id, task_id)`                                  | —                       |
+| `time_entry_workspace_project_task_idx` | índice `(workspace_id, project_id, task_id) where project_id is not null`     | —                       |
 
 - **La clave de tres columnas apunta a `task_workspace_project_id_unq`**, que
   dejó el 9. Por construcción, la tarea de una entrada es de su proyecto
@@ -172,10 +190,12 @@ Las restricciones son las que fija el §2.3 del 9, con nombre explícito:
   intentaría anular `workspace_id`.
 - **`time_entry` se declara después de `task`** en `schema.ts` si las
   referencias de las claves lo piden.
-- **El índice** sirve a los dos `set null` —borrar un proyecto o una tarea
-  recorre `time_entry`, que es la tabla más grande del modelo— y a la grilla
-  del slice 13, que agrupa por proyecto y tarea. Cuesta una entrada de índice
-  por alta.
+- **El índice existe por los dos `set null`**: borrar un proyecto o una tarea
+  recorre `time_entry`, que es la tabla más grande del modelo, buscando las
+  entradas que los referencian. **Es parcial, `where project_id is not null`**:
+  esas búsquedas nunca piden una entrada sin proyecto, y la mayoría de las
+  altas de hoy no llevan proyecto, así que no pagan la entrada de índice. El
+  slice 13 decide su propio índice si la grilla lo necesita.
 
 ### 2.2 Lo que hereda del slice 9
 
@@ -196,25 +216,33 @@ Las cinco se prueban con sentencias directas (criterio 2).
 ### 2.3 Sin tiempo de caída
 
 - Agregar dos columnas nulables sin valor por omisión no reescribe la tabla.
-- Las dos claves y el `check` se validan recorriendo `time_entry`, con todas
-  las filas en nulo, y el índice se construye sin `concurrently`. Las dos cosas
-  bloquean las escrituras sobre `time_entry` mientras duran; con el tamaño de
-  hoy son segundos. Si el despliegue llega con la tabla grande, las claves van
-  con `not valid` y `validate constraint` en una segunda sentencia, y el índice
-  con `concurrently` en una migración propia.
+- **Agregar cada clave toma `SHARE ROW EXCLUSIVE` sobre `time_entry` y también
+  sobre la tabla a la que apunta**: `project` para la primera, `task` para la
+  segunda. Mientras dura, se bloquean las escrituras sobre las tres tablas, no
+  solo sobre `time_entry`. Las claves y el `check` se validan recorriendo
+  `time_entry`, con todas las filas en nulo.
+- **El índice se construye sin `concurrently`** y bloquea las escrituras sobre
+  `time_entry` mientras dura.
+- Con el tamaño de hoy, todo son segundos. Si el despliegue llega con la tabla
+  grande, las claves van con `not valid` y `validate constraint` en una segunda
+  sentencia, y el índice con `concurrently` en una migración propia.
 - Ninguna fila existente cambia: todas quedan sin proyecto, que es lo que eran.
 
 ### 2.4 Reversión
 
 Si hay que volver atrás, **se pierde el proyecto y la tarea de todas las
-entradas**; las entradas y sus horas quedan.
+entradas**; las entradas y sus horas quedan. El orden importa:
 
-1. El índice, el `check` y las dos claves.
-2. Las columnas `task_id` y `project_id`.
-3. Las filas de las dos migraciones en `drizzle.__drizzle_migrations`, las que
+1. **Primero el código**: se despliega la versión anterior al slice, que no
+   lee ni escribe `project_id` ni `task_id`. Con el esquema revertido antes, el
+   código del slice fallaría en cada lectura y cada alta.
+2. El índice, el `check` y las dos claves.
+3. Las columnas `task_id` y `project_id`.
+4. Las filas de las dos migraciones en `drizzle.__drizzle_migrations`, las que
    tienen como `created_at` el `when` de sus entradas en el diario.
 
-Es el paso 1 de la reversión del slice 9 (§2.6 de su contrato).
+Los pasos 2 a 4 son el paso 1 de la reversión del slice 9 (§2.6 de su
+contrato).
 
 ## 3. Permisos
 
@@ -267,11 +295,11 @@ que valida una tarea; `time-entry` no cambia.
 de cualquier cambio de conducta (handshake, §6).
 
 - **Por qué ahora.** Este slice toca las actions del módulo, que es la
-  condición que el mapa puso. Y la necesita: con el ADR 0010, `time-entry`
-  recibe el `ProjectError` de `assertTrackable`. El `failure` local solo
-  reconoce `TimeEntryError`, así que un proyecto archivado saldría como
-  `unexpected`, con «Reintentar». El de `src/server/action.ts` reconoce
-  cualquier `DomainError`.
+  condición que el mapa puso, y va antes que el 6 y el 7. Y la necesita: con el
+  ADR 0010, `time-entry` recibe el `ProjectError` de `assertTrackable`. El
+  `failure` local solo reconoce `TimeEntryError`, así que un proyecto archivado
+  saldría como `unexpected`, con «Reintentar». El de `src/server/action.ts`
+  reconoce cualquier `DomainError`.
 - **El costo.** Mecánico y sin cambio de conducta: los textos de los dos lados
   son los mismos y los hooks son copias casi literales.
   - Servidor: `actions.ts` usa `handle(work, { paths: ["/"], messages })` con
@@ -289,8 +317,8 @@ de cualquier cambio de conducta (handshake, §6).
     (criterio 14).
 - **Lo que costaría dejarlo.** Escribir el selector, una action nueva y tres
   mutaciones más sobre las copias, que agranda lo que hay que migrar después;
-  y una traducción propia del error de otro módulo dentro de `time-entry`, que
-  es otra copia.
+  una traducción propia del error de otro módulo dentro de `time-entry`, que
+  es otra copia; y que el 6 sume sus actions también sobre las copias.
 
 ### 4.2 Los tipos
 
@@ -373,7 +401,7 @@ Dos piezas, una por módulo.
 ```ts
 /**
  * PR-23, PR-74, TT-08, TT-77. Lanza `ProjectError("not_found", …)` si la
- * persona no puede cargar horas en ese proyecto o esa tarea. Corre en la
+ * persona no puede cargar horas en ese proyecto o esa tarea. Solo lee, con la
  * transacción de quien la llama.
  */
 export async function assertTrackable(
@@ -384,18 +412,34 @@ export async function assertTrackable(
 ```
 
 1. Lee el proyecto **en el workspace de quien actúa**, con su fila de
-   `project_member` (`left join`, como `findProject`), dentro de `tx`.
+   `project_member`, con `findProject(tx, …)`. `findProject` pasa a recibir el
+   ejecutor como primer argumento, como `listClients`; `createTask` del 9 le
+   pasa `db`.
 2. Sin fila, archivado, o con `can(actor, "project.track", recurso)` en falso:
    `not_found` con `projectUnavailable` (TT-77).
-3. Si `taskId` no es nulo, lee la tarea **de ese proyecto y ese workspace**. Sin
-   fila, o con `status = 'done'`: `not_found` con `taskUnavailable` (PR-74). Una
-   tarea de otro proyecto no se encuentra, así que responde lo mismo.
+3. Si `taskId` no es nulo, lee la tarea con `findTask(tx, workspaceId,
+projectId, taskId)`, nuevo en `project/repository.ts`, que filtra por los
+   tres. Sin fila, o con `status = 'done'`: `not_found` con `taskUnavailable`
+   (PR-74). Una tarea de otro proyecto no se encuentra, así que responde lo
+   mismo.
 
-**Sin bloqueo, por decisión.** Una asignación que se cruza con un archivado de
-otra persona termina igual que si el archivado hubiera llegado justo después:
-la entrada conserva el proyecto (TT-104). Bloquear la fila no cambia ningún
-desenlace observable. Lo que sí importaría —que el proyecto o la tarea se
-borren en el medio— lo resuelve la clave foránea (§4.5).
+Lo que fija el ADR 0010 para la función:
+
+- **Solo lee con el `tx` que recibe**: no abre otra transacción, no usa `db` y
+  no escribe.
+- **Lanza solo `not_found`**, un código de `ActionErrorCode`.
+- **Qué da el `tx` y qué no.** Si `assertTrackable` rechaza, se deshace todo lo
+  que la operación hizo antes, también el cierre del timer de `startTimer` y
+  `continueEntry`; la validación y la escritura van por la misma conexión; y la
+  escritura la protege la clave foránea. **No da coherencia de snapshot**: con
+  `read committed`, lo leído puede cambiar antes de escribir.
+
+**Sin bloqueo, por decisión de este contrato**, que es quien llama. Una
+asignación que se cruza con un archivado de otra persona termina igual que si
+el archivado hubiera llegado justo después: la entrada conserva el proyecto
+(TT-104). Bloquear la fila no cambia ningún desenlace observable. Lo que sí
+importaría —que el proyecto o la tarea se borren en el medio— lo resuelve la
+clave foránea (§4.5).
 
 **`pairToCheck`, en `src/modules/time-entry/assignment.ts`** (nuevo, puro):
 
@@ -452,17 +496,22 @@ todo en la misma transacción.
 
 **`updateEntryProject`**: TT-10, TT-11, TT-27, TT-54.
 
-1. Lee la entrada con bloqueo y la autoriza con `timeEntry.own.update`, como
-   `updateDescription`: `not_found` con TT-80 si no existe, `forbidden` con
-   TT-79 si es ajena o si la membresía no está activa.
-2. **Si el par pedido es el que ya tiene, responde la vista sin escribir y sin
+1. **La action exige el permiso antes de tocar nada**, como las demás de
+   `time-entry`: `assertCan(actor, "timeEntry.own.update",
+ownTimeEntryResource(actor))`. Una membresía no activa recibe el mensaje
+   neutro de TT-79 sin que se busque la fila, también con un id que no existe.
+2. El service lee la entrada con bloqueo y la autoriza con
+   `timeEntry.own.update` sobre su dueño real, como `updateDescription`:
+   `not_found` con TT-80 si no existe, `forbidden` con el texto de TT-79 que
+   nombra la entrada si es ajena.
+3. **Si el par pedido es el que ya tiene, responde la vista sin escribir y sin
    registro de auditoría.**
-3. Si `pairToCheck(entrada, pedido)` da un par, `assertTrackable(tx, actor,
+4. Si `pairToCheck(entrada, pedido)` da un par, `assertTrackable(tx, actor,
 par)`. Si da `null` —«Sin proyecto», o quitar solo la tarea—, no valida.
-4. Escribe `project_id` y `task_id` sobre la entrada leída, corra o no.
-5. Escribe `recordAudit` con `timeEntry.updateProject`, `previousValue` y
+5. Escribe `project_id` y `task_id` sobre la entrada leída, corra o no.
+6. Escribe `recordAudit` con `timeEntry.updateProject`, `previousValue` y
    `nextValue` con `{ projectId, taskId }`.
-6. Responde `{ entry }` con la vista de §5.2.
+7. Responde `{ entry }` con la vista de §5.2.
 
 Funciona igual sobre la entrada que corre (TT-27) que sobre una cerrada, y
 también sobre una con horarios de solo lectura (TT-110).
@@ -528,9 +577,10 @@ export type TrackingProjectView = ProjectRef & {
 };
 ```
 
-- **Reusa las tres consultas de `getProjectCatalog`** —clientes, proyectos
-  activos con la fila de miembro, tareas activas de proyectos activos— en un
-  snapshot `repeatable read`. No hay consulta nueva.
+- **El catálogo reusa las tres consultas de `getProjectCatalog`** —clientes,
+  proyectos activos con la fila de miembro, tareas activas de proyectos
+  activos— en un snapshot `repeatable read`. El catálogo no suma consultas; las
+  dos lecturas nuevas del repository son las de `assertTrackable` (§4.3).
 - **El armado se comparte**: una función privada del service recibe la acción
   con la que filtra. `getProjectCatalog` filtra con `project.view`;
   `getTrackingCatalog`, con `project.track`. Es la misma regla de PR-61 vista
@@ -551,19 +601,25 @@ export type TrackingProjectView = ProjectRef & {
 
 ### 5.2 Las entradas con su proyecto
 
-- **Toda lectura de una entrada que termina en una vista** trae su proyecto y
-  su tarea con un `left join` desde el repository de `time-entry` (ADR 0010):
+**La regla: toda lectura del módulo que termine en una `TimeEntryView` trae el
+proyecto y la tarea de la entrada**, también las que sumen slices posteriores
+—la selección del 6, el calendario del 8—. No es una lista cerrada de
+funciones.
+
+- **Cómo**: un `left join` desde el repository de `time-entry` (ADR 0010):
   `project` por `(workspace_id, project_id)` y `task` por
   `(workspace_id, project_id, task_id)`. Solo las columnas de `ProjectRef` y
-  `TaskRef`.
-  - Afecta a `findRunning`, `listClosedBetween`, `findByIdForUpdate`,
-    `findById` y `findOwnById`. Devuelven
-    `EntryRow = TimeEntryRow & { project: … | null; task: … | null }`.
-  - **`findByIdForUpdate` bloquea solo la entrada**: `for update of
+  `TaskRef`. Las lecturas devuelven
+  `EntryWithRefs = TimeEntryRow & { project: … | null; task: … | null }`, y
+  `toView` recibe `EntryWithRefs`, así una lectura sin el join no compila.
+  - Hoy lo cumplen `findRunning`, `listClosedBetween`, `findByIdForUpdate`,
+    `findById` y `findOwnById`.
+  - **Una lectura que bloquea, bloquea solo la entrada**: `for update of
 time_entry`. Postgres rechaza `for update` sobre el lado nulable de un
     `left join`.
-  - `findLatestClosed` y `findLatestClosedBefore` solo se usan por su inicio y
-    su id, y no cambian.
+  - Una lectura que no termina en vista no necesita el join:
+    `findLatestClosed` y `findLatestClosedBefore` solo se usan por su inicio y
+    su id.
 - **Sin ningún filtro.** La entrada muestra su proyecto archivado (TT-104,
   PR-63), privado sin acceso (PR-71) y su tarea hecha (PR-65). El nombre y el
   color son los de ahora, no los de cuando se asignó (PR-102, PR-103). Cambiar
@@ -577,7 +633,7 @@ time_entry`. Postgres rechaza `for update` sobre el lado nulable de un
 - **El color se estrecha con `isPaletteKey`**, como en el service de `project`:
   el `check` de la base no deja guardar otra cosa, y si pasa, se lanza.
 - **El reintento de `createOnce` responde la vista con sus referencias**:
-  `findOwnById` devuelve `EntryRow`, y `replayed` arma la vista con ella.
+  `findOwnById` devuelve `EntryWithRefs`, y `replayed` arma la vista con ella.
 
 ## 6. Reparto de archivos
 
@@ -613,6 +669,8 @@ Rutas absolutas. **(nuevo)** marca lo que crea el slice.
   service: las dos claves, el `check`, los borrados de §2.2 y los predicados
   `isMissingProject` e `isMissingTask` contra un `23503` real, producido con un
   `insert` directo.
+- **`project/repository.ts`**: `findProject(tx, workspaceId, userId, id)` con
+  el ejecutor primero, y `findTask(tx, workspaceId, projectId, id)` nuevo.
 - **`constraint-error.ts`** suma solo la constante
   `FOREIGN_KEY_VIOLATION = "23503"`. Es del slice 2b y no cambia nada más.
 - **`CLAUDE.md`**: la línea del ADR 0010, solo si el equipo lo acepta, en el
@@ -623,6 +681,7 @@ Rutas absolutas. **(nuevo)** marca lo que crea el slice.
 ```
 /home/maxi/program/clock/src/components/ui/combobox.tsx                              (nuevo, generado)
 /home/maxi/program/clock/src/modules/project/components/project-picker.tsx           (nuevo)
+/home/maxi/program/clock/src/modules/project/components/project-picker.test.tsx      (nuevo)
 /home/maxi/program/clock/src/modules/project/components/tracking-catalog.tsx         (nuevo)
 /home/maxi/program/clock/src/modules/project/components/picker-model.ts              (nuevo)
 /home/maxi/program/clock/src/modules/project/components/picker-model.test.ts         (nuevo)
@@ -642,6 +701,10 @@ Rutas absolutas. **(nuevo)** marca lo que crea el slice.
 - **`combobox.tsx`** sale del CLI de shadcn con `components.json` tal como
   está, sobre el `Combobox` de Base UI 1.8. Si el generador suma dependencias,
   `package.json` y `package-lock.json` entran en la lista solo para ese cambio.
+- **`project-picker.test.tsx`** (nuevo) es un test de componente como el de
+  `projects-screen.test.tsx`: `renderToStaticMarkup`, sin `vi.mock`, con el
+  selector envuelto en `TrackingCatalogProvider` y un catálogo armado a mano
+  (criterio 16).
 - `src/hooks/` no cambia: se usa como está.
 
 ### tests-slice10
@@ -695,11 +758,11 @@ tiene que registrar».
 
 2. **Primer commit de funcionalidad de `backend-dev`:** la columna, las
    migraciones, los tipos de §4.2 (`ProjectRef`, `TaskRef`, `ProjectSelection`,
-   `TrackingCatalog`, los inputs, la vista), las firmas de
+   `TrackingCatalog`, los inputs, la vista), `EntryWithRefs`, las firmas de
    `updateEntryProject`, `getTrackingCatalog` y `assertTrackable`, y
    `pairToCheck`.
 3. **`frontend-dev` arranca en paralelo** con `combobox.tsx`,
-   `picker-model.ts` y su test, y los textos de `labels.ts`.
+   `picker-model.ts` y su test, y los textos de los dos `labels.ts`.
 4. Con el commit 2 en la rama, el resto. `tests-slice10` escribe el spec y
    confirma que falla por la funcionalidad.
 
@@ -709,8 +772,14 @@ tiene que registrar».
   contexto con el `TrackingCatalog` y `useTrackingCatalog()`. Envuelve la
   pantalla en `tracker-screen.tsx`, como `ReachWeekProvider`, para que la barra
   y cada fila lo lean sin pasarlo por tres niveles de props.
+  **`useTrackingCatalog()` lanza fuera del proveedor**, como
+  `useDisplayFormats` del slice 7: un catálogo vacío por omisión haría que un
+  selector sin proveedor dijera «No hay proyectos todavía» sin que nadie lo
+  note. Todo test de componente que dibuje el selector, o una fila que lo
+  contenga, lo envuelve en el proveedor.
 - **`picker-model.ts`** (nuevo, puro, sin React) arma lo que el selector dibuja
-  a partir del catálogo, la búsqueda y la selección actual:
+  a partir del catálogo, la búsqueda y la selección actual. **Es el único que
+  filtra**:
   - **La búsqueda** no distingue mayúsculas ni acentos (normaliza con `NFD` y
     descarta las marcas diacríticas). Un cliente que coincide trae todos sus
     proyectos con todas sus tareas; un proyecto que coincide trae todas sus
@@ -720,10 +789,22 @@ tiene que registrar».
   - **El vacío** distingue dos casos: el catálogo sin proyectos (TT-87, con el
     enlace si `canCreateProject`) y la búsqueda sin coincidencias.
 - **`project-picker.tsx`** (nuevo, `"use client"`) es el selector, sin estado
-  propio de la selección: recibe `value: ProjectSelection`,
-  `onChange(selection)`, el modo —`"bar"` o `"row"`— y el nombre de la entrada
-  para su nombre accesible. Lo usan la barra y la fila; después, el timesheet y
-  la edición masiva. Sus reglas de accesibilidad están en «El selector» abajo.
+  propio de la selección. Recibe:
+  - `value: ProjectSelection` y `onChange(selection)`;
+  - `variant: "bar" | "row"`, que decide qué muestra sin selección (TT-06,
+    TT-50);
+  - `label`, el nombre accesible del disparador, **ya armado por quien lo
+    usa**: el selector no sabe qué es una entrada;
+  - `pending`, que lo deja con `aria-disabled` mientras el cambio viaja;
+  - `readOnly`, que lo dibuja como texto, sin `combobox`: el punto y el nombre,
+    o lo que muestra sin selección.
+
+  **El `Combobox` de Base UI va con `filter={null}`** y recibe como ítems la
+  salida de `picker-model.ts`: si filtrara también la primitiva, un cliente que
+  coincide perdería los proyectos cuyo nombre no coincide. Lo usan la barra y
+  la fila; después, el timesheet y la edición masiva. Sus reglas de
+  accesibilidad están en «El selector» abajo.
+
 - **`tracker-bar.tsx`** es dueño del par de la barra, como de la descripción:
   - **Sin timer**, el par es un borrador que viaja con «Iniciar» y con
     «Agregar». «Agregar» lo limpia con éxito si sigue igual a lo que se mandó,
@@ -732,6 +813,9 @@ tiene que registrar».
     `updateEntryProject` sobre ella (TT-27), con vista optimista: el disparador
     muestra lo elegido mientras viaja y vuelve al del servidor si falla
     (TT-90). El aviso es «No se pudo cambiar el proyecto.» con el mensaje.
+  - **Con la membresía no activa** (`canTrack` falso), el selector va con
+    `readOnly`, como el resto de los controles de la barra quedan inactivos, y
+    muestra el proyecto del timer como texto (TT-92).
   - **Todo lo que la barra hace con la descripción cuando cambia el timer** lo
     hace con el par: retenerlo en modo manual si llega un timer de otra
     pestaña, devolverlo al detenerse, y descartarlo con el timer descartado
@@ -752,9 +836,10 @@ tiene que registrar».
   grupo, que sobrevive a la fila. Una operación nueva baja el aviso de duplicar,
   como hoy.
 - **`entry-row.tsx`** dibuja el selector en el lugar de «Sin proyecto», en el
-  orden de TT-49. **Con la membresía no activa** dibuja el texto, sin control:
-  el punto y «Proyecto: Tarea», o «Sin proyecto» en gris (TT-50, TT-92). **El
-  selector no manda nada si el par elegido es el que la fila ya tiene.**
+  orden de TT-49, con `label={entryProjectLabel(entryName)}`. **Con la
+  membresía no activa** lo pasa con `readOnly`: el punto y «Proyecto: Tarea», o
+  «Sin proyecto» en gris (TT-50, TT-92). **El selector no manda nada si el par
+  elegido es el que la fila ya tiene.**
 - **`labels.ts` de `project`** suma los textos del selector:
 
   | Clave                | Texto                                       | Origen       |
@@ -766,13 +851,16 @@ tiene que registrar».
   | `pickerGoToProjects` | «Ir a Proyectos»                            | TT-87        |
   | `pickerNoMatches`    | «Ningún proyecto coincide con la búsqueda.» | TT-07        |
 
-  Y dos funciones: `projectTaskLabel(proyecto, tarea)` → «Proyecto: Tarea»
-  (TT-06), y `entryProjectLabel(entrada)` → «Proyecto de la entrada «…»».
-  `trackerLabels.noProject` de `time-entry` pasa a usar el mismo texto desde
-  `projectLabels`, por la regla de una redacción por causa.
+  Y una función: `projectTaskLabel(proyecto, tarea)` → «Proyecto: Tarea»
+  (TT-06). `trackerLabels.noProject` de `time-entry` pasa a usar el mismo
+  texto desde `projectLabels`, por la regla de una redacción por causa: la
+  dirección `time-entry` → `project` del ADR 0010 lo permite.
 
-- **`labels.ts` de `time-entry`** suma `projectNotSaved`: «No se pudo cambiar el
-  proyecto.» (TT-90).
+- **`labels.ts` de `time-entry`** suma:
+  - `projectNotSaved`: «No se pudo cambiar el proyecto.» (TT-90);
+  - `entryProjectLabel(entryName)` → «Proyecto de la entrada «…»», el nombre
+    accesible del selector de la fila. Vive acá y no en `project`: nombra una
+    entrada, que es de este módulo.
 
 ### El selector
 
@@ -790,6 +878,7 @@ contrato fija:
     El punto es decorativo (`aria-hidden`): el nombre ya dice cuál es.
   - **Con un cambio en vuelo queda inactivo con `aria-disabled` y no abre**,
     sin `disabled`: el foco se queda en él (lección del proyecto).
+  - **Con `readOnly` no hay disparador**: el texto, sin rol `combobox`.
 - **Al abrir, el foco va al buscador**, con nombre accesible
   «Buscar proyecto, cliente o tarea».
 - **Las opciones.**
@@ -845,7 +934,7 @@ contrato fija:
    - «Sin proyecto» deja los dos nulos.
    - El mismo par que ya tiene responde la vista sin escribir y sin registro.
    - Una entrada ajena responde TT-79 con el texto que la nombra; una
-     inexistente, TT-80; una membresía inactiva, el neutro.
+     inexistente, TT-80.
 7. **La regla del par sobre una entrada que ya tiene proyecto** (TT-104, PR-63,
    PR-65, PR-71, PR-106). Con una entrada sembrada con un proyecto archivado,
    con uno privado del que quien actúa no es miembro y con una tarea hecha:
@@ -876,6 +965,9 @@ contrato fija:
       `canCreateProject`; la búsqueda sin coincidencias da el otro.
     - Un proyecto sin tareas no trae opciones de tarea.
 12. **La capa de action.**
+    - `updateEntryProject` **exige su permiso antes de tocar nada**: con la
+      membresía desactivada responde el mensaje neutro de TT-79 sin buscar la
+      fila, también con un id que no existe.
     - `updateEntryProject` traduce el `ZodError`, conserva el código y el
       mensaje del `TimeEntryError` y **del `ProjectError` de otro módulo**
       (`not_found`, no `unexpected`), responde `unexpected` con un error
@@ -895,10 +987,14 @@ contrato fija:
     `ActionResult`, `failure` ni `handle`.
 15. **La pantalla** (TT-06, TT-07, TT-10, TT-11, TT-27, TT-38, TT-49, TT-54,
     TT-57, TT-104, PR-94). Los recorridos 1 a 6 de abajo.
-16. **El selector, accesible.** Los roles y los nombres de «El selector» (§6);
-    el foco en el buscador al abrir y en el disparador al elegir y con
-    `Escape`; el disparador con `aria-disabled` y el foco en él mientras el
-    cambio viaja; una letra escrita en el buscador no dispara su atajo.
+16. **El selector, accesible** (TT-92).
+    - Los roles y los nombres de «El selector» (§6); el foco en el buscador al
+      abrir y en el disparador al elegir y con `Escape`; el disparador con
+      `aria-disabled` y el foco en él mientras el cambio viaja; una letra
+      escrita en el buscador no dispara su atajo.
+    - Con `readOnly` el selector se dibuja como texto, con el proyecto y la
+      tarea o «Sin proyecto», y sin ningún elemento con rol `combobox`.
+    - `useTrackingCatalog()` fuera del proveedor lanza.
 
 ### Con qué se verifica cada criterio
 
@@ -909,22 +1005,27 @@ contrato fija:
 | 3        | integración          | `project/service.integration.test.ts`                                             | el catálogo contra `can(…, "project.track", …)` sobre los mismos proyectos, y el contraste con `getProjectCatalog` |
 | 4        | integración          | `time-entry/service.integration.test.ts`                                          | la fila con su par; cada rechazo con la tabla sin filas nuevas y el timer previo abierto                           |
 | 5        | unidad               | `time-entry/schema.test.ts`                                                       | el `refine` en los tres inputs, con el mensaje                                                                     |
-| 6        | integración          | `time-entry/service.integration.test.ts`                                          | los cambios, el no-op sin `updated_at` nuevo ni registro, y los tres rechazos                                      |
+| 6        | integración          | `time-entry/service.integration.test.ts`                                          | los cambios, el no-op sin `updated_at` nuevo ni registro, y los dos rechazos                                       |
 | 7        | integración          | `time-entry/service.integration.test.ts`                                          | las operaciones sobre los tres estados sembrados                                                                   |
 | 8        | integración          | `time-entry/service.integration.test.ts`                                          | la copia del par; los rechazos sin filas nuevas y el timer previo abierto                                          |
 | 9        | integración          | `time-entry/service.integration.test.ts`                                          | `project` y `task` en cada vista y en `getTrackerState`, con los cambios por SQL                                   |
 | 10       | unidad               | `time-entry/assignment.test.ts`                                                   | la tabla de §4.3                                                                                                   |
 | 11       | unidad               | `project/components/picker-model.test.ts`                                         | cada búsqueda, la opción «Sin proyecto» y los dos vacíos                                                           |
-| 12       | integración          | `time-entry/actions.integration.test.ts`; `time-entry/schema.integration.test.ts` | las traducciones y la revalidación; los dos predicados contra un `23503` real                                      |
+| 12       | integración          | `time-entry/actions.integration.test.ts`; `time-entry/schema.integration.test.ts` | el permiso primero, las traducciones y la revalidación; los dos predicados contra un `23503` real                  |
 | 13       | integración          | `time-entry/audit.integration.test.ts`                                            | el registro del cambio, ninguno en el no-op, y el par en las cuatro altas                                          |
 | 14       | lint, tipos y suites | `npm run lint && npm run typecheck && npm run test:all`                           | los suites de hoy en verde después del paso 1 del handshake, sin cambios en lo que afirman                         |
 | 15       | e2e                  | `e2e/project-picker.spec.ts`                                                      | los recorridos 1 a 6                                                                                               |
-| 16       | e2e                  | `e2e/project-picker.spec.ts`                                                      | el recorrido 7                                                                                                     |
+| 16       | e2e + unidad         | `e2e/project-picker.spec.ts`; `project/components/project-picker.test.tsx`        | el recorrido 7; el marcado con `readOnly` y el lanzamiento fuera del proveedor                                     |
 
 **El vacío de TT-87 no se prueba en e2e**, por la misma razón que el vacío del
 slice 9: la base de los e2e es una sola, compartida y persistente, y «un
 workspace sin proyectos» existe una sola vez en su vida. Lo cubre el criterio
 11 sobre el modelo.
+
+**La membresía desactivada no se prueba en e2e**: ningún spec la produce hoy, y
+lo que el criterio 16 afirma —el texto en lugar del selector— es el marcado del
+componente con `readOnly`. Que la barra y la fila pasen `readOnly` cuando
+`canTrack` es falso lo mira la revisión de frontend.
 
 **El criterio 6 afirma el no-op mirando `updated_at`**, que cambia con
 cualquier `update` de drizzle por el `$onUpdate` de la tabla: un mutante que
@@ -952,10 +1053,14 @@ borrar en la fase 1 y la base persiste. Las horas «de hoy» son pasadas
 3. **La fila** (TT-54, TT-49). Cambiar el proyecto de una entrada cerrada desde
    su fila, ver el foco en el disparador de la fila después de elegir, recargar
    y ver el proyecto nuevo con su punto.
-4. **Lo que no se ofrece y lo que se conserva** (TT-08, PR-23, TT-104). Con un
-   proyecto privado del que la persona no es miembro y uno archivado, ninguno
-   aparece al buscarlos. Una entrada sembrada con el archivado lo muestra en su
-   fila.
+4. **Lo que no se ofrece y lo que se conserva** (TT-08, PR-23, TT-104).
+   1. Con un proyecto privado sembrado del que la persona no es miembro, no
+      aparece al buscarlo.
+   2. Con un proyecto público sembrado, crear por la interfaz, en modo manual,
+      una entrada con ese proyecto. Después, archivarlo con `archiveProject` de
+      `e2e/database.ts`.
+   3. Recargar: la fila sigue mostrando el proyecto archivado, y el selector ya
+      no lo ofrece al buscarlo.
 5. **Archivado en otra pestaña** (PR-94, TT-77). Elegir un proyecto en la barra
    sin timer, archivarlo con `archiveProject`, iniciar, y ver «No se pudo
    iniciar el timer.» con «Ese proyecto ya no está disponible.», sin
