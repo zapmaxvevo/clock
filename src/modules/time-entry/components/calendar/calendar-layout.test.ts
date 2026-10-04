@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import type { TimeEntryView } from "@/modules/time-entry/schema";
+
 import {
+  chronological,
   entrySegments,
   initialScrollMinute,
   isMissing,
@@ -304,5 +307,49 @@ describe("layoutColumn", () => {
       ["segunda", 0, 2],
       ["despues", 0, 1],
     ]);
+  });
+});
+
+describe("chronological", () => {
+  function view(id: string, startedAt: string, running = false): TimeEntryView {
+    return {
+      id,
+      description: "",
+      startedAt,
+      endedAt: running ? null : "2026-10-02T20:00:00.000Z",
+      dayDate: "2026-10-02",
+      weekStart: "2026-09-28",
+      startLabel: "",
+      endLabel: running ? null : "",
+      startClock: "00:00",
+      endClock: running ? null : "17:00",
+      extraDays: 0,
+      durationSeconds: running ? null : 0,
+      durationLabel: running ? null : "0:00",
+      editableTimes: !running,
+      project: null,
+      task: null,
+    };
+  }
+
+  const closed = view("4b000000-0000-4000-8000-000000000000", "2026-10-02T12:00:00.000Z");
+  const later = view("2c000000-0000-4000-8000-000000000000", "2026-10-02T14:00:00.000Z");
+
+  it("sin timer deja las cerradas por inicio", () => {
+    expect(chronological([closed, later], null)).toEqual([closed, later]);
+  });
+
+  it("un timer que empezó antes que una cerrada va primero, no al final", () => {
+    const timer = view(
+      "9f000000-0000-4000-8000-000000000000",
+      "2026-10-02T03:00:00.000Z",
+      true,
+    );
+    expect(chronological([closed, later], timer)).toEqual([timer, closed, later]);
+  });
+
+  it("con el mismo instante desempata por id, como la lectura del repository", () => {
+    const timer = view("1a000000-0000-4000-8000-000000000000", closed.startedAt, true);
+    expect(chronological([closed, later], timer)).toEqual([timer, closed, later]);
   });
 });

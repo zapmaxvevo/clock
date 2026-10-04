@@ -138,6 +138,23 @@ export function initialScrollMinute(now: NowPosition, days: readonly string[]): 
   return clockToMinutes(DEFAULT_SCROLL_CLOCK) ?? 0;
 }
 
+/**
+ * Las cerradas y el timer en orden cronológico, el de `Tab` (CAL-76): por
+ * inicio y, a igual inicio, por id, como las lee el repository. El timer entra
+ * en el lugar de su inicio y no al final.
+ */
+export function chronological(
+  entries: readonly TimeEntryView[],
+  running: TimeEntryView | null,
+): readonly TimeEntryView[] {
+  const all = running === null ? entries : [...entries, running];
+  return [...all].sort(
+    (a, b) =>
+      Date.parse(a.startedAt) - Date.parse(b.startedAt) ||
+      (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+  );
+}
+
 export type PlacedBlock<Item> = {
   readonly item: Item;
   readonly top: number;

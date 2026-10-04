@@ -22,6 +22,7 @@ import { clockLabel, MINUTES_PER_DAY, minutesToClock } from "@/server/time";
 import { useGroupTotalLabel } from "../use-group-total";
 import { CalendarBlock } from "./calendar-block";
 import {
+  chronological,
   entrySegments,
   initialScrollMinute,
   layoutColumn,
@@ -66,24 +67,14 @@ const DIMMED_STYLE: CSSProperties = {
 
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 
-/**
- * Las entradas de cada día del período, con sus segmentos, en orden
- * cronológico (CAL-76): `entries` ya viene por inicio y después por id, y el
- * timer entra en el lugar de su inicio.
- */
+/** Las entradas de cada día del período, con sus segmentos, en orden cronológico (CAL-76). */
 function columnItems(
   state: CalendarState,
   now: NowPosition,
 ): ReadonlyMap<string, readonly ColumnItem[]> {
   const dates = state.days.map((day) => day.date);
   const byDay = new Map<string, ColumnItem[]>(dates.map((date) => [date, []]));
-  const timeline =
-    state.running === null
-      ? state.entries
-      : [...state.entries, state.running].sort(
-          (a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt),
-        );
-  for (const entry of timeline) {
+  for (const entry of chronological(state.entries, state.running)) {
     const segments =
       entry === state.running
         ? runningSegments(entry, now, dates)
