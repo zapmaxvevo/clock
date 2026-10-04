@@ -12,6 +12,8 @@ arrastrando abre el mismo diálogo de alta que un clic. **No cambia nada del
 servidor.**
 
 Fuente de los comportamientos: `docs/parity/calendario.md` (CAL-01 a CAL-100).
+Revisiones del contrato: [ronda 1 de `architecture-reviewer`](correcciones-fase1-slice8b.md),
+con M1 a M3 y m1 a m5 aplicados.
 Decisiones de arquitectura asociadas:
 
 - [ADR 0014, los gestos del calendario son Pointer Events propios, solo con mouse](../adr/0014-los-gestos-del-calendario-son-pointer-events-propios.md),
@@ -56,7 +58,10 @@ gestos: sigue fuera, sin decisión pendiente para este slice.
 ## 0. Precondición de arranque
 
 **El 8b arranca con el 8c en `main`** (`55ce3bf`, rama
-`fase1/slice-8b-arrastre`). Las citas de abajo son de ese árbol.
+`fase1/slice-8b-arrastre`). Las citas de abajo son de ese árbol. Se volvieron a
+verificar después de mergear `main` en la rama: el merge trae `shadcn` en
+`devDependencies` y un cambio en `CLAUDE.md`, y no mueve ninguna de las líneas
+citadas.
 
 **Lo que deja el 8c**, con los nombres del árbol:
 
@@ -74,28 +79,33 @@ gestos: sigue fuera, sin decisión pendiente para este slice.
 
 **Supuestos sobre el árbol**, con archivo y línea en `55ce3bf`:
 
-| Supuesto                                                                                                                                                                                                                           | Dónde                                                                         |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| El efecto de foco de la grilla enfoca el bloque de `focusEntryId` solo con el foco en `body` o en la región, y si no, vuelve sin limpiarlo. Es la guarda que impide un detalle detrás de la confirmación de «Borrar» (T-n6 del 8c) | `calendar-grid.tsx:140-163`, la guarda en `:147-150`                          |
-| Sus dependencias son `focusEntryId`, `onEntryFocused`, `regionRef` y `state`                                                                                                                                                       | `calendar-grid.tsx:163`                                                       |
-| `DayColumn` abre el alta con `onClick`: ignora un clic sobre un bloque y llama a `slotAt` con `state.canTrack`                                                                                                                     | `calendar-grid.tsx:307-316`                                                   |
-| Cada columna es un `role="group"` con `data-calendar-day`, y el contenedor desplazable es `scrollRef`, con `overflow-auto` y `scroll-pt-14`                                                                                        | `calendar-grid.tsx:184-188`, `:319-323`                                       |
-| `columnItems` arma los segmentos de cada día desde `state.entries` y `state.running`                                                                                                                                               | `calendar-grid.tsx:83-107`                                                    |
-| `slotAt` devuelve `null` sin permiso, antes del piso o en un minuto que no existe; `minuteAt` ajusta hacia abajo; `slotDraft` corre el fin al final de un hueco                                                                    | `calendar-layout.ts:147-190`                                                  |
-| `Segment` tiene `date`, `from`, `to`, `startsHere` y `firstVisible`; una entrada que termina a las 00:00 no dibuja segmento en el día siguiente                                                                                    | `calendar-layout.ts:32-71`                                                    |
-| `isMissing`, `minuteHeight`, `SLOT_HEIGHT_PX` (48) y `MIN_BLOCK_HEIGHT_PX` (22)                                                                                                                                                    | `calendar-layout.ts:20-29`, `:142-144`                                        |
-| El bloque es el `TooltipTrigger`: un `button` en el primer segmento visible y un `div` oculto en los otros; `Tooltip disabled={dialogOpen}`; `onClick={onOpen}`                                                                    | `calendar-block.tsx:145-161`                                                  |
-| `useTrackerRefresh()` revalida al enfocar, al volver a ser visible y cada 60 s, sin parámetros; lo llaman la barra del rastreador y el calendario                                                                                  | `use-tracker-refresh.ts:14-35`; `tracker-bar.tsx:99`; `calendar-view.tsx:101` |
-| `useAction`: `optimistic` dentro de la transición; `run` baja el aviso; `retry` reenvía `lastInput`; `onFailure` recibe solo la falla                                                                                              | `src/hooks/use-action.ts:25-28`, `:59-93`                                     |
-| La fila muestra el trío en vuelo atenuado (TT-55) y su aviso es `trackerLabels.entryTimesNotSaved`, «No se pudo guardar el horario de la entrada.»                                                                                 | `day-group.tsx:166-185`, `:344-351`; `labels.ts:22`                           |
-| `updateEntryTimes` escribe y registra `timeEntry.updateTimes` en cada pedido válido; revalida `"/"` y `"/calendario"`                                                                                                              | `service.ts:985-1012`; `actions.ts:59-65`, `:126-134`                         |
-| `updateEntryTimesInput` es `{ id, date, start, end }`                                                                                                                                                                              | `schema.ts:135-142`                                                           |
-| `editableTimes` es falso en la entrada que corre y en la que el trío no puede expresar; `calendarState` trae `minDayKey`, y cada día `beforeWorkspace` y `missingMinutes`                                                          | `schema.ts:319-324`, `:396-438`                                               |
-| `fromView`, `sameDraft`, `draftDuration`, `draftExtraDays`                                                                                                                                                                         | `time-draft.ts:52-90`                                                         |
-| `formatDuration`, `addDaysToKey`, `minutesToClock`, `clockLabel`, `clockDifferenceMinutes`, `shiftClock`, `MINUTES_PER_DAY`                                                                                                        | `src/server/time/index.ts:61`, `:184`, `:369`, `:375`, `:483`, `:503`, `:146` |
-| Los tests de unidad corren en Node, sin DOM: los componentes se prueban con `renderToStaticMarkup`                                                                                                                                 | `vitest.config.ts:7`; `calendar-block.test.tsx:1`                             |
-| `loseActionResponses`, `holdActionResponses`, `holdRefreshes` y `withServerAction`                                                                                                                                                 | `e2e/network.ts:20`, `:56-119`                                                |
-| `clickSlot` calcula el punto de una franja con `minuteHeight`; `openDetails` cuenta los detalles abiertos                                                                                                                          | `e2e/calendar-page.ts:534-558`                                                |
+| Supuesto                                                                                                                                                                                                                           | Dónde                                                                                   |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| El efecto de foco de la grilla enfoca el bloque de `focusEntryId` solo con el foco en `body` o en la región, y si no, vuelve sin limpiarlo. Es la guarda que impide un detalle detrás de la confirmación de «Borrar» (T-n6 del 8c) | `calendar-grid.tsx:140-163`, la guarda en `:147-150`                                    |
+| Sus dependencias son `focusEntryId`, `onEntryFocused`, `regionRef` y `state`                                                                                                                                                       | `calendar-grid.tsx:163`                                                                 |
+| `DayColumn` abre el alta con `onClick`: ignora un clic sobre un bloque y llama a `slotAt` con `state.canTrack`                                                                                                                     | `calendar-grid.tsx:307-316`                                                             |
+| Cada columna es un `role="group"` con `data-calendar-day`, y el contenedor desplazable es `scrollRef`, con `overflow-auto` y `scroll-pt-14`                                                                                        | `calendar-grid.tsx:184-188`, `:319-323`                                                 |
+| `columnItems` arma los segmentos de cada día desde `state.entries` y `state.running`                                                                                                                                               | `calendar-grid.tsx:83-107`                                                              |
+| `slotAt` devuelve `null` sin permiso, antes del piso o en un minuto que no existe; `minuteAt` ajusta hacia abajo; `slotDraft` corre el fin al final de un hueco                                                                    | `calendar-layout.ts:147-190`                                                            |
+| `Segment` tiene `date`, `from`, `to`, `startsHere` y `firstVisible`; una entrada que termina a las 00:00 no dibuja segmento en el día siguiente                                                                                    | `calendar-layout.ts:32-71`                                                              |
+| `isMissing`, `minuteHeight`, `SLOT_HEIGHT_PX` (48) y `MIN_BLOCK_HEIGHT_PX` (22)                                                                                                                                                    | `calendar-layout.ts:20-29`, `:142-144`                                                  |
+| El bloque es el `TooltipTrigger`: un `button` en el primer segmento visible y un `div` oculto en los otros; `Tooltip disabled={dialogOpen}`; `onClick={onOpen}`                                                                    | `calendar-block.tsx:145-161`                                                            |
+| `useTrackerRefresh()` revalida al enfocar, al volver a ser visible y cada 60 s, sin parámetros; lo llaman la barra del rastreador y el calendario                                                                                  | `use-tracker-refresh.ts:14-35`; `tracker-bar.tsx:99`; `calendar-view.tsx:101`           |
+| Cada disparo de `useTrackerRefresh` mira `document.visibilityState` antes de revalidar: con la pestaña oculta no hace nada                                                                                                         | `use-tracker-refresh.ts:18-23`                                                          |
+| El e2e de TT-40 despacha `focus` en la ventana y espera la revalidación                                                                                                                                                            | `e2e/tracker.spec.ts:444-447`                                                           |
+| «Cancelar», `Esc`, un clic afuera y «Guardar» sin cambios cierran el diálogo de una entrada por `onCancel`, que `CalendarView` pasa como `setOpen(false)`                                                                          | `use-dialog-return-focus.ts:35-41`; `entry-dialog.tsx:134-162`; `calendar-view.tsx:338` |
+| La confirmación del borrado se cierra por `onOpenChange(false)`: con «Cancelar», `Esc` y un clic afuera, y también antes de `onConfirm` al confirmar; `CalendarView` la pasa como `setConfirmingDelete`                            | `delete-entry-dialog.tsx:43`, `:52-58`; `calendar-view.tsx:355`                         |
+| `useAction`: `optimistic` dentro de la transición; `run` baja el aviso; `retry` reenvía `lastInput`; `onFailure` recibe solo la falla                                                                                              | `src/hooks/use-action.ts:25-28`, `:59-93`                                               |
+| La fila muestra el trío en vuelo atenuado (TT-55) y su aviso es `trackerLabels.entryTimesNotSaved`, «No se pudo guardar el horario de la entrada.»                                                                                 | `day-group.tsx:166-185`, `:344-351`; `labels.ts:22`                                     |
+| `updateEntryTimes` escribe y registra `timeEntry.updateTimes` en cada pedido válido; revalida `"/"` y `"/calendario"`                                                                                                              | `service.ts:985-1012`; `actions.ts:59-65`, `:126-134`                                   |
+| `updateEntryTimes` resuelve el trío pedido contra la fila guardada, no contra lo que vio el cliente: el extremo cuyo rótulo difiere del guardado se recalcula                                                                      | `service.ts:964-979`, `:991-994`                                                        |
+| `updateEntryTimesInput` es `{ id, date, start, end }`                                                                                                                                                                              | `schema.ts:135-142`                                                                     |
+| `editableTimes` es falso en la entrada que corre y en la que el trío no puede expresar; `calendarState` trae `minDayKey`, y cada día `beforeWorkspace` y `missingMinutes`                                                          | `schema.ts:319-324`, `:396-438`                                                         |
+| `fromView`, `sameDraft`, `draftDuration`, `draftExtraDays`                                                                                                                                                                         | `time-draft.ts:52-90`                                                                   |
+| `formatDuration`, `addDaysToKey`, `minutesToClock`, `clockLabel`, `clockDifferenceMinutes`, `shiftClock`, `MINUTES_PER_DAY`                                                                                                        | `src/server/time/index.ts:61`, `:184`, `:369`, `:375`, `:483`, `:503`, `:146`           |
+| Los tests de unidad corren en Node, sin DOM: los componentes se prueban con `renderToStaticMarkup`                                                                                                                                 | `vitest.config.ts:7`; `calendar-block.test.tsx:1`                                       |
+| `loseActionResponses`, `holdActionResponses`, `holdRefreshes` y `withServerAction`                                                                                                                                                 | `e2e/network.ts:20`, `:56-119`                                                          |
+| `clickSlot` calcula el punto de una franja con `minuteHeight`; `openDetails` cuenta los detalles abiertos                                                                                                                          | `e2e/calendar-page.ts:534-558`                                                          |
 
 **Lo que `calendario.md` y el esbozo dan por cierto y este contrato precisa:**
 
@@ -108,10 +118,15 @@ gestos: sigue fuera, sin decisión pendiente para este slice.
   —una entrada de 10:07— una franja exacta no cae en una marca. Acá el borde
   estirado llega como mínimo a la primera marca posterior al otro extremo
   (§5.2).
+- **CAL-57** dice que soltar donde estaba no escribe. Con un extremo fuera de
+  marca —10:07, o los segundos que deja el timer—, cualquier candidato
+  ajustado es otro trío. Acá el extremo que vuelve a su **marca de casa** toma
+  su valor original (§5.2), y soltar ahí no pide.
 - **CAL-59** dice que un pedido con un extremo en la hora que no existe «llega
-  igual» y se rechaza. Desde el gesto no llega nunca para los días visibles; sí
-  para el día siguiente al último, del que el cliente no conoce los huecos
-  (§8).
+  igual» y se rechaza. Desde el gesto no llega nunca para los días visibles. Sí
+  puede llegar para dos días de los que el cliente no conoce los huecos: el
+  anterior al primero visible, donde puede quedar el inicio de un bloque
+  movido (`s < 0` en §5.2), y el siguiente al último (§8).
 - **El esbozo** propone `touch-action` para que la grilla no se desplace
   durante el gesto. Con el ADR 0014 no hay gesto táctil y no hace falta.
 - **El esbozo** dice que el aviso de falla ofrece «Reintentar» porque
@@ -155,7 +170,9 @@ Entran por arrastre, verificándose por el camino nuevo:
 **Cancelar** (CAL-63): `Esc`, la cancelación del puntero por el navegador, la
 pérdida de la captura, la ventana sin foco o la pestaña oculta, un cambio de
 zoom o de período, y que la entrada desaparezca de la pantalla. Cancelar deja
-todo como estaba, sin pedido y sin diálogo.
+todo como estaba, sin pedido y sin diálogo. **El gesto cancelado queda muerto
+hasta que se suelta el botón**: conserva la captura, ignora el movimiento, y
+soltar no pide nada ni abre el alta ni el diálogo de un bloque (§5.4, paso 6).
 
 **Por teclado** (WCAG 2.5.7 y 2.1.1): no hay gestos de teclado; el diálogo los
 cubre (§5.9). **En pantallas táctiles**: no hay gestos; el toque y el
@@ -183,7 +200,11 @@ Todo es diseño propio _no verificado_ (P-07):
   existe no se ofrece: el gesto se queda con el anterior. El inicio de un
   bloque movido no pasa al piso del workspace: el gesto se detiene en él.
 - **CAL-57.** Soltar con el mismo trío no pide, aunque el bloque haya pasado por
-  otros lugares.
+  otros lugares. **La marca de casa**: el extremo que se mueve y vuelve a la
+  marca más cercana a su lugar original toma su valor original, con sus
+  minutos y segundos. Una entrada de 10:07, o una del timer con segundos, que
+  pasa el umbral y se suelta en su lugar no se escribe a 10:00 ni pierde sus
+  segundos (ADR 0006).
 - **CAL-61.** El puntero se limita a las columnas visibles. Un bloque tomado de
   un segmento posterior al primero puede quedar empezando el día anterior al
   período, pero nunca queda fuera de él: el aviso de CAL-46 no aparece al
@@ -197,16 +218,22 @@ Todo es diseño propio _no verificado_ (P-07):
   empieza otro: apretar un bloque o una franja es un clic.
 - **CAL-62 y el foco.** Al terminar un gesto sobre un bloque —soltar con o sin
   pedido, o cancelar— el foco queda en el botón del bloque; si el pedido falla,
-  vuelve con el bloque a su lugar.
+  vuelve con el bloque a su lugar. Un foco pendiente de una operación anterior
+  se descarta al empezar un gesto y al cerrar sin acción el diálogo o la
+  confirmación del borrado.
 - **CAL-63.** Cancelan también la pérdida del puntero, la ventana sin foco, la
   pestaña oculta, el cambio de zoom o de período y que la entrada desaparezca.
+  Después de cancelar, soltar el botón no hace nada.
 - **CAL-89.** Las revalidaciones periódicas se juntan mientras dura el gesto, y
-  sale una al terminar si hubo alguna. La que viene con la respuesta de otra
-  action en vuelo no se puede pausar: si se lleva la entrada del gesto, el
-  gesto se cancela.
+  sale una al terminar si hubo alguna con la pestaña visible. La que viene con
+  la respuesta de otra action en vuelo no se puede pausar: si se lleva la
+  entrada del gesto, el gesto se cancela.
 - **CAL-90.** Un bloque de distancia de reloj cero —segundos dentro del mismo
   minuto— se estira pero no se mueve: con la distancia conservada, el trío
   movido dura cero.
+- **CAL-97 al estirar.** El extremo que no se toca viaja con el rótulo que
+  muestra la pantalla. Si otra pestaña lo cambió, gana la última escritura
+  también en ese extremo, como en la fila.
 - **CAL-23 y CAL-77.** Con un gesto en curso ningún bloque muestra su detalle.
 - **Un gesto no termina en clic**: después de soltar no se abre el diálogo del
   bloque ni el alta de CAL-43.
@@ -229,31 +256,26 @@ Todo es diseño propio _no verificado_ (P-07):
 
 ### Consecuencias sobre código ya entregado
 
-| Archivo                             | Qué cambia                                                                                                                                                                                                                                                                                                      | Qué hay que volver a probar                         |
-| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `calendar/calendar-grid.tsx`        | Monta `useCalendarGesture`; dibuja los bloques con el trío del gesto o del pedido en vuelo; la selección del alta; el detalle cerrado con un gesto; `select-none`. El efecto de foco limpia `focusEntryId` si el bloque ya tiene el foco y vuelve a correr cuando cambia el dibujo (§5.7). La guarda no cambia. | `calendar.spec.ts`, `calendar-edit.spec.ts` enteros |
-| `calendar/calendar-block.tsx`       | Las asas, el cursor, `busy` y `dragging`, y `onGestureStart`.                                                                                                                                                                                                                                                   | `calendar-block.test.tsx`                           |
-| `calendar/calendar-block.test.tsx`  | El render de cada caso pasa las props nuevas con `NO_GESTURES`, y `busy` y `dragging` en falso: es un cambio de fixture, ninguna afirmación cambia.                                                                                                                                                             | —                                                   |
-| `calendar/calendar-view.tsx`        | Suma `useAction(updateEntryTimes)` con su vista optimista a `handles`; el estado del gesto, que pausa `useTrackerRefresh`; `focusEntryId` al terminar un gesto, con éxito y con falla; el alta desde una selección.                                                                                             | `calendar-edit.spec.ts` entero                      |
-| `calendar/calendar-notices.tsx`     | El aviso de la falla del gesto, con «Reintentar» por red.                                                                                                                                                                                                                                                       | —                                                   |
-| `components/use-tracker-refresh.ts` | `useTrackerRefresh(paused = false)`, con la compuerta de `refresh-gate.ts`. Sin argumento, igual que hoy.                                                                                                                                                                                                       | TT-40 en `tracker.spec.ts`                          |
-| `e2e/calendar-page.ts`              | Suma los localizadores y los pasos de los gestos (§6). `clickSlot` pasa a usar `slotPoint`, sin cambiar lo que hace.                                                                                                                                                                                            | `calendar.spec.ts`, `calendar-edit.spec.ts`         |
+| Archivo                             | Qué cambia                                                                                                                                                                                                                                                                                                                                                | Qué hay que volver a probar                         |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `calendar/calendar-grid.tsx`        | Monta `useCalendarGesture`; dibuja los bloques con el trío del gesto o del pedido en vuelo; la selección del alta; el detalle cerrado con un gesto; `select-none`. El efecto de foco limpia `focusEntryId` si el bloque ya tiene el foco, antes de la guarda, y vuelve a correr cuando cambia el dibujo (§5.7). La guarda no cambia.                      | `calendar.spec.ts`, `calendar-edit.spec.ts` enteros |
+| `calendar/calendar-block.tsx`       | Las asas, el cursor, `busy` y `dragging`, y `onGestureStart`.                                                                                                                                                                                                                                                                                             | `calendar-block.test.tsx`                           |
+| `calendar/calendar-block.test.tsx`  | El render de cada caso pasa las props nuevas con `NO_GESTURES`, y `busy` y `dragging` en falso: es un cambio de fixture, ninguna afirmación cambia.                                                                                                                                                                                                       | —                                                   |
+| `calendar/calendar-view.tsx`        | Suma `useAction(updateEntryTimes)` con su vista optimista a `handles`; el estado del gesto, que pausa `useTrackerRefresh`; `focusEntryId` al terminar un gesto, con éxito y con falla; el alta desde una selección. Limpia `focusEntryId` al empezar un gesto, en `onCancel` del diálogo (`:338`) y en `onOpenChange(false)` de la confirmación (`:355`). | `calendar-edit.spec.ts` entero                      |
+| `calendar/calendar-notices.tsx`     | El aviso de la falla del gesto, con «Reintentar» por red.                                                                                                                                                                                                                                                                                                 | —                                                   |
+| `components/use-tracker-refresh.ts` | `useTrackerRefresh(paused = false)`, con la compuerta de `refresh-gate.ts` después de la comprobación de visibilidad. Sin argumento, igual que hoy.                                                                                                                                                                                                       | TT-40 en `tracker.spec.ts:444-447`                  |
+| `e2e/calendar-page.ts`              | Suma los localizadores y los pasos de los gestos (§6). `clickSlot` pasa a usar `slotPoint`, sin cambiar lo que hace.                                                                                                                                                                                                                                      | `calendar.spec.ts`, `calendar-edit.spec.ts`         |
 
 **Ninguna afirmación de un test existente cambia.** El único test existente que
 se toca es `calendar-block.test.tsx`, por las props nuevas del bloque.
 
 ### Tamaño
 
-**No se parte.** Sin servidor, el slice es una regla pura con sus tests, un
-hook que la conecta al DOM, cambios acotados en cuatro componentes y un spec de
-cuatro recorridos: menos que la mitad de frontend del 8c. Los tres gestos
-comparten el ciclo, el dibujo y los topes; partirlos por gesto repetiría el
-ciclo en dos slices.
-
-Si la revisión lo encuentra grande, el corte que no deja nada a medias es
-**crear arrastrando (CAL-44) en un slice aparte**: `CreateGesture`, la
-selección y el recorrido 3 salen; mover y estirar quedan enteros, y un clic en
-una franja sigue creando como hoy.
+**No se parte** (confirmado en la ronda 1). Sin servidor, el slice es una
+regla pura con sus tests, un hook que la conecta al DOM, cambios acotados en
+cuatro componentes y un spec de cuatro recorridos: menos que la mitad de
+frontend del 8c. Los tres gestos comparten el ciclo, el dibujo y los topes; CAL-44
+comparte el ciclo y la regla con los otros, y sacarlo ahorraría poco.
 
 ## 2. Cambios de esquema
 
@@ -286,17 +308,19 @@ grupos con «Guardar» y nombra la entrada entera en su aviso. Lo que
 `updateEntry` agregaría —no escribir con el trío igual— lo hace el cliente
 antes de pedir (CAL-57).
 
-**Los rechazos que el gesto puede ver**, todos de `updateEntryTimes`, con su
-texto como segunda parte del aviso (§5.6):
+**Lo que el gesto puede encontrar en el servidor**: los rechazos de
+`updateEntryTimes`, con su texto como segunda parte del aviso (§5.6), y una
+escritura concurrente que no es un rechazo.
 
-| Causa                                             | Código       | Texto              | Cómo llega desde el gesto                                            |
-| ------------------------------------------------- | ------------ | ------------------ | -------------------------------------------------------------------- |
-| La entrada ya no existe (TT-80)                   | `not_found`  | `notFound`         | otra pestaña la borró y la revalidación todavía no llegó             |
-| Membresía desactivada o ajena (TT-79)             | `forbidden`  | sus textos         | la membresía se desactivó con la pantalla abierta                    |
-| El trío ya no la expresa (TT-110)                 | `validation` | `multiDayTimes`    | otra pestaña la estiró a más de un día                               |
-| Hora que no existe (TT-112, CAL-59)               | `validation` | `nonexistentClock` | el fin cae en un hueco del día siguiente al último visible (§8)      |
-| Menos de un minuto (TT-73), antes del piso, fecha | `validation` | sus textos         | no por construcción (§5.2); quedan como red de la regla del servidor |
-| Red o error inesperado                            | `unexpected` | `unexpected`       | respuesta perdida o servidor caído                                   |
+| Causa                                                  | Código       | Texto              | Cómo llega desde el gesto                                                                                                                                                                                                                                  |
+| ------------------------------------------------------ | ------------ | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| La entrada ya no existe (TT-80)                        | `not_found`  | `notFound`         | otra pestaña la borró y la revalidación todavía no llegó                                                                                                                                                                                                   |
+| Membresía desactivada o ajena (TT-79)                  | `forbidden`  | sus textos         | la membresía se desactivó con la pantalla abierta                                                                                                                                                                                                          |
+| El trío ya no la expresa (TT-110)                      | `validation` | `multiDayTimes`    | otra pestaña la estiró a más de un día                                                                                                                                                                                                                     |
+| Hora que no existe (TT-112, CAL-59)                    | `validation` | `nonexistentClock` | el inicio cae en un hueco del día anterior al primero visible, o el fin en uno del siguiente al último (§8)                                                                                                                                                |
+| Menos de un minuto (TT-73), antes del piso, fecha      | `validation` | sus textos         | no por construcción (§5.2); quedan como red de la regla del servidor                                                                                                                                                                                       |
+| Otra pestaña cambió el extremo que no se tocó (CAL-97) | —            | ninguno            | no es un rechazo: al estirar, el extremo quieto viaja con el rótulo de la vista, `updateEntryTimes` lo resuelve contra la fila guardada (`service.ts:964-979`) y lo vuelve a ese rótulo. Gana la última escritura, también en ese extremo, como en la fila |
+| Red o error inesperado                                 | `unexpected` | `unexpected`       | respuesta perdida o servidor caído                                                                                                                                                                                                                         |
 
 **Reintento y auditoría.** «Reintentar» solo con `unexpected` (TT-89), con
 `retryHandlerOf`: reenvía el mismo trío, que llega al mismo estado. Si el primer
@@ -391,9 +415,10 @@ export function entryGesture(
 export function initialCandidate(gesture: Gesture, grid: GestureGrid): TimeDraft;
 
 /**
- * El trío que propone el gesto con el puntero en `pointer`, con el ajuste de
- * CAL-53 y los topes de CAL-48, CAL-55, CAL-56 y CAL-61 aplicados; `null` si un
- * extremo cae en un minuto que no existe (CAL-30, CAL-59).
+ * El trío que propone el gesto con el puntero en `pointer`: el original si el
+ * extremo que se mueve vuelve a su marca de casa (CAL-57); si no, con el
+ * ajuste de CAL-53 y los topes de CAL-48, CAL-55, CAL-56 y CAL-61 aplicados.
+ * `null` si un extremo cae en un minuto que no existe (CAL-30, CAL-59).
  */
 export function candidateAt(
   gesture: Gesture,
@@ -439,7 +464,9 @@ que `x`; `lastMark(x)`, la última menor que `x`. **El piso** de la recta es
 en la recta es `i * 1440 + startMinute` con `i` el índice de `dayDate`, o
 `-1440 + startMinute` si `dayDate` no está a la vista: una entrada con
 `editableTimes` dura menos de un día, así que con un segmento visible empezó a
-lo sumo el día anterior.
+lo sumo el día anterior. **La marca de casa** de un extremo es `round` de su
+lugar original en la recta: `round(start)` del inicio y `round(start + span)`
+del fin. Con el extremo en una marca, es él mismo.
 
 **`segmentGestures`.** `NO_GESTURES` si `canTrack` es falso, si la entrada
 corre (`endClock === null`) o si `editableTimes` es falso. Si no:
@@ -452,21 +479,27 @@ corre (`endClock === null`) o si `editableTimes` es falso. Si no:
   tiene asa de fin, como la que empezó antes no tiene asa de inicio (CAL-100
   visto desde una editable).
 
-**`candidateAt` por gesto.** Primero se acota con los topes y después se mira
-la hora que no existe. **Un candidato `null` deja el anterior**: el gesto nunca
-dibuja ni suelta un extremo en un hueco.
+**`candidateAt` por gesto.** Primero se mira la marca de casa, después se
+acota con los topes y por último se mira la hora que no existe. **Un candidato
+`null` deja el anterior**: el gesto nunca dibuja ni suelta un extremo en un
+hueco.
 
-- **`move`** (CAL-50, CAL-51, CAL-53, CAL-61): `s = round(pointer - grab)`,
-  acotado a `[max(piso, nextMark(-span)), END - zoom]`: el bloque conserva al
-  menos un minuto en el período y no empieza antes del piso. El trío es `{ día
-de s, minutesToClock(s), shiftClock(inicio, span) }`. `null` si el inicio cae
-  en `missingMinutes` de su día, o el fin en los del suyo, cuando ese día está a
-  la vista.
-- **`start`** (CAL-52, CAL-55, CAL-56): con `e = start + span`, `s =
-round(pointer)` acotado a `[max(piso, nextMark(e - 1440)), lastMark(e)]`. El
-  trío es `{ día de s, minutesToClock(s), original.end }`: el fin no cambia de
-  rótulo y conserva su instante (ADR 0006). `null` si el inicio cae en un hueco.
-- **`end`** (CAL-52, CAL-54, CAL-55, CAL-56): `f = round(pointer)` acotado a
+- **`move`** (CAL-50, CAL-51, CAL-53, CAL-57, CAL-61): `s = round(pointer -
+grab)`. Si `s === round(start)`, el candidato es `original`. Si no, `s` se
+  acota a `[max(piso, nextMark(-span)), END - zoom]`: el bloque conserva al
+  menos un minuto en el período y no empieza antes del piso. Con un `grab`
+  mayor que el punto del puntero en la primera columna, `s` puede quedar
+  negativo: el inicio queda el día anterior al primero visible. El trío es `{
+día de s, minutesToClock(s), shiftClock(inicio, span) }`. `null` si el inicio
+  cae en `missingMinutes` de su día, o el fin en los del suyo, cuando ese día
+  está a la vista; los días fuera de la vista no se miran (§8).
+- **`start`** (CAL-52, CAL-55, CAL-56, CAL-57): con `e = start + span`, `s =
+round(pointer)`. Si `s === round(start)`, el candidato es `original`. Si no,
+  `s` se acota a `[max(piso, nextMark(e - 1440)), lastMark(e)]`. El trío es `{
+día de s, minutesToClock(s), original.end }`: el fin no cambia de rótulo y
+  conserva su instante (ADR 0006). `null` si el inicio cae en un hueco.
+- **`end`** (CAL-52, CAL-54, CAL-55, CAL-56, CAL-57): `f = round(pointer)`. Si
+  `f === round(start + span)`, el candidato es `original`. Si no, `f` se acota a
   `[nextMark(start), lastMark(start + 1440)]`. El trío es `{ original.date,
 original.start, minutesToClock(f) }`: un fin anterior al inicio es del día
   siguiente (TT-72). `null` si el fin cae en un hueco.
@@ -475,7 +508,7 @@ original.start, minutesToClock(f) }`: un fin anterior al inicio es del día
   `[min(anchor, c), max(anchor, c) + zoom]`. Si mide más de `1440 - zoom`, se
   recorta del lado del puntero. El trío es `{ día de la columna, inicio, fin }`,
   con un fin de 24:00 escrito «00:00» (TT-72). `null` si un extremo cae en un
-  hueco.
+  hueco. No tiene marca de casa: parte de un borrador, no de una entrada.
 
 **`initialCandidate`**: `original` en un gesto sobre una entrada;
 `slotDraft(día, anchor, zoom, missingMinutes)` en una selección, el mismo
@@ -542,7 +575,7 @@ export function useCalendarGesture(options: {
   /** Avisa el principio y el fin, con el id de la entrada si es un gesto sobre una. */
   readonly onActiveChange: (active: boolean, entryId: string | null) => void;
 }): {
-  /** `null` sin gesto, y también antes del umbral. */
+  /** `null` sin gesto, antes del umbral y con el gesto cancelado. */
   readonly preview: GesturePreview | null;
   readonly beginEntry: (
     kind: EntryGestureKind,
@@ -554,7 +587,7 @@ export function useCalendarGesture(options: {
     anchor: number,
     event: PointerEvent<HTMLElement>,
   ) => void;
-  /** En captura sobre la grilla: el clic que sigue a un gesto no llega a su destino. */
+  /** En captura sobre la grilla: defensa contra un clic que siga a un gesto. */
   readonly onClickCapture: (event: MouseEvent<HTMLElement>) => void;
 };
 ```
@@ -579,20 +612,31 @@ export function useCalendarGesture(options: {
    mientras dura el gesto suma `autoScrollStep` de la distancia del puntero a
    cada borde del área visible de las columnas —la de `scrollRef` sin los
    encabezados pegajosos ni el eje, medidos del DOM— y recalcula el candidato.
-5. **Soltar** (`pointerup` con el gesto pasado del umbral). En un gesto sobre
-   una entrada: si `sameDraft(candidato, original)`, nada (CAL-57); si no,
-   `onDrop({ id, ...candidato })`. En `create`: `onSelectRange(candidato)`.
-   Después, `onActiveChange(false, id)`, y el clic que siga no actúa.
+5. **Soltar** (`pointerup` con el gesto vivo y pasado del umbral). En un gesto
+   sobre una entrada: si `sameDraft(candidato, original)`, nada (CAL-57); si
+   no, `onDrop({ id, ...candidato })`. En `create`: `onSelectRange(candidato)`.
+   Después, `onActiveChange(false, id)`, se suelta la captura y queda puesta la
+   marca del clic (paso 7).
 6. **Cancelar**: `Esc` (escuchado en `document` en fase de captura, con
    `preventDefault`), `pointercancel`, `lostpointercapture` sin `pointerup`,
    `blur` de la ventana, `visibilitychange` a oculto, otro zoom, que el id de la
-   entrada no esté en `entryIds`, `enabled` en falso, o desmontar la grilla
-   (otro período). Sin pedido y sin `onSelectRange`; `onActiveChange(false,
-id)`.
-7. **El clic que sigue.** `onClickCapture` en la raíz de la grilla detiene
-   (`stopPropagation` y `preventDefault`) el primer clic después de un gesto que
-   pasó el umbral, y la marca se borra en el siguiente `pointerdown`: un gesto
-   nunca abre el diálogo del bloque ni el alta de CAL-43.
+   entrada no esté en `entryIds`, o `enabled` en falso. `preview` pasa a
+   `null`, sin pedido y sin `onSelectRange`, y `onActiveChange(false, id)`.
+   **El gesto queda muerto hasta el `pointerup`**: conserva la captura si la
+   tenía, ignora los `pointermove` y el desplazamiento automático, y pone la
+   marca del clic. El `pointerup` que llega después solo suelta la captura: no
+   pide nada ni abre nada. Con `pointercancel` o `lostpointercapture` ya no hay
+   captura que conservar, y la marca queda igual. Desmontar la grilla (otro
+   período) termina el gesto sin más.
+7. **El clic que sigue.** Con la captura sobre `scrollRef`, el `click` que
+   sigue al `pointerup` llega a `scrollRef` y no al bloque ni a la columna: por
+   eso un gesto, terminado o cancelado, no abre el diálogo del bloque ni el
+   alta de CAL-43 mientras conserva la captura hasta soltar. La prueba del
+   handshake registra adónde llega ese `click` en Chromium. `onClickCapture`
+   en la raíz de la grilla, que detiene (`stopPropagation` y `preventDefault`)
+   el primer clic con la marca puesta, **queda como defensa**, como
+   `|| confirmingDelete` en T-n6: ningún test la cuenta como cobertura. La
+   marca se borra en el siguiente `pointerdown`.
 
 **Sin `preventDefault` en `pointerdown`**: apretar un bloque lo enfoca como
 hoy. La grilla lleva `select-none`, así que arrastrar no selecciona texto.
@@ -665,24 +709,38 @@ const moveTimes = useAction(updateEntryTimes, {
 
 ### 5.7 Foco
 
+- **Al empezar un gesto**, `onGestureChange(true, id)` limpia `focusEntryId`:
+  un pendiente de una operación anterior no puede llevarse el foco mientras el
+  bloque cambia de columna.
 - **Al terminar un gesto sobre un bloque**, con o sin pedido o cancelado,
   `CalendarView` fija `focusEntryId` con su id, por `onGestureChange(false,
 id)`. Llega después de `onDrop` y por eso después del `run` que lo limpia.
   En un `create`, el foco va al diálogo de alta, o se queda donde estaba si se
   canceló.
+- **Al cerrar sin acción**, `CalendarView` también limpia `focusEntryId`: en
+  `onCancel` del diálogo de una entrada (`calendar-view.tsx:338`, que hoy es
+  `setOpen(false)`) y en `onOpenChange(false)` de la confirmación del borrado
+  (`:355`, que hoy es `setConfirmingDelete`). «Cancelar» de la confirmación no
+  pasa por `run(remove)` ni por `openSubject`, y sin esto dejaría pendiente un
+  `focusEntryId` que un foco posterior en la región llevaría a un bloque viejo
+  (F-n1 del 8c). Al confirmar, `onOpenChange(false)` llega antes de
+  `onConfirm` (`delete-entry-dialog.tsx:55-58`), y `run(remove)` lo limpia
+  igual.
 - **El efecto de foco de la grilla** (`calendar-grid.tsx:140-163`) cambia en dos
   cosas, y **la guarda no cambia**:
-  - Si el botón de la entrada ya es el elemento con foco, limpia
-    `focusEntryId` y no hace nada más. Hoy vuelve sin limpiarlo, y después de
-    un gesto el botón apretado suele tener el foco: `focusEntryId` quedaría
-    pendiente y un foco posterior en la región lo usaría (F-n1 del 8c).
+  - **Antes de la guarda**, si el botón de la entrada ya es el elemento con
+    foco, limpia `focusEntryId` y no hace nada más. Hoy vuelve sin limpiarlo,
+    y después de un gesto el botón apretado suele tener el foco:
+    `focusEntryId` quedaría pendiente y un foco posterior en la región lo
+    usaría.
   - Vuelve a correr también cuando cambian `movingTimes` y la vista del gesto:
     un bloque que cambió de columna se desmonta, el foco cae en `body` y el
     efecto lo encuentra en su lugar nuevo.
 - **La guarda sigue siendo la de T-n6**: con el foco en un diálogo o en la
   confirmación del borrado, el efecto no lo saca. Una respuesta que llega con
-  la confirmación abierta deja `focusEntryId` pendiente, y `run(remove)` u
-  `openSubject` lo limpian como hoy.
+  la confirmación abierta deja `focusEntryId` pendiente, y cerrar la
+  confirmación lo limpia: con «Cancelar», por `onOpenChange(false)`; al
+  confirmar, también por `run(remove)`.
 - **Si el pedido falla**, el bloque vuelve a su lugar y `onFailure` fija
   `focusEntryId` otra vez: vuelve al bloque si el foco cayó en `body`.
 
@@ -708,6 +766,14 @@ disparo —enfocar, volver a ser visible, el intervalo de 60 s— pasa por
 nunca se cierra y la conducta es la de hoy. `CalendarView` le pasa el estado
 del gesto: `useTrackerRefresh(gestureActive)`.
 
+**La comprobación de visibilidad va antes de la compuerta**, como hoy
+(`use-tracker-refresh.ts:18-23`): un disparo con la pestaña oculta no llega a
+`nextRefreshGate` y no queda pendiente. Como la pestaña oculta además cancela
+el gesto (§5.4, paso 6), al volver a ser visible el evento de visibilidad
+revalida por el camino de siempre. Lo que sale al abrir la compuerta es un
+disparo `resume` del hook, que no vuelve a mirar la visibilidad: solo hay uno
+pendiente si llegó con la pestaña visible.
+
 La revalidación que viene con la respuesta de otra action en vuelo —un
 «Detener» o un «Duplicar» de antes del gesto— no pasa por la compuerta. El
 gesto la soporta: dibuja desde su candidato, y si la entrada ya no está, se
@@ -732,14 +798,11 @@ cancela (§5.4, paso 6).
 
 ### 5.10 Pantallas táctiles (ADR 0014)
 
-**Si se aprueba el ADR 0014:** `startsGesture` es falso para `touch` y `pen`.
-Un toque es un clic: abre el alta de CAL-43 o el diálogo del bloque, como hoy.
+Con el ADR 0014 aceptado, `startsGesture` es falso para `touch` y `pen`. Un
+toque es un clic: abre el alta de CAL-43 o el diálogo del bloque, como hoy.
 Deslizar desplaza la grilla con el desplazamiento nativo. No hay `touch-action`
 propio, ni asas visibles distintas. El detalle no aparece en pantallas
 táctiles, como en el 8.
-
-**Si el usuario elige otra opción del ADR**, cambia esta sección, el paso 1 de
-§5.4 y el criterio 13, y el contrato vuelve a revisión.
 
 ## 6. Reparto de archivos
 
@@ -775,7 +838,8 @@ de pantalla de una franja, que `clickSlot` pasa a usar—, `blockHandle(block,
 (`[data-calendar-selection]`), `gridScroller(page)` y `dragBetween(page, from,
 to)`, con `page.mouse` y al menos cinco pasos de movimiento. El conteo de
 pedidos de server action (cabecera `next-action`) y de revalidaciones (`GET` a
-`/calendario`) va en el spec.
+`/calendario`) va en el spec, igual que el paso que reemplaza
+`document.visibilityState` y despacha `visibilitychange` (recorrido 1).
 
 ### parity-analyst
 
@@ -784,11 +848,13 @@ pedidos de server action (cabecera `next-action`) y de revalidaciones (`GET` a
 ```
 
 Antes del merge: lo que enumera §1 en «Lo que el slice decide»; CAL-54 y CAL-56
-corregidos con la nota «_Corregido el …, slice 8b_»; CAL-59 con el caso del día
-siguiente al último visible; CAL-23 y CAL-77 con el detalle cerrado durante un
-gesto; la sección «Slice 8b» en §20, con «Lo que queda» actualizado; en P-07, la
-pregunta de CAL-44 sobre el dedo, y las de CAL-53, CAL-55, CAL-58 y CAL-61 sin
-cambios; y P-03 en «Abiertos» con la nota de que el 8b no lo cerró.
+corregidos con la nota «_Corregido el …, slice 8b_»; CAL-57 con la marca de
+casa; CAL-59 con los casos del día anterior al primero visible y del siguiente
+al último; CAL-63 con el gesto cancelado que queda muerto hasta soltar; CAL-97
+con el extremo quieto al estirar; CAL-23 y CAL-77 con el detalle cerrado
+durante un gesto; la sección «Slice 8b» en §20, con «Lo que queda» actualizado;
+en P-07, la pregunta de CAL-44 sobre el dedo, y las de CAL-53, CAL-55, CAL-58 y
+CAL-61 sin cambios; y P-03 en «Abiertos» con la nota de que el 8b no lo cerró.
 
 ### Lo que no toca nadie
 
@@ -801,15 +867,17 @@ asa de fin se decide en `segmentGestures`—, `calendar-layout.test.ts`,
 `calendar-href.ts`, `calendar-screen.tsx`, `period-picker.tsx`,
 `entry-dialog*.tsx`, `entry-dialog-draft.ts` ni `labels.ts`. De los del
 rastreador, solo `use-tracker-refresh.ts` y el `refresh-gate.ts` nuevo:
-`tracker-bar.tsx` sigue llamando a `useTrackerRefresh()` sin argumento. De los
-e2e existentes, solo `calendar-page.ts`, con lo de arriba. Los contratos y
-correcciones anteriores son históricos. El mapa y el estado de la fase los
-actualiza team-lead.
+`tracker-bar.tsx`, `delete-entry-dialog.tsx` y `use-dialog-return-focus.ts` no
+cambian, y `tracker-bar.tsx` sigue llamando a `useTrackerRefresh()` sin
+argumento. De los e2e existentes, solo `calendar-page.ts`, con lo de arriba.
+Los contratos y correcciones anteriores son históricos. El mapa y el estado de
+la fase los actualiza team-lead.
 
 ### Handshake de orden
 
 0. **Antes de implementar**: el contrato aprobado por `architecture-reviewer`
-   contra `55ce3bf`, y la decisión 1 del usuario (ADR 0014). La 2 no bloquea.
+   contra `55ce3bf` (ronda 1 aplicada) y el ADR 0014 aceptado. Las dos
+   decisiones del usuario están resueltas.
 1. **Primer commit de `frontend-dev`**: `calendar-gestures.ts` con los tipos y
    las firmas de §5.2 (cuerpos que lanzan), `refresh-gate.ts` con su firma, y
    los atributos `data-block-handle` en `calendar-block.tsx` y
@@ -818,10 +886,14 @@ actualiza team-lead.
 2. **`e2e-tester` arranca en paralelo** con `calendar-drag.spec.ts` y los pasos
    de `calendar-page.ts`, y confirma que cada recorrido falla por la
    funcionalidad —el bloque no se mueve, no hay asa, no hay selección— y no por
-   el arnés. **Primero de todo**, una prueba de que `page.mouse` con pasos
-   produce `pointermove` con `pointerType === "mouse"` sobre la grilla y de que
-   `setPointerCapture` sobre el contenedor los sigue recibiendo fuera de él; si
-   no, se avisa antes de seguir, porque cambia §5.4.
+   el arnés. **Primero de todo**, una prueba en una página de juguete, en
+   Chromium, que registra tres cosas: que `page.mouse` con pasos produce
+   `pointermove` con `pointerType === "mouse"`; que `setPointerCapture` sobre
+   un contenedor los sigue recibiendo fuera de él; y **adónde llega el `click`
+   que sigue al `pointerup`** después de un arrastre con la captura sobre el
+   contenedor y el botón soltado sobre un hijo. Si el `click` llega al hijo, se
+   avisa antes de seguir, porque cambia §5.4, paso 7, y `onClickCapture` deja
+   de ser defensa.
 3. `frontend-dev` sigue con `calendar-gestures.ts` y sus tests, `refresh-gate.ts`
    y `use-tracker-refresh.ts`, y después el hook, el bloque, la grilla, la
    vista y el aviso.
@@ -830,13 +902,15 @@ actualiza team-lead.
 ### Responsabilidades que no se leen en el nombre del archivo
 
 - **`calendar-gestures.ts`** es toda la regla: qué ofrece cada segmento, el
-  candidato de cada gesto con sus topes y huecos, la vista dibujada con otro
-  trío, el umbral, la condición de inicio y el desplazamiento automático. No
-  lee el DOM ni importa React. Importa `isMissing`, `slotDraft`, `Segment` y
-  `minuteHeight` de `calendar-layout.ts`, y `fromView`, `draftDuration` y
-  `draftExtraDays` de `time-draft.ts`; las horas, de `src/server/time`.
+  candidato de cada gesto con su marca de casa, sus topes y sus huecos, la vista
+  dibujada con otro trío, el umbral, la condición de inicio y el
+  desplazamiento automático. No lee el DOM ni importa React. Importa
+  `isMissing`, `slotDraft`, `Segment` y `minuteHeight` de `calendar-layout.ts`,
+  y `fromView`, `draftDuration` y `draftExtraDays` de `time-draft.ts`; las
+  horas, de `src/server/time`.
 - **`use-calendar-gesture.ts`** es el único que mira eventos, coordenadas,
-  `requestAnimationFrame` y la captura. No decide nada que `calendar-gestures.ts`
+  `requestAnimationFrame` y la captura, y el que lleva el estado del gesto:
+  armado, vivo, muerto hasta soltar. No decide nada que `calendar-gestures.ts`
   pueda decidir.
 - **`calendar-grid.tsx`** llama al hook, reemplaza la vista de la entrada del
   gesto o en vuelo antes de `columnItems`, dibuja la selección, pasa
@@ -844,10 +918,10 @@ actualiza team-lead.
   `onClickCapture` en su raíz. El clic en una franja sigue en `handleClick` con
   `slotAt`.
 - **`calendar-view.tsx`** es dueño del pedido (§5.6), del estado
-  `gestureActive` que pausa la revalidación y de `focusEntryId` al terminar un
-  gesto (§5.7).
+  `gestureActive` que pausa la revalidación y de `focusEntryId` al empezar y al
+  terminar un gesto, y al cerrar sin acción el diálogo o la confirmación (§5.7).
 - **`refresh-gate.ts`** es la compuerta pura; `use-tracker-refresh.ts` solo la
-  aplica.
+  aplica, después de mirar la visibilidad.
 
 ## 7. Criterios de aceptación
 
@@ -855,11 +929,16 @@ actualiza team-lead.
    cuerpo de un bloque lo lleva al día y a la marca bajo el puntero,
    conservando la distancia de reloj; al soltar, un pedido `updateEntryTimes`
    con ese trío, y el bloque queda en su lugar nuevo. Soltar con el mismo trío
-   no pide. Un bloque se puede soltar sobre otro, en el futuro o sobre el timer.
-2. **CAL-52, CAL-55, CAL-56, CAL-90, estirar** — Las asas mueven un solo
-   extremo; el otro no cambia de rótulo. El borde queda entre la primera marca
-   posterior al otro extremo y la última anterior a 24 horas de él. Un bloque
-   de distancia cero se estira y no se mueve.
+   no pide, tampoco con un extremo fuera de marca que volvió a su marca de
+   casa. Un bloque se puede soltar sobre otro, en el futuro o sobre el timer:
+   **esta última oración es estructural**, porque ninguna regla del gesto mira
+   otras entradas, ahora ni el timer, y no hay test que pueda fallar; se
+   verifica por revisión de `calendar-gestures.ts`.
+2. **CAL-52, CAL-55, CAL-56, CAL-57, CAL-90, estirar** — Las asas mueven un
+   solo extremo; el otro no cambia de rótulo. El borde queda entre la primera
+   marca posterior al otro extremo y la última anterior a 24 horas de él, salvo
+   en su marca de casa, donde vale el original. Un bloque de distancia cero se
+   estira y no se mueve.
 3. **CAL-54, la medianoche** — Mover un bloque de 22:00 a 23:30 a las 23:00 lo
    deja de 23:00 a 00:30 del día siguiente, en dos segmentos; estirar un fin
    más allá del final de su columna sigue en la columna siguiente.
@@ -869,8 +948,8 @@ actualiza team-lead.
    guardar nada y sin selección dibujada detrás. Un clic sin recorrido sigue
    abriendo el alta de CAL-43.
 5. **CAL-30, CAL-48, CAL-59** — Ningún gesto propone un extremo en un minuto que
-   no existe: se queda con el candidato anterior. Un bloque movido no empieza
-   antes del piso.
+   no existe de un día visible: se queda con el candidato anterior. Un bloque
+   movido no empieza antes del piso.
 6. **CAL-05, CAL-39, CAL-58, CAL-100** — Sin permiso de carga, en el timer y en
    una entrada con `editableTimes` en falso no hay asas ni se mueve; una entrada
    que empieza o termina fuera del período no tiene el asa de ese extremo.
@@ -882,16 +961,18 @@ actualiza team-lead.
    otro gesto. Si falla, vuelve, la región muestra «No se pudo guardar el
    horario de la entrada.» con la causa, y «Reintentar» solo por red, que lo
    lleva a su lugar nuevo.
-9. **CAL-63** — `Esc` con un gesto en curso devuelve el bloque a su lugar, sin
-   pedido; también la pérdida del puntero y la pestaña oculta.
+9. **CAL-63** — `Esc` y la pestaña oculta con un gesto en curso devuelven el
+   bloque a su lugar, sin pedido, y soltar el botón después no pide ni abre
+   nada. La pérdida del puntero cancela igual, sin e2e (§8).
 10. **CAL-89** — Con un gesto en curso, enfocar la ventana no revalida; al
     terminar, sale una revalidación.
 11. **CAL-23, CAL-77, el clic** — Con un gesto en curso ningún bloque muestra su
-    detalle, y soltar no abre el diálogo del bloque ni el alta de un clic.
+    detalle, y ni soltar ni soltar después de cancelar abren el diálogo del
+    bloque ni el alta de un clic.
 12. **Foco** — Al terminar un gesto sobre un bloque el foco está en su botón,
     también si cambió de columna y si el pedido falló. Con el foco ya en el
     botón, `focusEntryId` se limpia. Con la confirmación del borrado abierta,
-    el foco no sale de ella.
+    el foco no sale de ella, y cancelarla no deja un foco pendiente.
 13. **ADR 0014** — Un gesto empieza solo con el botón principal del mouse; un
     toque abre lo mismo que un clic.
 14. **El desplazamiento automático** — Con el puntero junto al borde inferior
@@ -903,36 +984,43 @@ actualiza team-lead.
 
 ### Con qué se verifica cada criterio
 
-| Criterio | Tipo         | Archivo                                                  | Qué afirma                                                                                                                       |
-| -------- | ------------ | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| 1        | unidad + e2e | `calendar-gestures.test.ts`; `e2e/calendar-drag.spec.ts` | `candidateAt` de `move` con cada zoom, tomado de un segundo segmento y con inicio fuera de marca; el recorrido 1                 |
-| 2        | unidad + e2e | `calendar-gestures.test.ts`; `e2e/calendar-drag.spec.ts` | `start` y `end` con sus topes, con el otro extremo en 10:07; `segmentGestures` con distancia cero; el recorrido 2                |
-| 3        | unidad + e2e | `calendar-gestures.test.ts`; `e2e/calendar-drag.spec.ts` | el fin pasa a la columna siguiente y a 24:00 escrito «00:00»; el recorrido 2                                                     |
-| 4        | unidad + e2e | `calendar-gestures.test.ts`; `e2e/calendar-drag.spec.ts` | `create` hacia arriba, hacia abajo, recortado a `1440 - zoom`; `initialCandidate` es `slotDraft`; el recorrido 3                 |
-| 5        | unidad       | `calendar-gestures.test.ts`                              | con el hueco de Madrid del 2026-03-29, cada gesto da `null` con un extremo en `[120, 180)`; el piso con un día `beforeWorkspace` |
-| 6        | unidad       | `calendar-gestures.test.ts`; `calendar-block.test.tsx`   | `segmentGestures` por caso; el bloque sin `data-block-handle` con `NO_GESTURES` y con los dos cuando los ofrece                  |
-| 7        | unidad       | `calendar-gestures.test.ts`                              | ningún candidato de `move` queda fuera del período (`isOutsidePeriod` falso) en los bordes                                       |
-| 8        | e2e + unidad | `e2e/calendar-drag.spec.ts`; `calendar-block.test.tsx`   | el recorrido 4; `busy` da `aria-busy` y `aria-disabled`                                                                          |
-| 9        | e2e          | `e2e/calendar-drag.spec.ts`                              | `Esc` en los recorridos 1 y 4, sin pedidos                                                                                       |
-| 10       | unidad + e2e | `refresh-gate.test.ts`; `e2e/calendar-drag.spec.ts`      | la compuerta junta disparos y suelta uno; el recorrido 4                                                                         |
-| 11       | e2e          | `e2e/calendar-drag.spec.ts`                              | los recorridos 1 y 3                                                                                                             |
-| 12       | e2e          | `e2e/calendar-drag.spec.ts`                              | los recorridos 1 y 4                                                                                                             |
-| 13       | unidad       | `calendar-gestures.test.ts`                              | `startsGesture` con `touch`, `pen`, el botón secundario y un puntero no primario                                                 |
-| 14       | unidad + e2e | `calendar-gestures.test.ts`; `e2e/calendar-drag.spec.ts` | `autoScrollStep` en la banda y fuera; el recorrido 4                                                                             |
-| 15       | unidad       | `refresh-gate.test.ts`                                   | con la compuerta abierta, cada disparo revalida                                                                                  |
-| 16       | todos        | las suites existentes                                    | en verde, con solo el fixture de `calendar-block.test.tsx`                                                                       |
+| Criterio | Tipo         | Archivo                                                  | Qué afirma                                                                                                                                                               |
+| -------- | ------------ | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1        | unidad + e2e | `calendar-gestures.test.ts`; `e2e/calendar-drag.spec.ts` | `candidateAt` de `move` con cada zoom, tomado de un segundo segmento y con inicio fuera de marca; una de 10:07 que vuelve a casa da `original`; el recorrido 1           |
+| 2        | unidad + e2e | `calendar-gestures.test.ts`; `e2e/calendar-drag.spec.ts` | `start` y `end` con sus topes, con el otro extremo en 10:07; cada extremo de 10:07 que vuelve a casa da `original`; `segmentGestures` con distancia cero; el recorrido 2 |
+| 3        | unidad + e2e | `calendar-gestures.test.ts`; `e2e/calendar-drag.spec.ts` | el fin pasa a la columna siguiente y a 24:00 escrito «00:00»; el recorrido 2                                                                                             |
+| 4        | unidad + e2e | `calendar-gestures.test.ts`; `e2e/calendar-drag.spec.ts` | `create` hacia arriba, hacia abajo, recortado a `1440 - zoom`; `initialCandidate` es `slotDraft`; el recorrido 3                                                         |
+| 5        | unidad       | `calendar-gestures.test.ts`                              | con el hueco de Madrid del 2026-03-29, cada gesto da `null` con un extremo en `[120, 180)`; el piso con un día `beforeWorkspace`                                         |
+| 6        | unidad       | `calendar-gestures.test.ts`; `calendar-block.test.tsx`   | `segmentGestures` por caso; el bloque sin `data-block-handle` con `NO_GESTURES` y con los dos cuando los ofrece                                                          |
+| 7        | unidad       | `calendar-gestures.test.ts`                              | ningún candidato de `move` queda fuera del período (`isOutsidePeriod` falso) en los bordes                                                                               |
+| 8        | e2e + unidad | `e2e/calendar-drag.spec.ts`; `calendar-block.test.tsx`   | el recorrido 4; `busy` da `aria-busy` y `aria-disabled`                                                                                                                  |
+| 9        | e2e          | `e2e/calendar-drag.spec.ts`                              | `Esc` antes de soltar en los recorridos 1, 3 y 4, y `visibilitychange` con `visibilityState` reemplazado en el 1, sin pedidos ni diálogos                                |
+| 10       | unidad + e2e | `refresh-gate.test.ts`; `e2e/calendar-drag.spec.ts`      | la compuerta junta disparos y suelta uno; el recorrido 4                                                                                                                 |
+| 11       | e2e          | `e2e/calendar-drag.spec.ts`                              | los recorridos 1 y 3, con `Esc` antes de soltar sobre el fondo de una columna                                                                                            |
+| 12       | e2e          | `e2e/calendar-drag.spec.ts`                              | los recorridos 1 y 4                                                                                                                                                     |
+| 13       | unidad       | `calendar-gestures.test.ts`                              | `startsGesture` con `touch`, `pen`, el botón secundario y un puntero no primario                                                                                         |
+| 14       | unidad + e2e | `calendar-gestures.test.ts`; `e2e/calendar-drag.spec.ts` | `autoScrollStep` en la banda y fuera; el recorrido 4                                                                                                                     |
+| 15       | unidad + e2e | `refresh-gate.test.ts`; `e2e/tracker.spec.ts:444-447`    | con la compuerta abierta, cada disparo revalida; el e2e de TT-40, que cae con `paused = true` por omisión                                                                |
+| 16       | todos        | las suites existentes                                    | en verde, con solo el fixture de `calendar-block.test.tsx`                                                                                                               |
 
 **El criterio 12 es el de T-n6.** El mutante que relaja la guarda para enfocar
 el bloque desde cualquier lado tiene que caer: en el recorrido 4, la respuesta
 que llega con la confirmación del borrado abierta fija `focusEntryId`, y el
 foco no sale de la confirmación ni se abre un detalle detrás. El mutante que no
-limpia `focusEntryId` con el foco ya en el botón cae en el recorrido 1: después
-de mover, un foco en la región lo llevaría al bloque movido.
+limpia `focusEntryId` en `onOpenChange(false)` cae en el mismo recorrido:
+después de «Cancelar», un foco en la región lo llevaría a «Falla». El que no lo
+limpia con el foco ya en el botón cae en el recorrido 1: después de mover, un
+foco en la región lo llevaría al bloque movido.
 
-**El criterio 11 distingue el umbral de la captura.** El mutante que toma la
-captura al apretar rompe el clic en un bloque y en una franja, que los
-recorridos de `calendar.spec.ts` y `calendar-edit.spec.ts` hacen; el que no
-detiene el clic posterior abre el diálogo después de soltar en el recorrido 1.
+**El criterio 11 distingue el umbral, la captura y la cancelación.** El
+mutante que toma la captura al apretar rompe el clic en un bloque y en una
+franja, que los recorridos de `calendar.spec.ts` y `calendar-edit.spec.ts`
+hacen. El mutante que se mata acá es **«cancelar suelta la captura sin
+marca»**: con `Esc` antes de soltar, el `pointerup` y el `click` llegarían a la
+columna, y `handleClick` abriría el alta en los recorridos 1 y 3. Que el
+`click` de un gesto terminado no llega al bloque lo garantiza la captura, no
+`onClickCapture` (§5.4, paso 7): sacar `onClickCapture` no rompe ningún test, y
+es a propósito.
 
 **El criterio 5 no tiene e2e**: el workspace de los e2e está en Buenos Aires,
 sin cambio de horario. Lo cubren los tests de unidad con el hueco de Madrid,
@@ -955,10 +1043,15 @@ una espera fija.
    la columna del jueves con «14:00 – 15:00», no hay diálogo abierto y el foco
    está en su botón; después de la revalidación, el total del miércoles es
    «0:00» y el del jueves «1:00». Moverlo al viernes y volver al mismo lugar
-   antes de soltar: ningún pedido. Moverlo al viernes y `Esc` antes de soltar:
-   el bloque vuelve al jueves, ningún pedido y el foco en su botón. Por último,
-   enfocar la región «Calendario» —lo que hace un clic en un lugar vacío de
-   ella—: el foco se queda en la región, no vuelve al bloque movido.
+   antes de soltar: ningún pedido. Moverlo al viernes, `Esc` con el botón
+   todavía apretado y soltar sobre el fondo del viernes: el bloque vuelve al
+   jueves, ningún pedido, no se abre «Agregar entrada» y el foco está en su
+   botón. Moverlo al viernes y, con el botón apretado, reemplazar
+   `document.visibilityState` por `"hidden"` y despachar `visibilitychange`: el
+   bloque vuelve al jueves; restituir `visibilityState` y soltar: ningún pedido
+   ni diálogo. Por último, enfocar la región «Calendario» —lo que hace un clic
+   en un lugar vacío de ella—: el foco se queda en la región, no vuelve al
+   bloque movido.
 2. **Estirar y la medianoche** (criterios 2, 3). Con el zoom en «30 min», una
    entrada el martes de 10:00 a 11:00. Llevar el asa de fin a las 12:30:
    «10:00 – 12:30». Llevarla por encima del inicio: «10:00 – 10:30». Llevar el
@@ -969,41 +1062,48 @@ una espera fija.
    martes. Llevar el asa de fin de la del miércoles a la columna del jueves, a
    la altura de las 23:00: el fin pasa al jueves y se detiene en las 21:00,
    «22:00 – 21:00» con su superíndice.
-3. **Crear arrastrando** (criterios 4, 11). Con el zoom en «15 min», en el
+3. **Crear arrastrando** (criterios 4, 9, 11). Con el zoom en «15 min», en el
    viernes, apretar en la franja de las 08:30 y llevar el puntero a la de las
    09:30: la selección dibujada con «08:30 – 09:45». Soltar: «Agregar entrada»
    con el viernes, 08:30 y 09:45, no el borrador de un clic. `Esc`: el diálogo se
    cierra, no hay selección dibujada ni bloque. Apretar en las 09:30, subir a
-   las 08:15 y `Esc` antes de soltar: sin diálogo ni selección. Apretar en las
+   las 08:15, `Esc` con el botón todavía apretado y soltar sobre el fondo del
+   viernes: sin diálogo, sin selección y sin el alta de un clic. Apretar en las
    08:30 y llevar el puntero al sábado a la altura de las 09:00: la selección
    sigue en el viernes, «08:30 – 09:15». Soltar y «Agregar»: el bloque en el
    viernes.
-4. **Falla, reintento, revalidación y desplazamiento** (criterios 8, 10, 12,
+4. **Falla, reintento, revalidación y desplazamiento** (criterios 8, 9, 10, 12,
    14). Una entrada «Falla» el miércoles de 09:00 a 10:00 y otra «Otra» el
    jueves de 09:00 a 10:00. Con `holdActionResponses`, llevar «Falla» a las
    11:00: el bloque en su lugar nuevo con `aria-busy="true"` y
-   `aria-disabled="true"`, y apretar «Otra» y moverla no la mueve. Con la
-   respuesta todavía retenida, abrir «Otra» con un clic, «Borrar» del menú, y
-   con la confirmación abierta soltar las respuestas: cuando llega la
-   revalidación, «Falla» dice «11:00 – 12:00» sin `aria-busy`, el foco sigue en
-   la confirmación y no hay ningún detalle abierto. «Cancelar». Con
-   `loseActionResponses` y `holdRefreshes`, llevar «Falla» a las 13:00: el
-   aviso «No se pudo guardar el horario de la entrada.» con su causa y
-   «Reintentar», el bloque de vuelta en «11:00 – 12:00» y el foco en su botón.
-   Dejar de perder respuestas y soltar las revalidaciones; «Reintentar»: el
-   foco en la región, nunca en `body`, y después en el bloque, con «13:00 –
-   14:00» y sin aviso. Apretar el bloque y moverlo, disparar `focus` en la
-   ventana: ninguna revalidación mientras dura el gesto. Llevar el puntero
-   junto al borde inferior del área visible: el `scrollTop` de la grilla sube.
-   `Esc` y soltar: ningún pedido, y sale una revalidación.
+   `aria-disabled="true"`. Con los gestos inactivos, apretar «Otra», mover el
+   puntero unos píxeles sin salir del bloque y soltar sobre él: «Otra» no se
+   mueve, y ese clic abre su diálogo. «Borrar» del menú, y con la confirmación
+   abierta soltar las respuestas: cuando llega la revalidación, «Falla» dice
+   «11:00 – 12:00» sin `aria-busy`, el foco sigue en la confirmación y no hay
+   ningún detalle abierto. «Cancelar», y enfocar la región «Calendario»: el
+   foco se queda en la región, no va a «Falla». Con `loseActionResponses` y
+   `holdRefreshes`, llevar «Falla» a las 13:00: el aviso «No se pudo guardar el
+   horario de la entrada.» con su causa y «Reintentar», el bloque de vuelta en
+   «11:00 – 12:00» y el foco en su botón. Dejar de perder respuestas y soltar
+   las revalidaciones; «Reintentar»: el foco en la región, nunca en `body`, y
+   después en el bloque, con «13:00 – 14:00» y sin aviso. Apretar el bloque y
+   moverlo, disparar `focus` en la ventana: ninguna revalidación mientras dura
+   el gesto. Llevar el puntero junto al borde inferior del área visible: el
+   `scrollTop` de la grilla sube. `Esc` y soltar: ningún pedido, y sale una
+   revalidación.
 
 ## 8. Deuda conocida del slice
 
-- **Los huecos del día siguiente al último visible no se conocen.** Un bloque
-  del domingo movido de forma que su fin caiga en el hueco del lunes siguiente
-  llega al servidor, que responde `nonexistentClock` (CAL-59), y el bloque
-  vuelve. Mandar los `missingMinutes` de un día más en `calendarState` lo
-  cierra.
+- **Los huecos de los días vecinos al período no se conocen.** Un bloque
+  movido puede quedar empezando el día anterior al primero visible (`s < 0` en
+  §5.2), o terminando el día siguiente al último. Si ese extremo cae en un
+  hueco de ese día, el pedido llega al servidor, que responde
+  `nonexistentClock` (CAL-59), y el bloque vuelve. Mandar los `missingMinutes`
+  de un día más a cada lado en `calendarState` lo cierra.
+- **La pérdida del puntero no tiene e2e**: `page.mouse` no produce
+  `pointercancel` ni `lostpointercapture`. Comparte la rama de cancelación con
+  `Esc` y la pestaña oculta, que sí la tienen (criterio 9).
 - **Los totales no se mueven de forma optimista**: el día y el período se
   ponen al día con la revalidación (§1).
 - **La duración en vuelo es la distancia de reloj**: en un día con cambio de
@@ -1018,6 +1118,9 @@ una espera fija.
   diálogo.
 - **Un bloque de distancia cero no se mueve** (CAL-90): se estira, o se mueve
   desde el diálogo.
+- **Al estirar, el extremo quieto viaja con lo que muestra la pantalla**
+  (CAL-97): si otra pestaña lo cambió, el gesto lo devuelve a ese rótulo. Es la
+  regla de la fila; evitarlo pediría una mutación que reciba un solo extremo.
 - **Táctil y lápiz sin gestos** (ADR 0014), y sin e2e de pantallas táctiles.
 - **Reintentar después de una respuesta perdida deja dos constancias** iguales
   de `timeEntry.updateTimes`, como en la fila.
