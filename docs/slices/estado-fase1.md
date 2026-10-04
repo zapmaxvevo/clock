@@ -15,23 +15,24 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-04.
 | 5 — Semana y paginación                    | En `main`                                       |
 | 9 — Núcleo de proyectos                    | En `main`                                       |
 | 10 — Selector de proyecto y tarea          | En `main`                                       |
-| 7 — Perfil                                 | En `main` (local): falta `git push origin main` |
-| 6 — Selección y acciones en masa           | Contrato con ronda 2 aplicada; sigue ahora      |
+| 7 — Perfil                                 | En `main`                                       |
+| 6 — Selección y acciones en masa           | En `main` (local): falta `git push origin main` |
 | 7b — Perfil: nombre editable y tema        | Sin contrato                                    |
 | 8, 11–13                                   | Sin contrato                                    |
 
-Los slices 1 a 5, 9 y 10 están en `origin/main`. El slice 7 pasó las seis revisiones
-(`correcciones-fase1-slice7-revisiones.md`) y su ronda de correcciones, y está mergeado en
-`main` local: **falta `git push origin main`**. Corrida final: 614 de unidad, 709 de
-integración y 88 de 88 en e2e (seis fallas por el 429 del endpoint de sesión, que pasan al
-repetirlas con `--last-failed`). No quedan agentes corriendo ni trabajo sin commitear.
+Los slices 1 a 5, 7, 9 y 10 están en `origin/main`. El
+slice 6 pasó las seis revisiones (`correcciones-fase1-slice6-revisiones.md`) y su ronda de
+correcciones, y está mergeado en `main` local: **falta `git push origin main`**. Corrida
+final: 657 de unidad, 779 de integración y 99 de 99 en e2e (16 fallas por el 429 del
+endpoint de sesión, que pasan con `--last-failed`). No quedan agentes corriendo ni trabajo
+sin commitear.
 
 ## Lo primero de la sesión siguiente
 
-1. **Pipeline del 6** (selección y acciones en masa). Antes, el paso 0 de su handshake:
-   confirmar contra el código del 7 los supuestos de su §0 (l. 72-75), que la ronda 2
-   dejó abiertos.
-2. El contrato del **8** (calendario); después el 7b, 11, 12, 13.
+1. **El contrato del 8** (calendario): `parity-analyst` ya tiene `docs/parity/calendario.md`;
+   sigue el `architect`. Después el 7b, 11, 12, 13.
+2. **Decisión del usuario sobre el 429** (ver «Decisiones pendientes»): ya son 16 fallas por
+   corrida completa y crece con cada slice.
 3. Para el contrato del **7b**: TT-16 justifica guardar el modo timer/manual en una cookie
    porque «no hay perfil todavía»; el perfil existe y no lo incluye. Decidir si entra al 7b o
    se reescribe la justificación. El 7b edita el nombre con su propia action:
@@ -67,11 +68,12 @@ null (col)`) antes de desplegar.
 - **Sesión en el workspace de Clockify** para cerrar lo no verificado: P-14 en
   `time-tracker.md` (fila de la entrada que corre, hora inexistente, horas de la
   copia al duplicar, «la última» de `c`, continuar o duplicar con un proyecto no
-  disponible, TT-57 y TT-58), P-09 de `perfil.md` (formas de 12 h y de fecha, búsqueda de zonas, `UTC`), P-12 de
+  disponible, TT-57 y TT-58), la edición masiva del rastreador (P-07: si está en Free; si limita la selección
+  a un día; qué cambia «Time»; si aplica en parte; «DELETE» y mayúsculas), P-09 de `perfil.md` (formas de 12 h y de fecha, búsqueda de zonas, `UTC`), P-12 de
   `timesheet.md`, P-07 de
   `calendario.md`, y PR-40/PR-58 de `proyectos.md` (quién crea tareas).
 - **El 429 del endpoint de sesión de prueba crece con la suite**: seis fallas en la corrida
-  del 7 (88 tests), que pasan al repetir. Opciones: subir el límite solo con
+  del 7 (88 tests) y dieciséis en la del 6 (99 tests), que pasan al repetir. Opciones: subir el límite solo con
   `ALLOW_TEST_SESSION`, o que cada worker reuse su sesión. Toca un control de seguridad.
 - **«Reintentar» en el alta manual**: con el ADR 0007 se le podría devolver y
   retirar TT-109. Es un cambio de paridad chico; queda propuesto.
