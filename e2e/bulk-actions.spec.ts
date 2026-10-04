@@ -10,6 +10,7 @@ import {
   weekStartOf,
   type CivilDay,
 } from "./days";
+import { copyEntry } from "./database";
 import {
   holdActionResponses,
   holdRefreshes,
@@ -56,6 +57,9 @@ import {
 /** La zona por omisión de la persona (P-03): la que fija qué día es hoy. */
 const PERSON_TIMEZONE = "America/Argentina/Buenos_Aires";
 
+/** §5.2: el motivo de los botones inactivos con más de 200 elegidas. */
+const BULK_TOO_MANY = "Se pueden elegir hasta 200 entradas a la vez.";
+
 /** El texto de `unexpected`, el de una falla de red. */
 const NETWORK_FAILURE = "No se pudo guardar. Revisá la conexión y volvé a intentar.";
 
@@ -97,6 +101,22 @@ function dayGroupBehindDialog(page: Page, day: CivilDay, today: CivilDay): Locat
   });
 }
 
+/** Una fila del grupo detrás de un diálogo modal abierto, por su descripción. */
+function rowBehindDialog(group: Locator, description: string): Locator {
+  return group
+    .getByRole("listitem", { includeHidden: true })
+    .filter({ hasText: description });
+}
+
+/** La casilla del encabezado de un día detrás de un diálogo modal abierto. */
+function dayCheckboxBehindDialog(group: Locator, label: string): Locator {
+  return group.getByRole("checkbox", {
+    name: `Seleccionar las entradas del día ${label}`,
+    exact: true,
+    includeHidden: true,
+  });
+}
+
 /** Las horas de una fila editable, un botón que abre el editor del horario. */
 function timesButton(row: Locator, start: string, end: string): Locator {
   return row.getByRole("button", { name: `${start} – ${end} — editar el horario` });
@@ -129,6 +149,11 @@ async function expectInactive(control: Locator): Promise<void> {
 async function expectActive(control: Locator): Promise<void> {
   await expect(control).not.toHaveAttribute("aria-disabled", "true");
   await expect(control).not.toHaveAttribute("disabled");
+}
+
+/** TT-55: la fila que ocupa una operación en vuelo. */
+async function expectBusy(row: Locator): Promise<void> {
+  await expect(row).toHaveAttribute("aria-busy", "true");
 }
 
 /**
@@ -233,31 +258,35 @@ function confirmField(dialog: Locator): Locator {
   return dialog.getByRole("textbox", { name: "Escribí BORRAR para confirmar" });
 }
 
+/** El nombre con que la página ve la función que anota cada encabezado. */
+const FOCUSED_HEADING_BINDING = "e2eFocusedHeading";
+
 /**
- * Empieza a anotar los encabezados que reciben el foco. Mirar el foco en un
- * instante no alcanza para el borrado masivo: un encabezado de día que lo
- * toma con la vista optimista y lo pierde enseguida, cuando el diálogo termina
- * de cerrarse y lo pasa a la región, ya no se ve al afirmar, pero un lector de
- * pantalla lo anunció.
+ * Empieza a anotar los encabezados que reciben el foco y devuelve la lista,
+ * que vive del lado del test: la página le pasa cada uno por un binding.
+ * Mirar el foco en un instante no alcanza para el borrado masivo: un
+ * encabezado de día que lo toma con la vista optimista y lo pierde enseguida,
+ * cuando el diálogo termina de cerrarse y lo pasa a la región, ya no se ve al
+ * afirmar, pero un lector de pantalla lo anunció.
  */
-async function recordFocusedHeadings(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const log: string[] = [];
-    Object.assign(window, { e2eFocusedHeadings: log });
+async function recordFocusedHeadings(page: Page): Promise<readonly string[]> {
+  const headings: string[] = [];
+  await page.exposeBinding(FOCUSED_HEADING_BINDING, (_source, text: string) => {
+    headings.push(text);
+  });
+  await page.evaluate((binding) => {
+    const report: unknown = Reflect.get(window, binding);
+    if (typeof report !== "function") {
+      throw new Error(`La página no tiene el binding ${binding}.`);
+    }
     document.addEventListener("focusin", (event) => {
       const target = event.target;
       if (target instanceof HTMLElement && /^H[1-6]$/.test(target.tagName)) {
-        log.push(target.textContent ?? "");
+        void report(target.textContent ?? "");
       }
     });
-  });
-}
-
-/** Los encabezados que recibieron el foco desde `recordFocusedHeadings`. */
-async function focusedHeadings(page: Page): Promise<readonly string[]> {
-  return page.evaluate(
-    () => (window as unknown as { e2eFocusedHeadings: string[] }).e2eFocusedHeadings,
-  );
+  }, FOCUSED_HEADING_BINDING);
+  return headings;
 }
 
 /**
@@ -375,6 +404,16 @@ test("elegir filas y días muestra la cantidad, el día mixto y la barra que se 
   await expect(first).not.toBeChecked();
   await expect(second).not.toBeChecked();
   await expect(bulkButton(page, "Quitar selección")).toHaveCount(0);
+
+  // «Quitar selección» suelta todas y se va con la barra: el foco, que tenía
+  // él, pasa a la región (§5.4).
+  await day.click();
+  await expect(bulkStatus(page)).toHaveText("2 entradas seleccionadas");
+  await bulkButton(page, "Quitar selección").click();
+  await expect(bulkButton(page, "Quitar selección")).toHaveCount(0);
+  await expect(day).toHaveAttribute("aria-checked", "false");
+  await expect(first).not.toBeChecked();
+  await expect(bulkRegion(page)).toBeFocused();
 });
 
 test("editar la descripción de tres entradas las cambia a todas y deja el foco en la región", async ({
@@ -412,9 +451,49 @@ test("editar la descripción de tres entradas las cambia a todas y deja el foco 
   const save = dialogButton(dialog, "Guardar");
   await expectInactive(save);
 
+  // Una hora escrita sin salir del campo ya cuenta: «Guardar» no se ve
+  // inactivo mientras tiene texto, y vaciado vuelve a estarlo.
+  const start = clockField(dialog, "Hora de inicio");
+  await start.fill("10:00");
+  await expect(start).toBeFocused();
+  await expectActive(save);
+  await start.fill("");
+  await expectInactive(save);
+
+  // «Quitar la fecha» vuelve a «Sin cambios», deja el foco en el selector y,
+  // sin otro campo con algo, «Guardar» inactivo.
+  await chooseBulkDate(page, dialog, today, yesterday);
+  await expect(bulkDateButton(dialog)).not.toContainText("Sin cambios");
+  await expectActive(save);
+  await dialogButton(dialog, "Quitar la fecha").click();
+  await expect(dialogButton(dialog, "Quitar la fecha")).toHaveCount(0);
+  await expect(bulkDateButton(dialog)).toContainText("Sin cambios");
+  await expect(bulkDateButton(dialog)).toBeFocused();
+  await expectInactive(save);
+
   await descriptionField(dialog).fill("nombre en bloque");
   await expectActive(save);
-  await withServerAction(page, () => save.click());
+
+  /*
+   * TT-55: mientras la edición viaja, las tres filas están ocupadas y la
+   * casilla del día no se puede usar. Quedan detrás del diálogo, que sigue
+   * abierto hasta la respuesta: se las busca con `includeHidden`.
+   */
+  const release = await holdActionResponses(page, isTrackerPage);
+  const edited = page.waitForResponse((response) => isAction(response.request()));
+  await save.click();
+  const todayBehind = dayGroupBehindDialog(page, today, today);
+  const yesterdayBehind = dayGroupBehindDialog(page, yesterday, today);
+  await expectBusy(rowBehindDialog(todayBehind, "vieja uno"));
+  await expectBusy(rowBehindDialog(todayBehind, "vieja dos"));
+  await expectBusy(rowBehindDialog(yesterdayBehind, "vieja de ayer"));
+  await expect(dayCheckboxBehindDialog(todayBehind, "Hoy")).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  await expectInactive(save);
+  release();
+  expect((await edited).ok()).toBeTruthy();
 
   // Criterio 6: las tres con la descripción nueva, en sus dos días.
   await expect(dialog).toBeHidden();
@@ -583,7 +662,7 @@ test("borrar dos entradas confirma con la palabra, y el borrado de una fila sigu
    */
   const releaseDelete = await holdActionResponses(page, isTrackerPage);
   const deleted = page.waitForResponse((response) => isAction(response.request()));
-  await recordFocusedHeadings(page);
+  const focusedHeadings = await recordFocusedHeadings(page);
   await field.press("Enter");
   await expect(dialog).toBeHidden();
   await expect(entryRow(todays, "se borra uno")).toHaveCount(0);
@@ -592,7 +671,7 @@ test("borrar dos entradas confirma con la palabra, y el borrado de una fila sigu
   // Criterio 19: la región, y ningún encabezado de día en el camino, aunque
   // el de hoy sigue en pantalla.
   await expect(bulkRegion(page)).toBeFocused();
-  expect(await focusedHeadings(page)).toEqual([]);
+  expect(focusedHeadings).toEqual([]);
   releaseDelete();
   expect((await deleted).ok()).toBeTruthy();
 
@@ -612,6 +691,68 @@ test("borrar dos entradas confirma con la palabra, y el borrado de una fila sigu
   release();
   await settled;
   await expect(todayGroup(page)).toHaveCount(0);
+});
+
+test("borrar todas las entradas deja la pantalla vacía con el foco y el resultado en la región", async ({
+  page,
+}) => {
+  const today = todayIn(PERSON_TIMEZONE);
+
+  // Sin timer: con las dos borradas no queda nada que mostrar (TT-85).
+  await page.goto("/");
+  await chooseMode(page, "manual");
+  await addTodayEntries(page, today, ["todas uno", "todas dos"]);
+
+  await dayCheckbox(todayGroup(page), "Hoy").click();
+  await expect(bulkStatus(page)).toHaveText("2 entradas seleccionadas");
+
+  const dialog = await openBulkDelete(page, "¿Borrar 2 entradas?");
+  await confirmField(dialog).fill("BORRAR");
+  await withServerAction(page, () => dialogButton(dialog, "Borrar").click());
+
+  // Criterio 19: la región sobrevive a la lista vacía, se queda con el foco y
+  // anuncia el resultado, con la pantalla vacía a la vista.
+  await expect(dialog).toBeHidden();
+  await expect(todayGroup(page)).toHaveCount(0);
+  await expect(page.getByText("Todavía no cargaste horas")).toBeVisible();
+  await expect(bulkStatus(page)).toHaveText("Se borraron 2 entradas.");
+  await expect(bulkRegion(page)).toBeFocused();
+});
+
+test("con más de 200 elegidas la barra muestra el tope y no deja editar ni borrar", async ({
+  page,
+  email,
+}) => {
+  const today = todayIn(PERSON_TIMEZONE);
+
+  // Una por la interfaz y doscientas copias por la base, en el mismo día.
+  await page.goto("/");
+  await chooseMode(page, "manual");
+  await addTodayEntries(page, today, ["pasada del tope"]);
+  await copyEntry(email, "pasada del tope", 200);
+  await page.reload();
+  await expect(entriesNamed(page, "pasada del tope")).toHaveCount(201);
+
+  // Criterio 5: la cantidad se cuenta igual, y los dos botones quedan
+  // inactivos con el motivo como descripción.
+  await dayCheckbox(todayGroup(page), "Hoy").click();
+  await expect(bulkStatus(page)).toHaveText("201 entradas seleccionadas");
+  await expect(bulkRegion(page).getByText(BULK_TOO_MANY)).toBeVisible();
+  for (const name of ["Editar", "Borrar"] as const) {
+    await expectInactive(bulkButton(page, name));
+    await expect(bulkButton(page, name)).toHaveAccessibleDescription(BULK_TOO_MANY);
+  }
+
+  /*
+   * Inactivo por `aria-disabled`, el botón sigue recibiendo el clic: se fuerza
+   * para que llegue y no abra el diálogo. «Quitar selección», que sí está
+   * activo, se aprieta después: con un diálogo modal abierto estaría inerte.
+   */
+  await bulkButton(page, "Borrar").click({ force: true });
+  await expect(bulkDeleteDialog(page)).toHaveCount(0);
+  await bulkButton(page, "Quitar selección").click();
+  await expect(bulkStatus(page)).not.toContainText("seleccionadas");
+  await expect(bulkDeleteDialog(page)).toHaveCount(0);
 });
 
 test("un borrado cuya respuesta se perdió se reintenta y termina bien, con el foco en la región", async ({
@@ -654,6 +795,19 @@ test("un borrado cuya respuesta se perdió se reintenta y termina bien, con el f
   await expect(bulkStatus(page)).toHaveText("2 entradas seleccionadas");
 
   await expectDeletedElsewhere(browser, email, "testigo", ["perdida uno", "perdida dos"]);
+
+  /*
+   * §4.7: el reintento reenvía el pedido entero, así que se ofrece solo
+   * mientras todas sus entradas sigan elegidas. Soltar una deja el aviso sin
+   * «Reintentar», y volver a elegirla lo trae.
+   */
+  await second.click();
+  await expect(bulkStatus(page)).toHaveText("1 entrada seleccionada");
+  await expect(notice).toContainText(NETWORK_FAILURE);
+  await expect(retry).toHaveCount(0);
+  await second.click();
+  await expect(bulkStatus(page)).toHaveText("2 entradas seleccionadas");
+  await expect(retry).toBeVisible();
 
   /*
    * Criterios 14 y 19: «Reintentar» se va con su aviso, y el foco tiene que

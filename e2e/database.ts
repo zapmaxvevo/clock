@@ -226,3 +226,43 @@ export async function markTaskDone(projectName: string, taskName: string): Promi
     [projectName, taskName],
   );
 }
+
+/**
+ * Copia `copies` veces la única entrada de una persona con esa descripción,
+ * con sus mismos instantes, así que caen en su mismo día. Es lo que la
+ * interfaz no puede producir en un tiempo razonable: más entradas que el tope
+ * de las acciones en masa. Si la persona no tiene exactamente una entrada con
+ * esa descripción, se corta sin dejar nada.
+ */
+export async function copyEntry(
+  email: string,
+  description: string,
+  copies: number,
+): Promise<void> {
+  await withDatabase(async (client) => {
+    await client.query("begin");
+    try {
+      const result = await client.query(
+        `insert into time_entry (workspace_id, user_id, description, started_at, ended_at)
+         select time_entry.workspace_id, time_entry.user_id, time_entry.description,
+                time_entry.started_at, time_entry.ended_at
+           from time_entry
+           join "user" on "user".id = time_entry.user_id
+          cross join generate_series(1, $3)
+          where time_entry.workspace_id = ${FIRST_WORKSPACE}
+            and "user".email = $1
+            and time_entry.description = $2`,
+        [email, description, copies],
+      );
+      if (result.rowCount !== copies) {
+        throw new Error(
+          `Se esperaba copiar ${copies} entradas y se copiaron ${result.rowCount}.`,
+        );
+      }
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    }
+  });
+}
