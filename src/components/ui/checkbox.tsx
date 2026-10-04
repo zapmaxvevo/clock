@@ -19,6 +19,7 @@ function Checkbox({ className, ...props }: CheckboxPrimitive.Root.Props) {
         className="grid place-content-center text-current transition-none [&>svg]:size-3.5"
       >
         <CheckIcon className="in-data-indeterminate:hidden" />
+        {/* No es del CLI, como las clases `data-indeterminate`: el estado mixto de la casilla del día. */}
         <MinusIcon className="hidden in-data-indeterminate:block" />
       </CheckboxPrimitive.Indicator>
     </CheckboxPrimitive.Root>

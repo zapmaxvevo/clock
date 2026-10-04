@@ -11,7 +11,6 @@ import { useEffect, useRef, useState } from "react";
 
 import { useDisplayFormats } from "@/components/layout/display-formats";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,7 +26,13 @@ import { clockLabel, formatDuration } from "@/server/time";
 import { DeleteEntryDialog } from "./delete-entry-dialog";
 import { DescriptionField } from "./description-field";
 import { EntryTimesEditor } from "./entry-times-editor";
-import { entryProjectLabel, selectEntryLabel, trackerLabels } from "./labels";
+import {
+  entryNameOf,
+  entryProjectLabel,
+  selectEntryLabel,
+  trackerLabels,
+} from "./labels";
+import { SelectionCheckbox } from "./selection-checkbox";
 import { draftDuration, draftExtraDays, fromView, type TimeDraft } from "./time-draft";
 
 type EntryRowProps = {
@@ -193,7 +198,7 @@ export function EntryRow({
     onSave(next);
   }
 
-  const entryName = description === "" ? trackerLabels.noDescription : description;
+  const entryName = entryNameOf(description);
   // Una sola expresión en reposo, en edición y en vuelo: las horas canónicas
   // nunca se muestran sin pasar por el formato de la persona.
   const timesLabel = `${clockLabel(times.start, time)} – ${clockLabel(times.end, time)}`;
@@ -213,18 +218,12 @@ export function EntryRow({
       className={cn("border-b last:border-b-0", busy && "opacity-60")}
     >
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2">
-        {/* TT-62: siempre visible, no solo al pasar el puntero. */}
         {canTrack && (
-          <Checkbox
+          <SelectionCheckbox
             checked={selected}
-            onCheckedChange={() => {
-              if (!selectionLocked) {
-                onToggleSelected();
-              }
-            }}
-            aria-label={selectEntryLabel(entryName, timesLabel)}
-            aria-disabled={selectionLocked}
-            className="aria-disabled:cursor-default aria-disabled:opacity-60"
+            label={selectEntryLabel(entryName, timesLabel)}
+            locked={selectionLocked}
+            onToggle={onToggleSelected}
           />
         )}
         <div className="min-w-0 flex-1 basis-64">

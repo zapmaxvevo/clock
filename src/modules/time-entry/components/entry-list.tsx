@@ -18,7 +18,7 @@ import {
 import { BulkActions, type SelectedEntry } from "./bulk-actions";
 import { DayGroup, type MovedEntry } from "./day-group";
 import { startedWeeks } from "./entry-week";
-import { trackerLabels } from "./labels";
+import { entryNameOf, trackerLabels } from "./labels";
 import { useReachWeek } from "./reach-week";
 import {
   keepVisible,
@@ -143,10 +143,12 @@ export function EntryList({
           entry.id,
           {
             id: entry.id,
-            name:
-              entry.description === "" ? trackerLabels.noDescription : entry.description,
+            name: entryNameOf(entry.description),
             dayLabel: group.label,
             startLabel: entry.startLabel,
+            // Los días traen solo entradas cerradas —el timer activo no es una
+            // fila de la lista—, así que el fin siempre está: el `??` es por el
+            // tipo de la vista, que comparte con el timer.
             endLabel: entry.endLabel ?? entry.startLabel,
           },
         ]),

@@ -1,5 +1,7 @@
 import type { TimeFormat } from "@/server/time";
 
+import { BULK_DELETE_WORD } from "./bulk-changes";
+
 /**
  * Textos de la pantalla del rastreador que dicen algo del dominio: los que
  * comparten varios componentes y los que nombran una regla de paridad. Los
@@ -57,7 +59,7 @@ export const trackerLabels = {
   clearDate: "Quitar la fecha",
   /** TT-64: el borrado masivo se confirma escribiendo la palabra. */
   bulkDeleteWarning: "No se puede deshacer.",
-  bulkDeleteConfirm: "Escribí BORRAR para confirmar",
+  bulkDeleteConfirm: `Escribí ${BULK_DELETE_WORD} para confirmar`,
   deleting: "Borrando…",
   /** TT-90: el aviso nombra la operación en masa que falló. */
   entriesNotEdited: "No se pudieron editar las entradas.",
@@ -68,6 +70,11 @@ export const trackerLabels = {
 
 /** TT-03: marcador del campo de descripción. */
 export const DESCRIPTION_PLACEHOLDER = "¿En qué estás trabajando?";
+
+/** TT-50 y TT-94: cómo nombra la pantalla una entrada, también la que no tiene descripción. */
+export function entryNameOf(description: string): string {
+  return description === "" ? trackerLabels.noDescription : description;
+}
 
 /** El nombre accesible del selector de la fila, como el de su menú de acciones. */
 export function entryProjectLabel(entryName: string): string {

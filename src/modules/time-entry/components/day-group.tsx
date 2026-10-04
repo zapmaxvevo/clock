@@ -3,7 +3,6 @@
 import { useEffect, useOptimistic, useRef } from "react";
 
 import { ActionFeedback } from "@/components/action-feedback";
-import { Checkbox } from "@/components/ui/checkbox";
 import { retryHandlerOf, useAction, type ActionHandle } from "@/hooks/use-action";
 import { useNewId } from "@/hooks/use-new-id";
 import {
@@ -24,6 +23,7 @@ import { saveEntryProject, selectionOf, type EntryProjectChange } from "./entry-
 import { EntryRow } from "./entry-row";
 import { selectDayLabel, trackerLabels } from "./labels";
 import { dayCheckState, type Selection } from "./selection";
+import { SelectionCheckbox } from "./selection-checkbox";
 import { useGroupTotalLabel } from "./use-group-total";
 
 type DayGroupProps = {
@@ -245,17 +245,12 @@ export function DayGroup({
       <header className="bg-muted/40 flex items-center justify-between gap-4 border-b px-3 py-2">
         <div className="flex items-center gap-4">
           {canTrack && entryIds.length > 0 && (
-            <Checkbox
+            <SelectionCheckbox
               checked={dayState === "all"}
               indeterminate={dayState === "some"}
-              onCheckedChange={() => {
-                if (!selectionLocked) {
-                  onToggleDay(entryIds);
-                }
-              }}
-              aria-label={selectDayLabel(group.label)}
-              aria-disabled={selectionLocked}
-              className="aria-disabled:cursor-default aria-disabled:opacity-60"
+              label={selectDayLabel(group.label)}
+              locked={selectionLocked}
+              onToggle={() => onToggleDay(entryIds)}
             />
           )}
           <h3
