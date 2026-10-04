@@ -1,5 +1,5 @@
 /**
- * Localizadores y acciones de `/calendario` (slice 8). Como en
+ * Localizadores y acciones de `/calendario` (slices 8 y 8c). Como en
  * `tracker-page.ts`, todo se busca por rol y por texto accesible. Hay dos
  * excepciones, las dos porque la pantalla no las expone a la accesibilidad:
  * la línea de ahora, que es decorativa y lleva `data-calendar-now`, y el
@@ -18,6 +18,28 @@ import {
 import { escapeRegExp } from "./tracker-page";
 
 export const CALENDAR_PATH = "/calendario";
+
+/** La zona por omisión de la persona (P-03): la que fija qué día es hoy. */
+export const PERSON_TIMEZONE = "America/Argentina/Buenos_Aires";
+
+/**
+ * Minutos del final de un día en que los recorridos del timer no se pueden
+ * afirmar: al principio el timer de las 00:00 suma «0:00» o mide la altura
+ * mínima, y al final el test puede cruzar la medianoche.
+ */
+export const NEAR_MIDNIGHT_MINUTES = 5;
+
+/** El motivo del salto de los recorridos del timer cerca de la medianoche. */
+export const NEAR_MIDNIGHT_REASON =
+  "A menos de cinco minutos de la medianoche de la persona el timer de las 00:00 suma «0:00» o el recorrido cruza de día; el reloj emulado no sirve, porque el total, la línea y el bloque se anclan en el serverNow.";
+
+/** Diferencia máxima, en píxeles, entre el borde del timer y la línea de ahora. */
+export const NOW_LINE_TOLERANCE_PX = 2;
+
+/** Lo que pide el endpoint de la pantalla: sus server actions y sus revalidaciones. */
+export function isCalendarPage(url: URL): boolean {
+  return url.pathname === CALENDAR_PATH;
+}
 
 /** La vista de la grilla, como la nombra el selector «Semana / Día» (CAL-07). */
 export type CalendarMode = "week" | "day";
@@ -145,6 +167,15 @@ export async function followPeriodLink(
  */
 export async function pickPeriodDay(page: Page, target: CivilDay): Promise<void> {
   await rangeButton(page).click();
+  await pickInOpenCalendar(page, target);
+}
+
+/**
+ * Elige un día en el calendario de mes abierto, que va en un portal, y espera
+ * que se cierre. El mes que muestra se lee del nombre de su grilla, así no
+ * importa en cuál abrió.
+ */
+async function pickInOpenCalendar(page: Page, target: CivilDay): Promise<void> {
   const calendar = page.getByRole("grid");
   const shown = monthOfCaption((await calendar.getAttribute("aria-label")) ?? "");
   const months = monthsBetween(shown, target);
@@ -222,6 +253,8 @@ export function closedBlockName(entry: {
   readonly end: string;
   readonly extraDays?: number;
   readonly duration: string;
+  /** «Proyecto» o «Proyecto: Tarea», que el nombre suma al final. */
+  readonly project?: string;
 }): string {
   const extraDays = entry.extraDays ?? 0;
   const superscript =
@@ -231,7 +264,8 @@ export function closedBlockName(entry: {
         ? " (termina un día después)"
         : ` (termina ${extraDays} días después)`;
   const day = weekdayLabel(entry.day, entry.today);
-  return `${entry.description}, ${day}, de ${entry.start} a ${entry.end}${superscript}, ${entry.duration}`;
+  const project = entry.project === undefined ? "" : `, ${entry.project}`;
+  return `${entry.description}, ${day}, de ${entry.start} a ${entry.end}${superscript}, ${entry.duration}${project}`;
 }
 
 /** El nombre del bloque del timer (CAL-75): «…, desde las {inicio}, en curso». */
@@ -344,33 +378,213 @@ export async function zoomIn(page: Page, size: ZoomSize): Promise<void> {
   await expectZoom(page, size);
 }
 
+/** Los títulos del diálogo de una entrada (§5.3 del 8c). */
+export type EntryDialogTitle =
+  "Editar entrada" | "Agregar entrada" | "Timer en curso" | "Entrada";
+
 /**
- * El diálogo de una entrada (§5.7), en solo lectura: «Entrada» para una
- * cerrada, «Timer en curso» para la que corre. Va en un portal.
+ * El diálogo de una entrada: «Editar entrada» para una cerrada, «Timer en
+ * curso» para la que corre, «Agregar entrada» para el alta, y «Entrada» en
+ * solo lectura, sin `canTrack`. Va en un portal.
  */
-export function entryDialog(page: Page, title: "Entrada" | "Timer en curso"): Locator {
+export function entryDialog(page: Page, title: EntryDialogTitle): Locator {
   return page.getByRole("dialog", { name: title, exact: true });
 }
 
-/** Los valores de la lista de definiciones del diálogo, en orden. */
-export function dialogValues(dialog: Locator): Locator {
-  return dialog.getByRole("definition");
+/** «Descripción» del diálogo. */
+export function dialogDescription(dialog: Locator): Locator {
+  return dialog.getByRole("textbox", { name: "Descripción", exact: true });
 }
 
-/** «Cerrar», el único control del diálogo de solo lectura. */
-export function closeButton(dialog: Locator): Locator {
-  return dialog.getByRole("button", { name: "Cerrar", exact: true });
+/** Un campo de hora o la duración del diálogo, los del modo manual (TT-18). */
+export function dialogClock(
+  dialog: Locator,
+  label: "Hora de inicio" | "Hora de fin" | "Duración",
+): Locator {
+  return dialog.getByRole("textbox", { name: label, exact: true });
+}
+
+/** El selector de fecha del diálogo, que lleva el día elegido en su nombre. */
+export function dialogDate(dialog: Locator): Locator {
+  return dialog.getByRole("button", { name: /^Fecha( de la entrada)?: / });
+}
+
+/** Un botón del pie del diálogo. */
+export function dialogButton(
+  dialog: Locator,
+  name: "Guardar" | "Cancelar" | "Agregar" | "Detener",
+): Locator {
+  return dialog.getByRole("button", { name, exact: true });
+}
+
+/** El menú del diálogo de una cerrada (CAL-68), con el nombre de la entrada. */
+export function dialogActions(dialog: Locator, description: string): Locator {
+  return dialog.getByRole("button", {
+    name: `Acciones de la entrada «${description}»`,
+    exact: true,
+  });
 }
 
 /**
- * Espera el diálogo de solo lectura abierto, con el foco en «Cerrar» y sin
- * ningún otro control: ni campos, ni selectores, ni la cruz del primitivo.
+ * Elige una opción del menú del diálogo, que se abre en un portal. Elegirla
+ * cierra el diálogo (CAL-68); quien llama espera lo que sigue.
  */
-export async function expectReadOnlyDialog(dialog: Locator): Promise<void> {
-  await expect(closeButton(dialog)).toBeFocused();
-  await expect(dialog.getByRole("button")).toHaveCount(1);
-  await expect(dialog.getByRole("textbox")).toHaveCount(0);
-  await expect(dialog.getByRole("combobox")).toHaveCount(0);
+export async function chooseDialogAction(
+  page: Page,
+  dialog: Locator,
+  description: string,
+  action: "Duplicar" | "Borrar",
+): Promise<void> {
+  await dialogActions(dialog, description).click();
+  await page.getByRole("menuitem", { name: action, exact: true }).click();
+}
+
+/** Lo que un diálogo de edición o de alta muestra en sus campos. */
+export type DialogFields = {
+  readonly description: string;
+  /** El rótulo del día en el selector: «Hoy», «Ayer» o «mié, 30/09». */
+  readonly date: string;
+  readonly start: string;
+  /** Sin fin ni duración en el timer, que dice «Fin: en curso». */
+  readonly end?: string;
+  readonly duration?: string;
+};
+
+/**
+ * Espera un diálogo de edición o de alta abierto, con el foco en
+ * «Descripción» y los valores de la entrada en sus campos (§5.3 y §5.5 del 8c).
+ */
+export async function expectEditDialog(
+  dialog: Locator,
+  fields: DialogFields,
+): Promise<void> {
+  await expect(dialogDescription(dialog)).toBeFocused();
+  await expect(dialogDescription(dialog)).toHaveValue(fields.description);
+  await expect(dialogDate(dialog)).toHaveAccessibleName(
+    new RegExp(`: ${escapeRegExp(fields.date)}$`),
+  );
+  await expect(dialogClock(dialog, "Hora de inicio")).toHaveValue(fields.start);
+  if (fields.end === undefined) {
+    await expect(dialogClock(dialog, "Hora de fin")).toHaveCount(0);
+    await expect(dialog).toContainText("Fin: en curso");
+  } else {
+    await expect(dialogClock(dialog, "Hora de fin")).toHaveValue(fields.end);
+  }
+  if (fields.duration !== undefined) {
+    await expect(dialogClock(dialog, "Duración")).toHaveValue(fields.duration);
+  }
+}
+
+/** La confirmación del borrado (TT-60), la misma de la fila. */
+export function deleteConfirmation(page: Page): Locator {
+  return page.getByRole("dialog", { name: "¿Borrar esta entrada?", exact: true });
+}
+
+/**
+ * Elige un día con el selector de fecha del diálogo y espera el foco de
+ * vuelta en el selector, que es cuando el borrador ya tiene el día.
+ */
+export async function pickDialogDay(
+  page: Page,
+  dialog: Locator,
+  target: CivilDay,
+): Promise<void> {
+  await dialogDate(dialog).click();
+  await pickInOpenCalendar(page, target);
+  await expect(dialogDate(dialog)).toBeFocused();
+}
+
+/** El aviso de una falla dentro del diálogo, por su título (TT-90). */
+export function dialogNotice(dialog: Locator, title: string): Locator {
+  return dialog.getByRole("alert").filter({ hasText: title });
+}
+
+/**
+ * El aviso de una falla en la pantalla, debajo de la barra, por su título: el
+ * que sobrevive al diálogo (§5.4 del 8c).
+ */
+export function screenNotice(page: Page, title: string): Locator {
+  return calendarRegion(page).getByRole("alert").filter({ hasText: title });
+}
+
+/**
+ * El aviso de CAL-46, informativo: la entrada guardada quedó fuera del
+ * período. `day` es el rótulo de columna de su día de inicio.
+ */
+export function outsideNotice(page: Page, day: string, mode: CalendarMode): Locator {
+  const period = mode === "week" ? "de la semana" : "del día";
+  return calendarRegion(page)
+    .getByRole("status")
+    .filter({ hasText: `La entrada quedó el ${day}, fuera ${period} que estás viendo.` });
+}
+
+/** «Agregar entrada», al final de la barra (CAL-74). */
+export function addEntryButton(page: Page): Locator {
+  return calendarRegion(page).getByRole("button", {
+    name: "Agregar entrada",
+    exact: true,
+  });
+}
+
+/**
+ * Hace clic en la franja de `clock` de un día (CAL-43): el fondo de la
+ * columna, un poco por debajo del borde de la franja. Las franjas no son
+ * controles, así que el lugar se calcula con la escala del zoom.
+ */
+export async function clickSlot(
+  page: Page,
+  day: CivilDay,
+  today: CivilDay,
+  clock: string,
+  size: ZoomSize = "1 h",
+): Promise<void> {
+  const [hours, minutes] = clock.split(":").map(Number);
+  const column = dayColumn(page, day, today);
+  const box = await column.boundingBox();
+  if (box === null) {
+    throw new Error("La columna no está dibujada.");
+  }
+  await column.click({
+    position: { x: box.width / 2, y: (hours * 60 + minutes) * minuteHeight(size) + 2 },
+  });
+}
+
+/**
+ * Los detalles de los bloques abiertos. Base UI no les da rol (ver
+ * `blockDetail`); el atributo es el de la primitiva generada.
+ */
+export function openDetails(page: Page): Locator {
+  return page.locator("[data-slot=tooltip-content]");
+}
+
+/**
+ * La distancia, en píxeles, entre el borde inferior de un bloque y el centro
+ * de la línea de ahora de su columna: el timer termina en ahora (CAL-38).
+ */
+export async function bottomToNowLine(block: Locator, column: Locator): Promise<number> {
+  const bottom = await block.evaluate((node) => node.getBoundingClientRect().bottom);
+  const top = await column.evaluate((node) => node.getBoundingClientRect().top);
+  const { fromColumnTop } = await nowLineMetrics(column);
+  return Math.abs(bottom - (top + fromColumnTop));
+}
+
+/**
+ * Espera dos bloques a la misma altura y lado a lado, sin pisarse (CAL-25),
+ * con un píxel de margen para los bordes.
+ */
+export async function expectSideBySide(blocks: Locator): Promise<void> {
+  await expect(blocks).toHaveCount(2);
+  const boxes = await blocks.evaluateAll((nodes) =>
+    nodes.map((node) => {
+      const { left, right, top, height } = node.getBoundingClientRect();
+      return { left, right, top, height };
+    }),
+  );
+  const [first, second] = boxes;
+  expect(Math.abs(first.top - second.top)).toBeLessThan(1);
+  expect(Math.abs(first.height - second.height)).toBeLessThan(1);
+  const apart = first.right <= second.left + 1 || second.right <= first.left + 1;
+  expect(apart, "los dos bloques se pisan").toBe(true);
 }
 
 /**
