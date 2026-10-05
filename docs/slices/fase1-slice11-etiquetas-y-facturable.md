@@ -7,8 +7,9 @@ Contrato del undécimo slice vertical de la fase 1. Módulos `time-entry` y
   `docs/parity/proyectos.md` (PR-nn, su §14.1) y `docs/parity/calendario.md`
   (CAL-nn, su §18).
 - **Lugar en el plan:** [mapa de la fase 1](fase1-mapa.md), slice 11.
-- **Revisión del contrato:** ronda 1 aplicada, con las resoluciones de
-  [`correcciones-fase1-slice11.md`](correcciones-fase1-slice11.md).
+- **Revisión del contrato:** rondas 1 y 2 aplicadas, con las resoluciones de
+  [`correcciones-fase1-slice11.md`](correcciones-fase1-slice11.md) y
+  [`correcciones-fase1-slice11-ronda2.md`](correcciones-fase1-slice11-ronda2.md).
 - **Relevamiento de paridad:** H-1 … H-13 relevados por `parity-analyst` en
   `939e5bc` (tabla de huecos, abajo).
 - **Decisiones de arquitectura asociadas:**
@@ -115,10 +116,10 @@ mismo commit:
 
 ## 0. Precondición de arranque
 
-- **`main` en `939e5bc`**, con los slices 1 a 10, 8c y 8b. Desde `54daee0` solo
+- **`main` en `8e27fcb`**, con los slices 1 a 10, 8c y 8b. Desde `54daee0` solo
   entraron documentos (los contratos del 7b y del 11, sus correcciones y la
-  paridad del 11), así que las citas de abajo, tomadas en `54daee0`, valen para
-  los dos.
+  paridad del 11; confirmado), así que las citas de abajo, tomadas en
+  `54daee0`, valen para los dos.
 - **Postgres 15 o posterior**, como desde el 9: la migración escrita a mano del
   11b usa `on delete set null (columna)` (§2.2).
 - **El 7b está aprobado y en implementación, y lo más probable es que entre
@@ -155,54 +156,55 @@ mismo commit:
 
 ### Supuestos sobre el árbol, con archivo y línea en `54daee0`
 
-| Supuesto                                                                                                                                         | Dónde                                                                                            |
-| ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| `project.billable_by_default` existe, `not null default false`; ninguna pantalla lo escribe                                                      | `src/server/db/schema.ts:242`                                                                    |
-| `createProject` escribe `billableByDefault: false` fijo                                                                                          | `project/service.ts:152-155`, `:195`                                                             |
-| `createProjectInput` no tiene campo de facturable; `insertProject` ya recibe `billableByDefault`                                                 | `project/schema.ts:53-60`; `project/repository.ts:101-117`                                       |
-| `time_entry` no tiene `billable`, ni una clave única `(workspace_id, id)`; su única clave es `id`                                                | `schema.ts:346-412`                                                                              |
-| No existen las tablas `tag` ni `time_entry_tag`                                                                                                  | `schema.ts`                                                                                      |
-| La última migración es `0007_user_preference`                                                                                                    | `drizzle/`                                                                                       |
-| Las claves con `set null (columna)` se reemplazan en una migración escrita a mano, con el mismo nombre                                           | `drizzle/0004_projects_set_null_backfill.sql:1-13`                                               |
-| `assertTrackable(tx, actor, target)` devuelve `void` y lee el proyecto con `findProject`                                                         | `project/service.ts:289-326`                                                                     |
-| `readCatalog` lee clientes, proyectos y tareas en una transacción `repeatable read` y filtra con `can()`                                         | `project/service.ts:339-398`                                                                     |
-| `TrackingProjectView` es `ProjectRef & { tasks }`; `TrackingCatalog` es `{ canCreateProject, groups }`; `ProjectCatalog` no tiene etiquetas      | `project/schema.ts:97-104`, `:121-138`                                                           |
-| `alphabetical` ordena con un `Intl.Collator("es", { sensitivity: "accent" })` privado, `byName`, y desempata por id                              | `project/service.ts:328-337`                                                                     |
-| `translatingNameTaken` traduce el índice de unicidad que deja pasar `createOnce`                                                                 | `project/service.ts:94-107`                                                                      |
-| El esquema de nombre (`name`) es privado de `project/schema.ts`                                                                                  | `project/schema.ts:31-36`                                                                        |
-| `ResourceByAction`, `resourceKinds` y `allowedRoles` no tienen acciones de etiqueta                                                              | `src/server/permissions/index.ts:54-72`, `:82-98`, `:108-124`                                    |
-| `startTimerInput` y `createManualEntryInput` aceptan el par opcional; `updateEntryChanges` es estricto con cuatro grupos                         | `time-entry/schema.ts:77-79`, `:118-129`, `:239-263`                                             |
-| `createManualEntryInput` no lleva `id`                                                                                                           | `time-entry/schema.ts:118-129`                                                                   |
-| `entryIds` normaliza a minúsculas y sin repetir                                                                                                  | `time-entry/schema.ts:185-189`                                                                   |
-| `timeEntryView` termina en `project` y `task`                                                                                                    | `time-entry/schema.ts:297-334`                                                                   |
-| `EntryRefs` es `{ project, task }`; `withRefs` y `selectWithRefs` arman el `left join`; las lecturas con bloqueo usan `for update of time_entry` | `time-entry/repository.ts:35-45`, `:93-125`, `:173-188`                                          |
-| `findByIdForUpdate` y `findManyByIdsForUpdate` leen el proyecto y la tarea por `left join` en la misma sentencia que bloquea                     | `repository.ts:173-188`, `:198-210`                                                              |
-| `insertRunning` e `insertClosed` releen con `rereadWithRefs`                                                                                     | `repository.ts:359-398`                                                                          |
-| `ClosedEntryFields` es `ClosedFields & { pair? }`; `columnsOf` abre el par; `updateClosedEntry` y `updateRunningEntry` releen                    | `repository.ts:59-80`, `:422-448`                                                                |
-| `updateProject` fija solo `project_id` y `task_id`                                                                                               | `repository.ts:464-475`                                                                          |
-| `assertAssignable` devuelve `void`; `assignedPair` devuelve `{ pair? }`                                                                          | `time-entry/service.ts:399-409`, `:1135-1147`                                                    |
-| `continuedFields` devuelve descripción y par, con un tipo privado que se llama `EntryFields`                                                     | `service.ts:415-424`                                                                             |
-| `startTimer` y `continueEntry` validan el par antes de cerrar el timer abierto                                                                   | `service.ts:492-555`                                                                             |
-| `updateEntryProject` responde la vista sin escribir si el par es el mismo                                                                        | `service.ts:684-712`                                                                             |
-| `deleteEntry`, `discardTimer` y `bulkDeleteEntries` guardan la fila borrada en `previousValue`                                                   | `service.ts:724-732`, `:769-777`, `:1430-1441`                                                   |
-| `updateEntry`: estado de la fila, descripción y horario, par; `writeEntryEdit` sin campos responde la fila; `valuesOf` arma la constancia        | `service.ts:1090-1222`, `:1326-1335`                                                             |
-| `bulkEditEntries` arma la vista con las referencias leídas bajo bloqueo                                                                          | `service.ts:1380-1381`                                                                           |
-| `translatingPairConstraints` traduce `23503` y el `check` del par                                                                                | `service.ts:372-389`                                                                             |
-| Las actions de `time-entry` revalidan `"/"` y `"/calendario"`; las de `project`, `"/proyectos"`                                                  | `time-entry/actions.ts:59-65`; `project/actions.ts:19-25`                                        |
-| La barra guarda el par en `pairDraft`, `heldPair` y `runningPairEdit`, y lo limpia o lo retiene con la descripción                               | `tracker-bar.tsx:118-130`, `:208-237`, `:248-292`, `:312-313`, `:446-453`                        |
-| El selector de la barra es del contenedor y se pasa a `TimerBar` y `ManualBar` como nodo; su foco al cambiar de modo usa `pickerTriggerRef`      | `tracker-bar.tsx:161-166`, `:328-337`, `:492-505`; `timer-bar.tsx:28-30`; `manual-bar.tsx:29-31` |
-| La fila dibuja el selector después de la descripción; `day-group.tsx` es dueño de sus mutaciones y de sus avisos                                 | `entry-row.tsx:253-261`; `day-group.tsx:150-159`, `:279-343`                                     |
-| El borrador del diálogo es `{ description, selection, times }`; `sharedChanges` manda el par si cambió; `createInputOf` arma el alta             | `calendar/entry-dialog-draft.ts:22-58`, `:96-102`                                                |
-| El diálogo actualiza el borrador con `change({ ...draftRef.current, … })`                                                                        | `calendar/entry-dialog.tsx:264-274`, `:364-368`                                                  |
-| El bloque arma su nombre accesible con `calendarLabels.blockLabel` y su detalle en un `Tooltip`                                                  | `calendar/calendar-block.tsx:103-109`, `:204-210`                                                |
-| El cuerpo de solo lectura del diálogo es una lista de definiciones                                                                               | `calendar/entry-dialog-body.tsx:61-112`                                                          |
-| `TrackerScreen` y `CalendarScreen` piden `getTrackingCatalog` y lo proveen con `TrackingCatalogProvider`                                         | `tracker-screen.tsx:35-38`, `:49`; `calendar-screen.tsx:34-37`, `:48`                            |
-| `ProjectPicker` es un `Combobox` de Base UI con el buscador en el popup, `filter={null}` y `readOnly`                                            | `project/components/project-picker.tsx:87-202`                                                   |
-| `combobox.tsx` exporta las piezas de selección múltiple (`ComboboxChips`, …)                                                                     | `src/components/ui/combobox.tsx:206-281`                                                         |
-| `toggle.tsx` y `checkbox.tsx` existen                                                                                                            | `src/components/ui/`                                                                             |
-| `normalizeSearch` está en `src/lib/text.ts` y lo usa `picker-model.ts`                                                                           | `picker-model.ts:2`, `:41-42`                                                                    |
-| `/proyectos` pasa las tres actions por props; la cabecera tiene «Nuevo cliente» y «Nuevo proyecto»                                               | `app/(app)/proyectos/page.tsx:6-16`; `projects-screen.tsx:27-61`                                 |
-| `seedProject` de e2e no siembra el facturable                                                                                                    | `e2e/database.ts:133-211`                                                                        |
+| Supuesto                                                                                                                                                                                  | Dónde                                                                                            |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `project.billable_by_default` existe, `not null default false`; ninguna pantalla lo escribe                                                                                               | `src/server/db/schema.ts:242`                                                                    |
+| `createProject` escribe `billableByDefault: false` fijo                                                                                                                                   | `project/service.ts:152-155`, `:195`                                                             |
+| `createProjectInput` no tiene campo de facturable; `insertProject` ya recibe `billableByDefault`                                                                                          | `project/schema.ts:53-60`; `project/repository.ts:101-117`                                       |
+| `time_entry` no tiene `billable`, ni una clave única `(workspace_id, id)`; su única clave es `id`                                                                                         | `schema.ts:346-412`                                                                              |
+| No existen las tablas `tag` ni `time_entry_tag`                                                                                                                                           | `schema.ts`                                                                                      |
+| La última migración es `0007_user_preference`                                                                                                                                             | `drizzle/`                                                                                       |
+| Las claves con `set null (columna)` se reemplazan en una migración escrita a mano, con el mismo nombre                                                                                    | `drizzle/0004_projects_set_null_backfill.sql:1-13`                                               |
+| `assertTrackable(tx, actor, target)` devuelve `void` y lee el proyecto con `findProject`                                                                                                  | `project/service.ts:289-326`                                                                     |
+| `readCatalog` lee clientes, proyectos y tareas en una transacción `repeatable read` y filtra con `can()`                                                                                  | `project/service.ts:339-398`                                                                     |
+| `TrackingProjectView` es `ProjectRef & { tasks }`; `TrackingCatalog` es `{ canCreateProject, groups }`; `ProjectCatalog` no tiene etiquetas                                               | `project/schema.ts:97-104`, `:121-138`                                                           |
+| `alphabetical` ordena con un `Intl.Collator("es", { sensitivity: "accent" })` privado, `byName`, y desempata por id                                                                       | `project/service.ts:328-337`                                                                     |
+| `translatingNameTaken` traduce el índice de unicidad que deja pasar `createOnce`                                                                                                          | `project/service.ts:94-107`                                                                      |
+| El esquema de nombre (`name`) es privado de `project/schema.ts`                                                                                                                           | `project/schema.ts:31-36`                                                                        |
+| `ResourceByAction`, `resourceKinds` y `allowedRoles` no tienen acciones de etiqueta                                                                                                       | `src/server/permissions/index.ts:54-72`, `:82-98`, `:108-124`                                    |
+| `startTimerInput` y `createManualEntryInput` aceptan el par opcional; `updateEntryChanges` es estricto con cuatro grupos                                                                  | `time-entry/schema.ts:77-79`, `:118-129`, `:239-263`                                             |
+| `createManualEntryInput` no lleva `id`                                                                                                                                                    | `time-entry/schema.ts:118-129`                                                                   |
+| `entryIds` normaliza a minúsculas y sin repetir                                                                                                                                           | `time-entry/schema.ts:185-189`                                                                   |
+| `timeEntryView` termina en `project` y `task`                                                                                                                                             | `time-entry/schema.ts:297-334`                                                                   |
+| `EntryRefs` es `{ project, task }`; `withRefs` y `selectWithRefs` arman el `left join`; las lecturas con bloqueo usan `for update of time_entry`                                          | `time-entry/repository.ts:35-45`, `:93-125`, `:173-188`                                          |
+| `findByIdForUpdate` y `findManyByIdsForUpdate` leen el proyecto y la tarea por `left join` en la misma sentencia que bloquea                                                              | `repository.ts:173-188`, `:198-210`                                                              |
+| `waitForBlockedBackends({ count })` espera a que haya `count` sesiones trabadas en un bloqueo                                                                                             | `src/test/concurrency.ts:49-69`                                                                  |
+| `insertRunning` e `insertClosed` releen con `rereadWithRefs`                                                                                                                              | `repository.ts:359-398`                                                                          |
+| `ClosedEntryFields` es `ClosedFields & { pair? }`; `columnsOf` abre el par; `updateClosedEntry` y `updateRunningEntry` releen                                                             | `repository.ts:59-80`, `:422-448`                                                                |
+| `updateProject` fija solo `project_id` y `task_id`                                                                                                                                        | `repository.ts:464-475`                                                                          |
+| `assertAssignable` devuelve `void`; `assignedPair` devuelve `{ pair? }`                                                                                                                   | `time-entry/service.ts:399-409`, `:1135-1147`                                                    |
+| `continuedFields` devuelve descripción y par, con un tipo privado que se llama `EntryFields`                                                                                              | `service.ts:415-424`                                                                             |
+| `startTimer` y `continueEntry` validan el par antes de cerrar el timer abierto                                                                                                            | `service.ts:492-555`                                                                             |
+| `updateEntryProject` responde la vista sin escribir si el par es el mismo                                                                                                                 | `service.ts:684-712`                                                                             |
+| `deleteEntry`, `discardTimer` y `bulkDeleteEntries` guardan la fila borrada en `previousValue`                                                                                            | `service.ts:724-732`, `:769-777`, `:1430-1441`                                                   |
+| `updateEntry`: estado de la fila, descripción y horario, par; `writeEntryEdit` sin campos responde la fila; `valuesOf` arma la constancia                                                 | `service.ts:1090-1222`, `:1326-1335`                                                             |
+| `bulkEditEntries` arma la vista con las referencias leídas bajo bloqueo                                                                                                                   | `service.ts:1380-1381`                                                                           |
+| `translatingPairConstraints` traduce `23503` y el `check` del par                                                                                                                         | `service.ts:372-389`                                                                             |
+| Las actions de `time-entry` revalidan `"/"` y `"/calendario"`; las de `project`, `"/proyectos"`                                                                                           | `time-entry/actions.ts:59-65`; `project/actions.ts:19-25`                                        |
+| La barra guarda el par en `pairDraft`, `heldPair` y `runningPairEdit`, y lo limpia o lo retiene con la descripción                                                                        | `tracker-bar.tsx:118-130`, `:208-237`, `:248-292`, `:312-313`, `:446-453`                        |
+| El selector de la barra es del contenedor y se pasa a `TimerBar` y `ManualBar` como nodo; su foco al cambiar de modo usa `pickerTriggerRef`                                               | `tracker-bar.tsx:161-166`, `:328-337`, `:492-505`; `timer-bar.tsx:28-30`; `manual-bar.tsx:29-31` |
+| La fila dibuja el selector después de la descripción; `day-group.tsx` es dueño de sus mutaciones y de sus avisos                                                                          | `entry-row.tsx:253-261`; `day-group.tsx:150-159`, `:279-343`                                     |
+| El borrador del diálogo es `{ description, selection, times }`; `sharedChanges` (privada) manda el par si cambió y la usan `changesOf` y `runningChangesOf`; `createInputOf` arma el alta | `calendar/entry-dialog-draft.ts:22-58`, `:47`, `:68`, `:83`, `:96-102`                           |
+| El diálogo actualiza el borrador con `change({ ...draftRef.current, … })`                                                                                                                 | `calendar/entry-dialog.tsx:264-274`, `:364-368`                                                  |
+| El bloque arma su nombre accesible con `calendarLabels.blockLabel` y su detalle en un `Tooltip`                                                                                           | `calendar/calendar-block.tsx:103-109`, `:204-210`                                                |
+| El cuerpo de solo lectura del diálogo es una lista de definiciones                                                                                                                        | `calendar/entry-dialog-body.tsx:61-112`                                                          |
+| `TrackerScreen` y `CalendarScreen` piden `getTrackingCatalog` y lo proveen con `TrackingCatalogProvider`                                                                                  | `tracker-screen.tsx:35-38`, `:49`; `calendar-screen.tsx:34-37`, `:48`                            |
+| `ProjectPicker` es un `Combobox` de Base UI con el buscador en el popup, `filter={null}` y `readOnly`                                                                                     | `project/components/project-picker.tsx:87-202`                                                   |
+| `combobox.tsx` exporta las piezas de selección múltiple (`ComboboxChips`, …)                                                                                                              | `src/components/ui/combobox.tsx:206-281`                                                         |
+| `toggle.tsx` y `checkbox.tsx` existen                                                                                                                                                     | `src/components/ui/`                                                                             |
+| `normalizeSearch` está en `src/lib/text.ts` y lo usa `picker-model.ts`                                                                                                                    | `picker-model.ts:2`, `:41-42`                                                                    |
+| `/proyectos` pasa las tres actions por props; la cabecera tiene «Nuevo cliente» y «Nuevo proyecto»                                                                                        | `app/(app)/proyectos/page.tsx:6-16`; `projects-screen.tsx:27-61`                                 |
+| `seedProject` de e2e no siembra el facturable                                                                                                                                             | `e2e/database.ts:133-211`                                                                        |
 
 ## 1. Alcance
 
@@ -330,9 +332,12 @@ de la `0010` a la `0012`.
 
 **Si otra migración entra a `main` antes que una parte, la de esa parte se
 descarta y se regenera después del rebase**, como manda el §0 del 7b: renumerar
-a mano rompe la cadena `prevId` de las instantáneas y el diario. De
-`tags_set_null` se conserva el contenido escrito a mano y se vuelve a pegar en
-la que genera `--custom`.
+a mano rompe la cadena `prevId` de las instantáneas y el diario. **Las del 11b
+se regeneran con los mismos pasos de §2.2, no de una vez**: primero solo la
+restricción única y `generate`, después las tablas y `generate`; regenerarlas
+juntas vuelve a traer el error de orden que §2.2 explica. De `tags_set_null` se
+conserva el contenido escrito a mano y se vuelve a pegar en la que genera
+`--custom`.
 
 ### 2.1 11a: `time_entry.billable`
 
@@ -911,10 +916,12 @@ PR-42 … PR-44, PR-52, PR-54, PR-80, PR-112. Es `createClient` con un campo:
     tomada antes de esperar el bloqueo: con dos pestañas, la segunda vería las
     etiquetas de antes, reasignaría una archivada (PR-45) o respondería «sin
     cambios» con una vista vieja, y ese dato viejo terminaría en el
-    `previousValue` del borrado. La segunda sentencia toma su foto con el
-    bloqueo ya tomado. **El proyecto y la tarea salen del `left join` de la
-    sentencia que bloquea** por la misma razón. **El primer commit de
-    `backend-dev` del 11b lo prueba con dos conexiones** (§6, handshake).
+    `previousValue` del borrado. Con el `left join` de hoy pasa lo mismo con el
+    par: si otra conexión lo cambió, la fila trae el `project_id` nuevo y el
+    `project` nulo. La segunda sentencia toma su foto con el bloqueo ya tomado.
+    **El proyecto y la tarea salen del `left join` de la sentencia que
+    bloquea** por la misma razón. **El primer commit de `backend-dev` del 11b
+    lo prueba con dos conexiones** (§6, handshake; criterio 9).
   - **El orden** lo pone `toView`, con `compareNames` (§5.2), y no el SQL: es la
     misma regla que el catálogo.
 - **`bulkEditEntries`** arma la vista con las referencias leídas bajo bloqueo
@@ -936,9 +943,10 @@ PR-42 … PR-44, PR-52, PR-54, PR-80, PR-112. Es `createClient` con un campo:
   compara los nombres con el mismo `Intl.Collator` y **desempata por id**: el
   collator iguala nombres que `lower()` distingue («ß» y «ss»), así que dos
   etiquetas distintas para el índice pueden empatar en el orden. Lo usan
-  `alphabetical` del catálogo, `toView` de `time-entry` y
-  `tag-picker-model.ts`: **una sola regla de orden** para la lista del selector
-  y la de la entrada.
+  `alphabetical` del catálogo, `toView` de `time-entry`,
+  `tag-picker-model.ts` y el disparador de `tag-picker.tsx` (§5.8): **una sola
+  regla de orden** para la lista del selector, su disparador y la de la
+  entrada.
 - **Un solo catálogo por pantalla** (ADR 0016): `TrackerScreen` y
   `CalendarScreen` no cambian; las etiquetas llegan dentro de `TrackingCatalog`
   y `useTrackingCatalog()` las da.
@@ -1106,8 +1114,10 @@ equivalentes sobre `EntryFields`, **sin cambiar ninguna conducta del 10**:
 - **El disparador** tiene rol `combobox`. Sin etiquetas: el ícono de etiqueta y,
   en la barra, «Etiquetas»; en la fila, solo el ícono en gris. Con etiquetas: el
   ícono marcado y los nombres separados por coma, recortados (H-1, TT-12
-  `adaptar`). Su nombre accesible es `label`, más «: » y los nombres si hay
-  (WCAG 2.5.3).
+  `adaptar`). **Ordena `value` con `compareNames`** antes de mostrarlo: el
+  borrador de la barra y del diálogo puede llevar el orden de los clics, y
+  TT-12 dice alfabético. Su nombre accesible es `label`, más «: » y los
+  nombres en ese orden si hay (WCAG 2.5.3).
 - **El borrador del selector**: al abrir copia `value`; cada opción alterna su
   marca sin cerrar; **al cerrar** —por `Escape`, clic afuera o `Tab`—, si el
   conjunto difiere de `value` (`sameTagIds`), avisa `onChange(conjunto)` (D-5).
@@ -1252,9 +1262,10 @@ el 11a.
 - **`time-entry/schema.integration.test.ts`** suma la unión: las dos claves, la
   cascada desde la etiqueta y desde la entrada, y `isMissingTag` contra un
   `23503` real.
-- **`time-entry/service.integration.test.ts`** suma el test de dos conexiones
-  de §5.1, junto a los de `findByIdForUpdate` y `findManyByIdsForUpdate` que ya
-  tiene.
+- **`time-entry/service.integration.test.ts`** suma los dos casos de dos
+  conexiones de §5.1 y del criterio 9, junto a los de `findByIdForUpdate` y
+  `findManyByIdsForUpdate` que ya tiene. Usan `waitForBlockedBackends` de
+  `src/test/concurrency.ts`, que ya está exportada y no cambia.
 - `src/server/db/constraint-error.ts` no cambia: `FOREIGN_KEY_VIOLATION` y
   `UNIQUE_VIOLATION` ya están.
 
@@ -1312,6 +1323,7 @@ el 11b.
 
 - `src/server/action.ts`, `src/server/create-once.ts`, `src/server/session.ts`,
   `src/server/audit.ts`, `src/server/time/`, `src/hooks/`.
+- `src/test/concurrency.ts`: los tests de dos conexiones usan lo que ya exporta.
 - `src/modules/profile/`, `src/modules/workspace/`.
 - **La edición masiva**: `bulkEditChanges`, `bulk-edit-dialog.tsx`,
   `bulk-changes.ts`, `bulk-actions.tsx`. Es del 12. De `bulkEditEntries` y
@@ -1360,12 +1372,14 @@ el 11b.
    orden de §2.2**, con `npm run db:migrate` en verde sobre una base que ya
    tiene las del 11a; las dos acciones de permiso con su test; los tipos de
    §4.4; `EntryRefs.tags` con la subconsulta; **las lecturas con bloqueo en dos
-   sentencias (§5.1), con un test de integración de dos conexiones**: la 1
-   bloquea una entrada con `findByIdForUpdate`, le cambia las etiquetas y
-   confirma mientras la 2 espera en el mismo `findByIdForUpdate`; la 2 ve el
-   conjunto nuevo. El test mata la variante con la subconsulta en la sentencia
-   que bloquea. Y las firmas de `createTag` y `assertTaggable`. Avisa a
-   `frontend-dev`.
+   sentencias (§5.1), con los dos tests de integración de dos conexiones del
+   criterio 9**: la 1 bloquea una entrada con `findByIdForUpdate` y le cambia
+   las etiquetas —en el segundo caso, el par con `updateEntryProject`—; la 2
+   pide el mismo `findByIdForUpdate`; **la 1 confirma recién después de
+   `waitForBlockedBackends({ count: 1 })`**, escrito en el mismo test; la 2 ve
+   el conjunto nuevo, o el proyecto nuevo. Los tests matan la variante con la
+   subconsulta o el `left join` en la sentencia que bloquea. Y las firmas de
+   `createTag` y `assertTaggable`. Avisa a `frontend-dev`.
 2. **`frontend-dev`, primero de todo**: una prueba de que el `Combobox` de Base
    UI con `multiple` y el buscador en el popup abre, marca sin cerrar, avisa al
    cerrar con `Escape` y devuelve el foco al disparador, **en la barra y dentro
@@ -1385,8 +1399,9 @@ el 11b.
 - **`tag-picker-model.ts`** es el único que filtra y ordena las opciones del
   selector de etiquetas, y el que marca las de `value` fuera del catálogo.
 - **`tag-picker.tsx`** guarda el borrador del selector mientras está abierto y
-  avisa una sola vez, al cerrar. No sabe qué es una entrada: el nombre accesible
-  lo arma quien lo usa.
+  avisa una sola vez, al cerrar. Muestra `value` en el orden de `compareNames`,
+  no en el que llega. No sabe qué es una entrada: el nombre accesible lo arma
+  quien lo usa.
 - **`labels.ts` de `time-entry`** suma `billable` («Facturable»),
   `billableNotSaved` («No se pudo cambiar el facturable.»), `tagsNotSaved` («No
   se pudieron cambiar las etiquetas.»), `entryBillableLabel(nombre)` y
@@ -1546,11 +1561,16 @@ lo crea por la interfaz, que es lo que prueba PR-21.
      constancia.
    - Con un proyecto no disponible y una etiqueta archivada responde TT-77 (el
      orden de §4.6).
-9. **La vista** (PR-47, PR-68, TT-105). Toda vista trae `tags`, en orden
-   alfabético; una archivada se muestra; renombrada por SQL, con el nombre
-   nuevo; borrada por SQL, ya no está. **Bajo bloqueo, las referencias salen de
-   una sentencia posterior al bloqueo** (§5.1): con dos conexiones, la que
-   esperaba en `findByIdForUpdate` ve las etiquetas que confirmó la otra.
+9. **La vista** (PR-47, PR-68, TT-105).
+   - Toda vista trae `tags`, en orden alfabético; una archivada se muestra;
+     renombrada por SQL, con el nombre nuevo; borrada por SQL, ya no está.
+   - **Bajo bloqueo, las referencias salen de una sentencia posterior al
+     bloqueo** (§5.1), con dos casos de dos conexiones. En los dos, la 1
+     bloquea la entrada, la 2 pide `findByIdForUpdate` sobre la misma, y la 1
+     confirma recién después de `waitForBlockedBackends({ count: 1 })`:
+     - la 1 cambia las etiquetas; la 2 ve las que confirmó la 1;
+     - la 1 cambia el par con `updateEntryProject`; la 2 ve el proyecto nuevo,
+       no un `project` nulo con el `project_id` nuevo.
 10. **`tagsToCheck`, `sameTagIds` y `compareNames`.** La tabla de §4.5;
     `compareNames` desempata por id dos nombres que el collator iguala («ß» y
     «ss»).
@@ -1564,14 +1584,20 @@ lo crea por la interfaz, que es lo que prueba PR-21.
 13. **El borrador** (11b, como el 9 del 11a). `fieldsOf` toma las etiquetas de
     la vista; `fieldsInput` manda `tagIds`; `afterAdd` limpia las etiquetas si
     siguen iguales a las mandadas y conserva las que se cambiaron mientras el
-    alta viajaba; `sharedChanges` manda `tags` solo con `!sameTagIds` contra la
-    vista; `createInputOf` manda `tagIds` explícito, también vacío.
-14. **El selector y la pantalla de alta, en el componente** (D-5, PR-112).
-    `readOnly` sin rol `combobox` y con los nombres; el nombre accesible con
-    los nombres; un solo `onChange` al cerrar, con el conjunto entero, y
-    ninguno al cerrar con el mismo conjunto; con un cambio en vuelo,
-    `aria-disabled` y no abre; la sección «Etiquetas» de `/proyectos` con las
-    etiquetas y con el vacío.
+    alta viajaba; `changesOf` y `runningChangesOf` mandan `tags` solo con
+    `!sameTagIds` contra la vista; `createInputOf` manda `tagIds` explícito,
+    también vacío.
+14. **El selector, la fila y la pantalla de alta, en el componente** (D-5,
+    TT-12, TT-50, PR-112).
+    - `readOnly` sin rol `combobox` y con los nombres; el nombre accesible con
+      los nombres.
+    - Marcar dos etiquetas en orden inverso al alfabético: el disparador y su
+      nombre accesible las muestran en orden alfabético (`compareNames`).
+    - Un solo `onChange` al cerrar, con el conjunto entero, y ninguno al cerrar
+      con el mismo conjunto; con un cambio en vuelo, `aria-disabled` y no abre.
+    - La fila sin etiquetas muestra el ícono en gris y sin texto; la fila en
+      solo lectura sin etiquetas no muestra nada (TT-50, H-6).
+    - La sección «Etiquetas» de `/proyectos` con las etiquetas y con el vacío.
 15. **La capa de action.** `createTag` traduce el `ZodError`, conserva el
     `ProjectError`, responde `unexpected` con un error cualquiera y revalida
     `"/proyectos"`, también con error. Las actions de `time-entry` responden
@@ -1579,25 +1605,25 @@ lo crea por la interfaz, que es lo que prueba PR-21.
 16. **La pantalla.** Los recorridos 1 a 6 de `e2e/tags.spec.ts`.
 17. **Lo existente sigue verde**, con los fixtures de vistas sumando `tags`.
 
-| Criterio | Tipo                 | Archivo                                                                            | Qué afirma                                                                               |
-| -------- | -------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| 1        | integración          | `project/schema.integration.test.ts`; `time-entry/schema.integration.test.ts`      | las migraciones; cada restricción con sentencias directas; los borrados; el predicado    |
-| 2        | unidad               | `src/server/permissions/permissions.test.ts`                                       | las dos acciones por rol, estado y workspace                                             |
-| 3        | integración          | `project/service.integration.test.ts`                                              | el alta, la colisión, el reintento, la membresía desactivada y la constancia             |
-| 4        | integración          | `project/service.integration.test.ts`                                              | cada rechazo                                                                             |
-| 5        | integración          | `project/service.integration.test.ts`                                              | los dos catálogos                                                                        |
-| 6        | integración + unidad | `time-entry/service.integration.test.ts`; `time-entry/schema.test.ts`              | las filas de la unión; cada rechazo con la tabla sin filas nuevas; el tope               |
-| 7        | integración          | `time-entry/service.integration.test.ts`                                           | la copia; el rechazo con el timer previo abierto                                         |
-| 8        | integración          | `time-entry/service.integration.test.ts`                                           | cada pedido y el orden                                                                   |
-| 9        | integración          | `time-entry/service.integration.test.ts`                                           | `tags` en cada vista y en `getTrackerState`, con los cambios por SQL; las dos conexiones |
-| 10       | unidad               | `time-entry/assignment.test.ts`; `src/lib/tag-ids.test.ts`; `src/lib/text.test.ts` | la tabla; el desempate                                                                   |
-| 11       | integración          | `time-entry/audit.integration.test.ts`; `project/service.integration.test.ts`      | los valores en cada constancia                                                           |
-| 12       | unidad               | `project/components/tag-picker-model.test.ts`                                      | cada caso                                                                                |
-| 13       | unidad               | `entry-fields.test.ts`; `calendar/entry-dialog-draft.test.ts`                      | cada transición y cada pedido                                                            |
-| 14       | unidad               | `project/components/tag-picker.test.tsx`; `projects-screen.test.tsx`               | el marcado y los avisos de `onChange`                                                    |
-| 15       | integración          | `project/actions.integration.test.ts`; `time-entry/actions.integration.test.ts`    | las traducciones y la revalidación                                                       |
-| 16       | e2e                  | `e2e/tags.spec.ts`                                                                 | los recorridos                                                                           |
-| 17       | lint, tipos y suites | `npm run lint && npm run typecheck && npm run test:all`; `npm run test:e2e`        | en verde                                                                                 |
+| Criterio | Tipo                 | Archivo                                                                                    | Qué afirma                                                                                            |
+| -------- | -------------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| 1        | integración          | `project/schema.integration.test.ts`; `time-entry/schema.integration.test.ts`              | las migraciones; cada restricción con sentencias directas; los borrados; el predicado                 |
+| 2        | unidad               | `src/server/permissions/permissions.test.ts`                                               | las dos acciones por rol, estado y workspace                                                          |
+| 3        | integración          | `project/service.integration.test.ts`                                                      | el alta, la colisión, el reintento, la membresía desactivada y la constancia                          |
+| 4        | integración          | `project/service.integration.test.ts`                                                      | cada rechazo                                                                                          |
+| 5        | integración          | `project/service.integration.test.ts`                                                      | los dos catálogos                                                                                     |
+| 6        | integración + unidad | `time-entry/service.integration.test.ts`; `time-entry/schema.test.ts`                      | las filas de la unión; cada rechazo con la tabla sin filas nuevas; el tope                            |
+| 7        | integración          | `time-entry/service.integration.test.ts`                                                   | la copia; el rechazo con el timer previo abierto                                                      |
+| 8        | integración          | `time-entry/service.integration.test.ts`                                                   | cada pedido y el orden                                                                                |
+| 9        | integración          | `time-entry/service.integration.test.ts`                                                   | `tags` en cada vista y en `getTrackerState`, con los cambios por SQL; los dos casos de dos conexiones |
+| 10       | unidad               | `time-entry/assignment.test.ts`; `src/lib/tag-ids.test.ts`; `src/lib/text.test.ts`         | la tabla; el desempate                                                                                |
+| 11       | integración          | `time-entry/audit.integration.test.ts`; `project/service.integration.test.ts`              | los valores en cada constancia                                                                        |
+| 12       | unidad               | `project/components/tag-picker-model.test.ts`                                              | cada caso                                                                                             |
+| 13       | unidad               | `entry-fields.test.ts`; `calendar/entry-dialog-draft.test.ts`                              | cada transición y cada pedido                                                                         |
+| 14       | unidad               | `project/components/tag-picker.test.tsx`; `entry-row.test.tsx`; `projects-screen.test.tsx` | el marcado, el orden y los avisos de `onChange`                                                       |
+| 15       | integración          | `project/actions.integration.test.ts`; `time-entry/actions.integration.test.ts`            | las traducciones y la revalidación                                                                    |
+| 16       | e2e                  | `e2e/tags.spec.ts`                                                                         | los recorridos                                                                                        |
+| 17       | lint, tipos y suites | `npm run lint && npm run typecheck && npm run test:all`; `npm run test:e2e`                | en verde                                                                                              |
 
 **El vacío de TT-88 no se prueba en e2e**, por la razón del 9 y del 10: la base
 de los e2e es una sola y ya tiene etiquetas después del primer recorrido. Lo
@@ -1611,12 +1637,16 @@ una nueva**: el mutante que valida el conjunto entero en lugar de
 mira que el timer previo siga abierto: el mutante que valida después de cerrar
 el timer lo deja cerrado.
 
-**El criterio 9 hace esperar a la segunda conexión en el bloqueo**: el mutante
+**El criterio 9 confirma la 1 con la 2 ya esperando el bloqueo**: el mutante
 que lee las etiquetas con una subconsulta en la sentencia que bloquea devuelve
-el conjunto de antes.
+el conjunto de antes, y el que deja el `left join` de proyecto y tarea en esa
+sentencia devuelve `project` nulo. Sin `waitForBlockedBackends`, la 2 puede
+llegar después de la confirmación y los dos mutantes pasan.
 
 **El criterio 14 marca tres casillas y cierra una vez**: el mutante que avisa
-con cada casilla llama tres veces a `onChange`.
+con cada casilla llama tres veces a `onChange`. **Y las marca en orden
+inverso al alfabético**: el disparador que muestra el orden de los clics no
+pasa.
 
 #### Recorridos obligatorios de `e2e/tags.spec.ts`
 
