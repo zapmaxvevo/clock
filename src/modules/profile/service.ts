@@ -59,18 +59,18 @@ function resolveTimeZone(value: string | null): string {
   return value !== null && isUsableTimeZone(value) ? value : PREFERENCE_DEFAULTS.timezone;
 }
 
-/** El `check` de la base impide un formato fuera de lista; si llega, lanza. */
-function knownFormat<Format extends string>(
-  formats: readonly Format[],
+/** El `check` de la base impide un valor fuera de lista; si llega, lanza. */
+function knownChoice<Choice extends string>(
+  choices: readonly Choice[],
   value: string | null,
-  fallback: Format,
-): Format {
+  fallback: Choice,
+): Choice {
   if (value === null) {
     return fallback;
   }
-  const known = formats.find((format) => format === value);
+  const known = choices.find((choice) => choice === value);
   if (known === undefined) {
-    throw new RangeError(`Formato fuera de lista: ${value}.`);
+    throw new RangeError(`Valor fuera de lista: ${value}.`);
   }
   return known;
 }
@@ -79,17 +79,17 @@ function knownFormat<Format extends string>(
 export function resolvePreferences(row: UserPreferenceRow | undefined): Preferences {
   return {
     timezone: resolveTimeZone(row?.timezone ?? null),
-    timeFormat: knownFormat<TimeFormat>(
+    timeFormat: knownChoice<TimeFormat>(
       TIME_FORMATS,
       row?.timeFormat ?? null,
       PREFERENCE_DEFAULTS.timeFormat,
     ),
-    dateFormat: knownFormat<DateFormat>(
+    dateFormat: knownChoice<DateFormat>(
       DATE_FORMATS,
       row?.dateFormat ?? null,
       PREFERENCE_DEFAULTS.dateFormat,
     ),
-    theme: knownFormat<Theme>(THEMES, row?.theme ?? null, PREFERENCE_DEFAULTS.theme),
+    theme: knownChoice<Theme>(THEMES, row?.theme ?? null, PREFERENCE_DEFAULTS.theme),
   };
 }
 
@@ -250,13 +250,11 @@ function columnOf(change: ColumnChange): PreferenceColumn {
 }
 
 /**
- * Los pasos comunes a toda escritura de la fila: la asegura, la bloquea, sale
- * sin efecto con el valor ya guardado, escribe solo esa columna y deja la
- * constancia `auditAction`. Pedir el valor ya guardado es un éxito sin efecto
- * (TT-89); un nulo no es igual a ningún valor, porque elegir el predeterminado
- * (o el nombre de Google, D1) deja de seguirlo. Devuelve la fila como quedó.
+ * Pedir el valor ya guardado es un éxito sin efecto (TT-89). Un nulo no es
+ * igual a ningún valor: elegir el predeterminado, o el nombre de Google (D1),
+ * deja de seguirlo.
  */
-async function writeOwnColumn(
+async function writePreferenceColumn(
   actor: Actor,
   change: ColumnChange,
   auditAction: string,
@@ -292,7 +290,7 @@ export async function updatePreference(
   actor: Actor,
   input: UpdatePreferenceInput,
 ): Promise<UpdatePreferenceResult> {
-  const row = await writeOwnColumn(actor, input, "profile.updatePreference");
+  const row = await writePreferenceColumn(actor, input, "profile.updatePreference");
   return { preferences: resolvePreferences(row) };
 }
 
@@ -305,7 +303,7 @@ export async function updateName(
   actor: Actor,
   input: UpdateNameInput,
 ): Promise<UpdateNameResult> {
-  await writeOwnColumn(
+  await writePreferenceColumn(
     actor,
     { key: "displayName", value: input.name },
     "profile.updateName",

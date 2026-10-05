@@ -49,8 +49,10 @@ export const auth = betterAuth({
     accountLinking: { disableImplicitLinking: true },
   },
   // El nombre y la foto no se editan por la API de Better Auth (PF-09): sin
-  // esto, cualquier sesión los reescribe y llegan al avatar.
-  disabledPaths: ["/update-user"],
+  // esto, cualquier sesión los reescribe y llegan al avatar. La aplicación
+  // tampoco enlaza ni desenlaza cuentas: quién entra a qué fila lo decide solo
+  // el ingreso por Google, sin enlace implícito.
+  disabledPaths: ["/update-user", "/link-social", "/unlink-account"],
   plugins: testSessionPlugins(),
   socialProviders: {
     google: {

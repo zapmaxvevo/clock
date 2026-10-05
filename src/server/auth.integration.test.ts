@@ -82,6 +82,53 @@ describe("la identidad no se edita por la API de Better Auth (PF-09)", () => {
   });
 });
 
+describe("las cuentas no se enlazan ni se desenlazan por la API de Better Auth (S2)", () => {
+  async function accountIdsOf(userId: string) {
+    const rows = await db
+      .select({ accountId: account.accountId })
+      .from(account)
+      .where(eq(account.userId, userId));
+    return rows.map((row) => row.accountId).sort();
+  }
+
+  it("/link-social responde 404 a una sesión válida y no empieza ningún enlace", async () => {
+    const { userId, cookie } = await signIn();
+
+    const response = await post(
+      "/link-social",
+      { provider: "google", callbackURL: "/" },
+      { cookie },
+    );
+
+    expect(response.status).toBe(404);
+    expect(await accountIdsOf(userId)).toEqual([]);
+  });
+
+  it("/unlink-account responde 404 a una sesión válida y no quita la cuenta", async () => {
+    const { userId, cookie } = await signIn();
+    // Dos cuentas: con una sola, Better Auth rechazaría el pedido por ser la última.
+    const subs = [randomUUID(), randomUUID()].sort();
+    for (const sub of subs) {
+      await db.insert(account).values({
+        id: randomUUID(),
+        accountId: sub,
+        providerId: "google",
+        userId,
+        updatedAt: new Date(),
+      });
+    }
+
+    const response = await post(
+      "/unlink-account",
+      { providerId: "google", accountId: subs[0] },
+      { cookie },
+    );
+
+    expect(response.status).toBe(404);
+    expect(await accountIdsOf(userId)).toEqual(subs);
+  });
+});
+
 async function userRow(id: string) {
   const [row] = await db
     .select({ name: user.name, email: user.email, image: user.image })

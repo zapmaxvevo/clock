@@ -584,6 +584,9 @@ describe("el nombre y el tema guardados (criterio 2: PF-08, PF-23, PF-37)", () =
 
   it("un tema fuera de lista lanza", () => {
     expect(() => resolvePreferences(rowWith({ theme: "auto" }))).toThrow(RangeError);
+    expect(() => resolvePreferences(rowWith({ theme: "auto" }))).toThrow(
+      "Valor fuera de lista: auto.",
+    );
   });
 
   it("el nombre que se muestra es el editado, o el de la cuenta si no hay", () => {
