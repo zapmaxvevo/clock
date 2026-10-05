@@ -2,10 +2,11 @@ import type { Locator, Page, Request } from "@playwright/test";
 
 import {
   blockHandle,
+  BODY_GRIP_PX,
+  boxOf,
   calendarHref,
   calendarRegion,
   calendarSelection,
-  centerOf,
   chooseDialogAction,
   clickSlot,
   closedBlockName,
@@ -21,6 +22,9 @@ import {
   entryDialog,
   expectEditDialog,
   expectPeriod,
+  hoverAt,
+  minuteHeight,
+  grabPoint,
   gridScroller,
   isCalendarPage,
   moveTo,
@@ -31,6 +35,7 @@ import {
   scrollGridTo,
   segmentText,
   settle,
+  slotOffset,
   slotPoint,
   zoomButton,
   zoomIn,
@@ -100,6 +105,11 @@ async function openLastWeek(page: Page, today: CivilDay): Promise<CivilDay> {
   const lastWeek = addDays(weekStartOf(today), -7);
   await page.goto(calendarHref(lastWeek));
   await expectPeriod(page, lastWeek, "week", "Semana anterior");
+  // CAL-14: la grilla abre con las 08:00 arriba, en un efecto después del
+  // primer dibujo. Hasta que llega, las cajas se mueven.
+  await expect
+    .poll(async () => (await gridScroller(page)).scrollTop)
+    .toBe(8 * 60 * minuteHeight("1 h"));
   return lastWeek;
 }
 
@@ -128,6 +138,9 @@ async function addEntry(
   }
   await withServerAction(page, () => dialogButton(dialog, "Agregar").click());
   await expect(dialog).toBeHidden();
+  // El foco va al bloque nuevo (§5.5 del 8c) y puede desplazar la grilla: se
+  // espera antes de medir nada.
+  await expect(entryBlocks(calendarRegion(page), entry.description)).toBeFocused();
 }
 
 /**
@@ -226,11 +239,10 @@ test("mover un bloque lo lleva al día y la franja del puntero, y soltarlo en su
   // Criterio 11 (CAL-23, CAL-77): el puntero muestra el detalle, y con un
   // gesto en curso ningún bloque muestra el suyo, tampoco el que se dibuja en
   // el lugar candidato debajo del puntero (CAL-62).
-  const grab = await slotPoint(page, wednesday, today, "10:00");
-  await page.mouse.move(grab.x, grab.y);
+  await hoverAt({ on: original, y: BODY_GRIP_PX });
   await expect(openDetails(page)).toHaveCount(1);
   await page.mouse.down();
-  await moveTo(page, await slotPoint(page, wednesday, today, "12:00"));
+  await moveTo(page, await grabPoint(page, wednesday, today, "12:00"));
   await expect(
     entryBlock(
       dayColumn(page, wednesday, today),
@@ -249,7 +261,7 @@ test("mover un bloque lo lleva al día y la franja del puntero, y soltarlo en su
   // Criterio 1 (CAL-50, CAL-53): con el borde superior en la franja de las
   // 14:00 del jueves, soltar pide ese trío y el bloque queda ahí, con el foco
   // en su botón (criterio 12) y sin diálogo: un gesto no termina en clic.
-  await moveTo(page, await slotPoint(page, thursday, today, "14:00"));
+  await moveTo(page, await grabPoint(page, thursday, today, "14:00"));
   await withServerAction(page, () => page.mouse.up());
   await expect(moved).toBeVisible();
   await expect(moved).toContainText("14:00 – 15:00");
@@ -263,12 +275,12 @@ test("mover un bloque lo lleva al día y la franja del puntero, y soltarlo en su
   );
 
   // Criterio 1 (CAL-57): llevarlo al viernes y volver antes de soltar no pide.
-  const home = await slotPoint(page, thursday, today, "14:00");
-  const away = await slotPoint(page, friday, today, "14:00");
+  const home = (): Promise<ScreenPoint> => grabPoint(page, thursday, today, "14:00");
+  const away = (): Promise<ScreenPoint> => grabPoint(page, friday, today, "14:00");
   let actions = requests.actions;
-  await pressAt(page, home);
-  await moveTo(page, away);
-  await moveTo(page, home);
+  await pressAt(page, { on: moved, y: BODY_GRIP_PX });
+  await moveTo(page, await away());
+  await moveTo(page, await home());
   await page.mouse.up();
   await expect(moved).toBeFocused();
   await settle(page);
@@ -278,8 +290,8 @@ test("mover un bloque lo lleva al día y la franja del puntero, y soltarlo en su
   // jueves; soltar después sobre el fondo del viernes no pide, no abre el alta
   // de un clic, y el foco queda en el botón del bloque.
   actions = requests.actions;
-  await pressAt(page, home);
-  await moveTo(page, away);
+  await pressAt(page, { on: moved, y: BODY_GRIP_PX });
+  await moveTo(page, await away());
   await page.keyboard.press("Escape");
   await expect(moved).toBeVisible();
   await page.mouse.up();
@@ -291,8 +303,8 @@ test("mover un bloque lo lleva al día y la franja del puntero, y soltarlo en su
   // Criterio 9: la pestaña oculta cancela igual; restituida, soltar no pide
   // ni abre nada.
   actions = requests.actions;
-  await pressAt(page, home);
-  await moveTo(page, away);
+  await pressAt(page, { on: moved, y: BODY_GRIP_PX });
+  await moveTo(page, await away());
   await expect(moved).toHaveCount(0);
   await hideTab(page);
   await expect(moved).toBeVisible();
@@ -337,31 +349,27 @@ test("las asas estiran un extremo entre sus topes, y la medianoche se cruza movi
 
   await expect(blockHandle(stretched, "end")).toHaveCount(1);
   await withServerAction(page, async () =>
-    dragBetween(
-      page,
-      await centerOf(blockHandle(stretched, "end")),
-      await slotPoint(page, tuesday, today, "12:30", "30 min"),
+    dragBetween(page, { on: blockHandle(stretched, "end") }, () =>
+      slotPoint(page, tuesday, today, "12:30", "30 min"),
     ),
   );
   await expect(stretched).toContainText("10:00 – 12:30");
+  await expect(stretched).toBeFocused();
 
   // CAL-55: por encima del inicio, el fin se detiene una franja después.
   await expect(blockHandle(stretched, "end")).toHaveCount(1);
   await withServerAction(page, async () =>
-    dragBetween(
-      page,
-      await centerOf(blockHandle(stretched, "end")),
-      await slotPoint(page, tuesday, today, "09:00", "30 min"),
+    dragBetween(page, { on: blockHandle(stretched, "end") }, () =>
+      slotPoint(page, tuesday, today, "09:00", "30 min"),
     ),
   );
   await expect(stretched).toContainText("10:00 – 10:30");
+  await expect(stretched).toBeFocused();
 
   await expect(blockHandle(stretched, "start")).toHaveCount(1);
   await withServerAction(page, async () =>
-    dragBetween(
-      page,
-      await centerOf(blockHandle(stretched, "start")),
-      await slotPoint(page, tuesday, today, "09:00", "30 min"),
+    dragBetween(page, { on: blockHandle(stretched, "start") }, () =>
+      slotPoint(page, tuesday, today, "09:00", "30 min"),
     ),
   );
   await expect(stretched).toHaveAccessibleName(
@@ -374,9 +382,9 @@ test("las asas estiran un extremo entre sus topes, y la medianoche se cruza movi
       duration: "1:30",
     }),
   );
+  await expect(stretched).toBeFocused();
 
   // Criterio 3 (CAL-54), a «1 h» y con la grilla al final del día.
-  await zoomButton(page, "Alejar").click();
   await zoomButton(page, "Alejar").click();
   await expect(zoomButton(page, "Alejar")).toHaveAttribute("aria-disabled", "true");
   await scrollGridTo(page, "23:59");
@@ -399,8 +407,11 @@ test("las asas estiran un extremo entre sus topes, y la medianoche se cruza movi
   await withServerAction(page, async () =>
     dragBetween(
       page,
-      await slotPoint(page, monday, today, "22:00"),
-      await slotPoint(page, monday, today, "23:00"),
+      {
+        on: entryBlocks(dayColumn(page, monday, today), "Lunes tarde"),
+        y: BODY_GRIP_PX,
+      },
+      () => grabPoint(page, monday, today, "23:00"),
     ),
   );
   const crossing = entryBlock(
@@ -424,10 +435,8 @@ test("las asas estiran un extremo entre sus topes, y la medianoche se cruza movi
   const evening = entryBlocks(dayColumn(page, wednesday, today), "Miércoles tarde");
   await expect(blockHandle(evening, "end")).toHaveCount(1);
   await withServerAction(page, async () =>
-    dragBetween(
-      page,
-      await centerOf(blockHandle(evening, "end")),
-      await slotPoint(page, thursday, today, "23:00"),
+    dragBetween(page, { on: blockHandle(evening, "end") }, () =>
+      slotPoint(page, thursday, today, "23:00"),
     ),
   );
   await expect(
@@ -464,7 +473,7 @@ test("arrastrar sobre el fondo de una columna selecciona las franjas y abre el a
 
   // Criterio 4 (CAL-44): hacia abajo, la selección cubre de la franja tocada
   // a la que está bajo el puntero, con el rango a la vista.
-  await pressAt(page, await at("08:30"));
+  await pressAt(page, { on: fridayColumn, y: slotOffset("08:30", "15 min") });
   await moveTo(page, await at("09:30"));
   await expect(calendarSelection(fridayColumn)).toContainText("08:30 – 09:45");
   await page.mouse.up();
@@ -488,7 +497,7 @@ test("arrastrar sobre el fondo de una columna selecciona las franjas y abre el a
   // Hacia arriba también; `Esc` con el botón apretado y soltar sobre el fondo
   // del viernes: ni el alta del rango ni la de un clic (criterios 9 y 11).
   const actions = requests.actions;
-  await pressAt(page, await at("09:30"));
+  await pressAt(page, { on: fridayColumn, y: slotOffset("09:30", "15 min") });
   await moveTo(page, await at("08:15"));
   await expect(calendarSelection(fridayColumn)).toContainText("08:15 – 09:45");
   await page.keyboard.press("Escape");
@@ -501,7 +510,7 @@ test("arrastrar sobre el fondo de una columna selecciona las franjas y abre el a
 
   // La selección no sale de su columna: con el puntero en el sábado sigue en
   // el viernes, hasta la franja de esa altura.
-  await pressAt(page, await at("08:30"));
+  await pressAt(page, { on: fridayColumn, y: slotOffset("08:30", "15 min") });
   await moveTo(page, await at("09:00", saturday));
   await expect(calendarSelection(fridayColumn)).toContainText("08:30 – 09:15");
   await expect(calendarSelection(dayColumn(page, saturday, today))).toHaveCount(0);
@@ -557,8 +566,8 @@ test("un gesto que falla vuelve con su aviso y «Reintentar», y la revalidació
   const releaseMove = await holdActionResponses(page, isCalendarPage);
   await dragBetween(
     page,
-    await slotPoint(page, wednesday, today, "09:00"),
-    await slotPoint(page, wednesday, today, "11:00"),
+    { on: entryBlocks(wednesdayColumn, "Falla"), y: BODY_GRIP_PX },
+    () => grabPoint(page, wednesday, today, "11:00"),
   );
   const inFlight = blockAt("11:00", "12:00");
   await expect(inFlight).toHaveAttribute("aria-busy", "true");
@@ -566,9 +575,10 @@ test("un gesto que falla vuelve con su aviso y «Reintentar», y la revalidació
 
   // Un gesto por vez: apretar «Otra» y moverse unos píxeles adentro es un
   // clic, que abre su diálogo, y «Otra» no se mueve.
-  const press = await slotPoint(page, thursday, today, "09:00");
-  await pressAt(page, { x: press.x, y: press.y + 8 });
-  await moveTo(page, { x: press.x + 6, y: press.y + 20 });
+  const otherBlock = entryBlocks(dayColumn(page, thursday, today), "Otra");
+  await pressAt(page, { on: otherBlock, y: 10 });
+  const otherBox = await boxOf(otherBlock);
+  await moveTo(page, { x: otherBox.x + otherBox.width / 2 + 6, y: otherBox.y + 22 });
   await page.mouse.up();
   const otherDialog = entryDialog(page, "Editar entrada");
   await expect(dialogDescription(otherDialog)).toHaveValue("Otra");
@@ -603,8 +613,8 @@ test("un gesto que falla vuelve con su aviso y «Reintentar», y la revalidació
   const releaseRefreshes = await holdRefreshes(page, isCalendarPage);
   await dragBetween(
     page,
-    await slotPoint(page, wednesday, today, "11:00"),
-    await slotPoint(page, wednesday, today, "13:00"),
+    { on: entryBlocks(wednesdayColumn, "Falla"), y: BODY_GRIP_PX },
+    () => grabPoint(page, wednesday, today, "13:00"),
   );
   const notice = screenNotice(page, TIMES_NOT_SAVED);
   await expect(notice).toContainText(NETWORK_FAILURE);
@@ -630,8 +640,11 @@ test("un gesto que falla vuelve con su aviso y «Reintentar», y la revalidació
   // revalida.
   const actions = requests.actions;
   const refreshes = requests.refreshes;
-  await pressAt(page, await slotPoint(page, wednesday, today, "13:00"));
-  await moveTo(page, await slotPoint(page, wednesday, today, "14:00"));
+  await pressAt(page, {
+    on: landed,
+    y: BODY_GRIP_PX,
+  });
+  await moveTo(page, await grabPoint(page, wednesday, today, "14:00"));
   await focusWindow(page);
   await settle(page);
   expect(requests.refreshes).toBe(refreshes);

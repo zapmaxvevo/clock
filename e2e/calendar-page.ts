@@ -530,11 +530,21 @@ export function addEntryButton(page: Page): Locator {
 export type ScreenPoint = { readonly x: number; readonly y: number };
 
 /**
- * El punto de pantalla de una franja (CAL-43): el centro de la columna, dos
- * píxeles debajo del borde de la franja de `clock`. Las franjas no son
- * controles, así que el lugar se calcula con la escala del zoom. Es un punto
- * del viewport: para usarlo con `page.mouse`, la franja tiene que estar a la
- * vista en la grilla.
+ * Desde el borde superior de una columna, los píxeles hasta dos por debajo
+ * del borde de la franja de `clock` (CAL-43). Las franjas no son controles,
+ * así que el lugar se calcula con la escala del zoom. Es relativo a la
+ * columna: no depende del desplazamiento de la grilla.
+ */
+export function slotOffset(clock: string, size: ZoomSize = "1 h"): number {
+  const [hours, minutes] = clock.split(":").map(Number);
+  return (hours * 60 + minutes) * minuteHeight(size) + 2;
+}
+
+/**
+ * El punto de pantalla de una franja: el centro de la columna, a
+ * `slotOffset`. Sale de una sola caja, tomada en el momento: hay que pedirlo
+ * justo antes de usarlo, porque la grilla se desplaza (al abrir, al enfocar un
+ * bloque, cerca de un borde durante un gesto).
  */
 export async function slotPoint(
   page: Page,
@@ -543,12 +553,30 @@ export async function slotPoint(
   clock: string,
   size: ZoomSize = "1 h",
 ): Promise<ScreenPoint> {
-  const [hours, minutes] = clock.split(":").map(Number);
   const box = await boxOf(dayColumn(page, day, today));
-  return {
-    x: box.x + box.width / 2,
-    y: box.y + (hours * 60 + minutes) * minuteHeight(size) + 2,
-  };
+  return { x: box.x + box.width / 2, y: box.y + slotOffset(clock, size) };
+}
+
+/**
+ * Debajo del borde superior de un bloque, dónde se aprieta su cuerpo para
+ * moverlo: más abajo que el asa de inicio, que mide 6 px (§5.3 del 8b). Es
+ * `slotOffset` más 16 px.
+ */
+export const BODY_GRIP_PX = 18;
+
+/**
+ * El punto adonde se lleva un bloque agarrado a `BODY_GRIP_PX` para que su
+ * inicio caiga en la franja de `clock` (CAL-50): el agarre se conserva.
+ */
+export async function grabPoint(
+  page: Page,
+  day: CivilDay,
+  today: CivilDay,
+  clock: string,
+  size: ZoomSize = "1 h",
+): Promise<ScreenPoint> {
+  const point = await slotPoint(page, day, today, clock, size);
+  return { x: point.x, y: point.y + BODY_GRIP_PX - 2 };
 }
 
 /** Hace clic en la franja de `clock` de un día, con el fondo de la columna. */
@@ -560,9 +588,8 @@ export async function clickSlot(
   size: ZoomSize = "1 h",
 ): Promise<void> {
   const column = dayColumn(page, day, today);
-  const box = await boxOf(column);
-  const point = await slotPoint(page, day, today, clock, size);
-  await column.click({ position: { x: point.x - box.x, y: point.y - box.y } });
+  const { width } = await boxOf(column);
+  await column.click({ position: { x: width / 2, y: slotOffset(clock, size) } });
 }
 
 /** La caja de un elemento dibujado, en píxeles del viewport. */
@@ -671,9 +698,30 @@ export async function settle(page: Page): Promise<void> {
 /** Pasos de movimiento de cada tramo de un arrastre: al menos cinco (§6 del 8b). */
 const DRAG_STEPS = 8;
 
-/** Lleva el puntero a `from` y aprieta el botón principal. */
-export async function pressAt(page: Page, from: ScreenPoint): Promise<void> {
-  await page.mouse.move(from.x, from.y);
+/**
+ * Lo que se aprieta para empezar un gesto: un elemento, y a cuántos píxeles
+ * de su borde superior, o su centro si falta. Es relativo al elemento, así que
+ * no depende del desplazamiento de la grilla.
+ */
+export type Grip = { readonly on: Locator; readonly y?: number };
+
+/**
+ * Lleva el puntero a `grip` con `hover`, que espera a que el elemento reciba
+ * el puntero en ese punto: el fondo de un diálogo que se termina de cerrar no
+ * se lleva el movimiento ni el `pointerdown` que sigue.
+ */
+export async function hoverAt(grip: Grip): Promise<void> {
+  if (grip.y === undefined) {
+    await grip.on.hover();
+    return;
+  }
+  const { width } = await boxOf(grip.on);
+  await grip.on.hover({ position: { x: width / 2, y: grip.y } });
+}
+
+/** Lleva el puntero a `grip` y aprieta el botón principal. */
+export async function pressAt(page: Page, grip: Grip): Promise<void> {
+  await hoverAt(grip);
   await page.mouse.down();
 }
 
@@ -682,14 +730,18 @@ export async function moveTo(page: Page, to: ScreenPoint): Promise<void> {
   await page.mouse.move(to.x, to.y, { steps: DRAG_STEPS });
 }
 
-/** Un arrastre entero con el botón principal: apretar, mover en pasos y soltar. */
+/**
+ * Un arrastre entero con el botón principal: apretar, mover en pasos y
+ * soltar. El destino se calcula después de apretar, porque `hover` puede
+ * desplazar la grilla para tener el elemento a la vista.
+ */
 export async function dragBetween(
   page: Page,
-  from: ScreenPoint,
-  to: ScreenPoint,
+  from: Grip,
+  to: () => Promise<ScreenPoint>,
 ): Promise<void> {
   await pressAt(page, from);
-  await moveTo(page, to);
+  await moveTo(page, await to());
   await page.mouse.up();
 }
 
