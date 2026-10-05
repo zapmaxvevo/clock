@@ -1,27 +1,28 @@
 # Estado de la fase 1
 
 Registro vivo de por dónde va la ejecución. Se actualiza al cerrar cada paso;
-quien retome el trabajo empieza acá. Última actualización: 2026-10-04.
+quien retome el trabajo empieza acá. Última actualización: 2026-10-05.
 
 ## Dónde estamos
 
-| Slice                                      | Estado       |
-| ------------------------------------------ | ------------ |
-| 1 — Timer sin proyecto                     | En `main`    |
-| 2 — Modo manual                            | En `main`    |
-| 2b — Reintento de «Iniciar»                | En `main`    |
-| 3 — Corregir horas y fecha                 | En `main`    |
-| 4 — Continuar, duplicar, descartar, atajos | En `main`    |
-| 5 — Semana y paginación                    | En `main`    |
-| 9 — Núcleo de proyectos                    | En `main`    |
-| 10 — Selector de proyecto y tarea          | En `main`    |
-| 7 — Perfil                                 | En `main`    |
-| 6 — Selección y acciones en masa           | En `main`    |
-| 7b — Perfil: nombre editable y tema        | Sin contrato |
-| 8 — Calendario: lectura                    | En `main`    |
-| 8c — Calendario: escritura                 | En `main`    |
-| 8b — Calendario: arrastre                  | En `main`    |
-| 11–13                                      | Sin contrato |
+| Slice                                      | Estado               |
+| ------------------------------------------ | -------------------- |
+| 1 — Timer sin proyecto                     | En `main`            |
+| 2 — Modo manual                            | En `main`            |
+| 2b — Reintento de «Iniciar»                | En `main`            |
+| 3 — Corregir horas y fecha                 | En `main`            |
+| 4 — Continuar, duplicar, descartar, atajos | En `main`            |
+| 5 — Semana y paginación                    | En `main`            |
+| 9 — Núcleo de proyectos                    | En `main`            |
+| 10 — Selector de proyecto y tarea          | En `main`            |
+| 7 — Perfil                                 | En `main`            |
+| 6 — Selección y acciones en masa           | En `main`            |
+| 7b — Perfil: nombre editable y tema        | Contrato en revisión |
+| 8 — Calendario: lectura                    | En `main`            |
+| 8c — Calendario: escritura                 | En `main`            |
+| 8b — Calendario: arrastre                  | En `main`            |
+| 11 — Etiquetas y facturable (11a, 11b)     | Contrato en revisión |
+| 12–13                                      | Sin contrato         |
 
 Los slices 1 a 10, 8c y 8b están en `main`: el calendario quedó completo (lectura, escritura y
 arrastre). El 8b se mergeó el 2026-10-05 con lint, typecheck, 863 de unidad, 873 de
@@ -29,6 +30,13 @@ integración y 114 de 114 e2e en verde (**falta `git push origin main`**). No qu
 con trabajo pendiente ni cambios sin commitear.
 
 ## Lo primero de la sesión siguiente
+
+0. **En curso (2026-10-05)**: el contrato del 7b tiene la ronda 1 de arquitectura resuelta en
+   `correcciones-fase1-slice7b.md` y el `architect` la está aplicando; sigue una ronda 2 del
+   `architecture-reviewer`. El contrato del 11 está escrito, con D-1 … D-6 resueltas por el
+   team-lead (partido en 11a y 11b) y el ADR 0016 propuesto; está en la ronda 1 de arquitectura
+   y `parity-analyst` releva H-1 … H-13. Las migraciones del 7b y del 11 salen las dos como
+   `0008`: la que entra segunda regenera la suya.
 
 1. **Lo que sigue**: los contratos del **7b** (perfil: nombre editable y tema) y de los slices
    **11 a 13** (ver `fase1-mapa.md`), y el slice chico de «Reintentar» en el alta manual
@@ -133,6 +141,6 @@ Lo que sigue siendo del usuario, porque necesita sus cuentas o su máquina:
 
 - Plan y orden: `fase1-mapa.md`.
 - Contratos: `fase1-slice<n>-*.md`; correcciones: `correcciones-fase1-slice<n>*.md`.
-- ADR: `docs/adr/0001`–`0014` (todos aceptados).
+- ADR: `docs/adr/0001`–`0016` (0016 propuesto; el resto aceptados).
 - Paridad: `docs/parity/` (time-tracker, perfil, proyectos, calendario,
   timesheet).
