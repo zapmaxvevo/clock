@@ -1,6 +1,10 @@
 import { billableFor, NEW_ENTRY_BILLABLE } from "@/lib/billable";
-import { sameId, samePair, type ProjectPair } from "@/lib/project-pair";
-import { NO_SELECTION, selectionIds } from "@/modules/project/components/picker-model";
+import { sameId, type ProjectPair } from "@/lib/project-pair";
+import {
+  NO_SELECTION,
+  sameSelection,
+  selectionIds,
+} from "@/modules/project/components/picker-model";
 import type {
   ProjectSelection,
   TrackingCatalog,
@@ -73,14 +77,38 @@ export function fieldsInput(fields: EntryFields): FieldsInput {
 }
 
 /**
- * TT-25: después de «Agregar», limpia cada campo que sigue igual a lo que se
- * mandó. Lo que se cambió mientras el alta viajaba se queda.
+ * El facturable con que arranca una entrada nueva con `selection` (TT-14):
+ * el por defecto de su proyecto en el catálogo; `false` sin proyecto o con
+ * uno fuera del catálogo.
  */
-export function afterAdd(current: EntryFields, sent: EntryFields): EntryFields {
+function newEntryBillable(
+  selection: ProjectSelection,
+  catalog: TrackingCatalog,
+): boolean {
+  const source =
+    selection.project === null ? null : catalogProject(catalog, selection.project.id);
+  return billableFor(NEW_ENTRY_BILLABLE, source ?? null);
+}
+
+/**
+ * TT-25: después de «Agregar», limpia cada campo que sigue igual a lo que se
+ * mandó. Lo que se cambió mientras el alta viajaba se queda. Un facturable
+ * igual al enviado vuelve al de una entrada nueva con la selección que queda,
+ * así el proyecto elegido durante el alta conserva su por defecto.
+ */
+export function afterAdd(
+  current: EntryFields,
+  sent: EntryFields,
+  catalog: TrackingCatalog,
+): EntryFields {
+  const selection = sameSelection(current.selection, sent.selection)
+    ? NO_FIELDS.selection
+    : current.selection;
   return {
-    selection: samePair(selectionIds(current.selection), selectionIds(sent.selection))
-      ? NO_FIELDS.selection
-      : current.selection,
-    billable: current.billable === sent.billable ? NO_FIELDS.billable : current.billable,
+    selection,
+    billable:
+      current.billable === sent.billable
+        ? newEntryBillable(selection, catalog)
+        : current.billable,
   };
 }

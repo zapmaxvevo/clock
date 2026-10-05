@@ -125,6 +125,9 @@ describe("withSelection", () => {
     expect(
       withSelection({ selection: onApp, billable: true }, onArchived, catalog),
     ).toEqual({ selection: onArchived, billable: true });
+    expect(
+      withSelection({ selection: onWeb, billable: false }, onArchived, catalog),
+    ).toEqual({ selection: onArchived, billable: false });
   });
 
   it("conserva el resto del borrador", () => {
@@ -160,7 +163,7 @@ describe("afterAdd", () => {
   const sent: EntryFields = { selection: onWeb, billable: true };
 
   it("limpia lo que sigue igual a lo que se mandó (TT-25)", () => {
-    expect(afterAdd(sent, sent)).toEqual(NO_FIELDS);
+    expect(afterAdd(sent, sent, catalog)).toEqual(NO_FIELDS);
   });
 
   it("el mismo par con otras mayúsculas también se limpia", () => {
@@ -169,14 +172,36 @@ describe("afterAdd", () => {
       billable: true,
     };
 
-    expect(afterAdd(upper, sent)).toEqual(NO_FIELDS);
+    expect(afterAdd(upper, sent, catalog)).toEqual(NO_FIELDS);
   });
 
   it("conserva el par que se eligió mientras el alta viajaba", () => {
-    expect(afterAdd({ selection: onWebDesign, billable: true }, sent)).toEqual({
+    expect(afterAdd({ selection: onWebDesign, billable: true }, sent, catalog)).toEqual({
       selection: onWebDesign,
-      billable: false,
+      billable: true,
     });
+  });
+
+  it("un facturable igual al enviado vuelve al por defecto del proyecto que queda (D-7)", () => {
+    // Se mandó «App» marcado a mano y, antes de la respuesta, se eligió «Web»,
+    // que arranca facturable: el próximo alta no manda `false` contra TT-14.
+    expect(
+      afterAdd(
+        { selection: onWeb, billable: true },
+        { selection: onApp, billable: true },
+        catalog,
+      ),
+    ).toEqual({ selection: onWeb, billable: true });
+  });
+
+  it("con el proyecto que queda fuera del catálogo, vuelve a no facturable", () => {
+    expect(
+      afterAdd(
+        { selection: onArchived, billable: true },
+        { selection: onApp, billable: true },
+        catalog,
+      ),
+    ).toEqual({ selection: onArchived, billable: false });
   });
 
   it("conserva el facturable que se cambió mientras el alta viajaba", () => {
@@ -184,6 +209,7 @@ describe("afterAdd", () => {
       afterAdd(
         { selection: onWeb, billable: true },
         { selection: onWeb, billable: false },
+        catalog,
       ),
     ).toEqual({ selection: none, billable: true });
   });

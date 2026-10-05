@@ -25,7 +25,11 @@ export const trackerLabels = {
   /** TT-110: el trío no puede expresar una entrada de más de un día. */
   multiDayTimesReadOnly:
     "Esta entrada dura más de un día; sus horarios no se pueden editar acá.",
-  /** TT-14: el control de la barra y del diálogo del calendario, y el ícono de solo lectura. */
+  /**
+   * TT-14: el control de la barra y del diálogo del calendario, el ícono de
+   * solo lectura, el campo del diálogo de solo lectura y la línea del detalle
+   * del bloque (CAL-23, CAL-45, CAL-66).
+   */
   billable: "Facturable",
   /** TT-28: el botón superpuesto al contador. */
   editRunningStart: "Editar la hora de inicio",

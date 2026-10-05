@@ -379,7 +379,7 @@ function EntryEditor({
           <BillableToggle
             pressed={draft.billable}
             onPressedChange={(billable) => change({ ...draftRef.current, billable })}
-            label={calendarLabels.billable}
+            label={trackerLabels.billable}
             showLabel
           />
         </div>

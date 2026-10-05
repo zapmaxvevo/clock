@@ -190,6 +190,12 @@ export function DayGroup({
       : { ...fields, billable: billableEdit.billable };
   }
 
+  /**
+   * El proyecto puede cambiar el facturable en el servidor (D-2): con uno de
+   * los dos en vuelo, el reintento del otro espera, así no pisa lo elegido.
+   */
+  const fieldsPending = saveProject.pending || saveBillable.pending;
+
   const remove = useAction(deleteEntry, {
     unreachableMessage: timeEntryMessages.unexpected,
     optimistic: (input) => showRemoved(input.id),
@@ -377,7 +383,7 @@ export function DayGroup({
             <ActionFeedback
               title={trackerLabels.projectNotSaved}
               message={saveProject.failure.message}
-              retryDisabled={saveProject.pending}
+              retryDisabled={fieldsPending}
               onRetry={retryOf(saveProject)}
             />
           )}
@@ -385,7 +391,7 @@ export function DayGroup({
             <ActionFeedback
               title={trackerLabels.billableNotSaved}
               message={saveBillable.failure.message}
-              retryDisabled={saveBillable.pending}
+              retryDisabled={fieldsPending}
               onRetry={retryOf(saveBillable)}
             />
           )}

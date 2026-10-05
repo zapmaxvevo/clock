@@ -84,7 +84,7 @@ export function EntryDialogBody({ entry, serverNow, todayKey }: EntryDialogBodyP
           onChange={() => undefined}
         />
       </Field>
-      <Field label={calendarLabels.billable}>
+      <Field label={trackerLabels.billable}>
         {entry.billable ? calendarLabels.billableYes : calendarLabels.billableNo}
       </Field>
       <Field label={trackerLabels.date}>

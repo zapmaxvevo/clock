@@ -12,7 +12,7 @@ import type { TimeEntryView } from "@/modules/time-entry/schema";
 import { formatDuration, weekdayLabel } from "@/server/time";
 
 import { useElapsedSeconds } from "../elapsed-counter";
-import { entryNameOf } from "../labels";
+import { entryNameOf, trackerLabels } from "../labels";
 import type { EntryGestureKind, SegmentGestures } from "./calendar-gestures";
 import type { PlacedBlock, Segment } from "./calendar-layout";
 import { calendarLabels } from "./labels";
@@ -219,7 +219,7 @@ export function CalendarBlock({
           {times} · {duration}
         </span>
         {project !== null && <span>{project}</span>}
-        {entry.billable && <span>{calendarLabels.billable}</span>}
+        {entry.billable && <span>{trackerLabels.billable}</span>}
       </TooltipContent>
     </Tooltip>
   );

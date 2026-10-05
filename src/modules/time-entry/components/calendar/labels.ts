@@ -22,7 +22,7 @@ type BlockLabelParts = {
 
 const RUNNING = "en curso";
 
-const BILLABLE = "Facturable";
+const BILLABLE = "facturable";
 
 function blockLabel({
   name,
@@ -41,7 +41,7 @@ function blockLabel({
     day,
     times,
     ...(project === null ? [] : [project]),
-    ...(billable ? [BILLABLE.toLowerCase()] : []),
+    ...(billable ? [BILLABLE] : []),
   ].join(", ");
 }
 
@@ -80,8 +80,7 @@ export const calendarLabels = {
   entryTitle: "Entrada",
   runningTitle: "Timer en curso",
   project: "Proyecto",
-  /** CAL-23, CAL-45 y CAL-66: el campo del diálogo y la línea del detalle. */
-  billable: BILLABLE,
+  /** CAL-66: el valor del facturable en el diálogo de solo lectura. */
   billableYes: "Sí",
   billableNo: "No",
   duration: "Duración",

@@ -96,10 +96,9 @@ type TrackerBarProps = {
  * que la descripción, el borrador manual, los pedidos, sus avisos y la
  * confirmación del descarte viven acá y no en la barra de cada modo. Los
  * campos de la entrada (`EntryFields`) siguen las mismas reglas que la
- * descripción. El
- * conmutador y los atajos `n`, `s` y `m` también: así el conmutador no cambia
- * de lugar ni pierde el foco al conmutar, y cada atajo ve el mismo estado que
- * su control.
+ * descripción. El conmutador y los atajos `n`, `s` y `m` también: así el
+ * conmutador no cambia de lugar ni pierde el foco al conmutar, y cada atajo ve
+ * el mismo estado que su control.
  *
  * `useTrackerRefresh()` se llama acá y no adentro de la barra del timer: si
  * viviera ahí, la revalidación de P-11 dejaría de correr en modo manual.
@@ -242,7 +241,7 @@ export function TrackerBar({
       // Lo que se tecleó mientras el pedido viajaba no es parte de la entrada
       // creada: se limpia solo lo que sigue igual a lo que se mandó.
       setDraft((current) => (current === input.description ? "" : current));
-      setFieldsDraft((current) => afterAdd(current, input.fields));
+      setFieldsDraft((current) => afterAdd(current, input.fields, catalog));
       setManualDraft((current) =>
         sameDraft(current, input) ? reset(serverNow, timeZone) : current,
       );
@@ -683,7 +682,7 @@ export function TrackerBar({
           <ActionFeedback
             title={trackerLabels.projectNotSaved}
             message={saveProject.failure.message}
-            retryDisabled={saveProject.pending || switching}
+            retryDisabled={fieldsPending}
             onRetry={retryOf(saveProject)}
           />
         )}
