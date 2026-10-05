@@ -5,41 +5,37 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-05.
 
 ## Dónde estamos
 
-| Slice                                      | Estado               |
-| ------------------------------------------ | -------------------- |
-| 1 — Timer sin proyecto                     | En `main`            |
-| 2 — Modo manual                            | En `main`            |
-| 2b — Reintento de «Iniciar»                | En `main`            |
-| 3 — Corregir horas y fecha                 | En `main`            |
-| 4 — Continuar, duplicar, descartar, atajos | En `main`            |
-| 5 — Semana y paginación                    | En `main`            |
-| 9 — Núcleo de proyectos                    | En `main`            |
-| 10 — Selector de proyecto y tarea          | En `main`            |
-| 7 — Perfil                                 | En `main`            |
-| 6 — Selección y acciones en masa           | En `main`            |
-| 7b — Perfil: nombre editable y tema        | Contrato en revisión |
-| 8 — Calendario: lectura                    | En `main`            |
-| 8c — Calendario: escritura                 | En `main`            |
-| 8b — Calendario: arrastre                  | En `main`            |
-| 11 — Etiquetas y facturable (11a, 11b)     | Contrato en revisión |
-| 12–13                                      | Sin contrato         |
+| Slice                                      | Estado            |
+| ------------------------------------------ | ----------------- |
+| 1 — Timer sin proyecto                     | En `main`         |
+| 2 — Modo manual                            | En `main`         |
+| 2b — Reintento de «Iniciar»                | En `main`         |
+| 3 — Corregir horas y fecha                 | En `main`         |
+| 4 — Continuar, duplicar, descartar, atajos | En `main`         |
+| 5 — Semana y paginación                    | En `main`         |
+| 9 — Núcleo de proyectos                    | En `main`         |
+| 10 — Selector de proyecto y tarea          | En `main`         |
+| 7 — Perfil                                 | En `main`         |
+| 6 — Selección y acciones en masa           | En `main`         |
+| 7b — Perfil: nombre editable y tema        | En `main`         |
+| 8 — Calendario: lectura                    | En `main`         |
+| 8c — Calendario: escritura                 | En `main`         |
+| 8b — Calendario: arrastre                  | En `main`         |
+| 11 — Etiquetas y facturable (11a, 11b)     | Contrato aprobado |
+| 12–13                                      | Sin contrato      |
 
-Los slices 1 a 10, 8c y 8b están en `main`: el calendario quedó completo (lectura, escritura y
-arrastre). El 8b se mergeó el 2026-10-05 con lint, typecheck, 863 de unidad, 873 de
-integración y 114 de 114 e2e en verde (**falta `git push origin main`**). No quedan agentes
-con trabajo pendiente ni cambios sin commitear.
+Los slices 1 a 10, 7b, 8c y 8b están en `main`. El 7b se mergeó el 2026-10-05 (`ccf09b2`) con
+lint, typecheck, 889 de unidad, 924 de integración y 117 de 117 e2e en verde; de paso arregló la
+fuente (`--font-sans` se apuntaba a sí misma desde la fase 0 y la interfaz salía en serif)
+(**falta `git push origin main`**). El contrato del 11 está aprobado en dos rondas, partido en
+11a (facturable) y 11b (etiquetas), con el ADR 0016 aceptado.
 
 ## Lo primero de la sesión siguiente
 
-0. **En curso (2026-10-05)**: el contrato del 7b tiene la ronda 1 de arquitectura resuelta en
-   `correcciones-fase1-slice7b.md` y el `architect` la está aplicando; sigue una ronda 2 del
-   `architecture-reviewer`. El contrato del 11 está escrito, con D-1 … D-6 resueltas por el
-   team-lead (partido en 11a y 11b) y el ADR 0016 propuesto; está en la ronda 1 de arquitectura
-   y `parity-analyst` releva H-1 … H-13. Las migraciones del 7b y del 11 salen las dos como
-   `0008`: la que entra segunda regenera la suya.
-
-1. **Lo que sigue**: los contratos del **7b** (perfil: nombre editable y tema) y de los slices
-   **11 a 13** (ver `fase1-mapa.md`), y el slice chico de «Reintentar» en el alta manual
+0. **Lo que sigue (2026-10-05)**: el **11a** sobre `main` en `ccf09b2`, primero con una ronda
+   corta del `architecture-reviewer` contra el árbol (entró el 7b). Su migración sale como
+   `0009`. Después el 11b, con el 11a en `main`.
+1. **Después**: los contratos de los slices **12 y 13** (ver `fase1-mapa.md`), y el slice chico de «Reintentar» en el alta manual
    (ADR 0007, retirar TT-109), ya decidido. Deuda chica sin slice:
    - un `DayCalendar` compartido entre `DateField` y `PeriodPicker`;
    - un `ClockRangeFields` común a `manual-bar.tsx`, `entry-times-editor.tsx` y el diálogo;
@@ -47,9 +43,9 @@ con trabajo pendiente ni cambios sin commitear.
    - en e2e, `stepToDay`, `isXPage` y `NETWORK_FAILURE` comunes;
    - `preferenceCookie` en `src/lib`;
    - el `Positioner` del detalle que todavía se lleva un clic (F2-n1 del 8b).
-2. Para el contrato del **7b**: el modo timer/manual queda en la cookie (TT-16
-   corregido el 2026-10-04) y no entra al 7b. El 7b edita el nombre con su propia
-   action: `/api/auth/update-user` quedó cerrado en el 7 (`disabledPaths`).
+2. Deuda que dejó el 7b: una cuenta de Google nueva con un correo ya usado (PF-47) termina en la
+   página de error de Better Auth (`account_not_linked`) sin texto propio; volver a seguir el
+   nombre de Google (P-10) y liberar un correo ocupado (P-11) quedan para la fase 2.
 
 El hydration mismatch de `AppLayout` quedó cerrado: es el `MetadataWrapper` de Next durante
 una recarga en caliente y no se reproduce.
@@ -85,6 +81,10 @@ su pipeline.
 Lo que sigue siendo del usuario, porque necesita sus cuentas o su máquina:
 
 - **Push**: `git push origin main`.
+- **Antes de desplegar el 7b**: correr en la base de producción
+  `select u.id, u.email from "user" u where not exists (select 1 from account a where a.user_id = u.id and a.provider_id = 'google');`.
+  Tiene que dar cero filas: con `disableImplicitLinking`, una fila `user` sin cuenta de Google
+  ya no puede entrar.
 - **`.env` local**: `npm run db:migrate` falla en silencio con el `DATABASE_URL` del
   `.env`; la base de e2e se migró con la URL de `e2e/environment.ts`. El `.env` no se
   puede leer desde la sesión.
@@ -95,8 +95,13 @@ Lo que sigue siendo del usuario, porque necesita sus cuentas o su máquina:
 - **Sesión en el workspace de Clockify** para cerrar lo no verificado: P-14 en
   `time-tracker.md` (fila de la entrada que corre, hora inexistente, horas de la copia al
   duplicar, «la última» de `c`, continuar o duplicar con un proyecto no disponible, TT-57 y
-  TT-58), la edición masiva del rastreador (P-07), P-09 de `perfil.md`, P-12 de
-  `timesheet.md`, P-07 de `calendario.md`, y PR-40/PR-58 de `proyectos.md`.
+  TT-58), la edición masiva del rastreador (P-07), P-09 de `perfil.md` (con lo del 7b: el
+  «username», el tema y la identidad de Google en PF-45, PF-47 y PF-48), P-12 de
+  `timesheet.md`, P-07 de `calendario.md` (con CAL-23), PR-40/PR-58 y P-33 de `proyectos.md`
+  (con PR-47 y PR-48), y lo del 11 en P-14: TT-12, TT-50 y el rechazo de continuar o duplicar
+  con una etiqueta archivada.
+- **Relevar Clockify con WebFetch**: el resumidor inventa citas (en el 11 inventó un tope de 50
+  etiquetas); antes de escribir «Documentado» se confirma la oración literal.
 
 ## Cómo se trabaja (lo que este proyecto aprendió)
 
@@ -134,6 +139,11 @@ Lo que sigue siendo del usuario, porque necesita sus cuentas o su máquina:
 - **Foco**: un control con foco que pasa a `disabled` lo pierde a `body`; usar
   `aria-disabled` y no actuar.
 - **Documentos de correcciones**: son históricos y no se reescriben.
+- **Un solo `next dev` por directorio** (Next 16): un agente que levanta el servidor en el árbol
+  principal le bloquea el suyo a otro. Cada uno lo levanta desde una copia propia en su
+  subdirectorio del scratchpad, con su puerto.
+- **Bases propias**: cada agente que corre tests fuera de la suite usa una base propia y la
+  borra al terminar; avisar antes de borrar una base ajena.
 - **Formato**: `npx prettier --write` sobre los `.md` que escriben agentes sin
   shell; `npx prettier --check .` antes de commitear.
 
@@ -141,6 +151,6 @@ Lo que sigue siendo del usuario, porque necesita sus cuentas o su máquina:
 
 - Plan y orden: `fase1-mapa.md`.
 - Contratos: `fase1-slice<n>-*.md`; correcciones: `correcciones-fase1-slice<n>*.md`.
-- ADR: `docs/adr/0001`–`0016` (0016 propuesto; el resto aceptados).
+- ADR: `docs/adr/0001`–`0016` (todos aceptados).
 - Paridad: `docs/parity/` (time-tracker, perfil, proyectos, calendario,
   timesheet).
