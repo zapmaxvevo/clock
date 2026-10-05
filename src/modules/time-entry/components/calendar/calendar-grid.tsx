@@ -207,7 +207,20 @@ export function CalendarGrid({
       return;
     }
     const scope: HTMLElement = region;
+    /**
+     * Apretar adentro de la región es hacer otra cosa: el foco pendiente se
+     * descarta. Va antes del foco que el mismo clic le da a la región, que si
+     * no llevaría al bloque y desplazaría la grilla bajo el puntero.
+     */
+    let abandoned = false;
+    function abandon(): void {
+      abandoned = true;
+      onEntryFocused();
+    }
     function focusBlock(): void {
+      if (abandoned) {
+        return;
+      }
       const button = scope.querySelector<HTMLButtonElement>(
         `button[data-entry-block="${focusEntryId}"]`,
       );
@@ -229,7 +242,11 @@ export function CalendarGrid({
     }
     focusBlock();
     scope.addEventListener("focus", focusBlock);
-    return () => scope.removeEventListener("focus", focusBlock);
+    scope.addEventListener("pointerdown", abandon, true);
+    return () => {
+      scope.removeEventListener("focus", focusBlock);
+      scope.removeEventListener("pointerdown", abandon, true);
+    };
     // Un bloque que cambió de columna se desmonta: con otro dibujo se vuelve a buscar.
   }, [focusEntryId, onEntryFocused, regionRef, state, movingTimes, preview]);
 

@@ -161,9 +161,28 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
   const moveTimes = useAction(updateEntryTimes, {
     unreachableMessage: timeEntryMessages.unexpected,
     optimistic: (input) => showMovingTimes(input),
-    onSuccess: (data) => setFocusEntryId(data.entry.id),
-    onFailure: () => setFocusEntryId(movingIdRef.current),
+    onSuccess: (data) => returnFocusTo(data.entry.id),
+    onFailure: () => returnFocusTo(movingIdRef.current),
   });
+
+  /**
+   * La respuesta de un gesto devuelve el foco al bloque solo si nadie lo llevó
+   * a otro lado mientras viajaba: sigue en el bloque, en la región o cayó en
+   * `body` porque el bloque cambió de columna. Si la persona ya hizo otra cosa
+   * —el zoom, otro período—, un foco pendiente se lo robaría al próximo clic
+   * en la grilla, que enfoca la región.
+   */
+  function returnFocusTo(id: string | null): void {
+    const active = document.activeElement;
+    const free =
+      active === null ||
+      active === document.body ||
+      active === regionRef.current ||
+      (id !== null && active.closest(`[data-entry-block="${id}"]`) !== null);
+    if (free) {
+      setFocusEntryId(id);
+    }
+  }
   const handles: readonly ActionHandle<never>[] = [
     save,
     create,
