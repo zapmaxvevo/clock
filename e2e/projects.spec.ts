@@ -10,6 +10,7 @@ import {
   withServerAction,
 } from "./network";
 import { expect, signIn, TEST_EMAIL_DOMAIN, test } from "./session";
+import { uniqueSuffix } from "./tracker-page";
 
 /**
  * Recorridos del slice 9: la pantalla de proyectos, sus tres altas y el
@@ -41,11 +42,6 @@ const FORBIDDEN = "No tenés permiso para hacer esto.";
 
 /** El título del aviso de «Nueva tarea», que nombra la operación (TT-90). */
 const TASK_NOT_CREATED = "No se pudo crear la tarea.";
-
-/** Sufijo único del recorrido, para que la próxima corrida no choque con esta. */
-function uniqueSuffix(): string {
-  return randomUUID().slice(0, 8);
-}
 
 function isProjectsPage(url: URL): boolean {
   return url.pathname === PROJECTS_PATH;

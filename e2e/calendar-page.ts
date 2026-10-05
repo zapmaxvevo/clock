@@ -410,14 +410,6 @@ export function dialogClock(
   return dialog.getByRole("textbox", { name: label, exact: true });
 }
 
-/**
- * «Facturable» del diálogo (CAL-45, CAL-66): el mismo botón de alternancia de
- * la barra, con `aria-pressed`.
- */
-export function dialogBillable(dialog: Locator): Locator {
-  return dialog.getByRole("button", { name: "Facturable", exact: true });
-}
-
 /** El selector de fecha del diálogo, que lleva el día elegido en su nombre. */
 export function dialogDate(dialog: Locator): Locator {
   return dialog.getByRole("button", { name: /^Fecha( de la entrada)?: / });

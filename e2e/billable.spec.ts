@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import type { Locator, Page } from "@playwright/test";
 
 import {
@@ -7,7 +5,6 @@ import {
   calendarRegion,
   closedBlockName,
   dayColumn,
-  dialogBillable,
   dialogButton,
   dialogDescription,
   entryBlock,
@@ -18,13 +15,21 @@ import {
 } from "./calendar-page";
 import { seedProject } from "./database";
 import { addDays, todayIn } from "./days";
-import { withServerAction } from "./network";
+import {
+  holdActionResponses,
+  isAction,
+  recordActions,
+  withServerAction,
+} from "./network";
 import { expect, test } from "./session";
 import {
+  addManualEntry,
   billableToggle,
   chooseMode,
+  continueButton,
   descriptionInput,
   entryRow,
+  isTrackerPage,
   pickProject,
   projectPicker,
   setClock,
@@ -32,6 +37,7 @@ import {
   stopTimer,
   todayGroup,
   trackerBar,
+  uniqueSuffix,
 } from "./tracker-page";
 
 /**
@@ -59,19 +65,9 @@ const BILLABLE_BY_DEFAULT_HINT =
 
 const PROJECTS_PATH = "/proyectos";
 
-/** Sufijo único del recorrido, para que la próxima corrida no choque con esta. */
-function uniqueSuffix(): string {
-  return randomUUID().slice(0, 8);
-}
-
 /** TT-14, H-7: el control de `scope` presionado o no, por su `aria-pressed`. */
 async function expectBillable(scope: Locator, billable: boolean): Promise<void> {
   await expect(billableToggle(scope)).toHaveAttribute("aria-pressed", String(billable));
-}
-
-/** El botón de continuar de una fila (TT-57). */
-function continueButton(scope: Locator, description: string): Locator {
-  return scope.getByRole("button", { name: `Continuar «${description}»`, exact: true });
 }
 
 /**
@@ -108,29 +104,6 @@ async function createBillableProject(page: Page, name: string): Promise<void> {
   ).toBeVisible();
 }
 
-/**
- * Carga una entrada de hoy desde la barra manual, de 00:00 a 00:01, y espera
- * su fila. Con `project`, lo elige antes buscándolo por `search`.
- */
-async function addManualEntry(
-  page: Page,
-  description: string,
-  project?: { readonly name: string; readonly search: string },
-): Promise<void> {
-  await chooseMode(page, "manual");
-  const bar = trackerBar(page);
-  await descriptionInput(bar).fill(description);
-  await setClock(bar, "Hora de inicio", "00:00");
-  await setClock(bar, "Hora de fin", "00:01");
-  if (project !== undefined) {
-    await pickProject(page, bar, project.name, project.search);
-  }
-  await withServerAction(page, () =>
-    bar.getByRole("button", { name: "Agregar" }).click(),
-  );
-  await expect(entryRow(todayGroup(page), description)).toBeVisible();
-}
-
 test("un proyecto creado facturable por defecto hace facturable el timer que lo elige, y detener deja la barra no facturable", async ({
   page,
 }) => {
@@ -150,7 +123,7 @@ test("un proyecto creado facturable por defecto hace facturable el timer que lo 
   await expectBillable(bar, true);
 
   // TT-38: el timer nació facturable, y una carga nueva lo trae del servidor.
-  await startTimer(page, description);
+  await withServerAction(page, () => startTimer(page, description));
   await page.reload();
   await expect(bar.getByRole("button", { name: "Detener" })).toBeVisible();
   await expect(projectPicker(bar)).toHaveText(project);
@@ -179,7 +152,7 @@ test("con el timer corriendo, elegir un proyecto facturable lo vuelve facturable
 
   await page.goto("/");
   const bar = trackerBar(page);
-  await startTimer(page, description);
+  await withServerAction(page, () => startTimer(page, description));
   await expectBillable(bar, false);
 
   // D-2, TT-27: otro proyecto impone su valor por defecto a la entrada que
@@ -192,9 +165,26 @@ test("con el timer corriendo, elegir un proyecto facturable lo vuelve facturable
   await expectBillable(bar, true);
 
   // TT-27: desmarcarlo viaja sobre la entrada abierta y no le quita el
-  // proyecto.
-  await withServerAction(page, () => billableToggle(bar).click());
+  // proyecto. Mientras viaja, el control está inactivo con el foco y
+  // volver a apretarlo no pide nada (§5.8): la respuesta se retiene hasta
+  // después. Con `aria-disabled` Playwright no hace el clic, así que se
+  // aprieta Espacio con el foco en el control, como lo haría la persona.
+  const sent = recordActions(page);
+  const release = await holdActionResponses(page, isTrackerPage);
+  const toggle = billableToggle(bar);
+  const requested = page.waitForRequest(isAction);
+  await toggle.click();
+  await requested;
   await expectBillable(bar, false);
+  await expect(toggle).toHaveAttribute("aria-disabled", "true");
+  await expect(toggle).toBeFocused();
+  await page.keyboard.press("Space");
+  await expectBillable(bar, false);
+  const settled = page.waitForResponse((response) => isAction(response.request()));
+  release();
+  await settled;
+  await expect(toggle).not.toHaveAttribute("aria-disabled", "true");
+  expect(sent).toHaveLength(1);
   await page.reload();
   await expect(bar.getByRole("button", { name: "Detener" })).toBeVisible();
   await expect(descriptionInput(bar)).toHaveValue(description);
@@ -266,11 +256,29 @@ test("en modo manual, «Agregar» con un proyecto facturable crea una fila factu
   await expect(projectPicker(bar)).toHaveText(NO_SELECTION);
   await expectBillable(bar, false);
 
+  // TT-14: lo que se elige en el borrador gana sobre el por defecto del
+  // proyecto. Una segunda alta con el mismo proyecto, desmarcada, nace no
+  // facturable.
+  const unbilled = `entrada desmarcada ${suffix}`;
+  await descriptionInput(bar).fill(unbilled);
+  await setClock(bar, "Hora de inicio", "00:00");
+  await setClock(bar, "Hora de fin", "00:01");
+  await pickProject(page, bar, project, suffix);
+  await expectBillable(bar, true);
+  await billableToggle(bar).click();
+  await expectBillable(bar, false);
+  await withServerAction(page, () =>
+    bar.getByRole("button", { name: "Agregar" }).click(),
+  );
+  await expect(entryRow(todayGroup(page), unbilled)).toBeVisible();
+
   await page.reload();
   await expect(projectPicker(entryRow(todayGroup(page), description))).toHaveText(
     project,
   );
   await expectBillable(entryRow(todayGroup(page), description), true);
+  await expect(projectPicker(entryRow(todayGroup(page), unbilled))).toHaveText(project);
+  await expectBillable(entryRow(todayGroup(page), unbilled), false);
 });
 
 test("en el calendario, marcar «Facturable» y guardar suma «facturable» al nombre del bloque y una línea al detalle", async ({
@@ -297,16 +305,27 @@ test("en el calendario, marcar «Facturable» y guardar suma «facturable» al n
   await expect(created).toBeFocused();
 
   // CAL-45, CAL-66: «Facturable» en el diálogo de edición, y «Guardar» lo
-  // escribe.
+  // manda. Un diálogo sin cambios se cierra sin pedir nada, así que el pedido
+  // se afirma antes de esperar su respuesta: si el facturable no viaja, el
+  // recorrido cae acá y no por la espera.
   await created.click();
   const dialog = entryDialog(page, "Editar entrada");
   await expect(dialogDescription(dialog)).toBeFocused();
-  const billable = dialogBillable(dialog);
+  const billable = billableToggle(dialog);
   await expect(billable).toHaveAttribute("aria-pressed", "false");
   await billable.click();
   await expect(billable).toHaveAttribute("aria-pressed", "true");
-  await withServerAction(page, () => dialogButton(dialog, "Guardar").click());
+  const sent = recordActions(page);
+  const settled = page.waitForResponse((response) => isAction(response.request()));
+  await dialogButton(dialog, "Guardar").click();
   await expect(dialog).toBeHidden();
+  await expect
+    .poll(() => sent.length, { message: "«Guardar» no mandó ningún pedido" })
+    .toBe(1);
+  expect(sent[0].postData(), "el pedido de «Guardar» no lleva el facturable").toContain(
+    '"billable":true',
+  );
+  expect((await settled).ok()).toBe(true);
 
   // CAL-75: el nombre del bloque termina en «, facturable». CAL-23: su
   // detalle suma la línea «Facturable».
@@ -327,4 +346,30 @@ test("en el calendario, marcar «Facturable» y guardar suma «facturable» al n
     ),
   ).toBeVisible();
   await expect(entryBlock(calendarRegion(page), closedBlockName(times))).toHaveCount(0);
+});
+
+test("sin timer, marcar «Facturable» en la barra sin proyecto inicia un timer facturable", async ({
+  page,
+}) => {
+  const suffix = uniqueSuffix();
+  const description = `timer marcado ${suffix}`;
+
+  // TT-14: sin proyecto la barra arranca no facturable; marcarlo cambia el
+  // borrador sin pedir nada al servidor.
+  await page.goto("/");
+  const bar = trackerBar(page);
+  await expectBillable(bar, false);
+  const sent = recordActions(page);
+  await billableToggle(bar).click();
+  await expectBillable(bar, true);
+  await expect(billableToggle(bar)).toBeFocused();
+  expect(sent).toHaveLength(0);
+
+  // «Iniciar» manda el facturable del borrador, y una carga nueva lo trae del
+  // servidor.
+  await withServerAction(page, () => startTimer(page, description));
+  await page.reload();
+  await expect(bar.getByRole("button", { name: "Detener" })).toBeVisible();
+  await expect(projectPicker(bar)).toHaveText(NO_SELECTION);
+  await expectBillable(bar, true);
 });

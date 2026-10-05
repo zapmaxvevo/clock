@@ -5,12 +5,34 @@
  * sabe de qué pantalla se trata; la que filtra pedidos recibe el predicado de
  * la URL.
  */
-import { expect, type Browser, type Page, type Route } from "@playwright/test";
+import {
+  expect,
+  type Browser,
+  type Page,
+  type Request,
+  type Route,
+} from "@playwright/test";
 
 import { signIn } from "./session";
 
 /** Qué pedidos de la página afecta una intercepción, por su URL. */
 export type UrlPredicate = (url: URL) => boolean;
+
+/** Un pedido de server action: lleva la cabecera `next-action`. */
+export function isAction(request: Request): boolean {
+  return request.headers()["next-action"] !== undefined;
+}
+
+/** Junta los pedidos de server action que salen desde que se llama. */
+export function recordActions(page: Page): readonly Request[] {
+  const sent: Request[] = [];
+  page.on("request", (request) => {
+    if (isAction(request)) {
+      sent.push(request);
+    }
+  });
+  return sent;
+}
 
 /**
  * Corre algo que dispara una server action y espera su respuesta. Se usa
