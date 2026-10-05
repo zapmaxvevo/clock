@@ -140,6 +140,15 @@ describe("EntryRow, el facturable (TT-14, TT-49, TT-92)", () => {
     expect(toggle).toContain('aria-pressed="false"');
   });
 
+  it("sin descripción, se nombra «Sin descripción», como el selector de proyecto (TT-50)", () => {
+    const markup = render({ description: "" });
+
+    expect(billableOf(markup)).toContain(
+      'aria-label="Entrada «Sin descripción» facturable"',
+    );
+    expect(markup).toContain('aria-label="Proyecto de la entrada «Sin descripción»"');
+  });
+
   it("muestra el facturable que recibe, también el optimista", () => {
     expect(billableOf(render({ billable: true }))).toContain('aria-pressed="true"');
   });
