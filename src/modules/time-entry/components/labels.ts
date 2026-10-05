@@ -17,6 +17,7 @@ export const trackerLabels = {
   /** TT-90: el aviso nombra el campo que no se guardó. */
   descriptionNotSaved: "No se pudo guardar la descripción.",
   projectNotSaved: "No se pudo cambiar el proyecto.",
+  billableNotSaved: "No se pudo cambiar el facturable.",
   entryNotDeleted: "No se pudo borrar la entrada.",
   /** TT-90: el trío viaja entero, así que el aviso nombra la operación. */
   entryTimesNotSaved: "No se pudo guardar el horario de la entrada.",
@@ -24,6 +25,8 @@ export const trackerLabels = {
   /** TT-110: el trío no puede expresar una entrada de más de un día. */
   multiDayTimesReadOnly:
     "Esta entrada dura más de un día; sus horarios no se pueden editar acá.",
+  /** TT-14: el control de la barra y del diálogo del calendario, y el ícono de solo lectura. */
+  billable: "Facturable",
   /** TT-28: el botón superpuesto al contador. */
   editRunningStart: "Editar la hora de inicio",
   /** Los botones de los calendarios de mes, el de la fecha y el del rango. */
@@ -89,6 +92,11 @@ export function entryNameOf(description: string): string {
 /** El nombre accesible del selector de la fila, como el de su menú de acciones. */
 export function entryProjectLabel(entryName: string): string {
   return `Proyecto de la entrada «${entryName}»`;
+}
+
+/** TT-14: el nombre accesible del control de facturable de la fila. */
+export function entryBillableLabel(entryName: string): string {
+  return `Entrada «${entryName}» facturable`;
 }
 
 /** Lo que el superíndice `+1` le dice a un lector de pantalla. */

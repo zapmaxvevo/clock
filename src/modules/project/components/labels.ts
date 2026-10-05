@@ -21,6 +21,9 @@ export const projectLabels = {
   color: "Color",
   /** PR-15: si no se elige color, lo asigna el servidor. */
   colorHint: "Si no elegís uno, se asigna automáticamente.",
+  /** PR-21: la casilla del alta de proyecto. */
+  billableByDefault: "Facturable por defecto",
+  billableByDefaultHint: "Las entradas nuevas con este proyecto arrancan facturables.",
   /** El aviso de error nombra la operación que no se hizo. */
   clientNotCreated: "No se pudo crear el cliente.",
   projectNotCreated: "No se pudo crear el proyecto.",
