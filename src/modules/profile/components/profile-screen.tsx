@@ -5,19 +5,21 @@ import type { ProfileActions } from "@/modules/profile/schema";
 import type { ProfileView } from "@/modules/profile/service";
 
 import { dayNames, profileLabels } from "./labels";
+import { NameField } from "./name-field";
 import { FixedSetting, PreferenceField } from "./preference-field";
 import { UserAvatar } from "./user-avatar";
 
 type ProfileScreenProps = {
   readonly view: ProfileView;
-  /** La action llega por props desde `page.tsx`, el único que importa `actions.ts`. */
+  /** Las actions llegan por props desde `page.tsx`, el único que importa `actions.ts`. */
   readonly actions: ProfileActions;
 };
 
 /**
- * `/perfil`: la identidad de Google en solo lectura y las preferencias de
- * hora y fecha, que guardan al cambiar (PF-30, PF-31). El primer día de la
- * semana y el formato de duración se muestran y no se editan acá.
+ * `/perfil`: el nombre editable con la foto y el correo de Google, y las
+ * preferencias de hora y fecha y de apariencia, que guardan al cambiar (PF-07,
+ * PF-30, PF-31). El primer día de la semana y el formato de duración se
+ * muestran y no se editan acá.
  */
 export function ProfileScreen({ view, actions }: ProfileScreenProps) {
   const { identity, preferences, options, canEdit } = view;
@@ -30,14 +32,16 @@ export function ProfileScreen({ view, actions }: ProfileScreenProps) {
         <h2 id="profile-identity" className="text-base font-medium">
           {profileLabels.identity}
         </h2>
-        <div className="flex items-center gap-4">
+        <div className="flex items-start gap-4">
           <UserAvatar image={identity.image} initials={identity.initials} size="lg" />
-          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-            <dt className="text-muted-foreground">{profileLabels.name}</dt>
-            <dd>{identity.name}</dd>
-            <dt className="text-muted-foreground">{profileLabels.email}</dt>
-            <dd>{identity.email}</dd>
-          </dl>
+          <div className="flex min-w-0 flex-1 flex-col gap-4">
+            <NameField
+              value={identity.name}
+              canEdit={canEdit}
+              updateName={actions.updateName}
+            />
+            <FixedSetting label={profileLabels.email} value={identity.email} />
+          </div>
         </div>
         <p className="text-muted-foreground text-sm">{profileLabels.identityNote}</p>
       </section>
@@ -93,6 +97,23 @@ export function ProfileScreen({ view, actions }: ProfileScreenProps) {
             label={profileLabels.durationFormat}
             value={profileLabels.durationValue}
             note={profileLabels.durationNote}
+          />
+        </div>
+
+        <div
+          role="group"
+          aria-labelledby="profile-appearance"
+          className="flex flex-col gap-5 rounded-lg border p-4"
+        >
+          <h3 id="profile-appearance" className="text-sm font-medium">
+            {profileLabels.appearance}
+          </h3>
+          <PreferenceField
+            preference="theme"
+            value={preferences.theme}
+            options={options.themes}
+            canEdit={canEdit}
+            updatePreference={actions.updatePreference}
           />
         </div>
       </section>

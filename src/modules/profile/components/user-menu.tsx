@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 import { buttonVariants } from "@/components/ui/button";
@@ -29,7 +29,6 @@ type UserMenuProps = {
 
 /** PF-10 y PF-30: la cuenta de quien está, con el enlace al perfil y la salida. */
 export function UserMenu({ name, email, image }: UserMenuProps) {
-  const router = useRouter();
   const pathname = usePathname();
   const [pending, setPending] = useState(false);
 
@@ -39,7 +38,11 @@ export function UserMenu({ name, email, image }: UserMenuProps) {
     }
     setPending(true);
     await signOut();
-    router.replace("/login");
+    // Una carga completa y no una navegación del cliente (D2 del 7b): el layout
+    // raíz se dibuja de nuevo sin sesión, sin la clase del tema de quien salió,
+    // y la caché del router se va con las pantallas de esa persona.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- la carga completa es la intención (D2)
+    window.location.assign("/login");
   }
 
   return (
