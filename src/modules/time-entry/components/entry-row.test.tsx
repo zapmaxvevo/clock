@@ -38,6 +38,8 @@ type Options = {
   readonly selectionLocked?: boolean;
   readonly formats?: DisplayFormats;
   readonly description?: string;
+  readonly billable?: boolean;
+  readonly busy?: boolean;
 };
 
 function render(options: Options = {}): string {
@@ -50,7 +52,8 @@ function render(options: Options = {}): string {
           entry={entry}
           description={options.description ?? entry.description}
           project={none}
-          busy={false}
+          billable={options.billable ?? false}
+          busy={options.busy ?? false}
           canTrack={options.canTrack ?? true}
           selected={options.selected ?? false}
           onToggleSelected={() => undefined}
@@ -60,6 +63,7 @@ function render(options: Options = {}): string {
           minDayKey="2026-01-01"
           onSave={() => undefined}
           onChangeProject={() => undefined}
+          onChangeBillable={() => undefined}
           onSaveTimes={() => undefined}
           onDelete={() => undefined}
           onContinue={() => undefined}
@@ -77,6 +81,13 @@ function render(options: Options = {}): string {
 /** El elemento con rol `checkbox`, con sus atributos. */
 function checkboxOf(markup: string): string | null {
   return markup.match(/<[a-z]+[^>]*role="checkbox"[^>]*>/)?.[0] ?? null;
+}
+
+/** El control de facturable de la fila, con sus atributos. */
+function billableOf(markup: string): string | null {
+  return (
+    markup.match(/<button[^>]*aria-label="Entrada «[^"]*» facturable"[^>]*>/)?.[0] ?? null
+  );
 }
 
 describe("EntryRow", () => {
@@ -118,5 +129,47 @@ describe("EntryRow", () => {
 
   it("con la membresía desactivada no hay casilla (TT-92)", () => {
     expect(checkboxOf(render({ canTrack: false }))).toBeNull();
+  });
+});
+
+describe("EntryRow, el facturable (TT-14, TT-49, TT-92)", () => {
+  it("es un botón de alternancia nombrado por la entrada", () => {
+    const toggle = billableOf(render());
+
+    expect(toggle).toContain('aria-label="Entrada «Informe» facturable"');
+    expect(toggle).toContain('aria-pressed="false"');
+  });
+
+  it("muestra el facturable que recibe, también el optimista", () => {
+    expect(billableOf(render({ billable: true }))).toContain('aria-pressed="true"');
+  });
+
+  it("va después del selector de proyecto", () => {
+    const markup = render();
+
+    expect(markup.search(/aria-label="Proyecto de la entrada/)).toBeLessThan(
+      markup.search(/aria-label="Entrada «Informe» facturable"/),
+    );
+  });
+
+  it("con una escritura de la fila en vuelo, inactivo sin `disabled`", () => {
+    const toggle = billableOf(render({ busy: true })) ?? "";
+
+    expect(toggle).toContain('aria-disabled="true"');
+    expect(toggle).not.toMatch(/\sdisabled(=|\s|>)/);
+  });
+
+  it("en solo lectura, facturable: el ícono con su nombre y sin control", () => {
+    const markup = render({ canTrack: false, billable: true });
+
+    expect(billableOf(markup)).toBeNull();
+    expect(markup).toContain('role="img" aria-label="Facturable"');
+  });
+
+  it("en solo lectura, no facturable: nada (H-6)", () => {
+    const markup = render({ canTrack: false, billable: false });
+
+    expect(billableOf(markup)).toBeNull();
+    expect(markup).not.toContain("Facturable");
   });
 });

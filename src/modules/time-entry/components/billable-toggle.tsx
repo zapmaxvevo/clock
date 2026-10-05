@@ -44,6 +44,8 @@ export function BillableToggle({
 
   return (
     <Toggle
+      // Con el nombre a la vista es un campo de formulario: lleva su borde.
+      variant={showLabel ? "outline" : "default"}
       size="sm"
       pressed={pressed}
       onPressedChange={(next) => {

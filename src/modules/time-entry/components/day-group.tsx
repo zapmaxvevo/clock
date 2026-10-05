@@ -5,6 +5,7 @@ import { useEffect, useOptimistic, useRef } from "react";
 import { ActionFeedback } from "@/components/action-feedback";
 import { retryHandlerOf, useAction, type ActionHandle } from "@/hooks/use-action";
 import { useNewId } from "@/hooks/use-new-id";
+import { useTrackingCatalog } from "@/modules/project/components/tracking-catalog";
 import {
   deleteEntry,
   duplicateEntry,
@@ -19,8 +20,9 @@ import {
   type UpdateEntryTimesInput,
 } from "@/modules/time-entry/schema";
 
+import { saveEntryBillable, type EntryBillableChange } from "./entry-billable";
+import { fieldsOf, withSelection, type EntryFields } from "./entry-fields";
 import { saveEntryProject, type EntryProjectChange } from "./entry-project";
-import { selectionOf } from "./entry-selection";
 import { EntryRow } from "./entry-row";
 import { selectDayLabel, trackerLabels } from "./labels";
 import { dayCheckState, type Selection } from "./selection";
@@ -136,6 +138,7 @@ export function DayGroup({
   selectionLocked,
 }: DayGroupProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const catalog = useTrackingCatalog();
 
   const [edits, showEdit] = useOptimistic<
     readonly UpdateDescriptionInput[],
@@ -147,7 +150,10 @@ export function DayGroup({
     onSuccess: (data) => onEntryWeek(data.entry.weekStart),
   });
 
-  /** TT-54: el par elegido se ve en la fila mientras viaja, y vuelve si falla. */
+  /**
+   * TT-54: el par elegido se ve en la fila mientras viaja, y vuelve si falla.
+   * Con él, el facturable que va a escribir el servidor (D-2).
+   */
   const [projectEdits, showProjectEdit] = useOptimistic<
     readonly EntryProjectChange[],
     EntryProjectChange
@@ -157,6 +163,32 @@ export function DayGroup({
     optimistic: (input) => showProjectEdit(input),
     onSuccess: (data) => onEntryWeek(data.entry.weekStart),
   });
+
+  /** TT-54: el facturable, como el par. */
+  const [billableEdits, showBillableEdit] = useOptimistic<
+    readonly EntryBillableChange[],
+    EntryBillableChange
+  >([], replaceById);
+  const saveBillable = useAction(saveEntryBillable, {
+    unreachableMessage: timeEntryMessages.unexpected,
+    optimistic: (input) => showBillableEdit(input),
+    onSuccess: (data) => onEntryWeek(data.entry.weekStart),
+  });
+
+  /** Los campos que muestra la fila: los de la vista con lo que viaja encima. */
+  function shownFields(
+    entry: TimeEntryView,
+    projectEdit: EntryProjectChange | undefined,
+    billableEdit: EntryBillableChange | undefined,
+  ): EntryFields {
+    const fields =
+      projectEdit === undefined
+        ? fieldsOf(entry)
+        : withSelection(fieldsOf(entry), projectEdit.selection, catalog);
+    return billableEdit === undefined
+      ? fields
+      : { ...fields, billable: billableEdit.billable };
+  }
 
   const remove = useAction(deleteEntry, {
     unreachableMessage: timeEntryMessages.unexpected,
@@ -275,16 +307,20 @@ export function DayGroup({
             const edit = edits.find((pending) => pending.id === entry.id);
             const timeEdit = timeEdits.find((pending) => pending.id === entry.id);
             const projectEdit = projectEdits.find((pending) => pending.id === entry.id);
+            const billableEdit = billableEdits.find((pending) => pending.id === entry.id);
+            const fields = shownFields(entry, projectEdit, billableEdit);
             return (
               <EntryRow
                 key={entry.id}
                 entry={entry}
                 description={edit?.description ?? entry.description}
-                project={projectEdit?.selection ?? selectionOf(entry)}
+                project={fields.selection}
+                billable={fields.billable}
                 busy={
                   (save.pending && edit !== undefined) ||
                   (saveTimes.pending && timeEdit !== undefined) ||
                   (saveProject.pending && projectEdit !== undefined) ||
+                  (saveBillable.pending && billableEdit !== undefined) ||
                   bulkBusyIds.includes(entry.id)
                 }
                 canTrack={canTrack}
@@ -297,6 +333,9 @@ export function DayGroup({
                 onSave={(description) => run(save, { id: entry.id, description })}
                 onChangeProject={(selection) =>
                   run(saveProject, { id: entry.id, selection })
+                }
+                onChangeBillable={(billable) =>
+                  run(saveBillable, { id: entry.id, billable })
                 }
                 onSaveTimes={(times) =>
                   run(saveTimes, {
@@ -321,6 +360,7 @@ export function DayGroup({
 
       {(save.failure !== null ||
         saveProject.failure !== null ||
+        saveBillable.failure !== null ||
         remove.failure !== null ||
         saveTimes.failure !== null ||
         duplicate.failure !== null) && (
@@ -339,6 +379,14 @@ export function DayGroup({
               message={saveProject.failure.message}
               retryDisabled={saveProject.pending}
               onRetry={retryOf(saveProject)}
+            />
+          )}
+          {saveBillable.failure !== null && (
+            <ActionFeedback
+              title={trackerLabels.billableNotSaved}
+              message={saveBillable.failure.message}
+              retryDisabled={saveBillable.pending}
+              onRetry={retryOf(saveBillable)}
             />
           )}
           {saveTimes.failure !== null && (

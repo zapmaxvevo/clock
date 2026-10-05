@@ -7,6 +7,7 @@ import { retryHandlerOf, useAction, type ActionHandle } from "@/hooks/use-action
 import { useNewId } from "@/hooks/use-new-id";
 import { projectLabels } from "@/modules/project/components/labels";
 import { ProjectPicker } from "@/modules/project/components/project-picker";
+import { useTrackingCatalog } from "@/modules/project/components/tracking-catalog";
 import type { ProjectSelection } from "@/modules/project/schema";
 import {
   createManualEntry,
@@ -23,8 +24,10 @@ import {
   type UpdateRunningStartInput,
 } from "@/modules/time-entry/schema";
 
+import { BillableToggle } from "./billable-toggle";
 import { DescriptionField } from "./description-field";
 import { DiscardTimerDialog } from "./discard-timer-dialog";
+import { saveEntryBillable } from "./entry-billable";
 import {
   afterAdd,
   fieldsInput,
@@ -116,6 +119,7 @@ export function TrackerBar({
 }: TrackerBarProps) {
   useTrackerRefresh();
   const reachWeek = useReachWeek();
+  const catalog = useTrackingCatalog();
 
   const [mode, setMode] = useState<TrackerMode>(initialMode);
   /**
@@ -208,7 +212,14 @@ export function TrackerBar({
   const saveProject = useAction(saveEntryProject, {
     unreachableMessage: timeEntryMessages.unexpected,
     optimistic: (input) =>
-      showRunningFieldsEdit((fields) => withSelection(fields, input.selection)),
+      showRunningFieldsEdit((fields) => withSelection(fields, input.selection, catalog)),
+    onSuccess: (data) => reachWeek([data.entry.weekStart]),
+  });
+  /** TT-27: el facturable de la entrada abierta, con su vista optimista. */
+  const saveBillable = useAction(saveEntryBillable, {
+    unreachableMessage: timeEntryMessages.unexpected,
+    optimistic: (input) =>
+      showRunningFieldsEdit((fields) => ({ ...fields, billable: input.billable })),
     onSuccess: (data) => reachWeek([data.entry.weekStart]),
   });
   /**
@@ -274,6 +285,9 @@ export function TrackerBar({
       setFieldsDraft(serverFields);
       if (saveProject.failure?.code === "unexpected") {
         saveProject.clear();
+      }
+      if (saveBillable.failure?.code === "unexpected") {
+        saveBillable.clear();
       }
       // Lo mismo con el inicio: «Reintentar» apuntaría a un timer que ya no
       // está. Un `already_stopped` llega en el mismo render que la vista sin
@@ -362,6 +376,7 @@ export function TrackerBar({
     stop.clear();
     saveStart.clear();
     saveProject.clear();
+    saveBillable.clear();
     discard.clear();
     add.clear();
     setPendingDiscard(null);
@@ -461,11 +476,21 @@ export function TrackerBar({
   /** TT-27: con el timer abierto el cambio se guarda en él; sin timer, es el borrador. */
   function handleProjectChange(selection: ProjectSelection): void {
     if (!editsRunningFields) {
-      setFieldsDraft((current) => withSelection(current, selection));
+      setFieldsDraft((current) => withSelection(current, selection, catalog));
       return;
     }
     clearNotices();
     saveProject.run({ id: running.id, selection });
+  }
+
+  /** TT-14 y TT-27: como el proyecto, sobre el timer abierto o sobre el borrador. */
+  function handleBillableChange(billable: boolean): void {
+    if (!editsRunningFields) {
+      setFieldsDraft((current) => ({ ...current, billable }));
+      return;
+    }
+    clearNotices();
+    saveBillable.run({ id: running.id, billable });
   }
 
   function handleModeChange(next: TrackerMode): void {
@@ -505,18 +530,34 @@ export function TrackerBar({
     />
   );
 
+  /**
+   * El proyecto puede cambiar el facturable en el servidor (D-2): con uno de
+   * los dos en vuelo, los dos esperan, así lo que se ve es lo que se escribe.
+   */
+  const fieldsPending = saveProject.pending || saveBillable.pending || switching;
+
   const projectPicker = (
     <ProjectPicker
       value={shownFields.selection}
       onChange={handleProjectChange}
       variant="bar"
       label={projectLabels.pickerEmpty}
-      pending={saveProject.pending || switching}
+      pending={fieldsPending}
       readOnly={!canTrack}
       triggerRef={pickerTriggerRef}
       onOpenChange={(open) => {
         pickerOpen.current = open;
       }}
+    />
+  );
+
+  const billableToggle = (
+    <BillableToggle
+      pressed={shownFields.billable}
+      onPressedChange={handleBillableChange}
+      label={trackerLabels.billable}
+      pending={fieldsPending}
+      readOnly={!canTrack}
     />
   );
 
@@ -527,6 +568,7 @@ export function TrackerBar({
           <ManualBar
             descriptionField={descriptionField}
             projectPicker={projectPicker}
+            billableToggle={billableToggle}
             draft={manualDraft}
             onDraftChange={setManualDraft}
             todayKey={todayKey}
@@ -540,6 +582,7 @@ export function TrackerBar({
           <TimerBar
             descriptionField={descriptionField}
             projectPicker={projectPicker}
+            billableToggle={billableToggle}
             isRunning={isRunning}
             counterStart={isRunning && running !== null ? running.startedAt : null}
             running={running}
@@ -642,6 +685,15 @@ export function TrackerBar({
             message={saveProject.failure.message}
             retryDisabled={saveProject.pending || switching}
             onRetry={retryOf(saveProject)}
+          />
+        )}
+
+        {saveBillable.failure !== null && (
+          <ActionFeedback
+            title={trackerLabels.billableNotSaved}
+            message={saveBillable.failure.message}
+            retryDisabled={fieldsPending}
+            onRetry={retryOf(saveBillable)}
           />
         )}
 

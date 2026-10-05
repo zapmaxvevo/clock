@@ -23,11 +23,13 @@ import type { ProjectSelection } from "@/modules/project/schema";
 import type { TimeEntryView } from "@/modules/time-entry/schema";
 import { clockLabel, formatDuration } from "@/server/time";
 
+import { BillableToggle } from "./billable-toggle";
 import { DeleteEntryDialog } from "./delete-entry-dialog";
 import { DescriptionField } from "./description-field";
 import { EntryTimesEditor } from "./entry-times-editor";
 import {
   entryActionsLabel,
+  entryBillableLabel,
   entryNameOf,
   entryProjectLabel,
   extraDaysText,
@@ -43,6 +45,8 @@ type EntryRowProps = {
   readonly description: string;
   /** El proyecto y la tarea a mostrar, también optimistas. */
   readonly project: ProjectSelection;
+  /** El facturable a mostrar, también optimista (TT-54, D-2). */
+  readonly billable: boolean;
   /** TT-55: con la escritura en vuelo la fila queda atenuada. */
   readonly busy: boolean;
   /** Con la membresía desactivada la fila queda en solo lectura y sin casilla (TT-92). */
@@ -65,6 +69,7 @@ type EntryRowProps = {
   readonly onSave: (description: string) => void;
   /** TT-54: el selector solo avisa si el par elegido no es el que la fila ya tiene. */
   readonly onChangeProject: (selection: ProjectSelection) => void;
+  readonly onChangeBillable: (billable: boolean) => void;
   readonly onSaveTimes: (times: TimeDraft) => void;
   readonly onDelete: () => void;
   /** TT-57: continuar es de la lista, que también lo dispara con «c». */
@@ -94,6 +99,7 @@ export function EntryRow({
   entry,
   description,
   project,
+  billable,
   busy,
   canTrack,
   selected,
@@ -104,6 +110,7 @@ export function EntryRow({
   minDayKey,
   onSave,
   onChangeProject,
+  onChangeBillable,
   onSaveTimes,
   onDelete,
   onContinue,
@@ -256,6 +263,15 @@ export function EntryRow({
           onChange={onChangeProject}
           variant="row"
           label={entryProjectLabel(entryName)}
+          pending={busy}
+          readOnly={!canTrack}
+        />
+
+        {/* TT-14 y H-6: en solo lectura, el ícono solo si es facturable. */}
+        <BillableToggle
+          pressed={billable}
+          onPressedChange={onChangeBillable}
+          label={entryBillableLabel(entryName)}
           pending={busy}
           readOnly={!canTrack}
         />

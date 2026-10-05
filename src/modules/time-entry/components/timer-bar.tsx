@@ -28,6 +28,8 @@ type TimerBarProps = {
   readonly descriptionField: ReactNode;
   /** El selector de proyecto también, con el par que viaja con la barra. */
   readonly projectPicker: ReactNode;
+  /** El control de facturable también, después del selector (TT-14). */
+  readonly billableToggle: ReactNode;
   /** Con la vista optimista: corre desde el clic en «Iniciar» hasta el de «Detener». */
   readonly isRunning: boolean;
   /** Inicio de la entrada abierta que cuenta el contador, o `null` parado. */
@@ -65,6 +67,7 @@ type TimerBarProps = {
 export function TimerBar({
   descriptionField,
   projectPicker,
+  billableToggle,
   isRunning,
   counterStart,
   running,
@@ -97,6 +100,8 @@ export function TimerBar({
       <div className="min-w-0 flex-1 basis-64">{descriptionField}</div>
 
       {projectPicker}
+
+      {billableToggle}
 
       <div className="relative">
         <ElapsedCounter startedAt={counterStart} serverNow={serverNow} />
