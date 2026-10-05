@@ -5,25 +5,25 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-05.
 
 ## Dónde estamos
 
-| Slice                                      | Estado                           |
-| ------------------------------------------ | -------------------------------- |
-| 1 — Timer sin proyecto                     | En `main`                        |
-| 2 — Modo manual                            | En `main`                        |
-| 2b — Reintento de «Iniciar»                | En `main`                        |
-| 3 — Corregir horas y fecha                 | En `main`                        |
-| 4 — Continuar, duplicar, descartar, atajos | En `main`                        |
-| 5 — Semana y paginación                    | En `main`                        |
-| 9 — Núcleo de proyectos                    | En `main`                        |
-| 10 — Selector de proyecto y tarea          | En `main`                        |
-| 7 — Perfil                                 | En `main`                        |
-| 6 — Selección y acciones en masa           | En `main`                        |
-| 7b — Perfil: nombre editable y tema        | En `main`                        |
-| 8 — Calendario: lectura                    | En `main`                        |
-| 8c — Calendario: escritura                 | En `main`                        |
-| 8b — Calendario: arrastre                  | En `main`                        |
-| 11a — Facturable                           | En `main`                        |
-| 11b — Etiquetas                            | Contrato aprobado; arranca ahora |
-| 12–13                                      | Sin contrato                     |
+| Slice                                      | Estado            |
+| ------------------------------------------ | ----------------- |
+| 1 — Timer sin proyecto                     | En `main`         |
+| 2 — Modo manual                            | En `main`         |
+| 2b — Reintento de «Iniciar»                | En `main`         |
+| 3 — Corregir horas y fecha                 | En `main`         |
+| 4 — Continuar, duplicar, descartar, atajos | En `main`         |
+| 5 — Semana y paginación                    | En `main`         |
+| 9 — Núcleo de proyectos                    | En `main`         |
+| 10 — Selector de proyecto y tarea          | En `main`         |
+| 7 — Perfil                                 | En `main`         |
+| 6 — Selección y acciones en masa           | En `main`         |
+| 7b — Perfil: nombre editable y tema        | En `main`         |
+| 8 — Calendario: lectura                    | En `main`         |
+| 8c — Calendario: escritura                 | En `main`         |
+| 8b — Calendario: arrastre                  | En `main`         |
+| 11a — Facturable                           | En `main`         |
+| 11b — Etiquetas                            | Contrato aprobado |
+| 12–13                                      | Sin contrato      |
 
 Los slices 1 a 10, 7b, 8c, 8b y 11a están en `main`. El 11a (facturable) se mergeó el
 2026-10-05 (`1db5917`) con lint, typecheck, 941 de unidad, 955 de integración y 123 de 123 e2e en
