@@ -5,41 +5,40 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-04.
 
 ## Dónde estamos
 
-| Slice                                      | Estado                                                                              |
-| ------------------------------------------ | ----------------------------------------------------------------------------------- |
-| 1 — Timer sin proyecto                     | En `main`                                                                           |
-| 2 — Modo manual                            | En `main`                                                                           |
-| 2b — Reintento de «Iniciar»                | En `main`                                                                           |
-| 3 — Corregir horas y fecha                 | En `main`                                                                           |
-| 4 — Continuar, duplicar, descartar, atajos | En `main`                                                                           |
-| 5 — Semana y paginación                    | En `main`                                                                           |
-| 9 — Núcleo de proyectos                    | En `main`                                                                           |
-| 10 — Selector de proyecto y tarea          | En `main`                                                                           |
-| 7 — Perfil                                 | En `main`                                                                           |
-| 6 — Selección y acciones en masa           | En `main`                                                                           |
-| 7b — Perfil: nombre editable y tema        | Sin contrato                                                                        |
-| 8 — Calendario: lectura                    | En `main`                                                                           |
-| 8c — Calendario: escritura                 | En `main`                                                                           |
-| 8b — Calendario: arrastre                  | Contrato escrito, ADR 0014 aceptado; revisión en curso en `fase1/slice-8b-arrastre` |
-| 11–13                                      | Sin contrato                                                                        |
+| Slice                                      | Estado       |
+| ------------------------------------------ | ------------ |
+| 1 — Timer sin proyecto                     | En `main`    |
+| 2 — Modo manual                            | En `main`    |
+| 2b — Reintento de «Iniciar»                | En `main`    |
+| 3 — Corregir horas y fecha                 | En `main`    |
+| 4 — Continuar, duplicar, descartar, atajos | En `main`    |
+| 5 — Semana y paginación                    | En `main`    |
+| 9 — Núcleo de proyectos                    | En `main`    |
+| 10 — Selector de proyecto y tarea          | En `main`    |
+| 7 — Perfil                                 | En `main`    |
+| 6 — Selección y acciones en masa           | En `main`    |
+| 7b — Perfil: nombre editable y tema        | Sin contrato |
+| 8 — Calendario: lectura                    | En `main`    |
+| 8c — Calendario: escritura                 | En `main`    |
+| 8b — Calendario: arrastre                  | En `main`    |
+| 11–13                                      | Sin contrato |
 
-Los slices 1 a 10 y el 8c están en `main`. El 8c (calendario, escritura) se mergeó el
-2026-10-04 con lint, typecheck, 810 de unidad, 873 de integración y 107 de 107 e2e en verde
-(**falta `git push origin main`**). No quedan agentes con trabajo pendiente ni cambios sin
-commitear.
+Los slices 1 a 10, 8c y 8b están en `main`: el calendario quedó completo (lectura, escritura y
+arrastre). El 8b se mergeó el 2026-10-05 con lint, typecheck, 863 de unidad, 873 de
+integración y 114 de 114 e2e en verde (**falta `git push origin main`**). No quedan agentes
+con trabajo pendiente ni cambios sin commitear.
 
 ## Lo primero de la sesión siguiente
 
-1. **El 8b** (arrastre): contrato en `fase1-slice8b-calendario-arrastre.md` y ADR 0014
-   aceptado (Pointer Events propios, solo con mouse); P-03 fuera. En curso, la ronda del
-   `architecture-reviewer`; después, su pipeline (frontend, e2e y paridad, sin backend).
-   Ojo con lo que dejó el 8c: la guarda de `focusBlock` en `calendar-grid.tsx` es la que hoy
-   impide un detalle detrás de la confirmación de «Borrar» (T-n6 de
-   `correcciones-fase1-slice8c-revisiones.md`), y `slotAt` decide el clic en una franja.
-   Deuda chica sin slice: un `DayCalendar` compartido entre `DateField` y `PeriodPicker`; un
-   `ClockRangeFields` común a `manual-bar.tsx`, `entry-times-editor.tsx` y el diálogo; las
-   variantes de `retryOf`; y en e2e, `stepToDay`, `isXPage` y `NETWORK_FAILURE` comunes;
-   `preferenceCookie` en `src/lib`.
+1. **Lo que sigue**: los contratos del **7b** (perfil: nombre editable y tema) y de los slices
+   **11 a 13** (ver `fase1-mapa.md`), y el slice chico de «Reintentar» en el alta manual
+   (ADR 0007, retirar TT-109), ya decidido. Deuda chica sin slice:
+   - un `DayCalendar` compartido entre `DateField` y `PeriodPicker`;
+   - un `ClockRangeFields` común a `manual-bar.tsx`, `entry-times-editor.tsx` y el diálogo;
+   - las variantes de `retryOf`;
+   - en e2e, `stepToDay`, `isXPage` y `NETWORK_FAILURE` comunes;
+   - `preferenceCookie` en `src/lib`;
+   - el `Positioner` del detalle que todavía se lleva un clic (F2-n1 del 8b).
 2. Para el contrato del **7b**: el modo timer/manual queda en la cookie (TT-16
    corregido el 2026-10-04) y no entra al 7b. El 7b edita el nombre con su propia
    action: `/api/auth/update-user` quedó cerrado en el 7 (`disabledPaths`).

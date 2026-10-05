@@ -62,3 +62,16 @@ El 6b (la respuesta de un gesto fija `focusEntryId` solo si el foco sigue en el 
 - **frontend-dev**: F-m1, P-m1, T-m3, C-m1 a C-m6 y C-n1 a C-n3.
 - **e2e-tester**: T-M1, la confirmación de T-M2, T-m4, T-m5, el e2e de P-m1 y C-m7.
 - **team-lead**: §7 y §8 del contrato (T-n6, P-n2) y el estado de la fase.
+
+## Segunda revisión de frontend
+
+Sobre `c776315..069a276`: aprobado sin hallazgos.
+
+- **F-m1:** reproducido de nuevo con `blur` y con `pointercancel`; el primer clic abre el diálogo.
+- **P-m1:** ya no abre el alta, y `pressedOnBlock` no queda pegado.
+- **C-m6 y C-m3:** la partición y `fromView` no cambian la conducta.
+
+**F2-n1**: el detalle todavía puede llevarse un clic. `pointer-events-none` está en el `Popup`,
+pero el `Positioner` de Base UI (`components/ui/tooltip.tsx:73`) sigue recibiendo el puntero, así
+que un clic sobre la franja que tapa el detalle abierto no abre el alta. No es una regresión: ya
+pasaba en el 8 y el 8c. Queda como deuda: una prop `positionerClassName` en `TooltipContent`.
