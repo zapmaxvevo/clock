@@ -103,66 +103,77 @@ export function TimerBar({
 
       {billableToggle}
 
-      <div className="relative">
-        <ElapsedCounter startedAt={counterStart} serverNow={serverNow} />
+      {/*
+       * El contador, «Iniciar» o «Detener» y el menú bajan juntos cuando la
+       * barra no entra en una línea: partidos, el contador cambiaría de lugar
+       * según lo que ocupen el selector y el facturable.
+       */}
+      <div className="flex shrink-0 items-center gap-3">
+        <div className="relative">
+          <ElapsedCounter startedAt={counterStart} serverNow={serverNow} />
+          {runningControls && (
+            <RunningStartEditor
+              running={running}
+              todayKey={todayKey}
+              minDayKey={minDayKey}
+              disabled={switching || savingStart}
+              onSave={onSaveStart}
+            />
+          )}
+        </div>
+
+        {/*
+         * Inactivo con `aria-disabled` y no con `disabled` mientras la parada o
+         * el arranque viajan: el foco se queda en el botón, también cuando la
+         * parada extiende la ventana (P-15) y la página se dibuja dos veces.
+         */}
+        <Button
+          type="button"
+          variant={isRunning ? "default" : "success"}
+          disabled={!canTrack}
+          aria-disabled={switching}
+          onClick={() => {
+            if (!switching) {
+              onToggle();
+            }
+          }}
+          aria-keyshortcuts={shortcutsEnabled ? (isRunning ? "S" : "N") : undefined}
+          className={cn(
+            "aria-disabled:active:translate-y-0",
+            isRunning
+              ? "bg-destructive text-destructive-foreground hover:bg-destructive/90 aria-disabled:hover:bg-destructive"
+              : "aria-disabled:hover:bg-success",
+          )}
+        >
+          {isRunning ? (
+            <SquareIcon aria-hidden="true" />
+          ) : (
+            <PlayIcon aria-hidden="true" />
+          )}
+          {isRunning ? "Detener" : "Iniciar"}
+        </Button>
+
         {runningControls && (
-          <RunningStartEditor
-            running={running}
-            todayKey={todayKey}
-            minDayKey={minDayKey}
-            disabled={switching || savingStart}
-            onSave={onSaveStart}
-          />
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={<Button ref={menuTriggerRef} variant="ghost" size="icon-sm" />}
+              aria-label="Acciones del timer"
+            >
+              <EllipsisVerticalIcon aria-hidden="true" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-auto min-w-40">
+              <DropdownMenuItem
+                variant="destructive"
+                disabled={switching}
+                onClick={() => onRequestDiscard(running.id)}
+              >
+                <Trash2Icon aria-hidden="true" />
+                Descartar
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </div>
-
-      {/*
-       * Inactivo con `aria-disabled` y no con `disabled` mientras la parada o
-       * el arranque viajan: el foco se queda en el botón, también cuando la
-       * parada extiende la ventana (P-15) y la página se dibuja dos veces.
-       */}
-      <Button
-        type="button"
-        variant={isRunning ? "default" : "success"}
-        disabled={!canTrack}
-        aria-disabled={switching}
-        onClick={() => {
-          if (!switching) {
-            onToggle();
-          }
-        }}
-        aria-keyshortcuts={shortcutsEnabled ? (isRunning ? "S" : "N") : undefined}
-        className={cn(
-          "aria-disabled:active:translate-y-0",
-          isRunning
-            ? "bg-destructive text-destructive-foreground hover:bg-destructive/90 aria-disabled:hover:bg-destructive"
-            : "aria-disabled:hover:bg-success",
-        )}
-      >
-        {isRunning ? <SquareIcon aria-hidden="true" /> : <PlayIcon aria-hidden="true" />}
-        {isRunning ? "Detener" : "Iniciar"}
-      </Button>
-
-      {runningControls && (
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={<Button ref={menuTriggerRef} variant="ghost" size="icon-sm" />}
-            aria-label="Acciones del timer"
-          >
-            <EllipsisVerticalIcon aria-hidden="true" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-auto min-w-40">
-            <DropdownMenuItem
-              variant="destructive"
-              disabled={switching}
-              onClick={() => onRequestDiscard(running.id)}
-            >
-              <Trash2Icon aria-hidden="true" />
-              Descartar
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
     </div>
   );
 }
