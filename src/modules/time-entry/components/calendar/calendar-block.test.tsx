@@ -33,6 +33,7 @@ const morning: TimeEntryView = {
   editableTimes: true,
   project: null,
   task: null,
+  billable: false,
 };
 
 const overnight: TimeEntryView = {

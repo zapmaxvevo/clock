@@ -36,6 +36,7 @@ const closed: TimeEntryView = {
   editableTimes: true,
   project: web,
   task: null,
+  billable: false,
 };
 
 const running: TimeEntryView = {

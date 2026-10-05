@@ -108,7 +108,23 @@ describe("createProjectInput", () => {
   const base = { id, name: "Web", clientId: null, color: null };
 
   it("acepta sin cliente y sin color", () => {
-    expect(createProjectInput.parse(base)).toEqual({ ...base, note: "" });
+    expect(createProjectInput.parse(base)).toEqual({
+      ...base,
+      note: "",
+      billableByDefault: false,
+    });
+  });
+
+  it("PR-21: acepta el facturable por defecto y rechaza lo que no es booleano", () => {
+    expect(createProjectInput.parse({ ...base, billableByDefault: true })).toMatchObject({
+      billableByDefault: true,
+    });
+    expect(
+      createProjectInput.safeParse({ ...base, billableByDefault: "true" }).success,
+    ).toBe(false);
+    expect(
+      createProjectInput.safeParse({ ...base, billableByDefault: null }).success,
+    ).toBe(false);
   });
 
   it("acepta una clave de la paleta y rechaza otra cosa", () => {

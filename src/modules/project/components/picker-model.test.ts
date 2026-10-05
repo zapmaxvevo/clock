@@ -21,6 +21,7 @@ function project(
       id: `${id}-t${index}`,
       name: taskName,
     })),
+    billableByDefault: false,
   };
 }
 

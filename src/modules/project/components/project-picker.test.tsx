@@ -17,6 +17,7 @@ const catalog: TrackingCatalog = {
           name: "Web",
           color: "teal",
           tasks: [{ id: "t-design", name: "Diseño" }],
+          billableByDefault: false,
         },
       ],
     },

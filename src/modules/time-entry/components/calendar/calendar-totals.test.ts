@@ -28,6 +28,7 @@ function view(
     editableTimes: durationSeconds !== null,
     project: null,
     task: null,
+    billable: false,
   };
 }
 

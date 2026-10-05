@@ -377,6 +377,8 @@ export const timeEntry = pgTable(
     projectId: uuid("project_id"),
     /** Nulo es «sin tarea». Una tarea no viaja sin su proyecto (TT-70). */
     taskId: uuid("task_id"),
+    /** TT-14, TT-15: un booleano, sin importes. Lo decide el service (`billableFor`). */
+    billable: boolean("billable").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()

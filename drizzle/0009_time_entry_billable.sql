@@ -1,0 +1,1 @@
+ALTER TABLE "time_entry" ADD COLUMN "billable" boolean DEFAULT false NOT NULL;

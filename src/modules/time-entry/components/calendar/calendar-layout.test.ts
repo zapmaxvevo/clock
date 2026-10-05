@@ -335,6 +335,7 @@ describe("chronological", () => {
       editableTimes: !running,
       project: null,
       task: null,
+      billable: false,
     };
   }
 

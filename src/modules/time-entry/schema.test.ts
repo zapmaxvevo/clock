@@ -247,6 +247,7 @@ describe("trackerState", () => {
     editableTimes: true,
     project: null,
     task: null,
+    billable: false,
   };
 
   /** Una semana con un solo día, que lleva las entradas que se le pasen. */
@@ -510,6 +511,7 @@ describe("calendarState", () => {
     editableTimes: true,
     project: null,
     task: null,
+    billable: false,
   };
 
   const day = {

@@ -191,6 +191,7 @@ function toView(row: EntryWithRefs, workspace: TrackerWorkspace): TimeEntryView 
     editableTimes: hasEditableTimes(row, timeZone),
     project: row.project === null ? null : projectRefOf(row.project),
     task: row.task === null ? null : { id: row.task.id, name: row.task.name },
+    billable: row.billable,
   };
 }
 

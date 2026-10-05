@@ -29,6 +29,7 @@ const entry: TimeEntryView = {
   editableTimes: true,
   project: null,
   task: null,
+  billable: false,
 };
 
 type Options = {

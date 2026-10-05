@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import type { BillableSource } from "@/lib/billable";
 import { noNullCharacter } from "@/lib/text";
 import type { ActionResult } from "@/server/action";
 
@@ -57,6 +58,8 @@ export const createProjectInput = z.object({
   /** Una clave de la paleta, o `null` para que la asigne el servidor. */
   color: z.enum(PALETTE_KEYS).nullable(),
   note: longText(projectMessages.noteTooLong).default(""),
+  /** PR-21: con qué facturable arrancan las entradas nuevas con este proyecto. */
+  billableByDefault: z.boolean().default(false),
 });
 
 export const createTaskInput = z.object({
@@ -121,7 +124,12 @@ export type ProjectSelection = {
 export type TrackingProjectView = ProjectRef & {
   /** Tareas activas, en orden alfabético (PR-99). Vacío: se elige el proyecto solo (PR-87). */
   readonly tasks: readonly TaskRef[];
+  /** PR-21: el navegador aplica `billableFor` al elegirlo. */
+  readonly billableByDefault: boolean;
 };
+
+/** Lo que una entrada necesita del proyecto que se le asigna. */
+export type TrackableProject = BillableSource;
 
 export type TrackingGroupView = {
   /** `null` es «Sin cliente», que va al final (PR-14, PR-97). */

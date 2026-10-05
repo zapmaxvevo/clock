@@ -45,6 +45,7 @@ const entry: TimeEntryView = {
   editableTimes: true,
   project: web,
   task: design,
+  billable: false,
 };
 
 describe("fieldsOf", () => {

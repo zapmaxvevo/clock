@@ -1015,6 +1015,7 @@ describe("getTrackingCatalog: el catálogo del selector (criterio 3: TT-08, PR-2
         { id: expect.any(String), name: "Diseño" },
         { id: expect.any(String), name: "maquetado" },
       ],
+      billableByDefault: false,
     });
     expect(projectsOf(catalog).find((view) => view.id === seeded.app.id)?.tasks).toEqual(
       [],

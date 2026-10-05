@@ -88,6 +88,8 @@ export type SeedTimeEntryValues = {
   readonly endedAt?: string | Date | null;
   readonly projectId?: string | null;
   readonly taskId?: string | null;
+  /** Ausente, el valor por omisión de la columna: `false`. */
+  readonly billable?: boolean;
 };
 
 /**
@@ -106,6 +108,7 @@ export async function seedTimeEntry(values: SeedTimeEntryValues) {
       endedAt: endedAt === null ? null : new Date(endedAt),
       projectId: values.projectId ?? null,
       taskId: values.taskId ?? null,
+      billable: values.billable,
     })
     .returning();
   return row;
@@ -152,6 +155,7 @@ export async function seedProject(values: {
   readonly name?: string;
   readonly color?: PaletteKey;
   readonly isPublic?: boolean;
+  readonly billableByDefault?: boolean;
   readonly archived?: boolean;
   readonly createdBy?: string | null;
   readonly members?: readonly SeedProjectMember[];
@@ -164,6 +168,7 @@ export async function seedProject(values: {
       name: values.name ?? uniqueName("Proyecto"),
       color: values.color ?? "blue",
       isPublic: values.isPublic ?? true,
+      billableByDefault: values.billableByDefault ?? false,
       archivedAt: archivedAtOf(values.archived),
       createdBy: values.createdBy ?? null,
     })
