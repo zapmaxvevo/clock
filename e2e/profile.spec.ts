@@ -174,7 +174,7 @@ test("el menú de la cuenta lleva al perfil, que muestra la identidad y los pred
 
   await openProfileFromMenu(page);
 
-  // PF-06 y PF-09: la identidad, en solo lectura.
+  // PF-06, PF-07 y PF-09: el nombre se edita; la foto y el correo, en solo lectura.
   const main = page.getByRole("main");
   await expect(nameField(page)).toHaveValue(PERSON_NAME);
   await expect(main).toContainText(email);
@@ -184,7 +184,7 @@ test("el menú de la cuenta lleva al perfil, que muestra la identidad y los pred
   ).toBeVisible();
   await expect(main.getByRole("textbox")).toHaveCount(1);
 
-  // Criterio 15 y PF-37: los tres controles con los predeterminados. La zona
+  // Criterio 15 y PF-37: los tres controles de hora y fecha con los predeterminados. La zona
   // elegida es la opción equivalente a la de omisión, con su desplazamiento.
   const zone = preferenceControl(page, "Zona horaria");
   await expect(zone).toContainText(BUENOS_AIRES_OPTION);
