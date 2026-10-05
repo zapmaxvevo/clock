@@ -63,6 +63,14 @@ describe("draftOfEntry", () => {
       times: { date: "2026-10-02", start: "09:00", end: "10:30" },
     });
   });
+
+  it("el timer no tiene fin: el del borrador queda en su inicio", () => {
+    expect(draftOfEntry(running).times).toEqual({
+      date: "2026-10-02",
+      start: "09:00",
+      end: "09:00",
+    });
+  });
 });
 
 describe("changesOf", () => {

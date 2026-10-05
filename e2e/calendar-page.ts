@@ -8,13 +8,16 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
 import {
+  addDays,
   calendarDayName,
   dayKeyOf,
   monthOfCaption,
   monthsBetween,
   weekdayLabel,
+  weekStartOf,
   type CivilDay,
 } from "./days";
+import { withServerAction } from "./network";
 import { escapeRegExp } from "./tracker-page";
 
 export const CALENDAR_PATH = "/calendario";
@@ -526,11 +529,60 @@ export function addEntryButton(page: Page): Locator {
   });
 }
 
+/** Un punto de la pantalla, en píxeles del viewport, el de `page.mouse`. */
+export type ScreenPoint = { readonly x: number; readonly y: number };
+
 /**
- * Hace clic en la franja de `clock` de un día (CAL-43): el fondo de la
- * columna, un poco por debajo del borde de la franja. Las franjas no son
- * controles, así que el lugar se calcula con la escala del zoom.
+ * Desde el borde superior de una columna, los píxeles hasta dos por debajo
+ * del borde de la franja de `clock` (CAL-43). Las franjas no son controles,
+ * así que el lugar se calcula con la escala del zoom. Es relativo a la
+ * columna: no depende del desplazamiento de la grilla.
  */
+export function slotOffset(clock: string, size: ZoomSize = "1 h"): number {
+  const [hours, minutes] = clock.split(":").map(Number);
+  return (hours * 60 + minutes) * minuteHeight(size) + 2;
+}
+
+/**
+ * El punto de pantalla de una franja: el centro de la columna, a
+ * `slotOffset`. Sale de una sola caja, tomada en el momento: hay que pedirlo
+ * justo antes de usarlo, porque la grilla se desplaza (al abrir, al enfocar un
+ * bloque, cerca de un borde durante un gesto).
+ */
+export async function slotPoint(
+  page: Page,
+  day: CivilDay,
+  today: CivilDay,
+  clock: string,
+  size: ZoomSize = "1 h",
+): Promise<ScreenPoint> {
+  const box = await boxOf(dayColumn(page, day, today));
+  return { x: box.x + box.width / 2, y: box.y + slotOffset(clock, size) };
+}
+
+/**
+ * Debajo del borde superior de un bloque, dónde se aprieta su cuerpo para
+ * moverlo: más abajo que el asa de inicio, que mide 6 px (§5.3 del 8b). Es
+ * `slotOffset` más 16 px.
+ */
+export const BODY_GRIP_PX = 18;
+
+/**
+ * El punto adonde se lleva un bloque agarrado a `BODY_GRIP_PX` para que su
+ * inicio caiga en la franja de `clock` (CAL-50): el agarre se conserva.
+ */
+export async function grabPoint(
+  page: Page,
+  day: CivilDay,
+  today: CivilDay,
+  clock: string,
+  size: ZoomSize = "1 h",
+): Promise<ScreenPoint> {
+  const point = await slotPoint(page, day, today, clock, size);
+  return { x: point.x, y: point.y + BODY_GRIP_PX - 2 };
+}
+
+/** Hace clic en la franja de `clock` de un día, con el fondo de la columna. */
 export async function clickSlot(
   page: Page,
   day: CivilDay,
@@ -538,15 +590,156 @@ export async function clickSlot(
   clock: string,
   size: ZoomSize = "1 h",
 ): Promise<void> {
-  const [hours, minutes] = clock.split(":").map(Number);
   const column = dayColumn(page, day, today);
-  const box = await column.boundingBox();
+  const { width } = await boxOf(column);
+  await column.click({ position: { x: width / 2, y: slotOffset(clock, size) } });
+}
+
+/** La caja de un elemento dibujado, en píxeles del viewport. */
+export async function boxOf(
+  element: Locator,
+): Promise<{ x: number; y: number; width: number; height: number }> {
+  const box = await element.boundingBox();
   if (box === null) {
-    throw new Error("La columna no está dibujada.");
+    throw new Error("El elemento no tiene caja: no está dibujado.");
   }
-  await column.click({
-    position: { x: box.width / 2, y: (hours * 60 + minutes) * minuteHeight(size) + 2 },
-  });
+  return box;
+}
+
+/**
+ * Un asa del bloque (§5.3 del 8b): decorativa (`aria-hidden`), así que se
+ * busca por su atributo, adentro del botón del bloque.
+ */
+export function blockHandle(block: Locator, edge: "start" | "end"): Locator {
+  return block.locator(`[data-block-handle="${edge}"]`);
+}
+
+/**
+ * La selección del alta mientras se arrastra (CAL-44), decorativa, en la
+ * región o en una columna.
+ */
+export function calendarSelection(scope: Locator): Locator {
+  return scope.locator("[data-calendar-selection]");
+}
+
+/** Lo que importa del área que se desplaza: su desplazamiento y su caja. */
+export type GridScroller = {
+  readonly scrollTop: number;
+  readonly maxScroll: number;
+  readonly top: number;
+  readonly bottom: number;
+};
+
+/**
+ * La grilla que se desplaza: el primer ancestro de las columnas con algo que
+ * desplazar. No tiene rol ni nombre; se llega desde una columna.
+ */
+export async function gridScroller(page: Page): Promise<GridScroller> {
+  return dayColumns(page)
+    .first()
+    .evaluate((node) => {
+      let scroller = node.parentElement;
+      while (scroller !== null && scroller.scrollHeight <= scroller.clientHeight) {
+        scroller = scroller.parentElement;
+      }
+      if (scroller === null) {
+        throw new Error("Las columnas no están en un área que se desplace.");
+      }
+      const box = scroller.getBoundingClientRect();
+      return {
+        scrollTop: scroller.scrollTop,
+        maxScroll: scroller.scrollHeight - scroller.clientHeight,
+        top: box.top,
+        bottom: box.bottom,
+      };
+    });
+}
+
+/**
+ * Desplaza la grilla para que `clock` quede arriba, debajo de los
+ * encabezados, o lo más cerca que permita el final. Es preparación del
+ * recorrido: lo que se afirma es la posición de las cosas, no el desplazamiento.
+ */
+export async function scrollGridTo(
+  page: Page,
+  clock: string,
+  size: ZoomSize = "1 h",
+): Promise<void> {
+  const [hours, minutes] = clock.split(":").map(Number);
+  const top = (hours * 60 + minutes) * minuteHeight(size);
+  await dayColumns(page)
+    .first()
+    .evaluate((node, scrollTop) => {
+      let scroller = node.parentElement;
+      while (scroller !== null && scroller.scrollHeight <= scroller.clientHeight) {
+        scroller = scroller.parentElement;
+      }
+      scroller?.scrollTo({ top: scrollTop });
+    }, top);
+  await settle(page);
+}
+
+/**
+ * Un paso que sincroniza con la página: dos cuadros de animación. Va antes de
+ * afirmar una ausencia —ningún pedido, ningún diálogo—, nunca una espera fija.
+ */
+export async function settle(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
+  );
+}
+
+/** Pasos de movimiento de cada tramo de un arrastre: al menos cinco (§6 del 8b). */
+const DRAG_STEPS = 8;
+
+/**
+ * Lo que se aprieta para empezar un gesto: un elemento, y a cuántos píxeles
+ * de su borde superior, o su centro si falta. Es relativo al elemento, así que
+ * no depende del desplazamiento de la grilla.
+ */
+export type Grip = { readonly on: Locator; readonly y?: number };
+
+/**
+ * Lleva el puntero a `grip` con `hover`, que espera a que el elemento reciba
+ * el puntero en ese punto: el fondo de un diálogo que se termina de cerrar no
+ * se lleva el movimiento ni el `pointerdown` que sigue.
+ */
+export async function hoverAt(grip: Grip): Promise<void> {
+  if (grip.y === undefined) {
+    await grip.on.hover();
+    return;
+  }
+  const { width } = await boxOf(grip.on);
+  await grip.on.hover({ position: { x: width / 2, y: grip.y } });
+}
+
+/** Lleva el puntero a `grip` y aprieta el botón principal. */
+export async function pressAt(page: Page, grip: Grip): Promise<void> {
+  await hoverAt(grip);
+  await page.mouse.down();
+}
+
+/** Mueve el puntero, con el botón como esté, en varios pasos. */
+export async function moveTo(page: Page, to: ScreenPoint): Promise<void> {
+  await page.mouse.move(to.x, to.y, { steps: DRAG_STEPS });
+}
+
+/**
+ * Un arrastre entero con el botón principal: apretar, mover en pasos y
+ * soltar. El destino se calcula después de apretar, porque `hover` puede
+ * desplazar la grilla para tener el elemento a la vista.
+ */
+export async function dragBetween(
+  page: Page,
+  from: Grip,
+  to: () => Promise<ScreenPoint>,
+): Promise<void> {
+  await pressAt(page, from);
+  await moveTo(page, await to());
+  await page.mouse.up();
 }
 
 /**
@@ -615,4 +808,50 @@ export async function headerLook(column: Locator): Promise<string> {
     }
     return parts.join(" | ");
   });
+}
+
+/**
+ * Abre la semana anterior a la de hoy, la de los recorridos que escriben:
+ * ninguna hora queda en el futuro y la semana tiene todos sus días. Espera su
+ * rótulo y el desplazamiento inicial (CAL-14), que llega en un efecto después
+ * del primer dibujo: hasta entonces, las cajas se mueven.
+ */
+export async function openLastWeek(page: Page, today: CivilDay): Promise<CivilDay> {
+  const lastWeek = addDays(weekStartOf(today), -7);
+  await page.goto(calendarHref(lastWeek));
+  await expectPeriod(page, lastWeek, "week", "Semana anterior");
+  await expect
+    .poll(async () => (await gridScroller(page)).scrollTop)
+    .toBe(8 * 60 * minuteHeight("1 h"));
+  return lastWeek;
+}
+
+/**
+ * Crea una entrada con un clic en su franja (CAL-43) y el diálogo de alta del
+ * 8c, con el fin que se pida, y espera que el servidor la haya escrito. El
+ * foco va al bloque nuevo (§5.5 del 8c) y puede desplazar la grilla: se espera
+ * antes de medir nada.
+ */
+export async function addEntry(
+  page: Page,
+  entry: {
+    readonly day: CivilDay;
+    readonly today: CivilDay;
+    readonly start: string;
+    readonly end?: string;
+    readonly description: string;
+    readonly size?: ZoomSize;
+  },
+): Promise<void> {
+  await clickSlot(page, entry.day, entry.today, entry.start, entry.size);
+  const dialog = entryDialog(page, "Agregar entrada");
+  await expect(dialogDescription(dialog)).toBeFocused();
+  await dialogDescription(dialog).fill(entry.description);
+  if (entry.end !== undefined) {
+    await dialogClock(dialog, "Hora de fin").fill(entry.end);
+    await dialogClock(dialog, "Hora de fin").press("Tab");
+  }
+  await withServerAction(page, () => dialogButton(dialog, "Agregar").click());
+  await expect(dialog).toBeHidden();
+  await expect(entryBlocks(calendarRegion(page), entry.description)).toBeFocused();
 }

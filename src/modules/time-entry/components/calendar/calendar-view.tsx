@@ -12,6 +12,7 @@ import {
   duplicateEntry,
   stopTimer,
   updateEntry,
+  updateEntryTimes,
 } from "@/modules/time-entry/actions";
 import {
   timeEntryMessages,
@@ -19,12 +20,14 @@ import {
   type CreateManualEntryInput,
   type TimeEntryView,
   type UpdateEntryChanges,
+  type UpdateEntryTimesInput,
 } from "@/modules/time-entry/schema";
 import { weekdayLabel } from "@/server/time";
 
 import { DeleteEntryDialog } from "../delete-entry-dialog";
 import { useElapsedSeconds } from "../elapsed-counter";
 import { entryNameOf } from "../labels";
+import type { TimeDraft } from "../time-draft";
 import { useTrackerRefresh } from "../use-tracker-refresh";
 import { CalendarGrid } from "./calendar-grid";
 import {
@@ -38,6 +41,7 @@ import { calendarZoomCookie, type CalendarZoom } from "./calendar-zoom";
 import { CalendarNotices, CLOSING_CODES, dialogFailureOf } from "./calendar-notices";
 import { EntryDialog, type DialogSubject } from "./entry-dialog";
 import { calendarLabels } from "./labels";
+import { focusIsFree } from "./use-pending-block-focus";
 
 type CalendarViewProps = {
   readonly state: CalendarState;
@@ -98,7 +102,9 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
    */
   const deleteReturnRef = useRef<HTMLElement>(null);
 
-  useTrackerRefresh();
+  /** Un gesto de arrastre está en curso: la revalidación periódica espera (CAL-89). */
+  const [gestureActive, setGestureActive] = useState(false);
+  useTrackerRefresh(gestureActive);
   // CAL-36: la línea de ahora es el minuto del servidor más lo transcurrido
   // desde esa lectura, sin la zona ni el reloj de la máquina (TT-32).
   const elapsed = useElapsedSeconds(state.serverNow, state.serverNow);
@@ -146,7 +152,40 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
     unreachableMessage: timeEntryMessages.unexpected,
     optimistic: (input) => showRemoved(input.id),
   });
-  const handles: readonly ActionHandle<never>[] = [save, create, stop, duplicate, remove];
+  /** CAL-62: el bloque soltado se dibuja en su lugar nuevo mientras viaja su pedido. */
+  const [movingTimes, showMovingTimes] = useOptimistic<
+    UpdateEntryTimesInput | null,
+    UpdateEntryTimesInput
+  >(null, (_, input) => input);
+  /** El id del último pedido de horario: adonde vuelve el foco si falla. */
+  const movingIdRef = useRef<string | null>(null);
+  const moveTimes = useAction(updateEntryTimes, {
+    unreachableMessage: timeEntryMessages.unexpected,
+    optimistic: (input) => showMovingTimes(input),
+    onSuccess: (data) => returnFocusTo(data.entry.id),
+    onFailure: () => returnFocusTo(movingIdRef.current),
+  });
+
+  /**
+   * La respuesta de un gesto devuelve el foco al bloque solo si nadie lo llevó
+   * a otro lado mientras viajaba: sigue en el bloque, en la región o cayó en
+   * `body` porque el bloque cambió de columna. Si la persona ya hizo otra cosa
+   * —el zoom, otro período—, un foco pendiente se lo robaría al próximo clic
+   * en la grilla, que enfoca la región.
+   */
+  function returnFocusTo(id: string | null): void {
+    if (focusIsFree(document.activeElement, regionRef.current, id)) {
+      setFocusEntryId(id);
+    }
+  }
+  const handles: readonly ActionHandle<never>[] = [
+    save,
+    create,
+    stop,
+    duplicate,
+    remove,
+    moveTimes,
+  ];
 
   /** Una operación nueva baja los avisos anteriores (§5.4). */
   function clearNotices(): void {
@@ -225,6 +264,30 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
     });
   }
 
+  function handleDropTimes(input: UpdateEntryTimesInput): void {
+    movingIdRef.current = input.id;
+    run(moveTimes, input);
+  }
+
+  /** CAL-44: el rango arrastrado abre el alta del 8c, que vuelve a la región al cancelar. */
+  function handleSelectRange(draft: TimeDraft): void {
+    openSubject({ kind: "add", draft, opener: "slot" });
+  }
+
+  /**
+   * Al empezar, un foco pendiente de otra operación se descarta; al terminar un
+   * gesto sobre un bloque, con o sin pedido o cancelado, el foco va a su botón
+   * (§5.7). Llega después de `onDrop` y del `run` que lo limpia.
+   */
+  function handleGestureChange(active: boolean, entryId: string | null): void {
+    setGestureActive(active);
+    if (active) {
+      setFocusEntryId(null);
+    } else if (entryId !== null) {
+      setFocusEntryId(entryId);
+    }
+  }
+
   function changeZoom(next: CalendarZoom): void {
     // CAL-12: la próxima visita llega dibujada con el zoom elegido.
     document.cookie = calendarZoomCookie(next);
@@ -298,6 +361,7 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
           stop={stop}
           duplicate={duplicate}
           remove={remove}
+          moveTimes={moveTimes}
           outside={outside}
           outsideLabel={(view) => weekdayLabel(view.dayDate, state.todayKey, date)}
           mode={state.mode}
@@ -324,6 +388,12 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
           focusEntryId={focusEntryId}
           onEntryFocused={clearFocusEntry}
           regionRef={regionRef}
+          movingTimes={movingTimes}
+          // Un gesto por vez: mientras viaja un pedido de horario, apretar es un clic.
+          gesturesEnabled={state.canTrack && !moveTimes.pending}
+          onDropTimes={handleDropTimes}
+          onSelectRange={handleSelectRange}
+          onGestureChange={handleGestureChange}
         />
       </section>
       <EntryDialog
@@ -335,7 +405,11 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
         minDayKey={state.minDayKey}
         pending={subject?.kind === "add" ? create.pending : save.pending}
         failure={dialogFailureOf(subject, save, create)}
-        onCancel={() => setOpen(false)}
+        onCancel={() => {
+          setOpen(false);
+          // Cerrar sin acción no deja un foco pendiente de otra operación (M3).
+          setFocusEntryId(null);
+        }}
         onSave={handleSave}
         onAdd={handleAdd}
         onStop={handleStop}
@@ -352,7 +426,12 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
           startLabel={entry.startLabel}
           endLabel={entry.endLabel}
           open={confirmingDelete}
-          onOpenChange={setConfirmingDelete}
+          onOpenChange={(next) => {
+            setConfirmingDelete(next);
+            if (!next) {
+              setFocusEntryId(null);
+            }
+          }}
           onConfirm={confirmDelete}
           finalFocus={deleteReturnRef}
         />
