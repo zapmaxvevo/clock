@@ -7806,21 +7806,24 @@ describe("updateEntryProject y el facturable (criterio 6 del 11a: D-2)", () => {
   it("al mismo proyecto con otra tarea, o sin ella, y a «Sin proyecto», conserva el facturable", async () => {
     const yes = await seedBillableProject(true);
     const other = await seedTask({ workspaceId, projectId: yes.billed.id, name: "Otra" });
+    // Con el mismo proyecto, en contra de su por defecto; sin proyecto, los dos
+    // valores: ninguno puede salir de un valor fijo.
     const cases = [
-      ["otra tarea", { projectId: yes.billed.id, taskId: other.id }],
-      ["sin la tarea", { projectId: yes.billed.id, taskId: null }],
-      ["sin proyecto", { projectId: null, taskId: null }],
+      ["otra tarea", { projectId: yes.billed.id, taskId: other.id }, false],
+      ["sin la tarea", { projectId: yes.billed.id, taskId: null }, false],
+      ["sin proyecto, facturable", { projectId: null, taskId: null }, true],
+      ["sin proyecto, no facturable", { projectId: null, taskId: null }, false],
     ] as const;
-    for (const [label, pair] of cases) {
+    for (const [label, pair, billable] of cases) {
       const entry = await seedBillableEntry({
         projectId: yes.billed.id,
         taskId: yes.design.id,
-        billable: false,
+        billable,
       });
       const result = await updateEntryProject(actor, ws, { id: entry.id, ...pair });
-      expect([label, result.entry.billable]).toEqual([label, false]);
+      expect([label, result.entry.billable]).toEqual([label, billable]);
       expect([label, await pairOfRow(entry.id)]).toEqual([label, pair]);
-      expect([label, await billableOfRow(entry.id)]).toEqual([label, false]);
+      expect([label, await billableOfRow(entry.id)]).toEqual([label, billable]);
     }
   });
 

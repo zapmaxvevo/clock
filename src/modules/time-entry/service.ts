@@ -415,7 +415,7 @@ async function assertAssignable(
 }
 
 /** TT-14: el facturable pedido en un alta, o el por defecto del proyecto validado. */
-function newEntryBillable(
+function billableOfNewEntry(
   requested: boolean | undefined,
   project: TrackableProject | null,
 ): boolean {
@@ -525,7 +525,7 @@ export async function startTimer(
       fields: {
         description: input.description,
         ...pair,
-        billable: newEntryBillable(input.billable, project),
+        billable: billableOfNewEntry(input.billable, project),
       },
     });
     await recordAudit(tx, {
@@ -871,7 +871,7 @@ export async function createManualEntry(
         userId: actor.userId,
         description: input.description,
         ...pair,
-        billable: newEntryBillable(input.billable, project),
+        billable: billableOfNewEntry(input.billable, project),
         startedAt,
         endedAt,
       });
