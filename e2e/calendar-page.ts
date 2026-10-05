@@ -258,6 +258,8 @@ export function closedBlockName(entry: {
   readonly duration: string;
   /** «Proyecto» o «Proyecto: Tarea», que el nombre suma al final. */
   readonly project?: string;
+  /** Facturable, el nombre termina en «, facturable» (CAL-75). */
+  readonly billable?: boolean;
 }): string {
   const extraDays = entry.extraDays ?? 0;
   const superscript =
@@ -268,7 +270,8 @@ export function closedBlockName(entry: {
         : ` (termina ${extraDays} días después)`;
   const day = weekdayLabel(entry.day, entry.today);
   const project = entry.project === undefined ? "" : `, ${entry.project}`;
-  return `${entry.description}, ${day}, de ${entry.start} a ${entry.end}${superscript}, ${entry.duration}${project}`;
+  const billable = entry.billable === true ? ", facturable" : "";
+  return `${entry.description}, ${day}, de ${entry.start} a ${entry.end}${superscript}, ${entry.duration}${project}${billable}`;
 }
 
 /** El nombre del bloque del timer (CAL-75): «…, desde las {inicio}, en curso». */
@@ -405,6 +408,14 @@ export function dialogClock(
   label: "Hora de inicio" | "Hora de fin" | "Duración",
 ): Locator {
   return dialog.getByRole("textbox", { name: label, exact: true });
+}
+
+/**
+ * «Facturable» del diálogo (CAL-45, CAL-66): el mismo botón de alternancia de
+ * la barra, con `aria-pressed`.
+ */
+export function dialogBillable(dialog: Locator): Locator {
+  return dialog.getByRole("button", { name: "Facturable", exact: true });
 }
 
 /** El selector de fecha del diálogo, que lleva el día elegido en su nombre. */

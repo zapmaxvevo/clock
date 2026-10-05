@@ -138,6 +138,8 @@ export type SeedProject = {
   readonly color?: string;
   /** La fase 1 crea todo público (P-17): privado es lo que solo se siembra. */
   readonly isPublic?: boolean;
+  /** PR-21: con qué facturable arrancan sus entradas nuevas; `false` si falta. */
+  readonly billableByDefault?: boolean;
   /** Tareas activas del proyecto. */
   readonly tasks?: readonly string[];
   /**
@@ -177,10 +179,16 @@ export async function seedProject(project: SeedProject): Promise<void> {
               [project.client],
             );
       const projectId = await insertOne(
-        `insert into project (workspace_id, client_id, name, color, is_public)
-         values (${FIRST_WORKSPACE}, $1, $2, $3, $4)
+        `insert into project (workspace_id, client_id, name, color, is_public, billable_by_default)
+         values (${FIRST_WORKSPACE}, $1, $2, $3, $4, $5)
          returning id`,
-        [clientId, project.name, project.color ?? "blue", project.isPublic ?? true],
+        [
+          clientId,
+          project.name,
+          project.color ?? "blue",
+          project.isPublic ?? true,
+          project.billableByDefault ?? false,
+        ],
       );
       for (const task of project.tasks ?? []) {
         await insertOne(

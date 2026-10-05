@@ -251,6 +251,15 @@ export async function pickProject(
 }
 
 /**
+ * El control de facturable de `scope` (TT-14, H-7): un botón de alternancia
+ * con `aria-pressed`, «Facturable» en la barra y «Entrada «…» facturable» en
+ * una fila. Dentro de cada uno hay uno solo.
+ */
+export function billableToggle(scope: Locator): Locator {
+  return scope.getByRole("button", { name: /^(Facturable|Entrada «.*» facturable)$/ });
+}
+
+/**
  * El disparador del menú de la cuenta, en el encabezado de toda pantalla del
  * shell: muestra la foto o las iniciales (PF-10, PF-44).
  */
