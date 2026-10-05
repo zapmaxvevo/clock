@@ -33,6 +33,7 @@ const morning: TimeEntryView = {
   editableTimes: true,
   project: null,
   task: null,
+  billable: false,
 };
 
 const overnight: TimeEntryView = {
@@ -169,6 +170,37 @@ describe("CalendarBlock, el nombre accesible (CAL-75)", () => {
     expect(nameOf(render(in12h(running, "12:00 AM", null), { formats: H12 }))).toBe(
       "Soporte, vie, 02/10, desde las 12:00 AM, en curso, Web",
     );
+  });
+});
+
+describe("CalendarBlock, el facturable (CAL-21, CAL-75)", () => {
+  const billable: TimeEntryView = { ...withProject, billable: true };
+
+  it("el nombre accesible termina en «facturable» cuando lo es", () => {
+    expect(nameOf(render(billable))).toBe(
+      "Sin descripción, mié, 30/09, de 09:00 a 10:30, 1:30, Web: Diseño, facturable",
+    );
+    expect(nameOf(render({ ...running, billable: true }))).toBe(
+      "Soporte, vie, 02/10, desde las 00:00, en curso, Web, facturable",
+    );
+  });
+
+  it("el ícono va al final de la línea del horario, oculto para el lector", () => {
+    expect(render(billable)).toMatch(
+      /09:00 – 10:30 · 1:30<\/span><svg[^>]*aria-hidden="true"[^>]*data-slot="billable-icon"/,
+    );
+  });
+
+  it("sin facturable no hay ícono", () => {
+    expect(render(withProject)).not.toContain('data-slot="billable-icon"');
+  });
+
+  it("solo en el segmento del día de inicio", () => {
+    const later = render(
+      { ...overnight, billable: true },
+      { segment: segmentOf(overnight, { startsHere: false, firstVisible: false }) },
+    );
+    expect(later).not.toContain('data-slot="billable-icon"');
   });
 });
 

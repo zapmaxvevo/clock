@@ -1,5 +1,6 @@
 "use client";
 
+import { CircleDollarSignIcon } from "lucide-react";
 import type { CSSProperties, PointerEvent, ReactNode, Ref } from "react";
 
 import { useDisplayFormats } from "@/components/layout/display-formats";
@@ -11,7 +12,7 @@ import type { TimeEntryView } from "@/modules/time-entry/schema";
 import { formatDuration, weekdayLabel } from "@/server/time";
 
 import { useElapsedSeconds } from "../elapsed-counter";
-import { entryNameOf } from "../labels";
+import { entryNameOf, trackerLabels } from "../labels";
 import type { EntryGestureKind, SegmentGestures } from "./calendar-gestures";
 import type { PlacedBlock, Segment } from "./calendar-layout";
 import { calendarLabels } from "./labels";
@@ -106,6 +107,7 @@ export function CalendarBlock({
     start,
     end: end === null ? null : { clock: end, extraDays: entry.extraDays, duration },
     project,
+    billable: entry.billable,
   });
 
   const times: ReactNode = (
@@ -138,8 +140,18 @@ export function CalendarBlock({
         </span>
       )}
       {segment.startsHere && (
-        <span className="text-foreground/70 truncate tabular-nums">
-          {times} · {duration}
+        <span className="text-foreground/70 flex min-w-0 items-center gap-1 tabular-nums">
+          <span className="truncate">
+            {times} · {duration}
+          </span>
+          {/* CAL-21: el nombre accesible del bloque ya lo dice. */}
+          {entry.billable && (
+            <CircleDollarSignIcon
+              aria-hidden="true"
+              data-slot="billable-icon"
+              className="size-3 shrink-0"
+            />
+          )}
         </span>
       )}
     </>
@@ -207,6 +219,7 @@ export function CalendarBlock({
           {times} · {duration}
         </span>
         {project !== null && <span>{project}</span>}
+        {entry.billable && <span>{trackerLabels.billable}</span>}
       </TooltipContent>
     </Tooltip>
   );

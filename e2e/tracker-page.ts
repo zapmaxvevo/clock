@@ -4,10 +4,17 @@
  * texto accesible: la pantalla se repartió en varios componentes y ningún
  * localizador tiene que depender de en cuál quedó cada cosa.
  */
+import { randomUUID } from "node:crypto";
+
 import { expect, type Locator, type Page } from "@playwright/test";
 
 import { calendarDayName, dayLabel, monthsBetween, type CivilDay } from "./days";
 import { withServerAction } from "./network";
+
+/** Lo que pide el rastreador: sus server actions y sus revalidaciones. */
+export function isTrackerPage(url: URL): boolean {
+  return url.pathname === "/";
+}
 
 export function trackerBar(page: Page): Locator {
   return page.getByRole("region", { name: "Rastreador" });
@@ -104,6 +111,20 @@ export async function stopTimer(page: Page, description: string): Promise<void> 
   await bar.getByRole("button", { name: "Detener" }).click();
   await expect(bar.getByRole("button", { name: "Iniciar" })).toBeVisible();
   await expect(entryRow(todayGroup(page), description)).toBeVisible();
+}
+
+/**
+ * Sufijo único de un recorrido. El workspace es uno solo para todos los specs
+ * y lo que se crea en la fase 1 no se puede borrar: todo nombre sembrado o
+ * creado lo lleva, para que la próxima corrida no choque con esta.
+ */
+export function uniqueSuffix(): string {
+  return randomUUID().slice(0, 8);
+}
+
+/** El botón de continuar de una fila, con el ícono de reproducción (TT-57). */
+export function continueButton(scope: Locator, description: string): Locator {
+  return scope.getByRole("button", { name: `Continuar «${description}»`, exact: true });
 }
 
 /** Borra una entrada desde el menú de su fila y confirma el diálogo (TT-60). */
@@ -248,6 +269,44 @@ export async function pickProject(
   await projectOption(page, option).click();
   await expect(projectPopup(page)).toBeHidden();
   await expect(projectPicker(scope)).toBeFocused();
+}
+
+/**
+ * Carga una entrada de hoy desde la barra manual y espera su fila. Va de 00:00
+ * a 00:01, que ya pasó a cualquier hora de la corrida. Con `project`, elige
+ * antes esa opción buscándola por `search` (ver `pickProject`). La barra
+ * vuelve al borrador inicial después de la respuesta, con la descripción
+ * vacía y sin proyecto (TT-06, TT-25).
+ */
+export async function addManualEntry(
+  page: Page,
+  description: string,
+  project?: { readonly option: string; readonly search: string },
+): Promise<void> {
+  await chooseMode(page, "manual");
+  const bar = trackerBar(page);
+  await descriptionInput(bar).fill(description);
+  await setClock(bar, "Hora de inicio", "00:00");
+  await setClock(bar, "Hora de fin", "00:01");
+  if (project !== undefined) {
+    await pickProject(page, bar, project.option, project.search);
+  }
+  await withServerAction(page, () =>
+    bar.getByRole("button", { name: "Agregar" }).click(),
+  );
+  await expect(entryRow(todayGroup(page), description)).toBeVisible();
+  await expect(descriptionInput(bar)).toHaveValue("");
+  await expect(projectPicker(bar)).toHaveText("Proyecto");
+}
+
+/**
+ * El control de facturable de `scope` (TT-14, H-7): un botón de alternancia
+ * con `aria-pressed`, «Facturable» en la barra y en el diálogo del
+ * calendario, y «Entrada «…» facturable» en una fila. Dentro de cada uno hay
+ * uno solo.
+ */
+export function billableToggle(scope: Locator): Locator {
+  return scope.getByRole("button", { name: /^(Facturable|Entrada «.*» facturable)$/ });
 }
 
 /**

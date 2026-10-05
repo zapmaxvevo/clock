@@ -63,14 +63,22 @@ export type ClosedFields = {
   readonly endedAt?: Date;
 };
 
-/** Lo que escribe `updateClosedEntry`: lo de `ClosedFields` y el par, siempre entero. */
-export type ClosedEntryFields = ClosedFields & { readonly pair?: ProjectPair };
+/**
+ * Lo que escribe `updateClosedEntry`: lo de `ClosedFields`, el par, siempre
+ * entero, y el facturable. La masiva sigue escribiendo solo `ClosedFields`.
+ */
+export type ClosedEntryFields = ClosedFields & {
+  readonly pair?: ProjectPair;
+  readonly billable?: boolean;
+};
 
 /** Lo que escribe `updateRunningEntry`. */
 export type RunningEntryFields = Omit<ClosedEntryFields, "endedAt">;
 
+type ColumnFields = Omit<ClosedEntryFields, "pair">;
+
 /** Las columnas de una escritura de una fila cerrada: el par va entero o no va. */
-type ClosedColumns = ClosedFields | (ClosedFields & ProjectPair);
+type ClosedColumns = ColumnFields | (ColumnFields & ProjectPair);
 
 /** Las columnas de una escritura: el par se abre en sus dos columnas, juntas. */
 function columnsOf({ pair, ...fields }: ClosedEntryFields): ClosedColumns {
@@ -365,6 +373,7 @@ export const timeEntryRepository = {
       description: string;
       projectId: string | null;
       taskId: string | null;
+      billable: boolean;
     },
   ): Promise<EntryWithRefs> {
     const [created] = await tx
@@ -389,6 +398,7 @@ export const timeEntryRepository = {
       description: string;
       projectId: string | null;
       taskId: string | null;
+      billable: boolean;
       startedAt: Date;
       endedAt: Date;
     },
@@ -460,24 +470,28 @@ export const timeEntryRepository = {
     return rereadIfWritten(tx, rows.at(0));
   },
 
-  /** Fija los dos valores sobre la fila leída, corra o no. */
+  /** Fija el par y el facturable que lo acompaña sobre la fila leída, corra o no. */
   async updateProject(
     tx: Transaction,
     target: EntryTarget,
-    pair: { projectId: string | null; taskId: string | null },
+    values: ProjectPair & { readonly billable: boolean },
   ): Promise<EntryWithRefs | undefined> {
     const rows = await tx
       .update(timeEntry)
-      .set({ projectId: pair.projectId, taskId: pair.taskId })
+      .set({
+        projectId: values.projectId,
+        taskId: values.taskId,
+        billable: values.billable,
+      })
       .where(isTarget(target))
       .returning();
     return rereadIfWritten(tx, rows.at(0));
   },
 
   /**
-   * Cualquier subconjunto de los tres campos, y el par entero si viene, solo en
-   * una fila cerrada. Sin relectura: la masiva no cambia el proyecto ni la
-   * tarea, y el service ya los leyó.
+   * Cualquier subconjunto de los tres campos, el par entero y el facturable si
+   * vienen, solo en una fila cerrada. Sin relectura: la masiva no cambia el
+   * proyecto ni la tarea, y el service ya los leyó.
    */
   async updateClosedFields(
     tx: Transaction,

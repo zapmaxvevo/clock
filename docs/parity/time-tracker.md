@@ -305,6 +305,13 @@ iniciar y elegir el proyecto después; si el facturable se decidiera solo al
 crear, esa entrada quedaría no facturable aunque el proyecto lo sea, y habría
 que acordarse de marcarla cada vez.
 
+_Agregado el 2026-10-05, slice 11a_: marcado, el ícono cambia de forma —la
+moneda pasa a ir dentro de un círculo— además de color, así el estado no se lee
+solo por el color (WCAG 1.4.1). En el diálogo del calendario el control lleva
+además el nombre «Facturable» a la vista, al lado del ícono (CAL-66 de
+[la paridad del calendario](calendario.md)). Diseño propio, como el resto del
+control.
+
 **TT-15 La marca no muestra importes** — `adaptar`
 En Clockify la facturabilidad alimenta tarifas e importes, que no existen en el
 plan Free y no se relevaron. Acá la marca es solo un booleano visible en la
@@ -1601,12 +1608,58 @@ equipo. Contrato:
   todo», que la documentación no nombra; continuar y duplicar en masa, que
   Clockify no documenta; y deshacer (P-06).
 
+### Slice 11a — facturable
+
+TT-14 y TT-15 en la barra, en sus dos modos, en cada fila y en el diálogo del
+calendario. Entran por arrastre, verificados por el camino nuevo, TT-25, TT-27,
+TT-38, TT-39, TT-49, TT-50, TT-54, TT-57, TT-58 y TT-92 en lo que toca al
+facturable. De [la paridad de proyectos](proyectos.md), PR-21; de
+[la del calendario](calendario.md), CAL-21, CAL-23, CAL-45, CAL-66 y CAL-75 en
+lo que toca al facturable (su sección 18). Es la primera parte del slice 11;
+las etiquetas son el 11b. Contrato:
+[fase1-slice11-etiquetas-y-facturable.md](../slices/fase1-slice11-etiquetas-y-facturable.md).
+
+- **El control va después del selector de proyecto** en la barra y en la fila
+  (TT-49), y después de «Proyecto» en el diálogo del calendario: un botón de
+  alternancia que, marcado, cambia el ícono de forma además de color (TT-14).
+  Con la membresía desactivada, una entrada facturable muestra el ícono y una
+  no facturable, nada (TT-92).
+- **El proyecto decide el facturable** (TT-14, PR-21): una entrada nueva sin
+  proyecto arranca no facturable, y elegir otro proyecto —antes de iniciar, con
+  el timer corriendo, en la fila o en el diálogo— le pone su facturable por
+  defecto; «Sin proyecto» y cambiar solo la tarea lo conservan. Mientras el
+  cambio de proyecto viaja, la barra y la fila ya muestran el facturable que
+  va a escribir el servidor.
+- **Con el timer corriendo** (TT-27), el facturable se guarda sobre la entrada
+  abierta, sin detenerla. Mientras viaja un cambio de proyecto o de
+  facturable, los dos controles de la barra esperan, así lo que se ve es lo que
+  queda escrito. Recargar lo muestra (TT-38), y otro dispositivo también, por
+  la misma lectura (TT-39).
+- **En la fila** (TT-54, TT-55) se cambia con un clic y se guarda solo, con el
+  foco en el control; la fila queda atenuada mientras viaja y, si falla, vuelve
+  al valor anterior con «No se pudo cambiar el facturable.» (TT-90) y
+  «Reintentar» por red (TT-89). El aviso de la barra es el mismo.
+- **Continuar y duplicar copian el facturable de la original** (TT-57, TT-58),
+  aunque su proyecto haya cambiado de valor por defecto después.
+- **«Agregar» y «Detener» dejan la barra no facturable**, además de sin
+  proyecto (TT-25). Si mientras el alta viajaba se cambió el facturable, «Agregar»
+  lo conserva; si se eligió otro proyecto, el facturable que quedó igual al enviado
+  vuelve al por defecto de ese proyecto (decisión D-7 del team-lead, 2026-10-05).
+- **Lo que el slice decide**: todo el facturable es diseño propio que no se
+  puede verificar en el plan Free (P-16 de la paridad de proyectos), así que no
+  entra en P-14: el control y sus nombres accesibles, la forma del ícono
+  marcado, la regla del proyecto, que decidió el equipo el 2026-10-05, y la
+  copia al continuar y al duplicar. PR-21 es `adaptar`: el facturable por
+  defecto se elige al crear el proyecto y no se edita después en la fase 1.
+- **Afuera**: las etiquetas (TT-12, TT-78, TT-88), que trae el 11b; el
+  facturable en la edición masiva (resto de TT-63), que trae el 12; y las
+  tarifas e importes (TT-15).
+
 ### Lo que queda
 
-Etiquetas (TT-12) y facturable (TT-14, TT-15), con su copia al continuar y al
-duplicar (TT-57, TT-58), que trae el slice 11, partido en 11a, el facturable, y
-11b, las etiquetas; y la edición masiva de proyecto, tarea, etiquetas y
-facturable (el resto de TT-63), que trae el 12.
+Etiquetas (TT-12), con su copia al continuar y al duplicar (TT-57, TT-58), que
+trae el 11b, la segunda parte del slice 11; y la edición masiva de proyecto,
+tarea, etiquetas y facturable (el resto de TT-63), que trae el 12.
 
 _Corregido el 2026-10-03, decisión del equipo_: esta lista incluía lo que ya
 implementaron los slices 3 y 4, que ahora tienen su sección, y no nombraba el
@@ -1622,6 +1675,8 @@ el borrado masivo (TT-64) y la edición masiva de descripción, hora y fecha
 (TT-63), que ahora tienen su sección; de TT-63 queda lo que trae el slice 12.
 _Corregido el 2026-10-05, slice 11_: no decía qué slice trae cada cosa ni que
 continuar y duplicar suman las etiquetas y el facturable con el 11.
+_Corregido el 2026-10-05, slice 11a_: sale de esta lista el facturable (TT-14,
+TT-15), con su copia al continuar y al duplicar, que ahora tiene su sección.
 
 ## Pendientes de definición del equipo
 

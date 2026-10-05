@@ -16,16 +16,33 @@ type BlockLabelParts = {
   } | null;
   /** «Proyecto» o «Proyecto: Tarea», o `null` sin proyecto. */
   readonly project: string | null;
+  /** CAL-75: el nombre termina en «facturable» cuando lo es. */
+  readonly billable: boolean;
 };
 
 const RUNNING = "en curso";
 
-function blockLabel({ name, day, start, end, project }: BlockLabelParts): string {
+const BILLABLE = "facturable";
+
+function blockLabel({
+  name,
+  day,
+  start,
+  end,
+  project,
+  billable,
+}: BlockLabelParts): string {
   const times =
     end === null
       ? `${entrySpanText(start, null)}, ${RUNNING}`
       : `${entrySpanText(start, end.clock)}${end.extraDays > 0 ? extraDaysText(end.extraDays) : ""}, ${end.duration}`;
-  return [name, day, times, ...(project === null ? [] : [project])].join(", ");
+  return [
+    name,
+    day,
+    times,
+    ...(project === null ? [] : [project]),
+    ...(billable ? [BILLABLE] : []),
+  ].join(", ");
 }
 
 /**
@@ -63,6 +80,9 @@ export const calendarLabels = {
   entryTitle: "Entrada",
   runningTitle: "Timer en curso",
   project: "Proyecto",
+  /** CAL-66: el valor del facturable en el diálogo de solo lectura. */
+  billableYes: "Sí",
+  billableNo: "No",
   duration: "Duración",
   runningEnd: "Fin: en curso",
   close: "Cerrar",

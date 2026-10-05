@@ -1,15 +1,11 @@
-import {
-  NO_SELECTION,
-  sameSelection,
-  selectionIds,
-} from "@/modules/project/components/picker-model";
-import type { ProjectSelection } from "@/modules/project/schema";
+import { sameSelection, selectionIds } from "@/modules/project/components/picker-model";
 import type {
   CreateManualEntryInput,
   TimeEntryView,
   UpdateEntryChanges,
 } from "@/modules/time-entry/schema";
 
+import { fieldsInput, fieldsOf, NO_FIELDS, type EntryFields } from "../entry-fields";
 import { selectionOf } from "../entry-selection";
 import { fromView, sameDraft, type TimeDraft } from "../time-draft";
 import { isClosedEntry } from "./calendar-layout";
@@ -17,11 +13,11 @@ import { isClosedEntry } from "./calendar-layout";
 /**
  * El borrador del diálogo de una entrada, en sus tres modos, y lo que cada
  * uno manda (ADR 0013). El diálogo solo guarda el resultado de estas
- * funciones. El slice 11 suma acá sus grupos.
+ * funciones. Los campos elegidos (`EntryFields`) cambian con las mismas
+ * transiciones que la barra.
  */
-export type EntryDialogDraft = {
+export type EntryDialogDraft = EntryFields & {
   readonly description: string;
-  readonly selection: ProjectSelection;
   /** En el timer, solo `date` y `start` cuentan. */
   readonly times: TimeDraft;
 };
@@ -29,8 +25,8 @@ export type EntryDialogDraft = {
 /** El borrador de una entrada que se abre, con las horas canónicas de la vista. */
 export function draftOfEntry(entry: TimeEntryView): EntryDialogDraft {
   return {
+    ...fieldsOf(entry),
     description: entry.description,
-    selection: selectionOf(entry),
     // En el timer, el fin del borrador no cuenta: se deja en el inicio.
     times: isClosedEntry(entry)
       ? fromView(entry)
@@ -38,22 +34,31 @@ export function draftOfEntry(entry: TimeEntryView): EntryDialogDraft {
   };
 }
 
-/** El borrador de un alta: sin descripción ni proyecto, con el trío propuesto (CAL-43, CAL-74). */
+/**
+ * El borrador de un alta: sin descripción ni proyecto y no facturable, con el
+ * trío propuesto (CAL-43, CAL-74).
+ */
 export function draftOfNew(times: TimeDraft): EntryDialogDraft {
-  return { description: "", selection: NO_SELECTION, times };
+  return { ...NO_FIELDS, description: "", times };
 }
 
-/** La descripción si su recorte difiere, y el par si es otro: lo común a los dos modos. */
+/**
+ * La descripción si su recorte difiere, el par si es otro y el facturable:
+ * lo común a los dos modos. El facturable viaja siempre que viaja el par, así
+ * el servidor no aplica el por defecto encima de lo que quedó a la vista.
+ */
 function sharedChanges(
   entry: TimeEntryView,
   draft: EntryDialogDraft,
 ): UpdateEntryChanges {
   const description = draft.description.trim();
+  const projectChanged = !sameSelection(draft.selection, selectionOf(entry));
   return {
     ...(description === entry.description ? {} : { description }),
-    ...(sameSelection(draft.selection, selectionOf(entry))
-      ? {}
-      : { project: selectionIds(draft.selection) }),
+    ...(projectChanged ? { project: selectionIds(draft.selection) } : {}),
+    ...(projectChanged || draft.billable !== entry.billable
+      ? { billable: draft.billable }
+      : {}),
   };
 }
 
@@ -79,7 +84,7 @@ export function changesOf(
   });
 }
 
-/** Los grupos del timer que cambiaron: la descripción, el par y el inicio (CAL-40). */
+/** Los grupos del timer que cambiaron: la descripción, el par, el facturable y el inicio (CAL-40). */
 export function runningChangesOf(
   entry: TimeEntryView,
   draft: EntryDialogDraft,
@@ -92,11 +97,11 @@ export function runningChangesOf(
   });
 }
 
-/** El alta del diálogo: `createManualEntry` con el trío y el par (CAL-45). */
+/** El alta del diálogo: `createManualEntry` con el trío, el par y el facturable explícito (CAL-45). */
 export function createInputOf(draft: EntryDialogDraft): CreateManualEntryInput {
   return {
     description: draft.description,
     ...draft.times,
-    ...selectionIds(draft.selection),
+    ...fieldsInput(draft),
   };
 }

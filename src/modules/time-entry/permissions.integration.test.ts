@@ -1202,7 +1202,7 @@ describe("quién asigna qué proyecto (§3: TT-08, PR-17)", () => {
     const open = await seedProject({ workspaceId });
     const otherId = await seedMember(workspaceId, "member");
     const row = await seedOwnEntry(otherId);
-    const pair = { projectId: open.id, taskId: null };
+    const pair = { projectId: open.id, taskId: null, billable: false };
 
     const foreign = await db.transaction((tx) =>
       timeEntryRepository.updateProject(

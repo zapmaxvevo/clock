@@ -16,6 +16,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ProjectPicker } from "@/modules/project/components/project-picker";
+import { useTrackingCatalog } from "@/modules/project/components/tracking-catalog";
 import {
   DESCRIPTION_MAX,
   type CreateManualEntryInput,
@@ -24,9 +25,11 @@ import {
 } from "@/modules/time-entry/schema";
 import { clockLabel, formatDuration } from "@/server/time";
 
+import { BillableToggle } from "../billable-toggle";
 import { ClockField } from "../clock-field";
 import { DateField } from "../date-field";
 import { ElapsedCounter } from "../elapsed-counter";
+import { withSelection } from "../entry-fields";
 import { entryNameOf, entryProjectLabel, extraDaysText, trackerLabels } from "../labels";
 import {
   commitChange,
@@ -253,6 +256,7 @@ function EntryEditor({
   onDelete,
 }: EntryEditorProps) {
   const { time } = useDisplayFormats();
+  const catalog = useTrackingCatalog();
   const descriptionId = useId();
   const submitRef = useRef<HTMLButtonElement>(null);
   const entry = subject.kind === "entry" ? subject.entry : null;
@@ -365,7 +369,18 @@ function EntryEditor({
             variant="row"
             value={draft.selection}
             label={entryProjectLabel(name)}
-            onChange={(selection) => change({ ...draftRef.current, selection })}
+            onChange={(selection) =>
+              change(withSelection(draftRef.current, selection, catalog))
+            }
+          />
+        </div>
+
+        <div>
+          <BillableToggle
+            pressed={draft.billable}
+            onPressedChange={(billable) => change({ ...draftRef.current, billable })}
+            label={trackerLabels.billable}
+            showLabel
           />
         </div>
 

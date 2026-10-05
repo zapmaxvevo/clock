@@ -1,27 +1,32 @@
-import { randomUUID } from "node:crypto";
-
-import type { Locator, Page, Request } from "@playwright/test";
+import type { Locator } from "@playwright/test";
 
 import { archiveProject, markTaskDone, seedProject } from "./database";
-import { holdActionResponses, withServerAction } from "./network";
+import {
+  holdActionResponses,
+  isAction,
+  recordActions,
+  withServerAction,
+} from "./network";
 import { expect, test } from "./session";
 import {
+  addManualEntry,
   backgroundRgb,
-  chooseMode,
+  continueButton,
   descriptionInput,
   elapsedCounter,
   entryRow,
+  isTrackerPage,
   openProjectPicker,
   pickProject,
   projectOption,
   projectPicker,
   projectPopup,
   projectSearch,
-  setClock,
   startTimer,
   stopTimer,
   todayGroup,
   trackerBar,
+  uniqueSuffix,
 } from "./tracker-page";
 
 /**
@@ -52,38 +57,9 @@ const PROJECT_UNAVAILABLE = "Ese proyecto ya no está disponible.";
 /** TT-07: la búsqueda sin coincidencias. */
 const NO_MATCHES = "Ningún proyecto coincide con la búsqueda.";
 
-/** Sufijo único del recorrido, para que la próxima corrida no choque con esta. */
-function uniqueSuffix(): string {
-  return randomUUID().slice(0, 8);
-}
-
-function isTrackerPage(url: URL): boolean {
-  return url.pathname === "/";
-}
-
-function isAction(request: Request): boolean {
-  return request.headers()["next-action"] !== undefined;
-}
-
-/** Junta los pedidos de server action que salen desde que se llama. */
-function recordActions(page: Page): readonly Request[] {
-  const sent: Request[] = [];
-  page.on("request", (request) => {
-    if (isAction(request)) {
-      sent.push(request);
-    }
-  });
-  return sent;
-}
-
 /** La opción de una tarea se llama «Proyecto: Tarea» (TT-06). */
 function taskOption(project: string, task: string): string {
   return `${project}: ${task}`;
-}
-
-/** El botón de continuar de una fila. */
-function continueButton(scope: Locator, description: string): Locator {
-  return scope.getByRole("button", { name: `Continuar «${description}»`, exact: true });
 }
 
 /**
@@ -93,32 +69,6 @@ function continueButton(scope: Locator, description: string): Locator {
  */
 function projectDot(picker: Locator): Locator {
   return picker.locator('[data-slot="project-dot"]');
-}
-
-/**
- * Carga una entrada de hoy desde la barra manual con un proyecto y espera su
- * fila. Va de 00:00 a 00:01, que ya pasó a cualquier hora de la corrida. La
- * barra vuelve al borrador inicial después de la respuesta, con la
- * descripción vacía y sin proyecto (TT-25).
- */
-async function addManualEntry(
-  page: Page,
-  description: string,
-  option: string,
-  search: string,
-): Promise<void> {
-  await chooseMode(page, "manual");
-  const bar = trackerBar(page);
-  await descriptionInput(bar).fill(description);
-  await setClock(bar, "Hora de inicio", "00:00");
-  await setClock(bar, "Hora de fin", "00:01");
-  await pickProject(page, bar, option, search);
-  await withServerAction(page, () =>
-    bar.getByRole("button", { name: "Agregar" }).click(),
-  );
-  await expect(entryRow(todayGroup(page), description)).toBeVisible();
-  await expect(descriptionInput(bar)).toHaveValue("");
-  await expect(projectPicker(bar)).toHaveText(NO_SELECTION);
 }
 
 test("la barra busca sin acentos, elige una tarea con su proyecto y el timer la conserva", async ({
@@ -253,7 +203,7 @@ test("la fila cambia de proyecto, deja el foco en su selector y muestra el punto
   await seedProject({ name: after, color: "red" });
 
   await page.goto("/");
-  await addManualEntry(page, description, before, suffix);
+  await addManualEntry(page, description, { option: before, search: suffix });
   const row = entryRow(todayGroup(page), description);
   await expect(projectPicker(row)).toHaveText(before);
 
@@ -315,7 +265,7 @@ test("el selector no ofrece privados ajenos, archivados ni tareas hechas, y la f
   await expect(projectPicker(bar)).toBeFocused();
 
   // m-9: la entrada se crea por la interfaz y el proyecto se archiva después.
-  await addManualEntry(page, description, shared, suffix);
+  await addManualEntry(page, description, { option: shared, search: suffix });
   await archiveProject(shared);
 
   // TT-104 y PR-23: la fila lo conserva; el selector ya no lo ofrece, ni a
@@ -380,7 +330,10 @@ test("continuar una fila con proyecto y tarea arranca el timer con los dos", asy
   await seedProject({ name: project, tasks: [task] });
 
   await page.goto("/");
-  await addManualEntry(page, description, taskOption(project, task), suffix);
+  await addManualEntry(page, description, {
+    option: taskOption(project, task),
+    search: suffix,
+  });
 
   // TT-57: el timer nuevo copia descripción, proyecto y tarea.
   await withServerAction(page, () =>

@@ -31,6 +31,7 @@ import {
   type ProjectRef,
   type ProjectView,
   type TaskView,
+  type TrackableProject,
   type TrackingCatalog,
   type TrackingProjectView,
 } from "./schema";
@@ -150,8 +151,9 @@ export async function createClient(
 }
 
 /**
- * PR-12 … PR-17, PR-19, PR-30. El proyecto nace público (P-17), sin
- * facturable por defecto, y quien lo crea queda como su responsable.
+ * PR-12 … PR-17, PR-19, PR-21, PR-30. El proyecto nace público (P-17), con el
+ * facturable por defecto que se pidió, y quien lo crea queda como su
+ * responsable.
  */
 export async function createProject(
   actor: Actor,
@@ -192,7 +194,7 @@ export async function createProject(
               name: input.name,
               color,
               isPublic: true,
-              billableByDefault: false,
+              billableByDefault: input.billableByDefault,
               note: input.note,
               createdBy: actor.userId,
             });
@@ -289,13 +291,14 @@ export async function createTask(
 /**
  * PR-23, PR-74, TT-08, TT-77. Lanza `ProjectError("not_found", …)` si la
  * persona no puede cargar horas en ese proyecto o esa tarea. Solo lee, con la
- * transacción de quien la llama (ADR 0010).
+ * transacción de quien la llama (ADR 0010). Devuelve lo que la entrada toma
+ * del proyecto: su facturable por defecto (PR-21).
  */
 export async function assertTrackable(
   tx: Transaction,
   actor: Actor,
   target: { readonly projectId: string; readonly taskId: string | null },
-): Promise<void> {
+): Promise<TrackableProject> {
   const owner = await projectRepository.findProject(
     tx,
     actor.workspaceId,
@@ -311,8 +314,9 @@ export async function assertTrackable(
   ) {
     throw new ProjectError("not_found", projectMessages.projectUnavailable);
   }
+  const trackable = { id: owner.id, billableByDefault: owner.billableByDefault };
   if (target.taskId === null) {
-    return;
+    return trackable;
   }
   const found = await projectRepository.findTask(
     tx,
@@ -323,6 +327,7 @@ export async function assertTrackable(
   if (found === undefined || found.status === "done") {
     throw new ProjectError("not_found", projectMessages.taskUnavailable);
   }
+  return trackable;
 }
 
 // Sin distinguir mayúsculas, como `lower(name)` en los índices de unicidad.
@@ -425,7 +430,11 @@ export async function getTrackingCatalog(actor: Actor): Promise<TrackingCatalog>
   const read = await readCatalog(
     actor,
     "project.track",
-    (row, tasks): TrackingProjectView => ({ ...toProjectRef(row), tasks }),
+    (row, tasks): TrackingProjectView => ({
+      ...toProjectRef(row),
+      tasks,
+      billableByDefault: row.billableByDefault,
+    }),
   );
   return {
     canCreateProject: can(actor, "project.create", workspaceResource(actor)),

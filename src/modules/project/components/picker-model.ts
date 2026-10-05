@@ -44,7 +44,9 @@ function matches(name: string, query: string): boolean {
 
 /** TT-07: las tareas van siempre debajo de su proyecto. */
 function projectOptions(project: TrackingProjectView, query: string): PickerOption[] {
-  const { tasks, ...ref } = project;
+  const { tasks } = project;
+  // Solo `ProjectRef`: el facturable por defecto lo busca en el catálogo quien elige.
+  const ref = { id: project.id, name: project.name, color: project.color };
   const shownTasks =
     query === "" || matches(project.name, query)
       ? tasks

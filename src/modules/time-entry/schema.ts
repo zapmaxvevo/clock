@@ -73,9 +73,17 @@ const newEntryPair = {
   taskId: z.uuid().nullable().default(null),
 };
 
+/** TT-14: ausente, el servidor aplica el por defecto del proyecto (`billableFor`). */
+const newEntryBillable = { billable: z.boolean().optional() };
+
 /** El cliente no manda instantes: el inicio lo pone la base. */
 export const startTimerInput = z
-  .object({ id: newEntryId, description: description.default(""), ...newEntryPair })
+  .object({
+    id: newEntryId,
+    description: description.default(""),
+    ...newEntryPair,
+    ...newEntryBillable,
+  })
   .refine(hasProjectForTask, taskNeedsProject);
 
 export const stopTimerInput = z.object({ id: z.uuid() });
@@ -125,6 +133,7 @@ export const createManualEntryInput = z
     /** Hora de pared del fin. Menor que el inicio significa el día siguiente (TT-72). */
     end: clockInput,
     ...newEntryPair,
+    ...newEntryBillable,
   })
   .refine(hasProjectForTask, taskNeedsProject);
 
@@ -240,8 +249,9 @@ const runningStart = z.strictObject(
  * Los grupos de campos que la persona tocó en el diálogo (ADR 0013). Ausente
  * no cambia; presente reemplaza, también "" en la descripción. Estricto en
  * cada nivel: un grupo o una clave que este slice no conoce —las etiquetas,
- * antes del 11— se rechaza con el texto de `unexpected`. `times` es de una
- * entrada cerrada y `runningStart` de la que corre: nunca los dos.
+ * antes del 11b— se rechaza con el texto de `unexpected`. `times` es de una
+ * entrada cerrada y `runningStart` de la que corre: nunca los dos. `billable`,
+ * presente, gana sobre el por defecto del proyecto que cambia en `project`.
  */
 export const updateEntryChanges = z
   .strictObject(
@@ -250,6 +260,7 @@ export const updateEntryChanges = z
       project: entryPair.optional(),
       times: entryTriple.optional(),
       runningStart: runningStart.optional(),
+      billable: z.boolean().optional(),
     },
     { error: timeEntryMessages.unexpected },
   )
@@ -331,6 +342,8 @@ export const timeEntryView = z.object({
     .nullable(),
   /** Con la forma de `TaskRef`. Nulo si la entrada no tiene tarea. */
   task: z.object({ id: z.uuid(), name: z.string() }).nullable(),
+  /** TT-14, TT-15: un booleano visible, sin importes. */
+  billable: z.boolean(),
 });
 
 export const dayGroupView = z.object({

@@ -36,6 +36,7 @@ const closed: TimeEntryView = {
   editableTimes: true,
   project: web,
   task: null,
+  billable: false,
 };
 
 const running: TimeEntryView = {
@@ -56,10 +57,11 @@ function edited(
 }
 
 describe("draftOfEntry", () => {
-  it("toma la descripción, el par y el trío canónico de la vista", () => {
-    expect(draftOfEntry(closed)).toEqual({
+  it("toma la descripción, el par, el facturable y el trío canónico de la vista", () => {
+    expect(draftOfEntry({ ...closed, billable: true })).toEqual({
       description: "Informe",
       selection: { project: web, task: null },
+      billable: true,
       times: { date: "2026-10-02", start: "09:00", end: "10:30" },
     });
   });
@@ -88,14 +90,35 @@ describe("changesOf", () => {
     });
   });
 
-  it("el par entero, solo si es otro", () => {
+  it("el par entero, solo si es otro, con el facturable que quedó a la vista", () => {
     const withTask: ProjectSelection = { project: web, task: design };
     expect(changesOf(closed, edited(closed, { selection: withTask }))).toEqual({
       project: { projectId: web.id, taskId: design.id },
+      billable: false,
     });
     expect(
       changesOf(closed, edited(closed, { selection: { project: null, task: null } })),
-    ).toEqual({ project: { projectId: null, taskId: null } });
+    ).toEqual({ project: { projectId: null, taskId: null }, billable: false });
+  });
+
+  it("el facturable solo, si difiere de la vista", () => {
+    expect(changesOf(closed, edited(closed, { billable: true }))).toEqual({
+      billable: true,
+    });
+    const billable = { ...closed, billable: true };
+    expect(changesOf(billable, edited(billable, { billable: false }))).toEqual({
+      billable: false,
+    });
+  });
+
+  it("con el par, el facturable viaja aunque sea el de la vista: el servidor no aplica el por defecto", () => {
+    const billable = { ...closed, billable: true };
+    expect(
+      changesOf(
+        billable,
+        edited(billable, { selection: { project: null, task: null }, billable: true }),
+      ),
+    ).toEqual({ project: { projectId: null, taskId: null }, billable: true });
   });
 
   it("el mismo par con otras mayúsculas no es un cambio", () => {
@@ -124,6 +147,7 @@ describe("changesOf", () => {
     ).toEqual({
       description: "Otra",
       project: { projectId: null, taskId: null },
+      billable: false,
       times,
     });
   });
@@ -170,7 +194,17 @@ describe("runningChangesOf", () => {
           selection: { project: null, task: null },
         }),
       ),
-    ).toEqual({ description: "Soporte", project: { projectId: null, taskId: null } });
+    ).toEqual({
+      description: "Soporte",
+      project: { projectId: null, taskId: null },
+      billable: false,
+    });
+  });
+
+  it("el facturable de la que corre, solo si difiere (TT-27)", () => {
+    expect(runningChangesOf(running, edited(running, { billable: true }))).toEqual({
+      billable: true,
+    });
   });
 });
 
@@ -180,6 +214,7 @@ describe("createInputOf", () => {
       ...draftOfNew({ date: "2026-09-30", start: "10:00", end: "11:30" }),
       description: "Planificación",
       selection: { project: web, task: design },
+      billable: true,
     };
     expect(createInputOf(draft)).toEqual({
       description: "Planificación",
@@ -188,10 +223,11 @@ describe("createInputOf", () => {
       end: "11:30",
       projectId: web.id,
       taskId: design.id,
+      billable: true,
     });
   });
 
-  it("un alta nueva arranca sin descripción ni proyecto", () => {
+  it("un alta nueva arranca sin descripción ni proyecto, y manda el facturable explícito", () => {
     expect(
       createInputOf(draftOfNew({ date: "2026-09-30", start: "10:00", end: "11:00" })),
     ).toEqual({
@@ -201,6 +237,7 @@ describe("createInputOf", () => {
       end: "11:00",
       projectId: null,
       taskId: null,
+      billable: false,
     });
   });
 });

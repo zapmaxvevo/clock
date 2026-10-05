@@ -1,18 +1,22 @@
-import type { Browser, Locator, Page, Request } from "@playwright/test";
+import type { Browser, Locator, Page } from "@playwright/test";
 
 import {
   holdRefreshes,
+  isAction,
   loseActionResponses,
   openSecondTab,
+  recordActions,
   withServerAction,
 } from "./network";
 import { expect, test } from "./session";
 import {
   chooseMode,
+  continueButton,
   descriptionInput,
   duplicateFromMenu,
   elapsedCounter,
   entryRow,
+  isTrackerPage,
   startTimer,
   stopTimer,
   todayGroup,
@@ -29,30 +33,6 @@ import {
 const CONTINUE_FAILED = "No se pudo continuar la entrada.";
 const DUPLICATE_FAILED = "No se pudo duplicar la entrada.";
 const DISCARD_FAILED = "No se pudo descartar el timer.";
-
-function isTrackerPage(url: URL): boolean {
-  return url.pathname === "/";
-}
-
-function isAction(request: Request): boolean {
-  return request.headers()["next-action"] !== undefined;
-}
-
-/** Junta los pedidos de server action que salen desde que se llama. */
-function recordActions(page: Page): readonly Request[] {
-  const sent: Request[] = [];
-  page.on("request", (request) => {
-    if (isAction(request)) {
-      sent.push(request);
-    }
-  });
-  return sent;
-}
-
-/** El botón de continuar de una fila, con el ícono de reproducción. */
-function continueButton(scope: Locator, description: string): Locator {
-  return scope.getByRole("button", { name: `Continuar «${description}»`, exact: true });
-}
 
 /** Todas las filas con una descripción, en cualquier día de la lista. */
 function entriesNamed(page: Page, description: string): Locator {

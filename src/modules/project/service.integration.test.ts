@@ -1015,6 +1015,7 @@ describe("getTrackingCatalog: el catálogo del selector (criterio 3: TT-08, PR-2
         { id: expect.any(String), name: "Diseño" },
         { id: expect.any(String), name: "maquetado" },
       ],
+      billableByDefault: false,
     });
     expect(projectsOf(catalog).find((view) => view.id === seeded.app.id)?.tasks).toEqual(
       [],
@@ -1131,5 +1132,70 @@ describe("assertTrackable (ADR 0010: PR-23, PR-74, TT-08, TT-77)", () => {
         tx.rollback();
       }),
     ).rejects.toBeInstanceOf(TransactionRollbackError);
+  });
+});
+
+describe("el facturable por defecto (criterio 2 del 11a: PR-21)", () => {
+  it("createProject guarda el pedido, y false sin él", async () => {
+    const billed = projectValues({ name: "Facturable", billableByDefault: true });
+    const plain = projectValues({ name: "Interno" });
+
+    await createProject(member, billed);
+    await createProject(member, plain);
+
+    const rows = await projectRows();
+    expect(rows.find((row) => row.id === billed.id)?.billableByDefault).toBe(true);
+    expect(rows.find((row) => row.id === plain.id)?.billableByDefault).toBe(false);
+    expect(await auditsOf("project", billed.id)).toEqual([
+      expect.objectContaining({
+        nextValue: expect.objectContaining({
+          project: expect.objectContaining({ billableByDefault: true }),
+        }),
+      }),
+    ]);
+  });
+
+  it("el reintento responde la fila del primer intento sin reescribir el facturable", async () => {
+    const values = projectValues({ billableByDefault: true });
+    const first = await createProject(member, values);
+    const again = await createProject(member, { ...values, billableByDefault: false });
+    expect(again).toEqual(first);
+    const [row] = await projectRows();
+    expect(row.billableByDefault).toBe(true);
+    expect(await auditFor("project", values.id)).toHaveLength(1);
+  });
+
+  it("getTrackingCatalog lo devuelve en cada proyecto", async () => {
+    const billed = await seedProject({
+      workspaceId,
+      name: "Sí",
+      billableByDefault: true,
+    });
+    const plain = await seedProject({ workspaceId, name: "No" });
+    const views = (await getTrackingCatalog(member)).groups.flatMap(
+      (group) => group.projects,
+    );
+    expect(views.find((view) => view.id === billed.id)?.billableByDefault).toBe(true);
+    expect(views.find((view) => view.id === plain.id)?.billableByDefault).toBe(false);
+  });
+
+  it("assertTrackable devuelve el proyecto validado con su facturable, con o sin tarea", async () => {
+    const billed = await seedProject({ workspaceId, billableByDefault: true });
+    const design = await seedTask({ workspaceId, projectId: billed.id });
+    const plain = await seedProject({ workspaceId });
+    const check = (target: { projectId: string; taskId: string | null }) =>
+      db.transaction((tx) => assertTrackable(tx, member, target));
+
+    expect(await check({ projectId: billed.id, taskId: null })).toEqual({
+      id: billed.id,
+      billableByDefault: true,
+    });
+    expect(
+      await check({ projectId: billed.id.toUpperCase(), taskId: design.id }),
+    ).toEqual({ id: billed.id, billableByDefault: true });
+    expect(await check({ projectId: plain.id, taskId: null })).toEqual({
+      id: plain.id,
+      billableByDefault: false,
+    });
   });
 });

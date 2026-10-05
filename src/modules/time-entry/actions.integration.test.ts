@@ -1790,4 +1790,45 @@ describe("updateEntry (ADR 0013)", () => {
     });
     expect(mocks.revalidated).toEqual(revalidatedFor(2));
   });
+
+  it("guarda el facturable solo y revalida las dos rutas (criterio 11 del 11a)", async () => {
+    const seeded = await signInOn({ createdAt: longAgo });
+    const closed = await seedOwnClosed(seeded);
+
+    const result = await actions.updateEntry({
+      id: closed.id,
+      changes: { billable: true },
+    });
+
+    expect(result).toMatchObject({ ok: true, data: { entry: { billable: true } } });
+    expect((await timeEntryById(closed.id))?.billable).toBe(true);
+    expect(mocks.revalidated).toEqual(revalidatedFor(1));
+  });
+
+  it("con el facturable, conserva TT-77 y responde validation a un facturable que no es booleano", async () => {
+    const seeded = await signInOn({ createdAt: longAgo });
+    const closed = await seedOwnClosed(seeded);
+    const old = await seedProject({ workspaceId: seeded.workspaceId, archived: true });
+
+    const unavailable = await actions.updateEntry({
+      id: closed.id,
+      changes: { project: { projectId: old.id, taskId: null }, billable: true },
+    });
+    const malformed = await actions.updateEntry({
+      id: closed.id,
+      changes: {
+        // @ts-expect-error: un pedido armado a mano, con un facturable que no es booleano.
+        billable: "true",
+      },
+    });
+
+    expect(unavailable).toEqual({
+      ok: false,
+      code: "not_found",
+      message: projectMessages.projectUnavailable,
+    });
+    expect(malformed).toMatchObject({ ok: false, code: "validation" });
+    expect((await timeEntryById(closed.id))?.billable).toBe(false);
+    expect(mocks.revalidated).toEqual(revalidatedFor(2));
+  });
 });

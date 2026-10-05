@@ -258,6 +258,8 @@ export function closedBlockName(entry: {
   readonly duration: string;
   /** «Proyecto» o «Proyecto: Tarea», que el nombre suma al final. */
   readonly project?: string;
+  /** Facturable, el nombre termina en «, facturable» (CAL-75). */
+  readonly billable?: boolean;
 }): string {
   const extraDays = entry.extraDays ?? 0;
   const superscript =
@@ -268,7 +270,8 @@ export function closedBlockName(entry: {
         : ` (termina ${extraDays} días después)`;
   const day = weekdayLabel(entry.day, entry.today);
   const project = entry.project === undefined ? "" : `, ${entry.project}`;
-  return `${entry.description}, ${day}, de ${entry.start} a ${entry.end}${superscript}, ${entry.duration}${project}`;
+  const billable = entry.billable === true ? ", facturable" : "";
+  return `${entry.description}, ${day}, de ${entry.start} a ${entry.end}${superscript}, ${entry.duration}${project}${billable}`;
 }
 
 /** El nombre del bloque del timer (CAL-75): «…, desde las {inicio}, en curso». */

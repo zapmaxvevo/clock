@@ -2,6 +2,7 @@
 
 import { useId, useState } from "react";
 
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -34,9 +35,17 @@ type ProjectDraft = {
   readonly clientId: string | null;
   readonly color: PaletteKey | null;
   readonly note: string;
+  /** PR-21: con qué facturable arrancan las entradas nuevas con este proyecto. */
+  readonly billableByDefault: boolean;
 };
 
-const emptyDraft: ProjectDraft = { name: "", clientId: null, color: null, note: "" };
+const emptyDraft: ProjectDraft = {
+  name: "",
+  clientId: null,
+  color: null,
+  note: "",
+  billableByDefault: false,
+};
 
 type NewProjectDialogProps = {
   readonly createProject: ProjectActions["createProject"];
@@ -45,13 +54,16 @@ type NewProjectDialogProps = {
 };
 
 /**
- * PR-12 … PR-17 y PR-30: el único lugar desde donde se crea un proyecto
- * (PR-04). Sin cliente es válido, también sin ningún cliente (PR-14, PR-86).
+ * PR-12 … PR-17, PR-21 y PR-30: el único lugar desde donde se crea un
+ * proyecto (PR-04). Sin cliente es válido, también sin ningún cliente (PR-14,
+ * PR-86).
  */
 export function NewProjectDialog({ createProject, clients }: NewProjectDialogProps) {
   const nameId = useId();
   const clientId = useId();
   const noteId = useId();
+  const billableId = useId();
+  const billableHintId = useId();
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(emptyDraft);
   const { report } = useProjectNotices();
@@ -131,6 +143,22 @@ export function NewProjectDialog({ createProject, clients }: NewProjectDialogPro
         value={draft.color}
         onValueChange={(color) => setDraft({ ...draft, color })}
       />
+      <div className="grid gap-2">
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id={billableId}
+            checked={draft.billableByDefault}
+            onCheckedChange={(checked) =>
+              setDraft({ ...draft, billableByDefault: checked })
+            }
+            aria-describedby={billableHintId}
+          />
+          <Label htmlFor={billableId}>{projectLabels.billableByDefault}</Label>
+        </div>
+        <p id={billableHintId} className="text-muted-foreground text-xs">
+          {projectLabels.billableByDefaultHint}
+        </p>
+      </div>
       <div className="grid gap-2">
         <Label htmlFor={noteId}>{projectLabels.note}</Label>
         <Textarea

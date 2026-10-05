@@ -561,6 +561,9 @@ _Corregido el 2026-10-04, slice 8c_: decía que cualquier acción sobre el timer
 detenido recibía «Este timer ya había sido detenido.». Con «Guardar» todo o
 nada, la descripción y el proyecto se aplican igual a la entrada cerrada; solo
 el inicio y «Detener» se rechazan.
+_Agregado el 2026-10-05, slice 11a_: el facturable entre los cambios sigue la
+regla de la descripción y el proyecto: se aplica a la entrada ya cerrada,
+porque tampoco depende de su estado.
 
 **CAL-42 Arrancar o continuar un timer desde un bloque** — `fuera de alcance`
 Clockify documenta el botón de reproducción solo sobre eventos de calendarios
@@ -891,6 +894,14 @@ borrador y no guarda al cerrarse, a diferencia del de la fila (TT-12). En el de
 solo lectura, «Facturable» con «Sí» o «No», y «Etiquetas» con los nombres o
 «Sin etiquetas», como texto.
 
+_Agregado el 2026-10-05, slice 11a_: en los tres modos que editan, el
+facturable es el control de TT-14 con el nombre «Facturable» también a la
+vista, al lado del ícono, y va justo después de «Proyecto». En el de solo
+lectura, «Facturable» va entre «Proyecto» y «Fecha», y dice «No» cuando la
+entrada no es facturable, a diferencia de la fila en solo lectura, que no
+muestra nada (TT-50): en una lista de campos con rótulo, un campo que falta se
+lee como un dato que no cargó. Diseño propio.
+
 **CAL-67 «Guardar», todo o nada** — `adaptar`
 Un botón «Guardar» aplica juntos los grupos de campos que la persona tocó
 —descripción, proyecto y tarea, horario—, o ninguno. Enter en la descripción o
@@ -1212,20 +1223,35 @@ CAL-58). Justificación: la de TT-110.
 El slice 8 llegó con el núcleo de proyectos ya en `main` (slices 9 y 10), así
 que el color del proyecto en el bloque (CAL-22), y el proyecto y la tarea en el
 bloque, el detalle, el diálogo de solo lectura y el nombre accesible (CAL-21,
-CAL-23, CAL-66, CAL-75) entraron con él. Lo que falta:
+CAL-23, CAL-66, CAL-75) entraron con él. Lo que llegó después y lo que falta:
 
-- **Slice 8c.** El proyecto y la tarea en el diálogo de alta y editables en el
-  de una entrada (CAL-45, CAL-66).
-- **Slice 11.** Etiquetas y facturable en el detalle y los diálogos, y el ícono
-  de facturable en el bloque. Dos campos más del diálogo. Partido en 11a, el
-  facturable, y 11b, las etiquetas; lo que fija está en CAL-21, CAL-23, CAL-45,
-  CAL-66 y CAL-75.
+- **Slice 8c, entregado.** El proyecto y la tarea en el diálogo de alta y
+  editables en el de una entrada (CAL-45, CAL-66).
+- **Slice 11a, entregado: el facturable.** Lo construyó como lo fijan CAL-21,
+  CAL-23, CAL-45, CAL-66 y CAL-75; lo que agregó a lo registrado está en
+  CAL-41 y CAL-66.
+  - En el bloque, el ícono al final de la línea del horario, solo en el
+    segmento del día de inicio y solo si la entrada es facturable.
+  - En el detalle, la línea «Facturable», después del proyecto, solo si lo es.
+  - En los tres modos del diálogo, el control de TT-14 justo después de
+    «Proyecto», con el nombre a la vista. El alta arranca no facturable;
+    elegir proyecto le pone su facturable por defecto (TT-14), y «Guardar»
+    manda el facturable siempre que manda el proyecto, así el servidor no
+    aplica el por defecto encima del que quedó a la vista.
+  - En el diálogo de solo lectura, «Facturable» con «Sí» o «No», entre
+    «Proyecto» y «Fecha».
+  - El nombre accesible de una entrada facturable termina en «, facturable»,
+    después del proyecto.
+- **Slice 11b: las etiquetas.** En el detalle y en los diálogos (CAL-23,
+  CAL-45, CAL-66), con el selector de TT-12. El bloque y su nombre accesible
+  no las muestran (CAL-21, CAL-75).
 - **Slice 12.** Nada.
 
 **El proyecto no toca la geometría de la grilla**: posición, altura,
 superposición y gestos no dependen de él. Una entrada sin proyecto se dibuja con
 el relleno neutro y es válida en todo el recorrido (CAL-91). Lo mismo vale para
-las etiquetas y el facturable del slice 11.
+las etiquetas y el facturable del slice 11. El 11a lo cumple: el ícono va
+dentro de la línea del horario y no cambia el lugar ni el alto del bloque.
 
 Dos dependencias que no son de proyectos y conviene tener a la vista:
 
@@ -1243,6 +1269,8 @@ de ser condicional.
 _Corregido el 2026-10-05, slice 11_: no decía que el 11 se parte en dos ni dónde
 quedó lo que fija, ni que las etiquetas y el facturable tampoco tocan la
 geometría.
+_Corregido el 2026-10-05, slice 11a_: el 8c y el 11 figuraban entre lo que
+falta. El 8c y el 11a están entregados, y del 11 queda el 11b, las etiquetas.
 
 ## 19. Impacto sobre lo ya construido
 
@@ -1438,7 +1466,7 @@ timer no ofrece ningún gesto. No cambia nada del servidor: mover y estirar son
 Con el 8b, los tres slices del calendario están entregados.
 
 - **Abiertos con su propuesta**: P-03 (CAL-39) y P-05 (CAL-13).
-- **Slice 11**: etiquetas y facturable (sección 18).
+- **Slice 11b**: las etiquetas (sección 18). El facturable llegó con el 11a.
 - **Fuera de los tres**: la ruta de vuelta después del acceso (CAL-86, TT-91),
   que no existe en ninguna pantalla; «Reintentar» en el alta (TT-109), que
   sigue pendiente; los gestos táctiles, con una pulsación larga, que irían en
@@ -1449,6 +1477,8 @@ _Corregido el 2026-10-04, slice 8c_: sale de esta lista la escritura, que ahora
 tiene su sección.
 _Corregido el 2026-10-05, slice 8b_: sale de esta lista el arrastre, que ahora
 tiene su sección.
+_Corregido el 2026-10-05, slice 11a_: decía «Slice 11: etiquetas y
+facturable»; el facturable llegó con el 11a (sección 18).
 
 ## Pendientes de definición del equipo
 

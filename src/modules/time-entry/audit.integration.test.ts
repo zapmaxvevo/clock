@@ -82,6 +82,7 @@ describe("audit log de las mutaciones", () => {
       description: "revisión",
       projectId: null,
       taskId: null,
+      billable: false,
       startedAt: result.running.startedAt,
     });
   });
@@ -124,6 +125,7 @@ describe("audit log de las mutaciones", () => {
       description: "dos",
       projectId: null,
       taskId: null,
+      billable: false,
       startedAt: second.running.startedAt,
     });
   });
@@ -215,6 +217,7 @@ describe("audit log de las mutaciones", () => {
       description: "para borrar",
       projectId: null,
       taskId: null,
+      billable: false,
       startedAt: "2026-10-01T11:00:00.000Z",
       endedAt: "2026-10-01T12:00:00.000Z",
       createdAt: row.createdAt.toISOString(),
@@ -442,6 +445,7 @@ describe("audit log de la entrada manual", () => {
       description: "reunión",
       projectId: null,
       taskId: null,
+      billable: false,
       startedAt: "2026-10-02T11:00:00.000Z",
       endedAt: "2026-10-02T13:30:00.000Z",
     });
@@ -480,6 +484,7 @@ describe("audit log de la entrada manual", () => {
       description: "turno noche",
       projectId: null,
       taskId: null,
+      billable: false,
       startedAt: row?.startedAt.toISOString(),
       endedAt: row?.endedAt?.toISOString(),
     });
@@ -695,6 +700,7 @@ describe("audit log de continuar, duplicar y descartar", () => {
       description: "diseño",
       projectId: null,
       taskId: null,
+      billable: false,
       startedAt: result.running.startedAt,
     });
     const closed = await auditFor("time_entry", previous.id);
@@ -722,6 +728,7 @@ describe("audit log de continuar, duplicar y descartar", () => {
       description: "diseño",
       projectId: null,
       taskId: null,
+      billable: false,
       startedAt: "2026-10-01T11:00:00.000Z",
       endedAt: "2026-10-01T12:00:00.000Z",
     });
@@ -749,6 +756,7 @@ describe("audit log de continuar, duplicar y descartar", () => {
       description: "para descartar",
       projectId: null,
       taskId: null,
+      billable: false,
       startedAt: "2026-10-02T11:00:00.000Z",
       endedAt: null,
       createdAt: row.createdAt.toISOString(),
@@ -1065,6 +1073,7 @@ describe("audit log de las operaciones en masa (ADR 0011)", () => {
         description: row.description,
         projectId: null,
         taskId: null,
+        billable: false,
         startedAt: row.startedAt.toISOString(),
         endedAt: row.endedAt?.toISOString(),
         createdAt: row.createdAt.toISOString(),
@@ -1255,5 +1264,137 @@ describe("audit log del guardado del diálogo (ADR 0013)", () => {
     expect((await auditsOf(row.id)).map((audit) => audit.nextValue)).toEqual([
       { description: "después" },
     ]);
+  });
+});
+
+describe("audit log del facturable (criterio 12 del 11a)", () => {
+  function seedEntry(values: { projectId: string | null; billable: boolean }) {
+    return seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      description: "original",
+      startedAt: "2026-10-01T11:00:00Z",
+      endedAt: "2026-10-01T12:00:00Z",
+      ...values,
+    });
+  }
+
+  async function changesOf(id: string) {
+    return (await auditFor("time_entry", id)).map((row) => ({
+      action: row.action,
+      previousValue: parsed(row.previousValue),
+      nextValue: parsed(row.nextValue),
+    }));
+  }
+
+  it("las cuatro altas guardan el facturable que escribieron", async () => {
+    const billed = await seedProject({ workspaceId, billableByDefault: true });
+    const plain = await seedProject({ workspaceId });
+    const source = await seedEntry({ projectId: plain.id, billable: true });
+
+    const started = await startTimer(actor, workspace, {
+      id: randomUUID(),
+      description: "",
+      projectId: billed.id,
+      taskId: null,
+    });
+    const manual = await createManualEntry(actor, workspace, {
+      description: "",
+      date: "2026-09-30",
+      start: "08:00",
+      end: "09:00",
+      projectId: billed.id,
+      taskId: null,
+      billable: false,
+    });
+    const continued = await continueEntry(actor, workspace, {
+      id: randomUUID(),
+      sourceId: source.id,
+    });
+    const duplicated = await duplicateEntry(actor, workspace, {
+      id: randomUUID(),
+      sourceId: source.id,
+    });
+
+    for (const [action, id, billable] of [
+      ["timeEntry.start", started.running.id, true],
+      ["timeEntry.createManual", manual.created.id, false],
+      ["timeEntry.continue", continued.running.id, true],
+      ["timeEntry.duplicate", duplicated.created.id, true],
+    ] as const) {
+      const created = (await auditFor("time_entry", id)).find(
+        (row) => row.action === action,
+      );
+      expect([action, parsed(created?.nextValue ?? null)]).toEqual([
+        action,
+        expect.objectContaining({ billable }),
+      ]);
+    }
+  });
+
+  it("timeEntry.updateProject suma el facturable a los dos lados solo cuando cambió", async () => {
+    const billed = await seedProject({ workspaceId, billableByDefault: true });
+    const design = await seedTask({ workspaceId, projectId: billed.id });
+    const entry = await seedEntry({ projectId: null, billable: false });
+
+    await updateEntryProject(actor, workspace, {
+      id: entry.id,
+      projectId: billed.id,
+      taskId: null,
+    });
+    await updateEntryProject(actor, workspace, {
+      id: entry.id,
+      projectId: billed.id,
+      taskId: design.id,
+    });
+
+    expect(await changesOf(entry.id)).toEqual(
+      expect.arrayContaining([
+        {
+          action: "timeEntry.updateProject",
+          previousValue: { projectId: null, taskId: null, billable: false },
+          nextValue: { projectId: billed.id, taskId: null, billable: true },
+        },
+        {
+          action: "timeEntry.updateProject",
+          previousValue: { projectId: billed.id, taskId: null },
+          nextValue: { projectId: billed.id, taskId: design.id },
+        },
+      ]),
+    );
+    expect(await auditFor("time_entry", entry.id)).toHaveLength(2);
+  });
+
+  it("timeEntry.update guarda el facturable cuando lo escribió, pedido o por el proyecto", async () => {
+    const billed = await seedProject({ workspaceId, billableByDefault: true });
+    const alone = await seedEntry({ projectId: null, billable: false });
+    const byProject = await seedEntry({ projectId: null, billable: false });
+
+    await updateEntry(actor, workspace, { id: alone.id, changes: { billable: true } });
+    await updateEntry(actor, workspace, {
+      id: byProject.id,
+      changes: { project: { projectId: billed.id, taskId: null } },
+    });
+
+    expect(await changesOf(alone.id)).toEqual([
+      {
+        action: "timeEntry.update",
+        previousValue: { billable: false },
+        nextValue: { billable: true },
+      },
+    ]);
+    expect(await changesOf(byProject.id)).toEqual([
+      {
+        action: "timeEntry.update",
+        previousValue: { projectId: null, taskId: null, billable: false },
+        nextValue: { projectId: billed.id, taskId: null, billable: true },
+      },
+    ]);
+  });
+
+  it("un facturable igual al de la fila no deja constancia", async () => {
+    const entry = await seedEntry({ projectId: null, billable: true });
+    await updateEntry(actor, workspace, { id: entry.id, changes: { billable: true } });
+    expect(await auditFor("time_entry", entry.id)).toEqual([]);
   });
 });

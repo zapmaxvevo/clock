@@ -92,6 +92,7 @@ function entry(
     editableTimes: endClock !== null,
     project: null,
     task: null,
+    billable: false,
     ...overrides,
   };
 }
