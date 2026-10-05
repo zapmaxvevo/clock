@@ -1,3 +1,4 @@
+import { billableFor, NEW_ENTRY_BILLABLE } from "@/lib/billable";
 import { samePair, type ProjectPair } from "@/lib/project-pair";
 import { DomainError, RejectedError, type Rejection } from "@/server/action";
 import { db, type Transaction } from "@/server/db";
@@ -32,7 +33,11 @@ import {
   type WeekStart,
 } from "@/server/time";
 import { isPaletteKey } from "@/modules/project/palette";
-import { projectMessages, type ProjectRef } from "@/modules/project/schema";
+import {
+  projectMessages,
+  type ProjectRef,
+  type TrackableProject,
+} from "@/modules/project/schema";
 import { assertTrackable } from "@/modules/project/service";
 import { timeSettingsOf, type ProfileContext } from "@/modules/profile/service";
 
@@ -395,33 +400,49 @@ const NO_PROJECT: ProjectPair = { projectId: null, taskId: null };
 /**
  * La regla del par (§4.3): si el pedido asigna algo nuevo, lo decide
  * `project` (ADR 0010) con la transacción de la operación, así un rechazo
- * deshace todo lo que la operación hizo antes.
+ * deshace todo lo que la operación hizo antes. Devuelve el proyecto validado,
+ * o `null` si no hubo nada que validar: justo los casos en que `billableFor`
+ * conserva el facturable.
  */
 async function assertAssignable(
   tx: Transaction,
   actor: Actor,
   current: ProjectPair,
   requested: ProjectPair,
-): Promise<void> {
+): Promise<TrackableProject | null> {
   const target = pairToCheck(current, requested);
-  if (target !== null) {
-    await assertTrackable(tx, actor, target);
-  }
+  return target === null ? null : assertTrackable(tx, actor, target);
+}
+
+/** TT-14: el facturable pedido en un alta, o el por defecto del proyecto validado. */
+function newEntryBillable(
+  requested: boolean | undefined,
+  project: TrackableProject | null,
+): boolean {
+  return requested ?? billableFor(NEW_ENTRY_BILLABLE, project);
 }
 
 function pairOf(row: ProjectPair): ProjectPair {
   return { projectId: row.projectId, taskId: row.taskId };
 }
 
-/** Los campos que la entrada nueva toma de la original. */
-type EntryFields = ProjectPair & { readonly description: string };
+/** Los campos de una entrada nueva que no son instantes. */
+type CopiedFields = ProjectPair & {
+  readonly description: string;
+  readonly billable: boolean;
+};
 
 /**
  * La única función que decide qué se copia de la original, para continuar y
- * para duplicar. El slice 11 le suma etiquetas y facturable.
+ * para duplicar. El facturable es el de la original, aunque su proyecto haya
+ * cambiado el por defecto (TT-57, TT-58). El 11b le suma las etiquetas.
  */
-function continuedFields(source: TimeEntryRow): EntryFields {
-  return { description: source.description, ...pairOf(source) };
+function continuedFields(source: TimeEntryRow): CopiedFields {
+  return {
+    description: source.description,
+    ...pairOf(source),
+    billable: source.billable,
+  };
 }
 
 type OpenedEntry = {
@@ -437,7 +458,7 @@ type OpenedEntry = {
 async function closeAndOpen(
   tx: Transaction,
   actor: Actor,
-  entry: { readonly id: string; readonly fields: EntryFields },
+  entry: { readonly id: string; readonly fields: CopiedFields },
 ): Promise<OpenedEntry> {
   const current = await timeEntryRepository.findRunning(
     actor.workspaceId,
@@ -498,10 +519,14 @@ export async function startTimer(
   return startEntryOnce(actor, workspace, input.id, async (tx) => {
     const pair = pairOf(input);
     // Antes de cerrar el timer abierto: un rechazo no lo cierra.
-    await assertAssignable(tx, actor, NO_PROJECT, pair);
+    const project = await assertAssignable(tx, actor, NO_PROJECT, pair);
     const opened = await closeAndOpen(tx, actor, {
       id: input.id,
-      fields: { description: input.description, ...pair },
+      fields: {
+        description: input.description,
+        ...pair,
+        billable: newEntryBillable(input.billable, project),
+      },
     });
     await recordAudit(tx, {
       workspaceId: actor.workspaceId,
@@ -513,6 +538,7 @@ export async function startTimer(
         description: opened.running.description,
         projectId: opened.running.projectId,
         taskId: opened.running.taskId,
+        billable: opened.running.billable,
         startedAt: opened.running.startedAt,
       },
     });
@@ -548,6 +574,7 @@ export async function continueEntry(
         description: opened.running.description,
         projectId: opened.running.projectId,
         taskId: opened.running.taskId,
+        billable: opened.running.billable,
         startedAt: opened.running.startedAt,
       },
     });
@@ -617,6 +644,7 @@ export async function duplicateEntry(
               description: created.description,
               projectId: created.projectId,
               taskId: created.taskId,
+              billable: created.billable,
               startedAt: created.startedAt,
               endedAt: created.endedAt,
             },
@@ -679,8 +707,9 @@ export async function updateDescription(
 }
 
 /**
- * TT-10, TT-11, TT-27, TT-54. Fija el par sobre la entrada leída, corra o no.
- * El pedido que deja el mismo par responde la vista sin escribir.
+ * TT-10, TT-11, TT-27, TT-54. Fija el par sobre la entrada leída, corra o no,
+ * con el facturable de `billableFor` (D-2). El pedido que deja el mismo par
+ * responde la vista sin escribir.
  */
 export async function updateEntryProject(
   actor: Actor,
@@ -690,22 +719,31 @@ export async function updateEntryProject(
   return translatingPairConstraints(() =>
     db.transaction(async (tx) => {
       const row = await readOwnEntry(tx, actor, "timeEntry.own.update", input.id);
-      const { pair } = await assignedPair(tx, actor, row, pairOf(input));
+      const { pair, project } = await assignedPair(tx, actor, row, pairOf(input));
       if (pair === undefined) {
         return { entry: toView(row, workspace) };
       }
-      const next = await timeEntryRepository.updateProject(tx, targetOf(row), pair);
+      // D-2: otro proyecto impone su facturable por defecto.
+      const billable = billableFor(row, project);
+      const next = await timeEntryRepository.updateProject(tx, targetOf(row), {
+        ...pair,
+        billable,
+      });
       if (next === undefined) {
         throw new TimeEntryError("not_found", timeEntryMessages.notFound);
       }
+      const withBillable = (written: TimeEntryRow) =>
+        billable === row.billable
+          ? pairOf(written)
+          : { ...pairOf(written), billable: written.billable };
       await recordAudit(tx, {
         workspaceId: actor.workspaceId,
         actorId: actor.userId,
         action: "timeEntry.updateProject",
         entity: AUDIT_ENTITY,
         entityId: next.id,
-        previousValue: pairOf(row),
-        nextValue: pairOf(next),
+        previousValue: withBillable(row),
+        nextValue: withBillable(next),
       });
       return { entry: toView(next, workspace) };
     }),
@@ -826,13 +864,14 @@ export async function createManualEntry(
         throw new TimeEntryError("validation", timeEntryMessages.beforeWorkspace);
       }
       const pair = pairOf(input);
-      await assertAssignable(tx, actor, NO_PROJECT, pair);
+      const project = await assertAssignable(tx, actor, NO_PROJECT, pair);
 
       const created = await timeEntryRepository.insertClosed(tx, {
         workspaceId: actor.workspaceId,
         userId: actor.userId,
         description: input.description,
         ...pair,
+        billable: newEntryBillable(input.billable, project),
         startedAt,
         endedAt,
       });
@@ -846,6 +885,7 @@ export async function createManualEntry(
           description: created.description,
           projectId: created.projectId,
           taskId: created.taskId,
+          billable: created.billable,
           startedAt: created.startedAt,
           endedAt: created.endedAt,
         },
@@ -1129,22 +1169,56 @@ function runningEntryEdit(
   };
 }
 
+/** El par que cambia, con el proyecto que validó; `project` nulo si no hubo nada que validar. */
+type AssignedPair = {
+  readonly pair?: ProjectPair;
+  readonly project: TrackableProject | null;
+};
+
 /**
  * El par pedido, si cambia y `project` lo deja asignar (TT-77, ADR 0010).
- * Vacío si no viene o es el mismo: entonces no se consulta.
+ * Sin `pair` si no viene o es el mismo: entonces no se consulta.
  */
 async function assignedPair(
   tx: Transaction,
   actor: Actor,
   row: ProjectPair,
   requested: ProjectPair | undefined,
-): Promise<{ readonly pair?: ProjectPair }> {
+): Promise<AssignedPair> {
   if (requested === undefined || samePair(row, requested)) {
-    return {};
+    return { project: null };
   }
   const pair = pairOf(requested);
-  await assertAssignable(tx, actor, pairOf(row), pair);
-  return { pair };
+  const project = await assertAssignable(tx, actor, pairOf(row), pair);
+  return { pair, project };
+}
+
+/**
+ * El paso del facturable de `updateEntry` (§4.1): el pedido gana; sin él, el
+ * proyecto que validó el paso del par decide con `billableFor`. Solo si difiere
+ * de la fila: uno igual no cuenta como cambio.
+ */
+function billableChange(
+  row: TimeEntryRow,
+  requested: boolean | undefined,
+  assigned: AssignedPair,
+): Pick<ClosedEntryFields, "billable"> {
+  const billable = requested ?? billableFor(row, assigned.project);
+  return billable === row.billable ? {} : { billable };
+}
+
+/** Los campos de los pasos del par y del facturable, después de la descripción y el horario. */
+async function assignmentFields(
+  tx: Transaction,
+  actor: Actor,
+  row: TimeEntryRow,
+  changes: UpdateEntryChangeValues,
+): Promise<Pick<ClosedEntryFields, "pair" | "billable">> {
+  const assigned = await assignedPair(tx, actor, row, changes.project);
+  return {
+    ...(assigned.pair === undefined ? {} : { pair: assigned.pair }),
+    ...billableChange(row, changes.billable, assigned),
+  };
 }
 
 /**
@@ -1182,7 +1256,7 @@ async function writeEntryEdit<Fields extends RunningEntryFields>(
  * El guardado del diálogo de una entrada (ADR 0013): los grupos de campos que
  * la persona tocó, todo o nada. Cada grupo pasa por la regla de su mutación de
  * un campo, en este orden: el estado de la fila, la descripción y el horario,
- * y el par. Lo que no cambió no se escribe.
+ * el par y el facturable. Lo que no cambió no se escribe.
  */
 export async function updateEntry(
   actor: Actor,
@@ -1197,23 +1271,23 @@ export async function updateEntry(
       const target = targetOf(row);
       if (isClosed(row)) {
         const fields = closedEntryEdit(row, changes, workspace);
-        const pair = await assignedPair(tx, actor, row, changes.project);
+        const assignment = await assignmentFields(tx, actor, row, changes);
         return writeEntryEdit(
           tx,
           actor,
           row,
-          { ...fields, ...pair },
+          { ...fields, ...assignment },
           (written) => timeEntryRepository.updateClosedEntry(tx, target, written),
           () => new TimeEntryError("timer_running", timeEntryMessages.runningEntryTimes),
         );
       }
       const fields = runningEntryEdit(row, changes, workspace, now);
-      const pair = await assignedPair(tx, actor, row, changes.project);
+      const assignment = await assignmentFields(tx, actor, row, changes);
       return writeEntryEdit(
         tx,
         actor,
         row,
-        { ...fields, ...pair },
+        { ...fields, ...assignment },
         (written) => timeEntryRepository.updateRunningEntry(tx, target, written),
         () => new TimeEntryError("already_stopped", timeEntryMessages.alreadyStopped),
       );
@@ -1330,6 +1404,7 @@ function valuesOf(row: TimeEntryRow, fields: ClosedEntryFields) {
     ...(fields.pair === undefined
       ? {}
       : { projectId: row.projectId, taskId: row.taskId }),
+    ...(fields.billable === undefined ? {} : { billable: row.billable }),
     ...(fields.startedAt === undefined ? {} : { startedAt: row.startedAt }),
     ...(fields.endedAt === undefined ? {} : { endedAt: row.endedAt }),
   };

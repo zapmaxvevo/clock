@@ -177,6 +177,35 @@ describe("createProject", () => {
     expect(mocks.revalidated).toEqual(["/proyectos"]);
   });
 
+  it("acepta el facturable por defecto y lo guarda (PR-21)", async () => {
+    await signInAs("member");
+    const id = randomUUID();
+    const result = await actions.createProject({
+      id,
+      name: "Facturable",
+      clientId: null,
+      color: null,
+      billableByDefault: true,
+    });
+    expect(result).toMatchObject({ ok: true, data: { project: { id } } });
+    const [row] = await db.select().from(project);
+    expect(row.billableByDefault).toBe(true);
+  });
+
+  it("un facturable por defecto que no es booleano responde validation y no escribe", async () => {
+    await signInAs("member");
+    const result = await actions.createProject({
+      id: randomUUID(),
+      name: "Web",
+      clientId: null,
+      color: null,
+      // @ts-expect-error: un pedido armado a mano, con un facturable que no es booleano.
+      billableByDefault: "sí",
+    });
+    expect(result).toMatchObject({ ok: false, code: "validation" });
+    expect(await db.select().from(project)).toEqual([]);
+  });
+
   it("conserva el not_found del cliente archivado (PR-83)", async () => {
     await signInAs("member");
     const archived = await seedClient({

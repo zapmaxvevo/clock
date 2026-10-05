@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { db } from "@/server/db";
@@ -6,6 +6,7 @@ import {
   CHECK_VIOLATION,
   constraintOf,
   FOREIGN_KEY_VIOLATION,
+  hasCode,
 } from "@/server/db/constraint-error";
 import { client, project, task, timeEntry, workspace } from "@/server/db/schema";
 import {
@@ -243,5 +244,25 @@ describe("los predicados del repository contra un 23503 real (criterio 12)", () 
     expect(timeEntryRepository.isTaskWithoutProject(error)).toBe(true);
     expect(timeEntryRepository.isMissingProject(error)).toBe(false);
     expect(timeEntryRepository.isMissingTask(error)).toBe(false);
+  });
+});
+
+describe("el facturable de una entrada (criterio 1 del 11a: TT-14)", () => {
+  it("una entrada insertada sin la columna queda no facturable", async () => {
+    const [row] = await insertEntry({ projectId: null, taskId: null }).returning();
+    expect(row.billable).toBe(false);
+  });
+
+  it("no acepta un facturable nulo", async () => {
+    const error = await rejection(
+      db.insert(timeEntry).values({
+        workspaceId: ours.workspaceId,
+        userId: ours.ownerId,
+        startedAt: new Date("2026-10-01T11:00:00Z"),
+        billable: sql`null`,
+      }),
+    );
+    // 23502: `not_null_violation`.
+    expect(hasCode(error, "23502")).toBe(true);
   });
 });

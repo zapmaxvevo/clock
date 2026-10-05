@@ -39,6 +39,19 @@ describe("startTimerInput", () => {
     });
   });
 
+  it("TT-14: deja el facturable ausente para el servidor y acepta solo un booleano", () => {
+    expect(startTimerInput.parse({ id })).not.toHaveProperty("billable");
+    expect(startTimerInput.parse({ id, billable: true })).toMatchObject({
+      billable: true,
+    });
+    expect(startTimerInput.parse({ id, billable: false })).toMatchObject({
+      billable: false,
+    });
+    for (const billable of ["true", 1, null]) {
+      expect(startTimerInput.safeParse({ id, billable }).success).toBe(false);
+    }
+  });
+
   it("recorta los espacios de los extremos", () => {
     expect(startTimerInput.parse({ id, description: "  reunión  " })).toEqual({
       id,
@@ -346,6 +359,18 @@ describe("trackerState", () => {
     ).toBe(false);
   });
 
+  it("exige billable en cada entrada (TT-14)", () => {
+    const withoutBillable = Object.fromEntries(
+      Object.entries(entry).filter(([key]) => key !== "billable"),
+    );
+    expect(
+      trackerState.safeParse({ ...state, weeks: weeksWith([withoutBillable]) }).success,
+    ).toBe(false);
+    expect(
+      trackerState.safeParse({ ...state, running: { ...entry, billable: "no" } }).success,
+    ).toBe(false);
+  });
+
   it("acepta el proyecto y la tarea de la entrada, y exige que estén", () => {
     const withProject = {
       ...entry,
@@ -610,6 +635,18 @@ describe("createManualEntryInput", () => {
       projectId: null,
       taskId: null,
     });
+  });
+
+  it("TT-14: deja el facturable ausente para el servidor y acepta solo un booleano", () => {
+    expect(createManualEntryInput.parse(valid)).not.toHaveProperty("billable");
+    expect(createManualEntryInput.parse({ ...valid, billable: false })).toMatchObject({
+      billable: false,
+    });
+    for (const billable of ["false", 0, null]) {
+      expect(createManualEntryInput.safeParse({ ...valid, billable }).success).toBe(
+        false,
+      );
+    }
   });
 
   it("rechaza un día que tiene la forma pero no existe", () => {
@@ -924,6 +961,17 @@ describe("updateEntryChanges (ADR 0013)", () => {
   it("rechaza un pedido sin ningún grupo con bulkNoChanges", () => {
     expect(messageOf({})).toBe(timeEntryMessages.bulkNoChanges);
     expect(messageOf({ description: undefined })).toBe(timeEntryMessages.bulkNoChanges);
+  });
+
+  it("el facturable es un grupo: solo, con el par, y solo booleano (11a)", () => {
+    expect(updateEntryChanges.parse({ billable: false })).toEqual({ billable: false });
+    expect(
+      updateEntryChanges.parse({ project: { projectId, taskId: null }, billable: true }),
+    ).toEqual({ project: { projectId, taskId: null }, billable: true });
+    expect(messageOf({ billable: undefined })).toBe(timeEntryMessages.bulkNoChanges);
+    for (const billable of ["true", 1, null]) {
+      expect(updateEntryChanges.safeParse({ billable }).success).toBe(false);
+    }
   });
 
   it("rechaza el trío y el inicio del timer juntos con unexpected", () => {

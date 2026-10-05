@@ -151,8 +151,9 @@ export async function createClient(
 }
 
 /**
- * PR-12 … PR-17, PR-19, PR-30. El proyecto nace público (P-17), sin
- * facturable por defecto, y quien lo crea queda como su responsable.
+ * PR-12 … PR-17, PR-19, PR-21, PR-30. El proyecto nace público (P-17), con el
+ * facturable por defecto que se pidió, y quien lo crea queda como su
+ * responsable.
  */
 export async function createProject(
   actor: Actor,
@@ -193,7 +194,7 @@ export async function createProject(
               name: input.name,
               color,
               isPublic: true,
-              billableByDefault: false,
+              billableByDefault: input.billableByDefault,
               note: input.note,
               createdBy: actor.userId,
             });

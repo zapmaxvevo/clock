@@ -455,6 +455,7 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
           timeEntryRepository.insertRunning(tx, {
             projectId: null,
             taskId: null,
+            billable: false,
             id: randomUUID(),
             workspaceId,
             userId: actor.userId,
@@ -545,6 +546,7 @@ describe("las restricciones que reconoce el repository", () => {
         timeEntryRepository.insertRunning(tx, {
           projectId: null,
           taskId: null,
+          billable: false,
           id: existing.id,
           workspaceId,
           userId: actor.userId,
@@ -7618,5 +7620,452 @@ describe("getCalendarState: minDayKey (§5.1 del 8c)", () => {
     );
 
     expect(state.minDayKey).toBe("2026-09-01");
+  });
+});
+
+/** Un proyecto público activo con una tarea y el facturable por defecto pedido (PR-21). */
+async function seedBillableProject(billableByDefault: boolean, name = "Facturable") {
+  const billed = await seedProject({ workspaceId, name, billableByDefault });
+  const design = await seedTask({ workspaceId, projectId: billed.id, name: "Diseño" });
+  return { billed, design };
+}
+
+/** Una entrada cerrada del actor con el par y el facturable pedidos. */
+function seedBillableEntry(
+  values: { projectId: string | null; taskId?: string | null; billable: boolean },
+  options: { running?: boolean } = {},
+) {
+  return seedTimeEntry({
+    workspaceId,
+    userId: actor.userId,
+    startedAt: options.running === true ? "2026-10-02T11:00:00Z" : "2026-10-01T11:00:00Z",
+    endedAt: options.running === true ? null : "2026-10-01T12:00:00Z",
+    taskId: null,
+    ...values,
+  });
+}
+
+async function billableOfRow(id: string): Promise<boolean | undefined> {
+  return (await timeEntryById(id))?.billable;
+}
+
+describe("las altas con facturable (criterio 4 del 11a: TT-14, PR-21)", () => {
+  const ws = workspaceOf(buenosAires);
+
+  /** Los cuatro pedidos de cada alta, con el facturable que tienen que dejar. */
+  async function cases() {
+    const yes = await seedBillableProject(true, "Sí");
+    const no = await seedBillableProject(false, "No");
+    return [
+      [
+        "presente, en contra del por defecto",
+        { projectId: yes.billed.id, billable: false },
+        false,
+      ],
+      [
+        "presente, en contra del por defecto",
+        { projectId: no.billed.id, billable: true },
+        true,
+      ],
+      ["presente, sin proyecto", { projectId: null, billable: true }, true],
+      ["ausente, el por defecto", { projectId: yes.billed.id }, true],
+      [
+        "ausente, el por defecto con tarea",
+        { projectId: yes.billed.id, taskId: yes.design.id },
+        true,
+      ],
+      ["ausente, el por defecto en falso", { projectId: no.billed.id }, false],
+      ["ausente y sin proyecto", { projectId: null }, false],
+    ] as const;
+  }
+
+  it("startTimer escribe el pedido y, sin él, el por defecto del proyecto", async () => {
+    for (const [label, request, expected] of await cases()) {
+      const result = await startTimer(actor, ws, {
+        id: randomUUID(),
+        description: label,
+        taskId: null,
+        ...request,
+      });
+      expect([label, result.running.billable]).toEqual([label, expected]);
+      expect([label, await billableOfRow(result.running.id)]).toEqual([label, expected]);
+    }
+  });
+
+  it("createManualEntry escribe el pedido y, sin él, el por defecto del proyecto", async () => {
+    let hour = 0;
+    for (const [label, request, expected] of await cases()) {
+      const start = `${String(hour).padStart(2, "0")}:00`;
+      hour += 1;
+      const result = await createManualEntry(actor, ws, {
+        description: label,
+        date: "2026-10-01",
+        start,
+        end: `${String(hour).padStart(2, "0")}:00`,
+        taskId: null,
+        ...request,
+      });
+      expect([label, result.created.billable]).toEqual([label, expected]);
+      expect([label, await billableOfRow(result.created.id)]).toEqual([label, expected]);
+    }
+  });
+
+  it("el reintento del arranque responde la fila del primer intento sin recalcular", async () => {
+    const yes = await seedBillableProject(true);
+    const id = randomUUID();
+    const input = { id, description: "", projectId: yes.billed.id, taskId: null };
+    await startTimer(actor, ws, { ...input, billable: false });
+    const replay = await startTimer(actor, ws, input);
+    expect(replay.running.billable).toBe(false);
+    expect(await billableOfRow(id)).toBe(false);
+  });
+});
+
+describe("continuar y duplicar copian el facturable (criterio 5 del 11a: TT-57, TT-58)", () => {
+  const ws = workspaceOf(buenosAires);
+
+  it("copian el de la original aunque difiera del por defecto de su proyecto", async () => {
+    const yes = await seedBillableProject(true, "Sí");
+    const no = await seedBillableProject(false, "No");
+    const againstYes = await seedBillableEntry({
+      projectId: yes.billed.id,
+      billable: false,
+    });
+    const againstNo = await seedBillableEntry({
+      projectId: no.billed.id,
+      billable: true,
+    });
+
+    for (const [source, expected] of [
+      [againstYes, false],
+      [againstNo, true],
+    ] as const) {
+      const duplicated = await duplicateEntry(actor, ws, {
+        id: randomUUID(),
+        sourceId: source.id,
+      });
+      const continued = await continueEntry(actor, ws, {
+        id: randomUUID(),
+        sourceId: source.id,
+      });
+      expect(duplicated.created.billable).toBe(expected);
+      expect(continued.running.billable).toBe(expected);
+      expect(await billableOfRow(duplicated.created.id)).toBe(expected);
+      expect(await billableOfRow(continued.running.id)).toBe(expected);
+    }
+  });
+
+  it("copian el facturable de una original sin proyecto", async () => {
+    const source = await seedBillableEntry({ projectId: null, billable: true });
+    const continued = await continueEntry(actor, ws, {
+      id: randomUUID(),
+      sourceId: source.id,
+    });
+    expect(continued.running.billable).toBe(true);
+  });
+});
+
+describe("updateEntryProject y el facturable (criterio 6 del 11a: D-2)", () => {
+  const ws = workspaceOf(buenosAires);
+
+  it("a otro proyecto, su por defecto, en los dos sentidos y también en el timer", async () => {
+    const yes = await seedBillableProject(true, "Sí");
+    const no = await seedBillableProject(false, "No");
+    const toYes = await seedBillableEntry({ projectId: null, billable: false });
+    const toNo = await seedBillableEntry({ projectId: yes.billed.id, billable: true });
+    const running = await seedBillableEntry(
+      { projectId: no.billed.id, billable: false },
+      { running: true },
+    );
+
+    const first = await updateEntryProject(actor, ws, {
+      id: toYes.id,
+      projectId: yes.billed.id,
+      taskId: yes.design.id,
+    });
+    const second = await updateEntryProject(actor, ws, {
+      id: toNo.id,
+      projectId: no.billed.id,
+      taskId: null,
+    });
+    const third = await updateEntryProject(actor, ws, {
+      id: running.id,
+      projectId: yes.billed.id,
+      taskId: null,
+    });
+
+    expect(first.entry.billable).toBe(true);
+    expect(second.entry.billable).toBe(false);
+    expect(third.entry.billable).toBe(true);
+    expect(third.entry.endedAt).toBeNull();
+    expect(await billableOfRow(toYes.id)).toBe(true);
+    expect(await billableOfRow(toNo.id)).toBe(false);
+    expect(await billableOfRow(running.id)).toBe(true);
+  });
+
+  it("al mismo proyecto con otra tarea, o sin ella, y a «Sin proyecto», conserva el facturable", async () => {
+    const yes = await seedBillableProject(true);
+    const other = await seedTask({ workspaceId, projectId: yes.billed.id, name: "Otra" });
+    const cases = [
+      ["otra tarea", { projectId: yes.billed.id, taskId: other.id }],
+      ["sin la tarea", { projectId: yes.billed.id, taskId: null }],
+      ["sin proyecto", { projectId: null, taskId: null }],
+    ] as const;
+    for (const [label, pair] of cases) {
+      const entry = await seedBillableEntry({
+        projectId: yes.billed.id,
+        taskId: yes.design.id,
+        billable: false,
+      });
+      const result = await updateEntryProject(actor, ws, { id: entry.id, ...pair });
+      expect([label, result.entry.billable]).toEqual([label, false]);
+      expect([label, await pairOfRow(entry.id)]).toEqual([label, pair]);
+      expect([label, await billableOfRow(entry.id)]).toEqual([label, false]);
+    }
+  });
+
+  it("con el mismo par no escribe, aunque el facturable difiera del por defecto", async () => {
+    const yes = await seedBillableProject(true);
+    const entry = await seedBillableEntry({ projectId: yes.billed.id, billable: false });
+    const result = await updateEntryProject(actor, ws, {
+      id: entry.id,
+      projectId: yes.billed.id.toUpperCase(),
+      taskId: null,
+    });
+    expect(result.entry.billable).toBe(false);
+    expect((await timeEntryById(entry.id))?.updatedAt).toEqual(entry.updatedAt);
+  });
+
+  it("un proyecto no disponible se rechaza y no toca el facturable", async () => {
+    const archived = await seedProject({
+      workspaceId,
+      archived: true,
+      billableByDefault: true,
+    });
+    const entry = await seedBillableEntry({ projectId: null, billable: false });
+    await expect(
+      updateEntryProject(actor, ws, {
+        id: entry.id,
+        projectId: archived.id,
+        taskId: null,
+      }),
+    ).rejects.toMatchObject({ code: "not_found" });
+    expect(await billableOfRow(entry.id)).toBe(false);
+  });
+});
+
+describe("updateEntry y el facturable (criterio 7 del 11a, ADR 0013)", () => {
+  const ws = workspaceOf(buenosAires);
+  const now = new Date("2026-10-02T15:00:00Z");
+
+  it("{ billable } solo cambia una cerrada y la que corre, sin detenerla (TT-27)", async () => {
+    const closed = await seedBillableEntry({ projectId: null, billable: false });
+    const running = await seedBillableEntry(
+      { projectId: null, billable: true },
+      { running: true },
+    );
+
+    const one = await updateEntry(actor, ws, {
+      id: closed.id,
+      changes: { billable: true },
+    });
+    const two = await updateEntry(
+      actor,
+      ws,
+      { id: running.id, changes: { billable: false } },
+      now,
+    );
+
+    expect(one.entry.billable).toBe(true);
+    expect(two.entry.billable).toBe(false);
+    expect(two.entry.endedAt).toBeNull();
+    expect(await billableOfRow(closed.id)).toBe(true);
+    expect(await timeEntryById(running.id)).toMatchObject({
+      billable: false,
+      endedAt: null,
+      startedAt: running.startedAt,
+    });
+  });
+
+  it("{ project, billable } escribe el pedido aunque contradiga el por defecto", async () => {
+    const yes = await seedBillableProject(true, "Sí");
+    const no = await seedBillableProject(false, "No");
+    const toYes = await seedBillableEntry({ projectId: null, billable: false });
+    const toNo = await seedBillableEntry({ projectId: null, billable: false });
+
+    const first = await updateEntry(actor, ws, {
+      id: toYes.id,
+      changes: { project: { projectId: yes.billed.id, taskId: null }, billable: false },
+    });
+    const second = await updateEntry(actor, ws, {
+      id: toNo.id,
+      changes: { project: { projectId: no.billed.id, taskId: null }, billable: true },
+    });
+
+    expect(first.entry.billable).toBe(false);
+    expect(second.entry.billable).toBe(true);
+    expect(await billableOfRow(toYes.id)).toBe(false);
+    expect(await billableOfRow(toNo.id)).toBe(true);
+    expect(await pairOfRow(toYes.id)).toEqual({ projectId: yes.billed.id, taskId: null });
+  });
+
+  it("{ project } solo aplica el por defecto del proyecto nuevo, también en el timer", async () => {
+    const yes = await seedBillableProject(true);
+    const closed = await seedBillableEntry({ projectId: null, billable: false });
+    const running = await seedBillableEntry(
+      { projectId: null, billable: false },
+      { running: true },
+    );
+
+    const one = await updateEntry(actor, ws, {
+      id: closed.id,
+      changes: { project: { projectId: yes.billed.id, taskId: yes.design.id } },
+    });
+    const two = await updateEntry(
+      actor,
+      ws,
+      {
+        id: running.id,
+        changes: { project: { projectId: yes.billed.id, taskId: null } },
+      },
+      now,
+    );
+
+    expect(one.entry.billable).toBe(true);
+    expect(two.entry.billable).toBe(true);
+    expect(await billableOfRow(closed.id)).toBe(true);
+    expect(await billableOfRow(running.id)).toBe(true);
+  });
+
+  it("{ project } con el mismo proyecto o «Sin proyecto» conserva el facturable", async () => {
+    const yes = await seedBillableProject(true);
+    const sameProject = await seedBillableEntry({
+      projectId: yes.billed.id,
+      taskId: null,
+      billable: false,
+    });
+    const toNone = await seedBillableEntry({ projectId: yes.billed.id, billable: true });
+
+    await updateEntry(actor, ws, {
+      id: sameProject.id,
+      changes: { project: { projectId: yes.billed.id, taskId: yes.design.id } },
+    });
+    await updateEntry(actor, ws, {
+      id: toNone.id,
+      changes: { project: { projectId: null, taskId: null } },
+    });
+
+    expect(await billableOfRow(sameProject.id)).toBe(false);
+    expect(await billableOfRow(toNone.id)).toBe(true);
+  });
+
+  it("{ billable } igual al de la fila no escribe", async () => {
+    const yes = await seedBillableProject(true);
+    const entry = await seedBillableEntry({ projectId: yes.billed.id, billable: true });
+    const result = await updateEntry(actor, ws, {
+      id: entry.id,
+      changes: { billable: true, project: { projectId: yes.billed.id, taskId: null } },
+    });
+    expect(result.entry.billable).toBe(true);
+    expect((await timeEntryById(entry.id))?.updatedAt).toEqual(entry.updatedAt);
+  });
+
+  it("el par rechazado o el horario rechazado no escriben el facturable (todo o nada)", async () => {
+    const archived = await seedProject({ workspaceId, archived: true });
+    const entry = await seedBillableEntry({ projectId: null, billable: false });
+
+    await expect(
+      updateEntry(actor, ws, {
+        id: entry.id,
+        changes: { project: { projectId: archived.id, taskId: null }, billable: true },
+      }),
+    ).rejects.toMatchObject({ code: "not_found" });
+    await expect(
+      updateEntry(actor, ws, {
+        id: entry.id,
+        changes: {
+          times: { date: "2026-10-01", start: "08:00", end: "08:00" },
+          billable: true,
+        },
+      }),
+    ).rejects.toMatchObject({ code: "validation" });
+
+    expect(await billableOfRow(entry.id)).toBe(false);
+    expect((await timeEntryById(entry.id))?.updatedAt).toEqual(entry.updatedAt);
+  });
+});
+
+describe("la vista trae el facturable (criterio 8 del 11a: TT-14, TT-38, TT-39)", () => {
+  const ws = workspaceOf(buenosAires);
+  const now = new Date("2026-10-02T15:00:00Z");
+
+  it("en el timer y en cada entrada de la lista y del calendario", async () => {
+    const running = await seedBillableEntry(
+      { projectId: null, billable: true },
+      { running: true },
+    );
+    const billed = await seedBillableEntry({ projectId: null, billable: true });
+    const plain = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-01T13:00:00Z",
+      endedAt: "2026-10-01T14:00:00Z",
+    });
+
+    const tracker = await getTrackerState(actor, ws, { from: null }, now);
+    const calendar = await getCalendarState(actor, ws, { mode: "week", day: null }, now);
+
+    expect(tracker.running).toMatchObject({ id: running.id, billable: true });
+    expect(calendar.running).toMatchObject({ id: running.id, billable: true });
+    for (const entries of [
+      daysOf(tracker).flatMap((day) => day.entries),
+      calendar.entries,
+    ]) {
+      expect(entries.find((entry) => entry.id === billed.id)?.billable).toBe(true);
+      expect(entries.find((entry) => entry.id === plain.id)?.billable).toBe(false);
+    }
+  });
+
+  it("en el `stopped` de un arranque y de una parada, y en el `entry` de las ediciones", async () => {
+    const previous = await seedBillableEntry(
+      { projectId: null, billable: true },
+      { running: true },
+    );
+    const started = await startTimer(actor, ws, {
+      id: randomUUID(),
+      description: "",
+      projectId: null,
+      taskId: null,
+    });
+    expect(started.stopped).toMatchObject({ id: previous.id, billable: true });
+    expect(started.running.billable).toBe(false);
+
+    await updateEntry(
+      actor,
+      ws,
+      { id: started.running.id, changes: { billable: true } },
+      now,
+    );
+    const stopped = await stopTimer(actor, ws, { id: started.running.id });
+    expect(stopped.stopped.billable).toBe(true);
+
+    const closed = await seedBillableEntry({ projectId: null, billable: true });
+    const described = await updateDescription(actor, ws, {
+      id: closed.id,
+      description: "otra",
+    });
+    const timed = await updateEntryTimes(actor, ws, {
+      id: closed.id,
+      date: "2026-10-01",
+      start: "08:00",
+      end: "09:00",
+    });
+    const bulk = await bulkEditEntries(actor, ws, {
+      ids: [closed.id],
+      changes: { description: "masiva" },
+    });
+    expect(described.entry.billable).toBe(true);
+    expect(timed.entry.billable).toBe(true);
+    expect(bulk.entries.map((entry) => entry.billable)).toEqual([true]);
   });
 });
