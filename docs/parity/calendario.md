@@ -334,8 +334,13 @@ despliegue, en tono claro y con el borde izquierdo en el color pleno.
 **CAL-23 Detalle al pasar el puntero** — `replicar`
 Documentado: «You can hover over a time block to see full entry details». Un
 recuadro con la descripción entera, el horario con el superíndice de días
-(TT-51) y la duración; más adelante, proyecto, tarea, etiquetas y facturable.
-El mismo recuadro aparece al enfocar el bloque con el teclado (CAL-77).
+(TT-51), la duración, y el proyecto y la tarea; más adelante, etiquetas y
+facturable. El mismo recuadro aparece al enfocar el bloque con el teclado
+(CAL-77). **Mientras dura un gesto de arrastre, ningún bloque muestra su
+detalle** (sección 9).
+_Corregido el 2026-10-05, slice 8b_: no decía qué pasa con el detalle durante
+un arrastre, y nombraba el proyecto y la tarea como algo de más adelante; el
+detalle los muestra desde el slice 8.
 
 **CAL-24 Bloque muy corto** — `adaptar`
 Un bloque tiene una altura mínima legible aunque su duración, al zoom actual,
@@ -681,34 +686,61 @@ _No verificado_: a qué múltiplo ajusta Clockify en cada zoom.
 **CAL-54 Cruzar la medianoche al mover o estirar** — `replicar`
 Se permite mientras el resultado tenga menos de 24 horas de reloj. Un bloque de
 22:00 a 23:30 movido a las 23:00 queda de 23:00 a 00:30 del día siguiente
-(TT-72) y pasa a dibujarse en dos segmentos (CAL-26). Estirar el fin hasta el
-final de la columna da las 00:00 del día siguiente; para seguir estirando, se
-arrastra el borde del segmento de la columna siguiente. No es una divergencia:
-el trío lo expresa.
+(TT-72) y pasa a dibujarse en dos segmentos (CAL-26). Un bloque se mueve
+tomándolo de cualquiera de sus segmentos. Al estirar, el borde sigue al puntero
+de una columna a otra: el fin de una entrada de 22:00 estirado más allá del
+final de su columna sigue en la columna siguiente, y el inicio, en la anterior.
+No es una divergencia: el trío lo expresa.
+_Corregido el 2026-10-05, slice 8b_: decía que, para seguir estirando después
+de las 00:00, se arrastraba el borde del segmento de la columna siguiente. Una
+entrada que termina a las 00:00 no dibuja segmento en esa columna (CAL-26), así
+que no había de dónde tomarlo.
 
 **CAL-55 Ni mover ni estirar llega a 24 horas de reloj** — `adaptar`
 **Divergencia.** El gesto se detiene antes de que la distancia de reloj llegue a
-24 horas: con el ajuste de CAL-53, el último valor que ofrece es 24 horas menos
-una franja. Vale para los dos bordes y para los dos segmentos de una entrada
-que cruza la medianoche. Clockify no tiene tope (TT-74) y es probable que lo
-permita. Justificación: es TT-110 desde el otro lado. Un fin a las 10:00 del
-día siguiente de un inicio a las 10:00 llega al servidor como un trío de
-duración cero y se rechaza con TT-73; uno a las 11:00 se lee como una entrada
-de una hora. Ofrecer el gesto y que el servidor entienda otra cosa es truncar
-en silencio. **Cómo se cierra**: con el editor de fecha de fin que TT-110 ya
-nombra.
+24 horas: el borde estirado llega como máximo a la última marca de franja
+anterior a 24 horas del otro extremo. Con el otro extremo en una marca, eso es
+24 horas menos una franja; con uno fuera de marca, un poco menos: el fin de una
+entrada que empieza a las 10:07 llega hasta las 10:00 del día siguiente con el
+zoom en 15. Vale para los dos bordes y para los dos segmentos de una entrada
+que cruza la medianoche. Mover conserva la distancia de reloj, que en una
+entrada que se arrastra ya es menor que 24 horas (CAL-58), y una selección de
+CAL-44 mide como máximo 24 horas menos una franja. Clockify no tiene tope
+(TT-74) y es probable que lo permita. Justificación: es TT-110 desde el otro
+lado. Un fin a las 10:00 del día siguiente de un inicio a las 10:00 llega al
+servidor como un trío de duración cero y se rechaza con TT-73; uno a las 11:00
+se lee como una entrada de una hora. Ofrecer el gesto y que el servidor
+entienda otra cosa es truncar en silencio. **Cómo se cierra**: con el editor de
+fecha de fin que TT-110 ya nombra.
 _No verificado_: si Clockify deja estirar un bloque a más de 24 horas.
+_Corregido el 2026-10-05, slice 8b_: decía que el último valor era siempre 24
+horas menos una franja. Con el otro extremo fuera de una marca, es la última
+marca anterior a 24 horas. Se suman mover y la selección de CAL-44.
 
 **CAL-56 Mínimo una franja** — `adaptar`
-El gesto no deja un bloque de menos de una franja del zoom, y un borde no pasa
-del otro: el bloque no se invierte. Un pedido que llegue igual por debajo del
-minuto recibe «La entrada tiene que durar al menos un minuto.» (TT-73).
-Justificación: con el ajuste a la franja, menos de una franja es cero.
+El borde estirado llega como mínimo a la primera marca de franja posterior al
+otro extremo, y no lo pasa: el bloque no se invierte. Con el otro extremo en
+una marca, el mínimo es una franja del zoom; con uno fuera de marca puede ser
+menos: el fin de una entrada que empieza a las 10:07 baja hasta las 10:15 con
+el zoom en 15. Un pedido que llegue igual por debajo del minuto recibe «La
+entrada tiene que durar al menos un minuto.» (TT-73). Justificación: con el
+ajuste a las marcas, un borde en la marca del otro extremo daría una entrada de
+cero minutos.
+_Corregido el 2026-10-05, slice 8b_: decía que el gesto no dejaba un bloque de
+menos de una franja del zoom. Con el otro extremo fuera de una marca, una
+franja exacta no cae en ninguna marca.
 
 **CAL-57 Soltar donde estaba no escribe** — `adaptar`
 Si el trío que resulta del gesto es el mismo que el de la entrada, no hay
-pedido. Justificación: diseño propio, como el editor del inicio del timer del
-slice 3.
+pedido, aunque el bloque haya pasado por otros lugares. **La marca de casa**:
+el extremo que se mueve y vuelve a la marca más cercana a su lugar original
+toma su valor original, con sus minutos y sus segundos. Así, una entrada de
+10:07, o una del timer con segundos, que se suelta en su lugar no se escribe a
+las 10:00 ni pierde sus segundos (ADR 0006). Justificación: diseño propio, como
+el editor del inicio del timer del slice 3.
+_Corregido el 2026-10-05, slice 8b_: decía solo que el mismo trío no escribe.
+Con un extremo fuera de una marca, cualquier lugar ajustado era otro trío, y
+soltar el bloque donde estaba lo habría escrito en la marca.
 
 **CAL-58 Una entrada que el trío no puede expresar no se arrastra** — `adaptar`
 **Divergencia**, la de TT-110. Un bloque con `editableTimes` en falso no tiene
@@ -720,34 +752,64 @@ TT-110. En Clockify no hay excepciones por duración.
 _No verificado_: si Clockify deja arrastrar un bloque de más de 24 horas.
 
 **CAL-59 Soltar en la hora que no existe** — `adaptar`
-La franja atenuada de CAL-30 no admite soltar. Un pedido que llegue igual
-—un estiramiento cuyo borde cae ahí, por ejemplo— se rechaza con «Esa hora no
-existe por el cambio de horario.» (TT-112) y el bloque vuelve a su lugar.
-Justificación: la de TT-112.
+La franja atenuada de CAL-30 no admite soltar: un candidato con un extremo en
+un minuto que no existe no se ofrece, y el gesto se queda con el anterior. En
+los días visibles, el gesto nunca pide un extremo así. Sí puede pedirlo en dos
+días cuyos huecos el cliente no conoce: el anterior al primero visible, donde
+puede quedar el inicio de un bloque movido tomado de un segmento posterior al
+primero (CAL-61), y el siguiente al último, donde puede quedar el fin. Ahí el
+servidor lo rechaza con «Esa hora no existe por el cambio de horario.»
+(TT-112) y el bloque vuelve a su lugar. Justificación: la de TT-112; el
+cliente no sabe de husos (ADR 0005) y conoce los huecos solo de los días que
+dibuja.
+_Corregido el 2026-10-05, slice 8b_: decía que un pedido con un extremo en la
+franja atenuada «llega igual» y se rechaza. Desde el gesto no llega para los
+días visibles; solo para los dos vecinos del período.
 
 **CAL-60 Soltar sobre otra entrada** — `replicar`
 Se permite, sin aviso (TT-82), y las dos pasan a dibujarse lado a lado (CAL-25).
 
 **CAL-61 Mover a otra semana** — `adaptar`
-El arrastre se limita a las columnas visibles. Para llevar una entrada a otra
-semana se cambia la fecha en el diálogo. Justificación: que la grilla avance
-sola al arrastrar contra un borde no está documentado y complica el gesto; el
-diálogo ya lo resuelve. Si la entrada queda fuera del período visible, vale el
-aviso de CAL-46.
+El arrastre se limita a las columnas visibles: con el puntero fuera de ellas,
+el borde o el bloque siguen en la columna más cercana, y la grilla no cambia de
+período sola. Para llevar una entrada a otra semana se cambia la fecha en el
+diálogo. Un bloque tomado de un segmento posterior al primero puede quedar
+empezando el día anterior al período, pero siempre conserva al menos un minuto
+a la vista: al soltar no aparece el aviso de CAL-46. Justificación: que la
+grilla avance sola al arrastrar contra un borde no está documentado y complica
+el gesto; el diálogo ya lo resuelve.
 _No verificado_: si Clockify deja arrastrar a otra semana.
+_Corregido el 2026-10-05, slice 8b_: decía que, si la entrada quedaba fuera del
+período visible, valía el aviso de CAL-46. Desde el gesto nunca queda fuera; el
+aviso es del diálogo.
 
 **CAL-62 Guardado al soltar** — `adaptar`
-El bloque queda en su lugar nuevo, atenuado, mientras la escritura está en
-vuelo, como la fila de TT-55. Si falla, vuelve a su lugar y aparece el aviso de
-dos partes de TT-90 con el título **«No se pudo guardar el horario de la
+Mientras dura el gesto, el bloque se dibuja en el lugar candidato, con un
+anillo. Al soltar, queda en su lugar nuevo, atenuado, ocupado e inactivo —no
+abre su diálogo— mientras la escritura está en vuelo, como la fila de TT-55, y
+la grilla no empieza otro gesto. Los totales no cambian hasta la revalidación,
+como en la lista. Si falla, vuelve a su lugar y aparece en la pantalla el aviso
+de dos partes de TT-90 con el título **«No se pudo guardar el horario de la
 entrada.»**, el mismo de la edición en línea: es la misma mutación y la misma
-causa. Con error de red ofrece «Reintentar» (TT-89), que acá es seguro porque
-`updateEntryTimes` es idempotente (contrato del slice 3, §4.4). Justificación:
-Clockify reintenta solo; acá no hay cola.
+causa. Con error de red ofrece «Reintentar» (TT-89), que reenvía el mismo trío:
+llega al mismo estado, pero deja otra constancia igual, como en la fila,
+porque `updateEntryTimes` escribe y registra en cada pedido válido.
+Justificación: Clockify reintenta solo; acá no hay cola.
+_Corregido el 2026-10-05, slice 8b_: decía que «Reintentar» era seguro porque
+`updateEntryTimes` es idempotente. Llega al mismo estado, pero deja otra
+constancia. Se suman el dibujo durante el gesto, el bloque inactivo, un gesto
+por vez y los totales.
 
 **CAL-63 `Esc` cancela un arrastre** — `adaptar`
 Con el arrastre en curso, `Esc` devuelve el bloque a su lugar sin escribir.
-Justificación: diseño propio.
+También lo cancelan la pérdida del puntero, la ventana sin foco, la pestaña
+oculta, un cambio de zoom o de período, y que la entrada desaparezca de la
+pantalla. Una selección de CAL-44 cancelada no abre el alta. **El gesto
+cancelado queda muerto hasta que se suelta el botón**: no sigue al puntero, y
+soltar no pide nada ni abre el alta ni el diálogo del bloque. Justificación:
+diseño propio.
+_Corregido el 2026-10-05, slice 8b_: nombraba solo `Esc`, y no decía qué hace
+el botón que se suelta después de cancelar.
 
 **CAL-64 La extensión de la ventana de TT-108 no aplica** — `adaptar`
 `updateEntryTimes` devuelve `{ entry }`, y `entry.weekStart` es la semana de la
@@ -890,8 +952,11 @@ enfocables vuelve inusable la navegación con `Tab`.
 
 **CAL-77 El detalle se muestra también con el foco** — `adaptar`
 El recuadro de CAL-23 aparece al enfocar el bloque, no solo al pasar el
-puntero, y se cierra con `Esc`. Justificación: lo que solo se ve con el puntero
-no existe para el teclado.
+puntero, y se cierra con `Esc`. Con un gesto de arrastre en curso no aparece,
+tampoco con el foco. Justificación: lo que solo se ve con el puntero no existe
+para el teclado.
+_Corregido el 2026-10-05, slice 8b_: no decía que el detalle se cierra durante
+un gesto (CAL-23).
 
 **CAL-78 Movimiento reducido** — `adaptar`
 Con `prefers-reduced-motion`, los bloques se reacomodan sin animación al soltar
@@ -1030,17 +1095,28 @@ filtros.
 
 **CAL-89 Cambios hechos en otra pestaña** — `adaptar`
 La revalidación de TT-40 (P-11): al enfocar, al volver a ser visible y cada 60
-segundos mientras está visible. Una revalidación que llega con un arrastre en
-curso se aplica al soltar, no en medio del gesto. Justificación: no hay canal
-abierto; mover un bloque debajo del puntero es peor que mostrarlo un instante
-desactualizado.
+segundos mientras está visible. Mientras dura un arrastre, esas revalidaciones
+se juntan y sale una al terminar, si hubo alguna con la pestaña visible. La que
+llega con la respuesta de otra action todavía en vuelo —un «Detener» o un
+«Duplicar» de antes del gesto— no se puede pausar: el gesto sigue dibujando su
+candidato, y si esa revalidación se lleva la entrada del gesto, el gesto se
+cancela (CAL-63). Justificación: no hay canal abierto; mover un bloque debajo
+del puntero es peor que mostrarlo un instante desactualizado.
+_Corregido el 2026-10-05, slice 8b_: decía que una revalidación que llega con
+un arrastre en curso se aplica al soltar. Solo esperan las de TT-40; la que
+trae la respuesta de otra action se aplica en el momento.
 
 ## 17. Casos borde
 
 **CAL-90 Entrada de segundos producida por el timer** — `adaptar`
-Se dibuja con la altura mínima (CAL-24) y se estira. El inicio conserva sus
-segundos; si el par queda en menos de un minuto, el descarte del ADR 0006
-recalcula los dos extremos. Justificación: consecuencia del ADR 0006.
+Se dibuja con la altura mínima (CAL-24) y se estira. Si su distancia de reloj
+es cero —empieza y termina dentro del mismo minuto—, no se mueve: con la
+distancia conservada (CAL-51), el trío movido duraría cero. Se mueve desde el
+diálogo. Al estirar, el extremo que no se toca conserva sus segundos; si el par
+queda en menos de un minuto, el descarte del ADR 0006 recalcula los dos
+extremos. Justificación: consecuencia del ADR 0006 y de CAL-51.
+_Corregido el 2026-10-05, slice 8b_: no decía que un bloque de distancia de
+reloj cero no se mueve.
 
 **CAL-91 Entrada sin proyecto** — `replicar`
 Válida en todo el recorrido, con el color neutro (CAL-22, TT-93).
@@ -1070,8 +1146,14 @@ Se reordenan las columnas y la semana de la URL se normaliza al nuevo inicio
 
 **CAL-97 Dos pestañas moviendo la misma entrada** — `adaptar`
 Gana la última escritura (contrato del slice 3, §4.3), y la otra pestaña se pone
-al día al revalidar. Justificación: sin canal abierto (TT-40) no hay forma de
-avisarle a la otra.
+al día al revalidar. **Al estirar, el extremo que no se toca viaja con el
+rótulo que muestra la pantalla**: si otra pestaña lo cambió, el pedido lo
+devuelve a ese rótulo, y gana la última escritura también en ese extremo, como
+en la fila. Justificación: sin canal abierto (TT-40) no hay forma de avisarle a
+la otra, y mover un solo extremo pediría una mutación que reciba solo ese
+extremo.
+_Corregido el 2026-10-05, slice 8b_: no decía qué pasa con el extremo que no se
+estira.
 
 **CAL-98 Mover una entrada al futuro** — `replicar`
 Se permite (TT-76): una entrada cerrada no tiene cota superior. Un timer activo
@@ -1251,17 +1333,74 @@ P-01, P-04 y P-06. Contrato:
   - **TT-89 en el diálogo.** «Reintentar» de un «Guardar» que falló por red
     guarda el borrador actual, no el del pedido que falló.
 
+### Slice 8b — calendario, arrastre
+
+CAL-44, CAL-50 a CAL-57, las asas de CAL-58, CAL-59 a CAL-64, el «ni soltar»
+de CAL-30 y CAL-48, la segunda oración de CAL-89, «se estira» de CAL-90,
+CAL-100, CAL-97 a CAL-99 sobre los gestos, CAL-23 y CAL-77 con un gesto en
+curso, y CAL-78 al soltar. CAL-39 se verifica por primera vez: el bloque del
+timer no ofrece ningún gesto. No cambia nada del servidor: mover y estirar son
+`updateEntryTimes` con el trío completo, y crear arrastrando abre el alta del
+8c. Contrato:
+[fase1-slice8b-calendario-arrastre.md](../slices/fase1-slice8b-calendario-arrastre.md).
+
+- **Los gestos son atajos del diálogo** (CAL-74): todo lo que hacen se hace
+  también desde el diálogo, con clics o con el teclado (WCAG 2.5.7 y 2.1.1).
+  Las asas no son controles ni están en el orden de `Tab`.
+- **Solo con el mouse**
+  ([ADR 0014](../adr/0014-los-gestos-del-calendario-son-pointer-events-propios.md)):
+  en pantallas táctiles y con lápiz no hay gestos; un toque es un clic y
+  deslizar desplaza la grilla. **Es una divergencia si Clockify arrastra con el
+  dedo.**
+- **Entran por arrastre, verificados por el camino nuevo**: TT-55, el horario
+  en vuelo atenuado, ahora en la grilla; TT-73, TT-110, TT-111, TT-112 y los
+  ADR 0005 y 0006, con sus textos, en el aviso del gesto; TT-79, TT-80, TT-89 y
+  TT-90; TT-66 y TT-92: los cinco roles arrastran sus entradas, y una membresía
+  desactivada no tiene gestos.
+- **Lo que el slice decide**, diseño propio _no verificado_ (P-07):
+  - **CAL-23, CAL-54 a CAL-57, CAL-59, CAL-61 a CAL-63, CAL-77, CAL-89, CAL-90
+    y CAL-97**, en su entrada.
+  - **CAL-50 y CAL-53.** El inicio del bloque movido cae en la marca de franja
+    más cercana al lugar donde quedaría con el puntero; el fin es ese inicio
+    más la distancia de reloj original. Se toma de cualquier segmento y se
+    arrastra por las columnas visibles.
+  - **CAL-52 y CAL-53.** El borde estirado cae en la marca más cercana al
+    puntero.
+  - **CAL-44.** La selección cubre las franjas entre la tocada y la que está
+    bajo el puntero, en las dos direcciones, sin salir de su columna, y mide
+    como máximo 24 horas menos una franja. Al soltar abre «Agregar entrada» con
+    ese rango. Un clic sin recorrido sigue siendo CAL-43.
+  - **CAL-30 y CAL-48.** Un candidato con un extremo en un minuto que no existe
+    no se ofrece: el gesto se queda con el anterior. El inicio de un bloque
+    movido no pasa del piso del workspace: el gesto se detiene en él.
+  - **Un gesto no termina en clic**: después de soltar no se abre el diálogo
+    del bloque ni el alta de CAL-43.
+  - **El foco.** Al terminar un gesto sobre un bloque —soltar con o sin pedido,
+    o cancelar— el foco queda en el botón del bloque. La respuesta del pedido,
+    con éxito o con falla, lo devuelve al bloque, salvo que mientras viajaba la
+    persona lo haya llevado a otro lado.
+  - **El desplazamiento automático.** Con el puntero a menos de 32 px de un
+    borde del área visible de las columnas, la grilla se desplaza hacia ese
+    borde, más rápido cuanto más cerca.
+- **Afuera**: P-03, el asa del inicio del timer (CAL-39), sigue abierto; los
+  atajos de teclado para mover o estirar; llevar un bloque a otra semana
+  arrastrando (CAL-61), que va por el diálogo.
+
 ### Lo que queda
 
-- **Slice 8b, el arrastre** (esbozo en §8 del contrato del 8c): crear
-  arrastrando (CAL-44), mover y estirar (CAL-50 a CAL-57), las asas de CAL-58,
-  CAL-59 a CAL-64, el «ni soltar» de CAL-30 y CAL-48, la segunda oración de
-  CAL-89, «se estira» de CAL-90 y CAL-100.
-- **Fuera de los tres**: P-03 (CAL-39) y P-05 (CAL-13), abiertos con su
-  propuesta. La ruta de vuelta después del acceso (CAL-86, TT-91) no existe en
-  ninguna pantalla. «Reintentar» en el alta (TT-109) sigue pendiente.
+Con el 8b, los tres slices del calendario están entregados.
+
+- **Abiertos con su propuesta**: P-03 (CAL-39) y P-05 (CAL-13).
+- **Slice 11**: etiquetas y facturable (sección 18).
+- **Fuera de los tres**: la ruta de vuelta después del acceso (CAL-86, TT-91),
+  que no existe en ninguna pantalla; «Reintentar» en el alta (TT-109), que
+  sigue pendiente; los gestos táctiles, con una pulsación larga, que irían en
+  un slice propio (ADR 0014); y los huecos de los días vecinos al período, que
+  el cliente no conoce (CAL-59).
 
 _Corregido el 2026-10-04, slice 8c_: sale de esta lista la escritura, que ahora
+tiene su sección.
+_Corregido el 2026-10-05, slice 8b_: sale de esta lista el arrastre, que ahora
 tiene su sección.
 
 ## Pendientes de definición del equipo
@@ -1274,9 +1413,11 @@ rastreador, de proyectos y del perfil, se cita como `calendario P-nn`.
 Todos tienen una propuesta escrita en el comportamiento que citan, y ninguno
 bloquea un contrato.
 
-- **P-03 Arrastrar el inicio del timer activo** (CAL-39). Propuesta: en el
-  slice 8 no; el inicio se corrige desde el diálogo. Agregar el asa después no
-  cambia ninguna otra regla.
+- **P-03 Arrastrar el inicio del timer activo** (CAL-39). Propuesta: no por
+  ahora; el inicio se corrige desde el diálogo (CAL-40). Agregar el asa después
+  no cambia ninguna otra regla, pero pide una que ningún otro gesto tiene —el
+  tope en «ahora», que avanza mientras se arrastra (TT-29)— y su propia
+  mutación, `updateRunningStart`.
 - **P-05 Mostrar solo días laborables** (CAL-13). Propuesta: fuera hasta que
   existan los días laborables por persona (PF-19, fase 2). La alternativa
   —ocultar sábado y domingo fijos— es una regla que Clockify no tiene.
@@ -1285,6 +1426,9 @@ bloquea un contrato.
 _Corregido el 2026-10-04, slice 8_: P-02 pasó a «Cerrados».
 _Corregido el 2026-10-04, slice 8c_: P-01, P-04 y P-06 pasaron a «Cerrados».
 Decía que los tres primeros cambiaban lo que el contrato tenía que decir.
+_Corregido el 2026-10-05, slice 8b_: P-03 decía «en el slice 8 no». El 8b
+tampoco lo cierra: el team-lead lo dejó fuera el 2026-10-04, por delegación
+del usuario, y sigue abierto.
 
 Y uno que no es de este documento pero se cruza: **perfil P-02**, «inicio del
 día» (PF-15). El slice 8 no lo cierra: la grilla abre con las 08:00 arriba como
@@ -1335,7 +1479,8 @@ divergencia de las que este documento propone.
 - **CAL-43** — Un clic en una franja libre con el zoom en 60: ¿qué inicio y
   qué fin propone el diálogo?
 - **CAL-44** — ¿Se puede crear arrastrando sobre la grilla? ¿Puede la
-  selección pasar de una columna a otra? **(divergencia)**
+  selección pasar de una columna a otra? En una pantalla táctil, ¿se puede
+  crear, mover o estirar arrastrando con el dedo? **(divergencia)**
 - **CAL-47** — Con un timer corriendo, hacer clic en una franja libre y
   agregar: ¿lo deja? **(divergencia)**
 - **CAL-53** — Con cada zoom, arrastrar un bloque despacio: ¿a qué múltiplo
@@ -1353,6 +1498,9 @@ divergencia de las que este documento propone.
 - **CAL-73** — Con la página del calendario abierta y el foco fuera de un
   campo, ¿hacen algo `n`, `c`, `s` y `m`?
 - **CAL-84** — ¿Qué muestra una semana sin entradas?
+
+_Corregido el 2026-10-05, slice 8b_: CAL-44 suma la pregunta del arrastre con
+el dedo, la divergencia del ADR 0014.
 
 ### Cerrados
 
