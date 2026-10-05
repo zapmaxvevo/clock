@@ -322,7 +322,18 @@ test("mover un bloque lo lleva al día y la franja del puntero, y soltarlo en su
   expect(requests.actions).toBe(actions);
 
   // Criterio 12: con el foco ya en el botón al terminar, no queda un foco
-  // pendiente que una revalidación lleve al bloque.
+  // pendiente que una revalidación lleve al bloque. El gesto no saca el bloque
+  // de su columna, así que su botón conserva el foco de principio a fin; soltar
+  // en su lugar no pide (CAL-57).
+  actions = requests.actions;
+  await pressAt(page, { on: moved, y: BODY_GRIP_PX });
+  await moveTo(page, await grabPoint(page, thursday, today, "16:00"));
+  await expect(moved).toHaveCount(0);
+  await moveTo(page, await home());
+  await page.mouse.up();
+  await expect(moved).toBeFocused();
+  await settle(page);
+  expect(requests.actions).toBe(actions);
   await focusRegionThroughRefresh(page);
   await expect(calendarRegion(page)).toBeFocused();
   await expect(original).toHaveCount(0);
