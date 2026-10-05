@@ -10,8 +10,9 @@ aplicación y el perfil suma el tema. Módulo `profile`, en
   este slice.
 - **Lugar en el plan:** [mapa de la fase 1](fase1-mapa.md), slice 7b. Depende
   del 7.
-- **Revisión del contrato:** ronda 1 aplicada, con las resoluciones de
-  [`correcciones-fase1-slice7b.md`](correcciones-fase1-slice7b.md).
+- **Revisión del contrato:** rondas 1 y 2 aplicadas, con las resoluciones de
+  [`correcciones-fase1-slice7b.md`](correcciones-fase1-slice7b.md) y
+  [`correcciones-fase1-slice7b-ronda2.md`](correcciones-fase1-slice7b-ronda2.md).
 - **Decisiones de arquitectura asociadas:**
   - [ADR 0015, el tema se resuelve en el servidor y «seguir al sistema» en la hoja de estilos](../adr/0015-el-tema-se-resuelve-en-el-servidor.md):
     **aceptado** (2026-10-05). Fija dónde vive el tema, cómo llega a
@@ -57,54 +58,59 @@ decide», con su registro en `perfil.md`.
 8b adentro. No depende de nada que no esté mergeado.
 
 **Corre en paralelo con el contrato del 11** (ADR 0016). Los dos cambian el
-esquema: el 11a con una columna de `time_entry`, el 11b con tablas nuevas y
-este con dos columnas de `user_preference`. Comparten `src/server/db/schema.ts`
-(bloques distintos), el diario y las instantáneas de `drizzle/meta/`, y
-`src/test/factories.ts`. **Las migraciones chocan de número**: la de este slice
-y la del 11a salen las dos como `0008`. La que se mergee segunda descarta la
-suya y la vuelve a generar después del rebase, como el 5 y el 9 (§2).
+esquema: el 11a con una columna de `time_entry`, el 11b con un índice único y
+tablas nuevas, y este con dos columnas de `user_preference`. Comparten
+`src/server/db/schema.ts` (bloques distintos), el diario y las instantáneas de
+`drizzle/meta/`, y `src/test/factories.ts`. **Las migraciones chocan de
+número**: sobre `54daee0`, la de este slice y la del 11a salen las dos como
+`0008`, y el 11b trae tres más (`time_entry_workspace_id_unq`, `tags` y
+`tags_set_null`). **Si el 11 o alguna de sus partes entró antes, la de este
+slice se regenera después del rebase y toma el número siguiente del diario**,
+como el 5 y el 9 (§2).
 
 **Supuestos sobre el árbol**, con archivo y línea en `54daee0`:
 
-| Supuesto                                                                                                                                                                    | Dónde                                                                                                                            |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `user_preference` tiene `user_id`, `timezone`, `time_format`, `date_format` y las dos fechas, con tres `check`; la migración más nueva es la `0007`                         | `src/server/db/schema.ts:126-156`; `drizzle/0007_user_preference.sql`                                                            |
-| `Preferences` son tres campos resueltos; `updatePreferenceInput` es una unión por `key` con tres claves; una clave desconocida responde `formatUnavailable`                 | `src/modules/profile/schema.ts:21-25`, `:32-52`                                                                                  |
-| `profileMessages` y `ProfileActions` con una sola action                                                                                                                    | `schema.ts:13-18`, `:58-62`                                                                                                      |
-| `PreferenceColumn` es una unión de tres columnas; `writePreference` escribe solo la columna que recibe                                                                      | `src/modules/profile/repository.ts:9-12`, `:60-74`                                                                               |
-| `PREFERENCE_DEFAULTS`, `resolvePreferences` con `knownFormat` que lanza fuera de lista, `preferencesOf`                                                                     | `src/modules/profile/service.ts:41-45`, `:58-88`, `:91-93`                                                                       |
-| `updatePreference` asegura la fila, la bloquea, sale sin efecto con el mismo valor, escribe una columna y audita `profile.updatePreference`                                 | `service.ts:214-242`                                                                                                             |
-| `ProfileUser`, `ProfileView` y `getProfileView` sin consultas; `Choice` exige `example`                                                                                     | `service.ts:120-124`, `:126-130`, `:132-146`, `:158-191`                                                                         |
-| La action valida con Zod, consulta `assertCan` con `ownProfileResource` y revalida `{ path: "/", type: "layout" }`, también con error                                       | `src/modules/profile/actions.ts:17-33`                                                                                           |
-| `currentSession` lee el contexto y las preferencias en paralelo y toma `user.name` de Better Auth; no está envuelta en `cache`                                              | `src/server/session.ts:31-51`, `:37-40`, `:46`                                                                                   |
-| El layout del shell lee la sesión y le pasa a `UserMenu` el nombre, el correo y la foto; la página de perfil la vuelve a leer                                               | `src/app/(app)/layout.tsx:8`, `:17-21`; `src/app/(app)/perfil/page.tsx:7`                                                        |
-| El layout raíz dibuja `<html>` sin sesión y sin clase de tema; `/login` lee la sesión                                                                                       | `src/app/layout.tsx:14-23`; `src/app/login/page.tsx:7`                                                                           |
-| La hoja de estilos tiene la variante `dark:` atada a la clase `.dark` y el bloque `.dark` con las variables oscuras; nadie pone la clase                                    | `src/app/globals.css:5`, `:54-91`, `:93-128`                                                                                     |
-| No hay `next-themes` ni otra dependencia de tema                                                                                                                            | `package.json:24-47`                                                                                                             |
-| La CSP mantiene `unsafe-inline` en `script-src` hasta el nonce                                                                                                              | `next.config.ts:4-10`                                                                                                            |
-| Better Auth 1.7.7: `disabledPaths: ["/update-user"]`; `mapProfileToUser` devuelve `{ name, image }`; no están `overrideUserInfoOnSignIn`, `account` ni `databaseHooks.user` | `src/server/auth.ts:47`, `:61-76`, `:79-98`; `node_modules/better-auth/package.json:3`                                           |
-| Con `overrideUserInfoOnSignIn`, cada ingreso por Google pide reescribir `name`, `image` y **`email`** del usuario, con un `updateUser` fuera de todo `try`                  | `node_modules/better-auth/dist/oauth2/link-account.mjs:238-254`; `dist/api/routes/callback.mjs:182`                              |
-| `updateUser` pasa por los ganchos `user.update.before`; el `data` que devuelve el gancho se mezcla sobre el del update                                                      | `dist/db/internal-adapter.mjs:601-621`; `dist/db/with-hooks.mjs:44-61`, `:56-59`                                                 |
-| En un update, el adaptador descarta los campos `undefined` sin `onUpdate`                                                                                                   | `node_modules/@better-auth/core/dist/db/adapter/factory.mjs:115`                                                                 |
-| La firma del gancho: `before(data, context)` devuelve `false`, nada o `{ data }`                                                                                            | `@better-auth/core/dist/types/init-options.d.mts:1282-1290`                                                                      |
-| El enlace implícito: un `sub` sin fila en `account` con el correo de una fila existente se enlaza a ella; `disableImplicitLinking` lo rechaza                               | `link-account.mjs:119-125`, `:139-145`, `:146-189`; `init-options.d.mts:1076-1085`                                               |
-| El rechazo del enlace redirige a la página de error de Better Auth con `error=account_not_linked`                                                                           | `callback.mjs:35`, `:195-197`                                                                                                    |
-| `handleOAuthUserInfo` se exporta desde `better-auth/oauth2`; la aplicación no usa `linkSocial`                                                                              | `node_modules/better-auth/dist/oauth2/index.d.mts:5`; `package.json:79-83` de `better-auth`                                      |
-| `decideGoogleAccess` exige `email_verified`                                                                                                                                 | `src/server/access.ts:54`                                                                                                        |
-| El gancho de la sesión vuelve a comprobar el correo de la base al crear cada sesión                                                                                         | `src/server/auth.ts:84-95`                                                                                                       |
-| El test de la ruta cerrada responde 404 y no cambia el nombre; importa el `auth` real con la sesión de prueba habilitada                                                    | `src/server/auth.integration.test.ts:12-19`, `:62-79`                                                                            |
-| `session.integration.test.ts` ya existe: reemplaza `getSession` con un `name` fijo y prueba la foto de PF-09                                                                | `src/server/session.integration.test.ts:13-31`, `:28`, `:43-63`                                                                  |
-| `seedUser` siembra `name` «Persona de prueba» y `emailVerified` en verdadero                                                                                                | `src/test/factories.ts:32-41`                                                                                                    |
-| `PreferenceField` es una unión por `preference`, la zona sin permiso es un `FixedSetting`, los formatos son un `Select` con `aria-disabled` y `readOnly`                    | `src/modules/profile/components/preference-field.tsx:38-59`, `:135-150`, `:200-260`                                              |
-| `FormatSelect` exige `example` en cada opción y siempre dibuja el paréntesis, en el disparador y en la opción                                                               | `preference-field.tsx:181-183`, `:189`, `:210-213`, `:251-255`                                                                   |
-| La pantalla dibuja la identidad en solo lectura, con la nota de que sale de Google, y el grupo «Hora y fecha»                                                               | `components/profile-screen.tsx:29-43`, `:58-97`; `components/labels.ts:12`                                                       |
-| «Salir» navega con `router.replace("/login")`                                                                                                                               | `components/user-menu.tsx:36-43`                                                                                                 |
-| Los tests que usan `theme` como clave desconocida                                                                                                                           | `schema.test.ts:85`; `actions.integration.test.ts:202`                                                                           |
-| Las afirmaciones y fixtures con `Preferences` o `UserPreferenceRow` literales                                                                                               | `service.integration.test.ts:97-106`, `:116-129`, `:173-178`; `actions.integration.test.ts:129`; `profile-screen.test.tsx:24-28` |
-| `preferencesOf` se usa fuera del módulo solo en tests                                                                                                                       | `service.integration.test.ts:29`, `:70`, `:116`, `:125`, `:135-136`; `time-entry/service.integration.test.ts:47`, `:3982`        |
-| El e2e del 7 afirma la nota de Google, el nombre como texto, cero `textbox` y tres `combobox` en `/perfil`                                                                  | `e2e/profile.spec.ts:190`, `:193-196`, `:213`                                                                                    |
-| `SeedPreferenceValues` elige las tres columnas del 7                                                                                                                        | `src/test/factories.ts:65-67`                                                                                                    |
-| El bloque del calendario mezcla el color del proyecto con `var(--background)`; la paleta son tonos 600                                                                      | `time-entry/components/calendar/calendar-block.tsx:57-68`; `project/palette.ts:36`                                               |
+| Supuesto                                                                                                                                                                                                                               | Dónde                                                                                                                            |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `user_preference` tiene `user_id`, `timezone`, `time_format`, `date_format` y las dos fechas, con tres `check`; la migración más nueva es la `0007`                                                                                    | `src/server/db/schema.ts:126-156`; `drizzle/0007_user_preference.sql`                                                            |
+| `Preferences` son tres campos resueltos; `updatePreferenceInput` es una unión por `key` con tres claves; una clave desconocida responde `formatUnavailable`                                                                            | `src/modules/profile/schema.ts:21-25`, `:32-52`                                                                                  |
+| `profileMessages` y `ProfileActions` con una sola action                                                                                                                                                                               | `schema.ts:13-18`, `:58-62`                                                                                                      |
+| `PreferenceColumn` es una unión de tres columnas; `writePreference` escribe solo la columna que recibe                                                                                                                                 | `src/modules/profile/repository.ts:9-12`, `:60-74`                                                                               |
+| `PREFERENCE_DEFAULTS`, `resolvePreferences` con `knownFormat` que lanza fuera de lista, `preferencesOf`                                                                                                                                | `src/modules/profile/service.ts:41-45`, `:58-88`, `:91-93`                                                                       |
+| `updatePreference` asegura la fila, la bloquea, sale sin efecto con el mismo valor, escribe una columna y audita `profile.updatePreference`                                                                                            | `service.ts:214-242`                                                                                                             |
+| `ProfileUser`, `ProfileView` y `getProfileView` sin consultas; `Choice` exige `example`                                                                                                                                                | `service.ts:120-124`, `:126-130`, `:132-146`, `:158-191`                                                                         |
+| La action valida con Zod, consulta `assertCan` con `ownProfileResource` y revalida `{ path: "/", type: "layout" }`, también con error                                                                                                  | `src/modules/profile/actions.ts:17-33`                                                                                           |
+| `currentSession` lee el contexto y las preferencias en paralelo y toma `user.name` de Better Auth; no está envuelta en `cache`                                                                                                         | `src/server/session.ts:31-51`, `:37-40`, `:46`                                                                                   |
+| El layout del shell lee la sesión y le pasa a `UserMenu` el nombre, el correo y la foto; la página de perfil la vuelve a leer                                                                                                          | `src/app/(app)/layout.tsx:8`, `:17-21`; `src/app/(app)/perfil/page.tsx:7`                                                        |
+| El layout raíz dibuja `<html>` sin sesión y sin clase de tema; `/login` lee la sesión                                                                                                                                                  | `src/app/layout.tsx:14-23`; `src/app/login/page.tsx:7`                                                                           |
+| La hoja de estilos tiene la variante `dark:` atada a la clase `.dark` y el bloque `.dark` con las variables oscuras; nadie pone la clase                                                                                               | `src/app/globals.css:5`, `:54-91`, `:93-128`                                                                                     |
+| No hay `next-themes` ni otra dependencia de tema                                                                                                                                                                                       | `package.json:24-47`                                                                                                             |
+| La CSP mantiene `unsafe-inline` en `script-src` hasta el nonce                                                                                                                                                                         | `next.config.ts:4-10`                                                                                                            |
+| Better Auth 1.7.7: `disabledPaths: ["/update-user"]`; `mapProfileToUser` devuelve `{ name, image }`; no están `overrideUserInfoOnSignIn`, `account` ni `databaseHooks.user`                                                            | `src/server/auth.ts:47`, `:61-76`, `:79-98`; `node_modules/better-auth/package.json:3`                                           |
+| Con `overrideUserInfoOnSignIn`, cada ingreso por Google pide reescribir `name`, `image` y **`email`** del usuario, con un `updateUser` cuyo error no captura nadie: el `try` del callback solo convierte `APIError` y relanza el resto | `node_modules/better-auth/dist/oauth2/link-account.mjs:238-254`; `dist/api/routes/callback.mjs:171-194`, `:182`                  |
+| `updateUser` pasa por los ganchos `user.update.before`; el `data` que devuelve el gancho se mezcla sobre el del update                                                                                                                 | `dist/db/internal-adapter.mjs:601-621`; `dist/db/with-hooks.mjs:44-61`, `:56-59`                                                 |
+| En un update, el adaptador descarta los campos `undefined` sin `onUpdate`                                                                                                                                                              | `node_modules/@better-auth/core/dist/db/adapter/factory.mjs:115`                                                                 |
+| La firma del gancho: `before(data, context)` devuelve `false`, nada o `{ data }`                                                                                                                                                       | `@better-auth/core/dist/types/init-options.d.mts:1282-1290`                                                                      |
+| El enlace implícito: un `sub` sin fila en `account` con el correo de una fila existente se enlaza a ella; `disableImplicitLinking` lo rechaza                                                                                          | `link-account.mjs:119-125`, `:139-145`, `:146-189`; `init-options.d.mts:1076-1085`                                               |
+| Un `sub` con fila en `account` encuentra a su dueño por la clave de la cuenta y no pasa por el enlace                                                                                                                                  | `link-account.mjs:80-106`, `:190-237`                                                                                            |
+| El rechazo del enlace redirige a la página de error de Better Auth con `error=account_not_linked`                                                                                                                                      | `callback.mjs:35`, `:195-197`                                                                                                    |
+| `handleOAuthUserInfo` se exporta desde `better-auth/oauth2`; la aplicación no usa `linkSocial`                                                                                                                                         | `node_modules/better-auth/dist/oauth2/index.d.mts:5`; `package.json:79-83` de `better-auth`                                      |
+| `decideGoogleAccess` exige `email_verified`                                                                                                                                                                                            | `src/server/access.ts:54`                                                                                                        |
+| El gancho de la sesión vuelve a comprobar el correo de la base al crear cada sesión                                                                                                                                                    | `src/server/auth.ts:84-95`                                                                                                       |
+| El test de la ruta cerrada responde 404 y no cambia el nombre; importa el `auth` real con la sesión de prueba habilitada                                                                                                               | `src/server/auth.integration.test.ts:12-19`, `:62-79`                                                                            |
+| `session.integration.test.ts` ya existe: reemplaza `getSession` con un `name` fijo y prueba la foto de PF-09                                                                                                                           | `src/server/session.integration.test.ts:13-31`, `:28`, `:43-63`                                                                  |
+| `seedUser` siembra `name` «Persona de prueba» y `emailVerified` en verdadero                                                                                                                                                           | `src/test/factories.ts:32-41`                                                                                                    |
+| `PreferenceField` es una unión por `preference`, la zona sin permiso es un `FixedSetting`, los formatos son un `Select` con `aria-disabled` y `readOnly`                                                                               | `src/modules/profile/components/preference-field.tsx:38-59`, `:135-150`, `:200-260`                                              |
+| `FormatSelect` exige `example` en cada opción y siempre dibuja el paréntesis, en el disparador y en la opción                                                                                                                          | `preference-field.tsx:181-183`, `:189`, `:210-213`, `:251-255`                                                                   |
+| La pantalla dibuja la identidad en solo lectura, con la nota de que sale de Google, y el grupo «Hora y fecha»                                                                                                                          | `components/profile-screen.tsx:29-43`, `:58-97`; `components/labels.ts:12`                                                       |
+| «Salir» navega con `router.replace("/login")`                                                                                                                                                                                          | `components/user-menu.tsx:36-43`                                                                                                 |
+| Los tests que usan `theme` como clave desconocida                                                                                                                                                                                      | `schema.test.ts:85`; `actions.integration.test.ts:202`                                                                           |
+| Las afirmaciones y fixtures con `Preferences` o `UserPreferenceRow` literales                                                                                                                                                          | `service.integration.test.ts:97-106`, `:116-129`, `:173-178`; `actions.integration.test.ts:129`; `profile-screen.test.tsx:24-28` |
+| `preferencesOf` se usa fuera del módulo solo en tests                                                                                                                                                                                  | `service.integration.test.ts:29`, `:70`, `:116`, `:125`, `:135-136`; `time-entry/service.integration.test.ts:47`, `:3982`        |
+| El e2e del 7 afirma la nota de Google, el nombre como texto, cero `textbox` y tres `combobox` en `/perfil`                                                                                                                             | `e2e/profile.spec.ts:190`, `:193-196`, `:213`                                                                                    |
+| `markDocument` y `documentIsMarked` son funciones privadas del spec del 7; los ayudantes compartidos de los e2e viven en `tracker-page.ts`                                                                                             | `e2e/profile.spec.ts:6-25`, `:130-138`                                                                                           |
+| `SeedPreferenceValues` elige las tres columnas del 7                                                                                                                                                                                   | `src/test/factories.ts:65-67`                                                                                                    |
+| El bloque del calendario mezcla el color del proyecto con `var(--background)`; la paleta son tonos 600                                                                                                                                 | `time-entry/components/calendar/calendar-block.tsx:57-68`; `project/palette.ts:36`                                               |
 
 ## 1. Alcance
 
@@ -143,8 +149,10 @@ Entran por arrastre, verificándose por el camino nuevo:
 
 - **El nombre se guarda recortado**: sin espacios en los extremos. Con solo
   espacios es «Escribí un nombre.».
-- **Escribir el nombre de Google lo guarda igual** (D1): desde ese momento, un
-  cambio de nombre en Google no llega.
+- **Escribir el nombre de Google después de haber editado otro lo guarda**
+  (D1): desde ese momento, un cambio de nombre en Google no llega. Quien nunca
+  editó el suyo no hace ningún pedido al escribirlo, porque es el texto que el
+  campo ya muestra.
 - **`Esc` en el campo del nombre descarta lo escrito** y vuelve al guardado,
   sin pedido, como en la edición en línea (TT-55). Salir del campo o Enter con
   el mismo nombre no hace ningún pedido.
@@ -190,36 +198,37 @@ Entran por arrastre, verificándose por el camino nuevo:
 
 ### Consecuencias sobre código ya entregado
 
-| Archivo                                                                       | Qué cambia                                                                                                                                                                                                                              | Qué hay que volver a probar                                   |
-| ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `src/server/db/schema.ts`                                                     | `user_preference` suma `display_name` y `theme`, con su `check` cada una (§2).                                                                                                                                                          | `profile/schema.integration.test.ts`                          |
-| `src/server/auth.ts`                                                          | `overrideUserInfoOnSignIn: true` en `socialProviders.google`; `databaseHooks.user.update.before` que saca el correo; `account.accountLinking.disableImplicitLinking: true` (§4.5). `disabledPaths` y el gancho de la sesión no cambian. | `auth.integration.test.ts`; el ingreso de e2e                 |
-| `src/server/session.ts`                                                       | `currentSession` envuelta en `cache`; lee `profileOf` en lugar de `preferencesOf`; `user.name` sale de `displayNameOf` (§5.1).                                                                                                          | Toda action, por los arneses de `actions.integration.test.ts` |
-| `src/server/session.integration.test.ts`                                      | El doble de `getSession` toma `name` de la fila `user` de la base, o de `mocks.name` si un caso lo fija. Los casos de la foto no cambian.                                                                                               | Los casos de la foto de PF-09                                 |
-| `src/app/layout.tsx`                                                          | Lee `currentSession()` y pone en `<html>` la clase de `themeClassOf` (§5.2).                                                                                                                                                            | Toda pantalla, por e2e                                        |
-| `src/app/globals.css`                                                         | La variante `dark` y el bloque oscuro según el ADR 0015, con `color-scheme` (§5.3).                                                                                                                                                     | Toda pantalla en claro, por e2e                               |
-| `src/app/(app)/perfil/page.tsx`                                               | Pasa `updateName` a la pantalla.                                                                                                                                                                                                        | —                                                             |
-| `src/modules/profile/schema.ts`                                               | `THEMES`, `Theme`, `NAME_MAX`; `Preferences` suma `theme`; la clave `theme` en `updatePreferenceInput`; `updateNameInput`; cuatro mensajes; `ProfileActions` suma `updateName` (§4.1).                                                  | `schema.test.ts` entero                                       |
-| `src/modules/profile/repository.ts`                                           | `PreferenceColumn` suma `theme` y `displayName`.                                                                                                                                                                                        | `service.integration.test.ts`                                 |
-| `src/modules/profile/service.ts`                                              | `PREFERENCE_DEFAULTS` y `resolvePreferences` suman el tema; `profileOf` reemplaza a `preferencesOf`; `displayNameOf`, `themeClassOf`, `updateName`; `ProfileView.options.themes` (§4, §5).                                              | `service.integration.test.ts` entero                          |
-| `src/modules/profile/actions.ts`                                              | Suma `updateName`.                                                                                                                                                                                                                      | `actions.integration.test.ts` entero                          |
-| `profile/schema.test.ts` y `profile/actions.integration.test.ts`              | El caso «una clave desconocida» deja de usar `{ key: "theme", value: "dark" }`, que pasa a ser válido, y usa `{ key: "displayName", value: "Ana" }`. Su mensaje no cambia.                                                              | —                                                             |
-| `profile/service.integration.test.ts` y `profile/actions.integration.test.ts` | Las `Preferences` literales suman `theme: "system"`; `rowWith` suma `displayName` y `theme` en nulo; `preferencesOf(id)` pasa a `(await profileOf(id)).preferences`.                                                                    | —                                                             |
-| `time-entry/service.integration.test.ts`                                      | Dos líneas: `:47`, el import de `preferencesOf` pasa a `profileOf`, y `:3982`, `preferencesOf(userId)` pasa a `(await profileOf(userId)).preferences`.                                                                                  | —                                                             |
-| `src/test/factories.ts`                                                       | `SeedPreferenceValues` suma `displayName` y `theme`.                                                                                                                                                                                    | —                                                             |
-| `profile/components/profile-screen.tsx`                                       | El nombre es un `NameField`; la nota de la identidad cambia; el grupo «Apariencia» con el tema (§5.4).                                                                                                                                  | `profile-screen.test.tsx`                                     |
-| `profile/components/preference-field.tsx`                                     | La clave `theme`, con un `Select` sin ejemplo; `example` pasa a ser opcional en `FormatSelect` y sin él no se dibuja el paréntesis (§5.4).                                                                                              | PF-32 en los tres controles del 7                             |
-| `profile/components/labels.ts`                                                | Los textos de §6.                                                                                                                                                                                                                       | —                                                             |
-| `profile/components/profile-screen.test.tsx`                                  | La vista de prueba suma `theme` y `options.themes`; el doble de `ProfileActions` suma `updateName`; la afirmación de la nota de `:104` pasa al texto nuevo.                                                                             | —                                                             |
-| `profile/components/user-menu.tsx`                                            | «Salir» termina con una carga completa de `/login` (D2, §5.2).                                                                                                                                                                          | «Salir», por e2e                                              |
-| `e2e/profile.spec.ts`                                                         | El recorrido 1: `:190` mira el nombre en el campo y no en el texto; `:193-196`, la nota nueva y un `textbox`, «Nombre»; `:213`, cuatro `combobox`. Nada más.                                                                            | —                                                             |
+| Archivo                                                                       | Qué cambia                                                                                                                                                                                                                                                                           | Qué hay que volver a probar                                   |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| `src/server/db/schema.ts`                                                     | `user_preference` suma `display_name` y `theme`, con su `check` cada una (§2).                                                                                                                                                                                                       | `profile/schema.integration.test.ts`                          |
+| `src/server/auth.ts`                                                          | `overrideUserInfoOnSignIn: true` en `socialProviders.google`; `databaseHooks.user.update.before` que saca el correo; `account.accountLinking.disableImplicitLinking: true` (§4.5). `disabledPaths` y el gancho de la sesión no cambian.                                              | `auth.integration.test.ts`; el ingreso de e2e                 |
+| `src/server/session.ts`                                                       | `currentSession` envuelta en `cache`; lee `profileOf` en lugar de `preferencesOf`; `user.name` sale de `displayNameOf` (§5.1).                                                                                                                                                       | Toda action, por los arneses de `actions.integration.test.ts` |
+| `src/server/session.integration.test.ts`                                      | El doble de `getSession` toma `name` de la fila `user` de la base, o de `mocks.name` si un caso lo fija. Los casos de la foto no cambian.                                                                                                                                            | Los casos de la foto de PF-09                                 |
+| `src/app/layout.tsx`                                                          | Lee `currentSession()` y pone en `<html>` la clase de `themeClassOf` (§5.2).                                                                                                                                                                                                         | Toda pantalla, por e2e                                        |
+| `src/app/globals.css`                                                         | La variante `dark` y el bloque oscuro según el ADR 0015, con `color-scheme` (§5.3).                                                                                                                                                                                                  | Toda pantalla en claro, por e2e                               |
+| `src/app/(app)/perfil/page.tsx`                                               | Pasa `updateName` a la pantalla.                                                                                                                                                                                                                                                     | —                                                             |
+| `src/modules/profile/schema.ts`                                               | `THEMES`, `Theme`, `NAME_MAX`; `Preferences` suma `theme`; la clave `theme` en `updatePreferenceInput`; `updateNameInput`; cuatro mensajes; `ProfileActions` suma `updateName` (§4.1).                                                                                               | `schema.test.ts` entero                                       |
+| `src/modules/profile/repository.ts`                                           | `PreferenceColumn` suma `theme` y `displayName`.                                                                                                                                                                                                                                     | `service.integration.test.ts`                                 |
+| `src/modules/profile/service.ts`                                              | `PREFERENCE_DEFAULTS` y `resolvePreferences` suman el tema; `profileOf` reemplaza a `preferencesOf`; `displayNameOf`, `themeClassOf`, `updateName`; `ProfileView.options.themes` (§4, §5).                                                                                           | `service.integration.test.ts` entero                          |
+| `src/modules/profile/actions.ts`                                              | Suma `updateName`.                                                                                                                                                                                                                                                                   | `actions.integration.test.ts` entero                          |
+| `profile/schema.test.ts` y `profile/actions.integration.test.ts`              | El caso «una clave desconocida» deja de usar `{ key: "theme", value: "dark" }`, que pasa a ser válido, y usa `{ key: "displayName", value: "Ana" }`. Su mensaje no cambia.                                                                                                           | —                                                             |
+| `profile/service.integration.test.ts` y `profile/actions.integration.test.ts` | Las `Preferences` literales suman `theme: "system"`; `rowWith` suma `displayName` y `theme` en nulo; `preferencesOf(id)` pasa a `(await profileOf(id)).preferences`.                                                                                                                 | —                                                             |
+| `time-entry/service.integration.test.ts`                                      | Dos líneas: `:47`, el import de `preferencesOf` pasa a `profileOf`, y `:3982`, `preferencesOf(userId)` pasa a `(await profileOf(userId)).preferences`.                                                                                                                               | —                                                             |
+| `src/test/factories.ts`                                                       | `SeedPreferenceValues` suma `displayName` y `theme`.                                                                                                                                                                                                                                 | —                                                             |
+| `profile/components/profile-screen.tsx`                                       | El nombre es un `NameField`; la nota de la identidad cambia; el grupo «Apariencia» con el tema (§5.4).                                                                                                                                                                               | `profile-screen.test.tsx`                                     |
+| `profile/components/preference-field.tsx`                                     | La clave `theme`, con un `Select` sin ejemplo; `example` pasa a ser opcional en `FormatSelect` y sin él no se dibuja el paréntesis (§5.4).                                                                                                                                           | PF-32 en los tres controles del 7                             |
+| `profile/components/labels.ts`                                                | Los textos de §6.                                                                                                                                                                                                                                                                    | —                                                             |
+| `profile/components/profile-screen.test.tsx`                                  | La vista de prueba suma `theme` y `options.themes`; el doble de `ProfileActions` suma `updateName`; la afirmación de la nota de `:104` pasa al texto nuevo.                                                                                                                          | —                                                             |
+| `profile/components/user-menu.tsx`                                            | «Salir» termina con una carga completa de `/login` (D2, §5.2).                                                                                                                                                                                                                       | «Salir», por e2e                                              |
+| `e2e/tracker-page.ts`                                                         | Recibe `markDocument` y `documentIsMarked`, que salen de `profile.spec.ts:130-138` sin cambios.                                                                                                                                                                                      | `profile.spec.ts`                                             |
+| `e2e/profile.spec.ts`                                                         | El recorrido 1: `:190` mira el nombre en el campo y no en el texto; `:193-196`, la nota nueva y un `textbox`, «Nombre»; `:213`, cuatro `combobox`. Y el import de `markDocument` y `documentIsMarked` desde `tracker-page.ts`, en lugar de sus definiciones de `:126-138`. Nada más. | —                                                             |
 
 **Ninguna otra afirmación de un test existente cambia.** Las de arriba son
 fixtures que el tipo nuevo exige, el caso de la clave desconocida, que el 7
 escribió con la clave que este slice vuelve válida, y los tres pasos del e2e
 del 7 que miraban la identidad en solo lectura. El doble de `getSession` de
 `session.integration.test.ts` cambia de dónde saca el nombre, no lo que afirman
-sus casos.
+sus casos, y la mudanza de los dos ayudantes del e2e no cambia su código.
 
 **Lo que no cambia.** `src/app/(app)/layout.tsx`: le sigue pasando
 `session.user.name` a `UserMenu`, que desde este slice ya es el nombre resuelto.
@@ -232,10 +241,10 @@ formato. `can()` y la tabla de permisos.
 una migración generada con
 `npm run db:generate -- --name=user_preference_name_theme`. Sobre `54daee0` sale
 `drizzle/0008_user_preference_name_theme.sql` con
-`drizzle/meta/0008_snapshot.json`. **La del 11a también sale como `0008`**: si
-el 11a se mergea antes, se descarta la generada y se vuelve a generar después
-del rebase, y sale `0009`. El diario `drizzle/meta/_journal.json` no se edita a
-mano.
+`drizzle/meta/0008_snapshot.json`. **Si el 11 o alguna de sus partes entró
+antes**, se descarta la generada, se regenera después del rebase y toma el
+número siguiente del diario. El diario `drizzle/meta/_journal.json` no se edita
+a mano.
 
 ```ts
 // src/server/db/schema.ts, dentro de userPreference
@@ -437,8 +446,10 @@ reciben las dos: la columna con su valor y el nombre de la constancia. Ni
 bloqueo ni la comparación.
 
 **La comparación es contra `display_name` y nada más** (D1): un nulo no es
-igual al nombre de Google, y escribir el nombre de Google lo guarda. El service
-no lee `user.name`.
+igual al nombre de Google, y un pedido con el nombre de Google lo guarda. El
+service no lee `user.name`. Desde la pantalla ese pedido solo sale después de
+haber editado otro nombre: antes, el campo ya muestra el de Google y no pide
+nada (§5.4).
 
 Es seguro de reintentar sin el ADR 0007, por lo mismo que `updatePreference`.
 Un nombre y un tema simultáneos de la misma persona se ponen en fila sobre la
@@ -513,8 +524,10 @@ databaseHooks: {
   de Better Auth (`internal-adapter.mjs:601-621`), así que ninguna ruta de la
   librería cambia el correo. Sin él, un correo de Google que ya es el de otra
   fila (`user.email` es único; por ejemplo, una dirección reciclada cuya fila
-  guarda horas) hace lanzar ese `updateUser`, que está fuera de todo `try`
-  (`link-account.mjs:238-254`), y cada ingreso de esa persona da 500.
+  guarda horas) hace lanzar ese `updateUser` (`link-account.mjs:238-254`), y su
+  error no lo captura nadie: el `try` del callback (`callback.mjs:171-194`)
+  solo convierte `APIError` y relanza el resto. Cada ingreso de esa persona
+  daría 500.
 - **El enlace implícito, apagado.** Sin la opción, un `sub` de Google sin fila
   en `account` que trae el correo de una fila existente se enlaza a ella
   (`link-account.mjs:119-125`, `:146-189`): con una dirección reciclada, la
@@ -524,7 +537,7 @@ databaseHooks: {
   `account not linked` (`:139-145`) y el callback redirige a la página de error
   de Better Auth con `error=account_not_linked` (`callback.mjs:195-197`). La
   cuenta de Google que creó la fila se encuentra por `sub` (`:80-106`) y no
-  pasa por ahí. La aplicación no usa `linkSocial`.
+  pasa por ahí (`:190-237`). La aplicación no usa `linkSocial`.
 - **La foto** sigue pasando por `googlePhotoOf` de `session.ts` antes de
   mostrarse.
 - **`disabledPaths` no cambia**: la identidad sigue sin escribirse por la API
@@ -532,7 +545,8 @@ databaseHooks: {
 - **No se puede probar el ingreso por Google** fuera del navegador. Se prueban
   las piezas: el gancho con `internalAdapter.updateUser` y la composición de la
   sesión con `user.name` cambiado en la base, que es lo que hace el ingreso
-  (criterio 7); el enlace con `handleOAuthUserInfo` (criterio 16).
+  (criterio 7); con `handleOAuthUserInfo`, el enlace rechazado y el ingreso de
+  la cuenta que creó la fila trayendo el correo de otra (criterio 16).
 
 **Lo revisa `security-auditor` antes del merge** (§6, handshake): es una
 escritura de la identidad que hoy no existe y un cambio en qué fila corresponde
@@ -788,16 +802,20 @@ Rutas absolutas; **(nuevo)** marca lo que el slice crea.
 /home/maxi/program/clock/src/test/factories.ts
 ```
 
-- Los archivos de `drizzle/` salen del generador (§2); si el 11a entró antes,
-  son la `0009`.
+- Los archivos de `drizzle/` salen del generador (§2). Si el 11 o alguna de
+  sus partes entró antes, se regeneran después del rebase y toman el número
+  siguiente del diario.
 - **`auth.ts`** suma las tres piezas de §4.5: `overrideUserInfoOnSignIn`,
   `databaseHooks.user.update.before` y
   `account.accountLinking.disableImplicitLinking`.
-- **`auth.integration.test.ts`** suma dos casos sobre el `auth` real que ya
-  importa: el gancho con `(await auth.$context).internalAdapter.updateUser` y
-  el enlace con `handleOAuthUserInfo` de `better-auth/oauth2` y ese mismo
-  `$context` (criterios 7 y 16). Si `handleOAuthUserInfo` no se deja llamar
-  fuera de un pedido, se avisa antes de cambiar la forma del test.
+- **`auth.integration.test.ts`** suma tres casos sobre el `auth` real que ya
+  importa: el gancho con `(await auth.$context).internalAdapter.updateUser`
+  (criterio 7), y dos con `handleOAuthUserInfo` de `better-auth/oauth2`
+  llamado con `{ context: await auth.$context }`: el enlace rechazado y el
+  ingreso de la cuenta que creó la fila (criterio 16). La fila `account` del
+  segundo se siembra en el test, con `providerId: "google"` y el `accountId`
+  del `sub`. Si `handleOAuthUserInfo` no se deja llamar fuera de un pedido, se
+  avisa antes de cambiar la forma del test.
 - **`session.integration.test.ts` ya existe** y se extiende, con su arnés:
   `next/headers` y `auth` reemplazados, el resto de verdad. El doble de
   `getSession` toma `name` de la fila `user` de la base, o de `mocks.name` si
@@ -834,9 +852,12 @@ Rutas absolutas; **(nuevo)** marca lo que el slice crea.
 /home/maxi/program/clock/e2e/tracker-page.ts
 ```
 
-`profile.spec.ts` cambia solo los tres pasos de §1. `tracker-page.ts` suma los
-ayudantes del spec nuevo —el campo del nombre, el fondo de la página, la clase
-de `<html>`— y los existentes no cambian.
+`profile.spec.ts` cambia solo lo de §1: los tres pasos y el import de los dos
+ayudantes que se mudan. `tracker-page.ts` recibe `markDocument` y
+`documentIsMarked` de `profile.spec.ts:130-138`, sin cambios, para que el spec
+nuevo los importe sin importar un spec (eso registraría sus tests dos veces), y
+suma los ayudantes del spec nuevo —el campo del nombre, el fondo de la página,
+la clase de `<html>`—. Los existentes no cambian.
 
 ### security-auditor
 
@@ -851,14 +872,15 @@ gancho que saca el correo, el enlace implícito apagado y
 ```
 
 Antes del merge: lo de §1, «Lo que el slice decide»; PF-07 y PF-08 como
-implementados, con D1; PF-45 con `overrideUserInfoOnSignIn` y el correo que no
-cambia (PF-06); el rechazo de una cuenta de Google nueva con el correo de una
-persona existente; PF-23 y PF-24 con el ADR 0015; la nota del slice 7 en PF-31,
-reemplazada por la pantalla de este; los títulos de PF-32; las dos filas nuevas
-de PF-35 (el tema desconocido, el carácter nulo); y en §10 las filas de
-`auth.ts` y de `layout.tsx` y `globals.css`, que dejan de estar pendientes. P-09
-suma los nombres de los temas y el grupo «Apariencia», que son decisiones
-nuestras.
+implementados, con D1 tal como la dice §1: escribir el nombre de Google después
+de haber editado otro lo guarda, y quien nunca editó no pide nada al escribirlo;
+PF-45 con `overrideUserInfoOnSignIn` y el correo que no cambia (PF-06); el
+rechazo de una cuenta de Google nueva con el correo de una persona existente;
+PF-23 y PF-24 con el ADR 0015; la nota del slice 7 en PF-31, reemplazada por la
+pantalla de este; los títulos de PF-32; las dos filas nuevas de PF-35 (el tema
+desconocido, el carácter nulo); y en §10 las filas de `auth.ts` y de
+`layout.tsx` y `globals.css`, que dejan de estar pendientes. P-09 suma los
+nombres de los temas y el grupo «Apariencia», que son decisiones nuestras.
 
 ### Lo que no toca nadie
 
@@ -868,14 +890,15 @@ CSP no cambia), `src/modules/workspace/`, `src/modules/project/`,
 `src/modules/time-entry/` salvo las dos líneas de su test, `src/components/`
 (incluido `components/ui` y `display-formats.tsx`), `src/hooks/`,
 `src/app/(app)/layout.tsx` y el resto de `src/app/` salvo lo listado. De los e2e
-existentes, solo `profile.spec.ts`, con lo de §1. Los contratos y correcciones
-anteriores son históricos. El mapa y el estado de la fase los actualiza
-team-lead.
+existentes, solo `profile.spec.ts` y `tracker-page.ts`, con lo de §1. Los
+contratos y correcciones anteriores son históricos. El mapa y el estado de la
+fase los actualiza team-lead.
 
 ### Handshake de orden
 
-0. **Antes de implementar**: si el 11a se mergeó antes, la migración se genera
-   sobre ese `main` (§2).
+0. **Antes de implementar**: si el 11 o alguna de sus partes entró antes, la
+   migración se regenera después del rebase y toma el número siguiente del
+   diario (§2).
 1. **Primer commit de `backend-dev`**: la migración y las columnas; en
    `profile/schema.ts`, `THEMES`, `Theme`, `NAME_MAX`, los mensajes,
    `Preferences.theme`, la clave `theme`, `updateNameInput` y `ProfileActions`;
@@ -890,9 +913,9 @@ team-lead.
    oscuro), y que una revalidación del layout raíz cambia la clase de `<html>`
    sin recargar. Si alguno falla, avisa antes de seguir, porque cambia §5.2 o
    §5.3. Después, `labels.ts` y `name-field.tsx`.
-3. **`tests-slice7b` arranca en paralelo** con el spec nuevo y los tres pasos de
-   `profile.spec.ts`, y confirma que fallan por la funcionalidad y no por el
-   arnés.
+3. **`tests-slice7b` arranca en paralelo** con la mudanza de los dos ayudantes,
+   el spec nuevo y los tres pasos de `profile.spec.ts`, y confirma que fallan
+   por la funcionalidad y no por el arnés.
 4. Con el primer commit en la rama, `frontend-dev` sigue con el layout raíz, la
    pantalla, el campo del tema, `user-menu.tsx` y `page.tsx`; `backend-dev`,
    con el service, la action, `auth.ts`, `session.ts` y sus tests.
@@ -986,31 +1009,36 @@ team-lead.
     cambiando solo lo que lista §1. En particular, todos los e2e corren con el
     sistema claro de Playwright y la persona sin tema, así que ninguno cambia de
     colores.
-16. **Sin enlace implícito** — Un `sub` de Google nuevo con el correo de una
-    fila existente no se enlaza: `handleOAuthUserInfo` responde
-    `account not linked`, no hay fila nueva en `account` para ese `sub` ni
-    sesión nueva, y la fila conserva sus cuentas.
+16. **Sin enlace implícito, y la cuenta original entra** — Un `sub` de Google
+    nuevo con el correo de una fila existente no se enlaza:
+    `handleOAuthUserInfo` responde `account not linked`, no hay fila nueva en
+    `account` para ese `sub` ni sesión nueva, y la fila conserva sus cuentas.
+    La cuenta de Google que creó la fila sigue entrando: con una fila `account`
+    para su `sub` y un `userInfo` con otro nombre, otra foto y el correo de otra
+    fila sembrada, `handleOAuthUserInfo` (con `overrideUserInfo: true`, como lo
+    pasa `callback.mjs:182`) no lanza y devuelve una sesión; la fila cambia de
+    nombre y de foto y conserva su correo.
 
 ### Con qué se verifica cada criterio
 
-| Criterio | Tipo                       | Archivo                                                                                                | Qué afirma                                                                                                                                |
-| -------- | -------------------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| 1        | integración                | `profile/schema.integration.test.ts`                                                                   | cada `THEMES`, los largos de borde y los rechazos, con inserts directos                                                                   |
-| 2        | integración                | `profile/service.integration.test.ts`                                                                  | `profileOf` sin fila y con fila parcial; `resolvePreferences` con un tema fuera de lista                                                  |
-| 3        | unidad + integración       | `profile/schema.test.ts`; `profile/service.integration.test.ts`; `profile/actions.integration.test.ts` | la rama `theme` del esquema; escritura, punto fijo y constancia; el mensaje por la action                                                 |
-| 4        | unidad + integración       | `profile/schema.test.ts`; `profile/service.integration.test.ts`; `profile/actions.integration.test.ts` | cada rechazo del esquema; escritura, recorte, punto fijo, constancia y el simultáneo con `raceThroughBarrier`; los mensajes por la action |
-| 5        | integración                | `profile/actions.integration.test.ts`                                                                  | las dos actions con `inactive` e `invited`                                                                                                |
-| 6        | integración                | `profile/actions.integration.test.ts`                                                                  | el destino en éxito y en error de `updateName`                                                                                            |
-| 7        | integración                | `src/server/session.integration.test.ts`; `src/server/auth.integration.test.ts`                        | las tres combinaciones de nombre; el `updateUser` con otro correo; la opción del proveedor; el 404 de siempre                             |
-| 8        | integración + e2e          | `profile/service.integration.test.ts`; `e2e/profile-name-theme.spec.ts`                                | `themeClassOf` con los tres temas y sin sesión; el recorrido 2, con «Salir» al final                                                      |
-| 9        | e2e                        | `e2e/profile-name-theme.spec.ts`                                                                       | el recorrido 2                                                                                                                            |
-| 10       | e2e                        | `e2e/profile-name-theme.spec.ts`                                                                       | los recorridos 1 y 2                                                                                                                      |
-| 11       | e2e                        | `e2e/profile-name-theme.spec.ts`                                                                       | los recorridos 1 y 3                                                                                                                      |
-| 12       | unidad + integración + e2e | `profile-screen.test.tsx`; `profile/service.integration.test.ts`; `e2e/profile.spec.ts`                | el marcado con y sin permiso; `options.themes` e `identity.name`; el recorrido 1 del 7 con sus tres cambios                               |
-| 13       | e2e                        | `e2e/profile-name-theme.spec.ts`                                                                       | el recorrido 1                                                                                                                            |
-| 14       | revisión                   | —                                                                                                      | `cache` en `session.ts`; la búsqueda de lecturas de `preferences` y de `user.name`                                                        |
-| 15       | unidad + integración + e2e | las suites existentes                                                                                  | en verde, con solo lo de §1 cambiado                                                                                                      |
-| 16       | integración + revisión     | `src/server/auth.integration.test.ts`                                                                  | `handleOAuthUserInfo` con un `sub` nuevo y el correo de una fila sembrada; la revisión de `security-auditor`                              |
+| Criterio | Tipo                       | Archivo                                                                                                | Qué afirma                                                                                                                                                   |
+| -------- | -------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1        | integración                | `profile/schema.integration.test.ts`                                                                   | cada `THEMES`, los largos de borde y los rechazos, con inserts directos                                                                                      |
+| 2        | integración                | `profile/service.integration.test.ts`                                                                  | `profileOf` sin fila y con fila parcial; `resolvePreferences` con un tema fuera de lista                                                                     |
+| 3        | unidad + integración       | `profile/schema.test.ts`; `profile/service.integration.test.ts`; `profile/actions.integration.test.ts` | la rama `theme` del esquema; escritura, punto fijo y constancia; el mensaje por la action                                                                    |
+| 4        | unidad + integración       | `profile/schema.test.ts`; `profile/service.integration.test.ts`; `profile/actions.integration.test.ts` | cada rechazo del esquema; escritura, recorte, punto fijo, constancia y el simultáneo con `raceThroughBarrier`; los mensajes por la action                    |
+| 5        | integración                | `profile/actions.integration.test.ts`                                                                  | las dos actions con `inactive` e `invited`                                                                                                                   |
+| 6        | integración                | `profile/actions.integration.test.ts`                                                                  | el destino en éxito y en error de `updateName`                                                                                                               |
+| 7        | integración                | `src/server/session.integration.test.ts`; `src/server/auth.integration.test.ts`                        | las tres combinaciones de nombre; el `updateUser` con otro correo; la opción del proveedor; el 404 de siempre                                                |
+| 8        | integración + e2e          | `profile/service.integration.test.ts`; `e2e/profile-name-theme.spec.ts`                                | `themeClassOf` con los tres temas y sin sesión; el recorrido 2, con «Salir» al final                                                                         |
+| 9        | e2e                        | `e2e/profile-name-theme.spec.ts`                                                                       | el recorrido 2                                                                                                                                               |
+| 10       | e2e                        | `e2e/profile-name-theme.spec.ts`                                                                       | los recorridos 1 y 2                                                                                                                                         |
+| 11       | e2e                        | `e2e/profile-name-theme.spec.ts`                                                                       | los recorridos 1 y 3                                                                                                                                         |
+| 12       | unidad + integración + e2e | `profile-screen.test.tsx`; `profile/service.integration.test.ts`; `e2e/profile.spec.ts`                | el marcado con y sin permiso; `options.themes` e `identity.name`; el recorrido 1 del 7 con sus tres cambios                                                  |
+| 13       | e2e                        | `e2e/profile-name-theme.spec.ts`                                                                       | el recorrido 1                                                                                                                                               |
+| 14       | revisión                   | —                                                                                                      | `cache` en `session.ts`; la búsqueda de lecturas de `preferences` y de `user.name`                                                                           |
+| 15       | unidad + integración + e2e | las suites existentes                                                                                  | en verde, con solo lo de §1 cambiado                                                                                                                         |
+| 16       | integración + revisión     | `src/server/auth.integration.test.ts`                                                                  | `handleOAuthUserInfo` con un `sub` nuevo y el correo de una fila sembrada; con el `sub` original y el correo de otra fila; la revisión de `security-auditor` |
 
 **El criterio 7 es el que sostiene PF-08 sin Google.** Siembra tres personas
 —sin nombre editado, con nombre editado, y con nombre editado igual al de la
@@ -1020,10 +1048,14 @@ cuenta— y cambia `user.name` de las tres en la base: el mutante que lee
 **Su caso del correo** llama a `updateUser` con otro correo y lee la fila: sin
 el gancho, el correo cambia y el caso cae.
 
-**El criterio 16 cae sin la opción.** La fila sembrada con `seedUser` tiene
-`emailVerified` en verdadero y el `userInfo` del caso también, así que sin
-`disableImplicitLinking` el mismo pedido se enlaza (`link-account.mjs:139`): el
-caso no puede pasar por otra rama del rechazo.
+**El criterio 16 cae sin la opción y sin el gancho.** En el caso del rechazo,
+la fila sembrada con `seedUser` tiene `emailVerified` en verdadero y el
+`userInfo` del caso también, así que sin `disableImplicitLinking` el mismo
+pedido se enlaza (`link-account.mjs:139`): el caso no puede pasar por otra rama
+del rechazo. El caso de la cuenta original reproduce el 500 de M1: sin el
+gancho, el `updateUser` del ingreso choca con la unicidad de `user.email` y
+lanza. Ese caso pasa `overrideUserInfo` a mano, como el callback; que la opción
+esté puesta en el proveedor lo afirma el criterio 7.
 
 **El criterio 4 cruza el simultáneo** con `raceThroughBarrier` de
 `src/test/concurrency.ts`, como el 7: un nombre y un tema de la misma persona,
@@ -1045,10 +1077,11 @@ Dueño: `tests-slice7b`. **Tres tests, uno por recorrido**: cada uno abre una
 sola sesión, con una persona propia que nace sin preferencias. Las respuestas
 se esperan con `withServerAction`; las opciones del `Select` se buscan en
 `page`, porque se dibujan en un portal. «Sin recargar» se afirma con la marca
-en la ventana de `profile.spec.ts` (`markDocument`, `documentIsMarked`). Los
-colores se comparan como estilo calculado: el fondo de `body` contra los dos
-valores de `--background` de `globals.css`, en la forma en que el navegador
-serializa `oklch`, que el spec fija al escribirse.
+en la ventana (`markDocument`, `documentIsMarked`, que se mudan de
+`profile.spec.ts` a `tracker-page.ts`, §6). Los colores se comparan como estilo
+calculado: el fondo de `body` contra los dos valores de `--background` de
+`globals.css`, en la forma en que el navegador serializa `oklch`, que el spec
+fija al escribirse.
 
 1. **El nombre** (criterios 10, 11, 13).
    1. Entrar a `/perfil` por el menú. El campo «Nombre» dice «Persona de
@@ -1093,8 +1126,8 @@ cubre en integración y en el test del componente.
 ## 8. Deuda conocida del slice
 
 - **Una vez editado, el nombre no vuelve a seguir a Google** (D1). Escribir el
-  de Google lo guarda como editado. Si hace falta, es un «Usar el de Google»
-  que guarda nulo, en un slice aparte.
+  de Google después de haber editado otro lo guarda como editado. Si hace
+  falta, es un «Usar el de Google» que guarda nulo, en un slice aparte.
 - **El correo no cambia (PF-06), tampoco si Google lo cambia.** La fila
   conserva el correo con que se creó, y el gancho de la sesión sigue
   comprobando ese. Si la empresa cambia la dirección de una persona, la cuenta
@@ -1107,7 +1140,7 @@ cubre en integración y en el test del componente.
   cubra. La página de error es la de Better Auth, sin texto propio.
 - **PF-45 no tiene e2e**: el ingreso por Google no corre en Playwright. Lo
   cubren la configuración, el gancho y la composición de la sesión (criterio
-  7), y el enlace (criterio 16).
+  7), y el enlace y el ingreso de la cuenta original (criterio 16).
 - **Los nombres admiten caracteres de control** salvo el nulo, como los de
   proyecto. Hoy cada persona ve solo el suyo; cuando la fase 2 muestre nombres
   de otras personas, conviene revisar los de dirección del texto.
