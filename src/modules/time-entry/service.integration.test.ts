@@ -44,7 +44,7 @@ import { allTimeEntries, auditFor, timeEntriesOf, timeEntryById } from "@/test/q
 
 import { projectMessages } from "@/modules/project/schema";
 import {
-  preferencesOf,
+  profileOf,
   timeSettingsOf,
   updatePreference,
   type ProfileContext,
@@ -3979,7 +3979,7 @@ async function profileContextFor(userId: string): Promise<ProfileContext> {
     workspace: row,
     membership: member,
     actor: actorFor(userId),
-    preferences: await preferencesOf(userId),
+    preferences: (await profileOf(userId)).preferences,
   };
 }
 

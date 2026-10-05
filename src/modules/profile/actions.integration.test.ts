@@ -130,6 +130,7 @@ describe("updatePreference (criterio 12)", () => {
           timezone: "America/Argentina/Buenos_Aires",
           timeFormat: "12h",
           dateFormat: "dd/MM/yyyy",
+          theme: "system",
         },
       },
     });
@@ -150,6 +151,7 @@ describe("updatePreference (criterio 12)", () => {
       timezone: "Asia/Tokyo",
       timeFormat: "24h",
       dateFormat: "yyyy-MM-dd",
+      theme: "system",
     });
     expect(mocks.revalidated).toEqual([wholeTree, wholeTree]);
   });
@@ -199,7 +201,7 @@ describe("updatePreference (criterio 12)", () => {
   it.each([
     ["un formato de hora desconocido", { key: "timeFormat", value: "25h" }],
     ["un formato de fecha desconocido", { key: "dateFormat", value: "d/M/y" }],
-    ["una clave desconocida", { key: "theme", value: "dark" }],
+    ["una clave desconocida", { key: "displayName", value: "Ana" }],
   ])(
     "%s responde «Ese formato no está disponible.», no escribe y revalida (criterio 10)",
     async (_label, input) => {

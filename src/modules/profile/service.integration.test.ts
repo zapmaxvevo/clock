@@ -26,7 +26,7 @@ import { type UpdatePreferenceInput } from "./schema";
 import {
   getProfileView,
   PREFERENCE_DEFAULTS,
-  preferencesOf,
+  profileOf,
   resolvePreferences,
   updatePreference,
   type ProfileContext,
@@ -67,7 +67,7 @@ async function contextFor(id: string): Promise<ProfileContext> {
     workspace: row,
     membership: member,
     actor: { userId: id, workspaceId, role: member.role, status: member.status },
-    preferences: await preferencesOf(id),
+    preferences: (await profileOf(id)).preferences,
   };
 }
 
@@ -100,6 +100,8 @@ function rowWith(values: SeedPreferenceValues): UserPreferenceRow {
     timezone: values.timezone ?? null,
     timeFormat: values.timeFormat ?? null,
     dateFormat: values.dateFormat ?? null,
+    displayName: values.displayName ?? null,
+    theme: values.theme ?? null,
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -113,27 +115,31 @@ beforeEach(async () => {
 
 describe("los predeterminados (criterio 2: PF-11, PF-12, PF-13, PF-37)", () => {
   it("sin fila, las preferencias son las de P-03", async () => {
-    expect(await preferencesOf(userId)).toEqual({
+    expect((await profileOf(userId)).preferences).toEqual({
       timezone: fallbackZone,
       timeFormat: "24h",
       dateFormat: "dd/MM/yyyy",
+      theme: "system",
     });
   });
 
   it("con solo time_format guardado, las otras dos son las predeterminadas", async () => {
     await seedPreferences(userId, { timeFormat: "12h" });
-    expect(await preferencesOf(userId)).toEqual({
+    expect((await profileOf(userId)).preferences).toEqual({
       timezone: fallbackZone,
       timeFormat: "12h",
       dateFormat: "dd/MM/yyyy",
+      theme: "system",
     });
   });
 
   it("lee la fila de quien pide y no la de otra persona", async () => {
     const other = await seedMember(workspaceId, "member");
     await seedPreferences(other, { timezone: "Asia/Tokyo", dateFormat: "yyyy-MM-dd" });
-    expect(await preferencesOf(userId)).toEqual(PREFERENCE_DEFAULTS);
-    expect(await preferencesOf(other)).toMatchObject({ timezone: "Asia/Tokyo" });
+    expect((await profileOf(userId)).preferences).toEqual(PREFERENCE_DEFAULTS);
+    expect((await profileOf(other)).preferences).toMatchObject({
+      timezone: "Asia/Tokyo",
+    });
   });
 
   it("una zona guardada que el entorno no convierte cae al predeterminado", () => {
@@ -175,6 +181,7 @@ describe("updatePreference (criterio 9: PF-32)", () => {
         timezone: fallbackZone,
         timeFormat: "12h",
         dateFormat: "dd/MM/yyyy",
+        theme: "system",
       },
     });
     expect(await rowOf(userId)).toMatchObject({
@@ -195,6 +202,7 @@ describe("updatePreference (criterio 9: PF-32)", () => {
       timezone: "Asia/Tokyo",
       timeFormat: "24h",
       dateFormat: "yyyy-MM-dd",
+      theme: "system",
     });
     expect(await rowOf(userId)).toMatchObject({
       timezone: "Asia/Tokyo",
@@ -244,6 +252,7 @@ describe("updatePreference (criterio 9: PF-32)", () => {
       timezone: "Asia/Tokyo",
       timeFormat: "12h",
       dateFormat: "dd/MM/yyyy",
+      theme: "system",
     });
     expect((await rowOf(userId))?.updatedAt).toEqual(seeded.updatedAt);
     expect(await auditOf(userId)).toEqual([]);

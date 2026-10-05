@@ -82,7 +82,7 @@ describe("updatePreferenceInput: los formatos (PF-12, PF-13)", () => {
 
 describe("updatePreferenceInput: la clave", () => {
   it.each([
-    ["una clave desconocida", { key: "theme", value: "dark" }],
+    ["una clave desconocida", { key: "displayName", value: "Ana" }],
     ["sin clave", { value: "24h" }],
     ["una clave que no es texto", { key: 1, value: "24h" }],
     ["un pedido que no es un objeto", "timezone"],

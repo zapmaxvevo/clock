@@ -118,10 +118,13 @@ export const membership = pgTable(
 );
 
 /**
- * Preferencias de la persona, de la cuenta y no del workspace (PF-03). Nunca
+ * Lo que la persona guarda de su cuenta, y no del workspace (PF-03): las
+ * preferencias de hora, el tema y el nombre que eligió. El nombre editado vive
+ * acá y no en `user.name`, que escribe Better Auth en cada ingreso; nunca
  * columnas de `user`: esa tabla la regenera `npm run auth:schema`. Una fila
  * que falta, o una columna en nulo, es «sin elegir»: vale el predeterminado,
- * que resuelve `resolvePreferences` de `src/modules/profile/service.ts`.
+ * que resuelven `resolvePreferences` y `displayNameOf` de
+ * `src/modules/profile/service.ts`.
  */
 export const userPreference = pgTable(
   "user_preference",
@@ -133,6 +136,10 @@ export const userPreference = pgTable(
     timezone: text("timezone"),
     timeFormat: text("time_format"),
     dateFormat: text("date_format"),
+    /** El nombre que eligió la persona (PF-07). Nulo es «el de Google» (PF-08, PF-45). */
+    displayName: text("display_name"),
+    /** `THEMES` de `src/modules/profile/schema.ts`. Nulo es «seguir al sistema» (PF-23). */
+    theme: text("theme"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
@@ -151,6 +158,14 @@ export const userPreference = pgTable(
     check(
       "user_preference_date_format_known",
       sql`${table.dateFormat} in ('dd/MM/yyyy', 'dd-MM-yyyy', 'yyyy-MM-dd', 'MM/dd/yyyy')`,
+    ),
+    check(
+      "user_preference_display_name_len",
+      sql`char_length(${table.displayName}) between 1 and 100`,
+    ),
+    check(
+      "user_preference_theme_known",
+      sql`${table.theme} in ('system', 'light', 'dark')`,
     ),
   ],
 );

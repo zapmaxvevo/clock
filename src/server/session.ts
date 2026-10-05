@@ -1,12 +1,14 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { cache } from "react";
 
-import { preferencesOf, type ProfileContext } from "@/modules/profile/service";
+import { displayNameOf, profileOf, type ProfileContext } from "@/modules/profile/service";
 import { ensureWorkspaceContext } from "@/modules/workspace/service";
 import { auth } from "@/server/auth";
 
 export type CurrentUser = {
   readonly id: string;
+  /** El nombre que se muestra: el editado o el de Google (`displayNameOf`). */
   readonly name: string;
   readonly email: string;
   readonly image: string | null;
@@ -26,29 +28,31 @@ function googlePhotoOf(image: string | null | undefined): string | null {
 
 /**
  * Punto central de autenticación del servidor. Toda lectura y toda mutación
- * arranca por acá, y ninguna repite la comprobación por su cuenta.
+ * arranca por acá, y ninguna repite la comprobación por su cuenta. Una lectura
+ * por pedido (ADR 0015): el layout raíz, el del shell y la página la comparten.
  */
-export async function currentSession(): Promise<SessionContext | null> {
+export const currentSession = cache(async (): Promise<SessionContext | null> => {
   const session = await auth.api.getSession({ headers: await headers() });
   if (session === null) {
     return null;
   }
   // Dos lecturas independientes, fuera de toda transacción común.
-  const [context, preferences] = await Promise.all([
+  const [context, stored] = await Promise.all([
     ensureWorkspaceContext({ id: session.user.id, email: session.user.email }),
-    preferencesOf(session.user.id),
+    profileOf(session.user.id),
   ]);
   return {
     ...context,
-    preferences,
+    preferences: stored.preferences,
     user: {
       id: session.user.id,
-      name: session.user.name,
+      // Único lugar que compone el nombre que se muestra (PF-08, PF-45).
+      name: displayNameOf(stored, session.user.name),
       email: session.user.email,
       image: googlePhotoOf(session.user.image),
     },
   };
-}
+});
 
 /** Variante para páginas y actions que exigen sesión. */
 export async function requireSession(): Promise<SessionContext> {
