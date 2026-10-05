@@ -5,36 +5,40 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-05.
 
 ## Dónde estamos
 
-| Slice                                      | Estado            |
-| ------------------------------------------ | ----------------- |
-| 1 — Timer sin proyecto                     | En `main`         |
-| 2 — Modo manual                            | En `main`         |
-| 2b — Reintento de «Iniciar»                | En `main`         |
-| 3 — Corregir horas y fecha                 | En `main`         |
-| 4 — Continuar, duplicar, descartar, atajos | En `main`         |
-| 5 — Semana y paginación                    | En `main`         |
-| 9 — Núcleo de proyectos                    | En `main`         |
-| 10 — Selector de proyecto y tarea          | En `main`         |
-| 7 — Perfil                                 | En `main`         |
-| 6 — Selección y acciones en masa           | En `main`         |
-| 7b — Perfil: nombre editable y tema        | En `main`         |
-| 8 — Calendario: lectura                    | En `main`         |
-| 8c — Calendario: escritura                 | En `main`         |
-| 8b — Calendario: arrastre                  | En `main`         |
-| 11 — Etiquetas y facturable (11a, 11b)     | Contrato aprobado |
-| 12–13                                      | Sin contrato      |
+| Slice                                      | Estado                           |
+| ------------------------------------------ | -------------------------------- |
+| 1 — Timer sin proyecto                     | En `main`                        |
+| 2 — Modo manual                            | En `main`                        |
+| 2b — Reintento de «Iniciar»                | En `main`                        |
+| 3 — Corregir horas y fecha                 | En `main`                        |
+| 4 — Continuar, duplicar, descartar, atajos | En `main`                        |
+| 5 — Semana y paginación                    | En `main`                        |
+| 9 — Núcleo de proyectos                    | En `main`                        |
+| 10 — Selector de proyecto y tarea          | En `main`                        |
+| 7 — Perfil                                 | En `main`                        |
+| 6 — Selección y acciones en masa           | En `main`                        |
+| 7b — Perfil: nombre editable y tema        | En `main`                        |
+| 8 — Calendario: lectura                    | En `main`                        |
+| 8c — Calendario: escritura                 | En `main`                        |
+| 8b — Calendario: arrastre                  | En `main`                        |
+| 11a — Facturable                           | En `main`                        |
+| 11b — Etiquetas                            | Contrato aprobado; arranca ahora |
+| 12–13                                      | Sin contrato                     |
 
-Los slices 1 a 10, 7b, 8c y 8b están en `main`. El 7b se mergeó el 2026-10-05 (`ccf09b2`) con
-lint, typecheck, 889 de unidad, 924 de integración y 117 de 117 e2e en verde; de paso arregló la
-fuente (`--font-sans` se apuntaba a sí misma desde la fase 0 y la interfaz salía en serif)
-(**falta `git push origin main`**). El contrato del 11 está aprobado en dos rondas, partido en
-11a (facturable) y 11b (etiquetas), con el ADR 0016 aceptado.
+Los slices 1 a 10, 7b, 8c, 8b y 11a están en `main`. El 11a (facturable) se mergeó el
+2026-10-05 (`1db5917`) con lint, typecheck, 941 de unidad, 955 de integración y 123 de 123 e2e en
+verde (**falta `git push origin main`**; el push anterior llegó hasta `41ff1ef`). No quedan agentes
+con trabajo pendiente ni cambios sin commitear.
 
 ## Lo primero de la sesión siguiente
 
-0. **Lo que sigue (2026-10-05)**: el **11a** sobre `main` en `ccf09b2`, primero con una ronda
-   corta del `architecture-reviewer` contra el árbol (entró el 7b). Su migración sale como
-   `0009`. Después el 11b, con el 11a en `main`.
+0. **Lo que sigue**: el **11b** (etiquetas) sobre `main` en `1db5917`, con el contrato aprobado
+   (`fase1-slice11-etiquetas-y-facturable.md`, rondas 1 y 2). Antes de implementar, una ronda
+   corta del `architecture-reviewer` contra el árbol (entró el 11a). Sus tres migraciones salen
+   desde la `0010`, generadas con los dos pasos de §2.2. Del 11a heredan: `EntryFields` en
+   `entry-fields.ts` (sumar `tags`), `entry-billable.ts` como modelo de `entry-tags.ts`,
+   `afterAdd(current, sent, catalog)` con D-7, y los ayudantes comunes de e2e en
+   `tracker-page.ts` y `network.ts`.
 1. **Después**: los contratos de los slices **12 y 13** (ver `fase1-mapa.md`), y el slice chico de «Reintentar» en el alta manual
    (ADR 0007, retirar TT-109), ya decidido. Deuda chica sin slice:
    - un `DayCalendar` compartido entre `DateField` y `PeriodPicker`;
@@ -43,7 +47,12 @@ fuente (`--font-sans` se apuntaba a sí misma desde la fase 0 y la interfaz sal�
    - en e2e, `stepToDay`, `isXPage` y `NETWORK_FAILURE` comunes;
    - `preferenceCookie` en `src/lib`;
    - el `Positioner` del detalle que todavía se lleva un clic (F2-n1 del 8b).
-2. Deuda que dejó el 7b: una cuenta de Google nueva con un correo ya usado (PF-47) termina en la
+2. Deuda que dejó el 11a: la barra en anchos chicos (por debajo de ~800 px la barra parada pasa
+   «Iniciar» a otra línea; a 768 px con proyecto el bloque del timer baja a una tercera); si se
+   borra la única fila de un día, el grupo desaparece y su aviso se va con él (también para la
+   descripción y el proyecto); un aviso de hidratación en desarrollo en `DescriptionField`; el
+   facturable por defecto de un proyecto no se ve ni se edita después del alta (fase 2).
+3. Deuda que dejó el 7b: una cuenta de Google nueva con un correo ya usado (PF-47) termina en la
    página de error de Better Auth (`account_not_linked`) sin texto propio; volver a seguir el
    nombre de Google (P-10) y liberar un correo ocupado (P-11) quedan para la fase 2.
 
@@ -85,9 +94,11 @@ Lo que sigue siendo del usuario, porque necesita sus cuentas o su máquina:
   `select u.id, u.email from "user" u where not exists (select 1 from account a where a.user_id = u.id and a.provider_id = 'google');`.
   Tiene que dar cero filas: con `disableImplicitLinking`, una fila `user` sin cuenta de Google
   ya no puede entrar.
-- **`.env` local**: `npm run db:migrate` falla en silencio con el `DATABASE_URL` del
-  `.env`; la base de e2e se migró con la URL de `e2e/environment.ts`. El `.env` no se
-  puede leer desde la sesión.
+- **`.env` local**: su `DATABASE_URL` usa el usuario `user`, que Postgres rechaza
+  (`password authentication failed`): es un valor de ejemplo. Por eso `db:migrate` fallaba y el
+  login local no anda. Para usar la app: apuntarlo a `postgresql://clock:clock@localhost:5432/clock`
+  y cargar credenciales de Google con `http://localhost:3000` como origen. Mientras tanto, la app
+  se ve levantándola con el entorno de `playwright.config.ts` y la sesión de prueba.
 - **Postgres de Neon**: el slice 9 necesita 15 o posterior (`on delete set null (col)`)
   antes de desplegar.
 - **Rol de Neon para e2e**: `E2E_DATABASE_URL` en el environment `preview` de GitHub, con
