@@ -1,8 +1,11 @@
 # 0016. Las etiquetas son del módulo de proyectos
 
-Fecha: 2026-10-04. Estado: propuesto.
+Fecha: 2026-10-04. Estado: aceptado (2026-10-05, por el team-lead con la delegación del
+usuario).
 Origen: contrato del slice 11
-([`fase1-slice11-etiquetas-y-facturable.md`](../slices/fase1-slice11-etiquetas-y-facturable.md)).
+([`fase1-slice11-etiquetas-y-facturable.md`](../slices/fase1-slice11-etiquetas-y-facturable.md)),
+revisado en la ronda 1 de ese contrato
+([`correcciones-fase1-slice11.md`](../slices/correcciones-fase1-slice11.md), m8).
 
 ## Contexto
 
@@ -82,3 +85,9 @@ La opción 1.
 - **Si la fase 2 limita quién crea etiquetas** (PR-44: «you can limit creation
   to Admins only»), la configuración viaja en el recurso de `tag.create`, como
   manda el ADR 0009, y no cambia este reparto.
+- **La fila y la barra del rastreador guardan el facturable y las etiquetas con
+  `updateEntry`**, con un solo grupo por pedido, y no con una mutación de un
+  campo (§4 del contrato del 11). Matiza «Dos caminos a las mismas reglas» del
+  ADR 0013, que dice que la fila guarda campo por campo con las mutaciones de
+  hoy: la descripción, el par y el horario lo siguen haciendo, y los dos campos
+  nuevos van por `updateEntry`. El 0013 no se reescribe.

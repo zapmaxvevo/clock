@@ -7,8 +7,12 @@ Contrato del undécimo slice vertical de la fase 1. Módulos `time-entry` y
   `docs/parity/proyectos.md` (PR-nn, su §14.1) y `docs/parity/calendario.md`
   (CAL-nn, su §18).
 - **Lugar en el plan:** [mapa de la fase 1](fase1-mapa.md), slice 11.
+- **Revisión del contrato:** ronda 1 aplicada, con las resoluciones de
+  [`correcciones-fase1-slice11.md`](correcciones-fase1-slice11.md).
+- **Relevamiento de paridad:** H-1 … H-13 relevados por `parity-analyst` en
+  `939e5bc` (tabla de huecos, abajo).
 - **Decisiones de arquitectura asociadas:**
-  - [ADR 0016, las etiquetas son del módulo de proyectos](../adr/0016-las-etiquetas-son-del-modulo-de-proyectos.md): **propuesto**, nace acá.
+  - [ADR 0016, las etiquetas son del módulo de proyectos](../adr/0016-las-etiquetas-son-del-modulo-de-proyectos.md): **aceptado** (2026-10-05), nace acá.
   - [ADR 0010](../adr/0010-un-modulo-consulta-las-reglas-de-otro-por-su-service.md): la etiqueta se valida con `assertTaggable` de `project` y se muestra con una lectura del repository de `time-entry`.
   - [ADR 0013](../adr/0013-el-dialogo-de-una-entrada-guarda-en-una-mutacion.md): `updateEntry` gana los grupos `billable` y `tags`.
   - [ADR 0007](../adr/0007-el-cliente-elige-el-id-de-las-altas.md): `createTag` lleva el id del cliente, como las altas del 9.
@@ -74,66 +78,77 @@ tiene recomendación; el contrato está escrito con la recomendada.
 
 **Resueltas el 2026-10-05 por el team-lead**, con la delegación del usuario («todo lo que vos
 puedas hacer, decidilo»), siguiendo la recomendación de cada una: **D-1 (a)**, **D-2 (b)**,
-**D-3 (a)**, **D-4 50**, **D-5 (a)** y **D-6 partir** en 11a y 11b. El ADR 0016 sigue
-propuesto hasta que lo cierre la revisión de arquitectura.
+**D-3 (a)**, **D-4 50**, **D-5 (a)** y **D-6 partir** en 11a y 11b. El ADR 0016 quedó
+aceptado el mismo día, con la ronda 1 de la revisión de arquitectura (m8).
 
-## Huecos de paridad para `parity-analyst`
+## Huecos de paridad, relevados
 
-Comportamientos que el slice necesita y que ningún documento de paridad fija.
-El contrato los escribe con la propuesta de la columna del medio; **`parity-analyst`
-los releva antes de implementar** y los que no se puedan relevar quedan como
-diseño propio con su justificación.
+Comportamientos que el slice necesita y que ningún documento de paridad fijaba.
+**`parity-analyst` los relevó el 2026-10-05 (`939e5bc`)**: todos quedaron como
+la propuesta del contrato, H-8 con un ajuste, y casi todos como diseño propio,
+porque la documentación pública no los describe. La última columna dice dónde
+quedó cada uno.
 
-| ID   | Hueco                                                                                                                                                           | Propuesta del contrato                                                                                                                                                        | Documento                   |
-| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
-| H-1  | TT-12: «el botón muestra la cantidad o los nombres si entran». No dice desde cuántas ni cómo se decide «si entran».                                             | Los nombres separados por coma, recortados con elipsis; el nombre accesible los dice todos (§5.8). `adaptar`: medir el ancho para cambiar a una cantidad no es predecible.    | `time-tracker.md`           |
-| H-2  | TT-12: cómo busca el selector de etiquetas.                                                                                                                     | Como TT-07: sin distinguir mayúsculas ni acentos, en el navegador, sobre el catálogo entero.                                                                                  | `time-tracker.md`           |
-| H-3  | TT-12: cuándo se guarda la selección de una entrada existente, y qué hace `Escape`.                                                                             | D-5.                                                                                                                                                                          | `time-tracker.md`           |
-| H-4  | TT-88: el texto «misma justificación que TT-87» no dice si hay enlace ni adónde.                                                                                | «No hay etiquetas todavía» y, con `tag.create`, el enlace «Ir a Proyectos» (D-1).                                                                                             | `time-tracker.md`, PR-88    |
-| H-5  | PR-47: cómo muestra el selector una etiqueta archivada que la entrada ya tiene.                                                                                 | Marcada, con «(archivada)» después del nombre; se puede desmarcar y, cerrado el selector, no vuelve a ofrecerse.                                                              | `proyectos.md`              |
-| H-6  | TT-49 y TT-50 con etiquetas y facturable: qué muestra una fila sin etiquetas y una no facturable.                                                               | Sin etiquetas, el ícono de etiqueta en gris sin texto; no facturable, el ícono de moneda sin marcar. En solo lectura (TT-92), nada en los dos casos.                          | `time-tracker.md`           |
-| H-7  | TT-14: el control. «Ícono de signo de moneda que alterna» no dice su nombre accesible.                                                                          | Un botón de alternancia con `aria-pressed`, llamado «Facturable» en la barra y «Entrada «…» facturable» en la fila.                                                           | `time-tracker.md`           |
-| H-8  | PR-21: cómo se elige el facturable por defecto al crear un proyecto.                                                                                            | Una casilla «Facturable por defecto», sin marcar, con la ayuda «Las entradas nuevas con este proyecto arrancan facturables.».                                                 | `proyectos.md`              |
-| H-9  | D-2: el facturable al cambiar el proyecto de una entrada existente.                                                                                             | D-2 (b).                                                                                                                                                                      | `time-tracker.md`, PR-21    |
-| H-10 | CAL-21: dónde va el ícono de facturable en el bloque; CAL-23: cómo se muestran etiquetas y facturable en el detalle; CAL-75: si el nombre accesible los nombra. | Bloque: el ícono al final de la línea del horario. Detalle: «Facturable» y «Etiquetas: a, b» como líneas propias. Nombre accesible: suma «facturable» al final; etiquetas no. | `calendario.md`             |
-| H-11 | PR-48 y D-4: el tope de etiquetas por entrada.                                                                                                                  | D-4.                                                                                                                                                                          | `proyectos.md`, P-33        |
-| H-12 | D-3: continuar y duplicar con una etiqueta archivada.                                                                                                           | D-3 (a).                                                                                                                                                                      | `time-tracker.md`, TT-57/58 |
-| H-13 | La pantalla de alta de etiquetas: su vacío y lo que lista.                                                                                                      | Una sección «Etiquetas» en `/proyectos` con las activas en orden alfabético, y «Todavía no hay etiquetas» sin ninguna.                                                        | `proyectos.md`              |
+| ID   | Hueco                                                                                                                                                           | Propuesta del contrato                                                                                                                                                        | Resultado, con el ID de paridad                                                                                                                             |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| H-1  | TT-12: «el botón muestra la cantidad o los nombres si entran». No dice desde cuántas ni cómo se decide «si entran».                                             | Los nombres separados por coma, recortados con elipsis; el nombre accesible los dice todos (§5.8). `adaptar`: medir el ancho para cambiar a una cantidad no es predecible.    | TT-12, que pasa de `replicar` a `adaptar`. _No verificado_ (P-14).                                                                                          |
+| H-2  | TT-12: cómo busca el selector de etiquetas.                                                                                                                     | Como TT-07: sin distinguir mayúsculas ni acentos, en el navegador, sobre el catálogo entero.                                                                                  | TT-12. _No verificado_ (P-14).                                                                                                                              |
+| H-3  | TT-12: cuándo se guarda la selección de una entrada existente, y qué hace `Escape`.                                                                             | D-5.                                                                                                                                                                          | TT-12. _No verificado_ (P-14): si Clockify guarda con cada casilla, el guardado al cerrar pasa a ser parte de la adaptación, con la justificación de TT-55. |
+| H-4  | TT-88: el texto «misma justificación que TT-87» no dice si hay enlace ni adónde.                                                                                | «No hay etiquetas todavía» y, con `tag.create`, el enlace «Ir a Proyectos» (D-1).                                                                                             | TT-88 y PR-88, con el destino en PR-112.                                                                                                                    |
+| H-5  | PR-47: cómo muestra el selector una etiqueta archivada que la entrada ya tiene.                                                                                 | Marcada, con «(archivada)» después del nombre; se puede desmarcar y, cerrado el selector, no vuelve a ofrecerse.                                                              | PR-47 (`adaptar`). _No verificado_ (P-33).                                                                                                                  |
+| H-6  | TT-49 y TT-50 con etiquetas y facturable: qué muestra una fila sin etiquetas y una no facturable.                                                               | Sin etiquetas, el ícono de etiqueta en gris sin texto; no facturable, el ícono de moneda sin marcar. En solo lectura (TT-92), nada en los dos casos.                          | TT-50, con TT-12 y TT-14. _No verificado_ (P-14) en las etiquetas; el facturable no se puede verificar (P-16).                                              |
+| H-7  | TT-14: el control. «Ícono de signo de moneda que alterna» no dice su nombre accesible.                                                                          | Un botón de alternancia con `aria-pressed`, llamado «Facturable» en la barra y «Entrada «…» facturable» en la fila.                                                           | TT-14, diseño propio (P-16).                                                                                                                                |
+| H-8  | PR-21: cómo se elige el facturable por defecto al crear un proyecto.                                                                                            | Una casilla «Facturable por defecto», sin marcar, con la ayuda «Las entradas nuevas con este proyecto arrancan facturables.».                                                 | PR-21, `adaptar`: Clockify lo cambia en **Settings** de un proyecto ya creado; acá se elige en el alta, porque la fase 1 no edita proyectos.                |
+| H-9  | D-2: el facturable al cambiar el proyecto de una entrada existente.                                                                                             | D-2 (b).                                                                                                                                                                      | TT-14 y PR-21, decisión del equipo del 2026-10-05.                                                                                                          |
+| H-10 | CAL-21: dónde va el ícono de facturable en el bloque; CAL-23: cómo se muestran etiquetas y facturable en el detalle; CAL-75: si el nombre accesible los nombra. | Bloque: el ícono al final de la línea del horario. Detalle: «Facturable» y «Etiquetas: a, b» como líneas propias. Nombre accesible: suma «facturable» al final; etiquetas no. | CAL-21, CAL-23 y CAL-75, con CAL-45 y CAL-66 para el diálogo. CAL-23 _no verificado_ (P-07 de `calendario.md`) en las etiquetas.                            |
+| H-11 | PR-48 y D-4: el tope de etiquetas por entrada.                                                                                                                  | D-4.                                                                                                                                                                          | PR-48, límite propio. _No verificado_ (P-33).                                                                                                               |
+| H-12 | D-3: continuar y duplicar con una etiqueta archivada.                                                                                                           | D-3 (a).                                                                                                                                                                      | TT-57 y TT-58. _No verificado_ (P-14).                                                                                                                      |
+| H-13 | La pantalla de alta de etiquetas: su vacío y lo que lista.                                                                                                      | Una sección «Etiquetas» en `/proyectos` con las activas en orden alfabético, y «Todavía no hay etiquetas» sin ninguna.                                                        | **PR-112**, nuevo, `adaptar`: Clockify tiene una página de etiquetas propia; acá se crean y se ven en `/proyectos` (D-1). Su vacío también está en PR-88.   |
 
-**Lo que la paridad dice y el árbol ya decidió**, para que `parity-analyst` lo
-corrija de paso:
+**Lo que la paridad decía y el árbol ya había decidido** quedó corregido en el
+mismo commit:
 
-- **TT-105 sigue marcado «No verificado»** (`time-tracker.md:1306`) y P-14 lo
-  lista (`:1512`), pero PR-46 lo cerró con la documentación pública
-  (`proyectos.md:448-453`).
-- **§14.1 de `proyectos.md` asigna PR-53, PR-54, PR-58 y PR-62 al slice 9**,
-  y §14.3 (`:929-934`) dice que la parte de etiquetas «llega con el 11». El 11
-  la verifica (§7) sin mover el destino.
+- **TT-105** dejó de estar marcado «No verificado» y salió de P-14: lo cerró
+  PR-46 con la documentación pública.
+- **§14.1 y §14.3 de `proyectos.md`** dicen que el 11 verifica la parte de
+  etiquetas de PR-53, PR-54, PR-58 y PR-62, que siguen con destino en el 9.
 
 ## 0. Precondición de arranque
 
-- **`main` en `54daee0`**, con los slices 1 a 10, 8c y 8b. Las citas de abajo
-  son de ese árbol.
+- **`main` en `939e5bc`**, con los slices 1 a 10, 8c y 8b. Desde `54daee0` solo
+  entraron documentos (los contratos del 7b y del 11, sus correcciones y la
+  paridad del 11), así que las citas de abajo, tomadas en `54daee0`, valen para
+  los dos.
 - **Postgres 15 o posterior**, como desde el 9: la migración escrita a mano del
   11b usa `on delete set null (columna)` (§2.2).
-- **El 7b se contrata en paralelo y puede entrar antes.** Si trae migración, las
-  del 11 se generan sobre la suya: §2 las nombra por etiqueta y no por número.
-  Comparten `src/server/db/schema.ts`; el que entra segundo se adapta.
+- **El 7b está aprobado y en implementación, y lo más probable es que entre
+  antes que el 11a.** Su migración es la `0008_user_preference_name_theme`.
+  Comparte con el 11 `src/server/db/schema.ts` (bloques distintos), el diario y
+  las instantáneas de `drizzle/meta/`, `src/test/factories.ts`,
+  `src/modules/time-entry/service.integration.test.ts` (el import de
+  `preferencesOf` pasa a `profileOf`) y `e2e/tracker-page.ts`, adonde muda
+  `markDocument` y `documentIsMarked`. **Si entra antes, la migración del 11a se
+  descarta y se regenera después del rebase** y toma el número siguiente del
+  diario (§2); en los demás archivos, el 11 se adapta a lo que deja el 7b.
 - **El slice chico de «Reintentar» en el alta manual** (ADR 0007, decidido el
   2026-10-04) toca `createManualEntryInput`, `createManualEntry`, el «Agregar» de
   la barra y el del calendario, que el 11a también toca. El que entra segundo se
-  adapta; el 11 no depende de él.
+  adapta; el 11 no depende de él. Si entra antes, el 11a conserva el `id` del
+  alta y el permiso antes de `createOnce` (§4.10).
 - **El 11b arranca con el 11a en `main`.**
 - **Antes de implementar cada parte, una ronda corta del
   `architecture-reviewer` contra el árbol**, si entre este contrato y el
-  arranque entró algo más a `main` (lección del 9 en `estado-fase1.md`).
+  arranque entró algo más a `main` (lección del 9 en `estado-fase1.md`). Con el
+  7b adentro, la ronda del 11a se hace.
 
-### Lo que la paridad da por cierto y el árbol ya no
+### Lo que la paridad anuncia y el árbol todavía no tiene
 
-- **TT-57 y TT-58 dicen que continuar y duplicar copian «las etiquetas y la
-  facturabilidad»**; el código copia la descripción y el par
-  (`service.ts:415-424`, con el comentario «El slice 11 le suma etiquetas y
-  facturable»).
+- **TT-57 y TT-58 dicen que, desde el slice 11, continuar y duplicar copian las
+  etiquetas y el facturable** de la original. TT-57 cita la documentación para
+  la descripción, el proyecto y las etiquetas, y deja la tarea y la
+  facturabilidad como _no verificadas_ (P-14). El código copia la descripción y
+  el par (`service.ts:415-424`, con el comentario «El slice 11 le suma etiquetas
+  y facturable»).
 - **CAL-45 y CAL-66 dicen que etiquetas y facturable «llegan con el slice 11, en
   el mismo diálogo»**; el diálogo los rechaza hoy por el `strictObject` de
   `updateEntryChanges` (`schema.ts:239-263`).
@@ -152,19 +167,21 @@ corrija de paso:
 | `assertTrackable(tx, actor, target)` devuelve `void` y lee el proyecto con `findProject`                                                         | `project/service.ts:289-326`                                                                     |
 | `readCatalog` lee clientes, proyectos y tareas en una transacción `repeatable read` y filtra con `can()`                                         | `project/service.ts:339-398`                                                                     |
 | `TrackingProjectView` es `ProjectRef & { tasks }`; `TrackingCatalog` es `{ canCreateProject, groups }`; `ProjectCatalog` no tiene etiquetas      | `project/schema.ts:97-104`, `:121-138`                                                           |
-| `alphabetical` ordena con un `Intl.Collator("es", { sensitivity: "accent" })` privado                                                            | `project/service.ts:328-337`                                                                     |
+| `alphabetical` ordena con un `Intl.Collator("es", { sensitivity: "accent" })` privado, `byName`, y desempata por id                              | `project/service.ts:328-337`                                                                     |
 | `translatingNameTaken` traduce el índice de unicidad que deja pasar `createOnce`                                                                 | `project/service.ts:94-107`                                                                      |
 | El esquema de nombre (`name`) es privado de `project/schema.ts`                                                                                  | `project/schema.ts:31-36`                                                                        |
 | `ResourceByAction`, `resourceKinds` y `allowedRoles` no tienen acciones de etiqueta                                                              | `src/server/permissions/index.ts:54-72`, `:82-98`, `:108-124`                                    |
 | `startTimerInput` y `createManualEntryInput` aceptan el par opcional; `updateEntryChanges` es estricto con cuatro grupos                         | `time-entry/schema.ts:77-79`, `:118-129`, `:239-263`                                             |
+| `createManualEntryInput` no lleva `id`                                                                                                           | `time-entry/schema.ts:118-129`                                                                   |
 | `entryIds` normaliza a minúsculas y sin repetir                                                                                                  | `time-entry/schema.ts:185-189`                                                                   |
 | `timeEntryView` termina en `project` y `task`                                                                                                    | `time-entry/schema.ts:297-334`                                                                   |
 | `EntryRefs` es `{ project, task }`; `withRefs` y `selectWithRefs` arman el `left join`; las lecturas con bloqueo usan `for update of time_entry` | `time-entry/repository.ts:35-45`, `:93-125`, `:173-188`                                          |
+| `findByIdForUpdate` y `findManyByIdsForUpdate` leen el proyecto y la tarea por `left join` en la misma sentencia que bloquea                     | `repository.ts:173-188`, `:198-210`                                                              |
 | `insertRunning` e `insertClosed` releen con `rereadWithRefs`                                                                                     | `repository.ts:359-398`                                                                          |
 | `ClosedEntryFields` es `ClosedFields & { pair? }`; `columnsOf` abre el par; `updateClosedEntry` y `updateRunningEntry` releen                    | `repository.ts:59-80`, `:422-448`                                                                |
 | `updateProject` fija solo `project_id` y `task_id`                                                                                               | `repository.ts:464-475`                                                                          |
 | `assertAssignable` devuelve `void`; `assignedPair` devuelve `{ pair? }`                                                                          | `time-entry/service.ts:399-409`, `:1135-1147`                                                    |
-| `continuedFields` devuelve descripción y par                                                                                                     | `service.ts:415-424`                                                                             |
+| `continuedFields` devuelve descripción y par, con un tipo privado que se llama `EntryFields`                                                     | `service.ts:415-424`                                                                             |
 | `startTimer` y `continueEntry` validan el par antes de cerrar el timer abierto                                                                   | `service.ts:492-555`                                                                             |
 | `updateEntryProject` responde la vista sin escribir si el par es el mismo                                                                        | `service.ts:684-712`                                                                             |
 | `deleteEntry`, `discardTimer` y `bulkDeleteEntries` guardan la fila borrada en `previousValue`                                                   | `service.ts:724-732`, `:769-777`, `:1430-1441`                                                   |
@@ -197,7 +214,8 @@ Entran:
   en cada fila y en el diálogo del calendario, con el valor por defecto del
   proyecto.
 - **TT-15**: el facturable es un booleano visible, sin importes.
-- **PR-21**: «Facturable por defecto» en el alta de proyecto.
+- **PR-21** (`adaptar`): «Facturable por defecto» en el alta de proyecto. En
+  Clockify se cambia en la configuración de un proyecto ya creado (H-8).
 - **CAL-21, CAL-23, CAL-45, CAL-66, CAL-75** en lo que toca al facturable: el
   ícono en el bloque, la línea del detalle, el campo en los tres modos del
   diálogo y el nombre accesible del bloque.
@@ -208,7 +226,8 @@ Entran por arrastre, verificándose por el camino nuevo:
   abierta.
 - **TT-38, TT-39**: recargar o abrir en otro dispositivo muestra el facturable
   del timer.
-- **TT-49**: la fila suma el facturable en su lugar.
+- **TT-49, TT-50**: la fila suma el facturable en su lugar, y sin marcar si no
+  lo es.
 - **TT-54**: el facturable se edita desde la fila.
 - **TT-57, TT-58**: continuar y duplicar copian el facturable de la original.
 - **TT-25**: «Agregar» limpia también el facturable.
@@ -219,33 +238,38 @@ Entran por arrastre, verificándose por el camino nuevo:
 
 Entran:
 
-- **TT-12**: el selector de etiquetas en la barra, en cada fila y en el diálogo.
+- **TT-12** (`adaptar` desde H-1): el selector de etiquetas en la barra, en
+  cada fila y en el diálogo.
 - **TT-78**: la etiqueta inexistente o archivada se rechaza al asignarla.
 - **TT-88**: el selector de un workspace sin etiquetas.
 - **TT-105**: la etiqueta borrada desaparece de la entrada (lo prueba la base).
-- **De `proyectos.md`, los 12 del slice 11** (§14.1) menos PR-21, que es del
-  11a: PR-42 … PR-44, PR-47, PR-48, PR-52, PR-68, PR-69, PR-73, PR-80, PR-88.
-  Y la parte de etiquetas de PR-53, PR-54, PR-58 y PR-62 (§14.3).
+- **De `proyectos.md`, los 13 del slice 11** (§14.1) menos PR-21, que es del
+  11a: PR-42 … PR-44, PR-47, PR-48, PR-52, PR-68, PR-69, PR-73, PR-80, PR-88,
+  PR-112. Y la parte de etiquetas de PR-53, PR-54, PR-58 y PR-62 (§14.3).
 - **CAL-23, CAL-45, CAL-66** en lo que toca a las etiquetas.
-- **El alta de una etiqueta** en `/proyectos` (D-1).
+- **El alta y la lista de etiquetas** en `/proyectos` (D-1, PR-112).
 
-Entran por arrastre: **TT-27, TT-38, TT-39, TT-49, TT-54, TT-57, TT-58, TT-25,
-TT-92** con las etiquetas, como en el 11a; **TT-61**: la constancia del borrado
-de una entrada conserva sus etiquetas.
+Entran por arrastre: **TT-27, TT-38, TT-39, TT-49, TT-50, TT-54, TT-57, TT-58,
+TT-25, TT-92** con las etiquetas, como en el 11a; **TT-61**: la constancia del
+borrado de una entrada conserva sus etiquetas.
 
-### Lo que el slice decide y que la paridad tiene que registrar
+### Lo que el slice decide y la paridad ya registra
 
-Lo registra `parity-analyst` antes del merge de cada parte (§6), con lo que
-decida el team-lead en D-1 … D-5 y los huecos H-1 … H-13:
+`parity-analyst` registró en `939e5bc` lo que deciden D-1 … D-5 y los huecos
+H-1 … H-13 (la tabla de huecos dice dónde):
 
-- **11a**: TT-14 con el control de H-7 y la regla de D-2; PR-21 con H-8; TT-57 y
-  TT-58 copian el facturable de la original aunque el proyecto haya cambiado su
-  valor por defecto después; CAL-21, CAL-23 y CAL-75 con H-10 para el
-  facturable; la sección «Slice 11a» de §11 de `time-tracker.md`.
-- **11b**: TT-12 con H-1, H-2, H-3 y H-6; TT-88 con H-4; PR-47 con H-5; PR-48
-  con D-4; TT-57 y TT-58 con D-3; H-13; TT-105 cerrado por PR-46; CAL-23 con
-  H-10 para las etiquetas; la sección «Slice 11b» y «Lo que queda» de §11 de
-  `time-tracker.md`, y §18 de `calendario.md`.
+- **11a**: TT-14 con el control de H-7 y la regla de D-2; PR-21, `adaptar`, con
+  H-8; TT-50 con H-6 para el facturable; TT-57 y TT-58 copian el facturable de
+  la original aunque el proyecto haya cambiado su valor por defecto después;
+  CAL-21, CAL-23, CAL-45, CAL-66 y CAL-75 con H-10 para el facturable.
+- **11b**: TT-12, `adaptar`, con H-1, H-2, H-3 y H-6; TT-88 y PR-88 con H-4;
+  PR-47 con H-5; PR-48 con D-4; TT-57 y TT-58 con D-3; PR-112 con H-13;
+  TT-105 cerrado por PR-46; CAL-23 con H-10 para las etiquetas.
+
+**Lo que queda para antes del merge de cada parte** (§6): la sección «Slice
+11a» o «Slice 11b» de §11 de `time-tracker.md`, «Lo que queda» de ese mismo
+§11 y §18 de `calendario.md`, que pasan a decir qué quedó implementado, y
+cualquier diferencia entre lo registrado y lo que se implementó.
 
 ### Queda afuera
 
@@ -266,41 +290,49 @@ decida el team-lead en D-1 … D-5 y los huecos H-1 … H-13:
 
 **11a:**
 
-| Archivo                                                  | Qué cambia                                                                                                                             | Qué hay que volver a probar                           |
-| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| `src/server/db/schema.ts`                                | `time_entry.billable` (§2.1).                                                                                                          | La creación de entradas de todos los slices           |
-| `project/schema.ts`, `project/service.ts`                | `createProjectInput.billableByDefault`; `TrackingProjectView.billableByDefault`; `assertTrackable` devuelve `TrackableProject` (§4.1). | `service.integration.test.ts` del módulo              |
-| `time-entry/schema.ts`                                   | `billable` en las dos altas, en `updateEntryChanges` y en la vista.                                                                    | `schema.test.ts` entero                               |
-| `time-entry/repository.ts`                               | `billable` en las altas, en `ClosedEntryFields` y en `updateProject`.                                                                  | Todo test de integración del módulo                   |
-| `time-entry/service.ts`                                  | La regla de §4.1 en las altas, `updateEntryProject` y `updateEntry`; `continuedFields` copia el facturable.                            | `service.integration.test.ts` entero                  |
-| `tracker-bar.tsx`                                        | `pairDraft` y `heldPair` pasan a un borrador de campos (§5.3); el control y su mutación.                                               | TT-22 … TT-30, TT-65, TT-89, `project-picker.spec.ts` |
-| `timer-bar.tsx`, `manual-bar.tsx`, `entry-row.tsx`       | El control después del selector de proyecto.                                                                                           | TT-25, TT-49, TT-92                                   |
-| `day-group.tsx`                                          | Una mutación más por fila, con su aviso.                                                                                               | TT-54, TT-55                                          |
-| `calendar/entry-dialog*.ts(x)`, `calendar-block.tsx`     | El campo en el diálogo y en su borrador; el ícono en el bloque y la línea del detalle.                                                 | `calendar-edit.spec.ts`, `entry-dialog.test.tsx`      |
-| `project/components/new-project-dialog.tsx`, `labels.ts` | La casilla de PR-21.                                                                                                                   | `projects.spec.ts`                                    |
-| `src/test/factories.ts`, `e2e/database.ts`               | `seedTimeEntry` acepta `billable`; los dos `seedProject`, `billableByDefault`.                                                         | —                                                     |
+| Archivo                                                  | Qué cambia                                                                                                                                                                         | Qué hay que volver a probar                           |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `src/server/db/schema.ts`                                | `time_entry.billable` (§2.1).                                                                                                                                                      | La creación de entradas de todos los slices           |
+| `project/schema.ts`, `project/service.ts`                | `createProjectInput.billableByDefault`; `TrackingProjectView.billableByDefault`; `assertTrackable` devuelve `TrackableProject` (§4.1).                                             | `service.integration.test.ts` del módulo              |
+| `time-entry/schema.ts`                                   | `billable` en las dos altas, en `updateEntryChanges` y en la vista.                                                                                                                | `schema.test.ts` entero                               |
+| `time-entry/repository.ts`                               | `billable` en las altas, en `ClosedEntryFields` y en `updateProject`.                                                                                                              | Todo test de integración del módulo                   |
+| `time-entry/service.ts`                                  | La regla de §4.1 en las altas, `updateEntryProject` y `updateEntry`; `continuedFields` copia el facturable, y su tipo privado `EntryFields` pasa a llamarse `CopiedFields` (§4.3). | `service.integration.test.ts` entero                  |
+| `tracker-bar.tsx`                                        | `pairDraft` y `heldPair` pasan a un borrador de campos (§5.3); el control y su mutación.                                                                                           | TT-22 … TT-30, TT-65, TT-89, `project-picker.spec.ts` |
+| `timer-bar.tsx`, `manual-bar.tsx`, `entry-row.tsx`       | El control después del selector de proyecto.                                                                                                                                       | TT-25, TT-49, TT-92                                   |
+| `day-group.tsx`                                          | Una mutación más por fila, con su aviso; la vista optimista del proyecto aplica `withSelection` (§5.5).                                                                            | TT-54, TT-55                                          |
+| `calendar/entry-dialog*.ts(x)`, `calendar-block.tsx`     | El campo en el diálogo y en su borrador; el ícono en el bloque y la línea del detalle.                                                                                             | `calendar-edit.spec.ts`, `entry-dialog.test.tsx`      |
+| `project/components/new-project-dialog.tsx`, `labels.ts` | La casilla de PR-21.                                                                                                                                                               | `projects.spec.ts`                                    |
+| `src/test/factories.ts`, `e2e/database.ts`               | `seedTimeEntry` acepta `billable`; los dos `seedProject`, `billableByDefault`.                                                                                                     | —                                                     |
 
 **11b:**
 
-| Archivo                                                                                | Qué cambia                                                                                                                                                      | Qué hay que volver a probar          |
-| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| `src/server/db/schema.ts`                                                              | `tag`, `time_entry_tag`, `time_entry_workspace_id_unq` (§2.2).                                                                                                  | La creación y el borrado de entradas |
-| `src/server/permissions/index.ts`                                                      | `tag.create`, `tag.view` (§3).                                                                                                                                  | `permissions.test.ts`                |
-| `src/lib/text.ts`                                                                      | `compareNames`, que sale de `project/service.ts` (§5.2).                                                                                                        | El orden del catálogo                |
-| `project/schema.ts`, `service.ts`, `repository.ts`, `actions.ts`                       | `TagRef`; `createTag`; `assertTaggable`; los catálogos con etiquetas.                                                                                           | Los tests del módulo                 |
-| `time-entry/schema.ts`                                                                 | `tagIds` en las altas, `tags` en `updateEntryChanges` y en la vista; `TAGS_MAX`.                                                                                | `schema.test.ts` entero              |
-| `time-entry/repository.ts`                                                             | `EntryRefs.tags`; las altas y `updateClosedEntry`/`updateRunningEntry` escriben la unión; `isMissingTag`.                                                       | Todo test de integración del módulo  |
-| `time-entry/service.ts`                                                                | Las etiquetas en las altas, en `continuedFields`, en `updateEntry`, en la vista y en las constancias de borrado; `translatingPairConstraints` cambia de nombre. | `service.integration.test.ts` entero |
-| `tracker-bar.tsx`, `timer-bar.tsx`, `manual-bar.tsx`, `entry-row.tsx`, `day-group.tsx` | El selector de etiquetas, como el control del 11a.                                                                                                              | Los mismos que el 11a                |
-| `calendar/entry-dialog*.ts(x)`, `calendar-block.tsx`                                   | El campo en el diálogo; las etiquetas en el detalle.                                                                                                            | `calendar-edit.spec.ts`              |
-| `projects-screen.tsx`, `app/(app)/proyectos/page.tsx`                                  | «Nueva etiqueta» y la sección «Etiquetas».                                                                                                                      | `projects.spec.ts`                   |
-| `src/test/factories.ts`                                                                | `seedTag`; `seedTimeEntry` acepta `tagIds`.                                                                                                                     | —                                    |
+| Archivo                                                                                | Qué cambia                                                                                                                                                                               | Qué hay que volver a probar          |
+| -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `src/server/db/schema.ts`                                                              | `tag`, `time_entry_tag`, `time_entry_workspace_id_unq`, en tres migraciones (§2.2).                                                                                                      | La creación y el borrado de entradas |
+| `src/server/permissions/index.ts`                                                      | `tag.create`, `tag.view` (§3).                                                                                                                                                           | `permissions.test.ts`                |
+| `src/lib/text.ts`                                                                      | `compareNames`, que sale de `project/service.ts` con el desempate por id (§5.2).                                                                                                         | El orden del catálogo                |
+| `project/schema.ts`, `service.ts`, `repository.ts`, `actions.ts`                       | `TagRef`; `createTag`; `assertTaggable`; los catálogos con etiquetas.                                                                                                                    | Los tests del módulo                 |
+| `time-entry/schema.ts`                                                                 | `tagIds` en las altas, `tags` en `updateEntryChanges` y en la vista; `TAGS_MAX`.                                                                                                         | `schema.test.ts` entero              |
+| `time-entry/repository.ts`                                                             | `EntryRefs.tags`; las lecturas con bloqueo leen las referencias en una segunda sentencia (§5.1); las altas y `updateClosedEntry`/`updateRunningEntry` escriben la unión; `isMissingTag`. | Todo test de integración del módulo  |
+| `time-entry/service.ts`                                                                | Las etiquetas en las altas, en `continuedFields`, en `updateEntry`, en la vista y en las constancias de borrado; `translatingPairConstraints` cambia de nombre.                          | `service.integration.test.ts` entero |
+| `tracker-bar.tsx`, `timer-bar.tsx`, `manual-bar.tsx`, `entry-row.tsx`, `day-group.tsx` | El selector de etiquetas, como el control del 11a.                                                                                                                                       | Los mismos que el 11a                |
+| `calendar/entry-dialog*.ts(x)`, `calendar-block.tsx`                                   | El campo en el diálogo; las etiquetas en el detalle.                                                                                                                                     | `calendar-edit.spec.ts`              |
+| `projects-screen.tsx`, `app/(app)/proyectos/page.tsx`                                  | «Nueva etiqueta» y la sección «Etiquetas» (PR-112).                                                                                                                                      | `projects.spec.ts`                   |
+| `src/test/factories.ts`                                                                | `seedTag`; `seedTimeEntry` acepta `tagIds`.                                                                                                                                              | —                                    |
 
 ## 2. Cambios de esquema
 
-El diario `drizzle/meta/_journal.json` no se edita a mano. Sobre `54daee0` la
-migración del 11a es la `0008` y las del 11b la `0009` y la `0010`; si el 7b
-entra antes, se corren uno.
+El diario `drizzle/meta/_journal.json` no se edita a mano, y las migraciones se
+nombran por etiqueta: **el número sale del diario al generarlas**. Sobre
+`54daee0` serían la `0008` del 11a y de la `0009` a la `0011` del 11b; con el
+7b en `main` (§0), que trae la `0008`, la del 11a es la `0009` y las del 11b,
+de la `0010` a la `0012`.
+
+**Si otra migración entra a `main` antes que una parte, la de esa parte se
+descarta y se regenera después del rebase**, como manda el §0 del 7b: renumerar
+a mano rompe la cadena `prevId` de las instantáneas y el diario. De
+`tags_set_null` se conserva el contenido escrito a mano y se vuelve a pegar en
+la que genera `--custom`.
 
 ### 2.1 11a: `time_entry.billable`
 
@@ -314,13 +346,26 @@ Una migración generada, `npm run db:generate -- --name=time_entry_billable`:
 
 ### 2.2 11b: `tag` y `time_entry_tag`
 
-Dos migraciones, en este orden:
+Tres migraciones, en este orden. **Entran o fallan juntas**: el migrador corre
+todas las pendientes en una sola transacción.
 
-1. **`tags`, la generada**, con `npm run db:generate -- --name=tags`.
-2. **`tags_set_null`, escrita a mano**, con
+1. **`time_entry_workspace_id_unq`, generada sola**, con
+   `npm run db:generate -- --name=time_entry_workspace_id_unq`, después de
+   sumarle a `time_entry` solo la restricción única y antes de declarar `tag` y
+   `time_entry_tag`.
+2. **`tags`, la generada**, con `npm run db:generate -- --name=tags`.
+3. **`tags_set_null`, escrita a mano**, con
    `npm run db:generate -- --custom --name=tags_set_null`, que reemplaza
    `tag_created_by_fk` por la forma `on delete set null (created_by)`, con el
    mismo nombre, como la `0004`.
+
+**Por qué la única va aparte.** En una sola migración, `drizzle-kit generate`
+(0.31.11) escribe la clave foránea `time_entry_tag_entry_fk` hacia
+`time_entry (workspace_id, id)` antes de la `UNIQUE` de `time_entry`, que deja
+última. Postgres rechaza una clave foránea sin una restricción única en el
+destino y, como el migrador corre todo en una transacción, falla el
+`db:migrate` entero. En una migración anterior, la `UNIQUE` ya existe cuando
+llega la clave.
 
 **`tag`** (PR-42, PR-43), declarada después de `task` y antes de `time_entry`:
 
@@ -358,7 +403,7 @@ Dos migraciones, en este orden:
 | `time_entry_tag_tag_fk`            | `(workspace_id, tag_id)` → `tag (workspace_id, id)`, `on delete cascade` (PR-69, TT-105)                      |
 | `time_entry_tag_workspace_tag_idx` | índice `(workspace_id, tag_id)`: lo recorre el `cascade` al borrar una etiqueta, y lo van a usar los reportes |
 
-Y en `time_entry`:
+Y en `time_entry`, con la primera migración:
 
 - **`time_entry_workspace_id_unq`**, `unique (workspace_id, id)`: el destino de
   `time_entry_tag_entry_fk`. Es la regla del 9 —ninguna referencia cruza
@@ -377,12 +422,19 @@ Y en `time_entry`:
   (Postgres 11+). Toma `ACCESS EXCLUSIVE` sobre `time_entry` un instante.
 - **11b**:
   - Las dos tablas nuevas no bloquean nada.
-  - **`time_entry_workspace_id_unq` construye un índice sobre `time_entry`** y
-    bloquea sus escrituras mientras dura. Las claves de la unión toman `SHARE
-ROW EXCLUSIVE` sobre `time_entry` y `tag`, con la unión vacía.
-  - Con el tamaño de hoy, segundos. Con la tabla grande, el índice va con
-    `create unique index concurrently` en una migración propia y la restricción
-    con `add constraint … unique using index`.
+  - **`time_entry_workspace_id_unq` es un `add constraint … unique`, que toma
+    `ACCESS EXCLUSIVE` sobre `time_entry`** mientras construye su índice:
+    bloquea las escrituras y también las lecturas. Las claves de la unión toman
+    `SHARE ROW EXCLUSIVE` sobre `time_entry` y `tag`, con la unión vacía.
+  - Con el tamaño de hoy, segundos.
+  - **Con la tabla grande, esa migración se hace a mano y fuera del migrador**:
+    `create unique index concurrently` no corre dentro de una transacción, y el
+    migrador envuelve todo en una. Primero el índice concurrente, después la
+    restricción con `add constraint … unique using index`. No es el caso hoy.
+- **Las migraciones van antes del despliegue**, como en el §2.2 del 7b: el
+  código viejo nombra las columnas una por una (Drizzle arma la lista desde el
+  esquema), así que no ve `billable` ni las tablas nuevas, y una entrada que
+  inserta sin `billable` queda en `false`.
 - Ninguna fila existente cambia de valor.
 
 ### 2.4 Reversión
@@ -393,8 +445,8 @@ cada lectura y fallaría con el esquema revertido.
 - **11a**: `drop column billable`. Se pierde el facturable de todas las
   entradas. Después, la fila de la migración en `drizzle.__drizzle_migrations`.
 - **11b**: `drop table time_entry_tag`, `drop table tag`, `drop constraint
-time_entry_workspace_id_unq`, y las filas de las dos migraciones. **Se pierden
-  todas las etiquetas y sus asignaciones**; las entradas quedan.
+time_entry_workspace_id_unq`, y las filas de las tres migraciones. **Se
+  pierden todas las etiquetas y sus asignaciones**; las entradas quedan.
 
 ## 3. Permisos
 
@@ -445,7 +497,8 @@ que el ADR 0013 anticipa («cada consumidor nuevo suma un grupo opcional»): una
 regla, un camino, una traducción de errores y un permiso que ya están probados.
 La alternativa —dos actions de un campo, como `updateDescription`— son dos
 actions más con sus casos de traducción, permiso y revalidación, para el mismo
-efecto. Las mutaciones de un campo que ya existen no cambian de camino.
+efecto. Las mutaciones de un campo que ya existen no cambian de camino. Lo
+registra el ADR 0016 en sus consecuencias.
 
 **Una action nueva en `project` (11b)**: `createTag`.
 
@@ -581,6 +634,10 @@ proyecto que el paso del par validó.
   un `billable` igual al de la fila no cuenta.
 - **El reintento de un alta** no recalcula nada: `createOnce` responde la fila
   del primer intento (ADR 0007).
+- **El tipo privado `EntryFields` de `service.ts:416` pasa a llamarse
+  `CopiedFields`** cuando `continuedFields` suma `billable` (y en el 11b,
+  `tagIds`): `EntryFields` es desde el 11a el borrador del navegador (§5.3), y
+  dos tipos del mismo módulo con el mismo nombre y otra forma confunden.
 
 ### 4.4 Los tipos del 11b
 
@@ -745,7 +802,8 @@ nothing`. Las dos filtran por `workspace_id` y `time_entry_id` del destino
 Lo que §4.3 del 8c fija no cambia; se suman dos pasos después del par y antes
 de «si no cambia nada»:
 
-1. Lectura con bloqueo y autorización, como hoy.
+1. Lectura con bloqueo y autorización, como hoy; desde el 11b, las referencias
+   salen de la segunda sentencia de §5.1.
 2. El estado de la fila contra lo pedido, como hoy.
 3. La descripción y el horario, como hoy.
 4. **El par**, como hoy. `assignedPair` devuelve además el `TrackableProject`
@@ -761,7 +819,7 @@ de «si no cambia nada»:
 
 ### 4.8 `createTag` (11b)
 
-PR-42 … PR-44, PR-52, PR-54, PR-80. Es `createClient` con un campo:
+PR-42 … PR-44, PR-52, PR-54, PR-80, PR-112. Es `createClient` con un campo:
 
 1. La action parsea con `createTagInput` y llama al service.
 2. El service consulta `assertCan(actor, "tag.create", workspaceResource(actor))`
@@ -783,7 +841,7 @@ PR-42 … PR-44, PR-52, PR-54, PR-80. Es `createClient` con un campo:
 | Causa                                               | Código       | Texto                                              | Origen       |
 | --------------------------------------------------- | ------------ | -------------------------------------------------- | ------------ |
 | Etiqueta inexistente, de otro workspace o archivada | `not_found`  | «Esa etiqueta ya no está disponible.»              | TT-78, PR-73 |
-| Más de 50 etiquetas                                 | `validation` | «Se pueden elegir hasta 50 etiquetas por entrada.» | D-4          |
+| Más de 50 etiquetas                                 | `validation` | «Se pueden elegir hasta 50 etiquetas por entrada.» | D-4, PR-48   |
 | Nombre de etiqueta repetido                         | `validation` | «Ya hay una etiqueta con ese nombre.»              | PR-80        |
 | Nombre vacío o largo                                | `validation` | los de PR-75 y PR-76                               | PR-75, PR-76 |
 | Sin permiso para crear                              | `forbidden`  | «No tenés permiso para hacer esto.»                | PR-84        |
@@ -811,7 +869,10 @@ PR-42 … PR-44, PR-52, PR-54, PR-80. Es `createClient` con un campo:
   - `updateEntry` con `billable` o `tags` llega a un punto fijo: el pedido fija
     el valor entero. Ofrece «Reintentar» con `unexpected` (TT-89).
   - `createTag` ofrece «Reintentar»: lleva el id del cliente (ADR 0007).
-  - `createManualEntry` sigue sin él (TT-109).
+  - `createManualEntry` sigue sin él (TT-109) mientras no entre el slice de
+    «Reintentar» del alta manual (§0). **Si entra antes que el 11a**, el 11a
+    conserva el `id` del alta y la consulta del permiso antes de `createOnce`
+    (ADR 0007), y suma `billable` sin cambiar ese orden.
 - **Auditoría**:
 
   | Acción                                                        | Suma                                                                                                      |
@@ -841,12 +902,19 @@ PR-42 … PR-44, PR-52, PR-54, PR-80. Es `createClient` con un campo:
     sola sentencia por lectura, como el `left join` del proyecto, y no
     multiplica filas. El repository estrecha el JSON con un esquema Zod antes
     de devolverlo.
-  - **Las lecturas con bloqueo** siguen bloqueando solo la entrada (`for update
-of time_entry`). La subconsulta va en la lista de columnas, que es otro
-    nivel de consulta: **el primer commit de `backend-dev` del 11b lo prueba
-    contra Postgres** (§6, handshake). Si no se sostuviera, la alternativa es
-    una segunda sentencia por lista de ids **en la misma transacción**; lo que
-    no puede pasar es que las etiquetas salgan de otra.
+  - **Las lecturas con bloqueo son dos sentencias.** `findByIdForUpdate` y
+    `findManyByIdsForUpdate` bloquean con una sentencia que lee solo
+    `time_entry` (`for update`, con el `order by time_entry.id` de la masiva) y
+    leen las referencias —etiquetas, proyecto y tarea— con una segunda, por
+    los ids bloqueados, **en la misma transacción**. En `read committed`, una
+    subconsulta o un `join` dentro de la sentencia que bloquea usa la foto
+    tomada antes de esperar el bloqueo: con dos pestañas, la segunda vería las
+    etiquetas de antes, reasignaría una archivada (PR-45) o respondería «sin
+    cambios» con una vista vieja, y ese dato viejo terminaría en el
+    `previousValue` del borrado. La segunda sentencia toma su foto con el
+    bloqueo ya tomado. **El proyecto y la tarea salen del `left join` de la
+    sentencia que bloquea** por la misma razón. **El primer commit de
+    `backend-dev` del 11b lo prueba con dos conexiones** (§6, handshake).
   - **El orden** lo pone `toView`, con `compareNames` (§5.2), y no el SQL: es la
     misma regla que el catálogo.
 - **`bulkEditEntries`** arma la vista con las referencias leídas bajo bloqueo
@@ -862,10 +930,15 @@ of time_entry`). La subconsulta va en la lista de columnas, que es otro
   `readCatalog`, **solo si `can(actor, "tag.view", …)`**; si no, `tags` es
   vacío. Las dos funciones de catálogo devuelven `tags` y `canCreateTag`
   (`can(actor, "tag.create", …)`).
-- **El orden**: `byName` de `project/service.ts` sale a `src/lib/text.ts` como
-  `compareNames(a, b)`, al lado de `normalizeSearch`. Lo usan `alphabetical`
-  del catálogo y `toView` de `time-entry`: **una sola regla de orden** para la
-  lista del selector y la de la entrada.
+- **El orden**: `byName` y el desempate de `alphabetical`
+  (`project/service.ts:328-337`) salen a `src/lib/text.ts`, al lado de
+  `normalizeSearch`, como `compareNames(a, b)`. **Recibe `{ id, name }`**,
+  compara los nombres con el mismo `Intl.Collator` y **desempata por id**: el
+  collator iguala nombres que `lower()` distingue («ß» y «ss»), así que dos
+  etiquetas distintas para el índice pueden empatar en el orden. Lo usan
+  `alphabetical` del catálogo, `toView` de `time-entry` y
+  `tag-picker-model.ts`: **una sola regla de orden** para la lista del selector
+  y la de la entrada.
 - **Un solo catálogo por pantalla** (ADR 0016): `TrackerScreen` y
   `CalendarScreen` no cambian; las etiquetas llegan dentro de `TrackingCatalog`
   y `useTrackingCatalog()` las da.
@@ -876,7 +949,8 @@ of time_entry`). La subconsulta va en la lista de columnas, que es otro
 
 El par de la barra deja de ser un estado suelto. **`entry-fields.ts`** (nuevo,
 puro, en `time-entry/components/`) agrupa lo que la barra y el diálogo eligen
-además de la descripción y las horas:
+además de la descripción y las horas. El tipo del mismo nombre que hoy tiene
+`service.ts` pasa a `CopiedFields` (§4.3).
 
 ```ts
 export type EntryFields = {
@@ -907,10 +981,12 @@ export function fieldsInput(fields: EntryFields): …;
 export function afterAdd(current: EntryFields, sent: EntryFields): EntryFields;
 ```
 
-- **`withSelection` busca el proyecto elegido en el catálogo** por id. Una
-  selección que no está en el catálogo —el proyecto archivado de una entrada—
-  no se puede elegir como nueva, así que solo llega igual a la de la fila, y
-  `billableFor` conserva.
+- **`withSelection` busca el proyecto elegido en el catálogo** por id. **Una
+  selección fuera del catálogo** —el proyecto archivado de una entrada—
+  **conserva `fields.billable`**, sin llamar a `billableFor`. No se puede
+  elegir como nueva, pero el borrador del diálogo no siempre coincide con la
+  fila, así que la regla no supone que esa selección sea la de la fila. Lo
+  prueba el criterio 9 del 11a.
 - **`afterAdd` campo por campo**, como hoy la descripción y el par: lo que se
   cambió mientras el alta viajaba se queda.
 - **Es genérico en `Fields`** para que el borrador del diálogo, que tiene
@@ -962,6 +1038,10 @@ equivalentes sobre `EntryFields`, **sin cambiar ninguna conducta del 10**:
   etiquetas— con vista optimista por fila (`replaceById`), la fila atenuada
   mientras viajan (TT-55) y sus avisos en el grupo, que sobreviven a la fila.
   Una operación nueva baja el aviso de duplicar, como hoy (`run`).
+- **La vista optimista de un cambio de proyecto en la fila aplica
+  `withSelection`** (11a), igual que la barra (§5.4): la fila muestra el
+  facturable que va a escribir el servidor antes de la respuesta, y la barra y
+  la fila muestran lo mismo.
 
 ### 5.6 El calendario
 
@@ -992,9 +1072,9 @@ equivalentes sobre `EntryFields`, **sin cambiar ninguna conducta del 10**:
 
 - **11a**: `NewProjectDialog` suma la casilla «Facturable por defecto», sin
   marcar, con la ayuda «Las entradas nuevas con este proyecto arrancan
-  facturables.» asociada por `aria-describedby`. `ProjectDraft` suma
-  `billableByDefault`.
-- **11b**:
+  facturables.» asociada por `aria-describedby` (PR-21, H-8). `ProjectDraft`
+  suma `billableByDefault`.
+- **11b** (PR-112):
   - `page.tsx` pasa `createTag` en `actions`.
   - La cabecera suma «Nueva etiqueta» con `canCreateTag`, después de «Nuevo
     proyecto».
@@ -1003,7 +1083,7 @@ equivalentes sobre `EntryFields`, **sin cambiar ninguna conducta del 10**:
     anuncio «Etiqueta «{nombre}» creada» en su región `status`.
   - **La sección «Etiquetas»**, después de los grupos de proyectos: un `h2`, la
     lista de las activas en orden alfabético, y «Todavía no hay etiquetas» sin
-    ninguna (H-13). No hay acciones por etiqueta: son de la fase 2.
+    ninguna (H-13, PR-88). No hay acciones por etiqueta: son de la fase 2.
 
 ### 5.8 Los controles
 
@@ -1025,8 +1105,9 @@ equivalentes sobre `EntryFields`, **sin cambiar ninguna conducta del 10**:
   `triggerRef` y `onOpenChange`.
 - **El disparador** tiene rol `combobox`. Sin etiquetas: el ícono de etiqueta y,
   en la barra, «Etiquetas»; en la fila, solo el ícono en gris. Con etiquetas: el
-  ícono marcado y los nombres separados por coma, recortados (H-1). Su nombre
-  accesible es `label`, más «: » y los nombres si hay (WCAG 2.5.3).
+  ícono marcado y los nombres separados por coma, recortados (H-1, TT-12
+  `adaptar`). Su nombre accesible es `label`, más «: » y los nombres si hay
+  (WCAG 2.5.3).
 - **El borrador del selector**: al abrir copia `value`; cada opción alterna su
   marca sin cerrar; **al cerrar** —por `Escape`, clic afuera o `Tab`—, si el
   conjunto difiere de `value` (`sameTagIds`), avisa `onChange(conjunto)` (D-5).
@@ -1057,7 +1138,7 @@ Rutas absolutas. **(nuevo)** marca lo que crea la parte.
 
 ```
 /home/maxi/program/clock/src/server/db/schema.ts
-/home/maxi/program/clock/drizzle/                                              (time_entry_billable, nueva, §2.1)
+/home/maxi/program/clock/drizzle/                                              (time_entry_billable, nueva, §2.1; el número sale del diario)
 /home/maxi/program/clock/src/lib/billable.ts                                   (nuevo)
 /home/maxi/program/clock/src/lib/billable.test.ts                              (nuevo)
 /home/maxi/program/clock/src/modules/project/schema.ts
@@ -1116,7 +1197,8 @@ Rutas absolutas. **(nuevo)** marca lo que crea la parte.
 
 `database.ts`: `SeedProject` suma `billableByDefault` y `seedProject` lo
 escribe. `tracker-page.ts` suma `billableToggle(scope)`; `calendar-page.ts`, el
-campo del diálogo.
+campo del diálogo. Si el 7b entró antes, `tracker-page.ts` ya trae
+`markDocument` y `documentIsMarked` (§0): el 11 suma, no mueve.
 
 #### parity-analyst
 
@@ -1126,8 +1208,8 @@ campo del diálogo.
 /home/maxi/program/clock/docs/parity/calendario.md
 ```
 
-Antes de implementar, H-6 … H-10 en lo que toca al facturable; antes del merge,
-lo de §1 para el 11a.
+Los huecos ya están relevados (`939e5bc`). Antes del merge, lo que §1 deja para
+el 11a.
 
 ### 11b
 
@@ -1135,7 +1217,7 @@ lo de §1 para el 11a.
 
 ```
 /home/maxi/program/clock/src/server/db/schema.ts
-/home/maxi/program/clock/drizzle/                                              (tags y tags_set_null, nuevas, §2.2)
+/home/maxi/program/clock/drizzle/                                              (time_entry_workspace_id_unq, tags y tags_set_null, nuevas, §2.2)
 /home/maxi/program/clock/src/server/permissions/index.ts
 /home/maxi/program/clock/src/server/permissions/permissions.test.ts
 /home/maxi/program/clock/src/lib/text.ts
@@ -1170,6 +1252,9 @@ lo de §1 para el 11a.
 - **`time-entry/schema.integration.test.ts`** suma la unión: las dos claves, la
   cascada desde la etiqueta y desde la entrada, y `isMissingTag` contra un
   `23503` real.
+- **`time-entry/service.integration.test.ts`** suma el test de dos conexiones
+  de §5.1, junto a los de `findByIdForUpdate` y `findManyByIdsForUpdate` que ya
+  tiene.
 - `src/server/db/constraint-error.ts` no cambia: `FOREIGN_KEY_VIOLATION` y
   `UNIQUE_VIOLATION` ya están.
 
@@ -1219,9 +1304,9 @@ lo de §1 para el 11a.
 
 #### parity-analyst
 
-Los mismos tres documentos: antes de implementar, H-1 … H-5 y H-11 … H-13;
-antes del merge, lo de §1 para el 11b y las dos correcciones de «Lo que la
-paridad dice y el árbol ya decidió».
+Los mismos tres documentos. Los huecos ya están relevados y las dos
+correcciones de paso, hechas (`939e5bc`). Antes del merge, lo que §1 deja para
+el 11b.
 
 ### Lo que no toca nadie
 
@@ -1249,13 +1334,15 @@ paridad dice y el árbol ya decidió».
 
 **11a:**
 
-0. Las decisiones D-2 y D-6 tomadas, y H-6 … H-10 relevados o aceptados como
-   propuesta.
-1. **Primer commit de `backend-dev`**: la columna y su migración, los tipos de
-   §4.2 (`createProjectInput`, `TrackingProjectView`, los inputs y la vista),
-   `billableFor` con su test, `TrackableProject` y la firma nueva de
-   `assertTrackable`. Los fixtures que arman vistas a mano suman `billable`. La
-   suite existente sigue verde. Avisa a `frontend-dev`.
+0. **Cumplido el 2026-10-05**: D-2 y D-6 tomadas, y H-6 … H-10 relevados
+   (`939e5bc`). Si el 7b ya está en `main`, la ronda corta de §0 antes de
+   arrancar.
+1. **Primer commit de `backend-dev`**: la columna y su migración, generada
+   sobre lo que haya en `main` (§2), los tipos de §4.2 (`createProjectInput`,
+   `TrackingProjectView`, los inputs y la vista), `billableFor` con su test,
+   `TrackableProject` y la firma nueva de `assertTrackable`. Los fixtures que
+   arman vistas a mano suman `billable`. La suite existente sigue verde. Avisa
+   a `frontend-dev`.
 2. **`frontend-dev` arranca en paralelo** con `entry-fields.ts` y su test
    —**primero el refactor del par de la barra a `EntryFields`, sin cambio de
    conducta, en un commit propio con `project-picker.spec.ts` en verde**—, y
@@ -1267,13 +1354,18 @@ paridad dice y el árbol ya decidió».
 
 **11b**, con el 11a en `main`:
 
-0. Las decisiones D-1, D-3, D-4 y D-5 tomadas, H-1 … H-5 y H-11 … H-13
-   relevados o aceptados, y el ADR 0016 aceptado.
-1. **Primer commit de `backend-dev`**: las tablas, las dos migraciones, las dos
-   acciones de permiso con su test, los tipos de §4.4, `EntryRefs.tags` con la
-   subconsulta **y un test de integración que lee con `findByIdForUpdate` una
-   entrada con dos etiquetas** (§5.1), y las firmas de `createTag` y
-   `assertTaggable`. Avisa a `frontend-dev`.
+0. **Cumplido el 2026-10-05**: D-1, D-3, D-4 y D-5 tomadas, H-1 … H-5 y
+   H-11 … H-13 relevados (`939e5bc`), y el ADR 0016 aceptado.
+1. **Primer commit de `backend-dev`**: las tablas; **las tres migraciones en el
+   orden de §2.2**, con `npm run db:migrate` en verde sobre una base que ya
+   tiene las del 11a; las dos acciones de permiso con su test; los tipos de
+   §4.4; `EntryRefs.tags` con la subconsulta; **las lecturas con bloqueo en dos
+   sentencias (§5.1), con un test de integración de dos conexiones**: la 1
+   bloquea una entrada con `findByIdForUpdate`, le cambia las etiquetas y
+   confirma mientras la 2 espera en el mismo `findByIdForUpdate`; la 2 ve el
+   conjunto nuevo. El test mata la variante con la subconsulta en la sentencia
+   que bloquea. Y las firmas de `createTag` y `assertTaggable`. Avisa a
+   `frontend-dev`.
 2. **`frontend-dev`, primero de todo**: una prueba de que el `Combobox` de Base
    UI con `multiple` y el buscador en el popup abre, marca sin cerrar, avisa al
    cerrar con `Escape` y devuelve el foco al disparador, **en la barra y dentro
@@ -1287,8 +1379,9 @@ paridad dice y el árbol ya decidió».
 ### Responsabilidades que no se leen en el nombre del archivo
 
 - **`entry-fields.ts`** es la única transición de los campos elegidos de una
-  entrada en el navegador: la barra y el diálogo la usan, y es la única que
-  llama a `billableFor` del lado del cliente.
+  entrada en el navegador: la barra, la fila (su vista optimista del proyecto)
+  y el diálogo la usan, y es la única que llama a `billableFor` del lado del
+  cliente.
 - **`tag-picker-model.ts`** es el único que filtra y ordena las opciones del
   selector de etiquetas, y el que marca las de `value` fuera del catálogo.
 - **`tag-picker.tsx`** guarda el borrador del selector mientras está abierto y
@@ -1335,10 +1428,11 @@ paridad dice y el árbol ya decidió».
    sin escritura ni constancia; el orden de §4.3 del 8c no cambia.
 8. **La vista.** Toda vista que devuelve una action o una lectura trae
    `billable`.
-9. **El borrador.** `withSelection` aplica el por defecto del catálogo y
-   conserva con la misma selección o «Sin proyecto»; `afterAdd` limpia campo por
-   campo; `changesOf` y `runningChangesOf` mandan `billable` con `project`;
-   `createInputOf` lo manda explícito.
+9. **El borrador.** `withSelection` aplica el por defecto del catálogo,
+   conserva con la misma selección o «Sin proyecto», y con una selección fuera
+   del catálogo conserva `fields.billable` aunque difiera del de la fila;
+   `afterAdd` limpia campo por campo; `changesOf` y `runningChangesOf` mandan
+   `billable` con `project`; `createInputOf` lo manda explícito.
 10. **El control** (TT-92). `aria-pressed` según el valor; con `pending`,
     `aria-disabled` y el foco en él; con `readOnly`, el ícono con su nombre si
     es facturable y nada si no.
@@ -1376,6 +1470,10 @@ da otro valor.
 **El criterio 7 cruza `project` con el `billable` contrario al por defecto**:
 el mutante que aplica el por defecto aunque venga el grupo pisa lo pedido.
 
+**El criterio 9 elige, sobre un borrador facturable, una selección fuera del
+catálogo**: el mutante que la trata como un proyecto nuevo sin facturable por
+defecto lo pone en `false`.
+
 #### Recorridos obligatorios de `e2e/billable.spec.ts`
 
 Dueño: `tests-slice11`. Una persona por recorrido, sufijo único en todo nombre
@@ -1404,6 +1502,8 @@ lo crea por la interfaz, que es lo que prueba PR-21.
 ### 11b
 
 1. **La base** (PR-42, PR-48, PR-52 … PR-54, PR-69, TT-105).
+   - Las tres migraciones se aplican en orden con `npm run db:migrate` sobre
+     una base con las del 11a.
    - `tag` rechaza un nombre vacío, uno de 101 caracteres y uno con espacios en
      los extremos; rechaza un nombre que solo cambia las mayúsculas de otro, y
      también el de una archivada.
@@ -1448,8 +1548,12 @@ lo crea por la interfaz, que es lo que prueba PR-21.
      orden de §4.6).
 9. **La vista** (PR-47, PR-68, TT-105). Toda vista trae `tags`, en orden
    alfabético; una archivada se muestra; renombrada por SQL, con el nombre
-   nuevo; borrada por SQL, ya no está.
-10. **`tagsToCheck` y `sameTagIds`.** La tabla de §4.5.
+   nuevo; borrada por SQL, ya no está. **Bajo bloqueo, las referencias salen de
+   una sentencia posterior al bloqueo** (§5.1): con dos conexiones, la que
+   esperaba en `findByIdForUpdate` ve las etiquetas que confirmó la otra.
+10. **`tagsToCheck`, `sameTagIds` y `compareNames`.** La tabla de §4.5;
+    `compareNames` desempata por id dos nombres que el collator iguala («ß» y
+    «ss»).
 11. **Auditoría.** Las altas y `timeEntry.update` guardan `tagIds`; el borrado,
     el descarte y el borrado masivo de una entrada con etiquetas guardan sus
     `tagIds` en `previousValue`; `tag.create` guarda la fila.
@@ -1457,34 +1561,43 @@ lo crea por la interfaz, que es lo que prueba PR-21.
     acentos y mayúsculas; la etiqueta de `value` fuera del catálogo, marcada y
     rotulada «(archivada)»; el catálogo vacío con y sin `canCreateTag`; la
     búsqueda sin coincidencias.
-13. **El selector y la pantalla de alta, en el componente.** `readOnly` sin rol
-    `combobox` y con los nombres; el nombre accesible con los nombres; la
-    sección «Etiquetas» de `/proyectos` con las etiquetas y con el vacío.
-14. **La capa de action.** `createTag` traduce el `ZodError`, conserva el
+13. **El borrador** (11b, como el 9 del 11a). `fieldsOf` toma las etiquetas de
+    la vista; `fieldsInput` manda `tagIds`; `afterAdd` limpia las etiquetas si
+    siguen iguales a las mandadas y conserva las que se cambiaron mientras el
+    alta viajaba; `sharedChanges` manda `tags` solo con `!sameTagIds` contra la
+    vista; `createInputOf` manda `tagIds` explícito, también vacío.
+14. **El selector y la pantalla de alta, en el componente** (D-5, PR-112).
+    `readOnly` sin rol `combobox` y con los nombres; el nombre accesible con
+    los nombres; un solo `onChange` al cerrar, con el conjunto entero, y
+    ninguno al cerrar con el mismo conjunto; con un cambio en vuelo,
+    `aria-disabled` y no abre; la sección «Etiquetas» de `/proyectos` con las
+    etiquetas y con el vacío.
+15. **La capa de action.** `createTag` traduce el `ZodError`, conserva el
     `ProjectError`, responde `unexpected` con un error cualquiera y revalida
     `"/proyectos"`, también con error. Las actions de `time-entry` responden
     TT-78 con `not_found`.
-15. **La pantalla.** Los recorridos 1 a 6 de `e2e/tags.spec.ts`.
-16. **Lo existente sigue verde**, con los fixtures de vistas sumando `tags`.
+16. **La pantalla.** Los recorridos 1 a 6 de `e2e/tags.spec.ts`.
+17. **Lo existente sigue verde**, con los fixtures de vistas sumando `tags`.
 
-| Criterio | Tipo                 | Archivo                                                                         | Qué afirma                                                                   |
-| -------- | -------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| 1        | integración          | `project/schema.integration.test.ts`; `time-entry/schema.integration.test.ts`   | cada restricción con sentencias directas; los borrados; el predicado         |
-| 2        | unidad               | `src/server/permissions/permissions.test.ts`                                    | las dos acciones por rol, estado y workspace                                 |
-| 3        | integración          | `project/service.integration.test.ts`                                           | el alta, la colisión, el reintento, la membresía desactivada y la constancia |
-| 4        | integración          | `project/service.integration.test.ts`                                           | cada rechazo                                                                 |
-| 5        | integración          | `project/service.integration.test.ts`                                           | los dos catálogos                                                            |
-| 6        | integración + unidad | `time-entry/service.integration.test.ts`; `time-entry/schema.test.ts`           | las filas de la unión; cada rechazo con la tabla sin filas nuevas; el tope   |
-| 7        | integración          | `time-entry/service.integration.test.ts`                                        | la copia; el rechazo con el timer previo abierto                             |
-| 8        | integración          | `time-entry/service.integration.test.ts`                                        | cada pedido y el orden                                                       |
-| 9        | integración          | `time-entry/service.integration.test.ts`                                        | `tags` en cada vista y en `getTrackerState`, con los cambios por SQL         |
-| 10       | unidad               | `time-entry/assignment.test.ts`; `src/lib/tag-ids.test.ts`                      | la tabla                                                                     |
-| 11       | integración          | `time-entry/audit.integration.test.ts`; `project/service.integration.test.ts`   | los valores en cada constancia                                               |
-| 12       | unidad               | `project/components/tag-picker-model.test.ts`                                   | cada caso                                                                    |
-| 13       | unidad               | `project/components/tag-picker.test.tsx`; `projects-screen.test.tsx`            | el marcado                                                                   |
-| 14       | integración          | `project/actions.integration.test.ts`; `time-entry/actions.integration.test.ts` | las traducciones y la revalidación                                           |
-| 15       | e2e                  | `e2e/tags.spec.ts`                                                              | los recorridos                                                               |
-| 16       | lint, tipos y suites | `npm run lint && npm run typecheck && npm run test:all`; `npm run test:e2e`     | en verde                                                                     |
+| Criterio | Tipo                 | Archivo                                                                            | Qué afirma                                                                               |
+| -------- | -------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| 1        | integración          | `project/schema.integration.test.ts`; `time-entry/schema.integration.test.ts`      | las migraciones; cada restricción con sentencias directas; los borrados; el predicado    |
+| 2        | unidad               | `src/server/permissions/permissions.test.ts`                                       | las dos acciones por rol, estado y workspace                                             |
+| 3        | integración          | `project/service.integration.test.ts`                                              | el alta, la colisión, el reintento, la membresía desactivada y la constancia             |
+| 4        | integración          | `project/service.integration.test.ts`                                              | cada rechazo                                                                             |
+| 5        | integración          | `project/service.integration.test.ts`                                              | los dos catálogos                                                                        |
+| 6        | integración + unidad | `time-entry/service.integration.test.ts`; `time-entry/schema.test.ts`              | las filas de la unión; cada rechazo con la tabla sin filas nuevas; el tope               |
+| 7        | integración          | `time-entry/service.integration.test.ts`                                           | la copia; el rechazo con el timer previo abierto                                         |
+| 8        | integración          | `time-entry/service.integration.test.ts`                                           | cada pedido y el orden                                                                   |
+| 9        | integración          | `time-entry/service.integration.test.ts`                                           | `tags` en cada vista y en `getTrackerState`, con los cambios por SQL; las dos conexiones |
+| 10       | unidad               | `time-entry/assignment.test.ts`; `src/lib/tag-ids.test.ts`; `src/lib/text.test.ts` | la tabla; el desempate                                                                   |
+| 11       | integración          | `time-entry/audit.integration.test.ts`; `project/service.integration.test.ts`      | los valores en cada constancia                                                           |
+| 12       | unidad               | `project/components/tag-picker-model.test.ts`                                      | cada caso                                                                                |
+| 13       | unidad               | `entry-fields.test.ts`; `calendar/entry-dialog-draft.test.ts`                      | cada transición y cada pedido                                                            |
+| 14       | unidad               | `project/components/tag-picker.test.tsx`; `projects-screen.test.tsx`               | el marcado y los avisos de `onChange`                                                    |
+| 15       | integración          | `project/actions.integration.test.ts`; `time-entry/actions.integration.test.ts`    | las traducciones y la revalidación                                                       |
+| 16       | e2e                  | `e2e/tags.spec.ts`                                                                 | los recorridos                                                                           |
+| 17       | lint, tipos y suites | `npm run lint && npm run typecheck && npm run test:all`; `npm run test:e2e`        | en verde                                                                                 |
 
 **El vacío de TT-88 no se prueba en e2e**, por la razón del 9 y del 10: la base
 de los e2e es una sola y ya tiene etiquetas después del primer recorrido. Lo
@@ -1498,19 +1611,27 @@ una nueva**: el mutante que valida el conjunto entero en lugar de
 mira que el timer previo siga abierto: el mutante que valida después de cerrar
 el timer lo deja cerrado.
 
+**El criterio 9 hace esperar a la segunda conexión en el bloqueo**: el mutante
+que lee las etiquetas con una subconsulta en la sentencia que bloquea devuelve
+el conjunto de antes.
+
+**El criterio 14 marca tres casillas y cierra una vez**: el mutante que avisa
+con cada casilla llama tres veces a `onChange`.
+
 #### Recorridos obligatorios de `e2e/tags.spec.ts`
 
 Dueño: `tests-slice11`. Las mismas reglas que los del 11a. Las etiquetas no se
 pueden borrar en la fase 1: todo nombre lleva el sufijo de la corrida.
 
-1. **PR-44, PR-52, PR-80 en `/proyectos`.** «Nueva etiqueta», «Cliente
-   {sufijo}»: aparece en la sección «Etiquetas» y se anuncia. Otra vez con
-   «cliente {sufijo}»: el aviso dice «Ya hay una etiqueta con ese nombre.».
+1. **PR-44, PR-52, PR-80 y PR-112 en `/proyectos`.** «Nueva etiqueta»,
+   «Cliente {sufijo}»: aparece en la sección «Etiquetas» y se anuncia. Otra vez
+   con «cliente {sufijo}»: el aviso dice «Ya hay una etiqueta con ese nombre.».
 2. **TT-12 y TT-38 en la barra.** Con «Diseño {sufijo}» y «Revisión {sufijo}»
-   creadas, abrir «Etiquetas», escribir «diseno» y ver solo la primera;
-   marcarla, borrar la búsqueda, marcar la segunda, `Escape`: el disparador
-   muestra las dos y tiene el foco. Iniciar, recargar: el timer las tiene.
-   Detener: la fila las muestra y la barra queda sin etiquetas.
+   creadas, abrir «Etiquetas», escribir «diseno {sufijo}» y ver solo la
+   primera —sin el sufijo, la búsqueda encuentra también las de corridas
+   anteriores—; marcarla, borrar la búsqueda, marcar la segunda, `Escape`: el
+   disparador muestra las dos y tiene el foco. Iniciar, recargar: el timer las
+   tiene. Detener: la fila las muestra y la barra queda sin etiquetas.
 3. **TT-54 en la fila.** En esa entrada, abrir sus etiquetas, desmarcar una,
    cerrar con un clic afuera; después de la respuesta, recargar: queda una.
 4. **PR-47, PR-68 y TT-78.** Con una entrada que tiene «Vieja {sufijo}»,
@@ -1533,7 +1654,8 @@ pueden borrar en la fase 1: todo nombre lleva el sufijo de la corrida.
 
 - **El facturable por defecto de un proyecto no se puede editar** después del
   alta: es de la fase 2 (PR-21). Un proyecto creado sin marcar, y que debía ir
-  marcado, se corrige con una sentencia sobre la base.
+  marcado, se corrige con una sentencia sobre la base. Elegirlo en el alta y no
+  en la configuración del proyecto, como Clockify, es la adaptación de PR-21.
 - **El facturable y las etiquetas no se editan en bloque** hasta el 12.
 - **Archivar, restaurar y borrar etiquetas** llega con la fase 2; hasta
   entonces, los efectos se prueban sembrando el estado, y la base de e2e
@@ -1544,19 +1666,21 @@ pueden borrar en la fase 1: todo nombre lleva el sufijo de la corrida.
 - **La red del `23503` de la etiqueta no se alcanza por el service** en la
   fase 1: nada borra etiquetas. Se prueba el reconocimiento con un error real.
 - **Una subconsulta por entrada** en cada lectura que arma una vista, para las
-  etiquetas (§5.1). Con la ventana de la lista de hoy son decenas; si la
+  etiquetas, y **una sentencia más en cada lectura con bloqueo**, para las
+  referencias (§5.1). Con la ventana de la lista de hoy son decenas; si la
   ventana crece mucho, una sola consulta por lista de ids.
 - **El navegador y el servidor aplican el mismo por defecto con datos de dos
   lecturas**: el catálogo puede estar hasta 60 segundos viejo (P-11). Si un
   proyecto cambia su por defecto en ese tiempo —en la fase 1, solo por SQL—, la
-  vista optimista del timer muestra uno y el servidor escribe el otro, y la
-  respuesta lo corrige. En las altas y en el diálogo el navegador manda el valor
-  explícito, así que gana lo que la persona vio.
-- **Continuar y duplicar con una etiqueta archivada se rechaza** sin verificar
-  contra Clockify (D-3, P-14).
-- **Sin verificar en Clockify** (P-14, P-33): todo lo de H-1 … H-13 que
-  `parity-analyst` no pueda relevar queda como diseño propio con su
-  justificación. El facturable no se puede verificar nunca en el plan Free
-  (P-16).
+  vista optimista del timer o de la fila muestra uno y el servidor escribe el
+  otro, y la respuesta lo corrige. En las altas y en el diálogo el navegador
+  manda el valor explícito, así que gana lo que la persona vio.
+- **Sin verificar en Clockify** (P-14 de `time-tracker.md`, P-33 de
+  `proyectos.md`, P-07 de `calendario.md`): `parity-analyst` dejó como diseño
+  propio _no verificado_ TT-12 (H-1, H-2, H-3), las etiquetas de TT-50 (H-6),
+  TT-57 y TT-58 con una etiqueta archivada (D-3), PR-47 (H-5), el tope de PR-48
+  (D-4) y las etiquetas de CAL-23 (H-10). Si el workspace del equipo muestra
+  otra cosa, se corrige. El facturable no se puede verificar nunca en el plan
+  Free (P-16).
 - **El módulo `project` es el catálogo** de clientes, proyectos, tareas y
   etiquetas (ADR 0016); el nombre queda corto.
