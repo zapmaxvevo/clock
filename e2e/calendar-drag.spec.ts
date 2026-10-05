@@ -73,10 +73,17 @@ const NETWORK_FAILURE = "No se pudo guardar. Revisá la conexión y volvé a int
 /** Lo que pidió la página a `/calendario` desde que se empezó a contar. */
 type CalendarRequests = { actions: number; refreshes: number };
 
+/**
+ * Una revalidación de la pantalla (`router.refresh`): un `GET` a
+ * `/calendario` que no es una action ni el prefetch de un enlace de la barra,
+ * que Next vuelve a pedir solo, con o sin gesto.
+ */
 function isRefresh(request: Request): boolean {
+  const headers = request.headers();
   return (
     request.method() === "GET" &&
-    request.headers()["next-action"] === undefined &&
+    headers["next-action"] === undefined &&
+    headers["next-router-prefetch"] === undefined &&
     isCalendarPage(new URL(request.url()))
   );
 }
@@ -403,7 +410,12 @@ test("las asas estiran un extremo entre sus topes, y la medianoche se cruza movi
   });
 
   // Mover el cuerpo una franja hacia abajo: pasa a cruzar la medianoche, con
-  // su superíndice y un segmento en el martes.
+  // su superíndice y un segmento en el martes. El destino queda dentro de la
+  // banda del desplazamiento automático del borde inferior: con la grilla en
+  // su máximo no se mueve, y el candidato es el del puntero.
+  await scrollGridTo(page, "23:59");
+  const end = await gridScroller(page);
+  expect(end.scrollTop).toBe(end.maxScroll);
   await withServerAction(page, async () =>
     dragBetween(
       page,
