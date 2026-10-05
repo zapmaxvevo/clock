@@ -264,6 +264,99 @@ export async function openProfileFromMenu(page: Page): Promise<void> {
   await expect(page.getByRole("heading", { name: "Perfil", exact: true })).toBeVisible();
 }
 
+/**
+ * Deja una marca en la ventana. Una carga nueva la borra: si sigue ahí, todo
+ * lo que pasó desde que se puso fue navegación del cliente (PF-33).
+ */
+export async function markDocument(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    Object.assign(window, { e2eSinRecargar: true });
+  });
+}
+
+export async function documentIsMarked(page: Page): Promise<boolean> {
+  return page.evaluate(() => "e2eSinRecargar" in window);
+}
+
+/** El campo del nombre de `/perfil` (PF-07), rotulado «Nombre». */
+export function nameField(page: Page): Locator {
+  return page.getByRole("textbox", { name: "Nombre", exact: true });
+}
+
+/** Los temas de `/perfil` como los nombra el selector (PF-23). */
+export type ThemeName = "Seguir al sistema" | "Claro" | "Oscuro";
+
+/** El disparador del selector del tema, cuyo nombre empieza con «Tema». */
+export function themeControl(page: Page): Locator {
+  return page.getByRole("combobox", { name: /^Tema/ });
+}
+
+/**
+ * Una opción del selector del tema abierto, por su nombre entero: los temas
+ * no llevan ejemplo entre paréntesis. La lista va en un portal.
+ */
+export function themeOption(page: Page, theme: ThemeName): Locator {
+  return page.getByRole("option", { name: theme, exact: true });
+}
+
+/**
+ * Elige un tema en `/perfil` y espera la respuesta del servidor, que es la
+ * que trae la clase nueva de `<html>` (ADR 0015).
+ */
+export async function chooseTheme(page: Page, theme: ThemeName): Promise<void> {
+  const control = themeControl(page);
+  await control.click();
+  await withServerAction(page, () => themeOption(page, theme).click());
+  await expect(control).toContainText(theme);
+}
+
+/** La clase de tema que lleva `<html>`: `dark`, `light` o ninguna (PF-24). */
+export async function documentThemeClass(page: Page): Promise<"dark" | "light" | null> {
+  return page.locator("html").evaluate((html) => {
+    const themes = (["dark", "light"] as const).filter((name) =>
+      html.classList.contains(name),
+    );
+    if (themes.length > 1) {
+      throw new Error(`<html> tiene las dos clases de tema: «${html.className}».`);
+    }
+    return themes[0] ?? null;
+  });
+}
+
+/**
+ * El color de fondo de la superficie de `element` en hexadecimal: el de
+ * `element` o el del primer ancestro que pinta uno. La lista de un `Select`
+ * es transparente y la pinta su popup. El estilo calculado se lleva a sRGB
+ * pintando un píxel en un canvas, porque la build reescribe los `oklch` de
+ * `globals.css` en `lab` con decimales que dependen del compilador de CSS.
+ */
+export async function surfaceBackground(element: Locator): Promise<string> {
+  return element.evaluate((node) => {
+    let surface: Element | null = node;
+    let color = "transparent";
+    while (surface !== null) {
+      color = window.getComputedStyle(surface).backgroundColor;
+      if (color !== "rgba(0, 0, 0, 0)" && color !== "transparent") {
+        break;
+      }
+      surface = surface.parentElement;
+    }
+    const context = document.createElement("canvas").getContext("2d");
+    if (context === null) {
+      throw new Error("El canvas no está disponible para normalizar el color.");
+    }
+    context.fillStyle = color;
+    context.fillRect(0, 0, 1, 1);
+    const [red, green, blue] = context.getImageData(0, 0, 1, 1).data;
+    return `#${[red, green, blue].map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+  });
+}
+
+/** El fondo de la página, el de `body`. */
+export async function pageBackground(page: Page): Promise<string> {
+  return surfaceBackground(page.locator("body"));
+}
+
 /** Vuelve al rastreador por la navegación principal, sin recargar. */
 export async function goToTrackerByNav(page: Page): Promise<void> {
   await page

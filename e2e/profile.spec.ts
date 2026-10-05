@@ -13,9 +13,12 @@ import {
   clockField,
   dateButton,
   descriptionInput,
+  documentIsMarked,
   entryRow,
   formatOption,
   goToTrackerByNav,
+  markDocument,
+  nameField,
   openProfileFromMenu,
   pickDate,
   preferenceControl,
@@ -123,20 +126,6 @@ async function addTodayEntry(page: Page, description: string): Promise<void> {
   await expect(descriptionInput(bar)).toHaveValue("");
 }
 
-/**
- * Deja una marca en la ventana. Una carga nueva la borra: si sigue ahí, todo
- * lo que pasó desde que se puso fue navegación del cliente (PF-33).
- */
-async function markDocument(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    Object.assign(window, { e2eSinRecargar: true });
-  });
-}
-
-async function documentIsMarked(page: Page): Promise<boolean> {
-  return page.evaluate(() => "e2eSinRecargar" in window);
-}
-
 /** Un ancho de teléfono, debajo del corte `md`. */
 const PHONE_VIEWPORT = { width: 390, height: 844 };
 
@@ -187,13 +176,13 @@ test("el menú de la cuenta lleva al perfil, que muestra la identidad y los pred
 
   // PF-06 y PF-09: la identidad, en solo lectura.
   const main = page.getByRole("main");
-  await expect(main).toContainText(PERSON_NAME);
+  await expect(nameField(page)).toHaveValue(PERSON_NAME);
   await expect(main).toContainText(email);
   await expect(main).toContainText(PERSON_INITIALS);
   await expect(
-    main.getByText("El nombre, la foto y el correo salen de tu cuenta de Google."),
+    main.getByText("La foto y el correo salen de tu cuenta de Google."),
   ).toBeVisible();
-  await expect(main.getByRole("textbox")).toHaveCount(0);
+  await expect(main.getByRole("textbox")).toHaveCount(1);
 
   // Criterio 15 y PF-37: los tres controles con los predeterminados. La zona
   // elegida es la opción equivalente a la de omisión, con su desplazamiento.
@@ -210,7 +199,7 @@ test("el menú de la cuenta lleva al perfil, que muestra la identidad y los pred
   await expect(main.getByText("Formato de duración")).toBeVisible();
   await expect(main.getByText("Compacto (h:mm)")).toBeVisible();
   await expect(main.getByText("Lo define el workspace.")).toBeVisible();
-  await expect(main.getByRole("combobox")).toHaveCount(3);
+  await expect(main.getByRole("combobox")).toHaveCount(4);
 });
 
 test("con 12 horas el rastreador cambia sin recargar, y el editor de la fila acepta «am»", async ({
