@@ -36,6 +36,7 @@ import {
   todayHeader,
   zoomButton,
   zoomIn,
+  boxOf,
 } from "./calendar-page";
 import {
   addDays,
@@ -141,17 +142,6 @@ async function expectHeight(element: Locator, pixels: number): Promise<void> {
   await expect
     .poll(async () => Math.abs((await boxOf(element)).height - pixels))
     .toBeLessThanOrEqual(2);
-}
-
-/** La caja de un elemento dibujado; sin caja, el elemento no está en pantalla. */
-async function boxOf(
-  element: Locator,
-): Promise<{ x: number; y: number; width: number; height: number }> {
-  const box = await element.boundingBox();
-  if (box === null) {
-    throw new Error("El elemento no tiene caja: no está dibujado.");
-  }
-  return box;
 }
 
 test("el calendario se abre desde la navegación, navega por semanas y días y dibuja con los formatos de la persona", async ({

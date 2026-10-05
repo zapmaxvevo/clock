@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import type { Page } from "@playwright/test";
-
 import {
   addEntryButton,
   bottomToNowLine,
@@ -35,6 +33,8 @@ import {
   runningBlockName,
   screenNotice,
   zoomIn,
+  openLastWeek,
+  addEntry,
 } from "./calendar-page";
 import { seedProject } from "./database";
 import {
@@ -45,7 +45,6 @@ import {
   weekdayLabel,
   weekLabel,
   weekStartOf,
-  type CivilDay,
 } from "./days";
 import {
   holdActionResponses,
@@ -77,33 +76,6 @@ const NETWORK_FAILURE = "No se pudo guardar. Revisá la conexión y volvé a int
 
 /** «Detener» con cambios sin guardar (decisión 4 del contrato). */
 const SAVE_BEFORE_STOP = "Guardá los cambios antes de detener el timer.";
-
-/** Abre la semana anterior a la de hoy y espera su rótulo. */
-async function openLastWeek(page: Page, today: CivilDay): Promise<CivilDay> {
-  const lastWeek = addDays(weekStartOf(today), -7);
-  await page.goto(calendarHref(lastWeek));
-  await expectPeriod(page, lastWeek, "week", "Semana anterior");
-  return lastWeek;
-}
-
-/**
- * Crea una entrada de una franja con un clic en la grilla (CAL-43) y espera
- * que el servidor la haya escrito y el diálogo se haya cerrado.
- */
-async function addFromSlot(
-  page: Page,
-  day: CivilDay,
-  today: CivilDay,
-  clock: string,
-  description: string,
-): Promise<void> {
-  await clickSlot(page, day, today, clock);
-  const dialog = entryDialog(page, "Agregar entrada");
-  await expect(dialogDescription(dialog)).toBeFocused();
-  await dialogDescription(dialog).fill(description);
-  await withServerAction(page, () => dialogButton(dialog, "Agregar").click());
-  await expect(dialog).toBeHidden();
-}
 
 test("un clic en una franja agrega la entrada, y guardarla en otra semana avisa con el enlace a esa semana", async ({
   page,
@@ -224,7 +196,12 @@ test("guardar aplica descripción, proyecto y horario juntos, y un horario recha
   const tuesday = addDays(lastWeek, 1);
   const column = dayColumn(page, tuesday, today);
 
-  await addFromSlot(page, tuesday, today, "09:00", "revisión inicial");
+  await addEntry(page, {
+    day: tuesday,
+    today,
+    start: "09:00",
+    description: "revisión inicial",
+  });
   const created = entryBlock(
     column,
     closedBlockName({
@@ -304,7 +281,12 @@ test("con el timer corriendo se crea desde la grilla, y el diálogo del timer gu
   // Criterio 2 (P-01): con el timer corriendo, la grilla crea igual.
   const lastWeek = await openLastWeek(page, today);
   const thursday = addDays(lastWeek, 3);
-  await addFromSlot(page, thursday, today, "10:00", "con el timer abierto");
+  await addEntry(page, {
+    day: thursday,
+    today,
+    start: "10:00",
+    description: "con el timer abierto",
+  });
   await expect(
     entryBlock(
       dayColumn(page, thursday, today),
@@ -390,7 +372,12 @@ test("duplicar y borrar desde el menú del diálogo llevan el foco a la copia, a
   const thursday = addDays(lastWeek, 3);
   const description = "entrada a duplicar";
 
-  await addFromSlot(page, thursday, today, "09:00", description);
+  await addEntry(page, {
+    day: thursday,
+    today,
+    start: "09:00",
+    description: description,
+  });
   const blocks = entryBlock(
     dayColumn(page, thursday, today),
     closedBlockName({
@@ -457,7 +444,7 @@ test("«Reintentar» guarda el borrador actual, y guardar una entrada borrada en
   const friday = addDays(lastWeek, 4);
   const region = calendarRegion(page);
 
-  await addFromSlot(page, friday, today, "09:00", "A");
+  await addEntry(page, { day: friday, today, start: "09:00", description: "A" });
   await entryBlocks(region, "A").click();
   const dialog = entryDialog(page, "Editar entrada");
   await expect(dialogDescription(dialog)).toBeFocused();

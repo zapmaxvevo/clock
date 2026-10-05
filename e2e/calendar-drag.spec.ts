@@ -4,11 +4,9 @@ import {
   blockHandle,
   BODY_GRIP_PX,
   boxOf,
-  calendarHref,
   calendarRegion,
   calendarSelection,
   chooseDialogAction,
-  clickSlot,
   closedBlockName,
   columnName,
   dayColumn,
@@ -21,9 +19,7 @@ import {
   entryBlocks,
   entryDialog,
   expectEditDialog,
-  expectPeriod,
   hoverAt,
-  minuteHeight,
   grabPoint,
   gridScroller,
   isCalendarPage,
@@ -40,9 +36,14 @@ import {
   zoomButton,
   zoomIn,
   type ScreenPoint,
-  type ZoomSize,
+  openLastWeek,
+  addEntry,
+  periodTotal,
+  goToCalendarByNav,
+  NEAR_MIDNIGHT_MINUTES,
+  NEAR_MIDNIGHT_REASON,
 } from "./calendar-page";
-import { addDays, dayLabel, todayIn, weekStartOf, type CivilDay } from "./days";
+import { addDays, dayLabel, minuteOfDayIn, todayIn, type CivilDay } from "./days";
 import {
   holdActionResponses,
   holdRefreshes,
@@ -50,7 +51,7 @@ import {
   withServerAction,
 } from "./network";
 import { expect, test } from "./session";
-import { escapeRegExp } from "./tracker-page";
+import { escapeRegExp, startTimer } from "./tracker-page";
 
 /**
  * Recorridos del slice 8b: los gestos de arrastre del calendario (§7 del
@@ -105,49 +106,6 @@ function countRequests(page: Page): CalendarRequests {
     }
   });
   return counts;
-}
-
-/** Abre la semana anterior a la de hoy y espera su rótulo. */
-async function openLastWeek(page: Page, today: CivilDay): Promise<CivilDay> {
-  const lastWeek = addDays(weekStartOf(today), -7);
-  await page.goto(calendarHref(lastWeek));
-  await expectPeriod(page, lastWeek, "week", "Semana anterior");
-  // CAL-14: la grilla abre con las 08:00 arriba, en un efecto después del
-  // primer dibujo. Hasta que llega, las cajas se mueven.
-  await expect
-    .poll(async () => (await gridScroller(page)).scrollTop)
-    .toBe(8 * 60 * minuteHeight("1 h"));
-  return lastWeek;
-}
-
-/**
- * Crea una entrada con un clic en su franja y el diálogo del 8c, con el fin
- * que se pida, y espera que el servidor la haya escrito.
- */
-async function addEntry(
-  page: Page,
-  entry: {
-    readonly day: CivilDay;
-    readonly today: CivilDay;
-    readonly start: string;
-    readonly end?: string;
-    readonly description: string;
-    readonly size?: ZoomSize;
-  },
-): Promise<void> {
-  await clickSlot(page, entry.day, entry.today, entry.start, entry.size);
-  const dialog = entryDialog(page, "Agregar entrada");
-  await expect(dialogDescription(dialog)).toBeFocused();
-  await dialogDescription(dialog).fill(entry.description);
-  if (entry.end !== undefined) {
-    await dialogClock(dialog, "Hora de fin").fill(entry.end);
-    await dialogClock(dialog, "Hora de fin").press("Tab");
-  }
-  await withServerAction(page, () => dialogButton(dialog, "Agregar").click());
-  await expect(dialog).toBeHidden();
-  // El foco va al bloque nuevo (§5.5 del 8c) y puede desplazar la grilla: se
-  // espera antes de medir nada.
-  await expect(entryBlocks(calendarRegion(page), entry.description)).toBeFocused();
 }
 
 /**
@@ -691,4 +649,128 @@ test("un gesto que falla vuelve con su aviso y «Reintentar», y la revalidació
   await settle(page);
   expect(requests.actions).toBe(actions);
   await expect(landed).toBeFocused();
+
+  // T-M1: la respuesta de «Duplicar» fija el foco en la copia sin mirar dónde
+  // está el foco (§5.4 del 8c), y llega con la confirmación del borrado de
+  // otra entrada abierta. El foco no sale de la confirmación, y «Cancelar»
+  // limpia el pendiente: un foco posterior en la región se queda ahí.
+  const releaseDuplicate = await holdActionResponses(page, isCalendarPage);
+  await landed.click();
+  const fallaDialog = entryDialog(page, "Editar entrada");
+  await expect(dialogDescription(fallaDialog)).toBeFocused();
+  await chooseDialogAction(page, fallaDialog, "Falla", "Duplicar");
+  await expect(fallaDialog).toBeHidden();
+  await entryBlocks(dayColumn(page, thursday, today), "Otra").click();
+  const otraDialog = entryDialog(page, "Editar entrada");
+  await expect(dialogDescription(otraDialog)).toBeFocused();
+  await chooseDialogAction(page, otraDialog, "Otra", "Borrar");
+  await expect(confirmation).toBeVisible();
+  await withServerAction(page, async () => releaseDuplicate());
+  await expect(blockBehindDialog(page, "Falla")).toHaveCount(2);
+  await settle(page);
+  expect(await holdsFocus(confirmation)).toBe(true);
+  await confirmation.getByRole("button", { name: "Cancelar", exact: true }).click();
+  await expect(confirmation).toBeHidden();
+  await focusRegionThroughRefresh(page);
+  await expect(region).toBeFocused();
+});
+
+test("un clic en un lugar de la región que no es un control descarta el foco pendiente", async ({
+  page,
+}) => {
+  const today = todayIn(PERSON_TIMEZONE);
+  const lastWeek = await openLastWeek(page, today);
+  const wednesday = addDays(lastWeek, 2);
+  await addEntry(page, { day: wednesday, today, start: "09:00", description: "Copiar" });
+  const blocks = entryBlocks(dayColumn(page, wednesday, today), "Copiar");
+
+  // T-m4 (desvío 6a): «Duplicar» deja su foco pendiente en la copia, que
+  // espera mientras el foco esté en otro control, aquí «Alejar».
+  const release = await holdActionResponses(page, isCalendarPage);
+  await blocks.click();
+  const dialog = entryDialog(page, "Editar entrada");
+  await expect(dialogDescription(dialog)).toBeFocused();
+  await chooseDialogAction(page, dialog, "Copiar", "Duplicar");
+  await expect(dialog).toBeHidden();
+  const zoomOut = zoomButton(page, "Alejar");
+  await zoomOut.focus();
+  await withServerAction(page, async () => release());
+  await expect(blocks).toHaveCount(2);
+  await settle(page);
+  await expect(zoomOut).toBeFocused();
+
+  // Un clic en el total del período, que no es un control, enfoca la región:
+  // es hacer otra cosa, y el pendiente no se lleva ese foco a la copia.
+  await periodTotal(page).click();
+  await settle(page);
+  await expect(calendarRegion(page)).toBeFocused();
+});
+
+test("la respuesta de un arrastre no deja foco pendiente si el foco ya está en otro control", async ({
+  page,
+}) => {
+  const today = todayIn(PERSON_TIMEZONE);
+  const lastWeek = await openLastWeek(page, today);
+  const wednesday = addDays(lastWeek, 2);
+  await addEntry(page, {
+    day: wednesday,
+    today,
+    start: "09:00",
+    description: "Arrastrar",
+  });
+  const block = entryBlocks(dayColumn(page, wednesday, today), "Arrastrar");
+
+  // T-m5 (desvío 6b): mientras viaja el pedido, el foco pasa a «Alejar». La
+  // respuesta no fija el foco en el bloque, así que un foco posterior en la
+  // región se queda ahí.
+  const release = await holdActionResponses(page, isCalendarPage);
+  await dragBetween(page, { on: block, y: BODY_GRIP_PX }, () =>
+    grabPoint(page, wednesday, today, "11:00"),
+  );
+  await expect(block).toHaveAttribute("aria-busy", "true");
+  const zoomOut = zoomButton(page, "Alejar");
+  await zoomOut.focus();
+  await withServerAction(page, async () => release());
+  await expect(block).toContainText("11:00 – 12:00");
+  await expect(block).not.toHaveAttribute("aria-busy", "true");
+  await settle(page);
+  await expect(zoomOut).toBeFocused();
+  await focusRegionThroughRefresh(page);
+  await expect(calendarRegion(page)).toBeFocused();
+});
+
+test("apretar el timer y soltar sobre una franja libre de su columna no abre nada", async ({
+  page,
+}) => {
+  const minute = minuteOfDayIn(PERSON_TIMEZONE);
+  test.skip(
+    minute < NEAR_MIDNIGHT_MINUTES || minute > 1440 - NEAR_MIDNIGHT_MINUTES,
+    NEAR_MIDNIGHT_REASON,
+  );
+  const today = todayIn(PERSON_TIMEZONE);
+  const description = "timer quieto";
+
+  await page.goto("/");
+  await startTimer(page, description);
+  await goToCalendarByNav(page);
+  const todayColumn = dayColumn(page, today, today);
+  const timer = entryBlocks(todayColumn, description);
+  await expect(timer).toHaveAccessibleName(/, en curso$/);
+  const requests = countRequests(page);
+
+  // P-m1 (CAL-39): el timer no ofrece gestos, así que apretarlo es un clic.
+  // Soltar sobre una franja libre de su columna —antes del inicio si la
+  // grilla la muestra, si no después— no abre el diálogo ni el alta.
+  await pressAt(page, { on: timer });
+  const box = await boxOf(timer);
+  const target =
+    minute >= 90
+      ? { x: box.x + box.width / 2, y: box.y - 40 }
+      : { x: box.x + box.width / 2, y: box.y + box.height + 40 };
+  await moveTo(page, target);
+  await page.mouse.up();
+  await settle(page);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(timer).toHaveAccessibleName(/, en curso$/);
+  expect(requests.actions).toBe(0);
 });

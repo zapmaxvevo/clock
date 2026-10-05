@@ -8,13 +8,16 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
 import {
+  addDays,
   calendarDayName,
   dayKeyOf,
   monthOfCaption,
   monthsBetween,
   weekdayLabel,
+  weekStartOf,
   type CivilDay,
 } from "./days";
+import { withServerAction } from "./network";
 import { escapeRegExp } from "./tracker-page";
 
 export const CALENDAR_PATH = "/calendario";
@@ -603,12 +606,6 @@ export async function boxOf(
   return box;
 }
 
-/** El centro de un elemento, para apretarlo con `page.mouse`. */
-export async function centerOf(element: Locator): Promise<ScreenPoint> {
-  const box = await boxOf(element);
-  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-}
-
 /**
  * Un asa del bloque (§5.3 del 8b): decorativa (`aria-hidden`), así que se
  * busca por su atributo, adentro del botón del bloque.
@@ -811,4 +808,50 @@ export async function headerLook(column: Locator): Promise<string> {
     }
     return parts.join(" | ");
   });
+}
+
+/**
+ * Abre la semana anterior a la de hoy, la de los recorridos que escriben:
+ * ninguna hora queda en el futuro y la semana tiene todos sus días. Espera su
+ * rótulo y el desplazamiento inicial (CAL-14), que llega en un efecto después
+ * del primer dibujo: hasta entonces, las cajas se mueven.
+ */
+export async function openLastWeek(page: Page, today: CivilDay): Promise<CivilDay> {
+  const lastWeek = addDays(weekStartOf(today), -7);
+  await page.goto(calendarHref(lastWeek));
+  await expectPeriod(page, lastWeek, "week", "Semana anterior");
+  await expect
+    .poll(async () => (await gridScroller(page)).scrollTop)
+    .toBe(8 * 60 * minuteHeight("1 h"));
+  return lastWeek;
+}
+
+/**
+ * Crea una entrada con un clic en su franja (CAL-43) y el diálogo de alta del
+ * 8c, con el fin que se pida, y espera que el servidor la haya escrito. El
+ * foco va al bloque nuevo (§5.5 del 8c) y puede desplazar la grilla: se espera
+ * antes de medir nada.
+ */
+export async function addEntry(
+  page: Page,
+  entry: {
+    readonly day: CivilDay;
+    readonly today: CivilDay;
+    readonly start: string;
+    readonly end?: string;
+    readonly description: string;
+    readonly size?: ZoomSize;
+  },
+): Promise<void> {
+  await clickSlot(page, entry.day, entry.today, entry.start, entry.size);
+  const dialog = entryDialog(page, "Agregar entrada");
+  await expect(dialogDescription(dialog)).toBeFocused();
+  await dialogDescription(dialog).fill(entry.description);
+  if (entry.end !== undefined) {
+    await dialogClock(dialog, "Hora de fin").fill(entry.end);
+    await dialogClock(dialog, "Hora de fin").press("Tab");
+  }
+  await withServerAction(page, () => dialogButton(dialog, "Agregar").click());
+  await expect(dialog).toBeHidden();
+  await expect(entryBlocks(calendarRegion(page), entry.description)).toBeFocused();
 }
