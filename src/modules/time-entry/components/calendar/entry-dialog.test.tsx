@@ -117,6 +117,7 @@ describe("EntryDialogBody (CAL-65, CAL-66)", () => {
     expect(fieldsOf(markup)).toEqual([
       ["Descripción", "Informe"],
       ["Proyecto", "Web: Diseño"],
+      ["Facturable", "No"],
       ["Fecha", "vie, 02/10"],
       ["Hora de inicio", "09:00"],
       ["Hora de fin", "10:30"],
@@ -141,6 +142,7 @@ describe("EntryDialogBody (CAL-65, CAL-66)", () => {
     expect(fieldsOf(markup)).toEqual([
       ["Descripción", "Sin descripción"],
       ["Proyecto", "Sin proyecto"],
+      ["Facturable", "No"],
       ["Fecha", "jue, 01/10"],
       ["Hora de inicio", "22:00"],
       ["Hora de fin", "02:00+2 (termina 2 días después)"],
@@ -156,6 +158,7 @@ describe("EntryDialogBody (CAL-65, CAL-66)", () => {
     expect(fields.map(([term]) => term)).toEqual([
       "Descripción",
       "Proyecto",
+      "Facturable",
       "Fecha",
       "Hora de inicio",
       "Fin: en curso",
@@ -163,6 +166,12 @@ describe("EntryDialogBody (CAL-65, CAL-66)", () => {
     expect(fields).toContainEqual(["Fecha", "Hoy"]);
     expect(markup).toContain('role="timer"');
     expect(fields.at(-1)?.[1]).toBe("2:00:00");
+    expectNoControls(markup);
+  });
+
+  it("una facturable lo dice como texto (TT-92)", () => {
+    const markup = render({ ...closed, billable: true });
+    expect(fieldsOf(markup)).toContainEqual(["Facturable", "Sí"]);
     expectNoControls(markup);
   });
 });
@@ -311,6 +320,40 @@ describe("EntryDialogContent: los modos según el permiso y el sujeto (CAL-05, C
     expect(markup).toContain(
       `id="${hint}" class="text-muted-foreground text-sm">La entrada tiene que durar al menos un minuto.`,
     );
+  });
+});
+
+describe("EntryDialogContent: el facturable en los tres modos (CAL-45, CAL-66)", () => {
+  function billableOf(markup: string): string | null {
+    return markup.match(/<button[^>]*aria-label="Facturable"[^>]*>/)?.[0] ?? null;
+  }
+
+  it("una cerrada lo edita con el valor de la vista", () => {
+    const markup = renderContent({ kind: "entry", entry: { ...closed, billable: true } });
+    expect(billableOf(markup)).toContain('aria-pressed="true"');
+  });
+
+  it("el timer lo edita", () => {
+    expect(billableOf(renderContent({ kind: "entry", entry: running }))).toContain(
+      'aria-pressed="false"',
+    );
+  });
+
+  it("el alta arranca no facturable", () => {
+    const markup = renderContent({
+      kind: "add",
+      draft: { date: "2026-09-30", start: "10:00", end: "11:00" },
+      opener: "slot",
+    });
+    expect(billableOf(markup)).toContain('aria-pressed="false"');
+  });
+
+  it("va después del proyecto y su nombre también se ve", () => {
+    const markup = renderContent({ kind: "entry", entry: closed });
+    expect(markup.search(/role="combobox"/)).toBeLessThan(
+      markup.search(/aria-label="Facturable"/),
+    );
+    expect(markup).toMatch(/aria-label="Facturable"[^>]*>.*?<span>Facturable<\/span>/);
   });
 });
 
