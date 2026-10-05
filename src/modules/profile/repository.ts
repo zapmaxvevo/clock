@@ -5,11 +5,13 @@ import { now, userPreference } from "@/server/db/schema";
 
 export type UserPreferenceRow = typeof userPreference.$inferSelect;
 
-/** Una sola columna de preferencia con su valor nuevo: la de la clave del pedido. */
+/** Una sola columna de la fila con su valor nuevo: la de la clave del pedido, o el nombre. */
 export type PreferenceColumn =
   | { readonly timezone: string }
   | { readonly timeFormat: string }
-  | { readonly dateFormat: string };
+  | { readonly dateFormat: string }
+  | { readonly theme: string }
+  | { readonly displayName: string };
 
 /**
  * Único lugar con acceso a datos del módulo. `user_preference` es de la cuenta

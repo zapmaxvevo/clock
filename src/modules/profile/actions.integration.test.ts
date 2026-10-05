@@ -14,7 +14,12 @@ import {
 } from "@/test/factories";
 import { auditFor } from "@/test/queries";
 
-import { profileMessages, type UpdatePreferenceInput } from "./schema";
+import {
+  NAME_MAX,
+  profileMessages,
+  type UpdateNameInput,
+  type UpdatePreferenceInput,
+} from "./schema";
 
 /**
  * La capa de actions con sus tres puertas de Next y de Better Auth
@@ -115,6 +120,15 @@ describe("sin sesión", () => {
     expect(mocks.revalidated).toEqual([]);
     expect(await db.select().from(userPreference)).toEqual([]);
   });
+
+  it("updateName manda al login sin ejecutar ni revalidar", async () => {
+    await expect(actions.updateName({ name: "Ana" })).rejects.toBeInstanceOf(
+      RedirectError,
+    );
+    expect(mocks.redirects).toEqual(["/login"]);
+    expect(mocks.revalidated).toEqual([]);
+    expect(await db.select().from(userPreference)).toEqual([]);
+  });
 });
 
 describe("updatePreference (criterio 12)", () => {
@@ -130,6 +144,7 @@ describe("updatePreference (criterio 12)", () => {
           timezone: "America/Argentina/Buenos_Aires",
           timeFormat: "12h",
           dateFormat: "dd/MM/yyyy",
+          theme: "system",
         },
       },
     });
@@ -150,6 +165,7 @@ describe("updatePreference (criterio 12)", () => {
       timezone: "Asia/Tokyo",
       timeFormat: "24h",
       dateFormat: "yyyy-MM-dd",
+      theme: "system",
     });
     expect(mocks.revalidated).toEqual([wholeTree, wholeTree]);
   });
@@ -199,7 +215,7 @@ describe("updatePreference (criterio 12)", () => {
   it.each([
     ["un formato de hora desconocido", { key: "timeFormat", value: "25h" }],
     ["un formato de fecha desconocido", { key: "dateFormat", value: "d/M/y" }],
-    ["una clave desconocida", { key: "theme", value: "dark" }],
+    ["una clave desconocida", { key: "displayName", value: "Ana" }],
   ])(
     "%s responde «Ese formato no está disponible.», no escribe y revalida (criterio 10)",
     async (_label, input) => {
@@ -281,5 +297,178 @@ describe("updatePreference (criterio 12)", () => {
       code: "validation",
       message: profileMessages.formatUnavailable,
     });
+  });
+});
+
+describe("updatePreference con el tema (criterio 3: PF-23)", () => {
+  it("guarda el tema, responde las preferencias resueltas y revalida el árbol", async () => {
+    const userId = await signInAs();
+
+    const result = await actions.updatePreference({ key: "theme", value: "dark" });
+
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        preferences: {
+          timezone: "America/Argentina/Buenos_Aires",
+          timeFormat: "24h",
+          dateFormat: "dd/MM/yyyy",
+          theme: "dark",
+        },
+      },
+    });
+    expect((await rowOf(userId))?.theme).toBe("dark");
+    expect(mocks.revalidated).toEqual([wholeTree]);
+  });
+
+  it.each([["auto"], ["Dark"], [null]])(
+    "un tema %j responde «Ese tema no está disponible.», no escribe y revalida",
+    async (value) => {
+      const userId = await signInAs();
+
+      const result = await actions.updatePreference({
+        key: "theme",
+        value,
+      } as unknown as UpdatePreferenceInput);
+
+      expect(result).toEqual({
+        ok: false,
+        code: "validation",
+        message: profileMessages.themeUnavailable,
+      });
+      expect(await rowOf(userId)).toBeUndefined();
+      expect(mocks.revalidated).toEqual([wholeTree]);
+    },
+  );
+});
+
+describe("updateName (criterios 4, 5 y 6: PF-07, PF-34, PF-35, PF-46)", () => {
+  it("guarda el nombre recortado, lo responde, deja profile.updateName y revalida el árbol", async () => {
+    const userId = await signInAs();
+
+    const result = await actions.updateName({ name: "  Ana María " });
+
+    expect(result).toEqual({ ok: true, data: { name: "Ana María" } });
+    expect((await rowOf(userId))?.displayName).toBe("Ana María");
+    expect(
+      (await auditFor("user_preference", userId)).map((row) => [
+        row.action,
+        row.nextValue,
+      ]),
+    ).toEqual([["profile.updateName", JSON.stringify({ displayName: "Ana María" })]]);
+    expect(mocks.revalidated).toEqual([wholeTree]);
+  });
+
+  it("acepta un nombre de 100 caracteres", async () => {
+    const userId = await signInAs();
+    const name = "x".repeat(NAME_MAX);
+
+    const result = await actions.updateName({ name });
+
+    expect(result).toEqual({ ok: true, data: { name } });
+    expect((await rowOf(userId))?.displayName).toBe(name);
+  });
+
+  it("con el nombre ya guardado responde lo guardado sin escribir ni registrar", async () => {
+    const userId = await signInAs();
+    const seeded = await seedPreferences(userId, { displayName: "Ana" });
+
+    const result = await actions.updateName({ name: " Ana " });
+
+    expect(result).toEqual({ ok: true, data: { name: "Ana" } });
+    expect((await rowOf(userId))?.updatedAt).toEqual(seeded.updatedAt);
+    expect(await auditFor("user_preference")).toEqual([]);
+    expect(mocks.revalidated).toEqual([wholeTree]);
+  });
+
+  it.each([
+    ["vacío", { name: "" }, profileMessages.nameRequired],
+    ["con solo espacios", { name: "   " }, profileMessages.nameRequired],
+    ["que no es texto", { name: 42 }, profileMessages.nameRequired],
+    ["ausente", {}, profileMessages.nameRequired],
+    [
+      "de 101 caracteres",
+      { name: "x".repeat(NAME_MAX + 1) },
+      profileMessages.nameTooLong,
+    ],
+    ["con el carácter nulo", { name: "Ana\u0000" }, profileMessages.nameNullCharacter],
+  ])(
+    "un nombre %s responde su mensaje, no escribe y revalida",
+    async (_label, input, message) => {
+      const userId = await signInAs();
+
+      const result = await actions.updateName(input as UpdateNameInput);
+
+      expect(result).toEqual({ ok: false, code: "validation", message });
+      expect(await rowOf(userId)).toBeUndefined();
+      expect(mocks.revalidated).toEqual([wholeTree]);
+    },
+  );
+
+  it.each(["inactive", "invited"] as const)(
+    "una membresía %s responde forbidden en las dos actions, sin escritura ni registro, y revalida",
+    async (status) => {
+      const userId = await signInAs(status);
+
+      const name = await actions.updateName({ name: "Ana" });
+      const theme = await actions.updatePreference({ key: "theme", value: "dark" });
+
+      const forbidden = {
+        ok: false,
+        code: "forbidden",
+        message: profileMessages.forbidden,
+      };
+      expect(name).toEqual(forbidden);
+      expect(theme).toEqual(forbidden);
+      expect(await rowOf(userId)).toBeUndefined();
+      expect(await auditFor("user_preference")).toEqual([]);
+      expect(mocks.revalidated).toEqual([wholeTree, wholeTree]);
+    },
+  );
+
+  it("una membresía inactive no cambia un nombre ya guardado, tampoco con el mismo", async () => {
+    const userId = await signInAs("inactive");
+    await seedPreferences(userId, { displayName: "Ana" });
+
+    for (const name of ["Ana", "Otra"]) {
+      const result = await actions.updateName({ name });
+      expect([name, result.ok || result.code]).toEqual([name, "forbidden"]);
+    }
+    expect((await rowOf(userId))?.displayName).toBe("Ana");
+    expect(await auditFor("user_preference")).toEqual([]);
+  });
+
+  it("una membresía inactive con un nombre inválido responde la validación, que corre antes del permiso", async () => {
+    await signInAs("inactive");
+
+    const result = await actions.updateName({ name: "  " });
+
+    expect(result).toEqual({
+      ok: false,
+      code: "validation",
+      message: profileMessages.nameRequired,
+    });
+  });
+
+  it("los cinco roles cambian su nombre y su tema (PF-34)", async () => {
+    for (const role of [
+      "owner",
+      "admin",
+      "project_manager",
+      "team_manager",
+      "member",
+    ] as const) {
+      const userId = await signInAs("active", role);
+
+      const name = await actions.updateName({ name: `Nombre ${role}` });
+      const theme = await actions.updatePreference({ key: "theme", value: "light" });
+
+      expect([role, name.ok, theme.ok, await rowOf(userId)]).toEqual([
+        role,
+        true,
+        true,
+        expect.objectContaining({ displayName: `Nombre ${role}`, theme: "light" }),
+      ]);
+    }
   });
 });

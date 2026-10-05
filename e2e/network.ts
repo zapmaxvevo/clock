@@ -48,6 +48,26 @@ export async function openSecondTab(
 }
 
 /**
+ * Corta toda server action a las URLs de `matches` antes de que salga, hasta
+ * que se llame a lo que devuelve. El servidor no recibe el pedido y el
+ * navegador recibe una falla de red: es el pedido que nunca llegó.
+ */
+export async function dropActionRequests(
+  page: Page,
+  matches: UrlPredicate,
+): Promise<() => Promise<void>> {
+  const handler = async (route: Route): Promise<void> => {
+    if (route.request().headers()["next-action"] === undefined) {
+      await route.fallback();
+      return;
+    }
+    await route.abort();
+  };
+  await page.route(matches, handler);
+  return () => page.unroute(matches, handler);
+}
+
+/**
  * Pierde la respuesta de toda server action a las URLs de `matches` hasta que
  * se llame a lo que devuelve. El pedido llega entero al servidor, que lo
  * aplica, y recién cuando el servidor contestó el navegador recibe una falla

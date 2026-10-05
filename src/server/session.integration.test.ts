@@ -1,17 +1,22 @@
 import { randomUUID } from "node:crypto";
 
+import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { db } from "@/server/db";
-import { membership } from "@/server/db/schema";
+import { membership, user } from "@/server/db/schema";
 import { seedUser, seedWorkspace } from "@/test/factories";
+import { updateName } from "@/modules/profile/service";
 
 /**
- * `currentSession` con la sesión de Better Auth reemplazada: la foto que
- * devuelve es la que cada caso pone en `mocks.image`. El resto corre de verdad.
+ * `currentSession` con la sesión de Better Auth reemplazada: el nombre es el de
+ * la fila `user` de la base, como lo deja el ingreso por Google, o el de
+ * `mocks.name` si un caso lo fija; la foto es la que cada caso pone en
+ * `mocks.image`. El resto corre de verdad.
  */
 const mocks = vi.hoisted(() => ({
   user: null as null | { id: string; email: string },
+  name: undefined as string | undefined,
   image: null as string | null | undefined,
 }));
 
@@ -22,22 +27,39 @@ vi.mock("next/headers", () => ({
 vi.mock("@/server/auth", () => ({
   auth: {
     api: {
-      getSession: async () =>
-        mocks.user === null
-          ? null
-          : { user: { ...mocks.user, name: "Ana López", image: mocks.image } },
+      getSession: async () => {
+        if (mocks.user === null) {
+          return null;
+        }
+        const [row] = await db
+          .select({ name: user.name })
+          .from(user)
+          .where(eq(user.id, mocks.user.id));
+        return {
+          user: { ...mocks.user, name: mocks.name ?? row.name, image: mocks.image },
+        };
+      },
     },
   },
 }));
 
 const { currentSession } = await import("./session");
 
-beforeEach(async () => {
-  const { workspaceId } = await seedWorkspace();
+let workspaceId: string;
+
+/** Una persona con su membresía activa en el workspace sembrado. */
+async function seedPerson() {
   const email = `${randomUUID()}@empresa.com`;
   const id = await seedUser(email);
   await db.insert(membership).values({ workspaceId, userId: id, role: "member" });
-  mocks.user = { id, email };
+  return { id, email };
+}
+
+beforeEach(async () => {
+  ({ workspaceId } = await seedWorkspace());
+  mocks.user = await seedPerson();
+  mocks.name = undefined;
+  mocks.image = null;
 });
 
 describe("la foto de la sesión (PF-09, PF-44)", () => {
@@ -59,5 +81,46 @@ describe("la foto de la sesión (PF-09, PF-44)", () => {
   ])("con %s da null, y quedan las iniciales", async (_label, image) => {
     mocks.image = image;
     expect((await currentSession())?.user.image).toBeNull();
+  });
+});
+
+describe("el nombre de la sesión (criterio 7: PF-08, PF-45)", () => {
+  /** El nombre que muestra la sesión de esa persona. */
+  async function shownNameOf(person: { id: string; email: string }) {
+    mocks.user = person;
+    return (await currentSession())?.user.name;
+  }
+
+  /** Lo que hace un ingreso por Google con `overrideUserInfoOnSignIn`. */
+  async function signInWithGoogleName(id: string, name: string) {
+    await db.update(user).set({ name }).where(eq(user.id, id));
+  }
+
+  it("da el editado si hay uno y el de la cuenta si no; un ingreso con otro nombre cambia solo el de quien no editó", async () => {
+    const actorOf = (id: string) =>
+      ({ userId: id, workspaceId, role: "member", status: "active" }) as const;
+    const notEdited = await seedPerson();
+    const edited = await seedPerson();
+    const editedAsAccount = await seedPerson();
+    await updateName(actorOf(edited.id), { name: "Ana Prueba" });
+    // D1: escribir el nombre de la cuenta también es editarlo.
+    await updateName(actorOf(editedAsAccount.id), { name: "Persona de prueba" });
+
+    expect(await shownNameOf(notEdited)).toBe("Persona de prueba");
+    expect(await shownNameOf(edited)).toBe("Ana Prueba");
+    expect(await shownNameOf(editedAsAccount)).toBe("Persona de prueba");
+
+    for (const person of [notEdited, edited, editedAsAccount]) {
+      await signInWithGoogleName(person.id, "Nombre nuevo de Google");
+    }
+
+    expect(await shownNameOf(notEdited)).toBe("Nombre nuevo de Google");
+    expect(await shownNameOf(edited)).toBe("Ana Prueba");
+    expect(await shownNameOf(editedAsAccount)).toBe("Persona de prueba");
+  });
+
+  it("sin nombre editado, da el nombre que trae la sesión de Better Auth", async () => {
+    mocks.name = "Nombre de la sesión";
+    expect((await currentSession())?.user.name).toBe("Nombre de la sesión");
   });
 });

@@ -7,6 +7,8 @@ import { user, userPreference } from "@/server/db/schema";
 import { DATE_FORMATS, TIME_FORMATS } from "@/server/time";
 import { seedUser } from "@/test/factories";
 
+import { NAME_MAX, THEMES } from "./schema";
+
 /**
  * La tabla, escrita de forma directa y sin pasar por el service: lo que tiene
  * que aceptar o rechazar aunque el service se equivoque (criterio 1).
@@ -95,6 +97,43 @@ describe("user_preference (criterio 1)", () => {
         db.insert(userPreference).values({ userId, timezone: "x".repeat(65) }),
       ),
     ).toBe("user_preference_timezone_len");
+  });
+
+  it("acepta el nombre y el tema en nulo", async () => {
+    await db.insert(userPreference).values({ userId });
+    expect(await rowOf(userId)).toMatchObject({ displayName: null, theme: null });
+  });
+
+  it("acepta cada valor de THEMES", async () => {
+    for (const theme of THEMES) {
+      const owner = await seedUser();
+      await db.insert(userPreference).values({ userId: owner, theme });
+      expect((await rowOf(owner))?.theme).toBe(theme);
+    }
+  });
+
+  it("acepta un nombre de 1 y uno de 100 caracteres, contados como caracteres", async () => {
+    for (const displayName of ["A", "x".repeat(NAME_MAX), "ñ".repeat(NAME_MAX)]) {
+      const owner = await seedUser();
+      await db.insert(userPreference).values({ userId: owner, displayName });
+      expect((await rowOf(owner))?.displayName).toBe(displayName);
+    }
+  });
+
+  it("rechaza un nombre vacío y uno de 101 caracteres", async () => {
+    for (const displayName of ["", "x".repeat(NAME_MAX + 1)]) {
+      expect(
+        await violatedCheck(db.insert(userPreference).values({ userId, displayName })),
+      ).toBe("user_preference_display_name_len");
+    }
+  });
+
+  it("rechaza un tema fuera de lista, también con otras mayúsculas", async () => {
+    for (const theme of ["Dark", "auto"]) {
+      expect(
+        await violatedCheck(db.insert(userPreference).values({ userId, theme })),
+      ).toBe("user_preference_theme_known");
+    }
   });
 
   it("borrar el usuario borra su fila", async () => {

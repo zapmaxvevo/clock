@@ -3,7 +3,13 @@ import type { z } from "zod";
 
 import { DATE_FORMATS, TIME_FORMATS } from "@/server/time";
 
-import { profileMessages, updatePreferenceInput } from "./schema";
+import {
+  NAME_MAX,
+  profileMessages,
+  THEMES,
+  updateNameInput,
+  updatePreferenceInput,
+} from "./schema";
 
 function messageOf(result: z.ZodSafeParseResult<unknown>): string | undefined {
   return result.success ? undefined : result.error.issues.at(0)?.message;
@@ -82,13 +88,90 @@ describe("updatePreferenceInput: los formatos (PF-12, PF-13)", () => {
 
 describe("updatePreferenceInput: la clave", () => {
   it.each([
-    ["una clave desconocida", { key: "theme", value: "dark" }],
+    ["una clave desconocida", { key: "displayName", value: "Ana" }],
     ["sin clave", { value: "24h" }],
     ["una clave que no es texto", { key: 1, value: "24h" }],
     ["un pedido que no es un objeto", "timezone"],
   ])("rechaza %s con «Ese formato no está disponible.»", (_label, input) => {
     expect(messageOf(updatePreferenceInput.safeParse(input))).toBe(
       profileMessages.formatUnavailable,
+    );
+  });
+});
+
+describe("updatePreferenceInput: el tema (PF-23, PF-35)", () => {
+  it("acepta cada tema, en el orden del selector", () => {
+    expect(THEMES).toEqual(["system", "light", "dark"]);
+    for (const value of THEMES) {
+      const result = updatePreferenceInput.safeParse({ key: "theme", value });
+      expect(result.success && result.data).toEqual({ key: "theme", value });
+    }
+  });
+
+  it.each([["Dark"], ["auto"], [""], ["dark "], [1], [null], [undefined]])(
+    "rechaza %j con «Ese tema no está disponible.»",
+    (value) => {
+      expect(messageOf(updatePreferenceInput.safeParse({ key: "theme", value }))).toBe(
+        profileMessages.themeUnavailable,
+      );
+    },
+  );
+
+  it("no acepta un formato como tema ni un tema como formato", () => {
+    expect(
+      messageOf(updatePreferenceInput.safeParse({ key: "theme", value: "24h" })),
+    ).toBe(profileMessages.themeUnavailable);
+    expect(
+      messageOf(updatePreferenceInput.safeParse({ key: "timeFormat", value: "dark" })),
+    ).toBe(profileMessages.formatUnavailable);
+  });
+});
+
+describe("updateNameInput (PF-07, PF-35)", () => {
+  it("recorta los espacios de los extremos y conserva los de adentro", () => {
+    const result = updateNameInput.safeParse({ name: "  Ana  María \t" });
+    expect(result.success && result.data).toEqual({ name: "Ana  María" });
+  });
+
+  it("acepta un nombre de un carácter y uno de 100, también con espacios alrededor", () => {
+    const longest = "x".repeat(NAME_MAX);
+    for (const name of ["A", longest, ` ${longest} `]) {
+      const result = updateNameInput.safeParse({ name });
+      expect(result.success && result.data.name).toBe(name.trim());
+    }
+  });
+
+  it.each([
+    ["vacío", ""],
+    ["solo espacios", "   "],
+    ["un número", 42],
+    ["un nulo", null],
+    ["la ausencia", undefined],
+  ])("un nombre %s responde «Escribí un nombre.»", (_label, name) => {
+    expect(messageOf(updateNameInput.safeParse({ name }))).toBe(
+      profileMessages.nameRequired,
+    );
+  });
+
+  it.each([
+    ["sin el campo", {}],
+    ["un pedido que no es un objeto", "Ana"],
+    ["un pedido nulo", null],
+  ])("%s responde «Escribí un nombre.»", (_label, input) => {
+    expect(messageOf(updateNameInput.safeParse(input))).toBe(
+      profileMessages.nameRequired,
+    );
+  });
+
+  it("101 caracteres responde «El nombre no puede superar los 100 caracteres.»", () => {
+    expect(messageOf(updateNameInput.safeParse({ name: "x".repeat(NAME_MAX + 1) }))).toBe(
+      profileMessages.nameTooLong,
+    );
+  });
+
+  it("el carácter nulo responde «El nombre tiene un carácter que no se puede guardar.»", () => {
+    expect(messageOf(updateNameInput.safeParse({ name: "Ana\u0000" }))).toBe(
+      profileMessages.nameNullCharacter,
     );
   });
 });

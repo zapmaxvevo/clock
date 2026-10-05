@@ -1,8 +1,9 @@
-import type { Locator, Page, Route } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 
 import { addDays, dayLabel, todayIn, type CivilDay } from "./days";
-import { withServerAction } from "./network";
-import { expect, test } from "./session";
+import { dropActionRequests, withServerAction } from "./network";
+import { isProfilePage, nameField } from "./profile-page";
+import { expect, PERSON_NAME, test } from "./session";
 import {
   accountMenu,
   accountMenuButton,
@@ -13,9 +14,11 @@ import {
   clockField,
   dateButton,
   descriptionInput,
+  documentIsMarked,
   entryRow,
   formatOption,
   goToTrackerByNav,
+  markDocument,
   openProfileFromMenu,
   pickDate,
   preferenceControl,
@@ -51,8 +54,7 @@ const BUENOS_AIRES_OFFSET = "UTC−03:00";
 
 const TOKYO = "Asia/Tokyo";
 
-/** El nombre con que `signIn` crea a la persona, y sus iniciales (PF-44). */
-const PERSON_NAME = "Persona de prueba";
+/** Las iniciales del nombre con que `signIn` crea a la persona (PF-44). */
 const PERSON_INITIALS = "PD";
 
 /** TT-90: el aviso de la falla nombra la preferencia. */
@@ -66,10 +68,6 @@ const TWELVE_HOUR_CLOCK = /^(?:[1-9]|1[0-2]):[0-5]\d [AP]M$/;
 
 /** Abreviaturas del día en los rótulos, las de `date-fns` en español. */
 const WEEKDAYS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
-
-function isProfilePage(url: URL): boolean {
-  return url.pathname === "/perfil";
-}
 
 function pad(value: number): string {
   return String(value).padStart(2, "0");
@@ -123,20 +121,6 @@ async function addTodayEntry(page: Page, description: string): Promise<void> {
   await expect(descriptionInput(bar)).toHaveValue("");
 }
 
-/**
- * Deja una marca en la ventana. Una carga nueva la borra: si sigue ahí, todo
- * lo que pasó desde que se puso fue navegación del cliente (PF-33).
- */
-async function markDocument(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    Object.assign(window, { e2eSinRecargar: true });
-  });
-}
-
-async function documentIsMarked(page: Page): Promise<boolean> {
-  return page.evaluate(() => "e2eSinRecargar" in window);
-}
-
 /** Un ancho de teléfono, debajo del corte `md`. */
 const PHONE_VIEWPORT = { width: 390, height: 844 };
 
@@ -185,17 +169,17 @@ test("el menú de la cuenta lleva al perfil, que muestra la identidad y los pred
 
   await openProfileFromMenu(page);
 
-  // PF-06 y PF-09: la identidad, en solo lectura.
+  // PF-06, PF-07 y PF-09: el nombre se edita; la foto y el correo, en solo lectura.
   const main = page.getByRole("main");
-  await expect(main).toContainText(PERSON_NAME);
+  await expect(nameField(page)).toHaveValue(PERSON_NAME);
   await expect(main).toContainText(email);
   await expect(main).toContainText(PERSON_INITIALS);
   await expect(
-    main.getByText("El nombre, la foto y el correo salen de tu cuenta de Google."),
+    main.getByText("La foto y el correo salen de tu cuenta de Google."),
   ).toBeVisible();
-  await expect(main.getByRole("textbox")).toHaveCount(0);
+  await expect(main.getByRole("textbox")).toHaveCount(1);
 
-  // Criterio 15 y PF-37: los tres controles con los predeterminados. La zona
+  // Criterio 15 y PF-37: los tres controles de hora y fecha con los predeterminados. La zona
   // elegida es la opción equivalente a la de omisión, con su desplazamiento.
   const zone = preferenceControl(page, "Zona horaria");
   await expect(zone).toContainText(BUENOS_AIRES_OPTION);
@@ -210,7 +194,7 @@ test("el menú de la cuenta lleva al perfil, que muestra la identidad y los pred
   await expect(main.getByText("Formato de duración")).toBeVisible();
   await expect(main.getByText("Compacto (h:mm)")).toBeVisible();
   await expect(main.getByText("Lo define el workspace.")).toBeVisible();
-  await expect(main.getByRole("combobox")).toHaveCount(3);
+  await expect(main.getByRole("combobox")).toHaveCount(4);
 });
 
 test("con 12 horas el rastreador cambia sin recargar, y el editor de la fila acepta «am»", async ({
@@ -365,14 +349,7 @@ test("si el cambio de formato no llega al servidor el control vuelve, y Reintent
   await expect(control).toContainText("dd/MM/yyyy");
 
   // El pedido se corta antes de salir: el servidor no lo recibe.
-  const abort = async (route: Route): Promise<void> => {
-    if (route.request().headers()["next-action"] === undefined) {
-      await route.fallback();
-      return;
-    }
-    await route.abort();
-  };
-  await page.route(isProfilePage, abort);
+  const restore = await dropActionRequests(page, isProfilePage);
 
   await control.click();
   await formatOption(page, "yyyy-MM-dd").click();
@@ -385,7 +362,7 @@ test("si el cambio de formato no llega al servidor el control vuelve, y Reintent
   await expect(control).toContainText("dd/MM/yyyy");
   await expect(control).not.toContainText("yyyy-MM-dd");
 
-  await page.unroute(isProfilePage, abort);
+  await restore();
   await withServerAction(page, () => retry.click());
   await expect(notice).toBeHidden();
   await expect(control).toContainText("yyyy-MM-dd");

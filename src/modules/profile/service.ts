@@ -24,10 +24,14 @@ import {
   type PreferenceColumn,
   type UserPreferenceRow,
 } from "./repository";
-import type {
-  Preferences,
-  UpdatePreferenceInput,
-  UpdatePreferenceResult,
+import {
+  THEMES,
+  type Preferences,
+  type Theme,
+  type UpdateNameInput,
+  type UpdateNameResult,
+  type UpdatePreferenceInput,
+  type UpdatePreferenceResult,
 } from "./schema";
 
 /** Lo que pide quien muestra horas: la sesión, con las preferencias resueltas. */
@@ -42,6 +46,7 @@ export const PREFERENCE_DEFAULTS: Preferences = {
   timezone: "America/Argentina/Buenos_Aires",
   timeFormat: "24h",
   dateFormat: "dd/MM/yyyy",
+  theme: "system",
 };
 
 /**
@@ -54,18 +59,18 @@ function resolveTimeZone(value: string | null): string {
   return value !== null && isUsableTimeZone(value) ? value : PREFERENCE_DEFAULTS.timezone;
 }
 
-/** El `check` de la base impide un formato fuera de lista; si llega, lanza. */
-function knownFormat<Format extends string>(
-  formats: readonly Format[],
+/** El `check` de la base impide un valor fuera de lista; si llega, lanza. */
+function knownChoice<Choice extends string>(
+  choices: readonly Choice[],
   value: string | null,
-  fallback: Format,
-): Format {
+  fallback: Choice,
+): Choice {
   if (value === null) {
     return fallback;
   }
-  const known = formats.find((format) => format === value);
+  const known = choices.find((choice) => choice === value);
   if (known === undefined) {
-    throw new RangeError(`Formato fuera de lista: ${value}.`);
+    throw new RangeError(`Valor fuera de lista: ${value}.`);
   }
   return known;
 }
@@ -74,22 +79,51 @@ function knownFormat<Format extends string>(
 export function resolvePreferences(row: UserPreferenceRow | undefined): Preferences {
   return {
     timezone: resolveTimeZone(row?.timezone ?? null),
-    timeFormat: knownFormat<TimeFormat>(
+    timeFormat: knownChoice<TimeFormat>(
       TIME_FORMATS,
       row?.timeFormat ?? null,
       PREFERENCE_DEFAULTS.timeFormat,
     ),
-    dateFormat: knownFormat<DateFormat>(
+    dateFormat: knownChoice<DateFormat>(
       DATE_FORMATS,
       row?.dateFormat ?? null,
       PREFERENCE_DEFAULTS.dateFormat,
     ),
+    theme: knownChoice<Theme>(THEMES, row?.theme ?? null, PREFERENCE_DEFAULTS.theme),
   };
 }
 
-/** Las preferencias de quien pide, ya resueltas. Una consulta por clave primaria. */
-export async function preferencesOf(userId: string): Promise<Preferences> {
-  return resolvePreferences(await profileRepository.findPreferences(userId));
+/** Lo que la persona guardó de su cuenta, resuelto. */
+export type StoredProfile = {
+  readonly preferences: Preferences;
+  /** El nombre que eligió, o `null` si nunca lo editó. */
+  readonly displayName: string | null;
+};
+
+/** Una consulta por clave primaria: las preferencias resueltas y el nombre tal como está. */
+export async function profileOf(userId: string): Promise<StoredProfile> {
+  const row = await profileRepository.findPreferences(userId);
+  return {
+    preferences: resolvePreferences(row),
+    displayName: row?.displayName ?? null,
+  };
+}
+
+/** El nombre que se muestra: el editado, o el de la cuenta de Google (PF-08, PF-45). */
+export function displayNameOf(stored: StoredProfile, accountName: string): string {
+  return stored.displayName ?? accountName;
+}
+
+/**
+ * La clase de `<html>` (PF-23, PF-24, ADR 0015). Sin sesión, o con «Seguir al
+ * sistema», ninguna: lo resuelve la hoja de estilos. Única lectura del tema
+ * para mostrar.
+ */
+export function themeClassOf(
+  context: ProfileContext | null,
+): "light" | "dark" | undefined {
+  const theme = context?.preferences.theme;
+  return theme === "light" || theme === "dark" ? theme : undefined;
 }
 
 /**
@@ -142,6 +176,8 @@ export type ProfileView = {
     readonly timezones: readonly Choice<string>[];
     readonly timeFormats: readonly Choice<TimeFormat>[];
     readonly dateFormats: readonly Choice<DateFormat>[];
+    /** Sin ejemplo: el nombre de cada tema lo pone la pantalla. */
+    readonly themes: readonly Theme[];
   };
 };
 
@@ -186,57 +222,91 @@ export function getProfileView(
         value: format,
         example: formatDayKey(todayKey, format, true),
       })),
+      themes: THEMES,
     },
   };
 }
 
-const AUDIT_ACTION = "profile.updatePreference";
 const AUDIT_ENTITY = "user_preference";
 
+/** Una columna de la fila con su valor: la clave de una preferencia, o el nombre. */
+type ColumnChange =
+  UpdatePreferenceInput | { readonly key: "displayName"; readonly value: string };
+
 /** La columna que escribe el pedido, con su valor. */
-function columnOf(input: UpdatePreferenceInput): PreferenceColumn {
-  switch (input.key) {
+function columnOf(change: ColumnChange): PreferenceColumn {
+  switch (change.key) {
     case "timezone":
-      return { timezone: input.value };
+      return { timezone: change.value };
     case "timeFormat":
-      return { timeFormat: input.value };
+      return { timeFormat: change.value };
     case "dateFormat":
-      return { dateFormat: input.value };
+      return { dateFormat: change.value };
+    case "theme":
+      return { theme: change.value };
+    case "displayName":
+      return { displayName: change.value };
   }
 }
 
 /**
- * PF-11 a PF-13, PF-32, PF-35. El permiso (PF-34) lo consulta la action. Pedir
- * el valor ya guardado es un éxito sin efecto (TT-89); un nulo no es igual a
- * su predeterminado, porque elegirlo explícitamente deja de seguir al
- * predeterminado.
+ * Pedir el valor ya guardado es un éxito sin efecto (TT-89). Un nulo no es
+ * igual a ningún valor: elegir el predeterminado, o el nombre de Google (D1),
+ * deja de seguirlo.
  */
-export async function updatePreference(
+async function writePreferenceColumn(
   actor: Actor,
-  input: UpdatePreferenceInput,
-): Promise<UpdatePreferenceResult> {
+  change: ColumnChange,
+  auditAction: string,
+): Promise<UserPreferenceRow | undefined> {
   return db.transaction(async (tx) => {
     // La fila asegurada pone en fila a los pedidos de la persona, también al primero.
     await profileRepository.ensurePreferences(tx, actor.userId);
     const row = await profileRepository.findPreferencesForUpdate(tx, actor.userId);
-    const previous = row?.[input.key] ?? null;
-    if (previous === input.value) {
-      return { preferences: resolvePreferences(row) };
+    const previous = row?.[change.key] ?? null;
+    if (previous === change.value) {
+      return row;
     }
     const written = await profileRepository.writePreference(
       tx,
       actor.userId,
-      columnOf(input),
+      columnOf(change),
     );
     await recordAudit(tx, {
       workspaceId: actor.workspaceId,
       actorId: actor.userId,
-      action: AUDIT_ACTION,
+      action: auditAction,
       entity: AUDIT_ENTITY,
       entityId: actor.userId,
-      previousValue: { [input.key]: previous },
-      nextValue: { [input.key]: input.value },
+      previousValue: { [change.key]: previous },
+      nextValue: { [change.key]: change.value },
     });
-    return { preferences: resolvePreferences(written) };
+    return written;
   });
+}
+
+/** PF-11 a PF-13, PF-23, PF-32, PF-35. El permiso (PF-34) lo consulta la action. */
+export async function updatePreference(
+  actor: Actor,
+  input: UpdatePreferenceInput,
+): Promise<UpdatePreferenceResult> {
+  const row = await writePreferenceColumn(actor, input, "profile.updatePreference");
+  return { preferences: resolvePreferences(row) };
+}
+
+/**
+ * PF-07, PF-08, PF-35. El permiso (PF-34) lo consulta la action. Compara contra
+ * `display_name` y nada más (D1): no lee `user.name`, y el nombre de Google
+ * pedido después de haber editado otro se guarda.
+ */
+export async function updateName(
+  actor: Actor,
+  input: UpdateNameInput,
+): Promise<UpdateNameResult> {
+  await writePreferenceColumn(
+    actor,
+    { key: "displayName", value: input.name },
+    "profile.updateName",
+  );
+  return { name: input.name };
 }

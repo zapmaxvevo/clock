@@ -29,7 +29,7 @@ import { cn } from "@/lib/utils";
 import { profileMessages, type ProfileActions } from "@/modules/profile/schema";
 import type { ProfileView } from "@/modules/profile/service";
 
-import { failureTitles, profileLabels, timeFormatNames } from "./labels";
+import { failureTitles, profileLabels, themeNames, timeFormatNames } from "./labels";
 import { matchingTimeZones } from "./timezone-search";
 
 type Options = ProfileView["options"];
@@ -56,12 +56,17 @@ type PreferenceFieldProps = {
       readonly value: string;
       readonly options: Options["dateFormats"];
     }
+  | {
+      readonly preference: "theme";
+      readonly value: string;
+      readonly options: Options["themes"];
+    }
 );
 
 const triggerWidth = "w-full sm:w-80";
 
 /**
- * Un control de «Hora y fecha» que guarda al cambiar (PF-32), con el valor
+ * Un control de las preferencias que guarda al cambiar (PF-32), con el valor
  * nuevo como vista optimista. Si falla, la transición descarta esa vista y el
  * control vuelve solo al anterior; el aviso queda debajo, y sobrevive a la
  * revalidación porque el campo sigue montado aunque `canEdit` cambie.
@@ -94,7 +99,7 @@ export function PreferenceField(props: PreferenceFieldProps) {
         );
       case "timeFormat":
         return (
-          <FormatSelect
+          <ChoiceSelect
             id={controlId}
             triggerRef={triggerRef}
             value={shown}
@@ -106,7 +111,7 @@ export function PreferenceField(props: PreferenceFieldProps) {
         );
       case "dateFormat":
         return (
-          <FormatSelect
+          <ChoiceSelect
             id={controlId}
             triggerRef={triggerRef}
             value={shown}
@@ -114,6 +119,20 @@ export function PreferenceField(props: PreferenceFieldProps) {
             nameOf={(value) => value}
             canEdit={props.canEdit}
             onChange={(value) => save.run({ key: "dateFormat", value })}
+          />
+        );
+      case "theme":
+        // Los colores cambian con la respuesta, cuando la revalidación trae
+        // la clase nueva de `<html>` (ADR 0015).
+        return (
+          <ChoiceSelect
+            id={controlId}
+            triggerRef={triggerRef}
+            value={shown}
+            options={props.options.map((value) => ({ value }))}
+            nameOf={(value) => themeNames[value]}
+            canEdit={props.canEdit}
+            onChange={(value) => save.run({ key: "theme", value })}
           />
         );
     }
@@ -177,27 +196,29 @@ export function FixedSetting({ label, value, note }: FixedSettingProps) {
   );
 }
 
-/** El valor con su ejemplo, como lo nombran el disparador y la opción. */
-function choiceText(name: string, example: string): string {
-  return `${name} (${example})`;
+/** El valor con su ejemplo, si tiene, como lo nombran el disparador y la opción. */
+function choiceText(name: string, example: string | undefined): string {
+  return example === undefined ? name : `${name} (${example})`;
 }
 
-type FormatSelectProps<Value extends string> = {
+type ChoiceSelectProps<Value extends string> = {
   readonly id: string;
   readonly triggerRef: Ref<HTMLButtonElement>;
   readonly value: string;
-  readonly options: readonly { readonly value: Value; readonly example: string }[];
+  /** Sin `example`, ni el disparador ni la opción llevan paréntesis (el tema). */
+  readonly options: readonly { readonly value: Value; readonly example?: string }[];
   readonly nameOf: (value: Value) => string;
   readonly canEdit: boolean;
   readonly onChange: (value: Value) => void;
 };
 
 /**
- * Un formato con su ejemplo. Sin permiso queda montado con `aria-disabled`
- * y no abre: `readOnly` fija el valor y la apertura la corta `changeOpen`,
- * porque la primitiva deja abrir un `Select` de solo lectura.
+ * Una opción de una lista cerrada: un formato con su ejemplo, o el tema sin
+ * él. Sin permiso queda montado con `aria-disabled` y no abre: `readOnly`
+ * fija el valor y la apertura la corta `changeOpen`, porque la primitiva deja
+ * abrir un `Select` de solo lectura.
  */
-function FormatSelect<Value extends string>({
+function ChoiceSelect<Value extends string>({
   id,
   triggerRef,
   value,
@@ -205,7 +226,7 @@ function FormatSelect<Value extends string>({
   nameOf,
   canEdit,
   onChange,
-}: FormatSelectProps<Value>) {
+}: ChoiceSelectProps<Value>) {
   const [open, setOpen] = useState(false);
   const items = options.map((option) => ({
     value: option.value,
@@ -250,8 +271,13 @@ function FormatSelect<Value extends string>({
       <SelectContent>
         {options.map((option) => (
           <SelectItem key={option.value} value={option.value}>
-            {nameOf(option.value)}{" "}
-            <span className="text-muted-foreground">({option.example})</span>
+            {nameOf(option.value)}
+            {option.example !== undefined && (
+              <>
+                {" "}
+                <span className="text-muted-foreground">({option.example})</span>
+              </>
+            )}
           </SelectItem>
         ))}
       </SelectContent>

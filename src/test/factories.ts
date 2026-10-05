@@ -63,7 +63,10 @@ export async function seedMember(workspaceId: string, role: Role): Promise<strin
 
 /** Las columnas de preferencia que se siembran; las que faltan quedan en nulo. */
 export type SeedPreferenceValues = Partial<
-  Pick<typeof userPreference.$inferInsert, "timezone" | "timeFormat" | "dateFormat">
+  Pick<
+    typeof userPreference.$inferInsert,
+    "timezone" | "timeFormat" | "dateFormat" | "displayName" | "theme"
+  >
 >;
 
 /** La fila de preferencias de una persona, escrita directo con las columnas que se pasen. */

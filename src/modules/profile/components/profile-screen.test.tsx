@@ -6,10 +6,11 @@ import type { ProfileView } from "@/modules/profile/service";
 
 import { ProfileScreen } from "./profile-screen";
 
-/** Doble escrito a mano: el marcado inicial no llama a la action. */
+/** Dobles escritos a mano: el marcado inicial no llama a las actions. */
 const actions: ProfileActions = {
   updatePreference: () =>
     Promise.resolve({ ok: false, code: "unexpected", message: "doble" }),
+  updateName: () => Promise.resolve({ ok: false, code: "unexpected", message: "doble" }),
 };
 
 const view: ProfileView = {
@@ -25,6 +26,7 @@ const view: ProfileView = {
     timezone: "America/Argentina/Buenos_Aires",
     timeFormat: "24h",
     dateFormat: "dd/MM/yyyy",
+    theme: "system",
   },
   timezoneOption: "America/Buenos_Aires",
   weekStart: 1,
@@ -44,6 +46,7 @@ const view: ProfileView = {
       { value: "yyyy-MM-dd", example: "2026-10-04" },
       { value: "MM/dd/yyyy", example: "10/04/2026" },
     ],
+    themes: ["system", "light", "dark"],
   },
 };
 
@@ -65,10 +68,25 @@ function identityOf(markup: string): string {
   );
 }
 
+/** El grupo «Hora y fecha», sin el de «Apariencia» que le sigue. */
+function timeAndDateOf(markup: string): string {
+  return markup.split('aria-labelledby="profile-appearance"')[0];
+}
+
+/** El grupo «Apariencia». */
+function appearanceOf(markup: string): string {
+  return markup.split('aria-labelledby="profile-appearance"')[1] ?? "";
+}
+
+/** El campo del nombre: el único `input` de la identidad. */
+function nameInputOf(markup: string): string {
+  return identityOf(markup).match(/<input[^>]*>/)?.[0] ?? "";
+}
+
 /** Un atributo `disabled` o `aria-disabled`, no las clases que los nombran. */
 const disabledAttribute = /\s(aria-)?disabled(=|\s|>)/;
 
-/** Los disparadores con rol `combobox`: el de la zona y los de los dos formatos. */
+/** Los disparadores con rol `combobox`: el de la zona, los de los dos formatos y el del tema. */
 function comboboxesOf(markup: string): string[] {
   return markup.match(/<button[^>]*role="combobox"[^>]*>.*?<\/button>/g) ?? [];
 }
@@ -80,7 +98,7 @@ function timezoneTriggerOf(markup: string): string | undefined {
   );
 }
 
-/** Los dos `Select`, que abren una lista. */
+/** Los `Select`, que abren una lista: los dos formatos y el tema. */
 function formatTriggersOf(markup: string): string[] {
   return comboboxesOf(markup).filter(
     (trigger) => !trigger.includes('aria-haspopup="dialog"'),
@@ -93,17 +111,34 @@ function controlIdFor(markup: string, label: string): string | undefined {
 }
 
 describe("ProfileScreen", () => {
-  it("muestra la identidad en solo lectura, con las iniciales sin foto y la nota de Google", () => {
+  it("muestra la identidad con el nombre como único control, las iniciales sin foto y la nota de Google", () => {
     const identity = identityOf(render());
     const text = textOf(identity);
 
-    expect(text).toContain("Ana Pérez");
+    expect(nameInputOf(render())).toContain('value="Ana Pérez"');
     expect(text).toContain("ana@empresa.com");
     expect(text).toContain("AP");
-    expect(text).toContain(
-      "El nombre, la foto y el correo salen de tu cuenta de Google.",
-    );
-    expect(identity).not.toMatch(/<(input|button|textarea)/);
+    expect(text).toContain("La foto y el correo salen de tu cuenta de Google.");
+    expect(identity.match(/<(input|button|textarea)/g)).toEqual(["<input"]);
+  });
+
+  it("el nombre es un campo de texto rotulado «Nombre», que corta en el largo del esquema", () => {
+    const markup = render();
+    const input = nameInputOf(markup);
+
+    expect(input).toContain('type="text"');
+    expect(input).toContain(`id="${controlIdFor(markup, "Nombre")}"`);
+    expect(input).toMatch(/\smaxLength="100"/i);
+    expect(input).toMatch(/\sautoComplete="name"/i);
+    expect(input).not.toMatch(/\sreadonly/i);
+  });
+
+  it("sin permiso, el nombre se ve en el campo, readOnly y sin disabled", () => {
+    const input = nameInputOf(render({ canEdit: false }));
+
+    expect(input).toContain('value="Ana Pérez"');
+    expect(input).toMatch(/\sreadonly(=|\s|>)/i);
+    expect(input).not.toMatch(disabledAttribute);
   });
 
   it("con permiso, la zona es un combobox con la opción equivalente y su desplazamiento", () => {
@@ -132,7 +167,7 @@ describe("ProfileScreen", () => {
 
     expect(text).toContain("Primer día de la semanaDomingoLo administra el equipo.");
     expect(text).toContain("Formato de duraciónCompacto (h:mm)Lo define el workspace.");
-    expect(comboboxesOf(render())).toHaveLength(3);
+    expect(comboboxesOf(timeAndDateOf(render()))).toHaveLength(3);
   });
 
   it("con permiso no muestra el aviso de la membresía y ningún control está inactivo", () => {
@@ -158,7 +193,7 @@ describe("ProfileScreen", () => {
 
   it("sin permiso, los dos formatos siguen montados con aria-disabled y sin disabled", () => {
     const markup = render({ canEdit: false });
-    const formats = formatTriggersOf(markup);
+    const formats = formatTriggersOf(timeAndDateOf(markup));
 
     expect(formats).toHaveLength(2);
     for (const trigger of formats) {
@@ -169,5 +204,30 @@ describe("ProfileScreen", () => {
     }
     expect(textOf(formats[0])).toBe("dd/MM/yyyy (04/10/2026)");
     expect(textOf(formats[1])).toBe("24 horas (13:00)");
+  });
+
+  it("el tema, en el grupo «Apariencia», muestra el guardado sin ejemplo, nombrado por su rótulo", () => {
+    const markup = render({ preferences: { ...view.preferences, theme: "dark" } });
+    const appearance = appearanceOf(markup);
+    const [trigger] = formatTriggersOf(appearance);
+
+    expect(textOf(appearance)).toContain("Apariencia");
+    expect(formatTriggersOf(appearance)).toHaveLength(1);
+    expect(textOf(trigger)).toBe("Oscuro");
+    expect(trigger).toContain(`id="${controlIdFor(markup, "Tema")}"`);
+  });
+
+  it("sin elegir, el tema es «Seguir al sistema»", () => {
+    const [trigger] = formatTriggersOf(appearanceOf(render()));
+
+    expect(textOf(trigger)).toBe("Seguir al sistema");
+  });
+
+  it("sin permiso, el tema sigue montado con aria-disabled y sin disabled", () => {
+    const [trigger] = formatTriggersOf(appearanceOf(render({ canEdit: false })));
+
+    expect(trigger).toContain('aria-disabled="true"');
+    expect(trigger).not.toMatch(/\sdisabled(=|\s|>)/);
+    expect(trigger).not.toContain("data-disabled");
   });
 });

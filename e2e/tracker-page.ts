@@ -41,19 +41,30 @@ export function dayTotal(group: Locator): Locator {
 }
 
 /**
- * Canales del color de fondo. El tema los define en oklch y el canvas los
- * lleva a sRGB pintando un píxel, así la afirmación es «es rojo» y no el
- * valor exacto de la paleta.
+ * Canales del color de fondo de la superficie de `element`: el suyo o el del
+ * primer ancestro que pinta uno, como la lista transparente de un `Select`,
+ * que la pinta su popup. El tema los define en oklch, la build los reescribe
+ * en lab, y el canvas los lleva a sRGB pintando un píxel, así la afirmación es
+ * «es rojo» y no el valor exacto de la paleta.
  */
 export async function backgroundRgb(
   element: Locator,
 ): Promise<{ red: number; green: number; blue: number }> {
   return element.evaluate((node) => {
+    let surface: Element | null = node;
+    let color = "transparent";
+    while (surface !== null) {
+      color = window.getComputedStyle(surface).backgroundColor;
+      if (color !== "rgba(0, 0, 0, 0)" && color !== "transparent") {
+        break;
+      }
+      surface = surface.parentElement;
+    }
     const context = document.createElement("canvas").getContext("2d");
     if (context === null) {
       throw new Error("El canvas no está disponible para normalizar el color.");
     }
-    context.fillStyle = window.getComputedStyle(node).backgroundColor;
+    context.fillStyle = color;
     context.fillRect(0, 0, 1, 1);
     const { data } = context.getImageData(0, 0, 1, 1);
     return { red: data[0], green: data[1], blue: data[2] };
@@ -262,6 +273,20 @@ export async function openProfileFromMenu(page: Page): Promise<void> {
   await accountMenu(page).getByRole("menuitem", { name: "Perfil", exact: true }).click();
   await expect(page).toHaveURL((url) => url.pathname === "/perfil");
   await expect(page.getByRole("heading", { name: "Perfil", exact: true })).toBeVisible();
+}
+
+/**
+ * Deja una marca en la ventana. Una carga nueva la borra: si sigue ahí, todo
+ * lo que pasó desde que se puso fue navegación del cliente (PF-33).
+ */
+export async function markDocument(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    Object.assign(window, { e2eSinRecargar: true });
+  });
+}
+
+export async function documentIsMarked(page: Page): Promise<boolean> {
+  return page.evaluate(() => "e2eSinRecargar" in window);
 }
 
 /** Vuelve al rastreador por la navegación principal, sin recargar. */
