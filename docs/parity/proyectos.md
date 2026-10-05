@@ -39,7 +39,11 @@ API:
 - https://clockify.me/help/track-time-and-expenses/categorizing-time-entries
 - https://clockify.me/help/administration/updates-to-clockify-free-plan
 - https://clockify.me/help/administration/user-roles-and-permissions/manager-role
+- https://clockify.me/help/administration/hourly-rates (facturable, de plan pago)
 - https://docs.clockify.me/ (endpoints de project, client, task y tag)
+
+_Agregado el 2026-10-05, slice 11_: la página de tarifas, y la de etiquetas
+consultada de nuevo, para PR-21, PR-47, PR-48 y PR-112.
 
 **No pude entrar al workspace real del equipo**: no tengo credenciales de
 Clockify en este entorno. Igual que en `time-tracker.md`, todo lo marcado como
@@ -275,6 +279,27 @@ compara contra este documento y no contra el producto. Lo que nunca entra es lo
 que cuelga del facturable en Clockify —tarifas, importes, facturas—, que es
 pago y además no se pidió (PR-29).
 
+_Agregado el 2026-10-05_. Relevamiento, de plan pago: la página de tarifas dice
+«You can set projects or individual tasks to be billable or non-billable by
+default, which means all new entries will initially be set according to what
+you choose.», y que se cambia desde la pestaña **Settings** de un proyecto ya
+creado. No dice qué pasa al cambiarle el proyecto a una entrada que ya existe.
+El facturable por defecto de la tarea y el interruptor de workspace «Activate
+billable hours», que la misma página nombra, no entran: son de la misma familia
+paga (P-32) y nadie los pidió.
+
+Diseño propio, fijado en el
+[contrato del slice 11](../slices/fase1-slice11-etiquetas-y-facturable.md):
+
+- **Se elige al crear el proyecto**, con la casilla «Facturable por defecto»,
+  sin marcar, y la ayuda «Las entradas nuevas con este proyecto arrancan
+  facturables.». En Clockify es un interruptor de la configuración de un
+  proyecto ya creado; acá va en el alta porque la fase 1 no edita proyectos
+  (§14.3), y editarlo después sigue siendo de la fase 2.
+- **Elegir otro proyecto para una entrada que ya existe le impone su facturable
+  por defecto**; «Sin proyecto» y cambiar solo la tarea lo conservan. Decisión
+  del equipo del 2026-10-05; el detalle está en TT-14.
+
 ### 2.3 Ciclo de vida
 
 **PR-22 Archivar un proyecto** — `replicar`
@@ -458,9 +483,48 @@ no la ofrece para entradas nuevas. La documentación no dice nada al respecto.
 Justificación: es la misma regla que TT-104 aplica al proyecto archivado, y la
 alternativa —que desaparezca— convertiría al archivado en un borrado silencioso.
 
+_Agregado el 2026-10-05_. Diseño propio, fijado en el
+[contrato del slice 11](../slices/fase1-slice11-etiquetas-y-facturable.md): en
+el selector de esa entrada, la etiqueta archivada aparece marcada, con
+«(archivada)» después del nombre, en su lugar del orden alfabético. Se puede
+desmarcar; cerrado el selector, la entrada ya no la tiene y no vuelve a
+ofrecerse. Conservarla mientras se agrega otra no la valida de nuevo: solo se
+validan las etiquetas que la entrada todavía no tiene. Continuar o duplicar esa
+entrada se rechaza con TT-78 (TT-57, TT-58). _No verificado_ (P-33): cómo la
+muestra Clockify.
+
 **PR-48 Varias etiquetas por entrada** — `replicar`
 Documentado: una entrada puede llevar más de una etiqueta. Sin tope conocido.
 _No verificado_: si Clockify limita la cantidad.
+
+_Agregado el 2026-10-05_. **Acá, hasta 50 por entrada**: límite propio, como el
+de 200 entradas de TT-63, fijado en el
+[contrato del slice 11](../slices/fase1-slice11-etiquetas-y-facturable.md)
+(decisión del equipo del 2026-10-05). Hace falta para el esquema y para que una
+sola mutación no escriba sin cota; nadie llega a 50. Con más, el servidor
+responde «Se pueden elegir hasta 50 etiquetas por entrada.». Una etiqueta no se
+repite en una entrada. Relevado sin resultado: la página de etiquetas dice «You
+can create as many tags as you want.», que habla del catálogo del workspace y
+no de la entrada, y no encontré un tope para `tagIds` en la referencia pública
+de la API. Si el workspace del equipo muestra un tope menor, se corrige (P-33).
+
+**PR-112 Dónde se crean y se ven las etiquetas en la fase 1** — `adaptar`
+_ID fuera de orden: este comportamiento se agregó después del resto._
+Documentado: Clockify tiene una página de etiquetas en el menú lateral, donde se
+crean —«Go to Tags page from sidebar», «Type tag name and click ADD»— y donde se
+archivan, restauran y borran desde los tres puntos de cada una, con el filtro
+«Show archived» / «Show all» (PR-45, PR-46). También se crean desde el selector
+(TT-13).
+Acá, en la fase 1, se crean y se ven en `/proyectos`: la cabecera suma «Nueva
+etiqueta» con `tag.create`, que abre un diálogo con el nombre, como el de
+cliente, y una sección «Etiquetas», después de los proyectos, lista las activas
+en orden alfabético, sin acciones por etiqueta. Sin ninguna, la sección dice
+«Todavía no hay etiquetas». Justificación: PR-04 deja un solo camino de alta
+por entidad y en la fase 1 ese camino es `/proyectos`; la página propia, con su
+filtro y sus acciones, es administración y llega con la fase 2 sin tocar el
+modelo ([ADR 0016](../adr/0016-las-etiquetas-son-del-modulo-de-proyectos.md)).
+Decisión del equipo del 2026-10-05, fijada en el
+[contrato del slice 11](../slices/fase1-slice11-etiquetas-y-facturable.md).
 
 ## 5. Unicidad y colisiones
 
@@ -699,6 +763,9 @@ expandir.
 
 **PR-88 Workspace sin etiquetas** — `adaptar`
 Ya relevado en TT-88.
+_Agregado el 2026-10-05_: con `tag.create`, el selector suma el enlace «Ir a
+Proyectos» (TT-88), y la sección «Etiquetas» de `/proyectos` vacía muestra
+«Todavía no hay etiquetas» (PR-112).
 
 **PR-89 Todo archivado** — `adaptar`
 Con el filtro en activos y todo archivado, la lista muestra «No hay proyectos
@@ -828,9 +895,11 @@ archive. La acción, cuando tiene identificador propio, va a la fase 2.
   PR-111.
 - **Slice 10 (24):** PR-10, PR-23, PR-63 … PR-67, PR-70, PR-71, PR-74, PR-82,
   PR-87, PR-94, PR-96, PR-98 … PR-103, PR-105 … PR-107, PR-110.
-- **Slice 11 (12):** PR-21 (decisión del equipo del 2026-10-03: el 11 suma el
+- **Slice 11 (13):** PR-21 (decisión del equipo del 2026-10-03: el 11 suma el
   facturable al alta de proyecto), PR-42 … PR-44, PR-47, PR-48, PR-52, PR-68,
-  PR-69, PR-73, PR-80, PR-88.
+  PR-69, PR-73, PR-80, PR-88, PR-112. El 11 verifica además la parte de
+  etiquetas de PR-53, PR-54, PR-58 y PR-62, que siguen con destino en el 9
+  (§14.3).
 - **Slice 12 (0):** ninguno. Sus comportamientos son de `time-tracker.md`
   (TT-63); de este documento aplica en bloque reglas que ya tienen destino, como
   PR-72 … PR-74 y PR-82.
@@ -839,7 +908,11 @@ archive. La acción, cuando tiene identificador propio, va a la fase 2.
   PR-104.
 - **Fuera de alcance (7):** PR-11, PR-28, PR-29, PR-32 … PR-34, PR-41.
 
-Son 111 identificadores, PR-01 a PR-111, cada uno en un solo destino.
+Son 112 identificadores, PR-01 a PR-112, cada uno en un solo destino.
+
+_Corregido el 2026-10-05, slice 11_: el 11 tenía 12 identificadores y no decía
+que verifica la parte de etiquetas de PR-53, PR-54, PR-58 y PR-62; suma
+PR-112, nuevo, y el total pasa de 111 a 112.
 
 ### 14.2 Qué cambió el 2026-10-03
 
@@ -898,6 +971,7 @@ Son 111 identificadores, PR-01 a PR-111, cada uno en un solo destino.
   fila.
 - **Nuevo:** PR-111 (9). _Agregado el 2026-10-03, decisión del equipo_; ver la
   sección 13.
+- **Nuevo:** PR-112 (11). _Agregado el 2026-10-05, slice 11_; ver la sección 4.
 
 ### 14.3 Lo que un destino le deja a otro
 
@@ -927,15 +1001,20 @@ Son 111 identificadores, PR-01 a PR-111, cada uno en un solo destino.
   activas; el selector del 10 esconde las hechas (PR-99).
 - **PR-40 y PR-44.** Crear es del 9 y del 11; editar y borrar, de la fase 2.
 - **PR-53 y PR-54.** El índice y los `checks` de la etiqueta llegan con el 11,
-  con la misma regla.
+  con la misma regla, y el 11 los verifica.
 - **PR-57, PR-60 y PR-90.** Valen para cada acción nueva del 10, del 11 y de la
   fase 2, que suman sus casos a sus propios tests.
-- **PR-58.** Crear clientes, proyectos y tareas es del 9; crear etiquetas, del 11.
-- **PR-62.** Que las etiquetas las vea todo el workspace llega con el 11.
+- **PR-58.** Crear clientes, proyectos y tareas es del 9; crear etiquetas, del
+  11, que lo verifica.
+- **PR-62.** Que las etiquetas las vea todo el workspace llega con el 11, que lo
+  verifica con `tag.view`.
 - **PR-85 y PR-86.** El vacío del selector es TT-87, del 10. La pantalla de
   clientes vacía de PR-86 llega con la pantalla de clientes de la fase 2.
 - **PR-93.** `/proyectos` se arma en el servidor desde el 9; el selector del 10
   sigue la misma regla.
+
+_Corregido el 2026-10-05, slice 11_: PR-53, PR-54, PR-58 y PR-62 decían que la
+parte de etiquetas llega con el 11, sin decir que el 11 la verifica.
 
 Las columnas que no tienen pantalla en la fase 1 —nota y dirección del cliente,
 nota del proyecto, visibilidad, facturable por defecto, marca de responsable,
@@ -972,13 +1051,16 @@ numeración que otro documento pueda estar escribiendo en paralelo.
 
 ### Abierto
 
-| ID   | Punto                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P-33 | **Verificar en el workspace real del equipo lo marcado como _no verificado_.** No es una decisión: es abrir la cuenta y mirar. Son doce puntos y se resuelven de una sentada: PR-01 (largos de los campos del cliente), PR-07 (restaurar un cliente no restaura sus proyectos), PR-14 (rótulo del grupo sin cliente), PR-24 (restaurar un proyecto no desmarca sus tareas), PR-31 (columnas, orden y filtros de la lista de proyectos), PR-40 (valor por defecto de quién crea tareas), PR-48 (tope de etiquetas por entrada), PR-51 (si Clockify exige nombres de tarea únicos), PR-67 (qué pasa con las tareas de un proyecto borrado), PR-101 (cambiar el cliente de un proyecto con entradas), PR-106 y PR-107 (archivar y borrar un proyecto con un timer corriendo). |
+| ID   | Punto                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P-33 | **Verificar en el workspace real del equipo lo marcado como _no verificado_.** No es una decisión: es abrir la cuenta y mirar. Son trece puntos y se resuelven de una sentada: PR-01 (largos de los campos del cliente), PR-07 (restaurar un cliente no restaura sus proyectos), PR-14 (rótulo del grupo sin cliente), PR-24 (restaurar un proyecto no desmarca sus tareas), PR-31 (columnas, orden y filtros de la lista de proyectos), PR-40 (valor por defecto de quién crea tareas), PR-47 (cómo muestra el selector una etiqueta archivada que la entrada ya tiene), PR-48 (tope de etiquetas por entrada; acá, 50), PR-51 (si Clockify exige nombres de tarea únicos), PR-67 (qué pasa con las tareas de un proyecto borrado), PR-101 (cambiar el cliente de un proyecto con entradas), PR-106 y PR-107 (archivar y borrar un proyecto con un timer corriendo). |
 
-Ninguno de los doce bloquea el slice 9: todos tienen una regla escrita en este
-documento y lo que la verificación puede hacer es corregirla, no destrabarla.
+Ninguno de los trece bloquea el slice 9 ni el 11: todos tienen una regla
+escrita en este documento y lo que la verificación puede hacer es corregirla, no
+destrabarla.
 
 PR-58 depende de la misma verificación que PR-40 y no suma un punto: si en el
 plan Free cualquier miembro crea tareas, cambia la regla de `task.create` o se
 registra la divergencia con su motivo. _Agregado el 2026-10-03._
+_Corregido el 2026-10-05, slice 11_: P-33 suma PR-47 y dice el tope que el 11
+fija en PR-48.

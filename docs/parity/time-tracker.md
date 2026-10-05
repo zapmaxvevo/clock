@@ -21,8 +21,13 @@ Clockify y la referencia pública de su API:
 - https://clockify.me/help/track-time-and-expenses/bulk-edit
 - https://clockify.me/help/track-time-and-expenses/duration-format
 - https://clockify.me/help/track-time-and-expenses/time-rounding
+- https://clockify.me/help/track-time-and-expenses/categorizing-time-entries
+- https://clockify.me/help/administration/hourly-rates (facturable, de plan pago)
 - https://clockify.me/help/users/user-settings
 - https://docs.clockify.me/ (endpoints de time entry)
+
+_Agregado el 2026-10-05, slice 11_: las páginas de etiquetas y de tarifas,
+consultadas ese día para TT-12, TT-13, TT-14, TT-57 y TT-88.
 
 **No pude entrar al workspace real del equipo**: no tengo credenciales de
 Clockify en este entorno. Todo lo que está marcado como _no verificado_ abajo
@@ -209,13 +214,54 @@ proyecto; quitar el proyecto quita la tarea.
 
 ### 2.3 Etiquetas
 
-**TT-12 Selector de etiquetas** — `replicar`
+**TT-12 Selector de etiquetas** — `adaptar`
 Ícono de etiqueta; abre un popover con buscador y casillas de selección
-múltiple. Con etiquetas elegidas el ícono se marca y el botón muestra la
-cantidad o los nombres si entran.
+múltiple. Con etiquetas elegidas el ícono se marca y el botón muestra sus
+nombres, recortados si no entran. Documentado, en la página de etiquetas:
+«Click tag icon on a time entry»; el resto se ve en el producto y no está
+escrito. Justificación: en Clockify el botón muestra la cantidad o los nombres,
+según entren, y elegir entre las dos midiendo el ancho no es predecible; los
+nombres recortados, con el nombre accesible entero, se leen igual siempre.
+
+_Agregado el 2026-10-05_. Diseño propio, fijado en el
+[contrato del slice 11](../slices/fase1-slice11-etiquetas-y-facturable.md): la
+documentación no describe el selector.
+
+- **El botón.** Sin etiquetas, el ícono de etiqueta y, en la barra, «Etiquetas»;
+  en la fila, solo el ícono, en gris (TT-50). Con etiquetas, el ícono marcado y
+  los nombres en orden alfabético, separados por coma y recortados con elipsis
+  si no entran. Su nombre accesible suma todos los nombres.
+- **La búsqueda es la de TT-07**: no distingue mayúsculas ni acentos, y filtra
+  en el navegador sobre el catálogo entero de etiquetas activas. Sin
+  coincidencias, «Ninguna etiqueta coincide con la búsqueda.»
+- **En una entrada que ya existe** —la que corre o una fila— **se guarda al
+  cerrar el selector**, con el conjunto entero y solo si cambió. Cada casilla
+  marca o desmarca sin cerrar. `Escape`, un clic afuera y `Tab` cierran, y
+  también guardan: cada casilla marcada ya es una elección hecha a la vista.
+  Con la barra sin timer y en los diálogos del calendario, el selector cambia
+  lo que viaja con «Iniciar», «Agregar» o «Guardar».
+- **Una etiqueta archivada que la entrada ya tiene** aparece marcada, con
+  «(archivada)» después del nombre (PR-47 de
+  [la paridad de proyectos](proyectos.md)).
+- **Hasta 50 etiquetas por entrada** (PR-48).
+- **Con la membresía desactivada** (TT-92), los nombres como texto, sin
+  selector; sin etiquetas, nada.
+
+_No verificado_ (P-14): cómo muestra Clockify el botón con varias etiquetas,
+cómo busca, y si guarda con cada casilla o al cerrar. La página de edición dice
+«Changes are automatically saved as you make them.», que no distingue entre las
+dos. Si guarda con cada casilla, el guardado al cerrar pasa a ser parte de la
+adaptación, con la justificación de TT-55: cambiar cinco etiquetas es un
+pedido, no cinco.
+
+_Corregido el 2026-10-05, slice 11_: era `replicar` y decía que el botón
+muestra «la cantidad o los nombres si entran».
 
 **TT-13 Crear etiqueta desde el selector** — `fuera de alcance`
 Igual que TT-09: pertenece al módulo de etiquetas.
+_Agregado el 2026-10-05_. Documentado: se escribe el nombre en el selector y se
+elige «Create tag» o `Ctrl + Enter`. En la fase 1 las etiquetas se crean en
+`/proyectos` (TT-88).
 
 ### 2.4 Facturable
 
@@ -223,6 +269,41 @@ Igual que TT-09: pertenece al módulo de etiquetas.
 Ícono de signo de moneda que alterna entre facturable y no facturable. El
 estado por defecto lo decide el proyecto elegido: si el proyecto es facturable,
 la entrada arranca facturable. Sin proyecto, arranca no facturable.
+
+_Agregado el 2026-10-05_. Relevamiento, de plan pago: la página de tarifas dice
+«Enable billable rate by clicking on the **$** icon on your time entry in the
+Time Tracker page.», y que proyectos y tareas tienen un facturable por defecto,
+«which means all new entries will initially be set according to what you
+choose.» La del calendario lo llama «A toggle used to indicate whether the time
+spent should be charged to a client». Ninguna dice qué pasa al cambiarle el
+proyecto a una entrada que ya existe. Como todo el facturable, no se puede
+verificar en el plan Free (P-16 de [la paridad de proyectos](proyectos.md)), así
+que no entra en P-14.
+
+Diseño propio, fijado en el
+[contrato del slice 11](../slices/fase1-slice11-etiquetas-y-facturable.md):
+
+- **El control** es un botón de alternancia con el ícono de moneda y
+  `aria-pressed`. Su nombre accesible es «Facturable» en la barra y en el
+  diálogo del calendario, y «Entrada «{descripción o Sin descripción}»
+  facturable» en la fila. No facturable, el ícono va sin marcar (TT-50). Con la
+  membresía desactivada (TT-92), una entrada facturable muestra el ícono, con
+  el nombre «Facturable», y una no facturable no muestra nada.
+- **Al cambiar el proyecto de una entrada que ya existe, elegir otro proyecto
+  le impone su facturable por defecto**; «Sin proyecto» y cambiar solo la
+  tarea lo conservan. Después se puede cambiar a mano. Vale igual en la barra
+  sin timer, con el timer corriendo, en la fila y en el diálogo del calendario,
+  así que iniciar y elegir el proyecto después da la misma entrada que elegirlo
+  antes. Si en el diálogo la persona cambia el proyecto y el facturable a la
+  vez, gana el facturable que dejó a la vista. Decisión del equipo del
+  2026-10-05.
+- **Continuar y duplicar copian el facturable de la original** (TT-57, TT-58),
+  aunque su proyecto haya cambiado de valor por defecto después.
+
+Justificación de la regla del proyecto: lo más común en el rastreador es
+iniciar y elegir el proyecto después; si el facturable se decidiera solo al
+crear, esa entrada quedaría no facturable aunque el proyecto lo sea, y habría
+que acordarse de marcarla cada vez.
 
 **TT-15 La marca no muestra importes** — `adaptar`
 En Clockify la facturabilidad alimenta tarifas e importes, que no existen en el
@@ -673,6 +754,14 @@ Sin descripción muestra «Sin descripción» en gris; sin proyecto muestra
 «Sin proyecto» en gris y sin punto de color. Las dos siguen siendo filas
 normales, editables y contabilizadas.
 
+_Agregado el 2026-10-05_. Diseño propio, fijado en el
+[contrato del slice 11](../slices/fase1-slice11-etiquetas-y-facturable.md): sin
+etiquetas, la fila muestra el ícono de etiqueta en gris y sin texto (TT-12); no
+facturable, el ícono de moneda sin marcar (TT-14). Con la membresía desactivada
+(TT-92), ninguno de los dos se muestra. _No verificado_ (P-14), en lo que toca
+a las etiquetas: la documentación no describe la fila. Lo del facturable no se
+puede verificar en el plan Free (TT-14).
+
 **TT-51 Marca de cruce de medianoche en la fila** — `replicar`
 Documentado: la hora de fin lleva un superíndice con la cantidad de días
 adicionales que abarca la entrada (`08:00 – 02:00` con `+1`).
@@ -823,9 +912,12 @@ Clockify no documenta. Si P-14 muestra que Clockify dibuja la fila abierta, la
 omisión de esa fila pasa a ser parte de esta misma adaptación.
 
 **TT-57 Continuar** — `replicar`
-Documentado: el botón de reproducción **crea una entrada nueva** con la
-descripción, el proyecto, la tarea, las etiquetas y la facturabilidad de la
-original, con `start` ahora y `end` nulo. No reabre la entrada original.
+Documentado, textual: «The timer will immediately start with the same
+description, project, and tags.» El botón de reproducción **crea una entrada
+nueva** con la descripción, el proyecto, la tarea, las etiquetas y la
+facturabilidad de la original, con `start` ahora y `end` nulo. No reabre la
+entrada original. _No verificado_ (P-14): la tarea y la facturabilidad, que esa
+frase no nombra.
 
 _Agregado el 2026-10-04_. Diseño propio, _no verificado_ (P-14), fijado en el
 [contrato del slice 10](../slices/fase1-slice10-selector-de-proyecto.md):
@@ -837,6 +929,21 @@ disponible.» (PR-74 de [la paridad de proyectos](proyectos.md)), y el timer que
 corría sigue corriendo. La documentación no cubre el caso. Justificación: la
 alternativa, copiar sin el proyecto, cambia la entrada en silencio. Si el
 workspace del equipo muestra que Clockify copia sin el proyecto, se cambia.
+
+_Agregado el 2026-10-05_. **Las etiquetas y el facturable se copian desde el
+[slice 11](../slices/fase1-slice11-etiquetas-y-facturable.md)**; hasta
+entonces, continuar copia la descripción, el proyecto y la tarea. El
+facturable es el de la original, aunque su proyecto haya cambiado de valor por
+defecto después (TT-14). Diseño propio, _no verificado_ (P-14), decisión del
+equipo del 2026-10-05: **continuar una entrada que tiene una etiqueta
+archivada se rechaza** con «Esa etiqueta ya no está disponible.» (TT-78), no
+crea nada, y el timer que corría sigue corriendo. Es la regla del proyecto no
+disponible: copiar sin la etiqueta cambia la entrada en silencio, y copiarla
+asigna una archivada a una entrada nueva, que PR-45 prohíbe. La persona la
+quita de la original desde la fila y vuelve a continuar.
+
+_Corregido el 2026-10-05, relevamiento_: decía que la documentación nombraba
+también la tarea y la facturabilidad.
 
 **TT-58 Duplicar** — `replicar`
 Menú de tres puntos → «Duplicar». Crea una copia cerrada con los mismos campos
@@ -859,6 +966,13 @@ también.
 _Agregado el 2026-10-04_. Diseño propio, _no verificado_ (P-14): **duplicar una
 entrada cuyo proyecto o tarea ya no está disponible se rechaza** con TT-77 o
 PR-74 y no crea nada, por la misma razón que al continuar (TT-57).
+
+_Agregado el 2026-10-05_. **Duplicar copia también las etiquetas y el
+facturable de la original** desde el
+[slice 11](../slices/fase1-slice11-etiquetas-y-facturable.md), con la misma
+regla que continuar (TT-57): el facturable es el de la original, y **duplicar
+una entrada que tiene una etiqueta archivada se rechaza** con TT-78 y no crea
+nada. Diseño propio, _no verificado_ (P-14).
 
 **TT-59 Dividir** — `fuera de alcance`
 La documentación la marca como funcionalidad de plan pago: no se puede relevar
@@ -1210,6 +1324,15 @@ habilita, y no decía qué pasa con «Sin proyecto».
 El selector de etiquetas abre con «No hay etiquetas todavía». Misma
 justificación que TT-87.
 
+_Agregado el 2026-10-05_. Diseño propio, fijado en el
+[contrato del slice 11](../slices/fase1-slice11-etiquetas-y-facturable.md):
+como en TT-87, si `tag.create` lo permite, el selector suma el enlace «Ir a
+Proyectos», que lleva a `/proyectos`, donde se crean las etiquetas en la fase 1
+(PR-112 de [la paridad de proyectos](proyectos.md)). En la fase 1 lo permite a
+toda membresía activa (PR-44). En Clockify, ahí se escribe el nombre y se crea
+la etiqueta desde el mismo selector («Click **Create tag** or press Ctrl / ^
+(Control) + Enter»), que es TT-13 y está fuera de alcance.
+
 ## 9. Estados de error
 
 **TT-89 Falla de red al guardar** — `adaptar`
@@ -1303,13 +1426,17 @@ modelo.
 | TT-102 | Dos pestañas arrancando a la vez                            | Queda un solo timer. Ver TT-37.                                                                                                                                                                                                                                                        |
 | TT-103 | Borrar la entrada que está corriendo desde otra pestaña     | La pestaña con la barra descubre que no existe al reintentar, limpia la barra y avisa «No se pudo detener el timer.» con «Esa entrada ya no existe.», el mismo texto de TT-80.                                                                                                         |
 | TT-104 | Proyecto archivado mientras la entrada ya lo tiene asignado | La entrada conserva el proyecto y lo muestra; el selector no lo ofrece para entradas nuevas. Se quita con «Sin proyecto» (TT-10), que se ofrece aun con el catálogo vacío (TT-87).                                                                                                     |
-| TT-105 | Etiqueta borrada mientras la entrada la tiene               | La etiqueta desaparece de la entrada. **No verificado**: Clockify podría conservarla; depende del módulo de etiquetas.                                                                                                                                                                 |
+| TT-105 | Etiqueta borrada mientras la entrada la tiene               | La etiqueta desaparece de la entrada. Documentado: «All deleted tags will be removed from time entries they are assigned to.» (PR-46, PR-69).                                                                                                                                          |
 | TT-106 | Cambio de zona horaria de la persona con entradas cargadas  | Los instantes no se tocan; los grupos de día se recalculan y una entrada puede cambiar de día.                                                                                                                                                                                         |
 | TT-107 | Timer que lleva más de 24 horas corriendo                   | Sigue corriendo y al detenerlo se guarda entero (TT-42, TT-74). No hay tope. Una vez cerrada, si el trío no la puede expresar, sus horarios no se editan desde la fila (TT-110).                                                                                                       |
 
 _Corregido el 2026-10-04, slice 7_: TT-106 hablaba de la zona horaria del
 workspace. Desde el slice 7 la que agrupa la lista es la de la persona (TT-02,
 PF-38), y cambiar `workspace.timezone` no mueve nada de esta pantalla (PF-05).
+_Corregido el 2026-10-05_: TT-105 decía «**No verificado**: Clockify podría
+conservarla; depende del módulo de etiquetas.». Lo cerró PR-46 de
+[la paridad de proyectos](proyectos.md) con la documentación pública, y lo
+construye el slice 11 con el `on delete cascade` de la unión (PR-69).
 
 ## 11. Reparto por slices
 
@@ -1476,8 +1603,10 @@ equipo. Contrato:
 
 ### Lo que queda
 
-Etiquetas (TT-12), facturable (TT-14, TT-15), y la edición masiva de proyecto,
-tarea, etiquetas y facturable (el resto de TT-63).
+Etiquetas (TT-12) y facturable (TT-14, TT-15), con su copia al continuar y al
+duplicar (TT-57, TT-58), que trae el slice 11, partido en 11a, el facturable, y
+11b, las etiquetas; y la edición masiva de proyecto, tarea, etiquetas y
+facturable (el resto de TT-63), que trae el 12.
 
 _Corregido el 2026-10-03, decisión del equipo_: esta lista incluía lo que ya
 implementaron los slices 3 y 4, que ahora tienen su sección, y no nombraba el
@@ -1491,6 +1620,8 @@ alcance.
 _Corregido el 2026-10-04, slice 6_: salen de esta lista la selección (TT-62),
 el borrado masivo (TT-64) y la edición masiva de descripción, hora y fecha
 (TT-63), que ahora tienen su sección; de TT-63 queda lo que trae el slice 12.
+_Corregido el 2026-10-05, slice 11_: no decía qué slice trae cada cosa ni que
+continuar y duplicar suman las etiquetas y el facturable con el 11.
 
 ## Pendientes de definición del equipo
 
@@ -1500,19 +1631,23 @@ Ninguno de estos puntos se puede relevar en el plan Free o no está en la
 documentación pública. No los inventé: van con una propuesta cuando la tengo,
 pero necesitan una decisión.
 
-| ID   | Punto                                                                                                                                                                                                 |
-| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P-01 | Campos obligatorios (`requireProject`, `requireTask`, `requireDescription`, `requireTag`) y `forceTimer`: existen en el esquema pero son de plan pago. ¿Se implementan, y con qué reglas?             |
-| P-02 | Aprobaciones y bloqueo de períodos: definen cuándo una entrada deja de ser editable. Sin ellas no hay bloqueo.                                                                                        |
-| P-03 | Redondeo (`roundingMinutes`): en Clockify es pago y solo afecta reportes. ¿Se mantiene fuera del rastreador?                                                                                          |
-| P-04 | Entradas superpuestas: ¿se permiten en silencio, se avisa o se rechazan?                                                                                                                              |
-| P-05 | Dividir entrada: funcionalidad paga. ¿Entra en el alcance y con qué reglas de corte?                                                                                                                  |
-| P-07 | Edición masiva en el rastreador: no sé si está en Free. Confirmar en el workspace. El slice 6 se construyó como si entrara: si es paga, TT-62 a TT-64 quedan como mejora deliberada (TT-63).          |
-| P-09 | Agrupación de entradas similares en una fila colapsable. El interruptor vive en el perfil (PF-26).                                                                                                    |
-| P-14 | Verificar en el workspace real del equipo lo marcado como _no verificado_: TT-16, TT-20, TT-26, TT-35, TT-44, TT-46, TT-47, TT-57, TT-58, TT-62, TT-63, TT-64, TT-65, TT-105, TT-108, TT-111, TT-112. |
+| ID   | Punto                                                                                                                                                                                                       |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P-01 | Campos obligatorios (`requireProject`, `requireTask`, `requireDescription`, `requireTag`) y `forceTimer`: existen en el esquema pero son de plan pago. ¿Se implementan, y con qué reglas?                   |
+| P-02 | Aprobaciones y bloqueo de períodos: definen cuándo una entrada deja de ser editable. Sin ellas no hay bloqueo.                                                                                              |
+| P-03 | Redondeo (`roundingMinutes`): en Clockify es pago y solo afecta reportes. ¿Se mantiene fuera del rastreador?                                                                                                |
+| P-04 | Entradas superpuestas: ¿se permiten en silencio, se avisa o se rechazan?                                                                                                                                    |
+| P-05 | Dividir entrada: funcionalidad paga. ¿Entra en el alcance y con qué reglas de corte?                                                                                                                        |
+| P-07 | Edición masiva en el rastreador: no sé si está en Free. Confirmar en el workspace. El slice 6 se construyó como si entrara: si es paga, TT-62 a TT-64 quedan como mejora deliberada (TT-63).                |
+| P-09 | Agrupación de entradas similares en una fila colapsable. El interruptor vive en el perfil (PF-26).                                                                                                          |
+| P-14 | Verificar en el workspace real del equipo lo marcado como _no verificado_: TT-12, TT-16, TT-20, TT-26, TT-35, TT-44, TT-46, TT-47, TT-50, TT-57, TT-58, TT-62, TT-63, TT-64, TT-65, TT-108, TT-111, TT-112. |
 
 _Corregido el 2026-10-04, slice 6_: P-07 decía «decidir si entra en la fase 1»;
 entró con el slice 6. P-14 suma TT-62 y TT-64.
+_Corregido el 2026-10-05, slice 11_: P-14 suma TT-12 y TT-50, por las
+etiquetas, y saca TT-105, que cerró PR-46 de
+[la paridad de proyectos](proyectos.md). El facturable (TT-14) no entra: no se
+puede verificar en el plan Free (P-16 de esa paridad).
 
 ### Cerrados
 

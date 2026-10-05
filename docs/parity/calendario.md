@@ -315,6 +315,14 @@ que un bloque sin alto mostraba solo la descripción y que el proyecto y la
 tarea se sumaban con el slice 10, que ya estaba en `main`. No decía qué
 muestran los otros segmentos ni el bloque del timer.
 
+_Agregado el 2026-10-05_. Diseño propio, fijado en el
+[contrato del slice 11](../slices/fase1-slice11-etiquetas-y-facturable.md): el
+ícono de facturable va al final de la línea del horario, solo en el segmento
+del día de inicio y solo si la entrada es facturable; una no facturable no
+lleva ícono. Las etiquetas no van en el bloque: están en el detalle (CAL-23) y
+en el diálogo (CAL-66). Como todo el facturable, no se puede verificar en el
+plan Free (P-16 de [la paridad de proyectos](proyectos.md)).
+
 **CAL-22 Color del bloque** — `replicar`
 Con proyecto, el relleno es el color del proyecto (PR-15) en tono claro
 —mezclado al 20 % con el fondo—, con un borde izquierdo en el color pleno, y el
@@ -341,6 +349,14 @@ detalle** (sección 9).
 _Corregido el 2026-10-05, slice 8b_: no decía qué pasa con el detalle durante
 un arrastre, y nombraba el proyecto y la tarea como algo de más adelante; el
 detalle los muestra desde el slice 8.
+
+_Agregado el 2026-10-05_. Diseño propio, fijado en el
+[contrato del slice 11](../slices/fase1-slice11-etiquetas-y-facturable.md): con
+el slice 11, el detalle suma una línea «Facturable» si la entrada lo es, y una
+línea «Etiquetas: a, b», con los nombres en orden alfabético, si tiene alguna.
+Sin etiquetas o no facturable, la línea no está. Una etiqueta archivada se
+muestra igual (PR-47). _No verificado_ (calendario P-07), en lo que toca a las
+etiquetas: «full entry details» no dice cómo las muestra Clockify.
 
 **CAL-24 Bloque muy corto** — `adaptar`
 Un bloque tiene una altura mínima legible aunque su duración, al zoom actual,
@@ -590,6 +606,15 @@ _Corregido el 2026-10-04, slice 8c_: decía «En el slice 8: descripción, fecha
 inicio, fin y duración» y que el proyecto y la tarea llegaban con el slice 10.
 El alta llegó con el 8c, que ya trae proyecto y tarea. Se suman el título, los
 botones, el piso de la fecha, Enter y «Agregar» inactivo con duración cero.
+
+_Agregado el 2026-10-05_. La página del calendario describe los dos campos que
+suma el slice 11: «**Tag:** A keyword or category commonly used for reporting
+or billing purposes» y «**Billable (Yes/No):** A toggle used to indicate
+whether the time spent should be charged to a client». Van después de
+«Proyecto», con el selector de TT-12 y el control de TT-14. El alta arranca sin
+etiquetas y no facturable, y elegir proyecto le pone su facturable por defecto
+(TT-14). Lo fija el
+[contrato del slice 11](../slices/fase1-slice11-etiquetas-y-facturable.md).
 
 **CAL-46 «Agregar» es el alta manual** — `replicar`
 Crea con `createManualEntry` y valen todas sus reglas: TT-72 (fin menor que el
@@ -857,6 +882,15 @@ lugar del fin y la duración, «Fin: en curso» con el transcurrido en `h:mm:ss`
 que avanza (TT-31, PF-22). Las horas siguen el formato de la persona (PF-13).
 Ningún control edita: los campos tolerantes llegan con el 8c.
 
+_Agregado el 2026-10-05_. Fijado en el
+[contrato del slice 11](../slices/fase1-slice11-etiquetas-y-facturable.md): con
+el slice 11, etiquetas y facturable van después de «Proyecto» en los tres modos
+del diálogo (CAL-40, CAL-45, CAL-65), y «Guardar» los suma a los grupos que
+aplica juntos (CAL-67). En el diálogo, el selector de etiquetas cambia el
+borrador y no guarda al cerrarse, a diferencia del de la fila (TT-12). En el de
+solo lectura, «Facturable» con «Sí» o «No», y «Etiquetas» con los nombres o
+«Sin etiquetas», como texto.
+
 **CAL-67 «Guardar», todo o nada** — `adaptar`
 Un botón «Guardar» aplica juntos los grupos de campos que la persona tocó
 —descripción, proyecto y tarea, horario—, o ninguno. Enter en la descripción o
@@ -942,6 +976,13 @@ con un lector de pantalla, y WCAG 2.2 pide una alternativa sin arrastre (2.5.7,
 «Descripción o Sin descripción, día, de HH:mm a HH:mm, duración», y «en curso»
 en lugar del fin en el timer activo. Justificación: el bloque es un botón y su
 contenido visible puede estar recortado (CAL-21).
+
+_Agregado el 2026-10-05_. Fijado en el
+[contrato del slice 11](../slices/fase1-slice11-etiquetas-y-facturable.md): con
+el slice 11, el nombre de una entrada facturable termina en «, facturable». Las
+etiquetas no van en el nombre: están en el detalle (CAL-23), que también
+aparece con el foco (CAL-77), y un nombre con todas las etiquetas se vuelve
+largo de escuchar en cada `Tab`.
 
 **CAL-76 Estructura de la grilla** — `adaptar`
 Los encabezados de columna —día y total— quedan asociados a sus bloques, y
@@ -1176,12 +1217,15 @@ CAL-23, CAL-66, CAL-75) entraron con él. Lo que falta:
 - **Slice 8c.** El proyecto y la tarea en el diálogo de alta y editables en el
   de una entrada (CAL-45, CAL-66).
 - **Slice 11.** Etiquetas y facturable en el detalle y los diálogos, y el ícono
-  de facturable en el bloque. Dos campos más del diálogo.
+  de facturable en el bloque. Dos campos más del diálogo. Partido en 11a, el
+  facturable, y 11b, las etiquetas; lo que fija está en CAL-21, CAL-23, CAL-45,
+  CAL-66 y CAL-75.
 - **Slice 12.** Nada.
 
 **El proyecto no toca la geometría de la grilla**: posición, altura,
 superposición y gestos no dependen de él. Una entrada sin proyecto se dibuja con
-el relleno neutro y es válida en todo el recorrido (CAL-91).
+el relleno neutro y es válida en todo el recorrido (CAL-91). Lo mismo vale para
+las etiquetas y el facturable del slice 11.
 
 Dos dependencias que no son de proyectos y conviene tener a la vista:
 
@@ -1196,6 +1240,9 @@ la grilla, y que todo lo demás se construía con entradas sin proyecto; lo
 mismo decía la primera decisión del equipo de «Tres clases de comportamiento».
 El 10 ya estaba en `main` cuando arrancó el 8. La dependencia del slice 4 dejó
 de ser condicional.
+_Corregido el 2026-10-05, slice 11_: no decía que el 11 se parte en dos ni dónde
+quedó lo que fija, ni que las etiquetas y el facturable tampoco tocan la
+geometría.
 
 ## 19. Impacto sobre lo ya construido
 
@@ -1457,6 +1504,8 @@ divergencia de las que este documento propone.
   selector de fecha— y cómo se rotula el rango visible?
 - **CAL-21, CAL-22** — ¿Qué muestra un bloque? ¿De qué color es un bloque sin
   proyecto, y uno con proyecto?
+- **CAL-23** — Una entrada con dos etiquetas: ¿qué muestra el recuadro al pasar
+  el puntero? ¿Las muestra también el bloque?
 - **CAL-25** — Crear dos entradas de 10:00 a 11:00 el mismo día: ¿cómo se
   dibujan?
 - **CAL-26, CAL-27** — ¿Cómo se dibuja una entrada de 22:00 a 02:00? ¿Y una de
@@ -1501,6 +1550,9 @@ divergencia de las que este documento propone.
 
 _Corregido el 2026-10-05, slice 8b_: CAL-44 suma la pregunta del arrastre con
 el dedo, la divergencia del ADR 0014.
+_Corregido el 2026-10-05, slice 11_: suma CAL-23, por las etiquetas. El
+facturable del bloque y del detalle no entra: no se puede verificar en el plan
+Free (P-16 de [la paridad de proyectos](proyectos.md)).
 
 ### Cerrados
 
