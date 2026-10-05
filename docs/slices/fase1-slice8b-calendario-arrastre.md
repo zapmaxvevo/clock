@@ -996,7 +996,7 @@ la fase los actualiza team-lead.
 | 8        | e2e + unidad | `e2e/calendar-drag.spec.ts`; `calendar-block.test.tsx`   | el recorrido 4; `busy` da `aria-busy` y `aria-disabled`                                                                                                                  |
 | 9        | e2e          | `e2e/calendar-drag.spec.ts`                              | `Esc` antes de soltar en los recorridos 1, 3 y 4, y `visibilitychange` con `visibilityState` reemplazado en el 1, sin pedidos ni diálogos                                |
 | 10       | unidad + e2e | `refresh-gate.test.ts`; `e2e/calendar-drag.spec.ts`      | la compuerta junta disparos y suelta uno; el recorrido 4                                                                                                                 |
-| 11       | e2e          | `e2e/calendar-drag.spec.ts`                              | los recorridos 1 y 3, con `Esc` antes de soltar sobre el fondo de una columna                                                                                            |
+| 11       | e2e          | `e2e/calendar-drag.spec.ts`                              | los recorridos 3 y 4, con `Esc` antes de soltar sobre el fondo de una columna                                                                                            |
 | 12       | e2e          | `e2e/calendar-drag.spec.ts`                              | los recorridos 1 y 4                                                                                                                                                     |
 | 13       | unidad       | `calendar-gestures.test.ts`                              | `startsGesture` con `touch`, `pen`, el botón secundario y un puntero no primario                                                                                         |
 | 14       | unidad + e2e | `calendar-gestures.test.ts`; `e2e/calendar-drag.spec.ts` | `autoScrollStep` en la banda y fuera; el recorrido 4                                                                                                                     |
@@ -1017,7 +1017,9 @@ mutante que toma la captura al apretar rompe el clic en un bloque y en una
 franja, que los recorridos de `calendar.spec.ts` y `calendar-edit.spec.ts`
 hacen. El mutante que se mata acá es **«cancelar suelta la captura sin
 marca»**: con `Esc` antes de soltar, el `pointerup` y el `click` llegarían a la
-columna, y `handleClick` abriría el alta en los recorridos 1 y 3. Que el
+columna, y `handleClick` abriría el alta en los recorridos 3 y 4. En el 1 no:
+el botón se aprieta en el bloque y se suelta en otra columna, y el `click` va al
+ancestro común (_corregido en las revisiones, T-n6_). Que el
 `click` de un gesto terminado no llega al bloque lo garantiza la captura, no
 `onClickCapture` (§5.4, paso 7): sacar `onClickCapture` no rompe ningún test, y
 es a propósito.
@@ -1095,6 +1097,10 @@ una espera fija.
 
 ## 8. Deuda conocida del slice
 
+- **Cada gesto reinicia el intervalo de 60 s de la revalidación periódica**
+  (`use-tracker-refresh.ts`, el efecto corre con cada cambio de `paused`). Una
+  sesión de gestos seguidos demora esa revalidación; la que dispara el foco de
+  la ventana sigue (P-n2 de las revisiones).
 - **Los huecos de los días vecinos al período no se conocen.** Un bloque
   movido puede quedar empezando el día anterior al primero visible (`s < 0` en
   §5.2), o terminando el día siguiente al último. Si ese extremo cae en un
