@@ -99,7 +99,7 @@ export function PreferenceField(props: PreferenceFieldProps) {
         );
       case "timeFormat":
         return (
-          <FormatSelect
+          <ChoiceSelect
             id={controlId}
             triggerRef={triggerRef}
             value={shown}
@@ -111,7 +111,7 @@ export function PreferenceField(props: PreferenceFieldProps) {
         );
       case "dateFormat":
         return (
-          <FormatSelect
+          <ChoiceSelect
             id={controlId}
             triggerRef={triggerRef}
             value={shown}
@@ -125,7 +125,7 @@ export function PreferenceField(props: PreferenceFieldProps) {
         // Los colores cambian con la respuesta, cuando la revalidación trae
         // la clase nueva de `<html>` (ADR 0015).
         return (
-          <FormatSelect
+          <ChoiceSelect
             id={controlId}
             triggerRef={triggerRef}
             value={shown}
@@ -201,7 +201,7 @@ function choiceText(name: string, example: string | undefined): string {
   return example === undefined ? name : `${name} (${example})`;
 }
 
-type FormatSelectProps<Value extends string> = {
+type ChoiceSelectProps<Value extends string> = {
   readonly id: string;
   readonly triggerRef: Ref<HTMLButtonElement>;
   readonly value: string;
@@ -213,11 +213,12 @@ type FormatSelectProps<Value extends string> = {
 };
 
 /**
- * Un formato con su ejemplo, o el tema sin él. Sin permiso queda montado con `aria-disabled`
- * y no abre: `readOnly` fija el valor y la apertura la corta `changeOpen`,
- * porque la primitiva deja abrir un `Select` de solo lectura.
+ * Una opción de una lista cerrada: un formato con su ejemplo, o el tema sin
+ * él. Sin permiso queda montado con `aria-disabled` y no abre: `readOnly`
+ * fija el valor y la apertura la corta `changeOpen`, porque la primitiva deja
+ * abrir un `Select` de solo lectura.
  */
-function FormatSelect<Value extends string>({
+function ChoiceSelect<Value extends string>({
   id,
   triggerRef,
   value,
@@ -225,7 +226,7 @@ function FormatSelect<Value extends string>({
   nameOf,
   canEdit,
   onChange,
-}: FormatSelectProps<Value>) {
+}: ChoiceSelectProps<Value>) {
   const [open, setOpen] = useState(false);
   const items = options.map((option) => ({
     value: option.value,

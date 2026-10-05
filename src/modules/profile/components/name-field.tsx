@@ -22,10 +22,11 @@ type NameFieldProps = {
  * El nombre editable (PF-07, PF-32): guarda al salir o con Enter si el texto
  * recortado no es el guardado, y Esc descarta lo escrito sin pedido.
  *
- * Mientras se escribe, lo tecleado vive en `draft` y una revalidación ajena no
- * lo pisa. La respuesta del pedido propio sí: deja el guardado aunque el campo
- * tenga foco, el recortado si salió bien y el anterior si falló, al que vuelve
- * sola la vista optimista.
+ * Mientras se escribe, lo tecleado vive en `draft` y ninguna revalidación lo
+ * pisa. Guardar vacía el borrador, así que el campo pasa a la vista: la
+ * respuesta deja el guardado aunque el campo tenga foco, el recortado si salió
+ * bien y el anterior si falló, al que vuelve sola la vista optimista. Lo que
+ * se teclee con el pedido en vuelo es un borrador nuevo y sobrevive.
  *
  * Nunca usa `disabled`, por lo mismo que `PreferenceField`: sin permiso es
  * `readOnly` y el foco no se pierde.
@@ -39,8 +40,6 @@ export function NameField({ updateName, value, canEdit }: NameFieldProps) {
   const save = useAction(updateName, {
     unreachableMessage: profileMessages.unexpected,
     optimistic: (input) => show(input.name.trim()),
-    onSuccess: () => setDraft(null),
-    onFailure: () => setDraft(null),
   });
 
   function commit(): void {
