@@ -22,12 +22,15 @@ import { auditFor } from "@/test/queries";
 import { workspaceRepository } from "@/modules/workspace/repository";
 
 import { type UserPreferenceRow } from "./repository";
-import { type UpdatePreferenceInput } from "./schema";
+import type { Theme, UpdatePreferenceInput } from "./schema";
 import {
+  displayNameOf,
   getProfileView,
   PREFERENCE_DEFAULTS,
   profileOf,
   resolvePreferences,
+  themeClassOf,
+  updateName,
   updatePreference,
   type ProfileContext,
 } from "./service";
@@ -547,5 +550,256 @@ describe("getProfileView (criterios 15 y 17)", () => {
       // Los valores se siguen viendo.
       expect(view.timezoneOption).toBe(fallbackOption);
     }
+  });
+});
+
+describe("el nombre y el tema guardados (criterio 2: PF-08, PF-23, PF-37)", () => {
+  it("sin fila, el tema es «Seguir al sistema» y no hay nombre editado", async () => {
+    expect(await profileOf(userId)).toEqual({
+      preferences: { ...PREFERENCE_DEFAULTS, theme: "system" },
+      displayName: null,
+    });
+  });
+
+  it("con solo el tema guardado, las otras columnas son las del 7", async () => {
+    await seedPreferences(userId, { theme: "dark" });
+    expect(await profileOf(userId)).toEqual({
+      preferences: {
+        timezone: fallbackZone,
+        timeFormat: "24h",
+        dateFormat: "dd/MM/yyyy",
+        theme: "dark",
+      },
+      displayName: null,
+    });
+  });
+
+  it("el nombre editado vuelve tal como está, sin tocar las preferencias", async () => {
+    await seedPreferences(userId, { displayName: "Ana Prueba", timeFormat: "12h" });
+    expect(await profileOf(userId)).toEqual({
+      preferences: { ...PREFERENCE_DEFAULTS, timeFormat: "12h" },
+      displayName: "Ana Prueba",
+    });
+  });
+
+  it("un tema fuera de lista lanza", () => {
+    expect(() => resolvePreferences(rowWith({ theme: "auto" }))).toThrow(RangeError);
+  });
+
+  it("el nombre que se muestra es el editado, o el de la cuenta si no hay", () => {
+    const preferences = PREFERENCE_DEFAULTS;
+    expect(displayNameOf({ preferences, displayName: null }, "De Google")).toBe(
+      "De Google",
+    );
+    expect(displayNameOf({ preferences, displayName: "Ana" }, "De Google")).toBe("Ana");
+  });
+});
+
+describe("updatePreference con el tema (criterio 3: PF-23, PF-32)", () => {
+  it("escribe solo su columna y responde las preferencias resueltas", async () => {
+    const stored = {
+      timezone: "Europe/Madrid",
+      timeFormat: "12h",
+      dateFormat: "dd-MM-yyyy",
+      displayName: "Ana Prueba",
+    } as const;
+    await seedPreferences(userId, stored);
+
+    const result = await updatePreference(actorFor(userId), {
+      key: "theme",
+      value: "dark",
+    });
+
+    expect(result.preferences).toEqual({
+      timezone: "Europe/Madrid",
+      timeFormat: "12h",
+      dateFormat: "dd-MM-yyyy",
+      theme: "dark",
+    });
+    expect(await rowOf(userId)).toMatchObject({ ...stored, theme: "dark" });
+  });
+
+  it("con el tema ya guardado no escribe ni deja registro", async () => {
+    const seeded = await seedPreferences(userId, { theme: "light" });
+
+    const result = await updatePreference(actorFor(userId), {
+      key: "theme",
+      value: "light",
+    });
+
+    expect(result.preferences.theme).toBe("light");
+    expect((await rowOf(userId))?.updatedAt).toEqual(seeded.updatedAt);
+    expect(await auditOf(userId)).toEqual([]);
+  });
+
+  it("elegir «Seguir al sistema» sin fila escribe system", async () => {
+    await updatePreference(actorFor(userId), { key: "theme", value: "system" });
+    expect((await rowOf(userId))?.theme).toBe("system");
+    expect(await auditOf(userId)).toHaveLength(1);
+  });
+
+  it("deja profile.updatePreference con el valor anterior crudo", async () => {
+    await updatePreference(actorFor(userId), { key: "theme", value: "dark" });
+    await updatePreference(actorFor(userId), { key: "theme", value: "system" });
+
+    const rows = await auditOf(userId);
+    expect(rows).toHaveLength(2);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        {
+          workspaceId,
+          actorId: userId,
+          action: "profile.updatePreference",
+          previousValue: { theme: null },
+          nextValue: { theme: "dark" },
+        },
+        {
+          workspaceId,
+          actorId: userId,
+          action: "profile.updatePreference",
+          previousValue: { theme: "dark" },
+          nextValue: { theme: "system" },
+        },
+      ]),
+    );
+  });
+});
+
+describe("updateName (criterio 4: PF-07, PF-08, PF-35)", () => {
+  it("escribe solo display_name y responde el nombre guardado", async () => {
+    const stored = {
+      timezone: "Asia/Tokyo",
+      timeFormat: "12h",
+      dateFormat: "yyyy-MM-dd",
+      theme: "dark",
+    } as const;
+    await seedPreferences(userId, stored);
+
+    const result = await updateName(actorFor(userId), { name: "Ana Prueba" });
+
+    expect(result).toEqual({ name: "Ana Prueba" });
+    expect(await rowOf(userId)).toMatchObject({ ...stored, displayName: "Ana Prueba" });
+  });
+
+  it("el primer cambio crea la fila con solo el nombre", async () => {
+    await updateName(actorFor(userId), { name: "Ana Prueba" });
+    expect(await rowOf(userId)).toMatchObject({
+      timezone: null,
+      timeFormat: null,
+      dateFormat: null,
+      theme: null,
+      displayName: "Ana Prueba",
+    });
+  });
+
+  it("deja profile.updateName sobre user_preference, con el nombre anterior crudo", async () => {
+    await updateName(actorFor(userId), { name: "Ana Prueba" });
+    await updateName(actorFor(userId), { name: "Ana María" });
+
+    const rows = await auditFor("user_preference", userId);
+    expect(rows.map((row) => [row.entity, row.entityId])).toEqual([
+      ["user_preference", userId],
+      ["user_preference", userId],
+    ]);
+    expect(await auditOf(userId)).toEqual(
+      expect.arrayContaining([
+        {
+          workspaceId,
+          actorId: userId,
+          action: "profile.updateName",
+          previousValue: { displayName: null },
+          nextValue: { displayName: "Ana Prueba" },
+        },
+        {
+          workspaceId,
+          actorId: userId,
+          action: "profile.updateName",
+          previousValue: { displayName: "Ana Prueba" },
+          nextValue: { displayName: "Ana María" },
+        },
+      ]),
+    );
+  });
+
+  it("con el mismo nombre no escribe ni deja registro, y responde lo guardado", async () => {
+    const seeded = await seedPreferences(userId, { displayName: "Ana Prueba" });
+
+    const result = await updateName(actorFor(userId), { name: "Ana Prueba" });
+
+    expect(result).toEqual({ name: "Ana Prueba" });
+    expect((await rowOf(userId))?.updatedAt).toEqual(seeded.updatedAt);
+    expect(await auditOf(userId)).toEqual([]);
+  });
+
+  it("el nombre de la cuenta sin nombre editado se guarda: compara contra display_name (D1)", async () => {
+    await updateName(actorFor(userId), { name: "Persona de prueba" });
+
+    expect((await rowOf(userId))?.displayName).toBe("Persona de prueba");
+    expect(await auditOf(userId)).toEqual([
+      expect.objectContaining({
+        action: "profile.updateName",
+        previousValue: { displayName: null },
+        nextValue: { displayName: "Persona de prueba" },
+      }),
+    ]);
+  });
+
+  it("un nombre y un tema simultáneos sobre una fila que no existe quedan los dos", async () => {
+    // La barrera inserta la fila sin confirmarla: los dos pedidos se traban al asegurarla.
+    const holdInsert = (tx: Transaction) => tx.insert(userPreference).values({ userId });
+
+    await raceThroughBarrier<unknown>(holdInsert, [
+      () => updateName(actorFor(userId), { name: "Ana Prueba" }),
+      () => updatePreference(actorFor(userId), { key: "theme", value: "dark" }),
+    ]);
+
+    expect(await rowOf(userId)).toMatchObject({
+      displayName: "Ana Prueba",
+      theme: "dark",
+    });
+    expect((await auditOf(userId)).map((row) => row.action).sort()).toEqual([
+      "profile.updateName",
+      "profile.updatePreference",
+    ]);
+  });
+});
+
+describe("themeClassOf (criterio 8: PF-23, PF-24)", () => {
+  it("da dark o light con esos temas, y ninguna con «Seguir al sistema» o sin sesión", async () => {
+    const context = await contextFor(userId);
+    const withTheme = (theme: Theme) => ({
+      ...context,
+      preferences: { ...context.preferences, theme },
+    });
+
+    expect(themeClassOf(withTheme("dark"))).toBe("dark");
+    expect(themeClassOf(withTheme("light"))).toBe("light");
+    expect(themeClassOf(withTheme("system"))).toBeUndefined();
+    expect(themeClassOf(null)).toBeUndefined();
+  });
+
+  it("lee el tema guardado de la sesión", async () => {
+    await seedPreferences(userId, { theme: "dark" });
+    expect(themeClassOf(await contextFor(userId))).toBe("dark");
+  });
+});
+
+describe("getProfileView con el tema (criterio 12: PF-23, PF-31)", () => {
+  const user = { name: "Ana Prueba", email: "ana@empresa.com", image: null };
+
+  it("las opciones del tema son THEMES, en orden, y la vista trae el guardado o el predeterminado", async () => {
+    const view = getProfileView(await contextFor(userId), user);
+    expect(view.options.themes).toEqual(["system", "light", "dark"]);
+    expect(view.preferences.theme).toBe("system");
+
+    await seedPreferences(userId, { theme: "light" });
+    expect(getProfileView(await contextFor(userId), user).preferences.theme).toBe(
+      "light",
+    );
+  });
+
+  it("la identidad trae el nombre que recibe, que es el resuelto", async () => {
+    const view = getProfileView(await contextFor(userId), user);
+    expect(view.identity).toEqual({ ...user, initials: "AP" });
   });
 });
