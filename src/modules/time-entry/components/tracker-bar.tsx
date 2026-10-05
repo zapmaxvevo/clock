@@ -5,9 +5,7 @@ import { useEffect, useOptimistic, useRef, useState } from "react";
 import { ActionFeedback } from "@/components/action-feedback";
 import { retryHandlerOf, useAction, type ActionHandle } from "@/hooks/use-action";
 import { useNewId } from "@/hooks/use-new-id";
-import { samePair } from "@/lib/project-pair";
 import { projectLabels } from "@/modules/project/components/labels";
-import { NO_SELECTION, selectionIds } from "@/modules/project/components/picker-model";
 import { ProjectPicker } from "@/modules/project/components/project-picker";
 import type { ProjectSelection } from "@/modules/project/schema";
 import {
@@ -20,14 +18,23 @@ import {
 } from "@/modules/time-entry/actions";
 import {
   timeEntryMessages,
+  type CreateManualEntryInput,
   type TimeEntryView,
   type UpdateRunningStartInput,
 } from "@/modules/time-entry/schema";
 
 import { DescriptionField } from "./description-field";
 import { DiscardTimerDialog } from "./discard-timer-dialog";
+import {
+  afterAdd,
+  fieldsInput,
+  fieldsOf,
+  NO_FIELDS,
+  withSelection,
+  type EntryFields,
+  type FieldsInput,
+} from "./entry-fields";
 import { saveEntryProject } from "./entry-project";
-import { selectionOf } from "./entry-selection";
 import { startedWeeks } from "./entry-week";
 import { trackerLabels } from "./labels";
 import { ManualBar } from "./manual-bar";
@@ -51,9 +58,19 @@ const DESCRIPTION_DEBOUNCE_MS = 500;
 /** «Iniciar» no parte de ninguna entrada: su id pendiente va con una clave fija. */
 const START_KEY = "start";
 
-/** El par del timer; sin timer, «Sin proyecto». */
-function runningSelection(running: TimeEntryView | null): ProjectSelection {
-  return running === null ? NO_SELECTION : selectionOf(running);
+/** Los campos del timer; sin timer, los de una entrada nueva. */
+function runningFields(running: TimeEntryView | null): EntryFields {
+  return running === null ? NO_FIELDS : fieldsOf(running);
+}
+
+/** El alta de la barra, con los campos enteros que se mandaron. */
+type BarAddInput = Omit<CreateManualEntryInput, keyof FieldsInput> & {
+  readonly fields: EntryFields;
+};
+
+/** A la action viajan los ids; los campos quedan para limpiar la barra después (TT-25). */
+function addFromBar({ fields, ...entry }: BarAddInput) {
+  return createManualEntry({ ...entry, ...fieldsInput(fields) });
 }
 
 type TrackerBarProps = {
@@ -74,8 +91,9 @@ type TrackerBarProps = {
  * tiene que sobrevivir a un cambio de modo. Un timer que arranca o se detiene
  * en otra pestaña cambia la barra de modo sin que nadie lo pida (TT-30), así
  * que la descripción, el borrador manual, los pedidos, sus avisos y la
- * confirmación del descarte viven acá y no en la barra de cada modo. El
- * proyecto y la tarea siguen las mismas reglas que la descripción. El
+ * confirmación del descarte viven acá y no en la barra de cada modo. Los
+ * campos de la entrada (`EntryFields`) siguen las mismas reglas que la
+ * descripción. El
  * conmutador y los atajos `n`, `s` y `m` también: así el conmutador no cambia
  * de lugar ni pierde el foco al conmutar, y cada atajo ve el mismo estado que
  * su control.
@@ -116,18 +134,19 @@ export function TrackerBar({
     description: running?.description ?? "",
   });
   /**
-   * El proyecto y la tarea sin timer: viajan con «Iniciar» y con «Agregar».
-   * Con un timer en la vista la barra muestra los de la entrada abierta,
-   * también mientras viaja «Detener» o «Descartar».
+   * Los campos sin timer: viajan con «Iniciar» y con «Agregar». Con un timer
+   * en la vista la barra muestra los de la entrada abierta, también mientras
+   * viaja «Detener» o «Descartar».
    */
-  const [pairDraft, setPairDraft] = useState(() => runningSelection(running));
-  /** Lo mismo que `heldDescription`, para el par. */
-  const [heldPair, setHeldPair] = useState<ProjectSelection | null>(null);
+  const [fieldsDraft, setFieldsDraft] = useState(() => runningFields(running));
+  /** Lo mismo que `heldDescription`, para los campos. */
+  const [heldFields, setHeldFields] = useState<EntryFields | null>(null);
+  const serverFields = runningFields(running);
   /** TT-27 y TT-90: lo elegido mientras el cambio viaja; si falla, vuelve el del servidor. */
-  const [runningPairEdit, showRunningPairEdit] = useOptimistic<
-    ProjectSelection | null,
-    ProjectSelection
-  >(null, (_current, next) => next);
+  const [runningFieldsShown, showRunningFieldsEdit] = useOptimistic<
+    EntryFields,
+    (fields: EntryFields) => EntryFields
+  >(serverFields, (current, edit) => edit(current));
   /** Descripción del guardado en vuelo: el rebote y el blur no lo repiten. */
   const [inFlightDescription, setInFlightDescription] = useState<string | null>(null);
   const [manualDraft, setManualDraft] = useState(() => reset(serverNow, timeZone));
@@ -188,7 +207,8 @@ export function TrackerBar({
   });
   const saveProject = useAction(saveEntryProject, {
     unreachableMessage: timeEntryMessages.unexpected,
-    optimistic: (input) => showRunningPairEdit(input.selection),
+    optimistic: (input) =>
+      showRunningFieldsEdit((fields) => withSelection(fields, input.selection)),
     onSuccess: (data) => reachWeek([data.entry.weekStart]),
   });
   /**
@@ -205,17 +225,13 @@ export function TrackerBar({
    * de red deja lo tecleado donde está (TT-89). No ofrece «Reintentar»: ver
    * el aviso de respuesta perdida (TT-109).
    */
-  const add = useAction(createManualEntry, {
+  const add = useAction(addFromBar, {
     unreachableMessage: timeEntryMessages.unexpected,
     onSuccess: (data, input) => {
       // Lo que se tecleó mientras el pedido viajaba no es parte de la entrada
       // creada: se limpia solo lo que sigue igual a lo que se mandó.
       setDraft((current) => (current === input.description ? "" : current));
-      // El esquema acepta el par ausente, que es «sin proyecto».
-      const sent = { projectId: input.projectId ?? null, taskId: input.taskId ?? null };
-      setPairDraft((current) =>
-        samePair(selectionIds(current), sent) ? NO_SELECTION : current,
-      );
+      setFieldsDraft((current) => afterAdd(current, input.fields));
       setManualDraft((current) =>
         sameDraft(current, input) ? reset(serverNow, timeZone) : current,
       );
@@ -238,7 +254,6 @@ export function TrackerBar({
 
   const serverId = running?.id ?? null;
   const serverDescription = running?.description ?? "";
-  const serverPair = runningSelection(running);
 
   // La descripción del campo sigue a la del servidor, que puede cambiar sin
   // que cambie la entrada: otro dispositivo la editó y la revalidación la
@@ -253,9 +268,10 @@ export function TrackerBar({
     if (serverState.id !== serverId) {
       start.clear();
       setPendingDiscard(null);
-      // El par sigue al timer nuevo, o queda sin proyecto al detenerse
-      // (TT-65); los casos forzados de abajo lo retienen y lo devuelven.
-      setPairDraft(serverPair);
+      // Los campos siguen al timer nuevo, o quedan los de una entrada nueva al
+      // detenerse (TT-65); los casos forzados de abajo los retienen y los
+      // devuelven.
+      setFieldsDraft(serverFields);
       if (saveProject.failure?.code === "unexpected") {
         saveProject.clear();
       }
@@ -274,13 +290,13 @@ export function TrackerBar({
     if (forcedIn) {
       setHeldDescription(draft);
       setDraft(serverDescription);
-      setHeldPair(pairDraft);
+      setHeldFields(fieldsDraft);
       setEditing(false);
     } else if (forcedOut) {
       setDraft(heldDescription ?? serverDescription);
       setHeldDescription(null);
-      setPairDraft(heldPair ?? serverPair);
-      setHeldPair(null);
+      setFieldsDraft(heldFields ?? serverFields);
+      setHeldFields(null);
       setEditing(false);
     } else if (resolvesDiscard(pendingDiscard, serverState.id, serverId)) {
       // TT-65: la descripción se va con el timer descartado, con el foco en el
@@ -305,12 +321,12 @@ export function TrackerBar({
   /** TT-30: con un timer corriendo o una operación de la barra en vuelo. */
   const modeSwitchDisabled = isRunning || switching || add.pending;
   /**
-   * Con un timer en la vista, el par es el de la entrada, con lo elegido
+   * Con un timer en la vista, los campos son los de la entrada, con lo elegido
    * mientras viaja (TT-27): también mientras viaja «Detener» o «Descartar»,
-   * que no lo cambian. Sin timer, o mientras viaja «Iniciar», el borrador.
+   * que no los cambian. Sin timer, o mientras viaja «Iniciar», el borrador.
    */
-  const editsRunningPair = running !== null && phase !== "starting";
-  const shownPair = editsRunningPair ? (runningPairEdit ?? serverPair) : pairDraft;
+  const editsRunningFields = running !== null && phase !== "starting";
+  const shownFields = editsRunningFields ? runningFieldsShown : fieldsDraft;
 
   useEffect(() => {
     if (!focusAfterDiscard.current) {
@@ -377,7 +393,7 @@ export function TrackerBar({
     if (running === null) {
       const id = newStartId(START_KEY);
       clearNotices();
-      start.run({ id, description: draft, ...selectionIds(pairDraft) });
+      start.run({ id, description: draft, ...fieldsInput(fieldsDraft) });
       return;
     }
     clearNotices();
@@ -438,14 +454,14 @@ export function TrackerBar({
       date: manualDraft.date,
       start: manualDraft.start,
       end: manualDraft.end,
-      ...selectionIds(pairDraft),
+      fields: fieldsDraft,
     });
   }
 
   /** TT-27: con el timer abierto el cambio se guarda en él; sin timer, es el borrador. */
   function handleProjectChange(selection: ProjectSelection): void {
-    if (!editsRunningPair) {
-      setPairDraft(selection);
+    if (!editsRunningFields) {
+      setFieldsDraft((current) => withSelection(current, selection));
       return;
     }
     clearNotices();
@@ -491,7 +507,7 @@ export function TrackerBar({
 
   const projectPicker = (
     <ProjectPicker
-      value={shownPair}
+      value={shownFields.selection}
       onChange={handleProjectChange}
       variant="bar"
       label={projectLabels.pickerEmpty}
