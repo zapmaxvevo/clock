@@ -24,12 +24,15 @@ type CalendarBlockProps = {
   readonly serverNow: string;
   /** Día de hoy en la zona de la persona: el año del rótulo del día. */
   readonly todayKey: string;
-  /** Con el diálogo abierto el detalle se cierra: no queda detrás del fondo. */
-  readonly dialogOpen: boolean;
+  /**
+   * El detalle se cierra con un diálogo abierto, que no lo deja detrás del
+   * fondo, y con un gesto en curso (CAL-23, CAL-77).
+   */
+  readonly detailsOff: boolean;
   readonly onOpen: () => void;
   /** El botón del bloque, adonde vuelve el foco al cerrar su diálogo. */
   readonly buttonRef?: Ref<HTMLButtonElement>;
-  /** Los gestos que ofrece este segmento; `NO_GESTURES` mientras viaja su pedido. */
+  /** Los gestos que ofrece este segmento; ninguno mientras viaja un pedido de horario. */
   readonly gestures: SegmentGestures;
   /** El pedido de su horario viaja: atenuado, `aria-busy`, inactivo (CAL-62). */
   readonly busy: boolean;
@@ -77,7 +80,7 @@ export function CalendarBlock({
   placement,
   serverNow,
   todayKey,
-  dialogOpen,
+  detailsOff,
   onOpen,
   buttonRef,
   gestures,
@@ -167,7 +170,7 @@ export function CalendarBlock({
   };
 
   return (
-    <Tooltip disabled={dialogOpen}>
+    <Tooltip disabled={detailsOff}>
       <TooltipTrigger
         render={
           segment.firstVisible ? (

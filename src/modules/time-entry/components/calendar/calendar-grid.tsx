@@ -5,9 +5,6 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type CSSProperties,
-  type MouseEvent,
-  type PointerEvent,
   type ReactNode,
   type Ref,
   type RefObject,
@@ -21,39 +18,24 @@ import type {
   TimeEntryView,
   UpdateEntryTimesInput,
 } from "@/modules/time-entry/schema";
-import {
-  clockLabel,
-  clockToMinutes,
-  MINUTES_PER_DAY,
-  minutesToClock,
-} from "@/server/time";
+import { clockLabel, MINUTES_PER_DAY, minutesToClock } from "@/server/time";
 
 import type { TimeDraft } from "../time-draft";
 import { useGroupTotalLabel } from "../use-group-total";
-import { CalendarBlock } from "./calendar-block";
-import {
-  movedView,
-  NO_GESTURES,
-  segmentGestures,
-  type EntryGestureKind,
-  type GestureGrid,
-  type SegmentGestures,
-} from "./calendar-gestures";
+import { DayColumn, headerId, type ColumnItem } from "./calendar-day-column";
+import { movedView, segmentGestures, type GestureGrid } from "./calendar-gestures";
 import {
   chronological,
   entrySegments,
   initialScrollMinute,
-  layoutColumn,
   minuteHeight,
   runningSegments,
-  SLOT_HEIGHT_PX,
-  slotAt,
   type NowPosition,
-  type Segment,
 } from "./calendar-layout";
 import { dayTotalOf } from "./calendar-totals";
 import type { CalendarZoom } from "./calendar-zoom";
 import { useCalendarGesture, type GesturePreview } from "./use-calendar-gesture";
+import { usePendingBlockFocus } from "./use-pending-block-focus";
 
 type CalendarGridProps = {
   readonly state: CalendarState;
@@ -86,26 +68,8 @@ type CalendarGridProps = {
   readonly onGestureChange: (active: boolean, entryId: string | null) => void;
 };
 
-/** Lo que una columna dibuja de una entrada. */
-type ColumnItem = {
-  readonly key: string;
-  readonly from: number;
-  readonly to: number;
-  /** La entrada como se dibuja: con el trío del gesto o del pedido en vuelo. */
-  readonly entry: TimeEntryView;
-  /** La entrada como la trajo la lectura, de la que parte un gesto. */
-  readonly source: TimeEntryView;
-  readonly segment: Segment;
-};
-
 /** Cómo se dibuja cada entrada mientras un gesto o un pedido de horario la mueven. */
 type Displayed = (entry: TimeEntryView) => TimeEntryView;
-
-/** Lo atenuado: rayado y no solo otro color (CAL-30, CAL-48). */
-const DIMMED_STYLE: CSSProperties = {
-  backgroundImage:
-    "repeating-linear-gradient(135deg, var(--muted) 0 6px, transparent 6px 12px)",
-};
 
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 
@@ -197,58 +161,14 @@ export function CalendarGrid({
   };
   const items = columnItems(state, now, removedIds, displayed);
 
-  // §5.5: el bloque de la entrada editada, creada, detenida o copiada toma el
-  // foco cuando se dibuja —en este render o después de la revalidación—, si el
-  // foco quedó en la región o en `body`. El diálogo que se cierra lo deja en la
-  // región después de su animación, así que también se espera a que llegue.
-  useEffect(() => {
-    const region = regionRef.current;
-    if (focusEntryId === null || region === null) {
-      return;
-    }
-    const scope: HTMLElement = region;
-    /**
-     * Apretar adentro de la región es hacer otra cosa: el foco pendiente se
-     * descarta. Va antes del foco que el mismo clic le da a la región, que si
-     * no llevaría al bloque y desplazaría la grilla bajo el puntero.
-     */
-    let abandoned = false;
-    function abandon(): void {
-      abandoned = true;
-      onEntryFocused();
-    }
-    function focusBlock(): void {
-      if (abandoned) {
-        return;
-      }
-      const button = scope.querySelector<HTMLButtonElement>(
-        `button[data-entry-block="${focusEntryId}"]`,
-      );
-      const active = document.activeElement;
-      // Con el foco ya en el botón no queda nada pendiente: un foco posterior
-      // en la región no lo vuelve a llevar ahí.
-      if (button !== null && active === button) {
-        onEntryFocused();
-        return;
-      }
-      if (active !== null && active !== document.body && active !== scope) {
-        return;
-      }
-      if (button === null) {
-        return;
-      }
-      button.focus();
-      onEntryFocused();
-    }
-    focusBlock();
-    scope.addEventListener("focus", focusBlock);
-    scope.addEventListener("pointerdown", abandon, true);
-    return () => {
-      scope.removeEventListener("focus", focusBlock);
-      scope.removeEventListener("pointerdown", abandon, true);
-    };
-    // Un bloque que cambió de columna se desmonta: con otro dibujo se vuelve a buscar.
-  }, [focusEntryId, onEntryFocused, regionRef, state, movingTimes, preview]);
+  usePendingBlockFocus({
+    regionRef,
+    focusEntryId,
+    onEntryFocused,
+    state,
+    movingTimes,
+    preview,
+  });
 
   // Solo al montar: una revalidación no mueve lo que la persona desplazó.
   const [initialScroll] = useState(() => initialScrollMinute(now, dates) * scale);
@@ -321,14 +241,14 @@ export function CalendarGrid({
             openerId={openerId}
             openerRef={openerRef}
             // CAL-23, CAL-77: con un gesto en curso ningún bloque muestra su detalle.
-            dialogOpen={dialogOpen || preview !== null}
+            detailsOff={dialogOpen || preview !== null}
             onOpen={onOpen}
             onSlot={onSlot}
             selection={selectionIn(preview, dayIndex)}
+            // Con un pedido de horario en vuelo los gestos están apagados, también
+            // en su bloque.
             gesturesOf={(item) =>
-              movingTimes?.id === item.entry.id
-                ? NO_GESTURES
-                : segmentGestures(item.entry, item.segment, gesturesEnabled)
+              segmentGestures(item.entry, item.segment, gesturesEnabled)
             }
             busyId={movingTimes?.id ?? null}
             draggedId={draggedId}
@@ -343,10 +263,6 @@ export function CalendarGrid({
       </div>
     </div>
   );
-}
-
-function headerId(date: string): string {
-  return `calendar-day-${date}`;
 }
 
 /** CAL-09, CAL-31: el rótulo del día y su total; hoy, resaltado con fondo. */
@@ -381,182 +297,9 @@ function DayHeader({
   );
 }
 
-type DayColumnProps = Pick<
-  CalendarGridProps,
-  "state" | "now" | "zoom" | "openerId" | "openerRef" | "dialogOpen" | "onOpen" | "onSlot"
-> & {
-  readonly day: CalendarDayView;
-  readonly items: readonly ColumnItem[];
-  /** La selección del alta que se está arrastrando en esta columna (CAL-44). */
-  readonly selection: TimeDraft | null;
-  readonly gesturesOf: (item: ColumnItem) => SegmentGestures;
-  /** La entrada cuyo pedido de horario viaja (CAL-62). */
-  readonly busyId: string | null;
-  /** La entrada del gesto en curso. */
-  readonly draggedId: string | null;
-  readonly onGestureStart: (
-    item: ColumnItem,
-    kind: EntryGestureKind,
-    event: PointerEvent<HTMLElement>,
-  ) => void;
-  /** Apretar el fondo, en la franja de `slotAt`: puede empezar una selección (CAL-44). */
-  readonly onCreateStart: (anchor: number, event: PointerEvent<HTMLElement>) => void;
-};
-
 /** La selección del alta en curso, si es de esta columna. */
 function selectionIn(preview: GesturePreview | null, dayIndex: number): TimeDraft | null {
   return preview?.kind === "create" && preview.dayIndex === dayIndex
     ? preview.times
     : null;
-}
-
-/**
- * La columna de un día, con lo atenuado (CAL-30, CAL-48), los bloques y la
- * línea de ahora si es la de hoy (CAL-35).
- */
-function DayColumn({
-  day,
-  items,
-  state,
-  now,
-  zoom,
-  openerId,
-  openerRef,
-  dialogOpen,
-  onOpen,
-  onSlot,
-  selection,
-  gesturesOf,
-  busyId,
-  draggedId,
-  onGestureStart,
-  onCreateStart,
-}: DayColumnProps) {
-  const scale = minuteHeight(zoom);
-
-  /** El minuto de la franja bajo el puntero, o `null` si ahí no se abre nada. */
-  function slotUnder(event: MouseEvent<HTMLDivElement>): number | null {
-    // Lo que se dibuja en un portal —el detalle de un bloque— propaga sus
-    // eventos por el árbol de React hasta acá sin estar en la columna.
-    if (!(event.target instanceof Node) || !event.currentTarget.contains(event.target)) {
-      return null;
-    }
-    if (event.target instanceof Element && event.target.closest("[data-entry-block]")) {
-      return null;
-    }
-    const offset = event.clientY - event.currentTarget.getBoundingClientRect().top;
-    return slotAt(day, offset, zoom, state.canTrack);
-  }
-
-  /**
-   * CAL-43: el fondo de la columna abre el alta en la franja tocada; sobre un
-   * bloque no. No es un control (CAL-76): el alta por teclado es «Agregar
-   * entrada».
-   */
-  function handleClick(event: MouseEvent<HTMLDivElement>): void {
-    const minute = slotUnder(event);
-    if (minute !== null) {
-      onSlot(day.date, minute);
-    }
-  }
-
-  function handlePointerDown(event: PointerEvent<HTMLDivElement>): void {
-    const minute = slotUnder(event);
-    if (minute !== null) {
-      onCreateStart(minute, event);
-    }
-  }
-
-  return (
-    <div
-      role="group"
-      aria-labelledby={headerId(day.date)}
-      data-calendar-day={day.date}
-      onClick={handleClick}
-      onPointerDown={handlePointerDown}
-      className={cn(
-        "relative border-r last:border-r-0",
-        state.canTrack && !day.beforeWorkspace && "cursor-pointer",
-      )}
-      style={{
-        height: MINUTES_PER_DAY * scale,
-        backgroundImage: "linear-gradient(to bottom, var(--border) 1px, transparent 1px)",
-        backgroundSize: `100% ${SLOT_HEIGHT_PX}px`,
-      }}
-    >
-      {day.beforeWorkspace && (
-        <div aria-hidden="true" className="absolute inset-0" style={DIMMED_STYLE} />
-      )}
-      {day.missingMinutes.map((range) => (
-        <div
-          key={range.from}
-          aria-hidden="true"
-          className="absolute inset-x-0"
-          style={{
-            ...DIMMED_STYLE,
-            top: range.from * scale,
-            height: (range.to - range.from) * scale,
-          }}
-        />
-      ))}
-      {layoutColumn(items, zoom).map(({ item, ...placement }) => (
-        <CalendarBlock
-          key={item.key}
-          entry={item.entry}
-          segment={item.segment}
-          placement={placement}
-          serverNow={state.serverNow}
-          todayKey={state.todayKey}
-          dialogOpen={dialogOpen}
-          onOpen={() => onOpen(item.entry.id)}
-          buttonRef={
-            item.segment.firstVisible && item.entry.id === openerId
-              ? openerRef
-              : undefined
-          }
-          gestures={gesturesOf(item)}
-          busy={item.entry.id === busyId}
-          dragging={item.entry.id === draggedId}
-          onGestureStart={(kind, event) => onGestureStart(item, kind, event)}
-        />
-      ))}
-      {selection !== null && <CalendarSelection times={selection} zoom={zoom} />}
-      {now.date === day.date && (
-        // CAL-35: decorativa, fuera del árbol de accesibilidad; sobre los
-        // bloques, debajo del enfocado, del eje y de los encabezados.
-        <div
-          aria-hidden="true"
-          data-calendar-now=""
-          className="bg-primary pointer-events-none absolute inset-x-0 z-[5] h-0.5 -translate-y-1/2"
-          style={{ top: now.minute * scale }}
-        />
-      )}
-    </div>
-  );
-}
-
-/** CAL-44: las franjas que cubre el alta que se arrastra, con su rango. */
-function CalendarSelection({
-  times,
-  zoom,
-}: {
-  readonly times: TimeDraft;
-  readonly zoom: CalendarZoom;
-}) {
-  const { time } = useDisplayFormats();
-  const scale = minuteHeight(zoom);
-  const from = clockToMinutes(times.start) ?? 0;
-  // Un fin de 24:00 se escribe «00:00» (TT-72).
-  const to =
-    times.end === "00:00" ? MINUTES_PER_DAY : (clockToMinutes(times.end) ?? from);
-  return (
-    <div
-      aria-hidden="true"
-      data-calendar-selection=""
-      className="bg-primary/15 border-primary pointer-events-none absolute inset-x-0.5 z-10 rounded-md border px-1.5 py-0.5 text-xs"
-      style={{ top: from * scale, height: (to - from) * scale }}
-    >
-      {clockLabel(times.start, time)} – {clockLabel(times.end, time)}
-    </div>
-  );
 }

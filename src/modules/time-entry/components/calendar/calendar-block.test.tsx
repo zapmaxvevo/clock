@@ -109,7 +109,7 @@ function render(
           placement={{ top: 0, height: 48, lane: 0, lanes: 1 }}
           serverNow={serverNow}
           todayKey="2026-10-04"
-          dialogOpen={false}
+          detailsOff={false}
           onOpen={() => undefined}
           gestures={options.gestures ?? NO_GESTURES}
           busy={options.busy ?? false}

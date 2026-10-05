@@ -16,6 +16,7 @@ import {
   runningSegments,
   slotAt,
   slotDraft,
+  slotOf,
 } from "./calendar-layout";
 
 /** La semana del lunes 2026-09-28 al domingo 2026-10-04. */
@@ -501,5 +502,14 @@ describe("isOutsidePeriod", () => {
   it("la de otra semana está afuera, también la que termina justo al empezar el período", () => {
     expect(isOutsidePeriod(closed("2026-09-09", "09:00", "10:00"), week)).toBe(true);
     expect(isOutsidePeriod(closed("2026-09-27", "22:00", "00:00", 1), week)).toBe(true);
+  });
+});
+
+describe("slotOf", () => {
+  it("la franja que contiene el minuto, entre la primera y la última del día", () => {
+    expect(slotOf(617, 60)).toBe(600);
+    expect(slotOf(617, 15)).toBe(615);
+    expect(slotOf(-20, 30)).toBe(0);
+    expect(slotOf(1440, 30)).toBe(1410);
   });
 });

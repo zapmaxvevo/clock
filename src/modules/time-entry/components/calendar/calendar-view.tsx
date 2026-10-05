@@ -41,6 +41,7 @@ import { calendarZoomCookie, type CalendarZoom } from "./calendar-zoom";
 import { CalendarNotices, CLOSING_CODES, dialogFailureOf } from "./calendar-notices";
 import { EntryDialog, type DialogSubject } from "./entry-dialog";
 import { calendarLabels } from "./labels";
+import { focusIsFree } from "./use-pending-block-focus";
 
 type CalendarViewProps = {
   readonly state: CalendarState;
@@ -173,13 +174,7 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
    * en la grilla, que enfoca la región.
    */
   function returnFocusTo(id: string | null): void {
-    const active = document.activeElement;
-    const free =
-      active === null ||
-      active === document.body ||
-      active === regionRef.current ||
-      (id !== null && active.closest(`[data-entry-block="${id}"]`) !== null);
-    if (free) {
+    if (focusIsFree(document.activeElement, regionRef.current, id)) {
       setFocusEntryId(id);
     }
   }

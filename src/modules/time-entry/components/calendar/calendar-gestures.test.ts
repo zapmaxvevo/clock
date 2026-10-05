@@ -9,13 +9,19 @@ import {
   gridMinuteAt,
   initialCandidate,
   movedView,
+  nearestColumn,
   NO_GESTURES,
   passedThreshold,
   segmentGestures,
   startsGesture,
   type GestureGrid,
 } from "./calendar-gestures";
-import { entrySegments, isOutsidePeriod, slotDraft } from "./calendar-layout";
+import {
+  entrySegments,
+  isOutsidePeriod,
+  slotDraft,
+  type ClosedEntryView,
+} from "./calendar-layout";
 import type { CalendarZoom } from "./calendar-zoom";
 
 /** La semana del lunes 2026-09-28 al domingo 2026-10-04, sin huecos. */
@@ -90,6 +96,16 @@ function entry(
   };
 }
 
+/** Una entrada cerrada, la que tienen los gestos. */
+function closedEntry(
+  dayDate: string,
+  startClock: string,
+  endClock: string,
+  overrides: Partial<TimeEntryView> = {},
+): ClosedEntryView {
+  return { ...entry(dayDate, startClock, endClock, overrides), endClock };
+}
+
 /** Un punto de la recta: el día de la semana por índice y la hora. */
 function at(dayIndex: number, clock: string): number {
   const [hours, minutes] = clock.split(":").map(Number);
@@ -97,7 +113,7 @@ function at(dayIndex: number, clock: string): number {
 }
 
 describe("segmentGestures (CAL-05, CAL-39, CAL-58, CAL-90, CAL-100)", () => {
-  const closed = entry("2026-09-30", "10:00", "11:00");
+  const closed = closedEntry("2026-09-30", "10:00", "11:00");
   const [only] = entrySegments(closed, week);
 
   it("una cerrada de un día se mueve y tiene las dos asas", () => {
@@ -125,7 +141,7 @@ describe("segmentGestures (CAL-05, CAL-39, CAL-58, CAL-90, CAL-100)", () => {
   });
 
   it("una de distancia de reloj cero se estira pero no se mueve (CAL-90)", () => {
-    const zero = entry("2026-09-30", "10:00", "10:00");
+    const zero = closedEntry("2026-09-30", "10:00", "10:00");
     const [segment] = entrySegments(zero, week);
     expect(segmentGestures(zero, segment, true)).toEqual({
       move: false,
@@ -135,7 +151,7 @@ describe("segmentGestures (CAL-05, CAL-39, CAL-58, CAL-90, CAL-100)", () => {
   });
 
   it("la que cruza la medianoche: el inicio en su día, el fin en el siguiente", () => {
-    const overnight = entry("2026-09-30", "22:00", "02:00");
+    const overnight = closedEntry("2026-09-30", "22:00", "02:00");
     const [first, second] = entrySegments(overnight, week);
     expect(segmentGestures(overnight, first, true)).toEqual({
       move: true,
@@ -150,7 +166,7 @@ describe("segmentGestures (CAL-05, CAL-39, CAL-58, CAL-90, CAL-100)", () => {
   });
 
   it("la que termina a las 00:00 tiene el asa de fin en el día de inicio", () => {
-    const toMidnight = entry("2026-09-30", "22:00", "00:00");
+    const toMidnight = closedEntry("2026-09-30", "22:00", "00:00");
     const segments = entrySegments(toMidnight, week);
     expect(segments).toHaveLength(1);
     expect(segmentGestures(toMidnight, segments[0], true).end).toBe(true);
@@ -158,21 +174,21 @@ describe("segmentGestures (CAL-05, CAL-39, CAL-58, CAL-90, CAL-100)", () => {
 
   it("en la hora repetida de un atraso, el segmento no termina donde la entrada: sin asa de fin", () => {
     // 02:30 en la primera pasada a 02:15 en la segunda (Madrid, 2026-10-25).
-    const repeated = entry("2026-10-01", "02:30", "02:15", { extraDays: 0 });
+    const repeated = closedEntry("2026-10-01", "02:30", "02:15", { extraDays: 0 });
     const [segment] = entrySegments(repeated, week);
     expect(segment.to).toBe(150);
     expect(segmentGestures(repeated, segment, true).end).toBe(false);
   });
 
   it("la que empezó antes o termina después del período no tiene el asa de ese extremo", () => {
-    const fromBefore = entry("2026-09-27", "22:00", "02:00");
+    const fromBefore = closedEntry("2026-09-27", "22:00", "02:00");
     const [monday] = entrySegments(fromBefore, week);
     expect(segmentGestures(fromBefore, monday, true)).toEqual({
       move: true,
       start: false,
       end: true,
     });
-    const pastEnd = entry("2026-10-04", "22:00", "02:00");
+    const pastEnd = closedEntry("2026-10-04", "22:00", "02:00");
     const [sunday] = entrySegments(pastEnd, week);
     expect(segmentGestures(pastEnd, sunday, true)).toEqual({
       move: true,
@@ -186,7 +202,7 @@ describe("entryGesture", () => {
   it("el inicio en la recta, la distancia de reloj y el punto tomado", () => {
     const gesture = entryGesture(
       "move",
-      entry("2026-09-30", "10:00", "11:30"),
+      closedEntry("2026-09-30", "10:00", "11:30"),
       week,
       at(2, "10:20"),
     );
@@ -201,7 +217,12 @@ describe("entryGesture", () => {
   });
 
   it("la que empezó el día anterior al período empieza en negativo", () => {
-    const gesture = entryGesture("end", entry("2026-09-27", "22:00", "02:00"), week, 60);
+    const gesture = entryGesture(
+      "end",
+      closedEntry("2026-09-27", "22:00", "02:00"),
+      week,
+      60,
+    );
     expect(gesture.start).toBe(-120);
     expect(gesture.span).toBe(240);
     expect(gesture.grab).toBe(0);
@@ -209,7 +230,7 @@ describe("entryGesture", () => {
 });
 
 describe("candidateAt: mover (CAL-50, CAL-51, CAL-53, CAL-57, CAL-61)", () => {
-  const hour = entry("2026-09-30", "10:00", "11:00");
+  const hour = closedEntry("2026-09-30", "10:00", "11:00");
 
   it("lleva el bloque al día y a la marca bajo el puntero, con su distancia de reloj", () => {
     const gesture = entryGesture("move", hour, week, at(2, "10:30"));
@@ -229,7 +250,7 @@ describe("candidateAt: mover (CAL-50, CAL-51, CAL-53, CAL-57, CAL-61)", () => {
   });
 
   it("de vuelta en su marca de casa, el original: una de 10:07 no se escribe a 10:00", () => {
-    const offMark = entry("2026-09-30", "10:07", "10:37");
+    const offMark = closedEntry("2026-09-30", "10:07", "10:37");
     const gesture = entryGesture("move", offMark, week, at(2, "10:17"));
     expect(candidateAt(gesture, at(2, "10:21"), gridOf(60))).toEqual(gesture.original);
     expect(candidateAt(gesture, at(2, "11:17"), gridOf(60))).toEqual({
@@ -240,14 +261,14 @@ describe("candidateAt: mover (CAL-50, CAL-51, CAL-53, CAL-57, CAL-61)", () => {
   });
 
   it("pasa a cruzar la medianoche y queda en dos segmentos (CAL-54)", () => {
-    const late = entry("2026-09-28", "22:00", "23:30");
+    const late = closedEntry("2026-09-28", "22:00", "23:30");
     const gesture = entryGesture("move", late, week, at(0, "22:00"));
     const candidate = candidateAt(gesture, at(0, "23:00"), gridOf(60));
     expect(candidate).toEqual({ date: "2026-09-28", start: "23:00", end: "00:30" });
   });
 
   it("tomada de un segundo segmento, puede quedar empezando el día anterior al período", () => {
-    const overnight = entry("2026-09-27", "22:00", "02:00");
+    const overnight = closedEntry("2026-09-27", "22:00", "02:00");
     const gesture = entryGesture("move", overnight, week, at(0, "01:00"));
     expect(candidateAt(gesture, at(0, "02:00"), gridOf(60))).toEqual({
       date: "2026-09-27",
@@ -263,7 +284,7 @@ describe("candidateAt: mover (CAL-50, CAL-51, CAL-53, CAL-57, CAL-61)", () => {
   });
 
   it("tomada lejos de su inicio, el tope de arriba le deja una franja en el período", () => {
-    const longer = entry("2026-09-27", "20:00", "02:00");
+    const longer = closedEntry("2026-09-27", "20:00", "02:00");
     // Tomada a las 01:50 del lunes: con el puntero arriba, el inicio quedaría a
     // las 18:00 del domingo y el bloque no tendría nada en el período.
     const gesture = entryGesture("move", longer, week, at(0, "01:50"));
@@ -284,7 +305,7 @@ describe("candidateAt: mover (CAL-50, CAL-51, CAL-53, CAL-57, CAL-61)", () => {
   });
 
   it("en los bordes, el bloque soltado nunca queda fuera del período (CAL-46)", () => {
-    const overnight = entry("2026-09-27", "22:00", "02:00");
+    const overnight = closedEntry("2026-09-27", "22:00", "02:00");
     for (const zoom of [60, 30, 15, 5] as const) {
       const fromSecond = entryGesture("move", overnight, week, at(0, "01:30"));
       const fromHour = entryGesture("move", hour, week, at(2, "10:30"));
@@ -321,7 +342,7 @@ describe("candidateAt: mover (CAL-50, CAL-51, CAL-53, CAL-57, CAL-61)", () => {
     });
     const gesture = entryGesture(
       "move",
-      entry("2026-10-01", "10:00", "11:00"),
+      closedEntry("2026-10-01", "10:00", "11:00"),
       week,
       at(3, "10:00"),
     );
@@ -333,7 +354,7 @@ describe("candidateAt: mover (CAL-50, CAL-51, CAL-53, CAL-57, CAL-61)", () => {
   });
 
   it("con un extremo en un minuto que no existe, no hay candidato (CAL-30, CAL-59)", () => {
-    const sunday = entry("2026-03-29", "00:00", "01:00");
+    const sunday = closedEntry("2026-03-29", "00:00", "01:00");
     const gesture = entryGesture("move", sunday, madridWeek, at(6, "00:00"));
     expect(candidateAt(gesture, at(6, "02:00"), madridGrid(60))).toBeNull();
     expect(candidateAt(gesture, at(6, "01:30"), madridGrid(30))).toBeNull();
@@ -342,8 +363,8 @@ describe("candidateAt: mover (CAL-50, CAL-51, CAL-53, CAL-57, CAL-61)", () => {
 });
 
 describe("candidateAt: estirar (CAL-52, CAL-55, CAL-56, CAL-57)", () => {
-  const offStart = entry("2026-09-30", "10:07", "11:00");
-  const offEnd = entry("2026-09-30", "09:00", "10:07");
+  const offStart = closedEntry("2026-09-30", "10:07", "11:00");
+  const offEnd = closedEntry("2026-09-30", "09:00", "10:07");
 
   it("el asa de inicio mueve solo el inicio; el fin conserva su rótulo", () => {
     const gesture = entryGesture("start", offStart, week, at(2, "10:07"));
@@ -369,15 +390,47 @@ describe("candidateAt: estirar (CAL-52, CAL-55, CAL-56, CAL-57)", () => {
     });
   });
 
+  it("el inicio no pasa al piso del workspace (CAL-48)", () => {
+    const grid = gridOf(60, {
+      minDayKey: "2026-09-30",
+      days: week.map((date) => ({
+        date,
+        beforeWorkspace: date < "2026-09-30",
+        missingMinutes: [],
+      })),
+    });
+    const gesture = entryGesture(
+      "start",
+      closedEntry("2026-09-30", "10:00", "11:00"),
+      week,
+      at(2, "10:00"),
+    );
+    expect(candidateAt(gesture, at(1, "23:00"), grid)).toEqual({
+      date: "2026-09-30",
+      start: "00:00",
+      end: "11:00",
+    });
+  });
+
   it("el asa de fin mueve solo el fin, y sigue a la columna siguiente (CAL-54)", () => {
-    const gesture = entryGesture("end", entry("2026-09-29", "10:00", "11:00"), week, 0);
+    const gesture = entryGesture(
+      "end",
+      closedEntry("2026-09-29", "10:00", "11:00"),
+      week,
+      0,
+    );
     expect(candidateAt(gesture, at(1, "12:40"), gridOf(30))).toEqual({
       date: "2026-09-29",
       start: "10:00",
       end: "12:30",
     });
     expect(candidateAt(gesture, at(1, "09:00"), gridOf(30))?.end).toBe("10:30");
-    const late = entryGesture("end", entry("2026-09-30", "22:00", "23:00"), week, 0);
+    const late = entryGesture(
+      "end",
+      closedEntry("2026-09-30", "22:00", "23:00"),
+      week,
+      0,
+    );
     expect(candidateAt(late, at(3, "23:00"), gridOf(60))).toEqual({
       date: "2026-09-30",
       start: "22:00",
@@ -392,19 +445,29 @@ describe("candidateAt: estirar (CAL-52, CAL-55, CAL-56, CAL-57)", () => {
   });
 
   it("el fin al final del período es 24:00, escrito «00:00» (TT-72)", () => {
-    const gesture = entryGesture("end", entry("2026-10-04", "22:00", "23:00"), week, 0);
+    const gesture = entryGesture(
+      "end",
+      closedEntry("2026-10-04", "22:00", "23:00"),
+      week,
+      0,
+    );
     expect(candidateAt(gesture, 7 * DAY, gridOf(60))?.end).toBe("00:00");
   });
 
   it("un extremo estirado a un minuto que no existe no da candidato", () => {
     const start = entryGesture(
       "start",
-      entry("2026-03-29", "05:00", "06:00"),
+      closedEntry("2026-03-29", "05:00", "06:00"),
       madridWeek,
       0,
     );
     expect(candidateAt(start, at(6, "02:30"), madridGrid(30))).toBeNull();
-    const end = entryGesture("end", entry("2026-03-29", "00:00", "01:00"), madridWeek, 0);
+    const end = entryGesture(
+      "end",
+      closedEntry("2026-03-29", "00:00", "01:00"),
+      madridWeek,
+      0,
+    );
     expect(candidateAt(end, at(6, "02:00"), madridGrid(60))).toBeNull();
     expect(candidateAt(end, at(6, "03:00"), madridGrid(60))?.end).toBe("03:00");
   });
@@ -465,7 +528,12 @@ describe("candidateAt: crear (CAL-44)", () => {
 
 describe("initialCandidate", () => {
   it("en un gesto sobre una entrada, su trío", () => {
-    const gesture = entryGesture("move", entry("2026-09-30", "10:07", "11:00"), week, 0);
+    const gesture = entryGesture(
+      "move",
+      closedEntry("2026-09-30", "10:07", "11:00"),
+      week,
+      0,
+    );
     expect(initialCandidate(gesture, gridOf(60))).toEqual({
       date: "2026-09-30",
       start: "10:07",
@@ -476,7 +544,7 @@ describe("initialCandidate", () => {
 
 describe("movedView (ADR 0012)", () => {
   it("dibuja la entrada con el trío nuevo, en el formato de la persona", () => {
-    const original = entry("2026-09-30", "10:00", "11:00");
+    const original = closedEntry("2026-09-30", "10:00", "11:00");
     expect(
       movedView(original, { date: "2026-10-01", start: "23:00", end: "00:30" }, "12h"),
     ).toEqual({
@@ -499,6 +567,30 @@ describe("gridMinuteAt", () => {
     expect(gridMinuteAt(2, 10 * 48, 30)).toBe(at(2, "05:00"));
     expect(gridMinuteAt(2, -30, 60)).toBe(at(2, "00:00"));
     expect(gridMinuteAt(2, 30 * 48, 60)).toBe(3 * DAY);
+  });
+});
+
+describe("nearestColumn (CAL-61)", () => {
+  const columns = [
+    { index: 0, left: 100, right: 200 },
+    { index: 1, left: 200, right: 300 },
+    { index: 2, left: 300, right: 400 },
+  ];
+
+  it("la columna cuyo ancho contiene el puntero, con el borde derecho en la siguiente", () => {
+    expect(nearestColumn(columns, 150)?.index).toBe(0);
+    expect(nearestColumn(columns, 200)?.index).toBe(1);
+    expect(nearestColumn(columns, 399)?.index).toBe(2);
+  });
+
+  it("fuera de las columnas, la más cercana: el puntero no sale del período", () => {
+    expect(nearestColumn(columns, 20)?.index).toBe(0);
+    expect(nearestColumn(columns, 400)?.index).toBe(2);
+    expect(nearestColumn(columns, 900)?.index).toBe(2);
+  });
+
+  it("sin columnas, ninguna", () => {
+    expect(nearestColumn([], 150)).toBeUndefined();
   });
 });
 

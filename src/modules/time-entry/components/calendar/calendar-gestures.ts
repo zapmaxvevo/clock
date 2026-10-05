@@ -11,8 +11,16 @@ import {
   type TimeFormat,
 } from "@/server/time";
 
-import { draftDuration, draftExtraDays, type TimeDraft } from "../time-draft";
-import { isMissing, minuteHeight, slotDraft, type Segment } from "./calendar-layout";
+import { draftDuration, draftExtraDays, fromView, type TimeDraft } from "../time-draft";
+import {
+  clamp,
+  isMissing,
+  minuteHeight,
+  slotDraft,
+  slotOf,
+  type ClosedEntryView,
+  type Segment,
+} from "./calendar-layout";
 import type { CalendarZoom } from "./calendar-zoom";
 
 /**
@@ -38,7 +46,7 @@ export type GestureGrid = {
 export type EntryGestureKind = "move" | "start" | "end";
 
 /** Un gesto sobre una entrada cerrada, con lo que tenía al empezar. */
-export type EntryGesture = {
+type EntryGesture = {
   readonly kind: EntryGestureKind;
   readonly entryId: string;
   /** El trío de la entrada al empezar, `fromView(entry)`. */
@@ -52,7 +60,7 @@ export type EntryGesture = {
 };
 
 /** Una selección para el alta, dentro de una columna (CAL-44). */
-export type CreateGesture = {
+type CreateGesture = {
   readonly kind: "create";
   readonly dayIndex: number;
   /** El minuto de la franja tocada, el de `slotAt`. */
@@ -97,23 +105,14 @@ export function segmentGestures(
   };
 }
 
-/** El trío de una entrada cerrada; la que corre no tiene gestos. */
-function tripleOf(entry: TimeEntryView): TimeDraft {
-  return {
-    date: entry.dayDate,
-    start: entry.startClock,
-    end: entry.endClock ?? entry.startClock,
-  };
-}
-
 /** El gesto sobre una entrada, tomado en `pointer`. */
 export function entryGesture(
   kind: EntryGestureKind,
-  entry: TimeEntryView,
+  entry: ClosedEntryView,
   days: readonly string[],
   pointer: GridMinute,
 ): EntryGesture {
-  const original = tripleOf(entry);
+  const original = fromView(entry);
   const index = days.indexOf(entry.dayDate);
   // Con `editableTimes` dura menos de un día: si su día no está a la vista,
   // empezó el anterior al primero.
@@ -154,20 +153,18 @@ function lineOf(grid: GestureGrid) {
     round: (x: number) => Math.round(x / zoom) * zoom,
     nextMark: (x: number) => Math.floor(x / zoom) * zoom + zoom,
     lastMark: (x: number) => Math.ceil(x / zoom) * zoom - zoom,
-    dayOf: (p: GridMinute) => addDaysToKey(days[0].date, Math.floor(p / MINUTES_PER_DAY)),
+    dayOf: (point: GridMinute) =>
+      addDaysToKey(days[0].date, Math.floor(point / MINUTES_PER_DAY)),
     /** Un punto de un día visible que no existe; los días de afuera no se miran (§8). */
-    missing: (p: GridMinute) => {
-      const index = Math.floor(p / MINUTES_PER_DAY);
+    missing: (point: GridMinute) => {
+      const index = Math.floor(point / MINUTES_PER_DAY);
       const day = days[index];
       return (
-        day !== undefined && isMissing(p - index * MINUTES_PER_DAY, day.missingMinutes)
+        day !== undefined &&
+        isMissing(point - index * MINUTES_PER_DAY, day.missingMinutes)
       );
     },
   };
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
 }
 
 /**
@@ -191,17 +188,17 @@ export function candidateAt(
         return original;
       }
       // Al menos un minuto en el período, y nunca antes del piso (CAL-48, CAL-61).
-      const s = clamp(
+      const startMinute = clamp(
         wanted,
         Math.max(line.floor, line.nextMark(-span)),
         line.end - grid.zoom,
       );
-      if (line.missing(s) || line.missing(s + span)) {
+      if (line.missing(startMinute) || line.missing(startMinute + span)) {
         return null;
       }
-      const startClock = minutesToClock(s);
+      const startClock = minutesToClock(startMinute);
       return {
-        date: line.dayOf(s),
+        date: line.dayOf(startMinute),
         start: startClock,
         end: shiftClock(startClock, span),
       };
@@ -214,16 +211,20 @@ export function candidateAt(
         return original;
       }
       // Entre 24 horas antes del fin y la última marca anterior a él (CAL-55, CAL-56).
-      const s = clamp(
+      const startMinute = clamp(
         wanted,
         Math.max(line.floor, line.nextMark(end - MINUTES_PER_DAY)),
         line.lastMark(end),
       );
-      if (line.missing(s)) {
+      if (line.missing(startMinute)) {
         return null;
       }
       // El fin no cambia de rótulo y conserva su instante (ADR 0006).
-      return { date: line.dayOf(s), start: minutesToClock(s), end: original.end };
+      return {
+        date: line.dayOf(startMinute),
+        start: minutesToClock(startMinute),
+        end: original.end,
+      };
     }
     case "end": {
       const { original, start, span } = gesture;
@@ -231,26 +232,26 @@ export function candidateAt(
       if (wanted === line.round(start + span)) {
         return original;
       }
-      const f = clamp(
+      const endMinute = clamp(
         wanted,
         line.nextMark(start),
         line.lastMark(start + MINUTES_PER_DAY),
       );
-      if (line.missing(f)) {
+      if (line.missing(endMinute)) {
         return null;
       }
       // Un fin anterior al inicio es del día siguiente (TT-72).
-      return { date: original.date, start: original.start, end: minutesToClock(f) };
+      return {
+        date: original.date,
+        start: original.start,
+        end: minutesToClock(endMinute),
+      };
     }
     case "create": {
       const { dayIndex, anchor } = gesture;
       const base = dayIndex * MINUTES_PER_DAY;
       const longest = MINUTES_PER_DAY - grid.zoom;
-      const slot = clamp(
-        Math.floor((pointer - base) / grid.zoom) * grid.zoom,
-        0,
-        longest,
-      );
+      const slot = slotOf(pointer - base, grid.zoom);
       let from = Math.min(anchor, slot);
       let to = Math.max(anchor, slot) + grid.zoom;
       // Más de 24 horas menos una franja: se recorta del lado del puntero.
@@ -305,6 +306,27 @@ export function gridMinuteAt(
   );
 }
 
+/** Una columna medida en pantalla: el índice de su día y sus bordes. */
+export type ColumnBox = {
+  readonly index: number;
+  readonly left: number;
+  readonly right: number;
+};
+
+/** CAL-61: la columna cuyo ancho contiene `x`, o la más cercana; `undefined` sin columnas. */
+export function nearestColumn<Column extends ColumnBox>(
+  columns: readonly Column[],
+  x: number,
+): Column | undefined {
+  const distance = (column: Column) =>
+    x < column.left ? column.left - x : x >= column.right ? x - column.right + 1 : 0;
+  return columns.reduce<Column | undefined>(
+    (best, column) =>
+      best === undefined || distance(column) < distance(best) ? column : best,
+    undefined,
+  );
+}
+
 /** ADR 0014: el botón principal del mouse. */
 export function startsGesture(pointer: {
   readonly pointerType: string;
@@ -314,14 +336,14 @@ export function startsGesture(pointer: {
   return pointer.pointerType === "mouse" && pointer.button === 0 && pointer.isPrimary;
 }
 
-export const DRAG_THRESHOLD_PX = 4;
+const DRAG_THRESHOLD_PX = 4;
 
 /** Desde acá el gesto deja de ser un clic. */
 export function passedThreshold(dx: number, dy: number): boolean {
   return Math.hypot(dx, dy) >= DRAG_THRESHOLD_PX;
 }
 
-export const AUTOSCROLL_EDGE_PX = 32;
+const AUTOSCROLL_EDGE_PX = 32;
 
 /** Píxeles por cuadro hacia un borde a esa distancia: 0 fuera de la banda, hasta 16 en el borde. */
 export function autoScrollStep(distanceToEdge: number): number {

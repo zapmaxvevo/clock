@@ -11,7 +11,8 @@ import type {
 } from "@/modules/time-entry/schema";
 
 import { selectionOf } from "../entry-selection";
-import { sameDraft, type TimeDraft } from "../time-draft";
+import { fromView, sameDraft, type TimeDraft } from "../time-draft";
+import { isClosedEntry } from "./calendar-layout";
 
 /**
  * El borrador del diálogo de una entrada, en sus tres modos, y lo que cada
@@ -30,11 +31,10 @@ export function draftOfEntry(entry: TimeEntryView): EntryDialogDraft {
   return {
     description: entry.description,
     selection: selectionOf(entry),
-    times: {
-      date: entry.dayDate,
-      start: entry.startClock,
-      end: entry.endClock ?? entry.startClock,
-    },
+    // En el timer, el fin del borrador no cuenta: se deja en el inicio.
+    times: isClosedEntry(entry)
+      ? fromView(entry)
+      : { date: entry.dayDate, start: entry.startClock, end: entry.startClock },
   };
 }
 
@@ -69,12 +69,10 @@ export function changesOf(
   entry: TimeEntryView,
   draft: EntryDialogDraft,
 ): UpdateEntryChanges | null {
-  const view =
-    entry.endClock === null
-      ? null
-      : { date: entry.dayDate, start: entry.startClock, end: entry.endClock };
   const timesChanged =
-    entry.editableTimes && view !== null && !sameDraft(draft.times, view);
+    entry.editableTimes &&
+    isClosedEntry(entry) &&
+    !sameDraft(draft.times, fromView(entry));
   return orNull({
     ...sharedChanges(entry, draft),
     ...(timesChanged ? { times: draft.times } : {}),

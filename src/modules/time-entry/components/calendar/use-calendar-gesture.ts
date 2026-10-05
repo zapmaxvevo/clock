@@ -13,14 +13,17 @@ import {
 import type { TimeEntryView, UpdateEntryTimesInput } from "@/modules/time-entry/schema";
 
 import { sameDraft, type TimeDraft } from "../time-draft";
+import { isClosedEntry } from "./calendar-layout";
 import {
   autoScrollStep,
   candidateAt,
   entryGesture,
   gridMinuteAt,
   initialCandidate,
+  nearestColumn,
   passedThreshold,
   startsGesture,
+  type ColumnBox,
   type EntryGestureKind,
   type Gesture,
   type GestureGrid,
@@ -80,13 +83,18 @@ function previewOf(gesture: Gesture, times: TimeDraft): GesturePreview {
 function columnsOf(
   scroller: HTMLElement,
   grid: GestureGrid,
-): readonly { readonly index: number; readonly rect: DOMRect }[] {
+): readonly (ColumnBox & { readonly top: number })[] {
   const dates = grid.days.map((day) => day.date);
   return [...scroller.querySelectorAll<HTMLElement>("[data-calendar-day]")].map(
-    (column) => ({
-      index: dates.indexOf(column.dataset.calendarDay ?? ""),
-      rect: column.getBoundingClientRect(),
-    }),
+    (column) => {
+      const rect = column.getBoundingClientRect();
+      return {
+        index: dates.indexOf(column.dataset.calendarDay ?? ""),
+        left: rect.left,
+        right: rect.right,
+        top: rect.top,
+      };
+    },
   );
 }
 
@@ -105,17 +113,11 @@ function pointerMinute(
   const column =
     ownDay !== null
       ? columns.find((candidate) => candidate.index === ownDay)
-      : columns.reduce<(typeof columns)[number] | undefined>((best, candidate) => {
-          const distance = (rect: DOMRect) =>
-            x < rect.left ? rect.left - x : x >= rect.right ? x - rect.right + 1 : 0;
-          return best === undefined || distance(candidate.rect) < distance(best.rect)
-            ? candidate
-            : best;
-        }, undefined);
+      : nearestColumn(columns, x);
   if (column === undefined || column.index === -1) {
     return null;
   }
-  return gridMinuteAt(column.index, y - column.rect.top, grid.zoom);
+  return gridMinuteAt(column.index, y - column.top, grid.zoom);
 }
 
 /**
@@ -371,7 +373,8 @@ export function useCalendarGesture(options: GestureOptions): {
         scroller === null
           ? null
           : pointerMinute(scroller, grid, null, event.clientX, event.clientY);
-      if (pointer === null) {
+      // La que corre no tiene gestos (CAL-39).
+      if (pointer === null || !isClosedEntry(entry)) {
         return;
       }
       const days = grid.days.map((day) => day.date);
@@ -396,14 +399,22 @@ export function useCalendarGesture(options: GestureOptions): {
     event.preventDefault();
   }, []);
 
-  // La marca se borra en el siguiente `pointerdown`, llegue o no el clic.
+  // La marca se borra en el siguiente `pointerdown`, llegue o no el clic. Un
+  // gesto muerto que no vio su `pointerup` —se canceló con la ventana sin foco
+  // o con `pointercancel`— termina acá: apretar de nuevo prueba que el botón
+  // anterior ya se soltó, y si no el clic siguiente se perdería.
   useEffect(() => {
-    function clearMark(): void {
+    function onPointerDown(): void {
       clickMark.current = false;
+      const current = session.current;
+      if (current?.phase === "dead") {
+        release(current.pointerId);
+        finish();
+      }
     }
-    document.addEventListener("pointerdown", clearMark, true);
-    return () => document.removeEventListener("pointerdown", clearMark, true);
-  }, []);
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [finish, release]);
 
   // Otro zoom, la entrada que se va o los gestos apagados cancelan (CAL-63).
   const { zoom } = options.grid;

@@ -28,6 +28,13 @@ export function minuteHeight(zoom: CalendarZoom): number {
   return SLOT_HEIGHT_PX / zoom;
 }
 
+/** Una entrada cerrada: la que corre no tiene fin. */
+export type ClosedEntryView = TimeEntryView & { readonly endClock: string };
+
+export function isClosedEntry(entry: TimeEntryView): entry is ClosedEntryView {
+  return entry.endClock !== null;
+}
+
 /** Lo que una entrada dibuja en un día del período (CAL-26 a CAL-28). */
 export type Segment = {
   readonly date: string;
@@ -145,8 +152,16 @@ export function isMissing(minute: number, ranges: readonly MinuteRange[]): boole
 
 /** El minuto de una posición vertical, ajustado hacia abajo a la franja. */
 export function minuteAt(offsetPx: number, zoom: CalendarZoom): number {
-  const slot = Math.floor(offsetPx / SLOT_HEIGHT_PX);
-  return Math.min(Math.max(slot, 0), MINUTES_PER_DAY / zoom - 1) * zoom;
+  return slotOf(offsetPx / minuteHeight(zoom), zoom);
+}
+
+export function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+/** La franja que contiene un minuto del día, entre la primera y la última. */
+export function slotOf(minute: number, zoom: CalendarZoom): number {
+  return clamp(Math.floor(minute / zoom) * zoom, 0, MINUTES_PER_DAY - zoom);
 }
 
 /**
