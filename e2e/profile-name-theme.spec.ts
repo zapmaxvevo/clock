@@ -1,21 +1,24 @@
-import type { Page, Route } from "@playwright/test";
+import type { Page, Request, Response } from "@playwright/test";
 
-import { withServerAction } from "./network";
-import { expect, test } from "./session";
+import { dropActionRequests, holdActionResponses, withServerAction } from "./network";
 import {
-  accountMenu,
-  accountMenuButton,
   chooseTheme,
-  documentIsMarked,
   documentThemeClass,
-  goToTrackerByNav,
-  markDocument,
+  isProfilePage,
   nameField,
-  openProfileFromMenu,
   pageBackground,
   surfaceBackground,
   themeControl,
   themeOption,
+} from "./profile-page";
+import { expect, PERSON_NAME, test } from "./session";
+import {
+  accountMenu,
+  accountMenuButton,
+  documentIsMarked,
+  goToTrackerByNav,
+  markDocument,
+  openProfileFromMenu,
 } from "./tracker-page";
 
 /**
@@ -24,9 +27,6 @@ import {
  * nombre es el de la cuenta y el tema, «Seguir al sistema». La membresía no
  * activa (PF-46) no se prueba acá, por lo mismo que en el 7.
  */
-
-/** El nombre con que `signIn` crea a la persona. */
-const PERSON_NAME = "Persona de prueba";
 
 /**
  * Los fondos de `globals.css` llevados a sRGB, como los devuelve
@@ -48,8 +48,9 @@ const NAME_REQUIRED = "Escribí un nombre.";
 /** El texto de `unexpected`, el de una falla de red. */
 const NETWORK_FAILURE = "No se pudo guardar. Revisá la conexión y volvé a intentar.";
 
-function isProfilePage(url: URL): boolean {
-  return url.pathname === "/perfil";
+function isServerAction(message: Request | Response): boolean {
+  const request = "request" in message ? message.request() : message;
+  return request.headers()["next-action"] !== undefined;
 }
 
 /**
@@ -61,7 +62,7 @@ function isProfilePage(url: URL): boolean {
 function countServerActions(page: Page): () => number {
   let count = 0;
   page.on("request", (request) => {
-    if (request.headers()["next-action"] !== undefined) {
+    if (isServerAction(request)) {
       count += 1;
     }
   });
@@ -73,6 +74,17 @@ function htmlClassesIn(document: string): string[] {
   const tag = /<html\b[^>]*>/.exec(document)?.[0] ?? "";
   const classes = /\sclass="([^"]*)"/.exec(tag)?.[1] ?? "";
   return classes.split(/\s+/).filter((name) => name !== "");
+}
+
+/**
+ * Los `<script>` en línea de un documento que mandó el servidor que tocan la
+ * clase de `<html>`. Los de Next solo empujan la carga del RSC
+ * (`self.__next_f.push`) y no nombran ni `documentElement` ni `classList`.
+ */
+function themeScriptsIn(document: string): string[] {
+  return [...document.matchAll(/<script\b(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/g)]
+    .map((match) => match[1])
+    .filter((script) => /documentElement|classList/.test(script));
 }
 
 /** Abre el menú de la cuenta, afirma el nombre que muestra y lo cierra. */
@@ -93,11 +105,26 @@ test("el nombre se edita en el perfil y llega al menú de la cuenta sin recargar
   await expect(field).toHaveValue(PERSON_NAME);
   await markDocument(page);
 
+  // D1: quien nunca editó su nombre no pide nada al escribir el de la cuenta,
+  // que es el que el campo ya muestra.
+  await field.fill(`${PERSON_NAME} `);
+  await field.press("Tab");
+  await expect(field).toHaveValue(PERSON_NAME);
+
   // PF-07, PF-32 y PF-33: salir del campo guarda, y el encabezado lo muestra
-  // con sus iniciales sin recargar.
+  // con sus iniciales sin recargar. Lo que se escribe con el pedido en vuelo
+  // no lo borra la respuesta, que llega retenida.
+  const release = await holdActionResponses(page, isProfilePage);
   await field.fill("Ana Prueba");
-  await withServerAction(page, () => field.press("Tab"));
+  await Promise.all([page.waitForRequest(isServerAction), field.press("Tab")]);
+  await field.fill("Ana Prueba y algo más");
+  const saved = page.waitForResponse(isServerAction);
+  release();
+  expect((await saved).ok()).toBeTruthy();
   await expect(accountMenuButton(page)).toHaveText("AP");
+  await expect(field).toHaveValue("Ana Prueba y algo más");
+  await field.press("Escape");
+  await expect(field).toHaveValue("Ana Prueba");
   await expectNameInMenu(page, "Ana Prueba");
   expect(await documentIsMarked(page)).toBe(true);
 
@@ -124,8 +151,15 @@ test("el nombre se edita en el perfil y llega al menú de la cuenta sin recargar
   await expect(field).toHaveValue("Ana María");
   await expect(accountMenuButton(page)).toHaveText("AM");
 
-  // Enter y salir del campo con el nombre guardado no piden nada.
+  // Criterio 13: Enter y salir del campo con el nombre guardado no piden
+  // nada, tampoco si lo escrito solo le suma espacios en los extremos.
   await field.press("Enter");
+  await field.fill(" Ana María ");
+  await field.press("Enter");
+  await expect(field).toHaveValue("Ana María");
+  await field.fill("Ana María  ");
+  await field.press("Tab");
+  await expect(field).toHaveValue("Ana María");
   await expectNameInMenu(page, "Ana María");
 
   // PF-36: una carga nueva trae el nombre guardado.
@@ -164,14 +198,17 @@ test("el tema sigue al sistema o al elegido sin recargar, y «Salir» vuelve al 
   await page.keyboard.press("Escape");
   await expect(list).toBeHidden();
 
-  // Se conserva al navegar, y el servidor ya lo dibuja en el documento.
+  // Se conserva al navegar, y el servidor ya lo dibuja en el documento, sin
+  // ningún script que cambie la clase (criterio 8).
   await goToTrackerByNav(page);
   await expect.poll(() => pageBackground(page)).toBe(DARK_BACKGROUND);
   const response = await page.request.get("/");
   expect(response.ok(), `la pantalla respondió ${response.status()}`).toBeTruthy();
-  const classes = htmlClassesIn(await response.text());
+  const document = await response.text();
+  const classes = htmlClassesIn(document);
   expect(classes).toContain("dark");
   expect(classes).not.toContain("light");
+  expect(themeScriptsIn(document)).toEqual([]);
 
   // «Claro» con el sistema oscuro.
   await openProfileFromMenu(page);
@@ -208,14 +245,7 @@ test("si el cambio de tema no llega al servidor el selector y los colores vuelve
   await expect(control).toContainText("Seguir al sistema");
 
   // El pedido se corta antes de salir: el servidor no lo recibe.
-  const abort = async (route: Route): Promise<void> => {
-    if (route.request().headers()["next-action"] === undefined) {
-      await route.fallback();
-      return;
-    }
-    await route.abort();
-  };
-  await page.route(isProfilePage, abort);
+  const restore = await dropActionRequests(page, isProfilePage);
 
   await control.click();
   await themeOption(page, "Oscuro").click();
@@ -229,7 +259,7 @@ test("si el cambio de tema no llega al servidor el selector y los colores vuelve
   expect(await documentThemeClass(page)).toBeNull();
   expect(await pageBackground(page)).toBe(LIGHT_BACKGROUND);
 
-  await page.unroute(isProfilePage, abort);
+  await restore();
   await withServerAction(page, () => retry.click());
   await expect(notice).toBeHidden();
   await expect(control).toContainText("Oscuro");

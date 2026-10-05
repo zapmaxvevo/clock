@@ -1,8 +1,9 @@
-import type { Locator, Page, Route } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 
 import { addDays, dayLabel, todayIn, type CivilDay } from "./days";
-import { withServerAction } from "./network";
-import { expect, test } from "./session";
+import { dropActionRequests, withServerAction } from "./network";
+import { isProfilePage, nameField } from "./profile-page";
+import { expect, PERSON_NAME, test } from "./session";
 import {
   accountMenu,
   accountMenuButton,
@@ -18,7 +19,6 @@ import {
   formatOption,
   goToTrackerByNav,
   markDocument,
-  nameField,
   openProfileFromMenu,
   pickDate,
   preferenceControl,
@@ -54,8 +54,7 @@ const BUENOS_AIRES_OFFSET = "UTC−03:00";
 
 const TOKYO = "Asia/Tokyo";
 
-/** El nombre con que `signIn` crea a la persona, y sus iniciales (PF-44). */
-const PERSON_NAME = "Persona de prueba";
+/** Las iniciales del nombre con que `signIn` crea a la persona (PF-44). */
 const PERSON_INITIALS = "PD";
 
 /** TT-90: el aviso de la falla nombra la preferencia. */
@@ -69,10 +68,6 @@ const TWELVE_HOUR_CLOCK = /^(?:[1-9]|1[0-2]):[0-5]\d [AP]M$/;
 
 /** Abreviaturas del día en los rótulos, las de `date-fns` en español. */
 const WEEKDAYS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
-
-function isProfilePage(url: URL): boolean {
-  return url.pathname === "/perfil";
-}
 
 function pad(value: number): string {
   return String(value).padStart(2, "0");
@@ -354,14 +349,7 @@ test("si el cambio de formato no llega al servidor el control vuelve, y Reintent
   await expect(control).toContainText("dd/MM/yyyy");
 
   // El pedido se corta antes de salir: el servidor no lo recibe.
-  const abort = async (route: Route): Promise<void> => {
-    if (route.request().headers()["next-action"] === undefined) {
-      await route.fallback();
-      return;
-    }
-    await route.abort();
-  };
-  await page.route(isProfilePage, abort);
+  const restore = await dropActionRequests(page, isProfilePage);
 
   await control.click();
   await formatOption(page, "yyyy-MM-dd").click();
@@ -374,7 +362,7 @@ test("si el cambio de formato no llega al servidor el control vuelve, y Reintent
   await expect(control).toContainText("dd/MM/yyyy");
   await expect(control).not.toContainText("yyyy-MM-dd");
 
-  await page.unroute(isProfilePage, abort);
+  await restore();
   await withServerAction(page, () => retry.click());
   await expect(notice).toBeHidden();
   await expect(control).toContainText("yyyy-MM-dd");

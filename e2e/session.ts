@@ -4,6 +4,9 @@ import { expect, test as base, type BrowserContext } from "@playwright/test";
 
 import { TEST_EMAIL_DOMAIN, TEST_SESSION_SECRET } from "./environment";
 
+/** El nombre de la cuenta con que `signIn` crea a cada persona. */
+export const PERSON_NAME = "Persona de prueba";
+
 /** Intentos de entrar antes de dar el 429 por definitivo. */
 const SIGN_IN_ATTEMPTS = 5;
 
@@ -22,7 +25,7 @@ export async function signIn(context: BrowserContext, email: string): Promise<vo
   for (let attempt = 1; ; attempt += 1) {
     const response = await context.request.post("/api/auth/test-session/sign-in", {
       headers: { "x-test-session": TEST_SESSION_SECRET },
-      data: { email, name: "Persona de prueba" },
+      data: { email, name: PERSON_NAME },
     });
     if (response.status() !== 429 || attempt === SIGN_IN_ATTEMPTS) {
       expect(response.status(), await response.text()).toBe(200);
