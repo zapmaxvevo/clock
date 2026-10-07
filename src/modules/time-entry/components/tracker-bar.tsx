@@ -50,6 +50,12 @@ import {
   type PendingDiscard,
 } from "./pending-discard";
 import { useReachWeek } from "./reach-week";
+import {
+  answersSent,
+  recordSent,
+  type NewEntryRequest,
+  type SentRequests,
+} from "./sent-entry";
 import { ShortcutsDialog } from "./shortcuts-dialog";
 import { reset, sameDraft } from "./time-draft";
 import { TimerBar, type Phase } from "./timer-bar";
@@ -62,6 +68,8 @@ const DESCRIPTION_DEBOUNCE_MS = 500;
 
 /** «Iniciar» no parte de ninguna entrada: su id pendiente va con una clave fija. */
 const START_KEY = "start";
+/** «Agregar» tampoco. */
+const ADD_KEY = "add";
 
 /** Los campos del timer; sin timer, los de una entrada nueva. */
 function runningFields(running: TimeEntryView | null): EntryFields {
@@ -76,6 +84,11 @@ type BarAddInput = Omit<CreateManualEntryInput, keyof FieldsInput> & {
 /** A la action viajan los ids; los campos quedan para limpiar la barra después (TT-25). */
 function addFromBar({ fields, ...entry }: BarAddInput) {
   return createManualEntry({ ...entry, ...fieldsInput(fields) });
+}
+
+/** Lo que pide el alta de la barra, como se compara con la respuesta (r2-1). */
+function requestOf({ fields, ...entry }: BarAddInput): NewEntryRequest {
+  return { ...entry, ...fieldsInput(fields) };
 }
 
 type TrackerBarProps = {
@@ -197,6 +210,10 @@ export function TrackerBar({
    * para la entrada de antes y se descarta al cerrar.
    */
   const tagsTarget = useRef<string | null>(null);
+  /** Los pedidos del alta que salieron con el id pendiente (r3-1). */
+  const sentAdds = useRef<SentRequests | null>(null);
+  /** r2-1: el alta respondió la entrada de un pedido anterior y la barra no se limpió. */
+  const [replayedAdd, setReplayedAdd] = useState(false);
 
   const save = useAction(updateDescription, {
     unreachableMessage: timeEntryMessages.unexpected,
@@ -250,12 +267,19 @@ export function TrackerBar({
   });
   /**
    * Agregar limpia la barra solo cuando el servidor confirmó, así una falla
-   * de red deja lo tecleado donde está (TT-89). No ofrece «Reintentar»: ver
-   * el aviso de respuesta perdida (TT-109).
+   * de red deja lo tecleado donde está (TT-89). «Reintentar» reenvía el pedido
+   * con su id, y si el primer intento se aplicó no crea otra fila (ADR 0007).
    */
   const add = useAction(addFromBar, {
     unreachableMessage: timeEntryMessages.unexpected,
     onSuccess: (data, input) => {
+      reachWeek([data.created.weekStart]);
+      // r2-1: con el id pendiente, el servidor responde la fila del primer
+      // intento. Si lo mandado era otra cosa, no se guardó: queda en la barra.
+      if (!answersSent(data.created, input.id, requestOf(input), sentAdds.current)) {
+        setReplayedAdd(true);
+        return;
+      }
       // Lo que se tecleó mientras el pedido viajaba no es parte de la entrada
       // creada: se limpia solo lo que sigue igual a lo que se mandó.
       setDraft((current) => (current === input.description ? "" : current));
@@ -263,7 +287,6 @@ export function TrackerBar({
       setManualDraft((current) =>
         sameDraft(current, input) ? reset(serverNow, timeZone) : current,
       );
-      reachWeek([data.created.weekStart]);
       // TT-25: la barra queda lista para la próxima entrada si el foco sigue
       // donde lo dejó el agregado. Si la persona ya está en otro control —una
       // hora de la barra, por ejemplo—, moverlo confirmaría lo que está
@@ -279,6 +302,7 @@ export function TrackerBar({
       }
     },
   });
+  const newAddId = useNewId(add.failure);
 
   const serverId = running?.id ?? null;
   const serverDescription = running?.description ?? "";
@@ -392,7 +416,9 @@ export function TrackerBar({
 
   /**
    * Un aviso describe el desenlace de una operación y un descarte confirmado
-   * espera el suyo: la operación siguiente deja viejos a los dos.
+   * espera el suyo: la operación siguiente deja viejos a los dos. El aviso de
+   * falla por red del alta se queda: mientras está a la vista, el id del alta
+   * sigue pendiente, y solo otro pedido del alta lo baja (m4).
    */
   function clearNotices(): void {
     save.clear();
@@ -403,7 +429,10 @@ export function TrackerBar({
     saveBillable.clear();
     saveTags.clear();
     discard.clear();
-    add.clear();
+    if (add.failure?.code !== "unexpected") {
+      add.clear();
+    }
+    setReplayedAdd(false);
     setPendingDiscard(null);
   }
 
@@ -487,15 +516,35 @@ export function TrackerBar({
         };
   }
 
+  /** Con el aviso de falla por red a la vista, el id pendiente y el borrador de ahora (D2c-1). */
   function handleAdd(): void {
+    const id = newAddId(ADD_KEY);
     clearNotices();
-    add.run({
+    const input = {
+      id,
       description: draft,
       date: manualDraft.date,
       start: manualDraft.start,
       end: manualDraft.end,
       fields: fieldsDraft,
-    });
+    };
+    sentAdds.current = recordSent(sentAdds.current, id, requestOf(input));
+    add.run(input);
+  }
+
+  /**
+   * «Reintentar» del alta reenvía el pedido que falló, con su id (D2c-2). Se va
+   * con su aviso: el foco pasa antes a «Agregar», que no lo pierde mientras
+   * viaja.
+   */
+  function retryAdd(): (() => void) | undefined {
+    const retry = retryOf(add);
+    return retry === undefined
+      ? undefined
+      : () => {
+          addRef.current?.focus();
+          retry();
+        };
   }
 
   /** TT-27: con el timer abierto el cambio se guarda en él; sin timer, es el borrador. */
@@ -718,25 +767,16 @@ export function TrackerBar({
           />
         )}
 
-        {add.failure !== null &&
-          (add.failure.code === "unexpected" ? (
-            /*
-             * Agregar es la única alta del módulo sin id elegido por el
-             * cliente (ADR 0007): si se pierde la respuesta, la fila puede
-             * estar creada y reintentar la duplicaría en silencio, porque
-             * TT-82 acepta la superposición. Por eso acá no se ofrece
-             * «Reintentar» y el aviso manda a mirar la lista.
-             */
-            <ActionFeedback
-              title={trackerLabels.addLostTitle}
-              message="Se perdió la respuesta del servidor. Antes de volver a agregarla, fijate en la lista: puede haberse creado."
-            />
-          ) : (
-            <ActionFeedback
-              title={trackerLabels.entryNotAdded}
-              message={add.failure.message}
-            />
-          ))}
+        {add.failure !== null && (
+          <ActionFeedback
+            title={trackerLabels.entryNotAdded}
+            message={add.failure.message}
+            // TT-30: con un timer en la barra no se agrega a mano, tampoco reintentando.
+            retryDisabled={!isManual}
+            onRetry={retryAdd()}
+          />
+        )}
+        {replayedAdd && <ActionFeedback tone="info" title={trackerLabels.addReplayed} />}
 
         {saveProject.failure !== null && (
           <ActionFeedback

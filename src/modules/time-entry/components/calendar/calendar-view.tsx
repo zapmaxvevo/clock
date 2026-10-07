@@ -17,7 +17,6 @@ import {
 import {
   timeEntryMessages,
   type CalendarState,
-  type CreateManualEntryInput,
   type TimeEntryView,
   type UpdateEntryChanges,
   type UpdateEntryTimesInput,
@@ -27,6 +26,12 @@ import { weekdayLabel } from "@/server/time";
 import { DeleteEntryDialog } from "../delete-entry-dialog";
 import { useElapsedSeconds } from "../elapsed-counter";
 import { entryNameOf } from "../labels";
+import {
+  answersSent,
+  recordSent,
+  type NewEntryRequest,
+  type SentRequests,
+} from "../sent-entry";
 import type { TimeDraft } from "../time-draft";
 import { useTrackerRefresh } from "../use-tracker-refresh";
 import { CalendarGrid } from "./calendar-grid";
@@ -42,6 +47,9 @@ import { CalendarNotices, CLOSING_CODES, dialogFailureOf } from "./calendar-noti
 import { EntryDialog, type DialogSubject } from "./entry-dialog";
 import { calendarLabels } from "./labels";
 import { focusIsFree } from "./use-pending-block-focus";
+
+/** El alta no parte de ninguna entrada: su id pendiente va con una clave fija. */
+const ADD_KEY = "add";
 
 type CalendarViewProps = {
   readonly state: CalendarState;
@@ -101,6 +109,10 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
    * elemento que recuerda de un diálogo anterior.
    */
   const deleteReturnRef = useRef<HTMLElement>(null);
+  /** Los pedidos del alta que salieron con el id pendiente (r3-1). */
+  const sentCreates = useRef<SentRequests | null>(null);
+  /** r2-1: el alta respondió la entrada de un pedido anterior y el diálogo sigue abierto. */
+  const [replayedAdd, setReplayedAdd] = useState(false);
 
   /** Un gesto de arrastre está en curso: la revalidación periódica espera (CAL-89). */
   const [gestureActive, setGestureActive] = useState(false);
@@ -134,11 +146,18 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
   });
   const create = useAction(createManualEntry, {
     unreachableMessage: timeEntryMessages.unexpected,
-    onSuccess: (data) => {
+    onSuccess: (data, input) => {
+      // r2-1: con el id pendiente, el servidor responde la fila del primer
+      // intento. Si lo mandado era otra cosa, no se guardó: queda en el diálogo.
+      if (!answersSent(data.created, input.id, input, sentCreates.current)) {
+        setReplayedAdd(true);
+        return;
+      }
       setOpen(false);
       landed(data.created);
     },
   });
+  const nextCreateId = useNewId(create.failure);
   const stop = useAction(stopTimer, {
     unreachableMessage: timeEntryMessages.unexpected,
     onSuccess: (data) => setFocusEntryId(data.stopped.id),
@@ -192,6 +211,7 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
     for (const handle of handles) {
       handle.clear();
     }
+    setReplayedAdd(false);
     setOutside(null);
   }
 
@@ -229,6 +249,7 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
       save.clear();
     }
     create.clear();
+    setReplayedAdd(false);
     setFocusEntryId(null);
     setSubject(next);
     setOpen(true);
@@ -302,8 +323,14 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
     }
   }
 
-  function handleAdd(input: CreateManualEntryInput): void {
-    run(create, input);
+  /**
+   * Con el aviso de falla por red a la vista, el id pendiente y el borrador de
+   * ahora (D2c-1, D2c-2). El id se pide antes de `run`, que baja el aviso.
+   */
+  function handleAdd(input: NewEntryRequest): void {
+    const id = nextCreateId(ADD_KEY);
+    sentCreates.current = recordSent(sentCreates.current, id, input);
+    run(create, { ...input, id });
   }
 
   function handleStop(): void {
@@ -404,7 +431,7 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
         todayKey={state.todayKey}
         minDayKey={state.minDayKey}
         pending={subject?.kind === "add" ? create.pending : save.pending}
-        failure={dialogFailureOf(subject, save, create)}
+        failure={dialogFailureOf(subject, save, create, replayedAdd)}
         onCancel={() => {
           setOpen(false);
           // Cerrar sin acción no deja un foco pendiente de otra operación (M3).

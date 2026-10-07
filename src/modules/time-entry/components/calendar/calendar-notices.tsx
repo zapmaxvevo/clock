@@ -15,28 +15,33 @@ import { calendarLabels } from "./labels";
 /** Las fallas de «Guardar» que cierran el diálogo: no hay nada que corregir en él. */
 export const CLOSING_CODES: readonly string[] = ["not_found", "already_stopped"];
 
-/** El aviso del diálogo, con la falla del pedido del modo abierto (§5.4). */
+/**
+ * El aviso del diálogo, con la falla del pedido del modo abierto (§5.4). En
+ * el alta, sin falla, el informativo de una respuesta que no es la mandada
+ * (r2-1).
+ */
 export function dialogFailureOf(
   subject: DialogSubject | null,
   save: ActionHandle<never>,
   create: ActionHandle<never>,
+  replayedAdd: boolean,
 ): EntryDialogFailure | null {
   if (subject?.kind === "add") {
-    if (create.failure === null) {
-      return null;
+    if (create.failure !== null) {
+      return {
+        title: trackerLabels.entryNotAdded,
+        message: create.failure.message,
+        retryable: create.failure.code === "unexpected",
+      };
     }
-    // TT-109: el alta no tiene id del cliente; no se sabe si quedó escrita.
-    return create.failure.code === "unexpected"
+    return replayedAdd
       ? {
-          title: trackerLabels.addLostTitle,
-          message: calendarLabels.addLostMessage,
+          title: calendarLabels.addReplayed,
+          message: undefined,
+          tone: "info",
           retryable: false,
         }
-      : {
-          title: trackerLabels.entryNotAdded,
-          message: create.failure.message,
-          retryable: false,
-        };
+      : null;
   }
   if (save.failure === null || CLOSING_CODES.includes(save.failure.code)) {
     return null;
