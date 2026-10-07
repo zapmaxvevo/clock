@@ -5845,6 +5845,23 @@ const sameRuleCases: readonly SameRuleCase[] = [
     rejects: timeEntryMessages.beforeFloor,
   },
   {
+    // En UTC todavía es el 31/12/1999: el piso se mide en la zona de la persona.
+    label: "el 1 de enero de 2000 a las 00:00 en Tokio",
+    zone: "Asia/Tokyo",
+    startedAt: "2026-10-01T01:00:00Z",
+    endedAt: "2026-10-01T02:00:00Z",
+    changes: { date: "2000-01-01", start: "00:00", end: "01:00" },
+  },
+  {
+    // En UTC ya es el 1/1/2000: el piso se mide en la zona de la persona.
+    label: "el 31 de diciembre de 1999 a las 23:00 en Buenos Aires",
+    zone: buenosAires,
+    startedAt: "2026-10-01T13:00:00Z",
+    endedAt: "2026-10-01T14:00:00Z",
+    changes: { date: "1999-12-31", start: "23:00", end: "23:59" },
+    rejects: timeEntryMessages.beforeFloor,
+  },
+  {
     label: "el día siguiente al 9999-12-31",
     zone: buenosAires,
     startedAt: "9999-12-31T13:00:00Z",
@@ -7782,6 +7799,10 @@ describe("el piso fijo con un workspace creado hoy (fix/piso-fijo)", () => {
 
   it("el calendario y la lista no cortan en el día de creación", async () => {
     await createOnMonday();
+    // El lunes de la semana pasada, dentro de los 13 días de la ventana, y una
+    // de agosto, fuera de ella, para «Cargar más».
+    const lastWeek = await seedClosed("2026-09-28T13:00:00Z", "2026-09-28T14:00:00Z");
+    await seedClosed("2026-08-03T13:00:00Z", "2026-08-03T14:00:00Z");
 
     const calendar = await getCalendarState(
       actor,
@@ -7803,7 +7824,12 @@ describe("el piso fijo con un workspace creado hoy (fix/piso-fijo)", () => {
     ]);
     expect(calendar.entries.map((entry) => entry.dayDate)).toEqual([monday]);
     expect(tracker.minDayKey).toBe("2000-01-01");
-    expect(daysOf(tracker).map((day) => day.date)).toEqual([monday]);
+    expect(tracker.windowFrom).toBe("2026-09-21");
+    expect(daysOf(tracker).map((day) => day.date)).toEqual([monday, "2026-09-28"]);
+    expect(
+      daysOf(tracker).flatMap((day) => day.entries.map((entry) => entry.id)),
+    ).toContain(lastWeek.id);
+    expect(tracker.loadMoreFrom).toBe("2026-08-03");
   });
 });
 
