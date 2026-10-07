@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { eq, TransactionRollbackError } from "drizzle-orm";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { db, type Transaction } from "@/server/db";
 import {
@@ -9,6 +9,7 @@ import {
   membership,
   project,
   projectMember,
+  tag,
   task,
   taskAssignee,
   workspace,
@@ -19,27 +20,33 @@ import {
   seedClient,
   seedMember,
   seedProject,
+  seedTag,
   seedTask,
   seedWorkspace,
 } from "@/test/factories";
 import { auditFor } from "@/test/queries";
 
 import { nextPaletteColor } from "./palette";
+import { projectRepository } from "./repository";
 import {
   createClientInput,
   createProjectInput,
+  createTagInput,
   createTaskInput,
   projectMessages,
   type CreateClientInput,
   type CreateProjectInput,
+  type CreateTagInput,
   type CreateTaskInput,
   type ProjectCatalog,
   type TrackingCatalog,
 } from "./schema";
 import {
+  assertTaggable,
   assertTrackable,
   createClient,
   createProject,
+  createTag,
   createTask,
   getProjectCatalog,
   getTrackingCatalog,
@@ -576,6 +583,8 @@ describe("el vacío (criterio 13: PR-85)", () => {
     expect(await getProjectCatalog(member)).toEqual({
       canCreateClient: true,
       canCreateProject: true,
+      canCreateTag: true,
+      tags: [],
       clients: [],
       groups: [],
     });
@@ -1033,6 +1042,8 @@ describe("getTrackingCatalog: el catálogo del selector (criterio 3: TT-08, PR-2
     expect((await getTrackingCatalog(member)).canCreateProject).toBe(true);
     expect(await getTrackingCatalog({ ...member, status: "inactive" })).toEqual({
       canCreateProject: false,
+      canCreateTag: false,
+      tags: [],
       groups: [],
     });
   });
@@ -1042,6 +1053,8 @@ describe("getTrackingCatalog: el catálogo del selector (criterio 3: TT-08, PR-2
     await seedProject({ workspaceId: other.workspaceId });
     expect(await getTrackingCatalog(owner)).toEqual({
       canCreateProject: true,
+      canCreateTag: true,
+      tags: [],
       groups: [],
     });
   });
@@ -1198,4 +1211,230 @@ describe("el facturable por defecto (criterio 2 del 11a: PR-21)", () => {
       billableByDefault: false,
     });
   });
+});
+
+function tagValues(input: Partial<CreateTagInput> = {}) {
+  return createTagInput.parse({ id: randomUUID(), name: "Diseño", ...input });
+}
+
+async function tagRows() {
+  return db.select().from(tag).where(eq(tag.workspaceId, workspaceId));
+}
+
+describe("createTag (criterio 3 del 11b: PR-43, PR-44, PR-52, PR-80)", () => {
+  it("cualquier rol activo la crea, con el nombre recortado y created_by", async () => {
+    const roles = {
+      owner,
+      admin,
+      member,
+      project_manager: await seedActor("project_manager"),
+      team_manager: await seedActor("team_manager"),
+    };
+    for (const [role, actor] of Object.entries(roles)) {
+      const values = tagValues({ name: `  Etiqueta ${role}  ` });
+      expect(await createTag(actor, values)).toEqual({
+        tag: { id: values.id, name: `Etiqueta ${role}` },
+      });
+      const [row] = await db.select().from(tag).where(eq(tag.id, values.id));
+      expect(row).toMatchObject({
+        workspaceId,
+        name: `Etiqueta ${role}`,
+        archivedAt: null,
+        createdBy: actor.userId,
+      });
+    }
+    expect(await tagRows()).toHaveLength(5);
+  });
+
+  it("un nombre repetido, aunque cambien las mayúsculas, responde PR-80 con validation y no escribe", async () => {
+    await seedTag({ workspaceId, name: "Diseño" });
+    await expectProjectError(
+      createTag(member, tagValues({ name: "DISEÑO" })),
+      "validation",
+      projectMessages.tagNameTaken,
+    );
+    expect(await tagRows()).toHaveLength(1);
+  });
+
+  it("una etiqueta archivada también ocupa el nombre", async () => {
+    await seedTag({ workspaceId, name: "Vieja", archived: true });
+    await expectProjectError(
+      createTag(member, tagValues({ name: "vieja" })),
+      "validation",
+      projectMessages.tagNameTaken,
+    );
+  });
+
+  it("el mismo nombre en otro workspace no choca", async () => {
+    const other = await seedWorkspace();
+    await seedTag({ workspaceId: other.workspaceId, name: "Diseño" });
+    await expect(createTag(member, tagValues())).resolves.toBeDefined();
+  });
+
+  it("el reintento con el mismo id responde la misma etiqueta, sin otra fila ni otra constancia", async () => {
+    const values = tagValues();
+    const first = await createTag(member, values);
+    const again = await createTag(member, { ...values, name: "Otro nombre" });
+    expect(again).toEqual(first);
+    expect(await tagRows()).toHaveLength(1);
+    expect(await auditFor("tag", values.id)).toHaveLength(1);
+  });
+
+  it("el reintento responde la etiqueta propia aunque ya esté archivada", async () => {
+    const values = tagValues();
+    await createTag(member, values);
+    await db.update(tag).set({ archivedAt: new Date() }).where(eq(tag.id, values.id));
+    expect(await createTag(member, values)).toEqual({
+      tag: { id: values.id, name: "Diseño" },
+    });
+  });
+
+  it("el id de una etiqueta de otra persona responde forbidden y no escribe", async () => {
+    const theirs = await seedTag({ workspaceId, createdBy: admin.userId });
+    await expectForbidden(createTag(member, tagValues({ id: theirs.id })));
+    expect(await tagRows()).toHaveLength(1);
+  });
+
+  it("con la membresía desactivada responde forbidden, también con el id de una propia", async () => {
+    const own = tagValues();
+    await createTag(member, own);
+    for (const status of ["inactive", "invited"] as const) {
+      const blocked: Actor = { ...member, status };
+      await expectForbidden(createTag(blocked, own));
+      await expectForbidden(createTag(blocked, tagValues({ name: "Nueva" })));
+    }
+    expect(await tagRows()).toHaveLength(1);
+  });
+
+  it("deja tag.create en el registro con la fila creada (criterio 11)", async () => {
+    const values = tagValues({ name: " Revisión " });
+    await createTag(member, values);
+    const rows = await auditFor("tag", values.id);
+    expect(
+      rows.map((row) => ({
+        action: row.action,
+        actorId: row.actorId,
+        workspaceId: row.workspaceId,
+        nextValue: row.nextValue === null ? null : (JSON.parse(row.nextValue) as unknown),
+      })),
+    ).toEqual([
+      {
+        action: "tag.create",
+        actorId: member.userId,
+        workspaceId,
+        nextValue: expect.objectContaining({
+          id: values.id,
+          workspaceId,
+          name: "Revisión",
+          archivedAt: null,
+          createdBy: member.userId,
+        }),
+      },
+    ]);
+  });
+});
+
+describe("assertTaggable (criterio 4 del 11b: TT-78, PR-45, PR-73)", () => {
+  function check(actor: Actor, tagIds: readonly string[]) {
+    return db.transaction((tx) => assertTaggable(tx, actor, tagIds));
+  }
+
+  async function expectUnavailable(work: Promise<unknown>): Promise<void> {
+    await expectProjectError(work, "not_found", projectMessages.tagUnavailable);
+  }
+
+  it("acepta etiquetas activas del workspace, también con los ids en mayúsculas", async () => {
+    const design = await seedTag({ workspaceId });
+    const review = await seedTag({ workspaceId });
+    await check(member, [design.id, review.id]);
+    await check(member, [design.id.toUpperCase()]);
+  });
+
+  it("rechaza con TT-78 la inexistente, la de otro workspace y la archivada", async () => {
+    const active = await seedTag({ workspaceId });
+    const old = await seedTag({ workspaceId, archived: true });
+    const other = await seedWorkspace();
+    const foreign = await seedTag({ workspaceId: other.workspaceId });
+    await expectUnavailable(check(member, [randomUUID()]));
+    await expectUnavailable(check(member, [foreign.id]));
+    await expectUnavailable(check(member, [old.id]));
+    // Una sola que no se puede usar alcanza, aunque las otras sí.
+    await expectUnavailable(check(member, [active.id, old.id]));
+  });
+
+  it("rechaza con TT-78 a una membresía que no está activa: usar es ver", async () => {
+    const design = await seedTag({ workspaceId });
+    for (const status of ["inactive", "invited"] as const) {
+      await expectUnavailable(check({ ...member, status }, [design.id]));
+    }
+  });
+
+  it("con la lista vacía no consulta", async () => {
+    const findTags = vi.spyOn(projectRepository, "findTags");
+    try {
+      await check(member, []);
+      await check({ ...member, status: "inactive" }, []);
+      expect(findTags).not.toHaveBeenCalled();
+    } finally {
+      findTags.mockRestore();
+    }
+  });
+});
+
+describe("las etiquetas de los catálogos (criterio 5 del 11b: PR-62, PR-60, TT-88)", () => {
+  const catalogs = {
+    getProjectCatalog,
+    getTrackingCatalog,
+  } as const;
+
+  for (const [name, read] of Object.entries(catalogs)) {
+    describe(name, () => {
+      it("trae las activas en orden alfabético sin distinguir mayúsculas, sin archivadas ni ajenas", async () => {
+        const other = await seedWorkspace();
+        // Por unidad de código, «Zeta» iría primero.
+        const beta = await seedTag({ workspaceId, name: "beta" });
+        const zeta = await seedTag({ workspaceId, name: "Zeta" });
+        const alfa = await seedTag({ workspaceId, name: "alfa" });
+        await seedTag({ workspaceId, name: "Archivada", archived: true });
+        await seedTag({ workspaceId: other.workspaceId, name: "Ajena" });
+
+        const catalog: ProjectCatalog | TrackingCatalog = await read(member);
+
+        expect(catalog.tags).toEqual([
+          { id: alfa.id, name: "alfa" },
+          { id: beta.id, name: "beta" },
+          { id: zeta.id, name: "Zeta" },
+        ]);
+      });
+
+      it("con la membresía no activa trae las etiquetas vacías y canCreateTag en falso", async () => {
+        await seedTag({ workspaceId });
+        for (const status of ["inactive", "invited"] as const) {
+          const catalog = await read({ ...member, status });
+          expect([status, catalog.tags, catalog.canCreateTag]).toEqual([
+            status,
+            [],
+            false,
+          ]);
+        }
+      });
+
+      it("canCreateTag sigue a can(tag.create) en los cinco roles", async () => {
+        for (const role of [
+          "owner",
+          "admin",
+          "project_manager",
+          "team_manager",
+          "member",
+        ] as const) {
+          const actor = role === "owner" ? owner : await seedActor(role);
+          expect([role, (await read(actor)).canCreateTag]).toEqual([
+            role,
+            can(actor, "tag.create", { kind: "workspace", workspaceId }),
+          ]);
+          expect((await read(actor)).canCreateTag).toBe(true);
+        }
+      });
+    });
+  }
 });

@@ -22,6 +22,10 @@ export const projectMessages = {
   projectNameTaken: "Ya hay un proyecto con ese nombre para ese cliente.",
   clientNameTaken: "Ya hay un cliente con ese nombre.",
   taskNameTaken: "Ya hay una tarea con ese nombre en el proyecto.",
+  // TT-78, PR-73.
+  tagUnavailable: "Esa etiqueta ya no está disponible.",
+  // PR-80.
+  tagNameTaken: "Ya hay una etiqueta con ese nombre.",
   forbidden: "No tenés permiso para hacer esto.",
   addressTooLong: "La dirección no puede superar los 3000 caracteres.",
   noteTooLong: "La nota no puede superar los 3000 caracteres.",
@@ -68,6 +72,12 @@ export const createTaskInput = z.object({
   name,
 });
 
+/** PR-43: una etiqueta es solo su nombre. */
+export const createTagInput = z.object({
+  id: z.uuidv4(),
+  name,
+});
+
 export type CreateClientInput = z.input<typeof createClientInput>;
 /** Lo que recibe el service: los textos ya recortados y con su default. */
 export type CreateClientValues = z.output<typeof createClientInput>;
@@ -75,6 +85,8 @@ export type CreateProjectInput = z.input<typeof createProjectInput>;
 export type CreateProjectValues = z.output<typeof createProjectInput>;
 export type CreateTaskInput = z.input<typeof createTaskInput>;
 export type CreateTaskValues = z.output<typeof createTaskInput>;
+export type CreateTagInput = z.input<typeof createTagInput>;
+export type CreateTagValues = z.output<typeof createTagInput>;
 
 export type ClientView = { readonly id: string; readonly name: string };
 
@@ -97,9 +109,16 @@ export type ProjectGroupView = {
   readonly projects: readonly ProjectView[];
 };
 
+/** Lo que se muestra y se elige de una etiqueta (PR-43). */
+export type TagRef = { readonly id: string; readonly name: string };
+
 export type ProjectCatalog = {
   readonly canCreateClient: boolean;
   readonly canCreateProject: boolean;
+  /** PR-112: «Nueva etiqueta». */
+  readonly canCreateTag: boolean;
+  /** Las activas, en orden alfabético; vacío sin `tag.view` (PR-62, PR-60). */
+  readonly tags: readonly TagRef[];
   /** Clientes activos del workspace, para el diálogo de proyecto. Orden alfabético. */
   readonly clients: readonly ClientView[];
   /** Proyectos que quien pide puede ver, agrupados por cliente. «Sin cliente» al final. */
@@ -141,6 +160,10 @@ export type TrackingGroupView = {
 export type TrackingCatalog = {
   /** TT-87: el enlace a `/proyectos` del selector vacío. */
   readonly canCreateProject: boolean;
+  /** TT-88: el enlace a `/proyectos` del selector de etiquetas vacío. */
+  readonly canCreateTag: boolean;
+  /** Las activas, en orden alfabético; vacío sin `tag.view` (PR-62, PR-60). */
+  readonly tags: readonly TagRef[];
   /** Proyectos activos en los que quien pide puede cargar horas (TT-08), por cliente. */
   readonly groups: readonly TrackingGroupView[];
 };
@@ -152,7 +175,9 @@ export type CreateProjectResult = { readonly project: ProjectView };
 
 export type CreateTaskResult = { readonly task: TaskView };
 
-/** Las tres actions, como las recibe la pantalla por props desde `page.tsx`. */
+export type CreateTagResult = { readonly tag: TagRef };
+
+/** Las cuatro actions, como las recibe la pantalla por props desde `page.tsx`. */
 export type ProjectActions = {
   readonly createClient: (
     input: CreateClientInput,
@@ -163,4 +188,5 @@ export type ProjectActions = {
   readonly createTask: (
     input: CreateTaskInput,
   ) => Promise<ActionResult<CreateTaskResult>>;
+  readonly createTag: (input: CreateTagInput) => Promise<ActionResult<CreateTagResult>>;
 };

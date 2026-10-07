@@ -28,7 +28,9 @@ type TimerBarProps = {
   readonly descriptionField: ReactNode;
   /** El selector de proyecto también, con el par que viaja con la barra. */
   readonly projectPicker: ReactNode;
-  /** El control de facturable también, después del selector (TT-14). */
+  /** El selector de etiquetas también, después del de proyecto (TT-12, TT-49). */
+  readonly tagPicker: ReactNode;
+  /** El control de facturable también, después de las etiquetas (TT-14). */
   readonly billableToggle: ReactNode;
   /** Con la vista optimista: corre desde el clic en «Iniciar» hasta el de «Detener». */
   readonly isRunning: boolean;
@@ -67,6 +69,7 @@ type TimerBarProps = {
 export function TimerBar({
   descriptionField,
   projectPicker,
+  tagPicker,
   billableToggle,
   isRunning,
   counterStart,
@@ -97,16 +100,19 @@ export function TimerBar({
         savingStart && "opacity-60",
       )}
     >
-      <div className="min-w-0 flex-1 basis-64">{descriptionField}</div>
+      {/* Base chica: la descripción cede ancho y se recorta antes que partir la barra (F3). */}
+      <div className="min-w-0 flex-1 basis-28">{descriptionField}</div>
 
       {projectPicker}
+
+      {tagPicker}
 
       {billableToggle}
 
       {/*
        * El contador, «Iniciar» o «Detener» y el menú bajan juntos cuando la
        * barra no entra en una línea: partidos, el contador cambiaría de lugar
-       * según lo que ocupen el selector y el facturable.
+       * según lo que ocupen los selectores y el facturable.
        */}
       <div className="flex shrink-0 items-center gap-3">
         <div className="relative">

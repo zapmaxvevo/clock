@@ -6,12 +6,15 @@ import * as service from "./service";
 import {
   createClientInput,
   createProjectInput,
+  createTagInput,
   createTaskInput,
   projectMessages,
   type CreateClientInput,
   type CreateClientResult,
   type CreateProjectInput,
   type CreateProjectResult,
+  type CreateTagInput,
+  type CreateTagResult,
   type CreateTaskInput,
   type CreateTaskResult,
 } from "./schema";
@@ -24,8 +27,8 @@ const options = {
   },
 } as const;
 
-// Las tres altas: el permiso lo consulta el service antes de `createOnce`
-// (ADR 0007). El de `task.create` necesita el proyecto leído, y las tres lo
+// Las cuatro altas: el permiso lo consulta el service antes de `createOnce`
+// (ADR 0007). El de `task.create` necesita el proyecto leído, y las cuatro lo
 // piden en el mismo lugar.
 
 export async function createClient(
@@ -53,6 +56,15 @@ export async function createTask(
 ): Promise<ActionResult<CreateTaskResult>> {
   return handle(
     async (session) => service.createTask(session.actor, createTaskInput.parse(input)),
+    options,
+  );
+}
+
+export async function createTag(
+  input: CreateTagInput,
+): Promise<ActionResult<CreateTagResult>> {
+  return handle(
+    async (session) => service.createTag(session.actor, createTagInput.parse(input)),
     options,
   );
 }

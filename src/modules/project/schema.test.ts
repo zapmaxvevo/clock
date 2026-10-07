@@ -4,6 +4,7 @@ import type { z } from "zod";
 import {
   createClientInput,
   createProjectInput,
+  createTagInput,
   createTaskInput,
   projectMessages,
 } from "./schema";
@@ -16,7 +17,7 @@ function messageOf(result: z.ZodSafeParseResult<unknown>): string | undefined {
   return result.success ? undefined : result.error.issues.at(0)?.message;
 }
 
-describe("el nombre, en las tres altas (PR-54, PR-75, PR-76, PR-109)", () => {
+describe("el nombre, en las cuatro altas (PR-54, PR-75, PR-76, PR-109)", () => {
   const cases = [
     ["cliente", (name: string) => createClientInput.safeParse({ id, name })],
     [
@@ -25,6 +26,7 @@ describe("el nombre, en las tres altas (PR-54, PR-75, PR-76, PR-109)", () => {
         createProjectInput.safeParse({ id, name, clientId: null, color: null }),
     ],
     ["tarea", (name: string) => createTaskInput.safeParse({ id, projectId: id, name })],
+    ["etiqueta", (name: string) => createTagInput.safeParse({ id, name })],
   ] as const;
 
   for (const [entity, parse] of cases) {
@@ -172,5 +174,20 @@ describe("createTaskInput", () => {
     expect(
       createTaskInput.safeParse({ id, projectId: uuidV7, name: "Diseño" }).success,
     ).toBe(true);
+  });
+});
+
+describe("createTagInput (PR-43)", () => {
+  it("es el id y el nombre, nada más", () => {
+    expect(createTagInput.parse({ id, name: " Diseño ", color: "red" })).toEqual({
+      id,
+      name: "Diseño",
+    });
+  });
+
+  it("exige un id v4, como las otras altas (ADR 0007)", () => {
+    expect(createTagInput.safeParse({ id: uuidV7, name: "Diseño" }).success).toBe(false);
+    expect(createTagInput.safeParse({ id: nilUuid, name: "Diseño" }).success).toBe(false);
+    expect(createTagInput.safeParse({ name: "Diseño" }).success).toBe(false);
   });
 });

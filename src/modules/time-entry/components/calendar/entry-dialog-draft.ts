@@ -1,4 +1,5 @@
 import { sameSelection, selectionIds } from "@/modules/project/components/picker-model";
+import { sameTags, tagIdsOf } from "@/modules/project/components/tag-picker-model";
 import type {
   CreateManualEntryInput,
   TimeEntryView,
@@ -35,17 +36,18 @@ export function draftOfEntry(entry: TimeEntryView): EntryDialogDraft {
 }
 
 /**
- * El borrador de un alta: sin descripción ni proyecto y no facturable, con el
- * trío propuesto (CAL-43, CAL-74).
+ * El borrador de un alta: sin descripción, proyecto ni etiquetas y no
+ * facturable, con el trío propuesto (CAL-43, CAL-74).
  */
 export function draftOfNew(times: TimeDraft): EntryDialogDraft {
   return { ...NO_FIELDS, description: "", times };
 }
 
 /**
- * La descripción si su recorte difiere, el par si es otro y el facturable:
- * lo común a los dos modos. El facturable viaja siempre que viaja el par, así
- * el servidor no aplica el por defecto encima de lo que quedó a la vista.
+ * La descripción si su recorte difiere, el par si es otro, el facturable y
+ * las etiquetas si son otras: lo común a los dos modos. El facturable viaja
+ * siempre que viaja el par, así el servidor no aplica el por defecto encima
+ * de lo que quedó a la vista.
  */
 function sharedChanges(
   entry: TimeEntryView,
@@ -59,6 +61,7 @@ function sharedChanges(
     ...(projectChanged || draft.billable !== entry.billable
       ? { billable: draft.billable }
       : {}),
+    ...(sameTags(draft.tags, entry.tags) ? {} : { tags: tagIdsOf(draft.tags) }),
   };
 }
 
@@ -84,7 +87,7 @@ export function changesOf(
   });
 }
 
-/** Los grupos del timer que cambiaron: la descripción, el par, el facturable y el inicio (CAL-40). */
+/** Los grupos del timer que cambiaron: los comunes y el inicio (CAL-40). */
 export function runningChangesOf(
   entry: TimeEntryView,
   draft: EntryDialogDraft,
@@ -97,7 +100,10 @@ export function runningChangesOf(
   });
 }
 
-/** El alta del diálogo: `createManualEntry` con el trío, el par y el facturable explícito (CAL-45). */
+/**
+ * El alta del diálogo: `createManualEntry` con el trío, el par, y el
+ * facturable y las etiquetas explícitos (CAL-45).
+ */
 export function createInputOf(draft: EntryDialogDraft): CreateManualEntryInput {
   return {
     description: draft.description,

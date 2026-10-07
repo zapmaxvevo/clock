@@ -4,11 +4,13 @@ import type {
   ProjectCatalog,
   ProjectGroupView,
   ProjectView,
+  TagRef,
 } from "@/modules/project/schema";
 
 import { colorDotLabel, projectLabels, tasksLabel } from "./labels";
 import { NewClientDialog } from "./new-client-dialog";
 import { NewProjectDialog } from "./new-project-dialog";
+import { NewTagDialog } from "./new-tag-dialog";
 import { NewTaskDialog } from "./new-task-dialog";
 import { ProjectNoticeRegion, ProjectNoticesProvider } from "./project-notices";
 
@@ -20,9 +22,10 @@ type ProjectsScreenProps = {
 };
 
 /**
- * `/proyectos`: los proyectos visibles agrupados por cliente, y un solo lugar
- * para crear cada entidad (PR-04). Los diálogos de cliente y de proyecto
- * viven en la cabecera, una vez cada uno.
+ * `/proyectos`: los proyectos visibles agrupados por cliente, las etiquetas
+ * activas, y un solo lugar para crear cada entidad (PR-04, D-1). Los diálogos
+ * de cliente, de proyecto y de etiqueta viven en la cabecera, una vez cada
+ * uno.
  */
 export function ProjectsScreen({ catalog, actions }: ProjectsScreenProps) {
   return (
@@ -40,6 +43,7 @@ export function ProjectsScreen({ catalog, actions }: ProjectsScreenProps) {
                 clients={catalog.clients}
               />
             )}
+            {catalog.canCreateTag && <NewTagDialog createTag={actions.createTag} />}
           </div>
         </div>
 
@@ -55,6 +59,8 @@ export function ProjectsScreen({ catalog, actions }: ProjectsScreenProps) {
             <ProjectGroup key={group.client?.id ?? ""} group={group} actions={actions} />
           ))
         )}
+
+        <TagList tags={catalog.tags} />
       </div>
     </ProjectNoticesProvider>
   );
@@ -119,6 +125,36 @@ function ProjectItem({ project, actions }: ProjectItemProps) {
         </ul>
       )}
     </li>
+  );
+}
+
+/**
+ * PR-112 y H-13: las etiquetas activas, ya en orden alfabético. Sin acciones
+ * por etiqueta: editarlas y archivarlas es de la fase 2.
+ */
+function TagList({ tags }: { readonly tags: readonly TagRef[] }) {
+  const headingId = "tags-heading";
+
+  return (
+    <section aria-labelledby={headingId} className="flex flex-col gap-2">
+      <h2 id={headingId} className="text-muted-foreground text-sm font-medium">
+        {projectLabels.tags}
+      </h2>
+      {tags.length === 0 ? (
+        // PR-88: el botón de crear es el «Nueva etiqueta» de la cabecera.
+        <p className="rounded-lg border border-dashed px-4 py-3 text-sm">
+          {projectLabels.tagsEmpty}
+        </p>
+      ) : (
+        <ul className="divide-y rounded-lg border">
+          {tags.map((tag) => (
+            <li key={tag.id} className="px-4 py-2">
+              {tag.name}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

@@ -24,6 +24,8 @@ import {
   updateEntryProjectInput,
   updateEntryTimesInput,
   updateRunningStartInput,
+  TAGS_MAX,
+  timeEntryView,
   TRACKER_WINDOW_DAYS,
 } from "./schema";
 
@@ -36,6 +38,7 @@ describe("startTimerInput", () => {
       description: "",
       projectId: null,
       taskId: null,
+      tagIds: [],
     });
   });
 
@@ -58,6 +61,7 @@ describe("startTimerInput", () => {
       description: "reunión",
       projectId: null,
       taskId: null,
+      tagIds: [],
     });
   });
 
@@ -85,6 +89,7 @@ describe("startTimerInput", () => {
       description: "",
       projectId: null,
       taskId: null,
+      tagIds: [],
     });
   });
 
@@ -261,6 +266,7 @@ describe("trackerState", () => {
     project: null,
     task: null,
     billable: false,
+    tags: [],
   };
 
   /** Una semana con un solo día, que lleva las entradas que se le pasen. */
@@ -537,6 +543,7 @@ describe("calendarState", () => {
     project: null,
     task: null,
     billable: false,
+    tags: [],
   };
 
   const day = {
@@ -634,6 +641,7 @@ describe("createManualEntryInput", () => {
       description: "",
       projectId: null,
       taskId: null,
+      tagIds: [],
     });
   });
 
@@ -985,7 +993,7 @@ describe("updateEntryChanges (ADR 0013)", () => {
 
   it("rechaza un grupo o una clave que no conoce, en cada nivel, con unexpected", () => {
     for (const changes of [
-      { description: "x", tags: [] },
+      { description: "x", labels: [] },
       { project: { projectId, taskId: null, billable: true } },
       { times: { date: "2026-10-01", start: "09:00", end: "10:00", extra: 1 } },
       { runningStart: { date: "2026-10-01", start: "09:00", end: "10:00" } },
@@ -1051,5 +1059,96 @@ describe("updateEntryChanges (ADR 0013)", () => {
       id,
       changes: { description: "x" },
     });
+  });
+});
+
+describe("las etiquetas en las altas y en updateEntry (criterio 6 del 11b, D-4)", () => {
+  const design = "9A7C2B1E-4D3F-4E8A-8B6C-5D4E3F2A1B0C";
+  const review = "1e2d3c4b-5a69-4788-9a0b-c1d2e3f4a5b6";
+  const manual = { date: "2026-10-02", start: "08:00", end: "10:30" };
+
+  /** `count` ids distintos con forma de uuid. */
+  function manyIds(count: number): string[] {
+    return Array.from(
+      { length: count },
+      (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+    );
+  }
+
+  it("las altas dejan las etiquetas vacías por defecto", () => {
+    expect(startTimerInput.parse({ id }).tagIds).toEqual([]);
+    expect(createManualEntryInput.parse(manual).tagIds).toEqual([]);
+  });
+
+  it("las altas y updateEntry normalizan a minúsculas y sin repetir", () => {
+    const requested = [design, review, design.toLowerCase()];
+    const normalized = [design.toLowerCase(), review];
+    expect(startTimerInput.parse({ id, tagIds: requested }).tagIds).toEqual(normalized);
+    expect(createManualEntryInput.parse({ ...manual, tagIds: requested }).tagIds).toEqual(
+      normalized,
+    );
+    expect(updateEntryChanges.parse({ tags: requested })).toEqual({ tags: normalized });
+  });
+
+  it(`aceptan ${TAGS_MAX} y rechazan ${TAGS_MAX + 1} con el texto de D-4`, () => {
+    expect(TAGS_MAX).toBe(50);
+    expect(startTimerInput.safeParse({ id, tagIds: manyIds(TAGS_MAX) }).success).toBe(
+      true,
+    );
+    const tooMany = manyIds(TAGS_MAX + 1);
+    for (const result of [
+      startTimerInput.safeParse({ id, tagIds: tooMany }),
+      createManualEntryInput.safeParse({ ...manual, tagIds: tooMany }),
+      updateEntryChanges.safeParse({ tags: tooMany }),
+    ]) {
+      expect(result.success).toBe(false);
+      expect(result.error?.issues.at(0)?.message).toBe(
+        "Se pueden elegir hasta 50 etiquetas por entrada.",
+      );
+    }
+  });
+
+  it("rechazan un id que no es un uuid", () => {
+    expect(startTimerInput.safeParse({ id, tagIds: ["diseño"] }).success).toBe(false);
+    expect(updateEntryChanges.safeParse({ tags: ["diseño"] }).success).toBe(false);
+  });
+
+  it("updateEntry acepta el grupo tags solo, vacío y junto a los otros", () => {
+    expect(updateEntryChanges.parse({ tags: [] })).toEqual({ tags: [] });
+    expect(updateEntryChanges.parse({ billable: true, tags: [review] })).toEqual({
+      billable: true,
+      tags: [review],
+    });
+    expect(updateEntryChanges.safeParse({ tags: undefined }).success).toBe(false);
+  });
+
+  it("la vista exige las etiquetas con la forma de TagRef", () => {
+    const view = {
+      id,
+      description: "",
+      startedAt: "2026-10-02T11:00:00.000Z",
+      endedAt: "2026-10-02T12:30:00.000Z",
+      dayDate: "2026-10-02",
+      weekStart: "2026-09-28",
+      startLabel: "08:00",
+      endLabel: "09:30",
+      startClock: "08:00",
+      endClock: "09:30",
+      extraDays: 0,
+      durationSeconds: 5400,
+      durationLabel: "1:30",
+      editableTimes: true,
+      project: null,
+      task: null,
+      billable: false,
+    };
+    expect(timeEntryView.safeParse(view).success).toBe(false);
+    expect(
+      timeEntryView.safeParse({ ...view, tags: [{ id: review, name: "Revisión" }] })
+        .success,
+    ).toBe(true);
+    expect(timeEntryView.safeParse({ ...view, tags: [{ id: review }] }).success).toBe(
+      false,
+    );
   });
 });

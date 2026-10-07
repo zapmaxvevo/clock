@@ -6,7 +6,11 @@ import type { CSSProperties, PointerEvent, ReactNode, Ref } from "react";
 import { useDisplayFormats } from "@/components/layout/display-formats";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { projectTaskLabel } from "@/modules/project/components/labels";
+import {
+  projectLabels,
+  projectTaskLabel,
+  withTagNames,
+} from "@/modules/project/components/labels";
 import { paletteColor } from "@/modules/project/palette";
 import type { TimeEntryView } from "@/modules/time-entry/schema";
 import { formatDuration, weekdayLabel } from "@/server/time";
@@ -219,6 +223,14 @@ export function CalendarBlock({
           {times} · {duration}
         </span>
         {project !== null && <span>{project}</span>}
+        {entry.tags.length > 0 && (
+          <span>
+            {withTagNames(
+              projectLabels.tags,
+              entry.tags.map((tag) => tag.name),
+            )}
+          </span>
+        )}
         {entry.billable && <span>{trackerLabels.billable}</span>}
       </TooltipContent>
     </Tooltip>

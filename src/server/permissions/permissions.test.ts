@@ -228,6 +228,53 @@ describe("can sobre proyectos", () => {
   });
 });
 
+describe("can sobre etiquetas (PR-44, PR-60, PR-62)", () => {
+  const roles = ["owner", "admin", "project_manager", "team_manager", "member"] as const;
+  const actions = ["tag.create", "tag.view"] as const;
+
+  it("deja a los cinco roles crear y ver etiquetas", () => {
+    for (const role of roles) {
+      for (const action of actions) {
+        expect([role, action, can(actor(role), action, workspace)]).toEqual([
+          role,
+          action,
+          true,
+        ]);
+      }
+    }
+  });
+
+  it("niega las dos a una membresía inactive o invited", () => {
+    for (const status of ["inactive", "invited"] as const) {
+      for (const action of actions) {
+        expect([
+          status,
+          action,
+          can(actor("owner", { status }), action, workspace),
+        ]).toEqual([status, action, false]);
+      }
+    }
+  });
+
+  it("niega las dos con el workspace de otro", () => {
+    const foreign = {
+      kind: "workspace",
+      workspaceId: "22222222-2222-2222-2222-222222222222",
+    } as const;
+    for (const action of actions) {
+      expect(can(actor("owner"), action, foreign)).toBe(false);
+    }
+  });
+
+  it("niegan un recurso de otra clase", () => {
+    const ownEntry = { kind: "timeEntry", workspaceId, userId: "u1" } as const;
+    // @ts-expect-error: tag.create pide un recurso workspace.
+    expect(can(actor("owner"), "tag.create", ownEntry)).toBe(false);
+    // @ts-expect-error: tag.view pide un recurso workspace.
+    expect(can(actor("owner"), "tag.view", ownEntry)).toBe(false);
+  });
+});
+
 describe("can con un recurso de otra clase", () => {
   it("las acciones de proyecto niegan un recurso workspace, aunque actúe el owner", () => {
     // @ts-expect-error: task.create pide un recurso project; el par no compila.

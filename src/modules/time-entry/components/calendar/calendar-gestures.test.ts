@@ -93,6 +93,7 @@ function entry(
     project: null,
     task: null,
     billable: false,
+    tags: [],
     ...overrides,
   };
 }

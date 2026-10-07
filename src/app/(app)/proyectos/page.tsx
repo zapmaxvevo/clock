@@ -1,4 +1,9 @@
-import { createClient, createProject, createTask } from "@/modules/project/actions";
+import {
+  createClient,
+  createProject,
+  createTag,
+  createTask,
+} from "@/modules/project/actions";
 import { ProjectsScreen } from "@/modules/project/components/projects-screen";
 import { getProjectCatalog } from "@/modules/project/service";
 import { requireSession } from "@/server/session";
@@ -10,7 +15,7 @@ export default async function ProjectsPage() {
   return (
     <ProjectsScreen
       catalog={catalog}
-      actions={{ createClient, createProject, createTask }}
+      actions={{ createClient, createProject, createTask, createTag }}
     />
   );
 }

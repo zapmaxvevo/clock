@@ -15,7 +15,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { projectLabels } from "@/modules/project/components/labels";
 import { ProjectPicker } from "@/modules/project/components/project-picker";
+import { TagPicker } from "@/modules/project/components/tag-picker";
 import { useTrackingCatalog } from "@/modules/project/components/tracking-catalog";
 import {
   DESCRIPTION_MAX,
@@ -372,6 +374,19 @@ function EntryEditor({
             onChange={(selection) =>
               change(withSelection(draftRef.current, selection, catalog))
             }
+          />
+        </div>
+
+        <div className="grid gap-2">
+          <span aria-hidden="true" className="text-sm leading-none font-medium">
+            {projectLabels.tags}
+          </span>
+          {/* El borrador del selector viaja con «Guardar», no al cerrarlo (CAL-66). */}
+          <TagPicker
+            variant="row"
+            value={draft.tags}
+            label={projectLabels.tags}
+            onChange={(tags) => change({ ...draftRef.current, tags })}
           />
         </div>
 

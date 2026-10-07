@@ -68,6 +68,11 @@ type ResourceByAction = {
   "project.view": ProjectResource;
   "project.track": ProjectResource;
   "task.create": ProjectResource;
+  // PR-44, PR-58: «Everyone can create tags». La configuración que la limita a
+  // los admins no existe en la fase 1; cuando llegue, recurso propio: ADR 0009.
+  "tag.create": WorkspaceResource;
+  // PR-62: quién ve las etiquetas del workspace. Usar una etiqueta es verla.
+  "tag.view": WorkspaceResource;
   "profile.own.update": ProfileResource;
 };
 
@@ -94,6 +99,8 @@ const resourceKinds = {
   "project.view": ["project"],
   "project.track": ["project"],
   "task.create": ["project"],
+  "tag.create": ["workspace"],
+  "tag.view": ["workspace"],
   "profile.own.update": ["profile"],
 } satisfies { [A in Action]: readonly ResourceFor<A>["kind"][] };
 
@@ -120,6 +127,8 @@ const allowedRoles: Record<Action, readonly Role[]> = {
   "project.view": everyone,
   "project.track": everyone,
   "task.create": everyone,
+  "tag.create": everyone,
+  "tag.view": everyone,
   "profile.own.update": everyone,
 };
 

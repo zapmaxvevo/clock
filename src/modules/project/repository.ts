@@ -1,13 +1,14 @@
-import { and, count, eq, isNull } from "drizzle-orm";
+import { and, count, eq, inArray, isNull } from "drizzle-orm";
 
 import { db, type Transaction } from "@/server/db";
 import { hasConstraint, UNIQUE_VIOLATION } from "@/server/db/constraint-error";
-import { client, project, projectMember, task } from "@/server/db/schema";
+import { client, project, projectMember, tag, task } from "@/server/db/schema";
 
 export type ClientRow = typeof client.$inferSelect;
 type ProjectRow = typeof project.$inferSelect;
 export type TaskRow = typeof task.$inferSelect;
 type ProjectMemberRow = typeof projectMember.$inferSelect;
+export type TagRow = typeof tag.$inferSelect;
 
 /** La fila de `project_member` de quien pide, o `null` si no es miembro. */
 type Viewer = { readonly isManager: boolean } | null;
@@ -277,9 +278,59 @@ export const projectRepository = {
     return rows.map((row) => row.task);
   },
 
+  /** Sin bloqueo. Solo encuentra una etiqueta creada por `userId` en ese workspace. */
+  async findOwnTag(
+    workspaceId: string,
+    userId: string,
+    id: string,
+  ): Promise<TagRow | undefined> {
+    const rows = await db
+      .select()
+      .from(tag)
+      .where(
+        and(eq(tag.workspaceId, workspaceId), eq(tag.id, id), eq(tag.createdBy, userId)),
+      )
+      .limit(1);
+    return rows.at(0);
+  },
+
+  async insertTag(
+    tx: Transaction,
+    values: {
+      readonly id: string;
+      readonly workspaceId: string;
+      readonly name: string;
+      readonly createdBy: string;
+    },
+  ): Promise<TagRow> {
+    const [created] = await tx.insert(tag).values(values).returning();
+    return created;
+  },
+
+  /** Las etiquetas de esos ids en ese workspace, en cualquier estado. */
+  async findTags(
+    tx: Transaction,
+    workspaceId: string,
+    ids: readonly string[],
+  ): Promise<TagRow[]> {
+    return tx
+      .select()
+      .from(tag)
+      .where(and(eq(tag.workspaceId, workspaceId), inArray(tag.id, [...ids])));
+  },
+
+  /** Las etiquetas activas del workspace. Sin orden: lo pone el service. */
+  async listActiveTags(tx: Executor, workspaceId: string): Promise<TagRow[]> {
+    return tx
+      .select()
+      .from(tag)
+      .where(and(eq(tag.workspaceId, workspaceId), isNull(tag.archivedAt)));
+  },
+
   clientIdConstraint: "client_pkey" as const,
   projectIdConstraint: "project_pkey" as const,
   taskIdConstraint: "task_pkey" as const,
+  tagIdConstraint: "tag_pkey" as const,
 
   isClientNameTaken(error: unknown): boolean {
     return hasConstraint(error, UNIQUE_VIOLATION, "client_name_unq");
@@ -291,5 +342,9 @@ export const projectRepository = {
 
   isTaskNameTaken(error: unknown): boolean {
     return hasConstraint(error, UNIQUE_VIOLATION, "task_name_unq");
+  },
+
+  isTagNameTaken(error: unknown): boolean {
+    return hasConstraint(error, UNIQUE_VIOLATION, "tag_name_unq");
   },
 };

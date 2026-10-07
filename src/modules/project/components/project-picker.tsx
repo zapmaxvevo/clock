@@ -9,6 +9,7 @@ import { buttonVariants } from "@/components/ui/button";
 import {
   Combobox,
   ComboboxContent,
+  ComboboxEmpty,
   ComboboxGroup,
   ComboboxInput,
   ComboboxItem,
@@ -179,6 +180,13 @@ export function ProjectPicker({
         <StatusRegion>
           {view.empty !== null && <EmptyMessage empty={view.empty} />}
         </StatusRegion>
+        {/*
+          Sin `Combobox.Empty` montado, con la lista vacía la primitiva deja
+          pasar `Escape` y cierra también el diálogo del calendario. Los vacíos
+          no van adentro: el de TT-87 se ve con «Sin proyecto» en la lista, y
+          `Combobox.Empty` solo dibuja con la lista vacía.
+        */}
+        <ComboboxEmpty hidden />
         <ComboboxList>
           {view.none !== null && (
             <ComboboxItem value={view.none} className="text-muted-foreground">

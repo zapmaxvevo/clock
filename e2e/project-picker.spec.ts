@@ -203,7 +203,9 @@ test("la fila cambia de proyecto, deja el foco en su selector y muestra el punto
   await seedProject({ name: after, color: "red" });
 
   await page.goto("/");
-  await addManualEntry(page, description, { option: before, search: suffix });
+  await addManualEntry(page, description, {
+    project: { option: before, search: suffix },
+  });
   const row = entryRow(todayGroup(page), description);
   await expect(projectPicker(row)).toHaveText(before);
 
@@ -265,7 +267,9 @@ test("el selector no ofrece privados ajenos, archivados ni tareas hechas, y la f
   await expect(projectPicker(bar)).toBeFocused();
 
   // m-9: la entrada se crea por la interfaz y el proyecto se archiva después.
-  await addManualEntry(page, description, { option: shared, search: suffix });
+  await addManualEntry(page, description, {
+    project: { option: shared, search: suffix },
+  });
   await archiveProject(shared);
 
   // TT-104 y PR-23: la fila lo conserva; el selector ya no lo ofrece, ni a
@@ -331,8 +335,7 @@ test("continuar una fila con proyecto y tarea arranca el timer con los dos", asy
 
   await page.goto("/");
   await addManualEntry(page, description, {
-    option: taskOption(project, task),
-    search: suffix,
+    project: { option: taskOption(project, task), search: suffix },
   });
 
   // TT-57: el timer nuevo copia descripción, proyecto y tarea.

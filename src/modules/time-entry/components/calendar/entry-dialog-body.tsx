@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { useDisplayFormats } from "@/components/layout/display-formats";
 import { cn } from "@/lib/utils";
+import { projectLabels } from "@/modules/project/components/labels";
 import { ProjectPicker } from "@/modules/project/components/project-picker";
 import type { TimeEntryView } from "@/modules/time-entry/schema";
 import { dayKeyLabel } from "@/server/time";
@@ -83,6 +84,14 @@ export function EntryDialogBody({ entry, serverNow, todayKey }: EntryDialogBodyP
           // Obligatoria también en solo lectura; acá no hay cambio que avisar.
           onChange={() => undefined}
         />
+      </Field>
+      {/* La vista ya trae las etiquetas en orden alfabético (TT-12). */}
+      <Field label={projectLabels.tags}>
+        {entry.tags.length === 0 ? (
+          <span className="text-muted-foreground">{calendarLabels.noTags}</span>
+        ) : (
+          entry.tags.map((tag) => tag.name).join(", ")
+        )}
       </Field>
       <Field label={trackerLabels.billable}>
         {entry.billable ? calendarLabels.billableYes : calendarLabels.billableNo}

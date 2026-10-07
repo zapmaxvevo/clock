@@ -5,8 +5,10 @@ import {
   sameSelection,
   selectionIds,
 } from "@/modules/project/components/picker-model";
+import { sameTags, tagIdsOf } from "@/modules/project/components/tag-picker-model";
 import type {
   ProjectSelection,
+  TagRef,
   TrackingCatalog,
   TrackingProjectView,
 } from "@/modules/project/schema";
@@ -23,16 +25,19 @@ export type EntryFields = {
   readonly selection: ProjectSelection;
   /** TT-14, TT-15. */
   readonly billable: boolean;
+  /** TT-12: el conjunto entero, en el orden en que se eligió. */
+  readonly tags: readonly TagRef[];
 };
 
-/** Una entrada nueva: sin proyecto y no facturable (TT-14). */
+/** Una entrada nueva: sin proyecto, no facturable y sin etiquetas (TT-14). */
 export const NO_FIELDS: EntryFields = {
   selection: NO_SELECTION,
   billable: NEW_ENTRY_BILLABLE.billable,
+  tags: [],
 };
 
 export function fieldsOf(entry: TimeEntryView): EntryFields {
-  return { selection: selectionOf(entry), billable: entry.billable };
+  return { selection: selectionOf(entry), billable: entry.billable, tags: entry.tags };
 }
 
 function catalogProject(
@@ -69,11 +74,18 @@ export function withSelection<Fields extends EntryFields>(
   };
 }
 
-/** Lo que viaja en un alta: el facturable siempre explícito. */
-export type FieldsInput = ProjectPair & { readonly billable: boolean };
+/** Lo que viaja en un alta: el facturable siempre explícito, las etiquetas por id. */
+export type FieldsInput = ProjectPair & {
+  readonly billable: boolean;
+  readonly tagIds: string[];
+};
 
 export function fieldsInput(fields: EntryFields): FieldsInput {
-  return { ...selectionIds(fields.selection), billable: fields.billable };
+  return {
+    ...selectionIds(fields.selection),
+    billable: fields.billable,
+    tagIds: tagIdsOf(fields.tags),
+  };
 }
 
 /**
@@ -110,5 +122,6 @@ export function afterAdd(
       current.billable === sent.billable
         ? newEntryBillable(selection, catalog)
         : current.billable,
+    tags: sameTags(current.tags, sent.tags) ? NO_FIELDS.tags : current.tags,
   };
 }

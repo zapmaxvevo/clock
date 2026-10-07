@@ -358,6 +358,11 @@ Sin etiquetas o no facturable, la línea no está. Una etiqueta archivada se
 muestra igual (PR-47). _No verificado_ (calendario P-07), en lo que toca a las
 etiquetas: «full entry details» no dice cómo las muestra Clockify.
 
+_Agregado el 2026-10-07, slice 11b_: las líneas del detalle van en este orden:
+la descripción, el horario con la duración, el proyecto, «Etiquetas: a, b» y
+«Facturable»; las tres últimas, solo si corresponden. Una etiqueta archivada se
+nombra como las demás, sin «(archivada)», que es una marca del selector.
+
 **CAL-24 Bloque muy corto** — `adaptar`
 Un bloque tiene una altura mínima legible aunque su duración, al zoom actual,
 dé menos; el borde superior sigue en su hora. Una entrada de segundos que
@@ -564,6 +569,8 @@ el inicio y «Detener» se rechazan.
 _Agregado el 2026-10-05, slice 11a_: el facturable entre los cambios sigue la
 regla de la descripción y el proyecto: se aplica a la entrada ya cerrada,
 porque tampoco depende de su estado.
+_Agregado el 2026-10-07, slice 11b_: las etiquetas entre los cambios, también:
+se aplican a la entrada ya cerrada, porque no dependen de su estado.
 
 **CAL-42 Arrancar o continuar un timer desde un bloque** — `fuera de alcance`
 Clockify documenta el botón de reproducción solo sobre eventos de calendarios
@@ -896,11 +903,21 @@ solo lectura, «Facturable» con «Sí» o «No», y «Etiquetas» con los nombr
 
 _Agregado el 2026-10-05, slice 11a_: en los tres modos que editan, el
 facturable es el control de TT-14 con el nombre «Facturable» también a la
-vista, al lado del ícono, y va justo después de «Proyecto». En el de solo
-lectura, «Facturable» va entre «Proyecto» y «Fecha», y dice «No» cuando la
-entrada no es facturable, a diferencia de la fila en solo lectura, que no
-muestra nada (TT-50): en una lista de campos con rótulo, un campo que falta se
-lee como un dato que no cargó. Diseño propio.
+vista, al lado del ícono, y va después de «Etiquetas». En el de solo lectura,
+«Facturable» va entre «Etiquetas» y «Fecha», y dice «No» cuando la entrada no
+es facturable, a diferencia de la fila en solo lectura, que no muestra nada
+(TT-50): en una lista de campos con rótulo, un campo que falta se lee como un
+dato que no cargó. Diseño propio.
+
+_Agregado el 2026-10-07, slice 11b_: en los tres modos que editan, «Etiquetas»
+va entre «Proyecto» y el facturable, con el rótulo arriba y el selector de
+TT-12, que sin etiquetas muestra solo el ícono. Cerrarlo no guarda: lo elegido
+viaja con «Guardar» o «Agregar», junto con los demás grupos (CAL-67). En el de
+solo lectura, «Etiquetas» va entre «Proyecto» y «Facturable», con los nombres
+en orden alfabético, o «Sin etiquetas» en gris.
+_Corregido el 2026-10-07, slice 11b_: la nota del 11a decía que el facturable
+iba justo después de «Proyecto» y, en solo lectura, entre «Proyecto» y
+«Fecha». «Etiquetas» quedó en el medio, en el orden de la fila (TT-49).
 
 **CAL-67 «Guardar», todo o nada** — `adaptar`
 Un botón «Guardar» aplica juntos los grupos de campos que la persona tocó
@@ -931,6 +948,13 @@ _Corregido el 2026-10-04, slice 8c_: era propuesta, con la consecuencia de
 construcción abierta en P-04: dos mutaciones seguidas no son todo o nada. P-04
 la cerró y el ADR 0013 la resolvió con `updateEntry`. Se suman lo que pasa sin
 cambios, con Enter, cuando falla y con «Reintentar».
+
+_Agregado el 2026-10-07, slice 11b_: con un selector abierto —de proyecto o de
+etiquetas—, `Esc` cierra solo el selector, también cuando la búsqueda no
+encuentra nada; el diálogo sigue abierto con su borrador, y un segundo `Esc` lo
+cierra. Hasta el 11b, con la lista del selector de proyecto vacía, el primer
+`Esc` cerraba el diálogo y se perdía el borrador; lo encontró la prueba del
+selector de etiquetas dentro del diálogo. Diseño propio, como toda la sección 11.
 
 **CAL-68 Menú de la entrada** — `replicar`
 Documentado en la página de dividir: «the three-dot menu at the bottom left
@@ -1232,26 +1256,39 @@ CAL-23, CAL-66, CAL-75) entraron con él. Lo que llegó después y lo que falta:
   CAL-41 y CAL-66.
   - En el bloque, el ícono al final de la línea del horario, solo en el
     segmento del día de inicio y solo si la entrada es facturable.
-  - En el detalle, la línea «Facturable», después del proyecto, solo si lo es.
-  - En los tres modos del diálogo, el control de TT-14 justo después de
-    «Proyecto», con el nombre a la vista. El alta arranca no facturable;
-    elegir proyecto le pone su facturable por defecto (TT-14), y «Guardar»
-    manda el facturable siempre que manda el proyecto, así el servidor no
-    aplica el por defecto encima del que quedó a la vista.
+  - En el detalle, la línea «Facturable», después del proyecto y, desde el
+    11b, de las etiquetas, solo si lo es.
+  - En los tres modos del diálogo, el control de TT-14 después de «Proyecto»
+    y, desde el 11b, de «Etiquetas», con el nombre a la vista. El alta arranca
+    no facturable; elegir proyecto le pone su facturable por defecto (TT-14), y
+    «Guardar» manda el facturable siempre que manda el proyecto, así el
+    servidor no aplica el por defecto encima del que quedó a la vista.
   - En el diálogo de solo lectura, «Facturable» con «Sí» o «No», entre
-    «Proyecto» y «Fecha».
+    «Etiquetas» y «Fecha».
   - El nombre accesible de una entrada facturable termina en «, facturable»,
     después del proyecto.
-- **Slice 11b: las etiquetas.** En el detalle y en los diálogos (CAL-23,
-  CAL-45, CAL-66), con el selector de TT-12. El bloque y su nombre accesible
-  no las muestran (CAL-21, CAL-75).
+- **Slice 11b, entregado: las etiquetas.** Las construyó como lo fijan CAL-23,
+  CAL-45, CAL-66 y CAL-75; lo que agregó a lo registrado está en CAL-23,
+  CAL-41, CAL-66 y CAL-67.
+  - En el detalle, la línea «Etiquetas: a, b», con los nombres en orden
+    alfabético, entre el proyecto y «Facturable», solo si tiene alguna.
+  - En los tres modos del diálogo, el selector de TT-12 entre «Proyecto» y el
+    facturable. El alta arranca sin etiquetas; el selector cambia el borrador
+    y lo elegido viaja con «Guardar» o «Agregar». Una etiqueta archivada que la
+    entrada ya tiene aparece marcada, con «(archivada)» (PR-47).
+  - Con un selector abierto, `Esc` cierra solo el selector, también con la
+    búsqueda sin resultados (CAL-67).
+  - En el diálogo de solo lectura, «Etiquetas» con los nombres o «Sin
+    etiquetas», entre «Proyecto» y «Facturable».
+  - El bloque y su nombre accesible no las muestran (CAL-21, CAL-75).
 - **Slice 12.** Nada.
 
 **El proyecto no toca la geometría de la grilla**: posición, altura,
 superposición y gestos no dependen de él. Una entrada sin proyecto se dibuja con
 el relleno neutro y es válida en todo el recorrido (CAL-91). Lo mismo vale para
 las etiquetas y el facturable del slice 11. El 11a lo cumple: el ícono va
-dentro de la línea del horario y no cambia el lugar ni el alto del bloque.
+dentro de la línea del horario y no cambia el lugar ni el alto del bloque. El
+11b también: las etiquetas no van en el bloque.
 
 Dos dependencias que no son de proyectos y conviene tener a la vista:
 
@@ -1271,6 +1308,9 @@ quedó lo que fija, ni que las etiquetas y el facturable tampoco tocan la
 geometría.
 _Corregido el 2026-10-05, slice 11a_: el 8c y el 11 figuraban entre lo que
 falta. El 8c y el 11a están entregados, y del 11 queda el 11b, las etiquetas.
+_Corregido el 2026-10-07, slice 11b_: el 11b figuraba entre lo que falta, y el
+detalle y los dos diálogos ponían «Facturable» justo después del proyecto; las
+etiquetas quedaron en el medio.
 
 ## 19. Impacto sobre lo ya construido
 
@@ -1466,7 +1506,6 @@ timer no ofrece ningún gesto. No cambia nada del servidor: mover y estirar son
 Con el 8b, los tres slices del calendario están entregados.
 
 - **Abiertos con su propuesta**: P-03 (CAL-39) y P-05 (CAL-13).
-- **Slice 11b**: las etiquetas (sección 18). El facturable llegó con el 11a.
 - **Fuera de los tres**: la ruta de vuelta después del acceso (CAL-86, TT-91),
   que no existe en ninguna pantalla; «Reintentar» en el alta (TT-109), que
   sigue pendiente; los gestos táctiles, con una pulsación larga, que irían en
@@ -1479,6 +1518,8 @@ _Corregido el 2026-10-05, slice 8b_: sale de esta lista el arrastre, que ahora
 tiene su sección.
 _Corregido el 2026-10-05, slice 11a_: decía «Slice 11: etiquetas y
 facturable»; el facturable llegó con el 11a (sección 18).
+_Corregido el 2026-10-07, slice 11b_: decía «Slice 11b: las etiquetas»; llegaron
+con el 11b (sección 18).
 
 ## Pendientes de definición del equipo
 

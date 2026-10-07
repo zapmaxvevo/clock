@@ -3,13 +3,18 @@ import { describe, expect, it } from "vitest";
 
 import { DisplayFormatsProvider } from "@/components/layout/display-formats";
 import { TrackingCatalogProvider } from "@/modules/project/components/tracking-catalog";
-import type { ProjectSelection, TrackingCatalog } from "@/modules/project/schema";
+import type { ProjectSelection, TagRef, TrackingCatalog } from "@/modules/project/schema";
 import type { TimeEntryView } from "@/modules/time-entry/schema";
 import type { DisplayFormats } from "@/server/time";
 
 import { EntryRow } from "./entry-row";
 
-const catalog: TrackingCatalog = { canCreateProject: false, groups: [] };
+const catalog: TrackingCatalog = {
+  canCreateProject: false,
+  canCreateTag: false,
+  groups: [],
+  tags: [],
+};
 const none: ProjectSelection = { project: null, task: null };
 
 const entry: TimeEntryView = {
@@ -30,7 +35,11 @@ const entry: TimeEntryView = {
   project: null,
   task: null,
   billable: false,
+  tags: [],
 };
+
+const review: TagRef = { id: "4d5e6f7a-8b9c-4d0e-9f1a-3b4c5d6e7f80", name: "Revisión" };
+const urgent: TagRef = { id: "5e6f7a8b-9c0d-4e1f-8a2b-4c5d6e7f8091", name: "Urgente" };
 
 type Options = {
   readonly canTrack?: boolean;
@@ -39,6 +48,7 @@ type Options = {
   readonly formats?: DisplayFormats;
   readonly description?: string;
   readonly billable?: boolean;
+  readonly tags?: readonly TagRef[];
   readonly busy?: boolean;
 };
 
@@ -53,6 +63,7 @@ function render(options: Options = {}): string {
           description={options.description ?? entry.description}
           project={none}
           billable={options.billable ?? false}
+          tags={options.tags ?? []}
           busy={options.busy ?? false}
           canTrack={options.canTrack ?? true}
           selected={options.selected ?? false}
@@ -64,6 +75,7 @@ function render(options: Options = {}): string {
           onSave={() => undefined}
           onChangeProject={() => undefined}
           onChangeBillable={() => undefined}
+          onChangeTags={() => undefined}
           onSaveTimes={() => undefined}
           onDelete={() => undefined}
           onContinue={() => undefined}
@@ -88,6 +100,20 @@ function billableOf(markup: string): string | null {
   return (
     markup.match(/<button[^>]*aria-label="Entrada «[^"]*» facturable"[^>]*>/)?.[0] ?? null
   );
+}
+
+/** El disparador del selector de etiquetas de la fila, con su contenido. */
+function tagsOf(markup: string): string | null {
+  return (
+    markup.match(
+      /<button[^>]*role="combobox"[^>]*aria-label="Etiquetas de la entrada[^>]*>.*?<\/button>/,
+    )?.[0] ?? null
+  );
+}
+
+/** El texto visible, sin etiquetas. */
+function textOf(markup: string): string {
+  return markup.replace(/<[^>]*>/g, "");
 }
 
 describe("EntryRow", () => {
@@ -180,5 +206,55 @@ describe("EntryRow, el facturable (TT-14, TT-49, TT-92)", () => {
 
     expect(billableOf(markup)).toBeNull();
     expect(markup).not.toContain("Facturable");
+  });
+});
+
+describe("EntryRow, las etiquetas (TT-12, TT-49, TT-50, TT-92)", () => {
+  it("es un combobox nombrado por la entrada, con las etiquetas que recibe, también las optimistas", () => {
+    const trigger = tagsOf(render({ tags: [review, urgent] })) ?? "";
+
+    expect(trigger).toContain(
+      'aria-label="Etiquetas de la entrada «Informe»: Revisión, Urgente"',
+    );
+    expect(textOf(trigger)).toBe("Revisión, Urgente");
+  });
+
+  it("sin etiquetas, el ícono en gris y sin texto (TT-50, H-6)", () => {
+    const trigger = tagsOf(render()) ?? "";
+
+    expect(trigger).toContain('aria-label="Etiquetas de la entrada «Informe»"');
+    expect(trigger).toContain('class="lucide lucide-tag text-muted-foreground"');
+    expect(textOf(trigger)).toBe("");
+  });
+
+  it("va entre el selector de proyecto y el facturable (TT-49)", () => {
+    const markup = render();
+    const tags = markup.search(/aria-label="Etiquetas de la entrada/);
+
+    expect(markup.search(/aria-label="Proyecto de la entrada/)).toBeLessThan(tags);
+    expect(tags).toBeLessThan(markup.search(/aria-label="Entrada «Informe» facturable"/));
+  });
+
+  it("con una escritura de la fila en vuelo, inactivo sin `disabled`", () => {
+    const trigger = tagsOf(render({ busy: true })) ?? "";
+
+    expect(trigger).toContain('aria-disabled="true"');
+    expect(trigger).not.toMatch(/\sdisabled(=|\s|>)/);
+  });
+
+  it("en solo lectura, los nombres como texto, sin combobox", () => {
+    const markup = render({ canTrack: false, tags: [review, urgent] });
+
+    expect(tagsOf(markup)).toBeNull();
+    expect(markup).toContain(">Revisión, Urgente</span>");
+  });
+
+  it("en solo lectura y sin etiquetas, nada (H-6)", () => {
+    const withTags = render({ canTrack: false, tags: [review] });
+    const without = render({ canTrack: false });
+
+    expect(without).not.toContain("Etiquetas");
+    expect(without).not.toContain("lucide-tag");
+    expect(withTags).toContain("lucide-tag");
   });
 });

@@ -19,13 +19,16 @@ const actions: ProjectActions = {
   createClient: () => unreachable(),
   createProject: () => unreachable(),
   createTask: () => unreachable(),
+  createTag: () => unreachable(),
 };
 
 const emptyCatalog: ProjectCatalog = {
   canCreateClient: true,
   canCreateProject: true,
+  canCreateTag: true,
   clients: [],
   groups: [],
+  tags: [],
 };
 
 function project(overrides: Partial<ProjectView> & Pick<ProjectView, "id" | "name">) {
@@ -59,7 +62,8 @@ describe("ProjectsScreen", () => {
     expect(markup).toContain("Todavía no hay proyectos");
     expect(buttonsNamed(markup, "Nuevo proyecto")).toBe(1);
     expect(buttonsNamed(markup, "Nuevo cliente")).toBe(1);
-    expect(markup).not.toContain("<section");
+    // La única sección es la de las etiquetas: no hay grupos de proyectos.
+    expect(textsOf(markup, "h2")).toEqual(["Etiquetas"]);
   });
 
   it("no ofrece crear lo que el catálogo no permite", () => {
@@ -67,10 +71,16 @@ describe("ProjectsScreen", () => {
       ...emptyCatalog,
       canCreateClient: false,
       canCreateProject: false,
+      canCreateTag: false,
     });
 
     expect(buttonsNamed(markup, "Nuevo proyecto")).toBe(0);
     expect(buttonsNamed(markup, "Nuevo cliente")).toBe(0);
+    expect(buttonsNamed(markup, "Nueva etiqueta")).toBe(0);
+  });
+
+  it("ofrece «Nueva etiqueta» una vez, en la cabecera, con `canCreateTag` (PR-44, D-1)", () => {
+    expect(buttonsNamed(render(emptyCatalog), "Nueva etiqueta")).toBe(1);
   });
 
   it("dibuja los grupos en el orden del catálogo, con «Sin cliente» para el grupo sin cliente", () => {
@@ -86,7 +96,7 @@ describe("ProjectsScreen", () => {
       ],
     });
 
-    expect(textsOf(markup, "h2")).toEqual(["Acme", "Sin cliente"]);
+    expect(textsOf(markup, "h2")).toEqual(["Acme", "Sin cliente", "Etiquetas"]);
     expect(textsOf(markup, "h3")).toEqual(["Web", "Interno"]);
     expect(markup).not.toContain("Todavía no hay proyectos");
   });
@@ -144,10 +154,38 @@ describe("ProjectsScreen", () => {
     expect(buttonsNamed(markup, "Nuevo cliente")).toBe(1);
   });
 
-  it("deja montada la región que anuncia el alta de un cliente", () => {
+  it("la sección «Etiquetas», después de los proyectos, lista las activas en el orden del catálogo (PR-112)", () => {
+    const markup = render({
+      ...emptyCatalog,
+      groups: [{ client: null, projects: [project({ id: "p-web", name: "Web" })] }],
+      tags: [
+        { id: "t-design", name: "Diseño" },
+        { id: "t-review", name: "Revisión" },
+      ],
+    });
+    const section = markup.match(
+      /<section aria-labelledby="tags-heading"[^>]*><h2 id="tags-heading"[^>]*>Etiquetas<\/h2>(.*?)<\/section>/,
+    );
+
+    expect(markup.indexOf("<h3")).toBeLessThan(markup.indexOf('id="tags-heading"'));
+    expect(textsOf(section?.[1] ?? "", "li")).toEqual(["Diseño", "Revisión"]);
+    expect(markup).not.toContain("Todavía no hay etiquetas");
+  });
+
+  it("sin etiquetas, la sección dice «Todavía no hay etiquetas» (H-13, PR-88)", () => {
+    const markup = render(emptyCatalog);
+    const section = markup.match(
+      /<section aria-labelledby="tags-heading"[^>]*>(.*?)<\/section>/,
+    );
+
+    expect(section?.[1]).toContain("Todavía no hay etiquetas");
+    expect(section?.[1]).not.toContain("<li");
+  });
+
+  it("deja montadas las regiones que anuncian el alta de un cliente y de una etiqueta", () => {
     const markup = render(emptyCatalog);
 
-    expect(markup).toMatch(/<p role="status"[^>]*><\/p>/);
+    expect(markup.match(/<p role="status"[^>]*><\/p>/g)).toHaveLength(2);
   });
 
   it("deja montada y vacía la región de avisos de un diálogo que sale del árbol", () => {

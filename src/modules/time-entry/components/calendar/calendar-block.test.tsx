@@ -11,7 +11,12 @@ import { CalendarBlock } from "./calendar-block";
 import { NO_GESTURES, type SegmentGestures } from "./calendar-gestures";
 import type { Segment } from "./calendar-layout";
 
-const catalog: TrackingCatalog = { canCreateProject: false, groups: [] };
+const catalog: TrackingCatalog = {
+  canCreateProject: false,
+  canCreateTag: false,
+  groups: [],
+  tags: [],
+};
 const serverNow = "2026-10-02T15:00:00.000Z";
 const H24: DisplayFormats = { time: "24h", date: "dd/MM/yyyy" };
 const H12: DisplayFormats = { time: "12h", date: "dd/MM/yyyy" };
@@ -34,6 +39,7 @@ const morning: TimeEntryView = {
   project: null,
   task: null,
   billable: false,
+  tags: [],
 };
 
 const overnight: TimeEntryView = {

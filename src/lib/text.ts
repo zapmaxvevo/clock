@@ -15,6 +15,36 @@ export function normalizeSearch(text: string): string {
   return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim();
 }
 
+// Sin distinguir mayúsculas, como `lower(name)` en los índices de unicidad.
+const byName = new Intl.Collator("es", { sensitivity: "accent" });
+
+/**
+ * El orden alfabético de clientes, proyectos, tareas y etiquetas, en el
+ * servidor y en el navegador. Desempata por id: el collator iguala nombres que
+ * `lower()` distingue («Ａna» en ancho completo y «Ana»), así que dos filas
+ * distintas para el índice pueden empatar acá.
+ */
+export function compareNames(
+  left: { readonly id: string; readonly name: string },
+  right: { readonly id: string; readonly name: string },
+): number {
+  const byText = byName.compare(left.name, right.name);
+  if (byText !== 0) {
+    return byText;
+  }
+  if (left.id === right.id) {
+    return 0;
+  }
+  return left.id < right.id ? -1 : 1;
+}
+
+/** Una copia de `rows` en el orden de `compareNames`. */
+export function sortedByName<Row extends { readonly id: string; readonly name: string }>(
+  rows: readonly Row[],
+): Row[] {
+  return [...rows].sort(compareNames);
+}
+
 /**
  * Lo que muestra el avatar sin foto (PF-44): la primera letra de cada una de
  * las dos primeras palabras del nombre, o la del correo si el nombre está vacío.

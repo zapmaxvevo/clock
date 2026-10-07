@@ -1,5 +1,7 @@
 import { billableFor, NEW_ENTRY_BILLABLE } from "@/lib/billable";
 import { samePair, type ProjectPair } from "@/lib/project-pair";
+import { sameTagIds } from "@/lib/tag-ids";
+import { sortedByName } from "@/lib/text";
 import { DomainError, RejectedError, type Rejection } from "@/server/action";
 import { db, type Transaction } from "@/server/db";
 import { recordAudit, recordAudits, type AuditEntry } from "@/server/audit";
@@ -38,10 +40,10 @@ import {
   type ProjectRef,
   type TrackableProject,
 } from "@/modules/project/schema";
-import { assertTrackable } from "@/modules/project/service";
+import { assertTaggable, assertTrackable } from "@/modules/project/service";
 import { timeSettingsOf, type ProfileContext } from "@/modules/profile/service";
 
-import { pairToCheck } from "./assignment";
+import { pairToCheck, tagsToCheck } from "./assignment";
 import {
   timeEntryRepository,
   type ClosedEntryFields,
@@ -172,6 +174,11 @@ function projectRefOf(project: NonNullable<EntryRefs["project"]>): ProjectRef {
   return { id: project.id, name: project.name, color: project.color };
 }
 
+/** Los ids de las etiquetas de la fila, en el orden de la vista (`sortedByName`). */
+function sortedTagIdsOf(row: EntryRefs): string[] {
+  return sortedByName(row.tags).map((tag) => tag.id);
+}
+
 /** Recibe la fila con sus referencias: una lectura sin el join no compila (§5.2). */
 function toView(row: EntryWithRefs, workspace: TrackerWorkspace): TimeEntryView {
   const timeZone = workspace.timezone;
@@ -197,6 +204,7 @@ function toView(row: EntryWithRefs, workspace: TrackerWorkspace): TimeEntryView 
     project: row.project === null ? null : projectRefOf(row.project),
     task: row.task === null ? null : { id: row.task.id, name: row.task.name },
     billable: row.billable,
+    tags: sortedByName(row.tags),
   };
 }
 
@@ -371,11 +379,11 @@ async function translatingEndBeforeStart<Result>(
 }
 
 /**
- * Las redes de la base para el par: el proyecto o la tarea que se borran entre
- * `assertTrackable` y la escritura (en la fase 1 nada borra), y el `check` que
- * Zod ya cubre.
+ * Las redes de la base para las referencias: el proyecto, la tarea o una
+ * etiqueta que se borran entre `assertTrackable` o `assertTaggable` y la
+ * escritura (en la fase 1 nada borra), y el `check` que Zod ya cubre.
  */
-async function translatingPairConstraints<Result>(
+async function translatingReferenceConstraints<Result>(
   work: () => Promise<Result>,
 ): Promise<Result> {
   try {
@@ -386,6 +394,9 @@ async function translatingPairConstraints<Result>(
     }
     if (timeEntryRepository.isMissingTask(error)) {
       throw new TimeEntryError("not_found", projectMessages.taskUnavailable);
+    }
+    if (timeEntryRepository.isMissingTag(error)) {
+      throw new TimeEntryError("not_found", projectMessages.tagUnavailable);
     }
     if (timeEntryRepository.isTaskWithoutProject(error)) {
       throw new TimeEntryError("validation", timeEntryMessages.taskNeedsProject);
@@ -430,18 +441,20 @@ function pairOf(row: ProjectPair): ProjectPair {
 type CopiedFields = ProjectPair & {
   readonly description: string;
   readonly billable: boolean;
+  readonly tagIds: readonly string[];
 };
 
 /**
  * La única función que decide qué se copia de la original, para continuar y
  * para duplicar. El facturable es el de la original, aunque su proyecto haya
- * cambiado el por defecto (TT-57, TT-58). El 11b le suma las etiquetas.
+ * cambiado el por defecto, y las etiquetas, todas las suyas (TT-57, TT-58).
  */
-function continuedFields(source: TimeEntryRow): CopiedFields {
+function continuedFields(source: EntryWithRefs): CopiedFields {
   return {
     description: source.description,
     ...pairOf(source),
     billable: source.billable,
+    tagIds: sortedTagIdsOf(source),
   };
 }
 
@@ -494,7 +507,7 @@ async function startEntryOnce(
     stopped: null,
   });
   return translatingEndBeforeStart(() =>
-    translatingPairConstraints(() =>
+    translatingReferenceConstraints(() =>
       createEntryOnce(actor, id, {
         attempt: async () => {
           const opened = await db.transaction(open);
@@ -518,14 +531,17 @@ export async function startTimer(
 ): Promise<StartTimerResult> {
   return startEntryOnce(actor, workspace, input.id, async (tx) => {
     const pair = pairOf(input);
-    // Antes de cerrar el timer abierto: un rechazo no lo cierra.
+    // Las reglas antes de escribir: un id ajeno o un timer abierto bloqueado
+    // por otra conexión no cambian la respuesta.
     const project = await assertAssignable(tx, actor, NO_PROJECT, pair);
+    await assertTaggable(tx, actor, input.tagIds);
     const opened = await closeAndOpen(tx, actor, {
       id: input.id,
       fields: {
         description: input.description,
         ...pair,
         billable: billableOfNewEntry(input.billable, project),
+        tagIds: input.tagIds,
       },
     });
     await recordAudit(tx, {
@@ -539,6 +555,7 @@ export async function startTimer(
         projectId: opened.running.projectId,
         taskId: opened.running.taskId,
         billable: opened.running.billable,
+        tagIds: sortedTagIdsOf(opened.running),
         startedAt: opened.running.startedAt,
       },
     });
@@ -559,9 +576,10 @@ export async function continueEntry(
   return startEntryOnce(actor, workspace, input.id, async (tx) => {
     const source = await readSourceEntry(tx, actor, input.sourceId);
     const fields = continuedFields(source);
-    // Antes de cerrar el timer abierto: con un proyecto que ya no está
-    // disponible no se crea nada y el timer sigue corriendo (§4.4).
+    // Las reglas antes de escribir: un id ajeno o un timer abierto bloqueado
+    // por otra conexión no cambian la respuesta (§4.4, D-3).
     await assertAssignable(tx, actor, NO_PROJECT, fields);
+    await assertTaggable(tx, actor, fields.tagIds);
     const opened = await closeAndOpen(tx, actor, { id: input.id, fields });
     await recordAudit(tx, {
       workspaceId: actor.workspaceId,
@@ -575,6 +593,7 @@ export async function continueEntry(
         projectId: opened.running.projectId,
         taskId: opened.running.taskId,
         billable: opened.running.billable,
+        tagIds: sortedTagIdsOf(opened.running),
         startedAt: opened.running.startedAt,
       },
     });
@@ -618,7 +637,7 @@ export async function duplicateEntry(
   workspace: TrackerWorkspace,
   input: DuplicateEntryInput,
 ): Promise<DuplicateEntryResult> {
-  return translatingPairConstraints(() =>
+  return translatingReferenceConstraints(() =>
     createEntryOnce(actor, input.id, {
       attempt: () =>
         db.transaction(async (tx) => {
@@ -626,6 +645,7 @@ export async function duplicateEntry(
           const source = requireClosed(await readSourceEntry(tx, actor, input.sourceId));
           const fields = continuedFields(source);
           await assertAssignable(tx, actor, NO_PROJECT, fields);
+          await assertTaggable(tx, actor, fields.tagIds);
           const created = await timeEntryRepository.insertClosed(tx, {
             id: input.id,
             workspaceId: actor.workspaceId,
@@ -645,6 +665,7 @@ export async function duplicateEntry(
               projectId: created.projectId,
               taskId: created.taskId,
               billable: created.billable,
+              tagIds: sortedTagIdsOf(created),
               startedAt: created.startedAt,
               endedAt: created.endedAt,
             },
@@ -716,7 +737,7 @@ export async function updateEntryProject(
   workspace: TrackerWorkspace,
   input: UpdateEntryProjectInput,
 ): Promise<UpdateEntryProjectResult> {
-  return translatingPairConstraints(() =>
+  return translatingReferenceConstraints(() =>
     db.transaction(async (tx) => {
       const row = await readOwnEntry(tx, actor, "timeEntry.own.update", input.id);
       const { pair, project } = await assignedPair(tx, actor, row, pairOf(input));
@@ -766,8 +787,9 @@ export async function deleteEntry(
       action: "timeEntry.delete",
       entity: AUDIT_ENTITY,
       entityId: removed.id,
-      // El borrado es físico: esta es la única copia que queda de la fila.
-      previousValue: removed,
+      // El borrado es físico y la unión se va en cascada: esta es la única
+      // copia que queda de la fila y de sus etiquetas (TT-61).
+      previousValue: { ...removed, tagIds: sortedTagIdsOf(row) },
     });
     return { id: removed.id };
   });
@@ -811,8 +833,9 @@ export async function discardTimer(
       action: "timeEntry.discard",
       entity: AUDIT_ENTITY,
       entityId: removed.id,
-      // El borrado es físico: esta es la única copia que queda de la fila.
-      previousValue: removed,
+      // El borrado es físico y la unión se va en cascada: esta es la única
+      // copia que queda de la fila y de sus etiquetas (TT-61).
+      previousValue: { ...removed, tagIds: sortedTagIdsOf(row) },
     });
     return { id: removed.id };
   });
@@ -830,7 +853,7 @@ export async function createManualEntry(
 ): Promise<CreateManualEntryResult> {
   const timeZone = workspace.timezone;
 
-  return translatingPairConstraints(() =>
+  return translatingReferenceConstraints(() =>
     db.transaction(async (tx) => {
       if (!can(actor, "timeEntry.own.create", ownTimeEntryResource(actor))) {
         throw new TimeEntryError("forbidden", timeEntryMessages.forbidden);
@@ -865,6 +888,7 @@ export async function createManualEntry(
       }
       const pair = pairOf(input);
       const project = await assertAssignable(tx, actor, NO_PROJECT, pair);
+      await assertTaggable(tx, actor, input.tagIds);
 
       const created = await timeEntryRepository.insertClosed(tx, {
         workspaceId: actor.workspaceId,
@@ -872,6 +896,7 @@ export async function createManualEntry(
         description: input.description,
         ...pair,
         billable: billableOfNewEntry(input.billable, project),
+        tagIds: input.tagIds,
         startedAt,
         endedAt,
       });
@@ -886,6 +911,7 @@ export async function createManualEntry(
           projectId: created.projectId,
           taskId: created.taskId,
           billable: created.billable,
+          tagIds: sortedTagIdsOf(created),
           startedAt: created.startedAt,
           endedAt: created.endedAt,
         },
@@ -1207,17 +1233,41 @@ function billableChange(
   return billable === row.billable ? {} : { billable };
 }
 
-/** Los campos de los pasos del par y del facturable, después de la descripción y el horario. */
+/**
+ * El paso de las etiquetas de `updateEntry` (§4.5): el conjunto pedido, si
+ * difiere del de la fila y `project` deja asignar las que la fila todavía no
+ * tiene. Las que ya tiene se conservan aunque estén archivadas (PR-47).
+ */
+async function tagsChange(
+  tx: Transaction,
+  actor: Actor,
+  row: EntryWithRefs,
+  requested: readonly string[] | undefined,
+): Promise<Pick<ClosedEntryFields, "tagIds">> {
+  const current = sortedTagIdsOf(row);
+  if (requested === undefined || sameTagIds(current, requested)) {
+    return {};
+  }
+  await assertTaggable(tx, actor, tagsToCheck(current, requested));
+  return { tagIds: requested };
+}
+
+/**
+ * Los campos de los pasos del par, del facturable y de las etiquetas, en ese
+ * orden, después de la descripción y el horario.
+ */
 async function assignmentFields(
   tx: Transaction,
   actor: Actor,
-  row: TimeEntryRow,
+  row: EntryWithRefs,
   changes: UpdateEntryChangeValues,
-): Promise<Pick<ClosedEntryFields, "pair" | "billable">> {
+): Promise<Pick<ClosedEntryFields, "pair" | "billable" | "tagIds">> {
   const assigned = await assignedPair(tx, actor, row, changes.project);
+  const billable = billableChange(row, changes.billable, assigned);
   return {
     ...(assigned.pair === undefined ? {} : { pair: assigned.pair }),
-    ...billableChange(row, changes.billable, assigned),
+    ...billable,
+    ...(await tagsChange(tx, actor, row, changes.tags)),
   };
 }
 
@@ -1256,7 +1306,7 @@ async function writeEntryEdit<Fields extends RunningEntryFields>(
  * El guardado del diálogo de una entrada (ADR 0013): los grupos de campos que
  * la persona tocó, todo o nada. Cada grupo pasa por la regla de su mutación de
  * un campo, en este orden: el estado de la fila, la descripción y el horario,
- * el par y el facturable. Lo que no cambió no se escribe.
+ * el par, el facturable y las etiquetas. Lo que no cambió no se escribe.
  */
 export async function updateEntry(
   actor: Actor,
@@ -1265,7 +1315,7 @@ export async function updateEntry(
   now: Date = new Date(),
 ): Promise<UpdateEntryResult> {
   const { changes } = input;
-  const entry = await translatingPairConstraints(() =>
+  const entry = await translatingReferenceConstraints(() =>
     db.transaction(async (tx) => {
       const row = await readOwnEntry(tx, actor, "timeEntry.own.update", input.id);
       const target = targetOf(row);
@@ -1398,13 +1448,14 @@ function editedFields(
 }
 
 /** Los valores de la fila en los campos que cambiaron, para la constancia. */
-function valuesOf(row: TimeEntryRow, fields: ClosedEntryFields) {
+function valuesOf(row: EntryWithRefs, fields: ClosedEntryFields) {
   return {
     ...(fields.description === undefined ? {} : { description: row.description }),
     ...(fields.pair === undefined
       ? {}
       : { projectId: row.projectId, taskId: row.taskId }),
     ...(fields.billable === undefined ? {} : { billable: row.billable }),
+    ...(fields.tagIds === undefined ? {} : { tagIds: sortedTagIdsOf(row) }),
     ...(fields.startedAt === undefined ? {} : { startedAt: row.startedAt }),
     ...(fields.endedAt === undefined ? {} : { endedAt: row.endedAt }),
   };
@@ -1453,8 +1504,10 @@ export async function bulkEditEntries(
       if (written === undefined) {
         throw new Error(`La entrada ${row.id} no se escribió con su bloqueo tomado.`);
       }
-      // El 6 no cambia el proyecto: las referencias leídas bajo bloqueo siguen valiendo.
-      entries.push({ ...written, project: row.project, task: row.task });
+      // El 6 no cambia el proyecto ni las etiquetas: las referencias leídas
+      // bajo bloqueo siguen valiendo.
+      const entry = { ...written, project: row.project, task: row.task, tags: row.tags };
+      entries.push(entry);
       audits.push({
         workspaceId: actor.workspaceId,
         actorId: actor.userId,
@@ -1462,7 +1515,7 @@ export async function bulkEditEntries(
         entity: AUDIT_ENTITY,
         entityId: written.id,
         previousValue: valuesOf(row, fields),
-        nextValue: valuesOf(written, fields),
+        nextValue: valuesOf(entry, fields),
       });
     }
     await recordAudits(tx, audits);
@@ -1511,12 +1564,25 @@ export async function bulkDeleteEntries(
         action: "timeEntry.bulkDelete",
         entity: AUDIT_ENTITY,
         entityId: row.id,
-        // El borrado es físico: esta es la única copia que queda de la fila.
-        previousValue: row,
+        // El borrado es físico y la unión se va en cascada: esta es la única
+        // copia que queda de la fila y de sus etiquetas (TT-61).
+        previousValue: { ...row, tagIds: sortedTagIdsOfLocked(found, row.id) },
       })),
     );
     return { ids: input.ids };
   });
+}
+
+/** Las etiquetas de una fila borrada en masa, leídas bajo bloqueo antes del borrado. */
+function sortedTagIdsOfLocked(
+  found: ReadonlyMap<string, EntryWithRefs>,
+  id: string,
+): string[] {
+  const row = found.get(id);
+  if (row === undefined) {
+    throw new Error(`La entrada ${id} se borró sin haberse leído bajo bloqueo.`);
+  }
+  return sortedTagIdsOf(row);
 }
 
 type WindowFloors = {

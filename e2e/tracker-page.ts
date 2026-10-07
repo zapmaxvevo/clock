@@ -271,25 +271,36 @@ export async function pickProject(
   await expect(projectPicker(scope)).toBeFocused();
 }
 
+/** Lo que `addManualEntry` elige en la barra además de la descripción. */
+export type ManualEntryFields = {
+  /** La opción del selector de proyecto y lo que se busca para verla (ver `pickProject`). */
+  readonly project?: { readonly option: string; readonly search: string };
+  /** Las etiquetas que se marcan (ver `pickTags`). */
+  readonly tags?: readonly string[];
+};
+
 /**
  * Carga una entrada de hoy desde la barra manual y espera su fila. Va de 00:00
- * a 00:01, que ya pasó a cualquier hora de la corrida. Con `project`, elige
- * antes esa opción buscándola por `search` (ver `pickProject`). La barra
- * vuelve al borrador inicial después de la respuesta, con la descripción
- * vacía y sin proyecto (TT-06, TT-25).
+ * a 00:01, que ya pasó a cualquier hora de la corrida. Con `project` y `tags`,
+ * los elige antes. La barra vuelve al borrador inicial después de la
+ * respuesta, con la descripción vacía, sin proyecto y sin etiquetas (TT-06,
+ * TT-25).
  */
 export async function addManualEntry(
   page: Page,
   description: string,
-  project?: { readonly option: string; readonly search: string },
+  fields: ManualEntryFields = {},
 ): Promise<void> {
   await chooseMode(page, "manual");
   const bar = trackerBar(page);
   await descriptionInput(bar).fill(description);
   await setClock(bar, "Hora de inicio", "00:00");
   await setClock(bar, "Hora de fin", "00:01");
-  if (project !== undefined) {
-    await pickProject(page, bar, project.option, project.search);
+  if (fields.project !== undefined) {
+    await pickProject(page, bar, fields.project.option, fields.project.search);
+  }
+  if (fields.tags !== undefined) {
+    await pickTags(page, bar, fields.tags);
   }
   await withServerAction(page, () =>
     bar.getByRole("button", { name: "Agregar" }).click(),
@@ -297,6 +308,7 @@ export async function addManualEntry(
   await expect(entryRow(todayGroup(page), description)).toBeVisible();
   await expect(descriptionInput(bar)).toHaveValue("");
   await expect(projectPicker(bar)).toHaveText("Proyecto");
+  await expect(tagPicker(bar)).toHaveAccessibleName("Etiquetas");
 }
 
 /**
@@ -307,6 +319,85 @@ export async function addManualEntry(
  */
 export function billableToggle(scope: Locator): Locator {
   return scope.getByRole("button", { name: /^(Facturable|Entrada «.*» facturable)$/ });
+}
+
+/** El nombre accesible del buscador del selector de etiquetas (TT-12, §5.8). */
+const TAG_SEARCH = "Buscar etiqueta";
+
+/**
+ * El disparador del selector de etiquetas de `scope` (TT-12, H-1): «Etiquetas»
+ * en la barra y en el diálogo del calendario, y «Etiquetas de la entrada «…»»
+ * en una fila. Con etiquetas, el nombre suma «: » y los nombres en orden
+ * alfabético. Dentro de cada uno hay uno solo.
+ */
+export function tagPicker(scope: Locator): Locator {
+  return scope.getByRole("combobox", {
+    name: /^Etiquetas( de la entrada «.*»)?(: .+)?$/,
+  });
+}
+
+/** El buscador del selector de etiquetas abierto. El popup va en un portal. */
+export function tagSearch(page: Page): Locator {
+  return page.getByRole("combobox", { name: TAG_SEARCH, exact: true });
+}
+
+/** El popup del selector de etiquetas abierto, el diálogo que lleva el buscador. */
+export function tagPopup(page: Page): Locator {
+  return page.getByRole("dialog").filter({ has: tagSearch(page) });
+}
+
+/**
+ * Una opción del selector de etiquetas abierto: el nombre de la etiqueta, o
+ * «{nombre} (archivada)» para la que la entrada tiene y ya no está en el
+ * catálogo (H-5). Marcada lleva `aria-selected="true"`.
+ */
+export function tagOption(page: Page, name: string): Locator {
+  return tagPopup(page).getByRole("option", { name, exact: true });
+}
+
+/** Abre el selector de etiquetas de `scope` y espera el foco en el buscador. */
+export async function openTagPicker(page: Page, scope: Locator): Promise<void> {
+  await tagPicker(scope).click();
+  await expect(tagSearch(page)).toBeFocused();
+}
+
+/**
+ * Alterna una etiqueta en el selector abierto, buscándola por su nombre
+ * entero, y espera que quede marcada o no según `selected`. El popup sigue
+ * abierto (TT-12).
+ */
+export async function toggleTag(
+  page: Page,
+  name: string,
+  selected: boolean,
+): Promise<void> {
+  await tagSearch(page).fill(name);
+  const option = tagOption(page, name);
+  await expect(option).toHaveAttribute("aria-selected", String(!selected));
+  await option.click();
+  await expect(option).toHaveAttribute("aria-selected", String(selected));
+  await expect(tagPopup(page)).toBeVisible();
+}
+
+/**
+ * Marca las etiquetas `names` en el selector de `scope` y lo cierra con
+ * `Escape`, que deja el foco en el disparador (D-5). Cada una se busca por su
+ * nombre entero: la base de los e2e acumula las etiquetas de todas las
+ * corridas, y el nombre lleva el sufijo del recorrido. En una entrada que ya
+ * existe, cerrar es lo que guarda: quien llama espera la respuesta.
+ */
+export async function pickTags(
+  page: Page,
+  scope: Locator,
+  names: readonly string[],
+): Promise<void> {
+  await openTagPicker(page, scope);
+  for (const name of names) {
+    await toggleTag(page, name, true);
+  }
+  await page.keyboard.press("Escape");
+  await expect(tagPopup(page)).toBeHidden();
+  await expect(tagPicker(scope)).toBeFocused();
 }
 
 /**

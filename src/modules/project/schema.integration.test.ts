@@ -15,6 +15,7 @@ import {
   membership,
   project,
   projectMember,
+  tag,
   task,
   taskAssignee,
   workspace,
@@ -24,6 +25,7 @@ import {
   seedClient,
   seedMember,
   seedProject,
+  seedTag,
   seedTask,
   seedUser,
   seedWorkspace,
@@ -531,5 +533,111 @@ describe("whoCreatesProjects (criterio 11, PR-59)", () => {
       .from(workspaceSettings)
       .where(eq(workspaceSettings.workspaceId, created.id));
     expect(settings.whoCreatesProjects).toBe("everyone");
+  });
+});
+
+describe("la tabla tag (criterio 1 del 11b: PR-42, PR-52 … PR-54)", () => {
+  /** La definición de una restricción, como la guarda la base. */
+  async function constraintDefinition(name: string): Promise<string | undefined> {
+    const result = await db.execute(
+      sql`select pg_get_constraintdef(oid) as definition from pg_constraint where conname = ${name}`,
+    );
+    return (result.rows.at(0) as { definition: string } | undefined)?.definition;
+  }
+
+  it("las tres migraciones del 11b están en el diario en orden, y la última deja set null (created_by)", async () => {
+    const journal = JSON.parse(
+      await readFile(join(process.cwd(), "drizzle/meta/_journal.json"), "utf8"),
+    ) as { entries: { tag: string }[] };
+    const tags = journal.entries.map((entry) => entry.tag);
+    const position = (name: string) => tags.indexOf(name);
+    expect(position("0009_time_entry_billable")).toBeGreaterThanOrEqual(0);
+    expect(tags.slice(position("0009_time_entry_billable") + 1)).toEqual([
+      "0010_time_entry_workspace_id_unq",
+      "0011_tags",
+      "0012_tags_set_null",
+    ]);
+    expect(await constraintDefinition("tag_created_by_fk")).toContain(
+      "ON DELETE SET NULL (created_by)",
+    );
+    expect(await constraintDefinition("time_entry_workspace_id_unq")).toBe(
+      "UNIQUE (workspace_id, id)",
+    );
+  });
+
+  it("rechaza un nombre vacío o de más de 100 caracteres, y acepta 100", async () => {
+    const write = (name: string) => seedTag({ workspaceId: ours.workspaceId, name });
+    expect(await violated(write(""), CHECK_VIOLATION)).toBe("tag_name_len");
+    expect(await violated(write("a".repeat(101)), CHECK_VIOLATION)).toBe("tag_name_len");
+    await expect(write("a".repeat(100))).resolves.toBeDefined();
+  });
+
+  it("rechaza un nombre con espacios en los extremos", async () => {
+    const write = (name: string) => seedTag({ workspaceId: ours.workspaceId, name });
+    expect(await violated(write(" Diseño"), CHECK_VIOLATION)).toBe("tag_name_trimmed");
+    expect(await violated(write("Diseño "), CHECK_VIOLATION)).toBe("tag_name_trimmed");
+  });
+
+  it("dos etiquetas con el mismo nombre chocan aunque cambien las mayúsculas (PR-52)", async () => {
+    await seedTag({ workspaceId: ours.workspaceId, name: "Diseño" });
+    expect(
+      await violated(
+        seedTag({ workspaceId: ours.workspaceId, name: "DISEÑO" }),
+        UNIQUE_VIOLATION,
+      ),
+    ).toBe("tag_name_unq");
+  });
+
+  it("una etiqueta archivada cuenta (PR-53)", async () => {
+    await seedTag({ workspaceId: ours.workspaceId, name: "Vieja", archived: true });
+    expect(
+      await violated(
+        seedTag({ workspaceId: ours.workspaceId, name: "vieja" }),
+        UNIQUE_VIOLATION,
+      ),
+    ).toBe("tag_name_unq");
+  });
+
+  it("el mismo nombre convive en otro workspace", async () => {
+    await seedTag({ workspaceId: ours.workspaceId, name: "Diseño" });
+    await expect(
+      seedTag({ workspaceId: theirs.workspaceId, name: "Diseño" }),
+    ).resolves.toBeDefined();
+  });
+
+  it("rechaza un created_by sin membresía en ese workspace", async () => {
+    const outsider = await seedMember(theirs.workspaceId, "member");
+    expect(
+      await violated(
+        db
+          .insert(tag)
+          .values({ workspaceId: ours.workspaceId, name: "Diseño", createdBy: outsider }),
+        FOREIGN_KEY_VIOLATION,
+      ),
+    ).toBe("tag_created_by_fk");
+  });
+
+  it("borrar la membresía de quien la creó deja created_by en nulo y la etiqueta en su workspace", async () => {
+    const member = await seedMember(ours.workspaceId, "member");
+    const created = await seedTag({ workspaceId: ours.workspaceId, createdBy: member });
+
+    await db
+      .delete(membership)
+      .where(
+        and(eq(membership.workspaceId, ours.workspaceId), eq(membership.userId, member)),
+      );
+
+    const [after] = await db.select().from(tag).where(eq(tag.id, created.id));
+    expect(after.createdBy).toBeNull();
+    expect(after.workspaceId).toBe(ours.workspaceId);
+  });
+
+  it("borrar el workspace se lleva sus etiquetas y deja las de otro", async () => {
+    await seedTag({ workspaceId: ours.workspaceId });
+    const survivor = await seedTag({ workspaceId: theirs.workspaceId });
+
+    await db.delete(workspace).where(eq(workspace.id, ours.workspaceId));
+
+    expect((await db.select().from(tag)).map((row) => row.id)).toEqual([survivor.id]);
   });
 });

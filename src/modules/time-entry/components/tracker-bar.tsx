@@ -7,8 +7,9 @@ import { retryHandlerOf, useAction, type ActionHandle } from "@/hooks/use-action
 import { useNewId } from "@/hooks/use-new-id";
 import { projectLabels } from "@/modules/project/components/labels";
 import { ProjectPicker } from "@/modules/project/components/project-picker";
+import { TagPicker } from "@/modules/project/components/tag-picker";
 import { useTrackingCatalog } from "@/modules/project/components/tracking-catalog";
-import type { ProjectSelection } from "@/modules/project/schema";
+import type { ProjectSelection, TagRef } from "@/modules/project/schema";
 import {
   createManualEntry,
   discardTimer,
@@ -38,6 +39,7 @@ import {
   type FieldsInput,
 } from "./entry-fields";
 import { saveEntryProject } from "./entry-project";
+import { saveEntryTags } from "./entry-tags";
 import { startedWeeks } from "./entry-week";
 import { trackerLabels } from "./labels";
 import { ManualBar } from "./manual-bar";
@@ -182,10 +184,19 @@ export function TrackerBar({
   const focusAfterDiscard = useRef(false);
   /**
    * El selector abierto cuando la barra cambia de modo se va sin elegir; si el
-   * foco queda sin dueño, vuelve al disparador de la barra nueva.
+   * foco queda sin dueño, vuelve al disparador del mismo selector en la barra
+   * nueva.
    */
-  const pickerTriggerRef = useRef<HTMLButtonElement>(null);
-  const pickerOpen = useRef(false);
+  const projectPickerTriggerRef = useRef<HTMLButtonElement>(null);
+  const tagPickerTriggerRef = useRef<HTMLButtonElement>(null);
+  const pickerOpen = useRef<"project" | "tags" | null>(null);
+  /**
+   * Adónde va el conjunto del selector de etiquetas, fijado al abrirlo: el id
+   * del timer abierto, o `null` para el borrador. Si el timer cambia con el
+   * selector abierto —otra pestaña lo detuvo o inició otro—, lo elegido era
+   * para la entrada de antes y se descarta al cerrar.
+   */
+  const tagsTarget = useRef<string | null>(null);
 
   const save = useAction(updateDescription, {
     unreachableMessage: timeEntryMessages.unexpected,
@@ -219,6 +230,13 @@ export function TrackerBar({
     unreachableMessage: timeEntryMessages.unexpected,
     optimistic: (input) =>
       showRunningFieldsEdit((fields) => ({ ...fields, billable: input.billable })),
+    onSuccess: (data) => reachWeek([data.entry.weekStart]),
+  });
+  /** TT-27: las etiquetas de la entrada abierta, al cerrar el selector (D-5). */
+  const saveTags = useAction(saveEntryTags, {
+    unreachableMessage: timeEntryMessages.unexpected,
+    optimistic: (input) =>
+      showRunningFieldsEdit((fields) => ({ ...fields, tags: input.tags })),
     onSuccess: (data) => reachWeek([data.entry.weekStart]),
   });
   /**
@@ -288,6 +306,9 @@ export function TrackerBar({
       if (saveBillable.failure?.code === "unexpected") {
         saveBillable.clear();
       }
+      if (saveTags.failure?.code === "unexpected") {
+        saveTags.clear();
+      }
       // Lo mismo con el inicio: «Reintentar» apuntaría a un timer que ya no
       // está. Un `already_stopped` llega en el mismo render que la vista sin
       // el timer y es justamente lo que hay que mostrar, así que se queda.
@@ -355,13 +376,17 @@ export function TrackerBar({
   }, [phase, isManual]);
 
   useEffect(() => {
-    if (!pickerOpen.current) {
+    const open = pickerOpen.current;
+    if (open === null) {
       return;
     }
-    pickerOpen.current = false;
+    pickerOpen.current = null;
     const focused = document.activeElement;
     if (focused === null || focused === document.body) {
-      pickerTriggerRef.current?.focus();
+      (open === "project"
+        ? projectPickerTriggerRef
+        : tagPickerTriggerRef
+      ).current?.focus();
     }
   }, [isManual]);
 
@@ -376,6 +401,7 @@ export function TrackerBar({
     saveStart.clear();
     saveProject.clear();
     saveBillable.clear();
+    saveTags.clear();
     discard.clear();
     add.clear();
     setPendingDiscard(null);
@@ -492,6 +518,19 @@ export function TrackerBar({
     saveBillable.run({ id: running.id, billable });
   }
 
+  /** TT-12 y TT-27: el conjunto entero, al cerrar el selector (D-5). */
+  function handleTagsChange(tags: readonly TagRef[]): void {
+    if ((editsRunningFields ? running.id : null) !== tagsTarget.current) {
+      return;
+    }
+    if (!editsRunningFields) {
+      setFieldsDraft((current) => ({ ...current, tags }));
+      return;
+    }
+    clearNotices();
+    saveTags.run({ id: running.id, tags });
+  }
+
   function handleModeChange(next: TrackerMode): void {
     // TT-16: la próxima visita llega dibujada en el modo elegido, por el
     // conmutador o por el atajo.
@@ -530,10 +569,11 @@ export function TrackerBar({
   );
 
   /**
-   * El proyecto puede cambiar el facturable en el servidor (D-2): con uno de
-   * los dos en vuelo, los dos esperan, así lo que se ve es lo que se escribe.
+   * El proyecto puede cambiar el facturable en el servidor (D-2): con un campo
+   * en vuelo, todos esperan, así lo que se ve es lo que se escribe.
    */
-  const fieldsPending = saveProject.pending || saveBillable.pending || switching;
+  const fieldsPending =
+    saveProject.pending || saveBillable.pending || saveTags.pending || switching;
 
   const projectPicker = (
     <ProjectPicker
@@ -543,9 +583,27 @@ export function TrackerBar({
       label={projectLabels.pickerEmpty}
       pending={fieldsPending}
       readOnly={!canTrack}
-      triggerRef={pickerTriggerRef}
+      triggerRef={projectPickerTriggerRef}
       onOpenChange={(open) => {
-        pickerOpen.current = open;
+        pickerOpen.current = open ? "project" : null;
+      }}
+    />
+  );
+
+  const tagPicker = (
+    <TagPicker
+      value={shownFields.tags}
+      onChange={handleTagsChange}
+      variant="bar"
+      label={projectLabels.tags}
+      pending={fieldsPending}
+      readOnly={!canTrack}
+      triggerRef={tagPickerTriggerRef}
+      onOpenChange={(open) => {
+        pickerOpen.current = open ? "tags" : null;
+        if (open) {
+          tagsTarget.current = editsRunningFields ? running.id : null;
+        }
       }}
     />
   );
@@ -567,6 +625,7 @@ export function TrackerBar({
           <ManualBar
             descriptionField={descriptionField}
             projectPicker={projectPicker}
+            tagPicker={tagPicker}
             billableToggle={billableToggle}
             draft={manualDraft}
             onDraftChange={setManualDraft}
@@ -581,6 +640,7 @@ export function TrackerBar({
           <TimerBar
             descriptionField={descriptionField}
             projectPicker={projectPicker}
+            tagPicker={tagPicker}
             billableToggle={billableToggle}
             isRunning={isRunning}
             counterStart={isRunning && running !== null ? running.startedAt : null}
@@ -693,6 +753,15 @@ export function TrackerBar({
             message={saveBillable.failure.message}
             retryDisabled={fieldsPending}
             onRetry={retryOf(saveBillable)}
+          />
+        )}
+
+        {saveTags.failure !== null && (
+          <ActionFeedback
+            title={trackerLabels.tagsNotSaved}
+            message={saveTags.failure.message}
+            retryDisabled={fieldsPending}
+            onRetry={retryOf(saveTags)}
           />
         )}
 

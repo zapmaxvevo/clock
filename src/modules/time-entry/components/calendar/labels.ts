@@ -83,6 +83,8 @@ export const calendarLabels = {
   /** CAL-66: el valor del facturable en el diálogo de solo lectura. */
   billableYes: "Sí",
   billableNo: "No",
+  /** CAL-66: las etiquetas del diálogo de solo lectura, sin ninguna. */
+  noTags: "Sin etiquetas",
   duration: "Duración",
   runningEnd: "Fin: en curso",
   close: "Cerrar",

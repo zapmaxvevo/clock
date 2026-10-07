@@ -14,6 +14,8 @@ import { EntryDialogBody } from "./entry-dialog-body";
 
 const catalog: TrackingCatalog = {
   canCreateProject: true,
+  canCreateTag: true,
+  tags: [],
   groups: [
     {
       client: null,
@@ -49,7 +51,11 @@ const closed: TimeEntryView = {
   project: { id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", name: "Web", color: "teal" },
   task: { id: "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d", name: "Diseño" },
   billable: false,
+  tags: [],
 };
+
+const review = { id: "4d5e6f7a-8b9c-4d0e-9f1a-3b4c5d6e7f80", name: "Revisión" };
+const urgent = { id: "5e6f7a8b-9c0d-4e1f-8a2b-4c5d6e7f8091", name: "Urgente" };
 
 const overnight: TimeEntryView = {
   ...closed,
@@ -117,6 +123,7 @@ describe("EntryDialogBody (CAL-65, CAL-66)", () => {
     expect(fieldsOf(markup)).toEqual([
       ["Descripción", "Informe"],
       ["Proyecto", "Web: Diseño"],
+      ["Etiquetas", "Sin etiquetas"],
       ["Facturable", "No"],
       ["Fecha", "vie, 02/10"],
       ["Hora de inicio", "09:00"],
@@ -142,6 +149,7 @@ describe("EntryDialogBody (CAL-65, CAL-66)", () => {
     expect(fieldsOf(markup)).toEqual([
       ["Descripción", "Sin descripción"],
       ["Proyecto", "Sin proyecto"],
+      ["Etiquetas", "Sin etiquetas"],
       ["Facturable", "No"],
       ["Fecha", "jue, 01/10"],
       ["Hora de inicio", "22:00"],
@@ -158,6 +166,7 @@ describe("EntryDialogBody (CAL-65, CAL-66)", () => {
     expect(fields.map(([term]) => term)).toEqual([
       "Descripción",
       "Proyecto",
+      "Etiquetas",
       "Facturable",
       "Fecha",
       "Hora de inicio",
@@ -172,6 +181,12 @@ describe("EntryDialogBody (CAL-65, CAL-66)", () => {
   it("una facturable lo dice como texto (TT-92)", () => {
     const markup = render({ ...closed, billable: true });
     expect(fieldsOf(markup)).toContainEqual(["Facturable", "Sí"]);
+    expectNoControls(markup);
+  });
+
+  it("las etiquetas, como texto en el orden de la vista (CAL-66, TT-92)", () => {
+    const markup = render({ ...closed, tags: [review, urgent] });
+    expect(fieldsOf(markup)).toContainEqual(["Etiquetas", "Revisión, Urgente"]);
     expectNoControls(markup);
   });
 });
@@ -354,6 +369,51 @@ describe("EntryDialogContent: el facturable en los tres modos (CAL-45, CAL-66)",
       markup.search(/aria-label="Facturable"/),
     );
     expect(markup).toMatch(/aria-label="Facturable"[^>]*>.*?<span>Facturable<\/span>/);
+  });
+});
+
+describe("EntryDialogContent: las etiquetas en los tres modos (CAL-45, CAL-66)", () => {
+  function tagsOf(markup: string): string | null {
+    return (
+      markup.match(
+        /<button[^>]*role="combobox"[^>]*aria-label="Etiquetas[^"]*"[^>]*>/,
+      )?.[0] ?? null
+    );
+  }
+
+  it("una cerrada las edita con las de la vista, nombradas en el disparador", () => {
+    const markup = renderContent({
+      kind: "entry",
+      entry: { ...closed, tags: [review, urgent] },
+    });
+    expect(tagsOf(markup)).toContain('aria-label="Etiquetas: Revisión, Urgente"');
+  });
+
+  it("el timer las edita", () => {
+    const markup = renderContent({
+      kind: "entry",
+      entry: { ...running, tags: [urgent] },
+    });
+    expect(tagsOf(markup)).toContain('aria-label="Etiquetas: Urgente"');
+  });
+
+  it("el alta arranca sin etiquetas", () => {
+    const markup = renderContent({
+      kind: "add",
+      draft: { date: "2026-09-30", start: "10:00", end: "11:00" },
+      opener: "slot",
+    });
+    expect(tagsOf(markup)).toContain('aria-label="Etiquetas"');
+  });
+
+  it("van entre el proyecto y el facturable (TT-49)", () => {
+    const markup = renderContent({ kind: "entry", entry: closed });
+    const project = markup.search(/aria-label="Proyecto de la entrada/);
+    const tags = markup.search(/aria-label="Etiquetas"/);
+
+    expect(project).toBeGreaterThan(-1);
+    expect(project).toBeLessThan(tags);
+    expect(tags).toBeLessThan(markup.search(/aria-label="Facturable"/));
   });
 });
 
