@@ -18,16 +18,12 @@ import {
 } from "@/components/ui/combobox";
 import { InputGroupAddon } from "@/components/ui/input-group";
 import { sameId } from "@/lib/project-pair";
+import { sortedByName } from "@/lib/text";
 import { cn } from "@/lib/utils";
 import type { TagRef } from "@/modules/project/schema";
 
 import { projectLabels, withTagNames } from "./labels";
-import {
-  sameTags,
-  sortedTags,
-  tagPickerView,
-  type TagPickerEmpty,
-} from "./tag-picker-model";
+import { sameTags, tagPickerView, type TagPickerEmpty } from "./tag-picker-model";
 import { useTrackingCatalog } from "./tracking-catalog";
 
 type TagPickerProps = {
@@ -80,7 +76,7 @@ export function TagPicker({
   const [draft, setDraft] = useState<readonly TagRef[] | null>(null);
   const [search, setSearch] = useState("");
   // TT-12: en orden alfabético, no en el de los clics del borrador que llega.
-  const names = sortedTags(value).map((tag) => tag.name);
+  const names = sortedByName(value).map((tag) => tag.name);
 
   if (readOnly) {
     return names.length === 0 ? null : (

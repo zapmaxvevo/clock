@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { TagRef } from "@/modules/project/schema";
 
-import { sameTags, sortedTags, tagIdsOf, tagPickerView } from "./tag-picker-model";
+import { sameTags, tagIdsOf, tagPickerView } from "./tag-picker-model";
 
 const design: TagRef = { id: "t-design", name: "Diseño" };
 const review: TagRef = { id: "t-review", name: "revisión" };
@@ -106,14 +106,7 @@ describe("sameTags", () => {
   });
 });
 
-describe("sortedTags y tagIdsOf", () => {
-  it("ordena con la regla del catálogo sin cambiar lo que recibe", () => {
-    const value = [urgent, review, design];
-
-    expect(sortedTags(value)).toEqual([design, review, urgent]);
-    expect(value).toEqual([urgent, review, design]);
-  });
-
+describe("tagIdsOf", () => {
   it("deja solo los ids, en el orden que recibe", () => {
     expect(tagIdsOf([urgent, design])).toEqual(["t-urgent", "t-design"]);
   });

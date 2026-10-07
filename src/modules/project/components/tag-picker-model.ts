@@ -1,6 +1,6 @@
 import { sameId } from "@/lib/project-pair";
 import { sameTagIds } from "@/lib/tag-ids";
-import { compareNames, normalizeSearch } from "@/lib/text";
+import { normalizeSearch, sortedByName } from "@/lib/text";
 import type { TagRef, TrackingCatalog } from "@/modules/project/schema";
 
 import { archivedTagLabel } from "./labels";
@@ -47,12 +47,10 @@ export function tagPickerView(
   value: readonly TagRef[],
   search: string,
 ): TagPickerView {
-  const all = [
-    ...catalog.tags.map((tag) => optionOf(tag, false)),
-    ...value
-      .filter((tag) => !inCatalog(catalog.tags, tag))
-      .map((tag) => optionOf(tag, true)),
-  ].sort((left, right) => compareNames(left.tag, right.tag));
+  const archived = new Set(value.filter((tag) => !inCatalog(catalog.tags, tag)));
+  const all = sortedByName([...catalog.tags, ...archived]).map((tag) =>
+    optionOf(tag, archived.has(tag)),
+  );
   if (all.length === 0) {
     return {
       options: [],
@@ -74,9 +72,4 @@ export function tagIdsOf(tags: readonly TagRef[]): string[] {
 /** Las mismas etiquetas, sin importar orden ni mayúsculas, como en la base. */
 export function sameTags(left: readonly TagRef[], right: readonly TagRef[]): boolean {
   return sameTagIds(tagIdsOf(left), tagIdsOf(right));
-}
-
-/** TT-12: las etiquetas en orden alfabético, como las muestra la entrada. */
-export function sortedTags(tags: readonly TagRef[]): TagRef[] {
-  return [...tags].sort(compareNames);
 }
