@@ -12,6 +12,7 @@ import {
   isCalendarPage,
   openLastWeek,
   PERSON_TIMEZONE,
+  settle,
 } from "./calendar-page";
 import { todayIn, type CivilDay } from "./days";
 import {
@@ -24,6 +25,7 @@ import {
 } from "./network";
 import { expect, test } from "./session";
 import {
+  addButton,
   chooseMode,
   clockField,
   dateButton,
@@ -31,10 +33,10 @@ import {
   editDescriptionButton,
   entryRow,
   isTrackerPage,
-  setClock,
   startTimer,
   todayGroup,
   trackerBar,
+  typeManualDraft,
 } from "./tracker-page";
 
 /**
@@ -79,22 +81,6 @@ function retryButton(notice: Locator): Locator {
 /** El aviso informativo de r2-1 en `scope`, un `status`. */
 function replayedNotice(scope: Page | Locator, text: string): Locator {
   return scope.getByRole("status").filter({ hasText: text });
-}
-
-function addButton(bar: Locator): Locator {
-  return bar.getByRole("button", { name: "Agregar", exact: true });
-}
-
-/** Teclea un borrador en la barra manual, con la fecha en hoy. */
-async function typeDraft(
-  bar: Locator,
-  description: string,
-  start: string,
-  end: string,
-): Promise<void> {
-  await descriptionInput(bar).fill(description);
-  await setClock(bar, "Hora de inicio", start);
-  await setClock(bar, "Hora de fin", end);
 }
 
 /** El borrador de la barra sigue como se tecleó. */
@@ -195,7 +181,7 @@ test("reintentar un alta de la barra cuya respuesta se perdió deja una sola fil
   await chooseMode(page, "manual");
   const bar = trackerBar(page);
   const add = addButton(bar);
-  await typeDraft(bar, description, "00:00", "00:01");
+  await typeManualDraft(bar, description, "00:00", "00:01");
 
   // TT-89 y TT-90: el aviso de cualquier operación del módulo, con
   // «Reintentar», y el borrador entero.
@@ -221,15 +207,20 @@ test("reintentar un alta de la barra cuya respuesta se perdió deja una sola fil
   await expect(notice).toHaveCount(0);
   await expect(replayedNotice(page, REPLAYED_IN_BAR)).toHaveCount(0);
 
-  // ADR 0007: el reintento llevó el id del primer intento.
+  // ADR 0007: el reintento llevó el id del primer intento. La lista es la que
+  // trajo su respuesta.
+  const rows = entryRow(todayGroup(page), description);
+  await expect(rows).toHaveCount(1);
+
+  // El id se renovó con el éxito: lo mismo otra vez, en el mismo montaje, es
+  // otra entrada. Un id fijo por montaje respondería la primera.
+  await typeManualDraft(bar, description, "00:00", "00:01");
+  await withServerAction(page, () => add.click());
+  await expect(rows).toHaveCount(2);
+
   releaseRefreshes();
   await page.reload();
-  await expect(entryRow(todayGroup(page), description)).toHaveCount(1);
-
-  // El id se renovó con el éxito: lo mismo otra vez es otra entrada.
-  await typeDraft(bar, description, "00:00", "00:01");
-  await withServerAction(page, () => add.click());
-  await expect(entryRow(todayGroup(page), description)).toHaveCount(2);
+  await expect(rows).toHaveCount(2);
 });
 
 test("apretar Agregar otra vez con el aviso de la respuesta perdida a la vista no duplica la entrada", async ({
@@ -242,7 +233,7 @@ test("apretar Agregar otra vez con el aviso de la respuesta perdida a la vista n
   await chooseMode(page, "manual");
   const bar = trackerBar(page);
   const add = addButton(bar);
-  await typeDraft(bar, description, "00:00", "00:01");
+  await typeManualDraft(bar, description, "00:00", "00:01");
 
   const releaseRefreshes = await holdRefreshes(page, isTrackerPage);
   const restoreResponses = await loseActionResponses(page, isTrackerPage);
@@ -271,7 +262,7 @@ test("el alta que no llegó se reintenta con el pedido que falló, aunque la bar
   await chooseMode(page, "manual");
   const bar = trackerBar(page);
   const add = addButton(bar);
-  await typeDraft(bar, "pedido original", "00:00", "00:01");
+  await typeManualDraft(bar, "pedido original", "00:00", "00:01");
 
   // El pedido nunca sale: el servidor no lo recibe. «Agregar» vuelve a estar
   // activo y lo tecleado sigue en la barra (TT-89).
@@ -368,7 +359,7 @@ test("con el aviso del alta a la vista, un timer de otra pestaña, Detener y el 
   await page.goto("/");
   await chooseMode(page, "manual");
   const bar = trackerBar(page);
-  await typeDraft(bar, description, "00:00", "00:01");
+  await typeManualDraft(bar, description, "00:00", "00:01");
 
   const restoreResponses = await loseActionResponses(page, isTrackerPage);
   const notice = await addFailing(page);
@@ -410,8 +401,10 @@ test("con el aviso del alta a la vista, un timer de otra pestaña, Detener y el 
   await expect(retry).toBeEnabled();
 
   // El reintento lleva el id pendiente y responde la entrada del primer
-  // intento.
+  // intento, que es la mandada: la barra se limpia. Las ausencias se miran
+  // después de eso, cuando `onSuccess` ya corrió.
   await withServerAction(page, () => retry.click());
+  await expectEmptyBar(bar);
   await expect(notice).toHaveCount(0);
   await expect(replayedNotice(page, REPLAYED_IN_BAR)).toHaveCount(0);
 
@@ -428,7 +421,7 @@ test("si la barra responde la entrada del primer intento y lo mandado era otra, 
   await chooseMode(page, "manual");
   const bar = trackerBar(page);
   const add = addButton(bar);
-  await typeDraft(bar, "primera", "00:00", "00:01");
+  await typeManualDraft(bar, "primera", "00:00", "00:01");
 
   const releaseRefreshes = await holdRefreshes(page, isTrackerPage);
   const restoreResponses = await loseActionResponses(page, isTrackerPage);
@@ -443,7 +436,7 @@ test("si la barra responde la entrada del primer intento y lo mandado era otra, 
   // r2-1: «Agregar» con otra entrada reusa el id pendiente y el servidor
   // responde la del primer intento. La barra no se limpia, el foco no se
   // mueve y el aviso informativo lo dice.
-  await typeDraft(bar, "segunda", "00:01", "00:02");
+  await typeManualDraft(bar, "segunda", "00:01", "00:02");
   await restoreResponses();
   await withServerAction(page, () => add.click());
   const replayed = replayedNotice(page, REPLAYED_IN_BAR);
@@ -473,7 +466,7 @@ test("si otra entrada con el id pendiente no llegó, reintentarla recibe la del 
   await chooseMode(page, "manual");
   const bar = trackerBar(page);
   const add = addButton(bar);
-  await typeDraft(bar, "aplicada", "00:00", "00:01");
+  await typeManualDraft(bar, "aplicada", "00:00", "00:01");
 
   const releaseRefreshes = await holdRefreshes(page, isTrackerPage);
   const restoreResponses = await loseActionResponses(page, isTrackerPage);
@@ -484,7 +477,7 @@ test("si otra entrada con el id pendiente no llegó, reintentarla recibe la del 
   // pendiente, y ese pedido nunca llega: falla otra vez y el id sigue.
   await restoreResponses();
   const restoreRequests = await dropActionRequests(page, isTrackerPage);
-  await typeDraft(bar, "no llegó", "00:01", "00:02");
+  await typeManualDraft(bar, "no llegó", "00:01", "00:02");
   const notice = await addFailing(page);
   await expectRowsElsewhere(browser, email, "no llegó", 0);
 
@@ -549,6 +542,125 @@ test("si el diálogo responde la entrada del primer intento y lo mandado era otr
   await expect(entryBlocks(region, "B")).toHaveCount(1);
 });
 
+test("mientras el alta del diálogo viaja, Esc y Cancelar no lo cierran, y la respuesta del primer intento deja el aviso a la vista", async ({
+  page,
+  email,
+  browser,
+}) => {
+  const today = todayIn(PERSON_TIMEZONE);
+  const lastWeek = await openLastWeek(page, today);
+  const region = calendarRegion(page);
+
+  const releaseRefreshes = await holdRefreshes(page, isCalendarPage);
+  const stopLosing = await loseActionResponses(page, isCalendarPage);
+  const dialog = await openAddDialog(page, "A");
+  await addFailingInDialog(dialog);
+  await expectBlocksElsewhere(browser, email, lastWeek, "A", 1);
+
+  // D2c-1: «Agregar» con «B» reusa el id pendiente, y la respuesta queda
+  // retenida.
+  await dialogDescription(dialog).fill("B");
+  await stopLosing();
+  const releaseResponse = await holdActionResponses(page, isCalendarPage);
+  const add = dialogButton(dialog, "Agregar");
+  await add.click();
+  await expect(add).toHaveAttribute("aria-disabled", "true");
+
+  // F1: mientras viaja, el diálogo no se cierra. «Cancelar» está inactivo sin
+  // perder el foco, y el clic de la persona no hace nada; `force` lo da sin
+  // esperar a que se vea activo, cosa que mientras viaja no pasa.
+  // Un diálogo que se cierra sigue visible mientras anima la salida, así que
+  // se mira su estado: Base UI lo pasa de `data-open` a `data-closed`.
+  const cancel = dialogButton(dialog, "Cancelar");
+  await expect(cancel).toHaveAttribute("aria-disabled", "true");
+  await page.keyboard.press("Escape");
+  await settle(page);
+  await expect(dialog).toHaveAttribute("data-open");
+  await cancel.click({ force: true });
+  await settle(page);
+  await expect(dialog).toHaveAttribute("data-open");
+
+  // La respuesta es la entrada «A» del primer intento: el informativo tiene
+  // el diálogo donde verse, con «B» a la vista.
+  await withServerAction(page, async () => releaseResponse());
+  await expect(replayedNotice(dialog, REPLAYED_IN_DIALOG)).toBeVisible();
+  await expect(dialogDescription(dialog)).toHaveValue("B");
+
+  // El id se renovó: «Agregar» crea «B» y cierra el diálogo.
+  await withServerAction(page, () => add.click());
+  await expect(dialog).toBeHidden();
+  releaseRefreshes();
+  await expect(entryBlocks(region, "A")).toHaveCount(1);
+  await expect(entryBlocks(region, "B")).toHaveCount(1);
+});
+
+/**
+ * Agrega «A» desde el diálogo con la respuesta perdida, comprueba desde otra
+ * pestaña que se aplicó y cancela con el aviso de falla a la vista. El foco
+ * vuelve a «Agregar entrada». Devuelve lo que suelta las revalidaciones.
+ */
+async function cancelLostAdd(
+  page: Page,
+  browser: Browser,
+  email: string,
+): Promise<() => void> {
+  const today = todayIn(PERSON_TIMEZONE);
+  const lastWeek = await openLastWeek(page, today);
+  const releaseRefreshes = await holdRefreshes(page, isCalendarPage);
+  const stopLosing = await loseActionResponses(page, isCalendarPage);
+  const dialog = await openAddDialog(page, "A");
+  await addFailingInDialog(dialog);
+  await expectBlocksElsewhere(browser, email, lastWeek, "A", 1);
+  await stopLosing();
+
+  await dialogButton(dialog, "Cancelar").click();
+  await expect(dialog).toBeHidden();
+  await expect(addEntryButton(page)).toBeFocused();
+  return releaseRefreshes;
+}
+
+test("cancelar el alta con el aviso de falla y volver a agregar lo mismo deja un solo bloque", async ({
+  page,
+  email,
+  browser,
+}) => {
+  const releaseRefreshes = await cancelLostAdd(page, browser, email);
+
+  // P2: el id pendiente sobrevive al cierre del diálogo. La misma alta otra
+  // vez responde la entrada del primer intento y cierra el diálogo.
+  const dialog = await openAddDialog(page, "A");
+  await withServerAction(page, () => dialogButton(dialog, "Agregar").click());
+  await expect(dialog).toBeHidden();
+  releaseRefreshes();
+  const blocks = entryBlocks(calendarRegion(page), "A");
+  await expect(blocks).toHaveCount(1);
+  await expect(blocks).toBeFocused();
+});
+
+test("cancelar el alta con el aviso de falla y agregar otra cosa da el aviso informativo, y el siguiente Agregar la crea", async ({
+  page,
+  email,
+  browser,
+}) => {
+  const releaseRefreshes = await cancelLostAdd(page, browser, email);
+
+  // El id pendiente sobrevive al cierre: el alta nueva lo reusa y el
+  // servidor responde «A». Lo tecleado queda con el informativo.
+  const dialog = await openAddDialog(page, "B");
+  const add = dialogButton(dialog, "Agregar");
+  await withServerAction(page, () => add.click());
+  await expect(replayedNotice(dialog, REPLAYED_IN_DIALOG)).toBeVisible();
+  await expect(dialogDescription(dialog)).toHaveValue("B");
+
+  // El id se renovó: «Agregar» crea «B».
+  await withServerAction(page, () => add.click());
+  await expect(dialog).toBeHidden();
+  releaseRefreshes();
+  const region = calendarRegion(page);
+  await expect(entryBlocks(region, "A")).toHaveCount(1);
+  await expect(entryBlocks(region, "B")).toHaveCount(1);
+});
+
 test("reintentar el mismo pedido cuando la entrada se editó en otra pestaña limpia la barra sin aviso", async ({
   page,
   email,
@@ -559,7 +671,7 @@ test("reintentar el mismo pedido cuando la entrada se editó en otra pestaña li
   await page.goto("/");
   await chooseMode(page, "manual");
   const bar = trackerBar(page);
-  await typeDraft(bar, description, "00:00", "00:01");
+  await typeManualDraft(bar, description, "00:00", "00:01");
 
   const releaseRefreshes = await holdRefreshes(page, isTrackerPage);
   const restoreResponses = await loseActionResponses(page, isTrackerPage);
