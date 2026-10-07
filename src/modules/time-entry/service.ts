@@ -1818,14 +1818,11 @@ function buildWeeks(
 /**
  * El `desde` de «Cargar más»: la semana de la entrada más reciente anterior a
  * la ventana (TT-52, TT-86), sin recorrer las semanas vacías del medio. `null`
- * si no hay ninguna; si es anterior a la semana del piso de carga, porque ese
- * `desde` se recortaría a la misma ventana; o si su semana no queda antes de
- * `windowFrom`, la red de seguridad contra un inicio de día mal ubicado: el
- * enlace no extendería nada.
+ * si no hay ninguna, o si es anterior a la semana del piso de carga, porque ese
+ * `desde` se recortaría a la misma ventana.
  */
 function loadMoreFromOf(
   older: TimeEntryRow | undefined,
-  windowFrom: string,
   floorWeek: string,
   workspace: TrackerWorkspace,
 ): string | null {
@@ -1835,8 +1832,7 @@ function loadMoreFromOf(
   if (dayKey(older.startedAt, workspace.timezone) < floorWeek) {
     return null;
   }
-  const week = weekOf(older.startedAt, workspace);
-  return week < windowFrom ? week : null;
+  return weekOf(older.startedAt, workspace);
 }
 
 /**
@@ -1930,7 +1926,7 @@ export async function getTrackerState(
     ),
     windowFrom: floors.windowFrom,
     reachFrom: floors.reachFrom,
-    loadMoreFrom: loadMoreFromOf(older, floors.windowFrom, floorWeek, workspace),
+    loadMoreFrom: loadMoreFromOf(older, floorWeek, workspace),
     hasAnyEntry: running !== undefined || latestClosed !== undefined,
   };
 }
