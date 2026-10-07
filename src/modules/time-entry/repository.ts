@@ -9,7 +9,6 @@ import {
   isNotNull,
   isNull,
   lt,
-  notInArray,
   or,
   sql,
   type SQL,
@@ -223,28 +222,6 @@ async function insertTags(
     .onConflictDoNothing();
 }
 
-/**
- * Deja en la entrada exactamente `tagIds`: borra las filas que no están en el
- * pedido e inserta las que faltan. Las dos sentencias filtran por el destino
- * leído, nunca por la entrada del cliente.
- */
-async function replaceTags(
-  tx: Transaction,
-  target: EntryTarget,
-  tagIds: readonly string[],
-): Promise<void> {
-  await tx
-    .delete(timeEntryTag)
-    .where(
-      and(
-        eq(timeEntryTag.workspaceId, target.workspaceId),
-        eq(timeEntryTag.timeEntryId, target.id),
-        notInArray(timeEntryTag.tagId, [...tagIds]),
-      ),
-    );
-  await insertTags(tx, target, tagIds);
-}
-
 /** El conjunto entero de etiquetas que una escritura en masa deja en su destino. */
 type TagsWrite = {
   readonly target: EntryTarget;
@@ -252,11 +229,12 @@ type TagsWrite = {
 };
 
 /**
- * `replaceTags` para varias entradas en dos sentencias, sea cual sea la
- * cantidad: los pares viajan en dos arreglos que se recorren con `unnest`, así
- * el peor caso (200 × 50) no multiplica los parámetros. Solo toca las filas
- * de la unión de los destinos de `writes`; un destino con el conjunto vacío
- * queda sin etiquetas. Sin escrituras, no hay sentencias.
+ * Deja en cada destino exactamente su conjunto: borra las filas de la unión que
+ * sobran e inserta las que faltan, en dos sentencias sea cual sea la cantidad.
+ * Los pares viajan en dos arreglos que se recorren con `unnest`, así el peor
+ * caso (200 × 50) no multiplica los parámetros. Solo toca las filas de la
+ * unión de los destinos de `writes`; un destino con el conjunto vacío queda
+ * sin etiquetas. Sin escrituras, no hay sentencias.
  */
 async function replaceManyTags(
   tx: Transaction,
@@ -292,6 +270,36 @@ async function replaceManyTags(
     .insert(timeEntryTag)
     .select(sql`select ${workspaceId}::uuid, pair.entry_id, pair.tag_id from ${pairs}`)
     .onConflictDoNothing();
+}
+
+/**
+ * Deja en la entrada exactamente `tagIds`: la regla de `replaceManyTags` con un
+ * solo destino, el leído, nunca la entrada del cliente.
+ */
+function replaceTags(
+  tx: Transaction,
+  target: EntryTarget,
+  tagIds: readonly string[],
+): Promise<void> {
+  return replaceManyTags(tx, [{ target, tagIds }]);
+}
+
+/**
+ * El `update` de las columnas de una escritura de una fila cerrada, si trae
+ * alguna: sin columnas no hay sentencia (Drizzle rechaza `set({})`), y que la
+ * fila esté cerrada lo decidió el service bajo el bloqueo. `false` si el
+ * `update` no tocó la fila.
+ */
+async function writeClosedColumns(
+  tx: Transaction,
+  target: EntryTarget,
+  fields: Omit<ClosedEntryFields, "tagIds">,
+): Promise<boolean> {
+  const columns = columnsOf(fields);
+  return (
+    !hasColumns(columns) ||
+    (await timeEntryRepository.updateClosedFields(tx, target, columns)) !== undefined
+  );
 }
 
 /** `rereadWithRefs` sobre el resultado de una escritura que puede no tocar ninguna fila. */
@@ -599,11 +607,7 @@ export const timeEntryRepository = {
     fields: ClosedEntryFields,
   ): Promise<EntryWithRefs | undefined> {
     const { tagIds, ...columnFields } = fields;
-    const columns = columnsOf(columnFields);
-    if (
-      hasColumns(columns) &&
-      (await timeEntryRepository.updateClosedFields(tx, target, columns)) === undefined
-    ) {
+    if (!(await writeClosedColumns(tx, target, columnFields))) {
       return undefined;
     }
     if (tagIds !== undefined) {
@@ -693,13 +697,7 @@ export const timeEntryRepository = {
     const tagged: TagsWrite[] = [];
     for (const { target, fields } of writes) {
       const { tagIds, ...columnFields } = fields;
-      const columns = columnsOf(columnFields);
-      // Sin columnas no hay `update`: que la fila esté cerrada lo decidió el
-      // service bajo el bloqueo.
-      if (
-        hasColumns(columns) &&
-        (await timeEntryRepository.updateClosedFields(tx, target, columns)) === undefined
-      ) {
+      if (!(await writeClosedColumns(tx, target, columnFields))) {
         return undefined;
       }
       if (tagIds !== undefined) {

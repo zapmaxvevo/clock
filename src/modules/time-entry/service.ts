@@ -1,6 +1,6 @@
 import { billableFor, NEW_ENTRY_BILLABLE } from "@/lib/billable";
 import { samePair, type ProjectPair } from "@/lib/project-pair";
-import { sameTagIds } from "@/lib/tag-ids";
+import { normalizedIds, sameTagIds } from "@/lib/tag-ids";
 import { sortedByName } from "@/lib/text";
 import { DomainError, RejectedError, type Rejection } from "@/server/action";
 import { db, type Transaction } from "@/server/db";
@@ -410,19 +410,17 @@ async function translatingReferenceConstraints<Result>(
 const NO_PROJECT: ProjectPair = { projectId: null, taskId: null };
 
 /**
- * La regla del par (§4.3): si el pedido asigna algo nuevo, lo decide
+ * La regla del par en un alta (§4.3): todo par con proyecto lo decide
  * `project` (ADR 0010) con la transacción de la operación, así un rechazo
  * deshace todo lo que la operación hizo antes. Devuelve el proyecto validado,
- * o `null` si no hubo nada que validar: justo los casos en que `billableFor`
- * conserva el facturable.
+ * o `null` con «Sin proyecto», en que `billableFor` conserva el facturable.
  */
-async function assertAssignable(
+async function assertNewEntryPair(
   tx: Transaction,
   actor: Actor,
-  current: ProjectPair,
   requested: ProjectPair,
 ): Promise<TrackableProject | null> {
-  const target = pairToCheck(current, requested);
+  const target = pairToCheck(NO_PROJECT, requested);
   return target === null ? null : assertTrackable(tx, actor, target);
 }
 
@@ -534,7 +532,7 @@ export async function startTimer(
     const pair = pairOf(input);
     // Las reglas antes de escribir: un id ajeno o un timer abierto bloqueado
     // por otra conexión no cambian la respuesta.
-    const project = await assertAssignable(tx, actor, NO_PROJECT, pair);
+    const project = await assertNewEntryPair(tx, actor, pair);
     await assertTaggable(tx, actor, input.tagIds);
     const opened = await closeAndOpen(tx, actor, {
       id: input.id,
@@ -579,7 +577,7 @@ export async function continueEntry(
     const fields = continuedFields(source);
     // Las reglas antes de escribir: un id ajeno o un timer abierto bloqueado
     // por otra conexión no cambian la respuesta (§4.4, D-3).
-    await assertAssignable(tx, actor, NO_PROJECT, fields);
+    await assertNewEntryPair(tx, actor, fields);
     await assertTaggable(tx, actor, fields.tagIds);
     const opened = await closeAndOpen(tx, actor, { id: input.id, fields });
     await recordAudit(tx, {
@@ -645,7 +643,7 @@ export async function duplicateEntry(
           // La abierta solo llega en un pedido armado a mano: no es una fila.
           const source = requireClosed(await readSourceEntry(tx, actor, input.sourceId));
           const fields = continuedFields(source);
-          await assertAssignable(tx, actor, NO_PROJECT, fields);
+          await assertNewEntryPair(tx, actor, fields);
           await assertTaggable(tx, actor, fields.tagIds);
           const created = await timeEntryRepository.insertClosed(tx, {
             id: input.id,
@@ -747,8 +745,7 @@ export async function updateEntryProject(
         return { entry: toView(row, workspace) };
       }
       const project = await assertAssignments(tx, actor, [plan]);
-      // D-2: otro proyecto impone su facturable por defecto.
-      const billable = billableFor(row, project);
+      const { billable = row.billable } = assignmentFields(row, plan, project);
       const next = await timeEntryRepository.updateProject(tx, targetOf(row), {
         ...pair,
         billable,
@@ -890,7 +887,7 @@ export async function createManualEntry(
         throw new TimeEntryError("validation", timeEntryMessages.beforeWorkspace);
       }
       const pair = pairOf(input);
-      const project = await assertAssignable(tx, actor, NO_PROJECT, pair);
+      const project = await assertNewEntryPair(tx, actor, pair);
       await assertTaggable(tx, actor, input.tagIds);
 
       const created = await timeEntryRepository.insertClosed(tx, {
@@ -1267,11 +1264,7 @@ async function assertAssignments(
 ): Promise<TrackableProject | null> {
   const pairCheck = plans.find((plan) => plan.pairCheck !== null)?.pairCheck ?? null;
   const project = pairCheck === null ? null : await assertTrackable(tx, actor, pairCheck);
-  await assertTaggable(
-    tx,
-    actor,
-    plans.flatMap((plan) => plan.tagsCheck),
-  );
+  await assertTaggable(tx, actor, normalizedIds(plans.flatMap((plan) => plan.tagsCheck)));
   return project;
 }
 
@@ -1486,6 +1479,11 @@ function editedFields(
   };
 }
 
+/** La escritura cambia algo: sin campos, la fila no se escribe ni deja constancia. */
+function hasFields(fields: ClosedEntryFields): boolean {
+  return Object.keys(fields).length > 0;
+}
+
 /** Los valores de la fila en los campos que cambiaron, para la constancia. */
 function valuesOf(row: EntryWithRefs, fields: ClosedEntryFields) {
   return {
@@ -1563,7 +1561,7 @@ export async function bulkEditEntries(
         row,
         fields: { ...fields, ...assignmentFields(row, assignment, project) },
       }));
-      const changed = edits.filter(({ fields }) => Object.keys(fields).length > 0);
+      const changed = edits.filter(({ fields }) => hasFields(fields));
       const written = await timeEntryRepository.updateClosedEntries(
         tx,
         changed.map(({ row, fields }) => ({ target: targetOf(row), fields })),
@@ -1571,22 +1569,29 @@ export async function bulkEditEntries(
       if (written === undefined) {
         throw new Error("Una entrada no se escribió con su bloqueo tomado.");
       }
+      const writtenById = new Map(written.map((entry) => [entry.id, entry]));
+      const writtenOf = (row: EntryWithRefs) => {
+        const entry = writtenById.get(row.id);
+        if (entry === undefined) {
+          throw new Error(`La entrada ${row.id} no volvió de su escritura.`);
+        }
+        return entry;
+      };
       await recordAudits(
         tx,
-        changed.map(({ row, fields }, index) => ({
+        changed.map(({ row, fields }) => ({
           workspaceId: actor.workspaceId,
           actorId: actor.userId,
           action: "timeEntry.bulkEdit",
           entity: AUDIT_ENTITY,
           entityId: row.id,
           previousValue: valuesOf(row, fields),
-          nextValue: valuesOf(written[index], fields),
+          nextValue: valuesOf(writtenOf(row), fields),
         })),
       );
-      const writtenById = new Map(written.map((entry) => [entry.id, entry]));
       return {
-        entries: edits.map(({ row }) =>
-          toView(writtenById.get(row.id) ?? row, workspace),
+        entries: edits.map(({ row, fields }) =>
+          toView(hasFields(fields) ? writtenOf(row) : row, workspace),
         ),
       };
     }),
