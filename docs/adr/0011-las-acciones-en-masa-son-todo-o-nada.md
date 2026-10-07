@@ -26,6 +26,10 @@ mismas que ya tiene la edición de una fila:
 - el par que queda dura menos de un minuto (TT-73);
 - o cae antes de la creación del workspace (ADR 0005).
 
+_Corregido el 2026-10-07, aprobado por el usuario_: la última causa pasa a «cae
+antes del piso (2000-01-01)»; el piso dejó de ser la creación del workspace
+(ADR 0005).
+
 Varias dependen del día de cada fila: cambiar solo el inicio a las 02:30 en
 Madrid falla en la fila del 29 de marzo y anda en todas las otras. Hay que
 decidir qué pasa con el resto de la selección cuando una fila falla, y cómo se
