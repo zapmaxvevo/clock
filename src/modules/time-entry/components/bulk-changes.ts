@@ -40,14 +40,19 @@ export const emptyBulkChanges: BulkChangesDraft = {
 };
 
 /**
- * «Agregar» sin etiquetas no cambia nada; «Reemplazar» cambia también sin
- * ninguna: deja las entradas sin etiquetas (D12-3).
+ * Si el borrador cambia las etiquetas. «Agregar» sin etiquetas no cambia nada;
+ * «Reemplazar» cambia también sin ninguna: deja las entradas sin etiquetas
+ * (D12-3).
  */
-function tagsChange({ tagMode, tags }: BulkChangesDraft): Pick<BulkEditChanges, "tags"> {
-  if (tagMode === "add" && tags.length === 0) {
+export function changesTags({ tagMode, tags }: BulkChangesDraft): boolean {
+  return tagMode === "replace" || tags.length > 0;
+}
+
+function tagsChange(draft: BulkChangesDraft): Pick<BulkEditChanges, "tags"> {
+  if (!changesTags(draft)) {
     return {};
   }
-  return { tags: { mode: tagMode, ids: tagIdsOf(tags) } };
+  return { tags: { mode: draft.tagMode, ids: tagIdsOf(draft.tags) } };
 }
 
 /**

@@ -5,6 +5,7 @@ import type { ProjectSelection, TagRef } from "@/modules/project/schema";
 
 import {
   BULK_DELETE_WORD,
+  changesTags,
   confirmsDelete,
   emptyBulkChanges,
   toChanges,
@@ -98,6 +99,20 @@ describe("toChanges", () => {
       tags: { mode: "add", ids: ["tag-client"] },
       billable: false,
     });
+  });
+});
+
+describe("changesTags", () => {
+  it("«Agregar» cambia solo con alguna etiqueta", () => {
+    expect(changesTags(emptyBulkChanges)).toBe(false);
+    expect(changesTags({ ...emptyBulkChanges, tags: [urgent] })).toBe(true);
+  });
+
+  it("«Reemplazar» cambia también sin ninguna (D12-3)", () => {
+    expect(changesTags({ ...emptyBulkChanges, tagMode: "replace" })).toBe(true);
+    expect(changesTags({ ...emptyBulkChanges, tagMode: "replace", tags: [urgent] })).toBe(
+      true,
+    );
   });
 });
 

@@ -30,6 +30,7 @@ import { DESCRIPTION_MAX, type BulkEditChanges } from "@/modules/time-entry/sche
 import { clockLabel } from "@/server/time";
 
 import {
+  changesTags,
   emptyBulkChanges,
   toChanges,
   withBulkClock,
@@ -200,7 +201,6 @@ function BulkEditForm({
   const typedClock = clockTexts.start.trim() !== "" || clockTexts.end.trim() !== "";
   const idle = pending || (toChanges(draft) === null && !typedClock);
   const tagsCleared = draft.tagMode === "replace" && draft.tags.length === 0;
-  const tagsChanged = draft.tagMode === "replace" || draft.tags.length > 0;
   // «Sin proyecto» no tiene facturable por defecto: cada entrada conserva el suyo (D-2).
   const billableByProject =
     draft.selection !== null &&
@@ -267,7 +267,7 @@ function BulkEditForm({
               triggerRef={tagsRef}
               onChange={(tags) => change({ ...draftRef.current, tags })}
             />
-            {tagsChanged && (
+            {changesTags(draft) && (
               <Button type="button" variant="ghost" size="sm" onClick={keepTags}>
                 {trackerLabels.keepTags}
               </Button>
