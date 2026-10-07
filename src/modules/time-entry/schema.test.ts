@@ -926,6 +926,110 @@ describe("bulkEditChanges (criterio 8)", () => {
   });
 });
 
+describe("bulkEditChanges: el proyecto, el facturable y las etiquetas (criterio 1 del 12)", () => {
+  const projectId = "6f1c1a52-3c55-4a43-9d0e-0d6b7d0f4d11";
+  const taskId = "9a7c2b1e-4d3f-4e8a-8b6c-5d4e3f2a1b0c";
+  const design = "9A7C2B1E-4D3F-4E8A-8B6C-5D4E3F2A1B0C";
+  const review = "1e2d3c4b-5a69-4788-9a0b-c1d2e3f4a5b6";
+
+  function messageOf(changes: unknown): string | undefined {
+    const result = bulkEditChanges.safeParse(changes);
+    expect(result.success).toBe(false);
+    return result.error?.issues.at(0)?.message;
+  }
+
+  it("acepta cada campo nuevo solo", () => {
+    for (const pair of [
+      { projectId, taskId },
+      { projectId, taskId: null },
+      { projectId: null, taskId: null },
+    ]) {
+      expect(bulkEditChanges.parse({ project: pair })).toEqual({ project: pair });
+    }
+    expect(bulkEditChanges.parse({ billable: false })).toEqual({ billable: false });
+    expect(bulkEditChanges.parse({ tags: { mode: "add", ids: [review] } })).toEqual({
+      tags: { mode: "add", ids: [review] },
+    });
+  });
+
+  it("acepta los campos nuevos combinados entre sí y con los del 6", () => {
+    const changes = {
+      description: "x",
+      start: "09:00",
+      project: { projectId, taskId: null },
+      billable: true,
+      tags: { mode: "replace", ids: [review] },
+    };
+    expect(bulkEditChanges.parse(changes)).toEqual(changes);
+  });
+
+  it("«replace» sin ids es válido: deja las entradas sin etiquetas (D12-3)", () => {
+    expect(bulkEditChanges.parse({ tags: { mode: "replace", ids: [] } })).toEqual({
+      tags: { mode: "replace", ids: [] },
+    });
+  });
+
+  it("«add» sin ids se rechaza con unexpected: no es un cambio", () => {
+    expect(messageOf({ tags: { mode: "add", ids: [] } })).toBe(
+      timeEntryMessages.unexpected,
+    );
+  });
+
+  it("normaliza los ids de los dos modos a minúsculas y sin repetir", () => {
+    for (const mode of ["add", "replace"] as const) {
+      expect(
+        bulkEditChanges.parse({
+          tags: { mode, ids: [design, review, design.toLowerCase()] },
+        }),
+      ).toEqual({ tags: { mode, ids: [design.toLowerCase(), review] } });
+    }
+  });
+
+  it(`acepta ${TAGS_MAX} ids y rechaza ${TAGS_MAX + 1} con tooManyTags, en los dos modos`, () => {
+    for (const mode of ["add", "replace"] as const) {
+      expect(
+        bulkEditChanges.safeParse({ tags: { mode, ids: idsOf(TAGS_MAX) } }).success,
+      ).toBe(true);
+      expect(messageOf({ tags: { mode, ids: idsOf(TAGS_MAX + 1) } })).toBe(
+        timeEntryMessages.tooManyTags,
+      );
+    }
+  });
+
+  it("rechaza la tarea sin proyecto con taskNeedsProject (TT-70)", () => {
+    const result = bulkEditChanges.safeParse({ project: { projectId: null, taskId } });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toEqual([
+      expect.objectContaining({
+        message: timeEntryMessages.taskNeedsProject,
+        path: ["project", "taskId"],
+      }),
+    ]);
+  });
+
+  it("rechaza con unexpected un modo desconocido y una clave de más en tags o en project", () => {
+    for (const changes of [
+      { tags: { mode: "remove", ids: [review] } },
+      { tags: { ids: [review] } },
+      { tags: { mode: "add", ids: [review], extra: true } },
+      { tags: { mode: "replace", ids: [review], extra: true } },
+      { project: { projectId, taskId: null, extra: true } },
+      { tags: [review] },
+    ]) {
+      expect(messageOf(changes)).toBe(timeEntryMessages.unexpected);
+    }
+  });
+
+  it("rechaza un id de etiqueta o del par que no es un uuid", () => {
+    expect(bulkEditChanges.safeParse({ tags: { mode: "add", ids: ["x"] } }).success).toBe(
+      false,
+    );
+    expect(
+      bulkEditChanges.safeParse({ project: { projectId: "web", taskId: null } }).success,
+    ).toBe(false);
+  });
+});
+
 describe("updateEntryChanges (ADR 0013)", () => {
   const projectId = "1c6e8d5e-3c2f-4b7a-9f1a-2c3d4e5f6a7b";
   const taskId = "2d7e8d5e-3c2f-4b7a-9f1a-2c3d4e5f6a7b";

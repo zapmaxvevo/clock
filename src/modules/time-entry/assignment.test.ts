@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { pairToCheck, tagsToCheck } from "./assignment";
+import { pairToCheck, tagsAfter, tagsToCheck } from "./assignment";
 
 const web = "0b5e8d5e-3c2f-4b7a-9f1a-2c3d4e5f6a7b";
 const app = "6f1c1a52-3c55-4a43-9d0e-0d6b7d0f4d11";
@@ -96,5 +96,49 @@ describe("tagsToCheck (criterio 10 del 11b, §4.5)", () => {
 
   it("un alta valida todas", () => {
     expect(tagsToCheck([], [archived, active])).toEqual([archived, active]);
+  });
+});
+
+describe("tagsAfter (criterio 2 del 12, §4.2)", () => {
+  const archived = "2b3c4d5e-6f70-4182-93a4-b5c6d7e8f901";
+  const active = "3c4d5e6f-7081-4293-a4b5-c6d7e8f90a12";
+  const other = "4d5e6f70-8192-43a4-b5c6-d7e8f90a1b23";
+
+  it("«add» suma las pedidas a las que tiene, sin repetir", () => {
+    expect(tagsAfter([active], { mode: "add", ids: [active, other] })).toEqual([
+      active,
+      other,
+    ]);
+    expect(tagsAfter([], { mode: "add", ids: [other] })).toEqual([other]);
+  });
+
+  it("«add» no distingue mayúsculas: una pedida que la fila ya tiene no se repite", () => {
+    expect(tagsAfter([active.toUpperCase()], { mode: "add", ids: [active] })).toEqual([
+      active,
+    ]);
+    expect(tagsAfter([active], { mode: "add", ids: [active.toUpperCase()] })).toEqual([
+      active,
+    ]);
+  });
+
+  it("«add» conserva lo que la fila tiene aunque no esté en el catálogo (PR-47)", () => {
+    expect(tagsAfter([archived], { mode: "add", ids: [active] })).toEqual([
+      archived,
+      active,
+    ]);
+  });
+
+  it("«replace» deja exactamente las pedidas", () => {
+    expect(tagsAfter([archived, active], { mode: "replace", ids: [other] })).toEqual([
+      other,
+    ]);
+    expect(tagsAfter([archived], { mode: "replace", ids: [archived, active] })).toEqual([
+      archived,
+      active,
+    ]);
+  });
+
+  it("«replace» sin ninguna deja la fila sin etiquetas (D12-3)", () => {
+    expect(tagsAfter([archived, active], { mode: "replace", ids: [] })).toEqual([]);
   });
 });
