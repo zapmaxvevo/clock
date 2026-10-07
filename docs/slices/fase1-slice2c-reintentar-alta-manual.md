@@ -12,12 +12,16 @@ manual) y `/calendario` (el alta del diálogo, que es la misma action).
   manual) y CAL-86.
 - **Lugar en el plan:** [mapa de la fase 1](fase1-mapa.md), la deuda de
   `fase1-mapa.md:373-376`. Va después del 12 y no depende del 13.
+- **Revisión del contrato:** ronda 1 de `architecture-reviewer` aplicada, con
+  las resoluciones de [`correcciones-fase1-slice2c.md`](correcciones-fase1-slice2c.md)
+  (M1 … M3, m1 … m6, y la decisión del team-lead sobre m4).
 - **Decisión de arquitectura:**
   [ADR 0007, el cliente elige el id de la entrada que crea](../adr/0007-el-cliente-elige-el-id-de-las-altas.md),
-  **sin cambios**: vale «para las altas de cualquier módulo» (`:57-58`) y ya
-  prevé este caso sin gancho: «Sin gancho —duplicar, las altas del slice 9, el
-  alta manual si algún día adopta esta regla— no hay segunda vuelta»
-  (`:163-165`). No hace falta ADR nuevo.
+  **sin cambios en la decisión**: vale «para las altas de cualquier módulo»
+  (`:57-58`) y ya prevé este caso sin gancho: «Sin gancho —duplicar, las altas
+  del slice 9, el alta manual si algún día adopta esta regla— no hay segunda
+  vuelta» (`:163-165`). No hace falta ADR nuevo. El usuario sumó la nota de
+  aplicación en «Consecuencias» (`0572d79`, D2c-5).
 - **Contratos de los que hereda:**
   [slice 2b](fase1-slice2b-reintento-de-iniciar.md) (`createOnce`,
   `createEntryOnce`, el id pendiente, el patrón del e2e de respuesta perdida)
@@ -26,19 +30,24 @@ manual) y `/calendario` (el alta del diálogo, que es la misma action).
   que es el alta cerrada con id que este slice copia); slices 10, 11a y 11b (el
   par, el facturable y las etiquetas del alta, validados antes de escribir).
 
-## Decisiones pendientes del usuario
+## Decisiones
 
 Ninguna la resuelve la paridad: TT-109 decía que no había «Reintentar», y al
-retirarlo hay que decir cómo es el que vuelve. **D2c-1 a D2c-3 se toman antes
-del primer commit; D2c-4 antes del merge; D2c-5 no bloquea.**
+retirarlo hay que decir cómo es el que vuelve. **D2c-1 a D2c-4 las tomó el
+team-lead el 2026-10-07 como las proponía este contrato; D2c-5 la hizo el
+usuario** (`correcciones-fase1-slice2c.md`, «Decisiones»).
 
-| ID    | Decisión                                                                                                                                  | Opciones                                                                                                                                                                | Propuesta y por qué                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ----- | ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D2c-1 | **«Agregar» otra vez con el aviso de falla por red a la vista**, si la persona cambió el borrador entre los dos clics.                    | (A) Reusa el id pendiente siempre, con el borrador de ahora. (B) Reusa el id pendiente solo si el pedido es idéntico al que falló; si cambió, id nuevo.                 | **(A).** Es la letra del ADR 0007 (`:167-175`: «repetir la misma acción reusa el id pendiente; el id se renueva cuando el alta tiene éxito o cuando el aviso baja») y lo que ya hacen «Iniciar» (`tracker-bar.tsx:432-437`) y las tres altas con formulario del slice 9 (`new-project-dialog.tsx:99`, `new-client-dialog.tsx:59`, `new-tag-dialog.tsx:57`). Nunca duplica. Su costo está escrito en el ADR (`:248-251`): si el primer intento se aplicó, el servidor responde esa fila y lo cambiado no se aplica; la barra se limpia y la lista muestra la entrada del primer intento. (B) cambia ese costo por otro visible —dos entradas— y es una enmienda al ADR 0007, que el usuario tendría que aceptar. |
-| D2c-2 | **«Reintentar» del alta en el diálogo del calendario**: qué manda.                                                                        | (a) El borrador actual con el id pendiente, como «Reintentar» de «Guardar» en el mismo diálogo. (b) El último pedido entero (`retry` de `useAction`), como en la barra. | **(a).** El diálogo ya fijó que su «Reintentar» manda el borrador actual (`calendario.md:1448-1449`, `entry-dialog.tsx:325-329`), y con (a) «Reintentar» y «Agregar» del diálogo son el mismo pedido. Si el primer intento se aplicó, los dos responden la fila del primero (D2c-1); si no llegó, (a) crea lo que la persona tiene a la vista y (b) lo que tenía antes de editarlo. La barra se queda con (b), que es lo que hace cada «Reintentar» de la barra (`tracker-bar.tsx:479-488`).                                                                                                                                                                                                                    |
-| D2c-3 | **El aviso del alta cuando la revalidación trae la entrada del primer intento.** «Iniciar» baja su aviso cuando cambia el timer (2b, §6). | (a) No baja. (b) Baja cuando la lista trae una fila con el id pendiente.                                                                                                | **(a).** Si el aviso baja sin pasar por `onSuccess`, la barra conserva el borrador entero y el id se renueva: el próximo «Agregar» crea una segunda entrada, que es lo que TT-109 quería evitar. Además la barra no conoce la lista (`TrackerBar` recibe solo `running`, `tracker-bar.tsx:81-92`). Con el aviso a la vista, «Reintentar» o «Agregar» responden la fila sin escribir y limpian la barra.                                                                                                                                                                                                                                                                                                         |
-| D2c-4 | **Cómo se retira TT-109 en los documentos de paridad**, y qué pasa con las referencias de `timesheet.md` que se justifican con él.        | (a) TT-109 conserva su id y su entrada pasa a decir que el alta manual sigue TT-89, con la nota `_Corregido_` de lo que decía. (b) Se borra la entrada.                 | **(a).** Los ids no se reusan y TT-109 está citado en código, en `calendario.md` y en `timesheet.md`; los documentos llevan su historia con notas `_Corregido_`. En `timesheet.md`, TS-37 deja de contrastar con el alta manual, y TS-60 y TS-92 dejan de apoyarse en TT-109: la copia de la semana conserva su «sin Reintentar» como propuesta, con su propia justificación, **pendiente del contrato del 13** (ahí TS-56 puede volver seguro el reintento de una copia aplicada).                                                                                                                                                                                                                             |
-| D2c-5 | **El ADR 0007 dice «El alta manual queda como está hasta que el equipo decida»** (`:276-278`). El ADR es del usuario.                     | (a) Una línea fechada en «Consecuencias»: «Aplicado al alta manual en el slice 2c». (b) No tocarlo: es histórico.                                                       | **(a)**, escrita o aprobada por el usuario. La decisión del ADR no cambia; la frase deja de describir el árbol. No bloquea el merge.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ID    | Decisión                                                                                                                                  | Opciones                                                                                                                                                | Lo decidido y por qué                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D2c-1 | **«Agregar» otra vez con el aviso de falla por red a la vista**, si la persona cambió el borrador entre los dos clics.                    | (A) Reusa el id pendiente siempre, con el borrador de ahora. (B) Reusa el id pendiente solo si el pedido es idéntico al que falló; si cambió, id nuevo. | **Tomada: (A).** Es la letra del ADR 0007 (`:167-175`: «repetir la misma acción reusa el id pendiente; el id se renueva cuando el alta tiene éxito o cuando el aviso baja») y lo que ya hacen «Iniciar» (`tracker-bar.tsx:432-437`) y las tres altas con formulario del slice 9 (`new-project-dialog.tsx:99`, `new-client-dialog.tsx:59`, `new-tag-dialog.tsx:57`). Nunca duplica. Su costo está escrito en el ADR (`:248-251`): si el primer intento se aplicó, el servidor responde esa fila y lo cambiado no se aplica; la barra se limpia y la lista muestra la entrada del primer intento. (B) cambia ese costo por otro visible —dos entradas— y es una enmienda al ADR 0007. **Mejora opcional, no exigida**: si `data.created` no coincide con lo enviado, `onSuccess` no limpia lo editado.                                |
+| D2c-2 | **«Reintentar» del alta**: qué manda, en la barra y en el diálogo del calendario.                                                         | (a) El borrador actual con el id pendiente. (b) El último pedido entero (`retry` de `useAction`).                                                       | **Tomada: (a) en el diálogo, (b) en la barra.** El diálogo ya fijó que su «Reintentar» manda el borrador actual (`calendario.md:1448-1449`, `entry-dialog.tsx:325-329`): tiene **un solo «Reintentar»**, el mismo para «Guardar» y «Agregar», y con (a) «Reintentar» y «Agregar» del diálogo son el mismo pedido. La barra se queda con (b), que es lo que hace cada «Reintentar» de la barra (`tracker-bar.tsx:479-488`). **Diverge de las altas en diálogo del slice 9**, que reintentan con el último pedido (`new-project-dialog.tsx:111`, `retryHandlerOf(create)`): ahí el diálogo de alta no comparte «Reintentar» con una edición. Si el primer intento se aplicó, (a) y (b) responden la misma fila; si no llegó, (a) crea lo que la persona tiene a la vista y (b) lo que mandó. Los recorridos 3 y 5 distinguen las dos. |
+| D2c-3 | **El aviso del alta cuando la revalidación trae la entrada del primer intento.** «Iniciar» baja su aviso cuando cambia el timer (2b, §6). | (a) No baja. (b) Baja cuando la lista trae una fila con el id pendiente.                                                                                | **Tomada: (a).** Si el aviso baja sin pasar por `onSuccess`, la barra conserva el borrador entero y el id se renueva: el próximo «Agregar» crea una segunda entrada, que es lo que TT-109 quería evitar. Además la barra no conoce la lista (`TrackerBar` recibe solo `running`, `tracker-bar.tsx:81-92`). Con el aviso a la vista, «Reintentar» o «Agregar» responden la fila sin escribir y limpian la barra.                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| D2c-4 | **Cómo se retira TT-109 en los documentos de paridad**, y qué pasa con las referencias de `timesheet.md` que se justifican con él.        | (a) TT-109 conserva su id; cambian su título y su cuerpo, con la nota `_Corregido_` de lo que decía. (b) Se borra la entrada.                           | **Tomada: (a).** Los ids no se reusan y TT-109 está citado en código, en `calendario.md` y en `timesheet.md`; los documentos llevan su historia con notas `_Corregido_`. **Las menciones dentro de notas `_Corregido_` anteriores no se tocan.** En `timesheet.md`, TS-37 deja de contrastar con el alta manual, y TS-60 y TS-92 dejan de apoyarse en TT-109: la copia de la semana conserva su «sin Reintentar» con justificación propia **hasta el contrato del 13** (ahí TS-56 puede volver seguro el reintento de una copia aplicada).                                                                                                                                                                                                                                                                                          |
+| D2c-5 | **El ADR 0007 decía «El alta manual queda como está hasta que el equipo decida»** (`:276-278`). El ADR es del usuario.                    | (a) Una línea fechada en «Consecuencias». (b) No tocarlo.                                                                                               | **Hecha por el usuario: (a)**, nota en «Consecuencias» (`0572d79`). La decisión del ADR no cambia.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+
+**Decisión del team-lead sobre m4** (`correcciones-fase1-slice2c.md`): en la
+barra, `clearNotices()` **no baja el aviso del alta manual mientras tenga un id
+pendiente**. Ver §5.1, criterio 15 y recorrido 6.
 
 ## 0. Precondición de arranque
 
@@ -46,8 +55,7 @@ del primer commit; D2c-4 antes del merge; D2c-5 no bloquea.**
   incluidos). Las citas de abajo son de ese árbol.
 - **Si entra algo a `main` antes del arranque** (el 13, por ejemplo), una ronda
   corta de `architecture-reviewer` contra el árbol (lección del 9).
-- **D2c-1, D2c-2 y D2c-3 tomadas.** El contrato está escrito con las tres
-  propuestas.
+- **D2c-1 a D2c-4 tomadas; D2c-5 hecha.** Ronda 1 de revisión aplicada.
 
 ### Supuestos sobre el árbol, con archivo y línea en `c1917d8`
 
@@ -68,6 +76,7 @@ del primer commit; D2c-4 antes del merge; D2c-5 no bloquea.**
 | `useNewId` reusa el id de la misma clave solo con un `unexpected` a la vista                                                                                                                           | `hooks/use-new-id.ts:17-28`                                                         |
 | `retry` reenvía el último pedido entero; `retryHandlerOf` lo ofrece solo con `unexpected`                                                                                                              | `hooks/use-action.ts:87-93`, `:107-111`                                             |
 | La barra: el alta sin «Reintentar» por TT-109 y su comentario                                                                                                                                          | `tracker-bar.tsx:251-281`, `:721-739`                                               |
+| `clearNotices()` baja todos los avisos de la barra, el del alta incluido; la llaman toda operación de la barra, «Detener» y el cambio de modo                                                          | `tracker-bar.tsx:397-408`, `:439`, `:538`                                           |
 | «Iniciar» elige el id antes de `clearNotices()`                                                                                                                                                        | `tracker-bar.tsx:432-437`                                                           |
 | `handleAdd` manda el borrador sin id                                                                                                                                                                   | `tracker-bar.tsx:490-499`                                                           |
 | Un timer que llega con el modo manual elegido fuerza el modo timer y retiene el borrador; `add` no se limpia ahí                                                                                       | `tracker-bar.tsx:291-342`                                                           |
@@ -79,8 +88,11 @@ del primer commit; D2c-4 antes del merge; D2c-5 no bloquea.**
 | `createInputOf` devuelve un `CreateManualEntryInput`                                                                                                                                                   | `entry-dialog-draft.ts:103-113`                                                     |
 | `addLostTitle` y `addLostMessage`                                                                                                                                                                      | `components/labels.ts:54-55`, `components/calendar/labels.ts:101-103`               |
 | El e2e de TT-109                                                                                                                                                                                       | `e2e/manual-entry.spec.ts:214-261`                                                  |
+| La revalidación sin recarga se fuerza con el evento `focus`                                                                                                                                            | `e2e/manual-entry.spec.ts:378-396`                                                  |
+| El foco en vuelo de un reintento del diálogo, con `holdActionResponses`                                                                                                                                | `e2e/calendar-edit.spec.ts:482-491`                                                 |
 | `dropActionRequests`, `loseActionResponses` (`route.fetch()` + `route.abort()`), `holdActionResponses`, `holdRefreshes`, `openSecondTab`                                                               | `e2e/network.ts:60-161`                                                             |
 | `outcomeWhileLocked` es local de `service.integration.test.ts`; `lockRow` está en `src/test/time-entry.ts`                                                                                             | `service.integration.test.ts:5153-5190`; `src/test/time-entry.ts:37`                |
+| Dos tests reusan el mismo objeto de valores en dos altas                                                                                                                                               | `service.integration.test.ts:1508-1522`, `:5550-5576`                               |
 | `raceThroughBarrier` suelta la barrera con `rollback`                                                                                                                                                  | `src/test/concurrency.ts:77-142`                                                    |
 
 ## 1. Alcance
@@ -96,6 +108,8 @@ calendario**, cumplidos con el ADR 0007:
   «Reintentar». El aviso «No sabemos si la entrada se guardó.» deja de existir.
 - Apretar «Agregar» otra vez con ese aviso a la vista reusa el id pendiente
   (D2c-1).
+- En la barra, el aviso del alta con id pendiente sobrevive a las demás
+  operaciones de la barra (m4).
 
 **El calendario entra porque es la misma action** (CAL-46: «Agregar» es el
 alta manual, `calendario.md:629-635`) y porque el id es obligatorio en el
@@ -106,15 +120,16 @@ pendiente, y el contrato del 8c lo dejó escrito
 Entran por arrastre, verificados con el id:
 
 - **TT-25**: «Agregar» limpia la barra y deja el foco en la descripción,
-  también cuando la respuesta es la de un reintento.
+  también cuando la respuesta es la de un reintento (recorrido 1).
 - **TT-30**: con un timer corriendo, la barra no agrega a mano; tampoco desde
-  «Reintentar» (§5.1).
+  «Reintentar» (§5.1, recorrido 6).
 - **TT-77, TT-78, TT-112, TT-73, el piso del workspace**: las reglas del alta no
   cambian de texto ni de código, y corren antes de escribir (§4.3).
 - **TT-92**: con la membresía desactivada, ni el id de una entrada propia da
   éxito.
-- **TT-108 / P-15**: la respuesta de un reintento trae `weekStart` y la ventana
-  se extiende igual (`reachWeek` en `onSuccess`, sin cambios).
+- **TT-108 / P-15**: la respuesta de un reintento trae el `weekStart` de la
+  entrada como está, y la ventana se extiende con él (`reachWeek` en
+  `onSuccess`, sin cambios). Lo verifica el criterio 5.
 
 ### Lo que la paridad tiene que registrar
 
@@ -122,12 +137,16 @@ Entran por arrastre, verificados con el id:
 
 - `time-tracker.md`, **TT-89** (`:1542-1549`): sale «La única operación del
   módulo que no lo ofrece es el alta manual, por TT-109.»
-- **TT-109** (`:1551-1587`): el alta manual ofrece «Reintentar» porque el
-  pedido lleva un id que elige el cliente (ADR 0007); un reintento de un alta
-  aplicada responde la entrada sin escribir; «Agregar» otra vez con el aviso a
-  la vista reusa el id (D2c-1); el reintento puede recrear una entrada borrada
-  entre medio. Nota `_Corregido el …, slice 2c_` con lo que decía. El párrafo
-  «El resto de las operaciones…» queda, sin el contraste.
+- **TT-109** (`:1551-1587`): cambian el título y el cuerpo: el alta manual
+  ofrece «Reintentar» porque el pedido lleva un id que elige el cliente (ADR
+  0007); un reintento de un alta aplicada responde la entrada sin escribir;
+  «Agregar» otra vez con el aviso a la vista reusa el id (D2c-1); en la barra,
+  «Reintentar» manda el pedido que falló y, en el diálogo del calendario, el
+  borrador actual (D2c-2); en la barra el aviso sobrevive a las otras
+  operaciones (m4); el reintento puede recrear una entrada borrada entre medio.
+  Nota `_Corregido el …, slice 2c_` con lo que decía. El párrafo «El resto de
+  las operaciones…» queda, sin el contraste. Las notas `_Corregido_` anteriores
+  no se tocan.
 - **§11, reparto por slices**: una sección «Slice 2c» después de la del 2b
   (`:1692-1698`), con TT-89, TT-90 y la corrección de TT-109. La lista del
   slice 2 (`:1688-1690`) es histórica y no cambia.
@@ -152,15 +171,15 @@ No es trabajo de `backend-dev` ni de `frontend-dev`.
 
 ### Consecuencias sobre código ya entregado
 
-| Archivo                                                                                  | Qué cambia                                                                                                 | Qué hay que volver a probar                                   |
-| ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `schema.ts`                                                                              | `createManualEntryInput` suma `id`; comentario de `CreateManualEntryResult`.                               | Todos los casos de `createManualEntryInput`                   |
-| `service.ts`                                                                             | `createManualEntry` pasa por `createEntryOnce`; el `can` sale de la transacción; `insertClosed` con el id. | TT-25, TT-72, TT-73, TT-76, TT-77, TT-78, TT-92, TT-112, piso |
-| `repository.ts`                                                                          | `insertClosed` con `id` obligatorio.                                                                       | Duplicar y el alta manual                                     |
-| `tracker-bar.tsx`                                                                        | Id del alta con `useNewId`; aviso único con «Reintentar»; foco del reintento.                              | TT-25, TT-30, TT-89, TT-90                                    |
-| `calendar-view.tsx`, `entry-dialog.tsx`, `calendar-notices.tsx`, `entry-dialog-draft.ts` | Id del alta; «Reintentar» en el aviso del alta del diálogo.                                                | CAL-46, CAL-86, CAL-74                                        |
-| tests existentes                                                                         | Todo llamado a `createManualEntry` lleva un `id`.                                                          | Los mismos casos, sin cambiar lo que afirman                  |
-| `e2e/manual-entry.spec.ts`                                                               | Sale el recorrido de TT-109.                                                                               | —                                                             |
+| Archivo                                                                                  | Qué cambia                                                                                                                         | Qué hay que volver a probar                                   |
+| ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `schema.ts`                                                                              | `createManualEntryInput` suma `id`; comentario de `CreateManualEntryResult`.                                                       | Todos los casos de `createManualEntryInput`                   |
+| `service.ts`                                                                             | `createManualEntry` pasa por `createEntryOnce`; el `can` sale de la transacción; `insertClosed` con el id.                         | TT-25, TT-72, TT-73, TT-76, TT-77, TT-78, TT-92, TT-112, piso |
+| `repository.ts`                                                                          | `insertClosed` con `id` obligatorio.                                                                                               | Duplicar y el alta manual                                     |
+| `tracker-bar.tsx`                                                                        | Id del alta con `useNewId`; aviso único con «Reintentar»; foco del reintento; `clearNotices()` conserva el aviso con id pendiente. | TT-25, TT-30, TT-89, TT-90, TT-16                             |
+| `calendar-view.tsx`, `entry-dialog.tsx`, `calendar-notices.tsx`, `entry-dialog-draft.ts` | Id del alta; «Reintentar» en el aviso del alta del diálogo, con el borrador actual.                                                | CAL-46, CAL-86, CAL-74                                        |
+| tests existentes                                                                         | Todo llamado a `createManualEntry` lleva un `id` propio.                                                                           | Los mismos casos, sin cambiar lo que afirman                  |
+| `e2e/manual-entry.spec.ts`                                                               | Sale el recorrido de TT-109.                                                                                                       | —                                                             |
 
 ## 2. Cambios de esquema
 
@@ -246,7 +265,8 @@ Con la forma de `duplicateEntry` (`service.ts:634-677`):
 - **`replayed`**: `(row) => ({ created: toView(row, workspace) })`.
 
 Las conversiones de hora pueden salir a una función privada si el diff lo
-pide; no es contrato. El orden sí.
+pide; no es contrato. El orden sí: **ni las conversiones ni ninguna regla
+corren antes de `createEntryOnce`**.
 
 ### 4.3 El orden, paso por paso
 
@@ -262,10 +282,14 @@ pide; no es contrato. El orden sí.
 | 8    | `23503` de proyecto, tarea o etiqueta                                                                                                                                                                                                   | `translatingReferenceConstraints` | TT-77 o TT-78                                    |
 
 **Por qué las reglas van después de la fila propia** (paso 4 antes que el 5):
-es el algoritmo del ADR 0007, y además dos reglas dependen de algo que puede
-cambiar entre los dos intentos —la zona de la persona (`nonexistentClock`,
-`beforeWorkspace`) y el estado del proyecto o de una etiqueta—. Un reintento de
-un alta aplicada responde la entrada aunque hoy el mismo pedido no pasaría.
+es el algoritmo del ADR 0007, y además varias reglas dependen de algo que
+puede cambiar entre los dos intentos —la zona de la persona (`nonexistentClock`,
+`beforeWorkspace`), el piso y el estado del proyecto o de una etiqueta—. Un
+reintento de un alta aplicada responde la entrada aunque hoy el mismo pedido no
+pasaría. **Cada regla adelantada antes de la fila propia la detecta el
+criterio 6**, que reintenta con el id propio y un pedido que la incumple: las
+tres conversiones de hora (`nonexistentClock`, `beforeWorkspace`,
+`invalidDate`), `tooShort`, el par y las etiquetas.
 
 **Por qué van antes del insert** (paso 5 antes que el 6): con el id de una
 fila ajena, el insert choca con la clave primaria, que es global, y la
@@ -274,8 +298,8 @@ lección del 10 y del 11b (`estado-fase1.md:158-163`). `tooShort`,
 `beforeWorkspace`, el par y las etiquetas **se podrían mover después del insert
 sin que ningún test de hoy lo note**: la transacción se deshace igual y, con un
 id nuevo, la respuesta es la misma. Solo el id ajeno los distingue (criterio
-9). `nonexistentClock` e `invalidDate` no se pueden mover: el insert necesita
-los dos instantes.
+9). `nonexistentClock` e `invalidDate` no se pueden mover después: el insert
+necesita los dos instantes.
 
 **Por qué no hay caso de «timer bloqueado»**: el alta manual no lee ni cierra
 el timer abierto, así que `outcomeWhileLocked` sobre el timer, que en el 11b
@@ -325,18 +349,33 @@ como están.
 
 - `const newAddId = useNewId(add.failure);` y una clave fija, `ADD_KEY = "add"`,
   como `START_KEY` (`:63-64`).
-- `handleAdd` elige el id **antes de `clearNotices()`**, que baja el aviso:
+- `handleAdd` elige el id **antes de `clearNotices()`**:
   `const id = newAddId(ADD_KEY);` y después
   `add.run({ id, description, date, start, end, fields })`. Con el aviso de
   `unexpected` a la vista es el id pendiente, con el borrador de ahora
   (D2c-1); en cualquier otro caso, uno nuevo.
-- **El id se renueva** cuando el alta termina bien (el aviso no está), cuando
-  falla con otro código (`validation`, `not_found`, `forbidden`: no escribió) y
-  cuando cualquier operación de la barra o el cambio de modo baja el aviso
-  (`clearNotices`, `:397-408`; `handleModeChange`, `:538`). Editar el borrador
-  en modo manual —descripción, horas, fecha, proyecto, etiquetas, facturable—
-  no baja el aviso y no renueva el id (`:503-506`, `:513-516`, `:526-529`).
+- **El id se renueva solo con el desenlace de otro pedido del alta**: cuando
+  termina bien, o cuando falla con otro código (`validation`, `not_found`,
+  `forbidden`: no escribió). Un nuevo `unexpected` conserva el mismo id.
 - `BarAddInput` toma el `id` de `CreateManualEntryInput` sin cambios de forma.
+
+**El aviso con id pendiente sobrevive a las demás operaciones** (decisión del
+team-lead sobre m4):
+
+- **`clearNotices()` no baja el aviso del alta mientras su código sea
+  `unexpected`**: `add.clear()` pasa a correr solo si
+  `add.failure?.code !== "unexpected"`. Así «Iniciar», «Detener», «Descartar»,
+  el cambio de modo (`:538`) y los guardados del timer bajan sus avisos y no
+  este, y el id pendiente no se renueva por una operación ajena al alta.
+- **Ese aviso baja solo con el desenlace de otro pedido del alta**: «Agregar»
+  o «Reintentar» llaman a `run`, que lo limpia, y el resultado nuevo lo
+  reemplaza o no deja ninguno. `ActionFeedback` no tiene un control para
+  cerrarlo (§8).
+- Editar el borrador en modo manual —descripción, horas, fecha, proyecto,
+  etiquetas, facturable— tampoco lo baja (`:503-506`, `:513-516`, `:526-529`).
+- Con el cambio de modo a manual el borrador vuelve a la hora de ahora
+  (`:540-542`) y el id sigue pendiente: si el primer intento se aplicó,
+  «Agregar» responde esa fila (D2c-1).
 
 **El aviso.** Uno solo para el alta, con cualquier código:
 
@@ -358,14 +397,11 @@ como están.
   hubo respuesta o la action si el servidor falló. «Reintentar» aparece solo
   con `unexpected` (`retryHandlerOf`).
 - **`retryDisabled={!isManual}`** (TT-30, «no se puede agregar tiempo a mano
-  con un timer activo», `time-tracker.md:524-532`): si un timer de otra
-  pestaña fuerza el modo timer con el aviso a la vista, el aviso queda y su
-  «Reintentar» queda inactivo; al detenerse ese timer, la barra vuelve a
-  manual con el borrador retenido y «Reintentar» vuelve a estar activo, con el
-  mismo id. No se baja el aviso ahí: bajarlo renovaría el id y el «Agregar» de
-  después podría duplicar. Tampoco se permite reintentar en modo timer: con el
-  modo forzado, `draft` y `fieldsDraft` son los del timer, y la limpieza de
-  `onSuccess` los tocaría.
+  con un timer activo», `time-tracker.md:524-532`): con un timer en la barra
+  —forzado por otra pestaña o elegido—, el aviso queda y su «Reintentar» queda
+  inactivo; al volver a manual vuelve a estar activo, con el mismo id. No se
+  permite reintentar en modo timer: con el modo forzado, `draft` y
+  `fieldsDraft` son los del timer, y la limpieza de `onSuccess` los tocaría.
 - Sale el comentario de TT-109 (`:723-729`) y el de `:251-255` pasa a decir que
   «Reintentar» reenvía el pedido con su id (ADR 0007).
 
@@ -379,7 +415,7 @@ como están.
   (TT-25, `:271-279`); si falla otra vez, se queda en «Agregar».
 - Reenvía **el último pedido entero**, con su id y sus campos (D2c-2, (b)).
   `onSuccess` limpia solo lo que sigue igual a lo mandado (`:258-266`): lo que
-  se editó después de la falla queda en la barra.
+  se editó después de la falla queda en la barra (recorrido 3).
 
 **Lo que conserva el borrador.** Igual que hoy: una falla no toca la barra; el
 borrador se limpia solo con éxito, y solo en lo que no cambió desde el envío.
@@ -398,8 +434,8 @@ borrador se limpia solo con éxito, y solo en lo que no cambió desde el envío.
 - **El id se renueva** con el éxito, con otra falla que no sea `unexpected`, y
   cuando el aviso baja: toda apertura del diálogo (`openSubject` limpia
   `create`, `:231`) y toda operación de la pantalla (`clearNotices`,
-  `:191-196`). Cerrar el diálogo con la falla a la vista y volver a abrir el
-  alta es otra alta, con otro id (§8).
+  `:191-196`). La decisión de m4 es de la barra; el calendario sigue bajando
+  el aviso al abrir otro diálogo (§8).
 
 **El tipo.** `entry-dialog-draft.ts` define y exporta
 `type NewEntryDraftInput = Omit<CreateManualEntryInput, "id">`; `createInputOf`
@@ -420,8 +456,8 @@ abierta:
 **«Reintentar»** en `entry-dialog.tsx`: `retry()` lleva el foco a `submitRef`
 («Agregar» o «Guardar») y llama a **`submit`** —`add` en el alta, `save` en la
 edición— en vez de a `save`. En el alta, manda el borrador actual con el id
-pendiente (D2c-2). El comentario de `retryable` pasa a decir «solo con
-`unexpected` (TT-89)».
+pendiente (D2c-2, (a)), no `create.retry`. El comentario de `retryable` pasa a
+decir «solo con `unexpected` (TT-89)».
 
 **Lo que conserva el borrador y el foco.** El diálogo sigue abierto con lo
 tecleado después de la falla, como hoy. «Reintentar» deja el foco en
@@ -466,9 +502,15 @@ Rutas absolutas; **(nuevo)** marca lo que el slice crea.
 - **Cada llamado existente lleva `id: randomUUID()` propio**, incluidos los que
   esperan un rechazo (`actions.integration.test.ts:251-255`, `:274-275`,
   `:327-331`, por ejemplo), para que el rechazo siga siendo por lo que dice el
-  test y no por el id que falta. **Nunca un id fijo compartido**: el mismo id
-  en dos personas es un id ajeno y cambia la respuesta (`manualValues` de
-  `permissions.integration.test.ts` pasa a armarse por llamado).
+  test y no por el id que falta. **Nunca un id fijo compartido**: con el id
+  adentro del objeto de valores, la segunda alta del mismo objeto es un
+  reintento (misma persona) o un id ajeno (otra persona) y cambia la
+  respuesta. Los casos que hoy reusan un objeto —
+  `service.integration.test.ts:1508-1522` (dos superpuestas) y `:5550-5576`
+  (dos personas con el mismo pedido)— y `manualValues` de
+  `permissions.integration.test.ts` pasan a una fábrica local
+  `manual(overrides)` que arma los valores con `id: randomUUID()` en cada
+  llamado.
 
 ### frontend-dev
 
@@ -510,16 +552,17 @@ Lo que enumera §1, con D2c-4.
 `src/modules/time-entry/actions.ts`, `src/server/create-once.ts`,
 `src/server/db/`, `src/server/permissions/`, `src/server/action.ts`, `drizzle/`,
 `src/hooks/` (`useNewId` y `useAction` alcanzan), `src/components/`
-(`ActionFeedback` alcanza), `manual-bar.tsx`, el módulo `project` y
-`src/app/`. Los contratos y correcciones anteriores son históricos. El mapa
-(`fase1-mapa.md`: una sección «Slice 2c» y la deuda de `:373-376` cerrada) y
-el estado los actualiza el team-lead; el ADR 0007, el usuario (D2c-5).
+(`ActionFeedback` alcanza), `manual-bar.tsx`, el módulo `project`, `src/app/` y
+`docs/adr/` (D2c-5 ya está hecha). Los contratos y correcciones anteriores son
+históricos. El mapa (`fase1-mapa.md`: una sección «Slice 2c» y la deuda de
+`:373-376` cerrada) y el estado los actualiza el team-lead.
 
 ### Handshake de orden
 
-0. **D2c-1, D2c-2 y D2c-3 tomadas.**
+0. **D2c-1 a D2c-4 tomadas, D2c-5 hecha, ronda 1 aplicada.**
 1. **Primer commit de `backend-dev`**: `schema.ts` con el id, `schema.test.ts`,
-   todos los llamados existentes con su id, y `outcomeWhileLocked` en
+   todos los llamados existentes con su id (con la fábrica `manual(overrides)`
+   donde se reusaba un objeto), y `outcomeWhileLocked` en
    `src/test/time-entry.ts`. Sin cambio de conducta del service: hasta el paso
    3 el id llega y se ignora, porque `insertClosed` todavía lo acepta opcional
    y `createManualEntry` no lo pasa. **Avisa a `frontend-dev`**: desde acá
@@ -527,7 +570,8 @@ el estado los actualiza el team-lead; el ADR 0007, el usuario (D2c-5).
    `tracker-bar.tsx`, `calendar-view.tsx` y `entry-dialog-draft.ts` hasta el
    paso 2; los dos commits entran en el mismo PR.
 2. **`frontend-dev`, enseguida**: el id en la barra y en el calendario, los
-   avisos, los textos y `calendar-notices.test.ts`.
+   avisos, `clearNotices()` con el aviso pendiente, los textos y
+   `calendar-notices.test.ts`.
 3. **`backend-dev`**: service y repository (§4), y los tests nuevos de §7.
    **`tests-slice2c`**, con el paso 2 en la rama: el spec, y confirma que falla
    por la funcionalidad (sin el paso 3, el reintento de una respuesta perdida
@@ -548,14 +592,22 @@ el estado los actualiza el team-lead; el ADR 0007, el usuario (D2c-5).
 4. **El reintento cruzado** — Dos `createManualEntry` con el mismo id,
    **obligados a cruzarse** con la barrera de abajo, responden los dos ese id y
    dejan una fila y una constancia.
-5. **La fila en el estado en que esté** — Crear, editar la entrada con
-   `updateEntry` (descripción «B» y otras horas) y reintentar con el pedido
-   original: la respuesta trae «B» y las horas nuevas; nada escrito, ninguna
-   constancia nueva.
-6. **La fila propia antes que las reglas** — Crear con el proyecto P y la
-   etiqueta X, archivar los dos y reintentar: termina bien con la fila, sin
-   TT-77 ni TT-78. Y el mismo id con horas de duración cero: termina bien con
-   la fila, sin `tooShort`.
+5. **La fila en el estado en que esté** (con TT-108) — Crear, editar la entrada
+   con `updateEntry` (descripción «B», otras horas y **una fecha de una semana
+   más vieja**) y reintentar con el pedido original: la respuesta trae «B», las
+   horas nuevas y **el `weekStart` de la semana más vieja**; nada escrito,
+   ninguna constancia nueva.
+6. **La fila propia antes que las reglas** — Con el id de una entrada propia ya
+   creada, cada uno de estos pedidos cambiados termina bien con esa fila, sin
+   escribir:
+   - el proyecto P y la etiqueta X del primer intento, archivados después: sin
+     TT-77 ni TT-78;
+   - horas de duración cero: sin `tooShort`;
+   - **una hora que no existe**: con el workspace en `Europe/Madrid`, el
+     2026-03-29 a las 02:30: sin `nonexistentClock`;
+   - **un día anterior al piso del workspace**: sin `beforeWorkspace`;
+   - **el 9999-12-31 cruzando la medianoche** (fin menor que el inicio): sin
+     `invalidDate`.
 7. **TT-92 antes que la fila propia** — Con la membresía `inactive` o
    `invited`, el id de una entrada propia que existe responde `forbidden` con el
    mensaje neutro, no la entrada. **Llamando al service.**
@@ -584,27 +636,40 @@ el estado los actualiza el team-lead; el ADR 0007, el usuario (D2c-5).
     `retryable: false`. Los casos de «Guardar» no cambian.
 14. **El borrador del diálogo** — `createInputOf` no lleva `id` y conserva lo
     que mandaba.
-15. **La pantalla** — Los recorridos de abajo.
+15. **El aviso pendiente de la barra sobrevive** (m4) — Con el aviso de
+    `unexpected` del alta a la vista, «Detener» y el cambio de modo no lo bajan
+    y no renuevan el id: volver a manual y «Agregar» responde la fila del
+    primer intento, sin duplicar.
+16. **La pantalla** — Los recorridos de abajo.
 
 ### Con qué se verifica cada criterio, y qué mutante mata
 
-| Criterio | Tipo        | Archivo                                                           | Qué afirma                                                                                  | Mutante que tiene que caer                                                                                                                                                              |
-| -------- | ----------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1        | unidad      | `schema.test.ts`                                                  | los cuatro rechazos y el id conservado                                                      | `id: z.uuid()` (pasan el nulo y el v7); `id` con `.optional()`                                                                                                                          |
-| 2        | integración | `manual-retry.integration.test.ts`; `audit.integration.test.ts`   | `created.id`, la fila y el `entityId` iguales al pedido                                     | `insertClosed` sin el `id` (lo genera la base)                                                                                                                                          |
-| 3        | integración | `manual-retry.integration.test.ts`; `audit.integration.test.ts`   | respuesta igual; filas, unión y constancias iguales                                         | `createManualEntry` sin `createEntryOnce`, con su transacción de hoy y el id (el segundo sale `unexpected` por la clave primaria)                                                       |
-| 4        | integración | `manual-retry.integration.test.ts`                                | con `raceThroughBarrier`: los dos con el id, una fila, una constancia                       | una lectura propia antes de la transacción y sin la relectura del paso 4 del ADR (el perdedor sale `unexpected`). En secuencia ese mutante pasa: por eso la barrera                     |
-| 5        | integración | `manual-retry.integration.test.ts`                                | la respuesta con «B» y las horas nuevas; nada escrito                                       | el insert como `on conflict (id) do update` (pisa la edición)                                                                                                                           |
-| 6        | integración | `manual-retry.integration.test.ts`                                | `ok` con la fila, con P y X archivados y con duración cero                                  | las reglas, o solo `assertNewEntryPair`, o solo `assertTaggable`, antes de `createEntryOnce`                                                                                            |
-| 7        | integración | `permissions.integration.test.ts`                                 | desde el service, `inactive` e `invited` con un id propio existente: el mensaje neutro      | el `can` dentro de `attempt`, donde está hoy (`service.ts:858`): la fila propia responde antes                                                                                          |
-| 8        | integración | `manual-retry.integration.test.ts`; `actions.integration.test.ts` | las tres variantes, sembradas con `seedTimeEntry`; código en el service, texto en la action | `findOwnById` sin el filtro de usuario (responde la fila ajena); sin el de workspace (lo mata solo la variante de la misma persona); `idConstraint` con otro nombre (sale `unexpected`) |
-| 9        | integración | `manual-retry.integration.test.ts`                                | `it.each` de las cuatro reglas; código, texto, filas y constancias                          | cada una de las cuatro movida después de `insertClosed`, dentro de la misma transacción (sale `forbidden`). Con un id nuevo ese mutante pasa: por eso el id ajeno                       |
-| 10       | integración | `manual-retry.integration.test.ts`                                | `outcomeWhileLocked(fila.id, reintento)` es `"resolved"`; filas iguales                     | `findOwn` con bloqueo (`findByIdForUpdate` en una transacción): sale `"blocked"`                                                                                                        |
-| 11       | integración | `actions.integration.test.ts`                                     | la traducción, la revalidación de las dos rutas y el `ok` del reintento                     | revalidar solo con éxito                                                                                                                                                                |
-| 12       | todas       | las suites existentes                                             | en verde sin cambiar afirmaciones                                                           | —                                                                                                                                                                                       |
-| 13       | unidad      | `calendar-notices.test.ts`                                        | título, mensaje y `retryable` por código                                                    | `retryable: false` fijo en el alta; `retryable` verdadero con cualquier código; el título de antes                                                                                      |
-| 14       | unidad      | `entry-dialog-draft.test.ts`                                      | la forma del pedido                                                                         | —                                                                                                                                                                                       |
-| 15       | e2e         | `e2e/manual-retry.spec.ts`                                        | los recorridos                                                                              | los de cada recorrido                                                                                                                                                                   |
+| Criterio | Tipo        | Archivo                                                           | Qué afirma                                                                                  | Mutante que tiene que caer                                                                                                                                                                                       |
+| -------- | ----------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1        | unidad      | `schema.test.ts`                                                  | los cuatro rechazos y el id conservado                                                      | `id: z.uuid()` (pasan el nulo y el v7); `id` con `.optional()`                                                                                                                                                   |
+| 2        | integración | `manual-retry.integration.test.ts`; `audit.integration.test.ts`   | `created.id`, la fila y el `entityId` iguales al pedido                                     | `insertClosed` sin el `id` (lo genera la base)                                                                                                                                                                   |
+| 3        | integración | `manual-retry.integration.test.ts`; `audit.integration.test.ts`   | respuesta igual; filas, unión y constancias iguales                                         | `createManualEntry` sin `createEntryOnce`, con su transacción de hoy y el id (el segundo sale `unexpected` por la clave primaria)                                                                                |
+| 4        | integración | `manual-retry.integration.test.ts`                                | con `raceThroughBarrier`: los dos con el id, una fila, una constancia                       | una lectura propia antes de la transacción y sin la relectura del paso 4 del ADR (el perdedor sale `unexpected`). En secuencia ese mutante pasa: por eso la barrera                                              |
+| 5        | integración | `manual-retry.integration.test.ts`                                | la respuesta con «B», las horas nuevas y el `weekStart` de la semana vieja; nada escrito    | el insert como `on conflict (id) do update` (pisa la edición); `replayed` con la vista armada desde el pedido y no desde la fila (`weekStart` de la semana original)                                             |
+| 6        | integración | `manual-retry.integration.test.ts`                                | `ok` con la fila en cada uno de los seis pedidos cambiados                                  | las reglas, o solo `assertNewEntryPair`, o solo `assertTaggable`, antes de `createEntryOnce`; **las conversiones de hora (`instantFromLocal`, el día de fin, el año 10000, el piso) antes de `createEntryOnce`** |
+| 7        | integración | `permissions.integration.test.ts`                                 | desde el service, `inactive` e `invited` con un id propio existente: el mensaje neutro      | `createOnce` directo, sin `createEntryOnce`, con el `can` dentro de `attempt`: la fila propia responde antes                                                                                                     |
+| 8        | integración | `manual-retry.integration.test.ts`; `actions.integration.test.ts` | las tres variantes, sembradas con `seedTimeEntry`; código en el service, texto en la action | `findOwnById` sin el filtro de usuario (responde la fila ajena); sin el de workspace (lo mata solo la variante de la misma persona); `idConstraint` con otro nombre (sale `unexpected`)                          |
+| 9        | integración | `manual-retry.integration.test.ts`                                | `it.each` de las cuatro reglas; código, texto, filas y constancias                          | cada una de las cuatro movida después de `insertClosed`, dentro de la misma transacción (sale `forbidden`). Con un id nuevo ese mutante pasa: por eso el id ajeno                                                |
+| 10       | integración | `manual-retry.integration.test.ts`                                | `outcomeWhileLocked(fila.id, reintento)` es `"resolved"`; filas iguales                     | `findOwn` con bloqueo (`findByIdForUpdate` en una transacción): sale `"blocked"`                                                                                                                                 |
+| 11       | integración | `actions.integration.test.ts`                                     | la traducción, la revalidación de las dos rutas y el `ok` del reintento                     | revalidar solo con éxito                                                                                                                                                                                         |
+| 12       | todas       | las suites existentes                                             | en verde sin cambiar afirmaciones                                                           | —                                                                                                                                                                                                                |
+| 13       | unidad      | `calendar-notices.test.ts`                                        | título, mensaje y `retryable` por código                                                    | `retryable: false` fijo en el alta; `retryable` verdadero con cualquier código; el título de antes                                                                                                               |
+| 14       | unidad      | `entry-dialog-draft.test.ts`                                      | la forma del pedido                                                                         | —                                                                                                                                                                                                                |
+| 15       | e2e         | `e2e/manual-retry.spec.ts`, recorrido 6                           | el aviso a la vista después de «Detener»; una sola fila después de «Agregar»                | `clearNotices()` que llama a `add.clear()` siempre (el aviso baja, el id se renueva y quedan dos filas)                                                                                                          |
+| 16       | e2e         | `e2e/manual-retry.spec.ts`                                        | los recorridos                                                                              | los de cada recorrido                                                                                                                                                                                            |
+
+**Los pedidos del criterio 6.** Cada uno usa el id de una entrada ya creada
+con un pedido válido y cambia solo lo que incumple la regla. La hora que no
+existe necesita el workspace del test en `Europe/Madrid` (`workspaceOf`),
+donde el 2026-03-29 los relojes pasan de 02:00 a 03:00. El piso se arma con un
+workspace creado después del día pedido, como los casos de `beforeWorkspace`
+que ya existen. El 9999-12-31 con fin menor que el inicio lleva el fin al
+10000-01-01, que no tiene clave de día (`service.ts:871-876`).
 
 **La barrera del criterio 4.** `raceThroughBarrier` con un `hold` que inserta,
 sin commitear, una entrada cerrada del mismo actor con el mismo id
@@ -625,7 +690,10 @@ descripción propia; las horas de hoy son `00:00–00:01`; las respuestas se
 esperan con `withServerAction`. **La respuesta perdida es real**:
 `loseActionResponses` (`route.fetch()` + `route.abort()`), y cada recorrido que
 la usa **comprueba desde otra pestaña que el primer intento se aplicó**: sin
-eso, un pedido que no llegó haría pasar el recorrido sin probar nada.
+eso, un pedido que no llegó haría pasar el recorrido sin probar nada. **Sin
+reloj emulado**: la revalidación sin recarga se fuerza con
+`window.dispatchEvent(new Event("focus"))`, como `manual-entry.spec.ts:390-392`.
+**Antes de cada `page.reload()`, las revalidaciones retenidas se sueltan.**
 
 1. **Respuesta perdida y «Reintentar», en la barra** (TT-89, TT-90, TT-25).
    Modo manual; retener las revalidaciones (`holdRefreshes`) y perder las
@@ -635,42 +703,63 @@ eso, un pedido que no llegó haría pasar el recorrido sin probar nada.
    sigue entero. Otra pestaña ve **una** fila con la descripción. Dejar de
    perder respuestas, retener la del reintento (`holdActionResponses`) y
    «Reintentar»: «Agregar» tiene el foco y `aria-disabled="true"`, nunca
-   `body`. Soltar la respuesta y las revalidaciones: el aviso no está, la barra
-   quedó vacía y el foco en la descripción. Recargar: **una** fila con la
-   descripción. Después, el mismo borrador y «Agregar»: **dos** filas (el id se
-   renovó con el éxito).
+   `body`. Soltar la respuesta: el aviso no está, la barra quedó vacía y el
+   foco en la descripción. Soltar las revalidaciones y recargar: **una** fila
+   con la descripción. Después, el mismo borrador y «Agregar»: **dos** filas
+   (el id se renovó con el éxito).
    _Mutantes_: `onRetry` sin `retryHandlerOf` (sin «Reintentar»); el id fijo
    por montaje (el último «Agregar» responde la primera fila y queda una).
 2. **Respuesta perdida y «Agregar» otra vez** (D2c-1). Lo mismo hasta la
    comprobación desde otra pestaña; dejar de perder respuestas y apretar
-   «Agregar» en vez de «Reintentar»: el aviso no está, la barra quedó vacía, y
-   al recargar hay **una** fila.
+   «Agregar» en vez de «Reintentar»: el aviso no está y la barra quedó vacía.
+   Soltar las revalidaciones y recargar: **una** fila.
    _Mutante_: `crypto.randomUUID()` directo en `handleAdd`, sin `useNewId`
    (dos filas).
-3. **El pedido que no llegó** (reemplaza `manual-entry.spec.ts:214-261`).
-   Cortar los pedidos con `dropActionRequests`. «Agregar»: el aviso con
-   «Reintentar»; «Agregar» activo; la descripción, el inicio, el fin y la
-   duración siguen como se tecleó. Otra pestaña no ve ninguna fila. Dejar de
-   cortar y «Reintentar»: una fila, la barra vacía.
-4. **El alta del diálogo del calendario** (CAL-46, D2c-2). En la semana pasada
-   (`openLastWeek`), retener revalidaciones, perder respuestas, abrir «Agregar
-   entrada» y agregar: el diálogo sigue abierto con el aviso «No se pudo
-   agregar la entrada.», el mensaje de red y «Reintentar». Otra pestaña ve
-   **un** bloque con la descripción. Dejar de perder respuestas y
-   «Reintentar»: el foco en «Agregar» mientras viaja; el diálogo se cierra, hay
-   **un** bloque y tiene el foco. Abrir el alta otra vez en el mismo lugar y
-   agregar con la misma descripción: **dos** bloques.
+3. **El pedido que no llegó, y «Reintentar» manda el pedido que falló**
+   (reemplaza `manual-entry.spec.ts:214-261`; D2c-2 en la barra). Cortar los
+   pedidos con `dropActionRequests`. «Agregar» con la descripción «original»:
+   el aviso con «Reintentar»; «Agregar» activo; la descripción, el inicio, el
+   fin y la duración siguen como se tecleó. Otra pestaña no ve ninguna fila.
+   Cambiar la descripción a «editada», dejar de cortar y «Reintentar»: hay
+   **una** fila y dice «original»; la barra conserva «editada» y las horas
+   volvieron al borrador nuevo.
+   _Mutante_: `retryAdd` que manda el borrador actual con el id pendiente (la
+   fila dice «editada» y la barra queda vacía).
+4. **Respuesta perdida en el alta del diálogo del calendario** (CAL-46). En la
+   semana pasada (`openLastWeek`), retener revalidaciones, perder respuestas,
+   abrir «Agregar entrada» (`addEntryButton`) y agregar: el diálogo sigue
+   abierto con el aviso «No se pudo agregar la entrada.», el mensaje de red y
+   «Reintentar». Otra pestaña ve **un** bloque con la descripción. Dejar de
+   perder respuestas, retener la del reintento (`holdActionResponses`, como
+   `calendar-edit.spec.ts:482-491`) y «Reintentar»: «Agregar» tiene el foco y
+   `aria-disabled="true"`. Soltar la respuesta: el diálogo se cierra, hay
+   **un** bloque y tiene el foco. Reabrir el alta con `addEntryButton` (no con
+   un clic en la franja, que ahora tiene un bloque) y agregar con la misma
+   descripción en el mismo horario: **dos** bloques.
    _Mutantes_: `retryable: false` en el alta (sin «Reintentar»); un id nuevo en
    cada `handleAdd` del calendario (dos bloques después de «Reintentar»).
-5. **Un timer de otra pestaña con el aviso a la vista** (TT-30). Con el reloj
-   de la página instalado (después de sembrar y recargar, por la lección del
-   reloj emulado), perder la respuesta de «Agregar». Otra pestaña inicia un
-   timer; adelantar el reloj 61 s (P-11): la barra está en modo timer, el
-   aviso sigue y «Reintentar» está inactivo. La otra pestaña detiene el timer;
-   adelantar 61 s: la barra vuelve a manual con la descripción y las horas
-   tecleadas, y «Reintentar» está activo. Dejar de perder respuestas y
-   «Reintentar»: al recargar, **una** fila con la descripción.
-   _Mutante_: sin `retryDisabled={!isManual}`.
+5. **«Reintentar» del diálogo manda el borrador actual** (D2c-2 en el
+   diálogo). Cortar los pedidos con `dropActionRequests`, abrir «Agregar
+   entrada» y agregar con «A»: el aviso con «Reintentar». Cambiar la
+   descripción a «B», dejar de cortar y «Reintentar»: el diálogo se cierra, hay
+   **un** bloque «B» y ninguno «A».
+   _Mutantes_: `retry()` con `create.retry` (el bloque dice «A»); `retry()` que
+   sigue llamando a `save()` (no sale ningún pedido y el diálogo sigue
+   abierto).
+6. **Un timer de otra pestaña con el aviso a la vista** (TT-30, m4). Modo
+   manual, perder las respuestas, «Agregar»: el aviso con «Reintentar». Otra
+   pestaña (`openSecondTab`) inicia un timer con
+   `withServerAction(otherPage, …)` y comprueba que hay una fila con la
+   descripción del alta. Despachar `focus` en esta pestaña: la barra está en
+   modo timer, el aviso del alta sigue y «Reintentar» está inactivo. Dejar de
+   perder respuestas y «Detener» en esta pestaña (`withServerAction`): **el
+   aviso del alta sigue a la vista**, la barra volvió a manual con la
+   descripción y las horas tecleadas, y «Reintentar» está activo. «Agregar»:
+   el aviso no está. Recargar: **una** fila con la descripción del alta,
+   buscada por descripción.
+   _Mutantes_: sin `retryDisabled={!isManual}`; `clearNotices()` que llama a
+   `add.clear()` siempre (después de «Detener» el aviso no está y, al recargar,
+   hay dos filas).
 
 ## 8. Deuda conocida del slice
 
@@ -679,19 +768,31 @@ eso, un pedido que no llegó haría pasar el recorrido sin probar nada.
   entrada del primer intento. Es la consecuencia del ADR 0007 (`:248-251`), más
   visible acá que en «Iniciar» porque el borrador del alta tiene más campos.
   «Reintentar» en la barra no la tiene: reenvía el pedido que falló y deja en
-  la barra lo editado después.
+  la barra lo editado después. La mejora opcional de D2c-1 la achicaría.
+- **El aviso del alta con id pendiente no se puede cerrar en la barra** (m4):
+  `ActionFeedback` no tiene un control de cierre, y desde este slice
+  `clearNotices()` no lo baja. Queda a la vista hasta el desenlace de otro
+  pedido del alta, aunque la persona siga trabajando en modo timer. Si se
+  quiere cerrar a mano, es un cambio de `ActionFeedback`, que comparten todos
+  los módulos.
 - **El reintento puede recrear una entrada que la persona borró** entre la
   respuesta perdida y el clic (ADR 0007, `:239-247`). Como el aviso no baja con
-  la revalidación (D2c-3), la ventana es todo el tiempo que el aviso esté a la
-  vista. Sin test: el desenlace está escrito en el ADR.
-- **Cerrar el diálogo del calendario con la falla a la vista y volver a abrir
-  el alta es otra alta**, con otro id: si el primer intento se aplicó, la
+  la revalidación (D2c-3) ni con las otras operaciones de la barra (m4), la
+  ventana es todo el tiempo que el aviso esté a la vista. Sin test: el
+  desenlace está escrito en el ADR.
+- **En el calendario, cerrar el diálogo con la falla a la vista y volver a
+  abrir el alta es otra alta**, con otro id: si el primer intento se aplicó, la
   segunda la duplica. Es la regla del ADR («el id se renueva cuando el aviso
-  baja»); en la barra pasa lo mismo al cambiar de modo.
-- **«Reintentar» inactivo usa `disabled`** (`action-feedback.tsx:58`): si tenía
-  el foco cuando llega un timer de otra pestaña, el foco cae en `body`. Es lo
-  mismo que ya pasa con los otros `retryDisabled` de la barra
-  (`tracker-bar.tsx:690`, `:698`, `:707`).
+  baja»); la barra ya no la tiene desde m4, el calendario sí, porque su aviso
+  vive en el diálogo y no sobrevive a otra apertura.
+- **D2c-2 deja dos «Reintentar» distintos para la misma action**: en la barra
+  manda el pedido que falló; en el diálogo, el borrador actual. Y el del
+  diálogo diverge de las altas en diálogo del slice 9.
+- **«Reintentar» inactivo usa `disabled`** (`action-feedback.tsx:58`), contra
+  la lección del foco (`estado-fase1.md:173-174`): si tenía el foco cuando
+  llega un timer de otra pestaña, el foco cae en `body`. Es lo mismo que ya
+  pasa con los otros `retryDisabled` de la barra (`tracker-bar.tsx:690`,
+  `:698`, `:707`, con `switching`).
 - **Una variante más de `retryOf`** (`retryAdd`), que suma a la deuda de
   `estado-fase1.md:44`.
 - **Un id ajeno ya borrado se puede reusar** (deuda del 2b, §8): ahora también
