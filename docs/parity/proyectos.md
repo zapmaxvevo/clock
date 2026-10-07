@@ -493,6 +493,12 @@ validan las etiquetas que la entrada todavía no tiene. Continuar o duplicar esa
 entrada se rechaza con TT-78 (TT-57, TT-58). _No verificado_ (P-33): cómo la
 muestra Clockify.
 
+_Agregado el 2026-10-07, slice 11b_: construido como está registrado; la opción
+archivada va además en gris. Fuera del selector —el botón de la fila, el
+diálogo de solo lectura del calendario y su detalle— la etiqueta se nombra como
+las demás, sin «(archivada)». La barra no la ofrece, tampoco buscándola por su
+nombre entero.
+
 **PR-48 Varias etiquetas por entrada** — `replicar`
 Documentado: una entrada puede llevar más de una etiqueta. Sin tope conocido.
 _No verificado_: si Clockify limita la cantidad.
@@ -525,6 +531,18 @@ filtro y sus acciones, es administración y llega con la fase 2 sin tocar el
 modelo ([ADR 0016](../adr/0016-las-etiquetas-son-del-modulo-de-proyectos.md)).
 Decisión del equipo del 2026-10-05, fijada en el
 [contrato del slice 11](../slices/fase1-slice11-etiquetas-y-facturable.md).
+
+_Agregado el 2026-10-07, slice 11b_. Lo construido: «Nueva etiqueta» va en la
+cabecera después de «Nuevo proyecto», y solo aparece con `tag.create`. Abre un
+diálogo titulado «Nueva etiqueta», con el campo «Nombre», «Cancelar» y
+«Guardar», como el de cliente. Al crearla, el diálogo se cierra, la etiqueta
+aparece en su lugar alfabético de la sección y la pantalla anuncia «Etiqueta
+«{nombre}» creada». Si falla, el diálogo queda abierto con lo escrito y el
+aviso «No se pudo crear la etiqueta.» con la causa (PR-75, PR-76, PR-80,
+PR-84). «Reintentar» se ofrece solo por red (PR-90), y no crea una segunda
+etiqueta porque el alta lleva el id que eligió el navegador
+([ADR 0007](../adr/0007-el-cliente-elige-el-id-de-las-altas.md)). Diseño
+propio.
 
 ## 5. Unicidad y colisiones
 
@@ -913,6 +931,9 @@ Son 112 identificadores, PR-01 a PR-112, cada uno en un solo destino.
 _Corregido el 2026-10-05, slice 11_: el 11 tenía 12 identificadores y no decía
 que verifica la parte de etiquetas de PR-53, PR-54, PR-58 y PR-62; suma
 PR-112, nuevo, y el total pasa de 111 a 112.
+_Agregado el 2026-10-07, slice 11b_: los 13 del slice 11 están entregados,
+PR-21 con el 11a y los otros doce con el 11b, que verificó además la parte de
+etiquetas de PR-53, PR-54, PR-58 y PR-62.
 
 ### 14.2 Qué cambió el 2026-10-03
 

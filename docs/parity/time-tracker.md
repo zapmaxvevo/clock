@@ -257,6 +257,54 @@ pedido, no cinco.
 _Corregido el 2026-10-05, slice 11_: era `replicar` y decía que el botón
 muestra «la cantidad o los nombres si entran».
 
+_Agregado el 2026-10-07, slice 11b_. Lo que el slice construyó además de lo
+registrado, fijado en las correcciones del
+[arranque](../slices/correcciones-fase1-slice11b-arranque.md) y de las
+[revisiones](../slices/correcciones-fase1-slice11b-revisiones.md) del 11b:
+
+- **Cada opción lleva una casilla**, vacía o marcada. Para el lector de
+  pantalla, la marca es el estado seleccionado de la opción; la casilla es solo
+  lo que se ve.
+- **El teclado.** Al abrir, el foco va al buscador, «Buscar etiqueta», y se
+  queda ahí: las flechas mueven el resaltado entre las opciones, **Enter marca
+  o desmarca la resaltada sin cerrar**, y **Espacio escribe en la búsqueda**,
+  porque los nombres de etiqueta llevan espacios. Escribir resalta la primera
+  coincidencia, así que el nombre seguido de Enter la marca sin pasar por las
+  flechas. Los atajos de una tecla no se disparan adentro (TT-26). Al cerrar,
+  el foco vuelve al botón.
+- **Marcar no borra la búsqueda**: solo la cambia lo que se escribe, así la
+  etiqueta siguiente se busca con el mismo filtro. Al volver a abrir, la
+  búsqueda empieza vacía.
+- **`Escape` cierra solo el selector, también con la lista vacía** —sin
+  etiquetas o sin coincidencias—. Dentro del diálogo del calendario, el diálogo
+  sigue abierto con su borrador (CAL-67 de
+  [la paridad del calendario](calendario.md)).
+- **El botón mide como máximo 160 px**, y lo que no entra se recorta con
+  elipsis. En la fila, su nombre accesible es «Etiquetas de la entrada
+  «{descripción o Sin descripción}»», con «: » y los nombres si hay. Con la
+  membresía desactivada, los nombres llevan delante «Etiquetas: » solo para el
+  lector de pantalla, porque el ícono no dice qué son.
+- **Mientras viaja un cambio de proyecto, de facturable o de etiquetas** de la
+  misma entrada —en la fila, cualquier escritura de esa fila—, el botón queda
+  inactivo y el selector no abre, como los otros dos controles (TT-14): lo que
+  se ve es lo que queda escrito. Si el cambio de etiquetas falla, la entrada
+  vuelve a las de antes con «No se pudieron cambiar las etiquetas.» (TT-90) y
+  «Reintentar» por red (TT-89).
+- **Si el timer cambia con el selector de la barra abierto** —otra pestaña lo
+  detuvo o arrancó otro, y esta se puso al día (TT-40)—, cerrarlo descarta lo
+  elegido y no manda nada: era para la entrada sobre la que se abrió.
+- **Una etiqueta archivada** que la entrada ya tiene va, además, en gris
+  (PR-47).
+
+_No verificado_ (P-14), además de lo anterior: si las opciones de Clockify
+llevan casilla, qué hacen Enter y Espacio en su selector, y si la búsqueda
+queda después de marcar. Consultada de nuevo el 2026-10-07, la página de
+etiquetas no describe las casillas, las teclas, la búsqueda después de marcar,
+cuándo se guarda ni cómo se ve el botón con varias etiquetas. La región del
+vacío, el botón inactivo en vuelo, el descarte con el timer cambiado y el
+nombre para el lector de pantalla son diseño propio sin referencia: no se
+comparan contra Clockify.
+
 **TT-13 Crear etiqueta desde el selector** — `fuera de alcance`
 Igual que TT-09: pertenece al módulo de etiquetas.
 _Agregado el 2026-10-05_. Documentado: se escribe el nombre en el selector y se
@@ -755,6 +803,14 @@ con el inicio de semana del workspace, porque no había campo por persona
 De izquierda a derecha: descripción, proyecto con su punto de color y la tarea,
 etiquetas, marca de facturable, hora de inicio y de fin, duración, botón de
 continuar, menú de tres puntos.
+
+_Agregado el 2026-10-07, slice 11b_. Diseño propio: la fila se lee en una
+línea mientras entra. La descripción ocupa el ancho que queda libre y la línea
+se parte recién cuando no le quedan 112 px; el botón de etiquetas mide como
+máximo 160 px (TT-12). Cuando no entra, las horas, la duración, «Continuar» y
+el menú bajan juntos a la línea siguiente, y no de a uno. La barra sigue la
+misma regla con el contador, «Iniciar» o «Detener» y su menú. Las medidas, y
+los casos que todavía se parten, están en «Slice 11b» de la sección 11.
 
 **TT-50 Fila de una entrada incompleta** — `replicar`
 Sin descripción muestra «Sin descripción» en gris; sin proyecto muestra
@@ -1655,11 +1711,111 @@ las etiquetas son el 11b. Contrato:
   facturable en la edición masiva (resto de TT-63), que trae el 12; y las
   tarifas e importes (TT-15).
 
+### Slice 11b — etiquetas
+
+TT-12, TT-78 y TT-88 en la barra, en sus dos modos, en cada fila y en el
+diálogo del calendario, y TT-105 en la base. Entran por arrastre, verificados
+por el camino nuevo, TT-25, TT-27, TT-38, TT-39, TT-49, TT-50, TT-54, TT-57,
+TT-58, TT-61 y TT-92 en lo que toca a las etiquetas. De
+[la paridad de proyectos](proyectos.md), PR-42 … PR-44, PR-47, PR-48, PR-52,
+PR-68, PR-69, PR-73, PR-80, PR-88 y PR-112, y la parte de etiquetas de PR-53,
+PR-54, PR-58 y PR-62; de [la del calendario](calendario.md), CAL-23, CAL-45 y
+CAL-66 en lo que toca a las etiquetas (su sección 18). Es la segunda parte del
+slice 11. Contrato:
+[fase1-slice11-etiquetas-y-facturable.md](../slices/fase1-slice11-etiquetas-y-facturable.md),
+con las correcciones del
+[arranque](../slices/correcciones-fase1-slice11b-arranque.md) y de las
+[revisiones](../slices/correcciones-fase1-slice11b-revisiones.md).
+
+- **Las etiquetas se crean en `/proyectos`** (PR-112): «Nueva etiqueta» en la
+  cabecera, para toda membresía activa (PR-44), y la sección «Etiquetas» con
+  las activas. El selector no crea (TT-13): con el workspace sin etiquetas dice
+  «No hay etiquetas todavía», con el enlace «Ir a Proyectos» (TT-88).
+- **El selector va entre el proyecto y el facturable**, en el orden de TT-49,
+  en la barra, en la fila y en el diálogo del calendario. Sin etiquetas, el
+  ícono con «Etiquetas» en la barra, y solo el ícono, en gris, en la fila
+  (TT-50); con etiquetas, el ícono marcado y los nombres en orden alfabético,
+  separados por coma y recortados. Con la membresía desactivada, los nombres
+  como texto, y nada sin etiquetas (TT-92).
+- **Por dentro** (TT-12): una casilla por opción; la búsqueda de TT-07; Enter
+  marca la opción resaltada sin cerrar y Espacio escribe; escribir resalta la
+  primera coincidencia; marcar no borra la búsqueda, que vuelve vacía al
+  reabrir. `Escape`, un clic afuera o `Tab` cierran, con el foco de vuelta en
+  el botón.
+- **Con el timer corriendo y en la fila** (TT-27, TT-54), el conjunto se guarda
+  al cerrar el selector, entero, en un solo pedido y solo si cambió: cerrar sin
+  cambios no manda nada. La fila queda atenuada mientras viaja (TT-55) y, si
+  falla, vuelve a las etiquetas de antes con «No se pudieron cambiar las
+  etiquetas.» y «Reintentar» por red. El aviso de la barra es el mismo.
+  Mientras viaja un cambio de proyecto, de facturable o de etiquetas, los tres
+  controles esperan. Recargar muestra las etiquetas del timer (TT-38), y otro
+  dispositivo también, por la misma lectura (TT-39).
+- **Sin timer y en el diálogo**, el selector cambia solo el borrador, que viaja
+  con «Iniciar», «Agregar» o «Guardar». «Agregar» y «Detener» dejan la barra
+  sin etiquetas (TT-25); si mientras el alta viajaba se cambiaron, «Agregar»
+  conserva las nuevas. Si la barra cambia de modo con el selector abierto, el
+  selector se cierra sin elegir y el foco vuelve a su botón en la barra nueva.
+- **Si el timer cambia con el selector de la barra abierto**, cerrarlo descarta
+  lo elegido y no manda nada (TT-12).
+- **Una etiqueta archivada** (PR-47, PR-68) sigue en la fila y en el diálogo
+  de la entrada que la tiene, y el selector de esa entrada la ofrece marcada,
+  en gris y con «(archivada)»; desmarcada, no vuelve. La barra no la ofrece.
+  Conservarla mientras se agrega otra no la valida de nuevo. Asignarla responde
+  «Esa etiqueta ya no está disponible.» (TT-78), también desde un borrador que
+  la eligió antes del archivado: «Iniciar» falla con «No se pudo iniciar el
+  timer.», sin «Reintentar», sin timer y con el borrador intacto.
+- **Continuar y duplicar copian las etiquetas** de la original (TT-57, TT-58).
+  Con una archivada responden TT-78 y no crean nada, y continuar no detiene el
+  timer que corría.
+- **Hasta 50 por entrada** (PR-48): con más, el servidor responde «Se pueden
+  elegir hasta 50 etiquetas por entrada.».
+- **TT-105 y TT-61**: borrar una etiqueta la quita de sus entradas, que
+  conservan las horas y las demás etiquetas; como en la fase 1 nada borra
+  etiquetas, lo prueba un borrado directo en la base. Borrar, descartar o
+  borrar en masa una entrada guarda sus etiquetas en la constancia.
+- **Lo que el slice decide**:
+  - _No verificado_ (P-14): dentro de TT-12, el botón con los nombres, la
+    búsqueda, el guardado al cerrar, las casillas, Enter y Espacio, el
+    resaltado al escribir y la búsqueda que queda después de marcar; la fila
+    sin etiquetas (TT-50); y el rechazo de continuar y duplicar con una
+    archivada (TT-57, TT-58). La documentación no describe ninguno: lo
+    consultado está en TT-12.
+  - Decisiones del equipo que viven en la paridad de proyectos: el alta en
+    `/proyectos` (PR-112, `adaptar`), el tope de 50 (PR-48) y la archivada
+    marcada en el selector (PR-47). Las dos últimas, _no verificadas_ (P-33 de
+    esa paridad).
+  - Diseño propio sin referencia: el selector inactivo mientras viaja un
+    cambio, el descarte con el timer cambiado, `Escape` con la lista vacía,
+    «Etiquetas: » para el lector de pantalla en solo lectura y el ancho de la
+    fila (TT-49).
+- **Afuera**: crear una etiqueta desde el selector (TT-13); editar, archivar,
+  restaurar y borrar etiquetas (PR-45, PR-46), de la fase 2; limitar quién crea
+  etiquetas (PR-44), que no tiene configuración en la fase 1; y las etiquetas
+  en la edición masiva (resto de TT-63), que trae el 12.
+
+**Los anchos** (TT-49). La descripción ocupa lo que queda libre y la línea se
+parte cuando no le quedan 112 px; el proyecto mide hasta 256 px y las
+etiquetas hasta 160 px. Medido por `frontend-dev` con un proyecto de 191 px; el
+margen es lo que sobra en la línea, en px:
+
+| Caso                                          | 1400 y 1024 px       | 768 px                        |
+| --------------------------------------------- | -------------------- | ----------------------------- |
+| Barra parada, proyecto y 3 etiquetas          | 1 línea (margen 41)  | 2: baja el contador           |
+| Barra con timer, proyecto y 3 etiquetas       | 2: baja el contador  | 3                             |
+| Barra con timer, vacía                        | 2                    | 3                             |
+| Fila, proyecto y 3 etiquetas                  | 1 línea (margen 6)   | 2: baja el bloque del horario |
+| Fila, proyecto sin etiquetas                  | 1 línea (margen 110) | 2                             |
+| Fila, proyecto al tope (256 px) y 3 etiquetas | 2 (faltan ~59 px)    | 2                             |
+
+La barra con el timer no entra en una línea ni vacía: con el timer, el texto
+de TT-30, «Detené el timer para agregar tiempo a mano.», ocupa 281 px. Pasa
+desde el 11a y este slice no lo resuelve. En la fila más cargada, la
+descripción queda en unos 14 caracteres visibles al editarla.
+
 ### Lo que queda
 
-Etiquetas (TT-12), con su copia al continuar y al duplicar (TT-57, TT-58), que
-trae el 11b, la segunda parte del slice 11; y la edición masiva de proyecto,
-tarea, etiquetas y facturable (el resto de TT-63), que trae el 12.
+La edición masiva de proyecto, tarea, etiquetas y facturable (el resto de
+TT-63), que trae el 12.
 
 _Corregido el 2026-10-03, decisión del equipo_: esta lista incluía lo que ya
 implementaron los slices 3 y 4, que ahora tienen su sección, y no nombraba el
@@ -1677,6 +1833,8 @@ _Corregido el 2026-10-05, slice 11_: no decía qué slice trae cada cosa ni que
 continuar y duplicar suman las etiquetas y el facturable con el 11.
 _Corregido el 2026-10-05, slice 11a_: sale de esta lista el facturable (TT-14,
 TT-15), con su copia al continuar y al duplicar, que ahora tiene su sección.
+_Corregido el 2026-10-07, slice 11b_: salen de esta lista las etiquetas
+(TT-12), con su copia al continuar y al duplicar, que ahora tienen su sección.
 
 ## Pendientes de definición del equipo
 
@@ -1703,6 +1861,11 @@ _Corregido el 2026-10-05, slice 11_: P-14 suma TT-12 y TT-50, por las
 etiquetas, y saca TT-105, que cerró PR-46 de
 [la paridad de proyectos](proyectos.md). El facturable (TT-14) no entra: no se
 puede verificar en el plan Free (P-16 de esa paridad).
+_Corregido el 2026-10-07, slice 11b_: P-14 no suma identificadores. Lo que el
+11b decide sin verificar es parte de TT-12 —las casillas, Enter y Espacio, el
+resaltado al escribir y la búsqueda que queda después de marcar— y está
+anotado ahí, junto con el rechazo de continuar y duplicar con una etiqueta
+archivada, que sigue en TT-57 y TT-58.
 
 ### Cerrados
 
