@@ -93,7 +93,16 @@ export function BulkEditDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent initialFocus={descriptionRef} finalFocus={finalFocus}>
+      {/*
+        Con siete campos y el aviso, el diálogo es más alto que una ventana
+        baja: no pasa del alto de la ventana y se desplazan los campos, con el
+        título y los botones a la vista.
+      */}
+      <DialogContent
+        initialFocus={descriptionRef}
+        finalFocus={finalFocus}
+        className="max-h-[calc(100dvh-2rem)] grid-rows-[minmax(0,1fr)]"
+      >
         <BulkEditForm
           descriptionRef={descriptionRef}
           count={count}
@@ -209,13 +218,14 @@ function BulkEditForm({
 
   return (
     // Enter en la descripción envía el formulario y guarda.
-    <form className="grid gap-4" onSubmit={handleSubmit}>
+    <form className="flex min-h-0 flex-col gap-4" onSubmit={handleSubmit}>
       <DialogHeader>
         <DialogTitle>{bulkEditTitle(count)}</DialogTitle>
         <DialogDescription>{trackerLabels.bulkEditHint}</DialogDescription>
       </DialogHeader>
 
-      <div className="grid gap-3">
+      {/* El margen negativo deja lugar para el anillo de foco, que el desplazamiento recorta. */}
+      <div className="-m-1 grid min-h-0 gap-3 overflow-y-auto p-1">
         <div className="grid gap-2">
           <Label htmlFor={descriptionId}>{trackerLabels.description}</Label>
           <Input
