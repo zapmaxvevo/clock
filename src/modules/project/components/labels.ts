@@ -44,6 +44,22 @@ export const projectLabels = {
   pickerGoToProjects: "Ir a Proyectos",
   /** TT-07: la búsqueda del selector sin coincidencias. */
   pickerNoMatches: "Ningún proyecto coincide con la búsqueda.",
+  /**
+   * TT-12: el disparador del selector de la barra sin etiquetas, el campo del
+   * diálogo del calendario, el de solo lectura y el detalle del bloque, y la
+   * sección de `/proyectos` (PR-112).
+   */
+  tags: "Etiquetas",
+  /** PR-112 y D-1: las etiquetas se crean desde `/proyectos`. */
+  newTag: "Nueva etiqueta",
+  tagNotCreated: "No se pudo crear la etiqueta.",
+  /** H-13 y PR-88: ninguna etiqueta activa. */
+  tagsEmpty: "Todavía no hay etiquetas",
+  /** H-2: el buscador del selector de etiquetas. */
+  tagPickerSearch: "Buscar etiqueta",
+  /** TT-88: el selector de un workspace sin etiquetas. */
+  tagPickerNoTags: "No hay etiquetas todavía",
+  tagPickerNoMatches: "Ninguna etiqueta coincide con la búsqueda.",
 } as const;
 
 /**
@@ -52,6 +68,25 @@ export const projectLabels = {
  */
 export function clientCreatedLabel(name: string): string {
   return `Cliente «${name}» creado`;
+}
+
+/** PR-112: la lista ya muestra la etiqueta nueva; el anuncio confirma el alta. */
+export function tagCreatedLabel(name: string): string {
+  return `Etiqueta «${name}» creada`;
+}
+
+/**
+ * «Etiquetas: a, b». El nombre accesible del disparador del selector dice
+ * también las elegidas, que a la vista pueden quedar recortadas (TT-12, H-1);
+ * el detalle del bloque del calendario las nombra igual (CAL-23).
+ */
+export function withTagNames(label: string, names: readonly string[]): string {
+  return names.length === 0 ? label : `${label}: ${names.join(", ")}`;
+}
+
+/** H-5 y PR-47: la etiqueta de una entrada que ya no está en el catálogo. */
+export function archivedTagLabel(name: string): string {
+  return `${name} (archivada)`;
 }
 
 /** El nombre accesible de «Nueva tarea» dice a qué proyecto se suma. */
