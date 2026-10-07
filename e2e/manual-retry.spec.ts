@@ -1,7 +1,9 @@
 import type { Browser, Locator, Page } from "@playwright/test";
 
 import {
+  addEntry,
   addEntryButton,
+  BODY_GRIP_PX,
   calendarHref,
   calendarRegion,
   closedBlockName,
@@ -10,15 +12,17 @@ import {
   dialogClock,
   dialogDescription,
   dialogNotice,
+  dragBetween,
   entryBlock,
   entryBlocks,
   entryDialog,
+  grabPoint,
   isCalendarPage,
   openLastWeek,
   PERSON_TIMEZONE,
   settle,
 } from "./calendar-page";
-import { todayIn, type CivilDay } from "./days";
+import { addDays, todayIn, type CivilDay } from "./days";
 import {
   dropActionRequests,
   holdActionResponses,
@@ -675,68 +679,155 @@ async function setDialogClock(
   await dialogClock(dialog, label).press("Tab");
 }
 
+/** El alta de F2-1: «Informe 9-10», el lunes de la semana pasada. */
+const REPORT = "Informe 9-10";
+
+/** El bloque de `REPORT` con ese horario, de una hora. */
+function reportBlock(page: Page, monday: CivilDay, start: string, end: string): Locator {
+  const today = todayIn(PERSON_TIMEZONE);
+  return entryBlock(
+    dayColumn(page, monday, today),
+    closedBlockName({
+      description: REPORT,
+      day: monday,
+      today,
+      start,
+      end,
+      duration: "1:00",
+    }),
+  );
+}
+
+/** Abre el alta y la deja en «Informe 9-10», de 09:00 a 10:00. */
+async function openReportAdd(page: Page): Promise<Locator> {
+  const dialog = await openAddDialog(page, REPORT);
+  await setDialogClock(dialog, "Hora de inicio", "09:00");
+  await setDialogClock(dialog, "Hora de fin", "10:00");
+  return dialog;
+}
+
+/**
+ * Agrega «Informe 9-10» con la respuesta perdida, comprueba desde otra pestaña
+ * que se aplicó y cancela con el aviso a la vista, que deja el id pendiente
+ * (P2). La revalidación trae el bloque del primer intento. Devuelve el lunes.
+ */
+async function cancelLostReport(
+  page: Page,
+  browser: Browser,
+  email: string,
+): Promise<CivilDay> {
+  const today = todayIn(PERSON_TIMEZONE);
+  const lastWeek = await openLastWeek(page, today);
+  const stopLosing = await loseActionResponses(page, isCalendarPage);
+  const dialog = await openReportAdd(page);
+  await addFailingInDialog(dialog);
+  await expectBlocksElsewhere(browser, email, lastWeek, REPORT, 1);
+  await stopLosing();
+
+  await dialogButton(dialog, "Cancelar").click();
+  await expect(dialog).toBeHidden();
+  await expect(addEntryButton(page)).toBeFocused();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(reportBlock(page, lastWeek, "09:00", "10:00")).toBeVisible();
+  return lastWeek;
+}
+
+/**
+ * F2-1: la misma alta otra vez es una entrada nueva en 09:00–10:00. Con el id
+ * del primer intento, el servidor respondería la entrada movida y la nueva no
+ * se crearía.
+ */
+async function expectReportAddedAgain(page: Page, monday: CivilDay): Promise<void> {
+  const dialog = await openReportAdd(page);
+  await withServerAction(page, () => dialogButton(dialog, "Agregar").click());
+  await expect(dialog).toBeHidden();
+  await expect(entryBlocks(calendarRegion(page), REPORT)).toHaveCount(2);
+  await expect(reportBlock(page, monday, "09:00", "10:00")).toBeVisible();
+  await expect(reportBlock(page, monday, "11:00", "12:00")).toBeVisible();
+}
+
 test("con el id pendiente, editar en esta pestaña la entrada del primer intento hace que la misma alta cree otra", async ({
   page,
   email,
   browser,
 }) => {
-  const description = "Informe 9-10";
-  const today = todayIn(PERSON_TIMEZONE);
-  const lastWeek = await openLastWeek(page, today);
-  const region = calendarRegion(page);
-  const column = dayColumn(page, lastWeek, today);
-  const block = (start: string, end: string): Locator =>
-    entryBlock(
-      column,
-      closedBlockName({
-        description,
-        day: lastWeek,
-        today,
-        start,
-        end,
-        duration: "1:00",
-      }),
-    );
-
-  // El alta de 09:00 a 10:00 se aplica y su respuesta se pierde.
-  const stopLosing = await loseActionResponses(page, isCalendarPage);
-  const dialog = await openAddDialog(page, description);
-  await setDialogClock(dialog, "Hora de inicio", "09:00");
-  await setDialogClock(dialog, "Hora de fin", "10:00");
-  await addFailingInDialog(dialog);
-  await expectBlocksElsewhere(browser, email, lastWeek, description, 1);
-  await stopLosing();
-
-  // Cancelar con el aviso a la vista deja el id pendiente (P2). La
-  // revalidación trae el bloque del primer intento.
-  await dialogButton(dialog, "Cancelar").click();
-  await expect(dialog).toBeHidden();
-  await expect(addEntryButton(page)).toBeFocused();
-  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-  await expect(block("09:00", "10:00")).toBeVisible();
+  const monday = await cancelLostReport(page, browser, email);
 
   // Esta pestaña mueve esa entrada a 11:00–12:00 desde su diálogo. El fin va
   // primero, así el borrador nunca queda con el fin antes del inicio.
-  await block("09:00", "10:00").click();
+  await reportBlock(page, monday, "09:00", "10:00").click();
   const edit = entryDialog(page, "Editar entrada");
   await expect(dialogDescription(edit)).toBeFocused();
   await setDialogClock(edit, "Hora de fin", "12:00");
   await setDialogClock(edit, "Hora de inicio", "11:00");
   await withServerAction(page, () => dialogButton(edit, "Guardar").click());
   await expect(edit).toBeHidden();
-  await expect(block("11:00", "12:00")).toBeFocused();
+  await expect(reportBlock(page, monday, "11:00", "12:00")).toBeFocused();
 
-  // F2-1: la misma alta otra vez es una entrada nueva en 09:00–10:00. Con el
-  // id del primer intento, el servidor respondería la entrada movida y la
-  // nueva no se crearía.
-  await openAddDialog(page, description);
-  await setDialogClock(dialog, "Hora de inicio", "09:00");
-  await setDialogClock(dialog, "Hora de fin", "10:00");
+  await expectReportAddedAgain(page, monday);
+});
+
+test("con el id pendiente, mover con el gesto la entrada del primer intento hace que la misma alta cree otra", async ({
+  page,
+  email,
+  browser,
+}) => {
+  const monday = await cancelLostReport(page, browser, email);
+
+  // El mismo cambio, arrastrando el cuerpo del bloque a la franja de las
+  // 11:00 (CAL-50).
+  const today = todayIn(PERSON_TIMEZONE);
+  await withServerAction(page, () =>
+    dragBetween(
+      page,
+      { on: reportBlock(page, monday, "09:00", "10:00"), y: BODY_GRIP_PX },
+      () => grabPoint(page, monday, today, "11:00"),
+    ),
+  );
+  await expect(reportBlock(page, monday, "11:00", "12:00")).toBeVisible();
+
+  await expectReportAddedAgain(page, monday);
+});
+
+test("con el id pendiente, editar otra entrada no lo suelta y la misma alta no duplica", async ({
+  page,
+  email,
+  browser,
+}) => {
+  const today = todayIn(PERSON_TIMEZONE);
+  const lastWeek = await openLastWeek(page, today);
+  const region = calendarRegion(page);
+  const tuesday = addDays(lastWeek, 1);
+  await addEntry(page, { day: tuesday, today, start: "09:00", description: "Otra" });
+
+  const releaseRefreshes = await holdRefreshes(page, isCalendarPage);
+  const stopLosing = await loseActionResponses(page, isCalendarPage);
+  const dialog = await openAddDialog(page, "A");
+  await addFailingInDialog(dialog);
+  await expectBlocksElsewhere(browser, email, lastWeek, "A", 1);
+  await stopLosing();
+  await dialogButton(dialog, "Cancelar").click();
+  await expect(dialog).toBeHidden();
+  await expect(addEntryButton(page)).toBeFocused();
+
+  // F2-1 suelta el id solo con un cambio a la entrada de ese id. Guardar otra
+  // entrada lo deja pendiente.
+  await entryBlocks(region, "Otra").click();
+  const edit = entryDialog(page, "Editar entrada");
+  await expect(dialogDescription(edit)).toBeFocused();
+  await dialogDescription(edit).fill("Otra editada");
+  await withServerAction(page, () => dialogButton(edit, "Guardar").click());
+  await expect(edit).toBeHidden();
+  await expect(entryBlocks(region, "Otra editada")).toBeFocused();
+
+  // La misma alta otra vez reusa el id y responde la entrada del primer
+  // intento, sin duplicarla.
+  await openAddDialog(page, "A");
   await withServerAction(page, () => dialogButton(dialog, "Agregar").click());
   await expect(dialog).toBeHidden();
-  await expect(entryBlocks(region, description)).toHaveCount(2);
-  await expect(block("09:00", "10:00")).toBeVisible();
-  await expect(block("11:00", "12:00")).toBeVisible();
+  releaseRefreshes();
+  await expect(entryBlocks(region, "A")).toHaveCount(1);
+  await expect(entryBlocks(region, "Otra editada")).toHaveCount(1);
 });
 
 test("reintentar el mismo pedido cuando la entrada se editó en otra pestaña limpia la barra sin aviso", async ({
