@@ -187,9 +187,16 @@ export function TrackerBar({
    * foco queda sin dueño, vuelve al disparador del mismo selector en la barra
    * nueva.
    */
-  const pickerTriggerRef = useRef<HTMLButtonElement>(null);
+  const projectPickerTriggerRef = useRef<HTMLButtonElement>(null);
   const tagPickerTriggerRef = useRef<HTMLButtonElement>(null);
   const pickerOpen = useRef<"project" | "tags" | null>(null);
+  /**
+   * Adónde va el conjunto del selector de etiquetas, fijado al abrirlo: el id
+   * del timer abierto, o `null` para el borrador. Si el timer cambia con el
+   * selector abierto —otra pestaña lo detuvo o inició otro—, lo elegido era
+   * para la entrada de antes y se descarta al cerrar.
+   */
+  const tagsTarget = useRef<string | null>(null);
 
   const save = useAction(updateDescription, {
     unreachableMessage: timeEntryMessages.unexpected,
@@ -376,7 +383,10 @@ export function TrackerBar({
     pickerOpen.current = null;
     const focused = document.activeElement;
     if (focused === null || focused === document.body) {
-      (open === "project" ? pickerTriggerRef : tagPickerTriggerRef).current?.focus();
+      (open === "project"
+        ? projectPickerTriggerRef
+        : tagPickerTriggerRef
+      ).current?.focus();
     }
   }, [isManual]);
 
@@ -510,6 +520,9 @@ export function TrackerBar({
 
   /** TT-12 y TT-27: el conjunto entero, al cerrar el selector (D-5). */
   function handleTagsChange(tags: readonly TagRef[]): void {
+    if ((editsRunningFields ? running.id : null) !== tagsTarget.current) {
+      return;
+    }
     if (!editsRunningFields) {
       setFieldsDraft((current) => ({ ...current, tags }));
       return;
@@ -570,7 +583,7 @@ export function TrackerBar({
       label={projectLabels.pickerEmpty}
       pending={fieldsPending}
       readOnly={!canTrack}
-      triggerRef={pickerTriggerRef}
+      triggerRef={projectPickerTriggerRef}
       onOpenChange={(open) => {
         pickerOpen.current = open ? "project" : null;
       }}
@@ -588,6 +601,9 @@ export function TrackerBar({
       triggerRef={tagPickerTriggerRef}
       onOpenChange={(open) => {
         pickerOpen.current = open ? "tags" : null;
+        if (open) {
+          tagsTarget.current = editsRunningFields ? running.id : null;
+        }
       }}
     />
   );
