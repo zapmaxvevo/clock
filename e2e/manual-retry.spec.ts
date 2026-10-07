@@ -4,9 +4,13 @@ import {
   addEntryButton,
   calendarHref,
   calendarRegion,
+  closedBlockName,
+  dayColumn,
   dialogButton,
+  dialogClock,
   dialogDescription,
   dialogNotice,
+  entryBlock,
   entryBlocks,
   entryDialog,
   isCalendarPage,
@@ -659,6 +663,80 @@ test("cancelar el alta con el aviso de falla y agregar otra cosa da el aviso inf
   const region = calendarRegion(page);
   await expect(entryBlocks(region, "A")).toHaveCount(1);
   await expect(entryBlocks(region, "B")).toHaveCount(1);
+});
+
+/** Escribe una hora del diálogo y sale del campo, que es cuando la interpreta. */
+async function setDialogClock(
+  dialog: Locator,
+  label: "Hora de inicio" | "Hora de fin",
+  text: string,
+): Promise<void> {
+  await dialogClock(dialog, label).fill(text);
+  await dialogClock(dialog, label).press("Tab");
+}
+
+test("con el id pendiente, editar en esta pestaña la entrada del primer intento hace que la misma alta cree otra", async ({
+  page,
+  email,
+  browser,
+}) => {
+  const description = "Informe 9-10";
+  const today = todayIn(PERSON_TIMEZONE);
+  const lastWeek = await openLastWeek(page, today);
+  const region = calendarRegion(page);
+  const column = dayColumn(page, lastWeek, today);
+  const block = (start: string, end: string): Locator =>
+    entryBlock(
+      column,
+      closedBlockName({
+        description,
+        day: lastWeek,
+        today,
+        start,
+        end,
+        duration: "1:00",
+      }),
+    );
+
+  // El alta de 09:00 a 10:00 se aplica y su respuesta se pierde.
+  const stopLosing = await loseActionResponses(page, isCalendarPage);
+  const dialog = await openAddDialog(page, description);
+  await setDialogClock(dialog, "Hora de inicio", "09:00");
+  await setDialogClock(dialog, "Hora de fin", "10:00");
+  await addFailingInDialog(dialog);
+  await expectBlocksElsewhere(browser, email, lastWeek, description, 1);
+  await stopLosing();
+
+  // Cancelar con el aviso a la vista deja el id pendiente (P2). La
+  // revalidación trae el bloque del primer intento.
+  await dialogButton(dialog, "Cancelar").click();
+  await expect(dialog).toBeHidden();
+  await expect(addEntryButton(page)).toBeFocused();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(block("09:00", "10:00")).toBeVisible();
+
+  // Esta pestaña mueve esa entrada a 11:00–12:00 desde su diálogo. El fin va
+  // primero, así el borrador nunca queda con el fin antes del inicio.
+  await block("09:00", "10:00").click();
+  const edit = entryDialog(page, "Editar entrada");
+  await expect(dialogDescription(edit)).toBeFocused();
+  await setDialogClock(edit, "Hora de fin", "12:00");
+  await setDialogClock(edit, "Hora de inicio", "11:00");
+  await withServerAction(page, () => dialogButton(edit, "Guardar").click());
+  await expect(edit).toBeHidden();
+  await expect(block("11:00", "12:00")).toBeFocused();
+
+  // F2-1: la misma alta otra vez es una entrada nueva en 09:00–10:00. Con el
+  // id del primer intento, el servidor respondería la entrada movida y la
+  // nueva no se crearía.
+  await openAddDialog(page, description);
+  await setDialogClock(dialog, "Hora de inicio", "09:00");
+  await setDialogClock(dialog, "Hora de fin", "10:00");
+  await withServerAction(page, () => dialogButton(dialog, "Agregar").click());
+  await expect(dialog).toBeHidden();
+  await expect(entryBlocks(region, description)).toHaveCount(2);
+  await expect(block("09:00", "10:00")).toBeVisible();
+  await expect(block("11:00", "12:00")).toBeVisible();
 });
 
 test("reintentar el mismo pedido cuando la entrada se editó en otra pestaña limpia la barra sin aviso", async ({
