@@ -3,16 +3,18 @@ import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { db } from "@/server/db";
-import { client, membership, project } from "@/server/db/schema";
+import { client, membership, project, tag } from "@/server/db/schema";
 import type { MembershipStatus, Role } from "@/server/permissions";
 import {
   seedClient,
   seedProject,
+  seedTag,
   seedUser,
   seedWorkspace,
   type SeededWorkspace,
 } from "@/test/factories";
 
+import { projectRepository } from "./repository";
 import { projectMessages } from "./schema";
 
 /**
@@ -318,6 +320,78 @@ describe("createTask", () => {
       code: "not_found",
       message: projectMessages.projectUnavailable,
     });
+  });
+});
+
+describe("createTag (criterio 15 del 11b)", () => {
+  it("crea la etiqueta en el workspace de la sesión, responde su TagRef y revalida /proyectos", async () => {
+    const userId = await signInAs("member");
+    const id = randomUUID();
+
+    const result = await actions.createTag({ id, name: " Diseño " });
+
+    expect(result).toEqual({ ok: true, data: { tag: { id, name: "Diseño" } } });
+    const [row] = await db.select().from(tag);
+    expect(row).toMatchObject({ workspaceId: seeded.workspaceId, createdBy: userId });
+    expect(mocks.revalidated).toEqual(["/proyectos"]);
+  });
+
+  it("traduce el ZodError con su mensaje y revalida", async () => {
+    await signInAs("member");
+    expect(await actions.createTag({ id: randomUUID(), name: "   " })).toEqual({
+      ok: false,
+      code: "validation",
+      message: projectMessages.nameRequired,
+    });
+    expect(
+      await actions.createTag({ id: "no-es-un-uuid", name: "Diseño" }),
+    ).toMatchObject({
+      ok: false,
+      code: "validation",
+    });
+    expect(await db.select().from(tag)).toEqual([]);
+    expect(mocks.revalidated).toEqual(["/proyectos", "/proyectos"]);
+  });
+
+  it("conserva el ProjectError del nombre repetido (PR-80) y revalida", async () => {
+    await signInAs("member");
+    await seedTag({ workspaceId: seeded.workspaceId, name: "Diseño" });
+    expect(await actions.createTag({ id: randomUUID(), name: "diseño" })).toEqual({
+      ok: false,
+      code: "validation",
+      message: projectMessages.tagNameTaken,
+    });
+    expect(mocks.revalidated).toEqual(["/proyectos"]);
+  });
+
+  it("con la membresía inactiva responde PR-84 y revalida", async () => {
+    await signInAs("member", "inactive");
+    expect(await actions.createTag({ id: randomUUID(), name: "Diseño" })).toEqual({
+      ok: false,
+      code: "forbidden",
+      message: projectMessages.forbidden,
+    });
+    expect(await db.select().from(tag)).toEqual([]);
+    expect(mocks.revalidated).toEqual(["/proyectos"]);
+  });
+
+  it("un error cualquiera responde unexpected con el mensaje del módulo y revalida", async () => {
+    await signInAs("member");
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const insertTag = vi
+      .spyOn(projectRepository, "insertTag")
+      .mockRejectedValue(new Error("la base se cayó"));
+    try {
+      expect(await actions.createTag({ id: randomUUID(), name: "Diseño" })).toEqual({
+        ok: false,
+        code: "unexpected",
+        message: projectMessages.unexpected,
+      });
+    } finally {
+      insertTag.mockRestore();
+      logged.mockRestore();
+    }
+    expect(mocks.revalidated).toEqual(["/proyectos"]);
   });
 });
 

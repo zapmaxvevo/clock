@@ -10,7 +10,9 @@ import {
   membership,
   project,
   projectMember,
+  tag,
   timeEntry,
+  timeEntryTag,
   workspace as workspaceTable,
 } from "@/server/db/schema";
 import { constraintOf, UNIQUE_VIOLATION } from "@/server/db/constraint-error";
@@ -54,7 +56,10 @@ import { workspaceRepository } from "@/modules/workspace/repository";
 
 import { timeEntryRepository } from "./repository";
 import {
+  createManualEntryInput,
+  startTimerInput,
   timeEntryMessages,
+  updateEntryInput,
   type BulkEditChanges,
   type CalendarState,
   type ContinueEntryResult,
@@ -8247,5 +8252,409 @@ describe("las lecturas con bloqueo leen las referencias después del bloqueo (cr
     );
 
     expect(seen.map((row) => row.tags)).toEqual([[{ id: review.id, name: review.name }]]);
+  });
+});
+
+/** Las filas de la unión de toda la base. */
+async function allEntryTags() {
+  return db.select().from(timeEntryTag);
+}
+
+/** Los ids de las etiquetas de una entrada en la unión, ordenados. */
+async function tagIdsOfRow(entryId: string): Promise<string[]> {
+  const rows = await db
+    .select({ tagId: timeEntryTag.tagId })
+    .from(timeEntryTag)
+    .where(eq(timeEntryTag.timeEntryId, entryId));
+  return rows.map((row) => row.tagId).sort();
+}
+
+/** Tres etiquetas activas y una archivada, con nombres en orden conocido. */
+async function seedTags() {
+  return {
+    alfa: await seedTag({ workspaceId, name: "alfa" }),
+    beta: await seedTag({ workspaceId, name: "Beta" }),
+    gamma: await seedTag({ workspaceId, name: "gamma" }),
+    old: await seedTag({ workspaceId, name: "Vieja", archived: true }),
+  };
+}
+
+function refOf(row: { readonly id: string; readonly name: string }) {
+  return { id: row.id, name: row.name };
+}
+
+/** Una entrada del actor con las etiquetas que se pasen. */
+function seedTaggedEntry(
+  tagIds: readonly string[],
+  options: { running?: boolean; projectId?: string | null } = {},
+) {
+  return seedTimeEntry({
+    workspaceId,
+    userId: actor.userId,
+    description: "con etiquetas",
+    startedAt: options.running === true ? "2026-10-02T11:00:00Z" : "2026-10-01T11:00:00Z",
+    endedAt: options.running === true ? null : "2026-10-01T12:00:00Z",
+    projectId: options.projectId ?? null,
+    tagIds,
+  });
+}
+
+const tt78 = { code: "not_found", message: projectMessages.tagUnavailable };
+
+describe("las altas con etiquetas (criterio 6 del 11b: TT-12, TT-78)", () => {
+  const ws = workspaceOf(buenosAires);
+
+  it("startTimer guarda las pedidas, sin repetir y sin importar mayúsculas", async () => {
+    const { alfa, beta } = await seedTags();
+    const input = startTimerInput.parse({
+      id: randomUUID(),
+      tagIds: [beta.id.toUpperCase(), alfa.id, beta.id],
+    });
+
+    const result = await startTimer(actor, ws, input);
+
+    expect(result.running.tags).toEqual([refOf(alfa), refOf(beta)]);
+    expect(await tagIdsOfRow(input.id)).toEqual([alfa.id, beta.id].sort());
+  });
+
+  it("createManualEntry guarda las pedidas, sin repetir y sin importar mayúsculas", async () => {
+    const { alfa, gamma } = await seedTags();
+    const input = createManualEntryInput.parse({
+      date: "2026-10-01",
+      start: "08:00",
+      end: "09:00",
+      tagIds: [gamma.id, alfa.id.toUpperCase(), gamma.id.toUpperCase()],
+    });
+
+    const result = await createManualEntry(actor, ws, input);
+
+    expect(result.created.tags).toEqual([refOf(alfa), refOf(gamma)]);
+    expect(await tagIdsOfRow(result.created.id)).toEqual([alfa.id, gamma.id].sort());
+  });
+
+  it("startTimer con una archivada o inexistente responde TT-78, no escribe y no cierra el timer que corría", async () => {
+    const { alfa, old } = await seedTags();
+    const previous = await seedRunning();
+    for (const [label, tagIds] of [
+      ["archivada", [alfa.id, old.id]],
+      ["inexistente", [randomUUID()]],
+    ] as const) {
+      const id = randomUUID();
+      await expect(
+        startTimer(actor, ws, startTimerInput.parse({ id, tagIds })),
+        label,
+      ).rejects.toMatchObject(tt78);
+      expect(await timeEntryById(id), label).toBeUndefined();
+      expect((await timeEntryById(previous.id))?.endedAt, label).toBeNull();
+    }
+    expect(await allTimeEntries()).toHaveLength(1);
+    expect(await allEntryTags()).toEqual([]);
+    expect(await auditFor("time_entry")).toEqual([]);
+  });
+
+  it("startTimer con una etiqueta de otro workspace responde TT-78", async () => {
+    const other = await seedWorkspace(buenosAires);
+    const foreign = await seedTag({ workspaceId: other.workspaceId });
+    await expect(
+      startTimer(
+        actor,
+        ws,
+        startTimerInput.parse({ id: randomUUID(), tagIds: [foreign.id] }),
+      ),
+    ).rejects.toMatchObject(tt78);
+    expect(await allTimeEntries()).toEqual([]);
+  });
+
+  it("createManualEntry con una archivada o inexistente responde TT-78 y no escribe", async () => {
+    const { old } = await seedTags();
+    for (const tagIds of [[old.id], [randomUUID()]]) {
+      await expect(
+        createManualEntry(
+          actor,
+          ws,
+          createManualEntryInput.parse({
+            date: "2026-10-01",
+            start: "08:00",
+            end: "09:00",
+            tagIds,
+          }),
+        ),
+      ).rejects.toMatchObject(tt78);
+    }
+    expect(await allTimeEntries()).toEqual([]);
+    expect(await allEntryTags()).toEqual([]);
+    expect(await auditFor("time_entry")).toEqual([]);
+  });
+
+  it("con un proyecto no disponible y una etiqueta archivada responde TT-77: el par va primero", async () => {
+    const { old } = await seedTags();
+    const archived = await seedProject({ workspaceId, archived: true });
+    await expect(
+      startTimer(
+        actor,
+        ws,
+        startTimerInput.parse({
+          id: randomUUID(),
+          projectId: archived.id,
+          tagIds: [old.id],
+        }),
+      ),
+    ).rejects.toMatchObject({
+      code: "not_found",
+      message: projectMessages.projectUnavailable,
+    });
+  });
+});
+
+describe("continuar y duplicar con etiquetas (criterio 7 del 11b: TT-57, TT-58, D-3)", () => {
+  const ws = workspaceOf(buenosAires);
+
+  it("continuar y duplicar copian las etiquetas de la original", async () => {
+    const { alfa, beta } = await seedTags();
+    const source = await seedTaggedEntry([beta.id, alfa.id]);
+
+    const continued = await continueEntry(actor, ws, {
+      id: randomUUID(),
+      sourceId: source.id,
+    });
+    const duplicated = await duplicateEntry(actor, ws, {
+      id: randomUUID(),
+      sourceId: source.id,
+    });
+
+    for (const view of [continued.running, duplicated.created]) {
+      expect(view.tags).toEqual([refOf(alfa), refOf(beta)]);
+      expect(await tagIdsOfRow(view.id)).toEqual([alfa.id, beta.id].sort());
+    }
+  });
+
+  it("con una archivada en la original, continuar responde TT-78, no escribe nada y no cierra el timer", async () => {
+    const { alfa, old } = await seedTags();
+    const source = await seedTaggedEntry([alfa.id, old.id]);
+    const previous = await seedRunning();
+    const entriesBefore = (await allTimeEntries()).length;
+    const tagsBefore = (await allEntryTags()).length;
+
+    await expect(
+      continueEntry(actor, ws, { id: randomUUID(), sourceId: source.id }),
+    ).rejects.toMatchObject(tt78);
+
+    expect(await allTimeEntries()).toHaveLength(entriesBefore);
+    expect(await allEntryTags()).toHaveLength(tagsBefore);
+    expect((await timeEntryById(previous.id))?.endedAt).toBeNull();
+    expect(await auditFor("time_entry")).toEqual([]);
+  });
+
+  it("con una archivada en la original, duplicar responde TT-78 y no escribe nada", async () => {
+    const { old } = await seedTags();
+    const source = await seedTaggedEntry([old.id]);
+
+    await expect(
+      duplicateEntry(actor, ws, { id: randomUUID(), sourceId: source.id }),
+    ).rejects.toMatchObject(tt78);
+
+    expect(await allTimeEntries()).toHaveLength(1);
+    expect(await allEntryTags()).toHaveLength(1);
+    expect(await auditFor("time_entry")).toEqual([]);
+  });
+});
+
+describe("updateEntry con tags (criterio 8 del 11b: TT-27, TT-54, PR-47, PR-68)", () => {
+  const ws = workspaceOf(buenosAires);
+  const now = new Date("2026-10-02T15:00:00Z");
+
+  function withTags(id: string, tags: readonly string[]) {
+    return updateEntryInput.parse({ id, changes: { tags } });
+  }
+
+  it("reemplaza el conjunto sobre una cerrada y sobre la que corre, sin detenerla", async () => {
+    const { alfa, beta, gamma } = await seedTags();
+    const closed = await seedTaggedEntry([alfa.id]);
+    const running = await seedTaggedEntry([alfa.id, beta.id], { running: true });
+
+    const one = await updateEntry(actor, ws, withTags(closed.id, [gamma.id, beta.id]));
+    const two = await updateEntry(actor, ws, withTags(running.id, [gamma.id]), now);
+
+    expect(one.entry.tags).toEqual([refOf(beta), refOf(gamma)]);
+    expect(two.entry.tags).toEqual([refOf(gamma)]);
+    expect(two.entry.endedAt).toBeNull();
+    expect(await tagIdsOfRow(closed.id)).toEqual([beta.id, gamma.id].sort());
+    expect(await tagIdsOfRow(running.id)).toEqual([gamma.id]);
+    expect(await timeEntryById(running.id)).toMatchObject({
+      endedAt: null,
+      startedAt: running.startedAt,
+    });
+  });
+
+  it("el conjunto vacío quita todas", async () => {
+    const { alfa, old } = await seedTags();
+    const entry = await seedTaggedEntry([alfa.id, old.id]);
+    const result = await updateEntry(actor, ws, withTags(entry.id, []));
+    expect(result.entry.tags).toEqual([]);
+    expect(await tagIdsOfRow(entry.id)).toEqual([]);
+  });
+
+  it("conservar una archivada y agregar una activa funciona (PR-47)", async () => {
+    const { alfa, old } = await seedTags();
+    const entry = await seedTaggedEntry([old.id]);
+    const result = await updateEntry(actor, ws, withTags(entry.id, [old.id, alfa.id]));
+    expect(result.entry.tags).toEqual([refOf(alfa), refOf(old)]);
+    expect(await tagIdsOfRow(entry.id)).toEqual([alfa.id, old.id].sort());
+  });
+
+  it("agregar una archivada responde TT-78 y no cambia nada", async () => {
+    const { alfa, old } = await seedTags();
+    const entry = await seedTaggedEntry([alfa.id]);
+    await expect(
+      updateEntry(actor, ws, {
+        id: entry.id,
+        changes: { description: "otra", tags: [alfa.id, old.id] },
+      }),
+    ).rejects.toMatchObject(tt78);
+    expect(await tagIdsOfRow(entry.id)).toEqual([alfa.id]);
+    expect((await timeEntryById(entry.id))?.description).toBe("con etiquetas");
+    expect(await auditFor("time_entry")).toEqual([]);
+  });
+
+  it("quitar una archivada funciona (PR-68)", async () => {
+    const { alfa, old } = await seedTags();
+    const entry = await seedTaggedEntry([alfa.id, old.id]);
+    const result = await updateEntry(actor, ws, withTags(entry.id, [alfa.id]));
+    expect(result.entry.tags).toEqual([refOf(alfa)]);
+    expect(await tagIdsOfRow(entry.id)).toEqual([alfa.id]);
+  });
+
+  it("el mismo conjunto en otro orden y con otras mayúsculas no escribe ni deja constancia", async () => {
+    const { alfa, beta } = await seedTags();
+    const entry = await seedTaggedEntry([alfa.id, beta.id]);
+    const before = await timeEntryById(entry.id);
+
+    const result = await updateEntry(actor, ws, {
+      id: entry.id,
+      changes: { tags: [beta.id.toUpperCase(), alfa.id.toUpperCase()] },
+    });
+
+    expect(result.entry.tags).toEqual([refOf(alfa), refOf(beta)]);
+    expect((await timeEntryById(entry.id))?.updatedAt).toEqual(before?.updatedAt);
+    expect(await auditFor("time_entry")).toEqual([]);
+  });
+
+  it("con un proyecto no disponible y una etiqueta archivada responde TT-77 (el orden de §4.6)", async () => {
+    const { old } = await seedTags();
+    const archived = await seedProject({ workspaceId, archived: true });
+    const entry = await seedTaggedEntry([]);
+    await expect(
+      updateEntry(actor, ws, {
+        id: entry.id,
+        changes: { project: { projectId: archived.id, taskId: null }, tags: [old.id] },
+      }),
+    ).rejects.toMatchObject({
+      code: "not_found",
+      message: projectMessages.projectUnavailable,
+    });
+  });
+
+  it("con solo las etiquetas sobre una cerrada no toca sus columnas", async () => {
+    const { alfa } = await seedTags();
+    const entry = await seedTaggedEntry([]);
+    await updateEntry(actor, ws, withTags(entry.id, [alfa.id]));
+    expect(await timeEntryById(entry.id)).toEqual(entry);
+  });
+});
+
+describe("la vista trae las etiquetas (criterio 9 del 11b: PR-47, PR-68, TT-105)", () => {
+  const ws = workspaceOf(buenosAires);
+  const now = new Date("2026-10-02T15:00:00Z");
+
+  it("getTrackerState y getCalendarState traen las etiquetas en orden alfabético, archivadas incluidas", async () => {
+    const { alfa, beta, old } = await seedTags();
+    await seedTaggedEntry([old.id, beta.id, alfa.id]);
+    await seedTaggedEntry([beta.id], { running: true });
+
+    const tracker = await getTrackerState(actor, ws, { from: null }, now);
+    const calendar = await getCalendarState(actor, ws, { mode: "week", day: null }, now);
+
+    const expected = [refOf(alfa), refOf(beta), refOf(old)];
+    expect(
+      daysOf(tracker)
+        .flatMap((day) => day.entries)
+        .map((entry) => entry.tags),
+    ).toEqual([expected]);
+    expect(tracker.running?.tags).toEqual([refOf(beta)]);
+    expect(calendar.entries.map((entry) => entry.tags)).toEqual([expected]);
+    expect(calendar.running?.tags).toEqual([refOf(beta)]);
+  });
+
+  it("una etiqueta renombrada por SQL se muestra con el nombre nuevo, y una borrada ya no está", async () => {
+    const { alfa, beta } = await seedTags();
+    await seedTaggedEntry([alfa.id, beta.id]);
+    await db.update(tag).set({ name: "Zeta" }).where(eq(tag.id, alfa.id));
+    await db.delete(tag).where(eq(tag.id, beta.id));
+
+    const tracker = await getTrackerState(actor, ws, { from: null }, now);
+
+    expect(
+      daysOf(tracker)
+        .flatMap((day) => day.entries)
+        .map((entry) => entry.tags),
+    ).toEqual([[{ id: alfa.id, name: "Zeta" }]]);
+  });
+
+  it("las mutaciones que no tocan las etiquetas responden la vista con ellas", async () => {
+    const { alfa, beta } = await seedTags();
+    const expected = [refOf(alfa), refOf(beta)];
+    const closed = await seedTaggedEntry([beta.id, alfa.id]);
+    const web = await seedProject({ workspaceId });
+
+    const described = await updateDescription(actor, ws, {
+      id: closed.id,
+      description: "otra",
+    });
+    const timed = await updateEntryTimes(actor, ws, {
+      id: closed.id,
+      date: "2026-10-01",
+      start: "08:00",
+      end: "09:00",
+    });
+    const moved = await updateEntryProject(actor, ws, {
+      id: closed.id,
+      projectId: web.id,
+      taskId: null,
+    });
+    const bulk = await bulkEditEntries(actor, ws, {
+      ids: [closed.id],
+      changes: { description: "masiva" },
+    });
+    const edited = await updateEntry(actor, ws, {
+      id: closed.id,
+      changes: { description: "diálogo" },
+    });
+    for (const view of [described.entry, timed.entry, moved.entry, edited.entry]) {
+      expect(view.tags).toEqual(expected);
+    }
+    expect(bulk.entries.map((entry) => entry.tags)).toEqual([expected]);
+
+    const running = await seedTaggedEntry([alfa.id], { running: true });
+    const restarted = await updateRunningStart(
+      actor,
+      ws,
+      { id: running.id, date: "2026-10-02", start: "07:00" },
+      now,
+    );
+    const stopped = await stopTimer(actor, ws, { id: running.id });
+    expect(restarted.running.tags).toEqual([refOf(alfa)]);
+    expect(stopped.stopped.tags).toEqual([refOf(alfa)]);
+  });
+
+  it("la respuesta del arranque trae las etiquetas del timer que cerró", async () => {
+    const { gamma } = await seedTags();
+    await seedTaggedEntry([gamma.id], { running: true });
+    const result = await startTimer(
+      actor,
+      ws,
+      startTimerInput.parse({ id: randomUUID() }),
+    );
+    expect(result.stopped?.tags).toEqual([refOf(gamma)]);
+    expect(result.running.tags).toEqual([]);
   });
 });

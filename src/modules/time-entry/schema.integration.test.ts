@@ -7,11 +7,21 @@ import {
   constraintOf,
   FOREIGN_KEY_VIOLATION,
   hasCode,
+  UNIQUE_VIOLATION,
 } from "@/server/db/constraint-error";
-import { client, project, task, timeEntry, workspace } from "@/server/db/schema";
+import {
+  client,
+  project,
+  tag,
+  task,
+  timeEntry,
+  timeEntryTag,
+  workspace,
+} from "@/server/db/schema";
 import {
   seedClient,
   seedProject,
+  seedTag,
   seedTask,
   seedTimeEntry,
   seedWorkspace,
@@ -264,5 +274,135 @@ describe("el facturable de una entrada (criterio 1 del 11a: TT-14)", () => {
     );
     // 23502: `not_null_violation`.
     expect(hasCode(error, "23502")).toBe(true);
+  });
+});
+
+describe("la unión de etiquetas (criterio 1 del 11b: PR-48, PR-69, TT-105)", () => {
+  /** Una entrada cerrada del owner con las etiquetas que se pasen. */
+  function seedTaggedEntry(tagIds: readonly string[]) {
+    return seedTimeEntry({
+      workspaceId: ours.workspaceId,
+      userId: ours.ownerId,
+      startedAt: "2026-10-01T11:00:00Z",
+      endedAt: "2026-10-01T12:30:00Z",
+      tagIds,
+    });
+  }
+
+  /** Las etiquetas de la entrada en la unión, por id. */
+  async function tagIdsOfEntry(entryId: string): Promise<string[]> {
+    const rows = await db
+      .select({ tagId: timeEntryTag.tagId })
+      .from(timeEntryTag)
+      .where(eq(timeEntryTag.timeEntryId, entryId));
+    return rows.map((row) => row.tagId).sort();
+  }
+
+  it("acepta varias etiquetas en una entrada", async () => {
+    const design = await seedTag({ workspaceId: ours.workspaceId });
+    const review = await seedTag({ workspaceId: ours.workspaceId });
+    const entry = await seedTaggedEntry([design.id, review.id]);
+    expect(await tagIdsOfEntry(entry.id)).toEqual([design.id, review.id].sort());
+  });
+
+  it("rechaza la misma etiqueta dos veces en una entrada", async () => {
+    const design = await seedTag({ workspaceId: ours.workspaceId });
+    const entry = await seedTaggedEntry([design.id]);
+    expect(
+      await violated(
+        db.insert(timeEntryTag).values({
+          workspaceId: ours.workspaceId,
+          timeEntryId: entry.id,
+          tagId: design.id,
+        }),
+        UNIQUE_VIOLATION,
+      ),
+    ).toBe("time_entry_tag_time_entry_id_tag_id_pk");
+  });
+
+  it("rechaza una entrada de un workspace con una etiqueta de otro, desde los dos lados", async () => {
+    const theirs = await seedWorkspace();
+    const foreign = await seedTag({ workspaceId: theirs.workspaceId });
+    const entry = await seedTaggedEntry([]);
+    expect(
+      await violated(
+        db.insert(timeEntryTag).values({
+          workspaceId: ours.workspaceId,
+          timeEntryId: entry.id,
+          tagId: foreign.id,
+        }),
+        FOREIGN_KEY_VIOLATION,
+      ),
+    ).toBe("time_entry_tag_tag_fk");
+    expect(
+      await violated(
+        db.insert(timeEntryTag).values({
+          workspaceId: theirs.workspaceId,
+          timeEntryId: entry.id,
+          tagId: foreign.id,
+        }),
+        FOREIGN_KEY_VIOLATION,
+      ),
+    ).toBe("time_entry_tag_entry_fk");
+  });
+
+  it("borrar una etiqueta la saca de la entrada, que queda con sus horas y sus otras etiquetas", async () => {
+    const design = await seedTag({ workspaceId: ours.workspaceId });
+    const review = await seedTag({ workspaceId: ours.workspaceId });
+    const entry = await seedTaggedEntry([design.id, review.id]);
+
+    await db.delete(tag).where(eq(tag.id, design.id));
+
+    expect(await tagIdsOfEntry(entry.id)).toEqual([review.id]);
+    expect(await timeEntryById(entry.id)).toMatchObject({
+      startedAt: entry.startedAt,
+      endedAt: entry.endedAt,
+    });
+  });
+
+  it("borrar la entrada borra sus filas de la unión y deja las etiquetas", async () => {
+    const design = await seedTag({ workspaceId: ours.workspaceId });
+    const entry = await seedTaggedEntry([design.id]);
+    const other = await seedTaggedEntry([design.id]);
+
+    await db.delete(timeEntry).where(eq(timeEntry.id, entry.id));
+
+    expect(await tagIdsOfEntry(entry.id)).toEqual([]);
+    expect(await tagIdsOfEntry(other.id)).toEqual([design.id]);
+    expect(await db.select().from(tag).where(eq(tag.id, design.id))).toHaveLength(1);
+  });
+
+  it("borrar el workspace funciona y se lleva entradas, etiquetas y unión", async () => {
+    const design = await seedTag({ workspaceId: ours.workspaceId });
+    const entry = await seedTaggedEntry([design.id]);
+
+    await db.delete(workspace).where(eq(workspace.id, ours.workspaceId));
+
+    expect(await timeEntryById(entry.id)).toBeUndefined();
+    expect(await db.select().from(timeEntryTag)).toEqual([]);
+    expect(
+      await db.select().from(tag).where(eq(tag.workspaceId, ours.workspaceId)),
+    ).toEqual([]);
+  });
+
+  it("isMissingTag reconoce un 23503 real de time_entry_tag_tag_fk y no el del proyecto", async () => {
+    const theirs = await seedWorkspace();
+    const foreign = await seedTag({ workspaceId: theirs.workspaceId });
+    const entry = await seedTaggedEntry([]);
+    const missingTag = await rejection(
+      db.insert(timeEntryTag).values({
+        workspaceId: ours.workspaceId,
+        timeEntryId: entry.id,
+        tagId: foreign.id,
+      }),
+    );
+    expect(timeEntryRepository.isMissingTag(missingTag)).toBe(true);
+    expect(timeEntryRepository.isMissingProject(missingTag)).toBe(false);
+
+    const foreignProject = await seedProject({ workspaceId: theirs.workspaceId });
+    const missingProject = await rejection(
+      insertEntry({ projectId: foreignProject.id, taskId: null }),
+    );
+    expect(timeEntryRepository.isMissingTag(missingProject)).toBe(false);
   });
 });

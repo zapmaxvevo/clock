@@ -10,6 +10,7 @@ import {
   defaultFormats,
   seedMember,
   seedProject,
+  seedTag,
   seedTask,
   seedTimeEntry,
   seedWorkspace,
@@ -1430,5 +1431,127 @@ describe("audit log del facturable (criterio 12 del 11a)", () => {
     const entry = await seedEntry({ projectId: null, billable: true });
     await updateEntry(actor, workspace, { id: entry.id, changes: { billable: true } });
     expect(await auditFor("time_entry", entry.id)).toEqual([]);
+  });
+});
+
+describe("audit log de las etiquetas (criterio 11 del 11b, TT-61)", () => {
+  /** Dos etiquetas cuyo orden alfabético es el inverso de su alta. */
+  async function seedTwoTags() {
+    return {
+      zeta: await seedTag({ workspaceId, name: "zeta" }),
+      alfa: await seedTag({ workspaceId, name: "Alfa" }),
+    };
+  }
+
+  function seedEntry(tagIds: readonly string[], running = false) {
+    return seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      description: "original",
+      startedAt: running ? "2026-10-02T11:00:00Z" : "2026-10-01T11:00:00Z",
+      endedAt: running ? null : "2026-10-01T12:00:00Z",
+      tagIds,
+    });
+  }
+
+  async function recordOf(id: string, action: string) {
+    const row = (await auditFor("time_entry", id)).find(
+      (candidate) => candidate.action === action,
+    );
+    return {
+      previousValue: parsed(row?.previousValue ?? null),
+      nextValue: parsed(row?.nextValue ?? null),
+    };
+  }
+
+  it("las cuatro altas guardan sus tagIds en el nextValue, en el orden de la vista", async () => {
+    const { zeta, alfa } = await seedTwoTags();
+    const source = await seedEntry([zeta.id, alfa.id]);
+    const expected = [alfa.id, zeta.id];
+
+    const started = await startTimer(actor, workspace, {
+      id: randomUUID(),
+      description: "",
+      projectId: null,
+      taskId: null,
+      tagIds: [zeta.id, alfa.id],
+    });
+    const manual = await createManualEntry(actor, workspace, {
+      description: "",
+      date: "2026-09-30",
+      start: "08:00",
+      end: "09:00",
+      projectId: null,
+      taskId: null,
+      tagIds: [zeta.id, alfa.id],
+    });
+    const continued = await continueEntry(actor, workspace, {
+      id: randomUUID(),
+      sourceId: source.id,
+    });
+    const duplicated = await duplicateEntry(actor, workspace, {
+      id: randomUUID(),
+      sourceId: source.id,
+    });
+
+    for (const [action, id] of [
+      ["timeEntry.start", started.running.id],
+      ["timeEntry.createManual", manual.created.id],
+      ["timeEntry.continue", continued.running.id],
+      ["timeEntry.duplicate", duplicated.created.id],
+    ] as const) {
+      expect([action, (await recordOf(id, action)).nextValue]).toEqual([
+        action,
+        expect.objectContaining({ tagIds: expected }),
+      ]);
+    }
+  });
+
+  it("timeEntry.update guarda los tagIds de antes y de después, solo cuando los escribió", async () => {
+    const { zeta, alfa } = await seedTwoTags();
+    const entry = await seedEntry([zeta.id]);
+    const same = await seedEntry([zeta.id, alfa.id]);
+
+    await updateEntry(actor, workspace, {
+      id: entry.id,
+      changes: { tags: [zeta.id, alfa.id] },
+    });
+    await updateEntry(actor, workspace, {
+      id: same.id,
+      changes: { description: "otra", tags: [alfa.id, zeta.id] },
+    });
+
+    expect(await recordOf(entry.id, "timeEntry.update")).toEqual({
+      previousValue: { tagIds: [zeta.id] },
+      nextValue: { tagIds: [alfa.id, zeta.id] },
+    });
+    expect(await recordOf(same.id, "timeEntry.update")).toEqual({
+      previousValue: { description: "original" },
+      nextValue: { description: "otra" },
+    });
+  });
+
+  it("el borrado, el descarte y el borrado masivo guardan los tagIds en el previousValue", async () => {
+    const { zeta, alfa } = await seedTwoTags();
+    const deleted = await seedEntry([zeta.id, alfa.id]);
+    const bulk = await seedEntry([zeta.id]);
+    const untagged = await seedEntry([]);
+    const running = await seedEntry([alfa.id, zeta.id], true);
+
+    await deleteEntry(actor, { id: deleted.id });
+    await discardTimer(actor, { id: running.id });
+    await bulkDeleteEntries(actor, { ids: [bulk.id, untagged.id] });
+
+    for (const [action, id, tagIds] of [
+      ["timeEntry.delete", deleted.id, [alfa.id, zeta.id]],
+      ["timeEntry.discard", running.id, [alfa.id, zeta.id]],
+      ["timeEntry.bulkDelete", bulk.id, [zeta.id]],
+      ["timeEntry.bulkDelete", untagged.id, []],
+    ] as const) {
+      expect([action, (await recordOf(id, action)).previousValue]).toEqual([
+        action,
+        expect.objectContaining({ id, description: "original", tagIds }),
+      ]);
+    }
   });
 });

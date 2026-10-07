@@ -10,6 +10,7 @@ import {
   seedMember,
   seedPreferences,
   seedProject,
+  seedTag,
   seedTask,
   seedTimeEntry,
   seedUser,
@@ -1830,5 +1831,97 @@ describe("updateEntry (ADR 0013)", () => {
     expect(malformed).toMatchObject({ ok: false, code: "validation" });
     expect((await timeEntryById(closed.id))?.billable).toBe(false);
     expect(mocks.revalidated).toEqual(revalidatedFor(2));
+  });
+});
+
+describe("las etiquetas en las actions (criterio 15 del 11b: TT-78)", () => {
+  const longAgo = "2020-01-01T00:00:00Z";
+  const unknownId = "11111111-1111-4111-8111-111111111111";
+
+  /** Abre la sesión y crea su membresía, que crea la primera action. */
+  async function signInWithMembership() {
+    const seeded = await signInOn({ createdAt: longAgo });
+    await actions.discardTimer({ id: unknownId });
+    mocks.revalidated.length = 0;
+    return seeded;
+  }
+
+  it("las cuatro altas y updateEntry responden TT-78 con not_found, y revalidan", async () => {
+    const seeded = await signInWithMembership();
+    const old = await seedTag({ workspaceId: seeded.workspaceId, archived: true });
+    const source = await seedTimeEntry({
+      workspaceId: seeded.workspaceId,
+      userId: sessionUserId(),
+      startedAt: "2026-10-01T11:00:00Z",
+      endedAt: "2026-10-01T12:00:00Z",
+      tagIds: [old.id],
+    });
+    const plain = await seedTimeEntry({
+      workspaceId: seeded.workspaceId,
+      userId: sessionUserId(),
+      startedAt: "2026-10-01T13:00:00Z",
+      endedAt: "2026-10-01T14:00:00Z",
+    });
+    const tt78 = {
+      ok: false,
+      code: "not_found",
+      message: projectMessages.tagUnavailable,
+    };
+
+    expect(await actions.startTimer({ id: randomUUID(), tagIds: [old.id] })).toEqual(
+      tt78,
+    );
+    expect(
+      await actions.createManualEntry({
+        date: "2026-10-01",
+        start: "08:00",
+        end: "09:00",
+        tagIds: [old.id],
+      }),
+    ).toEqual(tt78);
+    expect(
+      await actions.continueEntry({ id: randomUUID(), sourceId: source.id }),
+    ).toEqual(tt78);
+    expect(
+      await actions.duplicateEntry({ id: randomUUID(), sourceId: source.id }),
+    ).toEqual(tt78);
+    expect(
+      await actions.updateEntry({ id: plain.id, changes: { tags: [old.id] } }),
+    ).toEqual(tt78);
+    expect(await allTimeEntries()).toHaveLength(2);
+    expect(mocks.revalidated).toEqual(revalidatedFor(5));
+  });
+
+  it("51 etiquetas responden validation con el texto de D-4", async () => {
+    await signInWithMembership();
+    const tagIds = Array.from({ length: 51 }, () => randomUUID());
+    expect(await actions.startTimer({ id: randomUUID(), tagIds })).toEqual({
+      ok: false,
+      code: "validation",
+      message: timeEntryMessages.tooManyTags,
+    });
+    expect(await allTimeEntries()).toEqual([]);
+  });
+
+  it("updateEntry guarda las etiquetas pedidas y responde la vista con ellas", async () => {
+    const seeded = await signInWithMembership();
+    const design = await seedTag({ workspaceId: seeded.workspaceId, name: "Diseño" });
+    const entry = await seedTimeEntry({
+      workspaceId: seeded.workspaceId,
+      userId: sessionUserId(),
+      startedAt: "2026-10-01T11:00:00Z",
+      endedAt: "2026-10-01T12:00:00Z",
+    });
+
+    const result = await actions.updateEntry({
+      id: entry.id,
+      changes: { tags: [design.id] },
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: { entry: { tags: [{ id: design.id, name: "Diseño" }] } },
+    });
+    expect(mocks.revalidated).toEqual(revalidatedFor(1));
   });
 });
