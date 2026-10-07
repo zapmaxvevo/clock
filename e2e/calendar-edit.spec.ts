@@ -50,17 +50,28 @@ import {
   holdActionResponses,
   holdRefreshes,
   loseActionResponses,
+  recordActions,
   withServerAction,
 } from "./network";
 import { expect, test } from "./session";
-import { escapeRegExp, pickProject, startTimer } from "./tracker-page";
+import {
+  escapeRegExp,
+  openProjectPicker,
+  pickProject,
+  projectPicker,
+  projectPopup,
+  projectSearch,
+  startTimer,
+  uniqueSuffix,
+} from "./tracker-page";
 
 /**
  * Recorridos del slice 8c: el calendario escribe (§7 del contrato,
- * «Recorridos obligatorios de `e2e/calendar-edit.spec.ts`»). Cinco tests, uno
- * por recorrido, porque cada uno abre una sola sesión y el endpoint de sesión
- * ya responde 429 con la suite completa; la segunda pestaña es otra página del
- * mismo contexto. Las entradas se crean desde la grilla y van en la semana
+ * «Recorridos obligatorios de `e2e/calendar-edit.spec.ts`»). Un test por
+ * recorrido, porque cada uno abre una sola sesión y el endpoint de sesión ya
+ * responde 429 con la suite completa; la segunda pestaña es otra página del
+ * mismo contexto. El último es del 11b: el `Escape` del selector de proyecto
+ * dentro del diálogo (m13 de sus correcciones de arranque). Las entradas se crean desde la grilla y van en la semana
  * anterior, salvo el timer: ninguna hora queda en el futuro y la semana tiene
  * todos sus días. La grilla de una semana sin hoy abre con las 08:00 arriba
  * (CAL-14), así que las franjas de la mañana están a la vista. Toda persona
@@ -76,6 +87,9 @@ const NETWORK_FAILURE = "No se pudo guardar. Revisá la conexión y volvé a int
 
 /** «Detener» con cambios sin guardar (decisión 4 del contrato). */
 const SAVE_BEFORE_STOP = "Guardá los cambios antes de detener el timer.";
+
+/** TT-07: la búsqueda del selector de proyecto sin coincidencias. */
+const NO_PROJECT_MATCHES = "Ningún proyecto coincide con la búsqueda.";
 
 test("un clic en una franja agrega la entrada, y guardarla en otra semana avisa con el enlace a esa semana", async ({
   page,
@@ -506,4 +520,51 @@ test("«Reintentar» guarda el borrador actual, y guardar una entrada borrada en
   const gone = screenNotice(page, ENTRY_NOT_SAVED);
   await expect(gone).toContainText("Esa entrada ya no existe.");
   await expect(region).toBeFocused();
+});
+
+test("`Escape` en el selector de proyecto del diálogo sin coincidencias cierra solo el selector y conserva el borrador", async ({
+  page,
+}) => {
+  const suffix = uniqueSuffix();
+  const description = `escape del selector ${suffix}`;
+  const draft = `borrador del diálogo ${suffix}`;
+  const today = todayIn(PERSON_TIMEZONE);
+  const lastWeek = await openLastWeek(page, today);
+  const tuesday = addDays(lastWeek, 1);
+  await addEntry(page, { day: tuesday, today, start: "09:00", description });
+  const block = entryBlock(
+    dayColumn(page, tuesday, today),
+    closedBlockName({
+      description,
+      day: tuesday,
+      today,
+      start: "09:00",
+      end: "10:00",
+      duration: "1:00",
+    }),
+  );
+
+  // m13 del 11b: con la lista vacía, el `Escape` del selector no llega al
+  // diálogo. El borrador sin guardar sigue a la vista.
+  await block.click();
+  const dialog = entryDialog(page, "Editar entrada");
+  await expect(dialogDescription(dialog)).toBeFocused();
+  await dialogDescription(dialog).fill(draft);
+  const sent = recordActions(page);
+  await openProjectPicker(page, dialog);
+  await projectSearch(page).fill(`inexistente ${suffix}`);
+  await expect(
+    projectPopup(page).getByRole("status").filter({ hasText: NO_PROJECT_MATCHES }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(projectPopup(page)).toBeHidden();
+  await expect(dialog).toBeVisible();
+  await expect(projectPicker(dialog)).toBeFocused();
+  await expect(dialogDescription(dialog)).toHaveValue(draft);
+
+  // El segundo `Escape` cierra el diálogo sin guardar nada.
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(block).toBeFocused();
+  expect(sent).toHaveLength(0);
 });

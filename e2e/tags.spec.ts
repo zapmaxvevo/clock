@@ -15,7 +15,12 @@ import {
 } from "./calendar-page";
 import { archiveTag } from "./database";
 import { addDays, todayIn } from "./days";
-import { isAction, recordActions, withServerAction } from "./network";
+import {
+  holdActionResponses,
+  isAction,
+  recordActions,
+  withServerAction,
+} from "./network";
 import { expect, test } from "./session";
 import {
   chooseMode,
@@ -24,6 +29,7 @@ import {
   elapsedCounter,
   entryRow,
   escapeRegExp,
+  isTrackerPage,
   openTagPicker,
   pickTags,
   setClock,
@@ -182,6 +188,37 @@ async function addTaggedEntry(
 }
 
 /**
+ * Alterna una etiqueta en el selector abierto, buscándola por su nombre
+ * entero, y espera que quede marcada o no según `selected`. El popup sigue
+ * abierto (TT-12).
+ */
+async function toggleTag(page: Page, name: string, selected: boolean): Promise<void> {
+  await tagSearch(page).fill(name);
+  const option = tagOption(page, name);
+  await expect(option).toHaveAttribute("aria-selected", String(!selected));
+  await option.click();
+  await expect(option).toHaveAttribute("aria-selected", String(selected));
+  await expect(tagPopup(page)).toBeVisible();
+}
+
+/**
+ * Deja en el buscador del selector abierto el nombre entero de `name`, que la
+ * deja como única opción, y la resalta con la flecha. El foco se queda en el
+ * buscador, que anuncia la resaltada con `aria-activedescendant` (m11).
+ */
+async function highlightOnly(page: Page, name: string): Promise<void> {
+  const search = tagSearch(page);
+  await search.fill(name);
+  await expect(tagPopup(page).getByRole("option")).toHaveCount(1);
+  const id = await tagOption(page, name).getAttribute("id");
+  if (id === null) {
+    throw new Error(`La opción «${name}» no tiene id.`);
+  }
+  await search.press("ArrowDown");
+  await expect(search).toHaveAttribute("aria-activedescendant", id);
+}
+
+/**
  * Hace un clic fuera de todo popup y de todo control: sobre el «Total» del
  * grupo de hoy, que es texto. Va por coordenadas y no por el localizador,
  * porque lo que reciba el clic —el texto o una capa del popup— da igual: el
@@ -288,7 +325,7 @@ test("la barra busca etiquetas sin acentos, el timer guarda las elegidas y deten
   await expect(tagPicker(bar)).toHaveAccessibleName(TAGS);
 });
 
-test("la fila desmarca una etiqueta y la guarda al cerrar el selector con un clic afuera", async ({
+test("la fila guarda sus etiquetas en un solo pedido al cerrar el selector con un clic afuera, y no pide nada con el mismo conjunto", async ({
   page,
 }) => {
   const suffix = uniqueSuffix();
@@ -304,17 +341,43 @@ test("la fila desmarca una etiqueta y la guarda al cerrar el selector con un cli
   const row = entryRow(todayGroup(page), description);
   await expect(tagPicker(row)).toHaveAccessibleName(tagsName(rowLabel, [design, review]));
 
-  // TT-54, D-5: desmarcar no pide nada; cerrar con un clic afuera manda el
-  // conjunto entero, en un solo pedido.
+  // D-5, m14: desmarcar y volver a marcar deja el mismo conjunto, y cerrar
+  // con `Escape` no pide nada. Lo cuenta el pedido de abajo, que es el
+  // primero que tiene que salir.
   const sent = recordActions(page);
   await openTagPicker(page, row);
-  await tagSearch(page).fill(design);
-  const option = tagOption(page, design);
-  await expect(option).toHaveAttribute("aria-selected", "true");
-  await option.click();
-  await expect(option).toHaveAttribute("aria-selected", "false");
+  await toggleTag(page, review, false);
+  await toggleTag(page, review, true);
+  await page.keyboard.press("Escape");
+  await expect(tagPopup(page)).toBeHidden();
+  await expect(tagPicker(row)).toBeFocused();
+
+  // TT-54, D-5: tres casillas no piden nada; cerrar con un clic afuera manda
+  // el conjunto entero, en un solo pedido. Con la respuesta retenida, el
+  // disparador queda inactivo y no abre (§5.8).
+  await openTagPicker(page, row);
+  await toggleTag(page, design, false);
+  await toggleTag(page, review, false);
+  await toggleTag(page, review, true);
   await expect(tagPopup(page)).toBeVisible();
-  await withServerAction(page, () => clickOutside(page));
+  expect(sent).toHaveLength(0);
+  const release = await holdActionResponses(page, isTrackerPage);
+  const requested = page.waitForRequest(isAction);
+  await clickOutside(page);
+  await requested;
+  await expect(tagPopup(page)).toBeHidden();
+  await expect(tagPicker(row)).toHaveAccessibleName(tagsName(rowLabel, [review]));
+  await expect(tagPicker(row)).toHaveAttribute("aria-disabled", "true");
+  // Con `aria-disabled` Playwright no hace el clic, así que se abre por
+  // teclado con el foco en el disparador, como lo haría la persona.
+  await tagPicker(row).focus();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("ArrowDown");
+  const settled = page.waitForResponse((response) => isAction(response.request()));
+  release();
+  expect((await settled).ok()).toBe(true);
+  await expect(tagPicker(row)).not.toHaveAttribute("aria-disabled", "true");
+  // Un popup que se hubiera abierto en vuelo seguiría abierto.
   await expect(tagPopup(page)).toBeHidden();
   expect(sent).toHaveLength(1);
   expect(sent[0].postData(), "el pedido no lleva el grupo de etiquetas").toContain(
@@ -390,6 +453,9 @@ test("una etiqueta archivada sigue en la fila y no se ofrece, y archivarla despu
   await expect(bar.getByRole("button", { name: "Iniciar" })).toBeVisible();
   await expect(elapsedCounter(bar)).toHaveText("0:00:00");
   await expect(tagPicker(bar)).toHaveAccessibleName(tagsName(TAGS, [fresh]));
+  // m14: el único pedido desde que se abrió la fila es «Iniciar»; cerrar el
+  // selector de la fila sin cambios y el de la barra sin timer no piden nada.
+  expect(sent).toHaveLength(1);
 
   await page.reload();
   await expect(trackerBar(page).getByRole("button", { name: "Iniciar" })).toBeVisible();
@@ -486,17 +552,20 @@ test("el selector de etiquetas de la barra es accesible por teclado y sus letras
   await expect(bar.getByRole("button", { name: "Iniciar" })).toBeVisible();
   await expect(bar.getByRole("button", { name: "Detener" })).toHaveCount(0);
 
-  // Espacio sobre la opción resaltada la marca sin cerrar.
-  await search.fill(tag);
+  // m11: con la opción resaltada, Espacio escribe en el buscador y no la
+  // marca, porque los nombres llevan espacios.
   const option = tagOption(page, tag);
-  await expect(tagPopup(page).getByRole("option")).toHaveCount(1);
-  const optionId = await option.getAttribute("id");
-  expect(optionId).not.toBeNull();
-  await search.press("ArrowDown");
-  await expect(search).toHaveAttribute("aria-activedescendant", optionId ?? "");
+  await highlightOnly(page, tag);
   await page.keyboard.press("Space");
+  await expect(search).toHaveValue(`${tag} `);
+  await expect(tagPopup(page).getByRole("option", { selected: true })).toHaveCount(0);
+
+  // m11: Enter sobre la opción resaltada la marca sin cerrar.
+  await highlightOnly(page, tag);
+  await page.keyboard.press("Enter");
   await expect(option).toHaveAttribute("aria-selected", "true");
   await expect(tagPopup(page)).toBeVisible();
+  await expect(search).toBeFocused();
 
   // `Escape` cierra, el foco vuelve al disparador y su nombre dice la
   // elegida (WCAG 2.5.3). Nada viajó al servidor.
