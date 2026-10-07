@@ -152,8 +152,7 @@ test("el calendario se abre desde la navegación, navega por semanas y días y d
   const lastWeek = addDays(thisWeek, -7);
   const lastWednesday = addDays(lastWeek, 2);
   const yesterday = addDays(today, -1);
-  // Un día de esta semana que no es hoy y que ya está dentro del piso del
-  // workspace: el de hoy se compara contra él (CAL-09).
+  // Un día de esta semana que no es hoy: el de hoy se compara contra él (CAL-09).
   const otherDay = dayKeyOf(today) === dayKeyOf(thisWeek) ? addDays(today, 1) : yesterday;
   const description = "reunión del miércoles";
 
