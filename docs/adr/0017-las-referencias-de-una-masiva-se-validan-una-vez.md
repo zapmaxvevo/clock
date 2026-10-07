@@ -3,7 +3,10 @@
 Fecha: 2026-10-07. Estado: propuesto.
 Origen: contrato del slice 12
 ([`fase1-slice12-edicion-masiva.md`](../slices/fase1-slice12-edicion-masiva.md)),
-decisión D12-2.
+decisión D12-2. Revisado en la ronda 1 de ese contrato
+([`correcciones-fase1-slice12.md`](../slices/correcciones-fase1-slice12.md),
+M1 y M2). El team-lead tomó D12-2; queda sujeta a la aprobación de este ADR por
+el usuario.
 
 ## Contexto
 
@@ -33,7 +36,8 @@ Lo que hay que decidir en la masiva:
   todo el pedido, que responde con su propio código. Nombra «el proyecto
   elegido que ya no está disponible en el slice 12» entre las segundas.
 - **En qué orden**, si en el mismo pedido hay filas rechazadas y una referencia
-  no disponible. El contrato del 6 (§4.8) anticipaba «antes de evaluar filas».
+  no disponible, y si no están disponibles a la vez el proyecto y una etiqueta.
+  El contrato del 6 (§4.8) anticipaba «antes de evaluar filas».
 
 Las restricciones que la decisión no puede romper:
 
@@ -66,15 +70,24 @@ La opción 3.
      `tagsToCheck`). Una regla que depende de la fila y no consulta nada —el
      tope de 50 etiquetas de una entrada— lanza acá, y en la masiva es un
      rechazo de la fila.
-  2. **Las validaciones de `project`, una vez por pedido**: el par que piden
-     los planes, que es el mismo para todos, y la unión de las etiquetas que
-     cada plan asigna de nuevo. Sin nada que validar, no se consulta.
+  2. **Las validaciones de `project`, una vez para el pedido entero y no plan
+     por plan, primero el par y después la unión de las etiquetas**: el par es
+     el que pide cualquier plan que lo pida —todos piden el mismo—, y las
+     etiquetas son la unión de las que cada plan asigna de nuevo. Sin nada que
+     validar, no se consulta.
   3. **Los campos a escribir, puros**: el par, el facturable con `billableFor`
      (D-2) sobre el proyecto validado, y las etiquetas.
 - **Las filas van antes que las referencias.** Si alguna fila se rechaza, la
   respuesta es la lista de rechazos y las referencias no se consultan. Si
   ninguna se rechaza y una referencia no está disponible, la respuesta es el
-  error de `project`, `not_found` con su texto, sin lista.
+  error de `project`, `not_found` con su texto, sin lista. Con el proyecto y
+  una etiqueta no disponibles a la vez, responde el proyecto.
+- **La falla de una referencia es causa del pedido aunque dependa de qué filas
+  se eligieron.** Que la referencia se valide depende de las filas: con todas
+  las filas ya en el proyecto archivado, el pedido termina bien; con una que no
+  lo tiene, falla. Igual es causa del pedido y no rechazo de esa fila, porque
+  el remedio es elegir otra referencia, no quitar filas: quitar la fila que
+  dispara la validación deja un pedido que no cambia el par de ninguna.
 - **`updateEntry` usa las mismas tres funciones** con un solo plan. Su orden de
   consultas y de rechazos no cambia.
 
@@ -90,6 +103,12 @@ La opción 3.
   remedio —«Quitar esas entradas de la selección»— que no la resuelve: lo que
   hay que hacer es elegir otro proyecto. Es la distinción del ADR 0011 entre un
   rechazo de fila y una causa del pedido.
+- **Por qué para el pedido entero y no plan por plan.** No son equivalentes:
+  cambia qué error gana. Con el proyecto P y la etiqueta X archivados, una fila
+  en P sin X pide validar solo X, y una fila con X fuera de P pide validar solo
+  P. Plan por plan, la respuesta depende de qué fila va primero; para el
+  pedido entero, el par primero, es siempre la del proyecto, la misma que daría
+  `updateEntry`, que valida el par antes que las etiquetas.
 - **Por qué después de las filas.** Lo que se valida depende de las filas que
   se van a escribir; validar antes obliga a decidir sobre filas que después se
   rechazan. `evaluateAll` sigue síncrona y sin consultas, como la pide el ADR
@@ -107,17 +126,21 @@ La opción 3.
   intento no asigna nada nuevo, así que no valida y termina bien aunque lo
   pedido se haya archivado en el medio.
 - **Las consultas a `project` en una masiva son a lo sumo tres** —proyecto,
-  tarea, etiquetas—, cualquiera sea la cantidad de filas. No tiene test de
-  comportamiento: validar por fila da el mismo resultado con más consultas. Lo
-  cuida la revisión de backend.
+  tarea, etiquetas—, cualquiera sea la cantidad de filas. **La cantidad es lo
+  único sin test de comportamiento**: no se observa desde afuera del service, y
+  la cuida la revisión de backend. Qué error gana sí se observa, y lo afirma un
+  test con el contraejemplo de arriba.
 - **Un test de equivalencia por caso** compara la masiva con `updateEntry`
-  sobre copias sembradas iguales, como el del trío del slice 6.
+  sobre copias sembradas iguales, como el del trío del slice 6. Una copia fiel
+  de la regla no se desvía en ningún caso y no la detecta ese test, sino la
+  revisión.
 - **El contrato del 6 queda corregido en un punto**: su §4.8 decía que la
   referencia no disponible se responde «antes de evaluar filas»; con esta
   decisión se responde después, si ninguna fila se rechazó. El contrato del 6
   es histórico y no se reescribe; manda el del 12.
 - **Las próximas operaciones en masa** que asignen referencias de otro módulo
   —las de la fase 2 sobre entradas o proyectos— siguen el mismo patrón: plan
-  puro por fila, validación única de la unión, campos puros.
+  puro por fila, validación única de la unión para el pedido entero en un orden
+  fijo, campos puros.
 - **No cambia `project`**: `assertTrackable` y `assertTaggable` se llaman igual
   que hoy, con la transacción de quien llama.
