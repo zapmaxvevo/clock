@@ -740,10 +740,12 @@ export async function updateEntryProject(
   return translatingReferenceConstraints(() =>
     db.transaction(async (tx) => {
       const row = await readOwnEntry(tx, actor, "timeEntry.own.update", input.id);
-      const { pair, project } = await assignedPair(tx, actor, row, pairOf(input));
+      const plan = assignmentPlan(row, { project: pairOf(input) });
+      const { pair } = plan;
       if (pair === undefined) {
         return { entry: toView(row, workspace) };
       }
+      const project = await assertAssignments(tx, actor, [plan]);
       // D-2: otro proyecto impone su facturable por defecto.
       const billable = billableFor(row, project);
       const next = await timeEntryRepository.updateProject(tx, targetOf(row), {
@@ -1195,80 +1197,111 @@ function runningEntryEdit(
   };
 }
 
-/** El par que cambia, con el proyecto que validó; `project` nulo si no hubo nada que validar. */
-type AssignedPair = {
+/** Lo que un pedido pide a una fila en el par, el facturable y las etiquetas. */
+type AssignmentRequest = {
+  readonly project?: ProjectPair;
+  readonly billable?: boolean;
+  /** El conjunto entero que la fila debería tener. */
+  readonly tagIds?: readonly string[];
+};
+
+/** Lo que cambia en una fila y lo que hay que validar para eso, sin consultar nada. */
+type AssignmentPlan = {
+  /** El par pedido, si difiere del de la fila (`samePair`). */
   readonly pair?: ProjectPair;
-  readonly project: TrackableProject | null;
+  /** `pairToCheck(fila, pedido)` cuando hay `pair`; `null` si no hay nada que validar. */
+  readonly pairCheck: {
+    readonly projectId: string;
+    readonly taskId: string | null;
+  } | null;
+  readonly billable?: boolean;
+  /** El conjunto pedido, si difiere del de la fila (`sameTagIds`). */
+  readonly tagIds?: readonly string[];
+  /** `tagsToCheck(fila, conjunto)`: las que la fila todavía no tiene. */
+  readonly tagsCheck: readonly string[];
 };
 
 /**
- * El par pedido, si cambia y `project` lo deja asignar (TT-77, ADR 0010).
- * Sin `pair` si no viene o es el mismo: entonces no se consulta.
+ * Fase 1 de la regla del par, el facturable y las etiquetas (ADR 0017), pura:
+ * qué cambia en la fila y qué hay que validar para eso. Lo que la fila ya
+ * tiene no se valida (TT-104, PR-47).
  */
-async function assignedPair(
-  tx: Transaction,
-  actor: Actor,
-  row: ProjectPair,
-  requested: ProjectPair | undefined,
-): Promise<AssignedPair> {
-  if (requested === undefined || samePair(row, requested)) {
-    return { project: null };
-  }
-  const pair = pairOf(requested);
-  const project = await assertAssignable(tx, actor, pairOf(row), pair);
-  return { pair, project };
+function assignmentPlan(row: EntryWithRefs, request: AssignmentRequest): AssignmentPlan {
+  const current = pairOf(row);
+  const pair =
+    request.project === undefined || samePair(current, request.project)
+      ? undefined
+      : pairOf(request.project);
+  const currentTags = sortedTagIdsOf(row);
+  const tagIds =
+    request.tagIds === undefined || sameTagIds(currentTags, request.tagIds)
+      ? undefined
+      : request.tagIds;
+  return {
+    ...(pair === undefined ? {} : { pair }),
+    pairCheck: pair === undefined ? null : pairToCheck(current, pair),
+    ...(request.billable === undefined ? {} : { billable: request.billable }),
+    ...(tagIds === undefined ? {} : { tagIds }),
+    tagsCheck: tagIds === undefined ? [] : tagsToCheck(currentTags, tagIds),
+  };
 }
 
 /**
- * El paso del facturable de `updateEntry` (§4.1): el pedido gana; sin él, el
- * proyecto que validó el paso del par decide con `billableFor`. Solo si difiere
- * de la fila: uno igual no cuenta como cambio.
+ * Fase 2: las validaciones de `project` (ADR 0010), una vez por pedido y para
+ * el pedido entero, no plan por plan: primero el par —el `pairCheck` de
+ * cualquier plan que lo pida, todos iguales porque `pairToCheck` devuelve el
+ * pedido— y después la unión de los `tagsCheck`, que `assertTaggable` no
+ * consulta si queda vacía. Es el orden de `updateEntry`. Devuelve el proyecto
+ * validado, o `null` si ningún plan lo pidió.
  */
-function billableChange(
+async function assertAssignments(
+  tx: Transaction,
+  actor: Actor,
+  plans: readonly AssignmentPlan[],
+): Promise<TrackableProject | null> {
+  const pairCheck = plans.find((plan) => plan.pairCheck !== null)?.pairCheck ?? null;
+  const project = pairCheck === null ? null : await assertTrackable(tx, actor, pairCheck);
+  await assertTaggable(
+    tx,
+    actor,
+    plans.flatMap((plan) => plan.tagsCheck),
+  );
+  return project;
+}
+
+/**
+ * Fase 3, pura: lo que se escribe. El facturable es el pedido o, sin él,
+ * `billableFor` con el proyecto validado (D-2), y solo si difiere del de la
+ * fila: uno igual no cuenta como cambio.
+ */
+function assignmentFields(
   row: TimeEntryRow,
-  requested: boolean | undefined,
-  assigned: AssignedPair,
-): Pick<ClosedEntryFields, "billable"> {
-  const billable = requested ?? billableFor(row, assigned.project);
-  return billable === row.billable ? {} : { billable };
+  plan: AssignmentPlan,
+  project: TrackableProject | null,
+): Pick<ClosedEntryFields, "pair" | "billable" | "tagIds"> {
+  const billable =
+    plan.billable ?? billableFor(row, plan.pairCheck === null ? null : project);
+  return {
+    ...(plan.pair === undefined ? {} : { pair: plan.pair }),
+    ...(billable === row.billable ? {} : { billable }),
+    ...(plan.tagIds === undefined ? {} : { tagIds: plan.tagIds }),
+  };
 }
 
-/**
- * El paso de las etiquetas de `updateEntry` (§4.5): el conjunto pedido, si
- * difiere del de la fila y `project` deja asignar las que la fila todavía no
- * tiene. Las que ya tiene se conservan aunque estén archivadas (PR-47).
- */
-async function tagsChange(
-  tx: Transaction,
-  actor: Actor,
-  row: EntryWithRefs,
-  requested: readonly string[] | undefined,
-): Promise<Pick<ClosedEntryFields, "tagIds">> {
-  const current = sortedTagIdsOf(row);
-  if (requested === undefined || sameTagIds(current, requested)) {
-    return {};
-  }
-  await assertTaggable(tx, actor, tagsToCheck(current, requested));
-  return { tagIds: requested };
-}
-
-/**
- * Los campos de los pasos del par, del facturable y de las etiquetas, en ese
- * orden, después de la descripción y el horario.
- */
-async function assignmentFields(
+/** Las tres fases sobre la fila de `updateEntry`, que es un pedido de un solo plan. */
+async function entryAssignment(
   tx: Transaction,
   actor: Actor,
   row: EntryWithRefs,
   changes: UpdateEntryChangeValues,
 ): Promise<Pick<ClosedEntryFields, "pair" | "billable" | "tagIds">> {
-  const assigned = await assignedPair(tx, actor, row, changes.project);
-  const billable = billableChange(row, changes.billable, assigned);
-  return {
-    ...(assigned.pair === undefined ? {} : { pair: assigned.pair }),
-    ...billable,
-    ...(await tagsChange(tx, actor, row, changes.tags)),
-  };
+  const plan = assignmentPlan(row, {
+    project: changes.project,
+    billable: changes.billable,
+    tagIds: changes.tags,
+  });
+  const project = await assertAssignments(tx, actor, [plan]);
+  return assignmentFields(row, plan, project);
 }
 
 /**
@@ -1321,7 +1354,7 @@ export async function updateEntry(
       const target = targetOf(row);
       if (isClosed(row)) {
         const fields = closedEntryEdit(row, changes, workspace);
-        const assignment = await assignmentFields(tx, actor, row, changes);
+        const assignment = await entryAssignment(tx, actor, row, changes);
         return writeEntryEdit(
           tx,
           actor,
@@ -1332,7 +1365,7 @@ export async function updateEntry(
         );
       }
       const fields = runningEntryEdit(row, changes, workspace, now);
-      const assignment = await assignmentFields(tx, actor, row, changes);
+      const assignment = await entryAssignment(tx, actor, row, changes);
       return writeEntryEdit(
         tx,
         actor,

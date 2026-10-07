@@ -12,7 +12,6 @@ import {
   projectMember,
   tag,
   timeEntry,
-  timeEntryTag,
   workspace as workspaceTable,
 } from "@/server/db/schema";
 import { constraintOf, UNIQUE_VIOLATION } from "@/server/db/constraint-error";
@@ -23,7 +22,6 @@ import {
   formatClock,
   instantFromLocal,
   shiftClock,
-  type WeekStart,
 } from "@/server/time";
 import {
   queueBehindBarrier,
@@ -44,6 +42,16 @@ import {
   seedWorkspace,
 } from "@/test/factories";
 import { allTimeEntries, auditFor, timeEntriesOf, timeEntryById } from "@/test/queries";
+import {
+  actorIn,
+  allEntryTags,
+  lockRow,
+  rejectionOf,
+  seedClosedEntry,
+  snapshotOf,
+  tagIdsOfRow,
+  workspaceOf,
+} from "@/test/time-entry";
 
 import { projectMessages } from "@/modules/project/schema";
 import {
@@ -98,16 +106,7 @@ let workspaceId: string;
 let actor: Actor;
 
 function actorFor(userId: string, overrides: Partial<Actor> = {}): Actor {
-  return { userId, workspaceId, role: "member", status: "active", ...overrides };
-}
-
-/** El workspace tal como lo recibe el service: la zona, el piso de carga y el primer día de la semana. */
-function workspaceOf(
-  timezone: string,
-  createdAt = "2020-01-01T00:00:00Z",
-  weekStart: WeekStart = 1,
-): TrackerWorkspace {
-  return { timezone, createdAt: new Date(createdAt), weekStart, formats: defaultFormats };
+  return actorIn(workspaceId, userId, overrides);
 }
 
 /** Los días de la lista, sin las semanas que los agrupan. */
@@ -1882,20 +1881,13 @@ describe("createManualEntry con cambio de horario", () => {
   });
 });
 
-/** Toma el bloqueo de la fila, como lo hace `readOwnEntry`. */
-function lockRow(id: string) {
-  return (tx: Transaction) =>
-    tx.execute(sql`select id from time_entry where id = ${id} for update`);
-}
-
 /** Una entrada cerrada del actor, con los dos instantes tal como se escriben. */
 function seedClosed(startedAt: string, endedAt: string, userId?: string) {
-  return seedTimeEntry({
-    workspaceId,
-    userId: userId ?? actor.userId,
+  return seedClosedEntry(
+    { workspaceId, userId: userId ?? actor.userId },
     startedAt,
     endedAt,
-  });
+  );
 }
 
 /** Los dos instantes de la fila en ISO, o `undefined` si ya no está. */
@@ -5645,32 +5637,6 @@ describe("la zona y los formatos de la persona (slice 7)", () => {
   });
 });
 
-/** El `RejectedError` de una operación en masa; si termina bien o lanza otra cosa, falla. */
-async function rejectionOf(work: Promise<unknown>): Promise<RejectedError> {
-  try {
-    await work;
-  } catch (error) {
-    if (error instanceof RejectedError) {
-      return error;
-    }
-    throw error;
-  }
-  throw new Error("La operación en masa no se rechazó.");
-}
-
-/** Lo que dejó la fila sembrada: sus instantes, su descripción y su `updatedAt`. */
-async function snapshotOf(id: string) {
-  const row = await timeEntryById(id);
-  return row === undefined
-    ? undefined
-    : {
-        description: row.description,
-        startedAt: row.startedAt.toISOString(),
-        endedAt: row.endedAt === null ? null : row.endedAt.toISOString(),
-        updatedAt: row.updatedAt.toISOString(),
-      };
-}
-
 describe("bulkEditEntries: la descripción (criterio 6, TT-63)", () => {
   const workspace = workspaceOf(buenosAires);
 
@@ -8254,20 +8220,6 @@ describe("las lecturas con bloqueo leen las referencias después del bloqueo (cr
     expect(seen.map((row) => row.tags)).toEqual([[{ id: review.id, name: review.name }]]);
   });
 });
-
-/** Las filas de la unión de toda la base. */
-async function allEntryTags() {
-  return db.select().from(timeEntryTag);
-}
-
-/** Los ids de las etiquetas de una entrada en la unión, ordenados. */
-async function tagIdsOfRow(entryId: string): Promise<string[]> {
-  const rows = await db
-    .select({ tagId: timeEntryTag.tagId })
-    .from(timeEntryTag)
-    .where(eq(timeEntryTag.timeEntryId, entryId));
-  return rows.map((row) => row.tagId).sort();
-}
 
 /** Tres etiquetas activas y una archivada, con nombres en orden conocido. */
 async function seedTags() {
