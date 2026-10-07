@@ -858,10 +858,9 @@ export async function discardTimer(
 
 /**
  * Los dos instantes del alta manual, con las reglas de las horas tecleadas:
- * la hora que no existe, la duración cero, el año 10000 y el piso del
- * workspace. Dependen de la zona y del piso, que pueden cambiar entre dos
- * intentos: corren dentro de la transacción del alta, después de buscar la
- * fila propia (ADR 0007).
+ * la hora que no existe, la duración cero, el año 10000 y el piso de fechas.
+ * Dependen de la zona, que puede cambiar entre dos intentos: corren dentro de
+ * la transacción del alta, después de buscar la fila propia (ADR 0007).
  */
 function manualTimes(
   input: CreateManualEntryValues,
