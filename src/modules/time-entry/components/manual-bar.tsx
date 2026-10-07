@@ -29,7 +29,9 @@ type ManualBarProps = {
   readonly descriptionField: ReactNode;
   /** El selector de proyecto también, con el par que viaja con la barra. */
   readonly projectPicker: ReactNode;
-  /** El control de facturable también, después del selector (TT-14). */
+  /** El selector de etiquetas también, después del de proyecto (TT-12, TT-49). */
+  readonly tagPicker: ReactNode;
+  /** El control de facturable también, después de las etiquetas (TT-14). */
   readonly billableToggle: ReactNode;
   /**
    * El borrador también es del contenedor: si un timer de otra pestaña obliga
@@ -57,6 +59,7 @@ type ManualBarProps = {
 export function ManualBar({
   descriptionField,
   projectPicker,
+  tagPicker,
   billableToggle,
   draft,
   onDraftChange,
@@ -102,6 +105,8 @@ export function ManualBar({
         <div className="min-w-0 flex-1 basis-64">{descriptionField}</div>
 
         {projectPicker}
+
+        {tagPicker}
 
         {billableToggle}
 

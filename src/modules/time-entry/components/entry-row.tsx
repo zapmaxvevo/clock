@@ -19,7 +19,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { ProjectPicker } from "@/modules/project/components/project-picker";
-import type { ProjectSelection } from "@/modules/project/schema";
+import { TagPicker } from "@/modules/project/components/tag-picker";
+import type { ProjectSelection, TagRef } from "@/modules/project/schema";
 import type { TimeEntryView } from "@/modules/time-entry/schema";
 import { clockLabel, formatDuration } from "@/server/time";
 
@@ -32,6 +33,7 @@ import {
   entryBillableLabel,
   entryNameOf,
   entryProjectLabel,
+  entryTagsLabel,
   extraDaysText,
   selectEntryLabel,
   trackerLabels,
@@ -47,6 +49,8 @@ type EntryRowProps = {
   readonly project: ProjectSelection;
   /** El facturable a mostrar, también optimista (TT-54, D-2). */
   readonly billable: boolean;
+  /** Las etiquetas a mostrar, también optimistas (TT-54). */
+  readonly tags: readonly TagRef[];
   /** TT-55: con la escritura en vuelo la fila queda atenuada. */
   readonly busy: boolean;
   /** Con la membresía desactivada la fila queda en solo lectura y sin casilla (TT-92). */
@@ -70,6 +74,8 @@ type EntryRowProps = {
   /** TT-54: el selector solo avisa si el par elegido no es el que la fila ya tiene. */
   readonly onChangeProject: (selection: ProjectSelection) => void;
   readonly onChangeBillable: (billable: boolean) => void;
+  /** D-5: una vez, al cerrar el selector, y solo si el conjunto cambió. */
+  readonly onChangeTags: (tags: readonly TagRef[]) => void;
   readonly onSaveTimes: (times: TimeDraft) => void;
   readonly onDelete: () => void;
   /** TT-57: continuar es de la lista, que también lo dispara con «c». */
@@ -100,6 +106,7 @@ export function EntryRow({
   description,
   project,
   billable,
+  tags,
   busy,
   canTrack,
   selected,
@@ -111,6 +118,7 @@ export function EntryRow({
   onSave,
   onChangeProject,
   onChangeBillable,
+  onChangeTags,
   onSaveTimes,
   onDelete,
   onContinue,
@@ -263,6 +271,16 @@ export function EntryRow({
           onChange={onChangeProject}
           variant="row"
           label={entryProjectLabel(entryName)}
+          pending={busy}
+          readOnly={!canTrack}
+        />
+
+        {/* TT-49 y H-6: en solo lectura, los nombres, y nada sin etiquetas. */}
+        <TagPicker
+          value={tags}
+          onChange={onChangeTags}
+          variant="row"
+          label={entryTagsLabel(entryName)}
           pending={busy}
           readOnly={!canTrack}
         />

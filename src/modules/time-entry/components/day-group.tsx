@@ -23,6 +23,7 @@ import {
 import { saveEntryBillable, type EntryBillableChange } from "./entry-billable";
 import { fieldsOf, withSelection, type EntryFields } from "./entry-fields";
 import { saveEntryProject, type EntryProjectChange } from "./entry-project";
+import { saveEntryTags, type EntryTagsChange } from "./entry-tags";
 import { EntryRow } from "./entry-row";
 import { selectDayLabel, trackerLabels } from "./labels";
 import { dayCheckState, type Selection } from "./selection";
@@ -78,6 +79,13 @@ export type MovedEntry = {
   readonly id: string;
   /** Día local del grupo nuevo. */
   readonly date: string;
+};
+
+/** Lo que viaja encima de cada campo de una fila. */
+type FieldEdits = {
+  readonly project: EntryProjectChange | undefined;
+  readonly billable: EntryBillableChange | undefined;
+  readonly tags: EntryTagsChange | undefined;
 };
 
 /** Reductor de las vistas optimistas por fila: la edición nueva reemplaza a la anterior. */
@@ -175,26 +183,35 @@ export function DayGroup({
     onSuccess: (data) => onEntryWeek(data.entry.weekStart),
   });
 
+  /** TT-54: las etiquetas, como el par, al cerrar el selector (D-5). */
+  const [tagsEdits, showTagsEdit] = useOptimistic<
+    readonly EntryTagsChange[],
+    EntryTagsChange
+  >([], replaceById);
+  const saveTags = useAction(saveEntryTags, {
+    unreachableMessage: timeEntryMessages.unexpected,
+    optimistic: (input) => showTagsEdit(input),
+    onSuccess: (data) => onEntryWeek(data.entry.weekStart),
+  });
+
   /** Los campos que muestra la fila: los de la vista con lo que viaja encima. */
-  function shownFields(
-    entry: TimeEntryView,
-    projectEdit: EntryProjectChange | undefined,
-    billableEdit: EntryBillableChange | undefined,
-  ): EntryFields {
+  function shownFields(entry: TimeEntryView, edits: FieldEdits): EntryFields {
     const fields =
-      projectEdit === undefined
+      edits.project === undefined
         ? fieldsOf(entry)
-        : withSelection(fieldsOf(entry), projectEdit.selection, catalog);
-    return billableEdit === undefined
-      ? fields
-      : { ...fields, billable: billableEdit.billable };
+        : withSelection(fieldsOf(entry), edits.project.selection, catalog);
+    return {
+      ...fields,
+      billable: edits.billable?.billable ?? fields.billable,
+      tags: edits.tags?.tags ?? fields.tags,
+    };
   }
 
   /**
-   * El proyecto puede cambiar el facturable en el servidor (D-2): con uno de
-   * los dos en vuelo, el reintento del otro espera, así no pisa lo elegido.
+   * El proyecto puede cambiar el facturable en el servidor (D-2): con un campo
+   * en vuelo, el reintento de los otros espera, así no pisa lo elegido.
    */
-  const fieldsPending = saveProject.pending || saveBillable.pending;
+  const fieldsPending = saveProject.pending || saveBillable.pending || saveTags.pending;
 
   const remove = useAction(deleteEntry, {
     unreachableMessage: timeEntryMessages.unexpected,
@@ -314,7 +331,12 @@ export function DayGroup({
             const timeEdit = timeEdits.find((pending) => pending.id === entry.id);
             const projectEdit = projectEdits.find((pending) => pending.id === entry.id);
             const billableEdit = billableEdits.find((pending) => pending.id === entry.id);
-            const fields = shownFields(entry, projectEdit, billableEdit);
+            const tagsEdit = tagsEdits.find((pending) => pending.id === entry.id);
+            const fields = shownFields(entry, {
+              project: projectEdit,
+              billable: billableEdit,
+              tags: tagsEdit,
+            });
             return (
               <EntryRow
                 key={entry.id}
@@ -322,11 +344,13 @@ export function DayGroup({
                 description={edit?.description ?? entry.description}
                 project={fields.selection}
                 billable={fields.billable}
+                tags={fields.tags}
                 busy={
                   (save.pending && edit !== undefined) ||
                   (saveTimes.pending && timeEdit !== undefined) ||
                   (saveProject.pending && projectEdit !== undefined) ||
                   (saveBillable.pending && billableEdit !== undefined) ||
+                  (saveTags.pending && tagsEdit !== undefined) ||
                   bulkBusyIds.includes(entry.id)
                 }
                 canTrack={canTrack}
@@ -343,6 +367,7 @@ export function DayGroup({
                 onChangeBillable={(billable) =>
                   run(saveBillable, { id: entry.id, billable })
                 }
+                onChangeTags={(tags) => run(saveTags, { id: entry.id, tags })}
                 onSaveTimes={(times) =>
                   run(saveTimes, {
                     id: entry.id,
@@ -367,6 +392,7 @@ export function DayGroup({
       {(save.failure !== null ||
         saveProject.failure !== null ||
         saveBillable.failure !== null ||
+        saveTags.failure !== null ||
         remove.failure !== null ||
         saveTimes.failure !== null ||
         duplicate.failure !== null) && (
@@ -393,6 +419,14 @@ export function DayGroup({
               message={saveBillable.failure.message}
               retryDisabled={fieldsPending}
               onRetry={retryOf(saveBillable)}
+            />
+          )}
+          {saveTags.failure !== null && (
+            <ActionFeedback
+              title={trackerLabels.tagsNotSaved}
+              message={saveTags.failure.message}
+              retryDisabled={fieldsPending}
+              onRetry={retryOf(saveTags)}
             />
           )}
           {saveTimes.failure !== null && (
