@@ -57,6 +57,23 @@ en la fila y la barra, sigue con `flex-1` y elipsis, y la fila usa `gap-x-3`. TT
 fila en una línea, y recortar la descripción es preferible a partir la fila. Lo que siga
 partiendo (un proyecto al tope de 256 px, y por debajo de ~800 px) va a §8 con las medidas.
 
+Resultado, medido por `frontend-dev` con un proyecto de 191 px (el margen es el ancho útil menos
+lo que ocupa la línea con la descripción en 112 px). La barra con el timer no entra en una línea
+ni vacía: con el timer, el aviso «Detené el timer para agregar tiempo a mano.» ocupa 281 px y la
+barra queda en 577 útiles. Ya pasaba en `main` antes del 11b (deuda del 11a). Mover ese aviso queda
+fuera del slice; `gap-x-2` en la barra se probó y se revirtió porque no cierra ese caso.
+
+| Caso                                          | 1400 y 1024 px       | 768 px                        |
+| --------------------------------------------- | -------------------- | ----------------------------- |
+| Barra parada, proyecto y 3 etiquetas          | 1 línea (margen 41)  | 2: baja el contador           |
+| Barra con timer, proyecto y 3 etiquetas       | 2: baja el contador  | 3                             |
+| Barra con timer, vacía                        | 2                    | 3                             |
+| Fila, proyecto y 3 etiquetas                  | 1 línea (margen 6)   | 2: baja el bloque del horario |
+| Fila, proyecto sin etiquetas                  | 1 línea (margen 110) | 2                             |
+| Fila, proyecto al tope (256 px) y 3 etiquetas | 2 (faltan ~59 px)    | 2                             |
+
+En la fila más cargada la descripción queda en 118 px (unos 14 caracteres visibles al editar).
+
 Heredado, sin slice: si falla continuar y después falla duplicar, el aviso de continuar sigue en
 la barra junto al de duplicar (lo vio `parity-reviewer`). Deuda anotada en el estado de la fase.
 
