@@ -33,7 +33,7 @@ type RunningStartEditorProps = {
   };
   /** Día de hoy en la zona de la persona: el techo del selector (TT-29). */
   readonly todayKey: string;
-  /** Piso del workspace. */
+  /** Piso de fechas. */
   readonly minDayKey: string;
   /** Hay un arranque, una parada o un guardado del inicio en vuelo. */
   readonly disabled: boolean;

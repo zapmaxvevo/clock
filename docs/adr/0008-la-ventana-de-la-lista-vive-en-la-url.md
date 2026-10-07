@@ -88,6 +88,9 @@ La opción 3.
 - **La URL lleva estado de navegación**, que se puede compartir y guardar. Un
   `desde` inválido se ignora, uno anterior a la creación del workspace se
   recorta, y uno posterior a la ventana por omisión no la achica.
+  _Corregido el 2026-10-07, aprobado por el usuario_: el piso ya no es la
+  creación del workspace sino el 2000-01-01 (ADR 0005); un `desde` anterior al
+  piso se recorta, acá y en el punto de la ventana sin tope.
 - **El cliente decide cuándo navegar después de una mutación**, con una sola
   regla para todas: compara la semana de cada entrada devuelta con
   `reachFrom`, dos claves de día que le da el servidor. No hace aritmética de

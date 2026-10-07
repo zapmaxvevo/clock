@@ -15,7 +15,7 @@ type TrackerScreenProps = {
   readonly actor: Actor;
   /**
    * Zona horaria (TT-02), formatos y primer día de la semana de la persona
-   * (TT-48), y creación del workspace, el piso de la barra manual.
+   * (TT-48).
    */
   readonly workspace: TrackerWorkspace;
   /** El `desde` de la URL ya validado, o `null` (ADR 0008). */

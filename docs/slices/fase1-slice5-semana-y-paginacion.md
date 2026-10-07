@@ -601,6 +601,16 @@ encontró ningún caso: con las reglas de zonas conocidas, ningún día que el
 rastreador pida alcanza el `throw`. Si un cambio futuro de reglas lo crea, la
 falla es visible en vez de una semana corrida en silencio.
 
+_Corregido el 2026-10-07_: con el piso fijo en 2000-01-01
+([`fase1-fix-piso-fijo.md`](fase1-fix-piso-fijo.md), B2) los días de clase B de
+2011 quedan después del piso, y `getTrackerState` lanzaba `RangeError` con
+`Pacific/Apia`, el viernes como primer día y `desde=2012-01-02`: la semana
+empieza el 2011-12-30. `startOfDayKey` de un día que falta entero en la zona
+devuelve ahora el inicio del primer día siguiente que existe, que como cota de
+la lectura no deja nada afuera; solo lanza si falta el mediodía de un día que sí
+existe. La clase A ya no lanza: sus 00:00 existen y se resuelven antes de mirar
+el mediodía (`time.test.ts`, `Africa/Khartoum` 2000-01-15).
+
 ### 5.5 Qué ve la persona
 
 - Una franja por semana, con su rótulo a la izquierda y «Total» con el total de
@@ -915,6 +925,11 @@ usa una persona propia.
   Node. Todos esos días son anteriores a cualquier piso: la creación del
   workspace real (2026), el de los tests de integración (2020) y el de los e2e
   (hoy menos `WORKSPACE_HISTORY_DAYS`). En 2026 no falla ningún día.
+  _Corregido el 2026-10-07_: el piso es fijo, 2000-01-01
+  ([`fase1-fix-piso-fijo.md`](fase1-fix-piso-fijo.md)). Los dos días de la falla
+  siguen siendo anteriores, y entre 2000 y 2030 ninguna zona de `Intl` tiene un
+  inicio de día corrido. Los días que faltan enteros (§5.4, clase B) dejaron de
+  lanzar: empiezan con el primer día siguiente que existe.
 - **Que la revalidación de una action conserve `desde`** es conducta de Next: lo
   afirma el recorrido 4, que es el que se rompería si una versión nueva dejara
   de hacerlo.

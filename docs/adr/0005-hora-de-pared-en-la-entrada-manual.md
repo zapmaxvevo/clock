@@ -139,6 +139,15 @@ nueva, y acota el daño de un payload inventado —una fecha del año 1800— si
 tocar ningún caso de uso real. El futuro queda sin tope por decisión de producto
 (P-10), no por descuido.
 
+_Corregido el 2026-10-07, aprobado por el usuario_: el piso deja de ser el día
+de creación del workspace y pasa a ser una fecha fija, el 2000-01-01, con «No se
+pueden cargar horas anteriores al 1 de enero de 2000.» La premisa de que el piso
+no tocaba ningún caso de uso real era falsa: el primer día de uso, el workspace
+recién creado impedía cargar los días anteriores al login. Un piso fijo y amplio
+sigue frenando un payload inventado sin depender de cuándo entró alguien. Una
+fecha de inicio configurable por el owner queda para más adelante, si hace falta
+([`fase1-fix-piso-fijo.md`](../slices/fase1-fix-piso-fijo.md)).
+
 ## Consecuencias
 
 - Toda la aritmética de zonas horarias queda del lado del servidor y dentro de

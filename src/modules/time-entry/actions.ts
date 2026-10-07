@@ -117,8 +117,6 @@ export async function createManualEntry(
   return handle(async (session) => {
     const values = createManualEntryInput.parse(input);
     assertCan(session.actor, "timeEntry.own.create", ownTimeEntryResource(session.actor));
-    // El service necesita la fecha de creación del workspace para el piso, y
-    // la sesión ya la tiene: no hay consulta nueva.
     return service.createManualEntry(session.actor, trackerWorkspaceOf(session), values);
   }, options);
 }

@@ -195,7 +195,11 @@ export async function pickDate(
   for (let moved = 0; moved < Math.abs(months); moved += 1) {
     await step.click();
   }
-  await calendar.getByRole("button", { name: calendarDayName(target) }).click();
+  // Un día fuera del piso se dibuja inactivo: afirmarlo antes del clic nombra
+  // la causa en vez de agotar el tiempo del clic.
+  const day = calendar.getByRole("button", { name: calendarDayName(target) });
+  await expect(day).toBeEnabled();
+  await day.click();
   await expect(dateButton(scope)).toHaveText(dayLabel(target, today));
 }
 

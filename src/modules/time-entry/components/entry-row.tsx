@@ -64,7 +64,7 @@ type EntryRowProps = {
   readonly pendingTimes: TimeDraft | null;
   /** Día de hoy en la zona del workspace. */
   readonly todayKey: string;
-  /** Piso del workspace, el primer día al que se puede mover la entrada. */
+  /** Piso de fechas, el primer día al que se puede mover la entrada. */
   readonly minDayKey: string;
   /**
    * Guardar y borrar los resuelve el grupo: mueven el total y, sobre todo,

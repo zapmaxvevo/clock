@@ -939,12 +939,11 @@ describe("getTrackerState", () => {
     expect(remote.todayKey).toBe("2026-10-03");
   });
 
-  it("da como piso el día local de creación, el mismo que acepta la validación", async () => {
-    // Las 23:00 del 1 de setiembre en Buenos Aires, que en UTC ya son del 2.
-    const reciente = workspaceOf(buenosAires, "2026-09-02T02:00:00Z");
+  it("da como piso el 1 de enero de 2000, el mismo que acepta la validación", async () => {
+    const reciente = workspaceOf(buenosAires);
 
     const state = await getTrackerState(actor, reciente, { from: null }, now);
-    expect(state.minDayKey).toBe("2026-09-01");
+    expect(state.minDayKey).toBe("2000-01-01");
 
     const values = { description: "", start: "08:00", end: "09:00" };
     const floor = await createManualEntry(actor, reciente, {
@@ -967,7 +966,7 @@ describe("getTrackerState", () => {
       }),
     ).rejects.toMatchObject({
       code: "validation",
-      message: timeEntryMessages.beforeWorkspace,
+      message: timeEntryMessages.beforeFloor,
     });
   });
 
@@ -1480,41 +1479,37 @@ describe("createManualEntry", () => {
     expect(result.created.durationSeconds).toBe(60);
   });
 
-  it("rechaza una fecha anterior a la creación del workspace", async () => {
-    const reciente = workspaceOf(buenosAires, "2026-09-01T12:00:00Z");
-
+  it("rechaza una fecha anterior al 1 de enero de 2000", async () => {
     await expect(
-      createManualEntry(actor, reciente, {
+      createManualEntry(actor, workspaceOf(buenosAires), {
         id: randomUUID(),
         projectId: null,
         taskId: null,
         tagIds: [],
         description: "",
-        date: "2026-08-31",
+        date: "1999-12-31",
         start: "08:00",
         end: "09:00",
       }),
     ).rejects.toMatchObject({
       code: "validation",
-      message: timeEntryMessages.beforeWorkspace,
+      message: "No se pueden cargar horas anteriores al 1 de enero de 2000.",
     });
     expect(await allTimeEntries()).toHaveLength(0);
   });
 
-  it("acepta el mismo día en que se creó el workspace", async () => {
-    const reciente = workspaceOf(buenosAires, "2026-09-01T12:00:00Z");
-
-    const result = await createManualEntry(actor, reciente, {
+  it("acepta el 1 de enero de 2000", async () => {
+    const result = await createManualEntry(actor, workspaceOf(buenosAires), {
       id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
       description: "",
-      date: "2026-09-01",
+      date: "2000-01-01",
       start: "08:00",
       end: "09:00",
     });
-    expect(result.created.dayDate).toBe("2026-09-01");
+    expect(result.created.dayDate).toBe("2000-01-01");
   });
 
   it("permite dos entradas superpuestas y las dos suman al total", async () => {
@@ -2067,33 +2062,32 @@ describe("updateEntryTimes", () => {
     expect(day?.closedSeconds).toBe(4 * 3600);
   });
 
-  it("rechaza un día anterior a la creación del workspace y acepta el mismo día", async () => {
-    const reciente = workspaceOf(buenosAires, "2026-09-01T12:00:00Z");
+  it("rechaza el 31 de diciembre de 1999 y acepta el 1 de enero de 2000", async () => {
     const row = await seedClosed("2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z");
 
     await expect(
-      updateEntryTimes(actor, reciente, {
+      updateEntryTimes(actor, workspace, {
         id: row.id,
-        date: "2026-08-31",
+        date: "1999-12-31",
         start: "08:00",
         end: "09:00",
       }),
     ).rejects.toMatchObject({
       code: "validation",
-      message: timeEntryMessages.beforeWorkspace,
+      message: timeEntryMessages.beforeFloor,
     });
     expect(await instantsOf(row.id)).toEqual({
       startedAt: "2026-10-01T11:00:00.000Z",
       endedAt: "2026-10-01T12:00:00.000Z",
     });
 
-    const result = await updateEntryTimes(actor, reciente, {
+    const result = await updateEntryTimes(actor, workspace, {
       id: row.id,
-      date: "2026-09-01",
+      date: "2000-01-01",
       start: "08:00",
       end: "09:00",
     });
-    expect(result.entry.dayDate).toBe("2026-09-01");
+    expect(result.entry.dayDate).toBe("2000-01-01");
   });
 
   it("acepta mover una entrada cerrada al futuro: no hay cota superior (P-10)", async () => {
@@ -2609,30 +2603,29 @@ describe("updateRunningStart", () => {
     expect((await instantsOf(row.id))?.startedAt).toBe("2026-03-29T03:00:00.000Z");
   });
 
-  it("rechaza un día anterior a la creación del workspace y acepta el mismo día", async () => {
-    const reciente = workspaceOf(buenosAires, "2026-09-01T12:00:00Z");
+  it("rechaza el 31 de diciembre de 1999 y acepta el 1 de enero de 2000", async () => {
     const row = await seedTimer();
 
     await expect(
       updateRunningStart(
         actor,
-        reciente,
-        { id: row.id, date: "2026-08-31", start: "23:59" },
+        workspace,
+        { id: row.id, date: "1999-12-31", start: "23:59" },
         now,
       ),
     ).rejects.toMatchObject({
       code: "validation",
-      message: timeEntryMessages.beforeWorkspace,
+      message: timeEntryMessages.beforeFloor,
     });
     expect((await instantsOf(row.id))?.startedAt).toBe("2026-10-02T11:00:00.000Z");
 
     const result = await updateRunningStart(
       actor,
-      reciente,
-      { id: row.id, date: "2026-09-01", start: "00:00" },
+      workspace,
+      { id: row.id, date: "2000-01-01", start: "00:00" },
       now,
     );
-    expect(result.running.dayDate).toBe("2026-09-01");
+    expect(result.running.dayDate).toBe("2000-01-01");
   });
 
   it("TT-28, TT-46: mover el inicio a un día anterior cambia el día del timer activo", async () => {
@@ -4039,14 +4032,6 @@ function seedClosedOf(userId: string, startedAt: string, endedAt: string) {
   return seedTimeEntry({ workspaceId, userId, startedAt, endedAt });
 }
 
-/** Lleva la creación del workspace del test a 2020, para que el piso no estorbe. */
-async function backdateWorkspace() {
-  await db
-    .update(workspaceTable)
-    .set({ createdAt: new Date("2020-01-01T00:00:00Z") })
-    .where(eq(workspaceTable.id, workspaceId));
-}
-
 /** Fija el primer día de la semana de una persona del workspace del test. */
 async function setWeekStart(userId: string, weekStart: number) {
   await db
@@ -4111,7 +4096,6 @@ describe("getTrackerState: la lista en semanas (TT-47, TT-48, TT-52)", () => {
     async ({ weekStart, floor, weeks, loadMoreFrom }) => {
       // Jueves 1/10: trece días atrás es el viernes 18/09.
       const thursday = new Date("2026-10-01T15:00:00Z");
-      await backdateWorkspace();
       await setWeekStart(actor.userId, weekStart);
       await seedClosedOf(actor.userId, "2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
       await seedClosedOf(actor.userId, "2026-09-13T13:00:00Z", "2026-09-13T15:00:00Z");
@@ -4150,13 +4134,13 @@ describe("getTrackerState: la lista en semanas (TT-47, TT-48, TT-52)", () => {
 
     const monday = await getTrackerState(
       actor,
-      workspaceOf(buenosAires, undefined, 1),
+      workspaceOf(buenosAires, 1),
       { from: null },
       now,
     );
     const sunday = await getTrackerState(
       actor,
-      workspaceOf(buenosAires, undefined, 0),
+      workspaceOf(buenosAires, 0),
       { from: null },
       now,
     );
@@ -4177,7 +4161,6 @@ describe("getTrackerState: la lista en semanas (TT-47, TT-48, TT-52)", () => {
 
   it("PF-01: dos personas del mismo workspace ven la misma fecha en semanas distintas", async () => {
     const otherId = await seedMember(workspaceId, "member");
-    await backdateWorkspace();
     await setWeekStart(otherId, 0);
     await seedClosedOf(actor.userId, "2026-09-27T13:00:00Z", "2026-09-27T14:00:00Z");
     await seedClosedOf(otherId, "2026-09-27T13:00:00Z", "2026-09-27T14:00:00Z");
@@ -4403,40 +4386,77 @@ describe("getTrackerState: la lista en semanas (TT-47, TT-48, TT-52)", () => {
     expect(daysOf(state).map((day) => day.date)).toEqual(["2026-09-15"]);
   });
 
-  it("un desde anterior a la creación del workspace se recorta a su semana", async () => {
-    // Creado el jueves 20/08: su semana empieza el lunes 17/08.
-    const reciente = workspaceOf(buenosAires, "2026-08-20T15:00:00Z");
+  it("un desde anterior al 1 de enero de 2000 se recorta a la semana del piso", async () => {
+    // El 1/1/2000 fue sábado: su semana empieza el lunes 27/12/1999.
     await seedClosedOf(actor.userId, "2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
-    await seedClosedOf(actor.userId, "2026-08-21T13:00:00Z", "2026-08-21T14:00:00Z");
+    await seedClosedOf(actor.userId, "2000-01-03T13:00:00Z", "2000-01-03T14:00:00Z");
 
-    const state = await getTrackerState(actor, reciente, { from: "2026-01-05" }, now);
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: "1999-06-07" },
+      now,
+    );
 
-    expect(state.windowFrom).toBe("2026-08-17");
-    expect(state.reachFrom).toBe("2026-08-17");
+    expect(state.windowFrom).toBe("1999-12-27");
+    expect(state.reachFrom).toBe("1999-12-27");
     expect(state.loadMoreFrom).toBeNull();
-    expect(daysOf(state).map((day) => day.date)).toEqual(["2026-10-01", "2026-08-21"]);
+    expect(daysOf(state).map((day) => day.date)).toEqual(["2026-10-01", "2000-01-03"]);
   });
 
-  it("«Cargar más» no ofrece volver a una entrada anterior a la creación del workspace", async () => {
-    const reciente = workspaceOf(buenosAires, "2026-08-20T15:00:00Z");
+  it("«Cargar más» no ofrece volver a una entrada anterior a la semana del piso", async () => {
     await seedClosedOf(actor.userId, "2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
     // Escrita directo contra la tabla: la aplicación no la deja crear.
-    await seedClosedOf(actor.userId, "2026-08-04T13:00:00Z", "2026-08-04T14:00:00Z");
+    await seedClosedOf(actor.userId, "1999-12-20T13:00:00Z", "1999-12-20T14:00:00Z");
 
-    const state = await getTrackerState(actor, reciente, { from: null }, now);
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      now,
+    );
 
     expect(state.windowFrom).toBe("2026-09-14");
     expect(state.loadMoreFrom).toBeNull();
   });
 
+  it("«Cargar más» salta las semanas vacías hasta la de la entrada más reciente anterior a la ventana", async () => {
+    await seedClosedOf(actor.userId, "2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
+    const old = await seedClosedOf(
+      actor.userId,
+      "2003-05-14T13:00:00Z",
+      "2003-05-14T14:00:00Z",
+    );
+
+    const state = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: null },
+      now,
+    );
+    expect(state.loadMoreFrom).toBe("2003-05-12");
+
+    const loaded = await getTrackerState(
+      actor,
+      workspaceOf(buenosAires),
+      { from: "2003-05-12" },
+      now,
+    );
+    expect(loaded.weeks.map((week) => week.start)).toEqual(["2026-09-28", "2003-05-12"]);
+    expect(
+      daysOf(loaded).flatMap((day) => day.entries.map((entry) => entry.id)),
+    ).toContain(old.id);
+    expect(loaded.loadMoreFrom).toBeNull();
+  });
+
   it.each([
-    { weekStart: 1, day: "2026-08-17" },
-    { weekStart: 0, day: "2026-08-16" },
+    { weekStart: 1, day: "1999-12-27" },
+    { weekStart: 0, day: "1999-12-26" },
   ] as const)(
-    "«Cargar más» sí ofrece una entrada de la semana de creación anterior al día de creación, con weekStart $weekStart",
+    "«Cargar más» sí ofrece una entrada de la semana del piso anterior al 1 de enero de 2000, con weekStart $weekStart",
     async ({ weekStart, day }) => {
-      // Creado el jueves 20/08; el primer día de su semana es anterior y la ventana lo alcanza.
-      const reciente = workspaceOf(buenosAires, "2026-08-20T15:00:00Z", weekStart);
+      // El primer día de la semana del piso es anterior a él y la ventana lo alcanza.
+      const workspace = workspaceOf(buenosAires, weekStart);
       await seedClosedOf(actor.userId, "2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
       const early = await seedClosedOf(
         actor.userId,
@@ -4444,10 +4464,10 @@ describe("getTrackerState: la lista en semanas (TT-47, TT-48, TT-52)", () => {
         `${day}T14:00:00Z`,
       );
 
-      const state = await getTrackerState(actor, reciente, { from: null }, now);
+      const state = await getTrackerState(actor, workspace, { from: null }, now);
       expect(state.loadMoreFrom).toBe(day);
 
-      const loaded = await getTrackerState(actor, reciente, { from: day }, now);
+      const loaded = await getTrackerState(actor, workspace, { from: day }, now);
       expect(
         daysOf(loaded).flatMap((group) => group.entries.map((entry) => entry.id)),
       ).toContain(early.id);
@@ -4455,22 +4475,34 @@ describe("getTrackerState: la lista en semanas (TT-47, TT-48, TT-52)", () => {
     },
   );
 
-  it("«Cargar más» no ofrece la semana que la ventana ya dibuja aunque el inicio del día esté corrido", async () => {
-    // Salta, 20/10/1991: el día no tiene 00:00 y `startOfLocalDay` ubica su
-    // inicio una hora tarde (falla conocida del contrato, §8). Una entrada en
-    // esa hora es de ese día pero empieza antes del instante inferior.
-    const salta = workspaceOf("America/Argentina/Salta", "1991-01-01T12:00:00Z", 0);
-    await seedClosedOf(actor.userId, "1991-10-20T04:30:00Z", "1991-10-20T05:30:00Z");
+  it("una semana que empieza en un día que no existe en la zona arranca en el primer día que sí existe", async () => {
+    // Samoa pasó del 29 al 31 de diciembre de 2011. Con viernes como primer día,
+    // la semana del lunes 2/1/2012 empieza el 30/12, que no existió.
+    const apia = workspaceOf("Pacific/Apia", 5);
+    // El 14/2/2012, el 31/12/2011 en UTC+14 y el 29/12/2011 en UTC-10, a las 10:00.
+    await seedClosedOf(actor.userId, "2012-02-13T20:00:00Z", "2012-02-13T21:00:00Z");
+    const first = await seedClosedOf(
+      actor.userId,
+      "2011-12-30T20:00:00Z",
+      "2011-12-30T21:00:00Z",
+    );
+    await seedClosedOf(actor.userId, "2011-12-29T20:00:00Z", "2011-12-29T21:00:00Z");
 
     const state = await getTrackerState(
       actor,
-      salta,
-      { from: null },
-      new Date("1991-11-15T15:00:00Z"),
+      apia,
+      { from: "2012-01-02" },
+      new Date("2012-02-14T22:00:00Z"),
     );
 
-    expect(state.windowFrom).toBe("1991-10-20");
-    expect(state.loadMoreFrom).toBeNull();
+    expect(state.windowFrom).toBe("2011-12-30");
+    expect(daysOf(state).map((day) => day.date)).toEqual(["2012-02-14", "2011-12-31"]);
+    expect(
+      daysOf(state)
+        .at(-1)
+        ?.entries.map((entry) => entry.id),
+    ).toEqual([first.id]);
+    expect(state.loadMoreFrom).toBe("2011-12-23");
   });
 
   it("lastEntryId sigue siendo la cerrada más reciente con la ventana extendida por desde", async () => {
@@ -4544,11 +4576,13 @@ describe("weekStart en las vistas del service (criterio 13)", () => {
         startedAt: "2026-09-27T13:00:00Z",
       });
 
-      const result = await startTimer(
-        actor,
-        workspaceOf(buenosAires, undefined, weekStart),
-        { projectId: null, taskId: null, tagIds: [], id: randomUUID(), description: "" },
-      );
+      const result = await startTimer(actor, workspaceOf(buenosAires, weekStart), {
+        projectId: null,
+        taskId: null,
+        tagIds: [],
+        id: randomUUID(),
+        description: "",
+      });
 
       expect(result.stopped?.dayDate).toBe("2026-09-27");
       expect(result.stopped?.weekStart).toBe(expected);
@@ -4570,7 +4604,7 @@ describe("weekStart en las vistas del service (criterio 13)", () => {
 
       const state = await getTrackerState(
         actor,
-        workspaceOf(buenosAires, undefined, weekStart),
+        workspaceOf(buenosAires, weekStart),
         { from: null },
         new Date("2026-10-02T15:00:00Z"),
       );
@@ -5393,8 +5427,7 @@ describe("la zona y los formatos de la persona (slice 7)", () => {
     await seedClosedOf(userId, "2026-09-21T12:00:00Z", "2026-09-21T13:00:00Z");
   }
 
-  it("trackerWorkspaceOf es timeSettingsOf más la creación del workspace (criterio 19)", async () => {
-    await backdateWorkspace();
+  it("trackerWorkspaceOf es timeSettingsOf (criterio 19)", async () => {
     await setWeekStart(actor.userId, 0);
     await seedPreferences(actor.userId, {
       timezone: tokyo,
@@ -5403,10 +5436,7 @@ describe("la zona y los formatos de la persona (slice 7)", () => {
     });
     const context = await profileContextFor(actor.userId);
 
-    expect(trackerWorkspaceOf(context)).toEqual({
-      ...timeSettingsOf(context),
-      createdAt: new Date("2020-01-01T00:00:00Z"),
-    });
+    expect(trackerWorkspaceOf(context)).toEqual(timeSettingsOf(context));
     expect(timeSettingsOf(context)).toEqual({
       timezone: tokyo,
       weekStart: 0,
@@ -5415,7 +5445,6 @@ describe("la zona y los formatos de la persona (slice 7)", () => {
   });
 
   it("sin fila, getTrackerState da los mismos rótulos que antes del slice con el workspace en Buenos Aires (criterio 3)", async () => {
-    await backdateWorkspace();
     await seedTwoWeeks(actor.userId);
 
     const state = await getTrackerState(
@@ -5435,7 +5464,6 @@ describe("la zona y los formatos de la persona (slice 7)", () => {
   });
 
   it("con 12 h y otro formato de fecha, los rótulos cambian y las horas canónicas no (criterio 4)", async () => {
-    await backdateWorkspace();
     await seedTwoWeeks(actor.userId);
     await seedClosedOf(actor.userId, "2026-09-14T03:00:00Z", "2026-09-14T15:59:00Z");
     await seedPreferences(actor.userId, { timeFormat: "12h", dateFormat: "yyyy-MM-dd" });
@@ -5470,7 +5498,6 @@ describe("la zona y los formatos de la persona (slice 7)", () => {
   });
 
   it("el timer corriendo trae su hora canónica y su rótulo en 12 h", async () => {
-    await backdateWorkspace();
     await seedPreferences(actor.userId, { timeFormat: "12h" });
     await seedTimeEntry({
       workspaceId,
@@ -5494,7 +5521,6 @@ describe("la zona y los formatos de la persona (slice 7)", () => {
   });
 
   it("dos personas en zonas distintas ven la misma hora de inicio en su zona y su día (criterio 7, PF-04)", async () => {
-    await backdateWorkspace();
     const other = await seedMember(workspaceId, "member");
     await seedPreferences(other, { timezone: tokyo });
     // Las 00:00 del jueves 1 en Buenos Aires son las 12:00 del 1 en Tokio, y las
@@ -5533,45 +5559,42 @@ describe("la zona y los formatos de la persona (slice 7)", () => {
     expect(inTokyo.todayKey).toBe("2026-10-03");
   });
 
-  it("el piso es el día de creación del workspace en la zona de la persona (criterio 7)", async () => {
-    // Las 21:00 del 1 de setiembre en Buenos Aires son las 09:00 del 2 en Tokio.
-    await db
-      .update(workspaceTable)
-      .set({ createdAt: new Date("2026-09-02T00:00:00Z") })
-      .where(eq(workspaceTable.id, workspaceId));
+  it("el piso es el 1 de enero de 2000 en la zona de cada persona (criterio 7)", async () => {
     const other = await seedMember(workspaceId, "member");
     await seedPreferences(other, { timezone: tokyo });
-    const manual = () => ({
+    const manual = (date: string) => ({
       id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
       description: "",
-      date: "2026-09-01",
-      start: "08:00",
-      end: "09:00",
+      date,
+      start: "00:00",
+      end: "01:00",
     });
 
-    const local = await trackerWorkspaceFor(actor.userId);
-    const remote = await trackerWorkspaceFor(other);
-    expect((await getTrackerState(actor, local, { from: null }, now)).minDayKey).toBe(
-      "2026-09-01",
-    );
-    expect(
-      (await getTrackerState(actorFor(other), remote, { from: null }, now)).minDayKey,
-    ).toBe("2026-09-02");
-
-    await expect(createManualEntry(actor, local, manual())).resolves.toBeDefined();
-    await expect(
-      createManualEntry(actorFor(other), remote, manual()),
-    ).rejects.toMatchObject({
-      code: "validation",
-      message: timeEntryMessages.beforeWorkspace,
-    });
+    for (const userId of [actor.userId, other]) {
+      const workspace = await trackerWorkspaceFor(userId);
+      const state = await getTrackerState(
+        actorFor(userId),
+        workspace,
+        { from: null },
+        now,
+      );
+      expect(state.minDayKey).toBe("2000-01-01");
+      await expect(
+        createManualEntry(actorFor(userId), workspace, manual("2000-01-01")),
+      ).resolves.toBeDefined();
+      await expect(
+        createManualEntry(actorFor(userId), workspace, manual("1999-12-31")),
+      ).rejects.toMatchObject({
+        code: "validation",
+        message: timeEntryMessages.beforeFloor,
+      });
+    }
   });
 
   it("cambiar workspace.timezone no cambia ninguna vista (criterio 7, PF-05)", async () => {
-    await backdateWorkspace();
     await seedTwoWeeks(actor.userId);
     const before = await getTrackerState(
       actor,
@@ -5595,7 +5618,6 @@ describe("la zona y los formatos de la persona (slice 7)", () => {
   });
 
   it("cambiar la zona con un timer corriendo no toca su inicio y lo pasa al día de la zona nueva (criterio 8, PF-39)", async () => {
-    await backdateWorkspace();
     // Las 22:00 del 1 en Buenos Aires: las 10:00 del 2 en Tokio.
     const running = await seedTimeEntry({
       workspaceId,
@@ -5743,7 +5765,6 @@ describe("bulkEditEntries: la descripción (criterio 6, TT-63)", () => {
 type SameRuleCase = {
   readonly label: string;
   readonly zone: string;
-  readonly createdAt?: string;
   readonly startedAt: string;
   readonly endedAt: string;
   readonly changes: BulkEditChanges;
@@ -5839,13 +5860,36 @@ const sameRuleCases: readonly SameRuleCase[] = [
     rejects: timeEntryMessages.tooShort,
   },
   {
-    label: "antes de la creación del workspace",
+    label: "el 1 de enero de 2000, el piso",
     zone: buenosAires,
-    createdAt: "2026-06-01T12:00:00Z",
     startedAt: "2026-10-01T13:00:00Z",
     endedAt: "2026-10-01T14:00:00Z",
-    changes: { date: "2026-05-31" },
-    rejects: timeEntryMessages.beforeWorkspace,
+    changes: { date: "2000-01-01" },
+  },
+  {
+    label: "el 31 de diciembre de 1999, antes del piso",
+    zone: buenosAires,
+    startedAt: "2026-10-01T13:00:00Z",
+    endedAt: "2026-10-01T14:00:00Z",
+    changes: { date: "1999-12-31" },
+    rejects: timeEntryMessages.beforeFloor,
+  },
+  {
+    // En UTC todavía es el 31/12/1999: el piso se mide en la zona de la persona.
+    label: "el 1 de enero de 2000 a las 00:00 en Tokio",
+    zone: "Asia/Tokyo",
+    startedAt: "2026-10-01T01:00:00Z",
+    endedAt: "2026-10-01T02:00:00Z",
+    changes: { date: "2000-01-01", start: "00:00", end: "01:00" },
+  },
+  {
+    // En UTC ya es el 1/1/2000: el piso se mide en la zona de la persona.
+    label: "el 31 de diciembre de 1999 a las 23:00 en Buenos Aires",
+    zone: buenosAires,
+    startedAt: "2026-10-01T13:00:00Z",
+    endedAt: "2026-10-01T14:00:00Z",
+    changes: { date: "1999-12-31", start: "23:00", end: "23:59" },
+    rejects: timeEntryMessages.beforeFloor,
   },
   {
     label: "el día siguiente al 9999-12-31",
@@ -5885,7 +5929,7 @@ describe("bulkEditEntries: hora y fecha son la fila repetida (criterio 7)", () =
   }
 
   it.each(sameRuleCases)("$label", async (example) => {
-    const workspace = workspaceOf(example.zone, example.createdAt);
+    const workspace = workspaceOf(example.zone);
     const bulkRow = await seedClosed(example.startedAt, example.endedAt);
     const singleRow = await seedClosed(example.startedAt, example.endedAt);
     const startedAt = new Date(example.startedAt);
@@ -5907,6 +5951,8 @@ describe("bulkEditEntries: hora y fecha son la fila repetida (criterio 7)", () =
 
     expect(bulk).toEqual(single);
     if (example.rejects === undefined) {
+      // Un rechazo también difiere de la fila sembrada: tiene que haber instantes.
+      expect(bulk).toHaveProperty("startedAt");
       expect(bulk).not.toEqual({
         startedAt: startedAt.toISOString(),
         endedAt: new Date(example.endedAt).toISOString(),
@@ -6061,8 +6107,8 @@ describe("bulkEditEntries: todo o nada (criterio 10, ADR 0011)", () => {
     const short = await seedClosed("2026-10-01T23:00:00Z", "2026-10-02T00:30:00Z");
     // 01:00 a 02:00 del 9999-12-31: el fin pasa al día siguiente, que no existe.
     const lastDay = await seedClosed("9999-12-31T00:00:00Z", "9999-12-31T01:00:00Z");
-    // 10:00 a 11:00 del 30/12/2019, antes de la creación del workspace.
-    const tooEarly = await seedClosed("2019-12-30T09:00:00Z", "2019-12-30T10:00:00Z");
+    // 10:00 a 11:00 del 30/12/1999, antes del piso.
+    const tooEarly = await seedClosed("1999-12-30T09:00:00Z", "1999-12-30T10:00:00Z");
     const missing = randomUUID();
     const seeded = [
       validA,
@@ -6117,7 +6163,7 @@ describe("bulkEditEntries: todo o nada (criterio 10, ADR 0011)", () => {
       },
       { id: short.id, code: "validation", message: timeEntryMessages.tooShort },
       { id: lastDay.id, code: "validation", message: timeEntryMessages.invalidDate },
-      { id: tooEarly.id, code: "validation", message: timeEntryMessages.beforeWorkspace },
+      { id: tooEarly.id, code: "validation", message: timeEntryMessages.beforeFloor },
     ]);
     expect(await Promise.all(seeded.map((row) => snapshotOf(row.id)))).toEqual(before);
   });
@@ -6597,11 +6643,7 @@ describe("getCalendarState: el período (criterios 2 y 3, CAL-15 a CAL-18)", () 
   });
 
   it("corta la semana en el domingo si la persona lo eligió (TT-48)", async () => {
-    const state = await read(
-      "week",
-      "2026-10-01",
-      workspaceOf(buenosAires, undefined, 0),
-    );
+    const state = await read("week", "2026-10-01", workspaceOf(buenosAires, 0));
 
     expect(state.periodStart).toBe("2026-09-27");
     expect(state.days.map((day) => day.date).at(-1)).toBe("2026-10-03");
@@ -6964,33 +7006,30 @@ describe("getCalendarState: zona, formatos y días (criterios 7, 10, 11 y 15)", 
     ]);
   });
 
-  it("atenúa los días anteriores al piso del workspace (CAL-48, CAL-85)", async () => {
-    // El 30/09 a las 12:00 en Buenos Aires.
-    const recent = workspaceOf(buenosAires, "2026-09-30T15:00:00Z");
-
+  it("atenúa los días anteriores al 1 de enero de 2000 (CAL-48, CAL-85)", async () => {
+    const floorWeek = await getCalendarState(
+      actor,
+      workspaceOf(buenosAires),
+      { mode: "week", day: "1999-12-27" },
+      now,
+    );
     const current = await getCalendarState(
       actor,
-      recent,
+      workspaceOf(buenosAires),
       { mode: "week", day: null },
       now,
     );
-    const previous = await getCalendarState(
-      actor,
-      recent,
-      { mode: "week", day: "2026-09-21" },
-      now,
-    );
 
-    expect(current.days.map((day) => [day.date, day.beforeWorkspace])).toEqual([
-      ["2026-09-28", true],
-      ["2026-09-29", true],
-      ["2026-09-30", false],
-      ["2026-10-01", false],
-      ["2026-10-02", false],
-      ["2026-10-03", false],
-      ["2026-10-04", false],
+    expect(floorWeek.days.map((day) => [day.date, day.beforeFloor])).toEqual([
+      ["1999-12-27", true],
+      ["1999-12-28", true],
+      ["1999-12-29", true],
+      ["1999-12-30", true],
+      ["1999-12-31", true],
+      ["2000-01-01", false],
+      ["2000-01-02", false],
     ]);
-    expect(previous.days.every((day) => day.beforeWorkspace)).toBe(true);
+    expect(current.days.some((day) => day.beforeFloor)).toBe(false);
   });
 
   it("con la membresía desactivada, canTrack en falso y la grilla con sus entradas (TT-92)", async () => {
@@ -7040,7 +7079,7 @@ function seedRunningOf(userId: string, startedAt: string, description = "corrien
 
 describe("updateEntry: el trío es el de updateEntryTimes (criterio 3, ADR 0013)", () => {
   it.each(sameRuleCases)("$label", async (example) => {
-    const workspace = workspaceOf(example.zone, example.createdAt);
+    const workspace = workspaceOf(example.zone);
     const dialogRow = await seedClosed(example.startedAt, example.endedAt);
     const singleRow = await seedClosed(example.startedAt, example.endedAt);
     const startedAt = new Date(example.startedAt);
@@ -7062,6 +7101,8 @@ describe("updateEntry: el trío es el de updateEntryTimes (criterio 3, ADR 0013)
 
     expect(dialog).toEqual(single);
     if (example.rejects === undefined) {
+      // Un rechazo también difiere de la fila sembrada: tiene que haber instantes.
+      expect(dialog).toHaveProperty("startedAt");
       expect(dialog).not.toEqual({
         startedAt: startedAt.toISOString(),
         endedAt: new Date(example.endedAt).toISOString(),
@@ -7075,7 +7116,6 @@ describe("updateEntry: el trío es el de updateEntryTimes (criterio 3, ADR 0013)
 type RunningRuleCase = {
   readonly label: string;
   readonly zone: string;
-  readonly createdAt?: string;
   readonly startedAt: string;
   readonly now: string;
   readonly runningStart: { readonly date: string; readonly start: string };
@@ -7128,19 +7168,25 @@ const runningRuleCases: readonly RunningRuleCase[] = [
     runningStart: { date: "2026-10-25", start: "02:30" },
   },
   {
-    label: "antes de la creación del workspace",
+    label: "el 1 de enero de 2000, el piso",
     zone: buenosAires,
-    createdAt: "2026-09-01T12:00:00Z",
     startedAt: "2026-10-02T11:00:00Z",
     now: "2026-10-02T15:00:00Z",
-    runningStart: { date: "2026-08-31", start: "08:00" },
-    rejects: timeEntryMessages.beforeWorkspace,
+    runningStart: { date: "2000-01-01", start: "08:00" },
+  },
+  {
+    label: "el 31 de diciembre de 1999, antes del piso",
+    zone: buenosAires,
+    startedAt: "2026-10-02T11:00:00Z",
+    now: "2026-10-02T15:00:00Z",
+    runningStart: { date: "1999-12-31", start: "08:00" },
+    rejects: timeEntryMessages.beforeFloor,
   },
 ];
 
 describe("updateEntry: el inicio del timer es el de updateRunningStart (criterio 4, ADR 0013)", () => {
   it.each(runningRuleCases)("$label", async (example) => {
-    const workspace = workspaceOf(example.zone, example.createdAt);
+    const workspace = workspaceOf(example.zone);
     const now = new Date(example.now);
     // Cada persona tiene un solo timer: la copia es de otra.
     const other = actorFor(await seedMember(workspaceId, "member"));
@@ -7172,6 +7218,8 @@ describe("updateEntry: el inicio del timer es el de updateRunningStart (criterio
 
     expect(dialog).toEqual(single);
     if (example.rejects === undefined) {
+      // Un rechazo también difiere de la fila sembrada: tiene que haber instantes.
+      expect(dialog).toHaveProperty("startedAt");
       expect(dialog).not.toEqual({ startedAt: stored.toISOString(), endedAt: null });
     } else {
       expect(dialog).toEqual({ code: "validation", message: example.rejects });
@@ -7648,16 +7696,170 @@ describe("updateEntry: el timer detenido en otra pestaña (criterio 16, CAL-41)"
 });
 
 describe("getCalendarState: minDayKey (§5.1 del 8c)", () => {
-  it("es el día de creación del workspace en la zona de la persona", async () => {
-    // Las 23:00 del 1 de setiembre en Buenos Aires, que en UTC ya son del 2.
-    const state = await getCalendarState(
+  it("es el 1 de enero de 2000 en cualquier zona", async () => {
+    for (const zone of [buenosAires, madrid]) {
+      const state = await getCalendarState(
+        actor,
+        workspaceOf(zone),
+        { mode: "week", day: null },
+        new Date("2026-10-02T15:00:00Z"),
+      );
+
+      expect(state.minDayKey).toBe("2000-01-01");
+    }
+  });
+});
+
+describe("el piso fijo con un workspace creado hoy (fix/piso-fijo)", () => {
+  /** El miércoles 7 de octubre de 2026 a las 12:00 en Buenos Aires. */
+  const now = new Date("2026-10-07T15:00:00Z");
+  const monday = "2026-10-05";
+  /** Las 10:00 a 11:00 de ese lunes en Buenos Aires. */
+  const mondayInstants = {
+    startedAt: "2026-10-05T13:00:00.000Z",
+    endedAt: "2026-10-05T14:00:00.000Z",
+  };
+  let workspace: TrackerWorkspace;
+
+  beforeEach(async () => {
+    // El primer login de producción: el workspace nace un rato antes de `now`.
+    await db
+      .update(workspaceTable)
+      .set({ createdAt: new Date("2026-10-07T13:00:00Z") })
+      .where(eq(workspaceTable.id, workspaceId));
+    workspace = await trackerWorkspaceFor(actor.userId);
+  });
+
+  /** Una entrada de hoy, de 10:00 a 11:00. */
+  function seedToday() {
+    return seedClosed("2026-10-07T13:00:00Z", "2026-10-07T14:00:00Z");
+  }
+
+  function createOnMonday() {
+    return createManualEntry(actor, workspace, {
+      id: randomUUID(),
+      projectId: null,
+      taskId: null,
+      tagIds: [],
+      description: "lunes",
+      date: monday,
+      start: "10:00",
+      end: "11:00",
+    });
+  }
+
+  it("el alta manual acepta el lunes anterior", async () => {
+    const result = await createOnMonday();
+
+    expect(result.created.dayDate).toBe(monday);
+    expect(await instantsOf(result.created.id)).toEqual(mondayInstants);
+  });
+
+  it("la edición de horas, la del arrastre del calendario, lleva una entrada al lunes", async () => {
+    const row = await seedToday();
+
+    const result = await updateEntryTimes(actor, workspace, {
+      id: row.id,
+      date: monday,
+      start: "10:00",
+      end: "11:00",
+    });
+
+    expect(result.entry.dayDate).toBe(monday);
+    expect(await instantsOf(row.id)).toEqual(mondayInstants);
+  });
+
+  it("el diálogo de la entrada lleva una entrada al lunes", async () => {
+    const row = await seedToday();
+
+    await updateEntry(actor, workspace, {
+      id: row.id,
+      changes: { times: { date: monday, start: "10:00", end: "11:00" } },
+    });
+
+    expect(await instantsOf(row.id)).toEqual(mondayInstants);
+  });
+
+  it("la edición en masa lleva las entradas al lunes", async () => {
+    const rows = [await seedToday(), await seedToday()];
+
+    await bulkEditEntries(actor, workspace, {
+      ids: rows.map((row) => row.id),
+      changes: { date: monday },
+    });
+
+    for (const row of rows) {
+      expect(await instantsOf(row.id)).toEqual(mondayInstants);
+    }
+  });
+
+  it("el inicio del timer pasa al lunes", async () => {
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-07T13:00:00Z",
+    });
+
+    const result = await updateRunningStart(
       actor,
-      workspaceOf(buenosAires, "2026-09-02T02:00:00Z"),
-      { mode: "week", day: null },
-      new Date("2026-10-02T15:00:00Z"),
+      workspace,
+      { id: row.id, date: monday, start: "10:00" },
+      now,
     );
 
-    expect(state.minDayKey).toBe("2026-09-01");
+    expect(result.running.dayDate).toBe(monday);
+  });
+
+  it("una entrada del lunes se duplica y se continúa", async () => {
+    const source = await createOnMonday();
+
+    const copy = await duplicateEntry(actor, workspace, {
+      id: randomUUID(),
+      sourceId: source.created.id,
+    });
+    const continued = await continueEntry(actor, workspace, {
+      id: randomUUID(),
+      sourceId: source.created.id,
+    });
+
+    expect(copy.created.dayDate).toBe(monday);
+    expect(await instantsOf(copy.created.id)).toEqual(mondayInstants);
+    expect(continued.running.description).toBe("lunes");
+  });
+
+  it("el calendario y la lista no cortan en el día de creación", async () => {
+    await createOnMonday();
+    // El lunes de la semana pasada, dentro de los 13 días de la ventana, y una
+    // de agosto, fuera de ella, para «Cargar más».
+    const lastWeek = await seedClosed("2026-09-28T13:00:00Z", "2026-09-28T14:00:00Z");
+    await seedClosed("2026-08-03T13:00:00Z", "2026-08-03T14:00:00Z");
+
+    const calendar = await getCalendarState(
+      actor,
+      workspace,
+      { mode: "week", day: null },
+      now,
+    );
+    const tracker = await getTrackerState(actor, workspace, { from: null }, now);
+
+    expect(calendar.minDayKey).toBe("2000-01-01");
+    expect(calendar.days.map((day) => [day.date, day.beforeFloor])).toEqual([
+      ["2026-10-05", false],
+      ["2026-10-06", false],
+      ["2026-10-07", false],
+      ["2026-10-08", false],
+      ["2026-10-09", false],
+      ["2026-10-10", false],
+      ["2026-10-11", false],
+    ]);
+    expect(calendar.entries.map((entry) => entry.dayDate)).toEqual([monday]);
+    expect(tracker.minDayKey).toBe("2000-01-01");
+    expect(tracker.windowFrom).toBe("2026-09-21");
+    expect(daysOf(tracker).map((day) => day.date)).toEqual([monday, "2026-09-28"]);
+    expect(
+      daysOf(tracker).flatMap((day) => day.entries.map((entry) => entry.id)),
+    ).toContain(lastWeek.id);
+    expect(tracker.loadMoreFrom).toBe("2026-08-03");
   });
 });
 

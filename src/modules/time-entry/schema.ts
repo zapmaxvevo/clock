@@ -34,7 +34,7 @@ export const timeEntryMessages = {
   timerRunning: "Detené el timer para agregar tiempo a mano.",
   tooShort: "La entrada tiene que durar al menos un minuto.",
   nonexistentClock: "Esa hora no existe por el cambio de horario.",
-  beforeWorkspace: "No se pueden cargar horas anteriores a la creación del workspace.",
+  beforeFloor: "No se pueden cargar horas anteriores al 1 de enero de 2000.",
   invalidDate: "Fecha inválida.",
   invalidClock: "Hora inválida.",
   futureTime: "No se pueden cargar horas que todavía no pasaron.",
@@ -436,7 +436,7 @@ export const trackerState = z.object({
   timeZone: z.string(),
   /** Día de hoy en la zona de la persona. */
   todayKey: z.string(),
-  /** Día de creación del workspace en la zona de la persona: el primero que admite carga. */
+  /** El piso de carga, como día en la zona de la persona: el primero que admite carga. */
   minDayKey: z.string(),
   canTrack: z.boolean(),
   running: timeEntryView.nullable(),
@@ -472,8 +472,8 @@ export const calendarDayView = z.object({
   /** «jue, 01/10», con año si no es el de hoy (CAL-09). Nunca «Hoy» ni «Ayer». */
   label: z.string(),
   isToday: z.boolean(),
-  /** Anterior a la creación del workspace: atenuado (CAL-48). */
-  beforeWorkspace: z.boolean(),
+  /** Anterior al piso de carga: atenuado (CAL-48). */
+  beforeFloor: z.boolean(),
   /** Exacto: lo que suman las entradas cerradas que empiezan ese día (CAL-32, P-02). */
   closedSeconds: z.number().int().min(0),
   /** Lo que no existe ese día por el cambio de horario (CAL-30). */
@@ -484,7 +484,7 @@ export const calendarState = z.object({
   /** Referencia del desfase de TT-32. */
   serverNow: z.iso.datetime(),
   todayKey: z.string(),
-  /** Día de creación del workspace en la zona de la persona: el piso del alta. */
+  /** El piso de carga, como día en la zona de la persona: el piso del alta. */
   minDayKey: z.string(),
   /** Minuto del día de `serverNow` en la zona de la persona: la línea de ahora. */
   nowMinute: z.number().int().min(0).max(1439),

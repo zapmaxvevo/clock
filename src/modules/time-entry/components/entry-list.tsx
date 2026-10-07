@@ -38,7 +38,7 @@ type EntryListProps = {
   readonly canTrack: boolean;
   /** Día de hoy en la zona del workspace. */
   readonly todayKey: string;
-  /** Piso del workspace, el primer día al que se puede mover una entrada. */
+  /** Piso de fechas, el primer día al que se puede mover una entrada. */
   readonly minDayKey: string;
   /** La entrada que continúa el atajo «c», o `null` si no hay ninguna. */
   readonly lastEntryId: string | null;

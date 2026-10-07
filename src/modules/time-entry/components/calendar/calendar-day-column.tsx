@@ -162,7 +162,7 @@ export function DayColumn({
       onPointerDown={handlePointerDown}
       className={cn(
         "relative border-r last:border-r-0",
-        state.canTrack && !day.beforeWorkspace && "cursor-pointer",
+        state.canTrack && !day.beforeFloor && "cursor-pointer",
       )}
       style={{
         height: MINUTES_PER_DAY * scale,
@@ -170,7 +170,7 @@ export function DayColumn({
         backgroundSize: `100% ${SLOT_HEIGHT_PX}px`,
       }}
     >
-      {day.beforeWorkspace && (
+      {day.beforeFloor && (
         <div aria-hidden="true" className="absolute inset-0" style={DIMMED_STYLE} />
       )}
       {day.missingMinutes.map((range) => (

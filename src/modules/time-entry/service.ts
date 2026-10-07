@@ -109,24 +109,23 @@ const AUDIT_ENTITY = "time_entry";
 
 /**
  * Lo que el módulo usa del contexto de la sesión: la zona, los formatos y el
- * primer día de la semana de la persona, y la creación del workspace.
+ * primer día de la semana de la persona.
  */
-export type TrackerWorkspace = TimeSettings & { readonly createdAt: Date };
+export type TrackerWorkspace = TimeSettings;
 
 /** Único lugar por el que la zona, los formatos y el primer día entran al módulo. */
 export function trackerWorkspaceOf(context: ProfileContext): TrackerWorkspace {
-  return { ...timeSettingsOf(context), createdAt: context.workspace.createdAt };
+  return timeSettingsOf(context);
 }
 
 /**
- * Primer día en que se pueden cargar horas: el día de creación del workspace
- * en la zona de la persona, la misma con que se convierte la hora tecleada.
- * La validación del service y el calendario de la barra lo toman de acá, así
- * que los dos dicen lo mismo.
+ * Primer día en que se pueden cargar horas, como clave de día en la zona de la
+ * persona, la misma con que se convierte la hora tecleada. Es fijo: el día de
+ * creación del workspace dejaba sin cargar los días anteriores al primer uso
+ * (ADR 0005). La validación del service y el calendario de la barra lo toman de
+ * acá, así que los dos dicen lo mismo.
  */
-function workspaceFloorDayKey(workspace: TrackerWorkspace): string {
-  return dayKey(workspace.createdAt, workspace.timezone);
-}
+const ENTRY_FLOOR_DAY_KEY = "2000-01-01";
 
 /** El día local y la hora de pared de un extremo: lo que la fila muestra de él. */
 type WallLabel = { readonly day: string; readonly clock: string };
@@ -605,7 +604,7 @@ export async function continueEntry(
  * Pendiente de verificación en el workspace del equipo (P-14).
  *
  * Con esta regla la copia no necesita ningún control de rango. No puede quedar
- * debajo del piso del workspace ni pasar el año 9999: son instantes que ya se
+ * debajo del piso de carga ni pasar el año 9999: son instantes que ya se
  * guardaron. Y no puede quedar fuera de la lista donde está la original: cae
  * en su mismo día, y agregarla no mueve el extremo inferior de la ventana,
  * porque empieza en el mismo instante que una fila que ya estaba. Si la
@@ -615,7 +614,7 @@ export async function continueEntry(
  * Las alternativas consideradas tampoco necesitan extender la lista ni el piso:
  * la contigua (`startedAt = source.endedAt`) cae después de la original, y la
  * de las mismas horas de pared hoy cae en hoy, que la lista siempre dibuja y
- * que nunca es anterior a la creación del workspace. La contigua suma el tope
+ * que nunca es anterior al piso de carga. La contigua suma el tope
  * de `isAfterYear9999`, y la de hoy, el rechazo de `nonexistentClock`
  * (ADR 0005) y el `now` y la zona como parámetros. Solo una regla que pusiera
  * la copia en un día anterior al de la original y anterior a hoy necesitaría
@@ -859,10 +858,9 @@ export async function discardTimer(
 
 /**
  * Los dos instantes del alta manual, con las reglas de las horas tecleadas:
- * la hora que no existe, la duración cero, el año 10000 y el piso del
- * workspace. Dependen de la zona y del piso, que pueden cambiar entre dos
- * intentos: corren dentro de la transacción del alta, después de buscar la
- * fila propia (ADR 0007).
+ * la hora que no existe, la duración cero, el año 10000 y el piso de fechas.
+ * Dependen de la zona, que puede cambiar entre dos intentos: corren dentro de
+ * la transacción del alta, después de buscar la fila propia (ADR 0007).
  */
 function manualTimes(
   input: CreateManualEntryValues,
@@ -893,8 +891,8 @@ function manualTimes(
   if (isAfterYear9999(startedAt) || isAfterYear9999(endedAt)) {
     throw new TimeEntryError("validation", timeEntryMessages.invalidDate);
   }
-  if (dayKey(startedAt, timeZone) < workspaceFloorDayKey(workspace)) {
-    throw new TimeEntryError("validation", timeEntryMessages.beforeWorkspace);
+  if (dayKey(startedAt, timeZone) < ENTRY_FLOOR_DAY_KEY) {
+    throw new TimeEntryError("validation", timeEntryMessages.beforeFloor);
   }
   return { startedAt, endedAt };
 }
@@ -1050,7 +1048,7 @@ function resolveEntryTimes(
  * La regla de horas de una fila (slice 3, ADR 0006): de la entrada cerrada y
  * el trío pedido, los instantes a escribir. La comparten la edición de una
  * fila y la masiva. Lanza `TimeEntryError` con `multiDayTimes`, `invalidDate`,
- * `nonexistentClock`, `tooShort` o `beforeWorkspace`.
+ * `nonexistentClock`, `tooShort` o `beforeFloor`.
  */
 function entryTimesFor(
   row: ClosedEntryRow,
@@ -1063,8 +1061,8 @@ function entryTimesFor(
     throw new TimeEntryError("validation", timeEntryMessages.multiDayTimes);
   }
   const times = resolveEntryTimes(row, triple, timeZone);
-  if (dayKey(times.startedAt, timeZone) < workspaceFloorDayKey(workspace)) {
-    throw new TimeEntryError("validation", timeEntryMessages.beforeWorkspace);
+  if (dayKey(times.startedAt, timeZone) < ENTRY_FLOOR_DAY_KEY) {
+    throw new TimeEntryError("validation", timeEntryMessages.beforeFloor);
   }
   return times;
 }
@@ -1106,7 +1104,7 @@ export async function updateEntryTimes(
  * La regla del inicio del timer que corre (TT-28, TT-29, TT-112, ADR 0006
  * paso 1): conserva el instante si el rótulo no cambió, si no lo convierte.
  * Lanza `TimeEntryError` con `nonexistentClock`, `futureTime` o
- * `beforeWorkspace`.
+ * `beforeFloor`.
  */
 function runningStartFor(
   row: TimeEntryRow,
@@ -1128,8 +1126,8 @@ function runningStartFor(
   if (startedAt.getTime() > now.getTime()) {
     throw new TimeEntryError("validation", timeEntryMessages.futureTime);
   }
-  if (dayKey(startedAt, timeZone) < workspaceFloorDayKey(workspace)) {
-    throw new TimeEntryError("validation", timeEntryMessages.beforeWorkspace);
+  if (dayKey(startedAt, timeZone) < ENTRY_FLOOR_DAY_KEY) {
+    throw new TimeEntryError("validation", timeEntryMessages.beforeFloor);
   }
   return startedAt;
 }
@@ -1695,10 +1693,10 @@ type WindowFloors = {
  * Los pisos de la lista, en semanas enteras para que el total de la semana más
  * vieja sea el de verdad (TT-52). El día de partida es el menor entre 13 días
  * atrás, el de la última entrada cerrada que empezó antes de `now` y el `desde`
- * pedido, que solo extiende (ADR 0008); nunca antes del día de creación del
- * workspace. Una entrada futura no cuenta, porque acercaría el piso y
- * escondería las viejas. El timer activo extiende solo `windowFrom`: la lista
- * lo dibuja mientras corre, y en cuanto se detiene, la ventana es `reachFrom`.
+ * pedido, que solo extiende (ADR 0008); nunca antes del piso de carga. Una
+ * entrada futura no cuenta, porque acercaría el piso y escondería las viejas.
+ * El timer activo extiende solo `windowFrom`: la lista lo dibuja mientras
+ * corre, y en cuanto se detiene, la ventana es `reachFrom`.
  */
 function windowFloors(
   workspace: TrackerWorkspace,
@@ -1718,8 +1716,7 @@ function windowFloors(
     candidates.push(from);
   }
   const earliest = earliestDayKey(...candidates);
-  const floor = workspaceFloorDayKey(workspace);
-  const reachDay = earliest < floor ? floor : earliest;
+  const reachDay = earliest < ENTRY_FLOOR_DAY_KEY ? ENTRY_FLOOR_DAY_KEY : earliest;
   const windowDay =
     running === undefined
       ? reachDay
@@ -1819,14 +1816,12 @@ function buildWeeks(
 
 /**
  * El `desde` de «Cargar más»: la semana de la entrada más reciente anterior a
- * la ventana (TT-52, TT-86). `null` si no hay ninguna; si es anterior a la
- * semana de creación del workspace, porque ese `desde` se recortaría a la misma
- * ventana; o si su semana no queda antes de `windowFrom`, la red de seguridad
- * contra un inicio de día mal ubicado: el enlace no extendería nada.
+ * la ventana (TT-52, TT-86), sin recorrer las semanas vacías del medio. `null`
+ * si no hay ninguna, o si es anterior a la semana del piso de carga, porque ese
+ * `desde` se recortaría a la misma ventana.
  */
 function loadMoreFromOf(
   older: TimeEntryRow | undefined,
-  windowFrom: string,
   floorWeek: string,
   workspace: TrackerWorkspace,
 ): string | null {
@@ -1836,8 +1831,7 @@ function loadMoreFromOf(
   if (dayKey(older.startedAt, workspace.timezone) < floorWeek) {
     return null;
   }
-  const week = weekOf(older.startedAt, workspace);
-  return week < windowFrom ? week : null;
+  return weekOf(older.startedAt, workspace);
 }
 
 /**
@@ -1853,7 +1847,7 @@ export async function getTrackerState(
 ): Promise<TrackerState> {
   const timeZone = workspace.timezone;
   const todayKey = dayKey(now, timeZone);
-  const floorWeek = weekStartKey(workspaceFloorDayKey(workspace), workspace.weekStart);
+  const floorWeek = weekStartKey(ENTRY_FLOOR_DAY_KEY, workspace.weekStart);
   // Las lecturas salen del mismo snapshot. Con `read committed` cada
   // sentencia ve uno nuevo, y una mutación que commitea en el medio deja
   // estados que la sección 5 declara imposibles: `hasAnyEntry` en verdadero con
@@ -1892,8 +1886,8 @@ export async function getTrackerState(
           tx,
         );
         // La próxima semana con entradas, para «Cargar más» (TT-52, TT-86). Con
-        // la ventana ya en la semana de creación del workspace, `loadMoreFromOf`
-        // daría `null` con cualquier fila: la consulta se ahorra.
+        // la ventana ya en la semana del piso, `loadMoreFromOf` daría `null` con
+        // cualquier fila: la consulta se ahorra.
         const next =
           window.windowFrom > floorWeek
             ? await timeEntryRepository.findLatestClosedBefore(
@@ -1919,7 +1913,7 @@ export async function getTrackerState(
     serverNow: now.toISOString(),
     timeZone,
     todayKey,
-    minDayKey: workspaceFloorDayKey(workspace),
+    minDayKey: ENTRY_FLOOR_DAY_KEY,
     canTrack: can(actor, "timeEntry.own.create", ownTimeEntryResource(actor)),
     running: running === undefined ? null : toView(running, workspace),
     lastEntryId: latestPast === undefined ? null : latestPast.id,
@@ -1931,7 +1925,7 @@ export async function getTrackerState(
     ),
     windowFrom: floors.windowFrom,
     reachFrom: floors.reachFrom,
-    loadMoreFrom: loadMoreFromOf(older, floors.windowFrom, floorWeek, workspace),
+    loadMoreFrom: loadMoreFromOf(older, floorWeek, workspace),
     hasAnyEntry: running !== undefined || latestClosed !== undefined,
   };
 }
@@ -1977,10 +1971,10 @@ function isWholeDayMissing(day: string, timeZone: string): boolean {
 
 /**
  * CAL-17: el período tiene anterior y siguiente con claves de cuatro cifras,
- * y ningún día suyo, ni el siguiente al último, falta entero en la zona: sin
- * eso `startOfDayKey` lanza por un parámetro de la URL. Con el siguiente
- * dentro del 9999, el inicio del día posterior al último tampoco pasa de ese
- * año en UTC: ninguna zona se aparta 24 h.
+ * y ningún día suyo, ni el siguiente al último, falta entero en la zona: el
+ * calendario no dibuja una columna para un día que no existió. Con el
+ * siguiente dentro del 9999, el inicio del día posterior al último tampoco
+ * pasa de ese año en UTC: ninguna zona se aparta 24 h.
  */
 function isNavigable(period: CalendarPeriod, timeZone: string): boolean {
   const length = PERIOD_LENGTH[period.mode];
@@ -2023,12 +2017,11 @@ function calendarDays(
   todayKey: string,
   workspace: TrackerWorkspace,
 ): CalendarDayView[] {
-  const floor = workspaceFloorDayKey(workspace);
   return period.days.map((date) => ({
     date,
     label: weekdayLabel(date, todayKey, workspace.formats.date),
     isToday: date === todayKey,
-    beforeWorkspace: date < floor,
+    beforeFloor: date < ENTRY_FLOOR_DAY_KEY,
     closedSeconds: entries
       .filter((entry) => entry.dayDate === date)
       .reduce((total, entry) => total + (entry.durationSeconds ?? 0), 0),
@@ -2079,7 +2072,7 @@ export async function getCalendarState(
   return {
     serverNow: now.toISOString(),
     todayKey,
-    minDayKey: workspaceFloorDayKey(workspace),
+    minDayKey: ENTRY_FLOOR_DAY_KEY,
     nowMinute: minuteOfDayIn(now, timeZone),
     canTrack: can(actor, "timeEntry.own.create", ownTimeEntryResource(actor)),
     mode: period.mode,

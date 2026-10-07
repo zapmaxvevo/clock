@@ -37,7 +37,7 @@ export type GridMinute = number;
 export type GestureGrid = {
   readonly days: readonly Pick<
     CalendarDayView,
-    "date" | "beforeWorkspace" | "missingMinutes"
+    "date" | "beforeFloor" | "missingMinutes"
   >[];
   readonly minDayKey: string;
   readonly zoom: CalendarZoom;
@@ -142,7 +142,7 @@ export function initialCandidate(gesture: Gesture, grid: GestureGrid): TimeDraft
 function lineOf(grid: GestureGrid) {
   const { zoom, days } = grid;
   const end = days.length * MINUTES_PER_DAY;
-  const firstOpen = days.findIndex((day) => !day.beforeWorkspace);
+  const firstOpen = days.findIndex((day) => !day.beforeFloor);
   const floor =
     grid.minDayKey < days[0].date
       ? -Infinity

@@ -8,13 +8,6 @@ import { Client } from "pg";
 import { TEST_EMAIL_DOMAIN, testDatabaseUrl } from "./environment";
 
 /**
- * Días hacia atrás que cubre el piso del workspace de los e2e. Un recorrido
- * que necesite cargar horas viejas puede elegir cualquier fecha dentro de este
- * tramo, sin importar cuándo se creó la base.
- */
-export const WORKSPACE_HISTORY_DAYS = 90;
-
-/**
  * El workspace que lee la aplicación: el más viejo, con el mismo desempate
  * que `findFirstWorkspace`.
  */
@@ -31,18 +24,21 @@ async function withDatabase<T>(work: (client: Client) => Promise<T>): Promise<T>
 }
 
 /**
- * El workspace de los e2e lo crea la primera sesión, así que su piso es el día
- * de la corrida y ninguna fecha anterior se puede cargar. Esto lo atrasa
- * `WORKSPACE_HISTORY_DAYS`. Nunca lo adelanta, así que repetirlo no cambia
- * nada, y el workspace elegido es el mismo que lee la aplicación, que al
- * atrasarse sigue siendo el primero.
+ * El workspace de los e2e lo crea la primera sesión, así que en una base nueva
+ * es de hoy, como el de producción el primer día de uso. Una base que se
+ * reusa entre corridas tiene uno viejo: esto le pone la creación en este
+ * momento, para que toda corrida pruebe lo mismo. El piso de fechas no depende
+ * de la creación, y los recorridos que cargan días anteriores a hoy lo
+ * afirman con un workspace recién creado.
  *
  * Escribe directo en la base que le pasen, así que antes comprueba que es una
  * base de los e2e: el owner del workspace tiene que ser el que la
  * configuración de prueba le da al servidor. Si la cadena de conexión apuntara
- * a otra base, se corta sin tocarla y sin nombrar al owner que encontró.
+ * a otra base, se corta sin tocarla y sin nombrar al owner que encontró. Y si
+ * al renovarlo dejara de ser el primero, que es el que lee la aplicación, se
+ * corta sin dejar nada.
  */
-export async function backdateWorkspace(): Promise<void> {
+export async function renewWorkspace(): Promise<void> {
   const expectedOwner = `owner@${TEST_EMAIL_DOMAIN}`;
   await withDatabase(async (client) => {
     const found = await client.query<{ id: string; email: string }>(
@@ -53,19 +49,41 @@ export async function backdateWorkspace(): Promise<void> {
     );
     const workspace = found.rows.at(0);
     if (workspace === undefined) {
-      throw new Error("No hay ningún workspace que atrasar.");
+      throw new Error("No hay ningún workspace que renovar.");
     }
     if (workspace.email !== expectedOwner) {
       throw new Error(
-        `El owner del workspace no es ${expectedOwner}: la base no es la de los e2e y no se atrasa.`,
+        `El owner del workspace no es ${expectedOwner}: la base no es la de los e2e y no se renueva.`,
       );
     }
-    await client.query(
-      `update workspace
-          set created_at = least(created_at, now() - make_interval(days => $1))
-        where id = $2`,
-      [WORKSPACE_HISTORY_DAYS, workspace.id],
+    await client.query("begin");
+    try {
+      await client.query("update workspace set created_at = now() where id = $1", [
+        workspace.id,
+      ]);
+      const first = await client.query<{ id: string }>(`select ${FIRST_WORKSPACE} as id`);
+      if (first.rows.at(0)?.id !== workspace.id) {
+        throw new Error("Renovado, el workspace de los e2e dejaría de ser el primero.");
+      }
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    }
+  });
+}
+
+/** Cuándo se creó el workspace de los e2e, para afirmar que no está atrasado. */
+export async function workspaceCreatedAt(): Promise<Date> {
+  return withDatabase(async (client) => {
+    const result = await client.query<{ created_at: Date }>(
+      `select created_at from workspace where id = ${FIRST_WORKSPACE}`,
     );
+    const row = result.rows.at(0);
+    if (row === undefined) {
+      throw new Error("No hay ningún workspace del que leer la creación.");
+    }
+    return row.created_at;
   });
 }
 

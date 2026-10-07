@@ -90,7 +90,7 @@ type EntryDialogProps = {
   readonly serverNow: string;
   /** Día de hoy en la zona de la persona: «Hoy» y «Ayer», y el techo del inicio del timer. */
   readonly todayKey: string;
-  /** Piso del workspace, el primer día que se puede elegir. */
+  /** Piso de fechas, el primer día que se puede elegir. */
   readonly minDayKey: string;
   /** El pedido del diálogo viaja: «Guardar» y «Agregar» quedan inactivos. */
   readonly pending: boolean;

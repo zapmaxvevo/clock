@@ -97,7 +97,7 @@ type TrackerBarProps = {
   readonly timeZone: string;
   /** Día de hoy en la zona del workspace. */
   readonly todayKey: string;
-  /** Piso del workspace, el primer día que la barra manual puede elegir. */
+  /** Piso de fechas, el primer día que la barra manual puede elegir. */
   readonly minDayKey: string;
   readonly canTrack: boolean;
   /** Modo recordado, leído de la cookie en el servidor (TT-16). */

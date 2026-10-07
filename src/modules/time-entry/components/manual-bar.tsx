@@ -41,7 +41,7 @@ type ManualBarProps = {
   readonly onDraftChange: (draft: TimeDraft) => void;
   /** Día de hoy en la zona de la persona. */
   readonly todayKey: string;
-  /** Piso del workspace, el primer día que se puede elegir. */
+  /** Piso de fechas, el primer día que se puede elegir. */
   readonly minDayKey: string;
   readonly canTrack: boolean;
   /** Hay un agregado en vuelo. */
