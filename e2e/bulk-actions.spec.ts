@@ -22,7 +22,7 @@ import { expect, test } from "./session";
 import {
   bulkButton,
   bulkDeleteDialog,
-  bulkEditDialog,
+  bulkDescriptionField,
   bulkRegion,
   bulkStatus,
   chooseFormat,
@@ -39,6 +39,7 @@ import {
   entryCheckbox,
   entryRow,
   escapeRegExp,
+  openBulkEdit,
   pickDate,
   setClock,
   startTimer,
@@ -196,22 +197,6 @@ async function addTodayEntries(
   for (const description of descriptions) {
     await expect(entryRow(todayGroup(page), description)).toBeVisible();
   }
-}
-
-/**
- * Abre el diálogo de edición desde la barra y espera el foco en
- * «Descripción», que es donde lo deja al abrir (§5.4).
- */
-async function openBulkEdit(page: Page, title: string): Promise<Locator> {
-  await bulkButton(page, "Editar").click();
-  const dialog = bulkEditDialog(page);
-  await expect(dialog).toHaveAccessibleName(title);
-  await expect(descriptionField(dialog)).toBeFocused();
-  return dialog;
-}
-
-function descriptionField(dialog: Locator): Locator {
-  return dialog.getByRole("textbox", { name: "Descripción", exact: true });
 }
 
 /**
@@ -444,7 +429,7 @@ test("editar la descripción de tres entradas las cambia a todas y deja el foco 
   // §5.2: los campos vacíos, la ayuda, y «Guardar» inactivo sin cambios.
   dialog = await openBulkEdit(page, "Editar 3 entradas");
   await expect(dialog.getByText("Lo que dejes vacío no cambia.")).toBeVisible();
-  await expect(descriptionField(dialog)).toHaveValue("");
+  await expect(bulkDescriptionField(dialog)).toHaveValue("");
   await expect(clockField(dialog, "Hora de inicio")).toHaveValue("");
   await expect(clockField(dialog, "Hora de fin")).toHaveValue("");
   await expect(bulkDateButton(dialog)).toContainText("Sin cambios");
@@ -471,7 +456,7 @@ test("editar la descripción de tres entradas las cambia a todas y deja el foco 
   await expect(bulkDateButton(dialog)).toBeFocused();
   await expectInactive(save);
 
-  await descriptionField(dialog).fill("nombre en bloque");
+  await bulkDescriptionField(dialog).fill("nombre en bloque");
   await expectActive(save);
 
   /*
@@ -901,7 +886,7 @@ test("una entrada borrada en otra pestaña frena la edición, sale de la selecci
   await other.context().close();
 
   const dialog = await openBulkEdit(page, "Editar 2 entradas");
-  await descriptionField(dialog).fill("descripción en bloque");
+  await bulkDescriptionField(dialog).fill("descripción en bloque");
   const save = dialogButton(dialog, "Guardar");
   await withServerAction(page, () => save.click());
 

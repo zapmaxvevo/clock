@@ -144,6 +144,23 @@ export async function revokeProjectManager(email: string, name: string): Promise
   );
 }
 
+/**
+ * Inserta una fila que devuelve su `id` y comprueba que se insertó
+ * exactamente una: como en `updateOne`, otra cantidad es un error del test.
+ */
+async function insertOneRow(
+  client: Client,
+  sql: string,
+  values: readonly unknown[],
+): Promise<string> {
+  const result = await client.query<{ id: string }>(sql, [...values]);
+  const row = result.rows.at(0);
+  if (result.rowCount !== 1 || row === undefined) {
+    throw new Error(`Se esperaba insertar una fila e insertaron ${result.rowCount}.`);
+  }
+  return row.id;
+}
+
 /** Lo que siembra `seedProject`. Los nombres llevan el sufijo del recorrido. */
 export type SeedProject = {
   readonly name: string;
@@ -173,14 +190,8 @@ export type SeedProject = {
  */
 export async function seedProject(project: SeedProject): Promise<void> {
   await withDatabase(async (client) => {
-    async function insertOne(sql: string, values: readonly unknown[]): Promise<string> {
-      const result = await client.query<{ id: string }>(sql, [...values]);
-      const row = result.rows.at(0);
-      if (result.rowCount !== 1 || row === undefined) {
-        throw new Error(`Se esperaba insertar una fila e insertaron ${result.rowCount}.`);
-      }
-      return row.id;
-    }
+    const insertOne = (sql: string, values: readonly unknown[]) =>
+      insertOneRow(client, sql, values);
 
     await client.query("begin");
     try {
@@ -230,6 +241,23 @@ export async function seedProject(project: SeedProject): Promise<void> {
       await client.query("rollback");
       throw error;
     }
+  });
+}
+
+/**
+ * Siembra una etiqueta activa en el workspace de los e2e. El nombre lleva el
+ * sufijo del recorrido. Es más corto que crearla en `/proyectos`, y la
+ * pantalla que la usa la lee al cargar, así que se siembra antes de entrar.
+ */
+export async function seedTag(name: string): Promise<void> {
+  await withDatabase(async (client) => {
+    await insertOneRow(
+      client,
+      `insert into tag (workspace_id, name)
+       values (${FIRST_WORKSPACE}, $1)
+       returning id`,
+      [name],
+    );
   });
 }
 
