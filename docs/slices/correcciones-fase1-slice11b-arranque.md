@@ -21,6 +21,16 @@ difieren, manda este documento.
 | m9     | Frase ambigua en §5.1 sobre el `left join`                                                                | Se lee: «el proyecto y la tarea dejan el `left join` de la sentencia que bloquea y pasan a la segunda».                                                                                                                                                                                                                                                                                                                                                                                          |
 | m10    | §0 cita `main` en `8e27fcb`; las líneas que usa el 11b se movieron                                        | Las citas del 11b se rebasan a `aed694f` con la tabla de abajo.                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
+## m11: Enter marca, Espacio escribe
+
+Lo levantó `e2e-11b` al escribir el recorrido 6. El `Combobox` de Base UI 1.8 navega con foco
+virtual: el foco se queda en el buscador y la opción resaltada se anuncia con
+`aria-activedescendant`. Espacio ahí escribe en la búsqueda, y los nombres de etiqueta llevan
+espacios. Decisión del team-lead: la opción resaltada se marca con **Enter**, sin cerrar el
+popup; Espacio no se intercepta. Donde §5.8 y el recorrido 6 dicen «Espacio marca», se lee
+Enter. El recorrido 6 suma que Espacio después de una flecha escribe en «Buscar etiqueta» y no
+marca. La paridad no pide Espacio.
+
 ## Citas rebasadas a `aed694f`
 
 | Qué                                            | Dónde está hoy                                     |
