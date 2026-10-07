@@ -31,6 +31,29 @@ popup; Espacio no se intercepta. Donde §5.8 y el recorrido 6 dicen «Espacio ma
 Enter. El recorrido 6 suma que Espacio después de una flecha escribe en «Buscar etiqueta» y no
 marca. La paridad no pide Espacio.
 
+## m12–m14: lo que dejó la prueba del `Combobox`
+
+Lo levantó `frontend-11b` en el paso 2 del handshake. El `Combobox` de Base UI 1.8 con
+`multiple` y el buscador en el popup anda en la barra y dentro del `Dialog`: abre con el foco
+en el buscador, marca sin cerrar, avisa una sola vez al cerrar con `Escape` y devuelve el foco.
+§5.8 se mantiene, con tres ajustes que decide el team-lead:
+
+- **m12.** Si la lista filtrada queda vacía, Base UI deja pasar el `Escape` al popup padre salvo
+  que esté montado `Combobox.Empty`, y dentro del diálogo lo cierra entero. Los vacíos del
+  selector de etiquetas van en `ComboboxEmpty` (`components/ui/combobox.tsx`, una región
+  `status` con `aria-live`), no en una `StatusRegion` copiada de `ProjectPicker`.
+- **m13.** El mismo defecto está en `main` desde el 8c: en el diálogo del calendario, buscar un
+  proyecto inexistente y apretar `Escape` cierra el diálogo y se pierde el borrador.
+  `project-picker.tsx` sale de «Lo que no toca nadie» solo para pasar sus vacíos a
+  `ComboboxEmpty`, en un commit propio y sin otro cambio de conducta. `e2e-11b` suma un recorrido
+  que falla hoy: el primer `Escape` cierra solo el selector, el borrador sigue, el segundo
+  cierra el diálogo.
+- **m14.** La suite de unidad corre en `node`, sin DOM, y no se suman dependencias. El
+  criterio 14 se parte: la decisión del cierre es una función pura exportada,
+  `closingChange(value, draft)`, con su test y su mutante; «avisa una sola vez», «ninguno con el
+  mismo conjunto» y «no abre en vuelo» los cubre `tags.spec.ts` contando pedidos de
+  `updateEntry`, como T5 del 11a.
+
 ## Citas rebasadas a `aed694f`
 
 | Qué                                            | Dónde está hoy                                     |
