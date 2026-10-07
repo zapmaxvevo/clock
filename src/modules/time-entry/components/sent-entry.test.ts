@@ -162,6 +162,7 @@ describe("sameRequest", () => {
         ...sent,
         description: " Informe ",
         projectId: web.id.toUpperCase(),
+        taskId: design.id.toUpperCase(),
         tagIds: [urgent.id, review.id],
       }),
     ).toBe(true);

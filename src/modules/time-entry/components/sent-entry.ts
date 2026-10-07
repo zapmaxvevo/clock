@@ -31,29 +31,6 @@ function descriptionOf(request: NewEntryRequest): string {
   return (request.description ?? "").trim();
 }
 
-/**
- * La entrada que respondió el alta es la que se mandó. En falso, la respuesta
- * es la de un pedido anterior con el mismo id (ADR 0007, D2c-1): lo mandado no
- * se guardó.
- */
-export function isSentEntry(created: TimeEntryView, sent: NewEntryRequest): boolean {
-  return (
-    created.description === descriptionOf(sent) &&
-    created.dayDate === sent.date &&
-    created.startClock === sent.start &&
-    // Una entrada abierta, con `endClock` nulo, no es la que se mandó.
-    created.endClock === sent.end &&
-    sameId(created.project?.id ?? null, sent.projectId ?? null) &&
-    sameId(created.task?.id ?? null, sent.taskId ?? null) &&
-    // Sin facturable en el pedido, lo resolvió el servidor (r3-2).
-    (sent.billable === undefined || created.billable === sent.billable) &&
-    sameTagIds(
-      created.tags.map((tag) => tag.id),
-      sent.tagIds ?? [],
-    )
-  );
-}
-
 /** Los dos pedidos piden la misma entrada. */
 export function sameRequest(left: NewEntryRequest, right: NewEntryRequest): boolean {
   return (
@@ -65,6 +42,37 @@ export function sameRequest(left: NewEntryRequest, right: NewEntryRequest): bool
     sameId(left.taskId ?? null, right.taskId ?? null) &&
     left.billable === right.billable &&
     sameTagIds(left.tagIds ?? [], right.tagIds ?? [])
+  );
+}
+
+/** El pedido que guarda lo que la vista muestra; `null` con una entrada abierta. */
+function requestOfView(entry: TimeEntryView): NewEntryRequest | null {
+  if (entry.endClock === null) {
+    return null;
+  }
+  return {
+    description: entry.description,
+    date: entry.dayDate,
+    start: entry.startClock,
+    end: entry.endClock,
+    projectId: entry.project?.id ?? null,
+    taskId: entry.task?.id ?? null,
+    billable: entry.billable,
+    tagIds: entry.tags.map((tag) => tag.id),
+  };
+}
+
+/**
+ * La entrada que respondió el alta es la que se mandó. En falso, la respuesta
+ * es la de un pedido anterior con el mismo id (ADR 0007, D2c-1): lo mandado no
+ * se guardó.
+ */
+export function isSentEntry(created: TimeEntryView, sent: NewEntryRequest): boolean {
+  const view = requestOfView(created);
+  // Sin facturable en el pedido, lo resolvió el servidor (r3-2).
+  return (
+    view !== null &&
+    sameRequest(view, { ...sent, billable: sent.billable ?? view.billable })
   );
 }
 

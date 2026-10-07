@@ -81,14 +81,14 @@ type BarAddInput = Omit<CreateManualEntryInput, keyof FieldsInput> & {
   readonly fields: EntryFields;
 };
 
-/** A la action viajan los ids; los campos quedan para limpiar la barra después (TT-25). */
-function addFromBar({ fields, ...entry }: BarAddInput) {
-  return createManualEntry({ ...entry, ...fieldsInput(fields) });
-}
-
 /** Lo que pide el alta de la barra, como se compara con la respuesta (r2-1). */
 function requestOf({ fields, ...entry }: BarAddInput): NewEntryRequest {
   return { ...entry, ...fieldsInput(fields) };
+}
+
+/** A la action viajan los ids; los campos quedan para limpiar la barra después (TT-25). */
+function addFromBar(input: BarAddInput) {
+  return createManualEntry({ ...requestOf(input), id: input.id });
 }
 
 type TrackerBarProps = {
