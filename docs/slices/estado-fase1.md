@@ -1,29 +1,29 @@
 # Estado de la fase 1
 
 Registro vivo de por dónde va la ejecución. Se actualiza al cerrar cada paso;
-quien retome el trabajo empieza acá. Última actualización: 2026-10-05.
+quien retome el trabajo empieza acá. Última actualización: 2026-10-07.
 
 ## Dónde estamos
 
-| Slice                                      | Estado            |
-| ------------------------------------------ | ----------------- |
-| 1 — Timer sin proyecto                     | En `main`         |
-| 2 — Modo manual                            | En `main`         |
-| 2b — Reintento de «Iniciar»                | En `main`         |
-| 3 — Corregir horas y fecha                 | En `main`         |
-| 4 — Continuar, duplicar, descartar, atajos | En `main`         |
-| 5 — Semana y paginación                    | En `main`         |
-| 9 — Núcleo de proyectos                    | En `main`         |
-| 10 — Selector de proyecto y tarea          | En `main`         |
-| 7 — Perfil                                 | En `main`         |
-| 6 — Selección y acciones en masa           | En `main`         |
-| 7b — Perfil: nombre editable y tema        | En `main`         |
-| 8 — Calendario: lectura                    | En `main`         |
-| 8c — Calendario: escritura                 | En `main`         |
-| 8b — Calendario: arrastre                  | En `main`         |
-| 11a — Facturable                           | En `main`         |
-| 11b — Etiquetas                            | Contrato aprobado |
-| 12–13                                      | Sin contrato      |
+| Slice                                      | Estado       |
+| ------------------------------------------ | ------------ |
+| 1 — Timer sin proyecto                     | En `main`    |
+| 2 — Modo manual                            | En `main`    |
+| 2b — Reintento de «Iniciar»                | En `main`    |
+| 3 — Corregir horas y fecha                 | En `main`    |
+| 4 — Continuar, duplicar, descartar, atajos | En `main`    |
+| 5 — Semana y paginación                    | En `main`    |
+| 9 — Núcleo de proyectos                    | En `main`    |
+| 10 — Selector de proyecto y tarea          | En `main`    |
+| 7 — Perfil                                 | En `main`    |
+| 6 — Selección y acciones en masa           | En `main`    |
+| 7b — Perfil: nombre editable y tema        | En `main`    |
+| 8 — Calendario: lectura                    | En `main`    |
+| 8c — Calendario: escritura                 | En `main`    |
+| 8b — Calendario: arrastre                  | En `main`    |
+| 11a — Facturable                           | En `main`    |
+| 11b — Etiquetas                            | En revisión  |
+| 12–13                                      | Sin contrato |
 
 Los slices 1 a 10, 7b, 8c, 8b y 11a están en `main`. El 11a (facturable) se mergeó el
 2026-10-05 (`1db5917`) con lint, typecheck, 941 de unidad, 955 de integración y 123 de 123 e2e en
@@ -31,6 +31,14 @@ verde (**falta `git push origin main`**; el push anterior llegó hasta `41ff1ef`
 con trabajo pendiente ni cambios sin commitear.
 
 ## Lo primero de la sesión siguiente
+
+**En curso (2026-10-07)**: el 11b en la rama `fase1/slice-11b-etiquetas`. Ronda corta de
+arquitectura aprobada con m1–m14 (`correcciones-fase1-slice11b-arranque.md`). Backend
+(`fbf4f91`, `32010d9`), frontend (`3a95938`…`a9c78a8`) y e2e (`7f4d90e`, `8690c76`) commiteados;
+lint, typecheck, 1018 de unidad y 1025 de integración en verde. Corren las seis revisiones y la
+corrida completa de e2e; sigue el documento `correcciones-fase1-slice11b-revisiones.md`, la ronda
+de correcciones, `parity-analyst`, la corrida final y el merge. Contenedor local de Postgres:
+`docker start clock-pg`.
 
 0. **Lo que sigue**: el **11b** (etiquetas) sobre `main` en `1db5917`, con el contrato aprobado
    (`fase1-slice11-etiquetas-y-facturable.md`, rondas 1 y 2). Antes de implementar, una ronda
