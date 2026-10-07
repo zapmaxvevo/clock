@@ -63,15 +63,22 @@ const workspace: TrackerWorkspace = {
 const timesValues = { date: "2026-10-01", start: "09:00", end: "10:30" } as const;
 const runningStartValues = { date: "2026-10-02", start: "07:00" } as const;
 
-const manualValues: CreateManualEntryValues = {
-  projectId: null,
-  taskId: null,
-  tagIds: [],
-  description: "a mano",
-  date: "2026-10-02",
-  start: "08:00",
-  end: "09:00",
-};
+/** Los valores de un alta manual, con un id propio en cada llamado. */
+function manual(
+  overrides: Partial<CreateManualEntryValues> = {},
+): CreateManualEntryValues {
+  return {
+    id: randomUUID(),
+    projectId: null,
+    taskId: null,
+    tagIds: [],
+    description: "a mano",
+    date: "2026-10-02",
+    start: "08:00",
+    end: "09:00",
+    ...overrides,
+  };
+}
 
 let workspaceId: string;
 let ownerId: string;
@@ -121,7 +128,7 @@ describe.each(roles)("rol %s", (role) => {
     it("agrega tiempo a mano sobre una entrada propia", async () => {
       const actor = await seedActor(role);
 
-      const result = await createManualEntry(actor, workspace, manualValues);
+      const result = await createManualEntry(actor, workspace, manual());
 
       const row = await timeEntryById(result.created.id);
       expect(row?.userId).toBe(actor.userId);
@@ -132,9 +139,7 @@ describe.each(roles)("rol %s", (role) => {
     it.each(notActive)("no agrega nada a mano con la membresía %s", async (status) => {
       const actor = await seedActor(role, status);
 
-      await expect(
-        createManualEntry(actor, workspace, manualValues),
-      ).rejects.toMatchObject({
+      await expect(createManualEntry(actor, workspace, manual())).rejects.toMatchObject({
         code: "forbidden",
         message: timeEntryMessages.forbidden,
       });
@@ -628,7 +633,7 @@ describe("aislamiento entre workspaces", () => {
 
     // El workspace que recibe el service solo aporta la zona y el piso; de
     // dónde es la fila lo decide el actor.
-    const result = await createManualEntry(outsider, workspace, manualValues);
+    const result = await createManualEntry(outsider, workspace, manual());
 
     const row = await timeEntryById(result.created.id);
     expect(row?.workspaceId).toBe(other.workspaceId);
@@ -663,7 +668,7 @@ describe("aislamiento entre workspaces", () => {
       endedAt: "2026-10-02T12:00:00Z",
     });
 
-    const result = await createManualEntry(elsewhere, workspace, manualValues);
+    const result = await createManualEntry(elsewhere, workspace, manual());
 
     expect((await timeEntryById(result.created.id))?.workspaceId).toBe(other.workspaceId);
     const here = await timeEntriesOf(workspaceId, ownerId);
@@ -704,7 +709,7 @@ describe("aislamiento entre workspaces", () => {
 
     // El corte de TT-30 mira el timer del workspace de la sesión, no el de
     // cualquier workspace de la persona.
-    const result = await createManualEntry(actor, workspace, manualValues);
+    const result = await createManualEntry(actor, workspace, manual());
 
     expect((await timeEntryById(result.created.id))?.workspaceId).toBe(workspaceId);
     expect((await timeEntryById(running.id))?.endedAt).toBeNull();

@@ -249,6 +249,7 @@ describe("la revalidación corre siempre", () => {
     await signIn();
 
     const result = await actions.createManualEntry({
+      id: randomUUID(),
       date: "2026-10-01",
       start: "09:00",
       end: "09:00",
@@ -272,7 +273,12 @@ describe("la revalidación corre siempre", () => {
       actions.updateEntryProject({ id: "no-es-uuid", projectId: null, taskId: null }),
     deleteEntry: () => actions.deleteEntry({ id: "no-es-uuid" }),
     createManualEntry: () =>
-      actions.createManualEntry({ date: "2026-02-30", start: "09:00", end: "10:00" }),
+      actions.createManualEntry({
+        id: randomUUID(),
+        date: "2026-02-30",
+        start: "09:00",
+        end: "10:00",
+      }),
     updateEntryTimes: () =>
       actions.updateEntryTimes({
         id: "no-es-uuid",
@@ -325,6 +331,7 @@ describe("cada action exige su permiso antes de tocar nada", () => {
       await actions.updateDescription({ id, description: "x" }),
       await actions.deleteEntry({ id }),
       await actions.createManualEntry({
+        id: randomUUID(),
         date: "2026-10-01",
         start: "09:00",
         end: "10:00",
@@ -439,6 +446,7 @@ describe("la action convierte con la zona de la persona de la sesión (criterio 
     });
 
     const result = await actions.createManualEntry({
+      id: randomUUID(),
       description: "reunión",
       date: "2026-07-01",
       start: "12:00",
@@ -462,6 +470,7 @@ describe("la action convierte con la zona de la persona de la sesión (criterio 
     await signInOn({ workspaceTimezone: madrid, createdAt: "2020-01-01T00:00:00Z" });
 
     const result = await actions.createManualEntry({
+      id: randomUUID(),
       date: "2026-07-01",
       start: "12:00",
       end: "13:30",
@@ -475,6 +484,7 @@ describe("la action convierte con la zona de la persona de la sesión (criterio 
     await seedPreferences(sessionUserId(), { timeFormat: "12h" });
 
     const result = await actions.createManualEntry({
+      id: randomUUID(),
       date: "2026-07-01",
       start: "12:00",
       end: "13:30",
@@ -501,6 +511,7 @@ describe("el piso del workspace se mide por día local", () => {
     await signInOn({ createdAt });
 
     const result = await actions.createManualEntry({
+      id: randomUUID(),
       description: "temprano",
       date: "2026-09-01",
       start: "10:00",
@@ -518,6 +529,7 @@ describe("el piso del workspace se mide por día local", () => {
     await signInOn({ createdAt });
 
     const result = await actions.createManualEntry({
+      id: randomUUID(),
       date: "2026-09-01",
       start: "00:00",
       end: "00:01",
@@ -535,6 +547,7 @@ describe("el piso del workspace se mide por día local", () => {
     await signInOn({ createdAt });
 
     const result = await actions.createManualEntry({
+      id: randomUUID(),
       date: "2026-08-31",
       start: "23:00",
       end: "23:59",
@@ -561,7 +574,7 @@ describe("la hora de pared del cambio de horario", () => {
     async (_, values) => {
       await signInOn(enMadrid);
 
-      const result = await actions.createManualEntry(values);
+      const result = await actions.createManualEntry({ id: randomUUID(), ...values });
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
@@ -577,6 +590,7 @@ describe("la hora de pared del cambio de horario", () => {
     await signInOn(enMadrid);
 
     const result = await actions.createManualEntry({
+      id: randomUUID(),
       date: "2026-10-25",
       start: "02:30",
       end: "04:00",
@@ -603,6 +617,7 @@ describe("la forma canónica se revalida en el servidor", () => {
     await signInOn();
 
     const result = await actions.createManualEntry({
+      id: randomUUID(),
       date: "2026-09-01",
       start: "08:00",
       end: "09:00",
@@ -623,6 +638,7 @@ describe("lo que pasa la forma pero la base no puede guardar", () => {
     await signInOn({ createdAt: "2020-01-01T00:00:00Z" });
 
     const result = await actions.createManualEntry({
+      id: randomUUID(),
       description: "antes\u0000después",
       date: "2026-09-01",
       start: "08:00",
@@ -640,6 +656,7 @@ describe("lo que pasa la forma pero la base no puede guardar", () => {
     await signInOn();
 
     const result = await actions.createManualEntry({
+      id: randomUUID(),
       date: "9999-12-31",
       start: "23:00",
       end: "23:30",
@@ -1205,6 +1222,7 @@ describe("weekStart en las vistas, con el primer día de la persona de la sesió
       await signInWithWeekStart(weekStart);
 
       const manual = await actions.createManualEntry({
+        id: randomUUID(),
         date: "2026-10-04",
         start: "08:00",
         end: "09:00",
@@ -1485,6 +1503,7 @@ describe("updateEntryProject y el par en las altas (criterio 12)", () => {
     ).toEqual(tt77);
     expect(
       await actions.createManualEntry({
+        id: randomUUID(),
         date: "2026-10-01",
         start: "08:00",
         end: "09:00",
@@ -1874,6 +1893,7 @@ describe("las etiquetas en las actions (criterio 15 del 11b: TT-78)", () => {
     );
     expect(
       await actions.createManualEntry({
+        id: randomUUID(),
         date: "2026-10-01",
         start: "08:00",
         end: "09:00",

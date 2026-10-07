@@ -46,6 +46,7 @@ import {
   actorIn,
   allEntryTags,
   lockRow,
+  outcomeWhileLocked,
   rejectionOf,
   snapshotOf,
   tagIdsOfRow,
@@ -70,6 +71,7 @@ import {
   type BulkEditChanges,
   type CalendarState,
   type ContinueEntryResult,
+  type CreateManualEntryValues,
   type DayGroupView,
   type StartTimerResult,
   type TrackerState,
@@ -946,6 +948,7 @@ describe("getTrackerState", () => {
 
     const values = { description: "", start: "08:00", end: "09:00" };
     const floor = await createManualEntry(actor, reciente, {
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -955,6 +958,7 @@ describe("getTrackerState", () => {
     expect(floor.created.dayDate).toBe(state.minDayKey);
     await expect(
       createManualEntry(actor, reciente, {
+        id: randomUUID(),
         projectId: null,
         taskId: null,
         tagIds: [],
@@ -1341,6 +1345,7 @@ describe("createManualEntry", () => {
 
   it("crea una entrada cerrada con las horas de pared que se teclearon", async () => {
     const result = await createManualEntry(actor, workspace, {
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -1366,6 +1371,7 @@ describe("createManualEntry", () => {
 
   it("aparece en el grupo de su día y mueve ese total, que puede no ser hoy", async () => {
     await createManualEntry(actor, workspace, {
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -1388,6 +1394,7 @@ describe("createManualEntry", () => {
 
   it("cruza la medianoche cuando el fin es menor que el inicio", async () => {
     const result = await createManualEntry(actor, workspace, {
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -1424,6 +1431,7 @@ describe("createManualEntry", () => {
     });
 
     const result = await createManualEntry(actor, workspace, {
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -1445,6 +1453,7 @@ describe("createManualEntry", () => {
   it("rechaza una entrada de duración cero", async () => {
     await expect(
       createManualEntry(actor, workspace, {
+        id: randomUUID(),
         projectId: null,
         taskId: null,
         tagIds: [],
@@ -1459,6 +1468,7 @@ describe("createManualEntry", () => {
 
   it("acepta la entrada de un minuto, que es el mínimo", async () => {
     const result = await createManualEntry(actor, workspace, {
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -1475,6 +1485,7 @@ describe("createManualEntry", () => {
 
     await expect(
       createManualEntry(actor, reciente, {
+        id: randomUUID(),
         projectId: null,
         taskId: null,
         tagIds: [],
@@ -1494,6 +1505,7 @@ describe("createManualEntry", () => {
     const reciente = workspaceOf(buenosAires, "2026-09-01T12:00:00Z");
 
     const result = await createManualEntry(actor, reciente, {
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -1506,7 +1518,8 @@ describe("createManualEntry", () => {
   });
 
   it("permite dos entradas superpuestas y las dos suman al total", async () => {
-    const values = {
+    const manual = (overrides: Partial<CreateManualEntryValues> = {}) => ({
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -1514,13 +1527,10 @@ describe("createManualEntry", () => {
       date: "2026-10-02",
       start: "08:00",
       end: "10:00",
-    };
-    await createManualEntry(actor, workspace, values);
-    await createManualEntry(actor, workspace, {
-      ...values,
-      start: "09:00",
-      end: "11:00",
+      ...overrides,
     });
+    await createManualEntry(actor, workspace, manual());
+    await createManualEntry(actor, workspace, manual({ start: "09:00", end: "11:00" }));
 
     const state = await getTrackerState(
       actor,
@@ -1535,6 +1545,7 @@ describe("createManualEntry", () => {
 
   it("P-15: la entrada debajo de la ventana trae su semana, y con ella de `desde` se ve en su día", async () => {
     await createManualEntry(actor, workspace, {
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -1544,6 +1555,7 @@ describe("createManualEntry", () => {
       end: "09:00",
     });
     await createManualEntry(actor, workspace, {
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -1554,6 +1566,7 @@ describe("createManualEntry", () => {
     });
 
     const old = await createManualEntry(actor, workspace, {
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -1579,6 +1592,7 @@ describe("createManualEntry", () => {
 
   it("acepta una fecha futura y la muestra en su semana, rotulada con el rango (TT-47)", async () => {
     const result = await createManualEntry(actor, workspace, {
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -1625,6 +1639,7 @@ describe("createManualEntry", () => {
 
   it("no esconde la entrada vieja que se veía al agregar una futura", async () => {
     await createManualEntry(actor, workspace, {
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -1642,6 +1657,7 @@ describe("createManualEntry", () => {
     expect(daysOf(before).map((group) => group.date)).toEqual(["2026-09-04"]);
 
     const future = await createManualEntry(actor, workspace, {
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -1667,6 +1683,7 @@ describe("createManualEntry", () => {
     // ve, porque la ventana es de semanas enteras; una de la semana anterior
     // queda afuera, y su semana es anterior a `reachFrom`.
     const sameWeek = await createManualEntry(actor, workspace, {
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -1676,6 +1693,7 @@ describe("createManualEntry", () => {
       end: "09:00",
     });
     const previousWeek = await createManualEntry(actor, workspace, {
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -1702,6 +1720,7 @@ describe("createManualEntry", () => {
 
   it("mide el piso contra la última entrada pasada aunque haya una futura", async () => {
     await createManualEntry(actor, workspace, {
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -1712,6 +1731,7 @@ describe("createManualEntry", () => {
     });
 
     const older = await createManualEntry(actor, workspace, {
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -1740,6 +1760,7 @@ describe("createManualEntry", () => {
   it("rechaza como fecha inválida el día siguiente que no tiene clave", async () => {
     await expect(
       createManualEntry(actor, workspace, {
+        id: randomUUID(),
         projectId: null,
         taskId: null,
         tagIds: [],
@@ -1757,6 +1778,7 @@ describe("createManualEntry", () => {
 
   it("no dibuja los días vacíos que quedan entre hoy y la entrada futura", async () => {
     await createManualEntry(actor, workspace, {
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -1766,6 +1788,7 @@ describe("createManualEntry", () => {
       end: "09:00",
     });
     await createManualEntry(actor, workspace, {
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -1794,6 +1817,7 @@ describe("createManualEntry con cambio de horario", () => {
   it("guarda la hora de pared ambigua con el segundo instante", async () => {
     // El 25/10/2026 Madrid pasa de +02:00 a +01:00: las 02:30 ocurren dos veces.
     const result = await createManualEntry(actor, workspace, {
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -1819,6 +1843,7 @@ describe("createManualEntry con cambio de horario", () => {
     ]) {
       await expect(
         createManualEntry(actor, workspace, {
+          id: randomUUID(),
           projectId: null,
           taskId: null,
           tagIds: [],
@@ -1836,6 +1861,7 @@ describe("createManualEntry con cambio de horario", () => {
 
   it("mide la duración real en el día que pierde una hora", async () => {
     const result = await createManualEntry(actor, workspace, {
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -1861,6 +1887,7 @@ describe("createManualEntry con cambio de horario", () => {
     ];
     for (const values of attempts) {
       await createManualEntry(actor, workspace, {
+        id: randomUUID(),
         projectId: null,
         taskId: null,
         tagIds: [],
@@ -4654,6 +4681,7 @@ describe("las altas con proyecto (criterio 4: TT-06, TT-22, TT-25)", () => {
   it("createManualEntry guarda el par pedido, también el proyecto sin tarea", async () => {
     const { web, design } = await seedTrackable();
     const withTask = await createManualEntry(actor, ws, {
+      id: randomUUID(),
       description: "",
       date: "2026-10-01",
       start: "08:00",
@@ -4663,6 +4691,7 @@ describe("las altas con proyecto (criterio 4: TT-06, TT-22, TT-25)", () => {
       tagIds: [],
     });
     const withoutTask = await createManualEntry(actor, ws, {
+      id: randomUUID(),
       description: "",
       date: "2026-10-01",
       start: "10:00",
@@ -4755,6 +4784,7 @@ describe("las altas con proyecto (criterio 4: TT-06, TT-22, TT-25)", () => {
     for (const [label, pair, message] of await rejectedPairs()) {
       await expect(
         createManualEntry(actor, ws, {
+          id: randomUUID(),
           description: "",
           date: "2026-10-01",
           start: "08:00",
@@ -4772,6 +4802,7 @@ describe("las altas con proyecto (criterio 4: TT-06, TT-22, TT-25)", () => {
   it("valida el par después de las horas: una hora imposible responde por la hora", async () => {
     await expect(
       createManualEntry(actor, ws, {
+        id: randomUUID(),
         description: "",
         date: "2026-10-01",
         start: "08:00",
@@ -5150,45 +5181,6 @@ describe("continuar y duplicar con proyecto (criterio 8: TT-57, TT-58)", () => {
   });
 });
 
-/**
- * Corre `work` mientras otra transacción sostiene `for update` sobre la fila
- * `id`. Responde con lo que termine `work`, su error incluido, o con
- * `"blocked"` si se trabó esperando el bloqueo. Al final suelta el bloqueo y
- * espera a `work`, que no queda corriendo en el test siguiente.
- */
-async function outcomeWhileLocked(id: string, work: () => Promise<unknown>) {
-  let holding = () => {};
-  const held = new Promise<void>((resolve) => {
-    holding = resolve;
-  });
-  let release = () => {};
-  const released = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const holder = db.transaction(async (tx) => {
-    await lockRow(id)(tx);
-    holding();
-    await released;
-  });
-  await Promise.race([held, holder]);
-  const running = work().then(
-    () => "resolved",
-    (error: unknown) => error,
-  );
-  const waiting = new AbortController();
-  try {
-    return await Promise.race([
-      running,
-      waitForBlockedBackends({ count: 1, signal: waiting.signal }).then(() => "blocked"),
-    ]);
-  } finally {
-    waiting.abort();
-    release();
-    await holder;
-    await running;
-  }
-}
-
 describe("las altas validan el par antes de escribir (§4.4)", () => {
   const ws = workspaceOf(buenosAires);
   const tt77 = { code: "not_found", message: projectMessages.projectUnavailable };
@@ -5332,6 +5324,7 @@ describe("la vista con su proyecto (criterio 9: TT-49, TT-50, PR-71, PR-101 … 
       members: [{ userId: actor.userId }],
     });
     const created = await createManualEntry(actor, ws, {
+      id: randomUUID(),
       description: "",
       date: "2026-10-01",
       start: "08:00",
@@ -5548,7 +5541,8 @@ describe("la zona y los formatos de la persona (slice 7)", () => {
       .where(eq(workspaceTable.id, workspaceId));
     const other = await seedMember(workspaceId, "member");
     await seedPreferences(other, { timezone: tokyo });
-    const values = {
+    const manual = () => ({
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -5556,7 +5550,7 @@ describe("la zona y los formatos de la persona (slice 7)", () => {
       date: "2026-09-01",
       start: "08:00",
       end: "09:00",
-    };
+    });
 
     const local = await trackerWorkspaceFor(actor.userId);
     const remote = await trackerWorkspaceFor(other);
@@ -5567,9 +5561,9 @@ describe("la zona y los formatos de la persona (slice 7)", () => {
       (await getTrackerState(actorFor(other), remote, { from: null }, now)).minDayKey,
     ).toBe("2026-09-02");
 
-    await expect(createManualEntry(actor, local, values)).resolves.toBeDefined();
+    await expect(createManualEntry(actor, local, manual())).resolves.toBeDefined();
     await expect(
-      createManualEntry(actorFor(other), remote, values),
+      createManualEntry(actorFor(other), remote, manual()),
     ).rejects.toMatchObject({
       code: "validation",
       message: timeEntryMessages.beforeWorkspace,
@@ -7743,6 +7737,7 @@ describe("las altas con facturable (criterio 4 del 11a: TT-14, PR-21)", () => {
       const start = `${String(hour).padStart(2, "0")}:00`;
       hour += 1;
       const result = await createManualEntry(actor, ws, {
+        id: randomUUID(),
         description: label,
         date: "2026-10-01",
         start,
@@ -8272,6 +8267,7 @@ describe("las altas con etiquetas (criterio 6 del 11b: TT-12, TT-78)", () => {
   it("createManualEntry guarda las pedidas, sin repetir y sin importar mayúsculas", async () => {
     const { alfa, gamma } = await seedTags();
     const input = createManualEntryInput.parse({
+      id: randomUUID(),
       date: "2026-10-01",
       start: "08:00",
       end: "09:00",
@@ -8325,6 +8321,7 @@ describe("las altas con etiquetas (criterio 6 del 11b: TT-12, TT-78)", () => {
           actor,
           ws,
           createManualEntryInput.parse({
+            id: randomUUID(),
             date: "2026-10-01",
             start: "08:00",
             end: "09:00",
