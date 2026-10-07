@@ -226,10 +226,10 @@ describe("la fila propia antes que las reglas (criterio 6)", () => {
       timeEntryMessages.nonexistentClock,
     ],
     [
-      "un día anterior al piso del workspace: sin beforeWorkspace",
-      workspaceOf(buenosAires, "2026-09-15T12:00:00Z"),
-      { date: "2026-09-01" },
-      timeEntryMessages.beforeWorkspace,
+      "un día anterior al piso: sin beforeFloor",
+      workspace,
+      { date: "1999-12-31" },
+      timeEntryMessages.beforeFloor,
     ],
     [
       // El fin cae el 10000-01-01, que no tiene clave de día.
@@ -313,10 +313,10 @@ describe("las reglas antes de escribir, con el id de otro miembro (criterio 9)",
       expected: { code: "validation", message: timeEntryMessages.tooShort },
       where: workspace,
     }),
-    "un día anterior a la creación del workspace responde beforeWorkspace": async () => ({
-      change: { date: "2026-09-01" },
-      expected: { code: "validation", message: timeEntryMessages.beforeWorkspace },
-      where: workspaceOf(buenosAires, "2026-09-15T12:00:00Z"),
+    "un día anterior al piso responde beforeFloor": async () => ({
+      change: { date: "1999-12-31" },
+      expected: { code: "validation", message: timeEntryMessages.beforeFloor },
+      where: workspace,
     }),
     "un proyecto archivado responde TT-77": async () => ({
       change: { projectId: (await seedProject({ workspaceId, archived: true })).id },

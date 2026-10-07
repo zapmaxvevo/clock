@@ -22,6 +22,7 @@ import { allTimeEntries, timeEntryById } from "@/test/queries";
 import { projectMessages } from "@/modules/project/schema";
 
 import { timeEntryRepository } from "./repository";
+import { getCalendarState, trackerWorkspaceOf } from "./service";
 import {
   timeEntryMessages,
   type BulkEditEntriesInput,
@@ -40,8 +41,8 @@ import {
  * la revalidación ocurra también en el camino de error—.
  *
  * De la entrada manual, además: que la action le pase al service la zona de
- * la persona de la sesión y la fecha de creación del workspace, que el piso del
- * workspace se compare por día local y no por instante, y que una fecha u
+ * la persona de la sesión, que el piso se compare por día local y no por
+ * instante, que la creación del workspace no sea un piso, y que una fecha u
  * hora imposible salga como `validation` y no como `unexpected`.
  */
 const mocks = vi.hoisted(() => ({
@@ -92,6 +93,7 @@ vi.mock("@/server/auth", () => ({
 }));
 
 const actions = await import("./actions");
+const { requireSession } = await import("@/server/session");
 
 /** Lo que revalidan `calls` llamadas a actions del módulo: las dos pantallas cada una (§4.7). */
 function revalidatedFor(calls: number): string[] {
@@ -108,7 +110,7 @@ async function signIn(email = ownerEmail): Promise<string> {
 }
 
 /**
- * Workspace con la fecha de creación que el caso necesita, y una sesión
+ * Workspace, creado ahora o en la fecha que el caso pida, y una sesión
  * adentro, de una persona con la zona del caso (`seedPreferences`). La
  * membresía la crea `ensureWorkspaceContext` al entrar.
  */
@@ -441,7 +443,6 @@ describe("el id que elige el cliente para «Iniciar»", () => {
 
 describe("el id que elige el cliente para el alta manual (slice 2c)", () => {
   const values = { date: "2026-10-01", start: "09:00", end: "10:00" };
-  const longAgo = { createdAt: "2020-01-01T00:00:00Z" };
 
   it.each([
     ["sin id", {}],
@@ -465,7 +466,7 @@ describe("el id que elige el cliente para el alta manual (slice 2c)", () => {
   });
 
   it("el reintento de un alta aplicada responde ok con los mismos datos y no escribe", async () => {
-    await signInOn(longAgo);
+    await signInOn();
     const input = { ...values, id: randomUUID(), description: "reunión" };
     const first = await actions.createManualEntry(input);
     expect(first.ok).toBe(true);
@@ -481,7 +482,7 @@ describe("el id que elige el cliente para el alta manual (slice 2c)", () => {
   it.each(Object.entries(foreignOwners))(
     "el id de una entrada de %s responde forbidden con el mensaje neutro",
     async (_, ownerOf) => {
-      const seeded = await signInOn(longAgo);
+      const seeded = await signInOn();
       const mine = await actions.createManualEntry({ ...values, id: randomUUID() });
       expect(mine.ok).toBe(true);
       const foreignOwner = await ownerOf(seeded);
@@ -507,10 +508,7 @@ describe("el id que elige el cliente para el alta manual (slice 2c)", () => {
 
 describe("la action convierte con la zona de la persona de la sesión (criterio 7, ADR 0005)", () => {
   it("usa la zona de la persona, y no la del workspace ni la del proceso", async () => {
-    const seeded = await signInOn({
-      personTimezone: madrid,
-      createdAt: "2020-01-01T00:00:00Z",
-    });
+    const seeded = await signInOn({ personTimezone: madrid });
 
     const result = await actions.createManualEntry({
       id: randomUUID(),
@@ -534,7 +532,7 @@ describe("la action convierte con la zona de la persona de la sesión (criterio 
   });
 
   it("sin zona elegida usa el predeterminado aunque el workspace esté en otra zona (PF-05)", async () => {
-    await signInOn({ workspaceTimezone: madrid, createdAt: "2020-01-01T00:00:00Z" });
+    await signInOn({ workspaceTimezone: madrid });
 
     const result = await actions.createManualEntry({
       id: randomUUID(),
@@ -547,7 +545,7 @@ describe("la action convierte con la zona de la persona de la sesión (criterio 
   });
 
   it("los rótulos de la respuesta salen con los formatos de la persona", async () => {
-    await signInOn({ createdAt: "2020-01-01T00:00:00Z" });
+    await signInOn();
     await seedPreferences(sessionUserId(), { timeFormat: "12h" });
 
     const result = await actions.createManualEntry({
@@ -566,72 +564,196 @@ describe("la action convierte con la zona de la persona de la sesión (criterio 
   });
 });
 
-describe("el piso del workspace se mide por día local", () => {
-  /**
-   * Las 23:00 del 1 de setiembre en Buenos Aires, que en UTC ya son del 2. El
-   * día local de creación es el 1: con una comparación por instante, o por día
-   * UTC, los dos casos que acá se aceptan quedarían rechazados.
-   */
-  const createdAt = "2026-09-02T02:00:00Z";
-
-  it("acepta el mismo día aunque la hora sea anterior a la creación", async () => {
-    await signInOn({ createdAt });
+describe("el piso se mide por día local", () => {
+  it("acepta el 1 de enero de 2000 aunque en UTC todavía sea 1999", async () => {
+    await signInOn({ personTimezone: madrid });
 
     const result = await actions.createManualEntry({
       id: randomUUID(),
-      description: "temprano",
-      date: "2026-09-01",
-      start: "10:00",
-      end: "11:00",
+      description: "año nuevo",
+      date: "2000-01-01",
+      start: "00:00",
+      end: "00:30",
     });
 
-    // Instante anterior a la creación y día UTC anterior; día local, el mismo.
+    // Día local, el del piso; instante y día UTC, el 31 de diciembre.
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.data.created.startedAt).toBe("2026-09-01T13:00:00.000Z");
+    expect(result.data.created.startedAt).toBe("1999-12-31T23:00:00.000Z");
     expect(await allTimeEntries()).toHaveLength(1);
   });
 
-  it("acepta ese día entero, desde su primer minuto", async () => {
-    await signInOn({ createdAt });
+  it("rechaza el 31 de diciembre de 1999 hasta su último minuto con el texto del piso, y no deja fila", async () => {
+    await signInOn();
 
     const result = await actions.createManualEntry({
       id: randomUUID(),
-      date: "2026-09-01",
-      start: "00:00",
-      end: "00:01",
-    });
-
-    // El otro de los dos: el primer minuto del día de creación, casi un día
-    // entero antes de ese instante y todavía del lado aceptado.
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.data.created.startedAt).toBe("2026-09-01T03:00:00.000Z");
-    expect(result.data.created.durationSeconds).toBe(60);
-  });
-
-  it("rechaza el día anterior hasta su último minuto y no deja fila", async () => {
-    await signInOn({ createdAt });
-
-    const result = await actions.createManualEntry({
-      id: randomUUID(),
-      date: "2026-08-31",
+      date: "1999-12-31",
       start: "23:00",
       end: "23:59",
     });
 
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.code).toBe("validation");
-    expect(result.message).toBe(timeEntryMessages.beforeWorkspace);
+    // En Buenos Aires esas horas ya son del 1 de enero en UTC.
+    expect(result).toEqual({
+      ok: false,
+      code: "validation",
+      message: "No se pueden cargar horas anteriores al 1 de enero de 2000.",
+    });
     expect(await allTimeEntries()).toEqual([]);
+  });
+});
+
+describe("la creación del workspace no es un piso (fix/piso-fijo)", () => {
+  /**
+   * El primer login de producción: el workspace nace el miércoles 7 de octubre
+   * de 2026 y el lunes 5 ya se tiene que poder cargar.
+   */
+  const createdAt = "2026-10-07T13:00:00Z";
+  const monday = "2026-10-05";
+  /** Las 10:00 a 11:00 de ese lunes en Buenos Aires. */
+  const mondayInstants = {
+    startedAt: "2026-10-05T13:00:00.000Z",
+    endedAt: "2026-10-05T14:00:00.000Z",
+  };
+
+  /** Una entrada de la persona de la sesión, del día de creación de 10:00 a 11:00. */
+  function seedOwnToday(seeded: SeededWorkspace) {
+    return seedTimeEntry({
+      workspaceId: seeded.workspaceId,
+      userId: sessionUserId(),
+      startedAt: "2026-10-07T13:00:00Z",
+      endedAt: "2026-10-07T14:00:00Z",
+    });
+  }
+
+  async function instantsOf(id: string) {
+    const row = await timeEntryById(id);
+    return {
+      startedAt: row?.startedAt.toISOString(),
+      endedAt: row?.endedAt?.toISOString(),
+    };
+  }
+
+  function createOnMonday() {
+    return actions.createManualEntry({
+      id: randomUUID(),
+      description: "lunes",
+      date: monday,
+      start: "10:00",
+      end: "11:00",
+    });
+  }
+
+  it("el alta manual, la de la barra y la del calendario, acepta el lunes anterior", async () => {
+    await signInOn({ createdAt });
+
+    const result = await createOnMonday();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.created.dayDate).toBe(monday);
+    expect(await instantsOf(result.data.created.id)).toEqual(mondayInstants);
+  });
+
+  it("la edición de horas y el arrastre del calendario llevan una entrada al lunes", async () => {
+    const seeded = await signInOn({ createdAt });
+    const row = await seedOwnToday(seeded);
+
+    const result = await actions.updateEntryTimes({
+      id: row.id,
+      date: monday,
+      start: "10:00",
+      end: "11:00",
+    });
+
+    expect(result.ok && result.data.entry.dayDate).toBe(monday);
+    expect(await instantsOf(row.id)).toEqual(mondayInstants);
+  });
+
+  it("el diálogo de la entrada la lleva al lunes", async () => {
+    const seeded = await signInOn({ createdAt });
+    const row = await seedOwnToday(seeded);
+
+    const result = await actions.updateEntry({
+      id: row.id,
+      changes: { times: { date: monday, start: "10:00", end: "11:00" } },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(await instantsOf(row.id)).toEqual(mondayInstants);
+  });
+
+  it("la edición en masa lleva las entradas al lunes", async () => {
+    const seeded = await signInOn({ createdAt });
+    const rows = [await seedOwnToday(seeded), await seedOwnToday(seeded)];
+
+    const result = await actions.bulkEditEntries({
+      ids: rows.map((row) => row.id),
+      changes: { date: monday },
+    });
+
+    expect(result.ok).toBe(true);
+    for (const row of rows) {
+      expect(await instantsOf(row.id)).toEqual(mondayInstants);
+    }
+  });
+
+  it("el inicio del timer pasa al lunes", async () => {
+    const seeded = await signInOn({ createdAt });
+    const running = await seedTimeEntry({
+      workspaceId: seeded.workspaceId,
+      userId: sessionUserId(),
+      startedAt: "2026-10-07T13:00:00Z",
+    });
+
+    const result = await actions.updateRunningStart({
+      id: running.id,
+      date: monday,
+      start: "10:00",
+    });
+
+    expect(result.ok && result.data.running.dayDate).toBe(monday);
+  });
+
+  it("una entrada del lunes se duplica y se continúa", async () => {
+    await signInOn({ createdAt });
+    const source = await createOnMonday();
+    expect(source.ok).toBe(true);
+    if (!source.ok) return;
+
+    const copy = await actions.duplicateEntry({
+      id: randomUUID(),
+      sourceId: source.data.created.id,
+    });
+    const continued = await actions.continueEntry({
+      id: randomUUID(),
+      sourceId: source.data.created.id,
+    });
+
+    expect(copy.ok && copy.data.created.dayDate).toBe(monday);
+    expect(continued.ok && continued.data.running.description).toBe("lunes");
+  });
+
+  it("el calendario de la sesión no raya el lunes ni el martes", async () => {
+    await signInOn({ createdAt });
+    const session = await requireSession();
+
+    const state = await getCalendarState(
+      session.actor,
+      trackerWorkspaceOf(session),
+      { mode: "week", day: null },
+      new Date("2026-10-07T15:00:00Z"),
+    );
+
+    expect(state.minDayKey).toBe("2000-01-01");
+    expect(state.days.filter((day) => day.beforeFloor)).toEqual([]);
   });
 });
 
 describe("la hora de pared del cambio de horario", () => {
   // El 29/3/2026 Madrid salta de las 02:00 a las 03:00; el 25/10 las 02:30
   // ocurren dos veces.
-  const enMadrid = { personTimezone: madrid, createdAt: "2020-01-01T00:00:00Z" };
+  const enMadrid = { personTimezone: madrid };
 
   it.each([
     ["en el inicio", { date: "2026-03-29", start: "02:30", end: "04:00" }],
@@ -701,8 +823,8 @@ describe("la forma canónica se revalida en el servidor", () => {
 
 describe("lo que pasa la forma pero la base no puede guardar", () => {
   it("una descripción con el carácter nulo sale como validation", async () => {
-    // Un workspace viejo: sin el control del esquema, la entrada llegaría a la base.
-    await signInOn({ createdAt: "2020-01-01T00:00:00Z" });
+    // Sin el control del esquema, la entrada llegaría a la base.
+    await signInOn();
 
     const result = await actions.createManualEntry({
       id: randomUUID(),
@@ -740,7 +862,6 @@ describe("lo que pasa la forma pero la base no puede guardar", () => {
 });
 
 describe("updateEntryTimes y updateRunningStart", () => {
-  const longAgo = "2020-01-01T00:00:00Z";
   const unknownId = "11111111-1111-4111-8111-111111111111";
 
   /** Una entrada cerrada de la persona de la sesión, el 1/10 de 08:00 a 09:00. */
@@ -763,7 +884,7 @@ describe("updateEntryTimes y updateRunningStart", () => {
   }
 
   it("guardan con la zona de la persona de la sesión y revalidan", async () => {
-    const seeded = await signInOn({ personTimezone: madrid, createdAt: longAgo });
+    const seeded = await signInOn({ personTimezone: madrid });
     const closed = await seedOwnClosed(seeded);
     const running = await seedOwnRunning(seeded);
 
@@ -786,7 +907,7 @@ describe("updateEntryTimes y updateRunningStart", () => {
   });
 
   it("un error de Zod del trío sale como validation con el mensaje del issue", async () => {
-    await signInOn({ createdAt: longAgo });
+    await signInOn();
 
     const results = [
       [
@@ -832,7 +953,7 @@ describe("updateEntryTimes y updateRunningStart", () => {
   });
 
   it("un error de dominio conserva su código y su mensaje, y revalida", async () => {
-    const seeded = await signInOn({ createdAt: longAgo });
+    const seeded = await signInOn();
     const closed = await seedOwnClosed(seeded);
     const running = await seedOwnRunning(seeded);
 
@@ -872,20 +993,20 @@ describe("updateEntryTimes y updateRunningStart", () => {
     expect(mocks.revalidated).toEqual(revalidatedFor(3));
   });
 
-  it("el piso es el del workspace de la sesión", async () => {
-    const seeded = await signInOn({ createdAt: "2026-09-01T12:00:00Z" });
+  it("el piso rechaza el 31 de diciembre de 1999 en las dos", async () => {
+    const seeded = await signInOn();
     const closed = await seedOwnClosed(seeded);
     const running = await seedOwnRunning(seeded);
 
     const times = await actions.updateEntryTimes({
       id: closed.id,
-      date: "2026-08-31",
+      date: "1999-12-31",
       start: "08:00",
       end: "09:00",
     });
     const start = await actions.updateRunningStart({
       id: running.id,
-      date: "2026-08-31",
+      date: "1999-12-31",
       start: "08:00",
     });
 
@@ -893,13 +1014,13 @@ describe("updateEntryTimes y updateRunningStart", () => {
       expect(result).toEqual({
         ok: false,
         code: "validation",
-        message: timeEntryMessages.beforeWorkspace,
+        message: timeEntryMessages.beforeFloor,
       });
     }
   });
 
   it("TT-41: el timer que otra pestaña detuvo llega como already_stopped tipado", async () => {
-    const seeded = await signInOn({ createdAt: longAgo });
+    const seeded = await signInOn();
     const running = await seedOwnRunning(seeded);
     await actions.stopTimer({ id: running.id });
     mocks.revalidated.length = 0;
@@ -921,7 +1042,7 @@ describe("updateEntryTimes y updateRunningStart", () => {
   });
 
   it("TT-79, TT-80: la entrada ajena y la que no existe, con su texto", async () => {
-    const seeded = await signInOn({ createdAt: longAgo });
+    const seeded = await signInOn();
     const other = await seedUser();
     await db
       .insert(membership)
@@ -961,7 +1082,7 @@ describe("updateEntryTimes y updateRunningStart", () => {
   it.each(["inactive", "invited"] as const)(
     "TT-92: con la membresía %s responden el mensaje neutro y no escriben",
     async (status) => {
-      const seeded = await signInOn({ createdAt: longAgo });
+      const seeded = await signInOn();
       const closed = await seedOwnClosed(seeded);
       const running = await seedOwnRunning(seeded);
       // La primera action crea la membresía; recién ahí se le cambia el estado.
@@ -1004,7 +1125,6 @@ describe("updateEntryTimes y updateRunningStart", () => {
 });
 
 describe("continueEntry, duplicateEntry y discardTimer", () => {
-  const longAgo = "2020-01-01T00:00:00Z";
   const unknownId = "11111111-1111-4111-8111-111111111111";
 
   /** Una entrada cerrada de la persona de la sesión, la original de las altas. */
@@ -1029,7 +1149,7 @@ describe("continueEntry, duplicateEntry y discardTimer", () => {
 
   /** Abre la sesión y crea su membresía, que crea la primera action. */
   async function signInWithMembership() {
-    const seeded = await signInOn({ createdAt: longAgo });
+    const seeded = await signInOn();
     await actions.discardTimer({ id: unknownId });
     mocks.revalidated.length = 0;
     return seeded;
@@ -1241,12 +1361,11 @@ describe("continueEntry, duplicateEntry y discardTimer", () => {
 });
 
 describe("weekStart en las vistas, con el primer día de la persona de la sesión", () => {
-  const longAgo = "2020-01-01T00:00:00Z";
   const unknownId = "11111111-1111-4111-8111-111111111111";
 
   /** Abre la sesión, crea su membresía y le fija el primer día de la semana. */
   async function signInWithWeekStart(weekStart: number) {
-    const seeded = await signInOn({ createdAt: longAgo });
+    const seeded = await signInOn();
     await actions.discardTimer({ id: unknownId });
     await db
       .update(membership)
@@ -1368,12 +1487,11 @@ describe("weekStart en las vistas, con el primer día de la persona de la sesió
 });
 
 describe("updateEntryProject y el par en las altas (criterio 12)", () => {
-  const longAgo = "2020-01-01T00:00:00Z";
   const unknownId = "11111111-1111-4111-8111-111111111111";
 
   /** Abre la sesión y crea su membresía, que crea la primera action. */
   async function signInWithMembership() {
-    const seeded = await signInOn({ createdAt: longAgo });
+    const seeded = await signInOn();
     await actions.discardTimer({ id: unknownId });
     mocks.revalidated.length = 0;
     return seeded;
@@ -1608,12 +1726,11 @@ describe("updateEntryProject y el par en las altas (criterio 12)", () => {
 });
 
 describe("bulkEditEntries y bulkDeleteEntries (criterio 17)", () => {
-  const longAgo = "2020-01-01T00:00:00Z";
   const unknownId = "11111111-1111-4111-8111-111111111111";
 
   /** Abre la sesión y crea su membresía, que crea la primera action. */
   async function signInWithMembership() {
-    const seeded = await signInOn({ createdAt: longAgo });
+    const seeded = await signInOn();
     await actions.discardTimer({ id: unknownId });
     mocks.revalidated.length = 0;
     return seeded;
@@ -1794,7 +1911,6 @@ describe("bulkEditEntries y bulkDeleteEntries (criterio 17)", () => {
 });
 
 describe("updateEntry (ADR 0013)", () => {
-  const longAgo = "2020-01-01T00:00:00Z";
   const unknownId = "11111111-1111-4111-8111-111111111111";
 
   /** Una entrada cerrada de la persona de la sesión, el 1/10 de 08:00 a 09:00 en Madrid. */
@@ -1809,7 +1925,7 @@ describe("updateEntry (ADR 0013)", () => {
   }
 
   it("guarda los grupos juntos con la zona de la persona de la sesión y revalida", async () => {
-    const seeded = await signInOn({ personTimezone: madrid, createdAt: longAgo });
+    const seeded = await signInOn({ personTimezone: madrid });
     const closed = await seedOwnClosed(seeded);
 
     const result = await actions.updateEntry({
@@ -1831,7 +1947,7 @@ describe("updateEntry (ADR 0013)", () => {
   });
 
   it("sin grupos responde validation con bulkNoChanges, y un grupo desconocido con unexpected", async () => {
-    await signInOn({ createdAt: longAgo });
+    await signInOn();
 
     const empty = await actions.updateEntry({ id: unknownId, changes: {} });
     // Lo que puede mandar un cliente que no respeta el tipo.
@@ -1854,7 +1970,7 @@ describe("updateEntry (ADR 0013)", () => {
   });
 
   it("un error de dominio conserva su código y su mensaje, y revalida", async () => {
-    const seeded = await signInOn({ createdAt: longAgo });
+    const seeded = await signInOn();
     const closed = await seedOwnClosed(seeded);
 
     const missing = await actions.updateEntry({
@@ -1880,7 +1996,7 @@ describe("updateEntry (ADR 0013)", () => {
   });
 
   it("guarda el facturable solo y revalida las dos rutas (criterio 11 del 11a)", async () => {
-    const seeded = await signInOn({ createdAt: longAgo });
+    const seeded = await signInOn();
     const closed = await seedOwnClosed(seeded);
 
     const result = await actions.updateEntry({
@@ -1894,7 +2010,7 @@ describe("updateEntry (ADR 0013)", () => {
   });
 
   it("con el facturable, conserva TT-77 y responde validation a un facturable que no es booleano", async () => {
-    const seeded = await signInOn({ createdAt: longAgo });
+    const seeded = await signInOn();
     const closed = await seedOwnClosed(seeded);
     const old = await seedProject({ workspaceId: seeded.workspaceId, archived: true });
 
@@ -1922,12 +2038,11 @@ describe("updateEntry (ADR 0013)", () => {
 });
 
 describe("las etiquetas en las actions (criterio 15 del 11b: TT-78)", () => {
-  const longAgo = "2020-01-01T00:00:00Z";
   const unknownId = "11111111-1111-4111-8111-111111111111";
 
   /** Abre la sesión y crea su membresía, que crea la primera action. */
   async function signInWithMembership() {
-    const seeded = await signInOn({ createdAt: longAgo });
+    const seeded = await signInOn();
     await actions.discardTimer({ id: unknownId });
     mocks.revalidated.length = 0;
     return seeded;
@@ -2015,12 +2130,11 @@ describe("las etiquetas en las actions (criterio 15 del 11b: TT-78)", () => {
 });
 
 describe("bulkEditEntries con el par, el facturable y las etiquetas (criterio 17 del 12)", () => {
-  const longAgo = "2020-01-01T00:00:00Z";
   const unknownId = "11111111-1111-4111-8111-111111111111";
 
   /** Abre la sesión y crea su membresía, que crea la primera action. */
   async function signInWithMembership() {
-    const seeded = await signInOn({ createdAt: longAgo });
+    const seeded = await signInOn();
     await actions.discardTimer({ id: unknownId });
     mocks.revalidated.length = 0;
     return seeded;

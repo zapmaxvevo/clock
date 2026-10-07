@@ -51,10 +51,9 @@ beforeEach(async () => {
   };
 });
 
-/** El workspace tal como lo recibe el service. El piso no estorba a estos casos. */
+/** El workspace tal como lo recibe el service. */
 const workspace: TrackerWorkspace = {
   timezone: buenosAires,
-  createdAt: new Date("2020-01-01T00:00:00Z"),
   weekStart: 1,
   formats: defaultFormats,
 };
@@ -582,28 +581,21 @@ describe("audit log de la entrada manual", () => {
     expect(await timeEntriesOf(workspaceId, actor.userId)).toHaveLength(2);
   });
 
-  it("la creación negada por el piso del workspace no deja registro ni fila", async () => {
-    const reciente: TrackerWorkspace = {
-      timezone: buenosAires,
-      createdAt: new Date("2026-09-01T12:00:00Z"),
-      weekStart: 1,
-      formats: defaultFormats,
-    };
-
+  it("la creación negada por el piso no deja registro ni fila", async () => {
     await expect(
-      createManualEntry(actor, reciente, {
+      createManualEntry(actor, workspace, {
         id: randomUUID(),
         projectId: null,
         taskId: null,
         tagIds: [],
         description: "histórico",
-        date: "2026-08-31",
+        date: "1999-12-31",
         start: "08:00",
         end: "09:00",
       }),
     ).rejects.toMatchObject({
       code: "validation",
-      message: timeEntryMessages.beforeWorkspace,
+      message: timeEntryMessages.beforeFloor,
     });
 
     expect(await auditFor("time_entry")).toEqual([]);
@@ -614,7 +606,6 @@ describe("audit log de la entrada manual", () => {
     // El 29/03/2026 Madrid salta de las 02:00 a las 03:00.
     const madrid: TrackerWorkspace = {
       timezone: "Europe/Madrid",
-      createdAt: new Date("2020-01-01T00:00:00Z"),
       weekStart: 1,
       formats: defaultFormats,
     };

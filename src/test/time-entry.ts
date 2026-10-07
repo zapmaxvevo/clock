@@ -25,13 +25,12 @@ export function actorIn(
   return { userId, workspaceId, role: "member", status: "active", ...overrides };
 }
 
-/** El workspace tal como lo recibe el service: la zona, el piso de carga y el primer día de la semana. */
+/** El workspace tal como lo recibe el service: la zona y el primer día de la semana. */
 export function workspaceOf(
   timezone: string,
-  createdAt = "2020-01-01T00:00:00Z",
   weekStart: WeekStart = 1,
 ): TrackerWorkspace {
-  return { timezone, createdAt: new Date(createdAt), weekStart, formats: defaultFormats };
+  return { timezone, weekStart, formats: defaultFormats };
 }
 
 /** Toma el bloqueo de la fila, como lo hace `readOwnEntry`. */

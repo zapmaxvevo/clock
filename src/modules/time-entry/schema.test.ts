@@ -295,7 +295,7 @@ describe("trackerState", () => {
     serverNow: "2026-10-02T15:00:00.000Z",
     timeZone: "America/Argentina/Buenos_Aires",
     todayKey: "2026-10-02",
-    minDayKey: "2026-09-01",
+    minDayKey: "2000-01-01",
     canTrack: true,
     running: null,
     lastEntryId: id,
@@ -551,7 +551,7 @@ describe("calendarState", () => {
     date: "2026-10-01",
     label: "jue, 01/10",
     isToday: false,
-    beforeWorkspace: false,
+    beforeFloor: false,
     closedSeconds: 5400,
     missingMinutes: [],
   };
@@ -559,7 +559,7 @@ describe("calendarState", () => {
   const state = {
     serverNow: "2026-10-02T15:00:00.000Z",
     todayKey: "2026-10-02",
-    minDayKey: "2026-09-01",
+    minDayKey: "2000-01-01",
     nowMinute: 720,
     canTrack: true,
     mode: "week",

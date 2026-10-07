@@ -51,10 +51,9 @@ const roles: readonly Role[] = [
 ];
 const notActive: readonly MembershipStatus[] = ["inactive", "invited"];
 
-/** El workspace tal como lo recibe el service. El piso no estorba a estos casos. */
+/** El workspace tal como lo recibe el service. */
 const workspace: TrackerWorkspace = {
   timezone: buenosAires,
-  createdAt: new Date("2020-01-01T00:00:00Z"),
   weekStart: 1,
   formats: defaultFormats,
 };
