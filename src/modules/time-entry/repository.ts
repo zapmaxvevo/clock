@@ -86,15 +86,11 @@ type ColumnFields = Omit<ClosedEntryFields, "pair" | "tagIds">;
 /** Las columnas de una escritura de una fila cerrada: el par va entero o no va. */
 type ClosedColumns = ColumnFields | (ColumnFields & ProjectPair);
 
-/**
- * Las columnas de una escritura: el par se abre en sus dos columnas, juntas.
- * Las etiquetas no son columnas: van a la unión.
- */
+/** Las columnas de una escritura: el par se abre en sus dos columnas, juntas. */
 function columnsOf({
   pair,
-  tagIds: _tagIds, // eslint-disable-line @typescript-eslint/no-unused-vars -- se separa de las columnas
   ...fields
-}: ClosedEntryFields): ClosedColumns {
+}: Omit<ClosedEntryFields, "tagIds">): ClosedColumns {
   return pair === undefined
     ? fields
     : { ...fields, projectId: pair.projectId, taskId: pair.taskId };
@@ -141,9 +137,10 @@ const withRefs = {
 };
 
 /**
- * Las entradas que cumplen `where`, con su proyecto y su tarea. Las dos claves
- * hacen que el join no cruce workspaces ni proyectos: la tarea se busca por el
- * proyecto de la entrada.
+ * Las entradas que cumplen `where`, con su proyecto, su tarea y sus etiquetas.
+ * Las dos claves hacen que el join no cruce workspaces ni proyectos: la tarea
+ * se busca por el proyecto de la entrada. Las etiquetas salen de la
+ * subconsulta de `entryTags`.
  */
 function selectWithRefs(tx: Executor, where: SQL | undefined) {
   return tx
@@ -202,7 +199,10 @@ async function rereadWithRefs(
   return toEntryWithRefs(found);
 }
 
-/** Las filas de la unión de una entrada nueva. Sin etiquetas, no hay sentencia. */
+/**
+ * Las filas de la unión que faltan para `tagIds`; las que ya están quedan. Sin
+ * etiquetas, no hay sentencia.
+ */
 async function insertTags(
   tx: Transaction,
   entry: Pick<TimeEntryRow, "workspaceId" | "id">,
@@ -211,13 +211,16 @@ async function insertTags(
   if (tagIds.length === 0) {
     return;
   }
-  await tx.insert(timeEntryTag).values(
-    tagIds.map((tagId) => ({
-      workspaceId: entry.workspaceId,
-      timeEntryId: entry.id,
-      tagId,
-    })),
-  );
+  await tx
+    .insert(timeEntryTag)
+    .values(
+      tagIds.map((tagId) => ({
+        workspaceId: entry.workspaceId,
+        timeEntryId: entry.id,
+        tagId,
+      })),
+    )
+    .onConflictDoNothing();
 }
 
 /**
@@ -239,19 +242,7 @@ async function replaceTags(
         notInArray(timeEntryTag.tagId, [...tagIds]),
       ),
     );
-  if (tagIds.length === 0) {
-    return;
-  }
-  await tx
-    .insert(timeEntryTag)
-    .values(
-      tagIds.map((tagId) => ({
-        workspaceId: target.workspaceId,
-        timeEntryId: target.id,
-        tagId,
-      })),
-    )
-    .onConflictDoNothing();
+  await insertTags(tx, target, tagIds);
 }
 
 /** `rereadWithRefs` sobre el resultado de una escritura que puede no tocar ninguna fila. */
@@ -558,15 +549,16 @@ export const timeEntryRepository = {
     target: EntryTarget,
     fields: ClosedEntryFields,
   ): Promise<EntryWithRefs | undefined> {
-    const columns = columnsOf(fields);
+    const { tagIds, ...columnFields } = fields;
+    const columns = columnsOf(columnFields);
     if (
       hasColumns(columns) &&
       (await timeEntryRepository.updateClosedFields(tx, target, columns)) === undefined
     ) {
       return undefined;
     }
-    if (fields.tagIds !== undefined) {
-      await replaceTags(tx, target, fields.tagIds);
+    if (tagIds !== undefined) {
+      await replaceTags(tx, target, tagIds);
     }
     return rereadWithRefs(tx, target);
   },
@@ -581,7 +573,8 @@ export const timeEntryRepository = {
     target: EntryTarget,
     fields: RunningEntryFields,
   ): Promise<EntryWithRefs | undefined> {
-    const columns = columnsOf(fields);
+    const { tagIds, ...columnFields } = fields;
+    const columns = columnsOf(columnFields);
     if (hasColumns(columns)) {
       const rows = await tx
         .update(timeEntry)
@@ -592,8 +585,8 @@ export const timeEntryRepository = {
         return undefined;
       }
     }
-    if (fields.tagIds !== undefined) {
-      await replaceTags(tx, target, fields.tagIds);
+    if (tagIds !== undefined) {
+      await replaceTags(tx, target, tagIds);
     }
     return rereadWithRefs(tx, target);
   },

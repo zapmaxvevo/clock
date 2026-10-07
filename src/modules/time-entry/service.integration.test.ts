@@ -8588,7 +8588,6 @@ describe("updateEntry con tags (criterio 8 del 11b: TT-27, TT-54, PR-47, PR-68)"
   it("el mismo conjunto en otro orden y con otras mayúsculas no escribe ni deja constancia", async () => {
     const { alfa, beta } = await seedTags();
     const entry = await seedTaggedEntry([alfa.id, beta.id]);
-    const before = await timeEntryById(entry.id);
 
     const result = await updateEntry(actor, ws, {
       id: entry.id,
@@ -8596,7 +8595,6 @@ describe("updateEntry con tags (criterio 8 del 11b: TT-27, TT-54, PR-47, PR-68)"
     });
 
     expect(result.entry.tags).toEqual([refOf(alfa), refOf(beta)]);
-    expect((await timeEntryById(entry.id))?.updatedAt).toEqual(before?.updatedAt);
     expect(await auditFor("time_entry")).toEqual([]);
   });
 

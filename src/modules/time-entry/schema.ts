@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { sameId, type ProjectPair } from "@/lib/project-pair";
+import { normalizedIds } from "@/lib/tag-ids";
 import { noNullCharacter } from "@/lib/text";
 import type { ActionErrorCode } from "@/server/action";
 import { isClock, parseDayKey } from "@/server/time";
@@ -80,11 +81,6 @@ const newEntryPair = {
 /** TT-14: ausente, el servidor aplica el por defecto del proyecto (`billableFor`). */
 const newEntryBillable = { billable: z.boolean().optional() };
 
-/** En minúsculas y sin repetir: la base iguala los ids, y repetir uno no cambia lo pedido. */
-function uniqueIds(ids: readonly string[]): string[] {
-  return [...new Set(ids.map((id) => id.toLowerCase()))];
-}
-
 /**
  * Las etiquetas de una entrada, enteras: el pedido fija el conjunto, no «las
  * que cambiaron» (D-5).
@@ -92,7 +88,7 @@ function uniqueIds(ids: readonly string[]): string[] {
 const tagIds = z
   .array(z.uuid())
   .max(TAGS_MAX, timeEntryMessages.tooManyTags)
-  .transform(uniqueIds);
+  .transform(normalizedIds);
 
 /** En las altas, al lado del par. Ausente es ninguna. */
 const newEntryTags = { tagIds: tagIds.default([]) };
@@ -215,7 +211,7 @@ const entryIds = z
   .array(z.uuid())
   .min(1, timeEntryMessages.bulkEmpty)
   .max(BULK_MAX, timeEntryMessages.bulkTooMany)
-  .transform(uniqueIds);
+  .transform(normalizedIds);
 
 /**
  * Lo que cambia en cada entrada. Un campo ausente no cambia; uno presente

@@ -1,15 +1,19 @@
-/** Los ids de un conjunto de etiquetas, sin repetir y sin distinguir mayúsculas. */
-function tagIdSet(ids: readonly string[]): ReadonlySet<string> {
-  return new Set(ids.map((id) => id.toLowerCase()));
+/**
+ * Los ids en minúsculas y sin repetir: la base los iguala, y repetir uno no
+ * cambia lo pedido. Lo usan los esquemas de entrada, `sameTagIds` y
+ * `assertTaggable`.
+ */
+export function normalizedIds(ids: readonly string[]): string[] {
+  return [...new Set(ids.map((id) => id.toLowerCase()))];
 }
 
 /**
  * Los dos conjuntos tienen las mismas etiquetas, sin importar orden ni
- * mayúsculas: la base iguala los ids. Lo usan el servidor y el navegador, que
- * tienen que coincidir en qué pedido no cambia nada.
+ * mayúsculas. Lo usan el servidor y el navegador, que tienen que coincidir en
+ * qué pedido no cambia nada.
  */
 export function sameTagIds(left: readonly string[], right: readonly string[]): boolean {
-  const leftSet = tagIdSet(left);
-  const rightSet = tagIdSet(right);
-  return leftSet.size === rightSet.size && [...leftSet].every((id) => rightSet.has(id));
+  const leftIds = normalizedIds(left);
+  const rightIds = new Set(normalizedIds(right));
+  return leftIds.length === rightIds.size && leftIds.every((id) => rightIds.has(id));
 }

@@ -1,3 +1,4 @@
+import { normalizedIds } from "@/lib/tag-ids";
 import { sortedByName } from "@/lib/text";
 import { DomainError, type ActionErrorCode } from "@/server/action";
 import { recordAudit } from "@/server/audit";
@@ -405,9 +406,9 @@ export async function assertTaggable(
   }
   const found = await projectRepository.findTags(tx, actor.workspaceId, tagIds);
   const usable = new Set(
-    found.filter((row) => row.archivedAt === null).map((row) => row.id.toLowerCase()),
+    normalizedIds(found.filter((row) => row.archivedAt === null).map((row) => row.id)),
   );
-  if (tagIds.some((id) => !usable.has(id.toLowerCase()))) {
+  if (normalizedIds(tagIds).some((id) => !usable.has(id))) {
     throw new ProjectError("not_found", projectMessages.tagUnavailable);
   }
 }
