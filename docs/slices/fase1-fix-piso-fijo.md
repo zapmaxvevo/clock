@@ -65,3 +65,18 @@ Arreglo provisorio en producción, lo corre el usuario en Neon:
 - Una fecha anterior a 2000-01-01 se rechaza en el servidor con el texto nuevo.
 - `npm run lint && npm run typecheck && npm run test:all` y la suite e2e en verde.
 - Después del deploy, el `update` provisorio de producción queda sin efecto práctico.
+
+## Revisiones
+
+Revisiones de backend y de tests sobre `f4186e2`, con `next build` y 155 de 155 e2e en verde dos
+veces. Los dos piden cambios por huecos de prueba y un caso borde; el código de los caminos
+revisados está bien, no queda ningún uso funcional de `workspace.createdAt`, los tests nuevos
+fallan con el piso viejo y sacar la red de seguridad de `f4186e2` es seguro (ninguna zona de
+`Intl` tiene un inicio de día corrido entre 1999-12-20 y 2040). Decisiones del team-lead:
+
+| Origen | Hallazgo                                                                                                                                                                  | Decisión                                                                                                                                                                                                                           |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| B1     | Ningún test distingue la zona de la persona en el borde del piso en `entryTimesFor` (edición, arrastre, diálogo y masiva): con `dayKey(…, "UTC")` pasan todos             | Dos casos en `sameRuleCases`: Tokio, `2000-01-01` de 00:00 a 01:00, aceptado; Buenos Aires, `1999-12-31` de 23:00 a 23:59, rechazado con `beforeFloor`.                                                                            |
+| T1     | La parte de la lista del test «el calendario y la lista no cortan en el día de creación» no falla con el piso viejo en la ventana ni en «Cargar más»                      | Sembrar también el lunes de la semana pasada y una entrada de agosto, y afirmar `windowFrom`, la entrada en la lista y `loadMoreFrom`.                                                                                             |
+| B2     | Con el piso en 2000 entra un día que no existe (`Pacific/Apia`, 2011-12-30): con `weekStart` viernes, `getTrackerState` lanza `RangeError` en `startOfDayKey(windowFrom)` | Se arregla: `startOfDayKey` de un día que no existe en la zona devuelve el inicio del primer día siguiente que sí existe, con su test de unidad y uno de integración con Apia. Nota fechada en §5.4 y §8 del contrato del slice 5. |
+| B3     | El comentario de `manualTimes` habla del piso del workspace                                                                                                               | «… el año 10000 y el piso de fechas. Dependen de la zona, que puede cambiar entre dos intentos: …».                                                                                                                                |
