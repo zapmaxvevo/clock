@@ -147,9 +147,21 @@ export function EntryDialog({
     onCancel,
   });
   const readOnly = subject?.kind === "entry" && !canTrack;
+  /**
+   * F1: mientras el alta viaja el diálogo no se cierra, así la respuesta que
+   * no es la mandada tiene dónde mostrar su aviso (r2-1).
+   */
+  const adding = pending && subject?.kind === "add";
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!adding) {
+          onOpenChange(next);
+        }
+      }}
+    >
       <DialogContent
         showCloseButton={false}
         // Los campos del horario, en una línea.

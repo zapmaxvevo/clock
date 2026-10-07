@@ -4,7 +4,7 @@ import { useCallback, useEffect, useOptimistic, useRef, useState } from "react";
 
 import { useDisplayFormats } from "@/components/layout/display-formats";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { useAction, type ActionHandle } from "@/hooks/use-action";
+import { useAction, type ActionFailure, type ActionHandle } from "@/hooks/use-action";
 import { useNewId } from "@/hooks/use-new-id";
 import {
   createManualEntry,
@@ -111,6 +111,12 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
   const deleteReturnRef = useRef<HTMLElement>(null);
   /** Los pedidos del alta que salieron con el id pendiente (r3-1). */
   const sentCreates = useRef<SentRequests | null>(null);
+  /**
+   * El último desenlace del alta, que decide si su id sigue pendiente. Sobrevive
+   * al aviso: cerrar el diálogo o abrir otro no renueva el id, como en la barra
+   * (F1/P2); solo el éxito o una falla con otro código lo renuevan.
+   */
+  const [createOutcome, setCreateOutcome] = useState<ActionFailure | null>(null);
   /** r2-1: el alta respondió la entrada de un pedido anterior y el diálogo sigue abierto. */
   const [replayedAdd, setReplayedAdd] = useState(false);
 
@@ -147,6 +153,7 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
   const create = useAction(createManualEntry, {
     unreachableMessage: timeEntryMessages.unexpected,
     onSuccess: (data, input) => {
+      setCreateOutcome(null);
       // r2-1: con el id pendiente, el servidor responde la fila del primer
       // intento. Si lo mandado era otra cosa, no se guardó: queda en el diálogo.
       if (!answersSent(data.created, input.id, input, sentCreates.current)) {
@@ -156,8 +163,9 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
       setOpen(false);
       landed(data.created);
     },
+    onFailure: setCreateOutcome,
   });
-  const nextCreateId = useNewId(create.failure);
+  const nextCreateId = useNewId(createOutcome);
   const stop = useAction(stopTimer, {
     unreachableMessage: timeEntryMessages.unexpected,
     onSuccess: (data) => setFocusEntryId(data.stopped.id),
@@ -324,8 +332,8 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
   }
 
   /**
-   * Con el aviso de falla por red a la vista, el id pendiente y el borrador de
-   * ahora (D2c-1, D2c-2). El id se pide antes de `run`, que baja el aviso.
+   * Después de una falla por red, el id pendiente con el borrador de ahora
+   * (D2c-1, D2c-2), aunque el diálogo se haya cerrado entre medio (F1/P2).
    */
   function handleAdd(input: NewEntryRequest): void {
     const id = nextCreateId(ADD_KEY);

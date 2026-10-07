@@ -458,3 +458,35 @@ describe("EditorActions: «Detener» con cambios sin guardar (P-06)", () => {
     expect(markup).not.toContain("Guardá los cambios");
   });
 });
+
+describe("EditorActions: «Cancelar» con el pedido en vuelo (F1)", () => {
+  function cancelButton(mode: "add" | "edit", pending: boolean): string {
+    const markup = renderToStaticMarkup(
+      <Dialog open>
+        <EditorActions
+          mode={mode}
+          name="Informe"
+          pending={pending}
+          tooShort={false}
+          stopBlocked={false}
+          submitRef={{ current: null }}
+          onStop={noop}
+          onDuplicate={noop}
+          onDelete={noop}
+        />
+      </Dialog>,
+    );
+    return markup.match(/<button[^>]*>Cancelar<\/button>/)?.[0] ?? "";
+  }
+
+  it("con el alta en vuelo queda inactivo, sin `disabled`", () => {
+    const cancel = cancelButton("add", true);
+    expect(cancel).toContain('aria-disabled="true"');
+    expect(cancel).not.toMatch(/\sdisabled=/);
+  });
+
+  it("sin el alta en vuelo, o con el guardado de una entrada en vuelo, está activo", () => {
+    expect(cancelButton("add", false)).toContain('aria-disabled="false"');
+    expect(cancelButton("edit", true)).toContain('aria-disabled="false"');
+  });
+});
