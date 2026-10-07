@@ -445,7 +445,7 @@ describe("addEntryDraft", () => {
     });
   });
 
-  it("nunca antes del piso del workspace", () => {
+  it("nunca antes del piso de fechas", () => {
     const later = { date: "2026-10-12", minute: 617 };
     expect(addEntryDraft(week, later, "2026-09-30", 60)).toEqual({
       date: "2026-09-30",
@@ -465,9 +465,9 @@ describe("addEntryDraft", () => {
 });
 
 describe("slotAt", () => {
-  const plain = { beforeWorkspace: false, missingMinutes: [] };
+  const plain = { beforeFloor: false, missingMinutes: [] };
   const madridSpring = {
-    beforeWorkspace: false,
+    beforeFloor: false,
     missingMinutes: [{ from: 120, to: 180 }],
   };
 
@@ -481,7 +481,7 @@ describe("slotAt", () => {
   });
 
   it("en un día anterior al piso no abre nada (CAL-48)", () => {
-    expect(slotAt({ ...plain, beforeWorkspace: true }, 10 * 48, 60, true)).toBeNull();
+    expect(slotAt({ ...plain, beforeFloor: true }, 10 * 48, 60, true)).toBeNull();
   });
 
   it("en un minuto que no existe no abre nada; en los de al lado, sí (CAL-30, Madrid)", () => {

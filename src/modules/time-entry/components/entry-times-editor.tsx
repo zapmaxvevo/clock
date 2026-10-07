@@ -26,7 +26,7 @@ type EntryTimesEditorProps = {
   readonly onDraftChange: (draft: TimeDraft) => void;
   /** Día de hoy en la zona de la persona. */
   readonly todayKey: string;
-  /** Piso del workspace. No hay techo: una entrada cerrada puede ir al futuro (P-10). */
+  /** Piso de fechas. No hay techo: una entrada cerrada puede ir al futuro (P-10). */
   readonly minDayKey: string;
   /** El botón de fecha de la fila abre el editor con el calendario abierto. */
   readonly openCalendar: boolean;

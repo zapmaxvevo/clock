@@ -23,7 +23,7 @@ type DateFieldProps = {
   readonly onChange: (dayKey: string) => void;
   /** Día de hoy en la zona de la persona: el rótulo «Hoy» / «Ayer» y la marca del calendario. */
   readonly todayKey: string;
-  /** Piso del workspace: antes de ese día no se pueden cargar horas. */
+  /** Piso de fechas: antes de ese día no se pueden cargar horas. */
   readonly minDayKey: string;
   /**
    * Último día que se puede elegir. La barra manual y la fila no lo pasan,

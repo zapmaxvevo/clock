@@ -41,7 +41,7 @@ type TimerBarProps = {
   readonly serverNow: string;
   /** Día de hoy en la zona del workspace: el techo del inicio (TT-29). */
   readonly todayKey: string;
-  /** Piso del workspace. */
+  /** Piso de fechas. */
   readonly minDayKey: string;
   readonly canTrack: boolean;
   /** Hay un arranque o una parada en vuelo: el botón no acepta otro. */

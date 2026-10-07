@@ -15,7 +15,7 @@ import { calendarLabels } from "./labels";
 
 type CalendarScreenProps = {
   readonly actor: Actor;
-  /** Zona, formatos, primer día de la semana y creación del workspace. */
+  /** Zona, formatos y primer día de la semana de la persona. */
   readonly workspace: TrackerWorkspace;
   /** La vista y el `semana` de la URL ya validados (CAL-17). */
   readonly request: CalendarRequest;

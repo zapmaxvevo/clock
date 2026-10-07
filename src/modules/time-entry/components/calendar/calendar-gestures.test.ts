@@ -38,7 +38,7 @@ const DAY = 1440;
 
 function gridOf(zoom: CalendarZoom, overrides: Partial<GestureGrid> = {}): GestureGrid {
   return {
-    days: week.map((date) => ({ date, beforeWorkspace: false, missingMinutes: [] })),
+    days: week.map((date) => ({ date, beforeFloor: false, missingMinutes: [] })),
     minDayKey: "2026-01-01",
     zoom,
     ...overrides,
@@ -60,7 +60,7 @@ function madridGrid(zoom: CalendarZoom): GestureGrid {
   return {
     days: madridWeek.map((date) => ({
       date,
-      beforeWorkspace: false,
+      beforeFloor: false,
       missingMinutes: date === "2026-03-29" ? [{ from: 120, to: 180 }] : [],
     })),
     minDayKey: "2026-01-01",
@@ -333,12 +333,12 @@ describe("candidateAt: mover (CAL-50, CAL-51, CAL-53, CAL-57, CAL-61)", () => {
     }
   });
 
-  it("no empieza antes del piso del workspace (CAL-48)", () => {
+  it("no empieza antes del piso de fechas (CAL-48)", () => {
     const grid = gridOf(60, {
       minDayKey: "2026-09-30",
       days: week.map((date) => ({
         date,
-        beforeWorkspace: date < "2026-09-30",
+        beforeFloor: date < "2026-09-30",
         missingMinutes: [],
       })),
     });
@@ -392,12 +392,12 @@ describe("candidateAt: estirar (CAL-52, CAL-55, CAL-56, CAL-57)", () => {
     });
   });
 
-  it("el inicio no pasa al piso del workspace (CAL-48)", () => {
+  it("el inicio no pasa al piso de fechas (CAL-48)", () => {
     const grid = gridOf(60, {
       minDayKey: "2026-09-30",
       days: week.map((date) => ({
         date,
-        beforeWorkspace: date < "2026-09-30",
+        beforeFloor: date < "2026-09-30",
         missingMinutes: [],
       })),
     });

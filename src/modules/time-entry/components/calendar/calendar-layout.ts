@@ -170,12 +170,12 @@ export function slotOf(minute: number, zoom: CalendarZoom): number {
  * o en un minuto que no existe por el cambio de horario (CAL-30).
  */
 export function slotAt(
-  day: Pick<CalendarDayView, "beforeWorkspace" | "missingMinutes">,
+  day: Pick<CalendarDayView, "beforeFloor" | "missingMinutes">,
   offsetPx: number,
   zoom: CalendarZoom,
   canTrack: boolean,
 ): number | null {
-  if (!canTrack || day.beforeWorkspace) {
+  if (!canTrack || day.beforeFloor) {
     return null;
   }
   const minute = minuteAt(offsetPx, zoom);

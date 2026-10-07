@@ -38,7 +38,7 @@ function day(date: string, closedSeconds: number): CalendarDayView {
     date,
     label: date,
     isToday: date === "2026-10-02",
-    beforeWorkspace: false,
+    beforeFloor: false,
     closedSeconds,
     missingMinutes: [],
   };

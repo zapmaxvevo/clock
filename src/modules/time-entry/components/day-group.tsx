@@ -38,7 +38,7 @@ type DayGroupProps = {
   readonly canTrack: boolean;
   /** Día de hoy en la zona del workspace. */
   readonly todayKey: string;
-  /** Piso del workspace, el primer día al que se puede mover una entrada. */
+  /** Piso de fechas, el primer día al que se puede mover una entrada. */
   readonly minDayKey: string;
   /**
    * P-15: la semana de la entrada que devolvió una mutación del grupo. La

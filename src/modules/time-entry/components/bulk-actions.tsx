@@ -37,7 +37,7 @@ type BulkActionsProps = {
   readonly entries: readonly SelectedEntry[];
   /** Día de hoy en la zona de la persona. */
   readonly todayKey: string;
-  /** Piso del workspace, el primer día al que se puede mover una entrada. */
+  /** Piso de fechas, el primer día al que se puede mover una entrada. */
   readonly minDayKey: string;
   /** Vista optimista del borrado de la lista: se llama dentro de la transición. */
   readonly showRemoved: (id: string) => void;
