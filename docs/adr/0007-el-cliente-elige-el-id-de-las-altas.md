@@ -276,6 +276,12 @@ responde el ganador, como en la cuarta fila.
 - **El alta manual queda como está** hasta que el equipo decida. Adoptar esta
   regla en `createManualEntry` le devolvería «Reintentar» y retiraría la
   excepción de TT-109; es un cambio de paridad y no entra en los slices 2b ni 4.
+  _Agregado el 2026-10-07, aprobado por el usuario_: el equipo lo decidió el
+  2026-10-04 y lo aplica el slice 2c
+  ([`fase1-slice2c-reintentar-alta-manual.md`](../slices/fase1-slice2c-reintentar-alta-manual.md)):
+  `createManualEntry` recibe el id del cliente y crea con `createOnce`, sin
+  gancho, como `duplicateEntry`; la barra y el diálogo del calendario recuperan
+  «Reintentar», y TT-109 deja de ser una excepción.
 - **Los consumidores futuros** —el arrastre que crea en el calendario, las
   celdas del timesheet, las altas de cualquier módulo nuevo— crean con la misma
   regla y la misma `createOnce` de `src/server/create-once.ts`, con su propio
