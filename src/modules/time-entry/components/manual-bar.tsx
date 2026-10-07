@@ -101,7 +101,7 @@ export function ManualBar({
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-3 rounded-lg border px-3 py-2">
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2">
         {/* Base chica: la descripción cede ancho y se recorta antes que partir la barra (F3). */}
         <div className="min-w-0 flex-1 basis-28">{descriptionField}</div>
 
