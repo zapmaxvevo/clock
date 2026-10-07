@@ -38,10 +38,10 @@ function descriptionOf(request: NewEntryRequest): string {
  */
 export function isSentEntry(created: TimeEntryView, sent: NewEntryRequest): boolean {
   return (
-    created.endClock !== null &&
     created.description === descriptionOf(sent) &&
     created.dayDate === sent.date &&
     created.startClock === sent.start &&
+    // Una entrada abierta, con `endClock` nulo, no es la que se mandó.
     created.endClock === sent.end &&
     sameId(created.project?.id ?? null, sent.projectId ?? null) &&
     sameId(created.task?.id ?? null, sent.taskId ?? null) &&
