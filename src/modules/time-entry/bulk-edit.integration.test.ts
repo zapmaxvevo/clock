@@ -19,6 +19,7 @@ import { auditFor, timeEntryById } from "@/test/queries";
 import {
   actorIn,
   allEntryTags,
+  failureOf,
   lockRow,
   rejectionOf,
   snapshotOf,
@@ -118,19 +119,6 @@ async function everythingOf(ids: readonly string[]) {
   };
 }
 
-/** El error de dominio de un pedido; si termina bien o lanza otra cosa, falla. */
-async function failureOf(work: Promise<unknown>): Promise<DomainError<string>> {
-  try {
-    await work;
-  } catch (error) {
-    if (error instanceof DomainError) {
-      return error;
-    }
-    throw error;
-  }
-  throw new Error("El pedido no falló.");
-}
-
 /** Un error del pedido entero: su código y su texto, sin lista de filas. */
 async function requestFailureOf(work: Promise<unknown>) {
   const error = await failureOf(work);
@@ -175,13 +163,28 @@ async function seedRefs() {
 
 type Refs = Awaited<ReturnType<typeof seedRefs>>;
 
-type Failure = { readonly code: string; readonly message: string };
+/**
+ * Cómo falla la masiva: `rejected`, el rechazo de esa fila en la lista;
+ * `request`, un error del pedido entero, sin lista (ADR 0011, ADR 0017).
+ * `updateEntry` responde siempre como `request`.
+ */
+type Failure = {
+  readonly kind: "rejected" | "request";
+  readonly code: string;
+  readonly message: string;
+};
 
 type SameRuleCase = {
   readonly label: string;
   readonly setup: (refs: Refs) => Promise<{
     readonly seed: EntrySeed;
     readonly changes: BulkEditChanges;
+    /** El trío entero que recibe `updateEntry` cuando la masiva cambia el horario. */
+    readonly times?: {
+      readonly date: string;
+      readonly start: string;
+      readonly end: string;
+    };
     readonly expected: Assignment | Failure;
     /** Las dos copias se borran antes de editarlas. */
     readonly removed?: boolean;
@@ -322,7 +325,35 @@ const sameRuleCases: readonly SameRuleCase[] = [
       return {
         seed: { tagIds: own.map((tag) => tag.id) },
         changes: { tags: { mode: "add", ids: [b.id, x.id] } },
-        expected: { code: "validation", message: timeEntryMessages.tooManyTags },
+        expected: {
+          kind: "rejected",
+          code: "validation",
+          message: timeEntryMessages.tooManyTags,
+        },
+      };
+    },
+  },
+  {
+    label:
+      "de más de un día con 49 etiquetas, la hora y «Agregar» dos: TT-110 antes que el tope",
+    setup: async ({ b, x }) => {
+      const own = await Promise.all(
+        Array.from({ length: TAGS_MAX - 1 }, () => seedTag({ workspaceId })),
+      );
+      return {
+        // De las 10:00 del 1 a las 11:00 del 3 en Buenos Aires.
+        seed: {
+          startedAt: "2026-10-01T13:00:00Z",
+          endedAt: "2026-10-03T14:00:00Z",
+          tagIds: own.map((tag) => tag.id),
+        },
+        changes: { start: "09:00", tags: { mode: "add", ids: [b.id, x.id] } },
+        times: { date: "2026-10-01", start: "09:00", end: "11:00" },
+        expected: {
+          kind: "rejected",
+          code: "validation",
+          message: timeEntryMessages.multiDayTimes,
+        },
       };
     },
   },
@@ -331,7 +362,11 @@ const sameRuleCases: readonly SameRuleCase[] = [
     setup: async ({ b }) => ({
       seed: { userId: await seedMember(workspaceId, "member") },
       changes: { tags: { mode: "add", ids: [b.id] } },
-      expected: { code: "forbidden", message: timeEntryMessages.forbiddenOtherOwner },
+      expected: {
+        kind: "rejected",
+        code: "forbidden",
+        message: timeEntryMessages.forbiddenOtherOwner,
+      },
     }),
   },
   {
@@ -339,7 +374,11 @@ const sameRuleCases: readonly SameRuleCase[] = [
     setup: async ({ p }) => ({
       seed: {},
       changes: { project: { projectId: p.id, taskId: null } },
-      expected: { code: "not_found", message: timeEntryMessages.notFound },
+      expected: {
+        kind: "rejected",
+        code: "not_found",
+        message: timeEntryMessages.notFound,
+      },
       removed: true,
     }),
   },
@@ -348,7 +387,11 @@ const sameRuleCases: readonly SameRuleCase[] = [
     setup: async ({ old }) => ({
       seed: {},
       changes: { project: { projectId: old.id, taskId: null } },
-      expected: { code: "not_found", message: projectMessages.projectUnavailable },
+      expected: {
+        kind: "request",
+        code: "not_found",
+        message: projectMessages.projectUnavailable,
+      },
     }),
   },
   {
@@ -356,7 +399,11 @@ const sameRuleCases: readonly SameRuleCase[] = [
     setup: async ({ p, done }) => ({
       seed: {},
       changes: { project: { projectId: p.id, taskId: done.id } },
-      expected: { code: "not_found", message: projectMessages.taskUnavailable },
+      expected: {
+        kind: "request",
+        code: "not_found",
+        message: projectMessages.taskUnavailable,
+      },
     }),
   },
   {
@@ -364,14 +411,21 @@ const sameRuleCases: readonly SameRuleCase[] = [
     setup: async ({ a }) => ({
       seed: {},
       changes: { tags: { mode: "add", ids: [a.id] } },
-      expected: { code: "not_found", message: projectMessages.tagUnavailable },
+      expected: {
+        kind: "request",
+        code: "not_found",
+        message: projectMessages.tagUnavailable,
+      },
     }),
   },
 ];
 
 describe("bulkEditEntries: la fila repetida de updateEntry (criterio 3, ADR 0013)", () => {
-  /** El desenlace de una edición: lo que quedó en la fila, o el código y el texto del error. */
-  async function outcomeOf(id: string, work: () => Promise<unknown>) {
+  /** El desenlace de una edición: lo que quedó en la fila, o cómo falló, con su código y su texto. */
+  async function outcomeOf(
+    id: string,
+    work: () => Promise<unknown>,
+  ): Promise<Assignment | Failure | undefined> {
     try {
       await work();
       return await assignmentOf(id);
@@ -379,10 +433,10 @@ describe("bulkEditEntries: la fila repetida de updateEntry (criterio 3, ADR 0013
       if (error instanceof RejectedError) {
         expect(error.rejections.map((rejection) => rejection.id)).toEqual([id]);
         const [rejection] = error.rejections;
-        return { code: rejection.code, message: rejection.message };
+        return { kind: "rejected", code: rejection.code, message: rejection.message };
       }
       if (error instanceof DomainError) {
-        return { code: error.code, message: error.message };
+        return { kind: "request", code: error.code, message: error.message };
       }
       throw error;
     }
@@ -390,7 +444,7 @@ describe("bulkEditEntries: la fila repetida de updateEntry (criterio 3, ADR 0013
 
   it.each(sameRuleCases)("$label", async (example) => {
     const refs = await seedRefs();
-    const { seed, changes, expected, removed } = await example.setup(refs);
+    const { seed, changes, times, expected, removed } = await example.setup(refs);
     const bulkRow = await seedEntry(seed);
     const singleRow = await seedEntry(seed);
     if (removed === true) {
@@ -403,6 +457,7 @@ describe("bulkEditEntries: la fila repetida de updateEntry (criterio 3, ADR 0013
       updateEntry(actor, workspace, {
         id: singleRow.id,
         changes: {
+          times,
           project: changes.project,
           billable: changes.billable,
           tags: tags === undefined ? undefined : tagsAfter(seed.tagIds ?? [], tags),
@@ -410,8 +465,11 @@ describe("bulkEditEntries: la fila repetida de updateEntry (criterio 3, ADR 0013
       }),
     );
 
-    expect(bulk).toEqual(single);
     expect(bulk).toEqual(expected);
+    // La operación de una fila no tiene lista: falla igual, como error del pedido.
+    expect(single).toEqual(
+      "kind" in expected ? { ...expected, kind: "request" } : expected,
+    );
   });
 });
 

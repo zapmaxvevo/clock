@@ -47,7 +47,6 @@ import {
   allEntryTags,
   lockRow,
   rejectionOf,
-  seedClosedEntry,
   snapshotOf,
   tagIdsOfRow,
   workspaceOf,
@@ -1883,11 +1882,12 @@ describe("createManualEntry con cambio de horario", () => {
 
 /** Una entrada cerrada del actor, con los dos instantes tal como se escriben. */
 function seedClosed(startedAt: string, endedAt: string, userId?: string) {
-  return seedClosedEntry(
-    { workspaceId, userId: userId ?? actor.userId },
+  return seedTimeEntry({
+    workspaceId,
+    userId: userId ?? actor.userId,
     startedAt,
     endedAt,
-  );
+  });
 }
 
 /** Los dos instantes de la fila en ISO, o `undefined` si ya no está. */

@@ -1,13 +1,13 @@
 import { eq, sql } from "drizzle-orm";
 
-import { RejectedError } from "@/server/action";
+import { DomainError, RejectedError } from "@/server/action";
 import { db, type Transaction } from "@/server/db";
 import { timeEntryTag } from "@/server/db/schema";
 import type { Actor } from "@/server/permissions";
 import type { WeekStart } from "@/server/time";
 import type { TrackerWorkspace } from "@/modules/time-entry/service";
 
-import { defaultFormats, seedTimeEntry } from "./factories";
+import { defaultFormats } from "./factories";
 import { timeEntryById } from "./queries";
 
 /**
@@ -39,31 +39,26 @@ export function lockRow(id: string) {
     tx.execute(sql`select id from time_entry where id = ${id} for update`);
 }
 
-/** Una entrada cerrada de la persona, con los dos instantes tal como se escriben. */
-export function seedClosedEntry(
-  owner: { readonly workspaceId: string; readonly userId: string },
-  startedAt: string,
-  endedAt: string,
-) {
-  return seedTimeEntry({
-    workspaceId: owner.workspaceId,
-    userId: owner.userId,
-    startedAt,
-    endedAt,
-  });
-}
-
-/** El `RejectedError` de una operación en masa; si termina bien o lanza otra cosa, falla. */
-export async function rejectionOf(work: Promise<unknown>): Promise<RejectedError> {
+/** El error de dominio de una operación; si termina bien o lanza otra cosa, falla. */
+export async function failureOf(work: Promise<unknown>): Promise<DomainError<string>> {
   try {
     await work;
   } catch (error) {
-    if (error instanceof RejectedError) {
+    if (error instanceof DomainError) {
       return error;
     }
     throw error;
   }
-  throw new Error("La operación en masa no se rechazó.");
+  throw new Error("La operación no falló.");
+}
+
+/** El `RejectedError` de una operación en masa; si termina bien o lanza otra cosa, falla. */
+export async function rejectionOf(work: Promise<unknown>): Promise<RejectedError> {
+  const error = await failureOf(work);
+  if (error instanceof RejectedError) {
+    return error;
+  }
+  throw error;
 }
 
 /** Lo que dejó la fila sembrada: sus instantes, su descripción y su `updatedAt`. */
