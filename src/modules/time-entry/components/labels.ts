@@ -75,6 +75,18 @@ export const trackerLabels = {
   bulkEditHint: "Lo que dejes vacío no cambia.",
   noChange: "Sin cambios",
   clearDate: "Quitar la fecha",
+  /** TT-63: vuelven a «Sin cambios» el proyecto y las etiquetas del diálogo de edición masiva. */
+  keepProject: "No cambiar el proyecto",
+  keepTags: "No cambiar las etiquetas",
+  /** TT-63: «Agregar» suma a las etiquetas de cada entrada; «Reemplazar» deja las elegidas. */
+  tagModeGroup: "Cómo se aplican las etiquetas",
+  tagModeAdd: "Agregar a las que tienen",
+  tagModeReplace: "Reemplazar las que tienen",
+  /** D12-3: «Reemplazar» sin etiquetas las quita. */
+  tagsCleared: "Las entradas quedan sin etiquetas.",
+  /** D12-5: con un proyecto en bloque, el facturable sigue D-2 en cada entrada. */
+  billableByProject:
+    "Las entradas que cambian de proyecto toman el facturable por defecto de ese proyecto; las que ya estaban en él conservan el suyo.",
   /** TT-64: el borrado masivo se confirma escribiendo la palabra. */
   bulkDeleteWarning: "No se puede deshacer.",
   bulkDeleteConfirm: `Escribí ${BULK_DELETE_WORD} para confirmar`,
