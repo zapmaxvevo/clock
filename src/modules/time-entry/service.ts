@@ -1971,10 +1971,10 @@ function isWholeDayMissing(day: string, timeZone: string): boolean {
 
 /**
  * CAL-17: el período tiene anterior y siguiente con claves de cuatro cifras,
- * y ningún día suyo, ni el siguiente al último, falta entero en la zona: sin
- * eso `startOfDayKey` lanza por un parámetro de la URL. Con el siguiente
- * dentro del 9999, el inicio del día posterior al último tampoco pasa de ese
- * año en UTC: ninguna zona se aparta 24 h.
+ * y ningún día suyo, ni el siguiente al último, falta entero en la zona: el
+ * calendario no dibuja una columna para un día que no existió. Con el
+ * siguiente dentro del 9999, el inicio del día posterior al último tampoco
+ * pasa de ese año en UTC: ninguna zona se aparta 24 h.
  */
 function isNavigable(period: CalendarPeriod, timeZone: string): boolean {
   const length = PERIOD_LENGTH[period.mode];
