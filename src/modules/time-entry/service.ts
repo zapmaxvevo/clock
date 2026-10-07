@@ -626,54 +626,70 @@ function duplicateTimes(source: ClosedEntryRow): { startedAt: Date; endedAt: Dat
 }
 
 /**
+ * El alta idempotente de una entrada cerrada que comparten duplicar y el alta
+ * manual: `insert` es la transacción del alta, que aplica sus reglas antes de
+ * escribir y deja su registro. Un reintento con el mismo id responde la fila
+ * que creó el primer intento, sin validar ni escribir (ADR 0007). Una fila
+ * cerrada no choca con el índice del timer, así que no hay ganador que
+ * responder.
+ */
+async function closedEntryOnce(
+  actor: Actor,
+  workspace: TrackerWorkspace,
+  id: string,
+  insert: (tx: Transaction) => Promise<EntryWithRefs>,
+): Promise<{ readonly created: TimeEntryView }> {
+  const createdOf = (row: EntryWithRefs) => ({ created: toView(row, workspace) });
+  return translatingReferenceConstraints(() =>
+    createEntryOnce(actor, id, {
+      attempt: async () => createdOf(await db.transaction(insert)),
+      replayed: createdOf,
+    }),
+  );
+}
+
+/**
  * Agrega una entrada cerrada con los campos y las horas de otra (TT-58). Solo
- * crea: una fila cerrada no choca con el índice del timer, así que no hay
- * ganador que responder. Un reintento con el mismo id responde la copia del
- * primer intento (ADR 0007).
+ * crea: un reintento con el mismo id responde la copia del primer intento
+ * (ADR 0007).
  */
 export async function duplicateEntry(
   actor: Actor,
   workspace: TrackerWorkspace,
   input: DuplicateEntryInput,
 ): Promise<DuplicateEntryResult> {
-  return translatingReferenceConstraints(() =>
-    createEntryOnce(actor, input.id, {
-      attempt: () =>
-        db.transaction(async (tx) => {
-          // La abierta solo llega en un pedido armado a mano: no es una fila.
-          const source = requireClosed(await readSourceEntry(tx, actor, input.sourceId));
-          const fields = continuedFields(source);
-          await assertNewEntryPair(tx, actor, fields);
-          await assertTaggable(tx, actor, fields.tagIds);
-          const created = await timeEntryRepository.insertClosed(tx, {
-            id: input.id,
-            workspaceId: actor.workspaceId,
-            userId: actor.userId,
-            ...fields,
-            ...duplicateTimes(source),
-          });
-          await recordAudit(tx, {
-            workspaceId: actor.workspaceId,
-            actorId: actor.userId,
-            action: "timeEntry.duplicate",
-            entity: AUDIT_ENTITY,
-            entityId: created.id,
-            nextValue: {
-              sourceId: source.id,
-              description: created.description,
-              projectId: created.projectId,
-              taskId: created.taskId,
-              billable: created.billable,
-              tagIds: sortedTagIdsOf(created),
-              startedAt: created.startedAt,
-              endedAt: created.endedAt,
-            },
-          });
-          return { created: toView(created, workspace) };
-        }),
-      replayed: (row) => ({ created: toView(row, workspace) }),
-    }),
-  );
+  return closedEntryOnce(actor, workspace, input.id, async (tx) => {
+    // La abierta solo llega en un pedido armado a mano: no es una fila.
+    const source = requireClosed(await readSourceEntry(tx, actor, input.sourceId));
+    const fields = continuedFields(source);
+    await assertNewEntryPair(tx, actor, fields);
+    await assertTaggable(tx, actor, fields.tagIds);
+    const created = await timeEntryRepository.insertClosed(tx, {
+      id: input.id,
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+      ...fields,
+      ...duplicateTimes(source),
+    });
+    await recordAudit(tx, {
+      workspaceId: actor.workspaceId,
+      actorId: actor.userId,
+      action: "timeEntry.duplicate",
+      entity: AUDIT_ENTITY,
+      entityId: created.id,
+      nextValue: {
+        sourceId: source.id,
+        description: created.description,
+        projectId: created.projectId,
+        taskId: created.taskId,
+        billable: created.billable,
+        tagIds: sortedTagIdsOf(created),
+        startedAt: created.startedAt,
+        endedAt: created.endedAt,
+      },
+    });
+    return created;
+  });
 }
 
 export async function stopTimer(
@@ -894,47 +910,40 @@ export async function createManualEntry(
   workspace: TrackerWorkspace,
   input: CreateManualEntryValues,
 ): Promise<CreateManualEntryResult> {
-  return translatingReferenceConstraints(() =>
-    createEntryOnce(actor, input.id, {
-      attempt: () =>
-        db.transaction(async (tx) => {
-          const times = manualTimes(input, workspace);
-          const pair = pairOf(input);
-          const project = await assertNewEntryPair(tx, actor, pair);
-          await assertTaggable(tx, actor, input.tagIds);
+  return closedEntryOnce(actor, workspace, input.id, async (tx) => {
+    const times = manualTimes(input, workspace);
+    const pair = pairOf(input);
+    const project = await assertNewEntryPair(tx, actor, pair);
+    await assertTaggable(tx, actor, input.tagIds);
 
-          const created = await timeEntryRepository.insertClosed(tx, {
-            id: input.id,
-            workspaceId: actor.workspaceId,
-            userId: actor.userId,
-            description: input.description,
-            ...pair,
-            billable: billableOfNewEntry(input.billable, project),
-            tagIds: input.tagIds,
-            ...times,
-          });
-          await recordAudit(tx, {
-            workspaceId: actor.workspaceId,
-            actorId: actor.userId,
-            action: "timeEntry.createManual",
-            entity: AUDIT_ENTITY,
-            entityId: created.id,
-            nextValue: {
-              description: created.description,
-              projectId: created.projectId,
-              taskId: created.taskId,
-              billable: created.billable,
-              tagIds: sortedTagIdsOf(created),
-              startedAt: created.startedAt,
-              endedAt: created.endedAt,
-            },
-          });
-
-          return { created: toView(created, workspace) };
-        }),
-      replayed: (row) => ({ created: toView(row, workspace) }),
-    }),
-  );
+    const created = await timeEntryRepository.insertClosed(tx, {
+      id: input.id,
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+      description: input.description,
+      ...pair,
+      billable: billableOfNewEntry(input.billable, project),
+      tagIds: input.tagIds,
+      ...times,
+    });
+    await recordAudit(tx, {
+      workspaceId: actor.workspaceId,
+      actorId: actor.userId,
+      action: "timeEntry.createManual",
+      entity: AUDIT_ENTITY,
+      entityId: created.id,
+      nextValue: {
+        description: created.description,
+        projectId: created.projectId,
+        taskId: created.taskId,
+        billable: created.billable,
+        tagIds: sortedTagIdsOf(created),
+        startedAt: created.startedAt,
+        endedAt: created.endedAt,
+      },
+    });
+    return created;
+  });
 }
 
 type ClosedEntryRow = TimeEntryRow & { readonly endedAt: Date };
