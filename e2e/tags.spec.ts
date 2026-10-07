@@ -243,25 +243,25 @@ test("la barra busca etiquetas sin acentos, el timer guarda las elegidas y deten
   await expect(tagPicker(bar)).toHaveAccessibleName(TAGS);
   const sent = recordActions(page);
 
-  // TT-12, H-2: la búsqueda no distingue acentos ni mayúsculas. El sufijo deja
-  // afuera las «Diseño» de corridas anteriores.
+  // TT-12: cada casilla marca sin cerrar. Con la búsqueda vacía, la lista
+  // trae todo el catálogo.
   await openTagPicker(page, bar);
-  await tagSearch(page).fill(`diseno ${suffix}`);
   const popup = tagPopup(page);
-  await expect(tagOption(page, design)).toBeVisible();
-  await expect(popup.getByRole("option")).toHaveCount(1);
-
-  // TT-12: cada casilla marca sin cerrar. P3: marcar no borra la búsqueda,
-  // que solo cambia con lo que se escribe; vaciarla ofrece la otra.
   await tagOption(page, design).click();
   await expect(tagOption(page, design)).toHaveAttribute("aria-selected", "true");
   await expect(popup).toBeVisible();
-  await expect(tagSearch(page)).toHaveValue(`diseno ${suffix}`);
+
+  // H-2: la búsqueda no distingue acentos ni mayúsculas. El sufijo deja
+  // afuera las «Revisión» de corridas anteriores. P3: marcar no borra la
+  // búsqueda, que solo cambia con lo que se escribe.
+  await tagSearch(page).fill(`revision ${suffix}`);
+  await expect(tagOption(page, review)).toBeVisible();
   await expect(popup.getByRole("option")).toHaveCount(1);
-  await tagSearch(page).fill("");
   await tagOption(page, review).click();
   await expect(tagOption(page, review)).toHaveAttribute("aria-selected", "true");
-  await expect(tagOption(page, design)).toHaveAttribute("aria-selected", "true");
+  await expect(popup).toBeVisible();
+  await expect(tagSearch(page)).toHaveValue(`revision ${suffix}`);
+  await expect(popup.getByRole("option")).toHaveCount(1);
 
   // D-5: `Escape` cierra con el foco en el disparador, que nombra las dos. La
   // barra sin timer solo cambia el borrador.
@@ -270,6 +270,19 @@ test("la barra busca etiquetas sin acentos, el timer guarda las elegidas y deten
   await expect(tagPicker(bar)).toBeFocused();
   await expect(tagPicker(bar)).toHaveAccessibleName(tagsName(TAGS, [design, review]));
   expect(sent).toHaveLength(0);
+
+  // F2-2 de la segunda revisión: al reabrir, la resaltada es la primera
+  // marcada en orden alfabético, como si las dos se hubieran marcado sin
+  // búsqueda. Si marcar con búsqueda la vaciara por debajo, quedaría
+  // resaltada la segunda.
+  await openTagPicker(page, bar);
+  await expect(tagSearch(page)).toHaveValue("");
+  const designId = await tagOption(page, design).getAttribute("id");
+  expect(designId).not.toBeNull();
+  await expect(tagSearch(page)).toHaveAttribute("aria-activedescendant", designId ?? "");
+  await page.keyboard.press("Escape");
+  await expect(popup).toBeHidden();
+  await expect(tagPicker(bar)).toBeFocused();
 
   // TT-38: el timer nació con las dos, y una carga nueva las trae del servidor.
   await withServerAction(page, () => startTimer(page, description));
