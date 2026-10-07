@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 
+import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { db } from "@/server/db";
-import { membership } from "@/server/db/schema";
+import { membership, tag } from "@/server/db/schema";
 import type { Actor } from "@/server/permissions";
 import {
   buenosAires,
@@ -1167,6 +1168,118 @@ describe("audit log de las operaciones en masa (ADR 0011)", () => {
 
     expect(await auditFor("time_entry")).toEqual([]);
     expect(await timeEntryById(row.id)).toBeDefined();
+  });
+});
+
+describe("audit log de la edición masiva del par, el facturable y las etiquetas (criterio 14 del 12)", () => {
+  function seedEntry(values: {
+    readonly projectId?: string;
+    readonly billable?: boolean;
+    readonly tagIds?: readonly string[];
+  }) {
+    return seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-01T13:00:00Z",
+      endedAt: "2026-10-01T14:00:00Z",
+      ...values,
+    });
+  }
+
+  async function recordOf(id: string) {
+    const rows = await auditFor("time_entry", id);
+    return rows.map((row) => ({
+      action: row.action,
+      previousValue: parsed(row.previousValue),
+      nextValue: parsed(row.nextValue),
+    }));
+  }
+
+  /**
+   * Dos etiquetas cuyo orden alfabético es el inverso del de sus ids, que es el
+   * de la clave primaria de la unión: unos `tagIds` sin ordenar por nombre
+   * salen en el otro orden.
+   */
+  async function seedTagsAgainstIdOrder() {
+    const [low, high] = [
+      await seedTag({ workspaceId }),
+      await seedTag({ workspaceId }),
+    ].sort((left, right) => (left.id < right.id ? -1 : 1));
+    await db.update(tag).set({ name: "zeta" }).where(eq(tag.id, low.id));
+    await db.update(tag).set({ name: "Alfa" }).where(eq(tag.id, high.id));
+    return { zeta: low, alfa: high };
+  }
+
+  it("una constancia por fila escrita con solo lo que cambió, y los tagIds por nombre", async () => {
+    const web = await seedProject({ workspaceId, billableByDefault: true });
+    const layout = await seedTask({ workspaceId, projectId: web.id });
+    const { zeta, alfa } = await seedTagsAgainstIdOrder();
+    // Ya en el proyecto: cambia la tarea y conserva el facturable (D-2).
+    const paired = await seedEntry({ projectId: web.id, tagIds: [zeta.id, alfa.id] });
+    // Sin proyecto: cambia el par y toma el por defecto; gana Alfa.
+    const moved = await seedEntry({ tagIds: [zeta.id] });
+
+    await bulkEditEntries(actor, workspace, {
+      ids: [paired.id, moved.id],
+      changes: {
+        project: { projectId: web.id, taskId: layout.id },
+        tags: { mode: "add", ids: [alfa.id] },
+      },
+    });
+
+    expect(await recordOf(paired.id)).toEqual([
+      {
+        action: "timeEntry.bulkEdit",
+        previousValue: { projectId: web.id, taskId: null },
+        nextValue: { projectId: web.id, taskId: layout.id },
+      },
+    ]);
+    expect(await recordOf(moved.id)).toEqual([
+      {
+        action: "timeEntry.bulkEdit",
+        previousValue: {
+          projectId: null,
+          taskId: null,
+          billable: false,
+          tagIds: [zeta.id],
+        },
+        nextValue: {
+          projectId: web.id,
+          taskId: layout.id,
+          billable: true,
+          tagIds: [alfa.id, zeta.id],
+        },
+      },
+    ]);
+  });
+
+  it("la fila que no cambia no deja constancia, y el facturable solo cuando cambia", async () => {
+    const web = await seedProject({ workspaceId });
+    const alfa = await seedTag({ workspaceId, name: "Alfa" });
+    const same = await seedEntry({ projectId: web.id, tagIds: [alfa.id] });
+    const billed = await seedEntry({
+      projectId: web.id,
+      billable: true,
+      tagIds: [alfa.id],
+    });
+
+    await bulkEditEntries(actor, workspace, {
+      ids: [same.id, billed.id],
+      changes: {
+        project: { projectId: web.id, taskId: null },
+        billable: false,
+        tags: { mode: "add", ids: [alfa.id] },
+      },
+    });
+
+    expect(await recordOf(same.id)).toEqual([]);
+    expect(await recordOf(billed.id)).toEqual([
+      {
+        action: "timeEntry.bulkEdit",
+        previousValue: { billable: true },
+        nextValue: { billable: false },
+      },
+    ]);
   });
 });
 

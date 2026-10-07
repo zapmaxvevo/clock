@@ -4,7 +4,7 @@ import { sameTagIds } from "@/lib/tag-ids";
 import { sortedByName } from "@/lib/text";
 import { DomainError, RejectedError, type Rejection } from "@/server/action";
 import { db, type Transaction } from "@/server/db";
-import { recordAudit, recordAudits, type AuditEntry } from "@/server/audit";
+import { recordAudit, recordAudits } from "@/server/audit";
 import { createOnce, type ConflictOutcome } from "@/server/create-once";
 import { can, type Action, type Actor } from "@/server/permissions";
 import {
@@ -43,7 +43,7 @@ import {
 import { assertTaggable, assertTrackable } from "@/modules/project/service";
 import { timeSettingsOf, type ProfileContext } from "@/modules/profile/service";
 
-import { pairToCheck, tagsToCheck } from "./assignment";
+import { pairToCheck, tagsAfter, tagsToCheck } from "./assignment";
 import {
   timeEntryRepository,
   type ClosedEntryFields,
@@ -55,6 +55,7 @@ import {
   type TimeEntryRow,
 } from "./repository";
 import {
+  TAGS_MAX,
   timeEntryMessages,
   TRACKER_WINDOW_DAYS,
   type BulkDeleteEntriesResult,
@@ -1224,7 +1225,9 @@ type AssignmentPlan = {
 /**
  * Fase 1 de la regla del par, el facturable y las etiquetas (ADR 0017), pura:
  * qué cambia en la fila y qué hay que validar para eso. Lo que la fila ya
- * tiene no se valida (TT-104, PR-47).
+ * tiene no se valida (TT-104, PR-47). Lanza `validation` con `tooManyTags` si
+ * el conjunto pasa de `TAGS_MAX` (D-4): depende de la fila, así que en la
+ * masiva es un rechazo; en `updateEntry` Zod ya acota el conjunto.
  */
 function assignmentPlan(row: EntryWithRefs, request: AssignmentRequest): AssignmentPlan {
   const current = pairOf(row);
@@ -1237,6 +1240,9 @@ function assignmentPlan(row: EntryWithRefs, request: AssignmentRequest): Assignm
     request.tagIds === undefined || sameTagIds(currentTags, request.tagIds)
       ? undefined
       : request.tagIds;
+  if (tagIds !== undefined && tagIds.length > TAGS_MAX) {
+    throw new TimeEntryError("validation", timeEntryMessages.tooManyTags);
+  }
   return {
     ...(pair === undefined ? {} : { pair }),
     pairCheck: pair === undefined ? null : pairToCheck(current, pair),
@@ -1495,9 +1501,30 @@ function valuesOf(row: EntryWithRefs, fields: ClosedEntryFields) {
 }
 
 /**
- * TT-63: la descripción, la fecha y las horas de varias entradas cerradas,
- * todo o nada (ADR 0011). Cada fila pasa por la regla de `updateEntryTimes`;
- * una que no cambia no se escribe ni deja constancia.
+ * El pedido de la masiva sobre una fila (§4.3 del contrato del 12): el par y el
+ * facturable tal cual, y el conjunto que `tagsAfter` da sobre lo que la fila
+ * tiene, leído bajo el bloqueo.
+ */
+function bulkAssignmentRequest(
+  row: EntryWithRefs,
+  changes: BulkEditChanges,
+): AssignmentRequest {
+  return {
+    project: changes.project,
+    billable: changes.billable,
+    tagIds:
+      changes.tags === undefined
+        ? undefined
+        : tagsAfter(sortedTagIdsOf(row), changes.tags),
+  };
+}
+
+/**
+ * TT-63: la descripción, la fecha, las horas, el par, el facturable y las
+ * etiquetas de varias entradas cerradas, todo o nada (ADR 0011). Cada fila
+ * pasa por la regla de `updateEntryTimes` y por las tres fases de
+ * `updateEntry`; las referencias pedidas se validan una vez, después de las
+ * filas (ADR 0017). Una fila que no cambia no se escribe ni deja constancia.
  */
 export async function bulkEditEntries(
   actor: Actor,
@@ -1509,51 +1536,61 @@ export async function bulkEditEntries(
   if (!can(actor, "timeEntry.own.update", ownTimeEntryResource(actor))) {
     throw new TimeEntryError("forbidden", timeEntryMessages.forbidden);
   }
-  return db.transaction(async (tx) => {
-    const found = await lockEntries(tx, actor, input.ids);
-    const plans = evaluateAll(
-      input.ids,
-      (id) => {
-        const row = requireClosed(
-          authorizeEntry(actor, "timeEntry.own.update", found.get(id)),
-        );
-        return { row, fields: editedFields(row, input.changes, workspace) };
-      },
-      timeEntryMessages.bulkEditRejected,
-    );
-
-    const entries: EntryWithRefs[] = [];
-    const audits: AuditEntry[] = [];
-    for (const { row, fields } of plans) {
-      if (Object.keys(fields).length === 0) {
-        entries.push(row);
-        continue;
-      }
-      const written = await timeEntryRepository.updateClosedFields(
+  const { changes } = input;
+  return translatingReferenceConstraints(() =>
+    db.transaction(async (tx) => {
+      const found = await lockEntries(tx, actor, input.ids);
+      const plans = evaluateAll(
+        input.ids,
+        (id) => {
+          const row = requireClosed(
+            authorizeEntry(actor, "timeEntry.own.update", found.get(id)),
+          );
+          return {
+            row,
+            fields: editedFields(row, changes, workspace),
+            assignment: assignmentPlan(row, bulkAssignmentRequest(row, changes)),
+          };
+        },
+        timeEntryMessages.bulkEditRejected,
+      );
+      const project = await assertAssignments(
         tx,
-        targetOf(row),
-        fields,
+        actor,
+        plans.map((plan) => plan.assignment),
+      );
+      const edits = plans.map(({ row, fields, assignment }) => ({
+        row,
+        fields: { ...fields, ...assignmentFields(row, assignment, project) },
+      }));
+      const changed = edits.filter(({ fields }) => Object.keys(fields).length > 0);
+      const written = await timeEntryRepository.updateClosedEntries(
+        tx,
+        changed.map(({ row, fields }) => ({ target: targetOf(row), fields })),
       );
       if (written === undefined) {
-        throw new Error(`La entrada ${row.id} no se escribió con su bloqueo tomado.`);
+        throw new Error("Una entrada no se escribió con su bloqueo tomado.");
       }
-      // El 6 no cambia el proyecto ni las etiquetas: las referencias leídas
-      // bajo bloqueo siguen valiendo.
-      const entry = { ...written, project: row.project, task: row.task, tags: row.tags };
-      entries.push(entry);
-      audits.push({
-        workspaceId: actor.workspaceId,
-        actorId: actor.userId,
-        action: "timeEntry.bulkEdit",
-        entity: AUDIT_ENTITY,
-        entityId: written.id,
-        previousValue: valuesOf(row, fields),
-        nextValue: valuesOf(entry, fields),
-      });
-    }
-    await recordAudits(tx, audits);
-    return { entries: entries.map((entry) => toView(entry, workspace)) };
-  });
+      await recordAudits(
+        tx,
+        changed.map(({ row, fields }, index) => ({
+          workspaceId: actor.workspaceId,
+          actorId: actor.userId,
+          action: "timeEntry.bulkEdit",
+          entity: AUDIT_ENTITY,
+          entityId: row.id,
+          previousValue: valuesOf(row, fields),
+          nextValue: valuesOf(written[index], fields),
+        })),
+      );
+      const writtenById = new Map(written.map((entry) => [entry.id, entry]));
+      return {
+        entries: edits.map(({ row }) =>
+          toView(writtenById.get(row.id) ?? row, workspace),
+        ),
+      };
+    }),
+  );
 }
 
 /**
