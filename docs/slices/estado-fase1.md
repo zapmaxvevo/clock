@@ -23,28 +23,21 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-07.
 | 8b — Calendario: arrastre                   | En `main`    |
 | 11a — Facturable                            | En `main`    |
 | 11b — Etiquetas                             | En `main`    |
-| 12 — Edición masiva de proyecto y etiquetas | En revisión  |
+| 12 — Edición masiva de proyecto y etiquetas | En `main`    |
 | 13 — Timesheet semanal                      | Sin contrato |
 
-Los slices 1 a 10, 7b, 8c, 8b, 11a y 11b están en `main`. El 11b (etiquetas) se mergeó el
-2026-10-07 con lint, typecheck, 1020 de unidad, 1030 de integración, `next build` y 131 de 131
-e2e en verde, dos corridas (**falta `git push origin main`**; el push anterior llegó hasta
-`aed694f`). No quedan agentes con trabajo pendiente ni cambios sin commitear. Postgres local:
-`docker start clock-pg`.
+Los slices 1 a 12 (con 2b, 7b, 8b, 8c, 11a y 11b) están en `main`: con el 12, el rastreador
+queda cubierto salvo lo fuera de alcance. El 12 (edición masiva de proyecto, etiquetas y
+facturable) se mergeó el 2026-10-07 con lint, typecheck, 1043 de unidad, 1092 de integración,
+`next build` y 138 de 138 e2e en verde, dos corridas (**falta `git push origin main`**; el push
+anterior llegó hasta `aed694f`). No quedan agentes con trabajo pendiente ni cambios sin
+commitear. Postgres local: `docker start clock-pg`.
 
 ## Lo primero de la sesión siguiente
 
-0. **Lo que sigue**: el **12** (edición masiva de proyecto, etiquetas y facturable), con el
-   contrato aprobado en dos rondas (`fase1-slice12-edicion-masiva.md`,
-   `correcciones-fase1-slice12.md` y `-ronda2.md`, cuyos r2-1 y r2-2 se aplican al implementar).
-   ADR 0017 aceptado por el usuario el 2026-10-07. Implementado en la rama
-   `fase1/slice-12-masiva` (refactor `09b9613`, esquema `b258bd6`, service `af33ba8`, interfaz
-   `1733614` y `3887aee`, e2e `1882c19`), con lint, typecheck, 1041 de unidad y 1091 de
-   integración en verde. Corren las seis revisiones y la corrida final de e2e; sigue el documento
-   `correcciones-fase1-slice12-revisiones.md`, la ronda de correcciones, `parity-analyst` y el
-   merge. Después, el contrato del **13** (necesita P-12 de `timesheet.md` y una
-   decisión de arquitectura sobre TS-32) y el slice chico de «Reintentar» en el alta manual (ADR
-   0007, retirar TT-109), ya decidido.
+0. **Lo que sigue**: el contrato del **13** (timesheet semanal; necesita P-12 de `timesheet.md`
+   y una decisión de arquitectura sobre TS-32, ver `fase1-mapa.md`) y el slice chico de
+   «Reintentar» en el alta manual (ADR 0007, retirar TT-109), ya decidido.
 1. Deuda chica sin slice:
    - un `DayCalendar` compartido entre `DateField` y `PeriodPicker`;
    - un `ClockRangeFields` común a `manual-bar.tsx`, `entry-times-editor.tsx` y el diálogo;
@@ -56,7 +49,8 @@ e2e en verde, dos corridas (**falta `git push origin main`**; el push anterior l
      `ProjectPicker` (C9 del 11b);
    - la guarda de destino de F1 del 11b también en `handleProjectChange` de la barra (el
      selector de proyecto se cierra al elegir, así que el riesgo es menor);
-   - si falla continuar y después falla duplicar, la barra muestra los dos avisos.
+   - si falla continuar y después falla duplicar, la barra muestra los dos avisos;
+   - las comprobaciones «desde otra pestaña» de e2e sin unificar (§8 del contrato del 12).
 2. Deuda de anchos (11a y 11b, medidas en `correcciones-fase1-slice11b-revisiones.md`, F3): con
    el timer corriendo, el aviso «Detené el timer para agregar tiempo a mano.» (281 px) deja la
    barra en 577 px útiles y el bloque del contador baja a otra línea en cualquier ancho; moverlo
@@ -125,7 +119,11 @@ Lo que sigue siendo del usuario, porque necesita sus cuentas o su máquina:
   (con PR-47 y PR-48), y lo del 11 en P-14: TT-12, TT-50 y el rechazo de continuar o duplicar
   con una etiqueta archivada. Del 11b, también en TT-12: si las opciones llevan
   casilla, qué hacen Enter y Espacio, si la búsqueda queda después de marcar, si se guarda con
-  cada casilla o al cerrar y cómo se ve el botón con varias etiquetas.
+  cada casilla o al cerrar y cómo se ve el botón con varias etiquetas. Del 12, en P-07: si la
+  edición masiva del rastreador está en Free (TT-63 dice que la del reporte detallado es paga,
+  frase del 2026-10-04 que la página ya no tiene: confirmar o corregir), si «Overwrite existing»
+  sin etiquetas las quita y si admite varias, si una referencia archivada frena todo el pedido,
+  si se puede elegir la entrada que corre y qué pasa con más de 50 etiquetas.
 - **Relevar Clockify con WebFetch**: el resumidor inventa citas (en el 11 inventó un tope de 50
   etiquetas); antes de escribir «Documentado» se confirma la oración literal.
 
@@ -163,6 +161,10 @@ Lo que sigue siendo del usuario, porque necesita sus cuentas o su máquina:
   autor y `backend-reviewer` de acuerdo en que era equivalente porque miraron solo el estado de
   la base: además de las filas, comparar la respuesta y si la llamada espera un bloqueo
   (`outcomeWhileLocked`).
+- **Hashes informados**: en el 12 un agente avisó dos commits que no existían; antes de
+  pasar un hash a otro agente, verificarlo con `git log` o `git cat-file -t`.
+- **Diálogos que crecen**: un `DialogContent` sin alto máximo queda cortado en ventanas bajas
+  (1366×657 útiles en una laptop) y no se desplaza; medir con los avisos a la vista.
 - **Popups dentro de un `Dialog`** (Base UI): con la lista vacía, el `Escape` pasa al diálogo
   salvo que esté montado `Combobox.Empty`; un ítem resaltado pinta los descendientes con `**:`;
   ignorar un cambio de `inputValue` sin `details.cancel()` deja estado pendiente en la primitiva.
