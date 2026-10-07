@@ -19,7 +19,7 @@ export function nameField(dialog: Locator): Locator {
   return dialog.getByRole("textbox", { name: "Nombre", exact: true });
 }
 
-/** «Guardar» de un diálogo de alta. */
+/** «Guardar» de un diálogo: el de un alta o el de la edición masiva. */
 export function saveButton(dialog: Locator): Locator {
   return dialog.getByRole("button", { name: "Guardar", exact: true });
 }

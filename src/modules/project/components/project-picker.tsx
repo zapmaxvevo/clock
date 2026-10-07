@@ -32,8 +32,7 @@ import {
 } from "./picker-model";
 import { useTrackingCatalog } from "./tracking-catalog";
 
-type ProjectPickerProps = {
-  readonly value: ProjectSelection;
+type PickerCommonProps = {
   readonly onChange: (selection: ProjectSelection) => void;
   /** Sin selección, la barra dice «Proyecto» (TT-06) y la fila «Sin proyecto» (TT-50). */
   readonly variant: "bar" | "row";
@@ -46,6 +45,16 @@ type ProjectPickerProps = {
   readonly triggerRef?: Ref<HTMLButtonElement>;
   readonly onOpenChange?: (open: boolean) => void;
 };
+
+type ProjectPickerProps = PickerCommonProps &
+  (
+    | { readonly value: ProjectSelection; readonly placeholder?: never }
+    | {
+        /** `null`: nada elegido; el disparador muestra `placeholder` y ninguna opción queda marcada. */
+        readonly value: ProjectSelection | null;
+        readonly placeholder: string;
+      }
+  );
 
 /** Lo que nombra una opción y lo que muestra el disparador con selección. */
 function selectionLabel({ project, task }: ProjectSelection): string {
@@ -64,6 +73,16 @@ function ProjectDot({ project }: { readonly project: ProjectRef }) {
       className="size-2 shrink-0 rounded-full"
       style={{ backgroundColor: paletteColor(project.color).value }}
     />
+  );
+}
+
+/** Sin proyecto elegido: el ícono y un texto en gris. */
+function EmptyText({ text }: { readonly text: string }) {
+  return (
+    <>
+      <FolderIcon aria-hidden="true" className="text-muted-foreground" />
+      <span className="text-muted-foreground">{text}</span>
+    </>
   );
 }
 
@@ -87,6 +106,7 @@ function SelectionText({ selection }: { readonly selection: ProjectSelection }) 
  */
 export function ProjectPicker({
   value,
+  placeholder = "",
   onChange,
   variant,
   label,
@@ -102,7 +122,11 @@ export function ProjectPicker({
   if (readOnly) {
     return (
       <span className="flex min-w-0 items-center gap-1.5 text-sm">
-        <SelectionText selection={value} />
+        {value === null ? (
+          <span className="text-muted-foreground">{placeholder}</span>
+        ) : (
+          <SelectionText selection={value} />
+        )}
       </span>
     );
   }
@@ -114,7 +138,8 @@ export function ProjectPicker({
     view.none === null
       ? view.groups
       : [{ key: "none", client: null, items: [view.none] }, ...view.groups];
-  const current: PickerOption = { key: "current", selection: value };
+  const current: PickerOption | null =
+    value === null ? null : { key: "current", selection: value };
 
   function changeOpen(next: boolean): void {
     if (next && pending) {
@@ -125,7 +150,7 @@ export function ProjectPicker({
   }
 
   function choose(option: PickerOption | null): void {
-    if (option === null || sameSelection(option.selection, value)) {
+    if (option === null || (value !== null && sameSelection(option.selection, value))) {
       return;
     }
     onChange(option.selection);
@@ -158,11 +183,10 @@ export function ProjectPicker({
           "max-w-64 min-w-0 justify-start font-normal aria-disabled:opacity-60",
         )}
       >
-        {value.project === null && variant === "bar" ? (
-          <>
-            <FolderIcon aria-hidden="true" className="text-muted-foreground" />
-            <span className="text-muted-foreground">{projectLabels.pickerEmpty}</span>
-          </>
+        {value === null ? (
+          <EmptyText text={placeholder} />
+        ) : value.project === null && variant === "bar" ? (
+          <EmptyText text={projectLabels.pickerEmpty} />
         ) : (
           <SelectionText selection={value} />
         )}

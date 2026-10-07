@@ -213,12 +213,49 @@ const entryIds = z
   .max(BULK_MAX, timeEntryMessages.bulkTooMany)
   .transform(normalizedIds);
 
+/** El par entero, como en `updateEntryProject`: la tarea no viaja sola (TT-70). */
+const entryPair = z
+  .strictObject(
+    { projectId: z.uuid().nullable(), taskId: z.uuid().nullable() },
+    { error: timeEntryMessages.unexpected },
+  )
+  .refine(hasProjectForTask, taskNeedsProject);
+
+/**
+ * Cómo cambian las etiquetas de cada entrada: «add» suma a las que tiene,
+ * «replace» deja exactamente las pedidas. Estricto, con el texto de
+ * `unexpected`: ninguna interfaz manda otra cosa.
+ */
+const bulkTags = z.discriminatedUnion(
+  "mode",
+  [
+    z.strictObject(
+      {
+        mode: z.literal("add"),
+        // Agregar ninguna no es un cambio: el diálogo no lo manda.
+        ids: z
+          .array(z.uuid())
+          .min(1, timeEntryMessages.unexpected)
+          .max(TAGS_MAX, timeEntryMessages.tooManyTags)
+          .transform(normalizedIds),
+      },
+      { error: timeEntryMessages.unexpected },
+    ),
+    z.strictObject(
+      { mode: z.literal("replace"), ids: tagIds },
+      { error: timeEntryMessages.unexpected },
+    ),
+  ],
+  { error: timeEntryMessages.unexpected },
+);
+
 /**
  * Lo que cambia en cada entrada. Un campo ausente no cambia; uno presente
- * reemplaza, también con "" en la descripción. Estricto: un campo que este
- * slice no conoce —el proyecto, antes del slice 12— se rechaza en vez de
- * ignorarse, con el texto de `unexpected` y no con el de Zod, que está en
- * inglés: ninguna interfaz lo manda.
+ * reemplaza, también con "" en la descripción. `project` es el par entero,
+ * como en `updateEntryChanges`: `null` en los dos es «Sin proyecto».
+ * `billable` presente gana sobre el por defecto del proyecto (D-2). Estricto
+ * en cada nivel: una clave que no se conoce se rechaza con el texto de
+ * `unexpected` y no con el de Zod, que está en inglés.
  */
 export const bulkEditChanges = z
   .strictObject(
@@ -229,6 +266,9 @@ export const bulkEditChanges = z
       start: clockInput.optional(),
       /** Menor que el inicio que quede significa el día siguiente (TT-72). */
       end: clockInput.optional(),
+      project: entryPair.optional(),
+      billable: z.boolean().optional(),
+      tags: bulkTags.optional(),
     },
     { error: timeEntryMessages.unexpected },
   )
@@ -237,17 +277,12 @@ export const bulkEditChanges = z
     timeEntryMessages.bulkNoChanges,
   );
 
+/** El modo y los ids de las etiquetas en bloque, ya normalizados. */
+export type BulkTagsChange = z.output<typeof bulkTags>;
+
 export const bulkEditEntriesInput = z.object({ ids: entryIds, changes: bulkEditChanges });
 
 export const bulkDeleteEntriesInput = z.object({ ids: entryIds });
-
-/** El par entero, como en `updateEntryProject`: la tarea no viaja sola (TT-70). */
-const entryPair = z
-  .strictObject(
-    { projectId: z.uuid().nullable(), taskId: z.uuid().nullable() },
-    { error: timeEntryMessages.unexpected },
-  )
-  .refine(hasProjectForTask, taskNeedsProject);
 
 /** El trío de una entrada cerrada, entero: los tres se interpretan juntos (ADR 0006). */
 const entryTriple = z.strictObject(

@@ -1,10 +1,10 @@
 import { billableFor, NEW_ENTRY_BILLABLE } from "@/lib/billable";
 import { samePair, type ProjectPair } from "@/lib/project-pair";
-import { sameTagIds } from "@/lib/tag-ids";
+import { normalizedIds, sameTagIds } from "@/lib/tag-ids";
 import { sortedByName } from "@/lib/text";
 import { DomainError, RejectedError, type Rejection } from "@/server/action";
 import { db, type Transaction } from "@/server/db";
-import { recordAudit, recordAudits, type AuditEntry } from "@/server/audit";
+import { recordAudit, recordAudits } from "@/server/audit";
 import { createOnce, type ConflictOutcome } from "@/server/create-once";
 import { can, type Action, type Actor } from "@/server/permissions";
 import {
@@ -43,7 +43,7 @@ import {
 import { assertTaggable, assertTrackable } from "@/modules/project/service";
 import { timeSettingsOf, type ProfileContext } from "@/modules/profile/service";
 
-import { pairToCheck, tagsToCheck } from "./assignment";
+import { pairToCheck, tagsAfter, tagsToCheck } from "./assignment";
 import {
   timeEntryRepository,
   type ClosedEntryFields,
@@ -55,6 +55,7 @@ import {
   type TimeEntryRow,
 } from "./repository";
 import {
+  TAGS_MAX,
   timeEntryMessages,
   TRACKER_WINDOW_DAYS,
   type BulkDeleteEntriesResult,
@@ -409,19 +410,17 @@ async function translatingReferenceConstraints<Result>(
 const NO_PROJECT: ProjectPair = { projectId: null, taskId: null };
 
 /**
- * La regla del par (§4.3): si el pedido asigna algo nuevo, lo decide
+ * La regla del par en un alta (§4.3): todo par con proyecto lo decide
  * `project` (ADR 0010) con la transacción de la operación, así un rechazo
  * deshace todo lo que la operación hizo antes. Devuelve el proyecto validado,
- * o `null` si no hubo nada que validar: justo los casos en que `billableFor`
- * conserva el facturable.
+ * o `null` con «Sin proyecto», en que `billableFor` conserva el facturable.
  */
-async function assertAssignable(
+async function assertNewEntryPair(
   tx: Transaction,
   actor: Actor,
-  current: ProjectPair,
   requested: ProjectPair,
 ): Promise<TrackableProject | null> {
-  const target = pairToCheck(current, requested);
+  const target = pairToCheck(NO_PROJECT, requested);
   return target === null ? null : assertTrackable(tx, actor, target);
 }
 
@@ -533,7 +532,7 @@ export async function startTimer(
     const pair = pairOf(input);
     // Las reglas antes de escribir: un id ajeno o un timer abierto bloqueado
     // por otra conexión no cambian la respuesta.
-    const project = await assertAssignable(tx, actor, NO_PROJECT, pair);
+    const project = await assertNewEntryPair(tx, actor, pair);
     await assertTaggable(tx, actor, input.tagIds);
     const opened = await closeAndOpen(tx, actor, {
       id: input.id,
@@ -578,7 +577,7 @@ export async function continueEntry(
     const fields = continuedFields(source);
     // Las reglas antes de escribir: un id ajeno o un timer abierto bloqueado
     // por otra conexión no cambian la respuesta (§4.4, D-3).
-    await assertAssignable(tx, actor, NO_PROJECT, fields);
+    await assertNewEntryPair(tx, actor, fields);
     await assertTaggable(tx, actor, fields.tagIds);
     const opened = await closeAndOpen(tx, actor, { id: input.id, fields });
     await recordAudit(tx, {
@@ -644,7 +643,7 @@ export async function duplicateEntry(
           // La abierta solo llega en un pedido armado a mano: no es una fila.
           const source = requireClosed(await readSourceEntry(tx, actor, input.sourceId));
           const fields = continuedFields(source);
-          await assertAssignable(tx, actor, NO_PROJECT, fields);
+          await assertNewEntryPair(tx, actor, fields);
           await assertTaggable(tx, actor, fields.tagIds);
           const created = await timeEntryRepository.insertClosed(tx, {
             id: input.id,
@@ -740,12 +739,13 @@ export async function updateEntryProject(
   return translatingReferenceConstraints(() =>
     db.transaction(async (tx) => {
       const row = await readOwnEntry(tx, actor, "timeEntry.own.update", input.id);
-      const { pair, project } = await assignedPair(tx, actor, row, pairOf(input));
+      const plan = assignmentPlan(row, { project: pairOf(input) });
+      const { pair } = plan;
       if (pair === undefined) {
         return { entry: toView(row, workspace) };
       }
-      // D-2: otro proyecto impone su facturable por defecto.
-      const billable = billableFor(row, project);
+      const project = await assertAssignments(tx, actor, [plan]);
+      const { billable = row.billable } = assignmentFields(row, plan, project);
       const next = await timeEntryRepository.updateProject(tx, targetOf(row), {
         ...pair,
         billable,
@@ -887,7 +887,7 @@ export async function createManualEntry(
         throw new TimeEntryError("validation", timeEntryMessages.beforeWorkspace);
       }
       const pair = pairOf(input);
-      const project = await assertAssignable(tx, actor, NO_PROJECT, pair);
+      const project = await assertNewEntryPair(tx, actor, pair);
       await assertTaggable(tx, actor, input.tagIds);
 
       const created = await timeEntryRepository.insertClosed(tx, {
@@ -1195,80 +1195,112 @@ function runningEntryEdit(
   };
 }
 
-/** El par que cambia, con el proyecto que validó; `project` nulo si no hubo nada que validar. */
-type AssignedPair = {
+/** Lo que un pedido pide a una fila en el par, el facturable y las etiquetas. */
+type AssignmentRequest = {
+  readonly project?: ProjectPair;
+  readonly billable?: boolean;
+  /** El conjunto entero que la fila debería tener. */
+  readonly tagIds?: readonly string[];
+};
+
+/** Lo que cambia en una fila y lo que hay que validar para eso, sin consultar nada. */
+type AssignmentPlan = {
+  /** El par pedido, si difiere del de la fila (`samePair`). */
   readonly pair?: ProjectPair;
-  readonly project: TrackableProject | null;
+  /** `pairToCheck(fila, pedido)` cuando hay `pair`; `null` si no hay nada que validar. */
+  readonly pairCheck: {
+    readonly projectId: string;
+    readonly taskId: string | null;
+  } | null;
+  readonly billable?: boolean;
+  /** El conjunto pedido, si difiere del de la fila (`sameTagIds`). */
+  readonly tagIds?: readonly string[];
+  /** `tagsToCheck(fila, conjunto)`: las que la fila todavía no tiene. */
+  readonly tagsCheck: readonly string[];
 };
 
 /**
- * El par pedido, si cambia y `project` lo deja asignar (TT-77, ADR 0010).
- * Sin `pair` si no viene o es el mismo: entonces no se consulta.
+ * Fase 1 de la regla del par, el facturable y las etiquetas (ADR 0017), pura:
+ * qué cambia en la fila y qué hay que validar para eso. Lo que la fila ya
+ * tiene no se valida (TT-104, PR-47). Lanza `validation` con `tooManyTags` si
+ * el conjunto pasa de `TAGS_MAX` (D-4): depende de la fila, así que en la
+ * masiva es un rechazo; en `updateEntry` Zod ya acota el conjunto.
  */
-async function assignedPair(
-  tx: Transaction,
-  actor: Actor,
-  row: ProjectPair,
-  requested: ProjectPair | undefined,
-): Promise<AssignedPair> {
-  if (requested === undefined || samePair(row, requested)) {
-    return { project: null };
+function assignmentPlan(row: EntryWithRefs, request: AssignmentRequest): AssignmentPlan {
+  const current = pairOf(row);
+  const pair =
+    request.project === undefined || samePair(current, request.project)
+      ? undefined
+      : pairOf(request.project);
+  const currentTags = sortedTagIdsOf(row);
+  const tagIds =
+    request.tagIds === undefined || sameTagIds(currentTags, request.tagIds)
+      ? undefined
+      : request.tagIds;
+  if (tagIds !== undefined && tagIds.length > TAGS_MAX) {
+    throw new TimeEntryError("validation", timeEntryMessages.tooManyTags);
   }
-  const pair = pairOf(requested);
-  const project = await assertAssignable(tx, actor, pairOf(row), pair);
-  return { pair, project };
+  return {
+    ...(pair === undefined ? {} : { pair }),
+    pairCheck: pair === undefined ? null : pairToCheck(current, pair),
+    ...(request.billable === undefined ? {} : { billable: request.billable }),
+    ...(tagIds === undefined ? {} : { tagIds }),
+    tagsCheck: tagIds === undefined ? [] : tagsToCheck(currentTags, tagIds),
+  };
 }
 
 /**
- * El paso del facturable de `updateEntry` (§4.1): el pedido gana; sin él, el
- * proyecto que validó el paso del par decide con `billableFor`. Solo si difiere
- * de la fila: uno igual no cuenta como cambio.
+ * Fase 2: las validaciones de `project` (ADR 0010), una vez por pedido y para
+ * el pedido entero, no plan por plan: primero el par —el `pairCheck` de
+ * cualquier plan que lo pida, todos iguales porque `pairToCheck` devuelve el
+ * pedido— y después la unión de los `tagsCheck`, que `assertTaggable` no
+ * consulta si queda vacía. Es el orden de `updateEntry`. Devuelve el proyecto
+ * validado, o `null` si ningún plan lo pidió.
  */
-function billableChange(
+async function assertAssignments(
+  tx: Transaction,
+  actor: Actor,
+  plans: readonly AssignmentPlan[],
+): Promise<TrackableProject | null> {
+  const pairCheck = plans.find((plan) => plan.pairCheck !== null)?.pairCheck ?? null;
+  const project = pairCheck === null ? null : await assertTrackable(tx, actor, pairCheck);
+  await assertTaggable(tx, actor, normalizedIds(plans.flatMap((plan) => plan.tagsCheck)));
+  return project;
+}
+
+/**
+ * Fase 3, pura: lo que se escribe. El facturable es el pedido o, sin él,
+ * `billableFor` con el proyecto validado (D-2), y solo si difiere del de la
+ * fila: uno igual no cuenta como cambio.
+ */
+function assignmentFields(
   row: TimeEntryRow,
-  requested: boolean | undefined,
-  assigned: AssignedPair,
-): Pick<ClosedEntryFields, "billable"> {
-  const billable = requested ?? billableFor(row, assigned.project);
-  return billable === row.billable ? {} : { billable };
+  plan: AssignmentPlan,
+  project: TrackableProject | null,
+): Pick<ClosedEntryFields, "pair" | "billable" | "tagIds"> {
+  const billable =
+    plan.billable ?? billableFor(row, plan.pairCheck === null ? null : project);
+  return {
+    ...(plan.pair === undefined ? {} : { pair: plan.pair }),
+    ...(billable === row.billable ? {} : { billable }),
+    ...(plan.tagIds === undefined ? {} : { tagIds: plan.tagIds }),
+  };
 }
 
-/**
- * El paso de las etiquetas de `updateEntry` (§4.5): el conjunto pedido, si
- * difiere del de la fila y `project` deja asignar las que la fila todavía no
- * tiene. Las que ya tiene se conservan aunque estén archivadas (PR-47).
- */
-async function tagsChange(
-  tx: Transaction,
-  actor: Actor,
-  row: EntryWithRefs,
-  requested: readonly string[] | undefined,
-): Promise<Pick<ClosedEntryFields, "tagIds">> {
-  const current = sortedTagIdsOf(row);
-  if (requested === undefined || sameTagIds(current, requested)) {
-    return {};
-  }
-  await assertTaggable(tx, actor, tagsToCheck(current, requested));
-  return { tagIds: requested };
-}
-
-/**
- * Los campos de los pasos del par, del facturable y de las etiquetas, en ese
- * orden, después de la descripción y el horario.
- */
-async function assignmentFields(
+/** Las tres fases sobre la fila de `updateEntry`, que es un pedido de un solo plan. */
+async function entryAssignment(
   tx: Transaction,
   actor: Actor,
   row: EntryWithRefs,
   changes: UpdateEntryChangeValues,
 ): Promise<Pick<ClosedEntryFields, "pair" | "billable" | "tagIds">> {
-  const assigned = await assignedPair(tx, actor, row, changes.project);
-  const billable = billableChange(row, changes.billable, assigned);
-  return {
-    ...(assigned.pair === undefined ? {} : { pair: assigned.pair }),
-    ...billable,
-    ...(await tagsChange(tx, actor, row, changes.tags)),
-  };
+  const plan = assignmentPlan(row, {
+    project: changes.project,
+    billable: changes.billable,
+    tagIds: changes.tags,
+  });
+  const project = await assertAssignments(tx, actor, [plan]);
+  return assignmentFields(row, plan, project);
 }
 
 /**
@@ -1321,7 +1353,7 @@ export async function updateEntry(
       const target = targetOf(row);
       if (isClosed(row)) {
         const fields = closedEntryEdit(row, changes, workspace);
-        const assignment = await assignmentFields(tx, actor, row, changes);
+        const assignment = await entryAssignment(tx, actor, row, changes);
         return writeEntryEdit(
           tx,
           actor,
@@ -1332,7 +1364,7 @@ export async function updateEntry(
         );
       }
       const fields = runningEntryEdit(row, changes, workspace, now);
-      const assignment = await assignmentFields(tx, actor, row, changes);
+      const assignment = await entryAssignment(tx, actor, row, changes);
       return writeEntryEdit(
         tx,
         actor,
@@ -1447,6 +1479,11 @@ function editedFields(
   };
 }
 
+/** La escritura cambia algo: sin campos, la fila no se escribe ni deja constancia. */
+function hasFields(fields: ClosedEntryFields): boolean {
+  return Object.keys(fields).length > 0;
+}
+
 /** Los valores de la fila en los campos que cambiaron, para la constancia. */
 function valuesOf(row: EntryWithRefs, fields: ClosedEntryFields) {
   return {
@@ -1462,9 +1499,30 @@ function valuesOf(row: EntryWithRefs, fields: ClosedEntryFields) {
 }
 
 /**
- * TT-63: la descripción, la fecha y las horas de varias entradas cerradas,
- * todo o nada (ADR 0011). Cada fila pasa por la regla de `updateEntryTimes`;
- * una que no cambia no se escribe ni deja constancia.
+ * El pedido de la masiva sobre una fila (§4.3 del contrato del 12): el par y el
+ * facturable tal cual, y el conjunto que `tagsAfter` da sobre lo que la fila
+ * tiene, leído bajo el bloqueo.
+ */
+function bulkAssignmentRequest(
+  row: EntryWithRefs,
+  changes: BulkEditChanges,
+): AssignmentRequest {
+  return {
+    project: changes.project,
+    billable: changes.billable,
+    tagIds:
+      changes.tags === undefined
+        ? undefined
+        : tagsAfter(sortedTagIdsOf(row), changes.tags),
+  };
+}
+
+/**
+ * TT-63: la descripción, la fecha, las horas, el par, el facturable y las
+ * etiquetas de varias entradas cerradas, todo o nada (ADR 0011). Cada fila
+ * pasa por la regla de `updateEntryTimes` y por las tres fases de
+ * `updateEntry`; las referencias pedidas se validan una vez, después de las
+ * filas (ADR 0017). Una fila que no cambia no se escribe ni deja constancia.
  */
 export async function bulkEditEntries(
   actor: Actor,
@@ -1476,51 +1534,68 @@ export async function bulkEditEntries(
   if (!can(actor, "timeEntry.own.update", ownTimeEntryResource(actor))) {
     throw new TimeEntryError("forbidden", timeEntryMessages.forbidden);
   }
-  return db.transaction(async (tx) => {
-    const found = await lockEntries(tx, actor, input.ids);
-    const plans = evaluateAll(
-      input.ids,
-      (id) => {
-        const row = requireClosed(
-          authorizeEntry(actor, "timeEntry.own.update", found.get(id)),
-        );
-        return { row, fields: editedFields(row, input.changes, workspace) };
-      },
-      timeEntryMessages.bulkEditRejected,
-    );
-
-    const entries: EntryWithRefs[] = [];
-    const audits: AuditEntry[] = [];
-    for (const { row, fields } of plans) {
-      if (Object.keys(fields).length === 0) {
-        entries.push(row);
-        continue;
-      }
-      const written = await timeEntryRepository.updateClosedFields(
+  const { changes } = input;
+  return translatingReferenceConstraints(() =>
+    db.transaction(async (tx) => {
+      const found = await lockEntries(tx, actor, input.ids);
+      const plans = evaluateAll(
+        input.ids,
+        (id) => {
+          const row = requireClosed(
+            authorizeEntry(actor, "timeEntry.own.update", found.get(id)),
+          );
+          return {
+            row,
+            fields: editedFields(row, changes, workspace),
+            assignment: assignmentPlan(row, bulkAssignmentRequest(row, changes)),
+          };
+        },
+        timeEntryMessages.bulkEditRejected,
+      );
+      const project = await assertAssignments(
         tx,
-        targetOf(row),
-        fields,
+        actor,
+        plans.map((plan) => plan.assignment),
+      );
+      const edits = plans.map(({ row, fields, assignment }) => ({
+        row,
+        fields: { ...fields, ...assignmentFields(row, assignment, project) },
+      }));
+      const changed = edits.filter(({ fields }) => hasFields(fields));
+      const written = await timeEntryRepository.updateClosedEntries(
+        tx,
+        changed.map(({ row, fields }) => ({ target: targetOf(row), fields })),
       );
       if (written === undefined) {
-        throw new Error(`La entrada ${row.id} no se escribió con su bloqueo tomado.`);
+        throw new Error("Una entrada no se escribió con su bloqueo tomado.");
       }
-      // El 6 no cambia el proyecto ni las etiquetas: las referencias leídas
-      // bajo bloqueo siguen valiendo.
-      const entry = { ...written, project: row.project, task: row.task, tags: row.tags };
-      entries.push(entry);
-      audits.push({
-        workspaceId: actor.workspaceId,
-        actorId: actor.userId,
-        action: "timeEntry.bulkEdit",
-        entity: AUDIT_ENTITY,
-        entityId: written.id,
-        previousValue: valuesOf(row, fields),
-        nextValue: valuesOf(entry, fields),
-      });
-    }
-    await recordAudits(tx, audits);
-    return { entries: entries.map((entry) => toView(entry, workspace)) };
-  });
+      const writtenById = new Map(written.map((entry) => [entry.id, entry]));
+      const writtenOf = (row: EntryWithRefs) => {
+        const entry = writtenById.get(row.id);
+        if (entry === undefined) {
+          throw new Error(`La entrada ${row.id} no volvió de su escritura.`);
+        }
+        return entry;
+      };
+      await recordAudits(
+        tx,
+        changed.map(({ row, fields }) => ({
+          workspaceId: actor.workspaceId,
+          actorId: actor.userId,
+          action: "timeEntry.bulkEdit",
+          entity: AUDIT_ENTITY,
+          entityId: row.id,
+          previousValue: valuesOf(row, fields),
+          nextValue: valuesOf(writtenOf(row), fields),
+        })),
+      );
+      return {
+        entries: edits.map(({ row, fields }) =>
+          toView(hasFields(fields) ? writtenOf(row) : row, workspace),
+        ),
+      };
+    }),
+  );
 }
 
 /**

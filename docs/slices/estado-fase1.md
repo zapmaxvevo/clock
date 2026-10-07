@@ -5,44 +5,39 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-07.
 
 ## Dónde estamos
 
-| Slice                                       | Estado                                |
-| ------------------------------------------- | ------------------------------------- |
-| 1 — Timer sin proyecto                      | En `main`                             |
-| 2 — Modo manual                             | En `main`                             |
-| 2b — Reintento de «Iniciar»                 | En `main`                             |
-| 3 — Corregir horas y fecha                  | En `main`                             |
-| 4 — Continuar, duplicar, descartar, atajos  | En `main`                             |
-| 5 — Semana y paginación                     | En `main`                             |
-| 9 — Núcleo de proyectos                     | En `main`                             |
-| 10 — Selector de proyecto y tarea           | En `main`                             |
-| 7 — Perfil                                  | En `main`                             |
-| 6 — Selección y acciones en masa            | En `main`                             |
-| 7b — Perfil: nombre editable y tema         | En `main`                             |
-| 8 — Calendario: lectura                     | En `main`                             |
-| 8c — Calendario: escritura                  | En `main`                             |
-| 8b — Calendario: arrastre                   | En `main`                             |
-| 11a — Facturable                            | En `main`                             |
-| 11b — Etiquetas                             | En `main`                             |
-| 12 — Edición masiva de proyecto y etiquetas | Contrato aprobado; ADR 0017 propuesto |
-| 13 — Timesheet semanal                      | Sin contrato                          |
+| Slice                                       | Estado       |
+| ------------------------------------------- | ------------ |
+| 1 — Timer sin proyecto                      | En `main`    |
+| 2 — Modo manual                             | En `main`    |
+| 2b — Reintento de «Iniciar»                 | En `main`    |
+| 3 — Corregir horas y fecha                  | En `main`    |
+| 4 — Continuar, duplicar, descartar, atajos  | En `main`    |
+| 5 — Semana y paginación                     | En `main`    |
+| 9 — Núcleo de proyectos                     | En `main`    |
+| 10 — Selector de proyecto y tarea           | En `main`    |
+| 7 — Perfil                                  | En `main`    |
+| 6 — Selección y acciones en masa            | En `main`    |
+| 7b — Perfil: nombre editable y tema         | En `main`    |
+| 8 — Calendario: lectura                     | En `main`    |
+| 8c — Calendario: escritura                  | En `main`    |
+| 8b — Calendario: arrastre                   | En `main`    |
+| 11a — Facturable                            | En `main`    |
+| 11b — Etiquetas                             | En `main`    |
+| 12 — Edición masiva de proyecto y etiquetas | En `main`    |
+| 13 — Timesheet semanal                      | Sin contrato |
 
-Los slices 1 a 10, 7b, 8c, 8b, 11a y 11b están en `main`. El 11b (etiquetas) se mergeó el
-2026-10-07 con lint, typecheck, 1020 de unidad, 1030 de integración, `next build` y 131 de 131
-e2e en verde, dos corridas (**falta `git push origin main`**; el push anterior llegó hasta
-`aed694f`). No quedan agentes con trabajo pendiente ni cambios sin commitear. Postgres local:
-`docker start clock-pg`.
+Los slices 1 a 12 (con 2b, 7b, 8b, 8c, 11a y 11b) están en `main`: con el 12, el rastreador
+queda cubierto salvo lo fuera de alcance. El 12 (edición masiva de proyecto, etiquetas y
+facturable) se mergeó el 2026-10-07 con lint, typecheck, 1043 de unidad, 1092 de integración,
+`next build` y 138 de 138 e2e en verde, dos corridas (**falta `git push origin main`**; el push
+anterior llegó hasta `aed694f`). No quedan agentes con trabajo pendiente ni cambios sin
+commitear. Postgres local: `docker start clock-pg`.
 
 ## Lo primero de la sesión siguiente
 
-0. **Lo que sigue**: el **12** (edición masiva de proyecto, etiquetas y facturable), con el
-   contrato aprobado en dos rondas (`fase1-slice12-edicion-masiva.md`,
-   `correcciones-fase1-slice12.md` y `-ronda2.md`, cuyos r2-1 y r2-2 se aplican al implementar).
-   **Espera la aprobación del ADR 0017 por el usuario** (las referencias de una masiva se validan
-   una vez, después de las filas, el par antes que las etiquetas). Con eso, rama
-   `fase1/slice-12-masiva` desde `main` y el handshake arranca por el refactor de `updateEntry` en
-   un commit propio. Después, el contrato del **13** (necesita P-12 de `timesheet.md` y una
-   decisión de arquitectura sobre TS-32) y el slice chico de «Reintentar» en el alta manual (ADR
-   0007, retirar TT-109), ya decidido.
+0. **Lo que sigue**: el contrato del **13** (timesheet semanal; necesita P-12 de `timesheet.md`
+   y una decisión de arquitectura sobre TS-32, ver `fase1-mapa.md`) y el slice chico de
+   «Reintentar» en el alta manual (ADR 0007, retirar TT-109), ya decidido.
 1. Deuda chica sin slice:
    - un `DayCalendar` compartido entre `DateField` y `PeriodPicker`;
    - un `ClockRangeFields` común a `manual-bar.tsx`, `entry-times-editor.tsx` y el diálogo;
@@ -54,7 +49,8 @@ e2e en verde, dos corridas (**falta `git push origin main`**; el push anterior l
      `ProjectPicker` (C9 del 11b);
    - la guarda de destino de F1 del 11b también en `handleProjectChange` de la barra (el
      selector de proyecto se cierra al elegir, así que el riesgo es menor);
-   - si falla continuar y después falla duplicar, la barra muestra los dos avisos.
+   - si falla continuar y después falla duplicar, la barra muestra los dos avisos;
+   - las comprobaciones «desde otra pestaña» de e2e sin unificar (§8 del contrato del 12).
 2. Deuda de anchos (11a y 11b, medidas en `correcciones-fase1-slice11b-revisiones.md`, F3): con
    el timer corriendo, el aviso «Detené el timer para agregar tiempo a mano.» (281 px) deja la
    barra en 577 px útiles y el bloque del contador baja a otra línea en cualquier ancho; moverlo
@@ -123,7 +119,11 @@ Lo que sigue siendo del usuario, porque necesita sus cuentas o su máquina:
   (con PR-47 y PR-48), y lo del 11 en P-14: TT-12, TT-50 y el rechazo de continuar o duplicar
   con una etiqueta archivada. Del 11b, también en TT-12: si las opciones llevan
   casilla, qué hacen Enter y Espacio, si la búsqueda queda después de marcar, si se guarda con
-  cada casilla o al cerrar y cómo se ve el botón con varias etiquetas.
+  cada casilla o al cerrar y cómo se ve el botón con varias etiquetas. Del 12, en P-07: si la
+  edición masiva del rastreador está en Free (TT-63 dice que la del reporte detallado es paga,
+  frase del 2026-10-04 que la página ya no tiene: confirmar o corregir), si «Overwrite existing»
+  sin etiquetas las quita y si admite varias, si una referencia archivada frena todo el pedido,
+  si se puede elegir la entrada que corre y qué pasa con más de 50 etiquetas.
 - **Relevar Clockify con WebFetch**: el resumidor inventa citas (en el 11 inventó un tope de 50
   etiquetas); antes de escribir «Documentado» se confirma la oración literal.
 
@@ -161,6 +161,10 @@ Lo que sigue siendo del usuario, porque necesita sus cuentas o su máquina:
   autor y `backend-reviewer` de acuerdo en que era equivalente porque miraron solo el estado de
   la base: además de las filas, comparar la respuesta y si la llamada espera un bloqueo
   (`outcomeWhileLocked`).
+- **Hashes informados**: en el 12 un agente avisó dos commits que no existían; antes de
+  pasar un hash a otro agente, verificarlo con `git log` o `git cat-file -t`.
+- **Diálogos que crecen**: un `DialogContent` sin alto máximo queda cortado en ventanas bajas
+  (1366×657 útiles en una laptop) y no se desplaza; medir con los avisos a la vista.
 - **Popups dentro de un `Dialog`** (Base UI): con la lista vacía, el `Escape` pasa al diálogo
   salvo que esté montado `Combobox.Empty`; un ítem resaltado pinta los descendientes con `**:`;
   ignorar un cambio de `inputValue` sin `details.cancel()` deja estado pendiente en la primitiva.
@@ -181,6 +185,6 @@ Lo que sigue siendo del usuario, porque necesita sus cuentas o su máquina:
 
 - Plan y orden: `fase1-mapa.md`.
 - Contratos: `fase1-slice<n>-*.md`; correcciones: `correcciones-fase1-slice<n>*.md`.
-- ADR: `docs/adr/0001`–`0016` aceptados; `0017` propuesto (slice 12).
+- ADR: `docs/adr/0001`–`0017` (todos aceptados).
 - Paridad: `docs/parity/` (time-tracker, perfil, proyectos, calendario,
   timesheet).

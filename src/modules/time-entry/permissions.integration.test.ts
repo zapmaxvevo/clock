@@ -1342,6 +1342,46 @@ describe("operaciones en masa (criterio 16, TT-66)", () => {
   });
 });
 
+describe("quién asigna qué proyecto en bloque (criterio 17 del 12, TT-08)", () => {
+  it.each(roles)(
+    "%s asigna en bloque un público, y un privado solo si es miembro; el privado sin acceso responde como uno que no existe",
+    async (role) => {
+      const actor = await seedActor(role);
+      const open = await seedProject({ workspaceId });
+      const vault = await seedProject({ workspaceId, isPublic: false });
+      const joined = await seedProject({
+        workspaceId,
+        isPublic: false,
+        members: [{ userId: actor.userId }],
+      });
+      const entry = await seedTimeEntry({
+        workspaceId,
+        userId: actor.userId,
+        startedAt: "2026-10-01T11:00:00Z",
+        endedAt: "2026-10-01T12:00:00Z",
+      });
+
+      for (const target of [open, joined]) {
+        const result = await bulkEditEntries(actor, workspace, {
+          ids: [entry.id],
+          changes: { project: { projectId: target.id, taskId: null } },
+        });
+        expect(result.entries[0].project?.id).toBe(target.id);
+      }
+      const edit = bulkEditEntries(actor, workspace, {
+        ids: [entry.id],
+        changes: { project: { projectId: vault.id, taskId: null } },
+      });
+      await expect(edit).rejects.not.toBeInstanceOf(RejectedError);
+      await expect(edit).rejects.toMatchObject({
+        code: "not_found",
+        message: projectMessages.projectUnavailable,
+      });
+      expect((await timeEntryById(entry.id))?.projectId).toBe(joined.id);
+    },
+  );
+});
+
 describe("el guardado del diálogo (updateEntry, criterio 7, TT-66)", () => {
   function seedClosedOf(userId: string, description = "") {
     return seedTimeEntry({

@@ -55,6 +55,21 @@ function render(value: ProjectSelection, options: Options = {}): string {
   );
 }
 
+/** El selector de la edición masiva: «Sin cambios» con `value` nulo. */
+function renderWithPlaceholder(value: ProjectSelection | null): string {
+  return renderToStaticMarkup(
+    <TrackingCatalogProvider catalog={catalog}>
+      <ProjectPicker
+        value={value}
+        placeholder="Sin cambios"
+        onChange={() => undefined}
+        variant="row"
+        label="Proyecto"
+      />
+    </TrackingCatalogProvider>,
+  );
+}
+
 /** El texto visible, sin etiquetas. */
 function textOf(markup: string): string {
   return markup.replace(/<[^>]*>/g, "");
@@ -85,6 +100,23 @@ describe("ProjectPicker", () => {
     expect(textOf(bar)).toBe("Proyecto");
     expect(textOf(row)).toBe("Sin proyecto");
     expect(row).not.toMatch(dot);
+  });
+
+  it("con `value` nulo dibuja el `placeholder` en gris con el ícono, sin punto ni «Sin proyecto»", () => {
+    const trigger = comboboxOf(renderWithPlaceholder(null)) ?? "";
+
+    expect(textOf(trigger)).toBe("Sin cambios");
+    expect(trigger).toContain("lucide-folder");
+    expect(trigger).toContain('<span class="text-muted-foreground">Sin cambios</span>');
+    expect(trigger).not.toMatch(dot);
+  });
+
+  it("con `placeholder` y una selección, el disparador dibuja la de siempre", () => {
+    const trigger = comboboxOf(renderWithPlaceholder(withTask)) ?? "";
+
+    expect(trigger).toMatch(dot);
+    expect(textOf(trigger)).toBe("Web: Diseño");
+    expect(textOf(comboboxOf(renderWithPlaceholder(none)) ?? "")).toBe("Sin proyecto");
   });
 
   it("con un cambio en vuelo queda inactivo con `aria-disabled` y sin `disabled`", () => {

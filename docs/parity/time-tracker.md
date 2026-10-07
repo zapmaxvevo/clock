@@ -1119,12 +1119,28 @@ Confirmar en el workspace del equipo (P-07). La página, consultada de nuevo el
 esa confirmación; si resulta paga, TT-62 a TT-64 quedan como mejora
 deliberada, `adaptar`.
 
+_Agregado el 2026-10-07, slice 12_. Relevamiento de la página de edición
+masiva, consultada ese día con cada oración confirmada literal. En «Edit from
+the Time Tracker Page», los campos del diálogo son «Description», «Project»,
+«Tags», «Billable», «Time» y «Date»; arriba, la página dice que la edición
+masiva ahorra tiempo «when adjusting details like projects, tasks, or tags».
+En «Use tags for bulk edits», una sección de «Bulk edit time entries» que no
+dice si es del rastreador o del reporte detallado: «Choose how you want to add
+the tag:», con «Add to existing – Assigns the new tag in addition to any
+existing tags on the selected entries.» y «Overwrite existing – Replaces the
+existing tags with the new one». Eso respalda «agregando a las existentes o
+reemplazándolas». La página no dice qué opciones tiene «Billable», si cambiar
+el proyecto cambia el facturable, qué hace «Overwrite existing» sin ninguna
+etiqueta, qué pasa con un proyecto o una etiqueta archivados, si se puede
+elegir la entrada que corre ni qué pasa si una de las elegidas no admite el
+cambio. Tampoco nombra ningún plan: su tabla «Access permissions» dice de
+«Regular users» que «Can bulk edit and delete their time entries (as long as
+they are not locked or approved)», sin plan. P-07 sigue abierto.
+
 _Agregado el 2026-10-04, slice 6_. Lo que fija el
 [contrato del slice 6](../slices/fase1-slice6-seleccion-y-masa.md) para la
 descripción, la hora y la fecha. El proyecto, la tarea, las etiquetas y el
-facturable en bloque quedan para el slice 12, después del 11, que trae las
-etiquetas y el facturable; hasta entonces, el proyecto y la tarea de cada
-entrada no cambian y la entrada los conserva.
+facturable en bloque los fija el slice 12, más abajo.
 
 - **El diálogo «Editar N entradas»** tiene «Descripción», «Fecha», «Hora de
   inicio» y «Hora de fin», todos vacíos al abrir, con la ayuda «Lo que dejes
@@ -1177,6 +1193,131 @@ entrada no cambian y la entrada los conserva.
   mientras todas las entradas del pedido sigan en pantalla; si alguna se fue o
   la persona la soltó, el aviso queda sin «Reintentar», que reenviaría
   entradas que ya no se ven o ya no están elegidas.
+
+_Corregido el 2026-10-07, slice 12_: el párrafo del slice 6 decía «El
+proyecto, la tarea, las etiquetas y el facturable en bloque quedan para el
+slice 12, después del 11, que trae las etiquetas y el facturable; hasta
+entonces, el proyecto y la tarea de cada entrada no cambian y la entrada los
+conserva.» Deja de valer: el slice 12 los cambia en bloque. Desde el 12 el
+diálogo tiene siete campos y no cuatro, y la ayuda, «Guardar» inactivo sin
+cambios, el todo o nada, el tope de 200, la atenuación y «Reintentar» de la
+lista de arriba valen también para los campos nuevos.
+
+_Agregado el 2026-10-07, slice 12_. Lo que fija el
+[contrato del slice 12](../slices/fase1-slice12-edicion-masiva.md) para el
+proyecto y la tarea, las etiquetas y el facturable, con las decisiones D12-1 …
+D12-5 de sus [correcciones](../slices/correcciones-fase1-slice12.md) y el
+[ADR 0017](../adr/0017-las-referencias-de-una-masiva-se-validan-una-vez.md),
+que aceptó el usuario el 2026-10-07. Cada entrada pasa por la misma regla del
+par, el facturable y las etiquetas que su edición individual: la masiva y la
+fila comparten las funciones, no una copia.
+
+- **El diálogo suma tres secciones entre «Descripción» y «Fecha»**, todas en
+  «Sin cambios» al abrir:
+  - **«Proyecto»**, con el selector de TT-07 y «Sin cambios» en el disparador.
+    Ofrece lo mismo que el de la barra: los proyectos activos con acceso
+    (TT-08), sus tareas y «Sin proyecto» (TT-10); un proyecto archivado no se
+    ofrece. Lo elegido se ve en el disparador —el punto y el nombre, «P: T» o
+    «Sin proyecto»— y al lado aparece «No cambiar el proyecto», que vuelve a
+    «Sin cambios» y lleva el foco al disparador.
+  - **«Etiquetas»**, con el selector de TT-12, y debajo el grupo «Cómo se
+    aplican las etiquetas», con «Agregar a las que tienen», elegida al abrir,
+    y «Reemplazar las que tienen». Con «Reemplazar» o con alguna etiqueta
+    elegida aparece «No cambiar las etiquetas», que vuelve a «Agregar» sin
+    etiquetas y lleva el foco al disparador. Sin etiquetas elegidas, el
+    disparador dice «Etiquetas», como en la barra, y no «Sin cambios».
+  - **«Facturable»**, un grupo con «Sin cambios», elegida al abrir, «Sí» y
+    «No».
+  - `Escape` con un selector abierto cierra solo el selector, también con la
+    lista vacía, y el foco vuelve a su disparador; un segundo `Escape` cierra
+    el diálogo. El diálogo no pasa del alto de la ventana: los campos se
+    desplazan entre el título y los botones.
+
+  Documentado: los campos «Project», «Tags» y «Billable», y los dos modos de
+  las etiquetas. Diseño propio, _no verificado_ (P-14): el orden, los nombres
+  de los modos, «Sin cambios» en cada sección y los controles que vuelven a
+  él. Las opciones del facturable no se pueden verificar en el plan Free (P-16
+  de [la paridad de proyectos](proyectos.md)).
+
+- **«Agregar» suma a las etiquetas que cada entrada ya tiene, sin repetir;
+  «Reemplazar» le deja exactamente las elegidas.** Documentado, con las
+  oraciones de arriba. «Agregar» sin ninguna elegida no es un cambio.
+- **«Reemplazar» sin ninguna etiqueta deja las entradas sin etiquetas**, con
+  «Las entradas quedan sin etiquetas.» a la vista antes de guardar (D12-3).
+  Justificación: elegir «Reemplazar» es un acto explícito, no un campo que
+  quedó vacío, y es la única forma de sacar las etiquetas de varias entradas a
+  la vez. La descripción, que no tiene un control así, sigue sin poder vaciarse
+  en bloque. Diseño propio, _no verificado_ (P-14): la documentación habla de
+  «the new tag» y no dice qué hace «Overwrite existing» sin ninguna.
+- **El facturable sigue TT-14 en cada entrada** (D12-5, con la regla D-2 del
+  [slice 11](../slices/fase1-slice11-etiquetas-y-facturable.md)): con un
+  proyecto elegido y el facturable en «Sin cambios», la entrada que cambia de
+  proyecto toma el facturable por defecto del elegido, y la que ya estaba en
+  él —con otra tarea o sin tarea— y la que pasa a «Sin proyecto» conservan el
+  suyo. Dos entradas del mismo pedido pueden terminar con facturables
+  distintos, y lo dice, a la vista, «Las entradas que cambian de proyecto
+  toman el facturable por defecto de ese proyecto; las que ya estaban en él
+  conservan el suyo.» «Sí» o «No» gana en todas, también en las que cambian
+  de proyecto. Justificación: preseleccionar el por defecto del proyecto, como
+  el diálogo del calendario, se lo impondría también a las entradas que ya
+  estaban en él, y la masiva dejaría de ser la fila repetida. Diseño propio
+  que no se puede verificar en el plan Free (P-16), así que no entra en P-14.
+- **Lo archivado que una entrada ya tiene se conserva y no se valida**
+  (TT-104, PR-47, PR-68): «Agregar» no le quita una etiqueta archivada;
+  cambiar solo las etiquetas o el facturable no toca su proyecto archivado; y
+  pedirle el proyecto o la etiqueta que ya tiene no cambia nada, aunque esté
+  archivado. «Reemplazar» sin la archivada sí la saca. Lo que una entrada ya
+  tiene la exime solo a ella: si otra del mismo pedido lo recibe de nuevo, se
+  valida.
+- **Un proyecto, una tarea o una etiqueta no disponibles frenan el pedido
+  entero, sin lista de entradas**
+  ([ADR 0017](../adr/0017-las-referencias-de-una-masiva-se-validan-una-vez.md)):
+  el aviso dice «No se pudieron editar las entradas.» con «Ese proyecto ya no
+  está disponible.» (TT-77), «Esa tarea ya no está disponible.» (PR-74 de
+  [la paridad de proyectos](proyectos.md)) o «Esa etiqueta ya no está
+  disponible.» (TT-78), sin «Quitar esas entradas de la selección» ni
+  «Reintentar», y el diálogo sigue abierto con lo elegido. Vale para el
+  archivado, también si se archivó con el diálogo abierto, el privado sin
+  acceso (TT-08) y la tarea hecha. Es causa del pedido y no rechazo de una
+  entrada aunque dependa de cuáles se eligieron —con todas ya en el proyecto
+  archivado, el pedido termina bien—, porque el remedio es elegir otra
+  referencia, no quitar entradas.
+  - **Las entradas van antes que las referencias**: con una entrada rechazada
+    y el proyecto no disponible a la vez, la respuesta es la lista de arriba;
+    quitadas esas entradas, el segundo intento responde el proyecto.
+  - **Con el proyecto y una etiqueta no disponibles a la vez, responde el
+    proyecto**, en cualquier orden de las entradas, como en la edición de una
+    fila.
+
+  Diseño propio, _no verificado_ (P-14): la documentación no dice qué pasa con
+  una referencia archivada ni si Clockify aplica en parte.
+
+- **Más de 50 etiquetas en una entrada es un rechazo de esa entrada** (D12-4):
+  si «Agregar» deja alguna con más de 50, la lista la nombra con «Se pueden
+  elegir hasta 50 etiquetas por entrada.» (PR-48) y no cambia ninguna; con
+  exactamente 50, termina bien. Pedir más de 50 a la vez responde el mismo
+  texto para el pedido entero. Justificación: depende de cuántas tiene cada
+  entrada y se resuelve quitándola de la selección; recortar a 50 cambiaría lo
+  pedido sin decirlo. El tope es el de PR-48, _no verificado_ en esa paridad.
+- **La entrada que corre se rechaza aunque el cambio no toque el horario**
+  (TT-111): pedirle solo el proyecto, las etiquetas o el facturable también
+  responde «Esta entrada es la que está corriendo.» Una operación en masa es
+  sobre filas, y la abierta no lo es. Solo llega con un pedido armado a mano.
+- **Una entrada de más de un día** (TT-110) cambia de proyecto, de etiquetas o
+  de facturable sin rechazo: solo se rechaza si el pedido le cambia el
+  horario, como en la fila.
+- **«Reintentar» llega al mismo estado** (TT-89): el segundo intento encuentra
+  cada entrada con lo pedido y no escribe ni valida nada, así que termina bien
+  **aunque el proyecto o la etiqueta se hayan archivado entre los dos
+  intentos**.
+- **Al terminar bien**, cada entrada muestra su proyecto, sus etiquetas y su
+  facturable nuevos, con «Se editaron N entradas.»; mientras viaja, las
+  entradas elegidas quedan atenuadas (TT-55), sin mostrar antes los valores
+  nuevos.
+- **Afuera**: crear un proyecto o una etiqueta desde el diálogo (TT-09,
+  TT-13); elegir un proyecto o una etiqueta archivados, que el selector no
+  ofrece y el servidor rechaza (TT-77, TT-78); y vaciar la descripción en
+  bloque.
 
 **TT-64 Borrado masivo** — `adaptar`
 Clockify pide escribir `DELETE` en el diálogo y después deja deshacer 20
@@ -1658,8 +1799,8 @@ equipo. Contrato:
   fecha, la selección entre días, la selección que se vacía al terminar bien y
   «BORRAR» sin distinguir mayúsculas son diseño propio _no verificado_ (P-14);
   el tope de 200 entradas es un límite propio. P-07 sigue abierto.
-- **Proyecto, tarea, etiquetas y facturable en bloque** quedan para el slice
-  12, después del 11, que trae las etiquetas y el facturable.
+- **Proyecto, tarea, etiquetas y facturable en bloque** los trae el slice 12
+  (su sección, abajo), después del 11, que trae las etiquetas y el facturable.
 - **Afuera**: elegir un rango con Shift, la casilla por semana y «seleccionar
   todo», que la documentación no nombra; continuar y duplicar en masa, que
   Clockify no documenta; y deshacer (P-06).
@@ -1708,8 +1849,8 @@ las etiquetas son el 11b. Contrato:
   copia al continuar y al duplicar. PR-21 es `adaptar`: el facturable por
   defecto se elige al crear el proyecto y no se edita después en la fase 1.
 - **Afuera**: las etiquetas (TT-12, TT-78, TT-88), que trae el 11b; el
-  facturable en la edición masiva (resto de TT-63), que trae el 12; y las
-  tarifas e importes (TT-15).
+  facturable en la edición masiva (resto de TT-63), que trae el slice 12 (su
+  sección, abajo); y las tarifas e importes (TT-15).
 
 ### Slice 11b — etiquetas
 
@@ -1791,7 +1932,8 @@ con las correcciones del
 - **Afuera**: crear una etiqueta desde el selector (TT-13); editar, archivar,
   restaurar y borrar etiquetas (PR-45, PR-46), de la fase 2; limitar quién crea
   etiquetas (PR-44), que no tiene configuración en la fase 1; y las etiquetas
-  en la edición masiva (resto de TT-63), que trae el 12.
+  en la edición masiva (resto de TT-63), que trae el slice 12 (su sección,
+  abajo).
 
 **Los anchos** (TT-49). La descripción ocupa lo que queda libre y la línea se
 parte cuando no le quedan 112 px; el proyecto mide hasta 256 px y las
@@ -1812,10 +1954,83 @@ de TT-30, «Detené el timer para agregar tiempo a mano.», ocupa 281 px. Pasa
 desde el 11a y este slice no lo resuelve. En la fila más cargada, la
 descripción queda en unos 14 caracteres visibles al editarla.
 
+### Slice 12 — edición masiva de proyecto, etiquetas y facturable
+
+El resto de TT-63: el proyecto y la tarea —también «Sin proyecto»—, las
+etiquetas agregando o reemplazando, y el facturable, en el diálogo «Editar N
+entradas». Entran por arrastre, verificados por el camino nuevo, TT-14 con la
+regla D-2 del slice 11, TT-08, TT-70, TT-77, TT-78, TT-104, TT-110, TT-111,
+TT-55, TT-79, TT-80, TT-89, TT-90, TT-92 y la regla de P-15 (TT-108); de
+[la paridad de proyectos](proyectos.md), PR-47, PR-48, PR-68 y PR-74. Cierra el
+rastreador: con este slice no queda nada de este documento sin slice, salvo lo
+fuera de alcance. De acá sale el
+[ADR 0017](../adr/0017-las-referencias-de-una-masiva-se-validan-una-vez.md),
+que aceptó el usuario el 2026-10-07. Contrato:
+[fase1-slice12-edicion-masiva.md](../slices/fase1-slice12-edicion-masiva.md),
+con las correcciones de la [ronda 1](../slices/correcciones-fase1-slice12.md),
+la [ronda 2](../slices/correcciones-fase1-slice12-ronda2.md) y las
+[revisiones](../slices/correcciones-fase1-slice12-revisiones.md).
+
+- **La edición masiva sigue siendo la de una fila, repetida** (ADR 0011,
+  ADR 0013): el par, el facturable y las etiquetas de cada entrada salen de la
+  misma regla que su edición individual, y cada rechazo lleva el texto de esa
+  edición. Los cinco roles editan en masa sus propias entradas (TT-66).
+- **El diálogo** suma «Proyecto», «Etiquetas» con «Cómo se aplican las
+  etiquetas» y «Facturable», cada una con su «Sin cambios», entre
+  «Descripción» y «Fecha». «No cambiar el proyecto» y «No cambiar las
+  etiquetas» vuelven a «Sin cambios» con el foco en el disparador, y `Escape`
+  con un selector abierto cierra solo el selector. El diálogo no pasa del alto
+  de la ventana.
+- **El facturable sigue D-2 en cada entrada** (D12-5): con un proyecto y el
+  facturable en «Sin cambios», la que cambia de proyecto toma el por defecto y
+  la que ya estaba en él o pasa a «Sin proyecto» conserva el suyo, con una
+  ayuda a la vista; «Sí» o «No» gana en todas.
+- **«Agregar» suma, «Reemplazar» deja las elegidas**, y «Reemplazar» sin
+  ninguna deja las entradas sin etiquetas, con aviso (D12-3).
+- **Lo archivado que la entrada ya tiene se conserva y no se valida**: un
+  pedido que solo pide lo que todas ya tienen termina bien aunque esté
+  archivado.
+- **Una referencia no disponible frena el pedido entero**, sin lista y sin
+  «Reintentar», después de las entradas y con el proyecto antes que la
+  etiqueta (ADR 0017). **Más de 50 etiquetas en una entrada** es un rechazo de
+  esa entrada, con el texto de PR-48 (D12-4).
+- **La entrada que corre no es una fila** (TT-111): se rechaza aunque el
+  cambio sea solo de proyecto, etiquetas o facturable. **Una de más de un
+  día** (TT-110) cambia de proyecto sin rechazo.
+- **El reintento llega a un punto fijo** (TT-89), también si lo pedido se
+  archiva entre los dos intentos.
+- **Lo que el slice decide**:
+  - Documentado, confirmado literal el 2026-10-07: el proyecto, las etiquetas
+    y el facturable entre los campos de la edición masiva del rastreador, y los
+    modos «Add to existing» y «Overwrite existing» de las etiquetas (TT-63).
+  - _No verificado_ (P-14, dentro de TT-63): «Reemplazar» sin etiquetas las
+    quita; una referencia no disponible frena todo y el proyecto responde
+    antes que la etiqueta; el rechazo de la entrada con más de 50 y el de la
+    que corre con un cambio que no toca el horario; el orden de las
+    secciones, los nombres de los modos, «Sin cambios» y los controles que
+    vuelven a él. Y, como todo TT-62 a TT-64, si la edición masiva del
+    rastreador es del plan Free (P-07).
+  - No se puede verificar en el plan Free (P-16 de la paridad de proyectos),
+    así que no entra en P-14: el facturable por entrada (D12-5) y las opciones
+    «Sin cambios», «Sí» y «No».
+  - Diseño propio sin referencia: las entradas antes que las referencias, el
+    punto fijo del reintento con lo pedido archivado en el medio y el diálogo
+    con los campos desplazables.
+- **Afuera**: crear un proyecto o una etiqueta desde el diálogo (TT-09,
+  TT-13); elegir un proyecto o una etiqueta archivados; vaciar la descripción
+  en bloque (deuda del 6); continuar, duplicar y descartar en masa, que
+  Clockify no documenta; y marcar en la lista las entradas rechazadas (deuda
+  del 6).
+
 ### Lo que queda
 
-La edición masiva de proyecto, tarea, etiquetas y facturable (el resto de
-TT-63), que trae el 12.
+Nada del rastreador queda sin slice. Lo que no se construye en la fase 1 es lo
+marcado `fuera de alcance`, cada uno con su justificación: crear un proyecto o
+una etiqueta desde el selector (TT-09, TT-13), el contador en el título de la
+pestaña (TT-33), la agrupación de entradas similares (TT-53, P-09), dividir
+(TT-59, P-05), el bloqueo por aprobación o por cierre de período (TT-67, P-02),
+el redondeo (TT-83, P-03) y los campos obligatorios y forzar timer (TT-84,
+P-01).
 
 _Corregido el 2026-10-03, decisión del equipo_: esta lista incluía lo que ya
 implementaron los slices 3 y 4, que ahora tienen su sección, y no nombraba el
@@ -1835,6 +2050,10 @@ _Corregido el 2026-10-05, slice 11a_: sale de esta lista el facturable (TT-14,
 TT-15), con su copia al continuar y al duplicar, que ahora tiene su sección.
 _Corregido el 2026-10-07, slice 11b_: salen de esta lista las etiquetas
 (TT-12), con su copia al continuar y al duplicar, que ahora tienen su sección.
+_Corregido el 2026-10-07, slice 12_: decía «La edición masiva de proyecto,
+tarea, etiquetas y facturable (el resto de TT-63), que trae el 12.». Sale de
+esta lista, que ahora tiene su sección, y no queda nada salvo lo fuera de
+alcance.
 
 ## Pendientes de definición del equipo
 
@@ -1851,7 +2070,7 @@ pero necesitan una decisión.
 | P-03 | Redondeo (`roundingMinutes`): en Clockify es pago y solo afecta reportes. ¿Se mantiene fuera del rastreador?                                                                                                |
 | P-04 | Entradas superpuestas: ¿se permiten en silencio, se avisa o se rechazan?                                                                                                                                    |
 | P-05 | Dividir entrada: funcionalidad paga. ¿Entra en el alcance y con qué reglas de corte?                                                                                                                        |
-| P-07 | Edición masiva en el rastreador: no sé si está en Free. Confirmar en el workspace. El slice 6 se construyó como si entrara: si es paga, TT-62 a TT-64 quedan como mejora deliberada (TT-63).                |
+| P-07 | Edición masiva en el rastreador: no sé si está en Free. Confirmar en el workspace. Los slices 6 y 12 se construyeron como si entrara: si es paga, TT-62 a TT-64 quedan como mejora deliberada (TT-63).      |
 | P-09 | Agrupación de entradas similares en una fila colapsable. El interruptor vive en el perfil (PF-26).                                                                                                          |
 | P-14 | Verificar en el workspace real del equipo lo marcado como _no verificado_: TT-12, TT-16, TT-20, TT-26, TT-35, TT-44, TT-46, TT-47, TT-50, TT-57, TT-58, TT-62, TT-63, TT-64, TT-65, TT-108, TT-111, TT-112. |
 
@@ -1866,6 +2085,12 @@ _Corregido el 2026-10-07, slice 11b_: P-14 no suma identificadores. Lo que el
 resaltado al escribir y la búsqueda que queda después de marcar— y está
 anotado ahí, junto con el rechazo de continuar y duplicar con una etiqueta
 archivada, que sigue en TT-57 y TT-58.
+_Corregido el 2026-10-07, slice 12_: P-07 decía «El slice 6 se construyó como
+si entrara»; el 12 suma el proyecto, la tarea, las etiquetas y el facturable
+en bloque con la misma condición. La página de edición masiva, consultada ese
+día, sigue sin nombrar ningún plan (TT-63). P-14 no suma identificadores: lo
+que el 12 decide sin verificar es parte de TT-63 y está anotado ahí; lo del
+facturable no entra, por P-16 de [la paridad de proyectos](proyectos.md).
 
 ### Cerrados
 

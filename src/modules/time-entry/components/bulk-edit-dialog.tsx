@@ -22,15 +22,22 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { projectLabels } from "@/modules/project/components/labels";
+import { ProjectPicker } from "@/modules/project/components/project-picker";
+import { TagPicker } from "@/modules/project/components/tag-picker";
 import { DESCRIPTION_MAX, type BulkEditChanges } from "@/modules/time-entry/schema";
 import { clockLabel } from "@/server/time";
 
 import {
+  changesTags,
   emptyBulkChanges,
   toChanges,
   withBulkClock,
   type BulkChangesDraft,
+  type BulkTagMode,
 } from "./bulk-changes";
+import { calendarLabels } from "./calendar/labels";
 import { ClockField } from "./clock-field";
 import { DateField } from "./date-field";
 import { bulkEditTitle, clockPlaceholder, trackerLabels } from "./labels";
@@ -86,7 +93,16 @@ export function BulkEditDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent initialFocus={descriptionRef} finalFocus={finalFocus}>
+      {/*
+        Con siete campos y el aviso, el diálogo es más alto que una ventana
+        baja: no pasa del alto de la ventana y se desplazan los campos, con el
+        título y los botones a la vista.
+      */}
+      <DialogContent
+        initialFocus={descriptionRef}
+        finalFocus={finalFocus}
+        className="max-h-[calc(100dvh-2rem)] grid-rows-[minmax(0,1fr)]"
+      >
         <BulkEditForm
           descriptionRef={descriptionRef}
           count={count}
@@ -122,6 +138,11 @@ function BulkEditForm({
 }: BulkEditFormProps) {
   const { time } = useDisplayFormats();
   const descriptionId = useId();
+  const tagsClearedId = useId();
+  const billableLabelId = useId();
+  const billableHintId = useId();
+  const projectRef = useRef<HTMLButtonElement>(null);
+  const tagsRef = useRef<HTMLButtonElement>(null);
   const dateRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<BulkChangesDraft>(emptyBulkChanges);
   /**
@@ -162,6 +183,17 @@ function BulkEditForm({
     dateRef.current?.querySelector("button")?.focus();
   }
 
+  function keepProject(): void {
+    change({ ...draftRef.current, selection: null });
+    // Como «Quitar la fecha»: el botón se va y el foco pasa al selector.
+    projectRef.current?.focus();
+  }
+
+  function keepTags(): void {
+    change({ ...draftRef.current, tagMode: "add", tags: [] });
+    tagsRef.current?.focus();
+  }
+
   function save(): void {
     const changes = toChanges(draftRef.current);
     if (pending || changes === null) {
@@ -177,16 +209,23 @@ function BulkEditForm({
 
   const typedClock = clockTexts.start.trim() !== "" || clockTexts.end.trim() !== "";
   const idle = pending || (toChanges(draft) === null && !typedClock);
+  const tagsCleared = draft.tagMode === "replace" && draft.tags.length === 0;
+  // «Sin proyecto» no tiene facturable por defecto: cada entrada conserva el suyo (D-2).
+  const billableByProject =
+    draft.selection !== null &&
+    draft.selection.project !== null &&
+    draft.billable === null;
 
   return (
     // Enter en la descripción envía el formulario y guarda.
-    <form className="grid gap-4" onSubmit={handleSubmit}>
+    <form className="flex min-h-0 flex-col gap-4" onSubmit={handleSubmit}>
       <DialogHeader>
         <DialogTitle>{bulkEditTitle(count)}</DialogTitle>
         <DialogDescription>{trackerLabels.bulkEditHint}</DialogDescription>
       </DialogHeader>
 
-      <div className="grid gap-3">
+      {/* El margen negativo deja lugar para el anillo de foco, que el desplazamiento recorta. */}
+      <div className="-m-1 grid min-h-0 gap-3 overflow-y-auto p-1">
         <div className="grid gap-2">
           <Label htmlFor={descriptionId}>{trackerLabels.description}</Label>
           <Input
@@ -201,6 +240,92 @@ function BulkEditForm({
               change({ ...draftRef.current, description: event.target.value })
             }
           />
+        </div>
+
+        <div className="grid gap-2">
+          {/* El nombre del selector ya es «Proyecto». */}
+          <span aria-hidden="true" className="text-sm leading-none font-medium">
+            {calendarLabels.project}
+          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <ProjectPicker
+              variant="row"
+              label={calendarLabels.project}
+              value={draft.selection}
+              placeholder={trackerLabels.noChange}
+              triggerRef={projectRef}
+              onChange={(selection) => change({ ...draftRef.current, selection })}
+            />
+            {draft.selection !== null && (
+              <Button type="button" variant="ghost" size="sm" onClick={keepProject}>
+                {trackerLabels.keepProject}
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <div className="grid gap-2">
+          {/* El nombre del selector ya empieza con «Etiquetas». */}
+          <span aria-hidden="true" className="text-sm leading-none font-medium">
+            {projectLabels.tags}
+          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <TagPicker
+              variant="bar"
+              label={projectLabels.tags}
+              value={draft.tags}
+              triggerRef={tagsRef}
+              onChange={(tags) => change({ ...draftRef.current, tags })}
+            />
+            {changesTags(draft) && (
+              <Button type="button" variant="ghost" size="sm" onClick={keepTags}>
+                {trackerLabels.keepTags}
+              </Button>
+            )}
+          </div>
+          <RadioGroup
+            aria-label={trackerLabels.tagModeGroup}
+            aria-describedby={tagsCleared ? tagsClearedId : undefined}
+            value={draft.tagMode}
+            onValueChange={(tagMode) => {
+              if (isTagMode(tagMode)) {
+                change({ ...draftRef.current, tagMode });
+              }
+            }}
+            className="flex flex-wrap gap-x-4"
+          >
+            <RadioOption value="add" label={trackerLabels.tagModeAdd} />
+            <RadioOption value="replace" label={trackerLabels.tagModeReplace} />
+          </RadioGroup>
+          {tagsCleared && (
+            <p id={tagsClearedId} className="text-muted-foreground text-xs">
+              {trackerLabels.tagsCleared}
+            </p>
+          )}
+        </div>
+
+        <div className="grid gap-2">
+          <span id={billableLabelId} className="text-sm leading-none font-medium">
+            {trackerLabels.billable}
+          </span>
+          <RadioGroup
+            aria-labelledby={billableLabelId}
+            aria-describedby={billableByProject ? billableHintId : undefined}
+            value={billableOption(draft.billable)}
+            onValueChange={(option) =>
+              change({ ...draftRef.current, billable: billableOfOption(option) })
+            }
+            className="flex flex-wrap gap-x-4"
+          >
+            <RadioOption value="none" label={trackerLabels.noChange} />
+            <RadioOption value="yes" label={calendarLabels.billableYes} />
+            <RadioOption value="no" label={calendarLabels.billableNo} />
+          </RadioGroup>
+          {billableByProject && (
+            <p id={billableHintId} className="text-muted-foreground text-xs">
+              {trackerLabels.billableByProject}
+            </p>
+          )}
         </div>
 
         <div className="grid gap-2">
@@ -268,5 +393,40 @@ function BulkEditForm({
         </Button>
       </DialogFooter>
     </form>
+  );
+}
+
+function isTagMode(value: unknown): value is BulkTagMode {
+  return value === "add" || value === "replace";
+}
+
+/** El facturable del borrador como opción del grupo: `null` es «Sin cambios». */
+function billableOption(billable: boolean | null): string {
+  if (billable === null) {
+    return "none";
+  }
+  return billable ? "yes" : "no";
+}
+
+function billableOfOption(option: unknown): boolean | null {
+  if (option === "yes") {
+    return true;
+  }
+  return option === "no" ? false : null;
+}
+
+/** Una opción de un grupo, nombrada por el texto que la acompaña. */
+function RadioOption({
+  value,
+  label,
+}: {
+  readonly value: string;
+  readonly label: string;
+}) {
+  return (
+    <Label className="font-normal">
+      <RadioGroupItem value={value} />
+      {label}
+    </Label>
   );
 }

@@ -24,6 +24,7 @@ import { projectMessages } from "@/modules/project/schema";
 import { timeEntryRepository } from "./repository";
 import {
   timeEntryMessages,
+  type BulkEditEntriesInput,
   type StartTimerInput,
   type UpdateEntryChanges,
 } from "./schema";
@@ -1923,5 +1924,120 @@ describe("las etiquetas en las actions (criterio 15 del 11b: TT-78)", () => {
       data: { entry: { tags: [{ id: design.id, name: "Diseño" }] } },
     });
     expect(mocks.revalidated).toEqual(revalidatedFor(1));
+  });
+});
+
+describe("bulkEditEntries con el par, el facturable y las etiquetas (criterio 17 del 12)", () => {
+  const longAgo = "2020-01-01T00:00:00Z";
+  const unknownId = "11111111-1111-4111-8111-111111111111";
+
+  /** Abre la sesión y crea su membresía, que crea la primera action. */
+  async function signInWithMembership() {
+    const seeded = await signInOn({ createdAt: longAgo });
+    await actions.discardTimer({ id: unknownId });
+    mocks.revalidated.length = 0;
+    return seeded;
+  }
+
+  function seedOwnEntry(seeded: SeededWorkspace) {
+    return seedTimeEntry({
+      workspaceId: seeded.workspaceId,
+      userId: sessionUserId(),
+      startedAt: "2026-10-01T13:00:00Z",
+      endedAt: "2026-10-01T14:00:00Z",
+    });
+  }
+
+  it("aplica y responde las vistas con el par, el facturable y las etiquetas, y revalida", async () => {
+    const seeded = await signInWithMembership();
+    const web = await seedProject({ workspaceId: seeded.workspaceId, name: "Web" });
+    const design = await seedTag({ workspaceId: seeded.workspaceId, name: "Diseño" });
+    const entry = await seedOwnEntry(seeded);
+
+    const result = await actions.bulkEditEntries({
+      ids: [entry.id],
+      changes: {
+        project: { projectId: web.id, taskId: null },
+        billable: true,
+        tags: { mode: "add", ids: [design.id.toUpperCase()] },
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        entries: [
+          {
+            id: entry.id,
+            project: { id: web.id, name: "Web" },
+            billable: true,
+            tags: [{ id: design.id, name: "Diseño" }],
+          },
+        ],
+      },
+    });
+    expect(mocks.revalidated).toEqual(revalidatedFor(1));
+  });
+
+  it("traduce el error de project con su código y su mensaje, sin lista, y revalida", async () => {
+    const seeded = await signInWithMembership();
+    const old = await seedProject({ workspaceId: seeded.workspaceId, archived: true });
+    const web = await seedProject({ workspaceId: seeded.workspaceId });
+    const done = await seedTask({
+      workspaceId: seeded.workspaceId,
+      projectId: web.id,
+      status: "done",
+    });
+    const oldTag = await seedTag({ workspaceId: seeded.workspaceId, archived: true });
+    const entry = await seedOwnEntry(seeded);
+
+    const cases: [BulkEditEntriesInput["changes"], string][] = [
+      [
+        { project: { projectId: old.id, taskId: null } },
+        projectMessages.projectUnavailable,
+      ],
+      [
+        { project: { projectId: web.id, taskId: done.id } },
+        projectMessages.taskUnavailable,
+      ],
+      [{ tags: { mode: "add", ids: [oldTag.id] } }, projectMessages.tagUnavailable],
+    ];
+
+    for (const [changes, message] of cases) {
+      expect(await actions.bulkEditEntries({ ids: [entry.id], changes })).toEqual({
+        ok: false,
+        code: "not_found",
+        message,
+      });
+    }
+    expect(await timeEntryById(entry.id)).toMatchObject({
+      projectId: null,
+      taskId: null,
+    });
+    expect(mocks.revalidated).toEqual(revalidatedFor(3));
+  });
+
+  it("traduce los ZodError de los campos nuevos con su mensaje, y revalida", async () => {
+    const seeded = await signInWithMembership();
+    const entry = await seedOwnEntry(seeded);
+    const tooMany = Array.from({ length: 51 }, () => randomUUID());
+
+    const cases: [BulkEditEntriesInput["changes"], string][] = [
+      [
+        { project: { projectId: null, taskId: randomUUID() } },
+        timeEntryMessages.taskNeedsProject,
+      ],
+      [{ tags: { mode: "add", ids: [] } }, timeEntryMessages.unexpected],
+      [{ tags: { mode: "replace", ids: tooMany } }, timeEntryMessages.tooManyTags],
+    ];
+
+    for (const [changes, message] of cases) {
+      expect(await actions.bulkEditEntries({ ids: [entry.id], changes })).toEqual({
+        ok: false,
+        code: "validation",
+        message,
+      });
+    }
+    expect(mocks.revalidated).toEqual(revalidatedFor(3));
   });
 });

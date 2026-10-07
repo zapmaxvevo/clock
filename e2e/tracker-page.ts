@@ -235,6 +235,11 @@ export function projectPopup(page: Page): Locator {
   return page.getByRole("dialog").filter({ has: projectSearch(page) });
 }
 
+/** La opción de una tarea y lo que muestra un disparador con ella (TT-06). */
+export function taskOption(project: string, task: string): string {
+  return `${project}: ${task}`;
+}
+
 /**
  * Una opción del selector abierto: el nombre del proyecto, «Proyecto: Tarea»
  * o «Sin proyecto».
@@ -321,6 +326,11 @@ export function billableToggle(scope: Locator): Locator {
   return scope.getByRole("button", { name: /^(Facturable|Entrada «.*» facturable)$/ });
 }
 
+/** TT-14, H-7: el control de `scope` presionado o no, por su `aria-pressed`. */
+export async function expectBillable(scope: Locator, billable: boolean): Promise<void> {
+  await expect(billableToggle(scope)).toHaveAttribute("aria-pressed", String(billable));
+}
+
 /** El nombre accesible del buscador del selector de etiquetas (TT-12, §5.8). */
 const TAG_SEARCH = "Buscar etiqueta";
 
@@ -334,6 +344,20 @@ export function tagPicker(scope: Locator): Locator {
   return scope.getByRole("combobox", {
     name: /^Etiquetas( de la entrada «.*»)?(: .+)?$/,
   });
+}
+
+/** El nombre del disparador de etiquetas de una fila (TT-49, `entryTagsLabel`). */
+export function rowTagsLabel(description: string): string {
+  return `Etiquetas de la entrada «${description}»`;
+}
+
+/**
+ * El nombre accesible de un disparador de etiquetas: el rótulo y, con
+ * etiquetas, «: » y sus nombres en orden alfabético, separados por coma
+ * (TT-12, H-1). Los nombres llegan ya en ese orden.
+ */
+export function tagsName(label: string, names: readonly string[]): string {
+  return names.length === 0 ? label : `${label}: ${names.join(", ")}`;
 }
 
 /** El buscador del selector de etiquetas abierto. El popup va en un portal. */
@@ -562,6 +586,20 @@ export async function chooseDay(
 }
 
 /**
+ * Inactivo por `aria-disabled` y nunca por `disabled`: un control con foco
+ * que pasa a `disabled` lo pierde a `body` (§5.4 del 6).
+ */
+export async function expectInactive(control: Locator): Promise<void> {
+  await expect(control).toHaveAttribute("aria-disabled", "true");
+  await expect(control).not.toHaveAttribute("disabled");
+}
+
+export async function expectActive(control: Locator): Promise<void> {
+  await expect(control).not.toHaveAttribute("aria-disabled", "true");
+  await expect(control).not.toHaveAttribute("disabled");
+}
+
+/**
  * La región de las acciones en masa (TT-62), siempre montada aunque no haya
  * selección: es el destino del foco cuando lo que lo tenía se va. Con un
  * diálogo modal abierto, Base UI marca con `aria-hidden` todo lo de afuera; la
@@ -621,6 +659,67 @@ export function dayCheckbox(scope: Locator, label: string): Locator {
 /** El diálogo de edición masiva, «Editar N entradas». Va en un portal. */
 export function bulkEditDialog(page: Page): Locator {
   return page.getByRole("dialog", { name: /^Editar (1 entrada|\d+ entradas)$/ });
+}
+
+/** El campo «Descripción» del diálogo de edición masiva. */
+export function bulkDescriptionField(dialog: Locator): Locator {
+  return dialog.getByRole("textbox", { name: "Descripción", exact: true });
+}
+
+/**
+ * Abre el diálogo de edición desde la barra y espera el foco en
+ * «Descripción», que es donde lo deja al abrir (§5.4 del 6).
+ */
+export async function openBulkEdit(page: Page, title: string): Promise<Locator> {
+  await bulkButton(page, "Editar").click();
+  const dialog = bulkEditDialog(page);
+  await expect(dialog).toHaveAccessibleName(title);
+  await expect(bulkDescriptionField(dialog)).toBeFocused();
+  return dialog;
+}
+
+/**
+ * «No cambiar el proyecto» y «No cambiar las etiquetas» del diálogo de
+ * edición masiva: vuelven su sección a «Sin cambios» (§5.2 del 12). Cada uno
+ * está a la vista solo con algo elegido en su sección.
+ */
+export function keepButton(
+  dialog: Locator,
+  name: "No cambiar el proyecto" | "No cambiar las etiquetas",
+): Locator {
+  return dialog.getByRole("button", { name, exact: true });
+}
+
+/** El grupo de opciones del diálogo de edición masiva que dice cómo se aplican las etiquetas. */
+export function tagModeGroup(dialog: Locator): Locator {
+  return dialog.getByRole("radiogroup", {
+    name: "Cómo se aplican las etiquetas",
+    exact: true,
+  });
+}
+
+/** Una opción de `tagModeGroup`; «Agregar» es la elegida al abrir. */
+export function tagModeOption(
+  dialog: Locator,
+  name: "Agregar a las que tienen" | "Reemplazar las que tienen",
+): Locator {
+  return tagModeGroup(dialog).getByRole("radio", { name, exact: true });
+}
+
+/**
+ * El grupo de opciones del facturable del diálogo de edición masiva. No es
+ * el botón de alternancia de `billableToggle`: tiene «Sin cambios».
+ */
+export function bulkBillableGroup(dialog: Locator): Locator {
+  return dialog.getByRole("radiogroup", { name: "Facturable", exact: true });
+}
+
+/** Una opción de `bulkBillableGroup`; «Sin cambios» es la elegida al abrir. */
+export function bulkBillableOption(
+  dialog: Locator,
+  name: "Sin cambios" | "Sí" | "No",
+): Locator {
+  return bulkBillableGroup(dialog).getByRole("radio", { name, exact: true });
 }
 
 /** El diálogo de borrado masivo, «¿Borrar N entradas?». Va en un portal. */

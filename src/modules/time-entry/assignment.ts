@@ -1,4 +1,7 @@
 import { sameId, type ProjectPair } from "@/lib/project-pair";
+import { normalizedIds } from "@/lib/tag-ids";
+
+import type { BulkTagsChange } from "./schema";
 
 /**
  * El par que hay que validar, o `null` si el pedido no asigna nada nuevo:
@@ -33,4 +36,16 @@ export function tagsToCheck(
   requested: readonly string[],
 ): string[] {
   return requested.filter((id) => !current.some((own) => sameId(own, id)));
+}
+
+/**
+ * El conjunto que una entrada debería tener después del pedido en bloque:
+ * «replace», las pedidas; «add», las que tiene más las pedidas. Normalizado
+ * con `normalizedIds`. Las que ya tiene se conservan aunque estén archivadas
+ * (PR-47): `tagsToCheck` no las va a validar.
+ */
+export function tagsAfter(current: readonly string[], change: BulkTagsChange): string[] {
+  return normalizedIds(
+    change.mode === "replace" ? change.ids : [...current, ...change.ids],
+  );
 }

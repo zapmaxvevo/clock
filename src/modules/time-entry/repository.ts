@@ -9,7 +9,6 @@ import {
   isNotNull,
   isNull,
   lt,
-  notInArray,
   or,
   sql,
   type SQL,
@@ -68,9 +67,9 @@ export type ClosedFields = {
 };
 
 /**
- * Lo que escribe `updateClosedEntry`: lo de `ClosedFields`, el par, siempre
- * entero, el facturable y el conjunto entero de etiquetas. La masiva sigue
- * escribiendo solo `ClosedFields`.
+ * Lo que escriben `updateClosedEntry` y `updateClosedEntries`: lo de
+ * `ClosedFields`, el par, siempre entero, el facturable y el conjunto entero
+ * de etiquetas.
  */
 export type ClosedEntryFields = ClosedFields & {
   readonly pair?: ProjectPair;
@@ -223,26 +222,84 @@ async function insertTags(
     .onConflictDoNothing();
 }
 
+/** El conjunto entero de etiquetas que una escritura en masa deja en su destino. */
+type TagsWrite = {
+  readonly target: EntryTarget;
+  readonly tagIds: readonly string[];
+};
+
 /**
- * Deja en la entrada exactamente `tagIds`: borra las filas que no están en el
- * pedido e inserta las que faltan. Las dos sentencias filtran por el destino
- * leído, nunca por la entrada del cliente.
+ * Deja en cada destino exactamente su conjunto: borra las filas de la unión que
+ * sobran e inserta las que faltan, en dos sentencias sea cual sea la cantidad.
+ * Los pares viajan en dos arreglos que se recorren con `unnest`, así el peor
+ * caso (200 × 50) no multiplica los parámetros. Solo toca las filas de la
+ * unión de los destinos de `writes`; un destino con el conjunto vacío queda
+ * sin etiquetas. Sin escrituras, no hay sentencias.
  */
-async function replaceTags(
+async function replaceManyTags(
   tx: Transaction,
-  target: EntryTarget,
-  tagIds: readonly string[],
+  writes: readonly TagsWrite[],
 ): Promise<void> {
+  const first = writes.at(0);
+  if (first === undefined) {
+    return;
+  }
+  const workspaceId = first.target.workspaceId;
+  if (writes.some((write) => write.target.workspaceId !== workspaceId)) {
+    throw new Error("Una escritura en masa de etiquetas cruza workspaces.");
+  }
+  const targets = sql.param(writes.map((write) => write.target.id));
+  const entries = sql.param(
+    writes.flatMap((write) => write.tagIds.map(() => write.target.id)),
+  );
+  const tagIds = sql.param(writes.flatMap((write) => [...write.tagIds]));
+  const pairs = sql`unnest(${entries}::uuid[], ${tagIds}::uuid[]) as pair(entry_id, tag_id)`;
   await tx
     .delete(timeEntryTag)
     .where(
       and(
-        eq(timeEntryTag.workspaceId, target.workspaceId),
-        eq(timeEntryTag.timeEntryId, target.id),
-        notInArray(timeEntryTag.tagId, [...tagIds]),
+        eq(timeEntryTag.workspaceId, workspaceId),
+        sql`${timeEntryTag.timeEntryId} = any(${targets}::uuid[])`,
+        sql`not exists (select 1 from ${pairs} where pair.entry_id = ${timeEntryTag.timeEntryId} and pair.tag_id = ${timeEntryTag.tagId})`,
       ),
     );
-  await insertTags(tx, target, tagIds);
+  if (writes.every((write) => write.tagIds.length === 0)) {
+    return;
+  }
+  await tx
+    .insert(timeEntryTag)
+    .select(sql`select ${workspaceId}::uuid, pair.entry_id, pair.tag_id from ${pairs}`)
+    .onConflictDoNothing();
+}
+
+/**
+ * Deja en la entrada exactamente `tagIds`: la regla de `replaceManyTags` con un
+ * solo destino, el leído, nunca la entrada del cliente.
+ */
+function replaceTags(
+  tx: Transaction,
+  target: EntryTarget,
+  tagIds: readonly string[],
+): Promise<void> {
+  return replaceManyTags(tx, [{ target, tagIds }]);
+}
+
+/**
+ * El `update` de las columnas de una escritura de una fila cerrada, si trae
+ * alguna: sin columnas no hay sentencia (Drizzle rechaza `set({})`), y que la
+ * fila esté cerrada lo decidió el service bajo el bloqueo. `false` si el
+ * `update` no tocó la fila.
+ */
+async function writeClosedColumns(
+  tx: Transaction,
+  target: EntryTarget,
+  fields: Omit<ClosedEntryFields, "tagIds">,
+): Promise<boolean> {
+  const columns = columnsOf(fields);
+  return (
+    !hasColumns(columns) ||
+    (await timeEntryRepository.updateClosedFields(tx, target, columns)) !== undefined
+  );
 }
 
 /** `rereadWithRefs` sobre el resultado de una escritura que puede no tocar ninguna fila. */
@@ -550,11 +607,7 @@ export const timeEntryRepository = {
     fields: ClosedEntryFields,
   ): Promise<EntryWithRefs | undefined> {
     const { tagIds, ...columnFields } = fields;
-    const columns = columnsOf(columnFields);
-    if (
-      hasColumns(columns) &&
-      (await timeEntryRepository.updateClosedFields(tx, target, columns)) === undefined
-    ) {
+    if (!(await writeClosedColumns(tx, target, columnFields))) {
       return undefined;
     }
     if (tagIds !== undefined) {
@@ -623,9 +676,64 @@ export const timeEntryRepository = {
   },
 
   /**
+   * Escribe varias filas cerradas de una operación en masa y las relee con sus
+   * referencias. Por cada escritura con columnas, un `update` sobre su destino
+   * con `ended_at is not null`, como `updateClosedFields`; el par se abre en sus
+   * dos columnas, como `columnsOf`. Las etiquetas, en dos sentencias para todas
+   * las escrituras que traen `tagIds` —el conjunto entero de cada una—: un
+   * `delete` de las filas de la unión que sobran y un
+   * `insert … on conflict do nothing` de las que faltan. Una escritura sin
+   * `tagIds` no entra en ninguna de las dos. Una relectura de todas las
+   * escritas, con `selectWithRefs`. `undefined` si algún `update` no tocó su
+   * fila. Devuelve en el orden de `writes`.
+   */
+  async updateClosedEntries(
+    tx: Transaction,
+    writes: readonly {
+      readonly target: EntryTarget;
+      readonly fields: ClosedEntryFields;
+    }[],
+  ): Promise<readonly EntryWithRefs[] | undefined> {
+    const tagged: TagsWrite[] = [];
+    for (const { target, fields } of writes) {
+      const { tagIds, ...columnFields } = fields;
+      if (!(await writeClosedColumns(tx, target, columnFields))) {
+        return undefined;
+      }
+      if (tagIds !== undefined) {
+        tagged.push({ target, tagIds });
+      }
+    }
+    await replaceManyTags(tx, tagged);
+    const first = writes.at(0);
+    if (first === undefined) {
+      return [];
+    }
+    const rows = await selectWithRefs(
+      tx,
+      and(
+        eq(timeEntry.workspaceId, first.target.workspaceId),
+        inArray(
+          timeEntry.id,
+          writes.map((write) => write.target.id),
+        ),
+      ),
+    );
+    const reread = new Map(rows.map((row) => [row.entry.id, toEntryWithRefs(row)]));
+    return writes.map(({ target }) => {
+      const row = reread.get(target.id);
+      if (row === undefined) {
+        throw new Error(
+          `La entrada ${target.id} no está en la transacción que la escribió.`,
+        );
+      }
+      return row;
+    });
+  },
+
+  /**
    * Cualquier subconjunto de los tres campos, el par entero y el facturable si
-   * vienen, solo en una fila cerrada. Sin relectura: la masiva no cambia el
-   * proyecto ni la tarea, y el service ya los leyó.
+   * vienen, solo en una fila cerrada. Sin relectura: la hace quien la llama.
    */
   async updateClosedFields(
     tx: Transaction,

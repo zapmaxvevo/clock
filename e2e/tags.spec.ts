@@ -31,15 +31,19 @@ import {
   elapsedCounter,
   entryRow,
   escapeRegExp,
+  expectActive,
+  expectInactive,
   isTrackerPage,
   openTagPicker,
   pickTags,
+  rowTagsLabel,
   startTimer,
   stopTimer,
   tagOption,
   tagPicker,
   tagPopup,
   tagSearch,
+  tagsName,
   todayGroup,
   toggleTag,
   trackerBar,
@@ -78,20 +82,6 @@ const TAG_UNAVAILABLE = "Esa etiqueta ya no está disponible.";
 
 /** TT-12: la búsqueda sin coincidencias. */
 const NO_MATCHES = "Ninguna etiqueta coincide con la búsqueda.";
-
-/** El nombre del disparador de una fila (TT-49, `entryTagsLabel`). */
-function rowTagsLabel(description: string): string {
-  return `Etiquetas de la entrada «${description}»`;
-}
-
-/**
- * El nombre accesible de un disparador: el rótulo y, con etiquetas, «: » y
- * sus nombres en orden alfabético, separados por coma (TT-12, H-1). Los
- * nombres llegan ya en ese orden.
- */
-function tagsName(label: string, names: readonly string[]): string {
-  return names.length === 0 ? label : `${label}: ${names.join(", ")}`;
-}
 
 /** H-5: la opción de una etiqueta archivada que la entrada todavía tiene. */
 function archivedOption(name: string): string {
@@ -349,7 +339,7 @@ test("la fila guarda sus etiquetas en un solo pedido al cerrar el selector con u
   await requested;
   await expect(tagPopup(page)).toBeHidden();
   await expect(tagPicker(row)).toHaveAccessibleName(tagsName(rowLabel, [review]));
-  await expect(tagPicker(row)).toHaveAttribute("aria-disabled", "true");
+  await expectInactive(tagPicker(row));
   // Con `aria-disabled` Playwright no hace el clic, así que se abre por
   // teclado con el foco en el disparador, como lo haría la persona.
   await tagPicker(row).focus();
@@ -358,7 +348,7 @@ test("la fila guarda sus etiquetas en un solo pedido al cerrar el selector con u
   const settled = page.waitForResponse((response) => isAction(response.request()));
   release();
   expect((await settled).ok()).toBe(true);
-  await expect(tagPicker(row)).not.toHaveAttribute("aria-disabled", "true");
+  await expectActive(tagPicker(row));
   // Un popup que se hubiera abierto en vuelo seguiría abierto.
   await expect(tagPopup(page)).toBeHidden();
   expect(sent).toHaveLength(1);

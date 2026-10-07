@@ -24,6 +24,7 @@ import {
   projectSearch,
   startTimer,
   stopTimer,
+  taskOption,
   todayGroup,
   trackerBar,
   uniqueSuffix,
@@ -56,11 +57,6 @@ const PROJECT_UNAVAILABLE = "Ese proyecto ya no está disponible.";
 
 /** TT-07: la búsqueda sin coincidencias. */
 const NO_MATCHES = "Ningún proyecto coincide con la búsqueda.";
-
-/** La opción de una tarea se llama «Proyecto: Tarea» (TT-06). */
-function taskOption(project: string, task: string): string {
-  return `${project}: ${task}`;
-}
 
 /**
  * El punto de color del proyecto dentro de un disparador. Es decorativo
