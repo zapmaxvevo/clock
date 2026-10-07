@@ -6,6 +6,7 @@ import { useDisplayFormats } from "@/components/layout/display-formats";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAction, type ActionFailure, type ActionHandle } from "@/hooks/use-action";
 import { useNewId } from "@/hooks/use-new-id";
+import { sameId } from "@/lib/project-pair";
 import {
   createManualEntry,
   deleteEntry,
@@ -293,8 +294,20 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
     });
   }
 
+  /**
+   * F2-1: guardar, mover, borrar o duplicar desde esta pestaña la entrada del
+   * id pendiente la deja distinta de lo que se mandó, y reusar el id respondería
+   * esa fila como si fuera la del alta nueva. El próximo alta lleva otro id.
+   */
+  function releasePendingCreate(entryId: string): void {
+    if (sameId(sentCreates.current?.id ?? null, entryId)) {
+      setCreateOutcome(null);
+    }
+  }
+
   function handleDropTimes(input: UpdateEntryTimesInput): void {
     movingIdRef.current = input.id;
+    releasePendingCreate(input.id);
     run(moveTimes, input);
   }
 
@@ -327,6 +340,7 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
 
   function handleSave(changes: UpdateEntryChanges): void {
     if (entry !== null) {
+      releasePendingCreate(entry.id);
       run(save, { id: entry.id, changes });
     }
   }
@@ -354,6 +368,7 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
       return;
     }
     setOpen(false);
+    releasePendingCreate(entry.id);
     const id = nextDuplicateId(entry.id);
     run(duplicate, { id, sourceId: entry.id });
   }
@@ -366,6 +381,7 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
 
   function confirmDelete(): void {
     if (entry !== null) {
+      releasePendingCreate(entry.id);
       run(remove, { id: entry.id });
     }
   }

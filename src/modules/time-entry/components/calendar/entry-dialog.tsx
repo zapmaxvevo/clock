@@ -156,10 +156,14 @@ export function EntryDialog({
   return (
     <Dialog
       open={open}
-      onOpenChange={(next) => {
-        if (!adding) {
-          onOpenChange(next);
+      onOpenChange={(next, details) => {
+        // Se cancela, no solo se ignora: la primitiva no registra un cierre
+        // que no ocurrió.
+        if (adding) {
+          details.cancel();
+          return;
         }
+        onOpenChange(next);
       }}
     >
       <DialogContent
