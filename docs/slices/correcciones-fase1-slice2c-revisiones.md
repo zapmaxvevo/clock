@@ -58,3 +58,16 @@ slice).
 3. Segunda revisión de frontend sobre F1/P2, porque cambia cuándo se cierra el diálogo y cuándo
    se renueva el id.
 4. Corrida final completa y merge.
+
+## Segunda revisión de frontend
+
+Sobre `b00e3c8`: **aprobado**. F1 y P2 resueltos en todas las variantes (Esc, clic afuera,
+«Cancelar», cambio de semana con el diálogo abierto; misma alta, otra hora, abrir un bloque, éxito
+de otra alta, otro código); «Guardar» de una entrada (ADR 0013) sin cambios; C2 y C3 sin cambio de
+conducta. El team-lead acepta los tres menores.
+
+| Origen | Hallazgo                                                                                                                                                                                                              | Decisión y dueño                                                                                                                                                                                                                                             |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| F2-1   | `createOutcome` sobrevive sin nada visible: si esta pestaña mueve el bloque del primer intento y después se agrega lo mismo, el id reusado responde la fila movida, cuenta como mandada y la entrada nueva no se crea | (a): `frontend-dev` hace `setCreateOutcome(null)` cuando esta pestaña guarda, mueve, borra o duplica la entrada con el id pendiente. `e2e-tester`: un recorrido con ese camino (falla hoy).                                                                  |
+| F2-2   | La guarda del diálogo ignora el cierre en vez de cancelarlo; Base UI registra un cierre que no ocurrió                                                                                                                | `frontend-dev`: `details.cancel()` en el alta en vuelo, como `tag-picker.tsx`.                                                                                                                                                                               |
+| F2-3   | El comentario de `useNewId` describe el aviso a la vista; el límite del punto 3 nombra solo la barra                                                                                                                  | `frontend-dev`: el comentario de `src/hooks/use-new-id.ts` habla del último desenlace vigente. `parity-analyst`: el límite vale para la barra y el calendario (recargar o salir de la ruta renueva el id; con el alta en vuelo, irse pierde el informativo). |
