@@ -113,6 +113,21 @@ export async function archiveProject(name: string): Promise<void> {
 }
 
 /**
+ * Archiva una etiqueta del workspace de los e2e por su nombre. La fase 1 no
+ * tiene pantalla para archivarla (PR-45): es el estado que deja otra persona
+ * mientras la entrada la tiene o la barra la tiene elegida.
+ */
+export async function archiveTag(name: string): Promise<void> {
+  await updateOne(
+    `update tag
+        set archived_at = now()
+      where workspace_id = ${FIRST_WORKSPACE}
+        and name = $1`,
+    [name],
+  );
+}
+
+/**
  * Le quita a una persona la marca de responsable de un proyecto, que en la
  * fase 1 tampoco tiene pantalla. Sigue siendo miembro, y el proyecto, público.
  */

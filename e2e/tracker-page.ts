@@ -309,6 +309,71 @@ export function billableToggle(scope: Locator): Locator {
   return scope.getByRole("button", { name: /^(Facturable|Entrada «.*» facturable)$/ });
 }
 
+/** El nombre accesible del buscador del selector de etiquetas (TT-12, §5.8). */
+const TAG_SEARCH = "Buscar etiqueta";
+
+/**
+ * El disparador del selector de etiquetas de `scope` (TT-12, H-1): «Etiquetas»
+ * en la barra y en el diálogo del calendario, y «Etiquetas de la entrada «…»»
+ * en una fila. Con etiquetas, el nombre suma «: » y los nombres en orden
+ * alfabético. Dentro de cada uno hay uno solo.
+ */
+export function tagPicker(scope: Locator): Locator {
+  return scope.getByRole("combobox", {
+    name: /^Etiquetas( de la entrada «.*»)?(: .+)?$/,
+  });
+}
+
+/** El buscador del selector de etiquetas abierto. El popup va en un portal. */
+export function tagSearch(page: Page): Locator {
+  return page.getByRole("combobox", { name: TAG_SEARCH, exact: true });
+}
+
+/** El popup del selector de etiquetas abierto, el diálogo que lleva el buscador. */
+export function tagPopup(page: Page): Locator {
+  return page.getByRole("dialog").filter({ has: tagSearch(page) });
+}
+
+/**
+ * Una opción del selector de etiquetas abierto: el nombre de la etiqueta, o
+ * «{nombre} (archivada)» para la que la entrada tiene y ya no está en el
+ * catálogo (H-5). Marcada lleva `aria-selected="true"`.
+ */
+export function tagOption(page: Page, name: string): Locator {
+  return tagPopup(page).getByRole("option", { name, exact: true });
+}
+
+/** Abre el selector de etiquetas de `scope` y espera el foco en el buscador. */
+export async function openTagPicker(page: Page, scope: Locator): Promise<void> {
+  await tagPicker(scope).click();
+  await expect(tagSearch(page)).toBeFocused();
+}
+
+/**
+ * Marca las etiquetas `names` en el selector de `scope` y lo cierra con
+ * `Escape`, que deja el foco en el disparador (D-5). Cada una se busca por su
+ * nombre entero: la base de los e2e acumula las etiquetas de todas las
+ * corridas, y el nombre lleva el sufijo del recorrido. En una entrada que ya
+ * existe, cerrar es lo que guarda: quien llama espera la respuesta.
+ */
+export async function pickTags(
+  page: Page,
+  scope: Locator,
+  names: readonly string[],
+): Promise<void> {
+  await openTagPicker(page, scope);
+  for (const name of names) {
+    await tagSearch(page).fill(name);
+    const option = tagOption(page, name);
+    await expect(option).toHaveAttribute("aria-selected", "false");
+    await option.click();
+    await expect(option).toHaveAttribute("aria-selected", "true");
+  }
+  await page.keyboard.press("Escape");
+  await expect(tagPopup(page)).toBeHidden();
+  await expect(tagPicker(scope)).toBeFocused();
+}
+
 /**
  * El disparador del menú de la cuenta, en el encabezado de toda pantalla del
  * shell: muestra la foto o las iniciales (PF-10, PF-44).
