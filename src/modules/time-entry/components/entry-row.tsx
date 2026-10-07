@@ -227,7 +227,7 @@ export function EntryRow({
       data-entry-id={entry.id}
       className={cn("border-b last:border-b-0", busy && "opacity-60")}
     >
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
         {canTrack && (
           <SelectionCheckbox
             checked={selected}
@@ -236,7 +236,11 @@ export function EntryRow({
             onToggle={onToggleSelected}
           />
         )}
-        <div className="min-w-0 flex-1 basis-64">
+        {/*
+         * Base chica: la descripción cede ancho y se recorta antes que partir
+         * la fila, que TT-49 lee en una línea.
+         */}
+        <div className="min-w-0 flex-1 basis-28">
           {editing ? (
             <DescriptionField
               value={draft}
@@ -294,139 +298,146 @@ export function EntryRow({
           readOnly={!canTrack}
         />
 
-        {timesEditing !== null && timesDraft !== null ? (
-          <EntryTimesEditor
-            initial={timesEditing.initial}
-            draft={timesDraft}
-            onDraftChange={setTimesDraft}
-            todayKey={todayKey}
-            minDayKey={minDayKey}
-            openCalendar={timesEditing.how === "date"}
-            onConfirm={onSaveTimes}
-            onClose={closeTimesEditing}
-          />
-        ) : canTrack && entry.editableTimes ? (
-          <span className="flex items-center gap-1">
-            <button
-              type="button"
-              ref={timesRef}
-              onClick={() => startTimesEditing("times")}
-              // Nombre por `aria-label` y no por un texto oculto: así el texto
-              // de la fila sigue siendo las horas pegadas a la duración.
-              // Empieza con el texto visible (WCAG 2.5.3).
-              aria-label={`${timesText} — editar el horario`}
-              className="focus-visible:ring-ring hover:bg-muted text-muted-foreground rounded-md px-1 py-1 text-sm tabular-nums focus-visible:ring-3 focus-visible:outline-none"
-            >
-              {timesLabel}
-              {extraDays > 0 && <sup className="ml-0.5">+{extraDays}</sup>}
-            </button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => startTimesEditing("date")}
-              aria-label={`Cambiar la fecha de la entrada «${entryName}»`}
-            >
-              <CalendarIcon aria-hidden="true" />
-            </Button>
-          </span>
-        ) : (
-          <span className="flex items-center gap-1">
-            <span className="text-muted-foreground px-1 text-sm tabular-nums">
-              {timesLabel}
-              {extraDays > 0 && (
-                <sup className="ml-0.5">
-                  +{extraDays}
-                  <span className="sr-only">{extraDaysText(extraDays)}</span>
-                </sup>
-              )}
-            </span>
-            {/* El lugar del botón de fecha, para que las horas queden alineadas con las de las otras filas. */}
-            {canTrack && <span aria-hidden="true" className="size-7" />}
-          </span>
-        )}
-
-        <span className="w-16 text-right text-sm font-medium tabular-nums">
-          {durationLabel}
-        </span>
-
-        {canTrack && (
-          <>
-            {/*
-             * TT-57 y TT-110: también con horarios de solo lectura. Inactivo
-             * con `aria-disabled` y no con `disabled`: el foco se queda en el
-             * botón mientras su continuación viaja, y salir del editor de
-             * horas con Tab cae acá aunque otra escritura de la fila esté en
-             * vuelo, como en «Acciones».
-             */}
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`Continuar «${entryName}»`}
-              aria-disabled={continuing}
-              aria-busy={continuing}
-              aria-keyshortcuts={continueShortcut ? "C" : undefined}
-              onClick={() => {
-                if (!continuing) {
-                  onContinue();
-                }
-              }}
-            >
-              <PlayIcon aria-hidden="true" />
-            </Button>
-            {/*
-             * Con una escritura en vuelo el menú no abre, pero el disparador
-             * no se deshabilita: salir del editor de horas con Tab cae acá en
-             * el mismo render en que la escritura arranca, y un botón
-             * deshabilitado dejaría el foco en `body`.
-             */}
-            <DropdownMenu
-              open={menuOpen}
-              onOpenChange={(next) => setMenuOpen(next && !busy)}
-            >
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    ref={menuTriggerRef}
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-disabled={busy}
-                  />
-                }
-                aria-label={entryActionsLabel(entryName)}
-              >
-                <EllipsisVerticalIcon aria-hidden="true" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-auto min-w-40">
-                <DropdownMenuItem disabled={busy} onClick={onDuplicate}>
-                  <CopyIcon aria-hidden="true" />
-                  {trackerLabels.duplicate}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  variant="destructive"
-                  // Un clic en «Acciones» con el calendario del editor abierto
-                  // abre el menú antes de que el trío se confirme: el menú
-                  // puede quedar abierto con la escritura ya en vuelo.
-                  disabled={busy}
-                  onClick={() => setConfirmingDelete(true)}
-                >
-                  <Trash2Icon aria-hidden="true" />
-                  {trackerLabels.delete}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <DeleteEntryDialog
-              name={entryName}
-              startLabel={entry.startLabel}
-              endLabel={entry.endLabel}
-              open={confirmingDelete}
-              onOpenChange={setConfirmingDelete}
-              onConfirm={onDelete}
-              finalFocus={menuTriggerRef}
+        {/*
+         * Las horas, la duración, «Continuar» y «Acciones» bajan juntos cuando
+         * la fila no entra en una línea: partidos, quedarían en lugares
+         * distintos según lo que ocupen los selectores y el facturable.
+         */}
+        <div className="flex shrink-0 items-center gap-x-3">
+          {timesEditing !== null && timesDraft !== null ? (
+            <EntryTimesEditor
+              initial={timesEditing.initial}
+              draft={timesDraft}
+              onDraftChange={setTimesDraft}
+              todayKey={todayKey}
+              minDayKey={minDayKey}
+              openCalendar={timesEditing.how === "date"}
+              onConfirm={onSaveTimes}
+              onClose={closeTimesEditing}
             />
-          </>
-        )}
+          ) : canTrack && entry.editableTimes ? (
+            <span className="flex items-center gap-1">
+              <button
+                type="button"
+                ref={timesRef}
+                onClick={() => startTimesEditing("times")}
+                // Nombre por `aria-label` y no por un texto oculto: así el texto
+                // de la fila sigue siendo las horas pegadas a la duración.
+                // Empieza con el texto visible (WCAG 2.5.3).
+                aria-label={`${timesText} — editar el horario`}
+                className="focus-visible:ring-ring hover:bg-muted text-muted-foreground rounded-md px-1 py-1 text-sm tabular-nums focus-visible:ring-3 focus-visible:outline-none"
+              >
+                {timesLabel}
+                {extraDays > 0 && <sup className="ml-0.5">+{extraDays}</sup>}
+              </button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => startTimesEditing("date")}
+                aria-label={`Cambiar la fecha de la entrada «${entryName}»`}
+              >
+                <CalendarIcon aria-hidden="true" />
+              </Button>
+            </span>
+          ) : (
+            <span className="flex items-center gap-1">
+              <span className="text-muted-foreground px-1 text-sm tabular-nums">
+                {timesLabel}
+                {extraDays > 0 && (
+                  <sup className="ml-0.5">
+                    +{extraDays}
+                    <span className="sr-only">{extraDaysText(extraDays)}</span>
+                  </sup>
+                )}
+              </span>
+              {/* El lugar del botón de fecha, para que las horas queden alineadas con las de las otras filas. */}
+              {canTrack && <span aria-hidden="true" className="size-7" />}
+            </span>
+          )}
+
+          <span className="w-16 text-right text-sm font-medium tabular-nums">
+            {durationLabel}
+          </span>
+
+          {canTrack && (
+            <>
+              {/*
+               * TT-57 y TT-110: también con horarios de solo lectura. Inactivo
+               * con `aria-disabled` y no con `disabled`: el foco se queda en el
+               * botón mientras su continuación viaja, y salir del editor de
+               * horas con Tab cae acá aunque otra escritura de la fila esté en
+               * vuelo, como en «Acciones».
+               */}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Continuar «${entryName}»`}
+                aria-disabled={continuing}
+                aria-busy={continuing}
+                aria-keyshortcuts={continueShortcut ? "C" : undefined}
+                onClick={() => {
+                  if (!continuing) {
+                    onContinue();
+                  }
+                }}
+              >
+                <PlayIcon aria-hidden="true" />
+              </Button>
+              {/*
+               * Con una escritura en vuelo el menú no abre, pero el disparador
+               * no se deshabilita: salir del editor de horas con Tab cae acá en
+               * el mismo render en que la escritura arranca, y un botón
+               * deshabilitado dejaría el foco en `body`.
+               */}
+              <DropdownMenu
+                open={menuOpen}
+                onOpenChange={(next) => setMenuOpen(next && !busy)}
+              >
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      ref={menuTriggerRef}
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-disabled={busy}
+                    />
+                  }
+                  aria-label={entryActionsLabel(entryName)}
+                >
+                  <EllipsisVerticalIcon aria-hidden="true" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-auto min-w-40">
+                  <DropdownMenuItem disabled={busy} onClick={onDuplicate}>
+                    <CopyIcon aria-hidden="true" />
+                    {trackerLabels.duplicate}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    variant="destructive"
+                    // Un clic en «Acciones» con el calendario del editor abierto
+                    // abre el menú antes de que el trío se confirme: el menú
+                    // puede quedar abierto con la escritura ya en vuelo.
+                    disabled={busy}
+                    onClick={() => setConfirmingDelete(true)}
+                  >
+                    <Trash2Icon aria-hidden="true" />
+                    {trackerLabels.delete}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <DeleteEntryDialog
+                name={entryName}
+                startLabel={entry.startLabel}
+                endLabel={entry.endLabel}
+                open={confirmingDelete}
+                onOpenChange={setConfirmingDelete}
+                onConfirm={onDelete}
+                finalFocus={menuTriggerRef}
+              />
+            </>
+          )}
+        </div>
 
         {canTrack && !entry.editableTimes && (
           <p className="text-muted-foreground basis-full text-right text-xs">
