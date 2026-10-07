@@ -550,8 +550,8 @@ export const timeEntryRepository = {
   /**
    * Gemelo de `insertRunning` para las entradas cerradas: acá los dos instantes
    * llegan como valores, porque nacen de una hora de pared tecleada (ADR 0005)
-   * o de otra fila, y no de `now()`. El id lo trae duplicar, que lo eligió el
-   * cliente (ADR 0007); el alta manual no lo manda.
+   * o de otra fila, y no de `now()`. El id lo eligió el cliente, en el alta
+   * manual y en duplicar (ADR 0007).
    */
   async insertClosed(
     tx: Transaction,
@@ -559,7 +559,7 @@ export const timeEntryRepository = {
       tagIds,
       ...values
     }: {
-      id?: string;
+      id: string;
       workspaceId: string;
       userId: string;
       description: string;

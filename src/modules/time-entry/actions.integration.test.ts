@@ -25,6 +25,7 @@ import { timeEntryRepository } from "./repository";
 import {
   timeEntryMessages,
   type BulkEditEntriesInput,
+  type CreateManualEntryInput,
   type StartTimerInput,
   type UpdateEntryChanges,
 } from "./schema";
@@ -432,6 +433,72 @@ describe("el id que elige el cliente para «Iniciar»", () => {
         ok: false,
         code: "forbidden",
         message: timeEntryMessages.forbidden,
+      });
+      expect(await allTimeEntries()).toEqual(rows);
+    },
+  );
+});
+
+describe("el id que elige el cliente para el alta manual (slice 2c)", () => {
+  const values = { date: "2026-10-01", start: "09:00", end: "10:00" };
+  const longAgo = { createdAt: "2020-01-01T00:00:00Z" };
+
+  it.each([
+    ["sin id", {}],
+    ["con un texto que no es uuid", { id: "no-es-uuid" }],
+    ["con el uuid nulo", { id: "00000000-0000-0000-0000-000000000000" }],
+    ["con un uuid v7", { id: "01890a5d-ac96-774b-bcce-b302099a8057" }],
+  ])("%s responde validation, no escribe y revalida", async (_, id) => {
+    await signIn();
+
+    // Lo que puede mandar un cliente que no respeta el tipo.
+    const result = await actions.createManualEntry({
+      ...values,
+      ...id,
+    } as CreateManualEntryInput);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("validation");
+    expect(mocks.revalidated).toEqual(revalidatedFor(1));
+    expect(await allTimeEntries()).toHaveLength(0);
+  });
+
+  it("el reintento de un alta aplicada responde ok con los mismos datos y no escribe", async () => {
+    await signInOn(longAgo);
+    const input = { ...values, id: randomUUID(), description: "reunión" };
+    const first = await actions.createManualEntry(input);
+    expect(first.ok).toBe(true);
+    const rows = await allTimeEntries();
+
+    const retry = await actions.createManualEntry(input);
+
+    expect(retry).toEqual(first);
+    expect(mocks.revalidated).toEqual(revalidatedFor(2));
+    expect(await allTimeEntries()).toEqual(rows);
+  });
+
+  it.each(Object.entries(foreignOwners))(
+    "el id de una entrada de %s responde forbidden con el mensaje neutro",
+    async (_, ownerOf) => {
+      const seeded = await signInOn(longAgo);
+      const mine = await actions.createManualEntry({ ...values, id: randomUUID() });
+      expect(mine.ok).toBe(true);
+      const foreignOwner = await ownerOf(seeded);
+      const foreign = await seedTimeEntry({
+        workspaceId: foreignOwner.workspaceId,
+        userId: foreignOwner.ownerId,
+        startedAt: "2026-10-02T09:00:00Z",
+        endedAt: "2026-10-02T10:00:00Z",
+      });
+      const rows = await allTimeEntries();
+
+      const result = await actions.createManualEntry({ ...values, id: foreign.id });
+
+      expect(result).toEqual({
+        ok: false,
+        code: "forbidden",
+        message: "No tenés permiso para hacer esto.",
       });
       expect(await allTimeEntries()).toEqual(rows);
     },

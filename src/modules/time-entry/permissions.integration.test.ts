@@ -884,6 +884,26 @@ describe("el permiso va antes que la fila propia en continuar y duplicar (ADR 00
   );
 });
 
+describe("el permiso va antes que la fila propia en el alta manual (ADR 0007)", () => {
+  it.each(notActive)(
+    "con %s, el reintento de un alta aplicada da forbidden y no la entrada",
+    async (status) => {
+      const actor = await seedActor("member");
+      const values = manual();
+      await createManualEntry(actor, workspace, values);
+      const rows = await timeEntriesOf(workspaceId, actor.userId);
+
+      await expect(
+        createManualEntry({ ...actor, status }, workspace, values),
+      ).rejects.toMatchObject({
+        code: "forbidden",
+        message: timeEntryMessages.forbidden,
+      });
+      expect(await timeEntriesOf(workspaceId, actor.userId)).toEqual(rows);
+    },
+  );
+});
+
 describe("aislamiento entre workspaces en continuar, duplicar y descartar", () => {
   it("un actor de otro workspace recibe not_found al continuar y duplicar, y el descarte no borra", async () => {
     const other = await seedWorkspace(buenosAires);

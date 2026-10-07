@@ -436,8 +436,9 @@ describe("audit log de la edición de horas", () => {
 
 describe("audit log de la entrada manual", () => {
   it("deja un registro propio con la descripción y los dos instantes", async () => {
+    const id = randomUUID();
     const result = await createManualEntry(actor, workspace, {
-      id: randomUUID(),
+      id,
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -451,7 +452,8 @@ describe("audit log de la entrada manual", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].action).toBe("timeEntry.createManual");
     expect(rows[0].entity).toBe("time_entry");
-    expect(rows[0].entityId).toBe(result.created.id);
+    expect(result.created.id).toBe(id);
+    expect(rows[0].entityId).toBe(id);
     expect(rows[0].workspaceId).toBe(workspaceId);
     expect(rows[0].actorId).toBe(actor.userId);
     expect(rows[0].previousValue).toBeNull();
@@ -464,6 +466,28 @@ describe("audit log de la entrada manual", () => {
       startedAt: "2026-10-02T11:00:00.000Z",
       endedAt: "2026-10-02T13:30:00.000Z",
     });
+  });
+
+  it("el reintento de un alta ya aplicada no deja registro (ADR 0007)", async () => {
+    const values = {
+      id: randomUUID(),
+      projectId: null,
+      taskId: null,
+      tagIds: [],
+      description: "reunión",
+      date: "2026-10-02",
+      start: "08:00",
+      end: "10:30",
+    };
+    await createManualEntry(actor, workspace, values);
+    const before = await auditFor("time_entry");
+
+    await createManualEntry(actor, workspace, values);
+
+    expect(await auditFor("time_entry")).toEqual(before);
+    expect((await auditFor("time_entry", values.id)).map((row) => row.action)).toEqual([
+      "timeEntry.createManual",
+    ]);
   });
 
   it("no escribe nada cuando la entrada se rechaza", async () => {
