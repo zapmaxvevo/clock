@@ -539,7 +539,8 @@ export async function startTimer(
 ): Promise<StartTimerResult> {
   return startEntryOnce(actor, workspace, input.id, async (tx) => {
     const pair = pairOf(input);
-    // Antes de cerrar el timer abierto: un rechazo no lo cierra.
+    // Las reglas antes de escribir: un id ajeno o un timer abierto bloqueado
+    // por otra conexión no cambian la respuesta.
     const project = await assertAssignable(tx, actor, NO_PROJECT, pair);
     await assertTaggable(tx, actor, input.tagIds);
     const opened = await closeAndOpen(tx, actor, {
@@ -583,9 +584,8 @@ export async function continueEntry(
   return startEntryOnce(actor, workspace, input.id, async (tx) => {
     const source = await readSourceEntry(tx, actor, input.sourceId);
     const fields = continuedFields(source);
-    // Antes de cerrar el timer abierto: con un proyecto o una etiqueta que ya
-    // no están disponibles no se crea nada y el timer sigue corriendo (§4.4,
-    // D-3).
+    // Las reglas antes de escribir: un id ajeno o un timer abierto bloqueado
+    // por otra conexión no cambian la respuesta (§4.4, D-3).
     await assertAssignable(tx, actor, NO_PROJECT, fields);
     await assertTaggable(tx, actor, fields.tagIds);
     const opened = await closeAndOpen(tx, actor, { id: input.id, fields });

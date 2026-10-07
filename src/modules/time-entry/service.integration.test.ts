@@ -8459,6 +8459,67 @@ describe("continuar y duplicar con etiquetas (criterio 7 del 11b: TT-57, TT-58, 
   });
 });
 
+describe("las altas validan las etiquetas antes de escribir (criterio 7 del 11b, D-3)", () => {
+  const ws = workspaceOf(buenosAires);
+
+  /** Las tres altas con una etiqueta archivada y sin proyecto: «Iniciar» la pide, las otras la copian. */
+  async function archivedCreations() {
+    const old = await seedTag({ workspaceId, name: "Vieja", archived: true });
+    const source = await seedTaggedEntry([old.id]);
+    return {
+      startTimer: (id: string) =>
+        startTimer(actor, ws, {
+          id,
+          description: "",
+          projectId: null,
+          taskId: null,
+          tagIds: [old.id],
+        }),
+      continueEntry: (id: string) =>
+        continueEntry(actor, ws, { id, sourceId: source.id }),
+      duplicateEntry: (id: string) =>
+        duplicateEntry(actor, ws, { id, sourceId: source.id }),
+    };
+  }
+
+  it.each(["startTimer", "continueEntry", "duplicateEntry"] as const)(
+    "%s con el id de una entrada de otro miembro responde TT-78, no forbidden, y no escribe",
+    async (name) => {
+      const create = (await archivedCreations())[name];
+      const previous = await seedRunning();
+      const foreign = await seedTimeEntry({
+        workspaceId,
+        userId: await seedMember(workspaceId, "member"),
+        startedAt: "2026-10-02T09:00:00Z",
+        endedAt: "2026-10-02T10:00:00Z",
+      });
+      const rows = await allTimeEntries();
+      const tags = await allEntryTags();
+
+      await expect(create(foreign.id)).rejects.toMatchObject(tt78);
+      expect(await allTimeEntries()).toEqual(rows);
+      expect(await allEntryTags()).toEqual(tags);
+      expect(await auditFor("time_entry")).toEqual([]);
+      expect((await timeEntryById(previous.id))?.endedAt).toBeNull();
+    },
+  );
+
+  it.each(["startTimer", "continueEntry"] as const)(
+    "%s responde TT-78 sin esperar el bloqueo del timer abierto",
+    async (name) => {
+      const create = (await archivedCreations())[name];
+      const previous = await seedRunning();
+      const rows = await allTimeEntries();
+
+      const outcome = await outcomeWhileLocked(previous.id, () => create(randomUUID()));
+
+      expect(outcome).toMatchObject(tt78);
+      expect(await allTimeEntries()).toEqual(rows);
+      expect((await timeEntryById(previous.id))?.endedAt).toBeNull();
+    },
+  );
+});
+
 describe("updateEntry con tags (criterio 8 del 11b: TT-27, TT-54, PR-47, PR-68)", () => {
   const ws = workspaceOf(buenosAires);
   const now = new Date("2026-10-02T15:00:00Z");
