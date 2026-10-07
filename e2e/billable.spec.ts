@@ -21,6 +21,7 @@ import {
   recordActions,
   withServerAction,
 } from "./network";
+import { nameField, openProjects, saveButton } from "./projects-page";
 import { expect, test } from "./session";
 import {
   addManualEntry,
@@ -63,8 +64,6 @@ const NO_SELECTION = "Proyecto";
 const BILLABLE_BY_DEFAULT_HINT =
   "Las entradas nuevas con este proyecto arrancan facturables.";
 
-const PROJECTS_PATH = "/proyectos";
-
 /** TT-14, H-7: el control de `scope` presionado o no, por su `aria-pressed`. */
 async function expectBillable(scope: Locator, billable: boolean): Promise<void> {
   await expect(billableToggle(scope)).toHaveAttribute("aria-pressed", String(billable));
@@ -76,12 +75,11 @@ async function expectBillable(scope: Locator, billable: boolean): Promise<void> 
  * vuelta en su botón y el proyecto en «Sin cliente».
  */
 async function createBillableProject(page: Page, name: string): Promise<void> {
-  await page.goto(PROJECTS_PATH);
-  await expect(page.getByRole("heading", { level: 1, name: "Proyectos" })).toBeVisible();
+  await openProjects(page);
   const trigger = page.getByRole("button", { name: "Nuevo proyecto", exact: true });
   await trigger.click();
   const dialog = page.getByRole("dialog", { name: "Nuevo proyecto" });
-  await dialog.getByRole("textbox", { name: "Nombre", exact: true }).fill(name);
+  await nameField(dialog).fill(name);
 
   // H-8: sin marcar, con la ayuda asociada.
   const billableByDefault = dialog.getByRole("checkbox", {
@@ -92,9 +90,7 @@ async function createBillableProject(page: Page, name: string): Promise<void> {
   await expect(billableByDefault).toHaveAccessibleDescription(BILLABLE_BY_DEFAULT_HINT);
   await billableByDefault.check();
 
-  await withServerAction(page, () =>
-    dialog.getByRole("button", { name: "Guardar", exact: true }).click(),
-  );
+  await withServerAction(page, () => saveButton(dialog).click());
   await expect(dialog).toBeHidden();
   await expect(trigger).toBeFocused();
   await expect(

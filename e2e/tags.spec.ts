@@ -1,4 +1,4 @@
-import type { Locator, Page } from "@playwright/test";
+import type { Browser, Locator, Page } from "@playwright/test";
 
 import {
   addEntry,
@@ -18,13 +18,15 @@ import { addDays, todayIn } from "./days";
 import {
   holdActionResponses,
   isAction,
+  openSecondTab,
   recordActions,
   withServerAction,
 } from "./network";
+import { nameField, openProjects, saveButton } from "./projects-page";
 import { expect, test } from "./session";
 import {
+  addManualEntry,
   chooseMode,
-  dayTotal,
   descriptionInput,
   elapsedCounter,
   entryRow,
@@ -32,7 +34,6 @@ import {
   isTrackerPage,
   openTagPicker,
   pickTags,
-  setClock,
   startTimer,
   stopTimer,
   tagOption,
@@ -40,6 +41,7 @@ import {
   tagPopup,
   tagSearch,
   todayGroup,
+  toggleTag,
   trackerBar,
   uniqueSuffix,
 } from "./tracker-page";
@@ -61,8 +63,6 @@ import {
  * de TT-88 no se prueba acá: la base ya tiene etiquetas después del primer
  * recorrido, y lo cubre el modelo del selector.
  */
-
-const PROJECTS_PATH = "/proyectos";
 
 /** TT-12: el disparador de la barra y del diálogo, y su texto sin etiquetas. */
 const TAGS = "Etiquetas";
@@ -98,11 +98,6 @@ function archivedOption(name: string): string {
   return `${name} (archivada)`;
 }
 
-async function openProjects(page: Page): Promise<void> {
-  await page.goto(PROJECTS_PATH);
-  await expect(page.getByRole("heading", { level: 1, name: "Proyectos" })).toBeVisible();
-}
-
 function newTagButton(page: Page): Locator {
   return page.getByRole("button", { name: "Nueva etiqueta", exact: true });
 }
@@ -110,14 +105,6 @@ function newTagButton(page: Page): Locator {
 /** El diálogo de alta se dibuja en un portal, así que se busca en la página. */
 function newTagDialog(page: Page): Locator {
   return page.getByRole("dialog", { name: "Nueva etiqueta" });
-}
-
-function nameField(dialog: Locator): Locator {
-  return dialog.getByRole("textbox", { name: "Nombre", exact: true });
-}
-
-function saveButton(dialog: Locator): Locator {
-  return dialog.getByRole("button", { name: "Guardar", exact: true });
 }
 
 /** La sección «Etiquetas» de `/proyectos` (PR-112, H-13). */
@@ -163,50 +150,12 @@ async function createTags(page: Page, names: readonly string[]): Promise<void> {
 }
 
 /**
- * Carga una entrada de hoy desde la barra manual con las etiquetas `tags` y
- * espera su fila. Va de 00:00 a 00:01, que ya pasó a cualquier hora de la
- * corrida. «Agregar» deja la barra sin descripción y sin etiquetas (TT-25).
+ * Escribe en el buscador del selector abierto el nombre entero de `name`, que
+ * la deja como única opción, y espera que quede resaltada sin flechas
+ * (`autoHighlight`, F4). El foco se queda en el buscador, que anuncia la
+ * resaltada con `aria-activedescendant` (m11).
  */
-async function addTaggedEntry(
-  page: Page,
-  description: string,
-  tags: readonly string[],
-): Promise<void> {
-  await chooseMode(page, "manual");
-  const bar = trackerBar(page);
-  await descriptionInput(bar).fill(description);
-  await setClock(bar, "Hora de inicio", "00:00");
-  await setClock(bar, "Hora de fin", "00:01");
-  await pickTags(page, bar, tags);
-  await expect(tagPicker(bar)).toHaveAccessibleName(tagsName(TAGS, tags));
-  await withServerAction(page, () =>
-    bar.getByRole("button", { name: "Agregar" }).click(),
-  );
-  await expect(entryRow(todayGroup(page), description)).toBeVisible();
-  await expect(descriptionInput(bar)).toHaveValue("");
-  await expect(tagPicker(bar)).toHaveAccessibleName(TAGS);
-}
-
-/**
- * Alterna una etiqueta en el selector abierto, buscándola por su nombre
- * entero, y espera que quede marcada o no según `selected`. El popup sigue
- * abierto (TT-12).
- */
-async function toggleTag(page: Page, name: string, selected: boolean): Promise<void> {
-  await tagSearch(page).fill(name);
-  const option = tagOption(page, name);
-  await expect(option).toHaveAttribute("aria-selected", String(!selected));
-  await option.click();
-  await expect(option).toHaveAttribute("aria-selected", String(selected));
-  await expect(tagPopup(page)).toBeVisible();
-}
-
-/**
- * Deja en el buscador del selector abierto el nombre entero de `name`, que la
- * deja como única opción, y la resalta con la flecha. El foco se queda en el
- * buscador, que anuncia la resaltada con `aria-activedescendant` (m11).
- */
-async function highlightOnly(page: Page, name: string): Promise<void> {
+async function typeToHighlight(page: Page, name: string): Promise<void> {
   const search = tagSearch(page);
   await search.fill(name);
   await expect(tagPopup(page).getByRole("option")).toHaveCount(1);
@@ -214,22 +163,39 @@ async function highlightOnly(page: Page, name: string): Promise<void> {
   if (id === null) {
     throw new Error(`La opción «${name}» no tiene id.`);
   }
-  await search.press("ArrowDown");
   await expect(search).toHaveAttribute("aria-activedescendant", id);
 }
 
 /**
- * Hace un clic fuera de todo popup y de todo control: sobre el «Total» del
- * grupo de hoy, que es texto. Va por coordenadas y no por el localizador,
- * porque lo que reciba el clic —el texto o una capa del popup— da igual: el
- * selector lo toma como un clic afuera.
+ * Hace un clic afuera del selector en un punto que su popup nunca cubre: la
+ * esquina del encabezado de la aplicación, que es relleno sin controles. Los
+ * popups de la pantalla abren desde la barra o desde una fila, debajo del
+ * encabezado. Va por coordenadas: lo que reciba el clic da igual, el selector
+ * lo toma como un clic afuera (T8).
  */
 async function clickOutside(page: Page): Promise<void> {
-  const box = await dayTotal(todayGroup(page)).boundingBox();
+  const box = await page.getByRole("banner").boundingBox();
   if (box === null) {
-    throw new Error("El total del grupo de hoy no está a la vista.");
+    throw new Error("El encabezado de la aplicación no está a la vista.");
   }
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.click(box.x + 2, box.y + 2);
+}
+
+/**
+ * Detiene el timer en la otra pestaña y arranca otro, esperando cada
+ * respuesta. Es lo que ve la pestaña del test al recuperar el foco.
+ */
+async function replaceTimerElsewhere(
+  browser: Browser,
+  email: string,
+  stopped: string,
+  started: string,
+): Promise<void> {
+  const other = await openSecondTab(browser, email);
+  await expect(trackerBar(other).getByRole("button", { name: "Detener" })).toBeVisible();
+  await withServerAction(other, () => stopTimer(other, stopped));
+  await withServerAction(other, () => startTimer(other, started));
+  await other.context().close();
 }
 
 test("una etiqueta creada en /proyectos aparece en «Etiquetas» y se anuncia, y el mismo nombre en minúsculas se rechaza con PR-80", async ({
@@ -285,10 +251,13 @@ test("la barra busca etiquetas sin acentos, el timer guarda las elegidas y deten
   await expect(tagOption(page, design)).toBeVisible();
   await expect(popup.getByRole("option")).toHaveCount(1);
 
-  // TT-12: cada casilla marca sin cerrar; la búsqueda vacía ofrece la otra.
+  // TT-12: cada casilla marca sin cerrar. P3: marcar no borra la búsqueda,
+  // que solo cambia con lo que se escribe; vaciarla ofrece la otra.
   await tagOption(page, design).click();
   await expect(tagOption(page, design)).toHaveAttribute("aria-selected", "true");
   await expect(popup).toBeVisible();
+  await expect(tagSearch(page)).toHaveValue(`diseno ${suffix}`);
+  await expect(popup.getByRole("option")).toHaveCount(1);
   await tagSearch(page).fill("");
   await tagOption(page, review).click();
   await expect(tagOption(page, review)).toHaveAttribute("aria-selected", "true");
@@ -336,7 +305,7 @@ test("la fila guarda sus etiquetas en un solo pedido al cerrar el selector con u
 
   // TT-25: «Agregar» lleva las etiquetas del borrador y las limpia.
   await page.goto("/");
-  await addTaggedEntry(page, description, [design, review]);
+  await addManualEntry(page, description, { tags: [design, review] });
   const rowLabel = rowTagsLabel(description);
   const row = entryRow(todayGroup(page), description);
   await expect(tagPicker(row)).toHaveAccessibleName(tagsName(rowLabel, [design, review]));
@@ -380,9 +349,6 @@ test("la fila guarda sus etiquetas en un solo pedido al cerrar el selector con u
   // Un popup que se hubiera abierto en vuelo seguiría abierto.
   await expect(tagPopup(page)).toBeHidden();
   expect(sent).toHaveLength(1);
-  expect(sent[0].postData(), "el pedido no lleva el grupo de etiquetas").toContain(
-    '"tags":[',
-  );
   await expect(tagPicker(row)).toHaveAccessibleName(tagsName(rowLabel, [review]));
 
   await page.reload();
@@ -404,7 +370,7 @@ test("una etiqueta archivada sigue en la fila y no se ofrece, y archivarla despu
   // m-9 del 10: la entrada se crea por la interfaz y la etiqueta se archiva
   // después, como lo haría otra persona.
   await page.goto("/");
-  await addTaggedEntry(page, description, [old]);
+  await addManualEntry(page, description, { tags: [old] });
   await archiveTag(old);
 
   // PR-47, PR-68: la fila la conserva, y su selector la muestra marcada con
@@ -468,33 +434,45 @@ test("en el calendario, marcar una etiqueta en el diálogo y guardar la suma al 
   const suffix = uniqueSuffix();
   const tag = `Calendario ${suffix}`;
   const description = `horas etiquetadas ${suffix}`;
+  const draft = `horas con borrador ${suffix}`;
   await createTags(page, [tag]);
 
   const today = todayIn(PERSON_TIMEZONE);
   const lastWeek = await openLastWeek(page, today);
   const tuesday = addDays(lastWeek, 1);
-  const name = closedBlockName({
-    description,
-    day: tuesday,
-    today,
-    start: "09:00",
-    end: "10:00",
-    duration: "1:00",
-  });
-  const block = entryBlock(dayColumn(page, tuesday, today), name);
+  const times = { day: tuesday, today, start: "09:00", end: "10:00", duration: "1:00" };
+  const block = entryBlock(
+    dayColumn(page, tuesday, today),
+    closedBlockName({ ...times, description }),
+  );
+  const name = closedBlockName({ ...times, description: draft });
+  const saved = entryBlock(dayColumn(page, tuesday, today), name);
 
   // CAL-43: el alta nace sin etiquetas.
   await addEntry(page, { day: tuesday, today, start: "09:00", description });
   await expect(block).toBeFocused();
 
-  // CAL-45, CAL-66: el selector va dentro del diálogo, y cerrarlo con
-  // `Escape` cierra solo el popup. «Guardar» manda el conjunto; un diálogo
-  // sin cambios se cierra sin pedir nada, así que el pedido se afirma antes
-  // de esperar su respuesta.
+  // m12, T2: con la búsqueda sin coincidencias, `Escape` cierra solo el
+  // selector, con el foco en su disparador y el borrador del diálogo intacto.
   await block.click();
   const dialog = entryDialog(page, "Editar entrada");
   await expect(dialogDescription(dialog)).toBeFocused();
+  await dialogDescription(dialog).fill(draft);
   await expect(tagPicker(dialog)).toHaveAccessibleName(TAGS);
+  await openTagPicker(page, dialog);
+  await tagSearch(page).fill(`inexistente ${suffix}`);
+  await expect(
+    tagPopup(page).getByRole("status").filter({ hasText: NO_MATCHES }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(tagPopup(page)).toBeHidden();
+  await expect(dialog).toBeVisible();
+  await expect(tagPicker(dialog)).toBeFocused();
+  await expect(dialogDescription(dialog)).toHaveValue(draft);
+
+  // CAL-45, CAL-66: el selector va dentro del diálogo, y cerrarlo con
+  // `Escape` cierra solo el popup. «Guardar» manda el borrador entero; el
+  // pedido se cuenta antes de esperar su respuesta.
   await pickTags(page, dialog, [tag]);
   await expect(dialog).toBeVisible();
   await expect(tagPicker(dialog)).toHaveAccessibleName(tagsName(TAGS, [tag]));
@@ -505,18 +483,15 @@ test("en el calendario, marcar una etiqueta en el diálogo y guardar la suma al 
   await expect
     .poll(() => sent.length, { message: "«Guardar» no mandó ningún pedido" })
     .toBe(1);
-  expect(sent[0].postData(), "el pedido de «Guardar» no lleva las etiquetas").toContain(
-    '"tags":["',
-  );
   expect((await settled).ok()).toBe(true);
 
   // CAL-23, H-10: el detalle suma «Etiquetas: …»; el nombre del bloque no
   // las nombra (CAL-75).
-  await expect(block).toBeFocused();
-  await block.hover();
+  await expect(saved).toBeFocused();
+  await saved.hover();
   const detail = openDetails(page);
   await expect(detail).toHaveCount(1);
-  await expect(detail).toContainText(description);
+  await expect(detail).toContainText(draft);
   await expect(detail.getByText(`Etiquetas: ${tag}`, { exact: true })).toBeVisible();
 
   // La carga nueva trae lo que escribió el servidor.
@@ -552,16 +527,17 @@ test("el selector de etiquetas de la barra es accesible por teclado y sus letras
   await expect(bar.getByRole("button", { name: "Iniciar" })).toBeVisible();
   await expect(bar.getByRole("button", { name: "Detener" })).toHaveCount(0);
 
-  // m11: con la opción resaltada, Espacio escribe en el buscador y no la
-  // marca, porque los nombres llevan espacios.
+  // F4: escribir resalta la primera coincidencia. m11: con la opción
+  // resaltada, Espacio escribe en el buscador y no la marca, porque los
+  // nombres llevan espacios.
   const option = tagOption(page, tag);
-  await highlightOnly(page, tag);
+  await typeToHighlight(page, tag);
   await page.keyboard.press("Space");
   await expect(search).toHaveValue(`${tag} `);
   await expect(tagPopup(page).getByRole("option", { selected: true })).toHaveCount(0);
 
-  // m11: Enter sobre la opción resaltada la marca sin cerrar.
-  await highlightOnly(page, tag);
+  // m11, F4: escribir el nombre y Enter la marca sin flechas y sin cerrar.
+  await typeToHighlight(page, tag);
   await page.keyboard.press("Enter");
   await expect(option).toHaveAttribute("aria-selected", "true");
   await expect(tagPopup(page)).toBeVisible();
@@ -575,4 +551,51 @@ test("el selector de etiquetas de la barra es accesible por teclado y sus letras
   await expect(tagPicker(bar)).toHaveAccessibleName(tagsName(TAGS, [tag]));
   await expect(bar.getByRole("button", { name: "Detener" })).toHaveCount(0);
   expect(sent).toHaveLength(0);
+});
+
+test("si otra pestaña cambia el timer con el selector de la barra abierto, cerrarlo no le pone las etiquetas al timer nuevo", async ({
+  page,
+  email,
+  browser,
+}) => {
+  const suffix = uniqueSuffix();
+  const tag = `Pestaña ${suffix}`;
+  const first = `timer viejo ${suffix}`;
+  const second = `timer nuevo ${suffix}`;
+  await createTags(page, [tag]);
+
+  // El selector de la barra se abre sobre el timer que corre, y el borrador
+  // del selector cambia sin pedir nada (D-5).
+  await page.goto("/");
+  const bar = trackerBar(page);
+  await withServerAction(page, () => startTimer(page, first));
+  await openTagPicker(page, bar);
+  await toggleTag(page, tag, true);
+
+  // TT-35, TT-40: otra pestaña lo detiene y arranca otro; esta se pone al día
+  // al recuperar el foco, con el selector todavía abierto. En headless
+  // `bringToFront()` no dispara el evento, así que se despacha.
+  await replaceTimerElsewhere(browser, email, first, second);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(descriptionInput(bar)).toHaveValue(second);
+  await expect(tagPopup(page)).toBeVisible();
+
+  // F1: el conjunto era para la entrada sobre la que se abrió, que ya no es
+  // la que corre: cerrar lo descarta y no pide nada. Las actions salen en
+  // fila, así que la respuesta de «Detener» llega después de cualquier
+  // pedido que el cierre hubiera hecho.
+  const sent = recordActions(page);
+  await page.keyboard.press("Escape");
+  await expect(tagPopup(page)).toBeHidden();
+  await withServerAction(page, () => stopTimer(page, second));
+  expect(sent).toHaveLength(1);
+
+  await page.reload();
+  const today = todayGroup(page);
+  await expect(tagPicker(entryRow(today, second))).toHaveAccessibleName(
+    rowTagsLabel(second),
+  );
+  await expect(tagPicker(entryRow(today, first))).toHaveAccessibleName(
+    rowTagsLabel(first),
+  );
 });

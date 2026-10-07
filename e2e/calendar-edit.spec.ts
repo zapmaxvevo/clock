@@ -71,12 +71,13 @@ import {
  * recorrido, porque cada uno abre una sola sesión y el endpoint de sesión ya
  * responde 429 con la suite completa; la segunda pestaña es otra página del
  * mismo contexto. El último es del 11b: el `Escape` del selector de proyecto
- * dentro del diálogo (m13 de sus correcciones de arranque). Las entradas se crean desde la grilla y van en la semana
- * anterior, salvo el timer: ninguna hora queda en el futuro y la semana tiene
- * todos sus días. La grilla de una semana sin hoy abre con las 08:00 arriba
- * (CAL-14), así que las franjas de la mañana están a la vista. Toda persona
- * nueva tiene el lunes como primer día, `dd/MM/yyyy` y 24 h; lo esperado se
- * calcula con `days.ts`. Sin reloj emulado.
+ * dentro del diálogo (m13 de sus correcciones de arranque). Las entradas se
+ * crean desde la grilla y van en la semana anterior, salvo el timer: ninguna
+ * hora queda en el futuro y la semana tiene todos sus días. La grilla de una
+ * semana sin hoy abre con las 08:00 arriba (CAL-14), así que las franjas de la
+ * mañana están a la vista. Toda persona nueva tiene el lunes como primer día,
+ * `dd/MM/yyyy` y 24 h; lo esperado se calcula con `days.ts`. Sin reloj
+ * emulado.
  */
 
 /** El título de los avisos de «Guardar» (§5.4). */

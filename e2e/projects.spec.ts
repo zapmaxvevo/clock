@@ -9,6 +9,7 @@ import {
   openSecondTab,
   withServerAction,
 } from "./network";
+import { nameField, openProjects, PROJECTS_PATH, saveButton } from "./projects-page";
 import { expect, signIn, TEST_EMAIL_DOMAIN, test } from "./session";
 import { uniqueSuffix } from "./tracker-page";
 
@@ -23,8 +24,6 @@ import { uniqueSuffix } from "./tracker-page";
  * El vacío de PR-85 no se prueba acá: existe una sola vez en la vida de la
  * base, y lo cubren la integración y el test del componente.
  */
-
-const PROJECTS_PATH = "/proyectos";
 
 const NO_CLIENT = "Sin cliente";
 
@@ -47,11 +46,6 @@ function isProjectsPage(url: URL): boolean {
   return url.pathname === PROJECTS_PATH;
 }
 
-async function openProjects(page: Page): Promise<void> {
-  await page.goto(PROJECTS_PATH);
-  await expect(page.getByRole("heading", { level: 1, name: "Proyectos" })).toBeVisible();
-}
-
 function headerButton(page: Page, name: "Nuevo cliente" | "Nuevo proyecto"): Locator {
   return page.getByRole("button", { name, exact: true });
 }
@@ -62,14 +56,6 @@ function dialogNamed(
   name: "Nuevo cliente" | "Nuevo proyecto" | "Nueva tarea",
 ): Locator {
   return page.getByRole("dialog", { name });
-}
-
-function nameField(dialog: Locator): Locator {
-  return dialog.getByRole("textbox", { name: "Nombre", exact: true });
-}
-
-function saveButton(dialog: Locator): Locator {
-  return dialog.getByRole("button", { name: "Guardar", exact: true });
 }
 
 /** El aviso de un diálogo, que es un `alert` arriba de «Guardar». */
