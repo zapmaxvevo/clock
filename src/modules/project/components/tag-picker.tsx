@@ -116,13 +116,16 @@ export function TagPicker({
   /**
    * Solo lo que se escribe cambia la búsqueda: al marcar una opción con la
    * búsqueda escrita, la primitiva la vacía, y así se perdería el filtro con
-   * el que se busca la siguiente. Al abrir empieza vacía.
+   * el que se busca la siguiente. Ese vaciado se cancela, no solo se ignora:
+   * así la primitiva no deja pendiente el resaltado que lo acompaña, y la
+   * vuelve a vaciar al cerrar. Vaciarla al abrir queda de respaldo.
    */
   function changeSearch(
     next: string,
     details: ComboboxPrimitive.Root.ChangeEventDetails,
   ): void {
     if (details.reason === "input-clear" && details.isItemPress === true) {
+      details.cancel();
       return;
     }
     setSearch(next);
@@ -228,7 +231,7 @@ function OptionCheckbox() {
       data-slot="tag-option-checkbox"
       className="border-input group-data-[selected]/tag-option:border-primary group-data-[selected]/tag-option:bg-primary flex size-4 shrink-0 items-center justify-center rounded-[4px] border"
     >
-      <CheckIcon className="group-data-[selected]/tag-option:text-primary-foreground! hidden size-3.5 group-data-[selected]/tag-option:block" />
+      <CheckIcon className="group-data-[selected]/tag-option:stroke-primary-foreground hidden size-3.5 group-data-[selected]/tag-option:block" />
     </span>
   );
 }

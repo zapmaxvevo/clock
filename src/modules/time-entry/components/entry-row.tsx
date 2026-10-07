@@ -301,9 +301,11 @@ export function EntryRow({
         {/*
          * Las horas, la duración, «Continuar» y «Acciones» bajan juntos cuando
          * la fila no entra en una línea: partidos, quedarían en lugares
-         * distintos según lo que ocupen los selectores y el facturable.
+         * distintos según lo que ocupen los selectores y el facturable. En una
+         * pantalla angosta, con el editor de horas abierto, el bloque no entra
+         * ni solo: ahí se parte por dentro antes que desbordar la fila.
          */}
-        <div className="flex shrink-0 items-center gap-x-3">
+        <div className="flex max-w-full shrink-0 flex-wrap items-center gap-x-3 gap-y-1">
           {timesEditing !== null && timesDraft !== null ? (
             <EntryTimesEditor
               initial={timesEditing.initial}
