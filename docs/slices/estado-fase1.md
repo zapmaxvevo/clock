@@ -5,25 +5,26 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-07.
 
 ## Dónde estamos
 
-| Slice                                      | Estado       |
-| ------------------------------------------ | ------------ |
-| 1 — Timer sin proyecto                     | En `main`    |
-| 2 — Modo manual                            | En `main`    |
-| 2b — Reintento de «Iniciar»                | En `main`    |
-| 3 — Corregir horas y fecha                 | En `main`    |
-| 4 — Continuar, duplicar, descartar, atajos | En `main`    |
-| 5 — Semana y paginación                    | En `main`    |
-| 9 — Núcleo de proyectos                    | En `main`    |
-| 10 — Selector de proyecto y tarea          | En `main`    |
-| 7 — Perfil                                 | En `main`    |
-| 6 — Selección y acciones en masa           | En `main`    |
-| 7b — Perfil: nombre editable y tema        | En `main`    |
-| 8 — Calendario: lectura                    | En `main`    |
-| 8c — Calendario: escritura                 | En `main`    |
-| 8b — Calendario: arrastre                  | En `main`    |
-| 11a — Facturable                           | En `main`    |
-| 11b — Etiquetas                            | En `main`    |
-| 12–13                                      | Sin contrato |
+| Slice                                       | Estado                                |
+| ------------------------------------------- | ------------------------------------- |
+| 1 — Timer sin proyecto                      | En `main`                             |
+| 2 — Modo manual                             | En `main`                             |
+| 2b — Reintento de «Iniciar»                 | En `main`                             |
+| 3 — Corregir horas y fecha                  | En `main`                             |
+| 4 — Continuar, duplicar, descartar, atajos  | En `main`                             |
+| 5 — Semana y paginación                     | En `main`                             |
+| 9 — Núcleo de proyectos                     | En `main`                             |
+| 10 — Selector de proyecto y tarea           | En `main`                             |
+| 7 — Perfil                                  | En `main`                             |
+| 6 — Selección y acciones en masa            | En `main`                             |
+| 7b — Perfil: nombre editable y tema         | En `main`                             |
+| 8 — Calendario: lectura                     | En `main`                             |
+| 8c — Calendario: escritura                  | En `main`                             |
+| 8b — Calendario: arrastre                   | En `main`                             |
+| 11a — Facturable                            | En `main`                             |
+| 11b — Etiquetas                             | En `main`                             |
+| 12 — Edición masiva de proyecto y etiquetas | Contrato aprobado; ADR 0017 propuesto |
+| 13 — Timesheet semanal                      | Sin contrato                          |
 
 Los slices 1 a 10, 7b, 8c, 8b, 11a y 11b están en `main`. El 11b (etiquetas) se mergeó el
 2026-10-07 con lint, typecheck, 1020 de unidad, 1030 de integración, `next build` y 131 de 131
@@ -33,8 +34,15 @@ e2e en verde, dos corridas (**falta `git push origin main`**; el push anterior l
 
 ## Lo primero de la sesión siguiente
 
-0. **Lo que sigue**: los contratos de los slices **12 y 13** (ver `fase1-mapa.md`), y el slice
-   chico de «Reintentar» en el alta manual (ADR 0007, retirar TT-109), ya decidido.
+0. **Lo que sigue**: el **12** (edición masiva de proyecto, etiquetas y facturable), con el
+   contrato aprobado en dos rondas (`fase1-slice12-edicion-masiva.md`,
+   `correcciones-fase1-slice12.md` y `-ronda2.md`, cuyos r2-1 y r2-2 se aplican al implementar).
+   **Espera la aprobación del ADR 0017 por el usuario** (las referencias de una masiva se validan
+   una vez, después de las filas, el par antes que las etiquetas). Con eso, rama
+   `fase1/slice-12-masiva` desde `main` y el handshake arranca por el refactor de `updateEntry` en
+   un commit propio. Después, el contrato del **13** (necesita P-12 de `timesheet.md` y una
+   decisión de arquitectura sobre TS-32) y el slice chico de «Reintentar» en el alta manual (ADR
+   0007, retirar TT-109), ya decidido.
 1. Deuda chica sin slice:
    - un `DayCalendar` compartido entre `DateField` y `PeriodPicker`;
    - un `ClockRangeFields` común a `manual-bar.tsx`, `entry-times-editor.tsx` y el diálogo;
@@ -173,6 +181,6 @@ Lo que sigue siendo del usuario, porque necesita sus cuentas o su máquina:
 
 - Plan y orden: `fase1-mapa.md`.
 - Contratos: `fase1-slice<n>-*.md`; correcciones: `correcciones-fase1-slice<n>*.md`.
-- ADR: `docs/adr/0001`–`0016` (todos aceptados).
+- ADR: `docs/adr/0001`–`0016` aceptados; `0017` propuesto (slice 12).
 - Paridad: `docs/parity/` (time-tracker, perfil, proyectos, calendario,
   timesheet).
