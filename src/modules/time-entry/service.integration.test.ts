@@ -4475,6 +4475,36 @@ describe("getTrackerState: la lista en semanas (TT-47, TT-48, TT-52)", () => {
     },
   );
 
+  it("una semana que empieza en un día que no existe en la zona arranca en el primer día que sí existe", async () => {
+    // Samoa pasó del 29 al 31 de diciembre de 2011. Con viernes como primer día,
+    // la semana del lunes 2/1/2012 empieza el 30/12, que no existió.
+    const apia = workspaceOf("Pacific/Apia", 5);
+    // El 14/2/2012, el 31/12/2011 en UTC+14 y el 29/12/2011 en UTC-10, a las 10:00.
+    await seedClosedOf(actor.userId, "2012-02-13T20:00:00Z", "2012-02-13T21:00:00Z");
+    const first = await seedClosedOf(
+      actor.userId,
+      "2011-12-30T20:00:00Z",
+      "2011-12-30T21:00:00Z",
+    );
+    await seedClosedOf(actor.userId, "2011-12-29T20:00:00Z", "2011-12-29T21:00:00Z");
+
+    const state = await getTrackerState(
+      actor,
+      apia,
+      { from: "2012-01-02" },
+      new Date("2012-02-14T22:00:00Z"),
+    );
+
+    expect(state.windowFrom).toBe("2011-12-30");
+    expect(daysOf(state).map((day) => day.date)).toEqual(["2012-02-14", "2011-12-31"]);
+    expect(
+      daysOf(state)
+        .at(-1)
+        ?.entries.map((entry) => entry.id),
+    ).toEqual([first.id]);
+    expect(state.loadMoreFrom).toBe("2011-12-23");
+  });
+
   it("lastEntryId sigue siendo la cerrada más reciente con la ventana extendida por desde", async () => {
     await seedClosedOf(actor.userId, "2026-08-12T13:00:00Z", "2026-08-12T14:00:00Z");
     const latest = await seedClosedOf(

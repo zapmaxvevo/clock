@@ -310,7 +310,10 @@ export function weekStartKey(dayKey: string, weekStart: WeekStart): string {
 /**
  * El primer instante del día local: la primera vez que marca las 00:00. Si
  * las 00:00 no existieron por un adelanto de hora, `startOfLocalDay` del
- * mediodía, y si tampoco existió el mediodía, lanza en vez de devolver un
+ * mediodía. Un día que falta entero en la zona —Samoa pasó del 29 al 31 de
+ * diciembre de 2011— empieza donde empieza el primer día siguiente que existe:
+ * no tiene instantes propios, y como cota de una lectura no deja nada afuera.
+ * Si el mediodía falta en un día que sí existe, lanza en vez de devolver un
  * instante de otro día.
  */
 export function startOfDayKey(dayKey: string, timeZone: string): Date {
@@ -319,10 +322,20 @@ export function startOfDayKey(dayKey: string, timeZone: string): Date {
     return new Date(Math.min(...midnights));
   }
   const noon = instantFromLocal(dayKey, "12:00", timeZone);
-  if (noon === null) {
-    throw new RangeError(`El día ${dayKey} no tiene mediodía en ${timeZone}.`);
+  if (noon !== null) {
+    return startOfLocalDay(noon, timeZone);
   }
-  return startOfLocalDay(noon, timeZone);
+  if (isMissingDay(dayKey, timeZone)) {
+    return startOfDayKey(addDaysToKey(dayKey, 1), timeZone);
+  }
+  throw new RangeError(`El día ${dayKey} no tiene mediodía en ${timeZone}.`);
+}
+
+/** Si el día falta entero en la zona: ninguno de sus minutos marcó el reloj. */
+function isMissingDay(dayKey: string, timeZone: string): boolean {
+  return nonexistentMinutes(dayKey, timeZone).some(
+    (range) => range.from === 0 && range.to === MINUTES_PER_DAY,
+  );
 }
 
 /**

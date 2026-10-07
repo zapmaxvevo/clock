@@ -166,9 +166,13 @@ describe("startOfDayKey", () => {
     expect(dayKey(new Date(start.getTime() - 1), santiago)).toBe("2026-09-05");
   });
 
-  it("lanza en un día que no existe en la zona", () => {
-    // Samoa pasó del 29 al 31 de diciembre de 2011.
-    expect(() => startOfDayKey("2011-12-30", "Pacific/Apia")).toThrow(RangeError);
+  it("un día que no existe en la zona empieza con el primer día siguiente que existe", () => {
+    // Samoa pasó del 29 al 31 de diciembre de 2011: de las 23:59 del 29 en
+    // UTC-10 a las 00:00 del 31 en UTC+14.
+    const start = startOfDayKey("2011-12-30", "Pacific/Apia");
+    expect(start.toISOString()).toBe("2011-12-30T10:00:00.000Z");
+    expect(start).toEqual(startOfDayKey("2011-12-31", "Pacific/Apia"));
+    expect(dayKey(new Date(start.getTime() - 1), "Pacific/Apia")).toBe("2011-12-29");
   });
 
   it("es la 00:00 en un día cuyo adelanto de hora arranca a las 12:00", () => {
