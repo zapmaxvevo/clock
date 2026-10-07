@@ -458,6 +458,11 @@ test("los totales son los de la lista, la entrada de medianoche se parte en dos 
   await dialogButton(tuesdayDialog, "Cancelar").click();
   await expect(tuesdayDialog).toBeHidden();
   await expect(overlaps.nth(1)).toBeFocused();
+  // El puntero quedó donde estaba «Cancelar». El `Tab` de abajo desplaza la
+  // grilla hasta el jueves, y si su bloque queda debajo del puntero, el hover
+  // vuelve a abrir el detalle que `Esc` cierra. Lo que se prueba es el
+  // teclado: el puntero va a la esquina, fuera de la grilla.
+  await page.mouse.move(0, 0);
 
   // Criterio 14: `Tab` sigue en orden cronológico, al jueves, y con el foco
   // de teclado en el bloque aparece su detalle; `Esc` lo cierra.
