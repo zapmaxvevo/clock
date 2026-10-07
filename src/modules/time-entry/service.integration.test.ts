@@ -5904,6 +5904,8 @@ describe("bulkEditEntries: hora y fecha son la fila repetida (criterio 7)", () =
 
     expect(bulk).toEqual(single);
     if (example.rejects === undefined) {
+      // Un rechazo también difiere de la fila sembrada: tiene que haber instantes.
+      expect(bulk).toHaveProperty("startedAt");
       expect(bulk).not.toEqual({
         startedAt: startedAt.toISOString(),
         endedAt: new Date(example.endedAt).toISOString(),
@@ -7052,6 +7054,8 @@ describe("updateEntry: el trío es el de updateEntryTimes (criterio 3, ADR 0013)
 
     expect(dialog).toEqual(single);
     if (example.rejects === undefined) {
+      // Un rechazo también difiere de la fila sembrada: tiene que haber instantes.
+      expect(dialog).toHaveProperty("startedAt");
       expect(dialog).not.toEqual({
         startedAt: startedAt.toISOString(),
         endedAt: new Date(example.endedAt).toISOString(),
@@ -7167,6 +7171,8 @@ describe("updateEntry: el inicio del timer es el de updateRunningStart (criterio
 
     expect(dialog).toEqual(single);
     if (example.rejects === undefined) {
+      // Un rechazo también difiere de la fila sembrada: tiene que haber instantes.
+      expect(dialog).toHaveProperty("startedAt");
       expect(dialog).not.toEqual({ startedAt: stored.toISOString(), endedAt: null });
     } else {
       expect(dialog).toEqual({ code: "validation", message: example.rejects });
