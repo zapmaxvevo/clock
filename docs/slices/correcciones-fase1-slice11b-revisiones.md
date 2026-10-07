@@ -85,3 +85,19 @@ la barra junto al de duplicar (lo vio `parity-reviewer`). Deuda anotada en el es
 3. `parity-analyst` escribe §11 «Slice 11b» de `time-tracker.md` y §18 de `calendario.md`, con
    P2, P3 y m11.
 4. Corrida final completa (lint, typecheck, unidad, integración, build y e2e), commit y merge.
+
+## Segunda revisión de frontend
+
+Sobre `e088d65`: F1, F2, F3 (en lo decidido), F4, F5, P2 y P3 resueltos, sin bloqueantes ni
+mayores. El team-lead acepta los tres menores, con la corrección que el revisor probó en una
+copia; los hace `frontend-dev`.
+
+| Origen | Hallazgo                                                                                                                            | Corrección                                                                          |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| F2-1   | La opción marcada y resaltada pierde el tilde: el `**:text-accent-foreground` del ítem pinta los trazos del ícono                   | `stroke-primary-foreground` en la casilla, sin `!`.                                 |
+| F2-2   | El vaciado ignorado de P3 deja pendiente el resaltado de Base UI y cambia qué opción queda resaltada al reabrir                     | `details.cancel()` antes de ignorar; el `setSearch("")` al abrir queda de respaldo. |
+| F2-3   | A 390 px, con el editor de horas abierto, el bloque `shrink-0` de la fila desborda 86 px y deja «Continuar» y «⋮» fuera de pantalla | `max-w-full flex-wrap gap-y-1` en el bloque.                                        |
+
+Fuera del slice: `ProjectPicker` en la barra no tiene la guarda de destino de F1
+(`handleProjectChange`); el riesgo es menor porque el selector se cierra al elegir. Deuda anotada
+en el estado de la fase.
