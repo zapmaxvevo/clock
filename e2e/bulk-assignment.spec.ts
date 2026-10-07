@@ -7,6 +7,7 @@ import {
   openSecondTab,
   withServerAction,
 } from "./network";
+import { saveButton } from "./projects-page";
 import { expect, test } from "./session";
 import {
   addManualEntry,
@@ -14,11 +15,15 @@ import {
   bulkBillableGroup,
   bulkBillableOption,
   bulkButton,
+  bulkDescriptionField,
   bulkEditDialog,
   bulkRegion,
   bulkStatus,
   entryCheckbox,
   entryRow,
+  expectActive,
+  expectBillable,
+  expectInactive,
   isTrackerPage,
   keepButton,
   openBulkEdit,
@@ -29,11 +34,14 @@ import {
   projectPicker,
   projectPopup,
   projectSearch,
+  rowTagsLabel,
   tagModeGroup,
   tagModeOption,
   tagPicker,
   tagPopup,
   tagSearch,
+  tagsName,
+  taskOption,
   todayGroup,
   uniqueSuffix,
 } from "./tracker-page";
@@ -81,43 +89,6 @@ const NETWORK_FAILURE = "No se pudo guardar. Revisá la conexión y volvé a int
 /** TT-07 y TT-12: las búsquedas sin coincidencias. */
 const NO_PROJECT_MATCHES = "Ningún proyecto coincide con la búsqueda.";
 const NO_TAG_MATCHES = "Ninguna etiqueta coincide con la búsqueda.";
-
-/** La opción de una tarea y lo que muestra el disparador con ella (TT-06). */
-function taskOption(project: string, task: string): string {
-  return `${project}: ${task}`;
-}
-
-/**
- * El nombre del disparador de etiquetas de una fila: con etiquetas suma «: »
- * y sus nombres en orden alfabético (TT-49, H-1). Los nombres llegan ya en
- * ese orden.
- */
-function rowTagsName(description: string, names: readonly string[]): string {
-  const label = `Etiquetas de la entrada «${description}»`;
-  return names.length === 0 ? label : `${label}: ${names.join(", ")}`;
-}
-
-/** TT-14: el facturable de una fila, por el `aria-pressed` de su botón. */
-async function expectBillable(row: Locator, billable: boolean): Promise<void> {
-  await expect(billableToggle(row)).toHaveAttribute("aria-pressed", String(billable));
-}
-
-/** «Guardar» del diálogo. */
-function saveButton(dialog: Locator): Locator {
-  return dialog.getByRole("button", { name: "Guardar", exact: true });
-}
-
-/**
- * Inactivo por `aria-disabled`: el botón conserva el foco y no se envía
- * (§5.2 del 12, §5.4 del 6).
- */
-async function expectSaveInactive(dialog: Locator): Promise<void> {
-  await expect(saveButton(dialog)).toHaveAttribute("aria-disabled", "true");
-}
-
-async function expectSaveActive(dialog: Locator): Promise<void> {
-  await expect(saveButton(dialog)).not.toHaveAttribute("aria-disabled", "true");
-}
 
 /** El aviso de la edición, que vive en el diálogo mientras está abierto (TT-90). */
 function editNotice(dialog: Locator): Locator {
@@ -167,7 +138,7 @@ async function expectTaggedElsewhere(
   for (const description of descriptions) {
     await expect(
       tagPicker(entryRow(todayGroup(other), description)),
-    ).toHaveAccessibleName(rowTagsName(description, [tag]));
+    ).toHaveAccessibleName(tagsName(rowTagsLabel(description), [tag]));
   }
   await other.context().close();
 }
@@ -302,10 +273,10 @@ test("«Agregar» suma a las etiquetas de cada fila, «Reemplazar» deja las ele
       }
       const group = todayGroup(page);
       await expect(tagPicker(entryRow(group, tagged))).toHaveAccessibleName(
-        rowTagsName(tagged, taggedNames),
+        tagsName(rowTagsLabel(tagged), taggedNames),
       );
       await expect(tagPicker(entryRow(group, bare))).toHaveAccessibleName(
-        rowTagsName(bare, bareNames),
+        tagsName(rowTagsLabel(bare), bareNames),
       );
     }
   }
@@ -314,12 +285,12 @@ test("«Agregar» suma a las etiquetas de cada fila, «Reemplazar» deja las ele
   await selectToday(page, [tagged, bare]);
   let dialog = await openBulkEdit(page, "Editar 2 entradas");
   await expect(tagModeOption(dialog, "Agregar a las que tienen")).toBeChecked();
-  await expectSaveInactive(dialog);
+  await expectInactive(saveButton(dialog));
 
   // «Agregar» Y: cada fila suma Y a lo que tenía.
   await pickTags(page, dialog, [second]);
   await expect(tagPicker(dialog)).toHaveAccessibleName(`Etiquetas: ${second}`);
-  await expectSaveActive(dialog);
+  await expectActive(saveButton(dialog));
   await saveAndExpectEdited(page, dialog, 2);
   await expectTags([first, second], [second]);
 
@@ -340,7 +311,7 @@ test("«Agregar» suma a las etiquetas de cada fila, «Reemplazar» deja las ele
   await tagModeOption(dialog, "Reemplazar las que tienen").click();
   await expect(dialog.getByText(TAGS_CLEARED, { exact: true })).toBeVisible();
   await expect(tagModeGroup(dialog)).toHaveAccessibleDescription(TAGS_CLEARED);
-  await expectSaveActive(dialog);
+  await expectActive(saveButton(dialog));
   await saveAndExpectEdited(page, dialog, 2);
   await expectTags([], []);
 });
@@ -394,6 +365,52 @@ test("un proyecto archivado con el diálogo abierto frena el pedido entero con T
   }
 });
 
+test("a 1366×657, con el aviso de TT-77 a la vista, el título y «Cerrar» quedan dentro de la ventana y se llega a «Guardar» desplazando", async ({
+  page,
+}) => {
+  // F1 de las revisiones: la ventana de una notebook, con el diálogo en su
+  // alto mayor: un proyecto elegido con su ayuda, «Reemplazar» con la suya y
+  // el aviso del pedido rechazado.
+  await page.setViewportSize({ width: 1366, height: 657 });
+  const suffix = uniqueSuffix();
+  const archived = `Ventana baja ${suffix}`;
+  const first = `ventana uno ${suffix}`;
+  const second = `ventana dos ${suffix}`;
+  await seedProject({ name: archived });
+
+  await page.goto("/");
+  await addManualEntry(page, first);
+  await addManualEntry(page, second);
+  await selectToday(page, [first, second]);
+  const dialog = await openBulkEdit(page, "Editar 2 entradas");
+  await pickProject(page, dialog, archived, suffix);
+  await tagModeOption(dialog, "Reemplazar las que tienen").click();
+  await expect(dialog.getByText(BILLABLE_BY_PROJECT, { exact: true })).toBeVisible();
+  await expect(dialog.getByText(TAGS_CLEARED, { exact: true })).toBeVisible();
+
+  // Enter en «Descripción» guarda (§5.4 del 6) sin depender de que «Guardar»
+  // esté a la vista, que es lo que el recorrido mira después.
+  await archiveProject(archived);
+  await withServerAction(page, () => bulkDescriptionField(dialog).press("Enter"));
+  await expect(editNotice(dialog)).toContainText(PROJECT_UNAVAILABLE);
+
+  // El encabezado entero dentro de la ventana: el título dice qué se edita y
+  // «Cerrar» es la salida que no pide teclado.
+  await expect(
+    dialog.getByRole("heading", { name: "Editar 2 entradas", exact: true }),
+  ).toBeInViewport({ ratio: 1 });
+  await expect(
+    dialog.getByRole("button", { name: "Cerrar", exact: true }),
+  ).toBeInViewport({
+    ratio: 1,
+  });
+
+  // «Guardar» se alcanza desplazando lo que el diálogo deje desplazar.
+  const save = saveButton(dialog);
+  await save.scrollIntoViewIfNeeded();
+  await expect(save).toBeInViewport({ ratio: 1 });
+});
+
 test("«No cambiar» vuelve cada selector a «Sin cambios» con el foco en su disparador, y `Escape` sin coincidencias cierra solo el selector", async ({
   page,
 }) => {
@@ -410,17 +427,17 @@ test("«No cambiar» vuelve cada selector a «Sin cambios» con el foco en su di
   const keepTags = keepButton(dialog, "No cambiar las etiquetas");
   await expect(keepProject).toHaveCount(0);
   await expect(keepTags).toHaveCount(0);
-  await expectSaveInactive(dialog);
+  await expectInactive(saveButton(dialog));
 
   // §5.2: «No cambiar el proyecto» se va con la elección y el foco pasa al
   // disparador, que vuelve a «Sin cambios».
   await pickProject(page, dialog, project, suffix);
-  await expectSaveActive(dialog);
+  await expectActive(saveButton(dialog));
   await keepProject.click();
   await expect(keepProject).toHaveCount(0);
   await expect(projectPicker(dialog)).toHaveText(NO_CHANGE);
   await expect(projectPicker(dialog)).toBeFocused();
-  await expectSaveInactive(dialog);
+  await expectInactive(saveButton(dialog));
 
   // Con la lista vacía, `Escape` cierra solo el selector (m12 del 11b).
   await openProjectPicker(page, dialog);
@@ -437,13 +454,13 @@ test("«No cambiar» vuelve cada selector a «Sin cambios» con el foco en su di
   // «Reemplazar» ya es un cambio; «No cambiar las etiquetas» vuelve a
   // «Agregar» sin etiquetas, con el foco en su disparador.
   await tagModeOption(dialog, "Reemplazar las que tienen").click();
-  await expectSaveActive(dialog);
+  await expectActive(saveButton(dialog));
   await keepTags.click();
   await expect(keepTags).toHaveCount(0);
   await expect(tagModeOption(dialog, "Agregar a las que tienen")).toBeChecked();
   await expect(tagPicker(dialog)).toHaveAccessibleName("Etiquetas");
   await expect(tagPicker(dialog)).toBeFocused();
-  await expectSaveInactive(dialog);
+  await expectInactive(saveButton(dialog));
 
   await openTagPicker(page, dialog);
   await tagSearch(page).fill(`inexistente ${suffix}`);
@@ -519,7 +536,7 @@ test("«Agregar» una etiqueta con la respuesta perdida se reintenta y termina b
     for (const description of [first, second]) {
       await expect(
         tagPicker(entryRow(todayGroup(page), description)),
-      ).toHaveAccessibleName(rowTagsName(description, [tag]));
+      ).toHaveAccessibleName(tagsName(rowTagsLabel(description), [tag]));
     }
   }
 });

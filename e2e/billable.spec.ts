@@ -1,4 +1,4 @@
-import type { Locator, Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
 import {
   addEntry,
@@ -30,6 +30,9 @@ import {
   continueButton,
   descriptionInput,
   entryRow,
+  expectActive,
+  expectBillable,
+  expectInactive,
   isTrackerPage,
   pickProject,
   projectPicker,
@@ -63,11 +66,6 @@ const NO_SELECTION = "Proyecto";
 /** PR-21, H-8: la ayuda de la casilla del alta de proyecto. */
 const BILLABLE_BY_DEFAULT_HINT =
   "Las entradas nuevas con este proyecto arrancan facturables.";
-
-/** TT-14, H-7: el control de `scope` presionado o no, por su `aria-pressed`. */
-async function expectBillable(scope: Locator, billable: boolean): Promise<void> {
-  await expect(billableToggle(scope)).toHaveAttribute("aria-pressed", String(billable));
-}
 
 /**
  * Crea un proyecto sin cliente desde «Nuevo proyecto», con «Facturable por
@@ -172,14 +170,14 @@ test("con el timer corriendo, elegir un proyecto facturable lo vuelve facturable
   await toggle.click();
   await requested;
   await expectBillable(bar, false);
-  await expect(toggle).toHaveAttribute("aria-disabled", "true");
+  await expectInactive(toggle);
   await expect(toggle).toBeFocused();
   await page.keyboard.press("Space");
   await expectBillable(bar, false);
   const settled = page.waitForResponse((response) => isAction(response.request()));
   release();
   await settled;
-  await expect(toggle).not.toHaveAttribute("aria-disabled", "true");
+  await expectActive(toggle);
   expect(sent).toHaveLength(1);
   await page.reload();
   await expect(bar.getByRole("button", { name: "Detener" })).toBeVisible();

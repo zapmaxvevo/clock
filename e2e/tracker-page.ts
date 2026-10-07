@@ -235,6 +235,11 @@ export function projectPopup(page: Page): Locator {
   return page.getByRole("dialog").filter({ has: projectSearch(page) });
 }
 
+/** La opción de una tarea y lo que muestra un disparador con ella (TT-06). */
+export function taskOption(project: string, task: string): string {
+  return `${project}: ${task}`;
+}
+
 /**
  * Una opción del selector abierto: el nombre del proyecto, «Proyecto: Tarea»
  * o «Sin proyecto».
@@ -321,6 +326,11 @@ export function billableToggle(scope: Locator): Locator {
   return scope.getByRole("button", { name: /^(Facturable|Entrada «.*» facturable)$/ });
 }
 
+/** TT-14, H-7: el control de `scope` presionado o no, por su `aria-pressed`. */
+export async function expectBillable(scope: Locator, billable: boolean): Promise<void> {
+  await expect(billableToggle(scope)).toHaveAttribute("aria-pressed", String(billable));
+}
+
 /** El nombre accesible del buscador del selector de etiquetas (TT-12, §5.8). */
 const TAG_SEARCH = "Buscar etiqueta";
 
@@ -334,6 +344,20 @@ export function tagPicker(scope: Locator): Locator {
   return scope.getByRole("combobox", {
     name: /^Etiquetas( de la entrada «.*»)?(: .+)?$/,
   });
+}
+
+/** El nombre del disparador de etiquetas de una fila (TT-49, `entryTagsLabel`). */
+export function rowTagsLabel(description: string): string {
+  return `Etiquetas de la entrada «${description}»`;
+}
+
+/**
+ * El nombre accesible de un disparador de etiquetas: el rótulo y, con
+ * etiquetas, «: » y sus nombres en orden alfabético, separados por coma
+ * (TT-12, H-1). Los nombres llegan ya en ese orden.
+ */
+export function tagsName(label: string, names: readonly string[]): string {
+  return names.length === 0 ? label : `${label}: ${names.join(", ")}`;
 }
 
 /** El buscador del selector de etiquetas abierto. El popup va en un portal. */
@@ -559,6 +583,20 @@ export async function chooseDay(
   await calendar.getByRole("button", { name: calendarDayName(target) }).click();
   await expect(calendar).toBeHidden();
   await expect(dateButton(scope)).toBeFocused();
+}
+
+/**
+ * Inactivo por `aria-disabled` y nunca por `disabled`: un control con foco
+ * que pasa a `disabled` lo pierde a `body` (§5.4 del 6).
+ */
+export async function expectInactive(control: Locator): Promise<void> {
+  await expect(control).toHaveAttribute("aria-disabled", "true");
+  await expect(control).not.toHaveAttribute("disabled");
+}
+
+export async function expectActive(control: Locator): Promise<void> {
+  await expect(control).not.toHaveAttribute("aria-disabled", "true");
+  await expect(control).not.toHaveAttribute("disabled");
 }
 
 /**

@@ -39,6 +39,8 @@ import {
   entryCheckbox,
   entryRow,
   escapeRegExp,
+  expectActive,
+  expectInactive,
   openBulkEdit,
   pickDate,
   setClock,
@@ -136,20 +138,6 @@ function dialogButton(dialog: Locator, name: string): Locator {
 /** El aviso de falla de una operación en masa, por su título (TT-90). */
 function bulkNotice(page: Page, title: string): Locator {
   return page.getByRole("alert").filter({ hasText: title });
-}
-
-/**
- * Inactivo por `aria-disabled` y nunca por `disabled`: un control con foco
- * que pasa a `disabled` lo pierde a `body` (§5.4).
- */
-async function expectInactive(control: Locator): Promise<void> {
-  await expect(control).toHaveAttribute("aria-disabled", "true");
-  await expect(control).not.toHaveAttribute("disabled");
-}
-
-async function expectActive(control: Locator): Promise<void> {
-  await expect(control).not.toHaveAttribute("aria-disabled", "true");
-  await expect(control).not.toHaveAttribute("disabled");
 }
 
 /** TT-55: la fila que ocupa una operación en vuelo. */
