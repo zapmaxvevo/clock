@@ -1,6 +1,7 @@
 "use client";
 
-import { SearchIcon, TagIcon } from "lucide-react";
+import type { Combobox as ComboboxPrimitive } from "@base-ui/react";
+import { CheckIcon, SearchIcon, TagIcon } from "lucide-react";
 import Link from "next/link";
 import { useState, type Ref } from "react";
 
@@ -85,7 +86,11 @@ export function TagPicker({
     return names.length === 0 ? null : (
       <span className="flex min-w-0 items-center gap-1.5 text-sm">
         <TagIcon aria-hidden="true" className="text-muted-foreground size-4 shrink-0" />
-        <span className="truncate">{names.join(", ")}</span>
+        {/* El ícono no le dice al lector de pantalla qué son los nombres. */}
+        <span className="truncate">
+          <span className="sr-only">{`${projectLabels.tags}: `}</span>
+          {names.join(", ")}
+        </span>
       </span>
     );
   }
@@ -96,6 +101,7 @@ export function TagPicker({
     if (next) {
       if (!pending) {
         setDraft(value);
+        setSearch("");
         onOpenChange?.(true);
       }
       return;
@@ -111,6 +117,21 @@ export function TagPicker({
     }
   }
 
+  /**
+   * Solo lo que se escribe cambia la búsqueda: al marcar una opción con la
+   * búsqueda escrita, la primitiva la vacía, y así se perdería el filtro con
+   * el que se busca la siguiente. Al abrir empieza vacía.
+   */
+  function changeSearch(
+    next: string,
+    details: ComboboxPrimitive.Root.ChangeEventDetails,
+  ): void {
+    if (details.reason === "input-clear" && details.isItemPress === true) {
+      return;
+    }
+    setSearch(next);
+  }
+
   return (
     <Combobox<TagRef, true>
       multiple
@@ -121,7 +142,9 @@ export function TagPicker({
       isItemEqualToValue={(item, selected) => sameId(item.id, selected.id)}
       itemToStringLabel={(tag) => tag.name}
       inputValue={search}
-      onInputValueChange={setSearch}
+      onInputValueChange={changeSearch}
+      // Enter con lo escrito marca la primera opción, sin pasar por las flechas.
+      autoHighlight
       open={draft !== null}
       onOpenChange={changeOpen}
     >
@@ -134,7 +157,9 @@ export function TagPicker({
         onKeyDown={preventTypeahead}
         className={cn(
           buttonVariants({ variant: "ghost", size: "sm" }),
-          "max-w-64 min-w-0 justify-start font-normal aria-disabled:opacity-60",
+          // Un tope menor que el del proyecto: los nombres se recortan con
+          // elipsis y la fila no se parte (H-1); el nombre accesible los dice.
+          "max-w-40 min-w-0 justify-start font-normal aria-disabled:opacity-60",
         )}
       >
         {names.length === 0 ? (
@@ -166,7 +191,12 @@ export function TagPicker({
           la lista vacía la primitiva deja pasar `Escape` y cierra también el
           diálogo del calendario que contiene al selector.
         */}
-        <ComboboxEmpty>
+        {/*
+          Visible aunque esté vacía: una región en vivo que aparece junto con su
+          texto no se anuncia. Sin relleno propio, para no ocupar lugar sobre
+          la lista; el relleno lo pone el mensaje.
+        */}
+        <ComboboxEmpty className="flex py-0">
           {view.empty !== null && <EmptyMessage empty={view.empty} />}
         </ComboboxEmpty>
         <ComboboxList>
@@ -174,8 +204,14 @@ export function TagPicker({
             <ComboboxItem
               key={option.tag.id}
               value={option.tag}
-              className={option.archived ? "text-muted-foreground" : undefined}
+              className={cn(
+                // La casilla reemplaza a la marca de la derecha de la primitiva,
+                // que se monta solo con la opción marcada y es su último hijo.
+                "group/tag-option pr-1.5 [&>[aria-hidden=true]:last-child]:hidden",
+                option.archived && "text-muted-foreground",
+              )}
             >
+              <OptionCheckbox />
               <span className="truncate">{option.label}</span>
             </ComboboxItem>
           ))}
@@ -185,12 +221,28 @@ export function TagPicker({
   );
 }
 
+/**
+ * TT-12: las opciones son casillas de selección múltiple. Es solo lo que se ve:
+ * la marca la dice `aria-selected`, que la primitiva pone en la opción.
+ */
+function OptionCheckbox() {
+  return (
+    <span
+      aria-hidden="true"
+      data-slot="tag-option-checkbox"
+      className="border-input group-data-[selected]/tag-option:border-primary group-data-[selected]/tag-option:bg-primary flex size-4 shrink-0 items-center justify-center rounded-[4px] border"
+    >
+      <CheckIcon className="group-data-[selected]/tag-option:text-primary-foreground! hidden size-3.5 group-data-[selected]/tag-option:block" />
+    </span>
+  );
+}
+
 function EmptyMessage({ empty }: { readonly empty: TagPickerEmpty }) {
   if (empty.kind === "noMatches") {
-    return <p>{projectLabels.tagPickerNoMatches}</p>;
+    return <p className="py-2">{projectLabels.tagPickerNoMatches}</p>;
   }
   return (
-    <div className="flex flex-col items-center gap-1">
+    <div className="flex flex-col items-center gap-1 py-2">
       <p>{projectLabels.tagPickerNoTags}</p>
       {empty.canCreateTag && (
         <Link

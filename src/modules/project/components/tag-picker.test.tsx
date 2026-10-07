@@ -104,7 +104,13 @@ describe("TagPicker", () => {
 
     expect(markup).not.toContain('role="combobox"');
     expect(markup).not.toContain("<button");
-    expect(textOf(markup)).toBe("Diseño, Urgente");
+    expect(textOf(markup)).toBe("Etiquetas: Diseño, Urgente");
+  });
+
+  it("con `readOnly`, «Etiquetas: » solo para el lector de pantalla: a la vista, los nombres (F5)", () => {
+    const markup = render([design], { readOnly: true });
+
+    expect(markup).toContain('<span class="sr-only">Etiquetas: </span>Diseño');
   });
 
   it("con `readOnly` y sin etiquetas no dibuja nada (H-6)", () => {
