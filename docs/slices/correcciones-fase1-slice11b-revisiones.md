@@ -48,6 +48,15 @@ La frase del criterio 7 («el mutante lo deja cerrado») queda corregida por est
 | T8              | El clic afuera depende de hacia dónde abre el popup                                                                           | Aceptado. `e2e-tester`: clic en un punto que el popup nunca cubre.                                                                                                                                                                                                                                                   |
 | S1              | `npm audit --audit-level=high` con 9 altas de desarrollo (`braces` vía `shadcn` y `eslint-config-next`); producción sin altas | Fuera del slice; el CI de seguridad es del usuario. Ya estaba registrado.                                                                                                                                                                                                                                            |
 
+## F3 / P1: lo que midió `frontend-dev`
+
+Con el camino 1 aplicado, la fila (894 px de contenedor a 1400 y a 1024) y la barra (787 px)
+seguían en dos líneas: la base de 256 px de la descripción no deja lugar para un proyecto de
+~190 px y etiquetas de 160. Decisión del team-lead: la descripción pasa a `basis-28` (112 px)
+en la fila y la barra, sigue con `flex-1` y elipsis, y la fila usa `gap-x-3`. TT-49 pide leer la
+fila en una línea, y recortar la descripción es preferible a partir la fila. Lo que siga
+partiendo (un proyecto al tope de 256 px, y por debajo de ~800 px) va a §8 con las medidas.
+
 Heredado, sin slice: si falla continuar y después falla duplicar, el aviso de continuar sigue en
 la barra junto al de duplicar (lo vio `parity-reviewer`). Deuda anotada en el estado de la fase.
 
