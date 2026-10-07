@@ -96,7 +96,7 @@ export function TimerBar({
     <div
       aria-busy={savingStart}
       className={cn(
-        "flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2",
+        "flex flex-wrap items-center gap-x-2 gap-y-3 rounded-lg border px-3 py-2",
         savingStart && "opacity-60",
       )}
     >
