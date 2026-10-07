@@ -18,6 +18,8 @@ const web = {
   color: "teal",
 } as const;
 const design = { id: "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d", name: "Diseño" };
+const review = { id: "4d5e6f7a-8b9c-4d0e-9f1a-3b4c5d6e7f80", name: "Revisión" };
+const urgent = { id: "5e6f7a8b-9c0d-4e1f-8a2b-4c5d6e7f8091", name: "Urgente" };
 
 const closed: TimeEntryView = {
   id: "8d0f7a52-4c1e-4b8e-9a43-2f6a1c3e5b70",
@@ -37,6 +39,7 @@ const closed: TimeEntryView = {
   project: web,
   task: null,
   billable: false,
+  tags: [review],
 };
 
 const running: TimeEntryView = {
@@ -57,11 +60,12 @@ function edited(
 }
 
 describe("draftOfEntry", () => {
-  it("toma la descripción, el par, el facturable y el trío canónico de la vista", () => {
+  it("toma la descripción, el par, el facturable, las etiquetas y el trío canónico de la vista", () => {
     expect(draftOfEntry({ ...closed, billable: true })).toEqual({
       description: "Informe",
       selection: { project: web, task: null },
       billable: true,
+      tags: [review],
       times: { date: "2026-10-02", start: "09:00", end: "10:30" },
     });
   });
@@ -124,6 +128,25 @@ describe("changesOf", () => {
   it("el mismo par con otras mayúsculas no es un cambio", () => {
     const upper = { project: { ...web, id: web.id.toUpperCase() }, task: null };
     expect(changesOf(closed, edited(closed, { selection: upper }))).toBeNull();
+  });
+
+  it("las etiquetas enteras, por id, solo si el conjunto es otro", () => {
+    expect(changesOf(closed, edited(closed, { tags: [urgent, review] }))).toEqual({
+      tags: [urgent.id, review.id],
+    });
+    expect(changesOf(closed, edited(closed, { tags: [] }))).toEqual({ tags: [] });
+  });
+
+  it("el mismo conjunto con otras mayúsculas en los ids no es un cambio", () => {
+    const upperReview = { ...review, id: review.id.toUpperCase() };
+
+    expect(changesOf(closed, edited(closed, { tags: [upperReview] }))).toBeNull();
+  });
+
+  it("el mismo conjunto en otro orden no es un cambio", () => {
+    const both = { ...closed, tags: [review, urgent] };
+
+    expect(changesOf(both, edited(both, { tags: [urgent, review] }))).toBeNull();
   });
 
   it("el trío entero, si cambió alguno de sus tres", () => {
@@ -206,15 +229,23 @@ describe("runningChangesOf", () => {
       billable: true,
     });
   });
+
+  it("las etiquetas de la que corre, solo si el conjunto es otro (TT-27)", () => {
+    expect(runningChangesOf(running, edited(running, { tags: [urgent] }))).toEqual({
+      tags: [urgent.id],
+    });
+    expect(runningChangesOf(running, edited(running, { tags: [review] }))).toBeNull();
+  });
 });
 
 describe("createInputOf", () => {
-  it("el alta lleva la descripción, el trío y los ids del par", () => {
+  it("el alta lleva la descripción, el trío, y los ids del par y de las etiquetas", () => {
     const draft = {
       ...draftOfNew({ date: "2026-09-30", start: "10:00", end: "11:30" }),
       description: "Planificación",
       selection: { project: web, task: design },
       billable: true,
+      tags: [urgent, review],
     };
     expect(createInputOf(draft)).toEqual({
       description: "Planificación",
@@ -224,10 +255,11 @@ describe("createInputOf", () => {
       projectId: web.id,
       taskId: design.id,
       billable: true,
+      tagIds: [urgent.id, review.id],
     });
   });
 
-  it("un alta nueva arranca sin descripción ni proyecto, y manda el facturable explícito", () => {
+  it("un alta nueva arranca sin descripción, proyecto ni etiquetas, y manda el facturable y las etiquetas explícitos", () => {
     expect(
       createInputOf(draftOfNew({ date: "2026-09-30", start: "10:00", end: "11:00" })),
     ).toEqual({
@@ -238,6 +270,7 @@ describe("createInputOf", () => {
       projectId: null,
       taskId: null,
       billable: false,
+      tagIds: [],
     });
   });
 });
