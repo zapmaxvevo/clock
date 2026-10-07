@@ -48,7 +48,7 @@ type CreateDialogProps = {
 };
 
 /**
- * El marco común de los tres diálogos de alta: el botón que los abre, el
+ * El marco común de los cuatro diálogos de alta: el botón que los abre, el
  * formulario, el aviso arriba de «Guardar» y el foco de vuelta al botón al
  * cerrarse, por éxito o por la persona.
  */
