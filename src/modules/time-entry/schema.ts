@@ -143,6 +143,8 @@ const clockInput = z.string().refine(isClock, timeEntryMessages.invalidClock);
  */
 export const createManualEntryInput = z
   .object({
+    /** Id de la entrada que se crea, elegido por el cliente (ADR 0007). */
+    id: newEntryId,
     description: description.default(""),
     /** Día local del inicio, en la zona horaria de la persona. */
     date: dayKeyInput,
@@ -535,7 +537,13 @@ export type UpdateDescriptionResult = { readonly entry: TimeEntryView };
 
 export type DeleteEntryResult = { readonly id: string };
 
-export type CreateManualEntryResult = { readonly created: TimeEntryView };
+export type CreateManualEntryResult = {
+  /**
+   * La entrada creada. En un reintento resuelto por el ADR 0007, la que creó el
+   * primer intento, en el estado en que esté.
+   */
+  readonly created: TimeEntryView;
+};
 
 export type UpdateEntryTimesResult = { readonly entry: TimeEntryView };
 

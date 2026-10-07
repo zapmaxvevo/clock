@@ -1543,37 +1543,105 @@ la etiqueta desde el mismo selector («Click **Create tag** or press Ctrl / ^
 El botón vuelve a su estado anterior, lo tecleado se conserva y aparece un
 aviso «No se pudo guardar. Revisá la conexión y volvé a intentar.», con la
 acción «Reintentar». «Reintentar» se ofrece solo para esta causa: ni un error
-de validación ni un permiso mejoran repitiendo el mismo pedido. La única
-operación del módulo que no lo ofrece es el alta manual, por TT-109.
+de validación ni un permiso mejoran repitiendo el mismo pedido.
 Justificación: Clockify acumula los cambios en el cliente y los reenvía; acá no
 hay cola de reintentos.
+_Corregido el 2026-10-07, slice 2c_: decía «La única operación del módulo que
+no lo ofrece es el alta manual, por TT-109.». Desde el 2c el alta manual
+también lo ofrece (TT-109).
 
-**TT-109 El alta manual no ofrece «Reintentar»** — `adaptar`
+**TT-109 El alta manual se reintenta con el id del cliente** — `adaptar`
 _ID fuera de orden: este comportamiento se agregó después del resto._
 Clockify reenvía solo y no expone la decisión, así que no hay nada que relevar
 acá: la regla es nuestra.
 
-Decidido por el equipo el 2026-10-02: cuando `createManualEntry` falla por red,
-el aviso dice **«No sabemos si la entrada se guardó.»** y manda a mirar la
-lista, sin botón de «Reintentar». Lo tecleado se conserva, como en TT-89.
+Decidido por el equipo el 2026-10-04 y construido por el
+[slice 2c](../slices/fase1-slice2c-reintentar-alta-manual.md), con las
+decisiones del team-lead del 2026-10-07: el alta manual, desde la barra y
+desde el diálogo del calendario (CAL-46 de
+[la paridad del calendario](calendario.md)), cumple TT-89 y TT-90 como las
+demás operaciones del módulo. El pedido de `createManualEntry` lleva un id que
+elige el cliente
+([ADR 0007](../adr/0007-el-cliente-elige-el-id-de-las-altas.md)): si el primer
+intento se aplicó y lo que se perdió fue la respuesta, el reintento responde la
+entrada que creó, en el estado en que esté, sin escribir ni volver a validar;
+si no llegó, el reintento es el alta. Ante una falla de red el aviso dice «No
+se pudo agregar la entrada.», con el mensaje de TT-89 y «Reintentar», y lo
+tecleado se conserva.
 
-Justificación: el alta manual es la única operación del módulo que crea una
-entrada **sin un id elegido por el cliente**. Si el pedido llegó al servidor y
-lo que se perdió fue la respuesta, reintentar crea una segunda entrada
-idéntica, y nada la frena: sin ese id no hay cómo reconocer que el pedido ya se
-aplicó, como sí lo hay en «Iniciar», «Continuar» y «Duplicar»
-([ADR 0007](../adr/0007-el-cliente-elige-el-id-de-las-altas.md)), y TT-82
-acepta la superposición sin decir nada. Un reintento que a veces duplica es
-peor que no ofrecerlo.
+- **«Agregar» otra vez reusa el id** (D2c-1). Con el aviso de falla por red a
+  la vista, «Agregar» manda el borrador de ahora con el id pendiente. Si el
+  primer intento se aplicó, el servidor responde esa entrada y lo que cambió
+  después no se guarda.
+- **La respuesta que no es lo mandado no limpia nada** (r2-1). Si la entrada
+  que responde el servidor no es la que se mandó, lo tecleado queda, el foco no
+  se mueve y aparece un aviso informativo: en la barra, «La entrada ya se había
+  agregado con lo que mandaste antes; lo que está en la barra no se guardó.», y
+  en el diálogo del calendario, «La entrada ya se había agregado con lo que
+  mandaste antes; lo que está en el diálogo no se guardó.». El id se renueva,
+  así el próximo «Agregar» crea la entrada nueva. La respuesta cuenta como lo
+  mandado si todos los pedidos que salieron con ese id eran el mismo —aunque la
+  entrada se haya editado en otra pestaña o haya cambiado la zona horaria—, o
+  si coincide con lo mandado en descripción, día, inicio, fin, proyecto, tarea,
+  etiquetas y facturable (r3-1); un facturable que el pedido no lleva no se
+  compara (r3-2).
+- **Qué manda «Reintentar»** (D2c-2). En la barra, el pedido que falló, entero
+  y con su id: lo editado después de la falla no viaja y queda en la barra. En
+  el diálogo del calendario, el borrador actual con el id pendiente, como el
+  «Reintentar» de «Guardar» (CAL-67): ahí «Reintentar» y «Agregar» son el mismo
+  pedido. Con éxito y la respuesta que es lo mandado, la barra se limpia y el
+  foco va a la descripción (TT-25), y el diálogo se cierra (CAL-46).
+- **En la barra el aviso sobrevive** (m4). El aviso de falla por red del alta
+  no lo bajan «Iniciar», «Detener», «Descartar», el cambio de modo, los
+  guardados del timer ni editar el borrador: baja solo con el desenlace de otro
+  pedido del alta, y no tiene control para cerrarlo. Con un timer en la barra,
+  propio o llegado de otra pestaña, «Reintentar» queda inactivo (TT-30) y
+  vuelve a estar activo, con el mismo id, al volver a modo manual.
+- **En el diálogo del calendario el id sobrevive al cierre.** Mientras el alta
+  viaja el diálogo no se cierra: «Cancelar» no actúa y `Esc` y el clic afuera
+  se ignoran, así el aviso informativo siempre tiene dónde verse. Cerrarlo con
+  el aviso de falla a la vista no renueva el id: la próxima alta que se abra lo
+  reusa, y agregar lo mismo responde la entrada sin duplicarla; agregar otra
+  cosa da el aviso informativo, y el siguiente «Agregar» la crea. El id sí se
+  renueva cuando esta pestaña guarda, mueve, borra o duplica la entrada del
+  primer intento (F2-1): si no, agregar lo mismo respondería esa entrada ya
+  cambiada, contaría como lo mandado y la entrada nueva no se crearía.
+- **La revalidación no baja el aviso** (D2c-3), aunque traiga la entrada del
+  primer intento: con el aviso a la vista, «Reintentar» o «Agregar» responden
+  esa entrada sin escribir.
 
-El resto de las operaciones del módulo sí ofrece «Reintentar», porque repetirlas
-es inofensivo: arrancar, continuar y duplicar son seguros de reintentar porque
-el pedido lleva un id que elige el cliente (ADR 0007), y el reintento de uno ya
-aplicado responde la misma entrada sin escribir, sin cerrar, abrir ni copiar
-nada de más; detener sobre una entrada ya cerrada da TT-41; descartar un timer
-que ya no existe termina sin error, porque lo pedido —que el timer no esté— ya
-se cumple (TT-65); y editar y borrar apuntan a un identificador que ya existe,
-así que el segundo intento produce el mismo estado que el primero.
+Límites aceptados por el equipo:
+
+- **El reintento puede recrear una entrada que la persona borró** entre la
+  respuesta perdida y el clic (ADR 0007). Como en la barra el aviso sobrevive a
+  las demás operaciones, la ventana es todo el tiempo que esté a la vista.
+- **Recargar o salir de la ruta renueva el id**, en la barra y en el
+  calendario, porque se desmonta la pantalla y se pierde su estado: si el
+  primer intento se aplicó, volver a agregar lo mismo crea una segunda
+  entrada, y TT-82 la acepta sin aviso. Y con el alta en vuelo bajo un id
+  reusado, irse de la ruta pierde el aviso informativo: si la respuesta es la
+  entrada de un intento anterior, la entrada nueva no se crea y nada lo dice.
+- **El aviso informativo puede ser falso** (F3): con dos pedidos distintos bajo
+  el mismo id y la entrada editada en otra pestaña, la respuesta no coincide
+  con lo mandado aunque sea la suya, y el siguiente «Agregar» la duplica. El
+  cliente no sabe cuál de los pedidos se aplicó; lo cerraría que el servidor
+  dijera que la respuesta es de un reintento.
+- **Si lo cambiado era una corrección del primer intento**, la persona queda
+  con las dos entradas y borra la primera.
+
+Justificación del `adaptar`: Clockify reenvía solo (TT-89); el aviso, el botón
+y el aviso informativo son nuestros, y el id del cliente es lo que vuelve
+seguro repetir el alta.
+
+Las demás operaciones del módulo también ofrecen «Reintentar», porque
+repetirlas es inofensivo: arrancar, continuar y duplicar son seguros de
+reintentar porque el pedido lleva un id que elige el cliente (ADR 0007), y el
+reintento de uno ya aplicado responde la misma entrada sin escribir, sin
+cerrar, abrir ni copiar nada de más; detener sobre una entrada ya cerrada da
+TT-41; descartar un timer que ya no existe termina sin error, porque lo pedido
+—que el timer no esté— ya se cumple (TT-65); y editar y borrar apuntan a un
+identificador que ya existe, así que el segundo intento produce el mismo estado
+que el primero.
 
 _Corregido el 2026-10-03, decisión del equipo_: los dos párrafos anteriores
 decían que un arranque repetido choca con el índice único del timer abierto. El
@@ -1585,6 +1653,15 @@ _Corregido el 2026-10-03, decisión del equipo_: decía que el alta manual era
 «la única operación del módulo que solo crea», que dejó de ser cierto con
 duplicar, que también solo crea; y el párrafo de las operaciones que sí ofrecen
 «Reintentar» no nombraba continuar, duplicar ni descartar.
+_Corregido el 2026-10-07, slice 2c_: el título era «El alta manual no ofrece
+«Reintentar»». El cuerpo decía, por decisión del equipo del 2026-10-02, que
+ante una falla de red de `createManualEntry` el aviso era «No sabemos si la
+entrada se guardó.» y mandaba a mirar la lista, sin «Reintentar», porque el
+alta manual era la única operación del módulo que creaba una entrada sin un id
+elegido por el cliente y reintentarla podía duplicarla. El párrafo de las
+demás operaciones empezaba «El resto de las operaciones del módulo sí ofrece
+«Reintentar»». El id se conserva (D2c-4 del contrato del 2c); las dos notas
+anteriores describen el texto de ese momento.
 
 **TT-90 El aviso nombra la acción que falló** — `adaptar`
 Un aviso tiene dos partes: un título que nombra lo que no se pudo hacer —«No se
@@ -1696,6 +1773,61 @@ elegido por el cliente del
 [ADR 0007](../adr/0007-el-cliente-elige-el-id-de-las-altas.md), y de ahí sale la
 corrección de la justificación de TT-109. Contrato:
 [fase1-slice2b-reintento-de-iniciar.md](../slices/fase1-slice2b-reintento-de-iniciar.md).
+
+### Slice 2c — «Reintentar» en el alta manual
+
+TT-89 y TT-90 en el alta manual, en la barra y en el diálogo del calendario,
+con el id elegido por el cliente del
+[ADR 0007](../adr/0007-el-cliente-elige-el-id-de-las-altas.md), y la
+corrección de TT-109, que deja de ser una excepción. Entran por arrastre,
+verificados con el id, TT-25, TT-30, TT-73, TT-77, TT-78, TT-92, TT-108,
+TT-112 y el piso del workspace; de [la paridad del calendario](calendario.md),
+CAL-46 y CAL-86. Va después del 12. Contrato:
+[fase1-slice2c-reintentar-alta-manual.md](../slices/fase1-slice2c-reintentar-alta-manual.md),
+con las correcciones de la [ronda 1](../slices/correcciones-fase1-slice2c.md),
+la [ronda 2](../slices/correcciones-fase1-slice2c-ronda2.md) y las
+[revisiones](../slices/correcciones-fase1-slice2c-revisiones.md).
+
+- **El alta lleva un id del cliente** (TT-109): el reintento de un alta ya
+  aplicada responde la entrada en el estado en que esté, sin escribir ni volver
+  a validar. Con el id de una entrada ajena, o con la membresía desactivada
+  (TT-92), responde el mensaje neutro de TT-79. Las reglas del alta no cambian
+  de texto y corren antes de escribir.
+- **El aviso es el de cualquier operación** (TT-89, TT-90): «No se pudo agregar
+  la entrada.», el mensaje de red y «Reintentar». «No sabemos si la entrada se
+  guardó.» deja de existir.
+- **«Agregar» otra vez con el aviso a la vista reusa el id** (D2c-1), y si la
+  respuesta no es lo mandado, lo tecleado queda con el aviso informativo y el
+  próximo «Agregar» crea la entrada (r2-1, r3-1, r3-2).
+- **«Reintentar» manda el pedido que falló en la barra y el borrador actual en
+  el diálogo** (D2c-2). Con éxito, la barra se limpia con el foco en la
+  descripción (TT-25), y la ventana se extiende hasta la semana de la entrada
+  (TT-108), también con la respuesta que no es lo mandado.
+- **En la barra el aviso sobrevive** a las demás operaciones y al cambio de
+  modo (m4), con «Reintentar» inactivo mientras hay un timer en la barra
+  (TT-30).
+- **En el diálogo**, mientras el alta viaja no se cierra; el id pendiente
+  sobrevive a cerrarlo con el aviso de falla a la vista, y se renueva cuando
+  esta pestaña guarda, mueve, borra o duplica la entrada del primer intento
+  (F2-1).
+- **Lo que el slice decide**: nada se compara contra Clockify, que reenvía solo
+  y no expone la decisión (TT-89, TT-109), así que no entra en P-14.
+  - Decisiones del team-lead del 2026-10-07: D2c-1 a D2c-4 del contrato, m4 de
+    la ronda 1, r2-1 de la ronda 2 con r3-1 y r3-2 de su confirmación, y, en
+    las revisiones, el diálogo que no se cierra con el alta en vuelo, el id
+    que sobrevive a cerrarlo y el que se renueva cuando esta pestaña cambia la
+    entrada del primer intento (F2-1).
+  - Límites aceptados, anotados en TT-109: el reintento que recrea una entrada
+    borrada; recargar o salir de la ruta, en la barra y en el calendario, que
+    renueva el id y, con el alta en vuelo, pierde el aviso informativo; el
+    aviso informativo falso de F3; y la corrección que deja dos entradas.
+  - Diseño propio sin referencia: los dos textos del aviso informativo, uno
+    para la barra y otro para el diálogo.
+- **Afuera**: bajar el aviso cuando la revalidación trae la entrada del primer
+  intento (D2c-3); cerrar a mano el aviso de la barra, que pide cambiar el
+  aviso que comparten todos los módulos; que el servidor diga si la respuesta
+  es de un reintento, que cerraría F3; y la copia de semana del timesheet
+  (TS-60), que decide el contrato del 13.
 
 ### Slice 3 — horas y fecha
 

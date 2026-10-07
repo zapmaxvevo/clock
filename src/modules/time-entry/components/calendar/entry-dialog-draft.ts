@@ -1,13 +1,10 @@
 import { sameSelection, selectionIds } from "@/modules/project/components/picker-model";
 import { sameTags, tagIdsOf } from "@/modules/project/components/tag-picker-model";
-import type {
-  CreateManualEntryInput,
-  TimeEntryView,
-  UpdateEntryChanges,
-} from "@/modules/time-entry/schema";
+import type { TimeEntryView, UpdateEntryChanges } from "@/modules/time-entry/schema";
 
 import { fieldsInput, fieldsOf, NO_FIELDS, type EntryFields } from "../entry-fields";
 import { selectionOf } from "../entry-selection";
+import type { NewEntryRequest } from "../sent-entry";
 import { fromView, sameDraft, type TimeDraft } from "../time-draft";
 import { isClosedEntry } from "./calendar-layout";
 
@@ -102,9 +99,10 @@ export function runningChangesOf(
 
 /**
  * El alta del diálogo: `createManualEntry` con el trío, el par, y el
- * facturable y las etiquetas explícitos (CAL-45).
+ * facturable y las etiquetas explícitos (CAL-45). El id lo pone el dueño de
+ * los pedidos.
  */
-export function createInputOf(draft: EntryDialogDraft): CreateManualEntryInput {
+export function createInputOf(draft: EntryDialogDraft): NewEntryRequest {
   return {
     description: draft.description,
     ...draft.times,

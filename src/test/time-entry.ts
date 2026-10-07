@@ -7,6 +7,7 @@ import type { Actor } from "@/server/permissions";
 import type { WeekStart } from "@/server/time";
 import type { TrackerWorkspace } from "@/modules/time-entry/service";
 
+import { waitForBlockedBackends } from "./concurrency";
 import { defaultFormats } from "./factories";
 import { timeEntryById } from "./queries";
 
@@ -37,6 +38,45 @@ export function workspaceOf(
 export function lockRow(id: string) {
   return (tx: Transaction) =>
     tx.execute(sql`select id from time_entry where id = ${id} for update`);
+}
+
+/**
+ * Corre `work` mientras otra transacción sostiene `for update` sobre la fila
+ * `id`. Responde con lo que termine `work`, su error incluido, o con
+ * `"blocked"` si se trabó esperando el bloqueo. Al final suelta el bloqueo y
+ * espera a `work`, que no queda corriendo en el test siguiente.
+ */
+export async function outcomeWhileLocked(id: string, work: () => Promise<unknown>) {
+  let holding = () => {};
+  const held = new Promise<void>((resolve) => {
+    holding = resolve;
+  });
+  let release = () => {};
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const holder = db.transaction(async (tx) => {
+    await lockRow(id)(tx);
+    holding();
+    await released;
+  });
+  await Promise.race([held, holder]);
+  const running = work().then(
+    () => "resolved",
+    (error: unknown) => error,
+  );
+  const waiting = new AbortController();
+  try {
+    return await Promise.race([
+      running,
+      waitForBlockedBackends({ count: 1, signal: waiting.signal }).then(() => "blocked"),
+    ]);
+  } finally {
+    waiting.abort();
+    release();
+    await holder;
+    await running;
+  }
 }
 
 /** El error de dominio de una operación; si termina bien o lanza otra cosa, falla. */

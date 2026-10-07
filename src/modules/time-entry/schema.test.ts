@@ -114,7 +114,7 @@ describe("TT-70: la tarea no viaja sin su proyecto (criterio 5)", () => {
     [
       "createManualEntryInput",
       createManualEntryInput,
-      { date: "2026-10-02", start: "08:00", end: "09:00" },
+      { id, date: "2026-10-02", start: "08:00", end: "09:00" },
     ],
     ["updateEntryProjectInput", updateEntryProjectInput, { id }],
   ] as const;
@@ -149,7 +149,7 @@ describe("TT-70: la tarea no viaja sin su proyecto (criterio 5)", () => {
   it("las altas rechazan la tarea sola aunque falte projectId", () => {
     for (const [schema, rest] of [
       [startTimerInput, { id }],
-      [createManualEntryInput, { date: "2026-10-02", start: "08:00", end: "09:00" }],
+      [createManualEntryInput, { id, date: "2026-10-02", start: "08:00", end: "09:00" }],
     ] as const) {
       const result = schema.safeParse({ ...rest, taskId });
       expect(result.error?.issues.at(0)?.message).toBe(
@@ -162,6 +162,7 @@ describe("TT-70: la tarea no viaja sin su proyecto (criterio 5)", () => {
     expect(startTimerInput.safeParse({ id, projectId: "web" }).success).toBe(false);
     expect(
       createManualEntryInput.safeParse({
+        id,
         date: "2026-10-02",
         start: "08:00",
         end: "09:00",
@@ -202,7 +203,7 @@ describe("el carácter nulo en la descripción", () => {
     [
       "createManualEntryInput",
       createManualEntryInput,
-      { date: "2026-10-02", start: "08:00", end: "09:00" },
+      { id, date: "2026-10-02", start: "08:00", end: "09:00" },
     ],
   ] as const)("%s lo rechaza con su mensaje", (_, schema, rest) => {
     const result = schema.safeParse({ ...rest, description: withNull });
@@ -633,7 +634,23 @@ describe("TRACKER_WINDOW_DAYS", () => {
 });
 
 describe("createManualEntryInput", () => {
-  const valid = { date: "2026-10-02", start: "08:00", end: "10:30" };
+  const valid = { id, date: "2026-10-02", start: "08:00", end: "10:30" };
+
+  it("acepta el id que genera crypto.randomUUID() y lo conserva", () => {
+    const generated = crypto.randomUUID();
+    expect(createManualEntryInput.parse({ ...valid, id: generated }).id).toBe(generated);
+  });
+
+  it.each([
+    ["sin id", { id: undefined }],
+    ["con un texto que no es uuid", { id: "no-es-uuid" }],
+    ["con el uuid nulo", { id: "00000000-0000-0000-0000-000000000000" }],
+    ["con un uuid v7", { id: "01890a5d-ac96-774b-bcce-b302099a8057" }],
+  ])("rechaza el alta %s", (_, change) => {
+    const result = createManualEntryInput.safeParse({ ...valid, ...change });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.at(0)?.path).toEqual(["id"]);
+  });
 
   it("acepta la forma canónica y deja la descripción vacía por defecto", () => {
     expect(createManualEntryInput.parse(valid)).toEqual({
@@ -1169,7 +1186,7 @@ describe("updateEntryChanges (ADR 0013)", () => {
 describe("las etiquetas en las altas y en updateEntry (criterio 6 del 11b, D-4)", () => {
   const design = "9A7C2B1E-4D3F-4E8A-8B6C-5D4E3F2A1B0C";
   const review = "1e2d3c4b-5a69-4788-9a0b-c1d2e3f4a5b6";
-  const manual = { date: "2026-10-02", start: "08:00", end: "10:30" };
+  const manual = { id, date: "2026-10-02", start: "08:00", end: "10:30" };
 
   /** `count` ids distintos con forma de uuid. */
   function manyIds(count: number): string[] {

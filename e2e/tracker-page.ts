@@ -284,6 +284,26 @@ export type ManualEntryFields = {
   readonly tags?: readonly string[];
 };
 
+/** «Agregar» de la barra manual. */
+export function addButton(bar: Locator): Locator {
+  return bar.getByRole("button", { name: "Agregar", exact: true });
+}
+
+/**
+ * Teclea en la barra manual la descripción y las dos horas. La fecha queda
+ * como esté, que en el borrador inicial es hoy.
+ */
+export async function typeManualDraft(
+  bar: Locator,
+  description: string,
+  start: string,
+  end: string,
+): Promise<void> {
+  await descriptionInput(bar).fill(description);
+  await setClock(bar, "Hora de inicio", start);
+  await setClock(bar, "Hora de fin", end);
+}
+
 /**
  * Carga una entrada de hoy desde la barra manual y espera su fila. Va de 00:00
  * a 00:01, que ya pasó a cualquier hora de la corrida. Con `project` y `tags`,
@@ -298,18 +318,14 @@ export async function addManualEntry(
 ): Promise<void> {
   await chooseMode(page, "manual");
   const bar = trackerBar(page);
-  await descriptionInput(bar).fill(description);
-  await setClock(bar, "Hora de inicio", "00:00");
-  await setClock(bar, "Hora de fin", "00:01");
+  await typeManualDraft(bar, description, "00:00", "00:01");
   if (fields.project !== undefined) {
     await pickProject(page, bar, fields.project.option, fields.project.search);
   }
   if (fields.tags !== undefined) {
     await pickTags(page, bar, fields.tags);
   }
-  await withServerAction(page, () =>
-    bar.getByRole("button", { name: "Agregar" }).click(),
-  );
+  await withServerAction(page, () => addButton(bar).click());
   await expect(entryRow(todayGroup(page), description)).toBeVisible();
   await expect(descriptionInput(bar)).toHaveValue("");
   await expect(projectPicker(bar)).toHaveText("Proyecto");

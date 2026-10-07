@@ -211,55 +211,6 @@ test("una entrada de hace sesenta días extiende la lista hasta su semana, sin a
   await expect(page.getByText("todavía no se ve en la lista")).toHaveCount(0);
 });
 
-test("con la red caída, el alta manual no ofrece Reintentar: es la única operación del módulo sin reintento", async ({
-  page,
-}) => {
-  await page.goto("/");
-  await chooseMode(page, "manual");
-
-  const bar = trackerBar(page);
-  await descriptionInput(bar).fill("entrada que no viaja");
-  await setClock(bar, "Hora de inicio", "08:00");
-  await setClock(bar, "Hora de fin", "09:15");
-
-  await page.route(
-    (url) => url.pathname === "/",
-    async (route) => {
-      if (route.request().headers()["next-action"] !== undefined) {
-        await route.abort();
-        return;
-      }
-      await route.continue();
-    },
-  );
-
-  const add = bar.getByRole("button", { name: "Agregar" });
-  await add.click();
-
-  /*
-   * TT-109: las otras cinco operaciones del módulo —arrancar, detener, la
-   * descripción desde la barra y desde la fila, y borrar— ofrecen «Reintentar»
-   * ante una falla de red; esta no. Agregar solo crea, así que si lo que se perdió
-   * fue la respuesta, la fila puede estar creada y reintentar la duplicaría
-   * sin que nada lo frene, porque TT-82 acepta la superposición.
-   */
-  const notice = page
-    .getByRole("alert")
-    .filter({ hasText: "No sabemos si la entrada se guardó." });
-  await expect(notice).toContainText(
-    "Se perdió la respuesta del servidor. Antes de volver a agregarla, fijate en la lista: puede haberse creado.",
-  );
-  await expect(page.getByRole("button", { name: "Reintentar" })).toHaveCount(0);
-
-  // Criterio 17: el botón vuelve a su estado anterior y lo tecleado sigue en
-  // la barra para poder decidir qué hacer.
-  await expect(add).toBeEnabled();
-  await expect(descriptionInput(bar)).toHaveValue("entrada que no viaja");
-  await expect(clockField(bar, "Hora de inicio")).toHaveValue("08:00");
-  await expect(clockField(bar, "Hora de fin")).toHaveValue("09:15");
-  await expect(clockField(bar, "Duración")).toHaveValue("1:15");
-});
-
 test("teclear el fin y hacer clic en Agregar sin salir del campo crea la entrada con un solo clic", async ({
   page,
 }) => {

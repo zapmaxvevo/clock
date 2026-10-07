@@ -626,54 +626,70 @@ function duplicateTimes(source: ClosedEntryRow): { startedAt: Date; endedAt: Dat
 }
 
 /**
+ * El alta idempotente de una entrada cerrada que comparten duplicar y el alta
+ * manual: `insert` es la transacción del alta, que aplica sus reglas antes de
+ * escribir y deja su registro. Un reintento con el mismo id responde la fila
+ * que creó el primer intento, sin validar ni escribir (ADR 0007). Una fila
+ * cerrada no choca con el índice del timer, así que no hay ganador que
+ * responder.
+ */
+async function closedEntryOnce(
+  actor: Actor,
+  workspace: TrackerWorkspace,
+  id: string,
+  insert: (tx: Transaction) => Promise<EntryWithRefs>,
+): Promise<{ readonly created: TimeEntryView }> {
+  const createdOf = (row: EntryWithRefs) => ({ created: toView(row, workspace) });
+  return translatingReferenceConstraints(() =>
+    createEntryOnce(actor, id, {
+      attempt: async () => createdOf(await db.transaction(insert)),
+      replayed: createdOf,
+    }),
+  );
+}
+
+/**
  * Agrega una entrada cerrada con los campos y las horas de otra (TT-58). Solo
- * crea: una fila cerrada no choca con el índice del timer, así que no hay
- * ganador que responder. Un reintento con el mismo id responde la copia del
- * primer intento (ADR 0007).
+ * crea: un reintento con el mismo id responde la copia del primer intento
+ * (ADR 0007).
  */
 export async function duplicateEntry(
   actor: Actor,
   workspace: TrackerWorkspace,
   input: DuplicateEntryInput,
 ): Promise<DuplicateEntryResult> {
-  return translatingReferenceConstraints(() =>
-    createEntryOnce(actor, input.id, {
-      attempt: () =>
-        db.transaction(async (tx) => {
-          // La abierta solo llega en un pedido armado a mano: no es una fila.
-          const source = requireClosed(await readSourceEntry(tx, actor, input.sourceId));
-          const fields = continuedFields(source);
-          await assertNewEntryPair(tx, actor, fields);
-          await assertTaggable(tx, actor, fields.tagIds);
-          const created = await timeEntryRepository.insertClosed(tx, {
-            id: input.id,
-            workspaceId: actor.workspaceId,
-            userId: actor.userId,
-            ...fields,
-            ...duplicateTimes(source),
-          });
-          await recordAudit(tx, {
-            workspaceId: actor.workspaceId,
-            actorId: actor.userId,
-            action: "timeEntry.duplicate",
-            entity: AUDIT_ENTITY,
-            entityId: created.id,
-            nextValue: {
-              sourceId: source.id,
-              description: created.description,
-              projectId: created.projectId,
-              taskId: created.taskId,
-              billable: created.billable,
-              tagIds: sortedTagIdsOf(created),
-              startedAt: created.startedAt,
-              endedAt: created.endedAt,
-            },
-          });
-          return { created: toView(created, workspace) };
-        }),
-      replayed: (row) => ({ created: toView(row, workspace) }),
-    }),
-  );
+  return closedEntryOnce(actor, workspace, input.id, async (tx) => {
+    // La abierta solo llega en un pedido armado a mano: no es una fila.
+    const source = requireClosed(await readSourceEntry(tx, actor, input.sourceId));
+    const fields = continuedFields(source);
+    await assertNewEntryPair(tx, actor, fields);
+    await assertTaggable(tx, actor, fields.tagIds);
+    const created = await timeEntryRepository.insertClosed(tx, {
+      id: input.id,
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+      ...fields,
+      ...duplicateTimes(source),
+    });
+    await recordAudit(tx, {
+      workspaceId: actor.workspaceId,
+      actorId: actor.userId,
+      action: "timeEntry.duplicate",
+      entity: AUDIT_ENTITY,
+      entityId: created.id,
+      nextValue: {
+        sourceId: source.id,
+        description: created.description,
+        projectId: created.projectId,
+        taskId: created.taskId,
+        billable: created.billable,
+        tagIds: sortedTagIdsOf(created),
+        startedAt: created.startedAt,
+        endedAt: created.endedAt,
+      },
+    });
+    return created;
+  });
 }
 
 export async function stopTimer(
@@ -842,84 +858,92 @@ export async function discardTimer(
 }
 
 /**
+ * Los dos instantes del alta manual, con las reglas de las horas tecleadas:
+ * la hora que no existe, la duración cero, el año 10000 y el piso del
+ * workspace. Dependen de la zona y del piso, que pueden cambiar entre dos
+ * intentos: corren dentro de la transacción del alta, después de buscar la
+ * fila propia (ADR 0007).
+ */
+function manualTimes(
+  input: CreateManualEntryValues,
+  workspace: TrackerWorkspace,
+): { startedAt: Date; endedAt: Date } {
+  const timeZone = workspace.timezone;
+  const startedAt = instantFromLocal(input.date, input.start, timeZone);
+  if (startedAt === null) {
+    throw new TimeEntryError("validation", timeEntryMessages.nonexistentClock);
+  }
+  if (clockDifferenceMinutes(input.start, input.end) === 0) {
+    throw new TimeEntryError("validation", timeEntryMessages.tooShort);
+  }
+  // El fin es la hora tecleada y no el inicio más la duración: con un cambio
+  // de horario en el medio las dos cosas no coinciden.
+  const endDay = endDayOf(input.date, input.start, input.end);
+  // El día siguiente al 9999-12-31 no tiene clave de cuatro cifras: es la
+  // fecha la que no sirve, no la hora.
+  if (parseDayKey(endDay) === null) {
+    throw new TimeEntryError("validation", timeEntryMessages.invalidDate);
+  }
+  const endedAt = instantFromLocal(endDay, input.end, timeZone);
+  if (endedAt === null) {
+    throw new TimeEntryError("validation", timeEntryMessages.nonexistentClock);
+  }
+  // Un día de cuatro cifras al oeste de Greenwich puede caer en el año 10000
+  // UTC, que viaja a la base como "+010000-…" y la base no lo interpreta.
+  if (isAfterYear9999(startedAt) || isAfterYear9999(endedAt)) {
+    throw new TimeEntryError("validation", timeEntryMessages.invalidDate);
+  }
+  if (dayKey(startedAt, timeZone) < workspaceFloorDayKey(workspace)) {
+    throw new TimeEntryError("validation", timeEntryMessages.beforeWorkspace);
+  }
+  return { startedAt, endedAt };
+}
+
+/**
  * Agrega una entrada ya cerrada a partir de dos horas de pared. Es la única
  * escritura del módulo cuyos instantes no salen de `now()` de la base: nacen
- * de lo que la persona tecleó. Ver el ADR 0005.
+ * de lo que la persona tecleó. Ver el ADR 0005. Un reintento con el mismo id
+ * responde la entrada del primer intento sin escribir ni validar (ADR 0007).
  */
 export async function createManualEntry(
   actor: Actor,
   workspace: TrackerWorkspace,
   input: CreateManualEntryValues,
 ): Promise<CreateManualEntryResult> {
-  const timeZone = workspace.timezone;
+  return closedEntryOnce(actor, workspace, input.id, async (tx) => {
+    const times = manualTimes(input, workspace);
+    const pair = pairOf(input);
+    const project = await assertNewEntryPair(tx, actor, pair);
+    await assertTaggable(tx, actor, input.tagIds);
 
-  return translatingReferenceConstraints(() =>
-    db.transaction(async (tx) => {
-      if (!can(actor, "timeEntry.own.create", ownTimeEntryResource(actor))) {
-        throw new TimeEntryError("forbidden", timeEntryMessages.forbidden);
-      }
-
-      const startedAt = instantFromLocal(input.date, input.start, timeZone);
-      if (startedAt === null) {
-        throw new TimeEntryError("validation", timeEntryMessages.nonexistentClock);
-      }
-      if (clockDifferenceMinutes(input.start, input.end) === 0) {
-        throw new TimeEntryError("validation", timeEntryMessages.tooShort);
-      }
-      // El fin es la hora tecleada y no el inicio más la duración: con un cambio
-      // de horario en el medio las dos cosas no coinciden.
-      const endDay = endDayOf(input.date, input.start, input.end);
-      // El día siguiente al 9999-12-31 no tiene clave de cuatro cifras: es la
-      // fecha la que no sirve, no la hora.
-      if (parseDayKey(endDay) === null) {
-        throw new TimeEntryError("validation", timeEntryMessages.invalidDate);
-      }
-      const endedAt = instantFromLocal(endDay, input.end, timeZone);
-      if (endedAt === null) {
-        throw new TimeEntryError("validation", timeEntryMessages.nonexistentClock);
-      }
-      // Un día de cuatro cifras al oeste de Greenwich puede caer en el año 10000
-      // UTC, que viaja a la base como "+010000-…" y la base no lo interpreta.
-      if (isAfterYear9999(startedAt) || isAfterYear9999(endedAt)) {
-        throw new TimeEntryError("validation", timeEntryMessages.invalidDate);
-      }
-      if (dayKey(startedAt, timeZone) < workspaceFloorDayKey(workspace)) {
-        throw new TimeEntryError("validation", timeEntryMessages.beforeWorkspace);
-      }
-      const pair = pairOf(input);
-      const project = await assertNewEntryPair(tx, actor, pair);
-      await assertTaggable(tx, actor, input.tagIds);
-
-      const created = await timeEntryRepository.insertClosed(tx, {
-        workspaceId: actor.workspaceId,
-        userId: actor.userId,
-        description: input.description,
-        ...pair,
-        billable: billableOfNewEntry(input.billable, project),
-        tagIds: input.tagIds,
-        startedAt,
-        endedAt,
-      });
-      await recordAudit(tx, {
-        workspaceId: actor.workspaceId,
-        actorId: actor.userId,
-        action: "timeEntry.createManual",
-        entity: AUDIT_ENTITY,
-        entityId: created.id,
-        nextValue: {
-          description: created.description,
-          projectId: created.projectId,
-          taskId: created.taskId,
-          billable: created.billable,
-          tagIds: sortedTagIdsOf(created),
-          startedAt: created.startedAt,
-          endedAt: created.endedAt,
-        },
-      });
-
-      return { created: toView(created, workspace) };
-    }),
-  );
+    const created = await timeEntryRepository.insertClosed(tx, {
+      id: input.id,
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+      description: input.description,
+      ...pair,
+      billable: billableOfNewEntry(input.billable, project),
+      tagIds: input.tagIds,
+      ...times,
+    });
+    await recordAudit(tx, {
+      workspaceId: actor.workspaceId,
+      actorId: actor.userId,
+      action: "timeEntry.createManual",
+      entity: AUDIT_ENTITY,
+      entityId: created.id,
+      nextValue: {
+        description: created.description,
+        projectId: created.projectId,
+        taskId: created.taskId,
+        billable: created.billable,
+        tagIds: sortedTagIdsOf(created),
+        startedAt: created.startedAt,
+        endedAt: created.endedAt,
+      },
+    });
+    return created;
+  });
 }
 
 type ClosedEntryRow = TimeEntryRow & { readonly endedAt: Date };

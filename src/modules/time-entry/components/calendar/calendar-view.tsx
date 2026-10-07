@@ -4,8 +4,9 @@ import { useCallback, useEffect, useOptimistic, useRef, useState } from "react";
 
 import { useDisplayFormats } from "@/components/layout/display-formats";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { useAction, type ActionHandle } from "@/hooks/use-action";
+import { useAction, type ActionFailure, type ActionHandle } from "@/hooks/use-action";
 import { useNewId } from "@/hooks/use-new-id";
+import { sameId } from "@/lib/project-pair";
 import {
   createManualEntry,
   deleteEntry,
@@ -17,7 +18,6 @@ import {
 import {
   timeEntryMessages,
   type CalendarState,
-  type CreateManualEntryInput,
   type TimeEntryView,
   type UpdateEntryChanges,
   type UpdateEntryTimesInput,
@@ -27,6 +27,12 @@ import { weekdayLabel } from "@/server/time";
 import { DeleteEntryDialog } from "../delete-entry-dialog";
 import { useElapsedSeconds } from "../elapsed-counter";
 import { entryNameOf } from "../labels";
+import {
+  answersSent,
+  recordSent,
+  type NewEntryRequest,
+  type SentRequests,
+} from "../sent-entry";
 import type { TimeDraft } from "../time-draft";
 import { useTrackerRefresh } from "../use-tracker-refresh";
 import { CalendarGrid } from "./calendar-grid";
@@ -42,6 +48,9 @@ import { CalendarNotices, CLOSING_CODES, dialogFailureOf } from "./calendar-noti
 import { EntryDialog, type DialogSubject } from "./entry-dialog";
 import { calendarLabels } from "./labels";
 import { focusIsFree } from "./use-pending-block-focus";
+
+/** El alta no parte de ninguna entrada: su id pendiente va con una clave fija. */
+const ADD_KEY = "add";
 
 type CalendarViewProps = {
   readonly state: CalendarState;
@@ -101,6 +110,16 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
    * elemento que recuerda de un diálogo anterior.
    */
   const deleteReturnRef = useRef<HTMLElement>(null);
+  /** Los pedidos del alta que salieron con el id pendiente (r3-1). */
+  const sentCreates = useRef<SentRequests | null>(null);
+  /**
+   * El último desenlace del alta, que decide si su id sigue pendiente. Sobrevive
+   * al aviso: cerrar el diálogo o abrir otro no renueva el id, como en la barra
+   * (F1/P2); solo el éxito o una falla con otro código lo renuevan.
+   */
+  const [createOutcome, setCreateOutcome] = useState<ActionFailure | null>(null);
+  /** r2-1: el alta respondió la entrada de un pedido anterior y el diálogo sigue abierto. */
+  const [replayedAdd, setReplayedAdd] = useState(false);
 
   /** Un gesto de arrastre está en curso: la revalidación periódica espera (CAL-89). */
   const [gestureActive, setGestureActive] = useState(false);
@@ -134,11 +153,20 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
   });
   const create = useAction(createManualEntry, {
     unreachableMessage: timeEntryMessages.unexpected,
-    onSuccess: (data) => {
+    onSuccess: (data, input) => {
+      setCreateOutcome(null);
+      // r2-1: con el id pendiente, el servidor responde la fila del primer
+      // intento. Si lo mandado era otra cosa, no se guardó: queda en el diálogo.
+      if (!answersSent(data.created, input.id, input, sentCreates.current)) {
+        setReplayedAdd(true);
+        return;
+      }
       setOpen(false);
       landed(data.created);
     },
+    onFailure: setCreateOutcome,
   });
+  const nextCreateId = useNewId(createOutcome);
   const stop = useAction(stopTimer, {
     unreachableMessage: timeEntryMessages.unexpected,
     onSuccess: (data) => setFocusEntryId(data.stopped.id),
@@ -192,6 +220,7 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
     for (const handle of handles) {
       handle.clear();
     }
+    setReplayedAdd(false);
     setOutside(null);
   }
 
@@ -229,6 +258,7 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
       save.clear();
     }
     create.clear();
+    setReplayedAdd(false);
     setFocusEntryId(null);
     setSubject(next);
     setOpen(true);
@@ -264,8 +294,20 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
     });
   }
 
+  /**
+   * F2-1: guardar, mover, borrar o duplicar desde esta pestaña la entrada del
+   * id pendiente la deja distinta de lo que se mandó, y reusar el id respondería
+   * esa fila como si fuera la del alta nueva. El próximo alta lleva otro id.
+   */
+  function releasePendingCreate(entryId: string): void {
+    if (sameId(sentCreates.current?.id ?? null, entryId)) {
+      setCreateOutcome(null);
+    }
+  }
+
   function handleDropTimes(input: UpdateEntryTimesInput): void {
     movingIdRef.current = input.id;
+    releasePendingCreate(input.id);
     run(moveTimes, input);
   }
 
@@ -298,12 +340,19 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
 
   function handleSave(changes: UpdateEntryChanges): void {
     if (entry !== null) {
+      releasePendingCreate(entry.id);
       run(save, { id: entry.id, changes });
     }
   }
 
-  function handleAdd(input: CreateManualEntryInput): void {
-    run(create, input);
+  /**
+   * Después de una falla por red, el id pendiente con el borrador de ahora
+   * (D2c-1, D2c-2), aunque el diálogo se haya cerrado entre medio (F1/P2).
+   */
+  function handleAdd(input: NewEntryRequest): void {
+    const id = nextCreateId(ADD_KEY);
+    sentCreates.current = recordSent(sentCreates.current, id, input);
+    run(create, { ...input, id });
   }
 
   function handleStop(): void {
@@ -319,6 +368,7 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
       return;
     }
     setOpen(false);
+    releasePendingCreate(entry.id);
     const id = nextDuplicateId(entry.id);
     run(duplicate, { id, sourceId: entry.id });
   }
@@ -331,6 +381,7 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
 
   function confirmDelete(): void {
     if (entry !== null) {
+      releasePendingCreate(entry.id);
       run(remove, { id: entry.id });
     }
   }
@@ -404,7 +455,7 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
         todayKey={state.todayKey}
         minDayKey={state.minDayKey}
         pending={subject?.kind === "add" ? create.pending : save.pending}
-        failure={dialogFailureOf(subject, save, create)}
+        failure={dialogFailureOf(subject, save, create, replayedAdd)}
         onCancel={() => {
           setOpen(false);
           // Cerrar sin acción no deja un foco pendiente de otra operación (M3).

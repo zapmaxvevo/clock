@@ -51,8 +51,9 @@ export const trackerLabels = {
   timerNotDiscarded: "No se pudo descartar el timer.",
   timerNotStopped: "No se pudo detener el timer.",
   entryNotAdded: "No se pudo agregar la entrada.",
-  /** TT-109: el alta no tiene id del cliente, así que no se sabe si quedó escrita. */
-  addLostTitle: "No sabemos si la entrada se guardó.",
+  /** r2-1: el alta con el id pendiente respondió la entrada de un pedido anterior. */
+  addReplayed:
+    "La entrada ya se había agregado con lo que mandaste antes; lo que está en la barra no se guardó.",
   /** TT-65: la confirmación del descarte. */
   discardTitle: "¿Descartar el timer?",
   discardDescription: "Se borra el tiempo que lleva corriendo y no se puede deshacer.",

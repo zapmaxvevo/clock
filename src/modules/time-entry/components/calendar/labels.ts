@@ -98,9 +98,9 @@ export const calendarLabels = {
   stop: "Detener",
   saveBeforeStop: "Guardá los cambios antes de detener el timer.",
   entryNotSaved: "No se pudo guardar la entrada.",
-  /** TT-109: el lugar donde mirar es el calendario, no la lista. */
-  addLostMessage:
-    "Se perdió la respuesta del servidor. Antes de volver a agregarla, fijate en el calendario: puede haberse creado.",
+  /** r2-1: como el de la barra, con lo tecleado en el diálogo. */
+  addReplayed:
+    "La entrada ya se había agregado con lo que mandaste antes; lo que está en el diálogo no se guardó.",
   /** CAL-46: la entrada guardada no tiene ningún segmento en el período. */
   outsideWeek: (day: string) =>
     `La entrada quedó el ${day}, fuera de la semana que estás viendo.`,

@@ -83,7 +83,11 @@ export function EditorActions({
           )}
         </div>
         <div className="flex flex-col-reverse gap-2 sm:flex-row">
-          <DialogClose render={<Button type="button" variant="outline" />}>
+          {/* F1: con el alta en vuelo no cierra; el diálogo ignora el pedido. */}
+          <DialogClose
+            render={<Button type="button" variant="outline" />}
+            aria-disabled={mode === "add" && pending}
+          >
             Cancelar
           </DialogClose>
           <Button

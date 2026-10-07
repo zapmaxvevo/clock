@@ -436,7 +436,9 @@ describe("audit log de la edición de horas", () => {
 
 describe("audit log de la entrada manual", () => {
   it("deja un registro propio con la descripción y los dos instantes", async () => {
+    const id = randomUUID();
     const result = await createManualEntry(actor, workspace, {
+      id,
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -450,7 +452,8 @@ describe("audit log de la entrada manual", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].action).toBe("timeEntry.createManual");
     expect(rows[0].entity).toBe("time_entry");
-    expect(rows[0].entityId).toBe(result.created.id);
+    expect(result.created.id).toBe(id);
+    expect(rows[0].entityId).toBe(id);
     expect(rows[0].workspaceId).toBe(workspaceId);
     expect(rows[0].actorId).toBe(actor.userId);
     expect(rows[0].previousValue).toBeNull();
@@ -465,8 +468,31 @@ describe("audit log de la entrada manual", () => {
     });
   });
 
+  it("el reintento de un alta ya aplicada no deja registro (ADR 0007)", async () => {
+    const values = {
+      id: randomUUID(),
+      projectId: null,
+      taskId: null,
+      tagIds: [],
+      description: "reunión",
+      date: "2026-10-02",
+      start: "08:00",
+      end: "10:30",
+    };
+    await createManualEntry(actor, workspace, values);
+    const before = await auditFor("time_entry");
+
+    await createManualEntry(actor, workspace, values);
+
+    expect(await auditFor("time_entry")).toEqual(before);
+    expect((await auditFor("time_entry", values.id)).map((row) => row.action)).toEqual([
+      "timeEntry.createManual",
+    ]);
+  });
+
   it("no escribe nada cuando la entrada se rechaza", async () => {
     await createManualEntry(actor, workspace, {
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -481,6 +507,7 @@ describe("audit log de la entrada manual", () => {
 
   it("guarda los mismos instantes que la fila cuando la entrada cruza la medianoche", async () => {
     const result = await createManualEntry(actor, workspace, {
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -512,6 +539,7 @@ describe("audit log de la entrada manual", () => {
 
     await expect(
       createManualEntry(sinPermiso, workspace, {
+        id: randomUUID(),
         projectId: null,
         taskId: null,
         tagIds: [],
@@ -536,6 +564,7 @@ describe("audit log de la entrada manual", () => {
     });
 
     const manual = await createManualEntry(actor, workspace, {
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -563,6 +592,7 @@ describe("audit log de la entrada manual", () => {
 
     await expect(
       createManualEntry(actor, reciente, {
+        id: randomUUID(),
         projectId: null,
         taskId: null,
         tagIds: [],
@@ -591,6 +621,7 @@ describe("audit log de la entrada manual", () => {
 
     await expect(
       createManualEntry(actor, madrid, {
+        id: randomUUID(),
         projectId: null,
         taskId: null,
         tagIds: [],
@@ -646,6 +677,7 @@ describe("audit log de la entrada manual", () => {
     };
 
     const result = await createManualEntry(elsewhere, workspace, {
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -664,6 +696,7 @@ describe("audit log de la entrada manual", () => {
 
   it("distingue la entrada cargada a mano de la que produjo un timer", async () => {
     await createManualEntry(actor, workspace, {
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -846,6 +879,7 @@ describe("audit log de continuar, duplicar y descartar", () => {
     });
     await stopTimer(actor, workspace, { id: started.running.id });
     await createManualEntry(actor, workspace, {
+      id: randomUUID(),
       projectId: null,
       taskId: null,
       tagIds: [],
@@ -944,6 +978,7 @@ describe("audit log del proyecto y la tarea (criterio 13)", () => {
     const source = await seedEntry(pair);
 
     const manual = await createManualEntry(actor, workspace, {
+      id: randomUUID(),
       description: "",
       date: "2026-09-30",
       start: "08:00",
@@ -1446,6 +1481,7 @@ describe("audit log del facturable (criterio 12 del 11a)", () => {
       tagIds: [],
     });
     const manual = await createManualEntry(actor, workspace, {
+      id: randomUUID(),
       description: "",
       date: "2026-09-30",
       start: "08:00",
@@ -1590,6 +1626,7 @@ describe("audit log de las etiquetas (criterio 11 del 11b, TT-61)", () => {
       tagIds: [zeta.id, alfa.id],
     });
     const manual = await createManualEntry(actor, workspace, {
+      id: randomUUID(),
       description: "",
       date: "2026-09-30",
       start: "08:00",

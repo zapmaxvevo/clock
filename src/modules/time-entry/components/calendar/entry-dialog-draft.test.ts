@@ -273,4 +273,10 @@ describe("createInputOf", () => {
       tagIds: [],
     });
   });
+
+  it("no lleva id: lo pone el dueño de los pedidos (ADR 0007)", () => {
+    expect(
+      createInputOf(draftOfNew({ date: "2026-09-30", start: "10:00", end: "11:00" })),
+    ).not.toHaveProperty("id");
+  });
 });

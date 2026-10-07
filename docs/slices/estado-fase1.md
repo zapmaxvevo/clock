@@ -5,43 +5,41 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-07.
 
 ## Dónde estamos
 
-| Slice                                       | Estado            |
-| ------------------------------------------- | ----------------- |
-| 1 — Timer sin proyecto                      | En `main`         |
-| 2 — Modo manual                             | En `main`         |
-| 2b — Reintento de «Iniciar»                 | En `main`         |
-| 3 — Corregir horas y fecha                  | En `main`         |
-| 4 — Continuar, duplicar, descartar, atajos  | En `main`         |
-| 5 — Semana y paginación                     | En `main`         |
-| 9 — Núcleo de proyectos                     | En `main`         |
-| 10 — Selector de proyecto y tarea           | En `main`         |
-| 7 — Perfil                                  | En `main`         |
-| 6 — Selección y acciones en masa            | En `main`         |
-| 7b — Perfil: nombre editable y tema         | En `main`         |
-| 8 — Calendario: lectura                     | En `main`         |
-| 8c — Calendario: escritura                  | En `main`         |
-| 8b — Calendario: arrastre                   | En `main`         |
-| 11a — Facturable                            | En `main`         |
-| 11b — Etiquetas                             | En `main`         |
-| 12 — Edición masiva de proyecto y etiquetas | En `main`         |
-| 2c — «Reintentar» en el alta manual         | En implementación |
-| 13 — Timesheet semanal                      | Sin contrato      |
+| Slice                                       | Estado       |
+| ------------------------------------------- | ------------ |
+| 1 — Timer sin proyecto                      | En `main`    |
+| 2 — Modo manual                             | En `main`    |
+| 2b — Reintento de «Iniciar»                 | En `main`    |
+| 3 — Corregir horas y fecha                  | En `main`    |
+| 4 — Continuar, duplicar, descartar, atajos  | En `main`    |
+| 5 — Semana y paginación                     | En `main`    |
+| 9 — Núcleo de proyectos                     | En `main`    |
+| 10 — Selector de proyecto y tarea           | En `main`    |
+| 7 — Perfil                                  | En `main`    |
+| 6 — Selección y acciones en masa            | En `main`    |
+| 7b — Perfil: nombre editable y tema         | En `main`    |
+| 8 — Calendario: lectura                     | En `main`    |
+| 8c — Calendario: escritura                  | En `main`    |
+| 8b — Calendario: arrastre                   | En `main`    |
+| 11a — Facturable                            | En `main`    |
+| 11b — Etiquetas                             | En `main`    |
+| 12 — Edición masiva de proyecto y etiquetas | En `main`    |
+| 2c — «Reintentar» en el alta manual         | En `main`    |
+| 13 — Timesheet semanal                      | Sin contrato |
 
-Los slices 1 a 12 (con 2b, 7b, 8b, 8c, 11a y 11b) están en `main`: con el 12, el rastreador
-queda cubierto salvo lo fuera de alcance. El 12 (edición masiva de proyecto, etiquetas y
-facturable) se mergeó el 2026-10-07 con lint, typecheck, 1043 de unidad, 1092 de integración,
-`next build` y 138 de 138 e2e en verde, dos corridas (**falta `git push origin main`**; el push
-anterior llegó hasta `aed694f`). No quedan agentes con trabajo pendiente ni cambios sin
-commitear. Postgres local: `docker start clock-pg`.
+Los slices 1 a 12 (con 2b, 2c, 7b, 8b, 8c, 11a y 11b) están en `main`: el rastreador queda
+cubierto salvo lo fuera de alcance, y el alta manual ya ofrece «Reintentar» (TT-109 dejó de ser
+excepción). El 2c se mergeó el 2026-10-07 con lint, typecheck, 1098 de unidad, 1121 de
+integración, `next build` y 153 de 153 e2e en verde, dos corridas (**falta `git push origin
+main`**; el push anterior llegó hasta `aed694f`). No quedan agentes con trabajo pendiente ni
+cambios sin commitear. Postgres local: `docker start clock-pg`.
 
 ## Lo primero de la sesión siguiente
 
-0. **Lo que sigue**: el **2c** («Reintentar» en el alta manual, retirar TT-109), con el contrato
-   aprobado en tres rondas (`fase1-slice2c-reintentar-alta-manual.md`, `correcciones-fase1-slice2c.md`
-   y `-ronda2.md`, cuya confirmación suma r3-1 y r3-2, que mandan al implementar). El usuario
-   agregó la nota en el ADR 0007. En implementación en la rama `fase1/slice-2c-reintentar`.
-   Después, el contrato del **13** (timesheet semanal; necesita P-12 de `timesheet.md` y una
-   decisión de arquitectura sobre TS-32, ver `fase1-mapa.md`).
+0. **Lo que sigue**: el contrato del **13** (timesheet semanal; necesita P-12 de `timesheet.md`
+   y una decisión de arquitectura sobre TS-32, ver `fase1-mapa.md`). Ese contrato tiene que decir
+   si el reintento de la copia de semana pasa a ser seguro con TS-56 (TS-60 y TS-92 conservan su
+   «sin Reintentar» hasta entonces).
 1. Deuda chica sin slice:
    - un `DayCalendar` compartido entre `DateField` y `PeriodPicker`;
    - un `ClockRangeFields` común a `manual-bar.tsx`, `entry-times-editor.tsx` y el diálogo;
@@ -54,7 +52,14 @@ commitear. Postgres local: `docker start clock-pg`.
    - la guarda de destino de F1 del 11b también en `handleProjectChange` de la barra (el
      selector de proyecto se cierra al elegir, así que el riesgo es menor);
    - si falla continuar y después falla duplicar, la barra muestra los dos avisos;
-   - las comprobaciones «desde otra pestaña» de e2e sin unificar (§8 del contrato del 12).
+   - las comprobaciones «desde otra pestaña» de e2e sin unificar (§8 del contrato del 12);
+   - `ActionFeedback` con `disabled`: el foco cae a `body` (con un timer de otra pestaña, o con
+     «m» y el foco en «Reintentar» del alta, F2 del 2c); el arreglo es `aria-disabled` y no actuar,
+     en el componente compartido;
+   - el aviso del alta manual no se puede cerrar a mano (§8 del 2c);
+   - la comparación del alta es del cliente: con dos pedidos distintos bajo un id y la entrada
+     editada en otra pestaña, el informativo es falso (F3 del 2c); lo cerraría un `replayed`
+     explícito del servidor en `createOnce`.
 2. Deuda de anchos (11a y 11b, medidas en `correcciones-fase1-slice11b-revisiones.md`, F3): con
    el timer corriendo, el aviso «Detené el timer para agregar tiempo a mano.» (281 px) deja la
    barra en 577 px útiles y el bloque del contador baja a otra línea en cualquier ancho; moverlo
@@ -165,6 +170,9 @@ Lo que sigue siendo del usuario, porque necesita sus cuentas o su máquina:
   autor y `backend-reviewer` de acuerdo en que era equivalente porque miraron solo el estado de
   la base: además de las filas, comparar la respuesta y si la llamada espera un bloqueo
   (`outcomeWhileLocked`).
+- **Nada de `git stash` en el árbol compartido**: en el 2c un agente lo usó para comparar el
+  lint; el `pop` restauró todo, pero con otros agentes escribiendo puede llevarse cambios
+  ajenos. Comparar en una copia.
 - **Hashes informados**: en el 12 un agente avisó dos commits que no existían; antes de
   pasar un hash a otro agente, verificarlo con `git log` o `git cat-file -t`.
 - **Diálogos que crecen**: un `DialogContent` sin alto máximo queda cortado en ventanas bajas

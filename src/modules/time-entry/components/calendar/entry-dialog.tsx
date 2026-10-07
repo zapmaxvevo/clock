@@ -21,7 +21,6 @@ import { TagPicker } from "@/modules/project/components/tag-picker";
 import { useTrackingCatalog } from "@/modules/project/components/tracking-catalog";
 import {
   DESCRIPTION_MAX,
-  type CreateManualEntryInput,
   type TimeEntryView,
   type UpdateEntryChanges,
 } from "@/modules/time-entry/schema";
@@ -33,6 +32,7 @@ import { DateField } from "../date-field";
 import { ElapsedCounter } from "../elapsed-counter";
 import { withSelection } from "../entry-fields";
 import { entryNameOf, entryProjectLabel, extraDaysText, trackerLabels } from "../labels";
+import type { NewEntryRequest } from "../sent-entry";
 import {
   commitChange,
   draftDuration,
@@ -68,11 +68,16 @@ export type DialogSubject =
       readonly opener: "button" | "slot";
     };
 
-/** La falla del último pedido del diálogo, que el dueño le pasa (§5.3). */
+/**
+ * La falla del último pedido del diálogo, que el dueño le pasa (§5.3), o el
+ * informativo del alta que respondió otra entrada (r2-1).
+ */
 export type EntryDialogFailure = {
   readonly title: string;
-  readonly message: string;
-  /** «Reintentar»: solo con `unexpected` de «Guardar» (TT-89), nunca en el alta (TT-109). */
+  readonly message?: string;
+  /** Sin tono, un error. */
+  readonly tone?: "error" | "info";
+  /** «Reintentar»: solo con `unexpected` (TT-89). */
   readonly retryable: boolean;
 };
 
@@ -93,7 +98,7 @@ type EntryDialogProps = {
   /** «Cancelar», «Cerrar», Esc o un clic afuera, y «Guardar» sin cambios. */
   readonly onCancel: () => void;
   readonly onSave: (changes: UpdateEntryChanges) => void;
-  readonly onAdd: (input: CreateManualEntryInput) => void;
+  readonly onAdd: (input: NewEntryRequest) => void;
   readonly onStop: () => void;
   readonly onDuplicate: () => void;
   readonly onDelete: () => void;
@@ -142,9 +147,25 @@ export function EntryDialog({
     onCancel,
   });
   const readOnly = subject?.kind === "entry" && !canTrack;
+  /**
+   * F1: mientras el alta viaja el diálogo no se cierra, así la respuesta que
+   * no es la mandada tiene dónde mostrar su aviso (r2-1).
+   */
+  const adding = pending && subject?.kind === "add";
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next, details) => {
+        // Se cancela, no solo se ignora: la primitiva no registra un cierre
+        // que no ocurrió.
+        if (adding) {
+          details.cancel();
+          return;
+        }
+        onOpenChange(next);
+      }}
+    >
       <DialogContent
         showCloseButton={false}
         // Los campos del horario, en una línea.
@@ -322,10 +343,14 @@ function EntryEditor({
     submit();
   }
 
-  /** «Reintentar» se va con su aviso: el foco pasa antes a «Guardar» (TT-89). */
+  /**
+   * «Reintentar» se va con su aviso: el foco pasa antes a «Guardar» o
+   * «Agregar» (TT-89). Manda el borrador de ahora; en el alta, con el id
+   * pendiente (D2c-2).
+   */
   function retry(): void {
     submitRef.current?.focus();
-    save();
+    submit();
   }
 
   const name = entryNameOf(entry?.description ?? draft.description);
@@ -439,6 +464,7 @@ function EntryEditor({
         <ActionFeedback
           title={failure.title}
           message={failure.message}
+          tone={failure.tone}
           onRetry={failure.retryable ? retry : undefined}
         />
       )}
