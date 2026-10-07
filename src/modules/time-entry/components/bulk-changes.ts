@@ -1,5 +1,11 @@
+import { selectionIds } from "@/modules/project/components/picker-model";
+import { tagIdsOf } from "@/modules/project/components/tag-picker-model";
+import type { ProjectSelection, TagRef } from "@/modules/project/schema";
 import type { BulkEditChanges } from "@/modules/time-entry/schema";
 import { parseClockInput, type TimeFormat } from "@/server/time";
+
+/** TT-63: «add» suma a las etiquetas de cada entrada; «replace» deja las elegidas. */
+export type BulkTagMode = "add" | "replace";
 
 /**
  * TT-63: el borrador del diálogo de edición masiva. Un campo vacío no cambia
@@ -14,6 +20,12 @@ export type BulkChangesDraft = {
   /** Hora canónica "HH:mm", o "" sin cambios. */
   readonly start: string;
   readonly end: string;
+  /** `null` sin cambios; `NO_SELECTION` es «Sin proyecto». */
+  readonly selection: ProjectSelection | null;
+  readonly tagMode: BulkTagMode;
+  readonly tags: readonly TagRef[];
+  /** `null` sin cambios. */
+  readonly billable: boolean | null;
 };
 
 export const emptyBulkChanges: BulkChangesDraft = {
@@ -21,7 +33,22 @@ export const emptyBulkChanges: BulkChangesDraft = {
   date: null,
   start: "",
   end: "",
+  selection: null,
+  tagMode: "add",
+  tags: [],
+  billable: null,
 };
+
+/**
+ * «Agregar» sin etiquetas no cambia nada; «Reemplazar» cambia también sin
+ * ninguna: deja las entradas sin etiquetas (D12-3).
+ */
+function tagsChange({ tagMode, tags }: BulkChangesDraft): Pick<BulkEditChanges, "tags"> {
+  if (tagMode === "add" && tags.length === 0) {
+    return {};
+  }
+  return { tags: { mode: tagMode, ids: tagIdsOf(tags) } };
+}
 
 /**
  * Solo los campos con algo; un texto vacío o de solo espacios no cambia. `null`
@@ -34,6 +61,9 @@ export function toChanges(draft: BulkChangesDraft): BulkEditChanges | null {
     ...(draft.date === null ? {} : { date: draft.date }),
     ...(draft.start === "" ? {} : { start: draft.start }),
     ...(draft.end === "" ? {} : { end: draft.end }),
+    ...(draft.selection === null ? {} : { project: selectionIds(draft.selection) }),
+    ...tagsChange(draft),
+    ...(draft.billable === null ? {} : { billable: draft.billable }),
   };
   return Object.keys(changes).length === 0 ? null : changes;
 }

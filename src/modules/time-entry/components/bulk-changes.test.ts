@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import { NO_SELECTION } from "@/modules/project/components/picker-model";
+import type { ProjectSelection, TagRef } from "@/modules/project/schema";
+
 import {
   BULK_DELETE_WORD,
   confirmsDelete,
@@ -7,6 +10,14 @@ import {
   toChanges,
   withBulkClock,
 } from "./bulk-changes";
+
+const web = { id: "p-web", name: "Web", color: "teal" } as const;
+const webDesign: ProjectSelection = {
+  project: web,
+  task: { id: "t-design", name: "Diseño" },
+};
+const urgent: TagRef = { id: "tag-urgent", name: "Urgente" };
+const client: TagRef = { id: "tag-client", name: "Cliente" };
 
 describe("toChanges", () => {
   it("el borrador vacío no tiene nada que mandar", () => {
@@ -29,6 +40,43 @@ describe("toChanges", () => {
     });
   });
 
+  it("un proyecto viaja como el par de ids", () => {
+    expect(toChanges({ ...emptyBulkChanges, selection: webDesign })).toEqual({
+      project: { projectId: "p-web", taskId: "t-design" },
+    });
+  });
+
+  it("«Sin proyecto» es un cambio: el par nulo", () => {
+    expect(toChanges({ ...emptyBulkChanges, selection: NO_SELECTION })).toEqual({
+      project: { projectId: null, taskId: null },
+    });
+  });
+
+  it("«Agregar» manda las etiquetas elegidas; sin ninguna no cambia", () => {
+    expect(toChanges({ ...emptyBulkChanges, tags: [urgent, client] })).toEqual({
+      tags: { mode: "add", ids: ["tag-urgent", "tag-client"] },
+    });
+    expect(toChanges({ ...emptyBulkChanges, tagMode: "add", tags: [] })).toBeNull();
+  });
+
+  it("«Reemplazar» manda las elegidas, y sin ninguna la lista vacía (D12-3)", () => {
+    expect(
+      toChanges({ ...emptyBulkChanges, tagMode: "replace", tags: [urgent] }),
+    ).toEqual({ tags: { mode: "replace", ids: ["tag-urgent"] } });
+    expect(toChanges({ ...emptyBulkChanges, tagMode: "replace" })).toEqual({
+      tags: { mode: "replace", ids: [] },
+    });
+  });
+
+  it("el facturable viaja si no es nulo, también apagado", () => {
+    expect(toChanges({ ...emptyBulkChanges, billable: true })).toEqual({
+      billable: true,
+    });
+    expect(toChanges({ ...emptyBulkChanges, billable: false })).toEqual({
+      billable: false,
+    });
+  });
+
   it("con todos los campos, los manda todos", () => {
     expect(
       toChanges({
@@ -36,12 +84,19 @@ describe("toChanges", () => {
         date: "2026-10-02",
         start: "09:30",
         end: "10:00",
+        selection: { project: web, task: null },
+        tagMode: "add",
+        tags: [client],
+        billable: false,
       }),
     ).toEqual({
       description: "Revisión",
       date: "2026-10-02",
       start: "09:30",
       end: "10:00",
+      project: { projectId: "p-web", taskId: null },
+      tags: { mode: "add", ids: ["tag-client"] },
+      billable: false,
     });
   });
 });
