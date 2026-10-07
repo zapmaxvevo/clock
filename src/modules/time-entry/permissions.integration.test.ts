@@ -19,7 +19,7 @@ import { timeEntriesOf, timeEntryById } from "@/test/queries";
 import { projectMessages } from "@/modules/project/schema";
 
 import { timeEntryRepository } from "./repository";
-import { timeEntryMessages } from "./schema";
+import { timeEntryMessages, type CreateManualEntryValues } from "./schema";
 import {
   bulkDeleteEntries,
   bulkEditEntries,
@@ -63,14 +63,15 @@ const workspace: TrackerWorkspace = {
 const timesValues = { date: "2026-10-01", start: "09:00", end: "10:30" } as const;
 const runningStartValues = { date: "2026-10-02", start: "07:00" } as const;
 
-const manualValues = {
+const manualValues: CreateManualEntryValues = {
   projectId: null,
   taskId: null,
+  tagIds: [],
   description: "a mano",
   date: "2026-10-02",
   start: "08:00",
   end: "09:00",
-} as const;
+};
 
 let workspaceId: string;
 let ownerId: string;
@@ -104,6 +105,7 @@ describe.each(roles)("rol %s", (role) => {
       const result = await startTimer(actor, workspace, {
         projectId: null,
         taskId: null,
+        tagIds: [],
         id: randomUUID(),
         description: "trabajo",
       });
@@ -146,6 +148,7 @@ describe.each(roles)("rol %s", (role) => {
         startTimer(actor, workspace, {
           projectId: null,
           taskId: null,
+          tagIds: [],
           id: randomUUID(),
           description: "no va",
         }),
@@ -176,6 +179,7 @@ describe.each(roles)("rol %s", (role) => {
       const started = await startTimer(actor, workspace, {
         projectId: null,
         taskId: null,
+        tagIds: [],
         id: randomUUID(),
         description: "",
       });
@@ -727,6 +731,7 @@ describe("aislamiento entre workspaces", () => {
     const started = await startTimer(elsewhere, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id: randomUUID(),
       description: "corriendo allá",
     });
@@ -830,6 +835,7 @@ describe("el permiso va antes que la fila propia (ADR 0007)", () => {
         startTimer(actor, workspace, {
           projectId: null,
           taskId: null,
+          tagIds: [],
           id: own.id,
           description: "propia",
         }),

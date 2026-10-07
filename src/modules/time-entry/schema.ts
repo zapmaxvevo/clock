@@ -18,6 +18,9 @@ export const DESCRIPTION_MAX = 3000;
 /** Tope de entradas de una operación en masa (TT-63, TT-64). */
 export const BULK_MAX = 200;
 
+/** D-4: tope de etiquetas de una entrada. */
+export const TAGS_MAX = 50;
+
 /** Textos que la interfaz muestra tal cual. Un código puede tener más de uno. */
 export const timeEntryMessages = {
   descriptionTooLong: "La descripción no puede superar los 3000 caracteres.",
@@ -38,6 +41,7 @@ export const timeEntryMessages = {
   multiDayTimes: "Esta entrada dura más de un día; sus horarios no se pueden editar acá.",
   sameEntryId: "La entrada nueva no puede usar el id de la original.",
   taskNeedsProject: "Elegí un proyecto antes que una tarea.",
+  tooManyTags: `Se pueden elegir hasta ${TAGS_MAX} etiquetas por entrada.`,
   bulkEmpty: "Elegí al menos una entrada.",
   bulkTooMany: `Se pueden elegir hasta ${BULK_MAX} entradas a la vez.`,
   bulkNoChanges: "Elegí al menos un cambio.",
@@ -76,6 +80,23 @@ const newEntryPair = {
 /** TT-14: ausente, el servidor aplica el por defecto del proyecto (`billableFor`). */
 const newEntryBillable = { billable: z.boolean().optional() };
 
+/** En minúsculas y sin repetir: la base iguala los ids, y repetir uno no cambia lo pedido. */
+function uniqueIds(ids: readonly string[]): string[] {
+  return [...new Set(ids.map((id) => id.toLowerCase()))];
+}
+
+/**
+ * Las etiquetas de una entrada, enteras: el pedido fija el conjunto, no «las
+ * que cambiaron» (D-5).
+ */
+const tagIds = z
+  .array(z.uuid())
+  .max(TAGS_MAX, timeEntryMessages.tooManyTags)
+  .transform(uniqueIds);
+
+/** En las altas, al lado del par. Ausente es ninguna. */
+const newEntryTags = { tagIds: tagIds.default([]) };
+
 /** El cliente no manda instantes: el inicio lo pone la base. */
 export const startTimerInput = z
   .object({
@@ -83,6 +104,7 @@ export const startTimerInput = z
     description: description.default(""),
     ...newEntryPair,
     ...newEntryBillable,
+    ...newEntryTags,
   })
   .refine(hasProjectForTask, taskNeedsProject);
 
@@ -134,6 +156,7 @@ export const createManualEntryInput = z
     end: clockInput,
     ...newEntryPair,
     ...newEntryBillable,
+    ...newEntryTags,
   })
   .refine(hasProjectForTask, taskNeedsProject);
 
@@ -187,15 +210,12 @@ export const updateEntryProjectInput = z
   })
   .refine(hasProjectForTask, taskNeedsProject);
 
-/**
- * Los ids de una operación en masa. Se normalizan a minúsculas y sin repetir:
- * la base los iguala, y repetir uno no cambia lo pedido.
- */
+/** Los ids de una operación en masa, normalizados como los de las etiquetas. */
 const entryIds = z
   .array(z.uuid())
   .min(1, timeEntryMessages.bulkEmpty)
   .max(BULK_MAX, timeEntryMessages.bulkTooMany)
-  .transform((ids) => [...new Set(ids.map((id) => id.toLowerCase()))]);
+  .transform(uniqueIds);
 
 /**
  * Lo que cambia en cada entrada. Un campo ausente no cambia; uno presente
@@ -246,12 +266,13 @@ const runningStart = z.strictObject(
 );
 
 /**
- * Los grupos de campos que la persona tocó en el diálogo (ADR 0013). Ausente
- * no cambia; presente reemplaza, también "" en la descripción. Estricto en
- * cada nivel: un grupo o una clave que este slice no conoce —las etiquetas,
- * antes del 11b— se rechaza con el texto de `unexpected`. `times` es de una
- * entrada cerrada y `runningStart` de la que corre: nunca los dos. `billable`,
- * presente, gana sobre el por defecto del proyecto que cambia en `project`.
+ * Los grupos de campos que la persona tocó en el diálogo, la fila o la barra
+ * (ADR 0013). Ausente no cambia; presente reemplaza, también "" en la
+ * descripción y el conjunto vacío en `tags`. Estricto en cada nivel: un grupo
+ * o una clave que no se conoce se rechaza con el texto de `unexpected`.
+ * `times` es de una entrada cerrada y `runningStart` de la que corre: nunca
+ * los dos. `billable`, presente, gana sobre el por defecto del proyecto que
+ * cambia en `project`.
  */
 export const updateEntryChanges = z
   .strictObject(
@@ -261,6 +282,7 @@ export const updateEntryChanges = z
       times: entryTriple.optional(),
       runningStart: runningStart.optional(),
       billable: z.boolean().optional(),
+      tags: tagIds.optional(),
     },
     { error: timeEntryMessages.unexpected },
   )
@@ -344,6 +366,11 @@ export const timeEntryView = z.object({
   task: z.object({ id: z.uuid(), name: z.string() }).nullable(),
   /** TT-14, TT-15: un booleano visible, sin importes. */
   billable: z.boolean(),
+  /**
+   * Con la forma de `TagRef`, en orden alfabético, archivadas incluidas y con
+   * su nombre de ahora (PR-47, PR-68).
+   */
+  tags: z.array(z.object({ id: z.uuid(), name: z.string() })),
 });
 
 export const dayGroupView = z.object({

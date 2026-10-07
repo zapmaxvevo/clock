@@ -71,6 +71,27 @@
       "when": 1791227914657,
       "tag": "0009_time_entry_billable",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791381399457,
+      "tag": "0010_time_entry_workspace_id_unq",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791381413784,
+      "tag": "0011_tags",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791381414335,
+      "tag": "0012_tags_set_null",
+      "breakpoints": true
     }
   ]
 }

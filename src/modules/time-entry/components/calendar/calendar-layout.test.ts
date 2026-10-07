@@ -336,6 +336,7 @@ describe("chronological", () => {
       project: null,
       task: null,
       billable: false,
+      tags: [],
     };
   }
 

@@ -1,0 +1,1 @@
+ALTER TABLE "time_entry" ADD CONSTRAINT "time_entry_workspace_id_unq" UNIQUE("workspace_id","id");

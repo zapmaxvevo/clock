@@ -354,6 +354,43 @@ export const task = pgTable(
   ],
 );
 
+/** Una etiqueta del workspace (PR-42, PR-43). Del módulo de proyectos (ADR 0016). */
+export const tag = pgTable(
+  "tag",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull(),
+    name: text("name").notNull(),
+    /** Nulo es activa (PR-45). */
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    /** Quien la creó: es lo que hace «propia» la fila en un reintento (ADR 0007). */
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    foreignKey({
+      name: "tag_workspace_fk",
+      columns: [table.workspaceId],
+      foreignColumns: [workspace.id],
+    }).onDelete("cascade"),
+    // La 0012 la reemplaza por `on delete set null (created_by)`.
+    foreignKey({
+      name: "tag_created_by_fk",
+      columns: [table.workspaceId, table.createdBy],
+      foreignColumns: [membership.workspaceId, membership.userId],
+    }).onDelete("set null"),
+    unique("tag_workspace_id_unq").on(table.workspaceId, table.id),
+    // Sin condición: las archivadas cuentan (PR-52, PR-53).
+    uniqueIndex("tag_name_unq").on(table.workspaceId, sql`lower(${table.name})`),
+    check("tag_name_len", sql`char_length(${table.name}) between 1 and 100`),
+    check("tag_name_trimmed", sql`${table.name} = btrim(${table.name})`),
+  ],
+);
+
 /**
  * Una carga de horas. La duración no se almacena: se calcula sobre los dos
  * instantes, que escribe la base con now() dentro de la transacción.
@@ -425,6 +462,47 @@ export const timeEntry = pgTable(
     index("time_entry_workspace_project_task_idx")
       .on(table.workspaceId, table.projectId, table.taskId)
       .where(sql`${table.projectId} is not null`),
+    // El destino de `time_entry_tag_entry_fk`. Tiene su propia migración, la
+    // 0010: en la misma que la unión, drizzle-kit escribe la clave antes que
+    // la restricción y Postgres la rechaza.
+    unique("time_entry_workspace_id_unq").on(table.workspaceId, table.id),
+  ],
+);
+
+/**
+ * Las etiquetas de una entrada (PR-48). Sin `created_at`: el cambio queda en
+ * el registro de auditoría, como el par. Las dos claves compuestas hacen que
+ * una fila no junte una entrada de un workspace con una etiqueta de otro.
+ */
+export const timeEntryTag = pgTable(
+  "time_entry_tag",
+  {
+    workspaceId: uuid("workspace_id").notNull(),
+    timeEntryId: uuid("time_entry_id").notNull(),
+    tagId: uuid("tag_id").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.timeEntryId, table.tagId] }),
+    foreignKey({
+      name: "time_entry_tag_workspace_fk",
+      columns: [table.workspaceId],
+      foreignColumns: [workspace.id],
+    }).onDelete("cascade"),
+    // Las etiquetas no tienen vida fuera de la entrada; la copia queda en la
+    // constancia del borrado (TT-61).
+    foreignKey({
+      name: "time_entry_tag_entry_fk",
+      columns: [table.workspaceId, table.timeEntryId],
+      foreignColumns: [timeEntry.workspaceId, timeEntry.id],
+    }).onDelete("cascade"),
+    // PR-69, TT-105: la etiqueta borrada desaparece de la entrada.
+    foreignKey({
+      name: "time_entry_tag_tag_fk",
+      columns: [table.workspaceId, table.tagId],
+      foreignColumns: [tag.workspaceId, tag.id],
+    }).onDelete("cascade"),
+    // Lo recorre la cascada al borrar una etiqueta.
+    index("time_entry_tag_workspace_tag_idx").on(table.workspaceId, table.tagId),
   ],
 );
 

@@ -29,6 +29,7 @@ function view(
     project: null,
     task: null,
     billable: false,
+    tags: [],
   };
 }
 

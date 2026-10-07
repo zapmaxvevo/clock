@@ -21,3 +21,16 @@ export function pairToCheck(
   }
   return { projectId: requested.projectId, taskId: requested.taskId };
 }
+
+/**
+ * Las etiquetas pedidas que la entrada todavía no tiene: las únicas que se
+ * validan. Las que ya tiene se conservan aunque estén archivadas (PR-47,
+ * PR-68), y quitar no asigna nada. Para un alta, `current` es vacío y se
+ * validan todas.
+ */
+export function tagsToCheck(
+  current: readonly string[],
+  requested: readonly string[],
+): string[] {
+  return requested.filter((id) => !current.some((own) => sameId(own, id)));
+}

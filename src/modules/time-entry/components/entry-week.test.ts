@@ -92,6 +92,7 @@ function viewIn(weekStart: string): TimeEntryView {
     project: null,
     task: null,
     billable: false,
+    tags: [],
   };
 }
 

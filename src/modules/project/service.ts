@@ -1,3 +1,4 @@
+import { compareNames } from "@/lib/text";
 import { DomainError, type ActionErrorCode } from "@/server/action";
 import { recordAudit } from "@/server/audit";
 import { createOnce } from "@/server/create-once";
@@ -16,6 +17,7 @@ import {
   projectRepository,
   type ClientRow,
   type ProjectWithViewer,
+  type TagRow,
   type TaskRow,
 } from "./repository";
 import {
@@ -25,11 +27,14 @@ import {
   type CreateClientValues,
   type CreateProjectResult,
   type CreateProjectValues,
+  type CreateTagResult,
+  type CreateTagValues,
   type CreateTaskResult,
   type CreateTaskValues,
   type ProjectCatalog,
   type ProjectRef,
   type ProjectView,
+  type TagRef,
   type TaskView,
   type TrackableProject,
   type TrackingCatalog,
@@ -70,6 +75,10 @@ function toClientView(row: ClientRow): ClientView {
 }
 
 function toTaskView(row: TaskRow): TaskView {
+  return { id: row.id, name: row.name };
+}
+
+function toTagRef(row: TagRow): TagRef {
   return { id: row.id, name: row.name };
 }
 
@@ -289,6 +298,52 @@ export async function createTask(
 }
 
 /**
+ * PR-42 … PR-44, PR-52, PR-54, PR-80. Cualquier membresía activa crea una
+ * etiqueta (PR-58). El reintento responde la fila del primer intento, esté o
+ * no archivada: una etiqueta archivada no deja de ser propia y no hay nada que
+ * revelar (PR-62).
+ */
+export async function createTag(
+  actor: Actor,
+  input: CreateTagValues,
+): Promise<CreateTagResult> {
+  // Antes que la fila propia: sin esto, una membresía desactivada recibiría
+  // éxito por mandar el id de una etiqueta suya que ya existe (ADR 0007).
+  assertCan(actor, "tag.create", workspaceResource(actor));
+  return translatingNameTaken(
+    projectRepository.isTagNameTaken,
+    projectMessages.tagNameTaken,
+    () =>
+      createOnce<TagRow, CreateTagResult>({
+        id: input.id,
+        action: "tag.create",
+        idConstraint: projectRepository.tagIdConstraint,
+        findOwn: (id) =>
+          projectRepository.findOwnTag(actor.workspaceId, actor.userId, id),
+        attempt: () =>
+          db.transaction(async (tx) => {
+            const created = await projectRepository.insertTag(tx, {
+              id: input.id,
+              workspaceId: actor.workspaceId,
+              name: input.name,
+              createdBy: actor.userId,
+            });
+            await recordAudit(tx, {
+              workspaceId: actor.workspaceId,
+              actorId: actor.userId,
+              action: "tag.create",
+              entity: "tag",
+              entityId: created.id,
+              nextValue: created,
+            });
+            return { tag: toTagRef(created) };
+          }),
+        replayed: (row) => ({ tag: toTagRef(row) }),
+      }),
+  );
+}
+
+/**
  * PR-23, PR-74, TT-08, TT-77. Lanza `ProjectError("not_found", …)` si la
  * persona no puede cargar horas en ese proyecto o esa tarea. Solo lee, con la
  * transacción de quien la llama (ADR 0010). Devuelve lo que la entrada toma
@@ -330,20 +385,44 @@ export async function assertTrackable(
   return trackable;
 }
 
-// Sin distinguir mayúsculas, como `lower(name)` en los índices de unicidad.
-const byName = new Intl.Collator("es", { sensitivity: "accent" });
+/**
+ * PR-45, PR-73, TT-78. Lanza `ProjectError("not_found", tagUnavailable)` si
+ * alguna de `tagIds` no está en el workspace de quien actúa, está archivada, o
+ * `tag.view` no la deja ver: usar una etiqueta es verla. Un mensaje para todas,
+ * sin decir cuál, como TT-77. Solo lee, con la transacción de quien la llama
+ * (ADR 0010). Con `tagIds` vacío no consulta.
+ */
+export async function assertTaggable(
+  tx: Transaction,
+  actor: Actor,
+  tagIds: readonly string[],
+): Promise<void> {
+  if (tagIds.length === 0) {
+    return;
+  }
+  if (!can(actor, "tag.view", workspaceResource(actor))) {
+    throw new ProjectError("not_found", projectMessages.tagUnavailable);
+  }
+  const found = await projectRepository.findTags(tx, actor.workspaceId, tagIds);
+  const usable = new Set(
+    found.filter((row) => row.archivedAt === null).map((row) => row.id.toLowerCase()),
+  );
+  if (tagIds.some((id) => !usable.has(id.toLowerCase()))) {
+    throw new ProjectError("not_found", projectMessages.tagUnavailable);
+  }
+}
 
 function alphabetical<T extends { readonly id: string; readonly name: string }>(
   rows: readonly T[],
 ): T[] {
-  return [...rows].sort(
-    (a, b) => byName.compare(a.name, b.name) || (a.id < b.id ? -1 : 1),
-  );
+  return [...rows].sort(compareNames);
 }
 
 type CatalogRead<Project> = {
   /** Todos los clientes del workspace, archivados incluidos. */
   readonly clients: readonly ClientRow[];
+  /** Las etiquetas activas, en orden alfabético; vacío sin `tag.view`. */
+  readonly tags: readonly TagRef[];
   readonly groups: readonly {
     readonly client: ClientView | null;
     readonly projects: readonly Project[];
@@ -351,9 +430,10 @@ type CatalogRead<Project> = {
 };
 
 /**
- * Tres consultas en un mismo snapshot y el armado en memoria: el filtro de
+ * Las consultas en un mismo snapshot y el armado en memoria: el filtro de
  * acceso es `can()` con `access` sobre cada proyecto (PR-61, PR-93), sin una
- * segunda versión en SQL que pueda desalinearse.
+ * segunda versión en SQL que pueda desalinearse. Las etiquetas, solo con
+ * `tag.view` (PR-62).
  */
 async function readCatalog<Project>(
   actor: Actor,
@@ -369,6 +449,9 @@ async function readCatalog<Project>(
         actor.userId,
       ),
       tasks: await projectRepository.listActiveTasks(tx, actor.workspaceId),
+      tags: can(actor, "tag.view", workspaceResource(actor))
+        ? await projectRepository.listActiveTags(tx, actor.workspaceId)
+        : [],
     }),
     { isolationLevel: "repeatable read" },
   );
@@ -394,6 +477,7 @@ async function readCatalog<Project>(
 
   return {
     clients: read.clients,
+    tags: alphabetical(read.tags).map(toTagRef),
     // «Sin cliente» al final (PR-14, PR-97).
     groups:
       withoutClient === undefined
@@ -410,6 +494,8 @@ export async function getProjectCatalog(actor: Actor): Promise<ProjectCatalog> {
   return {
     canCreateClient: can(actor, "client.create", workspaceResource(actor)),
     canCreateProject: can(actor, "project.create", workspaceResource(actor)),
+    canCreateTag: can(actor, "tag.create", workspaceResource(actor)),
+    tags: read.tags,
     clients: alphabetical(read.clients.filter((row) => row.archivedAt === null)).map(
       toClientView,
     ),
@@ -438,6 +524,8 @@ export async function getTrackingCatalog(actor: Actor): Promise<TrackingCatalog>
   );
   return {
     canCreateProject: can(actor, "project.create", workspaceResource(actor)),
+    canCreateTag: can(actor, "tag.create", workspaceResource(actor)),
+    tags: read.tags,
     groups: read.groups,
   };
 }

@@ -27,6 +27,8 @@ function project(
 
 const catalog: TrackingCatalog = {
   canCreateProject: true,
+  canCreateTag: true,
+  tags: [],
   groups: [
     {
       client: { id: "c-acme", name: "Acme" },
@@ -149,7 +151,12 @@ describe("pickerView", () => {
   });
 
   it("el catálogo sin proyectos da el vacío de TT-87, con el enlace según canCreateProject", () => {
-    const empty: TrackingCatalog = { canCreateProject: true, groups: [] };
+    const empty: TrackingCatalog = {
+      canCreateProject: true,
+      canCreateTag: true,
+      tags: [],
+      groups: [],
+    };
 
     expect(pickerView(empty, "").empty).toEqual({
       kind: "noProjects",
@@ -166,7 +173,12 @@ describe("pickerView", () => {
   });
 
   it("el catálogo sin proyectos sigue ofreciendo «Sin proyecto», para quitar uno archivado", () => {
-    const empty: TrackingCatalog = { canCreateProject: false, groups: [] };
+    const empty: TrackingCatalog = {
+      canCreateProject: false,
+      canCreateTag: true,
+      tags: [],
+      groups: [],
+    };
 
     expect(pickerView(empty, "").none).not.toBeNull();
   });

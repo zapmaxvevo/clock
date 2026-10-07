@@ -9,10 +9,12 @@ import {
   isNotNull,
   isNull,
   lt,
+  notInArray,
   or,
   sql,
   type SQL,
 } from "drizzle-orm";
+import { z } from "zod";
 
 import type { ProjectPair } from "@/lib/project-pair";
 import { db, type Transaction } from "@/server/db";
@@ -22,15 +24,16 @@ import {
   hasConstraint,
   UNIQUE_VIOLATION,
 } from "@/server/db/constraint-error";
-import { now, project, task, timeEntry } from "@/server/db/schema";
+import { now, project, tag, task, timeEntry, timeEntryTag } from "@/server/db/schema";
 
 export type TimeEntryRow = typeof timeEntry.$inferSelect;
 
 /**
- * Lo que la fila muestra de su proyecto y su tarea, sin ningún filtro: una
- * entrada muestra su proyecto archivado, privado sin acceso, y su tarea hecha
- * (TT-104, PR-63, PR-65, PR-71). El color llega como texto; lo estrecha el
- * service.
+ * Lo que la fila muestra de su proyecto, su tarea y sus etiquetas, sin ningún
+ * filtro: una entrada muestra su proyecto archivado, privado sin acceso, su
+ * tarea hecha y sus etiquetas archivadas (TT-104, PR-63, PR-65, PR-71, PR-47,
+ * PR-68). El color llega como texto; lo estrecha el service. Las etiquetas
+ * llegan sin orden: lo pone el service.
  */
 export type EntryRefs = {
   readonly project: {
@@ -39,6 +42,7 @@ export type EntryRefs = {
     readonly color: string;
   } | null;
   readonly task: { readonly id: string; readonly name: string } | null;
+  readonly tags: readonly { readonly id: string; readonly name: string }[];
 };
 
 /** Toda lectura que termina en una vista devuelve esto (ADR 0010). */
@@ -65,26 +69,39 @@ export type ClosedFields = {
 
 /**
  * Lo que escribe `updateClosedEntry`: lo de `ClosedFields`, el par, siempre
- * entero, y el facturable. La masiva sigue escribiendo solo `ClosedFields`.
+ * entero, el facturable y el conjunto entero de etiquetas. La masiva sigue
+ * escribiendo solo `ClosedFields`.
  */
 export type ClosedEntryFields = ClosedFields & {
   readonly pair?: ProjectPair;
   readonly billable?: boolean;
+  readonly tagIds?: readonly string[];
 };
 
 /** Lo que escribe `updateRunningEntry`. */
 export type RunningEntryFields = Omit<ClosedEntryFields, "endedAt">;
 
-type ColumnFields = Omit<ClosedEntryFields, "pair">;
+type ColumnFields = Omit<ClosedEntryFields, "pair" | "tagIds">;
 
 /** Las columnas de una escritura de una fila cerrada: el par va entero o no va. */
 type ClosedColumns = ColumnFields | (ColumnFields & ProjectPair);
 
-/** Las columnas de una escritura: el par se abre en sus dos columnas, juntas. */
-function columnsOf({ pair, ...fields }: ClosedEntryFields): ClosedColumns {
+/**
+ * Las columnas de una escritura: el par se abre en sus dos columnas, juntas.
+ * Las etiquetas no son columnas: van a la unión.
+ */
+function columnsOf({
+  pair,
+  tagIds: _tagIds, // eslint-disable-line @typescript-eslint/no-unused-vars -- se separa de las columnas
+  ...fields
+}: ClosedEntryFields): ClosedColumns {
   return pair === undefined
     ? fields
     : { ...fields, projectId: pair.projectId, taskId: pair.taskId };
+}
+
+function hasColumns(columns: ClosedColumns): boolean {
+  return Object.keys(columns).length > 0;
 }
 
 function isTarget(target: EntryTarget) {
@@ -97,11 +114,30 @@ function isTarget(target: EntryTarget) {
 
 type Executor = Transaction | typeof db;
 
-/** Solo las columnas de `ProjectRef` y `TaskRef`. */
+/**
+ * Las etiquetas de la entrada de la fila exterior, en un arreglo JSON: una
+ * subconsulta correlacionada no multiplica filas como un `join`. Filtra por el
+ * `workspace_id` y el `id` de la entrada; las dos claves de la unión hacen que
+ * no cruce workspaces.
+ */
+const entryTags = sql<unknown>`coalesce((
+  select json_agg(json_build_object('id', ${tag.id}, 'name', ${tag.name}))
+  from ${timeEntryTag}
+  inner join ${tag}
+    on ${tag.workspaceId} = ${timeEntryTag.workspaceId} and ${tag.id} = ${timeEntryTag.tagId}
+  where ${timeEntryTag.workspaceId} = ${timeEntry.workspaceId}
+    and ${timeEntryTag.timeEntryId} = ${timeEntry.id}
+), '[]'::json)`;
+
+/** El JSON de `entryTags`, estrechado antes de salir del repository. */
+const entryTagsShape = z.array(z.object({ id: z.string(), name: z.string() }));
+
+/** Solo las columnas de `ProjectRef`, `TaskRef` y `TagRef`. */
 const withRefs = {
   entry: timeEntry,
   project: { id: project.id, name: project.name, color: project.color },
   task: { id: task.id, name: task.name },
+  tags: entryTags,
 };
 
 /**
@@ -136,17 +172,24 @@ function toEntryWithRefs(row: {
   readonly entry: TimeEntryRow;
   readonly project: EntryRefs["project"];
   readonly task: EntryRefs["task"];
+  readonly tags: unknown;
 }): EntryWithRefs {
-  return { ...row.entry, project: row.project, task: row.task };
+  return {
+    ...row.entry,
+    project: row.project,
+    task: row.task,
+    tags: entryTagsShape.parse(row.tags),
+  };
 }
 
 /**
- * La fila recién escrita, con sus referencias. `insert … returning` no puede
- * hacer el join: es una lectura más, dentro de la misma transacción.
+ * La fila recién escrita o recién bloqueada, con sus referencias. `insert …
+ * returning` no puede hacer el join, y la sentencia que bloquea no debe (ver
+ * `findByIdForUpdate`): es una lectura más, dentro de la misma transacción.
  */
 async function rereadWithRefs(
   tx: Transaction,
-  row: TimeEntryRow,
+  row: Pick<TimeEntryRow, "workspaceId" | "id">,
 ): Promise<EntryWithRefs> {
   const rows = await selectWithRefs(
     tx,
@@ -157,6 +200,58 @@ async function rereadWithRefs(
     throw new Error(`La entrada ${row.id} no está en la transacción que la escribió.`);
   }
   return toEntryWithRefs(found);
+}
+
+/** Las filas de la unión de una entrada nueva. Sin etiquetas, no hay sentencia. */
+async function insertTags(
+  tx: Transaction,
+  entry: Pick<TimeEntryRow, "workspaceId" | "id">,
+  tagIds: readonly string[],
+): Promise<void> {
+  if (tagIds.length === 0) {
+    return;
+  }
+  await tx.insert(timeEntryTag).values(
+    tagIds.map((tagId) => ({
+      workspaceId: entry.workspaceId,
+      timeEntryId: entry.id,
+      tagId,
+    })),
+  );
+}
+
+/**
+ * Deja en la entrada exactamente `tagIds`: borra las filas que no están en el
+ * pedido e inserta las que faltan. Las dos sentencias filtran por el destino
+ * leído, nunca por la entrada del cliente.
+ */
+async function replaceTags(
+  tx: Transaction,
+  target: EntryTarget,
+  tagIds: readonly string[],
+): Promise<void> {
+  await tx
+    .delete(timeEntryTag)
+    .where(
+      and(
+        eq(timeEntryTag.workspaceId, target.workspaceId),
+        eq(timeEntryTag.timeEntryId, target.id),
+        notInArray(timeEntryTag.tagId, [...tagIds]),
+      ),
+    );
+  if (tagIds.length === 0) {
+    return;
+  }
+  await tx
+    .insert(timeEntryTag)
+    .values(
+      tagIds.map((tagId) => ({
+        workspaceId: target.workspaceId,
+        timeEntryId: target.id,
+        tagId,
+      })),
+    )
+    .onConflictDoNothing();
 }
 
 /** `rereadWithRefs` sobre el resultado de una escritura que puede no tocar ninguna fila. */
@@ -183,37 +278,52 @@ export const timeEntryRepository = {
     workspaceId: string,
     id: string,
   ): Promise<EntryWithRefs | undefined> {
-    // Solo la entrada: Postgres rechaza `for update` sobre el lado nulable de
-    // un `left join`.
-    const rows = await selectWithRefs(
-      tx,
-      and(eq(timeEntry.workspaceId, workspaceId), eq(timeEntry.id, id)),
-    )
+    // Dos sentencias. En `read committed`, un `join` o una subconsulta dentro
+    // de la que bloquea usan la foto tomada antes de esperar el bloqueo: con
+    // otra conexión que cambió las etiquetas o el par y confirmó, traerían las
+    // etiquetas de antes o un proyecto nulo con el `project_id` nuevo. La
+    // segunda toma su foto con el bloqueo ya tomado.
+    const locked = await tx
+      .select({ workspaceId: timeEntry.workspaceId, id: timeEntry.id })
+      .from(timeEntry)
+      .where(and(eq(timeEntry.workspaceId, workspaceId), eq(timeEntry.id, id)))
       .limit(1)
-      .for("update", { of: timeEntry });
-    const row = rows.at(0);
-    return row === undefined ? undefined : toEntryWithRefs(row);
+      .for("update");
+    const row = locked.at(0);
+    return row === undefined ? undefined : rereadWithRefs(tx, row);
   },
 
   /**
    * Las filas pedidas del workspace, de cualquier dueño —quién lo es lo decide
-   * `can()`—, con su proyecto y su tarea por `left join`, como las lecturas del
-   * slice 10. Una sola sentencia con `order by time_entry.id` y
-   * `for update of time_entry`: el orden es el que evita que dos operaciones en
-   * masa se esperen en círculo (ADR 0011), y el `of` deja sin bloquear el lado
-   * nulable del join.
+   * `can()`—, con sus referencias. Bloquea con una sentencia que lee solo
+   * `time_entry`, con `order by time_entry.id`: el orden es el que evita que
+   * dos operaciones en masa se esperen en círculo (ADR 0011). Las referencias
+   * salen de una segunda, por la razón de `findByIdForUpdate`.
    */
   async findManyByIdsForUpdate(
     tx: Transaction,
     workspaceId: string,
     ids: readonly string[],
   ): Promise<readonly EntryWithRefs[]> {
+    const locked = await tx
+      .select({ id: timeEntry.id })
+      .from(timeEntry)
+      .where(and(eq(timeEntry.workspaceId, workspaceId), inArray(timeEntry.id, [...ids])))
+      .orderBy(asc(timeEntry.id))
+      .for("update");
+    if (locked.length === 0) {
+      return [];
+    }
     const rows = await selectWithRefs(
       tx,
-      and(eq(timeEntry.workspaceId, workspaceId), inArray(timeEntry.id, [...ids])),
-    )
-      .orderBy(asc(timeEntry.id))
-      .for("update", { of: timeEntry });
+      and(
+        eq(timeEntry.workspaceId, workspaceId),
+        inArray(
+          timeEntry.id,
+          locked.map((row) => row.id),
+        ),
+      ),
+    ).orderBy(asc(timeEntry.id));
     return rows.map(toEntryWithRefs);
   },
 
@@ -362,11 +472,15 @@ export const timeEntryRepository = {
 
   /**
    * El inicio lo escribe la base: `now()` es la marca de inicio de la
-   * transacción. El id lo eligió el cliente (ADR 0007).
+   * transacción. El id lo eligió el cliente (ADR 0007). Las etiquetas van a
+   * la unión antes de releer.
    */
   async insertRunning(
     tx: Transaction,
-    values: {
+    {
+      tagIds,
+      ...values
+    }: {
       id: string;
       workspaceId: string;
       userId: string;
@@ -374,12 +488,14 @@ export const timeEntryRepository = {
       projectId: string | null;
       taskId: string | null;
       billable: boolean;
+      tagIds: readonly string[];
     },
   ): Promise<EntryWithRefs> {
     const [created] = await tx
       .insert(timeEntry)
       .values({ ...values, startedAt: now })
       .returning();
+    await insertTags(tx, created, tagIds);
     return rereadWithRefs(tx, created);
   },
 
@@ -391,7 +507,10 @@ export const timeEntryRepository = {
    */
   async insertClosed(
     tx: Transaction,
-    values: {
+    {
+      tagIds,
+      ...values
+    }: {
       id?: string;
       workspaceId: string;
       userId: string;
@@ -399,11 +518,13 @@ export const timeEntryRepository = {
       projectId: string | null;
       taskId: string | null;
       billable: boolean;
+      tagIds: readonly string[];
       startedAt: Date;
       endedAt: Date;
     },
   ): Promise<EntryWithRefs> {
     const [created] = await tx.insert(timeEntry).values(values).returning();
+    await insertTags(tx, created, tagIds);
     return rereadWithRefs(tx, created);
   },
 
@@ -426,35 +547,55 @@ export const timeEntryRepository = {
   },
 
   /**
-   * Los campos que cambian de una fila cerrada, releída con sus referencias:
-   * el par pudo cambiar. `undefined` si la entrada está corriendo.
+   * Los campos que cambian de una fila cerrada y, si viene `tagIds`, su
+   * conjunto de etiquetas; releída con sus referencias: el par y las etiquetas
+   * pudieron cambiar. `undefined` si la entrada está corriendo. Con solo
+   * etiquetas no hay `update` de la fila: su estado lo decidió el service bajo
+   * el bloqueo de la lectura.
    */
   async updateClosedEntry(
     tx: Transaction,
     target: EntryTarget,
     fields: ClosedEntryFields,
   ): Promise<EntryWithRefs | undefined> {
-    return rereadIfWritten(
-      tx,
-      await timeEntryRepository.updateClosedFields(tx, target, columnsOf(fields)),
-    );
+    const columns = columnsOf(fields);
+    if (
+      hasColumns(columns) &&
+      (await timeEntryRepository.updateClosedFields(tx, target, columns)) === undefined
+    ) {
+      return undefined;
+    }
+    if (fields.tagIds !== undefined) {
+      await replaceTags(tx, target, fields.tagIds);
+    }
+    return rereadWithRefs(tx, target);
   },
 
   /**
-   * Los campos que cambian de la fila abierta, releída con sus referencias.
-   * `undefined` si ya la cerraron.
+   * Los campos que cambian de la fila abierta y su conjunto de etiquetas,
+   * releída con sus referencias. `undefined` si ya la cerraron. Con solo
+   * etiquetas, como `updateClosedEntry`.
    */
   async updateRunningEntry(
     tx: Transaction,
     target: EntryTarget,
     fields: RunningEntryFields,
   ): Promise<EntryWithRefs | undefined> {
-    const rows = await tx
-      .update(timeEntry)
-      .set(columnsOf(fields))
-      .where(and(isTarget(target), isNull(timeEntry.endedAt)))
-      .returning();
-    return rereadIfWritten(tx, rows.at(0));
+    const columns = columnsOf(fields);
+    if (hasColumns(columns)) {
+      const rows = await tx
+        .update(timeEntry)
+        .set(columns)
+        .where(and(isTarget(target), isNull(timeEntry.endedAt)))
+        .returning();
+      if (rows.length === 0) {
+        return undefined;
+      }
+    }
+    if (fields.tagIds !== undefined) {
+      await replaceTags(tx, target, fields.tagIds);
+    }
+    return rereadWithRefs(tx, target);
   },
 
   async updateDescription(
@@ -562,6 +703,11 @@ export const timeEntryRepository = {
   /** El proyecto se borró entre la validación y la escritura (TT-77). */
   isMissingProject(error: unknown): boolean {
     return hasConstraint(error, FOREIGN_KEY_VIOLATION, "time_entry_project_fk");
+  },
+
+  /** La etiqueta se borró entre la validación y la escritura (TT-78). */
+  isMissingTag(error: unknown): boolean {
+    return hasConstraint(error, FOREIGN_KEY_VIOLATION, "time_entry_tag_tag_fk");
   },
 
   /** La tarea se borró, o no es del proyecto, entre la validación y la escritura (PR-74). */

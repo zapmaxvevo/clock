@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { pairToCheck } from "./assignment";
+import { pairToCheck, tagsToCheck } from "./assignment";
 
 const web = "0b5e8d5e-3c2f-4b7a-9f1a-2c3d4e5f6a7b";
 const app = "6f1c1a52-3c55-4a43-9d0e-0d6b7d0f4d11";
@@ -69,5 +69,32 @@ describe("pairToCheck (criterio 10, §4.3)", () => {
         { projectId: web.toUpperCase(), taskId: null },
       ),
     ).toBeNull();
+  });
+});
+
+describe("tagsToCheck (criterio 10 del 11b, §4.5)", () => {
+  const archived = "2b3c4d5e-6f70-4182-93a4-b5c6d7e8f901";
+  const active = "3c4d5e6f-7081-4293-a4b5-c6d7e8f90a12";
+  const other = "4d5e6f70-8192-43a4-b5c6-d7e8f90a1b23";
+
+  it("el mismo conjunto no valida nada, también en otro orden y con otras mayúsculas", () => {
+    expect(tagsToCheck([archived, active], [active.toUpperCase(), archived])).toEqual([]);
+  });
+
+  it("quitar etiquetas, también una archivada, no valida nada", () => {
+    expect(tagsToCheck([archived, active], [active])).toEqual([]);
+    expect(tagsToCheck([archived, active], [])).toEqual([]);
+  });
+
+  it("agregar valida solo las nuevas", () => {
+    expect(tagsToCheck([active], [active, other])).toEqual([other]);
+  });
+
+  it("conservar una archivada y agregar una activa valida solo la activa (PR-47)", () => {
+    expect(tagsToCheck([archived], [archived, active])).toEqual([active]);
+  });
+
+  it("un alta valida todas", () => {
+    expect(tagsToCheck([], [archived, active])).toEqual([archived, active]);
   });
 });

@@ -6,8 +6,10 @@ import {
   membership,
   project,
   projectMember,
+  tag,
   task,
   timeEntry,
+  timeEntryTag,
   user,
   userPreference,
   workspace,
@@ -90,6 +92,8 @@ export type SeedTimeEntryValues = {
   readonly taskId?: string | null;
   /** Ausente, el valor por omisión de la columna: `false`. */
   readonly billable?: boolean;
+  /** Las filas de la unión, en el workspace de la entrada. */
+  readonly tagIds?: readonly string[];
 };
 
 /**
@@ -111,6 +115,16 @@ export async function seedTimeEntry(values: SeedTimeEntryValues) {
       billable: values.billable,
     })
     .returning();
+  const tagIds = values.tagIds ?? [];
+  if (tagIds.length > 0) {
+    await db.insert(timeEntryTag).values(
+      tagIds.map((tagId) => ({
+        workspaceId: row.workspaceId,
+        timeEntryId: row.id,
+        tagId,
+      })),
+    );
+  }
   return row;
 }
 
@@ -199,6 +213,25 @@ export async function seedTask(values: {
       projectId: values.projectId,
       name: values.name ?? uniqueName("Tarea"),
       status: values.status ?? "active",
+      createdBy: values.createdBy ?? null,
+    })
+    .returning();
+  return row;
+}
+
+/** Etiqueta escrita directo contra la tabla. */
+export async function seedTag(values: {
+  readonly workspaceId: string;
+  readonly name?: string;
+  readonly archived?: boolean;
+  readonly createdBy?: string | null;
+}) {
+  const [row] = await db
+    .insert(tag)
+    .values({
+      workspaceId: values.workspaceId,
+      name: values.name ?? uniqueName("Etiqueta"),
+      archivedAt: archivedAtOf(values.archived),
       createdBy: values.createdBy ?? null,
     })
     .returning();

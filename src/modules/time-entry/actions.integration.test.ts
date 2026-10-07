@@ -1749,7 +1749,7 @@ describe("updateEntry (ADR 0013)", () => {
     // Lo que puede mandar un cliente que no respeta el tipo.
     const unknown = await actions.updateEntry({
       id: unknownId,
-      changes: { tags: [] } as UpdateEntryChanges,
+      changes: { labels: [] } as UpdateEntryChanges,
     });
 
     expect(empty).toEqual({

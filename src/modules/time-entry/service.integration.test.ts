@@ -36,6 +36,7 @@ import {
   seedMember,
   seedPreferences,
   seedProject,
+  seedTag,
   seedTask,
   seedTimeEntry,
   seedWorkspace,
@@ -131,6 +132,7 @@ describe("startTimer", () => {
     const result = await startTimer(actor, workspaceOf(buenosAires), {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id: randomUUID(),
       description: "  revisión  ",
     });
@@ -158,12 +160,14 @@ describe("startTimer", () => {
     const first = await startTimer(actor, workspaceOf(buenosAires), {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id: randomUUID(),
       description: "uno",
     });
     const second = await startTimer(actor, workspaceOf(buenosAires), {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id: randomUUID(),
       description: "dos",
     });
@@ -180,12 +184,14 @@ describe("startTimer", () => {
     const first = await startTimer(actor, workspaceOf(buenosAires), {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id: randomUUID(),
       description: "uno",
     });
     const second = await startTimer(actor, workspaceOf(buenosAires), {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id: randomUUID(),
       description: "dos",
     });
@@ -208,6 +214,7 @@ describe("startTimer", () => {
         startTimer(actor, workspaceOf(buenosAires), {
           projectId: null,
           taskId: null,
+          tagIds: [],
           id: randomUUID(),
           description: `pestaña ${index}`,
         }),
@@ -227,6 +234,7 @@ describe("startTimer", () => {
     await startTimer(actor, workspaceOf(buenosAires), {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id: randomUUID(),
       description: "uno",
     });
@@ -247,6 +255,7 @@ describe("startTimer", () => {
     await startTimer(actorFor(otherId), workspaceOf(buenosAires), {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id: randomUUID(),
       description: "de otro",
     });
@@ -254,6 +263,7 @@ describe("startTimer", () => {
     const mine = await startTimer(actor, workspaceOf(buenosAires), {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id: randomUUID(),
       description: "mío",
     });
@@ -270,6 +280,7 @@ describe("startTimer", () => {
         startTimer({ ...actor, status }, workspaceOf(buenosAires), {
           projectId: null,
           taskId: null,
+          tagIds: [],
           id: randomUUID(),
           description: "no va",
         }),
@@ -289,6 +300,7 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
     const first = await startTimer(actor, workspaceOf(buenosAires), {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id,
       description: "tarea",
     });
@@ -300,6 +312,7 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
     const retry = await startTimer(actor, workspaceOf(buenosAires), {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id,
       description: "tarea",
     });
@@ -314,6 +327,7 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
     await startTimer(actor, workspaceOf(buenosAires), {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id,
       description: "tarea",
     });
@@ -324,6 +338,7 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
     const retry = await startTimer(actor, workspaceOf(buenosAires), {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id,
       description: "tarea",
     });
@@ -363,12 +378,14 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
       startTimer(actor, workspaceOf(buenosAires), {
         projectId: null,
         taskId: null,
+        tagIds: [],
         id,
         description: "tarea",
       }),
       startTimer(actor, workspaceOf(buenosAires), {
         projectId: null,
         taskId: null,
+        tagIds: [],
         id,
         description: "tarea",
       }),
@@ -389,6 +406,7 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
           startTimer(actor, workspaceOf(buenosAires), {
             projectId: null,
             taskId: null,
+            tagIds: [],
             id,
             description: "tarea",
           }),
@@ -396,6 +414,7 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
           startTimer(actor, workspaceOf(buenosAires), {
             projectId: null,
             taskId: null,
+            tagIds: [],
             id,
             description: "tarea",
           }),
@@ -417,6 +436,7 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
           startTimer(actor, workspaceOf(buenosAires), {
             projectId: null,
             taskId: null,
+            tagIds: [],
             id,
             description: id,
           }),
@@ -455,6 +475,7 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
           timeEntryRepository.insertRunning(tx, {
             projectId: null,
             taskId: null,
+            tagIds: [],
             billable: false,
             id: randomUUID(),
             workspaceId,
@@ -503,6 +524,7 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
         const mine = await startTimer(actor, workspaceOf(buenosAires), {
           projectId: null,
           taskId: null,
+          tagIds: [],
           id: randomUUID(),
           description: "mío",
         });
@@ -517,6 +539,7 @@ describe("startTimer con el id que eligió el cliente (ADR 0007)", () => {
         const error = await startTimer(actor, workspaceOf(buenosAires), {
           projectId: null,
           taskId: null,
+          tagIds: [],
           id: foreign.id,
           description: "ajeno",
         }).catch((caught: unknown) => caught);
@@ -546,6 +569,7 @@ describe("las restricciones que reconoce el repository", () => {
         timeEntryRepository.insertRunning(tx, {
           projectId: null,
           taskId: null,
+          tagIds: [],
           billable: false,
           id: existing.id,
           workspaceId,
@@ -576,6 +600,7 @@ describe("stopTimer", () => {
     const started = await startTimer(actor, workspaceOf(buenosAires), {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id: randomUUID(),
       description: "tarea",
     });
@@ -654,6 +679,7 @@ describe("stopTimer", () => {
     const started = await startTimer(actor, workspaceOf(buenosAires), {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id: randomUUID(),
       description: "tarea",
     });
@@ -695,6 +721,7 @@ describe("TT-101: la parada de un timer cuyo inicio quedó después del now() de
     const result = await startTimer(actor, workspaceOf(buenosAires), {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id: randomUUID(),
       description: "siguiente",
     });
@@ -749,6 +776,7 @@ describe("updateDescription", () => {
     const started = await startTimer(actor, workspaceOf(buenosAires), {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id: randomUUID(),
       description: "",
     });
@@ -834,6 +862,7 @@ describe("deleteEntry", () => {
     const started = await startTimer(actor, workspaceOf(buenosAires), {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id: randomUUID(),
       description: "abierta",
     });
@@ -916,6 +945,7 @@ describe("getTrackerState", () => {
     const floor = await createManualEntry(actor, reciente, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       ...values,
       date: state.minDayKey,
     });
@@ -924,6 +954,7 @@ describe("getTrackerState", () => {
       createManualEntry(actor, reciente, {
         projectId: null,
         taskId: null,
+        tagIds: [],
         ...values,
         date: addDaysToKey(state.minDayKey, -1),
       }),
@@ -1309,6 +1340,7 @@ describe("createManualEntry", () => {
     const result = await createManualEntry(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "  reunión  ",
       date: "2026-10-02",
       start: "08:00",
@@ -1333,6 +1365,7 @@ describe("createManualEntry", () => {
     await createManualEntry(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "",
       date: "2026-09-28",
       start: "09:00",
@@ -1354,6 +1387,7 @@ describe("createManualEntry", () => {
     const result = await createManualEntry(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "",
       date: "2026-09-30",
       start: "23:00",
@@ -1381,6 +1415,7 @@ describe("createManualEntry", () => {
     const started = await startTimer(actor, workspaceOf(buenosAires), {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id: randomUUID(),
       description: "corriendo",
     });
@@ -1388,6 +1423,7 @@ describe("createManualEntry", () => {
     const result = await createManualEntry(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "a mano",
       date: "2026-10-02",
       start: "08:00",
@@ -1408,6 +1444,7 @@ describe("createManualEntry", () => {
       createManualEntry(actor, workspace, {
         projectId: null,
         taskId: null,
+        tagIds: [],
         description: "",
         date: "2026-10-02",
         start: "08:00",
@@ -1421,6 +1458,7 @@ describe("createManualEntry", () => {
     const result = await createManualEntry(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "",
       date: "2026-10-02",
       start: "08:00",
@@ -1436,6 +1474,7 @@ describe("createManualEntry", () => {
       createManualEntry(actor, reciente, {
         projectId: null,
         taskId: null,
+        tagIds: [],
         description: "",
         date: "2026-08-31",
         start: "08:00",
@@ -1454,6 +1493,7 @@ describe("createManualEntry", () => {
     const result = await createManualEntry(actor, reciente, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "",
       date: "2026-09-01",
       start: "08:00",
@@ -1466,6 +1506,7 @@ describe("createManualEntry", () => {
     const values = {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "",
       date: "2026-10-02",
       start: "08:00",
@@ -1493,6 +1534,7 @@ describe("createManualEntry", () => {
     await createManualEntry(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "",
       date: "2026-07-15",
       start: "08:00",
@@ -1501,6 +1543,7 @@ describe("createManualEntry", () => {
     await createManualEntry(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "",
       date: "2026-10-01",
       start: "08:00",
@@ -1510,6 +1553,7 @@ describe("createManualEntry", () => {
     const old = await createManualEntry(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "",
       date: "2026-07-16",
       start: "08:00",
@@ -1534,6 +1578,7 @@ describe("createManualEntry", () => {
     const result = await createManualEntry(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "la semana que viene",
       date: "2026-10-10",
       start: "08:00",
@@ -1579,6 +1624,7 @@ describe("createManualEntry", () => {
     await createManualEntry(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "",
       date: "2026-09-04",
       start: "08:00",
@@ -1595,6 +1641,7 @@ describe("createManualEntry", () => {
     const future = await createManualEntry(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "",
       date: "2026-10-05",
       start: "08:00",
@@ -1619,6 +1666,7 @@ describe("createManualEntry", () => {
     const sameWeek = await createManualEntry(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "",
       date: "2026-09-03",
       start: "08:00",
@@ -1627,6 +1675,7 @@ describe("createManualEntry", () => {
     const previousWeek = await createManualEntry(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "",
       date: "2026-08-28",
       start: "08:00",
@@ -1652,6 +1701,7 @@ describe("createManualEntry", () => {
     await createManualEntry(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "",
       date: "2026-10-10",
       start: "08:00",
@@ -1661,6 +1711,7 @@ describe("createManualEntry", () => {
     const older = await createManualEntry(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "",
       date: "2026-09-04",
       start: "08:00",
@@ -1688,6 +1739,7 @@ describe("createManualEntry", () => {
       createManualEntry(actor, workspace, {
         projectId: null,
         taskId: null,
+        tagIds: [],
         description: "",
         date: "9999-12-31",
         start: "23:00",
@@ -1704,6 +1756,7 @@ describe("createManualEntry", () => {
     await createManualEntry(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "",
       date: "2026-11-02",
       start: "08:00",
@@ -1712,6 +1765,7 @@ describe("createManualEntry", () => {
     await createManualEntry(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "",
       date: "2026-10-02",
       start: "08:00",
@@ -1739,6 +1793,7 @@ describe("createManualEntry con cambio de horario", () => {
     const result = await createManualEntry(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "",
       date: "2026-10-25",
       start: "02:30",
@@ -1763,6 +1818,7 @@ describe("createManualEntry con cambio de horario", () => {
         createManualEntry(actor, workspace, {
           projectId: null,
           taskId: null,
+          tagIds: [],
           description: "",
           date: "2026-03-29",
           ...values,
@@ -1779,6 +1835,7 @@ describe("createManualEntry con cambio de horario", () => {
     const result = await createManualEntry(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "",
       date: "2026-03-29",
       start: "01:30",
@@ -1803,6 +1860,7 @@ describe("createManualEntry con cambio de horario", () => {
       await createManualEntry(actor, workspace, {
         projectId: null,
         taskId: null,
+        tagIds: [],
         description: "",
         ...values,
       }).catch(() => null);
@@ -2827,6 +2885,7 @@ describe("desenlaces con una pestaña desactualizada (§4.3)", () => {
         startTimer(actor, workspaceOf(buenosAires), {
           projectId: null,
           taskId: null,
+          tagIds: [],
           id: nextId,
           description: "siguiente",
         }),
@@ -3434,6 +3493,7 @@ describe("continueEntry con el id que eligió el cliente (ADR 0007)", () => {
             startTimer(actor, workspaceOf(buenosAires), {
               projectId: null,
               taskId: null,
+              tagIds: [],
               id: ids[1],
               description: "nuevo",
             }),
@@ -3719,6 +3779,7 @@ describe("discardTimer (TT-65)", () => {
     const started = await startTimer(actor, workspaceOf(buenosAires), {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id: randomUUID(),
       description: "otro",
     });
@@ -4462,7 +4523,7 @@ describe("weekStart en las vistas del service (criterio 13)", () => {
       const result = await startTimer(
         actor,
         workspaceOf(buenosAires, undefined, weekStart),
-        { projectId: null, taskId: null, id: randomUUID(), description: "" },
+        { projectId: null, taskId: null, tagIds: [], id: randomUUID(), description: "" },
       );
 
       expect(result.stopped?.dayDate).toBe("2026-09-27");
@@ -4583,6 +4644,7 @@ describe("las altas con proyecto (criterio 4: TT-06, TT-22, TT-25)", () => {
       description: "",
       projectId: web.id,
       taskId: design.id,
+      tagIds: [],
     });
     expect(await pairOfRow(result.running.id)).toEqual({
       projectId: web.id,
@@ -4601,6 +4663,7 @@ describe("las altas con proyecto (criterio 4: TT-06, TT-22, TT-25)", () => {
       end: "09:00",
       projectId: web.id,
       taskId: design.id,
+      tagIds: [],
     });
     const withoutTask = await createManualEntry(actor, ws, {
       description: "",
@@ -4609,6 +4672,7 @@ describe("las altas con proyecto (criterio 4: TT-06, TT-22, TT-25)", () => {
       end: "11:00",
       projectId: web.id,
       taskId: null,
+      tagIds: [],
     });
     expect(await pairOfRow(withTask.created.id)).toEqual({
       projectId: web.id,
@@ -4633,6 +4697,7 @@ describe("las altas con proyecto (criterio 4: TT-06, TT-22, TT-25)", () => {
       description: "",
       projectId: null,
       taskId: null,
+      tagIds: [],
     });
     expect(result.running.project).toBeNull();
     expect(result.running.task).toBeNull();
@@ -4679,7 +4744,7 @@ describe("las altas con proyecto (criterio 4: TT-06, TT-22, TT-25)", () => {
     for (const [label, pair, message] of await rejectedPairs()) {
       const id = randomUUID();
       await expect(
-        startTimer(actor, ws, { id, description: "", ...pair }),
+        startTimer(actor, ws, { id, description: "", tagIds: [], ...pair }),
         label,
       ).rejects.toMatchObject({ code: "not_found", message });
       expect(await timeEntryById(id), label).toBeUndefined();
@@ -4697,6 +4762,7 @@ describe("las altas con proyecto (criterio 4: TT-06, TT-22, TT-25)", () => {
           date: "2026-10-01",
           start: "08:00",
           end: "09:00",
+          tagIds: [],
           ...pair,
         }),
         label,
@@ -4715,6 +4781,7 @@ describe("las altas con proyecto (criterio 4: TT-06, TT-22, TT-25)", () => {
         end: "08:00",
         projectId: randomUUID(),
         taskId: null,
+        tagIds: [],
       }),
     ).rejects.toMatchObject({ code: "validation", message: timeEntryMessages.tooShort });
   });
@@ -4726,6 +4793,7 @@ describe("las altas con proyecto (criterio 4: TT-06, TT-22, TT-25)", () => {
       description: "",
       projectId: web.id,
       taskId: design.id,
+      tagIds: [],
     };
     const first = await startTimer(actor, ws, values);
     await db
@@ -5139,6 +5207,7 @@ describe("las altas validan el par antes de escribir (§4.4)", () => {
           description: "",
           projectId: archived.id,
           taskId: null,
+          tagIds: [],
         }),
       continueEntry: (id: string) =>
         continueEntry(actor, ws, { id, sourceId: source.id }),
@@ -5227,6 +5296,7 @@ describe("la vista con su proyecto (criterio 9: TT-49, TT-50, PR-71, PR-101 … 
       description: "",
       projectId: null,
       taskId: null,
+      tagIds: [],
     });
     expect(started.stopped?.id).toBe(previous.id);
     expect(started.stopped?.project?.id).toBe(web.id);
@@ -5271,6 +5341,7 @@ describe("la vista con su proyecto (criterio 9: TT-49, TT-50, PR-71, PR-101 … 
       end: "09:00",
       projectId: vault.id,
       taskId: null,
+      tagIds: [],
     });
     expect(created.created.project).toEqual({
       id: vault.id,
@@ -5483,6 +5554,7 @@ describe("la zona y los formatos de la persona (slice 7)", () => {
     const values = {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "",
       date: "2026-09-01",
       start: "08:00",
@@ -7578,6 +7650,7 @@ describe("updateEntry: el timer detenido en otra pestaña (criterio 16, CAL-41)"
     const started = await startTimer(actor, ws, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id: randomUUID(),
       description: "corriendo",
     });
@@ -7685,6 +7758,7 @@ describe("las altas con facturable (criterio 4 del 11a: TT-14, PR-21)", () => {
         id: randomUUID(),
         description: label,
         taskId: null,
+        tagIds: [],
         ...request,
       });
       expect([label, result.running.billable]).toEqual([label, expected]);
@@ -7703,6 +7777,7 @@ describe("las altas con facturable (criterio 4 del 11a: TT-14, PR-21)", () => {
         start,
         end: `${String(hour).padStart(2, "0")}:00`,
         taskId: null,
+        tagIds: [],
         ...request,
       });
       expect([label, result.created.billable]).toEqual([label, expected]);
@@ -7713,7 +7788,13 @@ describe("las altas con facturable (criterio 4 del 11a: TT-14, PR-21)", () => {
   it("el reintento del arranque responde la fila del primer intento sin recalcular", async () => {
     const yes = await seedBillableProject(true);
     const id = randomUUID();
-    const input = { id, description: "", projectId: yes.billed.id, taskId: null };
+    const input = {
+      id,
+      description: "",
+      projectId: yes.billed.id,
+      taskId: null,
+      tagIds: [],
+    };
     await startTimer(actor, ws, { ...input, billable: false });
     const replay = await startTimer(actor, ws, input);
     expect(replay.running.billable).toBe(false);
@@ -8039,6 +8120,7 @@ describe("la vista trae el facturable (criterio 8 del 11a: TT-14, TT-38, TT-39)"
       description: "",
       projectId: null,
       taskId: null,
+      tagIds: [],
     });
     expect(started.stopped).toMatchObject({ id: previous.id, billable: true });
     expect(started.running.billable).toBe(false);
@@ -8070,5 +8152,100 @@ describe("la vista trae el facturable (criterio 8 del 11a: TT-14, TT-38, TT-39)"
     expect(described.entry.billable).toBe(true);
     expect(timed.entry.billable).toBe(true);
     expect(bulk.entries.map((entry) => entry.billable)).toEqual([true]);
+  });
+});
+
+/**
+ * La conexión 1 bloquea la entrada con `findByIdForUpdate` y escribe con
+ * `write`; la 2 pide la misma lectura con bloqueo y queda esperando; la 1
+ * confirma recién cuando la 2 está trabada. Devuelve lo que leyó la 2.
+ */
+async function readBehindWriter<Row>(
+  id: string,
+  write: (tx: Transaction) => Promise<unknown>,
+  read: (tx: Transaction) => Promise<Row>,
+): Promise<Row> {
+  let holding = () => {};
+  const held = new Promise<void>((resolve) => {
+    holding = resolve;
+  });
+  const writer = db.transaction(async (tx) => {
+    await timeEntryRepository.findByIdForUpdate(tx, workspaceId, id);
+    await write(tx);
+    holding();
+    await waitForBlockedBackends({ count: 1 });
+  });
+  await Promise.race([held, writer]);
+  const reader = db.transaction(read);
+  await writer;
+  return reader;
+}
+
+describe("las lecturas con bloqueo leen las referencias después del bloqueo (criterio 9 del 11b, §5.1)", () => {
+  async function seedTaggedEntry() {
+    const design = await seedTag({ workspaceId, name: "Diseño" });
+    const review = await seedTag({ workspaceId, name: "Revisión" });
+    const entry = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      startedAt: "2026-10-01T11:00:00Z",
+      endedAt: "2026-10-01T12:00:00Z",
+      tagIds: [design.id],
+    });
+    return { design, review, entry };
+  }
+
+  it("findByIdForUpdate ve las etiquetas que confirmó la conexión que tenía el bloqueo", async () => {
+    const { review, entry } = await seedTaggedEntry();
+
+    const seen = await readBehindWriter(
+      entry.id,
+      (tx) =>
+        timeEntryRepository.updateClosedEntry(
+          tx,
+          { workspaceId, userId: actor.userId, id: entry.id },
+          { tagIds: [review.id] },
+        ),
+      (tx) => timeEntryRepository.findByIdForUpdate(tx, workspaceId, entry.id),
+    );
+
+    expect(seen?.tags).toEqual([{ id: review.id, name: review.name }]);
+  });
+
+  it("findByIdForUpdate ve el proyecto que asignó la conexión que tenía el bloqueo, no uno nulo", async () => {
+    const before = await seedProject({ workspaceId, name: "Antes" });
+    const after = await seedProject({ workspaceId, name: "Después" });
+    const entry = await seedEntryWith({ projectId: before.id, taskId: null });
+
+    const seen = await readBehindWriter(
+      entry.id,
+      (tx) =>
+        timeEntryRepository.updateProject(
+          tx,
+          { workspaceId, userId: actor.userId, id: entry.id },
+          { projectId: after.id, taskId: null, billable: false },
+        ),
+      (tx) => timeEntryRepository.findByIdForUpdate(tx, workspaceId, entry.id),
+    );
+
+    expect(seen?.projectId).toBe(after.id);
+    expect(seen?.project).toEqual({ id: after.id, name: "Después", color: "blue" });
+  });
+
+  it("findManyByIdsForUpdate ve las etiquetas que confirmó la conexión que tenía el bloqueo", async () => {
+    const { review, entry } = await seedTaggedEntry();
+
+    const seen = await readBehindWriter(
+      entry.id,
+      (tx) =>
+        timeEntryRepository.updateClosedEntry(
+          tx,
+          { workspaceId, userId: actor.userId, id: entry.id },
+          { tagIds: [review.id] },
+        ),
+      (tx) => timeEntryRepository.findManyByIdsForUpdate(tx, workspaceId, [entry.id]),
+    );
+
+    expect(seen.map((row) => row.tags)).toEqual([[{ id: review.id, name: review.name }]]);
   });
 });

@@ -576,6 +576,8 @@ describe("el vacío (criterio 13: PR-85)", () => {
     expect(await getProjectCatalog(member)).toEqual({
       canCreateClient: true,
       canCreateProject: true,
+      canCreateTag: true,
+      tags: [],
       clients: [],
       groups: [],
     });
@@ -1033,6 +1035,8 @@ describe("getTrackingCatalog: el catálogo del selector (criterio 3: TT-08, PR-2
     expect((await getTrackingCatalog(member)).canCreateProject).toBe(true);
     expect(await getTrackingCatalog({ ...member, status: "inactive" })).toEqual({
       canCreateProject: false,
+      canCreateTag: false,
+      tags: [],
       groups: [],
     });
   });
@@ -1042,6 +1046,8 @@ describe("getTrackingCatalog: el catálogo del selector (criterio 3: TT-08, PR-2
     await seedProject({ workspaceId: other.workspaceId });
     expect(await getTrackingCatalog(owner)).toEqual({
       canCreateProject: true,
+      canCreateTag: true,
+      tags: [],
       groups: [],
     });
   });

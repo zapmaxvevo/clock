@@ -66,6 +66,7 @@ describe("audit log de las mutaciones", () => {
     const result = await startTimer(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id: randomUUID(),
       description: "revisión",
     });
@@ -83,6 +84,7 @@ describe("audit log de las mutaciones", () => {
       projectId: null,
       taskId: null,
       billable: false,
+      tagIds: [],
       startedAt: result.running.startedAt,
     });
   });
@@ -91,12 +93,14 @@ describe("audit log de las mutaciones", () => {
     const first = await startTimer(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id: randomUUID(),
       description: "uno",
     });
     const second = await startTimer(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id: randomUUID(),
       description: "dos",
     });
@@ -126,6 +130,7 @@ describe("audit log de las mutaciones", () => {
       projectId: null,
       taskId: null,
       billable: false,
+      tagIds: [],
       startedAt: second.running.startedAt,
     });
   });
@@ -135,6 +140,7 @@ describe("audit log de las mutaciones", () => {
     await startTimer(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id,
       description: "uno",
     });
@@ -143,6 +149,7 @@ describe("audit log de las mutaciones", () => {
     await startTimer(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id,
       description: "uno",
     });
@@ -157,6 +164,7 @@ describe("audit log de las mutaciones", () => {
     const started = await startTimer(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id: randomUUID(),
       description: "tarea",
     });
@@ -218,6 +226,7 @@ describe("audit log de las mutaciones", () => {
       projectId: null,
       taskId: null,
       billable: false,
+      tagIds: [],
       startedAt: "2026-10-01T11:00:00.000Z",
       endedAt: "2026-10-01T12:00:00.000Z",
       createdAt: row.createdAt.toISOString(),
@@ -269,6 +278,7 @@ describe("mutaciones rechazadas", () => {
     const started = await startTimer(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id: randomUUID(),
       description: "tarea",
     });
@@ -427,6 +437,7 @@ describe("audit log de la entrada manual", () => {
     const result = await createManualEntry(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "reunión",
       date: "2026-10-02",
       start: "08:00",
@@ -446,6 +457,7 @@ describe("audit log de la entrada manual", () => {
       projectId: null,
       taskId: null,
       billable: false,
+      tagIds: [],
       startedAt: "2026-10-02T11:00:00.000Z",
       endedAt: "2026-10-02T13:30:00.000Z",
     });
@@ -455,6 +467,7 @@ describe("audit log de la entrada manual", () => {
     await createManualEntry(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "",
       date: "2026-10-02",
       start: "08:00",
@@ -468,6 +481,7 @@ describe("audit log de la entrada manual", () => {
     const result = await createManualEntry(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "turno noche",
       date: "2026-10-02",
       start: "23:00",
@@ -485,6 +499,7 @@ describe("audit log de la entrada manual", () => {
       projectId: null,
       taskId: null,
       billable: false,
+      tagIds: [],
       startedAt: row?.startedAt.toISOString(),
       endedAt: row?.endedAt?.toISOString(),
     });
@@ -497,6 +512,7 @@ describe("audit log de la entrada manual", () => {
       createManualEntry(sinPermiso, workspace, {
         projectId: null,
         taskId: null,
+        tagIds: [],
         description: "no va",
         date: "2026-10-02",
         start: "08:00",
@@ -512,6 +528,7 @@ describe("audit log de la entrada manual", () => {
     const started = await startTimer(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id: randomUUID(),
       description: "corriendo",
     });
@@ -519,6 +536,7 @@ describe("audit log de la entrada manual", () => {
     const manual = await createManualEntry(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "a mano",
       date: "2026-10-02",
       start: "08:00",
@@ -545,6 +563,7 @@ describe("audit log de la entrada manual", () => {
       createManualEntry(actor, reciente, {
         projectId: null,
         taskId: null,
+        tagIds: [],
         description: "histórico",
         date: "2026-08-31",
         start: "08:00",
@@ -572,6 +591,7 @@ describe("audit log de la entrada manual", () => {
       createManualEntry(actor, madrid, {
         projectId: null,
         taskId: null,
+        tagIds: [],
         description: "la hora que no fue",
         date: "2026-03-29",
         start: "02:30",
@@ -590,6 +610,7 @@ describe("audit log de la entrada manual", () => {
     const started = await startTimer(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id: randomUUID(),
       description: "con timer",
     });
@@ -625,6 +646,7 @@ describe("audit log de la entrada manual", () => {
     const result = await createManualEntry(elsewhere, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "en el otro",
       date: "2026-10-02",
       start: "08:00",
@@ -642,6 +664,7 @@ describe("audit log de la entrada manual", () => {
     await createManualEntry(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "a mano",
       date: "2026-10-02",
       start: "08:00",
@@ -650,6 +673,7 @@ describe("audit log de la entrada manual", () => {
     const started = await startTimer(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id: randomUUID(),
       description: "con timer",
     });
@@ -701,6 +725,7 @@ describe("audit log de continuar, duplicar y descartar", () => {
       projectId: null,
       taskId: null,
       billable: false,
+      tagIds: [],
       startedAt: result.running.startedAt,
     });
     const closed = await auditFor("time_entry", previous.id);
@@ -729,6 +754,7 @@ describe("audit log de continuar, duplicar y descartar", () => {
       projectId: null,
       taskId: null,
       billable: false,
+      tagIds: [],
       startedAt: "2026-10-01T11:00:00.000Z",
       endedAt: "2026-10-01T12:00:00.000Z",
     });
@@ -757,6 +783,7 @@ describe("audit log de continuar, duplicar y descartar", () => {
       projectId: null,
       taskId: null,
       billable: false,
+      tagIds: [],
       startedAt: "2026-10-02T11:00:00.000Z",
       endedAt: null,
       createdAt: row.createdAt.toISOString(),
@@ -811,6 +838,7 @@ describe("audit log de continuar, duplicar y descartar", () => {
     const started = await startTimer(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       id: randomUUID(),
       description: "arranque",
     });
@@ -818,6 +846,7 @@ describe("audit log de continuar, duplicar y descartar", () => {
     await createManualEntry(actor, workspace, {
       projectId: null,
       taskId: null,
+      tagIds: [],
       description: "",
       date: "2026-10-01",
       start: "13:00",
@@ -917,11 +946,13 @@ describe("audit log del proyecto y la tarea (criterio 13)", () => {
       date: "2026-09-30",
       start: "08:00",
       end: "09:00",
+      tagIds: [],
       ...pair,
     });
     const started = await startTimer(actor, workspace, {
       id: randomUUID(),
       description: "",
+      tagIds: [],
       ...pair,
     });
     const continued = await continueEntry(actor, workspace, {
@@ -1074,6 +1105,7 @@ describe("audit log de las operaciones en masa (ADR 0011)", () => {
         projectId: null,
         taskId: null,
         billable: false,
+        tagIds: [],
         startedAt: row.startedAt.toISOString(),
         endedAt: row.endedAt?.toISOString(),
         createdAt: row.createdAt.toISOString(),
@@ -1297,6 +1329,7 @@ describe("audit log del facturable (criterio 12 del 11a)", () => {
       description: "",
       projectId: billed.id,
       taskId: null,
+      tagIds: [],
     });
     const manual = await createManualEntry(actor, workspace, {
       description: "",
@@ -1305,6 +1338,7 @@ describe("audit log del facturable (criterio 12 del 11a)", () => {
       end: "09:00",
       projectId: billed.id,
       taskId: null,
+      tagIds: [],
       billable: false,
     });
     const continued = await continueEntry(actor, workspace, {
