@@ -22,41 +22,36 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-07.
 | 8c — Calendario: escritura                 | En `main`    |
 | 8b — Calendario: arrastre                  | En `main`    |
 | 11a — Facturable                           | En `main`    |
-| 11b — Etiquetas                            | En revisión  |
+| 11b — Etiquetas                            | En `main`    |
 | 12–13                                      | Sin contrato |
 
-Los slices 1 a 10, 7b, 8c, 8b y 11a están en `main`. El 11a (facturable) se mergeó el
-2026-10-05 (`1db5917`) con lint, typecheck, 941 de unidad, 955 de integración y 123 de 123 e2e en
-verde (**falta `git push origin main`**; el push anterior llegó hasta `41ff1ef`). No quedan agentes
-con trabajo pendiente ni cambios sin commitear.
+Los slices 1 a 10, 7b, 8c, 8b, 11a y 11b están en `main`. El 11b (etiquetas) se mergeó el
+2026-10-07 con lint, typecheck, 1020 de unidad, 1030 de integración, `next build` y 131 de 131
+e2e en verde, dos corridas (**falta `git push origin main`**; el push anterior llegó hasta
+`aed694f`). No quedan agentes con trabajo pendiente ni cambios sin commitear. Postgres local:
+`docker start clock-pg`.
 
 ## Lo primero de la sesión siguiente
 
-**En curso (2026-10-07)**: el 11b en la rama `fase1/slice-11b-etiquetas`. Ronda corta de
-arquitectura aprobada con m1–m14 (`correcciones-fase1-slice11b-arranque.md`). Backend
-(`fbf4f91`, `32010d9`), frontend (`3a95938`…`a9c78a8`) y e2e (`7f4d90e`, `8690c76`) commiteados;
-lint, typecheck, 1018 de unidad y 1025 de integración en verde. Corren las seis revisiones y la
-corrida completa de e2e; sigue el documento `correcciones-fase1-slice11b-revisiones.md`, la ronda
-de correcciones, `parity-analyst`, la corrida final y el merge. Contenedor local de Postgres:
-`docker start clock-pg`.
-
-0. **Lo que sigue**: el **11b** (etiquetas) sobre `main` en `1db5917`, con el contrato aprobado
-   (`fase1-slice11-etiquetas-y-facturable.md`, rondas 1 y 2). Antes de implementar, una ronda
-   corta del `architecture-reviewer` contra el árbol (entró el 11a). Sus tres migraciones salen
-   desde la `0010`, generadas con los dos pasos de §2.2. Del 11a heredan: `EntryFields` en
-   `entry-fields.ts` (sumar `tags`), `entry-billable.ts` como modelo de `entry-tags.ts`,
-   `afterAdd(current, sent, catalog)` con D-7, y los ayudantes comunes de e2e en
-   `tracker-page.ts` y `network.ts`.
-1. **Después**: los contratos de los slices **12 y 13** (ver `fase1-mapa.md`), y el slice chico de «Reintentar» en el alta manual
-   (ADR 0007, retirar TT-109), ya decidido. Deuda chica sin slice:
+0. **Lo que sigue**: los contratos de los slices **12 y 13** (ver `fase1-mapa.md`), y el slice
+   chico de «Reintentar» en el alta manual (ADR 0007, retirar TT-109), ya decidido.
+1. Deuda chica sin slice:
    - un `DayCalendar` compartido entre `DateField` y `PeriodPicker`;
    - un `ClockRangeFields` común a `manual-bar.tsx`, `entry-times-editor.tsx` y el diálogo;
    - las variantes de `retryOf`;
    - en e2e, `stepToDay`, `isXPage` y `NETWORK_FAILURE` comunes;
    - `preferenceCookie` en `src/lib`;
-   - el `Positioner` del detalle que todavía se lleva un clic (F2-n1 del 8b).
-2. Deuda que dejó el 11a: la barra en anchos chicos (por debajo de ~800 px la barra parada pasa
-   «Iniciar» a otra línea; a 768 px con proyecto el bloque del timer baja a una tercera); si se
+   - el `Positioner` del detalle que todavía se lleva un clic (F2-n1 del 8b);
+   - `PickerEmptyMessage`, las clases del disparador y el buscador comunes a `TagPicker` y
+     `ProjectPicker` (C9 del 11b);
+   - la guarda de destino de F1 del 11b también en `handleProjectChange` de la barra (el
+     selector de proyecto se cierra al elegir, así que el riesgo es menor);
+   - si falla continuar y después falla duplicar, la barra muestra los dos avisos.
+2. Deuda de anchos (11a y 11b, medidas en `correcciones-fase1-slice11b-revisiones.md`, F3): con
+   el timer corriendo, el aviso «Detené el timer para agregar tiempo a mano.» (281 px) deja la
+   barra en 577 px útiles y el bloque del contador baja a otra línea en cualquier ancho; moverlo
+   lo cerraría. Por debajo de ~800 px la fila y la barra parada pasan a dos líneas, y una fila con
+   un proyecto al tope (256 px) y tres etiquetas también en escritorio. Del 11a, además: si se
    borra la única fila de un día, el grupo desaparece y su aviso se va con él (también para la
    descripción y el proyecto); un aviso de hidratación en desarrollo en `DescriptionField`; el
    facturable por defecto de un proyecto no se ve ni se edita después del alta (fase 2).
@@ -118,7 +113,9 @@ Lo que sigue siendo del usuario, porque necesita sus cuentas o su máquina:
   «username», el tema y la identidad de Google en PF-45, PF-47 y PF-48), P-12 de
   `timesheet.md`, P-07 de `calendario.md` (con CAL-23), PR-40/PR-58 y P-33 de `proyectos.md`
   (con PR-47 y PR-48), y lo del 11 en P-14: TT-12, TT-50 y el rechazo de continuar o duplicar
-  con una etiqueta archivada.
+  con una etiqueta archivada. Del 11b, también en TT-12: si las opciones llevan
+  casilla, qué hacen Enter y Espacio, si la búsqueda queda después de marcar, si se guarda con
+  cada casilla o al cerrar y cómo se ve el botón con varias etiquetas.
 - **Relevar Clockify con WebFetch**: el resumidor inventa citas (en el 11 inventó un tope de 50
   etiquetas); antes de escribir «Documentado» se confirma la oración literal.
 
@@ -152,7 +149,13 @@ Lo que sigue siendo del usuario, porque necesita sus cuentas o su máquina:
   un error, el aviso sube a algo que sobrevive (región de la pantalla con foco).
 - **Altas con id del cliente**: el caso que distingue el orden de una validación respecto
   de la escritura es el id de una fila ajena (choca con la clave primaria y sale
-  `forbidden`); en el 10 un mutante dado por equivalente cayó así.
+  `forbidden`); en el 10 un mutante dado por equivalente cayó así. En el 11b pasó otra vez, con
+  autor y `backend-reviewer` de acuerdo en que era equivalente porque miraron solo el estado de
+  la base: además de las filas, comparar la respuesta y si la llamada espera un bloqueo
+  (`outcomeWhileLocked`).
+- **Popups dentro de un `Dialog`** (Base UI): con la lista vacía, el `Escape` pasa al diálogo
+  salvo que esté montado `Combobox.Empty`; un ítem resaltado pinta los descendientes con `**:`;
+  ignorar un cambio de `inputValue` sin `details.cancel()` deja estado pendiente en la primitiva.
 - **Contratos viejos**: antes de implementar un contrato escrito antes de otros slices, una
   ronda corta del `architecture-reviewer` contra el árbol (en el 9 encontró dos mayores).
 - **Foco**: un control con foco que pasa a `disabled` lo pierde a `body`; usar
