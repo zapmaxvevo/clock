@@ -629,10 +629,25 @@ etiquetas y no facturable, y elegir proyecto le pone su facturable por defecto
 **CAL-46 «Agregar» es el alta manual** — `replicar`
 Crea con `createManualEntry` y valen todas sus reglas: TT-72 (fin menor que el
 inicio es el día siguiente), TT-73, TT-76, TT-112 y el piso del workspace del
-ADR 0005. Si falla por red vale TT-109, sin «Reintentar» porque repetir
-duplica: «No sabemos si la entrada se guardó.», con «Se perdió la respuesta del
-servidor. Antes de volver a agregarla, fijate en el calendario: puede haberse
-creado.» Es la causa de la barra, con el lugar donde mirar.
+ADR 0005. Si falla por red vale TT-109: el aviso, dentro del diálogo, es «No se
+pudo agregar la entrada.» con el mensaje de TT-89 y «Reintentar», que manda el
+borrador actual con el id pendiente, como el «Reintentar» de «Guardar»
+(CAL-67). Si la respuesta es la entrada de un intento anterior y no lo que se
+mandó, el diálogo sigue abierto con el borrador y el aviso informativo «La
+entrada ya se había agregado con lo que mandaste antes; lo que está en el
+diálogo no se guardó.»; el próximo «Agregar» crea la entrada. Mientras el alta
+viaja el diálogo no se cierra —«Cancelar» no actúa y `Esc` y el clic afuera se
+ignoran, a diferencia de CAL-49—, y cerrarlo con el aviso de falla a la vista
+no renueva el id: la próxima alta que se abra lo reusa (TT-109).
+
+El id pendiente se renueva, por decisión del equipo (F2-1), cuando esta pestaña
+guarda, mueve, borra o duplica la entrada del primer intento: si no, agregar lo
+mismo respondería esa entrada ya cambiada, contaría como lo mandado y la
+entrada nueva no se crearía. Límites conocidos, aceptados por el equipo
+(TT-109): recargar o salir de `/calendario` desmonta la pantalla y renueva el
+id, así que, si el primer intento se aplicó, agregar lo mismo la duplica; y con
+el alta en vuelo bajo un id reusado, irse de la ruta pierde el aviso
+informativo, y la entrada nueva no se crea sin que nada lo diga.
 
 Si la entrada creada o guardada no tiene ningún segmento en el período visible
 —por ejemplo, porque se le cambió la fecha a otra semana—, se guarda igual y
@@ -653,6 +668,13 @@ un día fuera del período visible». El criterio es que la entrada no tenga
 ningún segmento en el período, y el aviso vale también para «Guardar». Se
 suman el texto de TT-109 del calendario, el enlace de la vista día y cómo se
 nombra el día.
+_Corregido el 2026-10-07, slice 2c_: el primer párrafo decía «Si falla por red
+vale TT-109, sin «Reintentar» porque repetir duplica: «No sabemos si la entrada
+se guardó.», con «Se perdió la respuesta del servidor. Antes de volver a
+agregarla, fijate en el calendario: puede haberse creado.» Es la causa de la
+barra, con el lugar donde mirar.». Desde el 2c el alta lleva un id que elige el
+cliente ([ADR 0007](../adr/0007-el-cliente-elige-el-id-de-las-altas.md)) y se
+reintenta. El segundo párrafo, sobre cuándo se renueva el id, es nuevo.
 
 **CAL-47 Crear con un timer corriendo** — `adaptar`
 Se permite, sin aviso: el clic en una franja libre y «Agregar entrada» abren
@@ -681,6 +703,8 @@ ofrecer un gesto que el servidor va a rechazar.
 **CAL-49 Cancelar** — `replicar`
 Cerrar el diálogo o `Esc` descarta el borrador: no queda nada guardado ni
 ninguna selección dibujada.
+_Agregado el 2026-10-07, slice 2c_: salvo con el alta en vuelo, cuando el
+diálogo no se cierra hasta que llega la respuesta (CAL-46).
 
 ## 9. Mover y estirar
 
@@ -1090,8 +1114,8 @@ mutaciones que llama, y sus textos se reusan tal cual.
 Títulos de aviso (TT-90), también reusados:
 
 - Mover o estirar: «No se pudo guardar el horario de la entrada.»
-- Agregar desde el diálogo: «No se pudo agregar la entrada.» y, por red, el de
-  TT-109.
+- Agregar desde el diálogo: «No se pudo agregar la entrada.», también por red,
+  con «Reintentar» (TT-89, TT-109).
 - Detener desde el diálogo: «No se pudo detener el timer.»
 - Duplicar: «No se pudo duplicar la entrada.»
 - Borrar: «No se pudo borrar la entrada.»
@@ -1102,10 +1126,10 @@ Textos nuevos, uno por causa nueva:
   «La entrada quedó el `<día>`, fuera de la semana que estás viendo.», con el
   enlace «Ir a esa semana». En la vista día, «fuera del día que estás viendo»,
   con «Ir a ese día».
-- **CAL-46 y TT-109**, se perdió la respuesta del alta: «Se perdió la respuesta
-  del servidor. Antes de volver a agregarla, fijate en el calendario: puede
-  haberse creado.» Es la causa de la barra, que dice «fijate en la lista»;
-  cambia el lugar donde mirar.
+- **CAL-46 y TT-109**, el alta respondió la entrada de un intento anterior y no
+  lo que se mandó: «La entrada ya se había agregado con lo que mandaste antes;
+  lo que está en el diálogo no se guardó.», como aviso informativo. Es el de la
+  barra, que dice «lo que está en la barra»; cambia el lugar.
 - **CAL-67**, falló «Guardar» del diálogo: «No se pudo guardar la entrada.» Es
   nuevo porque nombra otra acción: el diálogo guarda la entrada entera, no solo
   su horario ni solo su descripción. Vale también para el timer: el diálogo no
@@ -1118,6 +1142,11 @@ tiempo a mano.» (TT-30) como un texto del calendario, que desde P-01 no lo usa,
 y «No se pudo guardar el inicio del timer.» como título del diálogo del timer,
 que guarda con «Guardar» (CAL-67). Se suman el título de duplicar, el texto de
 TT-109 del calendario, «Ir a ese día» y el de «Detener».
+_Corregido el 2026-10-07, slice 2c_: el título de «Agregar» decía «y, por red,
+el de TT-109», y el texto de CAL-46 y TT-109 era «Se perdió la respuesta del
+servidor. Antes de volver a agregarla, fijate en el calendario: puede haberse
+creado.», que salió con el aviso «No sabemos si la entrada se guardó.». El
+texto nuevo es el informativo del alta que no se guardó.
 
 ## 14. Estados vacíos
 
@@ -1136,7 +1165,7 @@ Se dibuja entero atenuado, por CAL-48. Justificación: la de CAL-48.
 
 **CAL-86 Red, sesión y membresía** — `adaptar`
 Valen TT-89, TT-90 y TT-92: aviso de dos partes con «Reintentar» solo por red,
-salvo en el alta (TT-109), y membresía desactivada en solo lectura, con el
+también en el alta (TT-109), y membresía desactivada en solo lectura, con el
 aviso permanente de TT-92 arriba de la grilla (CAL-05). Con la sesión vencida,
 `requireSession` lleva a la pantalla de acceso y, al volver a entrar, el acceso
 lleva siempre a `/`: **no hay ruta de vuelta** a `/calendario` ni al período
@@ -1148,6 +1177,8 @@ pantalla de acceso conservando `/calendario` con su período como ruta de
 vuelta. El slice 8 entra sin ella. En el 8 la pantalla no escribe, así que
 todavía no hay avisos de dos partes: llegan con el 8c, que es el que tiene
 actions.
+_Corregido el 2026-10-07, slice 2c_: decía «con «Reintentar» solo por red,
+salvo en el alta (TT-109)»; desde el 2c el alta también lo ofrece.
 
 **CAL-87 Falla al leer el período** — `adaptar`
 La grilla se arma en el servidor. Mientras carga, la página muestra un
@@ -1428,6 +1459,8 @@ P-01, P-04 y P-06. Contrato:
   diálogo; los de «Detener», «Duplicar» y «Borrar», y los de «Guardar» que
   cierran el diálogo, en la pantalla, debajo de la barra. «Reintentar» solo por
   red y nunca en el alta. Una operación nueva baja los anteriores.
+  _Corregido el 2026-10-07, slice 2c_: desde el 2c el alta también ofrece
+  «Reintentar» por red (TT-109, CAL-46); lo de arriba es lo que entregó el 8c.
 - **Lo que el slice decide**, diseño propio _no verificado_ (P-07):
   - **CAL-39, CAL-40, CAL-41, CAL-45, CAL-46, CAL-47 y CAL-67**, en su
     entrada.
@@ -1507,10 +1540,9 @@ Con el 8b, los tres slices del calendario están entregados.
 
 - **Abiertos con su propuesta**: P-03 (CAL-39) y P-05 (CAL-13).
 - **Fuera de los tres**: la ruta de vuelta después del acceso (CAL-86, TT-91),
-  que no existe en ninguna pantalla; «Reintentar» en el alta (TT-109), que
-  sigue pendiente; los gestos táctiles, con una pulsación larga, que irían en
-  un slice propio (ADR 0014); y los huecos de los días vecinos al período, que
-  el cliente no conoce (CAL-59).
+  que no existe en ninguna pantalla; los gestos táctiles, con una pulsación
+  larga, que irían en un slice propio (ADR 0014); y los huecos de los días
+  vecinos al período, que el cliente no conoce (CAL-59).
 
 _Corregido el 2026-10-04, slice 8c_: sale de esta lista la escritura, que ahora
 tiene su sección.
@@ -1520,6 +1552,9 @@ _Corregido el 2026-10-05, slice 11a_: decía «Slice 11: etiquetas y
 facturable»; el facturable llegó con el 11a (sección 18).
 _Corregido el 2026-10-07, slice 11b_: decía «Slice 11b: las etiquetas»; llegaron
 con el 11b (sección 18).
+_Corregido el 2026-10-07, slice 2c_: sale de esta lista «Reintentar» en el alta
+(TT-109), que trajo el slice 2c junto con la barra del rastreador (su sección
+en [la paridad del rastreador](time-tracker.md)).
 
 ## Pendientes de definición del equipo
 

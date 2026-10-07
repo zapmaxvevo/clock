@@ -468,14 +468,20 @@ redondeo de la vista no puede convertirse en una escritura.
 **TS-37 Escribir una celda se puede reintentar** — `adaptar`
 Como el pedido es «dejar la celda en `V`», repetirlo deja el mismo estado: el
 primer intento crea la entrada (TS-29) y el segundo encuentra una sola entrada y
-la deja en `V` (TS-33). Por eso, ante una falla de red, el aviso **sí** ofrece
-«Reintentar» (TT-89), a diferencia del alta manual (TT-109), que solo crea.
+la deja en `V` (TS-33). Por eso, ante una falla de red, el aviso ofrece
+«Reintentar» (TT-89).
 Lo que la idempotencia exige del servidor: **dos pedidos simultáneos sobre la
 misma celda vacía tienen que dejar una sola entrada** —dos pestañas, o un
 Enter seguido de la pérdida del foco—. La lectura de la celda y la escritura van
 en la misma transacción y serializadas por `(persona, proyecto, tarea, día)`;
 cómo, lo decide el contrato del slice. Justificación: Clockify reintenta solo y
-no expone la decisión, como en TT-109.
+no expone la decisión, como en TT-89.
+_Corregido el 2026-10-07, slice 2c_: decía que el aviso «**sí**» ofrecía
+«Reintentar», «a diferencia del alta manual (TT-109), que solo crea», y la
+justificación terminaba «como en TT-109». Desde el slice 2c el alta manual
+también ofrece «Reintentar», con el id que elige el cliente
+([ADR 0007](../adr/0007-el-cliente-elige-el-id-de-las-altas.md)), y TT-109 dejó
+de ser una excepción.
 
 **TS-38 Superposición** — `adaptar`
 Las entradas que crea el timesheet pueden superponerse entre sí (TS-31) y con
@@ -648,9 +654,13 @@ audit log.
 - Una entrada cuya hora de pared no existe en la semana nueva (TT-112) se
   saltea y se cuenta en el aviso de TS-58; no se mueve ni frena la copia.
 - El timer activo no se copia.
-- La copia solo crea, así que vale lo mismo que TT-109: ante una falla de red
-  no hay «Reintentar» y el aviso manda a mirar la grilla. Si la copia sí se
-  hizo, la semana ya no está vacía y TS-56 impide repetirla.
+- Ante una falla de red no hay «Reintentar» y el aviso manda a mirar la grilla.
+  Si la copia sí se hizo, la semana ya no está vacía y TS-56 impide repetirla.
+  Justificación propia: la copia crea entradas sin un id elegido por el
+  cliente ([ADR 0007](../adr/0007-el-cliente-elige-el-id-de-las-altas.md)), y
+  que TS-56 vuelva seguro repetir una copia ya aplicada depende de cómo lo haga
+  cumplir el servidor, que fija el contrato del slice 13. Hasta ese contrato no
+  se ofrece.
 
 Justificación: la documentación dice «time logged for those entries» y no dice
 cómo. Copiar entrada por entrada conserva el total de cada celda, el detalle y
@@ -658,6 +668,11 @@ las horas; la alternativa —una entrada por celda con la suma, a la hora de
 TS-31— pierde descripciones y etiquetas.
 _No verificado_: qué crea Clockify (P-12). Si copia una entrada por celda, se
 replica eso.
+_Corregido el 2026-10-07, slice 2c_: el último punto de la lista decía «La
+copia solo crea, así que vale lo mismo que TT-109: ante una falla de red no hay
+«Reintentar» y el aviso manda a mirar la grilla.». Con el slice 2c TT-109 dejó
+de ser una excepción; la copia conserva su «sin Reintentar» con la
+justificación de arriba, hasta el contrato del 13 (D2c-4 del contrato del 2c).
 
 **TS-61 El requisito del período de aprobación semanal** — `fuera de alcance`
 Documentado: «The Copy Last Week feature only works when your workspace uses a
@@ -823,8 +838,12 @@ pudo guardar la celda.» Justificación: la de TT-89.
 
 **TS-92 Falla de red al borrar una fila o copiar una semana** — `adaptar`
 Borrar una fila ofrece «Reintentar»: repetirlo sobre una fila ya borrada no
-borra nada más. Copiar «actividades y tiempo» no lo ofrece (TS-60, TT-109).
-Justificación: la de TT-89 y TT-109.
+borra nada más. Copiar «actividades y tiempo» no lo ofrece (TS-60).
+Justificación: la de TT-89 y, para la copia, la de TS-60, hasta el contrato del
+slice 13.
+_Corregido el 2026-10-07, slice 2c_: la copia decía «(TS-60, TT-109)» y la
+justificación era «la de TT-89 y TT-109». Con el slice 2c TT-109 dejó de ser
+una excepción y la copia se sostiene por la suya (TS-60).
 
 **TS-93 La celda cambió en otra pestaña** — `adaptar`
 Como el servidor decide con el estado de la celda en ese momento (sección 5):
