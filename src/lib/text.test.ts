@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { compareNames, initialsOf, noNullCharacter, normalizeSearch } from "./text";
+import {
+  compareNames,
+  initialsOf,
+  noNullCharacter,
+  normalizeSearch,
+  sortedByName,
+} from "./text";
 
 describe("initialsOf (PF-44)", () => {
   it("da la primera letra de cada una de las dos primeras palabras, en mayúsculas", () => {
@@ -48,10 +54,11 @@ describe("compareNames", () => {
   const ref = (id: string, name: string) => ({ id, name });
 
   it("ordena alfabéticamente sin distinguir mayúsculas", () => {
-    const sorted = [ref("1", "beta"), ref("2", "Alfa"), ref("3", "gamma")].sort(
+    // Por unidad de código, «Zeta» iría primero.
+    const sorted = [ref("1", "beta"), ref("2", "Zeta"), ref("3", "alfa")].sort(
       compareNames,
     );
-    expect(sorted.map((row) => row.name)).toEqual(["Alfa", "beta", "gamma"]);
+    expect(sorted.map((row) => row.name)).toEqual(["alfa", "beta", "Zeta"]);
   });
 
   it("distingue los acentos", () => {
@@ -74,5 +81,17 @@ describe("compareNames", () => {
 
   it("da cero con la misma fila", () => {
     expect(compareNames(ref("a", "x"), ref("a", "x"))).toBe(0);
+  });
+});
+
+describe("sortedByName", () => {
+  it("devuelve una copia en el orden de compareNames, sin tocar la original", () => {
+    const rows = [
+      { id: "1", name: "beta" },
+      { id: "2", name: "Zeta" },
+      { id: "3", name: "alfa" },
+    ];
+    expect(sortedByName(rows).map((row) => row.name)).toEqual(["alfa", "beta", "Zeta"]);
+    expect(rows.map((row) => row.name)).toEqual(["beta", "Zeta", "alfa"]);
   });
 });

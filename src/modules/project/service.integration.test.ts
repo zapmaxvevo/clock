@@ -1391,18 +1391,19 @@ describe("las etiquetas de los catálogos (criterio 5 del 11b: PR-62, PR-60, TT-
     describe(name, () => {
       it("trae las activas en orden alfabético sin distinguir mayúsculas, sin archivadas ni ajenas", async () => {
         const other = await seedWorkspace();
-        const zeta = await seedTag({ workspaceId, name: "zeta" });
-        const alfa = await seedTag({ workspaceId, name: "Alfa" });
+        // Por unidad de código, «Zeta» iría primero.
         const beta = await seedTag({ workspaceId, name: "beta" });
+        const zeta = await seedTag({ workspaceId, name: "Zeta" });
+        const alfa = await seedTag({ workspaceId, name: "alfa" });
         await seedTag({ workspaceId, name: "Archivada", archived: true });
         await seedTag({ workspaceId: other.workspaceId, name: "Ajena" });
 
         const catalog: ProjectCatalog | TrackingCatalog = await read(member);
 
         expect(catalog.tags).toEqual([
-          { id: alfa.id, name: "Alfa" },
+          { id: alfa.id, name: "alfa" },
           { id: beta.id, name: "beta" },
-          { id: zeta.id, name: "zeta" },
+          { id: zeta.id, name: "Zeta" },
         ]);
       });
 

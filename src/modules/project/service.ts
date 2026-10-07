@@ -1,4 +1,4 @@
-import { compareNames } from "@/lib/text";
+import { sortedByName } from "@/lib/text";
 import { DomainError, type ActionErrorCode } from "@/server/action";
 import { recordAudit } from "@/server/audit";
 import { createOnce } from "@/server/create-once";
@@ -412,12 +412,6 @@ export async function assertTaggable(
   }
 }
 
-function alphabetical<T extends { readonly id: string; readonly name: string }>(
-  rows: readonly T[],
-): T[] {
-  return [...rows].sort(compareNames);
-}
-
 type CatalogRead<Project> = {
   /** Todos los clientes del workspace, archivados incluidos. */
   readonly clients: readonly ClientRow[];
@@ -463,21 +457,21 @@ async function readCatalog<Project>(
     tasksByProject.get(row.projectId)?.push(row);
   }
   const byClient = new Map<string | null, Project[]>();
-  for (const row of alphabetical(allowed)) {
-    const tasks = alphabetical(tasksByProject.get(row.id) ?? []).map(toTaskView);
+  for (const row of sortedByName(allowed)) {
+    const tasks = sortedByName(tasksByProject.get(row.id) ?? []).map(toTaskView);
     const group = byClient.get(row.clientId) ?? [];
     group.push(toProject(row, tasks));
     byClient.set(row.clientId, group);
   }
   // Un cliente sin proyectos que mostrar no forma grupo (PR-62).
-  const clientGroups = alphabetical(
+  const clientGroups = sortedByName(
     read.clients.filter((row) => byClient.has(row.id)),
   ).map((row) => ({ client: toClientView(row), projects: byClient.get(row.id) ?? [] }));
   const withoutClient = byClient.get(null);
 
   return {
     clients: read.clients,
-    tags: alphabetical(read.tags).map(toTagRef),
+    tags: sortedByName(read.tags).map(toTagRef),
     // «Sin cliente» al final (PR-14, PR-97).
     groups:
       withoutClient === undefined
@@ -496,7 +490,7 @@ export async function getProjectCatalog(actor: Actor): Promise<ProjectCatalog> {
     canCreateProject: can(actor, "project.create", workspaceResource(actor)),
     canCreateTag: can(actor, "tag.create", workspaceResource(actor)),
     tags: read.tags,
-    clients: alphabetical(read.clients.filter((row) => row.archivedAt === null)).map(
+    clients: sortedByName(read.clients.filter((row) => row.archivedAt === null)).map(
       toClientView,
     ),
     groups: read.groups,

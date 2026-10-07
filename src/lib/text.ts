@@ -21,8 +21,8 @@ const byName = new Intl.Collator("es", { sensitivity: "accent" });
 /**
  * El orden alfabético de clientes, proyectos, tareas y etiquetas, en el
  * servidor y en el navegador. Desempata por id: el collator iguala nombres que
- * `lower()` distingue («ß» y «ss»), así que dos filas distintas para el índice
- * pueden empatar acá.
+ * `lower()` distingue («Ａna» en ancho completo y «Ana»), así que dos filas
+ * distintas para el índice pueden empatar acá.
  */
 export function compareNames(
   left: { readonly id: string; readonly name: string },
@@ -36,6 +36,13 @@ export function compareNames(
     return 0;
   }
   return left.id < right.id ? -1 : 1;
+}
+
+/** Una copia de `rows` en el orden de `compareNames`. */
+export function sortedByName<Row extends { readonly id: string; readonly name: string }>(
+  rows: readonly Row[],
+): Row[] {
+  return [...rows].sort(compareNames);
 }
 
 /**

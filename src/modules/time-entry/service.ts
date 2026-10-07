@@ -1,7 +1,7 @@
 import { billableFor, NEW_ENTRY_BILLABLE } from "@/lib/billable";
 import { samePair, type ProjectPair } from "@/lib/project-pair";
 import { sameTagIds } from "@/lib/tag-ids";
-import { compareNames } from "@/lib/text";
+import { sortedByName } from "@/lib/text";
 import { DomainError, RejectedError, type Rejection } from "@/server/action";
 import { db, type Transaction } from "@/server/db";
 import { recordAudit, recordAudits, type AuditEntry } from "@/server/audit";
@@ -174,17 +174,9 @@ function projectRefOf(project: NonNullable<EntryRefs["project"]>): ProjectRef {
   return { id: project.id, name: project.name, color: project.color };
 }
 
-/**
- * Las etiquetas de la fila en orden alfabético, la misma regla que el catálogo
- * (`compareNames`): la vista y la constancia las dan en este orden.
- */
-function sortedTags(row: EntryRefs): EntryRefs["tags"] {
-  return [...row.tags].sort(compareNames);
-}
-
-/** Los ids de las etiquetas de la fila, en el orden de la vista. */
-function tagIdsOf(row: EntryRefs): string[] {
-  return sortedTags(row).map((tag) => tag.id);
+/** Los ids de las etiquetas de la fila, en el orden de la vista (`sortedByName`). */
+function sortedTagIdsOf(row: EntryRefs): string[] {
+  return sortedByName(row.tags).map((tag) => tag.id);
 }
 
 /** Recibe la fila con sus referencias: una lectura sin el join no compila (§5.2). */
@@ -212,7 +204,7 @@ function toView(row: EntryWithRefs, workspace: TrackerWorkspace): TimeEntryView 
     project: row.project === null ? null : projectRefOf(row.project),
     task: row.task === null ? null : { id: row.task.id, name: row.task.name },
     billable: row.billable,
-    tags: sortedTags(row).map((tag) => ({ id: tag.id, name: tag.name })),
+    tags: sortedByName(row.tags),
   };
 }
 
@@ -462,7 +454,7 @@ function continuedFields(source: EntryWithRefs): CopiedFields {
     description: source.description,
     ...pairOf(source),
     billable: source.billable,
-    tagIds: tagIdsOf(source),
+    tagIds: sortedTagIdsOf(source),
   };
 }
 
@@ -563,7 +555,7 @@ export async function startTimer(
         projectId: opened.running.projectId,
         taskId: opened.running.taskId,
         billable: opened.running.billable,
-        tagIds: tagIdsOf(opened.running),
+        tagIds: sortedTagIdsOf(opened.running),
         startedAt: opened.running.startedAt,
       },
     });
@@ -601,7 +593,7 @@ export async function continueEntry(
         projectId: opened.running.projectId,
         taskId: opened.running.taskId,
         billable: opened.running.billable,
-        tagIds: tagIdsOf(opened.running),
+        tagIds: sortedTagIdsOf(opened.running),
         startedAt: opened.running.startedAt,
       },
     });
@@ -673,7 +665,7 @@ export async function duplicateEntry(
               projectId: created.projectId,
               taskId: created.taskId,
               billable: created.billable,
-              tagIds: tagIdsOf(created),
+              tagIds: sortedTagIdsOf(created),
               startedAt: created.startedAt,
               endedAt: created.endedAt,
             },
@@ -797,7 +789,7 @@ export async function deleteEntry(
       entityId: removed.id,
       // El borrado es físico y la unión se va en cascada: esta es la única
       // copia que queda de la fila y de sus etiquetas (TT-61).
-      previousValue: { ...removed, tagIds: tagIdsOf(row) },
+      previousValue: { ...removed, tagIds: sortedTagIdsOf(row) },
     });
     return { id: removed.id };
   });
@@ -843,7 +835,7 @@ export async function discardTimer(
       entityId: removed.id,
       // El borrado es físico y la unión se va en cascada: esta es la única
       // copia que queda de la fila y de sus etiquetas (TT-61).
-      previousValue: { ...removed, tagIds: tagIdsOf(row) },
+      previousValue: { ...removed, tagIds: sortedTagIdsOf(row) },
     });
     return { id: removed.id };
   });
@@ -919,7 +911,7 @@ export async function createManualEntry(
           projectId: created.projectId,
           taskId: created.taskId,
           billable: created.billable,
-          tagIds: tagIdsOf(created),
+          tagIds: sortedTagIdsOf(created),
           startedAt: created.startedAt,
           endedAt: created.endedAt,
         },
@@ -1252,7 +1244,7 @@ async function tagsChange(
   row: EntryWithRefs,
   requested: readonly string[] | undefined,
 ): Promise<Pick<ClosedEntryFields, "tagIds">> {
-  const current = tagIdsOf(row);
+  const current = sortedTagIdsOf(row);
   if (requested === undefined || sameTagIds(current, requested)) {
     return {};
   }
@@ -1463,7 +1455,7 @@ function valuesOf(row: EntryWithRefs, fields: ClosedEntryFields) {
       ? {}
       : { projectId: row.projectId, taskId: row.taskId }),
     ...(fields.billable === undefined ? {} : { billable: row.billable }),
-    ...(fields.tagIds === undefined ? {} : { tagIds: tagIdsOf(row) }),
+    ...(fields.tagIds === undefined ? {} : { tagIds: sortedTagIdsOf(row) }),
     ...(fields.startedAt === undefined ? {} : { startedAt: row.startedAt }),
     ...(fields.endedAt === undefined ? {} : { endedAt: row.endedAt }),
   };
@@ -1574,7 +1566,7 @@ export async function bulkDeleteEntries(
         entityId: row.id,
         // El borrado es físico y la unión se va en cascada: esta es la única
         // copia que queda de la fila y de sus etiquetas (TT-61).
-        previousValue: { ...row, tagIds: tagIdsOfLocked(found, row.id) },
+        previousValue: { ...row, tagIds: sortedTagIdsOfLocked(found, row.id) },
       })),
     );
     return { ids: input.ids };
@@ -1582,12 +1574,15 @@ export async function bulkDeleteEntries(
 }
 
 /** Las etiquetas de una fila borrada en masa, leídas bajo bloqueo antes del borrado. */
-function tagIdsOfLocked(found: ReadonlyMap<string, EntryWithRefs>, id: string): string[] {
+function sortedTagIdsOfLocked(
+  found: ReadonlyMap<string, EntryWithRefs>,
+  id: string,
+): string[] {
   const row = found.get(id);
   if (row === undefined) {
     throw new Error(`La entrada ${id} se borró sin haberse leído bajo bloqueo.`);
   }
-  return tagIdsOf(row);
+  return sortedTagIdsOf(row);
 }
 
 type WindowFloors = {
