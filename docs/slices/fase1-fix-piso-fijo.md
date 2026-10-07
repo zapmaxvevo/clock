@@ -80,3 +80,14 @@ fallan con el piso viejo y sacar la red de seguridad de `f4186e2` es seguro (nin
 | T1     | La parte de la lista del test «el calendario y la lista no cortan en el día de creación» no falla con el piso viejo en la ventana ni en «Cargar más»                      | Sembrar también el lunes de la semana pasada y una entrada de agosto, y afirmar `windowFrom`, la entrada en la lista y `loadMoreFrom`.                                                                                             |
 | B2     | Con el piso en 2000 entra un día que no existe (`Pacific/Apia`, 2011-12-30): con `weekStart` viernes, `getTrackerState` lanza `RangeError` en `startOfDayKey(windowFrom)` | Se arregla: `startOfDayKey` de un día que no existe en la zona devuelve el inicio del primer día siguiente que sí existe, con su test de unidad y uno de integración con Apia. Nota fechada en §5.4 y §8 del contrato del slice 5. |
 | B3     | El comentario de `manualTimes` habla del piso del workspace                                                                                                               | «… el año 10000 y el piso de fechas. Dependen de la zona, que puede cambiar entre dos intentos: …».                                                                                                                                |
+
+## Cierre
+
+Sobre `6f34d30`: lint, typecheck, 1098 de unidad, 1142 de integración, `next build` y 155 de 155
+e2e en verde dos veces (base nueva y la misma reusada, que pasa por `renewWorkspace`). Los tests
+de B1, T1 y B2 fallan con su mutante: la zona `UTC` en el piso de `entryTimesFor`, el piso viejo
+en la ventana de la lista y en «Cargar más», y el `startOfDayKey` anterior con Apia.
+
+La base local `clock` no sirve para los e2e: tiene un segundo workspace del mismo owner, vacío,
+creado el 2026-10-02, y `renewWorkspace` se corta, como debe, porque el de los e2e dejaría de ser
+el primero. Se corre con una base nueva (`clock_e2e_piso`).

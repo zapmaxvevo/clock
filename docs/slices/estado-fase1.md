@@ -25,14 +25,20 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-07.
 | 11b — Etiquetas                             | En `main`    |
 | 12 — Edición masiva de proyecto y etiquetas | En `main`    |
 | 2c — «Reintentar» en el alta manual         | En `main`    |
+| Arreglo: piso de fechas fijo (2000-01-01)   | En `main`    |
 | 13 — Timesheet semanal                      | Sin contrato |
 
 Los slices 1 a 12 (con 2b, 2c, 7b, 8b, 8c, 11a y 11b) están en `main`: el rastreador queda
 cubierto salvo lo fuera de alcance, y el alta manual ya ofrece «Reintentar» (TT-109 dejó de ser
 excepción). El 2c se mergeó el 2026-10-07 con lint, typecheck, 1098 de unidad, 1121 de
 integración, `next build` y 153 de 153 e2e en verde, dos corridas (**falta `git push origin
-main`**; el push anterior llegó hasta `aed694f`). No quedan agentes con trabajo pendiente ni
-cambios sin commitear. Postgres local: `docker start clock-pg`.
+main`**; el push anterior llegó hasta `aed694f`). El arreglo del piso fijo
+(`fase1-fix-piso-fijo.md`, después del primer deploy) se mergeó el mismo día con 1098 de unidad,
+1142 de integración, `next build` y 155 de 155 e2e dos veces; con el deploy, el `update` provisorio
+de `created_at` en Neon queda sin efecto práctico. No quedan agentes con trabajo pendiente ni
+cambios sin commitear. Postgres local: `docker start clock-pg`; los e2e corren contra una base
+nueva (`DATABASE_URL=…/clock_e2e_piso`), porque `clock` tiene un segundo workspace vacío del owner
+y `renewWorkspace` se corta.
 
 ## Lo primero de la sesión siguiente
 
