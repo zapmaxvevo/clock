@@ -1,12 +1,11 @@
 # 0017. Una operación en masa valida sus referencias una vez, después de las filas
 
-Fecha: 2026-10-07. Estado: propuesto.
+Fecha: 2026-10-07. Estado: aceptado (2026-10-07, por el usuario).
 Origen: contrato del slice 12
 ([`fase1-slice12-edicion-masiva.md`](../slices/fase1-slice12-edicion-masiva.md)),
 decisión D12-2. Revisado en la ronda 1 de ese contrato
 ([`correcciones-fase1-slice12.md`](../slices/correcciones-fase1-slice12.md),
-M1 y M2). El team-lead tomó D12-2; queda sujeta a la aprobación de este ADR por
-el usuario.
+M1 y M2). El team-lead tomó D12-2 y el usuario aprobó este ADR el 2026-10-07.
 
 ## Contexto
 

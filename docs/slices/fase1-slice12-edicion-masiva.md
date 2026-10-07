@@ -34,8 +34,8 @@ cambio en un componente de `project`; pantalla `/`.
     las referencias se validan con `assertTrackable` y `assertTaggable` de
     `project`, con la transacción de la masiva.
   - [ADR 0017, una operación en masa valida sus referencias una vez, después de las filas](../adr/0017-las-referencias-de-una-masiva-se-validan-una-vez.md):
-    **propuesto** por este contrato (D12-2), **pendiente de aprobación del
-    usuario**.
+    propuesto por este contrato (D12-2) y **aceptado por el usuario el
+    2026-10-07**.
   - [ADR 0007](../adr/0007-el-cliente-elige-el-id-de-las-altas.md) **no se
     aplica**: ninguna operación del slice crea filas.
 
