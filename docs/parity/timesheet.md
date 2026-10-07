@@ -209,12 +209,20 @@ Se puede navegar a cualquier semana futura y cargar horas en ella. Es la
 consecuencia directa de TT-76 y P-10: Clockify acepta fechas futuras y el
 timesheet no tiene por qué ser más estricto que el modo manual.
 
-**TS-12 Días anteriores a la creación del workspace** — `adaptar`
+**TS-12 Días anteriores al 1 de enero de 2000** — `adaptar`
 Las celdas de esos días se dibujan en solo lectura y el servidor rechaza la
-escritura con el mensaje de TS-81, el piso que fija el
-[ADR 0005](../adr/0005-hora-de-pared-en-la-entrada-manual.md). La navegación
-hacia atrás no se corta: una semana vieja se puede mirar. Justificación: es el
-mismo piso que el alta manual; Clockify no tiene ninguno documentado.
+escritura con el mensaje de TS-81. El piso es una fecha fija, `2000-01-01`, como
+día en la zona horaria de la persona, el mismo de toda alta o edición de horas
+(CAL-48 de [la paridad del calendario](calendario.md)). La navegación hacia
+atrás no se corta: una semana vieja se puede mirar. Justificación: decisión del
+equipo ([arreglo del piso fijo](../slices/fase1-fix-piso-fijo.md)): un piso fijo
+y amplio no impide cargar ningún día real y sigue frenando payloads absurdos.
+_Corregido el 2026-10-07, piso fijo_: el título era «Días anteriores a la
+creación del workspace», el piso era «el que fija el
+[ADR 0005](../adr/0005-hora-de-pared-en-la-entrada-manual.md)» y la
+justificación decía «es el mismo piso que el alta manual; Clockify no tiene
+ninguno documentado». El piso por creación impedía cargar los días anteriores
+al primer login.
 
 ## 3. Filas
 
@@ -782,18 +790,18 @@ de TT-79. Justificación: `membership_status` es nuestro modelo.
 Los mensajes son nuestros; lo que se replica es la regla. Los que ya existen se
 reusan por la regla de una redacción por causa.
 
-| ID    | Regla                                                          | Mensaje                                                                        | Marca      |
-| ----- | -------------------------------------------------------------- | ------------------------------------------------------------------------------ | ---------- |
-| TS-77 | Celda nueva en un proyecto inexistente, archivado o sin acceso | «Ese proyecto ya no está disponible.» (TT-77)                                  | `adaptar`  |
-| TS-78 | Celda nueva en una tarea inexistente, hecha o de otro proyecto | «Esa tarea ya no está disponible.» (PR-74)                                     | `adaptar`  |
-| TS-79 | Escribir una celda con varias entradas                         | «Esta celda tiene varias entradas: editalas desde el detalle.»                 | `adaptar`  |
-| TS-80 | Escribir la celda del timer activo                             | «Esta entrada es la que está corriendo.» (TT-111)                              | `adaptar`  |
-| TS-81 | Día anterior a la creación del workspace                       | «No se pueden cargar horas anteriores a la creación del workspace.» (ADR 0005) | `adaptar`  |
-| TS-82 | Duración ilegible o de 24 horas o más                          | — (la celda vuelve al valor anterior, TT-21)                                   | `adaptar`  |
-| TS-83 | La entrada del detalle ya no existe                            | «Esa entrada ya no existe.» (TT-80)                                            | `adaptar`  |
-| TS-84 | Membresía que no puede escribir                                | «No tenés permiso para hacer esto.» (TT-79)                                    | `replicar` |
-| TS-85 | Copiar sobre una semana que ya tiene horas                     | «Esta semana ya tiene horas cargadas.»                                         | `adaptar`  |
-| TS-86 | Tarea sin proyecto                                             | «Elegí un proyecto antes que una tarea.» (TT-70)                               | `replicar` |
+| ID    | Regla                                                          | Mensaje                                                        | Marca      |
+| ----- | -------------------------------------------------------------- | -------------------------------------------------------------- | ---------- |
+| TS-77 | Celda nueva en un proyecto inexistente, archivado o sin acceso | «Ese proyecto ya no está disponible.» (TT-77)                  | `adaptar`  |
+| TS-78 | Celda nueva en una tarea inexistente, hecha o de otro proyecto | «Esa tarea ya no está disponible.» (PR-74)                     | `adaptar`  |
+| TS-79 | Escribir una celda con varias entradas                         | «Esta celda tiene varias entradas: editalas desde el detalle.» | `adaptar`  |
+| TS-80 | Escribir la celda del timer activo                             | «Esta entrada es la que está corriendo.» (TT-111)              | `adaptar`  |
+| TS-81 | Día anterior al 1 de enero de 2000                             | «No se pueden cargar horas anteriores al 1 de enero de 2000.»  | `adaptar`  |
+| TS-82 | Duración ilegible o de 24 horas o más                          | — (la celda vuelve al valor anterior, TT-21)                   | `adaptar`  |
+| TS-83 | La entrada del detalle ya no existe                            | «Esa entrada ya no existe.» (TT-80)                            | `adaptar`  |
+| TS-84 | Membresía que no puede escribir                                | «No tenés permiso para hacer esto.» (TT-79)                    | `replicar` |
+| TS-85 | Copiar sobre una semana que ya tiene horas                     | «Esta semana ya tiene horas cargadas.»                         | `adaptar`  |
+| TS-86 | Tarea sin proyecto                                             | «Elegí un proyecto antes que una tarea.» (TT-70)               | `replicar` |
 
 Justificación de los `adaptar`: los textos son nuestros, como en la sección 7
 de `time-tracker.md`; las reglas de TS-79, TS-80 y TS-85 son además propuestas
@@ -808,6 +816,11 @@ de este documento. Detalle:
   interfaz el botón ya está deshabilitado (TS-56).
 - **TS-86** no tiene camino en la interfaz —el selector de la fila no deja
   elegir una tarea sin su proyecto—; es la validación del payload.
+
+_Corregido el 2026-10-07, piso fijo_: la fila de TS-81 decía, en la regla, «Día
+anterior a la creación del workspace» y, en el mensaje, «No se pueden cargar
+horas anteriores a la creación del workspace.» (ADR 0005). El piso pasó a ser
+una fecha fija (TS-12), por decisión del equipo.
 
 ## 15. Estados vacíos
 
@@ -825,9 +838,13 @@ TS-20, la fila «Sin proyecto» se puede agregar igual.
 **TS-89 Primera semana de uso** — `replicar`
 Sin semana anterior con horas, «Copiar semana anterior» no se dibuja (TS-57).
 
-**TS-90 Semana entera anterior a la creación del workspace** — `adaptar`
+**TS-90 Semana entera anterior al 1 de enero de 2000** — `adaptar`
 Se dibuja vacía y en solo lectura, sin «Agregar fila» ni «Copiar semana
-anterior» (TS-12). Justificación: es el piso del ADR 0005.
+anterior» (TS-12). Solo se llega navegando a 1999 o antes. Justificación: es
+el piso fijo de TS-12.
+_Corregido el 2026-10-07, piso fijo_: el título era «Semana entera anterior a
+la creación del workspace» y la justificación, «es el piso del ADR 0005». El
+piso pasó a ser una fecha fija (TS-12).
 
 ## 16. Estados de error
 

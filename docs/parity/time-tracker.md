@@ -653,7 +653,7 @@ recarga y la revalidación la conservan
 
 - **La ventana son semanas enteras.** El día de partida es el menor entre el de
   hace 13 días, el de la última entrada cerrada que ya empezó y el `desde` de la
-  URL, si viene; nunca anterior al día de creación del workspace. Ese día baja
+  URL, si viene; nunca anterior al 1 de enero de 2000, el piso de fechas fijo (CAL-48 de [la paridad del calendario](calendario.md)). Ese día baja
   hasta el primer día de su semana (TT-48), así que la semana más vieja de la
   lista está entera y su total es el de verdad. Mientras hay un timer activo, la
   ventana baja además hasta la semana de su inicio. La extensión hacia atrás es
@@ -671,8 +671,7 @@ recarga y la revalidación la conservan
 - **Al recargar, la ventana es la misma**, porque vive en la URL. Tampoco la
   achican la revalidación periódica (P-11) ni la que sigue a una edición.
 - **Un `desde` inválido se ignora**, sin error: uno que no es un día del
-  calendario o que llega repetido. Uno anterior a la creación del workspace se
-  recorta a la semana de esa creación, y uno posterior al piso por omisión no
+  calendario o que llega repetido. Uno anterior al 1 de enero de 2000 se recorta a la semana de ese día, y uno posterior al piso por omisión no
   achica la ventana.
 
 _Corregido el 2026-10-03, slice 5_: decía que la ventana eran los últimos 14
@@ -682,6 +681,7 @@ la semana inmediatamente anterior en cada clic. Lo fija el
 _Corregido el 2026-10-03, revisión de paridad del slice 5_: decía que el enlace
 funciona sin JavaScript. Sin JavaScript, `/` se queda en el esqueleto de carga,
 porque la pantalla se transmite dentro de un `<Suspense>` desde el slice 1.
+_Corregido el 2026-10-07, piso fijo_: el primer punto decía «nunca anterior al día de creación del workspace», y el último, «Uno anterior a la creación del workspace se recorta a la semana de esa creación». El piso de fechas pasó a ser fijo, por decisión del equipo.
 
 **El extremo nuevo de la ventana es el día de la entrada más nueva, que puede
 ser posterior a hoy.** Con TT-76 aceptando fechas futuras, una ventana que
@@ -1165,9 +1165,9 @@ facturable en bloque los fija el slice 12, más abajo.
   texto: ya no existe (TT-80), es de otra persona (TT-79), es la que corre
   (TT-111, también si el cambio es solo la descripción), dura más de un día y
   cambia su horario (TT-110), la hora no existe ese día (TT-112), queda en
-  menos de un minuto (TT-73), o cae antes de la creación del workspace
-  ([ADR 0005](../adr/0005-hora-de-pared-en-la-entrada-manual.md)). La ajena y
+  menos de un minuto (TT-73), o cae antes del 1 de enero de 2000, el piso de fechas (CAL-48 de [la paridad del calendario](calendario.md)). La ajena y
   la que corre solo llegan con un pedido armado a mano.
+  _Corregido el 2026-10-07, piso fijo_: decía «o cae antes de la creación del workspace ([ADR 0005](../adr/0005-hora-de-pared-en-la-entrada-manual.md))».
 - **Todo o nada**
   ([ADR 0011](../adr/0011-las-acciones-en-masa-son-todo-o-nada.md)). Si
   alguna entrada no admite el cambio, no cambia ninguna. El aviso dice «No se
@@ -1781,12 +1781,13 @@ con el id elegido por el cliente del
 [ADR 0007](../adr/0007-el-cliente-elige-el-id-de-las-altas.md), y la
 corrección de TT-109, que deja de ser una excepción. Entran por arrastre,
 verificados con el id, TT-25, TT-30, TT-73, TT-77, TT-78, TT-92, TT-108,
-TT-112 y el piso del workspace; de [la paridad del calendario](calendario.md),
+TT-112 y el piso de fechas; de [la paridad del calendario](calendario.md),
 CAL-46 y CAL-86. Va después del 12. Contrato:
 [fase1-slice2c-reintentar-alta-manual.md](../slices/fase1-slice2c-reintentar-alta-manual.md),
 con las correcciones de la [ronda 1](../slices/correcciones-fase1-slice2c.md),
 la [ronda 2](../slices/correcciones-fase1-slice2c-ronda2.md) y las
 [revisiones](../slices/correcciones-fase1-slice2c-revisiones.md).
+_Corregido el 2026-10-07, piso fijo_: decía «TT-112 y el piso del workspace»; el piso pasó a ser la fecha fija de CAL-48.
 
 - **El alta lleva un id del cliente** (TT-109): el reintento de un alta ya
   aplicada responde la entrada en el estado en que esté, sin escribir ni volver

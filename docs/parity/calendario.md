@@ -520,7 +520,7 @@ Clic sobre el bloque abre el diálogo «Timer en curso» con:
 - el inicio, día y hora, editable con las reglas de TT-28, TT-29 y TT-75 —un
   inicio en el futuro se rechaza con «No se pueden cargar horas que todavía no
   pasaron.», y el selector de fecha no ofrece días posteriores a hoy—, TT-112 y
-  el piso del workspace. Es la regla de `updateRunningStart`, la del editor del
+  el piso de fechas (CAL-48). Es la regla de `updateRunningStart`, la del editor del
   contador del rastreador;
 - el fin como «Fin: en curso», sin campo, con el transcurrido;
 - abajo, «Detener», «Cancelar» y «Guardar», sin menú.
@@ -543,6 +543,7 @@ _Corregido el 2026-10-04, slice 8c_: decía que el inicio se guardaba con
 `updateEntry`, con la misma regla del inicio, y P-06 cerró «Detener», inactivo
 mientras haya cambios sin guardar. Se suman el proyecto, los botones y que el
 diálogo no tiene menú.
+_Corregido el 2026-10-07, piso fijo_: el inicio decía «TT-112 y el piso del workspace»; el piso es la fecha fija de CAL-48.
 
 **CAL-41 Timer detenido o borrado en otra pestaña** — `adaptar`
 La grilla se pone al día con la revalidación de TT-40 —al enfocar, al volver a
@@ -608,14 +609,14 @@ descripción, proyecto y tarea, fecha, inicio, fin y duración, con «Cancelar»
 «Agregar»; etiquetas y facturable llegan con el slice 11, en el mismo diálogo.
 Los campos de hora y de duración son los del modo manual, con sus formatos y su
 rechazo (TT-18 a TT-21): editar la duración mueve el fin, editar inicio o fin
-recalcula la duración. La fecha no ofrece días anteriores a la creación del
-workspace. Enter en la descripción o en un campo de hora también agrega. Con
+recalcula la duración. La fecha no ofrece días anteriores al 1 de enero de 2000 (CAL-48). Enter en la descripción o en un campo de hora también agrega. Con
 duración cero, «Agregar» queda inactivo, con «La entrada tiene que durar al
 menos un minuto.» a la vista (TT-73).
 _Corregido el 2026-10-04, slice 8c_: decía «En el slice 8: descripción, fecha,
 inicio, fin y duración» y que el proyecto y la tarea llegaban con el slice 10.
 El alta llegó con el 8c, que ya trae proyecto y tarea. Se suman el título, los
 botones, el piso de la fecha, Enter y «Agregar» inactivo con duración cero.
+_Corregido el 2026-10-07, piso fijo_: decía «La fecha no ofrece días anteriores a la creación del workspace.»; el piso es la fecha fija de CAL-48.
 
 _Agregado el 2026-10-05_. La página del calendario describe los dos campos que
 suma el slice 11: «**Tag:** A keyword or category commonly used for reporting
@@ -628,8 +629,7 @@ etiquetas y no facturable, y elegir proyecto le pone su facturable por defecto
 
 **CAL-46 «Agregar» es el alta manual** — `replicar`
 Crea con `createManualEntry` y valen todas sus reglas: TT-72 (fin menor que el
-inicio es el día siguiente), TT-73, TT-76, TT-112 y el piso del workspace del
-ADR 0005. Si falla por red vale TT-109: el aviso, dentro del diálogo, es «No se
+inicio es el día siguiente), TT-73, TT-76, TT-112 y el piso de fechas de CAL-48. Si falla por red vale TT-109: el aviso, dentro del diálogo, es «No se
 pudo agregar la entrada.» con el mensaje de TT-89 y «Reintentar», que manda el
 borrador actual con el id pendiente, como el «Reintentar» de «Guardar»
 (CAL-67). Si la respuesta es la entrada de un intento anterior y no lo que se
@@ -675,6 +675,7 @@ agregarla, fijate en el calendario: puede haberse creado.» Es la causa de la
 barra, con el lugar donde mirar.». Desde el 2c el alta lleva un id que elige el
 cliente ([ADR 0007](../adr/0007-el-cliente-elige-el-id-de-las-altas.md)) y se
 reintenta. El segundo párrafo, sobre cuándo se renueva el id, es nuevo.
+_Corregido el 2026-10-07, piso fijo_: el primer párrafo decía «TT-112 y el piso del workspace del ADR 0005»; el piso es la fecha fija de CAL-48.
 
 **CAL-47 Crear con un timer corriendo** — `adaptar`
 Se permite, sin aviso: el clic en una franja libre y «Agregar entrada» abren
@@ -694,11 +695,22 @@ y «Agregar» deshabilitado, como divergencia si Clockify lo permitía. P-01 lo
 invirtió: se permite, y el servidor dejó de rechazar el alta manual con un
 timer abierto.
 
-**CAL-48 Días anteriores a la creación del workspace** — `adaptar`
-Se dibujan atenuados y no admiten crear ni soltar un bloque. Un pedido que
-llegue igual recibe «No se pueden cargar horas anteriores a la creación del
-workspace.» (ADR 0005). Justificación: el piso es nuestro; atenuar evita
-ofrecer un gesto que el servidor va a rechazar.
+**CAL-48 Días anteriores al 1 de enero de 2000** — `adaptar`
+El piso de fechas es fijo, `2000-01-01`, como día en la zona horaria de la
+persona, y es el mismo en toda alta o edición de horas, desde cualquier
+pantalla (TS-12 de [la paridad del timesheet](timesheet.md)). Los días
+anteriores se dibujan atenuados y no admiten crear ni soltar un bloque; en la
+práctica solo se ven navegando a 1999. Un pedido que llegue igual recibe «No se
+pueden cargar horas anteriores al 1 de enero de 2000.». Justificación: decisión
+del equipo ([arreglo del piso fijo](../slices/fase1-fix-piso-fijo.md)): un piso
+fijo y amplio no impide cargar ningún día real y sigue frenando payloads
+absurdos; atenuar evita ofrecer un gesto que el servidor va a rechazar.
+_Corregido el 2026-10-07, piso fijo_: el título era «Días anteriores a la
+creación del workspace» y el texto, «No se pueden cargar horas anteriores a la
+creación del workspace.» (ADR 0005), con la justificación «el piso es nuestro».
+El piso por creación impedía cargar los días anteriores al primer login: con el
+workspace creado un miércoles, el lunes y el martes de esa semana aparecían
+atenuados.
 
 **CAL-49 Cancelar** — `replicar`
 Cerrar el diálogo o `Esc` descarta el borrador: no queda nada guardado ni
@@ -1100,8 +1112,8 @@ mutaciones que llama, y sus textos se reusan tal cual.
   no pasaron.» (TT-75). En CAL-40.
 - Hora que no existe por el cambio de horario: «Esa hora no existe por el
   cambio de horario.» (TT-112). En CAL-30 y CAL-59.
-- Antes de la creación del workspace: «No se pueden cargar horas anteriores a
-  la creación del workspace.» (ADR 0005). En CAL-48.
+- Antes del 1 de enero de 2000: «No se pueden cargar horas anteriores al 1 de
+  enero de 2000.». En CAL-48.
 - Entrada que el trío no puede expresar: «Esta entrada dura más de un día; sus
   horarios no se pueden editar acá.» (TT-110). En CAL-58.
 - Horas de la entrada que corre pedidas por `updateEntryTimes`: «Esta entrada
@@ -1147,6 +1159,7 @@ el de TT-109», y el texto de CAL-46 y TT-109 era «Se perdió la respuesta del
 servidor. Antes de volver a agregarla, fijate en el calendario: puede haberse
 creado.», que salió con el aviso «No sabemos si la entrada se guardó.». El
 texto nuevo es el informativo del alta que no se guardó.
+_Corregido el 2026-10-07, piso fijo_: la causa del piso decía «Antes de la creación del workspace: «No se pueden cargar horas anteriores a la creación del workspace.» (ADR 0005)». El piso es una fecha fija (CAL-48).
 
 ## 14. Estados vacíos
 
@@ -1158,8 +1171,11 @@ es lo contrario de la lista, que salta la semana vacía (TT-86), y está bien qu
 lo sea.
 _No verificado_: qué muestra Clockify con la semana vacía.
 
-**CAL-85 Período anterior a la creación del workspace** — `adaptar`
-Se dibuja entero atenuado, por CAL-48. Justificación: la de CAL-48.
+**CAL-85 Período anterior al 1 de enero de 2000** — `adaptar`
+Se dibuja entero atenuado, por CAL-48; solo se llega navegando a 1999 o antes.
+Justificación: la de CAL-48.
+_Corregido el 2026-10-07, piso fijo_: el título era «Período anterior a la
+creación del workspace». El piso pasó a ser una fecha fija (CAL-48).
 
 ## 15. Estados de error
 
@@ -1466,8 +1482,9 @@ P-01, P-04 y P-06. Contrato:
     entrada.
   - **CAL-43.** El clic en una franja propone su inicio y una franja de largo;
     si el fin cae en minutos que no existen, pasa al primer minuto que existe
-    después. No hace nada en un minuto que no existe, en un día anterior a la
-    creación del workspace o sin permiso de carga.
+    después. No hace nada en un minuto que no existe, en un día anterior al
+    piso de fechas (CAL-48) o sin permiso de carga.
+    _Corregido el 2026-10-07, piso fijo_: decía «en un día anterior a la creación del workspace».
   - **CAL-74.** «Agregar entrada», al final de la barra, propone hoy si está a
     la vista y si no el primer día del período, nunca antes del piso; la hora
     es la franja de ahora si el día es hoy, y las 08:00 si no.
@@ -1520,7 +1537,8 @@ timer no ofrece ningún gesto. No cambia nada del servidor: mover y estirar son
     ese rango. Un clic sin recorrido sigue siendo CAL-43.
   - **CAL-30 y CAL-48.** Un candidato con un extremo en un minuto que no existe
     no se ofrece: el gesto se queda con el anterior. El inicio de un bloque
-    movido no pasa del piso del workspace: el gesto se detiene en él.
+    movido no pasa del piso de fechas: el gesto se detiene en él.
+    _Corregido el 2026-10-07, piso fijo_: decía «no pasa del piso del workspace».
   - **Un gesto no termina en clic**: después de soltar no se abre el diálogo
     del bloque ni el alta de CAL-43.
   - **El foco.** Al terminar un gesto sobre un bloque —soltar con o sin pedido,
