@@ -70,3 +70,9 @@ merge.
 | C19    | Las fuentes de avisos listadas dos veces                                                  | `useLatestNotice` recorre `SOURCES`.                                   |
 | C20    | `Entry` nombra un pedido pendiente en el reducer genérico                                 | `Pending` y `pending`.                                                 |
 | F3     | El `PendingFocus` de F2 corre también en el «Reintentar» de la grilla, que no lo necesita | Solo en el del detalle.                                                |
+
+## Cierre
+
+Con la ronda final (`d657c3d`): lint, typecheck, Prettier, 1339 de unidad y 1236 de integración en
+verde; la suite e2e entera, 185 de 185 dos veces, y `timesheet-detail.spec.ts` (14 recorridos)
+tres veces seguidas, sin flaky; los 18 mutantes del spec caen.
