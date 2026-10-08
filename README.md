@@ -30,7 +30,7 @@ local:
 
 ```bash
 docker run -d --name clock-pg -e POSTGRES_USER=clock -e POSTGRES_PASSWORD=clock \
-  -e POSTGRES_DB=clock -p 5432:5432 postgres:17-alpine
+  -e POSTGRES_DB=clock -p 5432:5432 postgres:18-alpine
 docker exec clock-pg psql -U clock -d postgres -c "CREATE DATABASE clock_test"
 ```
 

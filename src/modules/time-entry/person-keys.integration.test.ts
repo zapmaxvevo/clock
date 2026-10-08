@@ -9,6 +9,7 @@ import {
   constraintOf,
   FOREIGN_KEY_VIOLATION,
   hasCode,
+  RESTRICT_VIOLATION,
 } from "@/server/db/constraint-error";
 import {
   auditLog,
@@ -142,7 +143,7 @@ describe("borrar una persona (criterios 1 y 2, P-09)", () => {
 
     const error = await rejection(db.delete(user).where(eq(user.id, personId)));
 
-    expect(hasCode(error, FOREIGN_KEY_VIOLATION)).toBe(true);
+    expect(hasCode(error, RESTRICT_VIOLATION)).toBe(true);
     expect(await userById(personId)).toBeDefined();
     expect(await membershipOf(ours.workspaceId, personId)).toBeDefined();
     expect(await timeEntryById(entry.id)).toBeDefined();
@@ -174,7 +175,7 @@ describe("quitar una membresía (criterios 3 y 4, P-09)", () => {
 
     const error = await rejection(deleteMembership(ours.workspaceId, personId));
 
-    expect(hasCode(error, FOREIGN_KEY_VIOLATION)).toBe(true);
+    expect(hasCode(error, RESTRICT_VIOLATION)).toBe(true);
     expect(await membershipOf(ours.workspaceId, personId)).toBeDefined();
     expect(await timeEntryById(entry.id)).toBeDefined();
   });
