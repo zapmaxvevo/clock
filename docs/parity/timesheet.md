@@ -231,14 +231,19 @@ Acá: «Proyectos», los siete días de la semana a partir de TS-06 y «Total»,
 sábado y domingo en un fondo distinto. Cada día se rotula con el día abreviado
 y la fecha corta en el formato de la persona (PF-12), como el encabezado de día
 del rastreador fuera de «Hoy» y «Ayer» (TT-44): `lun, 28/09`.
+**La columna de hoy se resalta** y se marca como la fecha actual para los
+lectores de pantalla (`aria-current="date"`). Decisión del contrato del slice
+13 (§1, §5.4), que adopta la propuesta de este documento.
 Justificación del `adaptar`: el rótulo de día es el mismo del rastreador, para
 que un día se escriba igual en las dos pantallas.
-_No verificado_: si la columna de hoy se resalta, porque la captura era de una
-semana pasada. Propuesta: resaltada. Tampoco si el fondo distinto sigue a
-sábado y domingo fijos o a los días laborables de la persona, que acá son de la
-fase 2 (PF-19); acá, sábado y domingo.
+_No verificado_: si Clockify resalta la columna de hoy, porque la captura era de
+una semana pasada. Tampoco si el fondo distinto sigue a sábado y domingo fijos o
+a los días laborables de la persona, que acá son de la fase 2 (PF-19); acá,
+sábado y domingo.
 _Corregido el 2026-10-07, P-12_: era `replicar`, el rótulo propuesto era
 `lun 29/09` y no decía nada del encabezado ni de los fines de semana.
+_Corregido el 2026-10-07, slice 13_: la columna de hoy resaltada era una
+propuesta.
 
 **TS-09 Navegación entre semanas** — `adaptar`
 Documentado: «Switch to a different week using the date navigation in the
@@ -249,15 +254,19 @@ un ícono de lista.
 Acá: arriba a la derecha, semana anterior, semana siguiente y el rango, que
 abre un selector de fecha y lleva a la semana que contiene el día elegido. El
 rango se rotula con los textos de TT-47: «Esta semana», «Semana anterior» o las
-fechas. Justificación del `adaptar`: la misma semana se llama igual en el
-rastreador, el calendario (CAL-15) y la planilla; el workspace dice «La semana
-pasada».
-_No verificado_: si hay un atajo para volver a la semana en curso —la captura no
-muestra ninguno fuera del selector, pero era una semana pasada— y qué hace el
-botón con ícono de lista. Propuesta: un botón «Esta semana» cuando se está en
-otra; el botón de lista no se replica hasta saber qué hace.
+fechas. **Cuando se mira otra semana, un enlace «Esta semana» lleva a la semana
+en curso**; en la semana en curso no aparece. El botón con ícono de lista no se
+replica hasta saber qué hace. Decisión del contrato del slice 13 (§1, §5.3),
+que adopta las dos propuestas de este documento.
+Justificación del `adaptar`: la misma semana se llama igual en el rastreador,
+el calendario (CAL-15) y la planilla; el workspace dice «La semana pasada».
+_No verificado_: si Clockify tiene un atajo para volver a la semana en curso
+—la captura no muestra ninguno fuera del selector, pero era una semana pasada—
+y qué hace el botón con ícono de lista.
 _Corregido el 2026-10-07, P-12_: era `replicar` y no describía lo que muestra el
 workspace.
+_Corregido el 2026-10-07, slice 13_: el enlace «Esta semana» y no replicar el
+botón de lista eran propuestas.
 
 **TS-10 La semana viaja en la URL** — `adaptar`
 `/planilla?semana=2026-09-28`, con el día de inicio de la semana; sin
@@ -310,15 +319,25 @@ _Corregido el 2026-10-07, P-12_: decía «al menos una entrada», sin excluir la
 corre, y «las filas agregadas a mano en la sesión».
 
 **TS-15 Orden de las filas** — `adaptar`
-Propuesta: por cliente, proyecto y tarea, en orden alfabético, con «Sin
-proyecto» después y las filas agregadas abajo de todo: las vacías siempre, y las
-que ya tienen horas hasta la próxima recarga. Justificación: Clockify no
-documenta el orden; este es el mismo agrupamiento del selector (TT-07) y no hace
-saltar filas mientras se edita.
+Las filas que salen de las entradas van en el orden del selector (TT-07):
+primero las de proyectos con cliente, por cliente en orden alfabético; después
+las de proyectos sin cliente; al final, «Sin proyecto» (TS-20). Dentro de un
+cliente, por proyecto en orden alfabético; dentro de un proyecto, primero la
+fila sin tarea y después las de tarea, en orden alfabético. **Las filas
+agregadas van abajo de todo**, en el orden en que se agregaron: las vacías que
+guarda el navegador (TS-19) siempre, y las agregadas en esta carga de la página
+aunque ya tengan horas. Una fila agregada que ya tiene horas pasa a su lugar
+con la próxima recarga; una revalidación no la mueve. Decisión del contrato del
+slice 13 (§1, §5.1, §5.4), que adopta la propuesta de este documento.
+Justificación: Clockify no documenta el orden; este es el mismo agrupamiento
+del selector (TT-07) y no hace saltar filas mientras se edita.
 _No verificado_: el orden de Clockify; la captura de la respuesta 13 no lo dice.
 _Corregido el 2026-10-07, P-12_: decía que las filas recién agregadas iban abajo
 hasta la próxima recarga, sin distinguir las vacías, que ahora la sobreviven
 (TS-19).
+_Corregido el 2026-10-07, slice 13_: era una propuesta; decía «por cliente,
+proyecto y tarea, en orden alfabético», sin ubicar los proyectos sin cliente ni
+la fila sin tarea, y no decía en qué orden van las filas agregadas.
 
 **TS-16 Añadir una fila** — `replicar`
 Documentado: «Click the **Add row** button to add a new line (optional)».
@@ -326,10 +345,20 @@ Verificado en el workspace (2026-10-07), respuestas 7 y 13: debajo de la
 grilla, «Añadir nueva fila» agrega una fila que dice «Seleccionar proyecto» con
 un ícono de agregar y su total en cero; ahí se eligen el proyecto y la tarea.
 Acá igual: la fila nueva dice «Seleccionar proyecto» y abre el selector de
-TS-17. La fila no tiene ninguna entrada hasta que se escribe una celda.
-Propuesta: mientras no se elige, sus celdas no se escriben.
+TS-17; al agregarla, el foco va a ese selector. La fila no tiene ninguna
+entrada hasta que se escribe una celda. **Mientras dice «Seleccionar
+proyecto», sus celdas no se escriben** y su total es cero, y **no hay otra
+igual**: «Añadir nueva fila» con una así en la grilla lleva el foco a su
+selector en vez de sumar otra. Esa fila vive solo en la página (TS-19) y se
+quita sin diálogo (TS-52). Decisión del contrato del slice 13 (D13-10),
+aceptada por el team-lead.
+_No verificado_: si Clockify deja escribir en las celdas de una fila antes de
+elegir el proyecto, y si deja tener varias filas sin elegir a la vez.
 _Corregido el 2026-10-07, P-12_: el botón era «Agregar fila» y la fila aparecía
 con el selector abierto.
+_Corregido el 2026-10-07, slice 13_: que las celdas de la fila nueva no se
+escribían era una propuesta, y no decía adónde va el foco ni cuántas filas sin
+elegir puede haber.
 
 **TS-17 Qué ofrece el selector de la fila** — `replicar`
 Documentado: «projects must be visible to you before you can add time to them»;
@@ -348,11 +377,20 @@ la ayuda.
 Acá el selector de una fila nueva no ofrece un par `(proyecto, tarea)` que ya es
 fila en la semana —el mismo proyecto con otra tarea, sí—, ni «Sin proyecto» si
 esa fila ya existe (TS-20). Decisión del equipo del 2026-10-07.
+Los pares excluidos son los de todas las filas de la grilla: las que salen de
+las entradas, las vacías que guarda el navegador y las agregadas en esta carga.
+**Lo excluido no se dibuja**, salvo la opción de un proyecto que todavía ofrece
+alguna tarea: queda visible e inactiva, para que sus tareas conserven su
+encabezado. Con la búsqueda vacía y todo excluido, el selector dice «Todas las
+combinaciones ya tienen fila esta semana.». Decisión del contrato del slice 13
+(D13-9), aceptada por el team-lead.
 Justificación: dos filas con el mismo par sumarían las mismas entradas y cada
 celda se vería dos veces.
 _No verificado_: qué muestra Clockify en dos filas con la misma combinación.
 _Corregido el 2026-10-07, P-12_: era `replicar` sobre la frase de la ayuda, leída
 para el par `(proyecto, tarea)` y pendiente de confirmar.
+_Corregido el 2026-10-07, slice 13_: no decía cómo se muestra lo excluido ni
+qué dice el selector cuando todo está excluido.
 
 **TS-19 La fila vacía la guarda el navegador** — `replicar`
 Verificado en el workspace (2026-10-07), respuestas 8 y G: una fila agregada sin
@@ -361,17 +399,29 @@ aparece en otro navegador ni en una ventana de incógnito.
 Acá igual: la fila vacía se guarda en el almacenamiento local del navegador y
 no en el servidor; sobrevive a la recarga en ese navegador y no se ve en otro.
 No hay tabla de filas. Cuando se escribe su primera celda, la fila sale de sus
-entradas (TS-14). Qué guarda el navegador y cuándo lo olvida lo fija el contrato
-del slice. Decisión del equipo del 2026-10-07 (timesheet P-07).
+entradas (TS-14). Decisión del equipo del 2026-10-07 (timesheet P-07).
 **La fila vacía es de la semana en que se agregó** y no aparece en las demás.
 Decisión del team-lead del 2026-10-07 (timesheet P-16).
-_No verificado_: qué hace Clockify con la fila vacía en las otras semanas; no se
-probó.
+**Qué guarda el navegador y cuándo lo olvida.** Guarda solo el par `(proyecto,
+tarea)` de una fila que ya lo tiene elegido, también «Sin proyecto», por
+semana, por workspace y por persona. Una fila nueva que todavía dice
+«Seleccionar proyecto» (TS-16) no se guarda: vive solo en la página. El
+navegador olvida la fila al quitarla (TS-52); cuando la lectura del servidor
+trae esa fila con entradas, porque ya sale de ellas (TS-14); y cuando su par
+deja de estar entre los que la persona puede cargar (TS-17) —un proyecto
+archivado, una tarea hecha, un privado sin acceso—, porque sería una fila que
+no se puede escribir (TS-21). No vence: una fila guardada en una semana vieja
+queda hasta que se quita. Sin almacenamiento local disponible, las filas vacías
+viven solo en la página, sin aviso. Una membresía que no está activa no las ve
+(TS-76). Decisión del contrato del slice 13 (D13-7), aceptada por el team-lead.
+_No verificado_: qué hace Clockify con la fila vacía en las otras semanas, ni
+con la de un proyecto que se archiva; no se probó.
 _Corregido el 2026-10-07, P-12_: era `adaptar`: la fila vacía vivía solo en la
 página y desaparecía al recargar o al cambiar de semana, como propuesta
 pendiente de timesheet P-07.
 _Corregido el 2026-10-07, slice 13_: si la fila vacía era de la semana en que se
-agregó o aparecía también en las otras estaba pendiente de timesheet P-16.
+agregó o aparecía también en las otras estaba pendiente de timesheet P-16, y
+qué guarda el navegador y cuándo lo olvida lo fijaba el contrato del slice.
 
 **TS-20 La fila «Sin proyecto»** — `adaptar`
 Las entradas sin proyecto de la semana forman una fila rotulada «Sin proyecto»,
@@ -419,13 +469,18 @@ significa que sus horas pasan a la fila «Sin proyecto» o a la fila del proyect
 sin tarea, y los totales no cambian.
 
 **TS-23 El proyecto de una fila no se cambia** — `adaptar`
-Una fila no tiene selector una vez creada: para mover horas de un proyecto a
-otro se edita la entrada desde el detalle (TS-41) o desde el rastreador.
-Propuesta. Justificación: cambiar el proyecto de una fila sería una edición
-masiva de proyecto sobre las entradas de la semana, que es TT-63 y del slice
-12; Clockify no documenta nada al respecto.
+Una fila no tiene selector una vez elegido su par, tenga horas o no. Para
+cambiar el de una fila vacía, se la quita y se agrega otra (TS-16); para mover
+horas de un proyecto a otro, se edita la entrada desde el rastreador o, desde
+el slice 13b, desde el detalle (TS-41). Decisión del contrato del slice 13
+(D13-10), aceptada por el team-lead. Justificación: cambiar el proyecto de una
+fila con horas sería una edición masiva de proyecto sobre las entradas de la
+semana, que es TT-63 y del slice 12, y en una fila vacía quitarla y agregar
+otra da lo mismo; Clockify no documenta nada al respecto.
 _No verificado_: si Clockify deja cambiar el proyecto de una fila con horas. La
 pregunta 14 de P-12 lo pedía y las respuestas no lo cubren.
+_Corregido el 2026-10-07, slice 13_: era una propuesta, mandaba primero al
+detalle, que llega con el 13b, y no decía qué pasa con una fila vacía.
 
 ## 4. Celdas: lo que muestran y lo que aceptan
 
@@ -512,13 +567,19 @@ Consecuencia aceptada: dos celdas del mismo día en filas distintas crean dos
 entradas que empiezan a la misma hora y se superponen. Vale TT-82 (TS-38).
 Si las 09:00 no existen ese día por un cambio de horario, se usa el primer
 minuto que exista después: la persona no tecleó esa hora y no corresponde
-mostrarle TT-112.
+mostrarle TT-112. **Si desde las 09:00 no existe ningún minuto ese día**, el
+servidor no escribe y responde «Esa hora no existe por el cambio de horario.»
+(TT-112). Decisión del contrato del slice 13, en el
+[ADR 0018](../adr/0018-lo-que-escribe-una-celda-se-calcula-en-instantes.md),
+propuesto.
 _No verificado_: qué hace Clockify un día en que las 09:00 no existen. La
 respuesta 1 dice también que la entrada creada no apareció en el calendario;
 no se sabe por qué, y no cambia ninguna regla de este documento.
 _Corregido el 2026-10-07, P-12_: era `adaptar`, como propuesta pendiente de
 timesheet P-01, con la hipótesis de que Clockify usara «inicio del día» del
 perfil.
+_Corregido el 2026-10-07, slice 13_: no decía qué pasa si desde las 09:00 no
+existe ningún minuto ese día.
 
 **TS-32 El fin es el inicio más la duración, en instantes** — `adaptar`
 **Divergencia explícita contra el
@@ -555,17 +616,21 @@ de los extremos (TT-81) se sostiene por construcción: `V` es de un minuto o má
 (TS-34).
 Verificado en el workspace (2026-10-07), respuesta B: al pasar una celda de
 `1:00` a `2:00`, Clockify movió solo el fin de la entrada.
-Decisión del equipo del 2026-10-07 (timesheet P-02): se acepta. Lo que pide:
-que `architect` registre la excepción en el ADR 0005 —o en uno nuevo— antes del
-contrato del slice 13, y que la mutación viva en `time-entry`, como manda el
+Decisión del equipo del 2026-10-07 (timesheet P-02): se acepta, con dos
+pedidos: que la excepción quede escrita en un ADR antes del contrato del slice
+13, y que la mutación viva en `time-entry`, como manda el
 [ADR 0006](../adr/0006-conservar-el-extremo-sin-cambios.md) para todo módulo
-que edite horas. Ni `createManualEntry` ni `updateEntryTimes` sirven tal como
-están: las dos reciben rótulos de fin.
+que edite horas. La excepción es el
+[ADR 0018](../adr/0018-lo-que-escribe-una-celda-se-calcula-en-instantes.md),
+**propuesto por el contrato del slice 13; lo aprueba el usuario**. La mutación
+es nueva: ni `createManualEntry` ni `updateEntryTimes` sirven tal como están,
+porque las dos reciben rótulos de fin.
 _Corregido el 2026-10-07, P-12_: estaba pendiente de timesheet P-02, sin
 respaldo del workspace, y cubría solo la entrada de una celda con una sola
 entrada.
 _Corregido el 2026-10-07, slice 13_: decía que se rechazaba la baja que dejaría
-una entrada «en cero o menos» (TS-34, D13-4).
+una entrada «en cero o menos» (TS-34, D13-4), y que la excepción la registraba
+`architect` «en el ADR 0005 —o en uno nuevo—», todavía sin escribir.
 
 **TS-33 Celda con una entrada: edita esa entrada** — `replicar`
 Si la celda tiene exactamente una entrada cerrada, escribir `V` **edita esa
@@ -592,7 +657,9 @@ nueva, con la misma descripción que las otras, que empieza apenas termina la
 última. Bajarlo descuenta de la entrada que empieza más tarde y, con el mismo
 inicio, de la de id más reciente.
 
-Con `S` la suma de las entradas cerradas de la celda y `V` lo escrito:
+Con `V` lo escrito y `S` **lo que la celda muestra**, en minutos —la suma
+exacta en segundos de sus entradas cerradas, dividida por 60 y truncada una vez
+(TS-24, TS-47)—:
 
 - **Subir (`V` mayor que `S`)**: crea una entrada cerrada de la persona, en el
   proyecto y la tarea de la fila, de duración `V − S`. Empieza en el instante
@@ -626,9 +693,21 @@ Con `S` la suma de las entradas cerradas de la celda y `V` lo escrito:
 - **Desempate de «la que empieza más tarde»**: la de `start` más tarde; con el
   mismo `start`, la de `created_at` más reciente; y si también empata, la de id
   mayor, como orden fijo. En Clockify es la de id más reciente, que en su
-  modelo es la creada último; acá los ids son UUID v4 elegidos por el cliente
-  ([ADR 0007](../adr/0007-el-cliente-elige-el-id-de-las-altas.md)) y no tienen
-  orden. Decisión del equipo del 2026-10-07.
+  modelo es la creada último; acá los ids son UUID v4 y no tienen orden, los
+  elija el cliente
+  ([ADR 0007](../adr/0007-el-cliente-elige-el-id-de-las-altas.md)) o, en lo
+  que crea una celda, el servidor
+  ([ADR 0019](../adr/0019-escribir-una-celda-fija-su-valor.md), propuesto).
+  Decisión del equipo del 2026-10-07.
+
+**`S` es lo que la celda muestra, no la suma en segundos.** Así, después de
+cualquier escritura la celda muestra exactamente `V`; el servidor no reescribe
+una celda que ya muestra `V` —es TS-36 del lado del servidor: una de `1:30:42`
+con `V` de `1:30` conserva sus segundos—; las sumas y las restas son de minutos
+enteros, y la entrada que agrega una subida dura siempre un minuto o más. Con
+la suma en segundos, una celda con dos entradas que suman `1:30:42`, llevada a
+`1:31`, agregaría una entrada de 18 segundos, contra TT-73. Decisión del
+contrato del slice 13 (D13-3), aceptada por el team-lead.
 
 En todos los rechazos la celda vuelve al valor anterior con el aviso.
 Decisión del equipo del 2026-10-07 (timesheet P-03 y P-13). Justificación del
@@ -650,8 +729,10 @@ pendiente de timesheet P-03; un pedido que llegara igual se rechazaba con
 TS-79.
 _Corregido el 2026-10-07, slice 13_: la baja se rechazaba solo si `S − V` era
 «mayor o igual que la duración» de la entrada que empieza más tarde; el alta en
-otro día mandaba «a editar desde el detalle de la celda (TS-42)»; y subir no
-decía que pasa por las validaciones de un alta.
+otro día mandaba «a editar desde el detalle de la celda (TS-42)»; subir no
+decía que pasa por las validaciones de un alta; `S` era «la suma de las
+entradas cerradas de la celda», sin decir en qué unidad; y el desempate decía
+que los ids son «elegidos por el cliente (ADR 0007)».
 
 **TS-35 Vaciar una celda o escribir cero** — `replicar`
 Vaciar la celda, escribir `0` o escribir menos de un minuto no borra nada y no
@@ -685,7 +766,10 @@ Lo que la idempotencia exige del servidor: **dos pedidos simultáneos sobre la
 misma celda tienen que dejarla en un solo estado** —dos pestañas, o un Enter
 seguido de la pérdida del foco—; sobre una celda vacía, una sola entrada. La
 lectura de la celda y la escritura van en la misma transacción y serializadas
-por `(persona, proyecto, tarea, día)`; cómo, lo decide el contrato del slice.
+por `(persona, proyecto, tarea, día)`, con un bloqueo de la celda tomado antes
+de leerla y sin id del cliente: decisión del contrato del slice 13 (D13-2),
+aceptada por el team-lead, en el
+[ADR 0019](../adr/0019-escribir-una-celda-fija-su-valor.md), propuesto.
 Justificación: Clockify reintenta solo y no expone la decisión, como en TT-89.
 _Corregido el 2026-10-07, slice 2c_: decía que el aviso «**sí**» ofrecía
 «Reintentar», «a diferencia del alta manual (TT-109), que solo crea», y la
@@ -695,6 +779,8 @@ también ofrece «Reintentar», con el id que elige el cliente
 de ser una excepción.
 _Corregido el 2026-10-07, P-12_: el segundo intento «encontraba una sola entrada
 y la dejaba en `V` (TS-33)», porque una celda con varias no se escribía.
+_Corregido el 2026-10-07, slice 13_: decía «cómo, lo decide el contrato del
+slice».
 
 **TS-38 Superposición** — `adaptar`
 Las entradas que crea la planilla pueden superponerse entre sí (TS-31), con las
@@ -776,7 +862,13 @@ semana. Una fila vacía muestra cero.
 
 **TS-45 Total por día** — `replicar`
 Abajo de la grilla, una fila «Total» con la suma de todas las filas en cada día.
-Un total en cero se muestra en gris.
+Un total en cero se muestra en gris, **y vale para los tres totales**: el de
+cada día, el de cada fila (TS-44) y el de la semana (TS-46). Para el de la fila
+y el de la semana, decisión del contrato del slice 13 (§1, §5.4).
+_No verificado_: si Clockify muestra en gris el total de una fila o el de la
+semana cuando son cero; la respuesta 13 lo dice solo del total por día.
+_Corregido el 2026-10-07, slice 13_: el gris del cero era solo del total por
+día.
 
 **TS-46 Total de la semana** — `replicar`
 En la fila «Total», a la derecha, la suma de toda la grilla.
@@ -849,12 +941,31 @@ associated with that task, for that week, will be deleted.» Verificado en el
 workspace (2026-10-07), respuesta 13: cada fila tiene una X a la derecha de su
 total para quitarla.
 Acá, la X —con el nombre accesible «Quitar fila» y el proyecto y la tarea—
-borra **todas** las entradas cerradas de la persona con ese proyecto y esa tarea
-cuyo `start` cae en la semana, tengan la descripción y las etiquetas que
-tengan. Las de otras semanas no se tocan. Una fila vacía (TS-19) se quita sin
-diálogo, porque no borra nada.
+borra las entradas cerradas de la persona con ese proyecto y esa tarea cuyo
+`start` cae en la semana, **todas las que la fila muestra**, tengan la
+descripción y las etiquetas que tengan. Las de otras semanas no se tocan. Una
+fila vacía (TS-19), o una nueva que todavía dice «Seleccionar proyecto»
+(TS-16), se quita sin diálogo, porque no borra nada.
+**La semana y las entradas son las que la persona vio.** La semana son los
+siete días de la grilla que estaba mirando, aunque un admin haya cambiado su
+primer día de la semana mientras la pantalla estaba abierta (TS-112). El pedido
+lleva los ids de las entradas que la grilla leyó para la fila, y el servidor
+borra solo las que al confirmar siguen siendo cerradas, de la persona, de ese
+par y de esos siete días. Lo que llegó a la fila después de la lectura —una
+entrada agregada en otra pestaña, la de un timer detenido después— no se borra,
+y la fila vuelve a aparecer con eso al revalidar; una entrada leída que ya no
+es de la fila en esa semana —se movió de día o de proyecto, o cambió la zona
+horaria (TS-111)— tampoco. Repetir el pedido después de una falla no borra nada
+más (TS-92). Decisión del contrato del slice 13 (D13-6, con la corrección M1 de
+su revisión), aceptada por el team-lead.
+_No verificado_: qué hace Clockify si la fila cambia entre que se ve y que se
+quita.
 _Corregido el 2026-10-07, P-12_: el título era «Borrar una fila borra su semana»
 y la acción era «Borrar fila», en un menú de la fila.
+_Corregido el 2026-10-07, slice 13_: decía que la X borraba «**todas** las
+entradas cerradas de la persona con ese proyecto y esa tarea cuyo `start` cae
+en la semana», sin decir qué semana ni qué pasa con lo que llega a la fila
+después de la lectura.
 
 **TS-53 Con confirmación y sin deshacer** — `adaptar`
 Documentado que Clockify permite deshacer: «Using the Undo feature
@@ -1282,15 +1393,18 @@ siguen escribiendo; las vacías responden TS-77 y la grilla se refresca
 Juntas, para que el equipo las vea de una vez. Desde el 2026-10-07 están todas
 decididas.
 
-| ID    | Contra qué                         | Qué                                                                                                         | Estado                               |
-| ----- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| TS-01 | Clockify, documentado              | La planilla no tiene interruptor.                                                                           | Decidida el 2026-10-07               |
-| TS-02 | Clockify, documentado y verificado | Activar la planilla no vuelve obligatorio el proyecto.                                                      | Decidida el 2026-10-07               |
-| TS-18 | Clockify, verificado               | El selector no ofrece una combinación de proyecto y tarea que ya es fila.                                   | Decidida el 2026-10-07               |
-| TS-32 | ADR 0005, regla interna            | El fin de lo que escribe una celda es inicio más duración: un tercer camino de instantes que el ADR cierra. | Decidida el 2026-10-07; falta el ADR |
-| TS-34 | Clockify, verificado en parte      | La baja que deja la que empieza más tarde en menos de un minuto y el alta en otro día se rechazan.          | Decidida el 2026-10-07               |
-| TS-53 | Clockify, documentado              | Quitar una fila pide confirmación y no se deshace.                                                          | Decidida por P-06 del rastreador     |
-| TS-98 | Clockify, verificado               | Después de Enter el foco sigue en la grilla.                                                                | Decidida el 2026-10-07               |
+| ID    | Contra qué                         | Qué                                                                                                         | Estado                           |
+| ----- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| TS-01 | Clockify, documentado              | La planilla no tiene interruptor.                                                                           | Decidida el 2026-10-07           |
+| TS-02 | Clockify, documentado y verificado | Activar la planilla no vuelve obligatorio el proyecto.                                                      | Decidida el 2026-10-07           |
+| TS-18 | Clockify, verificado               | El selector no ofrece una combinación de proyecto y tarea que ya es fila.                                   | Decidida el 2026-10-07           |
+| TS-32 | ADR 0005, regla interna            | El fin de lo que escribe una celda es inicio más duración: un tercer camino de instantes que el ADR cierra. | Decidida el 2026-10-07; ADR 0018 |
+| TS-34 | Clockify, verificado en parte      | La baja que deja la que empieza más tarde en menos de un minuto y el alta en otro día se rechazan.          | Decidida el 2026-10-07           |
+| TS-53 | Clockify, documentado              | Quitar una fila pide confirmación y no se deshace.                                                          | Decidida por P-06 del rastreador |
+| TS-98 | Clockify, verificado               | Después de Enter el foco sigue en la grilla.                                                                | Decidida el 2026-10-07           |
+
+El [ADR 0018](../adr/0018-lo-que-escribe-una-celda-se-calcula-en-instantes.md)
+está propuesto por el contrato del slice 13 y lo aprueba el usuario.
 
 _Corregido el 2026-10-07, P-12_: TS-34 era «una celda con varias entradas no se
 escribe desde la grilla», como divergencia probable; TS-39 era una divergencia
@@ -1298,7 +1412,7 @@ contra TT-30 y pasó a `replicar`, porque Clockify deja escribir con un timer
 corriendo. Se suman TS-01, TS-18 y TS-98.
 _Corregido el 2026-10-07, slice 13_: la fila de TS-34 decía «La baja que
 vaciaría la entrada que empieza más tarde y el alta que caería en otro día se
-rechazan.» (D13-4).
+rechazan.» (D13-4), y la de TS-32, «Decidida el 2026-10-07; falta el ADR».
 
 ## 21. Reparto
 
@@ -1312,21 +1426,87 @@ dependencias que el mapa no nombra, las dos ya antes en el orden:
   (TS-41). Si el slice 13 se adelantara, la entrada nacería no facturable y
   habría que volver a tocarla.
 
-| Dónde                        | Qué                                                                             |
-| ---------------------------- | ------------------------------------------------------------------------------- |
-| Slice 13                     | TS-01, TS-02, TS-04 … TS-54, TS-75 … TS-120, salvo TS-80, TS-85, TS-89 y TS-117 |
-| Fase 2                       | TS-62 … TS-66 (plantillas), por timesheet P-09                                  |
-| Fuera de la fase 1, por plan | TS-55 … TS-61, TS-89 y TS-117 (copiar la semana pasada)                         |
-| Nunca                        | TS-03, TS-67 … TS-74                                                            |
+| Dónde                        | Qué                                                                     |
+| ---------------------------- | ----------------------------------------------------------------------- |
+| Slice 13                     | TS-01 … TS-120, salvo TS-80 y TS-85, retiradas, y lo de las otras filas |
+| Slice 13b                    | TS-40 … TS-42, TS-83, TS-99, TS-115 y el «Borrar» de TS-35              |
+| Fase 2                       | TS-62 … TS-66 (plantillas), por timesheet P-09                          |
+| Fuera de la fase 1, por plan | TS-55 … TS-61, TS-89 y TS-117 (copiar la semana pasada)                 |
+| Nunca                        | TS-03, TS-67 … TS-74                                                    |
 
 **El slice 13 no cambia el esquema.** Las celdas y las filas se resuelven con
 `time_entry` tal como queda después del slice 11, y las filas vacías, en el
-navegador (TS-19). Lo que sí trae es una mutación nueva en `time-entry` (TS-32,
-TS-33, TS-34, TS-37, TS-39) y la excepción al ADR 0005, que tiene que estar
-escrita antes del contrato.
+navegador (TS-19). Lo que sí trae son dos mutaciones nuevas en `time-entry`
+—escribir una celda (TS-29 … TS-39) y quitar una fila (TS-52 … TS-54)— y dos
+ADR propuestos por su contrato, que el usuario aprueba antes de construir: el
+[ADR 0018](../adr/0018-lo-que-escribe-una-celda-se-calcula-en-instantes.md)
+(TS-32) y el [ADR 0019](../adr/0019-escribir-una-celda-fija-su-valor.md)
+(TS-37). El 13b no tiene backend nuevo.
 _Corregido el 2026-10-07, P-12_: el slice 13 llevaba TS-55 … TS-60, la copia se
 resolvía con `time_entry`, y el esquema cambiaba solo si timesheet P-09 traía
 las plantillas.
+_Corregido el 2026-10-07, slice 13_: la tabla tenía una sola fila para el slice
+13, «TS-01, TS-02, TS-04 … TS-54, TS-75 … TS-120, salvo TS-80, TS-85, TS-89 y
+TS-117», sin el 13b; el párrafo decía «una mutación nueva» y que la excepción
+al ADR 0005 tenía que estar escrita antes del contrato.
+
+### Slice 13 — la grilla y su escritura
+
+Lo que la tabla le asigna. Entran por arrastre, verificados por el camino nuevo,
+TT-19 y TT-21, TT-55, TT-61, TT-73, TT-77, TT-79, TT-89, TT-90, TT-92 y TT-97;
+de [la paridad de proyectos](proyectos.md), PR-23, PR-47, PR-64, PR-66 y PR-71.
+De acá salen el
+[ADR 0018](../adr/0018-lo-que-escribe-una-celda-se-calcula-en-instantes.md)
+(TS-32) y el [ADR 0019](../adr/0019-escribir-una-celda-fija-su-valor.md)
+(TS-37), **propuestos; los aprueba el usuario** antes de construir. Contrato:
+[fase1-slice13-planilla.md](../slices/fase1-slice13-planilla.md), con las
+correcciones de la [ronda 1](../slices/correcciones-fase1-slice13.md).
+
+- **Escribir una celda es dejarla en un valor** (sección 5): el pedido lleva el
+  día, el par y los minutos, sin id ni lo que la pestaña vio; el servidor
+  bloquea la celda, la lee y decide (TS-37, D13-2). Como `S` es lo que la celda
+  muestra (TS-34, D13-3), después de escribir la celda muestra `V` y repetir el
+  pedido no escribe nada.
+- **Los instantes** (TS-32): el fin es el inicio más la duración; el inicio de
+  una celda vacía, las 09:00 o el primer minuto que exista después ese día
+  (TS-31).
+- **Subir una celda con varias entradas es un alta** (TS-21, TS-34, D13-5), y
+  **la baja que dejaría la que empieza más tarde con menos de un minuto se
+  rechaza** (TS-34, D13-4). Este rechazo y el del alta en otro día llevan el
+  texto de TS-79 del 13: «Editá las entradas de esta celda desde el
+  rastreador.».
+- **Quitar una fila borra lo que la persona vio**: los siete días de su grilla
+  y las entradas que leyó (TS-52, D13-6 con M1).
+- **El navegador guarda solo el par de las filas vacías**, por semana,
+  workspace y persona (TS-19, D13-7, P-16).
+- **Lo que el slice decide**, en su entrada:
+  - Decisiones del contrato, aceptadas por el team-lead: TS-16 y TS-23
+    (D13-10), TS-18 (D13-9), TS-19 (D13-7), TS-21 (D13-5), TS-34 (D13-3,
+    D13-4, D13-5), TS-37 (D13-2), TS-52 (D13-6) y TS-100 (D13-12). Del
+    team-lead: P-14 (TS-40, para el 13b) y P-16 (TS-19).
+  - Propuestas de este documento que el contrato adopta: la columna de hoy
+    resaltada (TS-08), el enlace «Esta semana» (TS-09), el orden de las filas
+    (TS-15) y el gris del cero en los tres totales (TS-45).
+  - _No verificado_ en Clockify, y queda así: TS-08 (hoy resaltado), TS-09
+    (atajo a la semana en curso), TS-15 (orden), TS-16 (escribir antes de
+    elegir, varias filas sin elegir), TS-24 (celda vacía o en cero), TS-31 (las
+    09:00 que no existen), TS-34 (de qué entrada copia etiquetas y facturable,
+    y las bajas que no entran), TS-45 (el gris de los totales de fila y de
+    semana), TS-47 (el formato de la captura) y TS-52 (la fila que cambia entre
+    que se ve y que se quita).
+- **Afuera**: el menú de tres puntos y el detalle de una celda (slice 13b); el
+  botón con ícono de lista de TS-09; un atajo que no sea Tab, Mayús+Tab, Enter
+  y Esc (TS-98, TS-101); recordar qué celda tenía el foco después de una
+  recarga.
+
+### Slice 13b — el menú y el detalle de una celda
+
+TS-40, TS-41, TS-42, TS-83, TS-99, TS-115 y el «Borrar» de TS-35, con P-14
+cerrado: el menú de una celda con varias entradas no ofrece «Borrar». No tiene
+backend nuevo: edita y borra con las mutaciones que ya existen. Contrato propio
+cuando el 13 esté en `main`; el esbozo está en la §9 del contrato del 13. **Con
+el 13b, el texto de TS-79 pasa a «Editá las entradas de esta celda desde el
+detalle.»** (sección 14).
 
 ## 22. Pendientes de definición del equipo
 
