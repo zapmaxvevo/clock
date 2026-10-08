@@ -86,6 +86,42 @@ function secondsOf(value: string): number {
   return seconds;
 }
 
+/** La fila con sus dos sumas convertidas a número. */
+function withSeconds<
+  Row extends { readonly seconds: string; readonly billableSeconds: string },
+>(
+  row: Row,
+): Omit<Row, "seconds" | "billableSeconds"> & {
+  readonly seconds: number;
+  readonly billableSeconds: number;
+} {
+  return {
+    ...row,
+    seconds: secondsOf(row.seconds),
+    billableSeconds: secondsOf(row.billableSeconds),
+  };
+}
+
+/** Las columnas por las que agrupa un nivel. */
+type GroupColumn = typeof timeEntry.userId | typeof timeEntry.projectId;
+
+/**
+ * La agregación sobre `time_entry`, una fila por `(workspace_id, column)`, con
+ * el alcance y el rango. Los nombres se unen afuera, a las filas ya agrupadas.
+ */
+function totalsBy<Column extends GroupColumn>(
+  scope: ReportScope,
+  span: ReportSpan,
+  column: Column,
+) {
+  return db
+    .select({ workspaceId: timeEntry.workspaceId, key: column, ...sums() })
+    .from(timeEntry)
+    .where(and(inScope(scope), closedIn(span)))
+    .groupBy(timeEntry.workspaceId, column)
+    .as("totals");
+}
+
 /**
  * Las lecturas del reporte. Cada función recibe primero el alcance y es una
  * sentencia: agrega sobre `time_entry` y después une los nombres a las filas
@@ -97,19 +133,10 @@ export const reportRepository = {
     scope: ReportScope,
     span: ReportSpan,
   ): Promise<readonly PersonTotalRow[]> {
-    const totals = db
-      .select({
-        workspaceId: timeEntry.workspaceId,
-        userId: timeEntry.userId,
-        ...sums(),
-      })
-      .from(timeEntry)
-      .where(and(inScope(scope), closedIn(span)))
-      .groupBy(timeEntry.workspaceId, timeEntry.userId)
-      .as("totals");
+    const totals = totalsBy(scope, span, timeEntry.userId);
     const rows = await db
       .select({
-        userId: totals.userId,
+        userId: totals.key,
         accountName: user.name,
         displayName: userPreference.displayName,
         status: membership.status,
@@ -122,16 +149,12 @@ export const reportRepository = {
         membership,
         and(
           eq(membership.workspaceId, totals.workspaceId),
-          eq(membership.userId, totals.userId),
+          eq(membership.userId, totals.key),
         ),
       )
-      .innerJoin(user, eq(user.id, totals.userId))
-      .leftJoin(userPreference, eq(userPreference.userId, totals.userId));
-    return rows.map((row) => ({
-      ...row,
-      seconds: secondsOf(row.seconds),
-      billableSeconds: secondsOf(row.billableSeconds),
-    }));
+      .innerJoin(user, eq(user.id, totals.key))
+      .leftJoin(userPreference, eq(userPreference.userId, totals.key));
+    return rows.map(withSeconds);
   },
 
   /** Una fila por proyecto, y una sin proyecto, con horas cerradas en `span`. Una sentencia. */
@@ -139,16 +162,7 @@ export const reportRepository = {
     scope: ReportScope,
     span: ReportSpan,
   ): Promise<readonly ProjectTotalRow[]> {
-    const totals = db
-      .select({
-        workspaceId: timeEntry.workspaceId,
-        projectId: timeEntry.projectId,
-        ...sums(),
-      })
-      .from(timeEntry)
-      .where(and(inScope(scope), closedIn(span)))
-      .groupBy(timeEntry.workspaceId, timeEntry.projectId)
-      .as("totals");
+    const totals = totalsBy(scope, span, timeEntry.projectId);
     const rows = await db
       .select({
         project: { id: project.id, name: project.name, color: project.color },
@@ -160,19 +174,12 @@ export const reportRepository = {
       // RP-28: un proyecto nulo es «Sin proyecto»; RP-29: archivado o no.
       .leftJoin(
         project,
-        and(
-          eq(project.workspaceId, totals.workspaceId),
-          eq(project.id, totals.projectId),
-        ),
+        and(eq(project.workspaceId, totals.workspaceId), eq(project.id, totals.key)),
       )
       .leftJoin(
         client,
         and(eq(client.workspaceId, project.workspaceId), eq(client.id, project.clientId)),
       );
-    return rows.map((row) => ({
-      ...row,
-      seconds: secondsOf(row.seconds),
-      billableSeconds: secondsOf(row.billableSeconds),
-    }));
+    return rows.map(withSeconds);
   },
 };
