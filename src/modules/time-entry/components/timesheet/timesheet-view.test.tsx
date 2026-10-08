@@ -3,7 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import { TrackingCatalogProvider } from "@/modules/project/components/tracking-catalog";
 import type { TrackingCatalog } from "@/modules/project/schema";
-import type { TimesheetDayView, TimesheetState } from "@/modules/time-entry/schema";
+import type {
+  TimeEntryView,
+  TimesheetDayView,
+  TimesheetState,
+} from "@/modules/time-entry/schema";
 
 import { TimesheetToolbar } from "./timesheet-toolbar";
 import { TimesheetView } from "./timesheet-view";
@@ -16,6 +20,8 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/modules/time-entry/actions", () => ({
   setTimesheetCell: vi.fn(),
   removeTimesheetRow: vi.fn(),
+  updateEntry: vi.fn(),
+  deleteEntry: vi.fn(),
 }));
 
 const acme = { id: "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d", name: "Acme" };
@@ -68,6 +74,35 @@ function days(overrides: Partial<TimesheetDayView> = {}): TimesheetDayView[] {
   }));
 }
 
+/** Las dos entradas del 30/09 de Web: Diseño, las de `entryIds`, que suman `5_400`. */
+function designEntry(
+  id: string,
+  start: string,
+  end: string,
+  seconds: number,
+): TimeEntryView {
+  return {
+    id,
+    description: "",
+    startedAt: `2026-09-30T${start}:00.000Z`,
+    endedAt: `2026-09-30T${end}:00.000Z`,
+    dayDate: "2026-09-30",
+    weekStart: "2026-09-28",
+    startLabel: start,
+    endLabel: end,
+    startClock: start,
+    endClock: end,
+    extraDays: 0,
+    durationSeconds: seconds,
+    durationLabel: `0:${String(seconds / 60).padStart(2, "0")}`,
+    editableTimes: true,
+    project: web,
+    task: design,
+    billable: false,
+    tags: [],
+  };
+}
+
 const state: TimesheetState = {
   todayKey: "2026-10-01",
   canTrack: true,
@@ -92,6 +127,12 @@ const state: TimesheetState = {
   ],
   closedSeconds: 5_400,
   storageKey: "clock:planilla:w:u",
+  serverNow: "2026-10-01T15:00:00.000Z",
+  minDayKey: "2000-01-01",
+  entries: [
+    designEntry("7a8b9c0d-1e2f-4a3b-9c4d-6e7f8091a2b3", "12:00", "12:45", 2_700),
+    designEntry("8b9c0d1e-2f3a-4b4c-8d5e-7f8091a2b3c4", "14:00", "14:45", 2_700),
+  ],
 };
 
 function render(overrides: Partial<TimesheetState> = {}): string {
@@ -202,6 +243,14 @@ describe("TimesheetView, los estados (§5.10)", () => {
     expect(markup).not.toContain("Añadir nueva fila");
     expect(markup).not.toContain("Quitar fila");
     expect(markup).toMatch(/>1:30<\/span><\/td>/);
+  });
+
+  it("sin `canTrack`, la celda con entradas no tiene menú; con él, sí (TS-76, D13b-4)", () => {
+    const name = "Acciones de la celda Web: Diseño, miércoles 30/09";
+
+    expect(render({ canTrack: false })).not.toContain("Acciones de la celda");
+    expect(render()).toContain(`aria-label="${name}"`);
+    expect(render().match(/Acciones de la celda/g)).toHaveLength(1);
   });
 
   it("una semana entera anterior al piso no tiene celdas que se escriban ni «Añadir nueva fila» (TS-90)", () => {

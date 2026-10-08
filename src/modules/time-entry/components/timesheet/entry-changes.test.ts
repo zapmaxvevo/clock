@@ -67,17 +67,20 @@ function harness() {
     },
     remove: (input) => pending("delete", input.id),
   };
-  const changer = entryChanger(
-    actions,
-    (event: EntryChangesEvent) => {
-      state = entryChangesReducer(state, event);
-    },
-    (request) => settled.push(request),
-  );
+  const changer = entryChanger(actions, (event: EntryChangesEvent) => {
+    state = entryChangesReducer(state, event);
+  });
+  function send(request: EntryChangeRequest): void {
+    void changer.send(request).then((ok) => {
+      if (ok) {
+        settled.push(request);
+      }
+    });
+  }
   return {
     calls,
     settled,
-    changer,
+    changer: { send },
     state: () => state,
     snapshot: () => {
       state = entryChangesReducer(state, { type: "snapshot" });
@@ -85,7 +88,7 @@ function harness() {
     retry: () => {
       const failure = state.failure;
       if (failure !== null) {
-        changer.send(failure.request);
+        send(failure.request);
       }
     },
   };
@@ -167,7 +170,7 @@ describe("entryChanger y entryChangesReducer (§5.4)", () => {
     expect(detail.state()).toBe(before);
   });
 
-  it("`onSettled` recibe el pedido asentado, y no el que falla", async () => {
+  it("el envío dice si el pedido se asentó o falló", async () => {
     const detail = harness();
     detail.changer.send(save(a, tuesday));
     detail.changer.send(remove(b, tuesday));

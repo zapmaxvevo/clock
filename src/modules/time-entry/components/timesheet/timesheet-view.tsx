@@ -15,7 +15,11 @@ import type {
 } from "@/modules/time-entry/schema";
 
 import { useTrackerRefresh } from "../use-tracker-refresh";
+import { CellDetailDialogs, useCellDetail } from "./cell-detail";
+import { entryChangeFailureTitle } from "./cell-entries-dialog";
+import type { CellMenuChoice } from "./cell-menu";
 import { cellKeyOf } from "./cell-writes";
+import type { EntryChangeRequest } from "./entry-changes";
 import { timesheetLabels } from "./labels";
 import { RemoveRowDialog, type RowToRemove } from "./remove-row-dialog";
 import {
@@ -25,27 +29,41 @@ import {
   withoutStoredRow,
 } from "./stored-rows";
 import { TimesheetTable } from "./timesheet-table";
-import { nextWritableCell, pairOf, timesheetGrid, type GridRow } from "./timesheet-model";
+import {
+  nextWritableCell,
+  pairOf,
+  timesheetGrid,
+  type GridCell,
+  type GridRow,
+} from "./timesheet-model";
 import { useCellWrites } from "./use-cell-writes";
+import { useEntryChanges } from "./use-entry-changes";
 import { useRowRemovals } from "./use-row-removals";
 import { updateStoredRows, useStoredRows } from "./use-stored-rows";
 
 /** La fila con entradas cuyo diálogo está abierto, como estaba al abrirlo. */
 type PendingRemoval = RowToRemove & { readonly request: RemoveTimesheetRowInput };
 
-/** Adónde va el foco después de dibujar: el selector de la fila nueva o una fila. */
+/**
+ * Adónde va el foco después de dibujar: el selector de la fila nueva, una
+ * fila, o la celda de un pedido del detalle cuando la foto lo trae (13b, A2).
+ */
 type PendingFocus =
-  { readonly kind: "picker" } | { readonly kind: "row"; readonly pair: ProjectPair };
+  | { readonly kind: "picker" }
+  | { readonly kind: "row"; readonly pair: ProjectPair }
+  | { readonly kind: "cell"; readonly key: string };
 
 /**
  * El dueño de la planilla en el cliente: las escrituras de la grilla (§5.6),
  * las filas agregadas y las que guarda el navegador (§5.7), «Quitar fila»
- * (§5.8), los avisos (§5.9), el foco y la revalidación periódica (TS-97).
+ * (§5.8), el detalle de una celda (13b), los avisos (§5.9), el foco y la
+ * revalidación periódica (TS-97).
  */
 export function TimesheetView({ state }: { readonly state: TimesheetState }) {
   useTrackerRefresh();
   const catalog = useTrackingCatalog();
   const writes = useCellWrites(state);
+  const changes = useEntryChanges(state, settleDetail);
   const storedRows = useStoredRows(state.storageKey);
   /** Los pares elegidos en esta carga de la página y en esta semana, en orden (TS-15). */
   const [added, setAdded] = useState<readonly ProjectPair[]>([]);
@@ -63,10 +81,6 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
   const [confirming, setConfirming] = useState<PendingRemoval | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [week, setWeek] = useState(state.weekStart);
-  const [seenFailures, setSeenFailures] = useState({
-    cell: writes.failure,
-    row: removals.failure,
-  });
   const tableRef = useRef<HTMLTableElement>(null);
   const regionRef = useRef<HTMLDivElement>(null);
   const pickerRef = useRef<HTMLButtonElement>(null);
@@ -77,6 +91,24 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
   const removalFocusRef = useRef<HTMLElement | null>(null);
   /** Adonde va el foco cuando se dibuje lo que acaba de cambiar. */
   const pendingFocusRef = useRef<PendingFocus | null>(null);
+  const cellDetail = useCellDetail({
+    state,
+    changes,
+    destinationOf: cellDestination,
+    awaitCell: (key) => {
+      pendingFocusRef.current = { kind: "cell", key };
+    },
+  });
+  /** La falla del detalle que se ve en la pantalla, y no en el editor o la lista (§5.5). */
+  const detailFailure =
+    changes.failure !== null && cellDetail.placeOf(changes.failure) === "screen"
+      ? changes.failure
+      : null;
+  const [seenFailures, setSeenFailures] = useState({
+    cell: writes.failure,
+    row: removals.failure,
+    detail: detailFailure,
+  });
 
   // Otra semana: las filas agregadas y la fila nueva eran de la anterior. Las
   // escrituras en vuelo y los avisos siguen (F-m2).
@@ -85,14 +117,28 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
     setAdded([]);
     setNewRow(false);
   }
-  // Un aviso a la vez: la falla más reciente, de una celda o de una fila,
-  // reemplaza a la otra.
-  if (seenFailures.cell !== writes.failure || seenFailures.row !== removals.failure) {
-    setSeenFailures({ cell: writes.failure, row: removals.failure });
+  // Un aviso a la vez en la pantalla: la falla más reciente, de una celda, de
+  // una fila o del detalle, reemplaza a las otras. La del detalle que pasa de
+  // la lista a la pantalla cuenta como recién llegada (§5.2).
+  if (
+    seenFailures.cell !== writes.failure ||
+    seenFailures.row !== removals.failure ||
+    seenFailures.detail !== detailFailure
+  ) {
+    setSeenFailures({
+      cell: writes.failure,
+      row: removals.failure,
+      detail: detailFailure,
+    });
     if (writes.failure !== null && writes.failure !== seenFailures.cell) {
       removals.dismiss();
+      dismissDetailOnScreen();
     } else if (removals.failure !== null && removals.failure !== seenFailures.row) {
       writes.dismiss();
+      dismissDetailOnScreen();
+    } else if (detailFailure !== null && detailFailure !== seenFailures.detail) {
+      writes.dismiss();
+      removals.dismiss();
     }
   }
 
@@ -104,7 +150,9 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
     newRow,
     removing: removals.removing,
     shown: writes.shown,
+    changing: changes.changing,
   });
+  const busy = new Set([...writes.busy, ...changes.changing]);
   const canAddRow = state.canTrack && state.days.some((day) => !day.beforeFloor);
 
   useEffect(() => {
@@ -137,6 +185,10 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
       }
       return;
     }
+    if (target.kind === "cell") {
+      settleCellFocus(target.key);
+      return;
+    }
     const row = grid.rows.find(
       (candidate) => candidate.pair !== null && samePair(candidate.pair, target.pair),
     );
@@ -150,18 +202,71 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
     }
   });
 
+  /** El campo de una celda; `null` si no se dibuja o no se escribe. */
+  function fieldOf(key: string): HTMLInputElement | null {
+    return (
+      tableRef.current?.querySelector<HTMLInputElement>(
+        `[data-cell="${CSS.escape(key)}"] input`,
+      ) ?? null
+    );
+  }
+
   /** `false` si la celda no se dibuja o no se escribe. */
   function focusCell(key: string): boolean {
-    const field = tableRef.current?.querySelector<HTMLInputElement>(
-      `[data-cell="${CSS.escape(key)}"] input`,
-    );
+    const field = fieldOf(key);
     field?.focus();
-    return field !== null && field !== undefined;
+    return field !== null;
   }
 
   /** «Añadir nueva fila», o la región si no está: donde queda el foco sin la X. */
+  function outsideRows(): HTMLElement | null {
+    return addButtonRef.current ?? regionRef.current;
+  }
+
   function focusOutsideRows(): void {
-    (addButtonRef.current ?? regionRef.current)?.focus();
+    outsideRows()?.focus();
+  }
+
+  /** El destino de una celda al cerrarse el detalle: su campo, o el de «Quitar fila» (§5.6). */
+  function cellDestination(key: string): HTMLElement | null {
+    return fieldOf(key) ?? outsideRows();
+  }
+
+  /**
+   * El foco que espera la foto de un pedido del detalle se consume cuando la
+   * celda deja de estar ocupada o de dibujarse: al campo, o fuera de las filas
+   * si se fue con la fila. Solo si sigue en ese campo o cayó a `body`: si la
+   * persona lo llevó a otra parte, no se lo saca.
+   */
+  function settleCellFocus(key: string): void {
+    const cell = grid.rows
+      .flatMap((row) => row.cells)
+      .find((candidate) => candidate.key === key);
+    if (cell?.pending === true) {
+      return;
+    }
+    pendingFocusRef.current = null;
+    const field = fieldOf(key);
+    const active = document.activeElement;
+    if (active !== null && active !== document.body && active !== field) {
+      return;
+    }
+    if (field === null) {
+      focusOutsideRows();
+    } else {
+      field.focus();
+    }
+  }
+
+  /** El `onSettled` de los pedidos del detalle, que decide si el editor se cierra. */
+  function settleDetail(request: EntryChangeRequest): void {
+    cellDetail.settled(request);
+  }
+
+  function dismissDetailOnScreen(): void {
+    if (detailFailure !== null) {
+      changes.dismiss();
+    }
   }
 
   /**
@@ -183,6 +288,25 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
   function retryRow(): void {
     focusOutsideRows();
     removals.retry();
+  }
+
+  /** Como el de una celda: el foco pasa antes al campo de la celda del pedido (F-M1). */
+  function retryDetail(): void {
+    if (detailFailure === null) {
+      return;
+    }
+    if (!focusCell(detailFailure.request.cell)) {
+      regionRef.current?.focus();
+    }
+    changes.retry();
+  }
+
+  function openDetail(
+    cell: GridCell,
+    choice: CellMenuChoice,
+    trigger: HTMLElement,
+  ): void {
+    cellDetail.open(cell, choice, trigger);
   }
 
   function write(row: GridRow, date: string, minutes: number): void {
@@ -284,6 +408,15 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
             onRetry={removals.failure.code === "unexpected" ? retryRow : undefined}
           />
         )}
+        {detailFailure !== null && (
+          <ActionFeedback
+            title={entryChangeFailureTitle(detailFailure)}
+            message={detailFailure.message}
+            onRetry={detailFailure.code === "unexpected" ? retryDetail : undefined}
+          >
+            <p className="text-muted-foreground text-sm">{detailFailure.request.name}</p>
+          </ActionFeedback>
+        )}
       </div>
 
       <div ref={regionRef} tabIndex={-1} className="flex flex-col gap-3 outline-none">
@@ -291,13 +424,14 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
           grid={grid}
           days={state.days}
           canTrack={state.canTrack}
-          busy={writes.busy}
+          busy={busy}
           tableRef={tableRef}
           pickerRef={pickerRef}
           onWrite={write}
           onSubmit={submit}
           onChoose={choose}
           onRemove={askRemove}
+          onMenu={openDetail}
         />
         {canAddRow && (
           <div>
@@ -317,6 +451,7 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
         cancelFocus={removeButtonRef}
         fallbackFocus={removalFocusRef}
       />
+      <CellDetailDialogs cellDetail={cellDetail} state={state} changes={changes} />
     </div>
   );
 }

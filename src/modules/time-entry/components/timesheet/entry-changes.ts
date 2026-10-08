@@ -130,18 +130,17 @@ export type EntryChangeActions = {
 };
 
 export type EntryChanger = {
-  readonly send: (request: EntryChangeRequest) => void;
+  /** Se resuelve cuando el pedido se asienta (`true`) o falla (`false`). */
+  readonly send: (request: EntryChangeRequest) => Promise<boolean>;
 };
 
 /**
  * Los pedidos del detalle, sin React (D13b-3): llama a la action fuera de
- * toda transición, avisa cada cambio con `dispatch` y el pedido asentado con
- * `onSettled`.
+ * toda transición y avisa cada cambio con `dispatch`.
  */
 export function entryChanger(
   actions: EntryChangeActions,
   dispatch: (event: EntryChangesEvent) => void,
-  onSettled: (request: EntryChangeRequest) => void,
 ): EntryChanger {
   let lastId = 0;
 
@@ -153,7 +152,7 @@ export function entryChanger(
       : actions.remove(request.input);
   }
 
-  async function deliver(id: number, request: EntryChangeRequest): Promise<void> {
+  async function deliver(id: number, request: EntryChangeRequest): Promise<boolean> {
     const result = await sendOrUnexpected(() => call(request));
     if (!result.ok) {
       dispatch({
@@ -161,17 +160,17 @@ export function entryChanger(
         id,
         failure: { request, code: result.code, message: result.message },
       });
-      return;
+      return false;
     }
     dispatch({ type: "settled", id });
-    onSettled(request);
+    return true;
   }
 
-  function send(request: EntryChangeRequest): void {
+  function send(request: EntryChangeRequest): Promise<boolean> {
     lastId += 1;
     const id = lastId;
     dispatch({ type: "sent", id, request });
-    void deliver(id, request);
+    return deliver(id, request);
   }
 
   return { send };

@@ -10,7 +10,11 @@ import type {
   TaskView,
   TrackingCatalog,
 } from "@/modules/project/schema";
-import type { TimesheetRowView, TimesheetState } from "@/modules/time-entry/schema";
+import type {
+  TimeEntryView,
+  TimesheetRowView,
+  TimesheetState,
+} from "@/modules/time-entry/schema";
 import { formatDuration, parseDurationInput } from "@/server/time";
 
 import { cellKeyOf, rowKeyOf } from "./cell-writes";
@@ -35,6 +39,13 @@ export type GridCell = {
   readonly writable: boolean;
   /** «{fila}, {día}» (TS-100). */
   readonly name: string;
+  /** Las entradas de la foto en esta celda, en el orden del servidor (TS-40 … TS-42). */
+  readonly entries: readonly TimeEntryView[];
+  /**
+   * Tiene una escritura de la grilla o un pedido del detalle que todavía no
+   * está en la foto: el menú no abre hasta que llegue (D13b-5).
+   */
+  readonly pending: boolean;
 };
 
 export type GridRow = {
@@ -53,9 +64,10 @@ export type GridRow = {
   /** El total exacto de la foto, ya formateado: lo que dice el diálogo (TS-53). */
   readonly closedTotal: string;
   /**
-   * Alguna celda tiene una escritura que todavía no está en la foto, en vuelo
-   * o ya aplicada: la fila no se quita hasta que llegue (§5.8), porque ni el
-   * diálogo ni la decisión de pedirlo verían esa escritura.
+   * Alguna celda tiene una escritura o un pedido del detalle que todavía no
+   * está en la foto, en vuelo o ya aplicado: la fila no se quita hasta que
+   * llegue (§5.8, F-m3), porque ni el diálogo ni la decisión de pedirlo verían
+   * ese cambio.
    */
   readonly writing: boolean;
 };
@@ -83,6 +95,8 @@ export type TimesheetGridInput = {
   readonly removing: readonly ProjectPair[];
   /** Lo que muestran las escrituras que todavía no están en la foto (§5.6). */
   readonly shown: ReadonlyMap<string, number>;
+  /** Las celdas con un pedido del detalle que todavía no está en la foto (13b, §5.3). */
+  readonly changing: ReadonlySet<string>;
 };
 
 /** Lo que una fila trae antes de armar sus celdas. */
@@ -101,6 +115,27 @@ function totalOf(seconds: number): GridTotal {
 
 function sumSeconds(cells: readonly GridCell[]): number {
   return cells.reduce((sum, cell) => sum + cell.seconds, 0);
+}
+
+/** La celda de una entrada: su día y su par, la regla que arma las celdas (TS-07). */
+export function entryCellKeyOf(entry: TimeEntryView): string {
+  return cellKeyOf({
+    date: entry.dayDate,
+    projectId: entry.project?.id ?? null,
+    taskId: entry.task?.id ?? null,
+  });
+}
+
+/** Las entradas de la foto por celda, cada lista en el orden de `entries`. */
+function entriesByCell(
+  entries: readonly TimeEntryView[],
+): ReadonlyMap<string, readonly TimeEntryView[]> {
+  const byCell = new Map<string, TimeEntryView[]>();
+  for (const entry of entries) {
+    const key = entryCellKeyOf(entry);
+    byCell.set(key, [...(byCell.get(key) ?? []), entry]);
+  }
+  return byCell;
 }
 
 /** El par de una fila del servidor. */
@@ -191,24 +226,30 @@ function rowSources(input: TimesheetGridInput): RowSource[] {
 }
 
 /** Se escribe con permiso, desde el piso y con el par ofrecido o con entradas. */
-function gridRow(input: TimesheetGridInput, source: RowSource): GridRow {
-  const { state, catalog, shown } = input;
+function gridRow(
+  input: TimesheetGridInput,
+  source: RowSource,
+  entries: ReadonlyMap<string, readonly TimeEntryView[]>,
+): GridRow {
+  const { state, catalog, shown, changing } = input;
   const name = rowNameOf(source.project, source.task);
   const trackable = isTrackablePair(catalog, source.pair);
   const cells = state.days.map((day): GridCell => {
     const key = cellKeyOf({ date: day.date, ...source.pair });
     const server = source.server?.cells.find((cell) => cell.date === day.date) ?? null;
-    const pending = shown.get(key);
+    const written = shown.get(key);
     const minutes =
-      pending ?? (server === null ? null : Math.floor(server.closedSeconds / 60));
+      written ?? (server === null ? null : Math.floor(server.closedSeconds / 60));
     return {
       key,
       date: day.date,
       minutes,
       label: minutes === null ? "" : formatDuration(minutes),
-      seconds: pending === undefined ? (server?.closedSeconds ?? 0) : pending * 60,
+      seconds: written === undefined ? (server?.closedSeconds ?? 0) : written * 60,
       writable: state.canTrack && !day.beforeFloor && (server !== null || trackable),
       name: cellLabel(name, day.fullLabel),
+      entries: entries.get(key) ?? [],
+      pending: written !== undefined || changing.has(key),
     };
   });
   return {
@@ -222,7 +263,7 @@ function gridRow(input: TimesheetGridInput, source: RowSource): GridRow {
     total: totalOf(sumSeconds(cells)),
     entryIds: source.server?.entryIds ?? [],
     closedTotal: totalOf(source.server?.closedSeconds ?? 0).label,
-    writing: cells.some((cell) => shown.has(cell.key)),
+    writing: cells.some((cell) => cell.pending),
   };
 }
 
@@ -242,6 +283,8 @@ function newGridRow(state: TimesheetState): GridRow {
       seconds: 0,
       writable: false,
       name: "",
+      entries: [],
+      pending: false,
     })),
     total: totalOf(0),
     entryIds: [],
@@ -258,9 +301,10 @@ function newGridRow(state: TimesheetState): GridRow {
 export function timesheetGrid(input: TimesheetGridInput): TimesheetGrid {
   const { state, removing } = input;
   const sources = rowSources(input);
+  const entries = entriesByCell(state.entries);
   const rows = sources
     .filter((source) => !hasPair(removing, source.pair))
-    .map((source) => gridRow(input, source));
+    .map((source) => gridRow(input, source, entries));
   if (input.newRow && state.canTrack) {
     rows.push(newGridRow(state));
   }

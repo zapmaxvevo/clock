@@ -7,8 +7,9 @@ import type { ProjectSelection } from "@/modules/project/schema";
 import type { TimesheetDayView } from "@/modules/time-entry/schema";
 
 import { trackerLabels } from "../labels";
+import type { CellMenuChoice } from "./cell-menu";
 import { timesheetLabels } from "./labels";
-import type { GridRow, GridTotal, TimesheetGrid } from "./timesheet-model";
+import type { GridCell, GridRow, GridTotal, TimesheetGrid } from "./timesheet-model";
 import { TimesheetRow } from "./timesheet-row";
 
 /** El `h1` de la pantalla, que nombra la tabla (TS-100). */
@@ -18,6 +19,7 @@ type TimesheetTableProps = {
   readonly grid: TimesheetGrid;
   readonly days: readonly TimesheetDayView[];
   readonly canTrack: boolean;
+  /** Las celdas cuyo campo no acepta texto: escrituras o pedidos del detalle (§5.3). */
   readonly busy: ReadonlySet<string>;
   readonly tableRef: Ref<HTMLTableElement>;
   readonly pickerRef: Ref<HTMLButtonElement>;
@@ -25,6 +27,7 @@ type TimesheetTableProps = {
   readonly onSubmit: (row: GridRow, date: string) => void;
   readonly onChoose: (selection: ProjectSelection) => void;
   readonly onRemove: (row: GridRow, button: HTMLButtonElement) => void;
+  readonly onMenu: (cell: GridCell, choice: CellMenuChoice, trigger: HTMLElement) => void;
 };
 
 /**
@@ -43,6 +46,7 @@ export function TimesheetTable({
   onSubmit,
   onChoose,
   onRemove,
+  onMenu,
 }: TimesheetTableProps) {
   return (
     <div className="overflow-x-auto rounded-lg border">
@@ -103,6 +107,7 @@ export function TimesheetTable({
                 onSubmit={onSubmit}
                 onChoose={onChoose}
                 onRemove={onRemove}
+                onMenu={onMenu}
                 pickerRef={pickerRef}
               />
             ))
