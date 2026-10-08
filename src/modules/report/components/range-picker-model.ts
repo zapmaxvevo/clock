@@ -10,13 +10,15 @@ import {
 
 import { reportHref } from "./report-href";
 
-/** Lo que hace «Aplicar» con lo que hay elegido en el calendario. */
-export type ApplyOutcome =
-  /** La selección está vacía: «Aplicar» no hace nada. */
-  | { readonly kind: "empty" }
-  /** RP-34: el mensaje queda en el selector y no se navega. */
-  | { readonly kind: "invalid"; readonly message: string }
-  | { readonly kind: "navigate"; readonly href: string };
+/**
+ * Lo que deja «Aplicar»: si el selector sigue abierto, el mensaje de la región
+ * de alerta y adónde navegar, o `null` si no se navega.
+ */
+export type ApplyEffect = {
+  readonly open: boolean;
+  readonly error: string | null;
+  readonly href: string | null;
+};
 
 /** El período que se ve, como lo elige el calendario de rango. */
 export function selectionOf(range: ReportRange): DateRange {
@@ -26,15 +28,17 @@ export function selectionOf(range: ReportRange): DateRange {
 /**
  * D-R2a-4: con el inicio elegido y sin fin, el período es ese día. Valida con
  * el mismo esquema que la URL, así un período que la página descartaría no se
- * pide nunca. La agrupación se conserva.
+ * pide nunca. Sin selección no pasa nada (`aria-disabled`); con un período
+ * inválido el selector sigue abierto con el mensaje de RP-34; con uno válido
+ * cierra y navega, con la misma agrupación.
  */
 export function applySelection(
   selection: DateRange | undefined,
   groupBy: ReportGroupBy,
-): ApplyOutcome {
+): ApplyEffect {
   const from = selection?.from;
   if (from === undefined) {
-    return { kind: "empty" };
+    return { open: true, error: null, href: null };
   }
   const parsed = reportRangeInput.safeParse({
     first: dayKeyOfCivilDate(from),
@@ -42,9 +46,10 @@ export function applySelection(
   });
   if (!parsed.success) {
     return {
-      kind: "invalid",
-      message: parsed.error.issues.at(0)?.message ?? reportMessages.invalidDate,
+      open: true,
+      error: parsed.error.issues.at(0)?.message ?? reportMessages.invalidDate,
+      href: null,
     };
   }
-  return { kind: "navigate", href: reportHref({ range: parsed.data, groupBy }) };
+  return { open: false, error: null, href: reportHref({ range: parsed.data, groupBy }) };
 }

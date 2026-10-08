@@ -1,7 +1,7 @@
 import { createElement, type MouseEvent } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { DateRange } from "react-day-picker";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type * as CalendarModule from "@/components/ui/calendar";
 import { reportMessages } from "@/modules/report/schema";
@@ -71,29 +71,49 @@ function clickOn(selection: DateRange | undefined, key: string): DateRange | und
   return calendar.select(day(key));
 }
 
+/** Lo que deja «Aplicar» con un período válido: cierra y navega. */
+function navigatesTo(href: string) {
+  return { open: false, error: null, href };
+}
+
 const thisWeek = selectionOf({ first: "2026-10-05", last: "2026-10-11" });
 
-describe("RangePicker", () => {
-  it("un período de 367 días muestra el mensaje en la región de alerta y no navega (RP-34)", () => {
-    const outcome = applySelection(
-      { from: day("2025-10-01"), to: day("2026-10-02") },
-      "person",
-    );
-    expect(outcome).toEqual({ kind: "invalid", message: reportMessages.rangeTooLong });
-
-    const markup = renderPanel(thisWeek, reportMessages.rangeTooLong);
-    expect(markup).toMatch(
-      /<p role="alert"[^>]*>Elegí un período de hasta 366 días\.<\/p>/,
-    );
+describe("applySelection, el efecto de «Aplicar»", () => {
+  it("sin selección, el selector sigue abierto, sin mensaje y sin navegar", () => {
+    expect(applySelection(undefined, "person")).toEqual({
+      open: true,
+      error: null,
+      href: null,
+    });
+    expect(applySelection({ from: undefined }, "person")).toEqual({
+      open: true,
+      error: null,
+      href: null,
+    });
   });
 
-  it("366 días navegan", () => {
+  it("con 367 días, sigue abierto con el mensaje de RP-34 y sin navegar", () => {
+    expect(
+      applySelection({ from: day("2025-10-01"), to: day("2026-10-02") }, "person"),
+    ).toEqual({ open: true, error: reportMessages.rangeTooLong, href: null });
+  });
+
+  it("con 366 días, cierra y navega", () => {
     expect(
       applySelection({ from: day("2025-10-02"), to: day("2026-10-02") }, "person"),
-    ).toEqual({
-      kind: "navigate",
-      href: "/reportes?desde=2025-10-02&hasta=2026-10-02&agrupar=persona",
-    });
+    ).toEqual(navigatesTo("/reportes?desde=2025-10-02&hasta=2026-10-02&agrupar=persona"));
+  });
+});
+
+describe("RangePicker", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("el mensaje de RP-34 se ve en la región de alerta", () => {
+    expect(renderPanel(thisWeek, reportMessages.rangeTooLong)).toMatch(
+      /<p role="alert"[^>]*>Elegí un período de hasta 366 días\.<\/p>/,
+    );
   });
 
   it("sin mensaje, la región de alerta sigue montada y vacía", () => {
@@ -102,34 +122,35 @@ describe("RangePicker", () => {
 
   it("con el rango actual elegido, un clic y «Aplicar» navegan con desde = hasta en ese día", () => {
     const selection = clickOn(thisWeek, "2026-09-30");
-    expect(applySelection(selection, "project")).toEqual({
-      kind: "navigate",
-      href: "/reportes?desde=2026-09-30&hasta=2026-09-30&agrupar=proyecto",
-    });
+    expect(applySelection(selection, "project")).toEqual(
+      navigatesTo("/reportes?desde=2026-09-30&hasta=2026-09-30&agrupar=proyecto"),
+    );
   });
 
   it("con el rango actual elegido, dos clics fuera de él arman el rango entre esos dos días", () => {
     const first = clickOn(thisWeek, "2026-10-20");
     const second = clickOn(first, "2026-10-25");
-    expect(applySelection(second, "person")).toEqual({
-      kind: "navigate",
-      href: "/reportes?desde=2026-10-20&hasta=2026-10-25&agrupar=persona",
-    });
+    expect(applySelection(second, "person")).toEqual(
+      navigatesTo("/reportes?desde=2026-10-20&hasta=2026-10-25&agrupar=persona"),
+    );
   });
 
   it("con el segundo clic anterior al primero, los extremos se invierten", () => {
     const first = clickOn(thisWeek, "2026-10-25");
     const second = clickOn(first, "2026-10-20");
-    expect(applySelection(second, "person")).toEqual({
-      kind: "navigate",
-      href: "/reportes?desde=2026-10-20&hasta=2026-10-25&agrupar=persona",
-    });
+    expect(applySelection(second, "person")).toEqual(
+      navigatesTo("/reportes?desde=2026-10-20&hasta=2026-10-25&agrupar=persona"),
+    );
   });
 
   it("con un período de un día, un clic en ese día deja «Aplicar» sin efecto", () => {
     const oneDay = selectionOf({ first: "2026-10-08", last: "2026-10-08" });
     const selection = clickOn(oneDay, "2026-10-08");
-    expect(applySelection(selection, "person")).toEqual({ kind: "empty" });
+    expect(applySelection(selection, "person")).toEqual({
+      open: true,
+      error: null,
+      href: null,
+    });
     expect(applyButton(renderPanel(selection))).toContain('aria-disabled="true"');
   });
 
@@ -138,6 +159,8 @@ describe("RangePicker", () => {
   });
 
   it("el calendario marca hoy con el día de quien mira y nombra los meses en español", () => {
+    // El reloj del proceso en otro mes: la marca sale de `todayKey`, no del navegador.
+    vi.setSystemTime(new Date(2026, 2, 15, 12));
     const markup = renderPanel(thisWeek);
     expect(markup.match(/data-today="true"/g)).toHaveLength(1);
     expect(markup).toMatch(/data-day="2026-10-08"[^>]*data-today="true"/);

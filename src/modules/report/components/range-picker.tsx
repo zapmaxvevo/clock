@@ -51,16 +51,11 @@ export function RangePicker({ range, rangeLabel, todayKey, groupBy }: RangePicke
   }
 
   function handleApply(): void {
-    const outcome = applySelection(selection, groupBy);
-    switch (outcome.kind) {
-      case "empty":
-        return;
-      case "invalid":
-        setError(outcome.message);
-        return;
-      case "navigate":
-        setOpen(false);
-        router.push(outcome.href);
+    const effect = applySelection(selection, groupBy);
+    setOpen(effect.open);
+    setError(effect.error);
+    if (effect.href !== null) {
+      router.push(effect.href);
     }
   }
 
@@ -140,7 +135,7 @@ export function RangePanel({
           size="sm"
           // Con `aria-disabled` y no con `disabled`: sigue en el orden del
           // tabulador y se anuncia como inactivo. Sin selección, `applySelection`
-          // responde `empty` y no pasa nada.
+          // deja todo como está.
           aria-disabled={empty || undefined}
           className="self-end"
           onClick={onApply}
