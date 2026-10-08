@@ -43,7 +43,7 @@ vacío del owner y `renewWorkspace` se corta.
 
 0. **Lo que sigue** (cierre de la sesión del 2026-10-08). Todas las decisiones del usuario están
    respondidas; no queda ningún agente trabajando ni cambios sin commitear.
-   - **Push pendiente**: `main` local está 51 commits delante de `origin/main` (el sistema de
+   - **Push pendiente**: `main` local está más de 50 commits delante de `origin/main` (el sistema de
      permisos no deja pushear al team-lead). El usuario corre `git push origin main`.
    - **R1 del núcleo de reportes** (las horas no se borran con la persona): implementado en la
      rama `nucleo/r1-horas-sin-borrar` (`4555e55` 0013, `b7a3175` 0014 con la siembra de los
