@@ -381,9 +381,10 @@ Los pares excluidos son los de todas las filas de la grilla: las que salen de
 las entradas, las vacías que guarda el navegador y las agregadas en esta carga.
 **Lo excluido no se dibuja**, salvo la opción de un proyecto que todavía ofrece
 alguna tarea: queda visible e inactiva, para que sus tareas conserven su
-encabezado. Con la búsqueda vacía y todo excluido, el selector dice «Todas las
-combinaciones ya tienen fila esta semana.». Decisión del contrato del slice 13
-(D13-9), aceptada por el team-lead.
+encabezado. Con la búsqueda vacía, algún proyecto para ofrecer y todo excluido,
+el selector dice «Todas las combinaciones ya tienen fila esta semana.»; sin
+ningún proyecto para ofrecer, el vacío es el de TS-88. Decisión del contrato
+del slice 13 (D13-9), aceptada por el team-lead.
 Justificación: dos filas con el mismo par sumarían las mismas entradas y cada
 celda se vería dos veces.
 _No verificado_: qué muestra Clockify en dos filas con la misma combinación.
@@ -391,6 +392,8 @@ _Corregido el 2026-10-07, P-12_: era `replicar` sobre la frase de la ayuda, leí
 para el par `(proyecto, tarea)` y pendiente de confirmar.
 _Corregido el 2026-10-07, slice 13_: no decía cómo se muestra lo excluido ni
 qué dice el selector cuando todo está excluido.
+_Corregido el 2026-10-08, slice 13_: el vacío «Todas las combinaciones ya
+tienen fila esta semana.» valía también sin ningún proyecto para ofrecer.
 
 **TS-19 La fila vacía la guarda el navegador** — `replicar`
 Verificado en el workspace (2026-10-07), respuestas 8 y G: una fila agregada sin
@@ -571,7 +574,10 @@ mostrarle TT-112. **Si desde las 09:00 no existe ningún minuto ese día**, el
 servidor no escribe y responde «Esa hora no existe por el cambio de horario.»
 (TT-112). Decisión del contrato del slice 13, en el
 [ADR 0018](../adr/0018-lo-que-escribe-una-celda-se-calcula-en-instantes.md),
-propuesto.
+propuesto. **El caso se puede alcanzar desde la interfaz**: el 30 de diciembre
+de 2011 falta entero en `Pacific/Apia` y en `Pacific/Fakaofo`, dos zonas que
+la persona puede elegir en su perfil (TS-07). Lo registra la ronda 2 de la
+revisión del contrato.
 _No verificado_: qué hace Clockify un día en que las 09:00 no existen. La
 respuesta 1 dice también que la entrada creada no apareció en el calendario;
 no se sabe por qué, y no cambia ninguna regla de este documento.
@@ -580,6 +586,8 @@ timesheet P-01, con la hipótesis de que Clockify usara «inicio del día» del
 perfil.
 _Corregido el 2026-10-07, slice 13_: no decía qué pasa si desde las 09:00 no
 existe ningún minuto ese día.
+_Corregido el 2026-10-08, slice 13_: no decía que el caso se puede alcanzar
+desde la interfaz ni en qué zonas.
 
 **TS-32 El fin es el inicio más la duración, en instantes** — `adaptar`
 **Divergencia explícita contra el
@@ -958,6 +966,14 @@ es de la fila en esa semana —se movió de día o de proyecto, o cambió la zon
 horaria (TS-111)— tampoco. Repetir el pedido después de una falla no borra nada
 más (TS-92). Decisión del contrato del slice 13 (D13-6, con la corrección M1 de
 su revisión), aceptada por el team-lead.
+**Una fila con más de 200 entradas en la semana no se quita desde la
+planilla.** El pedido lleva a lo sumo 200 ids, el mismo tope de las acciones en
+masa del rastreador; con más, no se borra nada y el aviso de la pantalla dice
+«Esta fila tiene más de 200 entradas en la semana; borralas por partes desde el
+rastreador.», sin «Reintentar» (sección 14). **Es una divergencia con
+Clockify**, que documenta que se borra todo el tiempo de la semana (sección
+20). Decisión del team-lead del 2026-10-08, con la ronda 2 de la revisión del
+contrato.
 _No verificado_: qué hace Clockify si la fila cambia entre que se ve y que se
 quita.
 _Corregido el 2026-10-07, P-12_: el título era «Borrar una fila borra su semana»
@@ -966,6 +982,7 @@ _Corregido el 2026-10-07, slice 13_: decía que la X borraba «**todas** las
 entradas cerradas de la persona con ese proyecto y esa tarea cuyo `start` cae
 en la semana», sin decir qué semana ni qué pasa con lo que llega a la fila
 después de la lectura.
+_Corregido el 2026-10-08, slice 13_: no tenía tope de entradas.
 
 **TS-53 Con confirmación y sin deshacer** — `adaptar`
 Documentado que Clockify permite deshacer: «Using the Undo feature
@@ -1215,6 +1232,12 @@ documento. Detalle:
   identificador no se reusa.
 - **TS-86** no tiene camino en la interfaz —el selector de la fila no deja
   elegir una tarea sin su proyecto—; es la validación del payload.
+- **Quitar una fila con más de 200 entradas en la semana** (TS-52) es una causa
+  nueva, con su texto: «Esta fila tiene más de 200 entradas en la semana;
+  borralas por partes desde el rastreador.», sin «Reintentar». No reusa «Se
+  pueden elegir hasta 200 entradas a la vez.», el del tope de la selección en
+  masa del rastreador, porque acá la persona no eligió ninguna entrada.
+  Decisión del team-lead del 2026-10-08.
 
 _Corregido el 2026-10-07, piso fijo_: la fila de TS-81 decía, en la regla, «Día
 anterior a la creación del workspace» y, en el mensaje, «No se pueden cargar
@@ -1230,6 +1253,7 @@ _Corregido el 2026-10-07, slice 13_: la regla de TS-79 era «Varias entradas:
 baja que vaciaría la última o alta en otro día», y el mensaje, «Editá las
 entradas de esta celda desde el detalle.» desde el slice 13. No había detalle
 de TS-77 y TS-78.
+_Corregido el 2026-10-08, slice 13_: no estaba el texto del tope de TS-52.
 
 ## 15. Estados vacíos
 
@@ -1243,7 +1267,14 @@ botón de fila era «Agregar fila».
 **TS-88 Workspace sin proyectos** — `adaptar`
 El selector de la fila abre con «No hay proyectos todavía» y el enlace a la
 pantalla de proyectos, igual que TT-87 y PR-85, con la misma justificación. Con
-TS-20, la fila «Sin proyecto» se puede agregar igual.
+TS-20, la fila «Sin proyecto» se puede agregar igual, salvo que ya sea fila en
+la semana: entonces el selector no la ofrece (TS-18) y el vacío sigue siendo
+este. **Sin ningún proyecto para ofrecer, gana este vacío**: «Todas las
+combinaciones ya tienen fila esta semana.» (TS-18) es solo para cuando hay
+proyectos para ofrecer y todo está excluido. Decisión del team-lead del
+2026-10-08, con la ronda 2 de la revisión del contrato.
+_Corregido el 2026-10-08, slice 13_: decía que la fila «Sin proyecto» se podía
+agregar igual, sin exceptuar que ya fuera fila, y no decía qué vacío gana.
 
 **TS-89 Primera semana de uso** — `fuera de alcance`
 Era la consecuencia de TS-57 sobre la primera semana: sin semana anterior con
@@ -1400,6 +1431,7 @@ decididas.
 | TS-18 | Clockify, verificado               | El selector no ofrece una combinación de proyecto y tarea que ya es fila.                                   | Decidida el 2026-10-07           |
 | TS-32 | ADR 0005, regla interna            | El fin de lo que escribe una celda es inicio más duración: un tercer camino de instantes que el ADR cierra. | Decidida el 2026-10-07; ADR 0018 |
 | TS-34 | Clockify, verificado en parte      | La baja que deja la que empieza más tarde en menos de un minuto y el alta en otro día se rechazan.          | Decidida el 2026-10-07           |
+| TS-52 | Clockify, documentado              | Una fila con más de 200 entradas en la semana no se quita desde la planilla.                                | Decidida el 2026-10-08           |
 | TS-53 | Clockify, documentado              | Quitar una fila pide confirmación y no se deshace.                                                          | Decidida por P-06 del rastreador |
 | TS-98 | Clockify, verificado               | Después de Enter el foco sigue en la grilla.                                                                | Decidida el 2026-10-07           |
 
@@ -1413,6 +1445,8 @@ corriendo. Se suman TS-01, TS-18 y TS-98.
 _Corregido el 2026-10-07, slice 13_: la fila de TS-34 decía «La baja que
 vaciaría la entrada que empieza más tarde y el alta que caería en otro día se
 rechazan.» (D13-4), y la de TS-32, «Decidida el 2026-10-07; falta el ADR».
+_Corregido el 2026-10-08, slice 13_: se suma TS-52, el tope de 200 entradas al
+quitar una fila.
 
 ## 21. Reparto
 
@@ -1460,7 +1494,8 @@ De acá salen el
 (TS-32) y el [ADR 0019](../adr/0019-escribir-una-celda-fija-su-valor.md)
 (TS-37), **propuestos; los aprueba el usuario** antes de construir. Contrato:
 [fase1-slice13-planilla.md](../slices/fase1-slice13-planilla.md), con las
-correcciones de la [ronda 1](../slices/correcciones-fase1-slice13.md).
+correcciones de la [ronda 1](../slices/correcciones-fase1-slice13.md) y la
+[ronda 2](../slices/correcciones-fase1-slice13-ronda2.md).
 
 - **Escribir una celda es dejarla en un valor** (sección 5): el pedido lleva el
   día, el par y los minutos, sin id ni lo que la pestaña vio; el servidor
@@ -1469,21 +1504,25 @@ correcciones de la [ronda 1](../slices/correcciones-fase1-slice13.md).
   pedido no escribe nada.
 - **Los instantes** (TS-32): el fin es el inicio más la duración; el inicio de
   una celda vacía, las 09:00 o el primer minuto que exista después ese día
-  (TS-31).
+  (TS-31). Si desde las 09:00 no existe ninguno, se rechaza; pasa en
+  `Pacific/Apia` y `Pacific/Fakaofo` el 2011-12-30.
 - **Subir una celda con varias entradas es un alta** (TS-21, TS-34, D13-5), y
   **la baja que dejaría la que empieza más tarde con menos de un minuto se
   rechaza** (TS-34, D13-4). Este rechazo y el del alta en otro día llevan el
   texto de TS-79 del 13: «Editá las entradas de esta celda desde el
   rastreador.».
 - **Quitar una fila borra lo que la persona vio**: los siete días de su grilla
-  y las entradas que leyó (TS-52, D13-6 con M1).
+  y las entradas que leyó (TS-52, D13-6 con M1), hasta 200. Una fila con más
+  no se quita desde la planilla y el aviso manda a borrar por partes desde el
+  rastreador: es una divergencia con Clockify (sección 20).
 - **El navegador guarda solo el par de las filas vacías**, por semana,
   workspace y persona (TS-19, D13-7, P-16).
 - **Lo que el slice decide**, en su entrada:
   - Decisiones del contrato, aceptadas por el team-lead: TS-16 y TS-23
     (D13-10), TS-18 (D13-9), TS-19 (D13-7), TS-21 (D13-5), TS-34 (D13-3,
     D13-4, D13-5), TS-37 (D13-2), TS-52 (D13-6) y TS-100 (D13-12). Del
-    team-lead: P-14 (TS-40, para el 13b) y P-16 (TS-19).
+    team-lead: P-14 (TS-40, para el 13b), P-16 (TS-19), el tope de 200 de
+    TS-52 y que el vacío de TS-88 gana al de TS-18 sin proyectos para ofrecer.
   - Propuestas de este documento que el contrato adopta: la columna de hoy
     resaltada (TS-08), el enlace «Esta semana» (TS-09), el orden de las filas
     (TS-15) y el gris del cero en los tres totales (TS-45).
