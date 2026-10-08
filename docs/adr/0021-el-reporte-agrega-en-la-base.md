@@ -3,8 +3,13 @@
 Fecha: 2026-10-08. Estado: propuesto.
 Origen: el [ADR 0020](0020-nucleo-de-reportes-antes-de-la-fase-2.md) y P-06 de
 [`reportes.md`](../parity/reportes.md), que el usuario delegó el 2026-10-08: sin
-el tope de 31 días, y si el rendimiento pide uno, lo fija `architect`. Lo
-aprueba el usuario.
+el tope de 31 días, y si el rendimiento pide uno, lo fija `architect`. Revisado
+en [`correcciones-nucleo-reportes.md`](../slices/correcciones-nucleo-reportes.md).
+Lo aprueba el usuario.
+
+Excepción acotada al
+[ADR 0010](0010-un-modulo-consulta-las-reglas-de-otro-por-su-service.md): ver
+«Qué excepción abre al ADR 0010».
 
 ## Contexto
 
@@ -39,6 +44,8 @@ Lo que hay hoy:
   no tiene un prefijo selectivo.
 - **Vercel Hobby y Neon**: funciones sin estado y con duración acotada, y cada
   fila que viaja desde Neon cuesta red y memoria.
+- **Dos drivers**: la aplicación habla con Neon por `drizzle-orm/neon-serverless`
+  y los tests de integración, con `pg` contra un Postgres local.
 
 ## Opciones
 
@@ -62,6 +69,13 @@ La opción 3.
   la semana, devuelve las claves de día de cada tramo y su instante de inicio,
   más el fin del último. Suma también lo que haga falta para «Este mes» y «Mes
   pasado». Ninguna cuenta de zona horaria se escribe en SQL.
+- **Un día que falta entero repite un corte.** `startOfDayKey` de un día que no
+  existe en la zona devuelve el inicio del siguiente, así que la lista tiene dos
+  instantes iguales seguidos. `width_bucket` los admite —la lista tiene que
+  estar ordenada, no ser estrictamente creciente— y manda las entradas al
+  último de los iguales: el día que falta queda en cero y el siguiente se lleva
+  sus horas, que es lo correcto. Un test lo afirma con una zona y un día así
+  (Samoa, 2011-12-30).
 - **La duración se suma como la suma la planilla**: por entrada, en segundos
   enteros truncados, y después se suman. Postgres guarda microsegundos y JS lee
   milisegundos, así que `floor(extract(epoch from ended_at - started_at))` no da
@@ -69,6 +83,10 @@ La opción 3.
   milisegundos antes de restar. Un test de integración compara, para una persona
   y una semana, el total del reporte con el de `getTimesheetState`, con entradas
   sembradas con microsegundos.
+- **La suma sale como `bigint`.** `sum()` sobre enteros devuelve `numeric`, que
+  los drivers entregan como texto; la consulta convierte el resultado con
+  `::bigint` y el repository lo pasa a número. Un año de un equipo está muy por
+  debajo de `Number.MAX_SAFE_INTEGER` en segundos.
 - **Qué cuenta**: `ended_at is not null` y `started_at` en `[desde, hasta)`. Sin
   ninguna condición sobre el estado de la membresía (RP-61), del proyecto ni de
   la tarea (RP-29).
@@ -81,20 +99,19 @@ La opción 3.
   calcula sin esa unión.
 - **Lo que se muestra se lee en la misma sentencia**: nombre y color del
   proyecto, nombre del cliente, de la tarea y de la etiqueta, y de la persona
-  con su estado, por `join`, como dice el
-  [ADR 0010](0010-un-modulo-consulta-las-reglas-de-otro-por-su-service.md). El
-  nombre de una persona tiene una regla —el editado o el de Google—, así que la
-  consulta trae las dos columnas y el service aplica `displayNameOf` del módulo
-  de perfil.
+  con su estado, por `join`, como dice el ADR 0010. El nombre de una persona
+  tiene una regla —el editado o el de Google—, así que la consulta trae las dos
+  columnas y el service aplica `displayNameOf` del módulo de perfil.
 - **Un módulo nuevo, `src/modules/report/`**, que solo lee. Su repository es el
   único que agrega sobre `time_entry` fuera de `time-entry`; no escribe ninguna
-  tabla. Las dependencias van en una dirección: `report` importa de `profile`,
-  `workspace` y `project` (los catálogos de los filtros, por su service);
-  ningún módulo importa de `report`.
+  tabla. Cada una de sus funciones recibe el `ReportScope` del ADR 0020. Las
+  dependencias van en una dirección: `report` importa de `profile`, `workspace`
+  y `project` (los catálogos de los filtros, por su service); ningún módulo
+  importa de `report`.
 - **Un índice parcial nuevo** sobre `(workspace_id, started_at)`, con el mismo
-  predicado que la consulta: `where ended_at is not null`. El contrato del
-  primer slice del reporte lo justifica con `explain` sobre datos sintéticos del
-  volumen de arriba y lo retira si el plan no lo usa.
+  predicado que la consulta: `where ended_at is not null`. El contrato de R2a,
+  el primer slice con pantalla, lo justifica con `explain` sobre datos
+  sintéticos del volumen de arriba y lo retira si el plan no lo usa.
 - **El tope del rango es de 366 días** (P-06). No es el tope comercial de
   Clockify: cubre «Este año» y «Año pasado» y acota el peor pedido —el árbol de
   tres niveles con la fecha abajo y la exportación— a algo que se puede medir.
@@ -103,6 +120,23 @@ La opción 3.
 - **La granularidad del gráfico sale del largo del rango**: por día hasta 31
   días, por semana hasta 26 semanas, por mes más allá. El contrato del slice del
   gráfico puede moverla; el mecanismo de cortes no cambia.
+
+## Qué excepción abre al ADR 0010
+
+El ADR 0010 dice que una regla tiene un solo dueño y que otro módulo la consulta
+por el service del dueño. Dos reglas de `time-entry` quedan escritas otra vez,
+en SQL, en el repository de `report`: **cómo se mide una entrada** (segundos
+enteros entre los dos extremos, `durationSeconds`) y **qué entra en un rango**
+(cerrada, con el inicio adentro: TT-95, TT-96, TS-49).
+
+El motivo es la opción 1 descartada: consultarlas por el service de
+`time-entry` obliga a traer cada entrada a JS para medirla, que es justo lo que
+este ADR evita. `time-entry` sigue siendo el dueño de las dos reglas: si cambian,
+cambian ahí primero, y el test que compara el total del reporte con el de
+`getTimesheetState` falla hasta que el SQL de `report` las siga. Esa igualdad es
+lo que ata las dos copias; no se borra ni se relaja sin un ADR. Ninguna otra
+regla de `time-entry` se copia, y ninguna decisión de acceso: esas van por
+`can()` en el service de `report`.
 
 ## Por qué
 
@@ -121,17 +155,19 @@ La opción 3.
 ## Consecuencias
 
 - `src/server/time` crece con los cortes por tramo y la aritmética de meses,
-  con sus tests de cambio de horario.
+  con sus tests de cambio de horario y de día que falta.
 - El reporte y la planilla suman lo mismo para la misma persona, semana y zona,
   y un test lo afirma.
-- **El parámetro es un arreglo de `timestamptz`.** Pasarlo por el `sql` de
-  Drizzle con el driver de Neon se verifica al empezar el primer slice; si no
-  anda, la alternativa es `unnest` de los cortes en un `join` por rango, con el
-  mismo resultado.
+- **El parámetro es un arreglo de `timestamptz`**, que llega por primera vez en
+  R2b, el slice que trae la fecha como agrupación. Los tests de integración lo
+  prueban con `pg`; como producción usa `neon-serverless`, el contrato de R2b
+  suma una comprobación en un preview contra Neon antes de mergear. Si alguno de
+  los dos drivers no lo pasa bien, la alternativa es `unnest` de los cortes en
+  un `join` por rango, con el mismo resultado.
 - **El tope de 366 días es una decisión de este ADR, no del usuario**, y se
   revisa con mediciones. Si se levanta, la granularidad por mes ya está.
-- El detallado de la fase 3 lee entradas, no agregados: reusa el alcance y el
-  `where` de este módulo, no los cortes.
+- El detallado de la fase 3 lee entradas, no agregados: reusa el `ReportScope`
+  y el `where` de este módulo, no los cortes.
 - Si la base crece hasta que la suma de un año pese, la salida es una tabla de
   totales por persona y día mantenida en la escritura. No hace falta ahora, y
   dependería de la zona de quien escribe, que no es la de quien mira: por eso

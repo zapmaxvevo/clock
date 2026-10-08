@@ -3,7 +3,9 @@
 Fecha: 2026-10-08. Estado: propuesto.
 Origen: el relevamiento [`reportes.md`](../parity/reportes.md), su recomendación
 (§6) y las decisiones del usuario del 2026-10-08 (§8). Mismo patrón que el
-[ADR 0004](0004-nucleo-de-proyectos-en-fase-1.md). Lo aprueba el usuario.
+[ADR 0004](0004-nucleo-de-proyectos-en-fase-1.md). Revisado en
+[`correcciones-nucleo-reportes.md`](../slices/correcciones-nucleo-reportes.md).
+Lo aprueba el usuario.
 
 Cómo se calcula un reporte —dónde se agrega y dónde se corta el día— va aparte,
 en el [ADR 0021](0021-el-reporte-agrega-en-la-base.md). El orden de los slices
@@ -11,7 +13,9 @@ está en [el mapa del núcleo](../slices/nucleo-reportes-mapa.md).
 
 ## Contexto
 
-El plan pone los reportes en la fase 3, después de la administración de la fase 2. El usuario pidió ver las horas de todo el equipo antes de terminar la fase 2.
+El plan pone los reportes en la fase 3, después de la administración de la
+fase 2. El usuario pidió ver las horas de todo el equipo antes de terminar la
+fase 2.
 
 Lo que hay hoy en el árbol:
 
@@ -81,19 +85,24 @@ núcleo y no lo reescribe.
 | `report.view`           | todos (membresía activa) | entrar a los reportes, aunque sea para ver lo propio |
 | `timeEntry.others.view` | `owner`, `admin`         | ver horas de otras personas, en cualquier reporte    |
 
-- **El alcance lo arma el servidor.** El service del reporte pregunta una vez
-  `timeEntry.others.view`: con permiso, el alcance son todas las personas del
-  workspace, activas e inactivas (RP-02, RP-61); sin permiso, la consulta lleva
-  `user_id = <quien mira>` en el `where`, no solo la interfaz. Toda puerta de
-  entrada del reporte —la página y la ruta de exportación— pasa por la misma
-  función.
+- **El alcance lo arma el servidor, y el tipo lo exige.** El service del
+  reporte pregunta una vez `timeEntry.others.view` y arma un `ReportScope`: con
+  permiso, todas las personas del workspace, activas e inactivas (RP-02,
+  RP-61); sin permiso, solo quien mira. El `ReportScope` lleva siempre el
+  `workspace_id` del actor y solo lo puede construir el service: es un tipo
+  marcado o sale de un constructor que el módulo no exporta. **Toda función del
+  repository de `report` lo recibe como parámetro obligatorio** y lo traduce al
+  `where` de la consulta, así que una lectura nueva que se lo saltee no
+  compila. Toda puerta de entrada —la página y la ruta de exportación— pasa por
+  el mismo service, y toda función nueva del repository suma su test de
+  integración con un `member` que no ve nada ajeno.
 - **`project_manager` y `team_manager` deciden como `member`** (P-02, RP-05,
   RP-06): no hay modelo de equipo y la marca de responsable no abre nada.
 - **RP-03 queda vacío con esta regla y el núcleo no lo implementa.** Quien ve
   horas ajenas es owner o admin, que ven todos los proyectos (PR-61); el resto
   ve solo lo propio, que se ve siempre aunque haya perdido el acceso al proyecto
   (PR-71). Si la visibilidad se abre alguna vez, el filtro por `project.view`
-  entra con ella.
+  entra con ella, dentro del `ReportScope`.
 - **`who_sees_all_entries` queda congelado en `admins`, sin efecto**, como
   `whoCreatesProjects` con P-18: no es editable, no entra en `can()` y el
   recurso no lo lleva, porque un dato que viaja sin efecto invita a creer que
@@ -112,28 +121,47 @@ las claves de `time_entry`:
 - `time_entry.user_id` → `user.id` pasa de `cascade` a `restrict`;
 - se suma una clave compuesta `(workspace_id, user_id)` →
   `membership(workspace_id, user_id)`, `on delete restrict`, con nombre
-  explícito, como las de las tablas de proyectos.
+  explícito, como las de las tablas de proyectos, **creada validada**.
 
-Con las dos, borrar un usuario o una membresía con horas falla en la base, y
-desactivar es la única salida, que trae la fase 2. La clave compuesta además
-garantiza que toda entrada tiene una membresía en su workspace, así que el
-reporte siempre sabe si la persona está activa o inactiva (RP-62). El índice
+Antes de crear la clave compuesta, la misma migración inserta una membresía
+`inactive`, con rol `member`, para cada par `(workspace_id, user_id)` de
+`time_entry` que no tenga membresía. Así la clave se valida siempre, en todos
+los entornos, y ninguna entrada queda sin persona. No hay camino con la clave
+`not valid`: R2a lee el estado de la persona con un `join` interno, y una
+entrada sin membresía quedaría fuera de los totales sin aviso. R2a no se
+despliega sin la clave validada.
+
+Que esas membresías nazcan inactivas es lo correcto: una entrada sin membresía
+solo existe si alguien borró la membresía a mano, que hasta hoy era la única
+forma de intentar sacar a alguien. Si esa persona vuelve a entrar, ya no recibe
+una membresía activa nueva de `ensureWorkspaceContext`, porque encuentra la
+inactiva.
+
+Con las dos claves, borrar un usuario o una membresía con horas falla en la
+base, y desactivar es la única salida. La clave compuesta además garantiza que
+toda entrada tiene una membresía en su workspace, así que el reporte siempre
+sabe si la persona está activa o inactiva (RP-62). El índice
 `time_entry_workspace_user_started_idx` ya empieza por esas dos columnas y sirve
 a la comprobación de la clave al borrar una membresía.
 
-**Quinta: el orden.** El núcleo va después del slice 13 y antes del resto de la
-fase 2. «Desactivar» no lo bloquea: el núcleo lee el estado que haya, y los
-tests siembran membresías inactivas con las fábricas.
+**Quinta: el orden.** El paso de esquema de la cuarta condición (R1 del mapa)
+no depende de nada y puede salir ya, porque protege datos que existen hoy. Los
+slices con pantalla van después del slice 13 y antes del resto de la fase 2.
+«Desactivar» no los bloquea: el núcleo lee el estado que haya, y los tests
+siembran membresías inactivas con las fábricas.
 
 ## Consecuencias
 
 - **Es la primera pantalla con horas y nombres de otras personas.** La revisión
   de seguridad de cada slice del núcleo verifica que el alcance va en la
-  consulta, también en la exportación, y que un `member` con una URL armada a
-  mano no ve nada ajeno.
-- **Hasta que la fase 2 traiga `team.manage`, solo el owner ve el reporte de
-  equipo.** Un admin existe solo si alguien cambia el rol en la base. Es lo que
-  pidió P-01; se dice para que no sorprenda.
+  consulta por el `ReportScope`, también en la exportación, y que un `member`
+  con una URL armada a mano no ve nada ajeno.
+- **Hasta que exista una forma de nombrar admins, solo el owner ve el reporte
+  de equipo**, y desactivar a alguien (P-09) solo se puede por base. Cómo se
+  cubre eso antes de la fase 2 es una decisión del usuario, en la §5 del mapa:
+  un procedimiento SQL documentado con su fila en `audit_log`, o un slice
+  mínimo para cambiar el rol entre `member` y `admin`. No hay variable de
+  entorno de admins.
 - `timeEntry.others.view` sirve también al detallado de la fase 3. Editar horas
   ajenas desde ahí (RP-50) es otra acción, `timeEntry.others.update`, que este
   núcleo no agrega.
@@ -141,15 +169,34 @@ tests siembran membresías inactivas con las fábricas.
   desactivarlo, porque la base rechaza el borrado; y borrar una membresía queda
   para quien no tiene horas, como una invitación. Si alguien habilita
   `deleteUser` en Better Auth, borrar una cuenta con horas falla: es lo buscado.
-- **La migración necesita una comprobación previa en producción**: ninguna
-  entrada sin membresía en su workspace. Si la hay, la clave compuesta no se
-  puede crear. La consulta va en el contrato del primer slice y la corre el
-  usuario, como la del 7b.
-- **Los tests no cambian su limpieza**: `truncateAll` usa `cascade`, que no pasa
-  por las acciones de las claves.
+- **La migración tiene una consulta informativa previa en producción**: qué
+  pares de `time_entry` no tienen membresía y van a recibir una inactiva. La
+  corre el usuario antes de desplegar, como la del 7b, para saber a quién deja
+  afuera; no es una condición para que la migración ande.
+- **Los tests existentes no deberían cambiar**, por cuatro razones:
+  - `truncateAll` usa `truncate … cascade`, que no pasa por las acciones de las
+    claves;
+  - los tests de integración que borran un usuario
+    (`profile/schema.integration.test.ts`) o una membresía
+    (`project/schema.integration.test.ts`) lo hacen con personas sin entradas,
+    y `restrict` solo actúa si hay filas que apuntan;
+  - ningún e2e borra usuarios ni membresías;
+  - las siembras de entradas usan al owner de `seedWorkspace` o a una persona
+    de `seedMember`, que ya tienen membresía en ese workspace.
+
+  El contrato de R1 lo confirma con la suite completa; una siembra que cargue
+  horas a alguien sin membresía en ese workspace se corrige en la fábrica, no
+  en la clave.
+
+- **El contrato de R1 suma tests propios**: borrar un usuario con horas y una
+  membresía con horas falla con 23503, sin fijar el nombre de la clave —con dos
+  claves que pueden saltar, cuál lo hace primero no es parte del contrato—; y
+  borrar el workspace con horas sigue borrando todo. Si este último falla por el
+  orden en que corren las cascadas hacia `membership` y hacia `time_entry`, la
+  clave compuesta pasa de `restrict` a `no action`, que mira si quedan filas al
+  comprobar y no al borrar cada una; el test decide.
 - La divergencia de P-01 queda registrada en la §8 de `reportes.md`. El
-  documento de paridad suma una línea por RP-03 vacío y por la clave de P-09
-  cuando se cierre el contrato del primer slice.
+  documento de paridad suma una línea por RP-03 vacío y por la clave de P-09.
 
 ### Por qué no la opción 2
 

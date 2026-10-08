@@ -9,16 +9,21 @@ asistencia, asignaciones, facturas ni tarifas.
 
 El equipo adelanta un **núcleo de reportes** de la fase 3 antes de terminar la
 fase 2, con el mismo patrón que el núcleo de proyectos del
-[ADR 0004](../adr/0004-nucleo-de-proyectos-en-fase-1.md). Este relevamiento va
-antes de ese corte, que define `architect`; la
-[sección 6](#6-qué-entra-en-un-núcleo-mínimo) es la recomendación de este
-documento, no la decisión.
+[ADR 0004](../adr/0004-nucleo-de-proyectos-en-fase-1.md). El corte lo fija el
+[ADR 0020](../adr/0020-nucleo-de-reportes-antes-de-la-fase-2.md) con las
+decisiones del usuario de la [sección 8](#8-decisiones-del-usuario-2026-10-08);
+la [sección 6](#6-qué-entra-en-el-núcleo) lo traduce a identificadores.
 
 Cada comportamiento lleva un identificador `RP-nn` y una marca `replicar`,
 `adaptar` o `fuera de alcance`; las dos últimas llevan una línea de
 justificación. Los pendientes `P-nn` son de este documento, como en
 `perfil.md` y `timesheet.md`: los de otro documento se citan con su nombre
 («P-16 de `proyectos.md`»).
+
+_Actualizado el 2026-10-08, hallazgo m2 de
+[`correcciones-nucleo-reportes.md`](../slices/correcciones-nucleo-reportes.md)_:
+las marcas y la sección 6 siguen a la sección 8. Cambian RP-01, RP-03, RP-05,
+RP-10, RP-15, RP-20, RP-21, RP-30, RP-34, RP-53, RP-54, RP-62, RP-63 y RP-65.
 
 ## Fuentes y límites del relevamiento
 
@@ -119,7 +124,7 @@ de ruta los fija el contrato del slice.
 ## 1. Quién ve qué
 
 **RP-01 En el plan Free, un member ve en los reportes el tiempo de todos** —
-`replicar`
+`adaptar`
 Documentado: «By default, all members of your workspace can see all time
 entries and expenses», y restringirlo es pago («Hiding tracked time and
 expenses from other users in your workspace is a paid feature»). La tabla de
@@ -127,10 +132,13 @@ permisos del miembro común dice «Their own and others’ time | Yes (unless
 disabled)», y la del tablero, «Regular users can see everything by default».
 Con todos los proyectos públicos, en el workspace del equipo un member ve las
 horas de todo el workspace en todos los reportes.
-**Choca con el esquema**: `workspace_settings.who_sees_all_entries` arranca en
-`admins`. Replicar el plan Free es arrancar en «todos»; quedarse con el
-`default` actual es una divergencia que hay que escribir con su motivo. Es
-P-01, y bloquea el núcleo: de esto sale `can()` para los reportes.
+_Actualizado el 2026-10-08, decisión del usuario (P-01)_: **solo owner y admin
+ven las horas de otros; el resto ve solo las propias.** Justificación: es una
+divergencia deliberada con el plan Free, que el usuario eligió; el reviewer la
+compara contra este documento y no contra Clockify. El ADR 0020 la implementa
+con `timeEntry.others.view` para `owner` y `admin`, y sin ese permiso la
+consulta lleva `user_id = <quien mira>`. `who_sees_all_entries` queda
+congelado en `admins`, sin efecto.
 
 **RP-02 Owner y admin ven todo** — `replicar`
 Documentado: «Workspace owner and admins can see everything (time and
@@ -147,8 +155,11 @@ see all time entries for that project in reports»; en uno privado, «Only
 project managers can see all tracked time on their projects in reports». El
 reporte aplica el mismo filtro de lectura que el resto (PR-61), con una
 excepción que manda TT-01: las entradas propias se ven siempre, aunque la
-persona haya quedado fuera del proyecto (PR-71). En la fase actual todo es
-público y el filtro no esconde nada, pero el reporte lo usa desde el primer día.
+persona haya quedado fuera del proyecto (PR-71).
+_Actualizado el 2026-10-08, ADR 0020_: **con P-01 queda vacío y el núcleo no lo
+implementa.** Quien ve horas ajenas es owner o admin, que ven todos los
+proyectos (PR-61); el resto ve solo lo propio, que se ve siempre (PR-71). Si la
+visibilidad se abre alguna vez, el filtro por `project.view` entra con ella.
 
 **RP-04 El ajuste «Regular users can see»** — `fuera de alcance`
 Documentado, de plan pago, con tres valores: «All tracked time and expenses»,
@@ -160,14 +171,14 @@ decide **quién** ve todo; el de Clockify decide **qué** ve el member. Si P-01 
 quiere configurable, hay que elegir uno de los dos ejes.
 
 **RP-05 El responsable de proyecto ve todo el tiempo de sus proyectos** —
-`adaptar`
+`fuera de alcance`
 Documentado, de plan pago: «Project managers can see all tracked time on their
 projects.» y «Managers have access to Reports, and project managers
-additionally have access to the Projects page.» Acá la condición de
-responsable es la marca por proyecto de PR-19, no el rol de workspace.
-Justificación: es la misma decisión que P-24 de `proyectos.md`. Solo cambia algo
-si P-01 restringe lo que ve un member; si no, el responsable ya ve todo como
-cualquiera (P-02).
+additionally have access to the Projects page.»
+_Actualizado el 2026-10-08, decisión del usuario (P-02)_: justificación: no
+hay excepción para el responsable. Un responsable de proyecto que no es owner
+ni admin ve solo sus horas, por P-01; `project_manager` decide como `member` y
+la marca de responsable de PR-19 no abre nada en los reportes (ADR 0020).
 
 **RP-06 El team manager ve el tiempo de su equipo** — `fuera de alcance`
 Documentado, de plan pago: «This role can view all tracked time of their team
@@ -201,7 +212,8 @@ las tarifas no existen en el plan del equipo ni en el modelo (P-32 de
 **RP-10 Agrupa todas las entradas visibles del rango** — `replicar`
 Documentado: «It takes all the time entries in your account and groups them by
 project, client, user, groups, tag, or date.» «Todas» quiere decir las que
-RP-01 a RP-03 dejan ver, de todas las personas, no solo las propias.
+RP-01 y RP-02 dejan ver: las de todas las personas para owner y admin, solo las
+propias para el resto.
 
 **RP-11 Dimensiones de agrupación** — `adaptar`
 Documentado: proyecto, cliente, persona, grupo, etiqueta y fecha. Acá:
@@ -233,12 +245,19 @@ Documentado: «By clicking on the item from the Summary report (e.g. user name,
 client, project etc.) the Detailed report will be opened…» con el filtro
 aplicado. Necesita el reporte detallado (RP-50); llega con él.
 
-**RP-15 Gráfico de barras por día** — `replicar`
+**RP-15 Gráfico de barras por día** — `adaptar`
 Documentado: «The bar chart shows you the summary of all time entries for each
 day in the selected date range.»
 _No verificado_: si con rangos largos las barras pasan a semanas o meses (la API
-tiene `zoomLevel` con `WEEK` y `MONTH`). Con el tope de 31 días del plan Free
-(RP-20) siempre es por día; si P-06 levanta el tope, esto se decide con él.
+tiene `zoomLevel` con `WEEK` y `MONTH`).
+_Actualizado el 2026-10-08_: sin el tope de 31 días (P-06), el rango puede
+llegar a un año y un gráfico por día deja de leerse. El
+[ADR 0021](../adr/0021-el-reporte-agrega-en-la-base.md) propone que la
+granularidad salga del largo del rango: por día hasta 31 días, por semana hasta
+26 semanas, por mes más allá. Justificación: hasta 31 días es exactamente lo
+relevado; lo demás es nuestro, porque Clockify Free nunca muestra más de 31
+días. **Pendiente de aprobación del ADR 0021**, y el contrato del slice del
+gráfico puede mover los umbrales.
 
 **RP-16 Barras partidas por facturable o por proyecto** — `adaptar`
 Documentado: «It also shows how much of it is billable (dark green) vs
@@ -279,16 +298,21 @@ between previous and upcoming periods». La API lista los atajos `TODAY`,
 `YESTERDAY`, `THIS_WEEK`, `LAST_WEEK`, `PAST_TWO_WEEKS`, `THIS_MONTH`,
 `LAST_MONTH`, `THIS_YEAR` y `LAST_YEAR`, más `ABSOLUTE`.
 Acá: Hoy, Ayer, Esta semana, Semana pasada, Últimas dos semanas, Este mes, Mes
-pasado y un rango libre, con flechas que mueven el período entero. Este año y
-Año pasado dependen de P-06. Justificación: la lista sale de la API, no de la
-pantalla.
+pasado, Este año, Año pasado y un rango libre, con flechas que mueven el
+período entero. Justificación: la lista sale de la API, no de la pantalla, y
+Este año y Año pasado entran porque no hay tope de 31 días (P-06); caben en el
+tope de 366 días que propone el ADR 0021, **pendiente de aprobación** (RP-21).
 _No verificado_: el rango por defecto al entrar (P-05). Acá, «Esta semana».
 
-**RP-21 El tope de 31 días del plan Free** — `adaptar`
+**RP-21 Sin el tope de 31 días del plan Free** — `adaptar`
 Documentado: «On the Free Plan, generating reports is limited to a maximum date
 range of 31 days per report.» Es un límite comercial, no un comportamiento del
-reporte. Decisión pendiente (P-06): replicarlo, levantarlo o poner un tope
-propio por rendimiento. Lo que se decida fija el mensaje de RP-33.
+reporte.
+_Actualizado el 2026-10-08, decisión del usuario (P-06)_: justificación: no se
+replica el tope comercial. Si el rendimiento pide un tope, lo fija `architect`:
+el ADR 0021 propone **366 días**, que cubren «Este año» y «Año pasado» y acotan
+el peor pedido, y se revisa con mediciones. Es una decisión del ADR, no del
+usuario, y está **pendiente de aprobación**. El mensaje es el de RP-34.
 
 **RP-22 Zona horaria de quien mira** — `replicar`
 Documentado: «When you later view the time in reports, the time zone from your
@@ -348,13 +372,15 @@ filtra por estado del proyecto ni de la tarea: suma todo. El filtro de proyecto
 ofrece también los archivados (la API tiene `archived`); _no verificado_ cómo los
 muestra la interfaz.
 
-**RP-30 Timer en curso** — `adaptar`
+**RP-30 El timer en curso no se muestra ni se suma** — `adaptar`
 _No verificado_: si Clockify suma un timer corriendo y hasta qué momento. Acá el
-timer es una entrada con `end` nulo y el servidor no guarda estado. Pendiente
-de decisión (P-07); la recomendación es **no sumarlo** en el resumido —los
-totales solo cuentan entradas cerradas, y recargar no cambia un total por el
-paso del tiempo— y avisar debajo del total, para quien lo tenga a la vista,
-que hay un timer en curso que todavía no cuenta.
+timer es una entrada con `end` nulo y el servidor no guarda estado.
+_Actualizado el 2026-10-08, decisión del usuario (P-07)_: el reporte cuenta
+solo entradas cerradas. El timer en curso no aparece en ningún total, grupo ni
+gráfico, y **tampoco hay un aviso** de que existe. Justificación: recargar no
+cambia un total por el paso del tiempo, y el rastreador ya muestra el timer a
+quien lo tiene corriendo. Cuando el timer se detiene, la entrada empieza a
+contar como cualquier otra.
 
 **RP-31 Entradas de personas inactivas** — `replicar`
 Ver RP-61: cuentan en todos los totales y aparecen agrupando por persona.
@@ -381,12 +407,13 @@ cuando el filtro los esconde, como PR-89.
 | Regla                                      | Mensaje                                                 |
 | ------------------------------------------ | ------------------------------------------------------- |
 | El fin del rango es anterior al inicio     | «La fecha de fin no puede ser anterior a la de inicio.» |
-| El rango supera el tope (si P-06 fija uno) | «Elegí un período de hasta {n} días.»                   |
+| El rango supera el tope (RP-21)            | «Elegí un período de hasta 366 días.»                   |
 | Sin permiso para ver horas de otra persona | «No tenés permiso para hacer esto.» (TT-79)             |
 
 Justificación: copia propia, con la regla de una redacción por causa. Un filtro
 que nombra una persona, un proyecto o una etiqueta que ya no existe no es un
-error: se ignora.
+error: se ignora. El número del segundo mensaje sigue al tope del ADR 0021,
+pendiente de aprobación.
 
 **RP-35 Falla al cargar** — `adaptar`
 El reporte se arma en el servidor; si la lectura falla, la pantalla muestra
@@ -459,9 +486,9 @@ Documentado: «You can also filter by approval status…» y «…by clicking Sh
 -> Amount.» Justificación: aprobaciones y tarifas son pagas.
 
 **RP-49 Correo semanal** — `fuera de alcance`
-Documentado: Clockify manda al empezar cada semana un resumen de lo propio, «the email will be
-sent only if you logged some time the previous week». Justificación: nadie lo
-pidió y el único cron es diario.
+Documentado: Clockify manda al empezar cada semana un resumen de lo propio, «the
+email will be sent only if you logged some time the previous week».
+Justificación: nadie lo pidió y el único cron es diario.
 
 ## 4. Detallado, exportación y compartidos
 
@@ -486,11 +513,16 @@ can contain up to 3000 rows.», «Export of Summary report doesn’t contain
 timestamps.», «Grouping options in Summary report will affect how your exports
 look like.», «you can disable certain information (user, charts, etc.) from
 appearing on PDF» y «Only the data covered in the report will be exported.»
+_Actualizado el 2026-10-08, decisión del usuario (P-10)_: entra en el núcleo.
+Exporta lo que muestra la pantalla, con el mismo alcance de RP-01.
 
-**RP-54 Exportar a CSV y Excel** — `fuera de alcance`
+**RP-54 Exportar a CSV y Excel** — `adaptar`
 Documentado: «CSV and Excel report exports are available only on paid plans».
-Justificación: pago, no relevable. Para administración interna es
-probablemente más útil que el PDF; P-10.
+_Actualizado el 2026-10-08, decisión del usuario (P-10)_: entra en el núcleo.
+Justificación: es pago y no se puede relevar, así que entra **como diseño
+propio y no como paridad**, igual que el facturable (P-16 de `proyectos.md`):
+el reviewer lo compara contra el contrato del slice, no contra Clockify. Exporta
+lo que muestra la pantalla, con el mismo alcance de RP-01.
 
 **RP-55 Reportes compartidos** — `fuera de alcance`
 Documentado: «Share reports is a paid feature available on any paid plan.»;
@@ -527,14 +559,18 @@ pasado.
 **RP-62 Filtrar por una persona inactiva** — `adaptar`
 Documentado que en Clockify no se puede (RP-61), aunque la API tiene `status`
 en el filtro de personas con `ALL`, `ACTIVE_WITH_PENDING`, `ACTIVE`, `PENDING` e
-`INACTIVE`. Recomendación (P-08): el filtro de personas ofrece las activas y,
-aparte, las inactivas, con el nombre tachado como en la pantalla de equipo
-(«All inactive user names are struck out.»). Justificación: un reporte de
-empresa sobre un mes pasado necesita poder aislar a alguien que ya se fue.
+`INACTIVE`.
+_Actualizado el 2026-10-08, decisión del usuario (P-08)_: entra en el núcleo.
+El filtro de personas ofrece las activas y, aparte, las inactivas, con el
+nombre tachado como en la pantalla de equipo («All inactive user names are
+struck out.»). Justificación: un reporte de empresa sobre un mes pasado
+necesita poder aislar a alguien que ya se fue. Solo lo ve quien ve horas de
+otros (RP-01).
 
 **RP-63 Desactivar detiene el timer** — `replicar`
 Documentado: al desactivar, «…their current timer is stopped (if they have one
-running).» Es de la fase 2; se anota porque cambia lo que suma RP-30.
+running).» Es de la fase 2; se anota porque, al detenerse, esa entrada pasa a
+contar en el reporte (RP-30).
 
 **RP-64 Personas invitadas** — `adaptar`
 La API distingue `PENDING`. Una membresía `invited` no tiene entradas y no
@@ -544,51 +580,69 @@ nada que mostrar; RP-47 —mostrar personas sin horas— la excluye también.
 **RP-65 Borrar una persona** — `adaptar`
 _No verificado_: la misma página dice «Deleted user is permanently removed from
 the workspace and Clockify app, along with all their data.» y que «The time
-entries of deleted/inactive users will remain…». Se contradicen. Hoy
-`time_entry.user_id` va contra `user` con `on delete cascade`: borrar el
-usuario borra sus horas y cambia los totales del pasado. P-09.
+entries of deleted/inactive users will remain…». Se contradicen.
+_Actualizado el 2026-10-08, decisión del usuario (P-09)_: **a una persona con
+horas no se la borra, solo se desactiva.** Justificación: borrarla cambiaría
+los totales del pasado, que es lo que RP-61 protege. El ADR 0020 pasa
+`time_entry.user_id` de `cascade` a `restrict` y suma una clave compuesta
+`(workspace_id, user_id)` contra `membership`, también `restrict`: borrar un
+usuario o una membresía con horas falla en la base.
 
 **RP-66 Tope de cinco personas activas** — `fuera de alcance`
 Documentado: «5 active users (including the Owner and active members).»
 Justificación: límite comercial del plan.
 
-## 6. Qué entra en un núcleo mínimo
+## 6. Qué entra en el núcleo
 
-Recomendación, no decisión: la vista que pidió el usuario —las horas de todo el
-equipo o la empresa— es el **reporte resumido agrupado por persona y por
-proyecto**. Todo lo demás se agrega sin tocar el modelo.
+_Actualizado el 2026-10-08_: era la recomendación de este documento; ahora es
+el corte del ADR 0020 con las decisiones de la sección 8. La vista que pidió el
+usuario —las horas de todo el equipo o la empresa— es el **reporte resumido
+agrupado por persona y por proyecto**, con exportación. Todo lo demás se agrega
+sin tocar el modelo.
 
 **Entra:**
 
-- Quién ve: RP-01 (según P-01), RP-02, RP-03, RP-07.
+- Quién ve: RP-01 (con la divergencia de P-01), RP-02, RP-07.
 - Resumido: RP-10, RP-11, RP-12, RP-13, RP-15, RP-18, RP-19.
-- Rango: RP-20, RP-21 (según P-06), RP-22, RP-23, RP-24.
+- Rango: RP-20, RP-21, RP-22, RP-23, RP-24.
 - Filtros: RP-25 reducido a personas, cliente y proyecto; RP-26 solo «sin
-  proyecto».
-- Qué cuenta: RP-28, RP-29, RP-30 (según P-07), RP-31.
+  proyecto»; RP-62.
+- Qué cuenta: RP-28, RP-29, RP-30, RP-31.
 - Recarga, vacíos y errores: RP-32, RP-33, RP-34, RP-35.
-- Equipo: RP-60 y RP-61 como regla de lectura, RP-64.
+- Exportación: RP-53, RP-54.
+- Equipo: RP-60 y RP-61 como regla de lectura, RP-64, RP-65 como regla de la
+  base.
+
+**Pendiente de aprobación del ADR 0021:** el tope de 366 días de RP-20, RP-21 y
+RP-34, y la granularidad por semana y por mes de RP-15.
+
+**Vacío con P-01, no se implementa:** RP-03 y RP-05. Si la visibilidad se abre
+alguna vez, entran con ella.
+
+**Queda para la fase 2:** RP-63, y la acción de desactivar de RP-60.
 
 **Queda para la fase 3 completa:** RP-14 (necesita el detallado), RP-16 y RP-17
-(gráficos partidos y de torta: con las barras por día alcanza), RP-25 en el
-resto (tarea, etiqueta, descripción, facturable), RP-26 en el resto, RP-40 a
-RP-43 (tablero), RP-45 a RP-47 (semanal; RP-47 es el candidato más fuerte si
-se suma algo), RP-50, RP-53, RP-62 (según P-08).
+(gráficos partidos y de torta: con las barras alcanza), RP-25 en el resto
+(tarea, etiqueta, descripción, facturable), RP-26 en el resto, RP-40 a RP-43
+(tablero), RP-45 a RP-47 (semanal; RP-47 es el candidato más fuerte si se suma
+algo), RP-50.
 
 **Fuera de alcance:** RP-04, RP-06 (hasta que exista un modelo de equipo),
-RP-08, RP-09, RP-27, RP-36, RP-37, RP-48, RP-49, RP-51, RP-52, RP-54 (según
-P-10), RP-55, RP-56, RP-66.
-
-**Depende de una decisión:** RP-05 (P-02), RP-65 (P-09).
+RP-08, RP-09, RP-27, RP-36, RP-37, RP-48, RP-49, RP-51, RP-52, RP-55, RP-56,
+RP-66.
 
 ## 7. Pendientes de definición del equipo
+
+_Actualizado el 2026-10-08_: P-01, P-02 y P-06 a P-10 están decididos en la
+sección 8; las filas se dejan porque el ADR 0020 y el mapa las citan. Siguen
+abiertos P-03, P-04 y P-05.
 
 | ID   | Punto                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | P-01 | **Qué ve un member en los reportes.** En el plan Free, todo (RP-01); `who_sees_all_entries` arranca en `admins`. Opciones: replicar Free (todos ven todo), quedarse con `admins` y registrar la divergencia, o hacerlo configurable, eligiendo entre el eje de Clockify (qué ve el member) y el nuestro (quién ve todo) (RP-04). Bloquea el núcleo.                                                                                                                                             |
 | P-02 | **El responsable de un proyecto, ¿ve todas las horas de ese proyecto aunque P-01 restrinja?** En Clockify sí, y el ajuste de visibilidad no lo afecta (RP-05). Solo hay que decidirlo si P-01 restringe.                                                                                                                                                                                                                                                                                        |
 | P-03 | **Team manager sin equipo.** El rol existe en el esquema pero no a quién maneja. Hasta que exista ese modelo, en reportes decide como `member` (RP-06). ¿Se modela en la fase 2 o se saca el rol?                                                                                                                                                                                                                                                                                               |
-| P-04 | **Lo pago queda fuera del núcleo y sin fase:** redondeo, formato decimal, importes, ajuste «Regular users can see», esconder páginas, compartidos, CSV y Excel (salvo que P-10 diga otra cosa), cargar tiempo de otro, edición masiva, aprobaciones, facturas. No se puede relevar en el workspace del equipo.                                                                                                                                                                                  |
+| P-04 | **Lo pago queda fuera del núcleo y sin fase:** redondeo, formato decimal, importes, ajuste «Regular users can see», esconder páginas, compartidos, cargar tiempo de otro, edición masiva, aprobaciones, facturas. No se puede relevar en el workspace del equipo. CSV y Excel salieron de esta lista por P-10.                                                                                                                                                                                  |
 | P-05 | **Verificar en el workspace del equipo** (no es decisión, es mirar): opciones de «Group by» y tope de niveles (RP-11, RP-12); totales de la cabecera y suma por etiqueta (RP-18); rango por defecto (RP-20); primer día de la semana en «This week» (RP-24); rótulos de «sin proyecto», «sin cliente», «sin tarea» (RP-28); cómo aparece un timer corriendo en el resumido y en el detallado (RP-30); qué queda al recargar o volver a la pantalla (RP-32); qué semana abre el semanal (RP-45). |
 | P-06 | **Tope del rango.** Clockify Free corta en 31 días; los planes pagos no. ¿Se replica, se levanta, o se pone un tope propio por rendimiento? Define si entran «Este año» y «Año pasado» y el mensaje de RP-34. Recomendación: sin tope comercial; si hace falta uno por rendimiento, que lo fije `architect`.                                                                                                                                                                                    |
 | P-07 | **Timer en curso en los totales** (RP-30). Recomendación: no sumarlo y avisarlo.                                                                                                                                                                                                                                                                                                                                                                                                                |
