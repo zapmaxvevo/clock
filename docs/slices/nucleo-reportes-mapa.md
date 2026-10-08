@@ -67,8 +67,8 @@ esquema sin pantalla. El orden es de dependencia y de valor.
 | R5    | Gráfico de barras                                | R2b                       |
 | R6    | Exportar a CSV y Excel                           | R3, R4                    |
 | R7    | Exportar a PDF                                   | R6 (R5 si va con gráfico) |
-| R8    | Cambiar el rol entre member y admin (si §5.2 b)  | R2a                       |
-| R9    | Mostrar personas sin horas (si §5.7 lo pide)     | R4                        |
+| R8    | Cambiar el rol entre member y admin              | R2a                       |
+| R9    | Mostrar personas sin horas                       | R4                        |
 
 R3, R4 y R5 tocan la misma pantalla y la misma consulta. Van en serie, en el
 orden de la tabla; si se paralelizan, el segundo arranca con el primero
@@ -341,7 +341,7 @@ Riesgos:
 
 ### R8 — Cambiar el rol entre member y admin
 
-Solo si el usuario elige la opción (b) de la decisión 2 de la §5. Un control
+Entra por decisión del usuario del 2026-10-08 (§5). Un control
 mínimo para pasar una membresía de `member` a `admin` y de vuelta, con
 `team.manage` sobre el `MembershipResource` que ya existe, la protección de la
 membresía del owner que `can()` ya tiene y una fila de `audit_log` por cambio.
@@ -354,7 +354,7 @@ el rol de membresías que ya existen.
 
 ### R9 — Mostrar personas sin horas
 
-Solo si el usuario lo pide (decisión 7 de la §5). RP-47, del semanal, llevado al
+Entra por decisión del usuario del 2026-10-08 (§5). RP-47, del semanal, llevado al
 resumido agrupado por persona. Depende de R4, porque la lista de personas con su
 estado es la del filtro.
 
@@ -389,10 +389,8 @@ Ese mismo día decidió además:
 - **La exportación suma las entradas una por una** en CSV y Excel, además de lo que muestra el
   resumido.
 
-Sigue abierta:
-
-- **«Mostrar personas sin horas»** (RP-47, del semanal): responde «quién no cargó». Si se
-  quiere, entra como R9, después de R4.
+- **R9 entra**: «Mostrar personas sin horas» (RP-47, del semanal), para ver quién no cargó en
+  el período. Va después de R4.
 
 ## 6. Deudas que el mapa arrastra
 
