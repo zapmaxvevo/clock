@@ -17,6 +17,14 @@ export async function readsWithoutScope() {
   await reportRepository.totalsByPerson(span);
   // @ts-expect-error: totalsByProject exige el alcance como primer parámetro.
   await reportRepository.totalsByProject(span);
+  // @ts-expect-error: el alcance de totalsByPerson no admite undefined.
+  await reportRepository.totalsByPerson(undefined, span);
+  // @ts-expect-error: el alcance de totalsByProject no admite undefined.
+  await reportRepository.totalsByProject(undefined, span);
+  // @ts-expect-error: el alcance de totalsByPerson no admite null.
+  await reportRepository.totalsByPerson(null, span);
+  // @ts-expect-error: el alcance de totalsByProject no admite null.
+  await reportRepository.totalsByProject(null, span);
 }
 
 // @ts-expect-error: la clase del alcance no se exporta.
