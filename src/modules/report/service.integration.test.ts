@@ -299,7 +299,8 @@ describe("la medida (ADR 0021, D-R2a-6)", () => {
       false,
     );
     await seedExact(memberId, `${day} 12:00:00-03`, `${day} 12:00:01.5-03`, true);
-    await seedExact(memberId, `${day} 13:00:00.25-03`, `${day} 13:00:01.75-03`, false);
+    // Cruza dos límites de segundo: truncar a segundos daría 2 s.
+    await seedExact(memberId, `${day} 13:00:00.75-03`, `${day} 13:00:02.25-03`, false);
     // Lo de otra persona no entra en el reporte propio ni en su fila.
     await seedClosed(ownerId, "2026-09-30T15:00:00Z", 3600, { billable: true });
 
