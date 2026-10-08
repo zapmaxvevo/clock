@@ -4,6 +4,11 @@ export const UNIQUE_VIOLATION = "23505";
 export const CHECK_VIOLATION = "23514";
 /** Postgres: violación de clave foránea. */
 export const FOREIGN_KEY_VIOLATION = "23503";
+/**
+ * Postgres 18 o posterior: borrar o cambiar la fila a la que apunta una clave
+ * `on delete restrict`. Hasta la 17 salía como `FOREIGN_KEY_VIOLATION`.
+ */
+export const RESTRICT_VIOLATION = "23001";
 
 type DriverError = { code?: unknown; constraint?: unknown; cause?: unknown };
 

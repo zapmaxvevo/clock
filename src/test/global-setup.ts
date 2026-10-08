@@ -16,7 +16,7 @@ export async function setup(): Promise<void> {
     throw new Error(
       `No se pudo preparar la base de pruebas en ${testDatabaseUrl}. ` +
         "Levantala con: docker run -d --name clock-pg -e POSTGRES_PASSWORD=clock " +
-        "-e POSTGRES_USER=clock -e POSTGRES_DB=clock -p 5432:5432 postgres:17-alpine " +
+        "-e POSTGRES_USER=clock -e POSTGRES_DB=clock -p 5432:5432 postgres:18-alpine " +
         "y creá la base clock_test.",
       { cause },
     );
