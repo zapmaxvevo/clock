@@ -7,6 +7,12 @@ import type {
 } from "@/modules/time-entry/schema";
 import type { ActionResult } from "@/server/action";
 
+import {
+  pendingRequestsReducer,
+  type PendingRecord,
+  type PendingRequestsEvent,
+  type PendingRequestsState,
+} from "./pending-requests";
 import { sendOrUnexpected } from "./send-or-unexpected";
 
 /** Lo que el detalle pide sobre una entrada de la foto, y cómo nombrarla en el aviso. */
@@ -32,69 +38,40 @@ export type EntryChangeFailure = {
   readonly message: string;
 };
 
-/** Un pedido que la foto todavía no trae: `sending` en vuelo o en cola, `settled` ya aplicado. */
-type PendingChange = {
-  readonly id: number;
+/** Un pedido del detalle que la foto todavía no trae: ocupa su celda y su entrada. */
+type PendingChange = PendingRecord & {
   readonly cell: string;
   readonly entryId: string;
-  readonly status: "sending" | "settled";
 };
 
-export type EntryChangesState = {
-  /** En el orden en que se mandaron. */
-  readonly pending: readonly PendingChange[];
-  readonly failure: EntryChangeFailure | null;
-};
+export type EntryChangesState = PendingRequestsState<PendingChange, EntryChangeFailure>;
 
 export const NO_ENTRY_CHANGES: EntryChangesState = { pending: [], failure: null };
 
-export type EntryChangesEvent =
-  | { readonly type: "sent"; readonly id: number; readonly request: EntryChangeRequest }
-  | { readonly type: "settled"; readonly id: number }
-  | { readonly type: "failed"; readonly id: number; readonly failure: EntryChangeFailure }
-  /** Llegó otra foto: ya trae todo lo asentado antes de ella. */
-  | { readonly type: "snapshot" }
-  | { readonly type: "dismissed" };
+export type EntryChangesEvent = PendingRequestsEvent<
+  EntryChangeRequest,
+  EntryChangeFailure
+>;
 
-export function entryChangesReducer(
-  state: EntryChangesState,
-  event: EntryChangesEvent,
-): EntryChangesState {
-  switch (event.type) {
-    case "sent": {
-      const change: PendingChange = {
-        id: event.id,
-        cell: event.request.cell,
-        entryId: event.request.input.id,
-        status: "sending",
-      };
-      // Un pedido nuevo sobre la entrada que falló reemplaza lo que el aviso
-      // contaba; el de otra entrada no.
-      const failure =
-        state.failure !== null && state.failure.request.input.id === change.entryId
-          ? null
-          : state.failure;
-      return { pending: [...state.pending, change], failure };
-    }
-    case "settled":
-      return {
-        ...state,
-        pending: state.pending.map((change) =>
-          change.id === event.id ? { ...change, status: "settled" } : change,
-        ),
-      };
-    case "failed":
-      return {
-        pending: state.pending.filter((change) => change.id !== event.id),
-        failure: event.failure,
-      };
-    case "snapshot": {
-      const pending = state.pending.filter((change) => change.status === "sending");
-      return pending.length === state.pending.length ? state : { ...state, pending };
-    }
-    case "dismissed":
-      return state.failure === null ? state : { ...state, failure: null };
-  }
+export const entryChangesReducer = pendingRequestsReducer<
+  EntryChangeRequest,
+  PendingChange,
+  EntryChangeFailure
+>({
+  recordOf: (id, request) => ({
+    id,
+    cell: request.cell,
+    entryId: request.input.id,
+    status: "sending",
+  }),
+  // Un pedido nuevo sobre la entrada que falló reemplaza lo que el aviso
+  // contaba; el de otra entrada, aun de la misma celda, no.
+  sameSubject: (sent, failed) => sent.input.id === failed.input.id,
+});
+
+/** Lo que reenvía «Reintentar»: el pedido de la falla tal cual, no el último que salió. */
+export function retryRequestOf(state: EntryChangesState): EntryChangeRequest | null {
+  return state.failure?.request ?? null;
 }
 
 /** Las celdas con un pedido que la foto todavía no trae, `sending` o `settled`. */
@@ -129,7 +106,7 @@ export type EntryChangeActions = {
   ) => Promise<ActionResult<DeleteEntryResult, TimeEntryErrorCode>>;
 };
 
-export type EntryChanger = {
+type EntryChanger = {
   /** Se resuelve cuando el pedido se asienta (`true`) o falla (`false`). */
   readonly send: (request: EntryChangeRequest) => Promise<boolean>;
 };

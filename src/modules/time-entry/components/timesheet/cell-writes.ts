@@ -6,6 +6,12 @@ import type {
 } from "@/modules/time-entry/schema";
 import type { ActionResult } from "@/server/action";
 
+import {
+  pendingRequestsReducer,
+  type PendingRecord,
+  type PendingRequestsEvent,
+  type PendingRequestsState,
+} from "./pending-requests";
 import { sendOrUnexpected } from "./send-or-unexpected";
 
 /** Una celda: el día y el par, y cómo nombrarla en el aviso. */
@@ -21,32 +27,17 @@ export type CellWriteFailure = {
   readonly message: string;
 };
 
-/**
- * Un pedido que todavía no está en la foto del servidor: `sending` en vuelo o
- * en cola detrás de otra action, `settled` ya aplicado.
- */
-type PendingWrite = {
-  readonly id: number;
+/** Un pedido de una celda que todavía no está en la foto, con los minutos que muestra. */
+type PendingWrite = PendingRecord & {
   readonly cell: string;
   readonly minutes: number;
-  readonly status: "sending" | "settled";
 };
 
-export type CellWritesState = {
-  /** En el orden en que se mandaron. */
-  readonly pending: readonly PendingWrite[];
-  readonly failure: CellWriteFailure | null;
-};
+export type CellWritesState = PendingRequestsState<PendingWrite, CellWriteFailure>;
 
 export const NO_CELL_WRITES: CellWritesState = { pending: [], failure: null };
 
-export type CellWritesEvent =
-  | { readonly type: "sent"; readonly id: number; readonly request: CellWriteRequest }
-  | { readonly type: "settled"; readonly id: number }
-  | { readonly type: "failed"; readonly id: number; readonly failure: CellWriteFailure }
-  /** Llegó otra foto del servidor: ya trae todo lo asentado antes de ella (§5.6). */
-  | { readonly type: "snapshot" }
-  | { readonly type: "dismissed" };
+export type CellWritesEvent = PendingRequestsEvent<CellWriteRequest, CellWriteFailure>;
 
 /** La clave de una fila: `proyecto|tarea`, con los ids como los compara la base. */
 export function rowKeyOf(pair: ProjectPair): string {
@@ -58,47 +49,21 @@ export function cellKeyOf(cell: { readonly date: string } & ProjectPair): string
   return `${cell.date}|${rowKeyOf(cell)}`;
 }
 
-export function cellWritesReducer(
-  state: CellWritesState,
-  event: CellWritesEvent,
-): CellWritesState {
-  switch (event.type) {
-    case "sent": {
-      const cell = cellKeyOf(event.request.input);
-      const write: PendingWrite = {
-        id: event.id,
-        cell,
-        minutes: event.request.input.minutes,
-        status: "sending",
-      };
-      // Una escritura nueva de la celda que falló reemplaza lo que el aviso
-      // contaba; la de otra celda no.
-      const failure =
-        state.failure !== null && cellKeyOf(state.failure.request.input) === cell
-          ? null
-          : state.failure;
-      return { pending: [...state.pending, write], failure };
-    }
-    case "settled":
-      return {
-        ...state,
-        pending: state.pending.map((write) =>
-          write.id === event.id ? { ...write, status: "settled" } : write,
-        ),
-      };
-    case "failed":
-      return {
-        pending: state.pending.filter((write) => write.id !== event.id),
-        failure: event.failure,
-      };
-    case "snapshot": {
-      const pending = state.pending.filter((write) => write.status === "sending");
-      return pending.length === state.pending.length ? state : { ...state, pending };
-    }
-    case "dismissed":
-      return state.failure === null ? state : { ...state, failure: null };
-  }
-}
+export const cellWritesReducer = pendingRequestsReducer<
+  CellWriteRequest,
+  PendingWrite,
+  CellWriteFailure
+>({
+  recordOf: (id, request) => ({
+    id,
+    cell: cellKeyOf(request.input),
+    minutes: request.input.minutes,
+    status: "sending",
+  }),
+  // Una escritura nueva de la celda que falló reemplaza lo que el aviso
+  // contaba; la de otra celda no.
+  sameSubject: (sent, failed) => cellKeyOf(sent.input) === cellKeyOf(failed.input),
+});
 
 /** Lo que muestra cada celda que escribió: los minutos de su último pedido. */
 export function shownOf(state: CellWritesState): ReadonlyMap<string, number> {

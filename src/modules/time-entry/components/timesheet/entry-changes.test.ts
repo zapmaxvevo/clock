@@ -8,6 +8,7 @@ import {
   entryChanger,
   entryChangesReducer,
   NO_ENTRY_CHANGES,
+  retryRequestOf,
   sendingEntriesOf,
   type EntryChangeActions,
   type EntryChangeRequest,
@@ -86,9 +87,9 @@ function harness() {
       state = entryChangesReducer(state, { type: "snapshot" });
     },
     retry: () => {
-      const failure = state.failure;
-      if (failure !== null) {
-        send(failure.request);
+      const request = retryRequestOf(state);
+      if (request !== null) {
+        send(request);
       }
     },
   };
@@ -273,5 +274,22 @@ describe("entryChanger y entryChangesReducer (§5.4)", () => {
 
     expect(state.failure).toBeNull();
     expect(changingOf(state)).toEqual(new Set([wednesday]));
+  });
+});
+
+describe("retryRequestOf (TT-89)", () => {
+  it("sin falla no hay nada que reenviar", () => {
+    expect(retryRequestOf(NO_ENTRY_CHANGES)).toBeNull();
+  });
+
+  it("es el pedido de la falla, no el último que salió ni el que sigue en vuelo", async () => {
+    const detail = harness();
+    detail.changer.send(save(a, tuesday, "Informe"));
+    detail.changer.send(remove(b, wednesday));
+    detail.calls[0].reject(new Error("Failed to fetch"));
+    await flush();
+    detail.changer.send(save(c, wednesday));
+
+    expect(retryRequestOf(detail.state())).toEqual(save(a, tuesday, "Informe"));
   });
 });
