@@ -23,7 +23,15 @@ import {
   hasConstraint,
   UNIQUE_VIOLATION,
 } from "@/server/db/constraint-error";
-import { now, project, tag, task, timeEntry, timeEntryTag } from "@/server/db/schema";
+import {
+  client,
+  now,
+  project,
+  tag,
+  task,
+  timeEntry,
+  timeEntryTag,
+} from "@/server/db/schema";
 
 export type TimeEntryRow = typeof timeEntry.$inferSelect;
 
@@ -109,6 +117,62 @@ function isTarget(target: EntryTarget) {
 
 type Executor = Transaction | typeof db;
 
+/** Lo que delimita una celda o una fila: de quién, qué par y qué tramo de instantes. */
+export type EntrySlice = {
+  readonly workspaceId: string;
+  readonly userId: string;
+  readonly pair: ProjectPair;
+  readonly from: Date;
+  readonly to: Date;
+};
+
+/** La entrada de la planilla, con su proyecto, su tarea, sus etiquetas y el cliente. */
+export type TimesheetEntryRow = EntryWithRefs & {
+  readonly client: { readonly id: string; readonly name: string } | null;
+};
+
+/**
+ * Clase del bloqueo consultivo de una celda de la planilla (ADR 0019): el
+ * primer entero de la forma de dos. Es arbitraria; lo único que importa es que
+ * nadie más la use.
+ */
+const TIMESHEET_CELL_LOCK = 1_302_130_013;
+
+/** El par de la fila: `is null` cuando falta, porque `= null` no es verdadero nunca. */
+function hasPair(pair: ProjectPair) {
+  return and(
+    pair.projectId === null
+      ? isNull(timeEntry.projectId)
+      : eq(timeEntry.projectId, pair.projectId),
+    pair.taskId === null ? isNull(timeEntry.taskId) : eq(timeEntry.taskId, pair.taskId),
+  );
+}
+
+/** Las cerradas de la persona con ese par y el inicio en `[from, to)`. */
+function inSlice(slice: EntrySlice) {
+  return and(
+    eq(timeEntry.workspaceId, slice.workspaceId),
+    eq(timeEntry.userId, slice.userId),
+    hasPair(slice.pair),
+    isNotNull(timeEntry.endedAt),
+    gte(timeEntry.startedAt, slice.from),
+    lt(timeEntry.startedAt, slice.to),
+  );
+}
+
+/** Las dos claves hacen que el join no cruce workspaces. */
+const projectOfEntry = and(
+  eq(project.workspaceId, timeEntry.workspaceId),
+  eq(project.id, timeEntry.projectId),
+);
+
+/** La tarea se busca por el proyecto de la entrada: no cruza proyectos. */
+const taskOfEntry = and(
+  eq(task.workspaceId, timeEntry.workspaceId),
+  eq(task.projectId, timeEntry.projectId),
+  eq(task.id, timeEntry.taskId),
+);
+
 /**
  * Las etiquetas de la entrada de la fila exterior, en un arreglo JSON: una
  * subconsulta correlacionada no multiplica filas como un `join`. Filtra por el
@@ -145,21 +209,8 @@ function selectWithRefs(tx: Executor, where: SQL | undefined) {
   return tx
     .select(withRefs)
     .from(timeEntry)
-    .leftJoin(
-      project,
-      and(
-        eq(project.workspaceId, timeEntry.workspaceId),
-        eq(project.id, timeEntry.projectId),
-      ),
-    )
-    .leftJoin(
-      task,
-      and(
-        eq(task.workspaceId, timeEntry.workspaceId),
-        eq(task.projectId, timeEntry.projectId),
-        eq(task.id, timeEntry.taskId),
-      ),
-    )
+    .leftJoin(project, projectOfEntry)
+    .leftJoin(task, taskOfEntry)
     .where(where)
     .$dynamic();
 }
@@ -373,6 +424,95 @@ export const timeEntryRepository = {
       ),
     ).orderBy(asc(timeEntry.id));
     return rows.map(toEntryWithRefs);
+  },
+
+  /**
+   * TS-37, ADR 0019: serializa las escrituras de una celda hasta el fin de la
+   * transacción. La clave lleva el workspace, el usuario, el proyecto o `-`, la
+   * tarea o `-` —los ids en minúsculas— y `from` en ISO. Una sentencia propia,
+   * antes de leer la celda: en `read committed` la lectura que sigue toma su
+   * foto con el bloqueo ya tomado.
+   */
+  async lockCell(tx: Transaction, cell: Omit<EntrySlice, "to">): Promise<void> {
+    const key = [
+      cell.workspaceId,
+      cell.userId,
+      cell.pair.projectId ?? "-",
+      cell.pair.taskId ?? "-",
+    ]
+      .map((part) => part.toLowerCase())
+      .concat(cell.from.toISOString())
+      .join("|");
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(${TIMESHEET_CELL_LOCK}::int4, hashtext(${key}))`,
+    );
+  },
+
+  /**
+   * Las cerradas de la persona con ese par y el inicio en `[from, to)`,
+   * bloqueadas. Dos sentencias, por la razón de `findManyByIdsForUpdate`: la
+   * primera lee solo `time_entry` con `for update` y `order by id` (ADR 0011);
+   * la segunda, con el bloqueo ya tomado, trae las referencias.
+   */
+  async lockClosedInSlice(
+    tx: Transaction,
+    slice: EntrySlice,
+  ): Promise<readonly EntryWithRefs[]> {
+    const locked = await tx
+      .select({ id: timeEntry.id })
+      .from(timeEntry)
+      .where(inSlice(slice))
+      .orderBy(asc(timeEntry.id))
+      .for("update");
+    if (locked.length === 0) {
+      return [];
+    }
+    const rows = await selectWithRefs(
+      tx,
+      and(
+        eq(timeEntry.workspaceId, slice.workspaceId),
+        inArray(
+          timeEntry.id,
+          locked.map((row) => row.id),
+        ),
+      ),
+    ).orderBy(asc(timeEntry.startedAt), asc(timeEntry.createdAt), asc(timeEntry.id));
+    return rows.map(toEntryWithRefs);
+  },
+
+  /**
+   * Las cerradas de la persona con el inicio en `[from, to)`, de cualquier par,
+   * con sus referencias y el cliente del proyecto, sin ninguna condición de
+   * archivado ni de acceso: la planilla muestra lo que la entrada tiene
+   * (ADR 0010). Una sola sentencia.
+   */
+  async listTimesheetEntries(
+    workspaceId: string,
+    userId: string,
+    from: Date,
+    to: Date,
+    tx: Executor = db,
+  ): Promise<readonly TimesheetEntryRow[]> {
+    const rows = await tx
+      .select({ ...withRefs, client: { id: client.id, name: client.name } })
+      .from(timeEntry)
+      .leftJoin(project, projectOfEntry)
+      .leftJoin(task, taskOfEntry)
+      .leftJoin(
+        client,
+        and(eq(client.workspaceId, project.workspaceId), eq(client.id, project.clientId)),
+      )
+      .where(
+        and(
+          eq(timeEntry.workspaceId, workspaceId),
+          eq(timeEntry.userId, userId),
+          isNotNull(timeEntry.endedAt),
+          gte(timeEntry.startedAt, from),
+          lt(timeEntry.startedAt, to),
+        ),
+      )
+      .orderBy(asc(timeEntry.startedAt), asc(timeEntry.createdAt), asc(timeEntry.id));
+    return rows.map((row) => ({ ...toEntryWithRefs(row), client: row.client }));
   },
 
   /**

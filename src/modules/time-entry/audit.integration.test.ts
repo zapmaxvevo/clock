@@ -27,6 +27,8 @@ import {
   deleteEntry,
   discardTimer,
   duplicateEntry,
+  removeTimesheetRow,
+  setTimesheetCell,
   startTimer,
   stopTimer,
   updateDescription,
@@ -1693,6 +1695,181 @@ describe("audit log de las etiquetas (criterio 11 del 11b, TT-61)", () => {
         action,
         expect.objectContaining({ id, description: "original", tagIds }),
       ]);
+    }
+  });
+});
+
+describe("audit log de la planilla (criterio 19 del 13, §4.9)", () => {
+  /** El miércoles 30/09/2026 en Buenos Aires (-03:00). */
+  const wednesday = "2026-09-30";
+
+  function local(time: string): string {
+    return `${wednesday}T${time}-03:00`;
+  }
+
+  function seedOwn(values: {
+    readonly startedAt: string;
+    readonly endedAt: string;
+    readonly description?: string;
+    readonly projectId?: string;
+    readonly billable?: boolean;
+    readonly tagIds?: readonly string[];
+  }) {
+    return seedTimeEntry({ workspaceId, userId: actor.userId, ...values });
+  }
+
+  function write(minutes: number, projectId: string | null = null) {
+    return setTimesheetCell(actor, workspace, {
+      date: wednesday,
+      projectId,
+      taskId: null,
+      minutes,
+    });
+  }
+
+  it("una celda vacía deja timeEntry.createFromCell con sus campos y sin sourceId", async () => {
+    const web = await seedProject({ workspaceId, billableByDefault: true });
+
+    const result = await write(90, web.id);
+
+    const rows = await auditFor("time_entry");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      action: "timeEntry.createFromCell",
+      entity: "time_entry",
+      entityId: result.entry?.id,
+      workspaceId,
+      actorId: actor.userId,
+      previousValue: null,
+    });
+    expect(parsed(rows[0].nextValue)).toEqual({
+      description: "",
+      projectId: web.id,
+      taskId: null,
+      billable: true,
+      tagIds: [],
+      startedAt: "2026-09-30T12:00:00.000Z",
+      endedAt: "2026-09-30T13:30:00.000Z",
+    });
+  });
+
+  it("subir con varias deja timeEntry.createFromCell con sourceId y las etiquetas copiadas por nombre", async () => {
+    const zeta = await seedTag({ workspaceId, name: "Zeta" });
+    const alfa = await seedTag({ workspaceId, name: "alfa" });
+    await seedOwn({ startedAt: local("10:00"), endedAt: local("11:00") });
+    const source = await seedOwn({
+      description: "b",
+      billable: true,
+      tagIds: [zeta.id, alfa.id],
+      startedAt: local("12:00"),
+      endedAt: local("13:00"),
+    });
+
+    const result = await write(180);
+
+    const [record] = await auditFor("time_entry", result.entry?.id);
+    expect(record.action).toBe("timeEntry.createFromCell");
+    expect(parsed(record.nextValue)).toEqual({
+      sourceId: source.id,
+      description: "b",
+      projectId: null,
+      taskId: null,
+      billable: true,
+      tagIds: [alfa.id, zeta.id],
+      startedAt: "2026-09-30T16:00:00.000Z",
+      endedAt: "2026-09-30T17:00:00.000Z",
+    });
+  });
+
+  it("editar el fin deja timeEntry.updateFromCell con solo endedAt", async () => {
+    const entry = await seedOwn({
+      startedAt: local("10:00:40"),
+      endedAt: local("11:31:22"),
+    });
+
+    await write(120);
+
+    const rows = await auditFor("time_entry");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      action: "timeEntry.updateFromCell",
+      entityId: entry.id,
+    });
+    expect(parsed(rows[0].previousValue)).toEqual({
+      endedAt: "2026-09-30T14:31:22.000Z",
+    });
+    expect(parsed(rows[0].nextValue)).toEqual({ endedAt: "2026-09-30T15:00:40.000Z" });
+  });
+
+  it("sin cambios, rechazada o repetida no deja constancia", async () => {
+    await seedOwn({ startedAt: local("10:00"), endedAt: local("11:00") });
+    await seedOwn({ startedAt: local("22:00"), endedAt: "2026-10-01T01:00:00-03:00" });
+    const archived = await seedProject({ workspaceId, archived: true });
+
+    expect(await write(4 * 60)).toEqual({ entry: null });
+    await expect(write(5 * 60)).rejects.toMatchObject({
+      code: "validation",
+      message: timeEntryMessages.cellNeedsEntryEdit,
+    });
+    await expect(write(60, archived.id)).rejects.toMatchObject({ code: "not_found" });
+    await expect(
+      setTimesheetCell({ ...actor, status: "inactive" }, workspace, {
+        date: wednesday,
+        projectId: null,
+        taskId: null,
+        minutes: 30,
+      }),
+    ).rejects.toMatchObject({ code: "forbidden" });
+
+    expect(await auditFor("time_entry")).toEqual([]);
+  });
+
+  it("quitar una fila deja timeEntry.removeRow por entrada borrada, con la fila y sus etiquetas", async () => {
+    const zeta = await seedTag({ workspaceId, name: "Zeta" });
+    const alfa = await seedTag({ workspaceId, name: "alfa" });
+    const tagged = await seedOwn({
+      description: "con etiquetas",
+      tagIds: [zeta.id, alfa.id],
+      startedAt: local("10:00"),
+      endedAt: local("11:00"),
+    });
+    const plain = await seedOwn({ startedAt: local("12:00"), endedAt: local("13:00") });
+    const input = {
+      weekStart: "2026-09-28",
+      projectId: null,
+      taskId: null,
+      ids: [tagged.id, plain.id, randomUUID()],
+    };
+
+    await removeTimesheetRow(actor, workspace, input);
+    await removeTimesheetRow(actor, workspace, input);
+
+    expect(await auditFor("time_entry")).toHaveLength(2);
+    for (const [row, tagIds] of [
+      [tagged, [alfa.id, zeta.id]],
+      [plain, []],
+    ] as const) {
+      const [record] = await auditFor("time_entry", row.id);
+      expect(record).toMatchObject({
+        action: "timeEntry.removeRow",
+        workspaceId,
+        actorId: actor.userId,
+        nextValue: null,
+      });
+      expect(parsed(record.previousValue)).toEqual({
+        id: row.id,
+        workspaceId,
+        userId: actor.userId,
+        description: row.description,
+        projectId: null,
+        taskId: null,
+        billable: false,
+        tagIds,
+        startedAt: row.startedAt.toISOString(),
+        endedAt: row.endedAt?.toISOString(),
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+      });
     }
   });
 });
