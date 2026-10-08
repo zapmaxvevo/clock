@@ -25,8 +25,9 @@ type EditorActionsProps = {
   /** «Detener» con cambios sin guardar (§1, decisión 4). */
   readonly stopBlocked: boolean;
   readonly submitRef: RefObject<HTMLButtonElement | null>;
-  readonly onStop: () => void;
-  readonly onDuplicate: () => void;
+  readonly onStop?: () => void;
+  /** Sin él, el menú no ofrece «Duplicar» (13b, D13b-7). */
+  readonly onDuplicate?: () => void;
   readonly onDelete: () => void;
 };
 
@@ -74,7 +75,7 @@ export function EditorActions({
               aria-describedby={stopBlocked ? hintId : undefined}
               onClick={() => {
                 if (!stopBlocked) {
-                  onStop();
+                  onStop?.();
                 }
               }}
             >
@@ -104,14 +105,14 @@ export function EditorActions({
   );
 }
 
-/** CAL-68: «Duplicar» y «Borrar» de una entrada cerrada. */
+/** CAL-68: «Duplicar» y «Borrar» de una entrada cerrada; sin `onDuplicate`, solo «Borrar». */
 function EntryMenu({
   name,
   onDuplicate,
   onDelete,
 }: {
   readonly name: string;
-  readonly onDuplicate: () => void;
+  readonly onDuplicate?: () => void;
   readonly onDelete: () => void;
 }) {
   /**
@@ -139,10 +140,12 @@ function EntryMenu({
         className="w-auto min-w-40"
         finalFocus={() => !chosen.current}
       >
-        <DropdownMenuItem onClick={() => choose(onDuplicate)}>
-          <CopyIcon aria-hidden="true" />
-          {trackerLabels.duplicate}
-        </DropdownMenuItem>
+        {onDuplicate !== undefined && (
+          <DropdownMenuItem onClick={() => choose(onDuplicate)}>
+            <CopyIcon aria-hidden="true" />
+            {trackerLabels.duplicate}
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem variant="destructive" onClick={() => choose(onDelete)}>
           <Trash2Icon aria-hidden="true" />
           {trackerLabels.delete}

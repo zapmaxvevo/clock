@@ -98,9 +98,12 @@ type EntryDialogProps = {
   /** «Cancelar», «Cerrar», Esc o un clic afuera, y «Guardar» sin cambios. */
   readonly onCancel: () => void;
   readonly onSave: (changes: UpdateEntryChanges) => void;
-  readonly onAdd: (input: NewEntryRequest) => void;
-  readonly onStop: () => void;
-  readonly onDuplicate: () => void;
+  /** Sin él, el diálogo no abre altas: la planilla solo edita (13b, §5.2). */
+  readonly onAdd?: (input: NewEntryRequest) => void;
+  /** Sin él, el diálogo no abre el timer: la planilla solo trae cerradas. */
+  readonly onStop?: () => void;
+  /** Sin él, el menú de la entrada no ofrece «Duplicar» (13b, D13b-7). */
+  readonly onDuplicate?: () => void;
   readonly onDelete: () => void;
   /** Adónde vuelve el foco al cancelar: el bloque, «Agregar entrada» o ninguno. */
   readonly cancelFocus: RefObject<HTMLElement | null>;
@@ -333,7 +336,7 @@ function EntryEditor({
     if (pending || draftDuration(draftRef.current.times) === 0) {
       return;
     }
-    onAdd(createInputOf(draftRef.current));
+    onAdd?.(createInputOf(draftRef.current));
   }
 
   const submit = subject.kind === "add" ? add : save;
