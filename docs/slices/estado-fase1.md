@@ -5,31 +5,31 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-08.
 
 ## Dónde estamos
 
-| Slice                                       | Estado        |
-| ------------------------------------------- | ------------- |
-| 1 — Timer sin proyecto                      | En `main`     |
-| 2 — Modo manual                             | En `main`     |
-| 2b — Reintento de «Iniciar»                 | En `main`     |
-| 3 — Corregir horas y fecha                  | En `main`     |
-| 4 — Continuar, duplicar, descartar, atajos  | En `main`     |
-| 5 — Semana y paginación                     | En `main`     |
-| 9 — Núcleo de proyectos                     | En `main`     |
-| 10 — Selector de proyecto y tarea           | En `main`     |
-| 7 — Perfil                                  | En `main`     |
-| 6 — Selección y acciones en masa            | En `main`     |
-| 7b — Perfil: nombre editable y tema         | En `main`     |
-| 8 — Calendario: lectura                     | En `main`     |
-| 8c — Calendario: escritura                  | En `main`     |
-| 8b — Calendario: arrastre                   | En `main`     |
-| 11a — Facturable                            | En `main`     |
-| 11b — Etiquetas                             | En `main`     |
-| 12 — Edición masiva de proyecto y etiquetas | En `main`     |
-| 2c — «Reintentar» en el alta manual         | En `main`     |
-| Arreglo: piso de fechas fijo (2000-01-01)   | En `main`     |
-| 13 — Planilla de horarios semanal           | En `main`     |
-| 13b — Planilla: menú y detalle de la celda  | En `main`     |
-| Núcleo de reportes, R1                      | En `main`     |
-| Núcleo de reportes, R2a                     | Corrida final |
+| Slice                                       | Estado    |
+| ------------------------------------------- | --------- |
+| 1 — Timer sin proyecto                      | En `main` |
+| 2 — Modo manual                             | En `main` |
+| 2b — Reintento de «Iniciar»                 | En `main` |
+| 3 — Corregir horas y fecha                  | En `main` |
+| 4 — Continuar, duplicar, descartar, atajos  | En `main` |
+| 5 — Semana y paginación                     | En `main` |
+| 9 — Núcleo de proyectos                     | En `main` |
+| 10 — Selector de proyecto y tarea           | En `main` |
+| 7 — Perfil                                  | En `main` |
+| 6 — Selección y acciones en masa            | En `main` |
+| 7b — Perfil: nombre editable y tema         | En `main` |
+| 8 — Calendario: lectura                     | En `main` |
+| 8c — Calendario: escritura                  | En `main` |
+| 8b — Calendario: arrastre                   | En `main` |
+| 11a — Facturable                            | En `main` |
+| 11b — Etiquetas                             | En `main` |
+| 12 — Edición masiva de proyecto y etiquetas | En `main` |
+| 2c — «Reintentar» en el alta manual         | En `main` |
+| Arreglo: piso de fechas fijo (2000-01-01)   | En `main` |
+| 13 — Planilla de horarios semanal           | En `main` |
+| 13b — Planilla: menú y detalle de la celda  | En `main` |
+| Núcleo de reportes, R1                      | En `main` |
+| Núcleo de reportes, R2a                     | En `main` |
 
 Los slices 1 a 13 (con 2b, 2c, 7b, 8b, 8c, 11a y 11b) y el arreglo del piso fijo están en `main`.
 El 13 (planilla de horarios) se mergeó el 2026-10-08 con lint, typecheck, 1279 de unidad, 1223 de
@@ -46,15 +46,10 @@ vacío del owner y `renewWorkspace` se corta.
    - **Push**: desde hoy lo hace el team-lead después de cada merge en verde (el usuario sacó el
      `deny` de `git push` y `gh pr merge` en `.claude/settings.json`, **cambio local suyo, no se
      commitea**; `.idea/` tampoco). `origin/main` está en `206a22a`, al día.
-   - **R2a** en `nucleo/r2a-resumido` (en checkout en el árbol principal), HEAD `6e68af0`. Seis
-     revisiones y la ronda de correcciones hechas (`correcciones-nucleo-reportes-r2a-revisiones.md`):
-     backend, frontend y e2e cerraron con lint, typecheck, 1407 de unidad, 1275 de integración y
-     sus mutantes (42 de backend, 6 de frontend, e2e de F1). Medición en Postgres 18.6: el índice
-     no entra, no hay 0015. **Falta**: la corrida final de `tests-r2a` (`reports.spec.ts` ×3, la
-     suite entera ×2, los 11 mutantes) estaba corriendo al cortar; si no llegó, se repite sobre
-     HEAD contra `clock_e2er2a`. Con eso en verde: agregar el cierre al documento de revisiones,
-     merge `--no-ff` a `main` y push. La rama no compila entre `aff26e5` y `9ad028f` (un `git rm`
-     ajeno en el índice compartido); HEAD sí. No se reescribe.
+   - **R2a** en `main` (2026-10-08): corrida final sobre `6e68af0` con `reports.spec.ts` 7/7 ×3,
+     la suite 191/191 ×2 y los once mutantes caídos; el cierre está en
+     `correcciones-nucleo-reportes-r2a-revisiones.md`. La rama no compila entre `aff26e5` y
+     `9ad028f` (un `git rm` ajeno en el índice compartido); HEAD sí. No se reescribe.
    - **Después de R2a, dos arreglos de CI, en este orden** (CI de `main` está en rojo desde el
      2026-10-04 y el job `e2e` se saltea):
      1. `fix/postgres-18` (`8a61017`, worktree `scratchpad/lead-pg18`): Neon es Postgres 18.6;

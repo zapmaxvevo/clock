@@ -61,3 +61,10 @@ del contrato entre §5.1 y el criterio 13: vale lo implementado.
 | Origen | Hallazgo                                                                                                            | Resolución                                                                                                                    |
 | ------ | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | P1     | «Años de cuatro cifras» no coincide con el piso real, `0100-01-01` (convención de `parseDayKey`, fijada por CAL-17) | `reportes.md` dice el piso explícito en RP-20, RP-32 y RP-34: del 0100-01-01 al 9999-12-31, como CAL-17. Sin cambio de código |
+
+## Cierre
+
+Corrida final de `tests-r2a` sobre `6e68af0`, contra `clock_e2er2a` y con `next build`:
+`reports.spec.ts` 7 de 7 en tres corridas y la suite entera 191 de 191 en dos. Los once
+mutantes del reporte caen (M1 a M11, con los dos de F1 en el recorrido 4). Antes, en el árbol
+compartido: lint, typecheck, 1407 de unidad y 1275 de integración. Se mergea a `main`.
