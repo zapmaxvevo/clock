@@ -107,7 +107,8 @@ Cubre RP-65 (P-09) y la precondición de RP-60 y RP-61. **Cambia el esquema**
 (ADR 0020, condición cuarta):
 
 1. inserta una membresía `inactive`, rol `member`, para cada par
-   `(workspace_id, user_id)` de `time_entry` sin membresía, con una fila en
+   `(workspace_id, user_id)` de `time_entry` sin membresía (salvo el owner del
+   workspace, que queda `owner` y `active`: R1-D3 del contrato), con una fila en
    `audit_log` por cada una (acción propia, sin actor);
 2. pasa `time_entry.user_id` → `user` de `cascade` a `restrict`;
 3. crea la clave compuesta `(workspace_id, user_id)` → `membership`, `on delete
@@ -388,7 +389,9 @@ Siguen abiertas:
    - **(a) Procedimiento SQL documentado**, para cambiar el rol y para pasar una
      membresía a `status = 'inactive'`. Cada uso escribe su fila en
      `audit_log`, y desactivar cierra en la misma transacción el timer que
-     corra (RP-63). Lo corre el usuario. Sin slice.
+     corra (RP-63) y borra las filas de `session` y `account` de esa persona:
+     inactivar la membresía no corta una sesión abierta, y con R1 el usuario
+     ya no se borra (S1 de la revisión de R1). Lo corre el usuario. Sin slice.
    - **(b) El slice R8**, después de R2a: cambiar el rol entre `member` y
      `admin` desde la aplicación, con `team.manage`, la protección del owner y
      auditoría. Desactivar sigue por el procedimiento de (a) hasta la fase 2.
