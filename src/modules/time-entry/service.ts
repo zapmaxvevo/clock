@@ -2484,7 +2484,7 @@ export async function getTimesheetState(
     startOfDayKey(week.start, timeZone),
     startOfDayKey(week.end, timeZone),
   );
-  const entries = rows.map((entry) => ({
+  const dated = rows.map((entry) => ({
     entry,
     date: dayKey(entry.startedAt, timeZone),
   }));
@@ -2501,9 +2501,12 @@ export async function getTimesheetState(
     previousStart: addDaysToKey(week.start, -7),
     nextStart: week.end,
     currentStart: current.start,
-    days: timesheetDays(week.days, entries, todayKey, workspace.formats.date),
-    rows: timesheetRows(entries),
-    closedSeconds: closedSecondsOf(entries),
+    days: timesheetDays(week.days, dated, todayKey, workspace.formats.date),
+    rows: timesheetRows(dated),
+    closedSeconds: closedSecondsOf(dated),
     storageKey: `clock:planilla:${actor.workspaceId}:${actor.userId}`,
+    serverNow: now.toISOString(),
+    minDayKey: ENTRY_FLOOR_DAY_KEY,
+    entries: rows.map((row) => toView(row, workspace)),
   };
 }

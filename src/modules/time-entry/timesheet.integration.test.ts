@@ -38,7 +38,7 @@ import {
 import { projectMessages } from "@/modules/project/schema";
 
 import { timeEntryRepository } from "./repository";
-import { timeEntryMessages, type SetTimesheetCellValues } from "./schema";
+import { timeEntryMessages, timesheetState, type SetTimesheetCellValues } from "./schema";
 import {
   bulkDeleteEntries,
   getTimesheetState,
@@ -1255,5 +1255,174 @@ describe("getTimesheetState (criterio 17)", () => {
     );
 
     expect(state.canTrack).toBe(false);
+  });
+});
+
+describe("getTimesheetState: las entradas del detalle (criterio 2 del 13b)", () => {
+  it("trae las cerradas propias de la semana con toView, en orden de started_at, created_at e id", async () => {
+    const otherId = await seedMember(workspaceId, "member");
+    const web = await seedProject({ workspaceId, name: "Web", color: "pink" });
+    const layout = await seedTask({ workspaceId, projectId: web.id, name: "Maquetado" });
+    const alfa = await seedTag({ workspaceId, name: "Alfa" });
+    const beta = await seedTag({ workspaceId, name: "Beta" });
+    // Sembradas en desorden: el orden no sale de la base.
+    const sundayLate = await seedOwn({
+      startedAt: local("23:30", "2026-10-04"),
+      endedAt: local("00:30", "2026-10-05"),
+    });
+    const late = await seedOwn({
+      description: "Diseño",
+      projectId: web.id,
+      taskId: layout.id,
+      billable: true,
+      tagIds: [beta.id, alfa.id],
+      startedAt: local("22:00"),
+      endedAt: local("02:00", "2026-10-01"),
+    });
+    const createdLater = await seedOwn({
+      startedAt: local("10:00"),
+      endedAt: local("11:00"),
+      createdAt: "2026-09-30T14:00:00Z",
+    });
+    const createdEarlier = await seedOwn({
+      startedAt: local("10:00"),
+      endedAt: local("11:00"),
+      createdAt: "2026-09-30T13:00:00Z",
+    });
+    // Mismo inicio y mismo alta: desempata el id.
+    const sameIds = [randomUUID(), randomUUID()];
+    for (const id of sameIds) {
+      await seedOwn({
+        id,
+        startedAt: local("09:00", monday),
+        endedAt: local("09:30", monday),
+        createdAt: "2026-09-28T13:00:00Z",
+      });
+    }
+    // Lo que no entra: la que corre, la de otra persona y las de las semanas
+    // vecinas, también la que empieza dentro de la semana en UTC.
+    await seedOwn({ startedAt: local("15:00"), endedAt: null });
+    await seedTimeEntry({
+      workspaceId,
+      userId: otherId,
+      startedAt: local("12:00"),
+      endedAt: local("13:00"),
+    });
+    await seedOwn({
+      startedAt: local("23:30", "2026-09-27"),
+      endedAt: local("23:45", "2026-09-27"),
+    });
+    await seedOwn({
+      startedAt: local("00:00", "2026-10-05"),
+      endedAt: local("01:00", "2026-10-05"),
+    });
+
+    const state = await getTimesheetState(actor, workspace, { day: wednesday }, readNow);
+
+    expect(state.entries.map((entry) => entry.id)).toEqual([
+      ...[...sameIds].sort(),
+      createdEarlier.id,
+      createdLater.id,
+      late.id,
+      sundayLate.id,
+    ]);
+    expect(state.entries.find((entry) => entry.id === late.id)).toEqual({
+      id: late.id,
+      description: "Diseño",
+      startedAt: "2026-10-01T01:00:00.000Z",
+      endedAt: "2026-10-01T05:00:00.000Z",
+      dayDate: wednesday,
+      weekStart: monday,
+      startLabel: "22:00",
+      endLabel: "02:00",
+      startClock: "22:00",
+      endClock: "02:00",
+      extraDays: 1,
+      durationSeconds: 4 * 3600,
+      durationLabel: "4:00",
+      editableTimes: true,
+      project: { id: web.id, name: "Web", color: "pink" },
+      task: { id: layout.id, name: "Maquetado" },
+      billable: true,
+      tags: [
+        { id: alfa.id, name: "Alfa" },
+        { id: beta.id, name: "Beta" },
+      ],
+    });
+    expect(state.entries.find((entry) => entry.id === sundayLate.id)).toMatchObject({
+      dayDate: "2026-10-04",
+      project: null,
+      task: null,
+      description: "",
+      tags: [],
+    });
+    expect(timesheetState.parse(state)).toEqual(state);
+  });
+
+  it("la dayDate y el par de cada una son los de la celda que la cuenta (TS-07)", async () => {
+    const web = await seedProject({ workspaceId, color: "pink" });
+    const layout = await seedTask({ workspaceId, projectId: web.id });
+    const entry = (
+      pair: ProjectPair,
+      start: string,
+      end: string,
+      date = wednesday,
+      endDate = date,
+    ) =>
+      seedOwn({ ...pair, startedAt: local(start, date), endedAt: local(end, endDate) });
+    await entry(noProject, "22:00", "02:00", wednesday, "2026-10-01");
+    await entry(noProject, "10:00", "10:30");
+    await entry(noProject, "10:00", "11:00", monday);
+    await entry({ projectId: web.id, taskId: null }, "09:00", "09:45");
+    await entry({ projectId: web.id, taskId: layout.id }, "09:00", "10:00");
+    await entry({ projectId: web.id, taskId: layout.id }, "21:30", "23:00", "2026-10-01");
+
+    const state = await getTimesheetState(actor, workspace, { day: wednesday }, readNow);
+
+    expect(state.entries).toHaveLength(6);
+    const counted = state.rows.flatMap((row) =>
+      row.cells.map((cell) => {
+        const inCell = state.entries.filter(
+          (entry) =>
+            entry.dayDate === cell.date &&
+            (entry.project?.id ?? null) === (row.project?.id ?? null) &&
+            (entry.task?.id ?? null) === (row.task?.id ?? null),
+        );
+        return {
+          date: cell.date,
+          closedSeconds: inCell.reduce(
+            (sum, entry) => sum + (entry.durationSeconds ?? 0),
+            0,
+          ),
+          entryCount: inCell.length,
+        };
+      }),
+    );
+    expect(counted).toEqual(state.rows.flatMap((row) => row.cells));
+    expect(counted.reduce((sum, cell) => sum + cell.entryCount, 0)).toBe(6);
+  });
+
+  it("serverNow es el now del pedido y minDayKey, el piso de carga", async () => {
+    const later = new Date("2026-10-02T18:30:45.123Z");
+
+    const state = await getTimesheetState(actor, workspace, { day: wednesday }, readNow);
+    const other = await getTimesheetState(actor, workspace, { day: wednesday }, later);
+    const floorWeek = await getTimesheetState(
+      actor,
+      workspace,
+      { day: "2000-01-01" },
+      later,
+    );
+
+    expect(state).toMatchObject({
+      serverNow: "2026-10-01T15:00:00.000Z",
+      minDayKey: "2000-01-01",
+      entries: [],
+    });
+    expect(other).toMatchObject({
+      serverNow: "2026-10-02T18:30:45.123Z",
+      minDayKey: "2000-01-01",
+    });
+    expect(floorWeek.minDayKey).toBe("2000-01-01");
   });
 });

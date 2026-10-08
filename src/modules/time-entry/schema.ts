@@ -50,8 +50,8 @@ export const timeEntryMessages = {
     "Ninguna entrada cambió: algunas de las elegidas no se pueden editar.",
   bulkDeleteRejected:
     "No se borró ninguna entrada: algunas de las elegidas no se pueden borrar.",
-  /** TS-79: una causa, dos casos, un remedio (TS-34, TS-119). El 13b cambia el texto. */
-  cellNeedsEntryEdit: "Editá las entradas de esta celda desde el rastreador.",
+  /** TS-79: una causa, dos casos, un remedio (TS-34, TS-119): las entradas, en el detalle (TS-42). */
+  cellNeedsEntryEdit: "Editá las entradas de esta celda desde el detalle.",
   /** TS-52: la fila supera el tope de `ids`; la persona no eligió nada. */
   rowTooManyEntries: `Esta fila tiene más de ${BULK_MAX} entradas en la semana; borralas por partes desde el rastreador.`,
   unexpected: "No se pudo guardar. Revisá la conexión y volvé a intentar.",
@@ -631,6 +631,17 @@ export const timesheetState = z.object({
   closedSeconds: z.number().int().min(0),
   /** Dónde guarda el navegador las filas vacías: por workspace y persona. */
   storageKey: z.string(),
+  /** Lo pide el tipo de `EntryDialog`: la planilla no llega a lo que lo usa. */
+  serverNow: z.iso.datetime(),
+  /** El piso de carga, como día: el primero que admite la fecha del editor. */
+  minDayKey: z.string(),
+  /**
+   * Las cerradas de la persona con el inicio en la semana, en el orden de
+   * `listTimesheetEntries` (`started_at`, `created_at`, `id`): las del menú,
+   * la lista y el editor (TS-40 … TS-42). La celda de cada una es su
+   * `dayDate` y su par, la misma regla que arma las celdas (TS-07).
+   */
+  entries: z.array(timeEntryView),
 });
 
 export type TimeEntryView = z.infer<typeof timeEntryView>;
