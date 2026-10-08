@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import type { ProjectPair } from "@/lib/project-pair";
@@ -938,8 +939,9 @@ describe("removeTimesheetRow (criterio 15: TS-52 … TS-54, D13-6)", () => {
 describe("removeTimesheetRow no se traba (criterio 16)", () => {
   it("una fila y un borrado masivo sobre las mismas entradas en orden opuesto terminan los dos", async () => {
     const [first, middle, last] = [randomUUID(), randomUUID(), randomUUID()].sort();
-    // El orden físico y el de inicio, opuestos al de id: un borrado por
-    // predicado bloquearía de la última a la primera.
+    // El orden de inicio coincide con el de id; el físico es el opuesto: una
+    // lectura que bloquee sin `order by id` y recorra la tabla bloquearía de la
+    // última a la primera.
     for (const [id, date] of [
       [last, "2026-09-30"],
       [middle, "2026-09-29"],
@@ -951,6 +953,18 @@ describe("removeTimesheetRow no se traba (criterio 16)", () => {
         endedAt: local("11:00", date),
       });
     }
+    // Sin estadísticas, el plan recorre `time_entry_workspace_id_unq`, que ya
+    // da el orden de id, y el test no distinguiría un bloqueo sin `order by`.
+    await db.execute(sql`analyze time_entry`);
+    const plan = await db.execute(sql`
+      explain select id from time_entry
+      where workspace_id = ${workspaceId} and user_id = ${actor.userId}
+        and project_id is null and task_id is null and ended_at is not null
+        and started_at >= ${startOfDayKey(monday, buenosAires).toISOString()}
+        and started_at < ${startOfDayKey("2026-10-05", buenosAires).toISOString()}
+      for update
+    `);
+    expect(JSON.stringify(plan.rows)).not.toContain("time_entry_workspace_id_unq");
     await warmPool(3);
 
     const results = await raceThroughBarrier(lockRow(middle), [
