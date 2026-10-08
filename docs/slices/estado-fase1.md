@@ -5,28 +5,28 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-08.
 
 ## Dónde estamos
 
-| Slice                                       | Estado               |
-| ------------------------------------------- | -------------------- |
-| 1 — Timer sin proyecto                      | En `main`            |
-| 2 — Modo manual                             | En `main`            |
-| 2b — Reintento de «Iniciar»                 | En `main`            |
-| 3 — Corregir horas y fecha                  | En `main`            |
-| 4 — Continuar, duplicar, descartar, atajos  | En `main`            |
-| 5 — Semana y paginación                     | En `main`            |
-| 9 — Núcleo de proyectos                     | En `main`            |
-| 10 — Selector de proyecto y tarea           | En `main`            |
-| 7 — Perfil                                  | En `main`            |
-| 6 — Selección y acciones en masa            | En `main`            |
-| 7b — Perfil: nombre editable y tema         | En `main`            |
-| 8 — Calendario: lectura                     | En `main`            |
-| 8c — Calendario: escritura                  | En `main`            |
-| 8b — Calendario: arrastre                   | En `main`            |
-| 11a — Facturable                            | En `main`            |
-| 11b — Etiquetas                             | En `main`            |
-| 12 — Edición masiva de proyecto y etiquetas | En `main`            |
-| 2c — «Reintentar» en el alta manual         | En `main`            |
-| Arreglo: piso de fechas fijo (2000-01-01)   | En `main`            |
-| 13 — Planilla de horarios semanal           | Contrato en revisión |
+| Slice                                       | Estado            |
+| ------------------------------------------- | ----------------- |
+| 1 — Timer sin proyecto                      | En `main`         |
+| 2 — Modo manual                             | En `main`         |
+| 2b — Reintento de «Iniciar»                 | En `main`         |
+| 3 — Corregir horas y fecha                  | En `main`         |
+| 4 — Continuar, duplicar, descartar, atajos  | En `main`         |
+| 5 — Semana y paginación                     | En `main`         |
+| 9 — Núcleo de proyectos                     | En `main`         |
+| 10 — Selector de proyecto y tarea           | En `main`         |
+| 7 — Perfil                                  | En `main`         |
+| 6 — Selección y acciones en masa            | En `main`         |
+| 7b — Perfil: nombre editable y tema         | En `main`         |
+| 8 — Calendario: lectura                     | En `main`         |
+| 8c — Calendario: escritura                  | En `main`         |
+| 8b — Calendario: arrastre                   | En `main`         |
+| 11a — Facturable                            | En `main`         |
+| 11b — Etiquetas                             | En `main`         |
+| 12 — Edición masiva de proyecto y etiquetas | En `main`         |
+| 2c — «Reintentar» en el alta manual         | En `main`         |
+| Arreglo: piso de fechas fijo (2000-01-01)   | En `main`         |
+| 13 — Planilla de horarios semanal           | Contrato aprobado |
 
 Los slices 1 a 12 (con 2b, 2c, 7b, 8b, 8c, 11a y 11b) están en `main`: el rastreador queda
 cubierto salvo lo fuera de alcance, y el alta manual ya ofrece «Reintentar» (TT-109 dejó de ser
@@ -41,15 +41,15 @@ segundo workspace vacío del owner y `renewWorkspace` se corta.
 
 ## Lo primero de la sesión siguiente
 
-0. **Lo que sigue**: el contrato del **13** (planilla de horarios), en la rama
-   `fase1/slice-13-contrato`. P-12 quedó respondido por el usuario el 2026-10-07 y volcado en
-   `docs/parity/timesheet.md`. El `architect` escribió `fase1-slice13-planilla.md` con el corte
-   13 (grilla, escritura de celdas, quitar fila; todo el backend) / 13b (menú y detalle de la
-   celda, sin backend nuevo), y los ADR **0018** (lo que escribe una celda se calcula en
-   instantes) y **0019** (escribir una celda fija su valor, sin id del cliente; excepción a una
-   consecuencia del 0007), los dos **Propuestos**. La ronda 1 de `architecture-reviewer` pidió
-   cambios: `correcciones-fase1-slice13.md`, todos aceptados. Pasos: el `architect` aplica esa
-   tabla → ronda 2 de revisión → el usuario aprueba 0018 y 0019 → pipeline del 13.
+0. **Lo que sigue**: el **13** (planilla de horarios), en la rama `fase1/slice-13-contrato`.
+   El contrato `fase1-slice13-planilla.md` quedó **aprobado** el 2026-10-08 tras tres rondas
+   de `architecture-reviewer` (`correcciones-fase1-slice13.md`, `-ronda2.md`, `-ronda3.md`),
+   con `timesheet.md` alineado. Corte 13 (grilla, escritura de celdas, quitar fila; todo el
+   backend) / 13b (menú y detalle de la celda, sin backend nuevo). Falta que el usuario acepte
+   los ADR **0018** (lo que escribe una celda se calcula en instantes) y **0019** (escribir una
+   celda fija su valor, sin id del cliente; deja sin efecto para las celdas una consecuencia
+   del 0007), con las notas fechadas de 0005, 0006 y 0007. Después: pipeline del 13 (backend y
+   frontend en paralelo, `e2e-tester`, seis revisiones).
 1. Deuda chica sin slice:
    - un `DayCalendar` compartido entre `DateField` y `PeriodPicker`;
    - un `ClockRangeFields` común a `manual-bar.tsx`, `entry-times-editor.tsx` y el diálogo;
