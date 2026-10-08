@@ -13,7 +13,7 @@ import {
   type WorkspaceResource,
 } from "@/server/permissions";
 
-import { isPaletteKey, nextPaletteColor, type PaletteKey } from "./palette";
+import { nextPaletteColor, paletteKeyOf } from "./palette";
 import {
   projectRepository,
   type ClientRow,
@@ -63,14 +63,6 @@ function projectResource(row: ProjectWithViewer): ProjectResource {
   };
 }
 
-/** El `check` de la base no deja guardar otra cosa; si pasa, no es la paleta. */
-function paletteKeyOf(row: ProjectWithViewer): PaletteKey {
-  if (!isPaletteKey(row.color)) {
-    throw new Error(`El proyecto ${row.id} tiene un color fuera de la paleta.`);
-  }
-  return row.color;
-}
-
 function toClientView(row: ClientRow): ClientView {
   return { id: row.id, name: row.name };
 }
@@ -91,7 +83,7 @@ function toProjectView(
   return {
     id: row.id,
     name: row.name,
-    color: paletteKeyOf(row),
+    color: paletteKeyOf(row.color, row.id),
     isPublic: row.isPublic,
     canCreateTask: can(actor, "task.create", projectResource(row)),
     tasks,
@@ -499,7 +491,7 @@ export async function getProjectCatalog(actor: Actor): Promise<ProjectCatalog> {
 }
 
 function toProjectRef(row: ProjectWithViewer): ProjectRef {
-  return { id: row.id, name: row.name, color: paletteKeyOf(row) };
+  return { id: row.id, name: row.name, color: paletteKeyOf(row.color, row.id) };
 }
 
 /**

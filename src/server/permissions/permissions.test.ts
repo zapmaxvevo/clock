@@ -373,6 +373,65 @@ describe("can sobre el perfil (PF-34)", () => {
   });
 });
 
+describe("can sobre el reporte (ADR 0020, P-01, RP-07)", () => {
+  const roles = ["owner", "admin", "project_manager", "team_manager", "member"] as const;
+  const actions = ["report.view", "timeEntry.others.view"] as const;
+
+  it("deja a los cinco roles ver el reporte", () => {
+    for (const role of roles) {
+      expect([role, can(actor(role), "report.view", workspace)]).toEqual([role, true]);
+    }
+  });
+
+  it("solo owner y admin ven las horas ajenas, también si son responsables de un proyecto (P-02)", () => {
+    expect(
+      roles.map((role) => [role, can(actor(role), "timeEntry.others.view", workspace)]),
+    ).toEqual([
+      ["owner", true],
+      ["admin", true],
+      ["project_manager", false],
+      ["team_manager", false],
+      ["member", false],
+    ]);
+  });
+
+  it("niega las dos a una membresía inactive o invited, también la del owner", () => {
+    for (const status of ["inactive", "invited"] as const) {
+      for (const role of roles) {
+        for (const action of actions) {
+          expect([
+            status,
+            role,
+            action,
+            can(actor(role, { status }), action, workspace),
+          ]).toEqual([status, role, action, false]);
+        }
+      }
+    }
+  });
+
+  it("niega las dos con el workspace de otro", () => {
+    const foreign = {
+      kind: "workspace",
+      workspaceId: "22222222-2222-2222-2222-222222222222",
+    } as const;
+    for (const action of actions) {
+      expect([action, can(actor("owner"), action, foreign)]).toEqual([action, false]);
+    }
+  });
+
+  it("niegan un recurso de otra clase, también una entrada propia", () => {
+    const ownEntry = { kind: "timeEntry", workspaceId, userId: "u1" } as const;
+    const ownProfile = { kind: "profile", workspaceId, userId: "u1" } as const;
+    // @ts-expect-error: report.view pide un recurso workspace.
+    expect(can(actor("owner"), "report.view", ownEntry)).toBe(false);
+    // @ts-expect-error: timeEntry.others.view pide un recurso workspace.
+    expect(can(actor("owner"), "timeEntry.others.view", ownEntry)).toBe(false);
+    // @ts-expect-error: report.view pide un recurso workspace.
+    expect(can(actor("owner"), "report.view", ownProfile)).toBe(false);
+  });
+});
+
 describe("assertCan", () => {
   it("lanza ForbiddenError cuando can devuelve false", () => {
     expect(() => assertCan(actor("member"), "team.manage", workspace)).toThrow(

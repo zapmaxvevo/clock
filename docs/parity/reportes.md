@@ -25,6 +25,19 @@ _Actualizado el 2026-10-08, hallazgo m2 de
 las marcas y la sección 6 siguen a la sección 8. Cambian RP-01, RP-03, RP-05,
 RP-10, RP-15, RP-20, RP-21, RP-30, RP-34, RP-53, RP-54, RP-62, RP-63 y RP-65.
 
+_Actualizado el 2026-10-08, contrato de R2a
+([`nucleo-reportes-r2a-resumido.md`](../slices/nucleo-reportes-r2a-resumido.md),
+§7 «parity-analyst», con sus
+[correcciones](../slices/correcciones-nucleo-reportes-r2a-contrato.md))_: cada
+regla que el slice precisa lleva su corrección fechada, y la
+[sección 9](#9-núcleo-r2a) junta la pantalla. Cambian RP-01, RP-02, RP-03,
+RP-05, RP-06, RP-07, RP-10, RP-11, RP-12, RP-15, RP-18, RP-19, RP-20, RP-21,
+RP-22, RP-23, RP-24, RP-28, RP-29, RP-30, RP-31, RP-32, RP-33, RP-34, RP-35,
+RP-61, RP-64 y la sección 6. Con el ADR 0021 aceptado, «pendiente de
+aprobación» pasa a «aceptado el 2026-10-08». Las citas de los RP que cubre R2a
+se volvieron a confirmar ese día: RP-12 corrige de qué página sale su ejemplo y
+RP-19 pierde una cita que no está en la página.
+
 ## Fuentes y límites del relevamiento
 
 Documentación pública del centro de ayuda de Clockify y referencia pública de su
@@ -139,6 +152,12 @@ compara contra este documento y no contra Clockify. El ADR 0020 la implementa
 con `timeEntry.others.view` para `owner` y `admin`, y sin ese permiso la
 consulta lleva `user_id = <quien mira>`. `who_sees_all_entries` queda
 congelado en `admins`, sin efecto.
+_Actualizado el 2026-10-08, contrato de R2a (D-R2a-2)_: la pantalla dice
+siempre el alcance de quien mira, debajo del título: «Ves solo tus horas.» o
+«Ves las horas de todas las personas del workspace.». `project_manager`,
+`team_manager` y `member` ven la primera, aunque sean responsables de un
+proyecto. Justificación: un member que abre el enlace de un admin no confunde
+su total con el del equipo (RP-32).
 
 **RP-02 Owner y admin ven todo** — `replicar`
 Documentado: «Workspace owner and admins can see everything (time and
@@ -148,6 +167,10 @@ _No verificado_: si un admin ve en los reportes el tiempo de un proyecto privado
 del que no es miembro. La página de proyectos solo habla del responsable
 (PR-17). No importa en el núcleo: todo proyecto es público (P-17 de
 `proyectos.md`).
+_Actualizado el 2026-10-08, contrato de R2a (D-R2a-2)_: owner y admin activos
+ven «Ves las horas de todas las personas del workspace.» y una fila por cada
+persona con horas cerradas en el período, activa o no (RP-31). Hasta R8 el
+único que lo ve es el owner, porque nadie más tiene el rol de admin.
 
 **RP-03 El acceso al proyecto condiciona el reporte** — `replicar`
 Relevado en `proyectos.md` (PR-16, PR-17): en un proyecto público «Everyone can
@@ -160,6 +183,8 @@ _Actualizado el 2026-10-08, ADR 0020_: **con P-01 queda vacío y el núcleo no l
 implementa.** Quien ve horas ajenas es owner o admin, que ven todos los
 proyectos (PR-61); el resto ve solo lo propio, que se ve siempre (PR-71). Si la
 visibilidad se abre alguna vez, el filtro por `project.view` entra con ella.
+_Actualizado el 2026-10-08, contrato de R2a_: sin cambios; la consulta del
+reporte no filtra por proyecto ni consulta `project.view`.
 
 **RP-04 El ajuste «Regular users can see»** — `fuera de alcance`
 Documentado, de plan pago, con tres valores: «All tracked time and expenses»,
@@ -179,6 +204,9 @@ _Actualizado el 2026-10-08, decisión del usuario (P-02)_: justificación: no
 hay excepción para el responsable. Un responsable de proyecto que no es owner
 ni admin ve solo sus horas, por P-01; `project_manager` decide como `member` y
 la marca de responsable de PR-19 no abre nada en los reportes (ADR 0020).
+_Actualizado el 2026-10-08, contrato de R2a_: un `project_manager` responsable
+de un proyecto donde otras personas tienen horas ve solo su fila y su total, en
+las dos agrupaciones.
 
 **RP-06 El team manager ve el tiempo de su equipo** — `fuera de alcance`
 Documentado, de plan pago: «This role can view all tracked time of their team
@@ -187,11 +215,20 @@ chart». Justificación: el esquema tiene el rol `team_manager` pero no tiene a
 quién maneja cada uno —no hay tabla de equipo ni grupos (PR-20)—, y sin eso
 «su equipo» no se puede calcular. Hasta que exista, en reportes decide como
 `member`, igual que en proyectos (PR-57). P-03.
+_Actualizado el 2026-10-08, contrato de R2a_: `team_manager` ve «Ves solo tus
+horas.» y solo lo propio, como `member`.
 
 **RP-07 Una membresía que no está activa no ve reportes** — `replicar`
 Documentado: la persona desactivada «won’t appear on the Team page anymore» y
 pierde el acceso al workspace. `can()` ya corta por `status` antes que por rol
 (PR-60); la acción nueva de reportes lo hereda sin cambios.
+_Actualizado el 2026-10-08, contrato de R2a (D-R2a-2)_: la acción es
+`report.view`. «Reportes» está en la navegación para todos; sin `report.view`
+—membresía `inactive`, o `invited`, que tiene sesión— la pantalla muestra el
+título «Reporte resumido» y el aviso «Tu acceso al workspace está
+desactivado.» con «No podés ver reportes.», sin barra, totales ni tabla, y no
+se lee ninguna entrada. No es un error de lectura: no ofrece «Reintentar». El
+título del aviso es el mismo del resto de la aplicación.
 
 **RP-08 Esconder páginas a los members** — `fuera de alcance`
 Documentado: se puede «hide Projects, Team, and reports pages» del menú de los
@@ -214,6 +251,10 @@ Documentado: «It takes all the time entries in your account and groups them by
 project, client, user, groups, tag, or date.» «Todas» quiere decir las que
 RP-01 y RP-02 dejan ver: las de todas las personas para owner y admin, solo las
 propias para el resto.
+_Actualizado el 2026-10-08, contrato de R2a_: la pantalla es `/reportes`, con
+el título «Reporte resumido», y su entrada «Reportes» va en la navegación entre
+«Planilla» y «Proyectos». Una sola lectura por carga, con el alcance de quien
+mira dentro de la consulta.
 
 **RP-11 Dimensiones de agrupación** — `adaptar`
 Documentado: proyecto, cliente, persona, grupo, etiqueta y fecha. Acá:
@@ -223,18 +264,31 @@ _No verificado_: si la interfaz ofrece además tarea, descripción, mes, semana 
 año. La página no los nombra y en la API `groups` es una lista de cadenas sin
 enumerar. Tarea es la candidata obvia, porque las entradas la tienen; entra si
 P-05 la confirma.
+_Actualizado el 2026-10-08, contrato de R2a (D-R2a-3)_: un nivel, por persona
+o por proyecto, con «Agrupar por» y dos enlaces, «Persona» y «Proyecto»; el
+elegido queda marcado. En la URL, `agrupar=persona` o `agrupar=proyecto`.
+**Sin parámetro, por persona**, para los dos alcances: a un member le muestra
+una fila, la suya. Justificación: es la pregunta que motivó el núcleo («cuánto
+cargó cada uno») y un enlace sin parámetro da la misma vista a cualquiera
+(RP-32). La agrupación por omisión de Clockify sigue _no verificada_ (P-05).
+Cliente y fecha llegan con R2b; tarea, que el usuario sumó con la propuesta del
+núcleo (mapa §5), y etiqueta, con R3.
 
 **RP-12 Subagrupación encadenada** — `replicar`
-Documentado: «You can further breakdown data by sub groups.», «Group by client
--> user to see who worked for what client.» y, en la página de filtros,
-«Reports will be categorized in sequence based on your chosen Group by
-options». El ejemplo más largo de la página tiene tres niveles
-(«group -> user -> date»).
+Documentado: «You can further breakdown data by sub groups.» y los ejemplos
+«Group by client -> user to see who worked for what client» y «Group by group
+-> user -> date to see who worked when», el más largo con tres niveles; en la
+página de filtros, «Reports will be categorized in sequence based on your
+chosen Group by options…».
 _No verificado_: el tope de niveles, si un nivel puede ser «ninguno», y si
 una dimensión se puede repetir. Acá, hasta tres niveles sin repetir, que es lo
 que muestran los ejemplos. El orden de las filas dentro de un grupo es
 _no verificado_ (la API tiene `sortColumn` con `GROUP`, `DURATION`, …); acá, por
 duración descendente.
+_Actualizado el 2026-10-08, contrato de R2a (D-R2a-3)_: sin subgrupos hasta R3.
+El orden de los grupos es por duración descendente; con la misma duración, por
+nombre (`compareNames`, que desempata por id); «Sin proyecto» va después de los
+proyectos con su misma duración.
 
 **RP-13 Expandir un grupo** — `replicar`
 Documentado: «You can click on the number next to the group to expand it and
@@ -252,12 +306,12 @@ _No verificado_: si con rangos largos las barras pasan a semanas o meses (la API
 tiene `zoomLevel` con `WEEK` y `MONTH`).
 _Actualizado el 2026-10-08_: sin el tope de 31 días (P-06), el rango puede
 llegar a un año y un gráfico por día deja de leerse. El
-[ADR 0021](../adr/0021-el-reporte-agrega-en-la-base.md) propone que la
+[ADR 0021](../adr/0021-el-reporte-agrega-en-la-base.md) fija que la
 granularidad salga del largo del rango: por día hasta 31 días, por semana hasta
 26 semanas, por mes más allá. Justificación: hasta 31 días es exactamente lo
 relevado; lo demás es nuestro, porque Clockify Free nunca muestra más de 31
-días. **Pendiente de aprobación del ADR 0021**, y el contrato del slice del
-gráfico puede mover los umbrales.
+días. **Aceptado el 2026-10-08 con el ADR 0021**; el contrato del slice del
+gráfico puede mover los umbrales. R2a no tiene gráfico: llega con R5.
 
 **RP-16 Barras partidas por facturable o por proyecto** — `adaptar`
 Documentado: «It also shows how much of it is billable (dark green) vs
@@ -280,14 +334,30 @@ Justificación: es lo que el gráfico de RP-16 ya parte y no requiere nada pago.
 Una entrada con varias etiquetas, agrupando por etiqueta, suma en cada una:
 la suma de los grupos de etiqueta puede superar el total. _No verificado_ en
 Clockify; P-05.
+_Actualizado el 2026-10-08, contrato de R2a (§5.3; R6 de su revisión)_: la
+cabecera muestra «Total» y «Facturable», y cada fila su «Duración», sin importe
+ni porcentaje. Con un solo nivel, cada entrada está en exactamente un grupo y
+la suma de los grupos es el total. **Esa igualdad vale en segundos; en pantalla
+cada cifra se trunca al minuto por separado**, la de cada fila y la del total,
+que sale de los segundos y no de sumar lo que muestran las filas. Por eso la
+suma de lo que muestran las filas queda en el total o debajo: dos filas de
+90 s muestran «0:01» cada una y el total, «0:03». Es la misma regla que la
+planilla. La duración de cada entrada se trunca a segundos enteros antes de
+sumar, igual que en la planilla. La suma por etiqueta llega con R3.
 
 **RP-19 Formato de duración** — `adaptar`
 Documentado: el formato es del workspace («Find duration format in the General
-tab»), «Here's how duration formats will appear in reports and other places in
-Clockify depending on your settings.», y se cambia «on any plan, including the
-free plan»; el decimal es pago. Acá vale lo que diga PF-02 y PF-20 de
-`perfil.md`: hoy `formatDuration` fija `h:mm`, y el reporte usa la misma
-función que el resto. Justificación: el decimal es pago (P-04).
+tab») y «Here’s how duration formats will appear in reports and other places in
+Clockify depending on your settings.»; el decimal es pago («Decimal format is a
+paid feature you can enable by upgrading your workspace to any of our paid
+plans.»). Acá vale lo que diga PF-02 y PF-20 de `perfil.md`: hoy
+`formatDuration` fija `h:mm`, y el reporte usa la misma función que el resto.
+Justificación: el decimal es pago (P-04).
+_Actualizado el 2026-10-08_: _no verificado_ que se cambie «on any plan,
+including the free plan»: al reconfirmarla, esa cadena no está en la página
+(NOT FOUND). No cambia nada acá, porque el formato no se elige.
+_Actualizado el 2026-10-08, contrato de R2a_: cada cifra, las filas y los dos
+totales, en `h:mm`, truncada al minuto (RP-18); el vacío muestra «0:00».
 
 ### 2.2 Rango de fechas
 
@@ -297,12 +367,41 @@ calendario para elegir desde y hasta, y «click the arrows to easily navigate
 between previous and upcoming periods». La API lista los atajos `TODAY`,
 `YESTERDAY`, `THIS_WEEK`, `LAST_WEEK`, `PAST_TWO_WEEKS`, `THIS_MONTH`,
 `LAST_MONTH`, `THIS_YEAR` y `LAST_YEAR`, más `ABSOLUTE`.
-Acá: Hoy, Ayer, Esta semana, Semana pasada, Últimas dos semanas, Este mes, Mes
+Acá: Hoy, Ayer, Esta semana, Semana anterior, Últimas dos semanas, Este mes, Mes
 pasado, Este año, Año pasado y un rango libre, con flechas que mueven el
 período entero. Justificación: la lista sale de la API, no de la pantalla, y
 Este año y Año pasado entran porque no hay tope de 31 días (P-06); caben en el
-tope de 366 días que propone el ADR 0021, **pendiente de aprobación** (RP-21).
+tope de 366 días que fija el ADR 0021, aceptado el 2026-10-08 (RP-21).
 _No verificado_: el rango por defecto al entrar (P-05). Acá, «Esta semana».
+_Actualizado el 2026-10-08, contrato de R2a (D-R2a-4)_: R2a trae «Esta semana»,
+las flechas y el rango libre; los demás atajos llegan con R2b. «Esta semana» al
+entrar lo resolvió el usuario con la propuesta del núcleo (mapa §5).
+
+- **La URL** lleva `desde` y `hasta`, claves de día con los dos extremos
+  incluidos: `/reportes?desde=2026-10-05&hasta=2026-10-11&agrupar=proyecto`.
+  Sin un rango válido, «Esta semana» (RP-32).
+- **Las flechas**, «Período anterior» y «Período siguiente», mueven el período
+  entero: tantos días como tiene. Hasta que R2b traiga los atajos de mes, un
+  período de un mes se mueve 30 o 31 días. La flecha cuyo destino saldría de los
+  años válidos (del 0100-01-01 al 9999-12-31, como CAL-17) no se dibuja.
+- **«Esta semana»** es un enlace que aparece solo cuando el período no es la
+  semana actual, como en la planilla.
+- **El rango libre** es un calendario de rango en un popover que abre el botón
+  del período (nombre accesible «Elegir período: {período}»), con «Aplicar».
+  Sobre un rango ya elegido, el primer clic arranca uno nuevo con ese día como
+  inicio y el segundo lo cierra; si el segundo es anterior al primero, los
+  extremos se invierten. Con el inicio elegido y sin fin, «Aplicar» toma ese
+  solo día. Sobre un período de un día, un clic en ese día deja la selección
+  vacía y «Aplicar» no hace nada. Esc cierra sin navegar y devuelve el foco al
+  botón. Justificación: es el mismo botón con popover que el selector de
+  período del calendario y la planilla, y dos campos de fecha dentro de un
+  popover serían popovers anidados.
+- **El rótulo**: si el período es una semana que empieza en el primer día de
+  quien mira, «Esta semana», «Semana anterior» o «28/09 – 04/10»; si no,
+  «05/10 – 18/10», con el año en los dos extremos si alguno no es del año de hoy
+  («29/12/2025 – 04/01/2026»), y un solo día sin guion («05/10»).
+- **La agrupación se conserva** con las flechas, el selector y «Esta semana»;
+  el rango se conserva al cambiar la agrupación.
 
 **RP-21 Sin el tope de 31 días del plan Free** — `adaptar`
 Documentado: «On the Free Plan, generating reports is limited to a maximum date
@@ -310,9 +409,14 @@ range of 31 days per report.» Es un límite comercial, no un comportamiento del
 reporte.
 _Actualizado el 2026-10-08, decisión del usuario (P-06)_: justificación: no se
 replica el tope comercial. Si el rendimiento pide un tope, lo fija `architect`:
-el ADR 0021 propone **366 días**, que cubren «Este año» y «Año pasado» y acotan
-el peor pedido, y se revisa con mediciones. Es una decisión del ADR, no del
-usuario, y está **pendiente de aprobación**. El mensaje es el de RP-34.
+el ADR 0021 fija **366 días**, que cubren «Este año» y «Año pasado» y acotan el
+peor pedido, y se revisa con mediciones. Es una decisión del ADR, no del
+usuario, **aceptada el 2026-10-08**. El mensaje es el de RP-34.
+_Actualizado el 2026-10-08, contrato de R2a_: los 366 días cuentan los dos
+extremos: «Aplicar» acepta 366 y rechaza 367 con el mensaje de RP-34. En la
+URL, un rango más largo se descarta sin aviso (RP-32). Si la medición de
+volumen del slice deja una consulta fuera de presupuesto, el número vuelve a
+`architect` y, si cambia, al usuario.
 
 **RP-22 Zona horaria de quien mira** — `replicar`
 Documentado: «When you later view the time in reports, the time zone from your
@@ -320,17 +424,32 @@ Profile Settings is used.» Los bordes de cada día y del rango se calculan en l
 zona horaria del perfil de quien mira, no en la de quien cargó la entrada ni en
 la del workspace (PF-05 de `perfil.md`). Dos personas en zonas distintas pueden
 ver el mismo reporte con totales por día distintos, y eso es correcto.
+_Actualizado el 2026-10-08, contrato de R2a (D-R2a-5)_: la pantalla lo dice
+debajo del título: «Los días se cortan en tu zona horaria:
+America/Argentina/Buenos_Aires.», con el valor tal como está en el perfil y
+**sin desplazamiento**. Justificación de la línea, que Clockify no documenta:
+dos personas que comparan totales necesitan saber dónde se cortó el día; sin
+desplazamiento porque, en un período que cruza un cambio de horario, uno solo
+sería falso en una parte. Un día que falta entero en la zona (en `Pacific/Apia`,
+el 2011-12-30) da cero, sin error.
 
 **RP-23 Entrada que cruza la medianoche** — `adaptar`
 _No verificado_ en Clockify. Acá, la misma regla que TT-95 y TT-96: la entrada
 cuenta entera en el día y en la semana de su `start`, en la zona de quien mira, y
 entra en el rango si su `start` cae dentro. Justificación: un reporte que parta
 entradas no sumaría lo mismo que el rastreador y el timesheet.
+_Actualizado el 2026-10-08, contrato de R2a_: la entrada que empieza el último
+día del período y termina el siguiente cuenta entera; la que empieza el día
+anterior al período y termina adentro no cuenta.
 
 **RP-24 Primer día de la semana** — `adaptar`
 _No verificado_: la API tiene `weekStart` en el filtro; la interfaz no está
-documentada. Acá, «Esta semana», «Semana pasada» y la agrupación por fecha usan
+documentada. Acá, «Esta semana», «Semana anterior» y la agrupación por fecha usan
 el primer día de la membresía de quien mira (PF-01). P-05.
+_Actualizado el 2026-10-08, contrato de R2a_: en R2a, «Esta semana» son los
+siete días desde el primer día de la semana de quien mira (con domingo, empieza
+el domingo), y el rótulo de semana de RP-20 sigue el mismo primer día. «Semana
+pasada» y la agrupación por fecha llegan con R2b.
 
 ### 2.3 Filtros
 
@@ -363,6 +482,11 @@ Cuentan en el total y, agrupando por proyecto, forman su propio grupo «Sin
 proyecto», en línea con TT-50; agrupando por cliente, las entradas sin
 proyecto y las de proyectos sin cliente van en «Sin cliente» (PR-14). Lo mismo
 con «Sin tarea» y «Sin etiqueta». _No verificado_: el rótulo de Clockify. P-05.
+_Actualizado el 2026-10-08, contrato de R2a_: agrupando por proyecto, «Sin
+proyecto» va en gris, sin punto de color ni cliente, con el mismo rótulo que el
+resto de la aplicación; con la misma duración, va después de los proyectos
+(RP-12). El rótulo lo resolvió el usuario con la propuesta del núcleo (mapa
+§5). «Sin cliente» llega con R2b; «Sin tarea» y «Sin etiqueta», con R3.
 
 **RP-29 Proyectos archivados, tareas hechas y proyectos borrados** — `replicar`
 Relevado en `proyectos.md`: «Project's time entries will still be shown in
@@ -371,6 +495,10 @@ reports» (PR-22), «Time entries for done tasks will still appear in reports»
 filtra por estado del proyecto ni de la tarea: suma todo. El filtro de proyecto
 ofrece también los archivados (la API tiene `archived`); _no verificado_ cómo los
 muestra la interfaz.
+_Actualizado el 2026-10-08, contrato de R2a_: un proyecto archivado y una tarea
+hecha cuentan. La fila de un proyecto archivado lleva su nombre, su color y su
+cliente como cualquier otra, sin marca de archivado; _no verificado_ si Clockify
+lo marca en el resumido.
 
 **RP-30 El timer en curso no se muestra ni se suma** — `adaptar`
 _No verificado_: si Clockify suma un timer corriendo y hasta qué momento. Acá el
@@ -381,9 +509,16 @@ gráfico, y **tampoco hay un aviso** de que existe. Justificación: recargar no
 cambia un total por el paso del tiempo, y el rastreador ya muestra el timer a
 quien lo tiene corriendo. Cuando el timer se detiene, la entrada empieza a
 contar como cualquier otra.
+_Actualizado el 2026-10-08, contrato de R2a_: sin cambios; la consulta cuenta
+solo las entradas con fin y la pantalla no dice nada del timer.
 
 **RP-31 Entradas de personas inactivas** — `replicar`
 Ver RP-61: cuentan en todos los totales y aparecen agrupando por persona.
+_Actualizado el 2026-10-08, contrato de R2a_: agrupando por persona, la fila de
+una persona cuya membresía no está activa lleva el nombre seguido de
+«(inactiva)» en gris. El nombre es el que la persona editó en su perfil o, sin
+él, el de su cuenta. Dos personas con el mismo nombre se ven iguales: la fila no
+muestra el correo.
 
 ### 2.5 Recarga, vacíos y errores
 
@@ -394,6 +529,25 @@ datos que esa otra persona puede ver. Sin estado en el servidor.
 Justificación: Clockify no documenta qué pasa al recargar (P-05), y el
 servidor no guarda estado en memoria. Un parámetro inválido o desconocido se
 descarta y se usa el valor por defecto, sin error.
+_Actualizado el 2026-10-08, contrato de R2a (D-R2a-2, D-R2a-4)_: la URL lleva
+siempre `desde`, `hasta` y `agrupar`.
+
+- **Un rango inválido se descarta entero, los dos extremos, sin aviso**, y se
+  muestra «Esta semana». Inválido es: una clave que no es un día, un día cuyo
+  siguiente sale de los años válidos (del 0100-01-01 al 9999-12-31, como
+  CAL-17), `hasta` anterior a `desde`, más de
+  366 días, uno solo de los dos parámetros o un parámetro repetido.
+- **La agrupación se valida por su lado**: un `agrupar` válido sobrevive a un
+  rango inválido, y un rango válido a un `agrupar` inválido, que se muestra por
+  persona.
+- **Cualquier otra clave se ignora**, también una que nombre personas
+  (`personas=…`), hasta que R4 traiga el filtro.
+- **Un member que abre el enlace de un admin** ve el mismo rango y la misma
+  agrupación con sus propias horas, y la línea del alcance (RP-01) se lo dice.
+  Es la decisión del usuario del mapa §5; R4 la hereda para el parámetro de
+  personas.
+- Quien edita la URL a mano y la rompe ve «Esta semana» sin saber por qué: es
+  deuda conocida del contrato.
 
 **RP-33 Vacíos** — `adaptar`
 Sin entradas en el rango: «No hay horas en este período», con los gráficos
@@ -401,24 +555,51 @@ ocultos y el total en cero. Con filtros que no dejan nada: «Ninguna entrada
 coincide con los filtros», con la acción de quitar los filtros. Justificación:
 copia propia; distinguir los dos casos evita que alguien crea que no hay datos
 cuando el filtro los esconde, como PR-89.
+_Actualizado el 2026-10-08, contrato de R2a_: R2a trae solo el primer vacío:
+una fila de la tabla que ocupa las dos columnas con «No hay horas en este
+período», y «Total» y «Facturable» en «0:00». El segundo llega con los filtros
+de R4.
 
 **RP-34 Errores de validación** — `adaptar`
 
-| Regla                                      | Mensaje                                                 |
-| ------------------------------------------ | ------------------------------------------------------- |
-| El fin del rango es anterior al inicio     | «La fecha de fin no puede ser anterior a la de inicio.» |
-| El rango supera el tope (RP-21)            | «Elegí un período de hasta 366 días.»                   |
-| Sin permiso para ver horas de otra persona | «No tenés permiso para hacer esto.» (TT-79)             |
+| Regla                                                                   | Mensaje                                                 |
+| ----------------------------------------------------------------------- | ------------------------------------------------------- |
+| El fin del rango es anterior al inicio                                  | «La fecha de fin no puede ser anterior a la de inicio.» |
+| El rango supera el tope (RP-21)                                         | «Elegí un período de hasta 366 días.»                   |
+| Sin permiso para ver horas de otra persona                              | «No tenés permiso para hacer esto.» (TT-79)             |
+| La fecha no existe o sale de los años válidos (0100-01-01 a 9999-12-31) | «Fecha inválida.»                                       |
 
 Justificación: copia propia, con la regla de una redacción por causa. Un filtro
 que nombra una persona, un proyecto o una etiqueta que ya no existe no es un
 error: se ignora. El número del segundo mensaje sigue al tope del ADR 0021,
-pendiente de aprobación.
+aceptado el 2026-10-08.
+_Actualizado el 2026-10-08, contrato de R2a (D-R2a-2, D-R2a-4)_: **los mensajes
+son del selector de período**: «Aplicar» valida con la misma regla que la URL
+y, si falla, muestra el mensaje dentro del popover y no navega. En la URL no hay
+mensajes: un rango inválido se descarta (RP-32). Fila por fila:
+
+- **La primera no la produce la interfaz**: con el calendario de rango, un fin
+  anterior al inicio invierte los extremos (RP-20). Queda en la regla.
+- **La segunda se ve** al elegir 367 días o más.
+- **La tercera no se usa**: por la decisión del usuario (mapa §5), un member con
+  un enlace que nombra a otras personas ve lo propio, y la línea del alcance
+  (RP-01) reemplaza el mensaje.
+- **La cuarta es nueva de R2a** y, en la práctica, la interfaz tampoco la
+  produce: el calendario solo elige días que existen, y salir de los años válidos
+  no se alcanza navegando.
+  _Corregido el 2026-10-08, revisión de paridad de R2a (P1)_: decía «años de
+  cuatro cifras»; el piso real es el 0100-01-01, porque `parseDayKey` toma los
+  años 0 a 99 como 1900 a 1999, la misma convención que CAL-17. Las reglas se aplican en este orden:
+  la fecha, el fin anterior al inicio, el largo.
 
 **RP-35 Falla al cargar** — `adaptar`
 El reporte se arma en el servidor; si la lectura falla, la pantalla muestra
 «No se pudo cargar el reporte.» con «Reintentar», sin perder el rango ni los
 filtros, que están en la URL.
+_Actualizado el 2026-10-08, contrato de R2a_: como la planilla, con el título
+«Reporte resumido» arriba. Mientras carga, la pantalla muestra un esqueleto
+anunciado como «Cargando el reporte». Una membresía que no está activa no cae
+acá: es RP-07.
 
 ### 2.6 Lo que no entra del resumido
 
@@ -555,6 +736,10 @@ Consecuencia de modelo: el reporte lee `time_entry` por `workspace_id`, y el
 nombre de la persona sale de `user`; **no puede exigir una membresía activa**,
 porque esconder las horas de una persona inactiva cambiaría los totales del
 pasado.
+_Actualizado el 2026-10-08, contrato de R2a_: la consulta no pone ninguna
+condición sobre el estado de la membresía, del proyecto ni de la tarea, y la
+fila de la persona lleva «(inactiva)» (RP-31). El filtro por persona inactiva
+(RP-62) llega con R4.
 
 **RP-62 Filtrar por una persona inactiva** — `adaptar`
 Documentado que en Clockify no se puede (RP-61), aunque la API tiene `status`
@@ -576,6 +761,10 @@ contar en el reporte (RP-30).
 La API distingue `PENDING`. Una membresía `invited` no tiene entradas y no
 aparece en el filtro de personas ni como grupo vacío. Justificación: no hay
 nada que mostrar; RP-47 —mostrar personas sin horas— la excluye también.
+_Actualizado el 2026-10-08, contrato de R2a_: una membresía `invited` no
+aparece como fila, porque no tiene entradas y R2a no muestra personas sin horas
+(llegan con R9). Si entra a `/reportes`, ve el aviso de RP-07: no tiene
+`report.view`.
 
 **RP-65 Borrar una persona** — `adaptar`
 _No verificado_: la misma página dice «Deleted user is permanently removed from
@@ -613,8 +802,8 @@ sin tocar el modelo.
 - Equipo: RP-60 y RP-61 como regla de lectura, RP-64, RP-65 como regla de la
   base.
 
-**Pendiente de aprobación del ADR 0021:** el tope de 366 días de RP-20, RP-21 y
-RP-34, y la granularidad por semana y por mes de RP-15.
+**Aceptado el 2026-10-08 con el ADR 0021:** el tope de 366 días de RP-20, RP-21
+y RP-34, y la granularidad por semana y por mes de RP-15.
 
 **Vacío con P-01, no se implementa:** RP-03 y RP-05. Si la visibilidad se abre
 alguna vez, entran con ella.
@@ -635,7 +824,7 @@ RP-66.
 
 _Actualizado el 2026-10-08_: P-01, P-02 y P-06 a P-10 están decididos en la
 sección 8; las filas se dejan porque el ADR 0020 y el mapa las citan. Siguen
-abiertos P-03, P-04 y P-05.
+abiertos P-03, P-04 y lo que queda de P-05.
 
 | ID   | Punto                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -662,3 +851,91 @@ abiertos P-03, P-04 y P-05.
 - **P-08**: las personas inactivas se pueden filtrar, separadas y tachadas (RP-62).
 - **P-09**: a una persona con horas no se la borra, solo se desactiva (RP-65).
 - **P-10**: exportación a PDF, CSV y Excel (RP-53, RP-54).
+
+Ese día, con los ADR 0020 y 0021 aceptados (mapa del núcleo, §5), además:
+
+- **P-05, en parte**: se resuelve con la propuesta del núcleo la tarea como dimensión (RP-11),
+  «Esta semana» por defecto (RP-20) y los rótulos «Sin …» (RP-28). El resto de P-05 sigue
+  para la sesión en el workspace.
+- **Admins antes de la fase 2**: el slice R8 (cambiar el rol entre member y admin), después de
+  R2a. Desactivar sigue por el procedimiento SQL del mapa.
+- **Un enlace que nombra a otras personas**, abierto por un member, muestra lo propio: el
+  parámetro se descarta (RP-32); la tercera fila de RP-34 no se usa.
+- **«Mostrar personas sin horas»** (RP-47) entra como R9, después de R4.
+
+Decisiones del team-lead sobre R2a (2026-10-08): el atajo de RP-20 se rotula «Semana anterior»,
+como `weekKeyLabel` en el resto de la aplicación, y no «Semana pasada»; «Fecha inválida.» queda
+como lo fija el esquema del contrato; la fila de un proyecto archivado va sin marca, porque el
+reporte suma todo sin mirar el estado (RP-29).
+
+## 9. Núcleo, R2a
+
+_2026-10-08._ Contrato:
+[`nucleo-reportes-r2a-resumido.md`](../slices/nucleo-reportes-r2a-resumido.md),
+aprobado con las
+[correcciones de arquitectura](../slices/correcciones-nucleo-reportes-r2a-contrato.md).
+Es el primer slice del núcleo con pantalla. La regla de cada comportamiento
+está en la corrección fechada de su RP; esta sección junta la pantalla para que
+el reviewer la recorra de una vez.
+
+**Cubre:** RP-01, RP-02, RP-07, RP-10, RP-11 (un nivel, persona o proyecto),
+RP-12 (solo el orden), RP-18, RP-19, RP-20 («Esta semana», flechas y rango
+libre), RP-21, RP-22, RP-23, RP-24 (solo «Esta semana»), RP-28 (solo «Sin
+proyecto»), RP-29, RP-30, RP-31, RP-32, RP-33 (solo el primer vacío), RP-34,
+RP-35, RP-61 y RP-64. RP-03, RP-05 y RP-06 quedan como decisión y no
+implementan nada.
+
+**Queda para después:** los demás atajos, cliente y fecha (R2b); subgrupos,
+tarea y etiqueta (R3); filtros y el segundo vacío de RP-33 (R4); gráfico (R5);
+exportación (R6, R7); cambiar el rol (R8); personas sin horas (R9). No entran
+RP-14, RP-36, RP-09 ni el importe y el porcentaje por grupo.
+
+### 9.1 La pantalla `/reportes`
+
+«Reportes» en la navegación, entre «Planilla» y «Proyectos», para los cinco
+roles. De arriba abajo:
+
+| Parte   | Contenido                                                                                                                                                                                  |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Título  | «Reporte resumido»                                                                                                                                                                         |
+| Barra   | «Período anterior» y «Período siguiente»; el botón del período, «Elegir período: {período}»; «Esta semana», si el período no es la semana actual; «Agrupar por» con «Persona» y «Proyecto» |
+| Alcance | «Ves solo tus horas.» o «Ves las horas de todas las personas del workspace.» (RP-01, RP-02)                                                                                                |
+| Zona    | «Los días se cortan en tu zona horaria: {zona}.» (RP-22)                                                                                                                                   |
+| Totales | «Total» y «Facturable», en `h:mm` truncado al minuto (RP-18, RP-19)                                                                                                                        |
+| Tabla   | Columnas «Persona» o «Proyecto», y «Duración». Persona: el nombre y, si no está activa, «(inactiva)». Proyecto: el punto de color, el nombre y el cliente en gris; «Sin proyecto» en gris  |
+
+### 9.2 Qué puede hacer cada rol
+
+| Membresía                                           | Ve                                                       | Acciones                                                          |
+| --------------------------------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------- |
+| `owner`, `admin` activas                            | Todas las personas del workspace con horas, activas o no | Cambiar el período y la agrupación; recargar; compartir el enlace |
+| `project_manager`, `team_manager`, `member` activas | Solo lo propio, aunque sea responsable de un proyecto    | Las mismas                                                        |
+| Cualquiera no activa (`inactive`, `invited`)        | El aviso de RP-07                                        | Ninguna                                                           |
+
+### 9.3 Estados
+
+| Estado            | Qué se ve                                                                                        |
+| ----------------- | ------------------------------------------------------------------------------------------------ |
+| Cargando          | Un esqueleto anunciado como «Cargando el reporte» (RP-35)                                        |
+| Vacío             | La barra, las dos líneas, los totales en «0:00» y la fila «No hay horas en este período» (RP-33) |
+| Error de lectura  | El título y «No se pudo cargar el reporte.» con «Reintentar» (RP-35)                             |
+| Sin `report.view` | El título, «Tu acceso al workspace está desactivado.» y «No podés ver reportes.» (RP-07)         |
+| Al recargar       | La misma vista: todo está en la URL; lo inválido se descarta sin aviso (RP-32)                   |
+
+### 9.4 Lo que la interfaz no produce
+
+- **El mensaje del fin anterior al inicio** (RP-34): el calendario de rango
+  invierte los extremos. Queda en la regla que comparten la URL y el selector.
+- **«Fecha inválida.»** (RP-34): el calendario solo elige días que existen.
+- **«No tenés permiso para hacer esto.»** (RP-34): lo reemplaza la línea del
+  alcance.
+- **Un aviso del timer en curso** (RP-30), por P-07.
+
+### 9.5 Divergencias visibles que el reviewer no debe marcar como errores
+
+- La suma de lo que muestran las filas puede quedar unos minutos debajo del
+  total (RP-18).
+- Un rango inválido en la URL se descarta sin aviso (RP-32).
+- Dos personas con el mismo nombre se ven iguales (RP-31).
+- Las flechas mueven por días, también un período de un mes (RP-20).
+- Hasta R8, solo el owner ve el reporte de equipo (RP-02).

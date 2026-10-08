@@ -590,11 +590,8 @@ describe("el nombre y el tema guardados (criterio 2: PF-08, PF-23, PF-37)", () =
   });
 
   it("el nombre que se muestra es el editado, o el de la cuenta si no hay", () => {
-    const preferences = PREFERENCE_DEFAULTS;
-    expect(displayNameOf({ preferences, displayName: null }, "De Google")).toBe(
-      "De Google",
-    );
-    expect(displayNameOf({ preferences, displayName: "Ana" }, "De Google")).toBe("Ana");
+    expect(displayNameOf({ displayName: null }, "De Google")).toBe("De Google");
+    expect(displayNameOf({ displayName: "Ana" }, "De Google")).toBe("Ana");
   });
 });
 

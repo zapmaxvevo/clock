@@ -31,8 +31,7 @@ export const profileLabels = {
   durationFormat: "Formato de duración",
   durationValue: "Compacto (h:mm)",
   durationNote: "Lo define el workspace.",
-  /** PF-46: el título es el de TT-92; la línea, propia del perfil. */
-  inactiveTitle: "Tu acceso al workspace está desactivado.",
+  /** PF-46: el cuerpo del aviso de membresía desactivada, propio del perfil. */
   inactiveMessage:
     "Podés ver tu perfil, pero no cambiarlo. Pedile a quien administra el workspace que vuelva a activar tu membresía.",
 } as const;

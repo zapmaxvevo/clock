@@ -1,3 +1,4 @@
+import { InactiveMembershipNotice } from "@/components/inactive-membership-notice";
 import { DisplayFormatsProvider } from "@/components/layout/display-formats";
 import { TrackingCatalogProvider } from "@/modules/project/components/tracking-catalog";
 import { getTrackingCatalog } from "@/modules/project/service";
@@ -5,7 +6,7 @@ import { getTrackerState, type TrackerWorkspace } from "@/modules/time-entry/ser
 import type { Actor } from "@/server/permissions";
 
 import { EntryList } from "./entry-list";
-import { InactiveMembershipNotice } from "./inactive-membership-notice";
+import { trackerLabels } from "./labels";
 import { ReachWeekProvider } from "./reach-week";
 import { TrackerBar } from "./tracker-bar";
 import { TrackerEmpty } from "./tracker-empty";
@@ -41,7 +42,9 @@ export async function TrackerScreen({
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
       <h1 className="sr-only">Rastreador de tiempo</h1>
 
-      {!state.canTrack && <InactiveMembershipNotice />}
+      {!state.canTrack && (
+        <InactiveMembershipNotice body={trackerLabels.inactiveMessage} />
+      )}
 
       {/* Los formatos de esta misma lectura, no los del layout: una navegación
           del cliente puede conservar el layout con los formatos de antes. */}

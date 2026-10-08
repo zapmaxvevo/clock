@@ -37,7 +37,7 @@ import {
   type TimeSettings,
   type WeekStart,
 } from "@/server/time";
-import { isPaletteKey } from "@/modules/project/palette";
+import { paletteKeyOf } from "@/modules/project/palette";
 import {
   projectMessages,
   type ProjectRef,
@@ -179,12 +179,12 @@ function weekOf(instant: Date, workspace: TrackerWorkspace): string {
   return weekStartKey(dayKey(instant, workspace.timezone), workspace.weekStart);
 }
 
-/** El `check` de la base no deja guardar otra cosa; si pasa, no es la paleta. */
 function projectRefOf(project: NonNullable<EntryRefs["project"]>): ProjectRef {
-  if (!isPaletteKey(project.color)) {
-    throw new Error(`El proyecto ${project.id} tiene un color fuera de la paleta.`);
-  }
-  return { id: project.id, name: project.name, color: project.color };
+  return {
+    id: project.id,
+    name: project.name,
+    color: paletteKeyOf(project.color, project.id),
+  };
 }
 
 /** Los ids de las etiquetas de la fila, en el orden de la vista (`sortedByName`). */

@@ -1,7 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
 
 import { PERSON_TIMEZONE } from "./calendar-page";
-import { archiveProject, seedEntries, seedProject, type SeedEntry } from "./database";
+import { archiveProject, seedPersonEntries, seedProject } from "./database";
 import { addDays, dayKeyOf, todayIn, weekStartOf, type CivilDay } from "./days";
 import {
   loseActionResponses,
@@ -89,22 +89,6 @@ async function seedNamedProject(
   const name = `${label} ${suffix}`;
   await seedProject({ name, tasks });
   return { name, suffix };
-}
-
-/**
- * Siembra por base las entradas de un recorrido que no prueba cómo se
- * cargan, con las horas en la zona de la persona. La persona ya tiene que
- * haber entrado a una pantalla, que es lo que le crea la membresía.
- */
-async function seedPersonEntries(
-  email: string,
-  entries: readonly (Omit<SeedEntry, "day"> & { readonly day: CivilDay })[],
-): Promise<void> {
-  await seedEntries(
-    email,
-    PERSON_TIMEZONE,
-    entries.map((entry) => ({ ...entry, day: dayKeyOf(entry.day) })),
-  );
 }
 
 /** Días enteros de `from` a `to`. */
@@ -259,7 +243,7 @@ test("una celda con varias entradas sube con una nueva, baja la última y rechaz
   const week = lastWeekOf(day);
   const wednesday = addDays(week, 2);
   await openTimesheetWeek(page, week, day);
-  await seedPersonEntries(email, [
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
     { description: "a", day: wednesday, start: "10:00", end: "11:00", project },
     { description: "b", day: wednesday, start: "12:00", end: "13:00", project },
   ]);
@@ -419,7 +403,7 @@ test("reintentar quitar una fila cuya respuesta se perdió deja el foco en «Añ
   const day = today();
   const week = lastWeekOf(day);
   await openTimesheetWeek(page, week, day);
-  await seedPersonEntries(email, [
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
     { description: "", day: week, start: "09:00", end: "10:00", project },
   ]);
   await openTimesheetWeek(page, week, day);
@@ -719,7 +703,7 @@ test("una celda rechazada vuelve a su valor y deja de estar ocupada aunque otra 
   await openTimesheetWeek(page, week, day);
   // Dos entradas el lunes; la que empieza más tarde dura un minuto, así que
   // bajar la celda un minuto la dejaría sin duración (TS-79, D13-4).
-  await seedPersonEntries(email, [
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
     { description: "larga", day: week, start: "10:00", end: "11:00", project },
     { description: "corta", day: week, start: "12:00", end: "12:01", project },
   ]);

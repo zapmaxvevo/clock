@@ -6,6 +6,7 @@ import {
   PALETTE,
   PALETTE_KEYS,
   paletteColor,
+  paletteKeyOf,
 } from "./palette";
 
 describe("la paleta (P-30)", () => {
@@ -39,5 +40,19 @@ describe("isPaletteKey", () => {
     expect(isPaletteKey("#DC2626")).toBe(false);
     expect(isPaletteKey("Red")).toBe(false);
     expect(isPaletteKey("")).toBe(false);
+  });
+});
+
+describe("paletteKeyOf", () => {
+  it("devuelve la clave de un color de la paleta", () => {
+    for (const key of PALETTE_KEYS) {
+      expect(paletteKeyOf(key, "p1")).toBe(key);
+    }
+  });
+
+  it("lanza con el id del proyecto si el color no es de la paleta", () => {
+    expect(() => paletteKeyOf("#ff0000", "p1")).toThrow(
+      "El proyecto p1 tiene un color fuera de la paleta.",
+    );
   });
 });

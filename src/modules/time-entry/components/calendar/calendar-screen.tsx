@@ -1,3 +1,4 @@
+import { InactiveMembershipNotice } from "@/components/inactive-membership-notice";
 import { DisplayFormatsProvider } from "@/components/layout/display-formats";
 import { TrackingCatalogProvider } from "@/modules/project/components/tracking-catalog";
 import { getTrackingCatalog } from "@/modules/project/service";
@@ -8,7 +9,7 @@ import {
 } from "@/modules/time-entry/service";
 import type { Actor } from "@/server/permissions";
 
-import { InactiveMembershipNotice } from "../inactive-membership-notice";
+import { trackerLabels } from "../labels";
 import { CalendarView } from "./calendar-view";
 import type { CalendarZoom } from "./calendar-zoom";
 import { calendarLabels } from "./labels";
@@ -40,7 +41,9 @@ export async function CalendarScreen({
     <div className="flex w-full flex-col gap-4">
       <h1 className="sr-only">{calendarLabels.heading}</h1>
 
-      {!state.canTrack && <InactiveMembershipNotice />}
+      {!state.canTrack && (
+        <InactiveMembershipNotice body={trackerLabels.inactiveMessage} />
+      )}
 
       {/* Los formatos de esta misma lectura, no los del layout: una navegación
           del cliente puede conservar el layout con los formatos de antes. */}
