@@ -753,6 +753,14 @@ mínimo de un minuto es el de TT-73: un pedido que llegue igual con menos se
 rechaza con «La entrada tiene que durar al menos un minuto.», sin escribir.
 Borrar es desde el menú de tres puntos de la celda (TS-40), con el diálogo de
 confirmación de TT-61 y sin deshacer (P-06 del rastreador).
+**«Borrar» desde el menú** está en una celda con una sola entrada y borra esa
+entrada; en una con varias, se borra entrada por entrada desde el detalle
+(TS-42). Al confirmar, el foco va al campo de la celda. Si era la última entrada
+de una fila que viene del servidor, la fila sale con la próxima lectura y el
+foco va a «Añadir nueva fila», o a la región de la grilla si no está, como al
+quitar una fila (TS-52); una fila agregada en esta carga queda dibujada vacía
+(TS-15). Cancelar devuelve el foco al menú. Decisión del contrato del slice 13b
+(§5.6), aceptada por el team-lead.
 Verificado en el workspace (2026-10-07), respuesta 6: vaciar una celda con una
 entrada no hace nada, porque Clockify valida que el valor sea mayor que cero.
 Decisión del equipo del 2026-10-07 (timesheet P-04).
@@ -760,6 +768,8 @@ _No verificado_: el aviso exacto que muestra Clockify al rechazar el cero.
 _Corregido el 2026-10-07, P-12_: era `adaptar`, como propuesta pendiente de
 timesheet P-04: vaciar o escribir `0` borraba la entrada de una celda con una
 sola, con el diálogo de TT-61.
+_Corregido el 2026-10-08, slice 13b_: no decía adónde va el foco al borrar
+desde el menú ni qué pasa con la fila que se queda sin entradas.
 
 **TS-36 Escribir lo mismo no escribe nada** — `adaptar`
 Si lo que queda en la celda al perder el foco, ya interpretado, es igual a lo
@@ -830,35 +840,106 @@ ofrece «Borrar» y se borra entrada por entrada desde el detalle (TS-42), para
 no borrar de una vez entradas cuyas descripciones no se ven (TS-43). Decisión
 del team-lead del 2026-10-07 (timesheet P-14). El menú se abre también con el
 teclado (TS-99). «Borrar» y no «Eliminar», por TT-60.
+**Qué ofrece**: con una entrada, «Editar», que abre el editor (TS-41), y
+«Borrar»; con varias, solo «Ver detalle», que abre la lista (TS-42). Su nombre
+accesible es «Acciones de la celda {celda}», con el nombre de la celda de
+TS-100: «Acciones de la celda Rediseño: Maquetado, miércoles 01/10». **Cuándo
+existe**: en una celda con entradas en la última lectura del servidor y con
+permiso de carga; sin él no hay menú (TS-76). **Cuándo está inactivo**:
+mientras la celda tenga una escritura de la grilla o un guardado o un borrado
+del detalle que la última lectura todavía no trae, el botón queda inactivo y
+no abre, sin perder el foco; así el detalle abre siempre sobre las entradas que
+la celda muestra. Una celda vacía que se acaba de escribir recibe su menú
+cuando llega la lectura que trae su entrada. Elegir una opción lleva el foco al
+diálogo que abre, y cancelarlo lo devuelve al botón. Decisión del contrato del
+slice 13b (D13b-4, D13b-5, D13b-6), aceptada por el team-lead.
 _No verificado_: las demás opciones del menú de Clockify y qué borra su
 «eliminar» en una celda con varias entradas.
 _Corregido el 2026-10-07, P-12_: no decía que el menú borra.
 _Corregido el 2026-10-07, slice 13_: el menú de una celda con varias entradas
 sin «Borrar» era una propuesta pendiente de timesheet P-14.
+_Corregido el 2026-10-08, slice 13b_: no decía qué ofrece el menú en cada caso,
+ni su nombre, ni cuándo está inactivo, ni que sin permiso de carga no hay menú.
 
-**TS-41 Detalle de una celda con una entrada** — `replicar`
-El popover edita esa entrada con los mismos campos y las mismas mutaciones que
-la fila del rastreador: descripción (TT-54, TT-55), etiquetas (TT-12),
-facturable (TT-14), y horas y fecha (TT-54, TT-56), con sus dos excepciones,
-TT-110 y TT-111. Cambiar la fecha mueve la entrada de celda; cambiar el
-proyecto, si el detalle lo ofrece, la mueve de fila (TS-23).
-Etiquetas y facturable entran cuando esté mergeado el slice 11.
+**TS-41 Detalle de una celda con una entrada** — `adaptar`
+Documentado, textual, como tercer paso después de abrir los tres puntos (TS-40):
+«Enter the detail you want to add in the pop-up (description, tags, billable
+status, start/end time)». La página no dice cómo se guarda lo que se escribe en
+ese pop-up.
+Acá, «Editar» del menú abre el diálogo de una entrada del calendario, «Editar
+entrada» (CAL-65 … CAL-67), con la entrada como estaba en la última lectura al
+abrirlo (CAL-72) y el foco en la descripción. Edita descripción (TT-54),
+proyecto y tarea, fecha, inicio, fin y duración (TT-54, TT-56), etiquetas
+(TT-12) y facturable (TT-14), con las reglas de cada campo de la fila del
+rastreador y su excepción TT-110: una entrada de más de un día muestra su
+horario como texto. **«Guardar» aplica todo junto o nada**, en una sola
+mutación, como CAL-67: mientras el pedido viaja «Guardar» queda inactivo, y al
+asentarse el editor se cierra y el foco va al campo de la celda —o, si la fila
+salió, adonde va en TS-35—. Cerrarlo con cambios sin guardar los descarta
+(CAL-67). Cambiar la fecha mueve la entrada de celda o de semana, y cambiar el
+proyecto o la tarea la mueve de fila (TS-23, TS-115). El menú del editor ofrece
+«Borrar», que abre la confirmación de TT-61, y **no ofrece «Duplicar»** (CAL-68):
+duplicar no es parte de la paridad de la planilla.
+Las fallas de validación, de red (con «Reintentar», que guarda el borrador de
+ahora: TT-89, CAL-67) y de permiso (TS-84, sin «Reintentar») se ven en el
+editor. Las que lo cierran van a la pantalla: la entrada ya no existe (TS-83),
+o un proyecto, una tarea o una etiqueta que ya no se ofrecen, que pierden el
+borrador, como en el calendario. Si el editor se cerró con el pedido en vuelo,
+su falla también va a la pantalla. Decisión del contrato del slice 13b
+(D13b-1, D13b-7), aceptada por el team-lead.
+Justificación del `adaptar`: Clockify documenta un pop-up y no cómo guarda; acá
+es el mismo diálogo que edita una entrada en el calendario, con «Guardar» todo
+o nada por decisión del usuario (calendario P-04), para que una entrada se
+edite igual en las dos pantallas, y suma proyecto, tarea y fecha, que el pop-up
+documentado no lista.
+_No verificado_: si el pop-up de Clockify guarda campo por campo o con un
+botón, si ofrece proyecto, tarea y fecha, y qué hace al cerrarse con cambios.
+_Corregido el 2026-10-08, slice 13b_: era `replicar` y decía «El popover edita
+esa entrada con los mismos campos y las mismas mutaciones que la fila del
+rastreador: descripción (TT-54, TT-55), etiquetas (TT-12), facturable (TT-14),
+y horas y fecha (TT-54, TT-56), con sus dos excepciones, TT-110 y TT-111.
+Cambiar la fecha mueve la entrada de celda; cambiar el proyecto, si el detalle
+lo ofrece, la mueve de fila (TS-23). Etiquetas y facturable entran cuando esté
+mergeado el slice 11.»
 
 **TS-42 Detalle de una celda con varias entradas** — `adaptar`
-El popover lista las entradas cerradas de la celda, cada una con su
-descripción, sus horas y su duración, editables con las reglas de TS-41 y con
-«Borrar» (TT-60). Es el camino para lo que TS-34 no hace desde la celda: una
-baja que dejaría la entrada que empieza más tarde en menos de un minuto, un
-alta que caería en otro día, un cambio en otra entrada que no es esa, o un
-borrado. Decisión del equipo del 2026-10-07 (timesheet P-03). Llega con el
-slice 13b; hasta entonces ese camino es el rastreador (TS-79).
-Justificación: Clockify no documenta qué muestra el popover en ese caso.
+«Ver detalle» del menú abre una lista titulada «Detalle de {celda}» con las
+entradas cerradas de la celda, en el orden de la grilla —por inicio, creación e
+id—. Cada una muestra su descripción —«Sin descripción» en gris si está
+vacía—, su horario con el superíndice de días (TT-51), su duración y dos
+botones: «Editar», que abre encima el editor de TS-41, y «Borrar», que abre
+encima la confirmación de TT-61 (TT-60). Sus nombres accesibles llevan la
+entrada y su horario: «Editar «Diseño», de 09:00 a 10:30». Es el camino para lo
+que TS-34 no hace desde la celda: una baja que dejaría la entrada que empieza
+más tarde en menos de un minuto, un alta que caería en otro día, un cambio en
+otra entrada que no es esa, o un borrado. Decisión del equipo del 2026-10-07
+(timesheet P-03). Desde el slice 13b, TS-79 manda acá.
+**La lista sigue a la última lectura del servidor**: una entrada que se borró,
+se movió o cambió de par sale, y una que llegó a la celda desde otra pestaña
+aparece; el editor, en cambio, queda con la entrada como estaba al abrirlo
+(CAL-72). Mientras una entrada tiene un guardado o un borrado que la lectura
+todavía no trae, sus dos botones quedan inactivos. Si la lista queda vacía sin
+nada abierto encima, se cierra; con el editor o la confirmación encima, se
+cierra cuando ellos se cierran. **Mientras está abierta, las fallas de los
+pedidos de esa celda que irían a la pantalla se ven arriba de los ítems**, con
+el título de TS-83, y con «Reintentar» solo por red (TT-89); al cerrarla, si
+siguen vigentes, pasan a la pantalla. El foco: al asentarse un guardado, vuelve
+a «Editar» de esa entrada; al confirmar un borrado, al título de la lista;
+«Cerrar» lo devuelve al menú de la celda. No se agregan entradas desde la lista
+(para eso está la celda, TS-29, TS-34) ni se editan o borran varias a la vez (es
+la masiva del rastreador, TT-62 … TT-64). La forma, decisión del contrato del
+slice 13b (D13b-2, §5.2), aceptada por el team-lead.
+Justificación: Clockify no documenta qué muestra el pop-up en ese caso.
 _No verificado_: qué muestra Clockify; la pregunta 3 de P-12 lo pedía y las
 respuestas no lo cubren.
 _Corregido el 2026-10-07, P-12_: decía que era la única forma de editar esa
 celda, porque TS-34 la dejaba en solo lectura.
 _Corregido el 2026-10-07, slice 13_: decía «una baja que no entra en la entrada
 que empieza más tarde» y no decía qué camino hay antes del 13b.
+_Corregido el 2026-10-08, slice 13b_: decía «El popover lista las entradas
+cerradas de la celda, cada una con su descripción, sus horas y su duración,
+editables con las reglas de TS-41 y con «Borrar» (TT-60)», y que llegaba con el
+13b y hasta entonces ese camino era el rastreador (TS-79).
 
 **TS-43 La grilla no muestra descripciones ni etiquetas** — `replicar`
 Documentado, textual: «In the Timesheet view, you won't see the description
@@ -1192,6 +1273,13 @@ plantillas.
 La grilla se dibuja con los valores y sin ningún control de escritura, con el
 aviso permanente de TT-92. Un pedido que llegue igual recibe el mensaje neutro
 de TT-79. Justificación: `membership_status` es nuestro modelo.
+**Sin permiso de carga, las celdas no tienen menú** (TS-40) y no hay detalle en
+solo lectura, a diferencia del calendario (CAL-05): las descripciones se siguen
+viendo en el rastreador y el calendario. Decisión del contrato del slice 13b
+(D13b-4), aceptada por el team-lead: un detalle en solo lectura sería una
+variante nueva que ninguna regla pide.
+_Corregido el 2026-10-08, slice 13b_: no decía qué pasa con el menú de la
+celda.
 
 ## 14. Validaciones y mensajes
 
@@ -1202,7 +1290,7 @@ reusan por la regla de una redacción por causa.
 | ----- | -------------------------------------------------------------- | ------------------------------------------------------------- | ---------- |
 | TS-77 | Celda nueva en un proyecto inexistente, archivado o sin acceso | «Ese proyecto ya no está disponible.» (TT-77)                 | `adaptar`  |
 | TS-78 | Celda nueva en una tarea inexistente, hecha o de otro proyecto | «Esa tarea ya no está disponible.» (PR-74)                    | `adaptar`  |
-| TS-79 | Varias entradas: baja a menos de un minuto o alta en otro día  | «Editá las entradas de esta celda desde el rastreador.»       | `adaptar`  |
+| TS-79 | Varias entradas: baja a menos de un minuto o alta en otro día  | «Editá las entradas de esta celda desde el detalle.»          | `adaptar`  |
 | TS-80 | Retirada el 2026-10-07 (TS-50)                                 | —                                                             | —          |
 | TS-81 | Día anterior al 1 de enero de 2000                             | «No se pueden cargar horas anteriores al 1 de enero de 2000.» | `adaptar`  |
 | TS-82 | Duración ilegible, menor que un minuto o de 24 horas o más     | — (la celda vuelve al valor anterior, TT-21)                  | `adaptar`  |
@@ -1220,17 +1308,26 @@ documento. Detalle:
 - **TS-79** es una causa nueva, con dos casos y un solo remedio —editar una por
   una las entradas de la celda—, que no es el de ninguna otra: la baja que
   dejaría la entrada que empieza más tarde en menos de un minuto y el alta que
-  caería en otro día (TS-34). El mensaje dice dónde se hace eso. Hasta el slice
-  13b, que trae el detalle de la celda (TS-42), es el de la tabla: «Editá las
-  entradas de esta celda desde el rastreador.». El 13b lo cambia a «Editá las
-  entradas de esta celda desde el detalle.». La causa tiene un solo texto a la
-  vez.
+  caería en otro día (TS-34). El mensaje dice dónde se hace eso: «Editá las
+  entradas de esta celda desde el detalle.», y el menú de esas celdas, que
+  tienen varias entradas, ofrece «Ver detalle» (TS-40, TS-42). El aviso queda en
+  la pantalla y no abre el detalle solo. La causa tiene un solo texto a la vez.
+  Decisión del contrato del slice 13b (§1, §4.1, §5.5).
 - **TS-80** quedó sin uso: la planilla no escribe sobre la entrada que corre
   (TS-50). Un pedido de edición de horas sobre ella armado a mano lo responde la
   mutación de horas con TT-111. El identificador no se reusa.
 - **TS-82**: en la interfaz no sale pedido (TS-27, TS-35). Un pedido armado a
   mano con menos de un minuto recibe «La entrada tiene que durar al menos un
   minuto.» (TT-73), y uno de 24 horas o más, la validación del payload.
+- **TS-83** sale de «Guardar» en el editor (TS-41) o de confirmar un borrado
+  sobre una entrada que se borró en otra pestaña. El aviso se titula «No se pudo
+  guardar la entrada.» o «No se pudo borrar la entrada.», con el mensaje y,
+  debajo, la entrada y su horario; se ve en la pantalla —o en la lista, si está
+  abierta sobre esa celda (TS-42)— y sin «Reintentar», y el editor se cierra,
+  como en el calendario (CAL-72). Reintentar por red un borrado cuya respuesta
+  se perdió responde este mismo mensaje: es el desenlace real, como en el
+  rastreador. Decisión del contrato del slice 13b (§4.3, §5.5), aceptada por el
+  team-lead.
 - **TS-85** quedó sin uso con la copia fuera de alcance (sección 10). El
   identificador no se reusa.
 - **TS-86** no tiene camino en la interfaz —el selector de la fila no deja
@@ -1257,6 +1354,10 @@ baja que vaciaría la última o alta en otro día», y el mensaje, «Editá las
 entradas de esta celda desde el detalle.» desde el slice 13. No había detalle
 de TS-77 y TS-78.
 _Corregido el 2026-10-08, slice 13_: no estaba el texto del tope de TS-52.
+_Corregido el 2026-10-08, slice 13b_: el mensaje de TS-79 era «Editá las
+entradas de esta celda desde el rastreador.», el del slice 13, y su detalle
+decía que el 13b lo cambiaba a «… desde el detalle.». No había detalle de
+TS-83.
 
 ## 15. Estados vacíos
 
@@ -1337,11 +1438,13 @@ _Corregido el 2026-10-07, P-12_: incluía el timer activo entre lo que se
 calculaba y decía que no había estado del cliente que reconstruir.
 
 **TS-96 Lo que se pierde al recargar** — `adaptar`
-Lo tecleado en una celda que todavía no perdió el foco. Las filas vacías no se
-pierden en el mismo navegador (TS-19). Justificación: guardar al perder el foco
-(TS-28) no deja borradores.
+Lo tecleado en una celda que todavía no perdió el foco, y el detalle abierto con
+lo que no se guardó en su editor (TS-41), como al cerrarlo (CAL-67). Las filas
+vacías no se pierden en el mismo navegador (TS-19). Justificación: guardar al
+perder el foco (TS-28) y con «Guardar» (TS-41) no deja borradores.
 _Corregido el 2026-10-07, P-12_: decía que se perdían también las filas vacías,
 incluidas las de «Solo actividades», con la justificación de TS-19.
+_Corregido el 2026-10-08, slice 13b_: no nombraba el detalle abierto.
 
 **TS-97 Otra pestaña con la misma semana** — `adaptar`
 Se actualiza con la revalidación de TT-40: al enfocar, al volver a ser visible
@@ -1349,14 +1452,20 @@ y cada 60 segundos. Justificación: no hay canal abierto (TT-40).
 
 ## 18. Teclado y accesibilidad
 
-La documentación dice una sola cosa: Enter guarda (TS-28). Lo demás es
-propuesta, con una justificación común: una grilla de carga rápida que no se
-recorre con el teclado no cumple su propósito.
+La documentación dice una sola cosa: Enter guarda (TS-28). Lo demás lo decidieron
+los contratos de los slices 13 y 13b (TS-98, TS-99), con una justificación común:
+una grilla de carga rápida que no se recorre con el teclado no cumple su
+propósito.
+_Corregido el 2026-10-08, slice 13b_: decía «Lo demás es propuesta».
 
 **TS-98 Recorrido con Tab y foco después de Enter** — `adaptar`
 Tab y Mayús+Tab recorren las celdas por fila, de izquierda a derecha y de
-arriba abajo. Enter guarda y baja a la celda del mismo día en la fila
-siguiente; en la última fila, el foco se queda en la celda guardada.
+arriba abajo. **El menú de cada celda con entradas está en el recorrido,
+después de su campo** (TS-99): Tab desde el campo lleva a «Acciones de la celda
+…» y el siguiente, al próximo control de la fila. Decisión del contrato del
+slice 13b (§5.1), aceptada por el team-lead. Enter guarda y baja a la celda del
+mismo día en la fila siguiente; en la última fila, el foco se queda en la celda
+guardada.
 Verificado en el workspace (2026-10-07), respuesta 15: al guardar con Enter,
 Clockify no deja ninguna celda con foco. Decisión del equipo del 2026-10-07: el
 foco no se pierde. Justificación: sin foco, quien usa el teclado vuelve al
@@ -1364,6 +1473,8 @@ principio de la página; bajar a la fila siguiente es la convención de una
 planilla de cálculo y deja el foco en la grilla.
 _Corregido el 2026-10-07, P-12_: estaba sin verificar qué hacía Clockify con el
 foco, y no decía qué pasaba en la última fila.
+_Corregido el 2026-10-08, slice 13b_: el recorrido no nombraba el menú de la
+celda.
 
 **TS-99 El menú de la celda con el teclado** — `adaptar`
 El botón de tres puntos de TS-40 es enfocable y está en el orden de tabulación
@@ -1407,7 +1518,7 @@ No llevan marca propia: heredan la del comportamiento que citan.
 | TS-112 | Un admin cambia el primer día de la semana de la persona            | Ninguna entrada se mueve; cambian las columnas y los totales de la semana (PF-40, PF-41).                                                               |
 | TS-113 | Proyecto archivado mientras se edita la grilla                      | Escribir una celda de una entrada y bajar una con varias sigue; subir una con varias o una vacía responde TS-77 y la grilla se refresca (TS-21).        |
 | TS-114 | Proyecto borrado con su fila en pantalla                            | Al refrescar, sus horas pasan a «Sin proyecto» (TS-22).                                                                                                 |
-| TS-115 | Mover desde el detalle una entrada a otro día                       | Cambia de celda; si el día queda fuera de la semana, sale de la grilla y la fila puede quedar sin entradas y desaparecer.                               |
+| TS-115 | Mover desde el detalle una entrada de día, de semana o de par       | Sale de su celda con la próxima lectura; una fila del servidor que queda vacía sale y el foco va como en TS-35; una fila agregada, no (TS-15).          |
 | TS-116 | Celda con una entrada cerrada y el timer activo                     | La celda muestra solo la cerrada y escribirla la edita (TS-33); el timer no se toca (TS-49, TS-50).                                                     |
 | TS-117 | Copiar la semana pasada con el timer corriendo                      | Fuera de alcance de la fase 1 (sección 10).                                                                                                             |
 | TS-118 | Entrada de cero minutos del timer (TT-101)                          | Cuenta como entrada: la celda muestra `0:00`, no vacía. Para TS-34 es una más; si es la que empieza más tarde, toda baja responde TS-79.                |
@@ -1421,6 +1532,11 @@ decía que el botón de copiar estaba deshabilitado (TS-56); TS-118 terminaba en
 _Corregido el 2026-10-07, slice 13_: TS-113 decía «Las celdas con entradas se
 siguen escribiendo; las vacías responden TS-77 y la grilla se refresca
 (TS-21).».
+_Corregido el 2026-10-08, slice 13b_: TS-115 era «Mover desde el detalle una
+entrada a otro día», con «Cambia de celda; si el día queda fuera de la semana,
+sale de la grilla y la fila puede quedar sin entradas y desaparecer.», sin el
+cambio de par, sin distinguir la fila agregada en esta carga y sin decir adónde
+va el foco.
 
 ## 20. Divergencias que este documento registra
 
@@ -1456,20 +1572,21 @@ quitar una fila.
 El slice 13 del mapa depende de los slices 7 y 10. Este documento agrega dos
 dependencias que el mapa no nombra, las dos ya antes en el orden:
 
-- **Del slice 3**: el detalle de una celda (TS-41) es la edición de horas y
-  fecha de una fila del rastreador, con TT-110 y TT-111.
+- **Del slice 3 y del 8c**: el detalle de una celda (TS-41) es el diálogo de una
+  entrada del calendario, del slice 8c, que edita horas y fecha con las reglas
+  de la fila del rastreador del slice 3, con TT-110.
 - **Del slice 11**: el facturable por defecto de la entrada nueva (TS-30), las
   etiquetas y el facturable que copia TS-34, y las etiquetas del detalle
   (TS-41). Si el slice 13 se adelantara, la entrada nacería no facturable y
   habría que volver a tocarla.
 
-| Dónde                        | Qué                                                                     |
-| ---------------------------- | ----------------------------------------------------------------------- |
-| Slice 13                     | TS-01 … TS-120, salvo TS-80 y TS-85, retiradas, y lo de las otras filas |
-| Slice 13b                    | TS-40 … TS-42, TS-83, TS-99, TS-115 y el «Borrar» de TS-35              |
-| Fase 2                       | TS-62 … TS-66 (plantillas), por timesheet P-09                          |
-| Fuera de la fase 1, por plan | TS-55 … TS-61, TS-89 y TS-117 (copiar la semana pasada)                 |
-| Nunca                        | TS-03, TS-67 … TS-74                                                    |
+| Dónde                        | Qué                                                                      |
+| ---------------------------- | ------------------------------------------------------------------------ |
+| Slice 13                     | TS-01 … TS-120, salvo TS-80 y TS-85, retiradas, y lo de las otras filas  |
+| Slice 13b                    | TS-40 … TS-42, TS-76, TS-83, TS-98, TS-99, TS-115 y el «Borrar» de TS-35 |
+| Fase 2                       | TS-62 … TS-66 (plantillas), por timesheet P-09                           |
+| Fuera de la fase 1, por plan | TS-55 … TS-61, TS-89 y TS-117 (copiar la semana pasada)                  |
+| Nunca                        | TS-03, TS-67 … TS-74                                                     |
 
 **El slice 13 no cambia el esquema.** Las celdas y las filas se resuelven con
 `time_entry` tal como queda después del slice 11, y las filas vacías, en el
@@ -1478,7 +1595,8 @@ navegador (TS-19). Lo que sí trae son dos mutaciones nuevas en `time-entry`
 ADR propuestos por su contrato y aceptados por el usuario el 2026-10-08: el
 [ADR 0018](../adr/0018-lo-que-escribe-una-celda-se-calcula-en-instantes.md)
 (TS-32) y el [ADR 0019](../adr/0019-escribir-una-celda-fija-su-valor.md)
-(TS-37). El 13b no tiene backend nuevo.
+(TS-37). El 13b no tiene mutaciones nuevas: su lectura de la semana suma las
+entradas.
 _Corregido el 2026-10-07, P-12_: el slice 13 llevaba TS-55 … TS-60, la copia se
 resolvía con `time_entry`, y el esquema cambiaba solo si timesheet P-09 traía
 las plantillas.
@@ -1486,6 +1604,10 @@ _Corregido el 2026-10-07, slice 13_: la tabla tenía una sola fila para el slice
 13, «TS-01, TS-02, TS-04 … TS-54, TS-75 … TS-120, salvo TS-80, TS-85, TS-89 y
 TS-117», sin el 13b; el párrafo decía «una mutación nueva» y que la excepción
 al ADR 0005 tenía que estar escrita antes del contrato.
+_Corregido el 2026-10-08, slice 13b_: la dependencia era solo del slice 3 y
+decía que el detalle era «la edición de horas y fecha de una fila del
+rastreador, con TT-110 y TT-111»; el párrafo decía que el 13b no tenía backend
+nuevo.
 
 ### Slice 13 — la grilla y su escritura
 
@@ -1546,11 +1668,57 @@ correcciones de la [ronda 1](../slices/correcciones-fase1-slice13.md) y la
 ### Slice 13b — el menú y el detalle de una celda
 
 TS-40, TS-41, TS-42, TS-83, TS-99, TS-115 y el «Borrar» de TS-35, con P-14
-cerrado: el menú de una celda con varias entradas no ofrece «Borrar». No tiene
-backend nuevo: edita y borra con las mutaciones que ya existen. Contrato propio
-cuando el 13 esté en `main`; el esbozo está en la §9 del contrato del 13. **Con
-el 13b, el texto de TS-79 pasa a «Editá las entradas de esta celda desde el
-detalle.»** (sección 14).
+cerrado: el menú de una celda con varias entradas no ofrece «Borrar». Entran
+por arrastre, verificados por el camino nuevo, TT-12, TT-14, TT-54, TT-56,
+TT-60, TT-61, TT-80, TT-89, TT-90 y TT-110; de
+[la paridad del calendario](calendario.md), CAL-65 … CAL-68 y CAL-72. No cambia
+el esquema, no tiene mutaciones nuevas ni ADR nuevo: el detalle guarda con
+`updateEntry`
+([ADR 0013](../adr/0013-el-dialogo-de-una-entrada-guarda-en-una-mutacion.md)) y
+borra con `deleteEntry`, y la lectura de la semana suma las entradas de la
+persona. Contrato:
+[fase1-slice13b-detalle-de-celda.md](../slices/fase1-slice13b-detalle-de-celda.md),
+con las correcciones de las rondas 1 y 2 en
+[correcciones-fase1-slice13b-contrato.md](../slices/correcciones-fase1-slice13b-contrato.md).
+
+- **El menú** (TS-40) existe con permiso de carga y entradas en la última
+  lectura, y está inactivo mientras la celda tenga algo que esa lectura no trae
+  (D13b-4, D13b-5); con una entrada ofrece «Editar» y «Borrar», con varias,
+  «Ver detalle» (D13b-6). Está en el recorrido con Tab después del campo de su
+  celda (TS-98, TS-99). Sin permiso de carga no hay menú (TS-76).
+- **El editor** (TS-41) es el diálogo de una entrada del calendario: guarda todo
+  junto con «Guardar» y no ofrece «Duplicar» (D13b-1, D13b-7).
+- **La lista** (TS-42) se llama «Detalle de {celda}», sigue a la última lectura
+  y abre el editor y la confirmación encima; con ella abierta, las fallas de su
+  celda se ven en ella (D13b-2).
+- **Borrar desde el menú** (TS-35) y **mover una entrada** (TS-115): la fila del
+  servidor que se queda sin entradas sale y el foco va a «Añadir nueva fila»; la
+  agregada en esta carga queda dibujada vacía.
+- **TS-79** pasa a «Editá las entradas de esta celda desde el detalle.», y
+  **TS-83** se ve con el título del pedido, sin «Reintentar» (sección 14).
+- **Los pedidos del detalle no se muestran antes de tiempo** (D13b-3): la celda
+  queda ocupada con su valor anterior hasta que llega la lectura con el cambio.
+- **Lo que el slice decide**, en su entrada:
+  - Decisiones del contrato, aceptadas por el team-lead: TS-35 (§5.6), TS-40
+    (D13b-4, D13b-5, D13b-6), TS-41 (D13b-1, D13b-7), TS-42 (D13b-2), TS-76
+    (D13b-4), TS-79 (§4.1), TS-83 (§4.3, §5.5), TS-98 (§5.1) y TS-115 (§5.7).
+    TS-96 suma el detalle abierto, como consecuencia de TS-41.
+  - Cambio de marca: **TS-41 pasa de `replicar` a `adaptar`**. Clockify
+    documenta un pop-up y no cómo guarda; la forma y el guardado todo o nada
+    vienen del calendario (calendario P-04), no de un relevamiento.
+  - _No verificado_ en Clockify, y queda así: TS-40 (las demás opciones del
+    menú y qué borra en una celda con varias), TS-41 (si el pop-up guarda campo
+    por campo o con un botón, y si ofrece proyecto, tarea y fecha) y TS-42 (qué
+    muestra con varias entradas).
+- **Afuera**: agregar una entrada desde el detalle (TS-29, TS-34); duplicar
+  desde la planilla (D13b-7); el detalle en solo lectura (D13b-4); editar o
+  borrar varias entradas a la vez desde el detalle (TT-62 … TT-64).
+
+_Corregido el 2026-10-08, slice 13b_: decía «No tiene backend nuevo: edita y
+borra con las mutaciones que ya existen. Contrato propio cuando el 13 esté en
+`main`; el esbozo está en la §9 del contrato del 13. **Con el 13b, el texto de
+TS-79 pasa a «Editá las entradas de esta celda desde el detalle.»** (sección
+14).».
 
 ## 22. Pendientes de definición del equipo
 
@@ -1559,11 +1727,12 @@ la de proyectos ni la del perfil, se cita como `timesheet P-nn`.
 
 ### Abiertos
 
-Ninguno bloquea el contrato del slice 13.
+Ninguno bloquea el contrato del slice 13 ni el del 13b.
 
-| ID   | Punto                                                                                                                                                                                                            |
-| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P-15 | **Plantillas con tiempo** (TS-62, TS-64), para la fase 2: si guardan el total de cada celda o las entradas, y a qué hora empiezan las entradas que crea aplicarlas, sobre una celda vacía y sobre una con horas. |
+| ID   | Punto                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P-15 | **Plantillas con tiempo** (TS-62, TS-64), para la fase 2: si guardan el total de cada celda o las entradas, y a qué hora empiezan las entradas que crea aplicarlas, sobre una celda vacía y sobre una con horas.                                                                                                                                                                                                 |
+| P-18 | **El menú y el detalle de una celda en el workspace** (TS-40, TS-41, TS-42), para la sesión de verificación: las opciones del menú y qué borra en una celda con varias entradas; si el pop-up guarda campo por campo o con un botón, si ofrece proyecto, tarea y fecha, y qué hace al cerrarse con cambios; qué muestra con varias entradas. El 13b se construye con la decisión del contrato (TS-41 `adaptar`). |
 
 ### Cerrados
 
