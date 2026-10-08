@@ -43,8 +43,6 @@ export function TimesheetRow({
   onRemove,
   pickerRef,
 }: TimesheetRowProps) {
-  const rowBusy = row.cells.some((cell) => busy.has(cell.key));
-
   return (
     <tr className="border-b">
       <th scope="row" className="px-2 py-1 text-left font-normal">
@@ -89,10 +87,11 @@ export function TimesheetRow({
             aria-label={
               row.pair === null ? timesheetLabels.removeNewRow : removeRowLabel(row.name)
             }
-            // Con `disabled` la X que tenía el foco lo perdería.
-            aria-disabled={rowBusy || undefined}
+            // Inactiva mientras alguna escritura de la fila no está en la foto
+            // (F-m3). Con `disabled` la X que tenía el foco lo perdería.
+            aria-disabled={row.writing || undefined}
             onClick={(event) => {
-              if (!rowBusy) {
+              if (!row.writing) {
                 onRemove(row, event.currentTarget);
               }
             }}

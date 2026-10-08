@@ -1,6 +1,9 @@
-import { sameId, samePair, type ProjectPair } from "@/lib/project-pair";
+import { samePair, type ProjectPair } from "@/lib/project-pair";
 import { projectLabels, projectTaskLabel } from "@/modules/project/components/labels";
-import { isTrackablePair } from "@/modules/project/components/picker-model";
+import {
+  catalogEntryOf,
+  isTrackablePair,
+} from "@/modules/project/components/picker-model";
 import type {
   ClientView,
   ProjectRef,
@@ -10,7 +13,7 @@ import type {
 import type { TimesheetRowView, TimesheetState } from "@/modules/time-entry/schema";
 import { formatDuration, parseDurationInput } from "@/server/time";
 
-import { cellKeyOf } from "./cell-writes";
+import { cellKeyOf, rowKeyOf } from "./cell-writes";
 import { cellLabel } from "./labels";
 
 /** Un total: lo que dice y si es cero, que va en gris (TS-45). */
@@ -47,8 +50,14 @@ export type GridRow = {
   readonly total: GridTotal;
   /** Las entradas que la fila mostraba: las que cuenta y borra «Quitar fila» (D13-6). */
   readonly entryIds: readonly string[];
-  /** Exacto, de la foto del servidor: lo que dice el diálogo (TS-53). */
-  readonly closedSeconds: number;
+  /** El total exacto de la foto, ya formateado: lo que dice el diálogo (TS-53). */
+  readonly closedTotal: string;
+  /**
+   * Alguna celda tiene una escritura que todavía no está en la foto, en vuelo
+   * o ya aplicada: la fila no se quita hasta que llegue (§5.8), porque ni el
+   * diálogo ni la decisión de pedirlo verían esa escritura.
+   */
+  readonly writing: boolean;
 };
 
 export type TimesheetGrid = {
@@ -94,7 +103,8 @@ function sumSeconds(cells: readonly GridCell[]): number {
   return cells.reduce((sum, cell) => sum + cell.seconds, 0);
 }
 
-function pairOf(row: TimesheetRowView): ProjectPair {
+/** El par de una fila del servidor. */
+export function pairOf(row: TimesheetRowView): ProjectPair {
   return { projectId: row.project?.id ?? null, taskId: row.task?.id ?? null };
 }
 
@@ -133,28 +143,18 @@ function catalogSource(catalog: TrackingCatalog, pair: ProjectPair): RowSource |
       ? { pair, project: null, task: null, client: null, server: null }
       : null;
   }
-  for (const group of catalog.groups) {
-    const project = group.projects.find((candidate) =>
-      sameId(candidate.id, pair.projectId),
-    );
-    if (project === undefined) {
-      continue;
-    }
-    const task =
-      pair.taskId === null
-        ? null
-        : project.tasks.find((candidate) => sameId(candidate.id, pair.taskId));
-    return task === undefined
-      ? null
-      : {
-          pair,
-          project: { id: project.id, name: project.name, color: project.color },
-          task,
-          client: group.client,
-          server: null,
-        };
+  const entry = catalogEntryOf(catalog, pair);
+  if (entry === null) {
+    return null;
   }
-  return null;
+  const { client, project, task } = entry;
+  return {
+    pair,
+    project: { id: project.id, name: project.name, color: project.color },
+    task,
+    client,
+    server: null,
+  };
 }
 
 /**
@@ -190,7 +190,7 @@ function rowSources(input: TimesheetGridInput): RowSource[] {
   return [...serverRows.filter((source) => !hasPair(tailPairs, source.pair)), ...tail];
 }
 
-/** Las celdas se escriben con permiso, desde el piso y con el par ofrecido o con entradas. */
+/** Se escribe con permiso, desde el piso y con el par ofrecido o con entradas. */
 function gridRow(input: TimesheetGridInput, source: RowSource): GridRow {
   const { state, catalog, shown } = input;
   const name = rowNameOf(source.project, source.task);
@@ -212,7 +212,7 @@ function gridRow(input: TimesheetGridInput, source: RowSource): GridRow {
     };
   });
   return {
-    key: cellKeyOf({ date: "row", ...source.pair }),
+    key: rowKeyOf(source.pair),
     pair: source.pair,
     project: source.project,
     task: source.task,
@@ -221,7 +221,8 @@ function gridRow(input: TimesheetGridInput, source: RowSource): GridRow {
     cells,
     total: totalOf(sumSeconds(cells)),
     entryIds: source.server?.entryIds ?? [],
-    closedSeconds: source.server?.closedSeconds ?? 0,
+    closedTotal: totalOf(source.server?.closedSeconds ?? 0).label,
+    writing: cells.some((cell) => shown.has(cell.key)),
   };
 }
 
@@ -244,7 +245,8 @@ function newGridRow(state: TimesheetState): GridRow {
     })),
     total: totalOf(0),
     entryIds: [],
-    closedSeconds: 0,
+    closedTotal: totalOf(0).label,
+    writing: false,
   };
 }
 

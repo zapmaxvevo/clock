@@ -361,7 +361,41 @@ describe("timesheetGrid, los totales (TS-44 … TS-47)", () => {
   it("el diálogo usa lo exacto de la foto, no lo que muestran las escrituras", () => {
     const tuesday = cellKeyOf({ date: "2026-09-29", ...pairOf(web, design) });
 
-    expect(grid({ shown: new Map([[tuesday, 120]]) }).rows[0].closedSeconds).toBe(5_400);
+    expect(grid({ shown: new Map([[tuesday, 120]]) }).rows[0].closedTotal).toBe("1:30");
+    expect(grid().rows[1].closedTotal).toBe("0:30");
+  });
+});
+
+describe("timesheetGrid, «Quitar fila» (§5.8)", () => {
+  const tuesday = cellKeyOf({ date: "2026-09-29", ...pairOf(web, design) });
+
+  it("una fila sin escrituras pendientes se puede quitar", () => {
+    expect(grid().rows.map((gridRow) => gridRow.writing)).toEqual([false, false]);
+  });
+
+  it("una escritura en vuelo o ya aplicada pero fuera de la foto marca solo su fila", () => {
+    const view = grid({ shown: new Map([[tuesday, 120]]) });
+
+    expect(view.rows.map((gridRow) => gridRow.writing)).toEqual([true, false]);
+  });
+
+  it("una fila guardada sin entradas con una escritura asentada tampoco se quita sin la foto", () => {
+    const empty = cellKeyOf({ date: "2026-10-01", ...pairOf(app) });
+    const view = grid({ added: [pairOf(app)], shown: new Map([[empty, 45]]) });
+
+    expect(view.rows[2]).toMatchObject({ name: "App", entryIds: [], writing: true });
+  });
+
+  it("la clave de una fila es su par, sin distinguir mayúsculas", () => {
+    const upper = grid({
+      state: {
+        ...state,
+        rows: [{ ...webDesignRow, project: { ...web, id: web.id.toUpperCase() } }],
+      },
+    });
+
+    expect(upper.rows[0].key).toBe(grid().rows[0].key);
+    expect(grid().rows[0].key).not.toBe(grid().rows[1].key);
   });
 });
 

@@ -1,11 +1,12 @@
 import type { ProjectPair } from "@/lib/project-pair";
-import {
-  timeEntryMessages,
-  type SetTimesheetCellInput,
-  type SetTimesheetCellResult,
-  type TimeEntryErrorCode,
+import type {
+  SetTimesheetCellInput,
+  SetTimesheetCellResult,
+  TimeEntryErrorCode,
 } from "@/modules/time-entry/schema";
 import type { ActionResult } from "@/server/action";
+
+import { sendOrUnexpected } from "./send-or-unexpected";
 
 /** Una celda: el día y el par, y cómo nombrarla en el aviso. */
 export type CellWriteRequest = {
@@ -47,9 +48,14 @@ export type CellWritesEvent =
   | { readonly type: "snapshot" }
   | { readonly type: "dismissed" };
 
-/** La clave de una celda: `día|proyecto|tarea`, con los ids como los compara la base. */
+/** La clave de una fila: `proyecto|tarea`, con los ids como los compara la base. */
+export function rowKeyOf(pair: ProjectPair): string {
+  return [pair.projectId ?? "-", pair.taskId ?? "-"].join("|").toLowerCase();
+}
+
+/** La clave de una celda: `día|proyecto|tarea`. */
 export function cellKeyOf(cell: { readonly date: string } & ProjectPair): string {
-  return [cell.date, cell.projectId ?? "-", cell.taskId ?? "-"].join("|").toLowerCase();
+  return `${cell.date}|${rowKeyOf(cell)}`;
 }
 
 export function cellWritesReducer(
@@ -142,12 +148,7 @@ export function cellWriter(
   }
 
   async function deliver(id: number, cell: string, request: CellWriteRequest) {
-    let result: Awaited<ReturnType<SetTimesheetCell>>;
-    try {
-      result = await send(request.input);
-    } catch {
-      result = { ok: false, code: "unexpected", message: timeEntryMessages.unexpected };
-    }
+    const result = await sendOrUnexpected(() => send(request.input));
     release(cell, id);
     if (result.ok) {
       dispatch({ type: "settled", id });

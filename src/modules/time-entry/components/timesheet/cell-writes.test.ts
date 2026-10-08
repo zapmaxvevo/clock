@@ -9,6 +9,7 @@ import {
   busyOf,
   cellKeyOf,
   cellWriter,
+  rowKeyOf,
   cellWritesReducer,
   NO_CELL_WRITES,
   shownOf,
@@ -289,6 +290,16 @@ describe("cellWriter y cellWritesReducer (§5.6)", () => {
     grid.snapshot();
 
     expect(grid.state()).toBe(before);
+  });
+});
+
+describe("rowKeyOf", () => {
+  it("distingue el proyecto, la tarea y «Sin proyecto», sin distinguir mayúsculas", () => {
+    const base = { projectId: web, taskId: null };
+
+    expect(rowKeyOf(base)).toBe(rowKeyOf({ projectId: web.toUpperCase(), taskId: null }));
+    expect(rowKeyOf(base)).not.toBe(rowKeyOf({ projectId: null, taskId: null }));
+    expect(rowKeyOf(base)).not.toBe(rowKeyOf({ projectId: web, taskId: web }));
   });
 });
 

@@ -9,16 +9,13 @@ import { samePair, type ProjectPair } from "@/lib/project-pair";
 import { selectionIds } from "@/modules/project/components/picker-model";
 import { useTrackingCatalog } from "@/modules/project/components/tracking-catalog";
 import type { ProjectSelection } from "@/modules/project/schema";
-import { removeTimesheetRow } from "@/modules/time-entry/actions";
-import {
-  timeEntryMessages,
-  type RemoveTimesheetRowInput,
-  type TimeEntryErrorCode,
-  type TimesheetState,
+import type {
+  RemoveTimesheetRowInput,
+  TimesheetState,
 } from "@/modules/time-entry/schema";
-import { formatDuration } from "@/server/time";
 
 import { useTrackerRefresh } from "../use-tracker-refresh";
+import { cellKeyOf } from "./cell-writes";
 import { timesheetLabels } from "./labels";
 import { RemoveRowDialog, type RowToRemove } from "./remove-row-dialog";
 import {
@@ -28,22 +25,10 @@ import {
   withoutStoredRow,
 } from "./stored-rows";
 import { TimesheetTable } from "./timesheet-table";
-import { nextWritableCell, timesheetGrid, type GridRow } from "./timesheet-model";
+import { nextWritableCell, pairOf, timesheetGrid, type GridRow } from "./timesheet-model";
 import { useCellWrites } from "./use-cell-writes";
+import { useRowRemovals } from "./use-row-removals";
 import { updateStoredRows, useStoredRows } from "./use-stored-rows";
-
-/** Un «Quitar fila» que viaja o que ya se aplicó y espera la foto (§5.8). */
-type RowRemoval = {
-  readonly pair: ProjectPair;
-  readonly status: "sending" | "settled";
-};
-
-/** La falla de un «Quitar fila», con su pedido para «Reintentar» (TS-92). */
-type RowFailure = {
-  readonly request: RemoveTimesheetRowInput;
-  readonly code: TimeEntryErrorCode | "unexpected";
-  readonly message: string;
-};
 
 /** La fila con entradas cuyo diálogo está abierto, como estaba al abrirlo. */
 type PendingRemoval = RowToRemove & { readonly request: RemoveTimesheetRowInput };
@@ -62,15 +47,19 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
   const catalog = useTrackingCatalog();
   const writes = useCellWrites(state);
   const storedRows = useStoredRows(state.storageKey);
-  /** Los pares elegidos en esta carga de la página, en orden (TS-15). */
+  /** Los pares elegidos en esta carga de la página y en esta semana, en orden (TS-15). */
   const [added, setAdded] = useState<readonly ProjectPair[]>([]);
+  const removals = useRowRemovals(state, (pair) =>
+    setAdded((current) => current.filter((candidate) => !samePair(candidate, pair))),
+  );
   const [newRow, setNewRow] = useState(false);
-  const [removals, setRemovals] = useState<readonly RowRemoval[]>([]);
-  const [rowFailure, setRowFailure] = useState<RowFailure | null>(null);
   const [confirming, setConfirming] = useState<PendingRemoval | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [snapshot, setSnapshot] = useState(state);
-  const [seenCellFailure, setSeenCellFailure] = useState(writes.failure);
+  const [week, setWeek] = useState(state.weekStart);
+  const [seenFailures, setSeenFailures] = useState({
+    cell: writes.failure,
+    row: removals.failure,
+  });
   const tableRef = useRef<HTMLTableElement>(null);
   const regionRef = useRef<HTMLDivElement>(null);
   const pickerRef = useRef<HTMLButtonElement>(null);
@@ -82,16 +71,21 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
   /** Adonde va el foco cuando se dibuje lo que acaba de cambiar. */
   const pendingFocusRef = useRef<PendingFocus | null>(null);
 
-  // Otra foto del servidor ya trae los «Quitar fila» que se aplicaron antes.
-  if (snapshot !== state) {
-    setSnapshot(state);
-    setRemovals(removals.filter((removal) => removal.status === "sending"));
+  // Otra semana: las filas agregadas y la fila nueva eran de la anterior. Las
+  // escrituras en vuelo y los avisos siguen (F-m2).
+  if (week !== state.weekStart) {
+    setWeek(state.weekStart);
+    setAdded([]);
+    setNewRow(false);
   }
-  // Un aviso a la vez: la falla de una celda reemplaza a la de una fila.
-  if (seenCellFailure !== writes.failure) {
-    setSeenCellFailure(writes.failure);
-    if (writes.failure !== null) {
-      setRowFailure(null);
+  // Un aviso a la vez: la falla más reciente, de una celda o de una fila,
+  // reemplaza a la otra.
+  if (seenFailures.cell !== writes.failure || seenFailures.row !== removals.failure) {
+    setSeenFailures({ cell: writes.failure, row: removals.failure });
+    if (writes.failure !== null && writes.failure !== seenFailures.cell) {
+      removals.dismiss();
+    } else if (removals.failure !== null && removals.failure !== seenFailures.row) {
+      writes.dismiss();
     }
   }
 
@@ -101,7 +95,7 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
     stored: storedPairsOf(storedRows, state.weekStart),
     added,
     newRow,
-    removing: removals.map((removal) => removal.pair),
+    removing: removals.removing,
     shown: writes.shown,
   });
   const canAddRow = state.canTrack && state.days.some((day) => !day.beforeFloor);
@@ -112,38 +106,72 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
     if (!state.canTrack) {
       return;
     }
-    const serverPairs = state.rows.map((row) => ({
-      projectId: row.project?.id ?? null,
-      taskId: row.task?.id ?? null,
-    }));
+    const serverPairs = state.rows.map(pairOf);
     updateStoredRows(state.storageKey, (rows) =>
       prunedStoredRows(rows, state.weekStart, serverPairs, catalog),
     );
   }, [state, catalog]);
 
+  // El destino se consume cuando ya está dibujado: un clic que llega mientras
+  // la página se hidrata se repite antes de que se dibuje lo que agrega.
   useEffect(() => {
     const target = pendingFocusRef.current;
     if (target === null) {
       return;
     }
-    pendingFocusRef.current = null;
     if (target.kind === "picker") {
-      pickerRef.current?.focus();
+      if (pickerRef.current !== null) {
+        pendingFocusRef.current = null;
+        pickerRef.current.focus();
+      }
       return;
     }
     const row = grid.rows.find(
       (candidate) => candidate.pair !== null && samePair(candidate.pair, target.pair),
     );
-    const cell = row?.cells.find((candidate) => candidate.writable);
+    if (row === undefined) {
+      return;
+    }
+    pendingFocusRef.current = null;
+    const cell = row.cells.find((candidate) => candidate.writable);
     if (cell !== undefined) {
       focusCell(cell.key);
     }
   });
 
-  function focusCell(key: string): void {
-    tableRef.current
-      ?.querySelector<HTMLInputElement>(`[data-cell="${CSS.escape(key)}"] input`)
-      ?.focus();
+  /** `false` si la celda no se dibuja o no se escribe. */
+  function focusCell(key: string): boolean {
+    const field = tableRef.current?.querySelector<HTMLInputElement>(
+      `[data-cell="${CSS.escape(key)}"] input`,
+    );
+    field?.focus();
+    return field !== null && field !== undefined;
+  }
+
+  /** «Añadir nueva fila», o la región si no está: donde queda el foco sin la X. */
+  function focusOutsideRows(): void {
+    (addButtonRef.current ?? regionRef.current)?.focus();
+  }
+
+  /**
+   * «Reintentar» se va con el aviso que baja: antes, el foco pasa a la celda,
+   * que queda `busy` con el foco (F-M1).
+   */
+  function retryCell(): void {
+    const failure = writes.failure;
+    if (failure === null) {
+      return;
+    }
+    if (!focusCell(cellKeyOf(failure.request.input))) {
+      regionRef.current?.focus();
+    }
+    writes.retry();
+  }
+
+  /** Lo mismo con la fila, que se oculta: el foco va adonde va al confirmar. */
+  function retryRow(): void {
+    focusOutsideRows();
+    removals.retry();
   }
 
   function write(row: GridRow, date: string, minutes: number): void {
@@ -187,7 +215,7 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
 
   /** La fila sin entradas se quita sin diálogo y sin pedido (§5.8). */
   function forgetRow(row: GridRow): void {
-    (addButtonRef.current ?? regionRef.current)?.focus();
+    focusOutsideRows();
     const { pair } = row;
     if (pair === null) {
       setNewRow(false);
@@ -208,37 +236,10 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
     setConfirming({
       name: row.name,
       count: row.entryIds.length,
-      total: formatDuration(Math.floor(row.closedSeconds / 60)),
+      total: row.closedTotal,
       request: { weekStart: state.weekStart, ...row.pair, ids: [...row.entryIds] },
     });
     setDialogOpen(true);
-  }
-
-  async function remove(request: RemoveTimesheetRowInput): Promise<void> {
-    const pair = { projectId: request.projectId, taskId: request.taskId };
-    setRemovals((current) => [...current, { pair, status: "sending" }]);
-    setRowFailure(null);
-    let result: Awaited<ReturnType<typeof removeTimesheetRow>>;
-    try {
-      result = await removeTimesheetRow(request);
-    } catch {
-      result = { ok: false, code: "unexpected", message: timeEntryMessages.unexpected };
-    }
-    if (result.ok) {
-      setRemovals((current) =>
-        current.map((removal) =>
-          samePair(removal.pair, pair) ? { ...removal, status: "settled" } : removal,
-        ),
-      );
-      setAdded((current) => current.filter((candidate) => !samePair(candidate, pair)));
-      updateStoredRows(state.storageKey, (rows) =>
-        withoutStoredRow(rows, request.weekStart, pair),
-      );
-      return;
-    }
-    setRemovals((current) => current.filter((removal) => !samePair(removal.pair, pair)));
-    writes.dismiss();
-    setRowFailure({ request, code: result.code, message: result.message });
   }
 
   function confirmRemove(): void {
@@ -248,32 +249,28 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
     // La X se va con la fila: el foco sale antes de ocultarla.
     removalFocusRef.current = addButtonRef.current ?? regionRef.current;
     setDialogOpen(false);
-    void remove(confirming.request);
+    removals.remove(confirming.request);
   }
 
   return (
     <div className="flex w-full flex-col gap-4">
-      {/* Siempre montada, para que el lector anuncie lo que entra; lo que
-          falló vive en esta pantalla y sobrevive a la revalidación (§5.9). */}
-      <div role="alert" className="flex flex-col gap-2 empty:hidden">
+      {/* Lo que falló vive en esta pantalla y sobrevive a la revalidación
+          (§5.9). El anuncio lo da el `alert` de cada aviso. */}
+      <div className="flex flex-col gap-2 empty:hidden">
         {writes.failure !== null && (
           <ActionFeedback
             title={timesheetLabels.cellNotSaved}
             message={writes.failure.message}
-            onRetry={writes.failure.code === "unexpected" ? writes.retry : undefined}
+            onRetry={writes.failure.code === "unexpected" ? retryCell : undefined}
           >
             <p className="text-muted-foreground text-sm">{writes.failure.request.name}</p>
           </ActionFeedback>
         )}
-        {rowFailure !== null && (
+        {removals.failure !== null && (
           <ActionFeedback
             title={timesheetLabels.rowNotRemoved}
-            message={rowFailure.message}
-            onRetry={
-              rowFailure.code === "unexpected"
-                ? () => void remove(rowFailure.request)
-                : undefined
-            }
+            message={removals.failure.message}
+            onRetry={removals.failure.code === "unexpected" ? retryRow : undefined}
           />
         )}
       </div>

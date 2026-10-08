@@ -49,8 +49,7 @@ export async function TimesheetScreen({
           del cliente puede conservar el layout con los formatos de antes. */}
       <DisplayFormatsProvider formats={workspace.formats}>
         <TrackingCatalogProvider catalog={catalog}>
-          {/* Cada semana arranca sin filas agregadas ni escrituras de otra (P-16). */}
-          <TimesheetView key={state.weekStart} state={state} />
+          <TimesheetView state={state} />
         </TrackingCatalogProvider>
       </DisplayFormatsProvider>
     </div>

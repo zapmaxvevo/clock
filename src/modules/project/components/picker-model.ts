@@ -3,6 +3,7 @@ import { normalizeSearch } from "@/lib/text";
 import type {
   ClientView,
   ProjectSelection,
+  TaskView,
   TrackingCatalog,
   TrackingGroupView,
   TrackingProjectView,
@@ -153,6 +154,40 @@ function emptyOf(
   return query === "" ? { kind: "allUsed" } : { kind: "noMatches" };
 }
 
+/** Lo que el catálogo ofrece de un par con proyecto: proyecto, tarea y cliente. */
+export type CatalogEntry = {
+  readonly client: ClientView | null;
+  readonly project: TrackingProjectView;
+  readonly task: TaskView | null;
+};
+
+/**
+ * El proyecto y la tarea del par en el catálogo, con el cliente de su grupo;
+ * `null` si el catálogo no los ofrece o si el par no tiene proyecto.
+ */
+export function catalogEntryOf(
+  catalog: TrackingCatalog,
+  pair: ProjectPair,
+): CatalogEntry | null {
+  if (pair.projectId === null) {
+    return null;
+  }
+  for (const group of catalog.groups) {
+    const project = group.projects.find((candidate) =>
+      sameId(candidate.id, pair.projectId),
+    );
+    if (project === undefined) {
+      continue;
+    }
+    if (pair.taskId === null) {
+      return { client: group.client, project, task: null };
+    }
+    const task = project.tasks.find((candidate) => sameId(candidate.id, pair.taskId));
+    return task === undefined ? null : { client: group.client, project, task };
+  }
+  return null;
+}
+
 /**
  * D13-8: el par se puede cargar si el catálogo lo ofrece, que es la regla del
  * dueño ya aplicada (ADR 0010). «Sin proyecto» siempre.
@@ -161,15 +196,7 @@ export function isTrackablePair(catalog: TrackingCatalog, pair: ProjectPair): bo
   if (pair.projectId === null) {
     return pair.taskId === null;
   }
-  const project = catalog.groups
-    .flatMap((group) => group.projects)
-    .find((candidate) => sameId(candidate.id, pair.projectId));
-  if (project === undefined) {
-    return false;
-  }
-  return (
-    pair.taskId === null || project.tasks.some((task) => sameId(task.id, pair.taskId))
-  );
+  return catalogEntryOf(catalog, pair) !== null;
 }
 
 /** El mismo par. Los ids se comparan sin distinguir mayúsculas, como en la base. */

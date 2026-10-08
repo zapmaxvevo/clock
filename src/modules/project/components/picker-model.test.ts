@@ -7,6 +7,7 @@ import type {
 } from "@/modules/project/schema";
 
 import {
+  catalogEntryOf,
   isTrackablePair,
   pickerView,
   sameSelection,
@@ -324,6 +325,31 @@ describe("pickerView con `excluded` (TS-18, D13-9)", () => {
       empty: { kind: "noProjects", canCreateProject: true },
     });
     expect(pickerView(empty, "", []).none).not.toBeNull();
+  });
+});
+
+describe("catalogEntryOf", () => {
+  it("trae el proyecto, la tarea y el cliente de su grupo", () => {
+    const entry = catalogEntryOf(catalog, { projectId: "P-WEB", taskId: "p-web-t1" });
+
+    expect(entry?.client).toEqual({ id: "c-acme", name: "Acme" });
+    expect(entry?.project.name).toBe("Web");
+    expect(entry?.task).toEqual({ id: "p-web-t1", name: "Desarrollo" });
+    expect(catalogEntryOf(catalog, { projectId: "p-interno", taskId: null })).toEqual({
+      client: null,
+      project: catalog.groups[2].projects[0],
+      task: null,
+    });
+  });
+
+  it("es nulo sin proyecto, con un proyecto que no está o con una tarea de otro", () => {
+    expect(catalogEntryOf(catalog, { projectId: null, taskId: null })).toBeNull();
+    expect(
+      catalogEntryOf(catalog, { projectId: "p-archivado", taskId: null }),
+    ).toBeNull();
+    expect(
+      catalogEntryOf(catalog, { projectId: "p-web", taskId: "p-soporte-t0" }),
+    ).toBeNull();
   });
 });
 

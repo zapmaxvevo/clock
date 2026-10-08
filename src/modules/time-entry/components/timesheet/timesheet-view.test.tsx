@@ -172,10 +172,11 @@ describe("TimesheetView, la grilla (§5.4)", () => {
     );
   });
 
-  it("la región del aviso está montada y vacía sin ninguna falla (§5.9)", () => {
-    expect(render()).toContain(
-      '<div role="alert" class="flex flex-col gap-2 empty:hidden"></div>',
-    );
+  it("la región de los avisos está montada, vacía y sin rol propio sin ninguna falla (§5.9)", () => {
+    const markup = render();
+
+    expect(markup).toContain('<div class="flex flex-col gap-2 empty:hidden"></div>');
+    expect(markup).not.toContain('role="alert"');
   });
 });
 
