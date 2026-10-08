@@ -17,7 +17,9 @@ import {
   crossesMidnight,
   dayKeyLabel,
   earliestDayKey,
+  fullWeekdayLabel,
   instantFromLocal,
+  instantFromLocalOrLater,
   isAfterYear9999,
   isClock,
   MINUTES_PER_DAY,
@@ -890,6 +892,123 @@ describe("instantFromLocal", () => {
     expect(start).not.toBeNull();
     expect(end).not.toBeNull();
     expect(end?.getTime()).toBeGreaterThan(start?.getTime() ?? 0);
+  });
+});
+
+/**
+ * ADR 0018: las 09:00 de una celda vacía. Cada caso corre con el proceso en
+ * otra zona, también una con cambio de horario, para que un resultado que se
+ * apoye en la zona local se note.
+ */
+describe.each([buenosAires, madrid, "Asia/Tokyo"])(
+  "instantFromLocalOrLater con el proceso en %s",
+  (processTimeZone) => {
+    const original = process.env.TZ;
+
+    beforeAll(() => {
+      process.env.TZ = processTimeZone;
+    });
+
+    afterAll(() => {
+      restoreProcessTimeZone(original);
+    });
+
+    it("una hora que existe da lo mismo que instantFromLocal", () => {
+      for (const [day, clock, zone] of [
+        ["2026-10-02", "09:00", buenosAires],
+        ["2026-03-29", "03:00", madrid],
+        ["2026-03-29", "01:59", madrid],
+        ["2026-10-25", "09:00", madrid],
+      ] as const) {
+        expect(instantFromLocalOrLater(day, clock, zone)).toEqual(
+          instantFromLocal(day, clock, zone),
+        );
+      }
+      expect(
+        instantFromLocalOrLater("2026-10-02", "09:00", buenosAires)?.toISOString(),
+      ).toBe("2026-10-02T12:00:00.000Z");
+    });
+
+    it("la hora que no existe da el primer minuto que existe después: Madrid, 02:30", () => {
+      // El 29/03/2026 Madrid salta de las 02:00 a las 03:00 locales, 01:00Z.
+      expect(instantFromLocalOrLater("2026-03-29", "02:30", madrid)?.toISOString()).toBe(
+        "2026-03-29T01:00:00.000Z",
+      );
+      expect(instantFromLocalOrLater("2026-03-29", "02:00", madrid)?.toISOString()).toBe(
+        "2026-03-29T01:00:00.000Z",
+      );
+    });
+
+    it("desplaza también en un hueco de media hora y en uno a la medianoche", () => {
+      // Lord Howe salta de las 02:00 a las 02:30 (+11:00).
+      expect(
+        instantFromLocalOrLater(
+          "2026-10-04",
+          "02:15",
+          "Australia/Lord_Howe",
+        )?.toISOString(),
+      ).toBe("2026-10-03T15:30:00.000Z");
+      // Santiago salta de las 00:00 a la 01:00 (-03:00).
+      expect(
+        instantFromLocalOrLater("2026-09-06", "00:30", "America/Santiago")?.toISOString(),
+      ).toBe("2026-09-06T04:00:00.000Z");
+    });
+
+    it("la hora que ocurre dos veces da el segundo instante", () => {
+      expect(instantFromLocalOrLater("2026-10-25", "02:30", madrid)?.toISOString()).toBe(
+        "2026-10-25T01:30:00.000Z",
+      );
+    });
+
+    it("da null si desde esa hora no existió ningún minuto ese día: Apia, 2011-12-30", () => {
+      expect(instantFromLocalOrLater("2011-12-30", "09:00", "Pacific/Apia")).toBeNull();
+      expect(instantFromLocalOrLater("2011-12-30", "00:00", "Pacific/Apia")).toBeNull();
+    });
+
+    it("da null con un día o una hora que no son canónicos", () => {
+      expect(instantFromLocalOrLater("2026-02-30", "09:00", madrid)).toBeNull();
+      expect(instantFromLocalOrLater("2026-03-29", "2:30", madrid)).toBeNull();
+    });
+  },
+);
+
+describe("fullWeekdayLabel (TS-100)", () => {
+  it.each<[DateFormat, string, string]>([
+    ["dd/MM/yyyy", "miércoles 01/10", "martes 31/12/2024"],
+    ["dd-MM-yyyy", "miércoles 01-10", "martes 31-12-2024"],
+    ["yyyy-MM-dd", "miércoles 10-01", "martes 2024-12-31"],
+    ["MM/dd/yyyy", "miércoles 10/01", "martes 12/31/2024"],
+  ])(
+    "rotula con el día entero y con año fuera del de hoy, con %s",
+    (format, sameYear, otherYear) => {
+      expect(fullWeekdayLabel("2025-10-01", "2025-10-05", format)).toBe(sameYear);
+      expect(fullWeekdayLabel("2024-12-31", "2025-10-05", format)).toBe(otherYear);
+    },
+  );
+
+  it("rotula hoy y ayer con su día de la semana, sin «Hoy» ni «Ayer»", () => {
+    expect(fullWeekdayLabel("2026-10-04", "2026-10-04", "dd/MM/yyyy")).toBe(
+      "domingo 04/10",
+    );
+    expect(fullWeekdayLabel("2026-10-03", "2026-10-04", "dd/MM/yyyy")).toBe(
+      "sábado 03/10",
+    );
+  });
+
+  it("no corre el día con el proceso en un huso negativo", () => {
+    const original = process.env.TZ;
+    process.env.TZ = buenosAires;
+    try {
+      expect(fullWeekdayLabel("2026-10-02", "2026-10-05", "dd/MM/yyyy")).toBe(
+        "viernes 02/10",
+      );
+    } finally {
+      restoreProcessTimeZone(original);
+    }
+  });
+
+  it("devuelve la clave tal cual si no es un día", () => {
+    expect(fullWeekdayLabel("2026-02-30", "2026-10-02", "dd/MM/yyyy")).toBe("2026-02-30");
   });
 });
 

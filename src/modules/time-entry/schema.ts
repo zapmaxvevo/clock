@@ -4,7 +4,7 @@ import { sameId, type ProjectPair } from "@/lib/project-pair";
 import { normalizedIds } from "@/lib/tag-ids";
 import { noNullCharacter } from "@/lib/text";
 import type { ActionErrorCode } from "@/server/action";
-import { isClock, parseDayKey } from "@/server/time";
+import { isClock, MINUTES_PER_DAY, parseDayKey } from "@/server/time";
 import { PALETTE_KEYS } from "@/modules/project/palette";
 
 /**
@@ -50,6 +50,10 @@ export const timeEntryMessages = {
     "Ninguna entrada cambió: algunas de las elegidas no se pueden editar.",
   bulkDeleteRejected:
     "No se borró ninguna entrada: algunas de las elegidas no se pueden borrar.",
+  /** TS-79: una causa, dos casos, un remedio (TS-34, TS-119). El 13b cambia el texto. */
+  cellNeedsEntryEdit: "Editá las entradas de esta celda desde el rastreador.",
+  /** TS-52: la fila supera el tope de `ids`; la persona no eligió nada. */
+  rowTooManyEntries: `Esta fila tiene más de ${BULK_MAX} entradas en la semana; borralas por partes desde el rastreador.`,
   unexpected: "No se pudo guardar. Revisá la conexión y volvé a intentar.",
 } as const;
 
@@ -330,6 +334,50 @@ export const updateEntryChanges = z
 
 export const updateEntryInput = z.object({ id: z.uuid(), changes: updateEntryChanges });
 
+/** El par de una fila de la planilla: `null` en los dos es «Sin proyecto» (TS-20). */
+const timesheetPair = {
+  projectId: z.uuid().nullable(),
+  taskId: z.uuid().nullable(),
+};
+
+/**
+ * «Dejar la celda en este valor» (sección 5 de la paridad). No lleva lo que la
+ * pestaña vio ni un id: el servidor decide con lo que la celda tiene (ADR 0019).
+ */
+export const setTimesheetCellInput = z
+  .object({
+    /** Día de la columna, en la zona de la persona. */
+    date: dayKeyInput,
+    ...timesheetPair,
+    /**
+     * Lo que la celda tiene que mostrar, en minutos (TS-25). Menos de uno es
+     * TS-35 y TT-73; 24 horas o más no lo arma el intérprete (TS-26, TS-82).
+     */
+    minutes: z
+      .number(timeEntryMessages.unexpected)
+      .int(timeEntryMessages.unexpected)
+      .min(1, timeEntryMessages.tooShort)
+      .max(MINUTES_PER_DAY - 1, timeEntryMessages.unexpected),
+  })
+  .refine(hasProjectForTask, taskNeedsProject);
+
+/** TS-52: las entradas de la fila de un par, acotadas a los siete días desde `weekStart`. */
+export const removeTimesheetRowInput = z
+  .object({
+    /** El primer día de la semana que la persona ve: la cota (D13-6). */
+    weekStart: dayKeyInput,
+    ...timesheetPair,
+    /**
+     * Los `entryIds` de la fila que la grilla mostraba: lo único que se borra
+     * (D13-6). Los de la masiva: de 1 a `BULK_MAX`, normalizados.
+     */
+    ids: entryIds,
+  })
+  .refine(hasProjectForTask, taskNeedsProject);
+
+/** El parámetro de `/planilla` (TS-10), con `safeParse`, como el del calendario. */
+export const timesheetWeekParams = z.object({ semana: dayKeyInput });
+
 export type StartTimerInput = z.input<typeof startTimerInput>;
 /** Lo que recibe el service: `description` ya validada y con su default. */
 export type StartTimerValues = z.output<typeof startTimerInput>;
@@ -355,6 +403,11 @@ export type UpdateEntryChanges = z.input<typeof updateEntryChanges>;
 export type UpdateEntryInput = z.input<typeof updateEntryInput>;
 /** Lo que recibe el service: la descripción ya recortada. */
 export type UpdateEntryValues = z.output<typeof updateEntryInput>;
+export type SetTimesheetCellInput = z.input<typeof setTimesheetCellInput>;
+export type SetTimesheetCellValues = z.output<typeof setTimesheetCellInput>;
+export type RemoveTimesheetRowInput = z.input<typeof removeTimesheetRowInput>;
+/** Lo que recibe el service: los ids ya normalizados. */
+export type RemoveTimesheetRowValues = z.output<typeof removeTimesheetRowInput>;
 
 /**
  * Todo lo que depende de zona horaria o de formato se resuelve en el servidor.
@@ -510,12 +563,79 @@ export const calendarState = z.object({
   closedSeconds: z.number().int().min(0),
 });
 
+export const timesheetDayView = z.object({
+  /** "2026-09-28". */
+  date: z.string(),
+  /** El encabezado de la columna: «lun, 28/09», con año si no es el de hoy (TS-08). */
+  label: z.string(),
+  /** El día en el nombre de cada celda: «lunes 28/09» (TS-100). */
+  fullLabel: z.string(),
+  isToday: z.boolean(),
+  /** Sábado o domingo: fondo distinto (TS-08). */
+  isWeekend: z.boolean(),
+  /** Anterior al piso de carga: sus celdas no se escriben (TS-12). */
+  beforeFloor: z.boolean(),
+  /** Exacto: lo que suman las celdas del día, sin el timer (TS-45, TS-49). */
+  closedSeconds: z.number().int().min(0),
+});
+
+export const timesheetCellView = z.object({
+  date: z.string(),
+  /** Exacto: lo que suman las entradas cerradas de la celda (TS-24). */
+  closedSeconds: z.number().int().min(0),
+  /** Una de cero minutos cuenta: la celda dice `0:00` y no queda vacía (TS-118). */
+  entryCount: z.number().int().min(1),
+});
+
+export const timesheetRowView = z.object({
+  /** Con la forma de `ProjectRef`; `null` es «Sin proyecto». Esté o no archivado (TS-21). */
+  project: z
+    .object({ id: z.uuid(), name: z.string(), color: z.enum(PALETTE_KEYS) })
+    .nullable(),
+  task: z.object({ id: z.uuid(), name: z.string() }).nullable(),
+  /** El cliente del proyecto, en gris (TS-13); `null` sin cliente o sin proyecto. */
+  client: z.object({ id: z.uuid(), name: z.string() }).nullable(),
+  /** Solo las celdas con entradas, por día. */
+  cells: z.array(timesheetCellView),
+  /** Exacto: la suma de la fila en la semana (TS-44). */
+  closedSeconds: z.number().int().min(0),
+  /**
+   * Las cerradas de la fila en la semana, por id: lo que cuenta el diálogo de
+   * TS-53 y lo que borra «Quitar fila» (D13-6).
+   */
+  entryIds: z.array(z.uuid()).min(1),
+});
+
+export const timesheetState = z.object({
+  /** Día de hoy en la zona de la persona: la marca del selector de fecha. */
+  todayKey: z.string(),
+  canTrack: z.boolean(),
+  /** Primer día de la semana que se muestra, ya normalizado (TS-10). */
+  weekStart: z.string(),
+  /** «Esta semana», «Semana anterior» o el rango (TS-09, TT-47). */
+  weekLabel: z.string(),
+  previousStart: z.string(),
+  nextStart: z.string(),
+  /** La semana que contiene hoy: el destino de «Esta semana». */
+  currentStart: z.string(),
+  days: z.array(timesheetDayView).length(7),
+  /** Las filas que salen de las entradas, en el orden de TS-15. */
+  rows: z.array(timesheetRowView),
+  /** Exacto: el total de la semana (TS-46). */
+  closedSeconds: z.number().int().min(0),
+  /** Dónde guarda el navegador las filas vacías: por workspace y persona. */
+  storageKey: z.string(),
+});
+
 export type TimeEntryView = z.infer<typeof timeEntryView>;
 export type DayGroupView = z.infer<typeof dayGroupView>;
 export type WeekGroupView = z.infer<typeof weekGroupView>;
 export type TrackerState = z.infer<typeof trackerState>;
 export type CalendarDayView = z.infer<typeof calendarDayView>;
 export type CalendarState = z.infer<typeof calendarState>;
+export type TimesheetState = z.infer<typeof timesheetState>;
+export type TimesheetRowView = z.infer<typeof timesheetRowView>;
+export type TimesheetDayView = z.infer<typeof timesheetDayView>;
 
 export type TimeEntryErrorCode =
   ActionErrorCode | "already_stopped" | "timer_running" | "rejected";
@@ -566,3 +686,9 @@ export type BulkDeleteEntriesResult = { readonly ids: readonly string[] };
 
 /** La entrada como quedó, se haya escrito o no (ADR 0013). */
 export type UpdateEntryResult = { readonly entry: TimeEntryView };
+
+/** La entrada que el pedido creó o editó; `null` si la celda ya mostraba ese valor. */
+export type SetTimesheetCellResult = { readonly entry: TimeEntryView | null };
+
+/** Las entradas que se borraron; vacío si ya no quedaba ninguna de las pedidas (TS-92). */
+export type RemoveTimesheetRowResult = { readonly ids: readonly string[] };
