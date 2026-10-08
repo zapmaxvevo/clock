@@ -1083,7 +1083,7 @@ nombre. Se procesan en las reglas cuando cierre la segunda tanda de preguntas.
 
 Segunda tanda, el mismo día:
 
-- **A.** La celda mostró `00:01:00`. `1h` da una hora y `1:30`, una hora y media. En el perfil no
+- **A.** En la primera prueba se escribió `1`, no `1:00`: `1` da `00:01:00` y `1:00`, una hora. `1h` da una hora y `1:30`, una hora y media. En el perfil no
   hay nada parecido a «inicio del día».
 - **B.** Al pasar de `1:00` a `2:00` solo se movió el fin; la descripción quedó.
 - **C.** Con dos entradas en la celda: bajar el valor descuenta de la que empieza más tarde (con
