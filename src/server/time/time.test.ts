@@ -4,6 +4,8 @@ import {
   addMinutes,
   dayBounds,
   dayKey,
+  dayRangeLabel,
+  daysBetweenKeys,
   dayLabel,
   durationMinutes,
   durationSeconds,
@@ -306,6 +308,74 @@ describe("weekKeyLabel", () => {
     );
     expect(weekKeyLabel("2025-06-02", "2026-03-10", 1, "dd/MM/yyyy")).toBe(
       "02/06/2025 – 08/06/2025",
+    );
+  });
+});
+
+describe("daysBetweenKeys", () => {
+  it("da 0 con el mismo día y cuenta los días entre dos claves", () => {
+    expect(daysBetweenKeys("2026-10-05", "2026-10-05")).toBe(0);
+    expect(daysBetweenKeys("2026-10-05", "2026-10-11")).toBe(6);
+    expect(daysBetweenKeys("2026-01-01", "2026-12-31")).toBe(364);
+  });
+
+  it("cuenta el 29 de febrero de un año bisiesto", () => {
+    expect(daysBetweenKeys("2028-02-28", "2028-03-01")).toBe(2);
+    expect(daysBetweenKeys("2028-01-01", "2028-12-31")).toBe(365);
+    expect(daysBetweenKeys("2027-02-28", "2027-03-01")).toBe(1);
+  });
+
+  it("cruza el año", () => {
+    expect(daysBetweenKeys("2025-12-29", "2026-01-04")).toBe(6);
+  });
+
+  it("da negativo con el orden invertido", () => {
+    expect(daysBetweenKeys("2026-10-11", "2026-10-05")).toBe(-6);
+  });
+
+  it("lanza si alguna clave no es un día", () => {
+    expect(() => daysBetweenKeys("2026-02-30", "2026-03-01")).toThrow(RangeError);
+    expect(() => daysBetweenKeys("2026-03-01", "10000-01-01")).toThrow(RangeError);
+  });
+});
+
+describe("dayRangeLabel", () => {
+  it("rotula un día sin guion", () => {
+    expect(dayRangeLabel("2026-10-05", "2026-10-05", "2026-10-08", "dd/MM/yyyy")).toBe(
+      "05/10",
+    );
+  });
+
+  it("rotula un rango del año de hoy sin año", () => {
+    expect(dayRangeLabel("2026-10-05", "2026-10-18", "2026-10-08", "dd/MM/yyyy")).toBe(
+      "05/10 – 18/10",
+    );
+  });
+
+  it("lleva el año en los dos extremos si alguno no es del año de hoy", () => {
+    expect(dayRangeLabel("2025-12-29", "2026-01-04", "2026-10-08", "dd/MM/yyyy")).toBe(
+      "29/12/2025 – 04/01/2026",
+    );
+    expect(dayRangeLabel("2026-12-20", "2027-01-10", "2026-10-08", "dd/MM/yyyy")).toBe(
+      "20/12/2026 – 10/01/2027",
+    );
+    expect(dayRangeLabel("2025-03-01", "2025-03-01", "2026-10-08", "dd/MM/yyyy")).toBe(
+      "01/03/2025",
+    );
+  });
+
+  it.each<[DateFormat, string, string, string]>([
+    ["dd/MM/yyyy", "05/10", "05/10 – 18/10", "29/12/2025 – 04/01/2026"],
+    ["dd-MM-yyyy", "05-10", "05-10 – 18-10", "29-12-2025 – 04-01-2026"],
+    ["yyyy-MM-dd", "10-05", "10-05 – 10-18", "2025-12-29 – 2026-01-04"],
+    ["MM/dd/yyyy", "10/05", "10/05 – 10/18", "12/29/2025 – 01/04/2026"],
+  ])("con %s", (format, oneDay, sameYear, otherYear) => {
+    expect(dayRangeLabel("2026-10-05", "2026-10-05", "2026-10-08", format)).toBe(oneDay);
+    expect(dayRangeLabel("2026-10-05", "2026-10-18", "2026-10-08", format)).toBe(
+      sameYear,
+    );
+    expect(dayRangeLabel("2025-12-29", "2026-01-04", "2026-10-08", format)).toBe(
+      otherYear,
     );
   });
 });
@@ -1141,6 +1211,13 @@ describe("hora de pared con el proceso en una zona con cambio de horario", () =>
     expect(instantFromLocal("2026-03-29", "03:00", madrid)?.toISOString()).toBe(
       "2026-03-29T01:00:00.000Z",
     );
+  });
+
+  it("cuenta días enteros entre claves que cruzan los dos cambios de horario del proceso", () => {
+    // Con la medianoche local del proceso, del 28 al 30 de marzo serían 47 h.
+    expect(daysBetweenKeys("2026-03-28", "2026-03-30")).toBe(2);
+    expect(daysBetweenKeys("2026-10-24", "2026-10-26")).toBe(2);
+    expect(daysBetweenKeys("2026-01-01", "2026-12-31")).toBe(364);
   });
 
   it("acepta una hora que existe en la zona pedida aunque no en la del proceso", () => {

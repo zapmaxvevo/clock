@@ -110,7 +110,10 @@ export async function profileOf(userId: string): Promise<StoredProfile> {
 }
 
 /** El nombre que se muestra: el editado, o el de la cuenta de Google (PF-08, PF-45). */
-export function displayNameOf(stored: StoredProfile, accountName: string): string {
+export function displayNameOf(
+  stored: Pick<StoredProfile, "displayName">,
+  accountName: string,
+): string {
   return stored.displayName ?? accountName;
 }
 

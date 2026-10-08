@@ -416,6 +416,47 @@ export function weekKeyLabel(
   return `${formatDayKey(weekStart, format, withYear)} – ${formatDayKey(lastKey, format, withYear)}`;
 }
 
+/**
+ * Días civiles de `first` a `last`: 0 si son el mismo, negativo si `last` es
+ * anterior. Aritmética en UTC, sin zona. Lanza si alguna clave no es un día.
+ */
+export function daysBetweenKeys(first: string, last: string): number {
+  return (civilTime(last) - civilTime(first)) / DAY_MS;
+}
+
+/** La medianoche UTC de una clave de día; lanza si la clave no es un día. */
+function civilTime(dayKey: string): number {
+  const date = parseDayKey(dayKey);
+  if (date === null) {
+    throw new RangeError(`Clave de día inválida: ${dayKey}.`);
+  }
+  return Date.UTC(date.year, date.month - 1, date.day);
+}
+
+/**
+ * El rótulo de un período que no es una semana: «05/10 – 18/10», o «05/10» si
+ * es un día. Si alguno de los extremos no es del año de `todayKey`, los dos
+ * llevan el año: «29/12/2025 – 04/01/2026».
+ */
+export function dayRangeLabel(
+  first: string,
+  last: string,
+  todayKey: string,
+  format: DateFormat,
+): string {
+  const from = parseDayKey(first);
+  const to = parseDayKey(last);
+  const today = parseDayKey(todayKey);
+  if (from === null || to === null || today === null) {
+    return first;
+  }
+  const withYear = from.year !== today.year || to.year !== today.year;
+  if (first === last) {
+    return formatDayKey(first, format, withYear);
+  }
+  return `${formatDayKey(first, format, withYear)} – ${formatDayKey(last, format, withYear)}`;
+}
+
 /** Minutos desde las 00:00 de una hora canónica "HH:mm", o `null`. */
 export function clockToMinutes(clock: string): number | null {
   const match = CLOCK.exec(clock);

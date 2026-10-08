@@ -46,7 +46,7 @@ export const currentSession = cache(async (): Promise<SessionContext | null> => 
     preferences: stored.preferences,
     user: {
       id: session.user.id,
-      // Único lugar que compone el nombre que se muestra (PF-08, PF-45).
+      // Único lugar que compone el nombre de quien mira (PF-08, PF-45).
       name: displayNameOf(stored, session.user.name),
       email: session.user.email,
       image: googlePhotoOf(session.user.image),

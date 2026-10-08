@@ -61,6 +61,10 @@ type ResourceByAction = {
   "timeEntry.own.create": TimeEntryResource;
   "timeEntry.own.update": TimeEntryResource;
   "timeEntry.own.delete": TimeEntryResource;
+  // ADR 0020. `who_sees_all_entries` no entra: si la fase 2 la vuelve editable,
+  // `timeEntry.others.view` declara un recurso propio (ADR 0009).
+  "timeEntry.others.view": WorkspaceResource;
+  "report.view": WorkspaceResource;
   // En la fase 1 `whoCreatesProjects` no entra en la decisión (P-18). Cuando
   // entre, estas dos declaran un recurso propio que lo lleva: ADR 0009.
   "client.create": WorkspaceResource;
@@ -94,6 +98,8 @@ const resourceKinds = {
   "timeEntry.own.create": ["timeEntry"],
   "timeEntry.own.update": ["timeEntry"],
   "timeEntry.own.delete": ["timeEntry"],
+  "timeEntry.others.view": ["workspace"],
+  "report.view": ["workspace"],
   "client.create": ["workspace"],
   "project.create": ["workspace"],
   "project.view": ["project"],
@@ -122,6 +128,8 @@ const allowedRoles: Record<Action, readonly Role[]> = {
   "timeEntry.own.create": everyone,
   "timeEntry.own.update": everyone,
   "timeEntry.own.delete": everyone,
+  "timeEntry.others.view": ["owner", "admin"],
+  "report.view": everyone,
   "client.create": everyone,
   "project.create": everyone,
   "project.view": everyone,

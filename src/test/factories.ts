@@ -16,7 +16,7 @@ import {
   workspaceSettings,
 } from "@/server/db/schema";
 import type { PaletteKey } from "@/modules/project/palette";
-import type { Role } from "@/server/permissions";
+import type { MembershipStatus, Role } from "@/server/permissions";
 import type { DisplayFormats } from "@/server/time";
 
 /** Zona horaria de los workspaces de prueba. */
@@ -56,10 +56,14 @@ export async function seedWorkspace(timezone = buenosAires): Promise<SeededWorks
   return { workspaceId: created.id, ownerId };
 }
 
-/** Agrega un miembro con el rol pedido al workspace. */
-export async function seedMember(workspaceId: string, role: Role): Promise<string> {
+/** Agrega un miembro con el rol pedido al workspace, activo salvo que se pida otro estado. */
+export async function seedMember(
+  workspaceId: string,
+  role: Role,
+  status: MembershipStatus = "active",
+): Promise<string> {
   const userId = await seedUser();
-  await db.insert(membership).values({ workspaceId, userId, role });
+  await db.insert(membership).values({ workspaceId, userId, role, status });
   return userId;
 }
 
