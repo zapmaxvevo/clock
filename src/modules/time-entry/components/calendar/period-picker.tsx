@@ -5,11 +5,11 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { es } from "react-day-picker/locale";
 
+import { civilDate, dayKeyOfCivilDate } from "@/components/civil-date";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
-import { civilDate, dayKeyOfCivilDate } from "../civil-date";
 import { trackerLabels } from "../labels";
 import { calendarLabels } from "./labels";
 
