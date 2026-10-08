@@ -95,9 +95,9 @@ vi.mock("@/server/auth", () => ({
 const actions = await import("./actions");
 const { requireSession } = await import("@/server/session");
 
-/** Lo que revalidan `calls` llamadas a actions del módulo: las dos pantallas cada una (§4.7). */
+/** Lo que revalidan `calls` llamadas a actions del módulo: las tres pantallas cada una (§4.11 del 13). */
 function revalidatedFor(calls: number): string[] {
-  return Array.from({ length: calls }, () => ["/", "/calendario"]).flat();
+  return Array.from({ length: calls }, () => ["/", "/calendario", "/planilla"]).flat();
 }
 
 const ownerEmail = "owner@empresa.com";
@@ -303,10 +303,24 @@ describe("la revalidación corre siempre", () => {
     bulkEditEntries: () =>
       actions.bulkEditEntries({ ids: [], changes: { description: "" } }),
     bulkDeleteEntries: () => actions.bulkDeleteEntries({ ids: [] }),
+    setTimesheetCell: () =>
+      actions.setTimesheetCell({
+        date: "2026-10-01",
+        projectId: null,
+        taskId: null,
+        minutes: 0,
+      }),
+    removeTimesheetRow: () =>
+      actions.removeTimesheetRow({
+        weekStart: "2026-09-28",
+        projectId: null,
+        taskId: null,
+        ids: [],
+      }),
   } satisfies Record<keyof typeof actions, () => Promise<{ readonly ok: boolean }>>;
 
   it.each(Object.entries(rejectedCalls))(
-    "%s revalida el rastreador y el calendario también con error (§4.7)",
+    "%s revalida el rastreador, el calendario y la planilla también con error (§4.7, §4.11 del 13)",
     async (_, call) => {
       await signIn();
 
@@ -2240,5 +2254,248 @@ describe("bulkEditEntries con el par, el facturable y las etiquetas (criterio 17
       });
     }
     expect(mocks.revalidated).toEqual(revalidatedFor(3));
+  });
+});
+
+describe("setTimesheetCell y removeTimesheetRow (criterio 18 del 13)", () => {
+  const unknownId = "11111111-1111-4111-8111-111111111111";
+
+  /** Abre la sesión y crea su membresía, que crea la primera action. */
+  async function signInWithMembership() {
+    const seeded = await signInOn();
+    await actions.discardTimer({ id: unknownId });
+    mocks.revalidated.length = 0;
+    return seeded;
+  }
+
+  /** Una entrada propia cerrada; el miércoles 30/09/2026 a las 10:00 locales por omisión. */
+  function seedOwnEntry(
+    seeded: SeededWorkspace,
+    values: { startedAt?: string; endedAt?: string; projectId?: string | null } = {},
+  ) {
+    return seedTimeEntry({
+      workspaceId: seeded.workspaceId,
+      userId: sessionUserId(),
+      startedAt: values.startedAt ?? "2026-09-30T13:00:00Z",
+      endedAt: values.endedAt ?? "2026-09-30T14:00:00Z",
+      projectId: values.projectId ?? null,
+    });
+  }
+
+  it("escribe una celda vacía, responde la vista y revalida las tres pantallas", async () => {
+    await signInWithMembership();
+
+    const result = await actions.setTimesheetCell({
+      date: "2026-09-30",
+      projectId: null,
+      taskId: null,
+      minutes: 90,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.entry).toMatchObject({
+      startedAt: "2026-09-30T12:00:00.000Z",
+      endedAt: "2026-09-30T13:30:00.000Z",
+      durationLabel: "1:30",
+    });
+    expect(mocks.revalidated).toEqual(revalidatedFor(1));
+  });
+
+  it("traduce cellNeedsEntryEdit, el ProjectError y el ZodError, y revalida cada vez", async () => {
+    const seeded = await signInWithMembership();
+    // Dos entradas «Sin proyecto» el miércoles; la que empieza más tarde dura un minuto.
+    await seedOwnEntry(seeded);
+    await seedOwnEntry(seeded, {
+      startedAt: "2026-09-30T15:00:00Z",
+      endedAt: "2026-09-30T15:01:00Z",
+    });
+    const archived = await seedProject({
+      workspaceId: seeded.workspaceId,
+      archived: true,
+    });
+
+    const trim = await actions.setTimesheetCell({
+      date: "2026-09-30",
+      projectId: null,
+      taskId: null,
+      minutes: 60,
+    });
+    const unavailable = await actions.setTimesheetCell({
+      date: "2026-09-30",
+      projectId: archived.id,
+      taskId: null,
+      minutes: 60,
+    });
+    const zero = await actions.setTimesheetCell({
+      date: "2026-09-30",
+      projectId: null,
+      taskId: null,
+      minutes: 0,
+    });
+    const taskAlone = await actions.setTimesheetCell({
+      date: "2026-09-30",
+      projectId: null,
+      taskId: unknownId,
+      minutes: 30,
+    });
+
+    expect(trim).toEqual({
+      ok: false,
+      code: "validation",
+      message: timeEntryMessages.cellNeedsEntryEdit,
+    });
+    expect(unavailable).toEqual({
+      ok: false,
+      code: "not_found",
+      message: projectMessages.projectUnavailable,
+    });
+    expect(zero).toEqual({
+      ok: false,
+      code: "validation",
+      message: timeEntryMessages.tooShort,
+    });
+    expect(taskAlone).toEqual({
+      ok: false,
+      code: "validation",
+      message: timeEntryMessages.taskNeedsProject,
+    });
+    expect(await allTimeEntries()).toHaveLength(2);
+    expect(mocks.revalidated).toEqual(revalidatedFor(4));
+  });
+
+  it("quita una fila, responde los ids borrados y revalida", async () => {
+    const seeded = await signInWithMembership();
+    const entry = await seedOwnEntry(seeded);
+
+    const result = await actions.removeTimesheetRow({
+      weekStart: "2026-09-28",
+      projectId: null,
+      taskId: null,
+      ids: [entry.id.toUpperCase()],
+    });
+
+    expect(result).toEqual({ ok: true, data: { ids: [entry.id] } });
+    expect(await timeEntryById(entry.id)).toBeUndefined();
+    expect(mocks.revalidated).toEqual(revalidatedFor(1));
+  });
+
+  it("201 ids responden rowTooManyEntries sin borrar nada (TS-52)", async () => {
+    const seeded = await signInWithMembership();
+    const entry = await seedOwnEntry(seeded);
+    const ids = [entry.id, ...Array.from({ length: 200 }, () => randomUUID())];
+
+    const result = await actions.removeTimesheetRow({
+      weekStart: "2026-09-28",
+      projectId: null,
+      taskId: null,
+      ids,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      code: "validation",
+      message: timeEntryMessages.rowTooManyEntries,
+    });
+    expect(await timeEntryById(entry.id)).toBeDefined();
+    expect(mocks.revalidated).toEqual(revalidatedFor(1));
+  });
+
+  it("otro error del esquema sale con su propio texto, también junto a 201 ids", async () => {
+    await signInWithMembership();
+    const tooMany = Array.from({ length: 201 }, () => randomUUID());
+
+    const results = [
+      await actions.removeTimesheetRow({
+        weekStart: "2026-09-28",
+        projectId: null,
+        taskId: null,
+        ids: [],
+      }),
+      await actions.removeTimesheetRow({
+        weekStart: "2026-02-30",
+        projectId: null,
+        taskId: null,
+        ids: [unknownId],
+      }),
+      await actions.removeTimesheetRow({
+        weekStart: "2026-09-28",
+        projectId: null,
+        taskId: unknownId,
+        ids: [unknownId],
+      }),
+      await actions.removeTimesheetRow({
+        weekStart: "2026-09-28",
+        projectId: null,
+        taskId: null,
+        ids: ["no-es-uuid"],
+      }),
+    ];
+
+    expect(results.slice(0, 3)).toEqual([
+      { ok: false, code: "validation", message: timeEntryMessages.bulkEmpty },
+      { ok: false, code: "validation", message: timeEntryMessages.invalidDate },
+      { ok: false, code: "validation", message: timeEntryMessages.taskNeedsProject },
+    ]);
+    expect(results[3]).toMatchObject({ ok: false, code: "validation" });
+    expect(results[3]).not.toMatchObject({
+      message: timeEntryMessages.rowTooManyEntries,
+    });
+    // Con 201 ids y además una semana inválida, el tope gana: es lo que la
+    // persona puede resolver.
+    expect(
+      await actions.removeTimesheetRow({
+        weekStart: "2026-02-30",
+        projectId: null,
+        taskId: null,
+        ids: tooMany,
+      }),
+    ).toEqual({
+      ok: false,
+      code: "validation",
+      message: timeEntryMessages.rowTooManyEntries,
+    });
+    expect(mocks.revalidated).toEqual(revalidatedFor(5));
+  });
+
+  it("las dos niegan con la membresía desactivada antes de tocar nada", async () => {
+    const seeded = await signInWithMembership();
+    const entry = await seedOwnEntry(seeded);
+    await db
+      .update(membership)
+      .set({ status: "inactive" })
+      .where(
+        and(
+          eq(membership.workspaceId, seeded.workspaceId),
+          eq(membership.userId, sessionUserId()),
+        ),
+      );
+
+    const results = [
+      await actions.setTimesheetCell({
+        date: "2026-09-30",
+        projectId: null,
+        taskId: null,
+        minutes: 120,
+      }),
+      await actions.removeTimesheetRow({
+        weekStart: "2026-09-28",
+        projectId: null,
+        taskId: null,
+        ids: [entry.id],
+      }),
+    ];
+
+    for (const result of results) {
+      expect(result).toEqual({
+        ok: false,
+        code: "forbidden",
+        message: timeEntryMessages.forbidden,
+      });
+    }
+    expect(await timeEntryById(entry.id)).toMatchObject({
+      endedAt: new Date("2026-09-30T14:00:00Z"),
+    });
+    expect(mocks.revalidated).toEqual(revalidatedFor(2));
   });
 });
