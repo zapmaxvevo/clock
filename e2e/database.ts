@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 
 import { Client } from "pg";
 
+import { dayKeyOf, type CivilDay } from "./days";
 import { TEST_EMAIL_DOMAIN, testDatabaseUrl } from "./environment";
 import { PERSON_NAME } from "./session";
 
@@ -27,6 +28,24 @@ async function withDatabase<T>(work: (client: Client) => Promise<T>): Promise<T>
 }
 
 /**
+ * Corre `work` en una transacción propia: si algo lanza, se deshace entero y
+ * no queda nada a medias.
+ */
+async function withTransaction<T>(work: (client: Client) => Promise<T>): Promise<T> {
+  return withDatabase(async (client) => {
+    await client.query("begin");
+    try {
+      const result = await work(client);
+      await client.query("commit");
+      return result;
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    }
+  });
+}
+
+/**
  * El workspace de los e2e lo crea la primera sesión, así que en una base nueva
  * es de hoy, como el de producción el primer día de uso. Una base que se
  * reusa entre corridas tiene uno viejo: esto le pone la creación en este
@@ -43,7 +62,7 @@ async function withDatabase<T>(work: (client: Client) => Promise<T>): Promise<T>
  */
 export async function renewWorkspace(): Promise<void> {
   const expectedOwner = `owner@${TEST_EMAIL_DOMAIN}`;
-  await withDatabase(async (client) => {
+  await withTransaction(async (client) => {
     const found = await client.query<{ id: string; email: string }>(
       `select workspace.id, "user".email
          from workspace
@@ -59,19 +78,12 @@ export async function renewWorkspace(): Promise<void> {
         `El owner del workspace no es ${expectedOwner}: la base no es la de los e2e y no se renueva.`,
       );
     }
-    await client.query("begin");
-    try {
-      await client.query("update workspace set created_at = now() where id = $1", [
-        workspace.id,
-      ]);
-      const first = await client.query<{ id: string }>(`select ${FIRST_WORKSPACE} as id`);
-      if (first.rows.at(0)?.id !== workspace.id) {
-        throw new Error("Renovado, el workspace de los e2e dejaría de ser el primero.");
-      }
-      await client.query("commit");
-    } catch (error) {
-      await client.query("rollback");
-      throw error;
+    await client.query("update workspace set created_at = now() where id = $1", [
+      workspace.id,
+    ]);
+    const first = await client.query<{ id: string }>(`select ${FIRST_WORKSPACE} as id`);
+    if (first.rows.at(0)?.id !== workspace.id) {
+      throw new Error("Renovado, el workspace de los e2e dejaría de ser el primero.");
     }
   });
 }
@@ -210,57 +222,50 @@ export type SeedProject = {
  * no tiene membresía, se corta sin dejar nada.
  */
 export async function seedProject(project: SeedProject): Promise<void> {
-  await withDatabase(async (client) => {
+  await withTransaction(async (client) => {
     const insertOne = (sql: string, values: readonly unknown[]) =>
       insertOneRow(client, sql, values);
 
-    await client.query("begin");
-    try {
-      const clientId =
-        project.client === undefined
-          ? null
-          : await insertOne(
-              `insert into client (workspace_id, name)
-               values (${FIRST_WORKSPACE}, $1)
-               returning id`,
-              [project.client],
-            );
-      const projectId = await insertOne(
-        `insert into project (workspace_id, client_id, name, color, is_public, billable_by_default)
-         values (${FIRST_WORKSPACE}, $1, $2, $3, $4, $5)
+    const clientId =
+      project.client === undefined
+        ? null
+        : await insertOne(
+            `insert into client (workspace_id, name)
+             values (${FIRST_WORKSPACE}, $1)
+             returning id`,
+            [project.client],
+          );
+    const projectId = await insertOne(
+      `insert into project (workspace_id, client_id, name, color, is_public, billable_by_default)
+       values (${FIRST_WORKSPACE}, $1, $2, $3, $4, $5)
+       returning id`,
+      [
+        clientId,
+        project.name,
+        project.color ?? "blue",
+        project.isPublic ?? true,
+        project.billableByDefault ?? false,
+      ],
+    );
+    for (const task of project.tasks ?? []) {
+      await insertOne(
+        `insert into task (workspace_id, project_id, name)
+         values (${FIRST_WORKSPACE}, $1, $2)
          returning id`,
-        [
-          clientId,
-          project.name,
-          project.color ?? "blue",
-          project.isPublic ?? true,
-          project.billableByDefault ?? false,
-        ],
+        [projectId, task],
       );
-      for (const task of project.tasks ?? []) {
-        await insertOne(
-          `insert into task (workspace_id, project_id, name)
-           values (${FIRST_WORKSPACE}, $1, $2)
-           returning id`,
-          [projectId, task],
-        );
-      }
-      for (const email of project.members ?? []) {
-        await insertOne(
-          `insert into project_member (workspace_id, project_id, user_id)
-           select membership.workspace_id, $1, membership.user_id
-             from membership
-             join "user" on "user".id = membership.user_id
-            where membership.workspace_id = ${FIRST_WORKSPACE}
-              and "user".email = $2
-           returning project_id as id`,
-          [projectId, email],
-        );
-      }
-      await client.query("commit");
-    } catch (error) {
-      await client.query("rollback");
-      throw error;
+    }
+    for (const email of project.members ?? []) {
+      await insertOne(
+        `insert into project_member (workspace_id, project_id, user_id)
+         select membership.workspace_id, $1, membership.user_id
+           from membership
+           join "user" on "user".id = membership.user_id
+          where membership.workspace_id = ${FIRST_WORKSPACE}
+            and "user".email = $2
+         returning project_id as id`,
+        [projectId, email],
+      );
     }
   });
 }
@@ -323,35 +328,28 @@ export type SeedPerson = {
  * recorrido (§8.3 del contrato de R2a).
  */
 export async function seedPerson(person: SeedPerson): Promise<void> {
-  await withDatabase(async (client) => {
-    const insertOne = (sql: string, values: readonly unknown[]) =>
-      insertOneRow(client, sql, values);
-
-    await client.query("begin");
-    try {
-      const userId = await insertOne(
-        `insert into "user" (id, name, email, email_verified)
-         values ($1, $2, $3, true)
-         returning id`,
-        [randomUUID(), PERSON_NAME, person.email],
-      );
-      await insertOne(
-        `insert into membership (workspace_id, user_id, role, status)
-         values (${FIRST_WORKSPACE}, $1, 'member', $2)
-         returning id`,
-        [userId, person.status ?? "active"],
-      );
-      await insertOne(
-        `insert into user_preference (user_id, display_name)
-         values ($1, $2)
-         returning user_id as id`,
-        [userId, person.displayName],
-      );
-      await client.query("commit");
-    } catch (error) {
-      await client.query("rollback");
-      throw error;
-    }
+  await withTransaction(async (client) => {
+    const userId = await insertOneRow(
+      client,
+      `insert into "user" (id, name, email, email_verified)
+       values ($1, $2, $3, true)
+       returning id`,
+      [randomUUID(), PERSON_NAME, person.email],
+    );
+    await insertOneRow(
+      client,
+      `insert into membership (workspace_id, user_id, role, status)
+       values (${FIRST_WORKSPACE}, $1, 'member', $2)
+       returning id`,
+      [userId, person.status ?? "active"],
+    );
+    await insertOneRow(
+      client,
+      `insert into user_preference (user_id, display_name)
+       values ($1, $2)
+       returning user_id as id`,
+      [userId, person.displayName],
+    );
   });
 }
 
@@ -431,57 +429,66 @@ export async function seedEntries(
   timeZone: string,
   entries: readonly SeedEntry[],
 ): Promise<void> {
-  await withDatabase(async (client) => {
-    await client.query("begin");
-    try {
-      for (const entry of entries) {
-        const values = [
-          email,
-          entry.description,
-          entry.day,
-          entry.start,
-          entry.end,
-          timeZone,
-        ];
-        if (entry.project === undefined) {
-          await insertOneRow(
-            client,
-            `insert into time_entry (workspace_id, user_id, description, started_at, ended_at)
-             select membership.workspace_id, membership.user_id, $2,
-                    ($3::date + $4::time) at time zone $6,
-                    ($3::date + $5::time) at time zone $6
-               from membership
-               join "user" on "user".id = membership.user_id
-              where membership.workspace_id = ${FIRST_WORKSPACE}
-                and "user".email = $1
-             returning time_entry.id`,
-            values,
-          );
-          continue;
-        }
+  await withTransaction(async (client) => {
+    for (const entry of entries) {
+      const values = [
+        email,
+        entry.description,
+        entry.day,
+        entry.start,
+        entry.end,
+        timeZone,
+      ];
+      if (entry.project === undefined) {
         await insertOneRow(
           client,
-          `insert into time_entry (workspace_id, user_id, description, started_at, ended_at, project_id)
+          `insert into time_entry (workspace_id, user_id, description, started_at, ended_at)
            select membership.workspace_id, membership.user_id, $2,
                   ($3::date + $4::time) at time zone $6,
-                  ($3::date + $5::time) at time zone $6,
-                  project.id
+                  ($3::date + $5::time) at time zone $6
              from membership
              join "user" on "user".id = membership.user_id
-             join project on project.workspace_id = membership.workspace_id
-                         and project.name = $7
             where membership.workspace_id = ${FIRST_WORKSPACE}
               and "user".email = $1
            returning time_entry.id`,
-          [...values, entry.project],
+          values,
         );
+        continue;
       }
-      await client.query("commit");
-    } catch (error) {
-      await client.query("rollback");
-      throw error;
+      await insertOneRow(
+        client,
+        `insert into time_entry (workspace_id, user_id, description, started_at, ended_at, project_id)
+         select membership.workspace_id, membership.user_id, $2,
+                ($3::date + $4::time) at time zone $6,
+                ($3::date + $5::time) at time zone $6,
+                project.id
+           from membership
+           join "user" on "user".id = membership.user_id
+           join project on project.workspace_id = membership.workspace_id
+                       and project.name = $7
+          where membership.workspace_id = ${FIRST_WORKSPACE}
+            and "user".email = $1
+         returning time_entry.id`,
+        [...values, entry.project],
+      );
     }
   });
+}
+
+/**
+ * `seedEntries` con el día como `CivilDay`, que es como lo calculan los
+ * recorridos: las horas se leen en `timeZone`, la de la persona.
+ */
+export async function seedPersonEntries(
+  email: string,
+  timeZone: string,
+  entries: readonly (Omit<SeedEntry, "day"> & { readonly day: CivilDay })[],
+): Promise<void> {
+  await seedEntries(
+    email,
+    timeZone,
+    entries.map((entry) => ({ ...entry, day: dayKeyOf(entry.day) })),
+  );
 }
 
 /**
@@ -496,30 +503,23 @@ export async function copyEntry(
   description: string,
   copies: number,
 ): Promise<void> {
-  await withDatabase(async (client) => {
-    await client.query("begin");
-    try {
-      const result = await client.query(
-        `insert into time_entry (workspace_id, user_id, description, started_at, ended_at)
-         select time_entry.workspace_id, time_entry.user_id, time_entry.description,
-                time_entry.started_at, time_entry.ended_at
-           from time_entry
-           join "user" on "user".id = time_entry.user_id
-          cross join generate_series(1, $3)
-          where time_entry.workspace_id = ${FIRST_WORKSPACE}
-            and "user".email = $1
-            and time_entry.description = $2`,
-        [email, description, copies],
+  await withTransaction(async (client) => {
+    const result = await client.query(
+      `insert into time_entry (workspace_id, user_id, description, started_at, ended_at)
+       select time_entry.workspace_id, time_entry.user_id, time_entry.description,
+              time_entry.started_at, time_entry.ended_at
+         from time_entry
+         join "user" on "user".id = time_entry.user_id
+        cross join generate_series(1, $3)
+        where time_entry.workspace_id = ${FIRST_WORKSPACE}
+          and "user".email = $1
+          and time_entry.description = $2`,
+      [email, description, copies],
+    );
+    if (result.rowCount !== copies) {
+      throw new Error(
+        `Se esperaba copiar ${copies} entradas y se copiaron ${result.rowCount}.`,
       );
-      if (result.rowCount !== copies) {
-        throw new Error(
-          `Se esperaba copiar ${copies} entradas y se copiaron ${result.rowCount}.`,
-        );
-      }
-      await client.query("commit");
-    } catch (error) {
-      await client.query("rollback");
-      throw error;
     }
   });
 }

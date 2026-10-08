@@ -10,7 +10,7 @@ import {
   PERSON_TIMEZONE,
   pickDialogDay,
 } from "./calendar-page";
-import { seedEntries, seedProject, type SeedEntry } from "./database";
+import { seedPersonEntries, seedProject } from "./database";
 import { addDays, dayKeyOf, todayIn, type CivilDay } from "./days";
 import {
   dropActionRequests,
@@ -92,22 +92,6 @@ async function seedNamedProject(label: string): Promise<string> {
   return name;
 }
 
-/**
- * Siembra por base las entradas del recorrido, con las horas en la zona de la
- * persona. La persona ya tiene que haber entrado a una pantalla, que es lo
- * que le crea la membresía.
- */
-async function seedPersonEntries(
-  email: string,
-  entries: readonly (Omit<SeedEntry, "day"> & { readonly day: CivilDay })[],
-): Promise<void> {
-  await seedEntries(
-    email,
-    PERSON_TIMEZONE,
-    entries.map((entry) => ({ ...entry, day: dayKeyOf(entry.day) })),
-  );
-}
-
 /** «Cerrar» al pie de la lista (§5.2). */
 function closeListButton(list: Locator): Locator {
   return list.getByRole("button", { name: "Cerrar", exact: true });
@@ -150,7 +134,7 @@ async function openCellWithTwo(
   now: CivilDay,
 ): Promise<Locator> {
   await openTimesheetWeek(page, week, now);
-  await seedPersonEntries(email, [
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
     { description: "a", day, start: "10:00", end: "11:00", project },
     { description: "b", day, start: "12:00", end: "13:00", project },
   ]);
@@ -170,7 +154,7 @@ test("el menú de una celda con una entrada lleva al editor, que guarda todo jun
   const tuesday = addDays(week, 1);
   const thursday = addDays(week, 3);
   await openTimesheetWeek(page, week, day);
-  await seedPersonEntries(email, [
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
     { description: "", day: tuesday, start: "09:00", end: "10:30", project },
     { description: "", day: thursday, start: "14:00", end: "15:00", project },
   ]);
@@ -248,7 +232,7 @@ test("«Borrar» desde el menú confirma, vacía la celda, y sin otra entrada la
   const thursday = addDays(week, 3);
   const friday = addDays(week, 4);
   await openTimesheetWeek(page, week, day);
-  await seedPersonEntries(email, [
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
     { description: "", day: tuesday, start: "09:00", end: "10:30", project },
     { description: "", day: thursday, start: "14:00", end: "15:00", project },
     { description: "", day: friday, start: "09:00", end: "10:00", project: other },
@@ -433,7 +417,7 @@ test("mover la única entrada de una fila a la semana siguiente saca la fila y d
   const next = lastWeekOf(day);
   const week = addDays(next, -7);
   await openTimesheetWeek(page, week, day);
-  await seedPersonEntries(email, [
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
     { description: "mover", day: week, start: "09:00", end: "10:00", project },
   ]);
   await openTimesheetWeek(page, week, day);
@@ -485,7 +469,7 @@ test("guardar una entrada borrada en otra pestaña cierra el editor con «Esa en
   const tuesday = addDays(week, 1);
   const thursday = addDays(week, 3);
   await openTimesheetWeek(page, week, day);
-  await seedPersonEntries(email, [
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
     { description: "borrada", day: tuesday, start: "09:00", end: "10:00", project },
     { description: "sigue", day: thursday, start: "14:00", end: "15:00", project },
   ]);
@@ -546,7 +530,7 @@ test("el menú de una celda espera la foto de una escritura de la grilla", async
   const day = today();
   const week = lastWeekOf(day);
   await openTimesheetWeek(page, week, day);
-  await seedPersonEntries(email, [
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
     { description: "", day: week, start: "09:00", end: "10:00", project },
   ]);
   await openTimesheetWeek(page, week, day);
@@ -592,7 +576,7 @@ test("un guardado cuya respuesta se perdió se reintenta desde el editor", async
   const week = lastWeekOf(day);
   const tuesday = addDays(week, 1);
   await openTimesheetWeek(page, week, day);
-  await seedPersonEntries(email, [
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
     { description: "", day: tuesday, start: "09:00", end: "10:00", project },
   ]);
   await openTimesheetWeek(page, week, day);
@@ -757,7 +741,7 @@ test("borrar desde la lista todas las entradas de la celda la cierra, con el foc
   const cell = cellName(project, wednesday, day);
   await openTimesheetWeek(page, week, day);
   // La del jueves deja la fila en la grilla cuando el miércoles se vacía.
-  await seedPersonEntries(email, [
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
     { description: "a", day: wednesday, start: "10:00", end: "11:00", project },
     { description: "b", day: wednesday, start: "12:00", end: "13:00", project },
     { description: "c", day: thursday, start: "14:00", end: "15:00", project },
@@ -848,7 +832,7 @@ test("«Borrar» desde el editor con su falla a la vista la baja, y el aviso de 
   const tuesday = addDays(week, 1);
   const wednesday = addDays(week, 2);
   await openTimesheetWeek(page, week, day);
-  await seedPersonEntries(email, [
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
     { description: "editada", day: tuesday, start: "09:00", end: "10:00", project },
     { description: "a", day: wednesday, start: "10:00", end: "11:00", project },
     { description: "b", day: wednesday, start: "12:00", end: "13:00", project },
@@ -897,7 +881,7 @@ test("reintentar desde la pantalla el borrado de la única entrada de una fila e
   const week = lastWeekOf(day);
   const friday = addDays(week, 4);
   await openTimesheetWeek(page, week, day);
-  await seedPersonEntries(email, [
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
     { description: "única", day: friday, start: "09:00", end: "10:00", project },
   ]);
   await openTimesheetWeek(page, week, day);
