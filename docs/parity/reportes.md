@@ -383,7 +383,7 @@ entrar lo resolvió el usuario con la propuesta del núcleo (mapa §5).
 - **Las flechas**, «Período anterior» y «Período siguiente», mueven el período
   entero: tantos días como tiene. Hasta que R2b traiga los atajos de mes, un
   período de un mes se mueve 30 o 31 días. La flecha cuyo destino saldría de los
-  años de cuatro cifras no se dibuja.
+  años válidos (del 0100-01-01 al 9999-12-31, como CAL-17) no se dibuja.
 - **«Esta semana»** es un enlace que aparece solo cuando el período no es la
   semana actual, como en la planilla.
 - **El rango libre** es un calendario de rango en un popover que abre el botón
@@ -534,7 +534,8 @@ siempre `desde`, `hasta` y `agrupar`.
 
 - **Un rango inválido se descarta entero, los dos extremos, sin aviso**, y se
   muestra «Esta semana». Inválido es: una clave que no es un día, un día cuyo
-  siguiente no tiene año de cuatro cifras, `hasta` anterior a `desde`, más de
+  siguiente sale de los años válidos (del 0100-01-01 al 9999-12-31, como
+  CAL-17), `hasta` anterior a `desde`, más de
   366 días, uno solo de los dos parámetros o un parámetro repetido.
 - **La agrupación se valida por su lado**: un `agrupar` válido sobrevive a un
   rango inválido, y un rango válido a un `agrupar` inválido, que se muestra por
@@ -561,12 +562,12 @@ de R4.
 
 **RP-34 Errores de validación** — `adaptar`
 
-| Regla                                                  | Mensaje                                                 |
-| ------------------------------------------------------ | ------------------------------------------------------- |
-| El fin del rango es anterior al inicio                 | «La fecha de fin no puede ser anterior a la de inicio.» |
-| El rango supera el tope (RP-21)                        | «Elegí un período de hasta 366 días.»                   |
-| Sin permiso para ver horas de otra persona             | «No tenés permiso para hacer esto.» (TT-79)             |
-| La fecha no existe o sale de los años de cuatro cifras | «Fecha inválida.»                                       |
+| Regla                                                                   | Mensaje                                                 |
+| ----------------------------------------------------------------------- | ------------------------------------------------------- |
+| El fin del rango es anterior al inicio                                  | «La fecha de fin no puede ser anterior a la de inicio.» |
+| El rango supera el tope (RP-21)                                         | «Elegí un período de hasta 366 días.»                   |
+| Sin permiso para ver horas de otra persona                              | «No tenés permiso para hacer esto.» (TT-79)             |
+| La fecha no existe o sale de los años válidos (0100-01-01 a 9999-12-31) | «Fecha inválida.»                                       |
 
 Justificación: copia propia, con la regla de una redacción por causa. Un filtro
 que nombra una persona, un proyecto o una etiqueta que ya no existe no es un
@@ -584,8 +585,11 @@ mensajes: un rango inválido se descarta (RP-32). Fila por fila:
   un enlace que nombra a otras personas ve lo propio, y la línea del alcance
   (RP-01) reemplaza el mensaje.
 - **La cuarta es nueva de R2a** y, en la práctica, la interfaz tampoco la
-  produce: el calendario solo elige días que existen, y salir de los años de
-  cuatro cifras no se alcanza navegando. Las reglas se aplican en este orden:
+  produce: el calendario solo elige días que existen, y salir de los años válidos
+  no se alcanza navegando.
+  _Corregido el 2026-10-08, revisión de paridad de R2a (P1)_: decía «años de
+  cuatro cifras»; el piso real es el 0100-01-01, porque `parseDayKey` toma los
+  años 0 a 99 como 1900 a 1999, la misma convención que CAL-17. Las reglas se aplican en este orden:
   la fecha, el fin anterior al inicio, el largo.
 
 **RP-35 Falla al cargar** — `adaptar`
