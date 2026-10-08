@@ -1,5 +1,6 @@
+// De TZDate solo se leen campos: sus setters pasan por la zona del proceso.
 import { TZDate, tzOffset } from "@date-fns/tz";
-import { addDays, format as formatDate, startOfDay } from "date-fns";
+import { format as formatDate } from "date-fns";
 import { es } from "date-fns/locale";
 
 /** Día de la semana en que arranca la semana del usuario. 0 = domingo. */
@@ -33,9 +34,11 @@ export type TimeSettings = {
  * guardan en UTC; la zona horaria del usuario decide dónde cae el corte.
  */
 export function dayBounds(instant: Date, timeZone: string): Interval {
-  const start = startOfLocalDay(instant, timeZone);
-  const end = addDays(new TZDate(start, timeZone), 1);
-  return { start, end: new Date(end.getTime()) };
+  const key = dayKey(instant, timeZone);
+  return {
+    start: startOfDayKey(key, timeZone),
+    end: startOfDayKey(addDaysToKey(key, 1), timeZone),
+  };
 }
 
 /** La semana se corta sobre claves de día, que no tienen cambio de horario. */
@@ -73,9 +76,9 @@ export function roundMinutes(minutes: number, step: number): number {
   return Math.ceil(minutes / step) * step;
 }
 
-/** Inicio del día local en que cae el instante. */
+/** Inicio del día local en que cae el instante: su primer instante real. */
 export function startOfLocalDay(instant: Date, timeZone: string): Date {
-  return new Date(startOfDay(new TZDate(instant, timeZone)).getTime());
+  return startOfDayKey(dayKey(instant, timeZone), timeZone);
 }
 
 /** Día local del instante, como "2026-10-02". Es la clave de agrupación. */
@@ -358,26 +361,27 @@ export function weekStartKey(dayKey: string, weekStart: WeekStart): string {
 
 /**
  * El primer instante del día local: la primera vez que marca las 00:00. Si
- * las 00:00 no existieron por un adelanto de hora, `startOfLocalDay` del
- * mediodía. Un día que falta entero en la zona —Samoa pasó del 29 al 31 de
- * diciembre de 2011— empieza donde empieza el primer día siguiente que existe:
- * no tiene instantes propios, y como cota de una lectura no deja nada afuera.
- * Si el mediodía falta en un día que sí existe, lanza en vez de devolver un
- * instante de otro día.
+ * las 00:00 no existieron por un adelanto de hora, el primer minuto que sí
+ * existió ese día. Un día que falta entero en la zona —Samoa pasó del 29 al 31
+ * de diciembre de 2011— empieza donde empieza el primer día siguiente que
+ * existe: no tiene instantes propios, y como cota de una lectura no deja nada
+ * afuera. Solo usa la zona que recibe, nunca la del proceso.
  */
 export function startOfDayKey(dayKey: string, timeZone: string): Date {
+  // Las 00:00 que ocurren dos veces abren el día con la primera;
+  // `instantFromLocalOrLater` daría la segunda.
   const midnights = localInstants(dayKey, "00:00", timeZone);
   if (midnights.length > 0) {
     return new Date(Math.min(...midnights));
   }
-  const noon = instantFromLocal(dayKey, "12:00", timeZone);
-  if (noon !== null) {
-    return startOfLocalDay(noon, timeZone);
+  const firstMinute = instantFromLocalOrLater(dayKey, "00:00", timeZone);
+  if (firstMinute !== null) {
+    return firstMinute;
   }
   if (isMissingDay(dayKey, timeZone)) {
     return startOfDayKey(addDaysToKey(dayKey, 1), timeZone);
   }
-  throw new RangeError(`El día ${dayKey} no tiene mediodía en ${timeZone}.`);
+  throw new RangeError(`El día ${dayKey} no tiene un primer instante en ${timeZone}.`);
 }
 
 /** Si el día falta entero en la zona: ninguno de sus minutos marcó el reloj. */

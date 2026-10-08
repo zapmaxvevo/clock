@@ -54,6 +54,8 @@ import {
 
 const buenosAires = "America/Argentina/Buenos_Aires";
 const madrid = "Europe/Madrid";
+const santiago = "America/Santiago";
+const azores = "Atlantic/Azores";
 
 /**
  * Deja `TZ` como estaba. Asignar `undefined` a una variable de entorno la
@@ -85,6 +87,23 @@ describe("dayBounds", () => {
     const { start, end } = dayBounds(new Date("2026-03-29T12:00:00Z"), madrid);
     expect(end.getTime() - start.getTime()).toBe(23 * 60 * 60 * 1000);
   });
+
+  it("en un día sin 00:00 va del primer instante real al inicio del día siguiente", () => {
+    // El 20/10/1991 Salta salta de las 00:00 a las 02:00: el día dura 22 horas.
+    const { start, end } = dayBounds(
+      new Date("1991-10-20T15:00:00Z"),
+      "America/Argentina/Salta",
+    );
+    expect(start.toISOString()).toBe("1991-10-20T04:00:00.000Z");
+    expect(end.toISOString()).toBe("1991-10-21T02:00:00.000Z");
+  });
+
+  it("termina donde empieza el día siguiente aunque ese no tenga 00:00", () => {
+    // El 06/09/2026 Santiago empieza a la 01:00 (-03:00).
+    const { end } = dayBounds(new Date("2026-09-05T15:00:00Z"), santiago);
+    expect(end).toEqual(startOfDayKey("2026-09-06", santiago));
+    expect(end.toISOString()).toBe("2026-09-06T04:00:00.000Z");
+  });
 });
 
 describe("weekBounds", () => {
@@ -100,8 +119,6 @@ describe("weekBounds", () => {
   });
 });
 
-const santiago = "America/Santiago";
-const azores = "Atlantic/Azores";
 const allWeekStarts: readonly WeekStart[] = [0, 1, 2, 3, 4, 5, 6];
 
 /** Día de la semana de una clave, calculado aparte de `weekStartKey`. */
@@ -191,22 +208,19 @@ describe("startOfDayKey", () => {
     expect(dayKey(new Date(start.getTime() - 1), azores)).toBe("2026-10-24");
   });
 
-  it("es la 00:00 que `startOfLocalDay` corría una hora en Sydney 1990", () => {
+  it("es la 00:00 del día en que Sydney atrasa la hora, 1990-03-04", () => {
     const start = startOfDayKey("1990-03-04", "Australia/Sydney");
     expect(start.toISOString()).toBe("1990-03-03T13:00:00.000Z");
     expect(dayKey(new Date(start.getTime() - 1), "Australia/Sydney")).toBe("1990-03-03");
   });
 
-  // Falla conocida heredada de `startOfLocalDay` (contrato del slice 5, §8),
-  // que queda solo en los días sin 00:00: el instante cae en el día, pero 60
-  // minutos después de su primer instante real, así que el milisegundo anterior
-  // también es del mismo día. Si una versión nueva de date-fns la corrige, este
-  // caso avisa.
-  it("falla conocida: en America/Argentina/Salta el 1991-10-20 el milisegundo anterior sigue en el día", () => {
+  it("es las 02:00 el día en que America/Argentina/Salta salta de las 00:00 a las 02:00", () => {
+    // El 20/10/1991 a las 04:00Z Salta pasa de -04:00 a -02:00.
     const zone = "America/Argentina/Salta";
     const start = startOfDayKey("1991-10-20", zone);
+    expect(start.toISOString()).toBe("1991-10-20T04:00:00.000Z");
     expect(dayKey(start, zone)).toBe("1991-10-20");
-    expect(dayKey(new Date(start.getTime() - 1), zone)).toBe("1991-10-20");
+    expect(dayKey(new Date(start.getTime() - 1), zone)).toBe("1991-10-19");
   });
 });
 
@@ -395,6 +409,13 @@ describe("startOfLocalDay", () => {
         dayBounds(new Date(instant), madrid).start.toISOString(),
       );
     }
+  });
+
+  it("en un día sin 00:00 es su primer instante real, como startOfDayKey", () => {
+    const zone = "America/Argentina/Salta";
+    const start = startOfLocalDay(new Date("1991-10-20T15:00:00Z"), zone);
+    expect(start).toEqual(startOfDayKey("1991-10-20", zone));
+    expect(dayKey(new Date(start.getTime() - 1), zone)).toBe("1991-10-19");
   });
 });
 
@@ -970,6 +991,52 @@ describe.each([buenosAires, madrid, "Asia/Tokyo"])(
     it("da null con un día o una hora que no son canónicos", () => {
       expect(instantFromLocalOrLater("2026-02-30", "09:00", madrid)).toBeNull();
       expect(instantFromLocalOrLater("2026-03-29", "2:30", madrid)).toBeNull();
+    });
+  },
+);
+
+/**
+ * El comienzo del día sale solo de la zona pedida. Salta y Santiago tienen días
+ * sin 00:00; con el proceso en un huso negativo, `startOfDay` de date-fns
+ * corría el inicio de Salta una hora.
+ */
+describe.each([buenosAires, madrid, "Asia/Tokyo", "UTC"])(
+  "comienzo del día con el proceso en %s",
+  (processTimeZone) => {
+    const original = process.env.TZ;
+    const salta = "America/Argentina/Salta";
+
+    beforeAll(() => {
+      process.env.TZ = processTimeZone;
+    });
+
+    afterAll(() => {
+      restoreProcessTimeZone(original);
+    });
+
+    it("startOfDayKey es el primer instante real del día", () => {
+      expect(startOfDayKey("1991-10-20", salta).toISOString()).toBe(
+        "1991-10-20T04:00:00.000Z",
+      );
+      expect(startOfDayKey("2026-09-06", santiago).toISOString()).toBe(
+        "2026-09-06T04:00:00.000Z",
+      );
+      expect(startOfDayKey("2026-10-25", azores).toISOString()).toBe(
+        "2026-10-25T00:00:00.000Z",
+      );
+    });
+
+    it("startOfLocalDay y dayBounds cortan donde startOfDayKey", () => {
+      const instant = new Date("1991-10-20T15:00:00Z");
+      expect(startOfLocalDay(instant, salta).toISOString()).toBe(
+        "1991-10-20T04:00:00.000Z",
+      );
+      const { start, end } = dayBounds(instant, salta);
+      expect(start.toISOString()).toBe("1991-10-20T04:00:00.000Z");
+      expect(end.toISOString()).toBe("1991-10-21T02:00:00.000Z");
+      expect(
+        dayBounds(new Date("2026-09-05T15:00:00Z"), santiago).end.toISOString(),
+      ).toBe("2026-09-06T04:00:00.000Z");
     });
   },
 );
