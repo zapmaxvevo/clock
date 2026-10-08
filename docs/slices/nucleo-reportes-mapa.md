@@ -379,40 +379,20 @@ congelado en `admins` y sin efecto, y el tope de 366 días. Los pendientes de P-
 con la propuesta del núcleo: tarea como dimensión (RP-11), «Esta semana» por defecto (RP-20) y
 los rótulos «Sin …» (RP-28).
 
-Siguen abiertas:
+Ese mismo día decidió además:
 
-1. **Aprobar los ADR 0020 y 0021**, que están en «propuesto».
-2. **Cómo se nombra un admin y cómo se desactiva a alguien antes de la fase 2.** Sin nada, solo el owner ve el reporte de equipo, y desactivar (la única
-   salida para una persona con horas, P-09) solo se puede por base. Dos
-   opciones; ninguna usa una variable de entorno de admins:
-   - **(a) Procedimiento SQL documentado**, para cambiar el rol y para pasar una
-     membresía a `status = 'inactive'`. Cada uso escribe su fila en
-     `audit_log`, y desactivar cierra en la misma transacción el timer que
-     corra (RP-63). Lo corre el usuario. Sin slice.
-   - **(b) El slice R8**, después de R2a: cambiar el rol entre `member` y
-     `admin` desde la aplicación, con `team.manage`, la protección del owner y
-     auditoría. Desactivar sigue por el procedimiento de (a) hasta la fase 2.
-3. **La forma de P-09.** Lo propuesto son las dos claves en `restrict`, la del
-   usuario y una compuesta hacia la membresía, con las membresías que falten
-   creadas inactivas. La alternativa mínima es solo la del usuario; deja borrar
-   una membresía con horas y el reporte no sabría el estado de esa persona.
-4. **`who_sees_all_entries`**: congelado en `admins` y sin efecto (propuesto), o
-   borrar la columna. Si la fase 2 la vuelve editable, hay que elegir el eje
-   (RP-04).
-5. **Un member con un enlace que nombra a otras personas**: descartar el
-   parámetro y mostrar lo propio (propuesto, RP-32), o responder «No tenés
-   permiso para hacer esto.» (RP-34).
-6. **Qué se exporta**: lo que muestra el resumido (propuesto, RP-53), o además
-   las entradas una por una en CSV y Excel, que es el uso típico para
-   administración y en Clockify sale del detallado, que no entra en el núcleo.
-7. **«Mostrar personas sin horas»** (RP-47, del semanal): responde «quién no
-   cargó» y no entra en el núcleo. Si se quiere ya, entra como R9, después de
-   R4.
-8. **El tope de 366 días** lo fijó el ADR 0021 por delegación de P-06. Si el
-   usuario quiere rangos más largos desde el principio, se mide en R2a.
-9. **Pendientes de P-05** que el núcleo resuelve con su propuesta y no bloquean:
-   tarea como dimensión (RP-11), rango por defecto «Esta semana» (RP-20),
-   rótulos de «Sin …» (RP-28).
+- **Admins antes de la fase 2: el slice R8** (§5.2 b), porque otras personas además del owner
+  van a ver las horas del equipo. Desactivar a alguien sigue por el procedimiento SQL hasta la
+  fase 2.
+- **Un member con un enlace que nombra a otras personas ve lo propio** (RP-32): el parámetro
+  se descarta.
+- **La exportación suma las entradas una por una** en CSV y Excel, además de lo que muestra el
+  resumido.
+
+Sigue abierta:
+
+- **«Mostrar personas sin horas»** (RP-47, del semanal): responde «quién no cargó». Si se
+  quiere, entra como R9, después de R4.
 
 ## 6. Deudas que el mapa arrastra
 
