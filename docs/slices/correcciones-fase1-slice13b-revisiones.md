@@ -55,3 +55,18 @@ Los desvíos aceptados: `useCellDetail` y `CellDetailDialogs`; `entryChanger` pu
 exportado; el editor con `canTrack` siempre verdadero (`forbidden` se ve en el editor y un
 refresco no pasa el borrador a solo lectura); `pr-8` con el disparador absoluto; los mocks del
 menú en `entry-dialog.test.tsx`.
+
+## Confirmaciones
+
+La segunda pasada de frontend y la confirmación de código, sobre `1e4e02b..29b1f38`, aprueban.
+F4 (los tests de F1 y F2) lo cerró `a8042cd`. El usuario pidió aplicar los menores antes del
+merge.
+
+| Origen | Hallazgo                                                                                  | Resolución                                                             |
+| ------ | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| C16    | `showsInEditor` y `closesEditor` repiten «guardado de esta entrada»                       | `savesEntry(failure, entry)` y los dos encima.                         |
+| C17    | Tres conversiones a mano del estado al tipo de foco                                       | Un `focusOf(state)` local, o `EditorFocus`/`ConfirmFocus` con `entry`. |
+| C18    | La lista aplica dos veces el respaldo del foco                                            | `cancelFocus={lazyRef(places.trigger)}`.                               |
+| C19    | Las fuentes de avisos listadas dos veces                                                  | `useLatestNotice` recorre `SOURCES`.                                   |
+| C20    | `Entry` nombra un pedido pendiente en el reducer genérico                                 | `Pending` y `pending`.                                                 |
+| F3     | El `PendingFocus` de F2 corre también en el «Reintentar» de la grilla, que no lo necesita | Solo en el del detalle.                                                |
