@@ -19,6 +19,7 @@ import {
   isAction,
   loseActionResponses,
   openSecondTab,
+  recordActions,
   withServerAction,
 } from "./network";
 import { expect, test } from "./session";
@@ -107,12 +108,9 @@ async function seedPersonEntries(
   );
 }
 
-/**
- * «Cerrar» al pie de la lista (§5.2). El primero: el diálogo puede sumar la X
- * de la esquina, que también se llama «Cerrar» y va después en el árbol.
- */
+/** «Cerrar» al pie de la lista (§5.2). */
 function closeListButton(list: Locator): Locator {
-  return list.getByRole("button", { name: "Cerrar", exact: true }).first();
+  return list.getByRole("button", { name: "Cerrar", exact: true });
 }
 
 function retryButton(notice: Locator): Locator {
@@ -671,12 +669,171 @@ test("con la lista abierta, la falla de un borrado se ve en ella y se reintenta 
       .filter({ hasText: ENTRY_NOT_DELETED }),
   ).toHaveCount(1);
 
-  // Reintentar: el foco pasa al título, «a» sale y queda «b».
+  // T1: con el teclado, «Reintentar» se va con el aviso y el foco pasa antes
+  // al título (§5.6). Con la respuesta retenida, la foto todavía no sacó a
+  // «a», así que el foco no llega ahí por la entrada que sale.
   await restore();
-  await withServerAction(page, () => retryButton(notice).click());
+  const release = await holdActionResponses(page, isTimesheetPage);
+  const sent = page.waitForRequest(isAction);
+  const answered = page.waitForResponse((response) => isAction(response.request()));
+  await retryButton(notice).press("Enter");
+  await sent;
   await expect(notice).toHaveCount(0);
   await expect(title).toBeFocused();
+  await expect(detailEntryButton(list, "Editar", "a", "de 10:00 a 11:00")).toBeVisible();
+
+  // Al soltar, «a» sale y queda «b».
+  release();
+  expect((await answered).ok()).toBe(true);
   await expect(items).toHaveCount(1);
   await expect(detailEntryButton(list, "Editar", "a", "de 10:00 a 11:00")).toHaveCount(0);
   await expect(detailEntryButton(list, "Editar", "b", "de 12:00 a 13:00")).toBeVisible();
+});
+
+test("cancelar desde la lista el editor o la confirmación devuelve el foco al botón que abrió la cadena", async ({
+  page,
+  email,
+}) => {
+  const project = await seedNamedProject("Cancelar lista");
+  const day = today();
+  const week = lastWeekOf(day);
+  const wednesday = addDays(week, 2);
+  const cell = cellName(project, wednesday, day);
+  await openCellWithTwo(page, email, project, week, wednesday, day);
+  const sent = recordActions(page);
+
+  await openCellMenu(cellMenuButton(page, cell));
+  await cellMenuItem(page, "Ver detalle").click();
+  const list = cellDetailDialog(page, cell);
+  await expect(cellDetailTitle(list, cell)).toBeFocused();
+  const editA = detailEntryButton(list, "Editar", "a", "de 10:00 a 11:00");
+
+  // §5.6: «Cancelar» del editor abierto desde la lista vuelve a su «Editar».
+  await editA.click();
+  const editor = entryEditor(page);
+  await expect(dialogDescription(editor)).toBeFocused();
+  await dialogButton(editor, "Cancelar").click();
+  await expect(editor).toBeHidden();
+  await expect(list).toBeVisible();
+  await expect(editA).toBeFocused();
+
+  // A16: la confirmación que sale del menú del editor anidado vuelve, al
+  // cancelarla, al «Editar» que abrió la cadena.
+  await editA.click();
+  await expect(dialogDescription(editor)).toBeFocused();
+  await dialogActions(editor, "a").click();
+  await page.getByRole("menuitem", { name: "Borrar", exact: true }).click();
+  const confirm = deleteEntryConfirm(page);
+  await expect(confirm).toContainText("Se va a borrar «a», de 10:00 a 11:00.");
+  await expect(editor).toBeHidden();
+  await confirm.getByRole("button", { name: "Cancelar", exact: true }).click();
+  await expect(confirm).toBeHidden();
+  await expect(editA).toBeFocused();
+
+  // §5.6: la confirmación abierta desde la lista vuelve a su «Borrar».
+  const deleteB = detailEntryButton(list, "Borrar", "b", "de 12:00 a 13:00");
+  await deleteB.click();
+  await expect(
+    confirm.getByRole("button", { name: "Cancelar", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(confirm).toBeHidden();
+  await expect(deleteB).toBeFocused();
+
+  // Nada de lo cancelado viajó: la lista sigue con las dos.
+  await expect(list.getByRole("listitem")).toHaveCount(2);
+  expect(sent).toHaveLength(0);
+});
+
+test("borrar desde la lista todas las entradas de la celda la cierra, con el foco en el campo", async ({
+  page,
+  email,
+}) => {
+  const project = await seedNamedProject("Vaciar lista");
+  const day = today();
+  const week = lastWeekOf(day);
+  const wednesday = addDays(week, 2);
+  const thursday = addDays(week, 3);
+  const cell = cellName(project, wednesday, day);
+  await openTimesheetWeek(page, week, day);
+  // La del jueves deja la fila en la grilla cuando el miércoles se vacía.
+  await seedPersonEntries(email, [
+    { description: "a", day: wednesday, start: "10:00", end: "11:00", project },
+    { description: "b", day: wednesday, start: "12:00", end: "13:00", project },
+    { description: "c", day: thursday, start: "14:00", end: "15:00", project },
+  ]);
+  await openTimesheetWeek(page, week, day);
+  const field = cellField(page, project, wednesday, day);
+  await expect(field).toHaveValue("2:00");
+
+  await openCellMenu(cellMenuButton(page, cell));
+  await cellMenuItem(page, "Ver detalle").click();
+  const list = cellDetailDialog(page, cell);
+  const title = cellDetailTitle(list, cell);
+  await expect(title).toBeFocused();
+
+  await detailEntryButton(list, "Borrar", "a", "de 10:00 a 11:00").click();
+  await withServerAction(page, () =>
+    deleteEntryConfirm(page).getByRole("button", { name: "Borrar", exact: true }).click(),
+  );
+  await expect(list.getByRole("listitem")).toHaveCount(1);
+  await expect(title).toBeFocused();
+
+  // §5.2, §5.6: vacía y sin nada encima, la lista se cierra y el foco va al
+  // destino de la celda, su campo.
+  await detailEntryButton(list, "Borrar", "b", "de 12:00 a 13:00").click();
+  await withServerAction(page, () =>
+    deleteEntryConfirm(page).getByRole("button", { name: "Borrar", exact: true }).click(),
+  );
+  await expect(list).toBeHidden();
+  await expect(field).toHaveValue("");
+  await expect(field).toBeFocused();
+  await expect(cellMenuButton(page, cell)).toHaveCount(0);
+  await expect(rowTotal(page, project)).toHaveText("1:00");
+});
+
+test("cerrar la lista con la falla a la vista la pasa a la pantalla, que la reintenta", async ({
+  page,
+  email,
+}) => {
+  const project = await seedNamedProject("Falla cerrar");
+  const day = today();
+  const week = lastWeekOf(day);
+  const wednesday = addDays(week, 2);
+  const cell = cellName(project, wednesday, day);
+  const field = await openCellWithTwo(page, email, project, week, wednesday, day);
+  const trigger = cellMenuButton(page, cell);
+
+  await openCellMenu(trigger);
+  await cellMenuItem(page, "Ver detalle").click();
+  const list = cellDetailDialog(page, cell);
+  await expect(cellDetailTitle(list, cell)).toBeFocused();
+
+  const restore = await dropActionRequests(page, isTimesheetPage);
+  await detailEntryButton(list, "Borrar", "a", "de 10:00 a 11:00").click();
+  await deleteEntryConfirm(page)
+    .getByRole("button", { name: "Borrar", exact: true })
+    .click();
+  await expect(
+    list.getByRole("alert").filter({ hasText: ENTRY_NOT_DELETED }),
+  ).toBeVisible();
+
+  // §5.2, §5.5: al cerrar la lista, la falla vigente pasa a la región de la
+  // pantalla, con el nombre del pedido y «Reintentar».
+  await closeListButton(list).click();
+  await expect(list).toBeHidden();
+  await expect(trigger).toBeFocused();
+  const notice = screenNotice(page, ENTRY_NOT_DELETED);
+  await expect(notice).toBeVisible();
+  await expect(notice).toContainText(NETWORK_FAILURE);
+  await expect(notice).toContainText("«a», de 10:00 a 11:00");
+  await expect(retryButton(notice)).toBeVisible();
+  await expect(field).toHaveValue("2:00");
+
+  // §5.5: con el teclado, el foco pasa antes al campo de la celda del pedido.
+  await restore();
+  await withServerAction(page, () => retryButton(notice).press("Enter"));
+  await expect(screenNotice(page, ENTRY_NOT_DELETED)).toHaveCount(0);
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue("1:00");
 });
