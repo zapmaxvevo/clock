@@ -1041,6 +1041,27 @@ describe.each([buenosAires, madrid, "Asia/Tokyo", "UTC"])(
   },
 );
 
+/**
+ * `vitest.config.ts` fija `TZ` en UTC, como en Vercel y en CI, salvo que la
+ * corrida pida otra zona. Sin eso el proceso usaría la zona de la máquina.
+ */
+describe("la zona del proceso en los tests", () => {
+  it("es la de TZ, no la de la máquina", () => {
+    const configured = process.env.TZ;
+    expect(configured).toBeDefined();
+    const zone = configured ?? "";
+    expect(canonicalTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone)).toBe(
+      canonicalTimeZone(zone),
+    );
+    for (const probe of [
+      new Date("2026-01-15T12:00:00Z"),
+      new Date("2026-07-15T12:00:00Z"),
+    ]) {
+      expect(probe.getHours() * 60 + probe.getMinutes()).toBe(minuteOfDayIn(probe, zone));
+    }
+  });
+});
+
 describe("addMinutes", () => {
   it("suma sobre el instante, con sus segundos, y admite negativos", () => {
     expect(addMinutes(new Date("2026-09-30T13:00:40Z"), 120).toISOString()).toBe(

@@ -22,7 +22,10 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - run: npm run typecheck
-      - run: npm test
+      - run: npm run test:unit
+      # El módulo de tiempo de nuevo, con el proceso en un huso negativo: una
+      # dependencia de la zona de la máquina no se nota con el proceso en UTC.
+      - run: npm run test:time-ar
       - run: npm run build
         env:
           # Valores de relleno: el build no se conecta a nada, solo valida el
