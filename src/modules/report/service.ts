@@ -11,7 +11,7 @@ import {
   type TimeSettings,
 } from "@/server/time";
 import { displayNameOf } from "@/modules/profile/service";
-import { isPaletteKey } from "@/modules/project/palette";
+import { paletteKeyOf } from "@/modules/project/palette";
 
 import {
   reportRepository,
@@ -115,12 +115,13 @@ function projectGroupOf(row: ProjectTotalRow): ReportProjectGroup {
   if (stored === null) {
     return { kind: "project", project: null, client: null, seconds: row.seconds };
   }
-  if (!isPaletteKey(stored.color)) {
-    throw new Error(`El proyecto ${stored.id} tiene un color fuera de la paleta.`);
-  }
   return {
     kind: "project",
-    project: { id: stored.id, name: stored.name, color: stored.color },
+    project: {
+      id: stored.id,
+      name: stored.name,
+      color: paletteKeyOf(stored.color, stored.id),
+    },
     client: row.client,
     seconds: row.seconds,
   };

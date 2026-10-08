@@ -26,6 +26,18 @@ export function isPaletteKey(value: string): value is PaletteKey {
   return keys.includes(value);
 }
 
+/**
+ * El color guardado de un proyecto como clave de la paleta. El `check` de
+ * `project.color` no deja guardar otra cosa: si llega, el dato está roto, y
+ * se lanza en vez de dibujar un color que no existe.
+ */
+export function paletteKeyOf(color: string, projectId: string): PaletteKey {
+  if (!isPaletteKey(color)) {
+    throw new Error(`El proyecto ${projectId} tiene un color fuera de la paleta.`);
+  }
+  return color;
+}
+
 export type PaletteColor = {
   readonly key: PaletteKey;
   /** Nombre accesible del color. */
