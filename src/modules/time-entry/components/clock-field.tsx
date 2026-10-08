@@ -54,10 +54,10 @@ type ClockFieldProps = {
 /**
  * Campo de texto tolerante de hora o duración: el de la barra manual, el del
  * editor de horario de una fila, el del inicio del timer, los del diálogo de
- * edición masiva y las celdas de la planilla. Normaliza al salir del campo y con Enter, nunca mientras se
- * teclea, y no llama a ninguna action. Cuando el texto no se puede interpretar
- * el campo vuelve al valor anterior —que es la información— y además se marca
- * por un instante (TT-21).
+ * edición masiva y las celdas de la planilla. Normaliza al salir del campo y
+ * con Enter, nunca mientras se teclea, y no llama a ninguna action. Cuando el
+ * texto no se puede interpretar el campo vuelve al valor anterior —que es la
+ * información— y además se marca por un instante (TT-21).
  */
 export function ClockField({
   value,
