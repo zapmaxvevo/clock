@@ -1,10 +1,8 @@
-import type { ReportGroupBy, ReportRange } from "@/modules/report/schema";
-
-/** La URL dice `persona` y `proyecto`; el código, `person` y `project`. */
-const groupByParam: Record<ReportGroupBy, string> = {
-  person: "persona",
-  project: "proyecto",
-};
+import {
+  REPORT_GROUP_PARAMS,
+  type ReportGroupBy,
+  type ReportRange,
+} from "@/modules/report/schema";
 
 /**
  * La URL de un reporte (D-R2a-4), la única función que la arma: siempre con
@@ -20,7 +18,7 @@ export function reportHref({
   const params = new URLSearchParams({
     desde: range.first,
     hasta: range.last,
-    agrupar: groupByParam[groupBy],
+    agrupar: REPORT_GROUP_PARAMS[groupBy],
   });
   return `/reportes?${params.toString()}`;
 }
