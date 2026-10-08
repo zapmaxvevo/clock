@@ -1398,7 +1398,7 @@ describe("timesheetWeekParams", () => {
 describe("los textos de la planilla", () => {
   it("TS-79 y el tope de la fila (TS-52)", () => {
     expect(timeEntryMessages.cellNeedsEntryEdit).toBe(
-      "Editá las entradas de esta celda desde el rastreador.",
+      "Editá las entradas de esta celda desde el detalle.",
     );
     expect(timeEntryMessages.rowTooManyEntries).toBe(
       "Esta fila tiene más de 200 entradas en la semana; borralas por partes desde el rastreador.",

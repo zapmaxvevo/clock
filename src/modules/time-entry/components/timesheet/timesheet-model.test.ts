@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { TrackingCatalog } from "@/modules/project/schema";
 import type {
+  TimeEntryView,
   TimesheetDayView,
   TimesheetRowView,
   TimesheetState,
@@ -122,6 +123,9 @@ const state: TimesheetState = {
   rows: [webDesignRow, noProjectRow],
   closedSeconds: 7_230,
   storageKey: "clock:planilla:w:u",
+  serverNow: "2026-10-01T15:00:00.000Z",
+  minDayKey: "2000-01-01",
+  entries: [],
 };
 
 function grid(overrides: Partial<TimesheetGridInput> = {}): TimesheetGrid {
@@ -133,6 +137,7 @@ function grid(overrides: Partial<TimesheetGridInput> = {}): TimesheetGrid {
     newRow: false,
     removing: [],
     shown: new Map(),
+    changing: new Set(),
     ...overrides,
   });
 }
@@ -428,5 +433,118 @@ describe("nextWritableCell (TS-98)", () => {
     const view = grid({ newRow: true });
 
     expect(nextWritableCell(view, view.rows[1].key, "2026-09-30")).toBeNull();
+  });
+});
+
+/** Una entrada cerrada de la foto; lo que el modelo no mira va fijo. */
+function entry(
+  id: string,
+  dayDate: string,
+  startedAt: string,
+  project: TimeEntryView["project"],
+  task: TimeEntryView["task"] = null,
+): TimeEntryView {
+  return {
+    id,
+    description: "",
+    startedAt,
+    endedAt: startedAt,
+    dayDate,
+    weekStart: "2026-09-28",
+    startLabel: "09:00",
+    endLabel: "10:00",
+    startClock: "09:00",
+    endClock: "10:00",
+    extraDays: 0,
+    durationSeconds: 3_600,
+    durationLabel: "1:00",
+    editableTimes: true,
+    project,
+    task,
+    billable: false,
+    tags: [],
+  };
+}
+
+describe("timesheetGrid, las entradas de cada celda (13b, TS-40 … TS-42)", () => {
+  const morning = entry("a1", "2026-09-29", "2026-09-29T12:00:00.000Z", web, design);
+  // 23:45 del martes en Buenos Aires: en UTC ya es miércoles, y termina el miércoles.
+  const lateNight = {
+    ...entry("a2", "2026-09-29", "2026-09-30T02:45:00.000Z", web, design),
+    endedAt: "2026-09-30T03:15:00.000Z",
+    extraDays: 1,
+  };
+  const noProject = entry("b1", "2026-09-28", "2026-09-28T12:00:00.000Z", null);
+  const withEntries = { ...state, entries: [morning, lateNight, noProject] };
+
+  it("reparte las de la foto por su día y su par, en el orden del servidor", () => {
+    const view = grid({ state: withEntries });
+
+    expect(view.rows[0].cells[1].entries).toEqual([morning, lateNight]);
+    expect(view.rows[1].cells[0].entries).toEqual([noProject]);
+  });
+
+  it("la que cruza la medianoche va en su día de inicio, no en el de su instante en UTC", () => {
+    const view = grid({ state: withEntries });
+
+    expect(view.rows[0].cells[2].entries).toEqual([]);
+  });
+
+  it("las celdas sin entradas, y las de la fila nueva, no tienen ninguna", () => {
+    const view = grid({ state: withEntries, newRow: true });
+
+    expect(view.rows[1].cells[1].entries).toEqual([]);
+    expect(view.rows.at(-1)?.cells.every((cell) => cell.entries.length === 0)).toBe(true);
+  });
+
+  it("los ids de la entrada se comparan como los de la fila, sin distinguir mayúsculas", () => {
+    const upper = {
+      ...morning,
+      project: { ...web, id: web.id.toUpperCase() },
+    };
+    const view = grid({ state: { ...state, entries: [upper] } });
+
+    expect(view.rows[0].cells[1].entries).toEqual([upper]);
+  });
+});
+
+describe("timesheetGrid, lo que la foto todavía no trae (13b, D13b-5, §5.3)", () => {
+  const tuesday = cellKeyOf({ date: "2026-09-29", ...pairOf(web, design) });
+
+  it("una celda sin escrituras ni pedidos del detalle no está ocupada", () => {
+    expect(
+      grid()
+        .rows.flatMap((gridRow) => gridRow.cells)
+        .some((cell) => cell.pending),
+    ).toBe(false);
+  });
+
+  it("una escritura de la grilla ocupa solo su celda", () => {
+    const view = grid({ shown: new Map([[tuesday, 120]]) });
+
+    expect(view.rows[0].cells.map((cell) => cell.pending)).toEqual([
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+    ]);
+  });
+
+  it("un pedido del detalle ocupa su celda y deja la X de la fila inactiva (F-m3)", () => {
+    const view = grid({ changing: new Set([tuesday]) });
+
+    expect(view.rows[0].cells[1].pending).toBe(true);
+    expect(view.rows[0].cells[0].pending).toBe(false);
+    expect(view.rows.map((gridRow) => gridRow.writing)).toEqual([true, false]);
+  });
+
+  it("la fila nueva no está ocupada", () => {
+    const view = grid({ newRow: true, changing: new Set([tuesday]) });
+
+    expect(view.rows.at(-1)?.writing).toBe(false);
+    expect(view.rows.at(-1)?.cells.some((cell) => cell.pending)).toBe(false);
   });
 });

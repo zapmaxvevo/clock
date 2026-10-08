@@ -11,9 +11,10 @@ import { paletteColor } from "@/modules/project/palette";
 import type { ProjectSelection } from "@/modules/project/schema";
 import type { TimesheetDayView } from "@/modules/time-entry/schema";
 
+import type { CellMenuChoice } from "./cell-menu";
 import { removeRowLabel, timesheetLabels } from "./labels";
 import { TimesheetCell } from "./timesheet-cell";
-import type { GridRow } from "./timesheet-model";
+import type { GridCell, GridRow } from "./timesheet-model";
 
 type TimesheetRowProps = {
   readonly row: GridRow;
@@ -26,6 +27,7 @@ type TimesheetRowProps = {
   readonly onSubmit: (row: GridRow, date: string) => void;
   readonly onChoose: (selection: ProjectSelection) => void;
   readonly onRemove: (row: GridRow, button: HTMLButtonElement) => void;
+  readonly onMenu: (cell: GridCell, choice: CellMenuChoice, trigger: HTMLElement) => void;
   /** El disparador del selector de la fila nueva, adonde va el foco al agregarla. */
   readonly pickerRef: Ref<HTMLButtonElement>;
 };
@@ -41,6 +43,7 @@ export function TimesheetRow({
   onSubmit,
   onChoose,
   onRemove,
+  onMenu,
   pickerRef,
 }: TimesheetRowProps) {
   return (
@@ -65,9 +68,11 @@ export function TimesheetRow({
           key={cell.key}
           cell={cell}
           busy={busy.has(cell.key)}
+          canTrack={canTrack}
           weekend={days[index].isWeekend}
           onWrite={(minutes) => onWrite(row, cell.date, minutes)}
           onSubmit={() => onSubmit(row, cell.date)}
+          onMenu={(choice, trigger) => onMenu(cell, choice, trigger)}
         />
       ))}
       <td
@@ -87,8 +92,9 @@ export function TimesheetRow({
             aria-label={
               row.pair === null ? timesheetLabels.removeNewRow : removeRowLabel(row.name)
             }
-            // Inactiva mientras alguna escritura de la fila no está en la foto
-            // (F-m3). Con `disabled` la X que tenía el foco lo perdería.
+            // Inactiva mientras alguna escritura o algún pedido del detalle de
+            // la fila no está en la foto (F-m3). Con `disabled` la X que tenía
+            // el foco lo perdería.
             aria-disabled={row.writing || undefined}
             onClick={(event) => {
               if (!row.writing) {

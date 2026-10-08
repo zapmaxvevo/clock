@@ -469,7 +469,7 @@ export function CalendarView({ state, initialZoom }: CalendarViewProps) {
         cancelFocus={cancelFocus}
         // Al pasar a la confirmación del borrado el foco queda en ella: llevarlo a
         // la región, después de la animación de salida, lo sacaría del modal.
-        regionRef={confirmingDelete ? noFocusRef : regionRef}
+        fallbackFocus={confirmingDelete ? noFocusRef : regionRef}
       />
       {entry !== null && (
         <DeleteEntryDialog

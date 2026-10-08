@@ -1,6 +1,11 @@
+import { calendarLabels } from "../calendar/labels";
+import { trackerLabels } from "../labels";
+import type { EntryChangeFailure } from "./entry-changes";
+
 /**
- * Textos de la planilla de horarios. «Total», «Sin proyecto», «Semana
- * anterior», «Semana siguiente» y «Cancelar» se importan de donde ya están.
+ * Textos de la planilla de horarios. Los que ya dice otra pantalla —«Total»,
+ * «Sin proyecto», «Cancelar», «Borrar», los títulos de los avisos de una
+ * entrada— se importan de donde están.
  */
 export const timesheetLabels = {
   /** TS-04: el título visible, que también nombra la tabla (TS-100). */
@@ -25,6 +30,10 @@ export const timesheetLabels = {
   cellNotSaved: "No se pudo guardar la celda.",
   /** TS-92. */
   rowNotRemoved: "No se pudo quitar la fila.",
+  /** TS-40: el menú de una celda con una entrada abre su editor (TS-41). */
+  editEntry: "Editar",
+  /** TS-40 y TS-79: el menú de una celda con varias abre su lista (TS-42). */
+  showDetail: "Ver detalle",
 } as const;
 
 /** TS-52: la X de una fila con par, nombrada por la fila. */
@@ -47,4 +56,35 @@ export function removeRowBody(count: number, total: string): string {
 /** TS-100: «Rediseño: Maquetado, miércoles 01/10». */
 export function cellLabel(row: string, day: string): string {
   return `${row}, ${day}`;
+}
+
+/** TS-40: el menú de tres puntos de una celda, nombrado por ella. */
+export function cellActionsLabel(cell: string): string {
+  return `Acciones de la celda ${cell}`;
+}
+
+/** TS-42: el título de la lista de una celda con varias entradas. */
+export function cellDetailTitle(cell: string): string {
+  return `Detalle de ${cell}`;
+}
+
+/** TS-42: el horario distingue dos entradas con la misma descripción. */
+export function editEntryLabel(entry: string, span: string): string {
+  return `Editar «${entry}», ${span}`;
+}
+
+export function deleteEntryLabel(entry: string, span: string): string {
+  return `Borrar «${entry}», ${span}`;
+}
+
+/** Cómo nombra un aviso del detalle a su entrada: «Diseño», de 09:00 a 10:30. */
+export function entryChangeName(entry: string, span: string): string {
+  return `«${entry}», ${span}`;
+}
+
+/** El título del aviso de un pedido del detalle: nombra la operación que falló (§5.5). */
+export function entryChangeFailureTitle(failure: EntryChangeFailure): string {
+  return failure.request.kind === "save"
+    ? calendarLabels.entryNotSaved
+    : trackerLabels.entryNotDeleted;
 }

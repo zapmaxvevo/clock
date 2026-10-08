@@ -1,8 +1,10 @@
+import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { DisplayFormatsProvider } from "@/components/layout/display-formats";
 import { Dialog } from "@/components/ui/dialog";
+import type * as DropdownMenuModule from "@/components/ui/dropdown-menu";
 import { TrackingCatalogProvider } from "@/modules/project/components/tracking-catalog";
 import type { TrackingCatalog } from "@/modules/project/schema";
 import type { TimeEntryView } from "@/modules/time-entry/schema";
@@ -11,6 +13,21 @@ import type { DisplayFormats } from "@/server/time";
 import { EntryDialogContent, type DialogSubject } from "./entry-dialog";
 import { EditorActions } from "./entry-dialog-actions";
 import { EntryDialogBody } from "./entry-dialog-body";
+
+// El contenido del menú va en un portal que `renderToStaticMarkup` no dibuja:
+// sus ítems se dibujan en línea para ver qué ofrece.
+vi.mock("@/components/ui/dropdown-menu", async (importOriginal) => {
+  const { createElement } = await import("react");
+  const inline =
+    (role: string) =>
+    ({ children }: { readonly children?: ReactNode }) =>
+      createElement("div", { role }, children);
+  return {
+    ...(await importOriginal<typeof DropdownMenuModule>()),
+    DropdownMenuContent: inline("menu"),
+    DropdownMenuItem: inline("menuitem"),
+  };
+});
 
 const catalog: TrackingCatalog = {
   canCreateProject: true,
@@ -488,5 +505,35 @@ describe("EditorActions: «Cancelar» con el pedido en vuelo (F1)", () => {
   it("sin el alta en vuelo, o con el guardado de una entrada en vuelo, está activo", () => {
     expect(cancelButton("add", false)).toContain('aria-disabled="false"');
     expect(cancelButton("edit", true)).toContain('aria-disabled="false"');
+  });
+});
+
+describe("EditorActions: el menú de una entrada cerrada (CAL-68)", () => {
+  function menuItems(onDuplicate: (() => void) | undefined): string[] {
+    const markup = renderToStaticMarkup(
+      <Dialog open>
+        <EditorActions
+          mode="edit"
+          name="Informe"
+          pending={false}
+          tooShort={false}
+          stopBlocked={false}
+          submitRef={{ current: null }}
+          onDuplicate={onDuplicate}
+          onDelete={noop}
+        />
+      </Dialog>,
+    );
+    return [...markup.matchAll(/<div role="menuitem">(.*?)<\/div>/g)].map((match) =>
+      textOf(match[1]),
+    );
+  }
+
+  it("con `onDuplicate`, como en el calendario, ofrece «Duplicar» y «Borrar»", () => {
+    expect(menuItems(noop)).toEqual(["Duplicar", "Borrar"]);
+  });
+
+  it("sin `onDuplicate`, como en la planilla, solo «Borrar» (13b, D13b-7)", () => {
+    expect(menuItems(undefined)).toEqual(["Borrar"]);
   });
 });
