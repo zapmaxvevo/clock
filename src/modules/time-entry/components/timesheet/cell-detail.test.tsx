@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
@@ -127,8 +128,14 @@ function OpenList({ changes }: { readonly changes: EntryChanges }) {
     changes,
     destinationOf: () => null,
     awaitCell: noop,
-    openOnMount: { cell, choice: "detail" },
   });
+  const [opening, setOpening] = useState(true);
+  // El primer dibujo abre la lista como «Ver detalle», sin disparador: sin
+  // DOM no hay botón del menú que pasarle.
+  if (opening) {
+    setOpening(false);
+    cellDetail.open(cell, "detail", null);
+  }
   return <CellDetailDialogs dialogs={cellDetail.dialogs} state={state} />;
 }
 

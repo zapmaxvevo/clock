@@ -88,8 +88,16 @@ type DetailDialogs = {
 
 /** Lo que `TimesheetView` usa del detalle. */
 type CellDetailHandle = {
-  /** TS-40: lo que se elige en el menú de una celda, con su disparador. */
-  readonly open: (cell: GridCell, choice: CellMenuChoice, trigger: HTMLElement) => void;
+  /**
+   * TS-40: lo que se elige en el menú de una celda, con su disparador. Sin
+   * disparador, el foco que volvería a él al cancelar va al destino de la
+   * celda (`destinationOf`), como cuando el disparador ya salió de la grilla.
+   */
+  readonly open: (
+    cell: GridCell,
+    choice: CellMenuChoice,
+    trigger: HTMLElement | null,
+  ) => void;
   /** El `onSettled` de `useEntryChanges`: cierra el editor que sigue abierto. */
   readonly settled: (request: EntryChangeRequest) => void;
   /** La falla del detalle cuando se ve en la pantalla, no en el editor ni en la lista (§5.5). */
@@ -104,12 +112,6 @@ type CellDetailOptions = {
   readonly destinationOf: (cell: string) => HTMLElement | null;
   /** El foco espera la foto que trae el cambio de la celda (A2). */
   readonly awaitCell: (cell: string) => void;
-  /**
-   * Lo que el primer dibujo muestra abierto, sin disparador: el foco que
-   * volvería a él va al destino de la celda. Lo usa el test, que dibuja sin
-   * DOM y no puede pasar el botón del menú.
-   */
-  readonly openOnMount?: { readonly cell: GridCell; readonly choice: CellMenuChoice };
 };
 
 /** TS-40: lo que abre cada opción del menú de una celda (D13b-6). */
@@ -166,11 +168,8 @@ export function useCellDetail({
   changes,
   destinationOf,
   awaitCell,
-  openOnMount,
 }: CellDetailOptions): CellDetailHandle {
-  const [detail, setDetail] = useState(() =>
-    openOnMount === undefined ? null : openedDetail(openOnMount.cell, openOnMount.choice),
-  );
+  const [detail, setDetail] = useState<CellDetailState | null>(null);
   const [seenFailure, setSeenFailure] = useState(changes.failure);
   /** El disparador del menú de la celda abierta. */
   const triggerRef = useRef<HTMLElement | null>(null);
@@ -247,7 +246,11 @@ export function useCellDetail({
     );
   }
 
-  function open(cell: GridCell, choice: CellMenuChoice, trigger: HTMLElement): void {
+  function open(
+    cell: GridCell,
+    choice: CellMenuChoice,
+    trigger: HTMLElement | null,
+  ): void {
     triggerRef.current = trigger;
     const opened = openedDetail(cell, choice);
     if (opened.editor !== null) {
