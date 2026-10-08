@@ -42,29 +42,24 @@ vacío del owner y `renewWorkspace` se corta.
 
 ## Lo primero de la sesión siguiente
 
-0. **Lo que sigue** (cierre de la tercera sesión, 2026-10-08, ~23:10).
-   - **Push**: desde hoy lo hace el team-lead después de cada merge en verde (el usuario sacó el
-     `deny` de `git push` y `gh pr merge` en `.claude/settings.json`, **cambio local suyo, no se
-     commitea**; `.idea/` tampoco). `origin/main` está en `206a22a`, al día.
-   - **R2a** en `main` (2026-10-08): corrida final sobre `6e68af0` con `reports.spec.ts` 7/7 ×3,
+0. **Lo que sigue** (cuarta sesión, 2026-10-08, ~23:55).
+   - **Push**: lo hace el team-lead después de cada merge en verde (el usuario sacó el `deny` de
+     `git push` y `gh pr merge` en `.claude/settings.json`, **cambio local suyo, no se commitea**;
+     `.idea/` tampoco). `origin/main` está en `23de226`, al día.
+   - **R2a** en `main` (`314e8b9`): corrida final sobre `6e68af0` con `reports.spec.ts` 7/7 ×3,
      la suite 191/191 ×2 y los once mutantes caídos; el cierre está en
      `correcciones-nucleo-reportes-r2a-revisiones.md`. La rama no compila entre `aff26e5` y
      `9ad028f` (un `git rm` ajeno en el índice compartido); HEAD sí. No se reescribe.
-   - **Después de R2a, dos arreglos de CI, en este orden** (CI de `main` está en rojo desde el
-     2026-10-04 y el job `e2e` se saltea):
-     1. `fix/postgres-18` (`8a61017`, worktree `scratchpad/lead-pg18`): Neon es Postgres 18.6;
-        en 18 borrar el padre de una clave `restrict` da `23001` (`RESTRICT_VIOLATION`) y no
-        `23503`. Los dos tests de R1 afirman el código nuevo; CI, README y `global-setup` pasan a
-        `postgres:18-alpine`. Integración 1236/1236 en 18. Al mergear, el contenedor local
-        `clock-pg` (17) se reemplaza por uno 18 (`clock-pg18`, puerto 5433, ya existe) o se
-        recrea en 5432, y se vuelve a correr la integración.
-     2. `fix/zona-de-la-maquina` (`1f011ef`, `5b4c160`): `startOfDayKey`, `startOfLocalDay` y
-        `dayBounds` sin `startOfDay`/`addDays` de date-fns (dependían de la zona del proceso);
-        tests con `TZ=UTC` y `test:time-ar` con Buenos Aires, también en CI. Puede chocar en
-        `src/server/time/index.ts` con R2a (`dayRangeLabel` y C1): resolver al mergear y correr
-        `npm test` y `test:all`.
-        Después de los dos, confirmar con `gh run list --branch main` que CI quede en verde.
-   - **Siguiente slice del núcleo**: R2b (cortes por tramo y atajos de mes, «Semana anterior»
+   - **Arreglos de CI** en `main`: `fix/postgres-18` (`b0e34ed`) y `fix/zona-de-la-maquina`
+     (`23de226`), con lint, typecheck, 1419 de unidad, 228 de `test:time-ar` y 1275 de
+     integración en Postgres 18. **CI de `main` en verde** desde `23de226` (`verify` e
+     `integration`; `e2e` se saltea hasta que exista `E2E_DATABASE_URL`).
+   - **Postgres local**: la integración por defecto apunta a `clock-pg` (17, puerto 5432), donde
+     los dos tests de R1 de `23001` fallan. Hasta que el usuario decida si se migra a 18 en el
+     5432, se corre con
+     `TEST_DATABASE_URL=postgresql://clock:clock@localhost:5433/<base propia>` (`clock-pg18`).
+   - **Siguiente slice del núcleo**: R2b, contrato en curso (`architect-r2b`, rama
+     `nucleo/r2b-contrato`). R2b (cortes por tramo y atajos de mes, «Semana anterior»
      como rótulo). Orden del mapa: R2a → R2b → R3 → R4 → R5 → R6 → R7, con R8 después de R2a y
      R9 después de R4.
    - **Deuda nueva**: C5 de R2a (`RangePicker` es la tercera copia del calendario de mes: sumarlo
