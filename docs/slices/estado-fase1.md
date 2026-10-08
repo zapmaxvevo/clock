@@ -41,10 +41,14 @@ segundo workspace vacío del owner y `renewWorkspace` se corta.
 
 ## Lo primero de la sesión siguiente
 
-0. **Lo que sigue**: el contrato del **13** (timesheet semanal; necesita P-12 de `timesheet.md`
-   y una decisión de arquitectura sobre TS-32, ver `fase1-mapa.md`). Ese contrato tiene que decir
-   si el reintento de la copia de semana pasa a ser seguro con TS-56 (TS-60 y TS-92 conservan su
-   «sin Reintentar» hasta entonces).
+0. **Lo que sigue**: el contrato del **13** (planilla semanal), en la rama
+   `fase1/slice-13-contrato`. P-12 de `timesheet.md` quedó respondido por el usuario el
+   2026-10-07 (respuestas crudas en esa sección) y el `parity-analyst` las está volcando en las
+   reglas con las decisiones del team-lead: celda con varias entradas escribible como Clockify,
+   salvo una baja que borraría la entrada más tardía (se rechaza); el timer activo no se ve ni
+   se toca en la planilla; «Copiar la semana pasada» sale de la fase 1 (desactivado en el plan
+   del workspace), así que el reintento de TS-56 deja de ser tema del 13. Falta la decisión de
+   arquitectura sobre TS-32 (ADR propio, lo aprueba el usuario).
 1. Deuda chica sin slice:
    - un `DayCalendar` compartido entre `DateField` y `PeriodPicker`;
    - un `ClockRangeFields` común a `manual-bar.tsx`, `entry-times-editor.tsx` y el diálogo;
@@ -128,8 +132,7 @@ Lo que sigue siendo del usuario, porque necesita sus cuentas o su máquina:
   `time-tracker.md` (fila de la entrada que corre, hora inexistente, horas de la copia al
   duplicar, «la última» de `c`, continuar o duplicar con un proyecto no disponible, TT-57 y
   TT-58), la edición masiva del rastreador (P-07), P-09 de `perfil.md` (con lo del 7b: el
-  «username», el tema y la identidad de Google en PF-45, PF-47 y PF-48), P-12 de
-  `timesheet.md`, P-07 de `calendario.md` (con CAL-23), PR-40/PR-58 y P-33 de `proyectos.md`
+  «username», el tema y la identidad de Google en PF-45, PF-47 y PF-48), P-07 de `calendario.md` (con CAL-23), PR-40/PR-58 y P-33 de `proyectos.md`
   (con PR-47 y PR-48), y lo del 11 en P-14: TT-12, TT-50 y el rechazo de continuar o duplicar
   con una etiqueta archivada. Del 11b, también en TT-12: si las opciones llevan
   casilla, qué hacen Enter y Espacio, si la búsqueda queda después de marcar, si se guarda con
