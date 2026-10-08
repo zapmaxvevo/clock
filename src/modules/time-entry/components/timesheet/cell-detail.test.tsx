@@ -192,3 +192,66 @@ describe("CellDetailDialogs: la lista recibe el estado de los pedidos (A15)", ()
     );
   });
 });
+
+describe("useCellDetail: cerrar el editor baja la falla que tenía a la vista (A4)", () => {
+  const single: GridCell = { ...cell, minutes: 60, label: "1:00", entries: [entries[0]] };
+  const saveFailed: EntryChangesState = {
+    pending: [],
+    failure: {
+      request: {
+        kind: "save",
+        cell: key,
+        name: "«a», de 10:00 a 11:00",
+        input: { id: a, changes: { description: "a2" } },
+      },
+      code: "unexpected",
+      message: timeEntryMessages.unexpected,
+    },
+  };
+
+  /**
+   * Abre el editor de la celda desde el menú, con la falla de un guardado de
+   * esa entrada a la vista, y lo cierra como dice `close`. Anota cada paso y
+   * cada `dismiss`.
+   */
+  function closeEditorWith(close: "cancel" | "delete"): string[] {
+    const log: string[] = [];
+    const changes = { ...changesWith(saveFailed), dismiss: () => log.push("dismiss") };
+
+    function Editor() {
+      const cellDetail = useCellDetail({
+        state,
+        changes,
+        destinationOf: () => null,
+        awaitCell: noop,
+      });
+      const [step, setStep] = useState(0);
+      const { dialogs } = cellDetail;
+      const editor = dialogs.detail?.editor ?? null;
+      if (step === 0) {
+        setStep(1);
+        cellDetail.open(single, "edit", null);
+      } else if (step === 1 && editor !== null) {
+        setStep(2);
+        log.push(dialogs.editorFailure === null ? "sin falla" : "falla a la vista");
+        if (close === "cancel") {
+          dialogs.cancelEditor();
+        } else {
+          dialogs.deleteFromEditor(editor);
+        }
+      }
+      return null;
+    }
+
+    renderToStaticMarkup(<Editor />);
+    return log.slice(log.indexOf("falla a la vista"));
+  }
+
+  it("cancelar la baja", () => {
+    expect(closeEditorWith("cancel")).toEqual(["falla a la vista", "dismiss"]);
+  });
+
+  it("«Borrar» de su menú también: no pasa a la pantalla como recién llegada", () => {
+    expect(closeEditorWith("delete")).toEqual(["falla a la vista", "dismiss"]);
+  });
+});

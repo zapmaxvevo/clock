@@ -238,7 +238,16 @@ export function useCellDetail({
     }));
   }
 
+  /**
+   * Todo cierre que no sea el del pedido —cancelar, «Borrar» de su menú— baja
+   * la falla que el editor tenía a la vista (A4): si no, al cerrarse pasaría a
+   * la pantalla o a la lista como recién llegada, con un «Reintentar» que
+   * reescribiría el borrador abandonado.
+   */
   function closeEditor(closedBy: EditorState["closedBy"]): void {
+    if (closedBy !== "saved" && closedBy !== "failed" && editorShowsFailure) {
+      changes.dismiss();
+    }
     update((current) =>
       current.editor === null
         ? current
@@ -304,13 +313,7 @@ export function useCellDetail({
     titleRef,
     listRef,
     places,
-    cancelEditor: () => {
-      // Cerrar el editor con la falla a la vista la baja (A4).
-      if (editorShowsFailure) {
-        changes.dismiss();
-      }
-      closeEditor(null);
-    },
+    cancelEditor: () => closeEditor(null),
     saveEntry: (entry, entryChanges) => {
       if (detail !== null) {
         changes.save({
