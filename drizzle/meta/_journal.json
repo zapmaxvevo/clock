@@ -99,6 +99,13 @@
       "when": 1791479703278,
       "tag": "0013_time_entry_people_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791479854676,
+      "tag": "0014_time_entry_people_restrict",
+      "breakpoints": true
     }
   ]
 }

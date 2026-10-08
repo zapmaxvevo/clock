@@ -111,8 +111,9 @@ async function signIn(email = ownerEmail): Promise<string> {
 
 /**
  * Workspace, creado ahora o en la fecha que el caso pida, y una sesión
- * adentro, de una persona con la zona del caso (`seedPreferences`). La
- * membresía la crea `ensureWorkspaceContext` al entrar.
+ * adentro, de una persona con la zona del caso (`seedPreferences`) y su
+ * membresía activa de `member`: con `time_entry_membership_fk`, sus entradas
+ * no se siembran sin ella.
  */
 async function signInOn(
   options: {
@@ -130,6 +131,9 @@ async function signInOn(
   }
   const email = `${randomUUID()}@empresa.com`;
   const id = await seedUser(email);
+  await db
+    .insert(membership)
+    .values({ workspaceId: seeded.workspaceId, userId: id, role: "member" });
   if (options.personTimezone !== undefined) {
     await seedPreferences(id, { timezone: options.personTimezone });
   }
@@ -1099,7 +1103,7 @@ describe("updateEntryTimes y updateRunningStart", () => {
       const seeded = await signInOn();
       const closed = await seedOwnClosed(seeded);
       const running = await seedOwnRunning(seeded);
-      // La primera action crea la membresía; recién ahí se le cambia el estado.
+      // La membresía la siembra `signInOn`; la primera action entra con ella activa.
       await actions.updateDescription({ id: closed.id, description: "" });
       await db
         .update(membership)

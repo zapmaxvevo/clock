@@ -6547,6 +6547,9 @@ describe("las guardas de las escrituras de las operaciones en masa", () => {
   it("deleteClosedByIds no borra una entrada abierta, ni la de otra persona, ni la de otro workspace", async () => {
     const otherId = await seedMember(workspaceId, "member");
     const other = await seedWorkspace(buenosAires);
+    await db
+      .insert(membership)
+      .values({ workspaceId: other.workspaceId, userId: actor.userId, role: "member" });
     const own = await seedClosed("2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z");
     const running = await seedTimeEntry({
       workspaceId,
@@ -6803,6 +6806,9 @@ describe("getCalendarState: la lectura (criterio 4, CAL-02, CAL-28)", () => {
 
   it("no trae las de otro workspace", async () => {
     const other = await seedWorkspace(buenosAires);
+    await db
+      .insert(membership)
+      .values({ workspaceId: other.workspaceId, userId: actor.userId, role: "member" });
     await seedTimeEntry({
       workspaceId: other.workspaceId,
       userId: actor.userId,

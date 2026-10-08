@@ -64,6 +64,11 @@ export const workspaceSettings = pgTable("workspace_settings", {
   workspaceId: uuid("workspace_id")
     .primaryKey()
     .references(() => workspace.id, { onDelete: "cascade" }),
+  /**
+   * Sin efecto: ven horas ajenas owner y admin, por rol (P-01). Si la fase 2 la
+   * vuelve editable, entra en `can()` por el recurso de `timeEntry.others.view`,
+   * no por `Actor`: ADR 0009 y ADR 0020.
+   */
   whoSeesAllEntries: visibilityScope("who_sees_all_entries").notNull().default("admins"),
   whoSeesRates: visibilityScope("who_sees_rates").notNull().default("admins"),
   /**
@@ -402,9 +407,10 @@ export const timeEntry = pgTable(
     workspaceId: uuid("workspace_id")
       .notNull()
       .references(() => workspace.id, { onDelete: "cascade" }),
+    // P-09, ADR 0020: una persona con horas no se borra; se desactiva.
     userId: text("user_id")
       .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+      .references(() => user.id, { onDelete: "restrict" }),
     /** La cadena vacía es la única representación de «sin descripción». */
     description: text("description").notNull().default(""),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
@@ -466,6 +472,13 @@ export const timeEntry = pgTable(
     // 0010: en la misma que la unión, drizzle-kit escribe la clave antes que
     // la restricción y Postgres la rechaza.
     unique("time_entry_workspace_id_unq").on(table.workspaceId, table.id),
+    // P-09, ADR 0020: una persona con horas no se borra; se desactiva. La 0013
+    // crea antes las membresías que faltaban.
+    foreignKey({
+      name: "time_entry_membership_fk",
+      columns: [table.workspaceId, table.userId],
+      foreignColumns: [membership.workspaceId, membership.userId],
+    }).onDelete("restrict"),
   ],
 );
 
