@@ -14,6 +14,9 @@ import { seedEntries, seedProject, type SeedEntry } from "./database";
 import { addDays, dayKeyOf, todayIn, type CivilDay } from "./days";
 import {
   dropActionRequests,
+  holdActionResponses,
+  holdRefreshes,
+  isAction,
   loseActionResponses,
   openSecondTab,
   withServerAction,
@@ -285,12 +288,23 @@ test("«Borrar» desde el menú confirma, vacía la celda, y sin otra entrada la
   await expect(rowTotal(page, project)).toHaveText("1:00");
 
   // §5.6, A2: la única entrada de una fila del servidor se va con la fila, y
-  // el foco pasa a «Añadir nueva fila».
+  // el foco pasa a «Añadir nueva fila». Con la respuesta retenida, al
+  // cerrarse la confirmación el foco está en el campo de la celda, ocupado;
+  // sin retenerla, la foto puede llegar antes de que el diálogo termine de
+  // cerrarse y el recorrido no probaría que el foco espera la foto.
+  const otherField = cellField(page, other, friday, day);
   await openCellMenu(cellMenuButton(page, cellName(other, friday, day)));
   await cellMenuItem(page, "Borrar").click();
-  await withServerAction(page, () =>
-    deleteEntryConfirm(page).getByRole("button", { name: "Borrar", exact: true }).click(),
-  );
+  const release = await holdActionResponses(page, isTimesheetPage);
+  const answered = page.waitForResponse((response) => isAction(response.request()));
+  await deleteEntryConfirm(page)
+    .getByRole("button", { name: "Borrar", exact: true })
+    .click();
+  await expect(deleteEntryConfirm(page)).toBeHidden();
+  await expect(otherField).toBeFocused();
+  await expect(otherField).toHaveAttribute("aria-busy", "true");
+  release();
+  expect((await answered).ok()).toBe(true);
   await expect(timesheetRow(page, other)).toHaveCount(0);
   await expect(addRowButton(page)).toBeFocused();
   await expect(timesheetRow(page, project)).toBeVisible();
@@ -434,8 +448,25 @@ test("mover la única entrada de una fila a la semana siguiente saca la fila y d
   const editor = entryEditor(page);
   await expect(dialogDescription(editor)).toBeFocused();
   await pickDialogDay(page, editor, next);
-  await withServerAction(page, () => dialogButton(editor, "Guardar").click());
+
+  // La foto que saca la fila se demora detrás de una revalidación retenida,
+  // como la del foco de TT-40 que sale mientras el guardado viaja: el editor
+  // se cierra con su respuesta y el foco espera en el campo de la celda. Sin
+  // esto la foto puede llegar antes de que el editor termine de cerrarse, y
+  // el recorrido no probaría que el foco espera la foto.
+  const field = cellField(page, project, week, day);
+  const releaseSave = await holdActionResponses(page, isTimesheetPage);
+  const releaseRefresh = await holdRefreshes(page, isTimesheetPage);
+  const sent = page.waitForRequest(isAction);
+  const answered = page.waitForResponse((response) => isAction(response.request()));
+  await dialogButton(editor, "Guardar").click();
+  await sent;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  releaseSave();
+  expect((await answered).ok()).toBe(true);
   await expect(editor).toBeHidden();
+  await expect(field).toBeFocused();
+  releaseRefresh();
   await expect(timesheetRow(page, project)).toHaveCount(0);
   await expect(addRowButton(page)).toBeFocused();
   await expect(timesheetTable(page).getByText(EMPTY_WEEK, { exact: true })).toBeVisible();
