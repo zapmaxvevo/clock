@@ -140,6 +140,11 @@ hashtext(<clave>))`. La clase es una constante del repository de
   y el reintento otra pestaña cambió la celda, el reintento la devuelve a `V`:
   gana la última escritura, como en la fila. Con `createOnce` el reintento de un
   alta habría respondido la fila del primer intento sin tocar nada.
+- **Si la zona de la persona cambia entre la respuesta perdida y el reintento,
+  no hay punto fijo**, y se acepta: el reintento corta el día con la zona nueva,
+  puede no encontrar la entrada que creó el primer intento y crear una segunda.
+  Cambiar la zona en esa ventana es raro, y la segunda entrada queda a la vista
+  en la grilla.
 - **Una pestaña desactualizada no necesita nada propio** (TS-93): el pedido no
   lleva lo que la pestaña vio, y el servidor aplica la regla sobre lo que hay.
 - **Es un bloqueo de transacción**, que se suelta en el `commit` o el

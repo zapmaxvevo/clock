@@ -10,7 +10,9 @@ cambios chicos en componentes de `project`; pantalla nueva `/planilla`.
   (TS-70), ocultar el rastreador (TS-03)— no entra.
 - **Lugar en el plan:** [mapa de la fase 1](fase1-mapa.md), «Slice 13 — Planilla
   de horarios». Es el último de la fase.
-- **Revisión del contrato:** pendiente de la ronda 1 de `architecture-reviewer`.
+- **Revisión del contrato:** ronda 1 de `architecture-reviewer` aplicada
+  ([`correcciones-fase1-slice13.md`](correcciones-fase1-slice13.md)); pendiente
+  la ronda 2, sobre los cambios.
 - **Contratos de los que hereda la forma:** [slice 12](fase1-slice12-edicion-masiva.md)
   (tres fases y escritura agrupada), [slice 8](fase1-slice8-calendario.md)
   (segunda pantalla de `time-entry`, semana en la URL, días que no existen),
@@ -128,13 +130,19 @@ dicen que las celdas con entradas «se siguen escribiendo»: bajar y editar la
 
 **D13-6 — Qué borra «Quitar fila».** Opciones: los ids que la grilla mostraba,
 como el borrado masivo; las entradas cerradas de la persona con ese par en los
-siete días que la persona ve, decidido en el servidor. **Lo segundo**, que es la
-letra de TS-52. Los siete días son los que empiezan en el `weekStart` del
-pedido, sea o no el inicio de semana actual de la persona: si un admin cambió el
-primer día de la semana (TS-112) mientras la pantalla estaba abierta, se borra
-la semana que la persona vio. El conteo del diálogo es el de la última lectura;
-una entrada que otra pestaña agregó a la fila entre la lectura y la
-confirmación también se borra, y queda en el registro de auditoría.
+siete días que la persona ve, decidido en el servidor; las dos juntas. **Las
+dos juntas**: el pedido lleva los `entryIds` de la fila, y el servidor borra
+solo los que siguen siendo cerradas de la persona con ese par y el inicio en
+los siete días, que es la letra de TS-52 usada como cota. Se borra lo que el
+diálogo contó y nada más: una entrada que otra pestaña agregó a la fila entre
+la lectura y la confirmación, un timer de la fila detenido después de la
+lectura, una entrada de un día vecino que entró al tramo porque cambió la zona
+y lo agregado antes de un «Reintentar» quedan, y la fila reaparece con ellas en
+la revalidación. Con solo el predicado, todo eso se borraba sin que la persona
+lo viera. Los siete días son los que empiezan en el `weekStart` del pedido, sea
+o no el inicio de semana actual de la persona: si un admin cambió el primer día
+de la semana (TS-112) mientras la pantalla estaba abierta, la cota es la semana
+que la persona vio.
 
 **D13-7 — Qué guarda el navegador y cuándo lo olvida** (TS-19, P-16). Ver §5.7.
 Se guarda solo el par de una fila con proyecto elegido (o «Sin proyecto»), por
@@ -181,7 +189,8 @@ encabezados**: el de fila «Total» y el de columna del día, en una tabla con
 - **El árbol de la rama `fase1/slice-13-contrato` en `1a93230`**, con los slices
   1 a 12, 2b, 2c, 7b, 8b, 8c, 11a, 11b y el arreglo del piso fijo en `main`.
   Las citas de abajo son de ese árbol.
-- **Los ADR 0018 y 0019 aceptados por el usuario** antes del primer commit de
+- **Los ADR 0018 y 0019 aceptados por el usuario**, con las notas fechadas que
+  apuntan a ellos en los ADR 0005, 0006 y 0007, antes del primer commit de
   `backend-dev`.
 - **Si entre este contrato y el arranque entra algo a `main`**, una ronda corta
   de `architecture-reviewer` contra el árbol (lección del 9).
@@ -202,6 +211,7 @@ encabezados**: el de fila «Total» y el de columna del día, en una tabla con
 | `findManyByIdsForUpdate`: una sentencia que bloquea solo `time_entry` con `order by id`, y otra con las referencias                                                                                                       | `repository.ts:351-376`                                                                                                               |
 | `insertClosed` recibe el id; `updateClosedEntry(tx, target, fields)` escribe solo cerradas; `deleteClosedByIds(tx, targets)` con la guarda de la lista vacía                                                              | `repository.ts:556-577`, `:604-617`, `:757-769`                                                                                       |
 | `timeEntryMessages` (`tooShort`, `nonexistentClock`, `beforeFloor`, `invalidDate`, `taskNeedsProject`, `unexpected`); `dayKeyInput`; `hasProjectForTask`; `calendarWeekParams`; `TimeEntryErrorCode`                      | `time-entry/schema.ts:26-54`, `:117-119`, `:66-68`, `:129`, `:520-521`                                                                |
+| `BULK_MAX = 200`; el esquema privado `entryIds` de la masiva: `.min(1, bulkEmpty)`, `.max(BULK_MAX, bulkTooMany)` y `normalizedIds`                                                                                       | `time-entry/schema.ts:20`, `:46-47`, `:211-216`                                                                                       |
 | Las actions revalidan `"/"` y `"/calendario"` en `options.paths`, también con error                                                                                                                                       | `time-entry/actions.ts:59-65`; `src/server/action.ts:106-123`                                                                         |
 | `timeEntry.own.create`, `.update` y `.delete` para los cinco roles; `can` niega una membresía no activa                                                                                                                   | `src/server/permissions/index.ts:115-133`, `:173-175`                                                                                 |
 | `time_entry.created_at` existe con `defaultNow()`; índice `(workspace_id, user_id, started_at desc)`                                                                                                                      | `src/server/db/schema.ts:419`, `:430-434`                                                                                             |
@@ -267,9 +277,12 @@ PR-23, PR-47, PR-64, PR-66 y PR-71.
   paridad, adoptadas).
 - **TS-45**: el gris del cero vale para los tres totales.
 - **TS-100**: el nombre de los totales sale de sus encabezados (D13-12).
-- **TS-52**: los siete días son los de la semana que la persona vio (D13-6).
-- **TS-79 entre el 13 y el 13b**: el aviso manda «al detalle», que llega en el
-  13b; mientras tanto ese camino es el rastreador o el calendario (§8).
+- **TS-52**: se borran las entradas que la fila mostraba (`ids`), acotadas a los
+  siete días de la semana que la persona vio; lo agregado a la fila después de
+  la lectura queda (D13-6).
+- **TS-79 en el 13**: el aviso dice «Editá las entradas de esta celda desde el
+  rastreador.» (`cellNeedsEntryEdit`); el 13b lo pasa a «desde el detalle»
+  (§9).
 - **TS-40 y P-14**: P-14 pasa a cerrados con la decisión del team-lead; la regla
   se construye en el 13b.
 - **TS-32**: «falta el ADR» pasa a citar el ADR 0018, y la divergencia de la
@@ -291,21 +304,21 @@ PR-23, PR-47, PR-64, PR-66 y PR-71.
 
 ### Consecuencias sobre código ya entregado
 
-| Archivo                                               | Qué cambia                                                                                       | Qué hay que volver a probar                                                        |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| `src/server/time/index.ts`                            | Suma `instantFromLocalOrLater` y `fullWeekdayLabel` (§4.2). No cambia ninguna función existente. | `time.test.ts` entero                                                              |
-| `time-entry/schema.ts`                                | Entradas, estado y resultados de la planilla; `cellNeedsDetail` en `timeEntryMessages` (§4.1).   | `schema.test.ts` entero                                                            |
-| `time-entry/service.ts`                               | `getTimesheetState`, `setTimesheetCell`, `removeTimesheetRow`.                                   | —                                                                                  |
-| `time-entry/repository.ts`                            | `lockCell`, `lockClosedInSlice`, `listTimesheetEntries` (§4.6).                                  | —                                                                                  |
-| `time-entry/actions.ts`                               | Dos actions; `options.paths` suma `"/planilla"`.                                                 | `actions.integration.test.ts` (la revalidación de todas las actions)               |
-| `time-entry/components/clock-field.tsx`               | Suma `busy`: no acepta texto y se atenúa sin perder el foco (§5.5).                              | Los campos de hora de la barra, la fila, el inicio del timer y la masiva           |
-| `time-entry/components/calendar/period-picker.tsx`    | `mode` se reemplaza por `hrefOf(day)`.                                                           | `calendar.spec.ts` (CAL-16)                                                        |
-| `time-entry/components/calendar/calendar-toolbar.tsx` | Pasa `hrefOf={(day) => calendarHref(state.mode, day)}`.                                          | `calendar-toolbar.test.tsx`                                                        |
-| `project/components/picker-model.ts`                  | `pickerView` recibe `excluded`; suma `isTrackablePair` y el vacío `allUsed` (§5.7).              | `picker-model.test.ts` entero                                                      |
-| `project/components/project-picker.tsx`               | Prop `excluded`, opción del proyecto inactiva, vacío `allUsed`.                                  | `project-picker.test.tsx`; `e2e/project-picker.spec.ts`                            |
-| `project/components/labels.ts`                        | `pickerAllUsed`.                                                                                 | —                                                                                  |
-| `src/components/layout/app-nav.tsx`                   | Suma «Planilla» entre «Calendario» y «Proyectos».                                                | `e2e/profile.spec.ts` (`goToTrackerByNav`), `e2e/calendar.spec.ts` (la navegación) |
-| `src/test/factories.ts`                               | `seedTimeEntry` acepta `id` y `createdAt` opcionales.                                            | —                                                                                  |
+| Archivo                                               | Qué cambia                                                                                        | Qué hay que volver a probar                                                        |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `src/server/time/index.ts`                            | Suma `instantFromLocalOrLater` y `fullWeekdayLabel` (§4.2). No cambia ninguna función existente.  | `time.test.ts` entero                                                              |
+| `time-entry/schema.ts`                                | Entradas, estado y resultados de la planilla; `cellNeedsEntryEdit` en `timeEntryMessages` (§4.1). | `schema.test.ts` entero                                                            |
+| `time-entry/service.ts`                               | `getTimesheetState`, `setTimesheetCell`, `removeTimesheetRow`.                                    | —                                                                                  |
+| `time-entry/repository.ts`                            | `lockCell`, `lockClosedInSlice`, `listTimesheetEntries` (§4.6).                                   | —                                                                                  |
+| `time-entry/actions.ts`                               | Dos actions; `options.paths` suma `"/planilla"`.                                                  | `actions.integration.test.ts` (la revalidación de todas las actions)               |
+| `time-entry/components/clock-field.tsx`               | Suma `busy`: no acepta texto y se atenúa sin perder el foco (§5.5).                               | Los campos de hora de la barra, la fila, el inicio del timer y la masiva           |
+| `time-entry/components/calendar/period-picker.tsx`    | `mode` se reemplaza por `hrefOf(day)`.                                                            | `calendar.spec.ts` (CAL-16)                                                        |
+| `time-entry/components/calendar/calendar-toolbar.tsx` | Pasa `hrefOf={(day) => calendarHref(state.mode, day)}`.                                           | `calendar-toolbar.test.tsx`                                                        |
+| `project/components/picker-model.ts`                  | `pickerView` recibe `excluded`; suma `isTrackablePair` y el vacío `allUsed` (§5.7).               | `picker-model.test.ts` entero                                                      |
+| `project/components/project-picker.tsx`               | Prop `excluded`, opción del proyecto inactiva, vacío `allUsed`.                                   | `project-picker.test.tsx`; `e2e/project-picker.spec.ts`                            |
+| `project/components/labels.ts`                        | `pickerAllUsed`.                                                                                  | —                                                                                  |
+| `src/components/layout/app-nav.tsx`                   | Suma «Planilla» entre «Calendario» y «Proyectos».                                                 | `e2e/profile.spec.ts` (`goToTrackerByNav`), `e2e/calendar.spec.ts` (la navegación) |
+| `src/test/factories.ts`                               | `seedTimeEntry` acepta `id` y `createdAt` opcionales.                                             | —                                                                                  |
 
 **Ninguna afirmación de un test existente cambia.** Sin `excluded`, `pickerView`
 y `ProjectPicker` se comportan como hoy; sin `busy`, `ClockField` también.
@@ -347,8 +360,8 @@ cambia (TS-75).
 `timeEntryMessages` suma una clave:
 
 ```ts
-/** TS-79: una causa, dos casos, un remedio (TS-34, TS-119). */
-cellNeedsDetail: "Editá las entradas de esta celda desde el detalle.",
+/** TS-79: una causa, dos casos, un remedio (TS-34, TS-119). El 13b cambia el texto (§9). */
+cellNeedsEntryEdit: "Editá las entradas de esta celda desde el rastreador.",
 ```
 
 ```ts
@@ -379,12 +392,18 @@ export const setTimesheetCellInput = z
   })
   .refine(hasProjectForTask, taskNeedsProject);
 
-/** TS-52: la fila de un par en los siete días que empiezan en `weekStart`. */
+/** TS-52: las entradas de la fila de un par, acotadas a los siete días desde `weekStart`. */
 export const removeTimesheetRowInput = z
   .object({
-    /** El primer día de la semana que la persona ve (D13-6). */
+    /** El primer día de la semana que la persona ve: la cota (D13-6). */
     weekStart: dayKeyInput,
     ...timesheetPair,
+    /**
+     * Los `entryIds` de la fila que la grilla mostraba: lo único que se borra
+     * (D13-6). Es el esquema privado `entryIds` de la masiva: de 1 a
+     * `BULK_MAX`, normalizados con `normalizedIds`.
+     */
+    ids: entryIds,
   })
   .refine(hasProjectForTask, taskNeedsProject);
 
@@ -427,8 +446,11 @@ export const timesheetRowView = z.object({
   cells: z.array(timesheetCellView),
   /** Exacto: la suma de la fila en la semana (TS-44). */
   closedSeconds: z.number().int().min(0),
-  /** Lo que cuenta el diálogo de TS-53. */
-  entryCount: z.number().int().min(1),
+  /**
+   * Las cerradas de la fila en la semana, por id: lo que cuenta el diálogo de
+   * TS-53 y lo que borra «Quitar fila» (D13-6).
+   */
+  entryIds: z.array(z.uuid()).min(1),
 });
 
 export const timesheetState = z.object({
@@ -463,14 +485,16 @@ export type RemoveTimesheetRowValues = z.output<typeof removeTimesheetRowInput>;
 /** La entrada que el pedido creó o editó; `null` si la celda ya mostraba ese valor. */
 export type SetTimesheetCellResult = { readonly entry: TimeEntryView | null };
 
-/** Las entradas que se borraron; vacío si la fila ya no tenía ninguna (TS-92). */
+/** Las entradas que se borraron; vacío si ya no quedaba ninguna de las pedidas (TS-92). */
 export type RemoveTimesheetRowResult = { readonly ids: readonly string[] };
 ```
 
 - **`MINUTES_PER_DAY` se importa de `src/server/time`**, como `isClock`.
 - **Los textos de Zod son de `timeEntryMessages`**: ninguna interfaz manda un
   decimal, un número de más de 1439 ni un tipo distinto, así que esos casos
-  usan `unexpected`, como lo que el slice 12 rechaza con ese texto.
+  usan `unexpected`, como lo que el slice 12 rechaza con ese texto. `ids` lleva
+  los de la masiva: la interfaz nunca lo manda vacío —una fila sin entradas se
+  quita sin pedido— y más de `BULK_MAX` es `bulkTooMany` (§4.5).
 - **`TimeEntryErrorCode` no cambia**: TS-79 es `validation`.
 
 ### 4.2 Lo que suma `src/server/time`
@@ -630,7 +654,7 @@ En este orden:
       - **`unchanged`**: responde `{ entry: null }`. Nada escrito, ninguna
         constancia.
       - **`rejected`**: `appendOtherDay` y `trimTooShort` son `validation` con
-        `cellNeedsDetail` (TS-79); `noStartThatDay`, `validation` con
+        `cellNeedsEntryEdit` (TS-79); `noStartThatDay`, `validation` con
         `nonexistentClock`; `afterYear9999`, `validation` con `invalidDate`.
       - **`create`**: `can(… "timeEntry.own.create" …)` o `forbidden`.
         `assertNewEntryPair(tx, actor, par)` (TS-77, TS-78). `insertClosed` con
@@ -662,10 +686,11 @@ En este orden:
 
 ```ts
 /**
- * TS-52 … TS-54: borra las entradas cerradas de la persona con ese par cuyo
- * inicio cae en los siete días desde `weekStart`. La que corre no se toca. Sin
- * entradas, responde vacío sin escribir: el reintento de una fila ya quitada
- * no borra nada más (TS-92).
+ * TS-52 … TS-54: borra las entradas de `ids` que siguen siendo cerradas de la
+ * persona con ese par y con el inicio en los siete días desde `weekStart`
+ * (D13-6). La que corre no se toca, ni lo que no está en `ids`. Sin ninguna,
+ * responde vacío sin escribir: el reintento de una fila ya quitada no borra
+ * nada más (TS-92).
  */
 export async function removeTimesheetRow(
   actor: Actor,
@@ -680,12 +705,23 @@ export async function removeTimesheetRow(
    `invalidDate`. El tramo es `[startOfDayKey(weekStart), startOfDayKey(+7))`.
    **No hay piso**: borrar no carga horas, y ninguna entrada es anterior al
    2000-01-01.
-3. Una transacción: `lockClosedInSlice(tx, fila)`; `deleteClosedByIds(tx,
-filas.map(targetOf))`; si borró otra cantidad que la bloqueada, error sin
+3. Una transacción: `lockClosedInSlice(tx, fila)` bloquea las de la cota; las
+   que se borran son las bloqueadas cuyo id está en `input.ids`. Sin ninguna,
+   responde `{ ids: [] }` sin escribir. Si no, `deleteClosedByIds(tx,
+borradas.map(targetOf))`; si borró otra cantidad que la elegida, error sin
    traducir; `recordAudits` con una constancia `timeEntry.removeRow` por
-   entrada, con la copia de la fila y sus `tagIds` (`sortedTagIdsOf`), como
-   `bulkDeleteEntries`.
+   entrada borrada, con la copia de la fila y sus `tagIds` (`sortedTagIdsOf`),
+   como `bulkDeleteEntries`.
 4. Responde `{ ids }` de las borradas, en orden de id.
+
+- **Lo bloqueado que no está en `ids` queda** sin escribirse, y su bloqueo se
+  suelta con el `commit`. **Un id de `ids` fuera de la cota** —de otra semana,
+  de otro par, la que corre, ajena o que ya no existe— se ignora sin error: el
+  pedido no puede borrar fuera de la fila.
+- **Una fila con más de `BULK_MAX` entradas en la semana no se quita desde la
+  planilla**: el esquema rechaza el pedido con `bulkTooMany`, que el aviso de la
+  fila muestra sin «Reintentar» (TS-92). Se borra por partes con el borrado
+  masivo del rastreador.
 
 `workspace` no se usa para las vistas; la recibe por la zona con que se cortan
 los días.
@@ -758,12 +794,16 @@ listTimesheetEntries(
   relectura; con edición, un `update` y una relectura. Una constancia. **A lo
   sumo diez sentencias.**
 - **Quitar una fila**: una sentencia que bloquea con `order by id`, una
-  relectura con referencias, un `delete` y un `insert` de constancias. Sin tope
-  de filas propio: el alcance es una fila de una persona en siete días. El
-  umbral que obligaría a acotarlo está en §8.
+  relectura con referencias, un `delete` y un `insert` de constancias. El
+  `delete` tiene a lo sumo `BULK_MAX` destinos, por el esquema (§4.1); la cota
+  bloquea las de una fila de una persona en siete días.
 - **Ciclos**: ver el ADR 0019. Quitar una fila no toma bloqueos de celda; una
   escritura de celda que confirma mientras se quita la fila puede dejar una
-  entrada que la fila no borró, y la fila vuelve a aparecer con ella.
+  entrada que la fila no borró, y la fila vuelve a aparecer con ella. Una
+  escritura de celda que llega mientras se quita la fila toma su bloqueo de
+  celda y espera las filas en `lockClosedInSlice`; cuando la fila confirma,
+  `for update` en `read committed` salta las borradas y la celda decide con lo
+  que quedó: si quedó vacía, crea (criterio 16).
 - **Leer la semana**: una sentencia, sin transacción explícita; es una sola
   foto.
 
@@ -777,8 +817,8 @@ listTimesheetEntries(
 | Menos de un minuto                                               | `validation` | `tooShort` (TT-73)                              | TS-35, TS-82  |
 | 24 horas o más, decimal, otro tipo                               | `validation` | `unexpected`                                    | TS-82         |
 | Tarea sin proyecto                                               | `validation` | `taskNeedsProject` (TT-70)                      | TS-86         |
-| Subir con varias y la que termina más tarde termina otro día     | `validation` | `cellNeedsDetail`                               | TS-79, TS-119 |
-| Bajar y la que empieza más tarde quedaría con menos de un minuto | `validation` | `cellNeedsDetail`                               | TS-79, D13-4  |
+| Subir con varias y la que termina más tarde termina otro día     | `validation` | `cellNeedsEntryEdit`                            | TS-79, TS-119 |
+| Bajar y la que empieza más tarde quedaría con menos de un minuto | `validation` | `cellNeedsEntryEdit`                            | TS-79, D13-4  |
 | Desde las 09:00 no existió ningún minuto ese día                 | `validation` | `nonexistentClock`                              | ADR 0018      |
 | Alta en un proyecto inexistente, archivado o sin acceso          | `not_found`  | `projectUnavailable` (TT-77)                    | TS-77         |
 | Alta en una tarea inexistente, hecha o de otro proyecto          | `not_found`  | `taskUnavailable` (PR-74)                       | TS-78         |
@@ -812,8 +852,9 @@ constancia.
 - **La pestaña desactualizada** (TS-93) no manda lo que vio: si la celda pasó a
   tener varias, rige TS-34 o TS-79; si su entrada se borró, crea; si el timer de
   esa celda se detuvo, su entrada cuenta como una más.
-- **Quitar una fila** responde `{ ids: [] }` si ya no quedan entradas: el
-  reintento termina bien sin borrar nada más.
+- **Quitar una fila** responde `{ ids: [] }` si ya no queda ninguna de las de
+  `ids`: el reintento termina bien sin borrar nada, tampoco lo que se agregó a
+  la fila entre los dos intentos (D13-6).
 
 ### 4.11 Revalidación
 
@@ -871,6 +912,7 @@ startOfDayKey(inicio + 7))`.
   cliente, por proyecto (`compareNames`); dentro de un proyecto, la fila sin
   tarea primero y después por tarea (`compareNames`). El proyecto, la tarea y el
   cliente se muestran con su nombre de ahora, archivados o no (TS-21, TS-22).
+  Cada fila lleva sus `entryIds` en orden de id.
 - **Los días**: `label` con `weekdayLabel`, `fullLabel` con `fullWeekdayLabel`,
   `isToday`, `isWeekend` por el día de la semana de la clave (sábado y domingo),
   `beforeFloor` contra el piso, y `closedSeconds`.
@@ -957,11 +999,12 @@ nombre accesible «{fila}, {fullLabel}» —«Rediseño: Maquetado, miércoles
 
 1. `parseDurationInput(texto)`; `null` o `0` devuelve `null`: la celda vuelve
    al valor anterior y se marca (TS-27, TS-35, TT-21). No sale ningún pedido.
-2. **Igual a lo que la celda muestra, o al valor que ya viaja para esa celda**:
-   devuelve el rótulo sin mandar nada (TS-36). Es lo que hace que Enter seguido
-   de la pérdida del foco mande un solo pedido.
+2. **Igual a lo que la celda muestra**: devuelve el rótulo sin mandar nada
+   (TS-36).
 3. Si no, `write({ date, projectId, taskId, minutes })` de `useCellWrites` y
-   devuelve el rótulo de `minutes`.
+   devuelve el rótulo de `minutes`. `write` no manda nada si para esa celda ya
+   viaja un pedido con esos minutos (§5.6): es lo que hace que Enter seguido de
+   la pérdida del foco mande un solo pedido.
 
 `onSubmit` (Enter) lleva el foco a la celda escribible del mismo día en la
 próxima fila que la tenga; si no hay, el foco se queda (TS-98). `onCancel`
@@ -983,7 +1026,10 @@ type CellWriteRequest = {
 };
 
 type CellWrites = {
-  /** Los minutos que viajan por celda (clave `día|proyecto|tarea`): la vista optimista. */
+  /**
+   * Por celda (clave `día|proyecto|tarea`), los minutos del último pedido que
+   * viaja: la vista optimista y `busy`.
+   */
   readonly pending: ReadonlyMap<string, number>;
   /** La última falla, con su pedido: lo que dice el aviso y reenvía «Reintentar». */
   readonly failure: {
@@ -999,10 +1045,25 @@ type CellWrites = {
 export function useCellWrites(): CellWrites;
 ```
 
-- **Cada escritura en su transición**, con la vista optimista dentro, como
-  `useAction`: si falla o la revalidación trae otro valor, la vista optimista
-  se descarta sola. Lo que sigue al `await` va en otra transición (el mismo
-  motivo que `use-action.ts:64-66`).
+- **`pending` es estado propio, no `useOptimistic`**: un `useReducer` sobre el
+  estado de `cell-writes.ts`, con un registro por pedido (su celda y sus
+  minutos). React agrupa las transiciones en curso, así que con
+  `useOptimistic` una celda rechazada seguiría con el valor pedido, y `busy`,
+  mientras viajara cualquier otra escritura de la grilla, que es lo normal al
+  cargar con Tab. Por pedido:
+  - `write` lo agrega antes de llamar a la action;
+  - con un rechazo o un error de red, sale de `pending` en una actualización
+    urgente, después del `await`: la celda vuelve a lo que dice el servidor y
+    deja de estar `busy` aunque otra escritura siga en vuelo;
+  - con éxito, sale de `pending` dentro de `startTransition`, después del
+    `await`, para que se confirme junto con la revalidación que trae el valor
+    nuevo y la celda no muestre un instante el anterior (el mismo motivo que
+    `use-action.ts:64-66`).
+- **Lo que viaja por celda también está en un `ref`**, que `write` actualiza de
+  forma sincrónica y que se limpia cuando termina el pedido que lo puso, no
+  otro. `write` no manda nada si para esa celda ya viaja un pedido con los
+  mismos minutos: Enter y la pérdida del foco que le sigue llegan antes de que
+  React vuelva a dibujar, así que comparar con `pending` no alcanza.
 - **Una falla reemplaza a la anterior**; una escritura nueva **de la misma
   celda** baja el aviso; una de otra celda no. «Reintentar» reenvía el pedido de
   la falla, tal cual.
@@ -1078,14 +1139,15 @@ const storedRows = z.object({
 - **Una con entradas** abre el diálogo de TT-61: título «¿Quitar la fila
   «{fila}»?», descripción «Se van a borrar {n} entradas que suman {total}. No
   se puede deshacer.» (con una: «Se va a borrar 1 entrada de {total}. No se
-  puede deshacer.»), con `entryCount` y `closedSeconds` de la fila (TS-53).
-  «Cancelar» devuelve el foco a la X; «Quitar fila» manda
-  `removeTimesheetRow({ weekStart, projectId, taskId })`.
+  puede deshacer.»), con `entryIds.length` y `closedSeconds` de la fila
+  (TS-53). «Cancelar» devuelve el foco a la X; «Quitar fila» manda
+  `removeTimesheetRow({ weekStart, projectId, taskId, ids: entryIds })`.
 - **Mientras viaja**, la fila se oculta y el foco va a «Añadir nueva fila»
   antes de ocultarla: la X que tenía el foco desaparece. Con éxito, la fila
-  sale con la revalidación y se olvida en el navegador. Con falla, vuelve y el
-  aviso de la pantalla dice «No se pudo quitar la fila.» con el mensaje, y
-  «Reintentar» con `unexpected` (TS-92).
+  sale con la revalidación y se olvida en el navegador; si quedó en la fila
+  alguna entrada que no estaba en `ids`, vuelve con ella (D13-6). Con falla,
+  vuelve y el aviso de la pantalla dice «No se pudo quitar la fila.» con el
+  mensaje, y «Reintentar» con `unexpected` (TS-92).
 - **El timer no se toca** (TS-54): el diálogo cuenta solo las cerradas, porque
   la fila solo tiene esas.
 
@@ -1096,13 +1158,14 @@ Una región de la pantalla, encima de la grilla, siempre montada y con
 fila, con `ActionFeedback`:
 
 - **Celda** (TS-91): «No se pudo guardar la celda.», el mensaje del servidor
-  —«Editá las entradas de esta celda desde el detalle.», «Ese proyecto ya no
+  —«Editá las entradas de esta celda desde el rastreador.», «Ese proyecto ya no
   está disponible.», …— y «Reintentar» solo con `unexpected` (TT-89).
 - **Fila** (TS-92): «No se pudo quitar la fila.».
 - **El aviso no toma el foco**: la persona ya está en otra celda. Lo anuncia el
   rol.
-- **Una celda rechazada vuelve a su valor** porque la vista optimista se
-  descarta y la revalidación trae el real (TS-27, TS-79).
+- **Una celda rechazada vuelve a su valor** en cuanto llega el rechazo, aunque
+  otra escritura siga en vuelo: su pedido sale de `pending` (§5.6) y la
+  revalidación trae el real (TS-27, TS-79).
 
 ### 5.10 Estados vacíos y de solo lectura
 
@@ -1241,7 +1304,9 @@ fila, el diálogo, el aviso de la pantalla y la barra de la semana.
 
 Antes del merge, lo que §1 enumera en «Lo que el slice decide», con la sección
 «Slice 13», las correcciones fechadas, P-14 y P-16 a cerrados, y TS-32 y la
-sección 20 apuntando al ADR 0018.
+sección 20 apuntando al ADR 0018. TS-79 con el texto del 13 —«Editá las
+entradas de esta celda desde el rastreador.»—, en su regla y en la tabla de
+mensajes, ya está registrado; se comprueba que siga así.
 
 ### Lo que no toca nadie
 
@@ -1276,8 +1341,10 @@ anteriores son históricos; el mapa y el estado los actualiza el team-lead.
 1. **Los esquemas** — `setTimesheetCellInput` acepta un día, un par y de 1 a
    1439 minutos; rechaza 0 con `tooShort`, 1440, 1.5 y una cadena con
    `unexpected`, la tarea sin proyecto con `taskNeedsProject` y un día que no
-   existe con `invalidDate`. `removeTimesheetRowInput` igual sin minutos.
-   `timesheetWeekParams` no pasa con un parámetro repetido.
+   existe con `invalidDate`. `removeTimesheetRowInput` igual sin minutos, con
+   `ids` de 1 a 200: ninguno es `bulkEmpty`, 201 es `bulkTooMany`, y los ids
+   salen en minúsculas y sin repetir. `timesheetWeekParams` no pasa con un
+   parámetro repetido.
 2. **`src/server/time`** — `instantFromLocalOrLater`: una hora que existe da lo
    mismo que `instantFromLocal`; Madrid 2026-03-29 a las 02:30 da `01:00Z`; la
    hora repetida da el segundo instante; `Pacific/Apia` 2011-12-30 da `null`;
@@ -1304,7 +1371,7 @@ anteriores son históricos; el mapa y el estado los actualiza el team-lead.
 7. **Los rechazos de TS-79** — La que termina más tarde termina otro día, o a
    las 00:00 del siguiente, al subir; la que empieza más tarde quedaría con
    menos de un minuto al bajar, también la de cero minutos (TS-118):
-   `validation` con `cellNeedsDetail`, nada escrito, ninguna constancia.
+   `validation` con `cellNeedsEntryEdit`, nada escrito, ninguna constancia.
 8. **Sin cambios** — Con la celda en `V` no se escribe ni se deja constancia y
    responde `{ entry: null }`; una celda de `1:30:42` con `90` conserva sus
    segundos (TS-36, TS-105).
@@ -1333,23 +1400,31 @@ anteriores son históricos; el mapa y el estado los actualiza el team-lead.
     esperar**: con una barrera que toma el bloqueo de la celda (`lockCell`) y
     otra que bloquea una entrada de la celda (`outcomeWhileLocked`), la llamada
     termina con la barrera tomada.
-15. **Quitar una fila** — Borra las cerradas propias del par en los siete días;
-    no toca las de otras semanas, otros pares —`(P, —)` no borra `(P, T)`—, la
-    que corre ni las ajenas; «Sin proyecto» borra solo las sin proyecto; deja
-    una constancia por entrada con sus etiquetas; repetida responde `{ ids: [] }`
-    sin constancias; desactivada, `forbidden`.
-16. **Quitar una fila no se traba con una masiva** — Una fila y un borrado
-    masivo sobre las mismas entradas en orden opuesto, cruzados con
-    `raceThroughBarrier`, terminan los dos sin `40P01`.
+15. **Quitar una fila** — Borra las de `ids` que son cerradas propias del par en
+    los siete días; no toca las de otras semanas, otros pares —`(P, —)` no
+    borra `(P, T)`—, la que corre ni las ajenas, aunque estén en `ids`; «Sin
+    proyecto» borra solo las sin proyecto. Una entrada agregada a la fila
+    después de la lectura y un timer de la fila detenido después de la lectura
+    —cerradas en la cota, fuera de `ids`— no se borran, y la lectura siguiente
+    trae la fila con ellas. Deja una constancia por entrada con sus etiquetas;
+    repetida responde `{ ids: [] }` sin constancias; desactivada, `forbidden`.
+16. **Quitar una fila no se traba** — Una fila y un borrado masivo sobre las
+    mismas entradas en orden opuesto, cruzados con `raceThroughBarrier`,
+    terminan los dos sin `40P01`. Una escritura de celda encolada detrás del
+    bloqueo de filas de `removeTimesheetRow` —con `queueBehindBarrier`: la
+    barrera bloquea la entrada de la celda, y detrás se encolan
+    `removeTimesheetRow` con esa entrada en `ids` y después `setTimesheetCell`
+    sobre la celda— termina sin `40P01` y crea la entrada sobre la celda ya
+    vacía.
 17. **La lectura** — Las filas y su orden (TS-15), con cliente, sin cliente y
-    «Sin proyecto»; las celdas por el día local de la zona de la persona
-    (TS-07); la entrada que cruza la medianoche en su día de inicio (TS-102);
-    los días con sus rótulos, fin de semana, hoy y piso; los totales; un
-    proyecto archivado con su fila (TS-21); la semana de la persona (TS-06); un
-    día que no es inicio de semana lleva a la suya; una semana que no se puede
-    navegar cae a la actual.
-18. **La capa de action** — Traduce `cellNeedsDetail`, el `ProjectError` y los
-    `ZodError`; revalida `"/"`, `"/calendario"` y `"/planilla"` también con
+    «Sin proyecto», con sus `entryIds`; las celdas por el día local de la zona
+    de la persona (TS-07); la entrada que cruza la medianoche en su día de
+    inicio (TS-102); los días con sus rótulos, fin de semana, hoy y piso; los
+    totales; un proyecto archivado con su fila (TS-21); la semana de la persona
+    (TS-06); un día que no es inicio de semana lleva a la suya; una semana que
+    no se puede navegar cae a la actual.
+18. **La capa de action** — Traduce `cellNeedsEntryEdit`, el `ProjectError` y
+    los `ZodError`; revalida `"/"`, `"/calendario"` y `"/planilla"` también con
     error, en las dos nuevas y en las existentes.
 19. **La auditoría** — `timeEntry.createFromCell` con sus campos y `sourceId` al
     subir; `timeEntry.updateFromCell` con `endedAt`; `timeEntry.removeRow` con
@@ -1364,46 +1439,50 @@ anteriores son históricos; el mapa y el estado los actualiza el team-lead.
 22. **El selector** — `pickerView` con `excluded`: no devuelve los pares
     excluidos ni «Sin proyecto» excluido; deja el proyecto inactivo si quedan
     tareas; `allUsed` con todo excluido. `isTrackablePair` en sus cuatro casos.
-23. **Las escrituras de la grilla** — `cell-writes.ts`: dos en vuelo; una falla
-    no se baja con otra celda y sí con la misma; «Reintentar» reenvía el pedido
-    de la falla.
+23. **Las escrituras de la grilla** — `cell-writes.ts`: dos en vuelo; un pedido
+    que termina, bien o mal, sale de `pending` sin sacar a otro de la misma
+    celda; una falla no se baja con otra celda y sí con la misma; «Reintentar»
+    reenvía el pedido de la falla. En `timesheet-view.test.tsx`, dos escrituras
+    en celdas distintas, la primera rechazada y la segunda en vuelo: la primera
+    ya muestra su valor anterior y no está `busy`.
 24. **La celda** — Rechaza y marca `abc`, `0` y vacío sin llamar a la action;
-    `1:30` sobre `1:30` y `90` sobre `1:30` no llaman; Enter y después la
-    pérdida del foco llaman una vez; Esc vuelve.
+    `1:30` sobre `1:30` y `90` sobre `1:30` no llaman; Esc vuelve. Enter y
+    después la pérdida del foco llaman una vez, con `useCellWrites` real
+    (`timesheet-view.test.tsx`).
 25. **Lo existente sigue verde** — La suite de unidad, integración y e2e de
     `main` sin cambiar afirmaciones.
 26. **La pantalla** — Los recorridos de abajo.
 
 ### Con qué se verifica cada criterio, y qué mutante mata
 
-| Criterio | Tipo        | Archivo                                                            | Mutante que tiene que caer                                                                                                                                 |
-| -------- | ----------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1        | unidad      | `schema.test.ts`                                                   | sin `.int`; `.max(MINUTES_PER_DAY)`; sin el `refine` de TT-70                                                                                              |
-| 2        | unidad      | `time.test.ts`                                                     | devolver `null` como `instantFromLocal`; tomar el inicio del hueco y no su fin; `EEE` en vez de `EEEE`                                                     |
-| 3        | unidad      | `timesheet-cell.test.ts`                                           | `S` en segundos; `latestStarting` sin `createdAt`; `base` = la que empieza más tarde; aceptar el día siguiente en `base`; umbral `> 0` en vez de `>= 60 s` |
-| 4        | integración | `timesheet.integration.test.ts`                                    | el fin como rótulo convertido (cae Madrid: 19 h); el facturable fijo                                                                                       |
-| 5        | integración | `timesheet.integration.test.ts`                                    | el fin desde el inicio truncado al minuto (`1:59`); pasar por `entryTimesFor` (rechaza TT-110 y da 1 h o 3 h en Madrid)                                    |
-| 6        | integración | `timesheet.integration.test.ts`                                    | copiar de la que termina más tarde; duración `V` en vez de `V − S`; achicar la que termina más tarde                                                       |
-| 7        | integración | `timesheet.integration.test.ts`; `audit.integration.test.ts`       | sin la comprobación del día de `base`; borrar la entrada en vez de rechazar                                                                                |
-| 8        | integración | `timesheet.integration.test.ts`                                    | comparar segundos (trunca `1:30:42` a `1:30:00`)                                                                                                           |
-| 9        | integración | `timesheet.integration.test.ts`; `audit.integration.test.ts`       | sumar en vez de fijar (el segundo intento agrega)                                                                                                          |
-| 10       | integración | `timesheet.integration.test.ts`                                    | sin `lockCell` (la barrera falla); leer antes del bloqueo (dos entradas); `repeatable read` en la transacción (dos entradas)                               |
-| 11       | integración | `timesheet.integration.test.ts`                                    | la lectura y el bloqueo sin `ended_at is not null`                                                                                                         |
-| 12       | integración | `timesheet.integration.test.ts`                                    | sin el piso; sin la guarda del día siguiente (`RangeError` sale `unexpected`)                                                                              |
-| 13       | integración | `timesheet.integration.test.ts`                                    | validar el par en `setEnd`; no validar en `append`; no llamar a `assertTaggable` en `append`                                                               |
-| 14       | integración | `timesheet.integration.test.ts`; `permissions.integration.test.ts` | la celda sin `user_id`; el permiso después de `lockCell` o de `lockClosedInSlice` (la llamada espera la barrera)                                           |
-| 15       | integración | `timesheet.integration.test.ts`; `audit.integration.test.ts`       | `task_id = null` en vez de `is null`; sin `ended_at is not null`; constancia sin `tagIds`                                                                  |
-| 16       | integración | `timesheet.integration.test.ts`                                    | borrar por predicado sin bloquear antes en orden de id (`40P01`)                                                                                           |
-| 17       | integración | `timesheet.integration.test.ts`                                    | ordenar «Sin proyecto» primero; el día en UTC; contar la que corre                                                                                         |
-| 18       | integración | `actions.integration.test.ts`                                      | revalidar sin `"/planilla"`; revalidar solo con éxito                                                                                                      |
-| 19       | integración | `audit.integration.test.ts`                                        | constancia en `unchanged`                                                                                                                                  |
-| 20       | unidad      | `timesheet-model.test.ts`                                          | las filas agregadas en su orden alfabético; la celda vacía de un par no ofrecido escribible; el total sin lo que viaja                                     |
-| 21       | unidad      | `stored-rows.test.ts`                                              | no olvidar al llegar del servidor; guardar sin semana                                                                                                      |
-| 22       | unidad      | `picker-model.test.ts`                                             | excluir el proyecto entero con sus tareas; ofrecer «Sin proyecto» ya usado                                                                                 |
-| 23       | unidad      | `cell-writes.test.ts`                                              | un solo último pedido para toda la grilla (el de `useAction`)                                                                                              |
-| 24       | componente  | `timesheet-cell.test.tsx`                                          | comparar solo contra lo mostrado (Enter y foco mandan dos)                                                                                                 |
-| 25       | todas       | las suites existentes                                              | —                                                                                                                                                          |
-| 26       | e2e         | `e2e/timesheet.spec.ts`                                            | —                                                                                                                                                          |
+| Criterio | Tipo                | Archivo                                                            | Mutante que tiene que caer                                                                                                                                 |
+| -------- | ------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1        | unidad              | `schema.test.ts`                                                   | sin `.int`; `.max(MINUTES_PER_DAY)`; sin el `refine` de TT-70; `ids` sin `.max(BULK_MAX)`                                                                  |
+| 2        | unidad              | `time.test.ts`                                                     | devolver `null` como `instantFromLocal`; tomar el inicio del hueco y no su fin; `EEE` en vez de `EEEE`                                                     |
+| 3        | unidad              | `timesheet-cell.test.ts`                                           | `S` en segundos; `latestStarting` sin `createdAt`; `base` = la que empieza más tarde; aceptar el día siguiente en `base`; umbral `> 0` en vez de `>= 60 s` |
+| 4        | integración         | `timesheet.integration.test.ts`                                    | el fin como rótulo convertido (cae Madrid: 19 h); el facturable fijo                                                                                       |
+| 5        | integración         | `timesheet.integration.test.ts`                                    | el fin desde el inicio truncado al minuto (`1:59`); pasar por `entryTimesFor` (rechaza TT-110 y da 1 h o 3 h en Madrid)                                    |
+| 6        | integración         | `timesheet.integration.test.ts`                                    | copiar de la que termina más tarde; duración `V` en vez de `V − S`; achicar la que termina más tarde                                                       |
+| 7        | integración         | `timesheet.integration.test.ts`; `audit.integration.test.ts`       | sin la comprobación del día de `base`; borrar la entrada en vez de rechazar                                                                                |
+| 8        | integración         | `timesheet.integration.test.ts`                                    | comparar segundos (trunca `1:30:42` a `1:30:00`)                                                                                                           |
+| 9        | integración         | `timesheet.integration.test.ts`; `audit.integration.test.ts`       | sumar en vez de fijar (el segundo intento agrega)                                                                                                          |
+| 10       | integración         | `timesheet.integration.test.ts`                                    | sin `lockCell` (la barrera falla); leer antes del bloqueo (dos entradas); `repeatable read` en la transacción (dos entradas)                               |
+| 11       | integración         | `timesheet.integration.test.ts`                                    | la lectura y el bloqueo sin `ended_at is not null`                                                                                                         |
+| 12       | integración         | `timesheet.integration.test.ts`                                    | sin el piso; sin la guarda del día siguiente (`RangeError` sale `unexpected`)                                                                              |
+| 13       | integración         | `timesheet.integration.test.ts`                                    | validar el par en `setEnd`; no validar en `append`; no llamar a `assertTaggable` en `append`                                                               |
+| 14       | integración         | `timesheet.integration.test.ts`; `permissions.integration.test.ts` | la celda sin `user_id`; el permiso después de `lockCell` o de `lockClosedInSlice` (la llamada espera la barrera)                                           |
+| 15       | integración         | `timesheet.integration.test.ts`; `audit.integration.test.ts`       | `task_id = null` en vez de `is null`; sin `ended_at is not null`; constancia sin `tagIds`; borrar la cota entera sin cruzarla con `ids`                    |
+| 16       | integración         | `timesheet.integration.test.ts`                                    | borrar por predicado sin bloquear antes en orden de id (`40P01`); la celda leída sin `for update` (edita la entrada borrada y sale `unexpected`)           |
+| 17       | integración         | `timesheet.integration.test.ts`                                    | ordenar «Sin proyecto» primero; el día en UTC; contar la que corre                                                                                         |
+| 18       | integración         | `actions.integration.test.ts`                                      | revalidar sin `"/planilla"`; revalidar solo con éxito                                                                                                      |
+| 19       | integración         | `audit.integration.test.ts`                                        | constancia en `unchanged`                                                                                                                                  |
+| 20       | unidad              | `timesheet-model.test.ts`                                          | las filas agregadas en su orden alfabético; la celda vacía de un par no ofrecido escribible; el total sin lo que viaja                                     |
+| 21       | unidad              | `stored-rows.test.ts`                                              | no olvidar al llegar del servidor; guardar sin semana                                                                                                      |
+| 22       | unidad              | `picker-model.test.ts`                                             | excluir el proyecto entero con sus tareas; ofrecer «Sin proyecto» ya usado                                                                                 |
+| 23       | unidad y componente | `cell-writes.test.ts`; `timesheet-view.test.tsx`                   | un solo último pedido para toda la grilla (el de `useAction`); `pending` en `useOptimistic` (la rechazada sigue con el valor pedido y `busy`)              |
+| 24       | componente          | `timesheet-cell.test.tsx`; `timesheet-view.test.tsx`               | comparar lo que viaja con `pending` y no con el `ref` (Enter y foco mandan dos)                                                                            |
+| 25       | todas               | las suites existentes                                              | —                                                                                                                                                          |
+| 26       | e2e                 | `e2e/timesheet.spec.ts`                                            | —                                                                                                                                                          |
 
 **El criterio 10 se cruza con `queueBehindBarrier`**: el `hold` llama a
 `timeEntryRepository.lockCell` con la misma celda; los dos pedidos se encolan en
@@ -1439,13 +1518,13 @@ anterior —la planilla crea a las 09:00— y las respuestas se esperan con
    barra manual, 10:00–11:00 «a» y 12:00–13:00 «b». `3:00`: una tercera de
    13:00 a 14:00 con «b». `2:30`: la de 13:00 queda en 13:30. `1:00`: el aviso
    «No se pudo guardar la celda.» con «Editá las entradas de esta celda desde
-   el detalle.», sin «Reintentar», y la celda vuelve a `2:30`.
+   el rastreador.», sin «Reintentar», y la celda vuelve a `2:30`.
 5. **Lo que no se interpreta** (TS-27, TS-35, TS-28). `abc`, `0` y vacío vuelven
    al valor anterior con la marca y sin pedido; `Esc` descarta lo tecleado.
 6. **El timer** (TS-39, TS-49, TS-50). Con un timer de P corriendo desde el
    rastreador, la planilla de esta semana no lo muestra en ninguna celda ni
-   total; escribir `0:30` en un día anterior de P crea la entrada y el timer
-   sigue corriendo en el rastreador.
+   total; en la semana anterior, escribir `0:30` en una celda de P crea la
+   entrada y el timer sigue corriendo en el rastreador.
 7. **Reintentar con la respuesta perdida** (TS-37, TS-91). Escribir `1:00` en
    una celda vacía con la respuesta perdida (`route.fetch()` y
    `route.abort()`); comprobar desde otra pestaña (`openSecondTab`) que la
@@ -1474,18 +1553,11 @@ cubre `timesheet-view.test.tsx` con `canTrack` falso.
 
 ## 8. Deuda conocida del slice
 
-- **TS-79 apunta al detalle, que llega en el 13b.** Entre los dos, el remedio es
-  el rastreador o el calendario. Si el 13b se atrasa, el team-lead decide si el
-  push del 13 espera.
 - **La planilla no borra una entrada suelta** (el «Borrar» de TS-35 y TS-40):
   13b.
-- **Quitar una fila no tiene tope**: una fila con más de 200 entradas en una
-  semana haría una transacción larga y un `or` de 200 destinos en
-  `deleteClosedByIds`. Si aparece, se acota con el tope de `BULK_MAX` y un
-  `delete … where id = any($ids)`.
-- **El conteo del diálogo es el de la última lectura** (D13-6): una entrada
-  agregada en otra pestaña entre la lectura y la confirmación también se borra.
-  La revalidación de 60 s achica la ventana.
+- **Lo que se agrega a una fila después de la lectura no se borra con ella**
+  (D13-6): después de confirmar, la fila reaparece con eso y hay que quitarla
+  otra vez. La revalidación de 60 s achica la ventana.
 - **La fila agregada que ya tiene entradas queda abajo hasta recargar**
   (TS-15); una revalidación no la reubica.
 - **Las filas vacías no viajan entre navegadores** (TS-19, a propósito) y no
@@ -1511,6 +1583,9 @@ Esbozo para su contrato, que se escribe con el 13 en `main`.
   menú de una celda con una sola entrada, con el diálogo de TT-61), TS-83 y
   TS-115.
 - **P-14 cerrado**: el menú de una celda con varias no ofrece «Borrar».
+- **TS-79 pasa a «desde el detalle»**: `cellNeedsEntryEdit` cambia su texto a
+  «Editá las entradas de esta celda desde el detalle.»; la clave no cambia, y
+  `parity-analyst` corrige TS-79 y la tabla de mensajes.
 - **Sin backend nuevo.** El estado suma `entries: TimeEntryView[]` —las vistas
   de las filas que `listTimesheetEntries` ya trae— y `entryIds` en cada celda.
   Las mutaciones son las de hoy: `updateEntry` (ADR 0013) o las de un campo de
