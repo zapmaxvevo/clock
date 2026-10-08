@@ -32,8 +32,7 @@ export const CELL_NOT_SAVED = "No se pudo guardar la celda.";
 export const ROW_NOT_REMOVED = "No se pudo quitar la fila.";
 
 /** TS-79: el mensaje del servidor para la celda que hay que editar entrada por entrada. */
-export const CELL_NEEDS_ENTRY_EDIT =
-  "Editá las entradas de esta celda desde el rastreador.";
+export const CELL_NEEDS_ENTRY_EDIT = "Editá las entradas de esta celda desde el detalle.";
 
 /** El texto de `unexpected`, el de una falla de red. */
 export const NETWORK_FAILURE =
@@ -160,6 +159,78 @@ export function cellField(
     name: cellName(rowName, day, today),
     exact: true,
   });
+}
+
+/**
+ * El campo de una celda mientras un diálogo modal está abierto: lo de afuera
+ * queda con `aria-hidden`, así que la búsqueda por rol tiene que incluirlo.
+ * Sirve para leer su valor, no para usarlo.
+ */
+export function coveredCellField(
+  page: Page,
+  rowName: string,
+  day: CivilDay,
+  today: CivilDay,
+): Locator {
+  return page
+    .getByRole("table", { name: TIMESHEET_HEADING, exact: true, includeHidden: true })
+    .getByRole("textbox", {
+      name: cellName(rowName, day, today),
+      exact: true,
+      includeHidden: true,
+    });
+}
+
+/** El menú de tres puntos de una celda con entradas (TS-40): «Acciones de la celda {celda}». */
+export function cellMenuButton(page: Page, cell: string): Locator {
+  return timesheetTable(page).getByRole("button", {
+    name: `Acciones de la celda ${cell}`,
+    exact: true,
+  });
+}
+
+/** Una opción del menú abierto de una celda, que va en un portal (D13b-6). */
+export function cellMenuItem(
+  page: Page,
+  name: "Editar" | "Borrar" | "Ver detalle",
+): Locator {
+  return page.getByRole("menuitem", { name, exact: true });
+}
+
+/** La lista de una celda con varias entradas (TS-42): «Detalle de {celda}». */
+export function cellDetailDialog(page: Page, cell: string): Locator {
+  return page.getByRole("dialog", { name: `Detalle de ${cell}`, exact: true });
+}
+
+/** El título de la lista, que recibe el foco (§5.6 del 13b). */
+export function cellDetailTitle(dialog: Locator, cell: string): Locator {
+  return dialog.getByRole("heading", { name: `Detalle de ${cell}`, exact: true });
+}
+
+/**
+ * «Editar» o «Borrar» de una entrada de la lista, con su nombre y su horario:
+ * «Editar «b», de 12:00 a 13:00» (§5.8 del 13b).
+ */
+export function detailEntryButton(
+  dialog: Locator,
+  action: "Editar" | "Borrar",
+  entry: string,
+  span: string,
+): Locator {
+  return dialog.getByRole("button", {
+    name: `${action} «${entry}», ${span}`,
+    exact: true,
+  });
+}
+
+/** El editor de una entrada desde la planilla: el diálogo del calendario (TS-41). */
+export function entryEditor(page: Page): Locator {
+  return page.getByRole("dialog", { name: "Editar entrada", exact: true });
+}
+
+/** La confirmación del borrado de una entrada (TT-61). */
+export function deleteEntryConfirm(page: Page): Locator {
+  return page.getByRole("dialog", { name: "¿Borrar esta entrada?", exact: true });
 }
 
 /**

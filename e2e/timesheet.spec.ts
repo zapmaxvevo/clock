@@ -16,6 +16,8 @@ import {
   CELL_NEEDS_ENTRY_EDIT,
   CELL_NOT_SAVED,
   cellField,
+  cellMenuButton,
+  cellName,
   dayHeader,
   dayTotal,
   EMPTY_WEEK,
@@ -601,10 +603,12 @@ test("la fila de un proyecto archivado sigue, su celda con horas se escribe y la
   await expectWeek(page, week, day);
 
   // TS-21, TS-113: el lunes se edita; el martes es texto y no recibe el foco,
-  // así que Tab salta de la celda con horas a la X.
+  // así que Tab salta de la celda con horas a su menú (TS-99) y de ahí a la X.
   await expect(timesheetRow(page, project)).toBeVisible();
   await expect(cellField(page, project, tuesday, day)).toHaveCount(0);
   await monday.focus();
+  await page.keyboard.press("Tab");
+  await expect(cellMenuButton(page, cellName(project, week, day))).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(removeRowButton(page, project)).toBeFocused();
 
