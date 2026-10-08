@@ -1080,3 +1080,22 @@ nombre. Se procesan en las reglas cuando cierre la segunda tanda de preguntas.
     calendario.
 15. La planilla no tiene controles de timer. Al guardar con Enter, ninguna celda queda con foco.
 16. No se vio ninguna opción para ocultar el rastreador.
+
+Segunda tanda, el mismo día:
+
+- **A.** La celda mostró `00:01:00`. `1h` da una hora y `1:30`, una hora y media. En el perfil no
+  hay nada parecido a «inicio del día».
+- **B.** Al pasar de `1:00` a `2:00` solo se movió el fin; la descripción quedó.
+- **C.** Con dos entradas en la celda: bajar el valor descuenta de la que empieza más tarde (con
+  el mismo inicio, la de id más reciente); subirlo crea una entrada nueva, que parece llevar la
+  descripción de las existentes.
+- **D.** Con el timer corriendo se puede escribir en su celda. Quitar esa fila no detiene el
+  timer. Para el usuario, el timer no es una entrada hasta que se detiene.
+- **E.** La celda tiene un menú de tres puntos; una de sus opciones es eliminar.
+- **F.** Con una fila de proyecto A y tarea 1, se puede agregar otra con la misma combinación.
+- **G.** La fila vacía no aparece en otro navegador ni en incógnito: la guarda el navegador.
+- **H.** «Copiar la semana pasada» sigue desactivado con horas en la semana anterior; parece del
+  plan.
+- **I.** Aplicar una plantilla sobre una semana con horas agrega entradas nuevas.
+- **J.** Con el proyecto archivado, las celdas con entradas se editan; las vacías no crean.
+- **K.** «Compañeros» le aparece al admin para ver y editar las horas de los demás.
