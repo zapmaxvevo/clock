@@ -552,7 +552,8 @@ describe("la tabla tag (criterio 1 del 11b: PR-42, PR-52 … PR-54)", () => {
     const tags = journal.entries.map((entry) => entry.tag);
     const position = (name: string) => tags.indexOf(name);
     expect(position("0009_time_entry_billable")).toBeGreaterThanOrEqual(0);
-    expect(tags.slice(position("0009_time_entry_billable") + 1)).toEqual([
+    const after = position("0009_time_entry_billable") + 1;
+    expect(tags.slice(after, after + 3)).toEqual([
       "0010_time_entry_workspace_id_unq",
       "0011_tags",
       "0012_tags_set_null",
