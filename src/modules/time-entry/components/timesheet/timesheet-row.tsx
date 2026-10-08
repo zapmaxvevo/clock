@@ -4,10 +4,10 @@ import { XIcon } from "lucide-react";
 import type { Ref } from "react";
 
 import { Button } from "@/components/ui/button";
+import type { ProjectPair } from "@/lib/project-pair";
 import { cn } from "@/lib/utils";
 import { ProjectPicker } from "@/modules/project/components/project-picker";
 import { paletteColor } from "@/modules/project/palette";
-import type { ProjectPair } from "@/lib/project-pair";
 import type { ProjectSelection } from "@/modules/project/schema";
 import type { TimesheetDayView } from "@/modules/time-entry/schema";
 
