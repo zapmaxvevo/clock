@@ -12,6 +12,15 @@
 
 begin;
 
+-- Sobre otra base los ids chocan, o peor, el volumen se suma a datos reales.
+do $$
+begin
+  if exists (select 1 from workspace) or exists (select 1 from "user") then
+    raise exception 'seed.sql pide una base vacía migrada hasta la 0014.';
+  end if;
+end
+$$;
+
 select setseed(0.2026);
 
 insert into "user" (id, name, email, email_verified)
