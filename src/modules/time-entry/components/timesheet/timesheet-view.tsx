@@ -238,15 +238,12 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
   /**
    * «Reintentar» se va con el aviso que baja: antes, el foco pasa al campo de
    * la celda del pedido, que queda `busy` con el foco, o a la región si no
-   * está (F-M1). Lo usan la celda y el detalle. El foco espera la foto como
-   * al confirmar desde el detalle: si el pedido saca la fila, va fuera de las
-   * filas y no a `body`.
+   * está (F-M1). Lo usan la celda y el detalle.
    */
   function retryWithFocusOn(key: string, retry: () => void): void {
     if (!focusCell(key)) {
       regionRef.current?.focus();
     }
-    pendingFocusRef.current = { kind: "cell", key };
     retry();
   }
 
@@ -345,9 +342,14 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
         }}
         onRetryRow={retryRow}
         onRetryDetail={() => {
-          if (cellDetail.screenFailure !== null) {
-            retryWithFocusOn(cellDetail.screenFailure.request.cell, changes.retry);
+          const failure = cellDetail.screenFailure;
+          if (failure === null) {
+            return;
           }
+          retryWithFocusOn(failure.request.cell, changes.retry);
+          // El pedido del detalle puede sacar la fila: el foco espera la foto,
+          // como al confirmar desde el detalle, y no cae a `body` (F2).
+          pendingFocusRef.current = { kind: "cell", key: failure.request.cell };
         }}
       />
 

@@ -49,11 +49,7 @@ export function useLatestNotice(
   dismiss: Readonly<Record<NoticeSource, () => void>>,
 ): void {
   const [seen, setSeen] = useState(current);
-  if (
-    seen.cell !== current.cell ||
-    seen.row !== current.row ||
-    seen.detail !== current.detail
-  ) {
+  if (SOURCES.some((source) => seen[source] !== current[source])) {
     setSeen(current);
     for (const source of staleNoticesOf(seen, current)) {
       dismiss[source]();

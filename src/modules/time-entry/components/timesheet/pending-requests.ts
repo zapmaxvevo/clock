@@ -7,9 +7,9 @@ export type PendingRecord = {
   readonly status: "sending" | "settled";
 };
 
-export type PendingRequestsState<Entry extends PendingRecord, Failure> = {
+export type PendingRequestsState<Pending extends PendingRecord, Failure> = {
   /** En el orden en que se mandaron. */
-  readonly pending: readonly Entry[];
+  readonly pending: readonly Pending[];
   readonly failure: Failure | null;
 };
 
@@ -21,9 +21,9 @@ export type PendingRequestsEvent<Request, Failure> =
   | { readonly type: "snapshot" }
   | { readonly type: "dismissed" };
 
-export type PendingRequestsRules<Request, Entry> = {
+export type PendingRequestsRules<Request, Pending> = {
   /** El registro de un pedido que sale, en `sending`. */
-  readonly recordOf: (id: number, request: Request) => Entry;
+  readonly recordOf: (id: number, request: Request) => Pending;
   /**
    * Los dos pedidos son sobre lo mismo: uno nuevo reemplaza lo que contaba el
    * aviso de la falla del otro; uno sobre otra cosa no lo baja.
@@ -39,13 +39,13 @@ export type PendingRequestsRules<Request, Entry> = {
  */
 export function pendingRequestsReducer<
   Request,
-  Entry extends PendingRecord,
+  Pending extends PendingRecord,
   Failure extends { readonly request: Request },
->(rules: PendingRequestsRules<Request, Entry>) {
+>(rules: PendingRequestsRules<Request, Pending>) {
   return (
-    state: PendingRequestsState<Entry, Failure>,
+    state: PendingRequestsState<Pending, Failure>,
     event: PendingRequestsEvent<Request, Failure>,
-  ): PendingRequestsState<Entry, Failure> => {
+  ): PendingRequestsState<Pending, Failure> => {
     switch (event.type) {
       case "sent": {
         const failure =
@@ -61,18 +61,20 @@ export function pendingRequestsReducer<
       case "settled":
         return {
           ...state,
-          pending: state.pending.map((entry) =>
-            entry.id === event.id ? { ...entry, status: "settled" } : entry,
+          pending: state.pending.map((pending) =>
+            pending.id === event.id ? { ...pending, status: "settled" } : pending,
           ),
         };
       case "failed":
         return {
-          pending: state.pending.filter((entry) => entry.id !== event.id),
+          pending: state.pending.filter((pending) => pending.id !== event.id),
           failure: event.failure,
         };
       case "snapshot": {
-        const pending = state.pending.filter((entry) => entry.status === "sending");
-        return pending.length === state.pending.length ? state : { ...state, pending };
+        const sending = state.pending.filter((pending) => pending.status === "sending");
+        return sending.length === state.pending.length
+          ? state
+          : { ...state, pending: sending };
       }
       case "dismissed":
         return state.failure === null ? state : { ...state, failure: null };

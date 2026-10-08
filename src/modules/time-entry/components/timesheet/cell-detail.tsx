@@ -17,7 +17,7 @@ import {
   confirmTarget,
   editorCancelTarget,
   editorCloseTarget,
-  triggerTarget,
+  type ConfirmFocus,
   type ConfirmOrigin,
   type EditorFocus,
   type EntryButton,
@@ -39,15 +39,14 @@ import type { EntryChanges } from "./use-entry-changes";
  * (CAL-72). No se limpia al cerrarse: el cuerpo no queda vacío durante la
  * animación de salida, y cómo se cerró decide adónde va el foco.
  */
-type EditorState = Omit<EditorFocus, "entryId"> & {
+type EditorState = EditorFocus & {
   readonly entry: TimeEntryView;
   readonly open: boolean;
 };
 
-type ConfirmState = ConfirmOrigin & {
+type ConfirmState = ConfirmFocus & {
   readonly entry: TimeEntryView;
   readonly open: boolean;
-  readonly confirmed: boolean;
 };
 
 type CellDetailState = {
@@ -133,22 +132,19 @@ function openedDetail(cell: GridCell, choice: CellMenuChoice): CellDetailState {
   };
 }
 
+/** La falla es de un guardado de esa entrada: la que el editor puede mostrar o lo cierra. */
+function savesEntry(failure: EntryChangeFailure, entry: TimeEntryView): boolean {
+  return failure.request.kind === "save" && failure.request.input.id === entry.id;
+}
+
 /** La falla de un guardado de esa entrada que se corrige en el editor: no la cierra. */
 function showsInEditor(failure: EntryChangeFailure, entry: TimeEntryView): boolean {
-  return (
-    failure.request.kind === "save" &&
-    failure.request.input.id === entry.id &&
-    !CLOSING_CODES.includes(failure.code)
-  );
+  return savesEntry(failure, entry) && !CLOSING_CODES.includes(failure.code);
 }
 
 /** La falla de un guardado de esa entrada que cierra el editor (§4.3). */
 function closesEditor(failure: EntryChangeFailure, entry: TimeEntryView): boolean {
-  return (
-    failure.request.kind === "save" &&
-    failure.request.input.id === entry.id &&
-    CLOSING_CODES.includes(failure.code)
-  );
+  return savesEntry(failure, entry) && CLOSING_CODES.includes(failure.code);
 }
 
 function requestName(entry: TimeEntryView): string {
@@ -416,12 +412,8 @@ export function CellDetailDialogs({ dialogs, state }: CellDetailDialogsProps) {
       onCancel={dialogs.cancelEditor}
       onSave={(entryChanges) => dialogs.saveEntry(editor.entry, entryChanges)}
       onDelete={() => dialogs.deleteFromEditor(editor)}
-      cancelFocus={lazyRef(() =>
-        editorCancelTarget({ ...editor, entryId: editor.entry.id }, places),
-      )}
-      fallbackFocus={lazyRef(() =>
-        editorCloseTarget({ ...editor, entryId: editor.entry.id }, places),
-      )}
+      cancelFocus={lazyRef(() => editorCancelTarget(editor, places))}
+      fallbackFocus={lazyRef(() => editorCloseTarget(editor, places))}
     />
   );
 
@@ -437,9 +429,7 @@ export function CellDetailDialogs({ dialogs, state }: CellDetailDialogsProps) {
         }
       }}
       onConfirm={() => dialogs.confirmDelete(confirm)}
-      finalFocus={lazyRef(() =>
-        confirmTarget({ ...confirm, entryId: confirm.entry.id }, places),
-      )}
+      finalFocus={lazyRef(() => confirmTarget(confirm, places))}
     />
   );
 
@@ -466,7 +456,8 @@ export function CellDetailDialogs({ dialogs, state }: CellDetailDialogsProps) {
       onDelete={dialogs.deleteFromList}
       onRetry={dialogs.retryFromList}
       onCancel={dialogs.cancelList}
-      cancelFocus={lazyRef(() => triggerTarget(places))}
+      // Sin el disparador, `useDialogReturnFocus` cae en `fallbackFocus`.
+      cancelFocus={lazyRef(places.trigger)}
       fallbackFocus={lazyRef(places.destination)}
     >
       {editorDialog}

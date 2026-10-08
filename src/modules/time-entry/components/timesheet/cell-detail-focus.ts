@@ -1,9 +1,11 @@
 /** Los botones de cada entrada de la lista, adonde puede volver el foco. */
 export type EntryButton = "edit" | "delete";
 
+/** La entrada de un diálogo: lo único que el foco necesita de ella. */
+type FocusEntry = { readonly entry: { readonly id: string } };
+
 /** El editor, según cómo se abrió y cómo se cerró. */
-export type EditorFocus = {
-  readonly entryId: string;
+export type EditorFocus = FocusEntry & {
   /** Desde el menú de la celda (TS-41) o desde la lista (TS-42). */
   readonly origin: "menu" | "list";
   /** Lo cerró el dueño: se asentó, una falla de `CLOSING_CODES` o «Borrar» de su menú. */
@@ -17,8 +19,7 @@ export type ConfirmOrigin =
   | { readonly origin: "list"; readonly returnTo: EntryButton };
 
 /** La confirmación del borrado, según desde dónde se abrió y si se confirmó. */
-export type ConfirmFocus = {
-  readonly entryId: string;
+export type ConfirmFocus = FocusEntry & {
   readonly confirmed: boolean;
 } & ConfirmOrigin;
 
@@ -39,7 +40,7 @@ export type FocusPlaces<Target> = {
 };
 
 /** Cancelar lo abierto desde el menú: al disparador, o al destino si ya no está. */
-export function triggerTarget<Target>(places: FocusPlaces<Target>): Target | null {
+function triggerTarget<Target>(places: FocusPlaces<Target>): Target | null {
   return places.trigger() ?? places.destination();
 }
 
@@ -59,7 +60,7 @@ export function editorCancelTarget<Target>(
 ): Target | null {
   return editor.origin === "menu"
     ? triggerTarget(places)
-    : listTarget(places, editor.entryId, "edit");
+    : listTarget(places, editor.entry.id, "edit");
 }
 
 /** §5.6: el dueño cierra el editor. Con «Borrar» la confirmación toma el foco. */
@@ -74,7 +75,7 @@ export function editorCloseTarget<Target>(
     return places.destination();
   }
   return editor.closedBy === "saved"
-    ? listTarget(places, editor.entryId, "edit")
+    ? listTarget(places, editor.entry.id, "edit")
     : places.title();
 }
 
@@ -88,5 +89,5 @@ export function confirmTarget<Target>(
   }
   return confirm.confirmed
     ? places.title()
-    : listTarget(places, confirm.entryId, confirm.returnTo);
+    : listTarget(places, confirm.entry.id, confirm.returnTo);
 }
