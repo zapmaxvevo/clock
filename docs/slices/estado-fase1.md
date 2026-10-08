@@ -5,31 +5,31 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-08.
 
 ## Dónde estamos
 
-| Slice                                       | Estado               |
-| ------------------------------------------- | -------------------- |
-| 1 — Timer sin proyecto                      | En `main`            |
-| 2 — Modo manual                             | En `main`            |
-| 2b — Reintento de «Iniciar»                 | En `main`            |
-| 3 — Corregir horas y fecha                  | En `main`            |
-| 4 — Continuar, duplicar, descartar, atajos  | En `main`            |
-| 5 — Semana y paginación                     | En `main`            |
-| 9 — Núcleo de proyectos                     | En `main`            |
-| 10 — Selector de proyecto y tarea           | En `main`            |
-| 7 — Perfil                                  | En `main`            |
-| 6 — Selección y acciones en masa            | En `main`            |
-| 7b — Perfil: nombre editable y tema         | En `main`            |
-| 8 — Calendario: lectura                     | En `main`            |
-| 8c — Calendario: escritura                  | En `main`            |
-| 8b — Calendario: arrastre                   | En `main`            |
-| 11a — Facturable                            | En `main`            |
-| 11b — Etiquetas                             | En `main`            |
-| 12 — Edición masiva de proyecto y etiquetas | En `main`            |
-| 2c — «Reintentar» en el alta manual         | En `main`            |
-| Arreglo: piso de fechas fijo (2000-01-01)   | En `main`            |
-| 13 — Planilla de horarios semanal           | En `main`            |
-| 13b — Planilla: menú y detalle de la celda  | Contrato en revisión |
-| Núcleo de reportes, R1                      | En `main`            |
-| Núcleo de reportes, R2a                     | Contrato en curso    |
+| Slice                                       | Estado            |
+| ------------------------------------------- | ----------------- |
+| 1 — Timer sin proyecto                      | En `main`         |
+| 2 — Modo manual                             | En `main`         |
+| 2b — Reintento de «Iniciar»                 | En `main`         |
+| 3 — Corregir horas y fecha                  | En `main`         |
+| 4 — Continuar, duplicar, descartar, atajos  | En `main`         |
+| 5 — Semana y paginación                     | En `main`         |
+| 9 — Núcleo de proyectos                     | En `main`         |
+| 10 — Selector de proyecto y tarea           | En `main`         |
+| 7 — Perfil                                  | En `main`         |
+| 6 — Selección y acciones en masa            | En `main`         |
+| 7b — Perfil: nombre editable y tema         | En `main`         |
+| 8 — Calendario: lectura                     | En `main`         |
+| 8c — Calendario: escritura                  | En `main`         |
+| 8b — Calendario: arrastre                   | En `main`         |
+| 11a — Facturable                            | En `main`         |
+| 11b — Etiquetas                             | En `main`         |
+| 12 — Edición masiva de proyecto y etiquetas | En `main`         |
+| 2c — «Reintentar» en el alta manual         | En `main`         |
+| Arreglo: piso de fechas fijo (2000-01-01)   | En `main`         |
+| 13 — Planilla de horarios semanal           | En `main`         |
+| 13b — Planilla: menú y detalle de la celda  | En `main`         |
+| Núcleo de reportes, R1                      | En `main`         |
+| Núcleo de reportes, R2a                     | Contrato aprobado |
 
 Los slices 1 a 13 (con 2b, 2c, 7b, 8b, 8c, 11a y 11b) y el arreglo del piso fijo están en `main`.
 El 13 (planilla de horarios) se mergeó el 2026-10-08 con lint, typecheck, 1279 de unidad, 1223 de
@@ -52,15 +52,18 @@ vacío del owner y `renewWorkspace` se corta.
      informativa de §2.3 del contrato (ahora con `abiertas` y `es_owner_por_env`, que piden actuar
      si salen) y despliega fuera del horario de uso; **después**, la de verificación, que es
      condición para desplegar R2a.
-   - **13b**: `architecture-reviewer` lo aprobó con cambios (A1–A3 mayores: «Editar» de la lista
-     con `sending` + `settled`, el foco cuando se va la fila del servidor —decidido:
-     `focusOutsideRows`, como «Quitar fila»—, y la afirmación de Tab en `timesheet.spec.ts:603`).
-     `architect` aplica los cambios en `fase1/slice-13b-contrato`. **Sigue**: confirmar las
-     correcciones, `parity-analyst` (§1 del contrato, y TS-41 `replicar` → ¿`adaptar`?) y el
-     pipeline.
-   - **R2a**: `architect` escribe el contrato en `nucleo/r2a-contrato`. Después,
-     `architecture-reviewer`. Orden del mapa: R1 → R2a → R2b → R3 → R4 → R5 → R6 → R7, con R8
-     después de R2a y R9 después de R4.
+   - **13b en `main`** (`512259d`). Seis revisiones, una ronda grande (reducer genérico de pedidos,
+     foco de la lista con `useDialogReturnFocus`, `timesheet-notices.tsx`), segunda pasada de
+     frontend y confirmación de código, y una ronda corta final; todo en
+     `correcciones-fase1-slice13b-revisiones.md`. Cierre: lint, typecheck, 1339 de unidad, 1236 de
+     integración, e2e 185 de 185 dos veces y el spec del 13b (14 recorridos) tres veces, con 18
+     mutantes caídos. TS-41 pasó a `adaptar`; P-18 de `timesheet.md` queda para la sesión de
+     Clockify.
+   - **R2a**: contrato aprobado en la rama `nucleo/r2a-contrato` (`59a86a8`, con
+     `correcciones-nucleo-reportes-r2a-contrato.md`), sin mergear. **Sigue**, cuando el usuario lo
+     decida: mergear el contrato y lanzar el pipeline. Antes de la medición de §6, la versión mayor
+     de Postgres de Neon (la pide al usuario). Orden del mapa: R1 → R2a → R2b → R3 → R4 → R5 → R6
+     → R7, con R8 después de R2a y R9 después de R4.
    - **Deuda de R1** (C1): `rejection` y la lectura del diario de migraciones a `src/test/`.
 1. Deuda chica sin slice:
    - `pickDate` (`e2e/tracker-page.ts`) no espera el foco del disparador al cerrar el calendario:
@@ -139,11 +142,13 @@ Lo que sigue siendo del usuario, porque necesita sus cuentas o su máquina:
   login local no anda. Para usar la app: apuntarlo a `postgresql://clock:clock@localhost:5432/clock`
   y cargar credenciales de Google con `http://localhost:3000` como origen. Mientras tanto, la app
   se ve levantándola con el entorno de `playwright.config.ts` y la sesión de prueba.
-- **Postgres de Neon**: el slice 9 necesita 15 o posterior (`on delete set null (col)`)
+- **Postgres de Neon**: decir la versión mayor (`select version();`), que R2a necesita para medir
+  con la misma; el slice 9 necesita 15 o posterior (`on delete set null (col)`)
   antes de desplegar.
 - **Rol de Neon para e2e**: `E2E_DATABASE_URL` en el environment `preview` de GitHub, con
   un rol que solo lea `workspace` y actualice su `created_at`.
-- **Sesión en el workspace de Clockify** para cerrar lo no verificado: P-14 en
+- **Sesión en el workspace de Clockify** para cerrar lo no verificado: P-18 de `timesheet.md`
+  (el menú, el pop-up y el detalle de una celda: TS-40, TS-41, TS-42), P-14 en
   `time-tracker.md` (fila de la entrada que corre, hora inexistente, horas de la copia al
   duplicar, «la última» de `c`, continuar o duplicar con un proyecto no disponible, TT-57 y
   TT-58), la edición masiva del rastreador (P-07), P-09 de `perfil.md` (con lo del 7b: el
