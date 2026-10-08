@@ -636,9 +636,13 @@ test("Tab recorre las celdas de una fila y pasa a la X, Enter baja, y los atajos
   await expect(cellField(page, NO_PROJECT, week, day)).toBeFocused();
 
   // TS-98: Enter guarda y baja a la celda del mismo día en la fila siguiente.
+  // Enter y la pérdida del foco que le sigue mandan un solo pedido (criterio 24).
+  const cellWrites = recordActions(page);
   await writeCell(page, first, "1:00", "Enter");
   await expect(first).toHaveValue("1:00");
   await expect(cellField(page, NO_PROJECT, week, day)).toBeFocused();
+  await writeSentinel(page, cellField(page, project, addDays(week, 1), day));
+  expect(cellWrites).toHaveLength(2);
 
   // TS-101: `n` con el foco en la página no arranca ningún timer.
   const sent = recordActions(page);
@@ -753,8 +757,9 @@ test("una celda guardada muestra lo pedido y deja de estar ocupada aunque otra e
     { field: a, day: week, text: "90" },
     { field: b, day: tuesday, text: "0:30" },
   );
-  await expect(a).toHaveValue("1:30");
+  // Primero el fin de la escritura: «1:30» también es el valor optimista.
   await expectIdle(a);
+  await expect(a).toHaveValue("1:30");
   await expect(b).toHaveAttribute("aria-busy", "true");
 
   await releaseB();
