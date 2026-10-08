@@ -5,30 +5,31 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-08.
 
 ## Dónde estamos
 
-| Slice                                       | Estado           |
-| ------------------------------------------- | ---------------- |
-| 1 — Timer sin proyecto                      | En `main`        |
-| 2 — Modo manual                             | En `main`        |
-| 2b — Reintento de «Iniciar»                 | En `main`        |
-| 3 — Corregir horas y fecha                  | En `main`        |
-| 4 — Continuar, duplicar, descartar, atajos  | En `main`        |
-| 5 — Semana y paginación                     | En `main`        |
-| 9 — Núcleo de proyectos                     | En `main`        |
-| 10 — Selector de proyecto y tarea           | En `main`        |
-| 7 — Perfil                                  | En `main`        |
-| 6 — Selección y acciones en masa            | En `main`        |
-| 7b — Perfil: nombre editable y tema         | En `main`        |
-| 8 — Calendario: lectura                     | En `main`        |
-| 8c — Calendario: escritura                  | En `main`        |
-| 8b — Calendario: arrastre                   | En `main`        |
-| 11a — Facturable                            | En `main`        |
-| 11b — Etiquetas                             | En `main`        |
-| 12 — Edición masiva de proyecto y etiquetas | En `main`        |
-| 2c — «Reintentar» en el alta manual         | En `main`        |
-| Arreglo: piso de fechas fijo (2000-01-01)   | En `main`        |
-| 13 — Planilla de horarios semanal           | En `main`        |
-| 13b — Planilla: menú y detalle de la celda  | Contrato escrito |
-| Núcleo de reportes, R1                      | Implementado     |
+| Slice                                       | Estado               |
+| ------------------------------------------- | -------------------- |
+| 1 — Timer sin proyecto                      | En `main`            |
+| 2 — Modo manual                             | En `main`            |
+| 2b — Reintento de «Iniciar»                 | En `main`            |
+| 3 — Corregir horas y fecha                  | En `main`            |
+| 4 — Continuar, duplicar, descartar, atajos  | En `main`            |
+| 5 — Semana y paginación                     | En `main`            |
+| 9 — Núcleo de proyectos                     | En `main`            |
+| 10 — Selector de proyecto y tarea           | En `main`            |
+| 7 — Perfil                                  | En `main`            |
+| 6 — Selección y acciones en masa            | En `main`            |
+| 7b — Perfil: nombre editable y tema         | En `main`            |
+| 8 — Calendario: lectura                     | En `main`            |
+| 8c — Calendario: escritura                  | En `main`            |
+| 8b — Calendario: arrastre                   | En `main`            |
+| 11a — Facturable                            | En `main`            |
+| 11b — Etiquetas                             | En `main`            |
+| 12 — Edición masiva de proyecto y etiquetas | En `main`            |
+| 2c — «Reintentar» en el alta manual         | En `main`            |
+| Arreglo: piso de fechas fijo (2000-01-01)   | En `main`            |
+| 13 — Planilla de horarios semanal           | En `main`            |
+| 13b — Planilla: menú y detalle de la celda  | Contrato en revisión |
+| Núcleo de reportes, R1                      | En `main`            |
+| Núcleo de reportes, R2a                     | Contrato en curso    |
 
 Los slices 1 a 13 (con 2b, 2c, 7b, 8b, 8c, 11a y 11b) y el arreglo del piso fijo están en `main`.
 El 13 (planilla de horarios) se mergeó el 2026-10-08 con lint, typecheck, 1279 de unidad, 1223 de
@@ -41,31 +42,26 @@ vacío del owner y `renewWorkspace` se corta.
 
 ## Lo primero de la sesión siguiente
 
-0. **Lo que sigue** (cierre de la sesión del 2026-10-08). Todas las decisiones del usuario están
-   respondidas; no queda ningún agente trabajando ni cambios sin commitear.
-   - **Push pendiente**: `main` local está más de 50 commits delante de `origin/main` (el sistema de
-     permisos no deja pushear al team-lead). El usuario corre `git push origin main`.
-   - **R1 del núcleo de reportes** (las horas no se borran con la persona): implementado en la
-     rama `nucleo/r1-horas-sin-borrar` (`4555e55` 0013, `b7a3175` 0014 con la siembra de los
-     tests, `f44f0dd` `person-keys.integration.test.ts`). `backend-dev` informó lint, typecheck,
-     1279 de unidad y 1233 de integración en verde, `db:generate` sin cambios, todos los mutantes
-     de la tabla caídos (el de `ON CONFLICT DO UPDATE`, equivalente) y la reversión probada a
-     mano. Un desvío: el arreglo del test del diario va en el commit de la 0013, no en el de la
-     0014, para que cada commit quede en verde. **Sigue**: revisiones de backend, seguridad,
-     tests y código (sin frontend ni paridad: no hay pantalla); la suite e2e entera dos veces,
-     sobre una base nueva y sobre una reusada (§5 del contrato); merge y push. Antes de
-     desplegar, el usuario corre en producción la consulta informativa de §2.3; después, la de
-     verificación, que es condición para desplegar R2a.
-   - **13b** (menú y detalle de una celda): contrato escrito por `architect` en la rama
-     `fase1/slice-13b-contrato` (`2826deb`, `fase1-slice13b-detalle-de-celda.md`). Sin ADR nuevo
-     ni mutaciones nuevas (edita con el `EntryDialog` del calendario y `updateEntry`; borra con
-     `deleteEntry`). **Sigue**: `architecture-reviewer` (decisiones D13b-1 a D13b-7 a juzgar),
-     después `parity-analyst` registra lo que pide su §1 (TS-40, TS-41, TS-42, TS-76, TS-79,
-     TS-83, TS-98, TS-115 y «Slice 13b»), y el pipeline.
-   - **Núcleo de reportes, después de R1**: el contrato de R2a. Orden del mapa
-     (`nucleo-reportes-mapa.md`): R1 → R2a → R2b → R3 → R4 → R5 → R6 → R7, con R8 (cambiar el rol
-     entre member y admin) después de R2a y R9 (personas sin horas) después de R4. Decisiones
-     del usuario en la §5 del mapa y la §8 de `docs/parity/reportes.md`.
+0. **Lo que sigue** (2026-10-08, segunda sesión).
+   - **Push pendiente**: `main` local está delante de `origin/main` (el sistema de permisos no
+     deja pushear al team-lead). El usuario corre `git push origin main`.
+   - **R1 en `main`** (`b4aaff2`). Cuatro revisiones aprobadas (backend, seguridad, tests, código),
+     correcciones en `correcciones-nucleo-reportes-r1-revisiones.md`; lint, typecheck, 1279 de
+     unidad, 1233 de integración y la suite e2e 171 de 171 sobre una base nueva y sobre una copia
+     de la e2e acumulada. **Antes de desplegar**, el usuario corre en producción la consulta
+     informativa de §2.3 del contrato (ahora con `abiertas` y `es_owner_por_env`, que piden actuar
+     si salen) y despliega fuera del horario de uso; **después**, la de verificación, que es
+     condición para desplegar R2a.
+   - **13b**: `architecture-reviewer` lo aprobó con cambios (A1–A3 mayores: «Editar» de la lista
+     con `sending` + `settled`, el foco cuando se va la fila del servidor —decidido:
+     `focusOutsideRows`, como «Quitar fila»—, y la afirmación de Tab en `timesheet.spec.ts:603`).
+     `architect` aplica los cambios en `fase1/slice-13b-contrato`. **Sigue**: confirmar las
+     correcciones, `parity-analyst` (§1 del contrato, y TS-41 `replicar` → ¿`adaptar`?) y el
+     pipeline.
+   - **R2a**: `architect` escribe el contrato en `nucleo/r2a-contrato`. Después,
+     `architecture-reviewer`. Orden del mapa: R1 → R2a → R2b → R3 → R4 → R5 → R6 → R7, con R8
+     después de R2a y R9 después de R4.
+   - **Deuda de R1** (C1): `rejection` y la lectura del diario de migraciones a `src/test/`.
 1. Deuda chica sin slice:
    - `pickDate` (`e2e/tracker-page.ts`) no espera el foco del disparador al cerrar el calendario:
      un `pickProject` después falla de a ratos (la causa del flake del 13);
