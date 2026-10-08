@@ -930,6 +930,15 @@ usa una persona propia.
   siguen siendo anteriores, y entre 2000 y 2030 ninguna zona de `Intl` tiene un
   inicio de día corrido. Los días que faltan enteros (§5.4, clase B) dejaron de
   lanzar: empiezan con el primer día siguiente que existe.
+  _Corregido el 2026-10-08_: la falla dependía de la zona del proceso, no de
+  date-fns: `startOfDay` mueve la hora de un `TZDate` con los setters de `Date`,
+  que pasan por la zona local. En UTC, como Vercel y CI, Salta daba el valor
+  correcto y el test de la falla conocida fallaba. `startOfDayKey`,
+  `startOfLocalDay` y `dayBounds` ya no usan `startOfDay`: un día sin 00:00
+  empieza en `instantFromLocalOrLater(día, "00:00", zona)`. Salta 1991-10-20
+  empieza a las 04:00Z y el milisegundo anterior es del 19. Los tests de unidad
+  corren con `TZ=UTC` y `npm run test:time-ar` repite el módulo con el proceso
+  en Buenos Aires.
 - **Que la revalidación de una action conserve `desde`** es conducta de Next: lo
   afirma el recorrido 4, que es el que se rompería si una versión nueva dejara
   de hacerlo.
