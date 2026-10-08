@@ -1,5 +1,5 @@
 import { eq, sql } from "drizzle-orm";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { db } from "@/server/db";
 import { timeEntry, user } from "@/server/db/schema";
@@ -21,6 +21,7 @@ import { projectLabels } from "@/modules/project/components/labels";
 import { getTimesheetState } from "@/modules/time-entry/service";
 
 import { reportReadyState, type ReportRange, type ReportReadyState } from "./schema";
+import { reportRepository } from "./repository";
 import { getReportState, type ReportRequest } from "./service";
 
 const madrid = "Europe/Madrid";
@@ -513,5 +514,37 @@ describe("el período (D-R2a-4, RP-20)", () => {
       range: { first: "9999-12-17", last: "9999-12-23" },
     });
     expect(inside.next).toEqual({ first: "9999-12-24", last: "9999-12-30" });
+  });
+});
+
+describe("el período fuera del tope (B1)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("un rango invertido y uno de 367 días lanzan RangeError sin llamar al repository", async () => {
+    const byPerson = vi.spyOn(reportRepository, "totalsByPerson");
+    const byProject = vi.spyOn(reportRepository, "totalsByProject");
+    for (const range of [
+      { first: "2026-10-11", last: "2026-10-05" },
+      { first: "2025-01-01", last: "2026-01-02" },
+    ]) {
+      for (const groupBy of ["person", "project"] as const) {
+        await expect(
+          getReportState(owner, settings, { range, groupBy }, readNow),
+        ).rejects.toThrow(RangeError);
+      }
+    }
+    expect([byPerson.mock.calls.length, byProject.mock.calls.length]).toEqual([0, 0]);
+  });
+
+  it("un día y 366 días se leen", async () => {
+    const byPerson = vi.spyOn(reportRepository, "totalsByPerson");
+    await readyState(owner, { range: { first: "2026-10-05", last: "2026-10-05" } });
+    const longest = await readyState(owner, {
+      range: { first: "2025-01-01", last: "2026-01-01" },
+    });
+    expect(longest.range).toEqual({ first: "2025-01-01", last: "2026-01-01" });
+    expect(byPerson.mock.calls.length).toBe(2);
   });
 });

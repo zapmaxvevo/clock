@@ -20,6 +20,7 @@ import {
   type ReportSpan,
 } from "./repository";
 import {
+  REPORT_MAX_DAYS,
   reportRangeInput,
   type ReportGroup,
   type ReportGroupBy,
@@ -153,8 +154,9 @@ function compareGroups(left: ReportGroup, right: ReportGroup): number {
   return compareNames(leftKey, rightKey);
 }
 
-type Read = {
-  readonly groups: readonly ReportGroup[];
+/** Los grupos ordenados y los dos totales de la cabecera. */
+type ReportTotals = {
+  readonly groups: ReportGroup[];
   readonly totalSeconds: number;
   readonly billableSeconds: number;
 };
@@ -163,9 +165,9 @@ type Read = {
  * D-R2a-7: una sentencia. Con un solo nivel cada entrada está en un grupo, así
  * que la suma de los grupos es el total.
  */
-function readOf<
+function totalsOf<
   Row extends { readonly seconds: number; readonly billableSeconds: number },
->(rows: readonly Row[], groupOf: (row: Row) => ReportGroup): Read {
+>(rows: readonly Row[], groupOf: (row: Row) => ReportGroup): ReportTotals {
   return {
     groups: rows.map(groupOf).sort(compareGroups),
     totalSeconds: rows.reduce((sum, row) => sum + row.seconds, 0),
@@ -177,11 +179,11 @@ async function readGroups(
   scope: Scope,
   span: ReportSpan,
   groupBy: ReportGroupBy,
-): Promise<Read> {
+): Promise<ReportTotals> {
   if (groupBy === "person") {
-    return readOf(await reportRepository.totalsByPerson(scope, span), personGroupOf);
+    return totalsOf(await reportRepository.totalsByPerson(scope, span), personGroupOf);
   }
-  return readOf(await reportRepository.totalsByProject(scope, span), projectGroupOf);
+  return totalsOf(await reportRepository.totalsByProject(scope, span), projectGroupOf);
 }
 
 /**
@@ -204,13 +206,20 @@ export async function getReportState(
   const currentWeek = weekFrom(weekStartKey(todayKey, settings.weekStart));
   const range = request.range ?? currentWeek;
   const groupBy = request.groupBy ?? "person";
+  const days = daysBetweenKeys(range.first, range.last) + 1;
+  // El esquema de la URL ya lo valida; acá es una invariante, para que
+  // ningún otro llamador (la exportación de R6) lea fuera del tope.
+  if (days < 1 || days > REPORT_MAX_DAYS) {
+    throw new RangeError(
+      `Período fuera de 1 a ${REPORT_MAX_DAYS} días: ${range.first} a ${range.last}.`,
+    );
+  }
   // D-R2a-5: un solo intervalo cortado en la zona de quien mira.
   const span = {
     from: startOfDayKey(range.first, timeZone),
     to: startOfDayKey(addDaysToKey(range.last, 1), timeZone),
   };
-  const read = await readGroups(scope, span, groupBy);
-  const days = daysBetweenKeys(range.first, range.last) + 1;
+  const totals = await readGroups(scope, span, groupBy);
   return {
     kind: "ready",
     todayKey,
@@ -222,8 +231,8 @@ export async function getReportState(
     groupBy,
     scope: scope.people.kind,
     timeZone,
-    totalSeconds: read.totalSeconds,
-    billableSeconds: read.billableSeconds,
-    groups: [...read.groups],
+    totalSeconds: totals.totalSeconds,
+    billableSeconds: totals.billableSeconds,
+    groups: totals.groups,
   };
 }
