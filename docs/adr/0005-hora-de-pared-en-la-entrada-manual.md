@@ -165,7 +165,7 @@ fecha de inicio configurable por el owner queda para más adelante, si hace falt
   extremos, y el mensaje nombra la causa real.
 - TT-97 se vuelve visible: en un día con cambio de horario, la duración guardada
   es la real y puede no coincidir con la resta de las dos horas tecleadas. Lo
-  que se respeta son las horas de pared, porque son lo que la persona escribió;
+  que se respetan son las horas de pared, porque son lo que la persona escribió;
   la duración es derivada y nunca se almacena.
 - El payload es legible en un log y en un test: `{"date":"2026-10-02",
 "start":"08:00","end":"10:30"}` dice qué pidió la persona, cosa que un
@@ -178,6 +178,15 @@ fecha de inicio configurable por el owner queda para más adelante, si hace falt
 - La excepción a «los instantes los pone la base» queda acotada y nombrada: las
   escrituras que nacen de un `now()` siguen usando `now()`, y solo las que nacen
   de una hora tecleada usan `instantFromLocal`. No hay un tercer camino.
+  _Agregado el 2026-10-07, con el ADR 0018 propuesto_: el
+  [ADR 0018](0018-lo-que-escribe-una-celda-se-calcula-en-instantes.md) abre dos
+  excepciones a esta consecuencia y a «La hora inexistente se rechaza», solo
+  para lo que escribe una celda de la planilla (`setTimesheetCell`, TS-32): un
+  tercer camino —el fin es el inicio más la duración, en instantes, y la
+  entrada que agrega una celda con varias empieza en el fin de otra—, y las
+  09:00 de una celda vacía, que nadie tecleó, se llevan al primer minuto que
+  exista después en vez de rechazarse. Mientras no se acepte, esta consecuencia
+  vale sin excepciones.
 - La opción 3 queda descartada porque mezcla lo peor de las dos: el cliente
   igual necesita resolver el desplazamiento, y el servidor igual tiene que
   decidir qué hacer cuando el desplazamiento que llega no es el que corresponde
