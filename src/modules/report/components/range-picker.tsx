@@ -139,14 +139,11 @@ export function RangePanel({
           type="button"
           size="sm"
           // Con `aria-disabled` y no con `disabled`: sigue en el orden del
-          // tabulador y se anuncia como inactivo.
+          // tabulador y se anuncia como inactivo. Sin selección, `applySelection`
+          // responde `empty` y no pasa nada.
           aria-disabled={empty || undefined}
           className="self-end"
-          onClick={() => {
-            if (!empty) {
-              onApply();
-            }
-          }}
+          onClick={onApply}
         >
           {reportLabels.apply}
         </Button>
