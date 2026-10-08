@@ -1,0 +1,137 @@
+import { projectLabels } from "@/modules/project/components/labels";
+import { paletteColor } from "@/modules/project/palette";
+import type {
+  ReportGroup,
+  ReportPersonGroup,
+  ReportProjectGroup,
+  ReportReadyState,
+} from "@/modules/report/schema";
+import { formatDuration } from "@/server/time";
+
+import { reportLabels } from "./labels";
+
+/** El `h1` de la pantalla, que nombra la tabla. */
+export const REPORT_HEADING_ID = "reporte-titulo";
+
+/**
+ * Cada cifra se trunca al minuto por separado, la de cada fila y la del total:
+ * la suma de lo que muestran las filas queda en o debajo del total (§5.3).
+ */
+function durationLabel(seconds: number): string {
+  return formatDuration(Math.floor(seconds / 60));
+}
+
+/**
+ * El alcance y la zona (D-R2a-2, D-R2a-5), los totales (RP-18) y una fila por
+ * grupo, en el orden en que llegan.
+ */
+export function ReportView({ state }: { readonly state: ReportReadyState }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="text-muted-foreground flex flex-col gap-1 text-sm">
+        <p>
+          {state.scope === "everyone"
+            ? reportLabels.scopeEveryone
+            : reportLabels.scopeSelf}
+        </p>
+        <p>{reportLabels.zone(state.timeZone)}</p>
+      </div>
+
+      <dl className="flex flex-wrap gap-x-8 gap-y-2">
+        <div className="flex flex-col">
+          <dt className="text-muted-foreground text-sm">{reportLabels.total}</dt>
+          <dd className="text-lg font-semibold tabular-nums">
+            {durationLabel(state.totalSeconds)}
+          </dd>
+        </div>
+        <div className="flex flex-col">
+          <dt className="text-muted-foreground text-sm">{reportLabels.billable}</dt>
+          <dd className="text-lg font-semibold tabular-nums">
+            {durationLabel(state.billableSeconds)}
+          </dd>
+        </div>
+      </dl>
+
+      <div className="overflow-x-auto rounded-lg border">
+        <table aria-labelledby={REPORT_HEADING_ID} className="w-full text-sm">
+          <thead className="border-b">
+            <tr>
+              <th scope="col" className="px-3 py-2 text-left font-medium">
+                {state.groupBy === "person"
+                  ? reportLabels.byPerson
+                  : reportLabels.byProject}
+              </th>
+              <th scope="col" className="px-3 py-2 text-right font-medium">
+                {reportLabels.duration}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {state.groups.length === 0 ? (
+              <tr>
+                <td colSpan={2} className="text-muted-foreground px-3 py-6 text-center">
+                  {reportLabels.empty}
+                </td>
+              </tr>
+            ) : (
+              state.groups.map((group) => (
+                <tr key={groupKey(group)} className="border-b last:border-b-0">
+                  <th scope="row" className="px-3 py-2 text-left font-normal">
+                    {group.kind === "person" ? (
+                      <PersonHeading group={group} />
+                    ) : (
+                      <ProjectHeading group={group} />
+                    )}
+                  </th>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {durationLabel(group.seconds)}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/** Una fila por persona o por proyecto; «Sin proyecto» es una sola. */
+function groupKey(group: ReportGroup): string {
+  if (group.kind === "person") {
+    return group.userId;
+  }
+  return group.project === null ? "sin-proyecto" : group.project.id;
+}
+
+/** RP-31: una persona inactiva lo dice en texto, no solo con el gris. */
+function PersonHeading({ group }: { readonly group: ReportPersonGroup }) {
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <span className="truncate">{group.name}</span>
+      {group.inactive && (
+        <span className="text-muted-foreground">{reportLabels.inactivePerson}</span>
+      )}
+    </span>
+  );
+}
+
+/** El punto del color, el nombre y el cliente en gris, como la planilla. */
+function ProjectHeading({ group }: { readonly group: ReportProjectGroup }) {
+  if (group.project === null) {
+    return <span className="text-muted-foreground">{projectLabels.noProject}</span>;
+  }
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <span
+        aria-hidden="true"
+        className="size-2 shrink-0 rounded-full"
+        style={{ backgroundColor: paletteColor(group.project.color).value }}
+      />
+      <span className="truncate">{group.project.name}</span>
+      {group.client !== null && (
+        <span className="text-muted-foreground truncate">{group.client.name}</span>
+      )}
+    </span>
+  );
+}
