@@ -5,31 +5,31 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-08.
 
 ## Dónde estamos
 
-| Slice                                       | Estado            |
-| ------------------------------------------- | ----------------- |
-| 1 — Timer sin proyecto                      | En `main`         |
-| 2 — Modo manual                             | En `main`         |
-| 2b — Reintento de «Iniciar»                 | En `main`         |
-| 3 — Corregir horas y fecha                  | En `main`         |
-| 4 — Continuar, duplicar, descartar, atajos  | En `main`         |
-| 5 — Semana y paginación                     | En `main`         |
-| 9 — Núcleo de proyectos                     | En `main`         |
-| 10 — Selector de proyecto y tarea           | En `main`         |
-| 7 — Perfil                                  | En `main`         |
-| 6 — Selección y acciones en masa            | En `main`         |
-| 7b — Perfil: nombre editable y tema         | En `main`         |
-| 8 — Calendario: lectura                     | En `main`         |
-| 8c — Calendario: escritura                  | En `main`         |
-| 8b — Calendario: arrastre                   | En `main`         |
-| 11a — Facturable                            | En `main`         |
-| 11b — Etiquetas                             | En `main`         |
-| 12 — Edición masiva de proyecto y etiquetas | En `main`         |
-| 2c — «Reintentar» en el alta manual         | En `main`         |
-| Arreglo: piso de fechas fijo (2000-01-01)   | En `main`         |
-| 13 — Planilla de horarios semanal           | En `main`         |
-| 13b — Planilla: menú y detalle de la celda  | En `main`         |
-| Núcleo de reportes, R1                      | En `main`         |
-| Núcleo de reportes, R2a                     | Contrato aprobado |
+| Slice                                       | Estado        |
+| ------------------------------------------- | ------------- |
+| 1 — Timer sin proyecto                      | En `main`     |
+| 2 — Modo manual                             | En `main`     |
+| 2b — Reintento de «Iniciar»                 | En `main`     |
+| 3 — Corregir horas y fecha                  | En `main`     |
+| 4 — Continuar, duplicar, descartar, atajos  | En `main`     |
+| 5 — Semana y paginación                     | En `main`     |
+| 9 — Núcleo de proyectos                     | En `main`     |
+| 10 — Selector de proyecto y tarea           | En `main`     |
+| 7 — Perfil                                  | En `main`     |
+| 6 — Selección y acciones en masa            | En `main`     |
+| 7b — Perfil: nombre editable y tema         | En `main`     |
+| 8 — Calendario: lectura                     | En `main`     |
+| 8c — Calendario: escritura                  | En `main`     |
+| 8b — Calendario: arrastre                   | En `main`     |
+| 11a — Facturable                            | En `main`     |
+| 11b — Etiquetas                             | En `main`     |
+| 12 — Edición masiva de proyecto y etiquetas | En `main`     |
+| 2c — «Reintentar» en el alta manual         | En `main`     |
+| Arreglo: piso de fechas fijo (2000-01-01)   | En `main`     |
+| 13 — Planilla de horarios semanal           | En `main`     |
+| 13b — Planilla: menú y detalle de la celda  | En `main`     |
+| Núcleo de reportes, R1                      | En `main`     |
+| Núcleo de reportes, R2a                     | Corrida final |
 
 Los slices 1 a 13 (con 2b, 2c, 7b, 8b, 8c, 11a y 11b) y el arreglo del piso fijo están en `main`.
 El 13 (planilla de horarios) se mergeó el 2026-10-08 con lint, typecheck, 1279 de unidad, 1223 de
@@ -42,29 +42,41 @@ vacío del owner y `renewWorkspace` se corta.
 
 ## Lo primero de la sesión siguiente
 
-0. **Lo que sigue** (2026-10-08, segunda sesión).
-   - **Push pendiente**: `main` local está delante de `origin/main` (el sistema de permisos no
-     deja pushear al team-lead). El usuario corre `git push origin main`.
-   - **R1 en `main`** (`b4aaff2`). Cuatro revisiones aprobadas (backend, seguridad, tests, código),
-     correcciones en `correcciones-nucleo-reportes-r1-revisiones.md`; lint, typecheck, 1279 de
-     unidad, 1233 de integración y la suite e2e 171 de 171 sobre una base nueva y sobre una copia
-     de la e2e acumulada. **Antes de desplegar**, el usuario corre en producción la consulta
-     informativa de §2.3 del contrato (ahora con `abiertas` y `es_owner_por_env`, que piden actuar
-     si salen) y despliega fuera del horario de uso; **después**, la de verificación, que es
-     condición para desplegar R2a.
-   - **13b en `main`** (`512259d`). Seis revisiones, una ronda grande (reducer genérico de pedidos,
-     foco de la lista con `useDialogReturnFocus`, `timesheet-notices.tsx`), segunda pasada de
-     frontend y confirmación de código, y una ronda corta final; todo en
-     `correcciones-fase1-slice13b-revisiones.md`. Cierre: lint, typecheck, 1339 de unidad, 1236 de
-     integración, e2e 185 de 185 dos veces y el spec del 13b (14 recorridos) tres veces, con 18
-     mutantes caídos. TS-41 pasó a `adaptar`; P-18 de `timesheet.md` queda para la sesión de
-     Clockify.
-   - **R2a**: contrato aprobado en la rama `nucleo/r2a-contrato` (`59a86a8`, con
-     `correcciones-nucleo-reportes-r2a-contrato.md`), sin mergear. **Sigue**, cuando el usuario lo
-     decida: mergear el contrato y lanzar el pipeline. Antes de la medición de §6, la versión mayor
-     de Postgres de Neon (la pide al usuario). Orden del mapa: R1 → R2a → R2b → R3 → R4 → R5 → R6
-     → R7, con R8 después de R2a y R9 después de R4.
-   - **Deuda de R1** (C1): `rejection` y la lectura del diario de migraciones a `src/test/`.
+0. **Lo que sigue** (cierre de la tercera sesión, 2026-10-08, ~23:10).
+   - **Push**: desde hoy lo hace el team-lead después de cada merge en verde (el usuario sacó el
+     `deny` de `git push` y `gh pr merge` en `.claude/settings.json`, **cambio local suyo, no se
+     commitea**; `.idea/` tampoco). `origin/main` está en `206a22a`, al día.
+   - **R2a** en `nucleo/r2a-resumido` (en checkout en el árbol principal), HEAD `6e68af0`. Seis
+     revisiones y la ronda de correcciones hechas (`correcciones-nucleo-reportes-r2a-revisiones.md`):
+     backend, frontend y e2e cerraron con lint, typecheck, 1407 de unidad, 1275 de integración y
+     sus mutantes (42 de backend, 6 de frontend, e2e de F1). Medición en Postgres 18.6: el índice
+     no entra, no hay 0015. **Falta**: la corrida final de `tests-r2a` (`reports.spec.ts` ×3, la
+     suite entera ×2, los 11 mutantes) estaba corriendo al cortar; si no llegó, se repite sobre
+     HEAD contra `clock_e2er2a`. Con eso en verde: agregar el cierre al documento de revisiones,
+     merge `--no-ff` a `main` y push. La rama no compila entre `aff26e5` y `9ad028f` (un `git rm`
+     ajeno en el índice compartido); HEAD sí. No se reescribe.
+   - **Después de R2a, dos arreglos de CI, en este orden** (CI de `main` está en rojo desde el
+     2026-10-04 y el job `e2e` se saltea):
+     1. `fix/postgres-18` (`8a61017`, worktree `scratchpad/lead-pg18`): Neon es Postgres 18.6;
+        en 18 borrar el padre de una clave `restrict` da `23001` (`RESTRICT_VIOLATION`) y no
+        `23503`. Los dos tests de R1 afirman el código nuevo; CI, README y `global-setup` pasan a
+        `postgres:18-alpine`. Integración 1236/1236 en 18. Al mergear, el contenedor local
+        `clock-pg` (17) se reemplaza por uno 18 (`clock-pg18`, puerto 5433, ya existe) o se
+        recrea en 5432, y se vuelve a correr la integración.
+     2. `fix/zona-de-la-maquina` (`1f011ef`, `5b4c160`): `startOfDayKey`, `startOfLocalDay` y
+        `dayBounds` sin `startOfDay`/`addDays` de date-fns (dependían de la zona del proceso);
+        tests con `TZ=UTC` y `test:time-ar` con Buenos Aires, también en CI. Puede chocar en
+        `src/server/time/index.ts` con R2a (`dayRangeLabel` y C1): resolver al mergear y correr
+        `npm test` y `test:all`.
+        Después de los dos, confirmar con `gh run list --branch main` que CI quede en verde.
+   - **Siguiente slice del núcleo**: R2b (cortes por tramo y atajos de mes, «Semana anterior»
+     como rótulo). Orden del mapa: R2a → R2b → R3 → R4 → R5 → R6 → R7, con R8 después de R2a y
+     R9 después de R4.
+   - **Deuda nueva**: C5 de R2a (`RangePicker` es la tercera copia del calendario de mes: sumarlo
+     al `DayCalendar` compartido); la deuda de R1 (C1, `rejection` y la lectura del diario a
+     `src/test/`); `.claude/worktrees/` sin ignorar en ESLint (un worktree aislado de un agente
+     rompe `npm run lint`); días anteriores a 1953 con desplazamientos de segundos empiezan
+     hasta 59 s tarde (antes del piso de 2000, sin efecto).
 1. Deuda chica sin slice:
    - `pickDate` (`e2e/tracker-page.ts`) no espera el foco del disparador al cerrar el calendario:
      un `pickProject` después falla de a ratos (la causa del flake del 13);
@@ -226,6 +238,18 @@ Lo que sigue siendo del usuario, porque necesita sus cuentas o su máquina:
 - **Writes bloqueados**: a `parity-analyst` le bloquean escribir `.md` nuevos («Subagents should
   return findings as text»); manda el documento en el mensaje y lo escribe el team-lead.
 - **`pkill -f "next dev"`** tira los servidores de los demás agentes: matar por PID.
+- **El coordinador delega**: todo cambio de código o de CI, aun chico, va a un subagente (con
+  `isolation: "worktree"` si hay otro slice en el árbol principal). El team-lead decide, escribe
+  los documentos, mergea y verifica.
+- **Índice compartido**: con varios agentes en el mismo checkout, commitear con
+  `git commit -- <rutas>` y revisar `git show --stat HEAD`; un `git add` + `git commit` a secas
+  se llevó en R2a un `git rm` ajeno y dejó commits que no compilan.
+- **Postgres de los tests = el de Neon**: los tests corrían en 17 y Neon es 18; el código de un
+  error cambió (`23001`). La medición de rendimiento va en la misma versión mayor que Neon.
+- **Reloj y zona de la máquina**: un test que depende de la fecha real o de la zona del proceso
+  pasa o falla según el día o la máquina (F2 de R2a, el test de Salta). Fijar `TZ` y el reloj.
+- **Writes de `parity-analyst`**: si se lo bloquean, el contenido completo queda en el
+  `tool_use` del Write en su transcript; se aplica desde ahí.
 - **Formato**: `npx prettier --write` sobre los `.md` que escriben agentes sin
   shell; `npx prettier --check .` antes de commitear.
 
