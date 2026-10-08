@@ -1041,3 +1041,42 @@ corrige detalles.
 15. **TS-51, TS-98** — ¿Hay algún control de timer en la pantalla? Al guardar
     con Enter, ¿a qué celda va el foco?
 16. **TS-03** — ¿Aparece «Hide tracker» en los ajustes del workspace Free?
+
+### P-12, respuestas del workspace (2026-10-07, sin procesar)
+
+Respuestas del usuario en el workspace de la empresa, en castellano: la pantalla se llama
+«Planilla de horarios» (barra lateral: «Planilla»), y el rastreador y el calendario conservan su
+nombre. Se procesan en las reglas cuando cierre la segunda tanda de preguntas.
+
+1. Escribir `1:00` en una celda vacía crea una entrada que en el rastreador va de 09:00 a 09:01
+   (ver 5). En el calendario no apareció.
+2. Sobre una celda con una entrada de `1:00` hecha desde el rastreador, escribir `2:00` modifica
+   esa entrada; no crea otra.
+3. Con dos entradas el mismo día y proyecto, la celda deja escribir; al bajar el valor, los
+   minutos se descuentan de la primera entrada que aparece.
+4. El timer corriendo no aparece en la planilla. Se puede escribir y borrar.
+5. `8` son minutos: es el formato por defecto.
+6. Vaciar una celda con una entrada no hace nada: valida que sea mayor que cero.
+7. La fila nueva muestra «Seleccionar proyecto» y se elige proyecto y tarea.
+8. Una fila agregada sin escribir nada sigue después de recargar, con su proyecto y tarea.
+9. Con la planilla activa, el rastreador no deja guardar sin proyecto.
+10. «Copiar la semana pasada» no se pudo elegir.
+11. No parece habilitada en el plan.
+12. «Guardar como plantilla» pide un nombre y ofrece una casilla para guardar también el tiempo.
+13. Captura de una semana pasada con tres filas y una vacía:
+    - título «Planilla de horarios»; arriba a la derecha, «Compañeros» (desplegable), un botón con
+      ícono de lista, el selector de período con el rótulo «La semana pasada» y flechas anterior y
+      siguiente;
+    - encabezado «Proyectos», columnas «lu, sep. 28» … «do, oct. 4» y «Total:»; sábado y domingo
+      con fondo distinto;
+    - cada fila: punto del color del proyecto, «Proyecto - Cliente» con el cliente en gris, siete
+      campos con el formato `06:00:00`, el total de la fila y una X para quitarla;
+    - la fila vacía dice «Seleccionar proyecto» con un ícono de agregar; su total, `00:00:00`;
+    - abajo, la fila «Total:» con el total por día (`00:00:00` en gris si es cero) y el de la
+      semana a la derecha;
+    - debajo, «Añadir nueva fila», «Copiar la semana pasada» (desactivado, con flecha de
+      desplegable) y «Guardar como plantilla».
+14. Archivar un proyecto con horas en la semana: su tiempo sigue en la planilla, el rastreador y el
+    calendario.
+15. La planilla no tiene controles de timer. Al guardar con Enter, ninguna celda queda con foco.
+16. No se vio ninguna opción para ocultar el rastreador.
