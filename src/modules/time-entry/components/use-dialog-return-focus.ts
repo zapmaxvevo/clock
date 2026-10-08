@@ -3,12 +3,12 @@
 import { useRef, type RefObject } from "react";
 
 type DialogReturnFocusOptions = {
-  /** Adónde vuelve el foco al cancelar: el botón de la barra que abrió el diálogo. */
+  /** Adónde vuelve el foco al cancelar: el control que abrió el diálogo. */
   readonly cancelFocus: RefObject<HTMLElement | null>;
   /**
    * Adónde va el foco cuando el diálogo se cierra por otra cosa —quien lo
-   * abrió lo cerró— y al cancelar si el botón ya no está: la región de
-   * acciones en masa, que sigue en pantalla.
+   * abrió lo cerró— y al cancelar si el control ya no está: algo que sigue en
+   * pantalla, como la región de acciones en masa.
    */
   readonly fallbackFocus: RefObject<HTMLElement | null>;
   /** Cancelar, Esc o un clic afuera. */
@@ -16,12 +16,14 @@ type DialogReturnFocusOptions = {
 };
 
 /**
- * El foco al cerrar un diálogo de las acciones en masa (TT-63, TT-64):
- * `onOpenChange` y `finalFocus` para el `Dialog` y su contenido.
+ * El foco al cerrar un diálogo según cómo se cerró —las acciones en masa
+ * (TT-63, TT-64), el de una entrada del calendario, «Quitar fila» y la lista
+ * del detalle de la planilla—: `onOpenChange` y `finalFocus` para el `Dialog`
+ * y su contenido.
  *
  * El foco lo mueve el diálogo y no Base UI, que pasa al primer control
- * tabulable de lo que se le devuelve: con la región, que no es tabulable,
- * caería en «Editar» de la barra. Va en una microtarea, como el de Base UI,
+ * tabulable de lo que se le devuelve: con una región, que no es tabulable,
+ * caería en su primer control. Va en una microtarea, como el de Base UI,
  * cuando lo de afuera del modal ya dejó de estar inerte.
  */
 export function useDialogReturnFocus({

@@ -2,7 +2,6 @@
 
 import { useEffect, type ReactNode, type RefObject } from "react";
 
-import { ActionFeedback } from "@/components/action-feedback";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -17,6 +16,8 @@ import type { TimeEntryView } from "@/modules/time-entry/schema";
 
 import { calendarLabels } from "../calendar/labels";
 import { entryNameOf, entrySpanText, extraDaysText, trackerLabels } from "../labels";
+import { useDialogReturnFocus } from "../use-dialog-return-focus";
+import type { EntryButton } from "./cell-detail-focus";
 import {
   changingEntriesOf,
   type EntryChangeFailure,
@@ -28,9 +29,7 @@ import {
   editEntryLabel,
   timesheetLabels,
 } from "./labels";
-
-/** Cómo se marcan los botones de cada entrada: adonde vuelve el foco (§5.6). */
-export type EntryButton = "edit" | "delete";
+import { EntryChangeFeedback } from "./timesheet-notices";
 
 /** El botón de una entrada en la lista abierta; `null` si ya salió de ella. */
 export function entryButtonOf(
@@ -43,13 +42,6 @@ export function entryButtonOf(
       `[data-entry="${CSS.escape(entryId)}"] [data-button="${button}"]`,
     ) ?? null
   );
-}
-
-/** El título de un aviso del detalle: nombra la operación que falló (§5.5). */
-export function entryChangeFailureTitle(failure: EntryChangeFailure): string {
-  return failure.request.kind === "save"
-    ? calendarLabels.entryNotSaved
-    : trackerLabels.entryNotDeleted;
 }
 
 type CellEntriesContentProps = {
@@ -94,15 +86,7 @@ export function CellEntriesContent({
         </DialogTitle>
       </DialogHeader>
 
-      {failure !== null && (
-        <ActionFeedback
-          title={entryChangeFailureTitle(failure)}
-          message={failure.message}
-          onRetry={failure.code === "unexpected" ? onRetry : undefined}
-        >
-          <p className="text-muted-foreground text-sm">{failure.request.name}</p>
-        </ActionFeedback>
-      )}
+      {failure !== null && <EntryChangeFeedback failure={failure} onRetry={onRetry} />}
 
       <ul ref={listRef} className="divide-y">
         {entries.map((entry) => (
@@ -198,8 +182,10 @@ type CellEntriesDialogProps = CellEntriesContentProps & {
   readonly open: boolean;
   /** «Cerrar», Esc o un clic afuera. */
   readonly onCancel: () => void;
-  /** Adonde va el foco al cerrarse, según cómo se cerró (§5.6). */
-  readonly finalFocus: () => false;
+  /** Adonde vuelve el foco al cancelar: el disparador del menú (§5.6). */
+  readonly cancelFocus: RefObject<HTMLElement | null>;
+  /** Adonde va el foco si la lista se cierra porque quedó vacía: el destino de la celda. */
+  readonly fallbackFocus: RefObject<HTMLElement | null>;
   /** El editor o la confirmación de una entrada están abiertos encima. */
   readonly nestedOpen: boolean;
   /** El editor y la confirmación: hijos de la raíz, así Base UI los anida (A6). */
@@ -214,12 +200,18 @@ type CellEntriesDialogProps = CellEntriesContentProps & {
 export function CellEntriesDialog({
   open,
   onCancel,
-  finalFocus,
+  cancelFocus,
+  fallbackFocus,
   nestedOpen,
   children,
   ...content
 }: CellEntriesDialogProps) {
   const { entries, titleRef } = content;
+  const { onOpenChange, finalFocus } = useDialogReturnFocus({
+    cancelFocus,
+    fallbackFocus,
+    onCancel,
+  });
   const ids = entries.map((entry) => entry.id).join(",");
 
   useEffect(() => {
@@ -240,14 +232,7 @@ export function CellEntriesDialog({
   }, [ids, open, nestedOpen, titleRef]);
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) {
-          onCancel();
-        }
-      }}
-    >
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
         className="sm:max-w-lg"

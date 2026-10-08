@@ -10,11 +10,18 @@ import {
   entryChanger,
   entryChangesReducer,
   NO_ENTRY_CHANGES,
+  retryRequestOf,
   sendingEntriesOf,
   type EntryChangeFailure,
   type EntryChangeRequest,
   type EntryChangesState,
 } from "./entry-changes";
+
+/** Un pedido del detalle sin su `kind`, que pone `save` o `remove`. */
+type RequestOf<Kind extends EntryChangeRequest["kind"]> = Omit<
+  Extract<EntryChangeRequest, { readonly kind: Kind }>,
+  "kind"
+>;
 
 export type EntryChanges = {
   /** Lo que recibe la lista, que calcula adentro sus entradas inactivas (A15). */
@@ -25,8 +32,8 @@ export type EntryChanges = {
   readonly sending: ReadonlySet<string>;
   /** La última falla, con su pedido: lo que dice el aviso y reenvía «Reintentar». */
   readonly failure: EntryChangeFailure | null;
-  readonly save: (request: EntryChangeRequest & { readonly kind: "save" }) => void;
-  readonly remove: (request: EntryChangeRequest & { readonly kind: "delete" }) => void;
+  readonly save: (request: RequestOf<"save">) => void;
+  readonly remove: (request: RequestOf<"delete">) => void;
   readonly retry: () => void;
   readonly dismiss: () => void;
 };
@@ -76,11 +83,12 @@ export function useEntryChanges(
     changing,
     sending,
     failure,
-    save: send,
-    remove: send,
+    save: (request) => send({ kind: "save", ...request }),
+    remove: (request) => send({ kind: "delete", ...request }),
     retry: () => {
-      if (failure !== null) {
-        send(failure.request);
+      const request = retryRequestOf(changes);
+      if (request !== null) {
+        send(request);
       }
     },
     dismiss: () => dispatch({ type: "dismissed" }),

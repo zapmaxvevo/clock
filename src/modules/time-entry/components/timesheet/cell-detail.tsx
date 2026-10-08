@@ -13,38 +13,40 @@ import { EntryDialog, type EntryDialogFailure } from "../calendar/entry-dialog";
 import { calendarLabels } from "../calendar/labels";
 import { DeleteEntryDialog } from "../delete-entry-dialog";
 import { entryNameOf, entrySpanText } from "../labels";
-import type { CellMenuChoice } from "./cell-menu";
 import {
-  CellEntriesDialog,
-  entryButtonOf,
+  confirmTarget,
+  editorCancelTarget,
+  editorCloseTarget,
+  triggerTarget,
+  type ConfirmOrigin,
+  type EditorFocus,
   type EntryButton,
-} from "./cell-entries-dialog";
-import type { EntryChangeFailure, EntryChangeRequest } from "./entry-changes";
+  type FocusPlaces,
+} from "./cell-detail-focus";
+import { CellEntriesDialog, entryButtonOf } from "./cell-entries-dialog";
+import type { CellMenuChoice } from "./cell-menu";
+import type {
+  EntryChangeFailure,
+  EntryChangeRequest,
+  EntryChangesState,
+} from "./entry-changes";
 import { entryChangeName } from "./labels";
 import { entryCellKeyOf, type GridCell } from "./timesheet-model";
 import type { EntryChanges } from "./use-entry-changes";
 
 /**
- * El editor de una entrada, con la entrada como estaba al abrirlo (CAL-72).
- * No se limpia al cerrarse: el cuerpo no queda vacío durante la animación de
- * salida, y cómo se cerró decide adónde va el foco.
+ * Un diálogo sobre una entrada, con la entrada como estaba al abrirlo
+ * (CAL-72). No se limpia al cerrarse: el cuerpo no queda vacío durante la
+ * animación de salida, y cómo se cerró decide adónde va el foco.
  */
-type EditorState = {
+type EditorState = Omit<EditorFocus, "entryId"> & {
   readonly entry: TimeEntryView;
   readonly open: boolean;
-  /** Desde el menú de la celda (TS-41) o desde la lista (TS-42). */
-  readonly origin: "menu" | "list";
-  /** Lo cerró el dueño: se asentó, una falla de `CLOSING_CODES` o «Borrar» de su menú. */
-  readonly closedBy: "saved" | "failed" | "delete" | null;
 };
 
-/** La confirmación del borrado (TT-61), con la entrada como estaba al abrirla. */
-type ConfirmState = {
+type ConfirmState = ConfirmOrigin & {
   readonly entry: TimeEntryView;
   readonly open: boolean;
-  readonly origin: "menu" | "list";
-  /** Adonde vuelve al cancelar: el disparador, o el botón de la lista que abrió la cadena. */
-  readonly returnTo: "trigger" | EntryButton;
   readonly confirmed: boolean;
 };
 
@@ -55,15 +57,45 @@ type CellDetailState = {
   readonly cellName: string;
   /** Con una entrada, el editor o la confirmación sueltos; con varias, la lista (D13b-6). */
   readonly mode: "single" | "list";
-  readonly list: boolean;
-  /** La lista se cerró vacía: el foco va al destino de la celda, no al disparador. */
-  readonly listEmptied: boolean;
+  readonly listOpen: boolean;
   readonly editor: EditorState | null;
   readonly confirm: ConfirmState | null;
 };
 
-/** Dónde se ve una falla del detalle (§5.2, §5.5). */
-export type FailurePlace = "editor" | "list" | "screen";
+/** Lo que dibuja `CellDetailDialogs`, interno entre él y `useCellDetail`. */
+type DetailDialogs = {
+  readonly detail: CellDetailState | null;
+  /** Las entradas de la celda abierta en la foto. */
+  readonly entries: readonly TimeEntryView[];
+  readonly nestedOpen: boolean;
+  readonly changes: EntryChangesState;
+  readonly editorPending: boolean;
+  readonly editorFailure: EntryDialogFailure | null;
+  readonly listFailure: EntryChangeFailure | null;
+  readonly titleRef: RefObject<HTMLHeadingElement | null>;
+  readonly listRef: RefObject<HTMLUListElement | null>;
+  readonly places: FocusPlaces<HTMLElement>;
+  readonly cancelEditor: () => void;
+  readonly saveEntry: (entry: TimeEntryView, entryChanges: UpdateEntryChanges) => void;
+  readonly deleteFromEditor: (editor: EditorState) => void;
+  readonly editFromList: (entry: TimeEntryView) => void;
+  readonly deleteFromList: (entry: TimeEntryView) => void;
+  readonly closeConfirm: () => void;
+  readonly confirmDelete: (confirm: ConfirmState) => void;
+  readonly cancelList: () => void;
+  readonly retryFromList: () => void;
+};
+
+/** Lo que `TimesheetView` usa del detalle. */
+type CellDetailHandle = {
+  /** TS-40: lo que se elige en el menú de una celda, con su disparador. */
+  readonly open: (cell: GridCell, choice: CellMenuChoice, trigger: HTMLElement) => void;
+  /** El `onSettled` de `useEntryChanges`: cierra el editor que sigue abierto. */
+  readonly settled: (request: EntryChangeRequest) => void;
+  /** La falla del detalle cuando se ve en la pantalla, no en el editor ni en la lista (§5.5). */
+  readonly screenFailure: EntryChangeFailure | null;
+  readonly dialogs: DetailDialogs;
+};
 
 type CellDetailOptions = {
   readonly state: TimesheetState;
@@ -72,12 +104,49 @@ type CellDetailOptions = {
   readonly destinationOf: (cell: string) => HTMLElement | null;
   /** El foco espera la foto que trae el cambio de la celda (A2). */
   readonly awaitCell: (cell: string) => void;
+  /**
+   * Lo que el primer dibujo muestra abierto, sin disparador: el foco que
+   * volvería a él va al destino de la celda. Lo usa el test, que dibuja sin
+   * DOM y no puede pasar el botón del menú.
+   */
+  readonly openOnMount?: { readonly cell: GridCell; readonly choice: CellMenuChoice };
 };
 
-export type CellDetail = ReturnType<typeof useCellDetail>;
+/** TS-40: lo que abre cada opción del menú de una celda (D13b-6). */
+function openedDetail(cell: GridCell, choice: CellMenuChoice): CellDetailState {
+  const [entry] = cell.entries;
+  return {
+    cell: cell.key,
+    cellName: cell.name,
+    mode: choice === "detail" ? "list" : "single",
+    listOpen: choice === "detail",
+    editor:
+      choice === "edit" && entry !== undefined
+        ? { entry, open: true, origin: "menu", closedBy: null }
+        : null,
+    confirm:
+      choice === "delete" && entry !== undefined
+        ? { entry, origin: "menu", open: true, confirmed: false }
+        : null,
+  };
+}
 
-function editsEntry(failure: EntryChangeFailure, entry: TimeEntryView): boolean {
-  return failure.request.kind === "save" && failure.request.input.id === entry.id;
+/** La falla de un guardado de esa entrada que se corrige en el editor: no la cierra. */
+function showsInEditor(failure: EntryChangeFailure, entry: TimeEntryView): boolean {
+  return (
+    failure.request.kind === "save" &&
+    failure.request.input.id === entry.id &&
+    !CLOSING_CODES.includes(failure.code)
+  );
+}
+
+/** La falla de un guardado de esa entrada que cierra el editor (§4.3). */
+function closesEditor(failure: EntryChangeFailure, entry: TimeEntryView): boolean {
+  return (
+    failure.request.kind === "save" &&
+    failure.request.input.id === entry.id &&
+    CLOSING_CODES.includes(failure.code)
+  );
 }
 
 function requestName(entry: TimeEntryView): string {
@@ -90,16 +159,18 @@ function requestName(entry: TimeEntryView): string {
 /**
  * El dueño de qué está abierto en el detalle de una celda (§5.2): el editor
  * (TS-41), la lista (TS-42) y la confirmación (TS-35), adónde va el foco
- * (§5.6) y dónde se ve cada falla. `settled` es el `onSettled` de
- * `useEntryChanges`.
+ * (§5.6) y dónde se ve cada falla.
  */
 export function useCellDetail({
   state,
   changes,
   destinationOf,
   awaitCell,
-}: CellDetailOptions) {
-  const [detail, setDetail] = useState<CellDetailState | null>(null);
+  openOnMount,
+}: CellDetailOptions): CellDetailHandle {
+  const [detail, setDetail] = useState(() =>
+    openOnMount === undefined ? null : openedDetail(openOnMount.cell, openOnMount.choice),
+  );
   const [seenFailure, setSeenFailure] = useState(changes.failure);
   /** El disparador del menú de la celda abierta. */
   const triggerRef = useRef<HTMLElement | null>(null);
@@ -110,16 +181,17 @@ export function useCellDetail({
     detail === null
       ? []
       : state.entries.filter((entry) => entryCellKeyOf(entry) === detail.cell);
-  const nestedOpen = detail?.editor?.open === true || detail?.confirm?.open === true;
+  const editor = detail?.editor ?? null;
+  const nestedOpen = editor?.open === true || detail?.confirm?.open === true;
+  const failure = changes.failure;
 
   // Una falla de `CLOSING_CODES` cierra el editor de su entrada: no hay nada
   // que corregir en él (§4.3).
-  if (seenFailure !== changes.failure) {
-    setSeenFailure(changes.failure);
-    const failure = changes.failure;
-    if (failure !== null && CLOSING_CODES.includes(failure.code)) {
-      setDetail((current) =>
-        current?.editor?.open === true && editsEntry(failure, current.editor.entry)
+  if (seenFailure !== failure) {
+    setSeenFailure(failure);
+    if (failure !== null) {
+      update((current) =>
+        current.editor?.open === true && closesEditor(failure, current.editor.entry)
           ? { ...current, editor: { ...current.editor, open: false, closedBy: "failed" } }
           : current,
       );
@@ -127,58 +199,43 @@ export function useCellDetail({
   }
   // Vacía y sin nada encima, la lista se cierra; con el editor o la
   // confirmación abiertos, cuando se cierren (A6).
-  if (detail?.list === true && entries.length === 0 && !nestedOpen) {
-    setDetail({ ...detail, list: false, listEmptied: true });
+  if (detail?.listOpen === true && entries.length === 0 && !nestedOpen) {
+    setDetail({ ...detail, listOpen: false });
   }
 
-  function editorShows(failure: EntryChangeFailure): boolean {
-    const editor = detail?.editor;
-    return (
-      editor?.open === true &&
-      editsEntry(failure, editor.entry) &&
-      !CLOSING_CODES.includes(failure.code)
-    );
-  }
-
+  const editorShowsFailure =
+    failure !== null && editor?.open === true && showsInEditor(failure, editor.entry);
   /** La pantalla es la lista mientras está abierta sobre la celda del pedido (A14). */
-  function placeOf(failure: EntryChangeFailure): FailurePlace {
-    if (editorShows(failure)) {
-      return "editor";
-    }
-    if (detail?.mode === "list" && detail.list && detail.cell === failure.request.cell) {
-      return "list";
-    }
-    return "screen";
-  }
+  const listShowsFailure =
+    failure !== null &&
+    !editorShowsFailure &&
+    detail?.mode === "list" &&
+    detail.listOpen &&
+    detail.cell === failure.request.cell;
 
   function update(change: (current: CellDetailState) => CellDetailState): void {
     setDetail((current) => (current === null ? current : change(current)));
   }
 
   /** El aviso del editor es de lo que se abre: otra apertura arranca sin él. */
-  function openEditor(entry: TimeEntryView, origin: EditorState["origin"]): void {
-    const failure = changes.failure;
-    if (
-      failure !== null &&
-      editsEntry(failure, entry) &&
-      !CLOSING_CODES.includes(failure.code)
-    ) {
+  function dismissEditorFailureOf(entry: TimeEntryView): void {
+    if (failure !== null && showsInEditor(failure, entry)) {
       changes.dismiss();
     }
+  }
+
+  function openEditor(entry: TimeEntryView, origin: EditorState["origin"]): void {
+    dismissEditorFailureOf(entry);
     update((current) => ({
       ...current,
       editor: { entry, open: true, origin, closedBy: null },
     }));
   }
 
-  function openConfirm(
-    entry: TimeEntryView,
-    origin: ConfirmState["origin"],
-    returnTo: ConfirmState["returnTo"],
-  ): void {
+  function openConfirm(confirm: ConfirmOrigin & { readonly entry: TimeEntryView }): void {
     update((current) => ({
       ...current,
-      confirm: { entry, open: true, origin, returnTo, confirmed: false },
+      confirm: { ...confirm, open: true, confirmed: false },
     }));
   }
 
@@ -190,33 +247,17 @@ export function useCellDetail({
     );
   }
 
-  /** TS-40: lo que se elige en el menú de una celda, con su disparador. */
-  function open(
-    cell: GridCell,
-    choice: CellMenuChoice,
-    trigger: HTMLElement | null,
-  ): void {
+  function open(cell: GridCell, choice: CellMenuChoice, trigger: HTMLElement): void {
     triggerRef.current = trigger;
-    setDetail({
-      cell: cell.key,
-      cellName: cell.name,
-      mode: choice === "detail" ? "list" : "single",
-      list: choice === "detail",
-      listEmptied: false,
-      editor: null,
-      confirm: null,
-    });
-    const [entry] = cell.entries;
-    if (choice === "edit" && entry !== undefined) {
-      openEditor(entry, "menu");
-    } else if (choice === "delete" && entry !== undefined) {
-      openConfirm(entry, "menu", "trigger");
+    const opened = openedDetail(cell, choice);
+    if (opened.editor !== null) {
+      dismissEditorFailureOf(opened.editor.entry);
     }
+    setDetail(opened);
   }
 
   /** «Si sigue abierto»: el editor que se cerró en vuelo no mueve el foco (§5.6). */
   function settled(request: EntryChangeRequest): void {
-    const editor = detail?.editor;
     if (
       detail === null ||
       request.kind !== "save" ||
@@ -231,148 +272,104 @@ export function useCellDetail({
     closeEditor("saved");
   }
 
-  function cancelEditor(): void {
-    // Cerrar el editor con la falla a la vista la baja (A4).
-    if (changes.failure !== null && editorShows(changes.failure)) {
-      changes.dismiss();
-    }
-    closeEditor(null);
-  }
+  const places: FocusPlaces<HTMLElement> = {
+    trigger: () => {
+      const trigger = triggerRef.current;
+      return trigger?.isConnected === true ? trigger : null;
+    },
+    destination: () => (detail === null ? null : destinationOf(detail.cell)),
+    title: () => titleRef.current,
+    button: (entryId, button: EntryButton) =>
+      entryButtonOf(listRef.current, entryId, button),
+  };
 
-  function saveEntry(entry: TimeEntryView, input: UpdateEntryChanges): void {
-    if (detail === null) {
-      return;
-    }
-    changes.save({
-      kind: "save",
-      cell: detail.cell,
-      name: requestName(entry),
-      input: { id: entry.id, changes: input },
-    });
-  }
-
-  /** «Borrar» del menú del editor: la confirmación toma su lugar, como en el calendario. */
-  function deleteFromEditor(editor: EditorState): void {
-    closeEditor("delete");
-    openConfirm(
-      editor.entry,
-      editor.origin,
-      editor.origin === "menu" ? "trigger" : "edit",
-    );
-  }
-
-  function closeConfirm(): void {
-    update((current) =>
-      current.confirm === null
-        ? current
-        : { ...current, confirm: { ...current.confirm, open: false } },
-    );
-  }
-
-  function confirmDelete(confirm: ConfirmState): void {
-    if (detail === null) {
-      return;
-    }
-    update((current) =>
-      current.confirm === null
-        ? current
-        : { ...current, confirm: { ...current.confirm, open: false, confirmed: true } },
-    );
-    if (confirm.origin === "menu") {
-      awaitCell(detail.cell);
-    }
-    changes.remove({
-      kind: "delete",
-      cell: detail.cell,
-      name: requestName(confirm.entry),
-      input: { id: confirm.entry.id },
-    });
-  }
-
-  function cancelList(): void {
-    update((current) => ({ ...current, list: false }));
-  }
-
-  /** El aviso se va con el pedido nuevo: el foco pasa antes al título (§5.6). */
-  function retryFromList(): void {
-    titleRef.current?.focus();
-    changes.retry();
-  }
-
-  /** El disparador si sigue en la celda; si no, el destino de la celda. */
-  function triggerOrDestination(cell: string): HTMLElement | null {
-    const trigger = triggerRef.current;
-    return trigger?.isConnected === true ? trigger : destinationOf(cell);
-  }
-
-  /** Un botón de la lista; si su entrada salió, el título (§5.6). */
-  function listButtonOr(entryId: string, button: EntryButton): HTMLElement | null {
-    return entryButtonOf(listRef.current, entryId, button) ?? titleRef.current;
-  }
-
-  /** Adonde vuelve el foco al cancelar el editor. */
-  function editorCancelFocus(editor: EditorState, cell: string): HTMLElement | null {
-    return editor.origin === "menu"
-      ? triggerOrDestination(cell)
-      : listButtonOr(editor.entry.id, "edit");
-  }
-
-  /** Adonde va el foco cuando el dueño cierra el editor. */
-  function editorCloseFocus(editor: EditorState, cell: string): HTMLElement | null {
-    if (editor.closedBy === "delete") {
-      // La confirmación que se abre tiene el foco.
-      return null;
-    }
-    if (editor.origin === "menu") {
-      return destinationOf(cell);
-    }
-    return editor.closedBy === "saved"
-      ? listButtonOr(editor.entry.id, "edit")
-      : titleRef.current;
-  }
-
-  function confirmFocus(confirm: ConfirmState, cell: string): HTMLElement | null {
-    if (confirm.confirmed) {
-      return confirm.origin === "menu" ? destinationOf(cell) : titleRef.current;
-    }
-    return confirm.returnTo === "trigger"
-      ? triggerOrDestination(cell)
-      : listButtonOr(confirm.entry.id, confirm.returnTo);
-  }
-
-  function listFocus(current: CellDetailState): HTMLElement | null {
-    return current.listEmptied
-      ? destinationOf(current.cell)
-      : triggerOrDestination(current.cell);
-  }
-
-  return {
+  const dialogs: DetailDialogs = {
     detail,
     entries,
     nestedOpen,
+    changes: changes.state,
+    editorPending: editor !== null && changes.sending.has(editor.entry.id),
+    editorFailure:
+      editorShowsFailure && failure !== null
+        ? {
+            title: calendarLabels.entryNotSaved,
+            message: failure.message,
+            retryable: failure.code === "unexpected",
+          }
+        : null,
+    listFailure: listShowsFailure ? failure : null,
     titleRef,
     listRef,
+    places,
+    cancelEditor: () => {
+      // Cerrar el editor con la falla a la vista la baja (A4).
+      if (editorShowsFailure) {
+        changes.dismiss();
+      }
+      closeEditor(null);
+    },
+    saveEntry: (entry, entryChanges) => {
+      if (detail !== null) {
+        changes.save({
+          cell: detail.cell,
+          name: requestName(entry),
+          input: { id: entry.id, changes: entryChanges },
+        });
+      }
+    },
+    // «Borrar» del menú del editor: la confirmación toma su lugar, como en el calendario.
+    deleteFromEditor: (current) => {
+      closeEditor("delete");
+      openConfirm(
+        current.origin === "menu"
+          ? { entry: current.entry, origin: "menu" }
+          : { entry: current.entry, origin: "list", returnTo: "edit" },
+      );
+    },
+    editFromList: (entry) => openEditor(entry, "list"),
+    deleteFromList: (entry) => openConfirm({ entry, origin: "list", returnTo: "delete" }),
+    closeConfirm: () =>
+      update((current) =>
+        current.confirm === null
+          ? current
+          : { ...current, confirm: { ...current.confirm, open: false } },
+      ),
+    confirmDelete: (confirm) => {
+      if (detail === null) {
+        return;
+      }
+      update((current) =>
+        current.confirm === null
+          ? current
+          : { ...current, confirm: { ...current.confirm, open: false, confirmed: true } },
+      );
+      if (confirm.origin === "menu") {
+        awaitCell(detail.cell);
+      }
+      changes.remove({
+        cell: detail.cell,
+        name: requestName(confirm.entry),
+        input: { id: confirm.entry.id },
+      });
+    },
+    cancelList: () => update((current) => ({ ...current, listOpen: false })),
+    // El aviso se va con el pedido nuevo: el foco pasa antes al título (§5.6).
+    retryFromList: () => {
+      titleRef.current?.focus();
+      changes.retry();
+    },
+  };
+
+  return {
     open,
     settled,
-    placeOf,
-    editorShows,
-    openEditor,
-    openConfirm,
-    cancelEditor,
-    saveEntry,
-    deleteFromEditor,
-    closeConfirm,
-    confirmDelete,
-    cancelList,
-    retryFromList,
-    editorCancelFocus,
-    editorCloseFocus,
-    confirmFocus,
-    listFocus,
+    screenFailure:
+      failure !== null && !editorShowsFailure && !listShowsFailure ? failure : null,
+    dialogs,
   };
 }
 
-/** Lo que `RefObject` pide, calculado cuando el diálogo lo lee al cerrarse. */
+/** Lo que `RefObject` pide, buscado cuando el diálogo lo lee al cerrarse. */
 function lazyRef(get: () => HTMLElement | null): RefObject<HTMLElement | null> {
   return {
     get current() {
@@ -381,19 +378,9 @@ function lazyRef(get: () => HTMLElement | null): RefObject<HTMLElement | null> {
   };
 }
 
-/**
- * El foco puesto a mano, después de que lo de afuera del modal deje de estar
- * inerte: Base UI lo pasaría al primer control de un contenedor.
- */
-function focusLater(target: HTMLElement | null): false {
-  queueMicrotask(() => target?.focus());
-  return false;
-}
-
 type CellDetailDialogsProps = {
-  readonly cellDetail: CellDetail;
+  readonly dialogs: DetailDialogs;
   readonly state: TimesheetState;
-  readonly changes: EntryChanges;
 };
 
 /**
@@ -401,26 +388,12 @@ type CellDetailDialogsProps = {
  * sueltos; en TS-42 van como hijos de la lista, que es lo que necesita Base UI
  * para anidarlos.
  */
-export function CellDetailDialogs({
-  cellDetail,
-  state,
-  changes,
-}: CellDetailDialogsProps) {
-  const { detail } = cellDetail;
+export function CellDetailDialogs({ dialogs, state }: CellDetailDialogsProps) {
+  const { detail, places } = dialogs;
   if (detail === null) {
     return null;
   }
-  const { cell, editor, confirm } = detail;
-  const failure = changes.failure;
-
-  const editorFailure: EntryDialogFailure | null =
-    failure !== null && cellDetail.editorShows(failure)
-      ? {
-          title: calendarLabels.entryNotSaved,
-          message: failure.message,
-          retryable: failure.code === "unexpected",
-        }
-      : null;
+  const { editor, confirm } = detail;
 
   const editorDialog = editor !== null && (
     <EntryDialog
@@ -432,13 +405,17 @@ export function CellDetailDialogs({
       serverNow={state.serverNow}
       todayKey={state.todayKey}
       minDayKey={state.minDayKey}
-      pending={changes.sending.has(editor.entry.id)}
-      failure={editorFailure}
-      onCancel={cellDetail.cancelEditor}
-      onSave={(input) => cellDetail.saveEntry(editor.entry, input)}
-      onDelete={() => cellDetail.deleteFromEditor(editor)}
-      cancelFocus={lazyRef(() => cellDetail.editorCancelFocus(editor, cell))}
-      regionRef={lazyRef(() => cellDetail.editorCloseFocus(editor, cell))}
+      pending={dialogs.editorPending}
+      failure={dialogs.editorFailure}
+      onCancel={dialogs.cancelEditor}
+      onSave={(entryChanges) => dialogs.saveEntry(editor.entry, entryChanges)}
+      onDelete={() => dialogs.deleteFromEditor(editor)}
+      cancelFocus={lazyRef(() =>
+        editorCancelTarget({ ...editor, entryId: editor.entry.id }, places),
+      )}
+      fallbackFocus={lazyRef(() =>
+        editorCloseTarget({ ...editor, entryId: editor.entry.id }, places),
+      )}
     />
   );
 
@@ -450,11 +427,13 @@ export function CellDetailDialogs({
       open={confirm.open}
       onOpenChange={(next) => {
         if (!next) {
-          cellDetail.closeConfirm();
+          dialogs.closeConfirm();
         }
       }}
-      onConfirm={() => cellDetail.confirmDelete(confirm)}
-      finalFocus={lazyRef(() => cellDetail.confirmFocus(confirm, cell))}
+      onConfirm={() => dialogs.confirmDelete(confirm)}
+      finalFocus={lazyRef(() =>
+        confirmTarget({ ...confirm, entryId: confirm.entry.id }, places),
+      )}
     />
   );
 
@@ -469,21 +448,20 @@ export function CellDetailDialogs({
 
   return (
     <CellEntriesDialog
-      open={detail.list}
+      open={detail.listOpen}
       cellName={detail.cellName}
-      entries={cellDetail.entries}
-      changes={changes.state}
-      failure={
-        failure !== null && cellDetail.placeOf(failure) === "list" ? failure : null
-      }
-      titleRef={cellDetail.titleRef}
-      listRef={cellDetail.listRef}
-      nestedOpen={cellDetail.nestedOpen}
-      onEdit={(entry) => cellDetail.openEditor(entry, "list")}
-      onDelete={(entry) => cellDetail.openConfirm(entry, "list", "delete")}
-      onRetry={cellDetail.retryFromList}
-      onCancel={cellDetail.cancelList}
-      finalFocus={() => focusLater(cellDetail.listFocus(detail))}
+      entries={dialogs.entries}
+      changes={dialogs.changes}
+      failure={dialogs.listFailure}
+      titleRef={dialogs.titleRef}
+      listRef={dialogs.listRef}
+      nestedOpen={dialogs.nestedOpen}
+      onEdit={dialogs.editFromList}
+      onDelete={dialogs.deleteFromList}
+      onRetry={dialogs.retryFromList}
+      onCancel={dialogs.cancelList}
+      cancelFocus={lazyRef(() => triggerTarget(places))}
+      fallbackFocus={lazyRef(places.destination)}
     >
       {editorDialog}
       {confirmDialog}

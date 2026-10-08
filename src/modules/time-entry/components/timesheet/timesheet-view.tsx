@@ -3,7 +3,6 @@
 import { PlusIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { ActionFeedback } from "@/components/action-feedback";
 import { Button } from "@/components/ui/button";
 import { samePair, type ProjectPair } from "@/lib/project-pair";
 import { selectionIds } from "@/modules/project/components/picker-model";
@@ -16,8 +15,6 @@ import type {
 
 import { useTrackerRefresh } from "../use-tracker-refresh";
 import { CellDetailDialogs, useCellDetail } from "./cell-detail";
-import { entryChangeFailureTitle } from "./cell-entries-dialog";
-import type { CellMenuChoice } from "./cell-menu";
 import { cellKeyOf } from "./cell-writes";
 import type { EntryChangeRequest } from "./entry-changes";
 import { timesheetLabels } from "./labels";
@@ -28,14 +25,9 @@ import {
   withStoredRow,
   withoutStoredRow,
 } from "./stored-rows";
+import { TimesheetNotices, useLatestNotice } from "./timesheet-notices";
 import { TimesheetTable } from "./timesheet-table";
-import {
-  nextWritableCell,
-  pairOf,
-  timesheetGrid,
-  type GridCell,
-  type GridRow,
-} from "./timesheet-model";
+import { nextWritableCell, pairOf, timesheetGrid, type GridRow } from "./timesheet-model";
 import { useCellWrites } from "./use-cell-writes";
 import { useEntryChanges } from "./use-entry-changes";
 import { useRowRemovals } from "./use-row-removals";
@@ -99,16 +91,11 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
       pendingFocusRef.current = { kind: "cell", key };
     },
   });
-  /** La falla del detalle que se ve en la pantalla, y no en el editor o la lista (§5.5). */
-  const detailFailure =
-    changes.failure !== null && cellDetail.placeOf(changes.failure) === "screen"
-      ? changes.failure
-      : null;
-  const [seenFailures, setSeenFailures] = useState({
+  const screenFailures = {
     cell: writes.failure,
     row: removals.failure,
-    detail: detailFailure,
-  });
+    detail: cellDetail.screenFailure,
+  };
 
   // Otra semana: las filas agregadas y la fila nueva eran de la anterior. Las
   // escrituras en vuelo y los avisos siguen (F-m2).
@@ -117,30 +104,11 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
     setAdded([]);
     setNewRow(false);
   }
-  // Un aviso a la vez en la pantalla: la falla más reciente, de una celda, de
-  // una fila o del detalle, reemplaza a las otras. La del detalle que pasa de
-  // la lista a la pantalla cuenta como recién llegada (§5.2).
-  if (
-    seenFailures.cell !== writes.failure ||
-    seenFailures.row !== removals.failure ||
-    seenFailures.detail !== detailFailure
-  ) {
-    setSeenFailures({
-      cell: writes.failure,
-      row: removals.failure,
-      detail: detailFailure,
-    });
-    if (writes.failure !== null && writes.failure !== seenFailures.cell) {
-      removals.dismiss();
-      dismissDetailOnScreen();
-    } else if (removals.failure !== null && removals.failure !== seenFailures.row) {
-      writes.dismiss();
-      dismissDetailOnScreen();
-    } else if (detailFailure !== null && detailFailure !== seenFailures.detail) {
-      writes.dismiss();
-      removals.dismiss();
-    }
-  }
+  useLatestNotice(screenFailures, {
+    cell: writes.dismiss,
+    row: removals.dismiss,
+    detail: changes.dismiss,
+  });
 
   const grid = timesheetGrid({
     state,
@@ -258,55 +226,31 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
     }
   }
 
-  /** El `onSettled` de los pedidos del detalle, que decide si el editor se cierra. */
+  /**
+   * El `onSettled` de `useEntryChanges`, que se monta antes que el detalle
+   * porque el detalle lee sus pedidos. Se llama después, cuando un pedido se
+   * asienta, y para entonces `cellDetail` es el del último dibujo.
+   */
   function settleDetail(request: EntryChangeRequest): void {
     cellDetail.settled(request);
   }
 
-  function dismissDetailOnScreen(): void {
-    if (detailFailure !== null) {
-      changes.dismiss();
-    }
-  }
-
   /**
-   * «Reintentar» se va con el aviso que baja: antes, el foco pasa a la celda,
-   * que queda `busy` con el foco (F-M1).
+   * «Reintentar» se va con el aviso que baja: antes, el foco pasa al campo de
+   * la celda del pedido, que queda `busy` con el foco, o a la región si no
+   * está (F-M1). Lo usan la celda y el detalle.
    */
-  function retryCell(): void {
-    const failure = writes.failure;
-    if (failure === null) {
-      return;
-    }
-    if (!focusCell(cellKeyOf(failure.request.input))) {
+  function retryWithFocusOn(key: string, retry: () => void): void {
+    if (!focusCell(key)) {
       regionRef.current?.focus();
     }
-    writes.retry();
+    retry();
   }
 
   /** Lo mismo con la fila, que se oculta: el foco va adonde va al confirmar. */
   function retryRow(): void {
     focusOutsideRows();
     removals.retry();
-  }
-
-  /** Como el de una celda: el foco pasa antes al campo de la celda del pedido (F-M1). */
-  function retryDetail(): void {
-    if (detailFailure === null) {
-      return;
-    }
-    if (!focusCell(detailFailure.request.cell)) {
-      regionRef.current?.focus();
-    }
-    changes.retry();
-  }
-
-  function openDetail(
-    cell: GridCell,
-    choice: CellMenuChoice,
-    trigger: HTMLElement,
-  ): void {
-    cellDetail.open(cell, choice, trigger);
   }
 
   function write(row: GridRow, date: string, minutes: number): void {
@@ -382,42 +326,27 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
       return;
     }
     // La X se va con la fila: el foco sale antes de ocultarla.
-    removalFocusRef.current = addButtonRef.current ?? regionRef.current;
+    removalFocusRef.current = outsideRows();
     setDialogOpen(false);
     removals.remove(confirming.request);
   }
 
   return (
     <div className="flex w-full flex-col gap-4">
-      {/* Lo que falló vive en esta pantalla y sobrevive a la revalidación
-          (§5.9). El anuncio lo da el `alert` de cada aviso. */}
-      <div className="flex flex-col gap-2 empty:hidden">
-        {writes.failure !== null && (
-          <ActionFeedback
-            title={timesheetLabels.cellNotSaved}
-            message={writes.failure.message}
-            onRetry={writes.failure.code === "unexpected" ? retryCell : undefined}
-          >
-            <p className="text-muted-foreground text-sm">{writes.failure.request.name}</p>
-          </ActionFeedback>
-        )}
-        {removals.failure !== null && (
-          <ActionFeedback
-            title={timesheetLabels.rowNotRemoved}
-            message={removals.failure.message}
-            onRetry={removals.failure.code === "unexpected" ? retryRow : undefined}
-          />
-        )}
-        {detailFailure !== null && (
-          <ActionFeedback
-            title={entryChangeFailureTitle(detailFailure)}
-            message={detailFailure.message}
-            onRetry={detailFailure.code === "unexpected" ? retryDetail : undefined}
-          >
-            <p className="text-muted-foreground text-sm">{detailFailure.request.name}</p>
-          </ActionFeedback>
-        )}
-      </div>
+      <TimesheetNotices
+        failures={screenFailures}
+        onRetryCell={() => {
+          if (writes.failure !== null) {
+            retryWithFocusOn(cellKeyOf(writes.failure.request.input), writes.retry);
+          }
+        }}
+        onRetryRow={retryRow}
+        onRetryDetail={() => {
+          if (cellDetail.screenFailure !== null) {
+            retryWithFocusOn(cellDetail.screenFailure.request.cell, changes.retry);
+          }
+        }}
+      />
 
       <div ref={regionRef} tabIndex={-1} className="flex flex-col gap-3 outline-none">
         <TimesheetTable
@@ -431,7 +360,7 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
           onSubmit={submit}
           onChoose={choose}
           onRemove={askRemove}
-          onMenu={openDetail}
+          onMenu={cellDetail.open}
         />
         {canAddRow && (
           <div>
@@ -451,7 +380,7 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
         cancelFocus={removeButtonRef}
         fallbackFocus={removalFocusRef}
       />
-      <CellDetailDialogs cellDetail={cellDetail} state={state} changes={changes} />
+      <CellDetailDialogs dialogs={cellDetail.dialogs} state={state} />
     </div>
   );
 }

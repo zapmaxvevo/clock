@@ -1,6 +1,11 @@
+import { calendarLabels } from "../calendar/labels";
+import { trackerLabels } from "../labels";
+import type { EntryChangeFailure } from "./entry-changes";
+
 /**
- * Textos de la planilla de horarios. «Total», «Sin proyecto», «Semana
- * anterior», «Semana siguiente» y «Cancelar» se importan de donde ya están.
+ * Textos de la planilla de horarios. Los que ya dice otra pantalla —«Total»,
+ * «Sin proyecto», «Cancelar», «Borrar», los títulos de los avisos de una
+ * entrada— se importan de donde están.
  */
 export const timesheetLabels = {
   /** TS-04: el título visible, que también nombra la tabla (TS-100). */
@@ -75,4 +80,11 @@ export function deleteEntryLabel(entry: string, span: string): string {
 /** Cómo nombra un aviso del detalle a su entrada: «Diseño», de 09:00 a 10:30. */
 export function entryChangeName(entry: string, span: string): string {
   return `«${entry}», ${span}`;
+}
+
+/** El título del aviso de un pedido del detalle: nombra la operación que falló (§5.5). */
+export function entryChangeFailureTitle(failure: EntryChangeFailure): string {
+  return failure.request.kind === "save"
+    ? calendarLabels.entryNotSaved
+    : trackerLabels.entryNotDeleted;
 }

@@ -98,17 +98,20 @@ type EntryDialogProps = {
   /** «Cancelar», «Cerrar», Esc o un clic afuera, y «Guardar» sin cambios. */
   readonly onCancel: () => void;
   readonly onSave: (changes: UpdateEntryChanges) => void;
-  /** Sin él, el diálogo no abre altas: la planilla solo edita (13b, §5.2). */
+  /** La planilla no lo pasa: solo abre entradas cerradas, nunca un alta (13b, §5.2). */
   readonly onAdd?: (input: NewEntryRequest) => void;
-  /** Sin él, el diálogo no abre el timer: la planilla solo trae cerradas. */
+  /** La planilla no lo pasa: solo abre entradas cerradas, nunca el timer (13b, §5.2). */
   readonly onStop?: () => void;
   /** Sin él, el menú de la entrada no ofrece «Duplicar» (13b, D13b-7). */
   readonly onDuplicate?: () => void;
   readonly onDelete: () => void;
   /** Adónde vuelve el foco al cancelar: el bloque, «Agregar entrada» o ninguno. */
   readonly cancelFocus: RefObject<HTMLElement | null>;
-  /** La región de la pantalla: el foco va ahí si el dueño cierra o `cancelFocus` no está. */
-  readonly regionRef: RefObject<HTMLElement | null>;
+  /**
+   * Adónde va el foco si el dueño cierra o `cancelFocus` no está: la región
+   * del calendario, o lo que decide el detalle de la planilla (13b, §5.6).
+   */
+  readonly fallbackFocus: RefObject<HTMLElement | null>;
 };
 
 /** Cada apertura arranca su borrador: la clave cambia con lo que se abre. */
@@ -140,13 +143,13 @@ export function EntryDialog({
   onDuplicate,
   onDelete,
   cancelFocus,
-  regionRef,
+  fallbackFocus,
 }: EntryDialogProps) {
   const closeRef = useRef<HTMLButtonElement>(null);
   const descriptionRef = useRef<HTMLInputElement>(null);
   const { onOpenChange, finalFocus } = useDialogReturnFocus({
     cancelFocus,
-    fallbackFocus: regionRef,
+    fallbackFocus,
     onCancel,
   });
   const readOnly = subject?.kind === "entry" && !canTrack;

@@ -9,7 +9,7 @@ import {
 
 import { CellDetailDialogs, useCellDetail } from "./cell-detail";
 import type * as CellEntriesModule from "./cell-entries-dialog";
-import type { EntryChangesState } from "./entry-changes";
+import { changingOf, sendingEntriesOf, type EntryChangesState } from "./entry-changes";
 import { cellKeyOf } from "./cell-writes";
 import type { GridCell } from "./timesheet-model";
 import type { EntryChanges } from "./use-entry-changes";
@@ -110,12 +110,8 @@ const noop = () => undefined;
 function changesWith(changesState: EntryChangesState): EntryChanges {
   return {
     state: changesState,
-    changing: new Set(changesState.pending.map((change) => change.cell)),
-    sending: new Set(
-      changesState.pending
-        .filter((change) => change.status === "sending")
-        .map((change) => change.entryId),
-    ),
+    changing: changingOf(changesState),
+    sending: sendingEntriesOf(changesState),
     failure: changesState.failure,
     save: noop,
     remove: noop,
@@ -131,11 +127,9 @@ function OpenList({ changes }: { readonly changes: EntryChanges }) {
     changes,
     destinationOf: () => null,
     awaitCell: noop,
+    openOnMount: { cell, choice: "detail" },
   });
-  if (cellDetail.detail === null) {
-    cellDetail.open(cell, "detail", null);
-  }
-  return <CellDetailDialogs cellDetail={cellDetail} state={state} changes={changes} />;
+  return <CellDetailDialogs dialogs={cellDetail.dialogs} state={state} />;
 }
 
 function buttonNamed(markup: string, name: string): string {
@@ -154,6 +148,7 @@ describe("CellDetailDialogs: la lista recibe el estado de los pedidos (A15)", ()
     );
 
     expect(markup).toContain("Detalle de P, miércoles 01/10");
+    expect(buttonNamed(markup, "Editar «a», de 10:00 a 11:00")).not.toBe("");
     expect(buttonNamed(markup, "Editar «b», de 12:00 a 13:00")).toContain(
       'aria-disabled="true"',
     );
