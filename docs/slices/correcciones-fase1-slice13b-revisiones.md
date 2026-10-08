@@ -4,8 +4,9 @@ Salida de las revisiones sobre `7d34c5f..1e4e02b`. Backend (`backend-reviewer`):
 hallazgos. Seguridad (`security-auditor`): aprobado, sin hallazgos. Paridad (`parity-reviewer`, con
 la aplicación levantada): aprobado, sin diferencias. Tests (`test-reviewer`): cambios requeridos,
 un mayor y cuatro menores (T2 lo resolvió `1e4e02b`). Código (`clean-code-reviewer`): cambios
-requeridos, un mayor y catorce menores. Frontend (`frontend-reviewer`): en curso; sus hallazgos se
-suman abajo. El team-lead acepta todo lo que sigue.
+requeridos, un mayor y catorce menores. Frontend (`frontend-reviewer`, por lectura, después de que la primera
+corrida se trabara): cambios requeridos, un mayor y un menor; acepta los seis desvíos de
+`frontend-dev`. El team-lead acepta todo lo que sigue.
 
 Antes de las revisiones: la suite e2e entera, 180 de 180 dos veces, y `timesheet-detail.spec.ts`
 tres veces seguidas sobre `1e4e02b`.
@@ -42,3 +43,15 @@ tres veces seguidas sobre `1e4e02b`.
 
 T5 deja sin test, por costo, «un aviso a la vez» entre las tres fuentes: lo cubre la unidad de
 `timesheet-notices.tsx` que trae C8.
+
+## Frontend
+
+| Origen | Hallazgo                                                                                                                                                                                                                                      | Resolución                                                                                                                                                                                   |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F1     | «Borrar» desde el menú del editor cierra sin bajar la falla que el editor mostraba: pasa a la pantalla o a la lista como recién llegada, baja los avisos de celda y fila, y con `unexpected` su «Reintentar» reescribe el borrador abandonado | Un solo punto baja la falla del editor en todo cierre que no sea `saved` ni `failed`. Un paso e2e: respuesta perdida, «Borrar» desde el menú del editor, cancelar, y la región sin el aviso. |
+| F2     | «Reintentar» del aviso del detalle en la pantalla no repone el `PendingFocus` de la celda: si el reintento saca la fila, el foco cae a `body`                                                                                                 | Repone el `PendingFocus`. Un recorrido: borrado fallido de la única entrada de una fila del servidor, reintento desde la región, foco en «Añadir nueva fila».                                |
+
+Los desvíos aceptados: `useCellDetail` y `CellDetailDialogs`; `entryChanger` puro; `entryCellKeyOf`
+exportado; el editor con `canTrack` siempre verdadero (`forbidden` se ve en el editor y un
+refresco no pasa el borrador a solo lectura); `pr-8` con el disparador absoluto; los mocks del
+menú en `entry-dialog.test.tsx`.
