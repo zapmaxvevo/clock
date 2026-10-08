@@ -67,7 +67,52 @@ todos los hallazgos y fija el destino del foco de A2.
   porque la lista modal sigue abierta debajo y el foco no puede salir de ella. Si la lista queda
   vacía, se cierra y aplica su propia fila.
 
+## Ronda 2
+
+Salida de la ronda 2 de `architecture-reviewer` sobre las correcciones de la ronda 1 (`d0f2b9a`).
+Veredicto: **aprobado con cambios**. A1 … A13 quedan resueltos y los tres desvíos de arriba,
+aprobados. Hay un hallazgo mayor nuevo (A14), uno menor (A15) y dos notas (A16, A17). El
+team-lead acepta los cuatro.
+
+- **A14 (mayor). Las fallas del detalle quedaban detrás de la lista modal.** Aceptado como lo
+  propone el revisor. §5.2 suma «Las fallas con la lista abierta». Mientras la lista está
+  abierta, la falla del detalle cuyo `request.cell` es la celda abierta se ve dentro de la lista,
+  con un `ActionFeedback` arriba de los ítems y el título de §5.5. «Reintentar» aparece solo con
+  `unexpected`, y antes de reintentar el foco pasa al título de la lista. La falla no se duplica
+  en la pantalla. Al cerrar la lista, si sigue vigente, pasa a la región con las reglas de §5.5.
+  Lo acompañan:
+  - §4.3: una viñeta, «la pantalla» es la lista mientras está abierta.
+  - §5.5: la primera viñeta, la de «un aviso a la vez» y la de «Reintentar».
+  - §5.6: una fila para «Reintentar» desde la lista.
+  - §1: TS-42 y TS-83.
+  - El criterio 6 suma el aviso en la lista, y hay un recorrido 9 con `dropActionRequests` y el
+    mutante «la falla del detalle solo en la pantalla».
+- **A15 (menor). Ningún test cubría qué conjunto recibe la lista.** La lista recibe el
+  `EntryChangesState` y calcula `changingEntriesOf` adentro (§5.2), así que el hook devuelve
+  `state` en lugar de `changingEntries` (§5.4). Sale la viñeta «`cell-detail.tsx` reparte». La
+  lista exporta lo de adentro sin el portal, como `EntryDialogContent`.
+  - El criterio 6 prueba la lista con un `sending` y un `settled`.
+  - Suma `cell-detail.test.tsx` (nuevo, en el reparto de `frontend-dev`), que dibuja `CellDetail`
+    con un `settled`. Como el portal no se dibuja con `renderToStaticMarkup`, el `Dialog` de la
+    lista se reemplaza por su contenido con `vi.mock`.
+  - Mutante, en la fila del criterio 6: «los botones con solo `sending`, en la lista o en
+    `cell-detail.tsx`».
+- **A16 (nota). Dos ambigüedades de redacción.**
+  - El recorrido 2 dice «con la entrada de P del martes sembrada como al empezar el 1, con la del
+    jueves».
+  - §5.6 suma una fila: cancelar la confirmación que salió del menú del editor anidado lleva el
+    foco a «Editar» de esa entrada, que abrió la cadena.
+- **A17 (nota). TS-83 desde el menú en una fila de una sola entrada, sin refresco previo.** Queda
+  en §8 como caso raro. Una action que falla no revalida, así que el `PendingFocus` no espera una
+  foto que puede no llegar.
+
+Además, sin hallazgo:
+
+- **El paso de la falla de la lista a la pantalla.** Al cerrar la lista, la falla entra a «un
+  aviso a la vez» como si llegara en ese momento. Así queda definido qué pasa si mientras tanto
+  falló una escritura de otra celda.
+
 ## Lo que sigue
 
 1. El team-lead corre `npx prettier --check` sobre los dos archivos.
-2. `architecture-reviewer`: una ronda corta solo sobre estos cambios, si el team-lead la pide.
+2. `architecture-reviewer`: una ronda corta solo sobre A14 … A17, si el team-lead la pide.

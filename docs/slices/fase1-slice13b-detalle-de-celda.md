@@ -12,8 +12,8 @@ pantalla `/planilla`, sin mutaciones nuevas: edita y borra con `updateEntry` y
   [contrato del 13](fase1-slice13-planilla.md), que pide decidir cómo es el
   detalle, cómo lista las entradas, adónde va el foco al borrar la última y
   cómo conviven los avisos.
-- **Revisión del contrato:** ronda 1 de `architecture-reviewer`, aprobado con
-  cambios; la decisión por hallazgo (A1 … A13) está en
+- **Revisión del contrato:** rondas 1 y 2 de `architecture-reviewer`, aprobado
+  con cambios; la decisión por hallazgo (A1 … A17) está en
   [`correcciones-fase1-slice13b-contrato.md`](correcciones-fase1-slice13b-contrato.md).
 - **Contratos de los que hereda la forma:** [slice 13](fase1-slice13-planilla.md)
   (la grilla, `sendOrUnexpected`, el estado propio fuera de transiciones de
@@ -47,8 +47,8 @@ que el 13: una lectura que suma campos, un texto que cambia y componentes.
 
 ## Decisiones del contrato
 
-Tomadas por este contrato; las revisó `architecture-reviewer` (ronda 1) y las
-confirma el team-lead.
+Tomadas por este contrato; las revisó `architecture-reviewer` (rondas 1 y 2) y
+las confirma el team-lead.
 
 **D13b-1 — Cómo guarda el detalle de una entrada** (TS-41). Opciones: (1) un
 popover con las piezas de la fila del rastreador, que guarda campo por campo
@@ -198,12 +198,15 @@ TT-56, TT-60, TT-61, TT-80, TT-89, TT-90, TT-110, CAL-65 … CAL-68 y CAL-72.
   con «Guardar» (`updateEntry`, ADR 0013); no ofrece «Duplicar» (D13b-1,
   D13b-7). Hoy dice «popover» y «las mismas mutaciones que la fila».
 - **TS-42**: la lista se llama «Detalle de {celda}», sale de la foto y se
-  actualiza con ella; «Editar» abre el editor encima (D13b-2).
+  actualiza con ella; «Editar» abre el editor encima (D13b-2). Mientras está
+  abierta, las fallas de los pedidos de su celda se ven en ella, con
+  «Reintentar» solo con `unexpected` (§5.2).
 - **TS-76**: sin permiso de carga no hay menú (D13b-4).
 - **TS-79**: el texto pasa a «Editá las entradas de esta celda desde el
   detalle.», y el menú de esas celdas dice «Ver detalle».
 - **TS-83**: el aviso se titula «No se pudo guardar la entrada.» o «No se pudo
-  borrar la entrada.», en la pantalla y sin «Reintentar»; el editor se cierra.
+  borrar la entrada.», en la pantalla —o en la lista, si está abierta sobre esa
+  celda— y sin «Reintentar»; el editor se cierra.
 - **TS-98**: el recorrido con Tab pasa por el menú de cada celda con entradas,
   después de su campo (TS-99).
 - **TS-115**: una fila agregada en esta carga queda dibujada vacía aunque su
@@ -345,6 +348,8 @@ con los mismos códigos que el del calendario, `CLOSING_CODES`
 | Hora que no existe, menos de un minuto, antes del piso, fecha inválida | `validation` | los de TT-112, TT-73, TS-81         | El editor                                               | TS-41        |
 | Red caída o error inesperado                                           | `unexpected` | `timeEntryMessages.unexpected`      | El editor, o la pantalla al borrar; con «Reintentar»    | TT-89        |
 
+- **«La pantalla» es la lista mientras está abierta** sobre la celda del
+  pedido (§5.2): lo que está debajo del modal queda inerte y tapado.
 - **Un trío sobre una entrada de más de un día no viaja**: el editor la muestra
   como texto (TT-110) y `changesOf` no manda `times`.
 
@@ -372,7 +377,7 @@ con los mismos códigos que el del calendario, `CLOSING_CODES`
 ### 5.2 Los diálogos del detalle (`cell-detail.tsx`, nuevo)
 
 Un componente dueño de qué está abierto, montado por `TimesheetView`. Recibe la
-celda abierta (su clave), la grilla y el estado de `useEntryChanges`.
+celda abierta (su clave), la grilla y lo que devuelve `useEntryChanges`.
 
 **El árbol.** En TS-41, el editor y la confirmación van sueltos, montados por
 `cell-detail.tsx`. En TS-42 van como hijos del `Dialog` de la lista, que es lo
@@ -391,19 +396,23 @@ tenga un pedido `sending` (`sendingEntriesOf`, §5.4).
   cierra cuando ese pedido se asienta **si sigue abierto sobre esa entrada**.
 - **Cerrarlo con el pedido en vuelo se puede**: `EntryDialog` solo impide
   cerrarse durante un alta (`entry-dialog.tsx:154-167`). El pedido sigue; si se
-  asienta, nadie mueve el foco (§5.6); si falla, la falla va a la pantalla
-  (§5.5).
+  asienta, nadie mueve el foco (§5.6); si falla, la falla va a la pantalla, o a
+  la lista si está abierta sobre esa celda (§5.5).
 - **La falla del guardado** se ve en el editor si sigue abierto sobre esa
   entrada y su código no está en `CLOSING_CODES`; con `unexpected`,
   «Reintentar» reenvía el borrador de ahora (`entry-dialog.tsx:351-354`). Con
-  un código de `CLOSING_CODES` el editor se cierra y el aviso va a la pantalla
-  (§5.5). **Cerrar el editor con la falla a la vista la baja** (`dismissed`).
+  un código de `CLOSING_CODES` el editor se cierra y el aviso va a la pantalla,
+  o a la lista si el editor se abrió desde ella (§5.5). **Cerrar el editor con
+  la falla a la vista la baja** (`dismissed`).
 - **«Borrar» del menú del editor** cierra el editor y abre la confirmación,
   como el calendario (`calendar-view.tsx:376-380`).
 
 **La lista** (TS-42, `cell-entries-dialog.tsx`, nuevo): un `Dialog` con el
 título «Detalle de {celda}» y una lista con las entradas de la celda en la
-foto, en el orden de `entries`. Cada una:
+foto, en el orden de `entries`. Recibe el `EntryChangesState` y calcula
+`changingEntriesOf` adentro, así no hay ningún conjunto que elegir al
+cablearla. Exporta también lo de adentro sin el portal, para que el test lo
+dibuje, como `EntryDialogContent` (`entry-dialog.tsx:207-216`). Cada entrada:
 
 - la descripción (`entryNameOf`, en gris si está vacía), el horario
   «{inicio} – {fin}» con su superíndice `+N` y el texto de `extraDaysText`, y
@@ -428,6 +437,23 @@ ellos se cierran, si sigue vacía. Así, una entrada que se borra desde otra
 pestaña con su editor abierto —el refresco al recuperar el foco vacía la lista,
 `use-tracker-refresh.ts:41-43`— llega a TS-83 al «Guardar» en lugar de
 desmontar el editor con su borrador.
+
+**Las fallas con la lista abierta.** Lo que está fuera del modal queda inerte y
+tapado por el overlay (`components/ui/dialog.tsx`, `DialogOverlay`), así que
+una falla que §5.5 manda a la pantalla no se vería. Mientras la lista está
+abierta, **la falla del detalle cuyo `request.cell` es la celda abierta se ve
+dentro de la lista**: un `ActionFeedback` arriba de los ítems, con el título,
+el mensaje y el nombre del pedido de §5.5. Son la de un borrado, la de un
+guardado del editor anidado con un código de `CLOSING_CODES` (TS-83) y la de un
+guardado cuyo editor se cerró en vuelo; la que se ve en el editor sigue en el
+editor.
+
+- **«Reintentar»** solo con `unexpected` (TT-89). Antes de reintentar, el foco
+  pasa al título de la lista, porque el aviso se va.
+- **No se duplica en la pantalla**: mientras se ve en la lista, cuenta como la
+  del editor para «un aviso a la vez» (§5.5).
+- **Al cerrar la lista**, si esa falla sigue vigente, pasa a la región de la
+  pantalla con las reglas de §5.5, como si llegara en ese momento.
 
 **La confirmación** es `DeleteEntryDialog` (TT-61) con la entrada; confirmar
 manda `deleteEntry({ id })` por `useEntryChanges`.
@@ -505,7 +531,7 @@ export function entryChangesReducer(
 /** Las celdas con un pedido que la foto todavía no trae, `sending` o `settled`. */
 export function changingOf(state: EntryChangesState): ReadonlySet<string>;
 
-/** Las entradas con un pedido que la foto todavía no trae: «Editar» y «Borrar» de la lista quedan inactivos. */
+/** Las entradas con un pedido que la foto todavía no trae: la lista lo calcula y deja inactivos «Editar» y «Borrar». */
 export function changingEntriesOf(state: EntryChangesState): ReadonlySet<string>;
 
 /** Las entradas con un pedido `sending`: el `pending` del editor. */
@@ -522,11 +548,10 @@ export function sendingEntriesOf(state: EntryChangesState): ReadonlySet<string>;
   cambia la identidad de `state`, como `useCellWrites`; cada pedido con
   `sendOrUnexpected` y la action **fuera de toda transición**, despachando
   `sent`, `settled` o `failed` con actualizaciones urgentes; `onSettled`
-  recibe el pedido asentado. Devuelve `changing` (las celdas),
-  `changingEntries`, `sending` (las entradas en `sending`), `failure`, `save`,
-  `remove`, `retry` (reenvía el pedido de la falla, tal cual) y `dismiss`.
-- **`cell-detail.tsx` reparte**: `changingEntries` a la lista y `sending` solo
-  al `pending` del editor.
+  recibe el pedido asentado. Devuelve `state` (el `EntryChangesState`, que
+  recibe la lista), `changing` (las celdas), `sending` (las entradas en
+  `sending`, para el editor), `failure`, `save`, `remove`, `retry` (reenvía el
+  pedido de la falla, tal cual) y `dismiss`.
 - **No hay vista optimista**: el detalle no sabe qué valor va a mostrar la
   celda —una edición puede cambiar el horario, el día o el par—. La celda sigue
   mostrando la foto, ocupada, hasta que llega la nueva.
@@ -541,21 +566,24 @@ reemplaza a las otras (`timesheet-view.tsx:88-97`, extendido).
 - **Se ve en la pantalla** la falla de un borrado, la de un guardado con un
   código de `CLOSING_CODES` (TS-83 entre ellas) y la de un guardado cuyo editor
   ya no está abierto sobre esa entrada (se cerró con el pedido en vuelo,
-  §5.2). Las demás de un guardado se ven en el editor (§5.2).
+  §5.2). Las demás de un guardado se ven en el editor (§5.2). **Con la lista
+  abierta sobre la celda del pedido, la que iría a la pantalla se ve en la
+  lista** (§5.2), y pasa a la pantalla al cerrarla si sigue vigente.
 - **La regla de «un aviso a la vez» es solo de la pantalla.** La falla del
-  detalle que se ve en el editor no baja los avisos de una celda o de una
-  fila, ni ellos la bajan a ella: si con el editor abierto falla una escritura
-  de otra celda, su aviso aparece en la pantalla y el error que la persona
-  está leyendo en el editor sigue. Entre dos fallas del detalle gana la más
-  reciente (`failed`, §5.4).
+  detalle que se ve en el editor o en la lista no baja los avisos de una celda
+  o de una fila, ni ellos la bajan a ella: si con el editor abierto falla una
+  escritura de otra celda, su aviso aparece en la pantalla y el error que la
+  persona está leyendo en el editor sigue. Entre dos fallas del detalle gana la
+  más reciente (`failed`, §5.4).
 - **Título**: «No se pudo guardar la entrada.» (`calendarLabels.entryNotSaved`)
   o «No se pudo borrar la entrada.» (`trackerLabels.entryNotDeleted`), con el
   mensaje del servidor y, debajo, el nombre del pedido: «Diseño», de 09:00 a
   10:30.
 - **«Reintentar»** solo con `unexpected` (TT-89). Antes de reintentar, el foco
-  va al campo de la celda del pedido o, si no está, a la región (F-M1 del 13).
-  Reintentar un borrado cuya respuesta se perdió responde «Esa entrada ya no
-  existe.»: es el desenlace real, como en el rastreador.
+  va al campo de la celda del pedido o, si no está, a la región (F-M1 del 13);
+  desde la lista, a su título (§5.2). Reintentar un borrado cuya respuesta se
+  perdió responde «Esa entrada ya no existe.»: es el desenlace real, como en
+  el rastreador.
 - **Una celda rechazada con TS-79** sigue mostrando su aviso con el texto
   nuevo; no abre el detalle sola.
 
@@ -568,9 +596,11 @@ reemplaza a las otras (`timesheet-view.tsx:88-97`, extendido).
 | El editor abierto desde el menú, si sigue abierto            | Se asienta el guardado                        | Al destino de la celda                                                                               |
 | La confirmación desde el menú                                | Confirmar                                     | Al destino de la celda                                                                               |
 | El editor o la confirmación abiertos desde la lista          | Cancelar                                      | Al «Editar» o «Borrar» de esa entrada en la lista; si ya salió de ella, al título de la lista        |
+| La confirmación desde el menú del editor anidado             | Cancelar                                      | Al «Editar» de esa entrada en la lista, que abrió la cadena                                          |
 | El editor abierto desde la lista, si sigue abierto           | Se asienta el guardado                        | Al «Editar» de esa entrada                                                                           |
 | La confirmación desde la lista                               | Confirmar                                     | Al título de la lista                                                                                |
 | La lista                                                     | La entrada que tenía el foco sale con la foto | Al título de la lista                                                                                |
+| La lista                                                     | «Reintentar» de su aviso                      | Al título de la lista, antes de que el aviso se vaya                                                 |
 | La lista, sin nada anidado abierto                           | Queda vacía y se cierra                       | Al destino de la celda                                                                               |
 | El editor abierto desde el menú                              | Una falla de `CLOSING_CODES` lo cierra        | Al destino de la celda                                                                               |
 | El editor abierto desde la lista                             | Una falla de `CLOSING_CODES` lo cierra        | Al título de la lista                                                                                |
@@ -659,6 +689,7 @@ Rutas absolutas; **(nuevo)** marca lo que el slice crea.
     cell-writes.test.ts                                        (solo el texto, si se cambia)
     cell-menu.tsx                                              (nuevo)
     cell-detail.tsx                                            (nuevo)
+    cell-detail.test.tsx                                       (nuevo)
     cell-entries-dialog.tsx                                    (nuevo)
     cell-entries-dialog.test.tsx                               (nuevo)
     entry-changes.ts, entry-changes.test.ts                    (nuevos)
@@ -745,10 +776,18 @@ históricos.
    nombre; sin entradas, o sin permiso, no lo dibuja; con `pending`, lleva
    `aria-disabled`.
 6. **La lista** — En `cell-entries-dialog.test.tsx`, con
-   `renderToStaticMarkup`: cada entrada con su descripción o «Sin
-   descripción», su horario con `+1` y su texto para lectores, su duración, y
-   «Editar» y «Borrar» con los nombres de §5.8; con una entrada en el conjunto
-   que la lista recibe (`changingEntries`), sus dos botones `aria-disabled`.
+   `renderToStaticMarkup` sobre lo de adentro sin el portal, dentro de su raíz
+   (como `entry-dialog.test.tsx:196-214`): cada entrada con su descripción o
+   «Sin descripción», su horario con `+1` y su texto para lectores, su
+   duración, y «Editar» y «Borrar» con los nombres de §5.8; con un
+   `EntryChangesState` que tiene un `sending` de una entrada y un `settled` de
+   otra, los dos botones de las dos `aria-disabled`; con una falla de la celda,
+   el aviso arriba de los ítems, con «Reintentar» solo con `unexpected`. En
+   `cell-detail.test.tsx`, el mismo cableado de punta a punta: `CellDetail` con
+   la lista abierta y un estado de `useEntryChanges` con un `settled` de una
+   entrada —el portal no se dibuja con `renderToStaticMarkup`, así que el test
+   reemplaza el `Dialog` de la lista por lo de adentro sin el portal con
+   `vi.mock`—: los dos botones de esa entrada, `aria-disabled`.
 7. **El calendario sigue igual** — `EntryDialog` sin `onDuplicate` no ofrece
    «Duplicar»; con él, sí. El calendario lo sigue pasando.
 8. **Lo existente sigue verde** — La suite de unidad, integración y e2e de
@@ -765,7 +804,7 @@ históricos.
 | 3        | unidad              | `timesheet-model.test.ts`                                                                                    | agrupar por `startedAt` en UTC y no por `dayDate`; `pending` sin `changing`; `writing` sin `changing`                                                                                          |
 | 4        | unidad              | `entry-changes.test.ts`                                                                                      | `changingOf` o `changingEntriesOf` solo con `sending` (la X, el menú o la lista se liberan antes de la foto); `snapshot` que saca también los `sending`; una falla que baja la de otra entrada |
 | 5        | componente          | `timesheet-cell.test.tsx`                                                                                    | el menú en una celda vacía; el disparador con `disabled` en vez de `aria-disabled`                                                                                                             |
-| 6        | componente          | `cell-entries-dialog.test.tsx`                                                                               | los nombres de «Editar» sin el horario (dos entradas sin descripción quedan con el mismo nombre)                                                                                               |
+| 6        | componente          | `cell-entries-dialog.test.tsx`; `cell-detail.test.tsx`                                                       | los nombres de «Editar» sin el horario (dos entradas sin descripción quedan con el mismo nombre); los botones con solo `sending`, en la lista o en `cell-detail.tsx`                           |
 | 7        | componente; e2e     | `entry-dialog.test.tsx`; `e2e/timesheet-detail.spec.ts`                                                      | «Duplicar» siempre                                                                                                                                                                             |
 | 8        | todas               | las suites existentes                                                                                        | —                                                                                                                                                                                              |
 | 9        | e2e                 | `e2e/timesheet-detail.spec.ts`                                                                               | los de cada recorrido                                                                                                                                                                          |
@@ -792,12 +831,13 @@ en el campo de una celda, la fila lleva otra entrada sembrada en otro día.
    celda y el total del martes dicen `2:00` y los de la fila y la semana
    `3:00`, y en el rastreador la entrada es «Diseño», de 09:00 a 11:00. Esc en
    el editor devuelve el foco al disparador.
-2. **Borrar desde el menú** (TS-35, TT-61, §5.6). Sobre la celda del martes,
-   «Borrar»: «¿Borrar esta entrada?» con su horario; «Cancelar» devuelve el
-   foco al disparador; confirmar: la celda queda vacía, sin menú, el foco en su
-   campo, y el total de la fila en `1:00`, el del jueves. Después, en una fila
-   de R con una sola entrada, el viernes, «Borrar» desde su menú y confirmar:
-   la fila sale de la grilla y el foco está en «Añadir nueva fila».
+2. **Borrar desde el menú** (TS-35, TT-61, §5.6). Con la entrada de P del
+   martes sembrada como al empezar el 1, con la del jueves: «Borrar» desde el
+   menú del martes: «¿Borrar esta entrada?» con su horario; «Cancelar» devuelve
+   el foco al disparador; confirmar: la celda queda vacía, sin menú, el foco en
+   su campo, y el total de la fila en `1:00`, el del jueves. Después, en una
+   fila de R con una sola entrada, el viernes, «Borrar» desde su menú y
+   confirmar: la fila sale de la grilla y el foco está en «Añadir nueva fila».
 3. **Una celda con varias** (TS-42, P-14). Con «a» de 10:00 a 11:00 y «b» de
    12:00 a 13:00 el miércoles: el menú ofrece solo «Ver detalle»; la lista
    «Detalle de P, miércoles …» muestra «a» y «b» en ese orden con sus horarios
@@ -830,6 +870,14 @@ en el campo de una celda, la fila lleva otra entrada sembrada en otro día.
    (`loseActionResponses`), el editor sigue abierto con el aviso y
    «Reintentar»; reintentar guarda y cierra el editor; en el rastreador la
    entrada tiene la descripción pedida y la celda conserva su valor.
+9. **Una falla con la lista abierta** (TS-42, TT-89, §5.2). Con «a» y «b»
+   sembradas como al empezar el 3 y los pedidos de las actions descartados
+   (`dropActionRequests`, que da `unexpected` sin aplicar nada), «Borrar «a»,
+   …» desde la lista y confirmar: la lista sigue abierta, muestra «No se pudo
+   borrar la entrada.» con «Reintentar» arriba de los ítems, y «a» sigue en
+   ella; la región de la pantalla no tiene ese aviso. Soltar el descarte y
+   «Reintentar»: el foco está en el título de la lista, «a» sale y queda «b».
+   Mutante que tiene que caer: la falla del detalle solo en la pantalla.
 
 TS-76 sin recorrido: no hay forma de desactivar una membresía desde e2e. Lo
 cubre `timesheet-view.test.tsx`, con el estado de prueba que trae en `entries`
@@ -854,6 +902,14 @@ caer: el menú sin mirar `canTrack`.
   destino. Hasta la foto, la X de la fila destino queda activa y su «Quitar
   fila» mandaría los `entryIds` de la foto anterior, sin la entrada movida, que
   sobrevive: es la dirección segura.
+- **TS-83 desde el menú, en una fila de una sola entrada y sin refresco
+  previo**: el `PendingFocus` se consume con la falla, que es inmediata, y el
+  foco va al campo de la celda. Una action que falla no revalida, así que la
+  foto que saca la fila llega después, con el próximo refresco, y el foco cae a
+  `body` sin ningún `PendingFocus` vigente. Es raro —la entrada se borró en
+  otro lado sin que esta pestaña perdiera el foco ni pasara el minuto de TS-97—
+  y no se espera una foto que puede no llegar. El recorrido 6 lo evita
+  sembrando otra entrada.
 - **Reintentar un borrado cuya respuesta se perdió** responde «Esa entrada ya
   no existe.» (§5.5), como en el rastreador.
 - **Sin verificar en Clockify**: qué muestra el detalle de una celda con varias
