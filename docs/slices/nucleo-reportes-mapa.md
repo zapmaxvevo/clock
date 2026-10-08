@@ -107,7 +107,8 @@ Cubre RP-65 (P-09) y la precondición de RP-60 y RP-61. **Cambia el esquema**
 (ADR 0020, condición cuarta):
 
 1. inserta una membresía `inactive`, rol `member`, para cada par
-   `(workspace_id, user_id)` de `time_entry` sin membresía, con una fila en
+   `(workspace_id, user_id)` de `time_entry` sin membresía (salvo el owner del
+   workspace, que queda `owner` y `active`: R1-D3 del contrato), con una fila en
    `audit_log` por cada una (acción propia, sin actor);
 2. pasa `time_entry.user_id` → `user` de `cascade` a `restrict`;
 3. crea la clave compuesta `(workspace_id, user_id)` → `membership`, `on delete
@@ -383,7 +384,9 @@ Ese mismo día decidió además:
 
 - **Admins antes de la fase 2: el slice R8** (§5.2 b), porque otras personas además del owner
   van a ver las horas del equipo. Desactivar a alguien sigue por el procedimiento SQL hasta la
-  fase 2.
+  fase 2: pasa la membresía a `inactive`, cierra el timer que corra (RP-63) y borra las filas de
+  `session` y `account` de esa persona, porque inactivar la membresía no corta una sesión
+  abierta y con R1 el usuario ya no se borra (S1 de la revisión de R1).
 - **Un member con un enlace que nombra a otras personas ve lo propio** (RP-32): el parámetro
   se descarta.
 - **La exportación suma las entradas una por una** en CSV y Excel, además de lo que muestra el

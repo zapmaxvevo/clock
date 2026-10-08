@@ -223,13 +223,22 @@ más, el `schema.ts` tiene un cambio que no es de este slice.
 Lo corre el usuario, con su acceso a Neon. Va al registro de estado como las
 del 7b.
 
+La 0013 y la 0014 corren en una sola transacción que bloquea `"user"` y
+`time_entry` hasta el commit, con dos recorridos de `time_entry` para validar
+las claves: con el volumen actual son milisegundos, pero mientras dura se
+demoran los ingresos y la carga de horas. Conviene desplegar fuera del horario
+de uso (B1 de la revisión).
+
 **Antes de desplegar, informativa** (no es condición; dice a quién deja
-afuera la 0013, y si el owner está entre los pares, que queda activo):
+afuera la 0013, y si el owner está entre los pares, que queda activo).
+`<WORKSPACE_OWNER_EMAIL>` es el valor de esa variable en producción:
 
 ```sql
 select te.workspace_id, te.user_id, u.email,
        (w.owner_id = te.user_id) as es_owner,
+       lower(u.email) = lower('<WORKSPACE_OWNER_EMAIL>') as es_owner_por_env,
        count(*) as entradas,
+       count(*) filter (where te.ended_at is null) as abiertas,
        min(te.started_at) as primera, max(te.started_at) as ultima
 from time_entry te
 join "user" u on u.id = te.user_id
@@ -240,6 +249,14 @@ where not exists (
 )
 group by te.workspace_id, te.user_id, u.email, w.owner_id;
 ```
+
+Dos columnas piden actuar antes de desplegar (revisión de R1, B2 y S2):
+
+- `abiertas` mayor que cero: esa persona tiene un timer corriendo y la 0013 la
+  deja inactiva, así que ya no puede pararlo. Cerrarlo a mano antes.
+- `es_owner_por_env` verdadero con `es_owner` falso: el owner de la variable no
+  es el `owner_id` del workspace, y la 0013 lo dejaría `member` e inactivo.
+  Crearle antes la membresía `owner`/`active`.
 
 **Después de desplegar, de verificación** (condición para desplegar R2a):
 
