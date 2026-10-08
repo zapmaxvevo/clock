@@ -40,6 +40,7 @@ import {
   reportHeading,
   reportsNavLink,
   reportsUrl,
+  reportsUrlOf,
   reportTable,
   reportTerms,
   reportTotal,
@@ -257,9 +258,31 @@ test("las flechas, «Esta semana» y el calendario de rango navegan el período"
   await expectReport(page, thisWeek, "proyecto", day);
   await expect(periodLink(page, "Esta semana")).toHaveCount(0);
 
-  // D-R2a-4: sobre «Esta semana», un rango completo, el primer clic arranca
-  // uno nuevo y el segundo lo cierra.
+  // §5.2: Esc cierra sin navegar, aunque un clic ya haya cambiado la
+  // selección, y el foco vuelve al botón. Aplicada, esa selección pediría el
+  // lunes de la semana anterior como período de un día: ningún enlace de este
+  // recorrido lleva ahí, así que un pedido con esa URL solo puede venir de Esc.
+  // La navegación de un `router.push` puede llegar después de afirmar la URL;
+  // el registro la encuentra al final, con varios viajes al servidor en medio.
   const picked: ReportRange = { first: lastWeek.first, last: thisWeek.last };
+  const escapedRange = { first: picked.first, last: picked.first };
+  const escapedRequests: string[] = [];
+  page.on("request", (request) => {
+    if (reportsUrlOf(escapedRange, "proyecto")(new URL(request.url()))) {
+      escapedRequests.push(request.url());
+    }
+  });
+  await rangeButton(page).click();
+  await expect(rangeCalendar(page)).toBeVisible();
+  await clickRangeDay(page, picked.first);
+  await page.keyboard.press("Escape");
+  await expect(rangeCalendar(page)).toBeHidden();
+  await expect(rangeButton(page)).toBeFocused();
+  await expectReport(page, thisWeek, "proyecto", day);
+
+  // D-R2a-4: sobre «Esta semana», un rango completo, el primer clic arranca
+  // uno nuevo y el segundo lo cierra. Al abrir de nuevo, la selección vuelve
+  // a ser el período que se ve.
   await rangeButton(page).click();
   await expect(rangeCalendar(page)).toBeVisible();
   await clickRangeDay(page, picked.first);
@@ -273,6 +296,7 @@ test("las flechas, «Esta semana» y el calendario de rango navegan el período"
   // RP-20: con un período de 14 días, la flecha mueve 14.
   await periodLink(page, "Período anterior").click();
   await expectReport(page, shiftRange(picked, -14), "proyecto", day);
+  expect(escapedRequests).toEqual([]);
 });
 
 test("una URL con el rango inválido muestra «Esta semana» y conserva la agrupación", async ({
