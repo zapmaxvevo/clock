@@ -363,11 +363,15 @@ no en el servidor; sobrevive a la recarga en ese navegador y no se ve en otro.
 No hay tabla de filas. Cuando se escribe su primera celda, la fila sale de sus
 entradas (TS-14). Qué guarda el navegador y cuándo lo olvida lo fija el contrato
 del slice. Decisión del equipo del 2026-10-07 (timesheet P-07).
-_No verificado_: si la fila vacía es de la semana en que se agregó o aparece
-también en las otras (timesheet P-16).
+**La fila vacía es de la semana en que se agregó** y no aparece en las demás.
+Decisión del team-lead del 2026-10-07 (timesheet P-16).
+_No verificado_: qué hace Clockify con la fila vacía en las otras semanas; no se
+probó.
 _Corregido el 2026-10-07, P-12_: era `adaptar`: la fila vacía vivía solo en la
 página y desaparecía al recargar o al cambiar de semana, como propuesta
 pendiente de timesheet P-07.
+_Corregido el 2026-10-07, slice 13_: si la fila vacía era de la semana en que se
+agregó o aparecía también en las otras estaba pendiente de timesheet P-16.
 
 **TS-20 La fila «Sin proyecto»** — `adaptar`
 Las entradas sin proyecto de la semana forman una fila rotulada «Sin proyecto»,
@@ -388,17 +392,25 @@ sin decir «sin cliente», y el dibujo de Clockify estaba pendiente de verificar
 `replicar`
 La fila aparece si tiene entradas en la semana: archivar no toca las entradas
 (PR-63, PR-65) y quien perdió el acceso a un proyecto privado sigue viendo las
-suyas (PR-71). Las celdas que ya tienen entradas se editan con TS-33 y TS-34,
-porque editar la duración de una entrada existente no la vuelve a asignar al
-proyecto. Las celdas vacías de esa fila quedan en solo lectura, porque
-escribirlas crearía una entrada nueva en un proyecto que el selector no ofrece
-(PR-23); si el pedido llega igual, el servidor responde con TS-77 o TS-78.
+suyas (PR-71). Una celda con una sola entrada se escribe con TS-33 y una con
+varias se baja con TS-34, porque editar la duración de una entrada existente no
+la vuelve a asignar al proyecto. Las celdas vacías de esa fila quedan en solo
+lectura, porque escribirlas crearía una entrada nueva en un proyecto que el
+selector no ofrece (PR-23); si el pedido llega igual, el servidor responde con
+TS-77 o TS-78. **Subir una celda con varias entradas también se rechaza**, con
+TS-77 o TS-78 y sin escribir nada: agrega una entrada nueva (TS-34), y eso es
+crear en ese proyecto. Decisión del contrato del slice 13 (D13-5), aceptada por
+el team-lead.
 Verificado en el workspace (2026-10-07), respuestas 14 y J, para el proyecto
 archivado: su tiempo sigue en la planilla, el rastreador y el calendario; las
 celdas con entradas se editan y las vacías no crean.
 _No verificado_: la tarea hecha y el proyecto privado sin acceso, que no se
-probaron; se les aplica la misma regla.
+probaron; se les aplica la misma regla. Tampoco qué hace Clockify al subir una
+celda con varias entradas de un proyecto archivado: la respuesta J no distingue
+entre una entrada y varias.
 _Corregido el 2026-10-07, P-12_: lo de Clockify estaba sin verificar.
+_Corregido el 2026-10-07, slice 13_: decía que las celdas que ya tienen
+entradas se editaban con TS-33 y TS-34, sin excluir subir una celda con varias.
 
 **TS-22 Entradas de un proyecto o una tarea borrados** — `replicar`
 Documentado en proyectos: la entrada pierde el proyecto y conserva las horas
@@ -539,7 +551,8 @@ Con el fin como inicio más duración, **la celda muestra siempre exactamente lo
 que se escribió**, que es lo único que la persona puede comprobar en esta
 pantalla. Las horas de pared del fin son derivadas y nadie las tecleó. El orden
 de los extremos (TT-81) se sostiene por construcción: `V` es de un minuto o más
-(TS-35), y una baja que dejaría una entrada en cero o menos se rechaza (TS-34).
+(TS-35), y una baja que dejaría una entrada en menos de un minuto se rechaza
+(TS-34).
 Verificado en el workspace (2026-10-07), respuesta B: al pasar una celda de
 `1:00` a `2:00`, Clockify movió solo el fin de la entrada.
 Decisión del equipo del 2026-10-07 (timesheet P-02): se acepta. Lo que pide:
@@ -551,6 +564,8 @@ están: las dos reciben rótulos de fin.
 _Corregido el 2026-10-07, P-12_: estaba pendiente de timesheet P-02, sin
 respaldo del workspace, y cubría solo la entrada de una celda con una sola
 entrada.
+_Corregido el 2026-10-07, slice 13_: decía que se rechazaba la baja que dejaría
+una entrada «en cero o menos» (TS-34, D13-4).
 
 **TS-33 Celda con una entrada: edita esa entrada** — `replicar`
 Si la celda tiene exactamente una entrada cerrada, escribir `V` **edita esa
@@ -584,19 +599,30 @@ Con `S` la suma de las entradas cerradas de la celda y `V` lo escrito:
   de fin de la entrada de la celda que **termina** más tarde, y su fin es ese
   inicio más `V − S` (TS-32). Copia la descripción, las etiquetas y el
   facturable de la entrada de la celda que **empieza** más tarde.
+- **Subir es un alta.** La entrada nueva pasa por las mismas validaciones que
+  duplicar (TT-58): un proyecto archivado, una tarea hecha o un proyecto
+  privado sin acceso responden TS-77 o TS-78 (TS-21), y una etiqueta archivada
+  en la entrada que se copia responde «Esa etiqueta ya no está disponible.»
+  (TT-78). No se escribe nada. Decisión del contrato del slice 13 (D13-5),
+  aceptada por el team-lead.
 - **El alta que caería en otro día se rechaza.** Si el fin de la entrada que
   termina más tarde cae en otro día local que el de la celda —porque cruza la
   medianoche, o termina justo a las 00:00 del día siguiente—, la entrada nueva
   empezaría en otra celda. El servidor no escribe nada y responde TS-79, que
-  manda a editar desde el detalle de la celda (TS-42). Así la celda queda en el
+  manda a editar las entradas de la celda una por una. Así la celda queda en el
   valor pedido o no cambia, y escribirla sigue siendo idempotente (TS-37).
 - **Bajar (`V` menor que `S`)**: achica la entrada de la celda que empieza más
   tarde, adelantando su fin en `S − V`. El inicio, la descripción, las
   etiquetas y el facturable no cambian, como en TS-33.
-- **La baja que vaciaría esa entrada se rechaza.** Si `S − V` es mayor o igual
-  que la duración de la entrada que empieza más tarde, el servidor no escribe
-  nada y responde TS-79. No se borra ninguna entrada ni se reparte la baja
-  entre varias.
+- **La baja que dejaría esa entrada en menos de un minuto se rechaza.** Si a la
+  entrada que empieza más tarde le queda menos de un minuto después de restarle
+  `S − V` —cero o menos incluidos—, el servidor no escribe nada y responde
+  TS-79. Es TT-73: ninguna escritura de la interfaz deja una entrada de menos
+  de un minuto. Con entradas de minutos enteros es lo mismo que rechazar cero o
+  menos; cambia con una entrada del timer con segundos, como una de `0:01:30`
+  bajada un minuto, que quedaría en 30 segundos. Decisión del contrato del
+  slice 13 (D13-4), aceptada por el team-lead. No se borra ninguna entrada ni
+  se reparte la baja entre varias.
 - **Desempate de «la que empieza más tarde»**: la de `start` más tarde; con el
   mismo `start`, la de `created_at` más reciente; y si también empata, la de id
   mayor, como orden fijo. En Clockify es la de id más reciente, que en su
@@ -604,23 +630,28 @@ Con `S` la suma de las entradas cerradas de la celda y `V` lo escrito:
   ([ADR 0007](../adr/0007-el-cliente-elige-el-id-de-las-altas.md)) y no tienen
   orden. Decisión del equipo del 2026-10-07.
 
-En los dos rechazos la celda vuelve al valor anterior con el aviso.
+En todos los rechazos la celda vuelve al valor anterior con el aviso.
 Decisión del equipo del 2026-10-07 (timesheet P-03 y P-13). Justificación del
 `adaptar`: es la regla de Clockify salvo dos casos que en el workspace no se
 probaron. La baja que vaciaría la entrada la borraría en silencio, con su
-descripción y sus etiquetas; el alta que caería en otro día dejaría la celda
-sin el valor pedido y haría que un reintento volviera a sumar. En los dos, mejor
-rechazar y mandar al detalle, el mismo criterio de TT-110.
-_No verificado_: qué hace Clockify con una baja mayor que la duración de la
-entrada que empieza más tarde; de qué entrada copia las etiquetas y el
-facturable —la respuesta C confirma solo la descripción, y las dos entradas de
-la prueba tenían la misma—; y qué pasa cuando la entrada que termina más tarde
-termina otro día (TS-119).
+descripción y sus etiquetas, y la que la dejara en segundos rompería el mínimo
+de TT-73; el alta que caería en otro día dejaría la celda sin el valor pedido y
+haría que un reintento volviera a sumar. En los dos, mejor rechazar y mandar a
+editar las entradas una por una (TS-79), el mismo criterio de TT-110.
+_No verificado_: qué hace Clockify con una baja que deja la entrada que empieza
+más tarde en menos de un minuto o la vacía; de qué entrada copia las etiquetas
+y el facturable —la respuesta C confirma solo la descripción, y las dos
+entradas de la prueba tenían la misma—; y qué pasa cuando la entrada que
+termina más tarde termina otro día (TS-119).
 _Corregido el 2026-10-07, P-12_: el título era «Celda con varias entradas: no se
 escribe desde la grilla». La celda quedaba en solo lectura, con un indicador de
 que agrupaba varias, y se editaba solo desde el detalle, como propuesta
 pendiente de timesheet P-03; un pedido que llegara igual se rechazaba con
 TS-79.
+_Corregido el 2026-10-07, slice 13_: la baja se rechazaba solo si `S − V` era
+«mayor o igual que la duración» de la entrada que empieza más tarde; el alta en
+otro día mandaba «a editar desde el detalle de la celda (TS-42)»; y subir no
+decía que pasa por las validaciones de un alta.
 
 **TS-35 Vaciar una celda o escribir cero** — `replicar`
 Vaciar la celda, escribir `0` o escribir menos de un minuto no borra nada y no
@@ -697,14 +728,16 @@ workspace (2026-10-07), respuesta E: la celda tiene un menú de tres puntos y un
 de sus opciones es eliminar.
 Solo las celdas con horas tienen menú. El menú abre el detalle (TS-41, TS-42) y,
 en una celda con una sola entrada, ofrece «Borrar», que borra esa entrada con
-el diálogo de TT-61 y sin deshacer (TS-35). En una celda con varias, propuesta,
-**pendiente de timesheet P-14**: el menú no ofrece «Borrar» y se borra entrada
-por entrada desde el detalle (TS-42), para no borrar de una vez entradas cuyas
-descripciones no se ven (TS-43). El menú se abre también con el teclado (TS-99).
-«Borrar» y no «Eliminar», por TT-60.
+el diálogo de TT-61 y sin deshacer (TS-35). En una celda con varias, el menú no
+ofrece «Borrar» y se borra entrada por entrada desde el detalle (TS-42), para
+no borrar de una vez entradas cuyas descripciones no se ven (TS-43). Decisión
+del team-lead del 2026-10-07 (timesheet P-14). El menú se abre también con el
+teclado (TS-99). «Borrar» y no «Eliminar», por TT-60.
 _No verificado_: las demás opciones del menú de Clockify y qué borra su
 «eliminar» en una celda con varias entradas.
 _Corregido el 2026-10-07, P-12_: no decía que el menú borra.
+_Corregido el 2026-10-07, slice 13_: el menú de una celda con varias entradas
+sin «Borrar» era una propuesta pendiente de timesheet P-14.
 
 **TS-41 Detalle de una celda con una entrada** — `replicar`
 El popover edita esa entrada con los mismos campos y las mismas mutaciones que
@@ -718,14 +751,17 @@ Etiquetas y facturable entran cuando esté mergeado el slice 11.
 El popover lista las entradas cerradas de la celda, cada una con su
 descripción, sus horas y su duración, editables con las reglas de TS-41 y con
 «Borrar» (TT-60). Es el camino para lo que TS-34 no hace desde la celda: una
-baja que no entra en la entrada que empieza más tarde, un alta que caería en
-otro día, un cambio en otra entrada que no es esa, o un borrado. Decisión del
-equipo del 2026-10-07 (timesheet P-03).
+baja que dejaría la entrada que empieza más tarde en menos de un minuto, un
+alta que caería en otro día, un cambio en otra entrada que no es esa, o un
+borrado. Decisión del equipo del 2026-10-07 (timesheet P-03). Llega con el
+slice 13b; hasta entonces ese camino es el rastreador (TS-79).
 Justificación: Clockify no documenta qué muestra el popover en ese caso.
 _No verificado_: qué muestra Clockify; la pregunta 3 de P-12 lo pedía y las
 respuestas no lo cubren.
 _Corregido el 2026-10-07, P-12_: decía que era la única forma de editar esa
 celda, porque TS-34 la dejaba en solo lectura.
+_Corregido el 2026-10-07, slice 13_: decía «una baja que no entra en la entrada
+que empieza más tarde» y no decía qué camino hay antes del 13b.
 
 **TS-43 La grilla no muestra descripciones ni etiquetas** — `replicar`
 Documentado, textual: «In the Timesheet view, you won't see the description
@@ -1031,26 +1067,33 @@ de TT-79. Justificación: `membership_status` es nuestro modelo.
 Los mensajes son nuestros; lo que se replica es la regla. Los que ya existen se
 reusan por la regla de una redacción por causa.
 
-| ID    | Regla                                                           | Mensaje                                                       | Marca      |
-| ----- | --------------------------------------------------------------- | ------------------------------------------------------------- | ---------- |
-| TS-77 | Celda nueva en un proyecto inexistente, archivado o sin acceso  | «Ese proyecto ya no está disponible.» (TT-77)                 | `adaptar`  |
-| TS-78 | Celda nueva en una tarea inexistente, hecha o de otro proyecto  | «Esa tarea ya no está disponible.» (PR-74)                    | `adaptar`  |
-| TS-79 | Varias entradas: baja que vaciaría la última o alta en otro día | «Editá las entradas de esta celda desde el detalle.»          | `adaptar`  |
-| TS-80 | Retirada el 2026-10-07 (TS-50)                                  | —                                                             | —          |
-| TS-81 | Día anterior al 1 de enero de 2000                              | «No se pueden cargar horas anteriores al 1 de enero de 2000.» | `adaptar`  |
-| TS-82 | Duración ilegible, menor que un minuto o de 24 horas o más      | — (la celda vuelve al valor anterior, TT-21)                  | `adaptar`  |
-| TS-83 | La entrada del detalle ya no existe                             | «Esa entrada ya no existe.» (TT-80)                           | `adaptar`  |
-| TS-84 | Membresía que no puede escribir                                 | «No tenés permiso para hacer esto.» (TT-79)                   | `replicar` |
-| TS-85 | Retirada el 2026-10-07 (sección 10)                             | —                                                             | —          |
-| TS-86 | Tarea sin proyecto                                              | «Elegí un proyecto antes que una tarea.» (TT-70)              | `replicar` |
+| ID    | Regla                                                          | Mensaje                                                       | Marca      |
+| ----- | -------------------------------------------------------------- | ------------------------------------------------------------- | ---------- |
+| TS-77 | Celda nueva en un proyecto inexistente, archivado o sin acceso | «Ese proyecto ya no está disponible.» (TT-77)                 | `adaptar`  |
+| TS-78 | Celda nueva en una tarea inexistente, hecha o de otro proyecto | «Esa tarea ya no está disponible.» (PR-74)                    | `adaptar`  |
+| TS-79 | Varias entradas: baja a menos de un minuto o alta en otro día  | «Editá las entradas de esta celda desde el rastreador.»       | `adaptar`  |
+| TS-80 | Retirada el 2026-10-07 (TS-50)                                 | —                                                             | —          |
+| TS-81 | Día anterior al 1 de enero de 2000                             | «No se pueden cargar horas anteriores al 1 de enero de 2000.» | `adaptar`  |
+| TS-82 | Duración ilegible, menor que un minuto o de 24 horas o más     | — (la celda vuelve al valor anterior, TT-21)                  | `adaptar`  |
+| TS-83 | La entrada del detalle ya no existe                            | «Esa entrada ya no existe.» (TT-80)                           | `adaptar`  |
+| TS-84 | Membresía que no puede escribir                                | «No tenés permiso para hacer esto.» (TT-79)                   | `replicar` |
+| TS-85 | Retirada el 2026-10-07 (sección 10)                            | —                                                             | —          |
+| TS-86 | Tarea sin proyecto                                             | «Elegí un proyecto antes que una tarea.» (TT-70)              | `replicar` |
 
 Justificación de los `adaptar`: los textos son nuestros, como en la sección 7
 de `time-tracker.md`; la regla de TS-79 es además una decisión de este
 documento. Detalle:
 
-- **TS-79** es una causa nueva, con dos casos y un solo remedio —ir al detalle
-  de la celda—, que no es el de ninguna otra: la baja que vaciaría la entrada
-  que empieza más tarde y el alta que caería en otro día (TS-34).
+- **TS-77 y TS-78** responden también subir una celda con varias entradas de un
+  par que ya no se ofrece, porque eso es un alta (TS-21, TS-34).
+- **TS-79** es una causa nueva, con dos casos y un solo remedio —editar una por
+  una las entradas de la celda—, que no es el de ninguna otra: la baja que
+  dejaría la entrada que empieza más tarde en menos de un minuto y el alta que
+  caería en otro día (TS-34). El mensaje dice dónde se hace eso. Hasta el slice
+  13b, que trae el detalle de la celda (TS-42), es el de la tabla: «Editá las
+  entradas de esta celda desde el rastreador.». El 13b lo cambia a «Editá las
+  entradas de esta celda desde el detalle.». La causa tiene un solo texto a la
+  vez.
 - **TS-80** quedó sin uso: la planilla no escribe sobre la entrada que corre
   (TS-50). Un pedido de edición de horas sobre ella armado a mano lo responde la
   mutación de horas con TT-111. El identificador no se reusa.
@@ -1072,6 +1115,10 @@ TS-80 era «Escribir la celda del timer activo», con «Esta entrada es la que
 está corriendo.» (TT-111); TS-82 decía «Duración ilegible o de 24 horas o más»;
 TS-85 era «Copiar sobre una semana que ya tiene horas», con «Esta semana ya
 tiene horas cargadas.».
+_Corregido el 2026-10-07, slice 13_: la regla de TS-79 era «Varias entradas:
+baja que vaciaría la última o alta en otro día», y el mensaje, «Editá las
+entradas de esta celda desde el detalle.» desde el slice 13. No había detalle
+de TS-77 y TS-78.
 
 ## 15. Estados vacíos
 
@@ -1180,8 +1227,16 @@ después de su celda; no aparece solo al pasar el puntero.
 **TS-100 La grilla es una tabla** — `adaptar`
 Se marca como tabla con encabezados de fila —proyecto y tarea— y de columna
 —día—, y cada celda editable tiene un nombre accesible que dice las dos cosas:
-«Rediseño: Maquetado, miércoles 01/10». Los totales tienen el suyo: «Total del
-miércoles 01/10».
+«Rediseño: Maquetado, miércoles 01/10». **Los totales no llevan un rótulo
+propio**: toman su nombre de los encabezados de la tabla, con `scope` en cada
+encabezado. El total de un día se nombra por el encabezado de fila «Total» y el
+de columna de su día; el de una fila, por la fila y el encabezado de columna
+«Total»; el de la semana, por los dos «Total». Decisión del contrato del slice
+13 (D13-12), aceptada por el team-lead: un `aria-label` en una celda de tabla
+no lo anuncian todos los lectores de pantalla de la misma forma, y los
+encabezados dicen lo mismo.
+_Corregido el 2026-10-07, slice 13_: cada total tenía un rótulo propio, como
+«Total del miércoles 01/10».
 
 **TS-101 Los atajos del rastreador no se aplican** — `adaptar`
 `n`, `c`, `s` y `m` (TT-26) son del rastreador y en esta pantalla no hacen nada:
@@ -1205,7 +1260,7 @@ No llevan marca propia: heredan la del comportamiento que citan.
 | TS-110 | Enter y pérdida de foco, o dos pestañas, sobre la misma celda vacía | Queda una sola entrada (TS-37).                                                                                                                         |
 | TS-111 | La persona cambia su zona horaria                                   | Ningún instante se toca; las entradas pueden cambiar de celda y de semana (PF-38).                                                                      |
 | TS-112 | Un admin cambia el primer día de la semana de la persona            | Ninguna entrada se mueve; cambian las columnas y los totales de la semana (PF-40, PF-41).                                                               |
-| TS-113 | Proyecto archivado mientras se edita la grilla                      | Las celdas con entradas se siguen escribiendo; las vacías responden TS-77 y la grilla se refresca (TS-21).                                              |
+| TS-113 | Proyecto archivado mientras se edita la grilla                      | Escribir una celda de una entrada y bajar una con varias sigue; subir una con varias o una vacía responde TS-77 y la grilla se refresca (TS-21).        |
 | TS-114 | Proyecto borrado con su fila en pantalla                            | Al refrescar, sus horas pasan a «Sin proyecto» (TS-22).                                                                                                 |
 | TS-115 | Mover desde el detalle una entrada a otro día                       | Cambia de celda; si el día queda fuera de la semana, sale de la grilla y la fila puede quedar sin entradas y desaparecer.                               |
 | TS-116 | Celda con una entrada cerrada y el timer activo                     | La celda muestra solo la cerrada y escribirla la edita (TS-33); el timer no se toca (TS-49, TS-50).                                                     |
@@ -1218,6 +1273,9 @@ _Corregido el 2026-10-07, P-12_: TS-113 decía «las celdas con una entrada»;
 TS-116 decía que la celda tenía dos entradas y valían TS-34 y TS-50; TS-117
 decía que el botón de copiar estaba deshabilitado (TS-56); TS-118 terminaba en
 «para TS-34 es una entrada más». TS-119 y TS-120 son nuevos.
+_Corregido el 2026-10-07, slice 13_: TS-113 decía «Las celdas con entradas se
+siguen escribiendo; las vacías responden TS-77 y la grilla se refresca
+(TS-21).».
 
 ## 20. Divergencias que este documento registra
 
@@ -1230,7 +1288,7 @@ decididas.
 | TS-02 | Clockify, documentado y verificado | Activar la planilla no vuelve obligatorio el proyecto.                                                      | Decidida el 2026-10-07               |
 | TS-18 | Clockify, verificado               | El selector no ofrece una combinación de proyecto y tarea que ya es fila.                                   | Decidida el 2026-10-07               |
 | TS-32 | ADR 0005, regla interna            | El fin de lo que escribe una celda es inicio más duración: un tercer camino de instantes que el ADR cierra. | Decidida el 2026-10-07; falta el ADR |
-| TS-34 | Clockify, verificado en parte      | La baja que vaciaría la entrada que empieza más tarde y el alta que caería en otro día se rechazan.         | Decidida el 2026-10-07               |
+| TS-34 | Clockify, verificado en parte      | La baja que deja la que empieza más tarde en menos de un minuto y el alta en otro día se rechazan.          | Decidida el 2026-10-07               |
 | TS-53 | Clockify, documentado              | Quitar una fila pide confirmación y no se deshace.                                                          | Decidida por P-06 del rastreador     |
 | TS-98 | Clockify, verificado               | Después de Enter el foco sigue en la grilla.                                                                | Decidida el 2026-10-07               |
 
@@ -1238,6 +1296,9 @@ _Corregido el 2026-10-07, P-12_: TS-34 era «una celda con varias entradas no se
 escribe desde la grilla», como divergencia probable; TS-39 era una divergencia
 contra TT-30 y pasó a `replicar`, porque Clockify deja escribir con un timer
 corriendo. Se suman TS-01, TS-18 y TS-98.
+_Corregido el 2026-10-07, slice 13_: la fila de TS-34 decía «La baja que
+vaciaría la entrada que empieza más tarde y el alta que caería en otro día se
+rechazan.» (D13-4).
 
 ## 21. Reparto
 
@@ -1278,9 +1339,7 @@ Ninguno bloquea el contrato del slice 13.
 
 | ID   | Punto                                                                                                                                                                                                            |
 | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P-14 | **«Borrar» en el menú de una celda con varias entradas** (TS-40). Propuesta: no se ofrece y se borra entrada por entrada desde el detalle. No se probó qué borra Clockify.                                       |
 | P-15 | **Plantillas con tiempo** (TS-62, TS-64), para la fase 2: si guardan el total de cada celda o las entradas, y a qué hora empiezan las entradas que crea aplicarlas, sobre una celda vacía y sobre una con horas. |
-| P-16 | **Alcance de la fila vacía** (TS-19): si es de la semana en que se agregó o aparece también en las otras. No se probó.                                                                                           |
 
 ### Cerrados
 
@@ -1303,10 +1362,14 @@ decisiones del equipo.
 | P-11 | La planilla no tiene interruptor (TS-01) y no vuelve obligatorio el proyecto (TS-02).                                                                                                                                             |
 | P-12 | Respondida en dos tandas. Lo que las respuestas no cubren sigue `_No verificado_` en su regla: TS-08, TS-09, TS-13, TS-15, TS-18, TS-19, TS-21, TS-23, TS-24, TS-31, TS-34, TS-35, TS-40, TS-42, TS-47, TS-62 … TS-64.            |
 | P-13 | Subir una celda cuya entrada que termina más tarde termina otro día local se rechaza sin escribir, con TS-79, y la celda sigue idempotente (TS-34, TS-119).                                                                       |
+| P-14 | El menú de una celda con varias entradas no ofrece «Borrar»; se borra entrada por entrada desde el detalle (TS-40, TS-42). Decisión del team-lead; se construye en el 13b.                                                        |
+| P-16 | La fila vacía que guarda el navegador es de la semana en que se agregó y no aparece en las demás (TS-19). Decisión del team-lead.                                                                                                 |
 | P-17 | La referencia de paridad es el workspace de la empresa, con el plan que tenga; lo verificado ahí vale. Queda como dato que «Compañeros» aparece (TS-70) aunque la documentación lo da como pago, y que la copia está desactivada. |
 
 _Corregido el 2026-10-07, P-12_: P-01 a P-12 estaban abiertos. P-13 a P-17 son
 nuevos; P-13 y P-17 se cerraron el mismo día.
+_Corregido el 2026-10-07, slice 13_: P-14 y P-16 estaban abiertos: P-14 como
+propuesta y P-16 sin probar.
 
 ### P-12, la lista de verificación
 

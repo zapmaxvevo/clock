@@ -165,7 +165,7 @@ fecha de inicio configurable por el owner queda para más adelante, si hace falt
   extremos, y el mensaje nombra la causa real.
 - TT-97 se vuelve visible: en un día con cambio de horario, la duración guardada
   es la real y puede no coincidir con la resta de las dos horas tecleadas. Lo
-  que se respetan son las horas de pared, porque son lo que la persona escribió;
+  que se respeta son las horas de pared, porque son lo que la persona escribió;
   la duración es derivada y nunca se almacena.
 - El payload es legible en un log y en un test: `{"date":"2026-10-02",
 "start":"08:00","end":"10:30"}` dice qué pidió la persona, cosa que un

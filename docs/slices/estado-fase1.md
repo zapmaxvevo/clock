@@ -1,32 +1,32 @@
 # Estado de la fase 1
 
 Registro vivo de por dónde va la ejecución. Se actualiza al cerrar cada paso;
-quien retome el trabajo empieza acá. Última actualización: 2026-10-07.
+quien retome el trabajo empieza acá. Última actualización: 2026-10-08.
 
 ## Dónde estamos
 
-| Slice                                       | Estado       |
-| ------------------------------------------- | ------------ |
-| 1 — Timer sin proyecto                      | En `main`    |
-| 2 — Modo manual                             | En `main`    |
-| 2b — Reintento de «Iniciar»                 | En `main`    |
-| 3 — Corregir horas y fecha                  | En `main`    |
-| 4 — Continuar, duplicar, descartar, atajos  | En `main`    |
-| 5 — Semana y paginación                     | En `main`    |
-| 9 — Núcleo de proyectos                     | En `main`    |
-| 10 — Selector de proyecto y tarea           | En `main`    |
-| 7 — Perfil                                  | En `main`    |
-| 6 — Selección y acciones en masa            | En `main`    |
-| 7b — Perfil: nombre editable y tema         | En `main`    |
-| 8 — Calendario: lectura                     | En `main`    |
-| 8c — Calendario: escritura                  | En `main`    |
-| 8b — Calendario: arrastre                   | En `main`    |
-| 11a — Facturable                            | En `main`    |
-| 11b — Etiquetas                             | En `main`    |
-| 12 — Edición masiva de proyecto y etiquetas | En `main`    |
-| 2c — «Reintentar» en el alta manual         | En `main`    |
-| Arreglo: piso de fechas fijo (2000-01-01)   | En `main`    |
-| 13 — Timesheet semanal                      | Sin contrato |
+| Slice                                       | Estado               |
+| ------------------------------------------- | -------------------- |
+| 1 — Timer sin proyecto                      | En `main`            |
+| 2 — Modo manual                             | En `main`            |
+| 2b — Reintento de «Iniciar»                 | En `main`            |
+| 3 — Corregir horas y fecha                  | En `main`            |
+| 4 — Continuar, duplicar, descartar, atajos  | En `main`            |
+| 5 — Semana y paginación                     | En `main`            |
+| 9 — Núcleo de proyectos                     | En `main`            |
+| 10 — Selector de proyecto y tarea           | En `main`            |
+| 7 — Perfil                                  | En `main`            |
+| 6 — Selección y acciones en masa            | En `main`            |
+| 7b — Perfil: nombre editable y tema         | En `main`            |
+| 8 — Calendario: lectura                     | En `main`            |
+| 8c — Calendario: escritura                  | En `main`            |
+| 8b — Calendario: arrastre                   | En `main`            |
+| 11a — Facturable                            | En `main`            |
+| 11b — Etiquetas                             | En `main`            |
+| 12 — Edición masiva de proyecto y etiquetas | En `main`            |
+| 2c — «Reintentar» en el alta manual         | En `main`            |
+| Arreglo: piso de fechas fijo (2000-01-01)   | En `main`            |
+| 13 — Planilla de horarios semanal           | Contrato en revisión |
 
 Los slices 1 a 12 (con 2b, 2c, 7b, 8b, 8c, 11a y 11b) están en `main`: el rastreador queda
 cubierto salvo lo fuera de alcance, y el alta manual ya ofrece «Reintentar» (TT-109 dejó de ser
@@ -41,14 +41,15 @@ segundo workspace vacío del owner y `renewWorkspace` se corta.
 
 ## Lo primero de la sesión siguiente
 
-0. **Lo que sigue**: el contrato del **13** (planilla semanal), en la rama
-   `fase1/slice-13-contrato`. P-12 de `timesheet.md` quedó respondido por el usuario el
-   2026-10-07 (respuestas crudas en esa sección) y el `parity-analyst` las está volcando en las
-   reglas con las decisiones del team-lead: celda con varias entradas escribible como Clockify,
-   salvo una baja que borraría la entrada más tardía (se rechaza); el timer activo no se ve ni
-   se toca en la planilla; «Copiar la semana pasada» sale de la fase 1 (desactivado en el plan
-   del workspace), así que el reintento de TS-56 deja de ser tema del 13. Falta la decisión de
-   arquitectura sobre TS-32 (ADR propio, lo aprueba el usuario).
+0. **Lo que sigue**: el contrato del **13** (planilla de horarios), en la rama
+   `fase1/slice-13-contrato`. P-12 quedó respondido por el usuario el 2026-10-07 y volcado en
+   `docs/parity/timesheet.md`. El `architect` escribió `fase1-slice13-planilla.md` con el corte
+   13 (grilla, escritura de celdas, quitar fila; todo el backend) / 13b (menú y detalle de la
+   celda, sin backend nuevo), y los ADR **0018** (lo que escribe una celda se calcula en
+   instantes) y **0019** (escribir una celda fija su valor, sin id del cliente; excepción a una
+   consecuencia del 0007), los dos **Propuestos**. La ronda 1 de `architecture-reviewer` pidió
+   cambios: `correcciones-fase1-slice13.md`, todos aceptados. Pasos: el `architect` aplica esa
+   tabla → ronda 2 de revisión → el usuario aprueba 0018 y 0019 → pipeline del 13.
 1. Deuda chica sin slice:
    - un `DayCalendar` compartido entre `DateField` y `PeriodPicker`;
    - un `ClockRangeFields` común a `manual-bar.tsx`, `entry-times-editor.tsx` y el diálogo;
