@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  REPORT_GROUP_BYS,
+  REPORT_GROUP_PARAMS,
   REPORT_MAX_DAYS,
   reportGroupParams,
   reportMessages,
@@ -148,6 +150,17 @@ describe("reportGroupParams (D-R2a-3)", () => {
       success: true,
       data: "project",
     });
+  });
+
+  it("lee lo que escribe REPORT_GROUP_PARAMS, para cada agrupación", () => {
+    for (const groupBy of REPORT_GROUP_BYS) {
+      expect(
+        reportGroupParams.safeParse({ agrupar: REPORT_GROUP_PARAMS[groupBy] }),
+      ).toEqual({
+        success: true,
+        data: groupBy,
+      });
+    }
   });
 
   it("no pasa con otro valor, repetido ni ausente", () => {

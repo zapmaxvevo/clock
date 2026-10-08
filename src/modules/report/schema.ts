@@ -60,15 +60,19 @@ export const reportRangeParams = z
 export const REPORT_GROUP_BYS = ["person", "project"] as const;
 export type ReportGroupBy = (typeof REPORT_GROUP_BYS)[number];
 
-const groupByParam = { persona: "person", proyecto: "project" } as const satisfies Record<
-  string,
-  ReportGroupBy
->;
+/** El valor de `agrupar` en la URL de cada agrupación: con este mapa se lee y se escribe. */
+export const REPORT_GROUP_PARAMS = {
+  person: "persona",
+  project: "proyecto",
+} as const satisfies Record<ReportGroupBy, string>;
 
 /** `?agrupar=persona|proyecto` con `safeParse`, aparte del rango; cualquier otro valor se descarta. */
 export const reportGroupParams = z
-  .object({ agrupar: z.enum(["persona", "proyecto"]) })
-  .transform(({ agrupar }): ReportGroupBy => groupByParam[agrupar]);
+  .object({ agrupar: z.string() })
+  .transform(({ agrupar }) =>
+    REPORT_GROUP_BYS.find((groupBy) => REPORT_GROUP_PARAMS[groupBy] === agrupar),
+  )
+  .pipe(z.enum(REPORT_GROUP_BYS));
 
 const reportRangeView = z.object({ first: z.string(), last: z.string() });
 
