@@ -574,10 +574,11 @@ mostrarle TT-112. **Si desde las 09:00 no existe ningún minuto ese día**, el
 servidor no escribe y responde «Esa hora no existe por el cambio de horario.»
 (TT-112). Decisión del contrato del slice 13, en el
 [ADR 0018](../adr/0018-lo-que-escribe-una-celda-se-calcula-en-instantes.md),
-propuesto. **El caso se puede alcanzar desde la interfaz**: el 30 de diciembre
-de 2011 falta entero en `Pacific/Apia` y en `Pacific/Fakaofo`, dos zonas que
-la persona puede elegir en su perfil (TS-07). Lo registra la ronda 2 de la
-revisión del contrato.
+propuesto. El 30 de diciembre de 2011 falta entero en `Pacific/Apia` y en
+`Pacific/Fakaofo`, pero **no se llega navegando**: una semana con un día que
+falta entero cae a la actual (CAL-17). Solo desde una pestaña abierta antes de
+cambiar la zona del perfil a una de esas dos (TS-111), hasta que se revalida,
+o con un pedido armado a mano.
 _No verificado_: qué hace Clockify un día en que las 09:00 no existen. La
 respuesta 1 dice también que la entrada creada no apareció en el calendario;
 no se sabe por qué, y no cambia ninguna regla de este documento.
@@ -588,6 +589,8 @@ _Corregido el 2026-10-07, slice 13_: no decía qué pasa si desde las 09:00 no
 existe ningún minuto ese día.
 _Corregido el 2026-10-08, slice 13_: no decía que el caso se puede alcanzar
 desde la interfaz ni en qué zonas.
+_Corregido el 2026-10-08, ronda 3 del contrato del 13_: decía que el caso se
+alcanzaba desde la interfaz; `isNavigable` descarta esa semana.
 
 **TS-32 El fin es el inicio más la duración, en instantes** — `adaptar`
 **Divergencia explícita contra el
@@ -1505,7 +1508,9 @@ correcciones de la [ronda 1](../slices/correcciones-fase1-slice13.md) y la
 - **Los instantes** (TS-32): el fin es el inicio más la duración; el inicio de
   una celda vacía, las 09:00 o el primer minuto que exista después ese día
   (TS-31). Si desde las 09:00 no existe ninguno, se rechaza; pasa en
-  `Pacific/Apia` y `Pacific/Fakaofo` el 2011-12-30.
+  `Pacific/Apia` y `Pacific/Fakaofo` el 2011-12-30, al que no se llega
+  navegando (CAL-17): solo desde una pestaña abierta antes de cambiar la zona
+  (TS-111), hasta que se revalida, o con un pedido armado.
 - **Subir una celda con varias entradas es un alta** (TS-21, TS-34, D13-5), y
   **la baja que dejaría la que empieza más tarde con menos de un minuto se
   rechaza** (TS-34, D13-4). Este rechazo y el del alta en otro día llevan el

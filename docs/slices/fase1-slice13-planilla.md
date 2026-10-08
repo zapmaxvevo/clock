@@ -10,10 +10,11 @@ cambios chicos en componentes de `project`; pantalla nueva `/planilla`.
   (TS-70), ocultar el rastreador (TS-03)— no entra.
 - **Lugar en el plan:** [mapa de la fase 1](fase1-mapa.md), «Slice 13 — Planilla
   de horarios». Es el último de la fase.
-- **Revisión del contrato:** rondas 1 y 2 de `architecture-reviewer` aplicadas
+- **Revisión del contrato:** aprobado tras tres rondas de `architecture-reviewer`
   ([`correcciones-fase1-slice13.md`](correcciones-fase1-slice13.md),
-  [`correcciones-fase1-slice13-ronda2.md`](correcciones-fase1-slice13-ronda2.md));
-  pendiente la ronda 3, sobre los cambios de la 2.
+  [`correcciones-fase1-slice13-ronda2.md`](correcciones-fase1-slice13-ronda2.md),
+  [`correcciones-fase1-slice13-ronda3.md`](correcciones-fase1-slice13-ronda3.md)).
+  Falta que el usuario acepte los ADR 0018 y 0019.
 - **Contratos de los que hereda la forma:** [slice 12](fase1-slice12-edicion-masiva.md)
   (tres fases y escritura agrupada), [slice 8](fase1-slice8-calendario.md)
   (segunda pantalla de `time-entry`, semana en la URL, días que no existen),
@@ -1096,8 +1097,19 @@ export function useCellWrites(state: TimesheetState): CellWrites;
   - **otra foto del servidor** (cambia la identidad de `state`): los `settled`
     salen y los `sending` quedan, con el patrón de ajustar el estado durante el
     render cuando cambia una prop. La foto nueva ya trae toda escritura
-    asentada antes de ella, porque Next resuelve la action antes de que React
-    confirme el árbol.
+    asentada antes de ella por la cola: cada server action y cada
+    `router.refresh()` entran en la misma cola secuencial
+    (`app-router-instance.js`, `dispatchAction`) y las actualizaciones del
+    router se enredan, así que después de un éxito solo se confirma la foto de
+    algo despachado después o la que está enredada con él. **Excepción
+    aceptada**: `ACTION_NAVIGATE` y `ACTION_RESTORE` saltan la cola; una
+    navegación a la misma semana (el selector de período, atrás y adelante)
+    que se dibuja en el servidor antes de que se confirme la escritura y llega
+    después del éxito saca el `settled`, y la celda muestra el valor viejo
+    hasta el refresco que Next lanza solo al vaciarse la cola (`needsRefresh`).
+    Se corrige solo, en una ida y vuelta. `state` es el prop tal cual llega de
+    `TimesheetScreen`: no se deriva ni se memoriza en el cliente, porque una
+    identidad nueva en cada render sacaría los `settled` enseguida.
 - **`shown` y `busy` se derivan de `pending`**: `shown`, el registro más
   reciente de cada celda; `busy`, las celdas con algún `sending`.
 - **Lo que está en vuelo o en cola por celda también está en un `ref`**, que
