@@ -595,3 +595,16 @@ P-10), RP-55, RP-56, RP-66.
 | P-08 | **Filtrar por personas inactivas** (RP-62). Clockify no lo permite en la interfaz. Recomendación: permitirlo, separadas y tachadas.                                                                                                                                                                                                                                                                                                                                                             |
 | P-09 | **Borrar una persona con horas** (RP-65). Hoy el `cascade` de `time_entry.user_id` borra sus horas. ¿Se prohíbe borrar a quien tiene entradas —solo se desactiva— o se cambia la clave? Es de la fase 2 pero condiciona que RP-61 se cumpla.                                                                                                                                                                                                                                                    |
 | P-10 | **Exportación.** El PDF es lo único de Free (RP-53); el CSV es pago (RP-54) y probablemente lo más útil para administración. ¿Entra alguno, cuándo, y cuál?                                                                                                                                                                                                                                                                                                                                     |
+
+## 8. Decisiones del usuario (2026-10-08)
+
+- **P-01**: solo owner y admin ven las horas de otros; el resto ve solo las propias. Divergencia
+  con Clockify Free, donde todos ven todo (RP-01).
+- **P-02**: no aplica como excepción: un responsable de proyecto que no es owner ni admin ve solo
+  sus horas, por P-01.
+- **P-06**: sin el tope de 31 días de Clockify Free. Si el rendimiento pide un tope, lo fija
+  `architect`.
+- **P-07**: el timer en curso no se muestra ni se suma (RP-30).
+- **P-08**: las personas inactivas se pueden filtrar, separadas y tachadas (RP-62).
+- **P-09**: a una persona con horas no se la borra, solo se desactiva (RP-65).
+- **P-10**: exportación a PDF, CSV y Excel (RP-53, RP-54).
