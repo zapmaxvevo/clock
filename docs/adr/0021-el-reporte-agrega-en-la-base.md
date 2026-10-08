@@ -1,6 +1,6 @@
 # 0021. El reporte agrega en la base, con los cortes que calcula `src/server/time`
 
-Fecha: 2026-10-08. Estado: propuesto.
+Fecha: 2026-10-08. Estado: aceptado (2026-10-08, por el usuario).
 Origen: el [ADR 0020](0020-nucleo-de-reportes-antes-de-la-fase-2.md) y P-06 de
 [`reportes.md`](../parity/reportes.md), que el usuario delegó el 2026-10-08: sin
 el tope de 31 días, y si el rendimiento pide uno, lo fija `architect`. Revisado

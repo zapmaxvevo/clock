@@ -1,6 +1,6 @@
 # 0020. Núcleo de reportes antes de terminar la fase 2
 
-Fecha: 2026-10-08. Estado: propuesto.
+Fecha: 2026-10-08. Estado: aceptado (2026-10-08, por el usuario).
 Origen: el relevamiento [`reportes.md`](../parity/reportes.md), su recomendación
 (§6) y las decisiones del usuario del 2026-10-08 (§8). Mismo patrón que el
 [ADR 0004](0004-nucleo-de-proyectos-en-fase-1.md). Revisado en

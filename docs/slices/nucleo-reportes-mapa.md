@@ -371,7 +371,15 @@ RP-48, RP-49, RP-51, RP-52, RP-55, RP-56, RP-66.
 Queda para la fase 2: RP-60 y RP-63 (desactivar desde la pantalla, y que eso
 detenga el timer).
 
-## 5. Decisiones abiertas para el usuario
+## 5. Decisiones del usuario
+
+El 2026-10-08 el usuario aceptó los ADR 0020 y 0021, y con ellos lo que fijan: las dos claves
+en `restrict` con las membresías que falten creadas inactivas (P-09), `who_sees_all_entries`
+congelado en `admins` y sin efecto, y el tope de 366 días. Los pendientes de P-05 se resuelven
+con la propuesta del núcleo: tarea como dimensión (RP-11), «Esta semana» por defecto (RP-20) y
+los rótulos «Sin …» (RP-28).
+
+Siguen abiertas:
 
 1. **Aprobar los ADR 0020 y 0021**, que están en «propuesto».
 2. **Cómo se nombra un admin y cómo se desactiva a alguien antes de la fase 2.** Sin nada, solo el owner ve el reporte de equipo, y desactivar (la única
