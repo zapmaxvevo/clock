@@ -45,3 +45,11 @@ El spec (`e2e/timesheet.spec.ts`, `e2e/timesheet-page.ts`, `e2e/days.ts`) pasa s
 en una corrida aislada, pero en tres corridas completas del archivo falló uno distinto cada vez,
 siempre en el armado por la interfaz del rastreador (`pickProject` espera el foco en el
 selector). Se estabiliza antes de commitearlo, y suma los pasos de F-M1 y F-m4.
+
+## Segunda revisión de frontend
+
+Sobre `2d939c2..626bfa7`: aprobado, con un menor nuevo que se corrige antes del merge.
+
+| Origen | Hallazgo                                                                                                                                                                                                             | Resolución                                                                                                                                                                                                                               |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F2-m1  | Un «Quitar fila» de otra semana —un «Reintentar» desde B de una falla de A, un pedido de A que se asienta en B, un diálogo de A confirmado después de volver— oculta la fila del mismo par en B y la saca de `added` | `PendingRemoval` lleva `weekStart`; el hook devuelve `removing` filtrado por la semana que se mira; `onRemoved` recibe `weekStart` y la vista lo ignora si no es la actual, comparando contra un ref. Un caso en `row-removals.test.ts`. |
