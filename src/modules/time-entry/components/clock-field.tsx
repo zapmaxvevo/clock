@@ -31,6 +31,11 @@ type ClockFieldProps = {
   /** Lo que se ve con el campo vacío, donde vacío quiere decir algo. */
   readonly placeholder?: string;
   readonly disabled?: boolean;
+  /**
+   * El valor viaja: el campo no acepta texto y se atenúa, pero conserva el
+   * foco, que `disabled` mandaría a `body` (TT-55).
+   */
+  readonly busy?: boolean;
   /** Esc: el texto vuelve al valor mostrado y se avisa. Sin él, Esc no hace nada. */
   readonly onCancel?: () => void;
   /**
@@ -61,6 +66,7 @@ export function ClockField({
   format,
   placeholder,
   disabled = false,
+  busy = false,
   onCancel,
   onSubmit,
   onTextChange,
@@ -130,7 +136,12 @@ export function ClockField({
       aria-label={label}
       aria-invalid={rejected}
       disabled={disabled}
-      className={cn("text-center tabular-nums", format === "12h" ? "w-26" : "w-20")}
+      readOnly={busy}
+      aria-busy={busy || undefined}
+      className={cn(
+        "text-center tabular-nums aria-busy:opacity-60",
+        format === "12h" ? "w-26" : "w-20",
+      )}
       onChange={(event) => changeText(event.target.value)}
       onFocus={() => setFocused(true)}
       onBlur={() => {

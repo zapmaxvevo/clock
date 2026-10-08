@@ -8,15 +8,14 @@ import { es } from "react-day-picker/locale";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import type { CalendarMode } from "@/modules/time-entry/schema";
 
 import { civilDate, dayKeyOfCivilDate } from "../civil-date";
 import { trackerLabels } from "../labels";
-import { calendarHref } from "./calendar-href";
 import { calendarLabels } from "./labels";
 
 type PeriodPickerProps = {
-  readonly mode: CalendarMode;
+  /** La URL del período que contiene el día elegido: el calendario o la planilla. */
+  readonly hrefOf: (day: string) => string;
   readonly periodStart: string;
   /** «Esta semana», el rango o el día: lo que dice el botón (CAL-15). */
   readonly periodLabel: string;
@@ -25,12 +24,12 @@ type PeriodPickerProps = {
 };
 
 /**
- * CAL-16: el rango del período, que abre un calendario de mes sin cota.
- * Elegir un día lleva a su período; la semana la normaliza el servidor. Al
- * cerrar, el foco vuelve al botón.
+ * CAL-16 y TS-09: el rango del período, que abre un calendario de mes sin
+ * cota. Elegir un día lleva a su período; la semana la normaliza el servidor.
+ * Al cerrar, el foco vuelve al botón.
  */
 export function PeriodPicker({
-  mode,
+  hrefOf,
   periodStart,
   periodLabel,
   todayKey,
@@ -43,7 +42,7 @@ export function PeriodPicker({
     if (next === undefined) {
       return;
     }
-    router.push(calendarHref(mode, dayKeyOfCivilDate(next)));
+    router.push(hrefOf(dayKeyOfCivilDate(next)));
   }
 
   const selected = civilDate(periodStart);

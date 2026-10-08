@@ -75,7 +75,7 @@ export function CalendarToolbar({
       </Link>
 
       <PeriodPicker
-        mode={state.mode}
+        hrefOf={(day) => calendarHref(state.mode, day)}
         periodStart={state.periodStart}
         periodLabel={state.periodLabel}
         todayKey={state.todayKey}
