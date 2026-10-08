@@ -42,16 +42,15 @@ vacío del owner y `renewWorkspace` se corta.
 ## Lo primero de la sesión siguiente
 
 0. **Lo que sigue**: dos frentes.
-   - **Núcleo de reportes** (fase 3 adelantada, decisión del usuario del 2026-10-08), en la rama
-     `plan/nucleo-reportes` (worktree en el scratchpad de la sesión; si se perdió,
-     `git worktree add <dir> plan/nucleo-reportes`). Ahí están `docs/parity/reportes.md` con las
-     decisiones del usuario (§8), los ADR **0020** y **0021** (aceptados), el mapa
-     `docs/slices/nucleo-reportes-mapa.md` (R1, R2a, R2b, R3 … R7; R8 y R9 según §5) y el
-     contrato **aprobado** de R1 (`nucleo-reportes-r1-las-horas-no-se-borran.md`). La rama se
-     mergea a `main` antes de arrancar R1. Sigue: pipeline de R1 (solo `backend-dev`; antes de
-     desplegarlo, el usuario corre la consulta informativa de §2.3 en producción). Abiertas para
-     el usuario (§5 del mapa): cómo se nombra un admin antes de la fase 2 (SQL o R8), el enlace de
-     un member con personas ajenas, qué se exporta, y «personas sin horas» (R9).
+   - **Núcleo de reportes** (fase 3 adelantada, decisión del usuario del 2026-10-08), ya en
+     `main`: `docs/parity/reportes.md` con las decisiones del usuario (§8), los ADR **0020** y
+     **0021** (aceptados), el mapa `docs/slices/nucleo-reportes-mapa.md` (R1, R2a, R2b, R3 … R7;
+     R8 y R9 según su §5) y el contrato **aprobado** de R1
+     (`nucleo-reportes-r1-las-horas-no-se-borran.md`). Sigue: pipeline de R1 (solo
+     `backend-dev`; antes de desplegarlo, el usuario corre la consulta informativa de §2.3 en
+     producción). Abiertas para el usuario (§5 del mapa): cómo se nombra un admin antes de la
+     fase 2 (SQL o R8), el enlace de un member con personas ajenas, qué se exporta, y «personas
+     sin horas» (R9).
    - **13b** (menú y detalle de una celda, §9 del contrato del 13): contrato por escribir.
 1. Deuda chica sin slice:
    - `pickDate` (`e2e/tracker-page.ts`) no espera el foco del disparador al cerrar el calendario:
@@ -219,6 +218,6 @@ Lo que sigue siendo del usuario, porque necesita sus cuentas o su máquina:
 
 - Plan y orden: `fase1-mapa.md`.
 - Contratos: `fase1-slice<n>-*.md`; correcciones: `correcciones-fase1-slice<n>*.md`.
-- ADR: `docs/adr/0001`–`0019` en `main` (todos aceptados); 0020 y 0021 en `plan/nucleo-reportes`.
+- ADR: `docs/adr/0001`–`0021` (todos aceptados).
 - Paridad: `docs/parity/` (time-tracker, perfil, proyectos, calendario,
   timesheet).
