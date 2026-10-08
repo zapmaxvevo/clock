@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
+  addMinutes,
   dayBounds,
   dayKey,
   dayLabel,
@@ -22,6 +23,7 @@ import {
   instantFromLocalOrLater,
   isAfterYear9999,
   isClock,
+  isWeekendDayKey,
   MINUTES_PER_DAY,
   minuteOfDayIn,
   minutesToClock,
@@ -971,6 +973,55 @@ describe.each([buenosAires, madrid, "Asia/Tokyo"])(
     });
   },
 );
+
+describe("addMinutes", () => {
+  it("suma sobre el instante, con sus segundos, y admite negativos", () => {
+    expect(addMinutes(new Date("2026-09-30T13:00:40Z"), 120).toISOString()).toBe(
+      "2026-09-30T15:00:40.000Z",
+    );
+    expect(addMinutes(new Date("2026-09-30T13:00:00Z"), -30).toISOString()).toBe(
+      "2026-09-30T12:30:00.000Z",
+    );
+  });
+
+  it("no pasa por la hora de pared: cruzar el atraso de Madrid suma horas reales", () => {
+    // 01:30 (+02:00) del 25/10/2026 más dos horas son las 02:30 (+01:00).
+    const start = new Date("2026-10-24T23:30:00Z");
+    expect(addMinutes(start, 120).toISOString()).toBe("2026-10-25T01:30:00.000Z");
+  });
+});
+
+describe("isWeekendDayKey", () => {
+  it("es sábado o domingo, y nada más", () => {
+    // La semana del lunes 28/09/2026.
+    expect(
+      [
+        "2026-09-28",
+        "2026-09-29",
+        "2026-09-30",
+        "2026-10-01",
+        "2026-10-02",
+        "2026-10-03",
+        "2026-10-04",
+      ].map(isWeekendDayKey),
+    ).toEqual([false, false, false, false, false, true, true]);
+  });
+
+  it("no corre el día con el proceso en un huso negativo", () => {
+    const original = process.env.TZ;
+    process.env.TZ = buenosAires;
+    try {
+      expect(isWeekendDayKey("2026-10-03")).toBe(true);
+      expect(isWeekendDayKey("2026-10-05")).toBe(false);
+    } finally {
+      restoreProcessTimeZone(original);
+    }
+  });
+
+  it("es falso con una clave que no es un día", () => {
+    expect(isWeekendDayKey("2026-02-30")).toBe(false);
+  });
+});
 
 describe("fullWeekdayLabel (TS-100)", () => {
   it.each<[DateFormat, string, string]>([

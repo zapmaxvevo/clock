@@ -124,6 +124,14 @@ export function durationSeconds(start: Date, end: Date): number {
   return Math.max(0, Math.floor((end.getTime() - start.getTime()) / 1000));
 }
 
+/**
+ * El instante `minutes` minutos después. Suma sobre el instante, no sobre la
+ * hora de pared: con un cambio de horario en el medio no coinciden (ADR 0018).
+ */
+export function addMinutes(instant: Date, minutes: number): Date {
+  return new Date(instant.getTime() + minutes * 60_000);
+}
+
 /** Formato h:mm:ss, el del contador del timer. */
 export function formatElapsed(seconds: number): string {
   const safe = Math.max(0, Math.floor(seconds));
@@ -251,6 +259,32 @@ export function dayKeyLabel(
 }
 
 /**
+ * El día de la semana en español con el ancho de `pattern` («EEE» o «EEEE»)
+ * y la fecha en el formato de la persona, con año si no es el de `todayKey`.
+ * `null` si la clave no es un día.
+ */
+function weekdayParts(
+  dayKey: string,
+  todayKey: string,
+  format: DateFormat,
+  pattern: "EEE" | "EEEE",
+): { readonly weekday: string; readonly date: string } | null {
+  const date = parseDayKey(dayKey);
+  const today = parseDayKey(todayKey);
+  if (date === null) {
+    return null;
+  }
+  // La fecha civil se formatea en UTC: así el rótulo no se corre un día según
+  // dónde corra el proceso.
+  const civil = new TZDate(Date.UTC(date.year, date.month - 1, date.day), "UTC");
+  const sameYear = today !== null && today.year === date.year;
+  return {
+    weekday: formatDate(civil, pattern, { locale: es }),
+    date: formatDayKey(dayKey, format, !sameYear),
+  };
+}
+
+/**
  * El rótulo de una columna: día de la semana abreviado y fecha en el formato
  * de la persona, «jue, 01/10», con año si no es el de `todayKey`. Es la parte
  * de `dayKeyLabel` que no es «Hoy» ni «Ayer».
@@ -260,17 +294,8 @@ export function weekdayLabel(
   todayKey: string,
   format: DateFormat,
 ): string {
-  const date = parseDayKey(dayKey);
-  const today = parseDayKey(todayKey);
-  if (date === null) {
-    return dayKey;
-  }
-  // La fecha civil se formatea en UTC: así el rótulo no se corre un día según
-  // dónde corra el proceso.
-  const civil = new TZDate(Date.UTC(date.year, date.month - 1, date.day), "UTC");
-  const sameYear = today !== null && today.year === date.year;
-  const weekday = formatDate(civil, "EEE", { locale: es });
-  return `${weekday}, ${formatDayKey(dayKey, format, !sameYear)}`;
+  const parts = weekdayParts(dayKey, todayKey, format, "EEE");
+  return parts === null ? dayKey : `${parts.weekday}, ${parts.date}`;
 }
 
 /**
@@ -283,16 +308,18 @@ export function fullWeekdayLabel(
   todayKey: string,
   format: DateFormat,
 ): string {
+  const parts = weekdayParts(dayKey, todayKey, format, "EEEE");
+  return parts === null ? dayKey : `${parts.weekday} ${parts.date}`;
+}
+
+/** Sábado o domingo. Aritmética civil, sin zona: `false` si la clave no es un día. */
+export function isWeekendDayKey(dayKey: string): boolean {
   const date = parseDayKey(dayKey);
-  const today = parseDayKey(todayKey);
   if (date === null) {
-    return dayKey;
+    return false;
   }
-  // En UTC, como `weekdayLabel`.
-  const civil = new TZDate(Date.UTC(date.year, date.month - 1, date.day), "UTC");
-  const sameYear = today !== null && today.year === date.year;
-  const weekday = formatDate(civil, "EEEE", { locale: es });
-  return `${weekday} ${formatDayKey(dayKey, format, !sameYear)}`;
+  const weekday = new Date(Date.UTC(date.year, date.month - 1, date.day)).getUTCDay();
+  return weekday === 0 || weekday === 6;
 }
 
 /**

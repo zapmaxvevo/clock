@@ -1,4 +1,5 @@
 import {
+  addMinutes,
   dayKey,
   durationSeconds,
   instantFromLocalOrLater,
@@ -15,8 +16,6 @@ export type CellEntry = {
 
 /** TS-31: la hora de pared en que empieza la entrada de una celda vacía. */
 export const EMPTY_CELL_START = "09:00";
-
-const MINUTE_MS = 60_000;
 
 /**
  * Lo que la celda muestra, en minutos: la suma exacta en segundos de sus
@@ -95,11 +94,6 @@ export type CellWrite<Entry extends CellEntry> =
 
 const AFTER_YEAR_9999 = { kind: "rejected", reason: "afterYear9999" } as const;
 
-/** El instante `minutes` minutos después: las sumas son sobre el instante (ADR 0018). */
-function plusMinutes(instant: Date, minutes: number): Date {
-  return new Date(instant.getTime() + minutes * MINUTE_MS);
-}
-
 /**
  * «Dejar la celda en `minutes`» (ADR 0018), con las entradas cerradas de la
  * celda leídas bajo bloqueo. `cell.date` es el día de la columna y
@@ -116,7 +110,7 @@ export function cellWrite<Entry extends CellEntry>(
     if (startedAt === null) {
       return { kind: "rejected", reason: "noStartThatDay" };
     }
-    const endedAt = plusMinutes(startedAt, minutes);
+    const endedAt = addMinutes(startedAt, minutes);
     return isAfterYear9999(endedAt)
       ? AFTER_YEAR_9999
       : { kind: "create", startedAt, endedAt };
@@ -127,7 +121,7 @@ export function cellWrite<Entry extends CellEntry>(
     return { kind: "unchanged" };
   }
   if (rest.length === 0) {
-    const endedAt = plusMinutes(first.startedAt, minutes);
+    const endedAt = addMinutes(first.startedAt, minutes);
     return isAfterYear9999(endedAt)
       ? AFTER_YEAR_9999
       : { kind: "setEnd", target: first, endedAt };
@@ -137,14 +131,14 @@ export function cellWrite<Entry extends CellEntry>(
     if (dayKey(base.endedAt, cell.timeZone) !== cell.date) {
       return { kind: "rejected", reason: "appendOtherDay" };
     }
-    const endedAt = plusMinutes(base.endedAt, minutes - shown);
+    const endedAt = addMinutes(base.endedAt, minutes - shown);
     return isAfterYear9999(endedAt)
       ? AFTER_YEAR_9999
       : { kind: "append", source: latestStarting(all), startedAt: base.endedAt, endedAt };
   }
   const target = latestStarting(all);
-  const endedAt = plusMinutes(target.endedAt, minutes - shown);
-  if (endedAt.getTime() - target.startedAt.getTime() < MINUTE_MS) {
+  const endedAt = addMinutes(target.endedAt, minutes - shown);
+  if (durationSeconds(target.startedAt, endedAt) < 60) {
     return { kind: "rejected", reason: "trimTooShort" };
   }
   return { kind: "setEnd", target, endedAt };
