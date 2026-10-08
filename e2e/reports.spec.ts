@@ -4,14 +4,13 @@ import type { Page } from "@playwright/test";
 
 import { PERSON_TIMEZONE } from "./calendar-page";
 import {
-  seedEntries,
+  seedPersonEntries,
   seedPerson,
   seedProject,
   setDisplayName,
   setMembershipStatus,
   setRole,
   type MembershipStatus,
-  type SeedEntry,
 } from "./database";
 import { addDays, dayKeyOf, todayIn, type CivilDay } from "./days";
 import {
@@ -36,6 +35,7 @@ import {
   RANGE_MESSAGES,
   rangeButton,
   rangeCalendar,
+  recordNavigations,
   REPORTS_PATH,
   reportHeading,
   reportsNavLink,
@@ -78,18 +78,6 @@ function today(): CivilDay {
 async function enterApp(page: Page): Promise<void> {
   await page.goto("/");
   await expect(trackerBar(page)).toBeVisible();
-}
-
-/** Siembra entradas de una persona con el día como `CivilDay` y las horas en su zona. */
-async function seedPersonEntries(
-  email: string,
-  entries: readonly (Omit<SeedEntry, "day"> & { readonly day: CivilDay })[],
-): Promise<void> {
-  await seedEntries(
-    email,
-    PERSON_TIMEZONE,
-    entries.map((entry) => ({ ...entry, day: dayKeyOf(entry.day) })),
-  );
 }
 
 /** Otra persona del workspace, con un email propio y el nombre con el sufijo. */
@@ -156,13 +144,13 @@ test("un member ve solo lo propio aunque el enlace venga de otra persona", async
   await enterApp(page);
   await setDisplayName(email, own);
   await seedProject({ name: project });
-  await seedPersonEntries(email, [
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
     { description: "a", day: tuesday, start: "09:00", end: "10:30", project },
     { description: "b", day: wednesday, start: "11:00", end: "11:45", project },
     { description: "c", day: wednesday, start: "14:00", end: "14:20" },
   ]);
   const otherEmail = await seedOtherPerson(other);
-  await seedPersonEntries(otherEmail, [
+  await seedPersonEntries(otherEmail, PERSON_TIMEZONE, [
     { description: "d", day: tuesday, start: "08:00", end: "12:00", project },
   ]);
 
@@ -205,10 +193,10 @@ test("un admin ve las horas de todo el equipo, con la persona inactiva marcada",
   await seedProject({ name: project });
   const activeEmail = await seedOtherPerson(active);
   const inactiveEmail = await seedOtherPerson(inactive, "inactive");
-  await seedPersonEntries(activeEmail, [
+  await seedPersonEntries(activeEmail, PERSON_TIMEZONE, [
     { description: "b", day: thursday, start: "09:00", end: "12:00", project },
   ]);
-  await seedPersonEntries(inactiveEmail, [
+  await seedPersonEntries(inactiveEmail, PERSON_TIMEZONE, [
     { description: "c", day: thursday, start: "13:00", end: "14:00", project },
   ]);
 
@@ -265,13 +253,11 @@ test("las flechas, «Esta semana» y el calendario de rango navegan el período"
   // La navegación de un `router.push` puede llegar después de afirmar la URL;
   // el registro la encuentra al final, con varios viajes al servidor en medio.
   const picked: ReportRange = { first: lastWeek.first, last: thisWeek.last };
-  const escapedRange = { first: picked.first, last: picked.first };
-  const escapedRequests: string[] = [];
-  page.on("request", (request) => {
-    if (reportsUrlOf(escapedRange, "proyecto")(new URL(request.url()))) {
-      escapedRequests.push(request.url());
-    }
-  });
+  const escaped = recordNavigations(
+    page,
+    { first: picked.first, last: picked.first },
+    "proyecto",
+  );
   await rangeButton(page).click();
   await expect(rangeCalendar(page)).toBeVisible();
   await clickRangeDay(page, picked.first);
@@ -296,7 +282,35 @@ test("las flechas, «Esta semana» y el calendario de rango navegan el período"
   // RP-20: con un período de 14 días, la flecha mueve 14.
   await periodLink(page, "Período anterior").click();
   await expectReport(page, shiftRange(picked, -14), "proyecto", day);
-  expect(escapedRequests).toEqual([]);
+
+  // F1: sobre un período de un día, un clic en ese día deja la selección
+  // vacía; «Aplicar» lleva `aria-disabled`, no cierra ni navega. Después, otro
+  // día se aplica como siempre. Una navegación al período de un día que se
+  // veía solo podría venir de ese «Aplicar».
+  const single: ReportRange = {
+    first: addDays(lastWeek.first, 2),
+    last: addDays(lastWeek.first, 2),
+  };
+  const other = addDays(single.first, -7);
+  await openReport(page, single, "proyecto", day);
+  const reapplied = recordNavigations(page, single, "proyecto");
+  await rangeButton(page).click();
+  await expect(rangeCalendar(page)).toBeVisible();
+  await clickRangeDay(page, single.first);
+  await expect(applyButton(page)).toHaveAttribute("aria-disabled", "true");
+  // Con `aria-disabled` sigue en el orden del tabulador, así que se puede
+  // activar con Enter; Playwright no le hace clic a un control inactivo.
+  await applyButton(page).press("Enter");
+  await expect(rangeCalendar(page)).toBeVisible();
+  await expect(page).toHaveURL(reportsUrlOf(single, "proyecto"));
+  await clickRangeDay(page, other);
+  await expect(applyButton(page)).not.toHaveAttribute("aria-disabled", "true");
+  await applyButton(page).click();
+  await expect(rangeCalendar(page)).toBeHidden();
+  await expectReport(page, { first: other, last: other }, "proyecto", day);
+
+  expect(escaped).toEqual([]);
+  expect(reapplied).toEqual([]);
 });
 
 test("una URL con el rango inválido muestra «Esta semana» y conserva la agrupación", async ({

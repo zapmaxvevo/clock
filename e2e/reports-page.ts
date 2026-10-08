@@ -12,8 +12,10 @@ import {
   addDays,
   calendarDayName,
   dayKeyOf,
+  dayRangeLabel,
   monthOfCaption,
   monthsBetween,
+  sameDay,
   weekLabel,
   weekStartOf,
   type CivilDay,
@@ -105,31 +107,39 @@ export function reportsUrlOf(
     url.searchParams.getAll("agrupar").join(",") === groupBy;
 }
 
-function pad(value: number): string {
-  return String(value).padStart(2, "0");
-}
-
-function sameDay(left: CivilDay, right: CivilDay): boolean {
-  return left.year === right.year && left.month === right.month && left.day === right.day;
+/**
+ * Registra, desde ahora, los pedidos que navegan a ese período y esa
+ * agrupación. Los de prefetch de un enlace no cuentan: Next los marca con
+ * `next-router-prefetch` y no son una navegación. Una que llegue tarde, después
+ * de afirmar la URL, queda igual en el registro, que se lee al final.
+ */
+export function recordNavigations(
+  page: Page,
+  range: ReportRange,
+  groupBy: ReportGroupBy,
+): readonly string[] {
+  const matches = reportsUrlOf(range, groupBy);
+  const recorded: string[] = [];
+  page.on("request", (request) => {
+    if (
+      request.headers()["next-router-prefetch"] === undefined &&
+      matches(new URL(request.url()))
+    ) {
+      recorded.push(request.url());
+    }
+  });
+  return recorded;
 }
 
 /**
  * El rótulo del período (D-R2a-4): el de la semana si es una alineada al
- * lunes; si no, «05/10 – 18/10», con el año en los dos extremos si alguno no
- * es del de hoy, y un solo día sin guion. El formato es `dd/MM/yyyy`, el de
- * toda persona nueva.
+ * lunes, el primer día de toda persona nueva; si no, el de `dayRangeLabel`.
  */
 export function rangeLabel(range: ReportRange, today: CivilDay): string {
   const { first, last } = range;
-  if (sameDay(first, weekStartOf(first)) && sameDay(last, addDays(first, 6))) {
-    return weekLabel(first, today);
-  }
-  const withYear = first.year !== today.year || last.year !== today.year;
-  const format = (civil: CivilDay): string =>
-    withYear
-      ? `${pad(civil.day)}/${pad(civil.month)}/${civil.year}`
-      : `${pad(civil.day)}/${pad(civil.month)}`;
-  return sameDay(first, last) ? format(first) : `${format(first)} – ${format(last)}`;
+  return sameDay(first, weekStartOf(first)) && sameDay(last, addDays(first, 6))
+    ? weekLabel(first, today)
+    : dayRangeLabel(first, last, today);
 }
 
 /** «Reportes» en la navegación principal (D-R2a-10). */
