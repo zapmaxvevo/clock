@@ -31,14 +31,13 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-07.
 Los slices 1 a 12 (con 2b, 2c, 7b, 8b, 8c, 11a y 11b) están en `main`: el rastreador queda
 cubierto salvo lo fuera de alcance, y el alta manual ya ofrece «Reintentar» (TT-109 dejó de ser
 excepción). El 2c se mergeó el 2026-10-07 con lint, typecheck, 1098 de unidad, 1121 de
-integración, `next build` y 153 de 153 e2e en verde, dos corridas (**falta `git push origin
-main`**; el push anterior llegó hasta `aed694f`). El arreglo del piso fijo
+integración, `next build` y 153 de 153 e2e en verde, dos corridas. El arreglo del piso fijo
 (`fase1-fix-piso-fijo.md`, después del primer deploy) se mergeó el mismo día con 1098 de unidad,
 1142 de integración, `next build` y 155 de 155 e2e dos veces; con el deploy, el `update` provisorio
-de `created_at` en Neon queda sin efecto práctico. No quedan agentes con trabajo pendiente ni
-cambios sin commitear. Postgres local: `docker start clock-pg`; los e2e corren contra una base
-nueva (`DATABASE_URL=…/clock_e2e_piso`), porque `clock` tiene un segundo workspace vacío del owner
-y `renewWorkspace` se corta.
+de `created_at` en Neon queda sin efecto práctico. Todo está pusheado hasta `07674bc`. No quedan
+agentes con trabajo pendiente ni cambios sin commitear. Postgres local: `docker start clock-pg`;
+los e2e corren contra una base nueva (`DATABASE_URL=…/clock_e2e_piso`), porque `clock` tiene un
+segundo workspace vacío del owner y `renewWorkspace` se corta.
 
 ## Lo primero de la sesión siguiente
 
@@ -111,7 +110,7 @@ su pipeline.
 
 Lo que sigue siendo del usuario, porque necesita sus cuentas o su máquina:
 
-- **Push**: `git push origin main`.
+- **Push**: `git push origin main` después de cada merge.
 - **Antes de desplegar el 7b**: correr en la base de producción
   `select u.id, u.email from "user" u where not exists (select 1 from account a where a.user_id = u.id and a.provider_id = 'google');`.
   Tiene que dar cero filas: con `disableImplicitLinking`, una fila `user` sin cuenta de Google
