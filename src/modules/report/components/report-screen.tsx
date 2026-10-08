@@ -1,6 +1,4 @@
-import { InfoIcon } from "lucide-react";
-
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { InactiveMembershipNotice } from "@/components/inactive-membership-notice";
 import { getReportState, type ReportRequest } from "@/modules/report/service";
 import type { Actor } from "@/server/permissions";
 import type { TimeSettings } from "@/server/time";
@@ -27,11 +25,7 @@ export async function ReportScreen({ actor, settings, request }: ReportScreenPro
         <h1 id={REPORT_HEADING_ID} className="text-xl font-semibold">
           {reportLabels.heading}
         </h1>
-        <Alert>
-          <InfoIcon aria-hidden="true" />
-          <AlertTitle>{reportLabels.forbiddenTitle}</AlertTitle>
-          <AlertDescription>{reportLabels.forbiddenBody}</AlertDescription>
-        </Alert>
+        <InactiveMembershipNotice body={reportLabels.forbiddenBody} />
       </div>
     );
   }

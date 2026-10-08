@@ -8,8 +8,7 @@ export const reportLabels = {
   loading: "Cargando el reporte",
   /** RP-35: la lectura falló; nunca una tabla vacía, que se confundiría con RP-33. */
   loadFailed: "No se pudo cargar el reporte.",
-  /** RP-07: el mismo título que el aviso de membresía desactivada del resto de la aplicación. */
-  forbiddenTitle: "Tu acceso al workspace está desactivado.",
+  /** RP-07: el cuerpo del aviso de membresía desactivada, propio del reporte. */
   forbiddenBody: "No podés ver reportes.",
   /** RP-20: las flechas mueven el período entero. */
   previousPeriod: "Período anterior",

@@ -9,6 +9,9 @@ import { BULK_DELETE_WORD } from "./bulk-changes";
  * en el esquema del módulo.
  */
 export const trackerLabels = {
+  /** TT-92: el cuerpo del aviso de membresía desactivada del rastreador, el calendario y la planilla. */
+  inactiveMessage:
+    "Podés ver tus horas, pero no cargar ni modificar entradas. Pedile a quien administra el workspace que vuelva a activar tu membresía.",
   /** Los campos de hora de la barra manual, de la fila y del inicio del timer. */
   startTime: "Hora de inicio",
   endTime: "Hora de fin",

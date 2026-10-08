@@ -1,6 +1,4 @@
-import { InfoIcon } from "lucide-react";
-
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { InactiveMembershipNotice } from "@/components/inactive-membership-notice";
 import type { ProfileActions } from "@/modules/profile/schema";
 import type { ProfileView } from "@/modules/profile/service";
 
@@ -51,13 +49,7 @@ export function ProfileScreen({ view, actions }: ProfileScreenProps) {
           {profileLabels.preferences}
         </h2>
 
-        {!canEdit && (
-          <Alert>
-            <InfoIcon aria-hidden="true" />
-            <AlertTitle>{profileLabels.inactiveTitle}</AlertTitle>
-            <AlertDescription>{profileLabels.inactiveMessage}</AlertDescription>
-          </Alert>
-        )}
+        {!canEdit && <InactiveMembershipNotice body={profileLabels.inactiveMessage} />}
 
         <div
           role="group"

@@ -1,3 +1,4 @@
+import { InactiveMembershipNotice } from "@/components/inactive-membership-notice";
 import { DisplayFormatsProvider } from "@/components/layout/display-formats";
 import { TrackingCatalogProvider } from "@/modules/project/components/tracking-catalog";
 import { getTrackingCatalog } from "@/modules/project/service";
@@ -8,7 +9,7 @@ import {
 } from "@/modules/time-entry/service";
 import type { Actor } from "@/server/permissions";
 
-import { InactiveMembershipNotice } from "../inactive-membership-notice";
+import { trackerLabels } from "../labels";
 import { timesheetLabels } from "./labels";
 import { TIMESHEET_HEADING_ID } from "./timesheet-table";
 import { TimesheetToolbar } from "./timesheet-toolbar";
@@ -43,7 +44,9 @@ export async function TimesheetScreen({
         <TimesheetToolbar state={state} />
       </div>
 
-      {!state.canTrack && <InactiveMembershipNotice />}
+      {!state.canTrack && (
+        <InactiveMembershipNotice body={trackerLabels.inactiveMessage} />
+      )}
 
       {/* Los formatos de esta misma lectura, no los del layout: una navegación
           del cliente puede conservar el layout con los formatos de antes. */}
