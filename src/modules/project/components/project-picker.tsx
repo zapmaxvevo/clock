@@ -18,6 +18,7 @@ import {
   ComboboxTrigger,
 } from "@/components/ui/combobox";
 import { InputGroupAddon } from "@/components/ui/input-group";
+import type { ProjectPair } from "@/lib/project-pair";
 import { cn } from "@/lib/utils";
 import { paletteColor } from "@/modules/project/palette";
 import type { ProjectRef, ProjectSelection } from "@/modules/project/schema";
@@ -44,6 +45,8 @@ type PickerCommonProps = {
   readonly readOnly?: boolean;
   readonly triggerRef?: Ref<HTMLButtonElement>;
   readonly onOpenChange?: (open: boolean) => void;
+  /** TS-18: los pares que ya tienen fila en la planilla no se ofrecen. */
+  readonly excluded?: readonly ProjectPair[];
 };
 
 type ProjectPickerProps = PickerCommonProps &
@@ -114,6 +117,7 @@ export function ProjectPicker({
   readOnly = false,
   triggerRef,
   onOpenChange,
+  excluded,
 }: ProjectPickerProps) {
   const catalog = useTrackingCatalog();
   const [open, setOpen] = useState(false);
@@ -131,7 +135,7 @@ export function ProjectPicker({
     );
   }
 
-  const view = pickerView(catalog, search);
+  const view = pickerView(catalog, search, excluded);
   // «Sin proyecto» va en un grupo propio solo para la primitiva, que pide que
   // todos los ítems estén agrupados; se dibuja sin grupo.
   const items: readonly PickerGroup[] =
@@ -241,7 +245,7 @@ function PickerItem({ option }: { readonly option: PickerOption }) {
   }
   if (task === null) {
     return (
-      <ComboboxItem value={option}>
+      <ComboboxItem value={option} disabled={option.inactive === true}>
         <ProjectDot project={project} />
         <span className="truncate">{project.name}</span>
       </ComboboxItem>
@@ -283,6 +287,9 @@ function StatusRegion({ children }: { readonly children: ReactNode }) {
 function EmptyMessage({ empty }: { readonly empty: PickerEmpty }) {
   if (empty.kind === "noMatches") {
     return <p className="py-2">{projectLabels.pickerNoMatches}</p>;
+  }
+  if (empty.kind === "allUsed") {
+    return <p className="py-2">{projectLabels.pickerAllUsed}</p>;
   }
   return (
     <div className="flex flex-col items-center gap-1 py-2">
