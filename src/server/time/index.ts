@@ -405,15 +405,7 @@ export function weekKeyLabel(
   if (weekStart === addDaysToKey(current, -7)) {
     return "Semana anterior";
   }
-  const lastKey = addDaysToKey(weekStart, 6);
-  const first = parseDayKey(weekStart);
-  const last = parseDayKey(lastKey);
-  const today = parseDayKey(todayKey);
-  if (first === null || last === null || today === null) {
-    return weekStart;
-  }
-  const withYear = first.year !== today.year || last.year !== today.year;
-  return `${formatDayKey(weekStart, format, withYear)} – ${formatDayKey(lastKey, format, withYear)}`;
+  return dayRangeLabel(weekStart, addDaysToKey(weekStart, 6), todayKey, format);
 }
 
 /**
