@@ -1088,7 +1088,8 @@ Segunda tanda, el mismo día:
 - **B.** Al pasar de `1:00` a `2:00` solo se movió el fin; la descripción quedó.
 - **C.** Con dos entradas en la celda: bajar el valor descuenta de la que empieza más tarde (con
   el mismo inicio, la de id más reciente); subirlo crea una entrada nueva, que parece llevar la
-  descripción de las existentes.
+  descripción de las existentes. Confirmado después: la entrada nueva lleva la misma descripción
+  que las otras y empieza apenas termina la última.
 - **D.** Con el timer corriendo se puede escribir en su celda. Quitar esa fila no detiene el
   timer. Para el usuario, el timer no es una entrada hasta que se detiene.
 - **E.** La celda tiene un menú de tres puntos; una de sus opciones es eliminar.
