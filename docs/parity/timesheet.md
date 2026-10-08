@@ -574,7 +574,7 @@ mostrarle TT-112. **Si desde las 09:00 no existe ningún minuto ese día**, el
 servidor no escribe y responde «Esa hora no existe por el cambio de horario.»
 (TT-112). Decisión del contrato del slice 13, en el
 [ADR 0018](../adr/0018-lo-que-escribe-una-celda-se-calcula-en-instantes.md),
-propuesto. El 30 de diciembre de 2011 falta entero en `Pacific/Apia` y en
+aceptado. El 30 de diciembre de 2011 falta entero en `Pacific/Apia` y en
 `Pacific/Fakaofo`, pero **no se llega navegando**: una semana con un día que
 falta entero cae a la actual (CAL-17). Solo desde una pestaña abierta antes de
 cambiar la zona del perfil a una de esas dos (TS-111), hasta que se revalida,
@@ -633,7 +633,7 @@ pedidos: que la excepción quede escrita en un ADR antes del contrato del slice
 [ADR 0006](../adr/0006-conservar-el-extremo-sin-cambios.md) para todo módulo
 que edite horas. La excepción es el
 [ADR 0018](../adr/0018-lo-que-escribe-una-celda-se-calcula-en-instantes.md),
-**propuesto por el contrato del slice 13; lo aprueba el usuario**. La mutación
+**propuesto por el contrato del slice 13 y aceptado el 2026-10-08 por el usuario**. La mutación
 es nueva: ni `createManualEntry` ni `updateEntryTimes` sirven tal como están,
 porque las dos reciben rótulos de fin.
 _Corregido el 2026-10-07, P-12_: estaba pendiente de timesheet P-02, sin
@@ -708,7 +708,7 @@ exacta en segundos de sus entradas cerradas, dividida por 60 y truncada una vez
   elija el cliente
   ([ADR 0007](../adr/0007-el-cliente-elige-el-id-de-las-altas.md)) o, en lo
   que crea una celda, el servidor
-  ([ADR 0019](../adr/0019-escribir-una-celda-fija-su-valor.md), propuesto).
+  ([ADR 0019](../adr/0019-escribir-una-celda-fija-su-valor.md), aceptado).
   Decisión del equipo del 2026-10-07.
 
 **`S` es lo que la celda muestra, no la suma en segundos.** Así, después de
@@ -780,7 +780,7 @@ lectura de la celda y la escritura van en la misma transacción y serializadas
 por `(persona, proyecto, tarea, día)`, con un bloqueo de la celda tomado antes
 de leerla y sin id del cliente: decisión del contrato del slice 13 (D13-2),
 aceptada por el team-lead, en el
-[ADR 0019](../adr/0019-escribir-una-celda-fija-su-valor.md), propuesto.
+[ADR 0019](../adr/0019-escribir-una-celda-fija-su-valor.md), aceptado.
 Justificación: Clockify reintenta solo y no expone la decisión, como en TT-89.
 _Corregido el 2026-10-07, slice 2c_: decía que el aviso «**sí**» ofrecía
 «Reintentar», «a diferencia del alta manual (TT-109), que solo crea», y la
@@ -1439,7 +1439,7 @@ decididas.
 | TS-98 | Clockify, verificado               | Después de Enter el foco sigue en la grilla.                                                                | Decidida el 2026-10-07           |
 
 El [ADR 0018](../adr/0018-lo-que-escribe-una-celda-se-calcula-en-instantes.md)
-está propuesto por el contrato del slice 13 y lo aprueba el usuario.
+está propuesto por el contrato del slice 13 y aceptado el 2026-10-08 por el usuario.
 
 _Corregido el 2026-10-07, P-12_: TS-34 era «una celda con varias entradas no se
 escribe desde la grilla», como divergencia probable; TS-39 era una divergencia
@@ -1475,7 +1475,7 @@ dependencias que el mapa no nombra, las dos ya antes en el orden:
 `time_entry` tal como queda después del slice 11, y las filas vacías, en el
 navegador (TS-19). Lo que sí trae son dos mutaciones nuevas en `time-entry`
 —escribir una celda (TS-29 … TS-39) y quitar una fila (TS-52 … TS-54)— y dos
-ADR propuestos por su contrato, que el usuario aprueba antes de construir: el
+ADR propuestos por su contrato y aceptados por el usuario el 2026-10-08: el
 [ADR 0018](../adr/0018-lo-que-escribe-una-celda-se-calcula-en-instantes.md)
 (TS-32) y el [ADR 0019](../adr/0019-escribir-una-celda-fija-su-valor.md)
 (TS-37). El 13b no tiene backend nuevo.
@@ -1495,7 +1495,7 @@ de [la paridad de proyectos](proyectos.md), PR-23, PR-47, PR-64, PR-66 y PR-71.
 De acá salen el
 [ADR 0018](../adr/0018-lo-que-escribe-una-celda-se-calcula-en-instantes.md)
 (TS-32) y el [ADR 0019](../adr/0019-escribir-una-celda-fija-su-valor.md)
-(TS-37), **propuestos; los aprueba el usuario** antes de construir. Contrato:
+(TS-37), **aceptados por el usuario el 2026-10-08**. Contrato:
 [fase1-slice13-planilla.md](../slices/fase1-slice13-planilla.md), con las
 correcciones de la [ronda 1](../slices/correcciones-fase1-slice13.md) y la
 [ronda 2](../slices/correcciones-fase1-slice13-ronda2.md).

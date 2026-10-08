@@ -1,6 +1,6 @@
 # 0019. Escribir una celda de la planilla fija su valor, una celda a la vez
 
-Fecha: 2026-10-07. Estado: propuesto.
+Fecha: 2026-10-07. Estado: aceptado (2026-10-08, por el usuario).
 Origen: contrato del slice 13
 ([`fase1-slice13-planilla.md`](../slices/fase1-slice13-planilla.md)), decisión
 D13-2. TS-37 de [`timesheet.md`](../parity/timesheet.md) deja al contrato

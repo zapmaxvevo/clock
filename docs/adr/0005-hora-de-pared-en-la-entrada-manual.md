@@ -185,8 +185,7 @@ fecha de inicio configurable por el owner queda para más adelante, si hace falt
   tercer camino —el fin es el inicio más la duración, en instantes, y la
   entrada que agrega una celda con varias empieza en el fin de otra—, y las
   09:00 de una celda vacía, que nadie tecleó, se llevan al primer minuto que
-  exista después en vez de rechazarse. Mientras no se acepte, esta consecuencia
-  vale sin excepciones.
+  exista después en vez de rechazarse. El ADR 0018 se aceptó el 2026-10-08.
 - La opción 3 queda descartada porque mezcla lo peor de las dos: el cliente
   igual necesita resolver el desplazamiento, y el servidor igual tiene que
   decidir qué hacer cuando el desplazamiento que llega no es el que corresponde

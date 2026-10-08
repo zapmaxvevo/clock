@@ -45,11 +45,10 @@ segundo workspace vacío del owner y `renewWorkspace` se corta.
    El contrato `fase1-slice13-planilla.md` quedó **aprobado** el 2026-10-08 tras tres rondas
    de `architecture-reviewer` (`correcciones-fase1-slice13.md`, `-ronda2.md`, `-ronda3.md`),
    con `timesheet.md` alineado. Corte 13 (grilla, escritura de celdas, quitar fila; todo el
-   backend) / 13b (menú y detalle de la celda, sin backend nuevo). Falta que el usuario acepte
-   los ADR **0018** (lo que escribe una celda se calcula en instantes) y **0019** (escribir una
-   celda fija su valor, sin id del cliente; deja sin efecto para las celdas una consecuencia
-   del 0007), con las notas fechadas de 0005, 0006 y 0007. Después: pipeline del 13 (backend y
-   frontend en paralelo, `e2e-tester`, seis revisiones).
+   backend) / 13b (menú y detalle de la celda, sin backend nuevo). Los ADR **0018** (lo que escribe una celda se calcula en instantes) y
+   **0019** (escribir una celda fija su valor, sin id del cliente) los aceptó el usuario el
+   2026-10-08, con las notas de 0005, 0006 y 0007. En curso: pipeline del 13 en la rama `fase1/slice-13-planilla`
+   (backend y frontend en paralelo, `e2e-tester`, seis revisiones).
 1. Deuda chica sin slice:
    - un `DayCalendar` compartido entre `DateField` y `PeriodPicker`;
    - un `ClockRangeFields` común a `manual-bar.tsx`, `entry-times-editor.tsx` y el diálogo;
@@ -206,6 +205,6 @@ Lo que sigue siendo del usuario, porque necesita sus cuentas o su máquina:
 
 - Plan y orden: `fase1-mapa.md`.
 - Contratos: `fase1-slice<n>-*.md`; correcciones: `correcciones-fase1-slice<n>*.md`.
-- ADR: `docs/adr/0001`–`0017` (todos aceptados).
+- ADR: `docs/adr/0001`–`0019` (todos aceptados).
 - Paridad: `docs/parity/` (time-tracker, perfil, proyectos, calendario,
   timesheet).

@@ -14,7 +14,7 @@ cambios chicos en componentes de `project`; pantalla nueva `/planilla`.
   ([`correcciones-fase1-slice13.md`](correcciones-fase1-slice13.md),
   [`correcciones-fase1-slice13-ronda2.md`](correcciones-fase1-slice13-ronda2.md),
   [`correcciones-fase1-slice13-ronda3.md`](correcciones-fase1-slice13-ronda3.md)).
-  Falta que el usuario acepte los ADR 0018 y 0019.
+  Los ADR 0018 y 0019, aceptados por el usuario el 2026-10-08.
 - **Contratos de los que hereda la forma:** [slice 12](fase1-slice12-edicion-masiva.md)
   (tres fases y escritura agrupada), [slice 8](fase1-slice8-calendario.md)
   (segunda pantalla de `time-entry`, semana en la URL, días que no existen),
@@ -24,11 +24,10 @@ cambios chicos en componentes de `project`; pantalla nueva `/planilla`.
   («Reintentar» de un alta).
 - **Decisiones de arquitectura asociadas:**
   - [ADR 0018, lo que escribe una celda se calcula en instantes](../adr/0018-lo-que-escribe-una-celda-se-calcula-en-instantes.md):
-    **propuesto por este contrato (TS-32, timesheet P-02); lo aprueba el
-    usuario.** Abre dos excepciones al ADR 0005, solo dentro de
+    **propuesto por este contrato (TS-32, timesheet P-02); aceptado el 2026-10-08 por el usuario.** Abre dos excepciones al ADR 0005, solo dentro de
     `setTimesheetCell`.
   - [ADR 0019, escribir una celda fija su valor, una celda a la vez](../adr/0019-escribir-una-celda-fija-su-valor.md):
-    **propuesto por este contrato (D13-2); lo aprueba el usuario.** Enmienda
+    **propuesto por este contrato (D13-2); aceptado el 2026-10-08 por el usuario.** Enmienda
     una consecuencia del ADR 0007 y suma el bloqueo de celda a las reglas del
     ADR 0011.
   - [ADR 0010](../adr/0010-un-modulo-consulta-las-reglas-de-otro-por-su-service.md):
@@ -53,7 +52,7 @@ cambios chicos en componentes de `project`; pantalla nueva `/planilla`.
 - **Timesheet P-16 se cierra**: la fila vacía que guarda el navegador es de la
   semana en que se agregó y no aparece en las demás (§5.7).
 - **El slice no cambia el esquema** (§2).
-- **TS-32 entra por el ADR 0018**, propuesto.
+- **TS-32 entra por el ADR 0018**, aceptado.
 
 ## Partición
 

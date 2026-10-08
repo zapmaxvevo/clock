@@ -38,8 +38,8 @@ esta regla el valor de una celda de la planilla (`setTimesheetCell`, TS-32): el
 inicio de la entrada que edita una celda no viaja en el pedido y se conserva
 por construcción, como en el paso 1, y el fin es el inicio más la duración, en
 instantes, sin pasar por los pasos de este ADR. El detalle de una celda (slice
-13b) edita horas con el trío y sigue esta regla. Mientras no se acepte, las
-celdas del timesheet son un consumidor más de esta regla, sin excepciones.
+13b) edita horas con el trío y sigue esta regla. El ADR 0018 se aceptó el
+2026-10-08.
 
 Restricciones que la decisión no puede romper:
 

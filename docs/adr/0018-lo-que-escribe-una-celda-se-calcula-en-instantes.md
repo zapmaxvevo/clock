@@ -1,6 +1,6 @@
 # 0018. Lo que escribe una celda de la planilla se calcula en instantes
 
-Fecha: 2026-10-07. Estado: propuesto.
+Fecha: 2026-10-07. Estado: aceptado (2026-10-08, por el usuario).
 Origen: TS-32 de [`timesheet.md`](../parity/timesheet.md), aceptado por el
 equipo el 2026-10-07 (timesheet P-02) con el pedido de registrarlo en un ADR
 antes del contrato del slice 13

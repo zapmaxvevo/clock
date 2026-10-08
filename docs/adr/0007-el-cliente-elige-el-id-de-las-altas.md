@@ -291,5 +291,4 @@ responde el ganador, como en la cuarta fila.
   consecuencia a las celdas del timesheet. Escribir una celda de la planilla
   (`setTimesheetCell`) no es un alta —puede crear, editar o no escribir—: no
   lleva id del cliente ni usa `createOnce`, y su reintento se resuelve por el
-  valor, con un bloqueo por celda. Mientras no se acepte, esta consecuencia vale
-  sin excepciones.
+  valor, con un bloqueo por celda. El ADR 0019 se aceptó el 2026-10-08.
