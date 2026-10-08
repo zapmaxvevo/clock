@@ -236,13 +236,16 @@ período o de vista, y no con una revalidación. **Las 08:00 son una constante
 del cliente, no una preferencia** (decisión del usuario del 2026-10-04).
 Justificación: ninguna fuente lo dice y 24 franjas de una hora no entran en una
 pantalla.
-_No verificado_: a qué hora abre Clockify la grilla. Puede ser lo que gobierna
-«inicio del día» del perfil (PF-15, perfil P-02): si la verificación lo confirma
-(P-07), se cambia solo la constante por esa preferencia.
+_No verificado_: a qué hora abre Clockify la grilla.
 _Corregido el 2026-10-04, slice 8_: decía «se desplaza para que se vea la línea
 de ahora», sin decir dónde queda, y que si la verificación lo confirmaba la hora
 fija pasaba a ser el ajuste del perfil. El slice 8 deja la constante; PF-15
 sigue `fuera de alcance` y perfil P-02, abierto y atado a esta respuesta.
+_Corregido el 2026-10-07_: el _No verificado_ seguía «Puede ser lo que gobierna
+«inicio del día» del perfil (PF-15, perfil P-02): si la verificación lo confirma
+(P-07), se cambia solo la constante por esa preferencia.» Ese ajuste no existe
+en el workspace del equipo (respuesta A de timesheet P-12): perfil P-02 se
+cerró y las 08:00 siguen como constante.
 
 ## 3. Navegación
 
@@ -1601,13 +1604,16 @@ _Corregido el 2026-10-05, slice 8b_: P-03 decía «en el slice 8 no». El 8b
 tampoco lo cierra: el team-lead lo dejó fuera el 2026-10-04, por delegación
 del usuario, y sigue abierto.
 
-Y uno que no es de este documento pero se cruza: **perfil P-02**, «inicio del
-día» (PF-15). El slice 8 no lo cierra: la grilla abre con las 08:00 arriba como
-constante del cliente (CAL-14). Si la verificación de CAL-14 muestra que esa
-hora es «inicio del día», se cambia solo la constante por la preferencia; si no
-tiene que ver con el calendario, se cierra solo, como prevé el perfil.
+Y uno que no es de este documento pero se cruzaba: **perfil P-02**, «inicio del
+día» (PF-15). Se cerró el 2026-10-07: el ajuste no existe en el workspace del
+equipo (respuesta A de timesheet P-12), así que las 08:00 de CAL-14 siguen como
+constante del cliente y no hay preferencia que leer.
 _Corregido el 2026-10-04, slice 8_: decía que perfil P-02 quedaba apuntado a
 este slice y se cerraba en él si la verificación lo confirmaba.
+_Corregido el 2026-10-07_: decía que el slice 8 no lo cerraba y que, si la
+verificación de CAL-14 mostraba que esa hora era «inicio del día», se cambiaba
+solo la constante por la preferencia; si no tenía que ver con el calendario, se
+cerraba solo.
 
 ### calendario P-07, la lista de verificación
 
@@ -1622,8 +1628,7 @@ divergencia de las que este documento propone.
 - **CAL-12** — Cambiar el zoom, ir al rastreador y volver: ¿sigue el zoom
   elegido? ¿Y en otro navegador?
 - **CAL-14** — ¿A qué hora aparece desplazada la grilla al abrir la página, en
-  la semana actual y en una pasada? Cambiar «inicio del día» en el perfil:
-  ¿cambia esa hora? Esta respuesta cierra también perfil P-02.
+  la semana actual y en una pasada?
 - **CAL-15, CAL-16** — ¿Qué controles de navegación hay —flechas, «Hoy»,
   selector de fecha— y cómo se rotula el rango visible?
 - **CAL-21, CAL-22** — ¿Qué muestra un bloque? ¿De qué color es un bloque sin
@@ -1677,6 +1682,9 @@ el dedo, la divergencia del ADR 0014.
 _Corregido el 2026-10-05, slice 11_: suma CAL-23, por las etiquetas. El
 facturable del bloque y del detalle no entra: no se puede verificar en el plan
 Free (P-16 de [la paridad de proyectos](proyectos.md)).
+_Corregido el 2026-10-07_: la pregunta de CAL-14 pedía además cambiar «inicio
+del día» en el perfil y decía que la respuesta cerraba también perfil P-02. Ese
+ajuste no existe en el workspace del equipo y perfil P-02 se cerró.
 
 ### Cerrados
 
