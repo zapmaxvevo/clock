@@ -837,3 +837,99 @@ test("cerrar la lista con la falla a la vista la pasa a la pantalla, que la rein
   await expect(field).toBeFocused();
   await expect(field).toHaveValue("1:00");
 });
+
+test("«Borrar» desde el editor con su falla a la vista la baja, y el aviso de una celda sigue", async ({
+  page,
+  email,
+}) => {
+  const project = await seedNamedProject("Falla editor");
+  const day = today();
+  const week = lastWeekOf(day);
+  const tuesday = addDays(week, 1);
+  const wednesday = addDays(week, 2);
+  await openTimesheetWeek(page, week, day);
+  await seedPersonEntries(email, [
+    { description: "editada", day: tuesday, start: "09:00", end: "10:00", project },
+    { description: "a", day: wednesday, start: "10:00", end: "11:00", project },
+    { description: "b", day: wednesday, start: "12:00", end: "13:00", project },
+  ]);
+  await openTimesheetWeek(page, week, day);
+
+  // Antes, un aviso de celda en la pantalla (TS-79).
+  const busy = cellField(page, project, wednesday, day);
+  await expect(busy).toHaveValue("2:00");
+  await writeCell(page, busy, "1:00");
+  const cellNotice = screenNotice(page, CELL_NOT_SAVED);
+  await expect(cellNotice).toContainText(CELL_NEEDS_ENTRY_EDIT);
+
+  // La respuesta del guardado se pierde: la falla queda a la vista en el editor.
+  const trigger = cellMenuButton(page, cellName(project, tuesday, day));
+  await openCellMenu(trigger);
+  await cellMenuItem(page, "Editar").click();
+  const editor = entryEditor(page);
+  await expect(dialogDescription(editor)).toBeFocused();
+  await dialogDescription(editor).fill("renombrada");
+  const restore = await loseActionResponses(page, isTimesheetPage);
+  await dialogButton(editor, "Guardar").click();
+  await expect(dialogNotice(editor, ENTRY_NOT_SAVED)).toContainText(NETWORK_FAILURE);
+  await restore();
+
+  // F1, A4: «Borrar» del menú del editor lo cierra y baja su falla. Al
+  // cancelar la confirmación, la pantalla no la muestra, y el aviso de la
+  // celda, que nada bajó, sigue.
+  await dialogActions(editor, "editada").click();
+  await page.getByRole("menuitem", { name: "Borrar", exact: true }).click();
+  const confirm = deleteEntryConfirm(page);
+  await expect(editor).toBeHidden();
+  await confirm.getByRole("button", { name: "Cancelar", exact: true }).click();
+  await expect(confirm).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await expect(screenNotice(page, ENTRY_NOT_SAVED)).toHaveCount(0);
+  await expect(cellNotice).toContainText(CELL_NEEDS_ENTRY_EDIT);
+});
+
+test("reintentar desde la pantalla el borrado de la única entrada de una fila espera la foto para mover el foco", async ({
+  page,
+  email,
+}) => {
+  const project = await seedNamedProject("Reintentar borrado");
+  const day = today();
+  const week = lastWeekOf(day);
+  const friday = addDays(week, 4);
+  await openTimesheetWeek(page, week, day);
+  await seedPersonEntries(email, [
+    { description: "única", day: friday, start: "09:00", end: "10:00", project },
+  ]);
+  await openTimesheetWeek(page, week, day);
+  const field = cellField(page, project, friday, day);
+  await expect(field).toHaveValue("1:00");
+
+  // El pedido no sale: la falla va a la pantalla, con «Reintentar», y la fila sigue.
+  const restore = await dropActionRequests(page, isTimesheetPage);
+  await openCellMenu(cellMenuButton(page, cellName(project, friday, day)));
+  await cellMenuItem(page, "Borrar").click();
+  await deleteEntryConfirm(page)
+    .getByRole("button", { name: "Borrar", exact: true })
+    .click();
+  const notice = screenNotice(page, ENTRY_NOT_DELETED);
+  await expect(notice).toContainText(NETWORK_FAILURE);
+  await expect(notice).toContainText("«única», de 09:00 a 10:00");
+  await expect(timesheetRow(page, project)).toBeVisible();
+  await restore();
+
+  // F2: con el teclado, el foco pasa antes al campo de la celda; con la
+  // respuesta retenida, sigue ahí mientras el pedido viaja.
+  const release = await holdActionResponses(page, isTimesheetPage);
+  const sent = page.waitForRequest(isAction);
+  const answered = page.waitForResponse((response) => isAction(response.request()));
+  await retryButton(notice).press("Enter");
+  await sent;
+  await expect(screenNotice(page, ENTRY_NOT_DELETED)).toHaveCount(0);
+  await expect(field).toBeFocused();
+
+  // Al soltar, la fila sale con la foto y el foco va a «Añadir nueva fila» (A2).
+  release();
+  expect((await answered).ok()).toBe(true);
+  await expect(timesheetRow(page, project)).toHaveCount(0);
+  await expect(addRowButton(page)).toBeFocused();
+});
