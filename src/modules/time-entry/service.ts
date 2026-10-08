@@ -24,6 +24,7 @@ import {
   fullWeekdayLabel,
   instantFromLocal,
   isAfterYear9999,
+  isWeekendDayKey,
   MINUTES_PER_DAY,
   minuteOfDayIn,
   nonexistentMinutes,
@@ -32,6 +33,7 @@ import {
   weekdayLabel,
   weekKeyLabel,
   weekStartKey,
+  type DateFormat,
   type TimeSettings,
   type WeekStart,
 } from "@/server/time";
@@ -1657,31 +1659,43 @@ export async function bulkDeleteEntries(
       },
       timeEntryMessages.bulkDeleteRejected,
     );
-    const removed = await timeEntryRepository.deleteClosedByIds(
-      tx,
-      authorized.map(targetOf),
-    );
-    if (removed.length !== authorized.length) {
-      throw new Error("El borrado masivo no coincide con las filas bloqueadas.");
-    }
-    await recordAudits(
-      tx,
-      removed.map((row) => ({
-        workspaceId: actor.workspaceId,
-        actorId: actor.userId,
-        action: "timeEntry.bulkDelete",
-        entity: AUDIT_ENTITY,
-        entityId: row.id,
-        // El borrado es físico y la unión se va en cascada: esta es la única
-        // copia que queda de la fila y de sus etiquetas (TT-61).
-        previousValue: { ...row, tagIds: sortedTagIdsOfLocked(found, row.id) },
-      })),
-    );
+    await deleteLockedEntries(tx, actor, authorized, "timeEntry.bulkDelete");
     return { ids: input.ids };
   });
 }
 
-/** Las etiquetas de una fila borrada en masa, leídas bajo bloqueo antes del borrado. */
+/**
+ * Borra las cerradas ya bloqueadas y autorizadas, en una sentencia, y deja una
+ * constancia `action` por cada una con la fila entera y sus etiquetas, leídas
+ * bajo el bloqueo. Lo comparten el borrado masivo y «Quitar fila».
+ */
+async function deleteLockedEntries(
+  tx: Transaction,
+  actor: Actor,
+  rows: readonly EntryWithRefs[],
+  action: "timeEntry.bulkDelete" | "timeEntry.removeRow",
+): Promise<void> {
+  const removed = await timeEntryRepository.deleteClosedByIds(tx, rows.map(targetOf));
+  if (removed.length !== rows.length) {
+    throw new Error("El borrado no coincide con las filas bloqueadas.");
+  }
+  const found = new Map(rows.map((row) => [row.id, row]));
+  await recordAudits(
+    tx,
+    removed.map((row) => ({
+      workspaceId: actor.workspaceId,
+      actorId: actor.userId,
+      action,
+      entity: AUDIT_ENTITY,
+      entityId: row.id,
+      // El borrado es físico y la unión se va en cascada: esta es la única
+      // copia que queda de la fila y de sus etiquetas (TT-61).
+      previousValue: { ...row, tagIds: sortedTagIdsOfLocked(found, row.id) },
+    })),
+  );
+}
+
+/** Las etiquetas de una fila borrada, leídas bajo bloqueo antes del borrado. */
 function sortedTagIdsOfLocked(
   found: ReadonlyMap<string, EntryWithRefs>,
   id: string,
@@ -2333,24 +2347,7 @@ export async function removeTimesheetRow(
     if (chosen.length === 0) {
       return { ids: [] };
     }
-    const removed = await timeEntryRepository.deleteClosedByIds(tx, chosen.map(targetOf));
-    if (removed.length !== chosen.length) {
-      throw new Error("El borrado de la fila no coincide con las entradas bloqueadas.");
-    }
-    const found = new Map(chosen.map((entry) => [entry.id, entry]));
-    await recordAudits(
-      tx,
-      removed.map((entry) => ({
-        workspaceId: actor.workspaceId,
-        actorId: actor.userId,
-        action: "timeEntry.removeRow",
-        entity: AUDIT_ENTITY,
-        entityId: entry.id,
-        // El borrado es físico y la unión se va en cascada: esta es la única
-        // copia que queda de la fila y de sus etiquetas (TT-61).
-        previousValue: { ...entry, tagIds: sortedTagIdsOfLocked(found, entry.id) },
-      })),
-    );
+    await deleteLockedEntries(tx, actor, chosen, "timeEntry.removeRow");
     return { ids: chosen.map((entry) => entry.id).sort() };
   });
 }
@@ -2360,15 +2357,13 @@ export type TimesheetRequest = {
   readonly day: string | null;
 };
 
-/** Sábado o domingo: el día con que empieza una semana que arranca en sábado o en domingo. */
-function isWeekendKey(date: string): boolean {
-  return weekStartKey(date, 6) === date || weekStartKey(date, 0) === date;
-}
+/** Una entrada de la planilla con el día local de su inicio, calculado una vez (TS-07). */
+type DatedEntry = { readonly entry: TimesheetEntryRow; readonly date: string };
 
 /** Las entradas de una fila de la planilla y lo que la fila muestra de su par. */
 type TimesheetRowGroup = {
   readonly first: TimesheetEntryRow;
-  readonly entries: TimesheetEntryRow[];
+  readonly entries: DatedEntry[];
 };
 
 /** La clave del par de una entrada: la de las filas de la planilla. */
@@ -2376,9 +2371,9 @@ function pairKeyOf(row: ProjectPair): string {
   return `${row.projectId ?? "-"}|${row.taskId ?? "-"}`;
 }
 
-function closedSecondsOf(entries: readonly TimesheetEntryRow[]): number {
+function closedSecondsOf(entries: readonly DatedEntry[]): number {
   return entries.reduce(
-    (total, entry) =>
+    (total, { entry }) =>
       total +
       (entry.endedAt === null ? 0 : durationSeconds(entry.startedAt, entry.endedAt)),
     0,
@@ -2407,12 +2402,11 @@ function compareTimesheetRows(left: TimesheetRowView, right: TimesheetRowView): 
 }
 
 /** Una fila de la planilla: sus celdas por día de inicio (TS-07, TS-102). */
-function timesheetRowOf(group: TimesheetRowGroup, timeZone: string): TimesheetRowView {
+function timesheetRowOf(group: TimesheetRowGroup): TimesheetRowView {
   const { first, entries } = group;
-  const byDay = new Map<string, TimesheetEntryRow[]>();
-  for (const entry of entries) {
-    const date = dayKey(entry.startedAt, timeZone);
-    byDay.set(date, [...(byDay.get(date) ?? []), entry]);
+  const byDay = new Map<string, DatedEntry[]>();
+  for (const dated of entries) {
+    byDay.set(dated.date, [...(byDay.get(dated.date) ?? []), dated]);
   }
   return {
     project: first.project === null ? null : projectRefOf(first.project),
@@ -2429,47 +2423,39 @@ function timesheetRowOf(group: TimesheetRowGroup, timeZone: string): TimesheetRo
         entryCount: cellEntries.length,
       })),
     closedSeconds: closedSecondsOf(entries),
-    entryIds: entries.map((entry) => entry.id).sort(),
+    entryIds: entries.map(({ entry }) => entry.id).sort(),
   };
 }
 
 /** Las filas que salen de las entradas (TS-14), en el orden de TS-15. */
-function timesheetRows(
-  entries: readonly TimesheetEntryRow[],
-  timeZone: string,
-): TimesheetRowView[] {
+function timesheetRows(entries: readonly DatedEntry[]): TimesheetRowView[] {
   const groups = new Map<string, TimesheetRowGroup>();
-  for (const entry of entries) {
-    const key = pairKeyOf(entry);
+  for (const dated of entries) {
+    const key = pairKeyOf(dated.entry);
     const group = groups.get(key);
     if (group === undefined) {
-      groups.set(key, { first: entry, entries: [entry] });
+      groups.set(key, { first: dated.entry, entries: [dated] });
     } else {
-      group.entries.push(entry);
+      group.entries.push(dated);
     }
   }
-  return [...groups.values()]
-    .map((group) => timesheetRowOf(group, timeZone))
-    .sort(compareTimesheetRows);
+  return [...groups.values()].map(timesheetRowOf).sort(compareTimesheetRows);
 }
 
 function timesheetDays(
   days: readonly string[],
-  entries: readonly TimesheetEntryRow[],
+  entries: readonly DatedEntry[],
   todayKey: string,
-  workspace: TrackerWorkspace,
+  format: DateFormat,
 ): TimesheetDayView[] {
-  const format = workspace.formats.date;
   return days.map((date) => ({
     date,
     label: weekdayLabel(date, todayKey, format),
     fullLabel: fullWeekdayLabel(date, todayKey, format),
     isToday: date === todayKey,
-    isWeekend: isWeekendKey(date),
+    isWeekend: isWeekendDayKey(date),
     beforeFloor: date < ENTRY_FLOOR_DAY_KEY,
-    closedSeconds: closedSecondsOf(
-      entries.filter((entry) => dayKey(entry.startedAt, workspace.timezone) === date),
-    ),
+    closedSeconds: closedSecondsOf(entries.filter((dated) => dated.date === date)),
   }));
 }
 
@@ -2492,12 +2478,16 @@ export async function getTimesheetState(
     workspace,
   );
   // Una sola sentencia: es una sola foto, sin transacción explícita.
-  const entries = await timeEntryRepository.listTimesheetEntries(
+  const rows = await timeEntryRepository.listTimesheetEntries(
     actor.workspaceId,
     actor.userId,
     startOfDayKey(week.start, timeZone),
     startOfDayKey(week.end, timeZone),
   );
+  const entries = rows.map((entry) => ({
+    entry,
+    date: dayKey(entry.startedAt, timeZone),
+  }));
   return {
     todayKey,
     canTrack: can(actor, "timeEntry.own.create", ownTimeEntryResource(actor)),
@@ -2511,8 +2501,8 @@ export async function getTimesheetState(
     previousStart: addDaysToKey(week.start, -7),
     nextStart: week.end,
     currentStart: current.start,
-    days: timesheetDays(week.days, entries, todayKey, workspace),
-    rows: timesheetRows(entries, timeZone),
+    days: timesheetDays(week.days, entries, todayKey, workspace.formats.date),
+    rows: timesheetRows(entries),
     closedSeconds: closedSecondsOf(entries),
     storageKey: `clock:planilla:${actor.workspaceId}:${actor.userId}`,
   };

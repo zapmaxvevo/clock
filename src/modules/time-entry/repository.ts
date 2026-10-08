@@ -117,14 +117,16 @@ function isTarget(target: EntryTarget) {
 
 type Executor = Transaction | typeof db;
 
-/** Lo que delimita una celda o una fila: de quién, qué par y qué tramo de instantes. */
-export type EntrySlice = {
+/** De quién y qué tramo de instantes: lo que lee la semana de la planilla. */
+type EntrySpan = {
   readonly workspaceId: string;
   readonly userId: string;
-  readonly pair: ProjectPair;
   readonly from: Date;
   readonly to: Date;
 };
+
+/** Lo que delimita una celda o una fila: de quién, qué par y qué tramo de instantes. */
+export type EntrySlice = EntrySpan & { readonly pair: ProjectPair };
 
 /** La entrada de la planilla, con su proyecto, su tarea, sus etiquetas y el cliente. */
 export type TimesheetEntryRow = EntryWithRefs & {
@@ -148,16 +150,20 @@ function hasPair(pair: ProjectPair) {
   );
 }
 
-/** Las cerradas de la persona con ese par y el inicio en `[from, to)`. */
-function inSlice(slice: EntrySlice) {
+/** Las cerradas de la persona con el inicio en `[from, to)`, de cualquier par. */
+function inSpan(span: EntrySpan) {
   return and(
-    eq(timeEntry.workspaceId, slice.workspaceId),
-    eq(timeEntry.userId, slice.userId),
-    hasPair(slice.pair),
+    eq(timeEntry.workspaceId, span.workspaceId),
+    eq(timeEntry.userId, span.userId),
     isNotNull(timeEntry.endedAt),
-    gte(timeEntry.startedAt, slice.from),
-    lt(timeEntry.startedAt, slice.to),
+    gte(timeEntry.startedAt, span.from),
+    lt(timeEntry.startedAt, span.to),
   );
+}
+
+/** Las de `inSpan` con ese par. */
+function inSlice(slice: EntrySlice) {
+  return and(inSpan(slice), hasPair(slice.pair));
 }
 
 /** Las dos claves hacen que el join no cruce workspaces. */
@@ -502,15 +508,7 @@ export const timeEntryRepository = {
         client,
         and(eq(client.workspaceId, project.workspaceId), eq(client.id, project.clientId)),
       )
-      .where(
-        and(
-          eq(timeEntry.workspaceId, workspaceId),
-          eq(timeEntry.userId, userId),
-          isNotNull(timeEntry.endedAt),
-          gte(timeEntry.startedAt, from),
-          lt(timeEntry.startedAt, to),
-        ),
-      )
+      .where(inSpan({ workspaceId, userId, from, to }))
       .orderBy(asc(timeEntry.startedAt), asc(timeEntry.createdAt), asc(timeEntry.id));
     return rows.map((row) => ({ ...toEntryWithRefs(row), client: row.client }));
   },

@@ -409,6 +409,16 @@ export type RemoveTimesheetRowInput = z.input<typeof removeTimesheetRowInput>;
 /** Lo que recibe el service: los ids ya normalizados. */
 export type RemoveTimesheetRowValues = z.output<typeof removeTimesheetRowInput>;
 
+/** Con la forma de `ProjectRef`: lo que una vista muestra del proyecto. */
+const projectRefView = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  color: z.enum(PALETTE_KEYS),
+});
+
+/** Con la forma de `TaskRef`. */
+const taskRefView = z.object({ id: z.uuid(), name: z.string() });
+
 /**
  * Todo lo que depende de zona horaria o de formato se resuelve en el servidor.
  * El cliente solo cuenta el transcurrido del timer activo.
@@ -443,13 +453,11 @@ export const timeEntryView = z.object({
   editableTimes: z.boolean(),
   /**
    * El proyecto de la entrada, con su nombre y su color de ahora, esté
-   * archivado o no (TT-104, PR-102). Con la forma de `ProjectRef`.
+   * archivado o no (TT-104, PR-102).
    */
-  project: z
-    .object({ id: z.uuid(), name: z.string(), color: z.enum(PALETTE_KEYS) })
-    .nullable(),
-  /** Con la forma de `TaskRef`. Nulo si la entrada no tiene tarea. */
-  task: z.object({ id: z.uuid(), name: z.string() }).nullable(),
+  project: projectRefView.nullable(),
+  /** Nulo si la entrada no tiene tarea. */
+  task: taskRefView.nullable(),
   /** TT-14, TT-15: un booleano visible, sin importes. */
   billable: z.boolean(),
   /**
@@ -588,11 +596,9 @@ export const timesheetCellView = z.object({
 });
 
 export const timesheetRowView = z.object({
-  /** Con la forma de `ProjectRef`; `null` es «Sin proyecto». Esté o no archivado (TS-21). */
-  project: z
-    .object({ id: z.uuid(), name: z.string(), color: z.enum(PALETTE_KEYS) })
-    .nullable(),
-  task: z.object({ id: z.uuid(), name: z.string() }).nullable(),
+  /** `null` es «Sin proyecto». Esté o no archivado (TS-21). */
+  project: projectRefView.nullable(),
+  task: taskRefView.nullable(),
   /** El cliente del proyecto, en gris (TS-13); `null` sin cliente o sin proyecto. */
   client: z.object({ id: z.uuid(), name: z.string() }).nullable(),
   /** Solo las celdas con entradas, por día. */
