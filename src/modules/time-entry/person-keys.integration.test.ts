@@ -1,8 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { and, eq, sql } from "drizzle-orm";
-import { TransactionRollbackError } from "drizzle-orm/errors";
+import { and, eq, sql, TransactionRollbackError } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { db, type Transaction } from "@/server/db";
@@ -218,26 +217,31 @@ describe("borrar el workspace (criterio 5, R1-D4)", () => {
 
     await db.delete(workspace).where(eq(workspace.id, ours.workspaceId));
 
-    const of = ours.workspaceId;
-    expect(await db.select().from(workspace).where(eq(workspace.id, of))).toEqual([]);
+    const workspaceId = ours.workspaceId;
     expect(
-      await db.select().from(membership).where(eq(membership.workspaceId, of)),
+      await db.select().from(workspace).where(eq(workspace.id, workspaceId)),
     ).toEqual([]);
     expect(
-      await db.select().from(timeEntry).where(eq(timeEntry.workspaceId, of)),
+      await db.select().from(membership).where(eq(membership.workspaceId, workspaceId)),
     ).toEqual([]);
     expect(
-      await db.select().from(timeEntryTag).where(eq(timeEntryTag.workspaceId, of)),
+      await db.select().from(timeEntry).where(eq(timeEntry.workspaceId, workspaceId)),
+    ).toEqual([]);
+    expect(
+      await db
+        .select()
+        .from(timeEntryTag)
+        .where(eq(timeEntryTag.workspaceId, workspaceId)),
     ).toEqual([]);
     expect(
       await db
         .select()
         .from(workspaceSettings)
-        .where(eq(workspaceSettings.workspaceId, of)),
+        .where(eq(workspaceSettings.workspaceId, workspaceId)),
     ).toEqual([]);
-    expect(await db.select().from(auditLog).where(eq(auditLog.workspaceId, of))).toEqual(
-      [],
-    );
+    expect(
+      await db.select().from(auditLog).where(eq(auditLog.workspaceId, workspaceId)),
+    ).toEqual([]);
   });
 });
 
@@ -281,7 +285,11 @@ describe("el relleno de la 0013 (criterio 8, R1-D3)", () => {
     };
   }
 
-  function find(rows: readonly MembershipRow[], workspaceId: string, userId: string) {
+  function membershipIn(
+    rows: readonly MembershipRow[],
+    workspaceId: string,
+    userId: string,
+  ) {
     const found = rows.find(
       (row) => row.workspaceId === workspaceId && row.userId === userId,
     );
@@ -338,8 +346,8 @@ describe("el relleno de la 0013 (criterio 8, R1-D3)", () => {
     ).rejects.toBeInstanceOf(TransactionRollbackError);
 
     const [first, second] = readings;
-    const forU = find(first.memberships, a.workspaceId, u);
-    const forOwner = find(first.memberships, a.workspaceId, a.ownerId);
+    const forU = membershipIn(first.memberships, a.workspaceId, u);
+    const forOwner = membershipIn(first.memberships, a.workspaceId, a.ownerId);
     expect(first.memberships).toHaveLength(before.length + 2);
     expect(forU).toMatchObject({
       role: "member",
@@ -379,8 +387,8 @@ describe("el relleno de la 0013 (criterio 8, R1-D3)", () => {
     );
 
     expect([
-      find(first.memberships, b.workspaceId, u),
-      find(first.memberships, a.workspaceId, v),
+      membershipIn(first.memberships, b.workspaceId, u),
+      membershipIn(first.memberships, a.workspaceId, v),
     ]).toEqual(untouched);
 
     expect(second.memberships).toEqual(first.memberships);

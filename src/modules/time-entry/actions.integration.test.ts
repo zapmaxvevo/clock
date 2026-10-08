@@ -1103,8 +1103,6 @@ describe("updateEntryTimes y updateRunningStart", () => {
       const seeded = await signInOn();
       const closed = await seedOwnClosed(seeded);
       const running = await seedOwnRunning(seeded);
-      // La membresía la siembra `signInOn`; la primera action entra con ella activa.
-      await actions.updateDescription({ id: closed.id, description: "" });
       await db
         .update(membership)
         .set({ status })
