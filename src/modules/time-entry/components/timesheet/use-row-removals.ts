@@ -21,7 +21,10 @@ import { withoutStoredRow } from "./stored-rows";
 import { updateStoredRows } from "./use-stored-rows";
 
 export type RowRemovals = {
-  /** Las filas cuyo «Quitar fila» viaja o ya se aplicó y espera la foto. */
+  /**
+   * Las filas de la semana que se mira cuyo «Quitar fila» viaja o ya se
+   * aplicó y espera la foto.
+   */
   readonly removing: readonly ProjectPair[];
   /** La última falla, con su pedido: lo que dice el aviso y reenvía «Reintentar». */
   readonly failure: RowRemovalFailure | null;
@@ -33,12 +36,13 @@ export type RowRemovals = {
 /**
  * «Quitar fila» (§5.8, TS-52 … TS-54), como `useCellWrites`: estado propio y
  * la action fuera de toda transición. Con éxito olvida la fila en el
- * navegador y avisa `onRemoved`; `state` es la foto del servidor tal cual
- * llega, y otra semana descarta lo pendiente pero conserva la falla.
+ * navegador y avisa `onRemoved` con la semana del pedido; `state` es la foto
+ * del servidor tal cual llega, y otra semana descarta lo pendiente pero
+ * conserva la falla.
  */
 export function useRowRemovals(
   state: TimesheetState,
-  onRemoved: (pair: ProjectPair) => void,
+  onRemoved: (pair: ProjectPair, weekStart: string) => void,
 ): RowRemovals {
   const [removals, dispatch] = useReducer(rowRemovalsReducer, NO_ROW_REMOVALS);
   const [snapshot, setSnapshot] = useState(state);
@@ -51,7 +55,10 @@ export function useRowRemovals(
     });
   }
 
-  const removing = useMemo(() => removingOf(removals), [removals]);
+  const removing = useMemo(
+    () => removingOf(removals, state.weekStart),
+    [removals, state.weekStart],
+  );
   const { failure } = removals;
 
   async function send(request: RemoveTimesheetRowInput): Promise<void> {
@@ -72,7 +79,7 @@ export function useRowRemovals(
     updateStoredRows(state.storageKey, (rows) =>
       withoutStoredRow(rows, request.weekStart, pair),
     );
-    onRemoved(pair);
+    onRemoved(pair, request.weekStart);
   }
 
   function remove(request: RemoveTimesheetRowInput): void {

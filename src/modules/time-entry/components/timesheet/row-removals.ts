@@ -17,6 +17,8 @@ export type RowRemovalFailure = {
  */
 type PendingRemoval = {
   readonly id: number;
+  /** La semana del pedido: la fila se oculta solo ahí (F2-m1). */
+  readonly weekStart: string;
   readonly pair: ProjectPair;
   readonly status: "sending" | "settled";
 };
@@ -54,7 +56,12 @@ export function rowRemovalsReducer(
   switch (event.type) {
     case "sent": {
       const pair = removalPairOf(event.request);
-      const removal: PendingRemoval = { id: event.id, pair, status: "sending" };
+      const removal: PendingRemoval = {
+        id: event.id,
+        weekStart: event.request.weekStart,
+        pair,
+        status: "sending",
+      };
       // Como en las celdas: quitar otra vez la fila que falló baja su aviso.
       const failure =
         state.failure !== null && samePair(removalPairOf(state.failure.request), pair)
@@ -85,7 +92,16 @@ export function rowRemovalsReducer(
   }
 }
 
-/** Los pares de las filas que no se dibujan. */
-export function removingOf(state: RowRemovalsState): readonly ProjectPair[] {
-  return state.pending.map((removal) => removal.pair);
+/**
+ * Los pares de las filas que no se dibujan en la semana que se mira. Un
+ * pedido de otra semana —un «Reintentar» de su falla, un diálogo confirmado
+ * al volver— no oculta la fila del mismo par en esta (F2-m1).
+ */
+export function removingOf(
+  state: RowRemovalsState,
+  weekStart: string,
+): readonly ProjectPair[] {
+  return state.pending
+    .filter((removal) => removal.weekStart === weekStart)
+    .map((removal) => removal.pair);
 }

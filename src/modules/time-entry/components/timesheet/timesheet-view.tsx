@@ -49,9 +49,16 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
   const storedRows = useStoredRows(state.storageKey);
   /** Los pares elegidos en esta carga de la página y en esta semana, en orden (TS-15). */
   const [added, setAdded] = useState<readonly ProjectPair[]>([]);
-  const removals = useRowRemovals(state, (pair) =>
-    setAdded((current) => current.filter((candidate) => !samePair(candidate, pair))),
-  );
+  /** La semana que se mira, para lo que responde después de cambiarla (F2-m1). */
+  const weekRef = useRef(state.weekStart);
+  const removals = useRowRemovals(state, (pair, weekStart) => {
+    // Las filas agregadas son de la semana que se mira: un «Quitar fila» de
+    // otra no saca la del mismo par de esta.
+    if (weekStart !== weekRef.current) {
+      return;
+    }
+    setAdded((current) => current.filter((candidate) => !samePair(candidate, pair)));
+  });
   const [newRow, setNewRow] = useState(false);
   const [confirming, setConfirming] = useState<PendingRemoval | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -99,6 +106,10 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
     shown: writes.shown,
   });
   const canAddRow = state.canTrack && state.days.some((day) => !day.beforeFloor);
+
+  useEffect(() => {
+    weekRef.current = state.weekStart;
+  }, [state.weekStart]);
 
   // TS-19: lo guardado que ya llegó del servidor, o que el catálogo ya no
   // ofrece, se olvida. Sin permiso de carga no se toca: no se dibuja.
