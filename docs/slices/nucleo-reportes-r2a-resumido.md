@@ -13,7 +13,10 @@ medición de §6 lo justifica.
   vacío), RP-34, RP-35, RP-61 y RP-64.
 - **Lugar en el plan:** [mapa del núcleo](nucleo-reportes-mapa.md), §3 «R2a».
   Depende de R1 y del 13, los dos en `main`.
-- **Revisión del contrato:** pendiente de `architecture-reviewer`.
+- **Revisión del contrato:** aprobado con cambios en la primera ronda de
+  `architecture-reviewer`, sin decisiones del usuario; los trece hallazgos están
+  aplicados
+  ([`correcciones-nucleo-reportes-r2a-contrato.md`](correcciones-nucleo-reportes-r2a-contrato.md)).
 - **Decisiones de arquitectura asociadas**, todas aceptadas por el usuario:
   - [ADR 0020](../adr/0020-nucleo-de-reportes-antes-de-la-fase-2.md), condición
     tercera: `report.view`, `timeEntry.others.view`, el `ReportScope`, RP-03
@@ -62,9 +65,13 @@ propiedades no la cumple, así que nadie fuera del service la construye sin un
 privado del service, que pregunta `timeEntry.others.view` una vez. (3) se
 descarta porque un `null` olvidado abre todo; (1) obliga a un `as` en el código
 de producción. Toda función del repository de `report` lo recibe como primer
-parámetro y lo traduce a su `where` con una sola función privada, `inScope`; el
-repository importa el tipo con `import type` desde el service, un ciclo solo de
-tipos que se borra al compilar. Un test de tipos lo afirma (criterio 12).
+parámetro y lo traduce a su `where` con una sola función privada, `inScope`.
+
+El repository importa el tipo con `import type` desde el service: es el primer
+repository del árbol que importa de un service, un ciclo solo de tipos que se
+borra al compilar. Llevar la clase a un `scope.ts` aparte quitaría el ciclo pero
+obligaría a exportar `scopeOf` fuera del service, que es lo que el ADR 0020
+prohíbe. Un test de tipos lo afirma (criterio 12).
 
 **D-R2a-2 — Cómo decide cada rol.** `can()` decide; el service solo arma el
 alcance con lo que responde.
@@ -88,8 +95,10 @@ alcance con lo que responde.
   reemplaza la decisión del usuario.
 - **RP-07**: sin `report.view`, `getReportState` responde `{ kind: "forbidden" }`
   **sin llamar al repository**. La pantalla muestra el título y «Tu acceso al
-  workspace está desactivado. No podés ver reportes.». No es un error de lectura:
-  no pasa por `error.tsx`, que diría «Reintentar».
+  workspace está desactivado. No podés ver reportes.». Vale también para una
+  membresía `invited`, que tiene sesión porque `ensureWorkspaceContext` no la
+  activa. No es un error de lectura: no pasa por `error.tsx`, que diría
+  «Reintentar».
 - **RP-64**: una membresía invitada no tiene entradas; R2a no muestra personas
   sin horas (eso es R9), así que no aparece.
 
@@ -116,15 +125,26 @@ popups dentro de un `Dialog` en `estado-fase1.md`). Lo demás:
 - **Válido** es: las dos claves existen (`parseDayKey`), el día siguiente a
   `hasta` tiene clave de cuatro cifras (es la cota superior de la lectura),
   `hasta >= desde`, y el período tiene a lo sumo 366 días contando los dos
-  extremos (RP-21). **Una URL que no cumple se descarta entera, sin aviso**, y
-  se muestra «Esta semana» (RP-32); también un parámetro repetido.
+  extremos (RP-21). **Un rango inválido se descarta entero —los dos
+  extremos— sin aviso**, y se muestra «Esta semana» (RP-32); también un
+  parámetro repetido. **La agrupación se valida por su lado**: un `agrupar`
+  válido sobrevive a un rango inválido, y al revés.
+- **El calendario lleva `resetOnSelect`.** Con `mode="range"` y el rango actual
+  preseleccionado, `react-day-picker` 10 sin esa opción extiende o recorta el
+  rango con cada clic (`addToRange`), y un clic sobre el fin lo colapsa a ese
+  día. Con `resetOnSelect` (`selection/useRange.js:29-36`), sobre un rango
+  completo el primer clic arranca uno nuevo con ese día como inicio y sin fin, y
+  el segundo lo cierra; si el segundo es anterior al primero, los extremos se
+  invierten (`addToRange.js:37-39`). Sobre un período de un solo día, un clic en
+  ese mismo día deja la selección vacía (`useRange.js:30-31`).
 - **Los mensajes de RP-34 son del selector**: antes de navegar, valida con el
   mismo esquema que la URL (`reportRangeInput`) y, si falla, muestra el mensaje
   en el popover y no navega. Con el calendario de rango, el fin anterior al
   inicio no se puede elegir; su mensaje queda en el esquema y `parity-analyst`
   registra que la interfaz no lo produce. El de 366 días sí se ve.
-- **Un solo día** es un rango: elegido el inicio sin fin, «Aplicar» usa el mismo
-  día como fin.
+- **Un solo día** es un rango: con el inicio elegido y sin fin —después del
+  primer clic—, «Aplicar» usa el mismo día como fin. **Con la selección vacía**,
+  «Aplicar» lleva `aria-disabled` y no hace nada.
 - **Las flechas mueven el período entero** (RP-20): `n` días hacia atrás o
   adelante, con `n` el largo del período. Una flecha cuyo destino no tendría
   clave de cuatro cifras, o cuyo día siguiente al último no la tendría, no se
@@ -158,16 +178,19 @@ proyecto ni de la tarea (RP-29, RP-30, RP-61). La duración de cada entrada es
 floor(extract(epoch from date_trunc('milliseconds', ended_at) - date_trunc('milliseconds', started_at)))
 ```
 
-que es `durationSeconds` sobre los instantes como los ve JS: el driver entrega
-`timestamptz` como texto y Drizzle lo convierte con `new Date(texto)`
-(`drizzle-orm/node-postgres/session.js:26-29`,
-`pg-core/columns/timestamp.js:30-33`), que conserva hasta los milisegundos. Que
-los trunque y no los redondee no está escrito en ningún lugar del árbol: lo fija
-el criterio 8, que compara con la planilla y no con un número escrito a mano; si
-el driver redondea, el SQL lo sigue. Con `milliseconds`, `date_trunc` no depende
+que es `durationSeconds` sobre los instantes como los ve JS: los dos drivers
+entregan `timestamptz` como texto con el mismo `getTypeParser`
+(`drizzle-orm/node-postgres/session.js:26-29` y
+`drizzle-orm/neon-serverless/session.js:26-29`) y Drizzle lo convierte con
+`new Date(texto)` (`pg-core/columns/timestamp.js:30-33`), así que el parseo es
+el mismo en los tests y en producción. V8 trunca a milisegundos, no redondea
+(`new Date("…10:00:00.0009+00")` da `.000`), lo mismo que
+`date_trunc('milliseconds')`; el criterio 8 lo fija comparando con la planilla
+y no con un número escrito a mano. Con `milliseconds`, `date_trunc` no depende
 de la zona de la sesión. Cada entrada se trunca a segundos enteros y después se
-suman; `sum()` devuelve `numeric`, la consulta lo convierte con `::bigint` y el
-repository lo pasa a número con una comprobación de entero seguro y no
+suman. La expresión por entrada es `numeric` (`extract` da `numeric` desde
+Postgres 14), así que `sum()` también; la consulta lo convierte con `::bigint`
+y el repository lo pasa a número con una comprobación de entero seguro y no
 negativo. El total facturable es la misma suma con `filter (where billable)` y
 `coalesce(…, 0)`. **El test que ata las dos copias de la regla** (ADR 0021)
 compara el total del reporte con el `closedSeconds` de `getTimesheetState` para
@@ -192,7 +215,9 @@ user_id)` —R1 garantiza que existe— para el estado; `"user"` con `join`
   interno por el nombre de la cuenta; `user_preference` con `left join` por el
   nombre editado. El service compone con `displayNameOf`, que pasa a aceptar
   `Pick<StoredProfile, "displayName">` (hoy pide el `StoredProfile` entero, con
-  preferencias que el reporte no tiene);
+  preferencias que el reporte no tiene). El comentario de `session.ts:49`
+  («Único lugar que compone el nombre que se muestra») deja de ser cierto y pasa
+  a «Único lugar que compone el nombre de quien mira»;
 - **por proyecto**: `project` con `left join` por `(workspace_id, id)` —un
   `project_id` nulo es «Sin proyecto» (RP-28)— y `client` con `left join` por
   `(workspace_id, id)` contra `project.client_id`. Archivados o no (RP-29). El
@@ -203,18 +228,22 @@ user_id)` —R1 garantiza que existe— para el estado; `"user"` con `join`
 reproducible (30 personas, tres años, 8 entradas por día hábil), cuatro
 consultas medidas con `explain (analyze, buffers)` en un Postgres de la misma
 versión mayor que Neon, un presupuesto por consulta y una regla escrita para
-sumar o no el índice parcial del ADR 0021.
+sumar o no el índice parcial del ADR 0021. La versión importa: en Postgres 18
+el _skip scan_ podría hacer que el índice existente sirva para Q1 y cambiar la
+decisión.
 
 **D-R2a-10 — Ruta, navegación y error.** La ruta es `/reportes` y la entrada
 «Reportes» va entre «Planilla» y «Proyectos»: después de las pantallas donde se
 cargan horas y antes de la de administración. Se dibuja para todos:
 `report.view` es de los cinco roles, y una membresía inactiva ve el aviso de
-D-R2a-2. El título visible es «Reporte resumido»: el detallado y el semanal de
-la fase 3 serán otras vistas bajo «Reportes». `error.tsx` muestra «No se pudo
-cargar el reporte.» con «Reintentar» (RP-35), como `planilla`. **Sin caché
-compartida**: la página lee la sesión, así que es dinámica; el módulo no usa
-`"use cache"`, `unstable_cache` ni `revalidate`, y `cache()` de React solo
-dentro del pedido, como `currentSession`.
+D-R2a-2. La entrada queda marcada con parámetros en la URL, porque
+`app-nav.tsx:26` compara solo el `pathname`. El título visible es «Reporte
+resumido»: el detallado y el semanal de la fase 3 serán otras vistas bajo
+«Reportes». `error.tsx` muestra «No se pudo cargar el reporte.» con
+«Reintentar» (RP-35), como `planilla`. **Sin caché compartida**: la página lee
+la sesión, así que es dinámica; el módulo no usa `"use cache"`,
+`unstable_cache` ni `revalidate`, y `cache()` de React solo dentro del pedido,
+como `currentSession`.
 
 **D-R2a-11 — Los e2e del reporte.** La regla del mapa, con los helpers
 concretos (§8.3), y la lista de lo que no se prueba en e2e (§8.4).
@@ -222,19 +251,19 @@ concretos (§8.3), y la lista de lo que no se prueba en e2e (§8.4).
 **D-R2a-12 — El test de tipos.** Que una lectura sin `ReportScope` no compile se
 afirma con un archivo `report/scope.test-d.ts` que `npm run typecheck` revisa
 (`tsconfig.json:25-32` incluye todo `.ts`) y vitest no corre
-(`vitest.config.ts:8` incluye solo `*.test.ts` y `*.test.tsx`). Lleva
+(`vitest.config.ts:8` incluye solo `*.test.ts` y `*.test.tsx`; con ese sufijo,
+vitest importaría `service.ts` y con él la base y el entorno). Lleva
 `// @ts-expect-error` con su motivo, que `@typescript-eslint/ban-ts-comment`
-admite con descripción (`eslint.config.mjs:15`). No silencia al compilador: la
-directiva falla si el compilador deja de dar el error.
+admite con descripción (`eslint.config.mjs:15`, con la opción por omisión
+`allow-with-description`), con precedente en
+`src/server/permissions/permissions.test.ts:271-320`. No silencia al
+compilador: la directiva falla si el compilador deja de dar el error.
 
 ## 0. Precondición de arranque
 
 - **`main` en `b4aaff2`**, con R1 y el 13 mergeados. Las citas de abajo son de
-  ese árbol. El 13b está en revisión en otra rama y toca componentes de la
-  planilla; si entra antes del arranque de R2a, una ronda corta de
-  `architecture-reviewer` contra el árbol, con atención a
-  `time-entry/components/calendar/period-picker.tsx` y `date-field.tsx`, que este
-  contrato toca (§1).
+  ese árbol. El 13b (en revisión en `fase1/slice-13b-contrato`) no toca los
+  archivos de §1; si entra antes del arranque de R2a, alcanza con rebasar.
 - **La versión mayor de Postgres de Neon**, que da el usuario (§10), antes de
   la medición de §6. Los tests de integración y CI usan `postgres:17-alpine`.
 - **Para desplegar, no para mergear**: la consulta de verificación de R1 en
@@ -243,40 +272,44 @@ directiva falla si el compilador deja de dar el error.
 
 ### Supuestos sobre el árbol, con archivo y línea en `b4aaff2`
 
-| Supuesto                                                                                                                                                                                      | Dónde                                                                                                   |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| La unión `Action` sale de `ResourceByAction`; `resourceKinds` y `allowedRoles` tienen una fila por acción; `everyone` son los cinco roles                                                     | `src/server/permissions/index.ts:54-79`, `:87-105`, `:107-133`                                          |
-| `can` niega una membresía no activa, un recurso de otro workspace y un `kind` que la acción no admite, en ese orden                                                                           | `permissions/index.ts:173-182`                                                                          |
-| `WorkspaceResource` es `{ kind: "workspace", workspaceId }`; `project/service.ts` lo arma con una función privada                                                                             | `permissions/index.ts:14-17`; `src/modules/project/service.ts:52-54`                                    |
-| Los tests de `can` arman el actor y el recurso de workspace con literales                                                                                                                     | `src/server/permissions/permissions.test.ts:14-18`                                                      |
-| `requireSession()` devuelve `actor`, `membership` y las preferencias; `currentSession` es `cache()` de React, una lectura por pedido                                                          | `src/server/session.ts:34-64`                                                                           |
-| `timeSettingsOf(context)` da zona, primer día de la semana (de `weekStartOf`) y formatos                                                                                                      | `src/modules/profile/service.ts:134-143`; `src/modules/workspace/service.ts:18-20`                      |
-| `displayNameOf(stored: StoredProfile, accountName)` lee solo `displayName`; lo usan `session.ts` y un test de `profile`                                                                       | `profile/service.ts:97-101`, `:112-115`; `session.ts:50`; `profile/service.integration.test.ts:594-597` |
-| `weekBounds`, `formatDuration` (minutos a `h:mm`), `dayKey`, `durationSeconds` (milisegundos, `floor`), `parseDayKey` (solo años de cuatro cifras), `addDaysToKey`, `formatDayKey`            | `src/server/time/index.ts:42-52`, `:61-66`, `:82-84`, `:123-125`, `:166-184`, `:192-203`, `:222-241`    |
-| `weekStartKey`, `startOfDayKey` (un día que falta entero empieza en el siguiente), `weekKeyLabel`                                                                                             | `time/index.ts:350-357`, `:368-381`, `:395-417`                                                         |
-| No hay función que cuente días entre dos claves ni que rotule un rango que no sea una semana                                                                                                  | `time/index.ts` (las exportadas, `:6-735`)                                                              |
-| `time_entry.user_id` → `user` en `restrict` y la clave compuesta `time_entry_membership_fk` (R1): toda entrada tiene membresía en su workspace                                                | `src/server/db/schema.ts:411-413`, `:477-481`                                                           |
-| `time_entry` tiene `billable` no nulo, el índice `(workspace_id, user_id, started_at desc)`, `ended_at >= started_at` y el proyecto en `set null`                                             | `schema.ts:424`, `:436-440`, `:442-445`, `:450-454`                                                     |
-| `membership` es única por `(workspace_id, user_id)` y su `status` es `active`, `inactive` o `invited`                                                                                         | `schema.ts:33-37`, `:97-123`                                                                            |
-| `user_preference.display_name` nulable; `user.name` no nulo                                                                                                                                   | `schema.ts:145`; `src/server/db/auth-schema.ts:4-15`                                                    |
-| `project.color` se restringe a la paleta con un `check`; `project.client_id` apunta a `client (workspace_id, id)`; archivados por `archived_at`                                               | `schema.ts:252-309`                                                                                     |
-| `who_sees_all_entries` arranca en `admins`, con el comentario de R1                                                                                                                           | `schema.ts:67-72`                                                                                       |
-| La última migración es la 0014                                                                                                                                                                | `drizzle/meta/_journal.json:100-107`                                                                    |
-| `inSpan` de `time-entry` filtra cerradas por persona e inicio en `[from, to)`; `listTimesheetEntries` lee la semana de la planilla en una sentencia                                           | `src/modules/time-entry/repository.ts:154-162`, `:495-514`                                              |
-| `getTimesheetState` corta la semana con `startOfDayKey` y suma `durationSeconds` por entrada (`closedSecondsOf`); `TrackerWorkspace` es `TimeSettings`                                        | `time-entry/service.ts:127`, `:2374-2381`, `:2467-2509`                                                 |
-| Producción habla con Neon por `neon-serverless`; local y tests, por `node-postgres`                                                                                                           | `src/server/db/index.ts:16-22`                                                                          |
-| Drizzle recibe `timestamptz` como texto y lo convierte con `new Date(texto)`                                                                                                                  | `node_modules/drizzle-orm/node-postgres/session.js:26-29`; `pg-core/columns/timestamp.js:30-33`         |
-| La integración migra con `node-postgres` contra `postgres:17-alpine`; CI usa la misma imagen                                                                                                  | `src/test/global-setup.ts:11-26`; `.github/workflows/ci.yml:43-44`                                      |
-| `seedMember(workspaceId, role)` no recibe estado; `seedTimeEntry` convierte los instantes con `new Date` (pierde los microsegundos); `seedPreferences` escribe `display_name`                 | `src/test/factories.ts:60-64`, `:107-123`, `:75-81`                                                     |
-| `actorIn` y `workspaceOf` arman el actor y la configuración de tiempo de un test                                                                                                              | `src/test/time-entry.ts:20-34`                                                                          |
-| `compareNames` desempata por id; `isPaletteKey` y `ProjectRef`                                                                                                                                | `src/lib/text.ts:27-39`; `src/modules/project/palette.ts:24`; `project/schema.ts:129-133`               |
-| La navegación es una lista literal con «Inicio», «Calendario», «Planilla» y «Proyectos»; un e2e afirma un subconjunto en orden                                                                | `src/components/layout/app-nav.tsx:9-14`; `e2e/calendar.spec.ts:171-173`                                |
-| La planilla compone `requireSession`, `safeParse` de la URL y `Suspense`; su `error.tsx` usa `ActionFeedback` con `retry`                                                                     | `src/app/(app)/planilla/page.tsx:11-25`; `planilla/error.tsx:10-17`                                     |
-| `next.config.ts` no activa `cacheComponents` ni ninguna caché de páginas                                                                                                                      | `next.config.ts:33-37`                                                                                  |
-| `PeriodPicker` abre un `Calendar` de un día en un `Popover` y navega con `router.push`; `civilDate` vive en `time-entry/components` y lo importan solo `period-picker.tsx` y `date-field.tsx` | `time-entry/components/calendar/period-picker.tsx:31-77`; `time-entry/components/civil-date.ts:9-21`    |
-| Cada e2e entra con una persona propia (email único) y todas se llaman `PERSON_NAME`; el workspace es el más viejo (`FIRST_WORKSPACE`), del owner `owner@<dominio>`                            | `e2e/session.ts:7-8`, `:63-71`; `e2e/database.ts:14`; `e2e/workspace.setup.ts:19`                       |
-| `seedEntries` exige un proyecto por nombre y la membresía de la persona; `updateOne` exige exactamente una fila                                                                               | `e2e/database.ts:299-359`, `:109-116`                                                                   |
-| `@typescript-eslint/ban-ts-comment` en `error`; `tsc` incluye todo `.ts`; vitest de unidad incluye solo `*.test.ts(x)`                                                                        | `eslint.config.mjs:15`; `tsconfig.json:25-32`; `vitest.config.ts:8`                                     |
+| Supuesto                                                                                                                                                                                                                         | Dónde                                                                                                                               |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| La unión `Action` sale de `ResourceByAction`; `resourceKinds` y `allowedRoles` tienen una fila por acción; `everyone` son los cinco roles                                                                                        | `src/server/permissions/index.ts:54-79`, `:87-105`, `:107-133`                                                                      |
+| `can` niega una membresía no activa, un recurso de otro workspace y un `kind` que la acción no admite, en ese orden                                                                                                              | `permissions/index.ts:173-182`                                                                                                      |
+| `WorkspaceResource` es `{ kind: "workspace", workspaceId }`; `project/service.ts` lo arma con una función privada                                                                                                                | `permissions/index.ts:14-17`; `src/modules/project/service.ts:52-54`                                                                |
+| Los tests de `can` arman el actor y el recurso de workspace con literales, y usan `@ts-expect-error` con descripción                                                                                                             | `src/server/permissions/permissions.test.ts:14-18`, `:271-320`                                                                      |
+| `requireSession()` devuelve `actor`, `membership` y las preferencias; `currentSession` es `cache()` de React, una lectura por pedido; su comentario de `:49` dice que es el único que compone el nombre                          | `src/server/session.ts:34-64`, `:49`                                                                                                |
+| `ensureWorkspaceContext` devuelve la membresía que encuentra con su estado, también `invited`                                                                                                                                    | `src/modules/workspace/service.ts:62-79`                                                                                            |
+| `timeSettingsOf(context)` da zona, primer día de la semana (de `weekStartOf`) y formatos                                                                                                                                         | `src/modules/profile/service.ts:134-143`; `src/modules/workspace/service.ts:18-20`                                                  |
+| `displayNameOf(stored: StoredProfile, accountName)` lee solo `displayName`; lo usan `session.ts` y un test de `profile`                                                                                                          | `profile/service.ts:97-101`, `:112-115`; `session.ts:50`; `profile/service.integration.test.ts:594-597`                             |
+| `weekBounds`, `formatDuration` (minutos a `h:mm`), `dayKey`, `durationSeconds` (milisegundos, `floor`), `parseDayKey` (solo años de cuatro cifras), `addDaysToKey`, `formatDayKey`                                               | `src/server/time/index.ts:42-52`, `:61-66`, `:82-84`, `:123-125`, `:166-184`, `:192-203`, `:222-241`                                |
+| `weekStartKey`, `startOfDayKey` (un día que falta entero empieza en el siguiente), `weekKeyLabel`                                                                                                                                | `time/index.ts:350-357`, `:368-381`, `:395-417`                                                                                     |
+| No hay función que cuente días entre dos claves ni que rotule un rango que no sea una semana                                                                                                                                     | `time/index.ts` (las exportadas, `:6-735`)                                                                                          |
+| `time_entry.user_id` → `user` en `restrict` y la clave compuesta `time_entry_membership_fk` (R1): toda entrada tiene membresía en su workspace                                                                                   | `src/server/db/schema.ts:410-413`, `:477-481`                                                                                       |
+| `time_entry` tiene `billable` no nulo, el índice `(workspace_id, user_id, started_at desc)`, `ended_at >= started_at` y el proyecto en `set null`                                                                                | `schema.ts:424`, `:436-440`, `:442-445`, `:450-454`                                                                                 |
+| `membership` es única por `(workspace_id, user_id)` y su `status` es `active`, `inactive` o `invited`                                                                                                                            | `schema.ts:33-37`, `:97-123`                                                                                                        |
+| `user_preference.display_name` nulable; `user.name` no nulo                                                                                                                                                                      | `schema.ts:145`; `src/server/db/auth-schema.ts:4-15`                                                                                |
+| `project.color` se restringe a la paleta con un `check`; `project.client_id` apunta a `client (workspace_id, id)`; archivados por `archived_at`                                                                                  | `schema.ts:252-309`                                                                                                                 |
+| `who_sees_all_entries` arranca en `admins`, con el comentario de R1                                                                                                                                                              | `schema.ts:67-72`                                                                                                                   |
+| La última migración es la 0014                                                                                                                                                                                                   | `drizzle/meta/_journal.json:100-107`                                                                                                |
+| `inSpan` de `time-entry` filtra cerradas por persona e inicio en `[from, to)`; `listTimesheetEntries` lee la semana de la planilla en una sentencia                                                                              | `src/modules/time-entry/repository.ts:154-162`, `:495-514`                                                                          |
+| `getTimesheetState` corta la semana con `startOfDayKey` y suma `durationSeconds` por entrada (`closedSecondsOf`); `TrackerWorkspace` es `TimeSettings`                                                                           | `time-entry/service.ts:127`, `:2374-2381`, `:2467-2509`                                                                             |
+| La planilla trunca al minuto cada cifra por separado                                                                                                                                                                             | `time-entry/components/timesheet/timesheet-model.ts:98`, `:203`                                                                     |
+| Producción habla con Neon por `neon-serverless`; local y tests, por `node-postgres`                                                                                                                                              | `src/server/db/index.ts:16-22`                                                                                                      |
+| Los dos drivers reciben `timestamptz` como texto y Drizzle lo convierte con `new Date(texto)`                                                                                                                                    | `node_modules/drizzle-orm/node-postgres/session.js:26-29`; `neon-serverless/session.js:26-29`; `pg-core/columns/timestamp.js:30-33` |
+| `react-day-picker` 10: sin `resetOnSelect`, un clic sobre un rango completo lo extiende o recorta; con él, arranca uno nuevo                                                                                                     | `node_modules/react-day-picker/dist/esm/utils/addToRange.js:46-80`; `selection/useRange.js:29-38`                                   |
+| La integración migra con `node-postgres` contra `postgres:17-alpine`; CI usa la misma imagen                                                                                                                                     | `src/test/global-setup.ts:11-26`; `.github/workflows/ci.yml:43-44`                                                                  |
+| `seedMember(workspaceId, role)` no recibe estado; `seedTimeEntry` convierte los instantes con `new Date` (pierde los microsegundos); `seedPreferences` escribe `display_name`                                                    | `src/test/factories.ts:60-64`, `:107-123`, `:75-81`                                                                                 |
+| `actorIn` y `workspaceOf` arman el actor y la configuración de tiempo de un test                                                                                                                                                 | `src/test/time-entry.ts:20-34`                                                                                                      |
+| `compareNames` desempata por id; `isPaletteKey` y `ProjectRef`                                                                                                                                                                   | `src/lib/text.ts:27-39`; `src/modules/project/palette.ts:24`; `project/schema.ts:129-133`                                           |
+| La navegación es una lista literal con «Inicio», «Calendario», «Planilla» y «Proyectos», marcada por `pathname`; un e2e afirma un subconjunto en orden                                                                           | `src/components/layout/app-nav.tsx:9-14`, `:26`; `e2e/calendar.spec.ts:171-173`                                                     |
+| La planilla compone `requireSession`, `safeParse` de la URL y `Suspense`; su `error.tsx` usa `ActionFeedback` con `retry`                                                                                                        | `src/app/(app)/planilla/page.tsx:11-25`; `planilla/error.tsx:10-17`                                                                 |
+| `next.config.ts` no activa `cacheComponents` ni ninguna caché de páginas                                                                                                                                                         | `next.config.ts:33-37`                                                                                                              |
+| `PeriodPicker` abre un `Calendar` de un día en un `Popover` y navega con `router.push`; `civilDate` arma la medianoche local del navegador, «solo sirve para dibujar», y lo importan solo `period-picker.tsx` y `date-field.tsx` | `time-entry/components/calendar/period-picker.tsx:31-77`; `time-entry/components/civil-date.ts:3-21`                                |
+| `src/components` ya tiene utilidades de interfaz sin JSX que comparten los módulos; ningún archivo de `src/lib` importa de `@/server`                                                                                            | `src/components/combobox-typeahead.ts:1-15`; `src/lib/`                                                                             |
+| Cada e2e entra con una persona propia (email único) y todas se llaman `PERSON_NAME`; el workspace es el más viejo (`FIRST_WORKSPACE`), del owner `owner@<dominio>`                                                               | `e2e/session.ts:7-8`, `:63-71`; `e2e/database.ts:14`; `e2e/workspace.setup.ts:19`                                                   |
+| `seedEntries` exige un proyecto por nombre y la membresía de la persona; `updateOne` exige exactamente una fila                                                                                                                  | `e2e/database.ts:299-359`, `:109-116`                                                                                               |
+| `@typescript-eslint/ban-ts-comment` en `error`; `tsc` incluye todo `.ts`; vitest de unidad incluye solo `*.test.ts(x)`                                                                                                           | `eslint.config.mjs:15`; `tsconfig.json:25-32`; `vitest.config.ts:8`                                                                 |
 
 ## 1. Alcance
 
@@ -302,20 +335,24 @@ Queda afuera:
 
 ### Consecuencias sobre código ya entregado
 
-| Archivo                                                         | Qué cambia                                                                                  | Qué hay que volver a probar                                                              |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `src/server/permissions/index.ts`                               | Dos acciones en las tres tablas. Ninguna fila existente cambia.                             | `permissions.test.ts` entero                                                             |
-| `src/server/time/index.ts`                                      | Suma `daysBetweenKeys` y `dayRangeLabel`. No cambia ninguna función existente.              | `time.test.ts` entero                                                                    |
-| `src/modules/profile/service.ts`                                | `displayNameOf` recibe `Pick<StoredProfile, "displayName">`. El cuerpo no cambia.           | `profile/service.integration.test.ts`; `session.ts` compila                              |
-| `src/components/layout/app-nav.tsx`                             | Suma «Reportes» entre «Planilla» y «Proyectos».                                             | `e2e/calendar.spec.ts:171-173` (subconjunto en orden: no cambia)                         |
-| `time-entry/components/civil-date.ts` → `src/lib/civil-date.ts` | Se mueve sin cambios; `period-picker.tsx` y `date-field.tsx` cambian el import.             | `calendar.spec.ts`, `timesheet.spec.ts` (el selector de período), `manual-entry.spec.ts` |
-| `src/test/factories.ts`                                         | `seedMember` acepta un `status` opcional, `active` por omisión.                             | —                                                                                        |
-| `e2e/database.ts`                                               | Cuatro helpers nuevos; `SeedEntry.project` opcional, sin cambiar a quien ya lo pasa (§8.3). | Los specs que usan `seedEntries`                                                         |
-| `src/server/db/schema.ts`, `drizzle/`                           | Solo si §6 lo justifica: el índice parcial y la migración 0015.                             | La suite de integración entera (migra desde cero)                                        |
+| Archivo                                                                | Qué cambia                                                                                  | Qué hay que volver a probar                                                              |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `src/server/permissions/index.ts`                                      | Dos acciones en las tres tablas. Ninguna fila existente cambia.                             | `permissions.test.ts` entero                                                             |
+| `src/server/time/index.ts`                                             | Suma `daysBetweenKeys` y `dayRangeLabel`. No cambia ninguna función existente.              | `time.test.ts` entero                                                                    |
+| `src/modules/profile/service.ts`                                       | `displayNameOf` recibe `Pick<StoredProfile, "displayName">`. El cuerpo no cambia.           | `profile/service.integration.test.ts`; `session.ts` compila                              |
+| `src/server/session.ts`                                                | Solo el comentario de `:49`: «Único lugar que compone el nombre de quien mira».             | —                                                                                        |
+| `src/components/layout/app-nav.tsx`                                    | Suma «Reportes» entre «Planilla» y «Proyectos».                                             | `e2e/calendar.spec.ts:171-173` (subconjunto en orden: no cambia)                         |
+| `time-entry/components/civil-date.ts` → `src/components/civil-date.ts` | Se mueve sin cambios; `period-picker.tsx` y `date-field.tsx` cambian el import.             | `calendar.spec.ts`, `timesheet.spec.ts` (el selector de período), `manual-entry.spec.ts` |
+| `src/test/factories.ts`                                                | `seedMember` acepta un `status` opcional, `active` por omisión.                             | —                                                                                        |
+| `e2e/database.ts`                                                      | Cuatro helpers nuevos; `SeedEntry.project` opcional, sin cambiar a quien ya lo pasa (§8.3). | Los specs que usan `seedEntries`                                                         |
+| `src/server/db/schema.ts`, `drizzle/`                                  | Solo si §6 lo justifica: el índice parcial y la migración 0015.                             | La suite de integración entera (migra desde cero)                                        |
 
 `civil-date.ts` se mueve porque `report` no importa de `time-entry` (ADR 0021:
-`report` importa de `profile`, `workspace` y `project`), y es una utilidad pura
-que comparten servidor y navegador, lo que `src/lib` declara. **Ninguna
+`report` importa de `profile`, `workspace` y `project`). Va a `src/components` y
+no a `src/lib`: arma la medianoche local del navegador y solo sirve para dibujar
+(`civil-date.ts:3-8`), así que no es una utilidad que compartan servidor y
+navegador, y sería el primer archivo de `src/lib` que importa de `@/server`.
+Tiene el precedente de `src/components/combobox-typeahead.ts`. **Ninguna
 afirmación de un test existente cambia.**
 
 ## 2. Esquema e índices
@@ -341,6 +378,18 @@ son milisegundos; el usuario la despliega fuera del horario de uso, como R1.
 Si el índice no entra, `schema.ts` y `drizzle/` no se tocan, y la medición
 queda registrada igual, con el plan que se eligió sin él.
 
+### Reversión de la 0015
+
+Solo si el índice entró. Es una migración nueva hacia adelante (`drizzle-kit`
+no tiene migraciones de bajada):
+
+1. se quita la definición del índice de `schema.ts`;
+2. `npm run db:generate -- --name=time_entry_report_idx_drop` genera la 0016,
+   que tiene que dar exactamente
+   `DROP INDEX "time_entry_workspace_started_closed_idx";`;
+3. se despliega como la 0015. Sin el índice, el reporte sigue andando con el
+   plan medido sin él (§6.2).
+
 ## 3. Permisos
 
 Dos acciones nuevas, las dos sobre `WorkspaceResource` (ADR 0020):
@@ -353,10 +402,12 @@ Dos acciones nuevas, las dos sobre `WorkspaceResource` (ADR 0020):
 - En `ResourceByAction`, junto a las de `timeEntry.own.*`, con un comentario:
   «ADR 0020. `who_sees_all_entries` no entra: si la fase 2 la vuelve editable,
   `timeEntry.others.view` declara un recurso propio (ADR 0009).»
-- **RP-07 viene de `can()`**: corta por estado antes que por rol.
+- **RP-07 viene de `can()`**: corta por estado antes que por rol
+  (`permissions/index.ts:173-175`).
 - El comentario de `can()` sobre las acciones `.own` (`:186-187`) sigue siendo
   cierto y no cambia.
 - **Ninguna decisión de acceso fuera de `can()`**: el service no compara roles.
+  El criterio 4 lo afirma con `can` envuelto (§8).
 
 ## 4. Contrato de lectura
 
@@ -385,13 +436,13 @@ export type ReportRange = { readonly first: string; readonly last: string };
  */
 export const reportRangeInput; // { first, last } → ReportRange
 
-/** `?desde=…&hasta=…` con `safeParse`: lo inválido o repetido se descarta (RP-32). */
+/** `?desde=…&hasta=…` con `safeParse`: un rango inválido o repetido se descarta entero (RP-32). */
 export const reportRangeParams; // { desde, hasta } → reportRangeInput
 
 export const REPORT_GROUP_BYS = ["person", "project"] as const;
 export type ReportGroupBy = (typeof REPORT_GROUP_BYS)[number];
 
-/** `?agrupar=persona|proyecto` con `safeParse`; cualquier otro valor se descarta. */
+/** `?agrupar=persona|proyecto` con `safeParse`, aparte del rango; cualquier otro valor se descarta. */
 export const reportGroupParams; // → ReportGroupBy
 
 const reportRangeView = z.object({ first: z.string(), last: z.string() });
@@ -575,6 +626,9 @@ accountName)` e `inactive = status !== "active"`; por proyecto, el color
   `ReportError` llega con el primer slice que lo necesite.
 - `workspaceResource(actor)` es una función privada del service, como la de
   `project`.
+- **El service importa `can` de `@/server/permissions`** y lo llama en cada
+  pedido; no guarda la respuesta ni compara `actor.role`. Es lo que deja al
+  criterio 4 envolver `can` con `vi.mock`.
 
 ### 4.5 Costo
 
@@ -587,9 +641,10 @@ agregación toca las cerradas del rango; los `join` tocan una fila por grupo.
 
 - **`src/app/(app)/reportes/page.tsx`**: `requireSession()`;
   `reportRangeParams.safeParse` y `reportGroupParams.safeParse` sobre
-  `await searchParams`, cada uno por su lado (D-R2a-4); `<Suspense
-fallback={<ReportSkeleton />}>` con `<ReportScreen actor settings request />`,
-  donde `settings = timeSettingsOf(session)`.
+  `await searchParams`, cada uno por su lado: un rango inválido se descarta
+  entero (los dos extremos) y la agrupación se conserva, y al revés (D-R2a-4);
+  `<Suspense fallback={<ReportSkeleton />}>` con `<ReportScreen actor settings
+request />`, donde `settings = timeSettingsOf(session)`.
 - **`src/app/(app)/reportes/error.tsx`**: el título y `ActionFeedback` con
   «No se pudo cargar el reporte.» y «Reintentar» (RP-35), como el de la planilla.
 - **`ReportScreen`** (Server Component, `report/components/report-screen.tsx`):
@@ -602,7 +657,7 @@ fallback={<ReportSkeleton />}>` con `<ReportScreen actor settings request />`,
   la única función que arma `/reportes?desde=…&hasta=…&agrupar=…`, siempre con
   los tres.
 
-### 5.2 La barra
+### 5.2 La barra (`report/components/report-toolbar.tsx`)
 
 En este orden:
 
@@ -611,15 +666,16 @@ En este orden:
   `null` no se dibuja.
 - **El período**: `RangePicker` (cliente, `report/components/range-picker.tsx`).
   Botón con el ícono y `rangeLabel`, nombre accesible «Elegir período:
-  {rangeLabel}». Abre un `Popover` con `Calendar mode="range"`, `locale` `es`,
-  `today` en la zona de quien mira (`civilDate(todayKey)`), el rango actual
+  {rangeLabel}». Abre un `Popover` con `Calendar mode="range"` y
+  **`resetOnSelect`** (D-R2a-4), `locale` `es`, `today` en la zona de quien mira
+  (`civilDate(todayKey)`, de `src/components/civil-date.ts`), el rango actual
   elegido y su mes a la vista, y los rótulos de mes anterior y siguiente propios
   del módulo. Debajo, «Aplicar» y una región `role="alert"` siempre montada.
-  «Aplicar» valida con `reportRangeInput` (un solo día si falta el fin): con
-  error, el mensaje en la región y el popover sigue abierto; sin error, cierra y
-  `router.push(reportHref({ range, groupBy }))`. Sin día elegido, «Aplicar»
-  lleva `aria-disabled` y no hace nada. Esc cierra sin navegar; al cerrar, el
-  foco vuelve al botón.
+  «Aplicar» valida con `reportRangeInput`, con el inicio como fin si todavía no
+  hay fin: con error, el mensaje en la región y el popover sigue abierto; sin
+  error, cierra y `router.push(reportHref({ range, groupBy }))`. Con la
+  selección vacía, «Aplicar» lleva `aria-disabled` y no hace nada. Esc cierra
+  sin navegar; al cerrar, el foco vuelve al botón.
 - **«Esta semana»**: enlace a `reportHref({ range: currentWeek, groupBy })`,
   solo si `range` no es `currentWeek`.
 - **«Agrupar por»**: un grupo (`role="group"`, nombrado por su rótulo visible)
@@ -644,9 +700,11 @@ En este orden:
     horas en este período»; los totales siguen, en `0:00`.
 - **La carga**: `ReportSkeleton` con `role="status"`, `aria-busy` y «Cargando el
   reporte».
-- **La duración de cada fila se trunca al minuto por separado**: la suma de lo
-  que muestran las filas puede quedar hasta un minuto por fila debajo del total,
-  que también se trunca una vez. Es la misma regla que la planilla (§9).
+- **Cada cifra se trunca al minuto por separado**, la de cada fila y la del
+  total, que sale de `totalSeconds` y no de sumar lo que muestran las filas. La
+  suma de lo que muestran las filas queda en o debajo del total: dos filas de
+  90 s muestran «0:01» cada una y el total, «0:03». La igualdad de RP-18 vale en
+  segundos. Es la misma regla que la planilla (`timesheet-model.ts:98`, `:203`).
 
 ### 5.4 Textos (`report/components/labels.ts`, nuevo)
 
@@ -676,7 +734,9 @@ En este orden:
 | `inactivePerson` | «(inactiva)»                                                 |
 | `empty`          | «No hay horas en este período»                               |
 
-«Sin proyecto» es `projectLabels.noProject`.
+«Sin proyecto» es `projectLabels.noProject`. El título del aviso de membresía
+inactiva es el mismo del resto de la aplicación
+(`inactive-membership-notice.tsx:10`).
 
 ## 6. Volumen, presupuesto e índice
 
@@ -727,8 +787,9 @@ con él**, creado a mano con la definición de §2.
 - **Q4 no cambia de plan** con el índice: sigue en
   `time_entry_workspace_user_started_idx`. Si cambia, el índice no entra sin una
   ronda con `architect`.
-- **Si con el índice alguna consulta pasa su presupuesto, el slice se detiene**
-  y vuelve a `architect`: el tope de 366 días se revisa con mediciones (ADR 0021) y no se resuelve en la implementación.
+- **Si la configuración elegida, con o sin índice, deja alguna consulta fuera de
+  presupuesto, el slice se detiene** y vuelve a `architect`: el tope de 366 días
+  se revisa con mediciones (ADR 0021) y no se resuelve en la implementación.
 
 El informe de `backend-dev` lleva, por consulta y con y sin índice, el plan
 (los nodos y el índice que usa) y las cinco medidas. El team-lead lo copia al
@@ -736,7 +797,8 @@ documento de revisiones; los scripts quedan en el árbol para que R2b, R3 y R6
 vuelvan a medir con el mismo volumen.
 
 **La medición es local.** Neon agrega la ida y vuelta de red y un cómputo más
-chico; el presupuesto local deja margen para eso, pero no lo mide (§9).
+chico; el presupuesto local deja margen para eso, pero no lo mide (§9). El
+parseo de los instantes es el mismo en los dos drivers (D-R2a-6).
 
 ## 7. Reparto de archivos
 
@@ -749,6 +811,7 @@ Rutas absolutas; **(nuevo)** marca lo que el slice crea.
 /home/maxi/program/clock/src/server/permissions/permissions.test.ts
 /home/maxi/program/clock/src/server/time/index.ts
 /home/maxi/program/clock/src/server/time/time.test.ts
+/home/maxi/program/clock/src/server/session.ts                                (solo el comentario de :49)
 /home/maxi/program/clock/src/modules/profile/service.ts                       (solo la firma de displayNameOf)
 /home/maxi/program/clock/src/modules/report/schema.ts                         (nuevo)
 /home/maxi/program/clock/src/modules/report/schema.test.ts                    (nuevo)
@@ -771,18 +834,20 @@ Rutas absolutas; **(nuevo)** marca lo que el slice crea.
 /home/maxi/program/clock/src/app/(app)/reportes/page.tsx                      (nuevo)
 /home/maxi/program/clock/src/app/(app)/reportes/error.tsx                     (nuevo)
 /home/maxi/program/clock/src/components/layout/app-nav.tsx
-/home/maxi/program/clock/src/lib/civil-date.ts                                (movido)
+/home/maxi/program/clock/src/components/civil-date.ts                         (movido)
 /home/maxi/program/clock/src/modules/time-entry/components/civil-date.ts      (se borra)
 /home/maxi/program/clock/src/modules/time-entry/components/calendar/period-picker.tsx (solo el import)
 /home/maxi/program/clock/src/modules/time-entry/components/date-field.tsx     (solo el import)
 /home/maxi/program/clock/src/modules/report/components/                       (nuevo)
     report-screen.tsx, report-toolbar.tsx, range-picker.tsx, report-view.tsx,
     report-href.ts, labels.ts,
-    report-href.test.ts, range-picker.test.tsx, report-view.test.tsx
+    report-href.test.ts, range-picker.test.tsx, report-view.test.tsx,
+    report-toolbar.test.tsx
 ```
 
 Los nombres dentro de `components/` son orientativos salvo `report-href.ts`,
-`labels.ts`, `report-view.tsx` y `range-picker.tsx`, que citan los tests.
+`labels.ts`, `report-view.tsx`, `report-toolbar.tsx` y `range-picker.tsx`, que
+citan los tests.
 
 ### test-engineer
 
@@ -820,13 +885,18 @@ regla que el slice precisa:
 
 - **RP-11 y RP-12**: un nivel, persona o proyecto; por persona sin parámetro
   (D-R2a-3), _no verificado_ en Clockify (P-05); el orden con su desempate.
-- **RP-18 y RP-19**: «Total» y «Facturable»; cada fila truncada al minuto.
+- **RP-18 y RP-19**: «Total» y «Facturable». **La igualdad entre la suma de los
+  grupos y el total vale en segundos; en pantalla cada cifra se trunca al
+  minuto**, así que la suma de lo que muestran las filas puede quedar debajo del
+  total (§5.3).
 - **RP-20 y RP-24**: los parámetros, el rango libre con calendario de rango y
-  «Aplicar», las flechas por el largo del período, los rótulos.
+  «Aplicar» (un clic arranca un rango nuevo y el segundo lo cierra), las flechas
+  por el largo del período, los rótulos.
 - **RP-22**: la línea de la zona, sin desplazamiento.
-- **RP-32 y RP-34**: la URL inválida se descarta entera; los mensajes son del
-  selector; el primero no lo produce la interfaz; el tercero no se usa, por la
-  decisión del usuario (mapa §5), y la línea del alcance lo reemplaza.
+- **RP-32 y RP-34**: un rango inválido se descarta entero y la agrupación se
+  valida aparte; los mensajes son del selector; el primero no lo produce la
+  interfaz; el tercero no se usa, por la decisión del usuario (mapa §5), y la
+  línea del alcance lo reemplaza.
 - **RP-07, RP-31 y RP-33**: los textos de §5.4.
 - **RP-15, RP-20, RP-21, RP-34 y §6**: «pendiente de aprobación del ADR 0021»
   pasa a «aceptado el 2026-10-08».
@@ -834,10 +904,10 @@ regla que el slice precisa:
 ### Lo que no toca nadie
 
 `src/server/action.ts` (R2a no tiene mutaciones ni actions),
-`src/server/audit.ts`, `src/server/session.ts`, `src/server/auth.ts`,
-`src/modules/time-entry/` salvo los dos imports de `civil-date`,
-`src/modules/project/`, `src/modules/workspace/`, los ADR. El mapa y el estado
-los actualiza el team-lead.
+`src/server/audit.ts`, `src/server/session.ts` salvo el comentario de `:49`,
+`src/server/auth.ts`, `src/lib/`, `src/modules/time-entry/` salvo los dos
+imports de `civil-date`, `src/modules/project/`, `src/modules/workspace/`, los
+ADR. El mapa y el estado los actualiza el team-lead.
 
 ### Orden
 
@@ -860,6 +930,11 @@ los actualiza el team-lead.
    en un commit propio.
 7. **`test-engineer`**: los mutantes de §8.1 en su copia; `parity-analyst`,
    antes del merge.
+8. **Revisión de seguridad, antes del merge** (ADR 0020, Consecuencias): que el
+   alcance va en la consulta por el `ReportScope` —`inScope` en cada función del
+   repository, sin otro filtro de personas— y que un member con una URL armada a
+   mano (rango, agrupación y claves ajenas como `personas=…`) no ve nada ajeno.
+   Verifica también que no haya caché que cruce personas (D-R2a-10).
 
 ## 8. Criterios de aceptación
 
@@ -873,7 +948,7 @@ los actualiza el team-lead.
    `invalidDate`; un rango de 367 días que termina en 9999-12-31 da
    `invalidDate` primero. `reportRangeParams` no pasa con un parámetro repetido
    ni con uno solo de los dos; `reportGroupParams` pasa con `persona` y
-   `proyecto` y no con otro valor.
+   `proyecto` y no con otro valor, con o sin un rango válido al lado.
 3. **`src/server/time`** — `daysBetweenKeys` con el mismo día, un año bisiesto,
    un cruce de año y el orden invertido, con el proceso en otra zona;
    `dayRangeLabel` con un día, un rango del año de hoy, uno que cruza el año y
@@ -884,7 +959,11 @@ los actualiza el team-lead.
    dos agrupaciones, y nada de B; `project_manager` —responsable con
    `is_manager` de un proyecto donde las otras dos tienen horas—, `team_manager`
    y `member` ven solo lo propio en A, en las dos agrupaciones, y el total es el
-   suyo; la persona de A con horas en B ve en A solo lo de A.
+   suyo; la persona de A con horas en B ve en A solo lo de A. **La decisión es
+   de `can()`**: con `vi.mock("@/server/permissions")`, que envuelve el `can`
+   real y niega `timeEntry.others.view` a un owner activo, ese owner recibe el
+   alcance `self` (`scope: "self"` y solo su fila), y `report.view` sigue
+   pasando por el `can` real.
 5. **El enlace ajeno** (RP-32) — el pedido que arma un admin (rango y
    agrupación) da a un member su propia fila y su total; la página ignora
    `personas=…` y cualquier otra clave (`reportRangeParams` y
@@ -924,53 +1003,66 @@ los actualiza el team-lead.
 11. **Membresía no activa** (RP-07) — `inactive` e `invited` reciben
     `{ kind: "forbidden" }` y el repository no se llama (espía sobre
     `reportRepository`).
-12. **El tipo** (D-R2a-1, D-R2a-12) — en `scope.test-d.ts`, un literal con
-    `workspaceId` y `people` no es un `ReportScope`, y llamar a
-    `totalsByPerson` o `totalsByProject` sin alcance no compila; `npm run
-typecheck` lo revisa.
-13. **La pantalla** — `report-view.test.tsx`: el vacío con los totales en
-    `0:00`; las filas de persona con «(inactiva)» y de proyecto con cliente y
-    «Sin proyecto»; las dos líneas; la tabla nombrada por el título.
-    `range-picker.test.tsx`: un período de 367 días muestra «Elegí un período de
-    hasta 366 días.» y no navega; un día solo navega con `desde = hasta`; Esc
-    cierra sin navegar y devuelve el foco. `report-href.test.ts`: la URL con los
-    tres parámetros.
+12. **El tipo** (D-R2a-1, D-R2a-12) — en `scope.test-d.ts`, tres afirmaciones,
+    cada una con `// @ts-expect-error` y su motivo: un literal con
+    `workspaceId` y `people` no es un `ReportScope`; llamar a `totalsByPerson` o
+    `totalsByProject` sin alcance no compila; y, con `import * as service from
+"./service"`, `service.Scope` no existe («la clase del alcance no se
+    exporta»). `npm run typecheck` lo revisa.
+13. **La pantalla** —
+    - `report-view.test.tsx`: el vacío con los totales en `0:00`; las filas de
+      persona con «(inactiva)» y de proyecto con cliente y «Sin proyecto»; las
+      dos líneas; la tabla nombrada por el título; con dos filas de 90 s, cada
+      una muestra «0:01» y el total, «0:03».
+    - `range-picker.test.tsx`: un período de 367 días muestra «Elegí un período
+      de hasta 366 días.» y no navega; con el rango actual elegido, un clic y
+      «Aplicar» navegan con `desde = hasta` en ese día; con el rango actual
+      elegido, dos clics en días fuera de él arman el rango nuevo entre esos dos
+      días, y con el segundo anterior al primero, los extremos invertidos; con un
+      período de un día, un clic en ese día deja «Aplicar» sin efecto; Esc
+      cierra sin navegar y devuelve el foco.
+    - `report-toolbar.test.tsx`: con `previous: null` no hay «Período
+      anterior», y con `next: null` no hay «Período siguiente»; «Esta semana»
+      aparece solo si `range` no es `currentWeek`; la agrupación elegida lleva
+      `aria-current="true"` y la otra no; los enlaces conservan la agrupación y
+      el rango.
+    - `report-href.test.ts`: la URL con los tres parámetros.
 14. **El rendimiento** (§6) — el informe trae las medidas y la decisión del
-    índice con su regla; Q1 a Q3 dentro del presupuesto; Q4 sin cambio de plan.
-    Si el índice entra, `npm run db:generate` después del último commit no
-    genera nada.
+    índice con su regla; Q1 a Q3 dentro del presupuesto con la configuración
+    elegida; Q4 sin cambio de plan. Si el índice entra, `npm run db:generate`
+    después del último commit no genera nada.
 15. **Lo existente sigue verde** — lint, typecheck, `npm run test:all`, `next
 build` y la suite e2e entera, sin cambiar ninguna afirmación.
 16. **La pantalla de punta a punta** — los recorridos de §8.2.
 
 ### 8.1 Con qué se verifica cada criterio, y qué mutante mata
 
-| Criterio | Tipo        | Archivo                                                                | Mutante que tiene que caer                                                                                                                                                                                                |
-| -------- | ----------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1        | unidad      | `permissions.test.ts`                                                  | `timeEntry.others.view` con `everyone`; `report.view` solo para owner y admin; `resourceKinds` con `timeEntry`                                                                                                            |
-| 2        | unidad      | `report/schema.test.ts`                                                | `REPORT_MAX_DAYS` como último día excluido (366 rechazado); sin la comprobación del día siguiente; el largo comparando claves de texto; el orden de los `refine` cambiado                                                 |
-| 3        | unidad      | `time.test.ts`                                                         | `daysBetweenKeys` con la zona del proceso; `dayRangeLabel` con año solo en el extremo de otro año                                                                                                                         |
-| 4        | integración | `report/scope.integration.test.ts`                                     | `scopeOf` siempre `everyone`; `everyone` por rol comparado en el service y no por `can()`; `self` sin `workspace_id` (aparece lo de B); `everyone` sin `workspace_id`; `project_manager` con `everyone` si es responsable |
-| 5        | integración | `report/scope.integration.test.ts`                                     | un parámetro de personas que el esquema deja pasar y el service usa                                                                                                                                                       |
-| 6        | integración | `report/service.integration.test.ts`                                   | sin `ended_at is not null`; `<=` en `to`; filtrar por `ended_at` en vez de `started_at`; `inner join` con `project` (pierde «Sin proyecto»); `archived_at is null`; `membership.status = 'active'`                        |
-| 7        | integración | `report/service.integration.test.ts`                                   | el día cortado en UTC; la semana con el primer día fijo en lunes; los extremos con `dayBounds` del instante en vez de `startOfDayKey`                                                                                     |
-| 8        | integración | `report/service.integration.test.ts`                                   | sin `date_trunc` (0 s en las dos primeras); `round` en vez de truncar milisegundos; `floor` del total en vez de por entrada (3 s en las dos de 1,5 s); `billable` sin `filter`                                            |
-| 9        | integración | `report/service.integration.test.ts`                                   | el nombre de la cuenta antes que el editado; orden alfabético; «Sin proyecto» primero en el empate; agrupación por omisión por proyecto; el total con una segunda lectura que no suma «Sin proyecto»                      |
-| 10       | integración | `report/service.integration.test.ts`                                   | las flechas a 7 días fijos; `rangeLabel` siempre `dayRangeLabel`; la flecha dibujada fuera de los años de cuatro cifras                                                                                                   |
-| 11       | integración | `report/scope.integration.test.ts`                                     | `report.view` consultado después de leer; `invited` tratado como activo                                                                                                                                                   |
-| 12       | tipos       | `report/scope.test-d.ts`                                               | exportar la clase `Scope`; sacar el miembro privado; un parámetro de alcance opcional                                                                                                                                     |
-| 13       | componente  | `report-view.test.tsx`; `range-picker.test.tsx`; `report-href.test.ts` | validar en el selector sin `reportRangeInput` (navega con 367); `aria-disabled` sin efecto; «(inactiva)» ausente; la URL sin `agrupar`                                                                                    |
-| 14       | manual      | informe de `backend-dev`                                               | —                                                                                                                                                                                                                         |
-| 15       | todas       | las suites existentes                                                  | —                                                                                                                                                                                                                         |
-| 16       | e2e         | `e2e/reports.spec.ts`                                                  | —                                                                                                                                                                                                                         |
+| Criterio | Tipo        | Archivo                                                                                           | Mutante que tiene que caer                                                                                                                                                                                                                                                                                                                                |
+| -------- | ----------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1        | unidad      | `permissions.test.ts`                                                                             | `timeEntry.others.view` con `everyone`; `report.view` solo para owner y admin; `resourceKinds` con `timeEntry`                                                                                                                                                                                                                                            |
+| 2        | unidad      | `report/schema.test.ts`                                                                           | `REPORT_MAX_DAYS` como último día excluido (366 rechazado); sin la comprobación del día siguiente; el largo comparando claves de texto; el orden de los `refine` cambiado; rango y agrupación en un solo esquema                                                                                                                                          |
+| 3        | unidad      | `time.test.ts`                                                                                    | `daysBetweenKeys` con la zona del proceso; `dayRangeLabel` con año solo en el extremo de otro año                                                                                                                                                                                                                                                         |
+| 4        | integración | `report/scope.integration.test.ts`                                                                | `scopeOf` siempre `everyone`; `everyone` por rol comparado en el service y no por `can()` (cae con el `can` envuelto); `self` sin `workspace_id` (aparece lo de B); `everyone` sin `workspace_id`; `project_manager` con `everyone` si es responsable                                                                                                     |
+| 5        | integración | `report/scope.integration.test.ts`                                                                | un parámetro de personas que el esquema deja pasar y el service usa                                                                                                                                                                                                                                                                                       |
+| 6        | integración | `report/service.integration.test.ts`                                                              | sin `ended_at is not null`; `<=` en `to`; filtrar por `ended_at` en vez de `started_at`; `inner join` con `project` (pierde «Sin proyecto»); `archived_at is null`; `membership.status = 'active'`                                                                                                                                                        |
+| 7        | integración | `report/service.integration.test.ts`                                                              | el día cortado en UTC; la semana con el primer día fijo en lunes; los extremos con `dayBounds` del instante en vez de `startOfDayKey`                                                                                                                                                                                                                     |
+| 8        | integración | `report/service.integration.test.ts`                                                              | sin `date_trunc` (0 s en las dos primeras); `round` en vez de truncar milisegundos; `floor` del total en vez de por entrada (3 s en las dos de 1,5 s); `billable` sin `filter`                                                                                                                                                                            |
+| 9        | integración | `report/service.integration.test.ts`                                                              | el nombre de la cuenta antes que el editado; orden alfabético; «Sin proyecto» primero en el empate; agrupación por omisión por proyecto; el total con una segunda lectura que no suma «Sin proyecto»                                                                                                                                                      |
+| 10       | integración | `report/service.integration.test.ts`                                                              | las flechas a 7 días fijos; `rangeLabel` siempre `dayRangeLabel`; la flecha armada fuera de los años de cuatro cifras                                                                                                                                                                                                                                     |
+| 11       | integración | `report/scope.integration.test.ts`                                                                | `report.view` consultado después de leer; `invited` tratado como activo                                                                                                                                                                                                                                                                                   |
+| 12       | tipos       | `report/scope.test-d.ts`                                                                          | exportar la clase `Scope` (cae la tercera afirmación); sacar el miembro privado; un parámetro de alcance opcional                                                                                                                                                                                                                                         |
+| 13       | componente  | `report-view.test.tsx`; `range-picker.test.tsx`; `report-toolbar.test.tsx`; `report-href.test.ts` | el total mostrado como suma de los minutos de las filas («0:02»); `range-picker` sin `resetOnSelect` (el segundo clic recorta o extiende el rango viejo); validar sin `reportRangeInput` (navega con 367); `aria-disabled` sin efecto; la flecha dibujada con `previous: null`; «Esta semana» siempre visible; «(inactiva)» ausente; la URL sin `agrupar` |
+| 14       | manual      | informe de `backend-dev`                                                                          | —                                                                                                                                                                                                                                                                                                                                                         |
+| 15       | todas       | las suites existentes                                                                             | —                                                                                                                                                                                                                                                                                                                                                         |
+| 16       | e2e         | `e2e/reports.spec.ts`                                                                             | —                                                                                                                                                                                                                                                                                                                                                         |
 
-**Mutante declarado equivalente:** quitar el `::bigint` de las sumas. `sum()`
-de `bigint` es `numeric` y `node-postgres` entrega tanto `numeric` como `int8`
-como texto, así que el repository recibe lo mismo. El cast queda porque lo fija
-el ADR 0021. Antes de darlo por equivalente, `test-engineer` corre el criterio 8
-y el 9 con el mutante —con una persona sin facturables (el `coalesce`), una
-inactiva y un pedido de una membresía inactiva— y anota que las respuestas son
-las mismas.
+**Mutante declarado equivalente:** quitar el `::bigint` de las sumas. La
+expresión por entrada es `numeric` y su `sum()` también, y `node-postgres` y
+`neon-serverless` entregan tanto `numeric` como `int8` como texto, así que el
+repository recibe lo mismo. El cast queda porque lo fija el ADR 0021. Antes de
+darlo por equivalente, `test-engineer` corre el criterio 8 y el 9 con el
+mutante —con una persona sin facturables (el `coalesce`), una inactiva y un
+pedido de una membresía inactiva— y anota que las respuestas son las mismas.
 
 **Cualquier otro mutante declarado equivalente** se prueba antes igual:
 respuesta y filas, con pedidos de una membresía inactiva, de otro workspace y
@@ -1003,13 +1095,15 @@ abrir la pantalla.
    proyecto».
 4. **Navegar el período** (RP-20). Desde «Esta semana», «Período anterior»: la
    URL dice la semana anterior, el rótulo «Semana anterior», aparece «Esta
-   semana» y vuelve. Con el selector, del lunes de la semana anterior al domingo
-   de esta, «Aplicar»: la URL dice esos dos días, el rótulo es el rango, y
-   «Período anterior» mueve 14 días. La agrupación elegida se conserva en los
-   tres pasos.
+   semana» y vuelve. Con el selector abierto sobre «Esta semana» —un rango ya
+   completo—, un clic en el lunes de la semana anterior arranca un rango nuevo y
+   un clic en el domingo de esta lo cierra; «Aplicar»: la URL dice esos dos días,
+   el rótulo es el rango, y «Período anterior» mueve 14 días. La agrupación
+   elegida se conserva en los tres pasos.
 5. **La URL inválida** (RP-32). `desde` después de `hasta`, un rango de 400
-   días, un `desde` sin `hasta` y `agrupar=otro`: cada una muestra «Esta semana»
-   por persona, sin aviso.
+   días y un `desde` sin `hasta`, cada uno con `agrupar=proyecto`: «Esta semana»
+   por proyecto, sin aviso. `agrupar=otro` con un rango válido: ese rango, por
+   persona.
 6. **Membresía inactiva** (RP-07). La persona del test pasa a `inactive`: el
    título y el aviso, sin tabla ni totales.
 
@@ -1055,24 +1149,29 @@ todos»):
 - **El total del workspace con alcance `everyone`**: no es reproducible (§8.3).
 - **El mensaje de 366 días**: elegir 367 días en el calendario son trece meses
   de clics; es el criterio 13.
+- **Las flechas en los años límite**: el destino fuera de los años de cuatro
+  cifras no se alcanza navegando; son los criterios 10 y 13.
 
 ## 9. Deuda conocida del slice
 
 - **Medición solo local**: Q1 a Q3 se miden en Docker con la versión mayor de
-  Neon, no en Neon. Una comprobación en un preview —el total del reporte del
-  owner y el de su planilla en una semana con entradas del timer, que tienen
-  microsegundos— cubriría el driver `neon-serverless` y la red; necesita
+  Neon, no en Neon. El parseo de los instantes es el mismo en los dos drivers
+  (D-R2a-6); lo que queda sin medir es la red y el cómputo de Neon. Una
+  comprobación en un preview —el total del reporte del owner y el de su
+  planilla en una semana con entradas del timer— lo cubriría; necesita
   `E2E_DATABASE_URL` del preview (§10).
-- **Cada fila se trunca al minuto por separado** (§5.3): con muchas filas, la
+- **Cada cifra se trunca al minuto por separado** (§5.3): con muchas filas, la
   suma visible puede quedar unos minutos debajo del total. Es la regla de la
   planilla; la exportación de R6 lleva los segundos o las horas decimales.
 - **Dos personas con el mismo nombre** se ven iguales: la fila no muestra el
   correo. R4 trae el filtro de personas, que tendrá el mismo problema.
 - **Hasta R8, solo el owner ve el reporte de equipo** (ADR 0020).
-- **La URL inválida se descarta sin aviso** (RP-32): quien edita la URL a mano
+- **Un rango inválido se descarta sin aviso** (RP-32): quien edita la URL a mano
   ve «Esta semana» sin saber por qué.
 - **Las flechas mueven por días**: un período de un mes calendario se mueve 30
   o 31 días. R2b trae los atajos de mes y su aritmética.
+- **El repository importa un tipo del service** (D-R2a-1): es el primero del
+  árbol; el ciclo es solo de tipos.
 - **`scripts/` es una carpeta nueva** solo para la medición; no lo ejecuta CI.
 
 ## 10. Pendiente del usuario
@@ -1084,6 +1183,6 @@ todos»):
   0015 se despliega fuera del horario de uso.
 - **Opcional, recomendado**: `E2E_DATABASE_URL` del preview (ya pendiente en
   `estado-fase1.md`) para la comprobación contra Neon de §9.
-- **Si el presupuesto de §6 no se cumple con el índice**, el tope de 366 días
-  vuelve a `architect` y, si cambia, al usuario: es un número del ADR 0021 que
-  RP-21 y RP-34 muestran.
+- **Si la configuración elegida deja una consulta fuera del presupuesto de §6**,
+  el tope de 366 días vuelve a `architect` y, si cambia, al usuario: es un
+  número del ADR 0021 que RP-21 y RP-34 muestran.
