@@ -31,6 +31,11 @@ type ClockFieldProps = {
   /** Lo que se ve con el campo vacío, donde vacío quiere decir algo. */
   readonly placeholder?: string;
   readonly disabled?: boolean;
+  /**
+   * El valor viaja: el campo no acepta texto y se atenúa, pero conserva el
+   * foco, que `disabled` mandaría a `body` (TT-55).
+   */
+  readonly busy?: boolean;
   /** Esc: el texto vuelve al valor mostrado y se avisa. Sin él, Esc no hace nada. */
   readonly onCancel?: () => void;
   /**
@@ -48,11 +53,11 @@ type ClockFieldProps = {
 
 /**
  * Campo de texto tolerante de hora o duración: el de la barra manual, el del
- * editor de horario de una fila, el del inicio del timer y los del diálogo de
- * edición masiva. Normaliza al salir del campo y con Enter, nunca mientras se
- * teclea, y no llama a ninguna action. Cuando el texto no se puede interpretar
- * el campo vuelve al valor anterior —que es la información— y además se marca
- * por un instante (TT-21).
+ * editor de horario de una fila, el del inicio del timer, los del diálogo de
+ * edición masiva y las celdas de la planilla. Normaliza al salir del campo y
+ * con Enter, nunca mientras se teclea, y no llama a ninguna action. Cuando el
+ * texto no se puede interpretar el campo vuelve al valor anterior —que es la
+ * información— y además se marca por un instante (TT-21).
  */
 export function ClockField({
   value,
@@ -61,6 +66,7 @@ export function ClockField({
   format,
   placeholder,
   disabled = false,
+  busy = false,
   onCancel,
   onSubmit,
   onTextChange,
@@ -130,7 +136,12 @@ export function ClockField({
       aria-label={label}
       aria-invalid={rejected}
       disabled={disabled}
-      className={cn("text-center tabular-nums", format === "12h" ? "w-26" : "w-20")}
+      readOnly={busy}
+      aria-busy={busy || undefined}
+      className={cn(
+        "text-center tabular-nums aria-busy:opacity-60",
+        format === "12h" ? "w-26" : "w-20",
+      )}
       onChange={(event) => changeText(event.target.value)}
       onFocus={() => setFocused(true)}
       onBlur={() => {

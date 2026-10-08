@@ -1,7 +1,7 @@
 import { billableFor, NEW_ENTRY_BILLABLE } from "@/lib/billable";
 import { samePair, type ProjectPair } from "@/lib/project-pair";
 import { normalizedIds, sameTagIds } from "@/lib/tag-ids";
-import { sortedByName } from "@/lib/text";
+import { compareNames, sortedByName } from "@/lib/text";
 import { DomainError, RejectedError, type Rejection } from "@/server/action";
 import { db, type Transaction } from "@/server/db";
 import { recordAudit, recordAudits } from "@/server/audit";
@@ -21,8 +21,10 @@ import {
   extraDays,
   formatClock,
   formatDuration,
+  fullWeekdayLabel,
   instantFromLocal,
   isAfterYear9999,
+  isWeekendDayKey,
   MINUTES_PER_DAY,
   minuteOfDayIn,
   nonexistentMinutes,
@@ -31,6 +33,7 @@ import {
   weekdayLabel,
   weekKeyLabel,
   weekStartKey,
+  type DateFormat,
   type TimeSettings,
   type WeekStart,
 } from "@/server/time";
@@ -49,11 +52,14 @@ import {
   type ClosedEntryFields,
   type ClosedFields,
   type EntryRefs,
+  type EntrySlice,
   type EntryTarget,
   type EntryWithRefs,
   type RunningEntryFields,
   type TimeEntryRow,
+  type TimesheetEntryRow,
 } from "./repository";
+import { cellWrite, type CellEntry, type CellWrite } from "./timesheet-cell";
 import {
   TAGS_MAX,
   timeEntryMessages,
@@ -77,12 +83,19 @@ import {
   type DiscardTimerResult,
   type DuplicateEntryInput,
   type DuplicateEntryResult,
+  type RemoveTimesheetRowResult,
+  type RemoveTimesheetRowValues,
+  type SetTimesheetCellResult,
+  type SetTimesheetCellValues,
   type StartTimerValues,
   type StartTimerResult,
   type StopTimerInput,
   type StopTimerResult,
   type TimeEntryErrorCode,
   type TimeEntryView,
+  type TimesheetDayView,
+  type TimesheetRowView,
+  type TimesheetState,
   type TrackerState,
   type UpdateDescriptionInput,
   type UpdateDescriptionResult,
@@ -1646,31 +1659,43 @@ export async function bulkDeleteEntries(
       },
       timeEntryMessages.bulkDeleteRejected,
     );
-    const removed = await timeEntryRepository.deleteClosedByIds(
-      tx,
-      authorized.map(targetOf),
-    );
-    if (removed.length !== authorized.length) {
-      throw new Error("El borrado masivo no coincide con las filas bloqueadas.");
-    }
-    await recordAudits(
-      tx,
-      removed.map((row) => ({
-        workspaceId: actor.workspaceId,
-        actorId: actor.userId,
-        action: "timeEntry.bulkDelete",
-        entity: AUDIT_ENTITY,
-        entityId: row.id,
-        // El borrado es físico y la unión se va en cascada: esta es la única
-        // copia que queda de la fila y de sus etiquetas (TT-61).
-        previousValue: { ...row, tagIds: sortedTagIdsOfLocked(found, row.id) },
-      })),
-    );
+    await deleteLockedEntries(tx, actor, authorized, "timeEntry.bulkDelete");
     return { ids: input.ids };
   });
 }
 
-/** Las etiquetas de una fila borrada en masa, leídas bajo bloqueo antes del borrado. */
+/**
+ * Borra las cerradas ya bloqueadas y autorizadas, en una sentencia, y deja una
+ * constancia `action` por cada una con la fila entera y sus etiquetas, leídas
+ * bajo el bloqueo. Lo comparten el borrado masivo y «Quitar fila».
+ */
+async function deleteLockedEntries(
+  tx: Transaction,
+  actor: Actor,
+  rows: readonly EntryWithRefs[],
+  action: "timeEntry.bulkDelete" | "timeEntry.removeRow",
+): Promise<void> {
+  const removed = await timeEntryRepository.deleteClosedByIds(tx, rows.map(targetOf));
+  if (removed.length !== rows.length) {
+    throw new Error("El borrado no coincide con las filas bloqueadas.");
+  }
+  const found = new Map(rows.map((row) => [row.id, row]));
+  await recordAudits(
+    tx,
+    removed.map((row) => ({
+      workspaceId: actor.workspaceId,
+      actorId: actor.userId,
+      action,
+      entity: AUDIT_ENTITY,
+      entityId: row.id,
+      // El borrado es físico y la unión se va en cascada: esta es la única
+      // copia que queda de la fila y de sus etiquetas (TT-61).
+      previousValue: { ...row, tagIds: sortedTagIdsOfLocked(found, row.id) },
+    })),
+  );
+}
+
+/** Las etiquetas de una fila borrada, leídas bajo bloqueo antes del borrado. */
 function sortedTagIdsOfLocked(
   found: ReadonlyMap<string, EntryWithRefs>,
   id: string,
@@ -2095,5 +2120,390 @@ export async function getCalendarState(
     entries,
     running: running === undefined ? null : toView(running, workspace),
     closedSeconds: days.reduce((total, day) => total + day.closedSeconds, 0),
+  };
+}
+
+/**
+ * Las cerradas que leyó un bloqueo de la planilla. La consulta ya filtra por
+ * `ended_at is not null` y bajo el bloqueo ninguna vuelve a abrirse: una
+ * abierta acá es un error del repository, no un pedido que rechazar.
+ */
+function closedRowsOf(
+  rows: readonly EntryWithRefs[],
+): (EntryWithRefs & ClosedEntryRow)[] {
+  return rows.map((row) => {
+    if (!isClosed(row)) {
+      throw new Error(`La entrada ${row.id} está abierta en una lectura de cerradas.`);
+    }
+    return row;
+  });
+}
+
+type CellRejection = Extract<CellWrite<CellEntry>, { kind: "rejected" }>["reason"];
+
+/** El texto de cada rechazo de la regla de la celda (§4.8). */
+const CELL_REJECTIONS: Record<CellRejection, string> = {
+  appendOtherDay: timeEntryMessages.cellNeedsEntryEdit,
+  trimTooShort: timeEntryMessages.cellNeedsEntryEdit,
+  noStartThatDay: timeEntryMessages.nonexistentClock,
+  afterYear9999: timeEntryMessages.invalidDate,
+};
+
+/** Lo que una celda escribe con un alta: el par y los campos que no son instantes. */
+type CellCreation = {
+  /** Sin `billable`, el por defecto del proyecto (TS-30). */
+  readonly fields: Omit<CopiedFields, "billable"> & { readonly billable?: boolean };
+  readonly startedAt: Date;
+  readonly endedAt: Date;
+  /** La entrada de la que copia, al subir con varias. */
+  readonly sourceId?: string;
+};
+
+/**
+ * El alta de una celda: el permiso de alta y el par, que decide `project`
+ * (TS-77, TS-78), y las etiquetas que copia (D13-5). El id lo elige el service
+ * (ADR 0019).
+ */
+async function insertFromCell(
+  tx: Transaction,
+  actor: Actor,
+  creation: CellCreation,
+): Promise<EntryWithRefs> {
+  if (!can(actor, "timeEntry.own.create", ownTimeEntryResource(actor))) {
+    throw new TimeEntryError("forbidden", timeEntryMessages.forbidden);
+  }
+  const { fields } = creation;
+  const project = await assertNewEntryPair(tx, actor, pairOf(fields));
+  await assertTaggable(tx, actor, fields.tagIds);
+  const created = await timeEntryRepository.insertClosed(tx, {
+    id: crypto.randomUUID(),
+    workspaceId: actor.workspaceId,
+    userId: actor.userId,
+    ...fields,
+    billable: billableOfNewEntry(fields.billable, project),
+    startedAt: creation.startedAt,
+    endedAt: creation.endedAt,
+  });
+  await recordAudit(tx, {
+    workspaceId: actor.workspaceId,
+    actorId: actor.userId,
+    action: "timeEntry.createFromCell",
+    entity: AUDIT_ENTITY,
+    entityId: created.id,
+    nextValue: {
+      ...(creation.sourceId === undefined ? {} : { sourceId: creation.sourceId }),
+      description: created.description,
+      projectId: created.projectId,
+      taskId: created.taskId,
+      billable: created.billable,
+      tagIds: sortedTagIdsOf(created),
+      startedAt: created.startedAt,
+      endedAt: created.endedAt,
+    },
+  });
+  return created;
+}
+
+/**
+ * Mueve el fin de una entrada de la celda (TS-33, TS-34). No valida el par:
+ * editar una entrada que ya existe no la asigna de nuevo (TS-21, TS-113).
+ */
+async function setEndFromCell(
+  tx: Transaction,
+  actor: Actor,
+  target: EntryWithRefs & ClosedEntryRow,
+  endedAt: Date,
+): Promise<EntryWithRefs> {
+  const row = authorizeEntry(actor, "timeEntry.own.update", target);
+  const updated = await timeEntryRepository.updateClosedEntry(tx, targetOf(row), {
+    endedAt,
+  });
+  if (updated === undefined) {
+    throw new Error(`La entrada ${row.id} bloqueada y cerrada no se pudo escribir.`);
+  }
+  await recordAudit(tx, {
+    workspaceId: actor.workspaceId,
+    actorId: actor.userId,
+    action: "timeEntry.updateFromCell",
+    entity: AUDIT_ENTITY,
+    entityId: updated.id,
+    previousValue: { endedAt: target.endedAt },
+    nextValue: { endedAt: updated.endedAt },
+  });
+  return updated;
+}
+
+/**
+ * Lo que decidió `cellWrite`, aplicado dentro de la transacción. `null` si la
+ * celda ya mostraba el valor pedido.
+ */
+async function applyCellWrite(
+  tx: Transaction,
+  actor: Actor,
+  pair: ProjectPair,
+  write: CellWrite<EntryWithRefs & ClosedEntryRow>,
+): Promise<EntryWithRefs | null> {
+  switch (write.kind) {
+    case "unchanged":
+      return null;
+    case "rejected":
+      throw new TimeEntryError("validation", CELL_REJECTIONS[write.reason]);
+    case "create":
+      // TS-30: sin descripción ni etiquetas; el facturable, el del proyecto.
+      return insertFromCell(tx, actor, {
+        fields: { description: "", ...pair, tagIds: [] },
+        startedAt: write.startedAt,
+        endedAt: write.endedAt,
+      });
+    case "append":
+      return insertFromCell(tx, actor, {
+        fields: continuedFields(write.source),
+        startedAt: write.startedAt,
+        endedAt: write.endedAt,
+        sourceId: write.source.id,
+      });
+    case "setEnd":
+      return setEndFromCell(tx, actor, write.target, write.endedAt);
+  }
+}
+
+/**
+ * TS-29 … TS-39: deja la celda `(date, par)` de la persona en `minutes`. La
+ * celda se serializa con un bloqueo propio y se decide con lo que tiene en ese
+ * momento (ADR 0019); los instantes salen del ADR 0018. La entrada que corre
+ * nunca se lee ni se toca (TS-49, TS-50).
+ */
+export async function setTimesheetCell(
+  actor: Actor,
+  workspace: TrackerWorkspace,
+  input: SetTimesheetCellValues,
+): Promise<SetTimesheetCellResult> {
+  // Antes de leer y de esperar el bloqueo de la celda (TS-76, TS-84).
+  if (!can(actor, "timeEntry.own.update", ownTimeEntryResource(actor))) {
+    throw new TimeEntryError("forbidden", timeEntryMessages.forbidden);
+  }
+  if (input.date < ENTRY_FLOOR_DAY_KEY) {
+    throw new TimeEntryError("validation", timeEntryMessages.beforeFloor);
+  }
+  const nextDay = addDaysToKey(input.date, 1);
+  if (parseDayKey(nextDay) === null) {
+    throw new TimeEntryError("validation", timeEntryMessages.invalidDate);
+  }
+  const timeZone = workspace.timezone;
+  const pair = pairOf(input);
+  const cell: EntrySlice = {
+    workspaceId: actor.workspaceId,
+    userId: actor.userId,
+    pair,
+    from: startOfDayKey(input.date, timeZone),
+    to: startOfDayKey(nextDay, timeZone),
+  };
+  // Sin `isolationLevel`: en `read committed` la lectura que sigue al bloqueo
+  // ve lo que confirmó quien lo tenía (ADR 0019).
+  const written = await translatingReferenceConstraints(() =>
+    db.transaction(async (tx) => {
+      await timeEntryRepository.lockCell(tx, cell);
+      const entries = closedRowsOf(await timeEntryRepository.lockClosedInSlice(tx, cell));
+      const write = cellWrite({ date: input.date, timeZone }, entries, input.minutes);
+      return applyCellWrite(tx, actor, pair, write);
+    }),
+  );
+  return { entry: written === null ? null : toView(written, workspace) };
+}
+
+/**
+ * TS-52 … TS-54: borra las entradas de `ids` que siguen siendo cerradas de la
+ * persona con ese par y con el inicio en los siete días desde `weekStart`
+ * (D13-6). La que corre no se toca, ni lo que no está en `ids`. Sin ninguna,
+ * responde vacío sin escribir: el reintento de una fila ya quitada no borra
+ * nada más (TS-92). `workspace` da la zona con que se cortan los días.
+ */
+export async function removeTimesheetRow(
+  actor: Actor,
+  workspace: TrackerWorkspace,
+  input: RemoveTimesheetRowValues,
+): Promise<RemoveTimesheetRowResult> {
+  // Antes de leer: sin esto, una membresía desactivada recibiría éxito por
+  // una fila que ya no tiene entradas.
+  if (!can(actor, "timeEntry.own.delete", ownTimeEntryResource(actor))) {
+    throw new TimeEntryError("forbidden", timeEntryMessages.forbidden);
+  }
+  const weekEnd = addDaysToKey(input.weekStart, 7);
+  if (parseDayKey(weekEnd) === null) {
+    throw new TimeEntryError("validation", timeEntryMessages.invalidDate);
+  }
+  const timeZone = workspace.timezone;
+  const row: EntrySlice = {
+    workspaceId: actor.workspaceId,
+    userId: actor.userId,
+    pair: pairOf(input),
+    from: startOfDayKey(input.weekStart, timeZone),
+    to: startOfDayKey(weekEnd, timeZone),
+  };
+  return db.transaction(async (tx) => {
+    const locked = await timeEntryRepository.lockClosedInSlice(tx, row);
+    const requested = new Set(input.ids);
+    const chosen = locked.filter((entry) => requested.has(entry.id));
+    if (chosen.length === 0) {
+      return { ids: [] };
+    }
+    await deleteLockedEntries(tx, actor, chosen, "timeEntry.removeRow");
+    return { ids: chosen.map((entry) => entry.id).sort() };
+  });
+}
+
+export type TimesheetRequest = {
+  /** El `semana` de la URL ya validado, o `null`. */
+  readonly day: string | null;
+};
+
+/** Una entrada de la planilla con el día local de su inicio, calculado una vez (TS-07). */
+type DatedEntry = { readonly entry: TimesheetEntryRow; readonly date: string };
+
+/** Las entradas de una fila de la planilla y lo que la fila muestra de su par. */
+type TimesheetRowGroup = {
+  readonly first: TimesheetEntryRow;
+  readonly entries: DatedEntry[];
+};
+
+/** La clave del par de una entrada: la de las filas de la planilla. */
+function pairKeyOf(row: ProjectPair): string {
+  return `${row.projectId ?? "-"}|${row.taskId ?? "-"}`;
+}
+
+function closedSecondsOf(entries: readonly DatedEntry[]): number {
+  return entries.reduce(
+    (total, { entry }) =>
+      total +
+      (entry.endedAt === null ? 0 : durationSeconds(entry.startedAt, entry.endedAt)),
+    0,
+  );
+}
+
+/**
+ * TS-15: los proyectos con cliente, por cliente; después los sin cliente;
+ * después «Sin proyecto». Dentro de un cliente, por proyecto; dentro de un
+ * proyecto, la fila sin tarea primero y después por tarea.
+ */
+function compareTimesheetRows(left: TimesheetRowView, right: TimesheetRowView): number {
+  const rank = (row: TimesheetRowView) =>
+    row.project === null ? 2 : row.client === null ? 1 : 0;
+  return (
+    rank(left) - rank(right) ||
+    (left.client !== null && right.client !== null
+      ? compareNames(left.client, right.client)
+      : 0) ||
+    (left.project !== null && right.project !== null
+      ? compareNames(left.project, right.project)
+      : 0) ||
+    (left.task === null ? 0 : 1) - (right.task === null ? 0 : 1) ||
+    (left.task !== null && right.task !== null ? compareNames(left.task, right.task) : 0)
+  );
+}
+
+/** Una fila de la planilla: sus celdas por día de inicio (TS-07, TS-102). */
+function timesheetRowOf(group: TimesheetRowGroup): TimesheetRowView {
+  const { first, entries } = group;
+  const byDay = new Map<string, DatedEntry[]>();
+  for (const dated of entries) {
+    byDay.set(dated.date, [...(byDay.get(dated.date) ?? []), dated]);
+  }
+  return {
+    project: first.project === null ? null : projectRefOf(first.project),
+    task: first.task === null ? null : { id: first.task.id, name: first.task.name },
+    client:
+      first.project === null || first.client === null
+        ? null
+        : { id: first.client.id, name: first.client.name },
+    cells: [...byDay]
+      .sort(([left], [right]) => (left < right ? -1 : 1))
+      .map(([date, cellEntries]) => ({
+        date,
+        closedSeconds: closedSecondsOf(cellEntries),
+        entryCount: cellEntries.length,
+      })),
+    closedSeconds: closedSecondsOf(entries),
+    entryIds: entries.map(({ entry }) => entry.id).sort(),
+  };
+}
+
+/** Las filas que salen de las entradas (TS-14), en el orden de TS-15. */
+function timesheetRows(entries: readonly DatedEntry[]): TimesheetRowView[] {
+  const groups = new Map<string, TimesheetRowGroup>();
+  for (const dated of entries) {
+    const key = pairKeyOf(dated.entry);
+    const group = groups.get(key);
+    if (group === undefined) {
+      groups.set(key, { first: dated.entry, entries: [dated] });
+    } else {
+      group.entries.push(dated);
+    }
+  }
+  return [...groups.values()].map(timesheetRowOf).sort(compareTimesheetRows);
+}
+
+function timesheetDays(
+  days: readonly string[],
+  entries: readonly DatedEntry[],
+  todayKey: string,
+  format: DateFormat,
+): TimesheetDayView[] {
+  return days.map((date) => ({
+    date,
+    label: weekdayLabel(date, todayKey, format),
+    fullLabel: fullWeekdayLabel(date, todayKey, format),
+    isToday: date === todayKey,
+    isWeekend: isWeekendDayKey(date),
+    beforeFloor: date < ENTRY_FLOOR_DAY_KEY,
+    closedSeconds: closedSecondsOf(entries.filter((dated) => dated.date === date)),
+  }));
+}
+
+/**
+ * TS-95: la grilla de la semana, armada en el servidor con la zona y el
+ * primer día de la semana de la persona. Solo entradas cerradas (TS-49).
+ * `now` existe para que los tests fijen el día.
+ */
+export async function getTimesheetState(
+  actor: Actor,
+  workspace: TrackerWorkspace,
+  request: TimesheetRequest,
+  now: Date = new Date(),
+): Promise<TimesheetState> {
+  const timeZone = workspace.timezone;
+  const todayKey = dayKey(now, timeZone);
+  const { shown: week, current } = calendarPeriodsOf(
+    { mode: "week", day: request.day },
+    todayKey,
+    workspace,
+  );
+  // Una sola sentencia: es una sola foto, sin transacción explícita.
+  const rows = await timeEntryRepository.listTimesheetEntries(
+    actor.workspaceId,
+    actor.userId,
+    startOfDayKey(week.start, timeZone),
+    startOfDayKey(week.end, timeZone),
+  );
+  const entries = rows.map((entry) => ({
+    entry,
+    date: dayKey(entry.startedAt, timeZone),
+  }));
+  return {
+    todayKey,
+    canTrack: can(actor, "timeEntry.own.create", ownTimeEntryResource(actor)),
+    weekStart: week.start,
+    weekLabel: weekKeyLabel(
+      week.start,
+      todayKey,
+      workspace.weekStart,
+      workspace.formats.date,
+    ),
+    previousStart: addDaysToKey(week.start, -7),
+    nextStart: week.end,
+    currentStart: current.start,
+    days: timesheetDays(week.days, entries, todayKey, workspace.formats.date),
+    rows: timesheetRows(entries),
+    closedSeconds: closedSecondsOf(entries),
+    storageKey: `clock:planilla:${actor.workspaceId}:${actor.userId}`,
   };
 }

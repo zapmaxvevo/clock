@@ -286,3 +286,9 @@ responde el ganador, como en la cuarta fila.
   celdas del timesheet, las altas de cualquier módulo nuevo— crean con la misma
   regla y la misma `createOnce` de `src/server/create-once.ts`, con su propio
   `can()` antes.
+  _Agregado el 2026-10-08, con el ADR 0019 propuesto_: el
+  [ADR 0019](0019-escribir-una-celda-fija-su-valor.md) saca de esta
+  consecuencia a las celdas del timesheet. Escribir una celda de la planilla
+  (`setTimesheetCell`) no es un alta —puede crear, editar o no escribir—: no
+  lleva id del cliente ni usa `createOnce`, y su reintento se resuelve por el
+  valor, con un bloqueo por celda. El ADR 0019 se aceptó el 2026-10-08.

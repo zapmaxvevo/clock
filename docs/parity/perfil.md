@@ -67,6 +67,9 @@ workspace, así que nunca hay dos candidatos para el mismo dato.
 | **Primer día de semana** | Perfil de la persona, pero **escrito desde el equipo** | Admin u owner   |
 | **Formato de duración**  | Ajustes del workspace, pestaña General                 | Workspace       |
 
+La tabla sigue a la documentación. «Inicio del día» figura en ella, pero en el
+perfil del workspace del equipo no hay ningún ajuste parecido (PF-15).
+
 Las dos filas en negrita son las que rompen la intuición de «todo lo del perfil
 lo decide la persona»:
 
@@ -352,18 +355,25 @@ que reescribirlo cuando el formato fuera elegible; el slice 7 lo reescribió.
 
 **PF-15 Inicio del día** — `fuera de alcance`
 La documentación nombra el ajuste —«the start of your day»— y **no explica qué
-hace**. No lo releva nadie a partir de un nombre.
-Justificación: no se puede implementar lo que no se entendió. El slice del
-calendario no lo necesitó: la grilla abre con las 08:00 arriba como constante
-del cliente, no como preferencia (CAL-14). Si la verificación muestra que
-«inicio del día» es esa hora, se cambia solo la constante por este ajuste
-(P-02).
-_No verificado_: qué cambia este ajuste.
+hace**. Verificado en el workspace del equipo (2026-10-07), respuesta A de
+timesheet P-12: en el perfil no hay nada parecido a «inicio del día».
+Justificación: no existe en el workspace, así que no hay nada que relevar ni
+que implementar. La grilla del calendario abre con las 08:00 arriba como
+constante del cliente, no como preferencia (CAL-14), y la entrada que crea una
+celda vacía de la planilla empieza a las 09:00 fijas (TS-31 de
+[la paridad de la planilla](timesheet.md)): ninguna de las dos sale de un
+ajuste.
+_No verificado_: si el ajuste existe en otros planes de Clockify.
 
 _Corregido el 2026-10-04, slice 8_: decía que quedaba apuntado al slice del
 calendario, que lo iba a necesitar si resultaba ser un ajuste de esa vista. El
 slice 8 dejó la hora como constante, por decisión del usuario, y P-02 depende
 ahora de la respuesta de CAL-14 en calendario P-07.
+_Corregido el 2026-10-07, timesheet P-12_: decía que no se relevaba un ajuste a
+partir de su nombre, que si la verificación mostraba que «inicio del día» era
+la hora de CAL-14 se cambiaba la constante por este ajuste (P-02), y que qué
+cambiaba el ajuste estaba sin verificar. P-02 se cerró: el ajuste no existe en
+el workspace.
 
 ## 4. Primer día de la semana
 
@@ -381,7 +391,7 @@ decisión de acceso que `team.manage`, que ya existe.
 
 **PF-18 Sobre qué impacta** — `replicar`
 Sobre todo lo que agrupa por semana: el encabezado y el total de la semana del
-rastreador (TT-47, TT-48), el timesheet semanal y los rangos predefinidos de
+rastreador (TT-47, TT-48), la planilla de horarios y los rangos predefinidos de
 los reportes. No mueve ninguna entrada: solo cambia dónde corta la semana.
 
 **PF-19 Días laborables y capacidad semanal** — `fuera de alcance`
@@ -732,18 +742,19 @@ se cita como `perfil P-nn`.
 
 ### Abiertos
 
-| ID   | Punto                                                                                                                                                                                                                                                                                                                                                                               |
-| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P-02 | «Inicio del día» (PF-15): la documentación lo nombra y no lo explica. El slice 8 no lo necesitó: la grilla del calendario abre con las 08:00 arriba como constante (CAL-14). Depende de la respuesta de CAL-14 en calendario P-07: si «inicio del día» es la hora a la que abre la grilla, se cambia la constante por la preferencia; si no toca nada de la fase 1, se cierra solo. |
-| P-09 | La lista de verificación contra el workspace real. Está abajo, entera, para resolverla en una sentada.                                                                                                                                                                                                                                                                              |
-| P-10 | Volver a seguir el nombre de Google una vez editado (PF-08). Hoy no hay forma desde la pantalla: escribir el de Google lo guarda como editado. Si hace falta, es un «Usar el de Google» que guarda nulo, en un slice aparte. Falta decidir si hace falta.                                                                                                                           |
-| P-11 | Un correo ocupado no se libera (PF-47, PF-48): una cuenta de Google nueva con la dirección de una persona existente no entra, y hoy la salida es una corrección a mano en la base. Falta decidir cómo lo cubre la pantalla de equipo de la fase 2, y si la página de error de Better Auth necesita un texto propio.                                                                 |
+| ID   | Punto                                                                                                                                                                                                                                                                                                               |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P-09 | La lista de verificación contra el workspace real. Está abajo, entera, para resolverla en una sentada.                                                                                                                                                                                                              |
+| P-10 | Volver a seguir el nombre de Google una vez editado (PF-08). Hoy no hay forma desde la pantalla: escribir el de Google lo guarda como editado. Si hace falta, es un «Usar el de Google» que guarda nulo, en un slice aparte. Falta decidir si hace falta.                                                           |
+| P-11 | Un correo ocupado no se libera (PF-47, PF-48): una cuenta de Google nueva con la dirección de una persona existente no entra, y hoy la salida es una corrección a mano en la base. Falta decidir cómo lo cubre la pantalla de equipo de la fase 2, y si la página de error de Better Auth necesita un texto propio. |
 
 _Corregido el 2026-10-04, slice 8_: P-02 decía que quedaba apuntado al slice
 del calendario, «que es quien lo va a necesitar». El slice 8 no lo cerró: dejó
 la hora como constante, por decisión del usuario.
 _Agregado el 2026-10-05, slice 7b_: P-10 y P-11, las dos deudas del slice 7b
 que se ven desde la pantalla o desde el ingreso.
+_Corregido el 2026-10-07, timesheet P-12_: P-02 estaba abierto, atado a la
+respuesta de CAL-14 en calendario P-07. Pasó a cerrados.
 
 ### P-09, la lista de verificación
 
@@ -769,7 +780,6 @@ mirar en cada caso. Es lo único que necesita una cuenta de Clockify a mano.
   horaria, el formato de fecha, el de hora, el primer día de la semana y el
   tema. Los predeterminados nuestros ya están decididos (P-03); esto es para
   saber si coinciden.
-- **PF-15** — Qué hace «inicio del día». Es lo que destraba P-02.
 - **PF-22** — Si el contador del timer corriendo respeta el formato de duración
   o es siempre `h:mm:ss`. Es la suposición de una decisión ya tomada.
 - **PF-23** — Si existe «seguir al sistema» como tercera opción de tema.
@@ -787,6 +797,9 @@ slice 7 fijó como decisiones nuestras.
 _Agregado el 2026-10-05, slice 7b_: el «username» de PF-07, los nombres del
 tema y de su grupo, que el slice 7b fijó como decisiones nuestras, y lo que
 hace Clockify con la identidad de Google.
+_Corregido el 2026-10-07, timesheet P-12_: se quitó «**PF-15** — Qué hace
+«inicio del día». Es lo que destraba P-02.»; el workspace mostró que el ajuste
+no existe.
 
 ### Cerrados
 
@@ -795,6 +808,7 @@ Se dejan con su identificador porque el documento y los contratos los citan.
 | ID   | Decisión                                                                                                                                                                                                                                                                                                                        |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | P-01 | Formato de duración: compacto `h:mm` como predeterminado, completo `hh:mm:ss` como la otra opción, decimal `fuera de alcance` por ser de plan pago (PF-20). Decidido el 2026-10-02.                                                                                                                                             |
+| P-02 | «Inicio del día» (PF-15) no existe en el perfil del workspace del equipo (respuesta A de timesheet P-12) y sigue `fuera de alcance`. Ni la grilla del calendario (CAL-14, 08:00) ni la entrada que crea una celda de la planilla (TS-31, 09:00) salen de un ajuste. Cerrado el 2026-10-07 por decisión del equipo.              |
 | P-03 | Predeterminados fijados el 2026-10-02, **como decisión del equipo y no como relevamiento**: zona horaria `America/Argentina/Buenos_Aires` como valor fijo y no como vínculo con `workspace.timezone` (PF-11), fecha `dd/MM/yyyy`, hora de 24 horas, primer día de la semana lunes, tema «seguir al sistema», duración compacta. |
 | P-04 | El tema «seguir al sistema» entra y es el predeterminado, anotado como divergencia si Clockify no lo tiene (PF-23). Decidido el 2026-10-02.                                                                                                                                                                                     |
 | P-05 | El nombre es editable dentro de la aplicación (PF-07) y la foto sale de Google en solo lectura (PF-09), por el costo de la subida de archivos. Decidido el 2026-10-02.                                                                                                                                                          |

@@ -4,7 +4,7 @@ import { handle, type ActionResult } from "@/server/action";
 import { assertCan } from "@/server/permissions";
 
 import * as service from "./service";
-import { ownTimeEntryResource, trackerWorkspaceOf } from "./service";
+import { ownTimeEntryResource, TimeEntryError, trackerWorkspaceOf } from "./service";
 import {
   bulkDeleteEntriesInput,
   bulkEditEntriesInput,
@@ -13,6 +13,8 @@ import {
   deleteEntryInput,
   discardTimerInput,
   duplicateEntryInput,
+  removeTimesheetRowInput,
+  setTimesheetCellInput,
   startTimerInput,
   stopTimerInput,
   timeEntryMessages,
@@ -35,6 +37,11 @@ import {
   type DiscardTimerResult,
   type DuplicateEntryInput,
   type DuplicateEntryResult,
+  type RemoveTimesheetRowInput,
+  type RemoveTimesheetRowResult,
+  type RemoveTimesheetRowValues,
+  type SetTimesheetCellInput,
+  type SetTimesheetCellResult,
   type StartTimerInput,
   type StartTimerResult,
   type StopTimerInput,
@@ -53,11 +60,11 @@ import {
 } from "./schema";
 
 /**
- * Las dos pantallas que muestran entradas: `revalidatePath` actualiza solo la
- * que se está viendo, y el calendario usa varias de estas actions.
+ * Las pantallas que muestran entradas: `revalidatePath` actualiza solo la que
+ * se está viendo, y el calendario y la planilla usan varias de estas actions.
  */
 const options = {
-  paths: ["/", "/calendario"],
+  paths: ["/", "/calendario", "/planilla"],
   messages: {
     forbidden: timeEntryMessages.forbidden,
     unexpected: timeEntryMessages.unexpected,
@@ -195,5 +202,49 @@ export async function bulkDeleteEntries(
     const values = bulkDeleteEntriesInput.parse(input);
     assertCan(session.actor, "timeEntry.own.delete", ownTimeEntryResource(session.actor));
     return service.bulkDeleteEntries(session.actor, values);
+  }, options);
+}
+
+/** «Dejar la celda en este valor» de la planilla (TS-29 … TS-39, ADR 0019). */
+export async function setTimesheetCell(
+  input: SetTimesheetCellInput,
+): Result<SetTimesheetCellResult> {
+  return handle(async (session) => {
+    const values = setTimesheetCellInput.parse(input);
+    assertCan(session.actor, "timeEntry.own.update", ownTimeEntryResource(session.actor));
+    return service.setTimesheetCell(session.actor, trackerWorkspaceOf(session), values);
+  }, options);
+}
+
+/**
+ * El pedido de «Quitar fila». Una fila con más de `BULK_MAX` entradas en la
+ * semana no la eligió la persona: el tope de `ids` sale con su propio texto
+ * (TS-52). Cualquier otro problema del esquema, tal cual.
+ */
+function parseRemoveTimesheetRow(
+  input: RemoveTimesheetRowInput,
+): RemoveTimesheetRowValues {
+  const parsed = removeTimesheetRowInput.safeParse(input);
+  if (parsed.success) {
+    return parsed.data;
+  }
+  const tooManyIds = parsed.error.issues.some(
+    (issue) =>
+      issue.code === "too_big" && issue.path.length === 1 && issue.path[0] === "ids",
+  );
+  if (tooManyIds) {
+    throw new TimeEntryError("validation", timeEntryMessages.rowTooManyEntries);
+  }
+  throw parsed.error;
+}
+
+/** «Quitar fila» de la planilla (TS-52 … TS-54, D13-6). */
+export async function removeTimesheetRow(
+  input: RemoveTimesheetRowInput,
+): Result<RemoveTimesheetRowResult> {
+  return handle(async (session) => {
+    const values = parseRemoveTimesheetRow(input);
+    assertCan(session.actor, "timeEntry.own.delete", ownTimeEntryResource(session.actor));
+    return service.removeTimesheetRow(session.actor, trackerWorkspaceOf(session), values);
   }, options);
 }

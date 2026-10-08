@@ -82,6 +82,8 @@ export async function seedPreferences(userId: string, values: SeedPreferenceValu
 
 /** Entrada de horas escrita directo contra la tabla. */
 export type SeedTimeEntryValues = {
+  /** Ausente, el que genera la base. */
+  readonly id?: string;
   readonly workspaceId: string;
   readonly userId: string;
   readonly description?: string;
@@ -94,6 +96,8 @@ export type SeedTimeEntryValues = {
   readonly billable?: boolean;
   /** Las filas de la unión, en el workspace de la entrada. */
   readonly tagIds?: readonly string[];
+  /** Ausente, el `now()` de la base. Fija el desempate de TS-34. */
+  readonly createdAt?: string | Date;
 };
 
 /**
@@ -105,6 +109,7 @@ export async function seedTimeEntry(values: SeedTimeEntryValues) {
   const [row] = await db
     .insert(timeEntry)
     .values({
+      id: values.id,
       workspaceId: values.workspaceId,
       userId: values.userId,
       description: values.description ?? "",
@@ -113,6 +118,7 @@ export async function seedTimeEntry(values: SeedTimeEntryValues) {
       projectId: values.projectId ?? null,
       taskId: values.taskId ?? null,
       billable: values.billable,
+      createdAt: values.createdAt === undefined ? undefined : new Date(values.createdAt),
     })
     .returning();
   const tagIds = values.tagIds ?? [];

@@ -6,7 +6,14 @@ import type {
   TrackingProjectView,
 } from "@/modules/project/schema";
 
-import { pickerView, sameSelection, selectionIds, type PickerView } from "./picker-model";
+import {
+  catalogEntryOf,
+  isTrackablePair,
+  pickerView,
+  sameSelection,
+  selectionIds,
+  type PickerView,
+} from "./picker-model";
 
 function project(
   id: string,
@@ -194,6 +201,184 @@ describe("pickerView", () => {
       project: { id: "p-web", name: "Web", color: "blue" },
       task: { id: "p-web-t0", name: "Diseño" },
     });
+  });
+});
+
+describe("pickerView con `excluded` (TS-18, D13-9)", () => {
+  const none = { projectId: null, taskId: null };
+  const pair = (projectId: string, taskId: string | null = null) => ({
+    projectId,
+    taskId,
+  });
+
+  /** Las opciones inactivas, como «Proyecto» o «Proyecto: Tarea». */
+  function inactiveNames(view: PickerView): string[] {
+    return view.groups.flatMap((group) =>
+      group.items
+        .filter((option) => option.inactive === true)
+        .map(({ selection }) => selection.project?.name ?? ""),
+    );
+  }
+
+  it("sin `excluded` no marca ninguna opción inactiva", () => {
+    expect(inactiveNames(pickerView(catalog, ""))).toEqual([]);
+  });
+
+  it("no ofrece una tarea ya usada ni «Sin proyecto» ya usado", () => {
+    const view = pickerView(catalog, "", [pair("p-web", "p-web-t1"), none]);
+
+    expect(view.none).toBeNull();
+    expect(optionNames(view)[0]).toEqual([
+      "Web",
+      "Web: Diseño",
+      "App móvil",
+      "App móvil: Diseño de íconos",
+    ]);
+    expect(view.empty).toBeNull();
+  });
+
+  it("el proyecto usado que todavía ofrece tareas queda, inactivo, con sus tareas", () => {
+    const view = pickerView(catalog, "", [pair("p-web")]);
+    const [web, design, development] = view.groups[0].items;
+
+    expect(web.selection.task).toBeNull();
+    expect(web.inactive).toBe(true);
+    expect(design.inactive).toBeUndefined();
+    expect(development.inactive).toBeUndefined();
+    expect(inactiveNames(view)).toEqual(["Web"]);
+  });
+
+  it("los ids se comparan sin distinguir mayúsculas", () => {
+    const view = pickerView(catalog, "", [pair("P-WEB", "P-WEB-T0")]);
+
+    expect(optionNames(view)[0]).not.toContain("Web: Diseño");
+  });
+
+  it("el proyecto usado sin tareas que ofrecer no se dibuja, y un cliente sin opciones tampoco", () => {
+    const view = pickerView(catalog, "", [
+      pair("p-soporte"),
+      pair("p-soporte", "p-soporte-t0"),
+      pair("p-interno"),
+    ]);
+
+    expect(groupNames(view)).toEqual(["Acme"]);
+  });
+
+  it("con la búsqueda, el proyecto usado queda inactivo solo si alguna tarea coincide", () => {
+    expect(optionNames(pickerView(catalog, "desarr", [pair("p-web")]))).toEqual([
+      ["Web", "Web: Desarrollo"],
+    ]);
+    expect(
+      pickerView(catalog, "desarr", [pair("p-web"), pair("p-web", "p-web-t1")]),
+    ).toEqual({ none: null, groups: [], empty: { kind: "noMatches" } });
+  });
+
+  it("con proyectos, la búsqueda vacía y todo usado, el vacío es `allUsed`", () => {
+    const everything = [
+      none,
+      pair("p-web"),
+      pair("p-web", "p-web-t0"),
+      pair("p-web", "p-web-t1"),
+      pair("p-app"),
+      pair("p-app", "p-app-t0"),
+      pair("p-soporte"),
+      pair("p-soporte", "p-soporte-t0"),
+      pair("p-interno"),
+    ];
+
+    expect(pickerView(catalog, "", everything)).toEqual({
+      none: null,
+      groups: [],
+      empty: { kind: "allUsed" },
+    });
+    expect(pickerView(catalog, "web", everything).empty).toEqual({ kind: "noMatches" });
+  });
+
+  it("con todos los proyectos usados y «Sin proyecto» libre, no hay vacío", () => {
+    const view = pickerView(catalog, "", [
+      pair("p-web"),
+      pair("p-web", "p-web-t0"),
+      pair("p-web", "p-web-t1"),
+      pair("p-app"),
+      pair("p-app", "p-app-t0"),
+      pair("p-soporte"),
+      pair("p-soporte", "p-soporte-t0"),
+      pair("p-interno"),
+    ]);
+
+    expect(view.none).not.toBeNull();
+    expect(view.groups).toEqual([]);
+    expect(view.empty).toBeNull();
+  });
+
+  it("con el catálogo sin proyectos gana TT-87 (TS-88), sin «Sin proyecto» si ya es fila", () => {
+    const empty: TrackingCatalog = {
+      canCreateProject: true,
+      canCreateTag: true,
+      tags: [],
+      groups: [],
+    };
+
+    expect(pickerView(empty, "", [none])).toEqual({
+      none: null,
+      groups: [],
+      empty: { kind: "noProjects", canCreateProject: true },
+    });
+    expect(pickerView(empty, "", []).none).not.toBeNull();
+  });
+});
+
+describe("catalogEntryOf", () => {
+  it("trae el proyecto, la tarea y el cliente de su grupo", () => {
+    const entry = catalogEntryOf(catalog, { projectId: "P-WEB", taskId: "p-web-t1" });
+
+    expect(entry?.client).toEqual({ id: "c-acme", name: "Acme" });
+    expect(entry?.project.name).toBe("Web");
+    expect(entry?.task).toEqual({ id: "p-web-t1", name: "Desarrollo" });
+    expect(catalogEntryOf(catalog, { projectId: "p-interno", taskId: null })).toEqual({
+      client: null,
+      project: catalog.groups[2].projects[0],
+      task: null,
+    });
+  });
+
+  it("es nulo sin proyecto, con un proyecto que no está o con una tarea de otro", () => {
+    expect(catalogEntryOf(catalog, { projectId: null, taskId: null })).toBeNull();
+    expect(
+      catalogEntryOf(catalog, { projectId: "p-archivado", taskId: null }),
+    ).toBeNull();
+    expect(
+      catalogEntryOf(catalog, { projectId: "p-web", taskId: "p-soporte-t0" }),
+    ).toBeNull();
+  });
+});
+
+describe("isTrackablePair (D13-8)", () => {
+  it("«Sin proyecto» se puede cargar siempre, también con el catálogo vacío", () => {
+    const pair = { projectId: null, taskId: null };
+
+    expect(isTrackablePair(catalog, pair)).toBe(true);
+    expect(isTrackablePair({ ...catalog, groups: [] }, pair)).toBe(true);
+  });
+
+  it("un proyecto, si está en algún grupo del catálogo", () => {
+    expect(isTrackablePair(catalog, { projectId: "p-interno", taskId: null })).toBe(true);
+    expect(isTrackablePair(catalog, { projectId: "P-SOPORTE", taskId: null })).toBe(true);
+    expect(isTrackablePair(catalog, { projectId: "p-archivado", taskId: null })).toBe(
+      false,
+    );
+  });
+
+  it("una tarea, si además está entre las de su proyecto", () => {
+    expect(isTrackablePair(catalog, { projectId: "p-web", taskId: "p-web-t1" })).toBe(
+      true,
+    );
+    expect(isTrackablePair(catalog, { projectId: "p-web", taskId: "p-hecha" })).toBe(
+      false,
+    );
+    expect(isTrackablePair(catalog, { projectId: "p-web", taskId: "p-soporte-t0" })).toBe(
+      false,
+    );
   });
 });
 

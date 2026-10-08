@@ -6433,15 +6433,33 @@ describe("las operaciones en masa en la base, cruzadas", () => {
     expect(await snapshotOf(other.id)).toEqual(before);
   });
 
-  it("criterio 21: dos ediciones masivas sobre los mismos ids, en orden opuesto, responden las dos", async () => {
+  it("criterio 21: dos ediciones masivas sobre los mismos ids, en orden opuesto, y otra operación que bloquea en orden de id responden todas", async () => {
     const workspace = workspaceOf(buenosAires);
-    const seeded = [
-      await seedClosed("2026-10-01T13:00:00Z", "2026-10-01T14:00:00Z"),
-      await seedClosed("2026-09-30T13:00:00Z", "2026-09-30T14:00:00Z"),
-      await seedClosed("2026-09-29T13:00:00Z", "2026-09-29T14:00:00Z"),
-    ];
-    const [a, b, c] = seeded.map((row) => row.id).sort();
-    await warmPool(3);
+    const [a, b, c] = [randomUUID(), randomUUID(), randomUUID()].sort();
+    // Sembradas de mayor a menor id: el orden físico es el opuesto al de id.
+    for (const [id, day] of [
+      [c, "2026-10-01"],
+      [b, "2026-09-30"],
+      [a, "2026-09-29"],
+    ] as const) {
+      await seedTimeEntry({
+        id,
+        workspaceId,
+        userId: actor.userId,
+        startedAt: `${day}T13:00:00Z`,
+        endedAt: `${day}T14:00:00Z`,
+      });
+    }
+    // Sin estadísticas, el plan recorre `time_entry_workspace_id_unq`, que ya
+    // da el orden de id: un bloqueo sin `order by id` no se distinguiría.
+    await db.execute(sql`analyze time_entry`);
+    const plan = await db.execute(sql`
+      explain select id from time_entry
+      where workspace_id = ${workspaceId} and id in (${a}, ${b}, ${c})
+      for update
+    `);
+    expect(JSON.stringify(plan.rows)).not.toContain("time_entry_workspace_id_unq");
+    await warmPool(4);
     const finished: string[] = [];
     const edit = (ids: string[], description: string) => async () => {
       const result = await bulkEditEntries(actor, workspace, {
@@ -6452,15 +6470,29 @@ describe("las operaciones en masa en la base, cruzadas", () => {
       return result;
     };
 
-    const results = await raceThroughBarrier(lockRow(b), [
+    // La regla del ADR 0011 que tiene que cumplir la masiva, en una transacción
+    // del test: bloquear las mismas filas en una sentencia, en orden de id.
+    const lockInIdOrder = () =>
+      db.transaction(async (tx) => {
+        await tx.execute(
+          sql`select id from time_entry where id in (${a}, ${b}, ${c}) order by id for update`,
+        );
+        return null;
+      });
+
+    const [uno, dos, locked] = await raceThroughBarrier<Awaited<
+      ReturnType<typeof bulkEditEntries>
+    > | null>(lockRow(b), [
       edit([a, b, c], "uno"),
       edit([c, b, a], "dos"),
+      lockInIdOrder,
     ]);
 
-    expect(results.map((result) => result.entries.map((entry) => entry.id))).toEqual([
+    expect([uno, dos].map((result) => result?.entries.map((entry) => entry.id))).toEqual([
       [a, b, c],
       [c, b, a],
     ]);
+    expect(locked).toBeNull();
     expect(finished).toHaveLength(2);
     const last = finished[1];
     for (const id of [a, b, c]) {

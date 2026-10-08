@@ -114,6 +114,30 @@ export function weekdayLabel(civil: CivilDay, today: CivilDay): string {
     : `${weekday}, ${date}/${civil.year}`;
 }
 
+/** Los días de la semana enteros, los de `date-fns` en español. */
+const FULL_WEEKDAYS = [
+  "domingo",
+  "lunes",
+  "martes",
+  "miércoles",
+  "jueves",
+  "viernes",
+  "sábado",
+];
+
+/**
+ * El día en el nombre de una celda de la planilla: «miércoles 01/10», que
+ * lleva el año solo si no es el de hoy (TS-100). Es la forma larga de
+ * `weekdayLabel`.
+ */
+export function fullWeekdayLabel(civil: CivilDay, today: CivilDay): string {
+  const weekday = FULL_WEEKDAYS[utcOf(civil).getUTCDay()];
+  const date = `${pad(civil.day)}/${pad(civil.month)}`;
+  return civil.year === today.year
+    ? `${weekday} ${date}`
+    : `${weekday} ${date}/${civil.year}`;
+}
+
 /** El día como lo escribe la URL en `desde`: «2026-09-28». */
 export function dayKeyOf({ year, month, day }: CivilDay): string {
   return `${year}-${pad(month)}-${pad(day)}`;

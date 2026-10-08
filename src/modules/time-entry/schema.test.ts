@@ -13,6 +13,8 @@ import {
   deleteEntryInput,
   discardTimerInput,
   duplicateEntryInput,
+  removeTimesheetRowInput,
+  setTimesheetCellInput,
   startTimerInput,
   stopTimerInput,
   timeEntryMessages,
@@ -26,6 +28,7 @@ import {
   updateRunningStartInput,
   TAGS_MAX,
   timeEntryView,
+  timesheetWeekParams,
   TRACKER_WINDOW_DAYS,
 } from "./schema";
 
@@ -857,7 +860,12 @@ function idsOf(count: number): string[] {
 describe.each([
   ["bulkEditEntriesInput", bulkEditEntriesInput, { changes: { description: "x" } }],
   ["bulkDeleteEntriesInput", bulkDeleteEntriesInput, {}],
-] as const)("los ids de %s (criterio 5)", (_, schema, rest) => {
+  [
+    "removeTimesheetRowInput",
+    removeTimesheetRowInput,
+    { weekStart: "2026-09-28", projectId: null, taskId: null },
+  ],
+] as const)("los ids de %s (criterio 5 del 12, criterio 1 del 13)", (_, schema, rest) => {
   it("rechaza cero ids con bulkEmpty", () => {
     const result = schema.safeParse({ ids: [], ...rest });
     expect(result.success).toBe(false);
@@ -1270,6 +1278,130 @@ describe("las etiquetas en las altas y en updateEntry (criterio 6 del 11b, D-4)"
     ).toBe(true);
     expect(timeEntryView.safeParse({ ...view, tags: [{ id: review }] }).success).toBe(
       false,
+    );
+  });
+});
+
+describe("setTimesheetCellInput (criterio 1 del 13)", () => {
+  const cell = { date: "2026-09-30", projectId: id, taskId: null };
+  const task = "6f1c1a52-3c55-4a43-9d0e-0d6b7d0f4d11";
+
+  function firstMessage(input: unknown): string | undefined {
+    const result = setTimesheetCellInput.safeParse(input);
+    expect(result.success).toBe(false);
+    return result.error?.issues.at(0)?.message;
+  }
+
+  it("acepta un día, un par y de 1 a 1439 minutos", () => {
+    expect(setTimesheetCellInput.parse({ ...cell, minutes: 1 })).toEqual({
+      ...cell,
+      minutes: 1,
+    });
+    expect(setTimesheetCellInput.parse({ ...cell, minutes: 1439 }).minutes).toBe(1439);
+    expect(
+      setTimesheetCellInput.parse({ ...cell, projectId: id, taskId: task, minutes: 90 }),
+    ).toEqual({ ...cell, taskId: task, minutes: 90 });
+  });
+
+  it("acepta «Sin proyecto» (TS-20)", () => {
+    expect(
+      setTimesheetCellInput.parse({ ...cell, projectId: null, minutes: 30 }),
+    ).toEqual({ date: cell.date, projectId: null, taskId: null, minutes: 30 });
+  });
+
+  it("rechaza cero minutos con tooShort (TS-35, TT-73)", () => {
+    expect(firstMessage({ ...cell, minutes: 0 })).toBe(timeEntryMessages.tooShort);
+    expect(firstMessage({ ...cell, minutes: -5 })).toBe(timeEntryMessages.tooShort);
+  });
+
+  it("rechaza 24 horas, un decimal y otro tipo con unexpected (TS-82)", () => {
+    for (const minutes of [1440, 1.5, "90", null, Number.NaN]) {
+      expect(firstMessage({ ...cell, minutes })).toBe(timeEntryMessages.unexpected);
+    }
+  });
+
+  it("rechaza la tarea sin proyecto con taskNeedsProject (TS-86, TT-70)", () => {
+    const result = setTimesheetCellInput.safeParse({
+      ...cell,
+      projectId: null,
+      taskId: task,
+      minutes: 30,
+    });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.at(0)).toMatchObject({
+      message: timeEntryMessages.taskNeedsProject,
+      path: ["taskId"],
+    });
+  });
+
+  it("rechaza un día que no existe con invalidDate", () => {
+    expect(firstMessage({ ...cell, date: "2026-02-30", minutes: 30 })).toBe(
+      timeEntryMessages.invalidDate,
+    );
+  });
+
+  it("exige el par entero: no lo completa con null", () => {
+    expect(
+      setTimesheetCellInput.safeParse({ date: cell.date, minutes: 30 }).success,
+    ).toBe(false);
+  });
+});
+
+describe("removeTimesheetRowInput (criterio 1 del 13)", () => {
+  const task = "6f1c1a52-3c55-4a43-9d0e-0d6b7d0f4d11";
+  const row = { weekStart: "2026-09-28", projectId: id, taskId: null, ids: [id] };
+
+  it("acepta la semana, el par y los ids", () => {
+    expect(removeTimesheetRowInput.parse(row)).toEqual(row);
+    expect(
+      removeTimesheetRowInput.parse({ ...row, projectId: null, taskId: null }),
+    ).toEqual({ ...row, projectId: null, taskId: null });
+  });
+
+  it("rechaza la tarea sin proyecto con taskNeedsProject", () => {
+    const result = removeTimesheetRowInput.safeParse({
+      ...row,
+      projectId: null,
+      taskId: task,
+    });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.at(0)?.message).toBe(timeEntryMessages.taskNeedsProject);
+  });
+
+  it("rechaza una semana que no existe con invalidDate", () => {
+    const result = removeTimesheetRowInput.safeParse({ ...row, weekStart: "2026-02-30" });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.at(0)?.message).toBe(timeEntryMessages.invalidDate);
+  });
+});
+
+describe("timesheetWeekParams", () => {
+  it("acepta un día válido, sea o no inicio de semana", () => {
+    expect(timesheetWeekParams.safeParse({ semana: "2026-10-01" })).toEqual({
+      success: true,
+      data: { semana: "2026-10-01" },
+    });
+  });
+
+  it("no pasa sin semana, con un día que no existe ni repetida (TS-10)", () => {
+    for (const params of [
+      {},
+      { semana: "2026-02-30" },
+      { semana: "" },
+      { semana: ["2026-10-01", "2026-09-24"] },
+    ]) {
+      expect(timesheetWeekParams.safeParse(params).success).toBe(false);
+    }
+  });
+});
+
+describe("los textos de la planilla", () => {
+  it("TS-79 y el tope de la fila (TS-52)", () => {
+    expect(timeEntryMessages.cellNeedsEntryEdit).toBe(
+      "Editá las entradas de esta celda desde el rastreador.",
+    );
+    expect(timeEntryMessages.rowTooManyEntries).toBe(
+      "Esta fila tiene más de 200 entradas en la semana; borralas por partes desde el rastreador.",
     );
   });
 });

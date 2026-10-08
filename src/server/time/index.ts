@@ -124,6 +124,14 @@ export function durationSeconds(start: Date, end: Date): number {
   return Math.max(0, Math.floor((end.getTime() - start.getTime()) / 1000));
 }
 
+/**
+ * El instante `minutes` minutos después. Suma sobre el instante, no sobre la
+ * hora de pared: con un cambio de horario en el medio no coinciden (ADR 0018).
+ */
+export function addMinutes(instant: Date, minutes: number): Date {
+  return new Date(instant.getTime() + minutes * 60_000);
+}
+
 /** Formato h:mm:ss, el del contador del timer. */
 export function formatElapsed(seconds: number): string {
   const safe = Math.max(0, Math.floor(seconds));
@@ -251,6 +259,32 @@ export function dayKeyLabel(
 }
 
 /**
+ * El día de la semana en español con el ancho de `pattern` («EEE» o «EEEE»)
+ * y la fecha en el formato de la persona, con año si no es el de `todayKey`.
+ * `null` si la clave no es un día.
+ */
+function weekdayParts(
+  dayKey: string,
+  todayKey: string,
+  format: DateFormat,
+  pattern: "EEE" | "EEEE",
+): { readonly weekday: string; readonly date: string } | null {
+  const date = parseDayKey(dayKey);
+  const today = parseDayKey(todayKey);
+  if (date === null) {
+    return null;
+  }
+  // La fecha civil se formatea en UTC: así el rótulo no se corre un día según
+  // dónde corra el proceso.
+  const civil = new TZDate(Date.UTC(date.year, date.month - 1, date.day), "UTC");
+  const sameYear = today !== null && today.year === date.year;
+  return {
+    weekday: formatDate(civil, pattern, { locale: es }),
+    date: formatDayKey(dayKey, format, !sameYear),
+  };
+}
+
+/**
  * El rótulo de una columna: día de la semana abreviado y fecha en el formato
  * de la persona, «jue, 01/10», con año si no es el de `todayKey`. Es la parte
  * de `dayKeyLabel` que no es «Hoy» ni «Ayer».
@@ -260,17 +294,32 @@ export function weekdayLabel(
   todayKey: string,
   format: DateFormat,
 ): string {
+  const parts = weekdayParts(dayKey, todayKey, format, "EEE");
+  return parts === null ? dayKey : `${parts.weekday}, ${parts.date}`;
+}
+
+/**
+ * El día en el nombre de una celda: «miércoles 01/10», con el día de la semana
+ * entero y la fecha en el formato de la persona, con año si no es el de
+ * `todayKey` (TS-100). Es la forma larga de `weekdayLabel`.
+ */
+export function fullWeekdayLabel(
+  dayKey: string,
+  todayKey: string,
+  format: DateFormat,
+): string {
+  const parts = weekdayParts(dayKey, todayKey, format, "EEEE");
+  return parts === null ? dayKey : `${parts.weekday} ${parts.date}`;
+}
+
+/** Sábado o domingo. Aritmética civil, sin zona: `false` si la clave no es un día. */
+export function isWeekendDayKey(dayKey: string): boolean {
   const date = parseDayKey(dayKey);
-  const today = parseDayKey(todayKey);
   if (date === null) {
-    return dayKey;
+    return false;
   }
-  // La fecha civil se formatea en UTC: así el rótulo no se corre un día según
-  // dónde corra el proceso.
-  const civil = new TZDate(Date.UTC(date.year, date.month - 1, date.day), "UTC");
-  const sameYear = today !== null && today.year === date.year;
-  const weekday = formatDate(civil, "EEE", { locale: es });
-  return `${weekday}, ${formatDayKey(dayKey, format, !sameYear)}`;
+  const weekday = new Date(Date.UTC(date.year, date.month - 1, date.day)).getUTCDay();
+  return weekday === 0 || weekday === 6;
 }
 
 /**
@@ -558,6 +607,32 @@ export function instantFromLocal(
 ): Date | null {
   const matches = localInstants(dayKey, clock, timeZone);
   return matches.length === 0 ? null : new Date(Math.max(...matches));
+}
+
+/**
+ * La hora de pared de ese día como instante o, si no existió por un adelanto
+ * de hora, el primer minuto posterior de ese mismo día que sí existió. La
+ * hora que ocurre dos veces da el segundo instante, como `instantFromLocal`.
+ * `null` si desde esa hora no existió ningún minuto ese día. Solo para horas
+ * que nadie tecleó (ADR 0018).
+ */
+export function instantFromLocalOrLater(
+  dayKey: string,
+  clock: string,
+  timeZone: string,
+): Date | null {
+  const exact = instantFromLocal(dayKey, clock, timeZone);
+  const minute = clockToMinutes(clock);
+  if (exact !== null || minute === null) {
+    return exact;
+  }
+  const gap = nonexistentMinutes(dayKey, timeZone).find(
+    (range) => range.from <= minute && minute < range.to,
+  );
+  if (gap === undefined || gap.to >= MINUTES_PER_DAY) {
+    return null;
+  }
+  return instantFromLocal(dayKey, minutesToClock(gap.to), timeZone);
 }
 
 /** Minutos de reloj de un día, `[from, to)`. */

@@ -32,6 +32,15 @@ y fecha (slice 6), el arrastre y el estiramiento de un bloque del calendario
 (slice 8) y las celdas del timesheet (slice 13). Por eso va en un ADR y no en
 un contrato.
 
+_Agregado el 2026-10-08, con el ADR 0018 propuesto_: el
+[ADR 0018](0018-lo-que-escribe-una-celda-se-calcula-en-instantes.md) saca de
+esta regla el valor de una celda de la planilla (`setTimesheetCell`, TS-32): el
+inicio de la entrada que edita una celda no viaja en el pedido y se conserva
+por construcción, como en el paso 1, y el fin es el inicio más la duración, en
+instantes, sin pasar por los pasos de este ADR. El detalle de una celda (slice
+13b) edita horas con el trío y sigue esta regla. El ADR 0018 se aceptó el
+2026-10-08.
+
 Restricciones que la decisión no puede romper:
 
 - TT-81 y el `check time_entry_end_after_start`: el fin nunca queda antes del

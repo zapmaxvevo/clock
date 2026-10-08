@@ -1,51 +1,61 @@
 # Estado de la fase 1
 
 Registro vivo de por dónde va la ejecución. Se actualiza al cerrar cada paso;
-quien retome el trabajo empieza acá. Última actualización: 2026-10-07.
+quien retome el trabajo empieza acá. Última actualización: 2026-10-08.
 
 ## Dónde estamos
 
-| Slice                                       | Estado       |
-| ------------------------------------------- | ------------ |
-| 1 — Timer sin proyecto                      | En `main`    |
-| 2 — Modo manual                             | En `main`    |
-| 2b — Reintento de «Iniciar»                 | En `main`    |
-| 3 — Corregir horas y fecha                  | En `main`    |
-| 4 — Continuar, duplicar, descartar, atajos  | En `main`    |
-| 5 — Semana y paginación                     | En `main`    |
-| 9 — Núcleo de proyectos                     | En `main`    |
-| 10 — Selector de proyecto y tarea           | En `main`    |
-| 7 — Perfil                                  | En `main`    |
-| 6 — Selección y acciones en masa            | En `main`    |
-| 7b — Perfil: nombre editable y tema         | En `main`    |
-| 8 — Calendario: lectura                     | En `main`    |
-| 8c — Calendario: escritura                  | En `main`    |
-| 8b — Calendario: arrastre                   | En `main`    |
-| 11a — Facturable                            | En `main`    |
-| 11b — Etiquetas                             | En `main`    |
-| 12 — Edición masiva de proyecto y etiquetas | En `main`    |
-| 2c — «Reintentar» en el alta manual         | En `main`    |
-| Arreglo: piso de fechas fijo (2000-01-01)   | En `main`    |
-| 13 — Timesheet semanal                      | Sin contrato |
+| Slice                                       | Estado            |
+| ------------------------------------------- | ----------------- |
+| 1 — Timer sin proyecto                      | En `main`         |
+| 2 — Modo manual                             | En `main`         |
+| 2b — Reintento de «Iniciar»                 | En `main`         |
+| 3 — Corregir horas y fecha                  | En `main`         |
+| 4 — Continuar, duplicar, descartar, atajos  | En `main`         |
+| 5 — Semana y paginación                     | En `main`         |
+| 9 — Núcleo de proyectos                     | En `main`         |
+| 10 — Selector de proyecto y tarea           | En `main`         |
+| 7 — Perfil                                  | En `main`         |
+| 6 — Selección y acciones en masa            | En `main`         |
+| 7b — Perfil: nombre editable y tema         | En `main`         |
+| 8 — Calendario: lectura                     | En `main`         |
+| 8c — Calendario: escritura                  | En `main`         |
+| 8b — Calendario: arrastre                   | En `main`         |
+| 11a — Facturable                            | En `main`         |
+| 11b — Etiquetas                             | En `main`         |
+| 12 — Edición masiva de proyecto y etiquetas | En `main`         |
+| 2c — «Reintentar» en el alta manual         | En `main`         |
+| Arreglo: piso de fechas fijo (2000-01-01)   | En `main`         |
+| 13 — Planilla de horarios semanal           | En `main`         |
+| 13b — Planilla: menú y detalle de la celda  | Sin contrato      |
+| Núcleo de reportes, R1                      | Contrato aprobado |
 
-Los slices 1 a 12 (con 2b, 2c, 7b, 8b, 8c, 11a y 11b) están en `main`: el rastreador queda
-cubierto salvo lo fuera de alcance, y el alta manual ya ofrece «Reintentar» (TT-109 dejó de ser
-excepción). El 2c se mergeó el 2026-10-07 con lint, typecheck, 1098 de unidad, 1121 de
-integración, `next build` y 153 de 153 e2e en verde, dos corridas. El arreglo del piso fijo
-(`fase1-fix-piso-fijo.md`, después del primer deploy) se mergeó el mismo día con 1098 de unidad,
-1142 de integración, `next build` y 155 de 155 e2e dos veces; con el deploy, el `update` provisorio
-de `created_at` en Neon queda sin efecto práctico. Todo está pusheado hasta `07674bc`. No quedan
-agentes con trabajo pendiente ni cambios sin commitear. Postgres local: `docker start clock-pg`;
-los e2e corren contra una base nueva (`DATABASE_URL=…/clock_e2e_piso`), porque `clock` tiene un
-segundo workspace vacío del owner y `renewWorkspace` se corta.
+Los slices 1 a 13 (con 2b, 2c, 7b, 8b, 8c, 11a y 11b) y el arreglo del piso fijo están en `main`.
+El 13 (planilla de horarios) se mergeó el 2026-10-08 con lint, typecheck, 1279 de unidad, 1223 de
+integración, `next build` y 171 de 171 e2e en verde, dos corridas sobre una base nueva; el spec de
+la planilla, 17 de 17 en tres corridas. Sus seis revisiones y las correcciones están en
+`correcciones-fase1-slice13-arranque.md` y `-revisiones.md`. Pusheado hasta `07674bc`: el usuario
+tiene que pushear el merge del 13. Postgres local: `docker start clock-pg`; los e2e corren contra
+una base nueva (`DATABASE_URL=…/clock_e2e13final`), porque `clock` tiene un segundo workspace
+vacío del owner y `renewWorkspace` se corta.
 
 ## Lo primero de la sesión siguiente
 
-0. **Lo que sigue**: el contrato del **13** (timesheet semanal; necesita P-12 de `timesheet.md`
-   y una decisión de arquitectura sobre TS-32, ver `fase1-mapa.md`). Ese contrato tiene que decir
-   si el reintento de la copia de semana pasa a ser seguro con TS-56 (TS-60 y TS-92 conservan su
-   «sin Reintentar» hasta entonces).
+0. **Lo que sigue**: dos frentes.
+   - **Núcleo de reportes** (fase 3 adelantada, decisión del usuario del 2026-10-08), en la rama
+     `plan/nucleo-reportes` (worktree en el scratchpad de la sesión; si se perdió,
+     `git worktree add <dir> plan/nucleo-reportes`). Ahí están `docs/parity/reportes.md` con las
+     decisiones del usuario (§8), los ADR **0020** y **0021** (aceptados), el mapa
+     `docs/slices/nucleo-reportes-mapa.md` (R1, R2a, R2b, R3 … R7; R8 y R9 según §5) y el
+     contrato **aprobado** de R1 (`nucleo-reportes-r1-las-horas-no-se-borran.md`). La rama se
+     mergea a `main` antes de arrancar R1. Sigue: pipeline de R1 (solo `backend-dev`; antes de
+     desplegarlo, el usuario corre la consulta informativa de §2.3 en producción). Abiertas para
+     el usuario (§5 del mapa): cómo se nombra un admin antes de la fase 2 (SQL o R8), el enlace de
+     un member con personas ajenas, qué se exporta, y «personas sin horas» (R9).
+   - **13b** (menú y detalle de una celda, §9 del contrato del 13): contrato por escribir.
 1. Deuda chica sin slice:
+   - `pickDate` (`e2e/tracker-page.ts`) no espera el foco del disparador al cerrar el calendario:
+     un `pickProject` después falla de a ratos (la causa del flake del 13);
    - un `DayCalendar` compartido entre `DateField` y `PeriodPicker`;
    - un `ClockRangeFields` común a `manual-bar.tsx`, `entry-times-editor.tsx` y el diálogo;
    - las variantes de `retryOf`;
@@ -128,8 +138,7 @@ Lo que sigue siendo del usuario, porque necesita sus cuentas o su máquina:
   `time-tracker.md` (fila de la entrada que corre, hora inexistente, horas de la copia al
   duplicar, «la última» de `c`, continuar o duplicar con un proyecto no disponible, TT-57 y
   TT-58), la edición masiva del rastreador (P-07), P-09 de `perfil.md` (con lo del 7b: el
-  «username», el tema y la identidad de Google en PF-45, PF-47 y PF-48), P-12 de
-  `timesheet.md`, P-07 de `calendario.md` (con CAL-23), PR-40/PR-58 y P-33 de `proyectos.md`
+  «username», el tema y la identidad de Google en PF-45, PF-47 y PF-48), P-07 de `calendario.md` (con CAL-23), PR-40/PR-58 y P-33 de `proyectos.md`
   (con PR-47 y PR-48), y lo del 11 en P-14: TT-12, TT-50 y el rechazo de continuar o duplicar
   con una etiqueta archivada. Del 11b, también en TT-12: si las opciones llevan
   casilla, qué hacen Enter y Espacio, si la búsqueda queda después de marcar, si se guarda con
@@ -195,6 +204,14 @@ Lo que sigue siendo del usuario, porque necesita sus cuentas o su máquina:
   subdirectorio del scratchpad, con su puerto.
 - **Bases propias**: cada agente que corre tests fuera de la suite usa una base propia y la
   borra al terminar; avisar antes de borrar una base ajena.
+- **Informes que no llegan**: con la sesión bajo `/remote-control`, los `SendMessage` de los
+  agentes a «team-lead» no llegaron; el nombre de la sesión lo da `ListAgents` («clock-cb»). Si un
+  agente queda idle sin informe, leerlo del transcript en `subagents/` del directorio de la
+  sesión. Un agente quedó más de una hora esperando el permiso de un `docker exec` o un
+  `db:migrate`: crear las bases antes de lanzarlo y, si no avanza, pararlo y seguir a mano.
+- **Writes bloqueados**: a `parity-analyst` le bloquean escribir `.md` nuevos («Subagents should
+  return findings as text»); manda el documento en el mensaje y lo escribe el team-lead.
+- **`pkill -f "next dev"`** tira los servidores de los demás agentes: matar por PID.
 - **Formato**: `npx prettier --write` sobre los `.md` que escriben agentes sin
   shell; `npx prettier --check .` antes de commitear.
 
@@ -202,6 +219,6 @@ Lo que sigue siendo del usuario, porque necesita sus cuentas o su máquina:
 
 - Plan y orden: `fase1-mapa.md`.
 - Contratos: `fase1-slice<n>-*.md`; correcciones: `correcciones-fase1-slice<n>*.md`.
-- ADR: `docs/adr/0001`–`0017` (todos aceptados).
+- ADR: `docs/adr/0001`–`0019` en `main` (todos aceptados); 0020 y 0021 en `plan/nucleo-reportes`.
 - Paridad: `docs/parity/` (time-tracker, perfil, proyectos, calendario,
   timesheet).

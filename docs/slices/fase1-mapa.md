@@ -16,9 +16,10 @@ paginación); las fechas futuras se aceptan (P-10).
 
 ## 1. Lo que falta de la fase 1
 
-Cuatro bloques: el rastreador completo, el timesheet semanal, el calendario y
-el perfil. Del rastreador, el slice 1 entregó el timer de punta a punta con una
-entrada sin proyecto; queda todo el resto de `docs/parity/time-tracker.md`.
+Cuatro bloques: el rastreador completo, la planilla de horarios semanal, el
+calendario y el perfil. Del rastreador, el slice 1 entregó el timer de punta a
+punta con una entrada sin proyecto; queda todo el resto de
+`docs/parity/time-tracker.md`.
 
 Los otros tres bloques **no tienen especificación de paridad todavía**. Cada uno
 necesita su `docs/parity/<modulo>.md` escrito por `parity-analyst` antes de que
@@ -36,9 +37,9 @@ ni criterios observables que escribir. Es una precondición, no un slice.
 
 El selector de proyecto y tarea (TT-06 … TT-11), las etiquetas (TT-12) y el
 facturable (TT-14, TT-15) son fase 1 en el plan, pero las entidades `project`,
-`task`, `client` y `tag` son fase 2. El timesheet depende de proyectos más
-fuerte todavía: su grilla es una fila por proyecto y tarea, así que sin
-proyectos la pantalla no tiene de qué estar hecha.
+`task`, `client` y `tag` son fase 2. La planilla de horarios depende de
+proyectos más fuerte todavía: su grilla es una fila por proyecto y tarea, así
+que sin proyectos la pantalla no tiene de qué estar hecha.
 
 **La decisión es adelantar un núcleo mínimo de esas entidades al final de la
 fase 1**, en vez de empujar todo lo que depende de proyectos para después de la
@@ -53,7 +54,7 @@ usa en tres lugares:
   acceso de lectura y un solo camino de creación. La administración completa de
   proyectos —asignaciones, estimaciones, estados, archivado masivo, tarifas,
   pantallas de cliente— sigue siendo fase 2.
-- El timesheet queda último de la fase 1, después del núcleo.
+- La planilla de horarios queda última de la fase 1, después del núcleo.
 
 El costo que esto paga es que el slice 9 necesita `docs/parity/proyectos.md`
 relevado antes, aunque el módulo de proyectos se implemente recién en la fase 2.
@@ -80,7 +81,7 @@ solo. El orden es de dependencia, no de tamaño.
 | 10    | Selector de proyecto y tarea en el rastreador | 9               |
 | 11    | Etiquetas y facturable                        | 9, 10           |
 | 12    | Edición masiva de proyecto y etiquetas        | 6, 10, 11       |
-| 13    | Timesheet semanal                             | 3, 5, 7, 10, 11 |
+| 13    | Planilla de horarios                          | 3, 5, 7, 10, 11 |
 
 ### Slice 2 — Modo manual
 
@@ -224,8 +225,9 @@ deuda de `ensureWorkspaceContext` (§5).
 
 Depende del slice 5, que es el que introduce el primer día de la semana y
 `weekStartOf`. **Va acá porque es el último bloque de la fase 1 que no toca
-proyectos** y porque todo lo que se construya después —calendario y timesheet—
-quiere leer la zona horaria y el inicio de semana de un solo lugar, no de dos.
+proyectos** y porque todo lo que se construya después —calendario y planilla de
+horarios— quiere leer la zona horaria y el inicio de semana de un solo lugar, no
+de dos.
 
 ### Slice 8 — Calendario
 
@@ -273,7 +275,8 @@ después del rebase. Como segundo módulo con actions, extrae a `src/server/`,
 `src/lib/` y `src/hooks/` las piezas de las actions que hoy viven dentro de
 `time-entry` (§5). **Va primero de los cuatro slices de proyectos porque es el
 único que no se puede dividir más**: sin tablas no hay selector, sin selector no
-hay etiquetas con sentido en la fila, y sin nada de eso no hay timesheet.
+hay etiquetas con sentido en la fila, y sin nada de eso no hay planilla de
+horarios.
 
 Le deja escritas al slice 10 las claves de `time_entry` hacia proyecto y tarea,
 con una consecuencia que el 10 hereda como criterio: la base rechaza borrar un
@@ -316,21 +319,37 @@ Depende de los slices 6, 10 y 11. **Es el cierre del rastreador**: con este
 slice `docs/parity/time-tracker.md` queda cubierto salvo lo marcado como fuera de
 alcance (TT-09, TT-13, TT-33, TT-53, TT-59, TT-67, TT-83, TT-84).
 
-### Slice 13 — Timesheet semanal
+### Slice 13 — Planilla de horarios
 
-Identificadores de `docs/parity/timesheet.md`. Depende del slice 10 (la grilla es
+Identificadores de `docs/parity/timesheet.md`, que especifica la planilla de
+horarios, el «Timesheet» de Clockify; la pantalla se llama así porque así la
+nombra el workspace del equipo en castellano. Depende del slice 10 (la grilla es
 una fila por proyecto y tarea), del slice 5 (la semana que muestra sale del
 inicio de semana de la persona), del slice 7 (su zona horaria), del slice 3 (el detalle de una celda edita
 horas como la fila) y del slice 11 (la entrada que crea una celda lleva
 facturable y etiquetas). Todos ya van antes en el orden.
 
-La especificación de paridad dejó la escritura de una celda entera como
-propuesta: la documentación pública no dice qué hace una celda que ya tiene
-entradas ni a qué hora empieza la que crea una vacía. Antes del contrato hacen
-falta las respuestas del workspace (P-12 de `timesheet.md`) y una decisión de
-arquitectura: TS-32 propone que el fin de la entrada de una celda sea el inicio
-más la duración y no una hora de pared convertida, un tercer camino de
-instantes que el ADR 0005 cierra y que tiene que entrar por un ADR propio.
+La especificación de paridad está escrita sobre las respuestas del workspace del
+equipo (P-12 de `timesheet.md`, respondida el 2026-10-07) y las decisiones del
+equipo del mismo día: una celda vacía crea una entrada que empieza a las 09:00
+(TS-31); una celda con una entrada mueve su fin (TS-33); una con varias agrega
+una entrada al subir y achica la que empieza más tarde al bajar, y rechaza y
+manda al detalle lo que vaciaría esa entrada o caería en otro día (TS-34); la
+planilla no muestra ni toca el timer en curso (TS-49, TS-50). «Copiar la semana
+pasada» queda fuera de la fase 1, porque está desactivado en el plan del
+workspace, y las plantillas van a la fase 2 (timesheet P-09). Los pendientes que
+quedan abiertos en `timesheet.md` no bloquean el contrato.
+
+Antes del contrato falta una decisión de arquitectura: TS-32 fija que el fin de
+lo que escribe una celda sea el inicio más la duración, en instantes, y no una
+hora de pared convertida, un tercer camino de instantes que el ADR 0005 cierra.
+El equipo lo aceptó (timesheet P-02) y lo tiene que registrar un ADR de
+`architect`.
+
+_Corregido el 2026-10-07, timesheet P-12_: el slice se llamaba «Timesheet
+semanal», y esta sección decía que la escritura de una celda estaba entera como
+propuesta y que antes del contrato hacían falta las respuestas del workspace
+además del ADR.
 
 **Va último de la fase 1** porque es el único bloque cuya pantalla entera depende
 de proyectos: adelantarlo obligaría a dibujar una grilla de una sola fila «Sin
@@ -343,6 +362,9 @@ proyecto o etiqueta desde el selector, son del módulo de proyectos), TT-33
 (contador en el título de la pestaña), TT-53 (agrupación de entradas similares,
 P-09), TT-59 (dividir entrada, P-05), TT-67 (bloqueo por aprobación, P-02),
 TT-83 (redondeo, P-03) y TT-84 (campos obligatorios y forzar timer, P-01).
+De `docs/parity/timesheet.md`: «Copiar la semana pasada» (TS-55 … TS-61), que
+está desactivado en el plan del workspace; «Compañeros» (TS-70); y las
+plantillas (TS-62 … TS-66), que van a la fase 2 (timesheet P-09).
 
 Siguen abiertos y no los cierra ningún slice de este mapa: P-01 a P-07, P-09 y
 P-14.

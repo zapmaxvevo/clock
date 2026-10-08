@@ -28,7 +28,10 @@ import {
   deleteEntry,
   discardTimer,
   duplicateEntry,
+  getTimesheetState,
   getTrackerState,
+  removeTimesheetRow,
+  setTimesheetCell,
   startTimer,
   stopTimer,
   updateDescription,
@@ -1545,5 +1548,112 @@ describe("el guardado del diálogo (updateEntry, criterio 7, TT-66)", () => {
     expect(foreign).toEqual([undefined, undefined]);
     expect(await timeEntryById(closed.id)).toEqual(closed);
     expect(await timeEntryById(running.id)).toEqual(running);
+  });
+});
+
+describe("la planilla (criterio 14 del 13: TS-75, TS-76, TS-84)", () => {
+  /** El miércoles 30/09/2026 a las 10:00 en Buenos Aires. */
+  const cellValues = { date: "2026-09-30", projectId: null, taskId: null } as const;
+  const rowValues = { weekStart: "2026-09-28", projectId: null, taskId: null } as const;
+
+  function seedClosedOf(userId: string, workspace = workspaceId) {
+    return seedTimeEntry({
+      workspaceId: workspace,
+      userId,
+      startedAt: "2026-09-30T13:00:00Z",
+      endedAt: "2026-09-30T14:00:00Z",
+    });
+  }
+
+  it.each(roles)(
+    "%s escribe sus celdas, quita sus filas y lee la planilla con canTrack",
+    async (role) => {
+      const actor = await seedActor(role);
+      const edited = await seedClosedOf(actor.userId);
+
+      const created = await setTimesheetCell(actor, workspace, {
+        ...cellValues,
+        date: "2026-10-01",
+        minutes: 30,
+      });
+      const updated = await setTimesheetCell(actor, workspace, {
+        ...cellValues,
+        minutes: 90,
+      });
+      const state = await getTimesheetState(actor, workspace, { day: "2026-09-30" });
+      const removed = await removeTimesheetRow(actor, workspace, {
+        ...rowValues,
+        ids: [edited.id],
+      });
+
+      expect(created.entry?.durationSeconds).toBe(30 * 60);
+      expect(updated.entry).toMatchObject({ id: edited.id, durationSeconds: 90 * 60 });
+      expect(state.canTrack).toBe(true);
+      expect(removed).toEqual({ ids: [edited.id] });
+    },
+  );
+
+  it.each(notActive)(
+    "con %s, escribir y quitar responden forbidden sin tocar nada, y la lectura sigue sin canTrack",
+    async (status) => {
+      const actor = await seedActor("member", status);
+      const row = await seedClosedOf(actor.userId);
+
+      await expect(
+        setTimesheetCell(actor, workspace, { ...cellValues, minutes: 30 }),
+      ).rejects.toMatchObject({
+        code: "forbidden",
+        message: timeEntryMessages.forbidden,
+      });
+      await expect(
+        setTimesheetCell(actor, workspace, {
+          ...cellValues,
+          date: "2026-10-01",
+          minutes: 30,
+        }),
+      ).rejects.toMatchObject({ code: "forbidden" });
+      await expect(
+        removeTimesheetRow(actor, workspace, { ...rowValues, ids: [row.id] }),
+      ).rejects.toMatchObject({
+        code: "forbidden",
+        message: timeEntryMessages.forbidden,
+      });
+      const state = await getTimesheetState(actor, workspace, { day: "2026-09-30" });
+
+      expect(await timeEntriesOf(workspaceId, actor.userId)).toEqual([
+        expect.objectContaining({
+          id: row.id,
+          endedAt: new Date("2026-09-30T14:00:00Z"),
+        }),
+      ]);
+      expect(state.canTrack).toBe(false);
+      expect(state.rows.map((stateRow) => stateRow.entryIds)).toEqual([[row.id]]);
+    },
+  );
+
+  it("la entrada de la misma persona en otro workspace no es parte de la celda ni de la fila", async () => {
+    const actor = await seedActor("member");
+    const other = await seedWorkspace(buenosAires);
+    await db
+      .insert(membership)
+      .values({ workspaceId: other.workspaceId, userId: actor.userId, role: "member" });
+    const elsewhere = await seedClosedOf(actor.userId, other.workspaceId);
+
+    const written = await setTimesheetCell(actor, workspace, {
+      ...cellValues,
+      minutes: 30,
+    });
+    const removed = await removeTimesheetRow(actor, workspace, {
+      ...rowValues,
+      ids: [elsewhere.id],
+    });
+    const state = await getTimesheetState(actor, workspace, { day: "2026-09-30" });
+
+    expect(written.entry?.id).not.toBe(elsewhere.id);
+    expect(removed).toEqual({ ids: [] });
+    expect(await timeEntryById(elsewhere.id)).toMatchObject({
+      endedAt: new Date("2026-09-30T14:00:00Z"),
+    });
+    expect(state.rows.flatMap((row) => row.entryIds)).toEqual([written.entry?.id]);
   });
 });

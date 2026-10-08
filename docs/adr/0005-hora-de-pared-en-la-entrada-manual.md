@@ -178,6 +178,14 @@ fecha de inicio configurable por el owner queda para más adelante, si hace falt
 - La excepción a «los instantes los pone la base» queda acotada y nombrada: las
   escrituras que nacen de un `now()` siguen usando `now()`, y solo las que nacen
   de una hora tecleada usan `instantFromLocal`. No hay un tercer camino.
+  _Agregado el 2026-10-07, con el ADR 0018 propuesto_: el
+  [ADR 0018](0018-lo-que-escribe-una-celda-se-calcula-en-instantes.md) abre dos
+  excepciones a esta consecuencia y a «La hora inexistente se rechaza», solo
+  para lo que escribe una celda de la planilla (`setTimesheetCell`, TS-32): un
+  tercer camino —el fin es el inicio más la duración, en instantes, y la
+  entrada que agrega una celda con varias empieza en el fin de otra—, y las
+  09:00 de una celda vacía, que nadie tecleó, se llevan al primer minuto que
+  exista después en vez de rechazarse. El ADR 0018 se aceptó el 2026-10-08.
 - La opción 3 queda descartada porque mezcla lo peor de las dos: el cliente
   igual necesita resolver el desplazamiento, y el servidor igual tiene que
   decidir qué hacer cuando el desplazamiento que llega no es el que corresponde

@@ -44,6 +44,8 @@ export const projectLabels = {
   pickerGoToProjects: "Ir a Proyectos",
   /** TT-07: la búsqueda del selector sin coincidencias. */
   pickerNoMatches: "Ningún proyecto coincide con la búsqueda.",
+  /** TS-18: el selector de una fila nueva de la planilla, con todo ya usado. */
+  pickerAllUsed: "Todas las combinaciones ya tienen fila esta semana.",
   /**
    * TT-12: el disparador del selector de la barra sin etiquetas, el campo del
    * diálogo del calendario, el de solo lectura y el detalle del bloque, y la

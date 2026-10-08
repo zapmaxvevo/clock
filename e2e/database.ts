@@ -296,6 +296,68 @@ export async function markTaskDone(projectName: string, taskName: string): Promi
   );
 }
 
+/** Lo que siembra `seedEntries`: una entrada terminada de un proyecto. */
+export type SeedEntry = {
+  readonly description: string;
+  /** El día civil, como lo escribe la URL: «2026-09-30». */
+  readonly day: string;
+  /** Las horas en la zona `timeZone` de `seedEntries`: «10:00». */
+  readonly start: string;
+  readonly end: string;
+  /** El nombre del proyecto, con el sufijo del recorrido. */
+  readonly project: string;
+};
+
+/**
+ * Siembra entradas terminadas de una persona, en una transacción. Es más
+ * corto y más estable que cargarlas desde la barra manual cuando lo que se
+ * prueba es otra pantalla que las lee. Las horas se leen en `timeZone`. La
+ * persona tiene que haber entrado antes a la aplicación, que es lo que le
+ * crea la membresía; si no, o si el proyecto no existe, se corta sin dejar
+ * nada.
+ */
+export async function seedEntries(
+  email: string,
+  timeZone: string,
+  entries: readonly SeedEntry[],
+): Promise<void> {
+  await withDatabase(async (client) => {
+    await client.query("begin");
+    try {
+      for (const entry of entries) {
+        await insertOneRow(
+          client,
+          `insert into time_entry (workspace_id, user_id, description, started_at, ended_at, project_id)
+           select membership.workspace_id, membership.user_id, $2,
+                  ($3::date + $4::time) at time zone $6,
+                  ($3::date + $5::time) at time zone $6,
+                  project.id
+             from membership
+             join "user" on "user".id = membership.user_id
+             join project on project.workspace_id = membership.workspace_id
+                         and project.name = $7
+            where membership.workspace_id = ${FIRST_WORKSPACE}
+              and "user".email = $1
+           returning time_entry.id`,
+          [
+            email,
+            entry.description,
+            entry.day,
+            entry.start,
+            entry.end,
+            timeZone,
+            entry.project,
+          ],
+        );
+      }
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    }
+  });
+}
+
 /**
  * Copia `copies` veces la única entrada de una persona con esa descripción,
  * con sus mismos instantes, así que caen en su mismo día. Es lo que la
