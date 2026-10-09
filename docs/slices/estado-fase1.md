@@ -42,7 +42,7 @@ vacío del owner y `renewWorkspace` se corta.
 
 ## Lo primero de la sesión siguiente
 
-0. **Lo que sigue** (cuarta sesión, 2026-10-08, ~23:55).
+0. **Lo que sigue** (cierre de la cuarta sesión, 2026-10-09, ~02:10).
    - **Push**: lo hace el team-lead después de cada merge en verde (el usuario sacó el `deny` de
      `git push` y `gh pr merge` en `.claude/settings.json`, **cambio local suyo, no se commitea**;
      `.idea/` tampoco). `origin/main` está en `23de226`, al día.
@@ -65,8 +65,22 @@ vacío del owner y `renewWorkspace` se corta.
      (`correcciones-nucleo-reportes-r2b-revisiones.md`, «Cierre»). El preview de Vercel tiene
      `DATABASE_URL` (rama `preview` de Neon), `BETTER_AUTH_SECRET` y `BETTER_AUTH_URL` propios;
      `BETTER_AUTH_URL` quedó cargado solo para la rama `nucleo/r2b-atajos`.
-   - **Siguiente slice del núcleo**: R3 (subgrupos, tarea y etiqueta), o R8 (cambiar el rol), que
-     solo depende de R2a. Orden del mapa: R2a → R2b → R3 → R4 → R5 → R6 → R7, con R8 después de R2a y
+   - **R3 en contrato** (subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
+     (`7b66b03`), en checkout en el árbol principal. `architect-r3` quedó escribiendo
+     `docs/slices/nucleo-reportes-r3-subgrupos-tarea-y-etiqueta.md` (sin commit). Tarea entra
+     (decisión del usuario, mapa ~l. 382). Se le pidió resolver el tamaño del árbol (árbol entero
+     con tope o expandir pidiendo al servidor, con lo abierto en la URL), la suma por etiqueta
+     con aviso, la comprobación contra Neon si hay una forma de parámetro nueva, y proponer partir
+     el slice si es grande. **Al retomar**: si el archivo existe y el agente terminó (su informe
+     está en `subagents/agent-aarchitect-r3-*.jsonl` de la sesión `e1bb799a-…`), pasarle
+     `npx prettier --write`, lanzar `architecture-reviewer` hasta aprobar, commitear, mergear el
+     contrato a `main` y seguir el pipeline como en R2b (bases por agente creadas antes, backend
+     primero fija formas). Si no existe, relanzar el `architect` con el mismo encargo.
+   - CI de `main` en verde en `7b66b03` (`verify` e `integration`). El job `e2e` sigue salteado
+     hasta que el usuario cargue `E2E_DATABASE_URL` en el environment `preview` de GitHub; ahora el
+     preview tiene su rama de Neon propia (`preview`).
+   - Después de R3: R4 (filtros); R8 (cambiar el rol) se puede adelantar porque solo depende de R2a.
+     Orden del mapa: R2a → R2b → R3 → R4 → R5 → R6 → R7, con R8 después de R2a y
      R9 después de R4.
    - **Deuda nueva**: C5 de R2a (`RangePicker` es la tercera copia del calendario de mes: sumarlo
      al `DayCalendar` compartido); la deuda de R1 (C1, `rejection` y la lectura del diario a
@@ -244,6 +258,15 @@ cuentas sin Google antes de desplegar el 7b dio cero filas en producción el 202
   pasa o falla según el día o la máquina (F2 de R2a, el test de Salta). Fijar `TZ` y el reloj.
 - **Writes de `parity-analyst`**: si se lo bloquean, el contenido completo queda en el
   `tool_use` del Write en su transcript; se aplica desde ahí.
+- **El texto de `parity-analyst` lo aplica el team-lead**: el arnés le rechaza el Write aunque
+  sea un archivo existente (R2b); manda los cambios con su lugar exacto y el team-lead los aplica
+  con un script de reemplazos que afirma que cada ancla aparece una sola vez.
+- **Avisos duplicados y cruzados**: cada agente manda su informe por SendMessage y además llega su
+  `idle_notification` con el mismo texto; y un agente puede preguntar algo ya respondido porque los
+  mensajes se cruzan. Antes de responder, mirar `git log` y `git status`: suele estar resuelto.
+- **Archivos compartidos entre roles**: cuando un tipo nuevo rompe la compilación de archivos de
+  otro rol, el dueño del tipo toca lo mínimo en el mismo commit, después de que los dueños
+  commiteen lo pendiente de esos archivos (R2b, pasos 1 y 4).
 - **Formato**: `npx prettier --write` sobre los `.md` que escriben agentes sin
   shell; `npx prettier --check .` antes de commitear.
 
