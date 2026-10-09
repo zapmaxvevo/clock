@@ -279,13 +279,13 @@ export function groupRow(page: Page, name: string): Locator {
 }
 
 /**
- * El encabezado de la fila de una tarea: su nombre y, después, el de su
- * proyecto (§5.4). Dos tareas que se llaman igual se distinguen por el
- * proyecto. Entre los dos puede haber o no espacio, según cómo se lea el
- * texto de los elementos.
+ * El nombre accesible del encabezado de la fila de una tarea: su nombre y el
+ * de su proyecto, en dos elementos (§5.4). Dos tareas que se llaman igual se
+ * distinguen por el proyecto. Se busca por el nombre y no por el texto, que
+ * junta los dos sin espacio.
  */
-export function taskHeading(task: string, project: string): RegExp {
-  return new RegExp(`^${escapeRegExp(task)}\\s*${escapeRegExp(project)}$`);
+export function taskHeading(task: string, project: string): string {
+  return `${task} ${project}`;
 }
 
 /** La fila de una tarea de un proyecto, que `groupRow` no separa de otra igual. */
@@ -293,8 +293,27 @@ export function taskRow(page: Page, task: string, project: string): Locator {
   return reportTable(page)
     .getByRole("row")
     .filter({
-      has: page.getByRole("rowheader").filter({ hasText: taskHeading(task, project) }),
+      has: page.getByRole("rowheader", {
+        name: taskHeading(task, project),
+        exact: true,
+      }),
     });
+}
+
+/**
+ * Los encabezados de fila son exactamente `names`, en ese orden, por su nombre
+ * accesible. Primero la cantidad y después cada uno, que reintenta hasta que
+ * llega la tabla nueva.
+ */
+export async function expectGroupNames(
+  page: Page,
+  names: readonly string[],
+): Promise<void> {
+  const headers = groupHeaders(page);
+  await expect(headers).toHaveCount(names.length);
+  for (const [index, name] of names.entries()) {
+    await expect(headers.nth(index)).toHaveAccessibleName(name);
+  }
 }
 
 /** La duración de una fila: su única celda de datos (RP-19). */

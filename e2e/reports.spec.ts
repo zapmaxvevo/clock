@@ -20,6 +20,7 @@ import {
   currentWeekRange,
   EMPTY_REPORT,
   expectGroupBy,
+  expectGroupNames,
   expectReport,
   FORBIDDEN_BODY,
   FORBIDDEN_TITLE,
@@ -645,7 +646,7 @@ test("por tarea y por etiqueta, con «Sin …» y la suma de las etiquetas", asy
   await expectReport(page, lastWeek, "tarea", day);
   await expect(page.getByText(SCOPE_SELF, { exact: true })).toBeVisible();
   await expect(groupColumnHeader(page)).toHaveText(GROUP_LINK.tarea);
-  await expect(groupHeaders(page)).toHaveText([
+  await expectGroupNames(page, [
     taskHeading(first, withTasks),
     taskHeading(second, withTasks),
     NO_TASK,
