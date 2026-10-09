@@ -109,9 +109,15 @@ vacío del owner y `renewWorkspace` se corta.
      ronda corta contra el árbol (§0). R4 se parte en **R4a** (cliente y proyecto) y **R4b**
      (personas); R10 arranca con R4b mergeado. Sin comprobación contra Neon (D-R4-11). R4 y R8
      tienen cada uno su lectura de personas (`workspace` y `team`); unificarlas es de la fase 2.
-     **R4a en curso**, rama `nucleo/r4a` desde `be55db3`, `backend-r4a` en el paso 1. Bases:
-     `clock_r4a_back`, `clock_r4a_front`, `clock_r4a_test` y `clock_r4a_e2e` (esta migrada);
-     se borran al cerrar R4a.
+     **R4a en `main`** (`cd77a5b`): filtros de cliente y de proyecto. Seis revisiones (frontend
+     pidió un mayor, el botón sin truncar), ronda de correcciones, segunda pasada de frontend
+     aprobada y corrida final en verde salvo un flaky previo del rastreador
+     (`correcciones-nucleo-reportes-r4a-revisiones.md`, «Cierre»). **Sigue R4b** (personas)
+     desde el paso 6 del contrato, con C11 (sacar el cuerpo de la transacción de
+     `getReportState` a `readReport`) al arrancar. Deuda nueva: `e2e/tracker.spec.ts:477`
+     falla 6 de 10 en `main` esperando la respuesta del blur; `ProjectColorDot` común (sexta
+     copia); el borde invisible de las flechas del reporte (`buttonVariants` sin `cn`); los
+     popovers de período y subnivel sin nombre accesible.
 
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
      (`7b66b03`), en checkout en el árbol principal. `architect-r3` quedó escribiendo

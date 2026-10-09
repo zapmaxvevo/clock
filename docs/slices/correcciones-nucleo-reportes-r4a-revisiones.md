@@ -107,3 +107,21 @@ Lo que cada revisión aprobada verificó:
 Las tres notas (catálogo vacío sin texto, el desvío de «Nada coincide», el desborde de la
 navegación del shell, anterior a R4a) van en el texto de `reportes.md`, §12.3 y §12.4, que
 aplica el team-lead antes del merge, ajustado a F1 y F3.
+
+## Cierre
+
+Ronda de correcciones: frontend `5ea2942`, e2e `6bf535e` y backend `4c039e2`, sin cambios de
+comportamiento en backend. Segunda pasada de `frontend-reviewer` sobre `5ea2942`: aprobado, con
+`scrollWidth` de 531 px a 320 y 375 px con un proyecto y un cliente de 100 caracteres elegidos (el
+ancho de la navegación del shell, anterior a R4a). `e2e-tester` probó que los recorridos nuevos
+de T1 caen con los filtros vacíos en las props de `RangePicker` y de `SubgroupPicker`.
+`test-engineer` corrió 71 mutantes de §8.1: caen 69 y los dos equivalentes dan diff 0 contra la
+respuesta entera de `getReportState` con 9 actores, 19 filtros y 8 formas. Texto de paridad
+aplicado en `64216b1`, ajustado a F1, F3 y F4.
+
+Corrida final sobre `4c039e2` con una base de e2e nueva: lint, typecheck, 1629 de unidad, 277 de
+`test:time-ar`, 1374 de integración; recorridos 13 y 14 tres veces en verde; suite completa
+199/199 una vez y 198/199 dos veces por `e2e/tracker.spec.ts:477` («lo tecleado con el foco
+puesto sobrevive a una revalidación»), que se corta esperando la respuesta del blur (`:510`). No
+es de R4a: R4a no toca el rastreador, y con el código de `main` (`be55db3`) el mismo test falló 6
+de 10. Queda como deuda abierta. Sin comprobación contra Neon (D-R4-11). Mergeado en `cd77a5b`.
