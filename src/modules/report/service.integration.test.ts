@@ -22,6 +22,7 @@ import { projectLabels } from "@/modules/project/components/labels";
 import { getTimesheetState } from "@/modules/time-entry/service";
 
 import {
+  NO_REPORT_FILTERS,
   REPORT_GROUP_BYS,
   reportReadyState,
   type ReportGroup,
@@ -29,7 +30,7 @@ import {
   type ReportReadyState,
 } from "./schema";
 import { reportLabels } from "./components/labels";
-import { reportRepository } from "./repository";
+import { NO_ENTRY_FILTER, reportRepository } from "./repository";
 import { getReportState, type ReportRequest } from "./service";
 
 const madrid = "Europe/Madrid";
@@ -108,6 +109,7 @@ async function readyState(
       range: request.range ?? null,
       groupBy: request.groupBy ?? null,
       subgroups: request.subgroups ?? [],
+      filters: request.filters ?? NO_REPORT_FILTERS,
     },
     options.now ?? readNow,
   );
@@ -1146,15 +1148,22 @@ describe("las guardas de totalsByLevels (§4.3 de R3; criterios 7 y 20)", () => 
     const { scope, span, buckets } = await realLevelRead();
     const [first] = buckets.buckets;
     const shifted = (instant: Date) => new Date(instant.getTime() + 1000);
+    const filter = NO_ENTRY_FILTER;
     const invalid = [
-      { span, dimensions: [], buckets: null },
-      { span, dimensions: ["person", "project", "client", "task"], buckets: null },
-      { span, dimensions: ["person", "person"], buckets: null },
-      { span, dimensions: ["project", "date"], buckets: null },
-      { span, dimensions: ["project"], buckets },
-      { span, dimensions: ["date"], buckets: { buckets: [], end: buckets.end } },
+      { span, filter, dimensions: [], buckets: null },
       {
         span,
+        filter,
+        dimensions: ["person", "project", "client", "task"],
+        buckets: null,
+      },
+      { span, filter, dimensions: ["person", "person"], buckets: null },
+      { span, filter, dimensions: ["project", "date"], buckets: null },
+      { span, filter, dimensions: ["project"], buckets },
+      { span, filter, dimensions: ["date"], buckets: { buckets: [], end: buckets.end } },
+      {
+        span,
+        filter,
         dimensions: ["date"],
         buckets: {
           buckets: [
@@ -1164,11 +1173,16 @@ describe("las guardas de totalsByLevels (§4.3 de R3; criterios 7 y 20)", () => 
           end: buckets.end,
         },
       },
-      { span, dimensions: ["date"], buckets: { ...buckets, end: shifted(buckets.end) } },
+      {
+        span,
+        filter,
+        dimensions: ["date"],
+        buckets: { ...buckets, end: shifted(buckets.end) },
+      },
       // Criterio 20 de R3: el tope de filas es un entero positivo.
-      { span, dimensions: ["project"], buckets: null, limit: 0 },
-      { span, dimensions: ["project"], buckets: null, limit: -1 },
-      { span, dimensions: ["project"], buckets: null, limit: 1.5 },
+      { span, filter, dimensions: ["project"], buckets: null, limit: 0 },
+      { span, filter, dimensions: ["project"], buckets: null, limit: -1 },
+      { span, filter, dimensions: ["project"], buckets: null, limit: 1.5 },
     ] as const;
 
     const select = vi.spyOn(db, "select");
@@ -1263,6 +1277,7 @@ describe("varios niveles en la lectura (D-R3-2, D-R3-3; criterio 8 de R3)", () =
     const { scope, span } = await realLevelRead();
     const rows = await reportRepository.totalsByLevels(scope, {
       span,
+      filter: NO_ENTRY_FILTER,
       dimensions: ["person", "tag"],
       buckets: null,
     });
@@ -1292,6 +1307,7 @@ describe("varios niveles en la lectura (D-R3-2, D-R3-3; criterio 8 de R3)", () =
     const { scope, span } = await realLevelRead();
     const rows = await reportRepository.totalsByLevels(scope, {
       span,
+      filter: NO_ENTRY_FILTER,
       dimensions: ["tag", "project"],
       buckets: null,
     });
@@ -1348,6 +1364,7 @@ describe("varios niveles en la lectura (D-R3-2, D-R3-3; criterio 8 de R3)", () =
     const { scope, span } = await realLevelRead();
     const rows = await reportRepository.totalsByLevels(scope, {
       span,
+      filter: NO_ENTRY_FILTER,
       dimensions: ["client", "project", "task"],
       buckets: null,
     });
@@ -1406,6 +1423,7 @@ describe("varios niveles en la lectura (D-R3-2, D-R3-3; criterio 8 de R3)", () =
     const { scope, span, buckets } = await realLevelRead();
     const rows = await reportRepository.totalsByLevels(scope, {
       span,
+      filter: NO_ENTRY_FILTER,
       dimensions: ["project", "date"],
       buckets,
     });
@@ -1824,16 +1842,38 @@ describe("las invariantes de los subniveles (criterio 20 de R3)", () => {
         range: { first: "2026-10-11", last: "2026-10-05" },
         groupBy: "tag",
         subgroups: ["date"],
+        filters: NO_REPORT_FILTERS,
       },
       {
         range: { first: "2025-01-01", last: "2026-01-02" },
         groupBy: "tag",
         subgroups: ["date"],
+        filters: NO_REPORT_FILTERS,
       },
-      { range: lastWeek, groupBy: "person", subgroups: ["project", "date", "tag"] },
-      { range: lastWeek, groupBy: "person", subgroups: ["date", "date"] },
-      { range: lastWeek, groupBy: "project", subgroups: ["project"] },
-      { range: lastWeek, groupBy: null, subgroups: ["person"] },
+      {
+        range: lastWeek,
+        groupBy: "person",
+        subgroups: ["project", "date", "tag"],
+        filters: NO_REPORT_FILTERS,
+      },
+      {
+        range: lastWeek,
+        groupBy: "person",
+        subgroups: ["date", "date"],
+        filters: NO_REPORT_FILTERS,
+      },
+      {
+        range: lastWeek,
+        groupBy: "project",
+        subgroups: ["project"],
+        filters: NO_REPORT_FILTERS,
+      },
+      {
+        range: lastWeek,
+        groupBy: null,
+        subgroups: ["person"],
+        filters: NO_REPORT_FILTERS,
+      },
     ];
     for (const request of requests) {
       await expect(getReportState(owner, settings, request, readNow)).rejects.toThrow(
@@ -1876,7 +1916,12 @@ describe("el armado del árbol con una foto inconsistente (§4.4 de R3)", () => 
     return getReportState(
       owner,
       settings,
-      { range: lastWeek, groupBy: "project", subgroups: ["date"] },
+      {
+        range: lastWeek,
+        groupBy: "project",
+        subgroups: ["date"],
+        filters: NO_REPORT_FILTERS,
+      },
       readNow,
     );
   }
@@ -1926,7 +1971,12 @@ describe("el período fuera del tope (B1)", () => {
     ]) {
       for (const groupBy of REPORT_GROUP_BYS) {
         await expect(
-          getReportState(owner, settings, { range, groupBy, subgroups: [] }, readNow),
+          getReportState(
+            owner,
+            settings,
+            { range, groupBy, subgroups: [], filters: NO_REPORT_FILTERS },
+            readNow,
+          ),
         ).rejects.toThrow(RangeError);
       }
     }

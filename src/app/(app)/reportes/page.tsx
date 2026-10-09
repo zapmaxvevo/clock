@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { timeSettingsOf } from "@/modules/profile/service";
 import { ReportScreen, ReportSkeleton } from "@/modules/report/components/report-screen";
 import {
+  NO_REPORT_FILTERS,
   reportGroupParams,
   reportRangeParams,
   reportSubgroupParams,
@@ -27,6 +28,7 @@ export default async function ReportPage({ searchParams }: PageProps<"/reportes"
           range: range.success ? range.data : null,
           groupBy: groupBy.success ? groupBy.data : null,
           subgroups: subgroups.success ? subgroups.data : [],
+          filters: NO_REPORT_FILTERS,
         }}
       />
     </Suspense>

@@ -134,6 +134,91 @@ export const reportSubgroupParams = z
   )
   .transform(({ subgroups }): readonly ReportGroupBy[] => subgroups);
 
+/** D-R4-2: cuántos valores lleva como mucho cada filtro de la URL; `sin-proyecto` cuenta. */
+export const REPORT_MAX_FILTER_VALUES = 50;
+
+/** RP-26: el valor de `proyectos` que elige las entradas sin proyecto. */
+export const REPORT_WITHOUT_PROJECT = "sin-proyecto";
+
+/** Los filtros de un reporte, ya validados. Una lista vacía no filtra (D-R4-3). */
+export type ReportFilters = {
+  readonly clients: readonly string[];
+  readonly projects: readonly string[];
+  /** RP-26: «Sin proyecto», con los proyectos o sola. Cuenta uno en el tope de los proyectos. */
+  readonly withoutProject: boolean;
+};
+
+export const NO_REPORT_FILTERS: ReportFilters = {
+  clients: [],
+  projects: [],
+  withoutProject: false,
+};
+
+/** Algún filtro elige algo: lo que separa el segundo vacío del primero (D-R4-7). */
+export function hasReportFilters(filters: ReportFilters): boolean {
+  return (
+    filters.clients.length > 0 || filters.projects.length > 0 || filters.withoutProject
+  );
+}
+
+/**
+ * Un id de la URL tal como lo devuelve Postgres. `z.uuid()` acepta mayúsculas,
+ * y un id así no coincidiría con el del catálogo: se ignoraría en silencio en
+ * lugar de descartar el parámetro (D-R4-2).
+ */
+const LOWERCASE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** Los valores de una lista de la URL: de uno al tope, sin repetir, cada uno con `value`. */
+function filterValues<Value extends z.ZodType<string>>(value: Value) {
+  return z
+    .array(value)
+    .min(1)
+    .max(REPORT_MAX_FILTER_VALUES)
+    .refine((values) => new Set(values).size === values.length);
+}
+
+/**
+ * `?clientes=<uuid>,<uuid>` con `safeParse` (D-R4-2). Cualquier valor mal
+ * formado descarta el parámetro entero: un valor vacío, una coma de más, un
+ * repetido, más del tope o el parámetro repetido.
+ */
+export const reportClientParams = z
+  .object({ clientes: z.string() })
+  .transform(({ clientes }) => clientes.split(","))
+  .pipe(filterValues(z.string().regex(LOWERCASE_UUID)))
+  .transform((ids): readonly string[] => ids);
+
+/** `?proyectos=<uuid>,sin-proyecto` con `safeParse`; hasta 50 valores con `sin-proyecto`. */
+export const reportProjectParams = z
+  .object({ proyectos: z.string() })
+  .transform(({ proyectos }) => proyectos.split(","))
+  .pipe(
+    filterValues(
+      z.union([z.string().regex(LOWERCASE_UUID), z.literal(REPORT_WITHOUT_PROJECT)]),
+    ),
+  )
+  .transform((values): Pick<ReportFilters, "projects" | "withoutProject"> => ({
+    projects: values.filter((value) => value !== REPORT_WITHOUT_PROJECT),
+    withoutProject: values.includes(REPORT_WITHOUT_PROJECT),
+  }));
+
+/**
+ * Los filtros de la URL, cada parámetro validado por su lado con su `safeParse`:
+ * uno que no vale queda vacío y no arrastra a los otros (RP-32). No decide
+ * quién puede usar cada uno: eso es del service (D-R4-4).
+ */
+export function reportFiltersOf(
+  params: Readonly<Record<string, unknown>>,
+): ReportFilters {
+  const clients = reportClientParams.safeParse(params);
+  const projects = reportProjectParams.safeParse(params);
+  return {
+    clients: clients.success ? clients.data : [],
+    projects: projects.success ? projects.data.projects : [],
+    withoutProject: projects.success && projects.data.withoutProject,
+  };
+}
+
 const reportRangeView = z.object({ first: z.string(), last: z.string() });
 
 /** RP-20: los atajos, en el orden de la lista (D-R2b-2). */
@@ -166,6 +251,38 @@ const reportProjectRef = z.object({
   name: z.string(),
   color: z.enum(PALETTE_KEYS),
 });
+
+const reportClientOption = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  /** RP-29: se filtra igual; la pantalla lo pone aparte. */
+  archived: z.boolean(),
+});
+
+const reportProjectOption = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  color: z.enum(PALETTE_KEYS),
+  /** En gris, como en su fila; `null` sin cliente. */
+  client: reportNamedRef.nullable(),
+  archived: z.boolean(),
+});
+
+/**
+ * D-R4-5: lo de la URL que está en las opciones, en su orden, con sus ids. Las
+ * listas son de solo lectura, como las de `ReportFilters`, para que el estado
+ * las reciba sin copiarlas.
+ */
+const reportFiltersView = z
+  .object({
+    clients: z.array(z.uuid()).max(REPORT_MAX_FILTER_VALUES).readonly(),
+    projects: z.array(z.uuid()).readonly(),
+    withoutProject: z.boolean(),
+  })
+  .refine(
+    ({ projects, withoutProject }) =>
+      projects.length + (withoutProject ? 1 : 0) <= REPORT_MAX_FILTER_VALUES,
+  );
 
 /**
  * Un grupo con su nivel de abajo. El getter difiere la referencia a
@@ -281,9 +398,17 @@ export const reportReadyState = z.object({
   billableSeconds: z.number().int().min(0),
   /** El primer nivel, en el orden de D-R2a-3, con los de abajo en `children`. */
   groups: z.array(reportGroup),
+  filters: reportFiltersView,
+  /** D-R4-9: lo que ofrece cada filtro, de su dueño (ADR 0010), en el orden de `compareNames`. */
+  filterOptions: z.object({
+    clients: z.array(reportClientOption),
+    projects: z.array(reportProjectOption),
+  }),
 });
 
 export type ReportReadyState = z.infer<typeof reportReadyState>;
+export type ReportClientOption = z.infer<typeof reportClientOption>;
+export type ReportProjectOption = z.infer<typeof reportProjectOption>;
 export type ReportGroup = z.infer<typeof reportGroup>;
 export type ReportPersonGroup = z.infer<typeof reportPersonGroup>;
 export type ReportProjectGroup = z.infer<typeof reportProjectGroup>;

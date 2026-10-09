@@ -19,6 +19,7 @@ import { actorIn, workspaceOf } from "@/test/time-entry";
 
 import { reportRepository } from "./repository";
 import {
+  NO_REPORT_FILTERS,
   REPORT_GROUP_BYS,
   reportGroupParams,
   reportRangeParams,
@@ -330,7 +331,7 @@ beforeEach(async () => {
 });
 
 function request(groupBy: ReportRequest["groupBy"]): ReportRequest {
-  return { range: week, groupBy, subgroups: [] };
+  return { range: week, groupBy, subgroups: [], filters: NO_REPORT_FILTERS };
 }
 
 async function reportOf(actor: Actor, groupBy: ReportRequest["groupBy"]) {
@@ -507,7 +508,12 @@ const trees: readonly (readonly ReportGroupBy[])[] = [
 
 /** El pedido de la semana con `levels[0]` arriba y el resto como subniveles. */
 function treeRequest(levels: readonly ReportGroupBy[]): ReportRequest {
-  return { range: week, groupBy: levels[0], subgroups: levels.slice(1) };
+  return {
+    range: week,
+    groupBy: levels[0],
+    subgroups: levels.slice(1),
+    filters: NO_REPORT_FILTERS,
+  };
 }
 
 async function treeOf(actor: Actor, levels: readonly ReportGroupBy[]) {
@@ -827,7 +833,12 @@ describe("el enlace ajeno (criterio 5, RP-32; criterio 11 de R2b; criterio 9 de 
     if (!range.success || !groupBy.success) {
       throw new Error("El enlace del admin no pasó los esquemas.");
     }
-    return { range: range.data, groupBy: groupBy.data, subgroups: [] };
+    return {
+      range: range.data,
+      groupBy: groupBy.data,
+      subgroups: [],
+      filters: NO_REPORT_FILTERS,
+    };
   }
 
   it("los esquemas no dejan pasar ninguna clave que nombre personas", () => {
@@ -836,6 +847,7 @@ describe("el enlace ajeno (criterio 5, RP-32; criterio 11 de R2b; criterio 9 de 
         range: week,
         groupBy,
         subgroups: [],
+        filters: NO_REPORT_FILTERS,
       });
     }
   });
@@ -985,7 +997,12 @@ describe("el alcance en cada nivel (criterio 21 de R3)", () => {
       if (!range.success || !groupBy.success || !subgroups.success) {
         throw new Error("El enlace del admin no pasó los esquemas.");
       }
-      return { range: range.data, groupBy: groupBy.data, subgroups: subgroups.data };
+      return {
+        range: range.data,
+        groupBy: groupBy.data,
+        subgroups: subgroups.data,
+        filters: NO_REPORT_FILTERS,
+      };
     }
 
     it("los esquemas no dejan pasar ninguna clave que nombre personas", () => {

@@ -18,6 +18,7 @@ import { paletteKeyOf } from "@/modules/project/palette";
 
 import { reportPeriodOf } from "./period";
 import {
+  NO_ENTRY_FILTER,
   reportRepository,
   type EntryTotals,
   type ReportLevelRead,
@@ -27,9 +28,12 @@ import {
 } from "./repository";
 import {
   DEFAULT_GROUP_BY,
+  hasReportFilters,
+  NO_REPORT_FILTERS,
   REPORT_MAX_DAYS,
   REPORT_MAX_ROWS,
   type ReportDateGroup,
+  type ReportFilters,
   type ReportGroup,
   type ReportGroupBy,
   type ReportRange,
@@ -66,6 +70,8 @@ export type ReportRequest = {
   readonly groupBy: ReportGroupBy | null;
   /** Los de `reportSubgroupParams`; vacío, un nivel (D-R3-5). */
   readonly subgroups: readonly ReportGroupBy[];
+  /** Los de `reportFiltersOf`; `NO_REPORT_FILTERS` sin filtros. */
+  readonly filters: ReportFilters;
 };
 
 function workspaceResource(actor: Actor): WorkspaceResource {
@@ -357,6 +363,11 @@ export async function getReportState(
       `Período fuera de 1 a ${REPORT_MAX_DAYS} días: ${range.first} a ${range.last}.`,
     );
   }
+  // Paso 1 de R4: los filtros todavía no se leen, así que un pedido con
+  // filtros lanza en lugar de devolver horas sin filtrar.
+  if (hasReportFilters(request.filters)) {
+    throw new Error("Los filtros de cliente y de proyecto todavía no se aplican.");
+  }
   const span = {
     from: startOfDayKey(range.first, timeZone),
     to: startOfDayKey(addDaysToKey(range.last, 1), timeZone),
@@ -370,6 +381,7 @@ export async function getReportState(
     const dimensions = levels.slice(0, depth);
     return {
       span,
+      filter: NO_ENTRY_FILTER,
       dimensions,
       buckets: dimensions.includes("date") ? buckets : null,
       limit,
@@ -388,7 +400,11 @@ export async function getReportState(
       // (D-R2a-7).
       const totals =
         groupBy === "tag"
-          ? await reportRepository.entryTotals(scope, span, tx)
+          ? await reportRepository.entryTotals(
+              scope,
+              { span, filter: NO_ENTRY_FILTER },
+              tx,
+            )
           : {
               seconds: first.reduce((sum, row) => sum + row.seconds, 0),
               billableSeconds: first.reduce((sum, row) => sum + row.billableSeconds, 0),
@@ -417,5 +433,7 @@ export async function getReportState(
     totalSeconds: read.totals.seconds,
     billableSeconds: read.totals.billableSeconds,
     groups: treeOf(read.levels, dates),
+    filters: NO_REPORT_FILTERS,
+    filterOptions: { clients: [], projects: [] },
   };
 }

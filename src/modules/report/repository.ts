@@ -73,9 +73,33 @@ export type LevelTotalRow = {
   readonly billableSeconds: number;
 };
 
-/** Lo que lee `totalsByLevels`: el intervalo y por qué dimensiones agrupa. */
-export type ReportLevelRead = {
+/**
+ * RP-25, RP-26: los filtros de cliente y de proyecto, ya cruzados con sus
+ * catálogos.
+ */
+export type ReportEntryFilter = {
+  /** Vacío y sin `withoutProject`: sin filtro de proyecto. */
+  readonly projectIds: readonly string[];
+  readonly withoutProject: boolean;
+  /** Vacío: sin filtro de cliente. Deja afuera las entradas sin proyecto. */
+  readonly clientIds: readonly string[];
+};
+
+/** Sin filtros: lo que leían R2a a R3b. */
+export const NO_ENTRY_FILTER: ReportEntryFilter = {
+  projectIds: [],
+  withoutProject: false,
+  clientIds: [],
+};
+
+/** Lo que lee `entryTotals`: el intervalo y los filtros. */
+export type ReportEntryRead = {
   readonly span: ReportSpan;
+  readonly filter: ReportEntryFilter;
+};
+
+/** Lo que lee `totalsByLevels`: lo de `ReportEntryRead` y por qué dimensiones agrupa. */
+export type ReportLevelRead = ReportEntryRead & {
   /** De una a tres, sin repetir. */
   readonly dimensions: readonly ReportGroupBy[];
   /** Los tramos de `span` si `date` es una de las dimensiones; si no, `null`. */
@@ -395,6 +419,17 @@ function bucketsOf(read: ReportLevelRead): TimeBuckets {
   return read.buckets;
 }
 
+/**
+ * Paso 1 de R4: la condición del filtro todavía no existe, así que una lectura
+ * con filtro lanza en lugar de devolver horas sin filtrar.
+ */
+function checkEntryRead(read: ReportEntryRead): void {
+  const { projectIds, withoutProject, clientIds } = read.filter;
+  if (projectIds.length > 0 || withoutProject || clientIds.length > 0) {
+    throw new Error("El filtro de cliente y de proyecto todavía no se aplica.");
+  }
+}
+
 /** Las guardas de §4.3 de R3: lanza `RangeError` antes de consultar. */
 function checkLevelRead(read: ReportLevelRead): void {
   const { dimensions, buckets, span, limit } = read;
@@ -443,6 +478,7 @@ export const reportRepository = {
     read: ReportLevelRead,
     tx: Executor = db,
   ): Promise<readonly LevelTotalRow[]> {
+    checkEntryRead(read);
     checkLevelRead(read);
     const levels = read.dimensions.map((groupBy, index) => ({
       dimension: DIMENSIONS[groupBy],
@@ -522,19 +558,20 @@ export const reportRepository = {
     }));
   },
 
-  /** El total y el facturable reales de `span`, sin unir etiquetas. Una sentencia, una fila. */
+  /** El total y el facturable reales de `read.span`, sin unir etiquetas. Una sentencia, una fila. */
   async entryTotals(
     scope: ReportScope,
-    span: ReportSpan,
+    read: ReportEntryRead,
     tx: Executor = db,
   ): Promise<EntryTotals> {
+    checkEntryRead(read);
     const [row] = await tx
       .select({
         seconds: sql<string>`coalesce(sum(${entrySeconds}), 0)::bigint`,
         billableSeconds: sql<string>`coalesce(sum(${entrySeconds}) filter (where ${timeEntry.billable}), 0)::bigint`,
       })
       .from(timeEntry)
-      .where(and(inScope(scope), closedIn(span)));
+      .where(and(inScope(scope), closedIn(read.span)));
     return withSeconds(row);
   },
 };

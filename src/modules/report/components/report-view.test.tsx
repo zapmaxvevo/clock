@@ -1,11 +1,18 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import type { ReportGroup, ReportReadyState } from "@/modules/report/schema";
+import {
+  NO_REPORT_FILTERS,
+  type ReportGroup,
+  type ReportReadyState,
+} from "@/modules/report/schema";
 
 import { REPORT_HEADING_ID, ReportView } from "./report-view";
 
 const week = { first: "2026-10-05", last: "2026-10-11" };
+
+/** Las opciones de los filtros de todos los estados del archivo. */
+const filterOptions: ReportReadyState["filterOptions"] = { clients: [], projects: [] };
 
 const state: ReportReadyState = {
   kind: "ready",
@@ -24,6 +31,8 @@ const state: ReportReadyState = {
   totalSeconds: 0,
   billableSeconds: 0,
   groups: [],
+  filters: NO_REPORT_FILTERS,
+  filterOptions,
 };
 
 function render(overrides: Partial<ReportReadyState>): string {

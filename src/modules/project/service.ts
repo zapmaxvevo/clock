@@ -33,6 +33,7 @@ import {
   type CreateTaskResult,
   type CreateTaskValues,
   type ProjectCatalog,
+  type ProjectFilterCatalog,
   type ProjectRef,
   type ProjectView,
   type TagRef,
@@ -403,6 +404,22 @@ export async function assertTaggable(
   if (normalizedIds(tagIds).some((id) => !usable.has(id))) {
     throw new ProjectError("not_found", projectMessages.tagUnavailable);
   }
+}
+
+/**
+ * RP-25, RP-29: lo que ofrecen los filtros de cliente y de proyecto de un
+ * reporte. Todos los clientes del workspace y los proyectos que `project.view`
+ * deja ver, archivados incluidos y marcados, en el orden de `compareNames`.
+ * Solo lee, con la transacción de quien la llama (ADR 0010).
+ */
+export async function getProjectFilterCatalog(
+  tx: Transaction,
+  actor: Actor,
+): Promise<ProjectFilterCatalog> {
+  // Paso 1 de R4: la firma; la lectura llega en el paso 3.
+  void tx;
+  void actor;
+  throw new Error("getProjectFilterCatalog todavía no está implementada.");
 }
 
 type CatalogRead<Project> = {

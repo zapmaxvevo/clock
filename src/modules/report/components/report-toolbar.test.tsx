@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ReportReadyState } from "@/modules/report/schema";
+import { NO_REPORT_FILTERS, type ReportReadyState } from "@/modules/report/schema";
 
 import { ReportToolbar } from "./report-toolbar";
 
@@ -10,6 +10,9 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: () => undefined })
 
 const thisWeek = { first: "2026-10-05", last: "2026-10-11" };
 const lastWeek = { first: "2026-09-28", last: "2026-10-04" };
+
+/** Las opciones de los filtros de todos los estados del archivo. */
+const filterOptions: ReportReadyState["filterOptions"] = { clients: [], projects: [] };
 
 const state: ReportReadyState = {
   kind: "ready",
@@ -28,6 +31,8 @@ const state: ReportReadyState = {
   totalSeconds: 0,
   billableSeconds: 0,
   groups: [],
+  filters: NO_REPORT_FILTERS,
+  filterOptions,
 };
 
 function render(overrides: Partial<ReportReadyState> = {}): string {
