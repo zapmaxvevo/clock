@@ -81,7 +81,18 @@ vacío del owner y `renewWorkspace` se corta.
      forma de parámetro nueva). Pedidos enteros: 127 ms y 223 ms. Payload de 3000 filas: 278 KB.
      Todo en `correcciones-nucleo-reportes-r3b-revisiones.md`. Con esto, R3 entero está en
      `main`.
-   - **Lo que sigue**: R4 (filtros), según el mapa; R8 (cambiar el rol) se puede adelantar.
+   - **Lo que sigue** (decisión del usuario del 2026-10-09: seguir con R4 y con lo que venga
+     después, sin frenar hasta que él diga): R4 (filtros, mapa §R4: RP-25 reducido a personas,
+     cliente y proyecto, RP-26 solo «sin proyecto», RP-33, RP-34 y RP-62). Después R5, R6, R7 y
+     R9, en el orden del mapa. R8 (cambiar el rol, mapa §R8) no toca la pantalla del reporte:
+     su contrato se puede escribir en paralelo al de R4, y su implementación va en un worktree
+     aparte. Para R4, el encargo del `architect` hereda la forma de los contratos de R3 y R3b y
+     los riesgos del mapa: los catálogos los dan `project` y `workspace` (ADR 0010), las
+     inactivas se siembran por base, las invitadas no aparecen, y el filtro de personas pasa por
+     el `ReportScope` (un member con ids ajenos ve lo propio). Lecciones de R3 para el
+     pipeline: cada agente con su base de test propia, y la de e2e creada y migrada antes;
+     corridas en primer plano; el `parity-analyst` no puede escribir `reportes.md`, así que el
+     team-lead aplica su texto.
      Abiertas para el usuario:
      - la pregunta 2 de §10 del contrato de R3 (lo abierto al recargar; hoy se pierde);
      - P-05;
