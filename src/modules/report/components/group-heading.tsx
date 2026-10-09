@@ -4,6 +4,7 @@ import { projectLabels } from "@/modules/project/components/labels";
 import { paletteColor } from "@/modules/project/palette";
 import { trackerLabels } from "@/modules/time-entry/components/labels";
 import type {
+  ReportDescriptionGroup,
   ReportGroup,
   ReportPersonGroup,
   ReportProjectGroup,
@@ -46,12 +47,7 @@ export function GroupHeading({ group }: { readonly group: ReportGroup }): ReactE
         </PartialHeading>
       );
     case "description":
-      return (
-        <NamedHeading
-          named={group.description === null ? null : { name: group.description.text }}
-          emptyLabel={trackerLabels.noDescription}
-        />
-      );
+      return <DescriptionHeading description={group.description} />;
   }
 }
 
@@ -146,6 +142,22 @@ function NamedHeading({
     return <EmptyGroupHeading label={emptyLabel} />;
   }
   return <span className="block truncate">{named.name}</span>;
+}
+
+/**
+ * §5.2: el texto tal como llega, como texto y nunca como HTML, con «…» si el
+ * servidor lo recortó (D-R10-9); «Sin descripción» como en el rastreador.
+ */
+function DescriptionHeading({
+  description,
+}: {
+  readonly description: ReportDescriptionGroup["description"];
+}) {
+  if (description === null) {
+    return <EmptyGroupHeading label={trackerLabels.noDescription} />;
+  }
+  const text = description.truncated ? `${description.text}…` : description.text;
+  return <span className="block truncate">{text}</span>;
 }
 
 /** RP-28: el grupo de lo que no tiene la dimensión, en gris. */

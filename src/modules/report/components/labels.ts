@@ -60,6 +60,9 @@ export const reportLabels = {
   /** D-R3-6: un nivel que no entra en el tope no se muestra, ni los de abajo. */
   rowLimit: (maxRows: number) =>
     `El reporte pasa de ${maxRows} filas con todos sus niveles: se muestran solo los de arriba. Acortá el período o quitá un nivel.`,
+  /** D-R10-10: el primer nivel tampoco entra, y la tabla lo dice en lugar de las filas. */
+  firstLevelLimit: (maxRows: number) =>
+    `El primer nivel pasa de ${maxRows} filas y no se muestra. Acortá el período, filtrá o agrupá por otra cosa.`,
   duration: "Duración",
   /** RP-18. */
   total: "Total",

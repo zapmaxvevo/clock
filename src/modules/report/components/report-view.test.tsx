@@ -714,3 +714,106 @@ describe("ReportView con filtros (D-R4-7)", () => {
     expect(markup).not.toContain("Quitar filtros");
   });
 });
+
+describe("ReportView por descripción (D-R10-9, D-R10-10, §5.2, §5.4)", () => {
+  const LONG = "Revisión del tablero de soporte ".repeat(4).slice(0, 100);
+
+  /** El encabezado de cada fila del cuerpo, con sus etiquetas. */
+  function rowHeadings(markup: string): string[] {
+    return [...markup.matchAll(/<th scope="row"[^>]*>(.*?)<\/th>/g)].map(
+      ([, heading]) => heading,
+    );
+  }
+
+  function description(id: string, text: string, truncated: boolean, seconds: number) {
+    return {
+      kind: "description",
+      description: { id: id.repeat(32), text, truncated },
+      seconds,
+    } satisfies ReportGroup;
+  }
+
+  it("el encabezado «Descripción», cada texto, «…» solo en el recortado y «Sin descripción» en gris", () => {
+    const markup = render({
+      groupBy: "description",
+      groups: [
+        description("a", "Reunión semanal", false, 7_200),
+        description("b", LONG, true, 3_600),
+        { kind: "description", description: null, seconds: 1_800 },
+      ],
+      totalSeconds: 12_600,
+    });
+    expect(markup).toMatch(/<th scope="col"[^>]*>Descripción<\/th>/);
+    expect(bodyRows(markup)).toEqual([
+      ["Reunión semanal", "2:00"],
+      [`${LONG}…`, "1:00"],
+      ["Sin descripción", "0:30"],
+    ]);
+    expect(rowHeadings(markup)).toEqual([
+      '<span class="block truncate">Reunión semanal</span>',
+      `<span class="block truncate">${LONG}…</span>`,
+      '<span class="text-muted-foreground">Sin descripción</span>',
+    ]);
+    expect(markup.match(/…/g)).toHaveLength(1);
+  });
+
+  it("el texto de otra persona sale como texto: `<b>`, `&` y las comillas, escapados", () => {
+    const markup = render({
+      groupBy: "description",
+      scope: "everyone",
+      groups: [description("c", '<b>negrita</b> & "comillas"', false, 60)],
+      totalSeconds: 60,
+    });
+    expect(rowHeadings(markup)).toEqual([
+      '<span class="block truncate">&lt;b&gt;negrita&lt;/b&gt; &amp; &quot;comillas&quot;</span>',
+    ]);
+    expect(markup).not.toContain("<b>");
+  });
+
+  describe("con el primer nivel cortado (levelsShown: 0)", () => {
+    const firstLevelLimit =
+      "El primer nivel pasa de 3000 filas y no se muestra. Acortá el período, filtrá o agrupá por otra cosa.";
+    const rowLimit = "con todos sus niveles: se muestran solo los de arriba";
+
+    function renderCut(overrides: Partial<ReportReadyState>): string {
+      return render({
+        groupBy: "description",
+        subgroups: ["project", "tag"],
+        levelsShown: 0,
+        scope: "everyone",
+        groups: [],
+        totalSeconds: 3_000 * 3_600 + 60,
+        billableSeconds: 3_600,
+        ...overrides,
+      });
+    }
+
+    it("una fila en las dos columnas que lo dice, con el encabezado del primer nivel y los totales", () => {
+      const markup = renderCut({});
+      expect(markup).toMatch(/<th scope="col"[^>]*>Descripción<\/th>/);
+      expect(markup).toContain('<td colSpan="2"');
+      expect(bodyRows(markup)).toEqual([[firstLevelLimit]]);
+      expect(markup).not.toContain('<th scope="row"');
+      expect(markup).not.toContain("<button");
+      expect(totals(markup)).toEqual({ Total: "3000:01", Facturable: "1:00" });
+    });
+
+    it("sin la línea del tope de R3 ni ningún vacío, tampoco el de los filtros", () => {
+      const markup = renderCut({
+        filters: { people: [], clients: [], projects: [], withoutProject: true },
+      });
+      expect(bodyRows(markup)).toEqual([[firstLevelLimit]]);
+      expect(markup).not.toContain(rowLimit);
+      expect(markup).not.toContain("Ninguna entrada coincide con los filtros");
+      expect(markup).not.toContain("Quitar filtros");
+      expect(markup).not.toContain("No hay horas en este período");
+    });
+
+    it("por etiqueta, el encabezado «Etiqueta» y sin la línea de la suma, que habla de filas", () => {
+      const markup = renderCut({ groupBy: "tag", subgroups: [] });
+      expect(markup).toMatch(/<th scope="col"[^>]*>Etiqueta<\/th>/);
+      expect(bodyRows(markup)).toEqual([[firstLevelLimit]]);
+      expect(markup).not.toContain("Una entrada con varias etiquetas suma en cada una");
+    });
+  });
+});

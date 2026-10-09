@@ -21,11 +21,15 @@ export const REPORT_HEADING_ID = "reporte-titulo";
  * El alcance y la zona (D-R2a-2, D-R2a-5), el aviso de la suma por etiqueta
  * (D-R3-3), los totales (RP-18), el aviso del tope (D-R3-6) y la tabla, con las
  * filas en el orden en que llegan. Las del cuerpo las dibuja `ReportTree`. Sin
- * grupos, el vacío de R2a o, con filtros, el segundo (D-R4-7).
+ * grupos, el vacío de R2a o, con filtros, el segundo (D-R4-7). Si no entra ni
+ * el primer nivel, una fila que lo dice en lugar de las filas (D-R10-10).
  */
 export function ReportView({ state }: { readonly state: ReportReadyState }) {
   const requested = [state.groupBy, ...state.subgroups];
   const shown = requested.slice(0, state.levelsShown);
+  const firstLevelCut = state.levelsShown === 0;
+  // Sin ningún nivel, la columna sigue nombrando el primero pedido (§5.4).
+  const headed = firstLevelCut ? requested.slice(0, 1) : shown;
 
   return (
     <div className="flex flex-col gap-4">
@@ -54,7 +58,7 @@ export function ReportView({ state }: { readonly state: ReportReadyState }) {
         </div>
       </dl>
 
-      {shown.length < requested.length && (
+      {!firstLevelCut && shown.length < requested.length && (
         <p className="text-sm">{reportLabels.rowLimit(REPORT_MAX_ROWS)}</p>
       )}
 
@@ -68,7 +72,7 @@ export function ReportView({ state }: { readonly state: ReportReadyState }) {
           <thead className="border-b">
             <tr>
               <th scope="col" className="px-3 py-2 text-left font-medium">
-                {shown.map((level) => groupByLabels[level]).join(" / ")}
+                {headed.map((level) => groupByLabels[level]).join(" / ")}
               </th>
               <th scope="col" className="w-24 px-3 py-2 text-right font-medium">
                 {reportLabels.duration}
@@ -76,7 +80,9 @@ export function ReportView({ state }: { readonly state: ReportReadyState }) {
             </tr>
           </thead>
           <tbody>
-            {state.groups.length === 0 ? (
+            {firstLevelCut ? (
+              <FirstLevelLimitRow />
+            ) : state.groups.length === 0 ? (
               <EmptyRow state={state} />
             ) : (
               <ReportTree
@@ -95,6 +101,20 @@ export function ReportView({ state }: { readonly state: ReportReadyState }) {
         </table>
       </div>
     </div>
+  );
+}
+
+/**
+ * D-R10-10: el primer nivel pasa del tope y no se lee ninguno. No es un vacío:
+ * hay horas, y el total las cuenta.
+ */
+function FirstLevelLimitRow() {
+  return (
+    <tr>
+      <td colSpan={2} className="px-3 py-6 text-center">
+        {reportLabels.firstLevelLimit(REPORT_MAX_ROWS)}
+      </td>
+    </tr>
   );
 }
 
