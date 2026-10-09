@@ -3,7 +3,11 @@ import Link from "next/link";
 
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { ReportGroupBy, ReportReadyState } from "@/modules/report/schema";
+import {
+  sameRange,
+  type ReportGroupBy,
+  type ReportReadyState,
+} from "@/modules/report/schema";
 
 import { reportLabels } from "./labels";
 import { RangePicker } from "./range-picker";
@@ -12,14 +16,13 @@ import { reportHref } from "./report-href";
 const GROUP_BY_LABEL_ID = "reporte-agrupar";
 
 /**
- * RP-20 y RP-11: las flechas del período, el rango que abre el calendario, el
- * atajo a la semana en curso y la agrupación. Cada enlace conserva lo que no
- * cambia (D-R2a-4).
+ * RP-20 y RP-11: las flechas del período, el rango que abre los atajos y el
+ * calendario, el enlace a la semana en curso y la agrupación. Cada enlace
+ * conserva lo que no cambia (D-R2a-4).
  */
 export function ReportToolbar({ state }: { readonly state: ReportReadyState }) {
   const { range, groupBy, currentWeek } = state;
-  const isCurrentWeek =
-    range.first === currentWeek.first && range.last === currentWeek.last;
+  const isCurrentWeek = sameRange(range, currentWeek);
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -48,6 +51,7 @@ export function ReportToolbar({ state }: { readonly state: ReportReadyState }) {
         rangeLabel={state.rangeLabel}
         todayKey={state.todayKey}
         groupBy={groupBy}
+        shortcuts={state.shortcuts}
       />
       {!isCurrentWeek && (
         <Link
@@ -57,17 +61,19 @@ export function ReportToolbar({ state }: { readonly state: ReportReadyState }) {
           {reportLabels.thisWeek}
         </Link>
       )}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <span id={GROUP_BY_LABEL_ID} className="text-muted-foreground text-sm">
           {reportLabels.groupBy}
         </span>
         <div
           role="group"
           aria-labelledby={GROUP_BY_LABEL_ID}
-          className="flex items-center rounded-lg border p-0.5"
+          className="flex flex-wrap items-center rounded-lg border p-0.5"
         >
           <GroupByLink state={state} value="person" label={reportLabels.byPerson} />
           <GroupByLink state={state} value="project" label={reportLabels.byProject} />
+          <GroupByLink state={state} value="client" label={reportLabels.byClient} />
+          <GroupByLink state={state} value="date" label={reportLabels.byDate} />
         </div>
       </div>
     </div>

@@ -12,7 +12,7 @@ import {
   setRole,
   type MembershipStatus,
 } from "./database";
-import { addDays, dayKeyOf, todayIn, type CivilDay } from "./days";
+import { addDays, dayKeyOf, todayIn, weekdayLabel, type CivilDay } from "./days";
 import {
   applyButton,
   clickRangeDay,
@@ -23,18 +23,23 @@ import {
   FORBIDDEN_BODY,
   FORBIDDEN_TITLE,
   goToReportsByNav,
+  GROUP_LINK,
   groupByLink,
+  groupColumnHeader,
   groupDuration,
   groupHeaders,
   groupRow,
   inactiveMark,
   lastWeekRange,
+  monthRange,
+  NO_CLIENT,
   NO_PROJECT,
   openReport,
   periodLink,
   RANGE_MESSAGES,
   rangeButton,
   rangeCalendar,
+  rangePopover,
   recordNavigations,
   REPORTS_PATH,
   reportHeading,
@@ -47,23 +52,28 @@ import {
   SCOPE_EVERYONE,
   SCOPE_SELF,
   shiftRange,
+  SHORTCUT_LABELS,
+  shortcutLink,
+  shortcutList,
+  shortcutRange,
   zoneLine,
   type ReportRange,
+  type ShortcutLabel,
 } from "./reports-page";
 import { expect, TEST_EMAIL_DOMAIN, test } from "./session";
 import { trackerBar, uniqueSuffix } from "./tracker-page";
 
 /**
- * Recorridos de R2a del núcleo de reportes: el resumido por persona y por
- * proyecto (§8.2 del contrato), con la regla de §8.3. Cada recorrido tiene sus
- * personas —la de la sesión y las que siembra—, todas con un nombre editado
- * que lleva el sufijo del test, y solo afirma sobre sus filas o sobre
- * proyectos con ese sufijo: la base acumula personas y horas de todas las
- * corridas. El total se afirma solo con el alcance propio. El rol y el estado
- * los cambia la persona de la sesión sobre sí misma. Las entradas van en la
- * semana anterior a la de hoy y se siembran antes de abrir la pantalla; los
- * rótulos esperados se calculan con `days.ts`, no con el código que los
- * produce.
+ * Recorridos de R2a y R2b del núcleo de reportes: el resumido por persona, por
+ * proyecto, por cliente y por fecha, y los atajos del período (§8.2 de cada
+ * contrato), con la regla de §8.3 de R2a. Cada recorrido tiene sus personas
+ * —la de la sesión y las que siembra—, todas con un nombre editado que lleva
+ * el sufijo del test, y solo afirma sobre sus filas o sobre proyectos con ese
+ * sufijo: la base acumula personas y horas de todas las corridas. El total se
+ * afirma solo con el alcance propio. El rol y el estado los cambia la persona
+ * de la sesión sobre sí misma. Las entradas van en la semana anterior a la de
+ * hoy y se siembran antes de abrir la pantalla; los rótulos esperados se
+ * calculan con `days.ts`, no con el código que los produce.
  */
 
 /** Hoy en la zona por omisión de la persona, que es la que corta los días. */
@@ -88,6 +98,22 @@ async function seedOtherPerson(
   const email = `e2e-reporte-${randomUUID()}@${TEST_EMAIL_DOMAIN}`;
   await seedPerson({ email, displayName, status });
   return email;
+}
+
+/** Abre el selector del período y espera la lista de atajos. */
+async function openRangePicker(page: Page): Promise<void> {
+  await rangeButton(page).click();
+  await expect(shortcutList(page)).toBeVisible();
+}
+
+/**
+ * Elige un atajo del selector abierto: el selector se cierra sin pasar por
+ * «Aplicar» y el foco vuelve al botón del período (§5.2).
+ */
+async function pickShortcut(page: Page, label: ShortcutLabel): Promise<void> {
+  await shortcutLink(page, label).click();
+  await expect(rangePopover(page)).toBeHidden();
+  await expect(rangeButton(page)).toBeFocused();
 }
 
 /** El rango de la URL sin `hasta`, que se descarta entero. */
@@ -369,4 +395,177 @@ test("con la membresía inactiva, el reporte muestra el aviso y nada más", asyn
   await expect(reportTable(page)).toHaveCount(0);
   await expect(reportTerms(page)).toHaveCount(0);
   await expect(rangeButton(page)).toHaveCount(0);
+});
+
+test("los atajos eligen el período y las flechas siguen sus meses", async ({ page }) => {
+  const day = today();
+  const range = (label: ShortcutLabel): ReportRange => shortcutRange(label, day);
+  await page.goto(REPORTS_PATH);
+  await expect(rangeButton(page)).toHaveAccessibleName("Elegir período: Esta semana");
+  await groupByLink(page, "proyecto").click();
+  await expectReport(page, range("Esta semana"), "proyecto", day);
+
+  // RP-20: los nueve atajos en orden, con el período que se ve marcado.
+  await openRangePicker(page);
+  await expect(shortcutList(page).getByRole("link")).toHaveText([...SHORTCUT_LABELS]);
+  for (const label of SHORTCUT_LABELS) {
+    const current = shortcutLink(page, label);
+    if (label === "Esta semana") {
+      await expect(current).toHaveAttribute("aria-current", "true");
+    } else {
+      await expect(current).not.toHaveAttribute("aria-current", "true");
+    }
+  }
+
+  // D-R2b-1: el atajo escribe su rango en la URL, con la agrupación, y cierra
+  // el selector con el foco en el botón (D-R2b-10). El selector está cerrado
+  // antes de cada flecha.
+  await pickShortcut(page, "Mes pasado");
+  await expectReport(page, range("Mes pasado"), "proyecto", day);
+
+  // D-R2b-3: las flechas mueven meses enteros, rotulados por sus días si no son
+  // los de un atajo.
+  await periodLink(page, "Período anterior").click();
+  await expectReport(page, monthRange(day, -2), "proyecto", day);
+  await periodLink(page, "Período siguiente").click();
+  await expectReport(page, range("Mes pasado"), "proyecto", day);
+  await periodLink(page, "Período siguiente").click();
+  await expectReport(page, range("Este mes"), "proyecto", day);
+
+  await openRangePicker(page);
+  await pickShortcut(page, "Hoy");
+  await expectReport(page, range("Hoy"), "proyecto", day);
+  await periodLink(page, "Período anterior").click();
+  await expectReport(page, range("Ayer"), "proyecto", day);
+
+  await openRangePicker(page);
+  await pickShortcut(page, "Año pasado");
+  await expectReport(page, range("Año pasado"), "proyecto", day);
+  await periodLink(page, "Período siguiente").click();
+  await expectReport(page, range("Este año"), "proyecto", day);
+
+  // RP-24: la semana anterior y esta, que la flecha mueve 14 días.
+  await openRangePicker(page);
+  await pickShortcut(page, "Últimas dos semanas");
+  await expectReport(page, range("Últimas dos semanas"), "proyecto", day);
+  await periodLink(page, "Período anterior").click();
+  await expectReport(
+    page,
+    shiftRange(range("Últimas dos semanas"), -14),
+    "proyecto",
+    day,
+  );
+});
+
+test("por cliente, «Sin cliente» junta lo que no tiene proyecto y los proyectos sin cliente", async ({
+  page,
+  email,
+}) => {
+  const day = today();
+  const lastWeek = lastWeekRange(day);
+  const tuesday = addDays(lastWeek.first, 1);
+  const wednesday = addDays(lastWeek.first, 2);
+  const thursday = addDays(lastWeek.first, 3);
+  const suffix = uniqueSuffix();
+  const client = `Cliente ${suffix}`;
+  const withClient = `Con cliente ${suffix}`;
+  const withoutClient = `Suelto ${suffix}`;
+
+  await enterApp(page);
+  await setDisplayName(email, `Dana ${suffix}`);
+  await seedProject({ name: withClient, client });
+  await seedProject({ name: withoutClient });
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
+    { description: "a", day: tuesday, start: "09:00", end: "10:00", project: withClient },
+    {
+      description: "b",
+      day: wednesday,
+      start: "11:00",
+      end: "11:30",
+      project: withClient,
+    },
+    {
+      description: "c",
+      day: thursday,
+      start: "09:00",
+      end: "09:45",
+      project: withoutClient,
+    },
+    { description: "d", day: thursday, start: "14:00", end: "14:15" },
+  ]);
+
+  // RP-11, D-R2a-4: «Cliente» conserva el rango.
+  await openReport(page, lastWeek, "persona", day);
+  await groupByLink(page, "cliente").click();
+  await expectReport(page, lastWeek, "cliente", day);
+
+  // RP-28: las dos entradas del proyecto con cliente suman una fila, y «Sin
+  // cliente» junta la entrada sin proyecto con la del proyecto sin cliente.
+  // RP-12: por duración. El alcance es propio, así que el total es el de las
+  // dos filas.
+  const expectByClient = async (): Promise<void> => {
+    await expect(page.getByText(SCOPE_SELF, { exact: true })).toBeVisible();
+    await expect(groupColumnHeader(page)).toHaveText(GROUP_LINK.cliente);
+    await expect(groupHeaders(page)).toHaveText([client, NO_CLIENT]);
+    await expect(groupDuration(groupRow(page, client))).toHaveText("1:30");
+    await expect(groupDuration(groupRow(page, NO_CLIENT))).toHaveText("1:00");
+    await expect(reportTotal(page, "Total")).toHaveText("2:30");
+  };
+  await expectByClient();
+
+  // RP-32: al recargar, la misma vista.
+  await page.reload();
+  await expectReport(page, lastWeek, "cliente", day);
+  await expectByClient();
+});
+
+test("por fecha, una fila por día con horas, en orden y en la zona de quien mira", async ({
+  page,
+  email,
+}) => {
+  const day = today();
+  const lastWeek = lastWeekRange(day);
+  const tuesday = addDays(lastWeek.first, 1);
+  const wednesday = addDays(lastWeek.first, 2);
+  const thursday = addDays(lastWeek.first, 3);
+  const friday = addDays(lastWeek.first, 4);
+  const saturday = addDays(lastWeek.first, 5);
+  const suffix = uniqueSuffix();
+
+  await enterApp(page);
+  await setDisplayName(email, `Eva ${suffix}`);
+  // La del viernes a las 23:30 en la zona de la persona ya es sábado en UTC.
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
+    { description: "a", day: tuesday, start: "09:00", end: "09:20" },
+    { description: "b", day: tuesday, start: "14:00", end: "14:10" },
+    { description: "c", day: thursday, start: "10:00", end: "11:45" },
+    { description: "d", day: friday, start: "23:30", end: "23:50" },
+  ]);
+
+  await openReport(page, lastWeek, "persona", day);
+  await groupByLink(page, "fecha").click();
+  await expectReport(page, lastWeek, "fecha", day);
+
+  // RP-11, RP-22: un día por fila, cortado en la zona de quien mira, en orden
+  // cronológico aunque el jueves tenga más horas (D-R2b-6). Los días sin horas
+  // no tienen fila. El alcance es propio, así que el total es el de las filas.
+  await expect(page.getByText(SCOPE_SELF, { exact: true })).toBeVisible();
+  await expect(groupColumnHeader(page)).toHaveText(GROUP_LINK.fecha);
+  const [tuesdayLabel, thursdayLabel, fridayLabel] = [tuesday, thursday, friday].map(
+    (civil) => weekdayLabel(civil, day),
+  );
+  await expect(groupHeaders(page)).toHaveText([tuesdayLabel, thursdayLabel, fridayLabel]);
+  await expect(groupDuration(groupRow(page, tuesdayLabel))).toHaveText("0:30");
+  await expect(groupDuration(groupRow(page, thursdayLabel))).toHaveText("1:45");
+  await expect(groupDuration(groupRow(page, fridayLabel))).toHaveText("0:20");
+  for (const empty of [wednesday, saturday]) {
+    await expect(groupRow(page, weekdayLabel(empty, day))).toHaveCount(0);
+  }
+  await expect(reportTotal(page, "Total")).toHaveText("2:35");
+
+  // D-R2a-4: la flecha conserva la agrupación; la semana de antes no tiene horas.
+  await periodLink(page, "Período anterior").click();
+  await expectReport(page, shiftRange(lastWeek, -7), "fecha", day);
+  await expect(reportTable(page).getByText(EMPTY_REPORT, { exact: true })).toBeVisible();
+  await expect(groupHeaders(page)).toHaveCount(0);
 });

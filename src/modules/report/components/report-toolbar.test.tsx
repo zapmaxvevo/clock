@@ -19,6 +19,7 @@ const state: ReportReadyState = {
   previous: { first: "2026-09-21", last: "2026-09-27" },
   next: thisWeek,
   currentWeek: thisWeek,
+  shortcuts: [],
   groupBy: "project",
   scope: "everyone",
   timeZone: "America/Argentina/Buenos_Aires",
@@ -45,6 +46,14 @@ function links(markup: string): Map<string, { href: string; current: string | nu
       return [name, { href, current }];
     }),
   );
+}
+
+/** Los enlaces de «Agrupar por», en orden. */
+function groupByLinks(
+  markup: string,
+): { label: string; href: string; current: string | null }[] {
+  const group = /<div role="group"[^>]*>(.*?)<\/div>/.exec(markup)?.[1] ?? "";
+  return [...links(group)].map(([label, link]) => ({ label, ...link }));
 }
 
 describe("ReportToolbar", () => {
@@ -86,22 +95,52 @@ describe("ReportToolbar", () => {
     expect(found.has("Esta semana")).toBe(true);
   });
 
-  it("la agrupación elegida lleva aria-current y los dos enlaces conservan el rango (RP-11)", () => {
+  it("la agrupación elegida lleva aria-current y los enlaces conservan el rango (RP-11)", () => {
     const markup = render();
     expect(markup).toMatch(/<div role="group" aria-labelledby="([^"]+)"/);
     const labelId = /<div role="group" aria-labelledby="([^"]+)"/.exec(markup)?.[1];
     expect(markup).toContain(`<span id="${labelId}"`);
     expect(markup).toMatch(new RegExp(`<span id="${labelId}"[^>]*>Agrupar por</span>`));
 
+    expect(groupByLinks(markup)).toEqual([
+      {
+        label: "Persona",
+        href: "/reportes?desde=2026-09-28&hasta=2026-10-04&agrupar=persona",
+        current: null,
+      },
+      {
+        label: "Proyecto",
+        href: "/reportes?desde=2026-09-28&hasta=2026-10-04&agrupar=proyecto",
+        current: "true",
+      },
+      {
+        label: "Cliente",
+        href: "/reportes?desde=2026-09-28&hasta=2026-10-04&agrupar=cliente",
+        current: null,
+      },
+      {
+        label: "Fecha",
+        href: "/reportes?desde=2026-09-28&hasta=2026-10-04&agrupar=fecha",
+        current: null,
+      },
+    ]);
+  });
+
+  it("por cliente, la marca pasa a «Cliente» y las flechas la conservan", () => {
+    const markup = render({ groupBy: "client" });
+    expect(groupByLinks(markup).map(({ label, current }) => [label, current])).toEqual([
+      ["Persona", null],
+      ["Proyecto", null],
+      ["Cliente", "true"],
+      ["Fecha", null],
+    ]);
     const found = links(markup);
-    expect(found.get("Proyecto")).toEqual({
-      href: "/reportes?desde=2026-09-28&hasta=2026-10-04&agrupar=proyecto",
-      current: "true",
-    });
-    expect(found.get("Persona")).toEqual({
-      href: "/reportes?desde=2026-09-28&hasta=2026-10-04&agrupar=persona",
-      current: null,
-    });
+    expect(found.get("Período anterior")?.href).toBe(
+      "/reportes?desde=2026-09-21&hasta=2026-09-27&agrupar=cliente",
+    );
+    expect(found.get("Esta semana")?.href).toBe(
+      "/reportes?desde=2026-10-05&hasta=2026-10-11&agrupar=cliente",
+    );
   });
 
   it("por persona, la marca pasa a «Persona»", () => {
@@ -109,6 +148,19 @@ describe("ReportToolbar", () => {
     expect(found.get("Persona")?.current).toBe("true");
     expect(found.get("Proyecto")?.current).toBeNull();
     expect(found.get("Período anterior")?.href).toContain("agrupar=persona");
+  });
+
+  it("por fecha, la marca pasa a «Fecha» y las flechas la conservan", () => {
+    const markup = render({ groupBy: "date" });
+    expect(groupByLinks(markup).map(({ label, current }) => [label, current])).toEqual([
+      ["Persona", null],
+      ["Proyecto", null],
+      ["Cliente", null],
+      ["Fecha", "true"],
+    ]);
+    expect(links(markup).get("Período siguiente")?.href).toBe(
+      "/reportes?desde=2026-10-05&hasta=2026-10-11&agrupar=fecha",
+    );
   });
 
   it("el botón del período se nombra por lo que muestra", () => {

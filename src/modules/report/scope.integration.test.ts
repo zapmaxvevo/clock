@@ -7,6 +7,7 @@ import type * as Permissions from "@/server/permissions";
 import type { Actor, MembershipStatus, Role } from "@/server/permissions";
 import {
   buenosAires,
+  seedClient,
   seedMember,
   seedProject,
   seedTimeEntry,
@@ -15,7 +16,13 @@ import {
 import { actorIn, workspaceOf } from "@/test/time-entry";
 
 import { reportRepository } from "./repository";
-import { reportGroupParams, reportRangeParams, type ReportState } from "./schema";
+import {
+  REPORT_GROUP_BYS,
+  reportGroupParams,
+  reportRangeParams,
+  type ReportGroupBy,
+  type ReportState,
+} from "./schema";
 import { getReportState, type ReportRequest } from "./service";
 
 /**
@@ -23,7 +30,8 @@ import { getReportState, type ReportRequest } from "./service";
  * mirar `scopeOf`. `can` es el real, envuelto: una acción anotada en `denied`
  * se le niega a esa persona además de lo que niegue el real. Sin anotaciones,
  * decide el real; así se prueba que el alcance sale de `can()` y no de comparar
- * roles en el service (criterio 4, R9 de las correcciones).
+ * roles en el service (criterio 4, R9 de las correcciones). R2b suma las
+ * agrupaciones por cliente y por fecha con el mismo fixture (criterio 11 de R2b).
  */
 const permissionOverrides = vi.hoisted(() => ({
   denied: [] as { readonly userId: string; readonly action: string }[],
@@ -47,6 +55,9 @@ vi.mock("@/server/permissions", async (importOriginal) => {
 /** La semana del lunes 28/09/2026, con los dos extremos: el período que se pide. */
 const week = { first: "2026-09-28", last: "2026-10-04" } as const;
 
+/** El martes de `week` en Buenos Aires: el día de todas las entradas sembradas. */
+const entryDay = "2026-09-29";
+
 /** El jueves siguiente a `week`, a las 12:00 en Buenos Aires: el período pedido no es «Esta semana». */
 const now = new Date("2026-10-08T15:00:00Z");
 
@@ -61,14 +72,18 @@ const roles: readonly Role[] = [
 ];
 const notActive: readonly MembershipStatus[] = ["inactive", "invited"];
 
+/** Las agrupaciones que se recorren en cada caso de alcance. */
+const groupBys: readonly ReportGroupBy[] = REPORT_GROUP_BYS;
+
 /**
  * Workspace A: owner, admin, `project_manager` responsable de P, `team_manager`,
- * un member que también es miembro de B y un member inactivo. Cada uno tiene
- * una sola entrada el martes 29/09, con una duración que no se repite: en P y
- * facturable, o sin proyecto y no facturable.
+ * un member que también es miembro de B y un member inactivo. P es del cliente
+ * de A. Cada uno tiene una sola entrada el martes 29/09, con una duración que
+ * no se repite: en P y facturable, o sin proyecto y no facturable.
  */
 type WorkspaceA = {
   readonly workspaceId: string;
+  readonly clientId: string;
   readonly projectId: string;
   readonly ownerId: string;
   readonly adminId: string;
@@ -78,9 +93,13 @@ type WorkspaceA = {
   readonly inactiveId: string;
 };
 
-/** Workspace B: su owner, sin proyecto, y el member de A en el proyecto de B. */
+/**
+ * Workspace B: su owner, sin proyecto, y el member de A en el proyecto de B,
+ * que es del cliente de B.
+ */
 type WorkspaceB = {
   readonly workspaceId: string;
+  readonly clientId: string;
   readonly projectId: string;
   readonly ownerId: string;
 };
@@ -116,9 +135,11 @@ beforeEach(async () => {
   const teamManagerId = await seedMember(seededA.workspaceId, "team_manager");
   const memberId = await seedMember(seededA.workspaceId, "member");
   const inactiveId = await seedMember(seededA.workspaceId, "member", "inactive");
+  const clientA = await seedClient({ workspaceId: seededA.workspaceId });
   // RP-05: ser responsable de P no da las horas ajenas en P.
   const projectA = await seedProject({
     workspaceId: seededA.workspaceId,
+    clientId: clientA.id,
     members: [
       { userId: managerId, isManager: true },
       { userId: memberId },
@@ -127,6 +148,7 @@ beforeEach(async () => {
   });
   a = {
     workspaceId: seededA.workspaceId,
+    clientId: clientA.id,
     projectId: projectA.id,
     ownerId: seededA.ownerId,
     adminId,
@@ -140,9 +162,14 @@ beforeEach(async () => {
   await db
     .insert(membership)
     .values({ workspaceId: seededB.workspaceId, userId: memberId, role: "member" });
-  const projectB = await seedProject({ workspaceId: seededB.workspaceId });
+  const clientB = await seedClient({ workspaceId: seededB.workspaceId });
+  const projectB = await seedProject({
+    workspaceId: seededB.workspaceId,
+    clientId: clientB.id,
+  });
   b = {
     workspaceId: seededB.workspaceId,
+    clientId: clientB.id,
     projectId: projectB.id,
     ownerId: seededB.ownerId,
   };
@@ -228,21 +255,64 @@ function summaryOf(state: ReportState) {
     groupBy: state.groupBy,
     totalSeconds: state.totalSeconds,
     billableSeconds: state.billableSeconds,
-    groups: state.groups.map((group) =>
-      group.kind === "person"
-        ? { userId: group.userId, inactive: group.inactive, seconds: group.seconds }
-        : { projectId: group.project?.id ?? null, seconds: group.seconds },
-    ),
+    groups: state.groups.map((group) => {
+      switch (group.kind) {
+        case "person":
+          return {
+            userId: group.userId,
+            inactive: group.inactive,
+            seconds: group.seconds,
+          };
+        case "project":
+          return { projectId: group.project?.id ?? null, seconds: group.seconds };
+        case "client":
+          return { clientId: group.client?.id ?? null, seconds: group.seconds };
+        case "date":
+          return { dayKey: group.dayKey, seconds: group.seconds };
+      }
+    }),
   };
 }
 
-/** Lo que ve una persona con su propia fila de `minutes` minutos en `projectId`. */
+/** Dónde está una entrada: su proyecto y el cliente del proyecto, o ninguno. */
+type Place = { readonly projectId: string | null; readonly clientId: string | null };
+
+const noProject: Place = { projectId: null, clientId: null };
+
+function inProjectOf(workspace: WorkspaceA | WorkspaceB): Place {
+  return { projectId: workspace.projectId, clientId: workspace.clientId };
+}
+
+/** La fila que deja `summaryOf` de las horas de una persona en un solo lugar. */
+function rowOf(
+  groupBy: ReportGroupBy,
+  values: {
+    readonly userId: string;
+    readonly inactive?: boolean;
+    readonly place: Place;
+    readonly seconds: number;
+  },
+) {
+  const { seconds } = values;
+  switch (groupBy) {
+    case "person":
+      return { userId: values.userId, inactive: values.inactive ?? false, seconds };
+    case "project":
+      return { projectId: values.place.projectId, seconds };
+    case "client":
+      return { clientId: values.place.clientId, seconds };
+    case "date":
+      return { dayKey: entryDay, seconds };
+  }
+}
+
+/** Lo que ve una persona con su propia fila de `minutes` minutos en `place`. */
 function ownSummary(
-  groupBy: "person" | "project",
+  groupBy: ReportGroupBy,
   values: {
     readonly userId: string;
     readonly minutes: number;
-    readonly projectId: string | null;
+    readonly place: Place;
   },
 ) {
   const seconds = values.minutes * 60;
@@ -250,61 +320,91 @@ function ownSummary(
     scope: "self",
     groupBy,
     totalSeconds: seconds,
-    billableSeconds: values.projectId === null ? 0 : seconds,
-    groups: [
-      groupBy === "person"
-        ? { userId: values.userId, inactive: false, seconds }
-        : { projectId: values.projectId, seconds },
-    ],
+    billableSeconds: values.place.projectId === null ? 0 : seconds,
+    groups: [rowOf(groupBy, { ...values, seconds })],
   };
 }
 
 /** Todo A, de la duración mayor a la menor: nada de B. */
-function everyoneInA(groupBy: "person" | "project") {
+function everyoneInA(groupBy: ReportGroupBy) {
   return {
     scope: "everyone",
     groupBy,
     totalSeconds: 210 * 60,
     billableSeconds: 150 * 60,
-    groups:
-      groupBy === "person"
-        ? [
-            { userId: a.inactiveId, inactive: true, seconds: 60 * 60 },
-            { userId: a.memberId, inactive: false, seconds: 50 * 60 },
-            { userId: a.teamManagerId, inactive: false, seconds: 40 * 60 },
-            { userId: a.managerId, inactive: false, seconds: 30 * 60 },
-            { userId: a.adminId, inactive: false, seconds: 20 * 60 },
-            { userId: a.ownerId, inactive: false, seconds: 10 * 60 },
-          ]
-        : [
-            { projectId: a.projectId, seconds: 150 * 60 },
-            { projectId: null, seconds: 60 * 60 },
-          ],
+    groups: everyoneInAGroups(groupBy),
   };
+}
+
+/**
+ * P junta las horas de owner, `project_manager`, member e inactivo; el resto,
+ * sin proyecto. Por fecha, las seis en el mismo día.
+ */
+function everyoneInAGroups(groupBy: ReportGroupBy) {
+  switch (groupBy) {
+    case "person":
+      return [
+        { userId: a.inactiveId, inactive: true, seconds: 60 * 60 },
+        { userId: a.memberId, inactive: false, seconds: 50 * 60 },
+        { userId: a.teamManagerId, inactive: false, seconds: 40 * 60 },
+        { userId: a.managerId, inactive: false, seconds: 30 * 60 },
+        { userId: a.adminId, inactive: false, seconds: 20 * 60 },
+        { userId: a.ownerId, inactive: false, seconds: 10 * 60 },
+      ];
+    case "project":
+      return [
+        { projectId: a.projectId, seconds: 150 * 60 },
+        { projectId: null, seconds: 60 * 60 },
+      ];
+    case "client":
+      return [
+        { clientId: a.clientId, seconds: 150 * 60 },
+        { clientId: null, seconds: 60 * 60 },
+      ];
+    case "date":
+      return [{ dayKey: entryDay, seconds: 210 * 60 }];
+  }
+}
+
+/** Las tres personas de A que ven solo lo propio, con su única entrada. */
+function selfOnlyInA() {
+  return [
+    {
+      role: "project_manager",
+      userId: a.managerId,
+      minutes: 30,
+      place: inProjectOf(a),
+    },
+    { role: "team_manager", userId: a.teamManagerId, minutes: 40, place: noProject },
+    { role: "member", userId: a.memberId, minutes: 50, place: inProjectOf(a) },
+  ] as const;
 }
 
 async function expectForbiddenWithoutReading(actor: Actor) {
   const byPerson = vi.spyOn(reportRepository, "totalsByPerson");
   const byProject = vi.spyOn(reportRepository, "totalsByProject");
+  const byBucket = vi.spyOn(reportRepository, "totalsByBucket");
   try {
-    for (const groupBy of [null, "person", "project"] as const) {
+    for (const groupBy of [null, ...groupBys]) {
       expect(await reportOf(actor, groupBy)).toEqual({ kind: "forbidden" });
     }
     expect(byPerson).not.toHaveBeenCalled();
     expect(byProject).not.toHaveBeenCalled();
+    expect(byBucket).not.toHaveBeenCalled();
   } finally {
     byPerson.mockRestore();
     byProject.mockRestore();
+    byBucket.mockRestore();
   }
 }
 
-describe("el alcance por rol (criterio 4, D-R2a-2)", () => {
+describe("el alcance por rol (criterio 4, D-R2a-2; criterio 11 de R2b)", () => {
   for (const role of ["owner", "admin"] as const) {
-    it(`${role} de A ve a todas las personas de A, la inactiva marcada, y nada de B`, async () => {
+    it(`${role} de A ve a todas las personas de A, la inactiva con sus horas, y nada de B`, async () => {
       const actor = actorIn(a.workspaceId, role === "owner" ? a.ownerId : a.adminId, {
         role,
       });
-      for (const groupBy of ["person", "project"] as const) {
+      for (const groupBy of groupBys) {
         expect(summaryOf(await reportOf(actor, groupBy))).toEqual(everyoneInA(groupBy));
       }
     });
@@ -312,66 +412,70 @@ describe("el alcance por rol (criterio 4, D-R2a-2)", () => {
 
   it("project_manager, responsable del proyecto donde los demás cargan, ve solo lo propio (RP-05)", async () => {
     const actor = actorIn(a.workspaceId, a.managerId, { role: "project_manager" });
-    for (const groupBy of ["person", "project"] as const) {
+    for (const groupBy of groupBys) {
       expect(summaryOf(await reportOf(actor, groupBy))).toEqual(
-        ownSummary(groupBy, { userId: a.managerId, minutes: 30, projectId: a.projectId }),
+        ownSummary(groupBy, { userId: a.managerId, minutes: 30, place: inProjectOf(a) }),
       );
     }
   });
 
   it("team_manager ve solo lo propio (RP-06)", async () => {
     const actor = actorIn(a.workspaceId, a.teamManagerId, { role: "team_manager" });
-    for (const groupBy of ["person", "project"] as const) {
+    for (const groupBy of groupBys) {
       expect(summaryOf(await reportOf(actor, groupBy))).toEqual(
-        ownSummary(groupBy, { userId: a.teamManagerId, minutes: 40, projectId: null }),
+        ownSummary(groupBy, { userId: a.teamManagerId, minutes: 40, place: noProject }),
       );
     }
   });
 
   it("member ve solo lo propio, y en A no ve sus horas de B (RP-01)", async () => {
     const actor = actorIn(a.workspaceId, a.memberId);
-    for (const groupBy of ["person", "project"] as const) {
+    for (const groupBy of groupBys) {
       expect(summaryOf(await reportOf(actor, groupBy))).toEqual(
-        ownSummary(groupBy, { userId: a.memberId, minutes: 50, projectId: a.projectId }),
+        ownSummary(groupBy, { userId: a.memberId, minutes: 50, place: inProjectOf(a) }),
       );
     }
     // Sin agrupación, por persona: la misma fila.
     expect(summaryOf(await reportOf(actor, null))).toEqual(
-      ownSummary("person", { userId: a.memberId, minutes: 50, projectId: a.projectId }),
+      ownSummary("person", { userId: a.memberId, minutes: 50, place: inProjectOf(a) }),
     );
   });
 
   it("la misma persona, en B, ve solo lo suyo de B", async () => {
     const actor = actorIn(b.workspaceId, a.memberId);
-    for (const groupBy of ["person", "project"] as const) {
+    for (const groupBy of groupBys) {
       expect(summaryOf(await reportOf(actor, groupBy))).toEqual(
-        ownSummary(groupBy, { userId: a.memberId, minutes: 70, projectId: b.projectId }),
+        ownSummary(groupBy, { userId: a.memberId, minutes: 70, place: inProjectOf(b) }),
       );
     }
   });
 
   it("el owner de B ve todo B y nada de A", async () => {
     const actor = actorIn(b.workspaceId, b.ownerId, { role: "owner" });
-    expect(summaryOf(await reportOf(actor, "person"))).toEqual({
-      scope: "everyone",
-      groupBy: "person",
-      totalSeconds: 150 * 60,
-      billableSeconds: 70 * 60,
-      groups: [
-        { userId: b.ownerId, inactive: false, seconds: 80 * 60 },
-        { userId: a.memberId, inactive: false, seconds: 70 * 60 },
-      ],
-    });
-    expect(summaryOf(await reportOf(actor, "project"))).toEqual({
-      scope: "everyone",
-      groupBy: "project",
-      totalSeconds: 150 * 60,
-      billableSeconds: 70 * 60,
-      groups: [
-        { projectId: null, seconds: 80 * 60 },
-        { projectId: b.projectId, seconds: 70 * 60 },
-      ],
-    });
+    for (const groupBy of groupBys) {
+      expect(summaryOf(await reportOf(actor, groupBy))).toEqual({
+        scope: "everyone",
+        groupBy,
+        totalSeconds: 150 * 60,
+        billableSeconds: 70 * 60,
+        // Por fecha, las dos entradas de B son del mismo día.
+        groups:
+          groupBy === "date"
+            ? [{ dayKey: entryDay, seconds: 150 * 60 }]
+            : [
+                rowOf(groupBy, {
+                  userId: b.ownerId,
+                  place: noProject,
+                  seconds: 80 * 60,
+                }),
+                rowOf(groupBy, {
+                  userId: a.memberId,
+                  place: inProjectOf(b),
+                  seconds: 70 * 60,
+                }),
+              ],
+      });
+    }
   });
 
   it("el owner de A, member de B sin horas en B, no ve en B las suyas de A", async () => {
@@ -379,7 +483,7 @@ describe("el alcance por rol (criterio 4, D-R2a-2)", () => {
       .insert(membership)
       .values({ workspaceId: b.workspaceId, userId: a.ownerId, role: "member" });
     const actor = actorIn(b.workspaceId, a.ownerId);
-    for (const groupBy of ["person", "project"] as const) {
+    for (const groupBy of groupBys) {
       expect(summaryOf(await reportOf(actor, groupBy))).toEqual({
         scope: "self",
         groupBy,
@@ -398,9 +502,9 @@ describe("la decisión es de can() (criterio 4, R9)", () => {
       action: "timeEntry.others.view",
     });
     const actor = actorIn(a.workspaceId, a.ownerId, { role: "owner" });
-    for (const groupBy of ["person", "project"] as const) {
+    for (const groupBy of groupBys) {
       expect(summaryOf(await reportOf(actor, groupBy))).toEqual(
-        ownSummary(groupBy, { userId: a.ownerId, minutes: 10, projectId: a.projectId }),
+        ownSummary(groupBy, { userId: a.ownerId, minutes: 10, place: inProjectOf(a) }),
       );
     }
   });
@@ -423,19 +527,29 @@ describe("la decisión es de can() (criterio 4, R9)", () => {
   });
 });
 
-describe("el enlace ajeno (criterio 5, RP-32)", () => {
-  /** Lo que la página recibe de un enlace de un admin, con claves armadas a mano. */
-  const searchParams = {
-    desde: week.first,
-    hasta: week.last,
-    agrupar: "proyecto",
-    personas: ["ajena-1", "ajena-2"],
-    persona: "ajena-1",
-    userId: "ajena-1",
-    alcance: "everyone",
-  };
+describe("el enlace ajeno (criterio 5, RP-32; criterio 11 de R2b)", () => {
+  /** El valor de `agrupar` que escribe la URL y la agrupación que tiene que salir. */
+  const linkedGroupBys = [
+    ["proyecto", "project"],
+    ["cliente", "client"],
+    ["fecha", "date"],
+  ] as const;
 
-  function requestFromUrl(): ReportRequest {
+  /** Lo que la página recibe de un enlace de un admin, con claves armadas a mano. */
+  function searchParamsOf(agrupar: string) {
+    return {
+      desde: week.first,
+      hasta: week.last,
+      agrupar,
+      personas: ["ajena-1", "ajena-2"],
+      persona: "ajena-1",
+      userId: "ajena-1",
+      alcance: "everyone",
+    };
+  }
+
+  function requestFromUrl(agrupar: string): ReportRequest {
+    const searchParams = searchParamsOf(agrupar);
     const range = reportRangeParams.safeParse(searchParams);
     const groupBy = reportGroupParams.safeParse(searchParams);
     if (!range.success || !groupBy.success) {
@@ -445,20 +559,26 @@ describe("el enlace ajeno (criterio 5, RP-32)", () => {
   }
 
   it("los esquemas no dejan pasar ninguna clave que nombre personas", () => {
-    expect(requestFromUrl()).toStrictEqual({ range: week, groupBy: "project" });
+    for (const [agrupar, groupBy] of linkedGroupBys) {
+      expect(requestFromUrl(agrupar)).toStrictEqual({ range: week, groupBy });
+    }
   });
 
-  it("el pedido del admin da al member su propia fila y su total", async () => {
-    const fromUrl = requestFromUrl();
-    const admin = actorIn(a.workspaceId, a.adminId, { role: "admin" });
-    expect(summaryOf(await getReportState(admin, settings, fromUrl, now))).toEqual(
-      everyoneInA("project"),
-    );
-    const member = actorIn(a.workspaceId, a.memberId);
-    expect(summaryOf(await getReportState(member, settings, fromUrl, now))).toEqual(
-      ownSummary("project", { userId: a.memberId, minutes: 50, projectId: a.projectId }),
-    );
-  });
+  for (const [agrupar, groupBy] of linkedGroupBys) {
+    it(`con agrupar=${agrupar}, el pedido del admin da a cada uno su propia fila y su total`, async () => {
+      const fromUrl = requestFromUrl(agrupar);
+      const admin = actorIn(a.workspaceId, a.adminId, { role: "admin" });
+      expect(summaryOf(await getReportState(admin, settings, fromUrl, now))).toEqual(
+        everyoneInA(groupBy),
+      );
+      for (const { role, userId, minutes, place } of selfOnlyInA()) {
+        const actor = actorIn(a.workspaceId, userId, { role });
+        expect(summaryOf(await getReportState(actor, settings, fromUrl, now))).toEqual(
+          ownSummary(groupBy, { userId, minutes, place }),
+        );
+      }
+    });
+  }
 });
 
 describe("membresía no activa (criterio 11, RP-07)", () => {

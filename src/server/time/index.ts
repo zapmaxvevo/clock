@@ -197,12 +197,50 @@ export function addDaysToKey(dayKey: string, days: number): string {
   if (date === null) {
     return dayKey;
   }
-  const moved = new Date(Date.UTC(date.year, date.month - 1, date.day + days));
+  return utcDayKey(new Date(Date.UTC(date.year, date.month - 1, date.day + days)));
+}
+
+/** La clave del día civil de un instante leído en UTC. */
+function utcDayKey(moment: Date): string {
   return toDayKey({
-    year: moved.getUTCFullYear(),
-    month: moved.getUTCMonth() + 1,
-    day: moved.getUTCDate(),
+    year: moment.getUTCFullYear(),
+    month: moment.getUTCMonth() + 1,
+    day: moment.getUTCDate(),
   });
+}
+
+/**
+ * El primer día del mes que está `months` meses después del de `dayKey`
+ * (antes, si es negativo). Aritmética civil en UTC, como `addDaysToKey`. El
+ * resultado puede caer fuera de los años válidos: quien lo usa lo valida.
+ * Lanza si `dayKey` no es un día.
+ */
+export function monthStartKey(dayKey: string, months = 0): string {
+  // El año de una clave válida tiene cuatro cifras: `Date.UTC` no lo lee como 19xx.
+  const date = civilDateOf(dayKey);
+  return utcDayKey(new Date(Date.UTC(date.year, date.month - 1 + months, 1)));
+}
+
+/** El último día de ese mismo mes. Mismas reglas que `monthStartKey`. */
+export function monthEndKey(dayKey: string, months = 0): string {
+  // El día 0 del mes siguiente es el último de este.
+  const date = civilDateOf(dayKey);
+  return utcDayKey(new Date(Date.UTC(date.year, date.month + months, 0)));
+}
+
+/**
+ * Cuántos meses enteros hay de `first` a `last` —de 1 en adelante— si `first`
+ * es el primer día de un mes y `last` el último de un mes, no anterior; si no,
+ * `null`. Lanza si alguna clave no es un día.
+ */
+export function wholeMonthCount(first: string, last: string): number | null {
+  const from = civilDateOf(first);
+  const to = civilDateOf(last);
+  if (from.day !== 1 || monthEndKey(last) !== last) {
+    return null;
+  }
+  const months = (to.year - from.year) * 12 + (to.month - from.month) + 1;
+  return months >= 1 ? months : null;
 }
 
 type DatePart = "day" | "month" | "year";
@@ -326,14 +364,24 @@ export function isWeekendDayKey(dayKey: string): boolean {
 }
 
 /**
- * El menor de varios días. Las claves "AAAA-MM-DD" se ordenan como el
- * calendario, así que la comparación es de cadenas. Sin claves, `null`.
+ * El orden de dos días, negativo si `left` es anterior: las claves
+ * "AAAA-MM-DD" se ordenan como el calendario, así que la comparación es de
+ * cadenas.
  */
+export function compareDayKeys(left: string, right: string): number {
+  if (left === right) {
+    return 0;
+  }
+  return left < right ? -1 : 1;
+}
+
+/** El menor de varios días, con el orden de `compareDayKeys`. Sin claves, `null`. */
 export function earliestDayKey(first: string, ...rest: readonly string[]): string;
 export function earliestDayKey(...keys: readonly string[]): string | null;
 export function earliestDayKey(...keys: readonly string[]): string | null {
   return keys.reduce<string | null>(
-    (earliest, key) => (earliest === null || key < earliest ? key : earliest),
+    (earliest, key) =>
+      earliest === null || compareDayKeys(key, earliest) < 0 ? key : earliest,
     null,
   );
 }
@@ -391,6 +439,36 @@ function isMissingDay(dayKey: string, timeZone: string): boolean {
   );
 }
 
+/** Un tramo de una lectura agrupada: su primer día civil y su primer instante. */
+export type TimeBucket = { readonly firstDay: string; readonly start: Date };
+
+/**
+ * Los tramos en orden y el fin del último, que es la cota superior de la
+ * lectura. Los inicios quedan ordenados pero pueden repetirse (ADR 0021).
+ */
+export type TimeBuckets = {
+  readonly buckets: readonly TimeBucket[];
+  readonly end: Date;
+};
+
+/**
+ * Un tramo por día civil de `first` a `last`, con su inicio en `timeZone`
+ * (`startOfDayKey`), y el fin: el inicio del día siguiente a `last`. Un día que
+ * falta entero en la zona tiene el inicio del siguiente. Solo usa la zona que
+ * recibe. Lanza si alguna clave no es un día o si `last` es anterior a `first`.
+ */
+export function dayBuckets(first: string, last: string, timeZone: string): TimeBuckets {
+  const days = daysBetweenKeys(first, last);
+  if (days < 0) {
+    throw new RangeError(`El último día ${last} es anterior al primero ${first}.`);
+  }
+  const buckets = Array.from({ length: days + 1 }, (_, index) => {
+    const firstDay = addDaysToKey(first, index);
+    return { firstDay, start: startOfDayKey(firstDay, timeZone) };
+  });
+  return { buckets, end: startOfDayKey(addDaysToKey(last, 1), timeZone) };
+}
+
 /**
  * «Esta semana», «Semana anterior», o «28/09 – 04/10». Si alguno de los dos
  * extremos no es del año de `todayKey`, los dos llevan el año:
@@ -422,11 +500,17 @@ export function daysBetweenKeys(first: string, last: string): number {
 
 /** La medianoche UTC de una clave de día; lanza si la clave no es un día. */
 function civilTime(dayKey: string): number {
+  const date = civilDateOf(dayKey);
+  return Date.UTC(date.year, date.month - 1, date.day);
+}
+
+/** La fecha de una clave de día; lanza si la clave no es un día. */
+export function civilDateOf(dayKey: string): CivilDate {
   const date = parseDayKey(dayKey);
   if (date === null) {
     throw new RangeError(`Clave de día inválida: ${dayKey}.`);
   }
-  return Date.UTC(date.year, date.month - 1, date.day);
+  return date;
 }
 
 /**

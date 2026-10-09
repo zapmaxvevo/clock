@@ -38,6 +38,17 @@ aprobación» pasa a «aceptado el 2026-10-08». Las citas de los RP que cubre R
 se volvieron a confirmar ese día: RP-12 corrige de qué página sale su ejemplo y
 RP-19 pierde una cita que no está en la página.
 
+_Actualizado el 2026-10-08, contrato de R2b
+([`nucleo-reportes-r2b-atajos-cliente-y-fecha.md`](../slices/nucleo-reportes-r2b-atajos-cliente-y-fecha.md),
+§7 «parity-analyst», y hallazgo P1 de sus
+[revisiones](../slices/correcciones-nucleo-reportes-r2b-revisiones.md))_: cada
+regla que el slice precisa lleva su corrección fechada, y la
+[sección 10](#10-núcleo-r2b) junta la pantalla. Cambian RP-11, RP-12, RP-20,
+RP-22, RP-24, RP-28, RP-29, RP-32, P-05 y la sección 9.5. No hay citas nuevas
+de Clockify: «Past two weeks», «This year» y el orden agrupando por fecha se
+buscaron ese día en las páginas del resumido y de filtros y no están (NOT
+FOUND); quedan _no verificados_.
+
 ## Fuentes y límites del relevamiento
 
 Documentación pública del centro de ayuda de Clockify y referencia pública de su
@@ -273,6 +284,13 @@ cargó cada uno») y un enlace sin parámetro da la misma vista a cualquiera
 (RP-32). La agrupación por omisión de Clockify sigue _no verificada_ (P-05).
 Cliente y fecha llegan con R2b; tarea, que el usuario sumó con la propuesta del
 núcleo (mapa §5), y etiqueta, con R3.
+_Actualizado el 2026-10-08, contrato de R2b (D-R2b-5, D-R2b-6)_: cuatro
+dimensiones en un nivel. «Agrupar por» tiene cuatro enlaces, «Persona»,
+«Proyecto», «Cliente» y «Fecha», en ese orden, y el elegido queda marcado. En
+la URL, `agrupar=persona|proyecto|cliente|fecha`. Cualquier otro valor
+—`Cliente` o `Fecha` con mayúscula, `fechas`, un parámetro repetido— se
+descarta y la vista queda por persona (RP-32). Sin parámetro sigue siendo por
+persona.
 
 **RP-12 Subagrupación encadenada** — `replicar`
 Documentado: «You can further breakdown data by sub groups.» y los ejemplos
@@ -289,6 +307,14 @@ _Actualizado el 2026-10-08, contrato de R2a (D-R2a-3)_: sin subgrupos hasta R3.
 El orden de los grupos es por duración descendente; con la misma duración, por
 nombre (`compareNames`, que desempata por id); «Sin proyecto» va después de los
 proyectos con su misma duración.
+_Actualizado el 2026-10-08, contrato de R2b (D-R2b-5, D-R2b-6)_: por cliente,
+el orden de R2a: duración descendente, `compareNames` en el empate y «Sin
+cliente» después de los clientes de su misma duración. **Por fecha, orden
+cronológico**, del primer día al último, aunque un día posterior tenga más
+horas. Justificación: es un desvío del orden por duración, porque una línea de
+tiempo ordenada por duración no se lee (D-R2b-6). El orden de Clockify al
+agrupar por fecha es _no verificado_: ni la página del resumido ni la de
+filtros lo dicen (P-05).
 
 **RP-13 Expandir un grupo** — `replicar`
 Documentado: «You can click on the number next to the group to expand it and
@@ -382,8 +408,9 @@ entrar lo resolvió el usuario con la propuesta del núcleo (mapa §5).
   Sin un rango válido, «Esta semana» (RP-32).
 - **Las flechas**, «Período anterior» y «Período siguiente», mueven el período
   entero: tantos días como tiene. Hasta que R2b traiga los atajos de mes, un
-  período de un mes se mueve 30 o 31 días. La flecha cuyo destino saldría de los
-  años válidos (del 0100-01-01 al 9999-12-31, como CAL-17) no se dibuja.
+  período de un mes se mueve 30 o 31 días (_reemplazado el 2026-10-08 por R2b,
+  abajo_). La flecha cuyo destino saldría de los años válidos (del 0100-01-01 al
+  9999-12-31, como CAL-17) no se dibuja.
 - **«Esta semana»** es un enlace que aparece solo cuando el período no es la
   semana actual, como en la planilla.
 - **El rango libre** es un calendario de rango en un popover que abre el botón
@@ -402,6 +429,62 @@ entrar lo resolvió el usuario con la propuesta del núcleo (mapa §5).
   («29/12/2025 – 04/01/2026»), y un solo día sin guion («05/10»).
 - **La agrupación se conserva** con las flechas, el selector y «Esta semana»;
   el rango se conserva al cambiar la agrupación.
+
+_Actualizado el 2026-10-08, contrato de R2b (D-R2b-1 a D-R2b-3)_: llegan los
+demás atajos. Con `T` el día de hoy en la zona de quien mira (RP-22) y `S` el
+primer día de su semana actual (RP-24), cada atajo es este período, con los dos
+extremos incluidos:
+
+- «Hoy»: `T`.
+- «Ayer»: `T − 1`.
+- «Esta semana»: `S` a `S + 6`.
+- «Semana anterior»: `S − 7` a `S − 1`.
+- «Últimas dos semanas»: `S − 7` a `S + 6`.
+- «Este mes»: del primer al último día del mes de `T`.
+- «Mes pasado»: del primer al último día del mes anterior al de `T`.
+- «Este año»: del 1 de enero al 31 de diciembre del año de `T`.
+- «Año pasado»: del 1 de enero al 31 de diciembre del año anterior al de `T`.
+
+Y con ellos:
+
+- **Son unidades enteras del calendario**: «Esta semana», «Este mes» y «Este
+  año» incluyen los días que todavía no pasaron. Un año tiene 365 o 366 días y
+  entra en el tope (RP-21). «Últimas dos semanas» son la semana anterior y esta,
+  y no los 14 días que terminan hoy. Justificación: así todo atajo se reconoce
+  por su rótulo y las flechas lo mueven sin desalinearlo.
+- **«Mes pasado» y «Año pasado», no «Mes anterior»**: «Mes anterior» es el
+  nombre del botón de navegación del calendario, en el mismo selector, y dos
+  controles con el mismo nombre en un diálogo no se distinguen con un lector de
+  pantalla. «Semana anterior» queda por la decisión del team-lead (sección 8).
+- **Un atajo escribe `desde` y `hasta` en la URL**, como cualquier rango; no
+  tiene un parámetro propio (RP-32).
+- **El rótulo del botón** es el del atajo cuando el período coincide con el de
+  uno de hoy; si no, el de R2a. Un mes entero que no es este ni el pasado se
+  rotula con sus días: «01/08 – 31/08». Justificación: es el rótulo de días de
+  R2a; el nombre del mes no tiene slice.
+- **Un atajo cuyo período no pasa la validación no se ofrece**, con la misma
+  regla que las flechas. Solo pasa cerca de los años límite: con hoy el
+  9999-12-31 no se ofrecen «Hoy», «Esta semana», «Últimas dos semanas», «Este
+  mes» ni «Este año», porque el día siguiente al último no existe.
+- **La lista «Atajos»** va dentro del selector, antes del calendario: a la
+  izquierda en pantallas anchas y arriba en las angostas. El atajo del período
+  que se ve lleva `aria-current`. Elegir uno cierra el selector, navega sin
+  pasar por «Aplicar» y devuelve el foco al botón del período, como Esc. El foco
+  inicial sigue en el calendario y los atajos se alcanzan con Mayús+Tab. El
+  selector no pasa del espacio libre de la ventana y se desplaza por dentro en
+  pantallas bajas.
+- **Las flechas mueven meses enteros** cuando el período lo es: si va del primer
+  día de un mes al último de un mes —de 1 a 12 meses—, mueven esa cantidad de
+  meses; si no, sus días, como en R2a. «Este mes» de octubre va a septiembre y a
+  noviembre; de enero a marzo, a octubre a diciembre y a abril a junio; un año de
+  366 días, al anterior y al siguiente enteros. Un mes, un trimestre o un año
+  elegidos a mano en el calendario se mueven igual. Esto reemplaza «un período
+  de un mes se mueve 30 o 31 días» de R2a. La flecha cuyo destino no pasa la
+  validación no se dibuja.
+- _No verificado_ (P-05): qué período es `PAST_TWO_WEEKS` en Clockify, y si
+  «This month» y «This year» llegan hasta hoy o hasta el fin del mes y del año.
+  Ni «Past two weeks» ni «This year» están en las páginas del resumido y de
+  filtros (NOT FOUND el 2026-10-08).
 
 **RP-21 Sin el tope de 31 días del plan Free** — `adaptar`
 Documentado: «On the Free Plan, generating reports is limited to a maximum date
@@ -432,6 +515,13 @@ dos personas que comparan totales necesitan saber dónde se cortó el día; sin
 desplazamiento porque, en un período que cruza un cambio de horario, uno solo
 sería falso en una parte. Un día que falta entero en la zona (en `Pacific/Apia`,
 el 2011-12-30) da cero, sin error.
+_Actualizado el 2026-10-08, contrato de R2b (D-R2b-6)_: agrupando por fecha,
+cada fila es un día civil en la zona de quien mira, y una entrada cuenta en el
+día de su `start` (RP-23): en Buenos Aires, una entrada del viernes a las 23:30
+es del viernes aunque en UTC sea sábado. Un día con cambio de horario dura 23 o
+25 horas. El día que falta entero en `Pacific/Apia`, el 2011-12-30, no tiene
+fila; una entrada a las 00:00 del 31, el instante en que habría empezado el 30,
+cuenta en el 31.
 
 **RP-23 Entrada que cruza la medianoche** — `adaptar`
 _No verificado_ en Clockify. Acá, la misma regla que TT-95 y TT-96: la entrada
@@ -449,7 +539,14 @@ el primer día de la membresía de quien mira (PF-01). P-05.
 _Actualizado el 2026-10-08, contrato de R2a_: en R2a, «Esta semana» son los
 siete días desde el primer día de la semana de quien mira (con domingo, empieza
 el domingo), y el rótulo de semana de RP-20 sigue el mismo primer día. «Semana
-pasada» y la agrupación por fecha llegan con R2b.
+anterior» y la agrupación por fecha llegan con R2b.
+_Corregido el 2026-10-08, revisión de paridad de R2b (P1)_: decía «Semana
+pasada»; el atajo se rotula «Semana anterior» (sección 8).
+_Actualizado el 2026-10-08, contrato de R2b (D-R2b-2, D-R2b-6)_: «Semana
+anterior» y «Últimas dos semanas» se alinean al primer día de quien mira, como
+«Esta semana»: con domingo, empiezan el domingo. **La agrupación por fecha es
+por día y el primer día de la semana no la cambia**; esto corrige lo que este
+RP decía de ella.
 
 ### 2.3 Filtros
 
@@ -487,6 +584,11 @@ proyecto» va en gris, sin punto de color ni cliente, con el mismo rótulo que e
 resto de la aplicación; con la misma duración, va después de los proyectos
 (RP-12). El rótulo lo resolvió el usuario con la propuesta del núcleo (mapa
 §5). «Sin cliente» llega con R2b; «Sin tarea» y «Sin etiqueta», con R3.
+_Actualizado el 2026-10-08, contrato de R2b (D-R2b-5)_: agrupando por cliente,
+«Sin cliente» es una sola fila con las entradas sin proyecto y las de los
+proyectos sin cliente. Va en gris, con el mismo rótulo que la pantalla de
+proyectos, y con la misma duración va después de los clientes (RP-12). Dos
+proyectos de un mismo cliente dan una fila con la suma.
 
 **RP-29 Proyectos archivados, tareas hechas y proyectos borrados** — `replicar`
 Relevado en `proyectos.md`: «Project's time entries will still be shown in
@@ -499,6 +601,10 @@ _Actualizado el 2026-10-08, contrato de R2a_: un proyecto archivado y una tarea
 hecha cuentan. La fila de un proyecto archivado lleva su nombre, su color y su
 cliente como cualquier otra, sin marca de archivado; _no verificado_ si Clockify
 lo marca en el resumido.
+_Actualizado el 2026-10-08, contrato de R2b (D-R2b-5)_: agrupando por cliente,
+un cliente archivado cuenta y su fila lleva su nombre como cualquier otra, sin
+marca de archivado, con el mismo criterio que el proyecto archivado (sección
+8). _No verificado_ si Clockify lo marca.
 
 **RP-30 El timer en curso no se muestra ni se suma** — `adaptar`
 _No verificado_: si Clockify suma un timer corriendo y hasta qué momento. Acá el
@@ -548,6 +654,20 @@ siempre `desde`, `hasta` y `agrupar`.
   personas.
 - Quien edita la URL a mano y la rompe ve «Esta semana» sin saber por qué: es
   deuda conocida del contrato.
+
+_Actualizado el 2026-10-08, contrato de R2b (D-R2b-1)_:
+
+- **El enlace de un atajo reproduce los mismos días** para cualquiera que lo
+  abra, mañana o desde otra zona, porque lleva `desde` y `hasta`. No hay un
+  parámetro relativo: `periodo=…` se ignora como cualquier otra clave.
+- **El rótulo se recalcula en cada carga**: un enlace de «Este mes» abierto el
+  mes siguiente dice «Mes pasado», porque es eso; abierto más tarde, sus días
+  («01/08 – 31/08»).
+- **`agrupar=cliente` y `agrupar=fecha`** se validan como las otras dos (RP-11).
+- Deuda conocida: **un enlace no sigue al período en curso**; «Este mes»
+  guardado como favorito muestra siempre el mismo mes. Justificación: con un
+  parámetro relativo, un enlace de «Hoy» abierto mañana o en otra zona mostraría
+  otros días, y la exportación recibiría un rango abierto.
 
 **RP-33 Vacíos** — `adaptar`
 Sin entradas en el rango: «No hay horas en este período», con los gráficos
@@ -839,6 +959,13 @@ abiertos P-03, P-04 y lo que queda de P-05.
 | P-09 | **Borrar una persona con horas** (RP-65). Hoy el `cascade` de `time_entry.user_id` borra sus horas. ¿Se prohíbe borrar a quien tiene entradas —solo se desactiva— o se cambia la clave? Es de la fase 2 pero condiciona que RP-61 se cumpla.                                                                                                                                                                                                                                                    |
 | P-10 | **Exportación.** El PDF es lo único de Free (RP-53); el CSV es pago (RP-54) y probablemente lo más útil para administración. ¿Entra alguno, cuándo, y cuál?                                                                                                                                                                                                                                                                                                                                     |
 
+_Actualizado el 2026-10-08, contrato de R2b_: P-05 suma qué período es «Past
+two weeks» (`PAST_TWO_WEEKS` en la API) y si «This month» y «This year» llegan
+hasta hoy o hasta el fin del mes y del año (RP-20), y el orden de las filas
+agrupando por fecha (RP-12). Mientras tanto vale lo de D-R2b-2 —la semana
+anterior y esta, y meses y años enteros— y el orden cronológico de D-R2b-6. No
+bloquea.
+
 ## 8. Decisiones del usuario (2026-10-08)
 
 - **P-01**: solo owner y admin ven las horas de otros; el resto ve solo las propias. Divergencia
@@ -937,5 +1064,98 @@ roles. De arriba abajo:
   total (RP-18).
 - Un rango inválido en la URL se descarta sin aviso (RP-32).
 - Dos personas con el mismo nombre se ven iguales (RP-31).
-- Las flechas mueven por días, también un período de un mes (RP-20).
 - Hasta R8, solo el owner ve el reporte de equipo (RP-02).
+
+_Corregido el 2026-10-08, contrato de R2b (D-R2b-3)_: se retiró «Las flechas
+mueven por días, también un período de un mes (RP-20)»; desde R2b un período de
+meses enteros se mueve por meses (RP-20).
+
+## 10. Núcleo, R2b
+
+_2026-10-08._ Contrato:
+[`nucleo-reportes-r2b-atajos-cliente-y-fecha.md`](../slices/nucleo-reportes-r2b-atajos-cliente-y-fecha.md),
+aprobado con cambios por `architecture-reviewer`, con sus
+[revisiones](../slices/correcciones-nucleo-reportes-r2b-revisiones.md).
+Extiende la pantalla de R2a. La regla de cada comportamiento está en la
+corrección fechada de su RP; esta sección junta lo que cambia en la pantalla, y
+lo que no nombra sigue como en la [sección 9](#9-núcleo-r2a).
+
+**Cubre:** RP-11 (un nivel, persona, proyecto, cliente o fecha), RP-12 (el
+orden por cliente y por fecha), RP-20 (los nueve atajos y las flechas por
+meses), RP-22 (los días de la agrupación por fecha), RP-24 (los atajos de
+semana), RP-28 («Sin cliente»), RP-29 (el cliente archivado) y RP-32 (el enlace
+de un atajo). Los permisos y el alcance no cambian: RP-01, RP-02 y RP-07
+deciden igual por cliente y por fecha. La agrupación por fecha se mergea
+después de la comprobación contra Neon del usuario (§6.3 del contrato); si el
+slice se parte, lo de fecha pasa a R2c con esta misma sección.
+
+**Queda para después:** subgrupos, la fecha como subnivel, tarea y etiqueta
+(R3); filtros y el segundo vacío de RP-33 (R4); gráfico y los tramos por semana
+y por mes (R5); exportación (R6, R7); cambiar el rol (R8); personas sin horas
+(R9). No tienen slice: los días sin horas en la agrupación por fecha, el rótulo
+de un mes con su nombre, un período relativo en la URL, atajos propios, días
+hábiles y trimestres con nombre.
+
+### 10.1 La barra y el selector del período
+
+- **«Agrupar por»** con cuatro enlaces, en este orden: «Persona», «Proyecto»,
+  «Cliente» y «Fecha». El elegido lleva `aria-current`; todos conservan el
+  rango (RP-11). En pantallas angostas el grupo pasa a dos líneas.
+- **El botón del período** dice el nombre del atajo cuando el período es el de
+  uno de hoy («Mes pasado», «Este año»); si no, el rótulo de R2a. Un mes entero
+  que no es este ni el pasado dice sus días: «01/08 – 31/08» (RP-20).
+- **«Período anterior» y «Período siguiente»** mueven meses enteros cuando el
+  período lo es, de 1 a 12; si no, sus días (RP-20).
+- **«Esta semana»** fuera del selector, como en R2a: solo si el período no es
+  la semana actual. Con el selector abierto hay dos enlaces «Esta semana», el
+  de la barra y el atajo.
+- **El selector** tiene, antes del calendario, la lista «Atajos» con los nueve
+  enlaces en el orden de RP-20: a la izquierda en pantallas anchas, arriba en
+  las angostas. El atajo del período que se ve lleva `aria-current`. Elegir uno
+  cierra el selector, navega y devuelve el foco al botón del período; con Ctrl
+  o Cmd lo abre en otra pestaña y el selector queda abierto. El foco inicial
+  sigue en el calendario y los atajos se alcanzan con Mayús+Tab. El calendario,
+  el mensaje de error y «Aplicar» no cambian. El selector no pasa del espacio
+  libre de la ventana y, si no entra de alto, se desplaza por dentro.
+
+### 10.2 La tabla
+
+- **Columnas**: «Persona», «Proyecto», «Cliente» o «Fecha», y «Duración».
+- **Cliente**: el nombre del cliente, archivado o no, sin marca (RP-29);
+  «Sin cliente» en gris, con las entradas sin proyecto y las de proyectos sin
+  cliente (RP-28). Por duración, empate por nombre y «Sin cliente» después de
+  los clientes de su misma duración (RP-12).
+- **Fecha**: una fila por día con horas, en orden cronológico (RP-12), con los
+  días cortados en la zona de quien mira (RP-22). El rótulo va en un `<time>`
+  con el día en `dateTime`: el día de la semana abreviado y la fecha en el
+  formato de la persona, «jue, 01/10», con el año si no es el de hoy. Sin «Hoy»
+  ni «Ayer». Justificación: en un reporte la fecha explícita no se confunde al
+  recargar otro día.
+- **Los totales** son los de R2a en las cuatro agrupaciones: cada entrada está
+  en exactamente un proyecto, un cliente y un día, así que en segundos el total
+  es la suma de las filas (RP-18).
+
+### 10.3 Estados
+
+- **Vacío por cliente o por fecha**: el de R2a, la fila «No hay horas en este
+  período» con «Total» y «Facturable» en «0:00» (RP-33). Por fecha no hay filas
+  de días en cero.
+- **Cargando, error de lectura y sin `report.view`**: como en la sección 9.3,
+  en las cuatro agrupaciones.
+- **Al recargar**: la misma vista. Un atajo es un rango en la URL y su rótulo
+  se recalcula con el día de hoy (RP-32).
+
+### 10.4 Divergencias visibles que el reviewer no debe marcar como errores
+
+- Por fecha, el orden es cronológico y no por duración (RP-12); el de Clockify
+  está _no verificado_.
+- Por fecha, un día sin horas no tiene fila, tampoco el día que falta entero en
+  la zona (RP-22).
+- Un mes entero que no es este ni el pasado se rotula con sus días
+  («01/08 – 31/08»), no con su nombre (RP-20).
+- Un enlace no sigue al período en curso: «Este mes» abierto el mes siguiente
+  muestra el mismo mes, rotulado «Mes pasado» (RP-32).
+- «Últimas dos semanas» son la semana anterior y esta, y no los 14 días hasta
+  hoy; «Este mes» y «Este año» incluyen los días por venir (RP-20). Lo de
+  Clockify está _no verificado_ (P-05).
+- El atajo del mes anterior se llama «Mes pasado», no «Mes anterior» (RP-20).

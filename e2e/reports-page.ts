@@ -1,10 +1,10 @@
 /**
- * Localizadores y acciones de `/reportes` (R2a del núcleo de reportes). Como
- * en `timesheet-page.ts`, todo se busca por rol y por texto accesible. La
+ * Localizadores y acciones de `/reportes` (R2a y R2b del núcleo de reportes).
+ * Como en `timesheet-page.ts`, todo se busca por rol y por texto accesible. La
  * tabla se nombra por el título, y cada grupo es una fila con su encabezado de
- * fila. La única excepción son los totales: una lista de definiciones, cuyo
- * término no da nombre a su definición, así que la cifra se busca como el
- * hermano que sigue al término.
+ * fila: el nombre o, por fecha, el rótulo del día. La única excepción son los
+ * totales: una lista de definiciones, cuyo término no da nombre a su
+ * definición, así que la cifra se busca como el hermano que sigue al término.
  */
 import { expect, type Locator, type Page } from "@playwright/test";
 
@@ -13,7 +13,9 @@ import {
   calendarDayName,
   dayKeyOf,
   dayRangeLabel,
+  monthEndOf,
   monthOfCaption,
+  monthStartOf,
   monthsBetween,
   sameDay,
   weekLabel,
@@ -42,6 +44,9 @@ export const INACTIVE_PERSON = "(inactiva)";
 /** RP-28: el grupo de las entradas sin proyecto. */
 export const NO_PROJECT = "Sin proyecto";
 
+/** RP-28: el grupo de las entradas sin proyecto y de los proyectos sin cliente. */
+export const NO_CLIENT = "Sin cliente";
+
 /** RP-07: el aviso de una membresía que no está activa. */
 export const FORBIDDEN_TITLE = "Tu acceso al workspace está desactivado.";
 export const FORBIDDEN_BODY = "No podés ver reportes.";
@@ -62,13 +67,32 @@ export function zoneLine(timeZone: string): string {
 export type ReportRange = { readonly first: CivilDay; readonly last: CivilDay };
 
 /** La agrupación como la escribe la URL. */
-export type ReportGroupBy = "persona" | "proyecto";
+export type ReportGroupBy = "persona" | "proyecto" | "cliente" | "fecha";
 
-/** El enlace de cada agrupación en «Agrupar por». */
-const GROUP_LINK: Record<ReportGroupBy, string> = {
+/**
+ * El enlace de cada agrupación en «Agrupar por», en su orden. Es también el
+ * encabezado de la primera columna de la tabla (§5.3).
+ */
+export const GROUP_LINK: Record<ReportGroupBy, string> = {
   persona: "Persona",
   proyecto: "Proyecto",
+  cliente: "Cliente",
+  fecha: "Fecha",
 };
+
+/** RP-20: los atajos del selector del período, en el orden de la lista (D-R2b-2). */
+export const SHORTCUT_LABELS = [
+  "Hoy",
+  "Ayer",
+  "Esta semana",
+  "Semana anterior",
+  "Últimas dos semanas",
+  "Este mes",
+  "Mes pasado",
+  "Este año",
+  "Año pasado",
+] as const;
+export type ShortcutLabel = (typeof SHORTCUT_LABELS)[number];
 
 /** La semana de `start`, de siete días. */
 export function weekRange(start: CivilDay): ReportRange {
@@ -83,6 +107,44 @@ export function currentWeekRange(today: CivilDay): ReportRange {
 /** La semana anterior a la de hoy, la de los recorridos que siembran. */
 export function lastWeekRange(today: CivilDay): ReportRange {
   return weekRange(addDays(weekStartOf(today), -7));
+}
+
+/** El mes que está `months` meses después del de `civil`, entero. */
+export function monthRange(civil: CivilDay, months: number): ReportRange {
+  return { first: monthStartOf(civil, months), last: monthEndOf(civil, months) };
+}
+
+/** Del 1 de enero al 31 de diciembre de `year`. */
+function yearRange(year: number): ReportRange {
+  return { first: { year, month: 1, day: 1 }, last: { year, month: 12, day: 31 } };
+}
+
+/**
+ * El período de un atajo con hoy en `today` (D-R2b-2): unidades enteras del
+ * calendario, con los días que no pasaron, y las semanas alineadas al lunes.
+ * «Últimas dos semanas» son la anterior y esta, no los 14 días hasta hoy.
+ */
+export function shortcutRange(label: ShortcutLabel, today: CivilDay): ReportRange {
+  switch (label) {
+    case "Hoy":
+      return { first: today, last: today };
+    case "Ayer":
+      return { first: addDays(today, -1), last: addDays(today, -1) };
+    case "Esta semana":
+      return currentWeekRange(today);
+    case "Semana anterior":
+      return lastWeekRange(today);
+    case "Últimas dos semanas":
+      return { first: lastWeekRange(today).first, last: currentWeekRange(today).last };
+    case "Este mes":
+      return monthRange(today, 0);
+    case "Mes pasado":
+      return monthRange(today, -1);
+    case "Este año":
+      return yearRange(today.year);
+    case "Año pasado":
+      return yearRange(today.year - 1);
+  }
 }
 
 /** El período movido `days` días, hacia atrás si es negativo. */
@@ -132,11 +194,19 @@ export function recordNavigations(
 }
 
 /**
- * El rótulo del período (D-R2a-4): el de la semana si es una alineada al
- * lunes, el primer día de toda persona nueva; si no, el de `dayRangeLabel`.
+ * El rótulo del período: el del atajo de hoy que tiene ese período (D-R2b-2);
+ * si no hay, el de la semana si es una alineada al lunes, el primer día de
+ * toda persona nueva, y si no, el de `dayRangeLabel` (D-R2a-4).
  */
 export function rangeLabel(range: ReportRange, today: CivilDay): string {
   const { first, last } = range;
+  const shortcut = SHORTCUT_LABELS.find((label) => {
+    const candidate = shortcutRange(label, today);
+    return sameDay(candidate.first, first) && sameDay(candidate.last, last);
+  });
+  if (shortcut !== undefined) {
+    return shortcut;
+  }
   return sameDay(first, weekStartOf(first)) && sameDay(last, addDays(first, 6))
     ? weekLabel(first, today)
     : dayRangeLabel(first, last, today);
@@ -165,6 +235,11 @@ export async function goToReportsByNav(page: Page): Promise<void> {
   await expect(reportTable(page)).toBeVisible();
 }
 
+/** El encabezado de la primera columna, que nombra la agrupación (§5.3). */
+export function groupColumnHeader(page: Page): Locator {
+  return reportTable(page).getByRole("columnheader").first();
+}
+
 /**
  * Los encabezados de fila de la tabla, uno por grupo, en el orden en que se
  * muestran. La fila del vacío no tiene.
@@ -175,9 +250,10 @@ export function groupHeaders(page: Page): Locator {
 
 /**
  * La fila de un grupo, por el comienzo de su encabezado: el nombre de la
- * persona, que puede seguir con «(inactiva)», o el del proyecto. Los nombres
- * de los recorridos llevan el sufijo del test, así que no hay otro que
- * empiece igual.
+ * persona, que puede seguir con «(inactiva)», el del proyecto, el del cliente
+ * o el rótulo del día. Los nombres de los recorridos llevan el sufijo del
+ * test, así que no hay otro que empiece igual; los días son de un alcance
+ * propio.
  */
 export function groupRow(page: Page, name: string): Locator {
   return reportTable(page)
@@ -236,11 +312,15 @@ export function groupByLink(page: Page, groupBy: ReportGroupBy): Locator {
   });
 }
 
-/** La agrupación elegida es la única con `aria-current`. */
+/**
+ * La agrupación elegida es la única con `aria-current`. Una sola aserción
+ * sobre los enlaces marcados del grupo: reintenta hasta que llega la barra
+ * nueva, y falla tanto si la elegida no está marcada como si hay otra más.
+ */
 export async function expectGroupBy(page: Page, groupBy: ReportGroupBy): Promise<void> {
-  const other: ReportGroupBy = groupBy === "persona" ? "proyecto" : "persona";
-  await expect(groupByLink(page, groupBy)).toHaveAttribute("aria-current", "true");
-  await expect(groupByLink(page, other)).not.toHaveAttribute("aria-current", "true");
+  await expect(groupByControl(page).locator('[aria-current="true"]')).toHaveText([
+    GROUP_LINK[groupBy],
+  ]);
 }
 
 /**
@@ -276,6 +356,27 @@ export async function openReport(
 /** El calendario de rango abierto, que va en un portal. */
 export function rangeCalendar(page: Page): Locator {
   return page.getByRole("grid");
+}
+
+/**
+ * El selector del período abierto, que va en un portal: el diálogo que tiene
+ * el calendario de rango.
+ */
+export function rangePopover(page: Page): Locator {
+  return page.getByRole("dialog").filter({ has: page.getByRole("grid") });
+}
+
+/** La lista «Atajos» del selector abierto (§5.2). */
+export function shortcutList(page: Page): Locator {
+  return rangePopover(page).getByRole("list", { name: "Atajos", exact: true });
+}
+
+/**
+ * Un atajo de la lista. Se busca dentro del selector: con el selector
+ * abierto, «Esta semana» es también el enlace de la barra.
+ */
+export function shortcutLink(page: Page, label: ShortcutLabel): Locator {
+  return shortcutList(page).getByRole("link", { name: label, exact: true });
 }
 
 /** «Aplicar», debajo del calendario. */

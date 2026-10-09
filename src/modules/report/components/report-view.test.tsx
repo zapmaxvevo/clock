@@ -15,6 +15,7 @@ const state: ReportReadyState = {
   previous: { first: "2026-09-28", last: "2026-10-04" },
   next: { first: "2026-10-12", last: "2026-10-18" },
   currentWeek: week,
+  shortcuts: [],
   groupBy: "person",
   scope: "self",
   timeZone: "America/Argentina/Buenos_Aires",
@@ -130,6 +131,58 @@ describe("ReportView", () => {
     const noProject = markup.slice(markup.lastIndexOf("<tr"));
     expect(noProject).not.toContain("background-color");
     expect(markup.match(/background-color/g)).toHaveLength(2);
+  });
+
+  it("por cliente, el encabezado «Cliente», el nombre y «Sin cliente» en gris (RP-28)", () => {
+    const groups: ReportGroup[] = [
+      {
+        kind: "client",
+        client: { id: "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d", name: "Acme" },
+        seconds: 5_400,
+      },
+      { kind: "client", client: null, seconds: 3_600 },
+    ];
+    const markup = render({ groupBy: "client", groups, totalSeconds: 9_000 });
+    expect(markup).toMatch(/<th scope="col"[^>]*>Cliente<\/th>/);
+    expect(bodyRows(markup)).toEqual([
+      ["Acme", "1:30"],
+      ["Sin cliente", "1:00"],
+    ]);
+    expect(markup).toMatch(/<th scope="row"[^>]*><span class="truncate">Acme<\/span>/);
+    expect(markup).toMatch(
+      /<th scope="row"[^>]*><span class="text-muted-foreground">Sin cliente<\/span>/,
+    );
+    // Sin el punto del proyecto: la fila es del cliente.
+    expect(markup).not.toContain("background-color");
+    expect(totals(markup).Total).toBe("2:30");
+  });
+
+  it("por fecha, el encabezado «Fecha» y cada día con su rótulo dentro de <time> (D-R2b-6)", () => {
+    const groups: ReportGroup[] = [
+      { kind: "date", dayKey: "2026-09-29", label: "mar, 29/09", seconds: 1_800 },
+      { kind: "date", dayKey: "2026-10-01", label: "jue, 01/10", seconds: 6_300 },
+      { kind: "date", dayKey: "2025-12-31", label: "mié, 31/12/2025", seconds: 1_200 },
+    ];
+    const markup = render({ groupBy: "date", groups, totalSeconds: 9_300 });
+    expect(markup).toMatch(/<th scope="col"[^>]*>Fecha<\/th>/);
+    // En el orden en que llegan: el service ya las ordenó.
+    expect(bodyRows(markup)).toEqual([
+      ["mar, 29/09", "0:30"],
+      ["jue, 01/10", "1:45"],
+      ["mié, 31/12/2025", "0:20"],
+    ]);
+    expect(markup).toMatch(
+      /<th scope="row"[^>]*><time dateTime="2026-09-29">mar, 29\/09<\/time><\/th>/,
+    );
+    expect(markup).toContain('<time dateTime="2025-12-31">mié, 31/12/2025</time>');
+    expect(totals(markup).Total).toBe("2:35");
+  });
+
+  it("por fecha, un período sin horas es la fila del vacío (RP-33)", () => {
+    const markup = render({ groupBy: "date" });
+    expect(markup).toMatch(/<th scope="col"[^>]*>Fecha<\/th>/);
+    expect(bodyRows(markup)).toEqual([["No hay horas en este período"]]);
+    expect(markup).not.toContain("<time");
   });
 
   it("cada cifra se trunca al minuto por separado: dos filas de 90 s y el total 0:03 (§5.3)", () => {

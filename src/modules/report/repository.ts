@@ -10,6 +10,7 @@ import {
   userPreference,
 } from "@/server/db/schema";
 import type { MembershipStatus } from "@/server/permissions";
+import type { TimeBuckets } from "@/server/time";
 
 // Solo el tipo: el alcance lo construye el service (D-R2a-1). El ciclo se borra al compilar.
 import type { ReportScope } from "./service";
@@ -35,6 +36,13 @@ export type ProjectTotalRow = {
     readonly color: string;
   } | null;
   readonly client: { readonly id: string; readonly name: string } | null;
+  readonly seconds: number;
+  readonly billableSeconds: number;
+};
+
+export type BucketTotalRow = {
+  /** La posición del tramo en `buckets.buckets`, desde 0. */
+  readonly bucket: number;
   readonly seconds: number;
   readonly billableSeconds: number;
 };
@@ -100,6 +108,18 @@ function withSeconds<
     seconds: secondsOf(row.seconds),
     billableSeconds: secondsOf(row.billableSeconds),
   };
+}
+
+/**
+ * La posición desde 0 del tramo que da `width_bucket`, que cuenta desde 1;
+ * lanza si no queda entre los `count` tramos.
+ */
+function bucketIndexOf(value: number, count: number): number {
+  const index = value - 1;
+  if (!Number.isInteger(index) || index < 0 || index >= count) {
+    throw new RangeError(`Tramo fuera de rango: ${value} de ${count}.`);
+  }
+  return index;
 }
 
 /** Las columnas por las que agrupa un nivel. */
@@ -181,5 +201,46 @@ export const reportRepository = {
         and(eq(client.workspaceId, project.workspaceId), eq(client.id, project.clientId)),
       );
     return rows.map(withSeconds);
+  },
+
+  /**
+   * Una fila por tramo con horas cerradas, dentro de `scope`; los tramos sin
+   * horas no vienen. Una sentencia (D-R2b-6, D-R2b-7).
+   */
+  async totalsByBucket(
+    scope: ReportScope,
+    buckets: TimeBuckets,
+  ): Promise<readonly BucketTotalRow[]> {
+    const [first] = buckets.buckets;
+    if (first === undefined) {
+      throw new RangeError("Una lectura por tramos necesita al menos un tramo.");
+    }
+    // Un solo parámetro, en un solo lugar: los cortes repetidos no se
+    // deduplican, el índice del tramo es la posición en la lista (ADR 0021).
+    const cuts = sql.param(buckets.buckets.map((bucket) => bucket.start.toISOString()));
+    const entries = db
+      .select({
+        bucket:
+          sql<number>`width_bucket(${timeEntry.startedAt}, ${cuts}::timestamptz[])`.as(
+            "bucket",
+          ),
+        seconds: entrySeconds.as("seconds"),
+        billable: timeEntry.billable,
+      })
+      .from(timeEntry)
+      .where(and(inScope(scope), closedIn({ from: first.start, to: buckets.end })))
+      .as("entries");
+    const rows = await db
+      .select({
+        bucket: entries.bucket,
+        seconds: sql<string>`sum(${entries.seconds})::bigint`,
+        billableSeconds: sql<string>`coalesce(sum(${entries.seconds}) filter (where ${entries.billable}), 0)::bigint`,
+      })
+      .from(entries)
+      .groupBy(entries.bucket);
+    return rows.map((row) => ({
+      ...withSeconds(row),
+      bucket: bucketIndexOf(row.bucket, buckets.buckets.length),
+    }));
   },
 };

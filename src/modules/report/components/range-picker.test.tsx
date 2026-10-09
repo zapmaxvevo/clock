@@ -4,10 +4,16 @@ import type { DateRange } from "react-day-picker";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type * as CalendarModule from "@/components/ui/calendar";
-import { reportMessages } from "@/modules/report/schema";
+import {
+  reportMessages,
+  type ReportGroupBy,
+  type ReportRange,
+  type ReportShortcut,
+} from "@/modules/report/schema";
 
 import { applySelection, selectionOf } from "./range-picker-model";
 import { RangePanel } from "./range-picker";
+import { reportHref } from "./report-href";
 
 /**
  * El clic sobre un día, con la lógica de selección de `react-day-picker` y los
@@ -44,9 +50,62 @@ function day(key: string): Date {
   return new Date(year, month - 1, date);
 }
 
+/** Los atajos del jueves 2026-10-08 con el lunes como primer día (D-R2b-2). */
+const SHORTCUTS: readonly ReportShortcut[] = [
+  { id: "today", label: "Hoy", range: { first: "2026-10-08", last: "2026-10-08" } },
+  { id: "yesterday", label: "Ayer", range: { first: "2026-10-07", last: "2026-10-07" } },
+  {
+    id: "thisWeek",
+    label: "Esta semana",
+    range: { first: "2026-10-05", last: "2026-10-11" },
+  },
+  {
+    id: "lastWeek",
+    label: "Semana anterior",
+    range: { first: "2026-09-28", last: "2026-10-04" },
+  },
+  {
+    id: "lastTwoWeeks",
+    label: "Últimas dos semanas",
+    range: { first: "2026-09-28", last: "2026-10-11" },
+  },
+  {
+    id: "thisMonth",
+    label: "Este mes",
+    range: { first: "2026-10-01", last: "2026-10-31" },
+  },
+  {
+    id: "lastMonth",
+    label: "Mes pasado",
+    range: { first: "2026-09-01", last: "2026-09-30" },
+  },
+  {
+    id: "thisYear",
+    label: "Este año",
+    range: { first: "2026-01-01", last: "2026-12-31" },
+  },
+  {
+    id: "lastYear",
+    label: "Año pasado",
+    range: { first: "2025-01-01", last: "2025-12-31" },
+  },
+];
+
+type PanelOptions = {
+  readonly error?: string | null;
+  readonly shortcuts?: readonly ReportShortcut[];
+  readonly range?: ReportRange;
+  readonly groupBy?: ReportGroupBy;
+};
+
 function renderPanel(
   selection: DateRange | undefined,
-  error: string | null = null,
+  {
+    error = null,
+    shortcuts = SHORTCUTS,
+    range = { first: "2026-10-05", last: "2026-10-11" },
+    groupBy = "person",
+  }: PanelOptions = {},
 ): string {
   return renderToStaticMarkup(
     <RangePanel
@@ -54,10 +113,29 @@ function renderPanel(
       month={selection?.from}
       todayKey="2026-10-08"
       error={error}
+      shortcuts={shortcuts}
+      range={range}
+      groupBy={groupBy}
       onSelect={() => undefined}
       onApply={() => undefined}
+      onShortcut={() => undefined}
     />,
   );
+}
+
+/** Los enlaces de la lista «Atajos», en orden; `null` si no hay lista. */
+function shortcutLinks(
+  markup: string,
+): { label: string; href: string; current: string | null }[] | null {
+  const list = /<ul aria-label="Atajos"[^>]*>(.*?)<\/ul>/.exec(markup)?.[1];
+  if (list === undefined) {
+    return null;
+  }
+  return [...list.matchAll(/<a ([^>]*)>(.*?)<\/a>/g)].map(([, attributes, label]) => ({
+    label,
+    href: (/href="([^"]*)"/.exec(attributes)?.[1] ?? "").replaceAll("&amp;", "&"),
+    current: /aria-current="([^"]*)"/.exec(attributes)?.[1] ?? null,
+  }));
 }
 
 /** La etiqueta de apertura de «Aplicar». */
@@ -111,7 +189,7 @@ describe("RangePicker", () => {
   });
 
   it("el mensaje de RP-34 se ve en la región de alerta", () => {
-    expect(renderPanel(thisWeek, reportMessages.rangeTooLong)).toMatch(
+    expect(renderPanel(thisWeek, { error: reportMessages.rangeTooLong })).toMatch(
       /<p role="alert"[^>]*>Elegí un período de hasta 366 días\.<\/p>/,
     );
   });
@@ -167,5 +245,56 @@ describe("RangePicker", () => {
     expect(markup).toContain('aria-label="Mes anterior"');
     expect(markup).toContain('aria-label="Mes siguiente"');
     expect(markup).toContain("octubre 2026");
+  });
+});
+
+describe("RangePanel, los atajos (RP-20, D-R2b-10)", () => {
+  it("la lista «Atajos» tiene los rótulos de `shortcuts` en orden, antes del calendario", () => {
+    const markup = renderPanel(thisWeek);
+    expect(shortcutLinks(markup)?.map(({ label }) => label)).toEqual(
+      SHORTCUTS.map(({ label }) => label),
+    );
+    expect(markup.indexOf('aria-label="Atajos"')).toBeLessThan(
+      markup.indexOf('aria-label="Mes anterior"'),
+    );
+  });
+
+  it("cada atajo lleva a su rango con la agrupación recibida", () => {
+    const found = shortcutLinks(renderPanel(thisWeek, { groupBy: "client" }));
+    expect(found?.map(({ href }) => href)).toEqual(
+      SHORTCUTS.map(({ range }) => reportHref({ range, groupBy: "client" })),
+    );
+    expect(found?.[6].href).toBe(
+      "/reportes?desde=2026-09-01&hasta=2026-09-30&agrupar=cliente",
+    );
+  });
+
+  it("solo el atajo del período que se ve lleva aria-current", () => {
+    const found = shortcutLinks(
+      renderPanel(thisWeek, { range: { first: "2026-09-01", last: "2026-09-30" } }),
+    );
+    expect(found?.filter(({ current }) => current !== null)).toEqual([
+      {
+        label: "Mes pasado",
+        href: "/reportes?desde=2026-09-01&hasta=2026-09-30&agrupar=persona",
+        current: "true",
+      },
+    ]);
+  });
+
+  it("un período que no es de ningún atajo no marca ninguno", () => {
+    // Empieza con «Este mes» pero termina antes: no es él.
+    const found = shortcutLinks(
+      renderPanel(thisWeek, { range: { first: "2026-10-01", last: "2026-10-30" } }),
+    );
+    expect(found).toHaveLength(SHORTCUTS.length);
+    expect(found?.every(({ current }) => current === null)).toBe(true);
+  });
+
+  it("sin atajos no hay lista", () => {
+    const markup = renderPanel(thisWeek, { shortcuts: [] });
+    expect(shortcutLinks(markup)).toBeNull();
+    expect(markup).not.toContain("<ul");
+    expect(markup).toContain('aria-label="Mes anterior"');
   });
 });

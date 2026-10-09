@@ -3,11 +3,14 @@
  * `npm run typecheck`; vitest no lo corre. Cada directiva falla si el
  * compilador deja de dar el error.
  */
+import type { TimeBuckets } from "@/server/time";
+
 import { reportRepository, type ReportSpan } from "./repository";
 import type * as service from "./service";
 import type { ReportScope } from "./service";
 
 const span: ReportSpan = { from: new Date(0), to: new Date(0) };
+const buckets: TimeBuckets = { buckets: [], end: new Date(0) };
 
 // @ts-expect-error: un literal con workspaceId y people no es un ReportScope; solo scopeOf lo construye.
 export const forged: ReportScope = { workspaceId: "w", people: { kind: "everyone" } };
@@ -25,6 +28,12 @@ export async function readsWithoutScope() {
   await reportRepository.totalsByPerson(null, span);
   // @ts-expect-error: el alcance de totalsByProject no admite null.
   await reportRepository.totalsByProject(null, span);
+  // @ts-expect-error: totalsByBucket exige el alcance como primer parámetro.
+  await reportRepository.totalsByBucket(buckets);
+  // @ts-expect-error: el alcance de totalsByBucket no admite undefined.
+  await reportRepository.totalsByBucket(undefined, buckets);
+  // @ts-expect-error: el alcance de totalsByBucket no admite null.
+  await reportRepository.totalsByBucket(null, buckets);
 }
 
 // @ts-expect-error: la clase del alcance no se exporta.

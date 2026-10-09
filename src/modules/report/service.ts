@@ -2,26 +2,31 @@ import { compareNames } from "@/lib/text";
 import { can, type Actor, type WorkspaceResource } from "@/server/permissions";
 import {
   addDaysToKey,
+  compareDayKeys,
+  dayBuckets,
   dayKey,
-  dayRangeLabel,
   daysBetweenKeys,
   startOfDayKey,
-  weekKeyLabel,
-  weekStartKey,
+  weekdayLabel,
+  type DateFormat,
+  type TimeBuckets,
   type TimeSettings,
 } from "@/server/time";
 import { displayNameOf } from "@/modules/profile/service";
 import { paletteKeyOf } from "@/modules/project/palette";
 
+import { reportPeriodOf } from "./period";
 import {
   reportRepository,
+  type BucketTotalRow,
   type PersonTotalRow,
   type ProjectTotalRow,
   type ReportSpan,
 } from "./repository";
 import {
   REPORT_MAX_DAYS,
-  reportRangeInput,
+  type ReportClientGroup,
+  type ReportDateGroup,
   type ReportGroup,
   type ReportGroupBy,
   type ReportPersonGroup,
@@ -76,31 +81,6 @@ function scopeOf(actor: Actor): Scope {
   return new Scope(actor.workspaceId, people);
 }
 
-/** Los siete días desde `first`. */
-function weekFrom(first: string): ReportRange {
-  return { first, last: addDaysToKey(first, 6) };
-}
-
-/** El período corrido `days` días, o `null` si el destino no es un rango válido (D-R2a-4). */
-function shifted(range: ReportRange, days: number): ReportRange | null {
-  const moved = {
-    first: addDaysToKey(range.first, days),
-    last: addDaysToKey(range.last, days),
-  };
-  return reportRangeInput.safeParse(moved).success ? moved : null;
-}
-
-/** «Esta semana», «Semana anterior» o el rango de una semana alineada; si no, el de días. */
-function rangeLabelOf(range: ReportRange, todayKey: string, settings: TimeSettings) {
-  const format = settings.formats.date;
-  const isWeek =
-    daysBetweenKeys(range.first, range.last) === 6 &&
-    weekStartKey(range.first, settings.weekStart) === range.first;
-  return isWeek
-    ? weekKeyLabel(range.first, todayKey, settings.weekStart, format)
-    : dayRangeLabel(range.first, range.last, todayKey, format);
-}
-
 function personGroupOf(row: PersonTotalRow): ReportPersonGroup {
   return {
     kind: "person",
@@ -128,21 +108,73 @@ function projectGroupOf(row: ProjectTotalRow): ReportProjectGroup {
   };
 }
 
-/** Lo que el orden compara de un grupo; `null` es «Sin proyecto». */
-function sortKeyOf(
-  group: ReportGroup,
-): { readonly id: string; readonly name: string } | null {
-  if (group.kind === "person") {
-    return { id: group.userId, name: group.name };
+/** Las sumas de un cliente: las de sus proyectos; `client` nulo es «Sin cliente». */
+type ClientTotalRow = {
+  readonly client: ProjectTotalRow["client"];
+  readonly seconds: number;
+  readonly billableSeconds: number;
+};
+
+/**
+ * D-R2b-5: las filas por proyecto sumadas por cliente. «Sin cliente» junta la
+ * fila «Sin proyecto» y las de los proyectos sin cliente (RP-28).
+ */
+function clientRowsOf(rows: readonly ProjectTotalRow[]): ClientTotalRow[] {
+  const byClient = new Map<string | null, ClientTotalRow>();
+  for (const row of rows) {
+    const key = row.client?.id ?? null;
+    const folded = byClient.get(key);
+    byClient.set(key, {
+      client: row.client,
+      seconds: (folded?.seconds ?? 0) + row.seconds,
+      billableSeconds: (folded?.billableSeconds ?? 0) + row.billableSeconds,
+    });
   }
-  return group.project;
+  return [...byClient.values()];
+}
+
+function clientGroupOf(row: ClientTotalRow): ReportClientGroup {
+  return { kind: "client", client: row.client, seconds: row.seconds };
+}
+
+/** La fila de un día con horas, rotulada con su fecha y sin «Hoy» ni «Ayer» (D-R2b-6). */
+function dateGroupOf(
+  row: BucketTotalRow,
+  buckets: TimeBuckets,
+  todayKey: string,
+  format: DateFormat,
+): ReportDateGroup {
+  const day = buckets.buckets[row.bucket].firstDay;
+  return {
+    kind: "date",
+    dayKey: day,
+    label: weekdayLabel(day, todayKey, format),
+    seconds: row.seconds,
+  };
+}
+
+/** Los grupos que se ordenan por duración y nombre: todos menos la fecha. */
+type NamedGroup = Exclude<ReportGroup, ReportDateGroup>;
+
+/** Lo que el orden compara de un grupo; `null` es «Sin proyecto» o «Sin cliente». */
+function sortKeyOf(
+  group: NamedGroup,
+): { readonly id: string; readonly name: string } | null {
+  switch (group.kind) {
+    case "person":
+      return { id: group.userId, name: group.name };
+    case "project":
+      return group.project;
+    case "client":
+      return group.client;
+  }
 }
 
 /**
  * RP-12, D-R2a-3: duración descendente; con la misma, por nombre, y «Sin
- * proyecto» después de los proyectos.
+ * proyecto» o «Sin cliente» después de los que tienen nombre.
  */
-function compareGroups(left: ReportGroup, right: ReportGroup): number {
+function compareGroups(left: NamedGroup, right: NamedGroup): number {
   if (left.seconds !== right.seconds) {
     return right.seconds - left.seconds;
   }
@@ -152,6 +184,11 @@ function compareGroups(left: ReportGroup, right: ReportGroup): number {
     return (leftKey === null ? 1 : 0) - (rightKey === null ? 1 : 0);
   }
   return compareNames(leftKey, rightKey);
+}
+
+/** D-R2b-6: en orden cronológico. */
+function compareDays(left: ReportDateGroup, right: ReportDateGroup): number {
+  return compareDayKeys(left.dayKey, right.dayKey);
 }
 
 /** Los grupos ordenados y los dos totales de la cabecera. */
@@ -167,23 +204,64 @@ type ReportTotals = {
  */
 function totalsOf<
   Row extends { readonly seconds: number; readonly billableSeconds: number },
->(rows: readonly Row[], groupOf: (row: Row) => ReportGroup): ReportTotals {
+  Group extends ReportGroup,
+>(
+  rows: readonly Row[],
+  groupOf: (row: Row) => Group,
+  compare: (left: Group, right: Group) => number,
+): ReportTotals {
   return {
-    groups: rows.map(groupOf).sort(compareGroups),
+    groups: rows.map(groupOf).sort(compare),
     totalSeconds: rows.reduce((sum, row) => sum + row.seconds, 0),
     billableSeconds: rows.reduce((sum, row) => sum + row.billableSeconds, 0),
   };
 }
 
+/** Lo que una lectura necesita del pedido, ya dentro del tope. */
+type ReportRead = {
+  readonly scope: Scope;
+  readonly range: ReportRange;
+  /** D-R2a-5: un solo intervalo cortado en la zona de quien mira. */
+  readonly span: ReportSpan;
+  readonly timeZone: string;
+  readonly todayKey: string;
+  readonly dateFormat: DateFormat;
+};
+
 async function readGroups(
-  scope: Scope,
-  span: ReportSpan,
+  read: ReportRead,
   groupBy: ReportGroupBy,
 ): Promise<ReportTotals> {
-  if (groupBy === "person") {
-    return totalsOf(await reportRepository.totalsByPerson(scope, span), personGroupOf);
+  const { scope, span } = read;
+  switch (groupBy) {
+    case "person":
+      return totalsOf(
+        await reportRepository.totalsByPerson(scope, span),
+        personGroupOf,
+        compareGroups,
+      );
+    case "project":
+      return totalsOf(
+        await reportRepository.totalsByProject(scope, span),
+        projectGroupOf,
+        compareGroups,
+      );
+    case "client":
+      return totalsOf(
+        clientRowsOf(await reportRepository.totalsByProject(scope, span)),
+        clientGroupOf,
+        compareGroups,
+      );
+    case "date": {
+      // Los cortes solo para la fecha; el primero y el fin son los de `span`.
+      const buckets = dayBuckets(read.range.first, read.range.last, read.timeZone);
+      return totalsOf(
+        await reportRepository.totalsByBucket(scope, buckets),
+        (row) => dateGroupOf(row, buckets, read.todayKey, read.dateFormat),
+        compareDays,
+      );
+    }
   }
-  return totalsOf(await reportRepository.totalsByProject(scope, span), projectGroupOf);
 }
 
 /**
@@ -203,8 +281,8 @@ export async function getReportState(
   const scope = scopeOf(actor);
   const timeZone = settings.timezone;
   const todayKey = dayKey(now, timeZone);
-  const currentWeek = weekFrom(weekStartKey(todayKey, settings.weekStart));
-  const range = request.range ?? currentWeek;
+  const period = reportPeriodOf(todayKey, settings, request.range);
+  const range = period.range;
   const groupBy = request.groupBy ?? "person";
   const days = daysBetweenKeys(range.first, range.last) + 1;
   // El esquema de la URL ya lo valida; acá es una invariante, para que
@@ -214,20 +292,23 @@ export async function getReportState(
       `Período fuera de 1 a ${REPORT_MAX_DAYS} días: ${range.first} a ${range.last}.`,
     );
   }
-  // D-R2a-5: un solo intervalo cortado en la zona de quien mira.
   const span = {
     from: startOfDayKey(range.first, timeZone),
     to: startOfDayKey(addDaysToKey(range.last, 1), timeZone),
   };
-  const totals = await readGroups(scope, span, groupBy);
+  const totals = await readGroups(
+    { scope, range, span, timeZone, todayKey, dateFormat: settings.formats.date },
+    groupBy,
+  );
   return {
     kind: "ready",
     todayKey,
     range,
-    rangeLabel: rangeLabelOf(range, todayKey, settings),
-    previous: shifted(range, -days),
-    next: shifted(range, days),
-    currentWeek,
+    rangeLabel: period.rangeLabel,
+    previous: period.previous,
+    next: period.next,
+    currentWeek: period.currentWeek,
+    shortcuts: [...period.shortcuts],
     groupBy,
     scope: scope.people.kind,
     timeZone,

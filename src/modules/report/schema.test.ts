@@ -8,6 +8,9 @@ import {
   reportMessages,
   reportRangeInput,
   reportRangeParams,
+  reportReadyState,
+  sameRange,
+  type ReportReadyState,
 } from "./schema";
 
 /** Los mensajes de un `safeParse` fallido; vacío si pasa. */
@@ -89,6 +92,15 @@ describe("reportRangeInput (RP-21, RP-34)", () => {
   });
 });
 
+describe("sameRange", () => {
+  it("compara los dos extremos", () => {
+    const week = { first: "2026-10-05", last: "2026-10-11" };
+    expect(sameRange(week, { first: "2026-10-05", last: "2026-10-11" })).toBe(true);
+    expect(sameRange(week, { first: "2026-10-05", last: "2026-10-12" })).toBe(false);
+    expect(sameRange(week, { first: "2026-10-04", last: "2026-10-11" })).toBe(false);
+  });
+});
+
 describe("reportRangeParams (RP-32)", () => {
   it("lee desde y hasta como el período", () => {
     expect(
@@ -152,6 +164,21 @@ describe("reportGroupParams (D-R2a-3)", () => {
     });
   });
 
+  it("lee cliente (D-R2b-5) y fecha (D-R2b-6)", () => {
+    expect(reportGroupParams.safeParse({ agrupar: "cliente" })).toEqual({
+      success: true,
+      data: "client",
+    });
+    expect(reportGroupParams.safeParse({ agrupar: "fecha" })).toEqual({
+      success: true,
+      data: "date",
+    });
+    expect([REPORT_GROUP_PARAMS.client, REPORT_GROUP_PARAMS.date]).toEqual([
+      "cliente",
+      "fecha",
+    ]);
+  });
+
   it("lee lo que escribe REPORT_GROUP_PARAMS, para cada agrupación", () => {
     for (const groupBy of REPORT_GROUP_BYS) {
       expect(
@@ -168,6 +195,12 @@ describe("reportGroupParams (D-R2a-3)", () => {
       { agrupar: "otro" },
       { agrupar: "person" },
       { agrupar: "project" },
+      { agrupar: "client" },
+      { agrupar: "Cliente" },
+      { agrupar: "CLIENTE" },
+      { agrupar: "fechas" },
+      { agrupar: "date" },
+      { agrupar: "Fecha" },
       { agrupar: "" },
       { agrupar: ["persona", "persona"] },
       {},
@@ -194,5 +227,83 @@ describe("reportGroupParams (D-R2a-3)", () => {
         agrupar: "otro",
       }).success,
     ).toBe(false);
+  });
+
+  it("cliente y fecha pasan con o sin un rango válido al lado, y Cliente y fechas no pasan con ninguno", () => {
+    for (const range of [
+      { desde: "2026-10-05", hasta: "2026-10-11" },
+      { desde: "2026-10-11", hasta: "2026-10-05" },
+      {},
+    ]) {
+      expect(reportGroupParams.safeParse({ ...range, agrupar: "cliente" })).toEqual({
+        success: true,
+        data: "client",
+      });
+      expect(reportGroupParams.safeParse({ ...range, agrupar: "fecha" })).toEqual({
+        success: true,
+        data: "date",
+      });
+      for (const agrupar of ["Cliente", "fechas"]) {
+        expect(reportGroupParams.safeParse({ ...range, agrupar }).success).toBe(false);
+      }
+    }
+  });
+});
+
+describe("reportReadyState (D-R2b-2, D-R2b-5)", () => {
+  const week = { first: "2026-10-05", last: "2026-10-11" };
+  const ready: ReportReadyState = {
+    kind: "ready",
+    todayKey: "2026-10-08",
+    range: week,
+    rangeLabel: "Esta semana",
+    previous: null,
+    next: null,
+    currentWeek: week,
+    shortcuts: [{ id: "thisWeek", label: "Esta semana", range: week }],
+    groupBy: "client",
+    scope: "everyone",
+    timeZone: "America/Argentina/Buenos_Aires",
+    totalSeconds: 90,
+    billableSeconds: 0,
+    groups: [
+      {
+        kind: "client",
+        client: { id: "0b6f1c2e-6a0d-4d3e-9a52-3b1f1a6c9d01", name: "Acme" },
+        seconds: 60,
+      },
+      { kind: "client", client: null, seconds: 30 },
+    ],
+  };
+
+  it("admite los grupos de cliente, con «Sin cliente», y los atajos", () => {
+    expect(reportReadyState.parse(ready)).toEqual(ready);
+  });
+
+  it("admite los grupos de fecha", () => {
+    const byDate: ReportReadyState = {
+      ...ready,
+      groupBy: "date",
+      groups: [
+        { kind: "date", dayKey: "2026-10-01", label: "jue, 01/10", seconds: 60 },
+        { kind: "date", dayKey: "2026-10-02", label: "vie, 02/10", seconds: 30 },
+      ],
+    };
+    expect(reportReadyState.parse(byDate)).toEqual(byDate);
+  });
+
+  it("rechaza un atajo con un id desconocido", () => {
+    expect(
+      reportReadyState.safeParse({
+        ...ready,
+        shortcuts: [{ id: "nextWeek", label: "Semana siguiente", range: week }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rechaza un estado sin atajos", () => {
+    expect(reportReadyState.safeParse({ ...ready, shortcuts: undefined }).success).toBe(
+      false,
+    );
   });
 });

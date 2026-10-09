@@ -1,7 +1,8 @@
--- Las cuatro consultas de §6.2 del contrato de R2a, sobre el volumen de
--- `seed.sql`. Cada sentencia es el texto que emite el repository (`.toSQL()`),
--- preparada con sus parámetros como los manda el driver: los instantes son los
--- que calcula `startOfDayKey` en Buenos Aires, que no tiene cambio de horario.
+-- Las cuatro consultas de §6.2 del contrato de R2a y las dos de §6.1 del de
+-- R2b, sobre el volumen de `seed.sql`. Cada sentencia es el texto que emite el
+-- repository (`.toSQL()`), preparada con sus parámetros como los manda el
+-- driver: los instantes son los que calcula `startOfDayKey` en Buenos Aires,
+-- que no tiene cambio de horario.
 --
 --   docker exec -i <contenedor> psql -U clock -d <base> -v ON_ERROR_STOP=1 < scripts/report-volume/explain.sql
 --
@@ -98,5 +99,54 @@ explain (analyze, buffers) execute q4(:workspace, :member, :week_from, :week_to)
 explain (analyze, buffers) execute q4(:workspace, :member, :week_from, :week_to);
 \echo '-- medida 5'
 explain (analyze, buffers) execute q4(:workspace, :member, :week_from, :week_to);
+
+-- Los cortes de Q5 y Q6: el inicio de cada uno de los 366 días desde el 1 de
+-- enero del año pasado, la medianoche de Buenos Aires, igual a lo que da
+-- `startOfDayKey`. Llegan como el literal de texto que arma el driver con los
+-- `toISOString()`: `EXECUTE` no admite una subconsulta como parámetro.
+select array_agg(to_char((day at time zone 'America/Argentina/Buenos_Aires') at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') order by day)::text as day_cuts
+  from generate_series(
+         date_trunc('year', (now() at time zone 'America/Argentina/Buenos_Aires')) - interval '1 year',
+         date_trunc('year', (now() at time zone 'America/Argentina/Buenos_Aires')) - interval '1 year' + interval '365 days',
+         interval '1 day'
+       ) as day \gset
+select cardinality(:'day_cuts'::timestamptz[]) as cuts, (:'day_cuts'::timestamptz[])[1] as first_cut;
+
+-- Q5: totalsByBucket, everyone, los 366 días desde el 1 de enero del año pasado, un tramo por día. Presupuesto: mediana <= 150 ms.
+-- El arreglo de cortes es un solo parámetro, `$1`, como lo manda el driver.
+\echo '== Q5'
+prepare q5 as
+select "bucket", sum("seconds")::bigint, coalesce(sum("seconds") filter (where "billable"), 0)::bigint from (select width_bucket("started_at", $1::timestamptz[]) as "bucket", floor(extract(epoch from date_trunc('milliseconds', "ended_at") - date_trunc('milliseconds', "started_at"))) as "seconds", "billable" from "time_entry" where ("time_entry"."workspace_id" = $2 and ("time_entry"."ended_at" is not null and "time_entry"."started_at" >= $3 and "time_entry"."started_at" < $4))) "entries" group by "bucket";
+
+\echo '-- calentamiento'
+explain (analyze, buffers) execute q5(:'day_cuts', :workspace, :year_from, :year_to);
+\echo '-- medida 1'
+explain (analyze, buffers) execute q5(:'day_cuts', :workspace, :year_from, :year_to);
+\echo '-- medida 2'
+explain (analyze, buffers) execute q5(:'day_cuts', :workspace, :year_from, :year_to);
+\echo '-- medida 3'
+explain (analyze, buffers) execute q5(:'day_cuts', :workspace, :year_from, :year_to);
+\echo '-- medida 4'
+explain (analyze, buffers) execute q5(:'day_cuts', :workspace, :year_from, :year_to);
+\echo '-- medida 5'
+explain (analyze, buffers) execute q5(:'day_cuts', :workspace, :year_from, :year_to);
+
+-- Q6: totalsByBucket, self, los mismos 366 días. Presupuesto: mediana <= 30 ms.
+\echo '== Q6'
+prepare q6 as
+select "bucket", sum("seconds")::bigint, coalesce(sum("seconds") filter (where "billable"), 0)::bigint from (select width_bucket("started_at", $1::timestamptz[]) as "bucket", floor(extract(epoch from date_trunc('milliseconds', "ended_at") - date_trunc('milliseconds', "started_at"))) as "seconds", "billable" from "time_entry" where (("time_entry"."workspace_id" = $2 and "time_entry"."user_id" = $3) and ("time_entry"."ended_at" is not null and "time_entry"."started_at" >= $4 and "time_entry"."started_at" < $5))) "entries" group by "bucket";
+
+\echo '-- calentamiento'
+explain (analyze, buffers) execute q6(:'day_cuts', :workspace, :member, :year_from, :year_to);
+\echo '-- medida 1'
+explain (analyze, buffers) execute q6(:'day_cuts', :workspace, :member, :year_from, :year_to);
+\echo '-- medida 2'
+explain (analyze, buffers) execute q6(:'day_cuts', :workspace, :member, :year_from, :year_to);
+\echo '-- medida 3'
+explain (analyze, buffers) execute q6(:'day_cuts', :workspace, :member, :year_from, :year_to);
+\echo '-- medida 4'
+explain (analyze, buffers) execute q6(:'day_cuts', :workspace, :member, :year_from, :year_to);
+\echo '-- medida 5'
+explain (analyze, buffers) execute q6(:'day_cuts', :workspace, :member, :year_from, :year_to);
 
 deallocate all;

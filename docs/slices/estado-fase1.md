@@ -60,14 +60,20 @@ vacío del owner y `renewWorkspace` se corta.
      Integración 1275/1275 con la configuración por defecto.
    - **R2b, comprobación contra Neon** (decisión del usuario): en el preview de la rama apenas
      `totalsByBucket` esté, siempre antes del merge; se le avisa al usuario en ese momento.
-   - **Siguiente slice del núcleo**: R2b, contrato en curso (`architect-r2b`, rama
-     `nucleo/r2b-contrato`). R2b (cortes por tramo y atajos de mes, «Semana anterior»
-     como rótulo). Orden del mapa: R2a → R2b → R3 → R4 → R5 → R6 → R7, con R8 después de R2a y
+   - **R2b en `main`** (2026-10-09): seis revisiones, ronda de correcciones, corrida final en verde
+     y la comprobación contra Neon del usuario pasada en el preview de `6561286`
+     (`correcciones-nucleo-reportes-r2b-revisiones.md`, «Cierre»). El preview de Vercel tiene
+     `DATABASE_URL` (rama `preview` de Neon), `BETTER_AUTH_SECRET` y `BETTER_AUTH_URL` propios;
+     `BETTER_AUTH_URL` quedó cargado solo para la rama `nucleo/r2b-atajos`.
+   - **Siguiente slice del núcleo**: R3 (subgrupos, tarea y etiqueta), o R8 (cambiar el rol), que
+     solo depende de R2a. Orden del mapa: R2a → R2b → R3 → R4 → R5 → R6 → R7, con R8 después de R2a y
      R9 después de R4.
    - **Deuda nueva**: C5 de R2a (`RangePicker` es la tercera copia del calendario de mes: sumarlo
      al `DayCalendar` compartido); la deuda de R1 (C1, `rejection` y la lectura del diario a
      `src/test/`); `.claude/worktrees/` sin ignorar en ESLint (un worktree aislado de un agente
-     rompe `npm run lint`); días anteriores a 1953 con desplazamientos de segundos empiezan
+     rompe `npm run lint`); la navegación del shell da desplazamiento horizontal a 320 y 375 px;
+     `role="list"` en las listas sin viñetas de todo el proyecto (N2 de R2b); los e2e de reportes
+     sin salto cerca de la medianoche (T3 de R2b); días anteriores a 1953 con desplazamientos de segundos empiezan
      hasta 59 s tarde (antes del piso de 2000, sin efecto).
 1. Deuda chica sin slice:
    - `pickDate` (`e2e/tracker-page.ts`) no espera el foco del disparador al cerrar el calendario:
