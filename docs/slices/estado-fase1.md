@@ -60,17 +60,24 @@ vacío del owner y `renewWorkspace` se corta.
      Integración 1275/1275 con la configuración por defecto.
    - **R2b, comprobación contra Neon** (decisión del usuario): en el preview de la rama apenas
      `totalsByBucket` esté, siempre antes del merge; se le avisa al usuario en ese momento.
-   - **R2b en implementación** en `nucleo/r2b-atajos` (árbol principal), desde `9f5b82c`, con el
-     contrato `nucleo-reportes-r2b-atajos-cliente-y-fecha.md` en `main` (aprobado en dos rondas).
-     Partido en A (atajos y cliente) y B (fecha, commits al final); si Neon se demora, A se
-     mergea como R2b y B sigue como R2c. `backend-r2b` hace el paso 1; con su aviso arrancan
-     frontend, e2e y test-engineer. Bases: `clock_test_backendr2b`, `clock_test_frontendr2b`,
-     `clock_test_engineer_r2b`, `clock_e2er2b`. Orden del mapa: R2a → R2b → R3 → R4 → R5 → R6 → R7, con R8 después de R2a y
+   - **R2b listo para mergear, salvo Neon**, en `nucleo/r2b-atajos` (árbol principal, pusheada a
+     `origin`), HEAD `1ba9462`. Seis revisiones aprobadas, ronda de correcciones cerrada y corrida
+     final en verde (`correcciones-nucleo-reportes-r2b-revisiones.md`, «Cierre»). **Falta la
+     comprobación contra Neon del usuario** (§6.3 del contrato) en el preview
+     https://clock-idbieevpr-zapmaxvevos-projects.vercel.app (de `6561286`; vale para HEAD porque
+     `totalsByBucket` y `dayBuckets` no cambiaron desde `51fe0ce`). Con ella en verde: anotarla en
+     el cierre, merge `--no-ff` a `main` y push. Si falla por el driver, `backend-r2b` aplica la
+     alternativa de D-R2b-7 (un parámetro por corte). Ya no se parte en R2b + R2c: los commits
+     quedaron intercalados.
+   - **Siguiente slice del núcleo**: R3 (subgrupos, tarea y etiqueta), o R8 (cambiar el rol), que
+     solo depende de R2a. Orden del mapa: R2a → R2b → R3 → R4 → R5 → R6 → R7, con R8 después de R2a y
      R9 después de R4.
    - **Deuda nueva**: C5 de R2a (`RangePicker` es la tercera copia del calendario de mes: sumarlo
      al `DayCalendar` compartido); la deuda de R1 (C1, `rejection` y la lectura del diario a
      `src/test/`); `.claude/worktrees/` sin ignorar en ESLint (un worktree aislado de un agente
-     rompe `npm run lint`); días anteriores a 1953 con desplazamientos de segundos empiezan
+     rompe `npm run lint`); la navegación del shell da desplazamiento horizontal a 320 y 375 px;
+     `role="list"` en las listas sin viñetas de todo el proyecto (N2 de R2b); los e2e de reportes
+     sin salto cerca de la medianoche (T3 de R2b); días anteriores a 1953 con desplazamientos de segundos empiezan
      hasta 59 s tarde (antes del piso de 2000, sin efecto).
 1. Deuda chica sin slice:
    - `pickDate` (`e2e/tracker-page.ts`) no espera el foco del disparador al cerrar el calendario:
