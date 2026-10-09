@@ -156,7 +156,7 @@ function dateGroupOf(
 /** Los grupos que se ordenan por duración y nombre: todos menos la fecha. */
 type NamedGroup = Exclude<ReportGroup, ReportDateGroup>;
 
-/** Lo que el orden compara de un grupo; `null` es «Sin proyecto» o «Sin cliente». */
+/** Lo que el orden compara de un grupo; `null` es «Sin proyecto», «Sin cliente», «Sin tarea» o «Sin etiqueta». */
 function sortKeyOf(
   group: NamedGroup,
 ): { readonly id: string; readonly name: string } | null {
@@ -167,12 +167,16 @@ function sortKeyOf(
       return group.project;
     case "client":
       return group.client;
+    case "task":
+      return group.task;
+    case "tag":
+      return group.tag;
   }
 }
 
 /**
- * RP-12, D-R2a-3: duración descendente; con la misma, por nombre, y «Sin
- * proyecto» o «Sin cliente» después de los que tienen nombre.
+ * RP-12, D-R2a-3: duración descendente; con la misma, por nombre, y los «Sin
+ * …» después de los que tienen nombre.
  */
 function compareGroups(left: NamedGroup, right: NamedGroup): number {
   if (left.seconds !== right.seconds) {
@@ -252,6 +256,10 @@ async function readGroups(
         clientGroupOf,
         compareGroups,
       );
+    case "task":
+    case "tag":
+      // Hasta que llegue la lectura por niveles, ningún pedido devuelve otra cosa (§7 de R3).
+      throw new Error(`La agrupación ${groupBy} llega con la lectura por niveles.`);
     case "date": {
       // Los cortes solo para la fecha; el primero y el fin son los de `span`.
       const buckets = dayBuckets(read.range.first, read.range.last, read.timeZone);

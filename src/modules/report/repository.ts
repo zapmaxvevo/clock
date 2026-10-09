@@ -1,6 +1,6 @@
 import { and, eq, gte, isNotNull, lt, sql } from "drizzle-orm";
 
-import { db } from "@/server/db";
+import { db, type Transaction } from "@/server/db";
 import {
   client,
   membership,
@@ -12,11 +12,76 @@ import {
 import type { MembershipStatus } from "@/server/permissions";
 import type { TimeBuckets } from "@/server/time";
 
+import type { ReportGroupBy } from "./schema";
 // Solo el tipo: el alcance lo construye el service (D-R2a-1). El ciclo se borra al compilar.
 import type { ReportScope } from "./service";
 
+type Executor = Transaction | typeof db;
+
 /** El intervalo de instantes que lee el reporte: `[from, to)`. */
 export type ReportSpan = { readonly from: Date; readonly to: Date };
+
+type StoredProject = {
+  readonly id: string;
+  readonly name: string;
+  readonly color: string;
+};
+
+type NamedRef = { readonly id: string; readonly name: string };
+
+/** Lo que una fila dice de uno de sus niveles: el grupo y lo que se muestra de él. */
+export type LevelGroupRow =
+  | {
+      readonly kind: "person";
+      readonly userId: string;
+      /** `user.name`, el de Google. */
+      readonly accountName: string;
+      /** `user_preference.display_name`, o `null`. */
+      readonly displayName: string | null;
+      readonly status: MembershipStatus;
+    }
+  | {
+      readonly kind: "project";
+      /** `null` es «Sin proyecto». */
+      readonly project: StoredProject | null;
+      readonly client: NamedRef | null;
+    }
+  /** `null` es «Sin cliente»: sin proyecto o de un proyecto sin cliente. */
+  | { readonly kind: "client"; readonly client: NamedRef | null }
+  | {
+      readonly kind: "task";
+      /** `null` es «Sin tarea», y entonces el proyecto también. */
+      readonly task: NamedRef | null;
+      readonly project: StoredProject | null;
+    }
+  /** `null` es «Sin etiqueta»: la entrada no tiene ninguna. */
+  | { readonly kind: "tag"; readonly tag: NamedRef | null }
+  | {
+      readonly kind: "date";
+      /** La posición del tramo en `buckets.buckets`, desde 0. */
+      readonly bucket: number;
+    };
+
+export type LevelTotalRow = {
+  /** Uno por dimensión pedida, en el mismo orden. */
+  readonly groups: readonly LevelGroupRow[];
+  readonly seconds: number;
+  readonly billableSeconds: number;
+};
+
+/** Lo que lee `totalsByLevels`: el intervalo y por qué dimensiones agrupa. */
+export type ReportLevelRead = {
+  readonly span: ReportSpan;
+  /** De una a tres, sin repetir. */
+  readonly dimensions: readonly ReportGroupBy[];
+  /** Los tramos de `span` si `date` es una de las dimensiones; si no, `null`. */
+  readonly buckets: TimeBuckets | null;
+};
+
+export type EntryTotals = {
+  readonly seconds: number;
+  readonly billableSeconds: number;
+};
 
 export type PersonTotalRow = {
   readonly userId: string;
@@ -148,6 +213,31 @@ function totalsBy<Column extends GroupColumn>(
  * ya agrupadas (D-R2a-8). Sin orden: lo pone el service.
  */
 export const reportRepository = {
+  /**
+   * Una fila por combinación de grupos con horas cerradas en `read.span`,
+   * dentro de `scope`. Con la etiqueta entre las dimensiones, una entrada suma
+   * en cada una de las suyas (D-R3-3). Una sentencia; sin orden.
+   */
+  async totalsByLevels(
+    scope: ReportScope,
+    read: ReportLevelRead,
+    tx: Executor = db,
+  ): Promise<readonly LevelTotalRow[]> {
+    // La firma es la final; el cuerpo llega con el paso 3 de R3.
+    void tx;
+    throw new Error("totalsByLevels llega con el paso 3 de R3.");
+  },
+
+  /** El total y el facturable reales de `span`, sin unir etiquetas. Una sentencia, una fila. */
+  async entryTotals(
+    scope: ReportScope,
+    span: ReportSpan,
+    tx: Executor = db,
+  ): Promise<EntryTotals> {
+    void tx;
+    throw new Error("entryTotals llega con el paso 3 de R3.");
+  },
+
   /** Una fila por persona con horas cerradas en `span`, dentro de `scope`. Una sentencia. */
   async totalsByPerson(
     scope: ReportScope,

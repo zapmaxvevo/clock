@@ -62,7 +62,14 @@ export const reportRangeParams = z
   .transform(({ desde, hasta }) => ({ first: desde, last: hasta }))
   .pipe(reportRangeInput);
 
-export const REPORT_GROUP_BYS = ["person", "project", "client", "date"] as const;
+export const REPORT_GROUP_BYS = [
+  "person",
+  "project",
+  "client",
+  "task",
+  "tag",
+  "date",
+] as const;
 export type ReportGroupBy = (typeof REPORT_GROUP_BYS)[number];
 
 /** El valor de `agrupar` en la URL de cada agrupación: con este mapa se lee y se escribe. */
@@ -70,10 +77,12 @@ export const REPORT_GROUP_PARAMS = {
   person: "persona",
   project: "proyecto",
   client: "cliente",
+  task: "tarea",
+  tag: "etiqueta",
   date: "fecha",
 } as const satisfies Record<ReportGroupBy, string>;
 
-/** `?agrupar=persona|proyecto|cliente|fecha` con `safeParse`, aparte del rango; cualquier otro valor se descarta. */
+/** `?agrupar=persona|proyecto|cliente|tarea|etiqueta|fecha` con `safeParse`, aparte del rango; cualquier otro valor se descarta. */
 export const reportGroupParams = z
   .object({ agrupar: z.string() })
   .transform(({ agrupar }) =>
@@ -135,6 +144,28 @@ const reportClientGroup = z.object({
   seconds: z.number().int().min(0),
 });
 
+const reportTaskGroup = z.object({
+  kind: z.literal("task"),
+  /**
+   * `null` es «Sin tarea»: las entradas de un proyecto sin tarea y las sin
+   * proyecto (RP-28). Hecha o no (RP-29).
+   */
+  task: z.object({ id: z.uuid(), name: z.string() }).nullable(),
+  /** El proyecto de la tarea, en gris; `null` con «Sin tarea». */
+  project: z
+    .object({ id: z.uuid(), name: z.string(), color: z.enum(PALETTE_KEYS) })
+    .nullable(),
+  seconds: z.number().int().min(0),
+});
+
+const reportTagGroup = z.object({
+  kind: z.literal("tag"),
+  /** `null` es «Sin etiqueta»: las entradas sin ninguna (RP-28). Archivada o no. */
+  tag: z.object({ id: z.uuid(), name: z.string() }).nullable(),
+  /** Una entrada con varias etiquetas suma en cada una (RP-18, D-R3-3). */
+  seconds: z.number().int().min(0),
+});
+
 const reportDateGroup = z.object({
   kind: z.literal("date"),
   /** El día civil en la zona de quien mira (RP-22). */
@@ -162,7 +193,10 @@ export const reportReadyState = z.object({
   scope: z.enum(["everyone", "self"]),
   /** La zona con que se cortaron los días, tal como está en el perfil (D-R2a-5). */
   timeZone: z.string(),
-  /** Exactos: la suma de los grupos (D-R2a-7). */
+  /**
+   * Exactos y reales: la suma de los grupos (D-R2a-7) o, por etiqueta, la de
+   * las entradas, que no pasa por la unión con las etiquetas (D-R3-3).
+   */
   totalSeconds: z.number().int().min(0),
   billableSeconds: z.number().int().min(0),
   /** En el orden de D-R2a-3. */
@@ -171,6 +205,8 @@ export const reportReadyState = z.object({
       reportPersonGroup,
       reportProjectGroup,
       reportClientGroup,
+      reportTaskGroup,
+      reportTagGroup,
       reportDateGroup,
     ]),
   ),
@@ -181,6 +217,8 @@ export type ReportGroup = ReportReadyState["groups"][number];
 export type ReportPersonGroup = z.infer<typeof reportPersonGroup>;
 export type ReportProjectGroup = z.infer<typeof reportProjectGroup>;
 export type ReportClientGroup = z.infer<typeof reportClientGroup>;
+export type ReportTaskGroup = z.infer<typeof reportTaskGroup>;
+export type ReportTagGroup = z.infer<typeof reportTagGroup>;
 export type ReportDateGroup = z.infer<typeof reportDateGroup>;
 export type ReportShortcut = z.infer<typeof reportShortcut>;
 

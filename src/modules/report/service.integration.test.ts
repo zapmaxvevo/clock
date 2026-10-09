@@ -445,7 +445,8 @@ describe("la agrupación y el orden (D-R2a-3, D-R2a-8, RP-12, RP-18)", () => {
     await seedClosed(other, "2026-09-29T14:00:00Z", 600);
     await seedClosed(other, "2026-09-30T14:00:00Z", 30, { billable: true });
 
-    for (const groupBy of REPORT_GROUP_BYS) {
+    // Las cuatro de R2b hasta que llegue la lectura por niveles (paso 3 de R3).
+    for (const groupBy of ["person", "project", "client", "date"] as const) {
       const state = await readyState(owner, { range: lastWeek, groupBy });
       expect([
         groupBy,

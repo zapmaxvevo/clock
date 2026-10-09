@@ -9,6 +9,8 @@ import type {
   ReportPersonGroup,
   ReportProjectGroup,
   ReportReadyState,
+  ReportTagGroup,
+  ReportTaskGroup,
 } from "@/modules/report/schema";
 import { formatDuration } from "@/server/time";
 
@@ -22,6 +24,8 @@ const GROUP_COLUMN_HEADINGS = {
   person: reportLabels.byPerson,
   project: reportLabels.byProject,
   client: reportLabels.byClient,
+  task: "Tarea",
+  tag: "Etiqueta",
   date: reportLabels.byDate,
 } as const satisfies Record<ReportGroupBy, string>;
 
@@ -111,6 +115,10 @@ function groupKey(group: ReportGroup): string {
       return group.project === null ? "sin-proyecto" : group.project.id;
     case "client":
       return group.client === null ? "sin-cliente" : group.client.id;
+    case "task":
+      return group.task === null ? "sin-tarea" : group.task.id;
+    case "tag":
+      return group.tag === null ? "sin-etiqueta" : group.tag.id;
     case "date":
       return group.dayKey;
   }
@@ -125,6 +133,10 @@ function GroupHeading({ group }: { readonly group: ReportGroup }): ReactElement 
       return <ProjectHeading group={group} />;
     case "client":
       return <ClientHeading group={group} />;
+    case "task":
+      return <TaskHeading group={group} />;
+    case "tag":
+      return <TagHeading group={group} />;
     case "date":
       return <time dateTime={group.dayKey}>{group.label}</time>;
   }
@@ -168,4 +180,18 @@ function ClientHeading({ group }: { readonly group: ReportClientGroup }) {
     return <span className="text-muted-foreground">{projectLabels.noClient}</span>;
   }
   return <span className="truncate">{group.client.name}</span>;
+}
+
+function TaskHeading({ group }: { readonly group: ReportTaskGroup }) {
+  if (group.task === null) {
+    return <span className="text-muted-foreground">Sin tarea</span>;
+  }
+  return <span className="truncate">{group.task.name}</span>;
+}
+
+function TagHeading({ group }: { readonly group: ReportTagGroup }) {
+  if (group.tag === null) {
+    return <span className="text-muted-foreground">Sin etiqueta</span>;
+  }
+  return <span className="truncate">{group.tag.name}</span>;
 }

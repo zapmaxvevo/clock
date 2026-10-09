@@ -17,7 +17,6 @@ import { actorIn, workspaceOf } from "@/test/time-entry";
 
 import { reportRepository } from "./repository";
 import {
-  REPORT_GROUP_BYS,
   reportGroupParams,
   reportRangeParams,
   type ReportGroupBy,
@@ -72,8 +71,12 @@ const roles: readonly Role[] = [
 ];
 const notActive: readonly MembershipStatus[] = ["inactive", "invited"];
 
-/** Las agrupaciones que se recorren en cada caso de alcance. */
-const groupBys: readonly ReportGroupBy[] = REPORT_GROUP_BYS;
+/**
+ * Las agrupaciones que se recorren en cada caso de alcance. Las cuatro de R2b
+ * hasta que llegue la lectura por niveles (paso 3 de R3); después,
+ * `REPORT_GROUP_BYS`.
+ */
+const groupBys: readonly ReportGroupBy[] = ["person", "project", "client", "date"];
 
 /**
  * Workspace A: owner, admin, `project_manager` responsable de P, `team_manager`,
@@ -267,6 +270,10 @@ function summaryOf(state: ReportState) {
           return { projectId: group.project?.id ?? null, seconds: group.seconds };
         case "client":
           return { clientId: group.client?.id ?? null, seconds: group.seconds };
+        case "task":
+          return { taskId: group.task?.id ?? null, seconds: group.seconds };
+        case "tag":
+          return { tagId: group.tag?.id ?? null, seconds: group.seconds };
         case "date":
           return { dayKey: group.dayKey, seconds: group.seconds };
       }
@@ -301,6 +308,11 @@ function rowOf(
       return { projectId: values.place.projectId, seconds };
     case "client":
       return { clientId: values.place.clientId, seconds };
+    // El fixture no tiene tareas ni etiquetas.
+    case "task":
+      return { taskId: null, seconds };
+    case "tag":
+      return { tagId: null, seconds };
     case "date":
       return { dayKey: entryDay, seconds };
   }
@@ -361,6 +373,10 @@ function everyoneInAGroups(groupBy: ReportGroupBy) {
         { clientId: a.clientId, seconds: 150 * 60 },
         { clientId: null, seconds: 60 * 60 },
       ];
+    case "task":
+      return [{ taskId: null, seconds: 210 * 60 }];
+    case "tag":
+      return [{ tagId: null, seconds: 210 * 60 }];
     case "date":
       return [{ dayKey: entryDay, seconds: 210 * 60 }];
   }
