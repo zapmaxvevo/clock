@@ -127,10 +127,7 @@ vacío del owner y `renewWorkspace` se corta.
      test-engineer y e2e de R4b todavía no arrancaron: se lanzan con el hash del paso 6, como
      en R4a, con `clock_r4b_front`, `clock_r4b_test` y `clock_r4b_e2e` (esta migrada), y
      `parity-analyst`/`parity-reviewer` con base propia. R4b lleva la revisión de seguridad
-     completa (§7, paso 11, B). En paralelo, `flaky-tracker` (`e2e-tester` en un worktree
-     aislado, rama `fix/tracker-blur-flaky`, base `clock_flaky_tracker`, puerto 3110) diagnostica
-     `e2e/tracker.spec.ts:477`: arregla solo si la causa está en el test; si está en `src/`,
-     vuelve con la propuesta. Mirar `git worktree list` y `git branch` al retomar. R8 sigue solo
+     completa (§7, paso 11, B). El flaky de `e2e/tracker.spec.ts:477` quedó arreglado en `main` (`d5bc75e`, fast-forward): el test suponía que `page.clock.install()` detiene el reloj, y en Playwright 1.63 solo lo hace `pauseAt`, así que el rebote de 500 ms guardaba antes del blur. `stopClock(page)` en `e2e/clock.ts`; 20/20 con el arreglo, 5 de 20 fallan sin él. Deuda: `stopClock` también en `:383` y `:403`, que dicen tener el reloj detenido (pasan 40/40). `nucleo/r4b` lo recibe al mergear `main`. Mirar `git worktree list` y `git branch` al retomar. R8 sigue solo
      en contrato. Después de R4b: R10, R5, R6, R7 y R9.
 
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
