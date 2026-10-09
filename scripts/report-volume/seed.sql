@@ -1,4 +1,4 @@
--- Volumen sintético del reporte (contrato de R2a, §6.1). Determinista: `setseed`
+-- Volumen sintético del reporte (contrato de R2a, §6.1, y de R3, §6.1). Determinista: `setseed`
 -- fija `random()` y los ids salen de contadores. Se corre una vez sobre una base
 -- vacía migrada hasta la 0014; las fechas son relativas al día en que corre.
 --
@@ -8,7 +8,8 @@
 -- 24 proyectos (16 con cliente, 4 archivados, la mitad con tareas), tres años
 -- de días hábiles que terminan ayer con 8 entradas por persona y por día entre
 -- las 08:00 y las 19:00 de Buenos Aires, y un timer abierto para cinco
--- personas. Las etiquetas llegan con R3.
+-- personas. Doce etiquetas, dos archivadas, en el 60 % de las entradas
+-- cerradas.
 
 begin;
 
@@ -155,6 +156,43 @@ select
   format('volume-user-%s', lpad(i::text, 2, '0')),
   now() - interval '1 hour'
 from generate_series(2, 6) as i;
+
+-- Doce etiquetas; la 11 y la 12, archivadas.
+insert into tag (id, workspace_id, name, archived_at)
+select
+  format('00000000-0000-4000-8004-%s', lpad(i::text, 12, '0'))::uuid,
+  '00000000-0000-4000-8000-000000000001',
+  format('Etiqueta %s', i),
+  case when i > 10 then now() end
+from generate_series(1, 12) as i;
+
+-- Después de las entradas, que así no cambian: Q1 a Q6 se comparan con R2a y
+-- R2b. Cada entrada cerrada, con su propio `random()`: 40 % sin etiquetas, 35 %
+-- con una, 20 % con dos y 5 % con tres, consecutivas desde una al azar.
+with drawn as (
+  select ordered.id, random() as r_count, random() as r_first
+  from (select id from time_entry where ended_at is not null order by id) as ordered
+),
+counted as (
+  select
+    id,
+    case
+      when r_count < 0.40 then 0
+      when r_count < 0.75 then 1
+      when r_count < 0.95 then 2
+      else 3
+    end as tags,
+    floor(r_first * 12)::int as first
+  from drawn
+)
+insert into time_entry_tag (workspace_id, time_entry_id, tag_id)
+select
+  '00000000-0000-4000-8000-000000000001',
+  id,
+  format('00000000-0000-4000-8004-%s', lpad(((first + k) % 12 + 1)::text, 12, '0'))::uuid
+from counted
+cross join generate_series(0, 2) as k
+where k < tags;
 
 commit;
 
