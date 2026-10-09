@@ -12,17 +12,17 @@ de a dos.
 ## Revisiones
 
 Cuatro de seis corrieron sobre `1b1f1bc..a5d8fc6` (backend y seguridad, sobre `..7d8c1a7`).
-Faltan **código** (`clean-code-reviewer`) y **paridad** (`parity-reviewer`, que entrega el
+Código y paridad corrieron sobre `1b1f1bc..a5d8fc6`; paridad entregó el texto de §7 para `reportes.md`, sección «13. Núcleo, R10», aplicado por el team-lead. Paridad corrió con su base `clock_r10a_parity` (`parity-reviewer`, que entrega el
 texto de §7 para `reportes.md`, sección «13. Núcleo, R10»).
 
-| Revisión  | Agente              | Veredicto                         |
-| --------- | ------------------- | --------------------------------- |
-| Backend   | `backend-reviewer`  | aprobado, dos menores y dos notas |
-| Seguridad | `security-auditor`  | aprobado (corta, §7 paso 8)       |
-| Frontend  | `frontend-reviewer` | aprobado, dos notas               |
-| Tests     | `test-reviewer`     | cambios requeridos: un mayor      |
-| Código    | —                   | pendiente                         |
-| Paridad   | —                   | pendiente                         |
+| Revisión  | Agente                | Veredicto                              |
+| --------- | --------------------- | -------------------------------------- |
+| Backend   | `backend-reviewer`    | aprobado, dos menores y dos notas      |
+| Seguridad | `security-auditor`    | aprobado (corta, §7 paso 8)            |
+| Frontend  | `frontend-reviewer`   | aprobado, dos notas                    |
+| Tests     | `test-reviewer`       | cambios requeridos: un mayor           |
+| Código    | `clean-code-reviewer` | aprobado, cinco menores y cuatro notas |
+| Paridad   | `parity-reviewer`     | aprobado, sin hallazgos, dos notas     |
 
 Lo que verificaron:
 
@@ -43,16 +43,37 @@ Lo que verificaron:
 - **Tests**: cada criterio de 1 a 10 con su test; e2e que esperan la pantalla nueva y
   `setWeekStart` aislado por test.
 
-## Ronda de correcciones (pendiente)
+- **Paridad**: primer día domingo, lunes, miércoles y sábado; Buenos Aires, Madrid y Apia; los
+  cortes con un grupo de tiempo a cualquier altura (Mes → Persona → Semana); rótulos con y sin
+  año y con los dos formatos de fecha; atajos; los intercambios de D-R10-6; la validación de la
+  URL; los filtros; el alcance de un member con `personas`; 320 y 375 px sin desborde en `main`.
+  N2: el hueco de T1 es solo de tests, la pantalla corta bien Fecha → Semana.
+
+## Ronda de correcciones
+
+T3 aplicado por el team-lead en §8.1 del contrato (criterio 1). El resto, a un `backend-dev`.
 
 | Id  | Origen  | Para          | Hallazgo                                                                                                                                                                                                                                                   |
 | --- | ------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | T1  | tests   | `backend-dev` | **Mayor.** Una fecha arriba no corta la semana ni el mes: `path.filter(isTimeRow).filter((r) => r.kind !== "date")` en `service.ts:182` pasa todo. Sumar `[date, week]` y `[date, month]` al describe del criterio 6 (`service.integration.test.ts:3011`). |
 | T2  | tests   | `backend-dev` | El corte repetido de `weekBuckets` sin test: `weekBuckets("2011-12-30", "2012-01-12", 6, "Pacific/Apia")`, primeros días 30/12, 31/12 y 07/01, los dos primeros cortes iguales (`time.test.ts:527`).                                                       |
 | B1  | backend | `backend-dev` | `countedDays` llama `own` al grupo de más arriba (`service.ts:183`): renombrar.                                                                                                                                                                            |
+| C1  | código  | `backend-dev` | `dayBuckets` es `civilBuckets` con paso de un día (`src/server/time/index.ts:460-470` y `:502-525`): reescribirlo sobre `civilBuckets`.                                                                                                                    |
+| C2  | código  | `backend-dev` | `DayRange` (`service.ts:165`) repite `ReportRange` y el retorno de `bucketDays`: un `DayKeyRange` exportado de `src/server/time`.                                                                                                                          |
+| C3  | código  | `backend-dev` | `reportBucketsOf` y `bucketsWithin` (`service.ts:620-649`) recorren lo mismo: un helper `bucketsFor(dimensions, bucketOf)`.                                                                                                                                |
+| C4  | código  | `backend-dev` | `isTimeRow` e `isTimeGroup` (`service.ts:160` y `:287`) con el mismo cuerpo: un guard genérico `hasTimeKind`.                                                                                                                                              |
+| C5  | código  | `backend-dev` | `call[1] as ReportLevelRead` (`service.integration.test.ts:3237`): sin aserción, como en `:1769`.                                                                                                                                                          |
+| C6  | código  | `backend-dev` | Nota: `earliestDayKey` para el `last` de la intersección (`service.ts:190`).                                                                                                                                                                               |
+| C7  | código  | `backend-dev` | Nota: el doc de `partialOf` (`service.ts:201`) nombra `first` y `last`; el parámetro es `unit`.                                                                                                                                                            |
+| C8  | código  | `backend-dev` | Nota: `PartialHeading` con `children: ReactNode`, sin el `<span>` de `group-heading.tsx:41`.                                                                                                                                                               |
+| C9  | código  | `backend-dev` | Nota: quitar el `export` de `partialDays` (`e2e/reports-page.ts:114`). Los tipos de grupo sin uso de `schema.ts` quedan, por el precedente de `ReportClientGroup` y `ReportTagGroup` (decisión del team-lead).                                             |
 | T3  | tests   | team-lead     | Nota: la variante con `TZDate` del mutante «la 00:00 armada a mano» es equivalente en Santiago y Apia; anotarlo en el contrato (§8.1, criterio 1).                                                                                                         |
 
 ## Para R10b
+
+- **N1 de paridad**: a 320 px, una semana en el tercer nivel con «solo …» ocupa hasta siete
+  renglones, con el «–» solo en uno. Sin desborde. Va con F1: un espacio que no corta antes del
+  «–» en `dayRangeLabel`, o la tabla con `table-fixed`.
 
 - **F1 de frontend**: `truncate` dentro de una tabla de ancho automático no recorta, así que un
   nombre de persona largo ensancha la tabla a 320 y 375 px (368 px en una caja de 270). Previo a
