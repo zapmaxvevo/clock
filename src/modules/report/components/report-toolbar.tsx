@@ -41,7 +41,7 @@ export function ReportToolbar({ state }: { readonly state: ReportReadyState }) {
   const isCurrentWeek = sameRange(range, currentWeek);
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex max-w-full min-w-0 flex-wrap items-center gap-2">
       <div className="flex items-center gap-1">
         {state.previous !== null && (
           <Link
@@ -118,14 +118,14 @@ export function ReportToolbar({ state }: { readonly state: ReportReadyState }) {
           )}
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex max-w-full min-w-0 flex-wrap items-center gap-2">
         <span id={FILTER_BY_LABEL_ID} className="text-muted-foreground text-sm">
           {reportLabels.filterBy}
         </span>
         <div
           role="group"
           aria-labelledby={FILTER_BY_LABEL_ID}
-          className="flex flex-wrap items-center gap-2"
+          className="flex max-w-full min-w-0 flex-wrap items-center gap-2"
         >
           {FILTER_KINDS.map((kind) => (
             <FilterPicker

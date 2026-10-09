@@ -21,6 +21,7 @@ import {
   applyFilter,
   chosenKeys,
   filterSummary,
+  hasNoMatches,
   visibleOptions,
   type FilterKind,
   type FilterOption,
@@ -86,13 +87,19 @@ export function FilterPicker({
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger render={<Button variant="outline" size="sm" />}>
-        {reportLabels.filterChoice(
-          filterNames[kind],
-          filterSummary(kind, chosenKeys(filters, kind), options),
-        )}
+      <PopoverTrigger
+        render={<Button variant="outline" size="sm" className="max-w-full" />}
+      >
+        {/* Un nombre largo se recorta a la vista; el nombre accesible sigue entero. */}
+        <span className="truncate">
+          {reportLabels.filterChoice(
+            filterNames[kind],
+            filterSummary(kind, chosenKeys(filters, kind), options),
+          )}
+        </span>
       </PopoverTrigger>
       <PopoverContent
+        aria-label={filterNames[kind]}
         // Con un catálogo largo la lista se desplaza y «Aplicar» queda a la vista.
         className="max-h-(--available-height) w-80 max-w-(--available-width) p-0"
         align="start"
@@ -143,11 +150,6 @@ export function FilterPanel({
 }: FilterPanelProps) {
   const retiredHeadingId = useId();
   const { current, retired } = visibleOptions(options, query);
-  // «Sin proyecto» no se busca: hay coincidencias si queda alguna de las otras.
-  const hasSearchable = (list: readonly FilterOption[]) =>
-    list.some((option) => option.key !== REPORT_WITHOUT_PROJECT);
-  const noMatches =
-    hasSearchable(options) && !hasSearchable(current) && retired.length === 0;
   const chosenSet = new Set(chosen);
 
   return (
@@ -192,7 +194,7 @@ export function FilterPanel({
             ))}
           </div>
         )}
-        {noMatches && (
+        {hasNoMatches(options, query) && (
           <p className="text-muted-foreground px-1.5 py-2">
             {reportLabels.filterNoMatches}
           </p>

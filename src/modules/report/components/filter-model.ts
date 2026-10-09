@@ -116,6 +116,21 @@ export function visibleOptions(
   };
 }
 
+/**
+ * «Nada coincide con la búsqueda.»: con algo escrito, no queda visible ninguna
+ * opción que se busque. «Sin proyecto» no cuenta, porque no se filtra; con el
+ * catálogo vacío también vale. Sin búsqueda, nunca.
+ */
+export function hasNoMatches(options: readonly FilterOption[], query: string): boolean {
+  if (normalizeSearch(query) === "") {
+    return false;
+  }
+  const { current, retired } = visibleOptions(options, query);
+  return [...current, ...retired].every(
+    (option) => option.key === REPORT_WITHOUT_PROJECT,
+  );
+}
+
 /** «todos», el nombre de la única o la cantidad (D-R4-8). */
 export function filterSummary(
   kind: FilterKind,

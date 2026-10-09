@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import {
   NO_REPORT_FILTERS,
   REPORT_MAX_ROWS,
@@ -97,31 +98,28 @@ export function ReportView({ state }: { readonly state: ReportReadyState }) {
  * tenga horas, con «Quitar filtros» al mismo período y la misma agrupación.
  */
 function EmptyRow({ state }: { readonly state: ReportReadyState }) {
-  if (!hasReportFilters(state.filters)) {
-    return (
-      <tr>
-        <td colSpan={2} className="text-muted-foreground px-3 py-6 text-center">
-          {reportLabels.empty}
-        </td>
-      </tr>
-    );
-  }
+  const filtered = hasReportFilters(state.filters);
   return (
     <tr>
-      <td colSpan={2} className="text-muted-foreground px-3 py-6 text-center">
-        <div className="flex flex-col items-center gap-2">
-          <p>{reportLabels.emptyFiltered}</p>
-          <Link
-            href={reportHref({
-              range: state.range,
-              groupBy: state.groupBy,
-              subgroups: state.subgroups,
-              filters: NO_REPORT_FILTERS,
-            })}
-            className={buttonVariants({ variant: "outline", size: "sm" })}
-          >
-            {reportLabels.clearFilters}
-          </Link>
+      <td colSpan={2} className="px-3 py-6">
+        <div className="flex flex-col items-center gap-2 text-center">
+          <p className="text-muted-foreground">
+            {filtered ? reportLabels.emptyFiltered : reportLabels.empty}
+          </p>
+          {filtered && (
+            <Link
+              href={reportHref({
+                range: state.range,
+                groupBy: state.groupBy,
+                subgroups: state.subgroups,
+                filters: NO_REPORT_FILTERS,
+              })}
+              // Con `cn`, el borde del contorno reemplaza al transparente de la base.
+              className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+            >
+              {reportLabels.clearFilters}
+            </Link>
+          )}
         </div>
       </td>
     </tr>

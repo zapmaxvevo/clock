@@ -171,6 +171,24 @@ describe("FilterPanel (D-R4-8, §5.3)", () => {
     expect(markup).not.toContain('role="group"');
   });
 
+  it("con el catálogo vacío, el mensaje solo con algo escrito", () => {
+    const empty = (query: string) =>
+      renderToStaticMarkup(
+        <FilterPanel
+          kind="projects"
+          options={filterOptionsOf({ clients: [], projects: [] }, "projects")}
+          chosen={[]}
+          query={query}
+          error={null}
+          onQueryChange={() => undefined}
+          onToggle={() => undefined}
+          onApply={() => undefined}
+        />,
+      );
+    expect(empty("")).not.toContain("Nada coincide");
+    expect(empty("acme")).toContain("Nada coincide con la búsqueda.");
+  });
+
   it("con coincidencias, sin el mensaje", () => {
     expect(render("projects", { query: "dise" })).not.toContain("Nada coincide");
     expect(render("clients", { query: "bosq" })).not.toContain("Nada coincide");

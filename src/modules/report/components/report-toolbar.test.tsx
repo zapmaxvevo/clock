@@ -362,6 +362,17 @@ describe("ReportToolbar con filtros (D-R4-8, D-R4-10)", () => {
     expect(markup).not.toContain("Personas");
   });
 
+  it("el botón no pasa del ancho disponible y recorta lo elegido a la vista", () => {
+    const markup = render({ filterOptions: options, filters });
+    const start = markup.indexOf(">Filtrar por</span>");
+    const buttons = [...markup.slice(start).matchAll(/<button([^>]*)>(.*?)<\/button>/g)];
+    expect(buttons).toHaveLength(2);
+    for (const [, attributes, content] of buttons) {
+      expect(attributes).toMatch(/class="[^"]*max-w-full/);
+      expect(content).toMatch(/^<span class="truncate">[^<]+<\/span>$/);
+    }
+  });
+
   it("con uno, el botón dice su nombre; con dos, la cantidad", () => {
     expect(filterButtons(render({ filterOptions: options, filters }))).toEqual([
       "Clientes: Acme",

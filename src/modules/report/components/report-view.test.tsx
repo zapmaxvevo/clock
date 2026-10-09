@@ -463,6 +463,18 @@ describe("ReportView con filtros (D-R4-7)", () => {
     expect(totals(markup)).toEqual({ Total: "0:00", Facturable: "0:00" });
   });
 
+  it("«Quitar filtros» es un botón de contorno y el gris es solo del mensaje", () => {
+    const markup = render({ filters: filtered });
+    const link = /<a [^>]*>Quitar filtros<\/a>/.exec(markup)?.[0] ?? "";
+    expect(link).toContain("border-border");
+    expect(link).not.toContain("border-transparent");
+    expect(link).not.toContain("text-muted-foreground");
+    expect(markup).toMatch(
+      /<p class="[^"]*text-muted-foreground[^"]*">Ninguna entrada coincide con los filtros<\/p>/,
+    );
+    expect(markup).not.toMatch(/<td[^>]*text-muted-foreground/);
+  });
+
   it("«Sin proyecto» solo también es un filtro", () => {
     const markup = render({
       filters: { clients: [], projects: [], withoutProject: true },

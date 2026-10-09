@@ -14,6 +14,7 @@ import {
   chosenKeys,
   filterOptionsOf,
   filterSummary,
+  hasNoMatches,
   visibleOptions,
   withChosen,
   type FilterOption,
@@ -155,6 +156,35 @@ describe("chosenKeys y withChosen", () => {
       projects: [P4],
       withoutProject: false,
     });
+  });
+});
+
+describe("hasNoMatches", () => {
+  it("sin búsqueda, nunca: tampoco con el catálogo vacío", () => {
+    expect(hasNoMatches(projectOptions, "")).toBe(false);
+    expect(hasNoMatches(clientOptions, "  ")).toBe(false);
+    expect(hasNoMatches([], "")).toBe(false);
+    expect(
+      hasNoMatches(filterOptionsOf({ clients: [], projects: [] }, "projects"), ""),
+    ).toBe(false);
+  });
+
+  it("con una búsqueda que deja alguna vigente o archivada, no", () => {
+    expect(hasNoMatches(projectOptions, "dise")).toBe(false);
+    expect(hasNoMatches(projectOptions, "WEB")).toBe(false);
+    expect(hasNoMatches(clientOptions, "bosq")).toBe(false);
+  });
+
+  it("con una búsqueda que no deja ninguna, sí, aunque «Sin proyecto» siga visible", () => {
+    expect(hasNoMatches(projectOptions, "zeta")).toBe(true);
+    expect(hasNoMatches(clientOptions, "zeta")).toBe(true);
+  });
+
+  it("con el catálogo vacío y algo escrito, sí", () => {
+    expect(hasNoMatches([], "acme")).toBe(true);
+    expect(
+      hasNoMatches(filterOptionsOf({ clients: [], projects: [] }, "projects"), "acme"),
+    ).toBe(true);
   });
 });
 
