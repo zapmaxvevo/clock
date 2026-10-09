@@ -125,18 +125,17 @@ function yearRange(year: number): ReportRange {
  * «Últimas dos semanas» son la anterior y esta, no los 14 días hasta hoy.
  */
 export function shortcutRange(label: ShortcutLabel, today: CivilDay): ReportRange {
-  const week = weekStartOf(today);
   switch (label) {
     case "Hoy":
       return { first: today, last: today };
     case "Ayer":
       return { first: addDays(today, -1), last: addDays(today, -1) };
     case "Esta semana":
-      return weekRange(week);
+      return currentWeekRange(today);
     case "Semana anterior":
-      return weekRange(addDays(week, -7));
+      return lastWeekRange(today);
     case "Últimas dos semanas":
-      return { first: addDays(week, -7), last: addDays(week, 6) };
+      return { first: lastWeekRange(today).first, last: currentWeekRange(today).last };
     case "Este mes":
       return monthRange(today, 0);
     case "Mes pasado":
@@ -314,23 +313,14 @@ export function groupByLink(page: Page, groupBy: ReportGroupBy): Locator {
 }
 
 /**
- * La agrupación elegida es la única con `aria-current` entre las que hay. Se
- * leen los enlaces que dibuja la barra y no los de `GROUP_LINK`: una agrupación
- * que la pantalla todavía no ofrece no tiene enlace que marcar.
+ * La agrupación elegida es la única con `aria-current`. Una sola aserción
+ * sobre los enlaces marcados del grupo: reintenta hasta que llega la barra
+ * nueva, y falla tanto si la elegida no está marcada como si hay otra más.
  */
 export async function expectGroupBy(page: Page, groupBy: ReportGroupBy): Promise<void> {
-  await expect(groupByLink(page, groupBy)).toHaveAttribute("aria-current", "true");
-  await expect
-    .poll(() =>
-      groupByControl(page)
-        .getByRole("link")
-        .evaluateAll((links) =>
-          links
-            .filter((link) => link.getAttribute("aria-current") === "true")
-            .map((link) => link.textContent),
-        ),
-    )
-    .toEqual([GROUP_LINK[groupBy]]);
+  await expect(groupByControl(page).locator('[aria-current="true"]')).toHaveText([
+    GROUP_LINK[groupBy],
+  ]);
 }
 
 /**

@@ -65,16 +65,15 @@ import { trackerBar, uniqueSuffix } from "./tracker-page";
 
 /**
  * Recorridos de R2a y R2b del núcleo de reportes: el resumido por persona, por
- * proyecto, por cliente y por fecha, y los atajos del período (§8.2 de cada contrato), con
- * la regla de §8.3 de R2a. Cada recorrido tiene sus
- * personas —la de la sesión y las que siembra—, todas con un nombre editado
- * que lleva el sufijo del test, y solo afirma sobre sus filas o sobre
- * proyectos con ese sufijo: la base acumula personas y horas de todas las
- * corridas. El total se afirma solo con el alcance propio. El rol y el estado
- * los cambia la persona de la sesión sobre sí misma. Las entradas van en la
- * semana anterior a la de hoy y se siembran antes de abrir la pantalla; los
- * rótulos esperados se calculan con `days.ts`, no con el código que los
- * produce.
+ * proyecto, por cliente y por fecha, y los atajos del período (§8.2 de cada
+ * contrato), con la regla de §8.3 de R2a. Cada recorrido tiene sus personas
+ * —la de la sesión y las que siembra—, todas con un nombre editado que lleva
+ * el sufijo del test, y solo afirma sobre sus filas o sobre proyectos con ese
+ * sufijo: la base acumula personas y horas de todas las corridas. El total se
+ * afirma solo con el alcance propio. El rol y el estado los cambia la persona
+ * de la sesión sobre sí misma. Las entradas van en la semana anterior a la de
+ * hoy y se siembran antes de abrir la pantalla; los rótulos esperados se
+ * calculan con `days.ts`, no con el código que los produce.
  */
 
 /** Hoy en la zona por omisión de la persona, que es la que corta los días. */
@@ -500,10 +499,12 @@ test("por cliente, «Sin cliente» junta lo que no tiene proyecto y los proyecto
   await groupByLink(page, "cliente").click();
   await expectReport(page, lastWeek, "cliente", day);
 
-  // RP-28: los dos proyectos del cliente suman una fila, y «Sin cliente» junta
-  // la entrada sin proyecto con la del proyecto sin cliente. RP-12: por
-  // duración. El alcance es propio, así que el total es el de las dos filas.
+  // RP-28: las dos entradas del proyecto con cliente suman una fila, y «Sin
+  // cliente» junta la entrada sin proyecto con la del proyecto sin cliente.
+  // RP-12: por duración. El alcance es propio, así que el total es el de las
+  // dos filas.
   const expectByClient = async (): Promise<void> => {
+    await expect(page.getByText(SCOPE_SELF, { exact: true })).toBeVisible();
     await expect(groupColumnHeader(page)).toHaveText(GROUP_LINK.cliente);
     await expect(groupHeaders(page)).toHaveText([client, NO_CLIENT]);
     await expect(groupDuration(groupRow(page, client))).toHaveText("1:30");
@@ -548,6 +549,7 @@ test("por fecha, una fila por día con horas, en orden y en la zona de quien mir
   // RP-11, RP-22: un día por fila, cortado en la zona de quien mira, en orden
   // cronológico aunque el jueves tenga más horas (D-R2b-6). Los días sin horas
   // no tienen fila. El alcance es propio, así que el total es el de las filas.
+  await expect(page.getByText(SCOPE_SELF, { exact: true })).toBeVisible();
   await expect(groupColumnHeader(page)).toHaveText(GROUP_LINK.fecha);
   const [tuesdayLabel, thursdayLabel, fridayLabel] = [tuesday, thursday, friday].map(
     (civil) => weekdayLabel(civil, day),
