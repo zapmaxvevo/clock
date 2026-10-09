@@ -29,8 +29,8 @@ import { getReportState, type ReportRequest } from "./service";
  * mirar `scopeOf`. `can` es el real, envuelto: una acción anotada en `denied`
  * se le niega a esa persona además de lo que niegue el real. Sin anotaciones,
  * decide el real; así se prueba que el alcance sale de `can()` y no de comparar
- * roles en el service (criterio 4, R9 de las correcciones). R2b suma la
- * agrupación por cliente con el mismo fixture (criterio 11 de R2b).
+ * roles en el service (criterio 4, R9 de las correcciones). R2b suma las
+ * agrupaciones por cliente y por fecha con el mismo fixture (criterio 11 de R2b).
  */
 const permissionOverrides = vi.hoisted(() => ({
   denied: [] as { readonly userId: string; readonly action: string }[],
@@ -54,6 +54,9 @@ vi.mock("@/server/permissions", async (importOriginal) => {
 /** La semana del lunes 28/09/2026, con los dos extremos: el período que se pide. */
 const week = { first: "2026-09-28", last: "2026-10-04" } as const;
 
+/** El martes de `week` en Buenos Aires: el día de todas las entradas sembradas. */
+const entryDay = "2026-09-29";
+
 /** El jueves siguiente a `week`, a las 12:00 en Buenos Aires: el período pedido no es «Esta semana». */
 const now = new Date("2026-10-08T15:00:00Z");
 
@@ -69,7 +72,7 @@ const roles: readonly Role[] = [
 const notActive: readonly MembershipStatus[] = ["inactive", "invited"];
 
 /** Las agrupaciones que se recorren en cada caso de alcance. */
-const groupBys: readonly ReportGroupBy[] = ["person", "project", "client"];
+const groupBys: readonly ReportGroupBy[] = ["person", "project", "client", "date"];
 
 /**
  * Workspace A: owner, admin, `project_manager` responsable de P, `team_manager`,
@@ -263,6 +266,8 @@ function summaryOf(state: ReportState) {
           return { projectId: group.project?.id ?? null, seconds: group.seconds };
         case "client":
           return { clientId: group.client?.id ?? null, seconds: group.seconds };
+        case "date":
+          return { dayKey: group.dayKey, seconds: group.seconds };
       }
     }),
   };
@@ -295,6 +300,8 @@ function rowOf(
       return { projectId: values.place.projectId, seconds };
     case "client":
       return { clientId: values.place.clientId, seconds };
+    case "date":
+      return { dayKey: entryDay, seconds };
   }
 }
 
@@ -328,7 +335,10 @@ function everyoneInA(groupBy: ReportGroupBy) {
   };
 }
 
-/** P junta las horas de owner, `project_manager`, member e inactivo; el resto, sin proyecto. */
+/**
+ * P junta las horas de owner, `project_manager`, member e inactivo; el resto,
+ * sin proyecto. Por fecha, las seis en el mismo día.
+ */
 function everyoneInAGroups(groupBy: ReportGroupBy) {
   switch (groupBy) {
     case "person":
@@ -350,6 +360,8 @@ function everyoneInAGroups(groupBy: ReportGroupBy) {
         { clientId: a.clientId, seconds: 150 * 60 },
         { clientId: null, seconds: 60 * 60 },
       ];
+    case "date":
+      return [{ dayKey: entryDay, seconds: 210 * 60 }];
   }
 }
 
@@ -370,15 +382,18 @@ function selfOnlyInA() {
 async function expectForbiddenWithoutReading(actor: Actor) {
   const byPerson = vi.spyOn(reportRepository, "totalsByPerson");
   const byProject = vi.spyOn(reportRepository, "totalsByProject");
+  const byBucket = vi.spyOn(reportRepository, "totalsByBucket");
   try {
     for (const groupBy of [null, ...groupBys]) {
       expect(await reportOf(actor, groupBy)).toEqual({ kind: "forbidden" });
     }
     expect(byPerson).not.toHaveBeenCalled();
     expect(byProject).not.toHaveBeenCalled();
+    expect(byBucket).not.toHaveBeenCalled();
   } finally {
     byPerson.mockRestore();
     byProject.mockRestore();
+    byBucket.mockRestore();
   }
 }
 
@@ -442,14 +457,22 @@ describe("el alcance por rol (criterio 4, D-R2a-2; criterio 11 de R2b)", () => {
         groupBy,
         totalSeconds: 150 * 60,
         billableSeconds: 70 * 60,
-        groups: [
-          rowOf(groupBy, { userId: b.ownerId, place: noProject, seconds: 80 * 60 }),
-          rowOf(groupBy, {
-            userId: a.memberId,
-            place: inProjectOf(b),
-            seconds: 70 * 60,
-          }),
-        ],
+        // Por fecha, las dos entradas de B son del mismo día.
+        groups:
+          groupBy === "date"
+            ? [{ dayKey: entryDay, seconds: 150 * 60 }]
+            : [
+                rowOf(groupBy, {
+                  userId: b.ownerId,
+                  place: noProject,
+                  seconds: 80 * 60,
+                }),
+                rowOf(groupBy, {
+                  userId: a.memberId,
+                  place: inProjectOf(b),
+                  seconds: 70 * 60,
+                }),
+              ],
       });
     }
   });
@@ -508,6 +531,7 @@ describe("el enlace ajeno (criterio 5, RP-32; criterio 11 de R2b)", () => {
   const linkedGroupBys = [
     ["proyecto", "project"],
     ["cliente", "client"],
+    ["fecha", "date"],
   ] as const;
 
   /** Lo que la página recibe de un enlace de un admin, con claves armadas a mano. */
