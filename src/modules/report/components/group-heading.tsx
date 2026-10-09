@@ -53,8 +53,9 @@ export function GroupHeading({ group }: { readonly group: ReportGroup }): ReactE
 
 /**
  * D-R10-3: la semana o el mes entero y, si la fila no los cuenta enteros, los
- * días que cuenta en gris. El espacio no se dibuja entre los hijos del `flex`,
- * pero separa las dos partes en el texto y en el nombre del botón.
+ * días que cuenta en gris. En línea y no en `flex`: a 320 px los dos rangos
+ * con año no entran lado a lado, y así bajan de renglón en lugar de ensanchar
+ * la tabla.
  */
 function PartialHeading({
   partial,
@@ -67,7 +68,7 @@ function PartialHeading({
     return children;
   }
   return (
-    <span className="flex min-w-0 items-center gap-1.5">
+    <span>
       {children}{" "}
       <span className="text-muted-foreground">{reportLabels.partialDays(partial)}</span>
     </span>
