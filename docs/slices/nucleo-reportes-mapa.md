@@ -69,9 +69,10 @@ esquema sin pantalla. El orden es de dependencia y de valor.
 | R7    | Exportar a PDF                                   | R6 (R5 si va con gráfico) |
 | R8    | Cambiar el rol entre member y admin              | R2a                       |
 | R9    | Mostrar personas sin horas                       | R4                        |
+| R10   | Agrupar por descripción, mes y semana            | R3 (en serie tras R4)     |
 
-R3, R4 y R5 tocan la misma pantalla y la misma consulta. Van en serie, en el
-orden de la tabla; si se paralelizan, el segundo arranca con el primero
+R3, R4, R10 y R5 tocan la misma pantalla y la misma consulta. Van en serie, en
+ese orden; si se paralelizan, el segundo arranca con el primero
 mergeado.
 
 ### Lo que vale para todos
@@ -360,6 +361,16 @@ el rol de membresías que ya existen.
 Entra por decisión del usuario del 2026-10-08 (§5). RP-47, del semanal, llevado al
 resumido agrupado por persona. Depende de R4, porque la lista de personas con su
 estado es la del filtro.
+
+### R10 — Agrupar por descripción, mes y semana
+
+Entra por decisión del usuario del 2026-10-09 (P-11 de las revisiones de R3b).
+RP-11 en el resto: la página de filtros de Clockify lista agrupar por
+descripción, mes y semana, y Clock no los tiene. Va después de R4 y antes de R5,
+en serie con la pantalla. Riesgos: la descripción es texto libre y puede dar
+miles de grupos (el tope de 3000 filas de R3b y cómo se normaliza el texto); el
+mes y la semana se cortan en la zona del perfil, y la semana empieza el día que
+diga la preferencia de la persona.
 
 ## 4. Lo que no entra en el núcleo
 
