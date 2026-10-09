@@ -83,3 +83,24 @@ antes del `execute`, porque Postgres no admite una subconsulta como parámetro d
 | Origen | Hallazgo                                                                                    | Resolución                                                                                                                                                          |
 | ------ | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | P1     | `reportes.md` sigue como lo dejó R2a y contradice la pantalla en RP-11, RP-12, RP-24 y §9.5 | `parity-analyst` aplica la lista de `parity-reviewer`: cabecera, RP-11, RP-12, RP-20, RP-22, RP-24, RP-28, RP-29, RP-32, P-05, §9.5 y una sección «10. Núcleo, R2b» |
+
+## Cierre
+
+Ronda de correcciones: e2e en `8572eaf`; backend en `2cd9d75`, `72391e9`, `7cc9a1a` y
+`d4e8f54`; frontend en `91b25df` (F1 y P-N1 medidos a 320×568, 375×667 y 1366×657) y `d206dd0`;
+`reportes.md` en `1aead28`, con el texto de `parity-analyst` aplicado por el team-lead porque el
+arnés le rechaza el Write. T1 cae ahora en `period.test.ts`. Ninguna corrección tocó
+`totalsByBucket` ni `dayBuckets` desde `51fe0ce`.
+
+Corrida final sobre `1aead28`: lint, typecheck, prettier, 1485 de unidad, 277 de `test:time-ar` y
+1289 de integración (team-lead); `reports.spec.ts` 10 de 10 tres veces y la suite e2e entera 194
+de 194 dos veces, desde una copia nueva con `next build` (`tests-r2b`). Los once mutantes de e2e
+caen (los nueve de §8.2, la barra sin `shortcuts` y el de C3), con M4 y M9 reescritos por los
+cambios de `91b25df` y `72391e9`.
+
+Deuda nueva: la navegación del shell mide 531 px y da desplazamiento horizontal a 320 y 375 px
+(`src/app`, ya estaba en R2a).
+
+**Falta la comprobación contra Neon** (§6.3) en el preview de `6561286`, que vale para HEAD. Con
+ella en verde se anota el resultado acá y se mergea. La partición en R2b y R2c ya no es barata:
+los commits de A y B quedaron intercalados y la ronda de correcciones toca los dos.
