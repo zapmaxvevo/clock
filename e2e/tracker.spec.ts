@@ -1,5 +1,6 @@
 import type { Request } from "@playwright/test";
 
+import { stopClock } from "./clock";
 import { openSecondTab, withServerAction } from "./network";
 import { expect, test } from "./session";
 import {
@@ -480,9 +481,11 @@ test("lo tecleado con el foco puesto sobrevive a una revalidación", async ({
   browser,
 }) => {
   // El reloj detenido saca del medio el rebote: si el campo conserva lo
-  // tecleado no es porque una escritura lo haya fijado.
+  // tecleado no es porque una escritura lo haya fijado, y la escritura que
+  // espera el final es la de la salida del campo.
   await page.clock.install();
   await page.goto("/");
+  await stopClock(page);
   await startTimer(page, "entrada previa");
   await stopTimer(page, "entrada previa");
   // El grupo de hoy ya está dibujado: se espera la respuesta del arranque
