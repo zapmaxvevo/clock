@@ -1,14 +1,21 @@
 import { eq } from "drizzle-orm";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { db } from "@/server/db";
 import { CHECK_VIOLATION, constraintOf } from "@/server/db/constraint-error";
-import { membership, workspace, workspaceSettings } from "@/server/db/schema";
+import { membership, user, workspace, workspaceSettings } from "@/server/db/schema";
 import { warmPool, waitForBlockedBackends } from "@/test/concurrency";
-import { seedUser } from "@/test/factories";
+import {
+  seedMember,
+  seedPreferences,
+  seedTimeEntry,
+  seedUser,
+  seedWorkspace,
+} from "@/test/factories";
+import { actorIn } from "@/test/time-entry";
 
 import { workspaceRepository } from "./repository";
-import { ensureWorkspaceContext, weekStartOf } from "./service";
+import { ensureWorkspaceContext, listWorkspacePeople, weekStartOf } from "./service";
 
 describe("ensureWorkspaceContext", () => {
   it("crea el workspace y deja como owner a la cuenta configurada", async () => {
@@ -275,5 +282,87 @@ describe("weekStartOf", () => {
     expect(() =>
       weekStartOf({ ...context, membership: { ...context.membership, weekStart: 7 } }),
     ).toThrow(RangeError);
+  });
+});
+
+describe("listWorkspacePeople (RP-62, RP-64; criterio 17 de R4)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  async function renameAccount(userId: string, name: string) {
+    await db.update(user).set({ name }).where(eq(user.id, userId));
+  }
+
+  /** Lo que se lee con el actor, en una transacción como la del reporte. */
+  function readPeople(actor: Parameters<typeof listWorkspacePeople>[1]) {
+    return db.transaction((tx) => listWorkspacePeople(tx, actor));
+  }
+
+  it("las activas, con o sin horas, y las inactivas con su estado y los dos nombres; ni las invitadas ni las de otro workspace", async () => {
+    const { workspaceId, ownerId } = await seedWorkspace();
+    await renameAccount(ownerId, "Owner");
+    await seedPreferences(ownerId, { displayName: "La dueña" });
+    const idleId = await seedMember(workspaceId, "member");
+    await renameAccount(idleId, "Sin horas");
+    const inactiveId = await seedMember(workspaceId, "member", "inactive");
+    await renameAccount(inactiveId, "Inactiva");
+    // La aplicación no produce una invitada con horas: se siembra por base.
+    const invitedId = await seedMember(workspaceId, "member", "invited");
+    const other = await seedWorkspace();
+    const startedAt = new Date("2026-09-29T13:00:00Z");
+    const endedAt = new Date("2026-09-29T14:00:00Z");
+    for (const userId of [ownerId, inactiveId, invitedId]) {
+      await seedTimeEntry({ workspaceId, userId, startedAt, endedAt });
+    }
+    await seedTimeEntry({
+      workspaceId: other.workspaceId,
+      userId: other.ownerId,
+      startedAt,
+      endedAt,
+    });
+
+    const people = await readPeople(actorIn(workspaceId, idleId));
+
+    expect(
+      [...people].sort((left, right) =>
+        left.accountName.localeCompare(right.accountName),
+      ),
+    ).toStrictEqual([
+      {
+        userId: inactiveId,
+        accountName: "Inactiva",
+        displayName: null,
+        status: "inactive",
+      },
+      {
+        userId: ownerId,
+        accountName: "Owner",
+        displayName: "La dueña",
+        status: "active",
+      },
+      { userId: idleId, accountName: "Sin horas", displayName: null, status: "active" },
+    ]);
+  });
+
+  it("con un actor que no está activo, vacía sin leer", async () => {
+    const { workspaceId } = await seedWorkspace();
+    const listPeople = vi.spyOn(workspaceRepository, "listPeople");
+    for (const status of ["inactive", "invited"] as const) {
+      const actorId = await seedMember(workspaceId, "admin", status);
+      expect(await readPeople(actorIn(workspaceId, actorId, { status }))).toEqual([]);
+    }
+    expect(listPeople).not.toHaveBeenCalled();
+  });
+
+  it("lee con la transacción que recibe", async () => {
+    const { workspaceId, ownerId } = await seedWorkspace();
+    const listPeople = vi.spyOn(workspaceRepository, "listPeople");
+    const transaction = await db.transaction(async (tx) => {
+      await listWorkspacePeople(tx, actorIn(workspaceId, ownerId, { role: "owner" }));
+      return tx;
+    });
+    expect(listPeople).toHaveBeenCalledTimes(1);
+    expect(listPeople.mock.calls[0]?.[0]).toBe(transaction);
   });
 });

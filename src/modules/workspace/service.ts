@@ -1,9 +1,14 @@
 import { db, type Transaction } from "@/server/db";
 import { env } from "@/server/env";
-import type { Actor } from "@/server/permissions";
+import { can, type Actor } from "@/server/permissions";
 import { parseWeekStart, type WeekStart } from "@/server/time";
 
-import { workspaceRepository, type MembershipRow, type WorkspaceRow } from "./repository";
+import {
+  workspaceRepository,
+  type MembershipRow,
+  type PersonRow,
+  type WorkspaceRow,
+} from "./repository";
 
 export type WorkspaceContext = {
   readonly workspace: WorkspaceRow;
@@ -100,8 +105,22 @@ export async function listWorkspacePeople(
   tx: Transaction,
   actor: Actor,
 ): Promise<readonly WorkspacePerson[]> {
-  // Paso 6 de R4: la firma; la lectura llega en el paso 8.
-  void tx;
-  void actor;
-  throw new Error("listWorkspacePeople todavía no está implementada.");
+  if (!can(actor, "team.view", { kind: "workspace", workspaceId: actor.workspaceId })) {
+    return [];
+  }
+  const rows = await workspaceRepository.listPeople(tx, actor.workspaceId);
+  return rows.map(toWorkspacePerson);
+}
+
+/** La fila con el estado estrechado: la consulta solo deja pasar `active` e `inactive`. */
+function toWorkspacePerson(row: PersonRow): WorkspacePerson {
+  if (row.status === "invited") {
+    throw new Error(`La persona ${row.userId} llegó invitada al catálogo.`);
+  }
+  return {
+    userId: row.userId,
+    accountName: row.accountName,
+    displayName: row.displayName,
+    status: row.status,
+  };
 }

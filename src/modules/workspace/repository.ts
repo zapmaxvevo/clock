@@ -1,11 +1,28 @@
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import { db, type Transaction } from "@/server/db";
-import { membership, workspace, workspaceSettings } from "@/server/db/schema";
-import type { Role } from "@/server/permissions";
+import {
+  membership,
+  user,
+  userPreference,
+  workspace,
+  workspaceSettings,
+} from "@/server/db/schema";
+import type { MembershipStatus, Role } from "@/server/permissions";
 
 export type WorkspaceRow = typeof workspace.$inferSelect;
 export type MembershipRow = typeof membership.$inferSelect;
+
+/** Una persona del workspace con los dos nombres, que solo se muestran (ADR 0010). */
+export type PersonRow = {
+  readonly userId: string;
+  readonly accountName: string;
+  readonly displayName: string | null;
+  readonly status: MembershipStatus;
+};
+
+/** Los estados de quien está en el workspace; `invited` todavía no (RP-64). */
+const PRESENT_STATUSES: readonly MembershipStatus[] = ["active", "inactive"];
 
 /**
  * Clave del bloqueo que serializa la creación del primer workspace. Es
@@ -79,6 +96,26 @@ export const workspaceRepository = {
       throw new Error("La membresía no se insertó y tampoco existe.");
     }
     return existing;
+  },
+
+  /** Las membresías `active` e `inactive` del workspace, con los dos nombres. Sin orden. */
+  async listPeople(tx: Transaction, workspaceId: string): Promise<PersonRow[]> {
+    return tx
+      .select({
+        userId: membership.userId,
+        accountName: user.name,
+        displayName: userPreference.displayName,
+        status: membership.status,
+      })
+      .from(membership)
+      .innerJoin(user, eq(user.id, membership.userId))
+      .leftJoin(userPreference, eq(userPreference.userId, membership.userId))
+      .where(
+        and(
+          eq(membership.workspaceId, workspaceId),
+          inArray(membership.status, [...PRESENT_STATUSES]),
+        ),
+      );
   },
 
   /**

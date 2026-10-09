@@ -17,6 +17,7 @@ import { displayNameOf } from "@/modules/profile/service";
 import { paletteKeyOf } from "@/modules/project/palette";
 import type { ProjectFilterCatalog } from "@/modules/project/schema";
 import { getProjectFilterCatalog } from "@/modules/project/service";
+import { listWorkspacePeople, type WorkspacePerson } from "@/modules/workspace/service";
 
 import { reportPeriodOf } from "./period";
 import {
@@ -238,6 +239,8 @@ type ReportRead = {
   readonly levels: readonly (readonly LevelTotalRow[])[];
   readonly totals: EntryTotals;
   readonly catalog: ProjectFilterCatalog;
+  /** Las opciones del filtro de personas; `null` sin `timeEntry.others.view`. */
+  readonly people: PersonOptions | null;
   /** Los filtros efectivos: los del pedido que están en el catálogo (D-R4-5). */
   readonly filters: ReportFilters;
 };
@@ -272,22 +275,43 @@ function checkFilters({
   }
 }
 
+type PersonOptions = NonNullable<ReportReadyState["filterOptions"]["people"]>;
+
+/**
+ * RP-62, D-R4-9: las opciones del filtro de personas, campo por campo, con el
+ * nombre de `displayNameOf` (ADR 0021) y en el orden de `compareNames`. Un
+ * campo que `WorkspacePerson` sume no llega a la pantalla sin un cambio acá.
+ */
+function toPersonOptions(people: readonly WorkspacePerson[]): PersonOptions {
+  return people
+    .map((person) => ({
+      id: person.userId,
+      name: displayNameOf({ displayName: person.displayName }, person.accountName),
+      inactive: person.status === "inactive",
+    }))
+    .sort(compareNames);
+}
+
 /**
  * D-R4-5, RP-34: los filtros del pedido que están en el catálogo, en el orden
- * del catálogo y con sus ids, comparados tal cual. Lo que no está se ignora él
- * solo. «Sin proyecto» no está en ningún catálogo y pasa igual.
+ * del catálogo y con sus ids, comparados tal cual, sin cambiar mayúsculas. Lo
+ * que no está se ignora él solo. «Sin proyecto» no está en ningún catálogo y
+ * pasa igual. Sin catálogo de personas, el filtro de personas no existe
+ * (D-R4-4).
  */
 function effectiveFiltersOf(
   filters: ReportFilters,
   catalog: ProjectFilterCatalog,
+  people: PersonOptions | null,
 ): ReportFilters {
+  const chosen = new Set(filters.people);
   const clients = new Set(filters.clients);
   const projects = new Set(filters.projects);
   return {
-    // Paso 6 de R4: el catálogo de personas llega en el paso 8; hasta
-    // entonces, `getReportState` no deja pasar personas con `everyone`, y con
-    // `self` el filtro no existe.
-    people: [],
+    people:
+      people === null
+        ? []
+        : people.filter(({ id }) => chosen.has(id)).map(({ id }) => id),
     clients: catalog.clients.filter(({ id }) => clients.has(id)).map(({ id }) => id),
     projects: catalog.projects.filter(({ id }) => projects.has(id)).map(({ id }) => id),
     withoutProject: filters.withoutProject,
@@ -309,10 +333,10 @@ function entryFilterOf(filters: ReportFilters): ReportEntryFilter {
  */
 function toFilterOptions(
   catalog: ProjectFilterCatalog,
+  people: PersonOptions | null,
 ): ReportReadyState["filterOptions"] {
   return {
-    // Paso 6 de R4: sin el catálogo de personas, el control no se dibuja.
-    people: null,
+    people,
     clients: catalog.clients.map(({ id, name, archived }) => ({ id, name, archived })),
     projects: catalog.projects.map(({ id, name, color, client, archived }) => ({
       id,
@@ -479,7 +503,12 @@ async function readReport(
   plan: ReadPlan,
 ): Promise<ReportRead> {
   const catalog = await getProjectFilterCatalog(tx, actor);
-  const filters = effectiveFiltersOf(plan.filters, catalog);
+  // D-R4-4: el catálogo de personas solo para quien ve a todos.
+  const people =
+    scope.people.kind === "everyone"
+      ? toPersonOptions(await listWorkspacePeople(tx, actor))
+      : null;
+  const filters = effectiveFiltersOf(plan.filters, catalog, people);
   const filter = entryFilterOf(filters);
   // D-R4-4: las personas angostan el alcance; los otros filtros se suman a él.
   const readScope = filters.people.length > 0 ? narrowedTo(scope, filters.people) : scope;
@@ -501,7 +530,7 @@ async function readReport(
           seconds: first.reduce((sum, row) => sum + row.seconds, 0),
           billableSeconds: first.reduce((sum, row) => sum + row.billableSeconds, 0),
         };
-  return { levels, totals, catalog, filters };
+  return { levels, totals, catalog, people, filters };
 }
 
 /**
@@ -541,12 +570,6 @@ export async function getReportState(
     );
   }
   checkFilters(request.filters);
-  // Paso 6 de R4: el filtro de personas todavía no se cruza con su catálogo,
-  // así que un pedido con personas y alcance `everyone` lanza en lugar de
-  // ignorarlas.
-  if (scope.people.kind === "everyone" && request.filters.people.length > 0) {
-    throw new Error("El filtro de personas todavía no se aplica.");
-  }
   const span = {
     from: startOfDayKey(range.first, timeZone),
     to: startOfDayKey(addDaysToKey(range.last, 1), timeZone),
@@ -584,6 +607,6 @@ export async function getReportState(
     billableSeconds: read.totals.billableSeconds,
     groups: treeOf(read.levels, dates),
     filters: read.filters,
-    filterOptions: toFilterOptions(read.catalog),
+    filterOptions: toFilterOptions(read.catalog, read.people),
   };
 }
