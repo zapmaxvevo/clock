@@ -12,7 +12,7 @@ import {
   setRole,
   type MembershipStatus,
 } from "./database";
-import { addDays, dayKeyOf, todayIn, type CivilDay } from "./days";
+import { addDays, dayKeyOf, todayIn, weekdayLabel, type CivilDay } from "./days";
 import {
   applyButton,
   clickRangeDay,
@@ -65,7 +65,7 @@ import { trackerBar, uniqueSuffix } from "./tracker-page";
 
 /**
  * Recorridos de R2a y R2b del núcleo de reportes: el resumido por persona, por
- * proyecto y por cliente, y los atajos del período (§8.2 de cada contrato), con
+ * proyecto, por cliente y por fecha, y los atajos del período (§8.2 de cada contrato), con
  * la regla de §8.3 de R2a. Cada recorrido tiene sus
  * personas —la de la sesión y las que siembra—, todas con un nombre editado
  * que lleva el sufijo del test, y solo afirma sobre sus filas o sobre
@@ -516,4 +516,54 @@ test("por cliente, «Sin cliente» junta lo que no tiene proyecto y los proyecto
   await page.reload();
   await expectReport(page, lastWeek, "cliente", day);
   await expectByClient();
+});
+
+test("por fecha, una fila por día con horas, en orden y en la zona de quien mira", async ({
+  page,
+  email,
+}) => {
+  const day = today();
+  const lastWeek = lastWeekRange(day);
+  const tuesday = addDays(lastWeek.first, 1);
+  const wednesday = addDays(lastWeek.first, 2);
+  const thursday = addDays(lastWeek.first, 3);
+  const friday = addDays(lastWeek.first, 4);
+  const saturday = addDays(lastWeek.first, 5);
+  const suffix = uniqueSuffix();
+
+  await enterApp(page);
+  await setDisplayName(email, `Eva ${suffix}`);
+  // La del viernes a las 23:30 en la zona de la persona ya es sábado en UTC.
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
+    { description: "a", day: tuesday, start: "09:00", end: "09:20" },
+    { description: "b", day: tuesday, start: "14:00", end: "14:10" },
+    { description: "c", day: thursday, start: "10:00", end: "11:45" },
+    { description: "d", day: friday, start: "23:30", end: "23:50" },
+  ]);
+
+  await openReport(page, lastWeek, "persona", day);
+  await groupByLink(page, "fecha").click();
+  await expectReport(page, lastWeek, "fecha", day);
+
+  // RP-11, RP-22: un día por fila, cortado en la zona de quien mira, en orden
+  // cronológico aunque el jueves tenga más horas (D-R2b-6). Los días sin horas
+  // no tienen fila. El alcance es propio, así que el total es el de las filas.
+  await expect(groupColumnHeader(page)).toHaveText(GROUP_LINK.fecha);
+  const [tuesdayLabel, thursdayLabel, fridayLabel] = [tuesday, thursday, friday].map(
+    (civil) => weekdayLabel(civil, day),
+  );
+  await expect(groupHeaders(page)).toHaveText([tuesdayLabel, thursdayLabel, fridayLabel]);
+  await expect(groupDuration(groupRow(page, tuesdayLabel))).toHaveText("0:30");
+  await expect(groupDuration(groupRow(page, thursdayLabel))).toHaveText("1:45");
+  await expect(groupDuration(groupRow(page, fridayLabel))).toHaveText("0:20");
+  for (const empty of [wednesday, saturday]) {
+    await expect(groupRow(page, weekdayLabel(empty, day))).toHaveCount(0);
+  }
+  await expect(reportTotal(page, "Total")).toHaveText("2:35");
+
+  // D-R2a-4: la flecha conserva la agrupación; la semana de antes no tiene horas.
+  await periodLink(page, "Período anterior").click();
+  await expectReport(page, shiftRange(lastWeek, -7), "fecha", day);
+  await expect(reportTable(page).getByText(EMPTY_REPORT, { exact: true })).toBeVisible();
+  await expect(groupHeaders(page)).toHaveCount(0);
 });

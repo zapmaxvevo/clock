@@ -1,10 +1,10 @@
 /**
- * Localizadores y acciones de `/reportes` (R2a y R2b del núcleo de reportes). Como
- * en `timesheet-page.ts`, todo se busca por rol y por texto accesible. La
+ * Localizadores y acciones de `/reportes` (R2a y R2b del núcleo de reportes).
+ * Como en `timesheet-page.ts`, todo se busca por rol y por texto accesible. La
  * tabla se nombra por el título, y cada grupo es una fila con su encabezado de
- * fila. La única excepción son los totales: una lista de definiciones, cuyo
- * término no da nombre a su definición, así que la cifra se busca como el
- * hermano que sigue al término.
+ * fila: el nombre o, por fecha, el rótulo del día. La única excepción son los
+ * totales: una lista de definiciones, cuyo término no da nombre a su
+ * definición, así que la cifra se busca como el hermano que sigue al término.
  */
 import { expect, type Locator, type Page } from "@playwright/test";
 
@@ -67,7 +67,7 @@ export function zoneLine(timeZone: string): string {
 export type ReportRange = { readonly first: CivilDay; readonly last: CivilDay };
 
 /** La agrupación como la escribe la URL. */
-export type ReportGroupBy = "persona" | "proyecto" | "cliente";
+export type ReportGroupBy = "persona" | "proyecto" | "cliente" | "fecha";
 
 /**
  * El enlace de cada agrupación en «Agrupar por», en su orden. Es también el
@@ -77,6 +77,7 @@ export const GROUP_LINK: Record<ReportGroupBy, string> = {
   persona: "Persona",
   proyecto: "Proyecto",
   cliente: "Cliente",
+  fecha: "Fecha",
 };
 
 /** RP-20: los atajos del selector del período, en el orden de la lista (D-R2b-2). */
@@ -250,9 +251,10 @@ export function groupHeaders(page: Page): Locator {
 
 /**
  * La fila de un grupo, por el comienzo de su encabezado: el nombre de la
- * persona, que puede seguir con «(inactiva)», o el del proyecto. Los nombres
- * de los recorridos llevan el sufijo del test, así que no hay otro que
- * empiece igual.
+ * persona, que puede seguir con «(inactiva)», el del proyecto, el del cliente
+ * o el rótulo del día. Los nombres de los recorridos llevan el sufijo del
+ * test, así que no hay otro que empiece igual; los días son de un alcance
+ * propio.
  */
 export function groupRow(page: Page, name: string): Locator {
   return reportTable(page)
