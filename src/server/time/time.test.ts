@@ -17,7 +17,9 @@ import {
   roundMinutes,
   addDaysToKey,
   clockDifferenceMinutes,
+  civilDateOf,
   clockToMinutes,
+  compareDayKeys,
   crossesMidnight,
   dayKeyLabel,
   earliestDayKey,
@@ -140,6 +142,28 @@ function daysOfYear(year: number): string[] {
   }
   return days;
 }
+
+describe("compareDayKeys", () => {
+  it("ordena como el calendario, también cruzando el mes y el año", () => {
+    expect(compareDayKeys("2026-10-05", "2026-10-05")).toBe(0);
+    expect(compareDayKeys("2026-09-30", "2026-10-01")).toBeLessThan(0);
+    expect(compareDayKeys("2026-01-01", "2025-12-31")).toBeGreaterThan(0);
+    expect(
+      ["2026-10-02", "2025-12-31", "2026-01-10", "2026-10-01"].sort(compareDayKeys),
+    ).toEqual(["2025-12-31", "2026-01-10", "2026-10-01", "2026-10-02"]);
+  });
+});
+
+describe("civilDateOf", () => {
+  it("devuelve la fecha de una clave válida", () => {
+    expect(civilDateOf("2024-02-29")).toEqual({ year: 2024, month: 2, day: 29 });
+  });
+
+  it("lanza si la clave no es un día", () => {
+    expect(() => civilDateOf("2026-02-30")).toThrow(RangeError);
+    expect(() => civilDateOf("10000-01-01")).toThrow(RangeError);
+  });
+});
 
 describe("earliestDayKey", () => {
   it("devuelve el día más viejo, sin importar el orden", () => {

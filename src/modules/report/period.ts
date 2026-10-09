@@ -1,11 +1,11 @@
 import {
   addDaysToKey,
+  civilDateOf,
   dayKeyLabel,
   dayRangeLabel,
   daysBetweenKeys,
   monthEndKey,
   monthStartKey,
-  parseDayKey,
   toDayKey,
   weekKeyLabel,
   weekStartKey,
@@ -69,13 +69,9 @@ function isValidRange(range: ReportRange): boolean {
   return reportRangeInput.safeParse(range).success;
 }
 
-/** El año de la clave de hoy; lanza si no es un día. */
-function yearOf(todayKey: string): number {
-  const today = parseDayKey(todayKey);
-  if (today === null) {
-    throw new RangeError(`Clave de día inválida: ${todayKey}.`);
-  }
-  return today.year;
+/** El período si pasa `reportRangeInput`; si no, `null` (D-R2a-4). */
+function validOrNull(range: ReportRange): ReportRange | null {
+  return isValidRange(range) ? range : null;
 }
 
 /** D-R2b-2: el rótulo y el período de cada atajo con hoy en `todayKey`. */
@@ -84,7 +80,7 @@ function shortcutsOf(todayKey: string, settings: PeriodSettings): ReportShortcut
   const yesterday = addDaysToKey(todayKey, -1);
   const week = weekStartKey(todayKey, settings.weekStart);
   const previousWeek = addDaysToKey(week, -7);
-  const year = yearOf(todayKey);
+  const year = civilDateOf(todayKey).year;
   const definitions: Record<
     ReportShortcutId,
     { readonly label: string; readonly range: ReportRange }
@@ -126,7 +122,7 @@ function shifted(range: ReportRange, days: number): ReportRange | null {
     first: addDaysToKey(range.first, days),
     last: addDaysToKey(range.last, days),
   };
-  return isValidRange(moved) ? moved : null;
+  return validOrNull(moved);
 }
 
 /** Las dos flechas: `k` meses enteros si el período lo es, si no sus `n` días (D-R2b-3). */
@@ -136,17 +132,15 @@ function arrowsOf(range: ReportRange): Pick<ReportPeriod, "previous" | "next"> {
     const days = daysBetweenKeys(range.first, range.last) + 1;
     return { previous: shifted(range, -days), next: shifted(range, days) };
   }
-  const previous = {
-    first: monthStartKey(range.first, -months),
-    last: monthEndKey(range.first, -1),
-  };
-  const next = {
-    first: monthStartKey(range.first, months),
-    last: monthEndKey(range.first, 2 * months - 1),
-  };
   return {
-    previous: isValidRange(previous) ? previous : null,
-    next: isValidRange(next) ? next : null,
+    previous: validOrNull({
+      first: monthStartKey(range.first, -months),
+      last: monthEndKey(range.first, -1),
+    }),
+    next: validOrNull({
+      first: monthStartKey(range.first, months),
+      last: monthEndKey(range.first, 2 * months - 1),
+    }),
   };
 }
 

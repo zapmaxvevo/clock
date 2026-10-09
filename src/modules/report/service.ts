@@ -2,6 +2,7 @@ import { compareNames } from "@/lib/text";
 import { can, type Actor, type WorkspaceResource } from "@/server/permissions";
 import {
   addDaysToKey,
+  compareDayKeys,
   dayBuckets,
   dayKey,
   daysBetweenKeys,
@@ -185,15 +186,9 @@ function compareGroups(left: NamedGroup, right: NamedGroup): number {
   return compareNames(leftKey, rightKey);
 }
 
-/**
- * D-R2b-6: en orden cronológico. Las claves "AAAA-MM-DD" se ordenan como el
- * calendario, así que la comparación es de cadenas.
- */
+/** D-R2b-6: en orden cronológico. */
 function compareDays(left: ReportDateGroup, right: ReportDateGroup): number {
-  if (left.dayKey === right.dayKey) {
-    return 0;
-  }
-  return left.dayKey < right.dayKey ? -1 : 1;
+  return compareDayKeys(left.dayKey, right.dayKey);
 }
 
 /** Los grupos ordenados y los dos totales de la cabecera. */

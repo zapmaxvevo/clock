@@ -364,14 +364,24 @@ export function isWeekendDayKey(dayKey: string): boolean {
 }
 
 /**
- * El menor de varios días. Las claves "AAAA-MM-DD" se ordenan como el
- * calendario, así que la comparación es de cadenas. Sin claves, `null`.
+ * El orden de dos días, negativo si `left` es anterior: las claves
+ * "AAAA-MM-DD" se ordenan como el calendario, así que la comparación es de
+ * cadenas.
  */
+export function compareDayKeys(left: string, right: string): number {
+  if (left === right) {
+    return 0;
+  }
+  return left < right ? -1 : 1;
+}
+
+/** El menor de varios días, con el orden de `compareDayKeys`. Sin claves, `null`. */
 export function earliestDayKey(first: string, ...rest: readonly string[]): string;
 export function earliestDayKey(...keys: readonly string[]): string | null;
 export function earliestDayKey(...keys: readonly string[]): string | null {
   return keys.reduce<string | null>(
-    (earliest, key) => (earliest === null || key < earliest ? key : earliest),
+    (earliest, key) =>
+      earliest === null || compareDayKeys(key, earliest) < 0 ? key : earliest,
     null,
   );
 }
@@ -495,7 +505,7 @@ function civilTime(dayKey: string): number {
 }
 
 /** La fecha de una clave de día; lanza si la clave no es un día. */
-function civilDateOf(dayKey: string): CivilDate {
+export function civilDateOf(dayKey: string): CivilDate {
   const date = parseDayKey(dayKey);
   if (date === null) {
     throw new RangeError(`Clave de día inválida: ${dayKey}.`);
