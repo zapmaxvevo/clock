@@ -60,9 +60,12 @@ vacío del owner y `renewWorkspace` se corta.
      Integración 1275/1275 con la configuración por defecto.
    - **R2b, comprobación contra Neon** (decisión del usuario): en el preview de la rama apenas
      `totalsByBucket` esté, siempre antes del merge; se le avisa al usuario en ese momento.
-   - **Siguiente slice del núcleo**: R2b, contrato en curso (`architect-r2b`, rama
-     `nucleo/r2b-contrato`). R2b (cortes por tramo y atajos de mes, «Semana anterior»
-     como rótulo). Orden del mapa: R2a → R2b → R3 → R4 → R5 → R6 → R7, con R8 después de R2a y
+   - **R2b en implementación** en `nucleo/r2b-atajos` (árbol principal), desde `9f5b82c`, con el
+     contrato `nucleo-reportes-r2b-atajos-cliente-y-fecha.md` en `main` (aprobado en dos rondas).
+     Partido en A (atajos y cliente) y B (fecha, commits al final); si Neon se demora, A se
+     mergea como R2b y B sigue como R2c. `backend-r2b` hace el paso 1; con su aviso arrancan
+     frontend, e2e y test-engineer. Bases: `clock_test_backendr2b`, `clock_test_frontendr2b`,
+     `clock_test_engineer_r2b`, `clock_e2er2b`. Orden del mapa: R2a → R2b → R3 → R4 → R5 → R6 → R7, con R8 después de R2a y
      R9 después de R4.
    - **Deuda nueva**: C5 de R2a (`RangePicker` es la tercera copia del calendario de mes: sumarlo
      al `DayCalendar` compartido); la deuda de R1 (C1, `rejection` y la lectura del diario a
