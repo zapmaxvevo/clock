@@ -163,6 +163,20 @@ describe("SubgroupPanel (D-R3-8, §5.3)", () => {
     ]);
   });
 
+  it("Mes → Semana: el tercer nivel ofrece la fecha, con los dos de arriba en la URL (D-R10-6)", () => {
+    const { links } = list(render({ groupBy: "month", subgroups: ["week"] }, 2));
+    expect(links.map(({ label }) => label)).toEqual([
+      "Ninguno",
+      "Persona",
+      "Proyecto",
+      "Cliente",
+      "Tarea",
+      "Etiqueta",
+      "Fecha",
+    ]);
+    expect(links.at(-1)?.href).toBe(`${base}&agrupar=mes&subagrupar=semana%2Cfecha`);
+  });
+
   it("cada enlace conserva los filtros (D-R4-10)", () => {
     const project = "a2000000-0000-4000-8000-000000000000";
     const client = "c1000000-0000-4000-8000-000000000000";

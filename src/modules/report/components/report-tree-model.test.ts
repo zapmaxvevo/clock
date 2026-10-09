@@ -146,3 +146,64 @@ describe("visibleRows (D-R3-9)", () => {
     ]);
   });
 });
+
+describe("visibleRows por mes y semana (D-R10-11, §5.3)", () => {
+  function week(partial: string, seconds: number, children: ReportGroup[]) {
+    return {
+      kind: "week",
+      weekStart: "2026-09-28",
+      label: "28/09 – 04/10",
+      partial,
+      seconds,
+      children,
+    } satisfies ReportGroup;
+  }
+
+  function month(monthStart: string, label: string, children: ReportGroup[]) {
+    return {
+      kind: "month",
+      monthStart,
+      label,
+      partial: null,
+      seconds: children.reduce((sum, child) => sum + child.seconds, 0),
+      children,
+    } satisfies ReportGroup;
+  }
+
+  /** Mes → Semana → Fecha: la semana del 28/09 cruza el fin de mes y está debajo de los dos. */
+  const byMonth = [
+    month("2026-09-01", "septiembre", [
+      week("28/09 – 30/09", 6_300, [day("2026-09-30", 6_300)]),
+    ]),
+    month("2026-10-01", "octubre", [
+      week("01/10 – 04/10", 1_800, [day("2026-10-01", 1_800)]),
+    ]),
+  ];
+
+  it("la semana y el mes se identifican por su primer día entero", () => {
+    expect(byMonth.map(groupKey)).toEqual(["2026-09-01", "2026-10-01"]);
+    expect(byMonth.flatMap(({ children }) => children.map(groupKey))).toEqual([
+      "2026-09-28",
+      "2026-09-28",
+    ]);
+  });
+
+  it("la misma semana debajo de dos meses tiene dos claves, y abrir una no abre la otra", () => {
+    const [september, october] = visibleRows(byMonth, new Set()).map(({ key }) => key);
+    const months = new Set([september, october]);
+    const [, inSeptember, , inOctober] = visibleRows(byMonth, months);
+    expect(inSeptember.key).not.toBe(inOctober.key);
+
+    const rows = visibleRows(byMonth, new Set([...months, inSeptember.key]));
+    expect(new Set(rows.map(({ key }) => key)).size).toBe(rows.length);
+    expect(
+      rows.map(({ group, level, expanded }) => [groupKey(group), level, expanded]),
+    ).toEqual([
+      ["2026-09-01", 1, true],
+      ["2026-09-28", 2, true],
+      ["2026-09-30", 3, false],
+      ["2026-10-01", 1, true],
+      ["2026-09-28", 2, false],
+    ]);
+  });
+});

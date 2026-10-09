@@ -213,6 +213,32 @@ describe("ReportToolbar", () => {
     );
   });
 
+  it.each([
+    ["week", "Semana", "semana"],
+    ["month", "Mes", "mes"],
+  ] as const)(
+    "por %s, la marca pasa a «%s» y las flechas la conservan (D-R10-5)",
+    (groupBy, label, param) => {
+      const markup = render({ groupBy });
+      const marked = groupByLinks(markup);
+      expect(marked.filter(({ current }) => current !== null)).toEqual([
+        {
+          label,
+          href: `/reportes?desde=2026-09-28&hasta=2026-10-04&agrupar=${param}`,
+          current: "true",
+        },
+      ]);
+      expect(marked.map((link) => link.label).slice(-2)).toEqual(["Semana", "Mes"]);
+      const found = links(markup);
+      expect(found.get("Período anterior")?.href).toBe(
+        `/reportes?desde=2026-09-21&hasta=2026-09-27&agrupar=${param}`,
+      );
+      expect(found.get("Esta semana")?.href).toBe(
+        `/reportes?desde=2026-10-05&hasta=2026-10-11&agrupar=${param}`,
+      );
+    },
+  );
+
   it("por tarea, la marca pasa a «Tarea» y las flechas la conservan (RP-11)", () => {
     const markup = render({ groupBy: "task" });
     expect(groupByLinks(markup).map(({ label, current }) => [label, current])).toEqual([

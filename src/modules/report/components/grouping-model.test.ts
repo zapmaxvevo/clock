@@ -98,6 +98,17 @@ describe("levelOptions", () => {
     ]);
   });
 
+  it("Mes → Semana: el tercero ofrece la fecha y no las dos de arriba (D-R10-6)", () => {
+    expect(levelOptions(grouping("month", "week"), 2)).toEqual([
+      "person",
+      "project",
+      "client",
+      "task",
+      "tag",
+      "date",
+    ]);
+  });
+
   it("con tres niveles, el tercero no ofrece los de arriba y sí el suyo", () => {
     expect(levelOptions(grouping("tag", "person", "client"), 2)).toEqual([
       "project",

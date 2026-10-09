@@ -36,9 +36,42 @@ export function GroupHeading({ group }: { readonly group: ReportGroup }): ReactE
     case "date":
       return <time dateTime={group.dayKey}>{group.label}</time>;
     case "week":
+      return (
+        <PartialHeading partial={group.partial}>
+          <span>{group.label}</span>
+        </PartialHeading>
+      );
     case "month":
-      return <span>{group.label}</span>;
+      return (
+        <PartialHeading partial={group.partial}>
+          {/* Los siete primeros caracteres, «2026-10», son un mes válido de HTML. */}
+          <time dateTime={group.monthStart.slice(0, 7)}>{group.label}</time>
+        </PartialHeading>
+      );
   }
+}
+
+/**
+ * D-R10-3: la semana o el mes entero y, si la fila no los cuenta enteros, los
+ * días que cuenta en gris. El espacio no se dibuja entre los hijos del `flex`,
+ * pero separa las dos partes en el texto y en el nombre del botón.
+ */
+function PartialHeading({
+  partial,
+  children,
+}: {
+  readonly partial: string | null;
+  readonly children: ReactElement;
+}) {
+  if (partial === null) {
+    return children;
+  }
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      {children}{" "}
+      <span className="text-muted-foreground">{reportLabels.partialDays(partial)}</span>
+    </span>
+  );
 }
 
 /** RP-31: una persona inactiva lo dice en texto, no solo con el gris. */
