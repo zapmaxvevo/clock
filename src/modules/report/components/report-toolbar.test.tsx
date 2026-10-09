@@ -118,6 +118,11 @@ describe("ReportToolbar", () => {
         href: "/reportes?desde=2026-09-28&hasta=2026-10-04&agrupar=cliente",
         current: null,
       },
+      {
+        label: "Fecha",
+        href: "/reportes?desde=2026-09-28&hasta=2026-10-04&agrupar=fecha",
+        current: null,
+      },
     ]);
   });
 
@@ -127,6 +132,7 @@ describe("ReportToolbar", () => {
       ["Persona", null],
       ["Proyecto", null],
       ["Cliente", "true"],
+      ["Fecha", null],
     ]);
     const found = links(markup);
     expect(found.get("Período anterior")?.href).toBe(
@@ -142,6 +148,19 @@ describe("ReportToolbar", () => {
     expect(found.get("Persona")?.current).toBe("true");
     expect(found.get("Proyecto")?.current).toBeNull();
     expect(found.get("Período anterior")?.href).toContain("agrupar=persona");
+  });
+
+  it("por fecha, la marca pasa a «Fecha» y las flechas la conservan", () => {
+    const markup = render({ groupBy: "date" });
+    expect(groupByLinks(markup).map(({ label, current }) => [label, current])).toEqual([
+      ["Persona", null],
+      ["Proyecto", null],
+      ["Cliente", null],
+      ["Fecha", "true"],
+    ]);
+    expect(links(markup).get("Período siguiente")?.href).toBe(
+      "/reportes?desde=2026-10-05&hasta=2026-10-11&agrupar=fecha",
+    );
   });
 
   it("el botón del período se nombra por lo que muestra", () => {

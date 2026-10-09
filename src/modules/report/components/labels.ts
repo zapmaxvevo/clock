@@ -23,7 +23,7 @@ export const reportLabels = {
   apply: "Aplicar",
   /** RP-20: la lista de períodos con nombre, dentro del selector (D-R2b-2). */
   shortcuts: "Atajos",
-  /** RP-11: un nivel, por persona, por proyecto o por cliente. */
+  /** RP-11: un nivel, por persona, por proyecto, por cliente o por fecha. */
   groupBy: "Agrupar por",
   byPerson: "Persona",
   byProject: "Proyecto",

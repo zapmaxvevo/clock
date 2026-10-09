@@ -157,6 +157,34 @@ describe("ReportView", () => {
     expect(totals(markup).Total).toBe("2:30");
   });
 
+  it("por fecha, el encabezado «Fecha» y cada día con su rótulo dentro de <time> (D-R2b-6)", () => {
+    const groups: ReportGroup[] = [
+      { kind: "date", dayKey: "2026-09-29", label: "mar, 29/09", seconds: 1_800 },
+      { kind: "date", dayKey: "2026-10-01", label: "jue, 01/10", seconds: 6_300 },
+      { kind: "date", dayKey: "2025-12-31", label: "mié, 31/12/2025", seconds: 1_200 },
+    ];
+    const markup = render({ groupBy: "date", groups, totalSeconds: 9_300 });
+    expect(markup).toMatch(/<th scope="col"[^>]*>Fecha<\/th>/);
+    // En el orden en que llegan: el service ya las ordenó.
+    expect(bodyRows(markup)).toEqual([
+      ["mar, 29/09", "0:30"],
+      ["jue, 01/10", "1:45"],
+      ["mié, 31/12/2025", "0:20"],
+    ]);
+    expect(markup).toMatch(
+      /<th scope="row"[^>]*><time dateTime="2026-09-29">mar, 29\/09<\/time><\/th>/,
+    );
+    expect(markup).toContain('<time dateTime="2025-12-31">mié, 31/12/2025</time>');
+    expect(totals(markup).Total).toBe("2:35");
+  });
+
+  it("por fecha, un período sin horas es la fila del vacío (RP-33)", () => {
+    const markup = render({ groupBy: "date" });
+    expect(markup).toMatch(/<th scope="col"[^>]*>Fecha<\/th>/);
+    expect(bodyRows(markup)).toEqual([["No hay horas en este período"]]);
+    expect(markup).not.toContain("<time");
+  });
+
   it("cada cifra se trunca al minuto por separado: dos filas de 90 s y el total 0:03 (§5.3)", () => {
     const groups: ReportGroup[] = [
       { kind: "person", userId: "u1", name: "Ana", inactive: false, seconds: 90 },

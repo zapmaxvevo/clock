@@ -70,6 +70,7 @@ export function ReportToolbar({ state }: { readonly state: ReportReadyState }) {
           <GroupByLink state={state} value="person" label={reportLabels.byPerson} />
           <GroupByLink state={state} value="project" label={reportLabels.byProject} />
           <GroupByLink state={state} value="client" label={reportLabels.byClient} />
+          <GroupByLink state={state} value="date" label={reportLabels.byDate} />
         </div>
       </div>
     </div>
