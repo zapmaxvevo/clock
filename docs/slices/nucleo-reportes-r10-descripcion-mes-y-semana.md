@@ -894,8 +894,6 @@ paréntesis cuando el archivo es de una sola.
   cruzarse con la suite del árbol principal; la página temporal de §6.4, en una
   copia de `frontend-dev`, para que no quede en ningún commit.
 - **Las corridas van en primer plano.**
-- **Los agentes trabajan de a dos a la vez** (decisión del usuario): el orden
-  de abajo está en rondas de dos.
 - **`parity-analyst` no escribe archivos**: entrega el texto y lo aplica el
   team-lead.
 - Postgres local y Neon son 18.

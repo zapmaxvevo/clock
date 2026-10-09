@@ -5,7 +5,7 @@ el filtro de personas, con las inactivas aparte y tachadas y sin las invitadas. 
 `2aff669`, en la rama `nucleo/r4b`, y arranca con C11 de R4a (`af97c04`).
 
 La implementación la cortó el tope de uso a mitad del paso 8, con trabajo a medias de cuatro
-agentes en el árbol, y se relanzó de a dos (decisión del usuario): `backend-r4b` y
+agentes en el árbol, y se relanzó de a dos: `backend-r4b` y
 `frontend-r4b` primero, `test-r4b` y `e2e-r4b` con el hash del paso 8. Los commits son C11
 `af97c04`, paso 6 `b47a675`, paso 7 `434fbd6`, paso 8 `5a05990`, paso 9 `dfae352`, criterio 19
 `7a5f4ac` y recorridos 15 y 16 `f56e2e8`.

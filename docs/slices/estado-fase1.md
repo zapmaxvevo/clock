@@ -136,7 +136,7 @@ vacío del owner y `renewWorkspace` se corta.
      memoria `tope-de-uso`). Su trabajo a medias quedó sin commitear en el árbol, con una copia
      en parches por área en el scratchpad de la sesión `da8db711-…` (`r4b-corte/`): backend
      (paso 8), frontend (paso 7), integración (`scope.integration.test.ts`) y e2e (helpers).
-     Decisión del usuario: relanzar de a dos. `backend-r4b` (pasos 8 y 9) y `frontend-r4b`
+     Se relanzó de a dos. `backend-r4b` (pasos 8 y 9) y `frontend-r4b`
      (paso 7) relanzados sobre ese trabajo; integración y e2e, con el hash del paso 8. **R4b en `main`** (2026-10-09): el filtro de personas. Seis
      revisiones aprobadas (de a dos), ronda de correcciones y corrida final en verde sobre
      `4aa6b01`: 1652 de unidad, 277 de `test:time-ar`, 1397 de integración y e2e 201/201 ×2.
@@ -149,7 +149,7 @@ vacío del owner y `renewWorkspace` se corta.
      (mes y semana) y R10b (descripción). El usuario aceptó agrupar la descripción por el texto
      exacto. **R10a**, rama `nucleo/r10a` (pusheada), implementada entera y con cuatro de seis
      revisiones: backend, seguridad y frontend aprobadas; tests pide un mayor. Todo en
-     `correcciones-nucleo-reportes-r10a-revisiones.md`. **Al retomar**, de a dos agentes:
+     `correcciones-nucleo-reportes-r10a-revisiones.md`. **Al retomar**:
      (1) `clean-code-reviewer` y `parity-reviewer` (base propia `clock_r10a_parity`, crearla y
      migrarla antes); (2) la ronda de correcciones a un `backend-dev` (T1, T2, B1) más lo que
      pidan código y paridad; (3) aplicar el texto de paridad («13. Núcleo, R10») y T3 en el
@@ -164,7 +164,7 @@ vacío del owner y `renewWorkspace` se corta.
      (`bdeeac8`, `4e511ac`) y corrida final en verde sobre `4e511ac`: 1689 de unidad, 298 de
      `test:time-ar`, 1422 de integración y e2e 203/203 ×2. Texto de paridad en `reportes.md`
      (sección 13). Todo en `correcciones-nucleo-reportes-r10a-revisiones.md`. **Sigue R10b**
-     (descripción, parte B del contrato de R10), de a dos agentes; su encargo de frontend lleva
+     (descripción, parte B del contrato de R10); su encargo de frontend lleva
      F1 de R10a y N1 de paridad (la tabla a 320 px). Bases de R10a que se pueden borrar:
      `clock_r10a_back`, `_front`, `_test`, `_e2e`, `_parity`, `_final_test` y `_final_e2e`.
      Aviso de paridad: la `DATABASE_URL` del `.env` del usuario falla contra el Postgres local
