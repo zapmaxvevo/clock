@@ -181,19 +181,17 @@ export function shiftRange(range: ReportRange, days: number): ReportRange {
 export const NO_PROJECT_KEY = "sin-proyecto";
 
 /**
- * Los filtros de la URL (D-R4-2): ids de personas, de clientes y de
- * proyectos, con `NO_PROJECT_KEY` entre los de proyecto. Uno que falta, o
- * vacío, no se escribe.
+ * Los filtros de la URL (D-R4-2): ids de clientes y de proyectos, con
+ * `NO_PROJECT_KEY` entre los de proyecto. Uno que falta, o vacío, no se
+ * escribe.
  */
 export type ReportUrlFilters = {
-  readonly people?: readonly string[];
   readonly clients?: readonly string[];
   readonly projects?: readonly string[];
 };
 
 /** Cada filtro con su parámetro, en el orden en que la URL los escribe (D-R4-2). */
 const FILTER_PARAMS = [
-  ["people", "personas"],
   ["clients", "clientes"],
   ["projects", "proyectos"],
 ] as const;
@@ -230,8 +228,9 @@ export function reportsUrl(
 /**
  * La URL es la de ese período, esa agrupación, esos subniveles y esos
  * filtros: cada parámetro una vez, sin `subagrupar` si no hay subniveles y
- * sin `personas`, `clientes` ni `proyectos` si no se piden. Una lista de
- * filtro tiene que ser la que escribe la aplicación, en su orden.
+ * sin `clientes` ni `proyectos` si no se piden. Una lista de filtro tiene
+ * que ser la que escribe la aplicación, en su orden. `personas` no está nunca:
+ * en R4a la aplicación no lo escribe.
  */
 export function reportsUrlOf(
   range: ReportRange,
@@ -250,6 +249,7 @@ export function reportsUrlOf(
     url.searchParams.getAll("hasta").join(",") === dayKeyOf(range.last) &&
     url.searchParams.getAll("agrupar").join(",") === groupBy &&
     JSON.stringify(url.searchParams.getAll("subagrupar")) === JSON.stringify(levels) &&
+    !url.searchParams.has("personas") &&
     lists.every(
       ([param, list]) =>
         JSON.stringify(url.searchParams.getAll(param)) === JSON.stringify(list),
@@ -257,8 +257,8 @@ export function reportsUrlOf(
 }
 
 /**
- * Registra, desde ahora, los pedidos que navegan a ese período y esa
- * agrupación. Los de prefetch de un enlace no cuentan: Next los marca con
+ * Registra, desde ahora, los pedidos que navegan a ese período, esa
+ * agrupación y esos filtros, sin subniveles. Los de prefetch de un enlace no cuentan: Next los marca con
  * `next-router-prefetch` y no son una navegación. Una que llegue tarde, después
  * de afirmar la URL, queda igual en el registro, que se lee al final.
  */
@@ -266,8 +266,9 @@ export function recordNavigations(
   page: Page,
   range: ReportRange,
   groupBy: ReportGroupBy,
+  filters: ReportUrlFilters = {},
 ): readonly string[] {
-  const matches = reportsUrlOf(range, groupBy);
+  const matches = reportsUrlOf(range, groupBy, [], filters);
   const recorded: string[] = [];
   page.on("request", (request) => {
     if (
@@ -649,8 +650,11 @@ export function filterButton(page: Page, filter: FilterName, summary: string): L
   });
 }
 
-/** El buscador de un filtro por su nombre, sin acotarlo a un diálogo. */
-function searchBox(page: Page, filter: FilterName): Locator {
+/**
+ * El buscador del panel abierto de un filtro, que va en un portal y solo
+ * existe con el panel abierto.
+ */
+export function filterSearch(page: Page, filter: FilterName): Locator {
   return page.getByRole("searchbox", { name: FILTER_SEARCH[filter], exact: true });
 }
 
@@ -659,15 +663,7 @@ function searchBox(page: Page, filter: FilterName): Locator {
  * `has` se busca dentro del diálogo, así que no lleva el diálogo otra vez.
  */
 export function filterPanel(page: Page, filter: FilterName): Locator {
-  return page.getByRole("dialog").filter({ has: searchBox(page, filter) });
-}
-
-/** El buscador del panel abierto de un filtro. */
-export function filterSearch(page: Page, filter: FilterName): Locator {
-  return filterPanel(page, filter).getByRole("searchbox", {
-    name: FILTER_SEARCH[filter],
-    exact: true,
-  });
+  return page.getByRole("dialog").filter({ has: filterSearch(page, filter) });
 }
 
 /**
@@ -683,8 +679,9 @@ export function filterGroup(
 }
 
 /**
- * La casilla de una opción del panel abierto, que va en un portal, por el
- * comienzo de su nombre: el de un proyecto sigue con su cliente (§5.3). Los
+ * La casilla de una opción del panel abierto, que va en un portal, por su
+ * nombre accesible: el del proyecto solo, porque el cliente va por
+ * `aria-describedby` (§5.3). Se busca por el comienzo, como `groupRow`; los
  * nombres llevan el sufijo del test, así que no hay otro que empiece igual.
  */
 export function filterOption(page: Page, name: string): Locator {
@@ -693,7 +690,7 @@ export function filterOption(page: Page, name: string): Locator {
 
 /**
  * Las casillas de un grupo del panel son exactamente `names`, en ese orden,
- * por el comienzo de su nombre. Primero la cantidad, que reintenta hasta que
+ * por el comienzo de su nombre, como `filterOption`. Primero la cantidad, que reintenta hasta que
  * el buscador las filtra.
  */
 export async function expectFilterOptions(

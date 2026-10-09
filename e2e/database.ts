@@ -211,37 +211,40 @@ async function updateOneRow(
 }
 
 /**
- * Inserta una fila que devuelve su `id` y comprueba que se insertó
- * exactamente una: como en `updateOneRow`, otra cantidad es un error del test.
+ * Corre una sentencia que devuelve `id` y comprueba que devolvió exactamente
+ * una fila: como en `updateOneRow`, otra cantidad es un error del test.
+ * `verb` dice qué hacía la sentencia, para el mensaje.
  */
+async function oneRowId(
+  client: Client,
+  sql: string,
+  values: readonly unknown[],
+  verb: "insertar" | "leer",
+): Promise<string> {
+  const result = await client.query<{ id: string }>(sql, [...values]);
+  const row = result.rows.at(0);
+  if (result.rows.length !== 1 || row === undefined) {
+    throw new Error(`Se esperaba ${verb} una fila y fueron ${result.rows.length}.`);
+  }
+  return row.id;
+}
+
+/** Inserta una fila que devuelve su `id`, y exactamente una. */
 async function insertOneRow(
   client: Client,
   sql: string,
   values: readonly unknown[],
 ): Promise<string> {
-  const result = await client.query<{ id: string }>(sql, [...values]);
-  const row = result.rows.at(0);
-  if (result.rowCount !== 1 || row === undefined) {
-    throw new Error(`Se esperaba insertar una fila e insertaron ${result.rowCount}.`);
-  }
-  return row.id;
+  return oneRowId(client, sql, values, "insertar");
 }
 
-/**
- * Lee el `id` de una fila y comprueba que hay exactamente una: como en
- * `updateOneRow`, otra cantidad es un error del test.
- */
+/** Lee el `id` de una fila, y exactamente una. */
 async function selectOneId(
   client: Client,
   sql: string,
   values: readonly unknown[],
 ): Promise<string> {
-  const result = await client.query<{ id: string }>(sql, [...values]);
-  const row = result.rows.at(0);
-  if (result.rows.length !== 1 || row === undefined) {
-    throw new Error(`Se esperaba leer una fila y se leyeron ${result.rows.length}.`);
-  }
-  return row.id;
+  return oneRowId(client, sql, values, "leer");
 }
 
 /** Lo que siembra `seedProject`. Los nombres llevan el sufijo del recorrido. */

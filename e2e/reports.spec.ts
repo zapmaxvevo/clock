@@ -1005,6 +1005,7 @@ test("los filtros de cliente y de proyecto, con «Sin proyecto», los archivados
   ]);
 
   await openReport(page, lastWeek, "proyecto", day);
+  await expect(page.getByText(SCOPE_SELF, { exact: true })).toBeVisible();
   await expect(reportTotal(page, "Total")).toHaveText("2:35");
 
   // D-R4-8: «Sin proyecto» primero, sin filtrar por la búsqueda; las vigentes
@@ -1050,11 +1051,46 @@ test("los filtros de cliente y de proyecto, con «Sin proyecto», los archivados
   await expect(filterButton(page, "Proyectos", "2")).toBeVisible();
   await expectByClient();
 
-  // Al abrir, lo elegido es lo del estado. RP-29: el archivado se filtra y
-  // sus horas cuentan.
+  // D-R4-10: el subnivel y el atajo del período conservan los filtros. Las
+  // filas de arriba son las mismas: la semana de hoy no tiene horas.
+  const twoWeeks = shortcutRange("Últimas dos semanas", day);
+  await pickSubgroup(page, "Segundo nivel", "proyecto", ["proyecto"]);
+  await expectReport(page, lastWeek, "cliente", day, ["proyecto"], chosen);
+  await expect(filterButton(page, "Proyectos", "2")).toBeVisible();
+  await expectByClient();
+  await openRangePicker(page);
+  await pickShortcut(page, "Últimas dos semanas");
+  await expectReport(page, twoWeeks, "cliente", day, ["proyecto"], chosen);
+  await expect(filterButton(page, "Proyectos", "2")).toBeVisible();
+  await expectByClient();
+  await pickSubgroup(page, "Segundo nivel", null, []);
+  await expectReport(page, twoWeeks, "cliente", day, [], chosen);
+  await openRangePicker(page);
+  await pickShortcut(page, "Semana anterior");
+  await expectReport(page, lastWeek, "cliente", day, [], chosen);
+  await expect(filterButton(page, "Proyectos", "2")).toBeVisible();
+  await expectByClient();
+
+  // D-R4-8: Esc cierra sin aplicar y el foco vuelve al botón. Aplicada, la
+  // casilla de P3 pediría los tres proyectos: ningún paso lleva ahí, así que
+  // un pedido con esa URL solo puede venir de Esc.
+  const escaped = recordNavigations(page, lastWeek, "cliente", {
+    projects: [firstId, archivedId, NO_PROJECT_KEY],
+  });
+  await openFilter(page, "Proyectos", "2");
+  await filterOption(page, archived).check();
+  await page.keyboard.press("Escape");
+  await expect(filterPanel(page, "Proyectos")).toBeHidden();
+  await expect(filterButton(page, "Proyectos", "2")).toBeFocused();
+  await expectReport(page, lastWeek, "cliente", day, [], chosen);
+  await expectByClient();
+
+  // Al abrir de nuevo, lo elegido es lo del estado, no lo que Esc descartó.
+  // RP-29: el archivado se filtra y sus horas cuentan.
   await openFilter(page, "Proyectos", "2");
   await expect(filterOption(page, first)).toBeChecked();
   await expect(filterOption(page, NO_PROJECT)).toBeChecked();
+  await expect(filterOption(page, archived)).not.toBeChecked();
   await filterOption(page, first).uncheck();
   await filterOption(page, NO_PROJECT).uncheck();
   await filterOption(page, archived).check();
@@ -1105,6 +1141,8 @@ test("los filtros de cliente y de proyecto, con «Sin proyecto», los archivados
   await expect(groupDuration(groupRow(page, secondClient))).toHaveText("0:30");
   await expect(groupDuration(groupRow(page, NO_CLIENT))).toHaveText("1:05");
   await expect(reportTotal(page, "Total")).toHaveText("2:35");
+
+  expect(escaped).toEqual([]);
 });
 
 test("un filtro que nombra algo que no existe, o mal formado, se ignora", async ({
@@ -1144,6 +1182,7 @@ test("un filtro que nombra algo que no existe, o mal formado, se ignora", async 
   // entero, no es un filtro: no hay segundo vacío (D-R4-7).
   await page.goto(`${byPerson}&proyectos=${unknown}`);
   await expectPerson("1:30");
+  await expect(page.getByText(SCOPE_SELF, { exact: true })).toBeVisible();
   await expect(filterButton(page, "Proyectos", "todos")).toBeVisible();
   await expect(emptyFiltered(page)).toHaveCount(0);
 
