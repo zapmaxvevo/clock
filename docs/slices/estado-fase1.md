@@ -59,7 +59,7 @@ vacío del owner y `renewWorkspace` se corta.
    - **Arreglos de CI** en `main`: `fix/postgres-18` (`b0e34ed`) y `fix/zona-de-la-maquina`
      (`23de226`), con lint, typecheck, 1419 de unidad, 228 de `test:time-ar` y 1275 de
      integración en Postgres 18. **CI de `main` en verde** desde `23de226` (`verify` e
-     `integration`; `e2e` se saltea hasta que exista `E2E_DATABASE_URL`).
+     `integration`; desde el 2026-10-09, PR #1, `e2e` corre contra un servidor local y un Postgres en contenedor).
    - **Postgres local en 18** (2026-10-09, decisión del usuario): `clock-pg` (puerto 5432) es
      `postgres:18-alpine` con las 31 bases restauradas de un `pg_dumpall`; el contenedor 17 quedó
      parado como `clock-pg17` (respaldo, se puede borrar) y `clock-pg18` (5433) sigue aparte.
@@ -181,9 +181,8 @@ vacío del owner y `renewWorkspace` se corta.
      `npx prettier --write`, lanzar `architecture-reviewer` hasta aprobar, commitear, mergear el
      contrato a `main` y seguir el pipeline como en R2b (bases por agente creadas antes, backend
      primero fija formas). Si no existe, relanzar el `architect` con el mismo encargo.
-   - CI de `main` en verde en `7b66b03` (`verify` e `integration`). El job `e2e` sigue salteado
-     hasta que el usuario cargue `E2E_DATABASE_URL` en el environment `preview` de GitHub; ahora el
-     preview tiene su rama de Neon propia (`preview`).
+   - CI de `main` en verde en `7b66b03` (`verify` e `integration`). El job `e2e` corre en local
+     desde el PR #1 (`1908c85`, 2026-10-09): 203/203 en 9m26s.
    - Después de R3: R4 (filtros); R8 (cambiar el rol) se puede adelantar porque solo depende de R2a.
      Orden del mapa: R2a → R2b → R3 → R4 → R5 → R6 → R7, con R8 después de R2a y
      R9 después de R4.
@@ -270,8 +269,10 @@ cuentas sin Google antes de desplegar el 7b dio cero filas en producción el 202
 - **Postgres de Neon**: decir la versión mayor (`select version();`), que R2a necesita para medir
   con la misma; el slice 9 necesita 15 o posterior (`on delete set null (col)`)
   antes de desplegar.
-- **Rol de Neon para e2e**: `E2E_DATABASE_URL` en el environment `preview` de GitHub, con
-  un rol que solo lea `workspace` y actualice su `created_at`.
+- **Secretos de e2e sin uso**: desde el PR #1 CI no usa el environment `preview` ni
+  `E2E_BASE_URL`, `E2E_TEST_SESSION_SECRET` y `E2E_DATABASE_URL`; borrarlos es del usuario. Su
+  `.env` y `.env.example` deberían apuntar a `postgresql://clock:clock@localhost:5432/clock`
+  (`compose.yaml` levanta esa base con `docker compose up -d`).
 - **Sesión en el workspace de Clockify** para cerrar lo no verificado: P-18 de `timesheet.md`
   (el menú, el pop-up y el detalle de una celda: TS-40, TS-41, TS-42), P-14 en
   `time-tracker.md` (fila de la entrada que corre, hora inexistente, horas de la copia al
