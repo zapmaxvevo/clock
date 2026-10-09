@@ -98,3 +98,12 @@ mutante observable de al lado difiere en 60 líneas.
 El texto de `parity-reviewer` está aplicado en `docs/parity/reportes.md` (`629286e`): la
 cabecera, RP-25, RP-31, RP-32, RP-34, RP-62, RP-64, la entrada de R4b en la sección 12, las
 divergencias de B en §12.4 y las secciones 12.6 a 12.8.
+
+## Cierre
+
+Ronda de correcciones: frontend `e069399` (C2, C3, T1 y F2; los cuatro mutantes de T1 sobrevivían
+con los tests de antes y caen con los nuevos) y backend `4aa6b01` (C1, C7, C8, C9, T2, S1 y
+S2/T3; el mutante que ordena por la cuenta y el que lee `listPeople` antes de `report.view`
+caen). Corrida final sobre `4aa6b01`, con bases nuevas: lint, typecheck, 1652 de unidad, 277 de
+`test:time-ar`, 1397 de integración, `reports.spec.ts` 17/17 ×3 y la suite e2e 201/201 ×2. Sin
+comprobación contra Neon (D-R4-11).

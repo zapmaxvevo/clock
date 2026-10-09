@@ -33,6 +33,8 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-09.
 | Núcleo de reportes, R2b                     | En `main` |
 | Núcleo de reportes, R3a                     | En `main` |
 | Núcleo de reportes, R3b                     | En `main` |
+| Núcleo de reportes, R4a                     | En `main` |
+| Núcleo de reportes, R4b                     | En `main` |
 
 Los slices 1 a 13 (con 2b, 2c, 7b, 8b, 8c, 11a y 11b) y el arreglo del piso fijo están en `main`.
 El 13 (planilla de horarios) se mergeó el 2026-10-08 con lint, typecheck, 1279 de unidad, 1223 de
@@ -134,7 +136,12 @@ vacío del owner y `renewWorkspace` se corta.
      en parches por área en el scratchpad de la sesión `da8db711-…` (`r4b-corte/`): backend
      (paso 8), frontend (paso 7), integración (`scope.integration.test.ts`) y e2e (helpers).
      Decisión del usuario: relanzar de a dos. `backend-r4b` (pasos 8 y 9) y `frontend-r4b`
-     (paso 7) relanzados sobre ese trabajo; integración y e2e, con el hash del paso 8. R8 sigue solo
+     (paso 7) relanzados sobre ese trabajo; integración y e2e, con el hash del paso 8. **R4b en `main`** (2026-10-09): el filtro de personas. Seis
+     revisiones aprobadas (de a dos), ronda de correcciones y corrida final en verde sobre
+     `4aa6b01`: 1652 de unidad, 277 de `test:time-ar`, 1397 de integración y e2e 201/201 ×2.
+     Todo en `correcciones-nucleo-reportes-r4b-revisiones.md`. Deuda nueva: C4, C5 y C6 de R4b
+     (copias de helpers de test y `seedUser` posicional). **Sigue R10** (agrupar por
+     descripción, mes y semana, mapa §R10): primero su contrato. R8 sigue solo
      en contrato. Después de R4b: R10, R5, R6, R7 y R9.
 
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
