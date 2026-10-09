@@ -57,16 +57,17 @@ export const reportRangeParams = z
   .transform(({ desde, hasta }) => ({ first: desde, last: hasta }))
   .pipe(reportRangeInput);
 
-export const REPORT_GROUP_BYS = ["person", "project"] as const;
+export const REPORT_GROUP_BYS = ["person", "project", "client"] as const;
 export type ReportGroupBy = (typeof REPORT_GROUP_BYS)[number];
 
 /** El valor de `agrupar` en la URL de cada agrupación: con este mapa se lee y se escribe. */
 export const REPORT_GROUP_PARAMS = {
   person: "persona",
   project: "proyecto",
+  client: "cliente",
 } as const satisfies Record<ReportGroupBy, string>;
 
-/** `?agrupar=persona|proyecto` con `safeParse`, aparte del rango; cualquier otro valor se descarta. */
+/** `?agrupar=persona|proyecto|cliente` con `safeParse`, aparte del rango; cualquier otro valor se descarta. */
 export const reportGroupParams = z
   .object({ agrupar: z.string() })
   .transform(({ agrupar }) =>
@@ -75,6 +76,27 @@ export const reportGroupParams = z
   .pipe(z.enum(REPORT_GROUP_BYS));
 
 const reportRangeView = z.object({ first: z.string(), last: z.string() });
+
+/** RP-20: los atajos, en el orden de la lista (D-R2b-2). */
+export const REPORT_SHORTCUTS = [
+  "today",
+  "yesterday",
+  "thisWeek",
+  "lastWeek",
+  "lastTwoWeeks",
+  "thisMonth",
+  "lastMonth",
+  "thisYear",
+  "lastYear",
+] as const;
+export type ReportShortcutId = (typeof REPORT_SHORTCUTS)[number];
+
+const reportShortcut = z.object({
+  id: z.enum(REPORT_SHORTCUTS),
+  /** «Hoy», «Mes pasado»: lo que dice el enlace y, si es el período, el botón. */
+  label: z.string(),
+  range: reportRangeView,
+});
 
 const reportPersonGroup = z.object({
   kind: z.literal("person"),
@@ -97,17 +119,29 @@ const reportProjectGroup = z.object({
   seconds: z.number().int().min(0),
 });
 
+const reportClientGroup = z.object({
+  kind: z.literal("client"),
+  /**
+   * `null` es «Sin cliente»: las entradas sin proyecto y las de proyectos sin
+   * cliente (RP-28). Archivado o no (RP-29).
+   */
+  client: z.object({ id: z.uuid(), name: z.string() }).nullable(),
+  seconds: z.number().int().min(0),
+});
+
 export const reportReadyState = z.object({
   kind: z.literal("ready"),
   todayKey: z.string(),
   range: reportRangeView,
-  /** «Esta semana», «Semana anterior», «05/10 – 18/10» (D-R2a-4). */
+  /** El del atajo, «Mes pasado», o el de R2a: «Semana anterior», «05/10 – 18/10» (D-R2b-2). */
   rangeLabel: z.string(),
-  /** `null` si el destino no tendría clave de cuatro cifras. */
+  /** `null` si el destino no pasa `reportRangeInput`. */
   previous: reportRangeView.nullable(),
   next: reportRangeView.nullable(),
   /** El destino del enlace «Esta semana». */
   currentWeek: reportRangeView,
+  /** Los atajos de hoy, sin los que no pasan `reportRangeInput` (D-R2b-2). */
+  shortcuts: z.array(reportShortcut),
   groupBy: z.enum(REPORT_GROUP_BYS),
   /** Lo que dice la línea del alcance (D-R2a-2). */
   scope: z.enum(["everyone", "self"]),
@@ -117,13 +151,21 @@ export const reportReadyState = z.object({
   totalSeconds: z.number().int().min(0),
   billableSeconds: z.number().int().min(0),
   /** En el orden de D-R2a-3. */
-  groups: z.array(z.discriminatedUnion("kind", [reportPersonGroup, reportProjectGroup])),
+  groups: z.array(
+    z.discriminatedUnion("kind", [
+      reportPersonGroup,
+      reportProjectGroup,
+      reportClientGroup,
+    ]),
+  ),
 });
 
 export type ReportReadyState = z.infer<typeof reportReadyState>;
 export type ReportGroup = ReportReadyState["groups"][number];
 export type ReportPersonGroup = z.infer<typeof reportPersonGroup>;
 export type ReportProjectGroup = z.infer<typeof reportProjectGroup>;
+export type ReportClientGroup = z.infer<typeof reportClientGroup>;
+export type ReportShortcut = z.infer<typeof reportShortcut>;
 
 export type ReportState =
   | ReportReadyState

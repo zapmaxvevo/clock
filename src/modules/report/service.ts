@@ -3,16 +3,14 @@ import { can, type Actor, type WorkspaceResource } from "@/server/permissions";
 import {
   addDaysToKey,
   dayKey,
-  dayRangeLabel,
   daysBetweenKeys,
   startOfDayKey,
-  weekKeyLabel,
-  weekStartKey,
   type TimeSettings,
 } from "@/server/time";
 import { displayNameOf } from "@/modules/profile/service";
 import { paletteKeyOf } from "@/modules/project/palette";
 
+import { reportPeriodOf } from "./period";
 import {
   reportRepository,
   type PersonTotalRow,
@@ -21,7 +19,6 @@ import {
 } from "./repository";
 import {
   REPORT_MAX_DAYS,
-  reportRangeInput,
   type ReportGroup,
   type ReportGroupBy,
   type ReportPersonGroup,
@@ -76,31 +73,6 @@ function scopeOf(actor: Actor): Scope {
   return new Scope(actor.workspaceId, people);
 }
 
-/** Los siete días desde `first`. */
-function weekFrom(first: string): ReportRange {
-  return { first, last: addDaysToKey(first, 6) };
-}
-
-/** El período corrido `days` días, o `null` si el destino no es un rango válido (D-R2a-4). */
-function shifted(range: ReportRange, days: number): ReportRange | null {
-  const moved = {
-    first: addDaysToKey(range.first, days),
-    last: addDaysToKey(range.last, days),
-  };
-  return reportRangeInput.safeParse(moved).success ? moved : null;
-}
-
-/** «Esta semana», «Semana anterior» o el rango de una semana alineada; si no, el de días. */
-function rangeLabelOf(range: ReportRange, todayKey: string, settings: TimeSettings) {
-  const format = settings.formats.date;
-  const isWeek =
-    daysBetweenKeys(range.first, range.last) === 6 &&
-    weekStartKey(range.first, settings.weekStart) === range.first;
-  return isWeek
-    ? weekKeyLabel(range.first, todayKey, settings.weekStart, format)
-    : dayRangeLabel(range.first, range.last, todayKey, format);
-}
-
 function personGroupOf(row: PersonTotalRow): ReportPersonGroup {
   return {
     kind: "person",
@@ -128,19 +100,23 @@ function projectGroupOf(row: ProjectTotalRow): ReportProjectGroup {
   };
 }
 
-/** Lo que el orden compara de un grupo; `null` es «Sin proyecto». */
+/** Lo que el orden compara de un grupo; `null` es «Sin proyecto» o «Sin cliente». */
 function sortKeyOf(
   group: ReportGroup,
 ): { readonly id: string; readonly name: string } | null {
-  if (group.kind === "person") {
-    return { id: group.userId, name: group.name };
+  switch (group.kind) {
+    case "person":
+      return { id: group.userId, name: group.name };
+    case "project":
+      return group.project;
+    case "client":
+      return group.client;
   }
-  return group.project;
 }
 
 /**
  * RP-12, D-R2a-3: duración descendente; con la misma, por nombre, y «Sin
- * proyecto» después de los proyectos.
+ * proyecto» o «Sin cliente» después de los que tienen nombre.
  */
 function compareGroups(left: ReportGroup, right: ReportGroup): number {
   if (left.seconds !== right.seconds) {
@@ -180,10 +156,17 @@ async function readGroups(
   span: ReportSpan,
   groupBy: ReportGroupBy,
 ): Promise<ReportTotals> {
-  if (groupBy === "person") {
-    return totalsOf(await reportRepository.totalsByPerson(scope, span), personGroupOf);
+  switch (groupBy) {
+    case "person":
+      return totalsOf(await reportRepository.totalsByPerson(scope, span), personGroupOf);
+    case "project":
+      return totalsOf(
+        await reportRepository.totalsByProject(scope, span),
+        projectGroupOf,
+      );
+    case "client":
+      throw new Error("La agrupación por cliente todavía no se lee.");
   }
-  return totalsOf(await reportRepository.totalsByProject(scope, span), projectGroupOf);
 }
 
 /**
@@ -203,8 +186,8 @@ export async function getReportState(
   const scope = scopeOf(actor);
   const timeZone = settings.timezone;
   const todayKey = dayKey(now, timeZone);
-  const currentWeek = weekFrom(weekStartKey(todayKey, settings.weekStart));
-  const range = request.range ?? currentWeek;
+  const period = reportPeriodOf(todayKey, settings, request.range);
+  const range = period.range;
   const groupBy = request.groupBy ?? "person";
   const days = daysBetweenKeys(range.first, range.last) + 1;
   // El esquema de la URL ya lo valida; acá es una invariante, para que
@@ -224,10 +207,11 @@ export async function getReportState(
     kind: "ready",
     todayKey,
     range,
-    rangeLabel: rangeLabelOf(range, todayKey, settings),
-    previous: shifted(range, -days),
-    next: shifted(range, days),
-    currentWeek,
+    rangeLabel: period.rangeLabel,
+    previous: period.previous,
+    next: period.next,
+    currentWeek: period.currentWeek,
+    shortcuts: [...period.shortcuts],
     groupBy,
     scope: scope.people.kind,
     timeZone,

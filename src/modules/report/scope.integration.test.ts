@@ -228,11 +228,20 @@ function summaryOf(state: ReportState) {
     groupBy: state.groupBy,
     totalSeconds: state.totalSeconds,
     billableSeconds: state.billableSeconds,
-    groups: state.groups.map((group) =>
-      group.kind === "person"
-        ? { userId: group.userId, inactive: group.inactive, seconds: group.seconds }
-        : { projectId: group.project?.id ?? null, seconds: group.seconds },
-    ),
+    groups: state.groups.map((group) => {
+      switch (group.kind) {
+        case "person":
+          return {
+            userId: group.userId,
+            inactive: group.inactive,
+            seconds: group.seconds,
+          };
+        case "project":
+          return { projectId: group.project?.id ?? null, seconds: group.seconds };
+        case "client":
+          return { clientId: group.client?.id ?? null, seconds: group.seconds };
+      }
+    }),
   };
 }
 

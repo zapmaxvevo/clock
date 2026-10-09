@@ -19,6 +19,7 @@ const state: ReportReadyState = {
   previous: { first: "2026-09-21", last: "2026-09-27" },
   next: thisWeek,
   currentWeek: thisWeek,
+  shortcuts: [],
   groupBy: "project",
   scope: "everyone",
   timeZone: "America/Argentina/Buenos_Aires",

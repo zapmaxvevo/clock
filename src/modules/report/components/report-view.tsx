@@ -1,6 +1,7 @@
 import { projectLabels } from "@/modules/project/components/labels";
 import { paletteColor } from "@/modules/project/palette";
 import type {
+  ReportClientGroup,
   ReportGroup,
   ReportPersonGroup,
   ReportProjectGroup,
@@ -77,11 +78,7 @@ export function ReportView({ state }: { readonly state: ReportReadyState }) {
               state.groups.map((group) => (
                 <tr key={groupKey(group)} className="border-b last:border-b-0">
                   <th scope="row" className="px-3 py-2 text-left font-normal">
-                    {group.kind === "person" ? (
-                      <PersonHeading group={group} />
-                    ) : (
-                      <ProjectHeading group={group} />
-                    )}
+                    <GroupHeading group={group} />
                   </th>
                   <td className="px-3 py-2 text-right tabular-nums">
                     {durationLabel(group.seconds)}
@@ -96,12 +93,27 @@ export function ReportView({ state }: { readonly state: ReportReadyState }) {
   );
 }
 
-/** Una fila por persona o por proyecto; «Sin proyecto» es una sola. */
+/** Una fila por persona, proyecto o cliente; «Sin proyecto» y «Sin cliente» son una sola. */
 function groupKey(group: ReportGroup): string {
-  if (group.kind === "person") {
-    return group.userId;
+  switch (group.kind) {
+    case "person":
+      return group.userId;
+    case "project":
+      return group.project === null ? "sin-proyecto" : group.project.id;
+    case "client":
+      return group.client === null ? "sin-cliente" : group.client.id;
   }
-  return group.project === null ? "sin-proyecto" : group.project.id;
+}
+
+function GroupHeading({ group }: { readonly group: ReportGroup }) {
+  switch (group.kind) {
+    case "person":
+      return <PersonHeading group={group} />;
+    case "project":
+      return <ProjectHeading group={group} />;
+    case "client":
+      return <ClientHeading group={group} />;
+  }
 }
 
 /** RP-31: una persona inactiva lo dice en texto, no solo con el gris. */
@@ -134,4 +146,12 @@ function ProjectHeading({ group }: { readonly group: ReportProjectGroup }) {
       )}
     </span>
   );
+}
+
+/** El nombre del cliente; «Sin cliente» en gris, como «Sin proyecto». */
+function ClientHeading({ group }: { readonly group: ReportClientGroup }) {
+  if (group.client === null) {
+    return <span className="text-muted-foreground">{projectLabels.noClient}</span>;
+  }
+  return <span className="truncate">{group.client.name}</span>;
 }

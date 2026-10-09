@@ -29,6 +29,8 @@ import {
   MINUTES_PER_DAY,
   minuteOfDayIn,
   minutesToClock,
+  monthEndKey,
+  monthStartKey,
   nonexistentMinutes,
   parseClockInput,
   parseDayKey,
@@ -42,6 +44,7 @@ import {
   weekKeyLabel,
   weekStartKey,
   weekdayLabel,
+  wholeMonthCount,
   canonicalTimeZone,
   clockLabel,
   formatDayKey,
@@ -696,6 +699,102 @@ describe("addDaysToKey", () => {
   it("cruza el 29 de febrero de un año bisiesto", () => {
     expect(addDaysToKey("2024-02-28", 1)).toBe("2024-02-29");
     expect(addDaysToKey("2025-02-28", 1)).toBe("2025-03-01");
+  });
+});
+
+describe("monthStartKey y monthEndKey", () => {
+  it.each<[number, string, string]>([
+    [0, "2026-10-01", "2026-10-31"],
+    [1, "2026-11-01", "2026-11-30"],
+    [-1, "2026-09-01", "2026-09-30"],
+    [12, "2027-10-01", "2027-10-31"],
+    [-12, "2025-10-01", "2025-10-31"],
+    [13, "2027-11-01", "2027-11-30"],
+    [-13, "2025-09-01", "2025-09-30"],
+  ])("desde el medio del mes, %i meses", (months, start, end) => {
+    expect([
+      monthStartKey("2026-10-15", months),
+      monthEndKey("2026-10-15", months),
+    ]).toEqual([start, end]);
+  });
+
+  it("sin meses es el mes de la clave", () => {
+    expect([monthStartKey("2026-10-15"), monthEndKey("2026-10-15")]).toEqual([
+      "2026-10-01",
+      "2026-10-31",
+    ]);
+  });
+
+  it("febrero tiene 29 días en 2024 y 28 en 2026", () => {
+    expect(monthEndKey("2024-02-10")).toBe("2024-02-29");
+    expect(monthEndKey("2024-01-31", 1)).toBe("2024-02-29");
+    expect(monthEndKey("2026-02-10")).toBe("2026-02-28");
+    expect(monthEndKey("2026-03-31", -1)).toBe("2026-02-28");
+  });
+
+  it("cruza de diciembre a enero y de enero a diciembre", () => {
+    expect([monthStartKey("2026-12-15", 1), monthEndKey("2026-12-15", 1)]).toEqual([
+      "2027-01-01",
+      "2027-01-31",
+    ]);
+    expect([monthStartKey("2026-01-15", -1), monthEndKey("2026-01-15", -1)]).toEqual([
+      "2025-12-01",
+      "2025-12-31",
+    ]);
+  });
+
+  it("desde el 31 de un mes de 31 días llega a un mes de 30 o de 28", () => {
+    expect([monthStartKey("2026-10-31", 1), monthEndKey("2026-10-31", 1)]).toEqual([
+      "2026-11-01",
+      "2026-11-30",
+    ]);
+    expect([monthStartKey("2026-01-31", 1), monthEndKey("2026-01-31", 1)]).toEqual([
+      "2026-02-01",
+      "2026-02-28",
+    ]);
+  });
+
+  it("fuera de los años válidos da una clave que parseDayKey rechaza", () => {
+    // Con el año 99 leído como 1999 daría un día válido.
+    expect(monthStartKey("0100-01-15", -1)).toBe("0099-12-01");
+    expect(parseDayKey(monthStartKey("0100-01-15", -1))).toBeNull();
+    expect(monthEndKey("9999-12-15", 1)).toBe("10000-01-31");
+    expect(parseDayKey(monthEndKey("9999-12-15", 1))).toBeNull();
+  });
+
+  it("lanza si la clave no es un día", () => {
+    expect(() => monthStartKey("2026-02-30")).toThrow(RangeError);
+    expect(() => monthEndKey("2026-02-30", 1)).toThrow(RangeError);
+    expect(() => monthStartKey("10000-01-01", -1)).toThrow(RangeError);
+  });
+});
+
+describe("wholeMonthCount", () => {
+  it("cuenta los meses enteros de un mes, de un año y cruzando el año", () => {
+    expect(wholeMonthCount("2026-10-01", "2026-10-31")).toBe(1);
+    expect(wholeMonthCount("2026-01-01", "2026-12-31")).toBe(12);
+    expect(wholeMonthCount("2025-11-01", "2026-01-31")).toBe(3);
+    // 366 días: el 29 de febrero de 2024 adentro.
+    expect(wholeMonthCount("2023-03-01", "2024-02-29")).toBe(12);
+  });
+
+  it("da null si el inicio no es el día 1", () => {
+    expect(wholeMonthCount("2026-10-02", "2026-10-31")).toBeNull();
+  });
+
+  it("da null si el fin no es el último día de su mes", () => {
+    expect(wholeMonthCount("2026-10-01", "2026-10-30")).toBeNull();
+    expect(wholeMonthCount("2024-02-01", "2024-02-28")).toBeNull();
+  });
+
+  it("da null si el fin es anterior al inicio", () => {
+    expect(wholeMonthCount("2026-11-01", "2026-10-31")).toBeNull();
+    expect(wholeMonthCount("2026-12-01", "2026-10-31")).toBeNull();
+  });
+
+  it("lanza si alguna clave no es un día", () => {
+    expect(() => wholeMonthCount("2026-02-30", "2026-03-31")).toThrow(RangeError);
+    expect(() => wholeMonthCount("2026-03-01", "2026-02-30")).toThrow(RangeError);
   });
 });
 

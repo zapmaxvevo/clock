@@ -13,7 +13,7 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "npm run test:unit && npm run test:time-ar",
     "test:unit": "vitest run",
-    "test:time-ar": "TZ=America/Argentina/Buenos_Aires vitest run src/server/time",
+    "test:time-ar": "TZ=America/Argentina/Buenos_Aires vitest run src/server/time src/modules/report/period.test.ts",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "db:generate": "drizzle-kit generate",
