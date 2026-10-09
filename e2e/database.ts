@@ -477,6 +477,20 @@ export async function setMembershipStatus(
 }
 
 /**
+ * Cambia el primer día de la semana de una persona, del domingo en cero al
+ * sábado en seis (PF-16), como lo guarda `/perfil`. Como el rol, sobre su
+ * propia membresía y nunca sobre la del owner (D-R10-14).
+ */
+export async function setWeekStart(email: string, weekStart: number): Promise<void> {
+  await updateOne(
+    `update membership
+        set week_start = $2, updated_at = now()
+      where ${OWN_MEMBERSHIP}`,
+    [email, String(weekStart)],
+  );
+}
+
+/**
  * Lo que siembra `seedEntries`: una entrada terminada, con proyecto o sin él,
  * con tarea o sin ella y con sus etiquetas.
  */

@@ -1,5 +1,5 @@
 /**
- * Localizadores y acciones de `/reportes` (R2a a R4 del núcleo de reportes).
+ * Localizadores y acciones de `/reportes` (R2a a R10a del núcleo de reportes).
  * Como en `timesheet-page.ts`, todo se busca por rol y por texto accesible. La
  * tabla se nombra por el título, y cada grupo es una fila con su encabezado de
  * fila: el nombre o, por fecha, el rótulo del día. La única excepción son los
@@ -90,11 +90,11 @@ export type ReportRange = { readonly first: CivilDay; readonly last: CivilDay };
 
 /** La agrupación como la escribe la URL. */
 export type ReportGroupBy =
-  "persona" | "proyecto" | "cliente" | "tarea" | "etiqueta" | "fecha";
+  "persona" | "proyecto" | "cliente" | "tarea" | "etiqueta" | "fecha" | "semana" | "mes";
 
 /**
- * El enlace de cada agrupación en «Agrupar por», en su orden (D-R3-8). Es
- * también el encabezado de la primera columna de la tabla (§5.3).
+ * El enlace de cada agrupación en «Agrupar por», en su orden (D-R3-8,
+ * D-R10-5). Es también el encabezado de la primera columna de la tabla (§5.3).
  */
 export const GROUP_LINK: Record<ReportGroupBy, string> = {
   persona: "Persona",
@@ -103,7 +103,26 @@ export const GROUP_LINK: Record<ReportGroupBy, string> = {
   tarea: "Tarea",
   etiqueta: "Etiqueta",
   fecha: "Fecha",
+  semana: "Semana",
+  mes: "Mes",
 };
+
+/**
+ * D-R10-3: los días que cuenta una semana o un mes que el período o un grupo
+ * de arriba cortan, en gris después del rótulo: «solo 01/10 – 04/10».
+ */
+export function partialDays(days: string): string {
+  return `solo ${days}`;
+}
+
+/**
+ * El nombre accesible del encabezado de una semana o un mes: el rótulo de la
+ * unidad entera y, si la fila no la cuenta entera, los días que cuenta. Con
+ * ese nombre entero, `groupRow` separa la misma semana debajo de dos meses.
+ */
+export function periodHeading(label: string, partial: string | null): string {
+  return partial === null ? label : `${label} ${partialDays(partial)}`;
+}
 
 /** RP-20: los atajos del selector del período, en el orden de la lista (D-R2b-2). */
 export const SHORTCUT_LABELS = [
