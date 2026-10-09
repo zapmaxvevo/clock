@@ -93,13 +93,20 @@ vacío del owner y `renewWorkspace` se corta.
      pipeline: cada agente con su base de test propia, y la de e2e creada y migrada antes;
      corridas en primer plano; el `parity-analyst` no puede escribir `reportes.md`, así que el
      team-lead aplica su texto.
-     Abiertas para el usuario:
-     - la pregunta 2 de §10 del contrato de R3 (lo abierto al recargar; hoy se pierde);
-     - P-05;
-     - P-11 nueva: agrupar por descripción, mes y semana, que Clockify lista y Clock no tiene.
+     Decisiones del usuario del 2026-10-09 (quinta sesión): lo abierto al recargar se acepta
+     como está (todo contraído, sin URL; pregunta 2 de §10 de R3, cerrada); P-11 entra al
+     núcleo como **R10** (agrupar por descripción, mes y semana, mapa §R10), en serie después
+     de R4 y antes de R5; `npm audit` con altas solo de desarrollo (S1 de R3a) lo delegó en el
+     team-lead: se toleran, porque CI audita solo producción, y se revisa cuando haya versión
+     corregida. Sigue abierta para el usuario P-05 (sesión de relevamiento).
 
-     Deuda nueva: `Executor` común en `src/server/db/` (C13 de R3a) y `npm audit` con altas
-     solo de desarrollo (S1 de R3a, del usuario).
+     Deuda nueva: `Executor` común en `src/server/db/` (C13 de R3a).
+
+     Quinta sesión, en curso: rama `nucleo/contratos-r4-r8` desde `d5765ea`, con
+     `architect-r4` (`nucleo-reportes-r4-filtros.md`) y `architect-r8`
+     (`nucleo-reportes-r8-cambiar-rol.md`) escribiendo en paralelo. **R8: solo el contrato**
+     (decisión del usuario del 2026-10-09): se revisa y se mergea, pero no se implementa hasta
+     que el usuario lo pida. Adelantarlo no había sido decisión suya.
 
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
      (`7b66b03`), en checkout en el árbol principal. `architect-r3` quedó escribiendo
