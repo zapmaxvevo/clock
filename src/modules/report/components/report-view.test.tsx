@@ -185,6 +185,102 @@ describe("ReportView", () => {
     expect(markup).not.toContain("<time");
   });
 
+  it("por tarea, el proyecto en gris y «Sin tarea» en gris, sin proyecto (D-R3-4, RP-28)", () => {
+    const web = {
+      id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+      name: "Web",
+      color: "teal",
+    } as const;
+    const groups: ReportGroup[] = [
+      {
+        kind: "task",
+        task: { id: "3a4b5c6d-7e8f-4a9b-8c0d-2e3f4a5b6c7d", name: "Diseño" },
+        project: web,
+        seconds: 3_600,
+      },
+      {
+        kind: "task",
+        task: { id: "4a5b6c7d-8e9f-4a0b-9c1d-3e4f5a6b7c8d", name: "Revisión" },
+        project: web,
+        seconds: 1_800,
+      },
+      { kind: "task", task: null, project: null, seconds: 1_200 },
+      {
+        kind: "task",
+        task: { id: "5a6b7c8d-9e0f-4a1b-8c2d-4e5f6a7b8c9d", name: "Diseño" },
+        project: {
+          id: "2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d",
+          name: "Interno",
+          color: "red",
+        },
+        seconds: 900,
+      },
+    ];
+    const markup = render({ groupBy: "task", groups, totalSeconds: 7_500 });
+    expect(markup).toMatch(/<th scope="col"[^>]*>Tarea<\/th>/);
+    // Las dos «Diseño» se distinguen por su proyecto.
+    expect(bodyRows(markup)).toEqual([
+      ["DiseñoWeb", "1:00"],
+      ["RevisiónWeb", "0:30"],
+      ["Sin tarea", "0:20"],
+      ["DiseñoInterno", "0:15"],
+    ]);
+    expect(markup).toMatch(
+      /<th scope="row"[^>]*><span[^>]*><span class="truncate">Diseño<\/span><span class="text-muted-foreground truncate">Interno<\/span><\/span><\/th>/,
+    );
+    expect(markup).toMatch(
+      /<th scope="row"[^>]*><span class="text-muted-foreground">Sin tarea<\/span><\/th>/,
+    );
+    expect(totals(markup).Total).toBe("2:05");
+  });
+
+  it("por etiqueta, el encabezado «Etiqueta», el nombre y «Sin etiqueta» en gris (RP-28)", () => {
+    const groups: ReportGroup[] = [
+      {
+        kind: "tag",
+        tag: { id: "6a7b8c9d-0e1f-4a2b-9c3d-5e6f7a8b9c0d", name: "Urgente" },
+        seconds: 5_400,
+      },
+      {
+        kind: "tag",
+        tag: { id: "7a8b9c0d-1e2f-4a3b-8c4d-6e7f8a9b0c1d", name: "Soporte" },
+        seconds: 4_800,
+      },
+      { kind: "tag", tag: null, seconds: 900 },
+    ];
+    const markup = render({ groupBy: "tag", groups, totalSeconds: 7_500 });
+    expect(markup).toMatch(/<th scope="col"[^>]*>Etiqueta<\/th>/);
+    expect(bodyRows(markup)).toEqual([
+      ["Urgente", "1:30"],
+      ["Soporte", "1:20"],
+      ["Sin etiqueta", "0:15"],
+    ]);
+    expect(markup).toMatch(
+      /<th scope="row"[^>]*><span class="truncate">Urgente<\/span><\/th>/,
+    );
+    expect(markup).toMatch(
+      /<th scope="row"[^>]*><span class="text-muted-foreground">Sin etiqueta<\/span><\/th>/,
+    );
+    // La cabecera dice el total real, menos que la suma de las filas (D-R3-3).
+    expect(totals(markup).Total).toBe("2:05");
+  });
+
+  it("por etiqueta, avisa la suma debajo de la zona (RP-18, D-R3-3)", () => {
+    const markup = render({ groupBy: "tag" });
+    const zone =
+      "<p>Los días se cortan en tu zona horaria: America/Argentina/Buenos_Aires.</p>";
+    expect(markup).toContain(
+      `${zone}<p>Una entrada con varias etiquetas suma en cada una: las filas por etiqueta pueden sumar más que el total.</p>`,
+    );
+  });
+
+  it.each(["person", "project", "client", "task", "date"] as const)(
+    "por %s, sin el aviso de la suma por etiqueta",
+    (groupBy) => {
+      expect(render({ groupBy })).not.toContain("Una entrada con varias etiquetas");
+    },
+  );
+
   it("cada cifra se trunca al minuto por separado: dos filas de 90 s y el total 0:03 (§5.3)", () => {
     const groups: ReportGroup[] = [
       { kind: "person", userId: "u1", name: "Ana", inactive: false, seconds: 90 },

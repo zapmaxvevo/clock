@@ -24,8 +24,8 @@ const GROUP_COLUMN_HEADINGS = {
   person: reportLabels.byPerson,
   project: reportLabels.byProject,
   client: reportLabels.byClient,
-  task: "Tarea",
-  tag: "Etiqueta",
+  task: reportLabels.byTask,
+  tag: reportLabels.byTag,
   date: reportLabels.byDate,
 } as const satisfies Record<ReportGroupBy, string>;
 
@@ -38,8 +38,8 @@ function durationLabel(seconds: number): string {
 }
 
 /**
- * El alcance y la zona (D-R2a-2, D-R2a-5), los totales (RP-18) y una fila por
- * grupo, en el orden en que llegan.
+ * El alcance y la zona (D-R2a-2, D-R2a-5), el aviso de la suma por etiqueta
+ * (D-R3-3), los totales (RP-18) y una fila por grupo, en el orden en que llegan.
  */
 export function ReportView({ state }: { readonly state: ReportReadyState }) {
   return (
@@ -51,6 +51,7 @@ export function ReportView({ state }: { readonly state: ReportReadyState }) {
             : reportLabels.scopeSelf}
         </p>
         <p>{reportLabels.zone(state.timeZone)}</p>
+        {state.groupBy === "tag" && <p>{reportLabels.tagOverlap}</p>}
       </div>
 
       <dl className="flex flex-wrap gap-x-8 gap-y-2">
@@ -106,7 +107,7 @@ export function ReportView({ state }: { readonly state: ReportReadyState }) {
   );
 }
 
-/** Una fila por persona, proyecto, cliente o día; «Sin proyecto» y «Sin cliente» son una sola. */
+/** Una fila por persona, proyecto, cliente, tarea, etiqueta o día; cada «Sin …» es una sola. */
 function groupKey(group: ReportGroup): string {
   switch (group.kind) {
     case "person":
@@ -182,16 +183,29 @@ function ClientHeading({ group }: { readonly group: ReportClientGroup }) {
   return <span className="truncate">{group.client.name}</span>;
 }
 
+/**
+ * El nombre de la tarea y su proyecto en gris, como el cliente de un proyecto:
+ * dos tareas que se llaman igual en proyectos distintos se distinguen (D-R3-4).
+ * «Sin tarea» en gris y sin proyecto, porque junta varios.
+ */
 function TaskHeading({ group }: { readonly group: ReportTaskGroup }) {
   if (group.task === null) {
-    return <span className="text-muted-foreground">Sin tarea</span>;
+    return <span className="text-muted-foreground">{reportLabels.noTask}</span>;
   }
-  return <span className="truncate">{group.task.name}</span>;
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <span className="truncate">{group.task.name}</span>
+      {group.project !== null && (
+        <span className="text-muted-foreground truncate">{group.project.name}</span>
+      )}
+    </span>
+  );
 }
 
+/** El nombre de la etiqueta, archivada o no (RP-29); «Sin etiqueta» en gris. */
 function TagHeading({ group }: { readonly group: ReportTagGroup }) {
   if (group.tag === null) {
-    return <span className="text-muted-foreground">Sin etiqueta</span>;
+    return <span className="text-muted-foreground">{reportLabels.noTag}</span>;
   }
   return <span className="truncate">{group.tag.name}</span>;
 }

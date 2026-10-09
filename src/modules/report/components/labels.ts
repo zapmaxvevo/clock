@@ -23,12 +23,21 @@ export const reportLabels = {
   apply: "Aplicar",
   /** RP-20: la lista de períodos con nombre, dentro del selector (D-R2b-2). */
   shortcuts: "Atajos",
-  /** RP-11: un nivel, por persona, por proyecto, por cliente o por fecha. */
+  /** RP-11: un nivel, por persona, proyecto, cliente, tarea, etiqueta o fecha (D-R3-8). */
   groupBy: "Agrupar por",
   byPerson: "Persona",
   byProject: "Proyecto",
   byClient: "Cliente",
+  byTask: "Tarea",
+  byTag: "Etiqueta",
   byDate: "Fecha",
+  /**
+   * RP-28: las entradas de un proyecto sin tarea y las sin proyecto; las sin
+   * ninguna etiqueta. Son grupos del reporte, no de `projectLabels`, y «Sin
+   * etiqueta» va en singular, distinto del «Sin etiquetas» de una entrada.
+   */
+  noTask: "Sin tarea",
+  noTag: "Sin etiqueta",
   duration: "Duración",
   /** RP-18. */
   total: "Total",
@@ -38,6 +47,9 @@ export const reportLabels = {
   scopeEveryone: "Ves las horas de todas las personas del workspace.",
   /** RP-22, D-R2a-5: la zona tal como está en el perfil, sin desplazamiento. */
   zone: (timeZone: string) => `Los días se cortan en tu zona horaria: ${timeZone}.`,
+  /** RP-18, D-R3-3: debajo de la zona, cuando la etiqueta es uno de los niveles. */
+  tagOverlap:
+    "Una entrada con varias etiquetas suma en cada una: las filas por etiqueta pueden sumar más que el total.",
   /** RP-31. */
   inactivePerson: "(inactiva)",
   /** RP-33. */
