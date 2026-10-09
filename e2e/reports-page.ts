@@ -1,5 +1,5 @@
 /**
- * Localizadores y acciones de `/reportes` (R2a a R10a del núcleo de reportes).
+ * Localizadores y acciones de `/reportes` (R2a a R10b del núcleo de reportes).
  * Como en `timesheet-page.ts`, todo se busca por rol y por texto accesible. La
  * tabla se nombra por el título, y cada grupo es una fila con su encabezado de
  * fila: el nombre o, por fecha, el rótulo del día. La única excepción son los
@@ -65,6 +65,17 @@ export const NO_TASK = "Sin tarea";
 /** RP-28: el grupo de las entradas sin ninguna etiqueta. */
 export const NO_TAG = "Sin etiqueta";
 
+/** RP-28: el grupo de las entradas con la descripción vacía, el rótulo del rastreador. */
+export const NO_DESCRIPTION = "Sin descripción";
+
+/** D-R3-6: la línea de un nivel de abajo que no entra en el tope. */
+export const ROW_LIMIT =
+  "El reporte pasa de 3000 filas con todos sus niveles: se muestran solo los de arriba. Acortá el período o quitá un nivel.";
+
+/** D-R10-10: la fila que reemplaza a las del primer nivel cuando no entra en el tope. */
+export const FIRST_LEVEL_LIMIT =
+  "El primer nivel pasa de 3000 filas y no se muestra. Acortá el período, filtrá o agrupá por otra cosa.";
+
 /** RP-18, D-R3-3: la línea que avisa que las filas por etiqueta pueden pasar el total. */
 export const TAG_OVERLAP =
   "Una entrada con varias etiquetas suma en cada una: las filas por etiqueta pueden sumar más que el total.";
@@ -90,7 +101,15 @@ export type ReportRange = { readonly first: CivilDay; readonly last: CivilDay };
 
 /** La agrupación como la escribe la URL. */
 export type ReportGroupBy =
-  "persona" | "proyecto" | "cliente" | "tarea" | "etiqueta" | "fecha" | "semana" | "mes";
+  | "persona"
+  | "proyecto"
+  | "cliente"
+  | "tarea"
+  | "etiqueta"
+  | "fecha"
+  | "semana"
+  | "mes"
+  | "descripcion";
 
 /**
  * El enlace de cada agrupación en «Agrupar por», en su orden (D-R3-8,
@@ -105,6 +124,7 @@ export const GROUP_LINK: Record<ReportGroupBy, string> = {
   fecha: "Fecha",
   semana: "Semana",
   mes: "Mes",
+  descripcion: "Descripción",
 };
 
 /**
@@ -394,6 +414,14 @@ export function taskHeading(task: string, project: string): string {
 /** La fila de una tarea de un proyecto, que `groupRow` no separa de otra igual. */
 export function taskRow(page: Page, task: string, project: string): Locator {
   return rowByHeader(page, taskHeading(task, project));
+}
+
+/**
+ * La fila del primer nivel que no entra en el tope (D-R10-10): una celda que
+ * ocupa la tabla entera, sin encabezado de fila.
+ */
+export function firstLevelLimitCell(page: Page): Locator {
+  return reportTable(page).getByRole("cell", { name: FIRST_LEVEL_LIMIT, exact: true });
 }
 
 /**
