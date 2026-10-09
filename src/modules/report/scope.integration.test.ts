@@ -396,21 +396,22 @@ function selfOnlyInA() {
   ] as const;
 }
 
+/** Sin `report.view`, `forbidden` sin leer ni abrir la transacción (criterio 9 de R3). */
 async function expectForbiddenWithoutReading(actor: Actor) {
-  const byPerson = vi.spyOn(reportRepository, "totalsByPerson");
-  const byProject = vi.spyOn(reportRepository, "totalsByProject");
-  const byBucket = vi.spyOn(reportRepository, "totalsByBucket");
+  const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+  const entryTotals = vi.spyOn(reportRepository, "entryTotals");
+  const transaction = vi.spyOn(db, "transaction");
   try {
     for (const groupBy of [null, ...groupBys]) {
       expect(await reportOf(actor, groupBy)).toEqual({ kind: "forbidden" });
     }
-    expect(byPerson).not.toHaveBeenCalled();
-    expect(byProject).not.toHaveBeenCalled();
-    expect(byBucket).not.toHaveBeenCalled();
+    expect(byLevels).not.toHaveBeenCalled();
+    expect(entryTotals).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
   } finally {
-    byPerson.mockRestore();
-    byProject.mockRestore();
-    byBucket.mockRestore();
+    byLevels.mockRestore();
+    entryTotals.mockRestore();
+    transaction.mockRestore();
   }
 }
 
