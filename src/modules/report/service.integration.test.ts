@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/server/db";
 import { project, tag, task, timeEntry, user } from "@/server/db/schema";
 import type { Actor, MembershipStatus, Role } from "@/server/permissions";
-import { type TimeSettings } from "@/server/time";
+import { monthBuckets, weekBuckets, type TimeSettings } from "@/server/time";
 import {
   buenosAires,
   seedClient,
@@ -37,7 +37,7 @@ import {
   type ReportReadyState,
 } from "./schema";
 import { reportLabels } from "./components/labels";
-import { NO_ENTRY_FILTER, reportRepository } from "./repository";
+import { NO_ENTRY_FILTER, reportRepository, type ReportLevelRead } from "./repository";
 import { getReportState, type ReportRequest } from "./service";
 
 const madrid = "Europe/Madrid";
@@ -50,11 +50,6 @@ const thisWeek: ReportRange = { first: "2026-10-05", last: "2026-10-11" };
 const lastWeek: ReportRange = { first: "2026-09-28", last: "2026-10-04" };
 
 const settings = workspaceOf(buenosAires);
-
-/** Las agrupaciones de R3: los recorridos vuelven a `REPORT_GROUP_BYS` en el paso 3 de R10. */
-const R3_GROUP_BYS = REPORT_GROUP_BYS.filter(
-  (groupBy) => groupBy !== "week" && groupBy !== "month",
-);
 
 let workspaceId: string;
 let ownerId: string;
@@ -490,7 +485,7 @@ describe("la agrupación y el orden (D-R2a-3, D-R2a-8, RP-12, RP-18)", () => {
     await seedClosed(other, "2026-09-29T14:00:00Z", 600);
     await seedClosed(other, "2026-09-30T14:00:00Z", 30, { billable: true });
 
-    for (const groupBy of R3_GROUP_BYS) {
+    for (const groupBy of REPORT_GROUP_BYS) {
       const state = await readyState(owner, { range: lastWeek, groupBy });
       expect([
         groupBy,
@@ -1484,7 +1479,7 @@ function outline(groups: readonly ReportGroup[]): Outline[] {
   });
 }
 
-/** El nombre de un grupo, «Sin …» por su rótulo o el día. */
+/** El nombre de un grupo, «Sin …» por su rótulo, el día, o el rótulo de una semana o un mes con su «solo …». */
 function labelOf(group: ReportGroup): string {
   switch (group.kind) {
     case "person":
@@ -1500,9 +1495,10 @@ function labelOf(group: ReportGroup): string {
     case "date":
       return group.dayKey;
     case "week":
-      return group.weekStart;
     case "month":
-      return group.monthStart;
+      return group.partial === null
+        ? group.label
+        : `${group.label} solo ${group.partial}`;
   }
 }
 
@@ -2022,7 +2018,7 @@ describe("el período fuera del tope (B1)", () => {
       { first: "2026-10-11", last: "2026-10-05" },
       { first: "2025-01-01", last: "2026-01-02" },
     ]) {
-      for (const groupBy of R3_GROUP_BYS) {
+      for (const groupBy of REPORT_GROUP_BYS) {
         await expect(
           getReportState(
             owner,
@@ -2860,5 +2856,422 @@ describe("el filtro de personas (R4b: RP-25, RP-34, RP-62, RP-64; D-R4-4)", () =
       expect(scopes.every((scope) => scope.people.kind === "self")).toBe(true);
       expect(listPeople).not.toHaveBeenCalled();
     });
+  });
+});
+
+/** Las filas de semana o de mes del primer nivel como `[primer día, rótulo, solo, segundos]`, en orden. */
+function timeRows(state: ReportReadyState) {
+  return state.groups.map((group) => {
+    switch (group.kind) {
+      case "week":
+        return [group.weekStart, group.label, group.partial, group.seconds];
+      case "month":
+        return [group.monthStart, group.label, group.partial, group.seconds];
+      default:
+        return ["?", "?", "?", group.seconds];
+    }
+  });
+}
+
+/** El total y el facturable de un estado, para compararlos con los de «Persona». */
+function totalsPair(state: ReportReadyState) {
+  return [state.totalSeconds, state.billableSeconds];
+}
+
+describe("por semana (D-R10-2, D-R10-3, D-R10-5, RP-24; criterio 4 de R10)", () => {
+  /** Del miércoles 30/09 al martes 13/10: la primera y la última semana, cortadas. */
+  const range: ReportRange = { first: "2026-09-30", last: "2026-10-13" };
+
+  beforeEach(async () => {
+    // A las 10:00 de Buenos Aires.
+    await seedClosed(ownerId, "2026-09-30T13:00:00Z", 3600, { billable: true });
+    await seedClosed(ownerId, "2026-10-04T13:00:00Z", 1800);
+    await seedClosed(ownerId, "2026-10-08T13:00:00Z", 900, { billable: true });
+    // La última semana tiene más horas: el orden sigue siendo cronológico.
+    await seedClosed(ownerId, "2026-10-12T13:00:00Z", 7200);
+  });
+
+  it("con lunes: la primera y la última con partial, la del medio sin, en orden cronológico", async () => {
+    const state = await readyState(owner, { range, groupBy: "week" });
+    expect(timeRows(state)).toEqual([
+      ["2026-09-28", "28/09 – 04/10", "30/09 – 04/10", 5400],
+      ["2026-10-05", "05/10 – 11/10", null, 900],
+      ["2026-10-12", "12/10 – 18/10", "12/10 – 13/10", 7200],
+    ]);
+    expect(reportReadyState.parse(state)).toEqual(state);
+  });
+
+  it("las mismas entradas con domingo dan otras semanas", async () => {
+    const state = await readyState(
+      owner,
+      { range, groupBy: "week" },
+      { settings: workspaceOf(buenosAires, 0) },
+    );
+    expect(timeRows(state)).toEqual([
+      ["2026-09-27", "27/09 – 03/10", "30/09 – 03/10", 3600],
+      ["2026-10-04", "04/10 – 10/10", null, 2700],
+      ["2026-10-11", "11/10 – 17/10", "11/10 – 13/10", 7200],
+    ]);
+  });
+
+  it("el total y el facturable son los de «Persona»", async () => {
+    const byWeek = await readyState(owner, { range, groupBy: "week" });
+    const byPerson = await readyState(owner, { range, groupBy: "person" });
+    expect(totalsPair(byWeek)).toEqual([13_500, 4500]);
+    expect(totalsPair(byWeek)).toEqual(totalsPair(byPerson));
+  });
+
+  it("una semana de otro año lleva el año en el rótulo, sin «Esta semana» ni «Semana anterior»", async () => {
+    await seedClosed(ownerId, "2025-12-30T13:00:00Z", 600);
+    const lastYear = await readyState(owner, {
+      range: { first: "2025-12-29", last: "2026-01-04" },
+      groupBy: "week",
+    });
+    expect(timeRows(lastYear)).toEqual([
+      ["2025-12-29", "29/12/2025 – 04/01/2026", null, 600],
+    ]);
+    const current = await readyState(owner, {
+      range: { first: "2026-09-28", last: "2026-10-11" },
+      groupBy: "week",
+    });
+    expect(timeRows(current)).toEqual([
+      ["2026-09-28", "28/09 – 04/10", null, 5400],
+      ["2026-10-05", "05/10 – 11/10", null, 900],
+    ]);
+  });
+});
+
+describe("la semana y el mes en la zona de quien mira (RP-22, ADR 0021; criterios 4 y 5 de R10)", () => {
+  it("el domingo a las 23:30 de Buenos Aires es el lunes a las 04:30 de Madrid: semanas distintas", async () => {
+    await seedClosed(ownerId, "2026-10-05T02:30:00Z", 600);
+    const range = { first: "2026-09-28", last: "2026-10-11" };
+    const fromBuenosAires = await readyState(owner, { range, groupBy: "week" });
+    const fromMadrid = await readyState(
+      owner,
+      { range, groupBy: "week" },
+      { settings: workspaceOf(madrid) },
+    );
+    expect(timeRows(fromBuenosAires)).toEqual([
+      ["2026-09-28", "28/09 – 04/10", null, 600],
+    ]);
+    expect(timeRows(fromMadrid)).toEqual([["2026-10-05", "05/10 – 11/10", null, 600]]);
+  });
+
+  it("el 30/09 a las 23:30 de Buenos Aires es de septiembre allí y de octubre en Madrid", async () => {
+    await seedClosed(ownerId, "2026-10-01T02:30:00Z", 600);
+    const range = { first: "2026-09-15", last: "2026-10-14" };
+    const fromBuenosAires = await readyState(owner, { range, groupBy: "month" });
+    const fromMadrid = await readyState(
+      owner,
+      { range, groupBy: "month" },
+      { settings: workspaceOf(madrid) },
+    );
+    expect(timeRows(fromBuenosAires)).toEqual([
+      ["2026-09-01", "septiembre", "15/09 – 30/09", 600],
+    ]);
+    expect(timeRows(fromMadrid)).toEqual([
+      ["2026-10-01", "octubre", "01/10 – 14/10", 600],
+    ]);
+  });
+});
+
+describe("por mes (D-R10-2, D-R10-3, D-R10-5; criterio 5 de R10)", () => {
+  it("del 15/09 al 14/10: septiembre y octubre con lo que cuentan, en orden cronológico", async () => {
+    await seedClosed(ownerId, "2026-09-15T13:00:00Z", 600, { billable: true });
+    await seedClosed(ownerId, "2026-10-14T13:00:00Z", 1200);
+    const range = { first: "2026-09-15", last: "2026-10-14" };
+    const byMonth = await readyState(owner, { range, groupBy: "month" });
+    expect(timeRows(byMonth)).toEqual([
+      ["2026-09-01", "septiembre", "15/09 – 30/09", 600],
+      ["2026-10-01", "octubre", "01/10 – 14/10", 1200],
+    ]);
+    expect(reportReadyState.parse(byMonth)).toEqual(byMonth);
+    const byPerson = await readyState(owner, { range, groupBy: "person" });
+    expect(totalsPair(byMonth)).toEqual([1800, 600]);
+    expect(totalsPair(byMonth)).toEqual(totalsPair(byPerson));
+  });
+
+  it("un año entero da meses sin partial, con el año en el rótulo si no es el de hoy", async () => {
+    await seedClosed(ownerId, "2025-01-01T03:00:00Z", 600);
+    await seedClosed(ownerId, "2025-06-15T13:00:00Z", 1200);
+    // El último instante del año en Buenos Aires.
+    await seedClosed(ownerId, "2026-01-01T02:59:00Z", 1800);
+    const byMonth = await readyState(owner, {
+      range: { first: "2025-01-01", last: "2025-12-31" },
+      groupBy: "month",
+    });
+    expect(timeRows(byMonth)).toEqual([
+      ["2025-01-01", "enero de 2025", null, 600],
+      ["2025-06-01", "junio de 2025", null, 1200],
+      ["2025-12-01", "diciembre de 2025", null, 1800],
+    ]);
+  });
+});
+
+describe("los niveles de tiempo y los filtros (D-R10-3, D-R10-6, D-R10-11; criterio 6 de R10)", () => {
+  /** Del lunes 21/09 al domingo 11/10, con lunes: la semana del 28/09 entera adentro. */
+  const range: ReportRange = { first: "2026-09-21", last: "2026-10-11" };
+  let p1: string;
+
+  beforeEach(async () => {
+    const ana = await seedPerson({ accountName: "Ana" });
+    const bruno = await seedPerson({ accountName: "Bruno" });
+    p1 = (await seedProject({ workspaceId, name: "P1" })).id;
+    const p2 = (await seedProject({ workspaceId, name: "P2" })).id;
+    // A las 09:00 y a las 10:00 de Buenos Aires.
+    await seedClosed(ana, "2026-09-30T12:00:00Z", 3600, { projectId: p1 });
+    await seedClosed(ana, "2026-10-01T12:00:00Z", 1800, { projectId: p1 });
+    await seedClosed(bruno, "2026-09-30T13:00:00Z", 2700, { projectId: p2 });
+  });
+
+  function tree(levels: readonly ReportGroupBy[], filters: Partial<ReportFilters> = {}) {
+    return readyState(owner, {
+      range,
+      groupBy: levels[0],
+      subgroups: levels.slice(1),
+      filters: { ...NO_REPORT_FILTERS, ...filters },
+    });
+  }
+
+  it("[month, week]: la semana debajo de los dos meses, cada vez con su parte", async () => {
+    const state = await tree(["month", "week"]);
+    expect(outline(state.groups)).toEqual([
+      [
+        "septiembre solo 21/09 – 30/09",
+        6300,
+        [["28/09 – 04/10 solo 28/09 – 30/09", 6300]],
+      ],
+      ["octubre solo 01/10 – 11/10", 1800, [["28/09 – 04/10 solo 01/10 – 04/10", 1800]]],
+    ]);
+    expect(state.totalSeconds).toBe(8100);
+    expect(reportReadyState.parse(state)).toEqual(state);
+  });
+
+  it("[month, person, week]: la semana dice «solo …» aunque su padre sea la persona", async () => {
+    const state = await tree(["month", "person", "week"]);
+    expect(outline(state.groups)).toEqual([
+      [
+        "septiembre solo 21/09 – 30/09",
+        6300,
+        [
+          ["Ana", 3600, [["28/09 – 04/10 solo 28/09 – 30/09", 3600]]],
+          ["Bruno", 2700, [["28/09 – 04/10 solo 28/09 – 30/09", 2700]]],
+        ],
+      ],
+      [
+        "octubre solo 01/10 – 11/10",
+        1800,
+        [["Ana", 1800, [["28/09 – 04/10 solo 01/10 – 04/10", 1800]]]],
+      ],
+    ]);
+  });
+
+  it("[week, month]: debajo de la semana entera, sus dos meses con su parte", async () => {
+    const state = await tree(["week", "month"]);
+    expect(outline(state.groups)).toEqual([
+      [
+        "28/09 – 04/10",
+        8100,
+        [
+          ["septiembre solo 28/09 – 30/09", 6300],
+          ["octubre solo 01/10 – 04/10", 1800],
+        ],
+      ],
+    ]);
+  });
+
+  it("[week, date]: los días debajo de la semana", async () => {
+    const state = await tree(["week", "date"]);
+    expect(outline(state.groups)).toEqual([
+      [
+        "28/09 – 04/10",
+        8100,
+        [
+          ["2026-09-30", 6300],
+          ["2026-10-01", 1800],
+        ],
+      ],
+    ]);
+  });
+
+  it("[person, month]: cada persona con sus meses", async () => {
+    const state = await tree(["person", "month"]);
+    expect(outline(state.groups)).toEqual([
+      [
+        "Ana",
+        5400,
+        [
+          ["septiembre solo 21/09 – 30/09", 3600],
+          ["octubre solo 01/10 – 11/10", 1800],
+        ],
+      ],
+      ["Bruno", 2700, [["septiembre solo 21/09 – 30/09", 2700]]],
+    ]);
+  });
+
+  it("[month, week, date]: cada día debajo de su mes y de su semana", async () => {
+    const state = await tree(["month", "week", "date"]);
+    expect(outline(state.groups)).toEqual([
+      [
+        "septiembre solo 21/09 – 30/09",
+        6300,
+        [["28/09 – 04/10 solo 28/09 – 30/09", 6300, [["2026-09-30", 6300]]]],
+      ],
+      [
+        "octubre solo 01/10 – 11/10",
+        1800,
+        [["28/09 – 04/10 solo 01/10 – 04/10", 1800, [["2026-10-01", 1800]]]],
+      ],
+    ]);
+  });
+
+  it("[month, week] con P1: solo lo de P1 en cada nivel y en el total (R4, §9)", async () => {
+    const state = await tree(["month", "week"], { projects: [p1] });
+    expect(outline(state.groups)).toEqual([
+      [
+        "septiembre solo 21/09 – 30/09",
+        3600,
+        [["28/09 – 04/10 solo 28/09 – 30/09", 3600]],
+      ],
+      ["octubre solo 01/10 – 11/10", 1800, [["28/09 – 04/10 solo 01/10 – 04/10", 1800]]],
+    ]);
+    expect(state.totalSeconds).toBe(5400);
+  });
+});
+
+describe("las guardas de las dimensiones de tiempo (D-R10-4; criterio 7 de R10)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("cada lectura con los tramos mal puestos lanza RangeError sin consultar, con db y con el Executor de una transacción", async () => {
+    const { scope, span, buckets } = await realLevelRead();
+    const week = weekBuckets(lastWeek.first, lastWeek.last, 1, buenosAires);
+    const month = monthBuckets(lastWeek.first, lastWeek.last, buenosAires);
+    const shortMonth = monthBuckets(lastWeek.first, "2026-10-03", buenosAires);
+    const filter = NO_ENTRY_FILTER;
+    // Las válidas de cada forma, para que las inválidas fallen solo por lo suyo.
+    for (const valid of [
+      { span, filter, dimensions: ["week"], buckets: { week } },
+      { span, filter, dimensions: ["month", "week"], buckets: { month, week } },
+      {
+        span,
+        filter,
+        dimensions: ["month", "week", "date"],
+        buckets: { month, week, date: buckets },
+      },
+    ] satisfies ReportLevelRead[]) {
+      await expect(reportRepository.totalsByLevels(scope, valid)).resolves.toEqual(
+        expect.any(Array),
+      );
+    }
+    const invalid = [
+      { span, filter, dimensions: ["week"], buckets: {} },
+      { span, filter, dimensions: ["week"], buckets: { month } },
+      { span, filter, dimensions: ["project"], buckets: { week } },
+      { span, filter, dimensions: ["date"], buckets: { date: buckets, week } },
+      { span, filter, dimensions: ["month", "week"], buckets: { month } },
+      { span, filter, dimensions: ["month", "week"], buckets: { week } },
+      { span, filter, dimensions: ["month"], buckets: { month: shortMonth } },
+      {
+        span,
+        filter,
+        dimensions: ["month"],
+        buckets: {
+          month: {
+            buckets: [{ ...month.buckets[0], start: new Date(span.from.getTime() - 1) }],
+            end: month.end,
+          },
+        },
+      },
+      {
+        span,
+        filter,
+        dimensions: ["week"],
+        buckets: { week: { buckets: [], end: week.end } },
+      },
+      {
+        span,
+        filter,
+        dimensions: ["month"],
+        buckets: { month: { buckets: [], end: month.end } },
+      },
+    ] satisfies ReportLevelRead[];
+
+    const select = vi.spyOn(db, "select");
+    for (const read of invalid) {
+      await expect(reportRepository.totalsByLevels(scope, read)).rejects.toThrow(
+        RangeError,
+      );
+    }
+    expect(select).not.toHaveBeenCalled();
+
+    await db.transaction(async (tx) => {
+      const txSelect = vi.spyOn(tx, "select");
+      for (const read of invalid) {
+        await expect(reportRepository.totalsByLevels(scope, read, tx)).rejects.toThrow(
+          RangeError,
+        );
+      }
+      expect(txSelect).not.toHaveBeenCalled();
+    });
+    expect(select).not.toHaveBeenCalled();
+  });
+});
+
+describe("los tramos de cada lectura (D-R10-4; criterio 8 de R10)", () => {
+  /** Del miércoles 30/09 al martes 13/10. */
+  const range: ReportRange = { first: "2026-09-30", last: "2026-10-13" };
+
+  beforeEach(async () => {
+    await seedClosed(ownerId, "2026-10-01T13:00:00Z", 600);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** Las claves de `buckets` de cada lectura por niveles, en el orden de las lecturas. */
+  function bucketKeysOf(byLevels: { readonly mock: { readonly calls: unknown[][] } }) {
+    return byLevels.mock.calls.map((call) => {
+      const read = call[1] as ReportLevelRead;
+      return Object.keys(read.buckets).sort();
+    });
+  }
+
+  it("en Mes → Semana → Fecha, cada lectura lleva solo los tramos de sus dimensiones", async () => {
+    const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+    await readyState(owner, { range, groupBy: "month", subgroups: ["week", "date"] });
+    expect(bucketKeysOf(byLevels)).toEqual([
+      ["month"],
+      ["month", "week"],
+      ["date", "month", "week"],
+    ]);
+    const reads = byLevels.mock.calls.map(([, read]) => read);
+    // Los mismos tramos en cada lectura: se arman una vez por pedido.
+    expect(reads[1]?.buckets.month).toBe(reads[0]?.buckets.month);
+    expect(reads[2]?.buckets.week).toBe(reads[1]?.buckets.week);
+  });
+
+  it("sin dimensiones de tiempo, {}", async () => {
+    const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+    await readyState(owner, { range, groupBy: "person", subgroups: ["project"] });
+    expect(bucketKeysOf(byLevels)).toEqual([[], []]);
+  });
+
+  it("con domingo en settings.weekStart, el segundo tramo de buckets.week empieza un domingo", async () => {
+    const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+    await readyState(
+      owner,
+      { range, groupBy: "week" },
+      { settings: workspaceOf(buenosAires, 0) },
+    );
+    const week = byLevels.mock.calls[0]?.[1].buckets.week;
+    expect(week?.buckets.map((bucket) => bucket.firstDay)).toEqual([
+      "2026-09-30",
+      "2026-10-04",
+      "2026-10-11",
+    ]);
+    expect(week?.buckets[1]?.start.toISOString()).toBe("2026-10-04T03:00:00.000Z");
   });
 });

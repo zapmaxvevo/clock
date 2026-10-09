@@ -465,22 +465,9 @@ const DIMENSIONS: Readonly<Record<ReportGroupBy, Dimension>> = {
   }),
 
   date: timeDimension("date"),
-  week: pendingDimension("week"),
-  month: pendingDimension("month"),
+  week: timeDimension("week"),
+  month: timeDimension("month"),
 };
-
-/** Paso 1 de R10: la dimensión existe en la tabla y lanza al leer. */
-function pendingDimension(groupBy: ReportTimeGroupBy): Dimension {
-  return dimension({
-    key: () => {
-      throw new Error(`La agrupación por ${groupBy} todavía no lee.`);
-    },
-    shown: () => ({}),
-    groupOf: () => {
-      throw new Error(`La agrupación por ${groupBy} todavía no lee.`);
-    },
-  });
-}
 
 /**
  * D-R2b-7, D-R10-2: una dimensión de tiempo. Sus cortes van una sola vez, como

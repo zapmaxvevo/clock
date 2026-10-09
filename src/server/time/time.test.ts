@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
   addMinutes,
+  bucketDays,
   dayBounds,
   dayBuckets,
   dayKey,
@@ -32,7 +33,9 @@ import {
   MINUTES_PER_DAY,
   minuteOfDayIn,
   minutesToClock,
+  monthBuckets,
   monthEndKey,
+  monthLabel,
   monthStartKey,
   nonexistentMinutes,
   parseClockInput,
@@ -44,6 +47,7 @@ import {
   startOfLocalDay,
   toDayKey,
   weekBounds,
+  weekBuckets,
   weekKeyLabel,
   weekStartKey,
   weekdayLabel,
@@ -57,6 +61,7 @@ import {
   TIME_FORMATS,
   utcOffsetLabel,
   type DateFormat,
+  type TimeBuckets,
   type WeekStart,
 } from "./index";
 
@@ -399,6 +404,256 @@ describe("dayBuckets (ADR 0021, D-R2b-6)", () => {
     expect(() => dayBuckets("2026-10-08", "2026-10-07", buenosAires)).toThrow(RangeError);
     expect(() => dayBuckets("2026-02-30", "2026-03-01", buenosAires)).toThrow(RangeError);
     expect(() => dayBuckets("2026-03-01", "2026-02-30", buenosAires)).toThrow(RangeError);
+  });
+});
+
+/** Los tramos como `[primer día, inicio ISO]` y el fin ISO. */
+function bucketRowsOf({ buckets, end }: TimeBuckets) {
+  return {
+    buckets: buckets.map((bucket) => [bucket.firstDay, bucket.start.toISOString()]),
+    end: end.toISOString(),
+  };
+}
+
+const WEEK_STARTS: readonly WeekStart[] = [0, 1, 2, 3, 4, 5, 6];
+
+describe("weekBuckets (ADR 0021, D-R10-2, D-R10-3; criterio 1 de R10)", () => {
+  it("del miércoles 30/09 al martes 13/10 con lunes: tres tramos, el primero cortado en el 30/09", () => {
+    expect(bucketRowsOf(weekBuckets("2026-09-30", "2026-10-13", 1, buenosAires))).toEqual(
+      {
+        buckets: [
+          ["2026-09-30", "2026-09-30T03:00:00.000Z"],
+          ["2026-10-05", "2026-10-05T03:00:00.000Z"],
+          ["2026-10-12", "2026-10-12T03:00:00.000Z"],
+        ],
+        end: "2026-10-14T03:00:00.000Z",
+      },
+    );
+  });
+
+  it("los mismos días con domingo: el 30/09, el 04/10 y el 11/10", () => {
+    expect(bucketRowsOf(weekBuckets("2026-09-30", "2026-10-13", 0, buenosAires))).toEqual(
+      {
+        buckets: [
+          ["2026-09-30", "2026-09-30T03:00:00.000Z"],
+          ["2026-10-04", "2026-10-04T03:00:00.000Z"],
+          ["2026-10-11", "2026-10-11T03:00:00.000Z"],
+        ],
+        end: "2026-10-14T03:00:00.000Z",
+      },
+    );
+  });
+
+  it("con cada primer día, el primero en el 30/09 y los demás en su día, de a siete", () => {
+    for (const weekStart of WEEK_STARTS) {
+      const { buckets } = weekBuckets("2026-09-30", "2026-10-13", weekStart, buenosAires);
+      const [first, ...rest] = buckets.map((bucket) => bucket.firstDay);
+      const expected = addDaysToKey(weekStartKey("2026-09-30", weekStart), 7);
+      expect([weekStart, first, rest[0]]).toEqual([weekStart, "2026-09-30", expected]);
+      for (const day of rest) {
+        expect([weekStart, weekStartKey(day, weekStart)]).toEqual([weekStart, day]);
+      }
+      const days = buckets.map((bucket) => bucket.firstDay);
+      for (const [index, day] of days.slice(1).entries()) {
+        expect(daysBetweenKeys(days[index], day)).toBeLessThanOrEqual(7);
+      }
+    }
+  });
+
+  it("siete días alineados dan un tramo, y un día también", () => {
+    expect(bucketRowsOf(weekBuckets("2026-10-05", "2026-10-11", 1, buenosAires))).toEqual(
+      {
+        buckets: [["2026-10-05", "2026-10-05T03:00:00.000Z"]],
+        end: "2026-10-12T03:00:00.000Z",
+      },
+    );
+    expect(bucketRowsOf(weekBuckets("2026-10-08", "2026-10-08", 1, buenosAires))).toEqual(
+      {
+        buckets: [["2026-10-08", "2026-10-08T03:00:00.000Z"]],
+        end: "2026-10-09T03:00:00.000Z",
+      },
+    );
+  });
+
+  it("del domingo 07/01/2024 al lunes 06/01/2025 con lunes: 54 tramos, el primero y el último de un día", () => {
+    const buckets = weekBuckets("2024-01-07", "2025-01-06", 1, buenosAires);
+    expect(buckets.buckets).toHaveLength(54);
+    expect(bucketDays(buckets, 0, "2025-01-06")).toEqual({
+      first: "2024-01-07",
+      last: "2024-01-07",
+    });
+    expect(bucketDays(buckets, 1, "2025-01-06")).toEqual({
+      first: "2024-01-08",
+      last: "2024-01-14",
+    });
+    expect(bucketDays(buckets, 53, "2025-01-06")).toEqual({
+      first: "2025-01-06",
+      last: "2025-01-06",
+    });
+    expect(buckets.buckets[0].start.toISOString()).toBe("2024-01-07T03:00:00.000Z");
+    expect(buckets.end.toISOString()).toBe("2025-01-07T03:00:00.000Z");
+  });
+
+  it("en Madrid, la semana del cambio de horario dura 169 horas", () => {
+    const buckets = weekBuckets("2026-10-19", "2026-11-01", 1, madrid);
+    expect(bucketRowsOf(buckets)).toEqual({
+      buckets: [
+        ["2026-10-19", "2026-10-18T22:00:00.000Z"],
+        ["2026-10-26", "2026-10-25T23:00:00.000Z"],
+      ],
+      end: "2026-11-01T23:00:00.000Z",
+    });
+    expect(
+      (buckets.buckets[1].start.getTime() - buckets.buckets[0].start.getTime()) /
+        3_600_000,
+    ).toBe(169);
+  });
+
+  it("en Santiago, la semana que empieza el domingo 06/09, que no tiene 00:00, empieza a la 01:00", () => {
+    const buckets = weekBuckets("2026-08-31", "2026-09-13", 0, santiago);
+    expect(bucketRowsOf(buckets)).toEqual({
+      buckets: [
+        ["2026-08-31", "2026-08-31T04:00:00.000Z"],
+        ["2026-09-06", "2026-09-06T04:00:00.000Z"],
+        ["2026-09-13", "2026-09-13T03:00:00.000Z"],
+      ],
+      end: "2026-09-14T03:00:00.000Z",
+    });
+    // El anterior termina donde empieza: el último instante antes es del sábado.
+    const start = buckets.buckets[1].start;
+    expect(dayKey(new Date(start.getTime() - 1), santiago)).toBe("2026-09-05");
+  });
+
+  it("en Pacific/Apia, la semana del 30/12/2011, que no existe, empieza con el 31, y los cortes quedan ordenados", () => {
+    const buckets = weekBuckets("2011-12-23", "2012-01-12", 5, "Pacific/Apia");
+    expect(buckets.buckets.map((bucket) => bucket.firstDay)).toEqual([
+      "2011-12-23",
+      "2011-12-30",
+      "2012-01-06",
+    ]);
+    expect(buckets.buckets[1].start).toEqual(startOfDayKey("2011-12-31", "Pacific/Apia"));
+    const starts = [...buckets.buckets.map((bucket) => bucket.start), buckets.end];
+    for (const [index, start] of starts.slice(1).entries()) {
+      expect(start.getTime()).toBeGreaterThan(starts[index].getTime());
+    }
+  });
+
+  it("solo usa la zona que recibe: en UTC, las 00:00 UTC", () => {
+    expect(bucketRowsOf(weekBuckets("2026-09-30", "2026-10-06", 1, "UTC"))).toEqual({
+      buckets: [
+        ["2026-09-30", "2026-09-30T00:00:00.000Z"],
+        ["2026-10-05", "2026-10-05T00:00:00.000Z"],
+      ],
+      end: "2026-10-07T00:00:00.000Z",
+    });
+  });
+
+  it("lanza con el fin anterior al inicio o una clave inválida", () => {
+    expect(() => weekBuckets("2026-10-08", "2026-10-07", 1, buenosAires)).toThrow(
+      RangeError,
+    );
+    expect(() => weekBuckets("2026-02-30", "2026-03-01", 1, buenosAires)).toThrow(
+      RangeError,
+    );
+    expect(() => weekBuckets("2026-03-01", "2026-02-30", 1, buenosAires)).toThrow(
+      RangeError,
+    );
+  });
+});
+
+describe("monthBuckets (ADR 0021, D-R10-2, D-R10-3; criterio 1 de R10)", () => {
+  it("del 15/09 al 14/10: dos tramos, el primero cortado en el 15/09", () => {
+    expect(bucketRowsOf(monthBuckets("2026-09-15", "2026-10-14", buenosAires))).toEqual({
+      buckets: [
+        ["2026-09-15", "2026-09-15T03:00:00.000Z"],
+        ["2026-10-01", "2026-10-01T03:00:00.000Z"],
+      ],
+      end: "2026-10-15T03:00:00.000Z",
+    });
+  });
+
+  it("un año entero: doce tramos, cada uno el día 1", () => {
+    const { buckets, end } = monthBuckets("2024-01-01", "2024-12-31", buenosAires);
+    expect(buckets.map((bucket) => bucket.firstDay)).toEqual(
+      Array.from({ length: 12 }, (_, index) => monthStartKey("2024-01-01", index)),
+    );
+    expect(end.toISOString()).toBe("2025-01-01T03:00:00.000Z");
+  });
+
+  it("del 15/01/2025 al 15/01/2026: trece, y en Madrid el del 01/11/2025 empieza en +01:00", () => {
+    const buckets = monthBuckets("2025-01-15", "2026-01-15", madrid);
+    expect(buckets.buckets.map((bucket) => bucket.firstDay)).toEqual([
+      "2025-01-15",
+      ...Array.from({ length: 12 }, (_, index) => monthStartKey("2025-02-01", index)),
+    ]);
+    const november = buckets.buckets.find((bucket) => bucket.firstDay === "2025-11-01");
+    expect(november?.start.toISOString()).toBe("2025-10-31T23:00:00.000Z");
+    const october = buckets.buckets.find((bucket) => bucket.firstDay === "2025-10-01");
+    expect(october?.start.toISOString()).toBe("2025-09-30T22:00:00.000Z");
+    expect(buckets.end.toISOString()).toBe("2026-01-15T23:00:00.000Z");
+  });
+
+  it("un día: un tramo", () => {
+    expect(bucketRowsOf(monthBuckets("2026-10-31", "2026-10-31", buenosAires))).toEqual({
+      buckets: [["2026-10-31", "2026-10-31T03:00:00.000Z"]],
+      end: "2026-11-01T03:00:00.000Z",
+    });
+  });
+
+  it("lanza con el fin anterior al inicio o una clave inválida", () => {
+    expect(() => monthBuckets("2026-10-08", "2026-10-07", buenosAires)).toThrow(
+      RangeError,
+    );
+    expect(() => monthBuckets("2026-02-30", "2026-03-01", buenosAires)).toThrow(
+      RangeError,
+    );
+    expect(() => monthBuckets("2026-03-01", "2026-02-30", buenosAires)).toThrow(
+      RangeError,
+    );
+  });
+});
+
+describe("bucketDays (D-R10-3; criterio 1 de R10)", () => {
+  const buckets = weekBuckets("2026-09-30", "2026-10-13", 1, buenosAires);
+
+  it("el primer y el último día de cada tramo, el último con last", () => {
+    expect([0, 1, 2].map((index) => bucketDays(buckets, index, "2026-10-13"))).toEqual([
+      { first: "2026-09-30", last: "2026-10-04" },
+      { first: "2026-10-05", last: "2026-10-11" },
+      { first: "2026-10-12", last: "2026-10-13" },
+    ]);
+  });
+
+  it("los de un mes, el de febrero de un año bisiesto hasta el 29", () => {
+    const months = monthBuckets("2024-02-10", "2024-03-05", buenosAires);
+    expect([0, 1].map((index) => bucketDays(months, index, "2024-03-05"))).toEqual([
+      { first: "2024-02-10", last: "2024-02-29" },
+      { first: "2024-03-01", last: "2024-03-05" },
+    ]);
+  });
+
+  it("lanza con un índice fuera, con last anterior al último tramo o con una clave inválida", () => {
+    for (const index of [-1, 3, 1.5, Number.NaN]) {
+      expect(() => bucketDays(buckets, index, "2026-10-13")).toThrow(RangeError);
+    }
+    expect(() => bucketDays(buckets, 2, "2026-10-11")).toThrow(RangeError);
+    expect(() => bucketDays(buckets, 0, "2026-10-11")).toThrow(RangeError);
+    expect(() => bucketDays(buckets, 2, "2026-02-30")).toThrow(RangeError);
+  });
+});
+
+describe("monthLabel (D-R10-3; criterio 1 de R10)", () => {
+  it("el nombre del mes en minúscula, con el año si no es el de hoy", () => {
+    expect(monthLabel("2026-10-01", "2026-10-08")).toBe("octubre");
+    expect(monthLabel("2026-01-01", "2026-12-31")).toBe("enero");
+    expect(monthLabel("2025-10-01", "2026-10-08")).toBe("octubre de 2025");
+    expect(monthLabel("2027-01-01", "2026-10-08")).toBe("enero de 2027");
+    expect(monthLabel("2026-09-01", "2026-01-01")).toBe("septiembre");
+  });
+
+  it("lanza con una clave que no es un día", () => {
+    expect(() => monthLabel("2026-02-30", "2026-10-08")).toThrow(RangeError);
+    expect(() => monthLabel("2026-10", "2026-10-08")).toThrow(RangeError);
   });
 });
 
