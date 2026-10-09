@@ -113,6 +113,16 @@ const reportShortcut = z.object({
   range: reportRangeView,
 });
 
+/** Lo que un grupo muestra de un cliente, una tarea o una etiqueta. */
+const reportNamedRef = z.object({ id: z.uuid(), name: z.string() });
+
+/** Lo que un grupo muestra de un proyecto: el nombre y el punto de su color. */
+const reportProjectRef = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  color: z.enum(PALETTE_KEYS),
+});
+
 const reportPersonGroup = z.object({
   kind: z.literal("person"),
   userId: z.string(),
@@ -126,11 +136,9 @@ const reportPersonGroup = z.object({
 const reportProjectGroup = z.object({
   kind: z.literal("project"),
   /** `null` es «Sin proyecto» (RP-28). Archivado o no (RP-29). */
-  project: z
-    .object({ id: z.uuid(), name: z.string(), color: z.enum(PALETTE_KEYS) })
-    .nullable(),
+  project: reportProjectRef.nullable(),
   /** En gris; `null` sin cliente o sin proyecto. */
-  client: z.object({ id: z.uuid(), name: z.string() }).nullable(),
+  client: reportNamedRef.nullable(),
   seconds: z.number().int().min(0),
 });
 
@@ -140,7 +148,7 @@ const reportClientGroup = z.object({
    * `null` es «Sin cliente»: las entradas sin proyecto y las de proyectos sin
    * cliente (RP-28). Archivado o no (RP-29).
    */
-  client: z.object({ id: z.uuid(), name: z.string() }).nullable(),
+  client: reportNamedRef.nullable(),
   seconds: z.number().int().min(0),
 });
 
@@ -150,18 +158,16 @@ const reportTaskGroup = z.object({
    * `null` es «Sin tarea»: las entradas de un proyecto sin tarea y las sin
    * proyecto (RP-28). Hecha o no (RP-29).
    */
-  task: z.object({ id: z.uuid(), name: z.string() }).nullable(),
+  task: reportNamedRef.nullable(),
   /** El proyecto de la tarea, en gris; `null` con «Sin tarea». */
-  project: z
-    .object({ id: z.uuid(), name: z.string(), color: z.enum(PALETTE_KEYS) })
-    .nullable(),
+  project: reportProjectRef.nullable(),
   seconds: z.number().int().min(0),
 });
 
 const reportTagGroup = z.object({
   kind: z.literal("tag"),
   /** `null` es «Sin etiqueta»: las entradas sin ninguna (RP-28). Archivada o no. */
-  tag: z.object({ id: z.uuid(), name: z.string() }).nullable(),
+  tag: reportNamedRef.nullable(),
   /** Una entrada con varias etiquetas suma en cada una (RP-18, D-R3-3). */
   seconds: z.number().int().min(0),
 });

@@ -179,21 +179,6 @@ describe("reportGroupParams (D-R2a-3)", () => {
     ]);
   });
 
-  it("lee tarea y etiqueta (D-R3-2, RP-11)", () => {
-    expect(reportGroupParams.safeParse({ agrupar: "tarea" })).toEqual({
-      success: true,
-      data: "task",
-    });
-    expect(reportGroupParams.safeParse({ agrupar: "etiqueta" })).toEqual({
-      success: true,
-      data: "tag",
-    });
-    expect([REPORT_GROUP_PARAMS.task, REPORT_GROUP_PARAMS.tag]).toEqual([
-      "tarea",
-      "etiqueta",
-    ]);
-  });
-
   it("tarea y etiqueta pasan con o sin un rango válido al lado, y Tarea, tareas y etiquetas no pasan con ninguno", () => {
     for (const range of [
       { desde: "2026-10-05", hasta: "2026-10-11" },

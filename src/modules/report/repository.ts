@@ -25,7 +25,7 @@ type Executor = Transaction | typeof db;
 /** El intervalo de instantes que lee el reporte: `[from, to)`. */
 export type ReportSpan = { readonly from: Date; readonly to: Date };
 
-type StoredProject = {
+export type StoredProject = {
   readonly id: string;
   readonly name: string;
   readonly color: string;
@@ -179,12 +179,17 @@ type Dimension<Fields extends Shown = Shown> = {
   readonly joinOutside?: (query: PgSelect, key: SQL, workspaceId: SQL) => PgSelect;
   /** Lo que la fila trae de la dimensión, por su clave y lo que unió afuera. */
   readonly shown: (key: SQL) => Fields;
-  readonly groupOf: (values: ShownValues<Fields>, read: ReportLevelRead) => LevelGroupRow;
+  /**
+   * El grupo, de lo que la fila trae. Con sintaxis de método, que compara sus
+   * parámetros en las dos direcciones: así una dimensión con sus campos cabe
+   * en la tabla, que las guarda sin ellos.
+   */
+  groupOf(values: ShownValues<Fields>, read: ReportLevelRead): LevelGroupRow;
 };
 
 /** El tipo de cada dimensión se comprueba acá; la tabla las guarda sin él. */
 function dimension<Fields extends Shown>(spec: Dimension<Fields>): Dimension {
-  return spec as unknown as Dimension;
+  return spec;
 }
 
 // Cada dimensión une con sus propios alias: el proyecto aparece adentro para
@@ -480,8 +485,8 @@ export const reportRepository = {
     let named: PgSelect = tx
       .select({
         ...Object.fromEntries(
-          levels.map(({ dimension, name }, index) => [
-            keyName(index),
+          levels.map(({ dimension, name }) => [
+            name,
             dimension.shown(columnOf("totals", name)),
           ]),
         ),
@@ -503,10 +508,8 @@ export const reportRepository = {
         dimension.groupOf(row[name] as ShownValues<Shown>, read),
       ),
       // `bigint` llega como texto de los dos drivers; `secondsOf` lanza con otra cosa.
-      ...withSeconds({
-        seconds: String(row.seconds),
-        billableSeconds: String(row.billableSeconds),
-      }),
+      seconds: secondsOf(String(row.seconds)),
+      billableSeconds: secondsOf(String(row.billableSeconds)),
     }));
   },
 

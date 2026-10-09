@@ -2,7 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { db } from "@/server/db";
-import { tag, task, timeEntry, timeEntryTag, user } from "@/server/db/schema";
+import { tag, task, timeEntry, user } from "@/server/db/schema";
 import type { Actor, MembershipStatus, Role } from "@/server/permissions";
 import { type TimeSettings } from "@/server/time";
 import {
@@ -290,23 +290,40 @@ describe("la zona y la semana de quien mira (RP-22, RP-24)", () => {
   });
 });
 
-describe("la medida (ADR 0021, D-R2a-6)", () => {
-  /** Una entrada con los instantes escritos por SQL, con microsegundos. */
-  async function seedExact(
-    userId: string,
-    startedAt: string,
-    endedAt: string,
-    billable: boolean,
-  ) {
-    await db.insert(timeEntry).values({
-      workspaceId,
-      userId,
+/**
+ * Una entrada con los instantes escritos por SQL, con microsegundos. Se siembra
+ * con `seedTimeEntry`, que lleva sus referencias y etiquetas, y los instantes
+ * se reescriben después: un `Date` de JS no guarda microsegundos.
+ */
+async function seedExact(
+  userId: string,
+  startedAt: string,
+  endedAt: string,
+  billable: boolean,
+  extra: {
+    readonly projectId?: string;
+    readonly taskId?: string;
+    readonly tagIds?: readonly string[];
+  } = {},
+) {
+  const row = await seedTimeEntry({
+    workspaceId,
+    userId,
+    startedAt: new Date(0),
+    endedAt: new Date(1000),
+    billable,
+    ...extra,
+  });
+  await db
+    .update(timeEntry)
+    .set({
       startedAt: sql`${startedAt}::timestamptz`,
       endedAt: sql`${endedAt}::timestamptz`,
-      billable,
-    });
-  }
+    })
+    .where(eq(timeEntry.id, row.id));
+}
 
+describe("la medida (ADR 0021, D-R2a-6)", () => {
   it("el total del reporte es el de la planilla, con microsegundos, y el facturable suma solo las facturables", async () => {
     const memberId = await seedPerson({ accountName: "Marta" });
     const member = actorIn(workspaceId, memberId);
@@ -871,8 +888,10 @@ describe("por tarea (D-R3-4, RP-11, RP-28, RP-29; criterio 3 de R3)", () => {
     p = await seedProject({ workspaceId, name: "P", color: "green", clientId: c.id });
     q = await seedProject({ workspaceId, name: "Q", color: "red" });
     t1Id = (await seedTask({ workspaceId, projectId: p.id, name: "Diseño" })).id;
+    // Va después de «Sin tarea» por nombre: el empate con «Sin tarea» no se
+    // cumple por orden alfabético.
     t2Id = (
-      await seedTask({ workspaceId, projectId: p.id, name: "Revisión", status: "done" })
+      await seedTask({ workspaceId, projectId: p.id, name: "Validación", status: "done" })
     ).id;
     // Se llama igual que T1, en otro proyecto: dos filas.
     t3Id = (await seedTask({ workspaceId, projectId: q.id, name: "Diseño" })).id;
@@ -928,7 +947,7 @@ describe("por tarea (D-R3-4, RP-11, RP-28, RP-29; criterio 3 de R3)", () => {
       },
       {
         kind: "task",
-        task: { id: t2Id, name: "Revisión" },
+        task: { id: t2Id, name: "Validación" },
         project: { id: p.id, name: "P", color: "green" },
         seconds: 300,
       },
@@ -1052,41 +1071,32 @@ describe("la medida por tarea y por etiqueta (ADR 0021; criterio 6 de R3)", () =
     const e2 = await seedTag({ workspaceId, name: "E2" });
     const day = "2026-09-30";
 
-    /** Una entrada en T con los instantes escritos por SQL, con microsegundos. */
-    async function seedExact(
-      startedAt: string,
-      endedAt: string,
-      billable: boolean,
-      tagIds: readonly string[],
-    ) {
-      const [row] = await db
-        .insert(timeEntry)
-        .values({
-          workspaceId,
-          userId: memberId,
-          projectId: project.id,
-          taskId: t.id,
-          startedAt: sql`${startedAt}::timestamptz`,
-          endedAt: sql`${endedAt}::timestamptz`,
-          billable,
-        })
-        .returning();
-      for (const tagId of tagIds) {
-        await db.insert(timeEntryTag).values({ workspaceId, timeEntryId: row.id, tagId });
-      }
-    }
+    const inT = { projectId: project.id, taskId: t.id };
 
     // Las dos de microsegundos: E1 en una, la otra sin etiquetas.
-    await seedExact(`${day} 10:00:00.000900-03`, `${day} 10:00:01.000500-03`, true, [
-      e1.id,
-    ]);
-    await seedExact(`${day} 11:00:00.000500-03`, `${day} 11:00:01.000400-03`, false, []);
+    await seedExact(
+      memberId,
+      `${day} 10:00:00.000900-03`,
+      `${day} 10:00:01.000500-03`,
+      true,
+      { ...inT, tagIds: [e1.id] },
+    );
+    await seedExact(
+      memberId,
+      `${day} 11:00:00.000500-03`,
+      `${day} 11:00:01.000400-03`,
+      false,
+      inT,
+    );
     // Las dos de 1,5 s: E1 en las dos, E2 en una.
-    await seedExact(`${day} 12:00:00-03`, `${day} 12:00:01.5-03`, true, [e1.id]);
-    await seedExact(`${day} 13:00:00.75-03`, `${day} 13:00:02.25-03`, false, [
-      e1.id,
-      e2.id,
-    ]);
+    await seedExact(memberId, `${day} 12:00:00-03`, `${day} 12:00:01.5-03`, true, {
+      ...inT,
+      tagIds: [e1.id],
+    });
+    await seedExact(memberId, `${day} 13:00:00.75-03`, `${day} 13:00:02.25-03`, false, {
+      ...inT,
+      tagIds: [e1.id, e2.id],
+    });
 
     const timesheet = await getTimesheetState(member, settings, { day }, readNow);
     expect(timesheet.closedSeconds).toBe(4);
@@ -1227,9 +1237,12 @@ describe("varios niveles en la lectura (D-R3-2, D-R3-3; criterio 8 de R3)", () =
     await seedClosed(otherId, "2026-10-01T14:00:00Z", 100, { tagIds: [fId] });
   });
 
-  /** Las filas de una lectura, sin orden: la lectura no lo pone. */
-  function unordered(rows: readonly unknown[]) {
-    return rows.map((row) => JSON.stringify(row)).sort();
+  /** Las filas de una lectura, en cualquier orden: la lectura no lo pone. */
+  function expectRows(rows: readonly unknown[], expected: readonly unknown[]) {
+    // Con el mismo largo y filas esperadas distintas entre sí, contenerlas
+    // todas es ser una permutación de ellas.
+    expect(rows).toHaveLength(expected.length);
+    expect(rows).toEqual(expect.arrayContaining([...expected]));
   }
 
   function personGroup(userId: string, accountName: string) {
@@ -1247,18 +1260,16 @@ describe("varios niveles en la lectura (D-R3-2, D-R3-3; criterio 8 de R3)", () =
     const otherGroup = personGroup(otherId, "Otra");
     const e = { kind: "tag", tag: { id: eId, name: "E" } };
     const f = { kind: "tag", tag: { id: fId, name: "F" } };
-    expect(unordered(rows)).toEqual(
-      unordered([
-        { groups: [ownerGroup, e], seconds: 900, billableSeconds: 600 },
-        { groups: [ownerGroup, f], seconds: 600, billableSeconds: 600 },
-        { groups: [otherGroup, f], seconds: 100, billableSeconds: 0 },
-        {
-          groups: [otherGroup, { kind: "tag", tag: null }],
-          seconds: 200,
-          billableSeconds: 0,
-        },
-      ]),
-    );
+    expectRows(rows, [
+      { groups: [ownerGroup, e], seconds: 900, billableSeconds: 600 },
+      { groups: [ownerGroup, f], seconds: 600, billableSeconds: 600 },
+      { groups: [otherGroup, f], seconds: 100, billableSeconds: 0 },
+      {
+        groups: [otherGroup, { kind: "tag", tag: null }],
+        seconds: 200,
+        billableSeconds: 0,
+      },
+    ]);
     // La persona suma 900; sus filas por etiqueta, 1500.
     const byPerson = await readyState(owner, { range: lastWeek, groupBy: "person" });
     expect(personRows(byPerson)).toEqual([
@@ -1276,23 +1287,21 @@ describe("varios niveles en la lectura (D-R3-2, D-R3-3; criterio 8 de R3)", () =
     });
     const e = { kind: "tag", tag: { id: eId, name: "E" } };
     const f = { kind: "tag", tag: { id: fId, name: "F" } };
-    expect(unordered(rows)).toEqual(
-      unordered([
-        { groups: [e, webGroup()], seconds: 600, billableSeconds: 600 },
-        { groups: [e, appGroup()], seconds: 300, billableSeconds: 0 },
-        { groups: [f, webGroup()], seconds: 600, billableSeconds: 600 },
-        {
-          groups: [f, { kind: "project", project: null, client: null }],
-          seconds: 100,
-          billableSeconds: 0,
-        },
-        {
-          groups: [{ kind: "tag", tag: null }, zetaGroup()],
-          seconds: 200,
-          billableSeconds: 0,
-        },
-      ]),
-    );
+    expectRows(rows, [
+      { groups: [e, webGroup()], seconds: 600, billableSeconds: 600 },
+      { groups: [e, appGroup()], seconds: 300, billableSeconds: 0 },
+      { groups: [f, webGroup()], seconds: 600, billableSeconds: 600 },
+      {
+        groups: [f, { kind: "project", project: null, client: null }],
+        seconds: 100,
+        billableSeconds: 0,
+      },
+      {
+        groups: [{ kind: "tag", tag: null }, zetaGroup()],
+        seconds: 200,
+        billableSeconds: 0,
+      },
+    ]);
     const byTag = await readyState(owner, { range: lastWeek, groupBy: "tag" });
     expect(tagRows(byTag)).toEqual([
       ["E", 900],
@@ -1335,54 +1344,52 @@ describe("varios niveles en la lectura (D-R3-2, D-R3-3; criterio 8 de R3)", () =
     const web = webGroup();
     const app = appGroup();
     const zeta = zetaGroup();
-    expect(unordered(rows)).toEqual(
-      unordered([
-        {
-          groups: [
-            { kind: "client", client: web.client },
-            web,
-            {
-              kind: "task",
-              task: { id: designId, name: "Diseño" },
-              project: web.project,
-            },
-          ],
-          seconds: 600,
-          billableSeconds: 600,
-        },
-        {
-          groups: [
-            { kind: "client", client: app.client },
-            app,
-            { kind: "task", task: null, project: null },
-          ],
-          seconds: 300,
-          billableSeconds: 0,
-        },
-        {
-          groups: [
-            { kind: "client", client: null },
-            zeta,
-            {
-              kind: "task",
-              task: { id: supportId, name: "Soporte" },
-              project: zeta.project,
-            },
-          ],
-          seconds: 200,
-          billableSeconds: 0,
-        },
-        {
-          groups: [
-            { kind: "client", client: null },
-            { kind: "project", project: null, client: null },
-            { kind: "task", task: null, project: null },
-          ],
-          seconds: 100,
-          billableSeconds: 0,
-        },
-      ]),
-    );
+    expectRows(rows, [
+      {
+        groups: [
+          { kind: "client", client: web.client },
+          web,
+          {
+            kind: "task",
+            task: { id: designId, name: "Diseño" },
+            project: web.project,
+          },
+        ],
+        seconds: 600,
+        billableSeconds: 600,
+      },
+      {
+        groups: [
+          { kind: "client", client: app.client },
+          app,
+          { kind: "task", task: null, project: null },
+        ],
+        seconds: 300,
+        billableSeconds: 0,
+      },
+      {
+        groups: [
+          { kind: "client", client: null },
+          zeta,
+          {
+            kind: "task",
+            task: { id: supportId, name: "Soporte" },
+            project: zeta.project,
+          },
+        ],
+        seconds: 200,
+        billableSeconds: 0,
+      },
+      {
+        groups: [
+          { kind: "client", client: null },
+          { kind: "project", project: null, client: null },
+          { kind: "task", task: null, project: null },
+        ],
+        seconds: 100,
+        billableSeconds: 0,
+      },
+    ]);
   });
 
   it("[project, date]: la entrada de dos etiquetas cuenta una vez, y los días son los de buckets", async () => {
@@ -1392,25 +1399,22 @@ describe("varios niveles en la lectura (D-R3-2, D-R3-3; criterio 8 de R3)", () =
       dimensions: ["project", "date"],
       buckets,
     });
-    expect(
-      unordered(
-        rows.map((row) => {
-          const [project, date] = row.groups;
-          return [
-            project?.kind === "project" ? (project.project?.name ?? null) : "?",
-            date?.kind === "date" ? buckets.buckets[date.bucket]?.firstDay : "?",
-            row.seconds,
-            row.billableSeconds,
-          ];
-        }),
-      ),
-    ).toEqual(
-      unordered([
+    expectRows(
+      rows.map((row) => {
+        const [project, date] = row.groups;
+        return [
+          project?.kind === "project" ? (project.project?.name ?? null) : "?",
+          date?.kind === "date" ? buckets.buckets[date.bucket]?.firstDay : "?",
+          row.seconds,
+          row.billableSeconds,
+        ];
+      }),
+      [
         ["Web", "2026-09-29", 600, 600],
         ["Zeta", "2026-09-29", 200, 0],
         ["App", "2026-09-30", 300, 0],
         [null, "2026-10-01", 100, 0],
-      ]),
+      ],
     );
   });
 });

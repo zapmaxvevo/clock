@@ -17,7 +17,13 @@ import { displayNameOf } from "@/modules/profile/service";
 import { paletteKeyOf } from "@/modules/project/palette";
 
 import { reportPeriodOf } from "./period";
-import { reportRepository, type LevelGroupRow, type LevelTotalRow } from "./repository";
+import {
+  reportRepository,
+  type EntryTotals,
+  type LevelGroupRow,
+  type LevelTotalRow,
+  type StoredProject,
+} from "./repository";
 import {
   REPORT_MAX_DAYS,
   type ReportDateGroup,
@@ -74,9 +80,7 @@ function scopeOf(actor: Actor): Scope {
 }
 
 /** El proyecto con el color estrechado a la paleta, o `null`. */
-function projectOf(
-  stored: { readonly id: string; readonly name: string; readonly color: string } | null,
-) {
+function projectOf(stored: StoredProject | null) {
   if (stored === null) {
     return null;
   }
@@ -201,7 +205,7 @@ function compareSiblings(left: ReportGroup, right: ReportGroup): number {
 /** Lo que se lee de un pedido, en una sola foto. */
 type ReportRead = {
   readonly rows: readonly LevelTotalRow[];
-  readonly totals: { readonly seconds: number; readonly billableSeconds: number };
+  readonly totals: EntryTotals;
 };
 
 /**
