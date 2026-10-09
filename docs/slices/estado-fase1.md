@@ -127,7 +127,14 @@ vacío del owner y `renewWorkspace` se corta.
      test-engineer y e2e de R4b todavía no arrancaron: se lanzan con el hash del paso 6, como
      en R4a, con `clock_r4b_front`, `clock_r4b_test` y `clock_r4b_e2e` (esta migrada), y
      `parity-analyst`/`parity-reviewer` con base propia. R4b lleva la revisión de seguridad
-     completa (§7, paso 11, B). El flaky de `e2e/tracker.spec.ts:477` quedó arreglado en `main` (`d5bc75e`, fast-forward): el test suponía que `page.clock.install()` detiene el reloj, y en Playwright 1.63 solo lo hace `pauseAt`, así que el rebote de 500 ms guardaba antes del blur. `stopClock(page)` en `e2e/clock.ts`; 20/20 con el arreglo, 5 de 20 fallan sin él. Deuda: `stopClock` también en `:383` y `:403`, que dicen tener el reloj detenido (pasan 40/40). `nucleo/r4b` lo recibe al mergear `main`. Mirar `git worktree list` y `git branch` al retomar. R8 sigue solo
+     completa (§7, paso 11, B). El flaky de `e2e/tracker.spec.ts:477` quedó arreglado en `main` (`d5bc75e`, fast-forward): el test suponía que `page.clock.install()` detiene el reloj, y en Playwright 1.63 solo lo hace `pauseAt`, así que el rebote de 500 ms guardaba antes del blur. `stopClock(page)` en `e2e/clock.ts`; 20/20 con el arreglo, 5 de 20 fallan sin él. Deuda: `stopClock` también en `:383` y `:403`, que dicen tener el reloj detenido (pasan 40/40). `nucleo/r4b` lo recibe al mergear `main`. Mirar `git worktree list` y `git branch` al retomar. **Sexta sesión** (2026-10-09, ~15:00):
+     el tope de uso cortó a los cuatro agentes de R4b a las 12:29 en medio de una edición,
+     después de que el team-lead los reactivara pese al aviso de tope del usuario (lección en la
+     memoria `tope-de-uso`). Su trabajo a medias quedó sin commitear en el árbol, con una copia
+     en parches por área en el scratchpad de la sesión `da8db711-…` (`r4b-corte/`): backend
+     (paso 8), frontend (paso 7), integración (`scope.integration.test.ts`) y e2e (helpers).
+     Decisión del usuario: relanzar de a dos. `backend-r4b` (pasos 8 y 9) y `frontend-r4b`
+     (paso 7) relanzados sobre ese trabajo; integración y e2e, con el hash del paso 8. R8 sigue solo
      en contrato. Después de R4b: R10, R5, R6, R7 y R9.
 
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
