@@ -14,6 +14,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from "@/lib/utils";
 import {
   sameRange,
+  type ReportFilters,
   type ReportGrouping,
   type ReportRange,
   type ReportShortcut,
@@ -31,6 +32,8 @@ type RangePickerProps = {
   readonly todayKey: string;
   /** La agrupación y los subniveles que conservan «Aplicar» y los atajos. */
   readonly grouping: ReportGrouping;
+  /** Los filtros que conservan «Aplicar» y los atajos (D-R4-10). */
+  readonly filters: ReportFilters;
   /** Los atajos de hoy, en el orden de la lista (D-R2b-2). */
   readonly shortcuts: readonly ReportShortcut[];
 };
@@ -45,6 +48,7 @@ export function RangePicker({
   rangeLabel,
   todayKey,
   grouping,
+  filters,
   shortcuts,
 }: RangePickerProps) {
   const router = useRouter();
@@ -68,7 +72,7 @@ export function RangePicker({
   }
 
   function handleApply(): void {
-    const effect = applySelection(selection, grouping);
+    const effect = applySelection(selection, grouping, filters);
     setOpen(effect.open);
     setError(effect.error);
     if (effect.href !== null) {
@@ -99,6 +103,7 @@ export function RangePicker({
           shortcuts={shortcuts}
           range={range}
           grouping={grouping}
+          filters={filters}
           onSelect={handleSelect}
           onApply={handleApply}
           // El rango del atajo ya es válido: navega sin pasar por «Aplicar».
@@ -121,6 +126,8 @@ type RangePanelProps = {
   readonly range: ReportRange;
   /** La agrupación y los subniveles que conservan los enlaces de los atajos. */
   readonly grouping: ReportGrouping;
+  /** Los filtros que conservan los enlaces de los atajos (D-R4-10). */
+  readonly filters: ReportFilters;
   readonly onSelect: (selection: DateRange | undefined) => void;
   readonly onApply: () => void;
   /** Al elegir un atajo, antes de navegar. */
@@ -141,6 +148,7 @@ export function RangePanel({
   shortcuts,
   range,
   grouping,
+  filters,
   onSelect,
   onApply,
   onShortcut,
@@ -163,7 +171,7 @@ export function RangePanel({
             return (
               <li key={shortcut.id}>
                 <Link
-                  href={reportHref({ range: shortcut.range, ...grouping })}
+                  href={reportHref({ range: shortcut.range, ...grouping, filters })}
                   aria-current={current ? "true" : undefined}
                   // Solo en la navegación de la app: con Ctrl o Cmd abre otra
                   // pestaña y el selector sigue abierto.

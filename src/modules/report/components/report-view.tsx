@@ -1,4 +1,12 @@
-import { REPORT_MAX_ROWS, type ReportReadyState } from "@/modules/report/schema";
+import Link from "next/link";
+
+import { buttonVariants } from "@/components/ui/button";
+import {
+  NO_REPORT_FILTERS,
+  REPORT_MAX_ROWS,
+  hasReportFilters,
+  type ReportReadyState,
+} from "@/modules/report/schema";
 
 import { groupByLabels, reportLabels } from "./labels";
 import { reportHref } from "./report-href";
@@ -11,7 +19,8 @@ export const REPORT_HEADING_ID = "reporte-titulo";
 /**
  * El alcance y la zona (D-R2a-2, D-R2a-5), el aviso de la suma por etiqueta
  * (D-R3-3), los totales (RP-18), el aviso del tope (D-R3-6) y la tabla, con las
- * filas en el orden en que llegan. Las del cuerpo las dibuja `ReportTree`.
+ * filas en el orden en que llegan. Las del cuerpo las dibuja `ReportTree`. Sin
+ * grupos, el vacío de R2a o, con filtros, el segundo (D-R4-7).
  */
 export function ReportView({ state }: { readonly state: ReportReadyState }) {
   const requested = [state.groupBy, ...state.subgroups];
@@ -62,17 +71,16 @@ export function ReportView({ state }: { readonly state: ReportReadyState }) {
           </thead>
           <tbody>
             {state.groups.length === 0 ? (
-              <tr>
-                <td colSpan={2} className="text-muted-foreground px-3 py-6 text-center">
-                  {reportLabels.empty}
-                </td>
-              </tr>
+              <EmptyRow state={state} />
             ) : (
               <ReportTree
+                // Cambiar el período, la agrupación o un filtro vuelve a
+                // contraer el árbol (D-R3-9, D-R4-10).
                 key={reportHref({
                   range: state.range,
                   groupBy: state.groupBy,
                   subgroups: state.subgroups,
+                  filters: state.filters,
                 })}
                 groups={state.groups}
               />
@@ -81,5 +89,41 @@ export function ReportView({ state }: { readonly state: ReportReadyState }) {
         </table>
       </div>
     </div>
+  );
+}
+
+/**
+ * RP-33, D-R4-7: con filtros efectivos, el segundo vacío, aunque el período no
+ * tenga horas, con «Quitar filtros» al mismo período y la misma agrupación.
+ */
+function EmptyRow({ state }: { readonly state: ReportReadyState }) {
+  if (!hasReportFilters(state.filters)) {
+    return (
+      <tr>
+        <td colSpan={2} className="text-muted-foreground px-3 py-6 text-center">
+          {reportLabels.empty}
+        </td>
+      </tr>
+    );
+  }
+  return (
+    <tr>
+      <td colSpan={2} className="text-muted-foreground px-3 py-6 text-center">
+        <div className="flex flex-col items-center gap-2">
+          <p>{reportLabels.emptyFiltered}</p>
+          <Link
+            href={reportHref({
+              range: state.range,
+              groupBy: state.groupBy,
+              subgroups: state.subgroups,
+              filters: NO_REPORT_FILTERS,
+            })}
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
+            {reportLabels.clearFilters}
+          </Link>
+        </div>
+      </td>
+    </tr>
   );
 }

@@ -1,5 +1,7 @@
 import type { ReportGroupBy } from "@/modules/report/schema";
 
+import type { FilterKind } from "./filter-model";
+
 /**
  * Textos del reporte resumido. «Sin proyecto» y «Sin cliente» son
  * `projectLabels.noProject` y `projectLabels.noClient`; los rótulos de los
@@ -66,7 +68,38 @@ export const reportLabels = {
   inactivePerson: "(inactiva)",
   /** RP-33. */
   empty: "No hay horas en este período",
+  /** RP-33, D-R4-7: con algún filtro y ningún grupo. */
+  emptyFiltered: "Ninguna entrada coincide con los filtros",
+  /** D-R4-7: el mismo período, la misma agrupación y ningún filtro. */
+  clearFilters: "Quitar filtros",
+  /** RP-25, D-R4-8: el tercer grupo de la barra. */
+  filterBy: "Filtrar por",
+  /** El botón de un filtro dice lo elegido, y ese es su nombre. */
+  filterChoice: (filter: string, summary: string) => `${filter}: ${summary}`,
+  filterNoMatches: "Nada coincide con la búsqueda.",
+  /** RP-29: el grupo de aparte de clientes y proyectos. */
+  archivedOptions: "Archivados",
+  /** D-R4-2: con «Sin proyecto» contado. */
+  filterTooMany: (maxValues: number) => `Elegí hasta ${maxValues}.`,
 } as const;
+
+/** El nombre de cada filtro: su botón y el grupo de sus opciones vigentes. */
+export const filterNames = {
+  clients: "Clientes",
+  projects: "Proyectos",
+} as const satisfies Record<FilterKind, string>;
+
+/** Lo que dice el botón de un filtro sin nada elegido. */
+export const filterAll = {
+  clients: "todos",
+  projects: "todos",
+} as const satisfies Record<FilterKind, string>;
+
+/** El nombre accesible y el texto de ayuda del buscador de cada filtro. */
+export const filterSearch = {
+  clients: "Buscar clientes",
+  projects: "Buscar proyectos",
+} as const satisfies Record<FilterKind, string>;
 
 /** El rótulo de cada dimensión: el enlace de «Agrupar por», el subnivel y el encabezado. */
 export const groupByLabels = {

@@ -423,3 +423,72 @@ describe("ReportView con subniveles (D-R3-6, D-R3-9)", () => {
     expect(renderTree({})).not.toContain(overlap);
   });
 });
+
+describe("ReportView con filtros (D-R4-7)", () => {
+  const filtered: ReportReadyState["filters"] = {
+    clients: ["c1000000-0000-4000-8000-000000000000"],
+    projects: [],
+    withoutProject: true,
+  };
+
+  /** Los enlaces del cuerpo de la tabla, por su texto. */
+  function bodyLinks(markup: string): Map<string, string> {
+    const body = markup.slice(markup.indexOf("<tbody>"), markup.indexOf("</tbody>"));
+    return new Map(
+      [...body.matchAll(/<a [^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/g)].map(
+        ([, href, label]) => [label, href.replaceAll("&amp;", "&")],
+      ),
+    );
+  }
+
+  it("sin grupos y con filtros, el segundo vacío con «Quitar filtros» al mismo período y agrupación, sin filtros", () => {
+    const markup = render({
+      groupBy: "project",
+      subgroups: ["date", "tag"],
+      filters: filtered,
+    });
+    expect(markup).toContain('<td colSpan="2"');
+    expect(bodyRows(markup)).toEqual([
+      ["Ninguna entrada coincide con los filtrosQuitar filtros"],
+    ]);
+    expect(markup).not.toContain("No hay horas en este período");
+    expect(bodyLinks(markup)).toEqual(
+      new Map([
+        [
+          "Quitar filtros",
+          "/reportes?desde=2026-10-05&hasta=2026-10-11&agrupar=proyecto&subagrupar=fecha%2Cetiqueta",
+        ],
+      ]),
+    );
+    expect(totals(markup)).toEqual({ Total: "0:00", Facturable: "0:00" });
+  });
+
+  it("«Sin proyecto» solo también es un filtro", () => {
+    const markup = render({
+      filters: { clients: [], projects: [], withoutProject: true },
+    });
+    expect(markup).toContain("Ninguna entrada coincide con los filtros");
+    expect(bodyLinks(markup).get("Quitar filtros")).toBe(
+      "/reportes?desde=2026-10-05&hasta=2026-10-11&agrupar=persona",
+    );
+  });
+
+  it("sin grupos y sin filtros, el vacío de R2a, sin «Quitar filtros»", () => {
+    const markup = render({});
+    expect(bodyRows(markup)).toEqual([["No hay horas en este período"]]);
+    expect(markup).not.toContain("Quitar filtros");
+    expect(markup).not.toContain("Ninguna entrada coincide con los filtros");
+  });
+
+  it("con grupos y filtros, las filas y ningún vacío", () => {
+    const markup = render({
+      filters: filtered,
+      groups: [
+        { kind: "person", userId: "u1", name: "Ana", inactive: false, seconds: 3_600 },
+      ],
+      totalSeconds: 3_600,
+    });
+    expect(bodyRows(markup)).toEqual([["Ana", "1:00"]]);
+    expect(markup).not.toContain("Quitar filtros");
+  });
+});

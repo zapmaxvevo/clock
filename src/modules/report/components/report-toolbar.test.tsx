@@ -1,7 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import { NO_REPORT_FILTERS, type ReportReadyState } from "@/modules/report/schema";
+import {
+  NO_REPORT_FILTERS,
+  type ReportFilters,
+  type ReportReadyState,
+} from "@/modules/report/schema";
 
 import { ReportToolbar } from "./report-toolbar";
 
@@ -61,6 +65,13 @@ function groupByLinks(
 ): { label: string; href: string; current: string | null }[] {
   const group = /<div role="group"[^>]*>(.*?)<\/div>/.exec(markup)?.[1] ?? "";
   return [...links(group)].map(([label, link]) => ({ label, ...link }));
+}
+
+/** El texto de cada botón, en orden. */
+function buttonTexts(markup: string): string[] {
+  return [...markup.matchAll(/<button[^>]*>(.*?)<\/button>/g)].map(([, content]) =>
+    content.replace(/<[^>]+>/g, ""),
+  );
 }
 
 describe("ReportToolbar", () => {
@@ -224,13 +235,13 @@ describe("ReportToolbar", () => {
 });
 
 describe("ReportToolbar con subniveles (D-R3-8)", () => {
-  /** Los botones de «Subagrupar por», por su texto. */
+  /** Los botones de «Subagrupar por», por su texto: los que siguen hasta «Filtrar por». */
   function subgroupButtons(markup: string): string[] {
     const start = markup.indexOf(">Subagrupar por</span>");
+    const end = markup.indexOf(">Filtrar por</span>");
     expect(start).toBeGreaterThan(-1);
-    return [...markup.slice(start).matchAll(/<button[^>]*>(.*?)<\/button>/g)].map(
-      ([, content]) => content.replace(/<[^>]+>/g, ""),
-    );
+    expect(end).toBeGreaterThan(start);
+    return buttonTexts(markup.slice(start, end));
   }
 
   it("«Subagrupar por» es un grupo nombrado por su rótulo, después de «Agrupar por»", () => {
@@ -238,7 +249,7 @@ describe("ReportToolbar con subniveles (D-R3-8)", () => {
     const labelIds = [
       ...markup.matchAll(/<div role="group" aria-labelledby="([^"]+)"/g),
     ].map(([, id]) => id);
-    expect(labelIds).toHaveLength(2);
+    expect(labelIds).toHaveLength(3);
     expect(markup).toMatch(
       new RegExp(`<span id="${labelIds[1]}"[^>]*>Subagrupar por</span>`),
     );
@@ -295,6 +306,116 @@ describe("ReportToolbar con subniveles (D-R3-8)", () => {
       Tarea: `${base}&agrupar=tarea&subagrupar=fecha%2Cetiqueta`,
       Etiqueta: `${base}&agrupar=etiqueta&subagrupar=fecha%2Cproyecto`,
       Fecha: `${base}&agrupar=fecha&subagrupar=proyecto%2Cetiqueta`,
+    });
+  });
+});
+
+describe("ReportToolbar con filtros (D-R4-8, D-R4-10)", () => {
+  const C1 = "c1000000-0000-4000-8000-000000000000";
+  const P1 = "f1000000-0000-4000-8000-000000000000";
+  const P2 = "a2000000-0000-4000-8000-000000000000";
+  const options: ReportReadyState["filterOptions"] = {
+    clients: [{ id: C1, name: "Acme", archived: false }],
+    projects: [
+      { id: P2, name: "Interno", color: "red", client: null, archived: false },
+      {
+        id: P1,
+        name: "Web",
+        color: "teal",
+        client: { id: C1, name: "Acme" },
+        archived: true,
+      },
+    ],
+  };
+  const filters: ReportFilters = {
+    clients: [C1],
+    projects: [P1, P2],
+    withoutProject: false,
+  };
+  /** Lo que `filters` escribe en la URL, después de la agrupación. */
+  const kept = `&clientes=${C1}&proyectos=${P2}%2C${P1}`;
+
+  /** Los botones de «Filtrar por», por su texto. */
+  function filterButtons(markup: string): string[] {
+    const start = markup.indexOf(">Filtrar por</span>");
+    expect(start).toBeGreaterThan(-1);
+    return buttonTexts(markup.slice(start));
+  }
+
+  it("«Filtrar por» es el tercer grupo nombrado por su rótulo, después de «Subagrupar por»", () => {
+    const markup = render();
+    const labelIds = [
+      ...markup.matchAll(/<div role="group" aria-labelledby="([^"]+)"/g),
+    ].map(([, id]) => id);
+    expect(labelIds).toHaveLength(3);
+    expect(markup).toMatch(
+      new RegExp(`<span id="${labelIds[2]}"[^>]*>Filtrar por</span>`),
+    );
+    expect(markup.indexOf(">Subagrupar por<")).toBeLessThan(
+      markup.indexOf(">Filtrar por<"),
+    );
+  });
+
+  it("sin filtros, «Clientes: todos» y «Proyectos: todos», sin «Personas»", () => {
+    const markup = render({ filterOptions: options });
+    expect(filterButtons(markup)).toEqual(["Clientes: todos", "Proyectos: todos"]);
+    expect(markup).not.toContain("Personas");
+  });
+
+  it("con uno, el botón dice su nombre; con dos, la cantidad", () => {
+    expect(filterButtons(render({ filterOptions: options, filters }))).toEqual([
+      "Clientes: Acme",
+      "Proyectos: 2",
+    ]);
+  });
+
+  it("«Sin proyecto» cuenta como uno y se nombra así", () => {
+    expect(
+      filterButtons(
+        render({
+          filterOptions: options,
+          filters: { clients: [], projects: [], withoutProject: true },
+        }),
+      ),
+    ).toEqual(["Clientes: todos", "Proyectos: Sin proyecto"]);
+    expect(
+      filterButtons(
+        render({
+          filterOptions: options,
+          filters: { clients: [], projects: [P1], withoutProject: true },
+        }),
+      ),
+    ).toEqual(["Clientes: todos", "Proyectos: 2"]);
+  });
+
+  it("las flechas y «Esta semana» conservan los filtros", () => {
+    const found = links(render({ filterOptions: options, filters, subgroups: ["date"] }));
+    expect(found.get("Período anterior")?.href).toBe(
+      `/reportes?desde=2026-09-21&hasta=2026-09-27&agrupar=proyecto&subagrupar=fecha${kept}`,
+    );
+    expect(found.get("Período siguiente")?.href).toBe(
+      `/reportes?desde=2026-10-05&hasta=2026-10-11&agrupar=proyecto&subagrupar=fecha${kept}`,
+    );
+    expect(found.get("Esta semana")?.href).toBe(
+      `/reportes?desde=2026-10-05&hasta=2026-10-11&agrupar=proyecto&subagrupar=fecha${kept}`,
+    );
+  });
+
+  it("«Agrupar por» conserva los filtros", () => {
+    const base = "/reportes?desde=2026-09-28&hasta=2026-10-04";
+    expect(
+      Object.fromEntries(
+        groupByLinks(render({ filterOptions: options, filters })).map(
+          ({ label, href }) => [label, href],
+        ),
+      ),
+    ).toEqual({
+      Persona: `${base}&agrupar=persona${kept}`,
+      Proyecto: `${base}&agrupar=proyecto${kept}`,
+      Cliente: `${base}&agrupar=cliente${kept}`,
+      Tarea: `${base}&agrupar=tarea${kept}`,
+      Etiqueta: `${base}&agrupar=etiqueta${kept}`,
+      Fecha: `${base}&agrupar=fecha${kept}`,
     });
   });
 });
