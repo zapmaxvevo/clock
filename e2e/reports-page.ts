@@ -1,5 +1,5 @@
 /**
- * Localizadores y acciones de `/reportes` (R2a, R2b y R3 del núcleo de reportes).
+ * Localizadores y acciones de `/reportes` (R2a a R4 del núcleo de reportes).
  * Como en `timesheet-page.ts`, todo se busca por rol y por texto accesible. La
  * tabla se nombra por el título, y cada grupo es una fila con su encabezado de
  * fila: el nombre o, por fecha, el rótulo del día. La única excepción son los
@@ -37,6 +37,12 @@ export const SCOPE_SELF = "Ves solo tus horas.";
 
 /** D-R2a-2: la línea del alcance de owner y admin. */
 export const SCOPE_EVERYONE = "Ves las horas de todas las personas del workspace.";
+
+/** RP-33, D-R4-7: la fila del vacío cuando hay filtros. */
+export const EMPTY_FILTERED = "Ninguna entrada coincide con los filtros";
+
+/** D-R4-7: el enlace del segundo vacío, que vuelve a la vista sin filtros. */
+export const CLEAR_FILTERS = "Quitar filtros";
 
 /** D-R3-8: el grupo de los botones de los subniveles. */
 export const SUBGROUP_BY = "Subagrupar por";
@@ -171,35 +177,83 @@ export function shiftRange(range: ReportRange, days: number): ReportRange {
   return { first: addDays(range.first, days), last: addDays(range.last, days) };
 }
 
+/** RP-26: el valor de `proyectos` que elige las entradas sin proyecto (D-R4-2). */
+export const NO_PROJECT_KEY = "sin-proyecto";
+
+/**
+ * Los filtros de la URL (D-R4-2): ids de personas, de clientes y de
+ * proyectos, con `NO_PROJECT_KEY` entre los de proyecto. Uno que falta, o
+ * vacío, no se escribe.
+ */
+export type ReportUrlFilters = {
+  readonly people?: readonly string[];
+  readonly clients?: readonly string[];
+  readonly projects?: readonly string[];
+};
+
+/** Cada filtro con su parámetro, en el orden en que la URL los escribe (D-R4-2). */
+const FILTER_PARAMS = [
+  ["people", "personas"],
+  ["clients", "clientes"],
+  ["projects", "proyectos"],
+] as const;
+
+/**
+ * La lista de un filtro como la escribe la aplicación (D-R4-2): ordenada por
+ * unidades de código, con `sin-proyecto` al final.
+ */
+function filterList(values: readonly string[]): string {
+  const ids = values.filter((value) => value !== NO_PROJECT_KEY).sort();
+  const last = values.includes(NO_PROJECT_KEY) ? [NO_PROJECT_KEY] : [];
+  return [...ids, ...last].join(",");
+}
+
 /**
  * La dirección de un período y una agrupación: los tres parámetros y, si hay
- * subniveles, `subagrupar` como cuarto, separados por coma (D-R3-5).
+ * subniveles, `subagrupar` como cuarto, separados por coma (D-R3-5). Después,
+ * los filtros que no están vacíos, cada uno con su lista (D-R4-2).
  */
 export function reportsUrl(
   range: ReportRange,
   groupBy: ReportGroupBy,
   subgroups: readonly ReportGroupBy[] = [],
+  filters: ReportUrlFilters = {},
 ): string {
   const levels = subgroups.length === 0 ? "" : `&subagrupar=${subgroups.join(",")}`;
-  return `${REPORTS_PATH}?desde=${dayKeyOf(range.first)}&hasta=${dayKeyOf(range.last)}&agrupar=${groupBy}${levels}`;
+  const lists = FILTER_PARAMS.map(([key, param]) => {
+    const values = filters[key] ?? [];
+    return values.length === 0 ? "" : `&${param}=${filterList(values)}`;
+  }).join("");
+  return `${REPORTS_PATH}?desde=${dayKeyOf(range.first)}&hasta=${dayKeyOf(range.last)}&agrupar=${groupBy}${levels}${lists}`;
 }
 
 /**
- * La URL es la de ese período, esa agrupación y esos subniveles: cada
- * parámetro una vez, y sin `subagrupar` si no hay subniveles.
+ * La URL es la de ese período, esa agrupación, esos subniveles y esos
+ * filtros: cada parámetro una vez, sin `subagrupar` si no hay subniveles y
+ * sin `personas`, `clientes` ni `proyectos` si no se piden. Una lista de
+ * filtro tiene que ser la que escribe la aplicación, en su orden.
  */
 export function reportsUrlOf(
   range: ReportRange,
   groupBy: ReportGroupBy,
   subgroups: readonly ReportGroupBy[] = [],
+  filters: ReportUrlFilters = {},
 ): (url: URL) => boolean {
   const levels = subgroups.length === 0 ? [] : [subgroups.join(",")];
+  const lists = FILTER_PARAMS.map(([key, param]) => {
+    const values = filters[key] ?? [];
+    return [param, values.length === 0 ? [] : [filterList(values)]] as const;
+  });
   return (url) =>
     url.pathname === REPORTS_PATH &&
     url.searchParams.getAll("desde").join(",") === dayKeyOf(range.first) &&
     url.searchParams.getAll("hasta").join(",") === dayKeyOf(range.last) &&
     url.searchParams.getAll("agrupar").join(",") === groupBy &&
-    JSON.stringify(url.searchParams.getAll("subagrupar")) === JSON.stringify(levels);
+    JSON.stringify(url.searchParams.getAll("subagrupar")) === JSON.stringify(levels) &&
+    lists.every(
+      ([param, list]) =>
+        JSON.stringify(url.searchParams.getAll(param)) === JSON.stringify(list),
+    );
 }
 
 /**
@@ -410,8 +464,9 @@ export async function expectGroupBy(page: Page, groupBy: ReportGroupBy): Promise
 /**
  * Espera el período y la agrupación pedidos: la URL, el rótulo que dibuja el
  * servidor y la agrupación marcada. La URL sola no alcanza, porque cambia
- * antes de que llegue la pantalla nueva. Con subniveles, la URL los lleva;
- * los botones que los muestran los espera `expectSubgroups`.
+ * antes de que llegue la pantalla nueva. Con subniveles o filtros, la URL los
+ * lleva; los botones que los muestran los esperan `expectSubgroups` y
+ * `filterButton`.
  */
 export async function expectReport(
   page: Page,
@@ -419,8 +474,9 @@ export async function expectReport(
   groupBy: ReportGroupBy,
   today: CivilDay,
   subgroups: readonly ReportGroupBy[] = [],
+  filters: ReportUrlFilters = {},
 ): Promise<void> {
-  await expect(page).toHaveURL(reportsUrlOf(range, groupBy, subgroups));
+  await expect(page).toHaveURL(reportsUrlOf(range, groupBy, subgroups, filters));
   await expect(rangeButton(page)).toHaveAccessibleName(
     `Elegir período: ${rangeLabel(range, today)}`,
   );
@@ -434,9 +490,10 @@ export async function openReport(
   groupBy: ReportGroupBy,
   today: CivilDay,
   subgroups: readonly ReportGroupBy[] = [],
+  filters: ReportUrlFilters = {},
 ): Promise<void> {
-  await page.goto(reportsUrl(range, groupBy, subgroups));
-  await expectReport(page, range, groupBy, today, subgroups);
+  await page.goto(reportsUrl(range, groupBy, subgroups, filters));
+  await expectReport(page, range, groupBy, today, subgroups, filters);
   await expect(reportTable(page)).toBeVisible();
 }
 
@@ -560,4 +617,101 @@ export async function clickRangeDay(page: Page, target: CivilDay): Promise<void>
     })
     .toBe(0);
   await calendar.getByRole("button", { name: calendarDayName(target) }).click();
+}
+
+/** Los filtros de la barra, por el rótulo de su botón (D-R4-8). */
+export type FilterName = "Clientes" | "Proyectos";
+
+/** El buscador de cada filtro, por su `aria-label` (§5.7). */
+const FILTER_SEARCH: Record<FilterName, string> = {
+  Clientes: "Buscar clientes",
+  Proyectos: "Buscar proyectos",
+};
+
+/**
+ * El texto del botón de un filtro, que es también su nombre (D-R4-8):
+ * «Proyectos: todos», «Proyectos: Nombre» con uno, «Proyectos: 2» con más.
+ */
+export function filterChoice(filter: FilterName, summary: string): string {
+  return `${filter}: ${summary}`;
+}
+
+/** «Filtrar por», nombrado por su rótulo visible (D-R4-8). */
+export function filterControl(page: Page): Locator {
+  return page.getByRole("group", { name: "Filtrar por", exact: true });
+}
+
+/** El botón de un filtro con lo que dice: su nombre exacto. */
+export function filterButton(page: Page, filter: FilterName, summary: string): Locator {
+  return filterControl(page).getByRole("button", {
+    name: filterChoice(filter, summary),
+    exact: true,
+  });
+}
+
+/** El buscador del panel abierto de un filtro, que va en un portal. */
+export function filterSearch(page: Page, filter: FilterName): Locator {
+  return page
+    .getByRole("dialog")
+    .getByRole("searchbox", { name: FILTER_SEARCH[filter], exact: true });
+}
+
+/** El panel abierto de un filtro: el diálogo que tiene su buscador (§5.3). */
+export function filterPanel(page: Page, filter: FilterName): Locator {
+  return page.getByRole("dialog").filter({ has: filterSearch(page, filter) });
+}
+
+/**
+ * Un grupo de opciones del panel abierto: las vigentes, nombrado por el
+ * filtro, o el de aparte, «Archivados» (D-R4-8).
+ */
+export function filterGroup(
+  page: Page,
+  filter: FilterName,
+  group: FilterName | "Archivados",
+): Locator {
+  return filterPanel(page, filter).getByRole("group", { name: group, exact: true });
+}
+
+/**
+ * La casilla de una opción del panel abierto, que va en un portal, por el
+ * comienzo de su nombre: el de un proyecto sigue con su cliente (§5.3). Los
+ * nombres llevan el sufijo del test, así que no hay otro que empiece igual.
+ */
+export function filterOption(page: Page, name: string): Locator {
+  return page.getByRole("dialog").getByRole("checkbox", { name: leadingName(name) });
+}
+
+/**
+ * Las casillas de un grupo del panel son exactamente `names`, en ese orden,
+ * por el comienzo de su nombre. Primero la cantidad, que reintenta hasta que
+ * el buscador las filtra.
+ */
+export async function expectFilterOptions(
+  group: Locator,
+  names: readonly string[],
+): Promise<void> {
+  const options = group.getByRole("checkbox");
+  await expect(options).toHaveCount(names.length);
+  for (const [index, name] of names.entries()) {
+    await expect(options.nth(index)).toHaveAccessibleName(leadingName(name));
+  }
+}
+
+/** «Aplicar», al pie del panel abierto de un filtro, que va en un portal. */
+export function filterApply(page: Page): Locator {
+  return page.getByRole("dialog").getByRole("button", { name: "Aplicar", exact: true });
+}
+
+/**
+ * La fila del segundo vacío (D-R4-7). La celda sigue con «Quitar filtros»,
+ * así que se busca por el comienzo del texto.
+ */
+export function emptyFiltered(page: Page): Locator {
+  return reportTable(page).getByText(new RegExp(`^${escapeRegExp(EMPTY_FILTERED)}`));
+}
+
+/** «Quitar filtros», en la fila del segundo vacío. */
+export function clearFiltersLink(page: Page): Locator {
+  return reportTable(page).getByRole("link", { name: CLEAR_FILTERS, exact: true });
 }

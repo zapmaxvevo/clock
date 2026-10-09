@@ -169,6 +169,31 @@ export async function revokeProjectManager(email: string, name: string): Promise
 }
 
 /**
+ * El id de un proyecto del workspace de los e2e por su nombre, como lo
+ * escribe la URL del reporte (D-R4-2): el filtro de proyecto lo nombra por id.
+ */
+export async function projectIdOf(name: string): Promise<string> {
+  return withDatabase((client) =>
+    selectOneId(
+      client,
+      `select id from project where workspace_id = ${FIRST_WORKSPACE} and name = $1`,
+      [name],
+    ),
+  );
+}
+
+/** El id de un cliente del workspace de los e2e por su nombre, como `projectIdOf`. */
+export async function clientIdOf(name: string): Promise<string> {
+  return withDatabase((client) =>
+    selectOneId(
+      client,
+      `select id from client where workspace_id = ${FIRST_WORKSPACE} and name = $1`,
+      [name],
+    ),
+  );
+}
+
+/**
  * Cambia una fila con `client` y comprueba que cambió exactamente una. Los
  * nombres que reciben estas funciones llevan el sufijo único del recorrido,
  * así que otra cantidad es un error del test, no algo que se pueda dejar
@@ -198,6 +223,23 @@ async function insertOneRow(
   const row = result.rows.at(0);
   if (result.rowCount !== 1 || row === undefined) {
     throw new Error(`Se esperaba insertar una fila e insertaron ${result.rowCount}.`);
+  }
+  return row.id;
+}
+
+/**
+ * Lee el `id` de una fila y comprueba que hay exactamente una: como en
+ * `updateOneRow`, otra cantidad es un error del test.
+ */
+async function selectOneId(
+  client: Client,
+  sql: string,
+  values: readonly unknown[],
+): Promise<string> {
+  const result = await client.query<{ id: string }>(sql, [...values]);
+  const row = result.rows.at(0);
+  if (result.rows.length !== 1 || row === undefined) {
+    throw new Error(`Se esperaba leer una fila y se leyeron ${result.rows.length}.`);
   }
   return row.id;
 }
