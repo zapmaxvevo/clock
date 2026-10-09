@@ -2,16 +2,21 @@ import { Suspense } from "react";
 
 import { timeSettingsOf } from "@/modules/profile/service";
 import { ReportScreen, ReportSkeleton } from "@/modules/report/components/report-screen";
-import { reportGroupParams, reportRangeParams } from "@/modules/report/schema";
+import {
+  reportGroupParams,
+  reportRangeParams,
+  reportSubgroupParams,
+} from "@/modules/report/schema";
 import { requireSession } from "@/server/session";
 
 export default async function ReportPage({ searchParams }: PageProps<"/reportes">) {
   const session = await requireSession();
   const params = await searchParams;
-  // RP-32: un rango inválido o repetido se descarta entero y la agrupación se
-  // valida por su lado; ninguno de los dos es un error.
+  // RP-32: un rango inválido o repetido se descarta entero, y la agrupación y
+  // los subniveles se validan cada uno por su lado; ninguno es un error.
   const range = reportRangeParams.safeParse(params);
   const groupBy = reportGroupParams.safeParse(params);
+  const subgroups = reportSubgroupParams.safeParse(params);
 
   return (
     <Suspense fallback={<ReportSkeleton />}>
@@ -21,6 +26,7 @@ export default async function ReportPage({ searchParams }: PageProps<"/reportes"
         request={{
           range: range.success ? range.data : null,
           groupBy: groupBy.success ? groupBy.data : null,
+          subgroups: subgroups.success ? subgroups.data : [],
         }}
       />
     </Suspense>

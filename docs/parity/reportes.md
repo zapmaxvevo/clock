@@ -64,6 +64,22 @@ resumido; «Without task», «Without tag», «No task» y «No tag», en la de 
 groups them by project, client, user, groups, tag, or date.» (FOUND). Lo que
 dependía de las que no están queda _no verificado_.
 
+_Actualizado el 2026-10-09, R3b, la parte B del mismo contrato (§7
+«parity-analyst»)_: describe lo que hace el código de la rama
+`nucleo/r3b-subgrupos`. Cada regla lleva su corrección fechada; la sección 11
+pasa lo que estaba pendiente de R3b a lo que quedó hecho (secciones 11.5 a
+11.8) y la 11.4 suma sus divergencias. Cambian RP-11, RP-12, RP-13 (de
+`replicar` a `adaptar`), RP-18, RP-32, P-05 y la sección 11, y se suma P-11.
+Ese día se buscó en la página del resumido: «You can further breakdown data by
+sub groups.», «You can click on the number next to the group to expand it and
+see a more detailed breakdown for that group.» y «Group by client -> user to
+see who worked for what client» (FOUND); «collapse», un tope de niveles, qué
+pasa con lo expandido al recargar y «3000» (NOT FOUND). En la de filtros: «Apply
+the sorting options you want using one, two, or all three drop down menus» y la
+lista de opciones de «Group by» que la sigue (FOUND; RP-11, RP-12); «expand»,
+«collapse», «None» como opción de agrupación y que la agrupación se conserve al
+recargar (NOT FOUND).
+
 ## Fuentes y límites del relevamiento
 
 Documentación pública del centro de ayuda de Clockify y referencia pública de su
@@ -319,6 +335,18 @@ Clockify**: «Group by task» no está en la página del resumido (NOT FOUND el
 entradas tienen tarea y «cuánto se cargó en cada tarea» es una pregunta del
 equipo. Los subniveles quedan para R3b (sección 11.5).
 
+_Corregido el 2026-10-09, relevamiento de R3b_: la página de filtros enumera
+las opciones de «Group by» en una lista, debajo de «Apply the sorting options
+you want using one, two, or all three drop down menus»: «Project», «Client»,
+«User», «Description», «Group», «Tag», «Month», «Week» y «Date» (FOUND como
+ítems de la lista). Reemplaza el _no verificado_ de arriba en lo que la lista
+dice: **descripción, mes y semana están documentados** y Clock no los tiene;
+**tarea y año no están en la lista**, así que la tarea sigue entrando solo por
+la decisión del usuario. Descripción, mes y semana no tienen slice ni marca
+hasta que el equipo decida (P-11). En qué orden muestra la interfaz las
+opciones y si el resumido y el semanal ofrecen la misma lista siguen _no
+verificados_ (P-05).
+
 **RP-12 Subagrupación encadenada** — `replicar`
 Documentado: «You can further breakdown data by sub groups.» y los ejemplos
 «Group by client -> user to see who worked for what client» y «Group by group
@@ -351,9 +379,80 @@ grupos de su misma duración. Dos tareas con el mismo nombre en proyectos
 distintos se ordenan como dos grupos. **Los subgrupos siguen pendientes de
 R3b** (sección 11.5).
 
-**RP-13 Expandir un grupo** — `replicar`
+_Actualizado el 2026-10-09, R3b (D-R3-5, D-R3-6, D-R3-8)_: **hasta tres
+niveles, sin repetir.** El tope de tres ya no es solo de los ejemplos: la página
+de filtros dice «Apply the sorting options you want using one, two, or all three
+drop down menus» (FOUND el 2026-10-09). Si una dimensión se puede repetir en dos
+niveles y cómo se deja vacío un menú siguen _no verificados_: «None» no está en
+la página de filtros (NOT FOUND).
+
+- **«Agrupar por» elige el primer nivel**, con los seis enlaces de R3a.
+  Después, **«Subagrupar por»** con el botón «Segundo nivel: {dimensión}» o
+  «Segundo nivel: Ninguno», siempre, y «Tercer nivel: …», solo si hay segundo
+  nivel. Cada botón abre una lista con «Ninguno» primero y después las
+  dimensiones que no están en los niveles de arriba, en el orden de «Agrupar
+  por»: el segundo nivel ofrece cinco y el tercero, cuatro. La elegida, o
+  «Ninguno», lleva `aria-current`.
+- **En la URL, `subagrupar`**, con uno o dos valores separados por coma en el
+  orden de los niveles: `agrupar=proyecto&subagrupar=fecha,etiqueta`. Sin
+  subniveles, la URL es la de R2b, con tres parámetros (RP-32).
+- **Elegir una dimensión que ya está en otro nivel los intercambia.** Desde
+  Persona → Proyecto, «Proyecto» en «Agrupar por» da Proyecto → Persona; desde
+  Persona → Proyecto → Fecha, «Fecha» en «Agrupar por» da Fecha → Proyecto →
+  Persona. La lista del segundo nivel ofrece también lo que está en el tercero,
+  y elegirlo los intercambia: Persona → Proyecto → Fecha, con «Fecha» en el
+  segundo, da Persona → Fecha → Proyecto. La del tercero ofrece solo lo que no
+  está arriba, así que nunca intercambia.
+- **«Ninguno» quita ese nivel y los de abajo**: en el segundo, el reporte
+  vuelve a un nivel y el botón del tercero desaparece; en el tercero, quedan
+  dos.
+- **El orden dentro de cada nivel es el de su dimensión**, entre los hermanos
+  de un mismo grupo: los días, en orden cronológico; el resto, por duración
+  descendente, `compareNames` en el empate y el «Sin …» después de los de su
+  misma duración. Es el orden de un nivel aplicado a cada grupo.
+- **Un grupo de abajo es la combinación de todo su camino**: debajo de una
+  persona están solo sus proyectos, y debajo de cada proyecto, solo los días de
+  esa persona en ese proyecto. El mismo día debajo de dos proyectos son dos
+  grupos, cada uno con lo suyo.
+
+La marca sigue en `replicar` para los subgrupos y los tres niveles, que son los
+de Clockify. «Ninguno», el intercambio y `subagrupar` son la forma propia de
+elegirlos: justificación, la URL tiene que reproducir los niveles (RP-32) y el
+intercambio permite pasar de Persona → Proyecto a Proyecto → Persona con un
+clic. _No verificado_: el orden de Clockify dentro de un subgrupo (P-05).
+
+**RP-13 Expandir un grupo** — `adaptar`
 Documentado: «You can click on the number next to the group to expand it and
 see a more detailed breakdown for that group.»
+
+_Actualizado el 2026-10-09, R3b (D-R3-6, D-R3-9)_: la marca pasa de `replicar`
+a `adaptar`. Justificación: el control no es el número junto al grupo sino un
+botón con el chevrón y el nombre del grupo, y lo abierto no viaja en la URL,
+que es la decisión del contrato mientras el usuario no conteste la pregunta 2
+de su §10.
+
+- **El árbol entero llega con la página**: expandir y contraer no vuelve al
+  servidor.
+- **Todo contraído al cargar y en cada navegación que cambia la URL** dentro de
+  la pantalla: las flechas, «Esta semana», un atajo, «Aplicar», un enlace de
+  «Agrupar por» o uno de los subniveles. Se ven los grupos del primer nivel.
+- **Cada grupo con hijos lleva un botón** dentro de su encabezado de fila, con
+  el chevrón, oculto al lector, y el contenido del encabezado: su nombre es el
+  del grupo y su estado, `aria-expanded`. Clic, Enter o Espacio lo abren y lo
+  cierran, y el foco queda en el botón. Un grupo del último nivel que se
+  muestra no tiene botón y deja un espacio del ancho del chevrón, para que los
+  nombres alineen. Con un solo nivel, o con los subniveles cortados por el tope,
+  ninguna fila tiene botón ni ese espacio: la tabla se ve como la de R3a.
+- **Contraer oculta a todos los descendientes; reabrir los muestra como
+  estaban**: con P1 y su martes abiertos, cerrar P1 y reabrirlo deja el martes
+  abierto.
+- **Las filas contraídas no están en la página**, y el botón no lleva
+  `aria-controls`. La sangría marca el nivel y es solo visual.
+- **Lo abierto no sobrevive a una recarga, a «Atrás» ni a un enlace copiado.**
+- No hay «Expandir todo» ni «Contraer todo».
+- _No verificado_: qué cuenta el número del que habla la cita, y qué hace
+  Clockify con lo expandido al recargar; «collapse» y la recarga no están en la
+  página del resumido (NOT FOUND el 2026-10-09). P-05.
 
 **RP-14 Del resumido al detallado** — `replicar`
 Documentado: «By clicking on the item from the Summary report (e.g. user name,
@@ -426,6 +525,29 @@ qué dice la cabecera: «multiple tags» no está en la página del resumido ni 
 de filtros (NOT FOUND el 2026-10-09); sigue en P-05. Lo del árbol —los niveles
 debajo de una etiqueta suman lo de su grupo, y la línea con la etiqueta en un
 subnivel— queda para R3b (sección 11.5).
+
+_Actualizado el 2026-10-09, R3b (D-R3-3, D-R3-6, D-R3-9)_: en el árbol, **cada
+fila muestra lo de su grupo**, truncado al minuto por separado, como en un
+nivel.
+
+- **Sin la etiqueta en ningún nivel**, los hijos de un grupo suman lo del grupo,
+  en segundos.
+- **Debajo de una etiqueta**, los niveles reparten las entradas de esa etiqueta
+  y suman lo de su grupo.
+- **Con la etiqueta en un subnivel**, los hijos de etiqueta de un grupo pueden
+  sumar más que él, porque una entrada con varias etiquetas suma en cada una:
+  en Persona → Etiqueta, las etiquetas de una persona pueden pasar a la
+  persona. Los niveles de arriba de la etiqueta suman lo real.
+- **«Total» y «Facturable» son siempre los reales**: con la etiqueta primero, se
+  leen aparte; si no, son la suma del primer nivel, que no tiene la etiqueta.
+  Un árbol cortado por el tope no los cambia.
+- **La línea de la etiqueta** aparece si la etiqueta es cualquiera de los
+  niveles que se muestran, aunque ese nivel esté contraído, y en el vacío con la
+  etiqueta entre los niveles pedidos. Si el tope cortó el nivel de la etiqueta,
+  no aparece, porque ese nivel no se muestra.
+- Con las entradas del recorrido 11 del contrato, Proyecto → Fecha → Etiqueta:
+  P1 1:30, su martes 1:00 con E1 1:00 debajo, su jueves 0:30 con «Sin etiqueta»
+  0:30 debajo, y P2 0:45.
 
 **RP-19 Formato de duración** — `adaptar`
 Documentado: el formato es del workspace («Find duration format in the General
@@ -749,6 +871,31 @@ _Actualizado el 2026-10-08, contrato de R2b (D-R2b-1)_:
   parámetro relativo, un enlace de «Hoy» abierto mañana o en otra zona mostraría
   otros días, y la exportación recibiría un rango abierto.
 
+_Actualizado el 2026-10-09, R3b (D-R3-5, D-R3-6, D-R3-8)_:
+
+- **`subagrupar` se valida aparte y se descarta entero, sin aviso.** Vale con
+  uno o dos valores de `persona`, `proyecto`, `cliente`, `tarea`, `etiqueta` o
+  `fecha`, separados por una coma, distintos entre sí y distintos del primer
+  nivel efectivo: el de `agrupar` o, si `agrupar` falta o no vale, `persona`.
+  Se descarta con un valor desconocido, una mayúscula (`Fecha`), un espacio
+  (` fecha`), una coma de más (`fecha,`, `,fecha`, `fecha,,tarea`), un valor
+  vacío, tres valores, uno repetido (`fecha,fecha`), el del primer nivel o el
+  parámetro repetido. Descartado, el reporte queda en un nivel.
+- **Cada parámetro por su lado**: un `subagrupar` válido sobrevive a un rango
+  inválido. Con un `agrupar` inválido el primer nivel es persona, así que
+  `agrupar=Proyecto&subagrupar=proyecto` da Persona → Proyecto, y
+  `subagrupar=persona` sin `agrupar` se descarta.
+- **La coma** viaja como `%2C` en los enlaces que arma la aplicación; un enlace
+  escrito a mano con `,` vale igual.
+- **Todo enlace del reporte conserva los subniveles**: las flechas, «Esta
+  semana», los atajos, «Aplicar» y los enlaces de «Agrupar por», que los cambian
+  con el intercambio de RP-12.
+- **Al recargar**, la URL reproduce el período y los niveles, y los botones de
+  los subniveles dicen lo elegido; lo abierto no se reproduce y todo vuelve
+  contraído (RP-13). Un enlace copiado, lo mismo.
+- **Un member que abre el enlace de un admin con subniveles** ve los mismos
+  niveles con sus propias horas en cada uno; `personas=…` se sigue ignorando.
+
 **RP-33 Vacíos** — `adaptar`
 Sin entradas en el rango: «No hay horas en este período», con los gráficos
 ocultos y el total en cero. Con filtros que no dejan nada: «Ninguna entrada
@@ -1055,6 +1202,25 @@ etiqueta archivada (RP-29). Mientras tanto vale lo de R3a (sección 11). Lo de
 R3b —el tope de niveles, si una dimensión se repite, el orden dentro de los
 subgrupos y lo expandido al recargar— se suma con R3b. No bloquea.
 
+_Actualizado el 2026-10-09, R3b (§10, preguntas 2 y 3 del contrato)_: P-05
+sigue abierto para el usuario. **Sale de la lista el tope de niveles**, que la
+página de filtros documenta con sus tres menús (RP-12), y la lista de opciones
+de «Group by» queda documentada salvo su orden en pantalla (RP-11). Suma, para
+R3b: si una dimensión se puede repetir en dos niveles y cómo se deja vacío un
+menú (RP-12); el orden de las filas dentro de un subgrupo (RP-12); qué cuenta el
+número junto al grupo y qué queda expandido al recargar o al volver a la
+pantalla (RP-13, RP-32). **La pregunta 2 de §10 del contrato —conservar lo
+abierto al recargar— sigue abierta para el usuario**: hasta que la conteste,
+todo empieza contraído y lo abierto no va en la URL (RP-13). Mientras tanto vale
+lo de R3b (secciones 11.4 a 11.8). No bloquea.
+
+_Agregado el 2026-10-09, relevamiento de R3b_: **P-11 — Agrupar por
+descripción, mes y semana.** La página de filtros los lista entre las opciones
+de «Group by» (RP-11) y Clock no los tiene: ¿entran en el núcleo, en la fase 3
+o quedan fuera de alcance? Mes y semana se cruzan con la granularidad del
+gráfico de RP-15; descripción agruparía por un texto libre. Sin decisión, no
+tienen marca. No bloquea R3b.
+
 ## 8. Decisiones del usuario (2026-10-08)
 
 - **P-01**: solo owner y admin ven las horas de otros; el resto ve solo las propias. Divergencia
@@ -1278,6 +1444,19 @@ tope de filas (R3b, sección 11.5); filtros y el segundo vacío de RP-33 (R4);
 gráfico (R5); exportación (R6, R7); cambiar el rol (R8); personas sin horas
 (R9). Filtrar por tarea o por etiqueta es RP-25 en el resto, de la fase 3.
 
+_Actualizado el 2026-10-09, R3b_: la parte B quedó en la rama
+`nucleo/r3b-subgrupos`, con este mismo contrato desde su paso 6. Las secciones
+11.5 a 11.8 juntan su pantalla, en lugar de lo que la 11.5 dejaba pendiente, y
+la 11.4 suma sus divergencias. **Cubre:** RP-12 (hasta tres niveles,
+`subagrupar`, el intercambio y «Ninguno»), RP-13 (expandir y contraer), RP-18
+en el árbol y RP-32 (`subagrupar`). Los permisos y el alcance no cambian: no
+hay acción nueva, ningún nivel se lee sin `report.view`, y en cada nivel, como
+en el total, un member ve solo lo propio. **Queda para después:** filtros y el
+segundo vacío de RP-33 (R4); gráfico (R5); exportación, que hereda el tope de
+3000 filas (R6, R7); cambiar el rol (R8); personas sin horas (R9). No tienen
+slice: «Expandir todo» y «Contraer todo», lo abierto en la URL, `treegrid` y
+los grupos sin horas en cualquier nivel.
+
 ### 11.1 La barra
 
 - **«Agrupar por»** con seis enlaces, en este orden: «Persona», «Proyecto»,
@@ -1323,6 +1502,9 @@ gráfico (R5); exportación (R6, R7); cambiar el rol (R8); personas sin horas
   la vista queda por persona, sin aviso (RP-32). Hasta R3b, `subagrupar=…` se
   ignora como cualquier otra clave.
 
+_Corregido el 2026-10-09, R3b_: desde R3b, `subagrupar` se valida y, si no
+vale, se descarta entero (RP-32, sección 11.7).
+
 ### 11.4 Divergencias visibles que el reviewer no debe marcar como errores
 
 - Por etiqueta, la suma de las filas puede pasar el «Total» (RP-18); lo de
@@ -1339,21 +1521,111 @@ gráfico (R5); exportación (R6, R7); cambiar el rol (R8); personas sin horas
 - «Tarea» está en «Agrupar por» aunque la documentación de Clockify no la
   nombre: entra por decisión del usuario (RP-11).
 
-### 11.5 Pendiente de R3b
+_Actualizado el 2026-10-09, R3b_:
 
-La parte B del contrato no está en R3a. Cuando R3b se cierre, lleva su
-corrección fechada en cada RP y en esta sección:
+- **El tope de 3000 filas.** Si el árbol pasa de 3000 filas sumando todos sus
+  niveles, se muestran solo los niveles de arriba que entran, y encima de la
+  tabla, debajo de los totales, dice: «El reporte pasa de 3000 filas con todos
+  sus niveles: se muestran solo los de arriba. Acortá el período o quitá un
+  nivel.». Un nivel entra entero o no entra: nunca se ve una parte de un nivel,
+  y cuando uno no entra, los de abajo tampoco. Los botones de los subniveles
+  siguen diciendo lo pedido, que es lo que dice la URL; el encabezado de la
+  columna nombra solo los que se muestran (D-R3-6).
+- **Lo que se ve con el tope**, medido en el volumen de §6.3 del contrato: con
+  «Este año», **Persona → Proyecto → Fecha de todo el equipo muestra dos
+  niveles, Persona y Proyecto, y la línea del tope**; **Etiqueta → Proyecto →
+  Fecha, también**. Persona → Fecha de un año muestra solo las personas (§10,
+  nota 4 del contrato). Para ver los días de todo el equipo hay que acortar el
+  período o mirar por persona.
+- **El corte es por niveles enteros**: aunque los días de algunas personas
+  entrarían, no se ve ninguno.
+- **El primer nivel no tiene tope** y se muestra siempre entero. Si pasa de 3000
+  por su cuenta, con subniveles pedidos no se ve ninguno de abajo y aparece la
+  línea; sin subniveles, se ven todas sus filas y no hay línea.
+- **Un período sin horas no se corta**: el encabezado nombra todos los niveles
+  pedidos y no hay línea del tope.
+- **Lo abierto se pierde** al recargar, con «Atrás», en un enlace copiado y en
+  cada navegación que cambia la URL dentro de la pantalla (RP-13). No hay
+  «Expandir todo» ni «Contraer todo».
+- **Expandir es un botón con el nombre del grupo**, no el número junto al grupo
+  que describe Clockify (RP-13).
+- **El proyecto en gris de una tarea** se ve también debajo de un grupo de
+  proyecto, aunque repita el de arriba, como el cliente en gris de un proyecto
+  debajo de un grupo de cliente (D-R3-4).
+- **Con la etiqueta en un subnivel**, los hijos de etiqueta de un grupo pueden
+  sumar más que el grupo (RP-18).
+- **El nivel de una fila no se oye** con un lector de pantalla: la sangría es
+  solo visual; el orden de las filas y el estado del botón lo dan (D-R3-9).
+- **«Ninguno» y el intercambio** al elegir una dimensión que ya está no están
+  documentados en Clockify (RP-12).
 
-- **RP-12**: hasta tres niveles sin repetir, `subagrupar`, el intercambio al
-  elegir una dimensión que ya está en otro nivel y «Ninguno»; el orden dentro
-  de cada nivel es el de su dimensión. _No verificado_: el tope de niveles y la
-  repetición en Clockify.
-- **RP-13**: expandir y contraer en el navegador; todo contraído al cargar y en
-  cada navegación; lo abierto no sobrevive a la recarga (D-R3-6, D-R3-9).
-- **RP-18 en el árbol**: los niveles de abajo de una etiqueta suman lo de su
-  grupo, y la línea de la etiqueta cuando la etiqueta es cualquiera de los
-  niveles que se muestran.
-- **RP-32**: `subagrupar` se valida aparte y se descarta entero.
-- **En la 11.4**: el tope de 3000 filas y su línea; el proyecto en gris de la
-  tarea también debajo de un proyecto; lo abierto que se pierde al recargar o
-  al navegar.
+### 11.5 R3b: la barra
+
+- **«Subagrupar por»**, después de «Agrupar por», es un grupo nombrado por su
+  rótulo con el botón «Segundo nivel: {dimensión}» o «Segundo nivel: Ninguno»,
+  siempre, y «Tercer nivel: …», solo si hay segundo nivel. El texto del botón
+  es su nombre accesible.
+- **Cada botón abre un popover** con una lista nombrada «Segundo nivel» o
+  «Tercer nivel»: «Ninguno» primero y después las dimensiones que no están en
+  los niveles de arriba, en el orden de «Agrupar por». La elegida, o «Ninguno»,
+  lleva `aria-current`. Elegir un enlace cierra el popover, navega y devuelve el
+  foco al botón, que ya dice lo nuevo; con Ctrl o Cmd lo abre en otra pestaña y
+  el popover queda abierto.
+- **«Agrupar por»** sigue con los seis enlaces de R3a; elegir uno que está en un
+  subnivel los intercambia, y el enlace de lo que ya está en el primer nivel
+  lleva a la misma URL (RP-12).
+- **Las flechas, el selector del período con sus atajos y «Aplicar», y «Esta
+  semana»** conservan los subniveles (RP-32).
+
+### 11.6 R3b: la tabla y el árbol
+
+- **El encabezado de la primera columna** nombra los niveles que se muestran,
+  unidos por « / »: «Proyecto / Fecha», «Persona / Proyecto / Fecha». Con un
+  nivel, el de R3a. Con el árbol cortado por el tope, solo los que entraron.
+- **Las filas**: al cargar, los grupos del primer nivel. Cada grupo con hijos
+  lleva el botón de RP-13, con `aria-expanded`. Al abrirlo, sus hijos van
+  después de él y antes de su hermano siguiente, con más sangría; los del
+  tercer nivel, con más todavía.
+- **Una fila de abajo se rotula como en un nivel**: el día con su día de la
+  semana y su fecha, «mar, 06/10», sin «Hoy» ni «Ayer»; la tarea con su
+  proyecto en gris; el proyecto con su punto de color y su cliente en gris; la
+  persona con «(inactiva)» si corresponde; los «Sin …» en gris.
+- **La duración de cada fila** es la de su grupo, truncada al minuto (RP-18).
+- **El orden** de los hermanos es el de la dimensión de su nivel (RP-12).
+- **La línea de la etiqueta**, debajo de la de la zona, si la etiqueta es uno de
+  los niveles que se muestran (RP-18).
+- **La línea del tope**, debajo de los totales y encima de la tabla, si se
+  muestran menos niveles que los pedidos (sección 11.4).
+- Con las entradas del recorrido 11 del contrato, Proyecto → Fecha: P1 1:30 y
+  P2 0:45, contraídos; abierto P1, el martes 1:00 y el jueves 0:30 entre P1 y
+  P2.
+
+### 11.7 R3b: estados y casos borde
+
+- **Cargando, error de lectura y sin `report.view`**: como en la sección 9.3,
+  con cualquier combinación de niveles. Sin `report.view` no se abre la
+  transacción ni se lee ningún nivel (RP-07).
+- **Vacío con subniveles**: la fila «No hay horas en este período», «Total» y
+  «Facturable» en «0:00», el encabezado con todos los niveles pedidos
+  («Proyecto / Fecha / Etiqueta») y sin línea del tope; con la etiqueta en algún
+  nivel, su línea (RP-18, RP-33).
+- **Árbol cortado por el tope**: la línea del tope; el encabezado y las filas
+  con los niveles que entraron; si solo entró el primero, las filas sin botón,
+  como un reporte de un nivel.
+- **Al recargar**: la misma URL, los botones de los subniveles con lo elegido y
+  todo contraído (RP-13, RP-32). Un `subagrupar` inválido se descarta entero y
+  sin aviso, y el reporte queda en un nivel.
+- **El mismo día debajo de dos proyectos** son dos filas distintas, que se
+  abren y se cierran por separado.
+- **Una navegación que no cambia la URL** —el enlace de la agrupación ya
+  elegida, «Ninguno» en un nivel que ya no tiene nada, el atajo del período que
+  ya se ve— no vuelve a contraer lo abierto: el árbol empieza de nuevo cuando
+  cambia la URL del pedido, que es su `key` (D-R3-9). Ningún e2e lo recorre.
+
+### 11.8 R3b: qué puede hacer cada rol
+
+| Membresía                                           | Ve                                                                                           | Acciones                                                                                                                                      |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `owner`, `admin` activas                            | Todas las personas del workspace con horas, activas o no, en cada nivel                      | Cambiar el período, la agrupación y los subniveles; expandir y contraer; recargar; compartir el enlace, que lleva los niveles y no lo abierto |
+| `project_manager`, `team_manager`, `member` activas | Solo lo propio en cada nivel y en el total, también con el enlace de un admin con subniveles | Las mismas                                                                                                                                    |
+| Cualquiera no activa (`inactive`, `invited`)        | El aviso de RP-07                                                                            | Ninguna                                                                                                                                       |

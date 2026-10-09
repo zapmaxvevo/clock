@@ -22,6 +22,8 @@ import {
   REPORT_GROUP_BYS,
   reportGroupParams,
   reportRangeParams,
+  reportSubgroupParams,
+  type ReportGroup,
   type ReportGroupBy,
   type ReportState,
 } from "./schema";
@@ -35,7 +37,7 @@ import { getReportState, type ReportRequest } from "./service";
  * roles en el service (criterio 4, R9 de las correcciones). R2b suma las
  * agrupaciones por cliente y por fecha con el mismo fixture (criterio 11 de R2b),
  * y R3 las de tarea y etiqueta, con la tarea y las etiquetas en el fixture
- * (criterio 9 de R3).
+ * (criterio 9 de R3), y los subniveles (criterio 21 de R3).
  */
 const permissionOverrides = vi.hoisted(() => ({
   denied: [] as { readonly userId: string; readonly action: string }[],
@@ -134,6 +136,20 @@ type WorkspaceB = {
 let a: WorkspaceA;
 let b: WorkspaceB;
 
+/** Una entrada sembrada: lo que el reporte tiene que sumar de ella. */
+type SeededEntry = {
+  readonly workspaceId: string;
+  readonly userId: string;
+  readonly minutes: number;
+  readonly place: Place;
+};
+
+/** Las entradas de `beforeEach`, de A y de B. */
+let seeded: SeededEntry[];
+
+/** Cómo nombra un camino a cada id del fixture, para que un fallo se lea. */
+let names: Map<string, string>;
+
 /**
  * Una entrada cerrada de `minutes` minutos el martes 29/09, que empieza a las
  * `hour` UTC, en `place`: facturable si tiene proyecto.
@@ -146,6 +162,7 @@ async function closedEntry(values: {
   readonly place: Place;
 }) {
   const startedAt = new Date(Date.UTC(2026, 8, 29, values.hour));
+  seeded.push(values);
   await seedTimeEntry({
     workspaceId: values.workspaceId,
     userId: values.userId,
@@ -160,6 +177,7 @@ async function closedEntry(values: {
 
 beforeEach(async () => {
   permissionOverrides.denied.length = 0;
+  seeded = [];
 
   const seededA = await seedWorkspace(buenosAires);
   const adminId = await seedMember(seededA.workspaceId, "admin");
@@ -220,6 +238,23 @@ beforeEach(async () => {
     clientId: clientB.id,
   });
   const tagG = await seedTag({ workspaceId: seededB.workspaceId, name: "G" });
+  names = new Map([
+    [seededA.ownerId, "owner"],
+    [adminId, "admin"],
+    [managerId, "project_manager"],
+    [teamManagerId, "team_manager"],
+    [memberId, "member"],
+    [inactiveId, "inactivo"],
+    [seededB.ownerId, "owner de B"],
+    [clientA.id, "cliente de A"],
+    [projectA.id, "P"],
+    [taskA.id, "T"],
+    [tagE.id, "E"],
+    [tagF.id, "F"],
+    [clientB.id, "cliente de B"],
+    [projectB.id, "proyecto de B"],
+    [tagG.id, "G"],
+  ]);
   b = {
     workspaceId: seededB.workspaceId,
     ownerId: seededB.ownerId,
@@ -295,7 +330,7 @@ beforeEach(async () => {
 });
 
 function request(groupBy: ReportRequest["groupBy"]): ReportRequest {
-  return { range: week, groupBy };
+  return { range: week, groupBy, subgroups: [] };
 }
 
 async function reportOf(actor: Actor, groupBy: ReportRequest["groupBy"]) {
@@ -464,14 +499,154 @@ function selfOnlyInA() {
   ] as const;
 }
 
-/** Sin `report.view`, `forbidden` sin leer ni abrir la transacción (criterio 9 de R3). */
+/** Los dos árboles del criterio 21: tres niveles, uno con la etiqueta arriba. */
+const trees: readonly (readonly ReportGroupBy[])[] = [
+  ["person", "project", "date"],
+  ["tag", "task", "person"],
+];
+
+/** El pedido de la semana con `levels[0]` arriba y el resto como subniveles. */
+function treeRequest(levels: readonly ReportGroupBy[]): ReportRequest {
+  return { range: week, groupBy: levels[0], subgroups: levels.slice(1) };
+}
+
+async function treeOf(actor: Actor, levels: readonly ReportGroupBy[]) {
+  return getReportState(actor, settings, treeRequest(levels), now);
+}
+
+function nameOf(id: string | null): string {
+  return id === null ? "sin" : (names.get(id) ?? id);
+}
+
+/** Cómo aparece un grupo en un camino: su dimensión y su nombre, o «sin». */
+function keyOfGroup(group: ReportGroup): string {
+  switch (group.kind) {
+    case "person":
+      return `persona ${nameOf(group.userId)}`;
+    case "project":
+      return `proyecto ${nameOf(group.project?.id ?? null)}`;
+    case "client":
+      return `cliente ${nameOf(group.client?.id ?? null)}`;
+    case "task":
+      return `tarea ${nameOf(group.task?.id ?? null)}`;
+    case "tag":
+      return `etiqueta ${nameOf(group.tag?.id ?? null)}`;
+    case "date":
+      return `fecha ${group.dayKey}`;
+  }
+}
+
+/** Los grupos de una entrada en un nivel: uno, salvo por etiqueta (RP-18). */
+function keysOfEntry(entry: SeededEntry, level: ReportGroupBy): readonly string[] {
+  const { place } = entry;
+  switch (level) {
+    case "person":
+      return [`persona ${nameOf(entry.userId)}`];
+    case "project":
+      return [`proyecto ${nameOf(place.projectId)}`];
+    case "client":
+      return [`cliente ${nameOf(place.clientId)}`];
+    case "task":
+      return [`tarea ${nameOf(place.taskId)}`];
+    case "tag":
+      return place.tagIds.length === 0
+        ? ["etiqueta sin"]
+        : place.tagIds.map((tagId) => `etiqueta ${nameOf(tagId)}`);
+    case "date":
+      return [`fecha ${entryDay}`];
+  }
+}
+
+/** Cada grupo del árbol como su camino desde el primer nivel y sus segundos. */
+function pathsOf(groups: readonly ReportGroup[], above: string): string[] {
+  return groups.flatMap((group) => {
+    const path = above === "" ? keyOfGroup(group) : `${above} / ${keyOfGroup(group)}`;
+    return [`${path}: ${group.seconds}`, ...pathsOf(group.children ?? [], path)];
+  });
+}
+
+/**
+ * Lo que decide el alcance de un árbol: los niveles, los totales y cada grupo
+ * de cada nivel como un camino con sus segundos, sin orden (el orden es del
+ * criterio 17).
+ */
+function treeSummaryOf(state: ReportState) {
+  if (state.kind !== "ready") {
+    return state;
+  }
+  return {
+    scope: state.scope,
+    groupBy: state.groupBy,
+    subgroups: state.subgroups,
+    levelsShown: state.levelsShown,
+    totalSeconds: state.totalSeconds,
+    billableSeconds: state.billableSeconds,
+    paths: pathsOf(state.groups, "").sort(),
+  };
+}
+
+/**
+ * El árbol que dan `entries` con `levels`: cada entrada suma una vez en cada
+ * camino suyo, y una con dos etiquetas, en el de cada una; el total es el de
+ * las entradas.
+ */
+function expectedTree(
+  scope: "everyone" | "self",
+  levels: readonly ReportGroupBy[],
+  entries: readonly SeededEntry[],
+) {
+  const seconds = new Map<string, number>();
+  for (const entry of entries) {
+    let paths = [""];
+    for (const level of levels) {
+      paths = paths.flatMap((above) =>
+        keysOfEntry(entry, level).map((key) =>
+          above === "" ? key : `${above} / ${key}`,
+        ),
+      );
+      for (const path of paths) {
+        seconds.set(path, (seconds.get(path) ?? 0) + entry.minutes * 60);
+      }
+    }
+  }
+  const secondsOf = (counted: readonly SeededEntry[]) =>
+    counted.reduce((sum, entry) => sum + entry.minutes * 60, 0);
+  return {
+    scope,
+    groupBy: levels[0],
+    subgroups: levels.slice(1),
+    levelsShown: levels.length,
+    totalSeconds: secondsOf(entries),
+    billableSeconds: secondsOf(entries.filter((entry) => entry.place.projectId !== null)),
+    paths: [...seconds].map(([path, total]) => `${path}: ${total}`).sort(),
+  };
+}
+
+function entriesIn(workspaceId: string, userId?: string): SeededEntry[] {
+  return seeded.filter(
+    (entry) =>
+      entry.workspaceId === workspaceId &&
+      (userId === undefined || entry.userId === userId),
+  );
+}
+
+/**
+ * Sin `report.view`, `forbidden` sin leer ni abrir la transacción, con un nivel
+ * y con subniveles (criterios 9 y 21 de R3).
+ */
 async function expectForbiddenWithoutReading(actor: Actor) {
   const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
   const entryTotals = vi.spyOn(reportRepository, "entryTotals");
   const transaction = vi.spyOn(db, "transaction");
   try {
-    for (const groupBy of [null, ...groupBys]) {
-      expect(await reportOf(actor, groupBy)).toEqual({ kind: "forbidden" });
+    const requests = [
+      ...[null, ...groupBys].map(request),
+      ...trees.map((levels) => treeRequest(levels)),
+    ];
+    for (const forbidden of requests) {
+      expect(await getReportState(actor, settings, forbidden, now)).toEqual({
+        kind: "forbidden",
+      });
     }
     expect(byLevels).not.toHaveBeenCalled();
     expect(entryTotals).not.toHaveBeenCalled();
@@ -652,12 +827,16 @@ describe("el enlace ajeno (criterio 5, RP-32; criterio 11 de R2b; criterio 9 de 
     if (!range.success || !groupBy.success) {
       throw new Error("El enlace del admin no pasó los esquemas.");
     }
-    return { range: range.data, groupBy: groupBy.data };
+    return { range: range.data, groupBy: groupBy.data, subgroups: [] };
   }
 
   it("los esquemas no dejan pasar ninguna clave que nombre personas", () => {
     for (const [agrupar, groupBy] of linkedGroupBys) {
-      expect(requestFromUrl(agrupar)).toStrictEqual({ range: week, groupBy });
+      expect(requestFromUrl(agrupar)).toStrictEqual({
+        range: week,
+        groupBy,
+        subgroups: [],
+      });
     }
   });
 
@@ -708,5 +887,127 @@ describe("membresía no activa (criterio 11, RP-07; criterio 9 de R3)", () => {
     await expectForbiddenWithoutReading(
       actorIn(a.workspaceId, a.inactiveId, { status: "inactive" }),
     );
+  });
+});
+
+describe("el alcance en cada nivel (criterio 21 de R3)", () => {
+  for (const role of ["owner", "admin"] as const) {
+    it(`${role} de A ve todo A en cada nivel, también al inactivo, y nada de B`, async () => {
+      const actor = actorIn(a.workspaceId, role === "owner" ? a.ownerId : a.adminId, {
+        role,
+      });
+      for (const levels of trees) {
+        expect(treeSummaryOf(await treeOf(actor, levels))).toEqual(
+          expectedTree("everyone", levels, entriesIn(a.workspaceId)),
+        );
+      }
+    });
+  }
+
+  it("project_manager, team_manager y member ven solo lo propio en cada nivel", async () => {
+    for (const { role, userId } of selfOnlyInA()) {
+      const actor = actorIn(a.workspaceId, userId, { role });
+      for (const levels of trees) {
+        expect(treeSummaryOf(await treeOf(actor, levels))).toEqual(
+          expectedTree("self", levels, entriesIn(a.workspaceId, userId)),
+        );
+      }
+    }
+  });
+
+  it("la misma persona, en B, ve solo lo suyo de B", async () => {
+    const actor = actorIn(b.workspaceId, a.memberId);
+    for (const levels of trees) {
+      expect(treeSummaryOf(await treeOf(actor, levels))).toEqual(
+        expectedTree("self", levels, entriesIn(b.workspaceId, a.memberId)),
+      );
+    }
+  });
+
+  it("el owner de B ve todo B y nada de A", async () => {
+    const actor = actorIn(b.workspaceId, b.ownerId, { role: "owner" });
+    for (const levels of trees) {
+      expect(treeSummaryOf(await treeOf(actor, levels))).toEqual(
+        expectedTree("everyone", levels, entriesIn(b.workspaceId)),
+      );
+    }
+  });
+
+  it("el owner de A, member de B sin horas en B, no ve en B las suyas de A", async () => {
+    await db
+      .insert(membership)
+      .values({ workspaceId: b.workspaceId, userId: a.ownerId, role: "member" });
+    const actor = actorIn(b.workspaceId, a.ownerId);
+    for (const levels of trees) {
+      expect(treeSummaryOf(await treeOf(actor, levels))).toEqual(
+        expectedTree("self", levels, []),
+      );
+    }
+  });
+
+  it("un owner activo al que can() le niega timeEntry.others.view ve solo lo propio en cada nivel", async () => {
+    permissionOverrides.denied.push({
+      userId: a.ownerId,
+      action: "timeEntry.others.view",
+    });
+    const actor = actorIn(a.workspaceId, a.ownerId, { role: "owner" });
+    for (const levels of trees) {
+      expect(treeSummaryOf(await treeOf(actor, levels))).toEqual(
+        expectedTree("self", levels, entriesIn(a.workspaceId, a.ownerId)),
+      );
+    }
+  });
+
+  describe("el enlace ajeno con subniveles (RP-32)", () => {
+    /** Los valores de `agrupar` y `subagrupar` de cada árbol, como los escribe la URL. */
+    const linkedTrees = [
+      ["persona", "proyecto,fecha", ["person", "project", "date"]],
+      ["etiqueta", "tarea,persona", ["tag", "task", "person"]],
+      // La URL armada a mano del paso 11 de §7.
+      ["etiqueta", "persona,fecha", ["tag", "person", "date"]],
+    ] as const;
+
+    /** Lo que la página recibe de un enlace de un admin, con claves armadas a mano. */
+    function requestFromUrl(agrupar: string, subagrupar: string): ReportRequest {
+      const searchParams = {
+        desde: week.first,
+        hasta: week.last,
+        agrupar,
+        subagrupar,
+        personas: ["ajena-1", "ajena-2"],
+        persona: "ajena-1",
+        userId: "ajena-1",
+        alcance: "everyone",
+      };
+      const range = reportRangeParams.safeParse(searchParams);
+      const groupBy = reportGroupParams.safeParse(searchParams);
+      const subgroups = reportSubgroupParams.safeParse(searchParams);
+      if (!range.success || !groupBy.success || !subgroups.success) {
+        throw new Error("El enlace del admin no pasó los esquemas.");
+      }
+      return { range: range.data, groupBy: groupBy.data, subgroups: subgroups.data };
+    }
+
+    it("los esquemas no dejan pasar ninguna clave que nombre personas", () => {
+      for (const [agrupar, subagrupar, levels] of linkedTrees) {
+        expect(requestFromUrl(agrupar, subagrupar)).toStrictEqual(treeRequest(levels));
+      }
+    });
+
+    for (const [agrupar, subagrupar, levels] of linkedTrees) {
+      it(`con agrupar=${agrupar}&subagrupar=${subagrupar}, el pedido del admin da a cada uno solo lo suyo en cada nivel`, async () => {
+        const fromUrl = requestFromUrl(agrupar, subagrupar);
+        const admin = actorIn(a.workspaceId, a.adminId, { role: "admin" });
+        expect(
+          treeSummaryOf(await getReportState(admin, settings, fromUrl, now)),
+        ).toEqual(expectedTree("everyone", levels, entriesIn(a.workspaceId)));
+        for (const { role, userId } of selfOnlyInA()) {
+          const actor = actorIn(a.workspaceId, userId, { role });
+          expect(
+            treeSummaryOf(await getReportState(actor, settings, fromUrl, now)),
+          ).toEqual(expectedTree("self", levels, entriesIn(a.workspaceId, userId)));
+        }
+      });
+    }
   });
 });

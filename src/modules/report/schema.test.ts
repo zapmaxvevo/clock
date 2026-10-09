@@ -4,11 +4,13 @@ import {
   REPORT_GROUP_BYS,
   REPORT_GROUP_PARAMS,
   REPORT_MAX_DAYS,
+  REPORT_MAX_ROWS,
   reportGroupParams,
   reportMessages,
   reportRangeInput,
   reportRangeParams,
   reportReadyState,
+  reportSubgroupParams,
   sameRange,
   type ReportReadyState,
 } from "./schema";
@@ -278,7 +280,64 @@ describe("reportGroupParams (D-R2a-3)", () => {
   });
 });
 
-describe("reportReadyState (D-R2b-2, D-R2b-5, D-R3-3, D-R3-4)", () => {
+describe("reportSubgroupParams (D-R3-5, RP-12, RP-32)", () => {
+  /** Los rangos que pueden acompañar al parámetro: válido, inválido y ninguno. */
+  const ranges = [
+    { desde: "2026-10-05", hasta: "2026-10-11" },
+    { desde: "2026-10-11", hasta: "2026-10-05" },
+    {},
+  ];
+
+  it("lee uno o dos niveles, en el orden de la URL, con o sin un rango válido al lado", () => {
+    for (const range of ranges) {
+      for (const [params, subgroups] of [
+        [{ subagrupar: "fecha" }, ["date"]],
+        [{ subagrupar: "fecha,etiqueta" }, ["date", "tag"]],
+        [{ subagrupar: "etiqueta,fecha" }, ["tag", "date"]],
+        [{ agrupar: "proyecto", subagrupar: "persona" }, ["person"]],
+        [{ agrupar: "fecha", subagrupar: "persona,tarea" }, ["person", "task"]],
+        // `Proyecto` no es un `agrupar` válido: el primer nivel es persona.
+        [{ agrupar: "Proyecto", subagrupar: "proyecto" }, ["project"]],
+      ] as const) {
+        expect(reportSubgroupParams.safeParse({ ...range, ...params })).toEqual({
+          success: true,
+          data: subgroups,
+        });
+      }
+    }
+  });
+
+  it("descarta entero cualquier otro valor, con o sin un rango válido al lado", () => {
+    for (const range of ranges) {
+      for (const params of [
+        // El primer nivel efectivo, persona sin `agrupar` o con uno repetido.
+        { subagrupar: "persona" },
+        { agrupar: ["proyecto", "proyecto"], subagrupar: "persona" },
+        { agrupar: "proyecto", subagrupar: "proyecto" },
+        { agrupar: "proyecto", subagrupar: "fecha,proyecto" },
+        { subagrupar: "fecha,fecha" },
+        { subagrupar: "fecha,etiqueta,tarea" },
+        { subagrupar: "fecha," },
+        { subagrupar: ",fecha" },
+        { subagrupar: "fecha,,tarea" },
+        { subagrupar: "Fecha" },
+        { subagrupar: " fecha" },
+        { subagrupar: "date" },
+        { subagrupar: "" },
+        { subagrupar: ["fecha", "fecha"] },
+        { subagrupar: ["fecha", "etiqueta"] },
+        {},
+      ]) {
+        expect([
+          params,
+          reportSubgroupParams.safeParse({ ...range, ...params }).success,
+        ]).toEqual([params, false]);
+      }
+    }
+  });
+});
+
+describe("reportReadyState (D-R2b-2, D-R2b-5, D-R3-3, D-R3-4, D-R3-7)", () => {
   const week = { first: "2026-10-05", last: "2026-10-11" };
   const ready: ReportReadyState = {
     kind: "ready",
@@ -290,6 +349,8 @@ describe("reportReadyState (D-R2b-2, D-R2b-5, D-R3-3, D-R3-4)", () => {
     currentWeek: week,
     shortcuts: [{ id: "thisWeek", label: "Esta semana", range: week }],
     groupBy: "client",
+    subgroups: [],
+    levelsShown: 1,
     scope: "everyone",
     timeZone: "America/Argentina/Buenos_Aires",
     totalSeconds: 90,
@@ -364,6 +425,88 @@ describe("reportReadyState (D-R2b-2, D-R2b-5, D-R3-3, D-R3-4)", () => {
       ],
     };
     expect(reportReadyState.parse(byTag)).toEqual(byTag);
+  });
+
+  /** Proyecto → fecha → etiqueta: un grupo de cada nivel. */
+  const nested: ReportReadyState = {
+    ...ready,
+    groupBy: "project",
+    subgroups: ["date", "tag"],
+    levelsShown: 3,
+    groups: [
+      {
+        kind: "project",
+        project: { id: projectId, name: "Web", color: "green" },
+        client: null,
+        seconds: 90,
+        children: [
+          {
+            kind: "date",
+            dayKey: "2026-10-05",
+            label: "lun, 05/10",
+            seconds: 90,
+            children: [
+              { kind: "tag", tag: { id: tagId, name: "Urgente" }, seconds: 60 },
+              { kind: "tag", tag: null, seconds: 30 },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  it("admite tres niveles anidados, con los subniveles y los niveles mostrados", () => {
+    expect(reportReadyState.parse(nested)).toEqual(nested);
+    expect(REPORT_MAX_ROWS).toBe(3000);
+  });
+
+  it("rechaza children vacío, en cualquier nivel", () => {
+    expect(
+      reportReadyState.safeParse({
+        ...nested,
+        groups: [{ ...nested.groups[0], children: [] }],
+      }).success,
+    ).toBe(false);
+    expect(
+      reportReadyState.safeParse({
+        ...ready,
+        groups: [
+          {
+            kind: "client",
+            client: null,
+            seconds: 30,
+            children: [
+              {
+                kind: "date",
+                dayKey: "2026-10-05",
+                label: "lun, 05/10",
+                seconds: 30,
+                children: [],
+              },
+            ],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rechaza levelsShown 0 o 4 y tres subniveles", () => {
+    for (const levelsShown of [0, 4, 1.5]) {
+      expect(reportReadyState.safeParse({ ...nested, levelsShown }).success).toBe(false);
+    }
+    expect(
+      reportReadyState.safeParse({ ...nested, subgroups: ["date", "tag", "task"] })
+        .success,
+    ).toBe(false);
+  });
+
+  it("rechaza un estado sin subgroups o sin levelsShown", () => {
+    expect(reportReadyState.safeParse({ ...ready, subgroups: undefined }).success).toBe(
+      false,
+    );
+    expect(reportReadyState.safeParse({ ...ready, levelsShown: undefined }).success).toBe(
+      false,
+    );
   });
 
   it("rechaza un atajo con un id desconocido", () => {

@@ -20,12 +20,15 @@ import { reportPeriodOf } from "./period";
 import {
   reportRepository,
   type EntryTotals,
+  type ReportLevelRead,
   type LevelGroupRow,
   type LevelTotalRow,
   type StoredProject,
 } from "./repository";
 import {
+  DEFAULT_GROUP_BY,
   REPORT_MAX_DAYS,
+  REPORT_MAX_ROWS,
   type ReportDateGroup,
   type ReportGroup,
   type ReportGroupBy,
@@ -61,6 +64,8 @@ export type ReportRequest = {
   readonly range: ReportRange | null;
   /** La agrupación de la URL ya validada, o `null`: por persona. */
   readonly groupBy: ReportGroupBy | null;
+  /** Los de `reportSubgroupParams`; vacío, un nivel (D-R3-5). */
+  readonly subgroups: readonly ReportGroupBy[];
 };
 
 function workspaceResource(actor: Actor): WorkspaceResource {
@@ -182,15 +187,6 @@ function compareDays(left: ReportDateGroup, right: ReportDateGroup): number {
   return compareDayKeys(left.dayKey, right.dayKey);
 }
 
-/** El único nivel de una fila de un pedido de un nivel. */
-function levelOf(row: LevelTotalRow): LevelGroupRow {
-  const [level] = row.groups;
-  if (level === undefined || row.groups.length !== 1) {
-    throw new Error(`Se esperaba un nivel y la fila trae ${row.groups.length}.`);
-  }
-  return level;
-}
-
 /** Dos grupos del mismo nivel: los días por fecha, el resto por duración y nombre. */
 function compareSiblings(left: ReportGroup, right: ReportGroup): number {
   if (left.kind === "date" && right.kind === "date") {
@@ -204,9 +200,126 @@ function compareSiblings(left: ReportGroup, right: ReportGroup): number {
 
 /** Lo que se lee de un pedido, en una sola foto. */
 type ReportRead = {
-  readonly rows: readonly LevelTotalRow[];
+  /** Las filas de cada nivel que entró en el tope, desde el primero. */
+  readonly levels: readonly (readonly LevelTotalRow[])[];
   readonly totals: EntryTotals;
 };
+
+/**
+ * La clave de un grupo en el armado del árbol: la de su dimensión —el id,
+ * `null` para «Sin …», el índice del tramo—. Nunca se compara con la de otra
+ * dimensión, porque solo se comparan caminos del mismo largo y orden.
+ */
+function groupKeyOf(row: LevelGroupRow): string | number | null {
+  switch (row.kind) {
+    case "person":
+      return row.userId;
+    case "project":
+      return row.project?.id ?? null;
+    case "client":
+      return row.client?.id ?? null;
+    case "task":
+      return row.task?.id ?? null;
+    case "tag":
+      return row.tag?.id ?? null;
+    case "date":
+      return row.bucket;
+  }
+}
+
+/** El camino de un grupo: las claves de sus ancestros y la suya. */
+function pathOf(groups: readonly LevelGroupRow[]): string {
+  return JSON.stringify(groups.map(groupKeyOf));
+}
+
+/** Un grupo del árbol mientras se arma: sus hijos llegan con el nivel de abajo. */
+type TreeNode = { readonly group: ReportGroup; readonly children: TreeNode[] };
+
+/**
+ * D-R3-7: el árbol de los niveles leídos. Cada fila del nivel `d` se cuelga
+ * del grupo cuyo camino es el de sus `d − 1` primeras claves: el camino entero
+ * y no solo la última. Los hermanos van en el orden de su dimensión, y un
+ * grupo lleva `children` solo si el nivel de abajo se leyó y entró.
+ */
+function treeOf(
+  levels: readonly (readonly LevelTotalRow[])[],
+  dates: DateContext,
+): ReportGroup[] {
+  const roots: TreeNode[] = [];
+  let parents = new Map<string, TreeNode>();
+  for (const [depth, rows] of levels.entries()) {
+    const nodes = new Map<string, TreeNode>();
+    for (const row of rows) {
+      const level = row.groups[depth];
+      if (level === undefined || row.groups.length !== depth + 1) {
+        throw new Error(
+          `Una fila del nivel ${depth + 1} trae ${row.groups.length} grupos.`,
+        );
+      }
+      const node: TreeNode = { group: groupOf(level, row.seconds, dates), children: [] };
+      if (depth === 0) {
+        roots.push(node);
+      } else {
+        // En una foto, todo grupo tiene a sus ancestros en los niveles de arriba.
+        const parent = parents.get(pathOf(row.groups.slice(0, depth)));
+        if (parent === undefined) {
+          throw new Error(`Una fila del nivel ${depth + 1} sin su grupo de arriba.`);
+        }
+        parent.children.push(node);
+      }
+      nodes.set(pathOf(row.groups), node);
+    }
+    parents = nodes;
+  }
+  return groupsOf(roots, levels.length - 1);
+}
+
+/** Los grupos de un nivel, ordenados, con sus hijos hasta `below` niveles más abajo. */
+function groupsOf(nodes: readonly TreeNode[], below: number): ReportGroup[] {
+  return nodes
+    .map(({ group, children }): ReportGroup => {
+      if (below === 0) {
+        return group;
+      }
+      // Toda entrada tiene una clave en cada dimensión, aunque sea «Sin …».
+      if (children.length === 0) {
+        throw new Error("Un grupo sin hijos en un nivel que se muestra.");
+      }
+      return { ...group, children: groupsOf(children, below - 1) };
+    })
+    .sort(compareSiblings);
+}
+
+/**
+ * D-R3-6: los niveles que entran en el tope, desde el primero, que se lee
+ * entero. Cada uno de abajo se pide con lo que queda del tope más uno: entra
+ * entero o no entra, y entonces no se lee ninguno más abajo. Sin filas en el
+ * primero no hay nada que colgar y no se lee ninguno de abajo.
+ */
+async function readLevelsWithinLimit(
+  levelCount: number,
+  readLevel: (depth: number, limit?: number) => Promise<readonly LevelTotalRow[]>,
+): Promise<(readonly LevelTotalRow[])[]> {
+  const first = await readLevel(1);
+  if (first.length === 0) {
+    return [first];
+  }
+  const shown = [first];
+  let rowsRead = first.length;
+  for (let depth = 2; depth <= levelCount; depth++) {
+    const budget = REPORT_MAX_ROWS - rowsRead;
+    if (budget <= 0) {
+      break;
+    }
+    const rows = await readLevel(depth, budget + 1);
+    if (rows.length > budget) {
+      break;
+    }
+    shown.push(rows);
+    rowsRead += rows.length;
+  }
+  return shown;
+}
 
 /**
  * RP-10: el resumido de quien mira, armado en el servidor con su zona y su
@@ -227,7 +340,15 @@ export async function getReportState(
   const todayKey = dayKey(now, timeZone);
   const period = reportPeriodOf(todayKey, settings, request.range);
   const range = period.range;
-  const groupBy = request.groupBy ?? "person";
+  const groupBy = request.groupBy ?? DEFAULT_GROUP_BY;
+  const levels = [groupBy, ...request.subgroups];
+  // La página los recibe de `reportSubgroupParams`, que ya lo garantiza; acá
+  // es una invariante, para otro llamador (R6), antes de leer.
+  if (levels.length > 3 || new Set(levels).size !== levels.length) {
+    throw new RangeError(
+      `Niveles fuera de uno a tres sin repetir: ${levels.join(", ")}.`,
+    );
+  }
   const days = daysBetweenKeys(range.first, range.last) + 1;
   // El esquema de la URL ya lo valida; acá es una invariante, para que
   // ningún otro llamador (la exportación de R6) lea fuera del tope.
@@ -240,35 +361,45 @@ export async function getReportState(
     from: startOfDayKey(range.first, timeZone),
     to: startOfDayKey(addDaysToKey(range.last, 1), timeZone),
   };
-  // Los cortes solo para la fecha; el primero y el fin son los de `span`.
-  const buckets =
-    groupBy === "date" ? dayBuckets(range.first, range.last, timeZone) : null;
+  // Los cortes solo si la fecha es un nivel; el primero y el fin son los de `span`.
+  const buckets = levels.includes("date")
+    ? dayBuckets(range.first, range.last, timeZone)
+    : null;
+  /** La lectura de los `depth` primeros niveles, con los tramos solo si la fecha está entre ellos. */
+  function levelRead(depth: number, limit?: number): ReportLevelRead {
+    const dimensions = levels.slice(0, depth);
+    return {
+      span,
+      dimensions,
+      buckets: dimensions.includes("date") ? buckets : null,
+      limit,
+    };
+  }
   // ADR 0021, D-R3-3: una sola foto, aunque sea una sola lectura, para que el
   // service tenga un camino. Se abre después de `report.view` y de `scopeOf`.
   const read: ReportRead = await db.transaction(
     async (tx) => {
-      const rows = await reportRepository.totalsByLevels(
-        scope,
-        { span, dimensions: [groupBy], buckets },
-        tx,
+      const shown = await readLevelsWithinLimit(levels.length, (depth, limit) =>
+        reportRepository.totalsByLevels(scope, levelRead(depth, limit), tx),
       );
-      // El total no pasa por la unión con las etiquetas; con un nivel sin
-      // etiqueta, cada entrada está en un grupo y la suma es el total (D-R2a-7).
+      const [first] = shown;
+      // El total no pasa por la unión con las etiquetas; con el primer nivel
+      // sin etiqueta, cada entrada está en un grupo y la suma es el total
+      // (D-R2a-7).
       const totals =
         groupBy === "tag"
           ? await reportRepository.entryTotals(scope, span, tx)
           : {
-              seconds: rows.reduce((sum, row) => sum + row.seconds, 0),
-              billableSeconds: rows.reduce((sum, row) => sum + row.billableSeconds, 0),
+              seconds: first.reduce((sum, row) => sum + row.seconds, 0),
+              billableSeconds: first.reduce((sum, row) => sum + row.billableSeconds, 0),
             };
-      return { rows, totals };
+      return { levels: shown, totals };
     },
     { isolationLevel: "repeatable read", accessMode: "read only" },
   );
   const dates = { buckets, todayKey, format: settings.formats.date };
-  const groups = read.rows
-    .map((row) => groupOf(levelOf(row), row.seconds, dates))
-    .sort(compareSiblings);
+  // Un período sin horas no se corta: muestra todos los niveles pedidos.
+  const levelsShown = read.levels[0].length === 0 ? levels.length : read.levels.length;
   return {
     kind: "ready",
     todayKey,
@@ -279,10 +410,12 @@ export async function getReportState(
     currentWeek: period.currentWeek,
     shortcuts: [...period.shortcuts],
     groupBy,
+    subgroups: [...request.subgroups],
+    levelsShown,
     scope: scope.people.kind,
     timeZone,
     totalSeconds: read.totals.seconds,
     billableSeconds: read.totals.billableSeconds,
-    groups,
+    groups: treeOf(read.levels, dates),
   };
 }

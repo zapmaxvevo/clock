@@ -1,5 +1,5 @@
 /**
- * Localizadores y acciones de `/reportes` (R2a, R2b y R3a del núcleo de reportes).
+ * Localizadores y acciones de `/reportes` (R2a, R2b y R3 del núcleo de reportes).
  * Como en `timesheet-page.ts`, todo se busca por rol y por texto accesible. La
  * tabla se nombra por el título, y cada grupo es una fila con su encabezado de
  * fila: el nombre o, por fecha, el rótulo del día. La única excepción son los
@@ -37,6 +37,12 @@ export const SCOPE_SELF = "Ves solo tus horas.";
 
 /** D-R2a-2: la línea del alcance de owner y admin. */
 export const SCOPE_EVERYONE = "Ves las horas de todas las personas del workspace.";
+
+/** D-R3-8: el grupo de los botones de los subniveles. */
+export const SUBGROUP_BY = "Subagrupar por";
+
+/** D-R3-8: la opción que quita un subnivel, y el texto del botón sin él. */
+export const NO_LEVEL = "Ninguno";
 
 /** RP-31: la marca de una persona con la membresía inactiva. */
 export const INACTIVE_PERSON = "(inactiva)";
@@ -165,21 +171,35 @@ export function shiftRange(range: ReportRange, days: number): ReportRange {
   return { first: addDays(range.first, days), last: addDays(range.last, days) };
 }
 
-/** La dirección de un período y una agrupación, con los tres parámetros. */
-export function reportsUrl(range: ReportRange, groupBy: ReportGroupBy): string {
-  return `${REPORTS_PATH}?desde=${dayKeyOf(range.first)}&hasta=${dayKeyOf(range.last)}&agrupar=${groupBy}`;
+/**
+ * La dirección de un período y una agrupación: los tres parámetros y, si hay
+ * subniveles, `subagrupar` como cuarto, separados por coma (D-R3-5).
+ */
+export function reportsUrl(
+  range: ReportRange,
+  groupBy: ReportGroupBy,
+  subgroups: readonly ReportGroupBy[] = [],
+): string {
+  const levels = subgroups.length === 0 ? "" : `&subagrupar=${subgroups.join(",")}`;
+  return `${REPORTS_PATH}?desde=${dayKeyOf(range.first)}&hasta=${dayKeyOf(range.last)}&agrupar=${groupBy}${levels}`;
 }
 
-/** La URL es la de ese período y esa agrupación: cada parámetro una vez. */
+/**
+ * La URL es la de ese período, esa agrupación y esos subniveles: cada
+ * parámetro una vez, y sin `subagrupar` si no hay subniveles.
+ */
 export function reportsUrlOf(
   range: ReportRange,
   groupBy: ReportGroupBy,
+  subgroups: readonly ReportGroupBy[] = [],
 ): (url: URL) => boolean {
+  const levels = subgroups.length === 0 ? [] : [subgroups.join(",")];
   return (url) =>
     url.pathname === REPORTS_PATH &&
     url.searchParams.getAll("desde").join(",") === dayKeyOf(range.first) &&
     url.searchParams.getAll("hasta").join(",") === dayKeyOf(range.last) &&
-    url.searchParams.getAll("agrupar").join(",") === groupBy;
+    url.searchParams.getAll("agrupar").join(",") === groupBy &&
+    JSON.stringify(url.searchParams.getAll("subagrupar")) === JSON.stringify(levels);
 }
 
 /**
@@ -261,6 +281,14 @@ export function groupHeaders(page: Page): Locator {
   return reportTable(page).getByRole("rowheader");
 }
 
+/**
+ * Un nombre accesible que empieza con `name`, seguido de un espacio o de
+ * nada: el de un grupo, que puede seguir con «(inactiva)» o con el cliente.
+ */
+function leadingName(name: string): RegExp {
+  return new RegExp(`^${escapeRegExp(name)}(?:\\s|$)`);
+}
+
 /** La fila de la tabla cuyo encabezado de fila tiene ese nombre accesible. */
 function rowByHeader(page: Page, name: string | RegExp): Locator {
   return reportTable(page)
@@ -276,7 +304,7 @@ function rowByHeader(page: Page, name: string | RegExp): Locator {
  * propio.
  */
 export function groupRow(page: Page, name: string): Locator {
-  return rowByHeader(page, new RegExp(`^${escapeRegExp(name)}(?:\\s|$)`));
+  return rowByHeader(page, leadingName(name));
 }
 
 /**
@@ -308,6 +336,17 @@ export async function expectGroupNames(
   for (const [index, name] of names.entries()) {
     await expect(headers.nth(index)).toHaveAccessibleName(name);
   }
+}
+
+/**
+ * El botón de expandir de un grupo con hijos, dentro de su encabezado de fila
+ * (D-R3-9). Se nombra por el contenido del encabezado, así que se busca por el
+ * comienzo, como `groupRow`. Un grupo del último nivel no tiene.
+ */
+export function expandButton(page: Page, name: string): Locator {
+  return groupHeaders(page).getByRole("button", {
+    name: leadingName(name),
+  });
 }
 
 /** La duración de una fila: su única celda de datos (RP-19). */
@@ -371,15 +410,17 @@ export async function expectGroupBy(page: Page, groupBy: ReportGroupBy): Promise
 /**
  * Espera el período y la agrupación pedidos: la URL, el rótulo que dibuja el
  * servidor y la agrupación marcada. La URL sola no alcanza, porque cambia
- * antes de que llegue la pantalla nueva.
+ * antes de que llegue la pantalla nueva. Con subniveles, la URL los lleva;
+ * los botones que los muestran los espera `expectSubgroups`.
  */
 export async function expectReport(
   page: Page,
   range: ReportRange,
   groupBy: ReportGroupBy,
   today: CivilDay,
+  subgroups: readonly ReportGroupBy[] = [],
 ): Promise<void> {
-  await expect(page).toHaveURL(reportsUrlOf(range, groupBy));
+  await expect(page).toHaveURL(reportsUrlOf(range, groupBy, subgroups));
   await expect(rangeButton(page)).toHaveAccessibleName(
     `Elegir período: ${rangeLabel(range, today)}`,
   );
@@ -392,10 +433,76 @@ export async function openReport(
   range: ReportRange,
   groupBy: ReportGroupBy,
   today: CivilDay,
+  subgroups: readonly ReportGroupBy[] = [],
 ): Promise<void> {
-  await page.goto(reportsUrl(range, groupBy));
-  await expectReport(page, range, groupBy, today);
+  await page.goto(reportsUrl(range, groupBy, subgroups));
+  await expectReport(page, range, groupBy, today, subgroups);
   await expect(reportTable(page)).toBeVisible();
+}
+
+/** Los dos subniveles, por el rótulo de su botón y de su lista (§5.3). */
+export type SubgroupLevel = "Segundo nivel" | "Tercer nivel";
+
+/** El texto de una opción de la lista de un subnivel: una agrupación o «Ninguno». */
+function levelOptionLabel(groupBy: ReportGroupBy | null): string {
+  return groupBy === null ? NO_LEVEL : GROUP_LINK[groupBy];
+}
+
+/** El texto del botón de un subnivel, que es también su nombre: «Segundo nivel: Fecha». */
+export function levelChoice(level: SubgroupLevel, groupBy: ReportGroupBy | null): string {
+  return `${level}: ${levelOptionLabel(groupBy)}`;
+}
+
+/** «Subagrupar por», nombrado por su rótulo visible (D-R3-8). */
+export function subgroupControl(page: Page): Locator {
+  return page.getByRole("group", { name: SUBGROUP_BY, exact: true });
+}
+
+/** El botón de un subnivel, que abre su lista, con cualquier elección. */
+export function subgroupButton(page: Page, level: SubgroupLevel): Locator {
+  return subgroupControl(page).getByRole("button", {
+    name: new RegExp(`^${escapeRegExp(level)}: `),
+  });
+}
+
+/** La lista de un subnivel, nombrada por el nivel, dentro de su popover (§5.3). */
+export function subgroupList(page: Page, level: SubgroupLevel): Locator {
+  return page.getByRole("dialog").getByRole("list", { name: level, exact: true });
+}
+
+/** Una opción de la lista abierta de un subnivel: una agrupación o «Ninguno». */
+export function subgroupLink(
+  page: Page,
+  level: SubgroupLevel,
+  groupBy: ReportGroupBy | null,
+): Locator {
+  return subgroupList(page, level).getByRole("link", {
+    name: levelOptionLabel(groupBy),
+    exact: true,
+  });
+}
+
+/**
+ * Espera los botones de los subniveles que dibuja el servidor: el segundo
+ * siempre, con su elección o «Ninguno», y el tercero solo si hay segundo
+ * nivel. Como el rótulo del período, sirven para saber que llegó la pantalla
+ * nueva cuando la navegación solo cambia los subniveles.
+ */
+export async function expectSubgroups(
+  page: Page,
+  subgroups: readonly ReportGroupBy[],
+): Promise<void> {
+  const [second = null, third = null] = subgroups;
+  await expect(subgroupButton(page, "Segundo nivel")).toHaveAccessibleName(
+    levelChoice("Segundo nivel", second),
+  );
+  if (second === null) {
+    await expect(subgroupButton(page, "Tercer nivel")).toHaveCount(0);
+  } else {
+    await expect(subgroupButton(page, "Tercer nivel")).toHaveAccessibleName(
+      levelChoice("Tercer nivel", third),
+    );
+  }
 }
 
 /** El calendario de rango abierto, que va en un portal. */

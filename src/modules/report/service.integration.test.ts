@@ -24,9 +24,11 @@ import { getTimesheetState } from "@/modules/time-entry/service";
 import {
   REPORT_GROUP_BYS,
   reportReadyState,
+  type ReportGroup,
   type ReportRange,
   type ReportReadyState,
 } from "./schema";
+import { reportLabels } from "./components/labels";
 import { reportRepository } from "./repository";
 import { getReportState, type ReportRequest } from "./service";
 
@@ -102,7 +104,11 @@ async function readyState(
   const state = await getReportState(
     actor,
     options.settings ?? settings,
-    { range: request.range ?? null, groupBy: request.groupBy ?? null },
+    {
+      range: request.range ?? null,
+      groupBy: request.groupBy ?? null,
+      subgroups: request.subgroups ?? [],
+    },
     options.now ?? readNow,
   );
   if (state.kind !== "ready") {
@@ -1131,7 +1137,7 @@ async function realLevelRead() {
   return { scope, span: read.span, buckets: read.buckets };
 }
 
-describe("las guardas de totalsByLevels (§4.3 de R3; criterio 7)", () => {
+describe("las guardas de totalsByLevels (§4.3 de R3; criterios 7 y 20)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -1159,6 +1165,10 @@ describe("las guardas de totalsByLevels (§4.3 de R3; criterio 7)", () => {
         },
       },
       { span, dimensions: ["date"], buckets: { ...buckets, end: shifted(buckets.end) } },
+      // Criterio 20 de R3: el tope de filas es un entero positivo.
+      { span, dimensions: ["project"], buckets: null, limit: 0 },
+      { span, dimensions: ["project"], buckets: null, limit: -1 },
+      { span, dimensions: ["project"], buckets: null, limit: 1.5 },
     ] as const;
 
     const select = vi.spyOn(db, "select");
@@ -1419,6 +1429,488 @@ describe("varios niveles en la lectura (D-R3-2, D-R3-3; criterio 8 de R3)", () =
   });
 });
 
+/** Un árbol como `[rótulo, segundos]` en cada hoja y `[rótulo, segundos, hijos]` arriba, en orden. */
+type Outline = readonly [string, number] | readonly [string, number, readonly Outline[]];
+
+function outline(groups: readonly ReportGroup[]): Outline[] {
+  return groups.map((group): Outline => {
+    const label = labelOf(group);
+    return group.children === undefined
+      ? [label, group.seconds]
+      : [label, group.seconds, outline(group.children)];
+  });
+}
+
+/** El nombre de un grupo, «Sin …» por su rótulo o el día. */
+function labelOf(group: ReportGroup): string {
+  switch (group.kind) {
+    case "person":
+      return group.name;
+    case "project":
+      return group.project?.name ?? projectLabels.noProject;
+    case "client":
+      return group.client?.name ?? projectLabels.noClient;
+    case "task":
+      return group.task?.name ?? reportLabels.noTask;
+    case "tag":
+      return group.tag?.name ?? reportLabels.noTag;
+    case "date":
+      return group.dayKey;
+  }
+}
+
+describe("el árbol (D-R3-6, D-R3-7, RP-12, RP-13; criterio 17 de R3)", () => {
+  let otherId: string;
+
+  /**
+   * Owner: Web el martes 29/09 con E y F (600, con la tarea Diseño), sin
+   * proyecto el miércoles 30/09 (600) y App el martes (300). Otra: Web el
+   * miércoles (200) y App el jueves 01/10 (900). Web es de Acme; App, sin
+   * cliente.
+   */
+  beforeEach(async () => {
+    otherId = await seedPerson({ accountName: "Otra" });
+    const acme = await seedClient({ workspaceId, name: "Acme" });
+    const web = await seedProject({ workspaceId, name: "Web", clientId: acme.id });
+    const app = await seedProject({ workspaceId, name: "App" });
+    const design = await seedTask({ workspaceId, projectId: web.id, name: "Diseño" });
+    const e = await seedTag({ workspaceId, name: "E" });
+    const f = await seedTag({ workspaceId, name: "F" });
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 600, {
+      projectId: web.id,
+      taskId: design.id,
+      billable: true,
+      tagIds: [e.id, f.id],
+    });
+    await seedClosed(ownerId, "2026-09-30T13:00:00Z", 600);
+    await seedClosed(ownerId, "2026-09-29T14:00:00Z", 300, { projectId: app.id });
+    await seedClosed(otherId, "2026-09-30T14:00:00Z", 200, { projectId: web.id });
+    await seedClosed(otherId, "2026-10-01T14:00:00Z", 900, { projectId: app.id });
+  });
+
+  async function treeOf(groupBy: ReportGroup["kind"], subgroups: ReportGroup["kind"][]) {
+    const state = await readyState(owner, { range: lastWeek, groupBy, subgroups });
+    expect(reportReadyState.parse(state)).toEqual(state);
+    return state;
+  }
+
+  it("persona → proyecto: cada persona con sus proyectos, que suman lo de la persona, por duración y «Sin proyecto» después de uno de igual duración", async () => {
+    const state = await treeOf("person", ["project"]);
+    expect(outline(state.groups)).toEqual([
+      [
+        "Owner",
+        1500,
+        [
+          ["Web", 600],
+          [projectLabels.noProject, 600],
+          ["App", 300],
+        ],
+      ],
+      [
+        "Otra",
+        1100,
+        [
+          ["App", 900],
+          ["Web", 200],
+        ],
+      ],
+    ]);
+    expect([state.subgroups, state.levelsShown]).toEqual([["project"], 2]);
+    expect([state.totalSeconds, state.billableSeconds]).toEqual([2600, 600]);
+  });
+
+  it("persona → proyecto → fecha: debajo del proyecto de cada persona, solo sus días", async () => {
+    const state = await treeOf("person", ["project", "date"]);
+    expect(outline(state.groups)).toEqual([
+      [
+        "Owner",
+        1500,
+        [
+          ["Web", 600, [["2026-09-29", 600]]],
+          [projectLabels.noProject, 600, [["2026-09-30", 600]]],
+          ["App", 300, [["2026-09-29", 300]]],
+        ],
+      ],
+      [
+        "Otra",
+        1100,
+        [
+          ["App", 900, [["2026-10-01", 900]]],
+          ["Web", 200, [["2026-09-30", 200]]],
+        ],
+      ],
+    ]);
+    expect([state.subgroups, state.levelsShown, state.totalSeconds]).toEqual([
+      ["project", "date"],
+      3,
+      2600,
+    ]);
+  });
+
+  it("proyecto → fecha: los días de cada proyecto en orden cronológico, no por duración", async () => {
+    const state = await treeOf("project", ["date"]);
+    expect(outline(state.groups)).toEqual([
+      [
+        "App",
+        1200,
+        [
+          ["2026-09-29", 300],
+          ["2026-10-01", 900],
+        ],
+      ],
+      [
+        "Web",
+        800,
+        [
+          ["2026-09-29", 600],
+          ["2026-09-30", 200],
+        ],
+      ],
+      [projectLabels.noProject, 600, [["2026-09-30", 600]]],
+    ]);
+  });
+
+  it("cliente → proyecto → tarea: tres niveles, con el camino «Sin cliente» → «Sin proyecto» → «Sin tarea»", async () => {
+    const state = await treeOf("client", ["project", "task"]);
+    expect(outline(state.groups)).toEqual([
+      [
+        projectLabels.noClient,
+        1800,
+        [
+          ["App", 1200, [[reportLabels.noTask, 1200]]],
+          [projectLabels.noProject, 600, [[reportLabels.noTask, 600]]],
+        ],
+      ],
+      [
+        "Acme",
+        800,
+        [
+          [
+            "Web",
+            800,
+            [
+              ["Diseño", 600],
+              [reportLabels.noTask, 200],
+            ],
+          ],
+        ],
+      ],
+    ]);
+    expect([state.levelsShown, state.totalSeconds]).toEqual([3, 2600]);
+  });
+
+  it("persona → etiqueta: con la entrada de dos etiquetas los hijos suman más que la persona; sin ella, lo mismo", async () => {
+    const state = await treeOf("person", ["tag"]);
+    expect(outline(state.groups)).toEqual([
+      [
+        "Owner",
+        1500,
+        [
+          [reportLabels.noTag, 900],
+          ["E", 600],
+          ["F", 600],
+        ],
+      ],
+      ["Otra", 1100, [[reportLabels.noTag, 1100]]],
+    ]);
+    expect([state.totalSeconds, state.billableSeconds]).toEqual([2600, 600]);
+  });
+
+  it("etiqueta → proyecto: los hijos de cada etiqueta suman lo de la etiqueta, y el total es el real", async () => {
+    const state = await treeOf("tag", ["project"]);
+    expect(outline(state.groups)).toEqual([
+      [
+        reportLabels.noTag,
+        2000,
+        [
+          ["App", 1200],
+          [projectLabels.noProject, 600],
+          ["Web", 200],
+        ],
+      ],
+      ["E", 600, [["Web", 600]]],
+      ["F", 600, [["Web", 600]]],
+    ]);
+    expect([state.totalSeconds, state.billableSeconds]).toEqual([2600, 600]);
+  });
+
+  it("un pedido sin subniveles no tiene children en ningún grupo y tiene levelsShown 1", async () => {
+    for (const subgroups of [undefined, []]) {
+      const state = await readyState(owner, {
+        range: lastWeek,
+        groupBy: "person",
+        subgroups,
+      });
+      expect(outline(state.groups)).toEqual([
+        ["Owner", 1500],
+        ["Otra", 1100],
+      ]);
+      expect([state.subgroups, state.levelsShown]).toEqual([[], 1]);
+    }
+  });
+
+  it("un período sin horas con tres niveles: sin grupos, levelsShown 3 y una sola lectura", async () => {
+    const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+    try {
+      const state = await readyState(owner, {
+        range: thisWeek,
+        groupBy: "person",
+        subgroups: ["project", "date"],
+      });
+      expect([state.groups, state.levelsShown, state.totalSeconds]).toEqual([[], 3, 0]);
+      expect(byLevels).toHaveBeenCalledTimes(1);
+    } finally {
+      byLevels.mockRestore();
+    }
+  });
+});
+
+describe("el tope de filas (D-R3-6; criterio 18 de R3)", () => {
+  /** Los 365 días de 2025: las entradas ocupan los primeros 300. */
+  const year: ReportRange = { first: "2025-01-01", last: "2025-12-31" };
+
+  let tenthId: string;
+
+  /**
+   * Una persona, una entrada por día en 300 días, cada una con las mismas
+   * nueve etiquetas: por fecha → etiqueta son 300 + 2700 = 3000 filas.
+   */
+  beforeEach(async () => {
+    const tagIds: string[] = [];
+    for (let index = 1; index <= 9; index++) {
+      tagIds.push((await seedTag({ workspaceId, name: `Tope ${index}` })).id);
+    }
+    tenthId = (await seedTag({ workspaceId, name: "Tope 10" })).id;
+    // El mediodía de cada día en Buenos Aires.
+    await db.execute(sql`
+      insert into time_entry (workspace_id, user_id, started_at, ended_at, billable)
+      select ${workspaceId}, ${ownerId},
+             timestamptz '2025-01-01 15:00:00+00' + day * interval '1 day',
+             timestamptz '2025-01-01 16:00:00+00' + day * interval '1 day',
+             false
+        from generate_series(0, 299) as day`);
+    await db.execute(sql`
+      insert into time_entry_tag (workspace_id, time_entry_id, tag_id)
+      select time_entry.workspace_id, time_entry.id, tag.id
+        from time_entry
+        join tag on tag.workspace_id = time_entry.workspace_id
+       where time_entry.workspace_id = ${workspaceId}
+         and tag.id <> ${tenthId}`);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** La décima etiqueta en una de las entradas: el nivel 2 pasa a 2701 filas. */
+  async function addTenthTag() {
+    await db.execute(sql`
+      insert into time_entry_tag (workspace_id, time_entry_id, tag_id)
+      select workspace_id, id, ${tenthId}
+        from time_entry
+       where workspace_id = ${workspaceId}
+       order by started_at
+       limit 1`);
+  }
+
+  it("fecha → etiqueta con 3000 filas entra entero, cada día con sus nueve", async () => {
+    const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+    const state = await readyState(owner, {
+      range: year,
+      groupBy: "date",
+      subgroups: ["tag"],
+    });
+    expect(reportReadyState.parse(state)).toEqual(state);
+    expect([state.levelsShown, state.groups.length]).toEqual([2, 300]);
+    expect(state.groups.every((day) => day.children?.length === 9)).toBe(true);
+    expect(byLevels.mock.calls.map(([, read]) => read.limit)).toEqual([undefined, 2701]);
+  });
+
+  it("con 3001 filas el nivel 2 no entra: levelsShown 1, ningún children y los subniveles pedidos", async () => {
+    await addTenthTag();
+    const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+    const state = await readyState(owner, {
+      range: year,
+      groupBy: "date",
+      subgroups: ["tag"],
+    });
+    expect([state.levelsShown, state.subgroups, state.groups.length]).toEqual([
+      1,
+      ["tag"],
+      300,
+    ]);
+    expect(state.groups.some((day) => day.children !== undefined)).toBe(false);
+    expect(byLevels.mock.calls.map(([, read]) => read.limit)).toEqual([undefined, 2701]);
+    expect(state.totalSeconds).toBe(300 * 3600);
+  });
+
+  it("fecha → etiqueta → persona con 3000 filas: el nivel 3 no se pide", async () => {
+    const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+    const state = await readyState(owner, {
+      range: year,
+      groupBy: "date",
+      subgroups: ["tag", "person"],
+    });
+    expect(state.levelsShown).toBe(2);
+    expect(byLevels).toHaveBeenCalledTimes(2);
+    // Los 300 días con sus nueve etiquetas, y ninguna etiqueta con hijos.
+    expect(state.groups).toHaveLength(300);
+    for (const day of state.groups) {
+      expect(day.children).toHaveLength(9);
+      expect(day.children?.some((tag) => tag.children !== undefined)).toBe(false);
+    }
+  });
+
+  it("fecha → etiqueta → persona con 3001 filas: levelsShown 1 y dos lecturas, sin la del nivel 3", async () => {
+    await addTenthTag();
+    const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+    const state = await readyState(owner, {
+      range: year,
+      groupBy: "date",
+      subgroups: ["tag", "person"],
+    });
+    expect([state.levelsShown, state.subgroups]).toEqual([1, ["tag", "person"]]);
+    expect(byLevels.mock.calls.map(([, read]) => read.dimensions)).toEqual([
+      ["date"],
+      ["date", "tag"],
+    ]);
+  });
+});
+
+describe("una sola foto con subniveles (ADR 0021; criterio 19 de R3)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("los tres niveles y el total por etiqueta, en el Executor de una transacción de solo lectura repeatable read", async () => {
+    const e = await seedTag({ workspaceId, name: "E" });
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 600, { tagIds: [e.id] });
+    const transaction = vi.spyOn(db, "transaction");
+    const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+    const entryTotals = vi.spyOn(reportRepository, "entryTotals");
+    const state = await readyState(owner, {
+      range: lastWeek,
+      groupBy: "tag",
+      subgroups: ["project", "date"],
+    });
+    expect(state.levelsShown).toBe(3);
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(transaction.mock.calls[0]?.[1]).toEqual({
+      isolationLevel: "repeatable read",
+      accessMode: "read only",
+    });
+    const executors = [
+      ...byLevels.mock.calls.map((call) => call[2]),
+      ...entryTotals.mock.calls.map((call) => call[2]),
+    ];
+    expect(executors).toHaveLength(4);
+    expect(executors[0]).toBeDefined();
+    expect(executors[0]).not.toBe(db);
+    expect(executors.every((executor) => executor === executors[0])).toBe(true);
+  });
+});
+
+describe("las invariantes de los subniveles (criterio 20 de R3)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("con subniveles, un período fuera del tope o niveles mal formados lanzan RangeError sin leer ni abrir la transacción", async () => {
+    const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+    const entryTotals = vi.spyOn(reportRepository, "entryTotals");
+    const transaction = vi.spyOn(db, "transaction");
+    const requests: ReportRequest[] = [
+      {
+        range: { first: "2026-10-11", last: "2026-10-05" },
+        groupBy: "tag",
+        subgroups: ["date"],
+      },
+      {
+        range: { first: "2025-01-01", last: "2026-01-02" },
+        groupBy: "tag",
+        subgroups: ["date"],
+      },
+      { range: lastWeek, groupBy: "person", subgroups: ["project", "date", "tag"] },
+      { range: lastWeek, groupBy: "person", subgroups: ["date", "date"] },
+      { range: lastWeek, groupBy: "project", subgroups: ["project"] },
+      { range: lastWeek, groupBy: null, subgroups: ["person"] },
+    ];
+    for (const request of requests) {
+      await expect(getReportState(owner, settings, request, readNow)).rejects.toThrow(
+        RangeError,
+      );
+    }
+    expect([
+      byLevels.mock.calls.length,
+      entryTotals.mock.calls.length,
+      transaction.mock.calls.length,
+    ]).toEqual([0, 0, 0]);
+  });
+});
+
+describe("el armado del árbol con una foto inconsistente (§4.4 de R3)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const projectId = "7a8b9c0d-1e2f-4a3b-9c4d-5e6f7a8b9c0d";
+  const otherProjectId = "2f3e4d5c-6b7a-4980-a1b2-c3d4e5f60718";
+  const p = {
+    kind: "project",
+    project: { id: projectId, name: "P", color: "green" },
+    client: null,
+  } as const;
+  const noProject = { kind: "project", project: null, client: null } as const;
+  const firstLevel = [
+    { groups: [p], seconds: 60, billableSeconds: 0 },
+    { groups: [noProject], seconds: 30, billableSeconds: 0 },
+  ];
+
+  /** Proyecto → fecha con las dos lecturas armadas a mano. */
+  async function treeWith(
+    secondLevel: Awaited<ReturnType<typeof reportRepository.totalsByLevels>>,
+  ) {
+    vi.spyOn(reportRepository, "totalsByLevels")
+      .mockResolvedValueOnce(firstLevel)
+      .mockResolvedValueOnce(secondLevel);
+    return getReportState(
+      owner,
+      settings,
+      { range: lastWeek, groupBy: "project", subgroups: ["date"] },
+      readNow,
+    );
+  }
+
+  it("una fila sin su grupo de arriba lanza", async () => {
+    await expect(
+      treeWith([
+        { groups: [p, { kind: "date", bucket: 0 }], seconds: 60, billableSeconds: 0 },
+        {
+          groups: [noProject, { kind: "date", bucket: 1 }],
+          seconds: 30,
+          billableSeconds: 0,
+        },
+        {
+          groups: [
+            { ...p, project: { ...p.project, id: otherProjectId } },
+            { kind: "date", bucket: 2 },
+          ],
+          seconds: 10,
+          billableSeconds: 0,
+        },
+      ]),
+    ).rejects.toThrow("sin su grupo de arriba");
+  });
+
+  it("un grupo sin hijos en un nivel que se muestra lanza", async () => {
+    await expect(
+      treeWith([
+        { groups: [p, { kind: "date", bucket: 0 }], seconds: 60, billableSeconds: 0 },
+      ]),
+    ).rejects.toThrow("sin hijos");
+  });
+});
+
 describe("el período fuera del tope (B1)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -1434,7 +1926,7 @@ describe("el período fuera del tope (B1)", () => {
     ]) {
       for (const groupBy of REPORT_GROUP_BYS) {
         await expect(
-          getReportState(owner, settings, { range, groupBy }, readNow),
+          getReportState(owner, settings, { range, groupBy, subgroups: [] }, readNow),
         ).rejects.toThrow(RangeError);
       }
     }

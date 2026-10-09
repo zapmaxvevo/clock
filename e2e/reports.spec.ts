@@ -19,9 +19,11 @@ import {
   clickRangeDay,
   currentWeekRange,
   EMPTY_REPORT,
+  expandButton,
   expectGroupBy,
   expectGroupNames,
   expectReport,
+  expectSubgroups,
   FORBIDDEN_BODY,
   FORBIDDEN_TITLE,
   goToReportsByNav,
@@ -36,6 +38,7 @@ import {
   lastWeekRange,
   monthRange,
   NO_CLIENT,
+  NO_LEVEL,
   NO_PROJECT,
   NO_TAG,
   NO_TASK,
@@ -61,20 +64,27 @@ import {
   shortcutLink,
   shortcutList,
   shortcutRange,
+  levelChoice,
+  subgroupButton,
+  subgroupControl,
+  subgroupLink,
+  subgroupList,
   TAG_OVERLAP,
   taskHeading,
   taskRow,
   zoneLine,
+  type ReportGroupBy,
   type ReportRange,
   type ShortcutLabel,
+  type SubgroupLevel,
 } from "./reports-page";
 import { expect, TEST_EMAIL_DOMAIN, test } from "./session";
 import { trackerBar, uniqueSuffix } from "./tracker-page";
 
 /**
- * Recorridos de R2a, R2b y R3a del núcleo de reportes: el resumido por persona,
- * por proyecto, por cliente, por tarea, por etiqueta y por fecha, y los atajos
- * del período (§8.2 de cada contrato), con la regla de §8.3 de R2a. Cada
+ * Recorridos de R2a, R2b y R3 del núcleo de reportes: el resumido por persona,
+ * por proyecto, por cliente, por tarea, por etiqueta y por fecha, los atajos
+ * del período y los subniveles (§8.2 de cada contrato), con la regla de §8.3 de R2a. Cada
  * recorrido tiene sus personas —la de la sesión y las que siembra—, todas con
  * un nombre editado que lleva el sufijo del test, y solo afirma sobre sus filas
  * o sobre proyectos con ese sufijo: la base acumula personas y horas de todas
@@ -123,6 +133,32 @@ async function pickShortcut(page: Page, label: ShortcutLabel): Promise<void> {
   await shortcutLink(page, label).click();
   await expect(rangePopover(page)).toBeHidden();
   await expect(rangeButton(page)).toBeFocused();
+}
+
+/**
+ * Elige una opción en la lista de un subnivel: el popover se cierra y, con la
+ * pantalla nueva y sus subniveles `expected`, el foco está en el botón del
+ * nivel, que ya dice lo elegido (D-R3-8), como con un atajo. El foco se
+ * afirma después de que llega la pantalla: antes, el botón que lo tiene es el
+ * de la pantalla vieja.
+ */
+async function pickSubgroup(
+  page: Page,
+  level: SubgroupLevel,
+  groupBy: ReportGroupBy | null,
+  expected: readonly ReportGroupBy[],
+): Promise<void> {
+  await subgroupButton(page, level).click();
+  await expect(subgroupList(page, level)).toBeVisible();
+  await subgroupLink(page, level, groupBy).click();
+  await expect(subgroupList(page, level)).toBeHidden();
+  await expectSubgroups(page, expected);
+  await expect(
+    subgroupControl(page).getByRole("button", {
+      name: levelChoice(level, groupBy),
+      exact: true,
+    }),
+  ).toBeFocused();
 }
 
 /** El rango de la URL sin `hasta`, que se descarta entero. */
@@ -681,4 +717,210 @@ test("por tarea y por etiqueta, con «Sin …» y la suma de las etiquetas", asy
   await page.reload();
   await expectReport(page, lastWeek, "etiqueta", day);
   await expectByTag();
+});
+
+/**
+ * Las entradas de los recorridos 11 y 12 (§8.2 de R3): P1 el martes y el
+ * jueves, con E1 solo la del martes, y P2 el miércoles.
+ */
+async function seedSubgroupEntries(
+  email: string,
+  lastWeek: ReportRange,
+): Promise<{ readonly first: string; readonly second: string; readonly tag: string }> {
+  const suffix = uniqueSuffix();
+  const first = `P1 ${suffix}`;
+  const second = `P2 ${suffix}`;
+  const tag = `E1 ${suffix}`;
+  await setDisplayName(email, `Gabi ${suffix}`);
+  await seedProject({ name: first });
+  await seedProject({ name: second });
+  await seedTag(tag);
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
+    {
+      description: "a",
+      day: addDays(lastWeek.first, 1),
+      start: "09:00",
+      end: "10:00",
+      project: first,
+      tags: [tag],
+    },
+    {
+      description: "b",
+      day: addDays(lastWeek.first, 2),
+      start: "09:00",
+      end: "09:45",
+      project: second,
+    },
+    {
+      description: "c",
+      day: addDays(lastWeek.first, 3),
+      start: "10:00",
+      end: "10:30",
+      project: first,
+    },
+  ]);
+  return { first, second, tag };
+}
+
+test("los subniveles se eligen en su lista y cada grupo se expande y se contrae", async ({
+  page,
+  email,
+}) => {
+  const day = today();
+  const lastWeek = lastWeekRange(day);
+  const [tuesday, thursday] = [1, 3].map((days) =>
+    weekdayLabel(addDays(lastWeek.first, days), day),
+  );
+  await enterApp(page);
+  const { first, second, tag } = await seedSubgroupEntries(email, lastWeek);
+
+  // D-R3-8: sin subniveles, «Segundo nivel: Ninguno» y sin tercero. Su lista
+  // empieza por «Ninguno», marcado, y sigue con las cinco que no son el
+  // primer nivel, en el orden de «Agrupar por».
+  await openReport(page, lastWeek, "proyecto", day);
+  await expectSubgroups(page, []);
+  await subgroupButton(page, "Segundo nivel").click();
+  await expect(subgroupList(page, "Segundo nivel").getByRole("link")).toHaveText([
+    NO_LEVEL,
+    GROUP_LINK.persona,
+    GROUP_LINK.cliente,
+    GROUP_LINK.tarea,
+    GROUP_LINK.etiqueta,
+    GROUP_LINK.fecha,
+  ]);
+  await expect(subgroupLink(page, "Segundo nivel", null)).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+  await page.keyboard.press("Escape");
+  await expect(subgroupList(page, "Segundo nivel")).toBeHidden();
+
+  // RP-12, D-R3-5: «Fecha» cierra el popover con el foco en su botón y
+  // escribe `subagrupar`. RP-13, D-R3-9: todo contraído, con un botón por
+  // grupo que tiene hijos.
+  await pickSubgroup(page, "Segundo nivel", "fecha", ["fecha"]);
+  await expectReport(page, lastWeek, "proyecto", day, ["fecha"]);
+  await expect(page.getByText(SCOPE_SELF, { exact: true })).toBeVisible();
+  await expect(groupColumnHeader(page)).toHaveText(
+    `${GROUP_LINK.proyecto} / ${GROUP_LINK.fecha}`,
+  );
+  await expectGroupNames(page, [first, second]);
+  await expect(groupDuration(groupRow(page, first))).toHaveText("1:30");
+  await expect(groupDuration(groupRow(page, second))).toHaveText("0:45");
+  await expect(expandButton(page, first)).toHaveAttribute("aria-expanded", "false");
+  await expect(expandButton(page, second)).toHaveAttribute("aria-expanded", "false");
+  await expect(reportTotal(page, "Total")).toHaveText("2:15");
+
+  // Abrir P1 muestra sus días en orden, entre P1 y P2, y el foco queda en el
+  // botón. Enter lo vuelve a cerrar.
+  await expandButton(page, first).click();
+  await expectGroupNames(page, [first, tuesday, thursday, second]);
+  await expect(groupDuration(groupRow(page, tuesday))).toHaveText("1:00");
+  await expect(groupDuration(groupRow(page, thursday))).toHaveText("0:30");
+  await expect(expandButton(page, first)).toHaveAttribute("aria-expanded", "true");
+  await expect(expandButton(page, first)).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expectGroupNames(page, [first, second]);
+  await expect(expandButton(page, first)).toHaveAttribute("aria-expanded", "false");
+
+  // «Tercer nivel: Etiqueta» suma el nivel a la URL. RP-18: con la etiqueta
+  // entre los niveles, la línea de la suma por etiqueta.
+  await pickSubgroup(page, "Tercer nivel", "etiqueta", ["fecha", "etiqueta"]);
+  await expectReport(page, lastWeek, "proyecto", day, ["fecha", "etiqueta"]);
+  await expect(groupColumnHeader(page)).toHaveText(
+    `${GROUP_LINK.proyecto} / ${GROUP_LINK.fecha} / ${GROUP_LINK.etiqueta}`,
+  );
+  await expect(page.getByText(TAG_OVERLAP, { exact: true })).toBeVisible();
+  await expectGroupNames(page, [first, second]);
+  await expandButton(page, first).click();
+  await expandButton(page, tuesday).click();
+  await expandButton(page, thursday).click();
+  await expectGroupNames(page, [first, tuesday, tag, thursday, NO_TAG, second]);
+  await expect(groupDuration(groupRow(page, tag))).toHaveText("1:00");
+  await expect(groupDuration(groupRow(page, NO_TAG))).toHaveText("0:30");
+  // El último nivel no tiene botón.
+  await expect(expandButton(page, tag)).toHaveCount(0);
+  await expect(expandButton(page, NO_TAG)).toHaveCount(0);
+
+  // Cerrar P1 oculta a sus nietos; reabrirlo muestra los días como estaban.
+  await expandButton(page, first).click();
+  await expectGroupNames(page, [first, second]);
+  await expandButton(page, first).click();
+  await expectGroupNames(page, [first, tuesday, tag, thursday, NO_TAG, second]);
+  await expect(expandButton(page, tuesday)).toHaveAttribute("aria-expanded", "true");
+
+  // RP-32, D-R3-9: al recargar, la misma URL y los mismos niveles, contraídos.
+  await page.reload();
+  await expectReport(page, lastWeek, "proyecto", day, ["fecha", "etiqueta"]);
+  await expectSubgroups(page, ["fecha", "etiqueta"]);
+  await expectGroupNames(page, [first, second]);
+  await expect(expandButton(page, first)).toHaveAttribute("aria-expanded", "false");
+  await expect(expandButton(page, second)).toHaveAttribute("aria-expanded", "false");
+});
+
+test("los controles conservan los subniveles, los intercambian y los quitan", async ({
+  page,
+  email,
+}) => {
+  const day = today();
+  const lastWeek = lastWeekRange(day);
+  const [tuesday, wednesday, thursday] = [1, 2, 3].map((days) =>
+    weekdayLabel(addDays(lastWeek.first, days), day),
+  );
+  await enterApp(page);
+  const { first, tag } = await seedSubgroupEntries(email, lastWeek);
+  await openReport(page, lastWeek, "proyecto", day, ["fecha"]);
+  await expectSubgroups(page, ["fecha"]);
+
+  // D-R3-8: «Fecha» en «Agrupar por» ya está en el segundo nivel, así que
+  // los dos se intercambian.
+  await groupByLink(page, "fecha").click();
+  await expectReport(page, lastWeek, "fecha", day, ["proyecto"]);
+  await expectSubgroups(page, ["proyecto"]);
+  await expect(groupColumnHeader(page)).toHaveText(
+    `${GROUP_LINK.fecha} / ${GROUP_LINK.proyecto}`,
+  );
+  await expectGroupNames(page, [tuesday, wednesday, thursday]);
+  await expandButton(page, tuesday).click();
+  await expectGroupNames(page, [tuesday, first, wednesday, thursday]);
+  await expect(groupDuration(groupRow(page, first))).toHaveText("1:00");
+
+  // RP-20: las flechas conservan `subagrupar`; la semana de antes está vacía.
+  await periodLink(page, "Período anterior").click();
+  await expectReport(page, shiftRange(lastWeek, -7), "fecha", day, ["proyecto"]);
+  await expectSubgroups(page, ["proyecto"]);
+  await expect(reportTable(page).getByText(EMPTY_REPORT, { exact: true })).toBeVisible();
+  await expect(groupHeaders(page)).toHaveCount(0);
+
+  // D-R3-9: cada navegación arranca contraída, también de vuelta al período
+  // que tenía el martes abierto.
+  await periodLink(page, "Período siguiente").click();
+  await expectReport(page, lastWeek, "fecha", day, ["proyecto"]);
+  await expectSubgroups(page, ["proyecto"]);
+  await expectGroupNames(page, [tuesday, wednesday, thursday]);
+  await expect(expandButton(page, tuesday)).toHaveAttribute("aria-expanded", "false");
+
+  // Lo mismo sin pasar por un período vacío: con el martes abierto, sumar un
+  // nivel es otra navegación sobre los mismos días.
+  await expandButton(page, tuesday).click();
+  await expectGroupNames(page, [tuesday, first, wednesday, thursday]);
+  await pickSubgroup(page, "Tercer nivel", "etiqueta", ["proyecto", "etiqueta"]);
+  await expectReport(page, lastWeek, "fecha", day, ["proyecto", "etiqueta"]);
+  await expectGroupNames(page, [tuesday, wednesday, thursday]);
+  await expect(expandButton(page, tuesday)).toHaveAttribute("aria-expanded", "false");
+
+  // D-R3-7: P1 está debajo del martes y del jueves, y cada uno cuelga por el
+  // camino entero: debajo del martes, solo la etiqueta del martes.
+  await expandButton(page, tuesday).click();
+  await expandButton(page, first).click();
+  await expectGroupNames(page, [tuesday, first, tag, wednesday, thursday]);
+  await expect(groupDuration(groupRow(page, tag))).toHaveText("1:00");
+
+  // «Ninguno» en el segundo nivel quita los dos: la URL vuelve a los tres
+  // parámetros, no hay «Tercer nivel» y las filas no tienen botón.
+  await pickSubgroup(page, "Segundo nivel", null, []);
+  await expectReport(page, lastWeek, "fecha", day);
+  await expect(page).toHaveURL((url) => [...url.searchParams.keys()].length === 3);
+  await expectGroupNames(page, [tuesday, wednesday, thursday]);
+  await expect(groupHeaders(page).getByRole("button")).toHaveCount(0);
 });

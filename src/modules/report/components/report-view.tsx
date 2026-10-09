@@ -1,45 +1,22 @@
-import type { ReactElement } from "react";
+import { REPORT_MAX_ROWS, type ReportReadyState } from "@/modules/report/schema";
 
-import { projectLabels } from "@/modules/project/components/labels";
-import { paletteColor } from "@/modules/project/palette";
-import type {
-  ReportGroup,
-  ReportGroupBy,
-  ReportPersonGroup,
-  ReportProjectGroup,
-  ReportReadyState,
-  ReportTaskGroup,
-} from "@/modules/report/schema";
-import { formatDuration } from "@/server/time";
-
-import { reportLabels } from "./labels";
+import { groupByLabels, reportLabels } from "./labels";
+import { reportHref } from "./report-href";
+import { durationLabel } from "./group-heading";
+import { ReportTree } from "./report-tree";
 
 /** El `h1` de la pantalla, que nombra la tabla. */
 export const REPORT_HEADING_ID = "reporte-titulo";
 
-/** El encabezado de la primera columna, por la agrupación. */
-const GROUP_COLUMN_HEADINGS = {
-  person: reportLabels.byPerson,
-  project: reportLabels.byProject,
-  client: reportLabels.byClient,
-  task: reportLabels.byTask,
-  tag: reportLabels.byTag,
-  date: reportLabels.byDate,
-} as const satisfies Record<ReportGroupBy, string>;
-
-/**
- * Cada cifra se trunca al minuto por separado, la de cada fila y la del total:
- * la suma de lo que muestran las filas queda en o debajo del total (§5.3).
- */
-function durationLabel(seconds: number): string {
-  return formatDuration(Math.floor(seconds / 60));
-}
-
 /**
  * El alcance y la zona (D-R2a-2, D-R2a-5), el aviso de la suma por etiqueta
- * (D-R3-3), los totales (RP-18) y una fila por grupo, en el orden en que llegan.
+ * (D-R3-3), los totales (RP-18), el aviso del tope (D-R3-6) y la tabla, con las
+ * filas en el orden en que llegan. Las del cuerpo las dibuja `ReportTree`.
  */
 export function ReportView({ state }: { readonly state: ReportReadyState }) {
+  const requested = [state.groupBy, ...state.subgroups];
+  const shown = requested.slice(0, state.levelsShown);
+
   return (
     <div className="flex flex-col gap-4">
       <div className="text-muted-foreground flex flex-col gap-1 text-sm">
@@ -49,7 +26,7 @@ export function ReportView({ state }: { readonly state: ReportReadyState }) {
             : reportLabels.scopeSelf}
         </p>
         <p>{reportLabels.zone(state.timeZone)}</p>
-        {state.groupBy === "tag" && <p>{reportLabels.tagOverlap}</p>}
+        {shown.includes("tag") && <p>{reportLabels.tagOverlap}</p>}
       </div>
 
       <dl className="flex flex-wrap gap-x-8 gap-y-2">
@@ -67,12 +44,16 @@ export function ReportView({ state }: { readonly state: ReportReadyState }) {
         </div>
       </dl>
 
+      {shown.length < requested.length && (
+        <p className="text-sm">{reportLabels.rowLimit(REPORT_MAX_ROWS)}</p>
+      )}
+
       <div className="overflow-x-auto rounded-lg border">
         <table aria-labelledby={REPORT_HEADING_ID} className="w-full text-sm">
           <thead className="border-b">
             <tr>
               <th scope="col" className="px-3 py-2 text-left font-medium">
-                {GROUP_COLUMN_HEADINGS[state.groupBy]}
+                {shown.map((level) => groupByLabels[level]).join(" / ")}
               </th>
               <th scope="col" className="px-3 py-2 text-right font-medium">
                 {reportLabels.duration}
@@ -87,129 +68,18 @@ export function ReportView({ state }: { readonly state: ReportReadyState }) {
                 </td>
               </tr>
             ) : (
-              state.groups.map((group) => (
-                <tr key={groupKey(group)} className="border-b last:border-b-0">
-                  <th scope="row" className="px-3 py-2 text-left font-normal">
-                    <GroupHeading group={group} />
-                  </th>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {durationLabel(group.seconds)}
-                  </td>
-                </tr>
-              ))
+              <ReportTree
+                key={reportHref({
+                  range: state.range,
+                  groupBy: state.groupBy,
+                  subgroups: state.subgroups,
+                })}
+                groups={state.groups}
+              />
             )}
           </tbody>
         </table>
       </div>
     </div>
   );
-}
-
-/** Una fila por persona, proyecto, cliente, tarea, etiqueta o día; cada «Sin …» es una sola. */
-function groupKey(group: ReportGroup): string {
-  switch (group.kind) {
-    case "person":
-      return group.userId;
-    case "project":
-      return group.project === null ? "sin-proyecto" : group.project.id;
-    case "client":
-      return group.client === null ? "sin-cliente" : group.client.id;
-    case "task":
-      return group.task === null ? "sin-tarea" : group.task.id;
-    case "tag":
-      return group.tag === null ? "sin-etiqueta" : group.tag.id;
-    case "date":
-      return group.dayKey;
-  }
-}
-
-/** `ReactElement` y no `ReactNode`, que admite `undefined`: un `kind` sin caso no compila. */
-function GroupHeading({ group }: { readonly group: ReportGroup }): ReactElement {
-  switch (group.kind) {
-    case "person":
-      return <PersonHeading group={group} />;
-    case "project":
-      return <ProjectHeading group={group} />;
-    case "client":
-      return <NamedHeading named={group.client} emptyLabel={projectLabels.noClient} />;
-    case "task":
-      return <TaskHeading group={group} />;
-    case "tag":
-      return <NamedHeading named={group.tag} emptyLabel={reportLabels.noTag} />;
-    case "date":
-      return <time dateTime={group.dayKey}>{group.label}</time>;
-  }
-}
-
-/** RP-31: una persona inactiva lo dice en texto, no solo con el gris. */
-function PersonHeading({ group }: { readonly group: ReportPersonGroup }) {
-  return (
-    <span className="flex min-w-0 items-center gap-1.5">
-      <span className="truncate">{group.name}</span>
-      {group.inactive && (
-        <span className="text-muted-foreground">{reportLabels.inactivePerson}</span>
-      )}
-    </span>
-  );
-}
-
-/** El punto del color, el nombre y el cliente en gris, como la planilla. */
-function ProjectHeading({ group }: { readonly group: ReportProjectGroup }) {
-  if (group.project === null) {
-    return <EmptyGroupHeading label={projectLabels.noProject} />;
-  }
-  return (
-    <span className="flex min-w-0 items-center gap-1.5">
-      <span
-        aria-hidden="true"
-        className="size-2 shrink-0 rounded-full"
-        style={{ backgroundColor: paletteColor(group.project.color).value }}
-      />
-      <span className="truncate">{group.project.name}</span>
-      {group.client !== null && (
-        <span className="text-muted-foreground truncate">{group.client.name}</span>
-      )}
-    </span>
-  );
-}
-
-/**
- * El nombre de la tarea y su proyecto en gris, como el cliente de un proyecto:
- * dos tareas que se llaman igual en proyectos distintos se distinguen (D-R3-4).
- * «Sin tarea» en gris y sin proyecto, porque junta varios.
- */
-function TaskHeading({ group }: { readonly group: ReportTaskGroup }) {
-  if (group.task === null) {
-    return <EmptyGroupHeading label={reportLabels.noTask} />;
-  }
-  return (
-    <span className="flex min-w-0 items-center gap-1.5">
-      <span className="truncate">{group.task.name}</span>
-      {group.project !== null && (
-        <span className="text-muted-foreground truncate">{group.project.name}</span>
-      )}
-    </span>
-  );
-}
-
-/**
- * Solo el nombre, como el cliente o la etiqueta, archivados o no (RP-29); sin
- * él, el «Sin …» de la dimensión.
- */
-function NamedHeading({
-  named,
-  emptyLabel,
-}: {
-  readonly named: { readonly name: string } | null;
-  readonly emptyLabel: string;
-}) {
-  if (named === null) {
-    return <EmptyGroupHeading label={emptyLabel} />;
-  }
-  return <span className="truncate">{named.name}</span>;
-}
-
-/** RP-28: el grupo de lo que no tiene la dimensión, en gris. */
-function EmptyGroupHeading({ label }: { readonly label: string }) {
-  return <span className="text-muted-foreground">{label}</span>;
 }

@@ -72,6 +72,9 @@ export const REPORT_GROUP_BYS = [
 ] as const;
 export type ReportGroupBy = (typeof REPORT_GROUP_BYS)[number];
 
+/** D-R2a-3: el primer nivel sin un `agrupar` válido. */
+export const DEFAULT_GROUP_BY = "person" satisfies ReportGroupBy;
+
 /** El valor de `agrupar` en la URL de cada agrupación: con este mapa se lee y se escribe. */
 export const REPORT_GROUP_PARAMS = {
   person: "persona",
@@ -82,13 +85,54 @@ export const REPORT_GROUP_PARAMS = {
   date: "fecha",
 } as const satisfies Record<ReportGroupBy, string>;
 
+/** La agrupación que escribe `value` en la URL, o `undefined`. Distingue mayúsculas. */
+function groupByOfParam(value: unknown): ReportGroupBy | undefined {
+  return REPORT_GROUP_BYS.find((groupBy) => REPORT_GROUP_PARAMS[groupBy] === value);
+}
+
 /** `?agrupar=persona|proyecto|cliente|tarea|etiqueta|fecha` con `safeParse`, aparte del rango; cualquier otro valor se descarta. */
 export const reportGroupParams = z
   .object({ agrupar: z.string() })
-  .transform(({ agrupar }) =>
-    REPORT_GROUP_BYS.find((groupBy) => REPORT_GROUP_PARAMS[groupBy] === agrupar),
-  )
+  .transform(({ agrupar }) => groupByOfParam(agrupar))
   .pipe(z.enum(REPORT_GROUP_BYS));
+
+/**
+ * RP-12, D-R3-6: cuántas filas pueden sumar los niveles de un árbol. Acota lo
+ * que se lee de los niveles 2 y 3, no el primero. El mismo de R6 y R7.
+ */
+export const REPORT_MAX_ROWS = 3000;
+
+/** Los niveles de un reporte: el primero y, debajo, hasta dos más, sin repetir (RP-12). */
+export type ReportGrouping = {
+  readonly groupBy: ReportGroupBy;
+  readonly subgroups: readonly ReportGroupBy[];
+};
+
+/**
+ * `?subagrupar=fecha,etiqueta` con `safeParse` (D-R3-5): uno o dos valores
+ * distintos entre sí y del primer nivel efectivo, que lee de `agrupar` sin
+ * validarlo ni devolverlo (`persona` si no es válido o falta). Cualquier otra
+ * cosa se descarta entera: un valor vacío o desconocido, tres valores o el
+ * parámetro repetido.
+ */
+export const reportSubgroupParams = z
+  .object({ agrupar: z.unknown().optional(), subagrupar: z.string() })
+  .transform(({ agrupar, subagrupar }) => ({
+    first: groupByOfParam(agrupar) ?? DEFAULT_GROUP_BY,
+    subgroups: subagrupar.split(",").map(groupByOfParam),
+  }))
+  .pipe(
+    z
+      .object({
+        first: z.enum(REPORT_GROUP_BYS),
+        subgroups: z.array(z.enum(REPORT_GROUP_BYS)).min(1).max(2),
+      })
+      .refine(
+        ({ first, subgroups }) =>
+          new Set([first, ...subgroups]).size === 1 + subgroups.length,
+      ),
+  )
+  .transform(({ subgroups }): readonly ReportGroupBy[] => subgroups);
 
 const reportRangeView = z.object({ first: z.string(), last: z.string() });
 
@@ -123,7 +167,24 @@ const reportProjectRef = z.object({
   color: z.enum(PALETTE_KEYS),
 });
 
-const reportPersonGroup = z.object({
+/**
+ * Un grupo con su nivel de abajo. El getter difiere la referencia a
+ * `reportGroup`, que se declara después (D-R3-7).
+ */
+function withChildren<Shape extends z.ZodRawShape>(shape: Shape) {
+  return z.object({
+    ...shape,
+    /**
+     * D-R3-7: el nivel de abajo, ordenado. Está si se leyó y entró en el tope,
+     * y entonces tiene al menos un grupo; falta en el último que se muestra.
+     */
+    get children() {
+      return z.array(reportGroup).min(1).optional();
+    },
+  });
+}
+
+const reportPersonGroup = withChildren({
   kind: z.literal("person"),
   userId: z.string(),
   /** `displayNameOf`: el editado o el de la cuenta. */
@@ -133,7 +194,7 @@ const reportPersonGroup = z.object({
   seconds: z.number().int().min(0),
 });
 
-const reportProjectGroup = z.object({
+const reportProjectGroup = withChildren({
   kind: z.literal("project"),
   /** `null` es «Sin proyecto» (RP-28). Archivado o no (RP-29). */
   project: reportProjectRef.nullable(),
@@ -142,7 +203,7 @@ const reportProjectGroup = z.object({
   seconds: z.number().int().min(0),
 });
 
-const reportClientGroup = z.object({
+const reportClientGroup = withChildren({
   kind: z.literal("client"),
   /**
    * `null` es «Sin cliente»: las entradas sin proyecto y las de proyectos sin
@@ -152,7 +213,7 @@ const reportClientGroup = z.object({
   seconds: z.number().int().min(0),
 });
 
-const reportTaskGroup = z.object({
+const reportTaskGroup = withChildren({
   kind: z.literal("task"),
   /**
    * `null` es «Sin tarea»: las entradas de un proyecto sin tarea y las sin
@@ -164,7 +225,7 @@ const reportTaskGroup = z.object({
   seconds: z.number().int().min(0),
 });
 
-const reportTagGroup = z.object({
+const reportTagGroup = withChildren({
   kind: z.literal("tag"),
   /** `null` es «Sin etiqueta»: las entradas sin ninguna (RP-28). Archivada o no. */
   tag: reportNamedRef.nullable(),
@@ -172,7 +233,7 @@ const reportTagGroup = z.object({
   seconds: z.number().int().min(0),
 });
 
-const reportDateGroup = z.object({
+const reportDateGroup = withChildren({
   kind: z.literal("date"),
   /** El día civil en la zona de quien mira (RP-22). */
   dayKey: z.string(),
@@ -180,6 +241,15 @@ const reportDateGroup = z.object({
   label: z.string(),
   seconds: z.number().int().min(0),
 });
+
+const reportGroup = z.discriminatedUnion("kind", [
+  reportPersonGroup,
+  reportProjectGroup,
+  reportClientGroup,
+  reportTaskGroup,
+  reportTagGroup,
+  reportDateGroup,
+]);
 
 export const reportReadyState = z.object({
   kind: z.literal("ready"),
@@ -195,6 +265,10 @@ export const reportReadyState = z.object({
   /** Los atajos de hoy, sin los que no pasan `reportRangeInput` (D-R2b-2). */
   shortcuts: z.array(reportShortcut),
   groupBy: z.enum(REPORT_GROUP_BYS),
+  /** Los niveles pedidos debajo del primero, de `subagrupar` (D-R3-5). */
+  subgroups: z.array(z.enum(REPORT_GROUP_BYS)).max(2),
+  /** Los niveles leídos que entran en el tope: menos que los pedidos si no (D-R3-6). */
+  levelsShown: z.number().int().min(1).max(3),
   /** Lo que dice la línea del alcance (D-R2a-2). */
   scope: z.enum(["everyone", "self"]),
   /** La zona con que se cortaron los días, tal como está en el perfil (D-R2a-5). */
@@ -205,21 +279,12 @@ export const reportReadyState = z.object({
    */
   totalSeconds: z.number().int().min(0),
   billableSeconds: z.number().int().min(0),
-  /** En el orden de D-R2a-3. */
-  groups: z.array(
-    z.discriminatedUnion("kind", [
-      reportPersonGroup,
-      reportProjectGroup,
-      reportClientGroup,
-      reportTaskGroup,
-      reportTagGroup,
-      reportDateGroup,
-    ]),
-  ),
+  /** El primer nivel, en el orden de D-R2a-3, con los de abajo en `children`. */
+  groups: z.array(reportGroup),
 });
 
 export type ReportReadyState = z.infer<typeof reportReadyState>;
-export type ReportGroup = ReportReadyState["groups"][number];
+export type ReportGroup = z.infer<typeof reportGroup>;
 export type ReportPersonGroup = z.infer<typeof reportPersonGroup>;
 export type ReportProjectGroup = z.infer<typeof reportProjectGroup>;
 export type ReportClientGroup = z.infer<typeof reportClientGroup>;

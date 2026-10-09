@@ -1,3 +1,5 @@
+import type { ReportGroupBy } from "@/modules/report/schema";
+
 /**
  * Textos del reporte resumido. «Sin proyecto» y «Sin cliente» son
  * `projectLabels.noProject` y `projectLabels.noClient`; los rótulos de los
@@ -38,6 +40,16 @@ export const reportLabels = {
    */
   noTask: "Sin tarea",
   noTag: "Sin etiqueta",
+  /** RP-12: hasta dos niveles debajo del primero, sin repetir (D-R3-8). */
+  subgroupBy: "Subagrupar por",
+  secondLevel: "Segundo nivel",
+  thirdLevel: "Tercer nivel",
+  /** El botón de un nivel dice lo que tiene elegido, y ese es su nombre. */
+  levelChoice: (level: string, chosen: string) => `${level}: ${chosen}`,
+  noLevel: "Ninguno",
+  /** D-R3-6: un nivel que no entra en el tope no se muestra, ni los de abajo. */
+  rowLimit: (maxRows: number) =>
+    `El reporte pasa de ${maxRows} filas con todos sus niveles: se muestran solo los de arriba. Acortá el período o quitá un nivel.`,
   duration: "Duración",
   /** RP-18. */
   total: "Total",
@@ -55,3 +67,13 @@ export const reportLabels = {
   /** RP-33. */
   empty: "No hay horas en este período",
 } as const;
+
+/** El rótulo de cada dimensión: el enlace de «Agrupar por», el subnivel y el encabezado. */
+export const groupByLabels = {
+  person: reportLabels.byPerson,
+  project: reportLabels.byProject,
+  client: reportLabels.byClient,
+  task: reportLabels.byTask,
+  tag: reportLabels.byTag,
+  date: reportLabels.byDate,
+} as const satisfies Record<ReportGroupBy, string>;
