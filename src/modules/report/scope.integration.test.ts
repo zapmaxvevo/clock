@@ -127,7 +127,6 @@ type WorkspaceA = {
  */
 type WorkspaceB = {
   readonly workspaceId: string;
-  readonly tagGId: string;
   readonly ownerId: string;
   readonly places: { readonly owner: Place; readonly member: Place };
 };
@@ -223,7 +222,6 @@ beforeEach(async () => {
   const tagG = await seedTag({ workspaceId: seededB.workspaceId, name: "G" });
   b = {
     workspaceId: seededB.workspaceId,
-    tagGId: tagG.id,
     ownerId: seededB.ownerId,
     places: {
       owner: noProject,
