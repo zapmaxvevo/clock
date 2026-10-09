@@ -281,6 +281,14 @@ export function groupHeaders(page: Page): Locator {
   return reportTable(page).getByRole("rowheader");
 }
 
+/**
+ * Un nombre accesible que empieza con `name`, seguido de un espacio o de
+ * nada: el de un grupo, que puede seguir con «(inactiva)» o con el cliente.
+ */
+function leadingName(name: string): RegExp {
+  return new RegExp(`^${escapeRegExp(name)}(?:\\s|$)`);
+}
+
 /** La fila de la tabla cuyo encabezado de fila tiene ese nombre accesible. */
 function rowByHeader(page: Page, name: string | RegExp): Locator {
   return reportTable(page)
@@ -296,7 +304,7 @@ function rowByHeader(page: Page, name: string | RegExp): Locator {
  * propio.
  */
 export function groupRow(page: Page, name: string): Locator {
-  return rowByHeader(page, new RegExp(`^${escapeRegExp(name)}(?:\\s|$)`));
+  return rowByHeader(page, leadingName(name));
 }
 
 /**
@@ -337,7 +345,7 @@ export async function expectGroupNames(
  */
 export function expandButton(page: Page, name: string): Locator {
   return groupHeaders(page).getByRole("button", {
-    name: new RegExp(`^${escapeRegExp(name)}(?:\\s|$)`),
+    name: leadingName(name),
   });
 }
 
@@ -435,9 +443,14 @@ export async function openReport(
 /** Los dos subniveles, por el rótulo de su botón y de su lista (§5.3). */
 export type SubgroupLevel = "Segundo nivel" | "Tercer nivel";
 
+/** El texto de una opción de la lista de un subnivel: una agrupación o «Ninguno». */
+function levelOptionLabel(groupBy: ReportGroupBy | null): string {
+  return groupBy === null ? NO_LEVEL : GROUP_LINK[groupBy];
+}
+
 /** El texto del botón de un subnivel, que es también su nombre: «Segundo nivel: Fecha». */
 export function levelChoice(level: SubgroupLevel, groupBy: ReportGroupBy | null): string {
-  return `${level}: ${groupBy === null ? NO_LEVEL : GROUP_LINK[groupBy]}`;
+  return `${level}: ${levelOptionLabel(groupBy)}`;
 }
 
 /** «Subagrupar por», nombrado por su rótulo visible (D-R3-8). */
@@ -464,7 +477,7 @@ export function subgroupLink(
   groupBy: ReportGroupBy | null,
 ): Locator {
   return subgroupList(page, level).getByRole("link", {
-    name: groupBy === null ? NO_LEVEL : GROUP_LINK[groupBy],
+    name: levelOptionLabel(groupBy),
     exact: true,
   });
 }

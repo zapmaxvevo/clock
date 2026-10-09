@@ -64,7 +64,9 @@ import {
   shortcutLink,
   shortcutList,
   shortcutRange,
+  levelChoice,
   subgroupButton,
+  subgroupControl,
   subgroupLink,
   subgroupList,
   TAG_OVERLAP,
@@ -134,19 +136,29 @@ async function pickShortcut(page: Page, label: ShortcutLabel): Promise<void> {
 }
 
 /**
- * Elige una opción en la lista de un subnivel: el popover se cierra y el foco
- * vuelve al botón del nivel (D-R3-8), como con un atajo.
+ * Elige una opción en la lista de un subnivel: el popover se cierra y, con la
+ * pantalla nueva y sus subniveles `expected`, el foco está en el botón del
+ * nivel, que ya dice lo elegido (D-R3-8), como con un atajo. El foco se
+ * afirma después de que llega la pantalla: antes, el botón que lo tiene es el
+ * de la pantalla vieja.
  */
 async function pickSubgroup(
   page: Page,
   level: SubgroupLevel,
   groupBy: ReportGroupBy | null,
+  expected: readonly ReportGroupBy[],
 ): Promise<void> {
   await subgroupButton(page, level).click();
   await expect(subgroupList(page, level)).toBeVisible();
   await subgroupLink(page, level, groupBy).click();
   await expect(subgroupList(page, level)).toBeHidden();
-  await expect(subgroupButton(page, level)).toBeFocused();
+  await expectSubgroups(page, expected);
+  await expect(
+    subgroupControl(page).getByRole("button", {
+      name: levelChoice(level, groupBy),
+      exact: true,
+    }),
+  ).toBeFocused();
 }
 
 /** El rango de la URL sin `hasta`, que se descarta entero. */
@@ -786,9 +798,8 @@ test("los subniveles se eligen en su lista y cada grupo se expande y se contrae"
   // RP-12, D-R3-5: «Fecha» cierra el popover con el foco en su botón y
   // escribe `subagrupar`. RP-13, D-R3-9: todo contraído, con un botón por
   // grupo que tiene hijos.
-  await pickSubgroup(page, "Segundo nivel", "fecha");
+  await pickSubgroup(page, "Segundo nivel", "fecha", ["fecha"]);
   await expectReport(page, lastWeek, "proyecto", day, ["fecha"]);
-  await expectSubgroups(page, ["fecha"]);
   await expect(page.getByText(SCOPE_SELF, { exact: true })).toBeVisible();
   await expect(groupColumnHeader(page)).toHaveText(
     `${GROUP_LINK.proyecto} / ${GROUP_LINK.fecha}`,
@@ -814,9 +825,8 @@ test("los subniveles se eligen en su lista y cada grupo se expande y se contrae"
 
   // «Tercer nivel: Etiqueta» suma el nivel a la URL. RP-18: con la etiqueta
   // entre los niveles, la línea de la suma por etiqueta.
-  await pickSubgroup(page, "Tercer nivel", "etiqueta");
+  await pickSubgroup(page, "Tercer nivel", "etiqueta", ["fecha", "etiqueta"]);
   await expectReport(page, lastWeek, "proyecto", day, ["fecha", "etiqueta"]);
-  await expectSubgroups(page, ["fecha", "etiqueta"]);
   await expect(groupColumnHeader(page)).toHaveText(
     `${GROUP_LINK.proyecto} / ${GROUP_LINK.fecha} / ${GROUP_LINK.etiqueta}`,
   );
@@ -894,9 +904,8 @@ test("los controles conservan los subniveles, los intercambian y los quitan", as
   // nivel es otra navegación sobre los mismos días.
   await expandButton(page, tuesday).click();
   await expectGroupNames(page, [tuesday, first, wednesday, thursday]);
-  await pickSubgroup(page, "Tercer nivel", "etiqueta");
+  await pickSubgroup(page, "Tercer nivel", "etiqueta", ["proyecto", "etiqueta"]);
   await expectReport(page, lastWeek, "fecha", day, ["proyecto", "etiqueta"]);
-  await expectSubgroups(page, ["proyecto", "etiqueta"]);
   await expectGroupNames(page, [tuesday, wednesday, thursday]);
   await expect(expandButton(page, tuesday)).toHaveAttribute("aria-expanded", "false");
 
@@ -909,10 +918,9 @@ test("los controles conservan los subniveles, los intercambian y los quitan", as
 
   // «Ninguno» en el segundo nivel quita los dos: la URL vuelve a los tres
   // parámetros, no hay «Tercer nivel» y las filas no tienen botón.
-  await pickSubgroup(page, "Segundo nivel", null);
+  await pickSubgroup(page, "Segundo nivel", null, []);
   await expectReport(page, lastWeek, "fecha", day);
   await expect(page).toHaveURL((url) => [...url.searchParams.keys()].length === 3);
-  await expectSubgroups(page, []);
   await expectGroupNames(page, [tuesday, wednesday, thursday]);
   await expect(groupHeaders(page).getByRole("button")).toHaveCount(0);
 });
