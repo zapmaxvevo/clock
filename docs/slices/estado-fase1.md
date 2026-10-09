@@ -35,6 +35,7 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-09.
 | Núcleo de reportes, R3b                     | En `main` |
 | Núcleo de reportes, R4a                     | En `main` |
 | Núcleo de reportes, R4b                     | En `main` |
+| Núcleo de reportes, R10a                    | En `main` |
 
 Los slices 1 a 13 (con 2b, 2c, 7b, 8b, 8c, 11a y 11b) y el arreglo del piso fijo están en `main`.
 El 13 (planilla de horarios) se mergeó el 2026-10-08 con lint, typecheck, 1279 de unidad, 1223 de
@@ -157,6 +158,17 @@ vacío del owner y `renewWorkspace` se corta.
      `clock_r10a_e2e`. Después, R10b; F1 de frontend (`truncate` en la tabla) entra en su
      encargo. R8 sigue solo
      en contrato. Después de R4b: R10, R5, R6, R7 y R9.
+
+     **R10a en `main`** (`19e70db`, séptima sesión, 2026-10-09): agrupar por semana y por mes.
+     Seis revisiones (código con cinco menores, paridad sin hallazgos), ronda de correcciones
+     (`bdeeac8`, `4e511ac`) y corrida final en verde sobre `4e511ac`: 1689 de unidad, 298 de
+     `test:time-ar`, 1422 de integración y e2e 203/203 ×2. Texto de paridad en `reportes.md`
+     (sección 13). Todo en `correcciones-nucleo-reportes-r10a-revisiones.md`. **Sigue R10b**
+     (descripción, parte B del contrato de R10), de a dos agentes; su encargo de frontend lleva
+     F1 de R10a y N1 de paridad (la tabla a 320 px). Bases de R10a que se pueden borrar:
+     `clock_r10a_back`, `_front`, `_test`, `_e2e`, `_parity`, `_final_test` y `_final_e2e`.
+     Aviso de paridad: la `DATABASE_URL` del `.env` del usuario falla contra el Postgres local
+     (contraseña de `user`); los agentes usan la cadena de `e2e/environment.ts`.
 
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
      (`7b66b03`), en checkout en el árbol principal. `architect-r3` quedó escribiendo
