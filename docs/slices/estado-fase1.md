@@ -54,10 +54,12 @@ vacío del owner y `renewWorkspace` se corta.
      (`23de226`), con lint, typecheck, 1419 de unidad, 228 de `test:time-ar` y 1275 de
      integración en Postgres 18. **CI de `main` en verde** desde `23de226` (`verify` e
      `integration`; `e2e` se saltea hasta que exista `E2E_DATABASE_URL`).
-   - **Postgres local**: la integración por defecto apunta a `clock-pg` (17, puerto 5432), donde
-     los dos tests de R1 de `23001` fallan. Hasta que el usuario decida si se migra a 18 en el
-     5432, se corre con
-     `TEST_DATABASE_URL=postgresql://clock:clock@localhost:5433/<base propia>` (`clock-pg18`).
+   - **Postgres local en 18** (2026-10-09, decisión del usuario): `clock-pg` (puerto 5432) es
+     `postgres:18-alpine` con las 31 bases restauradas de un `pg_dumpall`; el contenedor 17 quedó
+     parado como `clock-pg17` (respaldo, se puede borrar) y `clock-pg18` (5433) sigue aparte.
+     Integración 1275/1275 con la configuración por defecto.
+   - **R2b, comprobación contra Neon** (decisión del usuario): en el preview de la rama apenas
+     `totalsByBucket` esté, siempre antes del merge; se le avisa al usuario en ese momento.
    - **Siguiente slice del núcleo**: R2b, contrato en curso (`architect-r2b`, rama
      `nucleo/r2b-contrato`). R2b (cortes por tramo y atajos de mes, «Semana anterior»
      como rótulo). Orden del mapa: R2a → R2b → R3 → R4 → R5 → R6 → R7, con R8 después de R2a y
@@ -132,13 +134,9 @@ modo en la cookie; ADR 0014 aceptado y P-03 fuera del 8b. Decidido y pendiente d
 devolver «Reintentar» al alta manual con el ADR 0007 y retirar TT-109, como slice chico con
 su pipeline.
 
-Lo que sigue siendo del usuario, porque necesita sus cuentas o su máquina:
+Lo que sigue siendo del usuario, porque necesita sus cuentas o su máquina (la consulta de
+cuentas sin Google antes de desplegar el 7b dio cero filas en producción el 2026-10-09):
 
-- **Push**: `git push origin main` después de cada merge.
-- **Antes de desplegar el 7b**: correr en la base de producción
-  `select u.id, u.email from "user" u where not exists (select 1 from account a where a.user_id = u.id and a.provider_id = 'google');`.
-  Tiene que dar cero filas: con `disableImplicitLinking`, una fila `user` sin cuenta de Google
-  ya no puede entrar.
 - **`.env` local**: su `DATABASE_URL` usa el usuario `user`, que Postgres rechaza
   (`password authentication failed`): es un valor de ejemplo. Por eso `db:migrate` fallaba y el
   login local no anda. Para usar la app: apuntarlo a `postgresql://clock:clock@localhost:5432/clock`
