@@ -104,7 +104,9 @@ vacío del owner y `renewWorkspace` se corta.
 
      Quinta sesión, en curso: rama `nucleo/contratos-r4-r8` desde `d5765ea`, con
      `architect-r4` (`nucleo-reportes-r4-filtros.md`) y `architect-r8`
-     (`nucleo-reportes-r8-cambiar-rol.md`) escribiendo en paralelo.
+     (`nucleo-reportes-r8-cambiar-rol.md`) escribiendo en paralelo. **R8: solo el contrato**
+     (decisión del usuario del 2026-10-09): se revisa y se mergea, pero no se implementa hasta
+     que el usuario lo pida. Adelantarlo no había sido decisión suya.
 
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
      (`7b66b03`), en checkout en el árbol principal. `architect-r3` quedó escribiendo
