@@ -116,18 +116,9 @@ export async function workspaceTimeZone(): Promise<string> {
   });
 }
 
-/**
- * Cambia una fila y comprueba que cambió exactamente una. Los nombres que
- * reciben estas funciones llevan el sufijo único del recorrido, así que otra
- * cantidad es un error del test, no algo que se pueda dejar pasar.
- */
+/** `updateOneRow` con una conexión propia, fuera de toda transacción. */
 async function updateOne(sql: string, values: readonly string[]): Promise<void> {
-  await withDatabase(async (client) => {
-    const result = await client.query(sql, [...values]);
-    if (result.rowCount !== 1) {
-      throw new Error(`Se esperaba cambiar una fila y cambiaron ${result.rowCount}.`);
-    }
-  });
+  await withDatabase((client) => updateOneRow(client, sql, values));
 }
 
 /**
@@ -178,8 +169,25 @@ export async function revokeProjectManager(email: string, name: string): Promise
 }
 
 /**
+ * Cambia una fila con `client` y comprueba que cambió exactamente una. Los
+ * nombres que reciben estas funciones llevan el sufijo único del recorrido,
+ * así que otra cantidad es un error del test, no algo que se pueda dejar
+ * pasar.
+ */
+async function updateOneRow(
+  client: Client,
+  sql: string,
+  values: readonly unknown[],
+): Promise<void> {
+  const result = await client.query(sql, [...values]);
+  if (result.rowCount !== 1) {
+    throw new Error(`Se esperaba cambiar una fila y cambiaron ${result.rowCount}.`);
+  }
+}
+
+/**
  * Inserta una fila que devuelve su `id` y comprueba que se insertó
- * exactamente una: como en `updateOne`, otra cantidad es un error del test.
+ * exactamente una: como en `updateOneRow`, otra cantidad es un error del test.
  */
 async function insertOneRow(
   client: Client,
@@ -422,21 +430,6 @@ export type SeedEntry = {
   /** Nombres de etiquetas del workspace, activas o archivadas. */
   readonly tags?: readonly string[];
 };
-
-/**
- * Cambia una fila dentro de la transacción de `client` y comprueba que cambió
- * exactamente una, como `updateOne`.
- */
-async function updateOneRow(
-  client: Client,
-  sql: string,
-  values: readonly unknown[],
-): Promise<void> {
-  const result = await client.query(sql, [...values]);
-  if (result.rowCount !== 1) {
-    throw new Error(`Se esperaba cambiar una fila y cambiaron ${result.rowCount}.`);
-  }
-}
 
 /**
  * Siembra entradas terminadas de una persona, en una transacción. Es más

@@ -72,16 +72,17 @@ import { expect, TEST_EMAIL_DOMAIN, test } from "./session";
 import { trackerBar, uniqueSuffix } from "./tracker-page";
 
 /**
- * Recorridos de R2a, R2b y R3a del núcleo de reportes: el resumido por
- * persona, por proyecto, por cliente, por tarea, por etiqueta y por fecha, y
- * los atajos del período (§8.2 de cada contrato), con la regla de §8.3 de R2a. Cada recorrido tiene sus personas
- * —la de la sesión y las que siembra—, todas con un nombre editado que lleva
- * el sufijo del test, y solo afirma sobre sus filas o sobre proyectos con ese
- * sufijo: la base acumula personas y horas de todas las corridas. El total se
- * afirma solo con el alcance propio. El rol y el estado los cambia la persona
- * de la sesión sobre sí misma. Las entradas van en la semana anterior a la de
- * hoy y se siembran antes de abrir la pantalla; los rótulos esperados se
- * calculan con `days.ts`, no con el código que los produce.
+ * Recorridos de R2a, R2b y R3a del núcleo de reportes: el resumido por persona,
+ * por proyecto, por cliente, por tarea, por etiqueta y por fecha, y los atajos
+ * del período (§8.2 de cada contrato), con la regla de §8.3 de R2a. Cada
+ * recorrido tiene sus personas —la de la sesión y las que siembra—, todas con
+ * un nombre editado que lleva el sufijo del test, y solo afirma sobre sus filas
+ * o sobre proyectos con ese sufijo: la base acumula personas y horas de todas
+ * las corridas. El total se afirma solo con el alcance propio. El rol y el
+ * estado los cambia la persona de la sesión sobre sí misma. Las entradas van en
+ * la semana anterior a la de hoy y se siembran antes de abrir la pantalla; los
+ * rótulos esperados se calculan con `days.ts`, no con el código que los
+ * produce.
  */
 
 /** Hoy en la zona por omisión de la persona, que es la que corta los días. */

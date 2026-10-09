@@ -261,6 +261,13 @@ export function groupHeaders(page: Page): Locator {
   return reportTable(page).getByRole("rowheader");
 }
 
+/** La fila de la tabla cuyo encabezado de fila tiene ese nombre accesible. */
+function rowByHeader(page: Page, name: string | RegExp): Locator {
+  return reportTable(page)
+    .getByRole("row")
+    .filter({ has: page.getByRole("rowheader", { name, exact: true }) });
+}
+
 /**
  * La fila de un grupo, por el comienzo de su encabezado: el nombre de la
  * persona, que puede seguir con «(inactiva)», el del proyecto, el del cliente
@@ -269,13 +276,7 @@ export function groupHeaders(page: Page): Locator {
  * propio.
  */
 export function groupRow(page: Page, name: string): Locator {
-  return reportTable(page)
-    .getByRole("row")
-    .filter({
-      has: page.getByRole("rowheader", {
-        name: new RegExp(`^${escapeRegExp(name)}(?:\\s|$)`),
-      }),
-    });
+  return rowByHeader(page, new RegExp(`^${escapeRegExp(name)}(?:\\s|$)`));
 }
 
 /**
@@ -290,14 +291,7 @@ export function taskHeading(task: string, project: string): string {
 
 /** La fila de una tarea de un proyecto, que `groupRow` no separa de otra igual. */
 export function taskRow(page: Page, task: string, project: string): Locator {
-  return reportTable(page)
-    .getByRole("row")
-    .filter({
-      has: page.getByRole("rowheader", {
-        name: taskHeading(task, project),
-        exact: true,
-      }),
-    });
+  return rowByHeader(page, taskHeading(task, project));
 }
 
 /**
