@@ -92,6 +92,16 @@ queda para R4b. No hay citas nuevas de Clockify: esta revisión no volvió a
 buscar en las páginas del resumido ni de filtros, así que lo que estaba _no
 verificado_ sigue igual.
 
+_Actualizado el 2026-10-09, R4b, la parte B del mismo contrato (§7
+«parity-analyst»)_: describe lo que hace el código de la rama `nucleo/r4b`,
+recorrido con la aplicación: el filtro de personas, con las inactivas aparte y
+tachadas y sin las invitadas. Cada regla que precisa lleva su corrección
+fechada; la sección 12 suma lo de la parte B (secciones 12.6 a 12.8) y la 12.4,
+sus divergencias. Cambian RP-25, RP-31, RP-32, RP-34, RP-62 y RP-64. No hay
+citas nuevas de Clockify: esta revisión no volvió a buscar en las páginas del
+resumido, de filtros ni de equipo, así que lo que estaba _no verificado_ sigue
+igual, y RP-61 y RP-62 conservan sus citas del 2026-10-08.
+
 ## Fuentes y límites del relevamiento
 
 Documentación pública del centro de ayuda de Clockify y referencia pública de su
@@ -779,6 +789,32 @@ descripción y facturable siguen para la fase 3.
   es lo de la pantalla y el buscador está vacío. Lo que la búsqueda esconde
   sigue tildado y se aplica.
 
+_Actualizado el 2026-10-09, R4b (D-R4-3, D-R4-4, D-R4-8)_: entra **personas**,
+el tercer filtro de la reducción; tarea, etiqueta, descripción y facturable
+siguen para la fase 3.
+
+- **«Personas»** va primero en «Filtrar por», antes de «Clientes», y solo para
+  quien ve horas de otros (owner y admin, RP-01); sin ese permiso el botón no
+  existe. Dice «Personas: todas» sin nada elegido, el nombre con una —también
+  una inactiva, sin «(inactiva)»— y la cantidad con más.
+- **El panel** es el de los otros dos: «Buscar personas», con el foco al abrir,
+  que busca por el nombre sin distinguir mayúsculas ni acentos; las activas en
+  el grupo «Personas» y después, si hay, las inactivas en «Inactivas», con el
+  nombre tachado (RP-62); cada grupo por nombre. El nombre es el que la persona
+  editó en su perfil o, sin él, el de su cuenta, como en su fila (RP-31); las
+  opciones no llevan color ni detalle. Una persona activa sin horas en el
+  período está: el filtro ofrece las personas del workspace, no las que tienen
+  horas.
+- **Dentro de personas, o; con cliente y proyecto, y**: una entrada cuenta si es
+  de una de las personas elegidas y además cumple los otros filtros. Dos
+  personas y un proyecto dan lo de las dos en ese proyecto; una persona y un
+  cliente dejan afuera lo que esa persona cargó sin proyecto (RP-26).
+- **Se aplica a todo**, como los otros: a cada nivel del árbol, a «Total» y
+  «Facturable» —también por etiqueta— y al tope de 3000 filas. Con personas
+  elegidas, el total es solo de ellas.
+- **«Aplicar», Esc, el clic afuera y el tope de 50** son los de los otros dos
+  filtros: con 51 personas tildadas, «Elegí hasta 50.» y no navega (RP-34).
+
 **RP-26 Filtrar lo que no tiene proyecto, cliente, tarea o etiqueta** —
 `replicar`
 Documentado: los filtros permiten buscar «entries without a client, project,
@@ -887,6 +923,14 @@ una persona cuya membresía no está activa lleva el nombre seguido de
 él, el de su cuenta. Dos personas con el mismo nombre se ven iguales: la fila no
 muestra el correo.
 
+_Actualizado el 2026-10-09, R4b (D-R4-8)_: **en el filtro de personas, dos
+personas con el mismo nombre son dos casillas iguales**, como sus filas: la
+opción no muestra el correo. Cada casilla elige a su persona —una da su fila y
+su total, y las dos dan dos filas con el mismo nombre—, pero solo probando se
+sabe cuál es cuál. Distinguirlas queda fuera del núcleo. Elegida, una persona
+inactiva sigue con «(inactiva)» en su fila, sin tachar: el tachado es del
+filtro (RP-62).
+
 ### 2.5 Recarga, vacíos y errores
 
 **RP-32 El estado del reporte vive en la URL** — `adaptar`
@@ -980,6 +1024,30 @@ R4a)_:
 - **`personas=…` se sigue ignorando** en R4a, como cualquier otra clave, y no
   pasa a los enlaces; el filtro de personas llega con R4b.
 
+_Actualizado el 2026-10-09, R4b (D-R4-2, D-R4-4, D-R4-5, D-R4-10)_:
+
+- **`personas`** va después de `subagrupar` y antes de `clientes` y
+  `proyectos`, con una lista de 1 a 50 ids separados por coma. Cada id tiene de
+  1 a 64 letras, cifras o guiones —los de la base: los de las cuentas llevan
+  mayúsculas y minúsculas— y **distingue mayúsculas**: se escribe y se compara
+  tal cual. La aplicación escribe la lista ordenada; una lista vacía no se
+  escribe.
+- **Se valida por su lado y se descarta entero, sin aviso**, con un valor vacío,
+  una coma de más (`a,`, `,a`), un espacio, un correo, un id repetido, más de 50
+  o el parámetro repetido. No arrastra a los otros:
+  `personas=<correo>&proyectos=<id>` filtra por el proyecto.
+- **Todo enlace del reporte conserva las personas**, como los otros filtros;
+  recargar, «Atrás» o un enlace copiado reproducen lo elegido, y el botón lo
+  dice. «Quitar filtros» (RP-33) también las quita.
+- **Un member, un `project_manager` o un `team_manager` que abre un enlace con
+  `personas`** ve lo propio, sin el botón «Personas» y con «Ves solo tus
+  horas.»: el parámetro se descarta, también con su propio id, y los otros
+  filtros se aplican sobre lo propio. **El parámetro se pierde en la navegación
+  siguiente**, porque los enlaces de su pantalla no lo llevan. Es la decisión
+  del usuario del mapa §5 que la corrección de R2a anunciaba para R4.
+- Lo que decía R2a de que `personas=…` se ignora como cualquier otra clave vale
+  ahora solo para quien no ve horas de otros.
+
 **RP-33 Vacíos** — `adaptar`
 Sin entradas en el rango: «No hay horas en este período», con los gráficos
 ocultos y el total en cero. Con filtros que no dejan nada: «Ninguna entrada
@@ -1048,6 +1116,22 @@ R4a)_:
   «Sin proyecto» valen. No navega y el panel sigue abierto; tildar o destildar
   borra el mensaje. En la URL no hay mensaje: más de 50 descartan el parámetro
   (RP-32).
+
+_Actualizado el 2026-10-09, R4b (D-R4-4, D-R4-5, D-R4-8)_:
+
+- **Un id de persona bien formado que no está en el filtro se ignora él solo**,
+  sin aviso: uno que no existe, el de una persona de otro workspace, el de una
+  invitada (RP-64) o el de una persona del filtro con otras mayúsculas, que no
+  es el mismo id. Las demás de la lista siguen; lo ignorado no se aplica, el
+  botón no lo cuenta y desaparece de la URL en la navegación siguiente. Si se
+  ignoran todas, el reporte es el de todas las personas y el vacío, el primero
+  (RP-33).
+- **«Elegí hasta 50.»** vale también en «Personas»: 51 tildadas no navegan, el
+  panel sigue abierto y destildar una borra el mensaje. En la URL, 51 ids
+  descartan `personas` entero (RP-32).
+- **La tercera fila sigue sin usarse**: quien no ve horas de otros no recibe un
+  error por `personas`; el parámetro se descarta y la línea del alcance dice lo
+  que ve.
 
 **RP-35 Falla al cargar** — `adaptar`
 El reporte se arma en el servidor; si la lectura falla, la pantalla muestra
@@ -1209,6 +1293,15 @@ struck out.»). Justificación: un reporte de empresa sobre un mes pasado
 necesita poder aislar a alguien que ya se fue. Solo lo ve quien ve horas de
 otros (RP-01).
 
+_Actualizado el 2026-10-09, R4b (D-R4-4, D-R4-5, D-R4-8)_: **hecho como lo
+decidió el usuario.** En el filtro de personas, las membresías `inactive` van en
+un grupo propio, «Inactivas», después de las activas, con el nombre tachado; el
+nombre del grupo dice por qué están aparte, porque el tachado no se anuncia.
+Están tengan o no horas en el período, y la búsqueda las encuentra como a las
+activas. Elegida, una inactiva filtra como cualquiera: su fila lleva
+«(inactiva)» (RP-31) y sus horas cuentan. Solo owner y admin tienen el filtro;
+para el resto no existe (RP-32).
+
 **RP-63 Desactivar detiene el timer** — `replicar`
 Documentado: al desactivar, «…their current timer is stopped (if they have one
 running).» Es de la fase 2; se anota porque, al detenerse, esa entrada pasa a
@@ -1222,6 +1315,13 @@ _Actualizado el 2026-10-08, contrato de R2a_: una membresía `invited` no
 aparece como fila, porque no tiene entradas y R2a no muestra personas sin horas
 (llegan con R9). Si entra a `/reportes`, ve el aviso de RP-07: no tiene
 `report.view`.
+
+_Actualizado el 2026-10-09, R4b (D-R4-5)_: **una membresía `invited` no está en
+el filtro de personas, por su estado**, tenga o no horas, y su id en `personas`
+se ignora (RP-34). La interfaz no produce una invitada con horas; si la base
+tiene una, agrupando por persona su fila aparece con «(inactiva)», porque el
+reporte no pone condiciones sobre el estado de la membresía (RP-61) y marca toda
+membresía que no está activa (RP-31), pero no se la puede elegir en el filtro.
 
 **RP-65 Borrar una persona** — `adaptar`
 _No verificado_: la misma página dice «Deleted user is permanently removed from
@@ -1767,6 +1867,16 @@ descripción, mes y semana (R10). Filtrar por tarea, etiqueta, descripción o
 facturable, «Sin cliente» como filtro y guardar filtros siguen para la fase 3
 (RP-25, RP-26, RP-27).
 
+_Actualizado el 2026-10-09, R4b_: la parte B, el filtro de personas, está hecha,
+y lo que sigue describe el código de la rama `nucleo/r4b`. **Cubre además:**
+RP-25 (personas), RP-31 (dos personas con el mismo nombre en el filtro), RP-32
+(`personas` y lo que hace con quien no ve horas de otros), RP-34 (un id que no
+está en el filtro se ignora), RP-62 (las inactivas aparte y tachadas) y RP-64
+(las invitadas no están). El filtro de personas angosta el alcance y nunca lo
+ensancha: solo existe para owner y admin, y quien no ve horas de otros y trae
+`personas` en la URL ve lo propio. De «Queda para después», lo de R4b ya no
+queda; el resto sigue igual. Las secciones 12.6 a 12.8 juntan lo de la pantalla.
+
 ### 12.1 La barra
 
 - **«Filtrar por»**, después de «Subagrupar por», es un grupo nombrado por su
@@ -1838,6 +1948,23 @@ facturable, «Sin cliente» como filtro y guardar filtros siguen para la fase 3
 - **Lo inválido o inexistente en la URL se descarta sin aviso** (RP-32,
   RP-34): quien edita la URL a mano ve «todos» sin saber por qué.
 - **Esc y un clic afuera descartan lo tildado** sin preguntar.
+- **Con personas elegidas, la línea del alcance sigue diciendo «Ves las horas de
+  todas las personas del workspace.»**: dice lo que quien mira puede ver; lo
+  elegido lo dice «Personas: …» (D-R4-4).
+- **Quien no ve horas de otros no se entera de que el enlace traía personas**:
+  el parámetro se descarta sin aviso y la línea dice «Ves solo tus horas.»
+  (RP-32).
+- **Las inactivas van tachadas en el filtro y no en la tabla**: su fila sigue
+  con «(inactiva)» en gris (RP-31); el tachado es solo del panel (P-08).
+- **Dos personas con el mismo nombre son dos casillas iguales**: la opción no
+  muestra el correo (RP-31).
+- **Una persona activa sin horas está en el filtro** y, elegida sola, da el
+  segundo vacío: el filtro ofrece las personas del workspace, no las del
+  período (D-R4-5, D-R4-7).
+- **Una invitada con horas**, que solo deja la base, tiene su fila agrupando por
+  persona y no está en el filtro (RP-64).
+- **Con una sola persona elegida, el botón dice su nombre sin «(inactiva)»**,
+  aunque lo sea.
 
 ### 12.5 Qué puede hacer cada rol
 
@@ -1846,3 +1973,38 @@ facturable, «Sin cliente» como filtro y guardar filtros siguen para la fase 3
 | `owner`, `admin` activas                            | Todas las personas del workspace con horas, filtradas por cliente y proyecto en cada nivel y en el total; en el filtro de proyecto, los que `project.view` les deja ver | Cambiar el período, la agrupación, los subniveles y los filtros; quitar los filtros; expandir y contraer; recargar; compartir el enlace, que lleva los niveles y los filtros |
 | `project_manager`, `team_manager`, `member` activas | Solo lo propio, filtrado, también con el enlace de un admin con filtros; en el filtro de proyecto, los que `project.view` les deja ver                                  | Las mismas                                                                                                                                                                   |
 | Cualquiera no activa (`inactive`, `invited`)        | El aviso de RP-07                                                                                                                                                       | Ninguna                                                                                                                                                                      |
+
+### 12.6 R4b: la barra y el panel de personas
+
+- **«Personas: {resumen}»** va primero en «Filtrar por», antes de «Clientes» y
+  «Proyectos», solo para owner y admin: «todas», el nombre con una y la
+  cantidad con más. En pantallas angostas ocupa el ancho de la columna, el
+  texto que no entra se corta con puntos suspensivos y su nombre accesible
+  sigue entero, como los otros (12.1).
+- **El panel**, nombrado «Personas»: «Buscar personas», el grupo «Personas» con
+  las activas, «Inactivas» con los nombres tachados, la región del mensaje y
+  «Aplicar», que quedan a la vista con una lista larga, también a 1366×657, 375
+  y 320 px. El teclado es el de 12.2.
+- **Con una búsqueda** que solo coincide con inactivas queda solo «Inactivas»;
+  con ninguna, «Nada coincide con la búsqueda.». Para quien tiene el filtro, la
+  lista nunca está vacía: quien mira está en ella.
+
+### 12.7 R4b: estados y casos borde
+
+- **Con personas y sin grupos**: el segundo vacío; «Quitar filtros» también
+  quita las personas.
+- **Al recargar, con «Atrás» o con un enlace copiado**: las mismas personas, y el
+  botón lo dice.
+- **`personas` mal formado** se descarta entero y los otros filtros siguen; **los
+  ids que no están** se ignoran de a uno y se pierden al navegar; si se ignoran
+  todos, el reporte es el de todas y el vacío, el primero (RP-32, RP-34).
+- **Quien no ve horas de otros, con `personas`**: lo propio, sin el botón, y el
+  parámetro se pierde en la navegación siguiente.
+
+### 12.8 R4b: qué puede hacer cada rol
+
+| Membresía                                           | Ve                                                                                                                                                                                                 | Acciones                                          |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `owner`, `admin` activas                            | Todas las personas del workspace con horas, o solo las elegidas, filtradas además por cliente y proyecto en cada nivel y en el total; en el filtro, las activas y las inactivas, sin las invitadas | Las de 12.5, y elegir personas, también inactivas |
+| `project_manager`, `team_manager`, `member` activas | Solo lo propio, filtrado por cliente y proyecto, también con el enlace de un admin que elige personas; sin filtro de personas                                                                      | Las de 12.5, sin filtro de personas               |
+| Cualquiera no activa (`inactive`, `invited`)        | El aviso de RP-07                                                                                                                                                                                  | Ninguna                                           |
