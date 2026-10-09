@@ -14,7 +14,7 @@ import { filterAll, reportLabels } from "./labels";
 import type { ApplyEffect } from "./range-picker-model";
 import { reportHref } from "./report-href";
 
-export type FilterKind = "clients" | "projects";
+export type FilterKind = "people" | "clients" | "projects";
 
 /** Una opción del panel: la clave es el id, o `sin-proyecto`. */
 export type FilterOption = {
@@ -23,7 +23,7 @@ export type FilterOption = {
   /** El cliente de un proyecto, en gris; `null` en el resto. */
   readonly detail: string | null;
   readonly color: PaletteKey | null;
-  /** Archivado: va en el grupo de aparte (D-R4-8). */
+  /** Archivado o inactiva: va en el grupo de aparte (D-R4-8). */
   readonly retired: boolean;
 };
 
@@ -36,11 +36,23 @@ const WITHOUT_PROJECT_OPTION: FilterOption = {
   retired: false,
 };
 
-/** Las opciones de un filtro, del estado; en proyectos, «Sin proyecto» primero. */
+/**
+ * Las opciones de un filtro, del estado; en proyectos, «Sin proyecto» primero.
+ * Sin catálogo de personas (`null`), ninguna: la barra no dibuja ese filtro.
+ */
 export function filterOptionsOf(
   options: ReportReadyState["filterOptions"],
   kind: FilterKind,
 ): readonly FilterOption[] {
+  if (kind === "people") {
+    return (options.people ?? []).map((person) => ({
+      key: person.id,
+      name: person.name,
+      detail: null,
+      color: null,
+      retired: person.inactive,
+    }));
+  }
   if (kind === "clients") {
     return options.clients.map((client) => ({
       key: client.id,
@@ -64,6 +76,9 @@ export function filterOptionsOf(
 
 /** Lo elegido de un filtro, como claves; en proyectos, `sin-proyecto` si está. */
 export function chosenKeys(filters: ReportFilters, kind: FilterKind): readonly string[] {
+  if (kind === "people") {
+    return filters.people;
+  }
   if (kind === "clients") {
     return filters.clients;
   }
@@ -83,6 +98,9 @@ export function withChosen(
   const ids = options
     .filter((option) => option.key !== REPORT_WITHOUT_PROJECT && chosen.has(option.key))
     .map((option) => option.key);
+  if (kind === "people") {
+    return { ...filters, people: ids };
+  }
   if (kind === "clients") {
     return { ...filters, clients: ids };
   }

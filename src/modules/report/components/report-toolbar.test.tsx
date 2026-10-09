@@ -436,3 +436,79 @@ describe("ReportToolbar con filtros (D-R4-8, D-R4-10)", () => {
     });
   });
 });
+
+describe("ReportToolbar con el filtro de personas (D-R4-4, D-R4-8)", () => {
+  const ANA = "aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY";
+  const BRUNO = "Zq8Wn2Rt6Yu0Io4Pa8Sd2Fg6Hj0Kl4Mx";
+  const C1 = "c1000000-0000-4000-8000-000000000000";
+  const options: ReportReadyState["filterOptions"] = {
+    people: [
+      { id: ANA, name: "Ana", inactive: false },
+      { id: BRUNO, name: "Bruno", inactive: true },
+    ],
+    clients: [{ id: C1, name: "Acme", archived: false }],
+    projects: [],
+  };
+
+  /** Los botones de «Filtrar por», por su texto. */
+  function filterButtons(markup: string): string[] {
+    const start = markup.indexOf(">Filtrar por</span>");
+    expect(start).toBeGreaterThan(-1);
+    return buttonTexts(markup.slice(start));
+  }
+
+  it("con el catálogo de personas, «Personas: todas» antes de «Clientes»", () => {
+    expect(filterButtons(render({ filterOptions: options }))).toEqual([
+      "Personas: todas",
+      "Clientes: todos",
+      "Proyectos: todos",
+    ]);
+  });
+
+  it("sin el catálogo (`null`), no hay «Personas», aunque lleguen personas elegidas", () => {
+    const markup = render({
+      filterOptions: { ...options, people: null },
+      filters: { ...NO_REPORT_FILTERS, people: [ANA] },
+    });
+    expect(filterButtons(markup)).toEqual(["Clientes: todos", "Proyectos: todos"]);
+    expect(markup).not.toContain("Personas");
+  });
+
+  it("con una, el botón dice su nombre; con dos, la cantidad", () => {
+    expect(
+      filterButtons(
+        render({
+          filterOptions: options,
+          filters: { ...NO_REPORT_FILTERS, people: [BRUNO] },
+        }),
+      )[0],
+    ).toBe("Personas: Bruno");
+    expect(
+      filterButtons(
+        render({
+          filterOptions: options,
+          filters: { ...NO_REPORT_FILTERS, people: [ANA, BRUNO] },
+        }),
+      )[0],
+    ).toBe("Personas: 2");
+  });
+
+  it("las flechas, «Esta semana» y «Agrupar por» conservan `personas` con los ids tal cual", () => {
+    const markup = render({
+      filterOptions: options,
+      filters: { ...NO_REPORT_FILTERS, people: [ANA, BRUNO], clients: [C1] },
+    });
+    const kept = `&personas=${BRUNO}%2C${ANA}&clientes=${C1}`;
+    const found = links(markup);
+    expect(found.get("Período anterior")?.href).toBe(
+      `/reportes?desde=2026-09-21&hasta=2026-09-27&agrupar=proyecto${kept}`,
+    );
+    expect(found.get("Período siguiente")?.href).toBe(
+      `/reportes?desde=2026-10-05&hasta=2026-10-11&agrupar=proyecto${kept}`,
+    );
+    expect(found.get("Esta semana")?.href).toBe(
+      `/reportes?desde=2026-10-05&hasta=2026-10-11&agrupar=proyecto${kept}`,
+    );
+    expect(groupByLinks(markup).every(({ href }) => href.endsWith(kept))).toBe(true);
+  });
+});

@@ -27,9 +27,16 @@ const P2 = "a2000000-0000-4000-8000-000000000000";
 const P3 = "b3000000-0000-4000-8000-000000000000";
 const P4 = "d4000000-0000-4000-8000-000000000000";
 
+/** Ids de Better Auth: 32 alfanuméricos con mayúsculas. */
+const ANA = "aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY";
+const BRUNO = "Zq8Wn2Rt6Yu0Io4Pa8Sd2Fg6Hj0Kl4Mx";
+
 /** El catálogo del estado, ya en el orden de `compareNames`. */
 const catalog: ReportReadyState["filterOptions"] = {
-  people: null,
+  people: [
+    { id: ANA, name: "Ana", inactive: false },
+    { id: BRUNO, name: "Bruno", inactive: true },
+  ],
   clients: [
     { id: C1, name: "Acme", archived: false },
     { id: C2, name: "Bosque", archived: true },
@@ -54,6 +61,7 @@ const catalog: ReportReadyState["filterOptions"] = {
   ],
 };
 
+const peopleOptions = filterOptionsOf(catalog, "people");
 const clientOptions = filterOptionsOf(catalog, "clients");
 const projectOptions = filterOptionsOf(catalog, "projects");
 
@@ -102,6 +110,25 @@ describe("filterOptionsOf", () => {
   });
 });
 
+describe("filterOptionsOf, personas", () => {
+  it("el catálogo con la inactiva marcada, sin «Sin proyecto» y con los ids tal cual", () => {
+    expect(peopleOptions).toEqual([
+      { key: ANA, name: "Ana", detail: null, color: null, retired: false },
+      { key: BRUNO, name: "Bruno", detail: null, color: null, retired: true },
+    ]);
+  });
+
+  it("sin catálogo (`null`), ninguna", () => {
+    expect(filterOptionsOf({ ...catalog, people: null }, "people")).toEqual([]);
+  });
+
+  it("las inactivas van aparte", () => {
+    const visible = visibleOptions(peopleOptions, "");
+    expect(keysOf(visible.current)).toEqual([ANA]);
+    expect(keysOf(visible.retired)).toEqual([BRUNO]);
+  });
+});
+
 describe("visibleOptions", () => {
   it("sin búsqueda, las vigentes y los archivados separados, cada uno en su orden", () => {
     const visible = visibleOptions(projectOptions, "");
@@ -141,6 +168,7 @@ describe("chosenKeys y withChosen", () => {
     };
     expect(chosenKeys(filters, "projects")).toEqual([P2, P1, REPORT_WITHOUT_PROJECT]);
     expect(chosenKeys(filters, "clients")).toEqual([C1]);
+    expect(chosenKeys({ ...filters, people: [BRUNO] }, "people")).toEqual([BRUNO]);
     expect(chosenKeys(NO_REPORT_FILTERS, "projects")).toEqual([]);
   });
 
@@ -154,6 +182,12 @@ describe("chosenKeys y withChosen", () => {
     expect(
       withChosen(filters, "projects", [P2, REPORT_WITHOUT_PROJECT, P3], projectOptions),
     ).toEqual({ people: [], clients: [C2], projects: [P3, P2], withoutProject: true });
+    expect(withChosen(filters, "people", [BRUNO, ANA], peopleOptions)).toEqual({
+      people: [ANA, BRUNO],
+      clients: [C2],
+      projects: [P4],
+      withoutProject: false,
+    });
     expect(withChosen(filters, "clients", [C2, C1], clientOptions)).toEqual({
       people: [],
       clients: [C1, C2],
@@ -199,6 +233,12 @@ describe("hasNoMatches", () => {
 });
 
 describe("filterSummary (D-R4-8)", () => {
+  it("personas: «todas», el nombre de una o la cantidad", () => {
+    expect(filterSummary("people", [], peopleOptions)).toBe("todas");
+    expect(filterSummary("people", [BRUNO], peopleOptions)).toBe("Bruno");
+    expect(filterSummary("people", [ANA, BRUNO], peopleOptions)).toBe("2");
+  });
+
   it("con ninguno, «todos»", () => {
     expect(filterSummary("projects", [], projectOptions)).toBe("todos");
     expect(filterSummary("clients", [], clientOptions)).toBe("todos");
@@ -262,6 +302,33 @@ describe("applyFilter, el efecto de «Aplicar» (D-R4-8)", () => {
     expect(effect.href).toBe(
       `${base}&clientes=${C2}%2C${C1}&proyectos=${[...keys].sort().join("%2C")}`,
     );
+  });
+
+  it("personas: navega con `personas` antes de `clientes`, ordenada y con los ids tal cual", () => {
+    expect(applyFilter(location, "people", [ANA, BRUNO], peopleOptions)).toEqual({
+      open: false,
+      error: null,
+      href: `/reportes?desde=2026-09-28&hasta=2026-10-04&agrupar=proyecto&subagrupar=fecha&personas=${BRUNO}%2C${ANA}&clientes=${C2}%2C${C1}`,
+    });
+  });
+
+  it("personas: con 51 sigue abierto con el mensaje; con 50 navega", () => {
+    const people = (count: number): readonly FilterOption[] =>
+      Array.from({ length: count }, (_, index) => ({
+        key: `Persona${String(index).padStart(25, "0")}X`,
+        name: `Persona ${index}`,
+        detail: null,
+        color: null,
+        retired: index % 2 === 0,
+      }));
+    const many = people(REPORT_MAX_FILTER_VALUES + 1);
+    expect(applyFilter(location, "people", keysOf(many), many)).toEqual({
+      open: true,
+      error: "Elegí hasta 50.",
+      href: null,
+    });
+    const fifty = people(REPORT_MAX_FILTER_VALUES);
+    expect(applyFilter(location, "people", keysOf(fifty), fifty).open).toBe(false);
   });
 
   it("con 51 sigue abierto con «Elegí hasta 50.» y no navega", () => {

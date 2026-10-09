@@ -79,24 +79,29 @@ export const reportLabels = {
   filterNoMatches: "Nada coincide con la búsqueda.",
   /** RP-29: el grupo de aparte de clientes y proyectos. */
   archivedOptions: "Archivados",
+  /** RP-62, P-08: el grupo de aparte de personas, con los nombres tachados. */
+  inactiveOptions: "Inactivas",
   /** D-R4-2: con «Sin proyecto» contado. */
   filterTooMany: (maxValues: number) => `Elegí hasta ${maxValues}.`,
 } as const;
 
 /** El nombre de cada filtro: su botón y el grupo de sus opciones vigentes. */
 export const filterNames = {
+  people: "Personas",
   clients: "Clientes",
   projects: "Proyectos",
 } as const satisfies Record<FilterKind, string>;
 
 /** Lo que dice el botón de un filtro sin nada elegido. */
 export const filterAll = {
+  people: "todas",
   clients: "todos",
   projects: "todos",
 } as const satisfies Record<FilterKind, string>;
 
 /** El nombre accesible y el texto de ayuda del buscador de cada filtro. */
 export const filterSearch = {
+  people: "Buscar personas",
   clients: "Buscar clientes",
   projects: "Buscar proyectos",
 } as const satisfies Record<FilterKind, string>;
