@@ -14,4 +14,5 @@ Convertís la especificación de paridad en flujos de Playwright.
 3. Sin esperas fijas: se espera por el estado visible.
 4. La sesión se obtiene por el endpoint de prueba, que solo existe fuera de
    producción. Los e2e no pasan por el login de Google.
-5. Corren contra `E2E_BASE_URL`, el preview del pull request.
+5. Corren contra un servidor local que levanta `playwright.config.ts`, también en CI;
+   `E2E_BASE_URL` (un preview) queda para correrlos a mano.
