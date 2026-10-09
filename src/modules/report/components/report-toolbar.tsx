@@ -12,9 +12,9 @@ import { reportHref } from "./report-href";
 const GROUP_BY_LABEL_ID = "reporte-agrupar";
 
 /**
- * RP-20 y RP-11: las flechas del período, el rango que abre el calendario, el
- * atajo a la semana en curso y la agrupación. Cada enlace conserva lo que no
- * cambia (D-R2a-4).
+ * RP-20 y RP-11: las flechas del período, el rango que abre los atajos y el
+ * calendario, el enlace a la semana en curso y la agrupación. Cada enlace
+ * conserva lo que no cambia (D-R2a-4).
  */
 export function ReportToolbar({ state }: { readonly state: ReportReadyState }) {
   const { range, groupBy, currentWeek } = state;
@@ -48,6 +48,7 @@ export function ReportToolbar({ state }: { readonly state: ReportReadyState }) {
         rangeLabel={state.rangeLabel}
         todayKey={state.todayKey}
         groupBy={groupBy}
+        shortcuts={state.shortcuts}
       />
       {!isCurrentWeek && (
         <Link
@@ -68,6 +69,7 @@ export function ReportToolbar({ state }: { readonly state: ReportReadyState }) {
         >
           <GroupByLink state={state} value="person" label={reportLabels.byPerson} />
           <GroupByLink state={state} value="project" label={reportLabels.byProject} />
+          <GroupByLink state={state} value="client" label={reportLabels.byClient} />
         </div>
       </div>
     </div>

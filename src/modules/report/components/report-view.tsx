@@ -3,6 +3,7 @@ import { paletteColor } from "@/modules/project/palette";
 import type {
   ReportClientGroup,
   ReportGroup,
+  ReportGroupBy,
   ReportPersonGroup,
   ReportProjectGroup,
   ReportReadyState,
@@ -13,6 +14,13 @@ import { reportLabels } from "./labels";
 
 /** El `h1` de la pantalla, que nombra la tabla. */
 export const REPORT_HEADING_ID = "reporte-titulo";
+
+/** El encabezado de la primera columna, por la agrupación. */
+const GROUP_COLUMN_HEADINGS = {
+  person: reportLabels.byPerson,
+  project: reportLabels.byProject,
+  client: reportLabels.byClient,
+} as const satisfies Record<ReportGroupBy, string>;
 
 /**
  * Cada cifra se trunca al minuto por separado, la de cada fila y la del total:
@@ -58,9 +66,7 @@ export function ReportView({ state }: { readonly state: ReportReadyState }) {
           <thead className="border-b">
             <tr>
               <th scope="col" className="px-3 py-2 text-left font-medium">
-                {state.groupBy === "person"
-                  ? reportLabels.byPerson
-                  : reportLabels.byProject}
+                {GROUP_COLUMN_HEADINGS[state.groupBy]}
               </th>
               <th scope="col" className="px-3 py-2 text-right font-medium">
                 {reportLabels.duration}

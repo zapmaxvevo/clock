@@ -133,6 +133,30 @@ describe("ReportView", () => {
     expect(markup.match(/background-color/g)).toHaveLength(2);
   });
 
+  it("por cliente, el encabezado «Cliente», el nombre y «Sin cliente» en gris (RP-28)", () => {
+    const groups: ReportGroup[] = [
+      {
+        kind: "client",
+        client: { id: "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d", name: "Acme" },
+        seconds: 5_400,
+      },
+      { kind: "client", client: null, seconds: 3_600 },
+    ];
+    const markup = render({ groupBy: "client", groups, totalSeconds: 9_000 });
+    expect(markup).toMatch(/<th scope="col"[^>]*>Cliente<\/th>/);
+    expect(bodyRows(markup)).toEqual([
+      ["Acme", "1:30"],
+      ["Sin cliente", "1:00"],
+    ]);
+    expect(markup).toMatch(/<th scope="row"[^>]*><span class="truncate">Acme<\/span>/);
+    expect(markup).toMatch(
+      /<th scope="row"[^>]*><span class="text-muted-foreground">Sin cliente<\/span>/,
+    );
+    // Sin el punto del proyecto: la fila es del cliente.
+    expect(markup).not.toContain("background-color");
+    expect(totals(markup).Total).toBe("2:30");
+  });
+
   it("cada cifra se trunca al minuto por separado: dos filas de 90 s y el total 0:03 (§5.3)", () => {
     const groups: ReportGroup[] = [
       { kind: "person", userId: "u1", name: "Ana", inactive: false, seconds: 90 },

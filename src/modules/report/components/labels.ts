@@ -1,6 +1,8 @@
 /**
- * Textos del reporte resumido. «Sin proyecto» es `projectLabels.noProject`; los
- * mensajes del rango salen de `reportMessages`, en el esquema del módulo.
+ * Textos del reporte resumido. «Sin proyecto» y «Sin cliente» son
+ * `projectLabels.noProject` y `projectLabels.noClient`; los rótulos de los
+ * atajos llegan en el estado y los mensajes del rango salen de
+ * `reportMessages`, en el esquema del módulo.
  */
 export const reportLabels = {
   /** El título visible, que también nombra la tabla. */
@@ -19,10 +21,13 @@ export const reportLabels = {
   previousMonth: "Mes anterior",
   nextMonth: "Mes siguiente",
   apply: "Aplicar",
-  /** RP-11: un nivel, por persona o por proyecto. */
+  /** RP-20: la lista de períodos con nombre, dentro del selector (D-R2b-2). */
+  shortcuts: "Atajos",
+  /** RP-11: un nivel, por persona, por proyecto o por cliente. */
   groupBy: "Agrupar por",
   byPerson: "Persona",
   byProject: "Proyecto",
+  byClient: "Cliente",
   duration: "Duración",
   /** RP-18. */
   total: "Total",

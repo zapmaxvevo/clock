@@ -1,19 +1,22 @@
 "use client";
 
 import { CalendarIcon } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { DateRange } from "react-day-picker";
 import { es } from "react-day-picker/locale";
 
 import { civilDate } from "@/components/civil-date";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import type { ReportGroupBy, ReportRange } from "@/modules/report/schema";
+import { cn } from "@/lib/utils";
+import type { ReportGroupBy, ReportRange, ReportShortcut } from "@/modules/report/schema";
 
 import { reportLabels } from "./labels";
 import { applySelection, selectionOf } from "./range-picker-model";
+import { reportHref } from "./report-href";
 
 type RangePickerProps = {
   readonly range: ReportRange;
@@ -22,14 +25,22 @@ type RangePickerProps = {
   /** Día de hoy en la zona de quien mira: la marca del calendario. */
   readonly todayKey: string;
   readonly groupBy: ReportGroupBy;
+  /** Los atajos de hoy, en el orden de la lista (D-R2b-2). */
+  readonly shortcuts: readonly ReportShortcut[];
 };
 
 /**
- * RP-20 y D-R2a-4: el período, que abre un calendario de rango con «Aplicar».
- * Cada vez que abre, parte del período que se ve. Esc cierra sin navegar y,
- * al cerrar, el foco vuelve al botón.
+ * RP-20 y D-R2a-4: el período, que abre los atajos y un calendario de rango con
+ * «Aplicar». Cada vez que abre, parte del período que se ve. Un atajo y Esc
+ * cierran y, al cerrar, el foco vuelve al botón.
  */
-export function RangePicker({ range, rangeLabel, todayKey, groupBy }: RangePickerProps) {
+export function RangePicker({
+  range,
+  rangeLabel,
+  todayKey,
+  groupBy,
+  shortcuts,
+}: RangePickerProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [selection, setSelection] = useState<DateRange | undefined>(() =>
@@ -74,8 +85,13 @@ export function RangePicker({ range, rangeLabel, todayKey, groupBy }: RangePicke
           month={civilDate(range.first)}
           todayKey={todayKey}
           error={error}
+          shortcuts={shortcuts}
+          range={range}
+          groupBy={groupBy}
           onSelect={handleSelect}
           onApply={handleApply}
+          // El rango del atajo ya es válido: navega sin pasar por «Aplicar».
+          onShortcut={() => setOpen(false)}
         />
       </PopoverContent>
     </Popover>
@@ -89,59 +105,106 @@ type RangePanelProps = {
   readonly todayKey: string;
   /** RP-34: el mensaje de la última vez que se apretó «Aplicar». */
   readonly error: string | null;
+  readonly shortcuts: readonly ReportShortcut[];
+  /** El período que se ve: su atajo lleva `aria-current`. */
+  readonly range: ReportRange;
+  /** La agrupación que conservan los enlaces de los atajos. */
+  readonly groupBy: ReportGroupBy;
   readonly onSelect: (selection: DateRange | undefined) => void;
   readonly onApply: () => void;
+  /** Al elegir un atajo, antes de navegar. */
+  readonly onShortcut: () => void;
 };
 
 /**
- * Lo que hay dentro del selector. Con `resetOnSelect`, sobre un rango completo
- * el primer clic arranca uno nuevo sin fin y el segundo lo cierra; sin él,
- * cada clic extendería o recortaría el rango que ya estaba.
+ * Lo que hay dentro del selector: los atajos y el calendario. Con
+ * `resetOnSelect`, sobre un rango completo el primer clic arranca uno nuevo sin
+ * fin y el segundo lo cierra; sin él, cada clic extendería o recortaría el
+ * rango que ya estaba.
  */
 export function RangePanel({
   selection,
   month,
   todayKey,
   error,
+  shortcuts,
+  range,
+  groupBy,
   onSelect,
   onApply,
+  onShortcut,
 }: RangePanelProps) {
   const empty = selection?.from === undefined;
 
   return (
-    <div className="flex flex-col">
-      <Calendar
-        mode="range"
-        resetOnSelect
-        locale={es}
-        // «Hoy» es el de la zona de la persona, no el del navegador.
-        today={civilDate(todayKey)}
-        selected={selection}
-        defaultMonth={month}
-        labels={{
-          labelPrevious: () => reportLabels.previousMonth,
-          labelNext: () => reportLabels.nextMonth,
-        }}
-        onSelect={onSelect}
-        autoFocus
-      />
-      <div className="flex flex-col gap-2 border-t p-2">
-        {/* Siempre montada, así el lector anuncia el mensaje cuando aparece. */}
-        <p role="alert" className="text-destructive text-sm empty:hidden">
-          {error}
-        </p>
-        <Button
-          type="button"
-          size="sm"
-          // Con `aria-disabled` y no con `disabled`: sigue en el orden del
-          // tabulador y se anuncia como inactivo. Sin selección, `applySelection`
-          // deja todo como está.
-          aria-disabled={empty || undefined}
-          className="self-end"
-          onClick={onApply}
+    // Los atajos van antes del calendario en el orden del documento: arriba en
+    // pantallas angostas y a la izquierda en las anchas. El foco inicial sigue
+    // en el calendario y los atajos se alcanzan con Mayús+Tab.
+    <div className="flex flex-col sm:flex-row">
+      {shortcuts.length > 0 && (
+        <ul
+          aria-label={reportLabels.shortcuts}
+          className="flex flex-wrap gap-0.5 border-b p-2 sm:flex-col sm:flex-nowrap sm:border-r sm:border-b-0"
         >
-          {reportLabels.apply}
-        </Button>
+          {shortcuts.map((shortcut) => {
+            // De presentación, como `isCurrentWeek` de la barra.
+            const current =
+              shortcut.range.first === range.first && shortcut.range.last === range.last;
+            return (
+              <li key={shortcut.id}>
+                <Link
+                  href={reportHref({ range: shortcut.range, groupBy })}
+                  aria-current={current ? "true" : undefined}
+                  // Solo en la navegación de la app: con Ctrl o Cmd abre otra
+                  // pestaña y el selector sigue abierto.
+                  onNavigate={onShortcut}
+                  className={cn(
+                    buttonVariants({ variant: "ghost", size: "sm" }),
+                    "justify-start sm:w-full",
+                    current ? "bg-secondary font-semibold" : "font-normal",
+                  )}
+                >
+                  {shortcut.label}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <div className="flex flex-col">
+        <Calendar
+          mode="range"
+          resetOnSelect
+          locale={es}
+          // «Hoy» es el de la zona de la persona, no el del navegador.
+          today={civilDate(todayKey)}
+          selected={selection}
+          defaultMonth={month}
+          labels={{
+            labelPrevious: () => reportLabels.previousMonth,
+            labelNext: () => reportLabels.nextMonth,
+          }}
+          onSelect={onSelect}
+          autoFocus
+        />
+        <div className="flex flex-col gap-2 border-t p-2">
+          {/* Siempre montada, así el lector anuncia el mensaje cuando aparece. */}
+          <p role="alert" className="text-destructive text-sm empty:hidden">
+            {error}
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            // Con `aria-disabled` y no con `disabled`: sigue en el orden del
+            // tabulador y se anuncia como inactivo. Sin selección, `applySelection`
+            // deja todo como está.
+            aria-disabled={empty || undefined}
+            className="self-end"
+            onClick={onApply}
+          >
+            {reportLabels.apply}
+          </Button>
+        </div>
       </div>
     </div>
   );
