@@ -4,7 +4,7 @@ import { civilDate, dayKeyOfCivilDate } from "@/components/civil-date";
 import {
   reportMessages,
   reportRangeInput,
-  type ReportGroupBy,
+  type ReportGrouping,
   type ReportRange,
 } from "@/modules/report/schema";
 
@@ -30,11 +30,11 @@ export function selectionOf(range: ReportRange): DateRange {
  * el mismo esquema que la URL, así un período que la página descartaría no se
  * pide nunca. Sin selección no pasa nada (`aria-disabled`); con un período
  * inválido el selector sigue abierto con el mensaje de RP-34; con uno válido
- * cierra y navega, con la misma agrupación.
+ * cierra y navega, con la misma agrupación y sus subniveles.
  */
 export function applySelection(
   selection: DateRange | undefined,
-  groupBy: ReportGroupBy,
+  grouping: ReportGrouping,
 ): ApplyEffect {
   const from = selection?.from;
   if (from === undefined) {
@@ -51,5 +51,9 @@ export function applySelection(
       href: null,
     };
   }
-  return { open: false, error: null, href: reportHref({ range: parsed.data, groupBy }) };
+  return {
+    open: false,
+    error: null,
+    href: reportHref({ range: parsed.data, ...grouping }),
+  };
 }

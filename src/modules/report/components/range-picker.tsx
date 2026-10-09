@@ -14,7 +14,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from "@/lib/utils";
 import {
   sameRange,
-  type ReportGroupBy,
+  type ReportGrouping,
   type ReportRange,
   type ReportShortcut,
 } from "@/modules/report/schema";
@@ -29,7 +29,8 @@ type RangePickerProps = {
   readonly rangeLabel: string;
   /** Día de hoy en la zona de quien mira: la marca del calendario. */
   readonly todayKey: string;
-  readonly groupBy: ReportGroupBy;
+  /** La agrupación y los subniveles que conservan «Aplicar» y los atajos. */
+  readonly grouping: ReportGrouping;
   /** Los atajos de hoy, en el orden de la lista (D-R2b-2). */
   readonly shortcuts: readonly ReportShortcut[];
 };
@@ -43,7 +44,7 @@ export function RangePicker({
   range,
   rangeLabel,
   todayKey,
-  groupBy,
+  grouping,
   shortcuts,
 }: RangePickerProps) {
   const router = useRouter();
@@ -67,7 +68,7 @@ export function RangePicker({
   }
 
   function handleApply(): void {
-    const effect = applySelection(selection, groupBy);
+    const effect = applySelection(selection, grouping);
     setOpen(effect.open);
     setError(effect.error);
     if (effect.href !== null) {
@@ -97,7 +98,7 @@ export function RangePicker({
           error={error}
           shortcuts={shortcuts}
           range={range}
-          groupBy={groupBy}
+          grouping={grouping}
           onSelect={handleSelect}
           onApply={handleApply}
           // El rango del atajo ya es válido: navega sin pasar por «Aplicar».
@@ -118,8 +119,8 @@ type RangePanelProps = {
   readonly shortcuts: readonly ReportShortcut[];
   /** El período que se ve: su atajo lleva `aria-current`. */
   readonly range: ReportRange;
-  /** La agrupación que conservan los enlaces de los atajos. */
-  readonly groupBy: ReportGroupBy;
+  /** La agrupación y los subniveles que conservan los enlaces de los atajos. */
+  readonly grouping: ReportGrouping;
   readonly onSelect: (selection: DateRange | undefined) => void;
   readonly onApply: () => void;
   /** Al elegir un atajo, antes de navegar. */
@@ -139,7 +140,7 @@ export function RangePanel({
   error,
   shortcuts,
   range,
-  groupBy,
+  grouping,
   onSelect,
   onApply,
   onShortcut,
@@ -162,7 +163,7 @@ export function RangePanel({
             return (
               <li key={shortcut.id}>
                 <Link
-                  href={reportHref({ range: shortcut.range, groupBy })}
+                  href={reportHref({ range: shortcut.range, ...grouping })}
                   aria-current={current ? "true" : undefined}
                   // Solo en la navegación de la app: con Ctrl o Cmd abre otra
                   // pestaña y el selector sigue abierto.

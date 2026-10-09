@@ -296,3 +296,122 @@ describe("ReportView", () => {
     expect(totals(markup).Total).toBe("0:03");
   });
 });
+
+describe("ReportView con subniveles (D-R3-6, D-R3-9)", () => {
+  const P1 = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+  const P2 = "2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d";
+  const tuesday = { kind: "date", dayKey: "2026-09-29", label: "mar, 29/09" } as const;
+  const thursday = { kind: "date", dayKey: "2026-10-01", label: "jue, 01/10" } as const;
+
+  /** Proyecto → Fecha, como el recorrido 11. */
+  const byProjectAndDate: ReportGroup[] = [
+    {
+      kind: "project",
+      project: { id: P1, name: "P1", color: "teal" },
+      client: null,
+      seconds: 5_400,
+      children: [
+        { ...tuesday, seconds: 3_600 },
+        { ...thursday, seconds: 1_800 },
+      ],
+    },
+    {
+      kind: "project",
+      project: { id: P2, name: "P2", color: "red" },
+      client: null,
+      seconds: 2_700,
+      children: [{ ...tuesday, seconds: 2_700 }],
+    },
+  ];
+
+  /** Lo mismo con el segundo nivel cortado por el tope: sin `children`. */
+  const cut: ReportGroup[] = byProjectAndDate.map((group) => ({
+    ...group,
+    children: undefined,
+  }));
+
+  function renderTree(overrides: Partial<ReportReadyState>): string {
+    return render({
+      groupBy: "project",
+      subgroups: ["date"],
+      levelsShown: 2,
+      groups: byProjectAndDate,
+      totalSeconds: 8_100,
+      ...overrides,
+    });
+  }
+
+  it("la primera pintura muestra solo el primer nivel, contraído", () => {
+    const markup = renderTree({});
+    expect(bodyRows(markup)).toEqual([
+      ["P1", "1:30"],
+      ["P2", "0:45"],
+    ]);
+    expect(markup).not.toContain("mar, 29/09");
+    expect(markup).not.toContain("<time");
+  });
+
+  it("cada grupo con hijos lleva un botón con aria-expanded=false, el chevrón oculto y su nombre", () => {
+    const markup = renderTree({});
+    const buttons = [...markup.matchAll(/<button ([^>]*)>(.*?)<\/button>/g)];
+    expect(buttons).toHaveLength(2);
+    for (const [, attributes, content] of buttons) {
+      expect(attributes).toContain('type="button"');
+      expect(attributes).toContain('aria-expanded="false"');
+      expect(attributes).not.toContain("aria-controls");
+      expect(content).toMatch(/^<svg[^>]*aria-hidden="true"/);
+    }
+    expect(buttons.map(([, , content]) => content.replace(/<[^>]+>/g, ""))).toEqual([
+      "P1",
+      "P2",
+    ]);
+    expect(markup).toMatch(/<th scope="row"[^>]*><span[^>]*><button /);
+  });
+
+  it("con el segundo nivel cortado, ninguna fila lleva botón", () => {
+    const markup = renderTree({ groups: cut, levelsShown: 1 });
+    expect(bodyRows(markup)).toEqual([
+      ["P1", "1:30"],
+      ["P2", "0:45"],
+    ]);
+    expect(markup).not.toContain("<button");
+    expect(markup).not.toContain("aria-expanded");
+  });
+
+  it("el encabezado une los rótulos de los niveles que se muestran", () => {
+    expect(renderTree({})).toMatch(/<th scope="col"[^>]*>Proyecto \/ Fecha<\/th>/);
+    expect(
+      renderTree({
+        subgroups: ["date", "tag"],
+        levelsShown: 3,
+      }),
+    ).toMatch(/<th scope="col"[^>]*>Proyecto \/ Fecha \/ Etiqueta<\/th>/);
+    expect(renderTree({ groups: cut, levelsShown: 1 })).toMatch(
+      /<th scope="col"[^>]*>Proyecto<\/th>/,
+    );
+  });
+
+  it("la línea del tope, encima de la tabla, solo si se muestran menos niveles que los pedidos", () => {
+    const limit =
+      "El reporte pasa de 3000 filas con todos sus niveles: se muestran solo los de arriba. Acortá el período o quitá un nivel.";
+    const markup = renderTree({ groups: cut, levelsShown: 1 });
+    expect(markup).toContain(limit);
+    expect(markup.indexOf(limit)).toBeLessThan(markup.indexOf("<table"));
+    expect(renderTree({ subgroups: ["date", "tag"], levelsShown: 2 })).toContain(limit);
+    expect(renderTree({})).not.toContain(limit);
+    expect(render({})).not.toContain(limit);
+  });
+
+  it("la línea de la etiqueta con la etiqueta en el segundo nivel, y no si ese nivel quedó cortado", () => {
+    const overlap = "Una entrada con varias etiquetas suma en cada una";
+    expect(renderTree({ subgroups: ["tag"] })).toContain(overlap);
+    expect(renderTree({ subgroups: ["date", "tag"], levelsShown: 3 })).toContain(overlap);
+    expect(renderTree({ subgroups: ["tag"], groups: cut, levelsShown: 1 })).not.toContain(
+      overlap,
+    );
+    expect(renderTree({ subgroups: ["date", "tag"], levelsShown: 2 })).not.toContain(
+      overlap,
+    );
+    expect(renderTree({})).not.toContain(overlap);
+  });
+});

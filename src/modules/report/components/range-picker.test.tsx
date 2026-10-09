@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as CalendarModule from "@/components/ui/calendar";
 import {
   reportMessages,
-  type ReportGroupBy,
+  type ReportGrouping,
   type ReportRange,
   type ReportShortcut,
 } from "@/modules/report/schema";
@@ -95,8 +95,11 @@ type PanelOptions = {
   readonly error?: string | null;
   readonly shortcuts?: readonly ReportShortcut[];
   readonly range?: ReportRange;
-  readonly groupBy?: ReportGroupBy;
+  readonly grouping?: ReportGrouping;
 };
+
+const BY_PERSON: ReportGrouping = { groupBy: "person", subgroups: [] };
+const BY_PROJECT: ReportGrouping = { groupBy: "project", subgroups: [] };
 
 function renderPanel(
   selection: DateRange | undefined,
@@ -104,7 +107,7 @@ function renderPanel(
     error = null,
     shortcuts = SHORTCUTS,
     range = { first: "2026-10-05", last: "2026-10-11" },
-    groupBy = "person",
+    grouping = BY_PERSON,
   }: PanelOptions = {},
 ): string {
   return renderToStaticMarkup(
@@ -115,7 +118,7 @@ function renderPanel(
       error={error}
       shortcuts={shortcuts}
       range={range}
-      groupBy={groupBy}
+      grouping={grouping}
       onSelect={() => undefined}
       onApply={() => undefined}
       onShortcut={() => undefined}
@@ -158,12 +161,12 @@ const thisWeek = selectionOf({ first: "2026-10-05", last: "2026-10-11" });
 
 describe("applySelection, el efecto de «Aplicar»", () => {
   it("sin selección, el selector sigue abierto, sin mensaje y sin navegar", () => {
-    expect(applySelection(undefined, "person")).toEqual({
+    expect(applySelection(undefined, BY_PERSON)).toEqual({
       open: true,
       error: null,
       href: null,
     });
-    expect(applySelection({ from: undefined }, "person")).toEqual({
+    expect(applySelection({ from: undefined }, BY_PERSON)).toEqual({
       open: true,
       error: null,
       href: null,
@@ -172,13 +175,26 @@ describe("applySelection, el efecto de «Aplicar»", () => {
 
   it("con 367 días, sigue abierto con el mensaje de RP-34 y sin navegar", () => {
     expect(
-      applySelection({ from: day("2025-10-01"), to: day("2026-10-02") }, "person"),
+      applySelection({ from: day("2025-10-01"), to: day("2026-10-02") }, BY_PERSON),
     ).toEqual({ open: true, error: reportMessages.rangeTooLong, href: null });
+  });
+
+  it("con un período válido, navega con los subniveles (D-R3-8)", () => {
+    expect(
+      applySelection(
+        { from: day("2026-09-01"), to: day("2026-09-30") },
+        { groupBy: "tag", subgroups: ["person"] },
+      ),
+    ).toEqual(
+      navigatesTo(
+        "/reportes?desde=2026-09-01&hasta=2026-09-30&agrupar=etiqueta&subagrupar=persona",
+      ),
+    );
   });
 
   it("con 366 días, cierra y navega", () => {
     expect(
-      applySelection({ from: day("2025-10-02"), to: day("2026-10-02") }, "person"),
+      applySelection({ from: day("2025-10-02"), to: day("2026-10-02") }, BY_PERSON),
     ).toEqual(navigatesTo("/reportes?desde=2025-10-02&hasta=2026-10-02&agrupar=persona"));
   });
 });
@@ -200,7 +216,7 @@ describe("RangePicker", () => {
 
   it("con el rango actual elegido, un clic y «Aplicar» navegan con desde = hasta en ese día", () => {
     const selection = clickOn(thisWeek, "2026-09-30");
-    expect(applySelection(selection, "project")).toEqual(
+    expect(applySelection(selection, BY_PROJECT)).toEqual(
       navigatesTo("/reportes?desde=2026-09-30&hasta=2026-09-30&agrupar=proyecto"),
     );
   });
@@ -208,7 +224,7 @@ describe("RangePicker", () => {
   it("con el rango actual elegido, dos clics fuera de él arman el rango entre esos dos días", () => {
     const first = clickOn(thisWeek, "2026-10-20");
     const second = clickOn(first, "2026-10-25");
-    expect(applySelection(second, "person")).toEqual(
+    expect(applySelection(second, BY_PERSON)).toEqual(
       navigatesTo("/reportes?desde=2026-10-20&hasta=2026-10-25&agrupar=persona"),
     );
   });
@@ -216,7 +232,7 @@ describe("RangePicker", () => {
   it("con el segundo clic anterior al primero, los extremos se invierten", () => {
     const first = clickOn(thisWeek, "2026-10-25");
     const second = clickOn(first, "2026-10-20");
-    expect(applySelection(second, "person")).toEqual(
+    expect(applySelection(second, BY_PERSON)).toEqual(
       navigatesTo("/reportes?desde=2026-10-20&hasta=2026-10-25&agrupar=persona"),
     );
   });
@@ -224,7 +240,7 @@ describe("RangePicker", () => {
   it("con un período de un día, un clic en ese día deja «Aplicar» sin efecto", () => {
     const oneDay = selectionOf({ first: "2026-10-08", last: "2026-10-08" });
     const selection = clickOn(oneDay, "2026-10-08");
-    expect(applySelection(selection, "person")).toEqual({
+    expect(applySelection(selection, BY_PERSON)).toEqual({
       open: true,
       error: null,
       href: null,
@@ -260,13 +276,28 @@ describe("RangePanel, los atajos (RP-20, D-R2b-10)", () => {
   });
 
   it("cada atajo lleva a su rango con la agrupación recibida", () => {
-    const found = shortcutLinks(renderPanel(thisWeek, { groupBy: "client" }));
+    const grouping: ReportGrouping = { groupBy: "client", subgroups: [] };
+    const found = shortcutLinks(renderPanel(thisWeek, { grouping }));
     expect(found?.map(({ href }) => href)).toEqual(
-      SHORTCUTS.map(({ range }) => reportHref({ range, groupBy: "client" })),
+      SHORTCUTS.map(({ range }) => reportHref({ range, ...grouping })),
     );
     expect(found?.[6].href).toBe(
       "/reportes?desde=2026-09-01&hasta=2026-09-30&agrupar=cliente",
     );
+  });
+
+  it("cada atajo conserva los subniveles (D-R3-8)", () => {
+    const found = shortcutLinks(
+      renderPanel(thisWeek, {
+        grouping: { groupBy: "project", subgroups: ["date", "tag"] },
+      }),
+    );
+    expect(found?.[6].href).toBe(
+      "/reportes?desde=2026-09-01&hasta=2026-09-30&agrupar=proyecto&subagrupar=fecha%2Cetiqueta",
+    );
+    expect(
+      found?.every(({ href }) => href.endsWith("&subagrupar=fecha%2Cetiqueta")),
+    ).toBe(true);
   });
 
   it("solo el atajo del período que se ve lleva aria-current", () => {

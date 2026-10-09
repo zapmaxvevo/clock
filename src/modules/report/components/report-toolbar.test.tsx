@@ -217,3 +217,79 @@ describe("ReportToolbar", () => {
     expect(render()).toContain('aria-label="Elegir período: Semana anterior"');
   });
 });
+
+describe("ReportToolbar con subniveles (D-R3-8)", () => {
+  /** Los botones de «Subagrupar por», por su texto. */
+  function subgroupButtons(markup: string): string[] {
+    const start = markup.indexOf(">Subagrupar por</span>");
+    expect(start).toBeGreaterThan(-1);
+    return [...markup.slice(start).matchAll(/<button[^>]*>(.*?)<\/button>/g)].map(
+      ([, content]) => content.replace(/<[^>]+>/g, ""),
+    );
+  }
+
+  it("«Subagrupar por» es un grupo nombrado por su rótulo, después de «Agrupar por»", () => {
+    const markup = render();
+    const labelIds = [
+      ...markup.matchAll(/<div role="group" aria-labelledby="([^"]+)"/g),
+    ].map(([, id]) => id);
+    expect(labelIds).toHaveLength(2);
+    expect(markup).toMatch(
+      new RegExp(`<span id="${labelIds[1]}"[^>]*>Subagrupar por</span>`),
+    );
+    expect(markup.indexOf(">Agrupar por<")).toBeLessThan(
+      markup.indexOf(">Subagrupar por<"),
+    );
+  });
+
+  it("sin subniveles, «Segundo nivel: Ninguno» y sin «Tercer nivel»", () => {
+    const markup = render();
+    expect(subgroupButtons(markup)).toEqual(["Segundo nivel: Ninguno"]);
+    expect(markup).not.toContain("Tercer nivel");
+  });
+
+  it("con segundo nivel, el botón lo dice y aparece «Tercer nivel: Ninguno»", () => {
+    expect(subgroupButtons(render({ subgroups: ["date"] }))).toEqual([
+      "Segundo nivel: Fecha",
+      "Tercer nivel: Ninguno",
+    ]);
+  });
+
+  it("con tres niveles, cada botón dice el suyo, aunque el tope los haya cortado", () => {
+    expect(
+      subgroupButtons(render({ subgroups: ["date", "tag"], levelsShown: 1 })),
+    ).toEqual(["Segundo nivel: Fecha", "Tercer nivel: Etiqueta"]);
+  });
+
+  it("las flechas y «Esta semana» conservan los subniveles", () => {
+    const found = links(render({ subgroups: ["date", "tag"] }));
+    expect(found.get("Período anterior")?.href).toBe(
+      "/reportes?desde=2026-09-21&hasta=2026-09-27&agrupar=proyecto&subagrupar=fecha%2Cetiqueta",
+    );
+    expect(found.get("Período siguiente")?.href).toBe(
+      "/reportes?desde=2026-10-05&hasta=2026-10-11&agrupar=proyecto&subagrupar=fecha%2Cetiqueta",
+    );
+    expect(found.get("Esta semana")?.href).toBe(
+      "/reportes?desde=2026-10-05&hasta=2026-10-11&agrupar=proyecto&subagrupar=fecha%2Cetiqueta",
+    );
+  });
+
+  it("«Agrupar por» conserva los subniveles y, con una que está abajo, las intercambia", () => {
+    const base = "/reportes?desde=2026-09-28&hasta=2026-10-04";
+    expect(
+      Object.fromEntries(
+        groupByLinks(render({ subgroups: ["date", "tag"] })).map(({ label, href }) => [
+          label,
+          href,
+        ]),
+      ),
+    ).toEqual({
+      Persona: `${base}&agrupar=persona&subagrupar=fecha%2Cetiqueta`,
+      Proyecto: `${base}&agrupar=proyecto&subagrupar=fecha%2Cetiqueta`,
+      Cliente: `${base}&agrupar=cliente&subagrupar=fecha%2Cetiqueta`,
+      Tarea: `${base}&agrupar=tarea&subagrupar=fecha%2Cetiqueta`,
+      Etiqueta: `${base}&agrupar=etiqueta&subagrupar=fecha%2Cproyecto`,
+      Fecha: `${base}&agrupar=fecha&subagrupar=proyecto%2Cetiqueta`,
+    });
+  });
+});
