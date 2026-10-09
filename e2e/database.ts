@@ -169,6 +169,25 @@ export async function revokeProjectManager(email: string, name: string): Promise
 }
 
 /**
+ * El id de una persona del workspace de los e2e por su email, tal como lo
+ * guarda la base: el de la sesión lo genera Better Auth, con mayúsculas, y
+ * el filtro de personas lo nombra así (D-R4-2, D-R4-13).
+ */
+export async function userIdOf(email: string): Promise<string> {
+  return withDatabase((client) =>
+    selectOneId(
+      client,
+      `select "user".id
+         from "user"
+         join membership on membership.user_id = "user".id
+        where membership.workspace_id = ${FIRST_WORKSPACE}
+          and "user".email = $1`,
+      [email],
+    ),
+  );
+}
+
+/**
  * El id de un proyecto del workspace de los e2e por su nombre, como lo
  * escribe la URL del reporte (D-R4-2): el filtro de proyecto lo nombra por id.
  */

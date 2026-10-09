@@ -13,6 +13,11 @@ const P2 = "a2000000-0000-4000-8000-000000000000";
 const P3 = "b3000000-0000-4000-8000-000000000000";
 
 const catalog: ReportReadyState["filterOptions"] = {
+  people: [
+    { id: "aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY", name: "Ana", inactive: false },
+    { id: "Zq8Wn2Rt6Yu0Io4Pa8Sd2Fg6Hj0Kl4Mx", name: "Bruno", inactive: true },
+    { id: "9e0b1c2d-3e4f-4a5b-8c6d-7e8f9a0b1c2d", name: "Carla", inactive: false },
+  ],
   clients: [
     { id: C1, name: "Acme", archived: false },
     { id: C2, name: "Bosque", archived: true },
@@ -131,6 +136,54 @@ describe("FilterPanel (D-R4-8, §5.3)", () => {
     ]);
   });
 
+  it("las personas: las activas en «Personas» y las inactivas aparte, en «Inactivas» y tachadas (P-08)", () => {
+    const markup = render("people", { chosen: ["Zq8Wn2Rt6Yu0Io4Pa8Sd2Fg6Hj0Kl4Mx"] });
+    expect(markup).toMatch(/<input[^>]*type="search"[^>]*aria-label="Buscar personas"/);
+    expect(options(group(markup, "Personas"))).toEqual([
+      { name: "Ana", checked: false, detail: null },
+      { name: "Carla", checked: false, detail: null },
+    ]);
+    expect(options(group(markup, "Inactivas"))).toEqual([
+      { name: "Bruno", checked: true, detail: null },
+    ]);
+    expect(markup).not.toContain(">Archivados<");
+    expect(markup.match(/line-through/g)).toHaveLength(1);
+    expect(markup).toMatch(/<span class="[^"]*line-through[^"]*">Bruno<\/span>/);
+  });
+
+  it("dos personas con el mismo nombre son dos casillas (RP-31)", () => {
+    const markup = renderToStaticMarkup(
+      <FilterPanel
+        kind="people"
+        options={filterOptionsOf(
+          {
+            ...catalog,
+            people: [
+              { id: "aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY", name: "Ana", inactive: false },
+              { id: "Zq8Wn2Rt6Yu0Io4Pa8Sd2Fg6Hj0Kl4Mx", name: "Ana", inactive: false },
+            ],
+          },
+          "people",
+        )}
+        chosen={["Zq8Wn2Rt6Yu0Io4Pa8Sd2Fg6Hj0Kl4Mx"]}
+        query=""
+        error={null}
+        onQueryChange={() => undefined}
+        onToggle={() => undefined}
+        onApply={() => undefined}
+      />,
+    );
+    expect(options(group(markup, "Personas"))).toEqual([
+      { name: "Ana", checked: false, detail: null },
+      { name: "Ana", checked: true, detail: null },
+    ]);
+  });
+
+  it("los archivados no se tachan", () => {
+    expect(render("projects")).not.toContain("line-through");
+    expect(render("clients")).not.toContain("line-through");
+  });
+
   it("el cliente de un proyecto va en gris y lo describe, fuera de su nombre", () => {
     expect(render("projects")).toMatch(
       /<span id="[^"]+" aria-hidden="true" class="[^"]*text-muted-foreground[^"]*">Acme<\/span>/,
@@ -176,7 +229,10 @@ describe("FilterPanel (D-R4-8, §5.3)", () => {
       renderToStaticMarkup(
         <FilterPanel
           kind="projects"
-          options={filterOptionsOf({ clients: [], projects: [] }, "projects")}
+          options={filterOptionsOf(
+            { people: null, clients: [], projects: [] },
+            "projects",
+          )}
           chosen={[]}
           query={query}
           error={null}

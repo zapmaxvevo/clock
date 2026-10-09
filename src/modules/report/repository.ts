@@ -132,10 +132,15 @@ export type EntryTotals = {
 /** Única traducción del alcance a la consulta: ninguna arma su propio filtro de personas. */
 function inScope(scope: ReportScope) {
   const inWorkspace = eq(timeEntry.workspaceId, scope.workspaceId);
-  if (scope.people.kind === "everyone") {
-    return inWorkspace;
+  switch (scope.people.kind) {
+    case "everyone":
+      return inWorkspace;
+    // D-R4-4: el workspace sigue; una persona de dos workspaces no trae lo del otro.
+    case "chosen":
+      return and(inWorkspace, inArray(timeEntry.userId, [...scope.people.userIds]));
+    case "self":
+      return and(inWorkspace, eq(timeEntry.userId, scope.people.userId));
   }
-  return and(inWorkspace, eq(timeEntry.userId, scope.people.userId));
 }
 
 /**

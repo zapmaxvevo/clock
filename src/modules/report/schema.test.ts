@@ -13,6 +13,7 @@ import {
   reportFiltersOf,
   reportGroupParams,
   reportMessages,
+  reportPeopleParams,
   reportProjectParams,
   reportRangeInput,
   reportRangeParams,
@@ -371,7 +372,7 @@ describe("reportReadyState (D-R2b-2, D-R2b-5, D-R3-3, D-R3-4, D-R3-7)", () => {
       { kind: "client", client: null, seconds: 30 },
     ],
     filters: NO_REPORT_FILTERS,
-    filterOptions: { clients: [], projects: [] },
+    filterOptions: { people: null, clients: [], projects: [] },
   };
 
   it("admite los grupos de cliente, con «Sin cliente», y los atajos", () => {
@@ -640,8 +641,9 @@ describe("reportFiltersOf (D-R4-2, RP-32)", () => {
         clientes: `${p1},`,
         proyectos: `${p2},${REPORT_WITHOUT_PROJECT}`,
       }),
-    ).toEqual({ clients: [], projects: [p2], withoutProject: true });
+    ).toEqual({ people: [], clients: [], projects: [p2], withoutProject: true });
     expect(reportFiltersOf({ clientes: p1, proyectos: `${p2},${p2}` })).toEqual({
+      people: [],
       clients: [p1],
       projects: [],
       withoutProject: false,
@@ -658,13 +660,21 @@ describe("reportFiltersOf (D-R4-2, RP-32)", () => {
         clientes: p1,
         proyectos: p2,
       }),
-    ).toEqual({ clients: [p1], projects: [p2], withoutProject: false });
+    ).toEqual({ people: [], clients: [p1], projects: [p2], withoutProject: false });
   });
 
   it("sin filtros, o con claves que no declara, da NO_REPORT_FILTERS", () => {
     for (const params of [
       {},
-      { personas: "ajena-1", cliente: p1, proyecto: p2, clients: p1, projects: p2 },
+      {
+        persona: "ajena-1",
+        people: "ajena-1",
+        userId: "ajena-1",
+        cliente: p1,
+        proyecto: p2,
+        clients: p1,
+        projects: p2,
+      },
     ]) {
       expect(reportFiltersOf(params)).toEqual(NO_REPORT_FILTERS);
     }
@@ -675,6 +685,7 @@ describe("hasReportFilters (D-R4-7)", () => {
   it("es cierto con alguna lista o con sin-proyecto, y falso sin nada", () => {
     expect(hasReportFilters(NO_REPORT_FILTERS)).toBe(false);
     for (const filters of [
+      { ...NO_REPORT_FILTERS, people: ["ajena-1"] },
       { ...NO_REPORT_FILTERS, clients: [p1] },
       { ...NO_REPORT_FILTERS, projects: [p1] },
       { ...NO_REPORT_FILTERS, withoutProject: true },
@@ -703,8 +714,9 @@ describe("reportReadyState con los filtros (D-R4-5, D-R4-9)", () => {
     totalSeconds: 0,
     billableSeconds: 0,
     groups: [],
-    filters: { clients: [p1], projects: [p2], withoutProject: true },
+    filters: { people: [], clients: [p1], projects: [p2], withoutProject: true },
     filterOptions: {
+      people: null,
       clients: [{ id: p1, name: "Acme", archived: true }],
       projects: [
         {
@@ -725,16 +737,16 @@ describe("reportReadyState con los filtros (D-R4-5, D-R4-9)", () => {
 
   it("admite el tope con sin-proyecto contado y rechaza pasarlo", () => {
     const within = [
-      { clients: uuids(50), projects: uuids(50), withoutProject: false },
-      { clients: [], projects: uuids(49), withoutProject: true },
+      { people: [], clients: uuids(50), projects: uuids(50), withoutProject: false },
+      { people: [], clients: [], projects: uuids(49), withoutProject: true },
     ];
     for (const filters of within) {
       expect(reportReadyState.safeParse({ ...ready, filters }).success).toBe(true);
     }
     const beyond = [
-      { clients: uuids(51), projects: [], withoutProject: false },
-      { clients: [], projects: uuids(51), withoutProject: false },
-      { clients: [], projects: uuids(50), withoutProject: true },
+      { people: [], clients: uuids(51), projects: [], withoutProject: false },
+      { people: [], clients: [], projects: uuids(51), withoutProject: false },
+      { people: [], clients: [], projects: uuids(50), withoutProject: true },
     ];
     for (const filters of beyond) {
       expect(reportReadyState.safeParse({ ...ready, filters }).success).toBe(false);
@@ -765,6 +777,147 @@ describe("reportReadyState con los filtros (D-R4-5, D-R4-9)", () => {
           ],
         },
       },
+    ]) {
+      expect(reportReadyState.safeParse(state).success).toBe(false);
+    }
+  });
+});
+
+/** Un id como los de Better Auth: 32 alfanuméricos con mayúsculas y minúsculas. */
+const betterAuthId = "Xk3fQ9pLm2ZtR7wB4nVc8HsJd1GyA6Ue";
+const otherBetterAuthId = "aB4dE6gH8jK0mN2pQ4sT6vW8yZ0bC2dE";
+
+describe("reportPeopleParams (D-R4-2, RP-32; criterio 16)", () => {
+  it("lee un id de Better Auth tal cual, un uuid, dos y hasta el tope, en el orden de la URL", () => {
+    expect(betterAuthId).toMatch(/^[A-Za-z0-9]{32}$/);
+    const fifty = Array.from(
+      { length: REPORT_MAX_FILTER_VALUES },
+      (_, index) => `${betterAuthId.slice(0, 30)}${String(index).padStart(2, "0")}`,
+    );
+    for (const ids of [
+      [betterAuthId],
+      [p1],
+      [otherBetterAuthId, betterAuthId],
+      [betterAuthId, betterAuthId.toLowerCase()],
+      ["a".repeat(64)],
+      fifty,
+    ]) {
+      expect(reportPeopleParams.safeParse({ personas: ids.join(",") })).toEqual({
+        success: true,
+        data: ids,
+      });
+    }
+  });
+
+  it("descarta entero un correo, un espacio, 65 caracteres, un vacío, un repetido, 51 valores o el parámetro repetido", () => {
+    const fiftyOne = Array.from(
+      { length: REPORT_MAX_FILTER_VALUES + 1 },
+      (_, index) => `persona-${index}`,
+    );
+    for (const params of [
+      { personas: "persona@empresa.com" },
+      { personas: `${betterAuthId},persona@empresa.com` },
+      { personas: "persona.uno" },
+      { personas: ` ${betterAuthId}` },
+      { personas: "dos palabras" },
+      { personas: "a".repeat(65) },
+      { personas: "" },
+      { personas: `${betterAuthId},` },
+      { personas: `,${betterAuthId}` },
+      { personas: `${betterAuthId},,${otherBetterAuthId}` },
+      { personas: `${betterAuthId},${betterAuthId}` },
+      { personas: fiftyOne.join(",") },
+      { personas: [betterAuthId, otherBetterAuthId] },
+      { personas: [betterAuthId, betterAuthId] },
+      {},
+    ]) {
+      expect([params, reportPeopleParams.safeParse(params).success]).toEqual([
+        params,
+        false,
+      ]);
+    }
+  });
+
+  it("reportFiltersOf lee personas por su lado: uno inválido no arrastra a los otros", () => {
+    expect(
+      reportFiltersOf({
+        personas: `${otherBetterAuthId},${betterAuthId}`,
+        clientes: `${p1},`,
+      }),
+    ).toEqual({
+      people: [otherBetterAuthId, betterAuthId],
+      clients: [],
+      projects: [],
+      withoutProject: false,
+    });
+    expect(
+      reportFiltersOf({
+        personas: "persona@empresa.com",
+        clientes: p1,
+        proyectos: REPORT_WITHOUT_PROJECT,
+      }),
+    ).toEqual({ people: [], clients: [p1], projects: [], withoutProject: true });
+  });
+});
+
+describe("reportReadyState con el filtro de personas (D-R4-4, D-R4-9; criterio 16)", () => {
+  const week = { first: "2026-10-05", last: "2026-10-11" };
+  const ready: ReportReadyState = {
+    kind: "ready",
+    todayKey: "2026-10-08",
+    range: week,
+    rangeLabel: "Esta semana",
+    previous: null,
+    next: null,
+    currentWeek: week,
+    shortcuts: [],
+    groupBy: "person",
+    subgroups: [],
+    levelsShown: 1,
+    scope: "everyone",
+    timeZone: "America/Argentina/Buenos_Aires",
+    totalSeconds: 0,
+    billableSeconds: 0,
+    groups: [],
+    filters: { ...NO_REPORT_FILTERS, people: [betterAuthId] },
+    filterOptions: {
+      people: [
+        { id: betterAuthId, name: "Ana", inactive: false },
+        { id: otherBetterAuthId, name: "Beto", inactive: true },
+      ],
+      clients: [],
+      projects: [],
+    },
+  };
+
+  it("admite las personas elegidas y sus opciones, y people en null sin el filtro", () => {
+    expect(reportReadyState.parse(ready)).toEqual(ready);
+    const withoutPeople = {
+      ...ready,
+      filters: NO_REPORT_FILTERS,
+      filterOptions: { ...ready.filterOptions, people: null },
+    };
+    expect(reportReadyState.parse(withoutPeople)).toEqual(withoutPeople);
+  });
+
+  it("rechaza 51 personas, una opción sin inactive y un estado sin people", () => {
+    for (const state of [
+      {
+        ...ready,
+        filters: {
+          ...ready.filters,
+          people: Array.from({ length: 51 }, (_, index) => `persona-${index}`),
+        },
+      },
+      {
+        ...ready,
+        filterOptions: {
+          ...ready.filterOptions,
+          people: [{ id: betterAuthId, name: "Ana" }],
+        },
+      },
+      { ...ready, filters: { ...ready.filters, people: undefined } },
+      { ...ready, filterOptions: { ...ready.filterOptions, people: undefined } },
     ]) {
       expect(reportReadyState.safeParse(state).success).toBe(false);
     }

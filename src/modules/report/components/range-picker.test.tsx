@@ -164,13 +164,18 @@ function navigatesTo(href: string) {
 
 const thisWeek = selectionOf({ first: "2026-10-05", last: "2026-10-11" });
 
+/** Un id de Better Auth: 32 alfanuméricos con mayúsculas. */
+const PERSON = "aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY";
+
 const FILTERS: ReportFilters = {
+  people: [PERSON],
   clients: ["c1000000-0000-4000-8000-000000000000"],
   projects: ["a2000000-0000-4000-8000-000000000000"],
   withoutProject: true,
 };
 /** Lo que `FILTERS` escribe en la URL, después de la agrupación. */
 const FILTERS_PARAMS =
+  `&personas=${PERSON}` +
   "&clientes=c1000000-0000-4000-8000-000000000000" +
   "&proyectos=a2000000-0000-4000-8000-000000000000%2Csin-proyecto";
 

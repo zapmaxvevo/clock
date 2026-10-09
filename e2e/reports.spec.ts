@@ -14,10 +14,12 @@ import {
   setDisplayName,
   setMembershipStatus,
   setRole,
+  userIdOf,
   type MembershipStatus,
 } from "./database";
 import { addDays, dayKeyOf, todayIn, weekdayLabel, type CivilDay } from "./days";
 import {
+  anyFilterButton,
   applyButton,
   clearFiltersLink,
   clickRangeDay,
@@ -47,6 +49,8 @@ import {
   groupHeaders,
   groupRow,
   inactiveMark,
+  INACTIVE_PERSON,
+  isStruckThrough,
   lastWeekRange,
   monthRange,
   NO_CLIENT,
@@ -1205,4 +1209,165 @@ test("un filtro que nombra algo que no existe, o mal formado, se ignora", async 
   await page.goto(`${byPerson}&clientes=${projectId}`);
   await expectPerson("1:30");
   await expect(filterButton(page, "Clientes", "todos")).toBeVisible();
+});
+
+test("un admin filtra por personas, con las inactivas aparte y sin las invitadas", async ({
+  page,
+  email,
+}) => {
+  const day = today();
+  const lastWeek = lastWeekRange(day);
+  const tuesday = addDays(lastWeek.first, 1);
+  const suffix = uniqueSuffix();
+  const project = `P ${suffix}`;
+  const own = `Ana ${suffix}`;
+  const active = `Beto ${suffix}`;
+  const inactive = `Carla ${suffix}`;
+  const invited = `Dora ${suffix}`;
+  const idle = `Eva ${suffix}`;
+
+  await enterApp(page);
+  await setRole(email, "admin");
+  await setDisplayName(email, own);
+  await seedProject({ name: project });
+  const activeEmail = await seedOtherPerson(active);
+  const inactiveEmail = await seedOtherPerson(inactive, "inactive");
+  await seedOtherPerson(invited, "invited");
+  const idleEmail = await seedOtherPerson(idle);
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
+    { description: "a", day: tuesday, start: "09:00", end: "10:00", project },
+  ]);
+  await seedPersonEntries(activeEmail, PERSON_TIMEZONE, [
+    { description: "b", day: tuesday, start: "09:00", end: "11:00", project },
+  ]);
+  await seedPersonEntries(inactiveEmail, PERSON_TIMEZONE, [
+    { description: "c", day: tuesday, start: "09:00", end: "09:30", project },
+  ]);
+  const [ownId, activeId, inactiveId, idleId] = await Promise.all(
+    [email, activeEmail, inactiveEmail, idleEmail].map(userIdOf),
+  );
+  // D-R4-2: el id de la sesión lo genera Better Auth, con mayúsculas. Sin
+  // ellas, un id pasado a minúsculas en algún punto no se notaría.
+  expect(ownId).not.toBe(ownId.toLowerCase());
+
+  await openReport(page, lastWeek, "persona", day);
+  await expect(page.getByText(SCOPE_EVERYONE, { exact: true })).toBeVisible();
+
+  // RP-62, D-R4-8, P-08: las activas en el grupo del filtro, con E aunque no
+  // tenga horas, y aparte, en «Inactivas», C con el nombre tachado. RP-64: la
+  // invitada no está en ninguno.
+  await openFilter(page, "Personas", "todas");
+  await filterSearch(page, "Personas").fill(suffix);
+  await expectFilterOptions(filterGroup(page, "Personas", "Personas"), [
+    own,
+    active,
+    idle,
+  ]);
+  await expectFilterOptions(filterGroup(page, "Personas", "Inactivas"), [inactive]);
+  await expect(filterOption(page, invited)).toHaveCount(0);
+  expect(await isStruckThrough(page, inactive)).toBe(true);
+  expect(await isStruckThrough(page, active)).toBe(false);
+
+  // RP-25: A, B y C. La URL lleva el id de A tal como lo guarda la base; las
+  // filas son solo las elegidas, así que el total es reproducible (§8.3).
+  const chosen = { people: [ownId, activeId, inactiveId] };
+  await filterOption(page, own).check();
+  await filterOption(page, active).check();
+  await filterOption(page, inactive).check();
+  await applyFilter(page, "Personas", "3");
+  const expectByPerson = async (): Promise<void> => {
+    await expectReport(page, lastWeek, "persona", day, [], chosen);
+    // RP-12: por duración descendente.
+    await expectGroupNames(page, [active, own, `${inactive} ${INACTIVE_PERSON}`]);
+    await expect(groupDuration(groupRow(page, active))).toHaveText("2:00");
+    await expect(groupDuration(groupRow(page, own))).toHaveText("1:00");
+    await expect(groupDuration(groupRow(page, inactive))).toHaveText("0:30");
+    await expect(inactiveMark(groupRow(page, inactive))).toBeVisible();
+    await expect(inactiveMark(groupRow(page, active))).toHaveCount(0);
+    await expect(reportTotal(page, "Total")).toHaveText("3:30");
+  };
+  await expectByPerson();
+
+  // D-R4-10: «Proyecto» conserva el filtro.
+  await groupByLink(page, "proyecto").click();
+  await expectReport(page, lastWeek, "proyecto", day, [], chosen);
+  await expectGroupNames(page, [project]);
+  await expect(groupDuration(groupRow(page, project))).toHaveText("3:30");
+  await expect(reportTotal(page, "Total")).toHaveText("3:30");
+
+  // RP-32: al recargar, la misma vista, y el botón dice lo elegido.
+  await page.reload();
+  await expectReport(page, lastWeek, "proyecto", day, [], chosen);
+  await expect(filterButton(page, "Personas", "3")).toBeVisible();
+  await expect(groupDuration(groupRow(page, project))).toHaveText("3:30");
+  await expect(reportTotal(page, "Total")).toHaveText("3:30");
+
+  // D-R4-7: solo E, que no tiene horas, es el segundo vacío.
+  await openFilter(page, "Personas", "3");
+  await filterSearch(page, "Personas").fill(suffix);
+  await expect(filterOption(page, own)).toBeChecked();
+  await expect(filterOption(page, active)).toBeChecked();
+  await expect(filterOption(page, inactive)).toBeChecked();
+  await filterOption(page, own).uncheck();
+  await filterOption(page, active).uncheck();
+  await filterOption(page, inactive).uncheck();
+  await filterOption(page, idle).check();
+  await applyFilter(page, "Personas", idle);
+  await expectReport(page, lastWeek, "proyecto", day, [], { people: [idleId] });
+  await expect(emptyFiltered(page)).toBeVisible();
+  await expect(groupHeaders(page)).toHaveCount(0);
+  await expect(reportTotal(page, "Total")).toHaveText("0:00");
+});
+
+test("un member con un enlace que filtra personas ve lo propio, y los otros filtros se aplican", async ({
+  page,
+  email,
+}) => {
+  const day = today();
+  const lastWeek = lastWeekRange(day);
+  const tuesday = addDays(lastWeek.first, 1);
+  const suffix = uniqueSuffix();
+  const own = `Lía ${suffix}`;
+  const other = `Omar ${suffix}`;
+  const first = `P1 ${suffix}`;
+  const second = `P2 ${suffix}`;
+
+  await enterApp(page);
+  await setDisplayName(email, own);
+  await seedProject({ name: first });
+  await seedProject({ name: second });
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
+    { description: "a", day: tuesday, start: "09:00", end: "10:00", project: first },
+    { description: "b", day: tuesday, start: "11:00", end: "11:30", project: second },
+  ]);
+  const otherEmail = await seedOtherPerson(other);
+  await seedPersonEntries(otherEmail, PERSON_TIMEZONE, [
+    { description: "c", day: tuesday, start: "09:00", end: "12:00", project: first },
+  ]);
+  const [otherId, firstId] = await Promise.all([
+    userIdOf(otherEmail),
+    projectIdOf(first),
+  ]);
+
+  // RP-32, D-R4-4: el enlace que arma un admin. Para un member `personas` no
+  // tiene catálogo y se ignora; `proyectos` se aplica sobre lo propio.
+  await page.goto(
+    reportsUrl(lastWeek, "persona", [], { people: [otherId], projects: [firstId] }),
+  );
+  await expect(rangeButton(page)).toHaveAccessibleName("Elegir período: Semana anterior");
+  await expectGroupBy(page, "persona");
+  await expect(page.getByText(SCOPE_SELF, { exact: true })).toBeVisible();
+  await expect(filterButton(page, "Proyectos", first)).toBeVisible();
+  await expect(anyFilterButton(page, "Personas")).toHaveCount(0);
+  await expectGroupNames(page, [own]);
+  await expect(groupDuration(groupRow(page, own))).toHaveText("1:00");
+  await expect(page.getByText(other)).toHaveCount(0);
+  await expect(reportTotal(page, "Total")).toHaveText("1:00");
+
+  // D-R4-5: el enlace siguiente lleva los filtros efectivos, sin `personas`.
+  await groupByLink(page, "proyecto").click();
+  await expectReport(page, lastWeek, "proyecto", day, [], { projects: [firstId] });
+  await expectGroupNames(page, [first]);
+  await expect(groupDuration(groupRow(page, first))).toHaveText("1:00");
+  await expect(reportTotal(page, "Total")).toHaveText("1:00");
 });

@@ -30,9 +30,11 @@ export type SeededWorkspace = {
   readonly ownerId: string;
 };
 
-/** Crea un usuario con email único. */
-export async function seedUser(email?: string): Promise<string> {
-  const id = randomUUID();
+/** Crea un usuario con email único y, si se pasa, con ese id; sin él, un uuid. */
+export async function seedUser(
+  email?: string,
+  id: string = randomUUID(),
+): Promise<string> {
   await db.insert(user).values({
     id,
     name: "Persona de prueba",
@@ -56,13 +58,17 @@ export async function seedWorkspace(timezone = buenosAires): Promise<SeededWorks
   return { workspaceId: created.id, ownerId };
 }
 
-/** Agrega un miembro con el rol pedido al workspace, activo salvo que se pida otro estado. */
+/**
+ * Agrega un miembro con el rol pedido al workspace, activo salvo que se pida
+ * otro estado, y con el id de usuario que se pase.
+ */
 export async function seedMember(
   workspaceId: string,
   role: Role,
   status: MembershipStatus = "active",
+  id?: string,
 ): Promise<string> {
-  const userId = await seedUser();
+  const userId = await seedUser(undefined, id);
   await db.insert(membership).values({ workspaceId, userId, role, status });
   return userId;
 }

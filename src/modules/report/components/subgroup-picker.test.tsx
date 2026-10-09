@@ -144,14 +144,17 @@ describe("SubgroupPanel (D-R3-8, §5.3)", () => {
   it("cada enlace conserva los filtros (D-R4-10)", () => {
     const project = "a2000000-0000-4000-8000-000000000000";
     const client = "c1000000-0000-4000-8000-000000000000";
+    // Un id de Better Auth, con mayúsculas.
+    const person = "aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY";
     const { links } = list(
       render({ groupBy: "project", subgroups: ["date"] }, 2, {
+        people: [person],
         clients: [client],
         projects: [project],
         withoutProject: true,
       }),
     );
-    const kept = `&clientes=${client}&proyectos=${project}%2Csin-proyecto`;
+    const kept = `&personas=${person}&clientes=${client}&proyectos=${project}%2Csin-proyecto`;
     expect(links.map(({ href }) => href)).toEqual([
       `${base}&agrupar=proyecto&subagrupar=fecha${kept}`,
       `${base}&agrupar=proyecto&subagrupar=fecha%2Cpersona${kept}`,

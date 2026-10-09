@@ -22,6 +22,7 @@ import { actorIn, workspaceOf } from "@/test/time-entry";
 
 import { projectLabels } from "@/modules/project/components/labels";
 import { projectRepository } from "@/modules/project/repository";
+import { workspaceRepository } from "@/modules/workspace/repository";
 import { getTimesheetState } from "@/modules/time-entry/service";
 
 import {
@@ -66,14 +67,20 @@ async function renameAccount(userId: string, name: string) {
   await db.update(user).set({ name }).where(eq(user.id, userId));
 }
 
-/** Una persona con su nombre de cuenta y, si se pasa, el editado. */
+/** Una persona con su nombre de cuenta y, si se pasa, el editado y el id. */
 async function seedPerson(values: {
   readonly accountName: string;
   readonly displayName?: string;
   readonly role?: Role;
   readonly status?: MembershipStatus;
+  readonly id?: string;
 }): Promise<string> {
-  const userId = await seedMember(workspaceId, values.role ?? "member", values.status);
+  const userId = await seedMember(
+    workspaceId,
+    values.role ?? "member",
+    values.status,
+    values.id,
+  );
   await renameAccount(userId, values.accountName);
   if (values.displayName !== undefined) {
     await seedPreferences(userId, { displayName: values.displayName });
@@ -2192,6 +2199,7 @@ describe("los filtros de cliente y de proyecto (R4: RP-25, RP-26, RP-29, RP-34)"
       ]);
       expect(totalsOf(state)).toEqual([1860, 1600]);
       expect(state.filters).toEqual({
+        people: [],
         clients: [],
         projects: [p1],
         withoutProject: true,
@@ -2254,6 +2262,7 @@ describe("los filtros de cliente y de proyecto (R4: RP-25, RP-26, RP-29, RP-34)"
       const state = await filtered("project", { clients: [c1], projects: [p2] });
       expect(state.groups).toEqual([]);
       expect(state.filters).toEqual({
+        people: [],
         clients: [c1],
         projects: [p2],
         withoutProject: false,
@@ -2345,6 +2354,7 @@ describe("los filtros de cliente y de proyecto (R4: RP-25, RP-26, RP-29, RP-34)"
       });
       expect(rowsOf(state)).toEqual([["Beta", 300]]);
       expect(state.filters).toEqual({
+        people: [],
         clients: [c2],
         projects: [p2],
         withoutProject: false,
@@ -2382,7 +2392,10 @@ describe("los filtros de cliente y de proyecto (R4: RP-25, RP-26, RP-29, RP-34)"
         withoutProject: true,
       });
       expect(rowsOf(state)).toEqual([["sin", 260]]);
-      expect(state.filters).toEqual({ clients: [], projects: [], withoutProject: true });
+      expect(state.filters).toEqual({
+        ...NO_REPORT_FILTERS,
+        withoutProject: true,
+      });
     });
   });
 
@@ -2439,7 +2452,12 @@ describe("los filtros de cliente y de proyecto (R4: RP-25, RP-26, RP-29, RP-34)"
                 range: lastWeek,
                 groupBy,
                 subgroups: [],
-                filters: { clients: [c1], projects: [p1], withoutProject: true },
+                filters: {
+                  people: [],
+                  clients: [c1],
+                  projects: [p1],
+                  withoutProject: true,
+                },
               },
               readNow,
             ),
@@ -2539,6 +2557,10 @@ describe("los filtros de cliente y de proyecto (R4: RP-25, RP-26, RP-29, RP-34)"
       const state = await filtered("project", {});
       const acme = { id: c1, name: "Acme" };
       expect(state.filterOptions).toStrictEqual({
+        people: [
+          { id: otherId, name: "Otra", inactive: false },
+          { id: ownerId, name: "Owner", inactive: false },
+        ],
         clients: [
           { id: c1, name: "Acme", archived: false },
           { id: c2, name: "Bravo", archived: false },
@@ -2573,6 +2595,7 @@ describe("los filtros de cliente y de proyecto (R4: RP-25, RP-26, RP-29, RP-34)"
         clients: [c3, c1],
       });
       expect(state.filters).toEqual({
+        people: [],
         clients: [c1, c3],
         projects: [p1, p2, p3],
         withoutProject: false,
@@ -2581,6 +2604,241 @@ describe("los filtros de cliente y de proyecto (R4: RP-25, RP-26, RP-29, RP-34)"
 
     it("sin filtros, filters es NO_REPORT_FILTERS", async () => {
       expect((await filtered("person", {})).filters).toEqual(NO_REPORT_FILTERS);
+    });
+  });
+});
+
+describe("el filtro de personas (R4b: RP-25, RP-34, RP-62, RP-64; D-R4-4)", () => {
+  /** Un id como los de Better Auth: 32 alfanuméricos con mayúsculas (D-R4-2). */
+  const inactiveUserId = "Q3vXk9LmP2aZr7TbW1cYn5HdF8sJe4Ug";
+  const unknownId = "NoExiste0123456789abcdefABCDEF00";
+
+  let adminId: string;
+  let admin: Actor;
+  let activeId: string;
+  let inactiveId: string;
+  let invitedId: string;
+  let strangerId: string;
+  let p1: string;
+  let p2: string;
+  let e: string;
+
+  beforeEach(async () => {
+    adminId = await seedPerson({ accountName: "Admin", role: "admin" });
+    admin = actorIn(workspaceId, adminId, { role: "admin" });
+    // La cuenta y el nombre editado caen en lugares distintos del orden.
+    activeId = await seedPerson({ accountName: "Zoe", displayName: "Anita" });
+    inactiveId = await seedPerson({
+      accountName: "Inés",
+      status: "inactive",
+      id: inactiveUserId,
+    });
+    invitedId = await seedPerson({ accountName: "Iván", status: "invited" });
+    p1 = (await seedProject({ workspaceId, name: "Alfa" })).id;
+    p2 = (await seedProject({ workspaceId, name: "Beta" })).id;
+    e = (await seedTag({ workspaceId, name: "E" })).id;
+
+    await seedClosed(activeId, "2026-09-29T13:00:00Z", 600, {
+      projectId: p1,
+      tagIds: [e],
+    });
+    await seedClosed(activeId, "2026-09-29T14:00:00Z", 300, { projectId: p2 });
+    await seedClosed(inactiveId, "2026-09-30T13:00:00Z", 1000, {
+      projectId: p1,
+      tagIds: [e],
+    });
+    // La aplicación no produce una invitada con horas: se siembra por base.
+    await seedClosed(invitedId, "2026-09-30T14:00:00Z", 50, { projectId: p1 });
+    await seedClosed(ownerId, "2026-10-01T13:00:00Z", 7, { projectId: p1 });
+    await seedClosed(ownerId, "2026-10-01T14:00:00Z", 20);
+    await seedClosed(adminId, "2026-10-01T15:00:00Z", 3, { projectId: p2 });
+
+    const other = await seedWorkspace();
+    strangerId = other.ownerId;
+    await seedTimeEntry({
+      workspaceId: other.workspaceId,
+      userId: strangerId,
+      startedAt: "2026-09-30T13:00:00Z",
+      endedAt: "2026-09-30T15:00:00Z",
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function filtered(
+    groupBy: ReportGroupBy,
+    filters: Partial<ReportFilters>,
+    actor: Actor = admin,
+  ) {
+    return readyState(actor, {
+      range: lastWeek,
+      groupBy,
+      filters: { ...NO_REPORT_FILTERS, ...filters },
+    });
+  }
+
+  /** Las filas por persona como `[nombre, segundos, inactiva]`, en orden. */
+  function peopleRows(state: ReportReadyState) {
+    return state.groups.map((group) =>
+      group.kind === "person"
+        ? [group.name, group.seconds, group.inactive]
+        : ["?", group.seconds, false],
+    );
+  }
+
+  /** Las filas por etiqueta como `[nombre, segundos]`, en orden; «Sin etiqueta» como «sin». */
+  function tagRows(state: ReportReadyState) {
+    return state.groups.map((group) =>
+      group.kind === "tag" ? [group.tag?.name ?? "sin", group.seconds] : ["?", 0],
+    );
+  }
+
+  /** Todas las personas del workspace con horas en la semana, sin filtro; la invitada es una fila (RP-61). */
+  const everyoneRows = [
+    ["Inés", 1000, true],
+    ["Anita", 900, false],
+    ["Iván", 50, true],
+    ["Owner", 27, false],
+    ["Admin", 3, false],
+  ];
+
+  describe("se aplica con el alcance angostado (criterio 18)", () => {
+    it("[activa, inactiva] por persona: las dos filas, la inactiva marcada; el total es el de las dos y la línea del alcance no cambia", async () => {
+      const state = await filtered("person", { people: [inactiveId, activeId] });
+      expect(peopleRows(state)).toEqual([
+        ["Inés", 1000, true],
+        ["Anita", 900, false],
+      ]);
+      expect(state.totalSeconds).toBe(1900);
+      expect(state.scope).toBe("everyone");
+      expect(state.filters).toEqual({
+        ...NO_REPORT_FILTERS,
+        people: [activeId, inactiveId],
+      });
+    });
+
+    it("por proyecto, la suma de las dos", async () => {
+      const state = await filtered("project", { people: [activeId, inactiveId] });
+      expect(projectRows(state)).toEqual([
+        ["Alfa", 1600],
+        ["Beta", 300],
+      ]);
+    });
+
+    it("por etiqueta, entryTotals da el total de las dos", async () => {
+      const entryTotals = vi.spyOn(reportRepository, "entryTotals");
+      const state = await filtered("tag", { people: [activeId, inactiveId] });
+      expect(tagRows(state)).toEqual([
+        ["E", 1600],
+        ["sin", 300],
+      ]);
+      expect(entryTotals).toHaveBeenCalledTimes(1);
+      expect(state.totalSeconds).toBe(1900);
+    });
+
+    it("con [P1] además, las dos dentro de P1", async () => {
+      const state = await filtered("person", {
+        people: [activeId, inactiveId],
+        projects: [p1],
+      });
+      expect(peopleRows(state)).toEqual([
+        ["Inés", 1000, true],
+        ["Anita", 600, false],
+      ]);
+      expect(state.totalSeconds).toBe(1600);
+    });
+
+    it("el catálogo de personas, los niveles y el total leen con el mismo Executor, el de la transacción", async () => {
+      const listPeople = vi.spyOn(workspaceRepository, "listPeople");
+      const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+      const entryTotals = vi.spyOn(reportRepository, "entryTotals");
+      await readyState(admin, {
+        range: lastWeek,
+        groupBy: "tag",
+        subgroups: ["person"],
+        filters: { ...NO_REPORT_FILTERS, people: [activeId] },
+      });
+      const executors = [
+        ...listPeople.mock.calls.map((call) => call[0]),
+        ...byLevels.mock.calls.map((call) => call[2]),
+        ...entryTotals.mock.calls.map((call) => call[2]),
+      ];
+      expect(executors).toHaveLength(4);
+      expect(executors[0]).toBeDefined();
+      expect(executors[0]).not.toBe(db);
+      expect(executors.every((executor) => executor === executors[0])).toBe(true);
+    });
+  });
+
+  describe("lo que no está en el catálogo se ignora (criterio 18, RP-34, RP-64)", () => {
+    it("el id de la inactiva en minúsculas no es el suyo: solo se ignora él", async () => {
+      const lowered = inactiveUserId.toLowerCase();
+      const alone = await filtered("person", { people: [lowered] });
+      expect(alone.filters).toEqual(NO_REPORT_FILTERS);
+      expect(peopleRows(alone)).toEqual(everyoneRows);
+
+      const withActive = await filtered("person", { people: [lowered, activeId] });
+      expect(withActive.filters.people).toEqual([activeId]);
+      expect(peopleRows(withActive)).toEqual([["Anita", 900, false]]);
+    });
+
+    it("la invitada, una persona de otro workspace y un id que no existe se ignoran; junto a una del catálogo, se aplica esa", async () => {
+      for (const ignored of [invitedId, strangerId, unknownId]) {
+        const state = await filtered("person", { people: [ignored, activeId] });
+        expect(state.filters.people).toEqual([activeId]);
+        expect(peopleRows(state)).toEqual([["Anita", 900, false]]);
+      }
+    });
+
+    it("si se ignoran todos, todas las personas, sin filtro de personas", async () => {
+      const state = await filtered("person", {
+        people: [invitedId, strangerId, unknownId],
+      });
+      expect(state.filters).toEqual(NO_REPORT_FILTERS);
+      expect(peopleRows(state)).toEqual(everyoneRows);
+      expect(state.totalSeconds).toBe(1980);
+    });
+  });
+
+  describe("las opciones (criterio 18, D-R4-9)", () => {
+    it("filterOptions.people: activas e inactivas con displayNameOf, solo id, name e inactive, en el orden alfabético de ese nombre y no del de la cuenta", async () => {
+      const state = await filtered("person", { people: [activeId] });
+      expect(state.filterOptions.people).toStrictEqual([
+        { id: adminId, name: "Admin", inactive: false },
+        { id: activeId, name: "Anita", inactive: false },
+        { id: inactiveId, name: "Inés", inactive: true },
+        { id: ownerId, name: "Owner", inactive: false },
+      ]);
+      expect(reportReadyState.parse(state)).toEqual(state);
+    });
+  });
+
+  describe("sin timeEntry.others.view no hay filtro de personas (criterio 20, D-R4-4)", () => {
+    it("un member con personas ajenas y la propia ve lo propio: el alcance sigue en self y el catálogo no se lee", async () => {
+      const listPeople = vi.spyOn(workspaceRepository, "listPeople");
+      const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+      const entryTotals = vi.spyOn(reportRepository, "entryTotals");
+      const member = actorIn(workspaceId, activeId);
+      for (const groupBy of ["person", "tag"] as const) {
+        const state = await filtered(
+          groupBy,
+          { people: [inactiveId, activeId, ownerId], projects: [p1] },
+          member,
+        );
+        expect(state.totalSeconds).toBe(600);
+        expect(state.scope).toBe("self");
+        expect(state.filters).toEqual({ ...NO_REPORT_FILTERS, projects: [p1] });
+        expect(state.filterOptions.people).toBeNull();
+      }
+      const scopes = [
+        ...byLevels.mock.calls.map((call) => call[0]),
+        ...entryTotals.mock.calls.map((call) => call[0]),
+      ];
+      expect(scopes).toHaveLength(3);
+      expect(scopes.every((scope) => scope.people.kind === "self")).toBe(true);
+      expect(listPeople).not.toHaveBeenCalled();
     });
   });
 });

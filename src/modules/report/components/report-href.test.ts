@@ -106,6 +106,10 @@ describe("reportHref con filtros (D-R4-2)", () => {
   const P1 = "f1000000-0000-4000-8000-000000000000";
   const P2 = "a2000000-0000-4000-8000-000000000000";
   const P3 = "b3000000-0000-4000-8000-000000000000";
+  /** Un id de Better Auth: 32 alfanuméricos con mayúsculas. */
+  const ANA = "aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY";
+  const BRUNO = "Zq8Wn2Rt6Yu0Io4Pa8Sd2Fg6Hj0Kl4Mx";
+  const CARLA = "9e0b1c2d-3e4f-4a5b-8c6d-7e8f9a0b1c2d";
   const base = "/reportes?desde=2026-10-05&hasta=2026-10-11";
 
   it("sin filtros, la URL de R3", () => {
@@ -119,7 +123,12 @@ describe("reportHref con filtros (D-R4-2)", () => {
       range,
       groupBy: "project",
       subgroups: ["date"],
-      filters: { clients: [C1, C2], projects: [P1, P2, P3], withoutProject: true },
+      filters: {
+        people: [],
+        clients: [C1, C2],
+        projects: [P1, P2, P3],
+        withoutProject: true,
+      },
     });
     expect(href).toBe(
       `${base}&agrupar=proyecto&subagrupar=fecha` +
@@ -141,14 +150,14 @@ describe("reportHref con filtros (D-R4-2)", () => {
       reportHref({
         range,
         groupBy: "person",
-        filters: { clients: [], projects: [P1], withoutProject: false },
+        filters: { people: [], clients: [], projects: [P1], withoutProject: false },
       }),
     ).toBe(`${base}&agrupar=persona&proyectos=${P1}`);
     expect(
       reportHref({
         range,
         groupBy: "person",
-        filters: { clients: [C1], projects: [], withoutProject: false },
+        filters: { people: [], clients: [C1], projects: [], withoutProject: false },
       }),
     ).toBe(`${base}&agrupar=persona&clientes=${C1}`);
   });
@@ -158,7 +167,7 @@ describe("reportHref con filtros (D-R4-2)", () => {
       reportHref({
         range,
         groupBy: "person",
-        filters: { clients: [], projects: [], withoutProject: true },
+        filters: { people: [], clients: [], projects: [], withoutProject: true },
       }),
     ).toBe(`${base}&agrupar=persona&proyectos=sin-proyecto`);
   });
@@ -168,15 +177,58 @@ describe("reportHref con filtros (D-R4-2)", () => {
     reportHref({
       range,
       groupBy: "person",
-      filters: { clients: [], projects, withoutProject: false },
+      filters: { people: [], clients: [], projects, withoutProject: false },
     });
     expect(projects).toEqual([P1, P2]);
   });
 
+  it("`personas` va antes de `clientes`, ordenada por unidades de código y con los ids tal cual", () => {
+    const href = reportHref({
+      range,
+      groupBy: "person",
+      filters: {
+        people: [ANA, CARLA, BRUNO],
+        clients: [C1],
+        projects: [],
+        withoutProject: false,
+      },
+    });
+    expect(href).toBe(
+      `${base}&agrupar=persona&personas=${CARLA}%2C${BRUNO}%2C${ANA}&clientes=${C1}`,
+    );
+    expect([...new URL(href, "https://clock.test").searchParams.keys()]).toEqual([
+      "desde",
+      "hasta",
+      "agrupar",
+      "personas",
+      "clientes",
+    ]);
+  });
+
+  it("las tres listas, en el orden de D-R4-2, después de `subagrupar`", () => {
+    const href = reportHref({
+      range,
+      groupBy: "project",
+      subgroups: ["date"],
+      filters: { people: [ANA], clients: [C1], projects: [P1], withoutProject: true },
+    });
+    expect([...new URL(href, "https://clock.test").searchParams.keys()]).toEqual([
+      "desde",
+      "hasta",
+      "agrupar",
+      "subagrupar",
+      "personas",
+      "clientes",
+      "proyectos",
+    ]);
+  });
+
   it.each<ReportFilters>([
-    { clients: [C1, C2], projects: [P1, P2, P3], withoutProject: true },
-    { clients: [], projects: [], withoutProject: true },
-    { clients: [C2], projects: [], withoutProject: false },
+    { people: [], clients: [C1, C2], projects: [P1, P2, P3], withoutProject: true },
+    { people: [], clients: [], projects: [], withoutProject: true },
+    { people: [], clients: [C2], projects: [], withoutProject: false },
+    { people: [ANA, BRUNO, CARLA], clients: [], projects: [], withoutProject: false },
+    { people: [BRUNO], clients: [C1], projects: [P2], withoutProject: true },
   ])("la página lee los mismos filtros que se escribieron: %o", (written) => {
     const params = Object.fromEntries(
       new URL(
@@ -185,6 +237,7 @@ describe("reportHref con filtros (D-R4-2)", () => {
       ).searchParams,
     );
     expect(reportFiltersOf(params)).toEqual({
+      people: [...written.people].sort(),
       clients: [...written.clients].sort(),
       projects: [...written.projects].sort(),
       withoutProject: written.withoutProject,

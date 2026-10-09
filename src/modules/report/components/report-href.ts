@@ -41,6 +41,10 @@ export function reportHref({
     ...[...filters.projects].sort(),
     ...(filters.withoutProject ? [REPORT_WITHOUT_PROJECT] : []),
   ];
+  if (filters.people.length > 0) {
+    // Los ids de Better Auth distinguen mayúsculas: se escriben tal cual.
+    params.set("personas", [...filters.people].sort().join(","));
+  }
   if (filters.clients.length > 0) {
     params.set("clientes", [...filters.clients].sort().join(","));
   }

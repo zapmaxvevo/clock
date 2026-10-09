@@ -26,7 +26,11 @@ const SUBGROUP_BY_LABEL_ID = "reporte-subagrupar";
 const FILTER_BY_LABEL_ID = "reporte-filtrar";
 
 /** Los filtros de la barra, en su orden (D-R4-8). */
-const FILTER_KINDS = ["clients", "projects"] as const satisfies readonly FilterKind[];
+const FILTER_KINDS = [
+  "people",
+  "clients",
+  "projects",
+] as const satisfies readonly FilterKind[];
 
 /**
  * RP-20 y RP-11: las flechas del período, el rango que abre los atajos y el
@@ -127,7 +131,10 @@ export function ReportToolbar({ state }: { readonly state: ReportReadyState }) {
           aria-labelledby={FILTER_BY_LABEL_ID}
           className="flex max-w-full min-w-0 flex-wrap items-center gap-2"
         >
-          {FILTER_KINDS.map((kind) => (
+          {FILTER_KINDS.filter(
+            // Sin `timeEntry.others.view` no hay catálogo de personas ni su filtro (D-R4-4).
+            (kind) => kind !== "people" || state.filterOptions.people !== null,
+          ).map((kind) => (
             <FilterPicker
               key={kind}
               range={range}

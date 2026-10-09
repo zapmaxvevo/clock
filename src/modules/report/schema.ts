@@ -142,6 +142,8 @@ export const REPORT_WITHOUT_PROJECT = "sin-proyecto";
 
 /** Los filtros de un reporte, ya validados. Una lista vacía no filtra (D-R4-3). */
 export type ReportFilters = {
+  /** Ids de `user`, tal cual; solo con `timeEntry.others.view` (D-R4-4). */
+  readonly people: readonly string[];
   readonly clients: readonly string[];
   readonly projects: readonly string[];
   /** RP-26: «Sin proyecto», con los proyectos o sola. Cuenta uno en el tope de los proyectos. */
@@ -149,6 +151,7 @@ export type ReportFilters = {
 };
 
 export const NO_REPORT_FILTERS: ReportFilters = {
+  people: [],
   clients: [],
   projects: [],
   withoutProject: false,
@@ -165,7 +168,10 @@ export function projectFilterCount(
 /** Algún filtro elige algo: lo que separa el segundo vacío del primero (D-R4-7). */
 export function hasReportFilters(filters: ReportFilters): boolean {
   return (
-    filters.clients.length > 0 || filters.projects.length > 0 || filters.withoutProject
+    filters.people.length > 0 ||
+    filters.clients.length > 0 ||
+    filters.projects.length > 0 ||
+    filters.withoutProject
   );
 }
 
@@ -175,6 +181,13 @@ export function hasReportFilters(filters: ReportFilters): boolean {
  * lugar de descartar el parámetro (D-R4-2).
  */
 const LOWERCASE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * El id de una persona: el de Better Auth, 32 alfanuméricos con mayúsculas y
+ * minúsculas, o un uuid de los que siembran los tests. Distingue mayúsculas: un
+ * id de Better Auth no se puede pasar a minúsculas (D-R4-2).
+ */
+const PERSON_ID = /^[A-Za-z0-9-]{1,64}$/;
 
 /** Los valores de una lista de la URL: de uno al tope, sin repetir, cada uno con `value`. */
 function filterValues<Value extends z.ZodType<string>>(value: Value) {
@@ -210,6 +223,13 @@ export const reportProjectParams = z
     withoutProject: values.includes(REPORT_WITHOUT_PROJECT),
   }));
 
+/** `?personas=<id>,<id>` con `safeParse` (D-R4-2); distingue mayúsculas. */
+export const reportPeopleParams = z
+  .object({ personas: z.string() })
+  .transform(({ personas }) => personas.split(","))
+  .pipe(filterValues(z.string().regex(PERSON_ID)))
+  .transform((ids): readonly string[] => ids);
+
 /**
  * Los filtros de la URL, cada parámetro validado por su lado con su `safeParse`:
  * uno que no vale queda vacío y no arrastra a los otros (RP-32). No decide
@@ -218,9 +238,11 @@ export const reportProjectParams = z
 export function reportFiltersOf(
   params: Readonly<Record<string, unknown>>,
 ): ReportFilters {
+  const people = reportPeopleParams.safeParse(params);
   const clients = reportClientParams.safeParse(params);
   const projects = reportProjectParams.safeParse(params);
   return {
+    people: people.success ? people.data : [],
     clients: clients.success ? clients.data : [],
     projects: projects.success ? projects.data.projects : [],
     withoutProject: projects.success && projects.data.withoutProject,
@@ -267,6 +289,14 @@ const reportClientOption = z.object({
   archived: z.boolean(),
 });
 
+const reportPersonOption = z.object({
+  id: z.string(),
+  /** `displayNameOf`: el editado o el de la cuenta. */
+  name: z.string(),
+  /** RP-62, P-08: aparte y tachada. */
+  inactive: z.boolean(),
+});
+
 const reportProjectOption = z.object({
   id: z.uuid(),
   name: z.string(),
@@ -283,6 +313,7 @@ const reportProjectOption = z.object({
  */
 const reportFiltersView = z
   .object({
+    people: z.array(z.string()).max(REPORT_MAX_FILTER_VALUES).readonly(),
     clients: z.array(z.uuid()).max(REPORT_MAX_FILTER_VALUES).readonly(),
     projects: z.array(z.uuid()).readonly(),
     withoutProject: z.boolean(),
@@ -409,6 +440,8 @@ export const reportReadyState = z.object({
   filters: reportFiltersView,
   /** D-R4-9: lo que ofrece cada filtro, de su dueño (ADR 0010), en el orden de `compareNames`. */
   filterOptions: z.object({
+    /** `null` sin `timeEntry.others.view`: el filtro no existe (D-R4-4). */
+    people: z.array(reportPersonOption).nullable(),
     clients: z.array(reportClientOption),
     projects: z.array(reportProjectOption),
   }),

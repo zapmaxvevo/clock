@@ -1,11 +1,12 @@
--- Volumen sintético del reporte (contrato de R2a, §6.1, y de R3, §6.1). Determinista: `setseed`
+-- Volumen sintético del reporte (contrato de R2a, §6.1, de R3, §6.1, y de R4, §6.1). Determinista: `setseed`
 -- fija `random()` y los ids salen de contadores. Se corre una vez sobre una base
 -- vacía migrada hasta la 0014; las fechas son relativas al día en que corre.
 --
 --   docker exec -i <contenedor> psql -U clock -d <base> -v ON_ERROR_STOP=1 < scripts/report-volume/seed.sql
 --
--- Un workspace, 30 personas (el owner, 27 activas y 2 inactivas), 6 clientes,
--- 24 proyectos (16 con cliente, 4 archivados, la mitad con tareas), tres años
+-- Un workspace, 30 personas (el owner, 27 activas y 2 inactivas) más una
+-- invitada sin entradas, la 31, que el catálogo de personas deja afuera (Q24),
+-- 6 clientes, 24 proyectos (16 con cliente, 4 archivados, la mitad con tareas), tres años
 -- de días hábiles que terminan ayer con 8 entradas por persona y por día entre
 -- las 08:00 y las 19:00 de Buenos Aires, y un timer abierto para cinco
 -- personas. Doce etiquetas, dos archivadas, en el 60 % de las entradas
@@ -50,6 +51,13 @@ select
   (case when i = 1 then 'owner' else 'member' end)::workspace_role,
   (case when i > 28 then 'inactive' else 'active' end)::membership_status
 from generate_series(1, 30) as i;
+
+-- La invitada, sin entradas: después de las otras, que así no cambian.
+insert into "user" (id, name, email, email_verified)
+values ('volume-user-31', 'Persona 31', 'persona31@empresa.com', true);
+
+insert into membership (workspace_id, user_id, role, status)
+values ('00000000-0000-4000-8000-000000000001', 'volume-user-31', 'member', 'invited');
 
 -- La mitad con el nombre editado.
 insert into user_preference (user_id, display_name)

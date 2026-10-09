@@ -1,5 +1,5 @@
 import { compareNames } from "@/lib/text";
-import { db } from "@/server/db";
+import { db, type Transaction } from "@/server/db";
 import { can, type Actor, type WorkspaceResource } from "@/server/permissions";
 import {
   addDaysToKey,
@@ -17,6 +17,7 @@ import { displayNameOf } from "@/modules/profile/service";
 import { paletteKeyOf } from "@/modules/project/palette";
 import type { ProjectFilterCatalog } from "@/modules/project/schema";
 import { getProjectFilterCatalog } from "@/modules/project/service";
+import { listWorkspacePeople, type WorkspacePerson } from "@/modules/workspace/service";
 
 import { reportPeriodOf } from "./period";
 import {
@@ -24,6 +25,7 @@ import {
   type EntryTotals,
   type ReportEntryFilter,
   type ReportLevelRead,
+  type ReportSpan,
   type LevelGroupRow,
   type LevelTotalRow,
   type StoredProject,
@@ -46,6 +48,8 @@ import {
 type ScopePeople =
   /** `timeEntry.others.view`: todas las personas del workspace, activas e inactivas (RP-02, RP-61). */
   | { readonly kind: "everyone" }
+  /** Con `timeEntry.others.view` y el filtro de personas: solo estas, del workspace (D-R4-4). */
+  | { readonly kind: "chosen"; readonly userIds: readonly string[] }
   /** Sin el permiso: solo quien mira (RP-01, P-01). */
   | { readonly kind: "self"; readonly userId: string };
 
@@ -63,7 +67,7 @@ class Scope {
   ) {}
 }
 
-/** El alcance de las lecturas (D-R2a-1). Solo `scopeOf` lo construye. */
+/** El alcance de las lecturas (D-R2a-1). Solo `scopeOf` y `narrowedTo` lo construyen. */
 export type ReportScope = Scope;
 
 export type ReportRequest = {
@@ -81,7 +85,7 @@ function workspaceResource(actor: Actor): WorkspaceResource {
   return { kind: "workspace", workspaceId: actor.workspaceId };
 }
 
-/** Único constructor del alcance: `can()` decide si quien mira ve a todos (D-R2a-2). */
+/** Constructor del alcance de quien mira: `can()` decide si ve a todos (D-R2a-2). */
 function scopeOf(actor: Actor): Scope {
   const people: ScopePeople = can(
     actor,
@@ -91,6 +95,28 @@ function scopeOf(actor: Actor): Scope {
     ? { kind: "everyone" }
     : { kind: "self", userId: actor.userId };
   return new Scope(actor.workspaceId, people);
+}
+
+/**
+ * D-R4-4: el alcance angostado a las personas elegidas. Solo sale de
+ * `everyone`, que ya respondió `timeEntry.others.view`: nunca ensancha. Es,
+ * con `scopeOf`, lo único que construye un `Scope`.
+ */
+function narrowedTo(scope: Scope, userIds: readonly string[]): Scope {
+  if (scope.people.kind !== "everyone") {
+    throw new Error(`El alcance ${scope.people.kind} no se angosta a personas elegidas.`);
+  }
+  if (userIds.length < 1 || userIds.length > REPORT_MAX_FILTER_VALUES) {
+    throw new RangeError(
+      `Personas elegidas fuera de 1 a ${REPORT_MAX_FILTER_VALUES}: ${userIds.length}.`,
+    );
+  }
+  return new Scope(scope.workspaceId, { kind: "chosen", userIds });
+}
+
+/** Lo que dice la línea del alcance: lo que quien mira puede ver, no lo elegido (D-R4-4). */
+function scopeLineOf(scope: Scope): ReportReadyState["scope"] {
+  return scope.people.kind === "self" ? "self" : "everyone";
 }
 
 /** El proyecto con el color estrechado a la paleta, o `null`. */
@@ -213,6 +239,8 @@ type ReportRead = {
   readonly levels: readonly (readonly LevelTotalRow[])[];
   readonly totals: EntryTotals;
   readonly catalog: ProjectFilterCatalog;
+  /** Las opciones del filtro de personas; `null` sin `timeEntry.others.view`. */
+  readonly people: PersonOptions | null;
   /** Los filtros efectivos: los del pedido que están en el catálogo (D-R4-5). */
   readonly filters: ReportFilters;
 };
@@ -223,8 +251,14 @@ type ReportRead = {
  * página los recibe de `reportFiltersOf`, que ya lo garantiza; es para otro
  * llamador (R6), antes de leer.
  */
-function checkFilters({ clients, projects, withoutProject }: ReportFilters): void {
+function checkFilters({
+  people,
+  clients,
+  projects,
+  withoutProject,
+}: ReportFilters): void {
   const lists = [
+    { name: "persona", values: people, count: people.length },
     { name: "cliente", values: clients, count: clients.length },
     {
       name: "proyecto",
@@ -241,18 +275,43 @@ function checkFilters({ clients, projects, withoutProject }: ReportFilters): voi
   }
 }
 
+type PersonOptions = NonNullable<ReportReadyState["filterOptions"]["people"]>;
+
+/**
+ * RP-62, D-R4-9: las opciones del filtro de personas, campo por campo, con el
+ * nombre de `displayNameOf` (ADR 0021) y en el orden de `compareNames`. Un
+ * campo que `WorkspacePerson` sume no llega a la pantalla sin un cambio acá.
+ */
+function toPersonOptions(people: readonly WorkspacePerson[]): PersonOptions {
+  return people
+    .map((person) => ({
+      id: person.userId,
+      name: displayNameOf({ displayName: person.displayName }, person.accountName),
+      inactive: person.status === "inactive",
+    }))
+    .sort(compareNames);
+}
+
 /**
  * D-R4-5, RP-34: los filtros del pedido que están en el catálogo, en el orden
- * del catálogo y con sus ids, comparados tal cual. Lo que no está se ignora él
- * solo. «Sin proyecto» no está en ningún catálogo y pasa igual.
+ * del catálogo y con sus ids, comparados tal cual, sin cambiar mayúsculas. Lo
+ * que no está se ignora él solo. «Sin proyecto» no está en ningún catálogo y
+ * pasa igual. Sin catálogo de personas, el filtro de personas no existe
+ * (D-R4-4).
  */
 function effectiveFiltersOf(
   filters: ReportFilters,
   catalog: ProjectFilterCatalog,
+  people: PersonOptions | null,
 ): ReportFilters {
+  const chosen = new Set(filters.people);
   const clients = new Set(filters.clients);
   const projects = new Set(filters.projects);
   return {
+    people:
+      people === null
+        ? []
+        : people.filter(({ id }) => chosen.has(id)).map(({ id }) => id),
     clients: catalog.clients.filter(({ id }) => clients.has(id)).map(({ id }) => id),
     projects: catalog.projects.filter(({ id }) => projects.has(id)).map(({ id }) => id),
     withoutProject: filters.withoutProject,
@@ -274,8 +333,10 @@ function entryFilterOf(filters: ReportFilters): ReportEntryFilter {
  */
 function toFilterOptions(
   catalog: ProjectFilterCatalog,
+  people: PersonOptions | null,
 ): ReportReadyState["filterOptions"] {
   return {
+    people,
     clients: catalog.clients.map(({ id, name, archived }) => ({ id, name, archived })),
     projects: catalog.projects.map(({ id, name, color, client, archived }) => ({
       id,
@@ -403,6 +464,77 @@ async function readLevelsWithinLimit(
   return shown;
 }
 
+/** Lo que se lee de un pedido ya validado: sus niveles, el intervalo, los tramos y los filtros. */
+type ReadPlan = {
+  readonly levels: readonly ReportGroupBy[];
+  readonly span: ReportSpan;
+  /** Los cortes de `span` si la fecha es un nivel; si no, `null`. */
+  readonly buckets: TimeBuckets | null;
+  /** Los del pedido, sin cruzar con los catálogos. */
+  readonly filters: ReportFilters;
+};
+
+/** La lectura de los `depth` primeros niveles, con los tramos solo si la fecha está entre ellos. */
+function levelReadOf(
+  plan: ReadPlan,
+  depth: number,
+  filter: ReportEntryFilter,
+  limit?: number,
+): ReportLevelRead {
+  const dimensions = plan.levels.slice(0, depth);
+  return {
+    span: plan.span,
+    filter,
+    dimensions,
+    buckets: dimensions.includes("date") ? plan.buckets : null,
+    limit,
+  };
+}
+
+/**
+ * Todo lo que se lee de un pedido, con la transacción de solo lectura de
+ * quien llama: primero los catálogos, que deciden los filtros efectivos
+ * (D-R4-5), y después los niveles y el total con esos filtros. El catálogo de
+ * personas se lee solo con el alcance `everyone`: `listWorkspacePeople` pide
+ * `team.view` y no `timeEntry.others.view`, que responde `scopeOf` (D-R4-4).
+ */
+async function readReport(
+  tx: Transaction,
+  actor: Actor,
+  scope: Scope,
+  plan: ReadPlan,
+): Promise<ReportRead> {
+  const catalog = await getProjectFilterCatalog(tx, actor);
+  // D-R4-4: el catálogo de personas solo para quien ve a todos.
+  const people =
+    scope.people.kind === "everyone"
+      ? toPersonOptions(await listWorkspacePeople(tx, actor))
+      : null;
+  const filters = effectiveFiltersOf(plan.filters, catalog, people);
+  const filter = entryFilterOf(filters);
+  // D-R4-4: las personas angostan el alcance; los otros filtros se suman a él.
+  const readScope = filters.people.length > 0 ? narrowedTo(scope, filters.people) : scope;
+  const levels = await readLevelsWithinLimit(plan.levels.length, (depth, limit) =>
+    reportRepository.totalsByLevels(
+      readScope,
+      levelReadOf(plan, depth, filter, limit),
+      tx,
+    ),
+  );
+  const [first] = levels;
+  // El total no pasa por la unión con las etiquetas; con el primer nivel sin
+  // etiqueta, cada entrada filtrada está en un grupo y la suma es el total
+  // (D-R2a-7).
+  const totals =
+    plan.levels[0] === "tag"
+      ? await reportRepository.entryTotals(readScope, { span: plan.span, filter }, tx)
+      : {
+          seconds: first.reduce((sum, row) => sum + row.seconds, 0),
+          billableSeconds: first.reduce((sum, row) => sum + row.billableSeconds, 0),
+        };
+  return { levels, totals, catalog, people, filters };
+}
+
 /**
  * RP-10: el resumido de quien mira, armado en el servidor con su zona y su
  * primer día de la semana. `now` existe para que los tests fijen el día.
@@ -448,45 +580,12 @@ export async function getReportState(
   const buckets = levels.includes("date")
     ? dayBuckets(range.first, range.last, timeZone)
     : null;
-  /** La lectura de los `depth` primeros niveles, con los tramos solo si la fecha está entre ellos. */
-  function levelRead(
-    depth: number,
-    filter: ReportEntryFilter,
-    limit?: number,
-  ): ReportLevelRead {
-    const dimensions = levels.slice(0, depth);
-    return {
-      span,
-      filter,
-      dimensions,
-      buckets: dimensions.includes("date") ? buckets : null,
-      limit,
-    };
-  }
   // ADR 0021, D-R3-3: una sola foto, con los catálogos de los filtros
   // (D-R4-5). Se abre después de `report.view`, de `scopeOf` y de las
   // invariantes.
-  const read: ReportRead = await db.transaction(
-    async (tx) => {
-      const catalog = await getProjectFilterCatalog(tx, actor);
-      const filters = effectiveFiltersOf(request.filters, catalog);
-      const filter = entryFilterOf(filters);
-      const shown = await readLevelsWithinLimit(levels.length, (depth, limit) =>
-        reportRepository.totalsByLevels(scope, levelRead(depth, filter, limit), tx),
-      );
-      const [first] = shown;
-      // El total no pasa por la unión con las etiquetas; con el primer nivel
-      // sin etiqueta, cada entrada filtrada está en un grupo y la suma es el
-      // total (D-R2a-7).
-      const totals =
-        groupBy === "tag"
-          ? await reportRepository.entryTotals(scope, { span, filter }, tx)
-          : {
-              seconds: first.reduce((sum, row) => sum + row.seconds, 0),
-              billableSeconds: first.reduce((sum, row) => sum + row.billableSeconds, 0),
-            };
-      return { levels: shown, totals, catalog, filters };
-    },
+  const read = await db.transaction(
+    (tx) =>
+      readReport(tx, actor, scope, { levels, span, buckets, filters: request.filters }),
     { isolationLevel: "repeatable read", accessMode: "read only" },
   );
   const dates = { buckets, todayKey, format: settings.formats.date };
@@ -504,12 +603,12 @@ export async function getReportState(
     groupBy,
     subgroups: [...request.subgroups],
     levelsShown,
-    scope: scope.people.kind,
+    scope: scopeLineOf(scope),
     timeZone,
     totalSeconds: read.totals.seconds,
     billableSeconds: read.totals.billableSeconds,
     groups: treeOf(read.levels, dates),
     filters: read.filters,
-    filterOptions: toFilterOptions(read.catalog),
+    filterOptions: toFilterOptions(read.catalog, read.people),
   };
 }

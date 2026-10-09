@@ -181,17 +181,19 @@ export function shiftRange(range: ReportRange, days: number): ReportRange {
 export const NO_PROJECT_KEY = "sin-proyecto";
 
 /**
- * Los filtros de la URL (D-R4-2): ids de clientes y de proyectos, con
- * `NO_PROJECT_KEY` entre los de proyecto. Uno que falta, o vacío, no se
- * escribe.
+ * Los filtros de la URL (D-R4-2): ids de personas, tal como los guarda la
+ * base, y de clientes y de proyectos, con `NO_PROJECT_KEY` entre los de
+ * proyecto. Uno que falta, o vacío, no se escribe.
  */
 export type ReportUrlFilters = {
+  readonly people?: readonly string[];
   readonly clients?: readonly string[];
   readonly projects?: readonly string[];
 };
 
 /** Cada filtro con su parámetro, en el orden en que la URL los escribe (D-R4-2). */
 const FILTER_PARAMS = [
+  ["people", "personas"],
   ["clients", "clientes"],
   ["projects", "proyectos"],
 ] as const;
@@ -228,9 +230,8 @@ export function reportsUrl(
 /**
  * La URL es la de ese período, esa agrupación, esos subniveles y esos
  * filtros: cada parámetro una vez, sin `subagrupar` si no hay subniveles y
- * sin `clientes` ni `proyectos` si no se piden. Una lista de filtro tiene
- * que ser la que escribe la aplicación, en su orden. `personas` no está nunca:
- * en R4a la aplicación no lo escribe.
+ * sin `personas`, `clientes` ni `proyectos` si no se piden. Una lista de
+ * filtro tiene que ser la que escribe la aplicación, en su orden.
  */
 export function reportsUrlOf(
   range: ReportRange,
@@ -249,7 +250,6 @@ export function reportsUrlOf(
     url.searchParams.getAll("hasta").join(",") === dayKeyOf(range.last) &&
     url.searchParams.getAll("agrupar").join(",") === groupBy &&
     JSON.stringify(url.searchParams.getAll("subagrupar")) === JSON.stringify(levels) &&
-    !url.searchParams.has("personas") &&
     lists.every(
       ([param, list]) =>
         JSON.stringify(url.searchParams.getAll(param)) === JSON.stringify(list),
@@ -621,10 +621,11 @@ export async function clickRangeDay(page: Page, target: CivilDay): Promise<void>
 }
 
 /** Los filtros de la barra, por el rótulo de su botón (D-R4-8). */
-export type FilterName = "Clientes" | "Proyectos";
+export type FilterName = "Personas" | "Clientes" | "Proyectos";
 
 /** El buscador de cada filtro, por su `aria-label` (§5.7). */
 const FILTER_SEARCH: Record<FilterName, string> = {
+  Personas: "Buscar personas",
   Clientes: "Buscar clientes",
   Proyectos: "Buscar proyectos",
 };
@@ -651,6 +652,16 @@ export function filterButton(page: Page, filter: FilterName, summary: string): L
 }
 
 /**
+ * El botón de un filtro, diga lo que diga. Un member no tiene el de
+ * «Personas» (D-R4-4).
+ */
+export function anyFilterButton(page: Page, filter: FilterName): Locator {
+  return filterControl(page).getByRole("button", {
+    name: new RegExp(`^${escapeRegExp(filter)}: `),
+  });
+}
+
+/**
  * El buscador del panel abierto de un filtro, que va en un portal y solo
  * existe con el panel abierto.
  */
@@ -668,12 +679,12 @@ export function filterPanel(page: Page, filter: FilterName): Locator {
 
 /**
  * Un grupo de opciones del panel abierto: las vigentes, nombrado por el
- * filtro, o el de aparte, «Archivados» (D-R4-8).
+ * filtro, o el de aparte, «Archivados» o «Inactivas» (D-R4-8).
  */
 export function filterGroup(
   page: Page,
   filter: FilterName,
-  group: FilterName | "Archivados",
+  group: FilterName | "Archivados" | "Inactivas",
 ): Locator {
   return filterPanel(page, filter).getByRole("group", { name: group, exact: true });
 }
@@ -690,8 +701,8 @@ export function filterOption(page: Page, name: string): Locator {
 
 /**
  * Las casillas de un grupo del panel son exactamente `names`, en ese orden,
- * por el comienzo de su nombre, como `filterOption`. Primero la cantidad, que reintenta hasta que
- * el buscador las filtra.
+ * por el comienzo de su nombre, como `filterOption`. Primero la cantidad, que
+ * reintenta hasta que el buscador las filtra.
  */
 export async function expectFilterOptions(
   group: Locator,
@@ -702,6 +713,32 @@ export async function expectFilterOptions(
   for (const [index, name] of names.entries()) {
     await expect(options.nth(index)).toHaveAccessibleName(leadingName(name));
   }
+}
+
+/**
+ * Si el nombre visible de una opción del panel abierto se ve tachado (P-08):
+ * el texto o alguno de sus contenedores, hasta el panel, lleva
+ * `line-through`. El tachado no se anuncia (el grupo dice por qué está
+ * aparte), así que no hay rol ni nombre que lo muestre y se lee el estilo
+ * calculado; `text-decoration` no se hereda, por eso se miran los
+ * contenedores.
+ */
+export async function isStruckThrough(page: Page, name: string): Promise<boolean> {
+  return page
+    .getByRole("dialog")
+    .getByText(name, { exact: true })
+    .evaluate((text) => {
+      for (
+        let node: Element | null = text;
+        node !== null && node.getAttribute("role") !== "dialog";
+        node = node.parentElement
+      ) {
+        if (getComputedStyle(node).textDecorationLine.includes("line-through")) {
+          return true;
+        }
+      }
+      return false;
+    });
 }
 
 /** «Aplicar», al pie del panel abierto de un filtro, que va en un portal. */

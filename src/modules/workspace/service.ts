@@ -1,9 +1,14 @@
 import { db, type Transaction } from "@/server/db";
 import { env } from "@/server/env";
-import type { Actor } from "@/server/permissions";
+import { can, type Actor } from "@/server/permissions";
 import { parseWeekStart, type WeekStart } from "@/server/time";
 
-import { workspaceRepository, type MembershipRow, type WorkspaceRow } from "./repository";
+import {
+  workspaceRepository,
+  type MembershipRow,
+  type PersonRow,
+  type WorkspaceRow,
+} from "./repository";
 
 export type WorkspaceContext = {
   readonly workspace: WorkspaceRow;
@@ -79,4 +84,48 @@ export async function ensureWorkspaceContext(user: {
       },
     };
   });
+}
+
+/** Una persona del workspace con su estado, para un catálogo de otra pantalla. */
+export type WorkspacePerson = {
+  readonly userId: string;
+  /** `user.name`, el de Google. */
+  readonly accountName: string;
+  /** `user_preference.display_name`, o `null`: el nombre lo arma `displayNameOf` (ADR 0021). */
+  readonly displayName: string | null;
+  readonly status: "active" | "inactive";
+};
+
+/**
+ * RP-62, RP-64: las personas del workspace, activas e inactivas; las invitadas
+ * no están, por su estado. Vacía sin `team.view`. Sin orden. Solo lee, con la
+ * transacción de quien la llama (ADR 0010).
+ *
+ * Solo pregunta `team.view`, que tienen todos los roles. El reporte la llama
+ * únicamente con el alcance `everyone`, que ya respondió
+ * `timeEntry.others.view` en `scopeOf` (D-R4-4): otro llamador que ofrezca el
+ * catálogo como filtro de horas (la exportación de R6) pasa por ese alcance.
+ */
+export async function listWorkspacePeople(
+  tx: Transaction,
+  actor: Actor,
+): Promise<readonly WorkspacePerson[]> {
+  if (!can(actor, "team.view", { kind: "workspace", workspaceId: actor.workspaceId })) {
+    return [];
+  }
+  const rows = await workspaceRepository.listPeople(tx, actor.workspaceId);
+  return rows.map(toWorkspacePerson);
+}
+
+/** La fila con el estado estrechado: la consulta solo deja pasar `active` e `inactive`. */
+function toWorkspacePerson(row: PersonRow): WorkspacePerson {
+  if (row.status === "invited") {
+    throw new Error(`La persona ${row.userId} llegó invitada al catálogo.`);
+  }
+  return {
+    userId: row.userId,
+    accountName: row.accountName,
+    displayName: row.displayName,
+    status: row.status,
+  };
 }

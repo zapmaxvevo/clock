@@ -20,13 +20,14 @@ import {
 import {
   applyFilter,
   chosenKeys,
+  filterStrikesRetired,
   filterSummary,
   hasNoMatches,
   visibleOptions,
   type FilterKind,
   type FilterOption,
 } from "./filter-model";
-import { filterNames, filterSearch, reportLabels } from "./labels";
+import { filterNames, filterRetired, filterSearch, reportLabels } from "./labels";
 
 type FilterPickerProps = {
   readonly range: ReportRange;
@@ -135,8 +136,9 @@ type FilterPanelProps = {
 /**
  * Lo que hay dentro del popover: el buscador, que recibe el foco al abrir por
  * ser lo primero que se alcanza con el tabulador, las vigentes en un grupo
- * nombrado por el filtro, las archivadas en el suyo (D-R4-8), la región de
- * alerta y «Aplicar».
+ * nombrado por el filtro, las de aparte en el suyo —«Archivados», o
+ * «Inactivas» con los nombres tachados (D-R4-8, P-08)—, la región de alerta y
+ * «Aplicar».
  */
 export function FilterPanel({
   kind,
@@ -182,13 +184,14 @@ export function FilterPanel({
               id={retiredHeadingId}
               className="text-muted-foreground px-1.5 pb-1 text-xs font-medium"
             >
-              {reportLabels.archivedOptions}
+              {filterRetired[kind]}
             </p>
             {retired.map((option) => (
               <OptionItem
                 key={option.key}
                 option={option}
                 checked={chosenSet.has(option.key)}
+                struck={filterStrikesRetired[kind]}
                 onToggle={onToggle}
               />
             ))}
@@ -220,10 +223,13 @@ export function FilterPanel({
 function OptionItem({
   option,
   checked,
+  struck = false,
   onToggle,
 }: {
   readonly option: FilterOption;
   readonly checked: boolean;
+  /** Con el nombre tachado, según `filterStrikesRetired` (P-08). */
+  readonly struck?: boolean;
   readonly onToggle: (key: string, checked: boolean) => void;
 }) {
   const id = useId();
@@ -246,7 +252,13 @@ function OptionItem({
             style={{ backgroundColor: paletteColor(option.color).value }}
           />
         )}
-        <span className={cn("truncate", withoutProject && "text-muted-foreground")}>
+        <span
+          className={cn(
+            "truncate",
+            withoutProject && "text-muted-foreground",
+            struck && "line-through",
+          )}
+        >
           {option.name}
         </span>
         {option.detail !== null && (

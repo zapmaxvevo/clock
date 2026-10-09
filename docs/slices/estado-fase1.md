@@ -33,6 +33,8 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-09.
 | Núcleo de reportes, R2b                     | En `main` |
 | Núcleo de reportes, R3a                     | En `main` |
 | Núcleo de reportes, R3b                     | En `main` |
+| Núcleo de reportes, R4a                     | En `main` |
+| Núcleo de reportes, R4b                     | En `main` |
 
 Los slices 1 a 13 (con 2b, 2c, 7b, 8b, 8c, 11a y 11b) y el arreglo del piso fijo están en `main`.
 El 13 (planilla de horarios) se mergeó el 2026-10-08 con lint, typecheck, 1279 de unidad, 1223 de
@@ -118,6 +120,29 @@ vacío del owner y `renewWorkspace` se corta.
      falla 6 de 10 en `main` esperando la respuesta del blur; `ProjectColorDot` común (sexta
      copia); el borde invisible de las flechas del reporte (`buttonVariants` sin `cn`); los
      popovers de período y subnivel sin nombre accesible.
+
+     **Al cortar la quinta sesión** (2026-10-09, ~15:15, por el tope de uso): rama
+     `nucleo/r4b` desde `2aff669`, en checkout en el árbol principal y pusheada. `backend-r4a`
+     (sesión `f88c70a0-…`, transcript en `subagents/agent-abackend-r4a-*.jsonl`) arrancó C11 y
+     el paso 6 de R4b; si no hay commits nuevos en la rama, relanzar un `backend-dev` con el
+     mismo encargo (C11 en su commit; pasos 6, 8 y 9; base `clock_r4b_back`). Frontend,
+     test-engineer y e2e de R4b todavía no arrancaron: se lanzan con el hash del paso 6, como
+     en R4a, con `clock_r4b_front`, `clock_r4b_test` y `clock_r4b_e2e` (esta migrada), y
+     `parity-analyst`/`parity-reviewer` con base propia. R4b lleva la revisión de seguridad
+     completa (§7, paso 11, B). El flaky de `e2e/tracker.spec.ts:477` quedó arreglado en `main` (`d5bc75e`, fast-forward): el test suponía que `page.clock.install()` detiene el reloj, y en Playwright 1.63 solo lo hace `pauseAt`, así que el rebote de 500 ms guardaba antes del blur. `stopClock(page)` en `e2e/clock.ts`; 20/20 con el arreglo, 5 de 20 fallan sin él. Deuda: `stopClock` también en `:383` y `:403`, que dicen tener el reloj detenido (pasan 40/40). `nucleo/r4b` lo recibe al mergear `main`. Mirar `git worktree list` y `git branch` al retomar. **Sexta sesión** (2026-10-09, ~15:00):
+     el tope de uso cortó a los cuatro agentes de R4b a las 12:29 en medio de una edición,
+     después de que el team-lead los reactivara pese al aviso de tope del usuario (lección en la
+     memoria `tope-de-uso`). Su trabajo a medias quedó sin commitear en el árbol, con una copia
+     en parches por área en el scratchpad de la sesión `da8db711-…` (`r4b-corte/`): backend
+     (paso 8), frontend (paso 7), integración (`scope.integration.test.ts`) y e2e (helpers).
+     Decisión del usuario: relanzar de a dos. `backend-r4b` (pasos 8 y 9) y `frontend-r4b`
+     (paso 7) relanzados sobre ese trabajo; integración y e2e, con el hash del paso 8. **R4b en `main`** (2026-10-09): el filtro de personas. Seis
+     revisiones aprobadas (de a dos), ronda de correcciones y corrida final en verde sobre
+     `4aa6b01`: 1652 de unidad, 277 de `test:time-ar`, 1397 de integración y e2e 201/201 ×2.
+     Todo en `correcciones-nucleo-reportes-r4b-revisiones.md`. Deuda nueva: C4, C5 y C6 de R4b
+     (copias de helpers de test y `seedUser` posicional). **Sigue R10** (agrupar por
+     descripción, mes y semana, mapa §R10): primero su contrato. R8 sigue solo
+     en contrato. Después de R4b: R10, R5, R6, R7 y R9.
 
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
      (`7b66b03`), en checkout en el árbol principal. `architect-r3` quedó escribiendo

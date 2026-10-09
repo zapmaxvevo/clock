@@ -17,8 +17,14 @@ const span: ReportSpan = { from: new Date(0), to: new Date(0) };
 const entries: ReportEntryRead = { span, filter: NO_ENTRY_FILTER };
 const read: ReportLevelRead = { ...entries, dimensions: ["person"], buckets: null };
 
-// @ts-expect-error: un literal con workspaceId y people no es un ReportScope; solo scopeOf lo construye.
+// @ts-expect-error: un literal con workspaceId y people no es un ReportScope; solo scopeOf y narrowedTo lo construyen.
 export const forged: ReportScope = { workspaceId: "w", people: { kind: "everyone" } };
+
+// @ts-expect-error: un literal con personas elegidas tampoco lo es; solo narrowedTo angosta el alcance (D-R4-4).
+export const forgedChosen: ReportScope = {
+  workspaceId: "w",
+  people: { kind: "chosen", userIds: ["u"] },
+};
 
 export async function readsWithoutScope() {
   // @ts-expect-error: totalsByLevels exige el alcance como primer parámetro.
