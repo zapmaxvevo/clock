@@ -60,15 +60,11 @@ vacío del owner y `renewWorkspace` se corta.
      Integración 1275/1275 con la configuración por defecto.
    - **R2b, comprobación contra Neon** (decisión del usuario): en el preview de la rama apenas
      `totalsByBucket` esté, siempre antes del merge; se le avisa al usuario en ese momento.
-   - **R2b listo para mergear, salvo Neon**, en `nucleo/r2b-atajos` (árbol principal, pusheada a
-     `origin`), HEAD `1ba9462`. Seis revisiones aprobadas, ronda de correcciones cerrada y corrida
-     final en verde (`correcciones-nucleo-reportes-r2b-revisiones.md`, «Cierre»). **Falta la
-     comprobación contra Neon del usuario** (§6.3 del contrato) en el preview
-     https://clock-idbieevpr-zapmaxvevos-projects.vercel.app (de `6561286`; vale para HEAD porque
-     `totalsByBucket` y `dayBuckets` no cambiaron desde `51fe0ce`). Con ella en verde: anotarla en
-     el cierre, merge `--no-ff` a `main` y push. Si falla por el driver, `backend-r2b` aplica la
-     alternativa de D-R2b-7 (un parámetro por corte). Ya no se parte en R2b + R2c: los commits
-     quedaron intercalados.
+   - **R2b en `main`** (2026-10-09): seis revisiones, ronda de correcciones, corrida final en verde
+     y la comprobación contra Neon del usuario pasada en el preview de `6561286`
+     (`correcciones-nucleo-reportes-r2b-revisiones.md`, «Cierre»). El preview de Vercel tiene
+     `DATABASE_URL` (rama `preview` de Neon), `BETTER_AUTH_SECRET` y `BETTER_AUTH_URL` propios;
+     `BETTER_AUTH_URL` quedó cargado solo para la rama `nucleo/r2b-atajos`.
    - **Siguiente slice del núcleo**: R3 (subgrupos, tarea y etiqueta), o R8 (cambiar el rol), que
      solo depende de R2a. Orden del mapa: R2a → R2b → R3 → R4 → R5 → R6 → R7, con R8 después de R2a y
      R9 después de R4.

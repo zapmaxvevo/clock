@@ -101,6 +101,13 @@ cambios de `91b25df` y `72391e9`.
 Deuda nueva: la navegación del shell mide 531 px y da desplazamiento horizontal a 320 y 375 px
 (`src/app`, ya estaba en R2a).
 
-**Falta la comprobación contra Neon** (§6.3) en el preview de `6561286`, que vale para HEAD. Con
-ella en verde se anota el resultado acá y se mergea. La partición en R2b y R2c ya no es barata:
-los commits de A y B quedaron intercalados y la ronda de correcciones toca los dos.
+**Comprobación contra Neon (§6.3): pasó**, hecha por el usuario el 2026-10-08 en el preview de
+`6561286` (alias de la rama), contra la rama `preview` de Neon vaciada y migrada desde cero (15
+migraciones, sin personas ni entradas antes de la prueba, sin datos de producción), con la zona
+`America/Argentina/Buenos_Aires`. El preview tiene `DATABASE_URL`, `BETTER_AUTH_SECRET` y
+`BETTER_AUTH_URL` propios. Entradas: martes 29/09 de 09:00 a 11:00 y de 23:00 a 23:50, jueves
+01/10 de 14:00 a 15:30; la planilla da 2:50, 1:30 y 4:20. «Semana anterior» por «Fecha»: dos
+filas, 29/09 2:50 y 01/10 1:30, total 4:20, la entrada de las 23:00 en su día; por «Persona»,
+4:20. «Año pasado» por «Fecha» (365 cortes en el parámetro) carga sin error. `neon-serverless`
+pasa el arreglo como un solo parámetro: no hace falta la alternativa de D-R2b-7. Vale para HEAD,
+porque `totalsByBucket` y `dayBuckets` no cambiaron desde `51fe0ce`. Se mergea a `main`.
