@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/server/db";
 import { CHECK_VIOLATION, constraintOf } from "@/server/db/constraint-error";
 import { membership, user, workspace, workspaceSettings } from "@/server/db/schema";
+import type { Actor } from "@/server/permissions";
 import { warmPool, waitForBlockedBackends } from "@/test/concurrency";
 import {
   seedMember,
@@ -295,7 +296,7 @@ describe("listWorkspacePeople (RP-62, RP-64; criterio 17 de R4)", () => {
   }
 
   /** Lo que se lee con el actor, en una transacción como la del reporte. */
-  function readPeople(actor: Parameters<typeof listWorkspacePeople>[1]) {
+  function readPeople(actor: Actor) {
     return db.transaction((tx) => listWorkspacePeople(tx, actor));
   }
 

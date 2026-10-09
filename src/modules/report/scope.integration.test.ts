@@ -644,7 +644,8 @@ function entriesIn(workspaceId: string, userId?: string): SeededEntry[] {
 /**
  * Sin `report.view`, `forbidden` sin leer ni abrir la transacción, con un nivel
  * y con subniveles (criterios 9 y 21 de R3), y sin leer los catálogos de los
- * filtros, con `filters` o sin ellos (criterio 12 de R4).
+ * filtros, el de personas incluido, con `filters` o sin ellos (criterios 12 y
+ * 19 de R4).
  */
 async function expectForbiddenWithoutReading(
   actor: Actor,
@@ -654,6 +655,7 @@ async function expectForbiddenWithoutReading(
   const entryTotals = vi.spyOn(reportRepository, "entryTotals");
   const clients = vi.spyOn(projectRepository, "listClients");
   const projects = vi.spyOn(projectRepository, "listAllProjects");
+  const listPeople = vi.spyOn(workspaceRepository, "listPeople");
   const transaction = vi.spyOn(db, "transaction");
   try {
     const requests = [
@@ -669,12 +671,14 @@ async function expectForbiddenWithoutReading(
     expect(entryTotals).not.toHaveBeenCalled();
     expect(clients).not.toHaveBeenCalled();
     expect(projects).not.toHaveBeenCalled();
+    expect(listPeople).not.toHaveBeenCalled();
     expect(transaction).not.toHaveBeenCalled();
   } finally {
     byLevels.mockRestore();
     entryTotals.mockRestore();
     clients.mockRestore();
     projects.mockRestore();
+    listPeople.mockRestore();
     transaction.mockRestore();
   }
 }
@@ -810,11 +814,14 @@ describe("la decisión es de can() (criterio 4, R9)", () => {
     );
   });
 
-  it("un owner activo al que can() le niega report.view no lee nada", async () => {
+  it("un owner activo al que can() le niega report.view no lee nada, tampoco con personas", async () => {
     permissionOverrides.denied.push({ userId: a.ownerId, action: "report.view" });
-    await expectForbiddenWithoutReading(
-      actorIn(a.workspaceId, a.ownerId, { role: "owner" }),
-    );
+    const owner = actorIn(a.workspaceId, a.ownerId, { role: "owner" });
+    await expectForbiddenWithoutReading(owner);
+    await expectForbiddenWithoutReading(owner, {
+      ...NO_REPORT_FILTERS,
+      people: [a.memberId],
+    });
   });
 });
 
@@ -1534,7 +1541,12 @@ describe("los filtros de cliente y de proyecto dentro del alcance (criterio 12 d
             ),
           );
         const memberId = await seedMember(a.workspaceId, "member", status);
-        for (const filters of filtersInA()) {
+        const withPeople: ReportFilters = {
+          ...NO_REPORT_FILTERS,
+          people: [a.memberId, a.adminId],
+          projects: [a.projectId],
+        };
+        for (const filters of [...filtersInA(), withPeople]) {
           await expectForbiddenWithoutReading(
             actorIn(a.workspaceId, a.ownerId, { role: "owner", status }),
             filters,

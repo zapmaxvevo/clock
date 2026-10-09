@@ -67,7 +67,7 @@ class Scope {
   ) {}
 }
 
-/** El alcance de las lecturas (D-R2a-1). Solo `scopeOf` lo construye. */
+/** El alcance de las lecturas (D-R2a-1). Solo `scopeOf` y `narrowedTo` lo construyen. */
 export type ReportScope = Scope;
 
 export type ReportRequest = {
@@ -85,7 +85,7 @@ function workspaceResource(actor: Actor): WorkspaceResource {
   return { kind: "workspace", workspaceId: actor.workspaceId };
 }
 
-/** Único constructor del alcance: `can()` decide si quien mira ve a todos (D-R2a-2). */
+/** Constructor del alcance de quien mira: `can()` decide si ve a todos (D-R2a-2). */
 function scopeOf(actor: Actor): Scope {
   const people: ScopePeople = can(
     actor,
@@ -258,7 +258,7 @@ function checkFilters({
   withoutProject,
 }: ReportFilters): void {
   const lists = [
-    { name: "personas", values: people, count: people.length },
+    { name: "persona", values: people, count: people.length },
     { name: "cliente", values: clients, count: clients.length },
     {
       name: "proyecto",
@@ -494,7 +494,9 @@ function levelReadOf(
 /**
  * Todo lo que se lee de un pedido, con la transacción de solo lectura de
  * quien llama: primero los catálogos, que deciden los filtros efectivos
- * (D-R4-5), y después los niveles y el total con esos filtros.
+ * (D-R4-5), y después los niveles y el total con esos filtros. El catálogo de
+ * personas se lee solo con el alcance `everyone`: `listWorkspacePeople` pide
+ * `team.view` y no `timeEntry.others.view`, que responde `scopeOf` (D-R4-4).
  */
 async function readReport(
   tx: Transaction,

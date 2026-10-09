@@ -100,6 +100,11 @@ export type WorkspacePerson = {
  * RP-62, RP-64: las personas del workspace, activas e inactivas; las invitadas
  * no están, por su estado. Vacía sin `team.view`. Sin orden. Solo lee, con la
  * transacción de quien la llama (ADR 0010).
+ *
+ * Solo pregunta `team.view`, que tienen todos los roles. El reporte la llama
+ * únicamente con el alcance `everyone`, que ya respondió
+ * `timeEntry.others.view` en `scopeOf` (D-R4-4): otro llamador que ofrezca el
+ * catálogo como filtro de horas (la exportación de R6) pasa por ese alcance.
  */
 export async function listWorkspacePeople(
   tx: Transaction,

@@ -2611,6 +2611,7 @@ describe("los filtros de cliente y de proyecto (R4: RP-25, RP-26, RP-29, RP-34)"
 describe("el filtro de personas (R4b: RP-25, RP-34, RP-62, RP-64; D-R4-4)", () => {
   /** Un id como los de Better Auth: 32 alfanuméricos con mayúsculas (D-R4-2). */
   const inactiveUserId = "Q3vXk9LmP2aZr7TbW1cYn5HdF8sJe4Ug";
+  const unknownId = "NoExiste0123456789abcdefABCDEF00";
 
   let adminId: string;
   let admin: Actor;
@@ -2625,7 +2626,8 @@ describe("el filtro de personas (R4b: RP-25, RP-34, RP-62, RP-64; D-R4-4)", () =
   beforeEach(async () => {
     adminId = await seedPerson({ accountName: "Admin", role: "admin" });
     admin = actorIn(workspaceId, adminId, { role: "admin" });
-    activeId = await seedPerson({ accountName: "Ana", displayName: "Anita" });
+    // La cuenta y el nombre editado caen en lugares distintos del orden.
+    activeId = await seedPerson({ accountName: "Zoe", displayName: "Anita" });
     inactiveId = await seedPerson({
       accountName: "Inés",
       status: "inactive",
@@ -2783,7 +2785,7 @@ describe("el filtro de personas (R4b: RP-25, RP-34, RP-62, RP-64; D-R4-4)", () =
     });
 
     it("la invitada, una persona de otro workspace y un id que no existe se ignoran; junto a una del catálogo, se aplica esa", async () => {
-      for (const ignored of [invitedId, strangerId, "NoExiste0123456789abcdefABCDEF00"]) {
+      for (const ignored of [invitedId, strangerId, unknownId]) {
         const state = await filtered("person", { people: [ignored, activeId] });
         expect(state.filters.people).toEqual([activeId]);
         expect(peopleRows(state)).toEqual([["Anita", 900, false]]);
@@ -2792,7 +2794,7 @@ describe("el filtro de personas (R4b: RP-25, RP-34, RP-62, RP-64; D-R4-4)", () =
 
     it("si se ignoran todos, todas las personas, sin filtro de personas", async () => {
       const state = await filtered("person", {
-        people: [invitedId, strangerId, "NoExiste0123456789abcdefABCDEF00"],
+        people: [invitedId, strangerId, unknownId],
       });
       expect(state.filters).toEqual(NO_REPORT_FILTERS);
       expect(peopleRows(state)).toEqual(everyoneRows);
@@ -2801,7 +2803,7 @@ describe("el filtro de personas (R4b: RP-25, RP-34, RP-62, RP-64; D-R4-4)", () =
   });
 
   describe("las opciones (criterio 18, D-R4-9)", () => {
-    it("filterOptions.people: activas e inactivas con displayNameOf, solo id, name e inactive, en orden alfabético", async () => {
+    it("filterOptions.people: activas e inactivas con displayNameOf, solo id, name e inactive, en el orden alfabético de ese nombre y no del de la cuenta", async () => {
       const state = await filtered("person", { people: [activeId] });
       expect(state.filterOptions.people).toStrictEqual([
         { id: adminId, name: "Admin", inactive: false },
