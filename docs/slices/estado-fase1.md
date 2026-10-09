@@ -119,6 +119,20 @@ vacío del owner y `renewWorkspace` se corta.
      copia); el borde invisible de las flechas del reporte (`buttonVariants` sin `cn`); los
      popovers de período y subnivel sin nombre accesible.
 
+     **Al cortar la quinta sesión** (2026-10-09, ~15:15, por el tope de uso): rama
+     `nucleo/r4b` desde `2aff669`, en checkout en el árbol principal y pusheada. `backend-r4a`
+     (sesión `f88c70a0-…`, transcript en `subagents/agent-abackend-r4a-*.jsonl`) arrancó C11 y
+     el paso 6 de R4b; si no hay commits nuevos en la rama, relanzar un `backend-dev` con el
+     mismo encargo (C11 en su commit; pasos 6, 8 y 9; base `clock_r4b_back`). Frontend,
+     test-engineer y e2e de R4b todavía no arrancaron: se lanzan con el hash del paso 6, como
+     en R4a, con `clock_r4b_front`, `clock_r4b_test` y `clock_r4b_e2e` (esta migrada), y
+     `parity-analyst`/`parity-reviewer` con base propia. R4b lleva la revisión de seguridad
+     completa (§7, paso 11, B). En paralelo, `flaky-tracker` (`e2e-tester` en un worktree
+     aislado, rama `fix/tracker-blur-flaky`, base `clock_flaky_tracker`, puerto 3110) diagnostica
+     `e2e/tracker.spec.ts:477`: arregla solo si la causa está en el test; si está en `src/`,
+     vuelve con la propuesta. Mirar `git worktree list` y `git branch` al retomar. R8 sigue solo
+     en contrato. Después de R4b: R10, R5, R6, R7 y R9.
+
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
      (`7b66b03`), en checkout en el árbol principal. `architect-r3` quedó escribiendo
      `docs/slices/nucleo-reportes-r3-subgrupos-tarea-y-etiqueta.md` (sin commit). Tarea entra
