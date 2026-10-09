@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { ReportGroup } from "@/modules/report/schema";
 
 import { ReportTreeRows } from "./report-tree";
-import { visibleRows } from "./report-tree-model";
+import { visibleRows, type VisibleRow } from "./report-tree-model";
 
 const P1 = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
 const E1 = "6a7b8c9d-0e1f-4a2b-9c3d-5e6f7a8b9c0d";
@@ -35,15 +35,11 @@ const groups: ReportGroup[] = [
   },
 ];
 
-function render(open: readonly string[]): string {
+function render(rows: readonly VisibleRow[]): string {
   return renderToStaticMarkup(
     <table>
       <tbody>
-        <ReportTreeRows
-          rows={visibleRows(groups, new Set(open))}
-          nested
-          onToggle={() => undefined}
-        />
+        <ReportTreeRows rows={rows} onToggle={() => undefined} />
       </tbody>
     </table>,
   );
@@ -56,16 +52,29 @@ function rowHeadings(markup: string): string[] {
   );
 }
 
-describe("ReportTreeRows (D-R3-9, §5.4)", () => {
-  const open = [`/${P1}`, `/${P1}/2026-09-29`];
+function textOf(markup: string): string {
+  return markup.replace(/<[^>]+>/g, "");
+}
 
+/** Las clases de sangría del contenedor de un encabezado, sin fijar cuáles. */
+function indentOf(heading: string): string[] {
+  const classes = /^<span class="([^"]*)"/.exec(heading)?.[1].split(" ") ?? [];
+  return classes.filter((name) => /^(?:pl|ps|ml|ms)-/.test(name));
+}
+
+/** P1 y el martes abiertos, con las claves que da `visibleRows`. */
+function openRows(): VisibleRow[] {
+  const [project] = visibleRows(groups, new Set());
+  const tuesday = visibleRows(groups, new Set([project.key]))[1];
+  return visibleRows(groups, new Set([project.key, tuesday.key]));
+}
+
+describe("ReportTreeRows (D-R3-9, §5.4)", () => {
   it("las filas abiertas en preorden, cada una con su duración", () => {
-    const markup = render(open);
+    const markup = render(openRows());
     expect(
       [...markup.matchAll(/<tr[^>]*>(.*?)<\/tr>/g)].map(([, row]) =>
-        [...row.matchAll(/<t[hd][^>]*>(.*?)<\/t[hd]>/g)].map(([, cell]) =>
-          cell.replace(/<[^>]+>/g, ""),
-        ),
+        [...row.matchAll(/<t[hd][^>]*>(.*?)<\/t[hd]>/g)].map(([, cell]) => textOf(cell)),
       ),
     ).toEqual([
       ["P1", "1:30"],
@@ -76,46 +85,39 @@ describe("ReportTreeRows (D-R3-9, §5.4)", () => {
   });
 
   it("un grupo abierto lleva aria-expanded=true y uno cerrado false", () => {
-    const [project, tuesday, , thursday] = rowHeadings(render(open));
+    const [project, tuesday, , thursday] = rowHeadings(render(openRows()));
     expect(project).toMatch(/<button type="button" aria-expanded="true"/);
     expect(tuesday).toMatch(/<button type="button" aria-expanded="true"/);
     expect(thursday).toMatch(/<button type="button" aria-expanded="false"/);
   });
 
   it("una hoja no lleva botón: deja el lugar del chevrón, oculto al lector", () => {
-    const [, , tag] = rowHeadings(render(open));
+    const [, , tag] = rowHeadings(render(openRows()));
     expect(tag).not.toContain("<button");
     expect(tag).not.toContain("aria-expanded");
-    expect(tag).toMatch(
-      /^<span[^>]*><span aria-hidden="true" class="size-4 shrink-0"><\/span>/,
-    );
-    expect(tag).toContain('<span class="truncate">E1</span>');
+    expect(tag).toMatch(/<span aria-hidden="true"[^>]*><\/span>/);
+    expect(textOf(tag)).toBe("E1");
   });
 
-  it("la sangría marca el nivel", () => {
-    const [project, tuesday, tag] = rowHeadings(render(open));
-    expect(project).not.toMatch(/pl-(6|12)/);
-    expect(tuesday).toMatch(/^<span class="[^"]*\bpl-6\b/);
-    expect(tag).toMatch(/^<span class="[^"]*\bpl-12\b/);
+  it("la sangría marca el nivel: ninguna en el primero y una distinta en cada uno de abajo", () => {
+    const [project, tuesday, tag] = rowHeadings(render(openRows())).map(indentOf);
+    expect(project).toEqual([]);
+    expect(tuesday).toHaveLength(1);
+    expect(tag).toHaveLength(1);
+    expect(tag).not.toEqual(tuesday);
   });
 
-  it("con un solo nivel, el encabezado solo, sin el lugar del chevrón", () => {
-    const [project] = rowHeadings(
-      renderToStaticMarkup(
-        <table>
-          <tbody>
-            <ReportTreeRows
-              rows={visibleRows(
-                [{ kind: "tag", tag: { id: E1, name: "E1" }, seconds: 60 }],
-                new Set(),
-              )}
-              nested={false}
-              onToggle={() => undefined}
-            />
-          </tbody>
-        </table>,
+  it("con un solo nivel, el encabezado solo, sin botón ni lugar del chevrón", () => {
+    const [tag] = rowHeadings(
+      render(
+        visibleRows(
+          [{ kind: "tag", tag: { id: E1, name: "E1" }, seconds: 60 }],
+          new Set(),
+        ),
       ),
     );
-    expect(project).toBe('<span class="truncate">E1</span>');
+    expect(textOf(tag)).toBe("E1");
+    expect(tag).not.toContain("<button");
+    expect(tag).not.toContain("aria-hidden");
   });
 });

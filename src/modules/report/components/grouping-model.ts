@@ -19,7 +19,9 @@ function groupingOf([groupBy, ...subgroups]: readonly ReportGroupBy[]): ReportGr
  * D-R3-8: la agrupación con `dimension` en el nivel `level`, donde 0 es
  * «Agrupar por». Si la dimensión ya está en otro nivel, los dos se
  * intercambian. `null` quita ese nivel y los de abajo, y no vale en el 0.
- * Lanza si `level` está más abajo que el siguiente al último.
+ * Lanza si `level` está más abajo que el siguiente al último, y si es un nivel
+ * nuevo con una dimensión que ya está arriba, porque no hay con qué
+ * intercambiarla.
  */
 export function withLevel(
   grouping: ReportGrouping,

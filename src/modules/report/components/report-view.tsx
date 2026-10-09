@@ -2,7 +2,7 @@ import { REPORT_MAX_ROWS, type ReportReadyState } from "@/modules/report/schema"
 
 import { groupByLabels, reportLabels } from "./labels";
 import { reportHref } from "./report-href";
-import { durationLabel } from "./report-row";
+import { durationLabel } from "./group-heading";
 import { ReportTree } from "./report-tree";
 
 /** El `h1` de la pantalla, que nombra la tabla. */

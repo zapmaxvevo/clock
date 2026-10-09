@@ -6,7 +6,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import type { ReportGroup } from "@/modules/report/schema";
 
-import { durationLabel, GroupHeading } from "./report-row";
+import { durationLabel, GroupHeading } from "./group-heading";
 import { visibleRows, type VisibleRow } from "./report-tree-model";
 
 /** La sangría de cada nivel: la única marca visual del nivel (D-R3-9). */
@@ -20,8 +20,6 @@ const LEVEL_INDENT: Record<number, string> = { 1: "", 2: "pl-6", 3: "pl-12" };
  */
 export function ReportTree({ groups }: { readonly groups: readonly ReportGroup[] }) {
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
-  // Con un solo nivel no hay chevrones con que alinear los nombres.
-  const nested = groups.some((group) => group.children !== undefined);
 
   function toggle(key: string): void {
     setOpen((current) => {
@@ -33,24 +31,20 @@ export function ReportTree({ groups }: { readonly groups: readonly ReportGroup[]
     });
   }
 
-  return (
-    <ReportTreeRows rows={visibleRows(groups, open)} nested={nested} onToggle={toggle} />
-  );
+  return <ReportTreeRows rows={visibleRows(groups, open)} onToggle={toggle} />;
 }
 
-/**
- * Las filas que se ven, sin el estado de lo abierto: `nested` dice si hay más
- * de un nivel, y entonces las hojas dejan el lugar del chevrón.
- */
+/** Las filas que se ven, sin el estado de lo abierto. */
 export function ReportTreeRows({
   rows,
-  nested,
   onToggle,
 }: {
   readonly rows: readonly VisibleRow[];
-  readonly nested: boolean;
   readonly onToggle: (key: string) => void;
 }) {
+  // Con más de un nivel, los grupos del primero siempre se ven y se pueden
+  // abrir; entonces las hojas dejan el lugar del chevrón para alinear.
+  const nested = rows.some((row) => row.expandable);
   return rows.map((row) => (
     <tr key={row.key} className="border-b last:border-b-0">
       <th scope="row" className="px-3 py-2 text-left font-normal">
@@ -94,7 +88,7 @@ function RowHeading({
         type="button"
         aria-expanded={row.expanded}
         onClick={onToggle}
-        className="focus-visible:ring-ring/50 -mx-1 flex min-w-0 items-center gap-1 rounded-md px-1 text-left outline-none focus-visible:ring-3"
+        className="focus-visible:ring-ring hover:bg-muted -mx-1 flex min-w-0 items-center gap-1 rounded-md px-1 text-left focus-visible:ring-3 focus-visible:outline-none"
       >
         <ChevronRightIcon
           aria-hidden="true"

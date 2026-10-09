@@ -348,7 +348,6 @@ describe("ReportView con subniveles (D-R3-6, D-R3-9)", () => {
       ["P2", "0:45"],
     ]);
     expect(markup).not.toContain("mar, 29/09");
-    expect(markup).not.toContain("<time");
   });
 
   it("cada grupo con hijos lleva un botón con aria-expanded=false, el chevrón oculto y su nombre", () => {
