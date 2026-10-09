@@ -58,14 +58,14 @@ export function ReportToolbar({ state }: { readonly state: ReportReadyState }) {
           {reportLabels.thisWeek}
         </Link>
       )}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <span id={GROUP_BY_LABEL_ID} className="text-muted-foreground text-sm">
           {reportLabels.groupBy}
         </span>
         <div
           role="group"
           aria-labelledby={GROUP_BY_LABEL_ID}
-          className="flex items-center rounded-lg border p-0.5"
+          className="flex flex-wrap items-center rounded-lg border p-0.5"
         >
           <GroupByLink state={state} value="person" label={reportLabels.byPerson} />
           <GroupByLink state={state} value="project" label={reportLabels.byProject} />

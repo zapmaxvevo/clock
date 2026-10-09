@@ -79,7 +79,12 @@ export function RangePicker({
         <CalendarIcon aria-hidden="true" />
         {rangeLabel}
       </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="start">
+      <PopoverContent
+        // En pantallas angostas el selector no entra entero: se ajusta al lugar
+        // libre y se desplaza, así «Aplicar» queda alcanzable.
+        className="max-h-(--available-height) w-auto max-w-(--available-width) overflow-y-auto p-0"
+        align="start"
+      >
         <RangePanel
           selection={selection}
           month={civilDate(range.first)}

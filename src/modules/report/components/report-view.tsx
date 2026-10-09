@@ -1,3 +1,5 @@
+import type { ReactElement } from "react";
+
 import { projectLabels } from "@/modules/project/components/labels";
 import { paletteColor } from "@/modules/project/palette";
 import type {
@@ -114,7 +116,8 @@ function groupKey(group: ReportGroup): string {
   }
 }
 
-function GroupHeading({ group }: { readonly group: ReportGroup }) {
+/** `ReactElement` y no `ReactNode`, que admite `undefined`: un `kind` sin caso no compila. */
+function GroupHeading({ group }: { readonly group: ReportGroup }): ReactElement {
   switch (group.kind) {
     case "person":
       return <PersonHeading group={group} />;
