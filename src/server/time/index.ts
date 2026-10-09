@@ -439,6 +439,9 @@ function isMissingDay(dayKey: string, timeZone: string): boolean {
   );
 }
 
+/** Unos días civiles seguidos, con los dos extremos. */
+export type DayKeyRange = { readonly first: string; readonly last: string };
+
 /** Un tramo de una lectura agrupada: su primer día civil y su primer instante. */
 export type TimeBucket = { readonly firstDay: string; readonly start: Date };
 
@@ -458,15 +461,7 @@ export type TimeBuckets = {
  * recibe. Lanza si alguna clave no es un día o si `last` es anterior a `first`.
  */
 export function dayBuckets(first: string, last: string, timeZone: string): TimeBuckets {
-  const days = daysBetweenKeys(first, last);
-  if (days < 0) {
-    throw new RangeError(`El último día ${last} es anterior al primero ${first}.`);
-  }
-  const buckets = Array.from({ length: days + 1 }, (_, index) => {
-    const firstDay = addDaysToKey(first, index);
-    return { firstDay, start: startOfDayKey(firstDay, timeZone) };
-  });
-  return { buckets, end: startOfDayKey(addDaysToKey(last, 1), timeZone) };
+  return civilBuckets(first, last, timeZone, (day) => addDaysToKey(day, 1));
 }
 
 /**
@@ -532,7 +527,7 @@ export function bucketDays(
   buckets: TimeBuckets,
   index: number,
   last: string,
-): { readonly first: string; readonly last: string } {
+): DayKeyRange {
   const count = buckets.buckets.length;
   if (!Number.isInteger(index) || index < 0 || index >= count) {
     throw new RangeError(`Tramo fuera de rango: ${index} de ${count}.`);

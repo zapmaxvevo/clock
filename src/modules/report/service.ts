@@ -9,6 +9,7 @@ import {
   dayKey,
   dayRangeLabel,
   daysBetweenKeys,
+  earliestDayKey,
   monthBuckets,
   monthEndKey,
   monthLabel,
@@ -18,6 +19,7 @@ import {
   weekdayLabel,
   weekStartKey,
   type DateFormat,
+  type DayKeyRange,
   type TimeBuckets,
   type TimeSettings,
   type WeekStart,
@@ -154,18 +156,21 @@ type TimeContext = {
   readonly format: DateFormat;
 };
 
-/** Lo que una fila dice de un nivel de tiempo: la dimensión y la posición del tramo. */
-type TimeRow = Extract<LevelGroupRow, { readonly kind: ReportTimeGroupBy }>;
+/** Los de `Item` que son de una dimensión de tiempo: la fecha, la semana o el mes. */
+type WithTimeKind<Item> = Extract<Item, { readonly kind: ReportTimeGroupBy }>;
 
-function isTimeRow(row: LevelGroupRow): row is TimeRow {
-  return REPORT_TIME_GROUP_BYS.some((kind) => kind === row.kind);
+/** Si una fila o un grupo es de una dimensión de tiempo. */
+function hasTimeKind<Item extends { readonly kind: string }>(
+  item: Item,
+): item is WithTimeKind<Item> {
+  return REPORT_TIME_GROUP_BYS.some((kind) => kind === item.kind);
 }
 
-/** Unos días civiles seguidos, con los dos extremos. */
-type DayRange = { readonly first: string; readonly last: string };
+/** Lo que una fila dice de un nivel de tiempo: la dimensión y la posición del tramo. */
+type TimeRow = WithTimeKind<LevelGroupRow>;
 
 /** Los días del tramo de una fila de tiempo, cortados por el período. */
-function daysOf(row: TimeRow, time: TimeContext): DayRange {
+function daysOf(row: TimeRow, time: TimeContext): DayKeyRange {
   const buckets: TimeBuckets | undefined = time.buckets[row.kind];
   if (buckets === undefined) {
     throw new Error(`Una fila por ${row.kind} sin los tramos de la lectura.`);
@@ -178,18 +183,18 @@ function daysOf(row: TimeRow, time: TimeContext): DayRange {
  * de tiempo de su camino, a cualquier altura y no solo el padre: la fila suma
  * las entradas que caen en todos. Nunca vacía, porque la fila existe.
  */
-function countedDays(path: readonly LevelGroupRow[], time: TimeContext): DayRange {
-  const ranges = path.filter(isTimeRow).map((row) => daysOf(row, time));
-  const [own, ...rest] = ranges;
-  if (own === undefined) {
+function countedDays(path: readonly LevelGroupRow[], time: TimeContext): DayKeyRange {
+  const ranges = path.filter(hasTimeKind).map((row) => daysOf(row, time));
+  const [outermost, ...inner] = ranges;
+  if (outermost === undefined) {
     throw new Error("Un camino sin grupos de tiempo no cuenta días.");
   }
-  const counted = rest.reduce(
+  const counted = inner.reduce(
     (range, other) => ({
       first: compareDayKeys(other.first, range.first) > 0 ? other.first : range.first,
-      last: compareDayKeys(other.last, range.last) < 0 ? other.last : range.last,
+      last: earliestDayKey(range.last, other.last),
     }),
-    own,
+    outermost,
   );
   if (compareDayKeys(counted.first, counted.last) > 0) {
     throw new Error("Una fila de tiempo sin días en común con su camino.");
@@ -198,11 +203,11 @@ function countedDays(path: readonly LevelGroupRow[], time: TimeContext): DayRang
 }
 
 /**
- * Lo que dice `partial` de una semana o un mes que va de `first` a `last`
- * enteros: los días que cuenta su camino si no son todos, o `null`.
+ * Lo que dice `partial` de una semana o un mes entero, `unit`: los días que
+ * cuenta su camino si no son todos, o `null`.
  */
 function partialOf(
-  unit: DayRange,
+  unit: DayKeyRange,
   path: readonly LevelGroupRow[],
   time: TimeContext,
 ): string | null {
@@ -282,11 +287,7 @@ function groupOf(
 }
 
 /** Los grupos que se cortan en tramos de tiempo: la fecha, la semana y el mes. */
-type TimeGroup = Extract<ReportGroup, { readonly kind: ReportTimeGroupBy }>;
-
-function isTimeGroup(group: ReportGroup): group is TimeGroup {
-  return REPORT_TIME_GROUP_BYS.some((kind) => kind === group.kind);
-}
+type TimeGroup = WithTimeKind<ReportGroup>;
 
 /** Los grupos que se ordenan por duración y nombre: todos menos los de tiempo. */
 type NamedGroup = Exclude<ReportGroup, TimeGroup>;
@@ -342,10 +343,10 @@ function firstDayOf(group: TimeGroup): string {
  * D-R10-5), el resto por duración y nombre.
  */
 function compareSiblings(left: ReportGroup, right: ReportGroup): number {
-  if (isTimeGroup(left) && isTimeGroup(right)) {
+  if (hasTimeKind(left) && hasTimeKind(right)) {
     return compareDayKeys(firstDayOf(left), firstDayOf(right));
   }
-  if (!isTimeGroup(left) && !isTimeGroup(right)) {
+  if (!hasTimeKind(left) && !hasTimeKind(right)) {
     return compareGroups(left, right);
   }
   throw new Error("Un nivel con grupos de tiempo y de otra dimensión.");
@@ -616,35 +617,23 @@ function timeBucketsOf(
   }
 }
 
-/** Los tramos de cada dimensión de tiempo de `levels`; sin ninguna, `{}`. */
-function reportBucketsOf(
-  levels: readonly ReportGroupBy[],
-  range: ReportRange,
-  settings: TimeSettings,
-): ReportBuckets {
-  const buckets: { -readonly [Dimension in ReportTimeGroupBy]?: TimeBuckets } = {};
-  for (const groupBy of REPORT_TIME_GROUP_BYS) {
-    if (levels.includes(groupBy)) {
-      buckets[groupBy] = timeBucketsOf(groupBy, range, settings);
-    }
-  }
-  return buckets;
-}
-
-/** Los tramos de las dimensiones de tiempo de `dimensions`, y solo de esas. */
-function bucketsWithin(
-  buckets: ReportBuckets,
+/**
+ * Los tramos de cada dimensión de tiempo de `dimensions`, y solo de esas, con
+ * los que da `bucketOf`; sin ninguna, `{}`.
+ */
+function bucketsFor(
   dimensions: readonly ReportGroupBy[],
+  bucketOf: (groupBy: ReportTimeGroupBy) => ReportBuckets[ReportTimeGroupBy],
 ): ReportBuckets {
-  const within: {
+  const buckets: {
     -readonly [Dimension in ReportTimeGroupBy]?: ReportBuckets[Dimension];
   } = {};
   for (const groupBy of REPORT_TIME_GROUP_BYS) {
     if (dimensions.includes(groupBy)) {
-      within[groupBy] = buckets[groupBy];
+      buckets[groupBy] = bucketOf(groupBy);
     }
   }
-  return within;
+  return buckets;
 }
 
 /** La lectura de los `depth` primeros niveles, con los tramos de sus dimensiones de tiempo. */
@@ -659,7 +648,7 @@ function levelReadOf(
     span: plan.span,
     filter,
     dimensions,
-    buckets: bucketsWithin(plan.buckets, dimensions),
+    buckets: bucketsFor(dimensions, (groupBy) => plan.buckets[groupBy]),
     limit,
   };
 }
@@ -751,7 +740,9 @@ export async function getReportState(
   };
   // Los cortes de cada dimensión de tiempo entre los niveles, una vez; el
   // primero y el fin de cada una son los de `span`.
-  const buckets = reportBucketsOf(levels, range, settings);
+  const buckets = bucketsFor(levels, (groupBy) =>
+    timeBucketsOf(groupBy, range, settings),
+  );
   // ADR 0021, D-R3-3: una sola foto, con los catálogos de los filtros
   // (D-R4-5). Se abre después de `report.view`, de `scopeOf` y de las
   // invariantes.

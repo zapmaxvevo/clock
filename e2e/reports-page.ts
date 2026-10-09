@@ -111,7 +111,7 @@ export const GROUP_LINK: Record<ReportGroupBy, string> = {
  * D-R10-3: los días que cuenta una semana o un mes que el período o un grupo
  * de arriba cortan, en gris después del rótulo: «solo 01/10 – 04/10».
  */
-export function partialDays(days: string): string {
+function partialDays(days: string): string {
   return `solo ${days}`;
 }
 

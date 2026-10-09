@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-import { addDaysToKey, daysBetweenKeys, parseDayKey } from "@/server/time";
+import {
+  addDaysToKey,
+  daysBetweenKeys,
+  parseDayKey,
+  type DayKeyRange,
+} from "@/server/time";
 import { PALETTE_KEYS } from "@/modules/project/palette";
 
 /** RP-21, ADR 0021: el período más largo, en días, con los dos extremos. */
@@ -14,7 +19,7 @@ export const reportMessages = {
   invalidDate: "Fecha inválida.",
 } as const;
 
-export type ReportRange = { readonly first: string; readonly last: string };
+export type ReportRange = DayKeyRange;
 
 /** Los dos períodos tienen los mismos extremos. */
 export function sameRange(left: ReportRange, right: ReportRange): boolean {

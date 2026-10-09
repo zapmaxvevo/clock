@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 
 import { projectLabels } from "@/modules/project/components/labels";
 import { paletteColor } from "@/modules/project/palette";
@@ -36,11 +36,7 @@ export function GroupHeading({ group }: { readonly group: ReportGroup }): ReactE
     case "date":
       return <time dateTime={group.dayKey}>{group.label}</time>;
     case "week":
-      return (
-        <PartialHeading partial={group.partial}>
-          <span>{group.label}</span>
-        </PartialHeading>
-      );
+      return <PartialHeading partial={group.partial}>{group.label}</PartialHeading>;
     case "month":
       return (
         <PartialHeading partial={group.partial}>
@@ -62,7 +58,7 @@ function PartialHeading({
   children,
 }: {
   readonly partial: string | null;
-  readonly children: ReactElement;
+  readonly children: ReactNode;
 }) {
   if (partial === null) {
     return children;

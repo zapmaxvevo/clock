@@ -499,10 +499,10 @@ describe("ReportView por semana y por mes (D-R10-3, §5.2)", () => {
       ["12/10 – 18/10 solo 12/10 – 13/10", "0:15"],
     ]);
     expect(rowHeading(markup, 0)).toBe(
-      '<span><span>28/09 – 04/10</span> <span class="text-muted-foreground">solo 30/09 – 04/10</span></span>',
+      '<span>28/09 – 04/10 <span class="text-muted-foreground">solo 30/09 – 04/10</span></span>',
     );
     // La semana entera, sin el gris ni «solo».
-    expect(rowHeading(markup, 1)).toBe("<span>05/10 – 11/10</span>");
+    expect(rowHeading(markup, 1)).toBe("05/10 – 11/10");
     expect(markup.match(/text-muted-foreground">solo /g)).toHaveLength(2);
     expect(totals(markup).Total).toBe("1:45");
   });
