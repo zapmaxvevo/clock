@@ -18,6 +18,7 @@ import {
 import { actorIn, workspaceOf } from "@/test/time-entry";
 
 import { projectRepository } from "@/modules/project/repository";
+import { workspaceRepository } from "@/modules/workspace/repository";
 
 import { reportRepository } from "./repository";
 import {
@@ -827,7 +828,10 @@ describe("el enlace ajeno (criterio 5, RP-32; criterio 11 de R2b; criterio 9 de 
     ["fecha", "date"],
   ] as const;
 
-  /** Lo que la página recibe de un enlace de un admin, con claves armadas a mano. */
+  /**
+   * Lo que la página recibe de un enlace de un admin, con claves armadas a mano:
+   * `personas` repetido, que el esquema descarta entero (RP-32).
+   */
   function searchParamsOf(agrupar: string) {
     return {
       desde: week.first,
@@ -851,11 +855,12 @@ describe("el enlace ajeno (criterio 5, RP-32; criterio 11 de R2b; criterio 9 de 
       range: range.data,
       groupBy: groupBy.data,
       subgroups: [],
-      filters: NO_REPORT_FILTERS,
+      filters: reportFiltersOf(searchParams),
     };
   }
 
-  it("los esquemas no dejan pasar ninguna clave que nombre personas", () => {
+  // `personas` bien formado es un filtro desde R4: está en el criterio 19 de R4.
+  it("los esquemas no dejan pasar persona, userId, alcance ni personas repetido", () => {
     for (const [agrupar, groupBy] of linkedGroupBys) {
       expect(requestFromUrl(agrupar)).toStrictEqual({
         range: week,
@@ -993,7 +998,10 @@ describe("el alcance en cada nivel (criterio 21 de R3)", () => {
       ["etiqueta", "persona,fecha", ["tag", "person", "date"]],
     ] as const;
 
-    /** Lo que la página recibe de un enlace de un admin, con claves armadas a mano. */
+    /**
+     * Lo que la página recibe de un enlace de un admin, con claves armadas a
+     * mano: `personas` repetido, que el esquema descarta entero (RP-32).
+     */
     function requestFromUrl(agrupar: string, subagrupar: string): ReportRequest {
       const searchParams = {
         desde: week.first,
@@ -1015,11 +1023,11 @@ describe("el alcance en cada nivel (criterio 21 de R3)", () => {
         range: range.data,
         groupBy: groupBy.data,
         subgroups: subgroups.data,
-        filters: NO_REPORT_FILTERS,
+        filters: reportFiltersOf(searchParams),
       };
     }
 
-    it("los esquemas no dejan pasar ninguna clave que nombre personas", () => {
+    it("los esquemas no dejan pasar persona, userId, alcance ni personas repetido", () => {
       for (const [agrupar, subagrupar, levels] of linkedTrees) {
         expect(requestFromUrl(agrupar, subagrupar)).toStrictEqual(treeRequest(levels));
       }
@@ -1042,6 +1050,64 @@ describe("el alcance en cada nivel (criterio 21 de R3)", () => {
     }
   });
 });
+
+/** Cada agrupación sola y dos árboles de dos niveles con el alcance abajo. */
+const shapes: readonly (readonly ReportGroupBy[])[] = [
+  ...groupBys.map((groupBy) => [groupBy]),
+  ["project", "person"],
+  ["tag", "project"],
+];
+
+function filtered(
+  levels: readonly ReportGroupBy[],
+  filters: ReportFilters,
+): ReportRequest {
+  return { ...treeRequest(levels), filters };
+}
+
+/** Lo que decide el alcance de un árbol, más los filtros que el estado dice aplicados. */
+function filteredSummaryOf(state: ReportState) {
+  if (state.kind !== "ready") {
+    return state;
+  }
+  return { ...treeSummaryOf(state), filters: state.filters };
+}
+
+/**
+ * D-R4-3: dentro de un filtro, o; entre filtros, y. «Sin proyecto» solo en el
+ * de proyecto; el de cliente deja afuera lo que no tiene proyecto. Las personas
+ * elegidas son las del alcance angostado (D-R4-4).
+ */
+function passes(entry: SeededEntry, filters: ReportFilters): boolean {
+  const { place } = entry;
+  const byPerson = filters.people.length === 0 || filters.people.includes(entry.userId);
+  const byProject =
+    (filters.projects.length === 0 && !filters.withoutProject) ||
+    (place.projectId === null
+      ? filters.withoutProject
+      : filters.projects.includes(place.projectId));
+  const byClient =
+    filters.clients.length === 0 ||
+    (place.clientId !== null && filters.clients.includes(place.clientId));
+  return byPerson && byProject && byClient;
+}
+
+/** El árbol de `entries` que pasan `applied`, con `applied` como los filtros del estado. */
+function expectedFiltered(
+  scope: "everyone" | "self",
+  levels: readonly ReportGroupBy[],
+  entries: readonly SeededEntry[],
+  applied: ReportFilters,
+) {
+  return {
+    ...expectedTree(
+      scope,
+      levels,
+      entries.filter((entry) => passes(entry, applied)),
+    ),
+    filters: applied,
+  };
+}
 
 describe("los filtros de cliente y de proyecto dentro del alcance (criterio 12 de R4)", () => {
   /**
@@ -1116,61 +1182,6 @@ describe("los filtros de cliente y de proyecto dentro del alcance (criterio 12 d
       },
     });
   });
-
-  /** Cada agrupación sola y dos árboles de dos niveles con el alcance abajo. */
-  const shapes: readonly (readonly ReportGroupBy[])[] = [
-    ...groupBys.map((groupBy) => [groupBy]),
-    ["project", "person"],
-    ["tag", "project"],
-  ];
-
-  function filtered(
-    levels: readonly ReportGroupBy[],
-    filters: ReportFilters,
-  ): ReportRequest {
-    return { ...treeRequest(levels), filters };
-  }
-
-  /** Lo que decide el alcance de un árbol, más los filtros que el estado dice aplicados. */
-  function filteredSummaryOf(state: ReportState) {
-    if (state.kind !== "ready") {
-      return state;
-    }
-    return { ...treeSummaryOf(state), filters: state.filters };
-  }
-
-  /**
-   * D-R4-3: dentro de un filtro, o; entre filtros, y. «Sin proyecto» solo en el
-   * de proyecto; el de cliente deja afuera lo que no tiene proyecto.
-   */
-  function passes(place: Place, filters: ReportFilters): boolean {
-    const byProject =
-      (filters.projects.length === 0 && !filters.withoutProject) ||
-      (place.projectId === null
-        ? filters.withoutProject
-        : filters.projects.includes(place.projectId));
-    const byClient =
-      filters.clients.length === 0 ||
-      (place.clientId !== null && filters.clients.includes(place.clientId));
-    return byProject && byClient;
-  }
-
-  /** El árbol de `entries` que pasan `applied`, con `applied` como los filtros del estado. */
-  function expectedFiltered(
-    scope: "everyone" | "self",
-    levels: readonly ReportGroupBy[],
-    entries: readonly SeededEntry[],
-    applied: ReportFilters,
-  ) {
-    return {
-      ...expectedTree(
-        scope,
-        levels,
-        entries.filter((entry) => passes(entry.place, applied)),
-      ),
-      filters: applied,
-    };
-  }
 
   /**
    * Los pedidos con ids de A, todos en su catálogo: lo pedido es lo aplicado.
@@ -1535,5 +1546,406 @@ describe("los filtros de cliente y de proyecto dentro del alcance (criterio 12 d
         }
       });
     }
+  });
+});
+
+describe("el filtro de personas dentro del alcance (criterio 19 de R4)", () => {
+  /**
+   * El fixture suma, en A, una persona con un id como los de Better Auth, de 32
+   * alfanuméricos con mayúsculas, que carga en P con E y F, y una invitada que
+   * carga sin proyecto. La aplicación no produce una invitada con horas: se
+   * siembra por base (§0).
+   */
+  const betterAuthId = "Kq7RbX2mN9pLs4TvW8yZc3HdF6gJ1aE5";
+  const unknownId = "NoExiste0123456789abcdefABCDEF00";
+  let invitedId: string;
+
+  beforeEach(async () => {
+    await seedMember(a.workspaceId, "member", "active", betterAuthId);
+    invitedId = await seedMember(a.workspaceId, "member", "invited");
+    names.set(betterAuthId, "Better Auth");
+    names.set(invitedId, "invitada");
+    await closedEntry({
+      workspaceId: a.workspaceId,
+      userId: betterAuthId,
+      hour: 19,
+      minutes: 15,
+      place: a.places.member,
+    });
+    await closedEntry({
+      workspaceId: a.workspaceId,
+      userId: invitedId,
+      hour: 20,
+      minutes: 25,
+      place: noProject,
+    });
+  });
+
+  /** Las mismas letras con las mayúsculas cambiadas: no es el mismo id (D-R4-2). */
+  function swapCase(id: string): string {
+    return [...id]
+      .map((char) =>
+        char === char.toUpperCase() ? char.toLowerCase() : char.toUpperCase(),
+      )
+      .join("");
+  }
+
+  function people(...ids: readonly string[]): ReportFilters {
+    return { ...NO_REPORT_FILTERS, people: ids };
+  }
+
+  /** Las personas que ofrece el filtro en A: activas e inactivas, sin la invitada. */
+  function catalogOfA(): readonly string[] {
+    return [
+      a.ownerId,
+      a.adminId,
+      a.managerId,
+      a.teamManagerId,
+      a.memberId,
+      a.inactiveId,
+      betterAuthId,
+    ];
+  }
+
+  /** En B: su owner y el member de A. */
+  function catalogOfB(): readonly string[] {
+    return [b.ownerId, a.memberId];
+  }
+
+  /**
+   * Lo que decide el alcance de un árbol, con los filtros aplicados y los ids de
+   * las personas que ofrece el filtro, o `null` sin filtro de personas. Las
+   * listas de personas van ordenadas: el orden del catálogo es del criterio 18.
+   */
+  function peopleSummaryOf(state: ReportState) {
+    if (state.kind !== "ready") {
+      return state;
+    }
+    return {
+      ...treeSummaryOf(state),
+      filters: { ...state.filters, people: [...state.filters.people].sort() },
+      offered: state.filterOptions.people?.map((person) => person.id).sort() ?? null,
+    };
+  }
+
+  type Seen = {
+    readonly scope: "everyone" | "self";
+    readonly entries: readonly SeededEntry[];
+    /** Las personas que ofrece el filtro, o `null` si no lo hay. */
+    readonly offered: readonly string[] | null;
+  };
+
+  function expectedView(
+    seen: Seen,
+    levels: readonly ReportGroupBy[],
+    applied: ReportFilters,
+  ) {
+    const filtered = expectedFiltered(seen.scope, levels, seen.entries, applied);
+    return {
+      ...filtered,
+      filters: { ...applied, people: [...applied.people].sort() },
+      offered: seen.offered === null ? null : [...seen.offered].sort(),
+    };
+  }
+
+  /** Cada pedido de `cases` en cada forma, contra lo que tiene que ver `actor`. */
+  async function expectPeopleView(
+    actor: Actor,
+    seen: Seen,
+    cases: readonly {
+      readonly requested: ReportFilters;
+      readonly applied: ReportFilters;
+    }[],
+  ) {
+    for (const { requested, applied } of cases) {
+      for (const levels of shapes) {
+        const state = await getReportState(
+          actor,
+          settings,
+          filtered(levels, requested),
+          now,
+        );
+        expect(
+          peopleSummaryOf(state),
+          `${nameOf(actor.userId)}, ${levels.join(" → ")}, ${JSON.stringify(requested)}`,
+        ).toEqual(expectedView(seen, levels, applied));
+      }
+    }
+  }
+
+  /** Lo propio, sin filtro de personas y sin leer el catálogo de personas. */
+  async function expectOwnWithoutPeople(
+    actor: Actor,
+    cases: readonly {
+      readonly requested: ReportFilters;
+      readonly applied: ReportFilters;
+    }[],
+  ) {
+    const listPeople = vi.spyOn(workspaceRepository, "listPeople");
+    try {
+      await expectPeopleView(
+        actor,
+        {
+          scope: "self",
+          entries: entriesIn(actor.workspaceId, actor.userId),
+          offered: null,
+        },
+        cases,
+      );
+      expect(listPeople).not.toHaveBeenCalled();
+    } finally {
+      listPeople.mockRestore();
+    }
+  }
+
+  const ignored = (requested: ReportFilters) => ({
+    requested,
+    applied: NO_REPORT_FILTERS,
+  });
+
+  /** Lo que un actor sin `timeEntry.others.view` puede pedir: todo se descarta salvo el proyecto. */
+  function casesWithoutPeople(userId: string) {
+    return [
+      ignored(people(a.ownerId, a.adminId, a.inactiveId, betterAuthId)),
+      ignored(people(userId)),
+      ignored(people(...new Set([userId, a.ownerId, a.memberId, betterAuthId]))),
+      ignored(people(b.ownerId)),
+      ignored(people(invitedId)),
+      ignored(people(swapCase(userId), swapCase(betterAuthId))),
+      ignored(people(unknownId)),
+      {
+        requested: {
+          ...people(...new Set([a.adminId, userId])),
+          projects: [a.projectId],
+        },
+        applied: { ...NO_REPORT_FILTERS, projects: [a.projectId] },
+      },
+    ];
+  }
+
+  it("project_manager, team_manager y member con personas ven lo propio y no reciben el catálogo de personas", async () => {
+    for (const { role, userId } of selfOnlyInA()) {
+      await expectOwnWithoutPeople(
+        actorIn(a.workspaceId, userId, { role }),
+        casesWithoutPeople(userId),
+      );
+    }
+  });
+
+  it("un owner al que can() le niega timeEntry.others.view, con personas, ve lo propio sin el catálogo", async () => {
+    permissionOverrides.denied.push({
+      userId: a.ownerId,
+      action: "timeEntry.others.view",
+    });
+    await expectOwnWithoutPeople(
+      actorIn(a.workspaceId, a.ownerId, { role: "owner" }),
+      casesWithoutPeople(a.ownerId),
+    );
+  });
+
+  it("la persona miembro de A y de B, en B, con personas ve solo lo suyo de B", async () => {
+    await expectOwnWithoutPeople(actorIn(b.workspaceId, a.memberId), [
+      ignored(people(b.ownerId)),
+      ignored(people(a.memberId, b.ownerId)),
+      ignored(people(a.ownerId, betterAuthId)),
+    ]);
+  });
+
+  /** Owner y admin de A, que ven a todos. */
+  function everyoneInAActors() {
+    return [
+      actorIn(a.workspaceId, a.ownerId, { role: "owner" }),
+      actorIn(a.workspaceId, a.adminId, { role: "admin" }),
+    ];
+  }
+
+  function everyoneSeenInA(): Seen {
+    return {
+      scope: "everyone",
+      entries: entriesIn(a.workspaceId),
+      offered: catalogOfA(),
+    };
+  }
+
+  it("owner y admin de A con [member] ven solo lo del member en A, en cada nivel y en el total", async () => {
+    for (const actor of everyoneInAActors()) {
+      await expectPeopleView(actor, everyoneSeenInA(), [
+        {
+          requested: people(a.memberId),
+          applied: people(a.memberId),
+        },
+      ]);
+    }
+  });
+
+  it("owner y admin de A eligen inactivas, el id de Better Auth tal cual y personas con un proyecto", async () => {
+    const applies = (filters: ReportFilters) => ({
+      requested: filters,
+      applied: filters,
+    });
+    for (const actor of everyoneInAActors()) {
+      await expectPeopleView(actor, everyoneSeenInA(), [
+        applies(people(a.memberId, a.inactiveId)),
+        applies(people(betterAuthId)),
+        applies(people(a.adminId, a.teamManagerId)),
+        applies({ ...people(a.memberId, a.adminId), projects: [a.projectId] }),
+      ]);
+    }
+  });
+
+  it("owner y admin de A: la invitada, otro workspace, otras mayúsculas y lo que no existe se ignoran", async () => {
+    for (const actor of everyoneInAActors()) {
+      await expectPeopleView(actor, everyoneSeenInA(), [
+        ignored(people(invitedId)),
+        ignored(people(b.ownerId)),
+        ignored(people(swapCase(betterAuthId))),
+        ignored(people(swapCase(a.memberId))),
+        ignored(people(unknownId)),
+        ignored(
+          people(
+            invitedId,
+            b.ownerId,
+            swapCase(betterAuthId),
+            swapCase(a.memberId),
+            unknownId,
+          ),
+        ),
+        {
+          requested: people(
+            b.ownerId,
+            swapCase(betterAuthId),
+            invitedId,
+            a.memberId,
+            unknownId,
+          ),
+          applied: people(a.memberId),
+        },
+      ]);
+    }
+  });
+
+  it("la persona miembro de A y de B, elegida por el admin de A, trae solo lo de A; elegida por el owner de B, solo lo de B", async () => {
+    await expectPeopleView(
+      actorIn(a.workspaceId, a.adminId, { role: "admin" }),
+      everyoneSeenInA(),
+      [{ requested: people(a.memberId), applied: people(a.memberId) }],
+    );
+    await expectPeopleView(
+      actorIn(b.workspaceId, b.ownerId, { role: "owner" }),
+      { scope: "everyone", entries: entriesIn(b.workspaceId), offered: catalogOfB() },
+      [{ requested: people(a.memberId), applied: people(a.memberId) }],
+    );
+  });
+
+  it("el owner de B con ids de A no ve nada de A: los ids se ignoran y ve todo B", async () => {
+    await expectPeopleView(
+      actorIn(b.workspaceId, b.ownerId, { role: "owner" }),
+      { scope: "everyone", entries: entriesIn(b.workspaceId), offered: catalogOfB() },
+      [
+        ignored(people(a.ownerId, a.adminId, a.inactiveId, betterAuthId, invitedId)),
+        ignored(people(a.managerId)),
+        {
+          requested: people(a.ownerId, a.memberId, betterAuthId),
+          applied: people(a.memberId),
+        },
+      ],
+    );
+  });
+
+  describe("desde la URL, con reportFiltersOf", () => {
+    /** Los valores de `agrupar` y `subagrupar` de cada árbol, como los escribe la URL. */
+    const linkedTrees = [
+      ["persona", "", ["person"]],
+      ["proyecto", "persona", ["project", "person"]],
+      ["etiqueta", "proyecto", ["tag", "project"]],
+    ] as const;
+
+    /** La lista ordenada por unidades de código, como la escribe la aplicación. */
+    function requested(): readonly string[] {
+      return [a.memberId, betterAuthId, swapCase(a.adminId), invitedId, b.ownerId].sort();
+    }
+
+    function requestFromUrl(agrupar: string, subagrupar: string): ReportRequest {
+      const searchParams = {
+        desde: week.first,
+        hasta: week.last,
+        agrupar,
+        ...(subagrupar === "" ? {} : { subagrupar }),
+        personas: requested().join(","),
+      };
+      const range = reportRangeParams.safeParse(searchParams);
+      const groupBy = reportGroupParams.safeParse(searchParams);
+      const subgroups =
+        subagrupar === ""
+          ? { success: true as const, data: [] }
+          : reportSubgroupParams.safeParse(searchParams);
+      if (!range.success || !groupBy.success || !subgroups.success) {
+        throw new Error("El enlace del admin no pasó los esquemas.");
+      }
+      return {
+        range: range.data,
+        groupBy: groupBy.data,
+        subgroups: subgroups.data,
+        filters: reportFiltersOf(searchParams),
+      };
+    }
+
+    it("personas pasa los esquemas tal como está en la URL, con las mayúsculas", () => {
+      for (const [agrupar, subagrupar] of linkedTrees) {
+        expect(requestFromUrl(agrupar, subagrupar).filters).toStrictEqual(
+          people(...requested()),
+        );
+      }
+    });
+
+    it("el pedido que arma un admin de A da a owner y admin las elegidas de A, a los demás lo propio y al owner de B lo suyo", async () => {
+      for (const [agrupar, subagrupar, levels] of linkedTrees) {
+        const fromUrl = requestFromUrl(agrupar, subagrupar);
+        const context = `agrupar=${agrupar}&subagrupar=${subagrupar}`;
+        for (const actor of everyoneInAActors()) {
+          expect(
+            peopleSummaryOf(await getReportState(actor, settings, fromUrl, now)),
+            `${nameOf(actor.userId)}, ${context}`,
+          ).toEqual(
+            expectedView(everyoneSeenInA(), levels, people(a.memberId, betterAuthId)),
+          );
+        }
+        for (const { role, userId } of selfOnlyInA()) {
+          const actor = actorIn(a.workspaceId, userId, { role });
+          expect(
+            peopleSummaryOf(await getReportState(actor, settings, fromUrl, now)),
+            `${role}, ${context}`,
+          ).toEqual(
+            expectedView(
+              { scope: "self", entries: entriesIn(a.workspaceId, userId), offered: null },
+              levels,
+              NO_REPORT_FILTERS,
+            ),
+          );
+        }
+        // En B, el owner de B es del catálogo y el member de A también.
+        expect(
+          peopleSummaryOf(
+            await getReportState(
+              actorIn(b.workspaceId, b.ownerId, { role: "owner" }),
+              settings,
+              fromUrl,
+              now,
+            ),
+          ),
+          `owner de B, ${context}`,
+        ).toEqual(
+          expectedView(
+            {
+              scope: "everyone",
+              entries: entriesIn(b.workspaceId),
+              offered: catalogOfB(),
+            },
+            levels,
+            people(a.memberId, b.ownerId),
+          ),
+        );
+      }
+    });
   });
 });
