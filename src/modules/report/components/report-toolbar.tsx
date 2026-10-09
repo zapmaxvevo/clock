@@ -17,9 +17,8 @@ const GROUP_BY_LABEL_ID = "reporte-agrupar";
 
 /**
  * RP-20 y RP-11: las flechas del período, el rango que abre los atajos y el
- * calendario, el enlace a la semana en curso y la agrupación, con sus seis
- * enlaces en el orden de D-R3-8. Cada enlace
- * conserva lo que no cambia (D-R2a-4).
+ * calendario, el enlace a la semana en curso y la agrupación, con sus enlaces
+ * en el orden de D-R3-8. Cada enlace conserva lo que no cambia (D-R2a-4).
  */
 export function ReportToolbar({ state }: { readonly state: ReportReadyState }) {
   const { range, groupBy, currentWeek } = state;

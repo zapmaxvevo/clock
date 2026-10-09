@@ -3,13 +3,11 @@ import type { ReactElement } from "react";
 import { projectLabels } from "@/modules/project/components/labels";
 import { paletteColor } from "@/modules/project/palette";
 import type {
-  ReportClientGroup,
   ReportGroup,
   ReportGroupBy,
   ReportPersonGroup,
   ReportProjectGroup,
   ReportReadyState,
-  ReportTagGroup,
   ReportTaskGroup,
 } from "@/modules/report/schema";
 import { formatDuration } from "@/server/time";
@@ -133,11 +131,11 @@ function GroupHeading({ group }: { readonly group: ReportGroup }): ReactElement 
     case "project":
       return <ProjectHeading group={group} />;
     case "client":
-      return <ClientHeading group={group} />;
+      return <NamedHeading named={group.client} emptyLabel={projectLabels.noClient} />;
     case "task":
       return <TaskHeading group={group} />;
     case "tag":
-      return <TagHeading group={group} />;
+      return <NamedHeading named={group.tag} emptyLabel={reportLabels.noTag} />;
     case "date":
       return <time dateTime={group.dayKey}>{group.label}</time>;
   }
@@ -158,7 +156,7 @@ function PersonHeading({ group }: { readonly group: ReportPersonGroup }) {
 /** El punto del color, el nombre y el cliente en gris, como la planilla. */
 function ProjectHeading({ group }: { readonly group: ReportProjectGroup }) {
   if (group.project === null) {
-    return <span className="text-muted-foreground">{projectLabels.noProject}</span>;
+    return <EmptyGroupHeading label={projectLabels.noProject} />;
   }
   return (
     <span className="flex min-w-0 items-center gap-1.5">
@@ -175,14 +173,6 @@ function ProjectHeading({ group }: { readonly group: ReportProjectGroup }) {
   );
 }
 
-/** El nombre del cliente; «Sin cliente» en gris, como «Sin proyecto». */
-function ClientHeading({ group }: { readonly group: ReportClientGroup }) {
-  if (group.client === null) {
-    return <span className="text-muted-foreground">{projectLabels.noClient}</span>;
-  }
-  return <span className="truncate">{group.client.name}</span>;
-}
-
 /**
  * El nombre de la tarea y su proyecto en gris, como el cliente de un proyecto:
  * dos tareas que se llaman igual en proyectos distintos se distinguen (D-R3-4).
@@ -190,7 +180,7 @@ function ClientHeading({ group }: { readonly group: ReportClientGroup }) {
  */
 function TaskHeading({ group }: { readonly group: ReportTaskGroup }) {
   if (group.task === null) {
-    return <span className="text-muted-foreground">{reportLabels.noTask}</span>;
+    return <EmptyGroupHeading label={reportLabels.noTask} />;
   }
   return (
     <span className="flex min-w-0 items-center gap-1.5">
@@ -202,10 +192,24 @@ function TaskHeading({ group }: { readonly group: ReportTaskGroup }) {
   );
 }
 
-/** El nombre de la etiqueta, archivada o no (RP-29); «Sin etiqueta» en gris. */
-function TagHeading({ group }: { readonly group: ReportTagGroup }) {
-  if (group.tag === null) {
-    return <span className="text-muted-foreground">{reportLabels.noTag}</span>;
+/**
+ * Solo el nombre, como el cliente o la etiqueta, archivados o no (RP-29); sin
+ * él, el «Sin …» de la dimensión.
+ */
+function NamedHeading({
+  named,
+  emptyLabel,
+}: {
+  readonly named: { readonly name: string } | null;
+  readonly emptyLabel: string;
+}) {
+  if (named === null) {
+    return <EmptyGroupHeading label={emptyLabel} />;
   }
-  return <span className="truncate">{group.tag.name}</span>;
+  return <span className="truncate">{named.name}</span>;
+}
+
+/** RP-28: el grupo de lo que no tiene la dimensión, en gris. */
+function EmptyGroupHeading({ label }: { readonly label: string }) {
+  return <span className="text-muted-foreground">{label}</span>;
 }
