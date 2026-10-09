@@ -80,6 +80,8 @@ export type ReportLevelRead = {
   readonly dimensions: readonly ReportGroupBy[];
   /** Los tramos de `span` si `date` es una de las dimensiones; si no, `null`. */
   readonly buckets: TimeBuckets | null;
+  /** Como mucho estas filas, cualesquiera: sin orden (D-R3-6). Sin él, todas. */
+  readonly limit?: number;
 };
 
 export type EntryTotals = {
@@ -395,7 +397,10 @@ function bucketsOf(read: ReportLevelRead): TimeBuckets {
 
 /** Las guardas de §4.3 de R3: lanza `RangeError` antes de consultar. */
 function checkLevelRead(read: ReportLevelRead): void {
-  const { dimensions, buckets, span } = read;
+  const { dimensions, buckets, span, limit } = read;
+  if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) {
+    throw new RangeError(`El tope de filas tiene que ser un entero positivo: ${limit}.`);
+  }
   if (dimensions.length < 1 || dimensions.length > 3) {
     throw new RangeError(`Una lectura por niveles lleva de una a tres dimensiones.`);
   }
@@ -498,6 +503,10 @@ export const reportRepository = {
     for (const { dimension, name } of levels) {
       named =
         dimension.joinOutside?.(named, columnOf("totals", name), workspaceId) ?? named;
+    }
+    // Las uniones de afuera son de uno a uno: el tope cuenta grupos.
+    if (read.limit !== undefined) {
+      named = named.limit(read.limit);
     }
 
     // La selección se arma por nivel, así que Drizzle no la tipa: cada nivel

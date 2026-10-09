@@ -21,6 +21,8 @@ const state: ReportReadyState = {
   currentWeek: thisWeek,
   shortcuts: [],
   groupBy: "project",
+  subgroups: [],
+  levelsShown: 1,
   scope: "everyone",
   timeZone: "America/Argentina/Buenos_Aires",
   totalSeconds: 0,

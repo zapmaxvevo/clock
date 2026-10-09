@@ -1131,7 +1131,7 @@ async function realLevelRead() {
   return { scope, span: read.span, buckets: read.buckets };
 }
 
-describe("las guardas de totalsByLevels (§4.3 de R3; criterio 7)", () => {
+describe("las guardas de totalsByLevels (§4.3 de R3; criterios 7 y 20)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -1159,6 +1159,10 @@ describe("las guardas de totalsByLevels (§4.3 de R3; criterio 7)", () => {
         },
       },
       { span, dimensions: ["date"], buckets: { ...buckets, end: shifted(buckets.end) } },
+      // Criterio 20 de R3: el tope de filas es un entero positivo.
+      { span, dimensions: ["project"], buckets: null, limit: 0 },
+      { span, dimensions: ["project"], buckets: null, limit: -1 },
+      { span, dimensions: ["project"], buckets: null, limit: 1.5 },
     ] as const;
 
     const select = vi.spyOn(db, "select");

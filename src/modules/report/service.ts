@@ -61,6 +61,8 @@ export type ReportRequest = {
   readonly range: ReportRange | null;
   /** La agrupación de la URL ya validada, o `null`: por persona. */
   readonly groupBy: ReportGroupBy | null;
+  /** Los de `reportSubgroupParams`; ausente o vacío, un nivel (D-R3-5). */
+  readonly subgroups?: readonly ReportGroupBy[];
 };
 
 function workspaceResource(actor: Actor): WorkspaceResource {
@@ -222,6 +224,11 @@ export async function getReportState(
   if (!can(actor, "report.view", workspaceResource(actor))) {
     return { kind: "forbidden" };
   }
+  // Los subniveles llegan con el árbol (paso 8 de R3): hasta entonces, ningún
+  // pedido devuelve otra cosa que un nivel.
+  if ((request.subgroups ?? []).length > 0) {
+    throw new Error("Los subniveles llegan con el árbol del reporte.");
+  }
   const scope = scopeOf(actor);
   const timeZone = settings.timezone;
   const todayKey = dayKey(now, timeZone);
@@ -279,6 +286,8 @@ export async function getReportState(
     currentWeek: period.currentWeek,
     shortcuts: [...period.shortcuts],
     groupBy,
+    subgroups: [],
+    levelsShown: 1,
     scope: scope.people.kind,
     timeZone,
     totalSeconds: read.totals.seconds,

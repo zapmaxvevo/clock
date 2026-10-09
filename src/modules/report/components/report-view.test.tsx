@@ -17,6 +17,8 @@ const state: ReportReadyState = {
   currentWeek: week,
   shortcuts: [],
   groupBy: "person",
+  subgroups: [],
+  levelsShown: 1,
   scope: "self",
   timeZone: "America/Argentina/Buenos_Aires",
   totalSeconds: 0,
