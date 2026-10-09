@@ -165,6 +165,7 @@ function navigatesTo(href: string) {
 const thisWeek = selectionOf({ first: "2026-10-05", last: "2026-10-11" });
 
 const FILTERS: ReportFilters = {
+  people: [],
   clients: ["c1000000-0000-4000-8000-000000000000"],
   projects: ["a2000000-0000-4000-8000-000000000000"],
   withoutProject: true,

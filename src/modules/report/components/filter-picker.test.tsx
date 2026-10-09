@@ -13,6 +13,7 @@ const P2 = "a2000000-0000-4000-8000-000000000000";
 const P3 = "b3000000-0000-4000-8000-000000000000";
 
 const catalog: ReportReadyState["filterOptions"] = {
+  people: null,
   clients: [
     { id: C1, name: "Acme", archived: false },
     { id: C2, name: "Bosque", archived: true },
@@ -176,7 +177,10 @@ describe("FilterPanel (D-R4-8, §5.3)", () => {
       renderToStaticMarkup(
         <FilterPanel
           kind="projects"
-          options={filterOptionsOf({ clients: [], projects: [] }, "projects")}
+          options={filterOptionsOf(
+            { people: null, clients: [], projects: [] },
+            "projects",
+          )}
           chosen={[]}
           query={query}
           error={null}

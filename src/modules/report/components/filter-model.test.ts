@@ -29,6 +29,7 @@ const P4 = "d4000000-0000-4000-8000-000000000000";
 
 /** El catálogo del estado, ya en el orden de `compareNames`. */
 const catalog: ReportReadyState["filterOptions"] = {
+  people: null,
   clients: [
     { id: C1, name: "Acme", archived: false },
     { id: C2, name: "Bosque", archived: true },
@@ -133,6 +134,7 @@ describe("visibleOptions", () => {
 describe("chosenKeys y withChosen", () => {
   it("lo elegido de proyectos lleva `sin-proyecto` al final si está", () => {
     const filters: ReportFilters = {
+      people: [],
       clients: [C1],
       projects: [P2, P1],
       withoutProject: true,
@@ -144,14 +146,16 @@ describe("chosenKeys y withChosen", () => {
 
   it("withChosen ordena por las opciones, separa «Sin proyecto» y conserva el otro filtro", () => {
     const filters: ReportFilters = {
+      people: [],
       clients: [C2],
       projects: [P4],
       withoutProject: false,
     };
     expect(
       withChosen(filters, "projects", [P2, REPORT_WITHOUT_PROJECT, P3], projectOptions),
-    ).toEqual({ clients: [C2], projects: [P3, P2], withoutProject: true });
+    ).toEqual({ people: [], clients: [C2], projects: [P3, P2], withoutProject: true });
     expect(withChosen(filters, "clients", [C2, C1], clientOptions)).toEqual({
+      people: [],
       clients: [C1, C2],
       projects: [P4],
       withoutProject: false,
@@ -165,7 +169,10 @@ describe("hasNoMatches", () => {
     expect(hasNoMatches(clientOptions, "  ")).toBe(false);
     expect(hasNoMatches([], "")).toBe(false);
     expect(
-      hasNoMatches(filterOptionsOf({ clients: [], projects: [] }, "projects"), ""),
+      hasNoMatches(
+        filterOptionsOf({ people: null, clients: [], projects: [] }, "projects"),
+        "",
+      ),
     ).toBe(false);
   });
 
@@ -183,7 +190,10 @@ describe("hasNoMatches", () => {
   it("con el catálogo vacío y algo escrito, sí", () => {
     expect(hasNoMatches([], "acme")).toBe(true);
     expect(
-      hasNoMatches(filterOptionsOf({ clients: [], projects: [] }, "projects"), "acme"),
+      hasNoMatches(
+        filterOptionsOf({ people: null, clients: [], projects: [] }, "projects"),
+        "acme",
+      ),
     ).toBe(true);
   });
 });
@@ -217,7 +227,7 @@ describe("applyFilter, el efecto de «Aplicar» (D-R4-8)", () => {
   const location = {
     range,
     grouping,
-    filters: { clients: [C2, C1], projects: [], withoutProject: false },
+    filters: { people: [], clients: [C2, C1], projects: [], withoutProject: false },
   };
 
   it("navega con las listas ordenadas y conserva el otro filtro", () => {
@@ -265,7 +275,7 @@ describe("applyFilter, el efecto de «Aplicar» (D-R4-8)", () => {
 
   it("con 49 proyectos y «Sin proyecto» navega", () => {
     const options = [
-      ...filterOptionsOf({ clients: [], projects: [] }, "projects"),
+      ...filterOptionsOf({ people: null, clients: [], projects: [] }, "projects"),
       ...manyProjects(REPORT_MAX_FILTER_VALUES - 1),
     ];
     const effect = applyFilter(location, "projects", keysOf(options), options);
@@ -275,7 +285,7 @@ describe("applyFilter, el efecto de «Aplicar» (D-R4-8)", () => {
 
   it("con 50 proyectos y «Sin proyecto» sigue abierto con el mensaje", () => {
     const options = [
-      ...filterOptionsOf({ clients: [], projects: [] }, "projects"),
+      ...filterOptionsOf({ people: null, clients: [], projects: [] }, "projects"),
       ...manyProjects(REPORT_MAX_FILTER_VALUES),
     ];
     expect(applyFilter(location, "projects", keysOf(options), options)).toEqual({

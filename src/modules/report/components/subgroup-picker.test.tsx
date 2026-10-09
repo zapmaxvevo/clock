@@ -146,6 +146,7 @@ describe("SubgroupPanel (D-R3-8, §5.3)", () => {
     const client = "c1000000-0000-4000-8000-000000000000";
     const { links } = list(
       render({ groupBy: "project", subgroups: ["date"] }, 2, {
+        people: [],
         clients: [client],
         projects: [project],
         withoutProject: true,

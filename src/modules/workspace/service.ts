@@ -80,3 +80,28 @@ export async function ensureWorkspaceContext(user: {
     };
   });
 }
+
+/** Una persona del workspace con su estado, para un catálogo de otra pantalla. */
+export type WorkspacePerson = {
+  readonly userId: string;
+  /** `user.name`, el de Google. */
+  readonly accountName: string;
+  /** `user_preference.display_name`, o `null`: el nombre lo arma `displayNameOf` (ADR 0021). */
+  readonly displayName: string | null;
+  readonly status: "active" | "inactive";
+};
+
+/**
+ * RP-62, RP-64: las personas del workspace, activas e inactivas; las invitadas
+ * no están, por su estado. Vacía sin `team.view`. Sin orden. Solo lee, con la
+ * transacción de quien la llama (ADR 0010).
+ */
+export async function listWorkspacePeople(
+  tx: Transaction,
+  actor: Actor,
+): Promise<readonly WorkspacePerson[]> {
+  // Paso 6 de R4: la firma; la lectura llega en el paso 8.
+  void tx;
+  void actor;
+  throw new Error("listWorkspacePeople todavía no está implementada.");
+}

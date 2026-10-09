@@ -1179,10 +1179,11 @@ describe("los filtros de cliente y de proyecto dentro del alcance (criterio 12 d
    */
   function filtersInA(): readonly ReportFilters[] {
     return [
-      { clients: [], projects: [a.projectId], withoutProject: false },
-      { clients: [clientA2Id], projects: [], withoutProject: false },
-      { clients: [], projects: [projectQId], withoutProject: true },
+      { people: [], clients: [], projects: [a.projectId], withoutProject: false },
+      { people: [], clients: [clientA2Id], projects: [], withoutProject: false },
+      { people: [], clients: [], projects: [projectQId], withoutProject: true },
       {
+        people: [],
         clients: [a.clientId],
         projects: [a.projectId, projectQId],
         withoutProject: true,
@@ -1273,6 +1274,7 @@ describe("los filtros de cliente y de proyecto dentro del alcance (criterio 12 d
   it("un filtro que solo elige horas ajenas no le muestra nada a quien ve lo propio", async () => {
     // Q tiene horas del owner y del member; el project_manager no cargó en Q.
     const onlyQ: ReportFilters = {
+      people: [],
       clients: [],
       projects: [projectQId],
       withoutProject: false,
@@ -1327,6 +1329,7 @@ describe("los filtros de cliente y de proyecto dentro del alcance (criterio 12 d
     /** C1 con P, Q y «Sin proyecto», en el orden del catálogo: solo lo de P. */
     function appliedFromUrl(): ReportFilters {
       return {
+        people: [],
         clients: [a.clientId],
         projects: [a.projectId, projectQId],
         withoutProject: true,
@@ -1336,6 +1339,7 @@ describe("los filtros de cliente y de proyecto dentro del alcance (criterio 12 d
     it("los filtros del enlace pasan los esquemas tal como están en la URL", () => {
       for (const [agrupar, subagrupar] of linkedTrees) {
         expect(requestFromUrl(agrupar, subagrupar).filters).toStrictEqual({
+          people: [],
           clients: [a.clientId],
           projects: [a.projectId, projectQId].sort(),
           withoutProject: true,
@@ -1379,6 +1383,7 @@ describe("los filtros de cliente y de proyecto dentro del alcance (criterio 12 d
     /** Todos los ids de B: los dos clientes y los dos proyectos. */
     function idsOfB(): ReportFilters {
       return {
+        people: [],
         clients: [clientBId, clientB2Id],
         projects: [projectBId, projectQBId],
         withoutProject: false,
@@ -1387,6 +1392,7 @@ describe("los filtros de cliente y de proyecto dentro del alcance (criterio 12 d
 
     function idsOfA(withoutProject: boolean): ReportFilters {
       return {
+        people: [],
         clients: [a.clientId, clientA2Id],
         projects: [a.projectId, projectQId],
         withoutProject,
@@ -1411,11 +1417,13 @@ describe("los filtros de cliente y de proyecto dentro del alcance (criterio 12 d
     it("en A, junto a ids de A, los de B se ignoran y los de A se aplican", async () => {
       const mixed = {
         requested: {
+          people: [],
           clients: [clientBId, a.clientId, clientB2Id],
           projects: [projectQBId, a.projectId],
           withoutProject: false,
         },
         applied: {
+          people: [],
           clients: [a.clientId],
           projects: [a.projectId],
           withoutProject: false,
@@ -1442,23 +1450,35 @@ describe("los filtros de cliente y de proyecto dentro del alcance (criterio 12 d
           // «Sin proyecto» no es un id: queda y elige lo de B sin proyecto.
           {
             requested: idsOfA(true),
-            applied: { clients: [], projects: [], withoutProject: true },
+            applied: { people: [], clients: [], projects: [], withoutProject: true },
           },
           {
             requested: {
+              people: [],
               clients: [],
               projects: [a.projectId, projectQBId],
               withoutProject: false,
             },
-            applied: { clients: [], projects: [projectQBId], withoutProject: false },
+            applied: {
+              people: [],
+              clients: [],
+              projects: [projectQBId],
+              withoutProject: false,
+            },
           },
           {
             requested: {
+              people: [],
               clients: [a.clientId, clientB2Id],
               projects: [],
               withoutProject: false,
             },
-            applied: { clients: [clientB2Id], projects: [], withoutProject: false },
+            applied: {
+              people: [],
+              clients: [clientB2Id],
+              projects: [],
+              withoutProject: false,
+            },
           },
         ],
       );
@@ -1473,11 +1493,17 @@ describe("los filtros de cliente y de proyecto dentro del alcance (criterio 12 d
           { requested: idsOfA(false), applied: NO_REPORT_FILTERS },
           {
             requested: {
+              people: [],
               clients: [],
               projects: [a.projectId, projectQId, projectBId],
               withoutProject: false,
             },
-            applied: { clients: [], projects: [projectBId], withoutProject: false },
+            applied: {
+              people: [],
+              clients: [],
+              projects: [projectBId],
+              withoutProject: false,
+            },
           },
         ],
       );

@@ -2192,6 +2192,7 @@ describe("los filtros de cliente y de proyecto (R4: RP-25, RP-26, RP-29, RP-34)"
       ]);
       expect(totalsOf(state)).toEqual([1860, 1600]);
       expect(state.filters).toEqual({
+        people: [],
         clients: [],
         projects: [p1],
         withoutProject: true,
@@ -2254,6 +2255,7 @@ describe("los filtros de cliente y de proyecto (R4: RP-25, RP-26, RP-29, RP-34)"
       const state = await filtered("project", { clients: [c1], projects: [p2] });
       expect(state.groups).toEqual([]);
       expect(state.filters).toEqual({
+        people: [],
         clients: [c1],
         projects: [p2],
         withoutProject: false,
@@ -2345,6 +2347,7 @@ describe("los filtros de cliente y de proyecto (R4: RP-25, RP-26, RP-29, RP-34)"
       });
       expect(rowsOf(state)).toEqual([["Beta", 300]]);
       expect(state.filters).toEqual({
+        people: [],
         clients: [c2],
         projects: [p2],
         withoutProject: false,
@@ -2382,7 +2385,10 @@ describe("los filtros de cliente y de proyecto (R4: RP-25, RP-26, RP-29, RP-34)"
         withoutProject: true,
       });
       expect(rowsOf(state)).toEqual([["sin", 260]]);
-      expect(state.filters).toEqual({ clients: [], projects: [], withoutProject: true });
+      expect(state.filters).toEqual({
+        ...NO_REPORT_FILTERS,
+        withoutProject: true,
+      });
     });
   });
 
@@ -2439,7 +2445,12 @@ describe("los filtros de cliente y de proyecto (R4: RP-25, RP-26, RP-29, RP-34)"
                 range: lastWeek,
                 groupBy,
                 subgroups: [],
-                filters: { clients: [c1], projects: [p1], withoutProject: true },
+                filters: {
+                  people: [],
+                  clients: [c1],
+                  projects: [p1],
+                  withoutProject: true,
+                },
               },
               readNow,
             ),
@@ -2539,6 +2550,7 @@ describe("los filtros de cliente y de proyecto (R4: RP-25, RP-26, RP-29, RP-34)"
       const state = await filtered("project", {});
       const acme = { id: c1, name: "Acme" };
       expect(state.filterOptions).toStrictEqual({
+        people: null,
         clients: [
           { id: c1, name: "Acme", archived: false },
           { id: c2, name: "Bravo", archived: false },
@@ -2573,6 +2585,7 @@ describe("los filtros de cliente y de proyecto (R4: RP-25, RP-26, RP-29, RP-34)"
         clients: [c3, c1],
       });
       expect(state.filters).toEqual({
+        people: [],
         clients: [c1, c3],
         projects: [p1, p2, p3],
         withoutProject: false,

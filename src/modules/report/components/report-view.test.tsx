@@ -12,7 +12,11 @@ import { REPORT_HEADING_ID, ReportView } from "./report-view";
 const week = { first: "2026-10-05", last: "2026-10-11" };
 
 /** Las opciones de los filtros de todos los estados del archivo. */
-const filterOptions: ReportReadyState["filterOptions"] = { clients: [], projects: [] };
+const filterOptions: ReportReadyState["filterOptions"] = {
+  people: null,
+  clients: [],
+  projects: [],
+};
 
 const state: ReportReadyState = {
   kind: "ready",
@@ -426,6 +430,7 @@ describe("ReportView con subniveles (D-R3-6, D-R3-9)", () => {
 
 describe("ReportView con filtros (D-R4-7)", () => {
   const filtered: ReportReadyState["filters"] = {
+    people: [],
     clients: ["c1000000-0000-4000-8000-000000000000"],
     projects: [],
     withoutProject: true,
@@ -477,7 +482,7 @@ describe("ReportView con filtros (D-R4-7)", () => {
 
   it("«Sin proyecto» solo también es un filtro", () => {
     const markup = render({
-      filters: { clients: [], projects: [], withoutProject: true },
+      filters: { people: [], clients: [], projects: [], withoutProject: true },
     });
     expect(markup).toContain("Ninguna entrada coincide con los filtros");
     expect(bodyLinks(markup).get("Quitar filtros")).toBe(

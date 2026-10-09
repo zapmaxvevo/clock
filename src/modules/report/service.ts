@@ -47,6 +47,8 @@ import {
 type ScopePeople =
   /** `timeEntry.others.view`: todas las personas del workspace, activas e inactivas (RP-02, RP-61). */
   | { readonly kind: "everyone" }
+  /** Con `timeEntry.others.view` y el filtro de personas: solo estas, del workspace (D-R4-4). */
+  | { readonly kind: "chosen"; readonly userIds: readonly string[] }
   /** Sin el permiso: solo quien mira (RP-01, P-01). */
   | { readonly kind: "self"; readonly userId: string };
 
@@ -92,6 +94,28 @@ function scopeOf(actor: Actor): Scope {
     ? { kind: "everyone" }
     : { kind: "self", userId: actor.userId };
   return new Scope(actor.workspaceId, people);
+}
+
+/**
+ * D-R4-4: el alcance angostado a las personas elegidas. Solo sale de
+ * `everyone`, que ya respondió `timeEntry.others.view`: nunca ensancha. Es,
+ * con `scopeOf`, lo único que construye un `Scope`.
+ */
+function narrowedTo(scope: Scope, userIds: readonly string[]): Scope {
+  if (scope.people.kind !== "everyone") {
+    throw new Error(`El alcance ${scope.people.kind} no se angosta a personas elegidas.`);
+  }
+  if (userIds.length < 1 || userIds.length > REPORT_MAX_FILTER_VALUES) {
+    throw new RangeError(
+      `Personas elegidas fuera de 1 a ${REPORT_MAX_FILTER_VALUES}: ${userIds.length}.`,
+    );
+  }
+  return new Scope(scope.workspaceId, { kind: "chosen", userIds });
+}
+
+/** Lo que dice la línea del alcance: lo que quien mira puede ver, no lo elegido (D-R4-4). */
+function scopeLineOf(scope: Scope): ReportReadyState["scope"] {
+  return scope.people.kind === "self" ? "self" : "everyone";
 }
 
 /** El proyecto con el color estrechado a la paleta, o `null`. */
@@ -224,8 +248,14 @@ type ReportRead = {
  * página los recibe de `reportFiltersOf`, que ya lo garantiza; es para otro
  * llamador (R6), antes de leer.
  */
-function checkFilters({ clients, projects, withoutProject }: ReportFilters): void {
+function checkFilters({
+  people,
+  clients,
+  projects,
+  withoutProject,
+}: ReportFilters): void {
   const lists = [
+    { name: "personas", values: people, count: people.length },
     { name: "cliente", values: clients, count: clients.length },
     {
       name: "proyecto",
@@ -254,6 +284,10 @@ function effectiveFiltersOf(
   const clients = new Set(filters.clients);
   const projects = new Set(filters.projects);
   return {
+    // Paso 6 de R4: el catálogo de personas llega en el paso 8; hasta
+    // entonces, `getReportState` no deja pasar personas con `everyone`, y con
+    // `self` el filtro no existe.
+    people: [],
     clients: catalog.clients.filter(({ id }) => clients.has(id)).map(({ id }) => id),
     projects: catalog.projects.filter(({ id }) => projects.has(id)).map(({ id }) => id),
     withoutProject: filters.withoutProject,
@@ -277,6 +311,8 @@ function toFilterOptions(
   catalog: ProjectFilterCatalog,
 ): ReportReadyState["filterOptions"] {
   return {
+    // Paso 6 de R4: sin el catálogo de personas, el control no se dibuja.
+    people: null,
     clients: catalog.clients.map(({ id, name, archived }) => ({ id, name, archived })),
     projects: catalog.projects.map(({ id, name, color, client, archived }) => ({
       id,
@@ -445,8 +481,14 @@ async function readReport(
   const catalog = await getProjectFilterCatalog(tx, actor);
   const filters = effectiveFiltersOf(plan.filters, catalog);
   const filter = entryFilterOf(filters);
+  // D-R4-4: las personas angostan el alcance; los otros filtros se suman a él.
+  const readScope = filters.people.length > 0 ? narrowedTo(scope, filters.people) : scope;
   const levels = await readLevelsWithinLimit(plan.levels.length, (depth, limit) =>
-    reportRepository.totalsByLevels(scope, levelReadOf(plan, depth, filter, limit), tx),
+    reportRepository.totalsByLevels(
+      readScope,
+      levelReadOf(plan, depth, filter, limit),
+      tx,
+    ),
   );
   const [first] = levels;
   // El total no pasa por la unión con las etiquetas; con el primer nivel sin
@@ -454,7 +496,7 @@ async function readReport(
   // (D-R2a-7).
   const totals =
     plan.levels[0] === "tag"
-      ? await reportRepository.entryTotals(scope, { span: plan.span, filter }, tx)
+      ? await reportRepository.entryTotals(readScope, { span: plan.span, filter }, tx)
       : {
           seconds: first.reduce((sum, row) => sum + row.seconds, 0),
           billableSeconds: first.reduce((sum, row) => sum + row.billableSeconds, 0),
@@ -499,6 +541,12 @@ export async function getReportState(
     );
   }
   checkFilters(request.filters);
+  // Paso 6 de R4: el filtro de personas todavía no se cruza con su catálogo,
+  // así que un pedido con personas y alcance `everyone` lanza en lugar de
+  // ignorarlas.
+  if (scope.people.kind === "everyone" && request.filters.people.length > 0) {
+    throw new Error("El filtro de personas todavía no se aplica.");
+  }
   const span = {
     from: startOfDayKey(range.first, timeZone),
     to: startOfDayKey(addDaysToKey(range.last, 1), timeZone),
@@ -530,7 +578,7 @@ export async function getReportState(
     groupBy,
     subgroups: [...request.subgroups],
     levelsShown,
-    scope: scope.people.kind,
+    scope: scopeLineOf(scope),
     timeZone,
     totalSeconds: read.totals.seconds,
     billableSeconds: read.totals.billableSeconds,
