@@ -259,6 +259,23 @@ export const projectRepository = {
     return rows.map(withViewer);
   },
 
+  /**
+   * Todos los proyectos, archivados incluidos, con la fila de miembro de
+   * `userId`. Sin filtro de acceso: es de `can()` (RP-29).
+   */
+  async listAllProjects(
+    tx: Executor,
+    workspaceId: string,
+    userId: string,
+  ): Promise<ProjectWithViewer[]> {
+    const rows = await tx
+      .select({ project, isManager: projectMember.isManager })
+      .from(project)
+      .leftJoin(projectMember, viewerOf(userId))
+      .where(eq(project.workspaceId, workspaceId));
+    return rows.map(withViewer);
+  },
+
   /** Las tareas activas de los proyectos activos. */
   async listActiveTasks(tx: Executor, workspaceId: string): Promise<TaskRow[]> {
     const rows = await tx

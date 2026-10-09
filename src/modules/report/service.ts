@@ -15,12 +15,14 @@ import {
 } from "@/server/time";
 import { displayNameOf } from "@/modules/profile/service";
 import { paletteKeyOf } from "@/modules/project/palette";
+import type { ProjectFilterCatalog } from "@/modules/project/schema";
+import { getProjectFilterCatalog } from "@/modules/project/service";
 
 import { reportPeriodOf } from "./period";
 import {
-  NO_ENTRY_FILTER,
   reportRepository,
   type EntryTotals,
+  type ReportEntryFilter,
   type ReportLevelRead,
   type LevelGroupRow,
   type LevelTotalRow,
@@ -28,15 +30,15 @@ import {
 } from "./repository";
 import {
   DEFAULT_GROUP_BY,
-  hasReportFilters,
-  NO_REPORT_FILTERS,
   REPORT_MAX_DAYS,
+  REPORT_MAX_FILTER_VALUES,
   REPORT_MAX_ROWS,
   type ReportDateGroup,
   type ReportFilters,
   type ReportGroup,
   type ReportGroupBy,
   type ReportRange,
+  type ReportReadyState,
   type ReportState,
 } from "./schema";
 
@@ -209,7 +211,80 @@ type ReportRead = {
   /** Las filas de cada nivel que entró en el tope, desde el primero. */
   readonly levels: readonly (readonly LevelTotalRow[])[];
   readonly totals: EntryTotals;
+  readonly catalog: ProjectFilterCatalog;
+  /** Los filtros efectivos: los del pedido que están en el catálogo (D-R4-5). */
+  readonly filters: ReportFilters;
 };
+
+/**
+ * La invariante de los filtros: cada lista sin repetir y con hasta
+ * `REPORT_MAX_FILTER_VALUES` valores, «Sin proyecto» contado como uno. La
+ * página los recibe de `reportFiltersOf`, que ya lo garantiza; es para otro
+ * llamador (R6), antes de leer.
+ */
+function checkFilters({ clients, projects, withoutProject }: ReportFilters): void {
+  const lists = [
+    { name: "cliente", values: clients, count: clients.length },
+    {
+      name: "proyecto",
+      values: projects,
+      count: projects.length + (withoutProject ? 1 : 0),
+    },
+  ];
+  for (const { name, values, count } of lists) {
+    if (count > REPORT_MAX_FILTER_VALUES || new Set(values).size !== values.length) {
+      throw new RangeError(
+        `Filtro de ${name} con ${count} valores o con repetidos; el tope es ${REPORT_MAX_FILTER_VALUES}.`,
+      );
+    }
+  }
+}
+
+/**
+ * D-R4-5, RP-34: los filtros del pedido que están en el catálogo, en el orden
+ * del catálogo y con sus ids, comparados tal cual. Lo que no está se ignora él
+ * solo. «Sin proyecto» no está en ningún catálogo y pasa igual.
+ */
+function effectiveFiltersOf(
+  filters: ReportFilters,
+  catalog: ProjectFilterCatalog,
+): ReportFilters {
+  const clients = new Set(filters.clients);
+  const projects = new Set(filters.projects);
+  return {
+    clients: catalog.clients.filter(({ id }) => clients.has(id)).map(({ id }) => id),
+    projects: catalog.projects.filter(({ id }) => projects.has(id)).map(({ id }) => id),
+    withoutProject: filters.withoutProject,
+  };
+}
+
+/** Los filtros efectivos como los lee el repository. */
+function entryFilterOf(filters: ReportFilters): ReportEntryFilter {
+  return {
+    projectIds: filters.projects,
+    withoutProject: filters.withoutProject,
+    clientIds: filters.clients,
+  };
+}
+
+/**
+ * D-R4-9: las opciones de los filtros, campo por campo: un campo que el
+ * catálogo sume no llega a la pantalla sin un cambio acá.
+ */
+function filterOptionsOf(
+  catalog: ProjectFilterCatalog,
+): ReportReadyState["filterOptions"] {
+  return {
+    clients: catalog.clients.map(({ id, name, archived }) => ({ id, name, archived })),
+    projects: catalog.projects.map(({ id, name, color, client, archived }) => ({
+      id,
+      name,
+      color,
+      client: client === null ? null : { id: client.id, name: client.name },
+      archived,
+    })),
+  };
+}
 
 /**
  * La clave de un grupo en el armado del árbol: la de su dimensión —el id,
@@ -363,11 +438,7 @@ export async function getReportState(
       `Período fuera de 1 a ${REPORT_MAX_DAYS} días: ${range.first} a ${range.last}.`,
     );
   }
-  // Paso 1 de R4: los filtros todavía no se leen, así que un pedido con
-  // filtros lanza en lugar de devolver horas sin filtrar.
-  if (hasReportFilters(request.filters)) {
-    throw new Error("Los filtros de cliente y de proyecto todavía no se aplican.");
-  }
+  checkFilters(request.filters);
   const span = {
     from: startOfDayKey(range.first, timeZone),
     to: startOfDayKey(addDaysToKey(range.last, 1), timeZone),
@@ -377,39 +448,43 @@ export async function getReportState(
     ? dayBuckets(range.first, range.last, timeZone)
     : null;
   /** La lectura de los `depth` primeros niveles, con los tramos solo si la fecha está entre ellos. */
-  function levelRead(depth: number, limit?: number): ReportLevelRead {
+  function levelRead(
+    depth: number,
+    filter: ReportEntryFilter,
+    limit?: number,
+  ): ReportLevelRead {
     const dimensions = levels.slice(0, depth);
     return {
       span,
-      filter: NO_ENTRY_FILTER,
+      filter,
       dimensions,
       buckets: dimensions.includes("date") ? buckets : null,
       limit,
     };
   }
-  // ADR 0021, D-R3-3: una sola foto, aunque sea una sola lectura, para que el
-  // service tenga un camino. Se abre después de `report.view` y de `scopeOf`.
+  // ADR 0021, D-R3-3: una sola foto, con los catálogos de los filtros
+  // (D-R4-5). Se abre después de `report.view`, de `scopeOf` y de las
+  // invariantes.
   const read: ReportRead = await db.transaction(
     async (tx) => {
+      const catalog = await getProjectFilterCatalog(tx, actor);
+      const filters = effectiveFiltersOf(request.filters, catalog);
+      const filter = entryFilterOf(filters);
       const shown = await readLevelsWithinLimit(levels.length, (depth, limit) =>
-        reportRepository.totalsByLevels(scope, levelRead(depth, limit), tx),
+        reportRepository.totalsByLevels(scope, levelRead(depth, filter, limit), tx),
       );
       const [first] = shown;
       // El total no pasa por la unión con las etiquetas; con el primer nivel
-      // sin etiqueta, cada entrada está en un grupo y la suma es el total
-      // (D-R2a-7).
+      // sin etiqueta, cada entrada filtrada está en un grupo y la suma es el
+      // total (D-R2a-7).
       const totals =
         groupBy === "tag"
-          ? await reportRepository.entryTotals(
-              scope,
-              { span, filter: NO_ENTRY_FILTER },
-              tx,
-            )
+          ? await reportRepository.entryTotals(scope, { span, filter }, tx)
           : {
               seconds: first.reduce((sum, row) => sum + row.seconds, 0),
               billableSeconds: first.reduce((sum, row) => sum + row.billableSeconds, 0),
             };
-      return { levels: shown, totals };
+      return { levels: shown, totals, catalog, filters };
     },
     { isolationLevel: "repeatable read", accessMode: "read only" },
   );
@@ -433,7 +508,7 @@ export async function getReportState(
     totalSeconds: read.totals.seconds,
     billableSeconds: read.totals.billableSeconds,
     groups: treeOf(read.levels, dates),
-    filters: NO_REPORT_FILTERS,
-    filterOptions: { clients: [], projects: [] },
+    filters: read.filters,
+    filterOptions: filterOptionsOf(read.catalog),
   };
 }

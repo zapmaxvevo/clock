@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { eq, TransactionRollbackError } from "drizzle-orm";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { db, type Transaction } from "@/server/db";
 import {
@@ -49,6 +49,7 @@ import {
   createTag,
   createTask,
   getProjectCatalog,
+  getProjectFilterCatalog,
   getTrackingCatalog,
   ProjectError,
 } from "./service";
@@ -1437,4 +1438,190 @@ describe("las etiquetas de los catálogos (criterio 5 del 11b: PR-62, PR-60, TT-
       });
     });
   }
+});
+
+describe("getProjectFilterCatalog: lo que ofrecen los filtros del reporte (criterio 8 de R4: RP-25, RP-29)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** Clientes y proyectos activos, archivados y privados, y otro workspace al lado. */
+  async function seedFilterWorkspace() {
+    const acme = await seedClient({ workspaceId, name: "acme" });
+    const bravo = await seedClient({ workspaceId, name: "Bravo", archived: true });
+    const zulu = await seedClient({ workspaceId, name: "Zulu" });
+    const web = await seedProject({
+      workspaceId,
+      clientId: acme.id,
+      name: "Web",
+      color: "green",
+    });
+    const old = await seedProject({
+      workspaceId,
+      clientId: acme.id,
+      name: "Viejo",
+      color: "red",
+      archived: true,
+    });
+    const vault = await seedProject({
+      workspaceId,
+      clientId: bravo.id,
+      name: "Bóveda",
+      color: "teal",
+      isPublic: false,
+    });
+    const joined = await seedProject({
+      workspaceId,
+      name: "interno",
+      color: "pink",
+      isPublic: false,
+      members: [{ userId: member.userId }],
+    });
+    const other = await seedWorkspace();
+    const foreignClient = await seedClient({
+      workspaceId: other.workspaceId,
+      name: "Ajeno",
+    });
+    const foreign = await seedProject({
+      workspaceId: other.workspaceId,
+      clientId: foreignClient.id,
+      name: "Ajeno",
+    });
+    return { acme, bravo, zulu, web, old, vault, joined, foreign, other };
+  }
+
+  function catalogOf(actor: Actor) {
+    return db.transaction((tx) => getProjectFilterCatalog(tx, actor));
+  }
+
+  it("todos los clientes, archivados incluidos y marcados, en orden alfabético y sin los de otro workspace", async () => {
+    const { acme, bravo, zulu } = await seedFilterWorkspace();
+    for (const actor of [owner, member]) {
+      expect((await catalogOf(actor)).clients).toEqual([
+        { id: acme.id, name: "acme", archived: false },
+        { id: bravo.id, name: "Bravo", archived: true },
+        { id: zulu.id, name: "Zulu", archived: false },
+      ]);
+    }
+  });
+
+  it("los proyectos que project.view deja ver, archivados incluidos y marcados, con su color y su cliente, en orden", async () => {
+    const { acme, bravo, web, old, vault, joined } = await seedFilterWorkspace();
+    const acmeRef = { id: acme.id, name: "acme" };
+    const webView = {
+      id: web.id,
+      name: "Web",
+      color: "green",
+      client: acmeRef,
+      archived: false,
+    };
+    const oldView = {
+      id: old.id,
+      name: "Viejo",
+      color: "red",
+      client: acmeRef,
+      archived: true,
+    };
+    const joinedView = {
+      id: joined.id,
+      name: "interno",
+      color: "pink",
+      client: null,
+      archived: false,
+    };
+    expect((await catalogOf(admin)).projects).toEqual([
+      {
+        id: vault.id,
+        name: "Bóveda",
+        color: "teal",
+        client: { id: bravo.id, name: "Bravo" },
+        archived: false,
+      },
+      joinedView,
+      oldView,
+      webView,
+    ]);
+    // El privado del que no es miembro no está para el member (PR-61).
+    expect((await catalogOf(member)).projects).toEqual([joinedView, oldView, webView]);
+  });
+
+  it("devuelve exactamente los proyectos, archivados incluidos, que acepta can(…, project.view, …)", async () => {
+    await seedFilterWorkspace();
+    const projects = (await projectRows()).filter(
+      (row) => row.workspaceId === workspaceId,
+    );
+    const members = await db.select().from(projectMember);
+    const actors = [
+      owner,
+      admin,
+      member,
+      await seedActor("project_manager"),
+      await seedActor("team_manager"),
+      { ...member, status: "inactive" as const },
+    ];
+    for (const actor of actors) {
+      const expected = projects
+        .filter((row) => {
+          const own = members.find(
+            (item) => item.projectId === row.id && item.userId === actor.userId,
+          );
+          return can(actor, "project.view", {
+            kind: "project",
+            workspaceId: row.workspaceId,
+            isPublic: row.isPublic,
+            viewer: own === undefined ? null : { isManager: own.isManager },
+          });
+        })
+        .map((row) => row.id)
+        .sort();
+      const seen = (await catalogOf(actor)).projects.map((view) => view.id);
+      expect([actor.role, actor.status, seen.sort()]).toEqual([
+        actor.role,
+        actor.status,
+        expected,
+      ]);
+    }
+  });
+
+  it("lee las dos listas con el tx que recibe, sin abrir otra transacción", async () => {
+    await seedFilterWorkspace();
+    const listClients = vi.spyOn(projectRepository, "listClients");
+    const listAllProjects = vi.spyOn(projectRepository, "listAllProjects");
+    const transaction = vi.spyOn(db, "transaction");
+    const added = randomUUID();
+    // El rollback deja la base como estaba: lo escrito solo lo ve el mismo tx.
+    await expect(
+      db.transaction(async (tx: Transaction) => {
+        await tx.insert(project).values({
+          id: added,
+          workspaceId,
+          name: "Recién creado",
+          color: "blue",
+        });
+        const catalog = await getProjectFilterCatalog(tx, admin);
+        expect(catalog.projects.map((view) => view.id)).toContain(added);
+        expect(listClients.mock.calls.map(([executor]) => executor)).toEqual([tx]);
+        expect(listAllProjects.mock.calls.map(([executor]) => executor)).toEqual([tx]);
+        tx.rollback();
+      }),
+    ).rejects.toBeInstanceOf(TransactionRollbackError);
+    expect(transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("listAllProjects llamado directo trae los del workspace, archivados incluidos, con la fila de miembro, y nada de otro", async () => {
+    const { web, old, vault, joined } = await seedFilterWorkspace();
+    const rows = await projectRepository.listAllProjects(db, workspaceId, member.userId);
+    expect(
+      rows
+        .map((row) => [row.id, row.viewer])
+        .sort(([left], [right]) => String(left).localeCompare(String(right))),
+    ).toEqual(
+      [
+        [web.id, null],
+        [old.id, null],
+        [vault.id, null],
+        [joined.id, { isManager: false }],
+      ].sort(([left], [right]) => String(left).localeCompare(String(right))),
+    );
+  });
 });

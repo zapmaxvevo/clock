@@ -416,10 +416,42 @@ export async function getProjectFilterCatalog(
   tx: Transaction,
   actor: Actor,
 ): Promise<ProjectFilterCatalog> {
-  // Paso 1 de R4: la firma; la lectura llega en el paso 3.
-  void tx;
-  void actor;
-  throw new Error("getProjectFilterCatalog todavía no está implementada.");
+  const clients = await projectRepository.listClients(tx, actor.workspaceId);
+  const projects = await projectRepository.listAllProjects(
+    tx,
+    actor.workspaceId,
+    actor.userId,
+  );
+  const clientsById = new Map(clients.map((row) => [row.id, toClientView(row)]));
+  return {
+    clients: sortedByName(clients).map((row) => ({
+      ...toClientView(row),
+      archived: row.archivedAt !== null,
+    })),
+    projects: sortedByName(
+      projects.filter((row) => can(actor, "project.view", projectResource(row))),
+    ).map((row) => ({
+      ...toProjectRef(row),
+      client: clientOf(row, clientsById),
+      archived: row.archivedAt !== null,
+    })),
+  };
+}
+
+/** El cliente de un proyecto, de los leídos en la misma foto. */
+function clientOf(
+  row: ProjectWithViewer,
+  clientsById: ReadonlyMap<string, ClientView>,
+): ClientView | null {
+  if (row.clientId === null) {
+    return null;
+  }
+  const found = clientsById.get(row.clientId);
+  // La clave compuesta ata el proyecto a un cliente de su workspace.
+  if (found === undefined) {
+    throw new Error(`El proyecto ${row.id} tiene un cliente que no está en la foto.`);
+  }
+  return found;
 }
 
 type CatalogRead<Project> = {

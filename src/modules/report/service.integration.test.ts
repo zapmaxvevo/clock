@@ -1,8 +1,10 @@
+import { randomUUID } from "node:crypto";
+
 import { eq, sql } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { db } from "@/server/db";
-import { tag, task, timeEntry, user } from "@/server/db/schema";
+import { project, tag, task, timeEntry, user } from "@/server/db/schema";
 import type { Actor, MembershipStatus, Role } from "@/server/permissions";
 import { type TimeSettings } from "@/server/time";
 import {
@@ -19,13 +21,17 @@ import {
 import { actorIn, workspaceOf } from "@/test/time-entry";
 
 import { projectLabels } from "@/modules/project/components/labels";
+import { projectRepository } from "@/modules/project/repository";
 import { getTimesheetState } from "@/modules/time-entry/service";
 
 import {
   NO_REPORT_FILTERS,
   REPORT_GROUP_BYS,
+  REPORT_MAX_FILTER_VALUES,
   reportReadyState,
+  type ReportFilters,
   type ReportGroup,
+  type ReportGroupBy,
   type ReportRange,
   type ReportReadyState,
 } from "./schema";
@@ -1793,6 +1799,30 @@ describe("el tope de filas (D-R3-6; criterio 18 de R3)", () => {
       ["date", "tag"],
     ]);
   });
+
+  it("con filtro, el tope cuenta lo filtrado: la décima etiqueta en una entrada de otro proyecto no corta (criterio 6 de R4)", async () => {
+    const kept = await seedProject({ workspaceId, name: "Las 300" });
+    const other = await seedProject({ workspaceId, name: "Otro" });
+    await db
+      .update(timeEntry)
+      .set({ projectId: kept.id })
+      .where(eq(timeEntry.workspaceId, workspaceId));
+    // El primer día, de otro proyecto: sin filtro, el nivel 2 pasa a 2701 filas.
+    await seedClosed(ownerId, "2025-01-01T17:00:00Z", 1800, {
+      projectId: other.id,
+      tagIds: [tenthId],
+    });
+    const request = { range: year, groupBy: "date", subgroups: ["tag"] } as const;
+    expect((await readyState(owner, request)).levelsShown).toBe(1);
+
+    const state = await readyState(owner, {
+      ...request,
+      filters: { ...NO_REPORT_FILTERS, projects: [kept.id] },
+    });
+    expect([state.levelsShown, state.groups.length]).toEqual([2, 300]);
+    expect(state.groups.every((day) => day.children?.length === 9)).toBe(true);
+    expect(state.totalSeconds).toBe(300 * 3600);
+  });
 });
 
 describe("una sola foto con subniveles (ADR 0021; criterio 19 de R3)", () => {
@@ -2014,5 +2044,543 @@ describe("el período fuera del tope (B1)", () => {
       ["date"],
     ]);
     expect(reads[3]?.buckets?.buckets).toHaveLength(366);
+  });
+});
+
+/**
+ * El workspace de los filtros de R4: C1 con P1 y P4 (archivado), C2 con P2,
+ * C3 archivado con P5, y P3 sin cliente y archivado. Entradas de dos personas
+ * en la semana anterior, en todos los proyectos y sin proyecto; E y F en la
+ * de P1 del owner, E en la sin proyecto de Otra.
+ */
+describe("los filtros de cliente y de proyecto (R4: RP-25, RP-26, RP-29, RP-34)", () => {
+  let otherId: string;
+  let c1: string;
+  let c2: string;
+  let c3: string;
+  let p1: string;
+  let p2: string;
+  let p3: string;
+  let p4: string;
+  let p5: string;
+  let e: string;
+  let f: string;
+
+  beforeEach(async () => {
+    otherId = await seedPerson({ accountName: "Otra" });
+    c1 = (await seedClient({ workspaceId, name: "Acme" })).id;
+    c2 = (await seedClient({ workspaceId, name: "Bravo" })).id;
+    c3 = (await seedClient({ workspaceId, name: "Cerrado", archived: true })).id;
+    p1 = (await seedProject({ workspaceId, clientId: c1, name: "Alfa", color: "green" }))
+      .id;
+    p2 = (await seedProject({ workspaceId, clientId: c2, name: "Beta", color: "red" }))
+      .id;
+    p3 = (
+      await seedProject({ workspaceId, name: "Gamma", color: "teal", archived: true })
+    ).id;
+    p4 = (
+      await seedProject({
+        workspaceId,
+        clientId: c1,
+        name: "Delta",
+        color: "pink",
+        archived: true,
+      })
+    ).id;
+    p5 = (
+      await seedProject({ workspaceId, clientId: c3, name: "Épsilon", color: "lime" })
+    ).id;
+    e = (await seedTag({ workspaceId, name: "E" })).id;
+    f = (await seedTag({ workspaceId, name: "F" })).id;
+
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 600, {
+      projectId: p1,
+      billable: true,
+      tagIds: [e, f],
+    });
+    await seedClosed(ownerId, "2026-09-29T14:00:00Z", 300, { projectId: p2 });
+    await seedClosed(ownerId, "2026-09-29T15:00:00Z", 120, { projectId: p3 });
+    await seedClosed(ownerId, "2026-09-29T16:00:00Z", 60);
+    await seedClosed(ownerId, "2026-09-29T17:00:00Z", 40, { projectId: p4 });
+    await seedClosed(otherId, "2026-09-30T13:00:00Z", 1000, {
+      projectId: p1,
+      billable: true,
+    });
+    await seedClosed(otherId, "2026-09-30T14:00:00Z", 200, { tagIds: [e] });
+    await seedClosed(otherId, "2026-09-30T15:00:00Z", 7, { projectId: p5 });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function filtered(
+    groupBy: ReportGroupBy,
+    filters: Partial<ReportFilters>,
+    subgroups: readonly ReportGroupBy[] = [],
+    actor: Actor = owner,
+  ) {
+    return readyState(actor, {
+      range: lastWeek,
+      groupBy,
+      subgroups,
+      filters: { ...NO_REPORT_FILTERS, ...filters },
+    });
+  }
+
+  /** Lo que se lee de un grupo: su nombre, o «sin» para los «Sin …». */
+  function keyOf(group: ReportGroup): string {
+    switch (group.kind) {
+      case "person":
+        return group.name;
+      case "project":
+        return group.project?.name ?? "sin";
+      case "client":
+        return group.client?.name ?? "sin";
+      case "task":
+        return group.task?.name ?? "sin";
+      case "tag":
+        return group.tag?.name ?? "sin";
+      case "date":
+        return group.dayKey;
+    }
+  }
+
+  /** Las filas del primer nivel como `[clave, segundos]`, en orden. */
+  function rowsOf(state: ReportReadyState) {
+    return state.groups.map((group) => [keyOf(group), group.seconds]);
+  }
+
+  /** Cada grupo del árbol como «camino: segundos», recorrido en orden. */
+  function pathsOf(groups: readonly ReportGroup[], above = ""): string[] {
+    return groups.flatMap((group) => {
+      const path = above === "" ? keyOf(group) : `${above} / ${keyOf(group)}`;
+      return [`${path}: ${group.seconds}`, ...pathsOf(group.children ?? [], path)];
+    });
+  }
+
+  function totalsOf(state: ReportReadyState) {
+    return [state.totalSeconds, state.billableSeconds];
+  }
+
+  describe("el filtro de proyecto (criterio 4)", () => {
+    it("[P1]: por persona, cada una con lo suyo en P1; por proyecto, una fila; el total y el facturable de lo filtrado", async () => {
+      const byPerson = await filtered("person", { projects: [p1] });
+      expect(rowsOf(byPerson)).toEqual([
+        ["Otra", 1000],
+        ["Owner", 600],
+      ]);
+      expect(totalsOf(byPerson)).toEqual([1600, 1600]);
+      const byProject = await filtered("project", { projects: [p1] });
+      expect(rowsOf(byProject)).toEqual([["Alfa", 1600]]);
+      expect(totalsOf(byProject)).toEqual([1600, 1600]);
+    });
+
+    it("«Sin proyecto»: por proyecto, solo esa fila; por cliente, solo «Sin cliente» con esas entradas", async () => {
+      const byProject = await filtered("project", { withoutProject: true });
+      expect(rowsOf(byProject)).toEqual([["sin", 260]]);
+      const byClient = await filtered("client", { withoutProject: true });
+      expect(rowsOf(byClient)).toEqual([["sin", 260]]);
+      expect(totalsOf(byClient)).toEqual([260, 0]);
+    });
+
+    it("[P1] con «Sin proyecto»: las dos, sumadas en el total", async () => {
+      const state = await filtered("project", { projects: [p1], withoutProject: true });
+      expect(rowsOf(state)).toEqual([
+        ["Alfa", 1600],
+        ["sin", 260],
+      ]);
+      expect(totalsOf(state)).toEqual([1860, 1600]);
+      expect(state.filters).toEqual({
+        clients: [],
+        projects: [p1],
+        withoutProject: true,
+      });
+    });
+
+    it("[P3], archivado y sin cliente, cuenta (RP-29)", async () => {
+      const state = await filtered("project", { projects: [p3] });
+      expect(rowsOf(state)).toEqual([["Gamma", 120]]);
+      expect(state.filters.projects).toEqual([p3]);
+    });
+
+    it("por etiqueta con [P1], entryTotals da el total filtrado, menos que la suma de las etiquetas", async () => {
+      const entryTotals = vi.spyOn(reportRepository, "entryTotals");
+      const state = await filtered("tag", { projects: [p1] });
+      expect(rowsOf(state)).toEqual([
+        ["sin", 1000],
+        ["E", 600],
+        ["F", 600],
+      ]);
+      expect(totalsOf(state)).toEqual([1600, 1600]);
+      expect(entryTotals.mock.calls.map(([, read]) => read.filter)).toEqual([
+        { projectIds: [p1], withoutProject: false, clientIds: [] },
+      ]);
+    });
+  });
+
+  describe("el filtro de cliente (criterio 5)", () => {
+    it("[C1]: P1 y el archivado de C1; ni lo sin proyecto ni P3", async () => {
+      const state = await filtered("project", { clients: [c1] });
+      expect(rowsOf(state)).toEqual([
+        ["Alfa", 1600],
+        ["Delta", 40],
+      ]);
+      expect(totalsOf(state)).toEqual([1640, 1600]);
+    });
+
+    it("un cliente archivado se filtra (RP-29)", async () => {
+      const state = await filtered("project", { clients: [c3] });
+      expect(rowsOf(state)).toEqual([["Épsilon", 7]]);
+      expect(state.filters.clients).toEqual([c3]);
+    });
+
+    it("agrupando por cliente con [C1], una fila; y con tres niveles, solo lo de C1", async () => {
+      const byClient = await filtered("client", { clients: [c1] });
+      expect(rowsOf(byClient)).toEqual([["Acme", 1640]]);
+      const tree = await filtered("client", { clients: [c1] }, ["project", "person"]);
+      expect(tree.levelsShown).toBe(3);
+      expect(pathsOf(tree.groups)).toEqual([
+        "Acme: 1640",
+        "Acme / Alfa: 1600",
+        "Acme / Alfa / Otra: 1000",
+        "Acme / Alfa / Owner: 600",
+        "Acme / Delta: 40",
+        "Acme / Delta / Owner: 40",
+      ]);
+    });
+
+    it("[C1] con [P2] se cruzan con «y»: sin grupos, con los dos filtros y los totales en cero", async () => {
+      const state = await filtered("project", { clients: [c1], projects: [p2] });
+      expect(state.groups).toEqual([]);
+      expect(state.filters).toEqual({
+        clients: [c1],
+        projects: [p2],
+        withoutProject: false,
+      });
+      expect(totalsOf(state)).toEqual([0, 0]);
+    });
+
+    it("[C1] con «Sin proyecto» no deja nada: lo sin proyecto no tiene cliente", async () => {
+      const state = await filtered("project", { clients: [c1], withoutProject: true });
+      expect(state.groups).toEqual([]);
+    });
+  });
+
+  describe("en todos los niveles (criterio 6)", () => {
+    it("persona → proyecto con [P1, P2]: los hijos son solo esos y suman lo de su padre", async () => {
+      const state = await filtered("person", { projects: [p1, p2] }, ["project"]);
+      expect(pathsOf(state.groups)).toEqual([
+        "Otra: 1000",
+        "Otra / Alfa: 1000",
+        "Owner: 900",
+        "Owner / Alfa: 600",
+        "Owner / Beta: 300",
+      ]);
+      expect(totalsOf(state)).toEqual([1900, 1600]);
+    });
+
+    it("etiqueta → proyecto con [P1]: los hijos de cada etiqueta son de P1 y el total es el filtrado", async () => {
+      const state = await filtered("tag", { projects: [p1] }, ["project"]);
+      expect(pathsOf(state.groups)).toEqual([
+        "sin: 1000",
+        "sin / Alfa: 1000",
+        "E: 600",
+        "E / Alfa: 600",
+        "F: 600",
+        "F / Alfa: 600",
+      ]);
+      expect(totalsOf(state)).toEqual([1600, 1600]);
+    });
+
+    it("cada lectura del árbol lleva el mismo filtro", async () => {
+      const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+      await filtered("person", { projects: [p1], clients: [c1] }, ["project", "date"]);
+      expect(byLevels.mock.calls.map(([, read]) => read.filter)).toEqual(
+        Array.from({ length: 3 }, () => ({
+          projectIds: [p1],
+          withoutProject: false,
+          clientIds: [c1],
+        })),
+      );
+    });
+  });
+
+  describe("lo que no existe se ignora (criterio 7, RP-34)", () => {
+    it("un uuid que no existe, un proyecto y un cliente de otro workspace y uno borrado se ignoran; si son todos, el reporte es el de sin filtros", async () => {
+      const other = await seedWorkspace();
+      const foreignClient = await seedClient({ workspaceId: other.workspaceId });
+      const foreignProject = await seedProject({
+        workspaceId: other.workspaceId,
+        clientId: foreignClient.id,
+      });
+      const deleted = await seedProject({ workspaceId, clientId: c1 });
+      await db.delete(project).where(eq(project.id, deleted.id));
+      const ignoredProjects = [randomUUID(), foreignProject.id, deleted.id];
+      const ignoredClients = [randomUUID(), foreignClient.id];
+
+      const unfiltered = await filtered("project", {});
+      expect(unfiltered.groups.length).toBeGreaterThan(0);
+      for (const filters of [
+        { projects: ignoredProjects },
+        { clients: ignoredClients },
+        { projects: ignoredProjects, clients: ignoredClients },
+      ]) {
+        const state = await filtered("project", filters);
+        expect(state.filters).toEqual(NO_REPORT_FILTERS);
+        expect([rowsOf(state), totalsOf(state)]).toEqual([
+          rowsOf(unfiltered),
+          totalsOf(unfiltered),
+        ]);
+      }
+    });
+
+    it("junto a uno que existe, se aplica el que existe y filters solo lo lleva a él", async () => {
+      const other = await seedWorkspace();
+      const foreignClient = await seedClient({ workspaceId: other.workspaceId });
+      const foreignProject = await seedProject({ workspaceId: other.workspaceId });
+      const state = await filtered("project", {
+        projects: [randomUUID(), p2, foreignProject.id],
+        clients: [foreignClient.id, c2],
+      });
+      expect(rowsOf(state)).toEqual([["Beta", 300]]);
+      expect(state.filters).toEqual({
+        clients: [c2],
+        projects: [p2],
+        withoutProject: false,
+      });
+    });
+
+    it("un privado que el member no ve se ignora para él: ve todo lo suyo, también lo de ese privado", async () => {
+      const vault = await seedProject({ workspaceId, name: "Bóveda", isPublic: false });
+      await seedClosed(otherId, "2026-10-01T13:00:00Z", 90, { projectId: vault.id });
+      const member = actorIn(workspaceId, otherId, { role: "member" });
+      const state = await filtered("project", { projects: [vault.id] }, [], member);
+      expect(state.filters).toEqual(NO_REPORT_FILTERS);
+      expect(rowsOf(state)).toEqual([
+        ["Alfa", 1000],
+        ["sin", 200],
+        ["Bóveda", 90],
+        ["Épsilon", 7],
+      ]);
+      // El admin sí lo tiene en el catálogo, y se le aplica.
+      const admin = actorIn(
+        workspaceId,
+        await seedPerson({ accountName: "Admin", role: "admin" }),
+        {
+          role: "admin",
+        },
+      );
+      const byAdmin = await filtered("project", { projects: [vault.id] }, [], admin);
+      expect(rowsOf(byAdmin)).toEqual([["Bóveda", 90]]);
+      expect(byAdmin.filters.projects).toEqual([vault.id]);
+    });
+
+    it("solo «Sin proyecto» con proyectos ignorados sigue filtrando por «Sin proyecto»", async () => {
+      const state = await filtered("project", {
+        projects: [randomUUID()],
+        withoutProject: true,
+      });
+      expect(rowsOf(state)).toEqual([["sin", 260]]);
+      expect(state.filters).toEqual({ clients: [], projects: [], withoutProject: true });
+    });
+  });
+
+  describe("una sola foto y nada sin permiso (criterio 9)", () => {
+    it("con filtros, los dos catálogos, los niveles y el total en el Executor de la transacción de solo lectura repeatable read", async () => {
+      const transaction = vi.spyOn(db, "transaction");
+      const listClients = vi.spyOn(projectRepository, "listClients");
+      const listAllProjects = vi.spyOn(projectRepository, "listAllProjects");
+      const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+      const entryTotals = vi.spyOn(reportRepository, "entryTotals");
+      await filtered("tag", { projects: [p1], clients: [c1] }, ["project"]);
+      expect(transaction).toHaveBeenCalledTimes(1);
+      expect(transaction.mock.calls[0]?.[1]).toEqual({
+        isolationLevel: "repeatable read",
+        accessMode: "read only",
+      });
+      const executors = [
+        ...listClients.mock.calls.map((call) => call[0]),
+        ...listAllProjects.mock.calls.map((call) => call[0]),
+        ...byLevels.mock.calls.map((call) => call[2]),
+        ...entryTotals.mock.calls.map((call) => call[2]),
+      ];
+      expect(executors).toHaveLength(5);
+      expect(executors[0]).toBeDefined();
+      expect(executors[0]).not.toBe(db);
+      expect(executors.every((executor) => executor === executors[0])).toBe(true);
+    });
+
+    it("sin filtros también lee los catálogos, en la misma transacción", async () => {
+      const listClients = vi.spyOn(projectRepository, "listClients");
+      const listAllProjects = vi.spyOn(projectRepository, "listAllProjects");
+      const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+      await filtered("person", {});
+      expect([listClients.mock.calls.length, listAllProjects.mock.calls.length]).toEqual([
+        1, 1,
+      ]);
+      expect(listClients.mock.calls[0]?.[0]).toBe(byLevels.mock.calls[0]?.[2]);
+    });
+
+    it("con una membresía inactive o invited, forbidden sin leer los catálogos ni abrir la transacción", async () => {
+      const transaction = vi.spyOn(db, "transaction");
+      const listClients = vi.spyOn(projectRepository, "listClients");
+      const listAllProjects = vi.spyOn(projectRepository, "listAllProjects");
+      const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+      const entryTotals = vi.spyOn(reportRepository, "entryTotals");
+      for (const status of ["inactive", "invited"] as const) {
+        const actor = actorIn(workspaceId, otherId, { role: "member", status });
+        for (const groupBy of ["person", "tag"] as const) {
+          expect(
+            await getReportState(
+              actor,
+              settings,
+              {
+                range: lastWeek,
+                groupBy,
+                subgroups: [],
+                filters: { clients: [c1], projects: [p1], withoutProject: true },
+              },
+              readNow,
+            ),
+          ).toEqual({ kind: "forbidden" });
+        }
+      }
+      expect([
+        transaction.mock.calls.length,
+        listClients.mock.calls.length,
+        listAllProjects.mock.calls.length,
+        byLevels.mock.calls.length,
+        entryTotals.mock.calls.length,
+      ]).toEqual([0, 0, 0, 0, 0]);
+    });
+  });
+
+  describe("las guardas (criterio 10)", () => {
+    const tooMany = (count: number) => Array.from({ length: count }, () => randomUUID());
+
+    it("totalsByLevels y entryTotals lanzan RangeError sin consultar con 51 proyectos, 50 y «Sin proyecto» o 51 clientes", async () => {
+      const { scope, span } = await realLevelRead();
+      const filters = [
+        { projectIds: tooMany(51), withoutProject: false, clientIds: [] },
+        { projectIds: tooMany(50), withoutProject: true, clientIds: [] },
+        { projectIds: [], withoutProject: false, clientIds: tooMany(51) },
+      ];
+      const select = vi.spyOn(db, "select");
+      for (const filter of filters) {
+        await expect(
+          reportRepository.totalsByLevels(scope, {
+            span,
+            filter,
+            dimensions: ["project"],
+            buckets: null,
+          }),
+        ).rejects.toThrow(RangeError);
+        await expect(
+          reportRepository.entryTotals(scope, { span, filter }),
+        ).rejects.toThrow(RangeError);
+      }
+      expect(select).not.toHaveBeenCalled();
+    });
+
+    it("con el tope justo, 50 proyectos, 49 y «Sin proyecto» o 50 clientes, las dos leen", async () => {
+      const { scope, span } = await realLevelRead();
+      const filters = [
+        { projectIds: [...tooMany(49), p1], withoutProject: false, clientIds: [] },
+        { projectIds: [...tooMany(48), p1], withoutProject: true, clientIds: [] },
+        { projectIds: [], withoutProject: false, clientIds: [...tooMany(49), c1] },
+      ];
+      for (const filter of filters) {
+        const rows = await reportRepository.totalsByLevels(scope, {
+          span,
+          filter,
+          dimensions: ["project"],
+          buckets: null,
+        });
+        expect(rows.length).toBeGreaterThan(0);
+        const totals = await reportRepository.entryTotals(scope, { span, filter });
+        expect(totals.seconds).toBeGreaterThan(0);
+      }
+    });
+
+    it("getReportState con un filtro repetido, de 51, o de 50 proyectos y «Sin proyecto», lanza RangeError sin abrir la transacción", async () => {
+      const transaction = vi.spyOn(db, "transaction");
+      const invalid: Partial<ReportFilters>[] = [
+        { projects: [p1, p1] },
+        { clients: [c1, c1] },
+        { projects: tooMany(51) },
+        { clients: tooMany(51) },
+        { projects: tooMany(50), withoutProject: true },
+      ];
+      for (const filters of invalid) {
+        await expect(filtered("project", filters)).rejects.toThrow(RangeError);
+      }
+      expect(transaction).not.toHaveBeenCalled();
+      // El tope justo se lee: los que no existen se ignoran.
+      for (const filters of [
+        { projects: tooMany(50) },
+        { projects: tooMany(49), withoutProject: true },
+        { clients: tooMany(50) },
+      ]) {
+        expect((await filtered("project", filters)).filters).toEqual({
+          ...NO_REPORT_FILTERS,
+          withoutProject: filters.withoutProject ?? false,
+        });
+      }
+    });
+
+    it("el tope del esquema es el de las guardas", () => {
+      expect(REPORT_MAX_FILTER_VALUES).toBe(50);
+    });
+  });
+
+  describe("el estado (criterio 11)", () => {
+    it("filterOptions son los del catálogo, en orden alfabético, con el color de la paleta y solo los campos del esquema", async () => {
+      const state = await filtered("project", {});
+      const acme = { id: c1, name: "Acme" };
+      expect(state.filterOptions).toStrictEqual({
+        clients: [
+          { id: c1, name: "Acme", archived: false },
+          { id: c2, name: "Bravo", archived: false },
+          { id: c3, name: "Cerrado", archived: true },
+        ],
+        projects: [
+          { id: p1, name: "Alfa", color: "green", client: acme, archived: false },
+          {
+            id: p2,
+            name: "Beta",
+            color: "red",
+            client: { id: c2, name: "Bravo" },
+            archived: false,
+          },
+          { id: p4, name: "Delta", color: "pink", client: acme, archived: true },
+          {
+            id: p5,
+            name: "Épsilon",
+            color: "lime",
+            client: { id: c3, name: "Cerrado" },
+            archived: false,
+          },
+          { id: p3, name: "Gamma", color: "teal", client: null, archived: true },
+        ],
+      });
+      expect(reportReadyState.parse(state)).toEqual(state);
+    });
+
+    it("filters lleva los ids en el orden del catálogo, no en el de la URL", async () => {
+      const state = await filtered("project", {
+        projects: [p3, p2, p1],
+        clients: [c3, c1],
+      });
+      expect(state.filters).toEqual({
+        clients: [c1, c3],
+        projects: [p1, p2, p3],
+        withoutProject: false,
+      });
+    });
+
+    it("sin filtros, filters es NO_REPORT_FILTERS", async () => {
+      expect((await filtered("person", {})).filters).toEqual(NO_REPORT_FILTERS);
+    });
   });
 });

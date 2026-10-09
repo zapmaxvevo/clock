@@ -1,5 +1,17 @@
-import { and, eq, gte, isNotNull, lt, sql, type SQL } from "drizzle-orm";
-import { alias, type PgSelect } from "drizzle-orm/pg-core";
+import {
+  and,
+  eq,
+  exists,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
+import { alias, QueryBuilder, type PgSelect } from "drizzle-orm/pg-core";
 
 import { db, type Transaction } from "@/server/db";
 import {
@@ -16,7 +28,7 @@ import {
 import type { MembershipStatus } from "@/server/permissions";
 import type { TimeBuckets } from "@/server/time";
 
-import type { ReportGroupBy } from "./schema";
+import { REPORT_MAX_FILTER_VALUES, type ReportGroupBy } from "./schema";
 // Solo el tipo: el alcance lo construye el service (D-R2a-1). El ciclo se borra al compilar.
 import type { ReportScope } from "./service";
 
@@ -75,7 +87,7 @@ export type LevelTotalRow = {
 
 /**
  * RP-25, RP-26: los filtros de cliente y de proyecto, ya cruzados con sus
- * catálogos.
+ * catálogos. El de personas va en el alcance (D-R4-4).
  */
 export type ReportEntryFilter = {
   /** Vacío y sin `withoutProject`: sin filtro de proyecto. */
@@ -132,6 +144,44 @@ function closedIn(span: ReportSpan) {
     gte(timeEntry.startedAt, span.from),
     lt(timeEntry.startedAt, span.to),
   );
+}
+
+// El proyecto del filtro de cliente: no es una dimensión y no se cruza con
+// los alias de ellas (D-R4-6).
+const filterProject = alias(project, "filter_project");
+
+/**
+ * RP-25, RP-26, D-R4-3: la condición de los filtros sobre cada entrada, o
+ * `undefined` sin filtros. Dentro de un filtro, o; entre filtros, y. El de
+ * cliente lee `project.client_id`, como la dimensión de cliente, así que deja
+ * afuera lo que no tiene proyecto. Con una lista vacía, esa parte no se
+ * escribe: `inArray` con una lista vacía no deja pasar nada.
+ */
+function matchesFilter({
+  projectIds,
+  withoutProject,
+  clientIds,
+}: ReportEntryFilter): SQL | undefined {
+  const byProject = or(
+    projectIds.length > 0 ? inArray(timeEntry.projectId, [...projectIds]) : undefined,
+    withoutProject ? isNull(timeEntry.projectId) : undefined,
+  );
+  const byClient =
+    clientIds.length > 0
+      ? exists(
+          new QueryBuilder()
+            .select({ one: sql`1` })
+            .from(filterProject)
+            .where(
+              and(
+                eq(filterProject.workspaceId, timeEntry.workspaceId),
+                eq(filterProject.id, timeEntry.projectId),
+                inArray(filterProject.clientId, [...clientIds]),
+              ),
+            ),
+        )
+      : undefined;
+  return and(byProject, byClient);
 }
 
 /**
@@ -420,13 +470,20 @@ function bucketsOf(read: ReportLevelRead): TimeBuckets {
 }
 
 /**
- * Paso 1 de R4: la condición del filtro todavía no existe, así que una lectura
- * con filtro lanza en lugar de devolver horas sin filtrar.
+ * Las guardas de §4.3 de R4: lanza `RangeError` antes de consultar si un
+ * filtro pasa el tope, con «Sin proyecto» contado como uno.
  */
-function checkEntryRead(read: ReportEntryRead): void {
-  const { projectIds, withoutProject, clientIds } = read.filter;
-  if (projectIds.length > 0 || withoutProject || clientIds.length > 0) {
-    throw new Error("El filtro de cliente y de proyecto todavía no se aplica.");
+function checkEntryRead({ filter }: ReportEntryRead): void {
+  const projectValues = filter.projectIds.length + (filter.withoutProject ? 1 : 0);
+  if (projectValues > REPORT_MAX_FILTER_VALUES) {
+    throw new RangeError(
+      `El filtro de proyecto lleva ${projectValues} valores; el tope es ${REPORT_MAX_FILTER_VALUES}.`,
+    );
+  }
+  if (filter.clientIds.length > REPORT_MAX_FILTER_VALUES) {
+    throw new RangeError(
+      `El filtro de cliente lleva ${filter.clientIds.length} valores; el tope es ${REPORT_MAX_FILTER_VALUES}.`,
+    );
   }
 }
 
@@ -517,7 +574,11 @@ export const reportRepository = {
             "billable_seconds",
           ),
       })
-      .from(entries.where(and(inScope(scope), closedIn(read.span))).as("entries"))
+      .from(
+        entries
+          .where(and(inScope(scope), closedIn(read.span), matchesFilter(read.filter)))
+          .as("entries"),
+      )
       .groupBy(columnOf("entries", "workspace_id"), ...entryKeys)
       .as("totals");
 
@@ -571,7 +632,7 @@ export const reportRepository = {
         billableSeconds: sql<string>`coalesce(sum(${entrySeconds}) filter (where ${timeEntry.billable}), 0)::bigint`,
       })
       .from(timeEntry)
-      .where(and(inScope(scope), closedIn(read.span)));
+      .where(and(inScope(scope), closedIn(read.span), matchesFilter(read.filter)));
     return withSeconds(row);
   },
 };
