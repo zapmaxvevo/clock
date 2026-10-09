@@ -1,5 +1,5 @@
 /**
- * Localizadores y acciones de `/reportes` (R2a y R2b del núcleo de reportes).
+ * Localizadores y acciones de `/reportes` (R2a, R2b y R3a del núcleo de reportes).
  * Como en `timesheet-page.ts`, todo se busca por rol y por texto accesible. La
  * tabla se nombra por el título, y cada grupo es una fila con su encabezado de
  * fila: el nombre o, por fecha, el rótulo del día. La única excepción son los
@@ -47,6 +47,16 @@ export const NO_PROJECT = "Sin proyecto";
 /** RP-28: el grupo de las entradas sin proyecto y de los proyectos sin cliente. */
 export const NO_CLIENT = "Sin cliente";
 
+/** RP-28: el grupo de las entradas sin tarea, con proyecto o sin él. */
+export const NO_TASK = "Sin tarea";
+
+/** RP-28: el grupo de las entradas sin ninguna etiqueta. */
+export const NO_TAG = "Sin etiqueta";
+
+/** RP-18, D-R3-3: la línea que avisa que las filas por etiqueta pueden pasar el total. */
+export const TAG_OVERLAP =
+  "Una entrada con varias etiquetas suma en cada una: las filas por etiqueta pueden sumar más que el total.";
+
 /** RP-07: el aviso de una membresía que no está activa. */
 export const FORBIDDEN_TITLE = "Tu acceso al workspace está desactivado.";
 export const FORBIDDEN_BODY = "No podés ver reportes.";
@@ -67,16 +77,19 @@ export function zoneLine(timeZone: string): string {
 export type ReportRange = { readonly first: CivilDay; readonly last: CivilDay };
 
 /** La agrupación como la escribe la URL. */
-export type ReportGroupBy = "persona" | "proyecto" | "cliente" | "fecha";
+export type ReportGroupBy =
+  "persona" | "proyecto" | "cliente" | "tarea" | "etiqueta" | "fecha";
 
 /**
- * El enlace de cada agrupación en «Agrupar por», en su orden. Es también el
- * encabezado de la primera columna de la tabla (§5.3).
+ * El enlace de cada agrupación en «Agrupar por», en su orden (D-R3-8). Es
+ * también el encabezado de la primera columna de la tabla (§5.3).
  */
 export const GROUP_LINK: Record<ReportGroupBy, string> = {
   persona: "Persona",
   proyecto: "Proyecto",
   cliente: "Cliente",
+  tarea: "Tarea",
+  etiqueta: "Etiqueta",
   fecha: "Fecha",
 };
 
@@ -248,6 +261,13 @@ export function groupHeaders(page: Page): Locator {
   return reportTable(page).getByRole("rowheader");
 }
 
+/** La fila de la tabla cuyo encabezado de fila tiene ese nombre accesible. */
+function rowByHeader(page: Page, name: string | RegExp): Locator {
+  return reportTable(page)
+    .getByRole("row")
+    .filter({ has: page.getByRole("rowheader", { name, exact: true }) });
+}
+
 /**
  * La fila de un grupo, por el comienzo de su encabezado: el nombre de la
  * persona, que puede seguir con «(inactiva)», el del proyecto, el del cliente
@@ -256,13 +276,38 @@ export function groupHeaders(page: Page): Locator {
  * propio.
  */
 export function groupRow(page: Page, name: string): Locator {
-  return reportTable(page)
-    .getByRole("row")
-    .filter({
-      has: page.getByRole("rowheader", {
-        name: new RegExp(`^${escapeRegExp(name)}(?:\\s|$)`),
-      }),
-    });
+  return rowByHeader(page, new RegExp(`^${escapeRegExp(name)}(?:\\s|$)`));
+}
+
+/**
+ * El nombre accesible del encabezado de la fila de una tarea: su nombre y el
+ * de su proyecto, en dos elementos (§5.4). Dos tareas que se llaman igual se
+ * distinguen por el proyecto. Se busca por el nombre y no por el texto, que
+ * junta los dos sin espacio.
+ */
+export function taskHeading(task: string, project: string): string {
+  return `${task} ${project}`;
+}
+
+/** La fila de una tarea de un proyecto, que `groupRow` no separa de otra igual. */
+export function taskRow(page: Page, task: string, project: string): Locator {
+  return rowByHeader(page, taskHeading(task, project));
+}
+
+/**
+ * Los encabezados de fila son exactamente `names`, en ese orden, por su nombre
+ * accesible. Primero la cantidad y después cada uno, que reintenta hasta que
+ * llega la tabla nueva.
+ */
+export async function expectGroupNames(
+  page: Page,
+  names: readonly string[],
+): Promise<void> {
+  const headers = groupHeaders(page);
+  await expect(headers).toHaveCount(names.length);
+  for (const [index, name] of names.entries()) {
+    await expect(headers.nth(index)).toHaveAccessibleName(name);
+  }
 }
 
 /** La duración de una fila: su única celda de datos (RP-19). */

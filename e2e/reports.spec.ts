@@ -7,6 +7,7 @@ import {
   seedPersonEntries,
   seedPerson,
   seedProject,
+  seedTag,
   setDisplayName,
   setMembershipStatus,
   setRole,
@@ -19,11 +20,13 @@ import {
   currentWeekRange,
   EMPTY_REPORT,
   expectGroupBy,
+  expectGroupNames,
   expectReport,
   FORBIDDEN_BODY,
   FORBIDDEN_TITLE,
   goToReportsByNav,
   GROUP_LINK,
+  groupByControl,
   groupByLink,
   groupColumnHeader,
   groupDuration,
@@ -34,6 +37,8 @@ import {
   monthRange,
   NO_CLIENT,
   NO_PROJECT,
+  NO_TAG,
+  NO_TASK,
   openReport,
   periodLink,
   RANGE_MESSAGES,
@@ -56,6 +61,9 @@ import {
   shortcutLink,
   shortcutList,
   shortcutRange,
+  TAG_OVERLAP,
+  taskHeading,
+  taskRow,
   zoneLine,
   type ReportRange,
   type ShortcutLabel,
@@ -64,16 +72,17 @@ import { expect, TEST_EMAIL_DOMAIN, test } from "./session";
 import { trackerBar, uniqueSuffix } from "./tracker-page";
 
 /**
- * Recorridos de R2a y R2b del núcleo de reportes: el resumido por persona, por
- * proyecto, por cliente y por fecha, y los atajos del período (§8.2 de cada
- * contrato), con la regla de §8.3 de R2a. Cada recorrido tiene sus personas
- * —la de la sesión y las que siembra—, todas con un nombre editado que lleva
- * el sufijo del test, y solo afirma sobre sus filas o sobre proyectos con ese
- * sufijo: la base acumula personas y horas de todas las corridas. El total se
- * afirma solo con el alcance propio. El rol y el estado los cambia la persona
- * de la sesión sobre sí misma. Las entradas van en la semana anterior a la de
- * hoy y se siembran antes de abrir la pantalla; los rótulos esperados se
- * calculan con `days.ts`, no con el código que los produce.
+ * Recorridos de R2a, R2b y R3a del núcleo de reportes: el resumido por persona,
+ * por proyecto, por cliente, por tarea, por etiqueta y por fecha, y los atajos
+ * del período (§8.2 de cada contrato), con la regla de §8.3 de R2a. Cada
+ * recorrido tiene sus personas —la de la sesión y las que siembra—, todas con
+ * un nombre editado que lleva el sufijo del test, y solo afirma sobre sus filas
+ * o sobre proyectos con ese sufijo: la base acumula personas y horas de todas
+ * las corridas. El total se afirma solo con el alcance propio. El rol y el
+ * estado los cambia la persona de la sesión sobre sí misma. Las entradas van en
+ * la semana anterior a la de hoy y se siembran antes de abrir la pantalla; los
+ * rótulos esperados se calculan con `days.ts`, no con el código que los
+ * produce.
  */
 
 /** Hoy en la zona por omisión de la persona, que es la que corta los días. */
@@ -568,4 +577,108 @@ test("por fecha, una fila por día con horas, en orden y en la zona de quien mir
   await expectReport(page, shiftRange(lastWeek, -7), "fecha", day);
   await expect(reportTable(page).getByText(EMPTY_REPORT, { exact: true })).toBeVisible();
   await expect(groupHeaders(page)).toHaveCount(0);
+});
+
+test("por tarea y por etiqueta, con «Sin …» y la suma de las etiquetas", async ({
+  page,
+  email,
+}) => {
+  const day = today();
+  const lastWeek = lastWeekRange(day);
+  const [monday, tuesday, wednesday, thursday] = [0, 1, 2, 3].map((days) =>
+    addDays(lastWeek.first, days),
+  );
+  const suffix = uniqueSuffix();
+  const withTasks = `P ${suffix}`;
+  const other = `Q ${suffix}`;
+  const first = `T1 ${suffix}`;
+  const second = `T2 ${suffix}`;
+  const tagOne = `E1 ${suffix}`;
+  const tagTwo = `E2 ${suffix}`;
+
+  await enterApp(page);
+  await setDisplayName(email, `Fede ${suffix}`);
+  // R10 de la revisión: Q tiene una tarea que se llama como la T1 de P.
+  await seedProject({ name: withTasks, tasks: [first, second] });
+  await seedProject({ name: other, tasks: [first] });
+  await seedTag(tagOne);
+  await seedTag(tagTwo);
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
+    {
+      description: "a",
+      day: monday,
+      start: "09:00",
+      end: "10:00",
+      project: withTasks,
+      task: first,
+      tags: [tagOne, tagTwo],
+    },
+    {
+      description: "b",
+      day: tuesday,
+      start: "09:00",
+      end: "09:30",
+      project: withTasks,
+      task: second,
+      tags: [tagOne],
+    },
+    {
+      description: "c",
+      day: wednesday,
+      start: "09:00",
+      end: "09:15",
+      project: other,
+      task: first,
+    },
+    { description: "d", day: thursday, start: "09:00", end: "09:20", tags: [tagTwo] },
+  ]);
+
+  // D-R3-8: los seis enlaces de «Agrupar por», en orden.
+  await openReport(page, lastWeek, "persona", day);
+  await expect(groupByControl(page).getByRole("link")).toHaveText(
+    Object.values(GROUP_LINK),
+  );
+
+  // RP-11, D-R2a-4: «Tarea» conserva el rango. RP-12: por duración. Cada T1
+  // es una fila con su proyecto (D-R3-4), y «Sin tarea» junta la entrada sin
+  // proyecto, sin proyecto al lado (RP-28). El alcance es propio, así que el
+  // total es el de las filas; sin la línea de la etiqueta.
+  await groupByLink(page, "tarea").click();
+  await expectReport(page, lastWeek, "tarea", day);
+  await expect(page.getByText(SCOPE_SELF, { exact: true })).toBeVisible();
+  await expect(groupColumnHeader(page)).toHaveText(GROUP_LINK.tarea);
+  await expectGroupNames(page, [
+    taskHeading(first, withTasks),
+    taskHeading(second, withTasks),
+    NO_TASK,
+    taskHeading(first, other),
+  ]);
+  await expect(groupDuration(taskRow(page, first, withTasks))).toHaveText("1:00");
+  await expect(groupDuration(taskRow(page, second, withTasks))).toHaveText("0:30");
+  await expect(groupDuration(groupRow(page, NO_TASK))).toHaveText("0:20");
+  await expect(groupDuration(taskRow(page, first, other))).toHaveText("0:15");
+  await expect(reportTotal(page, "Total")).toHaveText("2:05");
+  await expect(page.getByText(TAG_OVERLAP, { exact: true })).toHaveCount(0);
+
+  // RP-18: la entrada del lunes suma en E1 y en E2, así que las filas pasan
+  // el total, que sigue siendo el de las entradas, y la línea lo avisa. RP-28:
+  // «Sin etiqueta» es la del miércoles.
+  const expectByTag = async (): Promise<void> => {
+    await expect(page.getByText(SCOPE_SELF, { exact: true })).toBeVisible();
+    await expect(groupColumnHeader(page)).toHaveText(GROUP_LINK.etiqueta);
+    await expect(groupHeaders(page)).toHaveText([tagOne, tagTwo, NO_TAG]);
+    await expect(groupDuration(groupRow(page, tagOne))).toHaveText("1:30");
+    await expect(groupDuration(groupRow(page, tagTwo))).toHaveText("1:20");
+    await expect(groupDuration(groupRow(page, NO_TAG))).toHaveText("0:15");
+    await expect(reportTotal(page, "Total")).toHaveText("2:05");
+    await expect(page.getByText(TAG_OVERLAP, { exact: true })).toBeVisible();
+  };
+  await groupByLink(page, "etiqueta").click();
+  await expectReport(page, lastWeek, "etiqueta", day);
+  await expectByTag();
+
+  // RP-32: al recargar, la misma vista.
+  await page.reload();
+  await expectReport(page, lastWeek, "etiqueta", day);
+  await expectByTag();
 });

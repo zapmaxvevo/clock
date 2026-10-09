@@ -10,6 +10,8 @@ import {
   seedClient,
   seedMember,
   seedProject,
+  seedTag,
+  seedTask,
   seedTimeEntry,
   seedWorkspace,
 } from "@/test/factories";
@@ -31,7 +33,9 @@ import { getReportState, type ReportRequest } from "./service";
  * se le niega a esa persona además de lo que niegue el real. Sin anotaciones,
  * decide el real; así se prueba que el alcance sale de `can()` y no de comparar
  * roles en el service (criterio 4, R9 de las correcciones). R2b suma las
- * agrupaciones por cliente y por fecha con el mismo fixture (criterio 11 de R2b).
+ * agrupaciones por cliente y por fecha con el mismo fixture (criterio 11 de R2b),
+ * y R3 las de tarea y etiqueta, con la tarea y las etiquetas en el fixture
+ * (criterio 9 de R3).
  */
 const permissionOverrides = vi.hoisted(() => ({
   denied: [] as { readonly userId: string; readonly action: string }[],
@@ -75,45 +79,71 @@ const notActive: readonly MembershipStatus[] = ["inactive", "invited"];
 /** Las agrupaciones que se recorren en cada caso de alcance. */
 const groupBys: readonly ReportGroupBy[] = REPORT_GROUP_BYS;
 
+/** Dónde está una entrada: su proyecto, el cliente del proyecto, su tarea y sus etiquetas. */
+type Place = {
+  readonly projectId: string | null;
+  readonly clientId: string | null;
+  readonly taskId: string | null;
+  /** En el orden en que el reporte las lista con la misma duración: por nombre. */
+  readonly tagIds: readonly string[];
+};
+
+const noProject: Place = { projectId: null, clientId: null, taskId: null, tagIds: [] };
+
 /**
  * Workspace A: owner, admin, `project_manager` responsable de P, `team_manager`,
  * un member que también es miembro de B y un member inactivo. P es del cliente
- * de A. Cada uno tiene una sola entrada el martes 29/09, con una duración que
- * no se repite: en P y facturable, o sin proyecto y no facturable.
+ * de A y tiene la tarea T. Cada uno tiene una sola entrada el martes 29/09, con
+ * una duración que no se repite: en P y facturable, o sin proyecto y no
+ * facturable. Las de owner, `project_manager` e inactivo van en T; la del member
+ * lleva las etiquetas E y F, la del inactivo E y la del admin F.
  */
 type WorkspaceA = {
   readonly workspaceId: string;
   readonly clientId: string;
   readonly projectId: string;
+  readonly taskId: string;
+  readonly tagEId: string;
+  readonly tagFId: string;
   readonly ownerId: string;
   readonly adminId: string;
   readonly managerId: string;
   readonly teamManagerId: string;
   readonly memberId: string;
   readonly inactiveId: string;
+  readonly places: {
+    readonly owner: Place;
+    readonly admin: Place;
+    readonly manager: Place;
+    readonly teamManager: Place;
+    readonly member: Place;
+    readonly inactive: Place;
+  };
 };
 
 /**
  * Workspace B: su owner, sin proyecto, y el member de A en el proyecto de B,
- * que es del cliente de B.
+ * que es del cliente de B, con la etiqueta G de B.
  */
 type WorkspaceB = {
   readonly workspaceId: string;
-  readonly clientId: string;
-  readonly projectId: string;
   readonly ownerId: string;
+  readonly places: { readonly owner: Place; readonly member: Place };
 };
 
 let a: WorkspaceA;
 let b: WorkspaceB;
 
-/** Una entrada cerrada de `minutes` minutos el martes 29/09, que empieza a las `hour` UTC. */
+/**
+ * Una entrada cerrada de `minutes` minutos el martes 29/09, que empieza a las
+ * `hour` UTC, en `place`: facturable si tiene proyecto.
+ */
 async function closedEntry(values: {
   readonly workspaceId: string;
   readonly userId: string;
   readonly hour: number;
   readonly minutes: number;
-  readonly projectId: string | null;
+  readonly place: Place;
 }) {
   const startedAt = new Date(Date.UTC(2026, 8, 29, values.hour));
   await seedTimeEntry({
@@ -121,8 +151,10 @@ async function closedEntry(values: {
     userId: values.userId,
     startedAt,
     endedAt: new Date(startedAt.getTime() + values.minutes * 60_000),
-    projectId: values.projectId,
-    billable: values.projectId !== null,
+    projectId: values.place.projectId,
+    taskId: values.place.taskId,
+    billable: values.place.projectId !== null,
+    tagIds: values.place.tagIds,
   });
 }
 
@@ -146,16 +178,36 @@ beforeEach(async () => {
       { userId: inactiveId },
     ],
   });
+  const taskA = await seedTask({
+    workspaceId: seededA.workspaceId,
+    projectId: projectA.id,
+    name: "T",
+  });
+  const tagE = await seedTag({ workspaceId: seededA.workspaceId, name: "E" });
+  const tagF = await seedTag({ workspaceId: seededA.workspaceId, name: "F" });
+  const inP = { projectId: projectA.id, clientId: clientA.id, taskId: null, tagIds: [] };
+  const inT = { ...inP, taskId: taskA.id };
   a = {
     workspaceId: seededA.workspaceId,
     clientId: clientA.id,
     projectId: projectA.id,
+    taskId: taskA.id,
+    tagEId: tagE.id,
+    tagFId: tagF.id,
     ownerId: seededA.ownerId,
     adminId,
     managerId,
     teamManagerId,
     memberId,
     inactiveId,
+    places: {
+      owner: inT,
+      admin: { ...noProject, tagIds: [tagF.id] },
+      manager: inT,
+      teamManager: noProject,
+      member: { ...inP, tagIds: [tagE.id, tagF.id] },
+      inactive: { ...inT, tagIds: [tagE.id] },
+    },
   };
 
   const seededB = await seedWorkspace(buenosAires);
@@ -167,11 +219,19 @@ beforeEach(async () => {
     workspaceId: seededB.workspaceId,
     clientId: clientB.id,
   });
+  const tagG = await seedTag({ workspaceId: seededB.workspaceId, name: "G" });
   b = {
     workspaceId: seededB.workspaceId,
-    clientId: clientB.id,
-    projectId: projectB.id,
     ownerId: seededB.ownerId,
+    places: {
+      owner: noProject,
+      member: {
+        projectId: projectB.id,
+        clientId: clientB.id,
+        taskId: null,
+        tagIds: [tagG.id],
+      },
+    },
   };
 
   const inA = { workspaceId: a.workspaceId };
@@ -180,42 +240,42 @@ beforeEach(async () => {
     userId: a.ownerId,
     hour: 10,
     minutes: 10,
-    projectId: a.projectId,
+    place: a.places.owner,
   });
   await closedEntry({
     ...inA,
     userId: a.adminId,
     hour: 11,
     minutes: 20,
-    projectId: null,
+    place: a.places.admin,
   });
   await closedEntry({
     ...inA,
     userId: a.managerId,
     hour: 12,
     minutes: 30,
-    projectId: a.projectId,
+    place: a.places.manager,
   });
   await closedEntry({
     ...inA,
     userId: a.teamManagerId,
     hour: 13,
     minutes: 40,
-    projectId: null,
+    place: a.places.teamManager,
   });
   await closedEntry({
     ...inA,
     userId: a.memberId,
     hour: 14,
     minutes: 50,
-    projectId: a.projectId,
+    place: a.places.member,
   });
   await closedEntry({
     ...inA,
     userId: a.inactiveId,
     hour: 15,
     minutes: 60,
-    projectId: a.projectId,
+    place: a.places.inactive,
   });
   const inB = { workspaceId: b.workspaceId };
   await closedEntry({
@@ -223,14 +283,14 @@ beforeEach(async () => {
     userId: a.memberId,
     hour: 17,
     minutes: 70,
-    projectId: b.projectId,
+    place: b.places.member,
   });
   await closedEntry({
     ...inB,
     userId: b.ownerId,
     hour: 18,
     minutes: 80,
-    projectId: null,
+    place: b.places.owner,
   });
 });
 
@@ -267,6 +327,10 @@ function summaryOf(state: ReportState) {
           return { projectId: group.project?.id ?? null, seconds: group.seconds };
         case "client":
           return { clientId: group.client?.id ?? null, seconds: group.seconds };
+        case "task":
+          return { taskId: group.task?.id ?? null, seconds: group.seconds };
+        case "tag":
+          return { tagId: group.tag?.id ?? null, seconds: group.seconds };
         case "date":
           return { dayKey: group.dayKey, seconds: group.seconds };
       }
@@ -274,17 +338,11 @@ function summaryOf(state: ReportState) {
   };
 }
 
-/** Dónde está una entrada: su proyecto y el cliente del proyecto, o ninguno. */
-type Place = { readonly projectId: string | null; readonly clientId: string | null };
-
-const noProject: Place = { projectId: null, clientId: null };
-
-function inProjectOf(workspace: WorkspaceA | WorkspaceB): Place {
-  return { projectId: workspace.projectId, clientId: workspace.clientId };
-}
-
-/** La fila que deja `summaryOf` de las horas de una persona en un solo lugar. */
-function rowOf(
+/**
+ * Las filas que deja `summaryOf` de las horas de una persona en un solo lugar:
+ * una, salvo por etiqueta, donde suma en cada una de las suyas (RP-18).
+ */
+function rowsOf(
   groupBy: ReportGroupBy,
   values: {
     readonly userId: string;
@@ -296,17 +354,26 @@ function rowOf(
   const { seconds } = values;
   switch (groupBy) {
     case "person":
-      return { userId: values.userId, inactive: values.inactive ?? false, seconds };
+      return [{ userId: values.userId, inactive: values.inactive ?? false, seconds }];
     case "project":
-      return { projectId: values.place.projectId, seconds };
+      return [{ projectId: values.place.projectId, seconds }];
     case "client":
-      return { clientId: values.place.clientId, seconds };
+      return [{ clientId: values.place.clientId, seconds }];
+    case "task":
+      return [{ taskId: values.place.taskId, seconds }];
+    case "tag":
+      return values.place.tagIds.length === 0
+        ? [{ tagId: null, seconds }]
+        : values.place.tagIds.map((tagId) => ({ tagId, seconds }));
     case "date":
-      return { dayKey: entryDay, seconds };
+      return [{ dayKey: entryDay, seconds }];
   }
 }
 
-/** Lo que ve una persona con su propia fila de `minutes` minutos en `place`. */
+/**
+ * Lo que ve una persona con su propia entrada de `minutes` minutos en `place`:
+ * el total es el de la entrada también por etiqueta, aunque las filas sumen más.
+ */
 function ownSummary(
   groupBy: ReportGroupBy,
   values: {
@@ -321,11 +388,11 @@ function ownSummary(
     groupBy,
     totalSeconds: seconds,
     billableSeconds: values.place.projectId === null ? 0 : seconds,
-    groups: [rowOf(groupBy, { ...values, seconds })],
+    groups: rowsOf(groupBy, { ...values, seconds }),
   };
 }
 
-/** Todo A, de la duración mayor a la menor: nada de B. */
+/** Todo A, de la duración mayor a la menor: nada de B. Por etiqueta, el total real. */
 function everyoneInA(groupBy: ReportGroupBy) {
   return {
     scope: "everyone",
@@ -338,7 +405,8 @@ function everyoneInA(groupBy: ReportGroupBy) {
 
 /**
  * P junta las horas de owner, `project_manager`, member e inactivo; el resto,
- * sin proyecto. Por fecha, las seis en el mismo día.
+ * sin proyecto. T, las de owner, `project_manager` e inactivo. E, las de member
+ * e inactivo; F, las de member y admin. Por fecha, las seis en el mismo día.
  */
 function everyoneInAGroups(groupBy: ReportGroupBy) {
   switch (groupBy) {
@@ -361,6 +429,17 @@ function everyoneInAGroups(groupBy: ReportGroupBy) {
         { clientId: a.clientId, seconds: 150 * 60 },
         { clientId: null, seconds: 60 * 60 },
       ];
+    case "task":
+      return [
+        { taskId: null, seconds: 110 * 60 },
+        { taskId: a.taskId, seconds: 100 * 60 },
+      ];
+    case "tag":
+      return [
+        { tagId: a.tagEId, seconds: 110 * 60 },
+        { tagId: null, seconds: 80 * 60 },
+        { tagId: a.tagFId, seconds: 70 * 60 },
+      ];
     case "date":
       return [{ dayKey: entryDay, seconds: 210 * 60 }];
   }
@@ -373,32 +452,38 @@ function selfOnlyInA() {
       role: "project_manager",
       userId: a.managerId,
       minutes: 30,
-      place: inProjectOf(a),
+      place: a.places.manager,
     },
-    { role: "team_manager", userId: a.teamManagerId, minutes: 40, place: noProject },
-    { role: "member", userId: a.memberId, minutes: 50, place: inProjectOf(a) },
+    {
+      role: "team_manager",
+      userId: a.teamManagerId,
+      minutes: 40,
+      place: a.places.teamManager,
+    },
+    { role: "member", userId: a.memberId, minutes: 50, place: a.places.member },
   ] as const;
 }
 
+/** Sin `report.view`, `forbidden` sin leer ni abrir la transacción (criterio 9 de R3). */
 async function expectForbiddenWithoutReading(actor: Actor) {
-  const byPerson = vi.spyOn(reportRepository, "totalsByPerson");
-  const byProject = vi.spyOn(reportRepository, "totalsByProject");
-  const byBucket = vi.spyOn(reportRepository, "totalsByBucket");
+  const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+  const entryTotals = vi.spyOn(reportRepository, "entryTotals");
+  const transaction = vi.spyOn(db, "transaction");
   try {
     for (const groupBy of [null, ...groupBys]) {
       expect(await reportOf(actor, groupBy)).toEqual({ kind: "forbidden" });
     }
-    expect(byPerson).not.toHaveBeenCalled();
-    expect(byProject).not.toHaveBeenCalled();
-    expect(byBucket).not.toHaveBeenCalled();
+    expect(byLevels).not.toHaveBeenCalled();
+    expect(entryTotals).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
   } finally {
-    byPerson.mockRestore();
-    byProject.mockRestore();
-    byBucket.mockRestore();
+    byLevels.mockRestore();
+    entryTotals.mockRestore();
+    transaction.mockRestore();
   }
 }
 
-describe("el alcance por rol (criterio 4, D-R2a-2; criterio 11 de R2b)", () => {
+describe("el alcance por rol (criterio 4, D-R2a-2; criterio 11 de R2b; criterio 9 de R3)", () => {
   for (const role of ["owner", "admin"] as const) {
     it(`${role} de A ve a todas las personas de A, la inactiva con sus horas, y nada de B`, async () => {
       const actor = actorIn(a.workspaceId, role === "owner" ? a.ownerId : a.adminId, {
@@ -414,7 +499,11 @@ describe("el alcance por rol (criterio 4, D-R2a-2; criterio 11 de R2b)", () => {
     const actor = actorIn(a.workspaceId, a.managerId, { role: "project_manager" });
     for (const groupBy of groupBys) {
       expect(summaryOf(await reportOf(actor, groupBy))).toEqual(
-        ownSummary(groupBy, { userId: a.managerId, minutes: 30, place: inProjectOf(a) }),
+        ownSummary(groupBy, {
+          userId: a.managerId,
+          minutes: 30,
+          place: a.places.manager,
+        }),
       );
     }
   });
@@ -423,7 +512,11 @@ describe("el alcance por rol (criterio 4, D-R2a-2; criterio 11 de R2b)", () => {
     const actor = actorIn(a.workspaceId, a.teamManagerId, { role: "team_manager" });
     for (const groupBy of groupBys) {
       expect(summaryOf(await reportOf(actor, groupBy))).toEqual(
-        ownSummary(groupBy, { userId: a.teamManagerId, minutes: 40, place: noProject }),
+        ownSummary(groupBy, {
+          userId: a.teamManagerId,
+          minutes: 40,
+          place: a.places.teamManager,
+        }),
       );
     }
   });
@@ -432,12 +525,12 @@ describe("el alcance por rol (criterio 4, D-R2a-2; criterio 11 de R2b)", () => {
     const actor = actorIn(a.workspaceId, a.memberId);
     for (const groupBy of groupBys) {
       expect(summaryOf(await reportOf(actor, groupBy))).toEqual(
-        ownSummary(groupBy, { userId: a.memberId, minutes: 50, place: inProjectOf(a) }),
+        ownSummary(groupBy, { userId: a.memberId, minutes: 50, place: a.places.member }),
       );
     }
     // Sin agrupación, por persona: la misma fila.
     expect(summaryOf(await reportOf(actor, null))).toEqual(
-      ownSummary("person", { userId: a.memberId, minutes: 50, place: inProjectOf(a) }),
+      ownSummary("person", { userId: a.memberId, minutes: 50, place: a.places.member }),
     );
   });
 
@@ -445,7 +538,7 @@ describe("el alcance por rol (criterio 4, D-R2a-2; criterio 11 de R2b)", () => {
     const actor = actorIn(b.workspaceId, a.memberId);
     for (const groupBy of groupBys) {
       expect(summaryOf(await reportOf(actor, groupBy))).toEqual(
-        ownSummary(groupBy, { userId: a.memberId, minutes: 70, place: inProjectOf(b) }),
+        ownSummary(groupBy, { userId: a.memberId, minutes: 70, place: b.places.member }),
       );
     }
   });
@@ -458,22 +551,24 @@ describe("el alcance por rol (criterio 4, D-R2a-2; criterio 11 de R2b)", () => {
         groupBy,
         totalSeconds: 150 * 60,
         billableSeconds: 70 * 60,
-        // Por fecha, las dos entradas de B son del mismo día.
+        // Por fecha, las dos entradas de B son del mismo día; por tarea, las dos sin tarea.
         groups:
           groupBy === "date"
             ? [{ dayKey: entryDay, seconds: 150 * 60 }]
-            : [
-                rowOf(groupBy, {
-                  userId: b.ownerId,
-                  place: noProject,
-                  seconds: 80 * 60,
-                }),
-                rowOf(groupBy, {
-                  userId: a.memberId,
-                  place: inProjectOf(b),
-                  seconds: 70 * 60,
-                }),
-              ],
+            : groupBy === "task"
+              ? [{ taskId: null, seconds: 150 * 60 }]
+              : [
+                  ...rowsOf(groupBy, {
+                    userId: b.ownerId,
+                    place: b.places.owner,
+                    seconds: 80 * 60,
+                  }),
+                  ...rowsOf(groupBy, {
+                    userId: a.memberId,
+                    place: b.places.member,
+                    seconds: 70 * 60,
+                  }),
+                ],
       });
     }
   });
@@ -504,7 +599,7 @@ describe("la decisión es de can() (criterio 4, R9)", () => {
     const actor = actorIn(a.workspaceId, a.ownerId, { role: "owner" });
     for (const groupBy of groupBys) {
       expect(summaryOf(await reportOf(actor, groupBy))).toEqual(
-        ownSummary(groupBy, { userId: a.ownerId, minutes: 10, place: inProjectOf(a) }),
+        ownSummary(groupBy, { userId: a.ownerId, minutes: 10, place: a.places.owner }),
       );
     }
   });
@@ -527,11 +622,13 @@ describe("la decisión es de can() (criterio 4, R9)", () => {
   });
 });
 
-describe("el enlace ajeno (criterio 5, RP-32; criterio 11 de R2b)", () => {
+describe("el enlace ajeno (criterio 5, RP-32; criterio 11 de R2b; criterio 9 de R3)", () => {
   /** El valor de `agrupar` que escribe la URL y la agrupación que tiene que salir. */
   const linkedGroupBys = [
     ["proyecto", "project"],
     ["cliente", "client"],
+    ["tarea", "task"],
+    ["etiqueta", "tag"],
     ["fecha", "date"],
   ] as const;
 
@@ -581,7 +678,7 @@ describe("el enlace ajeno (criterio 5, RP-32; criterio 11 de R2b)", () => {
   }
 });
 
-describe("membresía no activa (criterio 11, RP-07)", () => {
+describe("membresía no activa (criterio 11, RP-07; criterio 9 de R3)", () => {
   for (const status of notActive) {
     it(`${status}: ningún rol lee, el owner tampoco`, async () => {
       for (const role of roles) {

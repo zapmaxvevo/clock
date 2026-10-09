@@ -49,6 +49,21 @@ de Clockify: «Past two weeks», «This year» y el orden agrupando por fecha se
 buscaron ese día en las páginas del resumido y de filtros y no están (NOT
 FOUND); quedan _no verificados_.
 
+_Actualizado el 2026-10-09, contrato de R3, parte A
+([`nucleo-reportes-r3-subgrupos-tarea-y-etiqueta.md`](../slices/nucleo-reportes-r3-subgrupos-tarea-y-etiqueta.md),
+§7 «parity-analyst», con sus
+[correcciones](../slices/correcciones-nucleo-reportes-r3-contrato.md))_: el
+slice se partió y esta actualización cubre solo la parte A, que se mergea como
+R3a; cada regla que precisa lleva su corrección fechada, y la
+[sección 11](#11-núcleo-r3) junta la pantalla. Cambian RP-11, RP-12, RP-18,
+RP-28, RP-29 y P-05. Lo de la parte B queda anotado como pendiente de R3b
+(sección 11.5). Ese día se buscó en las páginas del resumido y de filtros:
+«multiple tags» no está en ninguna de las dos; «Group by task», en la del
+resumido; «Without task», «Without tag», «No task» y «No tag», en la de filtros
+(NOT FOUND). Se reconfirmó «It takes all the time entries in your account and
+groups them by project, client, user, groups, tag, or date.» (FOUND). Lo que
+dependía de las que no están queda _no verificado_.
+
 ## Fuentes y límites del relevamiento
 
 Documentación pública del centro de ayuda de Clockify y referencia pública de su
@@ -292,6 +307,18 @@ la URL, `agrupar=persona|proyecto|cliente|fecha`. Cualquier otro valor
 descarta y la vista queda por persona (RP-32). Sin parámetro sigue siendo por
 persona.
 
+_Actualizado el 2026-10-09, contrato de R3, parte A (D-R3-8; R3a)_: seis
+dimensiones en un nivel. «Agrupar por» tiene seis enlaces, «Persona»,
+«Proyecto», «Cliente», «Tarea», «Etiqueta» y «Fecha», en ese orden, y el
+elegido queda marcado. En la URL,
+`agrupar=persona|proyecto|cliente|tarea|etiqueta|fecha`. `Tarea`, `tareas`,
+`etiquetas` o cualquier otro valor se descartan y la vista queda por persona
+(RP-32). **La tarea entra por la decisión del usuario (mapa §5), no por
+Clockify**: «Group by task» no está en la página del resumido (NOT FOUND el
+2026-10-09) y la lista documentada sigue siendo la de RP-10. Justificación: las
+entradas tienen tarea y «cuánto se cargó en cada tarea» es una pregunta del
+equipo. Los subniveles quedan para R3b (sección 11.5).
+
 **RP-12 Subagrupación encadenada** — `replicar`
 Documentado: «You can further breakdown data by sub groups.» y los ejemplos
 «Group by client -> user to see who worked for what client» y «Group by group
@@ -315,6 +342,14 @@ horas. Justificación: es un desvío del orden por duración, porque una línea 
 tiempo ordenada por duración no se lee (D-R2b-6). El orden de Clockify al
 agrupar por fecha es _no verificado_: ni la página del resumido ni la de
 filtros lo dicen (P-05).
+
+_Actualizado el 2026-10-09, contrato de R3, parte A (D-R3-3, D-R3-4; R3a)_:
+solo el orden de un nivel. Por tarea y por etiqueta, el de R2a: duración
+descendente, `compareNames` sobre el nombre de la tarea o de la etiqueta en el
+empate (que desempata por id) y «Sin tarea» o «Sin etiqueta» después de los
+grupos de su misma duración. Dos tareas con el mismo nombre en proyectos
+distintos se ordenan como dos grupos. **Los subgrupos siguen pendientes de
+R3b** (sección 11.5).
 
 **RP-13 Expandir un grupo** — `replicar`
 Documentado: «You can click on the number next to the group to expand it and
@@ -370,6 +405,27 @@ suma de lo que muestran las filas queda en el total o debajo: dos filas de
 90 s muestran «0:01» cada una y el total, «0:03». Es la misma regla que la
 planilla. La duración de cada entrada se trunca a segundos enteros antes de
 sumar, igual que en la planilla. La suma por etiqueta llega con R3.
+
+_Actualizado el 2026-10-09, contrato de R3, parte A (D-R3-3; R3a)_: **por
+etiqueta, una entrada con varias etiquetas suma entera en cada una**, así que
+la suma de las filas puede pasar el total. **La cabecera tiene siempre el total
+real**: por etiqueta, «Total» y «Facturable» se leen aparte, sin la unión con
+las etiquetas, en la misma foto que las filas (una transacción de solo lectura
+`repeatable read`); por las otras cinco agrupaciones son la suma de las filas,
+como en R2a, porque cada entrada está en exactamente un grupo —también por
+tarea: una entrada tiene una tarea o ninguna—. Con las entradas del recorrido 10
+del contrato, E1 muestra 1:30, E2 1:20 y «Sin etiqueta» 0:15, y «Total», 2:05.
+Cada cifra se sigue truncando al minuto por separado. **La pantalla lo avisa**
+debajo de la línea de la zona, solo agrupando por etiqueta: «Una entrada con
+varias etiquetas suma en cada una: las filas por etiqueta pueden sumar más que
+el total.». La línea sale con la agrupación y no con los datos: aparece aunque
+ninguna entrada del período tenga dos etiquetas, y también en el vacío.
+Justificación: copia propia; «pueden» es cierto siempre, y saber si pasó
+obligaría a otra lectura. _No verificado_ en Clockify cómo suma por etiqueta y
+qué dice la cabecera: «multiple tags» no está en la página del resumido ni en la
+de filtros (NOT FOUND el 2026-10-09); sigue en P-05. Lo del árbol —los niveles
+debajo de una etiqueta suman lo de su grupo, y la línea con la etiqueta en un
+subnivel— queda para R3b (sección 11.5).
 
 **RP-19 Formato de duración** — `adaptar`
 Documentado: el formato es del workspace («Find duration format in the General
@@ -590,6 +646,20 @@ proyectos sin cliente. Va en gris, con el mismo rótulo que la pantalla de
 proyectos, y con la misma duración va después de los clientes (RP-12). Dos
 proyectos de un mismo cliente dan una fila con la suma.
 
+_Actualizado el 2026-10-09, contrato de R3, parte A (D-R3-3, D-R3-4; R3a)_:
+agrupando por tarea, **«Sin tarea» es una sola fila con las entradas de un
+proyecto sin tarea y las que no tienen proyecto** —una tarea no existe sin su
+proyecto—, en gris y sin proyecto. Agrupando por etiqueta, **«Sin etiqueta» son
+las entradas sin ninguna etiqueta**: una entrada con al menos una nunca está
+ahí. Va en gris y en singular, distinto del «Sin etiquetas» con que el
+calendario dice que una entrada no tiene ninguna: uno es un grupo y el otro,
+una lista vacía. Los dos rótulos son del reporte, no de la pantalla de
+proyectos. Una tarea borrada deja sus entradas sin tarea, que pasan a «Sin
+tarea»; una etiqueta borrada sale de sus entradas, y la que no tenía otra pasa
+a «Sin etiqueta». Con la misma duración, los dos van después (RP-12).
+_No verificado_: el rótulo de Clockify; «Without task», «Without tag», «No
+task» y «No tag» no están en la página de filtros (NOT FOUND el 2026-10-09).
+
 **RP-29 Proyectos archivados, tareas hechas y proyectos borrados** — `replicar`
 Relevado en `proyectos.md`: «Project's time entries will still be shown in
 reports» (PR-22), «Time entries for done tasks will still appear in reports»
@@ -605,6 +675,16 @@ _Actualizado el 2026-10-08, contrato de R2b (D-R2b-5)_: agrupando por cliente,
 un cliente archivado cuenta y su fila lleva su nombre como cualquier otra, sin
 marca de archivado, con el mismo criterio que el proyecto archivado (sección
 8). _No verificado_ si Clockify lo marca.
+
+_Actualizado el 2026-10-09, contrato de R3, parte A (D-R3-3, D-R3-4; R3a)_:
+agrupando por tarea, **una tarea hecha cuenta** y su fila lleva su nombre y su
+proyecto como cualquier otra, sin marca; el proyecto de la tarea se muestra
+aunque esté archivado, también sin marca. Agrupando por etiqueta, **una
+etiqueta archivada cuenta** y su fila lleva su nombre, sin marca. Justificación
+de que no se marquen: el mismo criterio que el proyecto y el cliente archivados
+(sección 8), porque el reporte suma todo sin mirar el estado. _No verificado_ si
+Clockify marca una tarea hecha en el resumido, ni qué hace con una etiqueta
+archivada: no se relevó ninguna página de etiquetas. P-05.
 
 **RP-30 El timer en curso no se muestra ni se suma** — `adaptar`
 _No verificado_: si Clockify suma un timer corriendo y hasta qué momento. Acá el
@@ -966,6 +1046,15 @@ agrupando por fecha (RP-12). Mientras tanto vale lo de D-R2b-2 —la semana
 anterior y esta, y meses y años enteros— y el orden cronológico de D-R2b-6. No
 bloquea.
 
+_Actualizado el 2026-10-09, contrato de R3, parte A (§10, pregunta 3)_: P-05
+sigue abierto para el usuario y suma, para R3a: si «Group by» ofrece la tarea
+(RP-11); si, agrupando por etiqueta, una entrada con varias suma en cada una y
+qué total muestra entonces la cabecera (RP-18, ya en la lista); el rótulo del
+grupo sin etiqueta (RP-28); y si el resumido marca una tarea hecha o una
+etiqueta archivada (RP-29). Mientras tanto vale lo de R3a (sección 11). Lo de
+R3b —el tope de niveles, si una dimensión se repite, el orden dentro de los
+subgrupos y lo expandido al recargar— se suma con R3b. No bloquea.
+
 ## 8. Decisiones del usuario (2026-10-08)
 
 - **P-01**: solo owner y admin ven las horas de otros; el resto ve solo las propias. Divergencia
@@ -1159,3 +1248,112 @@ hábiles y trimestres con nombre.
   hoy; «Este mes» y «Este año» incluyen los días por venir (RP-20). Lo de
   Clockify está _no verificado_ (P-05).
 - El atajo del mes anterior se llama «Mes pasado», no «Mes anterior» (RP-20).
+
+## 11. Núcleo, R3
+
+_2026-10-09._ Contrato:
+[`nucleo-reportes-r3-subgrupos-tarea-y-etiqueta.md`](../slices/nucleo-reportes-r3-subgrupos-tarea-y-etiqueta.md),
+aprobado con cambios en la primera ronda de `architecture-reviewer`, con sus
+[correcciones](../slices/correcciones-nucleo-reportes-r3-contrato.md). El
+contrato tiene dos partes (D-R3-1) y el slice se partió: **esta sección
+registra la parte A, R3a** —tarea y etiqueta en un nivel—, y la parte B llega
+como R3b con su propia corrección en esta sección (11.5 deja anotado qué
+falta). Extiende la pantalla de R2b. La regla de cada comportamiento está en la
+corrección fechada de su RP; esta sección junta lo que cambia en la pantalla, y
+lo que no nombra sigue como en las secciones [9](#9-núcleo-r2a) y
+[10](#10-núcleo-r2b).
+
+**Cubre:** RP-11 (un nivel, seis dimensiones), RP-12 (solo el orden por tarea y
+por etiqueta), RP-18 (la suma por etiqueta, la cabecera con el total real y la
+línea que lo avisa), RP-28 («Sin tarea» y «Sin etiqueta») y RP-29 (la tarea
+hecha y la etiqueta archivada). Los permisos y el alcance no cambian: no hay
+acción nueva, y RP-01, RP-02 y RP-07 deciden igual por tarea y por etiqueta; un
+member ve solo lo propio también por etiqueta, con el total incluido. Las
+lecturas de un pedido van en una sola foto, una transacción de solo lectura
+`repeatable read`; por persona, proyecto, cliente y fecha la pantalla dice lo
+mismo que en R2b.
+
+**Queda para después:** subgrupos, «Subagrupar por», expandir y contraer y el
+tope de filas (R3b, sección 11.5); filtros y el segundo vacío de RP-33 (R4);
+gráfico (R5); exportación (R6, R7); cambiar el rol (R8); personas sin horas
+(R9). Filtrar por tarea o por etiqueta es RP-25 en el resto, de la fase 3.
+
+### 11.1 La barra
+
+- **«Agrupar por»** con seis enlaces, en este orden: «Persona», «Proyecto»,
+  «Cliente», «Tarea», «Etiqueta» y «Fecha». El elegido lleva `aria-current`;
+  todos conservan el rango (RP-11). En pantallas angostas el grupo se parte en
+  varias líneas.
+- **Las flechas, el selector del período y «Esta semana»** no cambian, y
+  conservan `agrupar=tarea` y `agrupar=etiqueta` como cualquier agrupación.
+
+### 11.2 La tabla
+
+- **Columnas**: «Tarea» o «Etiqueta», y «Duración».
+- **Tarea**: el nombre de la tarea y, en gris, el de su proyecto, sin punto de
+  color, como el cliente en la fila de un proyecto. Dos tareas con el mismo
+  nombre en proyectos distintos son dos filas, cada una con su proyecto. «Sin
+  tarea» en gris y sin proyecto, con las entradas de un proyecto sin tarea y
+  las sin proyecto (RP-28). La tarea hecha y el proyecto archivado de una
+  tarea, sin marca (RP-29).
+- **Etiqueta**: el nombre, sin color. «Sin etiqueta» en gris, con las entradas
+  sin ninguna etiqueta (RP-28). La etiqueta archivada, sin marca (RP-29).
+- **El orden**: por duración, empate por nombre y «Sin tarea» o «Sin etiqueta»
+  después de los grupos de su misma duración (RP-12).
+- **Los totales**: por tarea, los de R2a: cada entrada tiene una tarea o
+  ninguna, así que en segundos el total es la suma de las filas. Por etiqueta,
+  «Total» y «Facturable» son los reales, leídos aparte en la misma foto, y una
+  entrada con varias etiquetas suma en cada fila: la suma de las filas puede
+  pasar el total (RP-18). Con las entradas del recorrido 10 del contrato, E1
+  1:30, E2 1:20 y «Sin etiqueta» 0:15, con «Total» en 2:05.
+- **La línea de la etiqueta**: solo agrupando por etiqueta, debajo de la de la
+  zona: «Una entrada con varias etiquetas suma en cada una: las filas por
+  etiqueta pueden sumar más que el total.» (RP-18). Por tarea no aparece.
+
+### 11.3 Estados
+
+- **Vacío por tarea o por etiqueta**: el de R2a, la fila «No hay horas en este
+  período» con «Total» y «Facturable» en «0:00» (RP-33). Por etiqueta, la línea
+  de la etiqueta se ve también en el vacío.
+- **Cargando, error de lectura y sin `report.view`**: como en la sección 9.3,
+  en las seis agrupaciones. Sin `report.view` no se abre la transacción ni se
+  lee nada (RP-07).
+- **Al recargar**: la misma vista. `agrupar=tarea` y `agrupar=etiqueta` se
+  validan como las otras cuatro: `Tarea`, `tareas` o `etiquetas` se descartan y
+  la vista queda por persona, sin aviso (RP-32). Hasta R3b, `subagrupar=…` se
+  ignora como cualquier otra clave.
+
+### 11.4 Divergencias visibles que el reviewer no debe marcar como errores
+
+- Por etiqueta, la suma de las filas puede pasar el «Total» (RP-18); lo de
+  Clockify está _no verificado_ (P-05).
+- La línea de la etiqueta sale con la agrupación y no con los datos: se ve
+  aunque ninguna entrada del período tenga dos etiquetas, y en el vacío (RP-18).
+- «Sin tarea» junta en una sola fila, sin proyecto, las entradas sin proyecto y
+  las de proyectos sin tarea (RP-28).
+- «Sin etiqueta», en singular, es el grupo; el «Sin etiquetas» del calendario
+  dice que una entrada no tiene ninguna. Son dos textos distintos a propósito
+  (RP-28).
+- Ni la tarea hecha, ni la etiqueta archivada, ni el proyecto archivado de una
+  tarea llevan marca (RP-29).
+- «Tarea» está en «Agrupar por» aunque la documentación de Clockify no la
+  nombre: entra por decisión del usuario (RP-11).
+
+### 11.5 Pendiente de R3b
+
+La parte B del contrato no está en R3a. Cuando R3b se cierre, lleva su
+corrección fechada en cada RP y en esta sección:
+
+- **RP-12**: hasta tres niveles sin repetir, `subagrupar`, el intercambio al
+  elegir una dimensión que ya está en otro nivel y «Ninguno»; el orden dentro
+  de cada nivel es el de su dimensión. _No verificado_: el tope de niveles y la
+  repetición en Clockify.
+- **RP-13**: expandir y contraer en el navegador; todo contraído al cargar y en
+  cada navegación; lo abierto no sobrevive a la recarga (D-R3-6, D-R3-9).
+- **RP-18 en el árbol**: los niveles de abajo de una etiqueta suman lo de su
+  grupo, y la línea de la etiqueta cuando la etiqueta es cualquiera de los
+  niveles que se muestran.
+- **RP-32**: `subagrupar` se valida aparte y se descarta entero.
+- **En la 11.4**: el tope de 3000 filas y su línea; el proyecto en gris de la
+  tarea también debajo de un proyecto; lo abierto que se pierde al recargar o
+  al navegar.

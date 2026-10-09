@@ -119,6 +119,16 @@ describe("ReportToolbar", () => {
         current: null,
       },
       {
+        label: "Tarea",
+        href: "/reportes?desde=2026-09-28&hasta=2026-10-04&agrupar=tarea",
+        current: null,
+      },
+      {
+        label: "Etiqueta",
+        href: "/reportes?desde=2026-09-28&hasta=2026-10-04&agrupar=etiqueta",
+        current: null,
+      },
+      {
         label: "Fecha",
         href: "/reportes?desde=2026-09-28&hasta=2026-10-04&agrupar=fecha",
         current: null,
@@ -132,6 +142,8 @@ describe("ReportToolbar", () => {
       ["Persona", null],
       ["Proyecto", null],
       ["Cliente", "true"],
+      ["Tarea", null],
+      ["Etiqueta", null],
       ["Fecha", null],
     ]);
     const found = links(markup);
@@ -156,10 +168,46 @@ describe("ReportToolbar", () => {
       ["Persona", null],
       ["Proyecto", null],
       ["Cliente", null],
+      ["Tarea", null],
+      ["Etiqueta", null],
       ["Fecha", "true"],
     ]);
     expect(links(markup).get("Período siguiente")?.href).toBe(
       "/reportes?desde=2026-10-05&hasta=2026-10-11&agrupar=fecha",
+    );
+  });
+
+  it("por tarea, la marca pasa a «Tarea» y las flechas la conservan (RP-11)", () => {
+    const markup = render({ groupBy: "task" });
+    expect(groupByLinks(markup).map(({ label, current }) => [label, current])).toEqual([
+      ["Persona", null],
+      ["Proyecto", null],
+      ["Cliente", null],
+      ["Tarea", "true"],
+      ["Etiqueta", null],
+      ["Fecha", null],
+    ]);
+    const found = links(markup);
+    expect(found.get("Período anterior")?.href).toBe(
+      "/reportes?desde=2026-09-21&hasta=2026-09-27&agrupar=tarea",
+    );
+    expect(found.get("Esta semana")?.href).toBe(
+      "/reportes?desde=2026-10-05&hasta=2026-10-11&agrupar=tarea",
+    );
+  });
+
+  it("por etiqueta, la marca pasa a «Etiqueta» y las flechas la conservan (RP-11)", () => {
+    const markup = render({ groupBy: "tag" });
+    expect(groupByLinks(markup).map(({ label, current }) => [label, current])).toEqual([
+      ["Persona", null],
+      ["Proyecto", null],
+      ["Cliente", null],
+      ["Tarea", null],
+      ["Etiqueta", "true"],
+      ["Fecha", null],
+    ]);
+    expect(links(markup).get("Período siguiente")?.href).toBe(
+      "/reportes?desde=2026-10-05&hasta=2026-10-11&agrupar=etiqueta",
     );
   });
 

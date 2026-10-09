@@ -179,7 +179,35 @@ describe("reportGroupParams (D-R2a-3)", () => {
     ]);
   });
 
+  it("tarea y etiqueta pasan con o sin un rango válido al lado, y Tarea, tareas y etiquetas no pasan con ninguno", () => {
+    for (const range of [
+      { desde: "2026-10-05", hasta: "2026-10-11" },
+      { desde: "2026-10-11", hasta: "2026-10-05" },
+      {},
+    ]) {
+      expect(reportGroupParams.safeParse({ ...range, agrupar: "tarea" })).toEqual({
+        success: true,
+        data: "task",
+      });
+      expect(reportGroupParams.safeParse({ ...range, agrupar: "etiqueta" })).toEqual({
+        success: true,
+        data: "tag",
+      });
+      for (const agrupar of ["Tarea", "tareas", "etiquetas", "Etiqueta", "task", "tag"]) {
+        expect(reportGroupParams.safeParse({ ...range, agrupar }).success).toBe(false);
+      }
+    }
+  });
+
   it("lee lo que escribe REPORT_GROUP_PARAMS, para cada agrupación", () => {
+    expect(REPORT_GROUP_BYS).toEqual([
+      "person",
+      "project",
+      "client",
+      "task",
+      "tag",
+      "date",
+    ]);
     for (const groupBy of REPORT_GROUP_BYS) {
       expect(
         reportGroupParams.safeParse({ agrupar: REPORT_GROUP_PARAMS[groupBy] }),
@@ -250,7 +278,7 @@ describe("reportGroupParams (D-R2a-3)", () => {
   });
 });
 
-describe("reportReadyState (D-R2b-2, D-R2b-5)", () => {
+describe("reportReadyState (D-R2b-2, D-R2b-5, D-R3-3, D-R3-4)", () => {
   const week = { first: "2026-10-05", last: "2026-10-11" };
   const ready: ReportReadyState = {
     kind: "ready",
@@ -290,6 +318,52 @@ describe("reportReadyState (D-R2b-2, D-R2b-5)", () => {
       ],
     };
     expect(reportReadyState.parse(byDate)).toEqual(byDate);
+  });
+
+  const taskId = "4c1d2b3a-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
+  const projectId = "7a8b9c0d-1e2f-4a3b-9c4d-5e6f7a8b9c0d";
+  const tagId = "2f3e4d5c-6b7a-4980-a1b2-c3d4e5f60718";
+
+  it("admite los grupos de tarea, con su proyecto y con «Sin tarea» (D-R3-4)", () => {
+    const byTask: ReportReadyState = {
+      ...ready,
+      groupBy: "task",
+      groups: [
+        {
+          kind: "task",
+          task: { id: taskId, name: "Diseño" },
+          project: { id: projectId, name: "Web", color: "green" },
+          seconds: 60,
+        },
+        { kind: "task", task: null, project: null, seconds: 30 },
+      ],
+    };
+    expect(reportReadyState.parse(byTask)).toEqual(byTask);
+  });
+
+  it("rechaza un grupo de tarea sin project", () => {
+    for (const task of [{ id: taskId, name: "Diseño" }, null]) {
+      expect(
+        reportReadyState.safeParse({
+          ...ready,
+          groupBy: "task",
+          groups: [{ kind: "task", task, seconds: 60 }],
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("admite los grupos de etiqueta, con «Sin etiqueta» (D-R3-3)", () => {
+    const byTag: ReportReadyState = {
+      ...ready,
+      groupBy: "tag",
+      totalSeconds: 60,
+      groups: [
+        { kind: "tag", tag: { id: tagId, name: "Urgente" }, seconds: 60 },
+        { kind: "tag", tag: null, seconds: 30 },
+      ],
+    };
+    expect(reportReadyState.parse(byTag)).toEqual(byTag);
   });
 
   it("rechaza un atajo con un id desconocido", () => {
