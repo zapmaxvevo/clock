@@ -13,8 +13,9 @@ export type VisibleRow = {
 };
 
 /**
- * Una fila por persona, proyecto, cliente, tarea, etiqueta, día, semana o mes;
- * cada «Sin …» es una sola. La semana y el mes, por su primer día entero.
+ * Una fila por persona, proyecto, cliente, tarea, etiqueta, día, semana, mes o
+ * descripción; cada «Sin …» es una sola. La semana y el mes, por su primer día
+ * entero; la descripción, por su `id`.
  */
 export function groupKey(group: ReportGroup): string {
   switch (group.kind) {
@@ -34,6 +35,8 @@ export function groupKey(group: ReportGroup): string {
       return group.weekStart;
     case "month":
       return group.monthStart;
+    case "description":
+      return group.description === null ? "sin-descripcion" : group.description.id;
   }
 }
 

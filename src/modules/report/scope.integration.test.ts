@@ -89,8 +89,13 @@ const roles: readonly Role[] = [
 ];
 const notActive: readonly MembershipStatus[] = ["inactive", "invited"];
 
-/** Las agrupaciones que se recorren en cada caso de alcance: todas. */
-const groupBys: readonly ReportGroupBy[] = REPORT_GROUP_BYS;
+/**
+ * Las agrupaciones que se recorren en cada caso de alcance: las de R10a hasta
+ * que `test-engineer` lo devuelva a `REPORT_GROUP_BYS` en R10b.
+ */
+const groupBys: readonly ReportGroupBy[] = REPORT_GROUP_BYS.filter(
+  (groupBy) => groupBy !== "description",
+);
 
 /** Dónde está una entrada: su proyecto, el cliente del proyecto, su tarea y sus etiquetas. */
 type Place = {
@@ -383,6 +388,11 @@ function summaryOf(state: ReportState) {
           return { weekStart: group.weekStart, seconds: group.seconds };
         case "month":
           return { monthStart: group.monthStart, seconds: group.seconds };
+        case "description":
+          return {
+            descriptionId: group.description?.id ?? null,
+            seconds: group.seconds,
+          };
       }
     }),
   };
@@ -421,6 +431,9 @@ function rowsOf(
       return [{ weekStart: week.first, seconds }];
     case "month":
       return [{ monthStart: entryMonth, seconds }];
+    // Las entradas sembradas no llevan descripción: «Sin descripción».
+    case "description":
+      return [{ descriptionId: null, seconds }];
   }
 }
 
@@ -500,6 +513,8 @@ function everyoneInAGroups(groupBy: ReportGroupBy) {
       return [{ weekStart: week.first, seconds: 210 * 60 }];
     case "month":
       return [{ monthStart: entryMonth, seconds: 210 * 60 }];
+    case "description":
+      return [{ descriptionId: null, seconds: 210 * 60 }];
   }
 }
 
@@ -570,6 +585,8 @@ function keyOfGroup(group: ReportGroup): string {
       return `semana ${group.weekStart}`;
     case "month":
       return `mes ${group.monthStart}`;
+    case "description":
+      return `descripcion ${group.description?.text ?? "sin"}`;
   }
 }
 
@@ -595,6 +612,8 @@ function keysOfEntry(entry: SeededEntry, level: ReportGroupBy): readonly string[
       return [`semana ${week.first}`];
     case "month":
       return [`mes ${entryMonth}`];
+    case "description":
+      return ["descripcion sin"];
   }
 }
 

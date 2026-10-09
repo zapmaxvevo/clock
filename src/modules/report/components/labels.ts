@@ -29,7 +29,7 @@ export const reportLabels = {
   shortcuts: "Atajos",
   /**
    * RP-11: un nivel, por persona, proyecto, cliente, tarea, etiqueta, fecha,
-   * semana o mes (D-R3-8, D-R10-5).
+   * semana, mes o descripción (D-R3-8, D-R10-5).
    */
   groupBy: "Agrupar por",
   byPerson: "Persona",
@@ -40,6 +40,7 @@ export const reportLabels = {
   byDate: "Fecha",
   byWeek: "Semana",
   byMonth: "Mes",
+  byDescription: "Descripción",
   /** D-R10-3: los días que cuenta una semana o un mes cortado, en gris después del rótulo. */
   partialDays: (days: string) => `solo ${days}`,
   /**
@@ -129,4 +130,5 @@ export const groupByLabels = {
   date: reportLabels.byDate,
   week: reportLabels.byWeek,
   month: reportLabels.byMonth,
+  description: reportLabels.byDescription,
 } as const satisfies Record<ReportGroupBy, string>;

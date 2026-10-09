@@ -29,6 +29,7 @@ import {
 import { actorIn, workspaceOf } from "@/test/time-entry";
 
 import { projectLabels } from "@/modules/project/components/labels";
+import { trackerLabels } from "@/modules/time-entry/components/labels";
 import { projectRepository } from "@/modules/project/repository";
 import { workspaceRepository } from "@/modules/workspace/repository";
 import { getTimesheetState } from "@/modules/time-entry/service";
@@ -58,6 +59,9 @@ const thisWeek: ReportRange = { first: "2026-10-05", last: "2026-10-11" };
 const lastWeek: ReportRange = { first: "2026-09-28", last: "2026-10-04" };
 
 const settings = workspaceOf(buenosAires);
+
+/** Las agrupaciones de R10a: los recorridos vuelven a `REPORT_GROUP_BYS` en el paso 12 de R10. */
+const R10A_GROUP_BYS = REPORT_GROUP_BYS.filter((groupBy) => groupBy !== "description");
 
 let workspaceId: string;
 let ownerId: string;
@@ -493,7 +497,7 @@ describe("la agrupación y el orden (D-R2a-3, D-R2a-8, RP-12, RP-18)", () => {
     await seedClosed(other, "2026-09-29T14:00:00Z", 600);
     await seedClosed(other, "2026-09-30T14:00:00Z", 30, { billable: true });
 
-    for (const groupBy of REPORT_GROUP_BYS) {
+    for (const groupBy of R10A_GROUP_BYS) {
       const state = await readyState(owner, { range: lastWeek, groupBy });
       expect([
         groupBy,
@@ -1507,6 +1511,8 @@ function labelOf(group: ReportGroup): string {
       return group.partial === null
         ? group.label
         : `${group.label} solo ${group.partial}`;
+    case "description":
+      return group.description?.text ?? trackerLabels.noDescription;
   }
 }
 
@@ -2026,7 +2032,7 @@ describe("el período fuera del tope (B1)", () => {
       { first: "2026-10-11", last: "2026-10-05" },
       { first: "2025-01-01", last: "2026-01-02" },
     ]) {
-      for (const groupBy of REPORT_GROUP_BYS) {
+      for (const groupBy of R10A_GROUP_BYS) {
         await expect(
           getReportState(
             owner,
@@ -2174,6 +2180,8 @@ describe("los filtros de cliente y de proyecto (R4: RP-25, RP-26, RP-29, RP-34)"
         return group.weekStart;
       case "month":
         return group.monthStart;
+      case "description":
+        return group.description?.text ?? "sin";
     }
   }
 

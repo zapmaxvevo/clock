@@ -2,6 +2,7 @@ import type { ReactElement, ReactNode } from "react";
 
 import { projectLabels } from "@/modules/project/components/labels";
 import { paletteColor } from "@/modules/project/palette";
+import { trackerLabels } from "@/modules/time-entry/components/labels";
 import type {
   ReportGroup,
   ReportPersonGroup,
@@ -43,6 +44,13 @@ export function GroupHeading({ group }: { readonly group: ReportGroup }): ReactE
           {/* Los siete primeros caracteres, «2026-10», son un mes válido de HTML. */}
           <time dateTime={group.monthStart.slice(0, 7)}>{group.label}</time>
         </PartialHeading>
+      );
+    case "description":
+      return (
+        <NamedHeading
+          named={group.description === null ? null : { name: group.description.text }}
+          emptyLabel={trackerLabels.noDescription}
+        />
       );
   }
 }

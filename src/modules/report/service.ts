@@ -283,6 +283,8 @@ function groupOf(
         seconds,
       };
     }
+    case "description":
+      return { kind: "description", description: row.description, seconds };
   }
 }
 
@@ -292,7 +294,11 @@ type TimeGroup = WithTimeKind<ReportGroup>;
 /** Los grupos que se ordenan por duración y nombre: todos menos los de tiempo. */
 type NamedGroup = Exclude<ReportGroup, TimeGroup>;
 
-/** Lo que el orden compara de un grupo; `null` es «Sin proyecto», «Sin cliente», «Sin tarea» o «Sin etiqueta». */
+/**
+ * Lo que el orden compara de un grupo; `null` es «Sin proyecto», «Sin
+ * cliente», «Sin tarea», «Sin etiqueta» o «Sin descripción». Dos
+ * descripciones con el mismo texto recortado se desempatan por el `id`.
+ */
 function sortKeyOf(
   group: NamedGroup,
 ): { readonly id: string; readonly name: string } | null {
@@ -307,6 +313,10 @@ function sortKeyOf(
       return group.task;
     case "tag":
       return group.tag;
+    case "description":
+      return group.description === null
+        ? null
+        : { id: group.description.id, name: group.description.text };
   }
 }
 
@@ -488,6 +498,8 @@ function groupKeyOf(row: LevelGroupRow): string | number | null {
     case "week":
     case "month":
       return row.bucket;
+    case "description":
+      return row.description?.id ?? null;
   }
 }
 
@@ -734,6 +746,9 @@ export async function getReportState(
     );
   }
   checkFilters(request.filters);
+  if (levels.includes("description")) {
+    throw new Error("La agrupación por descripción todavía no lee.");
+  }
   const span = {
     from: startOfDayKey(range.first, timeZone),
     to: startOfDayKey(addDaysToKey(range.last, 1), timeZone),

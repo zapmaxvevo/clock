@@ -92,6 +92,17 @@ export type LevelGroupRow =
       readonly kind: "month";
       /** La posición en `buckets.month`, desde 0. */
       readonly bucket: number;
+    }
+  | {
+      readonly kind: "description";
+      /** `null` es «Sin descripción»: la cadena vacía. */
+      readonly description: {
+        /** Los 32 primeros hexadecimales del SHA-256 del texto entero (D-R10-9). */
+        readonly id: string;
+        /** Los primeros `REPORT_DESCRIPTION_SHOWN` puntos de código. */
+        readonly text: string;
+        readonly truncated: boolean;
+      } | null;
     };
 
 export type LevelTotalRow = {
@@ -467,6 +478,17 @@ const DIMENSIONS: Readonly<Record<ReportGroupBy, Dimension>> = {
   date: timeDimension("date"),
   week: timeDimension("week"),
   month: timeDimension("month"),
+
+  // Paso 10 de R10: la dimensión existe en la tabla y lanza al leer.
+  description: dimension({
+    key: () => {
+      throw new Error("La agrupación por descripción todavía no lee.");
+    },
+    shown: () => ({}),
+    groupOf: () => {
+      throw new Error("La agrupación por descripción todavía no lee.");
+    },
+  }),
 };
 
 /**

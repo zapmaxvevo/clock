@@ -165,6 +165,11 @@ describe("ReportToolbar", () => {
         href: "/reportes?desde=2026-09-28&hasta=2026-10-04&agrupar=mes",
         current: null,
       },
+      {
+        label: "Descripción",
+        href: "/reportes?desde=2026-09-28&hasta=2026-10-04&agrupar=descripcion",
+        current: null,
+      },
     ]);
   });
 
@@ -179,6 +184,7 @@ describe("ReportToolbar", () => {
       ["Fecha", null],
       ["Semana", null],
       ["Mes", null],
+      ["Descripción", null],
     ]);
     const found = links(markup);
     expect(found.get("Período anterior")?.href).toBe(
@@ -207,6 +213,7 @@ describe("ReportToolbar", () => {
       ["Fecha", "true"],
       ["Semana", null],
       ["Mes", null],
+      ["Descripción", null],
     ]);
     expect(links(markup).get("Período siguiente")?.href).toBe(
       "/reportes?desde=2026-10-05&hasta=2026-10-11&agrupar=fecha",
@@ -228,7 +235,11 @@ describe("ReportToolbar", () => {
           current: "true",
         },
       ]);
-      expect(marked.map((link) => link.label).slice(-2)).toEqual(["Semana", "Mes"]);
+      expect(marked.map((link) => link.label).slice(-3)).toEqual([
+        "Semana",
+        "Mes",
+        "Descripción",
+      ]);
       const found = links(markup);
       expect(found.get("Período anterior")?.href).toBe(
         `/reportes?desde=2026-09-21&hasta=2026-09-27&agrupar=${param}`,
@@ -250,6 +261,7 @@ describe("ReportToolbar", () => {
       ["Fecha", null],
       ["Semana", null],
       ["Mes", null],
+      ["Descripción", null],
     ]);
     const found = links(markup);
     expect(found.get("Período anterior")?.href).toBe(
@@ -271,6 +283,7 @@ describe("ReportToolbar", () => {
       ["Fecha", null],
       ["Semana", null],
       ["Mes", null],
+      ["Descripción", null],
     ]);
     expect(links(markup).get("Período siguiente")?.href).toBe(
       "/reportes?desde=2026-10-05&hasta=2026-10-11&agrupar=etiqueta",
@@ -356,6 +369,7 @@ describe("ReportToolbar con subniveles (D-R3-8)", () => {
       Fecha: `${base}&agrupar=fecha&subagrupar=proyecto%2Cetiqueta`,
       Semana: `${base}&agrupar=semana&subagrupar=fecha%2Cetiqueta`,
       Mes: `${base}&agrupar=mes&subagrupar=fecha%2Cetiqueta`,
+      Descripción: `${base}&agrupar=descripcion&subagrupar=fecha%2Cetiqueta`,
     });
   });
 });
@@ -481,6 +495,7 @@ describe("ReportToolbar con filtros (D-R4-8, D-R4-10)", () => {
       Fecha: `${base}&agrupar=fecha${kept}`,
       Semana: `${base}&agrupar=semana${kept}`,
       Mes: `${base}&agrupar=mes${kept}`,
+      Descripción: `${base}&agrupar=descripcion${kept}`,
     });
   });
 });

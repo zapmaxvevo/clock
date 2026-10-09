@@ -63,7 +63,7 @@ describe("withLevel (D-R3-8, §5.2)", () => {
 });
 
 describe("levelOptions", () => {
-  it("con un nivel, el segundo ofrece las siete que no son el primero, en orden", () => {
+  it("con un nivel, el segundo ofrece las ocho que no son el primero, en orden", () => {
     expect(levelOptions(grouping("project"), 1)).toEqual([
       "person",
       "client",
@@ -72,6 +72,7 @@ describe("levelOptions", () => {
       "date",
       "week",
       "month",
+      "description",
     ]);
   });
 
@@ -84,10 +85,11 @@ describe("levelOptions", () => {
       "date",
       "week",
       "month",
+      "description",
     ]);
   });
 
-  it("con dos niveles, el tercero ofrece las seis que no son los de arriba", () => {
+  it("con dos niveles, el tercero ofrece las siete que no son los de arriba", () => {
     expect(levelOptions(grouping("project", "date"), 2)).toEqual([
       "person",
       "client",
@@ -95,6 +97,7 @@ describe("levelOptions", () => {
       "tag",
       "week",
       "month",
+      "description",
     ]);
   });
 
@@ -106,6 +109,7 @@ describe("levelOptions", () => {
       "task",
       "tag",
       "date",
+      "description",
     ]);
   });
 
@@ -117,6 +121,7 @@ describe("levelOptions", () => {
       "date",
       "week",
       "month",
+      "description",
     ]);
     expect(levelOptions(grouping("tag", "person", "client"), 1)).toEqual([
       "person",
@@ -126,6 +131,7 @@ describe("levelOptions", () => {
       "date",
       "week",
       "month",
+      "description",
     ]);
   });
 });
