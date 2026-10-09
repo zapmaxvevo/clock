@@ -171,14 +171,21 @@ export function dayKeyOf({ year, month, day }: CivilDay): string {
 
 /**
  * Lunes, el primer día de la semana de toda membresía nueva (PF-16), con el
- * domingo en cero como `membership.week_start`. Los recorridos no lo cambian.
+ * domingo en cero como `membership.week_start`. Solo los recorridos 17 y 18
+ * del reporte lo cambian, sobre su propia persona (D-R10-14).
  */
 const MONDAY = 1;
 
-/** Primer día de la semana que contiene a `civil` (TT-48). */
-export function weekStartOf(civil: CivilDay): CivilDay {
+/** El domingo, el otro primer día de la semana que eligen los recorridos. */
+export const SUNDAY = 0;
+
+/**
+ * Primer día de la semana que contiene a `civil` (TT-48), con la semana que
+ * empieza en `weekStart`, del domingo en cero al sábado en seis.
+ */
+export function weekStartOf(civil: CivilDay, weekStart = MONDAY): CivilDay {
   const weekday = utcOf(civil).getUTCDay();
-  return addDays(civil, -((weekday - MONDAY + 7) % 7));
+  return addDays(civil, -((weekday - weekStart + 7) % 7));
 }
 
 /**
@@ -209,6 +216,15 @@ export function dayRangeLabel(first: CivilDay, last: CivilDay, today: CivilDay):
       ? `${pad(civil.day)}/${pad(civil.month)}/${civil.year}`
       : `${pad(civil.day)}/${pad(civil.month)}`;
   return sameDay(first, last) ? format(first) : `${format(first)} – ${format(last)}`;
+}
+
+/**
+ * Rótulo con que el reporte nombra un mes (D-R10-3): «octubre», que lleva
+ * «de 2025» solo si no es del año de hoy.
+ */
+export function monthLabel(civil: CivilDay, today: CivilDay): string {
+  const name = MONTHS[civil.month - 1];
+  return civil.year === today.year ? name : `${name} de ${civil.year}`;
 }
 
 /**

@@ -141,7 +141,21 @@ vacío del owner y `renewWorkspace` se corta.
      `4aa6b01`: 1652 de unidad, 277 de `test:time-ar`, 1397 de integración y e2e 201/201 ×2.
      Todo en `correcciones-nucleo-reportes-r4b-revisiones.md`. Deuda nueva: C4, C5 y C6 de R4b
      (copias de helpers de test y `seedUser` posicional). **Sigue R10** (agrupar por
-     descripción, mes y semana, mapa §R10): primero su contrato. R8 sigue solo
+     descripción, mes y semana, mapa §R10): primero su contrato.
+
+     **Al cortar la sexta sesión** (2026-10-09, ~18:30, por el 40 % de contexto, regla del
+     usuario): contrato de R10 en `main` (`1b1f1bc`), aprobado en dos rondas; se parte en R10a
+     (mes y semana) y R10b (descripción). El usuario aceptó agrupar la descripción por el texto
+     exacto. **R10a**, rama `nucleo/r10a` (pusheada), implementada entera y con cuatro de seis
+     revisiones: backend, seguridad y frontend aprobadas; tests pide un mayor. Todo en
+     `correcciones-nucleo-reportes-r10a-revisiones.md`. **Al retomar**, de a dos agentes:
+     (1) `clean-code-reviewer` y `parity-reviewer` (base propia `clock_r10a_parity`, crearla y
+     migrarla antes); (2) la ronda de correcciones a un `backend-dev` (T1, T2, B1) más lo que
+     pidan código y paridad; (3) aplicar el texto de paridad («13. Núcleo, R10») y T3 en el
+     contrato; (4) corrida final con bases nuevas (lint, typecheck, `test:all`, e2e completa ×2)
+     y merge. Bases que quedan: `clock_r10a_back`, `clock_r10a_front`, `clock_r10a_test` y
+     `clock_r10a_e2e`. Después, R10b; F1 de frontend (`truncate` en la tabla) entra en su
+     encargo. R8 sigue solo
      en contrato. Después de R4b: R10, R5, R6, R7 y R9.
 
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`

@@ -27,7 +27,10 @@ export const reportLabels = {
   apply: "Aplicar",
   /** RP-20: la lista de períodos con nombre, dentro del selector (D-R2b-2). */
   shortcuts: "Atajos",
-  /** RP-11: un nivel, por persona, proyecto, cliente, tarea, etiqueta o fecha (D-R3-8). */
+  /**
+   * RP-11: un nivel, por persona, proyecto, cliente, tarea, etiqueta, fecha,
+   * semana o mes (D-R3-8, D-R10-5).
+   */
   groupBy: "Agrupar por",
   byPerson: "Persona",
   byProject: "Proyecto",
@@ -35,6 +38,10 @@ export const reportLabels = {
   byTask: "Tarea",
   byTag: "Etiqueta",
   byDate: "Fecha",
+  byWeek: "Semana",
+  byMonth: "Mes",
+  /** D-R10-3: los días que cuenta una semana o un mes cortado, en gris después del rótulo. */
+  partialDays: (days: string) => `solo ${days}`,
   /**
    * RP-28: las entradas de un proyecto sin tarea y las sin proyecto; las sin
    * ninguna etiqueta. Son grupos del reporte, no de `projectLabels`, y «Sin
@@ -120,4 +127,6 @@ export const groupByLabels = {
   task: reportLabels.byTask,
   tag: reportLabels.byTag,
   date: reportLabels.byDate,
+  week: reportLabels.byWeek,
+  month: reportLabels.byMonth,
 } as const satisfies Record<ReportGroupBy, string>;

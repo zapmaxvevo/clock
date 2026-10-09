@@ -155,6 +155,16 @@ describe("ReportToolbar", () => {
         href: "/reportes?desde=2026-09-28&hasta=2026-10-04&agrupar=fecha",
         current: null,
       },
+      {
+        label: "Semana",
+        href: "/reportes?desde=2026-09-28&hasta=2026-10-04&agrupar=semana",
+        current: null,
+      },
+      {
+        label: "Mes",
+        href: "/reportes?desde=2026-09-28&hasta=2026-10-04&agrupar=mes",
+        current: null,
+      },
     ]);
   });
 
@@ -167,6 +177,8 @@ describe("ReportToolbar", () => {
       ["Tarea", null],
       ["Etiqueta", null],
       ["Fecha", null],
+      ["Semana", null],
+      ["Mes", null],
     ]);
     const found = links(markup);
     expect(found.get("Período anterior")?.href).toBe(
@@ -193,11 +205,39 @@ describe("ReportToolbar", () => {
       ["Tarea", null],
       ["Etiqueta", null],
       ["Fecha", "true"],
+      ["Semana", null],
+      ["Mes", null],
     ]);
     expect(links(markup).get("Período siguiente")?.href).toBe(
       "/reportes?desde=2026-10-05&hasta=2026-10-11&agrupar=fecha",
     );
   });
+
+  it.each([
+    ["week", "Semana", "semana"],
+    ["month", "Mes", "mes"],
+  ] as const)(
+    "por %s, la marca pasa a «%s» y las flechas la conservan (D-R10-5)",
+    (groupBy, label, param) => {
+      const markup = render({ groupBy });
+      const marked = groupByLinks(markup);
+      expect(marked.filter(({ current }) => current !== null)).toEqual([
+        {
+          label,
+          href: `/reportes?desde=2026-09-28&hasta=2026-10-04&agrupar=${param}`,
+          current: "true",
+        },
+      ]);
+      expect(marked.map((link) => link.label).slice(-2)).toEqual(["Semana", "Mes"]);
+      const found = links(markup);
+      expect(found.get("Período anterior")?.href).toBe(
+        `/reportes?desde=2026-09-21&hasta=2026-09-27&agrupar=${param}`,
+      );
+      expect(found.get("Esta semana")?.href).toBe(
+        `/reportes?desde=2026-10-05&hasta=2026-10-11&agrupar=${param}`,
+      );
+    },
+  );
 
   it("por tarea, la marca pasa a «Tarea» y las flechas la conservan (RP-11)", () => {
     const markup = render({ groupBy: "task" });
@@ -208,6 +248,8 @@ describe("ReportToolbar", () => {
       ["Tarea", "true"],
       ["Etiqueta", null],
       ["Fecha", null],
+      ["Semana", null],
+      ["Mes", null],
     ]);
     const found = links(markup);
     expect(found.get("Período anterior")?.href).toBe(
@@ -227,6 +269,8 @@ describe("ReportToolbar", () => {
       ["Tarea", null],
       ["Etiqueta", "true"],
       ["Fecha", null],
+      ["Semana", null],
+      ["Mes", null],
     ]);
     expect(links(markup).get("Período siguiente")?.href).toBe(
       "/reportes?desde=2026-10-05&hasta=2026-10-11&agrupar=etiqueta",
@@ -310,6 +354,8 @@ describe("ReportToolbar con subniveles (D-R3-8)", () => {
       Tarea: `${base}&agrupar=tarea&subagrupar=fecha%2Cetiqueta`,
       Etiqueta: `${base}&agrupar=etiqueta&subagrupar=fecha%2Cproyecto`,
       Fecha: `${base}&agrupar=fecha&subagrupar=proyecto%2Cetiqueta`,
+      Semana: `${base}&agrupar=semana&subagrupar=fecha%2Cetiqueta`,
+      Mes: `${base}&agrupar=mes&subagrupar=fecha%2Cetiqueta`,
     });
   });
 });
@@ -433,6 +479,8 @@ describe("ReportToolbar con filtros (D-R4-8, D-R4-10)", () => {
       Tarea: `${base}&agrupar=tarea${kept}`,
       Etiqueta: `${base}&agrupar=etiqueta${kept}`,
       Fecha: `${base}&agrupar=fecha${kept}`,
+      Semana: `${base}&agrupar=semana${kept}`,
+      Mes: `${base}&agrupar=mes${kept}`,
     });
   });
 });

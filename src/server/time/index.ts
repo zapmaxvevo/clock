@@ -439,6 +439,9 @@ function isMissingDay(dayKey: string, timeZone: string): boolean {
   );
 }
 
+/** Unos días civiles seguidos, con los dos extremos. */
+export type DayKeyRange = { readonly first: string; readonly last: string };
+
 /** Un tramo de una lectura agrupada: su primer día civil y su primer instante. */
 export type TimeBucket = { readonly firstDay: string; readonly start: Date };
 
@@ -458,15 +461,100 @@ export type TimeBuckets = {
  * recibe. Lanza si alguna clave no es un día o si `last` es anterior a `first`.
  */
 export function dayBuckets(first: string, last: string, timeZone: string): TimeBuckets {
-  const days = daysBetweenKeys(first, last);
-  if (days < 0) {
+  return civilBuckets(first, last, timeZone, (day) => addDaysToKey(day, 1));
+}
+
+/**
+ * Un tramo por semana de `first` a `last`, con la semana que empieza en
+ * `weekStart`: el primero empieza en `first` aunque su semana empiece antes, y
+ * cada uno de los siguientes en el primer día de su semana. El fin es el inicio
+ * del día siguiente a `last`. Cada inicio es `startOfDayKey` de su primer día
+ * en `timeZone`: un día sin 00:00 empieza en su primer minuto, y un día que
+ * falta entero repite el corte (ADR 0021). Solo usa la zona que recibe. Lanza
+ * como `dayBuckets`.
+ */
+export function weekBuckets(
+  first: string,
+  last: string,
+  weekStart: WeekStart,
+  timeZone: string,
+): TimeBuckets {
+  return civilBuckets(first, last, timeZone, (day) =>
+    addDaysToKey(weekStartKey(day, weekStart), 7),
+  );
+}
+
+/** Lo mismo por mes civil: el primero en `first`, cada uno de los siguientes el día 1. */
+export function monthBuckets(first: string, last: string, timeZone: string): TimeBuckets {
+  return civilBuckets(first, last, timeZone, (day) => monthStartKey(day, 1));
+}
+
+/**
+ * Los tramos de `first` a `last` que empiezan en `first` y después en cada día
+ * que da `nextFirstDay` desde el anterior, hasta `last`. Aritmética de claves:
+ * solo el inicio de cada tramo y el fin pasan por la zona.
+ */
+function civilBuckets(
+  first: string,
+  last: string,
+  timeZone: string,
+  nextFirstDay: (firstDay: string) => string,
+): TimeBuckets {
+  if (daysBetweenKeys(first, last) < 0) {
     throw new RangeError(`El último día ${last} es anterior al primero ${first}.`);
   }
-  const buckets = Array.from({ length: days + 1 }, (_, index) => {
-    const firstDay = addDaysToKey(first, index);
-    return { firstDay, start: startOfDayKey(firstDay, timeZone) };
-  });
+  const firstDays = [first];
+  for (
+    let day = nextFirstDay(first);
+    compareDayKeys(day, last) <= 0;
+    day = nextFirstDay(day)
+  ) {
+    firstDays.push(day);
+  }
+  const buckets = firstDays.map((firstDay) => ({
+    firstDay,
+    start: startOfDayKey(firstDay, timeZone),
+  }));
   return { buckets, end: startOfDayKey(addDaysToKey(last, 1), timeZone) };
+}
+
+/**
+ * Los días civiles del tramo `index`: su primer día y el anterior al primero
+ * del siguiente, o `last` si es el último. Lanza si `index` no es un tramo, si
+ * `last` no es un día o si es anterior al primer día del último tramo.
+ */
+export function bucketDays(
+  buckets: TimeBuckets,
+  index: number,
+  last: string,
+): DayKeyRange {
+  const count = buckets.buckets.length;
+  if (!Number.isInteger(index) || index < 0 || index >= count) {
+    throw new RangeError(`Tramo fuera de rango: ${index} de ${count}.`);
+  }
+  const bucket = buckets.buckets[index];
+  const final = buckets.buckets[count - 1];
+  if (daysBetweenKeys(final.firstDay, last) < 0) {
+    throw new RangeError(`El último día ${last} es anterior al último tramo.`);
+  }
+  const next = buckets.buckets.at(index + 1);
+  return {
+    first: bucket.firstDay,
+    last: next === undefined ? last : addDaysToKey(next.firstDay, -1),
+  };
+}
+
+/**
+ * El nombre del mes en minúscula, «octubre», o «octubre de 2025» si no es del
+ * año de `todayKey`. Lanza si `monthStart` o `todayKey` no son días.
+ */
+export function monthLabel(monthStart: string, todayKey: string): string {
+  const month = civilDateOf(monthStart);
+  const today = civilDateOf(todayKey);
+  // Como en `weekdayParts`: la fecha civil se formatea en UTC.
+  const civil = new TZDate(Date.UTC(month.year, month.month - 1, 1), "UTC");
+  const name = formatDate(civil, "LLLL", { locale: es });
+  return month.year === today.year ? name : `${name} de ${month.year}`;
 }
 
 /**

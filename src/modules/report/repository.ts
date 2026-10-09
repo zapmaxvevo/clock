@@ -31,7 +31,9 @@ import type { TimeBuckets } from "@/server/time";
 import {
   projectFilterCount,
   REPORT_MAX_FILTER_VALUES,
+  REPORT_TIME_GROUP_BYS,
   type ReportGroupBy,
+  type ReportTimeGroupBy,
 } from "./schema";
 // Solo el tipo: el alcance lo construye el service (D-R2a-1). El ciclo se borra al compilar.
 import type { ReportScope } from "./service";
@@ -78,7 +80,17 @@ export type LevelGroupRow =
   | { readonly kind: "tag"; readonly tag: NamedRef | null }
   | {
       readonly kind: "date";
-      /** La posición del tramo en `buckets.buckets`, desde 0. */
+      /** La posición en `buckets.date`, desde 0. */
+      readonly bucket: number;
+    }
+  | {
+      readonly kind: "week";
+      /** La posición en `buckets.week`, desde 0. */
+      readonly bucket: number;
+    }
+  | {
+      readonly kind: "month";
+      /** La posición en `buckets.month`, desde 0. */
       readonly bucket: number;
     };
 
@@ -114,12 +126,15 @@ export type ReportEntryRead = {
   readonly filter: ReportEntryFilter;
 };
 
+/** D-R10-4: los tramos de cada dimensión de tiempo pedida, y solo de esas. */
+export type ReportBuckets = { readonly [Dimension in ReportTimeGroupBy]?: TimeBuckets };
+
 /** Lo que lee `totalsByLevels`: lo de `ReportEntryRead` y por qué dimensiones agrupa. */
 export type ReportLevelRead = ReportEntryRead & {
   /** De una a tres, sin repetir. */
   readonly dimensions: readonly ReportGroupBy[];
-  /** Los tramos de `span` si `date` es una de las dimensiones; si no, `null`. */
-  readonly buckets: TimeBuckets | null;
+  /** Los tramos de `span`: una clave por cada dimensión de tiempo de `dimensions`. */
+  readonly buckets: ReportBuckets;
   /** Como mucho estas filas, cualesquiera: sin orden (D-R3-6). Sin él, todas. */
   readonly limit?: number;
 };
@@ -449,33 +464,43 @@ const DIMENSIONS: Readonly<Record<ReportGroupBy, Dimension>> = {
     }),
   }),
 
-  // D-R2b-7: los cortes van una sola vez, como un parámetro, en la subconsulta
-  // por entrada; los repetidos no se deduplican y el índice del tramo es la
-  // posición en la lista (ADR 0021). El service rotula con `buckets`.
-  date: dimension({
+  date: timeDimension("date"),
+  week: timeDimension("week"),
+  month: timeDimension("month"),
+};
+
+/**
+ * D-R2b-7, D-R10-2: una dimensión de tiempo. Sus cortes van una sola vez, como
+ * un parámetro, en la subconsulta por entrada; los repetidos no se deduplican
+ * y el índice del tramo es la posición en la lista (ADR 0021). El service
+ * rotula con los tramos de `read.buckets[groupBy]`.
+ */
+function timeDimension(groupBy: ReportTimeGroupBy): Dimension {
+  return dimension({
     key: (read) => {
       const cuts = sql.param(
-        bucketsOf(read).buckets.map((bucket) => bucket.start.toISOString()),
+        bucketsOf(read, groupBy).buckets.map((bucket) => bucket.start.toISOString()),
       );
       return sql`width_bucket(${timeEntry.startedAt}, ${cuts}::timestamptz[])`;
     },
     shown: (key) => ({ bucket: sql<number>`${key}` }),
     groupOf: (values, read) => ({
-      kind: "date",
-      bucket: bucketIndexOf(values.bucket, bucketsOf(read).buckets.length),
+      kind: groupBy,
+      bucket: bucketIndexOf(values.bucket, bucketsOf(read, groupBy).buckets.length),
     }),
-  }),
-};
+  });
+}
 
 /**
- * Los tramos de una lectura con la fecha. `checkLevelRead` ya garantizó que
- * están: si faltan es un error del módulo, no del pedido.
+ * Los tramos de una dimensión de tiempo de la lectura. `checkLevelRead` ya
+ * garantizó que están: si faltan es un error del módulo, no del pedido.
  */
-function bucketsOf(read: ReportLevelRead): TimeBuckets {
-  if (read.buckets === null) {
-    throw new Error("Una lectura por fecha llegó sin sus tramos.");
+function bucketsOf(read: ReportLevelRead, groupBy: ReportTimeGroupBy): TimeBuckets {
+  const buckets = read.buckets[groupBy];
+  if (buckets === undefined) {
+    throw new Error(`Una lectura por ${groupBy} llegó sin sus tramos.`);
   }
-  return read.buckets;
+  return buckets;
 }
 
 /**
@@ -499,9 +524,9 @@ function checkEntryRead({ filter }: ReportEntryRead): void {
   }
 }
 
-/** Las guardas de §4.3 de R3: lanza `RangeError` antes de consultar. */
+/** Las guardas de §4.3 de R3 y R10: lanza `RangeError` antes de consultar. */
 function checkLevelRead(read: ReportLevelRead): void {
-  const { dimensions, buckets, span, limit } = read;
+  const { dimensions, span, limit } = read;
   if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) {
     throw new RangeError(`El tope de filas tiene que ser un entero positivo: ${limit}.`);
   }
@@ -511,23 +536,40 @@ function checkLevelRead(read: ReportLevelRead): void {
   if (new Set(dimensions).size !== dimensions.length) {
     throw new RangeError(`Una dimensión repetida: ${dimensions.join(", ")}.`);
   }
-  if (dimensions.includes("date") !== (buckets !== null)) {
+  for (const groupBy of REPORT_TIME_GROUP_BYS) {
+    checkBuckets(groupBy, dimensions.includes(groupBy), read.buckets[groupBy], span);
+  }
+}
+
+/**
+ * D-R10-4: los tramos de una dimensión de tiempo van si y solo si la dimensión
+ * está, no vacíos y cubriendo exactamente el intervalo.
+ */
+function checkBuckets(
+  groupBy: ReportTimeGroupBy,
+  requested: boolean,
+  buckets: TimeBuckets | undefined,
+  span: ReportSpan,
+): void {
+  if (requested !== (buckets !== undefined)) {
     throw new RangeError(
-      "Los tramos van si y solo si la fecha es una de las dimensiones.",
+      `Los tramos de ${groupBy} van si y solo si es una de las dimensiones.`,
     );
   }
-  if (buckets === null) {
+  if (buckets === undefined) {
     return;
   }
   const [first] = buckets.buckets;
   if (first === undefined) {
-    throw new RangeError("Una lectura por tramos necesita al menos un tramo.");
+    throw new RangeError(`Una lectura por ${groupBy} necesita al menos un tramo.`);
   }
   if (
     first.start.getTime() !== span.from.getTime() ||
     buckets.end.getTime() !== span.to.getTime()
   ) {
-    throw new RangeError("Los tramos no cubren exactamente el intervalo de la lectura.");
+    throw new RangeError(
+      `Los tramos de ${groupBy} no cubren exactamente el intervalo de la lectura.`,
+    );
   }
 }
 

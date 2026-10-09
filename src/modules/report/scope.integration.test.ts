@@ -43,7 +43,9 @@ import { getReportState, type ReportRequest } from "./service";
  * roles en el service (criterio 4, R9 de las correcciones). R2b suma las
  * agrupaciones por cliente y por fecha con el mismo fixture (criterio 11 de R2b),
  * y R3 las de tarea y etiqueta, con la tarea y las etiquetas en el fixture
- * (criterio 9 de R3), y los subniveles (criterio 21 de R3).
+ * (criterio 9 de R3), y los subniveles (criterio 21 de R3). R10 suma la semana
+ * y el mes, sueltos y en los árboles Mes → Semana → Persona y Persona → Semana →
+ * Mes (criterio 9 de R10).
  */
 const permissionOverrides = vi.hoisted(() => ({
   denied: [] as { readonly userId: string; readonly action: string }[],
@@ -70,6 +72,9 @@ const week = { first: "2026-09-28", last: "2026-10-04" } as const;
 /** El martes de `week` en Buenos Aires: el día de todas las entradas sembradas. */
 const entryDay = "2026-09-29";
 
+/** El mes de `entryDay`: el primero de los dos que corta `week`. */
+const entryMonth = "2026-09-01";
+
 /** El jueves siguiente a `week`, a las 12:00 en Buenos Aires: el período pedido no es «Esta semana». */
 const now = new Date("2026-10-08T15:00:00Z");
 
@@ -84,7 +89,7 @@ const roles: readonly Role[] = [
 ];
 const notActive: readonly MembershipStatus[] = ["inactive", "invited"];
 
-/** Las agrupaciones que se recorren en cada caso de alcance. */
+/** Las agrupaciones que se recorren en cada caso de alcance: todas. */
 const groupBys: readonly ReportGroupBy[] = REPORT_GROUP_BYS;
 
 /** Dónde está una entrada: su proyecto, el cliente del proyecto, su tarea y sus etiquetas. */
@@ -374,6 +379,10 @@ function summaryOf(state: ReportState) {
           return { tagId: group.tag?.id ?? null, seconds: group.seconds };
         case "date":
           return { dayKey: group.dayKey, seconds: group.seconds };
+        case "week":
+          return { weekStart: group.weekStart, seconds: group.seconds };
+        case "month":
+          return { monthStart: group.monthStart, seconds: group.seconds };
       }
     }),
   };
@@ -408,6 +417,10 @@ function rowsOf(
         : values.place.tagIds.map((tagId) => ({ tagId, seconds }));
     case "date":
       return [{ dayKey: entryDay, seconds }];
+    case "week":
+      return [{ weekStart: week.first, seconds }];
+    case "month":
+      return [{ monthStart: entryMonth, seconds }];
   }
 }
 
@@ -483,6 +496,10 @@ function everyoneInAGroups(groupBy: ReportGroupBy) {
       ];
     case "date":
       return [{ dayKey: entryDay, seconds: 210 * 60 }];
+    case "week":
+      return [{ weekStart: week.first, seconds: 210 * 60 }];
+    case "month":
+      return [{ monthStart: entryMonth, seconds: 210 * 60 }];
   }
 }
 
@@ -505,10 +522,15 @@ function selfOnlyInA() {
   ] as const;
 }
 
-/** Los dos árboles del criterio 21: tres niveles, uno con la etiqueta arriba. */
+/**
+ * Los árboles del criterio 21 de R3, de tres niveles y uno con la etiqueta
+ * arriba, y los del criterio 9 de R10, con el tiempo arriba y en el medio.
+ */
 const trees: readonly (readonly ReportGroupBy[])[] = [
   ["person", "project", "date"],
   ["tag", "task", "person"],
+  ["month", "week", "person"],
+  ["person", "week", "month"],
 ];
 
 /** El pedido de la semana con `levels[0]` arriba y el resto como subniveles. */
@@ -544,6 +566,10 @@ function keyOfGroup(group: ReportGroup): string {
       return `etiqueta ${nameOf(group.tag?.id ?? null)}`;
     case "date":
       return `fecha ${group.dayKey}`;
+    case "week":
+      return `semana ${group.weekStart}`;
+    case "month":
+      return `mes ${group.monthStart}`;
   }
 }
 
@@ -565,6 +591,10 @@ function keysOfEntry(entry: SeededEntry, level: ReportGroupBy): readonly string[
         : place.tagIds.map((tagId) => `etiqueta ${nameOf(tagId)}`);
     case "date":
       return [`fecha ${entryDay}`];
+    case "week":
+      return [`semana ${week.first}`];
+    case "month":
+      return [`mes ${entryMonth}`];
   }
 }
 
@@ -683,7 +713,7 @@ async function expectForbiddenWithoutReading(
   }
 }
 
-describe("el alcance por rol (criterio 4, D-R2a-2; criterio 11 de R2b; criterio 9 de R3)", () => {
+describe("el alcance por rol (criterio 4, D-R2a-2; criterio 11 de R2b; criterio 9 de R3; criterio 9 de R10)", () => {
   for (const role of ["owner", "admin"] as const) {
     it(`${role} de A ve a todas las personas de A, la inactiva con sus horas, y nada de B`, async () => {
       const actor = actorIn(a.workspaceId, role === "owner" ? a.ownerId : a.adminId, {
@@ -751,10 +781,11 @@ describe("el alcance por rol (criterio 4, D-R2a-2; criterio 11 de R2b; criterio 
         groupBy,
         totalSeconds: 150 * 60,
         billableSeconds: 70 * 60,
-        // Por fecha, las dos entradas de B son del mismo día; por tarea, las dos sin tarea.
+        // Por fecha, semana y mes, las dos entradas de B caen en el mismo tramo;
+        // por tarea, las dos van sin tarea: una fila con las dos.
         groups:
-          groupBy === "date"
-            ? [{ dayKey: entryDay, seconds: 150 * 60 }]
+          groupBy === "date" || groupBy === "week" || groupBy === "month"
+            ? rowsOf(groupBy, { userId: b.ownerId, place: noProject, seconds: 150 * 60 })
             : groupBy === "task"
               ? [{ taskId: null, seconds: 150 * 60 }]
               : [
@@ -825,7 +856,7 @@ describe("la decisión es de can() (criterio 4, R9)", () => {
   });
 });
 
-describe("el enlace ajeno (criterio 5, RP-32; criterio 11 de R2b; criterio 9 de R3)", () => {
+describe("el enlace ajeno (criterio 5, RP-32; criterio 11 de R2b; criterio 9 de R3; criterio 9 de R10)", () => {
   /** El valor de `agrupar` que escribe la URL y la agrupación que tiene que salir. */
   const linkedGroupBys = [
     ["proyecto", "project"],
@@ -833,6 +864,8 @@ describe("el enlace ajeno (criterio 5, RP-32; criterio 11 de R2b; criterio 9 de 
     ["tarea", "task"],
     ["etiqueta", "tag"],
     ["fecha", "date"],
+    ["semana", "week"],
+    ["mes", "month"],
   ] as const;
 
   /**
@@ -928,7 +961,7 @@ describe("membresía no activa (criterio 11, RP-07; criterio 9 de R3)", () => {
   });
 });
 
-describe("el alcance en cada nivel (criterio 21 de R3)", () => {
+describe("el alcance en cada nivel (criterio 21 de R3; criterio 9 de R10)", () => {
   for (const role of ["owner", "admin"] as const) {
     it(`${role} de A ve todo A en cada nivel, también al inactivo, y nada de B`, async () => {
       const actor = actorIn(a.workspaceId, role === "owner" ? a.ownerId : a.adminId, {
@@ -1003,6 +1036,8 @@ describe("el alcance en cada nivel (criterio 21 de R3)", () => {
       ["etiqueta", "tarea,persona", ["tag", "task", "person"]],
       // La URL armada a mano del paso 11 de §7.
       ["etiqueta", "persona,fecha", ["tag", "person", "date"]],
+      ["mes", "semana,persona", ["month", "week", "person"]],
+      ["persona", "semana,mes", ["person", "week", "month"]],
     ] as const;
 
     /**
@@ -1561,7 +1596,7 @@ describe("los filtros de cliente y de proyecto dentro del alcance (criterio 12 d
   });
 });
 
-describe("el filtro de personas dentro del alcance (criterio 19 de R4)", () => {
+describe("el filtro de personas dentro del alcance (criterio 19 de R4; criterio 9 de R10)", () => {
   /**
    * El fixture suma, en A, una persona con un id como los de Better Auth, de 32
    * alfanuméricos con mayúsculas, que carga en P con E y F, y una invitada que
@@ -1870,6 +1905,8 @@ describe("el filtro de personas dentro del alcance (criterio 19 de R4)", () => {
       ["persona", "", ["person"]],
       ["proyecto", "persona", ["project", "person"]],
       ["etiqueta", "proyecto", ["tag", "project"]],
+      // El pedido del criterio 9 de R10.
+      ["mes", "semana,persona", ["month", "week", "person"]],
     ] as const;
 
     /** La lista ordenada por unidades de código, como la escribe la aplicación. */

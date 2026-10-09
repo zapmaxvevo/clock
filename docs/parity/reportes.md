@@ -102,6 +102,19 @@ citas nuevas de Clockify: esta revisión no volvió a buscar en las páginas del
 resumido, de filtros ni de equipo, así que lo que estaba _no verificado_ sigue
 igual, y RP-61 y RP-62 conservan sus citas del 2026-10-08.
 
+_Actualizado el 2026-10-09, contrato de R10, parte A
+([`nucleo-reportes-r10-descripcion-mes-y-semana.md`](../slices/nucleo-reportes-r10-descripcion-mes-y-semana.md),
+§7 «parity-analyst»)_: el contrato tiene dos partes (D-R10-1) y esta
+actualización cubre la A, que se mergea como R10a —agrupar por semana y por
+mes—, y describe lo que hace el código de la rama `nucleo/r10a`, recorrido con
+la aplicación. Cada regla que precisa lleva su corrección fechada, y la
+[sección 13](#13-núcleo-r10) junta la pantalla. Cambian RP-11, RP-12, RP-24,
+RP-32, P-05 y P-11. Lo de la parte B —la descripción, RP-28 y el tope del
+primer nivel— queda para R10b. No hay citas nuevas de Clockify: la lista de
+«Group by» es la del relevamiento de R3b, y esta revisión no volvió a buscar
+en las páginas del resumido ni de filtros, así que cómo rotula Clockify una
+semana o un mes sigue _no verificado_.
+
 ## Fuentes y límites del relevamiento
 
 Documentación pública del centro de ayuda de Clockify y referencia pública de su
@@ -369,6 +382,17 @@ hasta que el equipo decida (P-11). En qué orden muestra la interfaz las
 opciones y si el resumido y el semanal ofrecen la misma lista siguen _no
 verificados_ (P-05).
 
+_Actualizado el 2026-10-09, R10a (D-R10-5, D-R10-6)_: ocho dimensiones.
+«Agrupar por» tiene ocho enlaces, «Persona», «Proyecto», «Cliente», «Tarea»,
+«Etiqueta», «Fecha», «Semana» y «Mes», en ese orden, y el elegido queda
+marcado. En la URL, `agrupar=…|semana|mes`, en ASCII. `Semana`, `semanas`,
+`Mes`, `meses`, `week` o `month` se descartan y la vista queda por persona
+(RP-32). **Semana y mes entran por la lista documentada de la página de
+filtros** (corrección de R3b, arriba) y por la decisión del usuario sobre P-11.
+Se suman al final para no mover el orden de R2a a R3, y así la fecha, la
+semana y el mes quedan juntos, de menor a mayor. El orden de Clockify en
+pantalla sigue _no verificado_ (P-05). La descripción llega con R10b.
+
 **RP-12 Subagrupación encadenada** — `replicar`
 Documentado: «You can further breakdown data by sub groups.» y los ejemplos
 «Group by client -> user to see who worked for what client» y «Group by group
@@ -442,6 +466,16 @@ de Clockify. «Ninguno», el intercambio y `subagrupar` son la forma propia de
 elegirlos: justificación, la URL tiene que reproducir los niveles (RP-32) y el
 intercambio permite pasar de Persona → Proyecto a Proyecto → Persona con un
 clic. _No verificado_: el orden de Clockify dentro de un subgrupo (P-05).
+
+_Actualizado el 2026-10-09, R10a (D-R10-3, D-R10-5, D-R10-6)_: **por semana y
+por mes, orden cronológico**, como por fecha, aunque una posterior tenga más
+horas; justificación, la de D-R2b-6. Valen todas las combinaciones de hasta
+tres niveles sin repetir. **Una dimensión de tiempo debajo de otra es la
+intersección**: en Mes → Semana, la semana que cruza el fin de mes está debajo
+de los dos meses, cada vez con su parte; en Semana → Mes, debajo de esa semana
+están sus dos meses; Fecha → Semana da un hijo por día. El intercambio de
+«Agrupar por» vale igual: «Fecha» desde Mes → Fecha da Fecha → Mes. _No
+verificado_: si Clockify permite combinar dos dimensiones de tiempo (P-05).
 
 **RP-13 Expandir un grupo** — `adaptar`
 Documentado: «You can click on the number next to the group to expand it and
@@ -748,6 +782,13 @@ anterior» y «Últimas dos semanas» se alinean al primer día de quien mira, c
 por día y el primer día de la semana no la cambia**; esto corrige lo que este
 RP decía de ella.
 
+_Actualizado el 2026-10-09, R10a (D-R10-2, D-R10-3)_: **agrupando por semana,
+cada semana empieza el primer día de quien mira**: las mismas entradas, vistas
+con domingo y con lunes, dan semanas distintas, y cada fila lo dice con sus
+días. La semana se corta en la zona de quien mira (RP-22): una entrada del
+domingo a las 23:30 en Buenos Aires es del lunes desde Madrid. **La agrupación
+por fecha sigue sin depender del primer día**, y la por mes tampoco.
+
 ### 2.3 Filtros
 
 **RP-25 Filtros disponibles** — `adaptar`
@@ -1047,6 +1088,12 @@ _Actualizado el 2026-10-09, R4b (D-R4-2, D-R4-4, D-R4-5, D-R4-10)_:
   del usuario del mapa §5 que la corrección de R2a anunciaba para R4.
 - Lo que decía R2a de que `personas=…` se ignora como cualquier otra clave vale
   ahora solo para quien no ve horas de otros.
+
+_Actualizado el 2026-10-09, R10a_: `agrupar=semana|mes` y `semana` y `mes` en
+`subagrupar` se validan como los otros valores (RP-11): con mayúscula, en
+plural o en inglés se descartan; `subagrupar=semana` con `agrupar=semana` se
+descarta entero. Todo enlace del reporte —las flechas, «Esta semana», los
+atajos, «Aplicar», «Agrupar por» y los subniveles— los conserva.
 
 **RP-33 Vacíos** — `adaptar`
 Sin entradas en el rango: «No hay horas en este período», con los gráficos
@@ -1424,12 +1471,20 @@ abierto al recargar— sigue abierta para el usuario**: hasta que la conteste,
 todo empieza contraído y lo abierto no va en la URL (RP-13). Mientras tanto vale
 lo de R3b (secciones 11.4 a 11.8). No bloquea.
 
+_Actualizado el 2026-10-09, R10a_: P-05 suma cómo rotula Clockify una semana y
+un mes, si corta las semanas y los meses en los extremos del período, y si
+permite una dimensión de tiempo debajo de otra. Mientras tanto vale lo de R10a
+(sección 13). No bloquea.
+
 _Agregado el 2026-10-09, relevamiento de R3b_: **P-11 — Agrupar por
 descripción, mes y semana.** La página de filtros los lista entre las opciones
 de «Group by» (RP-11) y Clock no los tiene: ¿entran en el núcleo, en la fase 3
 o quedan fuera de alcance? Mes y semana se cruzan con la granularidad del
 gráfico de RP-15; descripción agruparía por un texto libre. Sin decisión, no
 tienen marca. No bloquea R3b.
+
+_Resuelto el 2026-10-09 por el usuario_: entran las tres en el núcleo, como
+R10. Semana y mes, con R10a (sección 13); descripción, con R10b.
 
 ## 8. Decisiones del usuario (2026-10-08)
 
@@ -2008,3 +2063,131 @@ queda; el resto sigue igual. Las secciones 12.6 a 12.8 juntan lo de la pantalla.
 | `owner`, `admin` activas                            | Todas las personas del workspace con horas, o solo las elegidas, filtradas además por cliente y proyecto en cada nivel y en el total; en el filtro, las activas y las inactivas, sin las invitadas | Las de 12.5, y elegir personas, también inactivas |
 | `project_manager`, `team_manager`, `member` activas | Solo lo propio, filtrado por cliente y proyecto, también con el enlace de un admin que elige personas; sin filtro de personas                                                                      | Las de 12.5, sin filtro de personas               |
 | Cualquiera no activa (`inactive`, `invited`)        | El aviso de RP-07                                                                                                                                                                                  | Ninguna                                           |
+
+## 13. Núcleo, R10
+
+_2026-10-09._ Contrato:
+[`nucleo-reportes-r10-descripcion-mes-y-semana.md`](../slices/nucleo-reportes-r10-descripcion-mes-y-semana.md),
+aprobado en la segunda ronda de `architecture-reviewer`. El contrato tiene dos
+partes (D-R10-1): **esta sección registra la parte A, R10a** —agrupar por
+semana y por mes—, y la parte B, descripción, llega como R10b con su propia
+corrección en esta sección. La regla de cada comportamiento está en la
+corrección fechada de su RP; esta sección junta lo que cambia en la pantalla, y
+lo que no nombra sigue como en las secciones [9](#9-núcleo-r2a) a
+[12](#12-núcleo-r4).
+
+**Cubre:** RP-11 (semana y mes, ocho dimensiones), RP-12 (el orden cronológico
+y las combinaciones de dos dimensiones de tiempo), RP-24 (la semana como
+agrupación sigue el primer día de quien mira), RP-32 (`semana` y `mes` en
+`agrupar` y `subagrupar`) y P-11 (resuelta). Los permisos y el alcance no
+cambian: no hay acción nueva; semana y mes pasan por el mismo alcance y los
+mismos filtros que las otras dimensiones, en cada nivel y en el total; un
+member ve solo lo propio, también con el enlace de un admin que trae
+`personas`. Los cortes los arma el servidor con la zona y el primer día de
+quien mira; de la URL solo llegan los valores de `agrupar` y `subagrupar`.
+
+**Queda para después:** agrupar por descripción, «Sin descripción» y el tope de
+3000 filas en el primer nivel (R10b); gráfico, que usa los mismos tramos por
+semana y por mes (R5); exportación (R6, R7); personas sin horas (R9). No tienen
+slice: numerar las semanas («Semana 40»), agrupar por año, una línea con el
+primer día de la semana y las semanas o los meses sin horas.
+
+### 13.1 La barra
+
+- **«Agrupar por»** con ocho enlaces, en este orden: «Persona», «Proyecto»,
+  «Cliente», «Tarea», «Etiqueta», «Fecha», «Semana» y «Mes». El elegido lleva
+  `aria-current`; todos conservan el rango, los subniveles y los filtros
+  (RP-11, RP-32). En pantallas angostas el grupo se parte en dos líneas.
+- **«Segundo nivel» y «Tercer nivel»** ofrecen «Semana» y «Mes» al final, en el
+  orden de «Agrupar por», salvo lo que ya está arriba. Elegir en «Agrupar por»
+  una dimensión que está en un subnivel las intercambia, también entre dos de
+  tiempo: desde Semana → Mes, «Mes» da Mes → Semana; desde Mes → Semana →
+  Fecha, «Fecha» da Fecha → Semana → Mes (RP-12).
+- **Las flechas, el selector del período y «Esta semana»** no cambian.
+
+### 13.2 La tabla
+
+- **Columnas**: «Semana» o «Mes», y «Duración»; con subniveles, «Mes / Semana /
+  Fecha» y las demás combinaciones.
+- **Semana**: el rótulo es la semana entera, del primer al séptimo día con el
+  primer día de quien mira, en el formato de fecha del perfil: «28/09 – 04/10»,
+  con el año en los dos extremos si alguno no es del año de hoy
+  («29/12/2025 – 04/01/2026»). Sin «Esta semana» ni «Semana anterior», como la
+  fecha va sin «Hoy» ni «Ayer».
+- **Mes**: el nombre en minúscula, «octubre», o «octubre de 2025» si no es del
+  año de hoy, en un `<time>` con el mes («2025-10»).
+- **«solo …»**: si la fila no cuenta la semana o el mes entero, después del
+  rótulo y en gris, los días que cuenta: «28/09/2025 – 04/10/2025 solo
+  01/10/2025 – 04/10/2025», o «solo 20/09/2025» si es uno. Los cortan el
+  período y **cada grupo de tiempo del camino de la fila, a cualquier altura**:
+  debajo de «septiembre», la semana que cruza el fin de mes dice «solo 28/09 –
+  30/09»; en Mes → Persona → Semana dice lo mismo, aunque su padre directo sea
+  la persona; debajo de un día, la semana dice ese día. Una semana o un mes
+  enteros dentro del período, sin grupo de tiempo arriba que los corte, no
+  dicen nada. El texto «solo …» es parte del nombre del botón de expandir.
+- **Los cortes** son los días civiles en la zona de quien mira (RP-22): una
+  entrada cuenta en la semana y en el mes de su inicio (RP-23). Con las
+  entradas del recorrido 17 del contrato y domingo como primer día, del
+  20/09/2025 al 10/10/2025: «14/09/2025 – 20/09/2025 solo 20/09/2025» 0:15,
+  «28/09/2025 – 04/10/2025» 1:30 y «05/10/2025 – 11/10/2025 solo 05/10/2025 –
+  10/10/2025» 0:20; por mes, «septiembre de 2025 solo 20/09/2025 – 30/09/2025»
+  1:15 y «octubre de 2025 solo 01/10/2025 – 10/10/2025» 0:50; total 2:05. Con
+  sábado, las mismas entradas dan tres semanas enteras sin «solo».
+- **Los atajos** (RP-20) son unidades enteras alineadas a quien mira: «Esta
+  semana», «Semana anterior» y «Últimas dos semanas» por semana dan semanas
+  sin «solo»; «Este mes» y «Mes pasado» por mes, un mes entero; «Este año» por
+  mes, meses enteros, y por semana, la primera y la última cortadas. Un rango
+  libre corta lo que corte.
+- **El orden**: cronológico en cada nivel, por el primer día de la semana o del
+  mes, aunque una posterior tenga más horas (RP-12).
+- **Los totales**: cada entrada está en exactamente una semana y un mes, así que
+  en segundos el total es la suma de las filas, como en R2a (RP-18). Los hijos
+  de cada grupo suman lo del grupo.
+
+### 13.3 Estados y casos borde
+
+- **Vacío por semana o por mes**: la fila «No hay horas en este período» y los
+  totales en «0:00» (RP-33). Una semana o un mes sin horas no tiene fila,
+  tampoco dentro de un período que los incluye.
+- **Al recargar o con «Atrás»**: la misma URL y todo contraído (RP-13, RP-32).
+  `agrupar` o `subagrupar` inválidos se descartan sin aviso, como los otros
+  valores.
+- **La misma semana debajo de dos meses** son dos filas distintas, cada una con
+  su parte, su «solo …» y su duración, y se abren y se cierran por separado.
+- **Dos zonas o dos primeros días** dan semanas distintas para el mismo
+  período: una entrada del domingo 05/10 a las 23:30 en Buenos Aires es de la
+  semana del 29/09 para quien mira desde ahí y de la del 06/10 desde Madrid; una
+  del 30/09 a las 23:30, de septiembre y de octubre. Es correcto (RP-22,
+  RP-24).
+- **El día que falta entero** (`Pacific/Apia`, el 2011-12-30) no rompe los
+  tramos: una semana que empezaría ese día empieza en el siguiente, con el
+  rótulo de la semana entera.
+- **Cargando, error de lectura y sin `report.view`**: como en la sección 9.3,
+  con cualquier combinación de niveles.
+
+### 13.4 Divergencias visibles que el reviewer no debe marcar como errores
+
+- **Una semana o un mes cortados por el período o por un grupo de arriba
+  llevan el rótulo entero y «solo …»** con los días que cuentan; el total es
+  siempre el del período de la cabecera (D-R10-3). Cómo lo hace Clockify está
+  _no verificado_ (P-05).
+- **La semana se rotula con sus días y no con un número** («28/09 – 04/10», no
+  «Semana 40»), y no hay línea con el primer día de la semana: cada fila lo
+  dice con sus días (D-R10-3).
+- **El orden es cronológico** y no por duración, como por fecha (RP-12).
+- **«Semana» y «Mes» van al final de «Agrupar por»**, después de «Fecha»; el
+  orden de Clockify en pantalla está _no verificado_ (P-05).
+- **Fecha → Semana y Semana → Fecha** se permiten aunque la primera da un hijo
+  por día (D-R10-6).
+- **«solo …» con el año** sigue la regla del año de su propio rango: debajo de
+  «29/12/2025 – 04/01/2026», «enero solo 01/01 – 04/01» va sin año.
+- **Dos personas que comparan semanas** pueden ver cortes distintos si sus
+  primeros días o sus zonas difieren (RP-22, RP-24).
+
+### 13.5 Qué puede hacer cada rol
+
+| Membresía                                           | Ve                                                                                                                            | Acciones                                                                   |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `owner`, `admin` activas                            | Todas las personas del workspace con horas, por semana y por mes en cada nivel, cortadas con su zona y su primer día          | Las de 12.5 y 12.8, con «Semana» y «Mes» en «Agrupar por» y los subniveles |
+| `project_manager`, `team_manager`, `member` activas | Solo lo propio por semana y por mes, también con el enlace de un admin con `agrupar=mes&subagrupar=semana,persona&personas=…` | Las mismas, sin filtro de personas                                         |
+| Cualquiera no activa (`inactive`, `invited`)        | El aviso de RP-07                                                                                                             | Ninguna                                                                    |

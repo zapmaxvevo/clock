@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-import { addDaysToKey, daysBetweenKeys, parseDayKey } from "@/server/time";
+import {
+  addDaysToKey,
+  daysBetweenKeys,
+  parseDayKey,
+  type DayKeyRange,
+} from "@/server/time";
 import { PALETTE_KEYS } from "@/modules/project/palette";
 
 /** RP-21, ADR 0021: el período más largo, en días, con los dos extremos. */
@@ -14,7 +19,7 @@ export const reportMessages = {
   invalidDate: "Fecha inválida.",
 } as const;
 
-export type ReportRange = { readonly first: string; readonly last: string };
+export type ReportRange = DayKeyRange;
 
 /** Los dos períodos tienen los mismos extremos. */
 export function sameRange(left: ReportRange, right: ReportRange): boolean {
@@ -69,8 +74,18 @@ export const REPORT_GROUP_BYS = [
   "task",
   "tag",
   "date",
+  "week",
+  "month",
 ] as const;
 export type ReportGroupBy = (typeof REPORT_GROUP_BYS)[number];
+
+/** ADR 0021: las dimensiones que se cortan en tramos de tiempo, en la zona de quien mira. */
+export const REPORT_TIME_GROUP_BYS = [
+  "date",
+  "week",
+  "month",
+] as const satisfies readonly ReportGroupBy[];
+export type ReportTimeGroupBy = (typeof REPORT_TIME_GROUP_BYS)[number];
 
 /** D-R2a-3: el primer nivel sin un `agrupar` válido. */
 export const DEFAULT_GROUP_BY = "person" satisfies ReportGroupBy;
@@ -83,6 +98,8 @@ export const REPORT_GROUP_PARAMS = {
   task: "tarea",
   tag: "etiqueta",
   date: "fecha",
+  week: "semana",
+  month: "mes",
 } as const satisfies Record<ReportGroupBy, string>;
 
 /** La agrupación que escribe `value` en la URL, o `undefined`. Distingue mayúsculas. */
@@ -90,7 +107,7 @@ function groupByOfParam(value: unknown): ReportGroupBy | undefined {
   return REPORT_GROUP_BYS.find((groupBy) => REPORT_GROUP_PARAMS[groupBy] === value);
 }
 
-/** `?agrupar=persona|proyecto|cliente|tarea|etiqueta|fecha` con `safeParse`, aparte del rango; cualquier otro valor se descarta. */
+/** `?agrupar=persona|proyecto|cliente|tarea|etiqueta|fecha|semana|mes` con `safeParse`, aparte del rango; cualquier otro valor se descarta. */
 export const reportGroupParams = z
   .object({ agrupar: z.string() })
   .transform(({ agrupar }) => groupByOfParam(agrupar))
@@ -398,6 +415,31 @@ const reportDateGroup = withChildren({
   seconds: z.number().int().min(0),
 });
 
+const reportWeekGroup = withChildren({
+  kind: z.literal("week"),
+  /** El primer día de la semana entera, con el primer día de quien mira (RP-24); puede caer antes del período. */
+  weekStart: z.string(),
+  /** La semana entera, «28/09 – 04/10», con año si algún extremo no es del año de hoy (D-R10-3). */
+  label: z.string(),
+  /**
+   * Los días que cuenta si no es la semana entera —la cortan el período o un
+   * grupo de tiempo de su camino—: «01/10 – 04/10». `null` si la cuenta entera.
+   */
+  partial: z.string().nullable(),
+  seconds: z.number().int().min(0),
+});
+
+const reportMonthGroup = withChildren({
+  kind: z.literal("month"),
+  /** El primer día del mes: «2026-10-01». */
+  monthStart: z.string(),
+  /** «octubre», o «octubre de 2025» si no es del año de hoy (D-R10-3). */
+  label: z.string(),
+  /** Como en la semana. */
+  partial: z.string().nullable(),
+  seconds: z.number().int().min(0),
+});
+
 const reportGroup = z.discriminatedUnion("kind", [
   reportPersonGroup,
   reportProjectGroup,
@@ -405,6 +447,8 @@ const reportGroup = z.discriminatedUnion("kind", [
   reportTaskGroup,
   reportTagGroup,
   reportDateGroup,
+  reportWeekGroup,
+  reportMonthGroup,
 ]);
 
 export const reportReadyState = z.object({
@@ -455,6 +499,8 @@ export type ReportClientGroup = z.infer<typeof reportClientGroup>;
 export type ReportTaskGroup = z.infer<typeof reportTaskGroup>;
 export type ReportTagGroup = z.infer<typeof reportTagGroup>;
 export type ReportDateGroup = z.infer<typeof reportDateGroup>;
+export type ReportWeekGroup = z.infer<typeof reportWeekGroup>;
+export type ReportMonthGroup = z.infer<typeof reportMonthGroup>;
 export type ReportShortcut = z.infer<typeof reportShortcut>;
 
 export type ReportState =

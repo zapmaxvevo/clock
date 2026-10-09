@@ -289,7 +289,7 @@ describe("ReportView", () => {
     );
   });
 
-  it.each(["person", "project", "client", "task", "date"] as const)(
+  it.each(["person", "project", "client", "task", "date", "week", "month"] as const)(
     "por %s, sin el aviso de la suma por etiqueta",
     (groupBy) => {
       expect(render({ groupBy })).not.toContain("Una entrada con varias etiquetas");
@@ -425,6 +425,179 @@ describe("ReportView con subniveles (D-R3-6, D-R3-9)", () => {
       overlap,
     );
     expect(renderTree({})).not.toContain(overlap);
+  });
+});
+
+describe("ReportView por semana y por mes (D-R10-3, §5.2)", () => {
+  /** Del miércoles 30/09 al martes 13/10, con lunes: la primera y la última, cortadas. */
+  const weeks: ReportGroup[] = [
+    {
+      kind: "week",
+      weekStart: "2026-09-28",
+      label: "28/09 – 04/10",
+      partial: "30/09 – 04/10",
+      seconds: 1_800,
+    },
+    {
+      kind: "week",
+      weekStart: "2026-10-05",
+      label: "05/10 – 11/10",
+      partial: null,
+      seconds: 3_600,
+    },
+    {
+      kind: "week",
+      weekStart: "2026-10-12",
+      label: "12/10 – 18/10",
+      partial: "12/10 – 13/10",
+      seconds: 900,
+    },
+  ];
+
+  /** Del 15/08 al 14/10: agosto y octubre cortados, septiembre entero. */
+  const months: ReportGroup[] = [
+    {
+      kind: "month",
+      monthStart: "2026-08-01",
+      label: "agosto",
+      partial: "15/08 – 31/08",
+      seconds: 1_200,
+    },
+    {
+      kind: "month",
+      monthStart: "2026-09-01",
+      label: "septiembre",
+      partial: null,
+      seconds: 7_200,
+    },
+    {
+      kind: "month",
+      monthStart: "2026-10-01",
+      label: "octubre",
+      partial: "01/10 – 14/10",
+      seconds: 2_700,
+    },
+  ];
+
+  /** El encabezado de la fila `index` del cuerpo, con sus etiquetas. */
+  function rowHeading(markup: string, index: number): string {
+    return [...markup.matchAll(/<th scope="row"[^>]*>(.*?)<\/th>/g)][index]?.[1] ?? "";
+  }
+
+  it("por semana, el encabezado «Semana» y «solo …» en gris solo en las cortadas", () => {
+    const markup = render({
+      groupBy: "week",
+      range: { first: "2026-09-30", last: "2026-10-13" },
+      groups: weeks,
+      totalSeconds: 6_300,
+    });
+    expect(markup).toMatch(/<th scope="col"[^>]*>Semana<\/th>/);
+    // En el orden en que llegan: el service ya las ordenó.
+    expect(bodyRows(markup)).toEqual([
+      ["28/09 – 04/10 solo 30/09 – 04/10", "0:30"],
+      ["05/10 – 11/10", "1:00"],
+      ["12/10 – 18/10 solo 12/10 – 13/10", "0:15"],
+    ]);
+    expect(rowHeading(markup, 0)).toBe(
+      '<span>28/09 – 04/10 <span class="text-muted-foreground">solo 30/09 – 04/10</span></span>',
+    );
+    // La semana entera, sin el gris ni «solo».
+    expect(rowHeading(markup, 1)).toBe("05/10 – 11/10");
+    expect(markup.match(/text-muted-foreground">solo /g)).toHaveLength(2);
+    expect(totals(markup).Total).toBe("1:45");
+  });
+
+  it("por mes, el encabezado «Mes» y cada mes dentro de <time> con su año y mes", () => {
+    const markup = render({
+      groupBy: "month",
+      range: { first: "2026-08-15", last: "2026-10-14" },
+      groups: months,
+      totalSeconds: 11_100,
+    });
+    expect(markup).toMatch(/<th scope="col"[^>]*>Mes<\/th>/);
+    expect(bodyRows(markup)).toEqual([
+      ["agosto solo 15/08 – 31/08", "0:20"],
+      ["septiembre", "2:00"],
+      ["octubre solo 01/10 – 14/10", "0:45"],
+    ]);
+    expect(rowHeading(markup, 2)).toBe(
+      '<span><time dateTime="2026-10">octubre</time> <span class="text-muted-foreground">solo 01/10 – 14/10</span></span>',
+    );
+    expect(rowHeading(markup, 1)).toBe('<time dateTime="2026-09">septiembre</time>');
+    expect(markup).toContain('<time dateTime="2026-08">agosto</time>');
+    expect(totals(markup).Total).toBe("3:05");
+  });
+
+  it("Mes → Semana → Fecha: el encabezado une los tres y el «solo …» va dentro del botón", () => {
+    const markup = render({
+      groupBy: "month",
+      subgroups: ["week", "date"],
+      levelsShown: 3,
+      range: { first: "2026-09-21", last: "2026-10-11" },
+      scope: "everyone",
+      groups: [
+        {
+          kind: "month",
+          monthStart: "2026-09-01",
+          label: "septiembre",
+          partial: "21/09 – 30/09",
+          seconds: 6_300,
+          children: [
+            {
+              kind: "week",
+              weekStart: "2026-09-28",
+              label: "28/09 – 04/10",
+              partial: "28/09 – 30/09",
+              seconds: 6_300,
+              children: [
+                {
+                  kind: "date",
+                  dayKey: "2026-09-30",
+                  label: "mié, 30/09",
+                  seconds: 6_300,
+                },
+              ],
+            },
+          ],
+        },
+        {
+          kind: "month",
+          monthStart: "2026-10-01",
+          label: "octubre",
+          partial: "01/10 – 11/10",
+          seconds: 1_800,
+          children: [
+            {
+              kind: "week",
+              weekStart: "2026-09-28",
+              label: "28/09 – 04/10",
+              partial: "01/10 – 04/10",
+              seconds: 1_800,
+              children: [
+                {
+                  kind: "date",
+                  dayKey: "2026-10-01",
+                  label: "jue, 01/10",
+                  seconds: 1_800,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      totalSeconds: 8_100,
+    });
+    expect(markup).toMatch(/<th scope="col"[^>]*>Mes \/ Semana \/ Fecha<\/th>/);
+    expect(bodyRows(markup)).toEqual([
+      ["septiembre solo 21/09 – 30/09", "1:45"],
+      ["octubre solo 01/10 – 11/10", "0:30"],
+    ]);
+    // El nombre del botón dice el mes y los días que cuenta.
+    expect(
+      [...markup.matchAll(/<button [^>]*>(.*?)<\/button>/g)].map(([, content]) =>
+        content.replace(/<[^>]+>/g, ""),
+      ),
+    ).toEqual(["septiembre solo 21/09 – 30/09", "octubre solo 01/10 – 11/10"]);
   });
 });
 

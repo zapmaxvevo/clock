@@ -3,15 +3,26 @@ import { db, type Transaction } from "@/server/db";
 import { can, type Actor, type WorkspaceResource } from "@/server/permissions";
 import {
   addDaysToKey,
+  bucketDays,
   compareDayKeys,
   dayBuckets,
   dayKey,
+  dayRangeLabel,
   daysBetweenKeys,
+  earliestDayKey,
+  monthBuckets,
+  monthEndKey,
+  monthLabel,
+  monthStartKey,
   startOfDayKey,
+  weekBuckets,
   weekdayLabel,
+  weekStartKey,
   type DateFormat,
+  type DayKeyRange,
   type TimeBuckets,
   type TimeSettings,
+  type WeekStart,
 } from "@/server/time";
 import { displayNameOf } from "@/modules/profile/service";
 import { paletteKeyOf } from "@/modules/project/palette";
@@ -23,6 +34,7 @@ import { reportPeriodOf } from "./period";
 import {
   reportRepository,
   type EntryTotals,
+  type ReportBuckets,
   type ReportEntryFilter,
   type ReportLevelRead,
   type ReportSpan,
@@ -36,13 +48,14 @@ import {
   REPORT_MAX_DAYS,
   REPORT_MAX_FILTER_VALUES,
   REPORT_MAX_ROWS,
-  type ReportDateGroup,
+  REPORT_TIME_GROUP_BYS,
   type ReportFilters,
   type ReportGroup,
   type ReportGroupBy,
   type ReportRange,
   type ReportReadyState,
   type ReportState,
+  type ReportTimeGroupBy,
 } from "./schema";
 
 type ScopePeople =
@@ -131,18 +144,92 @@ function projectOf(stored: StoredProject | null) {
   };
 }
 
-/** Cómo se rotula un día: los tramos de la lectura, hoy y el formato. */
-type DateContext = {
-  readonly buckets: TimeBuckets | null;
+/**
+ * Cómo se rotula un grupo de tiempo: los tramos del pedido, el último día del
+ * período, el primer día de la semana de quien mira, hoy y el formato.
+ */
+type TimeContext = {
+  readonly buckets: ReportBuckets;
+  readonly last: string;
+  readonly weekStart: WeekStart;
   readonly todayKey: string;
   readonly format: DateFormat;
 };
 
+/** Los de `Item` que son de una dimensión de tiempo: la fecha, la semana o el mes. */
+type WithTimeKind<Item> = Extract<Item, { readonly kind: ReportTimeGroupBy }>;
+
+/** Si una fila o un grupo es de una dimensión de tiempo. */
+function hasTimeKind<Item extends { readonly kind: string }>(
+  item: Item,
+): item is WithTimeKind<Item> {
+  return REPORT_TIME_GROUP_BYS.some((kind) => kind === item.kind);
+}
+
+/** Lo que una fila dice de un nivel de tiempo: la dimensión y la posición del tramo. */
+type TimeRow = WithTimeKind<LevelGroupRow>;
+
+/** Los días del tramo de una fila de tiempo, cortados por el período. */
+function daysOf(row: TimeRow, time: TimeContext): DayKeyRange {
+  const buckets: TimeBuckets | undefined = time.buckets[row.kind];
+  if (buckets === undefined) {
+    throw new Error(`Una fila por ${row.kind} sin los tramos de la lectura.`);
+  }
+  return bucketDays(buckets, row.bucket, time.last);
+}
+
 /**
- * El grupo de un nivel, de lo que la fila dice de él. Un día se rotula con su
- * fecha y sin «Hoy» ni «Ayer» (D-R2b-6).
+ * D-R10-3: los días que cuenta un grupo, la intersección de los de cada grupo
+ * de tiempo de su camino, a cualquier altura y no solo el padre: la fila suma
+ * las entradas que caen en todos. Nunca vacía, porque la fila existe.
  */
-function groupOf(row: LevelGroupRow, seconds: number, dates: DateContext): ReportGroup {
+function countedDays(path: readonly LevelGroupRow[], time: TimeContext): DayKeyRange {
+  const ranges = path.filter(hasTimeKind).map((row) => daysOf(row, time));
+  const [outermost, ...inner] = ranges;
+  if (outermost === undefined) {
+    throw new Error("Un camino sin grupos de tiempo no cuenta días.");
+  }
+  const counted = inner.reduce(
+    (range, other) => ({
+      first: compareDayKeys(other.first, range.first) > 0 ? other.first : range.first,
+      last: earliestDayKey(range.last, other.last),
+    }),
+    outermost,
+  );
+  if (compareDayKeys(counted.first, counted.last) > 0) {
+    throw new Error("Una fila de tiempo sin días en común con su camino.");
+  }
+  return counted;
+}
+
+/**
+ * Lo que dice `partial` de una semana o un mes entero, `unit`: los días que
+ * cuenta su camino si no son todos, o `null`.
+ */
+function partialOf(
+  unit: DayKeyRange,
+  path: readonly LevelGroupRow[],
+  time: TimeContext,
+): string | null {
+  const counted = countedDays(path, time);
+  if (counted.first === unit.first && counted.last === unit.last) {
+    return null;
+  }
+  return dayRangeLabel(counted.first, counted.last, time.todayKey, time.format);
+}
+
+/**
+ * El grupo de un nivel, de lo que la fila dice de él y de su camino, que lo
+ * incluye al final. Un día se rotula con su fecha y sin «Hoy» ni «Ayer»
+ * (D-R2b-6); una semana y un mes, con la unidad entera y sin «Esta semana», y
+ * con los días que cuentan si no son todos (D-R10-3).
+ */
+function groupOf(
+  row: LevelGroupRow,
+  path: readonly LevelGroupRow[],
+  seconds: number,
+  time: TimeContext,
+): ReportGroup {
   switch (row.kind) {
     case "person":
       return {
@@ -166,22 +253,44 @@ function groupOf(row: LevelGroupRow, seconds: number, dates: DateContext): Repor
     case "tag":
       return { kind: "tag", tag: row.tag, seconds };
     case "date": {
-      if (dates.buckets === null) {
-        throw new Error("Una fila por fecha sin los tramos de la lectura.");
-      }
-      const day = dates.buckets.buckets[row.bucket].firstDay;
+      const day = daysOf(row, time).first;
       return {
         kind: "date",
         dayKey: day,
-        label: weekdayLabel(day, dates.todayKey, dates.format),
+        label: weekdayLabel(day, time.todayKey, time.format),
+        seconds,
+      };
+    }
+    case "week": {
+      const weekStart = weekStartKey(daysOf(row, time).first, time.weekStart);
+      const week = { first: weekStart, last: addDaysToKey(weekStart, 6) };
+      return {
+        kind: "week",
+        weekStart,
+        label: dayRangeLabel(week.first, week.last, time.todayKey, time.format),
+        partial: partialOf(week, path, time),
+        seconds,
+      };
+    }
+    case "month": {
+      const first = daysOf(row, time).first;
+      const month = { first: monthStartKey(first), last: monthEndKey(first) };
+      return {
+        kind: "month",
+        monthStart: month.first,
+        label: monthLabel(month.first, time.todayKey),
+        partial: partialOf(month, path, time),
         seconds,
       };
     }
   }
 }
 
-/** Los grupos que se ordenan por duración y nombre: todos menos la fecha. */
-type NamedGroup = Exclude<ReportGroup, ReportDateGroup>;
+/** Los grupos que se cortan en tramos de tiempo: la fecha, la semana y el mes. */
+type TimeGroup = WithTimeKind<ReportGroup>;
+
+/** Los grupos que se ordenan por duración y nombre: todos menos los de tiempo. */
+type NamedGroup = Exclude<ReportGroup, TimeGroup>;
 
 /** Lo que el orden compara de un grupo; `null` es «Sin proyecto», «Sin cliente», «Sin tarea» o «Sin etiqueta». */
 function sortKeyOf(
@@ -217,20 +326,30 @@ function compareGroups(left: NamedGroup, right: NamedGroup): number {
   return compareNames(leftKey, rightKey);
 }
 
-/** D-R2b-6: en orden cronológico. */
-function compareDays(left: ReportDateGroup, right: ReportDateGroup): number {
-  return compareDayKeys(left.dayKey, right.dayKey);
+/** El primer día de un grupo de tiempo: el día, el de la semana entera o el del mes. */
+function firstDayOf(group: TimeGroup): string {
+  switch (group.kind) {
+    case "date":
+      return group.dayKey;
+    case "week":
+      return group.weekStart;
+    case "month":
+      return group.monthStart;
+  }
 }
 
-/** Dos grupos del mismo nivel: los días por fecha, el resto por duración y nombre. */
+/**
+ * Dos grupos del mismo nivel: los de tiempo en orden cronológico (D-R2b-6,
+ * D-R10-5), el resto por duración y nombre.
+ */
 function compareSiblings(left: ReportGroup, right: ReportGroup): number {
-  if (left.kind === "date" && right.kind === "date") {
-    return compareDays(left, right);
+  if (hasTimeKind(left) && hasTimeKind(right)) {
+    return compareDayKeys(firstDayOf(left), firstDayOf(right));
   }
-  if (left.kind !== "date" && right.kind !== "date") {
+  if (!hasTimeKind(left) && !hasTimeKind(right)) {
     return compareGroups(left, right);
   }
-  throw new Error("Un nivel con días y grupos de otra dimensión.");
+  throw new Error("Un nivel con grupos de tiempo y de otra dimensión.");
 }
 
 /** Lo que se lee de un pedido, en una sola foto. */
@@ -366,6 +485,8 @@ function groupKeyOf(row: LevelGroupRow): string | number | null {
     case "tag":
       return row.tag?.id ?? null;
     case "date":
+    case "week":
+    case "month":
       return row.bucket;
   }
 }
@@ -386,7 +507,7 @@ type TreeNode = { readonly group: ReportGroup; readonly children: TreeNode[] };
  */
 function treeOf(
   levels: readonly (readonly LevelTotalRow[])[],
-  dates: DateContext,
+  time: TimeContext,
 ): ReportGroup[] {
   const roots: TreeNode[] = [];
   let parents = new Map<string, TreeNode>();
@@ -399,7 +520,10 @@ function treeOf(
           `Una fila del nivel ${depth + 1} trae ${row.groups.length} grupos.`,
         );
       }
-      const node: TreeNode = { group: groupOf(level, row.seconds, dates), children: [] };
+      const node: TreeNode = {
+        group: groupOf(level, row.groups, row.seconds, time),
+        children: [],
+      };
       if (depth === 0) {
         roots.push(node);
       } else {
@@ -468,13 +592,51 @@ async function readLevelsWithinLimit(
 type ReadPlan = {
   readonly levels: readonly ReportGroupBy[];
   readonly span: ReportSpan;
-  /** Los cortes de `span` si la fecha es un nivel; si no, `null`. */
-  readonly buckets: TimeBuckets | null;
+  /** Los cortes de `span` de cada dimensión de tiempo entre los niveles. */
+  readonly buckets: ReportBuckets;
   /** Los del pedido, sin cruzar con los catálogos. */
   readonly filters: ReportFilters;
 };
 
-/** La lectura de los `depth` primeros niveles, con los tramos solo si la fecha está entre ellos. */
+/**
+ * Los tramos de una dimensión de tiempo en la zona de quien mira (ADR 0021);
+ * la semana, con su primer día (RP-24), que `timeSettingsOf` toma del perfil.
+ */
+function timeBucketsOf(
+  groupBy: ReportTimeGroupBy,
+  range: ReportRange,
+  settings: TimeSettings,
+): TimeBuckets {
+  switch (groupBy) {
+    case "date":
+      return dayBuckets(range.first, range.last, settings.timezone);
+    case "week":
+      return weekBuckets(range.first, range.last, settings.weekStart, settings.timezone);
+    case "month":
+      return monthBuckets(range.first, range.last, settings.timezone);
+  }
+}
+
+/**
+ * Los tramos de cada dimensión de tiempo de `dimensions`, y solo de esas, con
+ * los que da `bucketOf`; sin ninguna, `{}`.
+ */
+function bucketsFor(
+  dimensions: readonly ReportGroupBy[],
+  bucketOf: (groupBy: ReportTimeGroupBy) => ReportBuckets[ReportTimeGroupBy],
+): ReportBuckets {
+  const buckets: {
+    -readonly [Dimension in ReportTimeGroupBy]?: ReportBuckets[Dimension];
+  } = {};
+  for (const groupBy of REPORT_TIME_GROUP_BYS) {
+    if (dimensions.includes(groupBy)) {
+      buckets[groupBy] = bucketOf(groupBy);
+    }
+  }
+  return buckets;
+}
+
+/** La lectura de los `depth` primeros niveles, con los tramos de sus dimensiones de tiempo. */
 function levelReadOf(
   plan: ReadPlan,
   depth: number,
@@ -486,7 +648,7 @@ function levelReadOf(
     span: plan.span,
     filter,
     dimensions,
-    buckets: dimensions.includes("date") ? plan.buckets : null,
+    buckets: bucketsFor(dimensions, (groupBy) => plan.buckets[groupBy]),
     limit,
   };
 }
@@ -576,10 +738,11 @@ export async function getReportState(
     from: startOfDayKey(range.first, timeZone),
     to: startOfDayKey(addDaysToKey(range.last, 1), timeZone),
   };
-  // Los cortes solo si la fecha es un nivel; el primero y el fin son los de `span`.
-  const buckets = levels.includes("date")
-    ? dayBuckets(range.first, range.last, timeZone)
-    : null;
+  // Los cortes de cada dimensión de tiempo entre los niveles, una vez; el
+  // primero y el fin de cada una son los de `span`.
+  const buckets = bucketsFor(levels, (groupBy) =>
+    timeBucketsOf(groupBy, range, settings),
+  );
   // ADR 0021, D-R3-3: una sola foto, con los catálogos de los filtros
   // (D-R4-5). Se abre después de `report.view`, de `scopeOf` y de las
   // invariantes.
@@ -588,7 +751,13 @@ export async function getReportState(
       readReport(tx, actor, scope, { levels, span, buckets, filters: request.filters }),
     { isolationLevel: "repeatable read", accessMode: "read only" },
   );
-  const dates = { buckets, todayKey, format: settings.formats.date };
+  const time: TimeContext = {
+    buckets,
+    last: range.last,
+    weekStart: settings.weekStart,
+    todayKey,
+    format: settings.formats.date,
+  };
   // Un período sin horas no se corta: muestra todos los niveles pedidos.
   const levelsShown = read.levels[0].length === 0 ? levels.length : read.levels.length;
   return {
@@ -607,7 +776,7 @@ export async function getReportState(
     timeZone,
     totalSeconds: read.totals.seconds,
     billableSeconds: read.totals.billableSeconds,
-    groups: treeOf(read.levels, dates),
+    groups: treeOf(read.levels, time),
     filters: read.filters,
     filterOptions: toFilterOptions(read.catalog, read.people),
   };

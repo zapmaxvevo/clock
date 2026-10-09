@@ -6,6 +6,7 @@
 import {
   NO_ENTRY_FILTER,
   reportRepository,
+  type ReportBuckets,
   type ReportEntryRead,
   type ReportLevelRead,
   type ReportSpan,
@@ -15,7 +16,10 @@ import type { ReportScope } from "./service";
 
 const span: ReportSpan = { from: new Date(0), to: new Date(0) };
 const entries: ReportEntryRead = { span, filter: NO_ENTRY_FILTER };
-const read: ReportLevelRead = { ...entries, dimensions: ["person"], buckets: null };
+const read: ReportLevelRead = { ...entries, dimensions: ["person"], buckets: {} };
+
+// @ts-expect-error: D-R10-4, los tramos son solo de las dimensiones de tiempo.
+export const personBuckets: ReportBuckets = { person: { buckets: [], end: new Date(0) } };
 
 // @ts-expect-error: un literal con workspaceId y people no es un ReportScope; solo scopeOf y narrowedTo lo construyen.
 export const forged: ReportScope = { workspaceId: "w", people: { kind: "everyone" } };

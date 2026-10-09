@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 
 import { projectLabels } from "@/modules/project/components/labels";
 import { paletteColor } from "@/modules/project/palette";
@@ -35,7 +35,40 @@ export function GroupHeading({ group }: { readonly group: ReportGroup }): ReactE
       return <NamedHeading named={group.tag} emptyLabel={reportLabels.noTag} />;
     case "date":
       return <time dateTime={group.dayKey}>{group.label}</time>;
+    case "week":
+      return <PartialHeading partial={group.partial}>{group.label}</PartialHeading>;
+    case "month":
+      return (
+        <PartialHeading partial={group.partial}>
+          {/* Los siete primeros caracteres, «2026-10», son un mes válido de HTML. */}
+          <time dateTime={group.monthStart.slice(0, 7)}>{group.label}</time>
+        </PartialHeading>
+      );
   }
+}
+
+/**
+ * D-R10-3: la semana o el mes entero y, si la fila no los cuenta enteros, los
+ * días que cuenta en gris. En línea y no en `flex`: a 320 px los dos rangos
+ * con año no entran lado a lado, y así bajan de renglón en lugar de ensanchar
+ * la tabla.
+ */
+function PartialHeading({
+  partial,
+  children,
+}: {
+  readonly partial: string | null;
+  readonly children: ReactNode;
+}) {
+  if (partial === null) {
+    return children;
+  }
+  return (
+    <span>
+      {children}{" "}
+      <span className="text-muted-foreground">{reportLabels.partialDays(partial)}</span>
+    </span>
+  );
 }
 
 /** RP-31: una persona inactiva lo dice en texto, no solo con el gris. */

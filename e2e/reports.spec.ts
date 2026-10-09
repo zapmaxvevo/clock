@@ -14,10 +14,21 @@ import {
   setDisplayName,
   setMembershipStatus,
   setRole,
+  setWeekStart,
   userIdOf,
   type MembershipStatus,
 } from "./database";
-import { addDays, dayKeyOf, todayIn, weekdayLabel, type CivilDay } from "./days";
+import {
+  addDays,
+  dayKeyOf,
+  dayRangeLabel,
+  monthLabel,
+  SUNDAY,
+  todayIn,
+  weekdayLabel,
+  weekStartOf,
+  type CivilDay,
+} from "./days";
 import {
   anyFilterButton,
   applyButton,
@@ -60,6 +71,7 @@ import {
   NO_TAG,
   NO_TASK,
   openReport,
+  periodHeading,
   periodLink,
   RANGE_MESSAGES,
   rangeButton,
@@ -100,19 +112,20 @@ import { expect, TEST_EMAIL_DOMAIN, test } from "./session";
 import { trackerBar, uniqueSuffix } from "./tracker-page";
 
 /**
- * Recorridos de R2a a R4 del núcleo de reportes: el resumido por persona, por
- * proyecto, por cliente, por tarea, por etiqueta y por fecha, los atajos del
- * período, los subniveles y los filtros (§8.2 de cada contrato), con la regla
- * de §8.3 de R2a. Cada recorrido tiene sus personas —la de la sesión y las que
- * siembra—, todas con un nombre editado que lleva el sufijo del test, y solo
- * afirma sobre sus filas o sobre proyectos con ese sufijo: la base acumula
- * personas y horas de todas las corridas, así que la lista de un filtro se
- * busca por el sufijo antes de afirmar sus opciones (D-R4-13). El total se
- * afirma solo con el alcance propio. El rol y el
- * estado los cambia la persona de la sesión sobre sí misma. Las entradas van en
- * la semana anterior a la de hoy y se siembran antes de abrir la pantalla; los
- * rótulos esperados se calculan con `days.ts`, no con el código que los
- * produce.
+ * Recorridos de R2a a R10a del núcleo de reportes: el resumido por persona,
+ * por proyecto, por cliente, por tarea, por etiqueta, por fecha, por semana y
+ * por mes, los atajos del período, los subniveles y los filtros (§8.2 de cada
+ * contrato), con la regla de §8.3 de R2a. Cada recorrido tiene sus personas
+ * —la de la sesión y las que siembra—, todas con un nombre editado que lleva
+ * el sufijo del test, y solo afirma sobre sus filas o sobre proyectos con ese
+ * sufijo: la base acumula personas y horas de todas las corridas, así que la
+ * lista de un filtro se busca por el sufijo antes de afirmar sus opciones
+ * (D-R4-13). El total se afirma solo con el alcance propio. El rol, el estado
+ * y el primer día de la semana los cambia la persona de la sesión sobre sí
+ * misma. Las entradas van en la semana anterior a la de hoy, salvo las de la
+ * semana y el mes, que van en un período fijo de 2025 (D-R10-14), y se
+ * siembran antes de abrir la pantalla; los rótulos esperados se calculan con
+ * `days.ts`, no con el código que los produce.
  */
 
 /** Hoy en la zona por omisión de la persona, que es la que corta los días. */
@@ -718,7 +731,7 @@ test("por tarea y por etiqueta, con «Sin …» y la suma de las etiquetas", asy
     { description: "d", day: thursday, start: "09:00", end: "09:20", tags: [tagTwo] },
   ]);
 
-  // D-R3-8: los seis enlaces de «Agrupar por», en orden.
+  // D-R3-8, D-R10-5: los enlaces de «Agrupar por», en orden.
   await openReport(page, lastWeek, "persona", day);
   await expect(groupByControl(page).getByRole("link")).toHaveText(
     Object.values(GROUP_LINK),
@@ -824,8 +837,8 @@ test("los subniveles se eligen en su lista y cada grupo se expande y se contrae"
   const { first, second, tag } = await seedSubgroupEntries(email, lastWeek);
 
   // D-R3-8: sin subniveles, «Segundo nivel: Ninguno» y sin tercero. Su lista
-  // empieza por «Ninguno», marcado, y sigue con las cinco que no son el
-  // primer nivel, en el orden de «Agrupar por».
+  // empieza por «Ninguno», marcado, y sigue con las que no son el primer
+  // nivel, en el orden de «Agrupar por» (D-R10-5).
   await openReport(page, lastWeek, "proyecto", day);
   await expectSubgroups(page, []);
   await subgroupButton(page, "Segundo nivel").click();
@@ -836,6 +849,8 @@ test("los subniveles se eligen en su lista y cada grupo se expande y se contrae"
     GROUP_LINK.tarea,
     GROUP_LINK.etiqueta,
     GROUP_LINK.fecha,
+    GROUP_LINK.semana,
+    GROUP_LINK.mes,
   ]);
   await expect(subgroupLink(page, "Segundo nivel", null)).toHaveAttribute(
     "aria-current",
@@ -1370,4 +1385,229 @@ test("un member con un enlace que filtra personas ve lo propio, y los otros filt
   await expectGroupNames(page, [first]);
   await expect(groupDuration(groupRow(page, first))).toHaveText("1:00");
   await expect(reportTotal(page, "Total")).toHaveText("1:00");
+});
+
+/** Un día de 2025, el año fijo de los recorridos 17 y 18 (D-R10-14). */
+function in2025(month: number, day: number): CivilDay {
+  return { year: 2025, month, day };
+}
+
+/**
+ * El período de los recorridos 17 y 18 (§8.2 de R10), del sábado 20/09 al
+ * viernes 10/10 de 2025: con el domingo como primer día, corta la primera
+ * semana y la última, y los dos meses.
+ */
+const WEEKS_RANGE: ReportRange = { first: in2025(9, 20), last: in2025(10, 10) };
+
+/**
+ * Las entradas de los recorridos 17 y 18, en P1 salvo la del miércoles 01/10,
+ * en P2. La persona de la sesión empieza la semana el domingo (RP-24), sobre
+ * su propia membresía (D-R10-14).
+ */
+async function seedWeekEntries(
+  email: string,
+): Promise<{ readonly first: string; readonly suffix: string }> {
+  const suffix = uniqueSuffix();
+  const first = `P1 ${suffix}`;
+  const second = `P2 ${suffix}`;
+  await setDisplayName(email, `Jime ${suffix}`);
+  await setWeekStart(email, SUNDAY);
+  await seedProject({ name: first });
+  await seedProject({ name: second });
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
+    {
+      description: "a",
+      day: in2025(9, 20),
+      start: "09:00",
+      end: "09:15",
+      project: first,
+    },
+    {
+      description: "b",
+      day: in2025(9, 30),
+      start: "09:00",
+      end: "10:00",
+      project: first,
+    },
+    {
+      description: "c",
+      day: in2025(10, 1),
+      start: "09:00",
+      end: "09:30",
+      project: second,
+    },
+    {
+      description: "d",
+      day: in2025(10, 10),
+      start: "09:00",
+      end: "09:20",
+      project: first,
+    },
+  ]);
+  return { first, suffix };
+}
+
+/**
+ * Los rótulos de los recorridos 17 y 18 con hoy en `today`, con la regla del
+ * año de `days.ts`: unos días, la semana del domingo que contiene a un día y
+ * el mes de un día.
+ */
+function weekEntryLabels(today: CivilDay): {
+  readonly days: (first: CivilDay, last?: CivilDay) => string;
+  readonly week: (civil: CivilDay) => string;
+  readonly month: (civil: CivilDay) => string;
+} {
+  const days = (first: CivilDay, last: CivilDay = first): string =>
+    dayRangeLabel(first, last, today);
+  return {
+    days,
+    week: (civil) => {
+      const start = weekStartOf(civil, SUNDAY);
+      return days(start, addDays(start, 6));
+    },
+    month: (civil) => monthLabel(civil, today),
+  };
+}
+
+test("por semana y por mes, con el primer día de la persona y los extremos cortados", async ({
+  page,
+  email,
+}) => {
+  const day = today();
+  const { days, week, month } = weekEntryLabels(day);
+  await enterApp(page);
+  await seedWeekEntries(email);
+  await openReport(page, WEEKS_RANGE, "persona", day);
+
+  // RP-11, D-R10-5: «Semana» conserva el rango. RP-24: las semanas empiezan
+  // el domingo, el primer día de la persona. D-R10-3: cada una se rotula
+  // entera, y la primera y la última, que el período corta, dicen los días
+  // que cuentan. En orden cronológico; la del 21/09 no tiene horas y no está.
+  // El alcance es propio, así que el total es el de las filas.
+  const firstWeek = periodHeading(week(in2025(9, 20)), days(in2025(9, 20)));
+  const middleWeek = periodHeading(week(in2025(9, 30)), null);
+  const lastWeek = periodHeading(
+    week(in2025(10, 10)),
+    days(in2025(10, 5), in2025(10, 10)),
+  );
+  const expectByWeek = async (): Promise<void> => {
+    await expect(page.getByText(SCOPE_SELF, { exact: true })).toBeVisible();
+    await expect(groupColumnHeader(page)).toHaveText(GROUP_LINK.semana);
+    await expectGroupNames(page, [firstWeek, middleWeek, lastWeek]);
+    await expect(groupDuration(groupRow(page, firstWeek))).toHaveText("0:15");
+    await expect(groupDuration(groupRow(page, middleWeek))).toHaveText("1:30");
+    await expect(groupDuration(groupRow(page, lastWeek))).toHaveText("0:20");
+    await expect(groupRow(page, week(in2025(9, 21)))).toHaveCount(0);
+    await expect(reportTotal(page, "Total")).toHaveText("2:05");
+  };
+  await groupByLink(page, "semana").click();
+  await expectReport(page, WEEKS_RANGE, "semana", day);
+  await expectByWeek();
+
+  // RP-32: al recargar, la misma vista.
+  await page.reload();
+  await expectReport(page, WEEKS_RANGE, "semana", day);
+  await expectByWeek();
+
+  // «Mes»: los dos, cortados por el período, en orden cronológico.
+  const september = periodHeading(
+    month(in2025(9, 1)),
+    days(in2025(9, 20), in2025(9, 30)),
+  );
+  const october = periodHeading(
+    month(in2025(10, 1)),
+    days(in2025(10, 1), in2025(10, 10)),
+  );
+  await groupByLink(page, "mes").click();
+  await expectReport(page, WEEKS_RANGE, "mes", day);
+  await expect(groupColumnHeader(page)).toHaveText(GROUP_LINK.mes);
+  await expectGroupNames(page, [september, october]);
+  await expect(groupDuration(groupRow(page, september))).toHaveText("1:15");
+  await expect(groupDuration(groupRow(page, october))).toHaveText("0:50");
+  await expect(reportTotal(page, "Total")).toHaveText("2:05");
+});
+
+test("Mes → Semana parte la semana del fin de mes y un filtro conserva los niveles", async ({
+  page,
+  email,
+}) => {
+  const day = today();
+  const { days, week, month } = weekEntryLabels(day);
+  await enterApp(page);
+  const { first, suffix } = await seedWeekEntries(email);
+  const firstId = await projectIdOf(first);
+  await openReport(page, WEEKS_RANGE, "mes", day, ["semana"]);
+  await expectSubgroups(page, ["semana"]);
+
+  // RP-12, D-R3-9: los dos meses contraídos, cada uno con su botón.
+  const [septemberLabel, octoberLabel] = [month(in2025(9, 1)), month(in2025(10, 1))];
+  const september = periodHeading(septemberLabel, days(in2025(9, 20), in2025(9, 30)));
+  const october = periodHeading(octoberLabel, days(in2025(10, 1), in2025(10, 10)));
+  await expect(groupColumnHeader(page)).toHaveText(
+    `${GROUP_LINK.mes} / ${GROUP_LINK.semana}`,
+  );
+  await expectGroupNames(page, [september, october]);
+  await expect(expandButton(page, septemberLabel)).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  await expect(expandButton(page, octoberLabel)).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  await expect(groupDuration(groupRow(page, september))).toHaveText("1:15");
+  await expect(groupDuration(groupRow(page, october))).toHaveText("0:50");
+  await expect(reportTotal(page, "Total")).toHaveText("2:05");
+
+  // D-R10-6: la semana del 28/09 cruza el fin de mes, así que está debajo de
+  // los dos. D-R10-3: cada vez dice los días que cuenta, los del período y
+  // los del mes de arriba, aunque el período la tenga entera.
+  const split = week(in2025(9, 30));
+  const firstWeek = periodHeading(week(in2025(9, 20)), days(in2025(9, 20)));
+  const splitInSeptember = periodHeading(split, days(in2025(9, 28), in2025(9, 30)));
+  const splitInOctober = periodHeading(split, days(in2025(10, 1), in2025(10, 4)));
+  const lastWeek = periodHeading(
+    week(in2025(10, 10)),
+    days(in2025(10, 5), in2025(10, 10)),
+  );
+  await expandButton(page, septemberLabel).click();
+  await expectGroupNames(page, [september, firstWeek, splitInSeptember, october]);
+  await expect(groupDuration(groupRow(page, firstWeek))).toHaveText("0:15");
+  await expect(groupDuration(groupRow(page, splitInSeptember))).toHaveText("1:00");
+  await expandButton(page, octoberLabel).click();
+  await expectGroupNames(page, [
+    september,
+    firstWeek,
+    splitInSeptember,
+    october,
+    splitInOctober,
+    lastWeek,
+  ]);
+  await expect(groupDuration(groupRow(page, splitInOctober))).toHaveText("0:30");
+  await expect(groupDuration(groupRow(page, lastWeek))).toHaveText("0:20");
+
+  // RP-25, D-R4-10: el filtro conserva el mes y la semana. Sin la entrada del
+  // 01/10, que es de P2, octubre solo tiene la última semana.
+  const chosen = { projects: [firstId] };
+  await openFilter(page, "Proyectos", "todos");
+  await filterSearch(page, "Proyectos").fill(suffix);
+  await filterOption(page, first).check();
+  await applyFilter(page, "Proyectos", first);
+  await expectReport(page, WEEKS_RANGE, "mes", day, ["semana"], chosen);
+  await expectSubgroups(page, ["semana"]);
+  await expectGroupNames(page, [september, october]);
+  await expect(groupDuration(groupRow(page, september))).toHaveText("1:15");
+  await expect(groupDuration(groupRow(page, october))).toHaveText("0:20");
+  await expandButton(page, octoberLabel).click();
+  await expectGroupNames(page, [september, october, lastWeek]);
+  await expect(reportTotal(page, "Total")).toHaveText("1:35");
+
+  // D-R3-8: «Fecha» en el segundo nivel conserva el filtro.
+  await pickSubgroup(page, "Segundo nivel", "fecha", ["fecha"]);
+  await expectReport(page, WEEKS_RANGE, "mes", day, ["fecha"], chosen);
+  await expectGroupNames(page, [september, october]);
+  await expandButton(page, octoberLabel).click();
+  const friday = weekdayLabel(in2025(10, 10), day);
+  await expectGroupNames(page, [september, october, friday]);
+  await expect(groupDuration(groupRow(page, friday))).toHaveText("0:20");
 });

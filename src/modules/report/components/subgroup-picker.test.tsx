@@ -46,7 +46,7 @@ function list(markup: string): {
 }
 
 describe("SubgroupPanel (D-R3-8, §5.3)", () => {
-  it("sin segundo nivel: «Ninguno» primero y elegido, y las cinco que no son el primero", () => {
+  it("sin segundo nivel: «Ninguno» primero y elegido, y las siete que no son el primero", () => {
     expect(list(render({ groupBy: "project", subgroups: [] }, 1))).toEqual({
       name: "Segundo nivel",
       links: [
@@ -76,6 +76,16 @@ describe("SubgroupPanel (D-R3-8, §5.3)", () => {
           href: `${base}&agrupar=proyecto&subagrupar=fecha`,
           current: null,
         },
+        {
+          label: "Semana",
+          href: `${base}&agrupar=proyecto&subagrupar=semana`,
+          current: null,
+        },
+        {
+          label: "Mes",
+          href: `${base}&agrupar=proyecto&subagrupar=mes`,
+          current: null,
+        },
       ],
     });
   });
@@ -92,6 +102,8 @@ describe("SubgroupPanel (D-R3-8, §5.3)", () => {
       Tarea: `${base}&agrupar=proyecto&subagrupar=tarea%2Cetiqueta`,
       Etiqueta: `${base}&agrupar=proyecto&subagrupar=etiqueta%2Cfecha`,
       Fecha: `${base}&agrupar=proyecto&subagrupar=fecha%2Cetiqueta`,
+      Semana: `${base}&agrupar=proyecto&subagrupar=semana%2Cetiqueta`,
+      Mes: `${base}&agrupar=proyecto&subagrupar=mes%2Cetiqueta`,
     });
   });
 
@@ -124,6 +136,16 @@ describe("SubgroupPanel (D-R3-8, §5.3)", () => {
           href: `${base}&agrupar=proyecto&subagrupar=fecha%2Cetiqueta`,
           current: null,
         },
+        {
+          label: "Semana",
+          href: `${base}&agrupar=proyecto&subagrupar=fecha%2Csemana`,
+          current: null,
+        },
+        {
+          label: "Mes",
+          href: `${base}&agrupar=proyecto&subagrupar=fecha%2Cmes`,
+          current: null,
+        },
       ],
     });
   });
@@ -139,6 +161,20 @@ describe("SubgroupPanel (D-R3-8, §5.3)", () => {
         current: "true",
       },
     ]);
+  });
+
+  it("Mes → Semana: el tercer nivel ofrece la fecha, con los dos de arriba en la URL (D-R10-6)", () => {
+    const { links } = list(render({ groupBy: "month", subgroups: ["week"] }, 2));
+    expect(links.map(({ label }) => label)).toEqual([
+      "Ninguno",
+      "Persona",
+      "Proyecto",
+      "Cliente",
+      "Tarea",
+      "Etiqueta",
+      "Fecha",
+    ]);
+    expect(links.at(-1)?.href).toBe(`${base}&agrupar=mes&subagrupar=semana%2Cfecha`);
   });
 
   it("cada enlace conserva los filtros (D-R4-10)", () => {
@@ -161,6 +197,8 @@ describe("SubgroupPanel (D-R3-8, §5.3)", () => {
       `${base}&agrupar=proyecto&subagrupar=fecha%2Ccliente${kept}`,
       `${base}&agrupar=proyecto&subagrupar=fecha%2Ctarea${kept}`,
       `${base}&agrupar=proyecto&subagrupar=fecha%2Cetiqueta${kept}`,
+      `${base}&agrupar=proyecto&subagrupar=fecha%2Csemana${kept}`,
+      `${base}&agrupar=proyecto&subagrupar=fecha%2Cmes${kept}`,
     ]);
   });
 });

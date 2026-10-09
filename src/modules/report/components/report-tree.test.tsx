@@ -120,4 +120,46 @@ describe("ReportTreeRows (D-R3-9, §5.4)", () => {
     expect(tag).not.toContain("<button");
     expect(tag).not.toContain("aria-hidden");
   });
+
+  it("Mes → Semana abierto: la semana partida, debajo de cada mes con sus días (D-R10-3)", () => {
+    const partOf = (partial: string, seconds: number) =>
+      ({
+        kind: "week",
+        weekStart: "2026-09-28",
+        label: "28/09 – 04/10",
+        partial,
+        seconds,
+      }) as const;
+    const byMonth: ReportGroup[] = [
+      {
+        kind: "month",
+        monthStart: "2026-09-01",
+        label: "septiembre",
+        partial: "21/09 – 30/09",
+        seconds: 6_300,
+        children: [partOf("28/09 – 30/09", 6_300)],
+      },
+      {
+        kind: "month",
+        monthStart: "2026-10-01",
+        label: "octubre",
+        partial: "01/10 – 11/10",
+        seconds: 1_800,
+        children: [partOf("01/10 – 04/10", 1_800)],
+      },
+    ];
+    const months = new Set(visibleRows(byMonth, new Set()).map(({ key }) => key));
+    const headings = rowHeadings(render(visibleRows(byMonth, months)));
+    expect(headings.map(textOf)).toEqual([
+      "septiembre solo 21/09 – 30/09",
+      "28/09 – 04/10 solo 28/09 – 30/09",
+      "octubre solo 01/10 – 11/10",
+      "28/09 – 04/10 solo 01/10 – 04/10",
+    ]);
+    // La semana es una hoja: el gris va al lado del rótulo, sin botón.
+    expect(headings[1]).not.toContain("<button");
+    expect(headings[1]).toContain(
+      '<span class="text-muted-foreground">solo 28/09 – 30/09</span>',
+    );
+  });
 });

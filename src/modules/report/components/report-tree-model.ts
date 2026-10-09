@@ -12,7 +12,10 @@ export type VisibleRow = {
   readonly expanded: boolean;
 };
 
-/** Una fila por persona, proyecto, cliente, tarea, etiqueta o día; cada «Sin …» es una sola. */
+/**
+ * Una fila por persona, proyecto, cliente, tarea, etiqueta, día, semana o mes;
+ * cada «Sin …» es una sola. La semana y el mes, por su primer día entero.
+ */
 export function groupKey(group: ReportGroup): string {
   switch (group.kind) {
     case "person":
@@ -27,6 +30,10 @@ export function groupKey(group: ReportGroup): string {
       return group.tag === null ? "sin-etiqueta" : group.tag.id;
     case "date":
       return group.dayKey;
+    case "week":
+      return group.weekStart;
+    case "month":
+      return group.monthStart;
   }
 }
 
