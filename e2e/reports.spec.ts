@@ -858,7 +858,7 @@ test("los controles conservan los subniveles, los intercambian y los quitan", as
     weekdayLabel(addDays(lastWeek.first, days), day),
   );
   await enterApp(page);
-  const { first } = await seedSubgroupEntries(email, lastWeek);
+  const { first, tag } = await seedSubgroupEntries(email, lastWeek);
   await openReport(page, lastWeek, "proyecto", day, ["fecha"]);
   await expectSubgroups(page, ["fecha"]);
 
@@ -899,6 +899,13 @@ test("los controles conservan los subniveles, los intercambian y los quitan", as
   await expectSubgroups(page, ["proyecto", "etiqueta"]);
   await expectGroupNames(page, [tuesday, wednesday, thursday]);
   await expect(expandButton(page, tuesday)).toHaveAttribute("aria-expanded", "false");
+
+  // D-R3-7: P1 está debajo del martes y del jueves, y cada uno cuelga por el
+  // camino entero: debajo del martes, solo la etiqueta del martes.
+  await expandButton(page, tuesday).click();
+  await expandButton(page, first).click();
+  await expectGroupNames(page, [tuesday, first, tag, wednesday, thursday]);
+  await expect(groupDuration(groupRow(page, tag))).toHaveText("1:00");
 
   // «Ninguno» en el segundo nivel quita los dos: la URL vuelve a los tres
   // parámetros, no hay «Tercer nivel» y las filas no tienen botón.
