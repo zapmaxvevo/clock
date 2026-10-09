@@ -197,7 +197,9 @@ Riesgos:
 
 Cubre RP-11 con cliente y fecha en un nivel, RP-20 con Hoy, Ayer, Semana
 pasada, Últimas dos semanas, Este mes, Mes pasado, Este año y Año pasado, RP-24
-para la agrupación por fecha y RP-28 («Sin cliente»). Sin cambios de esquema ni
+para «Semana anterior» y «Últimas dos semanas» (la agrupación por fecha es por
+día y no depende del primer día de la semana: D-R2b-6 del contrato) y RP-28
+(«Sin cliente»). Sin cambios de esquema ni
 de permisos.
 
 Trae el mecanismo del ADR 0021: los cortes por tramo y la aritmética de meses
