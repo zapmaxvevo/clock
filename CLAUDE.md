@@ -22,10 +22,13 @@ precargan en todos los subagentes: no se repiten acá.
 | `npm test`                 | Vitest, solo unidad                  |
 | `npm run test:integration` | Vitest contra un Postgres real       |
 | `npm run test:all`         | Unidad e integración                 |
-| `npm run test:e2e`         | Playwright contra `E2E_BASE_URL`     |
+| `npm run test:e2e`         | Playwright contra un servidor local  |
 | `npm run db:generate`      | Nueva migración a partir del esquema |
 | `npm run db:migrate`       | Aplica migraciones pendientes        |
 | `npm run auth:schema`      | Regenera las tablas de Better Auth   |
+
+La base local es el Postgres de `compose.yaml` (`docker compose up -d`), en
+`postgresql://clock:clock@localhost:5432/clock`.
 
 Antes de dar por terminado un cambio: `npm run lint && npm run typecheck && npm run test:all`.
 
