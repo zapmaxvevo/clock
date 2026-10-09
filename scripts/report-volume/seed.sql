@@ -1,4 +1,4 @@
--- Volumen sintético del reporte (contrato de R2a, §6.1, de R3, §6.1, y de R4, §6.1). Determinista: `setseed`
+-- Volumen sintético del reporte (contrato de R2a, §6.1, de R3, §6.1, de R4, §6.1, y de R10, §6.1). Determinista: `setseed`
 -- fija `random()` y los ids salen de contadores. Se corre una vez sobre una base
 -- vacía migrada hasta la 0014; las fechas son relativas al día en que corre.
 --
@@ -11,6 +11,14 @@
 -- las 08:00 y las 19:00 de Buenos Aires, y un timer abierto para cinco
 -- personas. Doce etiquetas, dos archivadas, en el 60 % de las entradas
 -- cerradas.
+--
+-- Las cerradas llevan descripción, calculada del número de fila sin
+-- `random()`, así las entradas, sus instantes y las etiquetas no cambian: 20 %
+-- sin descripción, 1 % de unos 2900 caracteres y únicas, 19 % cortas y únicas,
+-- y 60 % repartidas entre 200 textos que se repiten. En 366 días son unos
+-- 12 700 textos distintos, que no entran en el primer nivel por descripción
+-- (3000 filas); en un mes, unos 1250, que entran. Los timers abiertos siguen
+-- sin descripción.
 
 begin;
 
@@ -141,11 +149,17 @@ timed as (
       at time zone 'America/Argentina/Buenos_Aires' as started_at
   from shaped
 )
-insert into time_entry (id, workspace_id, user_id, started_at, ended_at, project_id, task_id, billable)
+insert into time_entry (id, workspace_id, user_id, description, started_at, ended_at, project_id, task_id, billable)
 select
   format('00000000-0000-4000-9000-%s', lpad(n::text, 12, '0'))::uuid,
   '00000000-0000-4000-8000-000000000001',
   format('volume-user-%s', lpad(person::text, 2, '0')),
+  case
+    when n % 5 = 0 then ''
+    when n % 100 = 1 then 'Ticket largo ' || n || ' ' || repeat('detalle ', 360)
+    when n % 5 = 1 then 'Ticket ' || n
+    else 'Tarea recurrente ' || ((n * 7919) % 200 + 1)
+  end,
   started_at,
   started_at + make_interval(mins => minutes),
   case when project is not null then format('00000000-0000-4000-8002-%s', lpad(project::text, 12, '0'))::uuid end,
