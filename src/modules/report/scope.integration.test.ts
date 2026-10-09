@@ -959,6 +959,8 @@ describe("el alcance en cada nivel (criterio 21 de R3)", () => {
     const linkedTrees = [
       ["persona", "proyecto,fecha", ["person", "project", "date"]],
       ["etiqueta", "tarea,persona", ["tag", "task", "person"]],
+      // La URL armada a mano del paso 11 de §7.
+      ["etiqueta", "persona,fecha", ["tag", "person", "date"]],
     ] as const;
 
     /** Lo que la página recibe de un enlace de un admin, con claves armadas a mano. */
