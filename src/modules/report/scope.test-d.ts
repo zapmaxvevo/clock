@@ -3,37 +3,29 @@
  * `npm run typecheck`; vitest no lo corre. Cada directiva falla si el
  * compilador deja de dar el error.
  */
-import type { TimeBuckets } from "@/server/time";
-
-import { reportRepository, type ReportSpan } from "./repository";
+import { reportRepository, type ReportLevelRead, type ReportSpan } from "./repository";
 import type * as service from "./service";
 import type { ReportScope } from "./service";
 
 const span: ReportSpan = { from: new Date(0), to: new Date(0) };
-const buckets: TimeBuckets = { buckets: [], end: new Date(0) };
+const read: ReportLevelRead = { span, dimensions: ["person"], buckets: null };
 
 // @ts-expect-error: un literal con workspaceId y people no es un ReportScope; solo scopeOf lo construye.
 export const forged: ReportScope = { workspaceId: "w", people: { kind: "everyone" } };
 
 export async function readsWithoutScope() {
-  // @ts-expect-error: totalsByPerson exige el alcance como primer parámetro.
-  await reportRepository.totalsByPerson(span);
-  // @ts-expect-error: totalsByProject exige el alcance como primer parámetro.
-  await reportRepository.totalsByProject(span);
-  // @ts-expect-error: el alcance de totalsByPerson no admite undefined.
-  await reportRepository.totalsByPerson(undefined, span);
-  // @ts-expect-error: el alcance de totalsByProject no admite undefined.
-  await reportRepository.totalsByProject(undefined, span);
-  // @ts-expect-error: el alcance de totalsByPerson no admite null.
-  await reportRepository.totalsByPerson(null, span);
-  // @ts-expect-error: el alcance de totalsByProject no admite null.
-  await reportRepository.totalsByProject(null, span);
-  // @ts-expect-error: totalsByBucket exige el alcance como primer parámetro.
-  await reportRepository.totalsByBucket(buckets);
-  // @ts-expect-error: el alcance de totalsByBucket no admite undefined.
-  await reportRepository.totalsByBucket(undefined, buckets);
-  // @ts-expect-error: el alcance de totalsByBucket no admite null.
-  await reportRepository.totalsByBucket(null, buckets);
+  // @ts-expect-error: totalsByLevels exige el alcance como primer parámetro.
+  await reportRepository.totalsByLevels(read);
+  // @ts-expect-error: el alcance de totalsByLevels no admite undefined.
+  await reportRepository.totalsByLevels(undefined, read);
+  // @ts-expect-error: el alcance de totalsByLevels no admite null.
+  await reportRepository.totalsByLevels(null, read);
+  // @ts-expect-error: entryTotals exige el alcance como primer parámetro.
+  await reportRepository.entryTotals(span);
+  // @ts-expect-error: el alcance de entryTotals no admite undefined.
+  await reportRepository.entryTotals(undefined, span);
+  // @ts-expect-error: el alcance de entryTotals no admite null.
+  await reportRepository.entryTotals(null, span);
 }
 
 // @ts-expect-error: la clase del alcance no se exporta.

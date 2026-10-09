@@ -1,4 +1,5 @@
 import { compareNames } from "@/lib/text";
+import { db } from "@/server/db";
 import { can, type Actor, type WorkspaceResource } from "@/server/permissions";
 import {
   addDaysToKey,
@@ -16,21 +17,12 @@ import { displayNameOf } from "@/modules/profile/service";
 import { paletteKeyOf } from "@/modules/project/palette";
 
 import { reportPeriodOf } from "./period";
-import {
-  reportRepository,
-  type BucketTotalRow,
-  type PersonTotalRow,
-  type ProjectTotalRow,
-  type ReportSpan,
-} from "./repository";
+import { reportRepository, type LevelGroupRow, type LevelTotalRow } from "./repository";
 import {
   REPORT_MAX_DAYS,
-  type ReportClientGroup,
   type ReportDateGroup,
   type ReportGroup,
   type ReportGroupBy,
-  type ReportPersonGroup,
-  type ReportProjectGroup,
   type ReportRange,
   type ReportState,
 } from "./schema";
@@ -81,76 +73,67 @@ function scopeOf(actor: Actor): Scope {
   return new Scope(actor.workspaceId, people);
 }
 
-function personGroupOf(row: PersonTotalRow): ReportPersonGroup {
-  return {
-    kind: "person",
-    userId: row.userId,
-    name: displayNameOf({ displayName: row.displayName }, row.accountName),
-    inactive: row.status !== "active",
-    seconds: row.seconds,
-  };
-}
-
-function projectGroupOf(row: ProjectTotalRow): ReportProjectGroup {
-  const stored = row.project;
+/** El proyecto con el color estrechado a la paleta, o `null`. */
+function projectOf(
+  stored: { readonly id: string; readonly name: string; readonly color: string } | null,
+) {
   if (stored === null) {
-    return { kind: "project", project: null, client: null, seconds: row.seconds };
+    return null;
   }
   return {
-    kind: "project",
-    project: {
-      id: stored.id,
-      name: stored.name,
-      color: paletteKeyOf(stored.color, stored.id),
-    },
-    client: row.client,
-    seconds: row.seconds,
+    id: stored.id,
+    name: stored.name,
+    color: paletteKeyOf(stored.color, stored.id),
   };
 }
 
-/** Las sumas de un cliente: las de sus proyectos; `client` nulo es «Sin cliente». */
-type ClientTotalRow = {
-  readonly client: ProjectTotalRow["client"];
-  readonly seconds: number;
-  readonly billableSeconds: number;
+/** Cómo se rotula un día: los tramos de la lectura, hoy y el formato. */
+type DateContext = {
+  readonly buckets: TimeBuckets | null;
+  readonly todayKey: string;
+  readonly format: DateFormat;
 };
 
 /**
- * D-R2b-5: las filas por proyecto sumadas por cliente. «Sin cliente» junta la
- * fila «Sin proyecto» y las de los proyectos sin cliente (RP-28).
+ * El grupo de un nivel, de lo que la fila dice de él. Un día se rotula con su
+ * fecha y sin «Hoy» ni «Ayer» (D-R2b-6).
  */
-function clientRowsOf(rows: readonly ProjectTotalRow[]): ClientTotalRow[] {
-  const byClient = new Map<string | null, ClientTotalRow>();
-  for (const row of rows) {
-    const key = row.client?.id ?? null;
-    const folded = byClient.get(key);
-    byClient.set(key, {
-      client: row.client,
-      seconds: (folded?.seconds ?? 0) + row.seconds,
-      billableSeconds: (folded?.billableSeconds ?? 0) + row.billableSeconds,
-    });
+function groupOf(row: LevelGroupRow, seconds: number, dates: DateContext): ReportGroup {
+  switch (row.kind) {
+    case "person":
+      return {
+        kind: "person",
+        userId: row.userId,
+        name: displayNameOf({ displayName: row.displayName }, row.accountName),
+        inactive: row.status !== "active",
+        seconds,
+      };
+    case "project":
+      return {
+        kind: "project",
+        project: projectOf(row.project),
+        client: row.client,
+        seconds,
+      };
+    case "client":
+      return { kind: "client", client: row.client, seconds };
+    case "task":
+      return { kind: "task", task: row.task, project: projectOf(row.project), seconds };
+    case "tag":
+      return { kind: "tag", tag: row.tag, seconds };
+    case "date": {
+      if (dates.buckets === null) {
+        throw new Error("Una fila por fecha sin los tramos de la lectura.");
+      }
+      const day = dates.buckets.buckets[row.bucket].firstDay;
+      return {
+        kind: "date",
+        dayKey: day,
+        label: weekdayLabel(day, dates.todayKey, dates.format),
+        seconds,
+      };
+    }
   }
-  return [...byClient.values()];
-}
-
-function clientGroupOf(row: ClientTotalRow): ReportClientGroup {
-  return { kind: "client", client: row.client, seconds: row.seconds };
-}
-
-/** La fila de un día con horas, rotulada con su fecha y sin «Hoy» ni «Ayer» (D-R2b-6). */
-function dateGroupOf(
-  row: BucketTotalRow,
-  buckets: TimeBuckets,
-  todayKey: string,
-  format: DateFormat,
-): ReportDateGroup {
-  const day = buckets.buckets[row.bucket].firstDay;
-  return {
-    kind: "date",
-    dayKey: day,
-    label: weekdayLabel(day, todayKey, format),
-    seconds: row.seconds,
-  };
 }
 
 /** Los grupos que se ordenan por duración y nombre: todos menos la fecha. */
@@ -195,82 +178,31 @@ function compareDays(left: ReportDateGroup, right: ReportDateGroup): number {
   return compareDayKeys(left.dayKey, right.dayKey);
 }
 
-/** Los grupos ordenados y los dos totales de la cabecera. */
-type ReportTotals = {
-  readonly groups: ReportGroup[];
-  readonly totalSeconds: number;
-  readonly billableSeconds: number;
-};
-
-/**
- * D-R2a-7: una sentencia. Con un solo nivel cada entrada está en un grupo, así
- * que la suma de los grupos es el total.
- */
-function totalsOf<
-  Row extends { readonly seconds: number; readonly billableSeconds: number },
-  Group extends ReportGroup,
->(
-  rows: readonly Row[],
-  groupOf: (row: Row) => Group,
-  compare: (left: Group, right: Group) => number,
-): ReportTotals {
-  return {
-    groups: rows.map(groupOf).sort(compare),
-    totalSeconds: rows.reduce((sum, row) => sum + row.seconds, 0),
-    billableSeconds: rows.reduce((sum, row) => sum + row.billableSeconds, 0),
-  };
-}
-
-/** Lo que una lectura necesita del pedido, ya dentro del tope. */
-type ReportRead = {
-  readonly scope: Scope;
-  readonly range: ReportRange;
-  /** D-R2a-5: un solo intervalo cortado en la zona de quien mira. */
-  readonly span: ReportSpan;
-  readonly timeZone: string;
-  readonly todayKey: string;
-  readonly dateFormat: DateFormat;
-};
-
-async function readGroups(
-  read: ReportRead,
-  groupBy: ReportGroupBy,
-): Promise<ReportTotals> {
-  const { scope, span } = read;
-  switch (groupBy) {
-    case "person":
-      return totalsOf(
-        await reportRepository.totalsByPerson(scope, span),
-        personGroupOf,
-        compareGroups,
-      );
-    case "project":
-      return totalsOf(
-        await reportRepository.totalsByProject(scope, span),
-        projectGroupOf,
-        compareGroups,
-      );
-    case "client":
-      return totalsOf(
-        clientRowsOf(await reportRepository.totalsByProject(scope, span)),
-        clientGroupOf,
-        compareGroups,
-      );
-    case "task":
-    case "tag":
-      // Hasta que llegue la lectura por niveles, ningún pedido devuelve otra cosa (§7 de R3).
-      throw new Error(`La agrupación ${groupBy} llega con la lectura por niveles.`);
-    case "date": {
-      // Los cortes solo para la fecha; el primero y el fin son los de `span`.
-      const buckets = dayBuckets(read.range.first, read.range.last, read.timeZone);
-      return totalsOf(
-        await reportRepository.totalsByBucket(scope, buckets),
-        (row) => dateGroupOf(row, buckets, read.todayKey, read.dateFormat),
-        compareDays,
-      );
-    }
+/** El único nivel de una fila de un pedido de un nivel. */
+function levelOf(row: LevelTotalRow): LevelGroupRow {
+  const [level] = row.groups;
+  if (level === undefined || row.groups.length !== 1) {
+    throw new Error(`Se esperaba un nivel y la fila trae ${row.groups.length}.`);
   }
+  return level;
 }
+
+/** Dos grupos del mismo nivel: los días por fecha, el resto por duración y nombre. */
+function compareSiblings(left: ReportGroup, right: ReportGroup): number {
+  if (left.kind === "date" && right.kind === "date") {
+    return compareDays(left, right);
+  }
+  if (left.kind !== "date" && right.kind !== "date") {
+    return compareGroups(left, right);
+  }
+  throw new Error("Un nivel con días y grupos de otra dimensión.");
+}
+
+/** Lo que se lee de un pedido, en una sola foto. */
+type ReportRead = {
+  readonly rows: readonly LevelTotalRow[];
+  readonly totals: { readonly seconds: number; readonly billableSeconds: number };
+};
 
 /**
  * RP-10: el resumido de quien mira, armado en el servidor con su zona y su
@@ -304,10 +236,35 @@ export async function getReportState(
     from: startOfDayKey(range.first, timeZone),
     to: startOfDayKey(addDaysToKey(range.last, 1), timeZone),
   };
-  const totals = await readGroups(
-    { scope, range, span, timeZone, todayKey, dateFormat: settings.formats.date },
-    groupBy,
+  // Los cortes solo para la fecha; el primero y el fin son los de `span`.
+  const buckets =
+    groupBy === "date" ? dayBuckets(range.first, range.last, timeZone) : null;
+  // ADR 0021, D-R3-3: una sola foto, aunque sea una sola lectura, para que el
+  // service tenga un camino. Se abre después de `report.view` y de `scopeOf`.
+  const read: ReportRead = await db.transaction(
+    async (tx) => {
+      const rows = await reportRepository.totalsByLevels(
+        scope,
+        { span, dimensions: [groupBy], buckets },
+        tx,
+      );
+      // El total no pasa por la unión con las etiquetas; con un nivel sin
+      // etiqueta, cada entrada está en un grupo y la suma es el total (D-R2a-7).
+      const totals =
+        groupBy === "tag"
+          ? await reportRepository.entryTotals(scope, span, tx)
+          : {
+              seconds: rows.reduce((sum, row) => sum + row.seconds, 0),
+              billableSeconds: rows.reduce((sum, row) => sum + row.billableSeconds, 0),
+            };
+      return { rows, totals };
+    },
+    { isolationLevel: "repeatable read", accessMode: "read only" },
   );
+  const dates = { buckets, todayKey, format: settings.formats.date };
+  const groups = read.rows
+    .map((row) => groupOf(levelOf(row), row.seconds, dates))
+    .sort(compareSiblings);
   return {
     kind: "ready",
     todayKey,
@@ -320,8 +277,8 @@ export async function getReportState(
     groupBy,
     scope: scope.people.kind,
     timeZone,
-    totalSeconds: totals.totalSeconds,
-    billableSeconds: totals.billableSeconds,
-    groups: totals.groups,
+    totalSeconds: read.totals.seconds,
+    billableSeconds: read.totals.billableSeconds,
+    groups,
   };
 }

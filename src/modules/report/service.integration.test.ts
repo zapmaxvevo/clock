@@ -2,7 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { db } from "@/server/db";
-import { timeEntry, user } from "@/server/db/schema";
+import { tag, task, timeEntry, timeEntryTag, user } from "@/server/db/schema";
 import type { Actor, MembershipStatus, Role } from "@/server/permissions";
 import { type TimeSettings } from "@/server/time";
 import {
@@ -11,6 +11,7 @@ import {
   seedMember,
   seedPreferences,
   seedProject,
+  seedTag,
   seedTask,
   seedTimeEntry,
   seedWorkspace,
@@ -80,6 +81,7 @@ function seedClosed(
     readonly projectId?: string | null;
     readonly taskId?: string | null;
     readonly billable?: boolean;
+    readonly tagIds?: readonly string[];
   } = {},
 ) {
   const start = new Date(startedAt);
@@ -445,8 +447,7 @@ describe("la agrupación y el orden (D-R2a-3, D-R2a-8, RP-12, RP-18)", () => {
     await seedClosed(other, "2026-09-29T14:00:00Z", 600);
     await seedClosed(other, "2026-09-30T14:00:00Z", 30, { billable: true });
 
-    // Las cuatro de R2b hasta que llegue la lectura por niveles (paso 3 de R3).
-    for (const groupBy of ["person", "project", "client", "date"] as const) {
+    for (const groupBy of REPORT_GROUP_BYS) {
       const state = await readyState(owner, { range: lastWeek, groupBy });
       expect([
         groupBy,
@@ -834,15 +835,595 @@ describe("el período (D-R2a-4, RP-20)", () => {
   });
 });
 
+/** Las filas por tarea como `[tarea, proyecto, segundos]`, en orden; «Sin tarea» como `null`. */
+function taskRows(state: ReportReadyState) {
+  return state.groups.map((group) =>
+    group.kind === "task"
+      ? [group.task?.name ?? null, group.project?.name ?? null, group.seconds]
+      : ["?", "?", group.seconds],
+  );
+}
+
+/** Las filas por etiqueta como `[nombre, segundos]`, en orden; «Sin etiqueta» como `null`. */
+function tagRows(state: ReportReadyState) {
+  return state.groups.map((group) =>
+    group.kind === "tag"
+      ? [group.tag?.name ?? null, group.seconds]
+      : ["?", group.seconds],
+  );
+}
+
+/** El total y el facturable de la cabecera. */
+function totalsOf(state: ReportReadyState) {
+  return [state.totalSeconds, state.billableSeconds];
+}
+
+describe("por tarea (D-R3-4, RP-11, RP-28, RP-29; criterio 3 de R3)", () => {
+  let p: { readonly id: string };
+  let q: { readonly id: string };
+  let t1Id: string;
+  let t2Id: string;
+  let t3Id: string;
+  let analysisId: string;
+
+  beforeEach(async () => {
+    const c = await seedClient({ workspaceId, name: "C" });
+    p = await seedProject({ workspaceId, name: "P", color: "green", clientId: c.id });
+    q = await seedProject({ workspaceId, name: "Q", color: "red" });
+    t1Id = (await seedTask({ workspaceId, projectId: p.id, name: "Diseño" })).id;
+    t2Id = (
+      await seedTask({ workspaceId, projectId: p.id, name: "Revisión", status: "done" })
+    ).id;
+    // Se llama igual que T1, en otro proyecto: dos filas.
+    t3Id = (await seedTask({ workspaceId, projectId: q.id, name: "Diseño" })).id;
+    analysisId = (await seedTask({ workspaceId, projectId: q.id, name: "Análisis" })).id;
+
+    const other = await seedPerson({ accountName: "Otra" });
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 1200, {
+      projectId: p.id,
+      taskId: t1Id,
+      billable: true,
+    });
+    await seedClosed(other, "2026-09-29T14:00:00Z", 600, {
+      projectId: q.id,
+      taskId: t3Id,
+    });
+    await seedClosed(ownerId, "2026-09-30T13:00:00Z", 600, {
+      projectId: q.id,
+      taskId: analysisId,
+    });
+    await seedClosed(other, "2026-09-30T14:00:00Z", 300, {
+      projectId: p.id,
+      taskId: t2Id,
+    });
+    // «Sin tarea»: una de P sin tarea y una sin proyecto.
+    await seedClosed(ownerId, "2026-10-01T13:00:00Z", 200, {
+      projectId: p.id,
+      billable: true,
+    });
+    await seedClosed(other, "2026-10-01T14:00:00Z", 100);
+  });
+
+  it("una fila por tarea con su proyecto, la hecha cuenta, y «Sin tarea» junta lo de P sin tarea y lo sin proyecto, sin proyecto", async () => {
+    const state = await readyState(owner, { range: lastWeek, groupBy: "task" });
+    expect(reportReadyState.parse(state)).toEqual(state);
+    expect(state.groups).toEqual([
+      {
+        kind: "task",
+        task: { id: t1Id, name: "Diseño" },
+        project: { id: p.id, name: "P", color: "green" },
+        seconds: 1200,
+      },
+      {
+        kind: "task",
+        task: { id: analysisId, name: "Análisis" },
+        project: { id: q.id, name: "Q", color: "red" },
+        seconds: 600,
+      },
+      {
+        kind: "task",
+        task: { id: t3Id, name: "Diseño" },
+        project: { id: q.id, name: "Q", color: "red" },
+        seconds: 600,
+      },
+      {
+        kind: "task",
+        task: { id: t2Id, name: "Revisión" },
+        project: { id: p.id, name: "P", color: "green" },
+        seconds: 300,
+      },
+      { kind: "task", task: null, project: null, seconds: 300 },
+    ]);
+    const byPerson = await readyState(owner, { range: lastWeek, groupBy: "person" });
+    expect(totalsOf(state)).toEqual([3000, 1400]);
+    expect(totalsOf(state)).toEqual(totalsOf(byPerson));
+  });
+
+  it("borrada T2, su entrada pasa a «Sin tarea», que queda después de las de su misma duración", async () => {
+    await db.delete(task).where(eq(task.id, t2Id));
+    const state = await readyState(owner, { range: lastWeek, groupBy: "task" });
+    expect(taskRows(state)).toEqual([
+      ["Diseño", "P", 1200],
+      ["Análisis", "Q", 600],
+      ["Diseño", "Q", 600],
+      [null, null, 600],
+    ]);
+    expect(totalsOf(state)).toEqual([3000, 1400]);
+  });
+});
+
+describe("por etiqueta (D-R3-3, RP-18, RP-28, RP-29; criterio 4 de R3)", () => {
+  let e1Id: string;
+  let e2Id: string;
+  let e3Id: string;
+
+  beforeEach(async () => {
+    e1Id = (await seedTag({ workspaceId, name: "Urgente" })).id;
+    e2Id = (await seedTag({ workspaceId, name: "Cliente" })).id;
+    e3Id = (await seedTag({ workspaceId, name: "Vieja", archived: true })).id;
+    const other = await seedPerson({ accountName: "Otra" });
+    // e1, con E1 y E2.
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 600, {
+      billable: true,
+      tagIds: [e1Id, e2Id],
+    });
+    // e2, con E1.
+    await seedClosed(other, "2026-09-29T14:00:00Z", 300, { tagIds: [e1Id] });
+    // e3, sin etiquetas.
+    await seedClosed(other, "2026-09-30T14:00:00Z", 200);
+    // e4, con E3 archivada.
+    await seedClosed(ownerId, "2026-09-30T13:00:00Z", 200, {
+      billable: true,
+      tagIds: [e3Id],
+    });
+  });
+
+  it("cada etiqueta suma todas sus entradas, la archivada cuenta, «Sin etiqueta» va después de una de igual duración y el total es el real", async () => {
+    const state = await readyState(owner, { range: lastWeek, groupBy: "tag" });
+    expect(reportReadyState.parse(state)).toEqual(state);
+    expect(state.groups).toEqual([
+      { kind: "tag", tag: { id: e1Id, name: "Urgente" }, seconds: 900 },
+      { kind: "tag", tag: { id: e2Id, name: "Cliente" }, seconds: 600 },
+      { kind: "tag", tag: { id: e3Id, name: "Vieja" }, seconds: 200 },
+      { kind: "tag", tag: null, seconds: 200 },
+    ]);
+    // RP-18: las filas suman más que el total.
+    expect(state.groups.reduce((sum, group) => sum + group.seconds, 0)).toBe(1900);
+    const byPerson = await readyState(owner, { range: lastWeek, groupBy: "person" });
+    expect(totalsOf(state)).toEqual([1300, 800]);
+    expect(totalsOf(state)).toEqual(totalsOf(byPerson));
+  });
+
+  it("borrada E3, su entrada pasa a «Sin etiqueta»", async () => {
+    await db.delete(tag).where(eq(tag.id, e3Id));
+    const state = await readyState(owner, { range: lastWeek, groupBy: "tag" });
+    expect(tagRows(state)).toEqual([
+      ["Urgente", 900],
+      ["Cliente", 600],
+      [null, 400],
+    ]);
+    expect(totalsOf(state)).toEqual([1300, 800]);
+  });
+});
+
+describe("una sola foto (ADR 0021, D-R3-3; criterio 5 de R3)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("por etiqueta, una transacción de solo lectura repeatable read, con las dos lecturas en su Executor", async () => {
+    const transaction = vi.spyOn(db, "transaction");
+    const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+    const entryTotals = vi.spyOn(reportRepository, "entryTotals");
+    await readyState(owner, { range: lastWeek, groupBy: "tag" });
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(transaction.mock.calls[0]?.[1]).toEqual({
+      isolationLevel: "repeatable read",
+      accessMode: "read only",
+    });
+    expect([byLevels.mock.calls.length, entryTotals.mock.calls.length]).toEqual([1, 1]);
+    const executor = byLevels.mock.calls[0]?.[2];
+    expect(executor).toBeDefined();
+    expect(executor).not.toBe(db);
+    expect(entryTotals.mock.calls[0]?.[2]).toBe(executor);
+  });
+
+  it("por persona, una lectura en la transacción y ninguna de entryTotals", async () => {
+    const transaction = vi.spyOn(db, "transaction");
+    const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+    const entryTotals = vi.spyOn(reportRepository, "entryTotals");
+    await readyState(owner, { range: lastWeek, groupBy: "person" });
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(byLevels).toHaveBeenCalledTimes(1);
+    const executor = byLevels.mock.calls[0]?.[2];
+    expect(executor).toBeDefined();
+    expect(executor).not.toBe(db);
+    expect(entryTotals).not.toHaveBeenCalled();
+  });
+});
+
+describe("la medida por tarea y por etiqueta (ADR 0021; criterio 6 de R3)", () => {
+  it("cada entrada se trunca antes de sumar: T y el total son los de la planilla, E1 3 s, E2 1 s, «Sin etiqueta» 1 s", async () => {
+    const memberId = await seedPerson({ accountName: "Marta" });
+    const member = actorIn(workspaceId, memberId);
+    const project = await seedProject({ workspaceId, name: "P" });
+    const t = await seedTask({ workspaceId, projectId: project.id, name: "T" });
+    const e1 = await seedTag({ workspaceId, name: "E1" });
+    const e2 = await seedTag({ workspaceId, name: "E2" });
+    const day = "2026-09-30";
+
+    /** Una entrada en T con los instantes escritos por SQL, con microsegundos. */
+    async function seedExact(
+      startedAt: string,
+      endedAt: string,
+      billable: boolean,
+      tagIds: readonly string[],
+    ) {
+      const [row] = await db
+        .insert(timeEntry)
+        .values({
+          workspaceId,
+          userId: memberId,
+          projectId: project.id,
+          taskId: t.id,
+          startedAt: sql`${startedAt}::timestamptz`,
+          endedAt: sql`${endedAt}::timestamptz`,
+          billable,
+        })
+        .returning();
+      for (const tagId of tagIds) {
+        await db.insert(timeEntryTag).values({ workspaceId, timeEntryId: row.id, tagId });
+      }
+    }
+
+    // Las dos de microsegundos: E1 en una, la otra sin etiquetas.
+    await seedExact(`${day} 10:00:00.000900-03`, `${day} 10:00:01.000500-03`, true, [
+      e1.id,
+    ]);
+    await seedExact(`${day} 11:00:00.000500-03`, `${day} 11:00:01.000400-03`, false, []);
+    // Las dos de 1,5 s: E1 en las dos, E2 en una.
+    await seedExact(`${day} 12:00:00-03`, `${day} 12:00:01.5-03`, true, [e1.id]);
+    await seedExact(`${day} 13:00:00.75-03`, `${day} 13:00:02.25-03`, false, [
+      e1.id,
+      e2.id,
+    ]);
+
+    const timesheet = await getTimesheetState(member, settings, { day }, readNow);
+    expect(timesheet.closedSeconds).toBe(4);
+
+    const byTask = await readyState(member, { range: lastWeek, groupBy: "task" });
+    expect(taskRows(byTask)).toEqual([["T", "P", timesheet.closedSeconds]]);
+    expect(totalsOf(byTask)).toEqual([timesheet.closedSeconds, 2]);
+
+    const byTag = await readyState(member, { range: lastWeek, groupBy: "tag" });
+    expect(tagRows(byTag)).toEqual([
+      ["E1", 3],
+      ["E2", 1],
+      [null, 1],
+    ]);
+    expect(totalsOf(byTag)).toEqual([timesheet.closedSeconds, 2]);
+  });
+});
+
+/** El alcance y la lectura por fecha de un pedido real del owner: solo el service construye el alcance. */
+async function realLevelRead() {
+  const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+  await readyState(owner, { range: lastWeek, groupBy: "date" });
+  const call = byLevels.mock.calls[0];
+  byLevels.mockRestore();
+  if (call === undefined) {
+    throw new Error("Se esperaba la lectura por niveles.");
+  }
+  const [scope, read] = call;
+  if (read.buckets === null) {
+    throw new Error("Se esperaba la lectura por fecha, con sus tramos.");
+  }
+  return { scope, span: read.span, buckets: read.buckets };
+}
+
+describe("las guardas de totalsByLevels (§4.3 de R3; criterio 7)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("cada lectura mal formada lanza RangeError sin consultar, con db y con el Executor de una transacción", async () => {
+    const { scope, span, buckets } = await realLevelRead();
+    const [first] = buckets.buckets;
+    const shifted = (instant: Date) => new Date(instant.getTime() + 1000);
+    const invalid = [
+      { span, dimensions: [], buckets: null },
+      { span, dimensions: ["person", "project", "client", "task"], buckets: null },
+      { span, dimensions: ["person", "person"], buckets: null },
+      { span, dimensions: ["project", "date"], buckets: null },
+      { span, dimensions: ["project"], buckets },
+      { span, dimensions: ["date"], buckets: { buckets: [], end: buckets.end } },
+      {
+        span,
+        dimensions: ["date"],
+        buckets: {
+          buckets: [
+            { ...first, start: shifted(first.start) },
+            ...buckets.buckets.slice(1),
+          ],
+          end: buckets.end,
+        },
+      },
+      { span, dimensions: ["date"], buckets: { ...buckets, end: shifted(buckets.end) } },
+    ] as const;
+
+    const select = vi.spyOn(db, "select");
+    for (const read of invalid) {
+      await expect(reportRepository.totalsByLevels(scope, read)).rejects.toThrow(
+        RangeError,
+      );
+    }
+    expect(select).not.toHaveBeenCalled();
+
+    await db.transaction(async (tx) => {
+      const txSelect = vi.spyOn(tx, "select");
+      for (const read of invalid) {
+        await expect(reportRepository.totalsByLevels(scope, read, tx)).rejects.toThrow(
+          RangeError,
+        );
+      }
+      expect(txSelect).not.toHaveBeenCalled();
+    });
+    expect(select).not.toHaveBeenCalled();
+  });
+});
+
+describe("varios niveles en la lectura (D-R3-2, D-R3-3; criterio 8 de R3)", () => {
+  let otherId: string;
+  let acme: { readonly id: string };
+  let omega: { readonly id: string };
+  let web: { readonly id: string };
+  let app: { readonly id: string };
+  let zeta: { readonly id: string };
+  let designId: string;
+  let supportId: string;
+  let eId: string;
+  let fId: string;
+
+  beforeEach(async () => {
+    otherId = await seedPerson({ accountName: "Otra" });
+    acme = await seedClient({ workspaceId, name: "Acme" });
+    omega = await seedClient({ workspaceId, name: "Omega" });
+    web = await seedProject({
+      workspaceId,
+      name: "Web",
+      color: "green",
+      clientId: acme.id,
+    });
+    app = await seedProject({
+      workspaceId,
+      name: "App",
+      color: "violet",
+      clientId: omega.id,
+    });
+    zeta = await seedProject({ workspaceId, name: "Zeta", color: "red" });
+    designId = (await seedTask({ workspaceId, projectId: web.id, name: "Diseño" })).id;
+    supportId = (await seedTask({ workspaceId, projectId: zeta.id, name: "Soporte" })).id;
+    eId = (await seedTag({ workspaceId, name: "E" })).id;
+    fId = (await seedTag({ workspaceId, name: "F" })).id;
+
+    // La de dos etiquetas, el martes 29/09.
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 600, {
+      projectId: web.id,
+      taskId: designId,
+      billable: true,
+      tagIds: [eId, fId],
+    });
+    // El miércoles 30/09.
+    await seedClosed(ownerId, "2026-09-30T13:00:00Z", 300, {
+      projectId: app.id,
+      tagIds: [eId],
+    });
+    // El martes 29/09, de un proyecto sin cliente.
+    await seedClosed(otherId, "2026-09-29T14:00:00Z", 200, {
+      projectId: zeta.id,
+      taskId: supportId,
+    });
+    // El jueves 01/10, sin proyecto.
+    await seedClosed(otherId, "2026-10-01T14:00:00Z", 100, { tagIds: [fId] });
+  });
+
+  /** Las filas de una lectura, sin orden: la lectura no lo pone. */
+  function unordered(rows: readonly unknown[]) {
+    return rows.map((row) => JSON.stringify(row)).sort();
+  }
+
+  function personGroup(userId: string, accountName: string) {
+    return { kind: "person", userId, accountName, displayName: null, status: "active" };
+  }
+
+  it("[person, tag]: las filas de una persona suman más que la persona por la entrada de dos etiquetas", async () => {
+    const { scope, span } = await realLevelRead();
+    const rows = await reportRepository.totalsByLevels(scope, {
+      span,
+      dimensions: ["person", "tag"],
+      buckets: null,
+    });
+    const ownerGroup = personGroup(ownerId, "Owner");
+    const otherGroup = personGroup(otherId, "Otra");
+    const e = { kind: "tag", tag: { id: eId, name: "E" } };
+    const f = { kind: "tag", tag: { id: fId, name: "F" } };
+    expect(unordered(rows)).toEqual(
+      unordered([
+        { groups: [ownerGroup, e], seconds: 900, billableSeconds: 600 },
+        { groups: [ownerGroup, f], seconds: 600, billableSeconds: 600 },
+        { groups: [otherGroup, f], seconds: 100, billableSeconds: 0 },
+        {
+          groups: [otherGroup, { kind: "tag", tag: null }],
+          seconds: 200,
+          billableSeconds: 0,
+        },
+      ]),
+    );
+    // La persona suma 900; sus filas por etiqueta, 1500.
+    const byPerson = await readyState(owner, { range: lastWeek, groupBy: "person" });
+    expect(personRows(byPerson)).toEqual([
+      ["Owner", 900],
+      ["Otra", 300],
+    ]);
+  });
+
+  it("[tag, project]: las filas de cada etiqueta suman lo de la etiqueta", async () => {
+    const { scope, span } = await realLevelRead();
+    const rows = await reportRepository.totalsByLevels(scope, {
+      span,
+      dimensions: ["tag", "project"],
+      buckets: null,
+    });
+    const e = { kind: "tag", tag: { id: eId, name: "E" } };
+    const f = { kind: "tag", tag: { id: fId, name: "F" } };
+    expect(unordered(rows)).toEqual(
+      unordered([
+        { groups: [e, webGroup()], seconds: 600, billableSeconds: 600 },
+        { groups: [e, appGroup()], seconds: 300, billableSeconds: 0 },
+        { groups: [f, webGroup()], seconds: 600, billableSeconds: 600 },
+        {
+          groups: [f, { kind: "project", project: null, client: null }],
+          seconds: 100,
+          billableSeconds: 0,
+        },
+        {
+          groups: [{ kind: "tag", tag: null }, zetaGroup()],
+          seconds: 200,
+          billableSeconds: 0,
+        },
+      ]),
+    );
+    const byTag = await readyState(owner, { range: lastWeek, groupBy: "tag" });
+    expect(tagRows(byTag)).toEqual([
+      ["E", 900],
+      ["F", 700],
+      [null, 200],
+    ]);
+  });
+
+  function webGroup() {
+    return {
+      kind: "project",
+      project: { id: web.id, name: "Web", color: "green" },
+      client: { id: acme.id, name: "Acme" },
+    };
+  }
+
+  function appGroup() {
+    return {
+      kind: "project",
+      project: { id: app.id, name: "App", color: "violet" },
+      client: { id: omega.id, name: "Omega" },
+    };
+  }
+
+  function zetaGroup() {
+    return {
+      kind: "project",
+      project: { id: zeta.id, name: "Zeta", color: "red" },
+      client: null,
+    };
+  }
+
+  it("[client, project, task]: cada fila con lo que se muestra de cada nivel en su posición, y el camino «Sin cliente» → «Sin proyecto» → «Sin tarea»", async () => {
+    const { scope, span } = await realLevelRead();
+    const rows = await reportRepository.totalsByLevels(scope, {
+      span,
+      dimensions: ["client", "project", "task"],
+      buckets: null,
+    });
+    const web = webGroup();
+    const app = appGroup();
+    const zeta = zetaGroup();
+    expect(unordered(rows)).toEqual(
+      unordered([
+        {
+          groups: [
+            { kind: "client", client: web.client },
+            web,
+            {
+              kind: "task",
+              task: { id: designId, name: "Diseño" },
+              project: web.project,
+            },
+          ],
+          seconds: 600,
+          billableSeconds: 600,
+        },
+        {
+          groups: [
+            { kind: "client", client: app.client },
+            app,
+            { kind: "task", task: null, project: null },
+          ],
+          seconds: 300,
+          billableSeconds: 0,
+        },
+        {
+          groups: [
+            { kind: "client", client: null },
+            zeta,
+            {
+              kind: "task",
+              task: { id: supportId, name: "Soporte" },
+              project: zeta.project,
+            },
+          ],
+          seconds: 200,
+          billableSeconds: 0,
+        },
+        {
+          groups: [
+            { kind: "client", client: null },
+            { kind: "project", project: null, client: null },
+            { kind: "task", task: null, project: null },
+          ],
+          seconds: 100,
+          billableSeconds: 0,
+        },
+      ]),
+    );
+  });
+
+  it("[project, date]: la entrada de dos etiquetas cuenta una vez, y los días son los de buckets", async () => {
+    const { scope, span, buckets } = await realLevelRead();
+    const rows = await reportRepository.totalsByLevels(scope, {
+      span,
+      dimensions: ["project", "date"],
+      buckets,
+    });
+    expect(
+      unordered(
+        rows.map((row) => {
+          const [project, date] = row.groups;
+          return [
+            project?.kind === "project" ? (project.project?.name ?? null) : "?",
+            date?.kind === "date" ? buckets.buckets[date.bucket]?.firstDay : "?",
+            row.seconds,
+            row.billableSeconds,
+          ];
+        }),
+      ),
+    ).toEqual(
+      unordered([
+        ["Web", "2026-09-29", 600, 600],
+        ["Zeta", "2026-09-29", 200, 0],
+        ["App", "2026-09-30", 300, 0],
+        [null, "2026-10-01", 100, 0],
+      ]),
+    );
+  });
+});
+
 describe("el período fuera del tope (B1)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("un rango invertido y uno de 367 días lanzan RangeError sin llamar al repository", async () => {
-    const byPerson = vi.spyOn(reportRepository, "totalsByPerson");
-    const byProject = vi.spyOn(reportRepository, "totalsByProject");
-    const byBucket = vi.spyOn(reportRepository, "totalsByBucket");
+  it("un rango invertido y uno de 367 días lanzan RangeError sin llamar al repository ni abrir la transacción", async () => {
+    const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+    const entryTotals = vi.spyOn(reportRepository, "entryTotals");
+    const transaction = vi.spyOn(db, "transaction");
     for (const range of [
       { first: "2026-10-11", last: "2026-10-05" },
       { first: "2025-01-01", last: "2026-01-02" },
@@ -854,15 +1435,14 @@ describe("el período fuera del tope (B1)", () => {
       }
     }
     expect([
-      byPerson.mock.calls.length,
-      byProject.mock.calls.length,
-      byBucket.mock.calls.length,
+      byLevels.mock.calls.length,
+      entryTotals.mock.calls.length,
+      transaction.mock.calls.length,
     ]).toEqual([0, 0, 0]);
   });
 
   it("un día y 366 días se leen, por persona y por fecha", async () => {
-    const byPerson = vi.spyOn(reportRepository, "totalsByPerson");
-    const byBucket = vi.spyOn(reportRepository, "totalsByBucket");
+    const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
     // El 2026-01-01 a las 12:00 en Buenos Aires: el último de los 366 días.
     await seedClosed(ownerId, "2026-01-01T15:00:00Z", 600);
     for (const groupBy of ["person", "date"] as const) {
@@ -880,22 +1460,13 @@ describe("el período fuera del tope (B1)", () => {
         600,
       ]);
     }
-    expect([byPerson.mock.calls.length, byBucket.mock.calls.length]).toEqual([2, 2]);
-    expect(byBucket.mock.calls[1]?.[1].buckets).toHaveLength(366);
-  });
-
-  it("totalsByBucket sin tramos lanza RangeError sin llamar a la base", async () => {
-    // El alcance solo lo construye el service: se toma de una lectura real.
-    const byBucket = vi.spyOn(reportRepository, "totalsByBucket");
-    await readyState(owner, { range: lastWeek, groupBy: "date" });
-    const scope = byBucket.mock.calls[0]?.[0];
-    if (scope === undefined) {
-      throw new Error("Se esperaba la lectura por tramos.");
-    }
-    const select = vi.spyOn(db, "select");
-    await expect(
-      reportRepository.totalsByBucket(scope, { buckets: [], end: new Date() }),
-    ).rejects.toThrow(RangeError);
-    expect(select.mock.calls.length).toBe(0);
+    const reads = byLevels.mock.calls.map(([, read]) => read);
+    expect(reads.map((read) => read.dimensions)).toEqual([
+      ["person"],
+      ["person"],
+      ["date"],
+      ["date"],
+    ]);
+    expect(reads[3]?.buckets?.buckets).toHaveLength(366);
   });
 });
