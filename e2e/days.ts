@@ -82,6 +82,32 @@ export function sameDay(left: CivilDay, right: CivilDay): boolean {
   return left.year === right.year && left.month === right.month && left.day === right.day;
 }
 
+/** Febrero tiene 29 días en los años divisibles por 4, salvo los seculares que no lo son por 400. */
+function daysInMonth(year: number, month: number): number {
+  if (month === 2) {
+    const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+    return leap ? 29 : 28;
+  }
+  return [4, 6, 9, 11].includes(month) ? 30 : 31;
+}
+
+/** El año y el mes que están `months` meses después del de `civil`; antes, si es negativo. */
+function monthAfter(civil: CivilDay, months: number): { year: number; month: number } {
+  const index = civil.year * 12 + (civil.month - 1) + months;
+  return { year: Math.floor(index / 12), month: (((index % 12) + 12) % 12) + 1 };
+}
+
+/** El primer día del mes que está `months` meses después del de `civil`. */
+export function monthStartOf(civil: CivilDay, months = 0): CivilDay {
+  return { ...monthAfter(civil, months), day: 1 };
+}
+
+/** El último día de ese mismo mes. */
+export function monthEndOf(civil: CivilDay, months = 0): CivilDay {
+  const { year, month } = monthAfter(civil, months);
+  return { year, month, day: daysInMonth(year, month) };
+}
+
 /** Meses que hay que avanzar desde `from` para llegar a `to`; negativo, atrás. */
 export function monthsBetween(from: CivilDay, to: CivilDay): number {
   return (to.year - from.year) * 12 + (to.month - from.month);
