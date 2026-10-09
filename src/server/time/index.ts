@@ -429,6 +429,36 @@ function isMissingDay(dayKey: string, timeZone: string): boolean {
   );
 }
 
+/** Un tramo de una lectura agrupada: su primer día civil y su primer instante. */
+export type TimeBucket = { readonly firstDay: string; readonly start: Date };
+
+/**
+ * Los tramos en orden y el fin del último, que es la cota superior de la
+ * lectura. Los inicios quedan ordenados pero pueden repetirse (ADR 0021).
+ */
+export type TimeBuckets = {
+  readonly buckets: readonly TimeBucket[];
+  readonly end: Date;
+};
+
+/**
+ * Un tramo por día civil de `first` a `last`, con su inicio en `timeZone`
+ * (`startOfDayKey`), y el fin: el inicio del día siguiente a `last`. Un día que
+ * falta entero en la zona tiene el inicio del siguiente. Solo usa la zona que
+ * recibe. Lanza si alguna clave no es un día o si `last` es anterior a `first`.
+ */
+export function dayBuckets(first: string, last: string, timeZone: string): TimeBuckets {
+  const days = daysBetweenKeys(first, last);
+  if (days < 0) {
+    throw new RangeError(`El último día ${last} es anterior al primero ${first}.`);
+  }
+  const buckets = Array.from({ length: days + 1 }, (_, index) => {
+    const firstDay = addDaysToKey(first, index);
+    return { firstDay, start: startOfDayKey(firstDay, timeZone) };
+  });
+  return { buckets, end: startOfDayKey(addDaysToKey(last, 1), timeZone) };
+}
+
 /**
  * «Esta semana», «Semana anterior», o «28/09 – 04/10». Si alguno de los dos
  * extremos no es del año de `todayKey`, los dos llevan el año:

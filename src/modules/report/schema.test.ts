@@ -154,12 +154,19 @@ describe("reportGroupParams (D-R2a-3)", () => {
     });
   });
 
-  it("lee cliente (D-R2b-5)", () => {
+  it("lee cliente (D-R2b-5) y fecha (D-R2b-6)", () => {
     expect(reportGroupParams.safeParse({ agrupar: "cliente" })).toEqual({
       success: true,
       data: "client",
     });
-    expect(REPORT_GROUP_PARAMS.client).toBe("cliente");
+    expect(reportGroupParams.safeParse({ agrupar: "fecha" })).toEqual({
+      success: true,
+      data: "date",
+    });
+    expect([REPORT_GROUP_PARAMS.client, REPORT_GROUP_PARAMS.date]).toEqual([
+      "cliente",
+      "fecha",
+    ]);
   });
 
   it("lee lo que escribe REPORT_GROUP_PARAMS, para cada agrupación", () => {
@@ -182,6 +189,8 @@ describe("reportGroupParams (D-R2a-3)", () => {
       { agrupar: "Cliente" },
       { agrupar: "CLIENTE" },
       { agrupar: "fechas" },
+      { agrupar: "date" },
+      { agrupar: "Fecha" },
       { agrupar: "" },
       { agrupar: ["persona", "persona"] },
       {},
@@ -210,7 +219,7 @@ describe("reportGroupParams (D-R2a-3)", () => {
     ).toBe(false);
   });
 
-  it("cliente pasa con o sin un rango válido al lado, y Cliente no pasa con ninguno", () => {
+  it("cliente y fecha pasan con o sin un rango válido al lado, y Cliente y fechas no pasan con ninguno", () => {
     for (const range of [
       { desde: "2026-10-05", hasta: "2026-10-11" },
       { desde: "2026-10-11", hasta: "2026-10-05" },
@@ -220,9 +229,13 @@ describe("reportGroupParams (D-R2a-3)", () => {
         success: true,
         data: "client",
       });
-      expect(reportGroupParams.safeParse({ ...range, agrupar: "Cliente" }).success).toBe(
-        false,
-      );
+      expect(reportGroupParams.safeParse({ ...range, agrupar: "fecha" })).toEqual({
+        success: true,
+        data: "date",
+      });
+      for (const agrupar of ["Cliente", "fechas"]) {
+        expect(reportGroupParams.safeParse({ ...range, agrupar }).success).toBe(false);
+      }
     }
   });
 });
@@ -255,6 +268,18 @@ describe("reportReadyState (D-R2b-2, D-R2b-5)", () => {
 
   it("admite los grupos de cliente, con «Sin cliente», y los atajos", () => {
     expect(reportReadyState.parse(ready)).toEqual(ready);
+  });
+
+  it("admite los grupos de fecha", () => {
+    const byDate: ReportReadyState = {
+      ...ready,
+      groupBy: "date",
+      groups: [
+        { kind: "date", dayKey: "2026-10-01", label: "jue, 01/10", seconds: 60 },
+        { kind: "date", dayKey: "2026-10-02", label: "vie, 02/10", seconds: 30 },
+      ],
+    };
+    expect(reportReadyState.parse(byDate)).toEqual(byDate);
   });
 
   it("rechaza un atajo con un id desconocido", () => {

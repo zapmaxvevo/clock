@@ -2,9 +2,13 @@ import { compareNames } from "@/lib/text";
 import { can, type Actor, type WorkspaceResource } from "@/server/permissions";
 import {
   addDaysToKey,
+  dayBuckets,
   dayKey,
   daysBetweenKeys,
   startOfDayKey,
+  weekdayLabel,
+  type DateFormat,
+  type TimeBuckets,
   type TimeSettings,
 } from "@/server/time";
 import { displayNameOf } from "@/modules/profile/service";
@@ -13,6 +17,7 @@ import { paletteKeyOf } from "@/modules/project/palette";
 import { reportPeriodOf } from "./period";
 import {
   reportRepository,
+  type BucketTotalRow,
   type PersonTotalRow,
   type ProjectTotalRow,
   type ReportSpan,
@@ -20,6 +25,7 @@ import {
 import {
   REPORT_MAX_DAYS,
   type ReportClientGroup,
+  type ReportDateGroup,
   type ReportGroup,
   type ReportGroupBy,
   type ReportPersonGroup,
@@ -130,9 +136,28 @@ function clientGroupOf(row: ClientTotalRow): ReportClientGroup {
   return { kind: "client", client: row.client, seconds: row.seconds };
 }
 
+/** La fila de un día con horas, rotulada con su fecha y sin «Hoy» ni «Ayer» (D-R2b-6). */
+function dateGroupOf(
+  row: BucketTotalRow,
+  buckets: TimeBuckets,
+  todayKey: string,
+  format: DateFormat,
+): ReportDateGroup {
+  const day = buckets.buckets[row.bucket].firstDay;
+  return {
+    kind: "date",
+    dayKey: day,
+    label: weekdayLabel(day, todayKey, format),
+    seconds: row.seconds,
+  };
+}
+
+/** Los grupos que se ordenan por duración y nombre: todos menos la fecha. */
+type NamedGroup = Exclude<ReportGroup, ReportDateGroup>;
+
 /** Lo que el orden compara de un grupo; `null` es «Sin proyecto» o «Sin cliente». */
 function sortKeyOf(
-  group: ReportGroup,
+  group: NamedGroup,
 ): { readonly id: string; readonly name: string } | null {
   switch (group.kind) {
     case "person":
@@ -148,7 +173,7 @@ function sortKeyOf(
  * RP-12, D-R2a-3: duración descendente; con la misma, por nombre, y «Sin
  * proyecto» o «Sin cliente» después de los que tienen nombre.
  */
-function compareGroups(left: ReportGroup, right: ReportGroup): number {
+function compareGroups(left: NamedGroup, right: NamedGroup): number {
   if (left.seconds !== right.seconds) {
     return right.seconds - left.seconds;
   }
@@ -158,6 +183,17 @@ function compareGroups(left: ReportGroup, right: ReportGroup): number {
     return (leftKey === null ? 1 : 0) - (rightKey === null ? 1 : 0);
   }
   return compareNames(leftKey, rightKey);
+}
+
+/**
+ * D-R2b-6: en orden cronológico. Las claves "AAAA-MM-DD" se ordenan como el
+ * calendario, así que la comparación es de cadenas.
+ */
+function compareDays(left: ReportDateGroup, right: ReportDateGroup): number {
+  if (left.dayKey === right.dayKey) {
+    return 0;
+  }
+  return left.dayKey < right.dayKey ? -1 : 1;
 }
 
 /** Los grupos ordenados y los dos totales de la cabecera. */
@@ -173,32 +209,63 @@ type ReportTotals = {
  */
 function totalsOf<
   Row extends { readonly seconds: number; readonly billableSeconds: number },
->(rows: readonly Row[], groupOf: (row: Row) => ReportGroup): ReportTotals {
+  Group extends ReportGroup,
+>(
+  rows: readonly Row[],
+  groupOf: (row: Row) => Group,
+  compare: (left: Group, right: Group) => number,
+): ReportTotals {
   return {
-    groups: rows.map(groupOf).sort(compareGroups),
+    groups: rows.map(groupOf).sort(compare),
     totalSeconds: rows.reduce((sum, row) => sum + row.seconds, 0),
     billableSeconds: rows.reduce((sum, row) => sum + row.billableSeconds, 0),
   };
 }
 
+/** Lo que una lectura necesita del pedido, ya dentro del tope. */
+type ReportRead = {
+  readonly scope: Scope;
+  readonly range: ReportRange;
+  /** D-R2a-5: un solo intervalo cortado en la zona de quien mira. */
+  readonly span: ReportSpan;
+  readonly timeZone: string;
+  readonly todayKey: string;
+  readonly dateFormat: DateFormat;
+};
+
 async function readGroups(
-  scope: Scope,
-  span: ReportSpan,
+  read: ReportRead,
   groupBy: ReportGroupBy,
 ): Promise<ReportTotals> {
+  const { scope, span } = read;
   switch (groupBy) {
     case "person":
-      return totalsOf(await reportRepository.totalsByPerson(scope, span), personGroupOf);
+      return totalsOf(
+        await reportRepository.totalsByPerson(scope, span),
+        personGroupOf,
+        compareGroups,
+      );
     case "project":
       return totalsOf(
         await reportRepository.totalsByProject(scope, span),
         projectGroupOf,
+        compareGroups,
       );
     case "client":
       return totalsOf(
         clientRowsOf(await reportRepository.totalsByProject(scope, span)),
         clientGroupOf,
+        compareGroups,
       );
+    case "date": {
+      // Los cortes solo para la fecha; el primero y el fin son los de `span`.
+      const buckets = dayBuckets(read.range.first, read.range.last, read.timeZone);
+      return totalsOf(
+        await reportRepository.totalsByBucket(scope, buckets),
+        (row) => dateGroupOf(row, buckets, read.todayKey, read.dateFormat),
+        compareDays,
+      );
+    }
   }
 }
 
@@ -230,12 +297,14 @@ export async function getReportState(
       `Período fuera de 1 a ${REPORT_MAX_DAYS} días: ${range.first} a ${range.last}.`,
     );
   }
-  // D-R2a-5: un solo intervalo cortado en la zona de quien mira.
   const span = {
     from: startOfDayKey(range.first, timeZone),
     to: startOfDayKey(addDaysToKey(range.last, 1), timeZone),
   };
-  const totals = await readGroups(scope, span, groupBy);
+  const totals = await readGroups(
+    { scope, range, span, timeZone, todayKey, dateFormat: settings.formats.date },
+    groupBy,
+  );
   return {
     kind: "ready",
     todayKey,

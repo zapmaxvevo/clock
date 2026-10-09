@@ -57,7 +57,7 @@ export const reportRangeParams = z
   .transform(({ desde, hasta }) => ({ first: desde, last: hasta }))
   .pipe(reportRangeInput);
 
-export const REPORT_GROUP_BYS = ["person", "project", "client"] as const;
+export const REPORT_GROUP_BYS = ["person", "project", "client", "date"] as const;
 export type ReportGroupBy = (typeof REPORT_GROUP_BYS)[number];
 
 /** El valor de `agrupar` en la URL de cada agrupación: con este mapa se lee y se escribe. */
@@ -65,9 +65,10 @@ export const REPORT_GROUP_PARAMS = {
   person: "persona",
   project: "proyecto",
   client: "cliente",
+  date: "fecha",
 } as const satisfies Record<ReportGroupBy, string>;
 
-/** `?agrupar=persona|proyecto|cliente` con `safeParse`, aparte del rango; cualquier otro valor se descarta. */
+/** `?agrupar=persona|proyecto|cliente|fecha` con `safeParse`, aparte del rango; cualquier otro valor se descarta. */
 export const reportGroupParams = z
   .object({ agrupar: z.string() })
   .transform(({ agrupar }) =>
@@ -129,6 +130,15 @@ const reportClientGroup = z.object({
   seconds: z.number().int().min(0),
 });
 
+const reportDateGroup = z.object({
+  kind: z.literal("date"),
+  /** El día civil en la zona de quien mira (RP-22). */
+  dayKey: z.string(),
+  /** `weekdayLabel`: «jue, 01/10», con año si no es el de hoy (D-R2b-6). */
+  label: z.string(),
+  seconds: z.number().int().min(0),
+});
+
 export const reportReadyState = z.object({
   kind: z.literal("ready"),
   todayKey: z.string(),
@@ -156,6 +166,7 @@ export const reportReadyState = z.object({
       reportPersonGroup,
       reportProjectGroup,
       reportClientGroup,
+      reportDateGroup,
     ]),
   ),
 });
@@ -165,6 +176,7 @@ export type ReportGroup = ReportReadyState["groups"][number];
 export type ReportPersonGroup = z.infer<typeof reportPersonGroup>;
 export type ReportProjectGroup = z.infer<typeof reportProjectGroup>;
 export type ReportClientGroup = z.infer<typeof reportClientGroup>;
+export type ReportDateGroup = z.infer<typeof reportDateGroup>;
 export type ReportShortcut = z.infer<typeof reportShortcut>;
 
 export type ReportState =

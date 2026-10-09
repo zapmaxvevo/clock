@@ -20,6 +20,7 @@ const GROUP_COLUMN_HEADINGS = {
   person: reportLabels.byPerson,
   project: reportLabels.byProject,
   client: reportLabels.byClient,
+  date: reportLabels.byDate,
 } as const satisfies Record<ReportGroupBy, string>;
 
 /**
@@ -99,7 +100,7 @@ export function ReportView({ state }: { readonly state: ReportReadyState }) {
   );
 }
 
-/** Una fila por persona, proyecto o cliente; «Sin proyecto» y «Sin cliente» son una sola. */
+/** Una fila por persona, proyecto, cliente o día; «Sin proyecto» y «Sin cliente» son una sola. */
 function groupKey(group: ReportGroup): string {
   switch (group.kind) {
     case "person":
@@ -108,6 +109,8 @@ function groupKey(group: ReportGroup): string {
       return group.project === null ? "sin-proyecto" : group.project.id;
     case "client":
       return group.client === null ? "sin-cliente" : group.client.id;
+    case "date":
+      return group.dayKey;
   }
 }
 
@@ -119,6 +122,8 @@ function GroupHeading({ group }: { readonly group: ReportGroup }) {
       return <ProjectHeading group={group} />;
     case "client":
       return <ClientHeading group={group} />;
+    case "date":
+      return <time dateTime={group.dayKey}>{group.label}</time>;
   }
 }
 

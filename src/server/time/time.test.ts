@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   addMinutes,
   dayBounds,
+  dayBuckets,
   dayKey,
   dayRangeLabel,
   daysBetweenKeys,
@@ -286,6 +287,96 @@ function daysBetween(from: string, to: string): number {
     (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000,
   );
 }
+
+describe("dayBuckets (ADR 0021, D-R2b-6)", () => {
+  const HOUR_MS = 60 * 60_000;
+
+  /** Los tramos como `[día, inicio ISO]` y el fin ISO. */
+  function bucketRows(first: string, last: string, zone: string) {
+    const { buckets, end } = dayBuckets(first, last, zone);
+    return {
+      buckets: buckets.map((bucket) => [bucket.firstDay, bucket.start.toISOString()]),
+      end: end.toISOString(),
+    };
+  }
+
+  /** Las horas que dura cada tramo hasta el siguiente, y el último hasta el fin. */
+  function bucketHours(first: string, last: string, zone: string): number[] {
+    const { buckets, end } = dayBuckets(first, last, zone);
+    const bounds = [...buckets.map((bucket) => bucket.start.getTime()), end.getTime()];
+    return buckets.map((_, index) => (bounds[index + 1] - bounds[index]) / HOUR_MS);
+  }
+
+  it("un día: un tramo y el fin al día siguiente", () => {
+    expect(bucketRows("2026-10-08", "2026-10-08", buenosAires)).toEqual({
+      buckets: [["2026-10-08", "2026-10-08T03:00:00.000Z"]],
+      end: "2026-10-09T03:00:00.000Z",
+    });
+  });
+
+  it("una semana en Buenos Aires: siete inicios a 24 h", () => {
+    expect(bucketRows("2026-10-05", "2026-10-11", buenosAires)).toEqual({
+      buckets: [
+        ["2026-10-05", "2026-10-05T03:00:00.000Z"],
+        ["2026-10-06", "2026-10-06T03:00:00.000Z"],
+        ["2026-10-07", "2026-10-07T03:00:00.000Z"],
+        ["2026-10-08", "2026-10-08T03:00:00.000Z"],
+        ["2026-10-09", "2026-10-09T03:00:00.000Z"],
+        ["2026-10-10", "2026-10-10T03:00:00.000Z"],
+        ["2026-10-11", "2026-10-11T03:00:00.000Z"],
+      ],
+      end: "2026-10-12T03:00:00.000Z",
+    });
+  });
+
+  it("en Madrid, del 24 al 26 de octubre de 2026, el 25 dura 25 h", () => {
+    expect(bucketRows("2026-10-24", "2026-10-26", madrid)).toEqual({
+      buckets: [
+        ["2026-10-24", "2026-10-23T22:00:00.000Z"],
+        ["2026-10-25", "2026-10-24T22:00:00.000Z"],
+        ["2026-10-26", "2026-10-25T23:00:00.000Z"],
+      ],
+      end: "2026-10-26T23:00:00.000Z",
+    });
+    expect(bucketHours("2026-10-24", "2026-10-26", madrid)).toEqual([24, 25, 24]);
+  });
+
+  it("si el último día dura 25 h, el fin es el inicio del día siguiente", () => {
+    expect(bucketRows("2026-10-25", "2026-10-25", madrid)).toEqual({
+      buckets: [["2026-10-25", "2026-10-24T22:00:00.000Z"]],
+      end: "2026-10-25T23:00:00.000Z",
+    });
+  });
+
+  it("en Madrid, del 28 al 30 de marzo de 2026, el 29 dura 23 h", () => {
+    expect(bucketRows("2026-03-28", "2026-03-30", madrid)).toEqual({
+      buckets: [
+        ["2026-03-28", "2026-03-27T23:00:00.000Z"],
+        ["2026-03-29", "2026-03-28T23:00:00.000Z"],
+        ["2026-03-30", "2026-03-29T22:00:00.000Z"],
+      ],
+      end: "2026-03-30T22:00:00.000Z",
+    });
+    expect(bucketHours("2026-03-28", "2026-03-30", madrid)).toEqual([24, 23, 24]);
+  });
+
+  it("en Pacific/Apia, el tramo del 30 de diciembre de 2011 repite el inicio del 31", () => {
+    expect(bucketRows("2011-12-29", "2011-12-31", "Pacific/Apia")).toEqual({
+      buckets: [
+        ["2011-12-29", "2011-12-29T10:00:00.000Z"],
+        ["2011-12-30", "2011-12-30T10:00:00.000Z"],
+        ["2011-12-31", "2011-12-30T10:00:00.000Z"],
+      ],
+      end: "2011-12-31T10:00:00.000Z",
+    });
+  });
+
+  it("lanza con el fin anterior al inicio o una clave inválida", () => {
+    expect(() => dayBuckets("2026-10-08", "2026-10-07", buenosAires)).toThrow(RangeError);
+    expect(() => dayBuckets("2026-02-30", "2026-03-01", buenosAires)).toThrow(RangeError);
+    expect(() => dayBuckets("2026-03-01", "2026-02-30", buenosAires)).toThrow(RangeError);
+  });
+});
 
 describe("weekKeyLabel", () => {
   it("rotula esta semana y la anterior", () => {

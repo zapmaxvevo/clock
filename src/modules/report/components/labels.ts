@@ -28,6 +28,7 @@ export const reportLabels = {
   byPerson: "Persona",
   byProject: "Proyecto",
   byClient: "Cliente",
+  byDate: "Fecha",
   duration: "Duración",
   /** RP-18. */
   total: "Total",
