@@ -20,7 +20,12 @@ import { actorIn, workspaceOf } from "@/test/time-entry";
 import { projectLabels } from "@/modules/project/components/labels";
 import { getTimesheetState } from "@/modules/time-entry/service";
 
-import { reportReadyState, type ReportRange, type ReportReadyState } from "./schema";
+import {
+  REPORT_GROUP_BYS,
+  reportReadyState,
+  type ReportRange,
+  type ReportReadyState,
+} from "./schema";
 import { reportRepository } from "./repository";
 import { getReportState, type ReportRequest } from "./service";
 
@@ -440,7 +445,7 @@ describe("la agrupación y el orden (D-R2a-3, D-R2a-8, RP-12, RP-18)", () => {
     await seedClosed(other, "2026-09-29T14:00:00Z", 600);
     await seedClosed(other, "2026-09-30T14:00:00Z", 30, { billable: true });
 
-    for (const groupBy of ["person", "project", "client", "date"] as const) {
+    for (const groupBy of REPORT_GROUP_BYS) {
       const state = await readyState(owner, { range: lastWeek, groupBy });
       expect([
         groupBy,
@@ -841,7 +846,7 @@ describe("el período fuera del tope (B1)", () => {
       { first: "2026-10-11", last: "2026-10-05" },
       { first: "2025-01-01", last: "2026-01-02" },
     ]) {
-      for (const groupBy of ["person", "project", "client", "date"] as const) {
+      for (const groupBy of REPORT_GROUP_BYS) {
         await expect(
           getReportState(owner, settings, { range, groupBy }, readNow),
         ).rejects.toThrow(RangeError);
@@ -854,13 +859,42 @@ describe("el período fuera del tope (B1)", () => {
     ]).toEqual([0, 0, 0]);
   });
 
-  it("un día y 366 días se leen", async () => {
+  it("un día y 366 días se leen, por persona y por fecha", async () => {
     const byPerson = vi.spyOn(reportRepository, "totalsByPerson");
-    await readyState(owner, { range: { first: "2026-10-05", last: "2026-10-05" } });
-    const longest = await readyState(owner, {
-      range: { first: "2025-01-01", last: "2026-01-01" },
-    });
-    expect(longest.range).toEqual({ first: "2025-01-01", last: "2026-01-01" });
-    expect(byPerson.mock.calls.length).toBe(2);
+    const byBucket = vi.spyOn(reportRepository, "totalsByBucket");
+    // El 2026-01-01 a las 12:00 en Buenos Aires: el último de los 366 días.
+    await seedClosed(ownerId, "2026-01-01T15:00:00Z", 600);
+    for (const groupBy of ["person", "date"] as const) {
+      await readyState(owner, {
+        range: { first: "2026-10-05", last: "2026-10-05" },
+        groupBy,
+      });
+      const longest = await readyState(owner, {
+        range: { first: "2025-01-01", last: "2026-01-01" },
+        groupBy,
+      });
+      expect([groupBy, longest.range, longest.totalSeconds]).toEqual([
+        groupBy,
+        { first: "2025-01-01", last: "2026-01-01" },
+        600,
+      ]);
+    }
+    expect([byPerson.mock.calls.length, byBucket.mock.calls.length]).toEqual([2, 2]);
+    expect(byBucket.mock.calls[1]?.[1].buckets).toHaveLength(366);
+  });
+
+  it("totalsByBucket sin tramos lanza RangeError sin llamar a la base", async () => {
+    // El alcance solo lo construye el service: se toma de una lectura real.
+    const byBucket = vi.spyOn(reportRepository, "totalsByBucket");
+    await readyState(owner, { range: lastWeek, groupBy: "date" });
+    const scope = byBucket.mock.calls[0]?.[0];
+    if (scope === undefined) {
+      throw new Error("Se esperaba la lectura por tramos.");
+    }
+    const select = vi.spyOn(db, "select");
+    await expect(
+      reportRepository.totalsByBucket(scope, { buckets: [], end: new Date() }),
+    ).rejects.toThrow(RangeError);
+    expect(select.mock.calls.length).toBe(0);
   });
 });

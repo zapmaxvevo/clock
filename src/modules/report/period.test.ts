@@ -220,6 +220,18 @@ describe("las flechas (D-R2b-3)", () => {
     ]);
   });
 
+  it("una semana del 9999-12-18 al 24 no tiene siguiente y una desde el 0100-01-01 no tiene anterior", () => {
+    // El destino terminaría el 9999-12-31, cuyo día siguiente no tiene clave.
+    expect(arrows(range("9999-12-18", "9999-12-24"))).toEqual([
+      range("9999-12-11", "9999-12-17"),
+      null,
+    ]);
+    expect(arrows(range("0100-01-01", "0100-01-07"))).toEqual([
+      null,
+      range("0100-01-08", "0100-01-14"),
+    ]);
+  });
+
   it("sin pedido, las flechas de «Esta semana» se mueven 7 días", () => {
     const period = reportPeriodOf(today, monday, null);
     expect([period.previous, period.next]).toEqual([

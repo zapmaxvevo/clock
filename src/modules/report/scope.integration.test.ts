@@ -17,6 +17,7 @@ import { actorIn, workspaceOf } from "@/test/time-entry";
 
 import { reportRepository } from "./repository";
 import {
+  REPORT_GROUP_BYS,
   reportGroupParams,
   reportRangeParams,
   type ReportGroupBy,
@@ -72,7 +73,7 @@ const roles: readonly Role[] = [
 const notActive: readonly MembershipStatus[] = ["inactive", "invited"];
 
 /** Las agrupaciones que se recorren en cada caso de alcance. */
-const groupBys: readonly ReportGroupBy[] = ["person", "project", "client", "date"];
+const groupBys: readonly ReportGroupBy[] = REPORT_GROUP_BYS;
 
 /**
  * Workspace A: owner, admin, `project_manager` responsable de P, `team_manager`,
