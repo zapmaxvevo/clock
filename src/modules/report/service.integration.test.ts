@@ -1,7 +1,15 @@
 import { randomUUID } from "node:crypto";
 
 import { eq, sql } from "drizzle-orm";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type MockInstance,
+} from "vitest";
 
 import { db } from "@/server/db";
 import { project, tag, task, timeEntry, user } from "@/server/db/schema";
@@ -3094,6 +3102,22 @@ describe("los niveles de tiempo y los filtros (D-R10-3, D-R10-6, D-R10-11; crite
     ]);
   });
 
+  it("[date, week]: debajo de cada día, la semana dice «solo» ese día", async () => {
+    const state = await tree(["date", "week"]);
+    expect(outline(state.groups)).toEqual([
+      ["2026-09-30", 6300, [["28/09 – 04/10 solo 30/09", 6300]]],
+      ["2026-10-01", 1800, [["28/09 – 04/10 solo 01/10", 1800]]],
+    ]);
+  });
+
+  it("[date, month]: debajo de cada día, el mes dice «solo» ese día", async () => {
+    const state = await tree(["date", "month"]);
+    expect(outline(state.groups)).toEqual([
+      ["2026-09-30", 6300, [["septiembre solo 30/09", 6300]]],
+      ["2026-10-01", 1800, [["octubre solo 01/10", 1800]]],
+    ]);
+  });
+
   it("[person, month]: cada persona con sus meses", async () => {
     const state = await tree(["person", "month"]);
     expect(outline(state.groups)).toEqual([
@@ -3232,11 +3256,8 @@ describe("los tramos de cada lectura (D-R10-4; criterio 8 de R10)", () => {
   });
 
   /** Las claves de `buckets` de cada lectura por niveles, en el orden de las lecturas. */
-  function bucketKeysOf(byLevels: { readonly mock: { readonly calls: unknown[][] } }) {
-    return byLevels.mock.calls.map((call) => {
-      const read = call[1] as ReportLevelRead;
-      return Object.keys(read.buckets).sort();
-    });
+  function bucketKeysOf(byLevels: MockInstance<typeof reportRepository.totalsByLevels>) {
+    return byLevels.mock.calls.map(([, read]) => Object.keys(read.buckets).sort());
   }
 
   it("en Mes → Semana → Fecha, cada lectura lleva solo los tramos de sus dimensiones", async () => {

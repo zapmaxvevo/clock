@@ -538,6 +538,20 @@ describe("weekBuckets (ADR 0021, D-R10-2, D-R10-3; criterio 1 de R10)", () => {
     }
   });
 
+  it("en Pacific/Apia, desde el 30/12/2011, que no existe, con sábado: el corte se repite", () => {
+    const buckets = weekBuckets("2011-12-30", "2012-01-12", 6, "Pacific/Apia");
+    expect(buckets.buckets.map((bucket) => bucket.firstDay)).toEqual([
+      "2011-12-30",
+      "2011-12-31",
+      "2012-01-07",
+    ]);
+    const [missing, saturday, next] = buckets.buckets.map((bucket) => bucket.start);
+    expect(missing).toEqual(startOfDayKey("2011-12-31", "Pacific/Apia"));
+    expect(saturday).toEqual(missing);
+    expect(next.getTime()).toBeGreaterThan(saturday.getTime());
+    expect(buckets.end.getTime()).toBeGreaterThan(next.getTime());
+  });
+
   it("solo usa la zona que recibe: en UTC, las 00:00 UTC", () => {
     expect(bucketRowsOf(weekBuckets("2026-09-30", "2026-10-06", 1, "UTC"))).toEqual({
       buckets: [
