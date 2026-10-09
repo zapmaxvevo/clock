@@ -81,3 +81,15 @@ T3 aplicado por el team-lead en §8.1 del contrato (criterio 1). El resto, a un 
   desbordar igual. Corrección propuesta: `table-fixed` en la `<table>` de `report-view.tsx:62`
   con un ancho fijo para «Duración», o `max-w-0 w-full` en el `<th scope="row">` de
   `report-tree.tsx:50`.
+
+## Cierre
+
+Ronda de correcciones del `backend-dev`: `bdeeac8` (T1, T2 y C5; el mutante de T1, el filtro
+que deja pasar la fecha, sobrevivía y ahora cae en los dos casos nuevos, antes y después del
+refactor) y `4e511ac` (B1, C1 a C4, C6 a C9, sin cambios de comportamiento; C8 cambia el
+markup de la semana y actualiza las dos expectativas de `report-view.test.tsx`). Una corrida
+filtrada de unos 4 s fue por error contra `clock_test` (vació sus tablas; nadie la usaba).
+Corrida final del team-lead sobre `4e511ac`, con bases nuevas (`clock_r10a_final_test` y
+`clock_r10a_final_e2e`): lint, typecheck, 1689 de unidad, 298 de `test:time-ar`, 1422 de
+integración y la suite e2e 203/203 ×2. Sin comprobación contra Neon (sin forma de parámetro
+nueva).
