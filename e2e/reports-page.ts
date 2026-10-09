@@ -649,16 +649,25 @@ export function filterButton(page: Page, filter: FilterName, summary: string): L
   });
 }
 
-/** El buscador del panel abierto de un filtro, que va en un portal. */
-export function filterSearch(page: Page, filter: FilterName): Locator {
-  return page
-    .getByRole("dialog")
-    .getByRole("searchbox", { name: FILTER_SEARCH[filter], exact: true });
+/** El buscador de un filtro por su nombre, sin acotarlo a un diálogo. */
+function searchBox(page: Page, filter: FilterName): Locator {
+  return page.getByRole("searchbox", { name: FILTER_SEARCH[filter], exact: true });
 }
 
-/** El panel abierto de un filtro: el diálogo que tiene su buscador (§5.3). */
+/**
+ * El panel abierto de un filtro: el diálogo que tiene su buscador (§5.3). El
+ * `has` se busca dentro del diálogo, así que no lleva el diálogo otra vez.
+ */
 export function filterPanel(page: Page, filter: FilterName): Locator {
-  return page.getByRole("dialog").filter({ has: filterSearch(page, filter) });
+  return page.getByRole("dialog").filter({ has: searchBox(page, filter) });
+}
+
+/** El buscador del panel abierto de un filtro. */
+export function filterSearch(page: Page, filter: FilterName): Locator {
+  return filterPanel(page, filter).getByRole("searchbox", {
+    name: FILTER_SEARCH[filter],
+    exact: true,
+  });
 }
 
 /**

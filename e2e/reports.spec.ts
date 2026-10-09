@@ -1026,7 +1026,8 @@ test("los filtros de cliente y de proyecto, con «Sin proyecto», los archivados
   await filterOption(page, NO_PROJECT).check();
   await applyFilter(page, "Proyectos", "2");
   await expectReport(page, lastWeek, "proyecto", day, [], chosen);
-  await expectGroupNames(page, [first, NO_PROJECT]);
+  // El encabezado de un proyecto con cliente lo nombra a los dos (R3).
+  await expectGroupNames(page, [`${first} ${firstClient}`, NO_PROJECT]);
   await expect(groupDuration(groupRow(page, first))).toHaveText("1:00");
   await expect(groupDuration(groupRow(page, NO_PROJECT))).toHaveText("0:20");
   await expect(reportTotal(page, "Total")).toHaveText("1:20");
