@@ -1,5 +1,5 @@
 import { compareNames } from "@/lib/text";
-import { db } from "@/server/db";
+import { db, type Transaction } from "@/server/db";
 import { can, type Actor, type WorkspaceResource } from "@/server/permissions";
 import {
   addDaysToKey,
@@ -24,6 +24,7 @@ import {
   type EntryTotals,
   type ReportEntryFilter,
   type ReportLevelRead,
+  type ReportSpan,
   type LevelGroupRow,
   type LevelTotalRow,
   type StoredProject,
@@ -403,6 +404,64 @@ async function readLevelsWithinLimit(
   return shown;
 }
 
+/** Lo que se lee de un pedido ya validado: sus niveles, el intervalo, los tramos y los filtros. */
+type ReadPlan = {
+  readonly levels: readonly ReportGroupBy[];
+  readonly span: ReportSpan;
+  /** Los cortes de `span` si la fecha es un nivel; si no, `null`. */
+  readonly buckets: TimeBuckets | null;
+  /** Los del pedido, sin cruzar con los catálogos. */
+  readonly filters: ReportFilters;
+};
+
+/** La lectura de los `depth` primeros niveles, con los tramos solo si la fecha está entre ellos. */
+function levelReadOf(
+  plan: ReadPlan,
+  depth: number,
+  filter: ReportEntryFilter,
+  limit?: number,
+): ReportLevelRead {
+  const dimensions = plan.levels.slice(0, depth);
+  return {
+    span: plan.span,
+    filter,
+    dimensions,
+    buckets: dimensions.includes("date") ? plan.buckets : null,
+    limit,
+  };
+}
+
+/**
+ * Todo lo que se lee de un pedido, con la transacción de solo lectura de
+ * quien llama: primero los catálogos, que deciden los filtros efectivos
+ * (D-R4-5), y después los niveles y el total con esos filtros.
+ */
+async function readReport(
+  tx: Transaction,
+  actor: Actor,
+  scope: Scope,
+  plan: ReadPlan,
+): Promise<ReportRead> {
+  const catalog = await getProjectFilterCatalog(tx, actor);
+  const filters = effectiveFiltersOf(plan.filters, catalog);
+  const filter = entryFilterOf(filters);
+  const levels = await readLevelsWithinLimit(plan.levels.length, (depth, limit) =>
+    reportRepository.totalsByLevels(scope, levelReadOf(plan, depth, filter, limit), tx),
+  );
+  const [first] = levels;
+  // El total no pasa por la unión con las etiquetas; con el primer nivel sin
+  // etiqueta, cada entrada filtrada está en un grupo y la suma es el total
+  // (D-R2a-7).
+  const totals =
+    plan.levels[0] === "tag"
+      ? await reportRepository.entryTotals(scope, { span: plan.span, filter }, tx)
+      : {
+          seconds: first.reduce((sum, row) => sum + row.seconds, 0),
+          billableSeconds: first.reduce((sum, row) => sum + row.billableSeconds, 0),
+        };
+  return { levels, totals, catalog, filters };
+}
+
 /**
  * RP-10: el resumido de quien mira, armado en el servidor con su zona y su
  * primer día de la semana. `now` existe para que los tests fijen el día.
@@ -448,45 +507,12 @@ export async function getReportState(
   const buckets = levels.includes("date")
     ? dayBuckets(range.first, range.last, timeZone)
     : null;
-  /** La lectura de los `depth` primeros niveles, con los tramos solo si la fecha está entre ellos. */
-  function levelRead(
-    depth: number,
-    filter: ReportEntryFilter,
-    limit?: number,
-  ): ReportLevelRead {
-    const dimensions = levels.slice(0, depth);
-    return {
-      span,
-      filter,
-      dimensions,
-      buckets: dimensions.includes("date") ? buckets : null,
-      limit,
-    };
-  }
   // ADR 0021, D-R3-3: una sola foto, con los catálogos de los filtros
   // (D-R4-5). Se abre después de `report.view`, de `scopeOf` y de las
   // invariantes.
-  const read: ReportRead = await db.transaction(
-    async (tx) => {
-      const catalog = await getProjectFilterCatalog(tx, actor);
-      const filters = effectiveFiltersOf(request.filters, catalog);
-      const filter = entryFilterOf(filters);
-      const shown = await readLevelsWithinLimit(levels.length, (depth, limit) =>
-        reportRepository.totalsByLevels(scope, levelRead(depth, filter, limit), tx),
-      );
-      const [first] = shown;
-      // El total no pasa por la unión con las etiquetas; con el primer nivel
-      // sin etiqueta, cada entrada filtrada está en un grupo y la suma es el
-      // total (D-R2a-7).
-      const totals =
-        groupBy === "tag"
-          ? await reportRepository.entryTotals(scope, { span, filter }, tx)
-          : {
-              seconds: first.reduce((sum, row) => sum + row.seconds, 0),
-              billableSeconds: first.reduce((sum, row) => sum + row.billableSeconds, 0),
-            };
-      return { levels: shown, totals, catalog, filters };
-    },
+  const read = await db.transaction(
+    (tx) =>
+      readReport(tx, actor, scope, { levels, span, buckets, filters: request.filters }),
     { isolationLevel: "repeatable read", accessMode: "read only" },
   );
   const dates = { buckets, todayKey, format: settings.formats.date };
