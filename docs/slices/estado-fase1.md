@@ -1,7 +1,7 @@
 # Estado de la fase 1
 
 Registro vivo de por dónde va la ejecución. Se actualiza al cerrar cada paso;
-quien retome el trabajo empieza acá. Última actualización: 2026-10-08.
+quien retome el trabajo empieza acá. Última actualización: 2026-10-09.
 
 ## Dónde estamos
 
@@ -65,7 +65,14 @@ vacío del owner y `renewWorkspace` se corta.
      (`correcciones-nucleo-reportes-r2b-revisiones.md`, «Cierre»). El preview de Vercel tiene
      `DATABASE_URL` (rama `preview` de Neon), `BETTER_AUTH_SECRET` y `BETTER_AUTH_URL` propios;
      `BETTER_AUTH_URL` quedó cargado solo para la rama `nucleo/r2b-atajos`.
-   - **R3 en contrato** (subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
+   - **R3a en curso** (2026-10-09): contrato aprobado con cambios (R1–R13,
+     `correcciones-nucleo-reportes-r3-contrato.md`) y en `main` (`85eb968`). El team-lead partió
+     el slice: R3a (parte A, tarea y etiqueta) en `nucleo/r3a-tarea-etiqueta`, en checkout en el
+     árbol principal; R3b (parte B) después, con el mismo contrato desde el paso 6. Bases:
+     `clock_test_backendr3`, `clock_test_frontendr3`, `clock_test_engineer_r3`, `clock_e2er3`.
+     Agentes en la sesión `c37d1bea-…`: `backend-r3` en el paso 1. Abiertas para el usuario:
+     preguntas 2 (lo abierto al recargar) y 3 (P-05) de §10 y la nota 4 del tope de 3000.
+   - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
      (`7b66b03`), en checkout en el árbol principal. `architect-r3` quedó escribiendo
      `docs/slices/nucleo-reportes-r3-subgrupos-tarea-y-etiqueta.md` (sin commit). Tarea entra
      (decisión del usuario, mapa ~l. 382). Se le pidió resolver el tamaño del árbol (árbol entero
