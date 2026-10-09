@@ -93,6 +93,24 @@ describe("ReportView", () => {
     expect(markup).toMatch(/<th scope="col"[^>]*>Duración<\/th>/);
   });
 
+  it("la tabla es de ancho fijo, con la duración de ancho propio, para que un nombre largo se recorte", () => {
+    // En una tabla automática el `truncate` no recorta: un nombre de 100
+    // caracteres la llevaba a 809 px en una caja de 270, a 320 px.
+    const markup = render({
+      groupBy: "client",
+      groups: [
+        { kind: "client", client: { id: "c1", name: "x".repeat(100) }, seconds: 60 },
+      ],
+      totalSeconds: 60,
+    });
+    expect(markup).toMatch(/<table [^>]*class="[^"]*\btable-fixed\b/);
+    expect(markup).toMatch(/<th scope="col" class="[^"]*\bw-24\b[^"]*">Duración<\/th>/);
+    // Suelto en la celda, el nombre va en bloque: en línea, `truncate` tampoco recorta.
+    expect(markup).toMatch(
+      /<th scope="row"[^>]*><span class="block truncate">x{100}<\/span>/,
+    );
+  });
+
   it("por persona, la inactiva lo dice en texto (RP-31)", () => {
     const groups: ReportGroup[] = [
       { kind: "person", userId: "u1", name: "Ana", inactive: false, seconds: 7_200 },
@@ -163,7 +181,9 @@ describe("ReportView", () => {
       ["Acme", "1:30"],
       ["Sin cliente", "1:00"],
     ]);
-    expect(markup).toMatch(/<th scope="row"[^>]*><span class="truncate">Acme<\/span>/);
+    expect(markup).toMatch(
+      /<th scope="row"[^>]*><span class="block truncate">Acme<\/span>/,
+    );
     expect(markup).toMatch(
       /<th scope="row"[^>]*><span class="text-muted-foreground">Sin cliente<\/span>/,
     );
@@ -271,7 +291,7 @@ describe("ReportView", () => {
       ["Sin etiqueta", "0:15"],
     ]);
     expect(markup).toMatch(
-      /<th scope="row"[^>]*><span class="truncate">Urgente<\/span><\/th>/,
+      /<th scope="row"[^>]*><span class="block truncate">Urgente<\/span><\/th>/,
     );
     expect(markup).toMatch(
       /<th scope="row"[^>]*><span class="text-muted-foreground">Sin etiqueta<\/span><\/th>/,

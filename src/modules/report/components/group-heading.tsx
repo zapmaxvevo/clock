@@ -124,7 +124,8 @@ function TaskHeading({ group }: { readonly group: ReportTaskGroup }) {
 
 /**
  * Solo el nombre, como el cliente o la etiqueta, archivados o no (RP-29); sin
- * él, el «Sin …» de la dimensión.
+ * él, el «Sin …» de la dimensión. En bloque, porque en un solo nivel va suelto
+ * en la celda y un `truncate` en línea no recorta.
  */
 function NamedHeading({
   named,
@@ -136,7 +137,7 @@ function NamedHeading({
   if (named === null) {
     return <EmptyGroupHeading label={emptyLabel} />;
   }
-  return <span className="truncate">{named.name}</span>;
+  return <span className="block truncate">{named.name}</span>;
 }
 
 /** RP-28: el grupo de lo que no tiene la dimensión, en gris. */

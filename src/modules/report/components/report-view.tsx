@@ -59,13 +59,18 @@ export function ReportView({ state }: { readonly state: ReportReadyState }) {
       )}
 
       <div className="overflow-x-auto rounded-lg border">
-        <table aria-labelledby={REPORT_HEADING_ID} className="w-full text-sm">
+        {/*
+         * De ancho fijo, con la duración de ancho propio: en una tabla
+         * automática el `truncate` no recorta y un nombre largo la ensancha
+         * más allá de su caja.
+         */}
+        <table aria-labelledby={REPORT_HEADING_ID} className="w-full table-fixed text-sm">
           <thead className="border-b">
             <tr>
               <th scope="col" className="px-3 py-2 text-left font-medium">
                 {shown.map((level) => groupByLabels[level]).join(" / ")}
               </th>
-              <th scope="col" className="px-3 py-2 text-right font-medium">
+              <th scope="col" className="w-24 px-3 py-2 text-right font-medium">
                 {reportLabels.duration}
               </th>
             </tr>
