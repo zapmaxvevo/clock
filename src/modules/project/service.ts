@@ -410,7 +410,10 @@ export async function assertTaggable(
  * RP-25, RP-29: lo que ofrecen los filtros de cliente y de proyecto de un
  * reporte. Todos los clientes del workspace y los proyectos que `project.view`
  * deja ver, archivados incluidos y marcados, en el orden de `compareNames`.
- * Solo lee, con la transacción de quien la llama (ADR 0010).
+ * Solo lee, con la transacción de quien la llama (ADR 0010), que tiene que ser
+ * `repeatable read`: los clientes y los proyectos se leen en dos sentencias, y
+ * con `read committed` un proyecto podría apuntar a un cliente creado entre
+ * las dos, que no está en la lista; `clientOf` lanza en ese caso.
  */
 export async function getProjectFilterCatalog(
   tx: Transaction,
@@ -422,12 +425,13 @@ export async function getProjectFilterCatalog(
     actor.workspaceId,
     actor.userId,
   );
-  const clientsById = new Map(clients.map((row) => [row.id, toClientView(row)]));
+  const clientViews = sortedByName(clients).map((row) => ({
+    view: toClientView(row),
+    archived: row.archivedAt !== null,
+  }));
+  const clientsById = new Map(clientViews.map(({ view }) => [view.id, view]));
   return {
-    clients: sortedByName(clients).map((row) => ({
-      ...toClientView(row),
-      archived: row.archivedAt !== null,
-    })),
+    clients: clientViews.map(({ view, archived }) => ({ ...view, archived })),
     projects: sortedByName(
       projects.filter((row) => can(actor, "project.view", projectResource(row))),
     ).map((row) => ({

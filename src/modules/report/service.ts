@@ -30,6 +30,7 @@ import {
 } from "./repository";
 import {
   DEFAULT_GROUP_BY,
+  projectFilterCount,
   REPORT_MAX_DAYS,
   REPORT_MAX_FILTER_VALUES,
   REPORT_MAX_ROWS,
@@ -228,7 +229,7 @@ function checkFilters({ clients, projects, withoutProject }: ReportFilters): voi
     {
       name: "proyecto",
       values: projects,
-      count: projects.length + (withoutProject ? 1 : 0),
+      count: projectFilterCount(projects, withoutProject),
     },
   ];
   for (const { name, values, count } of lists) {
@@ -271,7 +272,7 @@ function entryFilterOf(filters: ReportFilters): ReportEntryFilter {
  * D-R4-9: las opciones de los filtros, campo por campo: un campo que el
  * catálogo sume no llega a la pantalla sin un cambio acá.
  */
-function filterOptionsOf(
+function toFilterOptions(
   catalog: ProjectFilterCatalog,
 ): ReportReadyState["filterOptions"] {
   return {
@@ -509,6 +510,6 @@ export async function getReportState(
     billableSeconds: read.totals.billableSeconds,
     groups: treeOf(read.levels, dates),
     filters: read.filters,
-    filterOptions: filterOptionsOf(read.catalog),
+    filterOptions: toFilterOptions(read.catalog),
   };
 }

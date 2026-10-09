@@ -154,6 +154,14 @@ export const NO_REPORT_FILTERS: ReportFilters = {
   withoutProject: false,
 };
 
+/** Cuántos valores lleva el filtro de proyecto: «Sin proyecto» cuenta uno (D-R4-2). */
+export function projectFilterCount(
+  projects: readonly string[],
+  withoutProject: boolean,
+): number {
+  return projects.length + (withoutProject ? 1 : 0);
+}
+
 /** Algún filtro elige algo: lo que separa el segundo vacío del primero (D-R4-7). */
 export function hasReportFilters(filters: ReportFilters): boolean {
   return (
@@ -281,7 +289,7 @@ const reportFiltersView = z
   })
   .refine(
     ({ projects, withoutProject }) =>
-      projects.length + (withoutProject ? 1 : 0) <= REPORT_MAX_FILTER_VALUES,
+      projectFilterCount(projects, withoutProject) <= REPORT_MAX_FILTER_VALUES,
   );
 
 /**
@@ -407,8 +415,6 @@ export const reportReadyState = z.object({
 });
 
 export type ReportReadyState = z.infer<typeof reportReadyState>;
-export type ReportClientOption = z.infer<typeof reportClientOption>;
-export type ReportProjectOption = z.infer<typeof reportProjectOption>;
 export type ReportGroup = z.infer<typeof reportGroup>;
 export type ReportPersonGroup = z.infer<typeof reportPersonGroup>;
 export type ReportProjectGroup = z.infer<typeof reportProjectGroup>;

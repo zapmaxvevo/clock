@@ -28,7 +28,11 @@ import {
 import type { MembershipStatus } from "@/server/permissions";
 import type { TimeBuckets } from "@/server/time";
 
-import { REPORT_MAX_FILTER_VALUES, type ReportGroupBy } from "./schema";
+import {
+  projectFilterCount,
+  REPORT_MAX_FILTER_VALUES,
+  type ReportGroupBy,
+} from "./schema";
 // Solo el tipo: el alcance lo construye el service (D-R2a-1). El ciclo se borra al compilar.
 import type { ReportScope } from "./service";
 
@@ -474,16 +478,19 @@ function bucketsOf(read: ReportLevelRead): TimeBuckets {
  * filtro pasa el tope, con «Sin proyecto» contado como uno.
  */
 function checkEntryRead({ filter }: ReportEntryRead): void {
-  const projectValues = filter.projectIds.length + (filter.withoutProject ? 1 : 0);
-  if (projectValues > REPORT_MAX_FILTER_VALUES) {
-    throw new RangeError(
-      `El filtro de proyecto lleva ${projectValues} valores; el tope es ${REPORT_MAX_FILTER_VALUES}.`,
-    );
-  }
-  if (filter.clientIds.length > REPORT_MAX_FILTER_VALUES) {
-    throw new RangeError(
-      `El filtro de cliente lleva ${filter.clientIds.length} valores; el tope es ${REPORT_MAX_FILTER_VALUES}.`,
-    );
+  const counts = [
+    {
+      name: "proyecto",
+      count: projectFilterCount(filter.projectIds, filter.withoutProject),
+    },
+    { name: "cliente", count: filter.clientIds.length },
+  ];
+  for (const { name, count } of counts) {
+    if (count > REPORT_MAX_FILTER_VALUES) {
+      throw new RangeError(
+        `El filtro de ${name} lleva ${count} valores; el tope es ${REPORT_MAX_FILTER_VALUES}.`,
+      );
+    }
   }
 }
 
