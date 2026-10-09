@@ -70,6 +70,9 @@ const week = { first: "2026-09-28", last: "2026-10-04" } as const;
 /** El martes de `week` en Buenos Aires: el día de todas las entradas sembradas. */
 const entryDay = "2026-09-29";
 
+/** El mes de `entryDay`: el primero de los dos que corta `week`. */
+const entryMonth = "2026-09-01";
+
 /** El jueves siguiente a `week`, a las 12:00 en Buenos Aires: el período pedido no es «Esta semana». */
 const now = new Date("2026-10-08T15:00:00Z");
 
@@ -84,8 +87,13 @@ const roles: readonly Role[] = [
 ];
 const notActive: readonly MembershipStatus[] = ["inactive", "invited"];
 
-/** Las agrupaciones que se recorren en cada caso de alcance. */
-const groupBys: readonly ReportGroupBy[] = REPORT_GROUP_BYS;
+/**
+ * Las agrupaciones que se recorren en cada caso de alcance: las de R3 hasta
+ * que `test-engineer` lo devuelva a `REPORT_GROUP_BYS` en R10.
+ */
+const groupBys: readonly ReportGroupBy[] = REPORT_GROUP_BYS.filter(
+  (groupBy) => groupBy !== "week" && groupBy !== "month",
+);
 
 /** Dónde está una entrada: su proyecto, el cliente del proyecto, su tarea y sus etiquetas. */
 type Place = {
@@ -374,6 +382,10 @@ function summaryOf(state: ReportState) {
           return { tagId: group.tag?.id ?? null, seconds: group.seconds };
         case "date":
           return { dayKey: group.dayKey, seconds: group.seconds };
+        case "week":
+          return { weekStart: group.weekStart, seconds: group.seconds };
+        case "month":
+          return { monthStart: group.monthStart, seconds: group.seconds };
       }
     }),
   };
@@ -408,6 +420,10 @@ function rowsOf(
         : values.place.tagIds.map((tagId) => ({ tagId, seconds }));
     case "date":
       return [{ dayKey: entryDay, seconds }];
+    case "week":
+      return [{ weekStart: week.first, seconds }];
+    case "month":
+      return [{ monthStart: entryMonth, seconds }];
   }
 }
 
@@ -483,6 +499,10 @@ function everyoneInAGroups(groupBy: ReportGroupBy) {
       ];
     case "date":
       return [{ dayKey: entryDay, seconds: 210 * 60 }];
+    case "week":
+      return [{ weekStart: week.first, seconds: 210 * 60 }];
+    case "month":
+      return [{ monthStart: entryMonth, seconds: 210 * 60 }];
   }
 }
 
@@ -544,6 +564,10 @@ function keyOfGroup(group: ReportGroup): string {
       return `etiqueta ${nameOf(group.tag?.id ?? null)}`;
     case "date":
       return `fecha ${group.dayKey}`;
+    case "week":
+      return `semana ${group.weekStart}`;
+    case "month":
+      return `mes ${group.monthStart}`;
   }
 }
 
@@ -565,6 +589,10 @@ function keysOfEntry(entry: SeededEntry, level: ReportGroupBy): readonly string[
         : place.tagIds.map((tagId) => `etiqueta ${nameOf(tagId)}`);
     case "date":
       return [`fecha ${entryDay}`];
+    case "week":
+      return [`semana ${week.first}`];
+    case "month":
+      return [`mes ${entryMonth}`];
   }
 }
 

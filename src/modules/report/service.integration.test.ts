@@ -51,6 +51,11 @@ const lastWeek: ReportRange = { first: "2026-09-28", last: "2026-10-04" };
 
 const settings = workspaceOf(buenosAires);
 
+/** Las agrupaciones de R3: los recorridos vuelven a `REPORT_GROUP_BYS` en el paso 3 de R10. */
+const R3_GROUP_BYS = REPORT_GROUP_BYS.filter(
+  (groupBy) => groupBy !== "week" && groupBy !== "month",
+);
+
 let workspaceId: string;
 let ownerId: string;
 let owner: Actor;
@@ -485,7 +490,7 @@ describe("la agrupación y el orden (D-R2a-3, D-R2a-8, RP-12, RP-18)", () => {
     await seedClosed(other, "2026-09-29T14:00:00Z", 600);
     await seedClosed(other, "2026-09-30T14:00:00Z", 30, { billable: true });
 
-    for (const groupBy of REPORT_GROUP_BYS) {
+    for (const groupBy of R3_GROUP_BYS) {
       const state = await readyState(owner, { range: lastWeek, groupBy });
       expect([
         groupBy,
@@ -1146,10 +1151,10 @@ async function realLevelRead() {
     throw new Error("Se esperaba la lectura por niveles.");
   }
   const [scope, read] = call;
-  if (read.buckets === null) {
+  if (read.buckets.date === undefined) {
     throw new Error("Se esperaba la lectura por fecha, con sus tramos.");
   }
-  return { scope, span: read.span, buckets: read.buckets };
+  return { scope, span: read.span, buckets: read.buckets.date };
 }
 
 describe("las guardas de totalsByLevels (§4.3 de R3; criterios 7 y 20)", () => {
@@ -1163,39 +1168,46 @@ describe("las guardas de totalsByLevels (§4.3 de R3; criterios 7 y 20)", () => 
     const shifted = (instant: Date) => new Date(instant.getTime() + 1000);
     const filter = NO_ENTRY_FILTER;
     const invalid = [
-      { span, filter, dimensions: [], buckets: null },
+      { span, filter, dimensions: [], buckets: {} },
       {
         span,
         filter,
         dimensions: ["person", "project", "client", "task"],
-        buckets: null,
+        buckets: {},
       },
-      { span, filter, dimensions: ["person", "person"], buckets: null },
-      { span, filter, dimensions: ["project", "date"], buckets: null },
-      { span, filter, dimensions: ["project"], buckets },
-      { span, filter, dimensions: ["date"], buckets: { buckets: [], end: buckets.end } },
+      { span, filter, dimensions: ["person", "person"], buckets: {} },
+      { span, filter, dimensions: ["project", "date"], buckets: {} },
+      { span, filter, dimensions: ["project"], buckets: { date: buckets } },
+      {
+        span,
+        filter,
+        dimensions: ["date"],
+        buckets: { date: { buckets: [], end: buckets.end } },
+      },
       {
         span,
         filter,
         dimensions: ["date"],
         buckets: {
-          buckets: [
-            { ...first, start: shifted(first.start) },
-            ...buckets.buckets.slice(1),
-          ],
-          end: buckets.end,
+          date: {
+            buckets: [
+              { ...first, start: shifted(first.start) },
+              ...buckets.buckets.slice(1),
+            ],
+            end: buckets.end,
+          },
         },
       },
       {
         span,
         filter,
         dimensions: ["date"],
-        buckets: { ...buckets, end: shifted(buckets.end) },
+        buckets: { date: { ...buckets, end: shifted(buckets.end) } },
       },
       // Criterio 20 de R3: el tope de filas es un entero positivo.
-      { span, filter, dimensions: ["project"], buckets: null, limit: 0 },
-      { span, filter, dimensions: ["project"], buckets: null, limit: -1 },
-      { span, filter, dimensions: ["project"], buckets: null, limit: 1.5 },
+      { span, filter, dimensions: ["project"], buckets: {}, limit: 0 },
+      { span, filter, dimensions: ["project"], buckets: {}, limit: -1 },
+      { span, filter, dimensions: ["project"], buckets: {}, limit: 1.5 },
     ] as const;
 
     const select = vi.spyOn(db, "select");
@@ -1292,7 +1304,7 @@ describe("varios niveles en la lectura (D-R3-2, D-R3-3; criterio 8 de R3)", () =
       span,
       filter: NO_ENTRY_FILTER,
       dimensions: ["person", "tag"],
-      buckets: null,
+      buckets: {},
     });
     const ownerGroup = personGroup(ownerId, "Owner");
     const otherGroup = personGroup(otherId, "Otra");
@@ -1322,7 +1334,7 @@ describe("varios niveles en la lectura (D-R3-2, D-R3-3; criterio 8 de R3)", () =
       span,
       filter: NO_ENTRY_FILTER,
       dimensions: ["tag", "project"],
-      buckets: null,
+      buckets: {},
     });
     const e = { kind: "tag", tag: { id: eId, name: "E" } };
     const f = { kind: "tag", tag: { id: fId, name: "F" } };
@@ -1379,7 +1391,7 @@ describe("varios niveles en la lectura (D-R3-2, D-R3-3; criterio 8 de R3)", () =
       span,
       filter: NO_ENTRY_FILTER,
       dimensions: ["client", "project", "task"],
-      buckets: null,
+      buckets: {},
     });
     const web = webGroup();
     const app = appGroup();
@@ -1438,7 +1450,7 @@ describe("varios niveles en la lectura (D-R3-2, D-R3-3; criterio 8 de R3)", () =
       span,
       filter: NO_ENTRY_FILTER,
       dimensions: ["project", "date"],
-      buckets,
+      buckets: { date: buckets },
     });
     expectRows(
       rows.map((row) => {
@@ -1487,6 +1499,10 @@ function labelOf(group: ReportGroup): string {
       return group.tag?.name ?? reportLabels.noTag;
     case "date":
       return group.dayKey;
+    case "week":
+      return group.weekStart;
+    case "month":
+      return group.monthStart;
   }
 }
 
@@ -2006,7 +2022,7 @@ describe("el período fuera del tope (B1)", () => {
       { first: "2026-10-11", last: "2026-10-05" },
       { first: "2025-01-01", last: "2026-01-02" },
     ]) {
-      for (const groupBy of REPORT_GROUP_BYS) {
+      for (const groupBy of R3_GROUP_BYS) {
         await expect(
           getReportState(
             owner,
@@ -2050,7 +2066,7 @@ describe("el período fuera del tope (B1)", () => {
       ["date"],
       ["date"],
     ]);
-    expect(reads[3]?.buckets?.buckets).toHaveLength(366);
+    expect(reads[3]?.buckets.date?.buckets).toHaveLength(366);
   });
 });
 
@@ -2150,6 +2166,10 @@ describe("los filtros de cliente y de proyecto (R4: RP-25, RP-26, RP-29, RP-34)"
         return group.tag?.name ?? "sin";
       case "date":
         return group.dayKey;
+      case "week":
+        return group.weekStart;
+      case "month":
+        return group.monthStart;
     }
   }
 
@@ -2491,7 +2511,7 @@ describe("los filtros de cliente y de proyecto (R4: RP-25, RP-26, RP-29, RP-34)"
             span,
             filter,
             dimensions: ["project"],
-            buckets: null,
+            buckets: {},
           }),
         ).rejects.toThrow(RangeError);
         await expect(
@@ -2513,7 +2533,7 @@ describe("los filtros de cliente y de proyecto (R4: RP-25, RP-26, RP-29, RP-34)"
           span,
           filter,
           dimensions: ["project"],
-          buckets: null,
+          buckets: {},
         });
         expect(rows.length).toBeGreaterThan(0);
         const totals = await reportRepository.entryTotals(scope, { span, filter });

@@ -10,7 +10,6 @@ import {
   startOfDayKey,
   weekdayLabel,
   type DateFormat,
-  type TimeBuckets,
   type TimeSettings,
 } from "@/server/time";
 import { displayNameOf } from "@/modules/profile/service";
@@ -23,6 +22,7 @@ import { reportPeriodOf } from "./period";
 import {
   reportRepository,
   type EntryTotals,
+  type ReportBuckets,
   type ReportEntryFilter,
   type ReportLevelRead,
   type ReportSpan,
@@ -36,13 +36,14 @@ import {
   REPORT_MAX_DAYS,
   REPORT_MAX_FILTER_VALUES,
   REPORT_MAX_ROWS,
-  type ReportDateGroup,
+  REPORT_TIME_GROUP_BYS,
   type ReportFilters,
   type ReportGroup,
   type ReportGroupBy,
   type ReportRange,
   type ReportReadyState,
   type ReportState,
+  type ReportTimeGroupBy,
 } from "./schema";
 
 type ScopePeople =
@@ -133,7 +134,7 @@ function projectOf(stored: StoredProject | null) {
 
 /** Cómo se rotula un día: los tramos de la lectura, hoy y el formato. */
 type DateContext = {
-  readonly buckets: TimeBuckets | null;
+  readonly buckets: ReportBuckets;
   readonly todayKey: string;
   readonly format: DateFormat;
 };
@@ -166,10 +167,10 @@ function groupOf(row: LevelGroupRow, seconds: number, dates: DateContext): Repor
     case "tag":
       return { kind: "tag", tag: row.tag, seconds };
     case "date": {
-      if (dates.buckets === null) {
+      if (dates.buckets.date === undefined) {
         throw new Error("Una fila por fecha sin los tramos de la lectura.");
       }
-      const day = dates.buckets.buckets[row.bucket].firstDay;
+      const day = dates.buckets.date.buckets[row.bucket].firstDay;
       return {
         kind: "date",
         dayKey: day,
@@ -177,11 +178,21 @@ function groupOf(row: LevelGroupRow, seconds: number, dates: DateContext): Repor
         seconds,
       };
     }
+    case "week":
+    case "month":
+      throw new Error(`La agrupación por ${row.kind} todavía no lee.`);
   }
 }
 
-/** Los grupos que se ordenan por duración y nombre: todos menos la fecha. */
-type NamedGroup = Exclude<ReportGroup, ReportDateGroup>;
+/** Los grupos que se cortan en tramos de tiempo: la fecha, la semana y el mes. */
+type TimeGroup = Extract<ReportGroup, { readonly kind: ReportTimeGroupBy }>;
+
+function isTimeGroup(group: ReportGroup): group is TimeGroup {
+  return REPORT_TIME_GROUP_BYS.some((kind) => kind === group.kind);
+}
+
+/** Los grupos que se ordenan por duración y nombre: todos menos los de tiempo. */
+type NamedGroup = Exclude<ReportGroup, TimeGroup>;
 
 /** Lo que el orden compara de un grupo; `null` es «Sin proyecto», «Sin cliente», «Sin tarea» o «Sin etiqueta». */
 function sortKeyOf(
@@ -217,20 +228,30 @@ function compareGroups(left: NamedGroup, right: NamedGroup): number {
   return compareNames(leftKey, rightKey);
 }
 
-/** D-R2b-6: en orden cronológico. */
-function compareDays(left: ReportDateGroup, right: ReportDateGroup): number {
-  return compareDayKeys(left.dayKey, right.dayKey);
+/** El primer día de un grupo de tiempo: el día, el de la semana entera o el del mes. */
+function firstDayOf(group: TimeGroup): string {
+  switch (group.kind) {
+    case "date":
+      return group.dayKey;
+    case "week":
+      return group.weekStart;
+    case "month":
+      return group.monthStart;
+  }
 }
 
-/** Dos grupos del mismo nivel: los días por fecha, el resto por duración y nombre. */
+/**
+ * Dos grupos del mismo nivel: los de tiempo en orden cronológico (D-R2b-6,
+ * D-R10-5), el resto por duración y nombre.
+ */
 function compareSiblings(left: ReportGroup, right: ReportGroup): number {
-  if (left.kind === "date" && right.kind === "date") {
-    return compareDays(left, right);
+  if (isTimeGroup(left) && isTimeGroup(right)) {
+    return compareDayKeys(firstDayOf(left), firstDayOf(right));
   }
-  if (left.kind !== "date" && right.kind !== "date") {
+  if (!isTimeGroup(left) && !isTimeGroup(right)) {
     return compareGroups(left, right);
   }
-  throw new Error("Un nivel con días y grupos de otra dimensión.");
+  throw new Error("Un nivel con grupos de tiempo y de otra dimensión.");
 }
 
 /** Lo que se lee de un pedido, en una sola foto. */
@@ -366,6 +387,8 @@ function groupKeyOf(row: LevelGroupRow): string | number | null {
     case "tag":
       return row.tag?.id ?? null;
     case "date":
+    case "week":
+    case "month":
       return row.bucket;
   }
 }
@@ -468,13 +491,29 @@ async function readLevelsWithinLimit(
 type ReadPlan = {
   readonly levels: readonly ReportGroupBy[];
   readonly span: ReportSpan;
-  /** Los cortes de `span` si la fecha es un nivel; si no, `null`. */
-  readonly buckets: TimeBuckets | null;
+  /** Los cortes de `span` de cada dimensión de tiempo entre los niveles. */
+  readonly buckets: ReportBuckets;
   /** Los del pedido, sin cruzar con los catálogos. */
   readonly filters: ReportFilters;
 };
 
-/** La lectura de los `depth` primeros niveles, con los tramos solo si la fecha está entre ellos. */
+/** Los tramos de las dimensiones de tiempo de `dimensions`, y solo de esas. */
+function bucketsWithin(
+  buckets: ReportBuckets,
+  dimensions: readonly ReportGroupBy[],
+): ReportBuckets {
+  const within: {
+    -readonly [Dimension in ReportTimeGroupBy]?: ReportBuckets[Dimension];
+  } = {};
+  for (const groupBy of REPORT_TIME_GROUP_BYS) {
+    if (dimensions.includes(groupBy)) {
+      within[groupBy] = buckets[groupBy];
+    }
+  }
+  return within;
+}
+
+/** La lectura de los `depth` primeros niveles, con los tramos de sus dimensiones de tiempo. */
 function levelReadOf(
   plan: ReadPlan,
   depth: number,
@@ -486,7 +525,7 @@ function levelReadOf(
     span: plan.span,
     filter,
     dimensions,
-    buckets: dimensions.includes("date") ? plan.buckets : null,
+    buckets: bucketsWithin(plan.buckets, dimensions),
     limit,
   };
 }
@@ -576,10 +615,13 @@ export async function getReportState(
     from: startOfDayKey(range.first, timeZone),
     to: startOfDayKey(addDaysToKey(range.last, 1), timeZone),
   };
+  if (levels.includes("week") || levels.includes("month")) {
+    throw new Error("La agrupación por semana o por mes todavía no lee.");
+  }
   // Los cortes solo si la fecha es un nivel; el primero y el fin son los de `span`.
-  const buckets = levels.includes("date")
-    ? dayBuckets(range.first, range.last, timeZone)
-    : null;
+  const buckets: ReportBuckets = levels.includes("date")
+    ? { date: dayBuckets(range.first, range.last, timeZone) }
+    : {};
   // ADR 0021, D-R3-3: una sola foto, con los catálogos de los filtros
   // (D-R4-5). Se abre después de `report.view`, de `scopeOf` y de las
   // invariantes.

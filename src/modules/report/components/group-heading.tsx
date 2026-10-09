@@ -35,6 +35,9 @@ export function GroupHeading({ group }: { readonly group: ReportGroup }): ReactE
       return <NamedHeading named={group.tag} emptyLabel={reportLabels.noTag} />;
     case "date":
       return <time dateTime={group.dayKey}>{group.label}</time>;
+    case "week":
+    case "month":
+      return <span>{group.label}</span>;
   }
 }
 

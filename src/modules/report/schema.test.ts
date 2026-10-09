@@ -8,6 +8,7 @@ import {
   REPORT_MAX_DAYS,
   REPORT_MAX_FILTER_VALUES,
   REPORT_MAX_ROWS,
+  REPORT_TIME_GROUP_BYS,
   REPORT_WITHOUT_PROJECT,
   reportClientParams,
   reportFiltersOf,
@@ -217,7 +218,10 @@ describe("reportGroupParams (D-R2a-3)", () => {
       "task",
       "tag",
       "date",
+      "week",
+      "month",
     ]);
+    expect(REPORT_TIME_GROUP_BYS).toEqual(["date", "week", "month"]);
     for (const groupBy of REPORT_GROUP_BYS) {
       expect(
         reportGroupParams.safeParse({ agrupar: REPORT_GROUP_PARAMS[groupBy] }),
@@ -267,6 +271,26 @@ describe("reportGroupParams (D-R2a-3)", () => {
     ).toBe(false);
   });
 
+  it("semana y mes pasan con o sin un rango válido al lado, y Semana, semanas, Mes, meses, week y month no pasan con ninguno (D-R10-5)", () => {
+    for (const range of [
+      { desde: "2026-10-05", hasta: "2026-10-11" },
+      { desde: "2026-10-11", hasta: "2026-10-05" },
+      {},
+    ]) {
+      expect(reportGroupParams.safeParse({ ...range, agrupar: "semana" })).toEqual({
+        success: true,
+        data: "week",
+      });
+      expect(reportGroupParams.safeParse({ ...range, agrupar: "mes" })).toEqual({
+        success: true,
+        data: "month",
+      });
+      for (const agrupar of ["Semana", "semanas", "Mes", "meses", "week", "month"]) {
+        expect(reportGroupParams.safeParse({ ...range, agrupar }).success).toBe(false);
+      }
+    }
+  });
+
   it("cliente y fecha pasan con o sin un rango válido al lado, y Cliente y fechas no pasan con ninguno", () => {
     for (const range of [
       { desde: "2026-10-05", hasta: "2026-10-11" },
@@ -304,6 +328,9 @@ describe("reportSubgroupParams (D-R3-5, RP-12, RP-32)", () => {
         [{ subagrupar: "etiqueta,fecha" }, ["tag", "date"]],
         [{ agrupar: "proyecto", subagrupar: "persona" }, ["person"]],
         [{ agrupar: "fecha", subagrupar: "persona,tarea" }, ["person", "task"]],
+        // D-R10-6: una dimensión de tiempo debajo de otra.
+        [{ agrupar: "fecha", subagrupar: "mes,semana" }, ["month", "week"]],
+        [{ agrupar: "mes", subagrupar: "semana,fecha" }, ["week", "date"]],
         // `Proyecto` no es un `agrupar` válido: el primer nivel es persona.
         [{ agrupar: "Proyecto", subagrupar: "proyecto" }, ["project"]],
       ] as const) {
@@ -331,6 +358,11 @@ describe("reportSubgroupParams (D-R3-5, RP-12, RP-32)", () => {
         { subagrupar: "Fecha" },
         { subagrupar: " fecha" },
         { subagrupar: "date" },
+        { agrupar: "semana", subagrupar: "semana" },
+        { agrupar: "mes", subagrupar: "semana,mes" },
+        { subagrupar: "Semana" },
+        { subagrupar: "meses" },
+        { subagrupar: "week" },
         { subagrupar: "" },
         { subagrupar: ["fecha", "fecha"] },
         { subagrupar: ["fecha", "etiqueta"] },
@@ -389,6 +421,103 @@ describe("reportReadyState (D-R2b-2, D-R2b-5, D-R3-3, D-R3-4, D-R3-7)", () => {
       ],
     };
     expect(reportReadyState.parse(byDate)).toEqual(byDate);
+  });
+
+  it("admite los grupos de semana y de mes, con partial nulo y con texto (D-R10-3)", () => {
+    const byWeek: ReportReadyState = {
+      ...ready,
+      groupBy: "week",
+      groups: [
+        {
+          kind: "week",
+          weekStart: "2026-09-28",
+          label: "28/09 – 04/10",
+          partial: "01/10 – 04/10",
+          seconds: 60,
+        },
+        {
+          kind: "week",
+          weekStart: "2026-10-05",
+          label: "05/10 – 11/10",
+          partial: null,
+          seconds: 30,
+        },
+      ],
+    };
+    expect(reportReadyState.parse(byWeek)).toEqual(byWeek);
+    const byMonth: ReportReadyState = {
+      ...ready,
+      groupBy: "month",
+      groups: [
+        {
+          kind: "month",
+          monthStart: "2026-09-01",
+          label: "septiembre",
+          partial: "15/09 – 30/09",
+          seconds: 60,
+        },
+        {
+          kind: "month",
+          monthStart: "2026-10-01",
+          label: "octubre",
+          partial: null,
+          seconds: 30,
+        },
+      ],
+    };
+    expect(reportReadyState.parse(byMonth)).toEqual(byMonth);
+  });
+
+  it("rechaza un grupo de semana o de mes sin partial", () => {
+    expect(
+      reportReadyState.safeParse({
+        ...ready,
+        groupBy: "week",
+        groups: [
+          { kind: "week", weekStart: "2026-09-28", label: "28/09 – 04/10", seconds: 60 },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      reportReadyState.safeParse({
+        ...ready,
+        groupBy: "month",
+        groups: [
+          { kind: "month", monthStart: "2026-09-01", label: "septiembre", seconds: 60 },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("admite Mes → Semana → Fecha anidados (D-R10-6)", () => {
+    const byTime: ReportReadyState = {
+      ...ready,
+      groupBy: "month",
+      subgroups: ["week", "date"],
+      levelsShown: 3,
+      groups: [
+        {
+          kind: "month",
+          monthStart: "2026-10-01",
+          label: "octubre",
+          partial: "01/10 – 11/10",
+          seconds: 90,
+          children: [
+            {
+              kind: "week",
+              weekStart: "2026-09-28",
+              label: "28/09 – 04/10",
+              partial: "01/10 – 04/10",
+              seconds: 90,
+              children: [
+                { kind: "date", dayKey: "2026-10-01", label: "jue, 01/10", seconds: 90 },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    expect(reportReadyState.parse(byTime)).toEqual(byTime);
   });
 
   const taskId = "4c1d2b3a-5e6f-4a7b-8c9d-0e1f2a3b4c5d";

@@ -27,6 +27,10 @@ export function groupKey(group: ReportGroup): string {
       return group.tag === null ? "sin-etiqueta" : group.tag.id;
     case "date":
       return group.dayKey;
+    case "week":
+      return group.weekStart;
+    case "month":
+      return group.monthStart;
   }
 }
 

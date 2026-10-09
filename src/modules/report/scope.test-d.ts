@@ -15,7 +15,7 @@ import type { ReportScope } from "./service";
 
 const span: ReportSpan = { from: new Date(0), to: new Date(0) };
 const entries: ReportEntryRead = { span, filter: NO_ENTRY_FILTER };
-const read: ReportLevelRead = { ...entries, dimensions: ["person"], buckets: null };
+const read: ReportLevelRead = { ...entries, dimensions: ["person"], buckets: {} };
 
 // @ts-expect-error: un literal con workspaceId y people no es un ReportScope; solo scopeOf y narrowedTo lo construyen.
 export const forged: ReportScope = { workspaceId: "w", people: { kind: "everyone" } };
