@@ -9,6 +9,7 @@ import {
   reportRangeInput,
   reportRangeParams,
   reportReadyState,
+  sameRange,
   type ReportReadyState,
 } from "./schema";
 
@@ -88,6 +89,15 @@ describe("reportRangeInput (RP-21, RP-34)", () => {
     expect(
       messagesOf(reportRangeInput.safeParse({ first: "2026-10-05", last: "2024-01-01" })),
     ).toEqual([reportMessages.endBeforeStart]);
+  });
+});
+
+describe("sameRange", () => {
+  it("compara los dos extremos", () => {
+    const week = { first: "2026-10-05", last: "2026-10-11" };
+    expect(sameRange(week, { first: "2026-10-05", last: "2026-10-11" })).toBe(true);
+    expect(sameRange(week, { first: "2026-10-05", last: "2026-10-12" })).toBe(false);
+    expect(sameRange(week, { first: "2026-10-04", last: "2026-10-11" })).toBe(false);
   });
 });
 

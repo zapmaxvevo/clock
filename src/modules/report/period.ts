@@ -16,6 +16,7 @@ import {
 import {
   REPORT_SHORTCUTS,
   reportRangeInput,
+  sameRange,
   type ReportRange,
   type ReportShortcut,
   type ReportShortcutId,
@@ -66,10 +67,6 @@ function monthRange(dayKey: string, months: number): ReportRange {
 
 function isValidRange(range: ReportRange): boolean {
   return reportRangeInput.safeParse(range).success;
-}
-
-function sameRange(left: ReportRange, right: ReportRange): boolean {
-  return left.first === right.first && left.last === right.last;
 }
 
 /** El año de la clave de hoy; lanza si no es un día. */

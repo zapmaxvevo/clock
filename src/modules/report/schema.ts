@@ -16,6 +16,11 @@ export const reportMessages = {
 
 export type ReportRange = { readonly first: string; readonly last: string };
 
+/** Los dos períodos tienen los mismos extremos. */
+export function sameRange(left: ReportRange, right: ReportRange): boolean {
+  return left.first === right.first && left.last === right.last;
+}
+
 /** El primer problema del período, en el orden de `reportRangeInput`, o `null`. */
 function rangeProblem({ first, last }: ReportRange): string | null {
   if (parseDayKey(first) === null || parseDayKey(last) === null) {
