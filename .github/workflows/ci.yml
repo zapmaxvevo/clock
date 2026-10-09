@@ -70,10 +70,26 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     needs: [verify, integration]
-    # Los secretos de e2e viven en este environment y no a nivel repositorio:
-    # E2E_DATABASE_URL escribe en la base del preview.
-    environment: preview
-    if: vars.E2E_BASE_URL != ''
+    # Corre contra un servidor local, no contra el preview de Vercel: sin
+    # E2E_BASE_URL, playwright.config.ts compila y levanta la aplicación con
+    # sus valores de desarrollo y genera el secreto de la sesión de prueba.
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: clock
+          POSTGRES_PASSWORD: clock
+          POSTGRES_DB: clock
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U clock"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # La misma base que LOCAL_DATABASE_URL de e2e/environment.ts.
+      DATABASE_URL: postgresql://clock:clock@localhost:5432/clock
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -81,16 +97,13 @@ jobs:
           node-version: 24.x
           cache: npm
       - run: npm ci
+      - run: npm run db:migrate
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
-        env:
-          E2E_BASE_URL: ${{ vars.E2E_BASE_URL }}
-          # El endpoint de sesión de prueba solo se registra con este secreto
-          # cargado. Tiene que coincidir con el del entorno de preview.
-          E2E_TEST_SESSION_SECRET: ${{ secrets.E2E_TEST_SESSION_SECRET }}
-          # Opt-in explícito del endpoint de sesión de prueba. Sin esta
-          # variable no se registra, aunque el secreto esté cargado.
-          ALLOW_TEST_SESSION: "true"
-          # El setup de Playwright atrasa la creación del workspace en la base
-          # del preview, que lleva solo datos sintéticos.
-          E2E_DATABASE_URL: ${{ secrets.E2E_DATABASE_URL }}
+      # Las trazas de los reintentos, para abrir con `npx playwright show-trace`.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-test-results
+          path: test-results/
+          retention-days: 7

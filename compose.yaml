@@ -1,0 +1,23 @@
+# Postgres local para desarrollo, integración y e2e: `docker compose up -d`.
+# La base de los tests de integración se crea aparte, ver el README.
+name: clock
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: clock
+      POSTGRES_PASSWORD: clock
+      POSTGRES_DB: clock
+    ports:
+      - "5432:5432"
+    volumes:
+      - clock-pg-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clock -d clock"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  clock-pg-data:

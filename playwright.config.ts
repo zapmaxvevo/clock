@@ -7,9 +7,10 @@ import {
 } from "./e2e/environment";
 
 /**
- * Los e2e corren contra el preview de Vercel del pull request, que llega en
- * E2E_BASE_URL. Sin esa variable la suite levanta y baja un servidor local;
- * en ese caso Postgres tiene que estar sirviendo DATABASE_URL, ya migrado.
+ * Sin E2E_BASE_URL, que es como corren en CI, la suite compila, levanta y baja
+ * un servidor local; Postgres tiene que estar sirviendo DATABASE_URL, ya
+ * migrado. Con E2E_BASE_URL corre a mano contra un servidor ya levantado, por
+ * ejemplo un preview de Vercel.
  */
 const previewURL = process.env.E2E_BASE_URL;
 const baseURL = previewURL ?? "http://localhost:3000";

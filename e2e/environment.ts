@@ -14,10 +14,10 @@ const SECRET_MIN_LENGTH = 32;
  * Un secreto que habilita saltear la autenticación no puede tener un valor
  * por defecto en el repositorio: alcanza con que alguien lo copie al cargar
  * las variables de un preview para que ese preview quede abierto. Cuando el
- * entorno no lo trae —fuera de CI— se genera uno nuevo por corrida y se deja
- * en `process.env`: los workers lo heredan al nacer y la configuración se lo
- * pasa al servidor, así las dos puntas comparten un valor que no vive en
- * ningún archivo.
+ * entorno no lo trae —contra el servidor local, también en CI— se genera uno
+ * nuevo por corrida y se deja en `process.env`: los workers lo heredan al
+ * nacer y la configuración se lo pasa al servidor, así las dos puntas
+ * comparten un valor que no vive en ningún archivo.
  */
 function testSessionSecret(): string {
   const configured = process.env.E2E_TEST_SESSION_SECRET;
