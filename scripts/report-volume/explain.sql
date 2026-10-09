@@ -1,7 +1,8 @@
 -- Las consultas de §6.2 y §6.3 del contrato de R3, sobre el volumen de `seed.sql`:
 -- Q1 a Q6 son las de R2a y R2b con el texto de la lectura por niveles (Q4,
 -- `listTimesheetEntries`, no cambia), y Q7 a Q10 las nuevas. Q17 a Q22 son
--- las de §6.2 del contrato de R4, con los filtros de cliente y de proyecto.
+-- las de §6.2 del contrato de R4, con los filtros de cliente y de proyecto, y
+-- Q23 y Q24 las de §6.3, con el filtro de personas y su catálogo.
 -- Cada sentencia es el texto que emite el repository (`.toSQL()`), preparada
 -- con sus parámetros como los manda el driver: los instantes son los que
 -- calcula `startOfDayKey` en Buenos Aires, que no tiene cambio de horario.
@@ -665,5 +666,134 @@ explain (analyze) execute q21a(:workspace, :year_from, :year_to, :p1, :p2, :p3, 
 explain (analyze) execute q21(:'day_cuts', :workspace, :year_from, :year_to, :p1, :p2, :p3, :q21_limit);
 commit;
 
+
+-- Contrato de R4, §6.3 (parte B): el filtro de personas angosta el alcance a
+-- `chosen`, `workspace_id = $1 and user_id in ($2, …)` con `inArray`, un
+-- parámetro por valor; el estado de la membresía también va con `inArray`,
+-- parámetros escalares del enum (D-R4-11). Tres personas: dos activas y una
+-- inactiva.
+\set u1 '''volume-user-02'''
+\set u2 '''volume-user-03'''
+\set u3 '''volume-user-29'''
+\set active '''active'''
+\set inactive '''inactive'''
+
+-- Q23: totalsByLevels [person], chosen con tres personas, 366 días. Presupuesto: mediana <= 60 ms.
+\echo '== Q23'
+prepare q23 as
+select "totals"."key_1", "user"."name", "user_preference"."display_name", "membership"."status", "totals"."seconds", "totals"."billable_seconds" from (select "entries"."workspace_id" as "workspace_id", "entries"."key_1" as "key_1", sum("entries"."seconds")::bigint as "seconds", coalesce(sum("entries"."seconds") filter (where "entries"."billable"), 0)::bigint as "billable_seconds" from (select "workspace_id" as "workspace_id", "user_id" as "key_1", floor(extract(epoch from date_trunc('milliseconds', "ended_at") - date_trunc('milliseconds', "started_at"))) as "seconds", "billable" as "billable" from "time_entry" where (("time_entry"."workspace_id" = $1 and "time_entry"."user_id" in ($2, $3, $4)) and ("time_entry"."ended_at" is not null and "time_entry"."started_at" >= $5 and "time_entry"."started_at" < $6))) "entries" group by "entries"."workspace_id", "entries"."key_1") "totals" inner join "membership" on ("membership"."workspace_id" = "totals"."workspace_id" and "membership"."user_id" = "totals"."key_1") inner join "user" on "user"."id" = "totals"."key_1" left join "user_preference" on "user_preference"."user_id" = "totals"."key_1";
+
+\echo '-- calentamiento'
+explain (analyze, buffers) execute q23(:workspace, :u1, :u2, :u3, :year_from, :year_to);
+\echo '-- medida 1'
+explain (analyze, buffers) execute q23(:workspace, :u1, :u2, :u3, :year_from, :year_to);
+\echo '-- medida 2'
+explain (analyze, buffers) execute q23(:workspace, :u1, :u2, :u3, :year_from, :year_to);
+\echo '-- medida 3'
+explain (analyze, buffers) execute q23(:workspace, :u1, :u2, :u3, :year_from, :year_to);
+\echo '-- medida 4'
+explain (analyze, buffers) execute q23(:workspace, :u1, :u2, :u3, :year_from, :year_to);
+\echo '-- medida 5'
+explain (analyze, buffers) execute q23(:workspace, :u1, :u2, :u3, :year_from, :year_to);
+
+-- El pedido Persona → Proyecto de las tres personas: Q23 es su primer nivel y
+-- Q23a el segundo, con el `limit` de su presupuesto, como lo calcula el
+-- service. Las filas de cada nivel se cuentan con la misma sentencia, sin el
+-- `limit`, antes de medir.
+prepare q23_rows as select count(*) from (select "totals"."key_1", "user"."name", "user_preference"."display_name", "membership"."status", "totals"."seconds", "totals"."billable_seconds" from (select "entries"."workspace_id" as "workspace_id", "entries"."key_1" as "key_1", sum("entries"."seconds")::bigint as "seconds", coalesce(sum("entries"."seconds") filter (where "entries"."billable"), 0)::bigint as "billable_seconds" from (select "workspace_id" as "workspace_id", "user_id" as "key_1", floor(extract(epoch from date_trunc('milliseconds', "ended_at") - date_trunc('milliseconds', "started_at"))) as "seconds", "billable" as "billable" from "time_entry" where (("time_entry"."workspace_id" = $1 and "time_entry"."user_id" in ($2, $3, $4)) and ("time_entry"."ended_at" is not null and "time_entry"."started_at" >= $5 and "time_entry"."started_at" < $6))) "entries" group by "entries"."workspace_id", "entries"."key_1") "totals" inner join "membership" on ("membership"."workspace_id" = "totals"."workspace_id" and "membership"."user_id" = "totals"."key_1") inner join "user" on "user"."id" = "totals"."key_1" left join "user_preference" on "user_preference"."user_id" = "totals"."key_1") as counted;
+execute q23_rows(:workspace, :u1, :u2, :u3, :year_from, :year_to) \gset q23_
+prepare q23a_rows as select count(*) from (select "totals"."key_1", "user"."name", "user_preference"."display_name", "membership"."status", "group_project"."id", "group_project"."name", "group_project"."color", "group_project_client"."id", "group_project_client"."name", "totals"."seconds", "totals"."billable_seconds" from (select "entries"."workspace_id" as "workspace_id", "entries"."key_1" as "key_1", "entries"."key_2" as "key_2", sum("entries"."seconds")::bigint as "seconds", coalesce(sum("entries"."seconds") filter (where "entries"."billable"), 0)::bigint as "billable_seconds" from (select "workspace_id" as "workspace_id", "user_id" as "key_1", "project_id" as "key_2", floor(extract(epoch from date_trunc('milliseconds', "ended_at") - date_trunc('milliseconds', "started_at"))) as "seconds", "billable" as "billable" from "time_entry" where (("time_entry"."workspace_id" = $1 and "time_entry"."user_id" in ($2, $3, $4)) and ("time_entry"."ended_at" is not null and "time_entry"."started_at" >= $5 and "time_entry"."started_at" < $6))) "entries" group by "entries"."workspace_id", "entries"."key_1", "entries"."key_2") "totals" inner join "membership" on ("membership"."workspace_id" = "totals"."workspace_id" and "membership"."user_id" = "totals"."key_1") inner join "user" on "user"."id" = "totals"."key_1" left join "user_preference" on "user_preference"."user_id" = "totals"."key_1" left join "project" "group_project" on ("group_project"."workspace_id" = "totals"."workspace_id" and "group_project"."id" = "totals"."key_2") left join "client" "group_project_client" on ("group_project_client"."workspace_id" = "group_project"."workspace_id" and "group_project_client"."id" = "group_project"."client_id") limit $7) as counted;
+execute q23a_rows(:workspace, :u1, :u2, :u3, :year_from, :year_to, 1000000) \gset q23a_
+select 3000 - :q23_count + 1 as q23a_limit \gset
+\echo 'filas por nivel: q23' :q23_count 'q23a' :q23a_count
+\echo 'limit: q23a' :q23a_limit
+
+-- Q23a: totalsByLevels [person, project], chosen con tres personas, 366 días, con el `limit` de su presupuesto: el nivel 2 del pedido.
+\echo '== Q23a'
+prepare q23a as
+select "totals"."key_1", "user"."name", "user_preference"."display_name", "membership"."status", "group_project"."id", "group_project"."name", "group_project"."color", "group_project_client"."id", "group_project_client"."name", "totals"."seconds", "totals"."billable_seconds" from (select "entries"."workspace_id" as "workspace_id", "entries"."key_1" as "key_1", "entries"."key_2" as "key_2", sum("entries"."seconds")::bigint as "seconds", coalesce(sum("entries"."seconds") filter (where "entries"."billable"), 0)::bigint as "billable_seconds" from (select "workspace_id" as "workspace_id", "user_id" as "key_1", "project_id" as "key_2", floor(extract(epoch from date_trunc('milliseconds', "ended_at") - date_trunc('milliseconds', "started_at"))) as "seconds", "billable" as "billable" from "time_entry" where (("time_entry"."workspace_id" = $1 and "time_entry"."user_id" in ($2, $3, $4)) and ("time_entry"."ended_at" is not null and "time_entry"."started_at" >= $5 and "time_entry"."started_at" < $6))) "entries" group by "entries"."workspace_id", "entries"."key_1", "entries"."key_2") "totals" inner join "membership" on ("membership"."workspace_id" = "totals"."workspace_id" and "membership"."user_id" = "totals"."key_1") inner join "user" on "user"."id" = "totals"."key_1" left join "user_preference" on "user_preference"."user_id" = "totals"."key_1" left join "project" "group_project" on ("group_project"."workspace_id" = "totals"."workspace_id" and "group_project"."id" = "totals"."key_2") left join "client" "group_project_client" on ("group_project_client"."workspace_id" = "group_project"."workspace_id" and "group_project_client"."id" = "group_project"."client_id") limit $7;
+
+\echo '-- calentamiento'
+explain (analyze, buffers) execute q23a(:workspace, :u1, :u2, :u3, :year_from, :year_to, :q23a_limit);
+\echo '-- medida 1'
+explain (analyze, buffers) execute q23a(:workspace, :u1, :u2, :u3, :year_from, :year_to, :q23a_limit);
+\echo '-- medida 2'
+explain (analyze, buffers) execute q23a(:workspace, :u1, :u2, :u3, :year_from, :year_to, :q23a_limit);
+\echo '-- medida 3'
+explain (analyze, buffers) execute q23a(:workspace, :u1, :u2, :u3, :year_from, :year_to, :q23a_limit);
+\echo '-- medida 4'
+explain (analyze, buffers) execute q23a(:workspace, :u1, :u2, :u3, :year_from, :year_to, :q23a_limit);
+\echo '-- medida 5'
+explain (analyze, buffers) execute q23a(:workspace, :u1, :u2, :u3, :year_from, :year_to, :q23a_limit);
+
+-- Q24: listPeople, el catálogo de personas. Presupuesto: mediana <= 10 ms.
+\echo '== Q24'
+prepare q24 as
+select "membership"."user_id", "user"."name", "user_preference"."display_name", "membership"."status" from "membership" inner join "user" on "user"."id" = "membership"."user_id" left join "user_preference" on "user_preference"."user_id" = "membership"."user_id" where ("membership"."workspace_id" = $1 and "membership"."status" in ($2, $3));
+
+\echo '-- calentamiento'
+explain (analyze, buffers) execute q24(:workspace, :active, :inactive);
+\echo '-- medida 1'
+explain (analyze, buffers) execute q24(:workspace, :active, :inactive);
+\echo '-- medida 2'
+explain (analyze, buffers) execute q24(:workspace, :active, :inactive);
+\echo '-- medida 3'
+explain (analyze, buffers) execute q24(:workspace, :active, :inactive);
+\echo '-- medida 4'
+explain (analyze, buffers) execute q24(:workspace, :active, :inactive);
+\echo '-- medida 5'
+explain (analyze, buffers) execute q24(:workspace, :active, :inactive);
+
+-- El pedido Persona → Proyecto entero de las tres personas, en una transacción
+-- como la del service: los tres catálogos, Q23 y Q23a. Presupuesto: <= 250 ms.
+\echo '== P4'
+\echo '-- calentamiento'
+begin transaction isolation level repeatable read read only;
+explain (analyze) execute q22a(:workspace);
+explain (analyze) execute q22b(:owner, :workspace);
+explain (analyze) execute q24(:workspace, :active, :inactive);
+explain (analyze) execute q23(:workspace, :u1, :u2, :u3, :year_from, :year_to);
+explain (analyze) execute q23a(:workspace, :u1, :u2, :u3, :year_from, :year_to, :q23a_limit);
+commit;
+\echo '-- medida 1'
+begin transaction isolation level repeatable read read only;
+explain (analyze) execute q22a(:workspace);
+explain (analyze) execute q22b(:owner, :workspace);
+explain (analyze) execute q24(:workspace, :active, :inactive);
+explain (analyze) execute q23(:workspace, :u1, :u2, :u3, :year_from, :year_to);
+explain (analyze) execute q23a(:workspace, :u1, :u2, :u3, :year_from, :year_to, :q23a_limit);
+commit;
+\echo '-- medida 2'
+begin transaction isolation level repeatable read read only;
+explain (analyze) execute q22a(:workspace);
+explain (analyze) execute q22b(:owner, :workspace);
+explain (analyze) execute q24(:workspace, :active, :inactive);
+explain (analyze) execute q23(:workspace, :u1, :u2, :u3, :year_from, :year_to);
+explain (analyze) execute q23a(:workspace, :u1, :u2, :u3, :year_from, :year_to, :q23a_limit);
+commit;
+\echo '-- medida 3'
+begin transaction isolation level repeatable read read only;
+explain (analyze) execute q22a(:workspace);
+explain (analyze) execute q22b(:owner, :workspace);
+explain (analyze) execute q24(:workspace, :active, :inactive);
+explain (analyze) execute q23(:workspace, :u1, :u2, :u3, :year_from, :year_to);
+explain (analyze) execute q23a(:workspace, :u1, :u2, :u3, :year_from, :year_to, :q23a_limit);
+commit;
+\echo '-- medida 4'
+begin transaction isolation level repeatable read read only;
+explain (analyze) execute q22a(:workspace);
+explain (analyze) execute q22b(:owner, :workspace);
+explain (analyze) execute q24(:workspace, :active, :inactive);
+explain (analyze) execute q23(:workspace, :u1, :u2, :u3, :year_from, :year_to);
+explain (analyze) execute q23a(:workspace, :u1, :u2, :u3, :year_from, :year_to, :q23a_limit);
+commit;
+\echo '-- medida 5'
+begin transaction isolation level repeatable read read only;
+explain (analyze) execute q22a(:workspace);
+explain (analyze) execute q22b(:owner, :workspace);
+explain (analyze) execute q24(:workspace, :active, :inactive);
+explain (analyze) execute q23(:workspace, :u1, :u2, :u3, :year_from, :year_to);
+explain (analyze) execute q23a(:workspace, :u1, :u2, :u3, :year_from, :year_to, :q23a_limit);
+commit;
 
 deallocate all;
