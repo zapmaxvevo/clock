@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { eq, sql } from "drizzle-orm";
 import {
@@ -59,9 +59,6 @@ const thisWeek: ReportRange = { first: "2026-10-05", last: "2026-10-11" };
 const lastWeek: ReportRange = { first: "2026-09-28", last: "2026-10-04" };
 
 const settings = workspaceOf(buenosAires);
-
-/** Las agrupaciones de R10a: los recorridos vuelven a `REPORT_GROUP_BYS` en el paso 12 de R10. */
-const R10A_GROUP_BYS = REPORT_GROUP_BYS.filter((groupBy) => groupBy !== "description");
 
 let workspaceId: string;
 let ownerId: string;
@@ -497,7 +494,7 @@ describe("la agrupación y el orden (D-R2a-3, D-R2a-8, RP-12, RP-18)", () => {
     await seedClosed(other, "2026-09-29T14:00:00Z", 600);
     await seedClosed(other, "2026-09-30T14:00:00Z", 30, { billable: true });
 
-    for (const groupBy of R10A_GROUP_BYS) {
+    for (const groupBy of REPORT_GROUP_BYS) {
       const state = await readyState(owner, { range: lastWeek, groupBy });
       expect([
         groupBy,
@@ -1780,7 +1777,7 @@ describe("el tope de filas (D-R3-6; criterio 18 de R3)", () => {
     expect(reportReadyState.parse(state)).toEqual(state);
     expect([state.levelsShown, state.groups.length]).toEqual([2, 300]);
     expect(state.groups.every((day) => day.children?.length === 9)).toBe(true);
-    expect(byLevels.mock.calls.map(([, read]) => read.limit)).toEqual([undefined, 2701]);
+    expect(byLevels.mock.calls.map(([, read]) => read.limit)).toEqual([3001, 2701]);
   });
 
   it("con 3001 filas el nivel 2 no entra: levelsShown 1, ningún children y los subniveles pedidos", async () => {
@@ -1797,7 +1794,7 @@ describe("el tope de filas (D-R3-6; criterio 18 de R3)", () => {
       300,
     ]);
     expect(state.groups.some((day) => day.children !== undefined)).toBe(false);
-    expect(byLevels.mock.calls.map(([, read]) => read.limit)).toEqual([undefined, 2701]);
+    expect(byLevels.mock.calls.map(([, read]) => read.limit)).toEqual([3001, 2701]);
     expect(state.totalSeconds).toBe(300 * 3600);
   });
 
@@ -2032,7 +2029,7 @@ describe("el período fuera del tope (B1)", () => {
       { first: "2026-10-11", last: "2026-10-05" },
       { first: "2025-01-01", last: "2026-01-02" },
     ]) {
-      for (const groupBy of R10A_GROUP_BYS) {
+      for (const groupBy of REPORT_GROUP_BYS) {
         await expect(
           getReportState(
             owner,
@@ -3302,5 +3299,382 @@ describe("los tramos de cada lectura (D-R10-4; criterio 8 de R10)", () => {
       "2026-10-11",
     ]);
     expect(week?.buckets[1]?.start.toISOString()).toBe("2026-10-04T03:00:00.000Z");
+  });
+});
+
+/** D-R10-9: el `id` que calcula la base, calculado acá: los 32 primeros hexadecimales del SHA-256 en UTF-8. */
+function descriptionIdOf(text: string): string {
+  return createHash("sha256").update(text, "utf8").digest("hex").slice(0, 32);
+}
+
+/** Las filas por descripción como `[texto o null, recortada, segundos]`, en orden. */
+function descriptionRows(state: ReportReadyState) {
+  return state.groups.map((group) =>
+    group.kind === "description"
+      ? [
+          group.description?.text ?? null,
+          group.description?.truncated ?? null,
+          group.seconds,
+        ]
+      : ["?", "?", group.seconds],
+  );
+}
+
+/** Los `id` del primer nivel por descripción, en orden; `null` es «Sin descripción». */
+function descriptionIds(state: ReportReadyState) {
+  return state.groups.map((group) =>
+    group.kind === "description" ? (group.description?.id ?? null) : "?",
+  );
+}
+
+describe("por descripción (D-R10-8, D-R10-9, RP-11, RP-28; criterio 15 de R10)", () => {
+  let otherId: string;
+  let p1: string;
+  let p2: string;
+
+  beforeEach(async () => {
+    otherId = await seedPerson({ accountName: "Otra" });
+    p1 = (await seedProject({ workspaceId, name: "P1" })).id;
+    p2 = (await seedProject({ workspaceId, name: "P2" })).id;
+  });
+
+  /** Una entrada del owner el martes 29/09 a las 10:00 de Buenos Aires. */
+  function seedDescribed(description: string, seconds: number, userId = ownerId) {
+    return seedTimeEntry({
+      workspaceId,
+      userId,
+      description,
+      startedAt: new Date("2026-09-29T13:00:00Z"),
+      endedAt: new Date(Date.parse("2026-09-29T13:00:00Z") + seconds * 1000),
+    });
+  }
+
+  it("agrupa por el texto exacto: las mayúsculas, los espacios internos, NFD y un espacio final separan", async () => {
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 3600, { projectId: p1 });
+    await seedClosed(otherId, "2026-09-30T13:00:00Z", 1800, { projectId: p2 });
+    await db
+      .update(timeEntry)
+      .set({ description: "Reunión" })
+      .where(eq(timeEntry.workspaceId, workspaceId));
+    await seedDescribed("reunión", 3000);
+    await seedDescribed("Reunión semanal", 2400);
+    await seedDescribed("Reunión  semanal", 2100);
+    // Sembradas con SQL: la aplicación guarda NFC y recorta los bordes.
+    await seedDescribed("Reunión".normalize("NFD"), 1500);
+    await seedDescribed("Reunión ", 1200);
+    const state = await readyState(owner, { range: lastWeek, groupBy: "description" });
+    expect(descriptionRows(state)).toEqual([
+      ["Reunión", false, 5400],
+      ["reunión", false, 3000],
+      ["Reunión semanal", false, 2400],
+      ["Reunión  semanal", false, 2100],
+      ["Reunión".normalize("NFD"), false, 1500],
+      ["Reunión ", false, 1200],
+    ]);
+    expect(descriptionIds(state)).toEqual(
+      [
+        "Reunión",
+        "reunión",
+        "Reunión semanal",
+        "Reunión  semanal",
+        "Reunión".normalize("NFD"),
+        "Reunión ",
+      ].map(descriptionIdOf),
+    );
+    expect(reportReadyState.parse(state)).toEqual(state);
+  });
+
+  it("la cadena vacía es «Sin descripción», después de las de su misma duración; el empate va por el texto", async () => {
+    await seedDescribed("", 600);
+    await seedDescribed("Bravo", 600);
+    await seedDescribed("Alfa", 600);
+    await seedDescribed("Charlie", 900);
+    const state = await readyState(owner, { range: lastWeek, groupBy: "description" });
+    expect(descriptionRows(state)).toEqual([
+      ["Charlie", false, 900],
+      ["Alfa", false, 600],
+      ["Bravo", false, 600],
+      [null, null, 600],
+    ]);
+    expect(state.groups.at(-1)).toEqual({
+      kind: "description",
+      description: null,
+      seconds: 600,
+    });
+  });
+
+  it("de una de 3000 caracteres viajan los 100 primeros; dos de 150 con los mismos 100 primeros son dos grupos", async () => {
+    const long = `Ticket largo ${"detalle ".repeat(400)}`.slice(0, 3000);
+    const shared = "x".repeat(100);
+    await seedDescribed(long, 900);
+    await seedDescribed(`${shared}${"a".repeat(50)}`, 600);
+    await seedDescribed(`${shared}${"b".repeat(50)}`, 300);
+    const state = await readyState(owner, { range: lastWeek, groupBy: "description" });
+    expect(long).toHaveLength(3000);
+    expect(descriptionRows(state)).toEqual([
+      [long.slice(0, 100), true, 900],
+      [shared, true, 600],
+      [shared, true, 300],
+    ]);
+    expect(descriptionIds(state)).toEqual(
+      [long, `${shared}${"a".repeat(50)}`, `${shared}${"b".repeat(50)}`].map(
+        descriptionIdOf,
+      ),
+    );
+  });
+
+  it("cuenta en puntos de código: 100 emojis viajan enteros y sin recortar; de 101, los 100 primeros", async () => {
+    const hundred = "😀".repeat(100);
+    await seedDescribed(hundred, 900);
+    await seedDescribed(`${hundred}🎉`, 600);
+    const state = await readyState(owner, { range: lastWeek, groupBy: "description" });
+    expect(descriptionRows(state)).toEqual([
+      [hundred, false, 900],
+      [hundred, true, 600],
+    ]);
+    expect(descriptionIds(state)).toEqual([hundred, `${hundred}🎉`].map(descriptionIdOf));
+    expect(reportReadyState.parse(state)).toEqual(state);
+  });
+
+  it("el id es el SHA-256 del texto en UTF-8, también con barras invertidas", async () => {
+    const texts = ["C:\\temp\\nuevo", "\\x41", "año ñandú"];
+    for (const [index, text] of texts.entries()) {
+      await seedDescribed(text, 900 - index * 100);
+    }
+    const state = await readyState(owner, { range: lastWeek, groupBy: "description" });
+    expect(descriptionRows(state).map(([text]) => text)).toEqual(texts);
+    expect(descriptionIds(state)).toEqual(texts.map(descriptionIdOf));
+  });
+
+  it("el total y el facturable son los de «Persona»", async () => {
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 3600, {
+      projectId: p1,
+      billable: true,
+    });
+    await seedClosed(otherId, "2026-09-30T13:00:00Z", 1800, { projectId: p2 });
+    await db
+      .update(timeEntry)
+      .set({ description: "Reunión" })
+      .where(eq(timeEntry.workspaceId, workspaceId));
+    await seedDescribed("", 600);
+    const byDescription = await readyState(owner, {
+      range: lastWeek,
+      groupBy: "description",
+    });
+    const byPerson = await readyState(owner, { range: lastWeek, groupBy: "person" });
+    expect(totalsPair(byDescription)).toEqual([6000, 3600]);
+    expect(totalsPair(byDescription)).toEqual(totalsPair(byPerson));
+  });
+});
+
+describe("la descripción en los niveles y con filtros (D-R10-6, D-R10-11; criterio 16 de R10)", () => {
+  let p1: string;
+
+  /**
+   * «Reunión» del owner en P1 el martes 29/09 y de Otra en P2 el miércoles
+   * 30/09; «Informe» del owner en P1 el miércoles; Otra, sin descripción, en P1
+   * el jueves 01/10. «Informe» lleva dos etiquetas: una unión con ellas lo
+   * contaría dos veces.
+   */
+  beforeEach(async () => {
+    const otherId = await seedPerson({ accountName: "Otra" });
+    p1 = (await seedProject({ workspaceId, name: "P1" })).id;
+    const p2 = (await seedProject({ workspaceId, name: "P2" })).id;
+    const tagIds = [
+      (await seedTag({ workspaceId, name: "E" })).id,
+      (await seedTag({ workspaceId, name: "F" })).id,
+    ];
+    for (const [userId, startedAt, seconds, projectId, description, tags] of [
+      [ownerId, "2026-09-29T13:00:00Z", 3600, p1, "Reunión", []],
+      [otherId, "2026-09-30T13:00:00Z", 1800, p2, "Reunión", []],
+      [ownerId, "2026-09-30T14:00:00Z", 1200, p1, "Informe", tagIds],
+      [otherId, "2026-10-01T13:00:00Z", 600, p1, "", []],
+    ] as const) {
+      const start = new Date(startedAt);
+      await seedTimeEntry({
+        workspaceId,
+        userId,
+        description,
+        projectId,
+        tagIds: tags,
+        startedAt: start,
+        endedAt: new Date(start.getTime() + seconds * 1000),
+      });
+    }
+  });
+
+  it("descripción → proyecto: debajo de «Reunión», P1 y P2 con lo suyo", async () => {
+    const state = await readyState(owner, {
+      range: lastWeek,
+      groupBy: "description",
+      subgroups: ["project"],
+    });
+    expect(outline(state.groups)).toEqual([
+      [
+        "Reunión",
+        5400,
+        [
+          ["P1", 3600],
+          ["P2", 1800],
+        ],
+      ],
+      ["Informe", 1200, [["P1", 1200]]],
+      [trackerLabels.noDescription, 600, [["P1", 600]]],
+    ]);
+    expect(reportReadyState.parse(state)).toEqual(state);
+  });
+
+  it("persona → descripción: cada persona con sus textos", async () => {
+    const state = await readyState(owner, {
+      range: lastWeek,
+      groupBy: "person",
+      subgroups: ["description"],
+    });
+    expect(outline(state.groups)).toEqual([
+      [
+        "Owner",
+        4800,
+        [
+          ["Reunión", 3600],
+          ["Informe", 1200],
+        ],
+      ],
+      [
+        "Otra",
+        2400,
+        [
+          ["Reunión", 1800],
+          [trackerLabels.noDescription, 600],
+        ],
+      ],
+    ]);
+  });
+
+  it("proyecto → descripción → fecha: cada fecha cuelga del camino entero", async () => {
+    const state = await readyState(owner, {
+      range: lastWeek,
+      groupBy: "project",
+      subgroups: ["description", "date"],
+    });
+    expect(outline(state.groups)).toEqual([
+      [
+        "P1",
+        5400,
+        [
+          ["Reunión", 3600, [["2026-09-29", 3600]]],
+          ["Informe", 1200, [["2026-09-30", 1200]]],
+          [trackerLabels.noDescription, 600, [["2026-10-01", 600]]],
+        ],
+      ],
+      ["P2", 1800, [["Reunión", 1800, [["2026-09-30", 1800]]]]],
+    ]);
+  });
+
+  it("descripción → proyecto con [P1]: los hijos solo de P1 y el total filtrado", async () => {
+    const state = await readyState(owner, {
+      range: lastWeek,
+      groupBy: "description",
+      subgroups: ["project"],
+      filters: { ...NO_REPORT_FILTERS, projects: [p1] },
+    });
+    expect(outline(state.groups)).toEqual([
+      ["Reunión", 3600, [["P1", 3600]]],
+      ["Informe", 1200, [["P1", 1200]]],
+      [trackerLabels.noDescription, 600, [["P1", 600]]],
+    ]);
+    expect(state.totalSeconds).toBe(5400);
+  });
+});
+
+describe("el tope del primer nivel (D-R10-10; criterio 17 de R10)", () => {
+  /**
+   * Una persona con 3001 entradas de un minuto, cada una con su descripción,
+   * el martes 29/09 a las 09:00 de Buenos Aires.
+   */
+  beforeEach(async () => {
+    await db.execute(sql`
+      insert into time_entry (workspace_id, user_id, description, started_at, ended_at, billable)
+      select ${workspaceId}, ${ownerId}, 'Entrada ' || n,
+             timestamptz '2026-09-29 12:00:00+00',
+             timestamptz '2026-09-29 12:01:00+00',
+             n % 2 = 0
+        from generate_series(1, 3001) as n`);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** Borra una de las 3001: el primer nivel por descripción pasa a 3000 filas. */
+  async function deleteOne() {
+    await db.execute(sql`
+      delete from time_entry
+       where workspace_id = ${workspaceId} and description = 'Entrada 3001'`);
+  }
+
+  it("por descripción con 3001: levelsShown 0, sin grupos y el total de entryTotals, en la misma transacción", async () => {
+    const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+    const entryTotals = vi.spyOn(reportRepository, "entryTotals");
+    const state = await readyState(owner, { range: lastWeek, groupBy: "description" });
+    expect(reportReadyState.parse(state)).toEqual(state);
+    expect([state.levelsShown, state.groups]).toEqual([0, []]);
+    expect(totalsPair(state)).toEqual([3001 * 60, 1500 * 60]);
+    expect(byLevels.mock.calls.map(([, read]) => read.limit)).toEqual([3001]);
+    expect(entryTotals).toHaveBeenCalledTimes(1);
+    const executor = byLevels.mock.calls[0]?.[2];
+    expect(executor).toBeDefined();
+    expect(executor).not.toBe(db);
+    expect(entryTotals.mock.calls[0]?.[2]).toBe(executor);
+  });
+
+  it("descripción → proyecto con 3001: una sola lectura por niveles, levelsShown 0 y sin grupos", async () => {
+    const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+    const state = await readyState(owner, {
+      range: lastWeek,
+      groupBy: "description",
+      subgroups: ["project"],
+    });
+    expect(byLevels.mock.calls.map(([, read]) => [read.dimensions, read.limit])).toEqual([
+      [["description"], 3001],
+    ]);
+    expect([state.levelsShown, state.subgroups, state.groups]).toEqual([
+      0,
+      ["project"],
+      [],
+    ]);
+    expect(state.totalSeconds).toBe(3001 * 60);
+  });
+
+  it("con 3000 entra entero: levelsShown 1, 3000 grupos y sin entryTotals", async () => {
+    await deleteOne();
+    const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+    const entryTotals = vi.spyOn(reportRepository, "entryTotals");
+    const state = await readyState(owner, { range: lastWeek, groupBy: "description" });
+    expect([state.levelsShown, state.groups.length]).toEqual([1, 3000]);
+    expect(state.totalSeconds).toBe(3000 * 60);
+    expect(byLevels.mock.calls.map(([, read]) => read.limit)).toEqual([3001]);
+    expect(entryTotals).not.toHaveBeenCalled();
+  });
+
+  it("descripción → proyecto con 3000: el nivel 2 no se pide y levelsShown es 1", async () => {
+    await deleteOne();
+    const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+    const state = await readyState(owner, {
+      range: lastWeek,
+      groupBy: "description",
+      subgroups: ["project"],
+    });
+    expect(byLevels.mock.calls.map(([, read]) => read.dimensions)).toEqual([
+      ["description"],
+    ]);
+    expect([state.levelsShown, state.groups.length]).toEqual([1, 3000]);
+    expect(state.groups.some((group) => group.children !== undefined)).toBe(false);
+  });
+
+  it("por persona sobre los mismos datos: una fila, con limit 3001 en el nivel 1", async () => {
+    const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+    const state = await readyState(owner, { range: lastWeek, groupBy: "person" });
+    expect(personRows(state)).toEqual([["Owner", 3001 * 60]]);
+    expect(byLevels.mock.calls.map(([, read]) => read.limit)).toEqual([3001]);
   });
 });

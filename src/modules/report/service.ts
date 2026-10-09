@@ -364,7 +364,7 @@ function compareSiblings(left: ReportGroup, right: ReportGroup): number {
 
 /** Lo que se lee de un pedido, en una sola foto. */
 type ReportRead = {
-  /** Las filas de cada nivel que entró en el tope, desde el primero. */
+  /** Las filas de cada nivel que entró en el tope, desde el primero; vacío si no entró ni el primero. */
   readonly levels: readonly (readonly LevelTotalRow[])[];
   readonly totals: EntryTotals;
   readonly catalog: ProjectFilterCatalog;
@@ -570,22 +570,19 @@ function groupsOf(nodes: readonly TreeNode[], below: number): ReportGroup[] {
 }
 
 /**
- * D-R3-6: los niveles que entran en el tope, desde el primero, que se lee
- * entero. Cada uno de abajo se pide con lo que queda del tope más uno: entra
- * entero o no entra, y entonces no se lee ninguno más abajo. Sin filas en el
- * primero no hay nada que colgar y no se lee ninguno de abajo.
+ * D-R3-6, D-R10-10: los niveles que entran en el tope, desde el primero, que
+ * también entra entero o no entra. Cada uno se pide con lo que queda del tope
+ * más uno; si no entra, no se lee ninguno más abajo, y si es el primero, la
+ * lista vuelve vacía. Sin filas en el primero no hay nada que colgar y no se
+ * lee ninguno de abajo.
  */
 async function readLevelsWithinLimit(
   levelCount: number,
-  readLevel: (depth: number, limit?: number) => Promise<readonly LevelTotalRow[]>,
+  readLevel: (depth: number, limit: number) => Promise<readonly LevelTotalRow[]>,
 ): Promise<(readonly LevelTotalRow[])[]> {
-  const first = await readLevel(1);
-  if (first.length === 0) {
-    return [first];
-  }
-  const shown = [first];
-  let rowsRead = first.length;
-  for (let depth = 2; depth <= levelCount; depth++) {
+  const shown: (readonly LevelTotalRow[])[] = [];
+  let rowsRead = 0;
+  for (let depth = 1; depth <= levelCount; depth++) {
     const budget = REPORT_MAX_ROWS - rowsRead;
     if (budget <= 0) {
       break;
@@ -596,8 +593,27 @@ async function readLevelsWithinLimit(
     }
     shown.push(rows);
     rowsRead += rows.length;
+    if (rows.length === 0) {
+      break;
+    }
   }
   return shown;
+}
+
+/**
+ * Cuántos niveles muestra el estado: 0 si no entró ni el primero (D-R10-10);
+ * todos los pedidos si el período no tiene horas, que no se corta; si no, los
+ * que entraron.
+ */
+function levelsShownOf(
+  levels: readonly (readonly LevelTotalRow[])[],
+  requested: number,
+): number {
+  const [first] = levels;
+  if (first === undefined) {
+    return 0;
+  }
+  return first.length === 0 ? requested : levels.length;
 }
 
 /** Lo que se lee de un pedido ya validado: sus niveles, el intervalo, los tramos y los filtros. */
@@ -696,11 +712,11 @@ async function readReport(
     ),
   );
   const [first] = levels;
-  // El total no pasa por la unión con las etiquetas; con el primer nivel sin
-  // etiqueta, cada entrada filtrada está en un grupo y la suma es el total
-  // (D-R2a-7).
+  // El total no pasa por la unión con las etiquetas, y sin el primer nivel no
+  // hay suma (D-R10-10); si no, cada entrada filtrada está en un grupo del
+  // primero y la suma es el total (D-R2a-7).
   const totals =
-    plan.levels[0] === "tag"
+    first === undefined || plan.levels[0] === "tag"
       ? await reportRepository.entryTotals(readScope, { span: plan.span, filter }, tx)
       : {
           seconds: first.reduce((sum, row) => sum + row.seconds, 0),
@@ -746,9 +762,6 @@ export async function getReportState(
     );
   }
   checkFilters(request.filters);
-  if (levels.includes("description")) {
-    throw new Error("La agrupación por descripción todavía no lee.");
-  }
   const span = {
     from: startOfDayKey(range.first, timeZone),
     to: startOfDayKey(addDaysToKey(range.last, 1), timeZone),
@@ -773,8 +786,7 @@ export async function getReportState(
     todayKey,
     format: settings.formats.date,
   };
-  // Un período sin horas no se corta: muestra todos los niveles pedidos.
-  const levelsShown = read.levels[0].length === 0 ? levels.length : read.levels.length;
+  const levelsShown = levelsShownOf(read.levels, levels.length);
   return {
     kind: "ready",
     todayKey,

@@ -30,6 +30,7 @@ import type { TimeBuckets } from "@/server/time";
 
 import {
   projectFilterCount,
+  REPORT_DESCRIPTION_SHOWN,
   REPORT_MAX_FILTER_VALUES,
   REPORT_TIME_GROUP_BYS,
   type ReportGroupBy,
@@ -335,6 +336,14 @@ function namedRefOf(values: {
   return { id: values.id, name: values.name };
 }
 
+/**
+ * D-R10-9: los 32 primeros hexadecimales del SHA-256 del texto en UTF-8, o
+ * `null` con la cadena vacía, «Sin descripción».
+ */
+function descriptionIdOf(text: SQL): SQL<string | null> {
+  return sql`case when ${text} = '' then null else left(encode(sha256(convert_to(${text}, 'UTF8')), 'hex'), 32) end`;
+}
+
 /** La tabla de §4.3: cada dimensión se describe una vez (D-R3-2). */
 const DIMENSIONS: Readonly<Record<ReportGroupBy, Dimension>> = {
   person: dimension({
@@ -479,15 +488,23 @@ const DIMENSIONS: Readonly<Record<ReportGroupBy, Dimension>> = {
   week: timeDimension("week"),
   month: timeDimension("month"),
 
-  // Paso 10 de R10: la dimensión existe en la tabla y lanza al leer.
+  // D-R10-8: la clave es el texto exacto, sin `lower` ni `btrim`; la cadena
+  // vacía es «Sin descripción». D-R10-9: lo que se muestra se calcula una vez
+  // por grupo, sobre la fila ya agrupada: el `id` es el SHA-256 del texto
+  // entero en UTF-8 —`convert_to` y no `::bytea`, que lee las barras
+  // invertidas como escapes— y del texto viajan los primeros caracteres,
+  // contados en puntos de código como `left()`.
   description: dimension({
-    key: () => {
-      throw new Error("La agrupación por descripción todavía no lee.");
-    },
-    shown: () => ({}),
-    groupOf: () => {
-      throw new Error("La agrupación por descripción todavía no lee.");
-    },
+    key: () => sql`${timeEntry.description}`,
+    shown: (key) => ({
+      id: descriptionIdOf(key),
+      text: sql<string>`left(${key}, ${REPORT_DESCRIPTION_SHOWN})`,
+      truncated: sql<boolean>`char_length(${key}) > ${REPORT_DESCRIPTION_SHOWN}`,
+    }),
+    groupOf: ({ id, text, truncated }) => ({
+      kind: "description",
+      description: id === null ? null : { id, text, truncated },
+    }),
   }),
 };
 
