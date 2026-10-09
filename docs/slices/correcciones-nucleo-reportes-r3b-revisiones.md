@@ -139,3 +139,32 @@ La primera carga trae solo las 30 filas del nivel 1, contraídas. Abrir una tard
 1. Ronda de correcciones: cada dueño commitea lo suyo con `git commit -- <rutas>`.
 2. Corrida final: lint, typecheck, `npm run test:all` y la suite e2e entera dos veces.
 3. Merge de R3b a `main`, push y CI.
+
+## Cierre
+
+Ronda de correcciones, con cada hallazgo resuelto como dice su fila:
+
+| Parte         | Commit    | Hallazgos               |
+| ------------- | --------- | ----------------------- |
+| Backend       | `8fc687e` | C1, C4, C5, C8 y T2     |
+| Frontend      | `42e4a8f` | C2, C3, F1, F2, T3 y T4 |
+| e2e           | `15df746` | T1, C6 y C7             |
+| test-engineer | `8084dd0` | la nota de seguridad    |
+
+Lo que se volvió a verificar con la ronda:
+
+- **C1:** los seis mutantes de la función del tope (17f y 18a a 18e) siguen cayendo.
+- **C5:** `subgroups: []` pasó a los constructores de pedidos de `scope.integration.test.ts`
+  como edición mecánica de backend.
+- **T3 y T4:** 36 mutantes de frontend, incluidos los seis del árbol de §8.1. Caen todos.
+- **T1:** el mutante «`key` en el `Suspense`» cae siempre con el spec nuevo. Con la respuesta
+  del servidor retrasada 1,5 s, el spec viejo lo dejaba vivo y el nuevo no.
+
+Corrida final sobre `8fc687e`:
+
+- lint y typecheck limpios;
+- 1561 de unidad, 277 de `test:time-ar` y 1329 de integración, en Postgres 18;
+- la suite e2e entera, 197 de 197, dos veces sobre la base nueva `clock_e2er3bfinal`, sin
+  fallas ni tests intermitentes.
+
+Mergeado a `main`. Con R3b, el slice R3 del contrato queda entero en `main`.

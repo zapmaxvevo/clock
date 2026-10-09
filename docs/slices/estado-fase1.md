@@ -32,6 +32,7 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-09.
 | Núcleo de reportes, R2a                     | En `main` |
 | Núcleo de reportes, R2b                     | En `main` |
 | Núcleo de reportes, R3a                     | En `main` |
+| Núcleo de reportes, R3b                     | En `main` |
 
 Los slices 1 a 13 (con 2b, 2c, 7b, 8b, 8c, 11a y 11b) y el arreglo del piso fijo están en `main`.
 El 13 (planilla de horarios) se mergeó el 2026-10-08 con lint, typecheck, 1279 de unidad, 1223 de
@@ -73,11 +74,22 @@ vacío del owner y `renewWorkspace` se corta.
      unidad, 277 de `test:time-ar`, 1302 de integración y e2e 195/195 ×2. No hizo falta la
      comprobación contra Neon (sin forma de parámetro nueva). Todo en
      `correcciones-nucleo-reportes-r3a-revisiones.md`.
-   - **Lo que sigue: R3b** (subgrupos, tope de 3000 y expandir), con el mismo contrato desde el
-     paso 6, en una rama nueva desde `main`. Bases a crear y migrar antes de lanzar a los
-     agentes. Abiertas para el usuario: preguntas 2 (lo abierto al recargar) y 3 (P-05) de §10
-     del contrato, y la nota 4 del tope de 3000. Deuda nueva: `Executor` común en
-     `src/server/db/` (C13 de R3a) y `npm audit` con altas solo de desarrollo (S1, del usuario).
+   - **R3b en `main`** (2026-10-09): subgrupos de hasta tres niveles, tope de 3000 filas y
+     expandir. Seis revisiones (backend, seguridad y paridad sin hallazgos), ronda de
+     correcciones y corrida final en verde sobre `8fc687e`: 1561 de unidad, 277 de
+     `test:time-ar`, 1329 de integración y e2e 197/197 ×2. Sin comprobación contra Neon (sin
+     forma de parámetro nueva). Pedidos enteros: 127 ms y 223 ms. Payload de 3000 filas: 278 KB.
+     Todo en `correcciones-nucleo-reportes-r3b-revisiones.md`. Con esto, R3 entero está en
+     `main`.
+   - **Lo que sigue**: R4 (filtros), según el mapa; R8 (cambiar el rol) se puede adelantar.
+     Abiertas para el usuario:
+     - la pregunta 2 de §10 del contrato de R3 (lo abierto al recargar; hoy se pierde);
+     - P-05;
+     - P-11 nueva: agrupar por descripción, mes y semana, que Clockify lista y Clock no tiene.
+
+     Deuda nueva: `Executor` común en `src/server/db/` (C13 de R3a) y `npm audit` con altas
+     solo de desarrollo (S1 de R3a, del usuario).
+
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
      (`7b66b03`), en checkout en el árbol principal. `architect-r3` quedó escribiendo
      `docs/slices/nucleo-reportes-r3-subgrupos-tarea-y-etiqueta.md` (sin commit). Tarea entra
