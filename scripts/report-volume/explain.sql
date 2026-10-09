@@ -1,7 +1,8 @@
 -- Las cuatro consultas de §6.2 del contrato de R2a y las dos de §6.1 del de
--- R2b, sobre el volumen de `seed.sql`. Cada sentencia es el texto que emite el repository (`.toSQL()`),
--- preparada con sus parámetros como los manda el driver: los instantes son los
--- que calcula `startOfDayKey` en Buenos Aires, que no tiene cambio de horario.
+-- R2b, sobre el volumen de `seed.sql`. Cada sentencia es el texto que emite el
+-- repository (`.toSQL()`), preparada con sus parámetros como los manda el
+-- driver: los instantes son los que calcula `startOfDayKey` en Buenos Aires,
+-- que no tiene cambio de horario.
 --
 --   docker exec -i <contenedor> psql -U clock -d <base> -v ON_ERROR_STOP=1 < scripts/report-volume/explain.sql
 --
