@@ -20,13 +20,14 @@ import {
 import {
   applyFilter,
   chosenKeys,
+  filterStrikesRetired,
   filterSummary,
   hasNoMatches,
   visibleOptions,
   type FilterKind,
   type FilterOption,
 } from "./filter-model";
-import { filterNames, filterSearch, reportLabels } from "./labels";
+import { filterNames, filterRetired, filterSearch, reportLabels } from "./labels";
 
 type FilterPickerProps = {
   readonly range: ReportRange;
@@ -183,17 +184,14 @@ export function FilterPanel({
               id={retiredHeadingId}
               className="text-muted-foreground px-1.5 pb-1 text-xs font-medium"
             >
-              {kind === "people"
-                ? reportLabels.inactiveOptions
-                : reportLabels.archivedOptions}
+              {filterRetired[kind]}
             </p>
             {retired.map((option) => (
               <OptionItem
                 key={option.key}
                 option={option}
                 checked={chosenSet.has(option.key)}
-                // El tachado no se anuncia: el nombre del grupo dice por qué.
-                struck={kind === "people"}
+                struck={filterStrikesRetired[kind]}
                 onToggle={onToggle}
               />
             ))}
@@ -230,7 +228,7 @@ function OptionItem({
 }: {
   readonly option: FilterOption;
   readonly checked: boolean;
-  /** Una persona inactiva, con el nombre tachado (P-08). */
+  /** Con el nombre tachado, según `filterStrikesRetired` (P-08). */
   readonly struck?: boolean;
   readonly onToggle: (key: string, checked: boolean) => void;
 }) {

@@ -151,6 +151,34 @@ describe("FilterPanel (D-R4-8, §5.3)", () => {
     expect(markup).toMatch(/<span class="[^"]*line-through[^"]*">Bruno<\/span>/);
   });
 
+  it("dos personas con el mismo nombre son dos casillas (RP-31)", () => {
+    const markup = renderToStaticMarkup(
+      <FilterPanel
+        kind="people"
+        options={filterOptionsOf(
+          {
+            ...catalog,
+            people: [
+              { id: "aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY", name: "Ana", inactive: false },
+              { id: "Zq8Wn2Rt6Yu0Io4Pa8Sd2Fg6Hj0Kl4Mx", name: "Ana", inactive: false },
+            ],
+          },
+          "people",
+        )}
+        chosen={["Zq8Wn2Rt6Yu0Io4Pa8Sd2Fg6Hj0Kl4Mx"]}
+        query=""
+        error={null}
+        onQueryChange={() => undefined}
+        onToggle={() => undefined}
+        onApply={() => undefined}
+      />,
+    );
+    expect(options(group(markup, "Personas"))).toEqual([
+      { name: "Ana", checked: false, detail: null },
+      { name: "Ana", checked: true, detail: null },
+    ]);
+  });
+
   it("los archivados no se tachan", () => {
     expect(render("projects")).not.toContain("line-through");
     expect(render("clients")).not.toContain("line-through");

@@ -27,6 +27,16 @@ export type FilterOption = {
   readonly retired: boolean;
 };
 
+/**
+ * Qué filtros tachan el nombre en su grupo de aparte: solo personas (P-08). El
+ * tachado no se anuncia; lo dice el nombre del grupo (`filterRetired`).
+ */
+export const filterStrikesRetired = {
+  people: true,
+  clients: false,
+  projects: false,
+} as const satisfies Record<FilterKind, boolean>;
+
 /** «Sin proyecto»: primero, siempre visible y sin cliente ni color (RP-26). */
 const WITHOUT_PROJECT_OPTION: FilterOption = {
   key: REPORT_WITHOUT_PROJECT,
@@ -44,47 +54,49 @@ export function filterOptionsOf(
   options: ReportReadyState["filterOptions"],
   kind: FilterKind,
 ): readonly FilterOption[] {
-  if (kind === "people") {
-    return (options.people ?? []).map((person) => ({
-      key: person.id,
-      name: person.name,
-      detail: null,
-      color: null,
-      retired: person.inactive,
-    }));
+  switch (kind) {
+    case "people":
+      return (options.people ?? []).map((person) => ({
+        key: person.id,
+        name: person.name,
+        detail: null,
+        color: null,
+        retired: person.inactive,
+      }));
+    case "clients":
+      return options.clients.map((client) => ({
+        key: client.id,
+        name: client.name,
+        detail: null,
+        color: null,
+        retired: client.archived,
+      }));
+    case "projects":
+      return [
+        WITHOUT_PROJECT_OPTION,
+        ...options.projects.map((project) => ({
+          key: project.id,
+          name: project.name,
+          detail: project.client?.name ?? null,
+          color: project.color,
+          retired: project.archived,
+        })),
+      ];
   }
-  if (kind === "clients") {
-    return options.clients.map((client) => ({
-      key: client.id,
-      name: client.name,
-      detail: null,
-      color: null,
-      retired: client.archived,
-    }));
-  }
-  return [
-    WITHOUT_PROJECT_OPTION,
-    ...options.projects.map((project) => ({
-      key: project.id,
-      name: project.name,
-      detail: project.client?.name ?? null,
-      color: project.color,
-      retired: project.archived,
-    })),
-  ];
 }
 
 /** Lo elegido de un filtro, como claves; en proyectos, `sin-proyecto` si está. */
 export function chosenKeys(filters: ReportFilters, kind: FilterKind): readonly string[] {
-  if (kind === "people") {
-    return filters.people;
+  switch (kind) {
+    case "people":
+      return filters.people;
+    case "clients":
+      return filters.clients;
+    case "projects":
+      return filters.withoutProject
+        ? [...filters.projects, REPORT_WITHOUT_PROJECT]
+        : filters.projects;
   }
-  if (kind === "clients") {
-    return filters.clients;
-  }
-  return filters.withoutProject
-    ? [...filters.projects, REPORT_WITHOUT_PROJECT]
-    : filters.projects;
 }
 
 /** Los filtros con `keys` como lo elegido en `kind`, en el orden de `options`. */
@@ -98,17 +110,18 @@ export function withChosen(
   const ids = options
     .filter((option) => option.key !== REPORT_WITHOUT_PROJECT && chosen.has(option.key))
     .map((option) => option.key);
-  if (kind === "people") {
-    return { ...filters, people: ids };
+  switch (kind) {
+    case "people":
+      return { ...filters, people: ids };
+    case "clients":
+      return { ...filters, clients: ids };
+    case "projects":
+      return {
+        ...filters,
+        projects: ids,
+        withoutProject: chosen.has(REPORT_WITHOUT_PROJECT),
+      };
   }
-  if (kind === "clients") {
-    return { ...filters, clients: ids };
-  }
-  return {
-    ...filters,
-    projects: ids,
-    withoutProject: chosen.has(REPORT_WITHOUT_PROJECT),
-  };
 }
 
 /**

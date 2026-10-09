@@ -429,8 +429,10 @@ describe("ReportView con subniveles (D-R3-6, D-R3-9)", () => {
 });
 
 describe("ReportView con filtros (D-R4-7)", () => {
+  /** Un id de Better Auth: 32 alfanuméricos con mayúsculas. */
+  const PERSON = "aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY";
   const filtered: ReportReadyState["filters"] = {
-    people: [],
+    people: [PERSON],
     clients: ["c1000000-0000-4000-8000-000000000000"],
     projects: [],
     withoutProject: true,
@@ -483,6 +485,16 @@ describe("ReportView con filtros (D-R4-7)", () => {
   it("«Sin proyecto» solo también es un filtro", () => {
     const markup = render({
       filters: { people: [], clients: [], projects: [], withoutProject: true },
+    });
+    expect(markup).toContain("Ninguna entrada coincide con los filtros");
+    expect(bodyLinks(markup).get("Quitar filtros")).toBe(
+      "/reportes?desde=2026-10-05&hasta=2026-10-11&agrupar=persona",
+    );
+  });
+
+  it("las personas solas también son un filtro, y «Quitar filtros» las quita", () => {
+    const markup = render({
+      filters: { people: [PERSON], clients: [], projects: [], withoutProject: false },
     });
     expect(markup).toContain("Ninguna entrada coincide con los filtros");
     expect(bodyLinks(markup).get("Quitar filtros")).toBe(
