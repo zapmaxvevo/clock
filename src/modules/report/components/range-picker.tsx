@@ -12,7 +12,12 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import type { ReportGroupBy, ReportRange, ReportShortcut } from "@/modules/report/schema";
+import {
+  sameRange,
+  type ReportGroupBy,
+  type ReportRange,
+  type ReportShortcut,
+} from "@/modules/report/schema";
 
 import { reportLabels } from "./labels";
 import { applySelection, selectionOf } from "./range-picker-model";
@@ -153,8 +158,7 @@ export function RangePanel({
         >
           {shortcuts.map((shortcut) => {
             // De presentación, como `isCurrentWeek` de la barra.
-            const current =
-              shortcut.range.first === range.first && shortcut.range.last === range.last;
+            const current = sameRange(shortcut.range, range);
             return (
               <li key={shortcut.id}>
                 <Link

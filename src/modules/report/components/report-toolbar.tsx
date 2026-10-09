@@ -3,7 +3,11 @@ import Link from "next/link";
 
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { ReportGroupBy, ReportReadyState } from "@/modules/report/schema";
+import {
+  sameRange,
+  type ReportGroupBy,
+  type ReportReadyState,
+} from "@/modules/report/schema";
 
 import { reportLabels } from "./labels";
 import { RangePicker } from "./range-picker";
@@ -18,8 +22,7 @@ const GROUP_BY_LABEL_ID = "reporte-agrupar";
  */
 export function ReportToolbar({ state }: { readonly state: ReportReadyState }) {
   const { range, groupBy, currentWeek } = state;
-  const isCurrentWeek =
-    range.first === currentWeek.first && range.last === currentWeek.last;
+  const isCurrentWeek = sameRange(range, currentWeek);
 
   return (
     <div className="flex flex-wrap items-center gap-2">
