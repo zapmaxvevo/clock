@@ -404,7 +404,10 @@ export async function setMembershipStatus(
   );
 }
 
-/** Lo que siembra `seedEntries`: una entrada terminada, con proyecto o sin él. */
+/**
+ * Lo que siembra `seedEntries`: una entrada terminada, con proyecto o sin él,
+ * con tarea o sin ella y con sus etiquetas.
+ */
 export type SeedEntry = {
   readonly description: string;
   /** El día civil, como lo escribe la URL: «2026-09-30». */
@@ -414,7 +417,26 @@ export type SeedEntry = {
   readonly end: string;
   /** El nombre del proyecto, con el sufijo del recorrido; sin él, la entrada va sin proyecto. */
   readonly project?: string;
+  /** El nombre de una tarea de `project`; sin él, la entrada va sin tarea. */
+  readonly task?: string;
+  /** Nombres de etiquetas del workspace, activas o archivadas. */
+  readonly tags?: readonly string[];
 };
+
+/**
+ * Cambia una fila dentro de la transacción de `client` y comprueba que cambió
+ * exactamente una, como `updateOne`.
+ */
+async function updateOneRow(
+  client: Client,
+  sql: string,
+  values: readonly unknown[],
+): Promise<void> {
+  const result = await client.query(sql, [...values]);
+  if (result.rowCount !== 1) {
+    throw new Error(`Se esperaba cambiar una fila y cambiaron ${result.rowCount}.`);
+  }
+}
 
 /**
  * Siembra entradas terminadas de una persona, en una transacción. Es más
@@ -422,7 +444,8 @@ export type SeedEntry = {
  * prueba es otra pantalla que las lee. Las horas se leen en `timeZone`. La
  * persona tiene que haber entrado antes a la aplicación, que es lo que le
  * crea la membresía, o haberse sembrado con `seedPerson`; si no, o si el
- * proyecto no existe, se corta sin dejar nada.
+ * proyecto, la tarea en ese proyecto o alguna etiqueta no existe, se corta
+ * sin dejar nada.
  */
 export async function seedEntries(
   email: string,
@@ -439,38 +462,65 @@ export async function seedEntries(
         entry.end,
         timeZone,
       ];
-      if (entry.project === undefined) {
+      const entryId =
+        entry.project === undefined
+          ? await insertOneRow(
+              client,
+              `insert into time_entry (workspace_id, user_id, description, started_at, ended_at)
+               select membership.workspace_id, membership.user_id, $2,
+                      ($3::date + $4::time) at time zone $6,
+                      ($3::date + $5::time) at time zone $6
+                 from membership
+                 join "user" on "user".id = membership.user_id
+                where membership.workspace_id = ${FIRST_WORKSPACE}
+                  and "user".email = $1
+               returning time_entry.id`,
+              values,
+            )
+          : await insertOneRow(
+              client,
+              `insert into time_entry (workspace_id, user_id, description, started_at, ended_at, project_id)
+               select membership.workspace_id, membership.user_id, $2,
+                      ($3::date + $4::time) at time zone $6,
+                      ($3::date + $5::time) at time zone $6,
+                      project.id
+                 from membership
+                 join "user" on "user".id = membership.user_id
+                 join project on project.workspace_id = membership.workspace_id
+                             and project.name = $7
+                where membership.workspace_id = ${FIRST_WORKSPACE}
+                  and "user".email = $1
+               returning time_entry.id`,
+              [...values, entry.project],
+            );
+      // La tarea se busca en el proyecto de la entrada: sin proyecto, o con
+      // una tarea de otro, no cambia ninguna fila.
+      if (entry.task !== undefined) {
+        await updateOneRow(
+          client,
+          `update time_entry
+              set task_id = task.id
+             from task
+            where time_entry.id = $1
+              and task.workspace_id = time_entry.workspace_id
+              and task.project_id = time_entry.project_id
+              and task.name = $2`,
+          [entryId, entry.task],
+        );
+      }
+      for (const tag of entry.tags ?? []) {
         await insertOneRow(
           client,
-          `insert into time_entry (workspace_id, user_id, description, started_at, ended_at)
-           select membership.workspace_id, membership.user_id, $2,
-                  ($3::date + $4::time) at time zone $6,
-                  ($3::date + $5::time) at time zone $6
-             from membership
-             join "user" on "user".id = membership.user_id
-            where membership.workspace_id = ${FIRST_WORKSPACE}
-              and "user".email = $1
-           returning time_entry.id`,
-          values,
+          `insert into time_entry_tag (workspace_id, time_entry_id, tag_id)
+           select time_entry.workspace_id, time_entry.id, tag.id
+             from time_entry
+             join tag on tag.workspace_id = time_entry.workspace_id
+                     and tag.name = $2
+            where time_entry.id = $1
+           returning tag_id as id`,
+          [entryId, tag],
         );
-        continue;
       }
-      await insertOneRow(
-        client,
-        `insert into time_entry (workspace_id, user_id, description, started_at, ended_at, project_id)
-         select membership.workspace_id, membership.user_id, $2,
-                ($3::date + $4::time) at time zone $6,
-                ($3::date + $5::time) at time zone $6,
-                project.id
-           from membership
-           join "user" on "user".id = membership.user_id
-           join project on project.workspace_id = membership.workspace_id
-                       and project.name = $7
-          where membership.workspace_id = ${FIRST_WORKSPACE}
-            and "user".email = $1
-         returning time_entry.id`,
-        [...values, entry.project],
-      );
     }
   });
 }
