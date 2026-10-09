@@ -30,6 +30,8 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-09.
 | 13b — Planilla: menú y detalle de la celda  | En `main` |
 | Núcleo de reportes, R1                      | En `main` |
 | Núcleo de reportes, R2a                     | En `main` |
+| Núcleo de reportes, R2b                     | En `main` |
+| Núcleo de reportes, R3a                     | En `main` |
 
 Los slices 1 a 13 (con 2b, 2c, 7b, 8b, 8c, 11a y 11b) y el arreglo del piso fijo están en `main`.
 El 13 (planilla de horarios) se mergeó el 2026-10-08 con lint, typecheck, 1279 de unidad, 1223 de
@@ -65,13 +67,17 @@ vacío del owner y `renewWorkspace` se corta.
      (`correcciones-nucleo-reportes-r2b-revisiones.md`, «Cierre»). El preview de Vercel tiene
      `DATABASE_URL` (rama `preview` de Neon), `BETTER_AUTH_SECRET` y `BETTER_AUTH_URL` propios;
      `BETTER_AUTH_URL` quedó cargado solo para la rama `nucleo/r2b-atajos`.
-   - **R3a en curso** (2026-10-09): contrato aprobado con cambios (R1–R13,
-     `correcciones-nucleo-reportes-r3-contrato.md`) y en `main` (`85eb968`). El team-lead partió
-     el slice: R3a (parte A, tarea y etiqueta) en `nucleo/r3a-tarea-etiqueta`, en checkout en el
-     árbol principal; R3b (parte B) después, con el mismo contrato desde el paso 6. Bases:
-     `clock_test_backendr3`, `clock_test_frontendr3`, `clock_test_engineer_r3`, `clock_e2er3`.
-     Agentes en la sesión `c37d1bea-…`: `backend-r3` en el paso 1. Abiertas para el usuario:
-     preguntas 2 (lo abierto al recargar) y 3 (P-05) de §10 y la nota 4 del tope de 3000.
+   - **R3a en `main`** (2026-10-09): tarea y etiqueta en un nivel, parte A del contrato
+     de R3. Seis revisiones (cinco aprobadas; código pidió cambios sin efecto en el
+     comportamiento), ronda de correcciones y corrida final en verde sobre `feab6e1`: 1499 de
+     unidad, 277 de `test:time-ar`, 1302 de integración y e2e 195/195 ×2. No hizo falta la
+     comprobación contra Neon (sin forma de parámetro nueva). Todo en
+     `correcciones-nucleo-reportes-r3a-revisiones.md`.
+   - **Lo que sigue: R3b** (subgrupos, tope de 3000 y expandir), con el mismo contrato desde el
+     paso 6, en una rama nueva desde `main`. Bases a crear y migrar antes de lanzar a los
+     agentes. Abiertas para el usuario: preguntas 2 (lo abierto al recargar) y 3 (P-05) de §10
+     del contrato, y la nota 4 del tope de 3000. Deuda nueva: `Executor` común en
+     `src/server/db/` (C13 de R3a) y `npm audit` con altas solo de desarrollo (S1, del usuario).
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
      (`7b66b03`), en checkout en el árbol principal. `architect-r3` quedó escribiendo
      `docs/slices/nucleo-reportes-r3-subgrupos-tarea-y-etiqueta.md` (sin commit). Tarea entra

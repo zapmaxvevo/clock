@@ -132,3 +132,31 @@ un solo parámetro, como en R2b, y el `begin … read only` es SQL fijo. Lo conf
 2. Corrida final: lint, typecheck, `npm run test:all`, `reports.spec.ts` y la suite e2e
    entera.
 3. Merge de R3a a `main` y push. Después, R3b desde el paso 6 del contrato.
+
+## Cierre
+
+Ronda de correcciones, con cada hallazgo resuelto como dice su fila:
+
+| Dueño         | Commit    | Hallazgos                            |
+| ------------- | --------- | ------------------------------------ |
+| backend       | `feab6e1` | C1, C2, C3, C4, C5, C9, C11, T1 y T2 |
+| frontend      | `3c1ed13` | F1/C12 y C6                          |
+| e2e           | `04132fa` | C7, C8 y C12                         |
+| test-engineer | `b92f724` | C10                                  |
+
+En C9, los instantes con microsegundos se reescriben con un `update` después de
+`seedTimeEntry`, porque un `Date` de JS no los guarda. Con T1, el mutante
+`group.task ?? { id: "", name: "Sin tarea" }` ahora cae. Con T2, invertir las
+claves de `groupOf` no rompe ningún test y los mutantes 8b siguen cayendo. Los
+29 mutantes de los criterios 2 a 8 se volvieron a correr sobre el código
+refactorizado y caen todos.
+
+Corrida final sobre `feab6e1`:
+
+- lint y typecheck limpios;
+- 1499 de unidad (una menos por C11), 277 de `test:time-ar` y 1302 de
+  integración, en Postgres 18;
+- la suite e2e entera, 195 de 195, dos veces sobre la base nueva
+  `clock_e2er3final`, sin fallas ni tests intermitentes.
+
+Mergeado a `main`.
