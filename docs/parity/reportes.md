@@ -80,6 +80,18 @@ lista de opciones de «Group by» que la sigue (FOUND; RP-11, RP-12); «expand»
 «collapse», «None» como opción de agrupación y que la agrupación se conserve al
 recargar (NOT FOUND).
 
+_Actualizado el 2026-10-09, contrato de R4, parte A
+([`nucleo-reportes-r4-filtros.md`](../slices/nucleo-reportes-r4-filtros.md),
+§7 «parity-analyst»)_: el slice se partió y esta actualización cubre solo la
+parte A, que se mergea como R4a —los filtros de cliente y de proyecto—, y
+describe lo que hace el código de la rama `nucleo/r4a`. Cada regla que precisa
+lleva su corrección fechada, y la [sección 12](#12-núcleo-r4) junta la
+pantalla. Cambian RP-25, RP-26, RP-29, RP-32, RP-33 y RP-34. Lo de la parte B
+—el filtro de personas, RP-31, RP-62, RP-64 y `personas` en RP-32 y RP-34—
+queda para R4b. No hay citas nuevas de Clockify: esta revisión no volvió a
+buscar en las páginas del resumido ni de filtros, así que lo que estaba _no
+verificado_ sigue igual.
+
 ## Fuentes y límites del relevamiento
 
 Documentación pública del centro de ayuda de Clockify y referencia pública de su
@@ -740,10 +752,47 @@ de tarifas y facturas, Kiosk y Custom Fields son pagos o no existen; Category
 no está documentado más allá de un ejemplo de facturable, que acá es el filtro
 de facturable (la API tiene `billable`).
 
+_Actualizado el 2026-10-09, contrato de R4, parte A (D-R4-3, D-R4-8; R4a)_:
+entran **cliente y proyecto**; personas llega con R4b, y tarea, etiqueta,
+descripción y facturable siguen para la fase 3.
+
+- **«Filtrar por»**, después de «Subagrupar por», con un botón por filtro:
+  «Clientes» y «Proyectos». El texto del botón es su nombre accesible y dice lo
+  elegido: «Proyectos: todos», «Proyectos: {nombre}» con uno y «Proyectos: 3»
+  con más. «Sin proyecto» cuenta como uno y se nombra así.
+- **El panel** de cada botón: un buscador con el foco al abrir, que filtra por
+  el nombre sin distinguir mayúsculas ni acentos; las opciones con casillas,
+  primero las vigentes en un grupo nombrado por el filtro y después las
+  archivadas en «Archivados» (RP-29), cada grupo por nombre; y «Aplicar». Un
+  proyecto lleva su punto de color y su cliente en gris.
+- **Dentro de un filtro, o; entre filtros, y**: una entrada cuenta si su
+  proyecto es uno de los elegidos —o no tiene y «Sin proyecto» está elegido— y
+  si su proyecto es de uno de los clientes elegidos. Cliente y proyecto se
+  cruzan sin excepción: un proyecto de C1 con C2 elegido no deja nada. Un
+  filtro sin nada elegido no restringe.
+- **Se aplican a todo**: a cada nivel del árbol, a «Total» y «Facturable»
+  —también por etiqueta— y al tope de 3000 filas, que cuenta lo filtrado.
+- **«Aplicar»** navega con lo elegido, cierra el panel y deja el foco en el
+  botón, que ya dice lo nuevo; sin nada elegido, quita ese filtro. Con más de
+  50 elegidos, «Sin proyecto» contado, no navega (RP-34).
+- **Esc o un clic afuera** cierran sin aplicar; al abrir de nuevo, lo tildado
+  es lo de la pantalla y el buscador está vacío. Lo que la búsqueda esconde
+  sigue tildado y se aplica.
+
 **RP-26 Filtrar lo que no tiene proyecto, cliente, tarea o etiqueta** —
 `replicar`
 Documentado: los filtros permiten buscar «entries without a client, project,
 task, or tag attached». La API tiene además `withoutDescription`.
+
+_Actualizado el 2026-10-09, contrato de R4, parte A (D-R4-3; R4a)_: entra solo
+**«Sin proyecto»**, como opción del filtro de proyecto: la primera de la lista,
+en gris, sin color ni cliente, con el mismo rótulo que la fila de RP-28, y
+siempre visible, porque la búsqueda no la esconde. Se elige sola o con
+proyectos; en la URL es el valor `sin-proyecto` de `proyectos`, al final de la
+lista. **El filtro de cliente deja afuera lo que no tiene proyecto**: una
+entrada sin proyecto no tiene cliente, así que con un cliente elegido no
+cuenta, aunque «Sin proyecto» esté elegido. «Sin cliente», «Sin tarea», «Sin
+etiqueta» y `withoutDescription` como filtros siguen para la fase 3.
 
 **RP-27 No se guardan filtros sueltos** — `fuera de alcance`
 Documentado: «While you cannot save just a filter setup as a standalone preset»
@@ -807,6 +856,16 @@ de que no se marquen: el mismo criterio que el proyecto y el cliente archivados
 (sección 8), porque el reporte suma todo sin mirar el estado. _No verificado_ si
 Clockify marca una tarea hecha en el resumido, ni qué hace con una etiqueta
 archivada: no se relevó ninguna página de etiquetas. P-05.
+
+_Actualizado el 2026-10-09, contrato de R4, parte A (D-R4-3, D-R4-5; R4a)_: los
+filtros de cliente y de proyecto **ofrecen los archivados**, aparte, en un
+grupo «Archivados» después de los vigentes, con el nombre sin tachar: el
+tachado es de las personas inactivas (P-08), que llegan con R4b. Un cliente o
+un proyecto archivado se filtra como cualquiera y sus horas cuentan. El filtro
+de cliente ofrece todos los clientes del workspace; el de proyecto, los que
+`project.view` deja ver a quien mira, archivados incluidos (sección 12.4). Un
+proyecto vigente de un cliente archivado va entre los vigentes. _No
+verificado_ sigue cómo los muestra Clockify.
 
 **RP-30 El timer en curso no se muestra ni se suma** — `adaptar`
 _No verificado_: si Clockify suma un timer corriendo y hasta qué momento. Acá el
@@ -896,6 +955,31 @@ _Actualizado el 2026-10-09, R3b (D-R3-5, D-R3-6, D-R3-8)_:
 - **Un member que abre el enlace de un admin con subniveles** ve los mismos
   niveles con sus propias horas en cada uno; `personas=…` se sigue ignorando.
 
+_Actualizado el 2026-10-09, contrato de R4, parte A (D-R4-2, D-R4-5, D-R4-10;
+R4a)_:
+
+- **`clientes` y `proyectos`** van después de `subagrupar`, en ese orden, cada
+  uno con una lista de 1 a 50 valores separados por coma; una lista vacía no
+  se escribe, y sin filtros la URL es la de R3b. Cada valor es un uuid en
+  minúsculas; en `proyectos`, también `sin-proyecto`. La aplicación escribe
+  cada lista ordenada, con `sin-proyecto` al final, así una misma elección da
+  la misma URL; la coma viaja como `%2C`, y escrita a mano vale igual.
+- **Cada filtro se valida por su lado y se descarta entero, sin aviso**, con un
+  valor vacío, una coma de más (`a,`, `,a`, `a,,b`), una mayúscula en un uuid,
+  un valor que no es uuid (un espacio delante, `sin-proyecto` en `clientes`),
+  un valor repetido, más de 50 con `sin-proyecto` contado o el parámetro
+  repetido. Uno inválido no arrastra al otro, ni al rango, la agrupación o los
+  subniveles: `clientes=xx&proyectos=<id>` filtra por el proyecto.
+- **Todo enlace del reporte conserva los filtros**: las flechas, «Esta
+  semana», los atajos, «Aplicar» del período, «Agrupar por» y los subniveles.
+  Solo el «Aplicar» de un filtro y «Quitar filtros» (RP-33) los cambian.
+  Recargar, «Atrás» o un enlace copiado reproducen lo elegido, y los botones lo
+  dicen.
+- **Un member que abre el enlace de un admin con filtros** ve los mismos
+  filtros sobre lo propio; un proyecto que no puede ver se ignora (RP-34).
+- **`personas=…` se sigue ignorando** en R4a, como cualquier otra clave, y no
+  pasa a los enlaces; el filtro de personas llega con R4b.
+
 **RP-33 Vacíos** — `adaptar`
 Sin entradas en el rango: «No hay horas en este período», con los gráficos
 ocultos y el total en cero. Con filtros que no dejan nada: «Ninguna entrada
@@ -906,6 +990,16 @@ _Actualizado el 2026-10-08, contrato de R2a_: R2a trae solo el primer vacío:
 una fila de la tabla que ocupa las dos columnas con «No hay horas en este
 período», y «Total» y «Facturable» en «0:00». El segundo llega con los filtros
 de R4.
+
+_Actualizado el 2026-10-09, contrato de R4, parte A (D-R4-7; R4a)_: llega **el
+segundo vacío**. Con algún filtro aplicado y ningún grupo, la fila de dos
+columnas dice «Ninguna entrada coincide con los filtros» y lleva debajo
+«Quitar filtros», un enlace al mismo período, la misma agrupación y los mismos
+subniveles sin ningún filtro; «Total» y «Facturable», en «0:00». **No mira si
+el período tiene horas**: con filtros y sin grupos es el segundo aunque el
+período esté vacío para todos, y «Quitar filtros» lleva entonces al primero.
+**Un filtro que se ignoró entero no es un filtro** (RP-34): con solo ids que no
+existen, el vacío es el primero.
 
 **RP-34 Errores de validación** — `adaptar`
 
@@ -938,6 +1032,22 @@ mensajes: un rango inválido se descarta (RP-32). Fila por fila:
   cuatro cifras»; el piso real es el 0100-01-01, porque `parseDayKey` toma los
   años 0 a 99 como 1900 a 1999, la misma convención que CAL-17. Las reglas se aplican en este orden:
   la fecha, el fin anterior al inicio, el largo.
+
+_Actualizado el 2026-10-09, contrato de R4, parte A (D-R4-2, D-R4-5, D-R4-8;
+R4a)_:
+
+- **Un id bien formado que no está en el catálogo se ignora él solo**, sin
+  aviso: un uuid que no existe, un proyecto o un cliente borrado o de otro
+  workspace, un proyecto que quien mira no puede ver, o el id de un proyecto
+  en `clientes`. Los demás del mismo parámetro siguen. Lo ignorado no se
+  aplica, el botón no lo cuenta y **desaparece de la URL en la navegación
+  siguiente**, porque los enlaces llevan solo lo aplicado. Si se ignoran todos,
+  el reporte es el de sin filtros y el vacío, el primero (RP-33).
+- **Un mensaje nuevo, del panel de un filtro**: «Elegí hasta 50.» al apretar
+  «Aplicar» con más de 50 elegidos, «Sin proyecto» contado; 49 proyectos y
+  «Sin proyecto» valen. No navega y el panel sigue abierto; tildar o destildar
+  borra el mensaje. En la URL no hay mensaje: más de 50 descartan el parámetro
+  (RP-32).
 
 **RP-35 Falla al cargar** — `adaptar`
 El reporte se arma en el servidor; si la lectura falla, la pantalla muestra
@@ -1629,3 +1739,110 @@ _Actualizado el 2026-10-09, R3b_:
 | `owner`, `admin` activas                            | Todas las personas del workspace con horas, activas o no, en cada nivel                      | Cambiar el período, la agrupación y los subniveles; expandir y contraer; recargar; compartir el enlace, que lleva los niveles y no lo abierto |
 | `project_manager`, `team_manager`, `member` activas | Solo lo propio en cada nivel y en el total, también con el enlace de un admin con subniveles | Las mismas                                                                                                                                    |
 | Cualquiera no activa (`inactive`, `invited`)        | El aviso de RP-07                                                                            | Ninguna                                                                                                                                       |
+
+## 12. Núcleo, R4
+
+_2026-10-09._ Contrato:
+[`nucleo-reportes-r4-filtros.md`](../slices/nucleo-reportes-r4-filtros.md). El
+contrato tiene dos partes (D-R4-1) y el slice se partió: **esta sección
+registra la parte A, R4a** —los filtros de cliente y de proyecto—, y la parte
+B, personas, llega como R4b con su propia corrección en esta sección. La regla
+de cada comportamiento está en la corrección fechada de su RP; esta sección
+junta lo que cambia en la pantalla, y lo que no nombra sigue como en las
+secciones [9](#9-núcleo-r2a) a [11](#11-núcleo-r3).
+
+**Cubre:** RP-25 (cliente y proyecto), RP-26 (solo «Sin proyecto»), RP-29 (los
+archivados en los filtros), RP-32 (`clientes`, `proyectos` y los enlaces que
+los conservan), RP-33 (el segundo vacío, con «Quitar filtros») y RP-34 (lo que
+no existe se ignora; «Elegí hasta 50.»). Los permisos y el alcance no cambian:
+no hay acción nueva, los filtros se suman al alcance y nunca lo ensanchan —un
+member filtra lo propio—, y sin `report.view` no se leen los catálogos ni se
+abre la transacción. Los catálogos de los filtros se leen en la misma foto que
+los niveles.
+
+**Queda para después:** el filtro de personas, con las inactivas aparte y
+tachadas y sin las invitadas (R4b: RP-25 en personas, RP-31, RP-62, RP-64);
+gráfico (R5); exportación (R6, R7); personas sin horas (R9); agrupar por
+descripción, mes y semana (R10). Filtrar por tarea, etiqueta, descripción o
+facturable, «Sin cliente» como filtro y guardar filtros siguen para la fase 3
+(RP-25, RP-26, RP-27).
+
+### 12.1 La barra
+
+- **«Filtrar por»**, después de «Subagrupar por», es un grupo nombrado por su
+  rótulo con dos botones: «Clientes: {resumen}» y «Proyectos: {resumen}». El
+  resumen es «todos» sin nada elegido, el nombre con uno —también un archivado,
+  y «Sin proyecto» solo— y la cantidad con más. En pantallas angostas el grupo
+  baja a su propia línea, y el texto de un botón que no entra se corta con
+  puntos suspensivos; su nombre accesible sigue entero.
+- **Las flechas, el selector del período con sus atajos y «Aplicar», «Esta
+  semana», «Agrupar por» y los subniveles** conservan los filtros (RP-32).
+
+### 12.2 El panel de un filtro
+
+- **Un popover** nombrado por el filtro («Clientes» o «Proyectos») debajo del botón, de unos 320 px de ancho o el de la pantalla
+  si es menor: el buscador arriba, la lista con su desplazamiento y, al pie, la
+  región del mensaje y «Aplicar», que quedan a la vista con un catálogo largo,
+  también a 1366×657, 375 y 320 px.
+- **El buscador**, «Buscar clientes» o «Buscar proyectos», tiene el foco al
+  abrir; Tab pasa a la primera casilla y Espacio la tilda. Enter en el buscador
+  no aplica. Un clic en el nombre tilda su casilla.
+- **Proyectos**: «Sin proyecto» primero, en gris; después los vigentes, cada
+  uno con su punto de color, su nombre y su cliente en gris; después
+  «Archivados». **Clientes**: los vigentes y «Archivados», sin color ni
+  detalle.
+- **«Nada coincide con la búsqueda.»** cuando hay una búsqueda escrita y no
+  coincide ninguna opción que se pueda buscar, también con el catálogo vacío; en proyectos aparece debajo de «Sin proyecto», que sigue.
+- **«Elegí hasta 50.»** al pie, con más de 50 elegidos (RP-34).
+
+### 12.3 Estados y casos borde
+
+- **Con filtros y sin grupos**: el segundo vacío (RP-33), también con
+  subniveles; «Quitar filtros» conserva `subagrupar`.
+- **Al recargar o con «Atrás»**: la misma vista y los botones con lo elegido;
+  el árbol empieza contraído, y cambiar un filtro lo vuelve a contraer
+  (D-R4-10).
+- **Un filtro inválido en la URL** se descarta entero y sin aviso, y los otros
+  siguen (RP-32). **Ids que no existen** se ignoran de a uno y se pierden en la
+  navegación siguiente (RP-34).
+- **Un catálogo vacío** —un workspace sin clientes, o sin proyectos que quien
+  mira pueda ver—: el panel tiene el buscador y «Aplicar», sin opciones; sin
+  búsqueda no hay mensaje, y con una búsqueda escrita, «Nada coincide con la
+  búsqueda.». En proyectos queda «Sin proyecto».
+- **Cargando, error de lectura y sin `report.view`**: como en la sección 9.3,
+  con cualquier filtro.
+
+### 12.4 Divergencias visibles que el reviewer no debe marcar como errores
+
+- **La línea del alcance no dice el filtro**: sigue diciendo «Ves solo tus
+  horas.» o «Ves las horas de todas las personas del workspace.», porque dice
+  lo que quien mira puede ver; lo elegido lo dicen los botones (D-R4-4).
+- **El segundo vacío con un período sin horas**: con filtros y sin grupos,
+  «Ninguna entrada coincide con los filtros» aunque el período esté vacío para
+  todos; «Quitar filtros» lleva al primero (D-R4-7).
+- **Un proyecto privado propio que no se puede elegir**: un member con horas
+  en un privado del que no es miembro (PR-71) las ve agrupando por proyecto,
+  pero el proyecto no está en el filtro, porque el catálogo sigue a
+  `project.view`, y su id en la URL se ignora. Sí puede filtrar por el cliente
+  de ese proyecto (D-R4-6). Con todos los proyectos públicos (P-17 de
+  `proyectos.md`), no pasa.
+- **El filtro de cliente deja afuera lo que no tiene proyecto**, también con
+  «Sin proyecto» elegido; cliente y proyecto se cruzan sin excepción (RP-26,
+  D-R4-3).
+- **Los archivados no van tachados**: van aparte, en «Archivados»; el tachado
+  es de las personas inactivas (P-08, R4b).
+- **«Sin proyecto» no se busca**: sigue en la lista con cualquier búsqueda, y
+  «Nada coincide con la búsqueda.» aparece debajo de él.
+- **La búsqueda mira solo el nombre**: el cliente en gris de un proyecto no se
+  busca.
+- **Lo inválido o inexistente en la URL se descarta sin aviso** (RP-32,
+  RP-34): quien edita la URL a mano ve «todos» sin saber por qué.
+- **Esc y un clic afuera descartan lo tildado** sin preguntar.
+
+### 12.5 Qué puede hacer cada rol
+
+| Membresía                                           | Ve                                                                                                                                                                      | Acciones                                                                                                                                                                     |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `owner`, `admin` activas                            | Todas las personas del workspace con horas, filtradas por cliente y proyecto en cada nivel y en el total; en el filtro de proyecto, los que `project.view` les deja ver | Cambiar el período, la agrupación, los subniveles y los filtros; quitar los filtros; expandir y contraer; recargar; compartir el enlace, que lleva los niveles y los filtros |
+| `project_manager`, `team_manager`, `member` activas | Solo lo propio, filtrado, también con el enlace de un admin con filtros; en el filtro de proyecto, los que `project.view` les deja ver                                  | Las mismas                                                                                                                                                                   |
+| Cualquiera no activa (`inactive`, `invited`)        | El aviso de RP-07                                                                                                                                                       | Ninguna                                                                                                                                                                      |
