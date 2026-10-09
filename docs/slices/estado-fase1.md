@@ -102,11 +102,16 @@ vacío del owner y `renewWorkspace` se corta.
 
      Deuda nueva: `Executor` común en `src/server/db/` (C13 de R3a).
 
-     Quinta sesión, en curso: rama `nucleo/contratos-r4-r8` desde `d5765ea`, con
-     `architect-r4` (`nucleo-reportes-r4-filtros.md`) y `architect-r8`
-     (`nucleo-reportes-r8-cambiar-rol.md`) escribiendo en paralelo. **R8: solo el contrato**
-     (decisión del usuario del 2026-10-09): se revisa y se mergea, pero no se implementa hasta
-     que el usuario lo pida. Adelantarlo no había sido decisión suya.
+     Quinta sesión: los contratos de R4 (`nucleo-reportes-r4-filtros.md`) y R8
+     (`nucleo-reportes-r8-cambiar-rol.md`) en `main` (`be55db3`), aprobados por
+     `architecture-reviewer` en dos rondas cada uno. **R8: solo el contrato** (decisión del
+     usuario del 2026-10-09; adelantarlo no había sido decisión suya); antes de implementarlo,
+     ronda corta contra el árbol (§0). R4 se parte en **R4a** (cliente y proyecto) y **R4b**
+     (personas); R10 arranca con R4b mergeado. Sin comprobación contra Neon (D-R4-11). R4 y R8
+     tienen cada uno su lectura de personas (`workspace` y `team`); unificarlas es de la fase 2.
+     **R4a en curso**, rama `nucleo/r4a` desde `be55db3`, `backend-r4a` en el paso 1. Bases:
+     `clock_r4a_back`, `clock_r4a_front`, `clock_r4a_test` y `clock_r4a_e2e` (esta migrada);
+     se borran al cerrar R4a.
 
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
      (`7b66b03`), en checkout en el árbol principal. `architect-r3` quedó escribiendo

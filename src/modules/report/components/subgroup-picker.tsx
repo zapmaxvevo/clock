@@ -6,7 +6,12 @@ import { useState } from "react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import type { ReportGroupBy, ReportGrouping, ReportRange } from "@/modules/report/schema";
+import type {
+  ReportFilters,
+  ReportGroupBy,
+  ReportGrouping,
+  ReportRange,
+} from "@/modules/report/schema";
 
 import { levelOptions, withLevel } from "./grouping-model";
 import { groupByLabels, reportLabels } from "./labels";
@@ -15,6 +20,8 @@ import { reportHref } from "./report-href";
 type SubgroupProps = {
   readonly range: ReportRange;
   readonly grouping: ReportGrouping;
+  /** Los filtros que conservan los enlaces (D-R4-10). */
+  readonly filters: ReportFilters;
   /** 1 es el segundo nivel; 2, el tercero. */
   readonly level: 1 | 2;
 };
@@ -32,9 +39,10 @@ function chosenAt({ subgroups }: ReportGrouping, level: 1 | 2): ReportGroupBy | 
 /**
  * D-R3-8: el botón de un subnivel, que dice lo elegido, y su lista en un
  * popover. Elegir cierra el popover y el foco vuelve al botón, como un atajo
- * del período. Recibe solo el rango, la agrupación y su nivel (§5.3).
+ * del período. Recibe solo el rango, la agrupación, los filtros y su nivel
+ * (§5.3).
  */
-export function SubgroupPicker({ range, grouping, level }: SubgroupProps) {
+export function SubgroupPicker({ range, grouping, filters, level }: SubgroupProps) {
   const [open, setOpen] = useState(false);
   const chosen = chosenAt(grouping, level);
 
@@ -50,6 +58,7 @@ export function SubgroupPicker({ range, grouping, level }: SubgroupProps) {
         <SubgroupPanel
           range={range}
           grouping={grouping}
+          filters={filters}
           level={level}
           onChoose={() => setOpen(false)}
         />
@@ -65,6 +74,7 @@ export function SubgroupPicker({ range, grouping, level }: SubgroupProps) {
 export function SubgroupPanel({
   range,
   grouping,
+  filters,
   level,
   onChoose,
 }: SubgroupProps & {
@@ -84,7 +94,7 @@ export function SubgroupPanel({
         return (
           <li key={option ?? "ninguno"}>
             <Link
-              href={reportHref({ range, ...withLevel(grouping, level, option) })}
+              href={reportHref({ range, ...withLevel(grouping, level, option), filters })}
               aria-current={current ? "true" : undefined}
               // Solo en la navegación de la app: con Ctrl o Cmd abre otra
               // pestaña y la lista sigue abierta.

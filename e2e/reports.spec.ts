@@ -4,6 +4,9 @@ import type { Page } from "@playwright/test";
 
 import { PERSON_TIMEZONE } from "./calendar-page";
 import {
+  archiveProject,
+  clientIdOf,
+  projectIdOf,
   seedPersonEntries,
   seedPerson,
   seedProject,
@@ -16,14 +19,23 @@ import {
 import { addDays, dayKeyOf, todayIn, weekdayLabel, type CivilDay } from "./days";
 import {
   applyButton,
+  clearFiltersLink,
   clickRangeDay,
   currentWeekRange,
+  emptyFiltered,
   EMPTY_REPORT,
   expandButton,
+  expectFilterOptions,
   expectGroupBy,
   expectGroupNames,
   expectReport,
   expectSubgroups,
+  filterApply,
+  filterButton,
+  filterGroup,
+  filterOption,
+  filterPanel,
+  filterSearch,
   FORBIDDEN_BODY,
   FORBIDDEN_TITLE,
   goToReportsByNav,
@@ -40,6 +52,7 @@ import {
   NO_CLIENT,
   NO_LEVEL,
   NO_PROJECT,
+  NO_PROJECT_KEY,
   NO_TAG,
   NO_TASK,
   openReport,
@@ -73,6 +86,7 @@ import {
   taskHeading,
   taskRow,
   zoneLine,
+  type FilterName,
   type ReportGroupBy,
   type ReportRange,
   type ShortcutLabel,
@@ -82,13 +96,15 @@ import { expect, TEST_EMAIL_DOMAIN, test } from "./session";
 import { trackerBar, uniqueSuffix } from "./tracker-page";
 
 /**
- * Recorridos de R2a, R2b y R3 del núcleo de reportes: el resumido por persona,
- * por proyecto, por cliente, por tarea, por etiqueta y por fecha, los atajos
- * del período y los subniveles (§8.2 de cada contrato), con la regla de §8.3 de R2a. Cada
- * recorrido tiene sus personas —la de la sesión y las que siembra—, todas con
- * un nombre editado que lleva el sufijo del test, y solo afirma sobre sus filas
- * o sobre proyectos con ese sufijo: la base acumula personas y horas de todas
- * las corridas. El total se afirma solo con el alcance propio. El rol y el
+ * Recorridos de R2a a R4 del núcleo de reportes: el resumido por persona, por
+ * proyecto, por cliente, por tarea, por etiqueta y por fecha, los atajos del
+ * período, los subniveles y los filtros (§8.2 de cada contrato), con la regla
+ * de §8.3 de R2a. Cada recorrido tiene sus personas —la de la sesión y las que
+ * siembra—, todas con un nombre editado que lleva el sufijo del test, y solo
+ * afirma sobre sus filas o sobre proyectos con ese sufijo: la base acumula
+ * personas y horas de todas las corridas, así que la lista de un filtro se
+ * busca por el sufijo antes de afirmar sus opciones (D-R4-13). El total se
+ * afirma solo con el alcance propio. El rol y el
  * estado los cambia la persona de la sesión sobre sí misma. Las entradas van en
  * la semana anterior a la de hoy y se siembran antes de abrir la pantalla; los
  * rótulos esperados se calculan con `days.ts`, no con el código que los
@@ -159,6 +175,35 @@ async function pickSubgroup(
       exact: true,
     }),
   ).toBeFocused();
+}
+
+/**
+ * Abre el panel de un filtro desde su botón, que dice `summary`: el buscador
+ * está vacío y tiene el foco (D-R4-8).
+ */
+async function openFilter(
+  page: Page,
+  filter: FilterName,
+  summary: string,
+): Promise<void> {
+  await filterButton(page, filter, summary).click();
+  await expect(filterSearch(page, filter)).toBeFocused();
+  await expect(filterSearch(page, filter)).toHaveValue("");
+}
+
+/**
+ * «Aplicar» en el panel abierto: el popover se cierra y, con la pantalla
+ * nueva, el foco está en el botón del filtro, que ya dice `summary` (D-R4-8).
+ * Como en `pickSubgroup`, el botón con lo elegido es el de la pantalla nueva.
+ */
+async function applyFilter(
+  page: Page,
+  filter: FilterName,
+  summary: string,
+): Promise<void> {
+  await filterApply(page).click();
+  await expect(filterPanel(page, filter)).toBeHidden();
+  await expect(filterButton(page, filter, summary)).toBeFocused();
 }
 
 /** El rango de la URL sin `hasta`, que se descarta entero. */
@@ -923,4 +968,241 @@ test("los controles conservan los subniveles, los intercambian y los quitan", as
   await expect(page).toHaveURL((url) => [...url.searchParams.keys()].length === 3);
   await expectGroupNames(page, [tuesday, wednesday, thursday]);
   await expect(groupHeaders(page).getByRole("button")).toHaveCount(0);
+});
+
+test("los filtros de cliente y de proyecto, con «Sin proyecto», los archivados y el segundo vacío", async ({
+  page,
+  email,
+}) => {
+  const day = today();
+  const lastWeek = lastWeekRange(day);
+  const [monday, tuesday, wednesday, thursday] = [0, 1, 2, 3].map((days) =>
+    addDays(lastWeek.first, days),
+  );
+  const suffix = uniqueSuffix();
+  const firstClient = `C1 ${suffix}`;
+  const secondClient = `C2 ${suffix}`;
+  const first = `P1 ${suffix}`;
+  const second = `P2 ${suffix}`;
+  const archived = `P3 ${suffix}`;
+
+  await enterApp(page);
+  await setDisplayName(email, `Iris ${suffix}`);
+  await seedProject({ name: first, client: firstClient });
+  await seedProject({ name: second, client: secondClient });
+  await seedProject({ name: archived });
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
+    { description: "a", day: monday, start: "09:00", end: "10:00", project: first },
+    { description: "b", day: tuesday, start: "09:00", end: "09:30", project: second },
+    { description: "c", day: wednesday, start: "09:00", end: "09:45", project: archived },
+    { description: "d", day: thursday, start: "09:00", end: "09:20" },
+  ]);
+  await archiveProject(archived);
+  const [firstId, archivedId, firstClientId] = await Promise.all([
+    projectIdOf(first),
+    projectIdOf(archived),
+    clientIdOf(firstClient),
+  ]);
+
+  await openReport(page, lastWeek, "proyecto", day);
+  await expect(page.getByText(SCOPE_SELF, { exact: true })).toBeVisible();
+  await expect(reportTotal(page, "Total")).toHaveText("2:35");
+
+  // D-R4-8: «Sin proyecto» primero, sin filtrar por la búsqueda; las vigentes
+  // en el grupo del filtro y, aparte, P3 en «Archivados» (RP-29).
+  await openFilter(page, "Proyectos", "todos");
+  await filterSearch(page, "Proyectos").fill(suffix);
+  await expectFilterOptions(filterGroup(page, "Proyectos", "Proyectos"), [
+    NO_PROJECT,
+    first,
+    second,
+  ]);
+  await expectFilterOptions(filterGroup(page, "Proyectos", "Archivados"), [archived]);
+
+  // RP-25, RP-26: P1 y «Sin proyecto». La URL lleva los dos, con
+  // `sin-proyecto` al final (D-R4-2); las filas y el total son los de lo
+  // filtrado.
+  const chosen = { projects: [firstId, NO_PROJECT_KEY] };
+  await filterOption(page, first).check();
+  await filterOption(page, NO_PROJECT).check();
+  await applyFilter(page, "Proyectos", "2");
+  await expectReport(page, lastWeek, "proyecto", day, [], chosen);
+  // El encabezado de un proyecto con cliente lo nombra a los dos (R3).
+  await expectGroupNames(page, [`${first} ${firstClient}`, NO_PROJECT]);
+  await expect(groupDuration(groupRow(page, first))).toHaveText("1:00");
+  await expect(groupDuration(groupRow(page, NO_PROJECT))).toHaveText("0:20");
+  await expect(reportTotal(page, "Total")).toHaveText("1:20");
+
+  // D-R4-10: «Cliente» conserva el filtro. La entrada sin proyecto va a «Sin
+  // cliente».
+  const expectByClient = async (): Promise<void> => {
+    await expectGroupNames(page, [firstClient, NO_CLIENT]);
+    await expect(groupDuration(groupRow(page, firstClient))).toHaveText("1:00");
+    await expect(groupDuration(groupRow(page, NO_CLIENT))).toHaveText("0:20");
+    await expect(reportTotal(page, "Total")).toHaveText("1:20");
+  };
+  await groupByLink(page, "cliente").click();
+  await expectReport(page, lastWeek, "cliente", day, [], chosen);
+  await expectByClient();
+
+  // RP-32: al recargar, la misma vista, y el botón dice lo elegido.
+  await page.reload();
+  await expectReport(page, lastWeek, "cliente", day, [], chosen);
+  await expect(filterButton(page, "Proyectos", "2")).toBeVisible();
+  await expectByClient();
+
+  // D-R4-10: el subnivel y el atajo del período conservan los filtros. Las
+  // filas de arriba son las mismas: la semana de hoy no tiene horas.
+  const twoWeeks = shortcutRange("Últimas dos semanas", day);
+  await pickSubgroup(page, "Segundo nivel", "proyecto", ["proyecto"]);
+  await expectReport(page, lastWeek, "cliente", day, ["proyecto"], chosen);
+  await expect(filterButton(page, "Proyectos", "2")).toBeVisible();
+  await expectByClient();
+  await openRangePicker(page);
+  await pickShortcut(page, "Últimas dos semanas");
+  await expectReport(page, twoWeeks, "cliente", day, ["proyecto"], chosen);
+  await expect(filterButton(page, "Proyectos", "2")).toBeVisible();
+  await expectByClient();
+  await pickSubgroup(page, "Segundo nivel", null, []);
+  await expectReport(page, twoWeeks, "cliente", day, [], chosen);
+  await openRangePicker(page);
+  await pickShortcut(page, "Semana anterior");
+  await expectReport(page, lastWeek, "cliente", day, [], chosen);
+  await expect(filterButton(page, "Proyectos", "2")).toBeVisible();
+  await expectByClient();
+
+  // D-R4-8: Esc cierra sin aplicar y el foco vuelve al botón. Aplicada, la
+  // casilla de P3 pediría los tres proyectos: ningún paso lleva ahí, así que
+  // un pedido con esa URL solo puede venir de Esc.
+  const escaped = recordNavigations(page, lastWeek, "cliente", {
+    projects: [firstId, archivedId, NO_PROJECT_KEY],
+  });
+  await openFilter(page, "Proyectos", "2");
+  await filterOption(page, archived).check();
+  await page.keyboard.press("Escape");
+  await expect(filterPanel(page, "Proyectos")).toBeHidden();
+  await expect(filterButton(page, "Proyectos", "2")).toBeFocused();
+  await expectReport(page, lastWeek, "cliente", day, [], chosen);
+  await expectByClient();
+
+  // Al abrir de nuevo, lo elegido es lo del estado, no lo que Esc descartó.
+  // RP-29: el archivado se filtra y sus horas cuentan.
+  await openFilter(page, "Proyectos", "2");
+  await expect(filterOption(page, first)).toBeChecked();
+  await expect(filterOption(page, NO_PROJECT)).toBeChecked();
+  await expect(filterOption(page, archived)).not.toBeChecked();
+  await filterOption(page, first).uncheck();
+  await filterOption(page, NO_PROJECT).uncheck();
+  await filterOption(page, archived).check();
+  await applyFilter(page, "Proyectos", archived);
+  const onlyArchived = { projects: [archivedId] };
+  await expectReport(page, lastWeek, "cliente", day, [], onlyArchived);
+  await expectGroupNames(page, [NO_CLIENT]);
+  await expect(groupDuration(groupRow(page, NO_CLIENT))).toHaveText("0:45");
+  await expect(reportTotal(page, "Total")).toHaveText("0:45");
+
+  // D-R4-10, RP-33: la flecha conserva el filtro; la semana de antes no tiene
+  // horas y, con filtros, es el segundo vacío (D-R4-7).
+  await periodLink(page, "Período anterior").click();
+  await expectReport(page, shiftRange(lastWeek, -7), "cliente", day, [], onlyArchived);
+  await expect(emptyFiltered(page)).toBeVisible();
+  await expect(clearFiltersLink(page)).toBeVisible();
+  await expect(groupHeaders(page)).toHaveCount(0);
+  await expect(reportTotal(page, "Total")).toHaveText("0:00");
+  await periodLink(page, "Período siguiente").click();
+  await expectReport(page, lastWeek, "cliente", day, [], onlyArchived);
+  await expect(groupDuration(groupRow(page, NO_CLIENT))).toHaveText("0:45");
+
+  // D-R4-3: entre filtros, «y». P3 no tiene cliente, así que con C1 no queda
+  // nada.
+  await openFilter(page, "Clientes", "todos");
+  await filterSearch(page, "Clientes").fill(suffix);
+  await expectFilterOptions(filterGroup(page, "Clientes", "Clientes"), [
+    firstClient,
+    secondClient,
+  ]);
+  await filterOption(page, firstClient).check();
+  await applyFilter(page, "Clientes", firstClient);
+  await expectReport(page, lastWeek, "cliente", day, [], {
+    clients: [firstClientId],
+    projects: [archivedId],
+  });
+  await expect(emptyFiltered(page)).toBeVisible();
+  await expect(groupHeaders(page)).toHaveCount(0);
+
+  // D-R4-7: «Quitar filtros» vuelve al mismo período y la misma agrupación,
+  // sin ningún filtro.
+  await clearFiltersLink(page).click();
+  await expectReport(page, lastWeek, "cliente", day);
+  await expect(filterButton(page, "Clientes", "todos")).toBeVisible();
+  await expect(filterButton(page, "Proyectos", "todos")).toBeVisible();
+  await expect(groupHeaders(page)).toHaveCount(3);
+  await expect(groupDuration(groupRow(page, firstClient))).toHaveText("1:00");
+  await expect(groupDuration(groupRow(page, secondClient))).toHaveText("0:30");
+  await expect(groupDuration(groupRow(page, NO_CLIENT))).toHaveText("1:05");
+  await expect(reportTotal(page, "Total")).toHaveText("2:35");
+
+  expect(escaped).toEqual([]);
+});
+
+test("un filtro que nombra algo que no existe, o mal formado, se ignora", async ({
+  page,
+  email,
+}) => {
+  const day = today();
+  const lastWeek = lastWeekRange(day);
+  const tuesday = addDays(lastWeek.first, 1);
+  const suffix = uniqueSuffix();
+  const person = `Juan ${suffix}`;
+  const project = `P1 ${suffix}`;
+
+  await enterApp(page);
+  await setDisplayName(email, person);
+  await seedProject({ name: project });
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
+    { description: "a", day: tuesday, start: "09:00", end: "10:00", project },
+    { description: "b", day: tuesday, start: "11:00", end: "11:30" },
+  ]);
+  const projectId = await projectIdOf(project);
+  const unknown = randomUUID();
+  const byPerson = reportsUrl(lastWeek, "persona");
+
+  // Cada dirección se carga entera: lo que se ve no puede venir de la anterior.
+  const expectPerson = async (duration: string): Promise<void> => {
+    await expect(rangeButton(page)).toHaveAccessibleName(
+      "Elegir período: Semana anterior",
+    );
+    await expectGroupBy(page, "persona");
+    await expect(groupHeaders(page)).toHaveCount(1);
+    await expect(groupDuration(groupRow(page, person))).toHaveText(duration);
+    await expect(reportTotal(page, "Total")).toHaveText(duration);
+  };
+
+  // RP-34: un id bien formado que no está en el catálogo se ignora. Ignorado
+  // entero, no es un filtro: no hay segundo vacío (D-R4-7).
+  await page.goto(`${byPerson}&proyectos=${unknown}`);
+  await expectPerson("1:30");
+  await expect(page.getByText(SCOPE_SELF, { exact: true })).toBeVisible();
+  await expect(filterButton(page, "Proyectos", "todos")).toBeVisible();
+  await expect(emptyFiltered(page)).toHaveCount(0);
+
+  // Los demás del mismo parámetro siguen, y el enlace siguiente lleva solo
+  // los efectivos (D-R4-5).
+  await page.goto(`${byPerson}&proyectos=${projectId},${unknown}`);
+  await expectPerson("1:00");
+  await expect(filterButton(page, "Proyectos", project)).toBeVisible();
+  await groupByLink(page, "proyecto").click();
+  await expectReport(page, lastWeek, "proyecto", day, [], { projects: [projectId] });
+  await expectGroupNames(page, [project]);
+  await expect(groupDuration(groupRow(page, project))).toHaveText("1:00");
+
+  // RP-32: una coma de más descarta el parámetro entero, no solo el valor vacío.
+  await page.goto(`${byPerson}&proyectos=${projectId},`);
+  await expectPerson("1:30");
+  await expect(filterButton(page, "Proyectos", "todos")).toBeVisible();
+
+  // Un proyecto como cliente está bien formado y no es de su catálogo.
+  await page.goto(`${byPerson}&clientes=${projectId}`);
+  await expectPerson("1:30");
+  await expect(filterButton(page, "Clientes", "todos")).toBeVisible();
 });

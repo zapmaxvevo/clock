@@ -1,18 +1,27 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import type { ReportGrouping } from "@/modules/report/schema";
+import {
+  NO_REPORT_FILTERS,
+  type ReportFilters,
+  type ReportGrouping,
+} from "@/modules/report/schema";
 
 import { SubgroupPanel } from "./subgroup-picker";
 
 const range = { first: "2026-09-28", last: "2026-10-04" };
 const base = "/reportes?desde=2026-09-28&hasta=2026-10-04";
 
-function render(grouping: ReportGrouping, level: 1 | 2): string {
+function render(
+  grouping: ReportGrouping,
+  level: 1 | 2,
+  filters: ReportFilters = NO_REPORT_FILTERS,
+): string {
   return renderToStaticMarkup(
     <SubgroupPanel
       range={range}
       grouping={grouping}
+      filters={filters}
       level={level}
       onChoose={() => undefined}
     />,
@@ -129,6 +138,26 @@ describe("SubgroupPanel (D-R3-8, §5.3)", () => {
         href: `${base}&agrupar=persona&subagrupar=proyecto%2Ctarea`,
         current: "true",
       },
+    ]);
+  });
+
+  it("cada enlace conserva los filtros (D-R4-10)", () => {
+    const project = "a2000000-0000-4000-8000-000000000000";
+    const client = "c1000000-0000-4000-8000-000000000000";
+    const { links } = list(
+      render({ groupBy: "project", subgroups: ["date"] }, 2, {
+        clients: [client],
+        projects: [project],
+        withoutProject: true,
+      }),
+    );
+    const kept = `&clientes=${client}&proyectos=${project}%2Csin-proyecto`;
+    expect(links.map(({ href }) => href)).toEqual([
+      `${base}&agrupar=proyecto&subagrupar=fecha${kept}`,
+      `${base}&agrupar=proyecto&subagrupar=fecha%2Cpersona${kept}`,
+      `${base}&agrupar=proyecto&subagrupar=fecha%2Ccliente${kept}`,
+      `${base}&agrupar=proyecto&subagrupar=fecha%2Ctarea${kept}`,
+      `${base}&agrupar=proyecto&subagrupar=fecha%2Cetiqueta${kept}`,
     ]);
   });
 });

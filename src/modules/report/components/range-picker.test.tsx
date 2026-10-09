@@ -5,7 +5,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type * as CalendarModule from "@/components/ui/calendar";
 import {
+  NO_REPORT_FILTERS,
   reportMessages,
+  type ReportFilters,
   type ReportGrouping,
   type ReportRange,
   type ReportShortcut,
@@ -96,6 +98,7 @@ type PanelOptions = {
   readonly shortcuts?: readonly ReportShortcut[];
   readonly range?: ReportRange;
   readonly grouping?: ReportGrouping;
+  readonly filters?: ReportFilters;
 };
 
 const BY_PERSON: ReportGrouping = { groupBy: "person", subgroups: [] };
@@ -108,6 +111,7 @@ function renderPanel(
     shortcuts = SHORTCUTS,
     range = { first: "2026-10-05", last: "2026-10-11" },
     grouping = BY_PERSON,
+    filters = NO_REPORT_FILTERS,
   }: PanelOptions = {},
 ): string {
   return renderToStaticMarkup(
@@ -119,6 +123,7 @@ function renderPanel(
       shortcuts={shortcuts}
       range={range}
       grouping={grouping}
+      filters={filters}
       onSelect={() => undefined}
       onApply={() => undefined}
       onShortcut={() => undefined}
@@ -159,14 +164,24 @@ function navigatesTo(href: string) {
 
 const thisWeek = selectionOf({ first: "2026-10-05", last: "2026-10-11" });
 
+const FILTERS: ReportFilters = {
+  clients: ["c1000000-0000-4000-8000-000000000000"],
+  projects: ["a2000000-0000-4000-8000-000000000000"],
+  withoutProject: true,
+};
+/** Lo que `FILTERS` escribe en la URL, después de la agrupación. */
+const FILTERS_PARAMS =
+  "&clientes=c1000000-0000-4000-8000-000000000000" +
+  "&proyectos=a2000000-0000-4000-8000-000000000000%2Csin-proyecto";
+
 describe("applySelection, el efecto de «Aplicar»", () => {
   it("sin selección, el selector sigue abierto, sin mensaje y sin navegar", () => {
-    expect(applySelection(undefined, BY_PERSON)).toEqual({
+    expect(applySelection(undefined, BY_PERSON, NO_REPORT_FILTERS)).toEqual({
       open: true,
       error: null,
       href: null,
     });
-    expect(applySelection({ from: undefined }, BY_PERSON)).toEqual({
+    expect(applySelection({ from: undefined }, BY_PERSON, NO_REPORT_FILTERS)).toEqual({
       open: true,
       error: null,
       href: null,
@@ -175,7 +190,11 @@ describe("applySelection, el efecto de «Aplicar»", () => {
 
   it("con 367 días, sigue abierto con el mensaje de RP-34 y sin navegar", () => {
     expect(
-      applySelection({ from: day("2025-10-01"), to: day("2026-10-02") }, BY_PERSON),
+      applySelection(
+        { from: day("2025-10-01"), to: day("2026-10-02") },
+        BY_PERSON,
+        NO_REPORT_FILTERS,
+      ),
     ).toEqual({ open: true, error: reportMessages.rangeTooLong, href: null });
   });
 
@@ -184,6 +203,7 @@ describe("applySelection, el efecto de «Aplicar»", () => {
       applySelection(
         { from: day("2026-09-01"), to: day("2026-09-30") },
         { groupBy: "tag", subgroups: ["person"] },
+        NO_REPORT_FILTERS,
       ),
     ).toEqual(
       navigatesTo(
@@ -192,9 +212,27 @@ describe("applySelection, el efecto de «Aplicar»", () => {
     );
   });
 
+  it("con un período válido, navega con los filtros (D-R4-10)", () => {
+    expect(
+      applySelection(
+        { from: day("2026-09-01"), to: day("2026-09-30") },
+        BY_PROJECT,
+        FILTERS,
+      ),
+    ).toEqual(
+      navigatesTo(
+        `/reportes?desde=2026-09-01&hasta=2026-09-30&agrupar=proyecto${FILTERS_PARAMS}`,
+      ),
+    );
+  });
+
   it("con 366 días, cierra y navega", () => {
     expect(
-      applySelection({ from: day("2025-10-02"), to: day("2026-10-02") }, BY_PERSON),
+      applySelection(
+        { from: day("2025-10-02"), to: day("2026-10-02") },
+        BY_PERSON,
+        NO_REPORT_FILTERS,
+      ),
     ).toEqual(navigatesTo("/reportes?desde=2025-10-02&hasta=2026-10-02&agrupar=persona"));
   });
 });
@@ -216,7 +254,7 @@ describe("RangePicker", () => {
 
   it("con el rango actual elegido, un clic y «Aplicar» navegan con desde = hasta en ese día", () => {
     const selection = clickOn(thisWeek, "2026-09-30");
-    expect(applySelection(selection, BY_PROJECT)).toEqual(
+    expect(applySelection(selection, BY_PROJECT, NO_REPORT_FILTERS)).toEqual(
       navigatesTo("/reportes?desde=2026-09-30&hasta=2026-09-30&agrupar=proyecto"),
     );
   });
@@ -224,7 +262,7 @@ describe("RangePicker", () => {
   it("con el rango actual elegido, dos clics fuera de él arman el rango entre esos dos días", () => {
     const first = clickOn(thisWeek, "2026-10-20");
     const second = clickOn(first, "2026-10-25");
-    expect(applySelection(second, BY_PERSON)).toEqual(
+    expect(applySelection(second, BY_PERSON, NO_REPORT_FILTERS)).toEqual(
       navigatesTo("/reportes?desde=2026-10-20&hasta=2026-10-25&agrupar=persona"),
     );
   });
@@ -232,7 +270,7 @@ describe("RangePicker", () => {
   it("con el segundo clic anterior al primero, los extremos se invierten", () => {
     const first = clickOn(thisWeek, "2026-10-25");
     const second = clickOn(first, "2026-10-20");
-    expect(applySelection(second, BY_PERSON)).toEqual(
+    expect(applySelection(second, BY_PERSON, NO_REPORT_FILTERS)).toEqual(
       navigatesTo("/reportes?desde=2026-10-20&hasta=2026-10-25&agrupar=persona"),
     );
   });
@@ -240,7 +278,7 @@ describe("RangePicker", () => {
   it("con un período de un día, un clic en ese día deja «Aplicar» sin efecto", () => {
     const oneDay = selectionOf({ first: "2026-10-08", last: "2026-10-08" });
     const selection = clickOn(oneDay, "2026-10-08");
-    expect(applySelection(selection, BY_PERSON)).toEqual({
+    expect(applySelection(selection, BY_PERSON, NO_REPORT_FILTERS)).toEqual({
       open: true,
       error: null,
       href: null,
@@ -279,7 +317,9 @@ describe("RangePanel, los atajos (RP-20, D-R2b-10)", () => {
     const grouping: ReportGrouping = { groupBy: "client", subgroups: [] };
     const found = shortcutLinks(renderPanel(thisWeek, { grouping }));
     expect(found?.map(({ href }) => href)).toEqual(
-      SHORTCUTS.map(({ range }) => reportHref({ range, ...grouping })),
+      SHORTCUTS.map(({ range }) =>
+        reportHref({ range, ...grouping, filters: NO_REPORT_FILTERS }),
+      ),
     );
     expect(found?.[6].href).toBe(
       "/reportes?desde=2026-09-01&hasta=2026-09-30&agrupar=cliente",
@@ -298,6 +338,16 @@ describe("RangePanel, los atajos (RP-20, D-R2b-10)", () => {
     expect(
       found?.every(({ href }) => href.endsWith("&subagrupar=fecha%2Cetiqueta")),
     ).toBe(true);
+  });
+
+  it("cada atajo conserva los filtros (D-R4-10)", () => {
+    const found = shortcutLinks(
+      renderPanel(thisWeek, { grouping: BY_PROJECT, filters: FILTERS }),
+    );
+    expect(found?.[6].href).toBe(
+      `/reportes?desde=2026-09-01&hasta=2026-09-30&agrupar=proyecto${FILTERS_PARAMS}`,
+    );
+    expect(found?.every(({ href }) => href.endsWith(FILTERS_PARAMS))).toBe(true);
   });
 
   it("solo el atajo del período que se ve lleva aria-current", () => {

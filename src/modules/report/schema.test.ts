@@ -1,12 +1,19 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  hasReportFilters,
+  NO_REPORT_FILTERS,
   REPORT_GROUP_BYS,
   REPORT_GROUP_PARAMS,
   REPORT_MAX_DAYS,
+  REPORT_MAX_FILTER_VALUES,
   REPORT_MAX_ROWS,
+  REPORT_WITHOUT_PROJECT,
+  reportClientParams,
+  reportFiltersOf,
   reportGroupParams,
   reportMessages,
+  reportProjectParams,
   reportRangeInput,
   reportRangeParams,
   reportReadyState,
@@ -363,6 +370,8 @@ describe("reportReadyState (D-R2b-2, D-R2b-5, D-R3-3, D-R3-4, D-R3-7)", () => {
       },
       { kind: "client", client: null, seconds: 30 },
     ],
+    filters: NO_REPORT_FILTERS,
+    filterOptions: { clients: [], projects: [] },
   };
 
   it("admite los grupos de cliente, con «Sin cliente», y los atajos", () => {
@@ -522,5 +531,242 @@ describe("reportReadyState (D-R2b-2, D-R2b-5, D-R3-3, D-R3-4, D-R3-7)", () => {
     expect(reportReadyState.safeParse({ ...ready, shortcuts: undefined }).success).toBe(
       false,
     );
+  });
+});
+
+/** El uuid `n`, en minúsculas, como los devuelve Postgres. */
+function uuidAt(n: number): string {
+  return `00000000-0000-4000-8000-${n.toString(16).padStart(12, "0")}`;
+}
+
+/** Los `count` primeros uuid de `uuidAt`, desde 1. */
+function uuids(count: number): string[] {
+  return Array.from({ length: count }, (_, index) => uuidAt(index + 1));
+}
+
+const p1 = "7a8b9c0d-1e2f-4a3b-9c4d-5e6f7a8b9c0d";
+const p2 = "2f3e4d5c-6b7a-4980-a1b2-c3d4e5f60718";
+
+/** Los parámetros mal formados que descartan una lista entera, armados con `name`. */
+function malformedLists(name: string) {
+  return [
+    { [name]: p1.toUpperCase() },
+    { [name]: `${p1.slice(0, 7)}A${p1.slice(8)}` },
+    { [name]: "" },
+    { [name]: `${p1},` },
+    { [name]: `,${p1}` },
+    { [name]: `${p1},,${p2}` },
+    { [name]: `${p1},${p1}` },
+    { [name]: ` ${p1}` },
+    { [name]: "proyecto" },
+    { [name]: "7a8b9c0d1e2f4a3b9c4d5e6f7a8b9c0d" },
+    { [name]: uuids(REPORT_MAX_FILTER_VALUES + 1).join(",") },
+    { [name]: [p1, p2] },
+    { [name]: [p1, p1] },
+    {},
+  ];
+}
+
+describe("reportClientParams (D-R4-2, RP-32)", () => {
+  it("lee uno, dos y hasta el tope de uuid en minúsculas, en el orden de la URL", () => {
+    expect(REPORT_MAX_FILTER_VALUES).toBe(50);
+    for (const ids of [[p1], [p2, p1], uuids(REPORT_MAX_FILTER_VALUES)]) {
+      expect(reportClientParams.safeParse({ clientes: ids.join(",") })).toEqual({
+        success: true,
+        data: ids,
+      });
+    }
+  });
+
+  it("descarta entero cualquier otro valor, también sin-proyecto", () => {
+    for (const params of [
+      ...malformedLists("clientes"),
+      { clientes: REPORT_WITHOUT_PROJECT },
+      { clientes: `${p1},${REPORT_WITHOUT_PROJECT}` },
+    ]) {
+      expect([params, reportClientParams.safeParse(params).success]).toEqual([
+        params,
+        false,
+      ]);
+    }
+  });
+});
+
+describe("reportProjectParams (D-R4-2, RP-26, RP-32)", () => {
+  it("lee uuid y sin-proyecto, que cuenta en el tope", () => {
+    expect(REPORT_WITHOUT_PROJECT).toBe("sin-proyecto");
+    for (const [proyectos, projects, withoutProject] of [
+      [p1, [p1], false],
+      [`${p2},${p1}`, [p2, p1], false],
+      [REPORT_WITHOUT_PROJECT, [], true],
+      [`${p1},${REPORT_WITHOUT_PROJECT}`, [p1], true],
+      [`${REPORT_WITHOUT_PROJECT},${p1}`, [p1], true],
+      [uuids(REPORT_MAX_FILTER_VALUES).join(","), uuids(REPORT_MAX_FILTER_VALUES), false],
+      [
+        [...uuids(REPORT_MAX_FILTER_VALUES - 1), REPORT_WITHOUT_PROJECT].join(","),
+        uuids(REPORT_MAX_FILTER_VALUES - 1),
+        true,
+      ],
+    ] as const) {
+      expect(reportProjectParams.safeParse({ proyectos })).toEqual({
+        success: true,
+        data: { projects, withoutProject },
+      });
+    }
+  });
+
+  it("descarta entero cualquier otro valor, sin-proyecto repetido y 50 uuid con sin-proyecto", () => {
+    for (const params of [
+      ...malformedLists("proyectos"),
+      { proyectos: `${REPORT_WITHOUT_PROJECT},${REPORT_WITHOUT_PROJECT}` },
+      { proyectos: "Sin-proyecto" },
+      { proyectos: "sin proyecto" },
+      {
+        proyectos: [...uuids(REPORT_MAX_FILTER_VALUES), REPORT_WITHOUT_PROJECT].join(","),
+      },
+    ]) {
+      expect([params, reportProjectParams.safeParse(params).success]).toEqual([
+        params,
+        false,
+      ]);
+    }
+  });
+});
+
+describe("reportFiltersOf (D-R4-2, RP-32)", () => {
+  it("valida cada parámetro por su lado: uno inválido no vacía al otro", () => {
+    expect(
+      reportFiltersOf({
+        clientes: `${p1},`,
+        proyectos: `${p2},${REPORT_WITHOUT_PROJECT}`,
+      }),
+    ).toEqual({ clients: [], projects: [p2], withoutProject: true });
+    expect(reportFiltersOf({ clientes: p1, proyectos: `${p2},${p2}` })).toEqual({
+      clients: [p1],
+      projects: [],
+      withoutProject: false,
+    });
+  });
+
+  it("también aparte del rango y de la agrupación", () => {
+    expect(
+      reportFiltersOf({
+        desde: "2026-10-11",
+        hasta: "2026-10-05",
+        agrupar: "Proyecto",
+        subagrupar: "fecha,fecha",
+        clientes: p1,
+        proyectos: p2,
+      }),
+    ).toEqual({ clients: [p1], projects: [p2], withoutProject: false });
+  });
+
+  it("sin filtros, o con claves que no declara, da NO_REPORT_FILTERS", () => {
+    for (const params of [
+      {},
+      { personas: "ajena-1", cliente: p1, proyecto: p2, clients: p1, projects: p2 },
+    ]) {
+      expect(reportFiltersOf(params)).toEqual(NO_REPORT_FILTERS);
+    }
+  });
+});
+
+describe("hasReportFilters (D-R4-7)", () => {
+  it("es cierto con alguna lista o con sin-proyecto, y falso sin nada", () => {
+    expect(hasReportFilters(NO_REPORT_FILTERS)).toBe(false);
+    for (const filters of [
+      { ...NO_REPORT_FILTERS, clients: [p1] },
+      { ...NO_REPORT_FILTERS, projects: [p1] },
+      { ...NO_REPORT_FILTERS, withoutProject: true },
+    ]) {
+      expect(hasReportFilters(filters)).toBe(true);
+    }
+  });
+});
+
+describe("reportReadyState con los filtros (D-R4-5, D-R4-9)", () => {
+  const week = { first: "2026-10-05", last: "2026-10-11" };
+  const ready: ReportReadyState = {
+    kind: "ready",
+    todayKey: "2026-10-08",
+    range: week,
+    rangeLabel: "Esta semana",
+    previous: null,
+    next: null,
+    currentWeek: week,
+    shortcuts: [],
+    groupBy: "project",
+    subgroups: [],
+    levelsShown: 1,
+    scope: "self",
+    timeZone: "America/Argentina/Buenos_Aires",
+    totalSeconds: 0,
+    billableSeconds: 0,
+    groups: [],
+    filters: { clients: [p1], projects: [p2], withoutProject: true },
+    filterOptions: {
+      clients: [{ id: p1, name: "Acme", archived: true }],
+      projects: [
+        {
+          id: p2,
+          name: "Web",
+          color: "green",
+          client: { id: p1, name: "Acme" },
+          archived: false,
+        },
+        { id: uuidAt(1), name: "Interno", color: "red", client: null, archived: true },
+      ],
+    },
+  };
+
+  it("admite los filtros efectivos y las opciones", () => {
+    expect(reportReadyState.parse(ready)).toEqual(ready);
+  });
+
+  it("admite el tope con sin-proyecto contado y rechaza pasarlo", () => {
+    const within = [
+      { clients: uuids(50), projects: uuids(50), withoutProject: false },
+      { clients: [], projects: uuids(49), withoutProject: true },
+    ];
+    for (const filters of within) {
+      expect(reportReadyState.safeParse({ ...ready, filters }).success).toBe(true);
+    }
+    const beyond = [
+      { clients: uuids(51), projects: [], withoutProject: false },
+      { clients: [], projects: uuids(51), withoutProject: false },
+      { clients: [], projects: uuids(50), withoutProject: true },
+    ];
+    for (const filters of beyond) {
+      expect(reportReadyState.safeParse({ ...ready, filters }).success).toBe(false);
+    }
+  });
+
+  it("rechaza un estado sin filters o sin filterOptions, y una opción sin su marca", () => {
+    for (const state of [
+      { ...ready, filters: undefined },
+      { ...ready, filterOptions: undefined },
+      {
+        ...ready,
+        filterOptions: { ...ready.filterOptions, clients: [{ id: p1, name: "Acme" }] },
+      },
+      {
+        ...ready,
+        filterOptions: {
+          ...ready.filterOptions,
+          projects: [{ id: p2, name: "Web", color: "green", client: null }],
+        },
+      },
+      {
+        ...ready,
+        filterOptions: {
+          ...ready.filterOptions,
+          projects: [
+            { id: p2, name: "Web", color: "#00ff00", client: null, archived: false },
+          ],
+        },
+      },
+    ]) {
+      expect(reportReadyState.safeParse(state).success).toBe(false);
+    }
   });
 });

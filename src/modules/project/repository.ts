@@ -1,4 +1,4 @@
-import { and, count, eq, inArray, isNull } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, type SQL } from "drizzle-orm";
 
 import { db, type Transaction } from "@/server/db";
 import { hasConstraint, UNIQUE_VIOLATION } from "@/server/db/constraint-error";
@@ -35,6 +35,20 @@ function withViewer(row: {
     ...row.project,
     viewer: row.isManager === null ? null : { isManager: row.isManager },
   };
+}
+
+/** Los proyectos que cumplen `where`, con la fila de miembro de `userId`. Sin filtro de acceso. */
+async function listProjectsWithViewer(
+  tx: Executor,
+  userId: string,
+  where: SQL | undefined,
+): Promise<ProjectWithViewer[]> {
+  const rows = await tx
+    .select({ project, isManager: projectMember.isManager })
+    .from(project)
+    .leftJoin(projectMember, viewerOf(userId))
+    .where(where);
+  return rows.map(withViewer);
 }
 
 /**
@@ -251,12 +265,23 @@ export const projectRepository = {
     workspaceId: string,
     userId: string,
   ): Promise<ProjectWithViewer[]> {
-    const rows = await tx
-      .select({ project, isManager: projectMember.isManager })
-      .from(project)
-      .leftJoin(projectMember, viewerOf(userId))
-      .where(and(eq(project.workspaceId, workspaceId), isNull(project.archivedAt)));
-    return rows.map(withViewer);
+    return listProjectsWithViewer(
+      tx,
+      userId,
+      and(eq(project.workspaceId, workspaceId), isNull(project.archivedAt)),
+    );
+  },
+
+  /**
+   * Todos los proyectos, archivados incluidos, con la fila de miembro de
+   * `userId`. Sin filtro de acceso: es de `can()` (RP-29).
+   */
+  async listAllProjects(
+    tx: Executor,
+    workspaceId: string,
+    userId: string,
+  ): Promise<ProjectWithViewer[]> {
+    return listProjectsWithViewer(tx, userId, eq(project.workspaceId, workspaceId));
   },
 
   /** Las tareas activas de los proyectos activos. */

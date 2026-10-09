@@ -1,5 +1,17 @@
-import { and, eq, gte, isNotNull, lt, sql, type SQL } from "drizzle-orm";
-import { alias, type PgSelect } from "drizzle-orm/pg-core";
+import {
+  and,
+  eq,
+  exists,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
+import { alias, QueryBuilder, type PgSelect } from "drizzle-orm/pg-core";
 
 import { db, type Transaction } from "@/server/db";
 import {
@@ -16,7 +28,11 @@ import {
 import type { MembershipStatus } from "@/server/permissions";
 import type { TimeBuckets } from "@/server/time";
 
-import type { ReportGroupBy } from "./schema";
+import {
+  projectFilterCount,
+  REPORT_MAX_FILTER_VALUES,
+  type ReportGroupBy,
+} from "./schema";
 // Solo el tipo: el alcance lo construye el service (D-R2a-1). El ciclo se borra al compilar.
 import type { ReportScope } from "./service";
 
@@ -73,9 +89,33 @@ export type LevelTotalRow = {
   readonly billableSeconds: number;
 };
 
-/** Lo que lee `totalsByLevels`: el intervalo y por qué dimensiones agrupa. */
-export type ReportLevelRead = {
+/**
+ * RP-25, RP-26: los filtros de cliente y de proyecto, ya cruzados con sus
+ * catálogos. El de personas va en el alcance (D-R4-4).
+ */
+export type ReportEntryFilter = {
+  /** Vacío y sin `withoutProject`: sin filtro de proyecto. */
+  readonly projectIds: readonly string[];
+  readonly withoutProject: boolean;
+  /** Vacío: sin filtro de cliente. Deja afuera las entradas sin proyecto. */
+  readonly clientIds: readonly string[];
+};
+
+/** Sin filtros: lo que leían R2a a R3b. */
+export const NO_ENTRY_FILTER: ReportEntryFilter = {
+  projectIds: [],
+  withoutProject: false,
+  clientIds: [],
+};
+
+/** Lo que lee `entryTotals`: el intervalo y los filtros. */
+export type ReportEntryRead = {
   readonly span: ReportSpan;
+  readonly filter: ReportEntryFilter;
+};
+
+/** Lo que lee `totalsByLevels`: lo de `ReportEntryRead` y por qué dimensiones agrupa. */
+export type ReportLevelRead = ReportEntryRead & {
   /** De una a tres, sin repetir. */
   readonly dimensions: readonly ReportGroupBy[];
   /** Los tramos de `span` si `date` es una de las dimensiones; si no, `null`. */
@@ -108,6 +148,44 @@ function closedIn(span: ReportSpan) {
     gte(timeEntry.startedAt, span.from),
     lt(timeEntry.startedAt, span.to),
   );
+}
+
+// El proyecto del filtro de cliente: no es una dimensión y no se cruza con
+// los alias de ellas (D-R4-6).
+const filterProject = alias(project, "filter_project");
+
+/**
+ * RP-25, RP-26, D-R4-3: la condición de los filtros sobre cada entrada, o
+ * `undefined` sin filtros. Dentro de un filtro, o; entre filtros, y. El de
+ * cliente lee `project.client_id`, como la dimensión de cliente, así que deja
+ * afuera lo que no tiene proyecto. Con una lista vacía, esa parte no se
+ * escribe: `inArray` con una lista vacía no deja pasar nada.
+ */
+function matchesFilter({
+  projectIds,
+  withoutProject,
+  clientIds,
+}: ReportEntryFilter): SQL | undefined {
+  const byProject = or(
+    projectIds.length > 0 ? inArray(timeEntry.projectId, [...projectIds]) : undefined,
+    withoutProject ? isNull(timeEntry.projectId) : undefined,
+  );
+  const byClient =
+    clientIds.length > 0
+      ? exists(
+          new QueryBuilder()
+            .select({ one: sql`1` })
+            .from(filterProject)
+            .where(
+              and(
+                eq(filterProject.workspaceId, timeEntry.workspaceId),
+                eq(filterProject.id, timeEntry.projectId),
+                inArray(filterProject.clientId, [...clientIds]),
+              ),
+            ),
+        )
+      : undefined;
+  return and(byProject, byClient);
 }
 
 /**
@@ -395,6 +473,27 @@ function bucketsOf(read: ReportLevelRead): TimeBuckets {
   return read.buckets;
 }
 
+/**
+ * Las guardas de §4.3 de R4: lanza `RangeError` antes de consultar si un
+ * filtro pasa el tope, con «Sin proyecto» contado como uno.
+ */
+function checkEntryRead({ filter }: ReportEntryRead): void {
+  const counts = [
+    {
+      name: "proyecto",
+      count: projectFilterCount(filter.projectIds, filter.withoutProject),
+    },
+    { name: "cliente", count: filter.clientIds.length },
+  ];
+  for (const { name, count } of counts) {
+    if (count > REPORT_MAX_FILTER_VALUES) {
+      throw new RangeError(
+        `El filtro de ${name} lleva ${count} valores; el tope es ${REPORT_MAX_FILTER_VALUES}.`,
+      );
+    }
+  }
+}
+
 /** Las guardas de §4.3 de R3: lanza `RangeError` antes de consultar. */
 function checkLevelRead(read: ReportLevelRead): void {
   const { dimensions, buckets, span, limit } = read;
@@ -443,6 +542,7 @@ export const reportRepository = {
     read: ReportLevelRead,
     tx: Executor = db,
   ): Promise<readonly LevelTotalRow[]> {
+    checkEntryRead(read);
     checkLevelRead(read);
     const levels = read.dimensions.map((groupBy, index) => ({
       dimension: DIMENSIONS[groupBy],
@@ -481,7 +581,11 @@ export const reportRepository = {
             "billable_seconds",
           ),
       })
-      .from(entries.where(and(inScope(scope), closedIn(read.span))).as("entries"))
+      .from(
+        entries
+          .where(and(inScope(scope), closedIn(read.span), matchesFilter(read.filter)))
+          .as("entries"),
+      )
       .groupBy(columnOf("entries", "workspace_id"), ...entryKeys)
       .as("totals");
 
@@ -522,19 +626,20 @@ export const reportRepository = {
     }));
   },
 
-  /** El total y el facturable reales de `span`, sin unir etiquetas. Una sentencia, una fila. */
+  /** El total y el facturable reales de `read.span`, sin unir etiquetas. Una sentencia, una fila. */
   async entryTotals(
     scope: ReportScope,
-    span: ReportSpan,
+    read: ReportEntryRead,
     tx: Executor = db,
   ): Promise<EntryTotals> {
+    checkEntryRead(read);
     const [row] = await tx
       .select({
         seconds: sql<string>`coalesce(sum(${entrySeconds}), 0)::bigint`,
         billableSeconds: sql<string>`coalesce(sum(${entrySeconds}) filter (where ${timeEntry.billable}), 0)::bigint`,
       })
       .from(timeEntry)
-      .where(and(inScope(scope), closedIn(span)));
+      .where(and(inScope(scope), closedIn(read.span), matchesFilter(read.filter)));
     return withSeconds(row);
   },
 };

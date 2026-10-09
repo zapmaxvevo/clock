@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { db } from "@/server/db";
-import { membership } from "@/server/db/schema";
+import { client, membership, project } from "@/server/db/schema";
 import type * as Permissions from "@/server/permissions";
 import type { Actor, MembershipStatus, Role } from "@/server/permissions";
 import {
@@ -17,12 +17,17 @@ import {
 } from "@/test/factories";
 import { actorIn, workspaceOf } from "@/test/time-entry";
 
+import { projectRepository } from "@/modules/project/repository";
+
 import { reportRepository } from "./repository";
 import {
+  NO_REPORT_FILTERS,
   REPORT_GROUP_BYS,
+  reportFiltersOf,
   reportGroupParams,
   reportRangeParams,
   reportSubgroupParams,
+  type ReportFilters,
   type ReportGroup,
   type ReportGroupBy,
   type ReportState,
@@ -330,7 +335,7 @@ beforeEach(async () => {
 });
 
 function request(groupBy: ReportRequest["groupBy"]): ReportRequest {
-  return { range: week, groupBy, subgroups: [] };
+  return { range: week, groupBy, subgroups: [], filters: NO_REPORT_FILTERS };
 }
 
 async function reportOf(actor: Actor, groupBy: ReportRequest["groupBy"]) {
@@ -507,7 +512,12 @@ const trees: readonly (readonly ReportGroupBy[])[] = [
 
 /** El pedido de la semana con `levels[0]` arriba y el resto como subniveles. */
 function treeRequest(levels: readonly ReportGroupBy[]): ReportRequest {
-  return { range: week, groupBy: levels[0], subgroups: levels.slice(1) };
+  return {
+    range: week,
+    groupBy: levels[0],
+    subgroups: levels.slice(1),
+    filters: NO_REPORT_FILTERS,
+  };
 }
 
 async function treeOf(actor: Actor, levels: readonly ReportGroupBy[]) {
@@ -632,11 +642,17 @@ function entriesIn(workspaceId: string, userId?: string): SeededEntry[] {
 
 /**
  * Sin `report.view`, `forbidden` sin leer ni abrir la transacción, con un nivel
- * y con subniveles (criterios 9 y 21 de R3).
+ * y con subniveles (criterios 9 y 21 de R3), y sin leer los catálogos de los
+ * filtros, con `filters` o sin ellos (criterio 12 de R4).
  */
-async function expectForbiddenWithoutReading(actor: Actor) {
+async function expectForbiddenWithoutReading(
+  actor: Actor,
+  filters: ReportFilters = NO_REPORT_FILTERS,
+) {
   const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
   const entryTotals = vi.spyOn(reportRepository, "entryTotals");
+  const clients = vi.spyOn(projectRepository, "listClients");
+  const projects = vi.spyOn(projectRepository, "listAllProjects");
   const transaction = vi.spyOn(db, "transaction");
   try {
     const requests = [
@@ -644,16 +660,20 @@ async function expectForbiddenWithoutReading(actor: Actor) {
       ...trees.map((levels) => treeRequest(levels)),
     ];
     for (const forbidden of requests) {
-      expect(await getReportState(actor, settings, forbidden, now)).toEqual({
-        kind: "forbidden",
-      });
+      expect(
+        await getReportState(actor, settings, { ...forbidden, filters }, now),
+      ).toEqual({ kind: "forbidden" });
     }
     expect(byLevels).not.toHaveBeenCalled();
     expect(entryTotals).not.toHaveBeenCalled();
+    expect(clients).not.toHaveBeenCalled();
+    expect(projects).not.toHaveBeenCalled();
     expect(transaction).not.toHaveBeenCalled();
   } finally {
     byLevels.mockRestore();
     entryTotals.mockRestore();
+    clients.mockRestore();
+    projects.mockRestore();
     transaction.mockRestore();
   }
 }
@@ -827,7 +847,12 @@ describe("el enlace ajeno (criterio 5, RP-32; criterio 11 de R2b; criterio 9 de 
     if (!range.success || !groupBy.success) {
       throw new Error("El enlace del admin no pasó los esquemas.");
     }
-    return { range: range.data, groupBy: groupBy.data, subgroups: [] };
+    return {
+      range: range.data,
+      groupBy: groupBy.data,
+      subgroups: [],
+      filters: NO_REPORT_FILTERS,
+    };
   }
 
   it("los esquemas no dejan pasar ninguna clave que nombre personas", () => {
@@ -836,6 +861,7 @@ describe("el enlace ajeno (criterio 5, RP-32; criterio 11 de R2b; criterio 9 de 
         range: week,
         groupBy,
         subgroups: [],
+        filters: NO_REPORT_FILTERS,
       });
     }
   });
@@ -985,7 +1011,12 @@ describe("el alcance en cada nivel (criterio 21 de R3)", () => {
       if (!range.success || !groupBy.success || !subgroups.success) {
         throw new Error("El enlace del admin no pasó los esquemas.");
       }
-      return { range: range.data, groupBy: groupBy.data, subgroups: subgroups.data };
+      return {
+        range: range.data,
+        groupBy: groupBy.data,
+        subgroups: subgroups.data,
+        filters: NO_REPORT_FILTERS,
+      };
     }
 
     it("los esquemas no dejan pasar ninguna clave que nombre personas", () => {
@@ -1006,6 +1037,475 @@ describe("el alcance en cada nivel (criterio 21 de R3)", () => {
           expect(
             treeSummaryOf(await getReportState(actor, settings, fromUrl, now)),
           ).toEqual(expectedTree("self", levels, entriesIn(a.workspaceId, userId)));
+        }
+      });
+    }
+  });
+});
+
+describe("los filtros de cliente y de proyecto dentro del alcance (criterio 12 de R4)", () => {
+  /**
+   * El fixture suma, en A, el cliente C2 con su proyecto Q, donde cargan el
+   * owner (con la etiqueta E) y el member; en B, otro cliente con su proyecto QB,
+   * donde carga el owner de B. P y el cliente de A pasan a llamarse «P» y «C1»:
+   * así el orden de los catálogos, el de `compareNames`, es fijo.
+   */
+  let clientA2Id: string;
+  let projectQId: string;
+  /** El cliente y el proyecto de B donde carga el member de A. */
+  let clientBId: string;
+  let projectBId: string;
+  let clientB2Id: string;
+  let projectQBId: string;
+
+  beforeEach(async () => {
+    await db.update(client).set({ name: "C1" }).where(eq(client.id, a.clientId));
+    await db.update(project).set({ name: "P" }).where(eq(project.id, a.projectId));
+    const clientA2 = await seedClient({ workspaceId: a.workspaceId, name: "C2" });
+    const projectQ = await seedProject({
+      workspaceId: a.workspaceId,
+      clientId: clientA2.id,
+      name: "Q",
+    });
+    const clientB2 = await seedClient({ workspaceId: b.workspaceId, name: "C3" });
+    const projectQB = await seedProject({
+      workspaceId: b.workspaceId,
+      clientId: clientB2.id,
+      name: "QB",
+    });
+    const { clientId, projectId } = b.places.member;
+    if (clientId === null || projectId === null) {
+      throw new Error("El member de A carga en B en un proyecto con cliente.");
+    }
+    clientBId = clientId;
+    projectBId = projectId;
+    clientA2Id = clientA2.id;
+    projectQId = projectQ.id;
+    clientB2Id = clientB2.id;
+    projectQBId = projectQB.id;
+    names.set(clientA2.id, "C2");
+    names.set(projectQ.id, "Q");
+    names.set(clientB2.id, "C3");
+    names.set(projectQB.id, "QB");
+
+    const inQ = { projectId: projectQ.id, clientId: clientA2.id, taskId: null };
+    await closedEntry({
+      workspaceId: a.workspaceId,
+      userId: a.ownerId,
+      hour: 19,
+      minutes: 25,
+      place: { ...inQ, tagIds: [a.tagEId] },
+    });
+    await closedEntry({
+      workspaceId: a.workspaceId,
+      userId: a.memberId,
+      hour: 20,
+      minutes: 35,
+      place: { ...inQ, tagIds: [] },
+    });
+    await closedEntry({
+      workspaceId: b.workspaceId,
+      userId: b.ownerId,
+      hour: 21,
+      minutes: 45,
+      place: {
+        projectId: projectQB.id,
+        clientId: clientB2.id,
+        taskId: null,
+        tagIds: [],
+      },
+    });
+  });
+
+  /** Cada agrupación sola y dos árboles de dos niveles con el alcance abajo. */
+  const shapes: readonly (readonly ReportGroupBy[])[] = [
+    ...groupBys.map((groupBy) => [groupBy]),
+    ["project", "person"],
+    ["tag", "project"],
+  ];
+
+  function filtered(
+    levels: readonly ReportGroupBy[],
+    filters: ReportFilters,
+  ): ReportRequest {
+    return { ...treeRequest(levels), filters };
+  }
+
+  /** Lo que decide el alcance de un árbol, más los filtros que el estado dice aplicados. */
+  function filteredSummaryOf(state: ReportState) {
+    if (state.kind !== "ready") {
+      return state;
+    }
+    return { ...treeSummaryOf(state), filters: state.filters };
+  }
+
+  /**
+   * D-R4-3: dentro de un filtro, o; entre filtros, y. «Sin proyecto» solo en el
+   * de proyecto; el de cliente deja afuera lo que no tiene proyecto.
+   */
+  function passes(place: Place, filters: ReportFilters): boolean {
+    const byProject =
+      (filters.projects.length === 0 && !filters.withoutProject) ||
+      (place.projectId === null
+        ? filters.withoutProject
+        : filters.projects.includes(place.projectId));
+    const byClient =
+      filters.clients.length === 0 ||
+      (place.clientId !== null && filters.clients.includes(place.clientId));
+    return byProject && byClient;
+  }
+
+  /** El árbol de `entries` que pasan `applied`, con `applied` como los filtros del estado. */
+  function expectedFiltered(
+    scope: "everyone" | "self",
+    levels: readonly ReportGroupBy[],
+    entries: readonly SeededEntry[],
+    applied: ReportFilters,
+  ) {
+    return {
+      ...expectedTree(
+        scope,
+        levels,
+        entries.filter((entry) => passes(entry.place, applied)),
+      ),
+      filters: applied,
+    };
+  }
+
+  /**
+   * Los pedidos con ids de A, todos en su catálogo: lo pedido es lo aplicado.
+   * Cubren o dentro de un filtro, y entre filtros, «Sin proyecto» con un
+   * proyecto y un cliente con «Sin proyecto» elegido.
+   */
+  function filtersInA(): readonly ReportFilters[] {
+    return [
+      { clients: [], projects: [a.projectId], withoutProject: false },
+      { clients: [clientA2Id], projects: [], withoutProject: false },
+      { clients: [], projects: [projectQId], withoutProject: true },
+      {
+        clients: [a.clientId],
+        projects: [a.projectId, projectQId],
+        withoutProject: true,
+      },
+    ];
+  }
+
+  function everyoneIn(workspaceId: string) {
+    return actorIn(workspaceId, workspaceId === a.workspaceId ? a.ownerId : b.ownerId, {
+      role: "owner",
+    });
+  }
+
+  /** Owner y admin de A, que ven a todos. */
+  function everyoneInAActors() {
+    return [
+      everyoneIn(a.workspaceId),
+      actorIn(a.workspaceId, a.adminId, { role: "admin" }),
+    ];
+  }
+
+  /** Cada pedido de `cases` en cada forma, contra lo que tiene que ver `actor`. */
+  async function expectFilteredView(
+    actor: Actor,
+    scope: "everyone" | "self",
+    entries: readonly SeededEntry[],
+    cases: readonly {
+      readonly requested: ReportFilters;
+      readonly applied: ReportFilters;
+    }[],
+  ) {
+    for (const { requested, applied } of cases) {
+      for (const levels of shapes) {
+        const state = await getReportState(
+          actor,
+          settings,
+          filtered(levels, requested),
+          now,
+        );
+        expect(
+          filteredSummaryOf(state),
+          `${nameOf(actor.userId)}, ${levels.join(" → ")}, ${JSON.stringify(requested)}`,
+        ).toEqual(expectedFiltered(scope, levels, entries, applied));
+      }
+    }
+  }
+
+  const asApplied = (filters: ReportFilters) => ({
+    requested: filters,
+    applied: filters,
+  });
+
+  it("owner y admin de A ven lo de todos en A filtrado, en cada nivel y en el total", async () => {
+    for (const actor of everyoneInAActors()) {
+      await expectFilteredView(
+        actor,
+        "everyone",
+        entriesIn(a.workspaceId),
+        filtersInA().map(asApplied),
+      );
+    }
+  });
+
+  it("project_manager, team_manager y member ven solo lo propio filtrado, en cada nivel y en el total", async () => {
+    for (const { role, userId } of selfOnlyInA()) {
+      await expectFilteredView(
+        actorIn(a.workspaceId, userId, { role }),
+        "self",
+        entriesIn(a.workspaceId, userId),
+        filtersInA().map(asApplied),
+      );
+    }
+  });
+
+  it("un owner al que can() le niega timeEntry.others.view ve solo lo propio filtrado", async () => {
+    permissionOverrides.denied.push({
+      userId: a.ownerId,
+      action: "timeEntry.others.view",
+    });
+    await expectFilteredView(
+      everyoneIn(a.workspaceId),
+      "self",
+      entriesIn(a.workspaceId, a.ownerId),
+      filtersInA().map(asApplied),
+    );
+  });
+
+  it("un filtro que solo elige horas ajenas no le muestra nada a quien ve lo propio", async () => {
+    // Q tiene horas del owner y del member; el project_manager no cargó en Q.
+    const onlyQ: ReportFilters = {
+      clients: [],
+      projects: [projectQId],
+      withoutProject: false,
+    };
+    await expectFilteredView(
+      actorIn(a.workspaceId, a.managerId, { role: "project_manager" }),
+      "self",
+      [],
+      [asApplied(onlyQ)],
+    );
+  });
+
+  describe("desde la URL, con reportFiltersOf", () => {
+    /** Los valores de `agrupar` y `subagrupar` de cada árbol, como los escribe la URL. */
+    const linkedTrees = [
+      ["proyecto", "persona", ["project", "person"]],
+      ["etiqueta", "proyecto", ["tag", "project"]],
+      ["persona", "", ["person"]],
+    ] as const;
+
+    /** Cada lista ordenada por unidades de código y `sin-proyecto` al final, como la escribe la aplicación. */
+    function searchParamsOf(agrupar: string, subagrupar: string) {
+      return {
+        desde: week.first,
+        hasta: week.last,
+        agrupar,
+        ...(subagrupar === "" ? {} : { subagrupar }),
+        clientes: a.clientId,
+        proyectos: [...[a.projectId, projectQId].sort(), "sin-proyecto"].join(","),
+      };
+    }
+
+    function requestFromUrl(agrupar: string, subagrupar: string): ReportRequest {
+      const searchParams = searchParamsOf(agrupar, subagrupar);
+      const range = reportRangeParams.safeParse(searchParams);
+      const groupBy = reportGroupParams.safeParse(searchParams);
+      const subgroups =
+        subagrupar === ""
+          ? { success: true as const, data: [] }
+          : reportSubgroupParams.safeParse(searchParams);
+      if (!range.success || !groupBy.success || !subgroups.success) {
+        throw new Error("El enlace del admin no pasó los esquemas.");
+      }
+      return {
+        range: range.data,
+        groupBy: groupBy.data,
+        subgroups: subgroups.data,
+        filters: reportFiltersOf(searchParams),
+      };
+    }
+
+    /** C1 con P, Q y «Sin proyecto», en el orden del catálogo: solo lo de P. */
+    function appliedFromUrl(): ReportFilters {
+      return {
+        clients: [a.clientId],
+        projects: [a.projectId, projectQId],
+        withoutProject: true,
+      };
+    }
+
+    it("los filtros del enlace pasan los esquemas tal como están en la URL", () => {
+      for (const [agrupar, subagrupar] of linkedTrees) {
+        expect(requestFromUrl(agrupar, subagrupar).filters).toStrictEqual({
+          clients: [a.clientId],
+          projects: [a.projectId, projectQId].sort(),
+          withoutProject: true,
+        });
+      }
+    });
+
+    it("el pedido que arma un admin da al admin lo de todos filtrado y a cada uno solo lo propio filtrado", async () => {
+      for (const [agrupar, subagrupar, levels] of linkedTrees) {
+        const fromUrl = requestFromUrl(agrupar, subagrupar);
+        const admin = actorIn(a.workspaceId, a.adminId, { role: "admin" });
+        expect(
+          filteredSummaryOf(await getReportState(admin, settings, fromUrl, now)),
+        ).toEqual(
+          expectedFiltered(
+            "everyone",
+            levels,
+            entriesIn(a.workspaceId),
+            appliedFromUrl(),
+          ),
+        );
+        for (const { role, userId } of selfOnlyInA()) {
+          const actor = actorIn(a.workspaceId, userId, { role });
+          expect(
+            filteredSummaryOf(await getReportState(actor, settings, fromUrl, now)),
+            `${role}, agrupar=${agrupar}&subagrupar=${subagrupar}`,
+          ).toEqual(
+            expectedFiltered(
+              "self",
+              levels,
+              entriesIn(a.workspaceId, userId),
+              appliedFromUrl(),
+            ),
+          );
+        }
+      }
+    });
+  });
+
+  describe("los ids de otro workspace (RP-34)", () => {
+    /** Todos los ids de B: los dos clientes y los dos proyectos. */
+    function idsOfB(): ReportFilters {
+      return {
+        clients: [clientBId, clientB2Id],
+        projects: [projectBId, projectQBId],
+        withoutProject: false,
+      };
+    }
+
+    function idsOfA(withoutProject: boolean): ReportFilters {
+      return {
+        clients: [a.clientId, clientA2Id],
+        projects: [a.projectId, projectQId],
+        withoutProject,
+      };
+    }
+
+    it("en A, los ids de B se ignoran: sin filtros, cada uno ve lo que ve sin ellos", async () => {
+      const ignored = { requested: idsOfB(), applied: NO_REPORT_FILTERS };
+      for (const actor of everyoneInAActors()) {
+        await expectFilteredView(actor, "everyone", entriesIn(a.workspaceId), [ignored]);
+      }
+      for (const { role, userId } of selfOnlyInA()) {
+        await expectFilteredView(
+          actorIn(a.workspaceId, userId, { role }),
+          "self",
+          entriesIn(a.workspaceId, userId),
+          [ignored],
+        );
+      }
+    });
+
+    it("en A, junto a ids de A, los de B se ignoran y los de A se aplican", async () => {
+      const mixed = {
+        requested: {
+          clients: [clientBId, a.clientId, clientB2Id],
+          projects: [projectQBId, a.projectId],
+          withoutProject: false,
+        },
+        applied: {
+          clients: [a.clientId],
+          projects: [a.projectId],
+          withoutProject: false,
+        },
+      };
+      for (const actor of everyoneInAActors()) {
+        await expectFilteredView(actor, "everyone", entriesIn(a.workspaceId), [mixed]);
+      }
+      await expectFilteredView(
+        actorIn(a.workspaceId, a.memberId),
+        "self",
+        entriesIn(a.workspaceId, a.memberId),
+        [mixed],
+      );
+    });
+
+    it("el owner de B con ids de A no ve nada de A: los ids se ignoran y ve todo B", async () => {
+      await expectFilteredView(
+        everyoneIn(b.workspaceId),
+        "everyone",
+        entriesIn(b.workspaceId),
+        [
+          { requested: idsOfA(false), applied: NO_REPORT_FILTERS },
+          // «Sin proyecto» no es un id: queda y elige lo de B sin proyecto.
+          {
+            requested: idsOfA(true),
+            applied: { clients: [], projects: [], withoutProject: true },
+          },
+          {
+            requested: {
+              clients: [],
+              projects: [a.projectId, projectQBId],
+              withoutProject: false,
+            },
+            applied: { clients: [], projects: [projectQBId], withoutProject: false },
+          },
+          {
+            requested: {
+              clients: [a.clientId, clientB2Id],
+              projects: [],
+              withoutProject: false,
+            },
+            applied: { clients: [clientB2Id], projects: [], withoutProject: false },
+          },
+        ],
+      );
+    });
+
+    it("la persona miembro de A y de B, en B, con ids de A ve solo lo suyo de B", async () => {
+      await expectFilteredView(
+        actorIn(b.workspaceId, a.memberId),
+        "self",
+        entriesIn(b.workspaceId, a.memberId),
+        [
+          { requested: idsOfA(false), applied: NO_REPORT_FILTERS },
+          {
+            requested: {
+              clients: [],
+              projects: [a.projectId, projectQId, projectBId],
+              withoutProject: false,
+            },
+            applied: { clients: [], projects: [projectBId], withoutProject: false },
+          },
+        ],
+      );
+    });
+  });
+
+  describe("membresía no activa con filtros (criterio 9 de R4)", () => {
+    for (const status of notActive) {
+      it(`${status}: ni el owner ni un member leen, ni los catálogos`, async () => {
+        await db
+          .update(membership)
+          .set({ status })
+          .where(
+            and(
+              eq(membership.workspaceId, a.workspaceId),
+              eq(membership.userId, a.ownerId),
+            ),
+          );
+        const memberId = await seedMember(a.workspaceId, "member", status);
+        for (const filters of filtersInA()) {
+          await expectForbiddenWithoutReading(
+            actorIn(a.workspaceId, a.ownerId, { role: "owner", status }),
+            filters,
+          );
+          await expectForbiddenWithoutReading(
+            actorIn(a.workspaceId, memberId, { status }),
+            filters,
+          );
         }
       });
     }

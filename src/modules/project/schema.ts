@@ -134,6 +134,21 @@ export type ProjectRef = {
 
 export type TaskRef = { readonly id: string; readonly name: string };
 
+/** Un cliente en el filtro de un reporte, con su marca de archivado (RP-29). */
+export type FilterClientView = ClientView & { readonly archived: boolean };
+
+/** Un proyecto en el filtro de un reporte, con su cliente y su marca de archivado (RP-29). */
+export type FilterProjectView = ProjectRef & {
+  readonly client: ClientView | null;
+  readonly archived: boolean;
+};
+
+/** Lo que ofrecen los filtros de cliente y de proyecto de un reporte (RP-25). */
+export type ProjectFilterCatalog = {
+  readonly clients: readonly FilterClientView[];
+  readonly projects: readonly FilterProjectView[];
+};
+
 /** Lo que elige el selector. `task` no nulo implica `project` no nulo (TT-11). */
 export type ProjectSelection = {
   readonly project: ProjectRef | null;

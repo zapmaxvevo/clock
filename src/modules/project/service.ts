@@ -33,6 +33,7 @@ import {
   type CreateTaskResult,
   type CreateTaskValues,
   type ProjectCatalog,
+  type ProjectFilterCatalog,
   type ProjectRef,
   type ProjectView,
   type TagRef,
@@ -403,6 +404,58 @@ export async function assertTaggable(
   if (normalizedIds(tagIds).some((id) => !usable.has(id))) {
     throw new ProjectError("not_found", projectMessages.tagUnavailable);
   }
+}
+
+/**
+ * RP-25, RP-29: lo que ofrecen los filtros de cliente y de proyecto de un
+ * reporte. Todos los clientes del workspace y los proyectos que `project.view`
+ * deja ver, archivados incluidos y marcados, en el orden de `compareNames`.
+ * Solo lee, con la transacción de quien la llama (ADR 0010), que tiene que ser
+ * `repeatable read`: los clientes y los proyectos se leen en dos sentencias, y
+ * con `read committed` un proyecto podría apuntar a un cliente creado entre
+ * las dos, que no está en la lista; `clientOf` lanza en ese caso.
+ */
+export async function getProjectFilterCatalog(
+  tx: Transaction,
+  actor: Actor,
+): Promise<ProjectFilterCatalog> {
+  const clients = await projectRepository.listClients(tx, actor.workspaceId);
+  const projects = await projectRepository.listAllProjects(
+    tx,
+    actor.workspaceId,
+    actor.userId,
+  );
+  const clientViews = sortedByName(clients).map((row) => ({
+    view: toClientView(row),
+    archived: row.archivedAt !== null,
+  }));
+  const clientsById = new Map(clientViews.map(({ view }) => [view.id, view]));
+  return {
+    clients: clientViews.map(({ view, archived }) => ({ ...view, archived })),
+    projects: sortedByName(
+      projects.filter((row) => can(actor, "project.view", projectResource(row))),
+    ).map((row) => ({
+      ...toProjectRef(row),
+      client: clientOf(row, clientsById),
+      archived: row.archivedAt !== null,
+    })),
+  };
+}
+
+/** El cliente de un proyecto, de los leídos en la misma foto. */
+function clientOf(
+  row: ProjectWithViewer,
+  clientsById: ReadonlyMap<string, ClientView>,
+): ClientView | null {
+  if (row.clientId === null) {
+    return null;
+  }
+  const found = clientsById.get(row.clientId);
+  // La clave compuesta ata el proyecto a un cliente de su workspace.
+  if (found === undefined) {
+    throw new Error(`El proyecto ${row.id} tiene un cliente que no está en la foto.`);
+  }
+  return found;
 }
 
 type CatalogRead<Project> = {
