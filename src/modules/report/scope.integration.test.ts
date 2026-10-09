@@ -330,7 +330,7 @@ beforeEach(async () => {
 });
 
 function request(groupBy: ReportRequest["groupBy"]): ReportRequest {
-  return { range: week, groupBy };
+  return { range: week, groupBy, subgroups: [] };
 }
 
 async function reportOf(actor: Actor, groupBy: ReportRequest["groupBy"]) {
@@ -827,12 +827,16 @@ describe("el enlace ajeno (criterio 5, RP-32; criterio 11 de R2b; criterio 9 de 
     if (!range.success || !groupBy.success) {
       throw new Error("El enlace del admin no pasó los esquemas.");
     }
-    return { range: range.data, groupBy: groupBy.data };
+    return { range: range.data, groupBy: groupBy.data, subgroups: [] };
   }
 
   it("los esquemas no dejan pasar ninguna clave que nombre personas", () => {
     for (const [agrupar, groupBy] of linkedGroupBys) {
-      expect(requestFromUrl(agrupar)).toStrictEqual({ range: week, groupBy });
+      expect(requestFromUrl(agrupar)).toStrictEqual({
+        range: week,
+        groupBy,
+        subgroups: [],
+      });
     }
   });
 

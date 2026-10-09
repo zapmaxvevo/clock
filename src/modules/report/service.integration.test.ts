@@ -28,6 +28,7 @@ import {
   type ReportRange,
   type ReportReadyState,
 } from "./schema";
+import { reportLabels } from "./components/labels";
 import { reportRepository } from "./repository";
 import { getReportState, type ReportRequest } from "./service";
 
@@ -106,7 +107,7 @@ async function readyState(
     {
       range: request.range ?? null,
       groupBy: request.groupBy ?? null,
-      subgroups: request.subgroups,
+      subgroups: request.subgroups ?? [],
     },
     options.now ?? readNow,
   );
@@ -1450,9 +1451,9 @@ function labelOf(group: ReportGroup): string {
     case "client":
       return group.client?.name ?? projectLabels.noClient;
     case "task":
-      return group.task?.name ?? "Sin tarea";
+      return group.task?.name ?? reportLabels.noTask;
     case "tag":
-      return group.tag?.name ?? "Sin etiqueta";
+      return group.tag?.name ?? reportLabels.noTag;
     case "date":
       return group.dayKey;
   }
@@ -1576,8 +1577,8 @@ describe("el árbol (D-R3-6, D-R3-7, RP-12, RP-13; criterio 17 de R3)", () => {
         projectLabels.noClient,
         1800,
         [
-          ["App", 1200, [["Sin tarea", 1200]]],
-          [projectLabels.noProject, 600, [["Sin tarea", 600]]],
+          ["App", 1200, [[reportLabels.noTask, 1200]]],
+          [projectLabels.noProject, 600, [[reportLabels.noTask, 600]]],
         ],
       ],
       [
@@ -1589,7 +1590,7 @@ describe("el árbol (D-R3-6, D-R3-7, RP-12, RP-13; criterio 17 de R3)", () => {
             800,
             [
               ["Diseño", 600],
-              ["Sin tarea", 200],
+              [reportLabels.noTask, 200],
             ],
           ],
         ],
@@ -1605,12 +1606,12 @@ describe("el árbol (D-R3-6, D-R3-7, RP-12, RP-13; criterio 17 de R3)", () => {
         "Owner",
         1500,
         [
-          ["Sin etiqueta", 900],
+          [reportLabels.noTag, 900],
           ["E", 600],
           ["F", 600],
         ],
       ],
-      ["Otra", 1100, [["Sin etiqueta", 1100]]],
+      ["Otra", 1100, [[reportLabels.noTag, 1100]]],
     ]);
     expect([state.totalSeconds, state.billableSeconds]).toEqual([2600, 600]);
   });
@@ -1619,7 +1620,7 @@ describe("el árbol (D-R3-6, D-R3-7, RP-12, RP-13; criterio 17 de R3)", () => {
     const state = await treeOf("tag", ["project"]);
     expect(outline(state.groups)).toEqual([
       [
-        "Sin etiqueta",
+        reportLabels.noTag,
         2000,
         [
           ["App", 1200],
@@ -1752,7 +1753,12 @@ describe("el tope de filas (D-R3-6; criterio 18 de R3)", () => {
     });
     expect(state.levelsShown).toBe(2);
     expect(byLevels).toHaveBeenCalledTimes(2);
-    expect(state.groups[0]?.children?.[0]?.children).toBeUndefined();
+    // Los 300 días con sus nueve etiquetas, y ninguna etiqueta con hijos.
+    expect(state.groups).toHaveLength(300);
+    for (const day of state.groups) {
+      expect(day.children).toHaveLength(9);
+      expect(day.children?.some((tag) => tag.children !== undefined)).toBe(false);
+    }
   });
 
   it("fecha → etiqueta → persona con 3001 filas: levelsShown 1 y dos lecturas, sin la del nivel 3", async () => {
@@ -1920,7 +1926,7 @@ describe("el período fuera del tope (B1)", () => {
     ]) {
       for (const groupBy of REPORT_GROUP_BYS) {
         await expect(
-          getReportState(owner, settings, { range, groupBy }, readNow),
+          getReportState(owner, settings, { range, groupBy, subgroups: [] }, readNow),
         ).rejects.toThrow(RangeError);
       }
     }

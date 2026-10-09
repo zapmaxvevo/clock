@@ -26,6 +26,7 @@ import {
   type StoredProject,
 } from "./repository";
 import {
+  DEFAULT_GROUP_BY,
   REPORT_MAX_DAYS,
   REPORT_MAX_ROWS,
   type ReportDateGroup,
@@ -63,8 +64,8 @@ export type ReportRequest = {
   readonly range: ReportRange | null;
   /** La agrupación de la URL ya validada, o `null`: por persona. */
   readonly groupBy: ReportGroupBy | null;
-  /** Los de `reportSubgroupParams`; ausente o vacío, un nivel (D-R3-5). */
-  readonly subgroups?: readonly ReportGroupBy[];
+  /** Los de `reportSubgroupParams`; vacío, un nivel (D-R3-5). */
+  readonly subgroups: readonly ReportGroupBy[];
 };
 
 function workspaceResource(actor: Actor): WorkspaceResource {
@@ -290,6 +291,37 @@ function groupsOf(nodes: readonly TreeNode[], below: number): ReportGroup[] {
 }
 
 /**
+ * D-R3-6: los niveles que entran en el tope, desde el primero, que se lee
+ * entero. Cada uno de abajo se pide con lo que queda del tope más uno: entra
+ * entero o no entra, y entonces no se lee ninguno más abajo. Sin filas en el
+ * primero no hay nada que colgar y no se lee ninguno de abajo.
+ */
+async function readLevelsWithinLimit(
+  levelCount: number,
+  readLevel: (depth: number, limit?: number) => Promise<readonly LevelTotalRow[]>,
+): Promise<(readonly LevelTotalRow[])[]> {
+  const first = await readLevel(1);
+  if (first.length === 0) {
+    return [first];
+  }
+  const shown = [first];
+  let rowsRead = first.length;
+  for (let depth = 2; depth <= levelCount; depth++) {
+    const budget = REPORT_MAX_ROWS - rowsRead;
+    if (budget <= 0) {
+      break;
+    }
+    const rows = await readLevel(depth, budget + 1);
+    if (rows.length > budget) {
+      break;
+    }
+    shown.push(rows);
+    rowsRead += rows.length;
+  }
+  return shown;
+}
+
+/**
  * RP-10: el resumido de quien mira, armado en el servidor con su zona y su
  * primer día de la semana. `now` existe para que los tests fijen el día.
  */
@@ -308,9 +340,8 @@ export async function getReportState(
   const todayKey = dayKey(now, timeZone);
   const period = reportPeriodOf(todayKey, settings, request.range);
   const range = period.range;
-  const groupBy = request.groupBy ?? "person";
-  const subgroups = request.subgroups ?? [];
-  const levels = [groupBy, ...subgroups];
+  const groupBy = request.groupBy ?? DEFAULT_GROUP_BY;
+  const levels = [groupBy, ...request.subgroups];
   // La página los recibe de `reportSubgroupParams`, que ya lo garantiza; acá
   // es una invariante, para otro llamador (R6), antes de leer.
   if (levels.length > 3 || new Set(levels).size !== levels.length) {
@@ -348,28 +379,10 @@ export async function getReportState(
   // service tenga un camino. Se abre después de `report.view` y de `scopeOf`.
   const read: ReportRead = await db.transaction(
     async (tx) => {
-      const first = await reportRepository.totalsByLevels(scope, levelRead(1), tx);
-      const shown = [first];
-      // D-R3-6: sin filas arriba no hay nada que colgar. Si no, cada nivel de
-      // abajo entra entero en lo que queda del tope o no entra, y entonces no
-      // se lee ninguno más abajo.
-      let rowsRead = first.length;
-      for (let depth = 2; first.length > 0 && depth <= levels.length; depth++) {
-        const budget = REPORT_MAX_ROWS - rowsRead;
-        if (budget <= 0) {
-          break;
-        }
-        const rows = await reportRepository.totalsByLevels(
-          scope,
-          levelRead(depth, budget + 1),
-          tx,
-        );
-        if (rows.length > budget) {
-          break;
-        }
-        shown.push(rows);
-        rowsRead += rows.length;
-      }
+      const shown = await readLevelsWithinLimit(levels.length, (depth, limit) =>
+        reportRepository.totalsByLevels(scope, levelRead(depth, limit), tx),
+      );
+      const [first] = shown;
       // El total no pasa por la unión con las etiquetas; con el primer nivel
       // sin etiqueta, cada entrada está en un grupo y la suma es el total
       // (D-R2a-7).
@@ -397,7 +410,7 @@ export async function getReportState(
     currentWeek: period.currentWeek,
     shortcuts: [...period.shortcuts],
     groupBy,
-    subgroups: [...subgroups],
+    subgroups: [...request.subgroups],
     levelsShown,
     scope: scope.people.kind,
     timeZone,

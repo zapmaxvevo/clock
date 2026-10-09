@@ -72,6 +72,9 @@ export const REPORT_GROUP_BYS = [
 ] as const;
 export type ReportGroupBy = (typeof REPORT_GROUP_BYS)[number];
 
+/** D-R2a-3: el primer nivel sin un `agrupar` válido. */
+export const DEFAULT_GROUP_BY = "person" satisfies ReportGroupBy;
+
 /** El valor de `agrupar` en la URL de cada agrupación: con este mapa se lee y se escribe. */
 export const REPORT_GROUP_PARAMS = {
   person: "persona",
@@ -115,7 +118,7 @@ export type ReportGrouping = {
 export const reportSubgroupParams = z
   .object({ agrupar: z.unknown().optional(), subagrupar: z.string() })
   .transform(({ agrupar, subagrupar }) => ({
-    first: groupByOfParam(agrupar) ?? "person",
+    first: groupByOfParam(agrupar) ?? DEFAULT_GROUP_BY,
     subgroups: subagrupar.split(",").map(groupByOfParam),
   }))
   .pipe(
