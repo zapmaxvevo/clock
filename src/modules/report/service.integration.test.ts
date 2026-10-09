@@ -120,6 +120,15 @@ function projectRows(state: ReportReadyState) {
   );
 }
 
+/** Las filas por cliente como `[nombre, segundos]`, en orden; «Sin cliente» por su rótulo. */
+function clientRows(state: ReportReadyState) {
+  return state.groups.map((group) =>
+    group.kind === "client"
+      ? [group.client?.name ?? projectLabels.noClient, group.seconds]
+      : ["?", group.seconds],
+  );
+}
+
 describe("qué cuenta (RP-23, RP-28, RP-29, RP-30, RP-61)", () => {
   // La semana anterior en Buenos Aires: [2026-09-28T03:00Z, 2026-10-05T03:00Z).
   const from = "2026-09-28T03:00:00Z";
@@ -306,6 +315,7 @@ describe("la medida (ADR 0021, D-R2a-6)", () => {
 
     const timesheet = await getTimesheetState(member, settings, { day }, readNow);
     const own = await readyState(member, { range: lastWeek });
+    const ownByClient = await readyState(member, { range: lastWeek, groupBy: "client" });
     const everyone = await readyState(owner, { range: lastWeek, groupBy: "person" });
     const memberRow = everyone.groups.find(
       (group) => group.kind === "person" && group.userId === memberId,
@@ -317,6 +327,14 @@ describe("la medida (ADR 0021, D-R2a-6)", () => {
     // Con los instantes truncados a milisegundos, las cuatro miden 1 s.
     expect(timesheet.closedSeconds).toBe(4);
     expect(own.billableSeconds).toBe(2);
+    // Por cliente (D-R2b-5): la fila «Sin cliente» y el total son los de la planilla.
+    expect(ownByClient.groups).toEqual([
+      { kind: "client", client: null, seconds: timesheet.closedSeconds },
+    ]);
+    expect([ownByClient.totalSeconds, ownByClient.billableSeconds]).toEqual([
+      timesheet.closedSeconds,
+      2,
+    ]);
   });
 
   it("una persona sin facturables da 0 en el facturable, no nulo", async () => {
@@ -406,7 +424,7 @@ describe("la agrupación y el orden (D-R2a-3, D-R2a-8, RP-12, RP-18)", () => {
     await seedClosed(other, "2026-09-29T14:00:00Z", 600);
     await seedClosed(other, "2026-09-30T14:00:00Z", 30, { billable: true });
 
-    for (const groupBy of ["person", "project"] as const) {
+    for (const groupBy of ["person", "project", "client"] as const) {
       const state = await readyState(owner, { range: lastWeek, groupBy });
       expect([
         groupBy,
@@ -420,6 +438,151 @@ describe("la agrupación y el orden (D-R2a-3, D-R2a-8, RP-12, RP-18)", () => {
     ).toEqual([
       ["Web", 1200],
       [projectLabels.noProject, 630],
+    ]);
+  });
+});
+
+describe("por cliente (D-R2b-5, RP-11, RP-12, RP-28, RP-29)", () => {
+  let acmeId: string;
+  let omegaId: string;
+  let zetaId: string;
+
+  beforeEach(async () => {
+    const acme = await seedClient({ workspaceId, name: "Acme" });
+    const omega = await seedClient({ workspaceId, name: "Omega" });
+    const zeta = await seedClient({ workspaceId, name: "Zeta", archived: true });
+    acmeId = acme.id;
+    omegaId = omega.id;
+    zetaId = zeta.id;
+    const web = await seedProject({ workspaceId, name: "Web", clientId: acme.id });
+    const app = await seedProject({ workspaceId, name: "App", clientId: acme.id });
+    const big = await seedProject({ workspaceId, name: "Grande", clientId: omega.id });
+    const old = await seedProject({
+      workspaceId,
+      name: "Viejo",
+      clientId: zeta.id,
+      archived: true,
+    });
+    const loose = await seedProject({ workspaceId, name: "Suelto" });
+    const other = await seedPerson({ accountName: "Otra" });
+
+    // Acme: dos proyectos, 600 + 900, de dos personas.
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 600, {
+      projectId: web.id,
+      billable: true,
+    });
+    await seedClosed(other, "2026-09-30T13:00:00Z", 900, { projectId: app.id });
+    // Omega: la de más horas, aunque su nombre va después.
+    await seedClosed(ownerId, "2026-09-30T14:00:00Z", 2000, { projectId: big.id });
+    // Zeta, archivado, con su proyecto archivado: cuenta.
+    await seedClosed(other, "2026-10-01T13:00:00Z", 1500, {
+      projectId: old.id,
+      billable: true,
+    });
+    // «Sin cliente»: un proyecto sin cliente y una entrada sin proyecto.
+    await seedClosed(ownerId, "2026-10-01T14:00:00Z", 400, { projectId: loose.id });
+    await seedClosed(other, "2026-10-02T13:00:00Z", 1100, { billable: true });
+  });
+
+  it("una fila por cliente con la suma de sus proyectos, el archivado incluido y «Sin cliente» con lo que no tiene", async () => {
+    const state = await readyState(owner, { range: lastWeek, groupBy: "client" });
+
+    expect(reportReadyState.parse(state)).toEqual(state);
+    expect(state.groupBy).toBe("client");
+    expect(state.groups).toEqual([
+      { kind: "client", client: { id: omegaId, name: "Omega" }, seconds: 2000 },
+      { kind: "client", client: { id: acmeId, name: "Acme" }, seconds: 1500 },
+      { kind: "client", client: { id: zetaId, name: "Zeta" }, seconds: 1500 },
+      { kind: "client", client: null, seconds: 1500 },
+    ]);
+  });
+
+  it("los totales son la suma de los grupos e iguales a los de «Proyecto»", async () => {
+    const byClient = await readyState(owner, { range: lastWeek, groupBy: "client" });
+    const byProject = await readyState(owner, { range: lastWeek, groupBy: "project" });
+    expect([
+      byClient.totalSeconds,
+      byClient.billableSeconds,
+      byClient.groups.reduce((sum, group) => sum + group.seconds, 0),
+    ]).toEqual([6500, 3200, 6500]);
+    expect([byProject.totalSeconds, byProject.billableSeconds]).toEqual([
+      byClient.totalSeconds,
+      byClient.billableSeconds,
+    ]);
+  });
+
+  it("con alcance propio, solo las horas de quien mira, plegadas igual", async () => {
+    const memberId = await seedPerson({ accountName: "Marta" });
+    const member = actorIn(workspaceId, memberId);
+    const state = await readyState(member, { range: lastWeek, groupBy: "client" });
+    expect([state.scope, state.groups, state.totalSeconds]).toEqual(["self", [], 0]);
+    const own = await readyState(actorIn(workspaceId, ownerId, { role: "member" }), {
+      range: lastWeek,
+      groupBy: "client",
+    });
+    expect(clientRows(own)).toEqual([
+      ["Omega", 2000],
+      ["Acme", 600],
+      [projectLabels.noClient, 400],
+    ]);
+  });
+});
+
+describe("«Este mes» en Madrid (D-R2b-2, criterio 8)", () => {
+  /** El jueves 15/10/2026 a las 12:00 en Madrid. */
+  const october = new Date("2026-10-15T10:00:00Z");
+  const inMadrid = workspaceOf(madrid);
+
+  it("el rango del atajo cuenta del 1 a las 00:30 al 31 a las 23:30, ya en UTC+1, y nada de los meses vecinos", async () => {
+    // 01/10 00:30 en Madrid (UTC+2): adentro.
+    await seedClosed(ownerId, "2026-09-30T22:30:00Z", 60);
+    // 31/10 23:30 en Madrid, después del atraso del 25 (UTC+1): adentro.
+    await seedClosed(ownerId, "2026-10-31T22:30:00Z", 120);
+    // 30/09 23:30 en Madrid: afuera.
+    await seedClosed(ownerId, "2026-09-30T21:30:00Z", 240);
+    // 01/11 00:30 en Madrid: afuera.
+    await seedClosed(ownerId, "2026-10-31T23:30:00Z", 480);
+
+    const today = await readyState(owner, {}, { settings: inMadrid, now: october });
+    const thisMonth = today.shortcuts.find((shortcut) => shortcut.id === "thisMonth");
+    expect(thisMonth?.range).toEqual({ first: "2026-10-01", last: "2026-10-31" });
+
+    for (const groupBy of ["person", "client"] as const) {
+      const state = await readyState(
+        owner,
+        { range: thisMonth?.range ?? null, groupBy },
+        { settings: inMadrid, now: october },
+      );
+      expect([groupBy, state.rangeLabel, state.totalSeconds]).toEqual([
+        groupBy,
+        "Este mes",
+        180,
+      ]);
+    }
+  });
+});
+
+describe("los atajos en el estado (D-R2b-2)", () => {
+  it("son los nueve de hoy, en orden, y el rótulo del período es el del atajo", async () => {
+    const state = await readyState(owner);
+    expect(state.shortcuts.map((shortcut) => shortcut.label)).toEqual([
+      "Hoy",
+      "Ayer",
+      "Esta semana",
+      "Semana anterior",
+      "Últimas dos semanas",
+      "Este mes",
+      "Mes pasado",
+      "Este año",
+      "Año pasado",
+    ]);
+    const lastMonth = state.shortcuts.find((shortcut) => shortcut.id === "lastMonth");
+    const picked = await readyState(owner, { range: lastMonth?.range ?? null });
+    expect([picked.range, picked.rangeLabel, picked.previous, picked.next]).toEqual([
+      { first: "2026-09-01", last: "2026-09-30" },
+      "Mes pasado",
+      { first: "2026-08-01", last: "2026-08-31" },
+      { first: "2026-10-01", last: "2026-10-31" },
     ]);
   });
 });
@@ -530,7 +693,7 @@ describe("el período fuera del tope (B1)", () => {
       { first: "2026-10-11", last: "2026-10-05" },
       { first: "2025-01-01", last: "2026-01-02" },
     ]) {
-      for (const groupBy of ["person", "project"] as const) {
+      for (const groupBy of ["person", "project", "client"] as const) {
         await expect(
           getReportState(owner, settings, { range, groupBy }, readNow),
         ).rejects.toThrow(RangeError);

@@ -19,6 +19,7 @@ import {
 } from "./repository";
 import {
   REPORT_MAX_DAYS,
+  type ReportClientGroup,
   type ReportGroup,
   type ReportGroupBy,
   type ReportPersonGroup,
@@ -100,6 +101,35 @@ function projectGroupOf(row: ProjectTotalRow): ReportProjectGroup {
   };
 }
 
+/** Las sumas de un cliente: las de sus proyectos; `client` nulo es «Sin cliente». */
+type ClientTotalRow = {
+  readonly client: ProjectTotalRow["client"];
+  readonly seconds: number;
+  readonly billableSeconds: number;
+};
+
+/**
+ * D-R2b-5: las filas por proyecto sumadas por cliente. «Sin cliente» junta la
+ * fila «Sin proyecto» y las de los proyectos sin cliente (RP-28).
+ */
+function clientRowsOf(rows: readonly ProjectTotalRow[]): ClientTotalRow[] {
+  const byClient = new Map<string | null, ClientTotalRow>();
+  for (const row of rows) {
+    const key = row.client?.id ?? null;
+    const folded = byClient.get(key);
+    byClient.set(key, {
+      client: row.client,
+      seconds: (folded?.seconds ?? 0) + row.seconds,
+      billableSeconds: (folded?.billableSeconds ?? 0) + row.billableSeconds,
+    });
+  }
+  return [...byClient.values()];
+}
+
+function clientGroupOf(row: ClientTotalRow): ReportClientGroup {
+  return { kind: "client", client: row.client, seconds: row.seconds };
+}
+
 /** Lo que el orden compara de un grupo; `null` es «Sin proyecto» o «Sin cliente». */
 function sortKeyOf(
   group: ReportGroup,
@@ -165,7 +195,10 @@ async function readGroups(
         projectGroupOf,
       );
     case "client":
-      throw new Error("La agrupación por cliente todavía no se lee.");
+      return totalsOf(
+        clientRowsOf(await reportRepository.totalsByProject(scope, span)),
+        clientGroupOf,
+      );
   }
 }
 
