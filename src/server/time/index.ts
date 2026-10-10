@@ -563,10 +563,7 @@ export function monthLabel(monthStart: string, todayKey: string): string {
  * `dayKey` no es un día.
  */
 export function monthShortLabel(dayKey: string): string {
-  const date = civilDateOf(dayKey);
-  // Como en `monthLabel`: la fecha civil se formatea en UTC.
-  const civil = new TZDate(Date.UTC(date.year, date.month - 1, date.day), "UTC");
-  return formatDate(civil, "LLL", { locale: es });
+  return formatDate(new TZDate(civilTime(dayKey), "UTC"), "LLL", { locale: es });
 }
 
 /**

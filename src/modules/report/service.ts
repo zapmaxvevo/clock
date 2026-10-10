@@ -38,6 +38,7 @@ import {
   reportRepository,
   type BucketTotalRow,
   type EntryTotals,
+  type ReportBucketRead,
   type ReportBuckets,
   type ReportEntryFilter,
   type ReportLevelRead,
@@ -651,14 +652,11 @@ type ReadPlan = {
   /** Los del pedido, sin cruzar con los catálogos. */
   readonly filters: ReportFilters;
   /** Los cortes de `span` del gráfico, en la granularidad del período (D-R5-4). */
-  readonly chart: ChartPlan;
+  readonly chartPlan: ChartPlan;
 };
 
 /** El gráfico de un pedido: su granularidad y sus tramos, que cubren `span`. */
-type ChartPlan = {
-  readonly granularity: ReportTimeGroupBy;
-  readonly buckets: TimeBuckets;
-};
+type ChartPlan = Pick<ReportBucketRead, "granularity" | "buckets">;
 
 /**
  * Los tramos de una dimensión de tiempo en la zona de quien mira (ADR 0021);
@@ -720,9 +718,9 @@ function levelReadOf(
  * quien llama: primero los catálogos, que deciden los filtros efectivos
  * (D-R4-5), y después los niveles, el total y el gráfico con esos filtros y
  * el mismo alcance (D-R5-2), también cuando el primer nivel no entra o es de
- * la misma dimensión que el gráfico. El catálogo de
- * personas se lee solo con el alcance `everyone`: `listWorkspacePeople` pide
- * `team.view` y no `timeEntry.others.view`, que responde `scopeOf` (D-R4-4).
+ * la misma dimensión que el gráfico. El catálogo de personas se lee solo con
+ * el alcance `everyone`: `listWorkspacePeople` pide `team.view` y no
+ * `timeEntry.others.view`, que responde `scopeOf` (D-R4-4).
  */
 async function readReport(
   tx: Transaction,
@@ -760,12 +758,7 @@ async function readReport(
         };
   const chart = await reportRepository.totalsByBucket(
     readScope,
-    {
-      span: plan.span,
-      filter,
-      granularity: plan.chart.granularity,
-      buckets: plan.chart.buckets,
-    },
+    { span: plan.span, filter, ...plan.chartPlan },
     tx,
   );
   return { levels, totals, catalog, people, filters, chart };
@@ -859,7 +852,10 @@ export async function getReportState(
   // D-R5-4: los del gráfico, de su propia granularidad, aunque un nivel la
   // comparta: son los mismos instantes.
   const granularity = chartGranularityOf(range);
-  const chart = { granularity, buckets: timeBucketsOf(granularity, range, settings) };
+  const chartPlan = {
+    granularity,
+    buckets: timeBucketsOf(granularity, range, settings),
+  };
   // ADR 0021, D-R3-3: una sola foto, con los catálogos de los filtros
   // (D-R4-5). Se abre después de `report.view`, de `scopeOf` y de las
   // invariantes.
@@ -870,7 +866,7 @@ export async function getReportState(
         span,
         buckets,
         filters: request.filters,
-        chart,
+        chartPlan,
       }),
     { isolationLevel: "repeatable read", accessMode: "read only" },
   );
@@ -901,6 +897,6 @@ export async function getReportState(
     groups: treeOf(read.levels, time),
     filters: read.filters,
     filterOptions: toFilterOptions(read.catalog, read.people),
-    chart: chartOf(read.chart, chart, time),
+    chart: chartOf(read.chart, chartPlan, time),
   };
 }

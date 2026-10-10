@@ -3574,19 +3574,24 @@ describe("la descripción en los niveles y con filtros (D-R10-6, D-R10-11; crite
   });
 });
 
+/**
+ * El primer nivel por descripción que no entra (D-R10-10): una persona con 3001
+ * entradas de un minuto, cada una con su descripción, la mitad facturables, el
+ * martes 29/09 a las 09:00 de Buenos Aires.
+ */
+async function seedUncappedDescriptions() {
+  await db.execute(sql`
+    insert into time_entry (workspace_id, user_id, description, started_at, ended_at, billable)
+    select ${workspaceId}, ${ownerId}, 'Entrada ' || n,
+           timestamptz '2026-09-29 12:00:00+00',
+           timestamptz '2026-09-29 12:01:00+00',
+           n % 2 = 0
+      from generate_series(1, 3001) as n`);
+}
+
 describe("el tope del primer nivel (D-R10-10; criterio 17 de R10)", () => {
-  /**
-   * Una persona con 3001 entradas de un minuto, cada una con su descripción,
-   * el martes 29/09 a las 09:00 de Buenos Aires.
-   */
   beforeEach(async () => {
-    await db.execute(sql`
-      insert into time_entry (workspace_id, user_id, description, started_at, ended_at, billable)
-      select ${workspaceId}, ${ownerId}, 'Entrada ' || n,
-             timestamptz '2026-09-29 12:00:00+00',
-             timestamptz '2026-09-29 12:01:00+00',
-             n % 2 = 0
-        from generate_series(1, 3001) as n`);
+    await seedUncappedDescriptions();
   });
 
   afterEach(() => {
@@ -3702,20 +3707,6 @@ const lastWeekDays = [
   "2026-10-03",
   "2026-10-04",
 ];
-
-/**
- * El primer nivel por descripción que no entra (D-R10-10): 3001 entradas de un
- * minuto, cada una con su texto, el martes 29/09 a las 09:00 de Buenos Aires.
- */
-async function seedUncappedDescriptions() {
-  await db.execute(sql`
-    insert into time_entry (workspace_id, user_id, description, started_at, ended_at, billable)
-    select ${workspaceId}, ${ownerId}, 'Entrada ' || n,
-           timestamptz '2026-09-29 12:00:00+00',
-           timestamptz '2026-09-29 12:01:00+00',
-           false
-      from generate_series(1, 3001) as n`);
-}
 
 describe("qué suma el gráfico (D-R5-2, D-R5-6, RP-18, RP-33; criterio 4 de R5)", () => {
   it("una persona con horas el martes y el jueves: siete barras en orden, las otras cinco en 0, que suman el total", async () => {
