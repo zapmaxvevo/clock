@@ -4,7 +4,8 @@
 -- las de §6.2 del contrato de R4, con los filtros de cliente y de proyecto, y
 -- Q23 y Q24 las de §6.3, con el filtro de personas y su catálogo. Q25 a Q30
 -- son las de §6.2 del contrato de R10, por semana y por mes, y Q31 a Q34 las
--- de §6.3, por descripción. Desde R10b el primer nivel también lleva el
+-- de §6.3, por descripción, y Q35 a Q39 las de §6.2 del contrato de R5, la
+-- lectura del gráfico. Desde R10b el primer nivel también lleva el
 -- `limit` del tope, `REPORT_MAX_ROWS + 1` (D-R10-10): el `limit $n` lo llevan
 -- solo Q2, Q5 y Q11; las demás de primer nivel no lo llevan, aunque el
 -- repository lo mande.
@@ -1194,4 +1195,126 @@ explain (analyze) execute q11(:workspace, :month_from, :month_to, 3001);
 explain (analyze) execute q33(100, 100, :workspace, :month_from, :month_to, :q33_limit);
 commit;
 
+-- Contrato de R5, §6.2: la lectura del gráfico, `totalsByBucket`, que arma la
+-- misma sentencia que un nivel de una dimensión de tiempo, sin `limit` (D-R5-3).
+-- Con `everyone` es el texto de Q25 y Q26, y con `self` el de Q30; cambian los
+-- cortes. Q35 y Q38 usan los de `month_cuts`. Q36 lleva los de `weekBuckets`
+-- con lunes en los 182 días desde el 1 de enero del año pasado, Q37 los de
+-- `dayBuckets` en sus 31 primeros días y Q39 los de los siete días de la semana
+-- actual, la de `week_from`.
+\set half_to '((date_trunc(''year'', (now() at time zone ''America/Argentina/Buenos_Aires'')) - interval ''1 year'' + interval ''182 days'') at time zone ''America/Argentina/Buenos_Aires'')'
+\set january_to '((date_trunc(''year'', (now() at time zone ''America/Argentina/Buenos_Aires'')) - interval ''1 year'' + interval ''31 days'') at time zone ''America/Argentina/Buenos_Aires'')'
+select array_agg(to_char((day at time zone 'America/Argentina/Buenos_Aires') at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') order by day)::text as half_week_cuts
+  from generate_series(
+         date_trunc('year', (now() at time zone 'America/Argentina/Buenos_Aires')) - interval '1 year',
+         date_trunc('year', (now() at time zone 'America/Argentina/Buenos_Aires')) - interval '1 year' + interval '181 days',
+         interval '1 day'
+       ) as day
+ where day = date_trunc('year', (now() at time zone 'America/Argentina/Buenos_Aires')) - interval '1 year' or extract(isodow from day) = 1 \gset
+select array_agg(to_char((day at time zone 'America/Argentina/Buenos_Aires') at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') order by day)::text as january_cuts
+  from generate_series(
+         date_trunc('year', (now() at time zone 'America/Argentina/Buenos_Aires')) - interval '1 year',
+         date_trunc('year', (now() at time zone 'America/Argentina/Buenos_Aires')) - interval '1 year' + interval '30 days',
+         interval '1 day'
+       ) as day \gset
+select array_agg(to_char((day at time zone 'America/Argentina/Buenos_Aires') at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') order by day)::text as this_week_cuts
+  from generate_series(
+         date_trunc('week', (now() at time zone 'America/Argentina/Buenos_Aires')),
+         date_trunc('week', (now() at time zone 'America/Argentina/Buenos_Aires')) + interval '6 days',
+         interval '1 day'
+       ) as day \gset
+select cardinality(:'month_cuts'::timestamptz[]) as month_cuts,
+       cardinality(:'half_week_cuts'::timestamptz[]) as half_week_cuts,
+       cardinality(:'january_cuts'::timestamptz[]) as january_cuts,
+       cardinality(:'this_week_cuts'::timestamptz[]) as this_week_cuts;
+
+-- Q35: totalsByBucket [month], everyone, 366 días, sin `limit`. Presupuesto: mediana <= 150 ms.
+\echo '== Q35'
+prepare q35 as
+select "totals"."key_1", "totals"."seconds", "totals"."billable_seconds" from (select "entries"."workspace_id" as "workspace_id", "entries"."key_1" as "key_1", sum("entries"."seconds")::bigint as "seconds", coalesce(sum("entries"."seconds") filter (where "entries"."billable"), 0)::bigint as "billable_seconds" from (select "workspace_id" as "workspace_id", width_bucket("started_at", $1::timestamptz[]) as "key_1", floor(extract(epoch from date_trunc('milliseconds', "ended_at") - date_trunc('milliseconds', "started_at"))) as "seconds", "billable" as "billable" from "time_entry" where ("time_entry"."workspace_id" = $2 and ("time_entry"."ended_at" is not null and "time_entry"."started_at" >= $3 and "time_entry"."started_at" < $4))) "entries" group by "entries"."workspace_id", "entries"."key_1") "totals";
+
+\echo '-- calentamiento'
+explain (analyze, buffers) execute q35(:'month_cuts', :workspace, :year_from, :year_to);
+\echo '-- medida 1'
+explain (analyze, buffers) execute q35(:'month_cuts', :workspace, :year_from, :year_to);
+\echo '-- medida 2'
+explain (analyze, buffers) execute q35(:'month_cuts', :workspace, :year_from, :year_to);
+\echo '-- medida 3'
+explain (analyze, buffers) execute q35(:'month_cuts', :workspace, :year_from, :year_to);
+\echo '-- medida 4'
+explain (analyze, buffers) execute q35(:'month_cuts', :workspace, :year_from, :year_to);
+\echo '-- medida 5'
+explain (analyze, buffers) execute q35(:'month_cuts', :workspace, :year_from, :year_to);
+
+-- Q36: totalsByBucket [week], everyone, 182 días, con lunes. Presupuesto: mediana <= 100 ms.
+\echo '== Q36'
+prepare q36 as
+select "totals"."key_1", "totals"."seconds", "totals"."billable_seconds" from (select "entries"."workspace_id" as "workspace_id", "entries"."key_1" as "key_1", sum("entries"."seconds")::bigint as "seconds", coalesce(sum("entries"."seconds") filter (where "entries"."billable"), 0)::bigint as "billable_seconds" from (select "workspace_id" as "workspace_id", width_bucket("started_at", $1::timestamptz[]) as "key_1", floor(extract(epoch from date_trunc('milliseconds', "ended_at") - date_trunc('milliseconds', "started_at"))) as "seconds", "billable" as "billable" from "time_entry" where ("time_entry"."workspace_id" = $2 and ("time_entry"."ended_at" is not null and "time_entry"."started_at" >= $3 and "time_entry"."started_at" < $4))) "entries" group by "entries"."workspace_id", "entries"."key_1") "totals";
+
+\echo '-- calentamiento'
+explain (analyze, buffers) execute q36(:'half_week_cuts', :workspace, :year_from, :half_to);
+\echo '-- medida 1'
+explain (analyze, buffers) execute q36(:'half_week_cuts', :workspace, :year_from, :half_to);
+\echo '-- medida 2'
+explain (analyze, buffers) execute q36(:'half_week_cuts', :workspace, :year_from, :half_to);
+\echo '-- medida 3'
+explain (analyze, buffers) execute q36(:'half_week_cuts', :workspace, :year_from, :half_to);
+\echo '-- medida 4'
+explain (analyze, buffers) execute q36(:'half_week_cuts', :workspace, :year_from, :half_to);
+\echo '-- medida 5'
+explain (analyze, buffers) execute q36(:'half_week_cuts', :workspace, :year_from, :half_to);
+
+-- Q37: totalsByBucket [date], everyone, 31 días. Presupuesto: mediana <= 40 ms.
+\echo '== Q37'
+prepare q37 as
+select "totals"."key_1", "totals"."seconds", "totals"."billable_seconds" from (select "entries"."workspace_id" as "workspace_id", "entries"."key_1" as "key_1", sum("entries"."seconds")::bigint as "seconds", coalesce(sum("entries"."seconds") filter (where "entries"."billable"), 0)::bigint as "billable_seconds" from (select "workspace_id" as "workspace_id", width_bucket("started_at", $1::timestamptz[]) as "key_1", floor(extract(epoch from date_trunc('milliseconds', "ended_at") - date_trunc('milliseconds', "started_at"))) as "seconds", "billable" as "billable" from "time_entry" where ("time_entry"."workspace_id" = $2 and ("time_entry"."ended_at" is not null and "time_entry"."started_at" >= $3 and "time_entry"."started_at" < $4))) "entries" group by "entries"."workspace_id", "entries"."key_1") "totals";
+
+\echo '-- calentamiento'
+explain (analyze, buffers) execute q37(:'january_cuts', :workspace, :year_from, :january_to);
+\echo '-- medida 1'
+explain (analyze, buffers) execute q37(:'january_cuts', :workspace, :year_from, :january_to);
+\echo '-- medida 2'
+explain (analyze, buffers) execute q37(:'january_cuts', :workspace, :year_from, :january_to);
+\echo '-- medida 3'
+explain (analyze, buffers) execute q37(:'january_cuts', :workspace, :year_from, :january_to);
+\echo '-- medida 4'
+explain (analyze, buffers) execute q37(:'january_cuts', :workspace, :year_from, :january_to);
+\echo '-- medida 5'
+explain (analyze, buffers) execute q37(:'january_cuts', :workspace, :year_from, :january_to);
+
+-- Q38: totalsByBucket [month], self, 366 días. Presupuesto: mediana <= 30 ms.
+\echo '== Q38'
+prepare q38 as
+select "totals"."key_1", "totals"."seconds", "totals"."billable_seconds" from (select "entries"."workspace_id" as "workspace_id", "entries"."key_1" as "key_1", sum("entries"."seconds")::bigint as "seconds", coalesce(sum("entries"."seconds") filter (where "entries"."billable"), 0)::bigint as "billable_seconds" from (select "workspace_id" as "workspace_id", width_bucket("started_at", $1::timestamptz[]) as "key_1", floor(extract(epoch from date_trunc('milliseconds', "ended_at") - date_trunc('milliseconds', "started_at"))) as "seconds", "billable" as "billable" from "time_entry" where (("time_entry"."workspace_id" = $2 and "time_entry"."user_id" = $3) and ("time_entry"."ended_at" is not null and "time_entry"."started_at" >= $4 and "time_entry"."started_at" < $5))) "entries" group by "entries"."workspace_id", "entries"."key_1") "totals";
+
+\echo '-- calentamiento'
+explain (analyze, buffers) execute q38(:'month_cuts', :workspace, :member, :year_from, :year_to);
+\echo '-- medida 1'
+explain (analyze, buffers) execute q38(:'month_cuts', :workspace, :member, :year_from, :year_to);
+\echo '-- medida 2'
+explain (analyze, buffers) execute q38(:'month_cuts', :workspace, :member, :year_from, :year_to);
+\echo '-- medida 3'
+explain (analyze, buffers) execute q38(:'month_cuts', :workspace, :member, :year_from, :year_to);
+\echo '-- medida 4'
+explain (analyze, buffers) execute q38(:'month_cuts', :workspace, :member, :year_from, :year_to);
+\echo '-- medida 5'
+explain (analyze, buffers) execute q38(:'month_cuts', :workspace, :member, :year_from, :year_to);
+
+-- Q39: totalsByBucket [date], everyone, la semana actual: la página sin parámetros. Presupuesto: mediana <= 15 ms.
+\echo '== Q39'
+prepare q39 as
+select "totals"."key_1", "totals"."seconds", "totals"."billable_seconds" from (select "entries"."workspace_id" as "workspace_id", "entries"."key_1" as "key_1", sum("entries"."seconds")::bigint as "seconds", coalesce(sum("entries"."seconds") filter (where "entries"."billable"), 0)::bigint as "billable_seconds" from (select "workspace_id" as "workspace_id", width_bucket("started_at", $1::timestamptz[]) as "key_1", floor(extract(epoch from date_trunc('milliseconds', "ended_at") - date_trunc('milliseconds', "started_at"))) as "seconds", "billable" as "billable" from "time_entry" where ("time_entry"."workspace_id" = $2 and ("time_entry"."ended_at" is not null and "time_entry"."started_at" >= $3 and "time_entry"."started_at" < $4))) "entries" group by "entries"."workspace_id", "entries"."key_1") "totals";
+
+\echo '-- calentamiento'
+explain (analyze, buffers) execute q39(:'this_week_cuts', :workspace, :week_from, :week_to);
+\echo '-- medida 1'
+explain (analyze, buffers) execute q39(:'this_week_cuts', :workspace, :week_from, :week_to);
+\echo '-- medida 2'
+explain (analyze, buffers) execute q39(:'this_week_cuts', :workspace, :week_from, :week_to);
+\echo '-- medida 3'
+explain (analyze, buffers) execute q39(:'this_week_cuts', :workspace, :week_from, :week_to);
+\echo '-- medida 4'
+explain (analyze, buffers) execute q39(:'this_week_cuts', :workspace, :week_from, :week_to);
+\echo '-- medida 5'
+explain (analyze, buffers) execute q39(:'this_week_cuts', :workspace, :week_from, :week_to);
 deallocate all;
