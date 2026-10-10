@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 
-import { PERSON_TIMEZONE } from "./calendar-page";
+import { boxOf, PERSON_TIMEZONE } from "./calendar-page";
 import {
   archiveProject,
   clientIdOf,
@@ -33,6 +33,14 @@ import {
 import {
   anyFilterButton,
   applyButton,
+  chartBar,
+  chartBarName,
+  chartBars,
+  chartCaption,
+  chartDataRows,
+  chartDataSummary,
+  chartFigure,
+  chartReadout,
   clearFiltersLink,
   clickRangeDay,
   currentWeekRange,
@@ -105,6 +113,7 @@ import {
   TAG_OVERLAP,
   taskHeading,
   taskRow,
+  weekRange,
   zoneLine,
   type FilterName,
   type ReportGroupBy,
@@ -116,10 +125,10 @@ import { expect, TEST_EMAIL_DOMAIN, test } from "./session";
 import { trackerBar, uniqueSuffix } from "./tracker-page";
 
 /**
- * Recorridos de R2a a R10b del núcleo de reportes: el resumido por persona,
+ * Recorridos de R2a a R10b y de R5 del núcleo de reportes: el resumido por persona,
  * por proyecto, por cliente, por tarea, por etiqueta, por fecha, por semana,
  * por mes y por descripción, los atajos del período, los subniveles, los
- * filtros y el tope del primer nivel (§8.2 de cada contrato), con la regla de
+ * filtros, el tope del primer nivel y el gráfico (§8.2 de cada contrato), con la regla de
  * §8.3 de R2a. Cada recorrido tiene sus personas —la de la sesión y las que
  * siembra—, todas con un nombre editado que lleva el sufijo del test, y solo
  * afirma sobre sus filas o sobre proyectos con ese sufijo: la base acumula
@@ -128,7 +137,8 @@ import { trackerBar, uniqueSuffix } from "./tracker-page";
  * afirma solo con el alcance propio. El rol, el estado y el primer día de la
  * semana los cambia la persona de la sesión sobre sí misma. Las entradas van
  * en la semana anterior a la de hoy, salvo las de la semana y el mes, que van
- * en un período fijo de 2025 (D-R10-14), y se siembran antes de abrir la
+ * en un período fijo de 2025 (D-R10-14) —las del gráfico también, más una
+ * de la semana actual (D-R5-12)—, y se siembran antes de abrir la
  * pantalla; las del tope del primer nivel, con un helper de SQL. Los rótulos
  * esperados se calculan con `days.ts`, no con el código que los produce.
  */
@@ -1770,4 +1780,316 @@ test("el primer nivel que no entra en el tope no se muestra, y el total sí", as
   await expect(expandButton(page, NO_PROJECT)).toHaveCount(0);
   await expect(groupDuration(groupRow(page, NO_PROJECT))).toHaveText("50:01");
   await expect(reportTotal(page, "Total")).toHaveText("50:01");
+});
+
+test("el gráfico por día, semana y mes, con el teclado, el puntero y los filtros", async ({
+  page,
+  email,
+}) => {
+  const day = today();
+  const { days, week, month } = weekEntryLabels(day);
+  await enterApp(page);
+  const { first, suffix } = await seedWeekEntries(email);
+  const second = `P2 ${suffix}`;
+  const secondId = await projectIdOf(second);
+  // M2, D-R5-12: una entrada siempre pasada el primer día de la semana
+  // actual, que empieza el domingo como la de la persona; `currentWeekRange`
+  // empieza el lunes, y los domingos daría otra semana.
+  const thisWeek = weekRange(weekStartOf(day, SUNDAY));
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
+    {
+      description: "e",
+      day: thisWeek.first,
+      start: "00:00",
+      end: "00:01",
+      project: first,
+    },
+  ]);
+  await openReport(page, WEEKS_RANGE, "persona", day);
+
+  // D-R5-4: 21 días van por día. D-R5-5: una columna por día, en orden,
+  // también las que no tienen horas, nombrada con el rótulo de la tabla.
+  const dayBar = (civil: CivilDay, duration: string): string =>
+    chartBarName(weekdayLabel(civil, day), null, duration);
+  const september20 = dayBar(in2025(9, 20), "0:15");
+  const september30 = dayBar(in2025(9, 30), "1:00");
+  const october1 = dayBar(in2025(10, 1), "0:30");
+  const october10 = dayBar(in2025(10, 10), "0:20");
+  const byDay = chartFigure(page, chartCaption("fecha"));
+  await expect(chartBars(byDay)).toHaveCount(21);
+  await expect(chartBars(byDay).first()).toHaveAccessibleName(september20);
+  await expect(chartBars(byDay).last()).toHaveAccessibleName(october10);
+  for (const name of [september30, october1, dayBar(in2025(9, 21), "0:00")]) {
+    await expect(chartBar(byDay, name)).toBeVisible();
+  }
+
+  // D-R5-9: el puntero sobre una columna la nombra en la línea del valor; al
+  // salir del gráfico, sin foco en ninguna columna, la línea queda vacía.
+  await chartBar(byDay, october1).hover();
+  await expect(chartReadout(byDay, october1)).toBeVisible();
+  await reportHeading(page).hover();
+  await expect(chartReadout(byDay)).toHaveCount(0);
+
+  // D-R5-9: una sola parada de tabulación, la primera columna; las flechas,
+  // Inicio y Fin mueven el foco sin dar la vuelta. Con el puntero encima, la
+  // activa es la del puntero; al salir, vuelve a ser la del foco.
+  const data = chartDataSummary(byDay);
+  await data.focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(chartBar(byDay, september20)).toBeFocused();
+  for (let step = 0; step < 10; step += 1) {
+    await page.keyboard.press("ArrowRight");
+  }
+  await expect(chartBar(byDay, september30)).toBeFocused();
+  await expect(chartReadout(byDay, september30)).toBeVisible();
+  await chartBar(byDay, october1).hover();
+  await expect(chartReadout(byDay, october1)).toBeVisible();
+  await reportHeading(page).hover();
+  await expect(chartReadout(byDay, september30)).toBeVisible();
+  await page.keyboard.press("End");
+  await expect(chartBar(byDay, october10)).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(chartBar(byDay, october10)).toBeFocused();
+  await page.keyboard.press("Home");
+  await expect(chartBar(byDay, september20)).toBeFocused();
+  // Al salir el foco de las columnas, la línea se apaga; la parada queda en
+  // la última enfocada.
+  await page.keyboard.press("Tab");
+  await expect(data).toBeFocused();
+  await expect(chartReadout(byDay)).toHaveCount(0);
+  await page.keyboard.press("Shift+Tab");
+  await expect(chartBar(byDay, september20)).toBeFocused();
+
+  // D-R5-9: la tabla de datos, una fila por columna, también las en cero.
+  await data.click();
+  await expect(chartDataRows(byDay)).toHaveCount(21);
+  const september30Row = chartDataRows(byDay).filter({
+    has: page.getByRole("rowheader", {
+      name: weekdayLabel(in2025(9, 30), day),
+      exact: true,
+    }),
+  });
+  await expect(september30Row.getByRole("cell")).toHaveText("1:00");
+
+  // D-R5-4: el gráfico no sigue a la agrupación: por semana, sigue por día.
+  await groupByLink(page, "semana").click();
+  await expectReport(page, WEEKS_RANGE, "semana", day);
+  await expect(groupColumnHeader(page)).toHaveText(GROUP_LINK.semana);
+  await expect(chartBars(byDay)).toHaveCount(21);
+
+  // D-R5-2: el gráfico lleva los filtros de la cabecera.
+  const onlySecond = { projects: [secondId] };
+  await openFilter(page, "Proyectos", "todos");
+  await filterSearch(page, "Proyectos").fill(suffix);
+  await filterOption(page, second).check();
+  await applyFilter(page, "Proyectos", second);
+  await expectReport(page, WEEKS_RANGE, "semana", day, [], onlySecond);
+  await expect(chartBars(byDay)).toHaveCount(21);
+  await expect(chartBar(byDay, october1)).toBeVisible();
+  await expect(chartBar(byDay, dayBar(in2025(9, 30), "0:00"))).toBeVisible();
+
+  // D-R5-4: de 32 a 182 días, por semana, con el domingo de la persona
+  // (RP-24). D-R5-5: la primera y la última, cortadas, dicen sus días.
+  const august = { first: in2025(8, 1), last: in2025(10, 10) };
+  await openReport(page, august, "persona", day);
+  const byWeek = chartFigure(page, chartCaption("semana"));
+  await expect(chartBars(byWeek)).toHaveCount(11);
+  await expect(chartBars(byWeek).first()).toHaveAccessibleName(
+    chartBarName(week(in2025(8, 1)), days(in2025(8, 1), in2025(8, 2)), "0:00"),
+  );
+  await expect(
+    chartBar(byWeek, chartBarName(week(in2025(9, 30)), null, "1:30")),
+  ).toBeVisible();
+  await expect(chartBars(byWeek).last()).toHaveAccessibleName(
+    chartBarName(week(in2025(10, 10)), days(in2025(10, 5), in2025(10, 10)), "0:20"),
+  );
+
+  // D-R5-6, RP-33: sin horas, sin gráfico.
+  await openReport(page, { first: in2025(6, 1), last: in2025(6, 7) }, "persona", day);
+  await expect(reportTable(page).getByText(EMPTY_REPORT, { exact: true })).toBeVisible();
+  await expect(page.getByRole("figure")).toHaveCount(0);
+
+  // D-R5-4: de 183 a 366 días, por mes.
+  const year = { first: in2025(1, 1), last: in2025(12, 31) };
+  await openReport(page, year, "persona", day);
+  const byMonth = chartFigure(page, chartCaption("mes"));
+  await expect(chartBars(byMonth)).toHaveCount(12);
+  for (const name of [
+    chartBarName(month(in2025(9, 1)), null, "1:15"),
+    chartBarName(month(in2025(10, 1)), null, "0:50"),
+    chartBarName(month(in2025(1, 1)), null, "0:00"),
+  ]) {
+    await expect(chartBar(byMonth, name)).toBeVisible();
+  }
+
+  // §5.1: una navegación de cliente vuelve a montar las columnas, con la
+  // parada en la primera. «Esta semana» es la del domingo de la persona, que
+  // el selector llama así.
+  await chartDataSummary(byMonth).focus();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("End");
+  await expect(
+    chartBar(byMonth, chartBarName(month(in2025(12, 1)), null, "0:00")),
+  ).toBeFocused();
+  await periodLink(page, "Esta semana").click();
+  await expect(page).toHaveURL(reportsUrlOf(thisWeek, "persona"));
+  await expect(rangeButton(page)).toHaveAccessibleName("Elegir período: Esta semana");
+  const byThisWeek = chartFigure(page, chartCaption("fecha"));
+  await expect(chartBars(byThisWeek)).toHaveCount(7);
+  await chartDataSummary(byThisWeek).focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(
+    chartBar(byThisWeek, chartBarName(weekdayLabel(thisWeek.first, day), null, "0:01")),
+  ).toBeFocused();
+});
+
+/** Una caja en píxeles del viewport, como la de `boxOf`. */
+type Box = { x: number; y: number; width: number; height: number };
+
+/**
+ * La caja del contenido de un elemento: la suya sin el borde ni el relleno.
+ * La de `main` es el ancho que la página le da a la pantalla.
+ */
+async function contentBoxOf(element: Locator): Promise<Box> {
+  return element.evaluate((node) => {
+    const rect = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    const inset = (side: "Top" | "Right" | "Bottom" | "Left"): number =>
+      parseFloat(style.getPropertyValue(`border-${side.toLowerCase()}-width`)) +
+      parseFloat(style.getPropertyValue(`padding-${side.toLowerCase()}`));
+    const x = rect.left + inset("Left");
+    const y = rect.top + inset("Top");
+    return {
+      x,
+      y,
+      width: rect.right - inset("Right") - x,
+      height: rect.bottom - inset("Bottom") - y,
+    };
+  });
+}
+
+/** Si `inner` cabe en `outer`, con medio píxel de redondeo. */
+function inside(inner: Box, outer: Box): boolean {
+  const tolerance = 0.5;
+  return (
+    inner.x >= outer.x - tolerance &&
+    inner.y >= outer.y - tolerance &&
+    inner.x + inner.width <= outer.x + outer.width + tolerance &&
+    inner.y + inner.height <= outer.y + outer.height + tolerance
+  );
+}
+
+/**
+ * Las marcas del eje, en el orden de las columnas, por su texto (son
+ * `aria-hidden`). Un texto que se repite, como «ene» de dos años, se toma por
+ * su aparición.
+ */
+function axisTicks(figure: Locator, labels: readonly string[]): Locator[] {
+  const seen = new Map<string, number>();
+  return labels.map((label) => {
+    const occurrence = seen.get(label) ?? 0;
+    seen.set(label, occurrence + 1);
+    return figure.getByText(label, { exact: true }).nth(occurrence);
+  });
+}
+
+/**
+ * D-R5-8, §5.2: el gráfico entra en el contenido principal. La figura no
+ * desborda; ella, la primera y la última columna, la marca de la última y la
+ * línea del valor con el puntero sobre la última quedan dentro de la caja del
+ * contenido de `main`. Las marcas que se ven no se pisan: a lo angosto se
+ * ocultan algunas (D1 de R5). Se consulta con `expect.poll`, porque hasta que
+ * carga la fuente el ancho del texto es el de la de reserva.
+ */
+async function expectChartFits(
+  page: Page,
+  figure: Locator,
+  tickLabels: readonly string[],
+): Promise<void> {
+  const ticks = axisTicks(figure, tickLabels);
+  const lastBar = chartBars(figure).last();
+  await lastBar.hover();
+  await expect(chartReadout(figure)).toBeVisible();
+  await expect
+    .poll(() => figure.evaluate((node) => node.scrollWidth - node.clientWidth), {
+      message: "la figura desborda",
+    })
+    .toBeLessThanOrEqual(0);
+  const parts: Record<string, Locator> = {
+    figura: figure,
+    "primera columna": chartBars(figure).first(),
+    "última columna": lastBar,
+    "marca de la última columna": ticks[ticks.length - 1],
+    "línea del valor": chartReadout(figure),
+  };
+  await expect
+    .poll(
+      async () => {
+        const content = await contentBoxOf(page.getByRole("main"));
+        const outside: string[] = [];
+        for (const [part, locator] of Object.entries(parts)) {
+          if (!inside(await boxOf(locator), content)) {
+            outside.push(part);
+          }
+        }
+        return outside;
+      },
+      { message: "partes del gráfico fuera del contenido principal" },
+    )
+    .toEqual([]);
+  await expect
+    .poll(
+      async () => {
+        const shown: { label: string; box: Box }[] = [];
+        for (const [index, tick] of ticks.entries()) {
+          const box = await tick.boundingBox();
+          if (box !== null) {
+            shown.push({ label: tickLabels[index], box });
+          }
+        }
+        return shown.flatMap(({ label, box }, index) => {
+          const previous = shown[index - 1];
+          return previous !== undefined && previous.box.x + previous.box.width > box.x
+            ? [`${previous.label} y ${label}`]
+            : [];
+        });
+      },
+      { message: "marcas visibles que se pisan" },
+    )
+    .toEqual([]);
+}
+
+test("a 320 px el gráfico entra en su caja y sus marcas no se pisan", async ({
+  page,
+  email,
+}) => {
+  const day = today();
+  await page.setViewportSize({ width: 320, height: 800 });
+  await enterApp(page);
+  await seedWeekEntries(email);
+
+  // D-R5-8: 31 columnas por día, con una marca cada cinco.
+  await openReport(page, { first: in2025(9, 10), last: in2025(10, 10) }, "persona", day);
+  const byDay = chartFigure(page, chartCaption("fecha"));
+  await expect(chartBars(byDay)).toHaveCount(31);
+  await expectChartFits(page, byDay, [
+    "10/09",
+    "15/09",
+    "20/09",
+    "25/09",
+    "30/09",
+    "05/10",
+    "10/10",
+  ]);
+
+  // D-R5-8: 13 columnas por mes, con una marca cada dos.
+  await openReport(
+    page,
+    { first: in2025(1, 15), last: { year: 2026, month: 1, day: 15 } },
+    "persona",
+    day,
+  );
+  const byMonth = chartFigure(page, chartCaption("mes"));
+  await expect(chartBars(byMonth)).toHaveCount(13);
+  await expectChartFits(page, byMonth, ["ene", "mar", "may", "jul", "sep", "nov", "ene"]);
 });

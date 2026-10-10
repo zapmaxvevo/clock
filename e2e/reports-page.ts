@@ -805,3 +805,82 @@ export function emptyFiltered(page: Page): Locator {
 export function clearFiltersLink(page: Page): Locator {
   return reportTable(page).getByRole("link", { name: CLEAR_FILTERS, exact: true });
 }
+
+/** D-R5-9: el resumen del `<details>` con la tabla de datos del gráfico. */
+export const CHART_DATA = "Ver los datos del gráfico";
+
+/** La granularidad del gráfico, que sale del largo del período (D-R5-4). */
+export type ChartGranularity = Extract<ReportGroupBy, "fecha" | "semana" | "mes">;
+
+/** D-R5-9: la leyenda de la figura, su único nombre. */
+export function chartCaption(granularity: ChartGranularity): string {
+  switch (granularity) {
+    case "fecha":
+      return "Horas por día";
+    case "semana":
+      return "Horas por semana";
+    case "mes":
+      return "Horas por mes";
+  }
+}
+
+/** El gráfico, la figura nombrada por su leyenda (D-R5-9). */
+export function chartFigure(page: Page, caption: string): Locator {
+  return page.getByRole("figure", { name: caption, exact: true });
+}
+
+/**
+ * Las columnas del gráfico, en orden: cada una es una imagen con su nombre,
+ * también las que están en cero (D-R5-9).
+ */
+export function chartBars(figure: Locator): Locator {
+  return figure.getByRole("img");
+}
+
+/** La columna con ese nombre, que es también su parada de foco (D-R5-9). */
+export function chartBar(figure: Locator, name: string): Locator {
+  return figure.getByRole("img", { name, exact: true });
+}
+
+/**
+ * El nombre de una columna (D-R5-5, D-R5-9): el rótulo de la fila de la
+ * tabla, con «solo …» si el período la corta, y la duración.
+ */
+export function chartBarName(
+  label: string,
+  partial: string | null,
+  duration: string,
+): string {
+  return `${periodHeading(label, partial)}: ${duration}`;
+}
+
+/**
+ * Cualquier nombre de columna: lo que la línea del valor dice cuando hay una
+ * activa. Ninguna otra pieza de la figura termina en «: h:mm».
+ */
+const ANY_CHART_BAR = /^.+: \d+:\d{2}$/;
+
+/**
+ * La línea del valor arriba de las columnas, cuando dice `name` (§5.2). Es
+ * `aria-hidden`, porque repite el nombre de la columna activa, así que se
+ * busca por su texto. Sin `name`, la que dice el de cualquier columna: que no
+ * haya ninguna es que la línea está vacía.
+ */
+export function chartReadout(figure: Locator, name?: string): Locator {
+  return name === undefined
+    ? figure.getByText(ANY_CHART_BAR)
+    : figure.getByText(name, { exact: true });
+}
+
+/** El resumen del `<details>` de la tabla de datos, que la abre y la cierra. */
+export function chartDataSummary(figure: Locator): Locator {
+  return figure.getByText(CHART_DATA, { exact: true });
+}
+
+/**
+ * Las filas de la tabla de datos, una por columna, sin la de los encabezados:
+ * las que tienen encabezado de fila.
+ */
+export function chartDataRows(figure: Locator): Locator {
+  return figure.getByRole("row").filter({ has: figure.page().getByRole("rowheader") });
+}
