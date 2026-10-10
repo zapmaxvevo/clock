@@ -1,7 +1,7 @@
 # Estado de la fase 1
 
 Registro vivo de por dónde va la ejecución. Se actualiza al cerrar cada paso;
-quien retome el trabajo empieza acá. Última actualización: 2026-10-09.
+quien retome el trabajo empieza acá. Última actualización: 2026-10-10.
 
 ## Dónde estamos
 
@@ -36,6 +36,7 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-09.
 | Núcleo de reportes, R4a                     | En `main` |
 | Núcleo de reportes, R4b                     | En `main` |
 | Núcleo de reportes, R10a                    | En `main` |
+| Núcleo de reportes, R10b                    | En `main` |
 
 Los slices 1 a 13 (con 2b, 2c, 7b, 8b, 8c, 11a y 11b) y el arreglo del piso fijo están en `main`.
 El 13 (planilla de horarios) se mergeó el 2026-10-08 con lint, typecheck, 1279 de unidad, 1223 de
@@ -59,7 +60,7 @@ vacío del owner y `renewWorkspace` se corta.
    - **Arreglos de CI** en `main`: `fix/postgres-18` (`b0e34ed`) y `fix/zona-de-la-maquina`
      (`23de226`), con lint, typecheck, 1419 de unidad, 228 de `test:time-ar` y 1275 de
      integración en Postgres 18. **CI de `main` en verde** desde `23de226` (`verify` e
-     `integration`; `e2e` se saltea hasta que exista `E2E_DATABASE_URL`).
+     `integration`; desde el 2026-10-09, PR #1, `e2e` corre contra un servidor local y un Postgres en contenedor).
    - **Postgres local en 18** (2026-10-09, decisión del usuario): `clock-pg` (puerto 5432) es
      `postgres:18-alpine` con las 31 bases restauradas de un `pg_dumpall`; el contenedor 17 quedó
      parado como `clock-pg17` (respaldo, se puede borrar) y `clock-pg18` (5433) sigue aparte.
@@ -136,7 +137,7 @@ vacío del owner y `renewWorkspace` se corta.
      memoria `tope-de-uso`). Su trabajo a medias quedó sin commitear en el árbol, con una copia
      en parches por área en el scratchpad de la sesión `da8db711-…` (`r4b-corte/`): backend
      (paso 8), frontend (paso 7), integración (`scope.integration.test.ts`) y e2e (helpers).
-     Decisión del usuario: relanzar de a dos. `backend-r4b` (pasos 8 y 9) y `frontend-r4b`
+     Se relanzó de a dos. `backend-r4b` (pasos 8 y 9) y `frontend-r4b`
      (paso 7) relanzados sobre ese trabajo; integración y e2e, con el hash del paso 8. **R4b en `main`** (2026-10-09): el filtro de personas. Seis
      revisiones aprobadas (de a dos), ronda de correcciones y corrida final en verde sobre
      `4aa6b01`: 1652 de unidad, 277 de `test:time-ar`, 1397 de integración y e2e 201/201 ×2.
@@ -149,7 +150,7 @@ vacío del owner y `renewWorkspace` se corta.
      (mes y semana) y R10b (descripción). El usuario aceptó agrupar la descripción por el texto
      exacto. **R10a**, rama `nucleo/r10a` (pusheada), implementada entera y con cuatro de seis
      revisiones: backend, seguridad y frontend aprobadas; tests pide un mayor. Todo en
-     `correcciones-nucleo-reportes-r10a-revisiones.md`. **Al retomar**, de a dos agentes:
+     `correcciones-nucleo-reportes-r10a-revisiones.md`. **Al retomar**:
      (1) `clean-code-reviewer` y `parity-reviewer` (base propia `clock_r10a_parity`, crearla y
      migrarla antes); (2) la ronda de correcciones a un `backend-dev` (T1, T2, B1) más lo que
      pidan código y paridad; (3) aplicar el texto de paridad («13. Núcleo, R10») y T3 en el
@@ -164,11 +165,15 @@ vacío del owner y `renewWorkspace` se corta.
      (`bdeeac8`, `4e511ac`) y corrida final en verde sobre `4e511ac`: 1689 de unidad, 298 de
      `test:time-ar`, 1422 de integración y e2e 203/203 ×2. Texto de paridad en `reportes.md`
      (sección 13). Todo en `correcciones-nucleo-reportes-r10a-revisiones.md`. **Sigue R10b**
-     (descripción, parte B del contrato de R10), de a dos agentes; su encargo de frontend lleva
+     (descripción, parte B del contrato de R10); su encargo de frontend lleva
      F1 de R10a y N1 de paridad (la tabla a 320 px). Bases de R10a que se pueden borrar:
      `clock_r10a_back`, `_front`, `_test`, `_e2e`, `_parity`, `_final_test` y `_final_e2e`.
-     Aviso de paridad: la `DATABASE_URL` del `.env` del usuario falla contra el Postgres local
-     (contraseña de `user`); los agentes usan la cadena de `e2e/environment.ts`.
+     **R10b en `main`** (octava sesión, 2026-10-10): paridad aplicada en `reportes.md` (`43225c0`),
+     e2e 205/205 ×2 sobre `6920a06` (Chromium headless volvió a dibujar tras el reinicio) y la
+     corrida final de `718cf32` con lint, typecheck, 1702 de unidad, 298 de `test:time-ar` y 1444
+     de integración. Ruido sin fallos: `The destination stream closed early` en el log del
+     servidor de e2e (~15 por vuelta). Aviso: la `DATABASE_URL` del `.env` del usuario falla contra
+     el Postgres local; los agentes usan la cadena de `e2e/environment.ts`.
 
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
      (`7b66b03`), en checkout en el árbol principal. `architect-r3` quedó escribiendo
@@ -181,9 +186,8 @@ vacío del owner y `renewWorkspace` se corta.
      `npx prettier --write`, lanzar `architecture-reviewer` hasta aprobar, commitear, mergear el
      contrato a `main` y seguir el pipeline como en R2b (bases por agente creadas antes, backend
      primero fija formas). Si no existe, relanzar el `architect` con el mismo encargo.
-   - CI de `main` en verde en `7b66b03` (`verify` e `integration`). El job `e2e` sigue salteado
-     hasta que el usuario cargue `E2E_DATABASE_URL` en el environment `preview` de GitHub; ahora el
-     preview tiene su rama de Neon propia (`preview`).
+   - CI de `main` en verde en `7b66b03` (`verify` e `integration`). El job `e2e` corre en local
+     desde el PR #1 (`1908c85`, 2026-10-09): 203/203 en 9m26s.
    - Después de R3: R4 (filtros); R8 (cambiar el rol) se puede adelantar porque solo depende de R2a.
      Orden del mapa: R2a → R2b → R3 → R4 → R5 → R6 → R7, con R8 después de R2a y
      R9 después de R4.
@@ -270,8 +274,10 @@ cuentas sin Google antes de desplegar el 7b dio cero filas en producción el 202
 - **Postgres de Neon**: decir la versión mayor (`select version();`), que R2a necesita para medir
   con la misma; el slice 9 necesita 15 o posterior (`on delete set null (col)`)
   antes de desplegar.
-- **Rol de Neon para e2e**: `E2E_DATABASE_URL` en el environment `preview` de GitHub, con
-  un rol que solo lea `workspace` y actualice su `created_at`.
+- **Secretos de e2e sin uso**: desde el PR #1 CI no usa el environment `preview` ni
+  `E2E_BASE_URL`, `E2E_TEST_SESSION_SECRET` y `E2E_DATABASE_URL`; borrarlos es del usuario. Su
+  `.env` y `.env.example` deberían apuntar a `postgresql://clock:clock@localhost:5432/clock`
+  (`compose.yaml` levanta esa base con `docker compose up -d`).
 - **Sesión en el workspace de Clockify** para cerrar lo no verificado: P-18 de `timesheet.md`
   (el menú, el pop-up y el detalle de una celda: TS-40, TS-41, TS-42), P-14 en
   `time-tracker.md` (fila de la entrada que corre, hora inexistente, horas de la copia al

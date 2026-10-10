@@ -207,3 +207,34 @@ describe("visibleRows por mes y semana (D-R10-11, §5.3)", () => {
     ]);
   });
 });
+
+describe("groupKey de la descripción (D-R10-9, §5.3)", () => {
+  const ID = "0123456789abcdef0123456789abcdef";
+
+  it("la descripción es su `id`, y «Sin descripción», `sin-descripcion`", () => {
+    expect(
+      groupKey({
+        kind: "description",
+        description: { id: ID, text: "Reunión", truncated: false },
+        seconds: 60,
+      }),
+    ).toBe(ID);
+    expect(groupKey({ kind: "description", description: null, seconds: 60 })).toBe(
+      "sin-descripcion",
+    );
+  });
+
+  it("dos textos que comparten lo que se muestra son dos filas, por su `id`", () => {
+    const shared = { text: "x".repeat(100), truncated: true };
+    const flat: ReportGroup[] = [
+      { kind: "description", description: { id: ID, ...shared }, seconds: 60 },
+      {
+        kind: "description",
+        description: { id: ID.replace("0", "f"), ...shared },
+        seconds: 60,
+      },
+    ];
+    const keys = visibleRows(flat, new Set()).map(({ key }) => key);
+    expect(new Set(keys).size).toBe(2);
+  });
+});

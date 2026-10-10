@@ -2,7 +2,9 @@ import type { ReactElement, ReactNode } from "react";
 
 import { projectLabels } from "@/modules/project/components/labels";
 import { paletteColor } from "@/modules/project/palette";
+import { trackerLabels } from "@/modules/time-entry/components/labels";
 import type {
+  ReportDescriptionGroup,
   ReportGroup,
   ReportPersonGroup,
   ReportProjectGroup,
@@ -44,6 +46,8 @@ export function GroupHeading({ group }: { readonly group: ReportGroup }): ReactE
           <time dateTime={group.monthStart.slice(0, 7)}>{group.label}</time>
         </PartialHeading>
       );
+    case "description":
+      return <DescriptionHeading description={group.description} />;
   }
 }
 
@@ -124,7 +128,8 @@ function TaskHeading({ group }: { readonly group: ReportTaskGroup }) {
 
 /**
  * Solo el nombre, como el cliente o la etiqueta, archivados o no (RP-29); sin
- * él, el «Sin …» de la dimensión.
+ * él, el «Sin …» de la dimensión. En bloque, porque en un solo nivel va suelto
+ * en la celda y un `truncate` en línea no recorta.
  */
 function NamedHeading({
   named,
@@ -136,7 +141,23 @@ function NamedHeading({
   if (named === null) {
     return <EmptyGroupHeading label={emptyLabel} />;
   }
-  return <span className="truncate">{named.name}</span>;
+  return <span className="block truncate">{named.name}</span>;
+}
+
+/**
+ * §5.2: el texto tal como llega, como texto y nunca como HTML, con «…» si el
+ * servidor lo recortó (D-R10-9); «Sin descripción» como en el rastreador.
+ */
+function DescriptionHeading({
+  description,
+}: {
+  readonly description: ReportDescriptionGroup["description"];
+}) {
+  if (description === null) {
+    return <EmptyGroupHeading label={trackerLabels.noDescription} />;
+  }
+  const text = description.truncated ? `${description.text}…` : description.text;
+  return <span className="block truncate">{text}</span>;
 }
 
 /** RP-28: el grupo de lo que no tiene la dimensión, en gris. */

@@ -644,3 +644,57 @@ export async function copyEntry(
     }
   });
 }
+
+/** Lo que siembra `seedNumberedEntries`. */
+export type NumberedEntries = {
+  /** El día civil de todas, en la zona `timeZone`. */
+  readonly day: CivilDay;
+  /** La hora en que empiezan todas: «09:00». */
+  readonly start: string;
+  readonly count: number;
+  /** El sufijo del recorrido, al final de cada descripción. */
+  readonly suffix: string;
+};
+
+/**
+ * Siembra `count` entradas de un minuto de una persona, sin proyecto, todas
+ * desde la misma hora, con la descripción «Entrada {n} {suffix}»: una
+ * descripción distinta por entrada, así que un reporte por descripción tiene
+ * `count` grupos. Es lo que la interfaz no puede producir en un tiempo
+ * razonable: más grupos que el tope del primer nivel (D-R10-14). Un solo
+ * `insert` en una transacción; si la persona no tiene membresía, no inserta
+ * ninguna y se corta sin dejar nada.
+ */
+export async function seedNumberedEntries(
+  email: string,
+  timeZone: string,
+  entries: NumberedEntries,
+): Promise<void> {
+  await withTransaction(async (client) => {
+    const result = await client.query(
+      `insert into time_entry (workspace_id, user_id, description, started_at, ended_at)
+       select membership.workspace_id, membership.user_id,
+              'Entrada ' || number || ' ' || $5,
+              ($2::date + $3::time) at time zone $4,
+              ($2::date + $3::time + interval '1 minute') at time zone $4
+         from membership
+         join "user" on "user".id = membership.user_id
+        cross join generate_series(1, $6::int) as number
+        where membership.workspace_id = ${FIRST_WORKSPACE}
+          and "user".email = $1`,
+      [
+        email,
+        dayKeyOf(entries.day),
+        entries.start,
+        timeZone,
+        entries.suffix,
+        entries.count,
+      ],
+    );
+    if (result.rowCount !== entries.count) {
+      throw new Error(
+        `Se esperaba sembrar ${entries.count} entradas y se sembraron ${result.rowCount}.`,
+      );
+    }
+  });
+}

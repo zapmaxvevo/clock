@@ -46,7 +46,7 @@ function list(markup: string): {
 }
 
 describe("SubgroupPanel (D-R3-8, §5.3)", () => {
-  it("sin segundo nivel: «Ninguno» primero y elegido, y las siete que no son el primero", () => {
+  it("sin segundo nivel: «Ninguno» primero y elegido, y las ocho que no son el primero", () => {
     expect(list(render({ groupBy: "project", subgroups: [] }, 1))).toEqual({
       name: "Segundo nivel",
       links: [
@@ -86,6 +86,11 @@ describe("SubgroupPanel (D-R3-8, §5.3)", () => {
           href: `${base}&agrupar=proyecto&subagrupar=mes`,
           current: null,
         },
+        {
+          label: "Descripción",
+          href: `${base}&agrupar=proyecto&subagrupar=descripcion`,
+          current: null,
+        },
       ],
     });
   });
@@ -104,6 +109,7 @@ describe("SubgroupPanel (D-R3-8, §5.3)", () => {
       Fecha: `${base}&agrupar=proyecto&subagrupar=fecha%2Cetiqueta`,
       Semana: `${base}&agrupar=proyecto&subagrupar=semana%2Cetiqueta`,
       Mes: `${base}&agrupar=proyecto&subagrupar=mes%2Cetiqueta`,
+      Descripción: `${base}&agrupar=proyecto&subagrupar=descripcion%2Cetiqueta`,
     });
   });
 
@@ -146,6 +152,11 @@ describe("SubgroupPanel (D-R3-8, §5.3)", () => {
           href: `${base}&agrupar=proyecto&subagrupar=fecha%2Cmes`,
           current: null,
         },
+        {
+          label: "Descripción",
+          href: `${base}&agrupar=proyecto&subagrupar=fecha%2Cdescripcion`,
+          current: null,
+        },
       ],
     });
   });
@@ -173,8 +184,11 @@ describe("SubgroupPanel (D-R3-8, §5.3)", () => {
       "Tarea",
       "Etiqueta",
       "Fecha",
+      "Descripción",
     ]);
-    expect(links.at(-1)?.href).toBe(`${base}&agrupar=mes&subagrupar=semana%2Cfecha`);
+    expect(links.find(({ label }) => label === "Fecha")?.href).toBe(
+      `${base}&agrupar=mes&subagrupar=semana%2Cfecha`,
+    );
   });
 
   it("cada enlace conserva los filtros (D-R4-10)", () => {
@@ -199,6 +213,7 @@ describe("SubgroupPanel (D-R3-8, §5.3)", () => {
       `${base}&agrupar=proyecto&subagrupar=fecha%2Cetiqueta${kept}`,
       `${base}&agrupar=proyecto&subagrupar=fecha%2Csemana${kept}`,
       `${base}&agrupar=proyecto&subagrupar=fecha%2Cmes${kept}`,
+      `${base}&agrupar=proyecto&subagrupar=fecha%2Cdescripcion${kept}`,
     ]);
   });
 });

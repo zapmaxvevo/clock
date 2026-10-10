@@ -76,6 +76,7 @@ export const REPORT_GROUP_BYS = [
   "date",
   "week",
   "month",
+  "description",
 ] as const;
 export type ReportGroupBy = (typeof REPORT_GROUP_BYS)[number];
 
@@ -100,6 +101,7 @@ export const REPORT_GROUP_PARAMS = {
   date: "fecha",
   week: "semana",
   month: "mes",
+  description: "descripcion",
 } as const satisfies Record<ReportGroupBy, string>;
 
 /** La agrupación que escribe `value` en la URL, o `undefined`. Distingue mayúsculas. */
@@ -107,17 +109,21 @@ function groupByOfParam(value: unknown): ReportGroupBy | undefined {
   return REPORT_GROUP_BYS.find((groupBy) => REPORT_GROUP_PARAMS[groupBy] === value);
 }
 
-/** `?agrupar=persona|proyecto|cliente|tarea|etiqueta|fecha|semana|mes` con `safeParse`, aparte del rango; cualquier otro valor se descarta. */
+/** `?agrupar=persona|proyecto|cliente|tarea|etiqueta|fecha|semana|mes|descripcion` con `safeParse`, aparte del rango; cualquier otro valor se descarta. */
 export const reportGroupParams = z
   .object({ agrupar: z.string() })
   .transform(({ agrupar }) => groupByOfParam(agrupar))
   .pipe(z.enum(REPORT_GROUP_BYS));
 
 /**
- * RP-12, D-R3-6: cuántas filas pueden sumar los niveles de un árbol. Acota lo
- * que se lee de los niveles 2 y 3, no el primero. El mismo de R6 y R7.
+ * RP-12, D-R3-6, D-R10-10: cuántas filas pueden sumar los niveles de un árbol.
+ * Acota lo que se lee de todos los niveles, también el primero, que entra
+ * entero o no se muestra. El mismo de R6 y R7.
  */
 export const REPORT_MAX_ROWS = 3000;
+
+/** D-R10-9: cuántos caracteres de una descripción viajan, en puntos de código como `left()`. */
+export const REPORT_DESCRIPTION_SHOWN = 100;
 
 /** Los niveles de un reporte: el primero y, debajo, hasta dos más, sin repetir (RP-12). */
 export type ReportGrouping = {
@@ -440,6 +446,26 @@ const reportMonthGroup = withChildren({
   seconds: z.number().int().min(0),
 });
 
+const reportDescriptionGroup = withChildren({
+  kind: z.literal("description"),
+  /** `null` es «Sin descripción»: la cadena vacía (RP-28, D-R10-8). */
+  description: z
+    .object({
+      /** Los 32 primeros hexadecimales del SHA-256 del texto entero: la clave del grupo (D-R10-9). */
+      id: z.string().regex(/^[0-9a-f]{32}$/),
+      /** De 1 a `REPORT_DESCRIPTION_SHOWN` puntos de código, tal como se guardaron. */
+      text: z
+        .string()
+        .min(1)
+        // En puntos de código, como `left()`: `.max()` cuenta unidades UTF-16.
+        .refine((text) => Array.from(text).length <= REPORT_DESCRIPTION_SHOWN),
+      /** El texto entero es más largo: la pantalla agrega «…». */
+      truncated: z.boolean(),
+    })
+    .nullable(),
+  seconds: z.number().int().min(0),
+});
+
 const reportGroup = z.discriminatedUnion("kind", [
   reportPersonGroup,
   reportProjectGroup,
@@ -449,47 +475,55 @@ const reportGroup = z.discriminatedUnion("kind", [
   reportDateGroup,
   reportWeekGroup,
   reportMonthGroup,
+  reportDescriptionGroup,
 ]);
 
-export const reportReadyState = z.object({
-  kind: z.literal("ready"),
-  todayKey: z.string(),
-  range: reportRangeView,
-  /** El del atajo, «Mes pasado», o el de R2a: «Semana anterior», «05/10 – 18/10» (D-R2b-2). */
-  rangeLabel: z.string(),
-  /** `null` si el destino no pasa `reportRangeInput`. */
-  previous: reportRangeView.nullable(),
-  next: reportRangeView.nullable(),
-  /** El destino del enlace «Esta semana». */
-  currentWeek: reportRangeView,
-  /** Los atajos de hoy, sin los que no pasan `reportRangeInput` (D-R2b-2). */
-  shortcuts: z.array(reportShortcut),
-  groupBy: z.enum(REPORT_GROUP_BYS),
-  /** Los niveles pedidos debajo del primero, de `subagrupar` (D-R3-5). */
-  subgroups: z.array(z.enum(REPORT_GROUP_BYS)).max(2),
-  /** Los niveles leídos que entran en el tope: menos que los pedidos si no (D-R3-6). */
-  levelsShown: z.number().int().min(1).max(3),
-  /** Lo que dice la línea del alcance (D-R2a-2). */
-  scope: z.enum(["everyone", "self"]),
-  /** La zona con que se cortaron los días, tal como está en el perfil (D-R2a-5). */
-  timeZone: z.string(),
-  /**
-   * Exactos y reales: la suma de los grupos (D-R2a-7) o, por etiqueta, la de
-   * las entradas, que no pasa por la unión con las etiquetas (D-R3-3).
-   */
-  totalSeconds: z.number().int().min(0),
-  billableSeconds: z.number().int().min(0),
-  /** El primer nivel, en el orden de D-R2a-3, con los de abajo en `children`. */
-  groups: z.array(reportGroup),
-  filters: reportFiltersView,
-  /** D-R4-9: lo que ofrece cada filtro, de su dueño (ADR 0010), en el orden de `compareNames`. */
-  filterOptions: z.object({
-    /** `null` sin `timeEntry.others.view`: el filtro no existe (D-R4-4). */
-    people: z.array(reportPersonOption).nullable(),
-    clients: z.array(reportClientOption),
-    projects: z.array(reportProjectOption),
-  }),
-});
+export const reportReadyState = z
+  .object({
+    kind: z.literal("ready"),
+    todayKey: z.string(),
+    range: reportRangeView,
+    /** El del atajo, «Mes pasado», o el de R2a: «Semana anterior», «05/10 – 18/10» (D-R2b-2). */
+    rangeLabel: z.string(),
+    /** `null` si el destino no pasa `reportRangeInput`. */
+    previous: reportRangeView.nullable(),
+    next: reportRangeView.nullable(),
+    /** El destino del enlace «Esta semana». */
+    currentWeek: reportRangeView,
+    /** Los atajos de hoy, sin los que no pasan `reportRangeInput` (D-R2b-2). */
+    shortcuts: z.array(reportShortcut),
+    groupBy: z.enum(REPORT_GROUP_BYS),
+    /** Los niveles pedidos debajo del primero, de `subagrupar` (D-R3-5). */
+    subgroups: z.array(z.enum(REPORT_GROUP_BYS)).max(2),
+    /**
+     * Los niveles leídos que entran en el tope: menos que los pedidos si no
+     * (D-R3-6); 0 si no entra ni el primero (D-R10-10).
+     */
+    levelsShown: z.number().int().min(0).max(3),
+    /** Lo que dice la línea del alcance (D-R2a-2). */
+    scope: z.enum(["everyone", "self"]),
+    /** La zona con que se cortaron los días, tal como está en el perfil (D-R2a-5). */
+    timeZone: z.string(),
+    /**
+     * Exactos y reales: la suma de los grupos (D-R2a-7) o, por etiqueta y sin
+     * el primer nivel, la de las entradas, que no pasa por la unión con las
+     * etiquetas (D-R3-3, D-R10-10).
+     */
+    totalSeconds: z.number().int().min(0),
+    billableSeconds: z.number().int().min(0),
+    /** El primer nivel, en el orden de D-R2a-3, con los de abajo en `children`. */
+    groups: z.array(reportGroup),
+    filters: reportFiltersView,
+    /** D-R4-9: lo que ofrece cada filtro, de su dueño (ADR 0010), en el orden de `compareNames`. */
+    filterOptions: z.object({
+      /** `null` sin `timeEntry.others.view`: el filtro no existe (D-R4-4). */
+      people: z.array(reportPersonOption).nullable(),
+      clients: z.array(reportClientOption),
+      projects: z.array(reportProjectOption),
+    }),
+  })
+  // D-R10-10: sin el primer nivel no hay grupos; con él, puede no haber (RP-33).
+  .refine(({ levelsShown, groups }) => levelsShown > 0 || groups.length === 0);
 
 export type ReportReadyState = z.infer<typeof reportReadyState>;
 export type ReportGroup = z.infer<typeof reportGroup>;
@@ -501,6 +535,7 @@ export type ReportTagGroup = z.infer<typeof reportTagGroup>;
 export type ReportDateGroup = z.infer<typeof reportDateGroup>;
 export type ReportWeekGroup = z.infer<typeof reportWeekGroup>;
 export type ReportMonthGroup = z.infer<typeof reportMonthGroup>;
+export type ReportDescriptionGroup = z.infer<typeof reportDescriptionGroup>;
 export type ReportShortcut = z.infer<typeof reportShortcut>;
 
 export type ReportState =

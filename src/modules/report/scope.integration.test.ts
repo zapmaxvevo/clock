@@ -15,6 +15,7 @@ import {
   seedTimeEntry,
   seedWorkspace,
 } from "@/test/factories";
+import { descriptionIdOf } from "@/test/report";
 import { actorIn, workspaceOf } from "@/test/time-entry";
 
 import { projectRepository } from "@/modules/project/repository";
@@ -45,7 +46,8 @@ import { getReportState, type ReportRequest } from "./service";
  * y R3 las de tarea y etiqueta, con la tarea y las etiquetas en el fixture
  * (criterio 9 de R3), y los subniveles (criterio 21 de R3). R10 suma la semana
  * y el mes, sueltos y en los árboles Mes → Semana → Persona y Persona → Semana →
- * Mes (criterio 9 de R10).
+ * Mes (criterio 9 de R10), y la descripción, suelta y en Descripción → Persona →
+ * Proyecto, con una descripción propia en cada entrada (criterio 18 de R10).
  */
 const permissionOverrides = vi.hoisted(() => ({
   denied: [] as { readonly userId: string; readonly action: string }[],
@@ -109,7 +111,8 @@ const noProject: Place = { projectId: null, clientId: null, taskId: null, tagIds
  * de A y tiene la tarea T. Cada uno tiene una sola entrada el martes 29/09, con
  * una duración que no se repite: en P y facturable, o sin proyecto y no
  * facturable. Las de owner, `project_manager` e inactivo van en T; la del member
- * lleva las etiquetas E y F, la del inactivo E y la del admin F.
+ * lleva las etiquetas E y F, la del inactivo E y la del admin F. Cada una lleva
+ * una descripción que solo es de su persona; la del inactivo, ninguna.
  */
 type WorkspaceA = {
   readonly workspaceId: string;
@@ -132,16 +135,26 @@ type WorkspaceA = {
     readonly member: Place;
     readonly inactive: Place;
   };
+  readonly descriptions: {
+    readonly owner: string;
+    readonly admin: string;
+    readonly manager: string;
+    readonly teamManager: string;
+    readonly member: string;
+    readonly inactive: string;
+  };
 };
 
 /**
  * Workspace B: su owner, sin proyecto, y el member de A en el proyecto de B,
- * que es del cliente de B, con la etiqueta G de B.
+ * que es del cliente de B, con la etiqueta G de B. El member lleva en B una
+ * descripción distinta de la suya en A.
  */
 type WorkspaceB = {
   readonly workspaceId: string;
   readonly ownerId: string;
   readonly places: { readonly owner: Place; readonly member: Place };
+  readonly descriptions: { readonly owner: string; readonly member: string };
 };
 
 let a: WorkspaceA;
@@ -153,6 +166,8 @@ type SeededEntry = {
   readonly userId: string;
   readonly minutes: number;
   readonly place: Place;
+  /** Tal como se guarda: la cadena vacía es «Sin descripción». */
+  readonly description: string;
 };
 
 /** Las entradas de `beforeEach`, de A y de B. */
@@ -163,7 +178,7 @@ let names: Map<string, string>;
 
 /**
  * Una entrada cerrada de `minutes` minutos el martes 29/09, que empieza a las
- * `hour` UTC, en `place`: facturable si tiene proyecto.
+ * `hour` UTC, en `place` y con `description`: facturable si tiene proyecto.
  */
 async function closedEntry(values: {
   readonly workspaceId: string;
@@ -171,12 +186,14 @@ async function closedEntry(values: {
   readonly hour: number;
   readonly minutes: number;
   readonly place: Place;
+  readonly description: string;
 }) {
   const startedAt = new Date(Date.UTC(2026, 8, 29, values.hour));
   seeded.push(values);
   await seedTimeEntry({
     workspaceId: values.workspaceId,
     userId: values.userId,
+    description: values.description,
     startedAt,
     endedAt: new Date(startedAt.getTime() + values.minutes * 60_000),
     projectId: values.place.projectId,
@@ -237,6 +254,14 @@ beforeEach(async () => {
       member: { ...inP, tagIds: [tagE.id, tagF.id] },
       inactive: { ...inT, tagIds: [tagE.id] },
     },
+    descriptions: {
+      owner: "Planificación del owner de A",
+      admin: "Revisión del admin de A",
+      manager: "Seguimiento del project_manager de A",
+      teamManager: "Coordinación del team_manager de A",
+      member: "Tareas del member en A",
+      inactive: "",
+    },
   };
 
   const seededB = await seedWorkspace(buenosAires);
@@ -278,6 +303,10 @@ beforeEach(async () => {
         tagIds: [tagG.id],
       },
     },
+    descriptions: {
+      owner: "Cierre del owner de B",
+      member: "Tareas del member en B",
+    },
   };
 
   const inA = { workspaceId: a.workspaceId };
@@ -287,6 +316,7 @@ beforeEach(async () => {
     hour: 10,
     minutes: 10,
     place: a.places.owner,
+    description: a.descriptions.owner,
   });
   await closedEntry({
     ...inA,
@@ -294,6 +324,7 @@ beforeEach(async () => {
     hour: 11,
     minutes: 20,
     place: a.places.admin,
+    description: a.descriptions.admin,
   });
   await closedEntry({
     ...inA,
@@ -301,6 +332,7 @@ beforeEach(async () => {
     hour: 12,
     minutes: 30,
     place: a.places.manager,
+    description: a.descriptions.manager,
   });
   await closedEntry({
     ...inA,
@@ -308,6 +340,7 @@ beforeEach(async () => {
     hour: 13,
     minutes: 40,
     place: a.places.teamManager,
+    description: a.descriptions.teamManager,
   });
   await closedEntry({
     ...inA,
@@ -315,6 +348,7 @@ beforeEach(async () => {
     hour: 14,
     minutes: 50,
     place: a.places.member,
+    description: a.descriptions.member,
   });
   await closedEntry({
     ...inA,
@@ -322,6 +356,7 @@ beforeEach(async () => {
     hour: 15,
     minutes: 60,
     place: a.places.inactive,
+    description: a.descriptions.inactive,
   });
   const inB = { workspaceId: b.workspaceId };
   await closedEntry({
@@ -330,6 +365,7 @@ beforeEach(async () => {
     hour: 17,
     minutes: 70,
     place: b.places.member,
+    description: b.descriptions.member,
   });
   await closedEntry({
     ...inB,
@@ -337,6 +373,7 @@ beforeEach(async () => {
     hour: 18,
     minutes: 80,
     place: b.places.owner,
+    description: b.descriptions.owner,
   });
 });
 
@@ -383,14 +420,29 @@ function summaryOf(state: ReportState) {
           return { weekStart: group.weekStart, seconds: group.seconds };
         case "month":
           return { monthStart: group.monthStart, seconds: group.seconds };
+        case "description":
+          return { description: group.description, seconds: group.seconds };
       }
     }),
   };
 }
 
 /**
- * Las filas que deja `summaryOf` de las horas de una persona en un solo lugar:
- * una, salvo por etiqueta, donde suma en cada una de las suyas (RP-18).
+ * El grupo de descripción que tiene que dar `text` (D-R10-9): `null` si es la
+ * cadena vacía; si no, los 32 primeros hexadecimales del SHA-256 del texto en
+ * UTF-8 y el texto entero, que en este fixture no pasa de 100 caracteres.
+ */
+function descriptionOf(text: string) {
+  if (text === "") {
+    return null;
+  }
+  return { id: descriptionIdOf(text), text, truncated: false };
+}
+
+/**
+ * Las filas que deja `summaryOf` de las horas de una persona en un solo lugar
+ * y con una sola descripción: una, salvo por etiqueta, donde suma en cada una
+ * de las suyas (RP-18).
  */
 function rowsOf(
   groupBy: ReportGroupBy,
@@ -398,6 +450,7 @@ function rowsOf(
     readonly userId: string;
     readonly inactive?: boolean;
     readonly place: Place;
+    readonly description: string;
     readonly seconds: number;
   },
 ) {
@@ -421,12 +474,15 @@ function rowsOf(
       return [{ weekStart: week.first, seconds }];
     case "month":
       return [{ monthStart: entryMonth, seconds }];
+    case "description":
+      return [{ description: descriptionOf(values.description), seconds }];
   }
 }
 
 /**
- * Lo que ve una persona con su propia entrada de `minutes` minutos en `place`:
- * el total es el de la entrada también por etiqueta, aunque las filas sumen más.
+ * Lo que ve una persona con su propia entrada de `minutes` minutos en `place` y
+ * con `description`: el total es el de la entrada también por etiqueta, aunque
+ * las filas sumen más.
  */
 function ownSummary(
   groupBy: ReportGroupBy,
@@ -434,6 +490,7 @@ function ownSummary(
     readonly userId: string;
     readonly minutes: number;
     readonly place: Place;
+    readonly description: string;
   },
 ) {
   const seconds = values.minutes * 60;
@@ -460,7 +517,8 @@ function everyoneInA(groupBy: ReportGroupBy) {
 /**
  * P junta las horas de owner, `project_manager`, member e inactivo; el resto,
  * sin proyecto. T, las de owner, `project_manager` e inactivo. E, las de member
- * e inactivo; F, las de member y admin. Por fecha, las seis en el mismo día.
+ * e inactivo; F, las de member y admin. Por fecha, las seis en el mismo día. Por
+ * descripción, una fila por persona: la del inactivo es «Sin descripción».
  */
 function everyoneInAGroups(groupBy: ReportGroupBy) {
   switch (groupBy) {
@@ -500,6 +558,15 @@ function everyoneInAGroups(groupBy: ReportGroupBy) {
       return [{ weekStart: week.first, seconds: 210 * 60 }];
     case "month":
       return [{ monthStart: entryMonth, seconds: 210 * 60 }];
+    case "description":
+      return [
+        { description: descriptionOf(a.descriptions.inactive), seconds: 60 * 60 },
+        { description: descriptionOf(a.descriptions.member), seconds: 50 * 60 },
+        { description: descriptionOf(a.descriptions.teamManager), seconds: 40 * 60 },
+        { description: descriptionOf(a.descriptions.manager), seconds: 30 * 60 },
+        { description: descriptionOf(a.descriptions.admin), seconds: 20 * 60 },
+        { description: descriptionOf(a.descriptions.owner), seconds: 10 * 60 },
+      ];
   }
 }
 
@@ -511,26 +578,36 @@ function selfOnlyInA() {
       userId: a.managerId,
       minutes: 30,
       place: a.places.manager,
+      description: a.descriptions.manager,
     },
     {
       role: "team_manager",
       userId: a.teamManagerId,
       minutes: 40,
       place: a.places.teamManager,
+      description: a.descriptions.teamManager,
     },
-    { role: "member", userId: a.memberId, minutes: 50, place: a.places.member },
+    {
+      role: "member",
+      userId: a.memberId,
+      minutes: 50,
+      place: a.places.member,
+      description: a.descriptions.member,
+    },
   ] as const;
 }
 
 /**
  * Los árboles del criterio 21 de R3, de tres niveles y uno con la etiqueta
- * arriba, y los del criterio 9 de R10, con el tiempo arriba y en el medio.
+ * arriba, los del criterio 9 de R10, con el tiempo arriba y en el medio, y el
+ * del criterio 18 de R10, con la descripción arriba.
  */
 const trees: readonly (readonly ReportGroupBy[])[] = [
   ["person", "project", "date"],
   ["tag", "task", "person"],
   ["month", "week", "person"],
   ["person", "week", "month"],
+  ["description", "person", "project"],
 ];
 
 /** El pedido de la semana con `levels[0]` arriba y el resto como subniveles. */
@@ -570,6 +647,8 @@ function keyOfGroup(group: ReportGroup): string {
       return `semana ${group.weekStart}`;
     case "month":
       return `mes ${group.monthStart}`;
+    case "description":
+      return `descripcion ${group.description?.text ?? "sin"}`;
   }
 }
 
@@ -595,6 +674,8 @@ function keysOfEntry(entry: SeededEntry, level: ReportGroupBy): readonly string[
       return [`semana ${week.first}`];
     case "month":
       return [`mes ${entryMonth}`];
+    case "description":
+      return [`descripcion ${entry.description === "" ? "sin" : entry.description}`];
   }
 }
 
@@ -713,7 +794,7 @@ async function expectForbiddenWithoutReading(
   }
 }
 
-describe("el alcance por rol (criterio 4, D-R2a-2; criterio 11 de R2b; criterio 9 de R3; criterio 9 de R10)", () => {
+describe("el alcance por rol (criterio 4, D-R2a-2; criterio 11 de R2b; criterio 9 de R3; criterios 9 y 18 de R10)", () => {
   for (const role of ["owner", "admin"] as const) {
     it(`${role} de A ve a todas las personas de A, la inactiva con sus horas, y nada de B`, async () => {
       const actor = actorIn(a.workspaceId, role === "owner" ? a.ownerId : a.adminId, {
@@ -733,6 +814,7 @@ describe("el alcance por rol (criterio 4, D-R2a-2; criterio 11 de R2b; criterio 
           userId: a.managerId,
           minutes: 30,
           place: a.places.manager,
+          description: a.descriptions.manager,
         }),
       );
     }
@@ -746,6 +828,7 @@ describe("el alcance por rol (criterio 4, D-R2a-2; criterio 11 de R2b; criterio 
           userId: a.teamManagerId,
           minutes: 40,
           place: a.places.teamManager,
+          description: a.descriptions.teamManager,
         }),
       );
     }
@@ -755,12 +838,22 @@ describe("el alcance por rol (criterio 4, D-R2a-2; criterio 11 de R2b; criterio 
     const actor = actorIn(a.workspaceId, a.memberId);
     for (const groupBy of groupBys) {
       expect(summaryOf(await reportOf(actor, groupBy))).toEqual(
-        ownSummary(groupBy, { userId: a.memberId, minutes: 50, place: a.places.member }),
+        ownSummary(groupBy, {
+          userId: a.memberId,
+          minutes: 50,
+          place: a.places.member,
+          description: a.descriptions.member,
+        }),
       );
     }
     // Sin agrupación, por persona: la misma fila.
     expect(summaryOf(await reportOf(actor, null))).toEqual(
-      ownSummary("person", { userId: a.memberId, minutes: 50, place: a.places.member }),
+      ownSummary("person", {
+        userId: a.memberId,
+        minutes: 50,
+        place: a.places.member,
+        description: a.descriptions.member,
+      }),
     );
   });
 
@@ -768,7 +861,12 @@ describe("el alcance por rol (criterio 4, D-R2a-2; criterio 11 de R2b; criterio 
     const actor = actorIn(b.workspaceId, a.memberId);
     for (const groupBy of groupBys) {
       expect(summaryOf(await reportOf(actor, groupBy))).toEqual(
-        ownSummary(groupBy, { userId: a.memberId, minutes: 70, place: b.places.member }),
+        ownSummary(groupBy, {
+          userId: a.memberId,
+          minutes: 70,
+          place: b.places.member,
+          description: b.descriptions.member,
+        }),
       );
     }
   });
@@ -785,18 +883,25 @@ describe("el alcance por rol (criterio 4, D-R2a-2; criterio 11 de R2b; criterio 
         // por tarea, las dos van sin tarea: una fila con las dos.
         groups:
           groupBy === "date" || groupBy === "week" || groupBy === "month"
-            ? rowsOf(groupBy, { userId: b.ownerId, place: noProject, seconds: 150 * 60 })
+            ? rowsOf(groupBy, {
+                userId: b.ownerId,
+                place: noProject,
+                description: b.descriptions.owner,
+                seconds: 150 * 60,
+              })
             : groupBy === "task"
               ? [{ taskId: null, seconds: 150 * 60 }]
               : [
                   ...rowsOf(groupBy, {
                     userId: b.ownerId,
                     place: b.places.owner,
+                    description: b.descriptions.owner,
                     seconds: 80 * 60,
                   }),
                   ...rowsOf(groupBy, {
                     userId: a.memberId,
                     place: b.places.member,
+                    description: b.descriptions.member,
                     seconds: 70 * 60,
                   }),
                 ],
@@ -830,7 +935,12 @@ describe("la decisión es de can() (criterio 4, R9)", () => {
     const actor = actorIn(a.workspaceId, a.ownerId, { role: "owner" });
     for (const groupBy of groupBys) {
       expect(summaryOf(await reportOf(actor, groupBy))).toEqual(
-        ownSummary(groupBy, { userId: a.ownerId, minutes: 10, place: a.places.owner }),
+        ownSummary(groupBy, {
+          userId: a.ownerId,
+          minutes: 10,
+          place: a.places.owner,
+          description: a.descriptions.owner,
+        }),
       );
     }
   });
@@ -856,7 +966,7 @@ describe("la decisión es de can() (criterio 4, R9)", () => {
   });
 });
 
-describe("el enlace ajeno (criterio 5, RP-32; criterio 11 de R2b; criterio 9 de R3; criterio 9 de R10)", () => {
+describe("el enlace ajeno (criterio 5, RP-32; criterio 11 de R2b; criterio 9 de R3; criterios 9 y 18 de R10)", () => {
   /** El valor de `agrupar` que escribe la URL y la agrupación que tiene que salir. */
   const linkedGroupBys = [
     ["proyecto", "project"],
@@ -866,6 +976,7 @@ describe("el enlace ajeno (criterio 5, RP-32; criterio 11 de R2b; criterio 9 de 
     ["fecha", "date"],
     ["semana", "week"],
     ["mes", "month"],
+    ["descripcion", "description"],
   ] as const;
 
   /**
@@ -918,10 +1029,10 @@ describe("el enlace ajeno (criterio 5, RP-32; criterio 11 de R2b; criterio 9 de 
       expect(summaryOf(await getReportState(admin, settings, fromUrl, now))).toEqual(
         everyoneInA(groupBy),
       );
-      for (const { role, userId, minutes, place } of selfOnlyInA()) {
+      for (const { role, userId, minutes, place, description } of selfOnlyInA()) {
         const actor = actorIn(a.workspaceId, userId, { role });
         expect(summaryOf(await getReportState(actor, settings, fromUrl, now))).toEqual(
-          ownSummary(groupBy, { userId, minutes, place }),
+          ownSummary(groupBy, { userId, minutes, place, description }),
         );
       }
     });
@@ -961,7 +1072,7 @@ describe("membresía no activa (criterio 11, RP-07; criterio 9 de R3)", () => {
   });
 });
 
-describe("el alcance en cada nivel (criterio 21 de R3; criterio 9 de R10)", () => {
+describe("el alcance en cada nivel (criterio 21 de R3; criterios 9 y 18 de R10)", () => {
   for (const role of ["owner", "admin"] as const) {
     it(`${role} de A ve todo A en cada nivel, también al inactivo, y nada de B`, async () => {
       const actor = actorIn(a.workspaceId, role === "owner" ? a.ownerId : a.adminId, {
@@ -1038,6 +1149,7 @@ describe("el alcance en cada nivel (criterio 21 de R3; criterio 9 de R10)", () =
       ["etiqueta", "persona,fecha", ["tag", "person", "date"]],
       ["mes", "semana,persona", ["month", "week", "person"]],
       ["persona", "semana,mes", ["person", "week", "month"]],
+      ["descripcion", "persona,proyecto", ["description", "person", "project"]],
     ] as const;
 
     /**
@@ -1090,6 +1202,105 @@ describe("el alcance en cada nivel (criterio 21 de R3; criterio 9 de R10)", () =
         }
       });
     }
+  });
+});
+
+describe("el texto de las entradas que no se ven no viaja (criterio 18 de R10)", () => {
+  /** Las descripciones de `entries`, sin la cadena vacía y sin repetir. */
+  function textsOf(entries: readonly SeededEntry[]): string[] {
+    return [
+      ...new Set(entries.map((entry) => entry.description).filter((text) => text !== "")),
+    ];
+  }
+
+  /**
+   * Cada agrupación sola y cada árbol, sin filtros y con todas las personas de A
+   * y la de B elegidas, como en un enlace que arma un admin (D-R4-4).
+   */
+  function requests(): ReportRequest[] {
+    const everybody: ReportFilters = {
+      ...NO_REPORT_FILTERS,
+      people: [
+        a.ownerId,
+        a.adminId,
+        a.managerId,
+        a.teamManagerId,
+        a.memberId,
+        a.inactiveId,
+        b.ownerId,
+      ],
+    };
+    return [...groupBys.map((groupBy) => [groupBy]), ...trees].flatMap((levels) => [
+      treeRequest(levels),
+      { ...treeRequest(levels), filters: everybody },
+    ]);
+  }
+
+  /**
+   * El estado entero, tal como viaja, no contiene ningún texto sembrado fuera de
+   * `seen`; por descripción, contiene todos los de `seen`.
+   */
+  async function expectOnlyTextsOf(actor: Actor, seen: readonly SeededEntry[]) {
+    const shown = textsOf(seen);
+    const hidden = textsOf(seeded).filter((text) => !shown.includes(text));
+    expect(hidden).not.toEqual([]);
+    for (const requested of requests()) {
+      const state = await getReportState(actor, settings, requested, now);
+      const context = `${nameOf(actor.userId)}, ${[requested.groupBy, ...requested.subgroups].join(" → ")}, ${requested.filters.people.length} personas`;
+      expect(state.kind, context).toBe("ready");
+      const payload = JSON.stringify(state);
+      for (const text of hidden) {
+        expect(payload, context).not.toContain(text);
+      }
+      if (requested.groupBy === "description") {
+        for (const text of shown) {
+          expect(payload, context).toContain(text);
+        }
+      }
+    }
+  }
+
+  it("project_manager, team_manager y member no reciben el texto de ninguna entrada ajena, con ninguna agrupación ni con personas", async () => {
+    for (const { role, userId } of selfOnlyInA()) {
+      await expectOnlyTextsOf(
+        actorIn(a.workspaceId, userId, { role }),
+        entriesIn(a.workspaceId, userId),
+      );
+    }
+  });
+
+  it("un owner al que can() le niega timeEntry.others.view recibe solo sus textos", async () => {
+    permissionOverrides.denied.push({
+      userId: a.ownerId,
+      action: "timeEntry.others.view",
+    });
+    await expectOnlyTextsOf(
+      actorIn(a.workspaceId, a.ownerId, { role: "owner" }),
+      entriesIn(a.workspaceId, a.ownerId),
+    );
+  });
+
+  it("la persona miembro de A y de B, en B, no recibe sus textos de A ni los del owner de B", async () => {
+    await expectOnlyTextsOf(
+      actorIn(b.workspaceId, a.memberId),
+      entriesIn(b.workspaceId, a.memberId),
+    );
+  });
+
+  it("owner y admin de A reciben los textos de A y ninguno de B", async () => {
+    for (const role of ["owner", "admin"] as const) {
+      await expectOnlyTextsOf(
+        actorIn(a.workspaceId, role === "owner" ? a.ownerId : a.adminId, { role }),
+        entriesIn(a.workspaceId),
+      );
+    }
+  });
+
+  it("el owner de B no recibe ningún texto de A", async () => {
+    await expectOnlyTextsOf(
+      actorIn(b.workspaceId, b.ownerId, { role: "owner" }),
+      entriesIn(b.workspaceId),
+    );
   });
 });
 
@@ -1203,6 +1414,7 @@ describe("los filtros de cliente y de proyecto dentro del alcance (criterio 12 d
       hour: 19,
       minutes: 25,
       place: { ...inQ, tagIds: [a.tagEId] },
+      description: a.descriptions.owner,
     });
     await closedEntry({
       workspaceId: a.workspaceId,
@@ -1210,6 +1422,7 @@ describe("los filtros de cliente y de proyecto dentro del alcance (criterio 12 d
       hour: 20,
       minutes: 35,
       place: { ...inQ, tagIds: [] },
+      description: a.descriptions.member,
     });
     await closedEntry({
       workspaceId: b.workspaceId,
@@ -1222,6 +1435,7 @@ describe("los filtros de cliente y de proyecto dentro del alcance (criterio 12 d
         taskId: null,
         tagIds: [],
       },
+      description: b.descriptions.owner,
     });
   });
 
@@ -1596,7 +1810,7 @@ describe("los filtros de cliente y de proyecto dentro del alcance (criterio 12 d
   });
 });
 
-describe("el filtro de personas dentro del alcance (criterio 19 de R4; criterio 9 de R10)", () => {
+describe("el filtro de personas dentro del alcance (criterio 19 de R4; criterios 9 y 18 de R10)", () => {
   /**
    * El fixture suma, en A, una persona con un id como los de Better Auth, de 32
    * alfanuméricos con mayúsculas, que carga en P con E y F, y una invitada que
@@ -1618,6 +1832,7 @@ describe("el filtro de personas dentro del alcance (criterio 19 de R4; criterio 
       hour: 19,
       minutes: 15,
       place: a.places.member,
+      description: "Soporte de la persona de Better Auth",
     });
     await closedEntry({
       workspaceId: a.workspaceId,
@@ -1625,6 +1840,7 @@ describe("el filtro de personas dentro del alcance (criterio 19 de R4; criterio 
       hour: 20,
       minutes: 25,
       place: noProject,
+      description: "Pendientes de la invitada",
     });
   });
 
@@ -1905,8 +2121,10 @@ describe("el filtro de personas dentro del alcance (criterio 19 de R4; criterio 
       ["persona", "", ["person"]],
       ["proyecto", "persona", ["project", "person"]],
       ["etiqueta", "proyecto", ["tag", "project"]],
-      // El pedido del criterio 9 de R10.
+      // Los pedidos de los criterios 9 y 18 de R10.
       ["mes", "semana,persona", ["month", "week", "person"]],
+      ["descripcion", "", ["description"]],
+      ["descripcion", "persona,proyecto", ["description", "person", "project"]],
     ] as const;
 
     /** La lista ordenada por unidades de código, como la escribe la aplicación. */

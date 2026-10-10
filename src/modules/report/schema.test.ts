@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   hasReportFilters,
   NO_REPORT_FILTERS,
+  REPORT_DESCRIPTION_SHOWN,
   REPORT_GROUP_BYS,
   REPORT_GROUP_PARAMS,
   REPORT_MAX_DAYS,
@@ -220,6 +221,7 @@ describe("reportGroupParams (D-R2a-3)", () => {
       "date",
       "week",
       "month",
+      "description",
     ]);
     expect(REPORT_TIME_GROUP_BYS).toEqual(["date", "week", "month"]);
     for (const groupBy of REPORT_GROUP_BYS) {
@@ -291,6 +293,29 @@ describe("reportGroupParams (D-R2a-3)", () => {
     }
   });
 
+  it("descripcion pasa con o sin un rango válido al lado, y descripción, Descripcion, descripciones y description no pasan con ninguno (D-R10-5)", () => {
+    expect(REPORT_GROUP_PARAMS.description).toBe("descripcion");
+    for (const range of [
+      { desde: "2026-10-05", hasta: "2026-10-11" },
+      { desde: "2026-10-11", hasta: "2026-10-05" },
+      {},
+    ]) {
+      expect(reportGroupParams.safeParse({ ...range, agrupar: "descripcion" })).toEqual({
+        success: true,
+        data: "description",
+      });
+      for (const agrupar of [
+        "descripción",
+        "Descripcion",
+        "DESCRIPCION",
+        "descripciones",
+        "description",
+      ]) {
+        expect(reportGroupParams.safeParse({ ...range, agrupar }).success).toBe(false);
+      }
+    }
+  });
+
   it("cliente y fecha pasan con o sin un rango válido al lado, y Cliente y fechas no pasan con ninguno", () => {
     for (const range of [
       { desde: "2026-10-05", hasta: "2026-10-11" },
@@ -331,6 +356,8 @@ describe("reportSubgroupParams (D-R3-5, RP-12, RP-32)", () => {
         // D-R10-6: una dimensión de tiempo debajo de otra.
         [{ agrupar: "fecha", subagrupar: "mes,semana" }, ["month", "week"]],
         [{ agrupar: "mes", subagrupar: "semana,fecha" }, ["week", "date"]],
+        [{ agrupar: "descripcion", subagrupar: "proyecto" }, ["project"]],
+        [{ subagrupar: "descripcion,fecha" }, ["description", "date"]],
         // `Proyecto` no es un `agrupar` válido: el primer nivel es persona.
         [{ agrupar: "Proyecto", subagrupar: "proyecto" }, ["project"]],
       ] as const) {
@@ -363,6 +390,8 @@ describe("reportSubgroupParams (D-R3-5, RP-12, RP-32)", () => {
         { subagrupar: "Semana" },
         { subagrupar: "meses" },
         { subagrupar: "week" },
+        { agrupar: "descripcion", subagrupar: "descripcion" },
+        { subagrupar: "descripción" },
         { subagrupar: "" },
         { subagrupar: ["fecha", "fecha"] },
         { subagrupar: ["fecha", "etiqueta"] },
@@ -629,8 +658,8 @@ describe("reportReadyState (D-R2b-2, D-R2b-5, D-R3-3, D-R3-4, D-R3-7)", () => {
     ).toBe(false);
   });
 
-  it("rechaza levelsShown 0 o 4 y tres subniveles", () => {
-    for (const levelsShown of [0, 4, 1.5]) {
+  it("rechaza levelsShown 0 con grupos, −1, 4 y tres subniveles", () => {
+    for (const levelsShown of [0, -1, 4, 1.5]) {
       expect(reportReadyState.safeParse({ ...nested, levelsShown }).success).toBe(false);
     }
     expect(
@@ -661,6 +690,117 @@ describe("reportReadyState (D-R2b-2, D-R2b-5, D-R3-3, D-R3-4, D-R3-7)", () => {
     expect(reportReadyState.safeParse({ ...ready, shortcuts: undefined }).success).toBe(
       false,
     );
+  });
+
+  /** Un `id` de descripción: 32 hexadecimales en minúsculas. */
+  const descriptionId = "0123456789abcdef0123456789abcdef";
+
+  /** El estado por descripción con un solo grupo, `description`. */
+  function byDescription(description: unknown) {
+    return {
+      ...ready,
+      groupBy: "description",
+      groups: [{ kind: "description", description, seconds: 60 }],
+    };
+  }
+
+  it("admite los grupos de descripción, con «Sin descripción» y recortados (D-R10-8, D-R10-9)", () => {
+    const state: ReportReadyState = {
+      ...ready,
+      groupBy: "description",
+      subgroups: ["project"],
+      levelsShown: 2,
+      groups: [
+        {
+          kind: "description",
+          description: { id: descriptionId, text: "Reunión", truncated: false },
+          seconds: 60,
+          children: [
+            {
+              kind: "project",
+              project: { id: projectId, name: "Web", color: "green" },
+              client: null,
+              seconds: 60,
+            },
+          ],
+        },
+        {
+          kind: "description",
+          description: {
+            id: "fedcba9876543210fedcba9876543210",
+            text: "x".repeat(REPORT_DESCRIPTION_SHOWN),
+            truncated: true,
+          },
+          seconds: 30,
+          children: [{ kind: "project", project: null, client: null, seconds: 30 }],
+        },
+        {
+          kind: "description",
+          description: null,
+          seconds: 30,
+          children: [{ kind: "project", project: null, client: null, seconds: 30 }],
+        },
+      ],
+    };
+    expect(reportReadyState.parse(state)).toEqual(state);
+    expect(REPORT_DESCRIPTION_SHOWN).toBe(100);
+  });
+
+  it("cuenta el texto en puntos de código: admite 100 emojis y rechaza 101, y 101 letras", () => {
+    const emojis = "😀".repeat(100);
+    expect(emojis).toHaveLength(200);
+    expect(
+      reportReadyState.safeParse(
+        byDescription({ id: descriptionId, text: emojis, truncated: true }),
+      ).success,
+    ).toBe(true);
+    for (const text of ["😀".repeat(101), "x".repeat(101)]) {
+      expect(
+        reportReadyState.safeParse(
+          byDescription({ id: descriptionId, text, truncated: true }),
+        ).success,
+      ).toBe(false);
+    }
+  });
+
+  it("rechaza un id con mayúsculas, de 31 o 33 caracteres, un texto vacío y una descripción sin truncated", () => {
+    for (const description of [
+      { id: descriptionId.toUpperCase(), text: "Reunión", truncated: false },
+      { id: descriptionId.slice(1), text: "Reunión", truncated: false },
+      { id: `${descriptionId}0`, text: "Reunión", truncated: false },
+      { id: `${descriptionId.slice(1)}g`, text: "Reunión", truncated: false },
+      { id: descriptionId, text: "", truncated: false },
+      { id: descriptionId, text: "Reunión" },
+      "",
+    ]) {
+      expect([
+        description,
+        reportReadyState.safeParse(byDescription(description)).success,
+      ]).toEqual([description, false]);
+    }
+  });
+
+  it("admite levelsShown 0 sin grupos, y no con un grupo ni −1 sin grupos (D-R10-10)", () => {
+    const cut = { ...ready, groupBy: "description", subgroups: ["project"] };
+    expect(
+      reportReadyState.safeParse({ ...cut, levelsShown: 0, groups: [] }).success,
+    ).toBe(true);
+    // Sin grupos el `refine` deja pasar cualquier valor: lo frena `.min(0)`.
+    expect(
+      reportReadyState.safeParse({ ...cut, levelsShown: -1, groups: [] }).success,
+    ).toBe(false);
+    expect(
+      reportReadyState.safeParse({
+        ...cut,
+        levelsShown: 0,
+        groups: [{ kind: "description", description: null, seconds: 60 }],
+      }).success,
+    ).toBe(false);
+    expect(reportReadyState.safeParse({ ...ready, levelsShown: 0 }).success).toBe(false);
+    // Con el primer nivel, un período sin horas no tiene grupos (RP-33).
+    expect(
+      reportReadyState.safeParse({ ...ready, levelsShown: 1, groups: [] }).success,
+    ).toBe(true);
   });
 });
 

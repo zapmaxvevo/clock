@@ -7,6 +7,7 @@ import {
   archiveProject,
   clientIdOf,
   projectIdOf,
+  seedNumberedEntries,
   seedPersonEntries,
   seedPerson,
   seedProject,
@@ -49,6 +50,7 @@ import {
   filterOption,
   filterPanel,
   filterSearch,
+  firstLevelLimitCell,
   FORBIDDEN_BODY,
   FORBIDDEN_TITLE,
   goToReportsByNav,
@@ -65,6 +67,7 @@ import {
   lastWeekRange,
   monthRange,
   NO_CLIENT,
+  NO_DESCRIPTION,
   NO_LEVEL,
   NO_PROJECT,
   NO_PROJECT_KEY,
@@ -86,6 +89,7 @@ import {
   reportTable,
   reportTerms,
   reportTotal,
+  ROW_LIMIT,
   SCOPE_EVERYONE,
   SCOPE_SELF,
   shiftRange,
@@ -112,20 +116,21 @@ import { expect, TEST_EMAIL_DOMAIN, test } from "./session";
 import { trackerBar, uniqueSuffix } from "./tracker-page";
 
 /**
- * Recorridos de R2a a R10a del núcleo de reportes: el resumido por persona,
- * por proyecto, por cliente, por tarea, por etiqueta, por fecha, por semana y
- * por mes, los atajos del período, los subniveles y los filtros (§8.2 de cada
- * contrato), con la regla de §8.3 de R2a. Cada recorrido tiene sus personas
- * —la de la sesión y las que siembra—, todas con un nombre editado que lleva
- * el sufijo del test, y solo afirma sobre sus filas o sobre proyectos con ese
- * sufijo: la base acumula personas y horas de todas las corridas, así que la
- * lista de un filtro se busca por el sufijo antes de afirmar sus opciones
- * (D-R4-13). El total se afirma solo con el alcance propio. El rol, el estado
- * y el primer día de la semana los cambia la persona de la sesión sobre sí
- * misma. Las entradas van en la semana anterior a la de hoy, salvo las de la
- * semana y el mes, que van en un período fijo de 2025 (D-R10-14), y se
- * siembran antes de abrir la pantalla; los rótulos esperados se calculan con
- * `days.ts`, no con el código que los produce.
+ * Recorridos de R2a a R10b del núcleo de reportes: el resumido por persona,
+ * por proyecto, por cliente, por tarea, por etiqueta, por fecha, por semana,
+ * por mes y por descripción, los atajos del período, los subniveles, los
+ * filtros y el tope del primer nivel (§8.2 de cada contrato), con la regla de
+ * §8.3 de R2a. Cada recorrido tiene sus personas —la de la sesión y las que
+ * siembra—, todas con un nombre editado que lleva el sufijo del test, y solo
+ * afirma sobre sus filas o sobre proyectos con ese sufijo: la base acumula
+ * personas y horas de todas las corridas, así que la lista de un filtro se
+ * busca por el sufijo antes de afirmar sus opciones (D-R4-13). El total se
+ * afirma solo con el alcance propio. El rol, el estado y el primer día de la
+ * semana los cambia la persona de la sesión sobre sí misma. Las entradas van
+ * en la semana anterior a la de hoy, salvo las de la semana y el mes, que van
+ * en un período fijo de 2025 (D-R10-14), y se siembran antes de abrir la
+ * pantalla; las del tope del primer nivel, con un helper de SQL. Los rótulos
+ * esperados se calculan con `days.ts`, no con el código que los produce.
  */
 
 /** Hoy en la zona por omisión de la persona, que es la que corta los días. */
@@ -851,6 +856,7 @@ test("los subniveles se eligen en su lista y cada grupo se expande y se contrae"
     GROUP_LINK.fecha,
     GROUP_LINK.semana,
     GROUP_LINK.mes,
+    GROUP_LINK.descripcion,
   ]);
   await expect(subgroupLink(page, "Segundo nivel", null)).toHaveAttribute(
     "aria-current",
@@ -1610,4 +1616,158 @@ test("Mes → Semana parte la semana del fin de mes y un filtro conserva los niv
   const friday = weekdayLabel(in2025(10, 10), day);
   await expectGroupNames(page, [september, october, friday]);
   await expect(groupDuration(groupRow(page, friday))).toHaveText("0:20");
+});
+
+/**
+ * Un texto ASCII de 150 caracteres que empieza con el sufijo. Sin espacios,
+ * así el corte de los 100 primeros no cae en uno que el nombre accesible
+ * pudiera recortar.
+ */
+function longDescription(suffix: string): string {
+  return `${suffix}-${"abcdefghij".repeat(15)}`.slice(0, 150);
+}
+
+test("por descripción, con «Sin descripción», las mayúsculas y el texto largo", async ({
+  page,
+  email,
+}) => {
+  const day = today();
+  const lastWeek = lastWeekRange(day);
+  const [monday, tuesday, wednesday, thursday, friday] = [0, 1, 2, 3, 4].map((days) =>
+    addDays(lastWeek.first, days),
+  );
+  const suffix = uniqueSuffix();
+  const first = `P1 ${suffix}`;
+  const second = `P2 ${suffix}`;
+  const meeting = `Reunión ${suffix}`;
+  const lowercaseMeeting = `reunión ${suffix}`;
+  const long = longDescription(suffix);
+  // D-R10-9: los 100 primeros caracteres y «…».
+  const longShown = `${long.slice(0, 100)}…`;
+
+  await enterApp(page);
+  await setDisplayName(email, `Hebe ${suffix}`);
+  await seedProject({ name: first });
+  await seedProject({ name: second });
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
+    { description: meeting, day: monday, start: "09:00", end: "10:00", project: first },
+    { description: meeting, day: tuesday, start: "09:00", end: "09:30", project: second },
+    {
+      description: lowercaseMeeting,
+      day: wednesday,
+      start: "09:00",
+      end: "09:20",
+      project: first,
+    },
+    { description: "", day: thursday, start: "09:00", end: "09:15", project: first },
+    { description: long, day: friday, start: "09:00", end: "09:10", project: second },
+  ]);
+  const secondId = await projectIdOf(second);
+  await openReport(page, lastWeek, "persona", day);
+
+  // RP-11, D-R10-5: «Descripción» conserva el rango. D-R10-8: la clave es el
+  // texto exacto, así que «Reunión» y «reunión» son dos filas. RP-12: por
+  // duración. RP-28: «Sin descripción» junta la vacía. D-R10-9: el largo,
+  // recortado y con «…». El alcance es propio, así que el total es el de las
+  // filas.
+  await groupByLink(page, "descripcion").click();
+  await expectReport(page, lastWeek, "descripcion", day);
+  await expect(page.getByText(SCOPE_SELF, { exact: true })).toBeVisible();
+  await expect(groupColumnHeader(page)).toHaveText(GROUP_LINK.descripcion);
+  await expectGroupNames(page, [meeting, lowercaseMeeting, NO_DESCRIPTION, longShown]);
+  await expect(groupDuration(groupRow(page, meeting))).toHaveText("1:30");
+  await expect(groupDuration(groupRow(page, lowercaseMeeting))).toHaveText("0:20");
+  await expect(groupDuration(groupRow(page, NO_DESCRIPTION))).toHaveText("0:15");
+  await expect(groupDuration(groupRow(page, longShown))).toHaveText("0:10");
+  await expect(reportTotal(page, "Total")).toHaveText("2:15");
+
+  // RP-12, D-R3-8: «Proyecto» en el segundo nivel. Debajo de «Reunión», sus
+  // dos proyectos por duración.
+  await pickSubgroup(page, "Segundo nivel", "proyecto", ["proyecto"]);
+  await expectReport(page, lastWeek, "descripcion", day, ["proyecto"]);
+  await expectGroupNames(page, [meeting, lowercaseMeeting, NO_DESCRIPTION, longShown]);
+  await expandButton(page, meeting).click();
+  await expectGroupNames(page, [
+    meeting,
+    first,
+    second,
+    lowercaseMeeting,
+    NO_DESCRIPTION,
+    longShown,
+  ]);
+  await expect(groupDuration(groupRow(page, first))).toHaveText("1:00");
+  await expect(groupDuration(groupRow(page, second))).toHaveText("0:30");
+
+  // RP-25, D-R4-10: el filtro conserva los dos niveles. Con P2 quedan la
+  // reunión del martes y el largo.
+  const chosen = { projects: [secondId] };
+  const expectFiltered = async (): Promise<void> => {
+    await expectSubgroups(page, ["proyecto"]);
+    await expectGroupNames(page, [meeting, longShown]);
+    await expect(groupDuration(groupRow(page, meeting))).toHaveText("0:30");
+    await expect(groupDuration(groupRow(page, longShown))).toHaveText("0:10");
+    await expect(reportTotal(page, "Total")).toHaveText("0:40");
+  };
+  await openFilter(page, "Proyectos", "todos");
+  await filterSearch(page, "Proyectos").fill(suffix);
+  await filterOption(page, second).check();
+  await applyFilter(page, "Proyectos", second);
+  await expectReport(page, lastWeek, "descripcion", day, ["proyecto"], chosen);
+  await expectFiltered();
+
+  // RP-32: al recargar, la misma vista.
+  await page.reload();
+  await expectReport(page, lastWeek, "descripcion", day, ["proyecto"], chosen);
+  await expectFiltered();
+});
+
+test("el primer nivel que no entra en el tope no se muestra, y el total sí", async ({
+  page,
+  email,
+}) => {
+  const day = today();
+  const lastWeek = lastWeekRange(day);
+  const suffix = uniqueSuffix();
+  await enterApp(page);
+  await setDisplayName(email, `Iris ${suffix}`);
+  // D-R10-14: una descripción distinta por entrada, una más que el tope.
+  await seedNumberedEntries(email, PERSON_TIMEZONE, {
+    day: lastWeek.first,
+    start: "09:00",
+    count: 3001,
+    suffix,
+  });
+  await openReport(page, lastWeek, "persona", day);
+
+  // D-R10-10: el primer nivel tiene 3001 filas y no entra. La columna sigue
+  // nombrándolo y la tabla lo dice en lugar de las filas, sin el vacío ni la
+  // línea del tope de los niveles de abajo. El total sale de las entradas.
+  await groupByLink(page, "descripcion").click();
+  await expectReport(page, lastWeek, "descripcion", day);
+  await expect(firstLevelLimitCell(page)).toBeVisible();
+  await expect(groupColumnHeader(page)).toHaveText(GROUP_LINK.descripcion);
+  await expect(groupHeaders(page)).toHaveCount(0);
+  await expect(reportTable(page).getByText(EMPTY_REPORT, { exact: true })).toHaveCount(0);
+  await expect(page.getByText(ROW_LIMIT, { exact: true })).toHaveCount(0);
+  await expect(reportTotal(page, "Total")).toHaveText("50:01");
+
+  // RP-28: por proyecto entra, con una sola fila.
+  await groupByLink(page, "proyecto").click();
+  await expectReport(page, lastWeek, "proyecto", day);
+  await expectGroupNames(page, [NO_PROJECT]);
+  await expect(groupDuration(groupRow(page, NO_PROJECT))).toHaveText("50:01");
+  await expect(firstLevelLimitCell(page)).toHaveCount(0);
+  await expect(reportTotal(page, "Total")).toHaveText("50:01");
+
+  // D-R3-6: debajo, la descripción tiene 3001 filas y el presupuesto del
+  // segundo nivel es de 2999. No entra: la línea del tope lo dice, la columna
+  // nombra solo el primero y «Sin proyecto» no tiene botón.
+  await pickSubgroup(page, "Segundo nivel", "descripcion", ["descripcion"]);
+  await expectReport(page, lastWeek, "proyecto", day, ["descripcion"]);
+  await expect(page.getByText(ROW_LIMIT, { exact: true })).toBeVisible();
+  await expect(groupColumnHeader(page)).toHaveText(GROUP_LINK.proyecto);
+  await expectGroupNames(page, [NO_PROJECT]);
+  await expect(expandButton(page, NO_PROJECT)).toHaveCount(0);
+  await expect(groupDuration(groupRow(page, NO_PROJECT))).toHaveText("50:01");
+  await expect(reportTotal(page, "Total")).toHaveText("50:01");
 });
