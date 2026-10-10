@@ -189,7 +189,24 @@ vacío del owner y `renewWorkspace` se corta.
      summary de `report-tree.tsx:91` con colores forzados (`outline-none`, F1 de R5); con
      JavaScript desactivado, `/reportes` queda en «Cargando el reporte» (el `Suspense` de
      `page.tsx:24`). **Sigue R6** (CSV y Excel, mapa §R6): primero su contrato. Bases de R5 que
-     se pueden borrar: `clock_r5_*`. Bases sin
+     se pueden borrar: `clock_r5_*`.
+
+     **Al cortar la novena sesión** (2026-10-10, ~17:15, a pedido del usuario): contrato de R6
+     escrito por el `architect` (`docs/slices/nucleo-reportes-r6-exportar-csv-y-excel.md`,
+     `48af8a6`, rama `nucleo/r6-contrato`, pusheada), **sin revisar**. Se parte en **R6a** (ruta
+     `src/app/(app)/reportes/exportar/<formato>/route.ts`, `ExportDocument`, CSV con resumen y
+     entradas una por una, decisión del mapa §5, y el grupo «Exportar» en la barra) y **R6b**
+     (Excel). No abre ADR. **Al retomar**: (1) `architecture-reviewer` sobre el contrato hasta
+     aprobar; (2) merge del contrato y el pipeline de R6a, con las bases por agente creadas
+     antes y `TEST_DATABASE_URL` en los encargos. **Preguntas para el usuario**: (a) `exceljs`
+     4.4.0 trae `uuid <11.1.1` (GHSA-w5hq-g745-h8pq, moderada, en producción); el `architect`
+     recomienda aceptarla porque `exceljs` usa `uuid` solo como `v4()` sin `buf`, en formato
+     condicional que no se escribe (`cf-rule-ext-xform.js`), a confirmar por `security-auditor`;
+     las otras opciones son un escritor propio sobre `node:zlib` u otra biblioteca. Bloquea solo
+     R6b. (b) Si cada exportación va al `audit_log`; recomienda que no; no bloquea. Notas del
+     `architect` para el team-lead: sin `download` ni RFC 5987 (D-R6-5, D-R6-10); el tope de R3
+     vale solo para el resumen; la comprobación en Vercel queda para después del despliegue.
+     Q25 de R10, medida de nuevo sin carga: 53,0 ms (≤ 150). Bases sin
      borrar (el permiso lo frenó): `clock_r10a_*` y `clock_r10b_final_*`.
 
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
