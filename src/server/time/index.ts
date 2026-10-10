@@ -558,6 +558,15 @@ export function monthLabel(monthStart: string, todayKey: string): string {
 }
 
 /**
+ * El nombre abreviado del mes de `dayKey`, en minúscula y sin año: «ene»,
+ * «sep», «oct». Es la marca del eje del gráfico por mes (D-R5-5). Lanza si
+ * `dayKey` no es un día.
+ */
+export function monthShortLabel(dayKey: string): string {
+  return formatDate(new TZDate(civilTime(dayKey), "UTC"), "LLL", { locale: es });
+}
+
+/**
  * «Esta semana», «Semana anterior», o «28/09 – 04/10». Si alguno de los dos
  * extremos no es del año de `todayKey`, los dos llevan el año:
  * «29/12/2025 – 04/01/2026». Una semana futura lleva su rango (TT-47).

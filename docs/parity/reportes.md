@@ -128,6 +128,19 @@ resumido ni de filtros, así que si Clockify distingue mayúsculas al agrupar
 por descripción, cómo recorta un texto largo y cómo rotula el grupo sin
 descripción siguen _no verificados_.
 
+_Actualizado el 2026-10-10, contrato de R5
+([`nucleo-reportes-r5-grafico-de-barras.md`](../slices/nucleo-reportes-r5-grafico-de-barras.md),
+§7 «parity-analyst»)_: el contrato es un solo slice (D-R5-1), aprobado en la
+segunda pasada de `architecture-reviewer`, y esta actualización describe lo que
+fija: el gráfico de barras entre los totales y la tabla. Cada regla que precisa
+lleva su corrección fechada, y la [sección 14](#14-núcleo-r5) junta la
+pantalla. Cambian RP-15, RP-16, RP-18, RP-22, RP-24, RP-33 y P-05. Ese día se
+buscó en la página del resumido: «The bar chart shows you the summary of all
+time entries for each day in the selected date range.» y «hover over the
+chart» (FOUND); «zoom», «by week» y «by month» (NOT FOUND). Si Clockify pasa a
+semanas o meses con períodos largos sigue _no verificado_, y no se puede mirar
+en el workspace del equipo, porque el plan Free no pasa de 31 días.
+
 ## Fuentes y límites del relevamiento
 
 Documentación pública del centro de ayuda de Clockify y referencia pública de su
@@ -581,6 +594,50 @@ relevado; lo demás es nuestro, porque Clockify Free nunca muestra más de 31
 días. **Aceptado el 2026-10-08 con el ADR 0021**; el contrato del slice del
 gráfico puede mover los umbrales. R2a no tiene gráfico: llega con R5.
 
+_Actualizado el 2026-10-10, contrato de R5 (D-R5-4 a D-R5-9)_: **la
+granularidad sale del largo del período**, con los umbrales del ADR 0021 sin
+mover (D-R5-4): de 1 a 31 días, una barra por día (de 1 a 31 barras); de 32 a
+182, una por semana (de 5 a 27); de 183 a 366, una por mes (de 6 a 13). Los días
+cuentan los dos extremos. «Hoy», «Ayer», las semanas, «Últimas dos semanas»,
+«Este mes» y «Mes pasado» van por día; «Este año» y «Año pasado», por mes. **El
+gráfico no sigue a la agrupación**: el mismo período da el mismo gráfico
+agrupado por persona, por semana o por Mes → Semana → Fecha.
+
+- **Una barra por tramo, en orden, también las que no tienen horas**, en cero.
+  Los tramos son los de la tabla: días civiles, semanas y meses en la zona de
+  quien mira (RP-22), con su primer día de la semana (RP-24).
+- **El nombre de cada barra es el rótulo de la fila de la tabla** para el mismo
+  tramo, con la regla del año, y su duración: «mié, 30/09: 1:00», sin «Hoy» ni
+  «Ayer»; «28/09 – 04/10 solo 01/10 – 04/10: 3:15»; «septiembre de 2025:
+  1:15». La semana y el mes cortados por el período llevan «solo …» con los
+  días que cuentan.
+- **Las marcas del eje** son cortas y sin año, hasta siete: por día y por
+  semana, el primer día que cuenta la barra en el formato de fecha del perfil
+  («01/10», o «10-01» con `yyyy-MM-dd`); por mes, el nombre abreviado («oct»).
+  Son hasta siete, una cada `ceil(n / 7)` barras desde la primera, con el área
+  de las columnas de 24rem o más; más angosta, se ve una de cada dos de esas:
+  con 31 días, cuatro, las de la 1.ª, la 11.ª, la 21.ª y la 31.ª barra. **La
+  escala** va en `h:mm`, de dos a cinco líneas desde «0:00» («0:15», «2:00»,
+  «2000:00»).
+- **El valor**: con el puntero sobre una barra, o con el foco en ella, la línea
+  de arriba del gráfico dice su nombre; con las dos cosas en barras distintas,
+  gana la del puntero. **Con teclado, el gráfico es una sola parada de
+  tabulación**: derecha y abajo llevan a la barra siguiente; izquierda y
+  arriba, a la anterior; Inicio y Fin, a la primera y la última, sin dar la
+  vuelta. Con Alt, Ctrl, Meta o Mayúsculas no mueven el foco: quedan para el
+  navegador. Una barra en cero también se puede señalar, enfocar y ver enfocada,
+  porque el elemento es la columna entera.
+- **La tabla de datos**: debajo de las barras, «Ver los datos del gráfico»,
+  cerrado, con una fila por barra, también las en cero, y las columnas «Fecha»,
+  «Semana» o «Mes», y «Duración».
+
+Justificación: por día hasta 31 días es lo relevado; el resto es nuestro,
+porque Clockify Free no pasa de 31 días. La línea del valor con el foco y el
+foco itinerante son para que el gráfico se lea sin mouse (D-R5-9). Documentado:
+«hover over the chart to see the exact numbers» (oración de RP-16, FOUND el
+2026-10-10). _No verificado_: cómo rotula Clockify el eje, qué texto muestra al
+pasar el puntero y si el gráfico se usa con teclado (P-05).
+
 **RP-16 Barras partidas por facturable o por proyecto** — `adaptar`
 Documentado: «It also shows how much of it is billable (dark green) vs
 non-billable (light green)…» y «Switch between Billability or Project with a
@@ -588,6 +645,12 @@ dropdown on the right and hover over the chart to see the exact numbers.»
 Justificación: el facturable es de plan pago y acá es diseño propio (P-16 de
 `proyectos.md`); la partición por facturable se compara contra este documento,
 no contra el producto. Los colores son de nuestra paleta.
+
+_Actualizado el 2026-10-10, contrato de R5 (D-R5-2)_: **sigue fuera del
+núcleo** (sección 6, fase 3). La barra de R5 no se parte por facturable ni por
+proyecto, es de un solo color y no hay menú para cambiar la partición; el
+facturable se lee en la cabecera. Los colores son los tokens del tema
+(`--chart-2` la barra, `--primary` la activa), sin el verde de Clockify.
 
 **RP-17 Gráfico de torta** — `replicar`
 Documentado: «The pie chart shows you the summary of all time entries grouped
@@ -662,6 +725,17 @@ entra, «Total» y «Facturable» se leen aparte**, de las entradas, como por
 etiqueta, en la misma foto: son los reales aunque la tabla no muestre ninguna
 fila. Por descripción cada entrada está en exactamente un grupo, así que con
 el primer nivel a la vista el total es la suma de las filas, como en R2a.
+
+_Actualizado el 2026-10-10, contrato de R5 (D-R5-2, D-R5-6)_: **las barras
+suman «Total», en segundos**: cada entrada cerrada del período cae en
+exactamente una barra, la de su `start` (RP-23), porque el gráfico lee las
+entradas sin unirlas con las etiquetas. Vale también agrupando por etiqueta,
+donde las filas pueden pasar el total y las barras no, y con el primer nivel
+que no entra, donde la tabla no muestra filas y el gráfico sí. Las barras se
+leen con el mismo alcance, las mismas personas elegidas y los mismos filtros
+que la cabecera, en la misma foto. En pantalla, cada barra se trunca al minuto
+por separado, como las filas: la suma de lo que dicen las barras queda en el
+total o unos minutos debajo. El gráfico no muestra el facturable (RP-16).
 
 **RP-19 Formato de duración** — `adaptar`
 Documentado: el formato es del workspace («Find duration format in the General
@@ -815,6 +889,15 @@ es del viernes aunque en UTC sea sábado. Un día con cambio de horario dura 23 
 fila; una entrada a las 00:00 del 31, el instante en que habría empezado el 30,
 cuenta en el 31.
 
+_Actualizado el 2026-10-10, contrato de R5 (D-R5-5)_: **en el gráfico, el día
+que falta entero tiene barra**: en `Pacific/Apia`, del 2011-12-23 al 2012-01-12
+por día, la barra del 30/12 está, en cero, y la entrada del 31 está en la del 31. La tabla agrupada por fecha sigue sin esa fila. Justificación: sacar la
+barra obligaría a deduplicar los cortes fuera de la base, que el ADR 0021 deja
+en manos de `width_bucket`. Un día de 23 o 25 horas es una barra con sus horas.
+Las barras se cortan en la zona de quien mira: una entrada del 30/09 a las
+23:30 de Buenos Aires está en la barra del 30/09 desde ahí y en la del 01/10
+desde Madrid.
+
 **RP-23 Entrada que cruza la medianoche** — `adaptar`
 _No verificado_ en Clockify. Acá, la misma regla que TT-95 y TT-96: la entrada
 cuenta entera en el día y en la semana de su `start`, en la zona de quien mira, y
@@ -846,6 +929,14 @@ con domingo y con lunes, dan semanas distintas, y cada fila lo dice con sus
 días. La semana se corta en la zona de quien mira (RP-22): una entrada del
 domingo a las 23:30 en Buenos Aires es del lunes desde Madrid. **La agrupación
 por fecha sigue sin depender del primer día**, y la por mes tampoco.
+
+_Actualizado el 2026-10-10, contrato de R5 (D-R5-4)_: **las barras por semana
+empiezan el primer día de quien mira**, como las filas de semana: las mismas
+horas vistas con domingo y con lunes dan barras distintas (del miércoles
+2026-09-30 al domingo 2026-11-15, la segunda barra empieza el 05/10 con lunes y
+el 04/10 con domingo). Un período de 32 a 182 días agrupado por semana da
+barras con los mismos rótulos, los mismos «solo …» y las mismas duraciones que
+las filas. Las barras por día y por mes no dependen del primer día.
 
 ### 2.3 Filtros
 
@@ -1200,6 +1291,15 @@ nivel pasa de 3000 filas y no se muestra. Acortá el período, filtrá o agrupá
 por otra cosa.», también con filtros, y sin «Quitar filtros». Un filtro que
 deja el primer nivel dentro del tope lo muestra, y uno que no deja nada da el
 segundo vacío.
+
+_Actualizado el 2026-10-10, contrato de R5 (D-R5-6)_: **sin horas no hay
+gráfico**, en los dos vacíos: sin entradas cerradas en el período y con filtros
+que no dejan nada. Es lo de «con los gráficos ocultos»: no queda ni el lugar.
+Un período con solo un timer en curso tampoco tiene gráfico (P-07). **Con el
+primer nivel que no entra hay gráfico**, porque hay horas y es la única forma
+de verlas repartidas: se ven el gráfico, la fila del tope y los totales. Con
+una sola entrada de menos de un segundo hay gráfico, con todas las barras en
+«0:00». La regla mira las entradas, no los grupos.
 
 **RP-34 Errores de validación** — `adaptar`
 
@@ -1566,6 +1666,15 @@ mayúsculas y espacios, cómo recorta Clockify un texto largo, cómo rotula el
 grupo sin descripción, en qué orden pone las descripciones y si el resumido
 tiene un tope de filas en el primer nivel. Mientras tanto vale lo de R10b
 (secciones 13.6 a 13.9). No bloquea.
+
+_Actualizado el 2026-10-10, contrato de R5 (§10, pregunta 1)_: P-05 suma, para
+R5, cómo rotula Clockify el eje del gráfico, qué texto muestra al pasar el
+puntero («hover over the chart to see the exact numbers» está documentado; el
+texto, no) y si el gráfico se usa con teclado. Se puede mirar en el workspace
+con períodos de hasta 31 días. **Si Clockify pasa a semanas o meses con
+períodos largos no se puede relevar**, porque el plan Free no pasa de 31 días;
+vale lo del ADR 0021 y D-R5-4. Mientras tanto vale lo de R5 (sección 14). No
+bloquea.
 
 _Agregado el 2026-10-09, relevamiento de R3b_: **P-11 — Agrupar por
 descripción, mes y semana.** La página de filtros los lista entre las opciones
@@ -2410,3 +2519,168 @@ _Actualizado el 2026-10-09, R10b_:
 | `owner`, `admin` activas                            | Las descripciones de todas las personas del workspace con horas, en cada nivel, también las de las inactivas                                    | Las de 13.5, con «Descripción» en «Agrupar por» y los subniveles |
 | `project_manager`, `team_manager`, `member` activas | Solo sus descripciones, en cada nivel y en el total, también con el enlace de un admin con `agrupar=descripcion&personas=…`; ningún texto ajeno | Las mismas, sin filtro de personas                               |
 | Cualquiera no activa (`inactive`, `invited`)        | El aviso de RP-07                                                                                                                               | Ninguna                                                          |
+
+## 14. Núcleo, R5
+
+_2026-10-10._ Contrato:
+[`nucleo-reportes-r5-grafico-de-barras.md`](../slices/nucleo-reportes-r5-grafico-de-barras.md),
+aprobado en la segunda pasada de `architecture-reviewer`. Es un solo slice
+(D-R5-1). La regla de cada comportamiento está en la corrección fechada de su
+RP; esta sección junta lo que cambia en la pantalla, y lo que no nombra sigue
+como en las secciones [9](#9-núcleo-r2a) a [13](#13-núcleo-r10).
+
+**Cubre:** RP-15 (el gráfico por día, semana o mes según el largo del período,
+el valor con el puntero y con el teclado, y la tabla de datos), RP-16 (sigue
+fuera: un solo color), RP-18 (las barras suman el total), RP-22 (los días en la
+zona de quien mira, con el día que falta), RP-24 (las semanas desde el primer
+día de quien mira) y RP-33 (sin gráfico en los dos vacíos). Los permisos y el
+alcance no cambian: no hay acción nueva; las barras pasan por el mismo alcance,
+las mismas personas elegidas y los mismos filtros que la cabecera, en la misma
+foto; un member ve lo propio, también con el enlace de un admin que trae
+`personas`. La granularidad, los cortes y los rótulos los arma el servidor; de
+la URL no llega ningún parámetro nuevo.
+
+**Queda para después:** exportación, con o sin gráfico (R6, R7); personas sin
+horas (R9), que no cambia el gráfico. Las barras partidas (RP-16) y la torta
+(RP-17) son de la fase 3. No tienen slice: elegir la granularidad a mano, un
+clic en una barra que cambie el período o filtre la tabla, líneas de objetivo,
+promedios o comparación con otro período, y numerar las semanas en el eje
+(«S40»). El gráfico del tablero es de RP-41.
+
+### 14.1 El gráfico
+
+- **El lugar**: después de «Total» y «Facturable» y antes de la línea del tope
+  (sección 11.6) y de la tabla. No cambian la barra de herramientas, la línea
+  del alcance, la de la zona, la de la etiqueta ni la tabla.
+- **La leyenda**: «Horas por día», «Horas por semana» u «Horas por mes». Es el
+  único nombre del gráfico.
+- **De arriba abajo**: la línea del valor, con su alto reservado aunque esté
+  vacía; el área, de alto fijo, con los rótulos de la escala a la izquierda, sus
+  líneas detrás y una columna por barra; las marcas debajo; y «Ver los datos
+  del gráfico».
+- **Las barras**: grises, del mismo color en los dos temas. La de la columna
+  activa va en el color principal (casi negra en claro, casi blanca en oscuro),
+  y esa columna entera lleva el fondo `muted`. Una barra con al menos un
+  segundo tiene al menos 2 px, así no se confunde con una vacía, aunque su
+  nombre diga «0:00»; una sin segundos no se dibuja, pero su columna está. Con una sola barra, el ancho tiene tope (48 px) y va
+  centrada.
+- **La escala**: de dos a cinco líneas desde «0:00», con un paso de 15 min,
+  30 min, 1 h, 2 h, 5 h, 10 h, 20 h, 50 h…, y el techo en el menor múltiplo del
+  paso que cubre la barra más alta. Todo en cero da «0:00» y «0:15».
+- **Las marcas**: hasta siete, una cada `ceil(n / 7)` barras desde la primera,
+  con el área de las columnas de 24rem o más; más angosta (a 320 y 375 px),
+  solo una de cada dos de esas: con 31 barras, las de la 1.ª, 11.ª, 21.ª y
+  31.ª. La marca de la primera columna va alineada al inicio, la de la última
+  columna, si la lleva, al final, y el resto, centradas: con 21 barras la última
+  columna no tiene marca.
+- **El nombre de cada columna**: «{rótulo}[ solo {días}]: {duración}», con el
+  rótulo de la fila de la tabla (RP-15).
+- Con las entradas del recorrido 21 del contrato (domingo como primer día;
+  20/09/2025 0:15 y 30/09 1:00 en P1, 01/10 0:30 en P2 y 10/10 0:20 en P1), del
+  20/09/2025 al 10/10/2025 por «Persona»: «Horas por día» con 21 columnas, entre
+  ellas «sáb, 20/09/2025: 0:15», «dom, 21/09/2025: 0:00» y «mar, 30/09/2025:
+  1:00». Agrupando por «Semana», el gráfico no cambia. Con el filtro de P2, la
+  del 01/10 dice 0:30 y la del 30/09, 0:00. Del 01/08/2025 al 10/10/2025, «Horas
+  por semana» con 11 columnas: la primera es «27/07/2025 – 02/08/2025 solo
+  01/08/2025 – 02/08/2025: 0:00», la de «28/09/2025 – 04/10/2025» dice 1:30 y
+  la última es «05/10/2025 – 11/10/2025 solo 05/10/2025 – 10/10/2025: 0:20».
+  Todo 2025: «Horas por mes» con 12 columnas, entre ellas «septiembre de 2025:
+  1:15» y «enero de 2025: 0:00».
+
+### 14.2 Teclado, puntero y tabla de datos
+
+- **Una sola parada de tabulación**: al montar, la primera columna; después, la
+  última que tuvo el foco. Derecha y abajo llevan a la siguiente; izquierda y
+  arriba, a la anterior; Inicio y Fin, a la primera y la última. En los
+  extremos el foco no se mueve. Con Alt, Ctrl, Meta o Mayúsculas, las flechas,
+  Inicio y Fin no hacen nada en el gráfico. Las flechas no desplazan la página. Tab sale
+  del gráfico a «Ver los datos del gráfico».
+- **La columna con el foco de teclado** lleva un contorno de 2 px hacia adentro,
+  que se ve también sobre una barra en cero. La barra enfocada se aparta 3 px
+  de los bordes de la columna, así el contorno no la pisa aunque llegue al
+  techo: a 320 px con 31 barras queda como un trazo fino dentro del contorno, y
+  su valor lo dice la línea del valor (P6 de las revisiones de R5).
+- **La columna activa** es la del puntero; sin puntero encima, la del foco; si
+  no hay ninguna de las dos, no hay columna activa. La línea del valor dice su
+  nombre. Al sacar el puntero del área de las columnas, la línea vuelve a la columna con el
+  foco o se vacía; al salir el foco de las columnas, se vacía si el puntero no
+  está encima.
+- **«Ver los datos del gráfico»**: cerrado; al abrirlo, una tabla con «Fecha»,
+  «Semana» o «Mes», y «Duración», con una fila por barra en orden, también las
+  en cero, y «solo …» en gris. Se abre con teclado y antes de hidratar.
+- **Lector de pantalla**: la figura se nombra por su leyenda y cada columna es
+  una imagen con su nombre. La escala, las marcas y la línea del valor están
+  ocultas, porque lo que dicen está en los nombres.
+- **Antes de hidratar, o si no carga el JavaScript de la aplicación**: las
+  barras se ven y la tabla de datos se abre; falta la línea del valor. Con
+  JavaScript desactivado en el navegador, la pantalla entera queda en «Cargando
+  el reporte», como desde R2a.
+- **Colores forzados**: las barras en `CanvasText`; la activa y el contorno del
+  foco, en `Highlight`.
+
+### 14.3 Estados y casos borde
+
+- **Vacío y segundo vacío** (RP-33): sin gráfico, con la fila de la tabla de
+  siempre. Un período con solo un timer en curso tampoco tiene gráfico (P-07).
+- **El primer nivel que no entra** (RP-18, RP-33): el gráfico, la fila del tope
+  y los totales; las barras suman el total.
+- **Una sola entrada de menos de un segundo**: el gráfico con todas las barras
+  en «0:00» y la escala en «0:00» y «0:15».
+- **Al recargar o con «Atrás»**: el mismo gráfico, que sale de la URL; la parada
+  de tabulación vuelve a la primera columna y no hay columna activa. **Cada
+  navegación que cambia la URL** hace lo mismo: las flechas, «Esta semana», un
+  atajo, «Aplicar», «Agrupar por», los subniveles o un filtro.
+- **Dos zonas o dos primeros días** dan barras distintas para el mismo período,
+  como en la tabla (RP-22, RP-24).
+- **Cambios de horario**: un día de 23 o 25 horas es una barra con sus horas.
+- **El día que falta entero** (`Pacific/Apia`, el 2011-12-30): su barra está,
+  en cero (RP-22).
+- **A 320 y 375 px**, con 31 barras y una escala hasta «2000:00»: el gráfico no
+  se sale de su caja ni ensancha la página más allá de la navegación del shell.
+- **Cargando, error de lectura y sin `report.view`**: como en la sección 9.3; el
+  esqueleto no cambia.
+
+### 14.4 Divergencias visibles que el reviewer no debe marcar como errores
+
+- **La granularidad sale del largo del período** (D-R5-4): Clockify documenta
+  barras por día y en el plan Free no pasa de 31 días; acá, de 32 a 182 días va
+  por semana y de 183 a 366, por mes. Lo que hace Clockify con períodos largos
+  está _no verificado_ y no se puede mirar en el workspace del equipo (P-05).
+- **El gráfico no sigue a la agrupación**: agrupando por semana un período de
+  21 días, la tabla va por semana y el gráfico, por día.
+- **La primera y la última barra de un período por semana o por mes pueden ser
+  más bajas**: si el período las corta, cuentan menos días. Lo dicen con «solo
+  …» en el nombre y en la tabla de datos, no en la barra.
+- **Las marcas no llevan año**: un período de 366 días por mes puede mostrar
+  «mar» en los dos extremos. El año está en el nombre de cada columna, en la
+  tabla de datos y en el período de la barra de herramientas.
+- **La marca de una semana cortada es el primer día que cuenta**, no el primer
+  día de la semana: la barra «28/09 – 04/10 solo 30/09 – 04/10» tiene la marca
+  «30/09».
+- **La barra del día que falta entero** en una zona existe, en cero, aunque la
+  tabla por fecha no tenga esa fila (RP-22).
+- **Un solo color**, sin partir por facturable ni por proyecto y sin menú para
+  elegir la partición (RP-16).
+- **Las barras en cero son columnas vacías** y cuentan para el teclado y para la
+  tabla de datos.
+- **La suma de lo que dicen las barras puede quedar unos minutos debajo de
+  «Total»**: cada barra se trunca al minuto por separado, como las filas
+  (RP-18).
+- **La línea del valor también sigue al foco, y las flechas mueven el foco**:
+  en Clockify está _no verificado_ (P-05). Es lo que deja leer el gráfico sin
+  mouse.
+- **El contorno del foco de las columnas no es el anillo de los botones del
+  módulo**: una columna no tiene borde propio.
+- **Un clic en una columna solo le da el foco**, sin contorno: queda como
+  parada de tabulación y la línea del valor la sigue nombrando al sacar el
+  puntero. No cambia el período ni filtra la tabla.
+- **Con 31 barras a 320 px, cada una mide unos 6 px** (unos 8 a 375), y se
+  ven cuatro marcas, una cada diez barras.
+
+### 14.5 Qué puede hacer cada rol
+
+| Membresía                                           | Ve                                                                                                                                        | Acciones                                                                                        |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `owner`, `admin` activas                            | Las barras de todas las personas del workspace con horas, también las inactivas, o solo de las elegidas, filtradas por cliente y proyecto | Las de 13.5 y 13.9, y recorrer las barras con el puntero y el teclado y abrir la tabla de datos |
+| `project_manager`, `team_manager`, `member` activas | Solo lo propio, filtrado, también con el enlace de un admin con `personas=…`: las barras suman lo mismo que sin `personas`                | Las mismas, sin filtro de personas                                                              |
+| Cualquiera no activa (`inactive`, `invited`)        | El aviso de RP-07                                                                                                                         | Ninguna                                                                                         |

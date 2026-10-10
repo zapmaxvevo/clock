@@ -5,6 +5,7 @@ import { db } from "@/server/db";
 import { client, membership, project } from "@/server/db/schema";
 import type * as Permissions from "@/server/permissions";
 import type { Actor, MembershipStatus, Role } from "@/server/permissions";
+import { dayBuckets, monthBuckets, weekBuckets, type TimeBuckets } from "@/server/time";
 import {
   buenosAires,
   seedClient,
@@ -21,7 +22,8 @@ import { actorIn, workspaceOf } from "@/test/time-entry";
 import { projectRepository } from "@/modules/project/repository";
 import { workspaceRepository } from "@/modules/workspace/repository";
 
-import { reportRepository } from "./repository";
+import { chartGranularityOf } from "./chart";
+import { NO_ENTRY_FILTER, reportRepository } from "./repository";
 import {
   NO_REPORT_FILTERS,
   REPORT_GROUP_BYS,
@@ -32,9 +34,11 @@ import {
   type ReportFilters,
   type ReportGroup,
   type ReportGroupBy,
+  type ReportRange,
   type ReportState,
+  type ReportTimeGroupBy,
 } from "./schema";
-import { getReportState, type ReportRequest } from "./service";
+import { getReportState, type ReportRequest, type ReportScope } from "./service";
 
 /**
  * El alcance del reporte (D-R2a-2), escrito contra las firmas públicas y sin
@@ -1304,6 +1308,132 @@ describe("el texto de las entradas que no se ven no viaja (criterio 18 de R10)",
   });
 });
 
+/**
+ * Los períodos del gráfico (D-R5-4), todos con `entryDay`: la semana, por día;
+ * 47 días, por semana; 183, por mes.
+ */
+const chartRanges: readonly ReportRange[] = [
+  week,
+  { first: "2026-09-28", last: "2026-11-13" },
+  { first: "2026-09-01", last: "2027-03-02" },
+];
+
+/**
+ * Las formas con que se pide cada período del gráfico: la etiqueta primero,
+ * cada dimensión de tiempo, también la misma que la del gráfico, y la
+ * descripción.
+ */
+const chartShapes: readonly (readonly ReportGroupBy[])[] = [
+  ["person"],
+  ["project"],
+  ["tag"],
+  ["date"],
+  ["week"],
+  ["month"],
+  ["description"],
+  ["tag", "project"],
+];
+
+/** Los tramos de `range` en `granularity`, con las funciones de `src/server/time`. */
+function chartBucketsOf(granularity: ReportTimeGroupBy, range: ReportRange): TimeBuckets {
+  switch (granularity) {
+    case "date":
+      return dayBuckets(range.first, range.last, settings.timezone);
+    case "week":
+      return weekBuckets(range.first, range.last, settings.weekStart, settings.timezone);
+    case "month":
+      return monthBuckets(range.first, range.last, settings.timezone);
+  }
+}
+
+/** La posición del tramo de `buckets` que cuenta `entryDay`: el último que empieza antes o ese día. */
+function entryBucketOf(buckets: TimeBuckets): number {
+  return buckets.buckets.findLastIndex((bucket) => bucket.firstDay <= entryDay);
+}
+
+function secondsOfEntries(entries: readonly SeededEntry[]): number {
+  return entries.reduce((sum, entry) => sum + entry.minutes * 60, 0);
+}
+
+/**
+ * Lo que decide el alcance del gráfico: el total y, si hay gráfico, su
+ * granularidad y cada barra como su primer día y sus segundos.
+ */
+function chartSummaryOf(state: ReportState) {
+  if (state.kind !== "ready") {
+    return state;
+  }
+  return {
+    totalSeconds: state.totalSeconds,
+    chart:
+      state.chart === null
+        ? null
+        : {
+            granularity: state.chart.granularity,
+            bars: state.chart.bars.map((bar) => [bar.firstDay, bar.seconds]),
+          },
+  };
+}
+
+/**
+ * El gráfico que dan `entries`, todas de `entryDay`, en `range`: una barra por
+ * tramo, la de `entryDay` con la suma y el resto en 0, así las barras suman el
+ * total; sin entradas, `null` (D-R5-6).
+ */
+function expectedChart(range: ReportRange, entries: readonly SeededEntry[]) {
+  const totalSeconds = secondsOfEntries(entries);
+  if (entries.length === 0) {
+    return { totalSeconds, chart: null };
+  }
+  const granularity = chartGranularityOf(range);
+  const buckets = chartBucketsOf(granularity, range);
+  const at = entryBucketOf(buckets);
+  return {
+    totalSeconds,
+    chart: {
+      granularity,
+      bars: buckets.buckets.map((bucket, index) => [
+        bucket.firstDay,
+        index === at ? totalSeconds : 0,
+      ]),
+    },
+  };
+}
+
+/**
+ * Cada pedido de `cases` en cada período del gráfico y cada forma: el gráfico
+ * suma solo las entradas del caso.
+ */
+async function expectChartView(
+  actor: Actor,
+  cases: readonly {
+    readonly requested: ReportFilters;
+    readonly entries: readonly SeededEntry[];
+  }[],
+) {
+  for (const { requested, entries } of cases) {
+    for (const range of chartRanges) {
+      for (const levels of chartShapes) {
+        const state = await getReportState(
+          actor,
+          settings,
+          { ...treeRequest(levels), range, filters: requested },
+          now,
+        );
+        expect(
+          chartSummaryOf(state),
+          `${nameOf(actor.userId)}, ${range.first} a ${range.last}, ${levels.join(" → ")}, ${JSON.stringify(requested)}`,
+        ).toEqual(expectedChart(range, entries));
+      }
+    }
+  }
+}
+
+/** Cada uno de `entries` filtrado por `requested`, que se aplica tal cual. */
+function applied(requested: ReportFilters, entries: readonly SeededEntry[]) {
+  return { requested, entries: entries.filter((entry) => passes(entry, requested)) };
+}
+
 /** Cada agrupación sola y dos árboles de dos niveles con el alcance abajo. */
 const shapes: readonly (readonly ReportGroupBy[])[] = [
   ...groupBys.map((groupBy) => [groupBy]),
@@ -1808,6 +1938,101 @@ describe("los filtros de cliente y de proyecto dentro del alcance (criterio 12 d
       });
     }
   });
+
+  describe("el gráfico con los filtros (criterio 10 de R5)", () => {
+    it("owner y admin de A: las barras suman lo de todos en A filtrado", async () => {
+      for (const actor of everyoneInAActors()) {
+        await expectChartView(
+          actor,
+          filtersInA().map((filters) => applied(filters, entriesIn(a.workspaceId))),
+        );
+      }
+    });
+
+    it("project_manager, team_manager y member: las barras suman solo lo propio filtrado", async () => {
+      for (const { role, userId } of selfOnlyInA()) {
+        await expectChartView(
+          actorIn(a.workspaceId, userId, { role }),
+          filtersInA().map((filters) =>
+            applied(filters, entriesIn(a.workspaceId, userId)),
+          ),
+        );
+      }
+    });
+
+    it("un filtro que solo elige horas ajenas no le da gráfico a quien ve lo propio", async () => {
+      await expectChartView(
+        actorIn(a.workspaceId, a.managerId, { role: "project_manager" }),
+        [
+          {
+            requested: { ...NO_REPORT_FILTERS, projects: [projectQId] },
+            entries: [],
+          },
+        ],
+      );
+    });
+
+    it("en A, los ids de B se ignoran: el gráfico es el de sin filtros; junto a ids de A, se aplican los de A", async () => {
+      const idsOfB: ReportFilters = {
+        people: [],
+        clients: [clientBId, clientB2Id],
+        projects: [projectBId, projectQBId],
+        withoutProject: false,
+      };
+      const mixed: ReportFilters = {
+        people: [],
+        clients: [clientBId, a.clientId, clientB2Id],
+        projects: [projectQBId, a.projectId],
+        withoutProject: false,
+      };
+      const inA = {
+        ...NO_REPORT_FILTERS,
+        clients: [a.clientId],
+        projects: [a.projectId],
+      };
+      for (const actor of everyoneInAActors()) {
+        await expectChartView(actor, [
+          { requested: idsOfB, entries: entriesIn(a.workspaceId) },
+          { requested: mixed, entries: applied(inA, entriesIn(a.workspaceId)).entries },
+        ]);
+      }
+      for (const { role, userId } of selfOnlyInA()) {
+        await expectChartView(actorIn(a.workspaceId, userId, { role }), [
+          { requested: idsOfB, entries: entriesIn(a.workspaceId, userId) },
+          {
+            requested: mixed,
+            entries: applied(inA, entriesIn(a.workspaceId, userId)).entries,
+          },
+        ]);
+      }
+    });
+
+    it("el owner de B con ids de A no ve nada de A en las barras", async () => {
+      await expectChartView(everyoneIn(b.workspaceId), [
+        {
+          requested: {
+            people: [],
+            clients: [a.clientId, clientA2Id],
+            projects: [a.projectId, projectQId],
+            withoutProject: false,
+          },
+          entries: entriesIn(b.workspaceId),
+        },
+        {
+          requested: {
+            people: [],
+            clients: [],
+            projects: [a.projectId, projectQBId],
+            withoutProject: false,
+          },
+          entries: applied(
+            { ...NO_REPORT_FILTERS, projects: [projectQBId] },
+            entriesIn(b.workspaceId),
+          ).entries,
+        },
+      ]);
+    });
+  });
 });
 
 describe("el filtro de personas dentro del alcance (criterio 19 de R4; criterios 9 y 18 de R10)", () => {
@@ -2214,5 +2439,369 @@ describe("el filtro de personas dentro del alcance (criterio 19 de R4; criterios
         );
       }
     });
+  });
+});
+
+/**
+ * El alcance que arma el service para `actor` con `filters`: el que recibe su
+ * lectura por niveles. `ReportScope` es nominal: solo sale de una lectura real.
+ */
+async function scopeReadFor(
+  actor: Actor,
+  filters: ReportFilters = NO_REPORT_FILTERS,
+): Promise<ReportScope> {
+  const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+  try {
+    await getReportState(actor, settings, { ...request("person"), filters }, now);
+    const call = byLevels.mock.calls[0];
+    if (call === undefined) {
+      throw new Error("Se esperaba la lectura por niveles.");
+    }
+    return call[0];
+  } finally {
+    byLevels.mockRestore();
+  }
+}
+
+/** Las personas elegidas a mano, como las escribe un enlace en `personas`. */
+function peopleFromUrl(...ids: readonly string[]): ReportFilters {
+  return reportFiltersOf({ personas: [...ids].sort().join(",") });
+}
+
+/** El id, si lo hay, como lista. */
+function idsOf(id: string | null): string[] {
+  return id === null ? [] : [id];
+}
+
+/** Un id que no es de nadie, con la forma de los de Better Auth. */
+const unknownPersonId = "NoExiste0123456789abcdefABCDEF00";
+
+describe("totalsByBucket con cada alcance (D-R5-3; criterio 10 de R5)", () => {
+  const granularities: readonly ReportTimeGroupBy[] = ["date", "week", "month"];
+
+  /** Las filas de `week` en `granularity`, sin filtros, por tramo. */
+  async function bucketTotalsOf(scope: ReportScope, granularity: ReportTimeGroupBy) {
+    const buckets = chartBucketsOf(granularity, week);
+    const [first] = buckets.buckets;
+    if (first === undefined) {
+      throw new Error("Se esperaban los tramos de la semana.");
+    }
+    const rows = await reportRepository.totalsByBucket(scope, {
+      span: { from: first.start, to: buckets.end },
+      filter: NO_ENTRY_FILTER,
+      granularity,
+      buckets,
+    });
+    return [...rows].sort((left, right) => left.bucket - right.bucket);
+  }
+
+  /** Una fila, la del tramo de `entryDay`, con lo de `entries`; sin entradas, ninguna. */
+  function expectedRows(granularity: ReportTimeGroupBy, entries: readonly SeededEntry[]) {
+    if (entries.length === 0) {
+      return [];
+    }
+    return [
+      {
+        bucket: entryBucketOf(chartBucketsOf(granularity, week)),
+        seconds: secondsOfEntries(entries),
+      },
+    ];
+  }
+
+  /**
+   * Por día, semana y mes, con el alcance de una lectura real de `actor`, la
+   * lectura del gráfico suma solo `entries`, sin pasar por `totalsByLevels`.
+   */
+  async function expectBucketTotals(
+    actor: Actor,
+    entries: readonly SeededEntry[],
+    filters: ReportFilters = NO_REPORT_FILTERS,
+  ) {
+    const scope = await scopeReadFor(actor, filters);
+    const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+    try {
+      for (const granularity of granularities) {
+        expect(
+          await bucketTotalsOf(scope, granularity),
+          `${nameOf(actor.userId)}, ${granularity}, ${JSON.stringify(filters.people)}`,
+        ).toEqual(expectedRows(granularity, entries));
+      }
+      expect(byLevels).not.toHaveBeenCalled();
+    } finally {
+      byLevels.mockRestore();
+    }
+  }
+
+  for (const role of ["owner", "admin"] as const) {
+    it(`${role} de A suma todo A, también al inactivo, y nada de B`, async () => {
+      await expectBucketTotals(
+        actorIn(a.workspaceId, role === "owner" ? a.ownerId : a.adminId, { role }),
+        entriesIn(a.workspaceId),
+      );
+    });
+  }
+
+  it("project_manager, team_manager y member suman solo lo propio", async () => {
+    for (const { role, userId } of selfOnlyInA()) {
+      await expectBucketTotals(
+        actorIn(a.workspaceId, userId, { role }),
+        entriesIn(a.workspaceId, userId),
+      );
+    }
+  });
+
+  it("un owner al que can() le niega timeEntry.others.view suma solo lo propio", async () => {
+    permissionOverrides.denied.push({
+      userId: a.ownerId,
+      action: "timeEntry.others.view",
+    });
+    await expectBucketTotals(
+      actorIn(a.workspaceId, a.ownerId, { role: "owner" }),
+      entriesIn(a.workspaceId, a.ownerId),
+    );
+  });
+
+  it("el owner de B suma todo B y nada de A; la persona de A y de B, en B, solo lo suyo de B", async () => {
+    await expectBucketTotals(
+      actorIn(b.workspaceId, b.ownerId, { role: "owner" }),
+      entriesIn(b.workspaceId),
+    );
+    await expectBucketTotals(
+      actorIn(b.workspaceId, a.memberId),
+      entriesIn(b.workspaceId, a.memberId),
+    );
+  });
+
+  it("el owner de A, member de B sin horas en B, no suma en B las suyas de A", async () => {
+    await db
+      .insert(membership)
+      .values({ workspaceId: b.workspaceId, userId: a.ownerId, role: "member" });
+    await expectBucketTotals(actorIn(b.workspaceId, a.ownerId), []);
+  });
+
+  it("con el alcance angostado a personas elegidas, solo las de ellas del workspace", async () => {
+    const owner = actorIn(a.workspaceId, a.ownerId, { role: "owner" });
+    await expectBucketTotals(
+      owner,
+      [
+        ...entriesIn(a.workspaceId, a.memberId),
+        ...entriesIn(a.workspaceId, a.inactiveId),
+      ],
+      peopleFromUrl(a.memberId, a.inactiveId, b.ownerId, unknownPersonId),
+    );
+    await expectBucketTotals(
+      actorIn(b.workspaceId, b.ownerId, { role: "owner" }),
+      entriesIn(b.workspaceId, a.memberId),
+      peopleFromUrl(a.memberId, a.ownerId),
+    );
+  });
+});
+
+describe("el gráfico dentro del alcance (criterio 10 de R5)", () => {
+  const unfiltered = (entries: readonly SeededEntry[]) => [
+    { requested: NO_REPORT_FILTERS, entries },
+  ];
+
+  for (const role of ["owner", "admin"] as const) {
+    it(`${role} de A: las barras suman todo A, también al inactivo, y nada de B`, async () => {
+      await expectChartView(
+        actorIn(a.workspaceId, role === "owner" ? a.ownerId : a.adminId, { role }),
+        unfiltered(entriesIn(a.workspaceId)),
+      );
+    });
+  }
+
+  it("project_manager, team_manager y member: las barras suman solo lo propio", async () => {
+    for (const { role, userId } of selfOnlyInA()) {
+      await expectChartView(
+        actorIn(a.workspaceId, userId, { role }),
+        unfiltered(entriesIn(a.workspaceId, userId)),
+      );
+    }
+  });
+
+  it("un owner al que can() le niega timeEntry.others.view: las barras suman solo lo propio", async () => {
+    permissionOverrides.denied.push({
+      userId: a.ownerId,
+      action: "timeEntry.others.view",
+    });
+    await expectChartView(
+      actorIn(a.workspaceId, a.ownerId, { role: "owner" }),
+      unfiltered(entriesIn(a.workspaceId, a.ownerId)),
+    );
+  });
+
+  it("el owner de B: todo B y nada de A; la persona de A y de B, en B: solo lo suyo de B; el owner de A en B: sin gráfico", async () => {
+    await expectChartView(
+      actorIn(b.workspaceId, b.ownerId, { role: "owner" }),
+      unfiltered(entriesIn(b.workspaceId)),
+    );
+    await expectChartView(
+      actorIn(b.workspaceId, a.memberId),
+      unfiltered(entriesIn(b.workspaceId, a.memberId)),
+    );
+    await db
+      .insert(membership)
+      .values({ workspaceId: b.workspaceId, userId: a.ownerId, role: "member" });
+    await expectChartView(actorIn(b.workspaceId, a.ownerId), unfiltered([]));
+  });
+
+  it("project_manager, team_manager y member con personas armado a mano: el gráfico de su pedido sin personas, solo lo propio", async () => {
+    for (const { role, userId } of selfOnlyInA()) {
+      const actor = actorIn(a.workspaceId, userId, { role });
+      const own = entriesIn(a.workspaceId, userId);
+      const others = [
+        a.ownerId,
+        a.adminId,
+        a.inactiveId,
+        b.ownerId,
+        unknownPersonId,
+        ...selfOnlyInA()
+          .map((person) => person.userId)
+          .filter((id) => id !== userId),
+      ];
+      await expectChartView(actor, [
+        { requested: peopleFromUrl(...others), entries: own },
+        { requested: peopleFromUrl(...others, userId), entries: own },
+        { requested: peopleFromUrl(userId), entries: own },
+      ]);
+      for (const range of chartRanges) {
+        const withPeople = await getReportState(
+          actor,
+          settings,
+          { ...request("person"), range, filters: peopleFromUrl(...others) },
+          now,
+        );
+        const without = await getReportState(
+          actor,
+          settings,
+          { ...request("person"), range },
+          now,
+        );
+        expect(chartSummaryOf(withPeople), `${role}, ${range.first}`).toEqual(
+          chartSummaryOf(without),
+        );
+      }
+    }
+  });
+
+  it("owner y admin de A con personas: las barras suman solo las elegidas de A, la inactiva incluida", async () => {
+    for (const role of ["owner", "admin"] as const) {
+      const actor = actorIn(a.workspaceId, role === "owner" ? a.ownerId : a.adminId, {
+        role,
+      });
+      await expectChartView(actor, [
+        {
+          requested: peopleFromUrl(a.memberId),
+          entries: entriesIn(a.workspaceId, a.memberId),
+        },
+        {
+          requested: peopleFromUrl(a.memberId, a.inactiveId, b.ownerId, unknownPersonId),
+          entries: [
+            ...entriesIn(a.workspaceId, a.memberId),
+            ...entriesIn(a.workspaceId, a.inactiveId),
+          ],
+        },
+        {
+          requested: {
+            ...peopleFromUrl(a.managerId, a.adminId),
+            projects: [a.projectId],
+          },
+          entries: entriesIn(a.workspaceId, a.managerId),
+        },
+        // Solo ids que no son del catálogo de A: se ignoran y suma todo A.
+        {
+          requested: peopleFromUrl(b.ownerId, unknownPersonId),
+          entries: entriesIn(a.workspaceId),
+        },
+      ]);
+    }
+  });
+
+  it("el owner de B con la persona de A y de B elegida: solo lo de ella en B", async () => {
+    await expectChartView(actorIn(b.workspaceId, b.ownerId, { role: "owner" }), [
+      {
+        requested: peopleFromUrl(a.memberId, a.ownerId),
+        entries: entriesIn(b.workspaceId, a.memberId),
+      },
+    ]);
+  });
+});
+
+describe("la misma foto del gráfico con cada alcance (D-R5-2; criterio 10 de R5)", () => {
+  /**
+   * Una lectura del gráfico por pedido, en la granularidad del período, con el
+   * mismo alcance —el mismo objeto—, el mismo filtro, el mismo `span` y el mismo
+   * `Executor` que las lecturas por niveles y el total, dentro de la única
+   * transacción `repeatable read`, `read only`.
+   */
+  async function expectChartReadLikeLevels(actor: Actor, filters: ReportFilters) {
+    for (const range of chartRanges) {
+      for (const levels of chartShapes) {
+        const context = `${nameOf(actor.userId)}, ${range.first} a ${range.last}, ${levels.join(" → ")}, ${JSON.stringify(filters)}`;
+        const transaction = vi.spyOn(db, "transaction");
+        const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+        const byBucket = vi.spyOn(reportRepository, "totalsByBucket");
+        const entryTotals = vi.spyOn(reportRepository, "entryTotals");
+        try {
+          const state = await getReportState(
+            actor,
+            settings,
+            { ...treeRequest(levels), range, filters },
+            now,
+          );
+          expect(state.kind, context).toBe("ready");
+          expect(transaction, context).toHaveBeenCalledTimes(1);
+          expect(transaction.mock.calls[0]?.[1], context).toEqual({
+            isolationLevel: "repeatable read",
+            accessMode: "read only",
+          });
+          expect(byBucket, context).toHaveBeenCalledTimes(1);
+          const [bucketScope, bucketRead, bucketExecutor] = byBucket.mock.calls[0] ?? [];
+          expect(bucketRead?.granularity, context).toBe(chartGranularityOf(range));
+          expect(byLevels.mock.calls.length, context).toBeGreaterThan(0);
+          for (const [levelScope, levelRead, levelExecutor] of byLevels.mock.calls) {
+            expect(bucketScope === levelScope, context).toBe(true);
+            expect(bucketRead?.filter, context).toEqual(levelRead.filter);
+            expect(bucketRead?.span, context).toEqual(levelRead.span);
+            expect(bucketExecutor === levelExecutor, context).toBe(true);
+          }
+          for (const [totalScope, , totalExecutor] of entryTotals.mock.calls) {
+            expect(bucketScope === totalScope, context).toBe(true);
+            expect(bucketExecutor === totalExecutor, context).toBe(true);
+          }
+          expect(bucketExecutor, context).toBeDefined();
+          expect(bucketExecutor === db, context).toBe(false);
+        } finally {
+          transaction.mockRestore();
+          byLevels.mockRestore();
+          byBucket.mockRestore();
+          entryTotals.mockRestore();
+        }
+      }
+    }
+  }
+
+  it("owner y admin de A, sin filtros y con personas y proyectos, uno de B", async () => {
+    for (const role of ["owner", "admin"] as const) {
+      const actor = actorIn(a.workspaceId, role === "owner" ? a.ownerId : a.adminId, {
+        role,
+      });
+      await expectChartReadLikeLevels(actor, NO_REPORT_FILTERS);
+      await expectChartReadLikeLevels(actor, {
+        ...peopleFromUrl(a.memberId, a.inactiveId, b.ownerId),
+        // El proyecto de B no es del catálogo de A: el filtro efectivo es solo P.
+        projects: [a.projectId, ...idsOf(b.places.member.projectId)],
+      });
+    }
+  });
+
+  it("project_manager, team_manager y member, con personas ajenas armadas a mano", async () => {
+    for (const { role, userId } of selfOnlyInA()) {
+      await expectChartReadLikeLevels(
+        actorIn(a.workspaceId, userId, { role }),
+        peopleFromUrl(a.ownerId, a.adminId, a.inactiveId, unknownPersonId),
+      );
+    }
   });
 });

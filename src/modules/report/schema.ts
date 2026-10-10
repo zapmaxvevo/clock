@@ -88,6 +88,18 @@ export const REPORT_TIME_GROUP_BYS = [
 ] as const satisfies readonly ReportGroupBy[];
 export type ReportTimeGroupBy = (typeof REPORT_TIME_GROUP_BYS)[number];
 
+/** RP-15, ADR 0021, D-R5-4: hasta 31 días, una barra por día. */
+export const REPORT_CHART_DAILY_MAX_DAYS = 31;
+
+/** D-R5-4: hasta 26 semanas, una por semana; más, una por mes. */
+export const REPORT_CHART_WEEKLY_MAX_DAYS = 182;
+
+/**
+ * Las barras del peor caso: 31 por día. Por semana son hasta 27 —el primer y
+ * el último tramo pueden ser parciales— y por mes hasta 13, con 366 días.
+ */
+export const REPORT_CHART_MAX_BARS = REPORT_CHART_DAILY_MAX_DAYS;
+
 /** D-R2a-3: el primer nivel sin un `agrupar` válido. */
 export const DEFAULT_GROUP_BY = "person" satisfies ReportGroupBy;
 
@@ -478,6 +490,28 @@ const reportGroup = z.discriminatedUnion("kind", [
   reportDescriptionGroup,
 ]);
 
+const reportChartBar = z.object({
+  /** El primer día que cuenta la barra, en la zona de quien mira: su clave. */
+  firstDay: z.string(),
+  /**
+   * El de la fila de la tabla para el mismo tramo, con la regla del año:
+   * «jue, 01/10», «28/09 – 04/10», «octubre» (D-R5-5).
+   */
+  label: z.string().min(1),
+  /** Como en la tabla: los días que cuenta una semana o un mes cortado por el período; `null` por día. */
+  partial: z.string().nullable(),
+  /** La marca del eje, sin año: «01/10», «oct» (D-R5-5). */
+  tick: z.string().min(1),
+  seconds: z.number().int().min(0),
+});
+
+const reportChart = z.object({
+  /** D-R5-4: sale del largo del período, no de la agrupación. */
+  granularity: z.enum(REPORT_TIME_GROUP_BYS),
+  /** Una por tramo, en orden, también las en cero (D-R5-5). */
+  bars: z.array(reportChartBar).min(1).max(REPORT_CHART_MAX_BARS),
+});
+
 export const reportReadyState = z
   .object({
     kind: z.literal("ready"),
@@ -521,9 +555,17 @@ export const reportReadyState = z
       clients: z.array(reportClientOption),
       projects: z.array(reportProjectOption),
     }),
+    /** D-R5-6: `null` sin entradas del alcance y los filtros en el período (RP-33). */
+    chart: reportChart.nullable(),
   })
   // D-R10-10: sin el primer nivel no hay grupos; con él, puede no haber (RP-33).
-  .refine(({ levelsShown, groups }) => levelsShown > 0 || groups.length === 0);
+  .refine(({ levelsShown, groups }) => levelsShown > 0 || groups.length === 0)
+  // D-R5-2, RP-18: cada entrada cerrada del período cae en exactamente una barra.
+  .refine(
+    ({ chart, totalSeconds }) =>
+      chart === null ||
+      chart.bars.reduce((sum, bar) => sum + bar.seconds, 0) === totalSeconds,
+  );
 
 export type ReportReadyState = z.infer<typeof reportReadyState>;
 export type ReportGroup = z.infer<typeof reportGroup>;
@@ -536,6 +578,8 @@ export type ReportDateGroup = z.infer<typeof reportDateGroup>;
 export type ReportWeekGroup = z.infer<typeof reportWeekGroup>;
 export type ReportMonthGroup = z.infer<typeof reportMonthGroup>;
 export type ReportDescriptionGroup = z.infer<typeof reportDescriptionGroup>;
+export type ReportChart = z.infer<typeof reportChart>;
+export type ReportChartBar = z.infer<typeof reportChartBar>;
 export type ReportShortcut = z.infer<typeof reportShortcut>;
 
 export type ReportState =

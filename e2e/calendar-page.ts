@@ -598,10 +598,11 @@ export async function clickSlot(
   await column.click({ position: { x: width / 2, y: slotOffset(clock, size) } });
 }
 
+/** Una caja en píxeles del viewport, como la de `boundingBox`. */
+export type Box = { x: number; y: number; width: number; height: number };
+
 /** La caja de un elemento dibujado, en píxeles del viewport. */
-export async function boxOf(
-  element: Locator,
-): Promise<{ x: number; y: number; width: number; height: number }> {
+export async function boxOf(element: Locator): Promise<Box> {
   const box = await element.boundingBox();
   if (box === null) {
     throw new Error("El elemento no tiene caja: no está dibujado.");

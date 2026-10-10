@@ -37,6 +37,7 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-10 (novena
 | Núcleo de reportes, R4b                     | En `main` |
 | Núcleo de reportes, R10a                    | En `main` |
 | Núcleo de reportes, R10b                    | En `main` |
+| Núcleo de reportes, R5                      | En `main` |
 
 Los slices 1 a 13 (con 2b, 2c, 7b, 8b, 8c, 11a y 11b) y el arreglo del piso fijo están en `main`.
 El 13 (planilla de horarios) se mergeó el 2026-10-08 con lint, typecheck, 1279 de unidad, 1223 de
@@ -177,7 +178,18 @@ vacío del owner y `renewWorkspace` se corta.
      pusheado, con lint, typecheck y e2e 205/205 sobre el merge. **Sigue R5** (gráfico de barras, mapa §R5) y
      después el resto sin parar (decisión del usuario del 2026-10-10, novena sesión: «r5 y
      despues segui sin parar»): R6, R7 y R9 en el orden del mapa; R8 sigue solo en contrato
-     salvo que él lo pida. Bases sin
+     salvo que él lo pida.
+     **R5 en `main`** (novena sesión, 2026-10-10): el gráfico de barras. Contrato aprobado en dos
+     pasadas; seis revisiones (backend, seguridad, frontend y tests aprobadas; código y paridad
+     pidieron cambios), ronda de correcciones, segunda pasada de frontend aprobada y corrida
+     final en verde sobre `ba53958`: 1773 de unidad, 300 de `test:time-ar`, 1489 de integración
+     y e2e 207/207 ×2. Desvíos D1 (marcas angostas por debajo de 24rem), D2 (modificadores) y
+     P6 (la barra enfocada se aparta 3 px del contorno; a 320 px con 31 columnas queda en
+     ~0,6 px). Todo en `correcciones-nucleo-reportes-r5-revisiones.md`. Deuda nueva: el foco del
+     summary de `report-tree.tsx:91` con colores forzados (`outline-none`, F1 de R5); con
+     JavaScript desactivado, `/reportes` queda en «Cargando el reporte» (el `Suspense` de
+     `page.tsx:24`). **Sigue R6** (CSV y Excel, mapa §R6): primero su contrato. Bases de R5 que
+     se pueden borrar: `clock_r5_*`. Bases sin
      borrar (el permiso lo frenó): `clock_r10a_*` y `clock_r10b_final_*`.
 
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
@@ -383,6 +395,10 @@ cuentas sin Google antes de desplegar el 7b dio cero filas en producción el 202
 - **Archivos compartidos entre roles**: cuando un tipo nuevo rompe la compilación de archivos de
   otro rol, el dueño del tipo toca lo mínimo en el mismo commit, después de que los dueños
   commiteen lo pendiente de esos archivos (R2b, pasos 1 y 4).
+- **La base de la integración es `TEST_DATABASE_URL`**: `src/test/setup.ts:7` pisa
+  `DATABASE_URL` con ella, y por defecto es `clock_test`, compartida. En R5 los encargos decían
+  `DATABASE_URL` y varias corridas fueron a `clock_test` sin que nadie lo notara. Para un
+  servidor (`next dev`, `next start`, e2e), en cambio, va `DATABASE_URL`.
 - **Formato**: `npx prettier --write` sobre los `.md` que escriben agentes sin
   shell; `npx prettier --check .` antes de commitear.
 

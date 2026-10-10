@@ -6,6 +6,7 @@ import {
   type ReportGroup,
   type ReportReadyState,
 } from "@/modules/report/schema";
+import { bodyRows } from "@/test/markup";
 
 import { REPORT_HEADING_ID, ReportView } from "./report-view";
 
@@ -37,20 +38,11 @@ const state: ReportReadyState = {
   groups: [],
   filters: NO_REPORT_FILTERS,
   filterOptions,
+  chart: null,
 };
 
 function render(overrides: Partial<ReportReadyState>): string {
   return renderToStaticMarkup(<ReportView state={{ ...state, ...overrides }} />);
-}
-
-/** Las celdas de cada fila del cuerpo, sin etiquetas. */
-function bodyRows(markup: string): string[][] {
-  const body = markup.slice(markup.indexOf("<tbody>"), markup.indexOf("</tbody>"));
-  return [...body.matchAll(/<tr[^>]*>(.*?)<\/tr>/g)].map(([, row]) =>
-    [...row.matchAll(/<t[hd][^>]*>(.*?)<\/t[hd]>/g)].map(([, cell]) =>
-      cell.replace(/<[^>]+>/g, ""),
-    ),
-  );
 }
 
 /** El encabezado de cada fila del cuerpo, con sus etiquetas. */
@@ -819,5 +811,68 @@ describe("ReportView por descripción (D-R10-9, D-R10-10, §5.2, §5.4)", () => 
       expect(bodyRows(markup)).toEqual([[FIRST_LEVEL_LIMIT]]);
       expect(markup).not.toContain("Una entrada con varias etiquetas suma en cada una");
     });
+  });
+});
+
+describe("ReportView con gráfico (RP-15, D-R5-6, §5.1)", () => {
+  const chart: NonNullable<ReportReadyState["chart"]> = {
+    granularity: "date",
+    bars: [
+      {
+        firstDay: "2026-10-05",
+        label: "lun, 05/10",
+        partial: null,
+        tick: "05/10",
+        seconds: 3_600,
+      },
+      {
+        firstDay: "2026-10-06",
+        label: "mar, 06/10",
+        partial: null,
+        tick: "06/10",
+        seconds: 0,
+      },
+    ],
+  };
+  const groups: ReportGroup[] = [
+    { kind: "person", userId: "u1", name: "Ana", inactive: false, seconds: 3_600 },
+  ];
+
+  it("la figura va después de los totales y antes de la tabla", () => {
+    const markup = render({ chart, groups, totalSeconds: 3_600 });
+    const figure = markup.indexOf("<figure");
+    expect(figure).toBeGreaterThan(markup.indexOf("</dl>"));
+    expect(figure).toBeLessThan(
+      markup.indexOf(`<table aria-labelledby="${REPORT_HEADING_ID}"`),
+    );
+    expect(markup).toContain("Horas por día");
+  });
+
+  it("sin gráfico, ninguna figura", () => {
+    expect(render({ groups, totalSeconds: 3_600 })).not.toContain("<figure");
+  });
+
+  it("la línea del tope va después de la figura", () => {
+    const markup = render({
+      chart,
+      groups,
+      totalSeconds: 3_600,
+      subgroups: ["project"],
+      levelsShown: 1,
+    });
+    expect(markup.indexOf(ROW_LIMIT)).toBeGreaterThan(markup.indexOf("</figure>"));
+  });
+
+  it("con el primer nivel cortado y gráfico, la figura y la fila del tope (D-R10-10)", () => {
+    const markup = render({
+      chart,
+      groupBy: "description",
+      levelsShown: 0,
+      groups: [],
+      totalSeconds: 3_600,
+    });
+    expect(markup).toContain("<figure");
+    const table = markup.slice(markup.indexOf("</figure>"));
+    expect(bodyRows(table)).toEqual([[FIRST_LEVEL_LIMIT]]);
   });
 });
