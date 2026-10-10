@@ -7,7 +7,7 @@ import {
   tickAlignOf,
   tickIndexesOf,
 } from "./chart-model";
-import { durationLabel } from "./group-heading";
+import { durationLabel, PartialHeading } from "./group-heading";
 import { chartCaptions, groupByLabels, reportLabels } from "./labels";
 
 /**
@@ -46,7 +46,7 @@ export function ReportChart({ chart }: { readonly chart: ReportChartState }) {
         bars={bars}
       />
       <details className="text-sm">
-        <summary className="focus-visible:ring-ring w-fit cursor-pointer rounded-md focus-visible:ring-3 focus-visible:outline-none">
+        <summary className="focus-visible:ring-ring w-fit cursor-pointer rounded-md focus-visible:ring-3 focus-visible:outline-hidden">
           {reportLabels.chartData}
         </summary>
         <div className="mt-2 overflow-x-auto rounded-lg border">
@@ -65,15 +65,7 @@ export function ReportChart({ chart }: { readonly chart: ReportChartState }) {
               {chart.bars.map((bar) => (
                 <tr key={bar.firstDay} className="border-b last:border-b-0">
                   <th scope="row" className="px-3 py-2 text-left font-normal">
-                    {bar.label}
-                    {bar.partial !== null && (
-                      <>
-                        {" "}
-                        <span className="text-muted-foreground">
-                          {reportLabels.partialDays(bar.partial)}
-                        </span>
-                      </>
-                    )}
+                    <PartialHeading partial={bar.partial}>{bar.label}</PartialHeading>
                   </th>
                   <td className="px-3 py-2 text-right tabular-nums">
                     {durationLabel(bar.seconds)}

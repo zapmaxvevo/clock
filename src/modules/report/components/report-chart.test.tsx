@@ -5,6 +5,7 @@ import type {
   ReportChart as ReportChartState,
   ReportChartBar,
 } from "@/modules/report/schema";
+import { bodyRows } from "@/test/markup";
 
 import { ReportChart } from "./report-chart";
 
@@ -69,17 +70,6 @@ function scaleLabels(markup: string): string[] {
   return [
     ...markup.matchAll(/<span class="absolute right-0[^"]*"[^>]*>(.*?)<\/span>/g),
   ].map(([, label]) => label);
-}
-
-/** Las celdas de cada fila del cuerpo de la tabla de datos, sin etiquetas. */
-function dataRows(markup: string): string[][] {
-  const details = markup.slice(markup.indexOf("<details"));
-  const body = details.slice(details.indexOf("<tbody>"), details.indexOf("</tbody>"));
-  return [...body.matchAll(/<tr[^>]*>(.*?)<\/tr>/g)].map(([, row]) =>
-    [...row.matchAll(/<t[hd][^>]*>(.*?)<\/t[hd]>/g)].map(([, cell]) =>
-      cell.replace(/<[^>]+>/g, ""),
-    ),
-  );
 }
 
 describe("ReportChart (D-R5-7 a D-R5-9)", () => {
@@ -149,6 +139,7 @@ describe("ReportChart (D-R5-7 a D-R5-9)", () => {
 
   it("la columna es de alto completo; la barra pintada va adentro, sin rol, nombre ni tabulación", () => {
     const markup = render({ granularity: "date", bars: dayBars(HOUR, 2 * HOUR) });
+    expect(columns(markup)).toHaveLength(2);
     for (const column of columns(markup)) {
       expect(column.className).toContain("h-full");
       expect(column.className).not.toContain("bg-chart-2");
@@ -158,6 +149,19 @@ describe("ReportChart (D-R5-7 a D-R5-9)", () => {
     for (const bar of painted) {
       expect(bar).not.toMatch(/role=|aria-label=|tabindex=/);
     }
+  });
+
+  it("con el foco de teclado, el contorno va hacia adentro y la barra se aparta de él (P6)", () => {
+    const markup = render({ granularity: "date", bars: dayBars(HOUR, 0) });
+    const [withHours, zero] = columns(markup);
+    for (const column of [withHours, zero]) {
+      expect(column?.className).toContain("focus-visible:-outline-offset-2");
+    }
+    // 2 px de contorno y 1 px del fondo de la columna activa entre él y la barra.
+    expect(withHours?.inside).toContain("group-focus-visible:mx-[3px]");
+    expect(withHours?.inside).toContain("group-focus-visible:mb-[3px]");
+    expect(withHours?.inside).toContain("group-focus-visible:max-h-[calc(100%-6px)]");
+    expect(withHours?.className).toMatch(/(^| )group( |$)/);
   });
 
   it("una barra en cero no se pinta; una con horas lleva su alto y el mínimo", () => {
@@ -260,7 +264,7 @@ describe("ReportChart (D-R5-7 a D-R5-9)", () => {
     expect(markup.indexOf("<details")).toBeGreaterThan(markup.lastIndexOf('role="img"'));
     expect(markup).toMatch(/<th scope="col"[^>]*>Semana<\/th>/);
     expect(markup).toMatch(/<th scope="col"[^>]*>Duración<\/th>/);
-    expect(dataRows(markup)).toEqual([
+    expect(bodyRows(markup.slice(markup.indexOf("<details")))).toEqual([
       ["28/09 – 04/10 solo 30/09 – 04/10", "1:00"],
       ["05/10 – 11/10", "0:00"],
     ]);
@@ -271,6 +275,7 @@ describe("ReportChart (D-R5-7 a D-R5-9)", () => {
     expect(one).toHaveLength(1);
     expect(one[0]?.className).toContain("max-w-12");
     const two = columns(render({ granularity: "date", bars: dayBars(HOUR, HOUR) }));
+    expect(two).toHaveLength(2);
     for (const column of two) {
       expect(column.className).not.toContain("max-w-12");
     }

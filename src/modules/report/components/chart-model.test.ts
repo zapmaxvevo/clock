@@ -21,22 +21,20 @@ function bars(...seconds: number[]) {
 describe("chartScaleOf (D-R5-8)", () => {
   it("todo en cero da un paso de 0:15 y dos líneas", () => {
     expect(chartScaleOf(bars(0, 0, 0))).toEqual({
-      step: 15 * MINUTE,
       ceiling: 15 * MINUTE,
       lines: [0, 15 * MINUTE],
     });
   });
 
   it("10 min: el techo es un paso de 0:15", () => {
-    expect(chartScaleOf(bars(0, 10 * MINUTE))).toMatchObject({
-      step: 15 * MINUTE,
+    expect(chartScaleOf(bars(0, 10 * MINUTE))).toEqual({
       ceiling: 15 * MINUTE,
+      lines: [0, 15 * MINUTE],
     });
   });
 
   it("60 min: paso de 0:15, techo de 1:00 y cinco líneas", () => {
     expect(chartScaleOf(bars(HOUR, 20 * MINUTE))).toEqual({
-      step: 15 * MINUTE,
       ceiling: HOUR,
       lines: [0, 15 * MINUTE, 30 * MINUTE, 45 * MINUTE, HOUR],
     });
@@ -44,7 +42,6 @@ describe("chartScaleOf (D-R5-8)", () => {
 
   it("61 min: el paso es el menor que cubre en cuatro, 0:30, y el techo 1:30", () => {
     expect(chartScaleOf(bars(61 * MINUTE))).toEqual({
-      step: 30 * MINUTE,
       ceiling: 90 * MINUTE,
       lines: [0, 30 * MINUTE, 60 * MINUTE, 90 * MINUTE],
     });
@@ -52,7 +49,6 @@ describe("chartScaleOf (D-R5-8)", () => {
 
   it("7:30: paso de 2:00 y techo de 8:00", () => {
     expect(chartScaleOf(bars(HOUR, 7.5 * HOUR))).toEqual({
-      step: 2 * HOUR,
       ceiling: 8 * HOUR,
       lines: [0, 2 * HOUR, 4 * HOUR, 6 * HOUR, 8 * HOUR],
     });
@@ -60,7 +56,6 @@ describe("chartScaleOf (D-R5-8)", () => {
 
   it("5280 h: paso de 2000 h y techo de 6000 h, sin tope en el paso", () => {
     expect(chartScaleOf(bars(5280 * HOUR))).toEqual({
-      step: 2000 * HOUR,
       ceiling: 6000 * HOUR,
       lines: [0, 2000 * HOUR, 4000 * HOUR, 6000 * HOUR],
     });

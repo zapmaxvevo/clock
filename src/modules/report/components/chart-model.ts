@@ -1,7 +1,6 @@
 /** La escala del eje vertical, en segundos (D-R5-8). */
-export type ChartScale = {
-  readonly step: number;
-  /** El menor múltiplo de `step` que cubre la barra más alta; como mínimo, un paso. */
+type ChartScale = {
+  /** El menor múltiplo del paso que cubre la barra más alta; como mínimo, un paso. */
   readonly ceiling: number;
   /** 0, un paso, dos… hasta `ceiling`: de dos a cinco. */
   readonly lines: readonly number[];
@@ -17,6 +16,9 @@ const HOUR = 60 * MINUTE;
 const SUB_HOUR_STEPS = [15 * MINUTE, 30 * MINUTE];
 const STEP_MULTIPLIERS = [1, 2, 5];
 
+/** Cómo se alinea la marca con su columna (D-R5-8). */
+export type TickAlign = "start" | "center" | "end";
+
 /** Hasta siete marcas en el eje horizontal (D-R5-8). */
 const MAX_TICKS = 7;
 
@@ -29,7 +31,7 @@ export function chartScaleOf(bars: readonly { readonly seconds: number }[]): Cha
   const step = stepFor(highest);
   const ceiling = Math.max(1, Math.ceil(highest / step)) * step;
   const lines = Array.from({ length: ceiling / step + 1 }, (_, index) => index * step);
-  return { step, ceiling, lines };
+  return { ceiling, lines };
 }
 
 function stepFor(highest: number): number {
@@ -65,7 +67,7 @@ export function narrowTickIndexesOf(count: number): readonly number[] {
  * La de la primera columna empieza en su borde y la de la última termina en el
  * suyo, así ninguna sale de la caja; el resto, y la de una sola, centradas.
  */
-export function tickAlignOf(index: number, count: number): "start" | "center" | "end" {
+export function tickAlignOf(index: number, count: number): TickAlign {
   if (count === 1) {
     return "center";
   }

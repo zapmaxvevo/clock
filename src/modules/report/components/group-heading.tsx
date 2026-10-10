@@ -57,7 +57,7 @@ export function GroupHeading({ group }: { readonly group: ReportGroup }): ReactE
  * con año no entran lado a lado, y así bajan de renglón en lugar de ensanchar
  * la tabla.
  */
-function PartialHeading({
+export function PartialHeading({
   partial,
   children,
 }: {

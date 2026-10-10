@@ -4,10 +4,15 @@ import { useRef, useState, type KeyboardEvent } from "react";
 
 import { cn } from "@/lib/utils";
 
-import { activeBarIndex, narrowTickIndexesOf, nextBarIndex } from "./chart-model";
+import {
+  activeBarIndex,
+  narrowTickIndexesOf,
+  nextBarIndex,
+  type TickAlign,
+} from "./chart-model";
 
 /** Una línea de la escala: su rótulo («2:00») y su altura en porcentaje del área. */
-export type ChartScaleLine = { readonly label: string; readonly percent: number };
+type ChartScaleLine = { readonly label: string; readonly percent: number };
 
 /** Una columna, ya armada en el servidor (§5.3). */
 export type ChartBarView = {
@@ -21,21 +26,44 @@ export type ChartBarView = {
   readonly hasHours: boolean;
   /** La marca, o `null` si esta columna no la muestra. */
   readonly tick: string | null;
-  readonly tickAlign: "start" | "center" | "end";
+  readonly tickAlign: TickAlign;
 };
 
 const TICK_ALIGN = {
   start: "left-0",
   center: "left-1/2 -translate-x-1/2",
   end: "right-0",
-} as const satisfies Record<ChartBarView["tickAlign"], string>;
+} as const satisfies Record<TickAlign, string>;
+
+/** El ancho de cada columna, y el de su marca debajo: el área repartida en partes iguales. */
+const COLUMN_WIDTH = "min-w-0 flex-1";
+
+/** D-R5-8: con una sola barra, la columna tiene un ancho tope y va centrada. */
+const SINGLE_COLUMN_WIDTH = "max-w-12";
+
+/**
+ * D-R5-9: el contorno del foco de teclado, de 2 px, hacia adentro: afuera
+ * queda el espacio de 1 px entre columnas, con el fondo, y no la barra vecina.
+ */
+const FOCUS_OUTLINE =
+  "focus-visible:outline-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 forced-colors:focus-visible:outline-[Highlight]";
+
+/**
+ * P6: con el foco, la barra se aparta 3 px de los bordes de la columna: 2 son
+ * del contorno y 1 queda con el fondo de la columna activa. Sin eso, la activa
+ * a toda la altura toca el contorno con casi el mismo color. Con margen y no
+ * con relleno en la columna, que la ensancharía y movería a las vecinas.
+ */
+const FOCUSED_BAR_INSET =
+  "group-focus-visible:mx-[3px] group-focus-visible:mb-[3px] group-focus-visible:max-h-[calc(100%-6px)]";
 
 /**
  * D-R5-7, D-R5-9: la línea del valor, las columnas y las marcas. Muestra el
  * valor de la columna activa —la del puntero o, sin puntero, la del foco— y
  * mueve el foco entre las columnas con las flechas, Inicio y Fin, con una sola
- * parada de tabulación. Quien la monta le pone como `key` el `href` del
- * pedido, así cada navegación vuelve a empezar en la primera columna.
+ * parada de tabulación. `ReportView` le pone a `ReportChart` como `key` el
+ * `href` del pedido, así cada navegación la vuelve a montar y empieza en la
+ * primera columna.
  */
 export function ChartBars({
   scale,
@@ -49,7 +77,6 @@ export function ChartBars({
   const [hovered, setHovered] = useState<number | null>(null);
   const columns = useRef<(HTMLDivElement | null)[]>([]);
   const active = activeBarIndex(hovered, focused);
-  // Con una sola barra, la columna tiene un ancho tope y va centrada (D-R5-8).
   const single = bars.length === 1;
   // Sale de la cantidad de columnas: no viaja en las props, que pesan en el payload RSC (§6.3).
   const narrowTicks = new Set(narrowTickIndexesOf(bars.length));
@@ -127,10 +154,10 @@ export function ChartBars({
               onBlur={() => setFocused(null)}
               onKeyDown={(event) => onKeyDown(event, index)}
               className={cn(
-                "flex h-full min-w-0 flex-1 items-end",
-                "focus-visible:outline-foreground focus-visible:outline-2 focus-visible:-outline-offset-2",
-                "forced-colors:focus-visible:outline-[Highlight]",
-                single && "max-w-12",
+                "group flex h-full items-end",
+                COLUMN_WIDTH,
+                FOCUS_OUTLINE,
+                single && SINGLE_COLUMN_WIDTH,
                 index === active && "bg-muted",
               )}
             >
@@ -138,6 +165,7 @@ export function ChartBars({
                 <div
                   className={cn(
                     "min-h-0.5 w-full forced-colors:forced-color-adjust-none",
+                    FOCUSED_BAR_INSET,
                     index === active
                       ? "bg-primary forced-colors:bg-[Highlight]"
                       : "bg-chart-2 forced-colors:bg-[CanvasText]",
@@ -162,7 +190,7 @@ export function ChartBars({
         {bars.map((bar, index) => (
           <div
             key={bar.key}
-            className={cn("relative min-w-0 flex-1", single && "max-w-12")}
+            className={cn("relative", COLUMN_WIDTH, single && SINGLE_COLUMN_WIDTH)}
           >
             {bar.tick !== null && (
               <span

@@ -6,6 +6,7 @@ import {
   type ReportGroup,
   type ReportReadyState,
 } from "@/modules/report/schema";
+import { bodyRows } from "@/test/markup";
 
 import { REPORT_HEADING_ID, ReportView } from "./report-view";
 
@@ -42,16 +43,6 @@ const state: ReportReadyState = {
 
 function render(overrides: Partial<ReportReadyState>): string {
   return renderToStaticMarkup(<ReportView state={{ ...state, ...overrides }} />);
-}
-
-/** Las celdas de cada fila del cuerpo, sin etiquetas. */
-function bodyRows(markup: string): string[][] {
-  const body = markup.slice(markup.indexOf("<tbody>"), markup.indexOf("</tbody>"));
-  return [...body.matchAll(/<tr[^>]*>(.*?)<\/tr>/g)].map(([, row]) =>
-    [...row.matchAll(/<t[hd][^>]*>(.*?)<\/t[hd]>/g)].map(([, cell]) =>
-      cell.replace(/<[^>]+>/g, ""),
-    ),
-  );
 }
 
 /** El encabezado de cada fila del cuerpo, con sus etiquetas. */

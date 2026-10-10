@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { Locator, Page } from "@playwright/test";
 
-import { boxOf, PERSON_TIMEZONE } from "./calendar-page";
+import { boxOf, PERSON_TIMEZONE, type Box } from "./calendar-page";
 import {
   archiveProject,
   clientIdOf,
@@ -1942,9 +1942,6 @@ test("el gráfico por día, semana y mes, con el teclado, el puntero y los filtr
     chartBar(byThisWeek, chartBarName(weekdayLabel(thisWeek.first, day), null, "0:01")),
   ).toBeFocused();
 });
-
-/** Una caja en píxeles del viewport, como la de `boxOf`. */
-type Box = { x: number; y: number; width: number; height: number };
 
 /**
  * La caja del contenido de un elemento: la suya sin el borde ni el relleno.
