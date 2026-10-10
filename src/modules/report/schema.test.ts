@@ -3,6 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   hasReportFilters,
   NO_REPORT_FILTERS,
+  REPORT_CHART_DAILY_MAX_DAYS,
+  REPORT_CHART_MAX_BARS,
+  REPORT_CHART_WEEKLY_MAX_DAYS,
   REPORT_DESCRIPTION_SHOWN,
   REPORT_GROUP_BYS,
   REPORT_GROUP_PARAMS,
@@ -22,6 +25,7 @@ import {
   reportReadyState,
   reportSubgroupParams,
   sameRange,
+  type ReportChartBar,
   type ReportReadyState,
 } from "./schema";
 
@@ -434,6 +438,7 @@ describe("reportReadyState (D-R2b-2, D-R2b-5, D-R3-3, D-R3-4, D-R3-7)", () => {
     ],
     filters: NO_REPORT_FILTERS,
     filterOptions: { people: null, clients: [], projects: [] },
+    chart: null,
   };
 
   it("admite los grupos de cliente, con «Sin cliente», y los atajos", () => {
@@ -998,6 +1003,7 @@ describe("reportReadyState con los filtros (D-R4-5, D-R4-9)", () => {
         { id: uuidAt(1), name: "Interno", color: "red", client: null, archived: true },
       ],
     },
+    chart: null,
   };
 
   it("admite los filtros efectivos y las opciones", () => {
@@ -1157,6 +1163,7 @@ describe("reportReadyState con el filtro de personas (D-R4-4, D-R4-9; criterio 1
       clients: [],
       projects: [],
     },
+    chart: null,
   };
 
   it("admite las personas elegidas y sus opciones, y people en null sin el filtro", () => {
@@ -1190,5 +1197,128 @@ describe("reportReadyState con el filtro de personas (D-R4-4, D-R4-9; criterio 1
     ]) {
       expect(reportReadyState.safeParse(state).success).toBe(false);
     }
+  });
+});
+
+describe("reportReadyState con el gráfico (D-R5-2, D-R5-4, D-R5-5; criterio 3)", () => {
+  const month = { first: "2026-10-01", last: "2026-10-31" };
+
+  /** La barra del día `day` de octubre de 2026, con `seconds`. */
+  function dayBar(day: number, seconds: number): ReportChartBar {
+    const dd = String(day).padStart(2, "0");
+    return {
+      firstDay: `2026-10-${dd}`,
+      label: `jue, ${dd}/10`,
+      partial: null,
+      tick: `${dd}/10`,
+      seconds,
+    };
+  }
+
+  const ready: ReportReadyState = {
+    kind: "ready",
+    todayKey: "2026-10-08",
+    range: month,
+    rangeLabel: "Este mes",
+    previous: null,
+    next: null,
+    currentWeek: { first: "2026-10-05", last: "2026-10-11" },
+    shortcuts: [],
+    groupBy: "client",
+    subgroups: [],
+    levelsShown: 1,
+    scope: "everyone",
+    timeZone: "America/Argentina/Buenos_Aires",
+    totalSeconds: 90,
+    billableSeconds: 0,
+    groups: [{ kind: "client", client: null, seconds: 90 }],
+    filters: NO_REPORT_FILTERS,
+    filterOptions: { people: null, clients: [], projects: [] },
+    chart: { granularity: "date", bars: [dayBar(1, 90)] },
+  };
+
+  /** El estado con `bars` por día, sumen lo que sumen. */
+  function withBars(bars: readonly unknown[]) {
+    return { ...ready, chart: { granularity: "date", bars } };
+  }
+
+  it("fija los umbrales y el tope de barras de D-R5-4", () => {
+    expect(REPORT_CHART_DAILY_MAX_DAYS).toBe(31);
+    expect(REPORT_CHART_WEEKLY_MAX_DAYS).toBe(182);
+    expect(REPORT_CHART_MAX_BARS).toBe(31);
+  });
+
+  it("admite chart null, un gráfico de una barra y uno de 31", () => {
+    expect(reportReadyState.parse(ready)).toEqual(ready);
+    const empty: ReportReadyState = {
+      ...ready,
+      totalSeconds: 0,
+      groups: [],
+      chart: null,
+    };
+    expect(reportReadyState.parse(empty)).toEqual(empty);
+    const full: ReportReadyState = {
+      ...ready,
+      chart: {
+        granularity: "date",
+        bars: Array.from({ length: 31 }, (_, index) =>
+          dayBar(index + 1, index === 0 ? 90 : 0),
+        ),
+      },
+    };
+    expect(reportReadyState.parse(full)).toEqual(full);
+  });
+
+  it("admite partial nulo y con texto", () => {
+    const byWeek: ReportReadyState = {
+      ...ready,
+      chart: {
+        granularity: "week",
+        bars: [
+          {
+            firstDay: "2026-10-01",
+            label: "28/09 – 04/10",
+            partial: "01/10 – 04/10",
+            tick: "01/10",
+            seconds: 60,
+          },
+          {
+            firstDay: "2026-10-05",
+            label: "05/10 – 11/10",
+            partial: null,
+            tick: "05/10",
+            seconds: 30,
+          },
+        ],
+      },
+    };
+    expect(reportReadyState.parse(byWeek)).toEqual(byWeek);
+  });
+
+  it("rechaza 0 barras, 32, una granularidad que no es de tiempo y una barra mal formada", () => {
+    const thirtyTwo = Array.from({ length: 32 }, (_, index) =>
+      dayBar((index % 31) + 1, index === 0 ? 90 : 0),
+    );
+    for (const state of [
+      withBars([]),
+      withBars(thirtyTwo),
+      { ...ready, chart: { granularity: "person", bars: [dayBar(1, 90)] } },
+      withBars([dayBar(1, 91), dayBar(2, -1)]),
+      withBars([{ ...dayBar(1, 90), tick: "" }]),
+      withBars([{ ...dayBar(1, 90), label: "" }]),
+      withBars([{ ...dayBar(1, 90), partial: undefined }]),
+    ]) {
+      expect(reportReadyState.safeParse(state).success).toBe(false);
+    }
+  });
+
+  it("rechaza un gráfico cuyas barras suman distinto de totalSeconds (RP-18)", () => {
+    expect(reportReadyState.safeParse(withBars([dayBar(1, 89)])).success).toBe(false);
+    expect(
+      reportReadyState.safeParse(withBars([dayBar(1, 60), dayBar(2, 31)])).success,
+    ).toBe(false);
+    expect(
+      reportReadyState.safeParse(withBars([dayBar(1, 60), dayBar(2, 30)])).success,
+    ).toBe(true);
   });
 });

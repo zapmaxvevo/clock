@@ -806,5 +806,6 @@ export async function getReportState(
     groups: treeOf(read.levels, time),
     filters: read.filters,
     filterOptions: toFilterOptions(read.catalog, read.people),
+    chart: null,
   };
 }

@@ -41,6 +41,7 @@ const state: ReportReadyState = {
   groups: [],
   filters: NO_REPORT_FILTERS,
   filterOptions,
+  chart: null,
 };
 
 function render(overrides: Partial<ReportReadyState> = {}): string {
