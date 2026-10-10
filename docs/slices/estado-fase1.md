@@ -1,7 +1,7 @@
 # Estado de la fase 1
 
 Registro vivo de por dónde va la ejecución. Se actualiza al cerrar cada paso;
-quien retome el trabajo empieza acá. Última actualización: 2026-10-09.
+quien retome el trabajo empieza acá. Última actualización: 2026-10-10.
 
 ## Dónde estamos
 
@@ -36,6 +36,7 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-09.
 | Núcleo de reportes, R4a                     | En `main` |
 | Núcleo de reportes, R4b                     | En `main` |
 | Núcleo de reportes, R10a                    | En `main` |
+| Núcleo de reportes, R10b                    | En `main` |
 
 Los slices 1 a 13 (con 2b, 2c, 7b, 8b, 8c, 11a y 11b) y el arreglo del piso fijo están en `main`.
 El 13 (planilla de horarios) se mergeó el 2026-10-08 con lint, typecheck, 1279 de unidad, 1223 de
@@ -167,13 +168,12 @@ vacío del owner y `renewWorkspace` se corta.
      (descripción, parte B del contrato de R10); su encargo de frontend lleva
      F1 de R10a y N1 de paridad (la tabla a 320 px). Bases de R10a que se pueden borrar:
      `clock_r10a_back`, `_front`, `_test`, `_e2e`, `_parity`, `_final_test` y `_final_e2e`.
-     **R10b al cortar la séptima sesión** (2026-10-09, ~22:45, el usuario apagó la máquina
-     trabada): rama `nucleo/r10b` pusheada, implementada entera, cinco de seis revisiones
-     aprobadas o corregidas en `718cf32`; paridad aprobada, su texto en `r10b-paridad-pendiente.md` sin aplicar; falta la segunda vuelta de e2e (Chromium
-     headless dejó de dibujar en la máquina, no es el código). Ver «Al cortar» en
-     `correcciones-nucleo-reportes-r10b-revisiones.md`. No hay tope de agentes en paralelo.
-     Aviso de paridad: la `DATABASE_URL` del `.env` del usuario falla contra el Postgres local
-     (contraseña de `user`); los agentes usan la cadena de `e2e/environment.ts`.
+     **R10b en `main`** (octava sesión, 2026-10-10): paridad aplicada en `reportes.md` (`43225c0`),
+     e2e 205/205 ×2 sobre `6920a06` (Chromium headless volvió a dibujar tras el reinicio) y la
+     corrida final de `718cf32` con lint, typecheck, 1702 de unidad, 298 de `test:time-ar` y 1444
+     de integración. Ruido sin fallos: `The destination stream closed early` en el log del
+     servidor de e2e (~15 por vuelta). Aviso: la `DATABASE_URL` del `.env` del usuario falla contra
+     el Postgres local; los agentes usan la cadena de `e2e/environment.ts`.
 
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
      (`7b66b03`), en checkout en el árbol principal. `architect-r3` quedó escribiendo
