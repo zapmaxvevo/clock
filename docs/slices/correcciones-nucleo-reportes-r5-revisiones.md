@@ -123,3 +123,9 @@ texto de paridad con P1 a P5 y P7.
   320, 375 y 1280 px y en los tres modos de color.
 - **Documentos**: el contrato lleva D1, D2, D3 y P6; la paridad, en `reportes.md` (`cb8beaf`),
   con P1 a P5, P7 y P6.
+
+## Cierre
+
+Corrida final sobre `ba53958` con bases nuevas: lint y typecheck limpios; 1773 de unidad, 300 de
+`test:time-ar` y 1489 de integración (`clock_r5_final_test`); `next build` y la suite e2e entera
+207/207 dos veces (`clock_r5_final_e2e`). Merge como R5.
