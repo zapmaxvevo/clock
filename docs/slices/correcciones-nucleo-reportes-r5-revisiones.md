@@ -129,3 +129,7 @@ texto de paridad con P1 a P5 y P7.
 Corrida final sobre `ba53958` con bases nuevas: lint y typecheck limpios; 1773 de unidad, 300 de
 `test:time-ar` y 1489 de integración (`clock_r5_final_test`); `next build` y la suite e2e entera
 207/207 dos veces (`clock_r5_final_e2e`). Merge como R5.
+
+Q25 de R10, medida de nuevo después del merge con la máquina descargada (contenedor propio,
+`seed.sql` sin cambios, dos corridas de `explain.sql`): medianas de 53,0 y 54,5 ms (≤ 150); Q35,
+52,6 y 54,2 ms. Los 152,5 ms de antes eran carga de la máquina.
