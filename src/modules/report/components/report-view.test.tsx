@@ -53,6 +53,21 @@ function bodyRows(markup: string): string[][] {
   );
 }
 
+/** El encabezado de cada fila del cuerpo, con sus etiquetas. */
+function rowHeadings(markup: string): string[] {
+  return [...markup.matchAll(/<th scope="row"[^>]*>(.*?)<\/th>/g)].map(
+    ([, heading]) => heading,
+  );
+}
+
+/** D-R3-6: la línea del tope, cuando un nivel de abajo no entra. */
+const ROW_LIMIT =
+  "El reporte pasa de 3000 filas con todos sus niveles: se muestran solo los de arriba. Acortá el período o quitá un nivel.";
+
+/** D-R10-10: la fila del primer nivel que no entra. */
+const FIRST_LEVEL_LIMIT =
+  "El primer nivel pasa de 3000 filas y no se muestra. Acortá el período, filtrá o agrupá por otra cosa.";
+
 /** «Total» y «Facturable» con lo que muestra cada uno. */
 function totals(markup: string): Record<string, string> {
   return Object.fromEntries(
@@ -424,14 +439,14 @@ describe("ReportView con subniveles (D-R3-6, D-R3-9)", () => {
   });
 
   it("la línea del tope, encima de la tabla, solo si se muestran menos niveles que los pedidos", () => {
-    const limit =
-      "El reporte pasa de 3000 filas con todos sus niveles: se muestran solo los de arriba. Acortá el período o quitá un nivel.";
     const markup = renderTree({ groups: cut, levelsShown: 1 });
-    expect(markup).toContain(limit);
-    expect(markup.indexOf(limit)).toBeLessThan(markup.indexOf("<table"));
-    expect(renderTree({ subgroups: ["date", "tag"], levelsShown: 2 })).toContain(limit);
-    expect(renderTree({})).not.toContain(limit);
-    expect(render({})).not.toContain(limit);
+    expect(markup).toContain(ROW_LIMIT);
+    expect(markup.indexOf(ROW_LIMIT)).toBeLessThan(markup.indexOf("<table"));
+    expect(renderTree({ subgroups: ["date", "tag"], levelsShown: 2 })).toContain(
+      ROW_LIMIT,
+    );
+    expect(renderTree({})).not.toContain(ROW_LIMIT);
+    expect(render({})).not.toContain(ROW_LIMIT);
   });
 
   it("la línea de la etiqueta con la etiqueta en el segundo nivel, y no si ese nivel quedó cortado", () => {
@@ -501,7 +516,7 @@ describe("ReportView por semana y por mes (D-R10-3, §5.2)", () => {
 
   /** El encabezado de la fila `index` del cuerpo, con sus etiquetas. */
   function rowHeading(markup: string, index: number): string {
-    return [...markup.matchAll(/<th scope="row"[^>]*>(.*?)<\/th>/g)][index]?.[1] ?? "";
+    return rowHeadings(markup)[index] ?? "";
   }
 
   it("por semana, el encabezado «Semana» y «solo …» en gris solo en las cortadas", () => {
@@ -718,13 +733,6 @@ describe("ReportView con filtros (D-R4-7)", () => {
 describe("ReportView por descripción (D-R10-9, D-R10-10, §5.2, §5.4)", () => {
   const LONG = "Revisión del tablero de soporte ".repeat(4).slice(0, 100);
 
-  /** El encabezado de cada fila del cuerpo, con sus etiquetas. */
-  function rowHeadings(markup: string): string[] {
-    return [...markup.matchAll(/<th scope="row"[^>]*>(.*?)<\/th>/g)].map(
-      ([, heading]) => heading,
-    );
-  }
-
   function description(id: string, text: string, truncated: boolean, seconds: number) {
     return {
       kind: "description",
@@ -771,10 +779,6 @@ describe("ReportView por descripción (D-R10-9, D-R10-10, §5.2, §5.4)", () => 
   });
 
   describe("con el primer nivel cortado (levelsShown: 0)", () => {
-    const firstLevelLimit =
-      "El primer nivel pasa de 3000 filas y no se muestra. Acortá el período, filtrá o agrupá por otra cosa.";
-    const rowLimit = "con todos sus niveles: se muestran solo los de arriba";
-
     function renderCut(overrides: Partial<ReportReadyState>): string {
       return render({
         groupBy: "description",
@@ -792,7 +796,7 @@ describe("ReportView por descripción (D-R10-9, D-R10-10, §5.2, §5.4)", () => 
       const markup = renderCut({});
       expect(markup).toMatch(/<th scope="col"[^>]*>Descripción<\/th>/);
       expect(markup).toContain('<td colSpan="2"');
-      expect(bodyRows(markup)).toEqual([[firstLevelLimit]]);
+      expect(bodyRows(markup)).toEqual([[FIRST_LEVEL_LIMIT]]);
       expect(markup).not.toContain('<th scope="row"');
       expect(markup).not.toContain("<button");
       expect(totals(markup)).toEqual({ Total: "3000:01", Facturable: "1:00" });
@@ -802,8 +806,8 @@ describe("ReportView por descripción (D-R10-9, D-R10-10, §5.2, §5.4)", () => 
       const markup = renderCut({
         filters: { people: [], clients: [], projects: [], withoutProject: true },
       });
-      expect(bodyRows(markup)).toEqual([[firstLevelLimit]]);
-      expect(markup).not.toContain(rowLimit);
+      expect(bodyRows(markup)).toEqual([[FIRST_LEVEL_LIMIT]]);
+      expect(markup).not.toContain(ROW_LIMIT);
       expect(markup).not.toContain("Ninguna entrada coincide con los filtros");
       expect(markup).not.toContain("Quitar filtros");
       expect(markup).not.toContain("No hay horas en este período");
@@ -812,7 +816,7 @@ describe("ReportView por descripción (D-R10-9, D-R10-10, §5.2, §5.4)", () => 
     it("por etiqueta, el encabezado «Etiqueta» y sin la línea de la suma, que habla de filas", () => {
       const markup = renderCut({ groupBy: "tag", subgroups: [] });
       expect(markup).toMatch(/<th scope="col"[^>]*>Etiqueta<\/th>/);
-      expect(bodyRows(markup)).toEqual([[firstLevelLimit]]);
+      expect(bodyRows(markup)).toEqual([[FIRST_LEVEL_LIMIT]]);
       expect(markup).not.toContain("Una entrada con varias etiquetas suma en cada una");
     });
   });

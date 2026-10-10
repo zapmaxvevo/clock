@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -17,6 +15,7 @@ import {
   seedTimeEntry,
   seedWorkspace,
 } from "@/test/factories";
+import { descriptionIdOf } from "@/test/report";
 import { actorIn, workspaceOf } from "@/test/time-entry";
 
 import { projectRepository } from "@/modules/project/repository";
@@ -437,8 +436,7 @@ function descriptionOf(text: string) {
   if (text === "") {
     return null;
   }
-  const id = createHash("sha256").update(text, "utf8").digest("hex").slice(0, 32);
-  return { id, text, truncated: false };
+  return { id: descriptionIdOf(text), text, truncated: false };
 }
 
 /**

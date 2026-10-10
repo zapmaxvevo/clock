@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 import { eq, sql } from "drizzle-orm";
 import {
@@ -26,6 +26,7 @@ import {
   seedTimeEntry,
   seedWorkspace,
 } from "@/test/factories";
+import { descriptionIdOf } from "@/test/report";
 import { actorIn, workspaceOf } from "@/test/time-entry";
 
 import { projectLabels } from "@/modules/project/components/labels";
@@ -107,6 +108,7 @@ function seedClosed(
     readonly taskId?: string | null;
     readonly billable?: boolean;
     readonly tagIds?: readonly string[];
+    readonly description?: string;
   } = {},
 ) {
   const start = new Date(startedAt);
@@ -3302,11 +3304,6 @@ describe("los tramos de cada lectura (D-R10-4; criterio 8 de R10)", () => {
   });
 });
 
-/** D-R10-9: el `id` que calcula la base, calculado acá: los 32 primeros hexadecimales del SHA-256 en UTF-8. */
-function descriptionIdOf(text: string): string {
-  return createHash("sha256").update(text, "utf8").digest("hex").slice(0, 32);
-}
-
 /** Las filas por descripción como `[texto o null, recortada, segundos]`, en orden. */
 function descriptionRows(state: ReportReadyState) {
   return state.groups.map((group) =>
@@ -3339,23 +3336,19 @@ describe("por descripción (D-R10-8, D-R10-9, RP-11, RP-28; criterio 15 de R10)"
   });
 
   /** Una entrada del owner el martes 29/09 a las 10:00 de Buenos Aires. */
-  function seedDescribed(description: string, seconds: number, userId = ownerId) {
-    return seedTimeEntry({
-      workspaceId,
-      userId,
-      description,
-      startedAt: new Date("2026-09-29T13:00:00Z"),
-      endedAt: new Date(Date.parse("2026-09-29T13:00:00Z") + seconds * 1000),
-    });
+  function seedDescribed(description: string, seconds: number) {
+    return seedClosed(ownerId, "2026-09-29T13:00:00Z", seconds, { description });
   }
 
   it("agrupa por el texto exacto: las mayúsculas, los espacios internos, NFD y un espacio final separan", async () => {
-    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 3600, { projectId: p1 });
-    await seedClosed(otherId, "2026-09-30T13:00:00Z", 1800, { projectId: p2 });
-    await db
-      .update(timeEntry)
-      .set({ description: "Reunión" })
-      .where(eq(timeEntry.workspaceId, workspaceId));
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 3600, {
+      projectId: p1,
+      description: "Reunión",
+    });
+    await seedClosed(otherId, "2026-09-30T13:00:00Z", 1800, {
+      projectId: p2,
+      description: "Reunión",
+    });
     await seedDescribed("reunión", 3000);
     await seedDescribed("Reunión semanal", 2400);
     await seedDescribed("Reunión  semanal", 2100);
@@ -3450,12 +3443,12 @@ describe("por descripción (D-R10-8, D-R10-9, RP-11, RP-28; criterio 15 de R10)"
     await seedClosed(ownerId, "2026-09-29T13:00:00Z", 3600, {
       projectId: p1,
       billable: true,
+      description: "Reunión",
     });
-    await seedClosed(otherId, "2026-09-30T13:00:00Z", 1800, { projectId: p2 });
-    await db
-      .update(timeEntry)
-      .set({ description: "Reunión" })
-      .where(eq(timeEntry.workspaceId, workspaceId));
+    await seedClosed(otherId, "2026-09-30T13:00:00Z", 1800, {
+      projectId: p2,
+      description: "Reunión",
+    });
     await seedDescribed("", 600);
     const byDescription = await readyState(owner, {
       range: lastWeek,
@@ -3490,15 +3483,10 @@ describe("la descripción en los niveles y con filtros (D-R10-6, D-R10-11; crite
       [ownerId, "2026-09-30T14:00:00Z", 1200, p1, "Informe", tagIds],
       [otherId, "2026-10-01T13:00:00Z", 600, p1, "", []],
     ] as const) {
-      const start = new Date(startedAt);
-      await seedTimeEntry({
-        workspaceId,
-        userId,
-        description,
+      await seedClosed(userId, startedAt, seconds, {
         projectId,
+        description,
         tagIds: tags,
-        startedAt: start,
-        endedAt: new Date(start.getTime() + seconds * 1000),
       });
     }
   });
@@ -3612,13 +3600,15 @@ describe("el tope del primer nivel (D-R10-10; criterio 17 de R10)", () => {
        where workspace_id = ${workspaceId} and description = 'Entrada 3001'`);
   }
 
-  it("por descripción con 3001: levelsShown 0, sin grupos y el total de entryTotals, en la misma transacción", async () => {
+  it("por descripción con 3002: levelsShown 0, sin grupos y el total de entryTotals, en la misma transacción", async () => {
+    // Una hora con otro texto: ninguna suma de las 3001 filas leídas da el total.
+    await seedClosed(ownerId, "2026-09-29T14:00:00Z", 3600, { description: "Informe" });
     const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
     const entryTotals = vi.spyOn(reportRepository, "entryTotals");
     const state = await readyState(owner, { range: lastWeek, groupBy: "description" });
     expect(reportReadyState.parse(state)).toEqual(state);
     expect([state.levelsShown, state.groups]).toEqual([0, []]);
-    expect(totalsPair(state)).toEqual([3001 * 60, 1500 * 60]);
+    expect(totalsPair(state)).toEqual([3001 * 60 + 3600, 1500 * 60]);
     expect(byLevels.mock.calls.map(([, read]) => read.limit)).toEqual([3001]);
     expect(entryTotals).toHaveBeenCalledTimes(1);
     const executor = byLevels.mock.calls[0]?.[2];

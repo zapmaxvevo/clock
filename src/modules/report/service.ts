@@ -669,7 +669,7 @@ function levelReadOf(
   plan: ReadPlan,
   depth: number,
   filter: ReportEntryFilter,
-  limit?: number,
+  limit: number,
 ): ReportLevelRead {
   const dimensions = plan.levels.slice(0, depth);
   return {

@@ -5,8 +5,9 @@
 -- Q23 y Q24 las de §6.3, con el filtro de personas y su catálogo. Q25 a Q30
 -- son las de §6.2 del contrato de R10, por semana y por mes, y Q31 a Q34 las
 -- de §6.3, por descripción. Desde R10b el primer nivel también lleva el
--- `limit` del tope, `REPORT_MAX_ROWS + 1` (D-R10-10): Q2, Q5 y Q11 lo llevan
--- en el texto, como lo manda el repository.
+-- `limit` del tope, `REPORT_MAX_ROWS + 1` (D-R10-10): el `limit $n` lo llevan
+-- solo Q2, Q5 y Q11; las demás de primer nivel no lo llevan, aunque el
+-- repository lo mande.
 -- Cada sentencia es el texto que emite el repository (`.toSQL()`), preparada
 -- con sus parámetros como los manda el driver: los instantes son los que
 -- calcula `startOfDayKey` en Buenos Aires, que no tiene cambio de horario.

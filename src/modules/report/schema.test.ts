@@ -780,11 +780,15 @@ describe("reportReadyState (D-R2b-2, D-R2b-5, D-R3-3, D-R3-4, D-R3-7)", () => {
     }
   });
 
-  it("admite levelsShown 0 sin grupos, y no con un grupo (D-R10-10)", () => {
+  it("admite levelsShown 0 sin grupos, y no con un grupo ni −1 sin grupos (D-R10-10)", () => {
     const cut = { ...ready, groupBy: "description", subgroups: ["project"] };
     expect(
       reportReadyState.safeParse({ ...cut, levelsShown: 0, groups: [] }).success,
     ).toBe(true);
+    // Sin grupos el `refine` deja pasar cualquier valor: lo frena `.min(0)`.
+    expect(
+      reportReadyState.safeParse({ ...cut, levelsShown: -1, groups: [] }).success,
+    ).toBe(false);
     expect(
       reportReadyState.safeParse({
         ...cut,
