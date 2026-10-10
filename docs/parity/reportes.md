@@ -2596,7 +2596,10 @@ promedios o comparación con otro período, y numerar las semanas en el eje
   Inicio y Fin no hacen nada en el gráfico. Las flechas no desplazan la página. Tab sale
   del gráfico a «Ver los datos del gráfico».
 - **La columna con el foco de teclado** lleva un contorno de 2 px hacia adentro,
-  que se ve también sobre una barra en cero.
+  que se ve también sobre una barra en cero. La barra enfocada se aparta 3 px
+  de los bordes de la columna, así el contorno no la pisa aunque llegue al
+  techo: a 320 px con 31 barras queda como un trazo fino dentro del contorno, y
+  su valor lo dice la línea del valor (P6 de las revisiones de R5).
 - **La columna activa** es la del puntero; sin puntero encima, la del foco; si
   no hay ninguna de las dos, no hay columna activa. La línea del valor dice su
   nombre. Al sacar el puntero del área de las columnas, la línea vuelve a la columna con el

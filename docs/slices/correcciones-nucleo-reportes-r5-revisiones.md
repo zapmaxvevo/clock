@@ -103,3 +103,23 @@ Lo que verificaron:
 
 Antes del merge, el team-lead aplica al contrato D1 (D-R5-8 y el criterio 11), D2 y D3, y el
 texto de paridad con P1 a P5 y P7.
+
+## Resultado de la ronda
+
+- **Backend** (`5bc75ba`): B1, B2, C3, C7 y T1. Lint, typecheck, unidad con `test:time-ar` e
+  integración 1489/1489 contra `clock_r5_back`. Las corridas de los pasos 1 y 3, y los mutantes
+  de los criterios 4 a 9, habían ido contra `clock_test`; la revisión de backend los repitió con
+  su base y dieron lo mismo.
+- **Frontend** (`4c71b22`): F1, P6, C1, C2, C4, C5, C6, C8, T3 y C9/T2. P6: con el foco visible
+  la barra se aparta 3 px de los bordes de la columna (margen en la barra; con relleno en la
+  columna, las vecinas se movían hasta 5,8 px). Alrededor del contorno, de 14,5 a 19,8:1 en los
+  dos temas; con colores forzados, 11,31, salvo un píxel de 1,86 contra la línea superior de la
+  escala. El costo: a 320 px con 31 columnas la barra enfocada queda en ~0,6 px de ancho. Se
+  acepta: separar un contorno de 2 px de una barra del mismo color cuesta 6 px de ancho de
+  cualquier forma, y la única salida sin ese costo (la barra enfocada en `bg-chart-2`) pierde el
+  color activo de D-R5-9. F1: con colores forzados el summary muestra un contorno en `Highlight`.
+  Los 21 mutantes anteriores siguen cayendo, y caen los 3 nuevos de P6.
+- **Segunda pasada de frontend** sobre `4c71b22`: aprobada, sin hallazgos. Midió P6 en vivo a
+  320, 375 y 1280 px y en los tres modos de color.
+- **Documentos**: el contrato lleva D1, D2, D3 y P6; la paridad, en `reportes.md` (`cb8beaf`),
+  con P1 a P5, P7 y P6.

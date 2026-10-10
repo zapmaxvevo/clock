@@ -305,6 +305,12 @@ HTML y CSS; (3) una biblioteca de gráficos. **(2).**
   se ve aunque la barra esté en cero. No se usa el anillo `ring-ring` de los
   botones del módulo (`report-tree.tsx:91`): una columna no tiene borde propio
   y ese gris da unos 2,6:1 contra el blanco.
+  _Corregido en la implementación (P6 de las revisiones)_: con la barra activa
+  a toda la altura, el contorno en `--foreground` pisaba la barra en
+  `--primary` y no se distinguía. Con el foco visible, la barra se aparta 3 px
+  de los bordes de la columna (margen en la barra, `FOCUSED_BAR_INSET`; con
+  relleno en la columna las vecinas se movían): de 14,5 a 19,8:1 alrededor del
+  contorno. A 320 px con 31 columnas la barra enfocada queda en ~0,6 px.
 - **El equivalente en tabla**: debajo de las columnas, un `<details>` cerrado,
   «Ver los datos del gráfico», con una tabla de dos columnas —la de la
   granularidad («Fecha», «Semana» o «Mes», los rótulos de «Agrupar por») y
