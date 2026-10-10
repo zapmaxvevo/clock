@@ -24,7 +24,7 @@ cambios de tablas, de índices ni de permisos.
   cambios, todos aplicados: el límite entre el componente de servidor y el de
   cliente (M1: `ChartBars` dibuja la línea del valor, las columnas y las
   marcas, §5.2 y §5.3, con cada prop nombrada); el estado de `ChartBars` entre
-  navegaciones (M2: se monta con la `key` de `ReportTree`, con su paso en el
+  navegaciones (M2: `ReportChart` se monta con la `key` de `ReportTree`, con su paso en el
   recorrido 21 y su mutante); el foco visible sobre una barra en cero (M3: el
   elemento enfocable es la columna entera, marcada y con contorno, D-R5-9,
   criterio 11 y §5.5); de 6 a 13 barras por mes (m1); «mié, 30/09» en 2026
@@ -34,6 +34,11 @@ cambios de tablas, de índices ni de permisos.
   D-R5-3 (n2), el foco itinerante como desvío del mapa (n3, abajo y §10.2), la
   alternativa de peso de §6.4 (n4), un solo nombre para el gráfico (n5) y las
   filas de §8.1 de `test-engineer` (n6).
+  La segunda pasada lo aprobó con dos menores y una nota, aplicados por el
+  team-lead: el mutante de M2 es «`ReportChart` montado sin `key` en
+  `ReportView`», el recorrido 21 siembra y espera la semana actual con
+  domingo (no con `currentWeekRange`) y el contorno del foco va hacia adentro
+  (`-outline-offset-2`).
 - **Decisiones de arquitectura asociadas**, todas aceptadas:
   - [ADR 0021](../adr/0021-el-reporte-agrega-en-la-base.md): «los totales de la
     cabecera, los grupos y el gráfico salen de la misma lectura, en una
@@ -707,7 +712,9 @@ del foco, si no ninguna. Es una función pura de `chart-model.ts`.
   puntero no está encima— y `tabStop` queda en la última enfocada.
 - **La columna activa** lleva `bg-muted` y su barra el color activo de §5.4; la
   enfocada con teclado, además, el contorno de D-R5-9
-  (`focus-visible:outline-2 focus-visible:outline-foreground`), y con colores
+  (`focus-visible:outline-2 focus-visible:-outline-offset-2
+focus-visible:outline-foreground`: hacia adentro, porque entre columnas hay
+  1 px y la vecina o el `overflow` del área lo taparían), y con colores
   forzados el `outline` en `Highlight`.
 
 ### 5.4 Colores
@@ -1130,7 +1137,11 @@ no dependan del día en que corre.
     filtros** (RP-15, RP-24, RP-33; D-R5-4 a D-R5-9). `seedWeekEntries`
     (domingo; 20/09 0:15 en P1, 30/09 1:00 en P1, 01/10 0:30 en P2, 10/10 0:20
     en P1) y, con `seedPersonEntries`, una entrada en P1 de 00:00 a 00:01 el
-    primer día de la semana actual (con domingo). `WEEKS_RANGE` por «Persona»:
+    primer día de la semana actual (con domingo). Para esa entrada y para el
+    rango esperado después de «Esta semana» se usa
+    `weekRange(weekStartOf(today, SUNDAY))`, no `currentWeekRange`, que empieza
+    en lunes (`e2e/reports-page.ts:167-169`) y los domingos daría otra semana.
+    `WEEKS_RANGE` por «Persona»:
     - la figura «Horas por día» con 21 columnas; «sáb, 20/09/2025: 0:15», «mar,
       30/09/2025: 1:00», «mié, 01/10/2025: 0:30», «vie, 10/10/2025: 0:20» y
       «dom, 21/09/2025: 0:00»;
@@ -1180,7 +1191,7 @@ semana); todas las columnas en la tabulación (21: Tab desde la columna no llega
 a «Ver los datos del gráfico»); las flechas sin manejar (21); la línea del
 valor sin el puntero o sin el foco (21); la activa que no vuelve a la del foco
 al salir el puntero (21); la línea del valor que no se apaga al salir el foco
-(21); **`ChartBars` sin `key`** (21: después de «Esta semana», Mayúsculas+Tab no
+(21); **`ReportChart` montado sin `key` en `ReportView`** (21: después de «Esta semana», Mayúsculas+Tab no
 llega a ninguna columna); el gráfico sin el filtro (21: el 30/09 con 1:00); el
 gráfico dibujado sin horas (21); `weekStart` ignorado en el gráfico (21: con
 lunes, los rótulos de semana son otros); la marca de la última columna
