@@ -1,7 +1,7 @@
 # Estado de la fase 1
 
 Registro vivo de por dónde va la ejecución. Se actualiza al cerrar cada paso;
-quien retome el trabajo empieza acá. Última actualización: 2026-10-10.
+quien retome el trabajo empieza acá. Última actualización: 2026-10-10 (novena sesión).
 
 ## Dónde estamos
 
@@ -174,8 +174,10 @@ vacío del owner y `renewWorkspace` se corta.
      de integración. Ruido sin fallos: `The destination stream closed early` en el log del
      servidor de e2e (~15 por vuelta). Aviso: la `DATABASE_URL` del `.env` del usuario falla contra
      el Postgres local; los agentes usan la cadena de `e2e/environment.ts`. Merge `b0262e0`
-     pusheado, con lint, typecheck y e2e 205/205 sobre el merge. **Sigue**: el usuario elige el
-     próximo slice (R5, R6, R7, R9 o adelantar R8); no se arranca ninguno sin su pedido. Bases sin
+     pusheado, con lint, typecheck y e2e 205/205 sobre el merge. **Sigue R5** (gráfico de barras, mapa §R5) y
+     después el resto sin parar (decisión del usuario del 2026-10-10, novena sesión: «r5 y
+     despues segui sin parar»): R6, R7 y R9 en el orden del mapa; R8 sigue solo en contrato
+     salvo que él lo pida. Bases sin
      borrar (el permiso lo frenó): `clock_r10a_*` y `clock_r10b_final_*`.
 
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
