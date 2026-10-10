@@ -6,6 +6,7 @@
 import {
   NO_ENTRY_FILTER,
   reportRepository,
+  type ReportBucketRead,
   type ReportBuckets,
   type ReportEntryRead,
   type ReportLevelRead,
@@ -17,6 +18,11 @@ import type { ReportScope } from "./service";
 const span: ReportSpan = { from: new Date(0), to: new Date(0) };
 const entries: ReportEntryRead = { span, filter: NO_ENTRY_FILTER };
 const read: ReportLevelRead = { ...entries, dimensions: ["person"], buckets: {} };
+const bucketRead: ReportBucketRead = {
+  ...entries,
+  granularity: "date",
+  buckets: { buckets: [], end: new Date(0) },
+};
 
 // @ts-expect-error: D-R10-4, los tramos son solo de las dimensiones de tiempo.
 export const personBuckets: ReportBuckets = { person: { buckets: [], end: new Date(0) } };
@@ -37,6 +43,12 @@ export async function readsWithoutScope() {
   await reportRepository.totalsByLevels(undefined, read);
   // @ts-expect-error: el alcance de totalsByLevels no admite null.
   await reportRepository.totalsByLevels(null, read);
+  // @ts-expect-error: totalsByBucket exige el alcance como primer parámetro.
+  await reportRepository.totalsByBucket(bucketRead);
+  // @ts-expect-error: el alcance de totalsByBucket no admite undefined.
+  await reportRepository.totalsByBucket(undefined, bucketRead);
+  // @ts-expect-error: el alcance de totalsByBucket no admite null.
+  await reportRepository.totalsByBucket(null, bucketRead);
   // @ts-expect-error: entryTotals exige el alcance como primer parámetro.
   await reportRepository.entryTotals(entries);
   // @ts-expect-error: el alcance de entryTotals no admite undefined.

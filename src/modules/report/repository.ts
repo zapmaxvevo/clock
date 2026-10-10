@@ -151,6 +151,16 @@ export type ReportLevelRead = ReportEntryRead & {
   readonly limit?: number;
 };
 
+/** D-R5-3: lo que lee `totalsByBucket`: lo de `ReportEntryRead` y los tramos de una dimensión de tiempo. */
+export type ReportBucketRead = ReportEntryRead & {
+  readonly granularity: ReportTimeGroupBy;
+  /** Cubren exactamente `span`, como los de una lectura por niveles. */
+  readonly buckets: TimeBuckets;
+};
+
+/** Un tramo con horas: su posición en `buckets`, desde 0, y su suma. */
+export type BucketTotalRow = { readonly bucket: number; readonly seconds: number };
+
 export type EntryTotals = {
   readonly seconds: number;
   readonly billableSeconds: number;
@@ -613,6 +623,100 @@ function checkBuckets(
 }
 
 /**
+ * La sentencia de `totalsByLevels` y de `totalsByBucket` (D-R5-3): una fila
+ * por combinación de grupos con horas cerradas en `read.span`, dentro de
+ * `scope`. Ninguna de las dos pasa por la otra a través de `reportRepository`.
+ */
+async function levelTotals(
+  scope: ReportScope,
+  read: ReportLevelRead,
+  tx: Executor,
+): Promise<readonly LevelTotalRow[]> {
+  checkEntryRead(read);
+  checkLevelRead(read);
+  const levels = read.dimensions.map((groupBy, index) => ({
+    dimension: DIMENSIONS[groupBy],
+    name: keyName(index),
+  }));
+
+  // Adentro, una fila por entrada —o por entrada y etiqueta— con sus claves.
+  // Solo las dimensiones pedidas unen sus tablas: `time_entry_tag` unida
+  // siempre contaría dos veces una entrada con dos etiquetas.
+  let entries: PgSelect = tx
+    .select({
+      workspaceId: sql`${timeEntry.workspaceId}`.as("workspace_id"),
+      ...Object.fromEntries(
+        levels.map(({ dimension, name }) => [name, dimension.key(read).as(name)]),
+      ),
+      seconds: entrySeconds.as("seconds"),
+      billable: sql`${timeEntry.billable}`.as("billable"),
+    })
+    .from(timeEntry)
+    .$dynamic();
+  for (const { dimension } of levels) {
+    entries = dimension.joinInside?.(entries) ?? entries;
+  }
+
+  // La medida se trunca por entrada adentro y se suma acá (ADR 0021).
+  const entryKeys = levels.map(({ name }) => columnOf("entries", name));
+  const totals = tx
+    .select({
+      workspaceId: sql`${columnOf("entries", "workspace_id")}`.as("workspace_id"),
+      ...Object.fromEntries(
+        levels.map(({ name }, index) => [name, sql`${entryKeys[index]}`.as(name)]),
+      ),
+      seconds: sql`sum(${columnOf("entries", "seconds")})::bigint`.as("seconds"),
+      billableSeconds:
+        sql`coalesce(sum(${columnOf("entries", "seconds")}) filter (where ${columnOf("entries", "billable")}), 0)::bigint`.as(
+          "billable_seconds",
+        ),
+    })
+    .from(
+      entries
+        .where(and(inScope(scope), closedIn(read.span), matchesFilter(read.filter)))
+        .as("entries"),
+    )
+    .groupBy(columnOf("entries", "workspace_id"), ...entryKeys)
+    .as("totals");
+
+  // Afuera, los nombres por la clave, de uno a uno: una fila por grupo.
+  const workspaceId = columnOf("totals", "workspace_id");
+  let named: PgSelect = tx
+    .select({
+      ...Object.fromEntries(
+        levels.map(({ dimension, name }) => [
+          name,
+          dimension.shown(columnOf("totals", name)),
+        ]),
+      ),
+      seconds: sql<string>`${columnOf("totals", "seconds")}`,
+      billableSeconds: sql<string>`${columnOf("totals", "billable_seconds")}`,
+    })
+    .from(totals)
+    .$dynamic();
+  for (const { dimension, name } of levels) {
+    named =
+      dimension.joinOutside?.(named, columnOf("totals", name), workspaceId) ?? named;
+  }
+  // Las uniones de afuera son de uno a uno: el tope cuenta grupos.
+  if (read.limit !== undefined) {
+    named = named.limit(read.limit);
+  }
+
+  // La selección se arma por nivel, así que Drizzle no la tipa: cada nivel
+  // la lee su dimensión, con el tipo de sus campos.
+  const rows: readonly Readonly<Record<string, unknown>>[] = await named;
+  return rows.map((row) => ({
+    groups: levels.map(({ dimension, name }) =>
+      dimension.groupOf(row[name] as ShownValues<Shown>, read),
+    ),
+    // `bigint` llega como texto de los dos drivers; `secondsOf` lanza con otra cosa.
+    seconds: secondsOf(String(row.seconds)),
+    billableSeconds: secondsOf(String(row.billableSeconds)),
+  }));
+}
+
+/**
  * Las lecturas del reporte. Cada función recibe primero el alcance y es una
  * sentencia: agrega sobre `time_entry` y después une los nombres a las filas
  * ya agrupadas (D-R2a-8). Sin orden: lo pone el service.
@@ -628,88 +732,32 @@ export const reportRepository = {
     read: ReportLevelRead,
     tx: Executor = db,
   ): Promise<readonly LevelTotalRow[]> {
-    checkEntryRead(read);
-    checkLevelRead(read);
-    const levels = read.dimensions.map((groupBy, index) => ({
-      dimension: DIMENSIONS[groupBy],
-      name: keyName(index),
-    }));
+    return levelTotals(scope, read, tx);
+  },
 
-    // Adentro, una fila por entrada —o por entrada y etiqueta— con sus claves.
-    // Solo las dimensiones pedidas unen sus tablas: `time_entry_tag` unida
-    // siempre contaría dos veces una entrada con dos etiquetas.
-    let entries: PgSelect = tx
-      .select({
-        workspaceId: sql`${timeEntry.workspaceId}`.as("workspace_id"),
-        ...Object.fromEntries(
-          levels.map(({ dimension, name }) => [name, dimension.key(read).as(name)]),
-        ),
-        seconds: entrySeconds.as("seconds"),
-        billable: sql`${timeEntry.billable}`.as("billable"),
-      })
-      .from(timeEntry)
-      .$dynamic();
-    for (const { dimension } of levels) {
-      entries = dimension.joinInside?.(entries) ?? entries;
-    }
-
-    // La medida se trunca por entrada adentro y se suma acá (ADR 0021).
-    const entryKeys = levels.map(({ name }) => columnOf("entries", name));
-    const totals = tx
-      .select({
-        workspaceId: sql`${columnOf("entries", "workspace_id")}`.as("workspace_id"),
-        ...Object.fromEntries(
-          levels.map(({ name }, index) => [name, sql`${entryKeys[index]}`.as(name)]),
-        ),
-        seconds: sql`sum(${columnOf("entries", "seconds")})::bigint`.as("seconds"),
-        billableSeconds:
-          sql`coalesce(sum(${columnOf("entries", "seconds")}) filter (where ${columnOf("entries", "billable")}), 0)::bigint`.as(
-            "billable_seconds",
-          ),
-      })
-      .from(
-        entries
-          .where(and(inScope(scope), closedIn(read.span), matchesFilter(read.filter)))
-          .as("entries"),
-      )
-      .groupBy(columnOf("entries", "workspace_id"), ...entryKeys)
-      .as("totals");
-
-    // Afuera, los nombres por la clave, de uno a uno: una fila por grupo.
-    const workspaceId = columnOf("totals", "workspace_id");
-    let named: PgSelect = tx
-      .select({
-        ...Object.fromEntries(
-          levels.map(({ dimension, name }) => [
-            name,
-            dimension.shown(columnOf("totals", name)),
-          ]),
-        ),
-        seconds: sql<string>`${columnOf("totals", "seconds")}`,
-        billableSeconds: sql<string>`${columnOf("totals", "billable_seconds")}`,
-      })
-      .from(totals)
-      .$dynamic();
-    for (const { dimension, name } of levels) {
-      named =
-        dimension.joinOutside?.(named, columnOf("totals", name), workspaceId) ?? named;
-    }
-    // Las uniones de afuera son de uno a uno: el tope cuenta grupos.
-    if (read.limit !== undefined) {
-      named = named.limit(read.limit);
-    }
-
-    // La selección se arma por nivel, así que Drizzle no la tipa: cada nivel
-    // la lee su dimensión, con el tipo de sus campos.
-    const rows: readonly Readonly<Record<string, unknown>>[] = await named;
-    return rows.map((row) => ({
-      groups: levels.map(({ dimension, name }) =>
-        dimension.groupOf(row[name] as ShownValues<Shown>, read),
-      ),
-      // `bigint` llega como texto de los dos drivers; `secondsOf` lanza con otra cosa.
-      seconds: secondsOf(String(row.seconds)),
-      billableSeconds: secondsOf(String(row.billableSeconds)),
-    }));
+  /**
+   * D-R5-2, D-R5-3: una fila por tramo con horas cerradas en `read.span`,
+   * dentro de `scope`; sin unir etiquetas, así cada entrada suma en un solo
+   * tramo. Una sentencia; sin orden y sin `limit`: como mucho, un tramo por
+   * fila.
+   */
+  async totalsByBucket(
+    scope: ReportScope,
+    read: ReportBucketRead,
+    tx: Executor = db,
+  ): Promise<readonly BucketTotalRow[]> {
+    const { span, filter, granularity, buckets } = read;
+    const rows = await levelTotals(
+      scope,
+      { span, filter, dimensions: [granularity], buckets: { [granularity]: buckets } },
+      tx,
+    );
+    return rows.map(({ groups: [group], seconds }) => {
+      if (group === undefined || group.kind !== granularity || !("bucket" in group)) {
+        throw new Error(`Una fila del gráfico sin su tramo de ${granularity}.`);
+      }
+      return { bucket: group.bucket, seconds };
+    });
   },
 
   /** El total y el facturable reales de `read.span`, sin unir etiquetas. Una sentencia, una fila. */

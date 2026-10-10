@@ -36,6 +36,7 @@ import {
   monthBuckets,
   monthEndKey,
   monthLabel,
+  monthShortLabel,
   monthStartKey,
   nonexistentMinutes,
   parseClockInput,
@@ -668,6 +669,20 @@ describe("monthLabel (D-R10-3; criterio 1 de R10)", () => {
   it("lanza con una clave que no es un día", () => {
     expect(() => monthLabel("2026-02-30", "2026-10-08")).toThrow(RangeError);
     expect(() => monthLabel("2026-10", "2026-10-08")).toThrow(RangeError);
+  });
+});
+
+describe("monthShortLabel (D-R5-5; criterio 2 de R5)", () => {
+  it("el nombre abreviado del mes en minúscula y sin año, también el día 1 y el último", () => {
+    expect(monthShortLabel("2026-01-01")).toBe("ene");
+    expect(monthShortLabel("2025-09-30")).toBe("sep");
+    expect(monthShortLabel("2025-10-01")).toBe("oct");
+    expect(monthShortLabel("2025-12-31")).toBe("dic");
+  });
+
+  it("lanza con una clave que no es un día", () => {
+    expect(() => monthShortLabel("2025-13-01")).toThrow(RangeError);
+    expect(() => monthShortLabel("hoy")).toThrow(RangeError);
   });
 });
 

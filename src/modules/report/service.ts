@@ -10,9 +10,11 @@ import {
   dayRangeLabel,
   daysBetweenKeys,
   earliestDayKey,
+  formatDayKey,
   monthBuckets,
   monthEndKey,
   monthLabel,
+  monthShortLabel,
   monthStartKey,
   startOfDayKey,
   weekBuckets,
@@ -30,9 +32,11 @@ import type { ProjectFilterCatalog } from "@/modules/project/schema";
 import { getProjectFilterCatalog } from "@/modules/project/service";
 import { listWorkspacePeople, type WorkspacePerson } from "@/modules/workspace/service";
 
+import { chartGranularityOf } from "./chart";
 import { reportPeriodOf } from "./period";
 import {
   reportRepository,
+  type BucketTotalRow,
   type EntryTotals,
   type ReportBuckets,
   type ReportEntryFilter,
@@ -49,6 +53,7 @@ import {
   REPORT_MAX_FILTER_VALUES,
   REPORT_MAX_ROWS,
   REPORT_TIME_GROUP_BYS,
+  type ReportChart,
   type ReportFilters,
   type ReportGroup,
   type ReportGroupBy,
@@ -220,9 +225,7 @@ function partialOf(
 
 /**
  * El grupo de un nivel, de lo que la fila dice de él y de su camino, que lo
- * incluye al final. Un día se rotula con su fecha y sin «Hoy» ni «Ayer»
- * (D-R2b-6); una semana y un mes, con la unidad entera y sin «Esta semana», y
- * con los días que cuentan si no son todos (D-R10-3).
+ * incluye al final. Los de tiempo los arma `timeGroupOf`.
  */
 function groupOf(
   row: LevelGroupRow,
@@ -252,6 +255,32 @@ function groupOf(
       return { kind: "task", task: row.task, project: projectOf(row.project), seconds };
     case "tag":
       return { kind: "tag", tag: row.tag, seconds };
+    case "date":
+    case "week":
+    case "month":
+      return timeGroupOf(row, path, seconds, time);
+    case "description":
+      return { kind: "description", description: row.description, seconds };
+  }
+}
+
+/** Los grupos que se cortan en tramos de tiempo: la fecha, la semana y el mes. */
+type TimeGroup = WithTimeKind<ReportGroup>;
+
+/**
+ * El grupo de una fila de tiempo, de la tabla o de una barra del gráfico, que
+ * lo pide con un camino de un solo grupo (D-R5-5). Un día se rotula con su
+ * fecha y sin «Hoy» ni «Ayer» (D-R2b-6); una semana y un mes, con la unidad
+ * entera y sin «Esta semana», y con los días que cuentan si no son todos
+ * (D-R10-3).
+ */
+function timeGroupOf(
+  row: TimeRow,
+  path: readonly LevelGroupRow[],
+  seconds: number,
+  time: TimeContext,
+): TimeGroup {
+  switch (row.kind) {
     case "date": {
       const day = daysOf(row, time).first;
       return {
@@ -283,13 +312,8 @@ function groupOf(
         seconds,
       };
     }
-    case "description":
-      return { kind: "description", description: row.description, seconds };
   }
 }
-
-/** Los grupos que se cortan en tramos de tiempo: la fecha, la semana y el mes. */
-type TimeGroup = WithTimeKind<ReportGroup>;
 
 /** Los grupos que se ordenan por duración y nombre: todos menos los de tiempo. */
 type NamedGroup = Exclude<ReportGroup, TimeGroup>;
@@ -372,6 +396,8 @@ type ReportRead = {
   readonly people: PersonOptions | null;
   /** Los filtros efectivos: los del pedido que están en el catálogo (D-R4-5). */
   readonly filters: ReportFilters;
+  /** Los tramos del gráfico con horas, con el alcance y los filtros de los niveles (D-R5-2). */
+  readonly chart: readonly BucketTotalRow[];
 };
 
 /**
@@ -624,6 +650,14 @@ type ReadPlan = {
   readonly buckets: ReportBuckets;
   /** Los del pedido, sin cruzar con los catálogos. */
   readonly filters: ReportFilters;
+  /** Los cortes de `span` del gráfico, en la granularidad del período (D-R5-4). */
+  readonly chart: ChartPlan;
+};
+
+/** El gráfico de un pedido: su granularidad y sus tramos, que cubren `span`. */
+type ChartPlan = {
+  readonly granularity: ReportTimeGroupBy;
+  readonly buckets: TimeBuckets;
 };
 
 /**
@@ -684,7 +718,9 @@ function levelReadOf(
 /**
  * Todo lo que se lee de un pedido, con la transacción de solo lectura de
  * quien llama: primero los catálogos, que deciden los filtros efectivos
- * (D-R4-5), y después los niveles y el total con esos filtros. El catálogo de
+ * (D-R4-5), y después los niveles, el total y el gráfico con esos filtros y
+ * el mismo alcance (D-R5-2), también cuando el primer nivel no entra o es de
+ * la misma dimensión que el gráfico. El catálogo de
  * personas se lee solo con el alcance `everyone`: `listWorkspacePeople` pide
  * `team.view` y no `timeEntry.others.view`, que responde `scopeOf` (D-R4-4).
  */
@@ -722,7 +758,56 @@ async function readReport(
           seconds: first.reduce((sum, row) => sum + row.seconds, 0),
           billableSeconds: first.reduce((sum, row) => sum + row.billableSeconds, 0),
         };
-  return { levels, totals, catalog, people, filters };
+  const chart = await reportRepository.totalsByBucket(
+    readScope,
+    {
+      span: plan.span,
+      filter,
+      granularity: plan.chart.granularity,
+      buckets: plan.chart.buckets,
+    },
+    tx,
+  );
+  return { levels, totals, catalog, people, filters, chart };
+}
+
+/**
+ * D-R5-5, D-R5-6: una barra por tramo del gráfico, en orden y también en cero,
+ * con el rótulo y `partial` de `timeGroupOf`; `null` si la lectura no trajo
+ * ninguna fila. La marca es el primer día que cuenta la barra, sin año, o el
+ * mes abreviado.
+ */
+function chartOf(
+  rows: readonly BucketTotalRow[],
+  { granularity, buckets }: ChartPlan,
+  time: TimeContext,
+): ReportChart | null {
+  if (rows.length === 0) {
+    return null;
+  }
+  const secondsByBucket = new Map(rows.map(({ bucket, seconds }) => [bucket, seconds]));
+  const chartTime: TimeContext = {
+    ...time,
+    buckets: bucketsFor([granularity], () => buckets),
+  };
+  return {
+    granularity,
+    bars: buckets.buckets.map(({ firstDay }, bucket) => {
+      const row: TimeRow = { kind: granularity, bucket };
+      const seconds = secondsByBucket.get(bucket) ?? 0;
+      const group = timeGroupOf(row, [row], seconds, chartTime);
+      return {
+        firstDay,
+        label: group.label,
+        partial: group.kind === "date" ? null : group.partial,
+        tick:
+          granularity === "month"
+            ? monthShortLabel(firstDay)
+            : formatDayKey(firstDay, time.format, false),
+        seconds,
+      };
+    }),
+  };
 }
 
 /**
@@ -771,12 +856,22 @@ export async function getReportState(
   const buckets = bucketsFor(levels, (groupBy) =>
     timeBucketsOf(groupBy, range, settings),
   );
+  // D-R5-4: los del gráfico, de su propia granularidad, aunque un nivel la
+  // comparta: son los mismos instantes.
+  const granularity = chartGranularityOf(range);
+  const chart = { granularity, buckets: timeBucketsOf(granularity, range, settings) };
   // ADR 0021, D-R3-3: una sola foto, con los catálogos de los filtros
   // (D-R4-5). Se abre después de `report.view`, de `scopeOf` y de las
   // invariantes.
   const read = await db.transaction(
     (tx) =>
-      readReport(tx, actor, scope, { levels, span, buckets, filters: request.filters }),
+      readReport(tx, actor, scope, {
+        levels,
+        span,
+        buckets,
+        filters: request.filters,
+        chart,
+      }),
     { isolationLevel: "repeatable read", accessMode: "read only" },
   );
   const time: TimeContext = {
@@ -806,6 +901,6 @@ export async function getReportState(
     groups: treeOf(read.levels, time),
     filters: read.filters,
     filterOptions: toFilterOptions(read.catalog, read.people),
-    chart: null,
+    chart: chartOf(read.chart, chart, time),
   };
 }

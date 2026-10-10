@@ -1300,7 +1300,8 @@ describe("reportReadyState con el gráfico (D-R5-2, D-R5-4, D-R5-5; criterio 3)"
       dayBar((index % 31) + 1, index === 0 ? 90 : 0),
     );
     for (const state of [
-      withBars([]),
+      // Con el total en 0, así no la rechaza el `refine` de la suma.
+      { ...withBars([]), totalSeconds: 0, groups: [] },
       withBars(thirtyTwo),
       { ...ready, chart: { granularity: "person", bars: [dayBar(1, 90)] } },
       withBars([dayBar(1, 91), dayBar(2, -1)]),

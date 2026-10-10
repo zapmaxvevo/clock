@@ -3668,3 +3668,600 @@ describe("el tope del primer nivel (D-R10-10; criterio 17 de R10)", () => {
     expect(byLevels.mock.calls.map(([, read]) => read.limit)).toEqual([3001]);
   });
 });
+
+/** Las barras del gráfico como `[primer día, segundos]`, en orden; `null` sin gráfico. */
+function barsOf(state: ReportReadyState) {
+  return state.chart === null
+    ? null
+    : state.chart.bars.map((bar) => [bar.firstDay, bar.seconds]);
+}
+
+/** El gráfico de un estado; lanza si no lo tiene. */
+function chartOf(state: ReportReadyState) {
+  if (state.chart === null) {
+    throw new Error("Se esperaba el gráfico.");
+  }
+  return state.chart;
+}
+
+/** Cada día de `days` como `[día, segundos]`: los de `hours`, o 0. */
+function dayBars(
+  days: readonly string[],
+  hours: Readonly<Record<string, number>>,
+): [string, number][] {
+  return days.map((day) => [day, hours[day] ?? 0]);
+}
+
+/** Los siete días de `lastWeek`. */
+const lastWeekDays = [
+  "2026-09-28",
+  "2026-09-29",
+  "2026-09-30",
+  "2026-10-01",
+  "2026-10-02",
+  "2026-10-03",
+  "2026-10-04",
+];
+
+/**
+ * El primer nivel por descripción que no entra (D-R10-10): 3001 entradas de un
+ * minuto, cada una con su texto, el martes 29/09 a las 09:00 de Buenos Aires.
+ */
+async function seedUncappedDescriptions() {
+  await db.execute(sql`
+    insert into time_entry (workspace_id, user_id, description, started_at, ended_at, billable)
+    select ${workspaceId}, ${ownerId}, 'Entrada ' || n,
+           timestamptz '2026-09-29 12:00:00+00',
+           timestamptz '2026-09-29 12:01:00+00',
+           false
+      from generate_series(1, 3001) as n`);
+}
+
+describe("qué suma el gráfico (D-R5-2, D-R5-6, RP-18, RP-33; criterio 4 de R5)", () => {
+  it("una persona con horas el martes y el jueves: siete barras en orden, las otras cinco en 0, que suman el total", async () => {
+    const memberId = await seedPerson({ accountName: "Marta" });
+    // A las 10:00 de Buenos Aires.
+    await seedClosed(memberId, "2026-09-29T13:00:00Z", 600);
+    await seedClosed(memberId, "2026-10-01T13:00:00Z", 900);
+    await seedClosed(ownerId, "2026-09-30T13:00:00Z", 60);
+    const state = await readyState(actorIn(workspaceId, memberId), { range: lastWeek });
+    expect(state.chart?.granularity).toBe("date");
+    expect(barsOf(state)).toEqual(
+      dayBars(lastWeekDays, { "2026-09-29": 600, "2026-10-01": 900 }),
+    );
+    expect(state.totalSeconds).toBe(1500);
+    expect(reportReadyState.parse(state)).toEqual(state);
+  });
+
+  it("por etiqueta, la entrada de dos etiquetas cuenta una vez: las barras suman el total y las filas más", async () => {
+    const e = await seedTag({ workspaceId, name: "E" });
+    const f = await seedTag({ workspaceId, name: "F" });
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 600, { tagIds: [e.id, f.id] });
+    await seedClosed(ownerId, "2026-10-01T13:00:00Z", 300);
+    const state = await readyState(owner, { range: lastWeek, groupBy: "tag" });
+    expect(state.groups.reduce((sum, group) => sum + group.seconds, 0)).toBe(1500);
+    expect(state.totalSeconds).toBe(900);
+    expect(barsOf(state)).toEqual(
+      dayBars(lastWeekDays, { "2026-09-29": 600, "2026-10-01": 300 }),
+    );
+    expect(reportReadyState.parse(state)).toEqual(state);
+  });
+
+  it("con el primer nivel que no entra hay gráfico, y suma el total (D-R10-10)", async () => {
+    await seedUncappedDescriptions();
+    const state = await readyState(owner, { range: lastWeek, groupBy: "description" });
+    expect([state.levelsShown, state.groups]).toEqual([0, []]);
+    expect(barsOf(state)).toEqual(dayBars(lastWeekDays, { "2026-09-29": 3001 * 60 }));
+    expect(state.totalSeconds).toBe(3001 * 60);
+    expect(reportReadyState.parse(state)).toEqual(state);
+  });
+
+  describe("con los filtros y las personas", () => {
+    let p1: string;
+    let otherId: string;
+
+    beforeEach(async () => {
+      otherId = await seedPerson({ accountName: "Beto" });
+      p1 = (await seedProject({ workspaceId, name: "P1" })).id;
+      const p2 = (await seedProject({ workspaceId, name: "P2" })).id;
+      await seedClosed(ownerId, "2026-09-29T13:00:00Z", 600, { projectId: p1 });
+      await seedClosed(ownerId, "2026-09-30T13:00:00Z", 300, { projectId: p2 });
+      await seedClosed(ownerId, "2026-10-01T13:00:00Z", 120);
+      await seedClosed(otherId, "2026-10-02T13:00:00Z", 45, { projectId: p1 });
+    });
+
+    function filtered(filters: Partial<ReportFilters>) {
+      return readyState(owner, {
+        range: lastWeek,
+        filters: { ...NO_REPORT_FILTERS, ...filters },
+      });
+    }
+
+    it("con un proyecto, solo lo suyo; con «Sin proyecto», solo lo sin proyecto", async () => {
+      expect(barsOf(await filtered({ projects: [p1] }))).toEqual(
+        dayBars(lastWeekDays, { "2026-09-29": 600, "2026-10-02": 45 }),
+      );
+      expect(barsOf(await filtered({ withoutProject: true }))).toEqual(
+        dayBars(lastWeekDays, { "2026-10-01": 120 }),
+      );
+    });
+
+    it("un proyecto que no existe se ignora: el gráfico es el de sin filtro (D-R4-5)", async () => {
+      const unfiltered = await filtered({});
+      expect(barsOf(unfiltered)).toEqual(
+        dayBars(lastWeekDays, {
+          "2026-09-29": 600,
+          "2026-09-30": 300,
+          "2026-10-01": 120,
+          "2026-10-02": 45,
+        }),
+      );
+      const ignored = await filtered({ projects: [randomUUID()] });
+      expect(ignored.chart).toEqual(unfiltered.chart);
+    });
+
+    it("un owner con personas=[B] ve en las barras solo lo de B (D-R4-4)", async () => {
+      const state = await filtered({ people: [otherId] });
+      expect(barsOf(state)).toEqual(dayBars(lastWeekDays, { "2026-10-02": 45 }));
+      expect(reportReadyState.parse(state)).toEqual(state);
+    });
+
+    it("un filtro que no deja nada no tiene gráfico", async () => {
+      const client = await seedClient({ workspaceId, name: "Vacío" });
+      const state = await filtered({ clients: [client.id] });
+      expect([state.filters.clients, state.chart]).toEqual([[client.id], null]);
+    });
+  });
+
+  it("sin entradas en el período no hay gráfico; con una de 0,4 s, todas las barras en 0", async () => {
+    expect((await readyState(owner, { range: lastWeek })).chart).toBeNull();
+    await seedClosed(ownerId, "2026-09-30T13:00:00Z", 0.4);
+    const state = await readyState(owner, { range: lastWeek });
+    expect(state.totalSeconds).toBe(0);
+    expect(barsOf(state)).toEqual(dayBars(lastWeekDays, {}));
+    expect(reportReadyState.parse(state)).toEqual(state);
+  });
+});
+
+describe("la granularidad en el estado (D-R5-4; criterio 5 de R5)", () => {
+  beforeEach(async () => {
+    // A las 10:00 de Buenos Aires; la última, hoy a las 09:00.
+    await seedClosed(ownerId, "2025-06-10T13:00:00Z", 600);
+    await seedClosed(ownerId, "2026-07-15T13:00:00Z", 600);
+    await seedClosed(ownerId, "2026-09-15T13:00:00Z", 600);
+    await seedClosed(ownerId, "2026-10-08T12:00:00Z", 600);
+  });
+
+  /** La granularidad y la cantidad de barras del gráfico de `range`. */
+  async function shapeOf(range: ReportRange) {
+    const chart = chartOf(await readyState(owner, { range }));
+    return [chart.granularity, chart.bars.length];
+  }
+
+  it("31 días por día, 32 por semana, 183 por mes, un año y un día en 13 meses y «Hoy» en una barra", async () => {
+    expect(await shapeOf({ first: "2026-09-01", last: "2026-10-01" })).toEqual([
+      "date",
+      31,
+    ]);
+    expect(await shapeOf({ first: "2026-09-01", last: "2026-10-02" })).toEqual([
+      "week",
+      5,
+    ]);
+    expect(await shapeOf({ first: "2026-04-01", last: "2026-09-30" })).toEqual([
+      "month",
+      6,
+    ]);
+    expect(await shapeOf({ first: "2025-01-15", last: "2026-01-15" })).toEqual([
+      "month",
+      13,
+    ]);
+    const today = await readyState(owner, {
+      range: { first: "2026-10-08", last: "2026-10-08" },
+    });
+    expect(barsOf(today)).toEqual([["2026-10-08", 600]]);
+  });
+
+  it("el mismo período por persona, por semana y por Mes → Semana → Fecha da el mismo gráfico", async () => {
+    const range = { first: "2026-09-01", last: "2026-10-02" };
+    const byPerson = await readyState(owner, { range });
+    expect(barsOf(byPerson)).toEqual([
+      ["2026-09-01", 0],
+      ["2026-09-07", 0],
+      ["2026-09-14", 600],
+      ["2026-09-21", 0],
+      ["2026-09-28", 0],
+    ]);
+    const byWeek = await readyState(owner, { range, groupBy: "week" });
+    const nested = await readyState(owner, {
+      range,
+      groupBy: "month",
+      subgroups: ["week", "date"],
+    });
+    expect(byWeek.chart).toEqual(byPerson.chart);
+    expect(nested.chart).toEqual(byPerson.chart);
+  });
+});
+
+describe("los cortes, la zona y la semana del gráfico (RP-22, RP-24, ADR 0021; criterio 6 de R5)", () => {
+  it("el 30/09 a las 23:30 de Buenos Aires es del 30/09 allí y del 01/10 en Madrid", async () => {
+    await seedClosed(ownerId, "2026-10-01T02:30:00Z", 600);
+    const inBuenosAires = await readyState(owner, { range: lastWeek });
+    expect(barsOf(inBuenosAires)).toEqual(dayBars(lastWeekDays, { "2026-09-30": 600 }));
+    const inMadrid = await readyState(
+      owner,
+      { range: lastWeek },
+      { settings: workspaceOf(madrid) },
+    );
+    expect(barsOf(inMadrid)).toEqual(dayBars(lastWeekDays, { "2026-10-01": 600 }));
+  });
+
+  it("en Madrid, el domingo 25/10 de 25 horas lleva las entradas de las 00:30 y de las 23:30", async () => {
+    // 00:30 del 25/10, todavía en UTC+2.
+    await seedClosed(ownerId, "2026-10-24T22:30:00Z", 60);
+    // 23:30 del 25/10, ya en UTC+1: 24 horas después del corte del 25 ya es el 26.
+    await seedClosed(ownerId, "2026-10-25T22:30:00Z", 120);
+    const state = await readyState(
+      owner,
+      { range: { first: "2026-10-22", last: "2026-10-28" } },
+      { settings: workspaceOf(madrid) },
+    );
+    expect(barsOf(state)).toEqual(
+      dayBars(
+        [
+          "2026-10-22",
+          "2026-10-23",
+          "2026-10-24",
+          "2026-10-25",
+          "2026-10-26",
+          "2026-10-27",
+          "2026-10-28",
+        ],
+        { "2026-10-25": 180 },
+      ),
+    );
+  });
+
+  it("por semana, del 30/09 al 15/11: la segunda barra empieza el 05/10 con lunes y el 04/10 con domingo", async () => {
+    await seedClosed(ownerId, "2026-10-08T13:00:00Z", 600);
+    const range = { first: "2026-09-30", last: "2026-11-15" };
+    /** Las dos primeras barras como `[primer día, rótulo, partial]`. */
+    function firstTwo(state: ReportReadyState) {
+      return chartOf(state)
+        .bars.slice(0, 2)
+        .map((bar) => [bar.firstDay, bar.label, bar.partial]);
+    }
+    expect(firstTwo(await readyState(owner, { range }))).toEqual([
+      ["2026-09-30", "28/09 – 04/10", "30/09 – 04/10"],
+      ["2026-10-05", "05/10 – 11/10", null],
+    ]);
+    expect(
+      firstTwo(
+        await readyState(owner, { range }, { settings: workspaceOf(buenosAires, 0) }),
+      ),
+    ).toEqual([
+      ["2026-09-30", "27/09 – 03/10", "30/09 – 03/10"],
+      ["2026-10-04", "04/10 – 10/10", null],
+    ]);
+  });
+
+  it("por semana, las barras con horas tienen el rótulo, el partial y los segundos de las filas de [week]", async () => {
+    await seedClosed(ownerId, "2026-09-30T13:00:00Z", 3600);
+    await seedClosed(ownerId, "2026-10-08T13:00:00Z", 900);
+    await seedClosed(ownerId, "2026-11-10T13:00:00Z", 1800);
+    const state = await readyState(owner, {
+      range: { first: "2026-09-30", last: "2026-11-10" },
+      groupBy: "week",
+    });
+    const withHours = chartOf(state)
+      .bars.filter((bar) => bar.seconds > 0)
+      .map((bar) => [bar.label, bar.partial, bar.seconds]);
+    expect(withHours).toEqual([
+      ["28/09 – 04/10", "30/09 – 04/10", 3600],
+      ["05/10 – 11/10", null, 900],
+      ["09/11 – 15/11", "09/11 – 10/11", 1800],
+    ]);
+    expect(withHours).toEqual(
+      state.groups.map((group) =>
+        group.kind === "week" ? [group.label, group.partial, group.seconds] : ["?"],
+      ),
+    );
+  });
+
+  it("en Pacific/Apia, el 30/12/2011 tiene su barra en 0 y la entrada del 31/12 está en la del 31/12", async () => {
+    // El 31/12/2011 a las 12:00 en Apia (UTC+14).
+    await seedClosed(ownerId, "2011-12-30T22:00:00Z", 300);
+    const state = await readyState(
+      owner,
+      { range: { first: "2011-12-23", last: "2012-01-12" } },
+      { settings: workspaceOf("Pacific/Apia") },
+    );
+    const chart = chartOf(state);
+    expect([chart.granularity, chart.bars.length]).toEqual(["date", 21]);
+    expect(
+      chart.bars
+        .filter((bar) => bar.firstDay === "2011-12-30" || bar.firstDay === "2011-12-31")
+        .map((bar) => [bar.firstDay, bar.label, bar.seconds]),
+    ).toEqual([
+      ["2011-12-30", "vie, 30/12/2011", 0],
+      ["2011-12-31", "sáb, 31/12/2011", 300],
+    ]);
+  });
+});
+
+describe("los rótulos y las marcas del gráfico (D-R5-5; criterio 7 de R5)", () => {
+  /** Las barras como `[primer día, rótulo, partial, marca]`. */
+  function labelsOf(state: ReportReadyState) {
+    return chartOf(state).bars.map((bar) => [
+      bar.firstDay,
+      bar.label,
+      bar.partial,
+      bar.tick,
+    ]);
+  }
+
+  it("por día: el rótulo de la fecha sin «Hoy» ni «Ayer», sin partial y la marca sin año", async () => {
+    await seedClosed(ownerId, "2026-09-30T13:00:00Z", 600);
+    const range = { first: "2026-09-30", last: "2026-10-08" };
+    expect(labelsOf(await readyState(owner, { range }))).toEqual([
+      ["2026-09-30", "mié, 30/09", null, "30/09"],
+      ["2026-10-01", "jue, 01/10", null, "01/10"],
+      ["2026-10-02", "vie, 02/10", null, "02/10"],
+      ["2026-10-03", "sáb, 03/10", null, "03/10"],
+      ["2026-10-04", "dom, 04/10", null, "04/10"],
+      ["2026-10-05", "lun, 05/10", null, "05/10"],
+      ["2026-10-06", "mar, 06/10", null, "06/10"],
+      ["2026-10-07", "mié, 07/10", null, "07/10"],
+      ["2026-10-08", "jue, 08/10", null, "08/10"],
+    ]);
+    const nextYear = await readyState(
+      owner,
+      { range },
+      { now: new Date("2027-01-10T15:00:00Z") },
+    );
+    expect(labelsOf(nextYear)[0]).toEqual([
+      "2026-09-30",
+      "mié, 30/09/2026",
+      null,
+      "30/09",
+    ]);
+    const isoDates = await readyState(
+      owner,
+      { range },
+      {
+        settings: { ...settings, formats: { time: "24h", date: "yyyy-MM-dd" } },
+      },
+    );
+    expect(chartOf(isoDates).bars[0]?.tick).toBe("09-30");
+  });
+
+  it("por semana con lunes, del 30/09 al 10/11: la primera y la última con partial y la marca del primer día que cuentan", async () => {
+    await seedClosed(ownerId, "2026-09-30T13:00:00Z", 600);
+    const state = await readyState(owner, {
+      range: { first: "2026-09-30", last: "2026-11-10" },
+    });
+    expect(chartOf(state).granularity).toBe("week");
+    expect(labelsOf(state)).toEqual([
+      ["2026-09-30", "28/09 – 04/10", "30/09 – 04/10", "30/09"],
+      ["2026-10-05", "05/10 – 11/10", null, "05/10"],
+      ["2026-10-12", "12/10 – 18/10", null, "12/10"],
+      ["2026-10-19", "19/10 – 25/10", null, "19/10"],
+      ["2026-10-26", "26/10 – 01/11", null, "26/10"],
+      ["2026-11-02", "02/11 – 08/11", null, "02/11"],
+      ["2026-11-09", "09/11 – 15/11", "09/11 – 10/11", "09/11"],
+    ]);
+  });
+
+  it("por mes, del 15/09/2025 al 31/03/2026: el año en el rótulo si no es el de hoy y la marca abreviada", async () => {
+    await seedClosed(ownerId, "2025-10-10T13:00:00Z", 600);
+    const state = await readyState(owner, {
+      range: { first: "2025-09-15", last: "2026-03-31" },
+    });
+    expect(chartOf(state).granularity).toBe("month");
+    expect(labelsOf(state)).toEqual([
+      ["2025-09-15", "septiembre de 2025", "15/09/2025 – 30/09/2025", "sep"],
+      ["2025-10-01", "octubre de 2025", null, "oct"],
+      ["2025-11-01", "noviembre de 2025", null, "nov"],
+      ["2025-12-01", "diciembre de 2025", null, "dic"],
+      ["2026-01-01", "enero", null, "ene"],
+      ["2026-02-01", "febrero", null, "feb"],
+      ["2026-03-01", "marzo", null, "mar"],
+    ]);
+  });
+});
+
+describe("la misma foto del gráfico (ADR 0021, D-R5-2, D-R5-3; criterio 8 de R5)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** Los espías de la transacción y de las tres lecturas del reporte. */
+  function spies() {
+    return {
+      transaction: vi.spyOn(db, "transaction"),
+      byLevels: vi.spyOn(reportRepository, "totalsByLevels"),
+      byBucket: vi.spyOn(reportRepository, "totalsByBucket"),
+      entryTotals: vi.spyOn(reportRepository, "entryTotals"),
+    };
+  }
+
+  /** Que cada lectura usó el mismo `Executor`, el de la única transacción `repeatable read`, `read only`. */
+  function expectOneSnapshot(spied: ReturnType<typeof spies>) {
+    expect(spied.transaction).toHaveBeenCalledTimes(1);
+    expect(spied.transaction.mock.calls[0]?.[1]).toEqual({
+      isolationLevel: "repeatable read",
+      accessMode: "read only",
+    });
+    const executors = [
+      ...spied.byLevels.mock.calls.map((call) => call[2]),
+      ...spied.entryTotals.mock.calls.map((call) => call[2]),
+      ...spied.byBucket.mock.calls.map((call) => call[2]),
+    ];
+    expect(executors[0]).toBeDefined();
+    expect(executors[0]).not.toBe(db);
+    expect(executors.every((executor) => executor === executors[0])).toBe(true);
+  }
+
+  it("una lectura con la granularidad, los tramos del span, el filtro efectivo y el alcance angostado de los niveles", async () => {
+    const otherId = await seedPerson({ accountName: "Beto" });
+    const p1 = (await seedProject({ workspaceId, name: "P1" })).id;
+    await seedClosed(otherId, "2026-09-29T13:00:00Z", 600, { projectId: p1 });
+    const spied = spies();
+    const state = await readyState(owner, {
+      range: lastWeek,
+      filters: { ...NO_REPORT_FILTERS, people: [otherId], projects: [randomUUID(), p1] },
+    });
+    expect(barsOf(state)).toEqual(dayBars(lastWeekDays, { "2026-09-29": 600 }));
+    expectOneSnapshot(spied);
+    expect(spied.byBucket).toHaveBeenCalledTimes(1);
+    expect(spied.byLevels).toHaveBeenCalledTimes(1);
+    const [bucketScope, bucketRead] = spied.byBucket.mock.calls[0] ?? [];
+    const [levelScope, levelRead] = spied.byLevels.mock.calls[0] ?? [];
+    expect(bucketScope).toBe(levelScope);
+    expect(bucketScope?.people).toEqual({ kind: "chosen", userIds: [otherId] });
+    expect(bucketRead?.granularity).toBe("date");
+    expect(bucketRead?.span).toEqual(levelRead?.span);
+    expect(bucketRead?.buckets.buckets[0]?.start).toEqual(bucketRead?.span.from);
+    expect(bucketRead?.buckets.end).toEqual(bucketRead?.span.to);
+    expect(bucketRead?.buckets.buckets.map((bucket) => bucket.firstDay)).toEqual(
+      lastWeekDays,
+    );
+    expect(bucketRead?.filter).toEqual({
+      projectIds: [p1],
+      withoutProject: false,
+      clientIds: [],
+    });
+    expect(bucketRead?.filter).toEqual(levelRead?.filter);
+  });
+
+  it("con la etiqueta primero, una lectura más además de los niveles y el total", async () => {
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 600);
+    const spied = spies();
+    await readyState(owner, { range: lastWeek, groupBy: "tag" });
+    expect([
+      spied.byLevels.mock.calls.length,
+      spied.entryTotals.mock.calls.length,
+      spied.byBucket.mock.calls.length,
+    ]).toEqual([1, 1, 1]);
+    expectOneSnapshot(spied);
+  });
+
+  it("con el primer nivel cortado, una lectura más además del nivel 1 y del total", async () => {
+    await seedUncappedDescriptions();
+    const spied = spies();
+    await readyState(owner, { range: lastWeek, groupBy: "description" });
+    expect([
+      spied.byLevels.mock.calls.length,
+      spied.entryTotals.mock.calls.length,
+      spied.byBucket.mock.calls.length,
+    ]).toEqual([1, 1, 1]);
+    expectOneSnapshot(spied);
+  });
+
+  it("con el primer nivel de la misma dimensión que el gráfico, también lo lee aparte", async () => {
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 600);
+    const byDate = spies();
+    await readyState(owner, { range: lastWeek, groupBy: "date" });
+    expect(byDate.byLevels.mock.calls.map(([, read]) => read.dimensions)).toEqual([
+      ["date"],
+    ]);
+    expect(byDate.byBucket.mock.calls.map(([, read]) => read.granularity)).toEqual([
+      "date",
+    ]);
+    expectOneSnapshot(byDate);
+    vi.restoreAllMocks();
+
+    const byWeek = spies();
+    await readyState(owner, {
+      range: { first: "2026-09-30", last: "2026-11-15" },
+      groupBy: "week",
+    });
+    expect(byWeek.byLevels.mock.calls.map(([, read]) => read.dimensions)).toEqual([
+      ["week"],
+    ]);
+    expect(byWeek.byBucket.mock.calls.map(([, read]) => read.granularity)).toEqual([
+      "week",
+    ]);
+    expectOneSnapshot(byWeek);
+  });
+});
+
+describe("las guardas de totalsByBucket (D-R5-3; criterio 9 de R5)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("con tramos vacíos, que no cubren el span o un filtro de más lanza RangeError sin consultar, con db y con el Executor de una transacción", async () => {
+    const { scope, span, buckets } = await realLevelRead();
+    const [first] = buckets.buckets;
+    if (first === undefined) {
+      throw new Error("Se esperaban los tramos de la semana.");
+    }
+    const shifted = (instant: Date) => new Date(instant.getTime() + 1000);
+    const filter = NO_ENTRY_FILTER;
+    await expect(
+      reportRepository.totalsByBucket(scope, {
+        span,
+        filter,
+        granularity: "date",
+        buckets,
+      }),
+    ).resolves.toEqual(expect.any(Array));
+    const invalid = [
+      { span, filter, granularity: "date", buckets: { buckets: [], end: buckets.end } },
+      {
+        span,
+        filter,
+        granularity: "date",
+        buckets: {
+          buckets: [
+            { ...first, start: shifted(first.start) },
+            ...buckets.buckets.slice(1),
+          ],
+          end: buckets.end,
+        },
+      },
+      {
+        span,
+        filter,
+        granularity: "date",
+        buckets: { ...buckets, end: shifted(buckets.end) },
+      },
+      {
+        span,
+        filter,
+        granularity: "month",
+        buckets: monthBuckets(lastWeek.first, "2026-10-03", buenosAires),
+      },
+      {
+        span,
+        filter: {
+          ...filter,
+          projectIds: Array.from({ length: REPORT_MAX_FILTER_VALUES + 1 }, () =>
+            randomUUID(),
+          ),
+        },
+        granularity: "date",
+        buckets,
+      },
+    ] as const;
+
+    const select = vi.spyOn(db, "select");
+    for (const read of invalid) {
+      await expect(reportRepository.totalsByBucket(scope, read)).rejects.toThrow(
+        RangeError,
+      );
+    }
+    expect(select).not.toHaveBeenCalled();
+
+    await db.transaction(async (tx) => {
+      const txSelect = vi.spyOn(tx, "select");
+      for (const read of invalid) {
+        await expect(reportRepository.totalsByBucket(scope, read, tx)).rejects.toThrow(
+          RangeError,
+        );
+      }
+      expect(txSelect).not.toHaveBeenCalled();
+    });
+    expect(select).not.toHaveBeenCalled();
+  });
+});
