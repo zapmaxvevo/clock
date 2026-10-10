@@ -88,3 +88,18 @@ A `backend-dev` (`backend-r10b`), salvo lo que pida paridad:
 
 Para §8.2 del contrato: «el total menor que 50:01» del recorrido 20 solo se puede dar con más de
 3001 grupos; con T2 la integración lo cubre.
+
+## Al cortar (2026-10-09, ~22:45, el usuario apaga la máquina)
+
+- Ronda de correcciones hecha en `718cf32` (B1/C2 con `ReportLevelRead.limit` todavía opcional,
+  decisión del team-lead: hacerlo obligatorio toca unas 25 lecturas a mano de los tests; B2, C1,
+  C3, C4, T1 y T2, con sus mutantes cayendo por la afirmación).
+- Corrida final sobre `718cf32`, bases `clock_r10b_final_test` y `clock_r10b_final_e2e`: lint,
+  typecheck, 1702 de unidad, 298 de `test:time-ar`, 1444 de integración y e2e **205/205 en la
+  primera vuelta**. Las dos vueltas siguientes cortaron en el setup («Cargando el rastreador»):
+  **no es R10b**, Chromium headless dejó de disparar `requestAnimationFrame` en esta máquina,
+  también en una página vacía y sobre una base nueva. Al retomar: comprobar que una página vacía
+  dispara `requestAnimationFrame` y repetir la e2e ×2.
+- **Falta paridad** (`parity-r10b`, lanzado ~20:36, sin informe al cortar): relanzar con el mismo
+  encargo (base `clock_r10b_parity`, borrarla si quedó) y aplicar su texto en `reportes.md`.
+  Después, el merge como R10b.

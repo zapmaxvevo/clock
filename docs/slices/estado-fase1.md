@@ -167,6 +167,11 @@ vacío del owner y `renewWorkspace` se corta.
      (descripción, parte B del contrato de R10); su encargo de frontend lleva
      F1 de R10a y N1 de paridad (la tabla a 320 px). Bases de R10a que se pueden borrar:
      `clock_r10a_back`, `_front`, `_test`, `_e2e`, `_parity`, `_final_test` y `_final_e2e`.
+     **R10b al cortar la séptima sesión** (2026-10-09, ~22:45, el usuario apagó la máquina
+     trabada): rama `nucleo/r10b` pusheada, implementada entera, cinco de seis revisiones
+     aprobadas o corregidas en `718cf32`; falta paridad y la segunda vuelta de e2e (Chromium
+     headless dejó de dibujar en la máquina, no es el código). Ver «Al cortar» en
+     `correcciones-nucleo-reportes-r10b-revisiones.md`. No hay tope de agentes en paralelo.
      Aviso de paridad: la `DATABASE_URL` del `.env` del usuario falla contra el Postgres local
      (contraseña de `user`); los agentes usan la cadena de `e2e/environment.ts`.
 
