@@ -822,3 +822,66 @@ describe("ReportView por descripción (D-R10-9, D-R10-10, §5.2, §5.4)", () => 
     });
   });
 });
+
+describe("ReportView con gráfico (RP-15, D-R5-6, §5.1)", () => {
+  const chart: NonNullable<ReportReadyState["chart"]> = {
+    granularity: "date",
+    bars: [
+      {
+        firstDay: "2026-10-05",
+        label: "lun, 05/10",
+        partial: null,
+        tick: "05/10",
+        seconds: 3_600,
+      },
+      {
+        firstDay: "2026-10-06",
+        label: "mar, 06/10",
+        partial: null,
+        tick: "06/10",
+        seconds: 0,
+      },
+    ],
+  };
+  const groups: ReportGroup[] = [
+    { kind: "person", userId: "u1", name: "Ana", inactive: false, seconds: 3_600 },
+  ];
+
+  it("la figura va después de los totales y antes de la tabla", () => {
+    const markup = render({ chart, groups, totalSeconds: 3_600 });
+    const figure = markup.indexOf("<figure");
+    expect(figure).toBeGreaterThan(markup.indexOf("</dl>"));
+    expect(figure).toBeLessThan(
+      markup.indexOf(`<table aria-labelledby="${REPORT_HEADING_ID}"`),
+    );
+    expect(markup).toContain("Horas por día");
+  });
+
+  it("sin gráfico, ninguna figura", () => {
+    expect(render({ groups, totalSeconds: 3_600 })).not.toContain("<figure");
+  });
+
+  it("la línea del tope va después de la figura", () => {
+    const markup = render({
+      chart,
+      groups,
+      totalSeconds: 3_600,
+      subgroups: ["project"],
+      levelsShown: 1,
+    });
+    expect(markup.indexOf(ROW_LIMIT)).toBeGreaterThan(markup.indexOf("</figure>"));
+  });
+
+  it("con el primer nivel cortado y gráfico, la figura y la fila del tope (D-R10-10)", () => {
+    const markup = render({
+      chart,
+      groupBy: "description",
+      levelsShown: 0,
+      groups: [],
+      totalSeconds: 3_600,
+    });
+    expect(markup).toContain("<figure");
+    const table = markup.slice(markup.indexOf("</figure>"));
+    expect(bodyRows(table)).toEqual([[FIRST_LEVEL_LIMIT]]);
+  });
+});

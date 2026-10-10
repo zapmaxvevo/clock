@@ -1,4 +1,4 @@
-import type { ReportGroupBy } from "@/modules/report/schema";
+import type { ReportGroupBy, ReportTimeGroupBy } from "@/modules/report/schema";
 
 import type { FilterKind } from "./filter-model";
 
@@ -83,6 +83,10 @@ export const reportLabels = {
   emptyFiltered: "Ninguna entrada coincide con los filtros",
   /** D-R4-7: el mismo período, la misma agrupación y ningún filtro. */
   clearFilters: "Quitar filtros",
+  /** D-R5-9: el nombre de una columna del gráfico y lo que dice la línea del valor. */
+  chartBar: (label: string, duration: string) => `${label}: ${duration}`,
+  /** D-R5-9: el equivalente en tabla, debajo de las columnas. */
+  chartData: "Ver los datos del gráfico",
   /** RP-25, D-R4-8: el tercer grupo de la barra. */
   filterBy: "Filtrar por",
   /** El botón de un filtro dice lo elegido, y ese es su nombre. */
@@ -135,3 +139,10 @@ export const groupByLabels = {
   month: reportLabels.byMonth,
   description: reportLabels.byDescription,
 } as const satisfies Record<ReportGroupBy, string>;
+
+/** D-R5-9: la leyenda del gráfico, su único nombre, según la granularidad del período. */
+export const chartCaptions = {
+  date: "Horas por día",
+  week: "Horas por semana",
+  month: "Horas por mes",
+} as const satisfies Record<ReportTimeGroupBy, string>;

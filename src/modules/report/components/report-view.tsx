@@ -12,6 +12,7 @@ import {
 import { groupByLabels, reportLabels } from "./labels";
 import { reportHref } from "./report-href";
 import { durationLabel } from "./group-heading";
+import { ReportChart } from "./report-chart";
 import { ReportTree } from "./report-tree";
 
 /** El `h1` de la pantalla, que nombra la tabla. */
@@ -19,10 +20,11 @@ export const REPORT_HEADING_ID = "reporte-titulo";
 
 /**
  * El alcance y la zona (D-R2a-2, D-R2a-5), el aviso de la suma por etiqueta
- * (D-R3-3), los totales (RP-18), el aviso del tope (D-R3-6) y la tabla, con las
- * filas en el orden en que llegan. Las del cuerpo las dibuja `ReportTree`. Sin
- * grupos, el vacío de R2a o, con filtros, el segundo (D-R4-7). Si no entra ni
- * el primer nivel, una fila que lo dice en lugar de las filas (D-R10-10).
+ * (D-R3-3), los totales (RP-18), el gráfico si hay horas (RP-15, D-R5-6), el
+ * aviso del tope (D-R3-6) y la tabla, con las filas en el orden en que llegan.
+ * Las del cuerpo las dibuja `ReportTree`. Sin grupos, el vacío de R2a o, con
+ * filtros, el segundo (D-R4-7). Si no entra ni el primer nivel, una fila que lo
+ * dice en lugar de las filas (D-R10-10).
  */
 export function ReportView({ state }: { readonly state: ReportReadyState }) {
   const requested = [state.groupBy, ...state.subgroups];
@@ -30,6 +32,14 @@ export function ReportView({ state }: { readonly state: ReportReadyState }) {
   const firstLevelCut = state.levelsShown === 0;
   // Sin ningún nivel, la columna sigue nombrando el primero pedido (§5.4).
   const headed = firstLevelCut ? requested.slice(0, 1) : shown;
+  // Cambiar el período, la agrupación o un filtro vuelve a contraer el árbol
+  // (D-R3-9, D-R4-10) y a empezar el foco del gráfico en la primera columna (§5.1).
+  const requestKey = reportHref({
+    range: state.range,
+    groupBy: state.groupBy,
+    subgroups: state.subgroups,
+    filters: state.filters,
+  });
 
   return (
     <div className="flex flex-col gap-4">
@@ -58,6 +68,8 @@ export function ReportView({ state }: { readonly state: ReportReadyState }) {
         </div>
       </dl>
 
+      {state.chart !== null && <ReportChart key={requestKey} chart={state.chart} />}
+
       {!firstLevelCut && shown.length < requested.length && (
         <p className="text-sm">{reportLabels.rowLimit(REPORT_MAX_ROWS)}</p>
       )}
@@ -85,17 +97,7 @@ export function ReportView({ state }: { readonly state: ReportReadyState }) {
             ) : state.groups.length === 0 ? (
               <EmptyRow state={state} />
             ) : (
-              <ReportTree
-                // Cambiar el período, la agrupación o un filtro vuelve a
-                // contraer el árbol (D-R3-9, D-R4-10).
-                key={reportHref({
-                  range: state.range,
-                  groupBy: state.groupBy,
-                  subgroups: state.subgroups,
-                  filters: state.filters,
-                })}
-                groups={state.groups}
-              />
+              <ReportTree key={requestKey} groups={state.groups} />
             )}
           </tbody>
         </table>
