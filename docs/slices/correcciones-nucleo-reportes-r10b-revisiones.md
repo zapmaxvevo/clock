@@ -48,7 +48,7 @@ integración `6890dd8` (criterio 18); e2e `75e816e` (recorridos 19 y 20).
 | Frontend  | `frontend-reviewer`   | aprobado, dos notas                            |
 | Tests     | `test-reviewer`       | aprobado, dos menores                          |
 | Código    | `clean-code-reviewer` | cambios requeridos: un mayor y tres menores    |
-| Paridad   | `parity-reviewer`     | pendiente                                      |
+| Paridad | `parity-reviewer` | aprobado; P1 de la especificación (§11.4) |
 
 Lo que verificaron:
 
@@ -100,6 +100,6 @@ Para §8.2 del contrato: «el total menor que 50:01» del recorrido 20 solo se p
   **no es R10b**, Chromium headless dejó de disparar `requestAnimationFrame` en esta máquina,
   también en una página vacía y sobre una base nueva. Al retomar: comprobar que una página vacía
   dispara `requestAnimationFrame` y repetir la e2e ×2.
-- **Falta paridad** (`parity-r10b`, lanzado ~20:36, sin informe al cortar): relanzar con el mismo
-  encargo (base `clock_r10b_parity`, borrarla si quedó) y aplicar su texto en `reportes.md`.
-  Después, el merge como R10b.
+- **Paridad llegó aprobada** justo al cortar: su informe y los diez bloques de texto están en
+  `r10b-paridad-pendiente.md`. Al retomar: aplicarlos en `reportes.md`, borrar ese archivo,
+  repetir la e2e ×2 y mergear como R10b.
