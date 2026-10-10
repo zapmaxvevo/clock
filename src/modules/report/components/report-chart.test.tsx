@@ -49,10 +49,19 @@ function paintedBars(markup: string): string[] {
 
 /** El texto de cada marca del eje horizontal, por columna; `null` si no lleva. */
 function ticks(markup: string): (string | null)[] {
-  const row = markup.slice(markup.indexOf('class="text-muted-foreground col-start-2'));
+  return tickSpans(markup).map((tick) => tick?.text ?? null);
+}
+
+/** Las marcas de la fila del eje, con su clase; `null` en las columnas sin marca. */
+function tickSpans(markup: string) {
+  const row = markup.slice(markup.indexOf("@container"));
   return [
-    ...row.matchAll(/<div class="relative[^"]*">(?:<span[^>]*>(.*?)<\/span>)?<\/div>/g),
-  ].map(([, tick]) => tick ?? null);
+    ...row.matchAll(
+      /<div class="relative[^"]*">(?:<span class="([^"]*)">(.*?)<\/span>)?<\/div>/g,
+    ),
+  ].map(([, className, text]) =>
+    text === undefined ? null : { text, className: className ?? "" },
+  );
 }
 
 /** Los rótulos de la escala, de abajo arriba. */
@@ -182,6 +191,34 @@ describe("ReportChart (D-R5-7 a D-R5-9)", () => {
       "07/10",
       null,
     ]);
+  });
+
+  it("con el área angosta se ven solo las de `narrowTickIndexesOf`; el resto, desde 24rem", () => {
+    const markup = render({
+      granularity: "date",
+      bars: dayBars(...Array.from({ length: 31 }, () => HOUR)),
+    });
+    const shown = tickSpans(markup).filter((tick) => tick !== null);
+    expect(shown.map(({ text }) => text)).toEqual([
+      "01/10",
+      "06/10",
+      "11/10",
+      "16/10",
+      "21/10",
+      "26/10",
+      "31/10",
+    ]);
+    expect(
+      shown
+        .filter(({ className }) => !className.includes("hidden"))
+        .map(({ text }) => text),
+    ).toEqual(["01/10", "11/10", "21/10", "31/10"]);
+    for (const { className } of shown.filter(({ text }) =>
+      ["06/10", "16/10", "26/10"].includes(text),
+    )) {
+      expect(className).toContain("hidden @min-[24rem]:block");
+    }
+    expect(markup).toMatch(/class="[^"]*@container[^"]*"/);
   });
 
   it("la marca de la primera va al inicio y la de la última al final", () => {

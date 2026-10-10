@@ -4,6 +4,7 @@ import {
   activeBarIndex,
   barHeightPercent,
   chartScaleOf,
+  narrowTickIndexesOf,
   nextBarIndex,
   tickAlignOf,
   tickIndexesOf,
@@ -84,6 +85,27 @@ describe("tickIndexesOf (D-R5-8)", () => {
     [31, [0, 5, 10, 15, 20, 25, 30]],
   ])("con %i columnas, las marcas van en %o", (count, expected) => {
     expect(tickIndexesOf(count)).toEqual(expected);
+  });
+});
+
+describe("narrowTickIndexesOf (D-R5-8, con el área angosta)", () => {
+  it.each<[number, number[]]>([
+    [1, [0]],
+    [7, [0, 2, 4, 6]],
+    [13, [0, 4, 8, 12]],
+    [27, [0, 8, 16, 24]],
+    [31, [0, 10, 20, 30]],
+  ])("con %i columnas, las marcas van en %o", (count, expected) => {
+    expect(narrowTickIndexesOf(count)).toEqual(expected);
+  });
+
+  it("son cuatro como mucho y siempre de las de `tickIndexesOf`", () => {
+    for (let count = 1; count <= 31; count += 1) {
+      const all = tickIndexesOf(count);
+      const narrow = narrowTickIndexesOf(count);
+      expect(narrow.length).toBeLessThanOrEqual(4);
+      expect(narrow.every((index) => all.includes(index))).toBe(true);
+    }
   });
 });
 

@@ -53,6 +53,15 @@ export function tickIndexesOf(count: number): readonly number[] {
 }
 
 /**
+ * Las que se ven con el área angosta: una de cada dos de `tickIndexesOf`,
+ * desde la primera. Con el paso doble son cuatro como mucho, y siempre de las
+ * mismas columnas que las siete.
+ */
+export function narrowTickIndexesOf(count: number): readonly number[] {
+  return tickIndexesOf(count).filter((_, position) => position % 2 === 0);
+}
+
+/**
  * La de la primera columna empieza en su borde y la de la última termina en el
  * suyo, así ninguna sale de la caja; el resto, y la de una sola, centradas.
  */

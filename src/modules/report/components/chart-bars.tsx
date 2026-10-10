@@ -4,7 +4,7 @@ import { useRef, useState, type KeyboardEvent } from "react";
 
 import { cn } from "@/lib/utils";
 
-import { activeBarIndex, nextBarIndex } from "./chart-model";
+import { activeBarIndex, narrowTickIndexesOf, nextBarIndex } from "./chart-model";
 
 /** Una línea de la escala: su rótulo («2:00») y su altura en porcentaje del área. */
 export type ChartScaleLine = { readonly label: string; readonly percent: number };
@@ -51,6 +51,8 @@ export function ChartBars({
   const active = activeBarIndex(hovered, focused);
   // Con una sola barra, la columna tiene un ancho tope y va centrada (D-R5-8).
   const single = bars.length === 1;
+  // Sale de la cantidad de columnas: no viaja en las props, que pesan en el payload RSC (§6.3).
+  const narrowTicks = new Set(narrowTickIndexesOf(bars.length));
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>, index: number): void {
     // Alt+flecha y los atajos con modificadores siguen siendo del navegador.
@@ -148,11 +150,16 @@ export function ChartBars({
         </div>
       </div>
 
+      {/*
+       * El ancho de las marcas lo mide la fila, que es un contenedor: debajo
+       * de 24rem siete marcas de día se pisan, y se ven solo las de
+       * `narrowTickIndexesOf` (D-R5-8).
+       */}
       <div
         aria-hidden="true"
-        className="text-muted-foreground col-start-2 mt-1 flex h-4 justify-center gap-px text-xs"
+        className="text-muted-foreground @container col-start-2 mt-1 flex h-4 justify-center gap-px text-xs"
       >
-        {bars.map((bar) => (
+        {bars.map((bar, index) => (
           <div
             key={bar.key}
             className={cn("relative min-w-0 flex-1", single && "max-w-12")}
@@ -162,6 +169,7 @@ export function ChartBars({
                 className={cn(
                   "absolute top-0 whitespace-nowrap",
                   TICK_ALIGN[bar.tickAlign],
+                  !narrowTicks.has(index) && "hidden @min-[24rem]:block",
                 )}
               >
                 {bar.tick}
