@@ -257,7 +257,9 @@ HTML y CSS; (3) una biblioteca de gráficos. **(2).**
   en 0, un paso, dos… hasta el techo: de dos a cinco. Todo en cero da 0:00 y
   0:15.
 - **Los rótulos del eje** son `durationLabel` de cada línea, «h:mm» como el
-  resto de la pantalla (RP-18): «0:00», «0:15», «2:00», «2000:00».
+  resto de la pantalla (RP-18): «0:00», «0:15», «2:00», «2000:00». La columna
+  de la escala toma el ancho del rótulo más ancho, no del último: con dígitos
+  proporcionales, «0:45» es más ancho que «1:00» (D3 de las revisiones).
 - **La altura** de cada barra es su porcentaje del techo. Una barra con horas
   tiene al menos 2 px, así no se confunde con una en cero; una en cero no se
   dibuja (su columna sí, D-R5-9).
@@ -266,6 +268,14 @@ HTML y CSS; (3) una biblioteca de gráficos. **(2).**
   cada cuatro; con 13 meses, cada dos; con siete o menos, todas. La de la
   primera barra va alineada al inicio, la de la última al final y el resto
   centradas, para que ninguna salga de la caja.
+  _Corregido en la implementación (D1 de
+  [las revisiones](correcciones-nucleo-reportes-r5-revisiones.md))_: a 320 y
+  375 px las siete se pisaban (una marca de día mide de 36 a 40 px y el área,
+  unos 214). **Con el área de las columnas por debajo de 24rem**, se ve una de
+  cada dos de `tickIndexesOf` (`narrowTickIndexesOf`: con 31 barras, 0, 10, 20
+  y 30), a lo sumo cuatro y siempre un subconjunto, con una container query
+  sobre la fila de las marcas y sin JavaScript. `ChartBars` las calcula de
+  `bars.length`, sin prop nueva.
 - **Con una sola barra**, su ancho tiene un tope (48 px) y va centrada.
 - Opción descartada: la escala en el service. No depende de la zona ni de los
   formatos, sino de las barras, y si R7 dibuja el gráfico en el PDF reusa las
@@ -286,7 +296,8 @@ HTML y CSS; (3) una biblioteca de gráficos. **(2).**
 - **Foco itinerante**: una sola columna tiene `tabIndex` 0 (al montar, la
   primera; después, la última que tuvo el foco) y las demás −1. Flecha derecha
   y abajo, la siguiente; izquierda y arriba, la anterior; Inicio y Fin, la
-  primera y la última; sin dar la vuelta.
+  primera y la última; sin dar la vuelta. Con Alt, Ctrl, Meta o Mayúsculas
+  no hacen nada, así Alt+flecha sigue siendo «atrás» (D2 de las revisiones).
 - **La columna activa** —la del puntero o, sin puntero encima, la del foco— se
   marca entera con `bg-muted` de fondo y su barra con el color activo (§5.4),
   y **la línea del valor**, arriba del gráfico, dice su nombre. **Con foco de
@@ -1086,7 +1097,10 @@ _Cierre._
       columna con `tabIndex` 0 y el resto −1; una barra en cero sin alto y una
       con horas con el alto mínimo; los rótulos de la escala; las marcas solo
       en las columnas de `tickIndexesOf`; la línea del valor vacía y
-      `aria-hidden`; el `<details>` cerrado con `CHART_DATA`, después de las
+      `aria-hidden`; con el área angosta, las marcas que no están en
+      `narrowTickIndexesOf` llevan la clase que las oculta (D1), y
+      `narrowTickIndexesOf` con 1, 7, 13, 27 y 31 da a lo sumo cuatro y un
+      subconjunto de `tickIndexesOf`; el `<details>` cerrado con `CHART_DATA`, después de las
       columnas, y una fila por barra, también las en cero; una sola barra con
       su ancho tope.
     - `report-view.test.tsx`: con `chart`, la figura después de los totales y
