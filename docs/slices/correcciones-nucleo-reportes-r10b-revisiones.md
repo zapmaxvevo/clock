@@ -43,11 +43,11 @@ integración `6890dd8` (criterio 18); e2e `75e816e` (recorridos 19 y 20).
 
 | Revisión  | Agente                | Veredicto                                      |
 | --------- | --------------------- | ---------------------------------------------- |
-| Backend   | `backend-reviewer`    | pendiente                                      |
+| Backend   | `backend-reviewer`    | aprobado, un menor y dos notas                 |
 | Seguridad | `security-auditor`    | aprobado, sin hallazgos (completa, §7 paso 17) |
 | Frontend  | `frontend-reviewer`   | aprobado, dos notas                            |
-| Tests     | `test-reviewer`       | pendiente                                      |
-| Código    | `clean-code-reviewer` | pendiente                                      |
+| Tests     | `test-reviewer`       | aprobado, dos menores                          |
+| Código    | `clean-code-reviewer` | cambios requeridos: un mayor y tres menores    |
 | Paridad   | `parity-reviewer`     | pendiente                                      |
 
 Lo que verificaron:
@@ -62,3 +62,29 @@ Lo que verificaron:
   subniveles; escape con `<img onerror>` y RLO; teclado y nombre del botón; el primer nivel
   cortado con y sin filtro. Notas: F1, un corte a 100 justo después de un espacio se ve «… …»
   (decisión de paridad); F2, el aviso de `eval()` y la CSP en `next dev`, previo.
+- **Backend**, sobre `..d32b376`: reprodujo §6.3 (Q31 44,3 ms, Q33 18,2, pedidos ~66 y ~21 ms) y
+  capturó con `log_statement` el SQL de Q31 y Q33, igual byte a byte a `explain.sql`. Filas por
+  nivel (B3): Q31 12 697 grupos, Q32 1177, Q33 4254 y Q34 540. **Con el volumen sintético,
+  Persona → Descripción de un mes no muestra el segundo nivel** (4254 > 2971): la regla del tope
+  de R3b, con su línea. En Q2, Q5 y Q11 el `limit` solo suma un nodo `Limit`.
+- **Tests**: cada mutante de §8.1 (14 a 19) y §8.2 (19 y 20) cae por su afirmación, salvo T1 y
+  T2; los dos equivalentes, bien declarados. Unidad de report 282/282, integración 200/200.
+- **Código**: capas, reutilización (`trackerLabels.noDescription`, claves `sin-*`) y comentarios
+  bien; duplicación en los helpers de tests.
+
+## Ronda de correcciones
+
+A `backend-dev` (`backend-r10b`), salvo lo que pida paridad:
+
+| Id    | Origen          | Hallazgo                                                                                                                                                 |
+| ----- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| B1/C2 | backend, código | `levelReadOf(…, limit?: number)` (`service.ts:672`) con `limit` obligatorio; `ReportLevelRead.limit` también, si los tests se adaptan sin ruido.         |
+| B2    | backend         | La cabecera de `explain.sql` dice que el `limit $n` lo llevan solo Q2, Q5 y Q11.                                                                         |
+| C1    | código          | **Mayor.** `seedClosed` con `description`; sin `seedDescribed` duplicado ni los dos `db.update` sobre todo el workspace (`service.integration.test.ts`). |
+| C3    | código          | El id esperado (sha256, 32 hex) en un solo helper de `src/test/`.                                                                                        |
+| C4    | código          | `rowHeadings` y los textos del tope a nivel de módulo en `report-view.test.tsx`.                                                                         |
+| T1    | tests           | `levelsShown: -1` con `groups: []` en `schema.test.ts`: hoy el piso no se prueba.                                                                        |
+| T2    | tests           | El total del criterio 17 no mata «la suma de las filas leídas»: sembrar una entrada más (3002 grupos) y afirmar `3001*60 + 3600`.                        |
+
+Para §8.2 del contrato: «el total menor que 50:01» del recorrido 20 solo se puede dar con más de
+3001 grupos; con T2 la integración lo cubre.
