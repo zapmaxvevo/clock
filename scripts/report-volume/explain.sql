@@ -5,8 +5,9 @@
 -- Q23 y Q24 las de §6.3, con el filtro de personas y su catálogo. Q25 a Q30
 -- son las de §6.2 del contrato de R10, por semana y por mes, y Q31 a Q34 las
 -- de §6.3, por descripción, y Q35 a Q39 las de §6.2 del contrato de R5, la
--- lectura del gráfico. Desde R10b el primer nivel también lleva el
--- `limit` del tope, `REPORT_MAX_ROWS + 1` (D-R10-10): el `limit $n` lo llevan
+-- lectura del gráfico. Q40 a Q43 son las de §6.2 del contrato de R6, la
+-- lectura de las entradas de la exportación. Desde R10b el primer nivel
+-- también lleva el `limit` del tope, `REPORT_MAX_ROWS + 1` (D-R10-10): el `limit $n` lo llevan
 -- solo Q2, Q5 y Q11; las demás de primer nivel no lo llevan, aunque el
 -- repository lo mande.
 -- Cada sentencia es el texto que emite el repository (`.toSQL()`), preparada
@@ -1317,4 +1318,77 @@ explain (analyze, buffers) execute q39(:'this_week_cuts', :workspace, :week_from
 explain (analyze, buffers) execute q39(:'this_week_cuts', :workspace, :week_from, :week_to);
 \echo '-- medida 5'
 explain (analyze, buffers) execute q39(:'this_week_cuts', :workspace, :week_from, :week_to);
+
+-- Q40 a Q43: `entryList` de §6.2 del contrato de R6, la lectura de las
+-- entradas de la exportación, siempre con el `limit`
+-- `REPORT_EXPORT_MAX_ENTRIES + 1`.
+\set days56_from '((date_trunc(''day'', (now() at time zone ''America/Argentina/Buenos_Aires'')) - interval ''56 days'') at time zone ''America/Argentina/Buenos_Aires'')'
+\set days56_to '(date_trunc(''day'', (now() at time zone ''America/Argentina/Buenos_Aires'')) at time zone ''America/Argentina/Buenos_Aires'')'
+
+-- Q40: entryList, everyone, el mes pasado entero, `limit 10001`. Presupuesto: mediana <= 300 ms.
+\echo '== Q40'
+prepare q40 as
+select "time_entry"."id", "time_entry"."started_at", "time_entry"."ended_at", (floor(extract(epoch from date_trunc('milliseconds', "time_entry"."ended_at") - date_trunc('milliseconds', "time_entry"."started_at"))))::bigint, "time_entry"."user_id", "user"."name", "user_preference"."display_name", "membership"."status", "list_project"."name", "list_client"."name", "list_task"."name", "time_entry"."description", "time_entry"."billable", coalesce(( select json_agg(json_build_object('id', "tag"."id", 'name', "tag"."name")) from "time_entry_tag" inner join "tag" on "tag"."workspace_id" = "time_entry_tag"."workspace_id" and "tag"."id" = "time_entry_tag"."tag_id" where "time_entry_tag"."workspace_id" = "time_entry"."workspace_id" and "time_entry_tag"."time_entry_id" = "time_entry"."id" ), '[]'::json) from "time_entry" inner join "membership" on ("membership"."workspace_id" = "time_entry"."workspace_id" and "membership"."user_id" = "time_entry"."user_id") inner join "user" on "user"."id" = "time_entry"."user_id" left join "user_preference" on "user_preference"."user_id" = "time_entry"."user_id" left join "project" "list_project" on ("list_project"."workspace_id" = "time_entry"."workspace_id" and "list_project"."id" = "time_entry"."project_id") left join "client" "list_client" on ("list_client"."workspace_id" = "list_project"."workspace_id" and "list_client"."id" = "list_project"."client_id") left join "task" "list_task" on ("list_task"."workspace_id" = "time_entry"."workspace_id" and "list_task"."id" = "time_entry"."task_id") where ("time_entry"."workspace_id" = $1 and ("time_entry"."ended_at" is not null and "time_entry"."started_at" >= $2 and "time_entry"."started_at" < $3)) limit $4;
+
+\echo '-- calentamiento'
+explain (analyze, buffers) execute q40(:workspace, :month_from, :month_to, 10001);
+\echo '-- medida 1'
+explain (analyze, buffers) execute q40(:workspace, :month_from, :month_to, 10001);
+\echo '-- medida 2'
+explain (analyze, buffers) execute q40(:workspace, :month_from, :month_to, 10001);
+\echo '-- medida 3'
+explain (analyze, buffers) execute q40(:workspace, :month_from, :month_to, 10001);
+\echo '-- medida 4'
+explain (analyze, buffers) execute q40(:workspace, :month_from, :month_to, 10001);
+\echo '-- medida 5'
+explain (analyze, buffers) execute q40(:workspace, :month_from, :month_to, 10001);
+
+-- Q41: entryList, everyone, los 56 días que terminan ayer, `limit 10001`: el mismo texto que Q40. Presupuesto: mediana <= 500 ms.
+\echo '== Q41'
+\echo '-- calentamiento'
+explain (analyze, buffers) execute q40(:workspace, :days56_from, :days56_to, 10001);
+\echo '-- medida 1'
+explain (analyze, buffers) execute q40(:workspace, :days56_from, :days56_to, 10001);
+\echo '-- medida 2'
+explain (analyze, buffers) execute q40(:workspace, :days56_from, :days56_to, 10001);
+\echo '-- medida 3'
+explain (analyze, buffers) execute q40(:workspace, :days56_from, :days56_to, 10001);
+\echo '-- medida 4'
+explain (analyze, buffers) execute q40(:workspace, :days56_from, :days56_to, 10001);
+\echo '-- medida 5'
+explain (analyze, buffers) execute q40(:workspace, :days56_from, :days56_to, 10001);
+
+-- Q42: entryList, everyone, los 366 días desde el 1 de enero del año pasado, `limit 10001` (no entran): el mismo texto que Q40. Presupuesto: mediana <= 500 ms.
+\echo '== Q42'
+\echo '-- calentamiento'
+explain (analyze, buffers) execute q40(:workspace, :year_from, :year_to, 10001);
+\echo '-- medida 1'
+explain (analyze, buffers) execute q40(:workspace, :year_from, :year_to, 10001);
+\echo '-- medida 2'
+explain (analyze, buffers) execute q40(:workspace, :year_from, :year_to, 10001);
+\echo '-- medida 3'
+explain (analyze, buffers) execute q40(:workspace, :year_from, :year_to, 10001);
+\echo '-- medida 4'
+explain (analyze, buffers) execute q40(:workspace, :year_from, :year_to, 10001);
+\echo '-- medida 5'
+explain (analyze, buffers) execute q40(:workspace, :year_from, :year_to, 10001);
+
+-- Q43: entryList, self, los 366 días desde el 1 de enero del año pasado, `limit 10001`. Presupuesto: mediana <= 100 ms.
+\echo '== Q43'
+prepare q43 as
+select "time_entry"."id", "time_entry"."started_at", "time_entry"."ended_at", (floor(extract(epoch from date_trunc('milliseconds', "time_entry"."ended_at") - date_trunc('milliseconds', "time_entry"."started_at"))))::bigint, "time_entry"."user_id", "user"."name", "user_preference"."display_name", "membership"."status", "list_project"."name", "list_client"."name", "list_task"."name", "time_entry"."description", "time_entry"."billable", coalesce(( select json_agg(json_build_object('id', "tag"."id", 'name', "tag"."name")) from "time_entry_tag" inner join "tag" on "tag"."workspace_id" = "time_entry_tag"."workspace_id" and "tag"."id" = "time_entry_tag"."tag_id" where "time_entry_tag"."workspace_id" = "time_entry"."workspace_id" and "time_entry_tag"."time_entry_id" = "time_entry"."id" ), '[]'::json) from "time_entry" inner join "membership" on ("membership"."workspace_id" = "time_entry"."workspace_id" and "membership"."user_id" = "time_entry"."user_id") inner join "user" on "user"."id" = "time_entry"."user_id" left join "user_preference" on "user_preference"."user_id" = "time_entry"."user_id" left join "project" "list_project" on ("list_project"."workspace_id" = "time_entry"."workspace_id" and "list_project"."id" = "time_entry"."project_id") left join "client" "list_client" on ("list_client"."workspace_id" = "list_project"."workspace_id" and "list_client"."id" = "list_project"."client_id") left join "task" "list_task" on ("list_task"."workspace_id" = "time_entry"."workspace_id" and "list_task"."id" = "time_entry"."task_id") where (("time_entry"."workspace_id" = $1 and "time_entry"."user_id" = $2) and ("time_entry"."ended_at" is not null and "time_entry"."started_at" >= $3 and "time_entry"."started_at" < $4)) limit $5;
+
+\echo '-- calentamiento'
+explain (analyze, buffers) execute q43(:workspace, :member, :year_from, :year_to, 10001);
+\echo '-- medida 1'
+explain (analyze, buffers) execute q43(:workspace, :member, :year_from, :year_to, 10001);
+\echo '-- medida 2'
+explain (analyze, buffers) execute q43(:workspace, :member, :year_from, :year_to, 10001);
+\echo '-- medida 3'
+explain (analyze, buffers) execute q43(:workspace, :member, :year_from, :year_to, 10001);
+\echo '-- medida 4'
+explain (analyze, buffers) execute q43(:workspace, :member, :year_from, :year_to, 10001);
+\echo '-- medida 5'
+explain (analyze, buffers) execute q43(:workspace, :member, :year_from, :year_to, 10001);
+
 deallocate all;
