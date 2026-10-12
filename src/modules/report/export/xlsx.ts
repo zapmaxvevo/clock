@@ -1,6 +1,11 @@
 import { Workbook, type Worksheet } from "exceljs";
 
-import { clockToMinutes, daysBetweenKeys, MINUTES_PER_DAY } from "@/server/time";
+import {
+  clockToMinutes,
+  daysBetweenKeys,
+  MINUTES_PER_DAY,
+  truncatedHours,
+} from "@/server/time";
 
 import type { ExportCell, ExportDocument, ExportRow } from "./types";
 
@@ -57,12 +62,8 @@ function valueOf(cell: ExportCell): XlsxValue {
     case "duration":
       return { value: cell.minutes / MINUTES_PER_DAY, numFmt: DURATION_FORMAT };
     case "hours":
-      // Truncadas al centésimo, como `formatDecimalHours`: lo que se ve y lo
-      // que suma una planilla no pasan el total (D-R6-6).
-      return {
-        value: Math.floor((Math.max(0, cell.minutes) * 5) / 3) / 100,
-        numFmt: HOURS_FORMAT,
-      };
+      // Lo que se ve y lo que suma una planilla no pasan el total (D-R6-6).
+      return { value: truncatedHours(cell.minutes), numFmt: HOURS_FORMAT };
     case "empty":
       return { value: null };
   }
