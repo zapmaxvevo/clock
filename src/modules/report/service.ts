@@ -740,7 +740,9 @@ type ReadPlan = {
   readonly filters: ReportFilters;
   /** Los cortes de `span` del gráfico, en la granularidad del período (D-R5-4). */
   readonly chartPlan: ChartPlan;
-  /** D-R6-2: la exportación lee además las entradas; la página no. */
+  /** D-R7-3: una exportación, con el tope de duración; la página no lo es. */
+  readonly exporting: boolean;
+  /** D-R6-2: la exportación que las pide lee además las entradas; la página no. */
   readonly entries: boolean;
   /** D-R9-5: la opción efectiva, que solo llega con el alcance `everyone`. */
   readonly peopleWithoutTime: boolean;
@@ -821,8 +823,9 @@ async function readReport(
   scope: Scope,
   plan: ReadPlan,
 ): Promise<ReportRead> {
-  // S3: la exportación lee más y corre en una función con tope de duración.
-  if (plan.entries) {
+  // S3, D-R7-3: toda exportación corre en una función con tope de duración,
+  // lea o no las entradas.
+  if (plan.exporting) {
     await reportRepository.limitStatementTime(REPORT_EXPORT_STATEMENT_TIMEOUT_MS, tx);
   }
   const catalog = await getProjectFilterCatalog(tx, actor);
@@ -962,29 +965,30 @@ type ReportStateRead<Entries extends EntryRead | null> =
 
 /**
  * El cuerpo de `getReportState` y de `getReportExport` (D-R6-2): el mismo
- * alcance, el mismo período, las mismas invariantes y la misma foto; con
- * `withEntries`, la foto lee también las entradas.
+ * alcance, el mismo período, las mismas invariantes y la misma foto. `null`
+ * es la página; un `ReportExportRead`, una exportación, con el tope de
+ * duración y, si las pide, las entradas en la misma foto (D-R7-3).
  */
 async function readReportState(
   actor: Actor,
   settings: TimeSettings,
   request: ReportRequest,
   now: Date,
-  withEntries: true,
-): Promise<ReportStateRead<EntryRead>>;
-async function readReportState(
-  actor: Actor,
-  settings: TimeSettings,
-  request: ReportRequest,
-  now: Date,
-  withEntries: false,
+  read: null,
 ): Promise<ReportStateRead<null>>;
 async function readReportState(
   actor: Actor,
   settings: TimeSettings,
   request: ReportRequest,
   now: Date,
-  withEntries: boolean,
+  read: ReportExportRead,
+): Promise<ReportStateRead<EntryRead | null>>;
+async function readReportState(
+  actor: Actor,
+  settings: TimeSettings,
+  request: ReportRequest,
+  now: Date,
+  read: ReportExportRead | null,
 ): Promise<ReportStateRead<EntryRead | null>> {
   // RP-07: sin permiso no se lee nada.
   if (!can(actor, "report.view", workspaceResource(actor))) {
@@ -1036,7 +1040,7 @@ async function readReportState(
   // ADR 0021, D-R3-3: una sola foto, con los catálogos de los filtros
   // (D-R4-5). Se abre después de `report.view`, de `scopeOf` y de las
   // invariantes.
-  const read = await db.transaction(
+  const snapshot = await db.transaction(
     (tx) =>
       readReport(tx, actor, scope, {
         levels,
@@ -1044,7 +1048,8 @@ async function readReportState(
         buckets,
         filters: request.filters,
         chartPlan,
-        entries: withEntries,
+        exporting: read !== null,
+        entries: read?.entries ?? false,
         peopleWithoutTime,
       }),
     { isolationLevel: "repeatable read", accessMode: "read only" },
@@ -1056,7 +1061,7 @@ async function readReportState(
     todayKey,
     format: settings.formats.date,
   };
-  const levelsShown = levelsShownOf(read.levels, levels.length);
+  const levelsShown = levelsShownOf(snapshot.levels, levels.length);
   const report: ReportReadyState = {
     kind: "ready",
     todayKey,
@@ -1072,15 +1077,15 @@ async function readReportState(
     levelsShown,
     scope: scopeLineOf(scope),
     timeZone,
-    totalSeconds: read.totals.seconds,
-    billableSeconds: read.totals.billableSeconds,
+    totalSeconds: snapshot.totals.seconds,
+    billableSeconds: snapshot.totals.billableSeconds,
     // D-R9-3, D-R9-7: las sin horas no pasan por el árbol: van después, sin hijos.
-    groups: [...treeOf(read.levels, time), ...read.withoutTime],
-    filters: read.filters,
-    filterOptions: toFilterOptions(read.catalog, read.people),
-    chart: chartOf(read.chart, chartPlan, time),
+    groups: [...treeOf(snapshot.levels, time), ...snapshot.withoutTime],
+    filters: snapshot.filters,
+    filterOptions: toFilterOptions(snapshot.catalog, snapshot.people),
+    chart: chartOf(snapshot.chart, chartPlan, time),
   };
-  return { kind: "ready", report, entries: read.entries };
+  return { kind: "ready", report, entries: snapshot.entries };
 }
 
 /**
@@ -1093,8 +1098,8 @@ export async function getReportState(
   request: ReportRequest,
   now: Date = new Date(),
 ): Promise<ReportState> {
-  const read = await readReportState(actor, settings, request, now, false);
-  return read.kind === "forbidden" ? read : read.report;
+  const state = await readReportState(actor, settings, request, now, null);
+  return state.kind === "forbidden" ? state : state.report;
 }
 
 /** D-R7-3: lo que una exportación lee además del estado de la página. */
@@ -1150,8 +1155,14 @@ function entryRowOf(row: EntryListRow, timeZone: string): ReportEntryRow {
   };
 }
 
-/** D-R6-3: todas, ordenadas, o ninguna si no entran o vinieron más que el tope. */
-function entriesOf(read: EntryRead, timeZone: string): ReportExportEntries {
+/**
+ * D-R6-3: todas, ordenadas, o ninguna si no entran o vinieron más que el
+ * tope; `null` si no se leyeron (D-R7-3).
+ */
+function entriesOf(read: EntryRead | null, timeZone: string): ReportExportEntries | null {
+  if (read === null) {
+    return null;
+  }
   if (read.kind === "tooMany" || read.rows.length > REPORT_EXPORT_MAX_ENTRIES) {
     return { kind: "tooMany" };
   }
@@ -1169,15 +1180,14 @@ export async function getReportExport(
   read: ReportExportRead,
   now: Date = new Date(),
 ): Promise<ReportExportState> {
-  // R7a, paso 3: sin `read.entries`, la foto deja de leerlas.
-  const state = await readReportState(actor, settings, request, now, true);
+  const state = await readReportState(actor, settings, request, now, read);
   if (state.kind === "forbidden") {
     return state;
   }
   return {
     kind: "ready",
     report: state.report,
-    entries: read.entries ? entriesOf(state.entries, settings.timezone) : null,
+    entries: entriesOf(state.entries, settings.timezone),
     generatedAt: now,
   };
 }
