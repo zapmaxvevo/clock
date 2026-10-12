@@ -106,6 +106,7 @@ describe("csvBytesOf (D-R6-9; criterio 8 de R6)", () => {
     expect(fieldOf({ kind: "duration", minutes: 90 })).toBe('"1:30"');
     expect(fieldOf({ kind: "duration", minutes: 120_000 })).toBe('"2000:00"');
     expect(fieldOf({ kind: "hours", minutes: 89 })).toBe('"1,48"');
+    expect(fieldOf({ kind: "hours", minutes: 1 })).toBe('"0,01"');
     expect(fieldOf({ kind: "day", dayKey: "2026-10-01" })).toBe('"2026-10-01"');
     expect(fieldOf({ kind: "clock", clock: "09:30" })).toBe('"09:30"');
     expect(fieldOf({ kind: "integer", value: 3 })).toBe('"3"');
