@@ -162,6 +162,18 @@ Clockify —separador, decimales, columnas, nombre del archivo— sigue _no
 verificado_ y no se puede mirar en el workspace del equipo, porque es pago
 (RP-54).
 
+_Actualizado el 2026-10-12, R6b, la segunda parte del contrato de R6 (§7
+«R6b», con la decisión B4 de
+[sus correcciones](../slices/correcciones-nucleo-reportes-r6b.md))_: describe
+lo que hace el código de la rama `nucleo/r6b-excel`: el Excel, con dos hojas y
+celdas con tipo, sobre el mismo documento, la misma ruta y los mismos topes
+que el CSV. Cada regla que precisa lleva su corrección fechada, y la sección 15
+suma lo del Excel. Cambian RP-18, RP-54 y la sección 15. Ese día se buscó en
+la página de exportación: «xlsx», «worksheet» y «number format» (NOT FOUND);
+«sheet» aparece solo dentro de «spreadsheet». Cómo es el Excel de Clockify
+sigue _no verificado_ y no se puede mirar en el workspace del equipo, porque es
+pago (RP-54).
+
 ## Fuentes y límites del relevamiento
 
 Documentación pública del centro de ayuda de Clockify y referencia pública de su
@@ -784,6 +796,15 @@ nivel que no entra.
   truncando dan «0,01» cada una, 0,03.
 - Con muchas entradas cortas la diferencia se nota: cien entradas de 1 minuto
   suman «1,00» en «Horas» contra «1,66» de «Total».
+
+_Actualizado el 2026-10-12, R6b (D-R6-6, D-R6-12)_: **en el Excel las cifras
+son números, con la misma regla que el CSV**. «Duración» es minutos / 1440
+con el formato `[h]:mm`, y «Horas», los mismos centésimos truncados del CSV
+divididos por 100, con el formato `0.00`: 1 minuto es 0,01, 89 son 1,48 y
+3599 s son 0,98. Los minutos de cada cifra se siguen truncando por separado.
+Así lo que se ve en cada celda y lo que da `=SUMA()` de una columna quedan en
+el total o por debajo, nunca arriba, con la misma salvedad de la etiqueta, y
+el CSV y el Excel del mismo reporte dicen las mismas horas.
 
 **RP-19 Formato de duración** — `adaptar`
 Documentado: el formato es del workspace («Find duration format in the General
@@ -1661,6 +1682,59 @@ exportación el 2026-10-12).
 - **Ninguna exportación queda en el `audit_log`**, por decisión del usuario
   (2026-10-12): el archivo trae lo que la pantalla ya muestra, y ninguna
   lectura se audita.
+
+_Actualizado el 2026-10-12, R6b (D-R6-12; B4 de
+[las correcciones de R6b](../slices/correcciones-nucleo-reportes-r6b.md))_:
+llega el Excel. Sigue siendo diseño propio; cómo es el Excel de Clockify sigue
+_no verificado_ («xlsx», «worksheet» y «number format» NOT FOUND en la página
+de exportación el 2026-10-12).
+
+- **Dónde se pide**: el enlace «Excel», después de «CSV» en el grupo
+  «Exportar» (sección 15.1). La ruta es `/reportes/exportar/xlsx`, con la
+  misma query que la página (RP-32).
+- **Qué trae**: lo mismo que el CSV —la misma cabecera, el mismo resumen, las
+  mismas entradas, los mismos topes y las mismas notas— en un `.xlsx` con dos
+  hojas, «Resumen» y «Entradas». Cada hoja lleva arriba la cabecera entera,
+  una fila vacía y su tabla. El título de la parte es el nombre de la hoja y
+  no una fila. La primera fila de cada tabla va en negrita: los encabezados de
+  columna o, si la parte es un aviso, el aviso.
+- **Cada celda tiene tipo**:
+  - el texto es una cadena con formato de texto (`@`), también si parece un
+    número o una fórmula;
+  - «Nivel» es un número entero;
+  - «Fecha de inicio» y «Fecha de fin» son una fecha de Excel (número de serie
+    desde el 30/12/1899) con el formato `yyyy-mm-dd`;
+  - «Hora de inicio» y «Hora de fin» son la fracción del día con `hh:mm`;
+  - «Duración» es minutos / 1440 con `[h]:mm`, que pasa de 24 h; también en
+    «Total» y «Facturable» de la cabecera;
+  - «Horas» son los centésimos truncados del CSV divididos por 100, con
+    `0.00`, y la planilla los muestra con el separador decimal de su
+    configuración (RP-18);
+  - lo vacío es una celda sin valor.
+- **Ninguna celda es una fórmula**, y el texto va tal cual, sin el `'` del CSV:
+  una descripción «=1+1» es la cadena «=1+1».
+- **Los caracteres que el formato no admite** (controles, U+FFFE, U+FFFF y
+  mitades sueltas de un par sustituto) se escriben como «�» (U+FFFD), solo en el
+  Excel, para que el archivo se pueda abrir; el CSV los deja como están.
+- **El tope de las entradas es del documento, medido como CSV**, el mismo para
+  los dos formatos (B4): con el mismo pedido, CSV y Excel deciden siempre lo
+  mismo. Antes de leer las entradas, la exportación las cuenta y calcula una
+  cota inferior de lo que pesan sus líneas en CSV; si pasan de 10 000 o de
+  4 000 000 bytes, no las lee. Si las lee, mide el documento escrito como CSV,
+  y si pasa de 4 000 000 bytes, el archivo sale sin entradas en cualquiera de
+  los dos formatos. En los dos casos la hoja «Entradas» trae el aviso de
+  siempre. Así, un Excel que comprimido habría pesado menos de 4 MB puede salir
+  sin entradas. Justificación: una sola regla para los dos formatos, y la
+  lectura queda acotada antes de listar.
+- **El nombre del archivo**: `reporte_<niveles>_<desde>_<hasta>.xlsx`, como el
+  del CSV salvo la extensión.
+- **Las respuestas**: 200 con `Content-Type:
+application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`,
+  `Content-Disposition: attachment; filename="….xlsx"` y `Cache-Control:
+no-store`; el 307 al login, el 403 y el 500, como en el CSV.
+- Cómo lo abren Excel y LibreOffice —las dos hojas, las fechas como fecha, las
+  duraciones sumables, «=1+1» como texto— es el criterio 21 del contrato, a
+  mano, y queda _no verificado_ hasta que se haga.
 
 **RP-55 Reportes compartidos** — `fuera de alcance`
 Documentado: «Share reports is a paid feature available on any paid plan.»;
@@ -2899,6 +2973,13 @@ columnas, su orden o el separador; un CSV por parte o un ZIP; exportar solo lo
 expandido; exportaciones programadas o por correo (RP-56); importar archivos;
 un tope de pedidos por persona.
 
+_Actualizado el 2026-10-12, R6b_: llega la segunda parte, el Excel, y esta
+corrección describe el código de la rama `nucleo/r6b-excel`. Suma a lo que
+cubre RP-54 con el Excel (dos hojas con celdas con tipo y ninguna fórmula) y
+RP-18 (las mismas horas truncadas, como números). La ruta, el documento, el
+alcance, los topes y las respuestas son los de R6a; cambia el formato. Lo que
+esta corrección no nombra sigue como en R6a. Queda para después el PDF (R7).
+
 ### 15.1 La barra
 
 - **El grupo «Exportar»** es el último de la barra, después de «Filtrar por»,
@@ -2912,6 +2993,13 @@ un tope de pedidos por persona.
   nivel que no entra o con los niveles cortados por el tope, sí.
 - **Lector de pantalla**: el grupo se anuncia «Exportar» y el enlace, «CSV»; el
   foco visible es el de los botones del módulo.
+
+_Actualizado el 2026-10-12, R6b_: el grupo suma **«Excel», después de
+«CSV»**, con el mismo ícono de descarga y el mismo estilo; el lector de
+pantalla lo nombra «Excel». Es un enlace común, como «CSV»: no se pide nada al
+abrir la pantalla, y el clic descarga `reporte_….xlsx` y deja la pantalla en
+`/reportes`. Aparece y falta junto con «CSV» (RP-33); con la sesión vencida,
+lleva al login.
 
 ### 15.2 El archivo
 
@@ -2927,7 +3015,7 @@ valor en la segunda:
 | «Agrupado por» | los niveles pedidos, «Persona / Proyecto / Fecha», también los que el tope cortó                                                                           |
 | «Personas»     | solo si hay personas elegidas: sus nombres con « (inactiva)», en el orden de las opciones, en una celda unidos con «, »                                    |
 | «Clientes»     | solo si hay clientes elegidos, igual                                                                                                                       |
-| «Proyectos»    | solo si hay proyectos elegidos o «Sin proyecto», igual, con «Sin proyecto» al final                                                                        |
+| «Proyectos»    | solo si hay proyectos elegidos o «Sin proyecto», igual, cada proyecto con su cliente entre paréntesis y «Sin proyecto» al final                            |
 | «Total»        | dos celdas: la duración y las horas (RP-18)                                                                                                                |
 | «Facturable»   | ídem                                                                                                                                                       |
 | «Generado»     | la fecha con año y la hora en los formatos de quien exporta, en su zona                                                                                    |
@@ -2973,6 +3061,28 @@ en el resumen, «Web {sufijo} (ACME {sufijo})» 2:15 y 2,25, su 15/09 1:30 y
 «Diseño», `Revisión "final"; v2`, la etiqueta, «No», «1:30» y «1,50»; las
 descripciones «=1+1» y «-guion …» con el `'` adelante.
 
+_Actualizado el 2026-10-12, R6b (D-R6-12)_: **el Excel trae las mismas filas
+en dos hojas**:
+
+| Hoja       | De arriba abajo                                                                                                  |
+| ---------- | ---------------------------------------------------------------------------------------------------------------- |
+| «Resumen»  | la cabecera entera, una fila vacía y la tabla del resumen o su aviso, con la primera fila en negrita             |
+| «Entradas» | la misma cabecera, una fila vacía y la tabla de las entradas o el aviso del tope, con la primera fila en negrita |
+
+- **La cabecera** es la del CSV, con las mismas filas. «Período», «Generado» y
+  los nombres son texto; «Total» y «Facturable» llevan la duración y las horas
+  como números (RP-54).
+- **Las tablas** tienen las mismas columnas que en el CSV, con celdas con tipo:
+  el nivel es un entero, las fechas son fechas `yyyy-mm-dd`, las horas de reloj
+  van con `hh:mm`, «Duración» con `[h]:mm` y «Horas» con `0.00`, truncadas al
+  centésimo como en el CSV. Ninguna celda es una fórmula y ningún texto lleva
+  el `'`.
+- **Las columnas tienen el ancho por omisión**, sin filtros ni filas fijas.
+- Con las entradas del recorrido 25 del contrato (las del 23, por Proyecto →
+  Fecha), salen las hojas «Resumen» y «Entradas». La duración de «Web {sufijo}
+  (ACME {sufijo})» es el número 135 / 1440 con `[h]:mm` y sus horas son 2,25;
+  la descripción «=1+1» es una cadena, sin fórmula y sin `'`.
+
 ### 15.3 Estados y casos borde
 
 - **Vacío y segundo vacío** (RP-33): sin «Exportar». La ruta pedida a mano
@@ -2995,6 +3105,16 @@ descripciones «=1+1» y «-guion …» con el `'` adelante.
   Volvé y probá de nuevo.», una página de texto; «Atrás» vuelve al reporte.
 - **Cargando, error de lectura y sin `report.view`**: la pantalla, como en la
   sección 9.3.
+
+_Actualizado el 2026-10-12, R6b_:
+
+- **Vacío y segundo vacío**: la ruta del Excel pedida a mano responde 200 con
+  las dos hojas. «Resumen» trae la cabecera y el vacío en negrita; «Entradas»,
+  la cabecera y los encabezados en negrita, sin filas.
+- **Las entradas que no entran**: la hoja «Entradas» trae la cabecera y el
+  aviso del tope en negrita. Con el mismo pedido, el CSV y el Excel salen los
+  dos con entradas o los dos sin ellas (B4).
+- **La sesión vencida, el 403 y el 500**: como en el CSV.
 
 ### 15.4 Divergencias visibles que el reviewer no debe marcar como errores
 
@@ -3035,6 +3155,21 @@ descripciones «=1+1» y «-guion …» con el `'` adelante.
 - **El aviso de las entradas une las dos causas** —la cantidad y el peso— en
   una sola frase.
 
+_Actualizado el 2026-10-12, R6b_:
+
+- **El Excel es diseño propio**, como el CSV: el de Clockify es pago y no se
+  puede relevar.
+- **Dos hojas, cada una con la cabecera entera**: la cabecera se repite para
+  que cada hoja se lea sola.
+- **El texto va sin `'`**: «=1+1» y «- reunión» se ven tal cual, como texto.
+- **El peso de las entradas se mide como CSV también para el Excel**: un Excel
+  que comprimido habría pesado menos de 4 MB puede salir sin entradas, con el
+  aviso «pesan más de 4 MB» (B4).
+- **El aviso de una parte va en negrita**, como los encabezados, porque es la
+  primera fila de la tabla.
+- **Las columnas tienen el ancho por omisión**: una descripción larga se corta
+  a la vista, aunque la celda la tenga entera.
+
 ### 15.5 Qué puede hacer cada rol
 
 | Membresía                                           | El archivo trae                                                                                                                                                           | Acciones                                       |
@@ -3042,3 +3177,7 @@ descripciones «=1+1» y «-guion …» con el `'` adelante.
 | `owner`, `admin` activas                            | Las horas, los nombres y las descripciones de todas las personas del workspace con horas, también las inactivas, o solo de las elegidas, filtradas por cliente y proyecto | Las de 14.5, y exportar a CSV cuando hay horas |
 | `project_manager`, `team_manager`, `member` activas | Solo lo propio, filtrado, con «Alcance» «Solo las horas de {nombre}», también con un enlace con `personas=…`: las mismas entradas que sin `personas`                      | Las mismas, sin filtro de personas             |
 | Cualquiera no activa (`inactive`, `invited`)        | Nada: la ruta responde 403                                                                                                                                                | Ninguna                                        |
+
+_Actualizado el 2026-10-12, R6b_: quien exporta a CSV exporta también a Excel,
+con el mismo alcance y lo mismo en el archivo; quien recibe 403 en uno lo
+recibe en el otro.
