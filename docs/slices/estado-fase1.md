@@ -223,6 +223,14 @@ vacío del owner y `renewWorkspace` se corta.
      de §10 «Para el team-lead», punto 6. **CI de `main`** estuvo en rojo desde el merge de R10b
      (`format:check` sobre `correcciones-nucleo-reportes-r10b-revisiones.md`, así que `e2e` no
      corría en CI); arreglado en `c19d04c`, con `verify`, `integration` y `e2e` en verde.
+     **R6a implementado** en `nucleo/r6a-csv` (`b0c56cf`..`098ff93`): pasos 1–7 hechos, el texto de
+     paridad aplicado (`34ffd6a`), mediciones dentro del presupuesto (Q40–Q43 ≤ 160 ms, E1–E5
+     ≤ 604 ms y ≤ 1,57 MB). Seis revisiones lanzadas sobre `098ff93` (bases
+     `clock_r6a_rev_*`, puertos 3102 paridad y 3103 frontend); al llegar, se juntan en
+     `correcciones-nucleo-reportes-r6a-revisiones.md`. Pendientes para esa ronda: «10000» frente a
+     «10 000» en el aviso de entradas; D-R6-6 generaliza de más con etiquetas en un subnivel
+     (salvedad ya en RP-18); el criterio 13 (abrir el CSV) con LibreOffice, que está instalado.
+     `backend-dev` corrió mutantes del paso 3 en el árbol compartido (revertidos, árbol limpio).
 
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
      (`7b66b03`), en checkout en el árbol principal. `architect-r3` quedó escribiendo
