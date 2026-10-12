@@ -250,6 +250,14 @@ vacío del owner y `renewWorkspace` se corta.
      **Sigue R7** (mapa §R7), primero su contrato; después R9. R8, solo contrato. Bases que se
      pueden borrar: `clock_r6b_*`. La prueba del CSV y el Excel con el Excel del usuario queda
      opcional (§10 del contrato).
+     **R7 y R9 en contrato** (rama `nucleo/r7-contrato`): contrato de R7 aprobado en dos pasadas
+     (`ce2bfde`); medición R7-0 en `nucleo-reportes-r7-medicion.md` (`b26c589`):
+     `@react-pdf/renderer` no cumple (3000 filas en 30 s y 1,5 GB), pdfkit sí (0,25 s, ~130 MB).
+     **Decisión del usuario (2026-10-12): pdfkit directo** (ADR 0022). Decisiones del team-lead
+     (el usuario no contestó esas preguntas): Noto Sans Regular incrustada, `pdfjs-dist` en
+     `devDependencies`, R7a antes que R9 (el orden que pidió), R7b (el gráfico) solo si lo pide.
+     El `architect` adapta el contrato a pdfkit y escribe el ADR. Contrato de R9 escrito
+     (`bc9af1e`), en revisión; R7 y R9 tocan los mismos archivos y van en serie.
 
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
      (`7b66b03`), en checkout en el árbol principal. `architect-r3` quedó escribiendo
