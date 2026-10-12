@@ -316,6 +316,24 @@ describe("applyFilter, el efecto de «Aplicar» (D-R4-8)", () => {
     });
   });
 
+  it("conserva las personas sin horas (D-R9-12)", () => {
+    expect(
+      applyFilter(
+        {
+          ...location,
+          grouping: { groupBy: "person", subgroups: ["date"], peopleWithoutTime: true },
+        },
+        "people",
+        [ANA],
+        peopleOptions,
+      ),
+    ).toEqual({
+      open: false,
+      error: null,
+      href: `/reportes?desde=2026-09-28&hasta=2026-10-04&agrupar=persona&subagrupar=fecha&sin-horas=1&personas=${ANA}&clientes=${C2}%2C${C1}`,
+    });
+  });
+
   it("personas: con 51 sigue abierto con el mensaje; con 50 navega", () => {
     const people = (count: number): readonly FilterOption[] =>
       Array.from({ length: count }, (_, index) => ({

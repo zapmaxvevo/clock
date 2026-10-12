@@ -121,6 +121,42 @@ describe("ReportTreeRows (D-R3-9, §5.4)", () => {
     expect(tag).not.toContain("aria-hidden");
   });
 
+  it("en dos niveles, una persona sin `children` no lleva botón y deja el lugar del chevrón (D-R9-3)", () => {
+    const people: ReportGroup[] = [
+      {
+        kind: "person",
+        userId: "aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY",
+        name: "Ana",
+        inactive: false,
+        seconds: 3_600,
+        children: [
+          {
+            kind: "project",
+            project: { id: P1, name: "P1", color: "teal" },
+            client: null,
+            seconds: 3_600,
+          },
+        ],
+      },
+      {
+        kind: "person",
+        userId: "Zq8Wn2Rt6Yu0Io4Pa8Sd2Fg6Hj0Kl4Mx",
+        name: "Bruno",
+        inactive: false,
+        seconds: 0,
+      },
+    ];
+    const [ana, bruno] = rowHeadings(render(visibleRows(people, new Set())));
+    expect(ana).toMatch(/<button type="button" aria-expanded="false"/);
+    expect(textOf(ana)).toBe("Ana");
+    expect(bruno).not.toContain("<button");
+    expect(bruno).not.toContain("aria-expanded");
+    expect(bruno).toMatch(/<span aria-hidden="true"[^>]*><\/span>/);
+    expect(textOf(bruno)).toBe("Bruno");
+    // Las dos del primer nivel, con la misma sangría.
+    expect(indentOf(bruno)).toEqual(indentOf(ana));
+  });
+
   it("Mes → Semana abierto: la semana partida, debajo de cada mes con sus días (D-R10-3)", () => {
     const partOf = (partial: string, seconds: number) =>
       ({

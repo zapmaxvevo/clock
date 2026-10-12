@@ -225,6 +225,20 @@ describe("applySelection, el efecto de «Aplicar»", () => {
     );
   });
 
+  it("con un período válido, conserva las personas sin horas (D-R9-12)", () => {
+    expect(
+      applySelection(
+        { from: day("2026-09-01"), to: day("2026-09-30") },
+        { ...BY_PERSON, peopleWithoutTime: true },
+        FILTERS,
+      ),
+    ).toEqual(
+      navigatesTo(
+        `/reportes?desde=2026-09-01&hasta=2026-09-30&agrupar=persona&sin-horas=1${FILTERS_PARAMS}`,
+      ),
+    );
+  });
+
   it("con un período válido, navega con los filtros (D-R4-10)", () => {
     expect(
       applySelection(
@@ -369,6 +383,17 @@ describe("RangePanel, los atajos (RP-20, D-R2b-10)", () => {
       `/reportes?desde=2026-09-01&hasta=2026-09-30&agrupar=proyecto${FILTERS_PARAMS}`,
     );
     expect(found?.every(({ href }) => href.endsWith(FILTERS_PARAMS))).toBe(true);
+  });
+
+  it("cada atajo conserva las personas sin horas (D-R9-12)", () => {
+    const grouping: ReportGrouping = { ...BY_PERSON, peopleWithoutTime: true };
+    const found = shortcutLinks(renderPanel(thisWeek, { grouping, filters: FILTERS }));
+    expect(found?.[6].href).toBe(
+      `/reportes?desde=2026-09-01&hasta=2026-09-30&agrupar=persona&sin-horas=1${FILTERS_PARAMS}`,
+    );
+    expect(
+      found?.every(({ href }) => href.endsWith(`&sin-horas=1${FILTERS_PARAMS}`)),
+    ).toBe(true);
   });
 
   it("solo el atajo del período que se ve lleva aria-current", () => {

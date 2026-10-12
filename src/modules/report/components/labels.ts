@@ -45,6 +45,12 @@ export const reportLabels = {
   byWeek: "Semana",
   byMonth: "Mes",
   byDescription: "Descripción",
+  /**
+   * RP-47, D-R9-11: el enlace al lado de «Agrupar por», con la persona en el
+   * primer nivel; dice lo que hace con la opción como está.
+   */
+  showPeopleWithoutTime: "Mostrar personas sin horas",
+  hidePeopleWithoutTime: "Ocultar personas sin horas",
   /** D-R10-3: los días que cuenta una semana o un mes cortado, en gris después del rótulo. */
   partialDays: (days: string) => `solo ${days}`,
   /**

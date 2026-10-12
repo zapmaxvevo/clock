@@ -232,4 +232,31 @@ describe("SubgroupPanel (D-R3-8, §5.3)", () => {
       `${base}&agrupar=proyecto&subagrupar=fecha%2Cdescripcion${kept}`,
     ]);
   });
+
+  it("cada enlace conserva las personas sin horas, con la persona arriba (D-R9-12)", () => {
+    const person = "aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY";
+    const second = list(
+      render({ groupBy: "person", subgroups: ["project"], peopleWithoutTime: true }, 1, {
+        ...NO_REPORT_FILTERS,
+        people: [person],
+      }),
+    );
+    const third = list(
+      render({ groupBy: "person", subgroups: ["project"], peopleWithoutTime: true }, 2),
+    );
+    expect(second.links.find(({ label }) => label === "Ninguno")?.href).toBe(
+      `${base}&agrupar=persona&sin-horas=1&personas=${person}`,
+    );
+    expect(second.links.find(({ label }) => label === "Fecha")?.href).toBe(
+      `${base}&agrupar=persona&subagrupar=fecha&sin-horas=1&personas=${person}`,
+    );
+    expect(third.links.find(({ label }) => label === "Etiqueta")?.href).toBe(
+      `${base}&agrupar=persona&subagrupar=proyecto%2Cetiqueta&sin-horas=1`,
+    );
+    for (const { href } of [...second.links, ...third.links]) {
+      expect(
+        new URL(href, "https://clock.test").searchParams.getAll("sin-horas"),
+      ).toEqual(["1"]);
+    }
+  });
 });
