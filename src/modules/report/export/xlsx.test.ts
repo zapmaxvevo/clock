@@ -135,9 +135,10 @@ describe("xlsxBytesOf (D-R6-12; criterio 16 de R6)", () => {
     expect(serialOf(duration)).toBeCloseTo(90 / 1440, 9);
     expect(duration.numFmt).toBe("[h]:mm");
     const hours = summary.getCell(4);
+    // 89 minutos son 1,4833… horas: truncadas al centésimo, 1,48, como el CSV.
     expect([hours.type, hours.value, hours.numFmt]).toEqual([
       ValueType.Number,
-      89 / 60,
+      1.48,
       "0.00",
     ]);
     const day = entries.getCell(1);
@@ -147,5 +148,23 @@ describe("xlsxBytesOf (D-R6-12; criterio 16 de R6)", () => {
     expect(serialOf(clock)).toBeCloseTo(570 / 1440, 9);
     expect(clock.numFmt).toBe("hh:mm");
     expect(entries.getCell(3).type).toBe(ValueType.Null);
+  });
+
+  it("las horas se truncan al centésimo: un minuto es 0,01 y tres no suman más que el total de 3 minutos", async () => {
+    const oneMinute: ExportCell = { kind: "hours", minutes: 1 };
+    const workbook = await readBack({
+      header: [[text("Total"), { kind: "hours", minutes: 3 }]],
+      sections: [
+        {
+          title: "Entradas",
+          rows: [[text("Horas")], [oneMinute], [oneMinute], [oneMinute]],
+        },
+      ],
+    });
+    const sheet = sheetOf(workbook, "Entradas");
+
+    const total = sheet.getRow(1).getCell(2).value;
+    const rows = [4, 5, 6].map((row) => sheet.getRow(row).getCell(1).value);
+    expect([total, rows]).toEqual([0.05, [0.01, 0.01, 0.01]]);
   });
 });

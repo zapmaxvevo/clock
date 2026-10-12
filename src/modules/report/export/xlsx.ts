@@ -43,7 +43,12 @@ function valueOf(cell: ExportCell): XlsxValue {
     case "duration":
       return { value: cell.minutes / MINUTES_PER_DAY, numFmt: DURATION_FORMAT };
     case "hours":
-      return { value: cell.minutes / 60, numFmt: HOURS_FORMAT };
+      // Truncadas al centésimo, como `formatDecimalHours`: lo que se ve y lo
+      // que suma una planilla no pasan el total (D-R6-6).
+      return {
+        value: Math.floor((Math.max(0, cell.minutes) * 5) / 3) / 100,
+        numFmt: HOURS_FORMAT,
+      };
     case "empty":
       return { value: null };
   }

@@ -359,14 +359,11 @@ describe("la ruta en Excel (D-R6-12; criterio 17 de R6)", () => {
 });
 
 describe("el tope de las entradas es el mismo en CSV y en Excel (B4 de R6a)", () => {
-  /**
-   * `count` entradas del member de 3000 emojis de descripción (12 000 bytes):
-   * con 334 la cota pasa los 4 MB; con 300, no.
-   */
-  async function seedHeavy(userId: string, count: number) {
+  /** `count` entradas del member con la misma descripción. */
+  async function seedMany(userId: string, count: number, description: string) {
     await db.execute(sql`
       insert into time_entry (workspace_id, user_id, description, started_at, ended_at, billable)
-      select ${seeded.workspaceId}, ${userId}, repeat('😀', 3000),
+      select ${seeded.workspaceId}, ${userId}, ${description},
              timestamptz '2026-09-29 13:00:00+00',
              timestamptz '2026-09-29 14:00:00+00',
              false
@@ -375,6 +372,14 @@ describe("el tope de las entradas es el mismo en CSV y en Excel (B4 de R6a)", ()
 
   const note = exportLabels.entriesLimit(REPORT_EXPORT_MAX_ENTRIES);
   const heavy = "😀".repeat(3000);
+
+  /**
+   * 3000 emojis de descripción, 12 000 bytes: con 334 entradas la cota pasa
+   * los 4 MB; con 300, no.
+   */
+  function seedHeavy(userId: string, count: number) {
+    return seedMany(userId, count, heavy);
+  }
 
   it("con la cota pasada, los dos salen sin entradas, aunque el Excel comprimido pese menos", async () => {
     const memberId = await signInAs();
@@ -406,5 +411,26 @@ describe("el tope de las entradas es el mismo en CSV y en Excel (B4 de R6a)", ()
     const texts = sheetTexts(await sheetOf(xlsx, "Entradas"));
     expect(texts).not.toContain(note);
     expect(texts.filter((text) => text === heavy)).toHaveLength(300);
+  });
+
+  it("con la cota debajo y el CSV escrito arriba de 4 MB, los dos salen sin entradas", async () => {
+    // 3000 comillas: la cota cuenta 3000 bytes por entrada y el CSV, 6000,
+    // porque las duplica. Con 1000 entradas, unos 3,1 MB contra unos 6,1 MB.
+    const quotes = '"'.repeat(3000);
+    const memberId = await signInAs();
+    await seedMany(memberId, 1000, quotes);
+    const entryList = vi.spyOn(reportRepository, "entryList");
+
+    const csv = await exportAs("csv", weekQuery);
+    const xlsx = await exportAs("xlsx", weekQuery);
+
+    // La cota previa dejó listar las entradas en los dos pedidos.
+    expect(entryList).toHaveBeenCalledTimes(2);
+    const csvText = await textOf(csv);
+    expect(csvText).toContain(note);
+    expect(csvText).not.toContain(quotes);
+    const texts = sheetTexts(await sheetOf(xlsx, "Entradas"));
+    expect(texts).toContain(note);
+    expect(texts).not.toContain(quotes);
   });
 });
