@@ -32,8 +32,9 @@ cambios de tablas, de índices ni de permisos.
   `architecture-reviewer` aplicadas el 2026-10-12. La tercera pasada, sobre la
   versión con `pdfkit` (`6be71a7`), dio «no aprobado» con cinco mayores y
   cuatro menores; aplicada el 2026-10-12, con las decisiones del team-lead
-  ([correcciones](correcciones-nucleo-reportes-r7-contrato.md)). **Falta la
-  verificación de las líneas tocadas**, sin otra pasada completa.
+  ([correcciones](correcciones-nucleo-reportes-r7-contrato.md)). Las líneas tocadas
+  se verificaron el mismo día: **aprobado con menores**, aplicados por el
+  team-lead.
 - **Decisiones de arquitectura asociadas**, todas aceptadas:
   - [ADR 0022](../adr/0022-el-pdf-del-reporte-se-dibuja-con-pdfkit.md): el PDF
     se dibuja en el servidor con `pdfkit`, empaquetado, con la tabla y la
@@ -160,10 +161,12 @@ decisión del usuario con la medición R7-0.
   `backend-dev` en el paso 1 de R7a (§7, «Orden»), con `package-lock.json`.
 - **Por qué 0.20.2 y no la 0.20.1 medida** (decisión del team-lead): 0.20.1 es
   la que instala `@react-pdf/renderer` (`node_modules/pdfkit/package.json:12`);
-  0.20.2 es `latest` (2026-08-30), y su CHANGELOG, según la tercera pasada de
-  la revisión, arregla que los empaquetadores y los trazadores llevaran las
-  copias ESM de las métricas de las fuentes estándar en lugar de las CommonJS
-  que carga el build de Node, con `Cannot find module` en tiempo de ejecución.
+  0.20.2 es `latest` (2026-08-30), y su `CHANGELOG.md`, entrada «[v0.20.2] -
+  2026-08-29» (verificada en el paquete por la revisión), dice: «Fix bundlers
+  and file tracers packing the ESM copies of the standard font metrics instead
+  of the CommonJS ones the Node build actually loads, which left `Cannot find
+module` errors for every standard font at runtime, by resolving the internal
+  `#standard-fonts/*` mapping to a single file under all conditions».
   Toca a todo PDF: `new PDFDocument()` carga Helvetica aunque después se use
   solo Noto (`initFonts(defaultFont = 'Helvetica')`,
   `node_modules/pdfkit/js/pdfkit.js:3695`, llamado en `:7040`). **El paso 1
@@ -178,8 +181,8 @@ decisión del usuario con la medición R7-0.
 | FontCollection` y `hasGlyphForCodePoint`. **Sin `declare module`.** `pdf.ts`
   distingue `Font` de `FontCollection` sin aserción de tipo: una colección es un
   error, porque la fuente del repositorio es un TTF.
-- **Las licencias**: `pdfkit`, `fontkit` y sus 13 dependencias transitivas,
-  MIT; `pdfjs-dist`, Apache-2.0, con `engines` en Node `>=22.13 || >=24` (CI
+- **Las licencias**: `pdfkit`, `fontkit` y sus 14 dependencias transitivas
+  (con `fflate`), todas MIT; `pdfjs-dist`, Apache-2.0, con `engines` en Node `>=22.13 || >=24` (CI
   usa 24.x) y la dependencia opcional nativa `@napi-rs/canvas`, que se instala
   en CI y en el build de Vercel pero no entra a la función (tercera pasada).
 - **Empaquetado por Turbopack, sin `serverExternalPackages`.** R7-0 lo probó
@@ -1305,8 +1308,9 @@ _R7b, si el usuario lo pide._
 - **7** (unidad, `pdf-layout.test.ts`): los antepasados sin `muted`; el propio
   con `muted`; los anchos que no suman 1; «Horas» a la izquierda; el `'` del
   CSV; un aviso tomado como tabla; la cabecera sin `pdfTextOf`; las celdas
-  vacías de la primera fila de datos fuera del reparto (cae con la fila sin
-  horas primera: los anchos cambian).
+  vacías de la primera fila de datos fuera del reparto (cae con el resumen de
+  tres niveles: los anchos cambian; la fila sin horas de R9 queda como caso de
+  regresión).
 - **8** (unidad, `pdf.test.ts`): la fila de encabezados solo en la primera
   página (cae: una página sin encabezados); el pie escrito debajo del margen
   (cae: una página de más, sin filas); `LETTER` en lugar de `A4`; la fila

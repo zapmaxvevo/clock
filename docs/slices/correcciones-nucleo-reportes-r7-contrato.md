@@ -489,3 +489,19 @@ corregido.
 9. El estado de la revisión nombra esta tercera pasada y que falta la
    verificación de las líneas tocadas; §10, punto 5, sigue pidiendo
    `prettier --write` antes del commit.
+
+### Verificación de las líneas tocadas
+
+`architecture-reviewer`, sobre `e858e44`, el 2026-10-12: **aprobado con
+menores**. Confirmó en el paquete la entrada «[v0.20.2] - 2026-08-29» del
+`CHANGELOG.md` de `pdfkit`. Los cuatro menores los aplicó el team-lead:
+
+1. D-R7-4 cita el CHANGELOG literal, con su fuente, en lugar de atribuirlo a la
+   revisión.
+2. Las dependencias transitivas de `pdfkit` y `fontkit` son 14, con `fflate`,
+   todas MIT.
+3. El mutante del criterio 7 (las celdas vacías dentro del reparto) cae con el
+   resumen de tres niveles; la fila sin horas de R9 queda como caso de
+   regresión.
+4. El estado de la revisión al principio del contrato dice que las líneas
+   tocadas están verificadas.
