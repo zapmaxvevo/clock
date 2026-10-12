@@ -806,3 +806,23 @@ describe("exportDocumentOf: las entradas (D-R6-3)", () => {
     ).toEqual(["Resumen", "Entradas"]);
   });
 });
+
+describe("exportDocumentOf sin las entradas leídas (D-R7-3; criterio 5 de R7)", () => {
+  it("una sola sección, «Resumen», y la misma cabecera que con entradas", () => {
+    const withEntries = exportDocumentOf(input(), settings);
+    const withoutEntries = exportDocumentOf(input({}, { entries: null }), settings);
+    expect(withoutEntries.sections).toEqual([section(withEntries, "Resumen")]);
+    expect(withoutEntries.header).toEqual(withEntries.header);
+  });
+
+  it("con el primer nivel cortado, el aviso del resumen y ninguna sección más", () => {
+    const cut: Partial<ReportReadyState> = {
+      groupBy: "description",
+      levelsShown: 0,
+      groups: [],
+    };
+    expect(exportDocumentOf(input(cut, { entries: null }), settings).sections).toEqual([
+      section(exportDocumentOf(input(cut), settings), "Resumen"),
+    ]);
+  });
+});

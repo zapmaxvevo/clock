@@ -29,6 +29,8 @@ export const exportLabels = {
   hours: "Horas",
   yes: "Sí",
   no: "No",
+  /** D-R7-6: el pie de cada página del PDF. */
+  pageLabel: (page: number, total: number) => `Página ${page} de ${total}`,
   /** D-R6-3: todas o ninguna, por cantidad o por peso. */
   entriesLimit: (maxEntries: number) =>
     `Las entradas no entran en el archivo: son más de ${thousands(maxEntries)} o pesan más de ${REPORT_EXPORT_MAX_BYTES / 1_000_000} MB. Acortá el período o filtrá.`,
