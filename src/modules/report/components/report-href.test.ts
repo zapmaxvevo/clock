@@ -10,7 +10,7 @@ import {
   type ReportGrouping,
 } from "@/modules/report/schema";
 
-import { reportHref } from "./report-href";
+import { reportExportHref, reportHref } from "./report-href";
 
 const range = { first: "2026-10-05", last: "2026-10-11" };
 const filters = NO_REPORT_FILTERS;
@@ -242,5 +242,55 @@ describe("reportHref con filtros (D-R4-2)", () => {
       projects: [...written.projects].sort(),
       withoutProject: written.withoutProject,
     });
+  });
+});
+
+describe("reportExportHref (D-R6-4, D-R6-10)", () => {
+  const C1 = "c1000000-0000-4000-8000-000000000000";
+  const P1 = "f1000000-0000-4000-8000-000000000000";
+  const P2 = "a2000000-0000-4000-8000-000000000000";
+  const ANA = "aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY";
+
+  it.each([
+    { range, groupBy: "person", filters },
+    { range, groupBy: "project", subgroups: ["date", "tag"], filters },
+    {
+      range,
+      groupBy: "client",
+      subgroups: ["description"],
+      filters: { people: [ANA], clients: [C1], projects: [P1, P2], withoutProject: true },
+    },
+    {
+      range,
+      groupBy: "task",
+      filters: { people: [], clients: [], projects: [], withoutProject: true },
+    },
+  ] satisfies Parameters<typeof reportHref>[0][])(
+    "es la descarga del formato con exactamente la query de la página: %o",
+    (view) => {
+      const query = reportHref(view).replace(/^\/reportes\?/, "");
+      expect(query).not.toBe("");
+      expect(reportExportHref("csv", view)).toBe(`/reportes/exportar/csv?${query}`);
+    },
+  );
+
+  it("con subniveles, los tres filtros y «Sin proyecto», en el orden de `reportHref`", () => {
+    expect(
+      reportExportHref("csv", {
+        range,
+        groupBy: "project",
+        subgroups: ["date"],
+        filters: {
+          people: [ANA],
+          clients: [C1],
+          projects: [P1, P2],
+          withoutProject: true,
+        },
+      }),
+    ).toBe(
+      "/reportes/exportar/csv?desde=2026-10-05&hasta=2026-10-11&agrupar=proyecto" +
+        `&subagrupar=fecha&personas=${ANA}&clientes=${C1}` +
+        `&proyectos=${P2}%2C${P1}%2Csin-proyecto`,
+    );
   });
 });

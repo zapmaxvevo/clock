@@ -1,4 +1,8 @@
-import type { ReportGroupBy, ReportTimeGroupBy } from "@/modules/report/schema";
+import type {
+  ReportExportFormat,
+  ReportGroupBy,
+  ReportTimeGroupBy,
+} from "@/modules/report/schema";
 
 import type { FilterKind } from "./filter-model";
 
@@ -94,7 +98,14 @@ export const reportLabels = {
   filterNoMatches: "Nada coincide con la búsqueda.",
   /** D-R4-2: con «Sin proyecto» contado. */
   filterTooMany: (maxValues: number) => `Elegí hasta ${maxValues}.`,
+  /** D-R6-10: el último grupo de la barra, solo con horas. */
+  exportBy: "Exportar",
 } as const;
+
+/** D-R6-10: el texto visible de cada descarga, que es su nombre. */
+export const exportFormatLabels = {
+  csv: "CSV",
+} as const satisfies Record<ReportExportFormat, string>;
 
 /** El nombre de cada filtro: su botón y el grupo de sus opciones vigentes. */
 export const filterNames = {

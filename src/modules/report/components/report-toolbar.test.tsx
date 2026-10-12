@@ -7,6 +7,7 @@ import {
   type ReportReadyState,
 } from "@/modules/report/schema";
 
+import { reportExportHref } from "./report-href";
 import { ReportToolbar } from "./report-toolbar";
 
 // El selector del período navega con el router de Next, que fuera de la app no existe.
@@ -574,5 +575,91 @@ describe("ReportToolbar con el filtro de personas (D-R4-4, D-R4-8)", () => {
       `/reportes?desde=2026-10-05&hasta=2026-10-11&agrupar=proyecto${kept}`,
     );
     expect(groupByLinks(markup).every(({ href }) => href.endsWith(kept))).toBe(true);
+  });
+});
+
+describe("ReportToolbar con «Exportar» (D-R6-10)", () => {
+  const C1 = "c1000000-0000-4000-8000-000000000000";
+  const P1 = "f1000000-0000-4000-8000-000000000000";
+  /** Con horas en el período: hay gráfico (D-R5-6). */
+  const chart: ReportReadyState["chart"] = {
+    granularity: "date",
+    bars: [
+      {
+        firstDay: "2026-09-28",
+        label: "lun, 28/09",
+        partial: null,
+        tick: "28/09",
+        seconds: 60,
+      },
+    ],
+  };
+  const filters: ReportFilters = {
+    people: [],
+    clients: [C1],
+    projects: [P1],
+    withoutProject: true,
+  };
+
+  /** Los rótulos de los grupos de la barra, en orden. */
+  function groupLabels(markup: string): string[] {
+    return [...markup.matchAll(/<div role="group" aria-labelledby="([^"]+)"/g)].map(
+      ([, id]) =>
+        new RegExp(`<span id="${id}"[^>]*>([^<]*)</span>`).exec(markup)?.[1] ?? "",
+    );
+  }
+
+  /** Lo que sigue al rótulo «Exportar». */
+  function exportGroup(markup: string): string {
+    const start = markup.indexOf(">Exportar</span>");
+    expect(start).toBeGreaterThan(-1);
+    return markup.slice(start);
+  }
+
+  it("con horas, «Exportar» es el último grupo, después de «Filtrar por»", () => {
+    expect(groupLabels(render({ chart }))).toEqual([
+      "Agrupar por",
+      "Subagrupar por",
+      "Filtrar por",
+      "Exportar",
+    ]);
+  });
+
+  it("sin horas (`chart: null`), ningún grupo «Exportar»", () => {
+    const markup = render({ chart: null });
+    expect(groupLabels(markup)).toEqual(["Agrupar por", "Subagrupar por", "Filtrar por"]);
+    expect(markup).not.toContain("Exportar");
+    expect(markup).not.toContain("/reportes/exportar");
+  });
+
+  it("con el primer nivel cortado hay horas, y hay grupo (D-R10-10)", () => {
+    expect(groupLabels(render({ chart, levelsShown: 0 }))).toContain("Exportar");
+  });
+
+  it("«CSV» descarga con la query de la página, los subniveles y los filtros efectivos", () => {
+    const markup = render({ chart, subgroups: ["date", "tag"], filters });
+    const csv = links(exportGroup(markup)).get("CSV");
+    expect(csv?.href).toBe(
+      reportExportHref("csv", {
+        range: lastWeek,
+        groupBy: "project",
+        subgroups: ["date", "tag"],
+        filters,
+      }),
+    );
+    expect(csv?.href).toBe(
+      "/reportes/exportar/csv?desde=2026-09-28&hasta=2026-10-04&agrupar=proyecto" +
+        `&subagrupar=fecha%2Cetiqueta&clientes=${C1}&proyectos=${P1}%2Csin-proyecto`,
+    );
+  });
+
+  it("es un enlace común, sin `download`, con el ícono oculto y el nombre de su texto", () => {
+    const group = exportGroup(render({ chart }));
+    const anchors = [...group.matchAll(/<a ([^>]*)>(.*?)<\/a>/g)];
+    expect(anchors).toHaveLength(1);
+    const [, attributes, content] = anchors[0];
+    expect(attributes).not.toMatch(/\bdownload\b/);
+    expect(attributes).not.toContain("aria-label");
+    expect(content).toMatch(/^<svg [^>]*aria-hidden="true"[^>]*>.*<\/svg>CSV$/);
   });
 });

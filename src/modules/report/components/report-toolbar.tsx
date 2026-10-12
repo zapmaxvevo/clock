@@ -1,9 +1,10 @@
-import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, DownloadIcon } from "lucide-react";
 import Link from "next/link";
 
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
+  REPORT_EXPORT_FORMATS,
   REPORT_GROUP_BYS,
   sameRange,
   type ReportFilters,
@@ -16,14 +17,15 @@ import {
 import { filterOptionsOf, type FilterKind } from "./filter-model";
 import { FilterPicker } from "./filter-picker";
 import { withLevel } from "./grouping-model";
-import { groupByLabels, reportLabels } from "./labels";
+import { exportFormatLabels, groupByLabels, reportLabels } from "./labels";
 import { RangePicker } from "./range-picker";
-import { reportHref } from "./report-href";
+import { reportExportHref, reportHref } from "./report-href";
 import { SubgroupPicker } from "./subgroup-picker";
 
 const GROUP_BY_LABEL_ID = "reporte-agrupar";
 const SUBGROUP_BY_LABEL_ID = "reporte-subagrupar";
 const FILTER_BY_LABEL_ID = "reporte-filtrar";
+const EXPORT_LABEL_ID = "reporte-exportar";
 
 /** Los filtros de la barra, en su orden (D-R4-8). */
 const FILTER_KINDS = [
@@ -37,7 +39,8 @@ const FILTER_KINDS = [
  * calendario, el enlace a la semana en curso y la agrupación, con sus enlaces
  * en el orden de D-R3-8, los subniveles y los filtros. Cada enlace conserva lo
  * que no cambia (D-R2a-4): los subniveles (D-R3-8) y los filtros (D-R4-10).
- * Cada filtro recibe solo sus opciones, no el estado entero (D-R4-9).
+ * Cada filtro recibe solo sus opciones, no el estado entero (D-R4-9). Al final,
+ * las descargas, solo si hay horas (D-R6-10).
  */
 export function ReportToolbar({ state }: { readonly state: ReportReadyState }) {
   const { range, currentWeek, filters } = state;
@@ -146,6 +149,31 @@ export function ReportToolbar({ state }: { readonly state: ReportReadyState }) {
           ))}
         </div>
       </div>
+      {state.chart !== null && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span id={EXPORT_LABEL_ID} className="text-muted-foreground text-sm">
+            {reportLabels.exportBy}
+          </span>
+          <div
+            role="group"
+            aria-labelledby={EXPORT_LABEL_ID}
+            className="flex items-center gap-2"
+          >
+            {REPORT_EXPORT_FORMATS.map((format) => (
+              // Un `<a>` y no `Link`, que pediría el archivo al entrar en pantalla;
+              // sin `download`, una sesión vencida lleva al login (D-R6-10).
+              <a
+                key={format}
+                href={reportExportHref(format, { range, ...grouping, filters })}
+                className={buttonVariants({ variant: "outline", size: "sm" })}
+              >
+                <DownloadIcon aria-hidden="true" />
+                {exportFormatLabels[format]}
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
