@@ -167,4 +167,25 @@ describe("xlsxBytesOf (D-R6-12; criterio 16 de R6)", () => {
     const rows = [4, 5, 6].map((row) => sheet.getRow(row).getCell(1).value);
     expect([total, rows]).toEqual([0.05, [0.01, 0.01, 0.01]]);
   });
+
+  it("reemplaza por U+FFFD lo que no es un carácter de XML 1.0, y el archivo se puede releer", async () => {
+    const workbook = await readBack({
+      header: [],
+      sections: [
+        {
+          title: "Entradas",
+          rows: [
+            [text("x\uFFFFy"), text("a\uD800b"), text("c\u0001d"), text("ok \u{1F600}")],
+          ],
+        },
+      ],
+    });
+
+    expect(textsOf(sheetOf(workbook, "Entradas"), 2, 4)).toEqual([
+      "x\uFFFDy",
+      "a\uFFFDb",
+      "c\uFFFDd",
+      "ok \u{1F600}",
+    ]);
+  });
 });

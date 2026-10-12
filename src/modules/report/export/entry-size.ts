@@ -1,11 +1,4 @@
 /**
- * B4 de R6a: el tope de las entradas es del documento, el mismo para todos
- * los formatos, y se mide como su escritura en CSV: si las entradas no entran
- * en el CSV, tampoco van en el Excel. Un `.xlsx` comprimido no tiene una cota
- * inferior útil, y esta deja acotada la lectura antes de listar (S1, S2).
- */
-
-/**
  * S2: lo mínimo que pesa una línea de «Entradas» en CSV sin sus textos. Las
  * 13 celdas de `entryCellsOf` (`document.ts`) van entre comillas (26 bytes),
  * con 12 `;` y `\r\n` (2): 40. Las dos fechas, `yyyy-MM-dd` (20); las dos
@@ -29,6 +22,10 @@ export type EntryTexts = {
  * las que tiene cada entrada. El CSV escribe cada texto entero y le puede
  * sumar el `'`, comillas duplicadas o « (inactiva)», nunca restarle: la cota
  * no pasa el CSV escrito.
+ *
+ * B4: es el tope de las entradas del documento para todos los formatos, medido
+ * como CSV, porque un `.xlsx` comprimido no tiene una cota inferior útil: si
+ * las entradas no entran en el CSV, tampoco van en el Excel.
  */
 export function entriesMinBytes(texts: EntryTexts): number {
   return (

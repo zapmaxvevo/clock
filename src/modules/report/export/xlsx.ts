@@ -15,6 +15,20 @@ const DURATION_FORMAT = "[h]:mm";
 /** Excel lo muestra con el separador decimal de su configuración. */
 const HOURS_FORMAT = "0.00";
 
+/**
+ * Lo que no es un carácter de XML 1.0: la biblioteca lo escribe tal cual y el
+ * archivo queda ilegible. Con `u`, también los surrogates sueltos.
+ */
+const NOT_XML_CHAR = /[^\x09\x0A\x0D\x20-\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}]/gu;
+
+/** U+FFFD, el carácter de reemplazo. */
+const REPLACEMENT_CHARACTER = "\uFFFD";
+
+/** Un texto que entra en el XML del archivo; el CSV escribe el original. */
+function xmlTextOf(text: string): string {
+  return text.replace(NOT_XML_CHAR, REPLACEMENT_CHARACTER);
+}
+
 type XlsxValue = {
   readonly value: string | number | null;
   readonly numFmt?: string;
@@ -33,7 +47,7 @@ function clockMinutes(clock: string): number {
 function valueOf(cell: ExportCell): XlsxValue {
   switch (cell.kind) {
     case "text":
-      return { value: cell.text, numFmt: TEXT_FORMAT };
+      return { value: xmlTextOf(cell.text), numFmt: TEXT_FORMAT };
     case "integer":
       return { value: cell.value };
     case "day":

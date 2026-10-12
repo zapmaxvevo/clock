@@ -2,6 +2,8 @@ import coreWebVitals from "eslint-config-next/core-web-vitals";
 import nextTypescript from "eslint-config-next/typescript";
 import prettier from "eslint-config-prettier";
 
+const EXCELJS_ONLY = "exceljs solo se importa en src/modules/report/export/xlsx.ts.";
+
 const config = [
   ...coreWebVitals,
   ...nextTypescript,
@@ -20,23 +22,21 @@ const config = [
       "no-console": ["error", { allow: ["warn", "error"] }],
       eqeqeq: ["error", "always"],
       // D-R6-12: la biblioteca de Excel, con su alerta de `uuid` aceptada,
-      // queda encerrada en el escritor; los tests la usan para leer.
+      // queda encerrada en el escritor; los tests la usan para leer. Las
+      // subrutas y el `import()` también cuentan.
       "no-restricted-imports": [
         "error",
-        {
-          paths: [
-            {
-              name: "exceljs",
-              message: "exceljs solo se importa en src/modules/report/export/xlsx.ts.",
-            },
-          ],
-        },
+        { patterns: [{ group: ["exceljs", "exceljs/*"], message: EXCELJS_ONLY }] },
+      ],
+      "no-restricted-syntax": [
+        "error",
+        { selector: "ImportExpression[source.value=/^exceljs/]", message: EXCELJS_ONLY },
       ],
     },
   },
   {
     files: ["src/modules/report/export/xlsx.ts", "**/*.test.ts", "e2e/**"],
-    rules: { "no-restricted-imports": "off" },
+    rules: { "no-restricted-imports": "off", "no-restricted-syntax": "off" },
   },
   {
     ignores: [

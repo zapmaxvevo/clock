@@ -16,7 +16,7 @@ import { csvBytesOf } from "./csv";
 import { exportDocumentOf, type ReportExportInput } from "./document";
 import type { ExportDocument, ExportWriter } from "./types";
 
-/** D-R6-6, D-R6-13: cómo se escribe y se sirve cada formato. R6b suma xlsx; R7, pdf. */
+/** D-R6-6, D-R6-13: cómo se escribe y se sirve cada formato. R7 suma pdf. */
 const EXPORT_WRITERS = {
   csv: {
     contentType: "text/csv; charset=utf-8",
