@@ -209,6 +209,12 @@ vacío del owner y `renewWorkspace` se corta.
      Q25 de R10, medida de nuevo sin carga: 53,0 ms (≤ 150). Bases sin
      borrar (el permiso lo frenó): `clock_r10a_*` y `clock_r10b_final_*`.
 
+     **Décima sesión** (2026-10-12): respuestas del usuario a las dos preguntas de R6. (a)
+     `exceljs` se acepta con la alerta de `uuid`, siempre que el `security-auditor` de R6b
+     confirme que la ruta vulnerable no se ejecuta; se revisa cuando haya versión corregida. (b)
+     Las exportaciones **no** van al `audit_log`. `architecture-reviewer` lanzado sobre el
+     contrato (primera pasada).
+
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
      (`7b66b03`), en checkout en el árbol principal. `architect-r3` quedó escribiendo
      `docs/slices/nucleo-reportes-r3-subgrupos-tarea-y-etiqueta.md` (sin commit). Tarea entra
