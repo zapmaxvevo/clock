@@ -52,3 +52,19 @@ worktree.
 Correcciones: `0aff6c6` (B4 medido como CSV, horas truncadas) y `b817148` (U+FFFD, ESLint,
 comentarios). E1 en `.xlsx` 320 KB y 710 ms; E2 535 KB y 1094 ms. Recorrido 25: `88c7333`.
 Paridad aplicada en `4871b4b`, con una nota de U+FFFD sumada por el team-lead.
+
+## Segundas pasadas y criterio 21
+
+- **Frontend**: aprobado, sin hallazgos. **Seguridad** (U+FFFD, ESLint, B4): aprobado; la regla
+  se esquiva a propósito con una plantilla (`import(\`exceljs\`)`), aceptado como barrera contra
+descuidos. **Backend**: aprobado; el costo de medir como CSV es ~18 ms. Menor: el truncado de
+«Horas» de `xlsx.ts`copia el de`formatDecimalHours`; **se corrige** con una función de
+`src/server/time`. **Tests**: aprobado; el criterio 16 del contrato decía `89 / 60`, corregido
+en `534ee98`. **Paridad**: aprobado, sin hallazgos (CSV y Excel comparados celda por celda; el
+  tope de peso decide igual en los dos).
+- `449c77a`: el selector del `import()` es `^exceljs(\x2F|$)`, para no frenar `exceljs-otro`.
+- **Criterio 21** con LibreOffice (headless, `--convert-to fods`) sobre la descarga del recorrido
+  25 de la revisión de paridad: dos hojas, «Resumen» y «Entradas»; ninguna fórmula; «=1+1»,
+  «@SUM(A1)» y «0123» como texto; las fechas como fecha; las horas de reloj y las duraciones
+  como tiempo (también 26:01 y 31:48); «Horas» como número (1,48 y 2,25); U+FFFF y los
+  controles como «�». La prueba con Excel queda para el usuario.
