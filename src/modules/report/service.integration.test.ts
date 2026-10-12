@@ -37,6 +37,7 @@ import { getTimesheetState } from "@/modules/time-entry/service";
 
 import {
   NO_REPORT_FILTERS,
+  REPORT_EXPORT_MAX_BYTES,
   REPORT_EXPORT_MAX_ENTRIES,
   REPORT_GROUP_BYS,
   REPORT_MAX_FILTER_VALUES,
@@ -4649,7 +4650,7 @@ describe("la exportación (D-R6-2, D-R6-3; criterio 5 de R6)", () => {
     ]);
   });
 
-  it("con REPORT_EXPORT_MAX_ENTRIES entradas, listed con todas; con una más, tooMany, y report igual en los dos", async () => {
+  it("con REPORT_EXPORT_MAX_ENTRIES entradas, listed con todas; con una más, tooMany sin listarlas, y report igual en los dos", async () => {
     await seedMinutes(REPORT_EXPORT_MAX_ENTRIES);
     const atLimit = await readyExport(owner, { range: lastWeek });
     expect(listedRows(atLimit.entries)).toHaveLength(REPORT_EXPORT_MAX_ENTRIES);
@@ -4657,8 +4658,11 @@ describe("la exportación (D-R6-2, D-R6-3; criterio 5 de R6)", () => {
     expect(atLimit.report.totalSeconds).toBe(REPORT_EXPORT_MAX_ENTRIES * 60);
 
     await seedMinutes(1);
+    const entryList = vi.spyOn(reportRepository, "entryList");
     const overLimit = await readyExport(owner, { range: lastWeek });
     expect(overLimit.entries).toEqual({ kind: "tooMany" });
+    // S1: la lectura de agregados ya lo dijo.
+    expect(entryList).not.toHaveBeenCalled();
     expect(overLimit.report).toEqual(await readyState(owner, { range: lastWeek }));
     expect(overLimit.report.totalSeconds).toBe((REPORT_EXPORT_MAX_ENTRIES + 1) * 60);
   });
@@ -4673,6 +4677,7 @@ describe("la exportación (D-R6-2, D-R6-3; criterio 5 de R6)", () => {
     const entryTotals = vi.spyOn(reportRepository, "entryTotals");
     const byBucket = vi.spyOn(reportRepository, "totalsByBucket");
     const entryList = vi.spyOn(reportRepository, "entryList");
+    const entryListSize = vi.spyOn(reportRepository, "entryListSize");
 
     const exported = await readyExport(owner, {
       range: lastWeek,
@@ -4691,11 +4696,16 @@ describe("la exportación (D-R6-2, D-R6-3; criterio 5 de R6)", () => {
     const [levelScope, levelRead, levelExecutor] = byLevels.mock.calls[0] ?? [];
     expect(listExecutor).toBeDefined();
     expect(listExecutor).not.toBe(db);
+    expect(entryListSize).toHaveBeenCalledTimes(1);
+    const [sizeScope, sizeRead, sizeExecutor] = entryListSize.mock.calls[0] ?? [];
     expect([
       levelExecutor,
       entryTotals.mock.calls[0]?.[2],
       byBucket.mock.calls[0]?.[2],
-    ]).toEqual([listExecutor, listExecutor, listExecutor]);
+      sizeExecutor,
+    ]).toEqual([listExecutor, listExecutor, listExecutor, listExecutor]);
+    expect(sizeScope).toBe(levelScope);
+    expect(sizeRead).toEqual({ span: levelRead?.span, filter: levelRead?.filter });
     expect(listScope).toBe(levelScope);
     expect(listScope?.people).toEqual({ kind: "chosen", userIds: [otherId] });
     expect(listRead).toEqual({
@@ -4705,13 +4715,15 @@ describe("la exportación (D-R6-2, D-R6-3; criterio 5 de R6)", () => {
     });
   });
 
-  it("getReportState no llama a entryList", async () => {
+  it("getReportState no llama a entryList ni a entryListSize", async () => {
     await seedClosed(ownerId, "2026-09-29T13:00:00Z", 600);
     const entryList = vi.spyOn(reportRepository, "entryList");
+    const entryListSize = vi.spyOn(reportRepository, "entryListSize");
     for (const groupBy of REPORT_GROUP_BYS) {
       await readyState(owner, { range: lastWeek, groupBy });
     }
     expect(entryList).not.toHaveBeenCalled();
+    expect(entryListSize).not.toHaveBeenCalled();
   });
 
   it("sin report.view, forbidden y ninguna lectura; con él, generatedAt es now", async () => {
@@ -4730,5 +4742,127 @@ describe("la exportación (D-R6-2, D-R6-3; criterio 5 de R6)", () => {
     expect(transaction).not.toHaveBeenCalled();
     expect(entryList).not.toHaveBeenCalled();
     expect((await readyExport(owner, { range: lastWeek })).generatedAt).toEqual(readNow);
+  });
+});
+
+describe("la cota de las entradas antes de listarlas (S1 de las revisiones de R6a)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /**
+   * Entradas del owner cuya cota suma `REPORT_EXPORT_MAX_BYTES - 4 + tagBytes`:
+   * 333 descripciones de 3000 emojis de 4 bytes (3 996 000), una de 2000 «x» y
+   * 998 «ñ» (3996) con una etiqueta de `tagBytes` letras. Contar caracteres en
+   * lugar de bytes daría la cuarta parte.
+   */
+  async function seedNearByteLimit(tagBytes: number) {
+    await db.execute(sql`
+      insert into time_entry (workspace_id, user_id, description, started_at, ended_at, billable)
+      select ${workspaceId}, ${ownerId}, repeat('😀', 3000),
+             timestamptz '2026-09-29 12:00:00+00',
+             timestamptz '2026-09-29 12:01:00+00',
+             false
+        from generate_series(1, 333)`);
+    const label = await seedTag({ workspaceId, name: "x".repeat(tagBytes) });
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 600, {
+      description: "x".repeat(2000) + "ñ".repeat(998),
+      tagIds: [label.id],
+    });
+  }
+
+  it("con la cota de bytes pasada por uno, tooMany sin llamar a entryList, y report igual al de la página", async () => {
+    await seedNearByteLimit(5);
+    const entryList = vi.spyOn(reportRepository, "entryList");
+
+    const exported = await readyExport(owner, { range: lastWeek });
+
+    expect(exported.entries).toEqual({ kind: "tooMany" });
+    expect(entryList).not.toHaveBeenCalled();
+    expect(exported.report).toEqual(await readyState(owner, { range: lastWeek }));
+  });
+
+  it("con la cota justo en el tope, listed", async () => {
+    // La cuenta de `seedNearByteLimit` contra el tope.
+    expect(333 * 3000 * 4 + 2000 + 998 * 2 + 4).toBe(REPORT_EXPORT_MAX_BYTES);
+    await seedNearByteLimit(4);
+
+    const exported = await readyExport(owner, { range: lastWeek });
+
+    const rows = listedRows(exported.entries);
+    expect(rows).toHaveLength(334);
+    expect(rows.at(-1)?.tags).toEqual(["xxxx"]);
+  });
+
+  it("lo ajeno no cuenta en la cota de un member", async () => {
+    const memberId = await seedPerson({ accountName: "Marta" });
+    await seedNearByteLimit(5);
+    await seedClosed(memberId, "2026-09-29T15:00:00Z", 600, { description: "Propia" });
+
+    const exported = await readyExport(actorIn(workspaceId, memberId), {
+      range: lastWeek,
+    });
+
+    expect(listedRows(exported.entries).map((row) => row.description)).toEqual([
+      "Propia",
+    ]);
+  });
+
+  it("entryListSize cuenta las entradas de entryList y suma los bytes en UTF-8 de descripciones y etiquetas, con los filtros", async () => {
+    const web = await seedProject({ workspaceId, name: "Web" });
+    const alfa = await seedTag({ workspaceId, name: "alfa" });
+    const enie = await seedTag({ workspaceId, name: "año" });
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 60, {
+      projectId: web.id,
+      description: "Reunión",
+      tagIds: [alfa.id, enie.id],
+    });
+    await seedClosed(ownerId, "2026-09-29T14:00:00Z", 60, { description: "abc" });
+    await seedClosed(ownerId, "2026-09-29T15:00:00Z", 60, { tagIds: [alfa.id] });
+    // Fuera del período y el timer en curso: no cuentan.
+    await seedClosed(ownerId, "2026-10-06T13:00:00Z", 60, { description: "afuera" });
+    await seedTimeEntry({
+      workspaceId,
+      userId: ownerId,
+      description: "en curso",
+      startedAt: "2026-09-29T16:00:00Z",
+    });
+    const { scope, span } = await realLevelRead();
+
+    const sizes = [];
+    for (const filter of [
+      NO_ENTRY_FILTER,
+      { ...NO_ENTRY_FILTER, projectIds: [web.id] },
+      { ...NO_ENTRY_FILTER, withoutProject: true },
+    ]) {
+      const size = await reportRepository.entryListSize(scope, { span, filter });
+      const rows = await reportRepository.entryList(scope, { span, filter, limit: 100 });
+      sizes.push([size.entries, rows.length, size.minBytes]);
+    }
+
+    // «Reunión» 8, «alfa» 4, «año» 4; «abc» 3; «alfa» 4.
+    expect(sizes).toEqual([
+      [3, 3, 23],
+      [1, 1, 16],
+      [2, 2, 7],
+    ]);
+  });
+
+  it("entryListSize lanza RangeError sin consultar con 51 proyectos en el filtro", async () => {
+    const { scope, span } = await realLevelRead();
+    const select = vi.spyOn(db, "select");
+
+    await expect(
+      reportRepository.entryListSize(scope, {
+        span,
+        filter: {
+          ...NO_ENTRY_FILTER,
+          projectIds: Array.from({ length: REPORT_MAX_FILTER_VALUES + 1 }, () =>
+            randomUUID(),
+          ),
+        },
+      }),
+    ).rejects.toThrow(RangeError);
+    expect(select).not.toHaveBeenCalled();
   });
 });

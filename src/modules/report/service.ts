@@ -39,10 +39,12 @@ import {
   reportRepository,
   type BucketTotalRow,
   type EntryListRow,
+  type EntryListSize,
   type EntryTotals,
   type ReportBucketRead,
   type ReportBuckets,
   type ReportEntryFilter,
+  type ReportEntryRead,
   type ReportLevelRead,
   type ReportSpan,
   type LevelGroupRow,
@@ -52,6 +54,7 @@ import {
 import {
   DEFAULT_GROUP_BY,
   projectFilterCount,
+  REPORT_EXPORT_MAX_BYTES,
   REPORT_EXPORT_MAX_ENTRIES,
   REPORT_MAX_DAYS,
   REPORT_MAX_FILTER_VALUES,
@@ -404,9 +407,17 @@ type ReportRead = {
   readonly filters: ReportFilters;
   /** Los tramos del gráfico con horas, con el alcance y los filtros de los niveles (D-R5-2). */
   readonly chart: readonly BucketTotalRow[];
-  /** D-R6-3: hasta `REPORT_EXPORT_MAX_ENTRIES + 1` entradas, sin orden; `null` si el plan no las pide. */
-  readonly entries: readonly EntryListRow[] | null;
+  /** D-R6-3: las entradas, o que no entran sin leerlas (S1); `null` si el plan no las pide. */
+  readonly entries: EntryRead | null;
 };
+
+/**
+ * D-R6-3: hasta `REPORT_EXPORT_MAX_ENTRIES + 1` entradas, sin orden, o
+ * `tooMany` si la lectura de agregados ya dijo que no entran (S1).
+ */
+type EntryRead =
+  | { readonly kind: "read"; readonly rows: readonly EntryListRow[] }
+  | { readonly kind: "tooMany" };
 
 /**
  * La invariante de los filtros: cada lista sin repetir y con hasta
@@ -771,15 +782,41 @@ async function readReport(
     { span: plan.span, filter, ...plan.chartPlan },
     tx,
   );
-  // D-R6-3: una de más dice que no entran todas.
   const entries = plan.entries
-    ? await reportRepository.entryList(
-        readScope,
-        { span: plan.span, filter, limit: REPORT_EXPORT_MAX_ENTRIES + 1 },
-        tx,
-      )
+    ? await readEntries(tx, readScope, { span: plan.span, filter })
     : null;
   return { levels, totals, catalog, people, filters, chart, entries };
+}
+
+/**
+ * S1: si las entradas no pueden entrar en el archivo, no se leen. `minBytes`
+ * suma los bytes en UTF-8 de las descripciones y de los nombres de las
+ * etiquetas; el CSV escribe cada uno entero, con comillas, separadores y
+ * escapes de más, así que nunca pesa menos: la cota no deja afuera un archivo
+ * que habría entrado. La guarda del peso escrito queda como respaldo.
+ */
+function entriesFit(size: EntryListSize): boolean {
+  return (
+    size.entries <= REPORT_EXPORT_MAX_ENTRIES && size.minBytes <= REPORT_EXPORT_MAX_BYTES
+  );
+}
+
+/** D-R6-3, S1: las entradas de la lectura con su tope, o `tooMany` sin listarlas. */
+async function readEntries(
+  tx: Transaction,
+  scope: Scope,
+  read: ReportEntryRead,
+): Promise<EntryRead> {
+  if (!entriesFit(await reportRepository.entryListSize(scope, read, tx))) {
+    return { kind: "tooMany" };
+  }
+  // D-R6-3: una de más dice que no entran todas.
+  const rows = await reportRepository.entryList(
+    scope,
+    { ...read, limit: REPORT_EXPORT_MAX_ENTRIES + 1 },
+    tx,
+  );
+  return { kind: "read", rows };
 }
 
 /**
@@ -822,12 +859,12 @@ function chartOf(
 }
 
 /** Lo que lee `readReportState`: el estado de la página y, si se pidieron, las entradas. */
-type ReportStateRead =
+type ReportStateRead<Entries extends EntryRead | null> =
   | { readonly kind: "forbidden" }
   | {
       readonly kind: "ready";
       readonly report: ReportReadyState;
-      readonly entries: readonly EntryListRow[] | null;
+      readonly entries: Entries;
     };
 
 /**
@@ -840,8 +877,22 @@ async function readReportState(
   settings: TimeSettings,
   request: ReportRequest,
   now: Date,
+  withEntries: true,
+): Promise<ReportStateRead<EntryRead>>;
+async function readReportState(
+  actor: Actor,
+  settings: TimeSettings,
+  request: ReportRequest,
+  now: Date,
+  withEntries: false,
+): Promise<ReportStateRead<null>>;
+async function readReportState(
+  actor: Actor,
+  settings: TimeSettings,
+  request: ReportRequest,
+  now: Date,
   withEntries: boolean,
-): Promise<ReportStateRead> {
+): Promise<ReportStateRead<EntryRead | null>> {
   // RP-07: sin permiso no se lee nada.
   if (!can(actor, "report.view", workspaceResource(actor))) {
     return { kind: "forbidden" };
@@ -992,14 +1043,14 @@ function entryRowOf(row: EntryListRow, timeZone: string): ReportEntryRow {
   };
 }
 
-/** D-R6-3: todas, ordenadas, o ninguna si vinieron más que el tope. */
-function entriesOf(rows: readonly EntryListRow[], timeZone: string): ReportExportEntries {
-  if (rows.length > REPORT_EXPORT_MAX_ENTRIES) {
+/** D-R6-3: todas, ordenadas, o ninguna si no entran o vinieron más que el tope. */
+function entriesOf(read: EntryRead, timeZone: string): ReportExportEntries {
+  if (read.kind === "tooMany" || read.rows.length > REPORT_EXPORT_MAX_ENTRIES) {
     return { kind: "tooMany" };
   }
   return {
     kind: "listed",
-    rows: [...rows].sort(compareEntries).map((row) => entryRowOf(row, timeZone)),
+    rows: [...read.rows].sort(compareEntries).map((row) => entryRowOf(row, timeZone)),
   };
 }
 
@@ -1013,9 +1064,6 @@ export async function getReportExport(
   const read = await readReportState(actor, settings, request, now, true);
   if (read.kind === "forbidden") {
     return read;
-  }
-  if (read.entries === null) {
-    throw new Error("La lectura de la exportación llegó sin sus entradas.");
   }
   return {
     kind: "ready",

@@ -145,6 +145,13 @@ export type ReportEntryListRead = ReportEntryRead & {
   readonly limit: number;
 };
 
+/** S1: lo que sumaría `entryList` sin el tope, sin leer las filas. */
+export type EntryListSize = {
+  readonly entries: number;
+  /** Cota inferior de los bytes de las entradas en el archivo (S1). */
+  readonly minBytes: number;
+};
+
 export type EntryListRow = {
   readonly id: string;
   readonly startedAt: Date;
@@ -775,6 +782,64 @@ const listTags = sql<unknown>`coalesce((
 /** El JSON de `listTags`, estrechado antes de salir del repository. */
 const listTagsShape = z.array(z.object({ id: z.string(), name: z.string() }));
 
+/** Un conteo o una suma de la base a número; lanza si no es un entero seguro no negativo. */
+function sizeOf(value: string): number {
+  const size = Number(value);
+  if (!Number.isSafeInteger(size) || size < 0) {
+    throw new RangeError(`Tamaño fuera de rango: ${value}.`);
+  }
+  return size;
+}
+
+/**
+ * S1: cuántas entradas listaría `entryList` y una cota inferior de sus bytes,
+ * con el mismo `where`. Las entradas se leen una vez, en una CTE, y las
+ * etiquetas se suman con una unión, sin una subconsulta por entrada.
+ */
+async function entrySize(
+  scope: ReportScope,
+  read: ReportEntryRead,
+  tx: Executor,
+): Promise<EntryListSize> {
+  checkEntryRead(read);
+  const entries = tx.$with("export_entries").as(
+    tx
+      .select({
+        workspaceId: timeEntry.workspaceId,
+        id: timeEntry.id,
+        description: timeEntry.description,
+      })
+      .from(timeEntry)
+      .where(and(inScope(scope), closedIn(read.span), matchesFilter(read.filter))),
+  );
+  // Un `select` de una sola tabla escribe las columnas sin calificar: acá van
+  // todas calificadas, y dentro de la subconsulta `export_entries` es la de su
+  // `from`.
+  const listed = (column: string) =>
+    sql`${sql.identifier("export_entries")}.${sql.identifier(column)}`;
+  const [row] = await tx
+    .with(entries)
+    .select({
+      entries: sql<string>`count(*)::bigint`,
+      descriptionBytes: sql<string>`coalesce(sum(octet_length(${listed("description")})), 0)::bigint`,
+      tagBytes: sql<string>`(
+        select coalesce(sum(octet_length("tag"."name")), 0)::bigint
+        from ${sql.identifier("export_entries")}
+        inner join "time_entry_tag"
+          on "time_entry_tag"."workspace_id" = ${listed("workspace_id")}
+          and "time_entry_tag"."time_entry_id" = ${listed("id")}
+        inner join "tag"
+          on "tag"."workspace_id" = "time_entry_tag"."workspace_id"
+          and "tag"."id" = "time_entry_tag"."tag_id"
+      )`,
+    })
+    .from(entries);
+  return {
+    entries: sizeOf(row.entries),
+    minBytes: sizeOf(row.descriptionBytes) + sizeOf(row.tagBytes),
+  };
+}
+
 /** D-R6-3: una fila por entrada cerrada del intervalo, del alcance y de los filtros. */
 async function entryRows(
   scope: ReportScope,
@@ -907,6 +972,19 @@ export const reportRepository = {
       .from(timeEntry)
       .where(and(inScope(scope), closedIn(read.span), matchesFilter(read.filter)));
     return withSeconds(row);
+  },
+
+  /**
+   * S1: cuántas entradas trae `entryList` con la misma lectura y sin tope, y
+   * la suma de los bytes de sus descripciones y de los nombres de sus
+   * etiquetas en UTF-8. Una sentencia, una fila.
+   */
+  async entryListSize(
+    scope: ReportScope,
+    read: ReportEntryRead,
+    tx: Executor = db,
+  ): Promise<EntryListSize> {
+    return entrySize(scope, read, tx);
   },
 
   /**
