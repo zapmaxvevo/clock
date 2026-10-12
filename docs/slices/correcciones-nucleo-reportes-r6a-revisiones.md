@@ -92,3 +92,29 @@ LibreOffice 24 (headless, `CSV:59,34,76`, es-AR) sobre el `member.csv` descargad
 revisión de paridad: columnas separadas, acentos bien, «Horas» como número (5,85, 1,48),
 `'=1+1`, `a=b` y ` =espacio` como texto. LibreOffice pide el separador al abrir; un Excel en
 español usa «;» por defecto. La prueba con Excel queda para el usuario (§10, nota).
+
+## Primera ronda de correcciones
+
+`backend-dev`: `7d1bab8` (C2), `23b5275` (B1, T1–T3), `c4701d4` (S1, C5), `37a3fda` (Q44–Q47) y
+`96f923c` (la última copia de los niveles, en `service.ts`). `frontend-dev`: `b641288` (F1, F2,
+T4, C3, C4) y `092eb5b` (C2). Paridad con «10 000»: `27d2ce5`. S1 se mide así: Q44–Q47 de 17 a
+73 ms; E1 387 ms, E2 609 ms, E3 314 ms (antes 455), E4 215 ms (antes 373). La cota del CSV no
+vale tal cual para el `.xlsx` comprimido: **R6b tiene que revisarla**.
+
+## Segundas pasadas
+
+- **Tests**: aprobado, sin hallazgos. Seis mutantes de S1 caen, uno más que los del autor
+  (las etiquetas fuera de la cota).
+- **Seguridad**: aprobado; el escenario de S1 ya no lee (RSS de 116 a 124 MB). Dos menores
+  nuevos:
+  - **S2**: la cota cuenta solo descripción y etiquetas; con nombres largos de proyecto y
+    cliente todavía se leen ~50 MB. **Se corrige**: nombres de persona, proyecto, cliente y
+    tarea, el separador de etiquetas y una constante por fila, sin dejar de ser cota inferior.
+    No se saca el `id` de `listTags` (el desempate de `compareNames` puede hacer falta). →
+    `backend-dev`.
+  - **S3**: una vez, sin poder reproducirlo, `entryListSize` quedó activa más de 10 minutos.
+    **Se corrige** con `set local statement_timeout` de 8 s en la transacción de la exportación.
+    → `backend-dev`.
+- **Backend**: aprobado. **B2 (menor)**: la suma de etiquetas como `select` propio con uniones
+  en lugar de nombres escritos como texto. **Se corrige**. El hash join con Seq Scan es mejor
+  que forzar el índice en el año (59 frente a 87 ms): sin cambio.
