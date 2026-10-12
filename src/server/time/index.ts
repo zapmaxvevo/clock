@@ -68,6 +68,20 @@ export function formatDuration(minutes: number): string {
   return `${hours}:${rest.toString().padStart(2, "0")}`;
 }
 
+/**
+ * Las horas de `minutes` minutos en decimal, con coma y dos decimales, sin
+ * separador de miles: «1,50», «2000,00» (D-R6-9). Trunca al centésimo con
+ * aritmética entera, `Math.floor(minutes * 5 / 3)` centésimos, como el minuto
+ * se trunca desde los segundos: la suma de una columna no pasa el total
+ * (D-R6-6). Un valor negativo da «0,00», como `formatDuration`.
+ */
+export function formatDecimalHours(minutes: number): string {
+  const hundredths = Math.floor((Math.max(0, minutes) * 5) / 3);
+  const hours = Math.floor(hundredths / 100);
+  const rest = hundredths % 100;
+  return `${hours},${rest.toString().padStart(2, "0")}`;
+}
+
 /** Redondeo de reportes. 0 minutos deja la duración como está. */
 export function roundMinutes(minutes: number, step: number): number {
   if (step <= 0) {

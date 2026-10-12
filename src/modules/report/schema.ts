@@ -17,6 +17,10 @@ export const reportMessages = {
   /** RP-34, ADR 0021. */
   rangeTooLong: `Elegí un período de hasta ${REPORT_MAX_DAYS} días.`,
   invalidDate: "Fecha inválida.",
+  /** D-R6-5: 403 de la ruta. */
+  exportForbidden: "No podés exportar reportes.",
+  /** D-R6-5: 500 de la ruta. */
+  exportFailed: "No se pudo exportar el reporte. Volvé y probá de nuevo.",
 } as const;
 
 export type ReportRange = DayKeyRange;
@@ -586,3 +590,46 @@ export type ReportState =
   | ReportReadyState
   /** RP-07: sin `report.view`. No se leyó nada. */
   | { readonly kind: "forbidden" };
+
+/** D-R6-3: las entradas que entran en un archivo; con más, no se lista ninguna. */
+export const REPORT_EXPORT_MAX_ENTRIES = 10_000;
+
+/** D-R6-3, D-R6-11: el peso máximo del cuerpo; con más, las entradas no van. */
+export const REPORT_EXPORT_MAX_BYTES = 4_000_000;
+
+/** D-R6-4: una carpeta de `reportes/exportar/` por formato. R6b suma "xlsx"; R7, "pdf". */
+export const REPORT_EXPORT_FORMATS = ["csv"] as const;
+export type ReportExportFormat = (typeof REPORT_EXPORT_FORMATS)[number];
+
+const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
+const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** D-R6-3: una entrada del archivo, ya armada en la zona de quien mira (RP-22). */
+export const reportEntryRow = z.object({
+  id: z.uuid(),
+  /** `dayKey` y `formatClock` del inicio y del fin, canónicos (D-R6-9). */
+  startDay: z.string().regex(DAY_KEY),
+  startClock: z.string().regex(CLOCK),
+  endDay: z.string().regex(DAY_KEY),
+  endClock: z.string().regex(CLOCK),
+  /** `displayNameOf`; `inactive` si la membresía no está activa (RP-31). */
+  person: z.object({ name: z.string(), inactive: z.boolean() }),
+  /** Nombres; `null` sin proyecto, sin cliente o sin tarea. Archivados o no (RP-29). */
+  project: z.string().nullable(),
+  client: z.string().nullable(),
+  task: z.string().nullable(),
+  /** El texto entero, también la cadena vacía (D-R10-12). */
+  description: z.string(),
+  /** Los nombres, en el orden de `compareNames`. */
+  tags: z.array(z.string()),
+  billable: z.boolean(),
+  /** `entrySeconds` (ADR 0021). */
+  seconds: z.number().int().min(0),
+});
+
+export type ReportEntryRow = z.infer<typeof reportEntryRow>;
+
+/** D-R6-3: todas, en orden de inicio, o ninguna. */
+export type ReportExportEntries =
+  | { readonly kind: "listed"; readonly rows: readonly ReportEntryRow[] }
+  | { readonly kind: "tooMany" };

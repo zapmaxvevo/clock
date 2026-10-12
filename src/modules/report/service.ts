@@ -55,6 +55,7 @@ import {
   REPORT_MAX_ROWS,
   REPORT_TIME_GROUP_BYS,
   type ReportChart,
+  type ReportExportEntries,
   type ReportFilters,
   type ReportGroup,
   type ReportGroupBy,
@@ -900,3 +901,27 @@ export async function getReportState(
     chart: chartOf(read.chart, chartPlan, time),
   };
 }
+
+export type ReportExportState =
+  /** RP-07: sin `report.view`. No se leyó nada. */
+  | { readonly kind: "forbidden" }
+  | {
+      readonly kind: "ready";
+      /** El mismo estado que `getReportState` para el mismo pedido y `now`. */
+      readonly report: ReportReadyState;
+      readonly entries: ReportExportEntries;
+      /** El `now` de la lectura: «Generado» (D-R6-8). */
+      readonly generatedAt: Date;
+    };
+
+/* eslint-disable @typescript-eslint/no-unused-vars -- R6a, paso 1: la firma se publica antes del cuerpo, que llega en el paso 3. */
+/** D-R6-2: el estado de la página y las entradas, en una sola foto. */
+export async function getReportExport(
+  actor: Actor,
+  settings: TimeSettings,
+  request: ReportRequest,
+  now?: Date,
+): Promise<ReportExportState> {
+  throw new Error("R6a, paso 3");
+}
+/* eslint-enable @typescript-eslint/no-unused-vars */
