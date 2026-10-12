@@ -9,6 +9,7 @@
 import { readFile } from "node:fs/promises";
 
 import { expect, type Locator, type Page, type Request } from "@playwright/test";
+import { Workbook, type Cell } from "exceljs";
 
 import {
   addDays,
@@ -279,7 +280,7 @@ export function reportsUrl(
 }
 
 /** D-R6-4: los formatos de la descarga, como los escribe su ruta. */
-export type ExportFormat = "csv";
+export type ExportFormat = "csv" | "xlsx";
 
 /** D-R6-4: la ruta de las descargas, `/reportes/exportar/<formato>`. */
 const EXPORT_PATH = `${REPORTS_PATH}/exportar/`;
@@ -387,6 +388,36 @@ export async function readCsv(path: string): Promise<string> {
   return new TextDecoder("utf-8", { ignoreBOM: true }).decode(
     bytes.subarray(BYTE_ORDER_MARK.length),
   );
+}
+
+/**
+ * Lee un `.xlsx` descargado con `exceljs`, que la regla de ESLint admite en
+ * `e2e/` y solo para leer lo que bajó el propio recorrido (D-R6-12).
+ */
+export async function readXlsx(path: string): Promise<Workbook> {
+  const workbook = new Workbook();
+  await workbook.xlsx.readFile(path);
+  return workbook;
+}
+
+/** Los milisegundos de un día, y los días del 30/12/1899 de Excel al 01/01/1970. */
+const DAY_MS = 86_400_000;
+const EXCEL_EPOCH_OFFSET_DAYS = 25_569;
+
+/**
+ * El número que guarda una celda del `.xlsx`. `exceljs` devuelve como `Date`
+ * en UTC las que tienen un formato de fecha o de hora (también `[h]:mm`), así
+ * que se vuelven a llevar al número de serie. Una cadena no es un número y falla.
+ */
+export function xlsxNumberOf(cell: Cell): number {
+  const { value } = cell;
+  if (value instanceof Date) {
+    return value.getTime() / DAY_MS + EXCEL_EPOCH_OFFSET_DAYS;
+  }
+  if (typeof value === "number") {
+    return value;
+  }
+  throw new Error(`La celda ${cell.address} no guarda un número: ${String(value)}.`);
 }
 
 /**
@@ -879,7 +910,7 @@ export function clearFiltersLink(page: Page): Locator {
 export const EXPORT_GROUP = "Exportar";
 
 /** El texto visible del enlace de cada formato en «Exportar» (D-R6-10). */
-export type ExportLabel = "CSV";
+export type ExportLabel = "CSV" | "Excel";
 
 /** «Exportar», nombrado por su rótulo visible. En los vacíos de RP-33 no está. */
 export function exportGroup(page: Page): Locator {

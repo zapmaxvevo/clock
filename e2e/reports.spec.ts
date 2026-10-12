@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { Locator, Page } from "@playwright/test";
+import { ValueType, type Row, type Workbook } from "exceljs";
 
 import { boxOf, PERSON_TIMEZONE, type Box } from "./calendar-page";
 import {
@@ -93,6 +94,7 @@ import {
   rangeCalendar,
   rangePopover,
   readCsv,
+  readXlsx,
   recordExportRequests,
   recordNavigations,
   REPORTS_PATH,
@@ -120,6 +122,7 @@ import {
   taskHeading,
   taskRow,
   weekRange,
+  xlsxNumberOf,
   zoneLine,
   type FilterName,
   type ReportGroupBy,
@@ -131,11 +134,11 @@ import { expect, TEST_EMAIL_DOMAIN, test } from "./session";
 import { trackerBar, uniqueSuffix } from "./tracker-page";
 
 /**
- * Recorridos de R2a a R10b, de R5 y de R6a del núcleo de reportes: el resumido
+ * Recorridos de R2a a R10b, de R5 y de R6 del núcleo de reportes: el resumido
  * por persona, por proyecto, por cliente, por tarea, por etiqueta, por fecha,
  * por semana, por mes y por descripción, los atajos del período, los
  * subniveles, los filtros, el tope del primer nivel, el gráfico y la
- * exportación a CSV (§8.2 de cada contrato), con la regla de §8.3 de R2a. Cada
+ * exportación a CSV y a Excel (§8.2 de cada contrato), con la regla de §8.3 de R2a. Cada
  * recorrido tiene sus personas —la de la sesión y las que siembra—, todas con
  * un nombre editado que lleva el sufijo del test, y solo afirma sobre sus
  * filas o sobre proyectos con ese sufijo: la base acumula
@@ -2100,13 +2103,13 @@ test("a 320 px el gráfico entra en su caja y sus marcas no se pisan", async ({
 });
 
 /**
- * La semana de los recorridos 23 y 24 (D-R6-14), del lunes 15/09 al domingo
+ * La semana de los recorridos 23 a 25 (D-R6-14), del lunes 15/09 al domingo
  * 21/09 de 2025: lejos de hoy, así los rótulos de fecha llevan año.
  */
 const EXPORT_WEEK: ReportRange = weekRange(in2025(9, 15));
 
 /**
- * Las entradas de los recorridos 23 y 24 (§8.2 de R6), de la persona de la
+ * Las entradas de los recorridos 23 a 25 (§8.2 de R6), de la persona de la
  * sesión: una con proyecto, cliente, tarea y etiqueta y una descripción con
  * comillas y `;`, una sin nada que empieza con `=` y una con proyecto que
  * empieza con `-`. La persona lleva un nombre editado, que es el que dice el
@@ -2281,4 +2284,103 @@ test("sin sesión la descarga lleva al login, y un member con personas ajenas ex
   } finally {
     await anonymous.dispose();
   }
+});
+
+/** El día como número de serie de Excel: los días desde el 30/12/1899 (D-R6-12). */
+function excelSerialOf({ year, month, day }: CivilDay): number {
+  return (Date.UTC(year, month - 1, day) - Date.UTC(1899, 11, 30)) / 86_400_000;
+}
+
+/**
+ * Las filas de la tabla de una hoja (D-R6-12), desde la de sus encabezados,
+ * que empieza con `firstHeading`, hasta la última: arriba van la cabecera y
+ * una fila vacía.
+ */
+function xlsxTable(
+  workbook: Workbook,
+  name: string,
+  firstHeading: string,
+): readonly Row[] {
+  const sheet = workbook.getWorksheet(name);
+  if (sheet === undefined) {
+    throw new Error(`Falta la hoja «${name}».`);
+  }
+  const rows = sheet.getRows(1, sheet.rowCount) ?? [];
+  const start = rows.findIndex((row) => row.getCell(1).value === firstHeading);
+  expect(start, `la tabla de «${name}»`).toBeGreaterThanOrEqual(0);
+  return rows.slice(start);
+}
+
+test("exportar a Excel el resumen y las entradas, con números y sin fórmulas", async ({
+  page,
+  email,
+}) => {
+  const day = today();
+  await enterApp(page);
+  const { suffix } = await seedExportEntries(email);
+  const web = `Web ${suffix} (ACME ${suffix})`;
+  const fileName = "reporte_proyecto-fecha_2025-09-15_2025-09-21.xlsx";
+
+  // D-R6-10: «Excel» después de «CSV», con la misma query que la página.
+  await openReport(page, EXPORT_WEEK, "proyecto", day, ["fecha"]);
+  await expectSubgroups(page, ["fecha"]);
+  await expect(exportGroup(page).getByRole("link")).toHaveText(["CSV", "Excel"]);
+  const excel = exportLink(page, "Excel");
+  await expect(excel).toHaveAttribute(
+    "href",
+    exportUrl("xlsx", EXPORT_WEEK, "proyecto", ["fecha"]),
+  );
+
+  // D-R6-5: `attachment` descarga y la página queda donde estaba.
+  const downloading = page.waitForEvent("download");
+  await excel.click();
+  const download = await downloading;
+  expect(download.suggestedFilename()).toBe(fileName);
+  await expectReport(page, EXPORT_WEEK, "proyecto", day, ["fecha"]);
+  await expect(reportTable(page)).toBeVisible();
+
+  // D-R6-12: una hoja por sección, en el orden del CSV.
+  const workbook = await readXlsx(await download.path());
+  expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(["Resumen", "Entradas"]);
+
+  // D-R6-12: la duración de «Web» es un número que se suma, minutos / 1440
+  // con `[h]:mm`, y las horas, minutos / 60 con `0.00`.
+  const [summaryHeading, webRow] = xlsxTable(workbook, "Resumen", "Nivel");
+  expect(summaryHeading.getCell(4).value).toBe("Duración");
+  expect([webRow.getCell(1).value, webRow.getCell(2).value]).toEqual([1, web]);
+  const duration = webRow.getCell(4);
+  expect(xlsxNumberOf(duration)).toBeCloseTo(135 / 1440, 9);
+  expect(duration.numFmt).toBe("[h]:mm");
+  const hours = webRow.getCell(5);
+  expect([hours.type, hours.value, hours.numFmt]).toEqual([
+    ValueType.Number,
+    2.25,
+    "0.00",
+  ]);
+
+  // D-R6-12: «=1+1» es una cadena, sin fórmula y sin el `'` del CSV; el
+  // día es una fecha con `yyyy-mm-dd`.
+  const [entriesHeading, , formulaLike] = xlsxTable(
+    workbook,
+    "Entradas",
+    "Fecha de inicio",
+  );
+  expect(entriesHeading.getCell(9).value).toBe("Descripción");
+  const description = formulaLike.getCell(9);
+  expect([description.type, description.value]).toEqual([ValueType.String, "=1+1"]);
+  const started = formulaLike.getCell(1);
+  expect(xlsxNumberOf(started)).toBe(excelSerialOf(in2025(9, 16)));
+  expect(started.numFmt).toBe("yyyy-mm-dd");
+
+  // D-R6-5: las cabeceras del formato.
+  const response = await page.request.get(
+    exportUrl("xlsx", EXPORT_WEEK, "proyecto", ["fecha"]),
+  );
+  expect(response.status()).toBe(200);
+  const headers = response.headers();
+  expect(headers["cache-control"]).toContain("no-store");
+  expect(headers["content-type"]).toBe(
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  );
+  expect(headers["content-disposition"]).toBe(`attachment; filename="${fileName}"`);
 });
