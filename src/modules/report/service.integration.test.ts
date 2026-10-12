@@ -4627,10 +4627,17 @@ describe("la exportación (D-R6-2, D-R6-3; criterio 5 de R6)", () => {
       displayName: "Inés",
       status: "inactive",
     });
-    const beta = await seedTag({ workspaceId, name: "Beta" });
-    const alfa = await seedTag({ workspaceId, name: "alfa" });
+    // Ids fijos y la unión sembrada con «Beta» antes que «alfa»: sin ordenar,
+    // `json_agg` las da «Beta, alfa» por la clave de `time_entry_tag` y por el
+    // orden de inserción, como un orden por código.
+    const betaId = "00000000-0000-4000-8000-00000000000b";
+    const alfaId = "00000000-0000-4000-8000-00000000000c";
+    await db.insert(tag).values([
+      { id: alfaId, workspaceId, name: "alfa" },
+      { id: betaId, workspaceId, name: "Beta" },
+    ]);
     await seedClosed(inactiveId, "2026-09-29T13:00:00Z", 600, {
-      tagIds: [beta.id, alfa.id],
+      tagIds: [betaId, alfaId],
     });
     await seedClosed(ownerId, "2026-09-30T13:00:00Z", 600);
 
