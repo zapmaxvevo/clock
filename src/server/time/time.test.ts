@@ -17,6 +17,7 @@ import {
   formatDuration,
   formatElapsed,
   roundMinutes,
+  truncatedHours,
   addDaysToKey,
   clockDifferenceMinutes,
   civilDateOf,
@@ -847,6 +848,19 @@ describe("formatDuration", () => {
     expect(formatDuration(5)).toBe("0:05");
     expect(formatDuration(90)).toBe("1:30");
     expect(formatDuration(600)).toBe("10:00");
+  });
+});
+
+describe("truncatedHours (D-R6-6)", () => {
+  it("trunca las horas al centésimo, en número", () => {
+    expect(truncatedHours(1)).toBe(0.01);
+    expect(truncatedHours(89)).toBe(1.48);
+    expect(truncatedHours(1439)).toBe(23.98);
+    expect(truncatedHours(120_000)).toBe(2000);
+  });
+
+  it("da 0 con un valor negativo", () => {
+    expect(truncatedHours(-5)).toBe(0);
   });
 });
 

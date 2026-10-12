@@ -52,7 +52,8 @@ import {
   type ReportReadyState,
 } from "./schema";
 import { reportLabels } from "./components/labels";
-import { csvBytesOf, csvEntriesMinBytes } from "./export/csv";
+import { csvBytesOf } from "./export/csv";
+import { entriesMinBytes } from "./export/entry-size";
 import { exportDocumentOf } from "./export/document";
 import { NO_ENTRY_FILTER, reportRepository, type ReportLevelRead } from "./repository";
 import { getReportExport, getReportState, type ReportRequest } from "./service";
@@ -4848,7 +4849,7 @@ describe("la cota de las entradas antes de listarlas (S1 y S2 de las revisiones 
       lines[lines.findIndex((text) => text.startsWith('"Fecha de inicio"')) + 1];
     return {
       entries: size.entries,
-      bound: csvEntriesMinBytes(size),
+      bound: entriesMinBytes(size),
       lineBytes: new TextEncoder().encode(`${line ?? ""}\r\n`).byteLength,
     };
   }

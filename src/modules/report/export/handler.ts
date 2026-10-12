@@ -16,11 +16,17 @@ import { csvBytesOf } from "./csv";
 import { exportDocumentOf, type ReportExportInput } from "./document";
 import type { ExportDocument, ExportWriter } from "./types";
 
-/** D-R6-6, D-R6-13: cómo se escribe y se sirve cada formato. R6b suma xlsx; R7, pdf. */
+/** D-R6-6, D-R6-13: cómo se escribe y se sirve cada formato. R7 suma pdf. */
 const EXPORT_WRITERS = {
   csv: {
     contentType: "text/csv; charset=utf-8",
     write: async (document: ExportDocument) => csvBytesOf(document),
+  },
+  xlsx: {
+    contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    // D-R6-12: con `import()`, ni la página ni el CSV cargan `exceljs`.
+    write: async (document: ExportDocument) =>
+      (await import("./xlsx")).xlsxBytesOf(document),
   },
 } as const satisfies Record<ReportExportFormat, ExportWriter>;
 
@@ -54,8 +60,26 @@ export function exportFileNameOf(
 }
 
 /**
- * D-R6-3: el archivo; si pasa `maxBytes`, lo escribe otra vez con las entradas
- * en «no entran».
+ * B4: el documento que se escribe. Las entradas entran si el documento
+ * entero, escrito como CSV, no pasa `maxBytes`, sea cual sea el formato
+ * pedido: CSV y Excel deciden lo mismo. Si no, van en «no entran».
+ */
+function fittingDocumentOf(
+  input: ReportExportInput,
+  settings: TimeSettings,
+  maxBytes: number,
+): ExportDocument {
+  const document = exportDocumentOf(input, settings);
+  if (csvBytesOf(document).byteLength <= maxBytes) {
+    return document;
+  }
+  return exportDocumentOf({ ...input, entries: { kind: "tooMany" } }, settings);
+}
+
+/**
+ * D-R6-3, B4: el archivo del documento que entra (`fittingDocumentOf`). Si el
+ * archivo escrito igual pasa `maxBytes`, lo escribe otra vez con las entradas
+ * en «no entran», como respaldo.
  */
 export async function exportBodyOf(
   input: ReportExportInput,
@@ -64,7 +88,7 @@ export async function exportBodyOf(
   maxBytes: number,
 ): Promise<Uint8Array<ArrayBuffer>> {
   const { write } = EXPORT_WRITERS[format];
-  const body = await write(exportDocumentOf(input, settings));
+  const body = await write(fittingDocumentOf(input, settings, maxBytes));
   if (body.byteLength <= maxBytes) {
     return body;
   }

@@ -105,6 +105,7 @@ export const reportLabels = {
 /** D-R6-10: el texto visible de cada descarga, que es su nombre. */
 export const exportFormatLabels = {
   csv: "CSV",
+  xlsx: "Excel",
 } as const satisfies Record<ReportExportFormat, string>;
 
 /** El nombre de cada filtro: su botón y el grupo de sus opciones vigentes. */

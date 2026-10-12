@@ -34,7 +34,7 @@ import { getProjectFilterCatalog } from "@/modules/project/service";
 import { listWorkspacePeople, type WorkspacePerson } from "@/modules/workspace/service";
 
 import { chartGranularityOf } from "./chart";
-import { csvEntriesMinBytes } from "./export/csv";
+import { entriesMinBytes } from "./export/entry-size";
 import { reportPeriodOf } from "./period";
 import {
   reportRepository,
@@ -796,15 +796,15 @@ async function readReport(
 }
 
 /**
- * S1, S2: si las entradas no pueden entrar en el archivo, no se leen. La cota
- * de los bytes nunca pasa al CSV escrito (`csvEntriesMinBytes`), así que no
- * deja afuera un archivo que habría entrado; la guarda del peso escrito queda
- * como respaldo.
+ * S1, S2, B4: si las entradas no pueden entrar en el documento, no se leen,
+ * en ningún formato. La cota de los bytes nunca pasa al CSV escrito
+ * (`entriesMinBytes`), así que no deja afuera un CSV que habría entrado; la
+ * guarda del peso escrito de cada formato queda como respaldo.
  */
 function entriesFit(size: EntryListSize): boolean {
   return (
     size.entries <= REPORT_EXPORT_MAX_ENTRIES &&
-    csvEntriesMinBytes(size) <= REPORT_EXPORT_MAX_BYTES
+    entriesMinBytes(size) <= REPORT_EXPORT_MAX_BYTES
   );
 }
 
