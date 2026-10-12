@@ -1882,13 +1882,15 @@ en CSV y en Excel:
   de la última persona con horas y sus filas hijas: una por persona, nivel 1,
   con su nombre («(inactiva)» si corresponde), vacías las columnas de abajo,
   «0:00» y «0,00», sin filas hijas. En el Excel, las mismas filas en la hoja
-  «Resumen», con celdas con tipo como cualquier otra fila.
+  «Resumen», con celdas con tipo como cualquier otra fila: el nivel, el entero
+  1; «Duración», el número 0 con `[h]:mm`; «Horas», el número 0 con `0.00`.
 - **«Entradas» no cambia**: una persona sin horas no tiene entradas.
 - **Los topes no cambian**: el resumen sigue acotado por las 3000 filas, y las
   sin horas cuentan (sección 16.3).
 - **Con solo filas sin horas no hay «Exportar»** en la pantalla (RP-33); la ruta
-  pedida a mano responde 200 con la cabecera, esas filas en el resumen y
-  «Entradas» con su fila de encabezados y ninguna entrada.
+  pedida a mano responde 200 con la cabecera, esas filas en el resumen, con su
+  fila de encabezados —una columna por cada nivel pedido, como el encabezado de
+  la pantalla— y «Entradas» con su fila de encabezados y ninguna entrada.
 - **Un member, un `project_manager` o un `team_manager`** que exporta con
   `sin-horas=1`, con o sin `personas`, baja el mismo archivo que sin esos
   parámetros: sin la fila de la cabecera y sin ningún nombre ajeno.
