@@ -174,6 +174,26 @@ la página de exportación: «xlsx», «worksheet» y «number format» (NOT FOU
 sigue _no verificado_ y no se puede mirar en el workspace del equipo, porque es
 pago (RP-54).
 
+_Actualizado el 2026-10-12, contrato de R9
+([`nucleo-reportes-r9-personas-sin-horas.md`](../slices/nucleo-reportes-r9-personas-sin-horas.md),
+§7 «parity-analyst», aprobado en la primera pasada de `architecture-reviewer`
+con [sus correcciones](../slices/correcciones-nucleo-reportes-r9-contrato.md))_:
+el contrato es un solo slice (D-R9-1), que implementa la rama
+`nucleo/r9-sin-horas`, y esta actualización describe lo que fija: «Mostrar
+personas sin horas» en el reporte resumido agrupado por persona. Cada regla que
+precisa lleva su corrección fechada, y la [sección 16](#16-núcleo-r9) junta la
+pantalla y el archivo. Cambian RP-12, RP-13, RP-32, RP-33, RP-47 (del semanal al
+resumido, de `replicar` a `adaptar`), RP-54, RP-62, RP-64, P-05 y las secciones
+6, 12.4 y 15.2. Ese día se buscó en la página del semanal: «To see who hasn’t
+tracked any time in a given week, group the report by user and click on Show
+users without time.» y «Owners, Admins and Team managers can see this option.»
+(FOUND, las citas de RP-47); «inactive», «invited», «pending», «deactivated»,
+«toggle» y «checkbox» (NOT FOUND). En las páginas del resumido y de filtros,
+«without time», «Show users» y «hasn’t tracked» (NOT FOUND): Clockify documenta
+la opción solo en el semanal. Si muestra a las inactivas o a quien entró después
+de la semana, en qué orden pone las filas sin horas y si el control es una
+casilla o un interruptor siguen _no verificados_ (P-05).
+
 ## Fuentes y límites del relevamiento
 
 Documentación pública del centro de ayuda de Clockify y referencia pública de su
@@ -575,6 +595,17 @@ Persona → Descripción, «Descripción» da Descripción → Persona. **El top
 primer nivel cambia D-R3-6**: el primer nivel también entra entero o no entra
 (sección 13.7). _No verificado_: el orden de Clockify por descripción (P-05).
 
+_Actualizado el 2026-10-12, contrato de R9 (D-R9-3, D-R9-7)_: **con «Mostrar
+personas sin horas» (RP-47), las personas sin horas van en el primer nivel,
+después de todas las que tienen horas**, por nombre: `compareNames` sobre el
+nombre que se muestra, que desempata por id. Van también después de una persona
+con entradas que suman «0:00»: esa tiene horas y conserva el orden por
+duración. Es la regla de los «Sin …» —después de los de su misma duración—
+aplicada a quien no tiene entradas, y así una fila con botón nunca queda entre
+dos sin botón. Las filas con horas siguen en el orden de siempre. _No
+verificado_: en qué orden pone Clockify a las personas sin horas en el semanal
+(P-05).
+
 **RP-13 Expandir un grupo** — `adaptar`
 Documentado: «You can click on the number next to the group to expand it and
 see a more detailed breakdown for that group.»
@@ -607,6 +638,14 @@ de su §10.
 - _No verificado_: qué cuenta el número del que habla la cita, y qué hace
   Clockify con lo expandido al recargar; «collapse» y la recarga no están en la
   página del resumido (NOT FOUND el 2026-10-09). P-05.
+
+_Actualizado el 2026-10-12, contrato de R9 (D-R9-3, D-R9-12)_: **una fila sin
+horas no tiene botón**, con cualquier cantidad de niveles: en Persona →
+Proyecto → Fecha, una persona sin horas es una fila del primer nivel sin hijos,
+que deja el espacio del chevrón si alguna otra fila tiene botón. Si ninguna lo
+tiene —un período sin horas con la opción—, la tabla se ve como la de un nivel,
+con el encabezado de todos los niveles pedidos (sección 11.7). Encender o
+apagar la opción cambia la URL y vuelve a contraer el árbol.
 
 **RP-14 Del resumido al detallado** — `replicar`
 Documentado: «By clicking on the item from the Summary report (e.g. user name,
@@ -1371,6 +1410,39 @@ _Actualizado el 2026-10-12, R6a (D-R6-2, D-R6-4, D-R6-8, D-R6-10)_:
   «Generado» y en lo que haya cambiado en la base; un rótulo de fecha sin año
   del resumen es del año en que se exporta, como en pantalla.
 
+_Actualizado el 2026-10-12, contrato de R9 (D-R9-4, D-R9-5, D-R9-12)_:
+
+- **`sin-horas=1`** va después de `subagrupar` y antes de `personas`: el orden
+  de los parámetros pasa a ser `desde`, `hasta`, `agrupar`, `subagrupar`,
+  `sin-horas`, `personas`, `clientes`, `proyectos`. Sin la opción, la URL es la
+  de R6.
+- **Se valida por su lado y se descarta sin aviso**: solo `1` vale; `0`,
+  `true`, `si`, un valor vacío, un espacio o el parámetro repetido la apagan,
+  sin arrastrar a ningún otro parámetro.
+- **Aplica solo si el primer nivel efectivo es la persona** —el de `agrupar` o,
+  sin un `agrupar` válido, la persona— **y quien mira ve horas de otros** (owner
+  y admin). Si no aplica, la pantalla es la de sin la opción y los enlaces no la
+  llevan: **desaparece de la URL en la navegación siguiente**, como un id
+  ignorado (RP-34). Con `agrupar=proyecto&sin-horas=1`, el reporte por proyecto
+  de siempre; con `sin-horas=1` y sin `agrupar`, aplica.
+- **Todo enlace del reporte la conserva**: las flechas, «Esta semana», los
+  atajos, «Aplicar» del período y de cada filtro, «Quitar filtros», los
+  subniveles —también «Ninguno»— y los enlaces de «Exportar». La cambian solo
+  dos: el enlace «Mostrar personas sin horas» / «Ocultar personas sin horas»,
+  que la invierte, y «Agrupar por», que la conserva si el primer nivel que
+  resulta es la persona y la apaga si no —«Proyecto», también con el
+  intercambio desde Persona → Proyecto—; volver a «Persona» la deja apagada.
+- **Al recargar, con «Atrás» o con un enlace copiado**: las mismas filas sin
+  horas y el enlace dice «Ocultar personas sin horas»; el árbol empieza
+  contraído (RP-13).
+- **Un member, un `project_manager` o un `team_manager` con `sin-horas=1`**,
+  con o sin `personas`, ve lo mismo que sin el parámetro, sin el enlace y con
+  «Ves solo tus horas.». Sin horas propias, ve el primer vacío y no su fila en
+  «0:00». El parámetro se pierde en la navegación siguiente.
+- **La misma URL da el mismo archivo**: la ruta de exportación lee `sin-horas`
+  con el mismo parseo, y el archivo trae las filas sin horas si y solo si la
+  pantalla las muestra (RP-54).
+
 **RP-33 Vacíos** — `adaptar`
 Sin entradas en el rango: «No hay horas en este período», con los gráficos
 ocultos y el total en cero. Con filtros que no dejan nada: «Ninguna entrada
@@ -1421,6 +1493,26 @@ responde** si se la pide a mano con un período vacío: 200, con la cabecera
 hay horas en este período» o, con filtros efectivos, «Ninguna entrada coincide
 con los filtros», y «Entradas» con su fila de encabezados y ninguna entrada. El
 archivo no lleva «Quitar filtros».
+
+_Actualizado el 2026-10-12, contrato de R9 (D-R9-9)_: **con «Mostrar personas
+sin horas», las filas sin horas son grupos y reemplazan a los vacíos**: si hay
+alguna, no hay vacío. El gráfico y «Exportar» siguen mirando las entradas, no
+los grupos.
+
+| Situación                                | Sin la opción                                  | Con la opción                                                       |
+| ---------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------- |
+| Período sin horas, sin filtros           | «No hay horas en este período»                 | una fila en «0:00» por candidata; sin gráfico ni «Exportar»         |
+| Filtros que no dejan nada                | «Ninguna entrada coincide…» y «Quitar filtros» | una fila en «0:00» por candidata, sin «Quitar filtros»; sin gráfico |
+| Ninguna candidata y ninguna hora (RP-47) | el vacío que corresponda                       | el mismo vacío; «Quitar filtros» conserva la opción                 |
+| Primer nivel que no entra                | la fila del tope                               | la misma; las sin horas contaron para el tope (sección 16.3)        |
+
+- «Total» y «Facturable» no cambian: una fila sin horas suma cero.
+- **Sin gráfico y sin «Exportar» con solo filas sin horas**: es la regla de R5
+  y R6a sin excepción. El archivo de «nadie cargó esta semana» no se baja desde
+  la pantalla; la ruta pedida a mano responde con esas filas en el resumen
+  (RP-54).
+- **Quien ve solo lo suyo**, con `sin-horas=1` y sin horas propias, ve el
+  primer vacío, no su fila en «0:00» (RP-32).
 
 **RP-34 Errores de validación** — `adaptar`
 
@@ -1550,11 +1642,53 @@ Documentado: «Grouping by user is useful when you want to see how much time eac
 person on your team worked each day.» y «Grouping by project is useful when you
 want to see how much time you’ve worked for each client.»
 
-**RP-47 Mostrar personas sin horas** — `replicar`
+**RP-47 Mostrar personas sin horas** — `adaptar`
 Documentado: «To see who hasn’t tracked any time in a given week, group the
 report by user and click on Show users without time.» y «Owners, Admins and Team
 managers can see this option.» Es lo más útil del semanal para una vista de
 empresa: responde «quién no cargó».
+_Actualizado el 2026-10-12, contrato de R9 (D-R9-1 a D-R9-12)_: **entra en el
+núcleo, en el reporte resumido y no en el semanal**, y la marca pasa de
+`replicar` a `adaptar`. Las dos citas se reconfirmaron ese día en la página del
+semanal (FOUND); en las del resumido y de filtros la opción no está (NOT
+FOUND). Justificación: el semanal no está en el núcleo (RP-45, RP-46) y «quién
+no cargó en el período» se responde con el resumido agrupado por persona, en
+cualquier período; lo decidió el usuario el 2026-10-08 (sección 8).
+
+- **Solo owner y admin**: que alguien no cargó es información sobre sus horas
+  (P-01). Clockify la da también al team manager, que acá decide como member
+  (P-03, RP-06). Un member, un `project_manager` o un `team_manager` no tiene el
+  enlace y, con `sin-horas=1` en la URL, no ve filas sin horas, tampoco la
+  propia (RP-32).
+- **Solo con «Persona» en «Agrupar por»**, con cualquier cantidad de
+  subniveles: las filas sin horas son del primer nivel y no tienen hijos
+  (RP-13). Con la persona en un subnivel (Proyecto → Persona) no aplica: cada
+  grupo mostraría a todas las personas que no cargaron en él.
+- **Quiénes aparecen**: sin el filtro de personas, las activas sin entradas
+  cerradas en el período que pasen los filtros; con el filtro, las elegidas,
+  también inactivas (RP-62); las invitadas, nunca (RP-64). En los dos casos,
+  **quien entró después del período no está**: una persona cuya membresía se
+  creó desde el inicio del día siguiente al último del período, en la zona de
+  quien mira —hoy, su primer ingreso a Clock—, no aparece. El estado es el de
+  hoy: quien se desactivó después del período no aparece salvo que se lo elija.
+- **«Sin horas» es sin entradas cerradas que pasen los filtros**: con solo un
+  timer en curso aparece (P-07); con un filtro de cliente o de proyecto, quien
+  cargó solo en otros proyectos aparece, porque no cargó en lo filtrado; con
+  entradas que suman menos de un segundo tiene horas, y su fila es la de
+  siempre, en «0:00».
+- **Cada fila** lleva el nombre de siempre, con «(inactiva)» si corresponde
+  (RP-31), y «0:00»; van después de todas las que tienen horas, por nombre
+  (RP-12).
+- **El control es un enlace**, «Mostrar personas sin horas» con la opción
+  apagada y «Ocultar personas sin horas» con la opción encendida, en el bloque
+  de «Agrupar por»; la opción va en la URL como `sin-horas=1` (RP-32).
+- **Cuentan para el tope de 3000 filas** (sección 16.3).
+- **El archivo** las trae en el resumen y suma la fila «Personas sin horas» a la
+  cabecera (RP-54).
+
+_No verificado_: si Clockify muestra a las inactivas o a quien entró después de
+la semana, en qué orden pone las filas sin horas y si el control es una casilla
+o un interruptor (P-05). El semanal sigue en la fase 3 (RP-45, RP-46).
 
 **RP-48 Filtro por aprobación e importes** — `fuera de alcance`
 Documentado: «You can also filter by approval status…» y «…by clicking Show Time
@@ -1736,6 +1870,31 @@ no-store`; el 307 al login, el 403 y el 500, como en el CSV.
   duraciones sumables, «=1+1» como texto— es el criterio 21 del contrato, a
   mano, y queda _no verificado_ hasta que se haga.
 
+_Actualizado el 2026-10-12, contrato de R9 (D-R9-10)_: con «Mostrar personas
+sin horas» (RP-47), el archivo sigue siendo el de la pantalla para la misma URL,
+en CSV y en Excel:
+
+- **La cabecera suma la fila «Personas sin horas»** con «Sí», solo con la
+  opción efectiva, inmediatamente después de «Agrupado por» y antes de
+  «Personas», «Clientes» y «Proyectos». Sin la opción, o si no aplica, no está;
+  no hay una fila con «No».
+- **El resumen trae las filas sin horas** en el orden de la pantalla, después
+  de la última persona con horas y sus filas hijas: una por persona, nivel 1,
+  con su nombre («(inactiva)» si corresponde), vacías las columnas de abajo,
+  «0:00» y «0,00», sin filas hijas. En el Excel, las mismas filas en la hoja
+  «Resumen», con celdas con tipo como cualquier otra fila.
+- **«Entradas» no cambia**: una persona sin horas no tiene entradas.
+- **Los topes no cambian**: el resumen sigue acotado por las 3000 filas, y las
+  sin horas cuentan (sección 16.3).
+- **Con solo filas sin horas no hay «Exportar»** en la pantalla (RP-33); la ruta
+  pedida a mano responde 200 con la cabecera, esas filas en el resumen y
+  «Entradas» con su fila de encabezados y ninguna entrada.
+- **Un member, un `project_manager` o un `team_manager`** que exporta con
+  `sin-horas=1`, con o sin `personas`, baja el mismo archivo que sin esos
+  parámetros: sin la fila de la cabecera y sin ningún nombre ajeno.
+- El PDF de R7, que va después, lo hereda sin cambios si lee el mismo
+  documento.
+
 **RP-55 Reportes compartidos** — `fuera de alcance`
 Documentado: «Share reports is a paid feature available on any paid plan.»;
 pueden ser públicos —«Public: anyone with the link can open it.»— o del
@@ -1792,6 +1951,17 @@ activas. Elegida, una inactiva filtra como cualquiera: su fila lleva
 «(inactiva)» (RP-31) y sus horas cuentan. Solo owner y admin tienen el filtro;
 para el resto no existe (RP-32).
 
+_Actualizado el 2026-10-12, contrato de R9 (D-R9-2)_: **con «Mostrar personas
+sin horas» (RP-47), una inactiva sin horas aparece solo si se la elige** en
+«Personas». Sin el filtro, las candidatas son las activas, porque una inactiva
+es alguien que ya no está y sería una fila de más en cada período posterior a su
+salida. Elegida, quien mira pregunta por ella: su fila va en «0:00» con
+«(inactiva)» (RP-31), después de las que tienen horas. Como cualquier
+candidata, no aparece si su membresía se creó después del período.
+Justificación: es la recomendación del contrato, que el usuario puede cambiar
+(pregunta 1 de su §10). _No verificado_: si el semanal de Clockify muestra a
+las inactivas (P-05).
+
 **RP-63 Desactivar detiene el timer** — `replicar`
 Documentado: al desactivar, «…their current timer is stopped (if they have one
 running).» Es de la fase 2; se anota porque, al detenerse, esa entrada pasa a
@@ -1812,6 +1982,14 @@ se ignora (RP-34). La interfaz no produce una invitada con horas; si la base
 tiene una, agrupando por persona su fila aparece con «(inactiva)», porque el
 reporte no pone condiciones sobre el estado de la membresía (RP-61) y marca toda
 membresía que no está activa (RP-31), pero no se la puede elegir en el filtro.
+
+_Actualizado el 2026-10-12, contrato de R9 (D-R9-2, D-R9-6)_: **una invitada
+nunca aparece sin horas**, con o sin el filtro de personas: las candidatas salen
+del mismo catálogo que el filtro, que la deja afuera por su estado, y su id en
+`personas` se sigue ignorando (RP-34). Es lo que esta entrada anunciaba desde el
+2026-10-08. Hoy nada crea membresías `invited`. Cuando las invitaciones de la
+fase 2 las creen, la fecha que decide «quien entró después del período» tiene
+que ser la de activación y no la de la invitación (§9 del contrato de R9).
 
 **RP-65 Borrar una persona** — `adaptar`
 _No verificado_: la misma página dice «Deleted user is permanently removed from
@@ -1839,7 +2017,8 @@ sin tocar el modelo.
 **Entra:**
 
 - Quién ve: RP-01 (con la divergencia de P-01), RP-02, RP-07.
-- Resumido: RP-10, RP-11, RP-12, RP-13, RP-15, RP-18, RP-19.
+- Resumido: RP-10, RP-11, RP-12, RP-13, RP-15, RP-18, RP-19, RP-47 (del
+  semanal, en el resumido agrupado por persona).
 - Rango: RP-20, RP-21, RP-22, RP-23, RP-24.
 - Filtros: RP-25 reducido a personas, cliente y proyecto; RP-26 solo «sin
   proyecto»; RP-62.
@@ -1860,12 +2039,16 @@ alguna vez, entran con ella.
 **Queda para la fase 3 completa:** RP-14 (necesita el detallado), RP-16 y RP-17
 (gráficos partidos y de torta: con las barras alcanza), RP-25 en el resto
 (tarea, etiqueta, descripción, facturable), RP-26 en el resto, RP-40 a RP-43
-(tablero), RP-45 a RP-47 (semanal; RP-47 es el candidato más fuerte si se suma
-algo), RP-50.
+(tablero), RP-45 y RP-46 (semanal), RP-50.
 
 **Fuera de alcance:** RP-04, RP-06 (hasta que exista un modelo de equipo),
 RP-08, RP-09, RP-27, RP-36, RP-37, RP-48, RP-49, RP-51, RP-52, RP-55, RP-56,
 RP-66.
+
+_Actualizado el 2026-10-12, contrato de R9_: **RP-47 entra en el núcleo**, en el
+reporte resumido agrupado por persona y no en el semanal, por la decisión del
+usuario del 2026-10-08 (sección 8), y sale de la fase 3. El semanal (RP-45,
+RP-46) sigue en la fase 3.
 
 ## 7. Pendientes de definición del equipo
 
@@ -1933,6 +2116,14 @@ con períodos de hasta 31 días. **Si Clockify pasa a semanas o meses con
 períodos largos no se puede relevar**, porque el plan Free no pasa de 31 días;
 vale lo del ADR 0021 y D-R5-4. Mientras tanto vale lo de R5 (sección 14). No
 bloquea.
+
+_Actualizado el 2026-10-12, contrato de R9 (§10, pregunta 3)_: P-05 suma, para
+R9, en el semanal con «Show users without time»: si aparecen las personas
+inactivas y quien entró después de la semana, en qué orden van las filas sin
+horas y si el control es una casilla, un interruptor u otra cosa. No está
+verificado que el semanal exista en el plan Free: la página de cambios del plan
+Free no lo nombra («weekly» NOT FOUND el 2026-10-12). Mientras tanto vale lo de
+R9 (sección 16). No bloquea.
 
 _Agregado el 2026-10-09, relevamiento de R3b_: **P-11 — Agrupar por
 descripción, mes y semana.** La página de filtros los lista entre las opciones
@@ -2486,6 +2677,11 @@ queda; el resto sigue igual. Las secciones 12.6 a 12.8 juntan lo de la pantalla.
   persona y no está en el filtro (RP-64).
 - **Con una sola persona elegida, el botón dice su nombre sin «(inactiva)»**,
   aunque lo sea.
+
+_Actualizado el 2026-10-12, contrato de R9 (D-R9-9)_: «Una persona activa sin
+horas está en el filtro y, elegida sola, da el segundo vacío» vale sin «Mostrar
+personas sin horas». Con la opción, elegida sola, es una fila en «0:00» y no hay
+vacío (RP-33, sección 16).
 
 ### 12.5 Qué puede hacer cada rol
 
@@ -3083,6 +3279,30 @@ en dos hojas**:
   (ACME {sufijo})» es el número 135 / 1440 con `[h]:mm` y sus horas son 2,25;
   la descripción «=1+1» es una cadena, sin fórmula y sin `'`.
 
+_Actualizado el 2026-10-12, contrato de R9 (D-R9-10)_: con la opción efectiva de
+«Mostrar personas sin horas» (RP-47), en el CSV y en el Excel:
+
+| Fila                 | Valor                                                                                                                     |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| «Personas sin horas» | «Sí», solo con la opción efectiva, inmediatamente después de «Agrupado por» y antes de «Personas»; sin la opción, no está |
+
+- **El resumen** trae una fila por persona sin horas, después de la última
+  persona con horas y sus filas hijas, por nombre: nivel 1, su nombre con
+  « (inactiva)» si corresponde, vacías las columnas de abajo, «0:00» y «0,00»,
+  sin filas hijas.
+
+  | Nivel | Persona | Proyecto   | Duración | Horas |
+  | ----- | ------- | ---------- | -------- | ----- |
+  | 1     | Ana     |            | 10:00    | 10,00 |
+  | 2     | Ana     | Web (ACME) | 10:00    | 10,00 |
+  | 1     | Beto    |            | 0:00     | 0,00  |
+  | 1     | Carla   |            | 0:00     | 0,00  |
+
+- **«Entradas» no cambia**: una persona sin horas no tiene entradas.
+- **Con solo filas sin horas**, la ruta pedida a mano responde con la cabecera,
+  esas filas en el resumen —con su fila de encabezados, porque hay grupos— y
+  «Entradas» sin filas; desde la pantalla no hay «Exportar» (RP-33).
+
 ### 15.3 Estados y casos borde
 
 - **Vacío y segundo vacío** (RP-33): sin «Exportar». La ruta pedida a mano
@@ -3181,3 +3401,146 @@ _Actualizado el 2026-10-12, R6b_:
 _Actualizado el 2026-10-12, R6b_: quien exporta a CSV exporta también a Excel,
 con el mismo alcance y lo mismo en el archivo; quien recibe 403 en uno lo
 recibe en el otro.
+
+## 16. Núcleo, R9
+
+_2026-10-12._ Contrato:
+[`nucleo-reportes-r9-personas-sin-horas.md`](../slices/nucleo-reportes-r9-personas-sin-horas.md),
+aprobado en la primera pasada de `architecture-reviewer`
+([correcciones](../slices/correcciones-nucleo-reportes-r9-contrato.md)). Es un
+solo slice (D-R9-1). La regla de cada comportamiento está en la corrección
+fechada de su RP; esta sección junta lo que cambia en la pantalla y en el
+archivo, y lo que no nombra sigue como en las secciones [9](#9-núcleo-r2a) a
+[15](#15-núcleo-r6).
+
+**Cubre:** RP-47 (las personas sin horas en el resumido agrupado por persona,
+solo para owner y admin), RP-12 (van después de todas las que tienen horas, por
+nombre), RP-13 (sin botón, con cualquier cantidad de niveles), RP-32
+(`sin-horas=1` y los enlaces que la conservan), RP-33 (las filas sin horas
+reemplazan a los vacíos), RP-54 (la fila de la cabecera y las filas del
+resumen), RP-62 (las inactivas, solo elegidas) y RP-64 (las invitadas, nunca).
+Los permisos no cambian: no hay acción nueva. La opción aplica con el mismo
+alcance que el filtro de personas, el de quien ve horas de otros, y las
+candidatas salen del mismo catálogo que ese filtro, en la misma foto. No cambian
+el gráfico, «Total», «Facturable», la línea del alcance ni las entradas del
+archivo.
+
+**Queda para después:** el PDF (R7), que hereda la fila de la cabecera y las
+filas del resumen si lee el mismo documento. De la fase 2: la fecha de
+activación de una invitada y la historia del estado de una membresía. De la
+fase 3: el reporte semanal (RP-45, RP-46). No tienen slice: personas sin horas
+debajo de otra dimensión (Proyecto → Persona); proyectos, clientes, tareas,
+etiquetas o días sin horas; la fila propia en cero para quien ve solo lo suyo;
+la opción para `team_manager` (P-03); una marca visual propia de la fila sin
+horas; «Exportar» con solo filas sin horas.
+
+### 16.1 La barra
+
+- **El enlace**, después del grupo de «Agrupar por» y en el mismo bloque, solo
+  para owner y admin y solo con «Persona» en «Agrupar por»: «Mostrar personas
+  sin horas» con la opción apagada y «Ocultar personas sin horas» con la opción
+  encendida, con el estilo de los botones de contorno chicos. Su nombre
+  accesible es el texto, lleva a la misma URL con la opción cambiada y, como es
+  un enlace común, funciona antes de hidratar.
+- **No está** agrupando por cualquier otra dimensión, ni para un member, un
+  `project_manager` o un `team_manager`.
+- **Las flechas, el selector del período, «Esta semana», los subniveles, los
+  filtros y «Exportar»** conservan la opción; «Agrupar por» la conserva o la
+  apaga según el primer nivel que resulta (RP-32).
+
+### 16.2 La tabla
+
+- **Las filas sin horas** van en el primer nivel, después de todas las personas
+  con horas, por nombre (RP-12): el nombre de siempre, con «(inactiva)» en gris
+  si corresponde (RP-31), y «0:00».
+- **Sin botón** (RP-13): con subniveles, una fila sin horas no se expande; si
+  alguna otra fila tiene botón, deja el espacio del chevrón para que los
+  nombres alineen.
+- **El encabezado** nombra los niveles como siempre (sección 11.6); con solo
+  filas sin horas, todos los pedidos, como en el vacío (sección 11.7).
+- **«Total», «Facturable» y el gráfico no cambian**: una fila sin horas suma
+  cero.
+- Con las entradas del recorrido 26 del contrato (el martes de la semana
+  anterior, A de 09:00 a 10:00 y B de 09:00 a 11:00 en P; C inactiva y E activa
+  sin horas; N, que entró hoy), la semana anterior por «Persona» con A, B, C, E
+  y N elegidas y la opción: B 2:00, A 1:00, C 0:00 con «(inactiva)» y E 0:00,
+  en ese orden; N no está; total 3:00. Con «Segundo nivel: Proyecto», B y A
+  tienen botón y C y E no.
+
+### 16.3 Estados y casos borde
+
+- **Un período sin horas, con la opción**: una fila en «0:00» por candidata,
+  sin «No hay horas en este período», sin gráfico y sin «Exportar»; «Total» y
+  «Facturable» en «0:00» (RP-33).
+- **Filtros que no dejan nada, con la opción**: una fila en «0:00» por
+  candidata, sin «Ninguna entrada coincide con los filtros» ni «Quitar
+  filtros»; sin gráfico ni «Exportar».
+- **Ninguna candidata y ninguna hora** —por ejemplo, una sola persona elegida
+  que entró después del período—: el vacío que corresponde; «Quitar filtros»
+  conserva la opción.
+- **El tope de 3000 filas** (D-R9-8): las filas sin horas son del primer nivel
+  y cuentan. El primer nivel entra si sus filas con horas más las sin horas son
+  3000 o menos; si no, se ve la fila del primer nivel que no entra (sección
+  13.7) y ninguna fila sin horas. Los niveles de abajo tienen lo que queda:
+  **encender la opción puede cortar el segundo nivel**, con la línea del tope
+  de siempre (sección 11.6). Persona → Descripción de un mes de todo el equipo
+  puede pasar a mostrar solo las personas.
+- **Con un filtro de cliente o de proyecto**, quien cargó solo en otros
+  proyectos aparece sin horas: no cargó en lo filtrado, y la cabecera dice el
+  filtro.
+- **Una persona con solo un timer en curso** aparece sin horas (P-07). **Una
+  con entradas que suman menos de un segundo** tiene horas: su fila es la de
+  siempre, en «0:00», antes de las sin horas y, con subniveles, con botón.
+- **Una opción que no aplica** —`agrupar=proyecto`, Proyecto → Persona, o quien
+  no ve horas de otros—: la pantalla de sin la opción, y `sin-horas` se pierde
+  en la navegación siguiente (RP-32). Sin un `agrupar` válido, aplica.
+- **Al recargar, con «Atrás» o con un enlace copiado**: la misma vista, el
+  enlace dice «Ocultar personas sin horas» y el árbol empieza contraído
+  (RP-13). Encender o apagar la opción también lo contrae.
+- **Cargando, error de lectura y sin `report.view`**: como en la sección 9.3.
+
+### 16.4 Divergencias visibles que el reviewer no debe marcar como errores
+
+- **En el resumido y no en el semanal** (RP-47): Clockify documenta la opción
+  en el semanal, para una semana; acá va en el resumido agrupado por persona,
+  con cualquier período.
+- **Solo owner y admin**: Clockify la da también al team manager, que acá
+  decide como member (P-03).
+- **El control es un enlace que cambia de texto**, «Mostrar…» y «Ocultar…», y
+  no una casilla ni un interruptor; cómo es en Clockify está _no verificado_
+  (P-05). Después del clic el foco queda donde lo deje el navegador, como en
+  «Agrupar por».
+- **Las inactivas aparecen solo si se las elige** (RP-62); sin el filtro, no.
+  En Clockify está _no verificado_.
+- **Quien entró después del período no aparece**, según la fecha en que se creó
+  su membresía, que hoy es su primer ingreso a Clock y no su alta en la
+  empresa: alguien que entró a Clock tarde no aparece sin horas en los períodos
+  anteriores a ese ingreso.
+- **El estado es el de hoy**: quien estaba activo en el período y se desactivó
+  después no aparece sin horas, salvo que se lo elija.
+- **Una persona con entradas de menos de un segundo** se ve en «0:00» como una
+  sin horas, pero va antes de ellas y, con subniveles, se puede abrir.
+- **Con un filtro de cliente o de proyecto**, quien cargó solo en otros aparece
+  sin horas.
+- **Con solo filas sin horas no hay gráfico ni «Exportar»**: el archivo de
+  «nadie cargó esta semana» no se baja desde la pantalla; la ruta pedida a mano
+  responde con esas filas (RP-33, RP-54).
+- **Encender la opción puede cortar el segundo nivel**, con la línea del tope de
+  siempre, que no nombra la opción.
+- **Sin filas sin horas debajo de otra dimensión**: con Proyecto → Persona la
+  opción no aplica y el enlace no está.
+- **Quien ve solo lo suyo no tiene su fila en «0:00»**: sin horas propias, el
+  primer vacío, también con `sin-horas=1` en la URL.
+- **La línea del alcance no cambia** con la opción.
+- **Sin marca visual propia**: una fila sin horas se distingue por «0:00», su
+  lugar al final y la falta de botón.
+- **La cabecera del archivo dice «Personas sin horas» «Sí»** con la opción; sin
+  ella no hay fila, tampoco una con «No».
+
+### 16.5 Qué puede hacer cada rol
+
+| Membresía                                           | Ve                                                                                                                                                                                                                                                   | Acciones                                                                                            |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `owner`, `admin` activas                            | Con «Persona» primero y la opción, además de las personas con horas, una fila en «0:00» por cada activa sin horas —o por cada elegida sin horas, también inactiva— que ya estaba en el workspace en el período; nunca invitadas ni de otro workspace | Las de 15.5, y mostrar u ocultar las personas sin horas; exportarlas en el resumen cuando hay horas |
+| `project_manager`, `team_manager`, `member` activas | Solo lo propio, como sin la opción, también con `sin-horas=1` y `personas=…` en la URL; sin su fila en «0:00»                                                                                                                                        | Las mismas, sin filtro de personas ni el enlace                                                     |
+| Cualquiera no activa (`inactive`, `invited`)        | El aviso de RP-07                                                                                                                                                                                                                                    | Ninguna                                                                                             |
