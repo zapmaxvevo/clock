@@ -12,6 +12,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { alias, QueryBuilder, type PgSelect } from "drizzle-orm/pg-core";
+import { z } from "zod";
 
 import { db, type Transaction } from "@/server/db";
 import {
@@ -136,6 +137,30 @@ export const NO_ENTRY_FILTER: ReportEntryFilter = {
 export type ReportEntryRead = {
   readonly span: ReportSpan;
   readonly filter: ReportEntryFilter;
+};
+
+/** D-R6-3: lo que lee `entryList`: lo de `ReportEntryRead` y cuántas como mucho. */
+export type ReportEntryListRead = ReportEntryRead & {
+  /** Como mucho estas filas, cualesquiera: sin orden. Entero positivo. */
+  readonly limit: number;
+};
+
+export type EntryListRow = {
+  readonly id: string;
+  readonly startedAt: Date;
+  readonly endedAt: Date;
+  readonly seconds: number;
+  readonly userId: string;
+  readonly accountName: string;
+  readonly displayName: string | null;
+  readonly status: MembershipStatus;
+  readonly projectName: string | null;
+  readonly clientName: string | null;
+  readonly taskName: string | null;
+  readonly description: string;
+  readonly billable: boolean;
+  /** Con id, para desempatar al ordenar. */
+  readonly tags: readonly { readonly id: string; readonly name: string }[];
 };
 
 /** D-R10-4: los tramos de cada dimensión de tiempo pedida, y solo de esas. */
@@ -573,6 +598,16 @@ function checkEntryRead({ filter }: ReportEntryRead): void {
   }
 }
 
+/** D-R6-3: las guardas de `entryList`; lanza `RangeError` antes de consultar. */
+function checkEntryListRead(read: ReportEntryListRead): void {
+  checkEntryRead(read);
+  if (!Number.isInteger(read.limit) || read.limit < 1) {
+    throw new RangeError(
+      `El tope de entradas tiene que ser un entero positivo: ${read.limit}.`,
+    );
+  }
+}
+
 /** Las guardas de §4.3 de R3 y R10: lanza `RangeError` antes de consultar. */
 function checkLevelRead(read: ReportLevelRead): void {
   const { dimensions, span, limit } = read;
@@ -716,6 +751,103 @@ async function levelTotals(
   }));
 }
 
+// D-R6-3: los nombres de cada entrada, con alias propios: no se cruzan con
+// `filterProject` ni con los de las dimensiones.
+const listProject = alias(project, "list_project");
+const listClient = alias(client, "list_client");
+const listTask = alias(task, "list_task");
+
+/**
+ * Las etiquetas de la entrada de la fila exterior, en un arreglo JSON, como
+ * `entryTags` de `time-entry`: una subconsulta correlacionada no multiplica
+ * filas como un `join`. Las dos condiciones de workspace son las claves que
+ * atan la entrada y la etiqueta.
+ */
+const listTags = sql<unknown>`coalesce((
+  select json_agg(json_build_object('id', ${tag.id}, 'name', ${tag.name}))
+  from ${timeEntryTag}
+  inner join ${tag}
+    on ${tag.workspaceId} = ${timeEntryTag.workspaceId} and ${tag.id} = ${timeEntryTag.tagId}
+  where ${timeEntryTag.workspaceId} = ${timeEntry.workspaceId}
+    and ${timeEntryTag.timeEntryId} = ${timeEntry.id}
+), '[]'::json)`;
+
+/** El JSON de `listTags`, estrechado antes de salir del repository. */
+const listTagsShape = z.array(z.object({ id: z.string(), name: z.string() }));
+
+/** D-R6-3: una fila por entrada cerrada del intervalo, del alcance y de los filtros. */
+async function entryRows(
+  scope: ReportScope,
+  read: ReportEntryListRead,
+  tx: Executor,
+): Promise<readonly EntryListRow[]> {
+  checkEntryListRead(read);
+  const rows = await tx
+    .select({
+      id: timeEntry.id,
+      startedAt: timeEntry.startedAt,
+      endedAt: timeEntry.endedAt,
+      seconds: sql<string>`(${entrySeconds})::bigint`,
+      userId: timeEntry.userId,
+      accountName: user.name,
+      displayName: userPreference.displayName,
+      status: membership.status,
+      projectName: listProject.name,
+      clientName: listClient.name,
+      taskName: listTask.name,
+      description: timeEntry.description,
+      billable: timeEntry.billable,
+      tags: listTags,
+    })
+    .from(timeEntry)
+    // R1: toda entrada tiene membresía en su workspace.
+    .innerJoin(
+      membership,
+      and(
+        eq(membership.workspaceId, timeEntry.workspaceId),
+        eq(membership.userId, timeEntry.userId),
+      ),
+    )
+    // Tablas de la cuenta, sin `workspace_id`: se unen por la persona.
+    .innerJoin(user, eq(user.id, timeEntry.userId))
+    .leftJoin(userPreference, eq(userPreference.userId, timeEntry.userId))
+    .leftJoin(
+      listProject,
+      and(
+        eq(listProject.workspaceId, timeEntry.workspaceId),
+        eq(listProject.id, timeEntry.projectId),
+      ),
+    )
+    .leftJoin(
+      listClient,
+      and(
+        eq(listClient.workspaceId, listProject.workspaceId),
+        eq(listClient.id, listProject.clientId),
+      ),
+    )
+    .leftJoin(
+      listTask,
+      and(
+        eq(listTask.workspaceId, timeEntry.workspaceId),
+        eq(listTask.id, timeEntry.taskId),
+      ),
+    )
+    .where(and(inScope(scope), closedIn(read.span), matchesFilter(read.filter)))
+    // Sin orden: con todo o nada, cuáles vuelven no importa, y la base corta al llegar.
+    .limit(read.limit);
+  return rows.map(({ endedAt, seconds, tags, ...row }) => {
+    if (endedAt === null) {
+      throw new Error(`La entrada ${row.id} llegó sin fin a una lectura de cerradas.`);
+    }
+    return {
+      ...row,
+      endedAt,
+      seconds: secondsOf(seconds),
+      tags: listTagsShape.parse(tags),
+    };
+  });
+}
+
 /**
  * Las lecturas del reporte. Cada función recibe primero el alcance y es una
  * sentencia: agrega sobre `time_entry` y después une los nombres a las filas
@@ -775,5 +907,18 @@ export const reportRepository = {
       .from(timeEntry)
       .where(and(inScope(scope), closedIn(read.span), matchesFilter(read.filter)));
     return withSeconds(row);
+  },
+
+  /**
+   * D-R6-3: las entradas cerradas con el inicio en `read.span`, dentro de
+   * `scope` y de los filtros, una fila por entrada con sus etiquetas en un
+   * arreglo. Una sentencia; sin orden.
+   */
+  async entryList(
+    scope: ReportScope,
+    read: ReportEntryListRead,
+    tx: Executor = db,
+  ): Promise<readonly EntryListRow[]> {
+    return entryRows(scope, read, tx);
   },
 };
