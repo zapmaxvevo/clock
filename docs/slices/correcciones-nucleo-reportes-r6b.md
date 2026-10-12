@@ -68,3 +68,11 @@ en `534ee98`. **Paridad**: aprobado, sin hallazgos (CSV y Excel comparados celda
   «@SUM(A1)» y «0123» como texto; las fechas como fecha; las horas de reloj y las duraciones
   como tiempo (también 26:01 y 31:48); «Horas» como número (1,48 y 2,25); U+FFFF y los
   controles como «�». La prueba con Excel queda para el usuario.
+
+## Cierre
+
+`78d3570` (`truncatedHours` en `src/server/time`, la regla del centésimo en un solo lugar) y
+`5acc32a` (el CSV con un minuto → «0,01»). Corrida final sobre `2149be7`: lint, typecheck y
+`format:check` limpios; unidad 1862 y `test:time-ar` 305; integración 1541
+(`clock_r6b_final_test`); e2e 210/210 ×2 sobre una base nueva (`clock_r6b_final_e2e`, build
+rehecho en cada corrida) y `reports.spec.ts` 26/26 ×3. Merge como R6b.

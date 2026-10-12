@@ -239,6 +239,17 @@ vacío del owner y `renewWorkspace` se corta.
      `correcciones-nucleo-reportes-r6a-revisiones.md`. **Sigue R6b** (Excel): para el
      `architect` o `backend-dev`, B4 (la cota de las entradas por formato: la del CSV no vale
      para el `.xlsx` comprimido). Bases de R6a que se pueden borrar: `clock_r6a_*`.
+     **R6b en `main`** (2026-10-12): exportar a Excel. B4 resuelto por el team-lead: el tope de
+     las entradas es del documento medido como CSV, igual para los dos formatos. Revisiones:
+     seguridad confirmó que GHSA-w5hq-g745-h8pq no se alcanza (`exceljs` llama a `v4()` sin
+     argumentos y solo en el formato condicional); se corrigieron U+FFFF (rompía el `.xlsx`), la
+     regla de ESLint (`import()` y subrutas), «Horas» truncadas también en el Excel
+     (`truncatedHours`) y la guarda posterior medida como CSV. Criterio 21 con LibreOffice.
+     Corrida final sobre `2149be7`: 1862 de unidad, 305 de `test:time-ar`, 1541 de integración,
+     e2e 210/210 ×2. Todo en `correcciones-nucleo-reportes-r6b.md`. **R6 entero en `main`.**
+     **Sigue R7** (mapa §R7), primero su contrato; después R9. R8, solo contrato. Bases que se
+     pueden borrar: `clock_r6b_*`. La prueba del CSV y el Excel con el Excel del usuario queda
+     opcional (§10 del contrato).
 
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
      (`7b66b03`), en checkout en el árbol principal. `architect-r3` quedó escribiendo
