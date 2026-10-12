@@ -1,5 +1,4 @@
-import { formatDecimalHours, formatDuration } from "@/server/time";
-
+import { cellText } from "./cell-text";
 import type { ExportCell, ExportDocument, ExportRow } from "./types";
 
 /** RFC 4180: también al final de la última línea. */
@@ -12,26 +11,6 @@ const BYTE_ORDER_MARK = "\uFEFF";
 
 /** OWASP: lo que hace que una planilla lea el campo como fórmula si va primero. */
 const FORMULA_STARTS = ["=", "+", "-", "@", "\t", "\r"];
-
-/** El texto de una celda, antes de las comillas. */
-function cellText(cell: ExportCell): string {
-  switch (cell.kind) {
-    case "text":
-      return cell.text;
-    case "integer":
-      return String(cell.value);
-    case "day":
-      return cell.dayKey;
-    case "clock":
-      return cell.clock;
-    case "duration":
-      return formatDuration(cell.minutes);
-    case "hours":
-      return formatDecimalHours(cell.minutes);
-    case "empty":
-      return "";
-  }
-}
 
 /** Entre comillas, con las internas duplicadas y el `'` si empieza como una fórmula. */
 function fieldOf(cell: ExportCell): string {

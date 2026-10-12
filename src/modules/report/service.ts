@@ -1097,6 +1097,12 @@ export async function getReportState(
   return read.kind === "forbidden" ? read : read.report;
 }
 
+/** D-R7-3: lo que una exportación lee además del estado de la página. */
+export type ReportExportRead = {
+  /** D-R6-3: las entradas una por una; el PDF no las pide (D-R7-2). */
+  readonly entries: boolean;
+};
+
 export type ReportExportState =
   /** RP-07: sin `report.view`. No se leyó nada. */
   | { readonly kind: "forbidden" }
@@ -1104,7 +1110,8 @@ export type ReportExportState =
       readonly kind: "ready";
       /** El mismo estado que `getReportState` para el mismo pedido y `now`. */
       readonly report: ReportReadyState;
-      readonly entries: ReportExportEntries;
+      /** `null` si el pedido no las pidió (D-R7-3). */
+      readonly entries: ReportExportEntries | null;
       /** El `now` de la lectura: «Generado» (D-R6-8). */
       readonly generatedAt: Date;
     };
@@ -1154,21 +1161,23 @@ function entriesOf(read: EntryRead, timeZone: string): ReportExportEntries {
   };
 }
 
-/** D-R6-2: el estado de la página y las entradas, en una sola foto. */
+/** D-R6-2, D-R7-3: el estado de la página y las entradas pedidas, en una foto. */
 export async function getReportExport(
   actor: Actor,
   settings: TimeSettings,
   request: ReportRequest,
+  read: ReportExportRead,
   now: Date = new Date(),
 ): Promise<ReportExportState> {
-  const read = await readReportState(actor, settings, request, now, true);
-  if (read.kind === "forbidden") {
-    return read;
+  // R7a, paso 3: sin `read.entries`, la foto deja de leerlas.
+  const state = await readReportState(actor, settings, request, now, true);
+  if (state.kind === "forbidden") {
+    return state;
   }
   return {
     kind: "ready",
-    report: read.report,
-    entries: entriesOf(read.entries, settings.timezone),
+    report: state.report,
+    entries: read.entries ? entriesOf(state.entries, settings.timezone) : null,
     generatedAt: now,
   };
 }

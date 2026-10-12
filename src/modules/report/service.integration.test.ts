@@ -4302,6 +4302,7 @@ async function readyExport(
     actor,
     options.settings ?? settings,
     fullRequest(request),
+    { entries: true },
     options.now ?? readNow,
   );
   if (state.kind !== "ready") {
@@ -4310,10 +4311,10 @@ async function readyExport(
   return state;
 }
 
-/** Las filas listadas; lanza con `tooMany`. */
-function listedRows(entries: ReportExportEntries): readonly ReportEntryRow[] {
-  if (entries.kind !== "listed") {
-    throw new Error(`Se esperaban las entradas y llegó ${entries.kind}.`);
+/** Las filas listadas; lanza con `tooMany` o sin entradas leídas. */
+function listedRows(entries: ReportExportEntries | null): readonly ReportEntryRow[] {
+  if (entries?.kind !== "listed") {
+    throw new Error(`Se esperaban las entradas y llegó ${entries?.kind ?? "null"}.`);
   }
   return entries.rows.map((row) => reportEntryRow.parse(row));
 }
@@ -4755,6 +4756,7 @@ describe("la exportación (D-R6-2, D-R6-3; criterio 5 de R6)", () => {
       actorIn(workspaceId, inactiveId, { status: "inactive" }),
       settings,
       fullRequest({ range: lastWeek }),
+      { entries: true },
       readNow,
     );
 

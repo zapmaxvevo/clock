@@ -20,10 +20,12 @@ import type { ExportDocument, ExportWriter } from "./types";
 const EXPORT_WRITERS = {
   csv: {
     contentType: "text/csv; charset=utf-8",
+    entries: true,
     write: async (document: ExportDocument) => csvBytesOf(document),
   },
   xlsx: {
     contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    entries: true,
     // D-R6-12: con `import()`, ni la página ni el CSV cargan `exceljs`.
     write: async (document: ExportDocument) =>
       (await import("./xlsx")).xlsxBytesOf(document),
@@ -109,7 +111,9 @@ export async function handleReportExport(
     const reportRequest = reportRequestOf(
       searchParamsRecord(new URL(request.url).searchParams),
     );
-    const state = await getReportExport(session.actor, settings, reportRequest);
+    const state = await getReportExport(session.actor, settings, reportRequest, {
+      entries: EXPORT_WRITERS[format].entries,
+    });
     if (state.kind === "forbidden") {
       return textResponse(403, reportMessages.exportForbidden);
     }

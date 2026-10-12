@@ -24,12 +24,14 @@ export type ExportSection = {
 export type ExportDocument = {
   /** D-R6-8, una fila por dato. */
   readonly header: readonly ExportRow[];
-  /** El resumen y las entradas, en ese orden. */
+  /** El resumen y, si se leyeron, las entradas, en ese orden (D-R7-3). */
   readonly sections: readonly ExportSection[];
 };
 
-/** D-R6-6, D-R6-13: cómo se sirve y se escribe un formato (§4.8). */
+/** D-R6-6, D-R6-13, D-R7-3: cómo se sirve y se escribe un formato. */
 export type ExportWriter = {
   readonly contentType: string;
+  /** D-R7-2: si el formato lleva las entradas una por una. */
+  readonly entries: boolean;
   readonly write: (document: ExportDocument) => Promise<Uint8Array<ArrayBuffer>>;
 };

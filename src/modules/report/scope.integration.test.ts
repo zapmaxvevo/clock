@@ -3068,7 +3068,13 @@ describe("entryList con cada alcance (D-R6-3; criterio 6 de R6)", () => {
 describe("la exportación dentro del alcance (criterio 6 de R6)", () => {
   /** La exportación de `week` por persona, con `filters`. */
   async function exportOf(actor: Actor, filters: ReportFilters = NO_REPORT_FILTERS) {
-    return getReportExport(actor, settings, { ...request("person"), filters }, now);
+    return getReportExport(
+      actor,
+      settings,
+      { ...request("person"), filters },
+      { entries: true },
+      now,
+    );
   }
 
   /** Las filas de una exportación lista, por el esquema publicado; lanza si no hay. */
@@ -3076,8 +3082,10 @@ describe("la exportación dentro del alcance (criterio 6 de R6)", () => {
     if (state.kind !== "ready") {
       throw new Error(`Se esperaba la exportación y llegó ${state.kind}.`);
     }
-    if (state.entries.kind !== "listed") {
-      throw new Error(`Se esperaban las entradas y llegó ${state.entries.kind}.`);
+    if (state.entries?.kind !== "listed") {
+      throw new Error(
+        `Se esperaban las entradas y llegó ${state.entries?.kind ?? "null"}.`,
+      );
     }
     return state.entries.rows.map((row) => reportEntryRow.parse(row));
   }
@@ -3514,7 +3522,13 @@ describe("las personas sin horas dentro del alcance (criterio 14 de R9)", () => 
         const state = await getReportState(actor, settings, requested, now);
         expect(firstLevelOf(state), context).toEqual(expected(levels));
         expectNothingForeign(state, actor.userId, context);
-        const exported = await getReportExport(actor, settings, requested, now);
+        const exported = await getReportExport(
+          actor,
+          settings,
+          requested,
+          { entries: true },
+          now,
+        );
         if (exported.kind !== "ready") {
           throw new Error(
             `${context}: se esperaba la exportación y llegó ${exported.kind}.`,
