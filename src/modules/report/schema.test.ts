@@ -21,6 +21,7 @@ import {
   reportEntryRow,
   reportFiltersOf,
   reportGroupParams,
+  reportLevelsOf,
   reportMessages,
   reportPeopleParams,
   reportProjectParams,
@@ -1385,5 +1386,16 @@ describe("reportEntryRow y las constantes de la exportación (D-R6-3, D-R6-4, D-
     expect(reportMessages.exportFailed).toBe(
       "No se pudo exportar el reporte. Volvé y probá de nuevo.",
     );
+  });
+});
+
+describe("reportLevelsOf", () => {
+  it("da el primer nivel y los de abajo, en orden", () => {
+    expect(reportLevelsOf({ groupBy: "project", subgroups: [] })).toEqual(["project"]);
+    expect(reportLevelsOf({ groupBy: "date", subgroups: ["tag", "person"] })).toEqual([
+      "date",
+      "tag",
+      "person",
+    ]);
   });
 });

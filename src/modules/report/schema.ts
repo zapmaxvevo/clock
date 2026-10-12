@@ -147,6 +147,11 @@ export type ReportGrouping = {
   readonly subgroups: readonly ReportGroupBy[];
 };
 
+/** Los niveles de un reporte en orden: el primero y los de abajo. */
+export function reportLevelsOf(grouping: ReportGrouping): readonly ReportGroupBy[] {
+  return [grouping.groupBy, ...grouping.subgroups];
+}
+
 /**
  * `?subagrupar=fecha,etiqueta` con `safeParse` (D-R3-5): uno o dos valores
  * distintos entre sí y del primer nivel efectivo, que lee de `agrupar` sin

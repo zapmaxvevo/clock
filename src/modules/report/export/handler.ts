@@ -3,6 +3,7 @@ import { reportRequestOf, searchParamsRecord } from "@/modules/report/request";
 import {
   REPORT_EXPORT_MAX_BYTES,
   REPORT_GROUP_PARAMS,
+  reportLevelsOf,
   reportMessages,
   type ReportExportFormat,
   type ReportReadyState,
@@ -46,7 +47,7 @@ export function exportFileNameOf(
   report: ReportReadyState,
   format: ReportExportFormat,
 ): string {
-  const levels = [report.groupBy, ...report.subgroups]
+  const levels = reportLevelsOf(report)
     .map((groupBy) => REPORT_GROUP_PARAMS[groupBy])
     .join("-");
   return `reporte_${levels}_${report.range.first}_${report.range.last}.${format}`;
