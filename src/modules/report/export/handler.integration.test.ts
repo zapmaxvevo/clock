@@ -72,6 +72,12 @@ const weekQuery = "desde=2026-09-28&hasta=2026-10-04&agrupar=persona&subagrupar=
 
 const settings = workspaceOf(buenosAires);
 
+/**
+ * El reloj de los tests que comparan dos archivos: «Generado» sale de él. Solo
+ * se falsea `Date`; la base usa sus propios temporizadores.
+ */
+const fakeNow = new Date("2026-10-01T15:00:00Z");
+
 const FILE_NAME = /^reporte_[a-z-]+_\d{4}-\d{2}-\d{2}_\d{4}-\d{2}-\d{2}\.csv$/;
 
 let seeded: SeededWorkspace;
@@ -198,6 +204,7 @@ describe("la ruta de exportación (D-R6-4, D-R6-5; criterio 10 de R6)", () => {
   });
 
   it("un member con personas=<otra> recibe solo lo propio", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: fakeNow });
     const otherId = await seedUser();
     await db
       .insert(membership)
@@ -216,8 +223,9 @@ describe("la ruta de exportación (D-R6-4, D-R6-5; criterio 10 de R6)", () => {
   });
 
   it("con desde inválido y agrupar=cualquiera, y con desde repetido, el archivo del pedido de reportRequestOf", async () => {
-    // Solo `Date`: «Generado» y «Esta semana» salen del reloj; la base usa sus propios temporizadores.
-    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-10-01T15:00:00Z") });
+    // «Esta semana» sale del reloj: ningún `desde` repetido cae en ella, así
+    // quedarse con el primero o el último da otro archivo.
+    vi.useFakeTimers({ toFake: ["Date"], now: fakeNow });
     const memberId = await signInAs();
     await seedHour(memberId, "Entrada propia");
 
@@ -226,7 +234,7 @@ describe("la ruta de exportación (D-R6-4, D-R6-5; criterio 10 de R6)", () => {
     );
     const empty = await exportOf("");
     const repeated = await exportOf(
-      "desde=2026-09-28&desde=2026-09-21&hasta=2026-10-04&agrupar=proyecto",
+      "desde=2026-09-21&desde=2026-09-14&hasta=2026-10-04&agrupar=proyecto",
     );
     const withoutRange = await exportOf("agrupar=proyecto");
 

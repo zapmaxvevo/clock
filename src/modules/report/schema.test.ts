@@ -1366,6 +1366,9 @@ describe("reportEntryRow y las constantes de la exportación (D-R6-3, D-R6-4, D-
   it("rechaza un día que no es canónico, una hora fuera de 00:00 a 23:59 o sin cero y segundos que no son enteros no negativos", () => {
     for (const invalid of [
       { ...row, startDay: "1/10/2026" },
+      { ...row, endDay: "01/10/2026" },
+      { ...row, startClock: "24:00" },
+      { ...row, startClock: "9:30" },
       { ...row, endClock: "24:00" },
       { ...row, endClock: "9:30" },
       { ...row, seconds: -1 },

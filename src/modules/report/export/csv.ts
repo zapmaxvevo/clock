@@ -8,7 +8,7 @@ const LINE_END = "\r\n";
 const SEPARATOR = ";";
 
 /** Sin él, Excel lee los acentos como Latin-1 (D-R6-9). */
-const BYTE_ORDER_MARK = "﻿";
+const BYTE_ORDER_MARK = "\uFEFF";
 
 /** OWASP: lo que hace que una planilla lea el campo como fórmula si va primero. */
 const FORMULA_STARTS = ["=", "+", "-", "@", "\t", "\r"];

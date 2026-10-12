@@ -66,7 +66,7 @@ describe("csvBytesOf (D-R6-9; criterio 8 de R6)", () => {
 
     expect([...bytes.slice(0, 3)]).toEqual(BOM);
     expect(textOf(bytes)).toBe(
-      "﻿" +
+      "\uFEFF" +
         '"Reporte resumido"\r\n' +
         '"Zona horaria";"America/Argentina/Buenos_Aires"\r\n' +
         '"Total";"1:30";"1,50"\r\n' +
@@ -78,7 +78,7 @@ describe("csvBytesOf (D-R6-9; criterio 8 de R6)", () => {
         '"Entradas"\r\n' +
         '"2026-09-30";"23:30";"";"Reunión"\r\n',
     );
-    expect(textOf(bytes).split("﻿")).toHaveLength(2);
+    expect(textOf(bytes).split("\uFEFF")).toHaveLength(2);
   });
 
   it("duplica las comillas internas y deja adentro el separador y los saltos de línea", () => {
