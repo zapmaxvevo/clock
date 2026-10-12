@@ -27,8 +27,10 @@ en cada una. Sin cambios de tablas, de índices ni de permisos.
   de peso, de tiempo o de cobertura de fuentes de este contrato es un
   presupuesto o un dato leído en `node_modules`, y la medición es el paso 0
   (§6.1), que hace `backend-dev`.
-- **Revisión del contrato:** primera pasada de `architecture-reviewer` aplicada
-  el 2026-10-12 ([correcciones](correcciones-nucleo-reportes-r7-contrato.md)).
+- **Revisión del contrato:** primera y segunda pasada de
+  `architecture-reviewer` aplicadas el 2026-10-12
+  ([correcciones](correcciones-nucleo-reportes-r7-contrato.md)); aprobado, sin
+  tercera pasada.
 - **Decisiones de arquitectura asociadas**, todas aceptadas:
   - [ADR 0020](../adr/0020-nucleo-de-reportes-antes-de-la-fase-2.md): «Toda
     puerta de entrada —la página y la ruta de exportación— pasa por el mismo
@@ -181,9 +183,10 @@ del usuario (§10, pregunta 1).
   el PDF crece poco; la función crece lo que pese el archivo. Cuál fuente lo
   decide el paso 0 con sus números (§6.1, M4) y el usuario (§10, pregunta 2).
 - **El texto que llega al PDF pasa por `pdfTextOf`** (§4.5):
-  - `\t`, `\n` y `\r` pasan a ser un espacio, como los muestra la pantalla: la
-    descripción los admite adentro (el esquema solo hace `trim`,
-    `src/modules/time-entry/schema.ts:60-64`) y el HTML colapsa el blanco;
+  - **una corrida seguida de `\t`, `\n` y `\r` pasa a ser un solo espacio**,
+    como la muestra la pantalla: la descripción los admite adentro (el esquema
+    solo hace `trim`, `src/modules/time-entry/schema.ts:60-64`) y el HTML
+    colapsa el blanco;
   - cada punto de código que la fuente no dibuja se cambia por el reemplazo:
     U+FFFD con la fuente incrustada, «?» con Helvetica;
   - los demás controles C0 y C1, U+FFFE, U+FFFF y los surrogates sueltos se
@@ -198,10 +201,11 @@ del usuario (§10, pregunta 1).
 - **`pdf.tsx` no guarda estado propio** (`.claude/skills/code-conventions/SKILL.md`,
   «TypeScript»: sin estado mutable a nivel de módulo). El almacén de fuentes
   es el de la biblioteca: `pdfBytesOf` registra la familia solo si
-  `Font.getRegisteredFontFamilies()` no la tiene, fija la partición de
-  palabras y llama a `Font.load`, que guarda la fuente cargada en la
-  biblioteca. La cobertura (`PdfGlyphs`) se arma en cada llamada sobre esa
-  fuente; no hay caché propia.
+  `Font.getRegisteredFontFamilies()` no la tiene, con la consulta y el registro
+  seguidos y sin `await` entre los dos (§4.6), fija la partición de palabras y
+  llama a `Font.load`, que guarda la fuente cargada en la biblioteca. La
+  cobertura (`PdfGlyphs`) se arma en cada llamada sobre esa fuente; no hay
+  caché propia.
 - **El archivo se lee del disco**: `join(process.cwd(),
 "src/modules/report/export/fonts/<archivo>")`, como el ejemplo de fuentes de
   Next (`node_modules/next/dist/docs/01-app/03-api-reference/04-functions/image-response.md:161-179`).
@@ -268,6 +272,11 @@ generaliza:
   `src/modules/report/export/pdf.tsx`. `pdfkit` y `fontkit` entran en la regla
   aunque nadie los importe hoy: son la forma de esquivarla.
 - `pdfjs-dist` (D-R7-10): solo tests, `src/test/` y `e2e/`.
+- **Los helpers de los tests** (`@/test/*` y la ruta relativa a `src/test/`):
+  solo tests, `src/test/` y `e2e/`. Con la excepción de `src/test/**`, un
+  helper puede traer `pdfjs-dist`, y un archivo de producción que lo importara
+  llevaría una dependencia de desarrollo a la función. Hoy ninguno importa
+  `@/test/`.
 - Los tests (`**/*.test.ts`, `**/*.test.tsx`), `src/test/**` y `e2e/**` pueden
   importar cualquiera. `xlsx.ts` no puede importar las del PDF, ni `pdf.tsx`,
   `exceljs`.
@@ -390,8 +399,10 @@ el texto del archivo. Las 3000 filas, en la medición (§6.1 y §6.2), no en
 - `@react-pdf/font`: las doce fuentes estándar, abiertas con `pdfkit`; las
   demás con `fontkit.open` desde una ruta, `fontkit.create` desde un data URL, o
   `fetch` desde una URL (`node_modules/@react-pdf/font/lib/index.js:6-29`,
-  `:252-277`); la familia por omisión es Helvetica (`:356-445`);
-  `getRegisteredFontFamilies` (`lib/index.d.ts:83`).
+  `:252-277`); la familia por omisión es Helvetica (`:356-445`); `register` y
+  `getRegisteredFontFamilies` son sincrónicos (`:447-473`, `:510`;
+  `lib/index.d.ts:73`, `:83`); `getRegisteredFonts` da las fuentes de cada
+  familia (`:507`).
 - `pdfkit`: las fuentes estándar con WinAnsi y `.notdef` para lo demás
   (`node_modules/pdfkit/js/pdfkit.js:3252-3294`, `:3339-3363`); sus `.afm` en
   `node_modules/pdfkit/js/data/`; sus dependencias, `fontkit`, `fflate`,
@@ -417,7 +428,9 @@ el texto del archivo. Las 3000 filas, en la medición (§6.1 y §6.2), no en
   `chartScaleOf`, `tickIndexesOf`, `tickAlignOf`, `barHeightPercent`.
 - Vitest de unidad toma `src/**/*.test.ts` y `*.test.tsx` en Node
   (`vitest.config.ts:8-17`); los helpers de tests viven en `src/test/`
-  (`markup.ts`, `report.ts`).
+  (`markup.ts`, `report.ts`), y ningún archivo de producción importa
+  `@/test/`; `vitest.integration.config.ts` nombra `src/test/` en cadenas, no
+  en un `import` (`:16-17`).
 - e2e: `ExportFormat = "csv" | "xlsx"` (`e2e/reports-page.ts:283`), `exportUrl`,
   `recordExportRequests`, `readCsv`, `readXlsx`, `ExportLabel = "CSV" | "Excel"`,
   `exportLink` (`:292-300`, `:366-374`, `:383-401`, `:913-923`); 25 recorridos,
@@ -638,17 +651,18 @@ export type PdfLayout = {
   readonly sections: readonly PdfSection[];
 };
 
-/** D-R7-5: el blanco, como espacio; lo que no se dibuja, por `glyphs.replacement`. */
+/** D-R7-5: el blanco, como un espacio; lo que no se dibuja, por `glyphs.replacement`. */
 export function pdfTextOf(text: string, glyphs: PdfGlyphs): string;
 
 /** D-R7-6: qué va en cada página, sin medidas de la biblioteca. Pura. */
 export function pdfLayoutOf(document: ExportDocument, glyphs: PdfGlyphs): PdfLayout;
 ```
 
-- **`pdfTextOf`** recorre el texto por punto de código: `\t` (U+0009), `\n`
-  (U+000A) y `\r` (U+000D) pasan a ser un espacio; los demás controles, de
-  U+0000 a U+001F y de U+007F a U+009F, U+FFFE, U+FFFF y los surrogates sueltos
-  pasan siempre a `glyphs.replacement`; lo demás que `covers` no cubre, también.
+- **`pdfTextOf`** recorre el texto por punto de código: **una corrida seguida
+  de `\t` (U+0009), `\n` (U+000A) y `\r` (U+000D), de uno o más, pasa a ser un
+  solo espacio**; los demás controles, de U+0000 a U+001F y de U+007F a
+  U+009F, U+FFFE, U+FFFF y los surrogates sueltos pasan siempre a
+  `glyphs.replacement`; lo demás que `covers` no cubre, también.
 - **El título** es la primera fila de la cabecera, que es una celda sola
   (D-R6-8, `document.ts:136`). **La cabecera** son las demás filas, cada celda
   con `cellText` y `pdfTextOf`.
@@ -679,10 +693,13 @@ export async function pdfBytesOf(
 ): Promise<Uint8Array<ArrayBuffer>>;
 ```
 
-- **La fuente, sin estado propio** (D-R7-5): en cada llamada, `Font.register`
-  con la ruta de D-R7-5 solo si `Font.getRegisteredFontFamilies()` no tiene la
-  familia; `Font.registerHyphenationCallback((word) => [word])`; `Font.load`,
-  que la biblioteca guarda cargada; y la cobertura (`PdfGlyphs`) sobre
+- **La fuente, sin estado propio** (D-R7-5): en cada llamada,
+  `Font.getRegisteredFontFamilies()` y, si no tiene la familia, `Font.register`
+  con la ruta de D-R7-5. **La consulta y el registro van seguidos y sin `await`
+  entre los dos**: los dos son sincrónicos (`index.js:447-473`, `:510`), así
+  que en un proceso de Node ningún otro pedido corre en el medio. Después,
+  `Font.registerHyphenationCallback((word) => [word])`; `Font.load`, que la
+  biblioteca guarda cargada; y la cobertura (`PdfGlyphs`) sobre
   `Font.getFont(…).data`, leída como `unknown` y estrechada. Con Helvetica
   (pregunta 2), sin registro y con la tabla WinAnsi. Ninguna variable del
   módulo cambia.
@@ -747,14 +764,16 @@ D-R7-9, con `no-restricted-imports` (`patterns`) y `no-restricted-syntax`
 (`ImportExpression`) para cada biblioteca, con su mensaje:
 
 - en todo el repositorio, `exceljs`, `@react-pdf/*`, `pdfkit`, `fontkit` y
-  `pdfjs-dist`, con sus subrutas;
+  `pdfjs-dist`, con sus subrutas, y los helpers de los tests: `@/test/*` y la
+  ruta relativa a `src/test/` (`**/test/*` desde `src/`);
 - en `src/modules/report/export/xlsx.ts`, todas menos `exceljs`;
 - en `src/modules/report/export/pdf.tsx`, todas menos `@react-pdf/*`, `pdfkit`
   y `fontkit`;
 - en `**/*.test.ts`, `**/*.test.tsx`, `src/test/**` y `e2e/**`, ninguna.
 
 El selector de `import()` sigue la forma de `449c77a`
-(`^exceljs(\x2F|$)`, con la barra escrita `\x2F`), uno por biblioteca.
+(`^exceljs(\x2F|$)`, con la barra escrita `\x2F`), uno por biblioteca y uno
+para `@/test/`.
 
 ### 4.10 Costo
 
@@ -995,8 +1014,8 @@ Entrega el texto y **lo aplica el team-lead**, antes del merge, con su
 corrección fechada y una sección «16. Núcleo, R7»: RP-53 (qué trae el PDF y
 qué no: la cabecera y el resumen, sin las entradas, con la cita de Clockify;
 A4, los encabezados en cada página, el número de página; el tope de 3000
-filas; el blanco como espacio y el reemplazo de lo que la fuente no dibuja; el
-nombre del archivo) y la corrección del texto de R6a que decía que el PDF
+filas; el blanco como un espacio y el reemplazo de lo que la fuente no dibuja;
+el nombre del archivo) y la corrección del texto de R6a que decía que el PDF
 traía las entradas (`reportes.md:1594-1598`). Divergencias que el reviewer no
 marca: sin gráfico si el usuario no lo pide; sin opciones de qué mostrar; el
 diseño de la página es propio.
@@ -1067,8 +1086,8 @@ _R7a, cierre._
    service; `no-store` en 200, 403 y 500; el PDF no lee las entradas; el tope de
    duración se fija; ninguna fuente remota, imagen, enlace ni fuente de emoji;
    la fuente sale del repositorio, con su licencia y el SHA-256 del paso 0; la
-   regla de ESLint; `npm audit --omit=dev` con lo que diga de la cadena de
-   `@react-pdf` (M7).
+   regla de ESLint, también la de `@/test/`; `npm audit --omit=dev` con lo que
+   diga de la cadena de `@react-pdf` (M7).
 10. **Abrir el archivo** (criterio 13), a mano: el team-lead con lo que haya, y
     el usuario con su visor si quiere.
 11. **Merge como R7a.**
@@ -1111,8 +1130,8 @@ _R7a._
 6. **El texto del PDF** (unidad, `pdf-layout.test.ts`, con un `PdfGlyphs` de
    prueba que cubre ASCII, Latin-1 y «Ł», con U+FFFD) —
    - «Łukasz» queda; «Дмитрий» da siete U+FFFD; «😀» da **uno**;
-   - «a\tb», «a\nb» y «a\r\nb» dan «a b», «a b» y «a b»: cada uno, un
-     espacio;
+   - «a\tb», «a\nb», «a\r\nb», «a\n\nb» y «a\t\r\n\tb» dan «a b»: **una
+     corrida, un solo espacio**;
    - un surrogate suelto, U+FFFE, U+FFFF, U+0000, U+0007, U+007F y U+0085 dan
      U+FFFD **aunque `covers` diga que sí**;
    - con `replacement` «?», «?» en los mismos casos, y los espacios iguales.
@@ -1141,8 +1160,9 @@ _R7a._
    - un rótulo con «😀» se lee U+FFFD (con la fuente incrustada) o «?» (con
      Helvetica);
    - **`fetch` no se llama** (espía en `globalThis.fetch`);
-   - dos llamadas seguidas a `pdfBytesOf` registran la familia una sola vez
-     (`Font.getRegisteredFontFamilies()` no la repite).
+   - **dos `pdfBytesOf` en paralelo** (`Promise.all`), con el almacén de la
+     biblioteca sin la familia, la registran **una sola vez**: la familia tiene
+     una sola fuente en `Font.getRegisteredFonts()`.
 9. **La ruta** (integración, `export/handler.integration.test.ts`) —
    - `pdf`: 200, `Content-Type: application/pdf`, `Content-Disposition:
 attachment; filename="reporte_persona-proyecto_2026-09-28_2026-10-04.pdf"`,
@@ -1163,9 +1183,10 @@ attachment; filename="reporte_persona-proyecto_2026-09-28_2026-10-04.pdf"`,
     subruta o un `import()` de `@react-pdf/renderer`, `pdfkit` o `fontkit` en
     `export/document.ts`, `npm run lint` falla; de `exceljs` en `pdf.tsx`,
     falla; de `@react-pdf/renderer` en `xlsx.ts`, falla; de `pdfjs-dist` en
-    `handler.ts`, falla; en un `*.test.ts`, un `*.test.tsx`, `src/test/` y
-    `e2e/`, no. Corrido en el worktree o en una copia, no en el árbol
-    compartido.
+    `handler.ts`, falla; **de `@/test/pdf`, estático o con `import()`, o de la
+    ruta relativa a `src/test/pdf`, en `handler.ts`, falla**; en un
+    `*.test.ts`, un `*.test.tsx`, `src/test/` y `e2e/`, ninguno falla. Corrido
+    en el worktree o en una copia, no en el árbol compartido.
 12. **El rendimiento y el peso** (manual, §6.2) — dentro del presupuesto.
 13. **Abrir el archivo** (manual) — el PDF de P1 y el de P2 en un visor y con
     lo que haya (`pdftotext`, LibreOffice, Firefox o Chrome): el texto se
@@ -1206,22 +1227,26 @@ _R7b._
   `null`.
 - **6** (unidad, `pdf-layout.test.ts`): recorrer por unidad UTF-16 (cae con el
   emoji: dos reemplazos); `\t`, `\n` o `\r` como reemplazo en lugar de espacio
-  (cae con «a\tb»); los demás controles solo si `covers` dice que no; sin
-  U+FFFE ni U+FFFF; el reemplazo fijo en lugar del de `glyphs`.
+  (cae con «a\tb»); **un espacio por cada uno, sin juntar la corrida** (cae
+  con «a\r\nb» y «a\n\nb»); los demás controles solo si `covers` dice que no;
+  sin U+FFFE ni U+FFFF; el reemplazo fijo en lugar del de `glyphs`.
 - **7** (unidad, `pdf-layout.test.ts`): los antepasados sin `muted`; el propio
   con `muted`; los anchos que no suman 1; «Horas» a la izquierda; el `'` del
   CSV; un aviso tomado como tabla; la cabecera sin `pdfTextOf`.
 - **8** (unidad, `pdf.test.tsx`): la fila de encabezados sin `fixed` (cae: una
   página sin encabezados); el pie sin `fixed`; `LETTER` en lugar de `A4`; el
   texto sin `pdfTextOf`; una fuente remota (cae con el espía de `fetch`);
-  `Font.register` en cada llamada sin mirar las registradas.
+  `Font.register` en cada llamada sin mirar las registradas; **un `await`
+  entre la consulta y el registro** (cae con las dos en paralelo: dos
+  fuentes).
 - **9** (integración, `handler.integration.test.ts`): `entries: true` en el
   PDF (caen los espías); `inline`; sin `no-store`; `text/plain` en lugar de
   `application/pdf`; la guarda de peso quitada (cae: 200 con un PDF de más).
 - **10** (componente, `report-toolbar.test.tsx`): «PDF» sin rótulo propio
   (muestra la clave); `download`.
 - **11** (lint): la biblioteca del PDF fuera de la regla; el selector de
-  `import()` quitado; la excepción ampliada a `src/**`.
+  `import()` quitado; la excepción ampliada a `src/**`; **el patrón de
+  `@/test/*` quitado**.
 - **12, 13** (manual): —.
 - **14** (e2e): los del final de §8.2.
 - **15**: —.
@@ -1288,10 +1313,12 @@ antes del clic); el rótulo «PDF» quitado (26).
 - **La fuente cubre lo que cubre**: un nombre en un alfabeto que no tenga, o
   un emoji, sale como U+FFFD (o «?» con Helvetica). El CSV y el Excel lo
   conservan. La cobertura de cada candidata la dice M4.
-- **El almacén de fuentes de la biblioteca es global**: `pdf.tsx` no guarda
-  estado, pero `Font` sí, por proceso. Registrar solo si falta la familia evita
-  repetirlo; dos pedidos a la vez pueden registrarla los dos, y la biblioteca
-  se queda con la primera que resuelve (`index.js:322-327`).
+- **El almacén de fuentes de la biblioteca es global**, por proceso:
+  `pdf.tsx` no guarda estado, pero `Font` sí. Como la consulta y el registro
+  son sincrónicos y van seguidos y sin `await` entre los dos (§4.6), dos
+  pedidos del mismo proceso no pueden registrar la familia a la vez. Un
+  `await` en el medio abriría esa carrera; el criterio 8 la prueba con dos
+  llamadas en paralelo.
 - **Un binario en el repositorio**: la fuente, con su licencia, que nadie
   revisa en un diff. El paso 0 registra de dónde salió y su SHA-256, y el
   informe del paso 4 los repite.
@@ -1305,7 +1332,8 @@ antes del clic); el rótulo «PDF» quitado (26).
   paso 4 corta por carácter en esa celda.
 - **La fecha de creación del PDF** va en sus metadatos: dos descargas del mismo
   reporte no son iguales byte a byte. Los tests no comparan bytes enteros.
-- **`pdfjs-dist` es una dependencia de desarrollo más** (pregunta 4).
+- **`pdfjs-dist` es una dependencia de desarrollo más** (pregunta 4), y la
+  regla de `@/test/*` impide que llegue a producción por un helper.
 
 ## 10. Decisiones del usuario, notas y pendientes
 
