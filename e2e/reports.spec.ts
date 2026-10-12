@@ -52,6 +52,9 @@ import {
   expectGroupNames,
   expectReport,
   expectSubgroups,
+  exportGroup,
+  exportLink,
+  exportUrl,
   filterApply,
   filterButton,
   filterGroup,
@@ -71,6 +74,7 @@ import {
   groupRow,
   inactiveMark,
   INACTIVE_PERSON,
+  isExportRequest,
   isStruckThrough,
   lastWeekRange,
   monthRange,
@@ -88,6 +92,8 @@ import {
   rangeButton,
   rangeCalendar,
   rangePopover,
+  readCsv,
+  recordExportRequests,
   recordNavigations,
   REPORTS_PATH,
   reportHeading,
@@ -125,20 +131,22 @@ import { expect, TEST_EMAIL_DOMAIN, test } from "./session";
 import { trackerBar, uniqueSuffix } from "./tracker-page";
 
 /**
- * Recorridos de R2a a R10b y de R5 del núcleo de reportes: el resumido por persona,
- * por proyecto, por cliente, por tarea, por etiqueta, por fecha, por semana,
- * por mes y por descripción, los atajos del período, los subniveles, los
- * filtros, el tope del primer nivel y el gráfico (§8.2 de cada contrato), con la regla de
- * §8.3 de R2a. Cada recorrido tiene sus personas —la de la sesión y las que
- * siembra—, todas con un nombre editado que lleva el sufijo del test, y solo
- * afirma sobre sus filas o sobre proyectos con ese sufijo: la base acumula
+ * Recorridos de R2a a R10b, de R5 y de R6a del núcleo de reportes: el resumido
+ * por persona, por proyecto, por cliente, por tarea, por etiqueta, por fecha,
+ * por semana, por mes y por descripción, los atajos del período, los
+ * subniveles, los filtros, el tope del primer nivel, el gráfico y la
+ * exportación a CSV (§8.2 de cada contrato), con la regla de §8.3 de R2a. Cada
+ * recorrido tiene sus personas —la de la sesión y las que siembra—, todas con
+ * un nombre editado que lleva el sufijo del test, y solo afirma sobre sus
+ * filas o sobre proyectos con ese sufijo: la base acumula
  * personas y horas de todas las corridas, así que la lista de un filtro se
  * busca por el sufijo antes de afirmar sus opciones (D-R4-13). El total se
  * afirma solo con el alcance propio. El rol, el estado y el primer día de la
  * semana los cambia la persona de la sesión sobre sí misma. Las entradas van
  * en la semana anterior a la de hoy, salvo las de la semana y el mes, que van
- * en un período fijo de 2025 (D-R10-14) —las del gráfico también, más una
- * de la semana actual (D-R5-12)—, y se siembran antes de abrir la
+ * en un período fijo de 2025 (D-R10-14) —las del gráfico y las de la
+ * exportación también (D-R6-14), más una del gráfico en la semana actual
+ * (D-R5-12)—, y se siembran antes de abrir la
  * pantalla; las del tope del primer nivel, con un helper de SQL. Los rótulos
  * esperados se calculan con `days.ts`, no con el código que los produce.
  */
@@ -2089,4 +2097,188 @@ test("a 320 px el gráfico entra en su caja y sus marcas no se pisan", async ({
   const byMonth = chartFigure(page, chartCaption("mes"));
   await expect(chartBars(byMonth)).toHaveCount(13);
   await expectChartFits(page, byMonth, ["ene", "mar", "may", "jul", "sep", "nov", "ene"]);
+});
+
+/**
+ * La semana de los recorridos 23 y 24 (D-R6-14), del lunes 15/09 al domingo
+ * 21/09 de 2025: lejos de hoy, así los rótulos de fecha llevan año.
+ */
+const EXPORT_WEEK: ReportRange = weekRange(in2025(9, 15));
+
+/**
+ * Las entradas de los recorridos 23 y 24 (§8.2 de R6), de la persona de la
+ * sesión: una con proyecto, cliente, tarea y etiqueta y una descripción con
+ * comillas y `;`, una sin nada que empieza con `=` y una con proyecto que
+ * empieza con `-`. La persona lleva un nombre editado, que es el que dice el
+ * archivo.
+ */
+async function seedExportEntries(
+  email: string,
+): Promise<{ readonly suffix: string; readonly name: string }> {
+  const suffix = uniqueSuffix();
+  const name = `Nora ${suffix}`;
+  const project = `Web ${suffix}`;
+  const tag = `Urgente ${suffix}`;
+  await setDisplayName(email, name);
+  await seedProject({ name: project, client: `ACME ${suffix}`, tasks: ["Diseño"] });
+  await seedTag(tag);
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
+    {
+      description: 'Revisión "final"; v2',
+      day: in2025(9, 15),
+      start: "09:00",
+      end: "10:30",
+      project,
+      task: "Diseño",
+      tags: [tag],
+    },
+    { description: "=1+1", day: in2025(9, 16), start: "10:00", end: "10:30" },
+    {
+      description: `-guion ${suffix}`,
+      day: in2025(9, 17),
+      start: "14:00",
+      end: "14:45",
+      project,
+    },
+  ]);
+  return { suffix, name };
+}
+
+/**
+ * Las líneas de una sección del CSV (D-R6-9): las que siguen a la de su
+ * título, hasta la línea vacía que la cierra o el final del archivo.
+ */
+function csvSection(lines: readonly string[], title: string): readonly string[] {
+  const heading = `"${title}"`;
+  expect(lines, `la sección «${title}»`).toContain(heading);
+  const start = lines.indexOf(heading) + 1;
+  const end = lines.indexOf("", start);
+  return lines.slice(start, end === -1 ? undefined : end);
+}
+
+test("exportar a CSV el resumen y las entradas, sin prefetch y con la descarga", async ({
+  page,
+  email,
+}) => {
+  const day = today();
+  await enterApp(page);
+
+  // RP-33, D-R6-10: en la semana actual, sin horas, no hay «Exportar».
+  await page.goto(REPORTS_PATH);
+  await expect(rangeButton(page)).toHaveAccessibleName("Elegir período: Esta semana");
+  await expect(reportTable(page).getByText(EMPTY_REPORT, { exact: true })).toBeVisible();
+  await expect(exportGroup(page)).toHaveCount(0);
+
+  const { suffix, name } = await seedExportEntries(email);
+  const web = `Web ${suffix} (ACME ${suffix})`;
+  const fileName = "reporte_proyecto-fecha_2025-09-15_2025-09-21.csv";
+
+  // D-R6-10: «CSV» en «Exportar», con la misma query que la URL de la página,
+  // que `openReport` abre con `reportsUrl`. Los pedidos a la ruta se graban
+  // desde que se abre la página.
+  const requests = recordExportRequests(page);
+  const prefetched = page.waitForRequest(isExportRequest).catch(() => null);
+  await openReport(page, EXPORT_WEEK, "proyecto", day, ["fecha"]);
+  await expectSubgroups(page, ["fecha"]);
+  const csv = exportLink(page, "CSV");
+  await expect(csv).toHaveAttribute(
+    "href",
+    exportUrl("csv", EXPORT_WEEK, "proyecto", ["fecha"]),
+  );
+
+  // D-R6-10: un enlace común, sin prefetch. Un `next/link` pediría la ruta
+  // al dibujarse o con el puntero encima, y la red no quedaría quieta
+  // mientras ese pedido espera: el primero a la ruta también corta la espera.
+  await csv.hover();
+  await Promise.race([page.waitForLoadState("networkidle"), prefetched]);
+  expect(requests, "pedidos a la ruta antes del clic").toEqual([]);
+
+  // D-R6-5: `attachment` descarga y la página queda donde estaba.
+  const downloading = page.waitForEvent("download");
+  await csv.click();
+  const download = await downloading;
+  expect(download.suggestedFilename()).toBe(fileName);
+  await expectReport(page, EXPORT_WEEK, "proyecto", day, ["fecha"]);
+  await expect(reportTable(page)).toBeVisible();
+
+  // D-R6-8, D-R6-9, RP-22: la cabecera, con el período con año, la zona de
+  // quien mira y de quién son las horas. `readCsv` afirma el BOM.
+  const lines = (await readCsv(await download.path())).split("\r\n");
+  expect(lines).toContain(
+    `"Período";"${dayRangeLabel(EXPORT_WEEK.first, EXPORT_WEEK.last, day)}"`,
+  );
+  expect(lines).toContain(`"Zona horaria";"${PERSON_TIMEZONE}"`);
+  expect(lines).toContain(`"Alcance";"Solo las horas de ${name}"`);
+  expect(lines).toContain(`"Agrupado por";"Proyecto / Fecha"`);
+  expect(lines).toContain(`"Total";"2:45";"2,75"`);
+  expect(lines).toContain(`"Facturable";"0:00";"0,00"`);
+
+  // D-R6-2, D-R6-7: el resumen entero, como si estuviera expandido, con el
+  // camino en cada fila y los días con su rótulo de la pantalla.
+  expect(csvSection(lines, "Resumen")).toEqual([
+    `"Nivel";"Proyecto";"Fecha";"Duración";"Horas"`,
+    `"1";"${web}";"";"2:15";"2,25"`,
+    `"2";"${web}";"${weekdayLabel(in2025(9, 15), day)}";"1:30";"1,50"`,
+    `"2";"${web}";"${weekdayLabel(in2025(9, 17), day)}";"0:45";"0,75"`,
+    `"1";"${NO_PROJECT}";"";"0:30";"0,50"`,
+    `"2";"${NO_PROJECT}";"${weekdayLabel(in2025(9, 16), day)}";"0:30";"0,50"`,
+  ]);
+
+  // D-R6-3, D-R6-9: las entradas una por una, con las fechas canónicas, las
+  // comillas duplicadas y el `'` delante de lo que empieza como una fórmula.
+  expect(csvSection(lines, "Entradas")).toEqual([
+    `"Fecha de inicio";"Hora de inicio";"Fecha de fin";"Hora de fin";"Persona";"Cliente";"Proyecto";"Tarea";"Descripción";"Etiquetas";"Facturable";"Duración";"Horas"`,
+    `"2025-09-15";"09:00";"2025-09-15";"10:30";"${name}";"ACME ${suffix}";"Web ${suffix}";"Diseño";"Revisión ""final""; v2";"Urgente ${suffix}";"No";"1:30";"1,50"`,
+    `"2025-09-16";"10:00";"2025-09-16";"10:30";"${name}";"";"";"";"'=1+1";"";"No";"0:30";"0,50"`,
+    `"2025-09-17";"14:00";"2025-09-17";"14:45";"${name}";"ACME ${suffix}";"Web ${suffix}";"";"'-guion ${suffix}";"";"No";"0:45";"0,75"`,
+  ]);
+
+  // D-R6-5: las cabeceras que sobreviven a `next start`. `page.request`
+  // comparte las cookies del contexto.
+  const response = await page.request.get(
+    exportUrl("csv", EXPORT_WEEK, "proyecto", ["fecha"]),
+  );
+  expect(response.status()).toBe(200);
+  const headers = response.headers();
+  expect(headers["cache-control"]).toContain("no-store");
+  expect(headers["content-type"]).toBe("text/csv; charset=utf-8");
+  expect(headers["content-disposition"]).toBe(`attachment; filename="${fileName}"`);
+});
+
+test("sin sesión la descarga lleva al login, y un member con personas ajenas exporta lo propio", async ({
+  page,
+  email,
+  playwright,
+  baseURL,
+}) => {
+  await enterApp(page);
+  const { suffix, name } = await seedExportEntries(email);
+  const other = `Olga ${suffix}`;
+  const otherEmail = await seedOtherPerson(other);
+  await seedPersonEntries(otherEmail, PERSON_TIMEZONE, [
+    { description: `ajena ${suffix}`, day: in2025(9, 16), start: "11:00", end: "12:00" },
+  ]);
+  const href = exportUrl("csv", EXPORT_WEEK, "persona", [], {
+    people: [await userIdOf(otherEmail)],
+  });
+
+  // RP-32, D-R4-4: el enlace que arma un admin. Para un member `personas` se
+  // ignora, también en la ruta: el archivo es lo propio, con su alcance.
+  const response = await page.request.get(href);
+  expect(response.status()).toBe(200);
+  const body = await response.text();
+  expect(body).toContain(`"'-guion ${suffix}"`);
+  expect(body).not.toContain(`ajena ${suffix}`);
+  expect(body).not.toContain(other);
+  expect(body).toContain(`"Alcance";"Solo las horas de ${name}"`);
+
+  // D-R6-5: sin sesión, el 307 de `requireSession` al login, no un 401.
+  const anonymous = await playwright.request.newContext({ baseURL });
+  try {
+    const redirected = await anonymous.get(href, { maxRedirects: 0 });
+    expect(redirected.status()).toBe(307);
+    expect(redirected.headers()["location"]).toMatch(/\/login$/);
+  } finally {
+    await anonymous.dispose();
+  }
 });
