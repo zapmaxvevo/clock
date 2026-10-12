@@ -60,6 +60,7 @@ import {
   REPORT_MAX_FILTER_VALUES,
   REPORT_MAX_ROWS,
   REPORT_TIME_GROUP_BYS,
+  reportLevelsOf,
   type ReportChart,
   type ReportEntryRow,
   type ReportExportEntries,
@@ -903,7 +904,7 @@ async function readReportState(
   const period = reportPeriodOf(todayKey, settings, request.range);
   const range = period.range;
   const groupBy = request.groupBy ?? DEFAULT_GROUP_BY;
-  const levels = [groupBy, ...request.subgroups];
+  const levels = reportLevelsOf({ groupBy, subgroups: request.subgroups });
   // La página los recibe de `reportSubgroupParams`, que ya lo garantiza; acá
   // es una invariante, para otro llamador (R6), antes de leer.
   if (levels.length > 3 || new Set(levels).size !== levels.length) {
