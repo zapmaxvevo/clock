@@ -30,7 +30,11 @@ const config = [
       ],
       "no-restricted-syntax": [
         "error",
-        { selector: "ImportExpression[source.value=/^exceljs/]", message: EXCELJS_ONLY },
+        // esquery corta la regex en la primera «/»: `\x2F` es la barra de la subruta.
+        {
+          selector: "ImportExpression[source.value=/^exceljs(\\x2F|$)/]",
+          message: EXCELJS_ONLY,
+        },
       ],
     },
   },
