@@ -86,9 +86,9 @@ describe("reportHref", () => {
   });
 
   it.each<ReportGrouping>([
-    { groupBy: "person", subgroups: ["task"] },
-    { groupBy: "project", subgroups: ["date", "tag"] },
-    { groupBy: "tag", subgroups: ["client", "person"] },
+    { groupBy: "person", subgroups: ["task"], peopleWithoutTime: false },
+    { groupBy: "project", subgroups: ["date", "tag"], peopleWithoutTime: false },
+    { groupBy: "tag", subgroups: ["client", "person"], peopleWithoutTime: false },
   ])("la página lee la misma agrupación que se escribió: %o", (grouping) => {
     const params = Object.fromEntries(
       new URL(reportHref({ range, ...grouping, filters }), "https://clock.test")

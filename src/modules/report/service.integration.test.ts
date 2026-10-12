@@ -142,6 +142,7 @@ async function readyState(
       groupBy: request.groupBy ?? null,
       subgroups: request.subgroups ?? [],
       filters: request.filters ?? NO_REPORT_FILTERS,
+      peopleWithoutTime: request.peopleWithoutTime ?? false,
     },
     options.now ?? readNow,
   );
@@ -1913,36 +1914,42 @@ describe("las invariantes de los subniveles (criterio 20 de R3)", () => {
         groupBy: "tag",
         subgroups: ["date"],
         filters: NO_REPORT_FILTERS,
+        peopleWithoutTime: false,
       },
       {
         range: { first: "2025-01-01", last: "2026-01-02" },
         groupBy: "tag",
         subgroups: ["date"],
         filters: NO_REPORT_FILTERS,
+        peopleWithoutTime: false,
       },
       {
         range: lastWeek,
         groupBy: "person",
         subgroups: ["project", "date", "tag"],
         filters: NO_REPORT_FILTERS,
+        peopleWithoutTime: false,
       },
       {
         range: lastWeek,
         groupBy: "person",
         subgroups: ["date", "date"],
         filters: NO_REPORT_FILTERS,
+        peopleWithoutTime: false,
       },
       {
         range: lastWeek,
         groupBy: "project",
         subgroups: ["project"],
         filters: NO_REPORT_FILTERS,
+        peopleWithoutTime: false,
       },
       {
         range: lastWeek,
         groupBy: null,
         subgroups: ["person"],
         filters: NO_REPORT_FILTERS,
+        peopleWithoutTime: false,
       },
     ];
     for (const request of requests) {
@@ -1991,6 +1998,7 @@ describe("el armado del árbol con una foto inconsistente (§4.4 de R3)", () => 
         groupBy: "project",
         subgroups: ["date"],
         filters: NO_REPORT_FILTERS,
+        peopleWithoutTime: false,
       },
       readNow,
     );
@@ -2044,7 +2052,13 @@ describe("el período fuera del tope (B1)", () => {
           getReportState(
             owner,
             settings,
-            { range, groupBy, subgroups: [], filters: NO_REPORT_FILTERS },
+            {
+              range,
+              groupBy,
+              subgroups: [],
+              filters: NO_REPORT_FILTERS,
+              peopleWithoutTime: false,
+            },
             readNow,
           ),
         ).rejects.toThrow(RangeError);
@@ -2497,6 +2511,7 @@ describe("los filtros de cliente y de proyecto (R4: RP-25, RP-26, RP-29, RP-34)"
                   projects: [p1],
                   withoutProject: true,
                 },
+                peopleWithoutTime: false,
               },
               readNow,
             ),
@@ -4272,6 +4287,7 @@ function fullRequest(request: Partial<ReportRequest>): ReportRequest {
     groupBy: request.groupBy ?? null,
     subgroups: request.subgroups ?? [],
     filters: request.filters ?? NO_REPORT_FILTERS,
+    peopleWithoutTime: request.peopleWithoutTime ?? false,
   };
 }
 

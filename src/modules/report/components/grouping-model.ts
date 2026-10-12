@@ -9,7 +9,7 @@ function groupingOf([groupBy, ...subgroups]: readonly ReportGroupBy[]): ReportGr
   if (groupBy === undefined) {
     throw new RangeError("Una agrupación tiene al menos un nivel.");
   }
-  return { groupBy, subgroups };
+  return { groupBy, subgroups, peopleWithoutTime: false };
 }
 
 /**

@@ -37,6 +37,7 @@ describe("reportRequestOf (RP-32, D-R6-4; criterio 3 de R6)", () => {
       groupBy: null,
       subgroups: [],
       filters: NO_REPORT_FILTERS,
+      peopleWithoutTime: false,
     });
   });
 
@@ -56,6 +57,7 @@ describe("reportRequestOf (RP-32, D-R6-4; criterio 3 de R6)", () => {
         projects: [PROJECT_ID],
         withoutProject: true,
       },
+      peopleWithoutTime: false,
     });
   });
 
@@ -65,6 +67,7 @@ describe("reportRequestOf (RP-32, D-R6-4; criterio 3 de R6)", () => {
       groupBy: "project",
       subgroups: [],
       filters: NO_REPORT_FILTERS,
+      peopleWithoutTime: false,
     });
   });
 
@@ -76,6 +79,7 @@ describe("reportRequestOf (RP-32, D-R6-4; criterio 3 de R6)", () => {
       groupBy: null,
       subgroups: [],
       filters: NO_REPORT_FILTERS,
+      peopleWithoutTime: false,
     });
   });
 
@@ -85,12 +89,14 @@ describe("reportRequestOf (RP-32, D-R6-4; criterio 3 de R6)", () => {
       groupBy: null,
       subgroups: [],
       filters: NO_REPORT_FILTERS,
+      peopleWithoutTime: false,
     });
     expect(requestOfQuery("agrupar=proyecto&subagrupar=proyecto")).toEqual({
       range: null,
       groupBy: "project",
       subgroups: [],
       filters: NO_REPORT_FILTERS,
+      peopleWithoutTime: false,
     });
   });
 
@@ -100,6 +106,7 @@ describe("reportRequestOf (RP-32, D-R6-4; criterio 3 de R6)", () => {
       groupBy: null,
       subgroups: [],
       filters: { ...NO_REPORT_FILTERS, clients: [CLIENT_ID] },
+      peopleWithoutTime: false,
     });
   });
 
@@ -114,6 +121,61 @@ describe("reportRequestOf (RP-32, D-R6-4; criterio 3 de R6)", () => {
       groupBy: "project",
       subgroups: ["date"],
       filters: { ...NO_REPORT_FILTERS, projects: [PROJECT_ID] },
+      peopleWithoutTime: false,
+    });
+  });
+
+  it("con sin-horas=1, true, también con un agrupar inválido o por proyecto: el pedido no decide si aplica (D-R9-4; criterio 2 de R9)", () => {
+    for (const [query, groupBy] of [
+      ["sin-horas=1", null],
+      ["agrupar=cualquiera&sin-horas=1", null],
+      ["agrupar=proyecto&sin-horas=1", "project"],
+    ] as const) {
+      expect(requestOfQuery(query)).toEqual({
+        range: null,
+        groupBy,
+        subgroups: [],
+        filters: NO_REPORT_FILTERS,
+        peopleWithoutTime: true,
+      });
+    }
+  });
+
+  it("un sin-horas inválido o repetido da false y no cambia los otros parámetros (D-R9-4, RP-32; criterio 2 de R9)", () => {
+    const others =
+      `desde=2026-09-28&hasta=2026-10-04&agrupar=persona&subagrupar=proyecto,fecha` +
+      `&personas=${PERSON_ID}&clientes=${CLIENT_ID}&proyectos=${PROJECT_ID}`;
+    const expected = {
+      range: { first: "2026-09-28", last: "2026-10-04" },
+      groupBy: "person",
+      subgroups: ["project", "date"],
+      filters: {
+        people: [PERSON_ID],
+        clients: [CLIENT_ID],
+        projects: [PROJECT_ID],
+        withoutProject: false,
+      },
+      peopleWithoutTime: false,
+    };
+    expect(requestOfQuery(others)).toEqual(expected);
+    for (const option of [
+      "sin-horas=0",
+      "sin-horas=true",
+      "sin-horas=si",
+      "sin-horas=",
+      "sin-horas",
+      "sin-horas=%201",
+      "sin-horas=1%20",
+      "sin-horas=1&sin-horas=1",
+      "Sin-horas=1",
+      "sin_horas=1",
+    ]) {
+      expect([option, requestOfQuery(`${others}&${option}`)]).toEqual([option, expected]);
+      expect([option, requestOfQuery(`${option}&${others}`)]).toEqual([option, expected]);
+    }
+    expect(requestOfQuery(`${others}&sin-horas=1`)).toEqual({
+      ...expected,
+      peopleWithoutTime: true,
     });
   });
 });

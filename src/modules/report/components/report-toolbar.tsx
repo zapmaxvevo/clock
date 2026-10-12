@@ -44,7 +44,11 @@ const FILTER_KINDS = [
  */
 export function ReportToolbar({ state }: { readonly state: ReportReadyState }) {
   const { range, currentWeek, filters } = state;
-  const grouping: ReportGrouping = { groupBy: state.groupBy, subgroups: state.subgroups };
+  const grouping: ReportGrouping = {
+    groupBy: state.groupBy,
+    subgroups: state.subgroups,
+    peopleWithoutTime: state.peopleWithoutTime,
+  };
   const isCurrentWeek = sameRange(range, currentWeek);
 
   return (

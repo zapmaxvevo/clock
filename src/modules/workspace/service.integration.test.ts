@@ -335,14 +335,22 @@ describe("listWorkspacePeople (RP-62, RP-64; criterio 17 de R4)", () => {
         accountName: "Inactiva",
         displayName: null,
         status: "inactive",
+        joinedAt: expect.any(Date),
       },
       {
         userId: ownerId,
         accountName: "Owner",
         displayName: "La dueña",
         status: "active",
+        joinedAt: expect.any(Date),
       },
-      { userId: idleId, accountName: "Sin horas", displayName: null, status: "active" },
+      {
+        userId: idleId,
+        accountName: "Sin horas",
+        displayName: null,
+        status: "active",
+        joinedAt: expect.any(Date),
+      },
     ]);
   });
 

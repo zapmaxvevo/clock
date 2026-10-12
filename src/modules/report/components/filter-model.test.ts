@@ -66,7 +66,11 @@ const clientOptions = filterOptionsOf(catalog, "clients");
 const projectOptions = filterOptionsOf(catalog, "projects");
 
 const range = { first: "2026-09-28", last: "2026-10-04" };
-const grouping: ReportGrouping = { groupBy: "project", subgroups: ["date"] };
+const grouping: ReportGrouping = {
+  groupBy: "project",
+  subgroups: ["date"],
+  peopleWithoutTime: false,
+};
 const base =
   "/reportes?desde=2026-09-28&hasta=2026-10-04&agrupar=proyecto&subagrupar=fecha";
 

@@ -6,7 +6,7 @@ import { levelOptions, withLevel } from "./grouping-model";
 
 /** «persona · proyecto · fecha», como la tabla de §5.2. */
 function grouping(...[groupBy, ...subgroups]: [ReportGroupBy, ...ReportGroupBy[]]) {
-  return { groupBy, subgroups } satisfies ReportGrouping;
+  return { groupBy, subgroups, peopleWithoutTime: false } satisfies ReportGrouping;
 }
 
 describe("withLevel (D-R3-8, §5.2)", () => {

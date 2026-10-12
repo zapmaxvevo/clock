@@ -94,6 +94,12 @@ export type WorkspacePerson = {
   /** `user_preference.display_name`, o `null`: el nombre lo arma `displayNameOf` (ADR 0021). */
   readonly displayName: string | null;
   readonly status: "active" | "inactive";
+  /**
+   * `membership.created_at`: desde cuándo existe la membresía; hoy, el primer
+   * ingreso (D-R9-2). Con las invitaciones de la fase 2 pasa a ser la fecha de
+   * la invitación (§9). Para decidir, no para mostrar.
+   */
+  readonly joinedAt: Date;
 };
 
 /**
@@ -127,5 +133,6 @@ function toWorkspacePerson(row: PersonRow): WorkspacePerson {
     accountName: row.accountName,
     displayName: row.displayName,
     status: row.status,
+    joinedAt: row.joinedAt,
   };
 }

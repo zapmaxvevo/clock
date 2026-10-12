@@ -34,6 +34,7 @@ const state: ReportReadyState = {
   shortcuts: [],
   groupBy: "project",
   subgroups: [],
+  peopleWithoutTime: false,
   levelsShown: 1,
   scope: "everyone",
   timeZone: "America/Argentina/Buenos_Aires",

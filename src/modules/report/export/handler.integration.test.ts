@@ -310,6 +310,7 @@ describe("exportBodyOf y exportFileNameOf (D-R6-3, D-R6-5; criterio 10 de R6)", 
         groupBy: null,
         subgroups: [],
         filters: { people: [], clients: [], projects: [], withoutProject: false },
+        peopleWithoutTime: false,
       },
       new Date("2026-10-08T15:00:00Z"),
     );

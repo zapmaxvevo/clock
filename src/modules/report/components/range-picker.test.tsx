@@ -101,8 +101,16 @@ type PanelOptions = {
   readonly filters?: ReportFilters;
 };
 
-const BY_PERSON: ReportGrouping = { groupBy: "person", subgroups: [] };
-const BY_PROJECT: ReportGrouping = { groupBy: "project", subgroups: [] };
+const BY_PERSON: ReportGrouping = {
+  groupBy: "person",
+  subgroups: [],
+  peopleWithoutTime: false,
+};
+const BY_PROJECT: ReportGrouping = {
+  groupBy: "project",
+  subgroups: [],
+  peopleWithoutTime: false,
+};
 
 function renderPanel(
   selection: DateRange | undefined,
@@ -207,7 +215,7 @@ describe("applySelection, el efecto de «Aplicar»", () => {
     expect(
       applySelection(
         { from: day("2026-09-01"), to: day("2026-09-30") },
-        { groupBy: "tag", subgroups: ["person"] },
+        { groupBy: "tag", subgroups: ["person"], peopleWithoutTime: false },
         NO_REPORT_FILTERS,
       ),
     ).toEqual(
@@ -319,7 +327,11 @@ describe("RangePanel, los atajos (RP-20, D-R2b-10)", () => {
   });
 
   it("cada atajo lleva a su rango con la agrupación recibida", () => {
-    const grouping: ReportGrouping = { groupBy: "client", subgroups: [] };
+    const grouping: ReportGrouping = {
+      groupBy: "client",
+      subgroups: [],
+      peopleWithoutTime: false,
+    };
     const found = shortcutLinks(renderPanel(thisWeek, { grouping }));
     expect(found?.map(({ href }) => href)).toEqual(
       SHORTCUTS.map(({ range }) =>
@@ -334,7 +346,11 @@ describe("RangePanel, los atajos (RP-20, D-R2b-10)", () => {
   it("cada atajo conserva los subniveles (D-R3-8)", () => {
     const found = shortcutLinks(
       renderPanel(thisWeek, {
-        grouping: { groupBy: "project", subgroups: ["date", "tag"] },
+        grouping: {
+          groupBy: "project",
+          subgroups: ["date", "tag"],
+          peopleWithoutTime: false,
+        },
       }),
     );
     expect(found?.[6].href).toBe(

@@ -398,7 +398,13 @@ beforeEach(async () => {
 });
 
 function request(groupBy: ReportRequest["groupBy"]): ReportRequest {
-  return { range: week, groupBy, subgroups: [], filters: NO_REPORT_FILTERS };
+  return {
+    range: week,
+    groupBy,
+    subgroups: [],
+    filters: NO_REPORT_FILTERS,
+    peopleWithoutTime: false,
+  };
 }
 
 async function reportOf(actor: Actor, groupBy: ReportRequest["groupBy"]) {
@@ -637,6 +643,7 @@ function treeRequest(levels: readonly ReportGroupBy[]): ReportRequest {
     groupBy: levels[0],
     subgroups: levels.slice(1),
     filters: NO_REPORT_FILTERS,
+    peopleWithoutTime: false,
   };
 }
 
@@ -1027,6 +1034,7 @@ describe("el enlace ajeno (criterio 5, RP-32; criterio 11 de R2b; criterio 9 de 
       groupBy: groupBy.data,
       subgroups: [],
       filters: reportFiltersOf(searchParams),
+      peopleWithoutTime: false,
     };
   }
 
@@ -1038,6 +1046,7 @@ describe("el enlace ajeno (criterio 5, RP-32; criterio 11 de R2b; criterio 9 de 
         groupBy,
         subgroups: [],
         filters: NO_REPORT_FILTERS,
+        peopleWithoutTime: false,
       });
     }
   });
@@ -1198,6 +1207,7 @@ describe("el alcance en cada nivel (criterio 21 de R3; criterios 9 y 18 de R10)"
         groupBy: groupBy.data,
         subgroups: subgroups.data,
         filters: reportFiltersOf(searchParams),
+        peopleWithoutTime: false,
       };
     }
 
@@ -1736,6 +1746,7 @@ describe("los filtros de cliente y de proyecto dentro del alcance (criterio 12 d
         groupBy: groupBy.data,
         subgroups: subgroups.data,
         filters: reportFiltersOf(searchParams),
+        peopleWithoutTime: false,
       };
     }
 
@@ -2395,6 +2406,7 @@ describe("el filtro de personas dentro del alcance (criterio 19 de R4; criterios
         groupBy: groupBy.data,
         subgroups: subgroups.data,
         filters: reportFiltersOf(searchParams),
+        peopleWithoutTime: false,
       };
     }
 

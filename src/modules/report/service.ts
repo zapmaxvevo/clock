@@ -109,6 +109,8 @@ export type ReportRequest = {
   readonly subgroups: readonly ReportGroupBy[];
   /** Los de `reportFiltersOf`; `NO_REPORT_FILTERS` sin filtros. */
   readonly filters: ReportFilters;
+  /** El de `reportPeopleWithoutTimeParams`, sin decidir si aplica (D-R9-5). */
+  readonly peopleWithoutTime: boolean;
 };
 
 function workspaceResource(actor: Actor): WorkspaceResource {
@@ -977,6 +979,8 @@ async function readReportState(
     shortcuts: [...period.shortcuts],
     groupBy,
     subgroups: [...request.subgroups],
+    // D-R9-5: la opción efectiva llega con las filas sin horas (paso 3).
+    peopleWithoutTime: false,
     levelsShown,
     scope: scopeLineOf(scope),
     timeZone,
