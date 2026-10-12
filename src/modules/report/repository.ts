@@ -1014,16 +1014,16 @@ export const reportRepository = {
     return withSeconds(row);
   },
 
-  /**
-   * S1, S2: cuántas entradas trae `entryList` con la misma lectura y sin
-   * tope, los bytes en UTF-8 de sus textos y sus vínculos con etiquetas. Una
-   * sentencia, una fila.
-   */
   /** S3: las sentencias que siguen en `tx` duran como mucho `milliseconds`. */
   async limitStatementTime(milliseconds: number, tx: Transaction): Promise<void> {
     return limitStatementTime(milliseconds, tx);
   },
 
+  /**
+   * S1, S2: cuántas entradas trae `entryList` con la misma lectura y sin
+   * tope, los bytes en UTF-8 de sus textos y sus vínculos con etiquetas. Una
+   * sentencia, una fila.
+   */
   async entryListSize(
     scope: ReportScope,
     read: ReportEntryRead,
