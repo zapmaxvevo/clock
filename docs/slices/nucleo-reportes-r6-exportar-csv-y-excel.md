@@ -23,10 +23,12 @@ que la página. Sin cambios de tablas, de índices ni de permisos.
   documento (D-R6-13). Sigue el orden que el usuario pidió el 2026-10-10 («r5 y
   despues segui sin parar», `estado-fase1.md:178-181`).
 - **Dos partes** (D-R6-1): **R6a**, la ruta, el modelo del documento, el CSV con
-  el resumen y las entradas, y el enlace en la pantalla; **R6b**, el Excel, que
-  espera la respuesta del usuario sobre `exceljs` (§10, pregunta 1). R6a se
-  despliega sola.
-- **Revisión del contrato:** pendiente de `architecture-reviewer`.
+  el resumen y las entradas, y el enlace en la pantalla; **R6b**, el Excel con
+  `exceljs`, que el usuario aceptó el 2026-10-12 con la alerta de `uuid` (§10,
+  decisión (a)), sujeto a la confirmación de `security-auditor` antes del
+  merge. R6a se despliega sola.
+- **Revisión del contrato:** primera pasada de `architecture-reviewer` aplicada
+  el 2026-10-12 ([correcciones](correcciones-nucleo-reportes-r6-contrato.md)).
 - **Decisiones de arquitectura asociadas**, todas aceptadas:
   - [ADR 0020](../adr/0020-nucleo-de-reportes-antes-de-la-fase-2.md): «Toda
     puerta de entrada —la página y la ruta de exportación— pasa por el mismo
@@ -52,11 +54,9 @@ que la página. Sin cambios de tablas, de índices ni de permisos.
     seguridad de `next.config.ts` valen también para la ruta nueva.
 
   **Este contrato no abre ningún ADR.** La elección de la biblioteca de Excel
-  tiene alternativas reales, pero aceptar una vulnerabilidad en producción es
-  decisión del usuario y queda como pregunta (§10, pregunta 1), con el contrato
-  armado para que la otra opción cambie un solo archivo de producción. Si el
-  usuario quiere dejar la aceptación registrada como ADR, sería el 0022, escrito
-  después de su respuesta.
+  tenía alternativas reales, pero aceptar una vulnerabilidad en producción era
+  decisión del usuario, y la tomó: `exceljs` (§10, decisión (a)). Si quiere
+  dejar la aceptación registrada como ADR, sería el 0022, y es suyo.
 
   **Lo que no se sostiene tal cual contra el árbol o contra el encargo**, y este
   contrato ajusta:
@@ -94,12 +94,14 @@ regla de los e2e de §8.3 de R2a.
 - Con las entradas (D-R6-3), el slice trae una lectura nueva del repository con
   su alcance y su medición, la primera ruta propia, un modelo de documento, un
   escritor de CSV y la pantalla. Es más que R5.
-- (2) parte por contenido y obliga a decidir `exceljs` antes del primer
-  despliegue. (3) parte por formato: **R6a no depende de ninguna respuesta del
-  usuario**, y R6b es un escritor más sobre el mismo documento, una entrada en
-  la tabla de formatos, una ruta de una línea y un enlace.
-- Si el usuario tarda en responder, R6a queda desplegada sola: exporta todo lo
-  que el slice promete, en CSV.
+- (2) parte por contenido y obliga a resolver `exceljs` antes del primer
+  despliegue. (3) parte por formato: **R6a no depende de la biblioteca**, y R6b
+  es un escritor más sobre el mismo documento, una entrada en la tabla de
+  formatos, una ruta de una línea y un enlace.
+- R6a se despliega sola: exporta todo lo que el slice promete, en CSV. R6b ya no
+  espera al usuario, que aceptó `exceljs` (§10, decisión (a)), sino la
+  confirmación de `security-auditor` sobre la alerta de `uuid`, que es paso de
+  R6b antes del merge (§7, paso 15).
 
 **D-R6-2 — Qué se exporta: el estado de la página para la misma URL, entero.**
 Opciones: (1) **la misma lectura que `getReportState`**, extendida; (2) una
@@ -244,13 +246,18 @@ documento: `csvBytesOf` en R6a, `xlsxBytesOf` en R6b. Así:
 - los textos, el orden de las filas y la regla del minuto truncado viven en un
   solo lugar (`export/document.ts`), y un formato no puede decir otra cosa que
   otro;
-- cambiar la biblioteca de Excel es cambiar un escritor (§10, pregunta 1);
+- la biblioteca de Excel queda encerrada en un escritor (D-R6-12);
 - R7 recibe el mismo documento (D-R6-13).
 
 La regla del minuto es la de la pantalla: cada cifra se trunca al minuto por
-separado (`durationLabel`, `components/group-heading.tsx:17-23`), así que la
-suma de las filas de una columna queda en o debajo del total, como en pantalla
-(D-R2a-7).
+separado (`durationLabel`, `components/group-heading.tsx:17-23`). «Horas» se
+trunca además al centésimo desde esos minutos (`formatDecimalHours`, §4.2). Así
+la suma de las filas de **cualquiera de las dos columnas** queda en el total o
+por debajo, nunca arriba, como en pantalla (D-R2a-7). Redondear «Horas» la
+dejaría arriba: tres entradas de 1 minuto darían «0,02» cada una, 0,06, contra
+«0,05» del total de 3 minutos; truncando dan «0,01» cada una, 0,03. Lo mismo
+vale entre los hijos y su grupo en el resumen. En el `.xlsx` de R6b las horas
+son minutos / 60 sin cortar, y la suma tampoco pasa el total.
 
 **D-R6-7 — El resumen en filas: un nivel por columna, con los de arriba
 repetidos.** Opciones: (1) una columna de texto con sangría; (2) **una columna
@@ -300,6 +307,14 @@ en la primera celda:
 | «Generado»     | la fecha con año y la hora de reloj en el formato de quien mira, en su zona                                                    |
 | «Nota»         | la de la suma por etiqueta, si la etiqueta es uno de los niveles mostrados (`tagOverlap`); la del tope, si se cortaron niveles |
 
+- **La forma de cada fila**: el nombre en la primera celda y el valor en la
+  segunda; el título va solo, en una celda. «Personas», «Clientes» y
+  «Proyectos» llevan todos los nombres **en una sola celda, unidos con «, »**.
+  «Total» y «Facturable» llevan dos celdas de valor, la duración y las horas.
+  «Nota» es **una fila por nota**: primero la de etiquetas y después la del
+  tope, en el orden de la pantalla (`report-view.tsx:53`, `:73-74`); si aplican
+  las dos, son dos filas. La del tope va, como en pantalla, solo si el primer
+  nivel entró: con `levelsShown: 0` el aviso es la fila del resumen (§4.6).
 - Los nombres de lo filtrado salen de `filterOptions` y de los filtros
   **efectivos** del estado (D-R4-9: «R6 los usa para la cabecera del
   archivo»), así que un id que no existe o un `personas=` de un member no
@@ -329,9 +344,11 @@ en la primera celda:
   con coma y dos decimales**, sin separador de miles: «1,50», «2000,00». Las
   dos salen de los mismos minutos truncados, así que dicen lo mismo («1:29» y
   «1,48»). El decimal es el que se suma en una planilla; `h:mm` como texto no
-  se suma, y Excel puede leerlo como una hora del día. Los dos decimales se
-  redondean desde los minutos con aritmética entera (`minutos × 5 / 3` no cae
-  nunca en ,5): `formatDecimalHours`, nueva en `src/server/time`.
+  se suma, y Excel puede leerlo como una hora del día. Los dos decimales **se
+  truncan** desde los minutos con aritmética entera, `Math.floor(minutos × 5 /
+3)` centésimos, como el minuto se trunca desde los segundos: 1 minuto es
+  «0,01» y no «0,02» (D-R6-6). `formatDecimalHours`, nueva en
+  `src/server/time`.
 - **Las fechas y las horas de las entradas, canónicas**: el día `yyyy-MM-dd`
   (`dayKey`, `:84-87`) y la hora `HH:mm` de 24 h (`formatClock`, `:99-102`), en
   la zona de quien mira. Son columnas que una planilla tiene que poder ordenar
@@ -397,8 +414,8 @@ entradas del volumen sintético (el 1 % con 2900 caracteres,
   permitiría pasar el límite de tamaño, pero no se sabe si Vercel lo respeta
   igual y obliga a escribir antes de saber si las entradas entran.
 
-**D-R6-12 — Excel (R6b): celdas con tipo, y `exceljs` en un solo archivo, si el
-usuario la acepta.**
+**D-R6-12 — Excel (R6b): celdas con tipo, y `exceljs` en un solo archivo de
+producción.**
 
 - **Dos hojas**, «Resumen» y «Entradas», cada una con la cabecera de D-R6-8
   arriba, una fila vacía y su tabla.
@@ -411,14 +428,19 @@ usuario la acepta.**
 - **El día, como fecha** (número de serie de Excel, días desde 1899-12-30,
   calculado con `daysBetweenKeys` sin zonas) con el formato `yyyy-mm-dd`; **la
   hora de reloj**, como fracción del día con `hh:mm`; **el nivel**, como entero.
-- **La biblioteca**: `exceljs` 4.4.0 está en `dependencies` sin uso
-  (`package.json:39`). El análisis y la recomendación están en §10, pregunta 1:
-  **aceptar la moderada es decisión del usuario.** Si se usa: solo
-  `report/export/xlsx.ts` la importa (regla de ESLint
-  `no-restricted-imports` con la excepción de ese archivo), solo para escribir
-  a un buffer, con `import()` dinámico para que ni la página ni el CSV la
-  carguen. Si no se acepta, ese archivo se escribe con la alternativa, con la
-  misma firma, y lo demás no cambia.
+- **La biblioteca**: `exceljs` 4.4.0, que ya está en `dependencies`
+  (`package.json:39`), aceptada por el usuario el 2026-10-12 con la alerta de
+  `uuid` (§10, decisión (a)) y sujeta a la confirmación de `security-auditor`
+  antes del merge de R6b. Entre los archivos de producción, solo
+  `report/export/xlsx.ts` la importa, solo para escribir a un buffer, sin
+  formato condicional y con `import()` dinámico, para que ni la página ni el
+  CSV la carguen.
+- **La regla de ESLint**: `no-restricted-imports` prohíbe `exceljs` en todo el
+  repositorio salvo en `src/modules/report/export/xlsx.ts`, `**/*.test.ts` y
+  `e2e/**`. Los tests, y solo ellos, usan las funciones de lectura de la
+  biblioteca (`xlsx.load`), sobre archivos que escribió el propio test o que
+  bajó el propio recorrido: `xlsx.test.ts` (criterio 16) y `readXlsx` de
+  `e2e/reports-page.ts` (recorrido 25).
 
 **D-R6-13 — Lo que queda para R7.** R7 suma `pdf` a `REPORT_EXPORT_FORMATS`, a la
 tabla de escritores de `handler.ts` y una carpeta `exportar/pdf/` de una línea,
@@ -452,8 +474,10 @@ LibreOffice.
 - **El árbol en `6f06c0e`** (`main` con R5 mergeado). Las citas de abajo son de
   ese árbol. Los tests de integración y CI usan `postgres:18-alpine`; Neon
   también es 18. Todo test de tiempo fija reloj y zona.
-- **R6a no tiene pendientes del usuario.** **R6b espera la respuesta a la
-  pregunta 1 de §10** (`exceljs`).
+- **Ni R6a ni R6b tienen pendientes del usuario**: aceptó `exceljs` y dijo que
+  las exportaciones no van al `audit_log` (§10, decisiones del 2026-10-12).
+  **R6b espera la confirmación de `security-auditor`** sobre la alerta de
+  `uuid`, que es paso de R6b antes del merge (§7, paso 15).
 - **Sin comprobación contra Neon antes de mergear**: ningún parámetro tiene
   forma nueva (la lectura de las entradas pasa ids y fechas como las demás), y
   el único resultado de forma nueva para el módulo, un arreglo JSON de
@@ -523,7 +547,8 @@ LibreOffice.
 - **La medición** de §6.
 
 **R6b** entra: el escritor de Excel, la ruta `exportar/xlsx`, el enlace «Excel»,
-la regla de ESLint de `exceljs` y su medición.
+la regla de ESLint de `exceljs`, su medición y la confirmación de
+`security-auditor` sobre la alerta de `uuid` (§10, decisión (a)).
 
 Queda afuera: ver §11.
 
@@ -541,7 +566,7 @@ Queda afuera: ver §11.
 | `components/report-toolbar.tsx`, `labels.ts` | El grupo «Exportar» al final, solo con `chart`; sus textos.                                                                                                                      | `report-toolbar.test.tsx`                                                                                  |
 | `scripts/report-volume/explain.sql`          | Q40 a Q43. `seed.sql` no cambia.                                                                                                                                                 | —                                                                                                          |
 | `e2e/reports-page.ts`, `e2e/reports.spec.ts` | Los helpers de la exportación; los recorridos 23 y 24 (25 en R6b). Ningún export existente se renombra.                                                                          | `reports.spec.ts` entero                                                                                   |
-| `eslint.config.mjs` (R6b)                    | `no-restricted-imports` de `exceljs`, salvo en `report/export/xlsx.ts`.                                                                                                          | `npm run lint`                                                                                             |
+| `eslint.config.mjs` (R6b)                    | `no-restricted-imports` de `exceljs`, salvo en `report/export/xlsx.ts`, `*.test.ts` y `e2e/`.                                                                                    | `npm run lint`                                                                                             |
 
 - **La página no cambia**: el estado es el mismo, sin lecturas nuevas
   (`getReportState` no llama a `entryList`, criterio 5) y la barra suma un grupo.
@@ -595,7 +620,7 @@ const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
 const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 /** D-R6-3: una entrada del archivo, ya armada en la zona de quien mira (RP-22). */
-const reportEntryRow = z.object({
+export const reportEntryRow = z.object({
   id: z.uuid(),
   /** `dayKey` y `formatClock` del inicio y del fin, canónicos (D-R6-9). */
   startDay: z.string().regex(DAY_KEY),
@@ -633,9 +658,10 @@ como hacen con `reportReadyState`.
 ```ts
 /**
  * Las horas de `minutes` minutos en decimal, con coma y dos decimales, sin
- * separador de miles: «1,50», «2000,00» (D-R6-9). Redondea al centésimo con
- * aritmética entera: `minutes × 5 / 3` nunca cae en ,5. Un valor negativo da
- * «0,00», como `formatDuration`.
+ * separador de miles: «1,50», «2000,00» (D-R6-9). Trunca al centésimo con
+ * aritmética entera, `Math.floor(minutes * 5 / 3)` centésimos, como el minuto
+ * se trunca desde los segundos: la suma de una columna no pasa el total
+ * (D-R6-6). Un valor negativo da «0,00», como `formatDuration`.
  */
 export function formatDecimalHours(minutes: number): string;
 ```
@@ -688,15 +714,25 @@ export const reportRepository = {
 ```
 
 - **El `where`** es `and(inScope(scope), closedIn(read.span), matchesFilter(read.filter))`,
-  como `entryTotals` (`repository.ts:776`). **Las uniones**, todas con el
-  `workspace_id` en la condición, como las dimensiones: `membership` interna
-  (R1: toda entrada tiene membresía), `user` interna, `user_preference`,
-  proyecto, su cliente y la tarea por id, a izquierda. Con alias propios: no
-  se cruzan con `filterProject` ni con los de las dimensiones.
+  como `entryTotals` (`repository.ts:776`). **Las uniones**, con alias propios
+  (no se cruzan con `filterProject` ni con los de las dimensiones):
+  - `membership`, interna (R1: toda entrada tiene membresía), por
+    `membership.workspace_id = time_entry.workspace_id` y
+    `membership.user_id = time_entry.user_id`;
+  - el proyecto, su cliente y la tarea, a izquierda, por `workspace_id` e id:
+    el proyecto y la tarea con el workspace de la entrada, el cliente con el
+    del proyecto, como las dimensiones (`repository.ts:383-392`, `:418-423`);
+  - `user`, interna, y `user_preference`, a izquierda, **por `user_id`**: son
+    tablas de la cuenta, sin `workspace_id` (`src/server/db/schema.ts:134-176`),
+    y se unen como en la dimensión de persona (`repository.ts:368-369`).
 - **Las etiquetas**: una subconsulta correlacionada con `json_agg` de `{ id,
 name }` y `coalesce(…, '[]'::json)`, como `entryTags`, estrechada con un
-  esquema Zod antes de salir del repository. Una unión con `time_entry_tag`
-  multiplicaría las filas.
+  esquema Zod antes de salir del repository. Con las mismas condiciones de
+  workspace que `entryTags` (`src/modules/time-entry/repository.ts:188-193`):
+  `tag.workspace_id = time_entry_tag.workspace_id` en la unión y
+  `time_entry_tag.workspace_id = time_entry.workspace_id` en el `where`, además
+  de los ids. Quitarlas es un mutante equivalente (§8.1). Una unión con
+  `time_entry_tag` multiplicaría las filas.
 - **`seconds`**: `entrySeconds` como texto convertido con `secondsOf`.
 - **Las guardas**, `RangeError` antes de consultar: `checkEntryRead` y un
   `limit` que no es entero positivo.
@@ -801,6 +837,12 @@ export type ExportDocument = {
   readonly sections: readonly ExportSection[];
 };
 
+/** D-R6-6, D-R6-13: cómo se sirve y se escribe un formato (§4.8). */
+export type ExportWriter = {
+  readonly contentType: string;
+  readonly write: (document: ExportDocument) => Promise<Uint8Array<ArrayBuffer>>;
+};
+
 // export/document.ts
 export type ReportExportInput = Extract<ReportExportState, { kind: "ready" }> & {
   /** `session.user.name`: la línea del alcance propio (D-R6-8). */
@@ -817,9 +859,14 @@ export function exportDocumentOf(
 export function groupTextOf(group: ReportGroup): string;
 ```
 
-- **La cabecera**, en el orden de D-R6-8. Las duraciones de «Total» y
-  «Facturable» son dos celdas, `duration` y `hours`, con
-  `Math.floor(segundos / 60)`.
+- **La cabecera**, en el orden y con la forma de D-R6-8: cada fila es `text`
+  del nombre y `text` del valor; el título, una sola celda `text`. Los nombres
+  de «Personas», «Clientes» y «Proyectos», en una sola celda `text`, unidos con
+  «, ». Las duraciones de «Total» y «Facturable» son dos celdas, `duration` y
+  `hours`, con `Math.floor(segundos / 60)`. «Nota», una fila por nota: la de
+  etiquetas (`tagOverlap`) si la etiqueta está en los niveles mostrados, y
+  después la del tope (`rowLimit(REPORT_MAX_ROWS)`) si `levelsShown` es mayor
+  que 0 y menor que los niveles pedidos.
 - **El resumen** («Resumen»):
   - con `levelsShown: 0`, una sola fila con `firstLevelLimit(REPORT_MAX_ROWS)`;
   - sin grupos, una sola fila con `empty` o, con filtros efectivos,
@@ -850,7 +897,7 @@ export function groupTextOf(group: ReportGroup): string;
 
 ```ts
 /** D-R6-9: BOM, `;`, `\r\n`, todo entre comillas y el `'` de la inyección. */
-export function csvBytesOf(document: ExportDocument): Uint8Array;
+export function csvBytesOf(document: ExportDocument): Uint8Array<ArrayBuffer>;
 ```
 
 - **Las líneas**: cada fila de la cabecera; una vacía; el título de la primera
@@ -861,7 +908,9 @@ export function csvBytesOf(document: ExportDocument): Uint8Array;
 - **Cada celda**: `text`, el texto; `integer`, `String(value)`; `day`, la clave;
   `clock`, la hora; `duration`, `formatDuration(minutes)`; `hours`,
   `formatDecimalHours(minutes)`; `empty`, la cadena vacía.
-- **Los bytes**: `﻿` y el texto, con `TextEncoder`.
+- **Los bytes**: `﻿` (el BOM) y el texto, en un solo `TextEncoder.encode`,
+  que ya devuelve `Uint8Array<ArrayBuffer>`
+  (`node_modules/typescript/lib/lib.dom.d.ts:31824`).
 
 ### 4.8 El handler y la ruta (`report/export/handler.ts`, nuevo)
 
@@ -890,8 +939,16 @@ export async function exportBodyOf(
   settings: TimeSettings,
   format: ReportExportFormat,
   maxBytes: number,
-): Promise<Uint8Array>;
+): Promise<Uint8Array<ArrayBuffer>>;
 ```
+
+**Los bytes son `Uint8Array<ArrayBuffer>`** en `csvBytesOf`, `exportBodyOf`,
+`xlsxBytesOf` y `ExportWriter` (§4.6), y no `Uint8Array` a secas, que es
+`Uint8Array<ArrayBufferLike>`: `new Response(…)` no lo acepta (TS2345), porque
+`BodyInit` admite `ArrayBufferView<ArrayBuffer>` y no una vista que pueda estar
+sobre un `SharedArrayBuffer` (`node_modules/typescript/lib/lib.dom.d.ts:39167-39168`,
+`:39235`; TypeScript 5.9.3 con la `lib` del `tsconfig.json`). Ninguna firma
+publicada pide un `as`.
 
 En este orden:
 
@@ -906,7 +963,7 @@ format, REPORT_EXPORT_MAX_BYTES)`, y 200 con `Content-Type` de la tabla de
    y `Cache-Control: no-store`.
 5. `catch`: `console.error` y 500 con `reportMessages.exportFailed` (D-R6-5).
 
-**La tabla de formatos**, privada:
+**La tabla de formatos**, privada, con el `ExportWriter` de `export/types.ts`:
 
 ```ts
 /** D-R6-6, D-R6-13: cómo se escribe y se sirve cada formato. R6b suma xlsx; R7, pdf. */
@@ -932,7 +989,9 @@ export async function GET(request: Request): Promise<Response> {
 
 ```ts
 /** D-R6-12: dos hojas, cada una con la cabecera y su tabla. Solo escribe. */
-export async function xlsxBytesOf(document: ExportDocument): Promise<Uint8Array>;
+export async function xlsxBytesOf(
+  document: ExportDocument,
+): Promise<Uint8Array<ArrayBuffer>>;
 ```
 
 - `REPORT_EXPORT_FORMATS` suma `"xlsx"`; `EXPORT_WRITERS`, `{ contentType:
@@ -947,11 +1006,18 @@ async (document) => (await import("./xlsx")).xlsxBytesOf(document) }`; la
 - **El título de la sección** es el nombre de la hoja; la cabecera va arriba de
   cada hoja, después una fila vacía y la tabla. Los encabezados de columna, en
   negrita.
-- **Con `exceljs`**: `new Workbook()`, `addWorksheet`, valores y `numFmt`, y
-  `xlsx.writeBuffer()`. Nada de `read`, `load`, `readFile`, `csv` ni formato
-  condicional. Si `next build` no la empaqueta bien, `serverExternalPackages:
-["exceljs"]` en `next.config.ts`, y lo dice el informe.
-- **Con la alternativa** (§10, pregunta 1): la misma firma.
+- **La escritura con `exceljs`**: `new Workbook()`, `addWorksheet`, valores y
+  `numFmt`, y `xlsx.writeBuffer()`. Nada de `read`, `load`, `readFile`, `csv`
+  ni formato condicional: la lectura la usan solo los tests (D-R6-12). Si
+  `next build` no la empaqueta bien, `serverExternalPackages: ["exceljs"]` en
+  `next.config.ts`, y lo dice el informe.
+- **La conversión del buffer va acá y en ningún otro lado.** `writeBuffer()`
+  declara `Promise<Buffer>`, con un `Buffer` propio de sus tipos que extiende
+  `ArrayBuffer` (`node_modules/exceljs/index.d.ts:1`, `:1495`); en ejecución es
+  un `Buffer` de Node, una vista que puede estar sobre un `ArrayBuffer` más
+  grande. `new Uint8Array(await workbook.xlsx.writeBuffer())` copia los bytes a
+  un `ArrayBuffer` propio y es asignable a `Uint8Array<ArrayBuffer>` sin `as`
+  (`node_modules/typescript/lib/lib.es5.d.ts:2411-2412`).
 
 ### 4.10 Costo
 
@@ -1101,7 +1167,7 @@ tope de entradas está mal elegido y vuelve a `architect`.
 
 ### 6.5 R6b
 
-`backend-dev`, en su copia, con la biblioteca elegida: E1 y E2 en `.xlsx`
+`backend-dev`, en su copia, con `exceljs`: E1 y E2 en `.xlsx`
 (≤ 4 s y pico de `heapUsed` ≤ 512 MB), el peso de cada archivo; el tamaño del
 código de la ruta `xlsx` en `.next` y del trazado de la función; el primer
 pedido después de `next start` a `exportar/xlsx` y a `exportar/csv`, para
@@ -1184,7 +1250,8 @@ Rutas absolutas; **(nuevo)** marca lo que el slice crea.
 Escribe los casos del criterio 6 contra las firmas publicadas, sin mirar la
 implementación de `entryList`, y corre en una copia propia, con su base, los
 mutantes de las filas **4, 5, 6 y 10** de §8.1, confirmando que cada uno cae
-por su afirmación.
+por su afirmación, y el mutante declarado equivalente de §8.1 con la prueba
+que ahí se pide.
 
 ### R6a — e2e-tester
 
@@ -1216,7 +1283,8 @@ corrección fechada y una sección «15. Núcleo, R6»:
   fechas canónicas de las entradas, el nombre del archivo.
 - **RP-53**: el PDF reusa la ruta y el documento (R7).
 - **RP-18**: «Total» y «Facturable» en la cabecera; cada cifra truncada al
-  minuto, como en pantalla.
+  minuto, como en pantalla, y las horas decimales truncadas al centésimo: la
+  suma de una columna queda en el total o por debajo, nunca arriba.
 - **RP-22**: la zona en la cabecera; los días y las horas de las entradas en la
   zona de quien mira.
 - **RP-32**: la misma URL da el mismo archivo; un member con `personas=` exporta
@@ -1224,21 +1292,25 @@ corrección fechada y una sección «15. Núcleo, R6»:
 - **RP-33**: sin entradas no hay «Exportar»; la ruta igual responde.
 - **§15.x, divergencias que el reviewer no marca**: RP-54 es diseño propio; la
   exportación es un solo archivo por formato, con secciones; las entradas en el
-  mismo archivo que el resumen; sin gráfico.
+  mismo archivo que el resumen; sin gráfico; ninguna exportación queda en el
+  `audit_log` (§10, decisión (b)).
 
 ### R6b
 
-Cuando el usuario responda la pregunta 1 de §10:
+Después del merge de R6a; la decisión del usuario sobre `exceljs` ya está (§10,
+decisión (a)):
 
 - **backend-dev**: `/home/maxi/program/clock/src/modules/report/export/xlsx.ts`
   (nuevo), `xlsx.test.ts` (nuevo), `handler.ts`, `schema.ts`,
   `/home/maxi/program/clock/src/app/(app)/reportes/exportar/xlsx/route.ts`
-  (nuevo), `/home/maxi/program/clock/eslint.config.mjs` (si va `exceljs`);
-  `package.json` y `package-lock.json` solo si la respuesta saca `exceljs`;
-  `next.config.ts` solo si el build pide `serverExternalPackages`.
+  (nuevo), `/home/maxi/program/clock/eslint.config.mjs`; `next.config.ts` solo
+  si el build pide `serverExternalPackages`. `package.json` y
+  `package-lock.json` no cambian: `exceljs` 4.4.0 ya está.
 - **frontend-dev**: `components/labels.ts` («Excel»), `report-toolbar.tsx` y su
   test.
-- **e2e-tester**: el recorrido 25 y su helper `readXlsx(path)`.
+- **e2e-tester**: el recorrido 25 y su helper `readXlsx(path)`, que lee con
+  `exceljs` (la regla lo admite en `e2e/`).
+- **security-auditor**: la confirmación de la alerta de `uuid` (§7, paso 15).
 - **parity-analyst**: RP-54 con el Excel.
 
 ### Lo que no toca nadie
@@ -1251,7 +1323,8 @@ Cuando el usuario responda la pregunta 1 de §10:
 `report-chart*`, `range-picker*`, `subgroup-picker*`, `grouping-model*`,
 `filter-*`, `scripts/report-volume/seed.sql`, `e2e/database.ts`,
 `e2e/days.ts`, los ADR. En R6a, también `package.json`, `next.config.ts` y
-`eslint.config.mjs`. El mapa y el estado los actualiza el team-lead.
+`eslint.config.mjs`; en R6b, `package.json` y `package-lock.json`. El mapa y el
+estado los actualiza el team-lead.
 
 ### Orden
 
@@ -1274,7 +1347,8 @@ _R6a, ronda 1: `backend-dev` y `frontend-dev`._
 
 _R6a, ronda 2: `test-engineer` y `e2e-tester`, con el hash del paso 4._
 
-6. **`test-engineer`**: el criterio 6 y los mutantes de las filas 4, 5, 6 y 10.
+6. **`test-engineer`**: el criterio 6, los mutantes de las filas 4, 5, 6 y 10 y
+   el mutante declarado equivalente de §8.1.
 7. **`e2e-tester`**: los helpers y los recorridos 23 y 24, confirmando en su
    copia que cada afirmación nueva cae con su mutante de §8.2.
 
@@ -1291,21 +1365,26 @@ _R6a, cierre._
     con LibreOffice si está instalado, y el usuario con su Excel si quiere.
 11. **Merge como R6a.**
 
-_R6b, cuando el usuario responda._
+_R6b, después del merge de R6a._
 
 12. **`backend-dev`**: `xlsx.ts`, la tabla de formatos, la ruta, la regla de
     ESLint; los criterios 16, 17 y 19; la medición de §6.5.
 13. **`frontend-dev`**: «Excel» en el grupo; el criterio 18.
 14. **`e2e-tester`**: el recorrido 25.
-15. **Paridad, seguridad** (la dependencia y su uso: solo escribe, solo en
-    `xlsx.ts`), **abrir el archivo** (criterio 21) y **merge como R6b**.
+15. **Revisión de seguridad de `security-auditor`**, antes del merge: confirma
+    la alerta de `uuid` (GHSA-w5hq-g745-h8pq) contra el texto del aviso, que
+    este contrato no leyó, y el uso de la biblioteca (solo escribe, solo en
+    `xlsx.ts` entre los archivos de producción, sin formato condicional, con
+    `import()` dinámico; la lectura, solo en los tests). Si no la confirma, R6b
+    se detiene y vuelve al usuario. Después, **paridad**, **abrir el archivo**
+    (criterio 21) y **merge como R6b**.
 
 ## 8. Criterios de aceptación
 
 _R6a._
 
 1. **Las horas decimales** (unidad, `time.test.ts`, en UTC y en `test:time-ar`)
-   — `formatDecimalHours` da «0,00» con 0, «0,02» con 1, «0,03» con 2, «0,50»
+   — `formatDecimalHours` da «0,00» con 0, «0,01» con 1, «0,03» con 2, «0,50»
    con 30, «1,48» con 89, «1,50» con 90, «23,98» con 1439, «2000,00» con 120 000
    y «0,00» con −5.
 2. **Los esquemas** (unidad, `schema.test.ts`) — `reportEntryRow` admite una
@@ -1379,10 +1458,13 @@ _R6a._
      solo día; la zona; el alcance `everyone` y `self` con el nombre; «Agrupado
      por» con los pedidos; las personas elegidas con «(inactiva)», los clientes
      y los proyectos con «Sin proyecto» al final, por nombre y en el orden de
-     las opciones, y ninguna línea sin filtros; «Total» y «Facturable» con 3599
-     s → «0:59» y «0,98»; «Generado» en 24 h y en 12 h; la nota de etiquetas
-     solo con la etiqueta en los niveles **mostrados**, y la del tope solo con
-     niveles cortados;
+     las opciones, **cada filtro en una sola celda con los nombres unidos con
+     «, »**, y ninguna línea sin filtros; «Total» y «Facturable» con 3599 s →
+     «0:59» y «0,98»; «Generado» en 24 h y en 12 h; la nota de etiquetas solo
+     con la etiqueta en los niveles **mostrados**, y la del tope solo con
+     niveles cortados; **con las dos, dos filas «Nota», la de etiquetas
+     primero**; con el primer nivel cortado, ninguna nota de tope en la
+     cabecera;
    - el resumen: «Nivel» y una columna por nivel mostrado; las filas en
      profundidad, con los antepasados repetidos y vacíos los niveles de abajo;
      `groupTextOf` de cada tipo y de cada «Sin …», la semana y el mes con
@@ -1434,18 +1516,20 @@ attachment; filename="reporte_persona-proyecto_2026-09-28_2026-10-04.csv"`
 
 _R6b._
 
-16. **El Excel** (unidad, `export/xlsx.test.ts`, leyendo el archivo escrito con
-    la biblioteca en el test) — dos hojas, «Resumen» y «Entradas», cada una con
-    la cabecera, una fila vacía y su tabla; **ninguna celda con fórmula**,
-    también con «=1+1», que es una cadena con `numFmt` `@`; `duration` 90 → 90
-    / 1440 con `[h]:mm`; `hours` 89 → 89 / 60 con `0.00`; `day` «2024-01-01» →
-    45292 con `yyyy-mm-dd`; `clock` «09:30» → 570 / 1440 con `hh:mm`;
-    `integer` como número.
+16. **El Excel** (unidad, `export/xlsx.test.ts`, leyendo con `xlsx.load` de
+    `exceljs` el archivo que escribió el test) — dos hojas, «Resumen» y
+    «Entradas», cada una con la cabecera, una fila vacía y su tabla; **ninguna
+    celda con fórmula**, también con «=1+1», que es una cadena con `numFmt`
+    `@`; `duration` 90 → 90 / 1440 con `[h]:mm`; `hours` 89 → 89 / 60 con
+    `0.00`; `day` «2024-01-01» → 45292 con `yyyy-mm-dd`; `clock` «09:30» → 570
+    / 1440 con `hh:mm`; `integer` como número.
 17. **La ruta en Excel** (integración) — 200 con el `Content-Type` de `.xlsx`,
     el nombre `.xlsx`, `no-store` y el cuerpo que empieza con `PK\x03\x04`.
 18. **La pantalla** (unidad) — «Excel» después de «CSV», con su `href`.
-19. **La biblioteca en un solo archivo** (lint) — con un `import` de `exceljs`
-    en otro archivo del módulo, `npm run lint` falla (si va `exceljs`).
+19. **La biblioteca en un solo archivo de producción** (lint) — con un `import`
+    de `exceljs` en otro archivo de producción del módulo
+    (`export/document.ts`, por ejemplo), `npm run lint` falla; en
+    `export/xlsx.ts`, en un `*.test.ts` y en `e2e/`, no.
 20. **El rendimiento, el peso y el arranque** (manual, §6.5).
 21. **Abrir el `.xlsx`** (manual) — en Excel y en LibreOffice: las dos hojas, las
     duraciones sumables con `[h]:mm`, las fechas como fecha, «=1+1» como texto.
@@ -1455,7 +1539,7 @@ _R6b._
 
 | Criterio | Tipo        | Archivo                                          | Mutante que tiene que caer                                                                                                                                                                                                                                                                                                                                                                                  |
 | -------- | ----------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1        | unidad      | `src/server/time/time.test.ts`                   | punto en lugar de coma; `floor` en lugar de redondear (cae con 1); un decimal; separador de miles (cae con 120 000); el negativo sin acotar                                                                                                                                                                                                                                                                 |
+| 1        | unidad      | `src/server/time/time.test.ts`                   | punto en lugar de coma; `round` en lugar de truncar (cae con 1); un decimal; separador de miles (cae con 120 000); el negativo sin acotar                                                                                                                                                                                                                                                                   |
 | 2        | unidad      | `report/schema.test.ts`                          | la regex de día o de hora quitada; `.min(0)` o `.int()` de `seconds` quitados                                                                                                                                                                                                                                                                                                                               |
 | 3        | unidad      | `report/request.test.ts`                         | `searchParams.get` en lugar de juntar los repetidos (cae con `desde` repetido); un parámetro inválido que descarta a los otros                                                                                                                                                                                                                                                                              |
 | 4        | integración | `service.integration.test.ts`                    | sin `closedIn` (cae con el timer); `lte` en lugar de `lt` (cae con el fin); la descripción con `left`; las etiquetas por `join` (dos filas); sin `matchesFilter` o sin el filtro de cliente; sin `limit`; sin `checkEntryRead`; `limit` sin validar                                                                                                                                                         |
@@ -1463,7 +1547,7 @@ _R6b._
 | 6        | integración | `scope.integration.test.ts`                      | `inScope` quitado en `entryList`; `everyone` fijo; el alcance sin angostar con `personas`                                                                                                                                                                                                                                                                                                                   |
 | 7        | tipos       | `report/scope.test-d.ts`                         | el alcance de `entryList` opcional                                                                                                                                                                                                                                                                                                                                                                          |
 | 8        | unidad      | `export/csv.test.ts`                             | sin BOM; BOM por línea; `,` como separador; `\n` en lugar de `\r\n`; campos sin comillas; comillas sin duplicar; **cada uno de los seis caracteres quitado de la lista** (seis mutantes); el prefijo en cualquier posición (cae con `a=b`); las horas con punto                                                                                                                                             |
-| 9        | unidad      | `export/document.test.ts`                        | el período sin año; los filtros por id; «(inactiva)» quitado; los antepasados sin repetir; la columna de un nivel pedido que no se muestra (cae con el tope); los minutos redondeados (cae con 3599 s); «solo …» o «…» quitados; la nota de etiquetas con los niveles pedidos; «Sí» y «No» invertidos; `tooMany` con filas                                                                                  |
+| 9        | unidad      | `export/document.test.ts`                        | el período sin año; los filtros por id; «(inactiva)» quitado; los antepasados sin repetir; la columna de un nivel pedido que no se muestra (cae con el tope); los minutos redondeados (cae con 3599 s); «solo …» o «…» quitados; la nota de etiquetas con los niveles pedidos; «Sí» y «No» invertidos; `tooMany` con filas; las notas en el orden inverso; un filtro con una celda por nombre               |
 | 10       | integración | `export/handler.integration.test.ts`             | sin `no-store`; `inline` en lugar de `attachment`; `requireSession` dentro del `try` (cae: 500 en lugar del redirect); 200 con `forbidden`; el pedido sin `reportRequestOf` (cae con `desde` repetido); el 500 sin `no-store`; el guard de peso quitado                                                                                                                                                     |
 | 11       | componente  | `report-href.test.ts`; `report-toolbar.test.tsx` | el `href` a `/reportes`; sin subniveles o sin filtros; el atributo `download`; el grupo con `chart: null`; el grupo antes de «Filtrar por»                                                                                                                                                                                                                                                                  |
 | 12, 13   | manual      | informes de `backend-dev` y del team-lead        | —                                                                                                                                                                                                                                                                                                                                                                                                           |
@@ -1472,12 +1556,22 @@ _R6b._
 | 16       | unidad      | `export/xlsx.test.ts`                            | una cadena escrita como `{ formula }`; sin `numFmt` `@`; la duración como texto; `h:mm` en lugar de `[h]:mm`; la fecha como texto; el serial desde 1899-12-31 (cae con 45292)                                                                                                                                                                                                                               |
 | 17       | integración | `export/handler.integration.test.ts`             | el `Content-Type` del CSV; la extensión `.csv`                                                                                                                                                                                                                                                                                                                                                              |
 | 18       | componente  | `report-toolbar.test.tsx`                        | «Excel» sin `href` al formato                                                                                                                                                                                                                                                                                                                                                                               |
-| 19       | lint        | `eslint.config.mjs`                              | la regla quitada                                                                                                                                                                                                                                                                                                                                                                                            |
+| 19       | lint        | `eslint.config.mjs`                              | la regla quitada; la excepción ampliada a `src/**`                                                                                                                                                                                                                                                                                                                                                          |
 | 22       | e2e         | `e2e/reports.spec.ts`                            | el recorrido 25 con la duración como texto                                                                                                                                                                                                                                                                                                                                                                  |
 
-**Cualquier mutante declarado equivalente** se prueba antes con pedidos de una
-membresía inactiva, de otro workspace y de un member con horas ajenas en el
-rango.
+**Mutante declarado equivalente:** la subconsulta de etiquetas de `entryList`
+sin `tag.workspace_id = time_entry_tag.workspace_id` o sin
+`time_entry_tag.workspace_id = time_entry.workspace_id`. Las claves compuestas
+de `time_entry_tag` a la entrada y a la etiqueta
+(`src/server/db/schema.ts:499-516`) no dejan sembrar una entrada de un
+workspace con una etiqueta de otro, ni a mano, y los ids de `tag` y de
+`time_entry` son únicos, así que trae lo mismo; las condiciones quedan porque
+son las claves que los atan, como en `entryTags`. Antes de darlo por
+equivalente, `test-engineer` corre los criterios 4 y 6 con el mutante, también
+con una etiqueta de B que se llama igual que una de A, y anota que las
+respuestas son las mismas. **Cualquier otro mutante declarado equivalente** se
+prueba antes con pedidos de una membresía inactiva, de otro workspace y de un
+member con horas ajenas en el rango.
 
 ### 8.2 Recorridos de `e2e/reports.spec.ts`
 
@@ -1530,10 +1624,10 @@ _R6b._
 
 25. **Exportar a Excel** (RP-54; D-R6-12). Las mismas entradas y la misma URL que
     el 23: el enlace «Excel» después de «CSV»; el clic descarga
-    `reporte_proyecto-fecha_2025-09-15_2025-09-21.xlsx`; leído con la
-    biblioteca en el test: las hojas «Resumen» y «Entradas»; la duración de
-    «Web {sufijo}» es el número 135 / 1440 con `[h]:mm`; la descripción «=1+1»
-    es una cadena sin fórmula.
+    `reporte_proyecto-fecha_2025-09-15_2025-09-21.xlsx`; leído con `readXlsx`
+    (`exceljs`, que la regla de ESLint admite en `e2e/`): las hojas «Resumen» y
+    «Entradas»; la duración de «Web {sufijo}» es el número 135 / 1440 con
+    `[h]:mm`; la descripción «=1+1» es una cadena sin fórmula.
 
 Los mutantes que tienen que caer en e2e, corridos en una copia con puerto
 propio: `Link` en lugar de `<a>` (23: hay un pedido antes del clic); sin
@@ -1572,8 +1666,11 @@ membresía del owner ni el workspace.
   configuración, el `.xlsx` de R6b, que guarda números.
 - **«Duración» como `h:mm` en el CSV** puede leerse como una hora del día en
   algunas planillas; «Horas» es la columna para sumar. El criterio 13 lo mira.
-- **La suma de una columna de horas puede quedar debajo del total**: cada cifra
-  se trunca al minuto, como en pantalla (D-R2a-7).
+- **La suma de una columna de «Duración» o de «Horas» puede quedar debajo del
+  total, nunca arriba**: cada cifra se trunca al minuto, como en pantalla
+  (D-R2a-7), y las horas además al centésimo (D-R6-6). Con muchas entradas
+  cortas la diferencia se nota: cien entradas de 1 minuto suman «1,00» en
+  «Horas» contra «1,66» del total.
 - **Un rótulo de fecha sin año** en el resumen es del año de hoy, como en
   pantalla: abierto un año después, la cabecera («Período», «Generado») dice
   cuál es. Las entradas llevan siempre el día completo.
@@ -1587,61 +1684,59 @@ membresía del owner ni el workspace.
   el navegador agrega un número.
 - **Sin lector de pantalla en CI**: el grupo y sus enlaces los afirman los tests
   de componente y los e2e por rol y nombre.
-- **R6b depende de una respuesta del usuario** (§10, pregunta 1); mientras
-  tanto, solo CSV.
+- **`exceljs` trae una moderada aceptada** (`uuid`, §10, decisión (a)) y no
+  publica desde 2024-12-20. Se vuelve a mirar si aparece un aviso alto en su
+  árbol o uno que toque la escritura, o si CI baja el nivel a moderado.
+- **R6b depende de la confirmación de `security-auditor`** (§7, paso 15); si no
+  la da, vuelve al usuario y, mientras tanto, solo CSV.
 
-## 10. Pendiente del usuario y preguntas abiertas
+## 10. Decisiones del usuario, notas y pendientes
 
-### Para el usuario
+### Decisiones del usuario (2026-10-12)
 
-1. **`exceljs` en producción (bloquea R6b, no R6a).** Hoy, según el encargo,
-   `npm audit --omit=dev` da seis moderadas; una es `uuid <11.1.1`
-   (GHSA-w5hq-g745-h8pq), que llega por `exceljs >=3.5.0`, y el arreglo que
-   sugiere `npm` es bajar a `exceljs@3.4.0`, un cambio de versión mayor hacia
-   atrás que no se toma. CI audita producción con `--audit-level=high`
-   (`ci.yml:41`): la moderada no lo rompe, pero aceptarla es una decisión.
-   **Lo que dice el árbol:**
-   - `exceljs` usa `uuid` en un solo archivo, como `v4()` **sin argumentos**,
-     solo para reglas de formato condicional con extensión
-     (`cf-rule-ext-xform.js:1`, `:43`, `:77`). La exportación no escribe
-     formato condicional: el código no se alcanza, y si se alcanzara, no pasa
-     `buf`. Que el aviso trate de `buf` es lo que dice el encargo; **el texto
-     del aviso no se leyó** (sin red): `security-auditor` lo confirma antes de
-     que decidas.
-   - Lo que escribe pasa por `jszip` (`xlsx.js:2-4`); lo que lee
-     (`unzipper`, `saxes`, `fast-csv`) viaja en el paquete pero no se llama.
-   - La última publicación de `exceljs` fue el 2024-12-20 (dato del encargo; el
-     mapa decía 2023).
+Comunicadas por el team-lead el 2026-10-12, en respuesta a las dos preguntas de
+la primera versión de este contrato.
 
-   **Opciones:**
-   - **(a) Aceptar la moderada**, con estas condiciones: `exceljs` solo en
-     `report/export/xlsx.ts` (regla de ESLint), solo para escribir a un buffer,
-     sin formato condicional, cargada con `import()` dinámico; se vuelve a
-     mirar si aparece un aviso alto en su árbol o uno que toque la escritura
-     (`jszip`, sus `xform`), o si CI baja el nivel a moderado.
-   - **(b) Un escritor propio** sin dependencias (`node:zlib` y el XML mínimo de
-     una hoja), y sacar `exceljs`: sin avisos de terceros, pero unas 300 líneas
-     de un formato que CI no puede abrir en Excel, y el mantenimiento es
-     nuestro.
-   - **(c) Otra biblioteca**: no se evaluó ninguna en este árbol; la más
-     conocida, `xlsx` en npm (0.18.5), tiene avisos altos sin arreglo
-     publicado en npm.
+**(a) `exceljs` 4.4.0 en producción, aceptada con la alerta de `uuid <11.1.1`**
+(GHSA-w5hq-g745-h8pq). Según el encargo, `npm audit --omit=dev` da seis
+moderadas; esa llega por `exceljs >=3.5.0`, y el arreglo que sugiere `npm` es
+bajar a `exceljs@3.4.0`, un cambio de versión mayor hacia atrás que no se toma.
+CI audita producción con `--audit-level=high` (`ci.yml:41`): la moderada no lo
+rompe.
 
-   **Recomendación: (a).** El código vulnerable no se alcanza, el uso queda
-   encerrado en un archivo, y (b) cambia un riesgo conocido y acotado por uno de
-   compatibilidad que solo se ve abriendo el archivo en cada Excel. Con
-   cualquier respuesta cambian `xlsx.ts`, su test y, con (b), `package.json`;
-   nada más.
+- **Las condiciones**: entre los archivos de producción, `exceljs` solo en
+  `report/export/xlsx.ts` (regla de ESLint, D-R6-12), solo para escribir a un
+  buffer, sin formato condicional, cargada con `import()` dinámico. Se vuelve a
+  mirar si aparece un aviso alto en su árbol o uno que toque la escritura
+  (`jszip`, sus `xform`), o si CI baja el nivel a moderado.
+- **Lo que dice el árbol**, para la revisión:
+  - `exceljs` usa `uuid` en un solo archivo, como `v4()` **sin argumentos**,
+    solo para reglas de formato condicional con extensión
+    (`cf-rule-ext-xform.js:1`, `:43`, `:77`). La exportación no escribe
+    formato condicional: el código no se alcanza, y si se alcanzara, no pasa
+    `buf`. Que el aviso trate de `buf` es lo que dice el encargo; **el texto
+    del aviso no se leyó** (sin red).
+  - Lo que escribe pasa por `jszip` (`xlsx.js:2-4`); lo que lee
+    (`unzipper`, `saxes`, `fast-csv`) viaja en el paquete pero en producción
+    no se llama.
+  - La última publicación de `exceljs` fue el 2024-12-20 (dato del encargo; el
+    mapa decía 2023).
+- **La confirmación de `security-auditor`** es paso de R6b antes del merge
+  (§7, paso 15): lee el texto del aviso y confirma que el uso no lo alcanza. Si
+  no lo confirma, R6b se detiene y vuelve al usuario; R6a no cambia.
+- **El ADR 0022** sobre la aceptación, si el usuario lo quiere, es suyo; este
+  contrato no lo abre.
 
-2. **¿Querés que cada exportación quede en `audit_log`?** Hoy ninguna lectura se
-   audita, y el archivo trae lo mismo que la pantalla ya muestra. Sumarlo es una
-   escritura fuera de la transacción de solo lectura y una acción de auditoría
-   nueva. **Recomendación: no, por ahora.** No bloquea.
+**(b) Ninguna exportación va al `audit_log`.** Hoy ninguna lectura se audita y
+el archivo trae lo mismo que la pantalla ya muestra; sumarlo sería una
+escritura fuera de la transacción de solo lectura y una acción de auditoría
+nueva.
 
-3. **Nota, no es pregunta: el criterio 13 se prueba mejor con tu Excel.** Si
-   podés, abrí el CSV de un mes y fijate que las columnas se separen, los
-   acentos se vean bien, «Horas» se sume con `=SUMA()` y una descripción
-   «=1+1» se vea como texto.
+### Nota para el usuario
+
+1. **El criterio 13 se prueba mejor con tu Excel.** Si podés, abrí el CSV de un
+   mes y fijate que las columnas se separen, los acentos se vean bien, «Horas»
+   se sume con `=SUMA()` y una descripción «=1+1» se vea como texto.
 
 ### Para el team-lead
 
@@ -1662,6 +1757,29 @@ membresía del owner ni el workspace.
    equipo. El preview solo admite login en la rama de `BETTER_AUTH_URL`.
 5. **`page.tsx` cambia** (una línea de composición, a `reportRequestOf`), aunque
    R5 dejaba `src/app/` fuera del reparto: lo hace `backend-dev`.
+6. **CLAUDE.md queda desactualizado con la ruta nueva.** Describe `(app)/` como
+   «shell con sesión obligatoria» y dice que las lecturas van «desde Server
+   Components», y un Route Handler en `(app)` no hereda el shell
+   (`15-route-handlers.md:150-155`). No pide ADR: el ADR 0020 ya nombra la ruta
+   de exportación como puerta de entrada que pasa por el mismo service. El
+   texto, al mergear R6a:
+
+   En «Estructura», la línea de `(app)/` pasa a ser estas dos:
+
+   ```
+       (app)/             shell con sesión obligatoria; un route.ts no lo hereda
+         reportes/exportar/ descargas, una carpeta por formato (Route Handlers)
+   ```
+
+   En «Recorrido de una mutación», el párrafo de las lecturas pasa a ser:
+
+   > Las lecturas van por el service desde Server Components. Una descarga es
+   > un Route Handler de `(app)/reportes/exportar/<formato>/`, que no hereda el
+   > shell de `(app)`: pide su sesión con `requireSession()` fuera del `try`
+   > (sin sesión, 307 a `/login`), arma el pedido con el mismo parseo que la
+   > página, lee por el mismo service y responde con `Cache-Control: no-store`.
+   > Un service no importa de `app/` ni de `components/`; un componente no
+   > importa un repository.
 
 ## 11. Fuera de alcance
 

@@ -197,3 +197,50 @@ archivo.**
 - **Slices:** R6a se despliega sola; R6b es un escritor, una ruta y un enlace.
 - **Criterios:** cada uno con su test y su mutante; los de integración y e2e son
   ejecutables con los helpers y mocks que ya existen.
+
+## Respuesta del architect
+
+Aplicada el 2026-10-12. Las secciones son del contrato corregido.
+
+1. `Uint8Array<ArrayBuffer>` en `csvBytesOf` (§4.7), `exportBodyOf` (§4.8),
+   `ExportWriter` (§4.6) y `xlsxBytesOf` (§4.9, partida en tres líneas porque
+   pasa de 90 columnas); §4.8 suma el motivo con las líneas de `lib.dom.d.ts`, y
+   §4.9, la conversión del `Buffer` dentro de `xlsx.ts`
+   (`new Uint8Array(await workbook.xlsx.writeBuffer())`). Verificado leyendo los
+   tipos (`lib.dom.d.ts:31824`, `:39167-39168`, `:39235`;
+   `lib.es5.d.ts:2411-2412`; `exceljs/index.d.ts:1`, `:1495`), **sin
+   compilar**: el architect no tuvo shell en esta corrida.
+2. Opción (A): D-R6-6 (la regla para las dos columnas, con el ejemplo y el
+   `.xlsx`), D-R6-9 (las duraciones), §4.2 (comentario sin «,5»), criterio 1
+   (1 → «0,01»), §8.1 fila 1 («`round` en lugar de truncar (cae con 1)»), §9
+   (las dos columnas, con el caso de cien entradas de 1 minuto) y el texto de
+   RP-18 para `parity-analyst` (§7).
+3. D-R6-12 (la biblioteca y la regla con la excepción de `xlsx.ts`,
+   `**/*.test.ts` y `e2e/**`; solo los tests leen), §1 (fila de
+   `eslint.config.mjs`), §4.9 (sin la rama de la alternativa), criterios 16 y
+   19, §8.1 fila 19 (suma «la excepción ampliada a `src/**`»), recorrido 25 y
+   §7 R6b (sin «si va `exceljs`» ni cambios de `package.json`).
+4. `export const reportEntryRow` (§4.1).
+5. §4.3: las uniones por clave (`membership` por `workspace_id` y `user_id`;
+   proyecto, cliente y tarea por `workspace_id` e id; `user` y
+   `user_preference` por `user_id`) y las dos condiciones de workspace de la
+   subconsulta. **Desvío:** el mutante no se puede matar sembrando a mano una
+   etiqueta de B sobre una entrada de A, porque `time_entry_tag_entry_fk` y
+   `time_entry_tag_tag_fk` (`src/server/db/schema.ts:499-516`) lo impiden y los
+   ids son únicos. Queda como mutante declarado equivalente en §8.1, con la
+   prueba previa de `test-engineer` (criterios 4 y 6), como el del `exists` del
+   cliente en R4; §7 lo suma al encargo de `test-engineer` y al paso 6.
+6. `ExportWriter` definido en `export/types.ts` (§4.6); §4.8 lo usa.
+7. D-R6-8, «La forma de cada fila» (los nombres de cada filtro en una celda,
+   unidos con «, »; una fila «Nota» por nota, la de etiquetas primero; la del
+   tope solo si el primer nivel entró, como `report-view.tsx:73`); §4.6 (la
+   cabecera); criterio 9 (las dos notas, la celda única y sin nota de tope con
+   el primer nivel cortado); §8.1 fila 9 (dos mutantes más).
+8. Encabezado y nota del ADR 0022, D-R6-1, D-R6-6, D-R6-12, §0, §1, §6.5, §7
+   (R6b, «Lo que no toca nadie» y el «Orden», con `security-auditor` en el paso
+   15), §9 (dos riesgos nuevos en lugar del «depende del usuario») y §10
+   («Decisiones del usuario (2026-10-12)» con (a) y (b); las preguntas 1 y 2
+   salen; la nota del criterio 13 queda como «Nota para el usuario»). El texto
+   de §15.x para `parity-analyst` suma que nada va al `audit_log`.
+9. §10, «Para el team-lead», punto 6: el texto para «Estructura» y para
+   «Recorrido de una mutación» de CLAUDE.md. CLAUDE.md no se tocó.
