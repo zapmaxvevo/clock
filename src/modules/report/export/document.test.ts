@@ -7,10 +7,11 @@ import {
   type ReportGroup,
   type ReportReadyState,
 } from "@/modules/report/schema";
-import { formatDecimalHours, formatDuration, type TimeSettings } from "@/server/time";
+import type { TimeSettings } from "@/server/time";
 
+import { csvBytesOf } from "./csv";
 import { exportDocumentOf, groupTextOf, type ReportExportInput } from "./document";
-import type { ExportCell, ExportRow } from "./types";
+import type { ExportRow } from "./types";
 
 const settings: TimeSettings = {
   timezone: "America/Argentina/Buenos_Aires",
@@ -70,28 +71,21 @@ function input(
   };
 }
 
-/** Cada celda como la escribe el CSV, para leer las filas (§4.7). */
-function cellText(cell: ExportCell): string {
-  switch (cell.kind) {
-    case "text":
-      return cell.text;
-    case "integer":
-      return String(cell.value);
-    case "day":
-      return cell.dayKey;
-    case "clock":
-      return cell.clock;
-    case "duration":
-      return formatDuration(cell.minutes);
-    case "hours":
-      return formatDecimalHours(cell.minutes);
-    case "empty":
-      return "";
-  }
-}
-
+/**
+ * Las filas como las escribe el CSV (§4.7), un campo por celda, sin las
+ * comillas. `TextDecoder` quita el BOM. Ningún texto de este archivo lleva un
+ * salto de línea, así que cada línea es una fila.
+ */
 function texts(rows: readonly ExportRow[]): string[][] {
-  return rows.map((row) => row.map(cellText));
+  const csv = new TextDecoder().decode(csvBytesOf({ header: rows, sections: [] }));
+  return csv
+    .split("\r\n")
+    .slice(0, -1)
+    .map((line) =>
+      [...line.matchAll(/"((?:[^"]|"")*)"(?:;|$)/g)].map(([, field]) =>
+        field.replaceAll('""', '"'),
+      ),
+    );
 }
 
 function header(document: ReturnType<typeof exportDocumentOf>): string[][] {
@@ -213,9 +207,35 @@ describe("exportDocumentOf: la cabecera (D-R6-8)", () => {
     expect(rows.slice(5, 8)).toEqual([
       ["Personas", "Ana, Carla (inactiva)"],
       ["Clientes", "ACME, Beta"],
-      ["Proyectos", "Interno, Web, Sin proyecto"],
+      ["Proyectos", "Interno, Web (ACME), Sin proyecto"],
     ]);
     expect(rows[8][0]).toBe("Total");
+  });
+
+  it("dos proyectos con el mismo nombre se distinguen por su cliente; «Sin proyecto» al final", () => {
+    const P3 = "b3000000-0000-4000-8000-000000000000";
+    expect(
+      headerRows(
+        {
+          filters: { ...NO_REPORT_FILTERS, projects: [P1, P3], withoutProject: true },
+          filterOptions: {
+            people: null,
+            clients: [],
+            projects: [
+              { id: P1, name: "Web", color: "teal", client: acme, archived: false },
+              {
+                id: P3,
+                name: "Web",
+                color: "red",
+                client: { id: C2, name: "Beta" },
+                archived: true,
+              },
+            ],
+          },
+        },
+        "Proyectos",
+      ),
+    ).toEqual([["Proyectos", "Web (ACME), Web (Beta), Sin proyecto"]]);
   });
 
   it("solo «Sin proyecto» es una línea de proyectos; sin otros filtros, ninguna más", () => {
@@ -679,7 +699,7 @@ describe("exportDocumentOf: las entradas (D-R6-3)", () => {
   it("con `tooMany`, la nota y ninguna fila", () => {
     expect(texts(entries({ entries: { kind: "tooMany" } }))).toEqual([
       [
-        "Las entradas no entran en el archivo: son más de 10000 o pesan más de 4 MB. Acortá el período o filtrá.",
+        "Las entradas no entran en el archivo: son más de 10\u00a0000 o pesan más de 4 MB. Acortá el período o filtrá.",
       ],
     ]);
   });

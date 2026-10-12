@@ -7,6 +7,7 @@ import {
   type ReportEntryRow,
   type ReportExportEntries,
   type ReportGroup,
+  type ReportRange,
   type ReportReadyState,
 } from "@/modules/report/schema";
 import type { ReportExportState } from "@/modules/report/service";
@@ -16,6 +17,7 @@ import {
   dayKey,
   formatClock,
   formatDayKey,
+  type DateFormat,
   type TimeSettings,
 } from "@/server/time";
 
@@ -34,7 +36,7 @@ export function exportDocumentOf(
 ): ExportDocument {
   return {
     header: headerOf(input, settings),
-    sections: [summaryOf(input.report), entriesOf(input.entries)],
+    sections: [summaryOf(input.report), entriesSectionOf(input.entries)],
   };
 }
 
@@ -47,12 +49,9 @@ export function groupTextOf(group: ReportGroup): string {
     case "person":
       return personText(group);
     case "project":
-      if (group.project === null) {
-        return projectLabels.noProject;
-      }
-      return group.client === null
-        ? group.project.name
-        : `${group.project.name} (${group.client.name})`;
+      return group.project === null
+        ? projectLabels.noProject
+        : projectText(group.project, group.client);
     case "client":
       return group.client?.name ?? projectLabels.noClient;
     case "task":
@@ -92,6 +91,14 @@ function personText({
   return inactive ? `${name} ${reportLabels.inactivePerson}` : name;
 }
 
+/** El proyecto con su cliente, que la pantalla pone en gris al lado. */
+function projectText(
+  project: { readonly name: string },
+  client: { readonly name: string } | null,
+): string {
+  return client === null ? project.name : `${project.name} (${client.name})`;
+}
+
 function text(value: string): ExportCell {
   return { kind: "text", text: value };
 }
@@ -128,21 +135,9 @@ function headerOf(
 ): readonly ExportRow[] {
   const { report } = input;
   const { requested, shown } = levelsOf(report);
-  const dateFormat = settings.formats.date;
-  const { first, last } = report.range;
-  const period =
-    first === last
-      ? formatDayKey(first, dateFormat, true)
-      : `${formatDayKey(first, dateFormat, true)} – ${formatDayKey(last, dateFormat, true)}`;
-  const generated = `${formatDayKey(
-    dayKey(input.generatedAt, settings.timezone),
-    dateFormat,
-    true,
-  )} ${clockLabel(formatClock(input.generatedAt, settings.timezone), settings.formats.time)}`;
-
   const rows: ExportRow[] = [
     [text(exportLabels.title)],
-    [text(exportLabels.period), text(period)],
+    [text(exportLabels.period), text(periodText(report.range, settings.formats.date))],
     [text(exportLabels.timeZone), text(report.timeZone)],
     [
       text(exportLabels.scope),
@@ -159,7 +154,7 @@ function headerOf(
     ...filterRows(report),
     [text(reportLabels.total), ...durationCells(report.totalSeconds)],
     [text(reportLabels.billable), ...durationCells(report.billableSeconds)],
-    [text(exportLabels.generated), text(generated)],
+    [text(exportLabels.generated), text(generatedText(input.generatedAt, settings))],
   ];
   // Las notas, en el orden de la pantalla: la de etiquetas y después la del tope,
   // que con el primer nivel cortado es la fila del resumen (D-R6-8).
@@ -170,6 +165,26 @@ function headerOf(
     rows.push([text(exportLabels.note), text(reportLabels.rowLimit(REPORT_MAX_ROWS))]);
   }
   return rows;
+}
+
+/** «Período»: las dos fechas con año en el formato de quien mira; un día, una. */
+function periodText({ first, last }: ReportRange, format: DateFormat): string {
+  const from = formatDayKey(first, format, true);
+  return first === last ? from : `${from} – ${formatDayKey(last, format, true)}`;
+}
+
+/** «Generado»: la fecha con año y la hora de reloj de quien mira, en su zona. */
+function generatedText(instant: Date, settings: TimeSettings): string {
+  const day = formatDayKey(
+    dayKey(instant, settings.timezone),
+    settings.formats.date,
+    true,
+  );
+  const clock = clockLabel(
+    formatClock(instant, settings.timezone),
+    settings.formats.time,
+  );
+  return `${day} ${clock}`;
 }
 
 /**
@@ -186,7 +201,8 @@ function filterRows({ filters, filterOptions }: ReportReadyState): readonly Expo
   const projects = [
     ...filterOptions.projects
       .filter(({ id }) => filters.projects.includes(id))
-      .map(({ name }) => name),
+      // Con su cliente: dos proyectos se pueden llamar igual (D-R3-4).
+      .map((project) => projectText(project, project.client)),
     ...(filters.withoutProject ? [projectLabels.noProject] : []),
   ];
   return (
@@ -242,7 +258,7 @@ function summaryOf(report: ReportReadyState): ExportSection {
 }
 
 /** D-R6-3: todas las entradas, en el orden en que llegan, o la nota. */
-function entriesOf(entries: ReportExportEntries): ExportSection {
+function entriesSectionOf(entries: ReportExportEntries): ExportSection {
   if (entries.kind === "tooMany") {
     return note(
       exportLabels.entries,
@@ -251,11 +267,11 @@ function entriesOf(entries: ReportExportEntries): ExportSection {
   }
   return {
     title: exportLabels.entries,
-    rows: [entryColumnLabels.map(text), ...entries.rows.map(entryRowOf)],
+    rows: [entryColumnLabels.map(text), ...entries.rows.map(entryCellsOf)],
   };
 }
 
-function entryRowOf(entry: ReportEntryRow): ExportRow {
+function entryCellsOf(entry: ReportEntryRow): ExportRow {
   return [
     { kind: "day", dayKey: entry.startDay },
     { kind: "clock", clock: entry.startClock },

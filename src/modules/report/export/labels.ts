@@ -29,8 +29,18 @@ export const exportLabels = {
   no: "No",
   /** D-R6-3: todas o ninguna, por cantidad o por peso. */
   entriesLimit: (maxEntries: number) =>
-    `Las entradas no entran en el archivo: son más de ${maxEntries} o pesan más de ${REPORT_EXPORT_MAX_BYTES / 1_000_000} MB. Acortá el período o filtrá.`,
+    `Las entradas no entran en el archivo: son más de ${thousands(maxEntries)} o pesan más de ${REPORT_EXPORT_MAX_BYTES / 1_000_000} MB. Acortá el período o filtrá.`,
 } as const;
+
+/**
+ * Un entero con los miles separados por un espacio duro, como pide la RAE desde
+ * las cinco cifras: «10 000», pero «3000». Sin `Intl.NumberFormat`, que en
+ * `es` separa con punto, «10.000», y depende de los datos de ICU del entorno.
+ */
+function thousands(value: number): string {
+  const digits = String(value);
+  return digits.length < 5 ? digits : digits.replace(/\B(?=(\d{3})+$)/g, "\u00a0");
+}
 
 /** D-R6-3: los encabezados de las entradas, en el orden de sus columnas (§4.6). */
 export const entryColumnLabels = [
