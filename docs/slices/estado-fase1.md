@@ -220,7 +220,9 @@ vacío del owner y `renewWorkspace` se corta.
      declarado equivalente. Merge del contrato a `main` y arranque de R6a en la rama
      `nucleo/r6a-csv`, con las bases `clock_r6a_{back,front,test,e2e,parity}` ya creadas
      (e2e, parity y front migradas). Al mergear R6a, el team-lead aplica a CLAUDE.md el texto
-     de §10 «Para el team-lead», punto 6.
+     de §10 «Para el team-lead», punto 6. **CI de `main`** estuvo en rojo desde el merge de R10b
+     (`format:check` sobre `correcciones-nucleo-reportes-r10b-revisiones.md`, así que `e2e` no
+     corría en CI); arreglado en `c19d04c`, con `verify`, `integration` y `e2e` en verde.
 
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
      (`7b66b03`), en checkout en el árbol principal. `architect-r3` quedó escribiendo
