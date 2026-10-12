@@ -1520,8 +1520,9 @@ _R6b._
     `exceljs` el archivo que escribió el test) — dos hojas, «Resumen» y
     «Entradas», cada una con la cabecera, una fila vacía y su tabla; **ninguna
     celda con fórmula**, también con «=1+1», que es una cadena con `numFmt`
-    `@`; `duration` 90 → 90 / 1440 con `[h]:mm`; `hours` 89 → 89 / 60 con
-    `0.00`; `day` «2024-01-01» → 45292 con `yyyy-mm-dd`; `clock` «09:30» → 570
+    `@`; `duration` 90 → 90 / 1440 con `[h]:mm`; `hours` 89 → 1,48 con
+    `0.00` (truncado al centésimo, como en el CSV; corrección del 2026-10-12 en
+    [las de R6b](correcciones-nucleo-reportes-r6b.md)); `day` «2024-01-01» → 45292 con `yyyy-mm-dd`; `clock` «09:30» → 570
     / 1440 con `hh:mm`; `integer` como número.
 17. **La ruta en Excel** (integración) — 200 con el `Content-Type` de `.xlsx`,
     el nombre `.xlsx`, `no-store` y el cuerpo que empieza con `PK\x03\x04`.
