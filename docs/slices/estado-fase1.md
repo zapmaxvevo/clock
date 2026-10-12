@@ -231,6 +231,14 @@ vacío del owner y `renewWorkspace` se corta.
      «10 000» en el aviso de entradas; D-R6-6 generaliza de más con etiquetas en un subnivel
      (salvedad ya en RP-18); el criterio 13 (abrir el CSV) con LibreOffice, que está instalado.
      `backend-dev` corrió mutantes del paso 3 en el árbol compartido (revertidos, árbol limpio).
+     **R6a en `main`** (2026-10-12): exportar a CSV. Seis revisiones (tests pidió cambios; las
+     demás aprobaron con menores), dos rondas de correcciones (la cota de lectura de seguridad:
+     S1, S2 y S3, con `statement_timeout` de 8 s en la exportación) y corrida final en verde
+     sobre `5b3aeff`: 1854 de unidad, 303 de `test:time-ar`, 1537 de integración, e2e 209/209 ×2
+     y `reports.spec.ts` ×3. CLAUDE.md con la ruta de descarga. Todo en
+     `correcciones-nucleo-reportes-r6a-revisiones.md`. **Sigue R6b** (Excel): para el
+     `architect` o `backend-dev`, B4 (la cota de las entradas por formato: la del CSV no vale
+     para el `.xlsx` comprimido). Bases de R6a que se pueden borrar: `clock_r6a_*`.
 
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
      (`7b66b03`), en checkout en el árbol principal. `architect-r3` quedó escribiendo

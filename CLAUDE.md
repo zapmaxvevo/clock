@@ -37,7 +37,8 @@ Antes de dar por terminado un cambio: `npm run lint && npm run typecheck && npm 
 ```
 src/
   app/                 rutas; solo componen, sin lógica
-    (app)/             shell con sesión obligatoria
+    (app)/             shell con sesión obligatoria; un route.ts no lo hereda
+      reportes/exportar/ descargas, una carpeta por formato (Route Handlers)
     login/             pantalla de acceso
     api/auth/[...all]/ handler de Better Auth
     api/cron/daily/    único trabajo programado
@@ -78,8 +79,13 @@ docs/adr/              decisiones de arquitectura
 5. El service usa el repository dentro de una transacción y escribe el audit log.
 6. La action revalida las rutas afectadas y devuelve un resultado tipado.
 
-Las lecturas van por el service desde Server Components. Un service no importa
-de `app/` ni de `components/`; un componente no importa un repository.
+Las lecturas van por el service desde Server Components. Una descarga es
+un Route Handler de `(app)/reportes/exportar/<formato>/`, que no hereda el
+shell de `(app)`: pide su sesión con `requireSession()` fuera del `try`
+(sin sesión, 307 a `/login`), arma el pedido con el mismo parseo que la
+página, lee por el mismo service y responde con `Cache-Control: no-store`.
+Un service no importa de `app/` ni de `components/`; un componente no
+importa un repository.
 
 Un service puede llamar a la función de validación que exporta el service de
 otro módulo, que solo lee con la transacción que recibe; lo que solo se muestra

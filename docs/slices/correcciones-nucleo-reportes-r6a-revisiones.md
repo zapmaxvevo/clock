@@ -139,3 +139,15 @@ exportación. Once mutantes caen. Q46 sube de 73 a 140 ms (uniones de nombres en
     con el `.xlsx` comprimido cortaría un archivo que habría entrado. **R6b** pasa la cota por
     la tabla de escritores (un `minBytes` por formato que `getReportExport` reciba del
     handler) o su contrato dice cómo queda.
+
+## Cierre
+
+`95066d9` mueve el JSDoc de `entryListSize` (B3; solo el comentario). Corrida final sobre
+`5b3aeff` (código idéntico a `95066d9` salvo ese comentario): lint, typecheck y `format:check`
+limpios; unidad 1854 y `test:time-ar` 303; integración 1537 (`clock_r6a_final_test`); e2e
+209/209 ×2 sobre una base nueva (`clock_r6a_final_e2e`) y `reports.spec.ts` 25/25 ×3. Criterio
+13 con LibreOffice (arriba). CLAUDE.md actualizado con el texto de §10, «Para el team-lead»,
+punto 6. Merge como R6a.
+
+Para R6b: B4 (la cota por formato) y el desvío 2 de `backend-dev` (la cota del CSV no vale para
+el `.xlsx`). Deuda: C1 (`listTags` copia `entryTags`, junto al `Executor`).
