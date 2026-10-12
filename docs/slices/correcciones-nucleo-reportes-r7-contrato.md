@@ -219,3 +219,45 @@ totalPages }) => …}`;
   alternativa escrita.
 - **ADR 0022:** queda propuesto, no escrito, como decisión del usuario; el
   número es el siguiente libre.
+
+## Respuesta del architect
+
+Aplicada el 2026-10-12. Las secciones son del contrato corregido. Los
+hallazgos 1, 2 y 4 quedan como las indicaciones que `backend-dev` ya sigue en
+R7-0.
+
+1. §6.1: «Los documentos grandes se arman a mano» y M3 y M6 con el
+   `ExportDocument` de 50, 500 y 3000 filas armado a mano (M6, rótulos de 100
+   caracteres en todos los niveles de texto; el informe dice las filas); §6.2,
+   P2 y P4 con un pedido real de 2900 a 3000 filas, anotado, y la salida si no
+   lo hay; «Lo que no se sostiene», punto 6, explica por qué.
+2. M8 nuevo en §6.1 (el primer pedido en frío por la ruta, con la lectura de
+   P2 y el documento de 3000 filas, mediana de cinco reinicios, ≤ 5 s), primero
+   entre los presupuestos; P2 en frío en §6.2; en la decisión del ADR (§12),
+   en D-R7-11, en §9 y en la pregunta 1 de §10.
+3. Las cinco llamadas en los supuestos de §0, en §1 y en el paso 1 de §7; el
+   paso 1 hace, con la regla del dueño del tipo y aviso, el cambio mínimo en
+   `scope.integration.test.ts` y en `document.ts`, nombrado también en §1 y en
+   el reparto de `backend-dev`; el paso 2 de `frontend-dev` suma el caso de
+   `null` en `document.test.ts`.
+4. M1 con `.next/server/app/(app)/reportes/exportar/pdf/route.js.nft.json`, el
+   total y aparte `@react-pdf`, `pdfkit`, `fontkit`, `yoga-layout` y sus
+   dependencias, y la fuente; por qué la resta contra el CSV no sirve con
+   Turbopack (también en los supuestos de §0); los 250 MB de Vercel, no
+   verificados, al lado de los 50 MB en §6.1, D-R7-11 y §12.
+5. `pdfTextOf` cambia `\t`, `\n` y `\r` por un espacio (D-R7-5, §4.5 y su
+   firma); el criterio 6 suma «a\tb», «a\nb» y «a\r\nb», con U+0000 y los demás
+   controles como reemplazo; §8.1, fila 6, suma el mutante del blanco como
+   reemplazo; el texto de paridad lo nombra.
+6. Criterio 8 con unas 200 filas y tres páginas o más (D-R7-13 y §8.3 dejan las
+   3000 filas a la medición); D-R7-10 con `pdfjs-dist/legacy/build/pdf.mjs` sin
+   worker y los fragmentos unidos con el blanco colapsado; un lector nuevo,
+   `src/test/pdf.ts` (`pdfPageTexts`, §4.8), para los criterios 8 y 9, con
+   `src/test/**` en la excepción de ESLint (D-R7-9, §4.9 y criterio 11); M9 en
+   R7-0 lo prueba bajo Vitest en Node; `"pdf"` en `ExportFormat` (§0, §1 y §7,
+   e2e).
+7. D-R7-5 y §4.6: `pdf.tsx` sin estado propio; `pdfBytesOf` registra la familia
+   solo si `Font.getRegisteredFontFamilies()` no la tiene, y `Font.load` guarda
+   la fuente en la biblioteca; el criterio 8 y su mutante lo afirman; §9 anota
+   el almacén global de la biblioteca.
+8. La primera línea dice «Contrato del slice R7 del núcleo de reportes».

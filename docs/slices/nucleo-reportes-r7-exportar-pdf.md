@@ -1,6 +1,6 @@
 # Núcleo de reportes, R7: exportar a PDF
 
-Contrato del último slice del núcleo de reportes. Suma un formato a la ruta de
+Contrato del slice R7 del núcleo de reportes. Suma un formato a la ruta de
 R6: `/reportes/exportar/pdf`, con la misma query string que `/reportes`, la
 misma sesión, el mismo alcance, la misma foto, `no-store` y el mismo nombre de
 archivo. El PDF trae la cabecera y el resumen del `ExportDocument` de R6,
@@ -27,7 +27,8 @@ en cada una. Sin cambios de tablas, de índices ni de permisos.
   de peso, de tiempo o de cobertura de fuentes de este contrato es un
   presupuesto o un dato leído en `node_modules`, y la medición es el paso 0
   (§6.1), que hace `backend-dev`.
-- **Revisión del contrato:** pendiente de `architecture-reviewer`.
+- **Revisión del contrato:** primera pasada de `architecture-reviewer` aplicada
+  el 2026-10-12 ([correcciones](correcciones-nucleo-reportes-r7-contrato.md)).
 - **Decisiones de arquitectura asociadas**, todas aceptadas:
   - [ADR 0020](../adr/0020-nucleo-de-reportes-antes-de-la-fase-2.md): «Toda
     puerta de entrada —la página y la ruta de exportación— pasa por el mismo
@@ -73,6 +74,11 @@ en cada una. Sin cambios de tablas, de índices ni de permisos.
      `parity-analyst` corrige RP-53.
   5. **D-R6-13 dejaba para R7 «si no, suma la opción de no leerlas a
      `getReportExport`»**: es D-R7-3.
+  6. **El volumen sintético no da 3000 filas con los pedidos de E3 y E4 de R6.**
+     Cada nivel entra entero o no entra (D-R3-6), y por Persona → Proyecto →
+     Fecha en 366 días el PDF tendría unas 780 filas. Los casos de 3000 filas
+     de la medición salen de un documento armado a mano o de un pedido buscado
+     para eso (§6.1, §6.2).
 
 Decisiones que el contrato da por tomadas (R2a a R6): solo owner y admin ven
 horas ajenas; un member con un enlace que nombra a otras personas ve lo propio;
@@ -174,23 +180,33 @@ del usuario (§10, pregunta 1).
   con fondo, no con negrita. `fontkit` incrusta solo los glifos usados, así que
   el PDF crece poco; la función crece lo que pese el archivo. Cuál fuente lo
   decide el paso 0 con sus números (§6.1, M4) y el usuario (§10, pregunta 2).
-- **El texto que llega al PDF pasa por `pdfTextOf`** (§4.5): cada punto de
-  código que la fuente no dibuja se cambia por el reemplazo: U+FFFD con la
-  fuente incrustada, «?» con Helvetica. Siempre se cambian, cubra o no la
-  fuente, los controles C0 y C1 (también `\t`, `\n` y `\r`), U+FFFE, U+FFFF y
-  los surrogates sueltos. Se recorre por punto de código: un emoji fuera del
-  plano básico es un solo reemplazo.
+- **El texto que llega al PDF pasa por `pdfTextOf`** (§4.5):
+  - `\t`, `\n` y `\r` pasan a ser un espacio, como los muestra la pantalla: la
+    descripción los admite adentro (el esquema solo hace `trim`,
+    `src/modules/time-entry/schema.ts:60-64`) y el HTML colapsa el blanco;
+  - cada punto de código que la fuente no dibuja se cambia por el reemplazo:
+    U+FFFD con la fuente incrustada, «?» con Helvetica;
+  - los demás controles C0 y C1, U+FFFE, U+FFFF y los surrogates sueltos se
+    cambian siempre por el reemplazo, cubra o no la fuente;
+  - se recorre por punto de código: un emoji fuera del plano básico es un solo
+    reemplazo.
 - **La cobertura sale de la fuente cargada**: `Font.getFont(…).data`
   (`node_modules/@react-pdf/font/lib/index.d.ts:46-57`, `:76`) con
-  `hasGlyphForCodePoint`, estrechada con un tipo propio y una comprobación en
-  tiempo de ejecución: `fontkit` no tiene tipos instalados y `data` llega sin
-  tipo. Con Helvetica, la tabla WinAnsi fija.
+  `hasGlyphForCodePoint`, leída como `unknown` y estrechada con un guardián de
+  tipo: `fontkit` no tiene tipos instalados y `data` llega sin tipo. Con
+  Helvetica, la tabla WinAnsi fija.
+- **`pdf.tsx` no guarda estado propio** (`.claude/skills/code-conventions/SKILL.md`,
+  «TypeScript»: sin estado mutable a nivel de módulo). El almacén de fuentes
+  es el de la biblioteca: `pdfBytesOf` registra la familia solo si
+  `Font.getRegisteredFontFamilies()` no la tiene, fija la partición de
+  palabras y llama a `Font.load`, que guarda la fuente cargada en la
+  biblioteca. La cobertura (`PdfGlyphs`) se arma en cada llamada sobre esa
+  fuente; no hay caché propia.
 - **El archivo se lee del disco**: `join(process.cwd(),
 "src/modules/report/export/fonts/<archivo>")`, como el ejemplo de fuentes de
-  Next (`node_modules/next/dist/docs/01-app/03-api-reference/04-functions/image-response.md:161-179`),
-  y se registra una vez por instancia. Que el archivo viaje con la función lo
-  verifica el paso 0 (M1) en el trazado de la ruta; si no viaja,
-  `outputFileTracingIncludes` en `next.config.ts`
+  Next (`node_modules/next/dist/docs/01-app/03-api-reference/04-functions/image-response.md:161-179`).
+  Que el archivo viaje con la función lo verifica el paso 0 (M1) en el trazado
+  de la ruta; si no viaja, `outputFileTracingIncludes` en `next.config.ts`
   (`…/05-config/01-next-config-js/output.md:80-97`).
 - **Sin partición de palabras**: `Font.registerHyphenationCallback((word) =>
 [word])`. La de la biblioteca es la del inglés y cortaría «Dise-ño». Cómo se
@@ -251,9 +267,10 @@ generaliza:
 - `@react-pdf/*`, `pdfkit` y `fontkit`, con sus subrutas: solo
   `src/modules/report/export/pdf.tsx`. `pdfkit` y `fontkit` entran en la regla
   aunque nadie los importe hoy: son la forma de esquivarla.
-- `pdfjs-dist` (D-R7-10): solo tests y `e2e/`.
-- Los tests (`**/*.test.ts`, `**/*.test.tsx`) y `e2e/**` pueden importar
-  cualquiera. `xlsx.ts` no puede importar las del PDF, ni `pdf.tsx`, `exceljs`.
+- `pdfjs-dist` (D-R7-10): solo tests, `src/test/` y `e2e/`.
+- Los tests (`**/*.test.ts`, `**/*.test.tsx`), `src/test/**` y `e2e/**` pueden
+  importar cualquiera. `xlsx.ts` no puede importar las del PDF, ni `pdf.tsx`,
+  `exceljs`.
 - La plantilla (``import(`exceljs`)``) sigue esquivándola, como aceptó
   seguridad en R6b: es una barrera contra descuidos.
 
@@ -265,6 +282,14 @@ Opciones: (1) **`pdfjs-dist`**; (2) mirar solo la estructura de los bytes; (3)
   lector no se puede afirmar «Web (ACME)» en los bytes. `pdfkit` usa
   `pdfjs-dist` para sus propios tests
   (`node_modules/pdfkit/package.json:42`).
+- **En Node, el build `legacy`, sin worker**:
+  `pdfjs-dist/legacy/build/pdf.mjs`. Que funciona bajo Vitest en Node lo
+  prueba una vez el paso 0 (§6.1, M9).
+- **El texto de una celda que se parte en renglones llega en varios
+  fragmentos.** Los lectores de los tests (`src/test/pdf.ts` y `readPdf` de
+  `e2e/reports-page.ts`) unen los fragmentos de cada página y colapsan el
+  blanco en un espacio antes de buscar: «Web {sufijo} (ACME {sufijo})» se busca
+  en ese texto, no en un fragmento.
 - (2) deja sin probar todo lo que se ve; (3) no está en CI.
 - Es de desarrollo: CI audita producción (`--omit=dev`), y la regla de D-R7-9
   impide que llegue a un archivo de producción.
@@ -277,7 +302,11 @@ siguen _no verificados_ (D-R6-11): el contrato se diseña contra 10 s por pedido
 y 4,5 MB de respuesta, y suma uno que en R6 no pesaba, **el tamaño de la
 función**, que con `@react-pdf/renderer`, `yoga-layout`
 (`node_modules/@react-pdf/layout/package.json:32`), `pdfkit`, `fontkit` y una
-fuente crece. El paso 0 mide todo antes de escribir código de producción.
+fuente crece (250 MB sin comprimir según la documentación de Vercel que se
+recuerda, _no verificado_). **El peor pedido es el primero en frío con el
+documento más grande**: la carga de la biblioteca, la lectura y la escritura
+juntas. El paso 0 lo mide entero (M8), con la mitad de los 10 s como
+presupuesto, antes de escribir código de producción.
 
 **D-R7-12 — El gráfico en el PDF (R7b), si el usuario lo pide.**
 
@@ -294,11 +323,12 @@ fuente crece. El paso 0 mide todo antes de escribir código de producción.
   parámetros de exportación (D-R6-4).
 
 **D-R7-13 — Lo que se prueba en unidad y lo que no.** En unidad: `cellText`,
-`pdfTextOf`, `pdfLayoutOf`, el documento sin entradas, los bytes del PDF
-leídos con `pdfjs-dist` y el enlace. En integración: la lectura sin entradas y
-con el tope de duración, y la ruta entera con la sesión simulada. En e2e: que
-el enlace descarga, las cabeceras contra `next start` y el texto del archivo.
-A mano: cómo se ve en un visor y al imprimir.
+`pdfTextOf`, `pdfLayoutOf`, el documento sin entradas, los bytes de un PDF de
+pocas páginas leídos con `pdfjs-dist` y el enlace. En integración: la lectura
+sin entradas y con el tope de duración, y la ruta entera con la sesión
+simulada. En e2e: que el enlace descarga, las cabeceras contra `next start` y
+el texto del archivo. Las 3000 filas, en la medición (§6.1 y §6.2), no en
+`npm test`. A mano: cómo se ve en un visor y al imprimir.
 
 ## 0. Precondición de arranque
 
@@ -326,8 +356,8 @@ A mano: cómo se ve en un visor y al imprimir.
 - `cellText` es privada de `csv.ts` (`:16-34`); el CSV la usa con el `'` de la
   inyección (`:36-41`).
 - `exportDocumentOf`, la cabecera, el resumen y las entradas:
-  `src/modules/report/export/document.ts:33-42`, `:126-165`, `:220-255`,
-  `:257-269`.
+  `src/modules/report/export/document.ts:33-42` (`entriesSectionOf` en `:40`),
+  `:126-165`, `:220-255`, `:257-269`.
 - `xlsx.ts`: el reemplazo por U+FFFD de lo que el XML no admite (`:23-35`) y la
   copia del `Buffer` (`:104-106`).
 - La cota de las entradas medida como CSV: `export/entry-size.ts:19-36`;
@@ -336,13 +366,23 @@ A mano: cómo se ve en un visor y al imprimir.
   (`service.ts:755-758`); `ReadPlan` (`:668-679`); `EntryRead` (`:421-423`);
   `readReportState` con sus dos sobrecargas (`:877-991`); `getReportExport`
   (`:1064-1081`); `ReportExportState` (`:1007-1017`).
+- `getReportExport` se llama en cinco lugares: `handler.ts:112`,
+  `service.integration.test.ts:4284` y `:4737`,
+  `scope.integration.test.ts:3049` y `handler.integration.test.ts:305`.
 - `limitStatementTime` con `set_config(…, true)`: `repository.ts:940-954`;
   `REPORT_EXPORT_STATEMENT_TIMEOUT_MS = 8_000`: `schema.ts:605-610`.
 - `REPORT_EXPORT_FORMATS = ["csv", "xlsx"]`: `schema.ts:612-614`;
   `REPORT_MAX_ROWS = 3000`: `:139`; `REPORT_DESCRIPTION_SHOWN = 100`: `:141-142`.
+- Cada nivel del árbol entra entero o no entra (`readLevelsWithinLimit`,
+  `service.ts`; D-R3-6); el volumen sintético reparte las entradas entre 24
+  proyectos o ninguno (`scripts/report-volume/seed.sql:140`).
+- La descripción admite saltos de línea y tabulaciones internas: el esquema
+  solo hace `trim` (`src/modules/time-entry/schema.ts:60-64`).
 - `exportFormatLabels`: `components/labels.ts:106-109`; la barra dibuja un
   enlace por formato: `components/report-toolbar.tsx:152-176`.
 - La regla de ESLint de `exceljs`: `eslint.config.mjs:5`, `:24-44`.
+- Sin estado mutable a nivel de módulo, salvo el pool:
+  `.claude/skills/code-conventions/SKILL.md`, «TypeScript».
 - `@react-pdf/renderer` 4.9.0 en `dependencies` (`package.json:30`); sus
   dependencias, entre ellas `pdfkit` 0.20.1 y `@react-pdf/font`
   (`node_modules/@react-pdf/renderer/package.json:25-39`); `renderToBuffer`
@@ -350,7 +390,8 @@ A mano: cómo se ve en un visor y al imprimir.
 - `@react-pdf/font`: las doce fuentes estándar, abiertas con `pdfkit`; las
   demás con `fontkit.open` desde una ruta, `fontkit.create` desde un data URL, o
   `fetch` desde una URL (`node_modules/@react-pdf/font/lib/index.js:6-29`,
-  `:252-277`); la familia por omisión es Helvetica (`:356-445`).
+  `:252-277`); la familia por omisión es Helvetica (`:356-445`);
+  `getRegisteredFontFamilies` (`lib/index.d.ts:83`).
 - `pdfkit`: las fuentes estándar con WinAnsi y `.notdef` para lo demás
   (`node_modules/pdfkit/js/pdfkit.js:3252-3294`, `:3339-3363`); sus `.afm` en
   `node_modules/pdfkit/js/data/`; sus dependencias, `fontkit`, `fflate`,
@@ -368,15 +409,19 @@ A mano: cómo se ve en un visor y al imprimir.
   `outputFileTracingIncludes` por ruta
   (`…/01-next-config-js/output.md:16`, `:80-97`); el ejemplo de fuentes lee el
   archivo con `readFile(join(process.cwd(), …))`
-  (`…/04-functions/image-response.md:161-179`).
+  (`…/04-functions/image-response.md:161-179`). Con el grupo de rutas, el
+  trazado de una descarga está en `.next/server/app/(app)/reportes/exportar/<formato>/route.js.nft.json`;
+  con Turbopack, los de `csv` y `xlsx` listan lo mismo, porque lo empaquetado
+  va a fragmentos compartidos (revisión de este contrato, hallazgo 4).
 - `chart-model.ts` no importa nada (`components/chart-model.ts`):
   `chartScaleOf`, `tickIndexesOf`, `tickAlignOf`, `barHeightPercent`.
 - Vitest de unidad toma `src/**/*.test.ts` y `*.test.tsx` en Node
-  (`vitest.config.ts:8-17`).
-- e2e: `exportUrl`, `recordExportRequests`, `readCsv`, `readXlsx`,
-  `ExportLabel = "CSV" | "Excel"`, `exportLink` (`e2e/reports-page.ts:292-300`,
-  `:366-374`, `:383-401`, `:913-923`); 25 recorridos, el último en
-  `e2e/reports.spec.ts:2314`.
+  (`vitest.config.ts:8-17`); los helpers de tests viven en `src/test/`
+  (`markup.ts`, `report.ts`).
+- e2e: `ExportFormat = "csv" | "xlsx"` (`e2e/reports-page.ts:283`), `exportUrl`,
+  `recordExportRequests`, `readCsv`, `readXlsx`, `ExportLabel = "CSV" | "Excel"`,
+  `exportLink` (`:292-300`, `:366-374`, `:383-401`, `:913-923`); 25 recorridos,
+  el último en `e2e/reports.spec.ts:2314`.
 - CI: `format:check` y audita producción con nivel alto
   (`.github/workflows/ci.yml:23`, `:41`).
 
@@ -394,8 +439,8 @@ mergea.
   la fuente con su licencia; el formato en el handler.
 - **La ruta** `src/app/(app)/reportes/exportar/pdf/route.ts`.
 - **La pantalla**: el rótulo «PDF».
-- **La regla de ESLint** de D-R7-9 y `pdfjs-dist` en `devDependencies`
-  (pregunta 4).
+- **Los tests**: el lector `src/test/pdf.ts`; la regla de ESLint de D-R7-9 y
+  `pdfjs-dist` en `devDependencies` (pregunta 4).
 - **La medición** de §6.2.
 
 **R7b** entra: el gráfico en el documento y en el PDF (D-R7-12).
@@ -410,11 +455,12 @@ Queda afuera: ver §11.
   `ReportExportRead`; `ReportExportState.entries` admite `null`; `ReadPlan`
   suma `exporting`; el tope de duración depende de `exporting`;
   `readReportState` recibe `ReportExportRead | null` en lugar de `withEntries`.
-  Las cuatro llamadas existentes a `getReportExport` (`service.integration.test.ts`,
-  dos; `scope.integration.test.ts`, una; `handler.ts`, una) pasan
+  **Las cinco llamadas existentes a `getReportExport`**
+  (`handler.ts:112`, `service.integration.test.ts:4284` y `:4737`,
+  `scope.integration.test.ts:3049`, `handler.integration.test.ts:305`) pasan
   `{ entries: true }` y no cambian de resultado. Vuelve a probar:
-  `service.integration.test.ts` y `scope.integration.test.ts` enteros, con los
-  mismos valores.
+  `service.integration.test.ts`, `scope.integration.test.ts` y
+  `handler.integration.test.ts` enteros, con los mismos valores.
 - **`export/types.ts`**: `ExportWriter.entries`; el comentario de
   `sections`. Vuelve a probar: `npm run typecheck`.
 - **`export/document.ts`**: con `entries: null`, solo «Resumen». Vuelve a
@@ -432,14 +478,15 @@ Queda afuera: ver §11.
 - **`next.config.ts`**: solo si el paso 0 dice que la fuente no viaja con la
   función (`outputFileTracingIncludes`) o si se elige `pdfkit`
   (`serverExternalPackages`).
-- **`e2e/reports-page.ts`, `e2e/reports.spec.ts`**: `"PDF"` en `ExportLabel`,
-  `readPdf(path)` y el recorrido 26 (27 en R7b). Ningún export se renombra.
-  Vuelve a probar: `reports.spec.ts` entero.
+- **`e2e/reports-page.ts`, `e2e/reports.spec.ts`**: `"pdf"` en `ExportFormat`,
+  `"PDF"` en `ExportLabel`, `readPdf(path)` y el recorrido 26 (27 en R7b).
+  Ningún export se renombra. Vuelve a probar: `reports.spec.ts` entero.
 
 La página no lee nada nuevo y la barra suma un enlace. Las ediciones fuera del
 reparto siguen la regla de R3 a R6: las hace el dueño del tipo que las rompe,
 con aviso al team-lead, después de que el dueño del archivo commitee lo
-pendiente.
+pendiente. **En el paso 1 son dos** (§7, «Orden»): `scope.integration.test.ts`
+(de `test-engineer`) y `document.ts` (de `frontend-dev`).
 
 ## 2. Esquema e índices
 
@@ -591,16 +638,17 @@ export type PdfLayout = {
   readonly sections: readonly PdfSection[];
 };
 
-/** D-R7-5: cada punto de código que no se dibuja, por `glyphs.replacement`. */
+/** D-R7-5: el blanco, como espacio; lo que no se dibuja, por `glyphs.replacement`. */
 export function pdfTextOf(text: string, glyphs: PdfGlyphs): string;
 
 /** D-R7-6: qué va en cada página, sin medidas de la biblioteca. Pura. */
 export function pdfLayoutOf(document: ExportDocument, glyphs: PdfGlyphs): PdfLayout;
 ```
 
-- **`pdfTextOf`** recorre el texto por punto de código y cambia por
-  `glyphs.replacement` cada uno que `covers` no cubre, y siempre los controles
-  U+0000 a U+001F y U+007F a U+009F, U+FFFE, U+FFFF y los surrogates sueltos.
+- **`pdfTextOf`** recorre el texto por punto de código: `\t` (U+0009), `\n`
+  (U+000A) y `\r` (U+000D) pasan a ser un espacio; los demás controles, de
+  U+0000 a U+001F y de U+007F a U+009F, U+FFFE, U+FFFF y los surrogates sueltos
+  pasan siempre a `glyphs.replacement`; lo demás que `covers` no cubre, también.
 - **El título** es la primera fila de la cabecera, que es una celda sola
   (D-R6-8, `document.ts:136`). **La cabecera** son las demás filas, cada celda
   con `cellText` y `pdfTextOf`.
@@ -631,10 +679,13 @@ export async function pdfBytesOf(
 ): Promise<Uint8Array<ArrayBuffer>>;
 ```
 
-- **La fuente**, al cargar el módulo y una vez por instancia: `Font.register`
-  con la ruta de D-R7-5, `Font.registerHyphenationCallback((word) => [word])`
-  y, antes de armar el diseño, `Font.load` y la cobertura (`PdfGlyphs`). Con
-  Helvetica (pregunta 2), sin registro y con la tabla WinAnsi.
+- **La fuente, sin estado propio** (D-R7-5): en cada llamada, `Font.register`
+  con la ruta de D-R7-5 solo si `Font.getRegisteredFontFamilies()` no tiene la
+  familia; `Font.registerHyphenationCallback((word) => [word])`; `Font.load`,
+  que la biblioteca guarda cargada; y la cobertura (`PdfGlyphs`) sobre
+  `Font.getFont(…).data`, leída como `unknown` y estrechada. Con Helvetica
+  (pregunta 2), sin registro y con la tabla WinAnsi. Ninguna variable del
+  módulo cambia.
 - **El documento**: `<Document title="Reporte resumido" language="es">`, un
   `<Page size="A4">` con el estilo de D-R7-6; la cabecera; por sección, el
   título y la tabla, con la fila de encabezados `fixed`, cada fila con
@@ -677,7 +728,20 @@ export async function GET(request: Request): Promise<Response> {
 }
 ```
 
-### 4.8 La regla de ESLint (`eslint.config.mjs`)
+### 4.8 El lector de los tests (`src/test/pdf.ts`, nuevo)
+
+```ts
+/**
+ * D-R7-10: el texto de cada página de un PDF, con `pdfjs-dist` (`legacy`, sin
+ * worker): los fragmentos unidos y el blanco colapsado en un espacio.
+ */
+export async function pdfPageTexts(bytes: Uint8Array): Promise<readonly string[]>;
+```
+
+Lo usan `pdf.test.tsx` y `handler.integration.test.ts`. `readPdf` de
+`e2e/reports-page.ts` hace lo mismo sobre el archivo descargado.
+
+### 4.9 La regla de ESLint (`eslint.config.mjs`)
 
 D-R7-9, con `no-restricted-imports` (`patterns`) y `no-restricted-syntax`
 (`ImportExpression`) para cada biblioteca, con su mensaje:
@@ -687,17 +751,17 @@ D-R7-9, con `no-restricted-imports` (`patterns`) y `no-restricted-syntax`
 - en `src/modules/report/export/xlsx.ts`, todas menos `exceljs`;
 - en `src/modules/report/export/pdf.tsx`, todas menos `@react-pdf/*`, `pdfkit`
   y `fontkit`;
-- en `**/*.test.ts`, `**/*.test.tsx` y `e2e/**`, ninguna.
+- en `**/*.test.ts`, `**/*.test.tsx`, `src/test/**` y `e2e/**`, ninguna.
 
 El selector de `import()` sigue la forma de `449c77a`
 (`^exceljs(\x2F|$)`, con la barra escrita `\x2F`), uno por biblioteca.
 
-### 4.9 Costo
+### 4.10 Costo
 
 - **Ninguna sentencia nueva**: el PDF lee lo de la página más el
   `set_config`; no lee las entradas.
 - **La función**: `@react-pdf/renderer`, `yoga-layout`, `pdfkit`, `fontkit` y
-  la fuente, cargados solo por la ruta del PDF (§6.1, M1 y M2).
+  la fuente, cargados solo por la ruta del PDF (§6.1, M1, M2 y M8).
 - **Lo que viaja al navegador en la página**: un enlace más, sin JavaScript de
   cliente.
 
@@ -727,13 +791,18 @@ con el worktree; nada se commitea. En R6 se rompió dos veces la regla de los
 archivos de prueba en el árbol compartido (`correcciones-nucleo-reportes-r6b.md:29-33`):
 el encargo la repite.
 
-**Los prototipos**: una ruta `reportes/exportar/pdf` mínima que escribe el
-documento de R6 (`exportDocumentOf` de una exportación real, con
-`entries: { kind: "tooMany" }` y solo «Resumen») con cada candidata:
+**Los prototipos**: una ruta `reportes/exportar/pdf` mínima que escribe un
+documento de R6 (solo «Resumen») con cada candidata:
 
 - **P-RP**: `@react-pdf/renderer` como en §4.6;
 - **P-KIT**: `pdfkit` directo, con la tabla dibujada a mano (encabezados por
   página, filas sin partir, el pie con `bufferPages`).
+
+**Los documentos grandes se arman a mano.** Con el volumen sintético, ningún
+pedido de E3 o E4 de R6 da 3000 filas (§ «Lo que no se sostiene», punto 6). Los
+documentos de 50, 500 y 3000 filas de M3, M6 y M8 son un `ExportDocument` de
+tres niveles armado directo (o un `ReportReadyState` armado a mano que pasa por
+`exportDocumentOf`). El informe dice cuántas filas escribió cada uno.
 
 **Las fuentes candidatas**, cada una con su licencia:
 
@@ -746,18 +815,21 @@ documento de R6 (`exportDocumentOf` de una exportación real, con
 
 **Lo que se mide** (mediana de cinco, salvo lo que es un número único):
 
-- **M1, el peso de la función**: con `next build`, la suma de lo que lista el
-  trazado de la ruta del PDF (`.next/server/app/reportes/exportar/pdf/route.js.nft.json`)
-  y la del CSV, para P-RP y P-KIT, con F-H y con la fuente incrustada; si el
-  archivo de la fuente está en el trazado.
+- **M1, el peso de la función**: con `next build`, el trazado de la ruta del
+  PDF, `.next/server/app/(app)/reportes/exportar/pdf/route.js.nft.json`: el
+  total de lo que lista y, aparte, lo que lista de `node_modules/@react-pdf`,
+  `pdfkit`, `fontkit`, `yoga-layout` y sus dependencias, y si el archivo de la
+  fuente está. Con Turbopack, los trazados de `csv` y `xlsx` son iguales (lo
+  empaquetado va a fragmentos compartidos): la resta contra el CSV no aísla la
+  biblioteca, el desglose sí. Para P-RP y P-KIT, con F-H y con la fuente
+  incrustada.
 - **M2, el tiempo en frío**: después de `next start`, el primer pedido a
   `exportar/pdf` y el segundo, y el primero a `exportar/csv`; aparte, cuánto
   tarda `await import("@react-pdf/renderer")` y el primer `Font.load` en un
   proceso nuevo.
-- **M3, el costo de las filas**: el tiempo de escritura (sin la lectura), el
-  pico de `heapUsed`, las páginas y los bytes, con 50, 500 y 3000 filas de un
-  árbol de tres niveles (Persona → Proyecto → Fecha del volumen sintético,
-  366 días, todo el equipo, como E3 de R6), para P-RP y P-KIT, con F-H y con la
+- **M3, el costo de las filas**: con los documentos armados a mano de 50, 500
+  y 3000 filas, el tiempo de escritura (sin la lectura), el pico de
+  `heapUsed`, las páginas y los bytes, para P-RP y P-KIT, con F-H y con la
   fuente incrustada.
 - **M4, las fuentes**: el peso de cada archivo; si tiene U+FFFD; cuántos
   puntos de código cubre de Latin-1, Latin Extended-A y B, griego y cirílico;
@@ -767,17 +839,26 @@ documento de R6 (`exportDocumentOf` de una exportación real, con
   caracteres sin espacios en una columna angosta; abierto con lo que haya
   (`pdftotext`, LibreOffice, el visor de Firefox o de Chrome): qué se ve y qué
   se copia de cada uno, y si la palabra larga se parte o se sale.
-- **M6, el peor peso**: 3000 filas por Persona → Descripción con rótulos de
-  100 caracteres.
+- **M6, el peor peso**: el documento de 3000 filas armado a mano, con rótulos
+  de 100 caracteres en todos los niveles de texto.
 - **M7, la cadena de dependencias**: `npm audit --omit=dev` con el árbol de
   hoy (ya incluye a `@react-pdf/renderer` desde el principio) y lo que diga
   sobre `@react-pdf/*`, `pdfkit`, `fontkit`, `yoga-layout` y sus dependencias.
+- **M8, el peor pedido**: después de `next start`, en un proceso nuevo, el
+  primer pedido a `exportar/pdf` por la ruta, con su lectura (la del pedido de
+  P2 de §6.2) y el documento más grande de M3, hasta el último byte. Mediana de
+  cinco reinicios.
+- **M9, el lector de los tests**: `pdfjs-dist/legacy/build/pdf.mjs`, sin
+  worker, bajo Vitest en Node, leyendo el PDF de M5 con los fragmentos unidos
+  (D-R7-10).
 
 **Los presupuestos para recomendar P-RP** (locales; Vercel no está medido):
 
+- **M8: ≤ 5 s**, la mitad de los 10 s del diseño (D-R7-11);
 - M3 con 3000 filas: **≤ 3 s** de escritura y **≤ 512 MB** de pico;
 - M2: el primer pedido al PDF, **≤ 3 s** más que el primero al CSV;
-- M1: el trazado de la ruta del PDF, **≤ 50 MB**;
+- M1: el trazado de la ruta del PDF, **≤ 50 MB** (contra 250 MB sin comprimir
+  de Vercel, _no verificado_);
 - M6: **≤ 2 MB**.
 
 **El informe** lleva cada número, la máquina y las versiones, y una
@@ -795,15 +876,22 @@ Lo hace `backend-dev` con el código terminado, como §6.3 de R6, desde
 
 - **P1**: el mes pasado, todo el equipo, Persona → Proyecto → Fecha.
   Presupuesto **≤ 2 s**.
-- **P2**: 366 días, todo el equipo, Persona → Proyecto → Fecha (las 3000 filas
-  del tope). **≤ 4 s**, **≤ 2 MB**.
+- **P2**: **un pedido real del volumen que dé entre 2900 y 3000 filas con
+  todos sus niveles**, por ejemplo Persona → Fecha sobre el período de unos 95
+  días hábiles que lo logre. `backend-dev` lo ajusta y anota el pedido,
+  `levelsShown` y las filas. **≤ 4 s**, **≤ 2 MB**; y **en frío**, como M8,
+  **≤ 5 s**.
 - **P3**: 366 días, todo el equipo, Descripción (el primer nivel no entra: el
   aviso). **≤ 1 s**.
-- **P4**: el peor peso de M6. **≤ 5 s**, **≤ 2 MB**.
+- **P4**: **un pedido real que dé entre 2900 y 3000 filas con los rótulos más
+  largos que tenga el volumen** (con descripción en algún nivel). **≤ 5 s**,
+  **≤ 2 MB**.
 
-Con el pico de `heapUsed` de cada una (**≤ 512 MB**), el primer pedido después
-de `next start` a `exportar/pdf` y a `exportar/csv` (que el CSV no cargue la
-biblioteca del PDF) y el trazado de la ruta.
+Si no hay un pedido que llegue a 2900 filas, P2 y P4 suman la lectura de E3 de
+R6 al escritor sobre el documento armado a mano de M3 y M6, y el informe lo
+dice. Con el pico de `heapUsed` de cada una (**≤ 512 MB**), el primer pedido
+después de `next start` a `exportar/pdf` y a `exportar/csv` (que el CSV no
+cargue la biblioteca del PDF) y el trazado de la ruta, con el desglose de M1.
 
 ### 6.3 Lo que no se mide en local
 
@@ -851,12 +939,17 @@ Ningún archivo del árbol compartido. El worktree
 /home/maxi/program/clock/src/modules/report/export/fonts/                         (nuevo, si hay fuente)
 /home/maxi/program/clock/src/modules/report/export/handler.ts
 /home/maxi/program/clock/src/modules/report/export/handler.integration.test.ts
+/home/maxi/program/clock/src/test/pdf.ts                                          (nuevo)
 /home/maxi/program/clock/src/app/(app)/reportes/exportar/pdf/route.ts             (nuevo)
 /home/maxi/program/clock/eslint.config.mjs
 /home/maxi/program/clock/package.json
 /home/maxi/program/clock/package-lock.json
 /home/maxi/program/clock/next.config.ts                                           (solo si D-R7-5 o §12 lo piden)
 ```
+
+En el paso 1, además, con la regla del dueño del tipo y aviso:
+`scope.integration.test.ts` (la llamada con `{ entries: true }`) y
+`export/document.ts` (con `entries: null`, sin la sección «Entradas»).
 
 ### R7a — frontend-dev
 
@@ -886,8 +979,10 @@ copia propia con su base, los mutantes de los criterios 3, 4, 8 y 9 de §8.1.
 /home/maxi/program/clock/e2e/reports-page.ts
 ```
 
-- `reports-page.ts`: `"PDF"` en `ExportLabel`; `readPdf(path)`, que afirma que
-  empieza con `%PDF-` y devuelve el texto de cada página con `pdfjs-dist`.
+- `reports-page.ts`: `"pdf"` en `ExportFormat`; `"PDF"` en `ExportLabel`;
+  `readPdf(path)`, que afirma que empieza con `%PDF-` y devuelve el texto de
+  cada página con `pdfjs-dist` (`legacy`, sin worker), con los fragmentos
+  unidos y el blanco colapsado (D-R7-10).
 - Los mutantes de §8.2, en una copia con puerto propio.
 
 ### R7a — parity-analyst
@@ -900,11 +995,11 @@ Entrega el texto y **lo aplica el team-lead**, antes del merge, con su
 corrección fechada y una sección «16. Núcleo, R7»: RP-53 (qué trae el PDF y
 qué no: la cabecera y el resumen, sin las entradas, con la cita de Clockify;
 A4, los encabezados en cada página, el número de página; el tope de 3000
-filas; el reemplazo de lo que la fuente no dibuja; el nombre del archivo) y la
-corrección del texto de R6a que decía que el PDF traía las entradas
-(`reportes.md:1594-1598`). Divergencias que el reviewer no marca: sin gráfico
-si el usuario no lo pide; sin opciones de qué mostrar; el diseño de la página
-es propio.
+filas; el blanco como espacio y el reemplazo de lo que la fuente no dibuja; el
+nombre del archivo) y la corrección del texto de R6a que decía que el PDF
+traía las entradas (`reportes.md:1594-1598`). Divergencias que el reviewer no
+marca: sin gráfico si el usuario no lo pide; sin opciones de qué mostrar; el
+diseño de la página es propio.
 
 ### R7b
 
@@ -920,10 +1015,10 @@ Con la respuesta del usuario a la pregunta 3 y R7a mergeada:
 ### Lo que no toca nadie
 
 `src/server/`, `drizzle/`, `src/components/`, `src/lib/`, el resto de
-`src/app/`, los módulos que no son `report`, `report/repository.ts`,
-`report/request.ts`, `report/period.ts`, `report/chart.ts`,
-`report/components/` salvo `labels.ts` y el test de la barra,
-`export/xlsx.ts`, `export/entry-size.ts`, `scripts/report-volume/`,
+`src/app/`, el resto de `src/test/`, los módulos que no son `report`,
+`report/repository.ts`, `report/request.ts`, `report/period.ts`,
+`report/chart.ts`, `report/components/` salvo `labels.ts` y el test de la
+barra, `export/xlsx.ts`, `export/entry-size.ts`, `scripts/report-volume/`,
 `e2e/database.ts`, los ADR y CLAUDE.md. El mapa y el estado los actualiza el
 team-lead.
 
@@ -937,16 +1032,21 @@ _R7-0._
 
 _R7a, ronda 1: `backend-dev` y `frontend-dev`._
 
-1. **Primer commit de `backend-dev`**: `"pdf"` en `schema.ts` con
-   `schema.test.ts`; `ExportWriter.entries` y el comentario de `sections` en
-   `types.ts`; `cell-text.ts` con su test y `csv.ts`; `ReportExportRead`, el
-   tipo de `ReportExportState` y la firma de `getReportExport`, con las cuatro
-   llamadas en `{ entries: true }`; en `handler.ts`, `entries: true` en CSV y
-   Excel; `pdfjs-dist` en `devDependencies` (pregunta 4). Criterios 1 y 2.
-   **Avisa a `frontend-dev` y al team-lead**: las formas son las finales.
-2. **`frontend-dev`**, desde el paso 1: `document.ts` con `entries: null`,
-   `pdf-layout.ts`, `export/labels.ts` (`pageLabel`) y «PDF» en
-   `components/labels.ts`; los criterios 5, 6, 7 y 10.
+1. **Primer commit de `backend-dev`**, que deja el árbol compilando: `"pdf"` en
+   `schema.ts` con `schema.test.ts`; `ExportWriter.entries` y el comentario de
+   `sections` en `types.ts`; `cell-text.ts` con su test y `csv.ts`;
+   `ReportExportRead`, el tipo de `ReportExportState` y la firma de
+   `getReportExport`, con **las cinco llamadas** en `{ entries: true }`; en
+   `handler.ts`, `entries: true` en CSV y Excel; `pdfjs-dist` en
+   `devDependencies` (pregunta 4) y `src/test/pdf.ts`. **Con la regla del dueño
+   del tipo y aviso a sus dueños**, el cambio mínimo en
+   `scope.integration.test.ts` (la llamada) y en `document.ts` (con
+   `entries: null`, sin la sección «Entradas»), que el tipo nuevo rompe.
+   Criterios 1 y 2. **Avisa a `frontend-dev`, a `test-engineer` y al
+   team-lead**: las formas son las finales.
+2. **`frontend-dev`**, desde el paso 1: el caso de `entries: null` en
+   `document.test.ts`, `pdf-layout.ts`, `export/labels.ts` (`pageLabel`) y
+   «PDF» en `components/labels.ts`; los criterios 5, 6, 7 y 10.
 3. **`backend-dev`**: la lectura sin entradas y el tope de duración con
    `exporting` en `service.ts`; el criterio 3.
 4. **`backend-dev`**, con el último commit de `frontend-dev`: la fuente y su
@@ -1009,10 +1109,13 @@ _R7a._
    `entries: null`, una sola sección, «Resumen», y la misma cabecera que con
    entradas.
 6. **El texto del PDF** (unidad, `pdf-layout.test.ts`, con un `PdfGlyphs` de
-   prueba que cubre ASCII, Latin-1 y «Ł», con U+FFFD) — «Łukasz» queda;
-   «Дмитрий» da siete U+FFFD; «😀» da **uno**; un surrogate suelto, U+FFFE,
-   U+FFFF, U+0007, `\t`, `\n`, `\r`, U+007F y U+0085 dan U+FFFD **aunque
-   `covers` diga que sí**; con `replacement` «?», «?».
+   prueba que cubre ASCII, Latin-1 y «Ł», con U+FFFD) —
+   - «Łukasz» queda; «Дмитрий» da siete U+FFFD; «😀» da **uno**;
+   - «a\tb», «a\nb» y «a\r\nb» dan «a b», «a b» y «a b»: cada uno, un
+     espacio;
+   - un surrogate suelto, U+FFFE, U+FFFF, U+0000, U+0007, U+007F y U+0085 dan
+     U+FFFD **aunque `covers` diga que sí**;
+   - con `replacement` «?», «?» en los mismos casos, y los espacios iguales.
 7. **El diseño** (unidad, `pdf-layout.test.ts`) —
    - el título es la primera fila; la cabecera, las demás, con «Total» y
      «Facturable» de tres celdas («0:59», «0,98»);
@@ -1027,24 +1130,26 @@ _R7a._
    - un carácter que el `PdfGlyphs` no cubre, cambiado en un rótulo, un
      encabezado, la cabecera y un aviso;
    - una tabla cuya primera celda de datos no es `integer`: `RangeError`.
-8. **Los bytes** (unidad, `pdf.test.tsx`, leyendo con `pdfjs-dist`) —
+8. **Los bytes** (unidad, `pdf.test.tsx`, leyendo con `pdfPageTexts`) —
    - empieza con `%PDF-`; la página es A4 vertical (595,28 × 841,89 pt, con
      tolerancia de 0,5); el título de los metadatos es «Reporte resumido»;
    - un documento chico: una página, con el título, «Período», los valores de
      la cabecera, «Web (ACME)», «1:30», «1,50» y «Página 1 de 1»;
-   - un documento de 3000 filas: más de una página; **el texto de cada página
-     tiene la fila de encabezados** («Nivel», …, «Horas») y «Página n de N»,
-     con `n` de 1 a N;
+   - **un documento de unas 200 filas que da tres páginas o más**: el texto de
+     cada página tiene la fila de encabezados («Nivel», …, «Horas») y «Página n
+     de N», con `n` de 1 a N;
    - un rótulo con «😀» se lee U+FFFD (con la fuente incrustada) o «?» (con
      Helvetica);
-   - **`fetch` no se llama** (espía en `globalThis.fetch`).
+   - **`fetch` no se llama** (espía en `globalThis.fetch`);
+   - dos llamadas seguidas a `pdfBytesOf` registran la familia una sola vez
+     (`Font.getRegisteredFontFamilies()` no la repite).
 9. **La ruta** (integración, `export/handler.integration.test.ts`) —
    - `pdf`: 200, `Content-Type: application/pdf`, `Content-Disposition:
 attachment; filename="reporte_persona-proyecto_2026-09-28_2026-10-04.pdf"`,
      **`Cache-Control: no-store` exacto**, el cuerpo empieza con `%PDF-`;
    - **ni `entryListSize` ni `entryList` se llaman**; `limitStatementTime`, sí;
-   - un member con `personas=<otra>`: el texto del PDF no tiene el nombre de la
-     otra persona;
+   - un member con `personas=<otra>`: el texto del PDF (`pdfPageTexts`) no tiene
+     el nombre de la otra persona;
    - con la membresía inactiva, 403; `totalsByLevels` que rechaza, 500, los
      dos con `no-store`;
    - `exportBodyOf` sin entradas con `maxBytes` menor que el PDF: rechaza con
@@ -1058,8 +1163,9 @@ attachment; filename="reporte_persona-proyecto_2026-09-28_2026-10-04.pdf"`,
     subruta o un `import()` de `@react-pdf/renderer`, `pdfkit` o `fontkit` en
     `export/document.ts`, `npm run lint` falla; de `exceljs` en `pdf.tsx`,
     falla; de `@react-pdf/renderer` en `xlsx.ts`, falla; de `pdfjs-dist` en
-    `handler.ts`, falla; en un `*.test.ts`, un `*.test.tsx` y `e2e/`, no.
-    Corrido en el worktree o en una copia, no en el árbol compartido.
+    `handler.ts`, falla; en un `*.test.ts`, un `*.test.tsx`, `src/test/` y
+    `e2e/`, no. Corrido en el worktree o en una copia, no en el árbol
+    compartido.
 12. **El rendimiento y el peso** (manual, §6.2) — dentro del presupuesto.
 13. **Abrir el archivo** (manual) — el PDF de P1 y el de P2 en un visor y con
     lo que haya (`pdftotext`, LibreOffice, Firefox o Chrome): el texto se
@@ -1099,14 +1205,16 @@ _R7b._
 - **5** (unidad, `document.test.ts`): «Entradas» con el aviso cuando son
   `null`.
 - **6** (unidad, `pdf-layout.test.ts`): recorrer por unidad UTF-16 (cae con el
-  emoji: dos reemplazos); los controles solo si `covers` dice que no; sin
+  emoji: dos reemplazos); `\t`, `\n` o `\r` como reemplazo en lugar de espacio
+  (cae con «a\tb»); los demás controles solo si `covers` dice que no; sin
   U+FFFE ni U+FFFF; el reemplazo fijo en lugar del de `glyphs`.
 - **7** (unidad, `pdf-layout.test.ts`): los antepasados sin `muted`; el propio
   con `muted`; los anchos que no suman 1; «Horas» a la izquierda; el `'` del
   CSV; un aviso tomado como tabla; la cabecera sin `pdfTextOf`.
 - **8** (unidad, `pdf.test.tsx`): la fila de encabezados sin `fixed` (cae: una
   página sin encabezados); el pie sin `fixed`; `LETTER` en lugar de `A4`; el
-  texto sin `pdfTextOf`; una fuente remota (cae con el espía de `fetch`).
+  texto sin `pdfTextOf`; una fuente remota (cae con el espía de `fetch`);
+  `Font.register` en cada llamada sin mirar las registradas.
 - **9** (integración, `handler.integration.test.ts`): `entries: true` en el
   PDF (caen los espías); `inline`; sin `no-store`; `text/plain` en lugar de
   `application/pdf`; la guarda de peso quitada (cae: 200 con un PDF de más).
@@ -1139,11 +1247,11 @@ la misma regla.
     - el clic en «PDF» descarga
       `reporte_proyecto-fecha_2025-09-15_2025-09-21.pdf` y la página sigue en
       `/reportes`;
-    - `readPdf`: una página, con «Reporte resumido», «Período» y
-      «15/09/2025 – 21/09/2025», «Solo las horas de {nombre}», «Web {sufijo}
-      (ACME {sufijo})» con «2:15» y «2,25», «Sin proyecto» con «0:30» y «0,50»,
-      y «Página 1 de 1»; **no** trae `Revisión "final"; v2`, «=1+1» ni
-      «Entradas»;
+    - `readPdf`, con los fragmentos unidos: una página, con «Reporte
+      resumido», «Período» y «15/09/2025 – 21/09/2025», «Solo las horas de
+      {nombre}», «Web {sufijo} (ACME {sufijo})» con «2:15» y «2,25», «Sin
+      proyecto» con «0:30» y «0,50», y «Página 1 de 1»; **no** trae
+      `Revisión "final"; v2`, «=1+1» ni «Entradas»;
     - `page.request.get(href)`: 200; `content-type` `application/pdf`;
       `cache-control` contiene `no-store`; `content-disposition` con
       `attachment` y el nombre.
@@ -1157,8 +1265,9 @@ antes del clic); el rótulo «PDF» quitado (26).
 
 ### 8.3 Lo que no se prueba en e2e
 
-- **El reemplazo de lo que la fuente no dibuja, las 3000 filas y los
-  encabezados por página**: criterios 6 a 8.
+- **El blanco, el reemplazo de lo que la fuente no dibuja y los encabezados por
+  página**: criterios 6 a 8.
+- **Las 3000 filas**: §6.1 y §6.2, no `npm test` ni e2e.
 - **El tope de duración**: criterio 3.
 - **El 403, el 500 y la guarda de peso**: criterio 9.
 - **Cómo se ve y cómo se imprime**: criterio 13.
@@ -1170,12 +1279,19 @@ antes del clic); el rótulo «PDF» quitado (26).
 - **El costo de `@react-pdf/renderer` con 3000 filas no se conoce** hasta el
   paso 0: el diseño con Yoga es más lento que dibujar a mano. Por eso la
   medición va antes y `pdfkit` queda como salida con el mismo `pdfBytesOf`.
+- **El peor pedido en frío** (M8) junta la carga de la biblioteca, la lectura
+  y la escritura. Con 5 s en local queda la mitad de los 10 s para la CPU de
+  Vercel y la red hasta Neon; ninguno de los dos está medido.
 - **El tamaño y el arranque de la función**: `@react-pdf/renderer` trae
   `yoga-layout`, `pdfkit`, `fontkit` y la fuente. Los límites de Vercel no
   están verificados (D-R7-11).
 - **La fuente cubre lo que cubre**: un nombre en un alfabeto que no tenga, o
   un emoji, sale como U+FFFD (o «?» con Helvetica). El CSV y el Excel lo
   conservan. La cobertura de cada candidata la dice M4.
+- **El almacén de fuentes de la biblioteca es global**: `pdf.tsx` no guarda
+  estado, pero `Font` sí, por proceso. Registrar solo si falta la familia evita
+  repetirlo; dos pedidos a la vez pueden registrarla los dos, y la biblioteca
+  se queda con la primera que resuelve (`index.js:322-327`).
 - **Un binario en el repositorio**: la fuente, con su licencia, que nadie
   revisa en un diff. El paso 0 registra de dónde salió y su SHA-256, y el
   informe del paso 4 los repite.
@@ -1197,9 +1313,9 @@ antes del clic); el rótulo «PDF» quitado (26).
 
 1. **Cómo se arma el PDF (bloquea R7a, no R7-0).** Es el ADR propuesto de §12.
    **Recomendación: `@react-pdf/renderer`**, si el paso 0 cumple los
-   presupuestos de §6.1; si no, `pdfkit` directo. La hoja de impresión del
-   navegador no genera un archivo y no se recomienda. Se responde con el
-   informe del paso 0 a la vista.
+   presupuestos de §6.1 (entre ellos, el peor pedido en frío, M8); si no,
+   `pdfkit` directo. La hoja de impresión del navegador no genera un archivo y
+   no se recomienda. Se responde con el informe del paso 0 a la vista.
 2. **La fuente (bloquea el paso 4 de R7a).** (a) **Una fuente incrustada**,
    con U+FFFD y cobertura amplia, de licencia libre, en el repositorio: el PDF
    dibuja casi cualquier nombre y marca lo que no puede con U+FFFD, como el
@@ -1293,12 +1409,15 @@ siguiente número libre (hoy, 0022).
 >    los encabezados y los pies los pone el navegador, y lo que sale no se
 >    puede probar en CI salvo con Chromium.
 >
-> **Decisión.** (1), con la medición del paso 0 como condición: con 3000 filas,
-> la escritura en 3 s o menos y un pico de 512 MB o menos; el primer pedido en
-> frío, 3 s o menos por encima del CSV; el trazado de la ruta, 50 MB o menos.
-> Si (1) no cumple y (2) sí, (2). Las dos quedan encerradas en
-> `src/modules/report/export/pdf.tsx` detrás de `pdfBytesOf`: el diseño de la
-> página (`pdf-layout.ts`) y sus tests no dependen de la biblioteca.
+> **Decisión.** (1), con la medición del paso 0 como condición: **el primer
+> pedido en frío por la ruta, con su lectura y el documento de 3000 filas, en
+> 5 s o menos** (la mitad de los 10 s del diseño); con 3000 filas, la escritura
+> en 3 s o menos y un pico de 512 MB o menos; el primer pedido en frío, 3 s o
+> menos por encima del CSV; el trazado de la ruta, 50 MB o menos (contra 250 MB
+> de Vercel, no verificado). Si (1) no cumple y (2) sí, (2). Las dos quedan
+> encerradas en `src/modules/report/export/pdf.tsx` detrás de `pdfBytesOf`: el
+> diseño de la página (`pdf-layout.ts`) y sus tests no dependen de la
+> biblioteca.
 >
 > **Consecuencias.** La biblioteca se importa solo en `pdf.tsx`, con
 > `import()` dinámico, y una regla de ESLint lo hace cumplir, como con
