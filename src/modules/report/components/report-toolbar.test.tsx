@@ -653,13 +653,33 @@ describe("ReportToolbar con «Exportar» (D-R6-10)", () => {
     );
   });
 
-  it("es un enlace común, sin `download`, con el ícono oculto y el nombre de su texto", () => {
+  it("«Excel», después de «CSV», descarga el `.xlsx` con la misma query (R6b)", () => {
+    const markup = render({ chart, subgroups: ["date", "tag"], filters });
+    const found = [...links(exportGroup(markup))];
+    expect(found.map(([label]) => label)).toEqual(["CSV", "Excel"]);
+    const view = {
+      range: lastWeek,
+      groupBy: "project",
+      subgroups: ["date", "tag"],
+      filters,
+    } as const;
+    expect(found[1][1].href).toBe(reportExportHref("xlsx", view));
+    expect(found[1][1].href).toBe(
+      reportExportHref("csv", view).replace("/exportar/csv?", "/exportar/xlsx?"),
+    );
+  });
+
+  it("cada uno es un enlace común, sin `download`, con el ícono oculto y el nombre de su texto", () => {
     const group = exportGroup(render({ chart }));
     const anchors = [...group.matchAll(/<a ([^>]*)>(.*?)<\/a>/g)];
-    expect(anchors).toHaveLength(1);
-    const [, attributes, content] = anchors[0];
-    expect(attributes).not.toMatch(/\bdownload\b/);
-    expect(attributes).not.toContain("aria-label");
-    expect(content).toMatch(/^<svg [^>]*aria-hidden="true"[^>]*>.*<\/svg>CSV$/);
+    expect(anchors.map(([, , content]) => content.replace(/<[^>]+>/g, ""))).toEqual([
+      "CSV",
+      "Excel",
+    ]);
+    for (const [, attributes, content] of anchors) {
+      expect(attributes).not.toMatch(/\bdownload\b/);
+      expect(attributes).not.toContain("aria-label");
+      expect(content).toMatch(/^<svg [^>]*aria-hidden="true"[^>]*>.*<\/svg>(CSV|Excel)$/);
+    }
   });
 });
