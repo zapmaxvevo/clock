@@ -261,3 +261,97 @@ R7-0.
    la fuente en la biblioteca; el criterio 8 y su mutante lo afirman; §9 anota
    el almacén global de la biblioteca.
 8. La primera línea dice «Contrato del slice R7 del núcleo de reportes».
+
+## Segunda pasada
+
+Revisión de `architecture-reviewer` sobre `f73b455`, con
+`git diff 55e938e f73b455`. Las líneas son del contrato corregido.
+
+**Veredicto: cambios requeridos, solo menores.** Los ocho hallazgos de la
+primera pasada quedaron resueltos. Hay tres hallazgos nuevos, menores, en lo que
+agregó la corrección; si se aplican tal cual, no hace falta una tercera pasada.
+
+### Lo que quedó resuelto
+
+- **El diff:** todos los cambios caen en las secciones de los ocho hallazgos.
+  No se perdió ni cambió texto fuera de ellas; las demás decisiones, §2, §3,
+  §5, §11 y las preguntas 2 a 4 de §10 quedan iguales a `55e938e`.
+- **Hallazgos 1 y 2:** los documentos de 50, 500 y 3000 filas se arman a mano
+  (M3 y M6); P2 y P4 usan un pedido real de 2900 a 3000 filas, con su salida si
+  no lo hay; M8, el peor pedido en frío, tiene un presupuesto de ≤ 5 s y entra
+  en la decisión del ADR, en D-R7-11, en §9 y en la pregunta 1.
+- **Hallazgo 3:** las cinco llamadas están en §0, §1 y el paso 1; el cambio
+  mínimo en `scope.integration.test.ts` y `document.ts` queda con la regla del
+  dueño del tipo.
+- **Hallazgo 4:** la ruta del trazado lleva `(app)`, con el desglose por
+  paquete y los 250 MB, no verificados.
+- **Hallazgos 5 a 8:** el blanco como espacio, el lector `pdfPageTexts`, el
+  build `legacy` y M9, `"pdf"` en `ExportFormat`, `pdf.tsx` sin estado propio y
+  la primera línea.
+
+### Compilación
+
+Compilé en un archivo temporal del scratchpad, ya borrado, con el `tsc` del repo
+(5.9.3), la `lib`, `strict` y `jsx` del `tsconfig.json`. Para `pdfjs-dist` usé
+los tipos de la 5.7.284 (la versión que `pdfkit` declara), instalada aparte en
+el scratchpad con `--ignore-scripts` y ya borrada. **Compila sin errores**:
+
+- `pdf.tsx`: `Font.getRegisteredFontFamilies().includes(…)` antes de
+  `Font.register`, `registerHyphenationCallback`, `Font.load`,
+  `Font.getFont(…).data` como `unknown` con un guardián de tipo, el JSX con
+  `fixed`, `wrap={false}` y `render`, y
+  `new Uint8Array(await renderToBuffer(…))` como `Uint8Array<ArrayBuffer>`;
+- `src/test/pdf.ts`: `pdfPageTexts(bytes: Uint8Array): Promise<readonly string[]>`
+  implementada con `getDocument` de `pdfjs-dist/legacy/build/pdf.mjs`,
+  `getTextContent`, los fragmentos unidos y el blanco colapsado;
+- las cinco llamadas a `getReportExport` con `read` antes de `now?`, con la
+  forma de cada una en el árbol: `handler.ts:112`,
+  `service.integration.test.ts:4284` y `:4737`,
+  `scope.integration.test.ts:3049` y `handler.integration.test.ts:305`. La
+  forma vieja, con `now` como cuarto argumento, ya no compila: el compilador
+  obliga a tocar las cinco.
+
+M9 está bien planteado: el build `legacy` sin worker, bajo Vitest en Node, sobre
+el PDF de M5; Node 24, el de CI, alcanza para la 5.x. No corrí el lector:
+probarlo es M9.
+
+### Hallazgos nuevos
+
+**N1 (menor). «a\r\nb» no da «a b» con la regla escrita.**
+
+- **Dónde:** D-R7-5 `:183-185`; §4.5 `:676-679`; criterio 6 `:1114-1115`.
+- **Qué pasa:** la regla cambia `\t`, `\n` y `\r` «cada uno» por un espacio,
+  así que «a\r\nb» da «a␠␠b», con dos espacios; el criterio espera «a b».
+  Además, la pantalla colapsa toda corrida de blanco en un espacio, y la regla
+  no colapsa nada.
+- **Cambio:** fijar una de dos y ajustar el criterio y su mutante:
+  - **(recomendada)** una corrida de `\t`, `\n` y `\r` pasa a ser un solo
+    espacio, así que «a\r\nb» y «a\n\nb» dan «a b»;
+  - o cada uno es un espacio y el criterio espera «a␠␠b».
+
+**N2 (menor). El riesgo de registrar la fuente dos veces a la vez no existe si
+la consulta y el registro van juntos.**
+
+- **Dónde:** §9 `:1290-1294`; §4.6 `:682-688`.
+- **Qué pasa:** `getRegisteredFontFamilies()` y `Font.register` son
+  sincrónicos. En un proceso de Node, dos pedidos no pueden registrar los dos la
+  familia salvo que haya un `await` entre la consulta y el registro. Con la
+  regla bien escrita, el riesgo de §9 no se da; con un `await` en el medio, sí
+  se da, y nada lo prueba.
+- **Cambio:** que §4.6 diga «la consulta y el registro, seguidos y sin `await`
+  entre los dos», y que §9 lo diga así en lugar del riesgo. Opcional: sumar al
+  criterio 8 dos `pdfBytesOf` en paralelo (`Promise.all`) que registran la
+  familia una vez.
+
+**N3 (menor). Nada impide que producción importe `src/test/`, que ahora puede
+traer `pdfjs-dist`.**
+
+- **Dónde:** D-R7-9 `:269-272`; §4.9 `:754`.
+- **Qué pasa:** la excepción de `src/test/**` deja ahí cualquiera de las
+  bibliotecas, y ninguna regla impide que un archivo de producción importe
+  `@/test/pdf`. Hoy ninguno importa `@/test/` (lo usan solo los tests y
+  `vitest.integration.config.ts`), pero ese import pasaría `lint` y llevaría
+  una dependencia de desarrollo a la función.
+- **Cambio:** sumar a la regla de §4.9 el patrón `@/test/*` (y la ruta
+  relativa a `src/test/`), prohibido fuera de `**/*.test.ts`, `**/*.test.tsx`,
+  `src/test/**` y `e2e/**`, con su caso en el criterio 11.
