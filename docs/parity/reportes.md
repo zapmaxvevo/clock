@@ -1627,8 +1627,9 @@ exportación el 2026-10-12).
   - las entradas, **10 000 o 4 000 000 bytes de archivo, todo o nada**: con
     más de 10 000, o si el archivo con ellas pasa ese peso, no se lista
     ninguna y la parte «Entradas» es la fila «Las entradas no entran en el
-    archivo: son más de 10000 o pesan más de 4 MB. Acortá el período o
-    filtrá.». El resumen y la cabecera van igual. Justificación: cortar en las
+    archivo: son más de 10 000 o pesan más de 4 MB. Acortá el período o
+    filtrá.» (con un espacio duro, U+00A0, entre los miles; corrección F2 de
+    [las revisiones de R6a](../slices/correcciones-nucleo-reportes-r6a-revisiones.md)). El resumen y la cabecera van igual. Justificación: cortar en las
     primeras 10 000 daría un archivo que parece completo y no suma el total.
 - **CSV en español**: separador `;`, BOM UTF-8 una vez al principio, fin de
   línea `\r\n` también en la última, todos los campos entre comillas —también
@@ -3031,8 +3032,8 @@ descripciones «=1+1» y «-guion …» con el `'` adelante.
   número.
 - **Un 403 o un 500 se ven como una página de texto**, sin la interfaz de la
   aplicación: el enlace no abre otra pestaña y «Atrás» vuelve al reporte.
-- **El aviso de las entradas dice «10000»**, sin separador de miles, y une las
-  dos causas —la cantidad y el peso— en una sola frase.
+- **El aviso de las entradas une las dos causas** —la cantidad y el peso— en
+  una sola frase.
 
 ### 15.5 Qué puede hacer cada rol
 
