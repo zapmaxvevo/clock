@@ -213,7 +213,8 @@ vacío del owner y `renewWorkspace` se corta.
      `exceljs` se acepta con la alerta de `uuid`, siempre que el `security-auditor` de R6b
      confirme que la ruta vulnerable no se ejecuta; se revisa cuando haya versión corregida. (b)
      Las exportaciones **no** van al `audit_log`. `architecture-reviewer` lanzado sobre el
-     contrato (primera pasada).
+     contrato (primera pasada). Pedido del usuario (2026-10-12): «seguí sin parar con R6a, R6b,
+     R7 y R9», en ese orden. R8 sigue solo en contrato.
 
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
      (`7b66b03`), en checkout en el árbol principal. `architect-r3` quedó escribiendo
