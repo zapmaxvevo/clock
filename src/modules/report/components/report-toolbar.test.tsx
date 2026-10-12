@@ -34,6 +34,7 @@ const state: ReportReadyState = {
   shortcuts: [],
   groupBy: "project",
   subgroups: [],
+  peopleWithoutTime: false,
   levelsShown: 1,
   scope: "everyone",
   timeZone: "America/Argentina/Buenos_Aires",
@@ -644,6 +645,7 @@ describe("ReportToolbar con «Exportar» (D-R6-10)", () => {
         range: lastWeek,
         groupBy: "project",
         subgroups: ["date", "tag"],
+        peopleWithoutTime: false,
         filters,
       }),
     );
@@ -661,6 +663,7 @@ describe("ReportToolbar con «Exportar» (D-R6-10)", () => {
       range: lastWeek,
       groupBy: "project",
       subgroups: ["date", "tag"],
+      peopleWithoutTime: false,
       filters,
     } as const;
     expect(found[1][1].href).toBe(reportExportHref("xlsx", view));
@@ -681,5 +684,134 @@ describe("ReportToolbar con «Exportar» (D-R6-10)", () => {
       expect(attributes).not.toContain("aria-label");
       expect(content).toMatch(/^<svg [^>]*aria-hidden="true"[^>]*>.*<\/svg>(CSV|Excel)$/);
     }
+  });
+});
+
+describe("ReportToolbar con las personas sin horas (D-R9-11, D-R9-12)", () => {
+  const ANA = "aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY";
+  const BRUNO = "Zq8Wn2Rt6Yu0Io4Pa8Sd2Fg6Hj0Kl4Mx";
+  const SHOW = "Mostrar personas sin horas";
+  const HIDE = "Ocultar personas sin horas";
+  /** Con el catálogo de personas: quien mira ve horas de otros (D-R9-5). */
+  const options: ReportReadyState["filterOptions"] = {
+    people: [
+      { id: ANA, name: "Ana", inactive: false },
+      { id: BRUNO, name: "Bruno", inactive: true },
+    ],
+    clients: [],
+    projects: [],
+  };
+  const chosen: ReportFilters = { ...NO_REPORT_FILTERS, people: [ANA] };
+  const chart: ReportReadyState["chart"] = {
+    granularity: "date",
+    bars: [
+      {
+        firstDay: "2026-09-28",
+        label: "lun, 28/09",
+        partial: null,
+        tick: "28/09",
+        seconds: 60,
+      },
+    ],
+  };
+  const byPerson: Partial<ReportReadyState> = {
+    groupBy: "person",
+    subgroups: ["project"],
+    filterOptions: options,
+    filters: chosen,
+  };
+  const lastWeekBase = "/reportes?desde=2026-09-28&hasta=2026-10-04";
+
+  /** Los rótulos de los grupos de la barra, en orden. */
+  function groupLabels(markup: string): string[] {
+    return [...markup.matchAll(/<div role="group" aria-labelledby="([^"]+)"/g)].map(
+      ([, id]) =>
+        new RegExp(`<span id="${id}"[^>]*>([^<]*)</span>`).exec(markup)?.[1] ?? "",
+    );
+  }
+
+  it("apagada, el enlace dice «Mostrar personas sin horas» y la enciende", () => {
+    const found = links(render(byPerson));
+    expect(found.get(SHOW)?.href).toBe(
+      `${lastWeekBase}&agrupar=persona&subagrupar=proyecto&sin-horas=1&personas=${ANA}`,
+    );
+    expect(found.has(HIDE)).toBe(false);
+  });
+
+  it("encendida, dice «Ocultar personas sin horas» y la apaga", () => {
+    const found = links(render({ ...byPerson, peopleWithoutTime: true }));
+    expect(found.get(HIDE)?.href).toBe(
+      `${lastWeekBase}&agrupar=persona&subagrupar=proyecto&personas=${ANA}`,
+    );
+    expect(found.has(SHOW)).toBe(false);
+  });
+
+  it("es un enlace de contorno, nombrado por su texto, después del grupo de «Agrupar por»", () => {
+    const markup = render(byPerson);
+    const link = new RegExp(`<a ([^>]*)>${SHOW}</a>`).exec(markup)?.[1] ?? "";
+    expect(link).toContain("border-border");
+    expect(link).not.toContain("aria-label");
+    expect(link).not.toContain("aria-pressed");
+    expect(link).not.toContain("aria-current");
+    // Fuera del grupo: no es una dimensión más de «Agrupar por».
+    expect(groupByLinks(markup).map(({ label }) => label)).not.toContain(SHOW);
+    expect(markup.indexOf(">Agrupar por<")).toBeLessThan(markup.indexOf(SHOW));
+    expect(markup.indexOf(SHOW)).toBeLessThan(markup.indexOf(">Subagrupar por<"));
+  });
+
+  it("no está con otra dimensión arriba, aunque haya catálogo de personas", () => {
+    const markup = render({ ...byPerson, groupBy: "project", subgroups: ["person"] });
+    expect(markup).not.toContain(SHOW);
+    expect(markup).not.toContain(HIDE);
+  });
+
+  it("no está sin el catálogo de personas (`null`), aunque se agrupe por persona", () => {
+    const markup = render({
+      ...byPerson,
+      filterOptions: { ...options, people: null },
+      filters: NO_REPORT_FILTERS,
+    });
+    expect(markup).not.toContain(SHOW);
+    expect(markup).not.toContain(HIDE);
+  });
+
+  it("encendida, las flechas, «Esta semana», «Persona» y «Exportar» la conservan; «Proyecto», no", () => {
+    const markup = render({ ...byPerson, peopleWithoutTime: true, chart });
+    const kept = `&agrupar=persona&subagrupar=proyecto&sin-horas=1&personas=${ANA}`;
+    const found = links(markup);
+    expect(found.get("Período anterior")?.href).toBe(
+      `/reportes?desde=2026-09-21&hasta=2026-09-27${kept}`,
+    );
+    expect(found.get("Período siguiente")?.href).toBe(
+      `/reportes?desde=2026-10-05&hasta=2026-10-11${kept}`,
+    );
+    expect(found.get("Esta semana")?.href).toBe(
+      `/reportes?desde=2026-10-05&hasta=2026-10-11${kept}`,
+    );
+    const groupBy = new Map(groupByLinks(markup).map(({ label, href }) => [label, href]));
+    expect(groupBy.get("Persona")).toBe(`${lastWeekBase}${kept}`);
+    expect(groupBy.get("Proyecto")).toBe(
+      `${lastWeekBase}&agrupar=proyecto&subagrupar=persona&personas=${ANA}`,
+    );
+    expect(
+      [...groupBy]
+        .filter(([, href]) => href.includes("sin-horas"))
+        .map(([label]) => label),
+    ).toEqual(["Persona"]);
+    expect(found.get("CSV")?.href).toBe(
+      `/reportes/exportar/csv?desde=2026-09-28&hasta=2026-10-04${kept}`,
+    );
+    expect(found.get("Excel")?.href).toBe(
+      `/reportes/exportar/xlsx?desde=2026-09-28&hasta=2026-10-04${kept}`,
+    );
+  });
+
+  it("el enlace no suma un grupo con rótulo", () => {
+    expect(groupLabels(render({ ...byPerson, peopleWithoutTime: true, chart }))).toEqual([
+      "Agrupar por",
+      "Subagrupar por",
+      "Filtrar por",
+      "Exportar",
+    ]);
   });
 });

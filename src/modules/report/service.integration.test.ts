@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   afterEach,
   beforeEach,
@@ -12,7 +12,7 @@ import {
 } from "vitest";
 
 import { db } from "@/server/db";
-import { project, tag, task, timeEntry, user } from "@/server/db/schema";
+import { membership, project, tag, task, timeEntry, user } from "@/server/db/schema";
 import type { Actor, MembershipStatus, Role } from "@/server/permissions";
 import { monthBuckets, weekBuckets, type TimeSettings } from "@/server/time";
 import {
@@ -41,6 +41,7 @@ import {
   REPORT_EXPORT_MAX_ENTRIES,
   REPORT_GROUP_BYS,
   REPORT_MAX_FILTER_VALUES,
+  REPORT_MAX_ROWS,
   reportEntryRow,
   reportReadyState,
   type ReportEntryRow,
@@ -142,6 +143,7 @@ async function readyState(
       groupBy: request.groupBy ?? null,
       subgroups: request.subgroups ?? [],
       filters: request.filters ?? NO_REPORT_FILTERS,
+      peopleWithoutTime: request.peopleWithoutTime ?? false,
     },
     options.now ?? readNow,
   );
@@ -1913,36 +1915,42 @@ describe("las invariantes de los subniveles (criterio 20 de R3)", () => {
         groupBy: "tag",
         subgroups: ["date"],
         filters: NO_REPORT_FILTERS,
+        peopleWithoutTime: false,
       },
       {
         range: { first: "2025-01-01", last: "2026-01-02" },
         groupBy: "tag",
         subgroups: ["date"],
         filters: NO_REPORT_FILTERS,
+        peopleWithoutTime: false,
       },
       {
         range: lastWeek,
         groupBy: "person",
         subgroups: ["project", "date", "tag"],
         filters: NO_REPORT_FILTERS,
+        peopleWithoutTime: false,
       },
       {
         range: lastWeek,
         groupBy: "person",
         subgroups: ["date", "date"],
         filters: NO_REPORT_FILTERS,
+        peopleWithoutTime: false,
       },
       {
         range: lastWeek,
         groupBy: "project",
         subgroups: ["project"],
         filters: NO_REPORT_FILTERS,
+        peopleWithoutTime: false,
       },
       {
         range: lastWeek,
         groupBy: null,
         subgroups: ["person"],
         filters: NO_REPORT_FILTERS,
+        peopleWithoutTime: false,
       },
     ];
     for (const request of requests) {
@@ -1991,6 +1999,7 @@ describe("el armado del árbol con una foto inconsistente (§4.4 de R3)", () => 
         groupBy: "project",
         subgroups: ["date"],
         filters: NO_REPORT_FILTERS,
+        peopleWithoutTime: false,
       },
       readNow,
     );
@@ -2044,7 +2053,13 @@ describe("el período fuera del tope (B1)", () => {
           getReportState(
             owner,
             settings,
-            { range, groupBy, subgroups: [], filters: NO_REPORT_FILTERS },
+            {
+              range,
+              groupBy,
+              subgroups: [],
+              filters: NO_REPORT_FILTERS,
+              peopleWithoutTime: false,
+            },
             readNow,
           ),
         ).rejects.toThrow(RangeError);
@@ -2497,6 +2512,7 @@ describe("los filtros de cliente y de proyecto (R4: RP-25, RP-26, RP-29, RP-34)"
                   projects: [p1],
                   withoutProject: true,
                 },
+                peopleWithoutTime: false,
               },
               readNow,
             ),
@@ -4272,6 +4288,7 @@ function fullRequest(request: Partial<ReportRequest>): ReportRequest {
     groupBy: request.groupBy ?? null,
     subgroups: request.subgroups ?? [],
     filters: request.filters ?? NO_REPORT_FILTERS,
+    peopleWithoutTime: request.peopleWithoutTime ?? false,
   };
 }
 
@@ -4985,5 +5002,359 @@ describe("el tope de duración de la exportación (S3 de las revisiones de R6a)"
     await readyState(owner, { range: lastWeek });
 
     expect(limit).not.toHaveBeenCalled();
+  });
+});
+
+/** D-R9-2: un ingreso anterior a todos los períodos de los tests. */
+const joinedBefore = new Date("2026-01-01T00:00:00Z");
+
+/** El fin de `lastWeek` en Buenos Aires: el `span.to` de D-R9-2. */
+const lastWeekEnd = new Date("2026-10-05T03:00:00Z");
+
+/** D-R9-2: la fecha de ingreso de una persona, `membership.created_at`. */
+async function setJoinedAt(userId: string, instant: Date, inWorkspace = workspaceId) {
+  await db
+    .update(membership)
+    .set({ createdAt: instant })
+    .where(and(eq(membership.workspaceId, inWorkspace), eq(membership.userId, userId)));
+}
+
+/** Una persona del workspace del test con el ingreso antes de todos los períodos. */
+async function seedJoined(values: Parameters<typeof seedPerson>[0]): Promise<string> {
+  const userId = await seedPerson(values);
+  await setJoinedAt(userId, joinedBefore);
+  return userId;
+}
+
+/** Las filas del primer nivel como `[nombre, segundos, inactiva, con hijos]`, en orden. */
+function withoutTimeRows(state: ReportReadyState) {
+  return state.groups.map((group) => [
+    group.kind === "person" ? group.name : "?",
+    group.seconds,
+    group.kind === "person" && group.inactive,
+    group.children !== undefined,
+  ]);
+}
+
+describe("las personas sin horas (R9: RP-47; D-R9-2 a D-R9-7; criterios 5 a 10 y 12 de R9)", () => {
+  let admin: Actor;
+  let adminId: string;
+  let bId: string;
+  let cId: string;
+  let iId: string;
+  let nId: string;
+  let kId: string;
+  let p1: string;
+  let p2: string;
+
+  /**
+   * El owner O (7200 s en P1) y A1, la admin que mira (3600 s en P2), activos
+   * con horas; B, activa sin horas; C, inactiva sin horas; I, invitada sin
+   * horas; N, activa, creada en `span.to`; K, activa, creada 1 ms antes; X,
+   * activa sin horas, de otro workspace.
+   */
+  beforeEach(async () => {
+    await setJoinedAt(ownerId, joinedBefore);
+    adminId = await seedJoined({ accountName: "Ana", role: "admin" });
+    admin = actorIn(workspaceId, adminId, { role: "admin" });
+    bId = await seedJoined({ accountName: "Beatriz" });
+    cId = await seedJoined({ accountName: "Carla", status: "inactive" });
+    iId = await seedJoined({ accountName: "Iván", status: "invited" });
+    nId = await seedPerson({ accountName: "Nora" });
+    await setJoinedAt(nId, lastWeekEnd);
+    kId = await seedPerson({ accountName: "Kevin" });
+    await setJoinedAt(kId, new Date(lastWeekEnd.getTime() - 1));
+    const other = await seedWorkspace();
+    await setJoinedAt(other.ownerId, joinedBefore, other.workspaceId);
+    const xId = await seedMember(other.workspaceId, "member");
+    await renameAccount(xId, "Xavier");
+    await setJoinedAt(xId, joinedBefore, other.workspaceId);
+
+    p1 = (await seedProject({ workspaceId, name: "P1" })).id;
+    p2 = (await seedProject({ workspaceId, name: "P2" })).id;
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 7200, { projectId: p1 });
+    await seedClosed(adminId, "2026-09-30T13:00:00Z", 3600, { projectId: p2 });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function withOption(request: Partial<ReportRequest> = {}) {
+    return readyState(admin, { range: lastWeek, peopleWithoutTime: true, ...request });
+  }
+
+  it("por persona: O y A1 por duración, después B y K por nombre; ni C, ni I, ni N, ni X (criterio 5)", async () => {
+    const state = await withOption();
+    expect(reportReadyState.parse(state)).toEqual(state);
+    expect(state.peopleWithoutTime).toBe(true);
+    expect(state.groups).toStrictEqual([
+      { kind: "person", userId: ownerId, name: "Owner", inactive: false, seconds: 7200 },
+      { kind: "person", userId: adminId, name: "Ana", inactive: false, seconds: 3600 },
+      { kind: "person", userId: bId, name: "Beatriz", inactive: false, seconds: 0 },
+      { kind: "person", userId: kId, name: "Kevin", inactive: false, seconds: 0 },
+    ]);
+
+    const without = await readyState(admin, { range: lastWeek });
+    expect(without.peopleWithoutTime).toBe(false);
+    expect(without.groups).toStrictEqual(state.groups.slice(0, 2));
+    for (const field of [
+      "totalSeconds",
+      "billableSeconds",
+      "chart",
+      "filterOptions",
+      "filters",
+      "levelsShown",
+      "scope",
+    ] as const) {
+      expect([field, state[field]]).toEqual([field, without[field]]);
+    }
+  });
+
+  it("una con entradas de menos de un segundo va antes que las sin horas; dos sin horas con el mismo nombre, por id (criterio 6)", async () => {
+    const zetaId = await seedJoined({ accountName: "Zeta" });
+    await seedClosed(zetaId, "2026-10-01T13:00:00Z", 0.4);
+    await seedJoined({ accountName: "Beta" });
+    // El id mayor primero: el orden no es el de la siembra.
+    const laterId = await seedJoined({ accountName: "Igual", id: "igual-z-0000" });
+    const earlierId = await seedJoined({ accountName: "Igual", id: "igual-a-0000" });
+
+    const state = await withOption();
+
+    expect(withoutTimeRows(state)).toEqual([
+      ["Owner", 7200, false, false],
+      ["Ana", 3600, false, false],
+      ["Zeta", 0, false, false],
+      ["Beatriz", 0, false, false],
+      ["Beta", 0, false, false],
+      ["Igual", 0, false, false],
+      ["Igual", 0, false, false],
+      ["Kevin", 0, false, false],
+    ]);
+    const ids = state.groups.map((group) =>
+      group.kind === "person" ? group.userId : "",
+    );
+    expect(ids.slice(5, 7)).toEqual([earlierId, laterId]);
+  });
+
+  it("con el filtro de personas, las elegidas, también inactivas, y la regla de ingreso (criterio 7)", async () => {
+    const chosen = (people: readonly string[]) =>
+      withOption({ filters: { ...NO_REPORT_FILTERS, people } });
+
+    expect(withoutTimeRows(await chosen([adminId, bId, cId]))).toEqual([
+      ["Ana", 3600, false, false],
+      ["Beatriz", 0, false, false],
+      ["Carla", 0, true, false],
+    ]);
+
+    const onlyC = await chosen([cId]);
+    expect(onlyC.groups).toStrictEqual([
+      { kind: "person", userId: cId, name: "Carla", inactive: true, seconds: 0 },
+    ]);
+    expect([onlyC.levelsShown, onlyC.totalSeconds, onlyC.chart]).toEqual([1, 0, null]);
+
+    const onlyN = await chosen([nId]);
+    expect([onlyN.groups, onlyN.filters.people, onlyN.peopleWithoutTime]).toEqual([
+      [],
+      [nId],
+      true,
+    ]);
+
+    const invited = await chosen([iId]);
+    expect(invited.filters.people).toEqual([]);
+    expect(invited.groups).toStrictEqual((await withOption()).groups);
+  });
+
+  it("con un proyecto elegido, quien cargó solo en otro aparece sin horas (criterio 8)", async () => {
+    const state = await withOption({ filters: { ...NO_REPORT_FILTERS, projects: [p1] } });
+    expect(withoutTimeRows(state)).toEqual([
+      ["Owner", 7200, false, false],
+      ["Ana", 0, false, false],
+      ["Beatriz", 0, false, false],
+      ["Kevin", 0, false, false],
+    ]);
+    expect(state.groups[1]).toStrictEqual({
+      kind: "person",
+      userId: adminId,
+      name: "Ana",
+      inactive: false,
+      seconds: 0,
+    });
+    expect(state.totalSeconds).toBe(7200);
+  });
+
+  it("en el árbol, las sin horas son filas del primer nivel sin hijos (criterio 9)", async () => {
+    const twoLevels = await withOption({ subgroups: ["project"] });
+    expect(reportReadyState.parse(twoLevels)).toEqual(twoLevels);
+    expect(withoutTimeRows(twoLevels)).toEqual([
+      ["Owner", 7200, false, true],
+      ["Ana", 3600, false, true],
+      ["Beatriz", 0, false, false],
+      ["Kevin", 0, false, false],
+    ]);
+    expect(twoLevels.levelsShown).toBe(2);
+    expect(twoLevels.groups.slice(2).every((group) => !("children" in group))).toBe(true);
+
+    const threeLevels = await withOption({ subgroups: ["project", "date"] });
+    expect(withoutTimeRows(threeLevels)).toEqual(withoutTimeRows(twoLevels));
+    expect(threeLevels.levelsShown).toBe(3);
+  });
+
+  it("un período sin horas: las candidatas, sin hijos, sin gráfico y en cero (criterio 9)", async () => {
+    const state = await withOption({ range: thisWeek, subgroups: ["project"] });
+    expect(reportReadyState.parse(state)).toEqual(state);
+    // N entró al terminar la semana anterior: en esta ya estaba.
+    expect(withoutTimeRows(state)).toEqual([
+      ["Ana", 0, false, false],
+      ["Beatriz", 0, false, false],
+      ["Kevin", 0, false, false],
+      ["Nora", 0, false, false],
+      ["Owner", 0, false, false],
+    ]);
+    expect([
+      state.levelsShown,
+      state.chart,
+      state.totalSeconds,
+      state.billableSeconds,
+    ]).toEqual([2, null, 0, 0]);
+  });
+
+  it("por proyecto, o con la persona debajo, no aplica; sin agrupar, sí (criterio 10)", async () => {
+    for (const request of [
+      { groupBy: "project" },
+      { groupBy: "project", subgroups: ["person"] },
+    ] as const) {
+      const state = await withOption(request);
+      const without = await readyState(admin, { range: lastWeek, ...request });
+      expect(state.peopleWithoutTime).toBe(false);
+      expect(state.groups).toStrictEqual(without.groups);
+    }
+    const byProject = await withOption({ groupBy: "project", subgroups: ["person"] });
+    expect(
+      byProject.groups.map((group) =>
+        group.children?.map((child) => (child.kind === "person" ? child.name : "?")),
+      ),
+    ).toEqual([["Owner"], ["Ana"]]);
+
+    const byDefault = await withOption({ groupBy: null });
+    expect([byDefault.groupBy, byDefault.peopleWithoutTime]).toEqual(["person", true]);
+    expect(withoutTimeRows(byDefault)).toEqual(withoutTimeRows(await withOption()));
+  });
+
+  it("una sola foto: el catálogo una vez, con el Executor de los niveles, y las mismas lecturas de niveles (criterio 12)", async () => {
+    const request = {
+      subgroups: ["project"],
+      filters: { ...NO_REPORT_FILTERS, projects: [p1] },
+    } as const;
+    const listPeople = vi.spyOn(workspaceRepository, "listPeople");
+    const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+    await readyState(admin, { range: lastWeek, ...request });
+    // El límite del nivel 2 cambia: las sin horas cuentan en el tope (D-R9-8).
+    const readsOf = () =>
+      byLevels.mock.calls.map(([, { span, filter, dimensions }]) => ({
+        span,
+        filter,
+        dimensions,
+      }));
+    const levelReads = readsOf();
+    expect(levelReads).toHaveLength(2);
+    listPeople.mockClear();
+    byLevels.mockClear();
+
+    await withOption(request);
+
+    expect(listPeople).toHaveBeenCalledTimes(1);
+    expect(readsOf()).toEqual(levelReads);
+    const executor = byLevels.mock.calls[0]?.[2];
+    expect(executor).toBeDefined();
+    expect(executor).not.toBe(db);
+    expect(listPeople.mock.calls[0]?.[0]).toBe(executor);
+  });
+});
+
+describe("el tope con las personas sin horas (D-R9-8; criterio 11 de R9)", () => {
+  /** Las descripciones de A1: con A1, el owner y B sin horas son 3000 filas. */
+  const descriptions = REPORT_MAX_ROWS - 3;
+
+  let admin: Actor;
+
+  beforeEach(async () => {
+    await setJoinedAt(ownerId, joinedBefore);
+    const adminId = await seedJoined({ accountName: "Ana", role: "admin" });
+    admin = actorIn(workspaceId, adminId, { role: "admin" });
+    await seedJoined({ accountName: "Beatriz" });
+    await db.execute(sql`
+      insert into time_entry (workspace_id, user_id, description, started_at, ended_at, billable)
+      select ${workspaceId}, ${adminId}, 'Entrada ' || n,
+             timestamptz '2026-09-29 12:00:00+00',
+             timestamptz '2026-09-29 12:01:00+00',
+             false
+        from generate_series(1, ${descriptions}) as n`);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function byDescription(peopleWithoutTime: boolean) {
+    return readyState(admin, {
+      range: lastWeek,
+      subgroups: ["description"],
+      peopleWithoutTime,
+    });
+  }
+
+  it("con 3000 filas contando las sin horas, entra entero y el nivel 2 se pide con lo que dejan", async () => {
+    const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+    const state = await byDescription(true);
+    expect(state.levelsShown).toBe(2);
+    expect(withoutTimeRows(state)).toEqual([
+      ["Ana", descriptions * 60, false, true],
+      ["Beatriz", 0, false, false],
+      ["Owner", 0, false, false],
+    ]);
+    expect(state.groups[0]?.children).toHaveLength(descriptions);
+    expect(byLevels.mock.calls.map(([, read]) => read.limit)).toEqual([
+      REPORT_MAX_ROWS + 1,
+      REPORT_MAX_ROWS - 3 + 1,
+    ]);
+  });
+
+  it("con una sin horas más, el nivel 2 no entra; sin la opción, sí", async () => {
+    await seedJoined({ accountName: "Darío" });
+    const state = await byDescription(true);
+    expect(state.levelsShown).toBe(1);
+    expect(withoutTimeRows(state)).toEqual([
+      ["Ana", descriptions * 60, false, false],
+      ["Beatriz", 0, false, false],
+      ["Darío", 0, false, false],
+      ["Owner", 0, false, false],
+    ]);
+    expect((await byDescription(false)).levelsShown).toBe(2);
+  });
+
+  it("con 3001 activas sin horas más, el primer nivel no entra: levelsShown 0, sin grupos y el total de entryTotals", async () => {
+    const prefix = randomUUID();
+    await db.execute(sql`
+      with created as (
+        insert into "user" (id, name, email, email_verified)
+        select ${prefix} || '-' || n, 'Tope ' || n, ${prefix} || '-' || n || '@empresa.com', true
+          from generate_series(1, 3001) as n
+        returning id)
+      insert into membership (workspace_id, user_id, role, status, created_at)
+      select ${workspaceId}, id, 'member', 'active', timestamptz '2026-01-01 00:00:00+00'
+        from created`);
+    const entryTotals = vi.spyOn(reportRepository, "entryTotals");
+
+    const state = await readyState(admin, { range: lastWeek, peopleWithoutTime: true });
+
+    expect(reportReadyState.parse(state)).toEqual(state);
+    expect([state.levelsShown, state.groups, state.peopleWithoutTime]).toEqual([
+      0,
+      [],
+      true,
+    ]);
+    expect(state.totalSeconds).toBe(descriptions * 60);
+    expect(entryTotals).toHaveBeenCalledTimes(1);
   });
 });

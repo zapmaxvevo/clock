@@ -335,15 +335,60 @@ describe("listWorkspacePeople (RP-62, RP-64; criterio 17 de R4)", () => {
         accountName: "Inactiva",
         displayName: null,
         status: "inactive",
+        joinedAt: expect.any(Date),
       },
       {
         userId: ownerId,
         accountName: "Owner",
         displayName: "La dueña",
         status: "active",
+        joinedAt: expect.any(Date),
       },
-      { userId: idleId, accountName: "Sin horas", displayName: null, status: "active" },
+      {
+        userId: idleId,
+        accountName: "Sin horas",
+        displayName: null,
+        status: "active",
+        joinedAt: expect.any(Date),
+      },
     ]);
+  });
+
+  it("joinedAt es membership.created_at de cada persona, no updated_at (D-R9-2; criterio 13 de R9)", async () => {
+    const { workspaceId, ownerId } = await seedWorkspace();
+    const activeId = await seedMember(workspaceId, "member");
+    const inactiveId = await seedMember(workspaceId, "member", "inactive");
+    const joined = new Map([
+      [ownerId, new Date("2025-03-01T12:00:00.000Z")],
+      [activeId, new Date("2026-02-14T09:30:00.123Z")],
+      [inactiveId, new Date("2026-09-30T23:59:59.999Z")],
+    ]);
+    for (const [userId, createdAt] of joined) {
+      await db.update(membership).set({ createdAt }).where(eq(membership.userId, userId));
+    }
+    // La membresía cambia después de crearse: `updated_at` se mueve y `created_at` no.
+    await db
+      .update(membership)
+      .set({ weeklyCapacityMinutes: 1200 })
+      .where(eq(membership.workspaceId, workspaceId));
+    const stored = await db
+      .select({
+        userId: membership.userId,
+        createdAt: membership.createdAt,
+        updatedAt: membership.updatedAt,
+      })
+      .from(membership)
+      .where(eq(membership.workspaceId, workspaceId));
+    expect(
+      stored.every((row) => row.updatedAt.getTime() !== row.createdAt.getTime()),
+    ).toBe(true);
+
+    const people = await readPeople(actorIn(workspaceId, ownerId, { role: "owner" }));
+
+    expect(
+      Object.fromEntries(people.map(({ userId, joinedAt }) => [userId, joinedAt])),
+    ).toEqual(Object.fromEntries(joined));
+    expect(people).toHaveLength(3);
   });
 
   it("con un actor que no está activo, vacía sin leer", async () => {

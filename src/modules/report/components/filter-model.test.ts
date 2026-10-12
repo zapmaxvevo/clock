@@ -66,7 +66,11 @@ const clientOptions = filterOptionsOf(catalog, "clients");
 const projectOptions = filterOptionsOf(catalog, "projects");
 
 const range = { first: "2026-09-28", last: "2026-10-04" };
-const grouping: ReportGrouping = { groupBy: "project", subgroups: ["date"] };
+const grouping: ReportGrouping = {
+  groupBy: "project",
+  subgroups: ["date"],
+  peopleWithoutTime: false,
+};
 const base =
   "/reportes?desde=2026-09-28&hasta=2026-10-04&agrupar=proyecto&subagrupar=fecha";
 
@@ -309,6 +313,24 @@ describe("applyFilter, el efecto de «Aplicar» (D-R4-8)", () => {
       open: false,
       error: null,
       href: `/reportes?desde=2026-09-28&hasta=2026-10-04&agrupar=proyecto&subagrupar=fecha&personas=${BRUNO}%2C${ANA}&clientes=${C2}%2C${C1}`,
+    });
+  });
+
+  it("conserva las personas sin horas (D-R9-12)", () => {
+    expect(
+      applyFilter(
+        {
+          ...location,
+          grouping: { groupBy: "person", subgroups: ["date"], peopleWithoutTime: true },
+        },
+        "people",
+        [ANA],
+        peopleOptions,
+      ),
+    ).toEqual({
+      open: false,
+      error: null,
+      href: `/reportes?desde=2026-09-28&hasta=2026-10-04&agrupar=persona&subagrupar=fecha&sin-horas=1&personas=${ANA}&clientes=${C2}%2C${C1}`,
     });
   });
 

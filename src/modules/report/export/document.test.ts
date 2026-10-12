@@ -43,6 +43,7 @@ const report: ReportReadyState = {
   shortcuts: [],
   groupBy: "person",
   subgroups: [],
+  peopleWithoutTime: false,
   levelsShown: 1,
   scope: "everyone",
   timeZone: "America/Argentina/Buenos_Aires",
@@ -309,6 +310,101 @@ describe("exportDocumentOf: la cabecera (D-R6-8)", () => {
         "Nota",
       ),
     ).toEqual([]);
+  });
+});
+
+describe("exportDocumentOf con las personas sin horas (D-R9-10; criterio 15 de R9)", () => {
+  const people = [
+    { id: ANA, name: "Ana", inactive: false },
+    { id: BRUNO, name: "Bruno", inactive: false },
+    { id: CARLA, name: "Carla", inactive: true },
+  ];
+  const withTime: ReportGroup = {
+    kind: "person",
+    userId: ANA,
+    name: "Ana",
+    inactive: false,
+    seconds: 3599,
+    children: [{ kind: "project", project: web, client: acme, seconds: 3599 }],
+  };
+  const bruno: ReportGroup = {
+    kind: "person",
+    userId: BRUNO,
+    name: "Bruno",
+    inactive: false,
+    seconds: 0,
+  };
+  const carla: ReportGroup = {
+    kind: "person",
+    userId: CARLA,
+    name: "Carla",
+    inactive: true,
+    seconds: 0,
+  };
+  const option: Partial<ReportReadyState> = {
+    groupBy: "person",
+    subgroups: ["project"],
+    peopleWithoutTime: true,
+    levelsShown: 2,
+    groups: [withTime, bruno, carla],
+    filters: { ...NO_REPORT_FILTERS, people: [ANA, BRUNO, CARLA] },
+    filterOptions: { people, clients: [], projects: [] },
+  };
+
+  it("con la opción, «Personas sin horas» y «Sí» justo después de «Agrupado por» y antes de «Personas»", () => {
+    const rows = header(exportDocumentOf(input(option), settings));
+    expect(rows.slice(4, 7)).toEqual([
+      ["Agrupado por", "Persona / Proyecto"],
+      ["Personas sin horas", "Sí"],
+      ["Personas", "Ana, Bruno, Carla (inactiva)"],
+    ]);
+    expect(rows.filter(([first]) => first === "Personas sin horas")).toHaveLength(1);
+  });
+
+  it("con la opción y sin filtros, la fila va antes de «Total»", () => {
+    const rows = header(
+      exportDocumentOf(input({ ...option, filters: NO_REPORT_FILTERS }), settings),
+    );
+    expect(rows.slice(4, 7)).toEqual([
+      ["Agrupado por", "Persona / Proyecto"],
+      ["Personas sin horas", "Sí"],
+      ["Total", "0:59", "0,98"],
+    ]);
+  });
+
+  it("sin la opción, ninguna fila, con las mismas filas sin horas en el resumen", () => {
+    expect(
+      headerRows({ ...option, peopleWithoutTime: false }, "Personas sin horas"),
+    ).toEqual([]);
+    expect(headerRows({}, "Personas sin horas")).toEqual([]);
+  });
+
+  it("una fila sin horas del resumen es nivel 1, con su nombre, vacío abajo, «0:00» y «0,00», sin filas hijas", () => {
+    expect(summary(option)).toEqual([
+      ["Nivel", "Persona", "Proyecto", "Duración", "Horas"],
+      ["1", "Ana", "", "0:59", "0,98"],
+      ["2", "Ana", "Web (ACME)", "0:59", "0,98"],
+      ["1", "Bruno", "", "0:00", "0,00"],
+      ["1", "Carla (inactiva)", "", "0:00", "0,00"],
+    ]);
+    const rows = section(exportDocumentOf(input(option), settings), "Resumen").rows;
+    expect(rows[3]).toEqual([
+      { kind: "integer", value: 1 },
+      { kind: "text", text: "Bruno" },
+      { kind: "empty" },
+      { kind: "duration", minutes: 0 },
+      { kind: "hours", minutes: 0 },
+    ]);
+  });
+
+  it("con solo filas sin horas, el resumen las lista y no hay vacío", () => {
+    expect(
+      summary({ ...option, groups: [bruno, carla], totalSeconds: 0, billableSeconds: 0 }),
+    ).toEqual([
+      ["Nivel", "Persona", "Proyecto", "Duración", "Horas"],
+      ["1", "Bruno", "", "0:00", "0,00"],
+      ["1", "Carla (inactiva)", "", "0:00", "0,00"],
+    ]);
   });
 });
 

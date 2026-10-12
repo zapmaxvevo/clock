@@ -47,7 +47,9 @@ function list(markup: string): {
 
 describe("SubgroupPanel (D-R3-8, §5.3)", () => {
   it("sin segundo nivel: «Ninguno» primero y elegido, y las ocho que no son el primero", () => {
-    expect(list(render({ groupBy: "project", subgroups: [] }, 1))).toEqual({
+    expect(
+      list(render({ groupBy: "project", subgroups: [], peopleWithoutTime: false }, 1)),
+    ).toEqual({
       name: "Segundo nivel",
       links: [
         { label: "Ninguno", href: `${base}&agrupar=proyecto`, current: "true" },
@@ -96,7 +98,12 @@ describe("SubgroupPanel (D-R3-8, §5.3)", () => {
   });
 
   it("con tres niveles, el segundo marca el suyo e intercambia con el tercero", () => {
-    const { links } = list(render({ groupBy: "project", subgroups: ["date", "tag"] }, 1));
+    const { links } = list(
+      render(
+        { groupBy: "project", subgroups: ["date", "tag"], peopleWithoutTime: false },
+        1,
+      ),
+    );
     expect(
       links.filter(({ current }) => current !== null).map(({ label }) => label),
     ).toEqual(["Fecha"]);
@@ -114,7 +121,11 @@ describe("SubgroupPanel (D-R3-8, §5.3)", () => {
   });
 
   it("el tercer nivel, nombrado por su nivel, sin los dos de arriba", () => {
-    expect(list(render({ groupBy: "project", subgroups: ["date"] }, 2))).toEqual({
+    expect(
+      list(
+        render({ groupBy: "project", subgroups: ["date"], peopleWithoutTime: false }, 2),
+      ),
+    ).toEqual({
       name: "Tercer nivel",
       links: [
         {
@@ -163,7 +174,10 @@ describe("SubgroupPanel (D-R3-8, §5.3)", () => {
 
   it("con tercer nivel elegido, solo él lleva aria-current", () => {
     const { links } = list(
-      render({ groupBy: "person", subgroups: ["project", "task"] }, 2),
+      render(
+        { groupBy: "person", subgroups: ["project", "task"], peopleWithoutTime: false },
+        2,
+      ),
     );
     expect(links.filter(({ current }) => current !== null)).toEqual([
       {
@@ -175,7 +189,9 @@ describe("SubgroupPanel (D-R3-8, §5.3)", () => {
   });
 
   it("Mes → Semana: el tercer nivel ofrece la fecha, con los dos de arriba en la URL (D-R10-6)", () => {
-    const { links } = list(render({ groupBy: "month", subgroups: ["week"] }, 2));
+    const { links } = list(
+      render({ groupBy: "month", subgroups: ["week"], peopleWithoutTime: false }, 2),
+    );
     expect(links.map(({ label }) => label)).toEqual([
       "Ninguno",
       "Persona",
@@ -197,7 +213,7 @@ describe("SubgroupPanel (D-R3-8, §5.3)", () => {
     // Un id de Better Auth, con mayúsculas.
     const person = "aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY";
     const { links } = list(
-      render({ groupBy: "project", subgroups: ["date"] }, 2, {
+      render({ groupBy: "project", subgroups: ["date"], peopleWithoutTime: false }, 2, {
         people: [person],
         clients: [client],
         projects: [project],
@@ -215,5 +231,32 @@ describe("SubgroupPanel (D-R3-8, §5.3)", () => {
       `${base}&agrupar=proyecto&subagrupar=fecha%2Cmes${kept}`,
       `${base}&agrupar=proyecto&subagrupar=fecha%2Cdescripcion${kept}`,
     ]);
+  });
+
+  it("cada enlace conserva las personas sin horas, con la persona arriba (D-R9-12)", () => {
+    const person = "aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY";
+    const second = list(
+      render({ groupBy: "person", subgroups: ["project"], peopleWithoutTime: true }, 1, {
+        ...NO_REPORT_FILTERS,
+        people: [person],
+      }),
+    );
+    const third = list(
+      render({ groupBy: "person", subgroups: ["project"], peopleWithoutTime: true }, 2),
+    );
+    expect(second.links.find(({ label }) => label === "Ninguno")?.href).toBe(
+      `${base}&agrupar=persona&sin-horas=1&personas=${person}`,
+    );
+    expect(second.links.find(({ label }) => label === "Fecha")?.href).toBe(
+      `${base}&agrupar=persona&subagrupar=fecha&sin-horas=1&personas=${person}`,
+    );
+    expect(third.links.find(({ label }) => label === "Etiqueta")?.href).toBe(
+      `${base}&agrupar=persona&subagrupar=proyecto%2Cetiqueta&sin-horas=1`,
+    );
+    for (const { href } of [...second.links, ...third.links]) {
+      expect(
+        new URL(href, "https://clock.test").searchParams.getAll("sin-horas"),
+      ).toEqual(["1"]);
+    }
   });
 });

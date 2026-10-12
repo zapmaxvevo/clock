@@ -16,6 +16,8 @@ export const exportLabels = {
   /** D-R6-8: el archivo dice de quién son las horas aunque se reenvíe. */
   scopeSelf: (name: string) => `Solo las horas de ${name}`,
   groupedBy: "Agrupado por",
+  /** D-R9-10: solo con la opción efectiva, después de «Agrupado por». */
+  peopleWithoutTime: "Personas sin horas",
   people: filterNames.people,
   clients: filterNames.clients,
   projects: filterNames.projects,

@@ -968,17 +968,23 @@ rango.
 
 Dueño: `e2e-tester`. Los veinticinco de R2a a R6 no cambian, salvo que
 `reportsUrlOf` ahora afirma que no hay `sin-horas`. Se suman dos, con la regla
-de §8.3 de R2a y D-R9-14; las entradas van en la semana anterior a la de hoy,
-en la zona de la persona, y se siembran antes de abrir la pantalla. R7a, que va
+de §8.3 de R2a y D-R9-14; las entradas del 27 van en la semana anterior a la
+de hoy y las del 26 en una semana fija de 2001, en la zona de la persona, y se siembran antes de abrir la pantalla. R7a, que va
 después, numera los suyos a continuación.
 
 26. **Un admin ve quién no cargó, con las inactivas solo elegidas** (RP-47;
-    D-R9-2 a D-R9-5, D-R9-7, D-R9-11, D-R9-12). La persona del test pasa a
-    admin y se llama A. Se siembran B (activa), C (inactiva), D (invitada) y E
-    (activa), y a las cuatro y a A se les pone `setJoinedAt` un mes antes de la
-    semana anterior; N (activa) se siembra sin `setJoinedAt`: entró hoy. El
-    martes de la semana anterior, A de 09:00 a 10:00 en P y B de 09:00 a 11:00
-    en P. Desde la semana anterior por «Persona»:
+    D-R9-2 a D-R9-5, D-R9-7, D-R9-11, D-R9-12; D-R3-9). _Corregido el
+    2026-10-12 en la revisión de tests_: va en una semana fija, del lunes
+    01/10 al domingo 07/10 de 2001, y no en la anterior a la de hoy. Sin el
+    filtro de personas aparecen todas las activas que entraron antes del fin
+    del período, y una base reusada suma cientos por corrida; en 2001 solo
+    entraron las del propio 26, así que el primer nivel no llega al tope
+    (D-R9-14). La persona del test pasa a admin y se llama A. Se siembran B
+    (activa), C (inactiva), D (invitada), E (activa) y N (activa). A A y a las
+    cuatro primeras se les pone `setJoinedAt` un mes antes de la semana; a N,
+    dos días después del último día: entró después. El martes 02/10/2001, A de
+    09:00 a 10:00 en P y B de 09:00 a 11:00 en P. Desde esa semana por
+    «Persona»:
     - Con «Personas» en A, B, C, E y N: B 2:00 y A 1:00; está el enlace
       «Mostrar personas sin horas».
     - Clic en el enlace: la URL lleva `sin-horas=1` después de `agrupar` y antes
@@ -994,6 +1000,10 @@ después, numera los suyos a continuación.
     - Al recargar: lo mismo.
     - «Personas: todas» (destildar todas y «Aplicar»): la fila de E está con
       0:00; las de C, D y N, no. No se afirma nada más de la lista.
+    - Con B abierto, «Ocultar personas sin horas»: la URL no lleva `sin-horas`,
+      E no tiene fila y B está contraído. Con B abierto otra vez, «Mostrar
+      personas sin horas»: la URL lleva `sin-horas`, E está con 0:00 y B está
+      contraído.
     - «Proyecto» en «Agrupar por»: la URL no lleva `sin-horas` y el enlace no
       está. «Persona» de nuevo: el enlace dice «Mostrar personas sin horas» y E
       no tiene fila.
@@ -1008,7 +1018,8 @@ Los mutantes que tienen que caer en e2e, en una copia con puerto propio: un
 enlace que pierde la opción (el subnivel y la flecha del 26); la inactiva que
 nadie eligió o la invitada en la lista (26, sin filtro); N en la lista (26);
 una fila sin horas con botón (26); el enlace que no cambia de texto (26); un
-member que ve el enlace o a O (27).
+member que ve el enlace o a O (27); el `key` del pedido sin la opción (B queda
+abierto al ocultar, 26).
 
 ### 8.3 La regla de los e2e
 

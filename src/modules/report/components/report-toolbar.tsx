@@ -40,11 +40,17 @@ const FILTER_KINDS = [
  * en el orden de D-R3-8, los subniveles y los filtros. Cada enlace conserva lo
  * que no cambia (D-R2a-4): los subniveles (D-R3-8) y los filtros (D-R4-10).
  * Cada filtro recibe solo sus opciones, no el estado entero (D-R4-9). Al final,
- * las descargas, solo si hay horas (D-R6-10).
+ * las descargas, solo si hay horas (D-R6-10). Al lado de «Agrupar por», el
+ * enlace que muestra u oculta las personas sin horas (D-R9-11), que los demás
+ * enlaces conservan con la agrupación (D-R9-12).
  */
 export function ReportToolbar({ state }: { readonly state: ReportReadyState }) {
   const { range, currentWeek, filters } = state;
-  const grouping: ReportGrouping = { groupBy: state.groupBy, subgroups: state.subgroups };
+  const grouping: ReportGrouping = {
+    groupBy: state.groupBy,
+    subgroups: state.subgroups,
+    peopleWithoutTime: state.peopleWithoutTime,
+  };
   const isCurrentWeek = sameRange(range, currentWeek);
 
   return (
@@ -104,6 +110,22 @@ export function ReportToolbar({ state }: { readonly state: ReportReadyState }) {
             />
           ))}
         </div>
+        {/* D-R9-11: solo quien ve horas de otros, y con la persona en el primer nivel. */}
+        {state.groupBy === "person" && state.filterOptions.people !== null && (
+          <Link
+            href={reportHref({
+              range,
+              ...grouping,
+              peopleWithoutTime: !grouping.peopleWithoutTime,
+              filters,
+            })}
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
+            {grouping.peopleWithoutTime
+              ? reportLabels.hidePeopleWithoutTime
+              : reportLabels.showPeopleWithoutTime}
+          </Link>
+        )}
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <span id={SUBGROUP_BY_LABEL_ID} className="text-muted-foreground text-sm">

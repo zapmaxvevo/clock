@@ -39,6 +39,7 @@ export function ReportView({ state }: { readonly state: ReportReadyState }) {
     range: state.range,
     groupBy: state.groupBy,
     subgroups: state.subgroups,
+    peopleWithoutTime: state.peopleWithoutTime,
     filters: state.filters,
   });
 
@@ -123,7 +124,9 @@ function FirstLevelLimitRow() {
 
 /**
  * RP-33, D-R4-7: con filtros efectivos, el segundo vacío, aunque el período no
- * tenga horas, con «Quitar filtros» al mismo período y la misma agrupación.
+ * tenga horas, con «Quitar filtros» al mismo período y la misma agrupación,
+ * con las personas sin horas incluidas (D-R9-9). Con la opción y alguna
+ * persona sin horas no se llega acá: son grupos.
  */
 function EmptyRow({ state }: { readonly state: ReportReadyState }) {
   const filtered = hasReportFilters(state.filters);
@@ -140,6 +143,7 @@ function EmptyRow({ state }: { readonly state: ReportReadyState }) {
                 range: state.range,
                 groupBy: state.groupBy,
                 subgroups: state.subgroups,
+                peopleWithoutTime: state.peopleWithoutTime,
                 filters: NO_REPORT_FILTERS,
               })}
               // Con `cn`, el borde del contorno reemplaza al transparente de la base.

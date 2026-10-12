@@ -24,6 +24,7 @@ import {
   reportLevelsOf,
   reportMessages,
   reportPeopleParams,
+  reportPeopleWithoutTimeParams,
   reportProjectParams,
   reportRangeInput,
   reportRangeParams,
@@ -31,6 +32,7 @@ import {
   reportSubgroupParams,
   sameRange,
   type ReportChartBar,
+  type ReportGrouping,
   type ReportReadyState,
 } from "./schema";
 
@@ -428,6 +430,7 @@ describe("reportReadyState (D-R2b-2, D-R2b-5, D-R3-3, D-R3-4, D-R3-7)", () => {
     shortcuts: [{ id: "thisWeek", label: "Esta semana", range: week }],
     groupBy: "client",
     subgroups: [],
+    peopleWithoutTime: false,
     levelsShown: 1,
     scope: "everyone",
     timeZone: "America/Argentina/Buenos_Aires",
@@ -987,6 +990,7 @@ describe("reportReadyState con los filtros (D-R4-5, D-R4-9)", () => {
     shortcuts: [],
     groupBy: "project",
     subgroups: [],
+    peopleWithoutTime: false,
     levelsShown: 1,
     scope: "self",
     timeZone: "America/Argentina/Buenos_Aires",
@@ -1153,6 +1157,7 @@ describe("reportReadyState con el filtro de personas (D-R4-4, D-R4-9; criterio 1
     shortcuts: [],
     groupBy: "person",
     subgroups: [],
+    peopleWithoutTime: false,
     levelsShown: 1,
     scope: "everyone",
     timeZone: "America/Argentina/Buenos_Aires",
@@ -1205,6 +1210,116 @@ describe("reportReadyState con el filtro de personas (D-R4-4, D-R4-9; criterio 1
   });
 });
 
+describe("reportPeopleWithoutTimeParams (D-R9-4, RP-32; criterio 1 de R9)", () => {
+  it("pasa con sin-horas=1, con o sin otros parámetros al lado", () => {
+    for (const params of [
+      { "sin-horas": "1" },
+      { "sin-horas": "1", agrupar: "proyecto" },
+      {
+        "sin-horas": "1",
+        agrupar: "cualquiera",
+        desde: "2026-10-11",
+        hasta: "2026-10-05",
+      },
+    ]) {
+      expect(reportPeopleWithoutTimeParams.safeParse(params)).toEqual({
+        success: true,
+        data: true,
+      });
+    }
+  });
+
+  it("no pasa con otro valor, uno vacío, con espacios, repetido ni ausente", () => {
+    for (const params of [
+      { "sin-horas": "0" },
+      { "sin-horas": "true" },
+      { "sin-horas": "si" },
+      { "sin-horas": "" },
+      { "sin-horas": " 1" },
+      { "sin-horas": "1 " },
+      { "sin-horas": ["1", "1"] },
+      { "sin-horas": 1 },
+      { "sin-horas": true },
+      { sinHoras: "1" },
+      {},
+    ]) {
+      expect([params, reportPeopleWithoutTimeParams.safeParse(params).success]).toEqual([
+        params,
+        false,
+      ]);
+    }
+  });
+});
+
+describe("reportReadyState con las personas sin horas (D-R9-4, D-R9-5; criterio 1 de R9)", () => {
+  const week = { first: "2026-10-05", last: "2026-10-11" };
+  const ready: ReportReadyState = {
+    kind: "ready",
+    todayKey: "2026-10-08",
+    range: week,
+    rangeLabel: "Esta semana",
+    previous: null,
+    next: null,
+    currentWeek: week,
+    shortcuts: [],
+    groupBy: "person",
+    subgroups: ["project"],
+    peopleWithoutTime: true,
+    levelsShown: 2,
+    scope: "everyone",
+    timeZone: "America/Argentina/Buenos_Aires",
+    totalSeconds: 0,
+    billableSeconds: 0,
+    groups: [
+      { kind: "person", userId: betterAuthId, name: "Ana", inactive: false, seconds: 0 },
+      {
+        kind: "person",
+        userId: otherBetterAuthId,
+        name: "Beto",
+        inactive: true,
+        seconds: 0,
+      },
+    ],
+    filters: NO_REPORT_FILTERS,
+    filterOptions: {
+      people: [
+        { id: betterAuthId, name: "Ana", inactive: false },
+        { id: otherBetterAuthId, name: "Beto", inactive: true },
+      ],
+      clients: [],
+      projects: [],
+    },
+    chart: null,
+  };
+
+  it("admite la opción por persona con el catálogo, y apagada con cualquier agrupación o sin catálogo", () => {
+    expect(reportReadyState.parse(ready)).toEqual(ready);
+    for (const state of [
+      { ...ready, peopleWithoutTime: false },
+      { ...ready, peopleWithoutTime: false, groupBy: "project", groups: [] },
+      {
+        ...ready,
+        peopleWithoutTime: false,
+        filterOptions: { ...ready.filterOptions, people: null },
+      },
+    ]) {
+      expect(reportReadyState.parse(state)).toEqual(state);
+    }
+  });
+
+  it("rechaza la opción con otro primer nivel o sin el catálogo de personas, y un estado sin ella", () => {
+    for (const state of [
+      { ...ready, groupBy: "project", subgroups: [], groups: [] },
+      { ...ready, groupBy: "client", subgroups: ["person"], groups: [] },
+      { ...ready, filterOptions: { ...ready.filterOptions, people: null } },
+      { ...ready, peopleWithoutTime: undefined },
+      { ...ready, peopleWithoutTime: "1" },
+    ]) {
+      expect(reportReadyState.safeParse(state).success).toBe(false);
+    }
+  });
+});
+
 describe("reportReadyState con el gráfico (D-R5-2, D-R5-4, D-R5-5; criterio 3)", () => {
   const month = { first: "2026-10-01", last: "2026-10-31" };
 
@@ -1231,6 +1346,7 @@ describe("reportReadyState con el gráfico (D-R5-2, D-R5-4, D-R5-5; criterio 3)"
     shortcuts: [],
     groupBy: "client",
     subgroups: [],
+    peopleWithoutTime: false,
     levelsShown: 1,
     scope: "everyone",
     timeZone: "America/Argentina/Buenos_Aires",
@@ -1400,5 +1516,18 @@ describe("reportLevelsOf", () => {
       "tag",
       "person",
     ]);
+  });
+
+  it("recibe la agrupación sin la opción, y con ella da los mismos niveles (D-R9-4)", () => {
+    expect(reportLevelsOf({ groupBy: "person", subgroups: ["project"] })).toEqual([
+      "person",
+      "project",
+    ]);
+    const grouping: ReportGrouping = {
+      groupBy: "person",
+      subgroups: ["project"],
+      peopleWithoutTime: true,
+    };
+    expect(reportLevelsOf(grouping)).toEqual(["person", "project"]);
   });
 });

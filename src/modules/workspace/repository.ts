@@ -19,6 +19,8 @@ export type PersonRow = {
   readonly accountName: string;
   readonly displayName: string | null;
   readonly status: MembershipStatus;
+  /** `membership.created_at` (D-R9-2). */
+  readonly joinedAt: Date;
 };
 
 /** Los estados de quien está en el workspace; `invited` todavía no (RP-64). */
@@ -106,6 +108,7 @@ export const workspaceRepository = {
         accountName: user.name,
         displayName: userPreference.displayName,
         status: membership.status,
+        joinedAt: membership.createdAt,
       })
       .from(membership)
       .innerJoin(user, eq(user.id, membership.userId))

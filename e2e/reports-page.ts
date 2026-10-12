@@ -1,5 +1,5 @@
 /**
- * Localizadores y acciones de `/reportes` (R2a a R10b del núcleo de reportes).
+ * Localizadores y acciones de `/reportes` (R2a a R10b y R9 del núcleo de reportes).
  * Como en `timesheet-page.ts`, todo se busca por rol y por texto accesible. La
  * tabla se nombra por el título, y cada grupo es una fila con su encabezado de
  * fila: el nombre o, por fecha, el rótulo del día. La única excepción son los
@@ -82,6 +82,12 @@ export const FIRST_LEVEL_LIMIT =
 /** RP-18, D-R3-3: la línea que avisa que las filas por etiqueta pueden pasar el total. */
 export const TAG_OVERLAP =
   "Una entrada con varias etiquetas suma en cada una: las filas por etiqueta pueden sumar más que el total.";
+
+/** D-R9-11: el texto del enlace con la opción apagada, que es su nombre. */
+export const SHOW_WITHOUT_TIME = "Mostrar personas sin horas";
+
+/** D-R9-11: el texto del mismo enlace con la opción encendida. */
+export const HIDE_WITHOUT_TIME = "Ocultar personas sin horas";
 
 /** RP-07: el aviso de una membresía que no está activa. */
 export const FORBIDDEN_TITLE = "Tu acceso al workspace está desactivado.";
@@ -233,6 +239,17 @@ export type ReportUrlFilters = {
   readonly projects?: readonly string[];
 };
 
+/**
+ * Lo que la URL lleva además de los filtros: las personas sin horas, que se
+ * escriben como `sin-horas=1` (D-R9-4). Sin la opción, no se escribe.
+ */
+export type ReportUrlOptions = {
+  readonly peopleWithoutTime?: boolean;
+};
+
+/** D-R9-4: el parámetro de las personas sin horas, entre `subagrupar` y los filtros. */
+const WITHOUT_TIME_PARAM = "sin-horas";
+
 /** Cada filtro con su parámetro, en el orden en que la URL los escribe (D-R4-2). */
 const FILTER_PARAMS = [
   ["people", "personas"],
@@ -253,30 +270,35 @@ function filterList(values: readonly string[]): string {
 /**
  * La query de un período y una agrupación: los tres parámetros y, si hay
  * subniveles, `subagrupar` como cuarto, separados por coma (D-R3-5). Después,
- * los filtros que no están vacíos, cada uno con su lista (D-R4-2).
+ * `sin-horas=1` con la opción (D-R9-4) y los filtros que no están vacíos, cada
+ * uno con su lista (D-R4-2).
  */
 function reportsQuery(
   range: ReportRange,
   groupBy: ReportGroupBy,
   subgroups: readonly ReportGroupBy[],
   filters: ReportUrlFilters,
+  options: ReportUrlOptions,
 ): string {
   const levels = subgroups.length === 0 ? "" : `&subagrupar=${subgroups.join(",")}`;
+  const withoutTime =
+    options.peopleWithoutTime === true ? `&${WITHOUT_TIME_PARAM}=1` : "";
   const lists = FILTER_PARAMS.map(([key, param]) => {
     const values = filters[key] ?? [];
     return values.length === 0 ? "" : `&${param}=${filterList(values)}`;
   }).join("");
-  return `desde=${dayKeyOf(range.first)}&hasta=${dayKeyOf(range.last)}&agrupar=${groupBy}${levels}${lists}`;
+  return `desde=${dayKeyOf(range.first)}&hasta=${dayKeyOf(range.last)}&agrupar=${groupBy}${levels}${withoutTime}${lists}`;
 }
 
-/** La dirección de un período, una agrupación, sus subniveles y sus filtros. */
+/** La dirección de un período, una agrupación, sus subniveles, sus filtros y sus opciones. */
 export function reportsUrl(
   range: ReportRange,
   groupBy: ReportGroupBy,
   subgroups: readonly ReportGroupBy[] = [],
   filters: ReportUrlFilters = {},
+  options: ReportUrlOptions = {},
 ): string {
-  return `${REPORTS_PATH}?${reportsQuery(range, groupBy, subgroups, filters)}`;
+  return `${REPORTS_PATH}?${reportsQuery(range, groupBy, subgroups, filters, options)}`;
 }
 
 /** D-R6-4: los formatos de la descarga, como los escribe su ruta. */
@@ -295,23 +317,27 @@ export function exportUrl(
   groupBy: ReportGroupBy,
   subgroups: readonly ReportGroupBy[] = [],
   filters: ReportUrlFilters = {},
+  options: ReportUrlOptions = {},
 ): string {
-  return `${EXPORT_PATH}${format}?${reportsQuery(range, groupBy, subgroups, filters)}`;
+  return `${EXPORT_PATH}${format}?${reportsQuery(range, groupBy, subgroups, filters, options)}`;
 }
 
 /**
- * La URL es la de ese período, esa agrupación, esos subniveles y esos
- * filtros: cada parámetro una vez, sin `subagrupar` si no hay subniveles y
- * sin `personas`, `clientes` ni `proyectos` si no se piden. Una lista de
- * filtro tiene que ser la que escribe la aplicación, en su orden.
+ * La URL es la de ese período, esa agrupación, esos subniveles, esos filtros
+ * y esas opciones: cada parámetro una vez, sin `subagrupar` si no hay
+ * subniveles, sin `sin-horas` si no se pide la opción y sin `personas`,
+ * `clientes` ni `proyectos` si no se piden. Una lista de filtro tiene que ser
+ * la que escribe la aplicación, en su orden.
  */
 export function reportsUrlOf(
   range: ReportRange,
   groupBy: ReportGroupBy,
   subgroups: readonly ReportGroupBy[] = [],
   filters: ReportUrlFilters = {},
+  options: ReportUrlOptions = {},
 ): (url: URL) => boolean {
   const levels = subgroups.length === 0 ? [] : [subgroups.join(",")];
+  const withoutTime = options.peopleWithoutTime === true ? ["1"] : [];
   const lists = FILTER_PARAMS.map(([key, param]) => {
     const values = filters[key] ?? [];
     return [param, values.length === 0 ? [] : [filterList(values)]] as const;
@@ -322,6 +348,8 @@ export function reportsUrlOf(
     url.searchParams.getAll("hasta").join(",") === dayKeyOf(range.last) &&
     url.searchParams.getAll("agrupar").join(",") === groupBy &&
     JSON.stringify(url.searchParams.getAll("subagrupar")) === JSON.stringify(levels) &&
+    JSON.stringify(url.searchParams.getAll(WITHOUT_TIME_PARAM)) ===
+      JSON.stringify(withoutTime) &&
     lists.every(
       ([param, list]) =>
         JSON.stringify(url.searchParams.getAll(param)) === JSON.stringify(list),
@@ -610,11 +638,24 @@ export async function expectGroupBy(page: Page, groupBy: ReportGroupBy): Promise
 }
 
 /**
+ * El enlace de las personas sin horas (D-R9-11), por su nombre exacto: con
+ * `shown`, el que las oculta; sin él, el que las muestra. Va junto a «Agrupar
+ * por», fuera de su grupo, y solo con la persona en el primer nivel y el
+ * filtro de personas.
+ */
+export function withoutTimeToggle(page: Page, shown: boolean): Locator {
+  return page.getByRole("link", {
+    name: shown ? HIDE_WITHOUT_TIME : SHOW_WITHOUT_TIME,
+    exact: true,
+  });
+}
+
+/**
  * Espera el período y la agrupación pedidos: la URL, el rótulo que dibuja el
  * servidor y la agrupación marcada. La URL sola no alcanza, porque cambia
- * antes de que llegue la pantalla nueva. Con subniveles o filtros, la URL los
- * lleva; los botones que los muestran los esperan `expectSubgroups` y
- * `filterButton`.
+ * antes de que llegue la pantalla nueva. Con subniveles, filtros u opciones,
+ * la URL los lleva; los controles que los muestran los esperan
+ * `expectSubgroups`, `filterButton` y `withoutTimeToggle`.
  */
 export async function expectReport(
   page: Page,
@@ -623,8 +664,9 @@ export async function expectReport(
   today: CivilDay,
   subgroups: readonly ReportGroupBy[] = [],
   filters: ReportUrlFilters = {},
+  options: ReportUrlOptions = {},
 ): Promise<void> {
-  await expect(page).toHaveURL(reportsUrlOf(range, groupBy, subgroups, filters));
+  await expect(page).toHaveURL(reportsUrlOf(range, groupBy, subgroups, filters, options));
   await expect(rangeButton(page)).toHaveAccessibleName(
     `Elegir período: ${rangeLabel(range, today)}`,
   );
@@ -639,9 +681,10 @@ export async function openReport(
   today: CivilDay,
   subgroups: readonly ReportGroupBy[] = [],
   filters: ReportUrlFilters = {},
+  options: ReportUrlOptions = {},
 ): Promise<void> {
-  await page.goto(reportsUrl(range, groupBy, subgroups, filters));
-  await expectReport(page, range, groupBy, today, subgroups, filters);
+  await page.goto(reportsUrl(range, groupBy, subgroups, filters, options));
+  await expectReport(page, range, groupBy, today, subgroups, filters, options);
   await expect(reportTable(page)).toBeVisible();
 }
 

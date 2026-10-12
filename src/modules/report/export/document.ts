@@ -148,6 +148,10 @@ function headerOf(
       text(exportLabels.groupedBy),
       text(requested.map((level) => groupByLabels[level]).join(" / ")),
     ],
+    // D-R9-10: la opción cambia el resumen, así que la cabecera la nombra.
+    ...(report.peopleWithoutTime
+      ? [[text(exportLabels.peopleWithoutTime), text(exportLabels.yes)]]
+      : []),
     ...filterRows(report),
     [text(reportLabels.total), ...durationCells(report.totalSeconds)],
     [text(reportLabels.billable), ...durationCells(report.billableSeconds)],

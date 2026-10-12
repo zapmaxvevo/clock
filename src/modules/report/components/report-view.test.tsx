@@ -30,6 +30,7 @@ const state: ReportReadyState = {
   shortcuts: [],
   groupBy: "person",
   subgroups: [],
+  peopleWithoutTime: false,
   levelsShown: 1,
   scope: "self",
   timeZone: "America/Argentina/Buenos_Aires",
@@ -874,5 +875,110 @@ describe("ReportView con gráfico (RP-15, D-R5-6, §5.1)", () => {
     expect(markup).toContain("<figure");
     const table = markup.slice(markup.indexOf("</figure>"));
     expect(bodyRows(table)).toEqual([[FIRST_LEVEL_LIMIT]]);
+  });
+});
+
+describe("ReportView con las personas sin horas (D-R9-9, D-R9-12)", () => {
+  const ANA = "aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY";
+  const BRUNO = "Zq8Wn2Rt6Yu0Io4Pa8Sd2Fg6Hj0Kl4Mx";
+  const P1 = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+  /** Quien ve horas de otros, por persona y con la opción (D-R9-5). */
+  const withoutTime: Partial<ReportReadyState> = {
+    groupBy: "person",
+    peopleWithoutTime: true,
+    scope: "everyone",
+    filterOptions: {
+      people: [
+        { id: ANA, name: "Ana", inactive: false },
+        { id: BRUNO, name: "Bruno", inactive: true },
+      ],
+      clients: [],
+      projects: [],
+    },
+  };
+  /** Las dos en cero y sin `children`, como las arma el service. */
+  const nobody: ReportGroup[] = [
+    { kind: "person", userId: ANA, name: "Ana", inactive: false, seconds: 0 },
+    { kind: "person", userId: BRUNO, name: "Bruno", inactive: true, seconds: 0 },
+  ];
+
+  /** Los enlaces del cuerpo de la tabla, por su texto. */
+  function bodyLinks(markup: string): Map<string, string> {
+    const body = markup.slice(markup.indexOf("<tbody>"), markup.indexOf("</tbody>"));
+    return new Map(
+      [...body.matchAll(/<a [^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/g)].map(
+        ([, href, label]) => [label, href.replaceAll("&amp;", "&")],
+      ),
+    );
+  }
+
+  it("sin horas cerradas y con filas sin horas, las filas en 0:00 y ningún vacío", () => {
+    const markup = render({ ...withoutTime, groups: nobody });
+    expect(bodyRows(markup)).toEqual([
+      ["Ana", "0:00"],
+      ["Bruno(inactiva)", "0:00"],
+    ]);
+    expect(markup).not.toContain("No hay horas en este período");
+    expect(markup).not.toContain("Ninguna entrada coincide con los filtros");
+    expect(markup).not.toContain("<button");
+    expect(totals(markup)).toEqual({ Total: "0:00", Facturable: "0:00" });
+  });
+
+  it("con filtros que no dejan horas y filas sin horas, ningún vacío ni «Quitar filtros»", () => {
+    const markup = render({
+      ...withoutTime,
+      groups: [nobody[1]],
+      filters: { ...NO_REPORT_FILTERS, people: [BRUNO] },
+    });
+    expect(bodyRows(markup)).toEqual([["Bruno(inactiva)", "0:00"]]);
+    expect(markup).not.toContain("Ninguna entrada coincide con los filtros");
+    expect(markup).not.toContain("Quitar filtros");
+  });
+
+  it("sin ninguna fila, «Quitar filtros» conserva la opción", () => {
+    const markup = render({
+      ...withoutTime,
+      subgroups: ["project"],
+      filters: { ...NO_REPORT_FILTERS, people: [ANA], projects: [P1] },
+    });
+    expect(markup).toContain("Ninguna entrada coincide con los filtros");
+    expect(bodyLinks(markup).get("Quitar filtros")).toBe(
+      "/reportes?desde=2026-10-05&hasta=2026-10-11&agrupar=persona&subagrupar=proyecto&sin-horas=1",
+    );
+  });
+
+  it("en dos niveles, la fila con horas lleva botón y la sin horas no", () => {
+    const markup = render({
+      ...withoutTime,
+      subgroups: ["project"],
+      levelsShown: 2,
+      totalSeconds: 3_600,
+      groups: [
+        {
+          kind: "person",
+          userId: ANA,
+          name: "Ana",
+          inactive: false,
+          seconds: 3_600,
+          children: [
+            {
+              kind: "project",
+              project: { id: P1, name: "P1", color: "teal" },
+              client: null,
+              seconds: 3_600,
+            },
+          ],
+        },
+        nobody[1],
+      ],
+    });
+    expect(bodyRows(markup)).toEqual([
+      ["Ana", "1:00"],
+      ["Bruno(inactiva)", "0:00"],
+    ]);
+    const [ana, bruno] = rowHeadings(markup);
+    expect(ana).toMatch(/<button type="button" aria-expanded="false"/);
+    expect(bruno).not.toContain("<button");
+    expect(bruno).toMatch(/<span aria-hidden="true"[^>]*><\/span>/);
   });
 });

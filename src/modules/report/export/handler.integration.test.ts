@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import { sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { Workbook, type Worksheet } from "exceljs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { db } from "@/server/db";
-import { membership } from "@/server/db/schema";
+import { membership, user } from "@/server/db/schema";
 import type { MembershipStatus, Role } from "@/server/permissions";
 import {
   buenosAires,
@@ -310,6 +310,7 @@ describe("exportBodyOf y exportFileNameOf (D-R6-3, D-R6-5; criterio 10 de R6)", 
         groupBy: null,
         subgroups: [],
         filters: { people: [], clients: [], projects: [], withoutProject: false },
+        peopleWithoutTime: false,
       },
       new Date("2026-10-08T15:00:00Z"),
     );
@@ -334,6 +335,86 @@ describe("exportBodyOf y exportFileNameOf (D-R6-3, D-R6-5; criterio 10 de R6)", 
     expect(exportFileNameOf(state.report, "csv")).toBe(
       "reporte_persona_2026-09-28_2026-10-04.csv",
     );
+  });
+});
+
+describe("las personas sin horas en el archivo (D-R9-10; criterio 15 de R9)", () => {
+  /** El nombre de cuenta y el ingreso antes de la semana (D-R9-2). */
+  async function prepare(userId: string, name: string) {
+    await db.update(user).set({ name }).where(eq(user.id, userId));
+    await db
+      .update(membership)
+      .set({ createdAt: new Date("2026-01-01T00:00:00Z") })
+      .where(
+        and(
+          eq(membership.workspaceId, seeded.workspaceId),
+          eq(membership.userId, userId),
+        ),
+      );
+  }
+
+  /** Una persona activa del workspace sembrado, sin horas. */
+  async function seedIdle(name: string) {
+    const userId = await seedUser();
+    await db
+      .insert(membership)
+      .values({ workspaceId: seeded.workspaceId, userId, role: "member" });
+    await prepare(userId, name);
+    return userId;
+  }
+
+  /** La sección «Entradas» de un CSV, desde su título. */
+  function entriesOf(text: string): string {
+    const start = text.indexOf(`"${exportLabels.entries}"\r\n`);
+    expect(start).toBeGreaterThan(0);
+    return text.slice(start);
+  }
+
+  it("el CSV y el Excel de un admin con sin-horas=1: la fila de la cabecera, las filas sin horas en el resumen y las mismas entradas", async () => {
+    const adminId = await signInAs("active", "admin");
+    await prepare(adminId, "Admin");
+    await prepare(seeded.ownerId, "Owner");
+    await seedIdle("Beto");
+    await seedHour(adminId, "Entrada del admin");
+
+    const withOption = await textOf(await exportOf(`${weekQuery}&sin-horas=1`));
+    const without = await textOf(await exportOf(weekQuery));
+
+    expect(withOption).toContain(
+      `"Agrupado por";"Persona / Proyecto"\r\n"Personas sin horas";"Sí"\r\n"Total"`,
+    );
+    expect(withOption).toContain(
+      `"1";"Admin";"";"1:00";"1,00"\r\n"2";"Admin";"Sin proyecto";"1:00";"1,00"\r\n` +
+        `"1";"Beto";"";"0:00";"0,00"\r\n"1";"Owner";"";"0:00";"0,00"\r\n\r\n`,
+    );
+    expect(entriesOf(withOption)).toBe(entriesOf(without));
+    expect(without).not.toContain("Personas sin horas");
+    expect(without).not.toContain('"Beto"');
+
+    const xlsx = await exportAs("xlsx", `${weekQuery}&sin-horas=1`);
+    const summary = await sheetOf(xlsx, exportLabels.summary);
+    const rows: unknown[][] = [];
+    summary.eachRow((row) => rows.push((row.values as unknown[]).slice(1)));
+    expect(rows).toContainEqual([exportLabels.peopleWithoutTime, exportLabels.yes]);
+    const levelOne = rows.filter(([level]) => level === 1).map(([, name]) => name);
+    expect(levelOne).toEqual(["Admin", "Beto", "Owner"]);
+  });
+
+  it("un member con sin-horas=1&personas=<otra> baja el mismo archivo que sin esos parámetros", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: fakeNow });
+    const otherId = await seedIdle("Otra Persona");
+    const memberId = await signInAs();
+    await prepare(memberId, "Member");
+    await seedHour(memberId, "Entrada propia");
+
+    const text = await textOf(
+      await exportOf(`${weekQuery}&sin-horas=1&personas=${otherId}`),
+    );
+
+    expect(text).toBe(await textOf(await exportOf(weekQuery)));
+    expect(text).not.toContain("Personas sin horas");
+    expect(text).not.toContain("Otra Persona");
+    expect(text).toContain('"Entrada propia"');
   });
 });
 

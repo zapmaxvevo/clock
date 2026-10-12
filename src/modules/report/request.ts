@@ -1,6 +1,7 @@
 import {
   reportFiltersOf,
   reportGroupParams,
+  reportPeopleWithoutTimeParams,
   reportRangeParams,
   reportSubgroupParams,
 } from "./schema";
@@ -38,5 +39,6 @@ export function reportRequestOf(
     groupBy: groupBy.success ? groupBy.data : null,
     subgroups: subgroups.success ? subgroups.data : [],
     filters: reportFiltersOf(params),
+    peopleWithoutTime: reportPeopleWithoutTimeParams.safeParse(params).success,
   };
 }

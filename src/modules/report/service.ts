@@ -69,6 +69,7 @@ import {
   type ReportFilters,
   type ReportGroup,
   type ReportGroupBy,
+  type ReportPersonGroup,
   type ReportRange,
   type ReportReadyState,
   type ReportState,
@@ -109,6 +110,8 @@ export type ReportRequest = {
   readonly subgroups: readonly ReportGroupBy[];
   /** Los de `reportFiltersOf`; `NO_REPORT_FILTERS` sin filtros. */
   readonly filters: ReportFilters;
+  /** El de `reportPeopleWithoutTimeParams`, sin decidir si aplica (D-R9-5). */
+  readonly peopleWithoutTime: boolean;
 };
 
 function workspaceResource(actor: Actor): WorkspaceResource {
@@ -412,7 +415,66 @@ type ReportRead = {
   readonly chart: readonly BucketTotalRow[];
   /** D-R6-3: las entradas, o que no entran sin leerlas (S1); `null` si el plan no las pide. */
   readonly entries: EntryRead | null;
+  /**
+   * D-R9-3: las personas sin horas, después del primer nivel; vacío sin la
+   * opción o si el primer nivel no entró.
+   */
+  readonly withoutTime: readonly ReportPersonGroup[];
 };
+
+/**
+ * D-R9-2: quiénes pueden aparecer sin horas: las elegidas en el filtro de
+ * personas, si hay, activas o inactivas; si no, las activas. En los dos casos,
+ * con la membresía creada antes de `until`, el fin del período.
+ */
+function withoutTimeCandidates(
+  people: readonly WorkspacePerson[],
+  chosen: readonly string[],
+  until: Date,
+): readonly WorkspacePerson[] {
+  const picked = new Set(chosen);
+  return people.filter(
+    (person) =>
+      (chosen.length > 0 ? picked.has(person.userId) : person.status === "active") &&
+      person.joinedAt.getTime() < until.getTime(),
+  );
+}
+
+/**
+ * D-R9-3, D-R9-7: las candidatas que no tienen fila en el primer nivel, como
+ * grupos de persona en cero y sin hijos, en el orden de `compareNames` sobre
+ * el nombre de `displayNameOf`. Lanza si una fila del primer nivel no es de
+ * persona.
+ */
+function peopleWithoutTimeOf(
+  firstLevel: readonly LevelTotalRow[],
+  candidates: readonly WorkspacePerson[],
+): ReportPersonGroup[] {
+  const withTime = new Set(
+    firstLevel.map(({ groups }) => {
+      const [group] = groups;
+      if (group?.kind !== "person" || groups.length !== 1) {
+        throw new Error("Una fila del primer nivel que no es de persona.");
+      }
+      return group.userId;
+    }),
+  );
+  return candidates
+    .filter(({ userId }) => !withTime.has(userId))
+    .map((person): ReportPersonGroup => ({
+      kind: "person",
+      userId: person.userId,
+      name: displayNameOf({ displayName: person.displayName }, person.accountName),
+      inactive: person.status === "inactive",
+      seconds: 0,
+    }))
+    .sort((left, right) =>
+      compareNames(
+        { id: left.userId, name: left.name },
+        { id: right.userId, name: right.name },
+      ),
+    );
+}
 
 /**
  * D-R6-3: hasta `REPORT_EXPORT_MAX_ENTRIES + 1` entradas, sin orden, o
@@ -622,11 +684,14 @@ function groupsOf(nodes: readonly TreeNode[], below: number): ReportGroup[] {
  * también entra entero o no entra. Cada uno se pide con lo que queda del tope
  * más uno; si no entra, no se lee ninguno más abajo, y si es el primero, la
  * lista vuelve vacía. Sin filas en el primero no hay nada que colgar y no se
- * lee ninguno de abajo.
+ * lee ninguno de abajo. El primero cuenta además las filas que suma una vez
+ * leído (D-R9-8), para entrar y para el presupuesto de los de abajo.
  */
 async function readLevelsWithinLimit(
   levelCount: number,
   readLevel: (depth: number, limit: number) => Promise<readonly LevelTotalRow[]>,
+  /** D-R9-8: cuántas filas suma el primer nivel una vez leído; 0 sin la opción. */
+  firstLevelExtra: (rows: readonly LevelTotalRow[]) => number,
 ): Promise<(readonly LevelTotalRow[])[]> {
   const shown: (readonly LevelTotalRow[])[] = [];
   let rowsRead = 0;
@@ -636,11 +701,12 @@ async function readLevelsWithinLimit(
       break;
     }
     const rows = await readLevel(depth, budget + 1);
-    if (rows.length > budget) {
+    const counted = rows.length + (depth === 1 ? firstLevelExtra(rows) : 0);
+    if (counted > budget) {
       break;
     }
     shown.push(rows);
-    rowsRead += rows.length;
+    rowsRead += counted;
     if (rows.length === 0) {
       break;
     }
@@ -676,6 +742,8 @@ type ReadPlan = {
   readonly chartPlan: ChartPlan;
   /** D-R6-2: la exportación lee además las entradas; la página no. */
   readonly entries: boolean;
+  /** D-R9-5: la opción efectiva, que solo llega con el alcance `everyone`. */
+  readonly peopleWithoutTime: boolean;
 };
 
 /** El gráfico de un pedido: su granularidad y sus tramos, que cubren `span`. */
@@ -744,7 +812,8 @@ function levelReadOf(
  * la misma dimensión que el gráfico; las entradas, si el plan las pide, con lo
  * mismo (D-R6-3). El catálogo de personas se lee solo con
  * el alcance `everyone`: `listWorkspacePeople` pide `team.view` y no
- * `timeEntry.others.view`, que responde `scopeOf` (D-R4-4).
+ * `timeEntry.others.view`, que responde `scopeOf` (D-R4-4). Las personas sin
+ * horas salen de ese mismo catálogo, sin otra lectura (D-R9-6).
  */
 async function readReport(
   tx: Transaction,
@@ -758,22 +827,39 @@ async function readReport(
   }
   const catalog = await getProjectFilterCatalog(tx, actor);
   // D-R4-4: el catálogo de personas solo para quien ve a todos.
-  const people =
-    scope.people.kind === "everyone"
-      ? toPersonOptions(await listWorkspacePeople(tx, actor))
-      : null;
+  const workspacePeople =
+    scope.people.kind === "everyone" ? await listWorkspacePeople(tx, actor) : null;
+  if (plan.peopleWithoutTime && workspacePeople === null) {
+    throw new Error("Las personas sin horas sin el catálogo de personas.");
+  }
+  const people = workspacePeople === null ? null : toPersonOptions(workspacePeople);
   const filters = effectiveFiltersOf(plan.filters, catalog, people);
   const filter = entryFilterOf(filters);
   // D-R4-4: las personas angostan el alcance; los otros filtros se suman a él.
   const readScope = filters.people.length > 0 ? narrowedTo(scope, filters.people) : scope;
-  const levels = await readLevelsWithinLimit(plan.levels.length, (depth, limit) =>
-    reportRepository.totalsByLevels(
-      readScope,
-      levelReadOf(plan, depth, filter, limit),
-      tx,
-    ),
+  // D-R9-2: las candidatas, de las personas efectivas del filtro.
+  const candidates =
+    plan.peopleWithoutTime && workspacePeople !== null
+      ? withoutTimeCandidates(workspacePeople, filters.people, plan.span.to)
+      : [];
+  const levels = await readLevelsWithinLimit(
+    plan.levels.length,
+    (depth, limit) =>
+      reportRepository.totalsByLevels(
+        readScope,
+        levelReadOf(plan, depth, filter, limit),
+        tx,
+      ),
+    // D-R9-8: las sin horas cuentan en el tope.
+    plan.peopleWithoutTime
+      ? (rows) => peopleWithoutTimeOf(rows, candidates).length
+      : () => 0,
   );
   const [first] = levels;
+  const withoutTime =
+    plan.peopleWithoutTime && first !== undefined
+      ? peopleWithoutTimeOf(first, candidates)
+      : [];
   // El total no pasa por la unión con las etiquetas, y sin el primer nivel no
   // hay suma (D-R10-10); si no, cada entrada filtrada está en un grupo del
   // primero y la suma es el total (D-R2a-7).
@@ -792,7 +878,7 @@ async function readReport(
   const entries = plan.entries
     ? await readEntries(tx, readScope, { span: plan.span, filter })
     : null;
-  return { levels, totals, catalog, people, filters, chart, entries };
+  return { levels, totals, catalog, people, filters, chart, entries, withoutTime };
 }
 
 /**
@@ -911,6 +997,10 @@ async function readReportState(
   const range = period.range;
   const groupBy = request.groupBy ?? DEFAULT_GROUP_BY;
   const levels = reportLevelsOf({ groupBy, subgroups: request.subgroups });
+  // D-R9-5: la opción aplica con la persona en el primer nivel efectivo y solo
+  // para quien ve a todos, el único alcance que lee el catálogo de personas.
+  const peopleWithoutTime =
+    request.peopleWithoutTime && groupBy === "person" && scope.people.kind === "everyone";
   // La página los recibe de `reportSubgroupParams`, que ya lo garantiza; acá
   // es una invariante, para otro llamador (R6), antes de leer.
   if (levels.length > 3 || new Set(levels).size !== levels.length) {
@@ -955,6 +1045,7 @@ async function readReportState(
         filters: request.filters,
         chartPlan,
         entries: withEntries,
+        peopleWithoutTime,
       }),
     { isolationLevel: "repeatable read", accessMode: "read only" },
   );
@@ -977,12 +1068,14 @@ async function readReportState(
     shortcuts: [...period.shortcuts],
     groupBy,
     subgroups: [...request.subgroups],
+    peopleWithoutTime,
     levelsShown,
     scope: scopeLineOf(scope),
     timeZone,
     totalSeconds: read.totals.seconds,
     billableSeconds: read.totals.billableSeconds,
-    groups: treeOf(read.levels, time),
+    // D-R9-3, D-R9-7: las sin horas no pasan por el árbol: van después, sin hijos.
+    groups: [...treeOf(read.levels, time), ...read.withoutTime],
     filters: read.filters,
     filterOptions: toFilterOptions(read.catalog, read.people),
     chart: chartOf(read.chart, chartPlan, time),

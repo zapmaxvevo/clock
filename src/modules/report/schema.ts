@@ -145,10 +145,17 @@ export const REPORT_DESCRIPTION_SHOWN = 100;
 export type ReportGrouping = {
   readonly groupBy: ReportGroupBy;
   readonly subgroups: readonly ReportGroupBy[];
+  /**
+   * RP-47, D-R9-4: con la persona en el primer nivel, también las personas sin
+   * horas. En un enlace, solo la efectiva (D-R9-12).
+   */
+  readonly peopleWithoutTime: boolean;
 };
 
 /** Los niveles de un reporte en orden: el primero y los de abajo. */
-export function reportLevelsOf(grouping: ReportGrouping): readonly ReportGroupBy[] {
+export function reportLevelsOf(
+  grouping: Pick<ReportGrouping, "groupBy" | "subgroups">,
+): readonly ReportGroupBy[] {
   return [grouping.groupBy, ...grouping.subgroups];
 }
 
@@ -273,6 +280,14 @@ export const reportPeopleParams = z
   .transform(({ personas }) => personas.split(","))
   .pipe(filterValues(z.string().regex(PERSON_ID)))
   .transform((ids): readonly string[] => ids);
+
+/**
+ * `?sin-horas=1` con `safeParse` (D-R9-4): cualquier otro valor, uno vacío o el
+ * parámetro repetido se descartan. No decide si aplica: eso es del service.
+ */
+export const reportPeopleWithoutTimeParams = z
+  .object({ "sin-horas": z.literal("1") })
+  .transform((): true => true);
 
 /**
  * Los filtros de la URL, cada parámetro validado por su lado con su `safeParse`:
@@ -539,6 +554,11 @@ export const reportReadyState = z
     /** Los niveles pedidos debajo del primero, de `subagrupar` (D-R3-5). */
     subgroups: z.array(z.enum(REPORT_GROUP_BYS)).max(2),
     /**
+     * D-R9-4, D-R9-5: la opción efectiva. Las personas sin horas, si hay, están
+     * en `groups`, al final del primer nivel y sin `children`.
+     */
+    peopleWithoutTime: z.boolean(),
+    /**
      * Los niveles leídos que entran en el tope: menos que los pedidos si no
      * (D-R3-6); 0 si no entra ni el primero (D-R10-10).
      */
@@ -569,6 +589,11 @@ export const reportReadyState = z
   })
   // D-R10-10: sin el primer nivel no hay grupos; con él, puede no haber (RP-33).
   .refine(({ levelsShown, groups }) => levelsShown > 0 || groups.length === 0)
+  // D-R9-5: la opción solo aplica por persona y con el catálogo de personas.
+  .refine(
+    ({ peopleWithoutTime, groupBy, filterOptions }) =>
+      !peopleWithoutTime || (groupBy === "person" && filterOptions.people !== null),
+  )
   // D-R5-2, RP-18: cada entrada cerrada del período cae en exactamente una barra.
   .refine(
     ({ chart, totalSeconds }) =>
