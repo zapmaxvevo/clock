@@ -19,7 +19,24 @@ const config = [
       ],
       "no-console": ["error", { allow: ["warn", "error"] }],
       eqeqeq: ["error", "always"],
+      // D-R6-12: la biblioteca de Excel, con su alerta de `uuid` aceptada,
+      // queda encerrada en el escritor; los tests la usan para leer.
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "exceljs",
+              message: "exceljs solo se importa en src/modules/report/export/xlsx.ts.",
+            },
+          ],
+        },
+      ],
     },
+  },
+  {
+    files: ["src/modules/report/export/xlsx.ts", "**/*.test.ts", "e2e/**"],
+    rules: { "no-restricted-imports": "off" },
   },
   {
     ignores: [

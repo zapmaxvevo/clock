@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import { sql } from "drizzle-orm";
+import { Workbook, type Worksheet } from "exceljs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { db } from "@/server/db";
@@ -14,7 +16,12 @@ import {
 } from "@/test/factories";
 import { actorIn, workspaceOf } from "@/test/time-entry";
 
-import { REPORT_EXPORT_MAX_ENTRIES, reportMessages } from "../schema";
+import {
+  REPORT_EXPORT_MAX_BYTES,
+  REPORT_EXPORT_MAX_ENTRIES,
+  reportMessages,
+  type ReportExportFormat,
+} from "../schema";
 import { reportRepository } from "../repository";
 import { getReportExport } from "../service";
 import { exportLabels } from "./labels";
@@ -23,7 +30,7 @@ import { exportLabels } from "./labels";
  * La ruta de exportación con las tres puertas de Next y de Better Auth
  * reemplazadas, como en las actions: el resto corre de verdad
  * (`requireSession`, `reportRequestOf`, `can()`, el service, la base, el
- * documento y el CSV).
+ * documento y los escritores de CSV y de Excel).
  */
 const mocks = vi.hoisted(() => ({
   sessionUser: null as null | { id: string; email: string },
@@ -116,11 +123,39 @@ function seedHour(userId: string, description: string) {
   });
 }
 
-function exportOf(query: string): Promise<Response> {
+function exportAs(format: ReportExportFormat, query: string): Promise<Response> {
   return handleReportExport(
-    new Request(`http://localhost:3000/reportes/exportar/csv?${query}`),
-    "csv",
+    new Request(`http://localhost:3000/reportes/exportar/${format}?${query}`),
+    format,
   );
+}
+
+function exportOf(query: string): Promise<Response> {
+  return exportAs("csv", query);
+}
+
+/** La hoja de un `.xlsx` descargado, leída con la biblioteca (D-R6-12: solo los tests leen). */
+async function sheetOf(response: Response, name: string): Promise<Worksheet> {
+  const workbook = new Workbook();
+  await workbook.xlsx.load(await response.arrayBuffer());
+  const sheet = workbook.getWorksheet(name);
+  if (sheet === undefined) {
+    throw new Error(`Falta la hoja ${name}.`);
+  }
+  return sheet;
+}
+
+/** Los textos de todas las celdas de una hoja. */
+function sheetTexts(sheet: Worksheet): string[] {
+  const texts: string[] = [];
+  sheet.eachRow((row) =>
+    row.eachCell((cell) => {
+      if (typeof cell.value === "string") {
+        texts.push(cell.value);
+      }
+    }),
+  );
+  return texts;
 }
 
 /** El cuerpo como texto, con el BOM, que `TextDecoder` quitaría por omisión. */
@@ -299,5 +334,77 @@ describe("exportBodyOf y exportFileNameOf (D-R6-3, D-R6-5; criterio 10 de R6)", 
     expect(exportFileNameOf(state.report, "csv")).toBe(
       "reporte_persona_2026-09-28_2026-10-04.csv",
     );
+  });
+});
+
+describe("la ruta en Excel (D-R6-12; criterio 17 de R6)", () => {
+  it("200 con el Content-Type de .xlsx, el nombre .xlsx, no-store y un ZIP con la hoja Entradas", async () => {
+    const memberId = await signInAs();
+    await seedHour(memberId, "Entrada propia");
+
+    const response = await exportAs("xlsx", weekQuery);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe(
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    expect(response.headers.get("Content-Disposition")).toBe(
+      'attachment; filename="reporte_persona-proyecto_2026-09-28_2026-10-04.xlsx"',
+    );
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    const body = new Uint8Array(await response.clone().arrayBuffer());
+    expect([...body.slice(0, 4)]).toEqual([0x50, 0x4b, 0x03, 0x04]);
+    expect(sheetTexts(await sheetOf(response, "Entradas"))).toContain("Entrada propia");
+  });
+});
+
+describe("el tope de las entradas es el mismo en CSV y en Excel (B4 de R6a)", () => {
+  /**
+   * `count` entradas del member de 3000 emojis de descripción (12 000 bytes):
+   * con 334 la cota pasa los 4 MB; con 300, no.
+   */
+  async function seedHeavy(userId: string, count: number) {
+    await db.execute(sql`
+      insert into time_entry (workspace_id, user_id, description, started_at, ended_at, billable)
+      select ${seeded.workspaceId}, ${userId}, repeat('😀', 3000),
+             timestamptz '2026-09-29 13:00:00+00',
+             timestamptz '2026-09-29 14:00:00+00',
+             false
+        from generate_series(1, ${count})`);
+  }
+
+  const note = exportLabels.entriesLimit(REPORT_EXPORT_MAX_ENTRIES);
+  const heavy = "😀".repeat(3000);
+
+  it("con la cota pasada, los dos salen sin entradas, aunque el Excel comprimido pese menos", async () => {
+    const memberId = await signInAs();
+    await seedHeavy(memberId, 334);
+
+    const csv = await exportAs("csv", weekQuery);
+    const xlsx = await exportAs("xlsx", weekQuery);
+
+    const csvText = await textOf(csv);
+    expect(csvText).toContain(note);
+    expect(csvText).not.toContain(heavy);
+    const xlsxBytes = (await xlsx.clone().arrayBuffer()).byteLength;
+    expect(xlsxBytes).toBeLessThan(REPORT_EXPORT_MAX_BYTES);
+    const texts = sheetTexts(await sheetOf(xlsx, "Entradas"));
+    expect(texts).toContain(note);
+    expect(texts).not.toContain(heavy);
+  });
+
+  it("con la cota debajo, los dos salen con todas las entradas", async () => {
+    const memberId = await signInAs();
+    await seedHeavy(memberId, 300);
+
+    const csv = await exportAs("csv", weekQuery);
+    const xlsx = await exportAs("xlsx", weekQuery);
+
+    const csvText = await textOf(csv);
+    expect(csvText).not.toContain(note);
+    expect(csvText.split(heavy)).toHaveLength(301);
+    const texts = sheetTexts(await sheetOf(xlsx, "Entradas"));
+    expect(texts).not.toContain(note);
+    expect(texts.filter((text) => text === heavy)).toHaveLength(300);
   });
 });
