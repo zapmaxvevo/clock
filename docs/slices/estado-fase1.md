@@ -1,7 +1,7 @@
 # Estado de la fase 1
 
 Registro vivo de por dónde va la ejecución. Se actualiza al cerrar cada paso;
-quien retome el trabajo empieza acá. Última actualización: 2026-10-10 (novena sesión).
+quien retome el trabajo empieza acá. Última actualización: 2026-10-12 (décima sesión).
 
 ## Dónde estamos
 
@@ -250,6 +250,33 @@ vacío del owner y `renewWorkspace` se corta.
      **Sigue R7** (mapa §R7), primero su contrato; después R9. R8, solo contrato. Bases que se
      pueden borrar: `clock_r6b_*`. La prueba del CSV y el Excel con el Excel del usuario queda
      opcional (§10 del contrato).
+     **R7 y R9 en contrato** (rama `nucleo/r7-contrato`): contrato de R7 aprobado en dos pasadas
+     (`ce2bfde`); medición R7-0 en `nucleo-reportes-r7-medicion.md` (`b26c589`):
+     `@react-pdf/renderer` no cumple (3000 filas en 30 s y 1,5 GB), pdfkit sí (0,25 s, ~130 MB).
+     **Decisión del usuario (2026-10-12): pdfkit directo** (ADR 0022). Decisiones del team-lead
+     (el usuario no contestó esas preguntas): Noto Sans Regular incrustada, `pdfjs-dist` en
+     `devDependencies`, R7a antes que R9 (el orden que pidió), R7b (el gráfico) solo si lo pide.
+     El `architect` adapta el contrato a pdfkit y escribe el ADR. Contrato de R9 escrito
+     (`bc9af1e`), en revisión; R7 y R9 tocan los mismos archivos y van en serie.
+     **Al cortar la décima sesión** (2026-10-12, ~18:00, por contexto): en `main` los contratos
+     de R7 y R9, el ADR 0022 y la medición R7-0. **Orden: R9 primero** (decisión del team-lead,
+     confirmada por `architecture-reviewer`: R9 no espera nada y el PDF hereda «Personas sin
+     horas» sin cambios). **Al retomar**: (1) el pipeline de R9 (contrato aprobado, `5249bc4`,
+     correcciones en `correcciones-nucleo-reportes-r9-contrato.md`): rama `nucleo/r9-sin-horas`
+     desde `main`, bases `clock_r9_*` creadas y migradas antes, `backend-dev` primero fija formas,
+     después `frontend-dev`, `test-engineer`, `e2e-tester` (recorridos 26 y 27) y
+     `parity-analyst` (texto que aplica el team-lead), seis revisiones, corrección, corrida
+     final, merge. (2) Después, **una pasada más de `architecture-reviewer` sobre el contrato de
+     R7 adaptado a pdfkit** (`cf94f4d`, reescrito entero: 432+/520−), y el pipeline de R7a. El
+     contrato suma `pdfkit` y `fontkit` a `dependencies`, `@types/pdfkit`, `@types/fontkit` y
+     `pdfjs-dist` a `devDependencies` (versiones de los `@types` sin verificar), y saca
+     `@react-pdf/renderer` en el paso 1 de R7a (decisión del `architect`; la regla de ESLint lo
+     prohíbe igual). La medición no tiene M8 (peor pedido en frío) ni M9 (`pdfjs-dist` bajo
+     Vitest): M8 pasó a P2 en frío en §6.2 y M9 lo prueba `backend-dev` en el paso 1 de R7a; si
+     falla, se detiene. R7b (el gráfico en el PDF) solo si el usuario lo pide. Lección de R6:
+     `backend-dev` probó dos veces en el árbol compartido; repetir en cada encargo que las
+     pruebas descartables y los mutantes van en un worktree. Bases que se pueden borrar:
+     `clock_r6a_*`, `clock_r6b_*`, `clock_r10a_*`, `clock_r10b_final_*`.
 
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
      (`7b66b03`), en checkout en el árbol principal. `architect-r3` quedó escribiendo
