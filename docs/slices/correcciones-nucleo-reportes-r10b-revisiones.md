@@ -48,7 +48,7 @@ integración `6890dd8` (criterio 18); e2e `75e816e` (recorridos 19 y 20).
 | Frontend  | `frontend-reviewer`   | aprobado, dos notas                            |
 | Tests     | `test-reviewer`       | aprobado, dos menores                          |
 | Código    | `clean-code-reviewer` | cambios requeridos: un mayor y tres menores    |
-| Paridad | `parity-reviewer` | aprobado; P1 de la especificación (§11.4) |
+| Paridad   | `parity-reviewer`     | aprobado; P1 de la especificación (§11.4)      |
 
 Lo que verificaron:
 
