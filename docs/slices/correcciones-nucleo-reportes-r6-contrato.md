@@ -244,3 +244,48 @@ Aplicada el 2026-10-12. Las secciones son del contrato corregido.
    de §15.x para `parity-analyst` suma que nada va al `audit_log`.
 9. §10, «Para el team-lead», punto 6: el texto para «Estructura» y para
    «Recorrido de una mutación» de CLAUDE.md. CLAUDE.md no se tocó.
+
+## Segunda pasada
+
+Revisión de `architecture-reviewer` sobre el commit `49f41fd`, con
+`git diff 14d6ac4 49f41fd -- docs/slices/nucleo-reportes-r6-exportar-csv-y-excel.md`.
+
+**Veredicto: aprobado.** Sin hallazgos nuevos.
+
+- **El diff:** todos los hunks caen en las secciones de los nueve hallazgos o en
+  las que nombran las decisiones del usuario: el encabezado, D-R6-1, D-R6-6,
+  D-R6-8, D-R6-9, D-R6-12, §0, §1, §4.1, §4.2, §4.3, §4.6 a §4.9, §6.5, §7,
+  §8, §9 y §10. No se perdió ni cambió texto fuera de eso; §11 y el resto de
+  las decisiones quedan iguales a `14d6ac4`.
+- **Hallazgos 1, 4 y 6, compilados.** Un archivo temporal con las firmas
+  literales del contrato, compilado con el `tsc` del repo (5.9.3), `lib` y
+  `strict` del `tsconfig.json`, y `zod` y `exceljs` del repo, termina sin
+  errores. Contenía `export const reportEntryRow`, `ExportWriter`,
+  `csvBytesOf` con `TextEncoder.encode`, `xlsxBytesOf` con
+  `new Uint8Array(await workbook.xlsx.writeBuffer())`, `EXPORT_WRITERS`
+  `satisfies Record<ReportExportFormat, ExportWriter>`, `exportBodyOf` y
+  `new Response(body)`. En la primera pasada, la misma llamada con `Uint8Array`
+  a secas dio TS2345. El archivo se borró.
+- **Hallazgo 2 (opción A):** con `Math.floor(minutes * 5 / 3)`, los valores
+  del criterio 1 dan 0,00, 0,01, 0,03, 0,50, 1,48, 1,50, 23,98, 2000,00 y 0,00;
+  los de la cabecera (3599 s → «0:59», «0,98») y los del recorrido 23 (2,25,
+  1,50 y 0,50) no cambian. El ejemplo de §9 es correcto: cien entradas de
+  1 minuto dan «1,00» contra «1,66». La suma de truncados no pasa el truncado
+  de la suma, así que el invariante de D-R6-6 vale para las dos columnas.
+- **Hallazgo 3:** la regla con la excepción de `xlsx.ts`, `**/*.test.ts` y
+  `e2e/**`, el criterio 19 con su mutante «excepción ampliada a `src/**`» y el
+  recorrido 25 ya no se contradicen.
+- **Hallazgo 5, desvío aceptado.** `time_entry_tag_entry_fk`
+  (`workspace_id`, `time_entry_id`) → `time_entry` (`workspace_id`, `id`) y
+  `time_entry_tag_tag_fk` (`workspace_id`, `tag_id`) → `tag` (`workspace_id`,
+  `id`) existen en la base (`drizzle/0011_tags.sql`), no son diferibles, y
+  `time_entry.id` y `tag.id` son claves primarias. Toda fila de
+  `time_entry_tag` comparte el workspace de su entrada y de su etiqueta, así
+  que, con las condiciones por id, quitar las de workspace no cambia ninguna
+  respuesta: el mutante es equivalente. Que las condiciones queden escritas,
+  como en `entryTags`, y la prueba previa de `test-engineer` (§8.1) alcanzan.
+- **Hallazgos 7, 8 y 9:** resueltos. La nota de tope de la cabecera sigue la
+  condición de la pantalla (`report-view.tsx:73`: sin el primer nivel cortado y
+  con menos niveles mostrados que pedidos). §10 registra las decisiones (a) y
+  (b) del usuario. R6b espera solo a `security-auditor` (§7, paso 15). El texto
+  para CLAUDE.md queda en «Para el team-lead», punto 6.
