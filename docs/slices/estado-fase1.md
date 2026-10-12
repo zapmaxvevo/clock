@@ -214,7 +214,13 @@ vacío del owner y `renewWorkspace` se corta.
      confirme que la ruta vulnerable no se ejecuta; se revisa cuando haya versión corregida. (b)
      Las exportaciones **no** van al `audit_log`. `architecture-reviewer` lanzado sobre el
      contrato (primera pasada). Pedido del usuario (2026-10-12): «seguí sin parar con R6a, R6b,
-     R7 y R9», en ese orden. R8 sigue solo en contrato.
+     R7 y R9», en ese orden. R8 sigue solo en contrato. **Contrato de R6 aprobado** en dos
+     pasadas (`correcciones-nucleo-reportes-r6-contrato.md`): nueve hallazgos, «Horas» trunca
+     al centésimo (opción A, decisión del team-lead), mutante de la subconsulta de etiquetas
+     declarado equivalente. Merge del contrato a `main` y arranque de R6a en la rama
+     `nucleo/r6a-csv`, con las bases `clock_r6a_{back,front,test,e2e,parity}` ya creadas
+     (e2e, parity y front migradas). Al mergear R6a, el team-lead aplica a CLAUDE.md el texto
+     de §10 «Para el team-lead», punto 6.
 
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
      (`7b66b03`), en checkout en el árbol principal. `architect-r3` quedó escribiendo
