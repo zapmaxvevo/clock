@@ -658,7 +658,7 @@ describe("ReportToolbar con «Exportar» (D-R6-10)", () => {
   it("«Excel», después de «CSV», descarga el `.xlsx` con la misma query (R6b)", () => {
     const markup = render({ chart, subgroups: ["date", "tag"], filters });
     const found = [...links(exportGroup(markup))];
-    expect(found.map(([label]) => label)).toEqual(["CSV", "Excel"]);
+    expect(found.map(([label]) => label)).toEqual(["CSV", "Excel", "PDF"]);
     const view = {
       range: lastWeek,
       groupBy: "project",
@@ -678,11 +678,14 @@ describe("ReportToolbar con «Exportar» (D-R6-10)", () => {
     expect(anchors.map(([, , content]) => content.replace(/<[^>]+>/g, ""))).toEqual([
       "CSV",
       "Excel",
+      "PDF",
     ]);
     for (const [, attributes, content] of anchors) {
       expect(attributes).not.toMatch(/\bdownload\b/);
       expect(attributes).not.toContain("aria-label");
-      expect(content).toMatch(/^<svg [^>]*aria-hidden="true"[^>]*>.*<\/svg>(CSV|Excel)$/);
+      expect(content).toMatch(
+        /^<svg [^>]*aria-hidden="true"[^>]*>.*<\/svg>(CSV|Excel|PDF)$/,
+      );
     }
   });
 });

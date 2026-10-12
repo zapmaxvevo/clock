@@ -16,7 +16,7 @@ import { csvBytesOf } from "./csv";
 import { exportDocumentOf, type ReportExportInput } from "./document";
 import type { ExportDocument, ExportWriter } from "./types";
 
-/** D-R6-6, D-R6-13: cómo se escribe y se sirve cada formato. R7 suma pdf. */
+/** D-R6-6, D-R6-13, D-R7-2: cómo se escribe y se sirve cada formato. */
 const EXPORT_WRITERS = {
   csv: {
     contentType: "text/csv; charset=utf-8",
@@ -29,6 +29,14 @@ const EXPORT_WRITERS = {
     // D-R6-12: con `import()`, ni la página ni el CSV cargan `exceljs`.
     write: async (document: ExportDocument) =>
       (await import("./xlsx")).xlsxBytesOf(document),
+  },
+  pdf: {
+    contentType: "application/pdf",
+    entries: false,
+    // El escritor del PDF llega en el paso 4 de R7a; hasta entonces no hay ruta.
+    write: async () => {
+      throw new Error("El escritor del PDF llega en el paso 4 de R7a.");
+    },
   },
 } as const satisfies Record<ReportExportFormat, ExportWriter>;
 
