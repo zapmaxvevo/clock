@@ -83,6 +83,12 @@ export const FIRST_LEVEL_LIMIT =
 export const TAG_OVERLAP =
   "Una entrada con varias etiquetas suma en cada una: las filas por etiqueta pueden sumar más que el total.";
 
+/** D-R9-11: el texto del enlace con la opción apagada, que es su nombre. */
+export const SHOW_WITHOUT_TIME = "Mostrar personas sin horas";
+
+/** D-R9-11: el texto del mismo enlace con la opción encendida. */
+export const HIDE_WITHOUT_TIME = "Ocultar personas sin horas";
+
 /** RP-07: el aviso de una membresía que no está activa. */
 export const FORBIDDEN_TITLE = "Tu acceso al workspace está desactivado.";
 export const FORBIDDEN_BODY = "No podés ver reportes.";
@@ -630,12 +636,6 @@ export async function expectGroupBy(page: Page, groupBy: ReportGroupBy): Promise
     GROUP_LINK[groupBy],
   ]);
 }
-
-/** D-R9-11: el texto del enlace con la opción apagada, que es su nombre. */
-export const SHOW_WITHOUT_TIME = "Mostrar personas sin horas";
-
-/** D-R9-11: el texto del mismo enlace con la opción encendida. */
-export const HIDE_WITHOUT_TIME = "Ocultar personas sin horas";
 
 /**
  * El enlace de las personas sin horas (D-R9-11), por su nombre exacto: con

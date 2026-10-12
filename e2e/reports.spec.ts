@@ -152,7 +152,8 @@ import { trackerBar, uniqueSuffix } from "./tracker-page";
  * en la semana anterior a la de hoy, salvo las de la semana y el mes, que van
  * en un período fijo de 2025 (D-R10-14) —las del gráfico y las de la
  * exportación también (D-R6-14), más una del gráfico en la semana actual
- * (D-R5-12)—, y se siembran antes de abrir la
+ * (D-R5-12)— y las de las personas sin horas, que van en una semana de 2001
+ * (D-R9-14), y se siembran antes de abrir la
  * pantalla; las del tope del primer nivel, con un helper de SQL. Los rótulos
  * esperados se calculan con `days.ts`, no con el código que los produce.
  */
@@ -2397,13 +2398,30 @@ function joinedBefore(range: ReportRange): Date {
   return new Date(`${dayKeyOf(addDays(range.first, -31))}T00:00:00Z`);
 }
 
+/**
+ * D-R9-2: un ingreso posterior a `range`: dos días después del último, así que
+ * es posterior al fin del período en cualquier zona.
+ */
+function joinedAfter(range: ReportRange): Date {
+  return new Date(`${dayKeyOf(addDays(range.last, 2))}T00:00:00Z`);
+}
+
+/**
+ * La semana del recorrido 26, del lunes 01/10 al domingo 07/10 de 2001. Sin el
+ * filtro de personas, todas las activas que entraron antes del fin del período
+ * aparecen sin horas, y una base reusada acumula cientos por corrida. En un
+ * período tan viejo solo entraron las personas que deja el propio 26, así que
+ * el primer nivel no llega al tope de 3000 filas (D-R9-8, D-R9-14).
+ */
+const WITHOUT_TIME_WEEK: ReportRange = weekRange({ year: 2001, month: 10, day: 1 });
+
 test("un admin ve quién no cargó, con las inactivas solo si las elige", async ({
   page,
   email,
 }) => {
   const day = today();
-  const lastWeek = lastWeekRange(day);
-  const tuesday = addDays(lastWeek.first, 1);
+  const week = WITHOUT_TIME_WEEK;
+  const tuesday = addDays(week.first, 1);
   const suffix = uniqueSuffix();
   const project = `P ${suffix}`;
   const own = `Ana ${suffix}`;
@@ -2422,11 +2440,12 @@ test("un admin ve quién no cargó, con las inactivas solo si las elige", async 
   const inactiveEmail = await seedOtherPerson(inactive, "inactive");
   const invitedEmail = await seedOtherPerson(invited, "invited");
   const idleEmail = await seedOtherPerson(idle);
-  // D-R9-2: N entró hoy, después de la semana anterior: no está sin horas.
   const newcomerEmail = await seedOtherPerson(newcomer);
   for (const joined of [email, activeEmail, inactiveEmail, invitedEmail, idleEmail]) {
-    await setJoinedAt(joined, joinedBefore(lastWeek));
+    await setJoinedAt(joined, joinedBefore(week));
   }
+  // D-R9-2: N entró después de la semana: no está sin horas.
+  await setJoinedAt(newcomerEmail, joinedAfter(week));
   await seedPersonEntries(email, PERSON_TIMEZONE, [
     { description: "a", day: tuesday, start: "09:00", end: "10:00", project },
   ]);
@@ -2441,7 +2460,7 @@ test("un admin ve quién no cargó, con las inactivas solo si las elige", async 
   const withoutTime = { peopleWithoutTime: true };
 
   // D-R9-11: sin la opción, las que tienen horas y el enlace que la enciende.
-  await openReport(page, lastWeek, "persona", day, [], chosen);
+  await openReport(page, week, "persona", day, [], chosen);
   await expect(page.getByText(SCOPE_EVERYONE, { exact: true })).toBeVisible();
   await expectGroupNames(page, [active, own]);
   await expect(groupDuration(groupRow(page, active))).toHaveText("2:00");
@@ -2453,7 +2472,7 @@ test("un admin ve quién no cargó, con las inactivas solo si las elige", async 
   // `personas`. D-R9-2, D-R9-7: después de las que tienen horas, por nombre,
   // C —elegida, aunque inactiva— y E; N no. RP-31: C lleva «(inactiva)».
   await withoutTimeToggle(page, false).click();
-  await expectReport(page, lastWeek, "persona", day, [], chosen, withoutTime);
+  await expectReport(page, week, "persona", day, [], chosen, withoutTime);
   await expect(page).toHaveURL(
     (url) =>
       [...url.searchParams.keys()].join(",") === "desde,hasta,agrupar,sin-horas,personas",
@@ -2475,7 +2494,7 @@ test("un admin ve quién no cargó, con las inactivas solo si las elige", async 
   // D-R9-12: el subnivel conserva la opción. D-R9-3: las sin horas no tienen
   // hijos, así que no tienen botón.
   await pickSubgroup(page, "Segundo nivel", "proyecto", ["proyecto"]);
-  await expectReport(page, lastWeek, "persona", day, ["proyecto"], chosen, withoutTime);
+  await expectReport(page, week, "persona", day, ["proyecto"], chosen, withoutTime);
   const expectTree = async (): Promise<void> => {
     await expectWithoutTime();
     await expect(expandButton(page, active)).toBeVisible();
@@ -2490,7 +2509,7 @@ test("un admin ve quién no cargó, con las inactivas solo si las elige", async 
   await periodLink(page, "Período anterior").click();
   await expectReport(
     page,
-    shiftRange(lastWeek, -7),
+    shiftRange(week, -7),
     "persona",
     day,
     ["proyecto"],
@@ -2510,7 +2529,7 @@ test("un admin ve quién no cargó, con las inactivas solo si las elige", async 
   await expect(withoutTimeToggle(page, true)).toBeVisible();
 
   await periodLink(page, "Período siguiente").click();
-  await expectReport(page, lastWeek, "persona", day, ["proyecto"], chosen, withoutTime);
+  await expectReport(page, week, "persona", day, ["proyecto"], chosen, withoutTime);
   await expectTree();
 
   // D-R6-10, D-R9-12: «CSV» lleva la misma query que la página, con la opción.
@@ -2522,33 +2541,50 @@ test("un admin ve quién no cargó, con las inactivas solo si las elige", async 
 
   // RP-32: al recargar, lo mismo.
   await page.reload();
-  await expectReport(page, lastWeek, "persona", day, ["proyecto"], chosen, withoutTime);
+  await expectReport(page, week, "persona", day, ["proyecto"], chosen, withoutTime);
   await expectTree();
 
   // D-R9-2: sin el filtro de personas, E está sin horas; C, inactiva, ya no,
-  // y ni D, invitada, ni N, que entró hoy. La lista acumula las personas de
-  // todas las corridas, así que no se afirma nada más de ella (D-R9-14).
+  // y ni D, invitada, ni N, que entró después. La lista tiene las personas de
+  // las corridas anteriores del 26, así que no se afirma nada más de ella
+  // (D-R9-14).
   await openFilter(page, "Personas", "5");
   await filterSearch(page, "Personas").fill(suffix);
   for (const name of [own, active, inactive, idle, newcomer]) {
     await filterOption(page, name).uncheck();
   }
   await applyFilter(page, "Personas", "todas");
-  await expectReport(page, lastWeek, "persona", day, ["proyecto"], {}, withoutTime);
+  await expectReport(page, week, "persona", day, ["proyecto"], {}, withoutTime);
   await expect(groupDuration(groupRow(page, idle))).toHaveText("0:00");
   await expect(groupRow(page, inactive)).toHaveCount(0);
   await expect(groupRow(page, invited)).toHaveCount(0);
   await expect(groupRow(page, newcomer)).toHaveCount(0);
 
+  // D-R3-9: encender o apagar la opción es otra navegación, así que el árbol
+  // vuelve a contraerse: B abierto queda cerrado al ocultar y al mostrar.
+  await expandButton(page, active).click();
+  await expect(expandButton(page, active)).toHaveAttribute("aria-expanded", "true");
+  await withoutTimeToggle(page, true).click();
+  await expectReport(page, week, "persona", day, ["proyecto"]);
+  await expect(withoutTimeToggle(page, false)).toBeVisible();
+  await expect(groupRow(page, idle)).toHaveCount(0);
+  await expect(expandButton(page, active)).toHaveAttribute("aria-expanded", "false");
+  await expandButton(page, active).click();
+  await expect(expandButton(page, active)).toHaveAttribute("aria-expanded", "true");
+  await withoutTimeToggle(page, false).click();
+  await expectReport(page, week, "persona", day, ["proyecto"], {}, withoutTime);
+  await expect(groupDuration(groupRow(page, idle))).toHaveText("0:00");
+  await expect(expandButton(page, active)).toHaveAttribute("aria-expanded", "false");
+
   // D-R9-12: «Proyecto» intercambia los niveles y apaga la opción, y sin la
   // persona en el primer nivel no hay enlace. «Persona» la deja apagada.
   await groupByLink(page, "proyecto").click();
-  await expectReport(page, lastWeek, "proyecto", day, ["persona"]);
+  await expectReport(page, week, "proyecto", day, ["persona"]);
   await expectSubgroups(page, ["persona"]);
   await expect(withoutTimeToggle(page, false)).toHaveCount(0);
   await expect(withoutTimeToggle(page, true)).toHaveCount(0);
   await groupByLink(page, "persona").click();
-  await expectReport(page, lastWeek, "persona", day, ["proyecto"]);
+  await expectReport(page, week, "persona", day, ["proyecto"]);
   await expectSubgroups(page, ["proyecto"]);
   await expect(withoutTimeToggle(page, false)).toBeVisible();
   await expect(groupDuration(groupRow(page, active))).toHaveText("2:00");
