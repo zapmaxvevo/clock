@@ -355,3 +355,137 @@ traer `pdfjs-dist`.**
 - **Cambio:** sumar a la regla de §4.9 el patrón `@/test/*` (y la ruta
   relativa a `src/test/`), prohibido fuera de `**/*.test.ts`, `**/*.test.tsx`,
   `src/test/**` y `e2e/**`, con su caso en el criterio 11.
+
+## Tercera pasada
+
+Revisión de `architecture-reviewer` sobre la versión con `pdfkit` (`cf94f4d`),
+contra `main` en `6be71a7` y la medición rehecha (`7644438`). Las líneas del
+informe son del contrato en `6be71a7`.
+
+**Veredicto: no aprobado.** Cinco mayores, ninguno bloqueante, y cuatro
+menores; todos se arreglan editando el texto. Con los mayores aplicados queda
+«aprobado con menores», sin otra pasada completa: basta revisar las líneas
+tocadas.
+
+### Hallazgos
+
+**1 (mayor). La fuente entra sola al trazado, así que
+`outputFileTracingIncludes` sobra.** La medición `7644438` (M1) dice que
+Turbopack sigue la ruta literal de `path.join(process.cwd(), "src/…")`; con el
+include la fuente aparece dos veces. El riesgo pasa a ser una ruta armada de
+otra forma, que la deja fuera del trazado sin que se note en local.
+
+**2 (mayor). Las cifras y el estado de M8 y M9 son los de la primera medición
+(`b26c589`).** El hash, el trazado (5,00 y 11,36 MB), las páginas (88), el peor
+peso (627 KB en 273 páginas), M2 (780 filas, +0,17 s), M3 (0,28 s, 122 MB), M8
+(0,85 s), M9 (funciona) y las cifras de §10.
+
+**3 (mayor). El lector de los tests no sigue la forma de leer que funcionó en
+M9.** Unir los fragmentos con un espacio parte la palabra de 100 «x» en tres;
+pegarlos sin espacio rompe un rótulo partido en un espacio. M9 lee por fila.
+
+**4 (mayor). El contrato no sabe que R9 va antes.** El recorrido 26 choca con
+los 26 y 27 de R9; falta el caso del PDF que R9 delega a R7a (su criterio 15);
+las líneas citadas se corren con el merge de R9.
+
+**5 (mayor). `pdfkit` 0.20.1 o 0.20.2, a conciencia.** 0.20.2 es `latest` y su
+CHANGELOG arregla el trazado de las métricas de las fuentes estándar, que
+`new PDFDocument()` carga siempre (`initFonts`, `pdfkit.js:3695`, `:7040`). La
+salida externa medida depende de ese trazado y M1 la probó solo con
+`next start`.
+
+**6 (menor). Las versiones y licencias de las dependencias nuevas.**
+`@types/pdfkit` 0.17.6, `@types/fontkit` 2.0.9, `pdfjs-dist` 6.4.299, con
+`--save-exact`; sin `declare module`; `Font` contra `FontCollection` sin
+aserción; `pdfjs-dist` fuera de la auditoría de CI.
+
+**7 (menor). Los rótulos tienen hasta unos 203 caracteres, no 100.** La tarea
+es «nombre (proyecto)» y el proyecto, «nombre (cliente)», con `NAME_MAX = 100`.
+
+**8 (menor). El ADR 0022 tiene los mismos datos viejos.** Propone un párrafo
+«Corrección (2026-10-12)» en lugar de reescribirlo.
+
+**9 (menor). Detalles de forma.** El estado de la revisión (`:30-34`) tiene que
+nombrar la tercera pasada; `prettier --write` antes del commit.
+
+### Decisiones del team-lead para lo abierto
+
+- **Hallazgo 5:** `"pdfkit": "0.20.2"` exacta; el paso 1 corre `next build` y
+  `next start`, baja un PDF y mira el `route.js.nft.json` de la ruta del PDF
+  (la fuente y las métricas que carga `pdfkit`).
+- **Hallazgo 6:** las cuatro versiones con `--save-exact` y sin la salida del
+  `declare module`.
+- **Hallazgo 7:** tal cual: rótulos de unos 203 caracteres, P4 ≤ 2 MB y
+  `RangeError` para una fila más alta que la página, probado en el criterio 8.
+- **Hallazgo 4:** los recorridos de R7a y R7b pasan a 28 y 29; R7a parte de
+  `main` con R9 mergeado; los casos de R9 en los criterios 7, 9 y 10.
+- **Hallazgo 3:** la firma `PdfPageText { text, rows }` propuesta.
+
+### Respuesta del architect
+
+Aplicada el 2026-10-12. Cada cifra se verificó contra
+`nucleo-reportes-r7-medicion.md` (`7644438`); las secciones son del contrato
+corregido.
+
+1. D-R7-5 con la ruta literal en `join`, «Sin `outputFileTracingIncludes`» y el
+   riesgo de una ruta armada de otra forma; §1 sin `next.config.ts` en el
+   alcance ni en las consecuencias; §4.6, «La ruta de la fuente va literal en
+   la llamada a `join`»; §4.7 sin el bloque de `next.config.ts` («no
+   cambia»); §7 sin `next.config.ts` en el reparto ni en el paso 4, y con él
+   en «Lo que no toca nadie»; criterio 12 con el `nft.json` que lista la
+   fuente y el mutante de la ruta armada con una variable (§8.1); §6.2, que
+   el trazado liste la fuente; §8.2 y §8.3 con la ruta fuera del literal; §9,
+   «el PDF da 500 en Vercel; la ruta va literal»; §10, punto 2, «entra sola
+   al trazado»; los supuestos de §0 sin `outputFileTracingIncludes`.
+2. `7644438` en el encabezado, §0, §6.1 y el «Orden»; lo único sin verificar,
+   los límites de Vercel (y el paso a 0.20.2, por el hallazgo 5); D-R7-4,
+   5,00 contra 11,36 MB; D-R7-5 sin «Suma 0,44 MB»; D-R7-6, 88 páginas y
+   249 KB; D-R7-7, 627 KB en 273 páginas y 0,66 s; D-R7-10 sin «la 5.7.284» y
+   con M9 como se midió; D-R7-11 con el texto propuesto; los supuestos de §0
+   con 780 filas y «Midió también M8 y M9»; §6.1 con M8, M3, M2, M1, M6 y M9
+   nuevos y sin «Quedaron sin medir»; §4.10, 5,00 MB; el paso 1 con M9 como
+   comprobación del lector; §9 con M8 en 0,85 s y «Ochenta y ocho páginas;
+   273 con rótulos de 100 caracteres»; §10, punto 1, con 35,6 s y 1990 MB,
+   46,0 s y 1410 MB, y 0,28 s y entre 122 y 138 MB.
+3. §4.8 con `PdfPageText { text, rows }` y `pdfPageTexts` que devuelve
+   `readonly PdfPageText[]`; D-R7-10 con la lectura por fila de M9, los
+   rótulos de los tests que no se parten y la comparación sin blancos; criterio
+   8 con la fila larga como elemento de `rows` de la página k+1 y ninguna fila
+   de la página k con su prefijo, y la cabecera, los encabezados y el pie en
+   `text`; criterio 9 y recorrido 28 con `text` y `rows`; `readPdf` con la
+   misma forma y `await import(…)` adentro, probado primero bajo Playwright
+   (D-R7-10 y §7, e2e).
+4. §0 con «`main` con R9 mergeado», las citas de `31a83b3` que se corren con R9
+   y las llamadas que dé `git grep`; §1 y el paso 1 con «todas las llamadas»;
+   criterio 7 con la fila sin horas como primera fila de datos (y el mutante
+   de las celdas vacías fuera del reparto); criterio 9 con el admin con
+   `sin-horas=1` y el member con `sin-horas=1&personas=<otra>`, y sus
+   mutantes; criterio 10 con `sin-horas=1` en el `href` de «PDF» y su
+   mutante; §8.2, «Los veintisiete de R2a a R9 no cambian», con 28 y 29 en
+   todo el contrato (§1, §7, criterios 14 y 19); «Decisiones que el contrato
+   da por tomadas» y §10 con D-R9-10 y el orden de R9.
+5. D-R7-4 con `"pdfkit": "0.20.2"` exacta, el porqué (el CHANGELOG, citado
+   por la revisión, y `initFonts`) y la comprobación del paso 1; la salida
+   externa, «no verificada para Vercel» en D-R7-4, §6.4 y §9; §1 y el paso 1
+   con la versión; §0 avisa que las líneas citadas de `pdfkit.js` son de la
+   0.20.1. **Ajuste:** en el paso 1 la ruta del PDF todavía no existe (la
+   crea el paso 4), así que la comprobación de `next build`, `next start` y el
+   `nft.json` va en una copia descartable con una ruta mínima, como pide la
+   regla de la corrida de §7; §6.2 la repite con el código terminado.
+6. Las cinco versiones exactas en D-R7-4, §1, el paso 1 y §10 (punto 4, nuevo);
+   las licencias en D-R7-4; sin `declare module` (D-R7-4 y §7); `pdf.ts`
+   distingue `Font` de `FontCollection` sin aserción (D-R7-4 y §4.6);
+   `pdfjs-dist` fuera de la auditoría de CI e `isEvalSupported: false` en
+   D-R7-10 y §9.
+7. D-R7-6 con «unos 203 caracteres; unos nueve renglones en la columna más
+   angosta», con `NAME_MAX` y `document.ts:64` y `:100` (verificados en el
+   árbol); §4.6, el `RangeError` de la fila más alta que el alto útil; §6.2,
+   P4 ≤ 2 MB y el documento armado a mano con esos largos; D-R7-7 y §9 lo
+   nombran; criterio 8 con un rótulo de 20 000 caracteres y su mutante.
+8. El ADR 0022 suma al final «Corrección (2026-10-12)» con las cifras de
+   `7644438`, la fuente que entra sola al trazado, `pdfkit` 0.20.2 y «La
+   decisión no cambia»; el resto del ADR queda igual. §12 del contrato lo
+   nombra.
+9. El estado de la revisión nombra esta tercera pasada y que falta la
+   verificación de las líneas tocadas; §10, punto 5, sigue pidiendo
+   `prettier --write` antes del commit.

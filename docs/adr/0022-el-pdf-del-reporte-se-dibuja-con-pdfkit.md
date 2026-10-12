@@ -116,3 +116,29 @@ en la escritura. La opción 3 no genera un archivo.
   `serverExternalPackages: ["pdfkit", "fontkit"]`, con el doble de trazado.
 - Los límites de Vercel siguen sin verificar; los mide el usuario después del
   despliegue, con el tiempo en frío de un mes del equipo.
+
+## Corrección (2026-10-12)
+
+La medición R7-0 se rehízo (`7644438`) y reemplaza a la de `b26c589`. **La
+fuente entra sola al trazado**: leída con `join(process.cwd(), …)` y la ruta
+escrita literal, Turbopack la sigue; la primera medición la buscaba en una
+lista cortada. `outputFileTracingIncludes` no hace falta, y una ruta armada de
+otra forma puede dejarla fuera. Las cifras nuevas, con `pdfkit` 0.20.1:
+
+- **3000 filas, solo la escritura**: `@react-pdf/renderer`, 35,6 s y 1990 MB
+  con Helvetica, 46,0 s y 1410 MB con Noto; `pdfkit`, 0,28 s y 138 MB con
+  Helvetica, 0,28 s y 122 MB con Noto, en 88 páginas y 249 KB.
+- **El peor pedido entero en frío** (`next start` nuevo, la lectura real de 780
+  filas y la escritura de 3000, presupuesto 5 s): `@react-pdf/renderer`,
+  35,1 s y 43,7 s; `pdfkit`, 0,83 s y 0,85 s.
+- **El primer PDF en frío** con 780 filas, contra el primer CSV:
+  `@react-pdf/renderer`, +2,30 s y +2,77 s; `pdfkit`, +0,08 s y +0,17 s.
+- **El trazado**: `@react-pdf/renderer`, 13,59 MB; `pdfkit` externo, 11,36 MB;
+  `pdfkit` empaquetado, 5,00 MB, con la fuente adentro; el del CSV, 4,79 MB.
+- **El peor peso**, rótulos de 100 caracteres: `pdfkit`, 627 KB con Noto en
+  273 páginas y 483 KB con Helvetica; `@react-pdf/renderer`, 777 KB en 128 s.
+- **`pdfjs-dist` 6.4.299** lee el PDF bajo Vitest en Node, sin worker.
+
+El contrato de R7 fija `pdfkit` 0.20.2, que arregla el trazado de las métricas
+de las fuentes estándar, y lo comprueba antes de escribir el PDF. La decisión
+no cambia.
