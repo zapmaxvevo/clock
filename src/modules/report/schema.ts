@@ -602,6 +602,13 @@ export const REPORT_EXPORT_MAX_ENTRIES = 10_000;
 /** D-R6-3, D-R6-11: el peso máximo del cuerpo; con más, las entradas no van. */
 export const REPORT_EXPORT_MAX_BYTES = 4_000_000;
 
+/**
+ * S3: lo más que dura una sentencia de la lectura de la exportación. Debajo de
+ * los 10 s de Vercel Hobby (D-R6-11): una sentencia colgada no sigue en la base
+ * después de que la plataforma corta la función.
+ */
+export const REPORT_EXPORT_STATEMENT_TIMEOUT_MS = 8_000;
+
 /** D-R6-4: una carpeta de `reportes/exportar/` por formato. R6b suma "xlsx"; R7, "pdf". */
 export const REPORT_EXPORT_FORMATS = ["csv"] as const;
 export type ReportExportFormat = (typeof REPORT_EXPORT_FORMATS)[number];

@@ -145,11 +145,18 @@ export type ReportEntryListRead = ReportEntryRead & {
   readonly limit: number;
 };
 
-/** S1: lo que sumaría `entryList` sin el tope, sin leer las filas. */
+/** S1, S2: lo que traería `entryList` sin el tope, contado sin leer las filas. */
 export type EntryListSize = {
   readonly entries: number;
-  /** Cota inferior de los bytes de las entradas en el archivo (S1). */
-  readonly minBytes: number;
+  /**
+   * Los bytes en UTF-8 de los textos de cada entrada tal como los trae
+   * `entryList`: la descripción, el nombre que se muestra de la persona, el
+   * proyecto, el cliente, la tarea y los nombres de las etiquetas.
+   */
+  readonly textBytes: number;
+  /** Los vínculos con etiquetas, y cuántas entradas tienen al menos uno. */
+  readonly tagLinks: number;
+  readonly taggedEntries: number;
 };
 
 export type EntryListRow = {
@@ -764,6 +771,28 @@ const listProject = alias(project, "list_project");
 const listClient = alias(client, "list_client");
 const listTask = alias(task, "list_task");
 
+// Las uniones de `entryList` y de `entryListSize`, las mismas en las dos.
+/** R1: toda entrada tiene membresía en su workspace. */
+const membershipOfEntry = and(
+  eq(membership.workspaceId, timeEntry.workspaceId),
+  eq(membership.userId, timeEntry.userId),
+);
+/** Tablas de la cuenta, sin `workspace_id`: se unen por la persona. */
+const userOfEntry = eq(user.id, timeEntry.userId);
+const preferenceOfEntry = eq(userPreference.userId, timeEntry.userId);
+const projectOfEntry = and(
+  eq(listProject.workspaceId, timeEntry.workspaceId),
+  eq(listProject.id, timeEntry.projectId),
+);
+const clientOfProject = and(
+  eq(listClient.workspaceId, listProject.workspaceId),
+  eq(listClient.id, listProject.clientId),
+);
+const taskOfEntry = and(
+  eq(listTask.workspaceId, timeEntry.workspaceId),
+  eq(listTask.id, timeEntry.taskId),
+);
+
 /**
  * Las etiquetas de la entrada de la fila exterior, en un arreglo JSON, como
  * `entryTags` de `time-entry`: una subconsulta correlacionada no multiplica
@@ -792,9 +821,10 @@ function sizeOf(value: string): number {
 }
 
 /**
- * S1: cuántas entradas listaría `entryList` y una cota inferior de sus bytes,
- * con el mismo `where`. Las entradas se leen una vez, en una CTE, y las
- * etiquetas se suman con una unión, sin una subconsulta por entrada.
+ * S1, S2: cuántas entradas listaría `entryList` y cuánto pesan sus textos,
+ * con el mismo `where` y las mismas uniones. Las entradas se leen una vez, en
+ * una CTE, y las etiquetas se suman con una unión, sin una subconsulta por
+ * entrada.
  */
 async function entrySize(
   scope: ReportScope,
@@ -807,36 +837,56 @@ async function entrySize(
       .select({
         workspaceId: timeEntry.workspaceId,
         id: timeEntry.id,
-        description: timeEntry.description,
+        // El nombre que se muestra es el de `displayNameOf`; nulo cuenta 0.
+        textBytes: sql<string>`octet_length(${timeEntry.description})
+          + octet_length(coalesce(${userPreference.displayName}, ${user.name}))
+          + coalesce(octet_length(${listProject.name}), 0)
+          + coalesce(octet_length(${listClient.name}), 0)
+          + coalesce(octet_length(${listTask.name}), 0)`.as("text_bytes"),
       })
       .from(timeEntry)
+      .innerJoin(membership, membershipOfEntry)
+      .innerJoin(user, userOfEntry)
+      .leftJoin(userPreference, preferenceOfEntry)
+      .leftJoin(listProject, projectOfEntry)
+      .leftJoin(listClient, clientOfProject)
+      .leftJoin(listTask, taskOfEntry)
       .where(and(inScope(scope), closedIn(read.span), matchesFilter(read.filter))),
   );
-  // Un `select` de una sola tabla escribe las columnas sin calificar: acá van
-  // todas calificadas, y dentro de la subconsulta `export_entries` es la de su
-  // `from`.
-  const listed = (column: string) =>
-    sql`${sql.identifier("export_entries")}.${sql.identifier(column)}`;
+  const tags = tx
+    .select({
+      bytes: sql`coalesce(sum(octet_length(${tag.name})), 0)`.as("bytes"),
+      links: sql`count(*)`.as("links"),
+      tagged: sql`count(distinct ${timeEntryTag.timeEntryId})`.as("tagged"),
+    })
+    .from(entries)
+    .innerJoin(
+      timeEntryTag,
+      and(
+        eq(timeEntryTag.workspaceId, entries.workspaceId),
+        eq(timeEntryTag.timeEntryId, entries.id),
+      ),
+    )
+    .innerJoin(
+      tag,
+      and(eq(tag.workspaceId, timeEntryTag.workspaceId), eq(tag.id, timeEntryTag.tagId)),
+    )
+    .as("export_tags");
   const [row] = await tx
     .with(entries)
     .select({
-      entries: sql<string>`count(*)::bigint`,
-      descriptionBytes: sql<string>`coalesce(sum(octet_length(${listed("description")})), 0)::bigint`,
-      tagBytes: sql<string>`(
-        select coalesce(sum(octet_length("tag"."name")), 0)::bigint
-        from ${sql.identifier("export_entries")}
-        inner join "time_entry_tag"
-          on "time_entry_tag"."workspace_id" = ${listed("workspace_id")}
-          and "time_entry_tag"."time_entry_id" = ${listed("id")}
-        inner join "tag"
-          on "tag"."workspace_id" = "time_entry_tag"."workspace_id"
-          and "tag"."id" = "time_entry_tag"."tag_id"
-      )`,
+      entries: sql<string>`(select count(*) from ${entries})::bigint`,
+      textBytes: sql<string>`(select coalesce(sum(${entries.textBytes}), 0) from ${entries})::bigint`,
+      tagBytes: sql<string>`${tags.bytes}::bigint`,
+      tagLinks: sql<string>`${tags.links}::bigint`,
+      taggedEntries: sql<string>`${tags.tagged}::bigint`,
     })
-    .from(entries);
+    .from(tags);
   return {
     entries: sizeOf(row.entries),
-    minBytes: sizeOf(row.descriptionBytes) + sizeOf(row.tagBytes),
+    textBytes: sizeOf(row.textBytes) + sizeOf(row.tagBytes),
+    tagLinks: sizeOf(row.tagLinks),
+    taggedEntries: sizeOf(row.taggedEntries),
   };
 }
 
@@ -865,38 +915,12 @@ async function entryRows(
       tags: listTags,
     })
     .from(timeEntry)
-    // R1: toda entrada tiene membresía en su workspace.
-    .innerJoin(
-      membership,
-      and(
-        eq(membership.workspaceId, timeEntry.workspaceId),
-        eq(membership.userId, timeEntry.userId),
-      ),
-    )
-    // Tablas de la cuenta, sin `workspace_id`: se unen por la persona.
-    .innerJoin(user, eq(user.id, timeEntry.userId))
-    .leftJoin(userPreference, eq(userPreference.userId, timeEntry.userId))
-    .leftJoin(
-      listProject,
-      and(
-        eq(listProject.workspaceId, timeEntry.workspaceId),
-        eq(listProject.id, timeEntry.projectId),
-      ),
-    )
-    .leftJoin(
-      listClient,
-      and(
-        eq(listClient.workspaceId, listProject.workspaceId),
-        eq(listClient.id, listProject.clientId),
-      ),
-    )
-    .leftJoin(
-      listTask,
-      and(
-        eq(listTask.workspaceId, timeEntry.workspaceId),
-        eq(listTask.id, timeEntry.taskId),
-      ),
-    )
+    .innerJoin(membership, membershipOfEntry)
+    .innerJoin(user, userOfEntry)
+    .leftJoin(userPreference, preferenceOfEntry)
+    .leftJoin(listProject, projectOfEntry)
+    .leftJoin(listClient, clientOfProject)
+    .leftJoin(listTask, taskOfEntry)
     .where(and(inScope(scope), closedIn(read.span), matchesFilter(read.filter)))
     // Sin orden: con todo o nada, cuáles vuelven no importa, y la base corta al llegar.
     .limit(read.limit);
@@ -911,6 +935,22 @@ async function entryRows(
       tags: listTagsShape.parse(tags),
     };
   });
+}
+
+/**
+ * S3: el tope de duración de cada sentencia, solo dentro de la transacción
+ * (`set_config` con `is_local`, como `set local`): no queda en la conexión
+ * del pool.
+ */
+async function limitStatementTime(milliseconds: number, tx: Transaction): Promise<void> {
+  if (!Number.isInteger(milliseconds) || milliseconds < 1) {
+    throw new RangeError(
+      `El tope de duración tiene que ser un entero positivo: ${milliseconds}.`,
+    );
+  }
+  await tx.execute(
+    sql`select set_config('statement_timeout', ${String(milliseconds)}, true)`,
+  );
 }
 
 /**
@@ -975,10 +1015,15 @@ export const reportRepository = {
   },
 
   /**
-   * S1: cuántas entradas trae `entryList` con la misma lectura y sin tope, y
-   * la suma de los bytes de sus descripciones y de los nombres de sus
-   * etiquetas en UTF-8. Una sentencia, una fila.
+   * S1, S2: cuántas entradas trae `entryList` con la misma lectura y sin
+   * tope, los bytes en UTF-8 de sus textos y sus vínculos con etiquetas. Una
+   * sentencia, una fila.
    */
+  /** S3: las sentencias que siguen en `tx` duran como mucho `milliseconds`. */
+  async limitStatementTime(milliseconds: number, tx: Transaction): Promise<void> {
+    return limitStatementTime(milliseconds, tx);
+  },
+
   async entryListSize(
     scope: ReportScope,
     read: ReportEntryRead,

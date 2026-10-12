@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { csvBytesOf } from "./csv";
+import { csvBytesOf, csvEntriesMinBytes } from "./csv";
 import type { ExportCell, ExportDocument } from "./types";
 
 const BOM = [0xef, 0xbb, 0xbf];
@@ -110,5 +110,46 @@ describe("csvBytesOf (D-R6-9; criterio 8 de R6)", () => {
     expect(fieldOf({ kind: "clock", clock: "09:30" })).toBe('"09:30"');
     expect(fieldOf({ kind: "integer", value: 3 })).toBe('"3"');
     expect(fieldOf({ kind: "empty" })).toBe('""');
+  });
+});
+
+describe("csvEntriesMinBytes (S1, S2 de las revisiones de R6a)", () => {
+  it("una línea de «Entradas» sin textos pesa lo fijo de cada línea", () => {
+    const document: ExportDocument = {
+      header: [],
+      sections: [
+        {
+          title: "",
+          rows: [
+            [
+              { kind: "day", dayKey: "2026-09-29" },
+              { kind: "clock", clock: "10:00" },
+              { kind: "day", dayKey: "2026-09-29" },
+              { kind: "clock", clock: "10:00" },
+              text(""),
+              { kind: "empty" },
+              { kind: "empty" },
+              { kind: "empty" },
+              { kind: "empty" },
+              { kind: "empty" },
+              text("No"),
+              { kind: "duration", minutes: 0 },
+              { kind: "hours", minutes: 0 },
+            ],
+          ],
+        },
+      ],
+    };
+    // El BOM (3), la línea vacía (2) y el título vacío (4) van antes de la fila.
+    const lineBytes = csvBytesOf(document).byteLength - 3 - 2 - 4;
+    expect(
+      csvEntriesMinBytes({ entries: 1, textBytes: 0, tagLinks: 0, taggedEntries: 0 }),
+    ).toBe(lineBytes);
+  });
+
+  it("suma los textos y un «, » menos que las etiquetas de cada entrada", () => {
+    expect(
+      csvEntriesMinBytes({ entries: 3, textBytes: 100, tagLinks: 5, taggedEntries: 2 }),
+    ).toBe(3 * 80 + 100 + 2 * 3);
   });
 });

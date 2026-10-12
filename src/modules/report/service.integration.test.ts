@@ -52,6 +52,8 @@ import {
   type ReportReadyState,
 } from "./schema";
 import { reportLabels } from "./components/labels";
+import { csvBytesOf, csvEntriesMinBytes } from "./export/csv";
+import { exportDocumentOf } from "./export/document";
 import { NO_ENTRY_FILTER, reportRepository, type ReportLevelRead } from "./repository";
 import { getReportExport, getReportState, type ReportRequest } from "./service";
 
@@ -4745,34 +4747,58 @@ describe("la exportación (D-R6-2, D-R6-3; criterio 5 de R6)", () => {
   });
 });
 
-describe("la cota de las entradas antes de listarlas (S1 de las revisiones de R6a)", () => {
+describe("la cota de las entradas antes de listarlas (S1 y S2 de las revisiones de R6a)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
+  /** 100 emojis de 4 bytes: el nombre más largo que admite la base, 400 bytes. */
+  const longName = "😀".repeat(100);
+
   /**
-   * Entradas del owner cuya cota suma `REPORT_EXPORT_MAX_BYTES - 4 + tagBytes`:
-   * 333 descripciones de 3000 emojis de 4 bytes (3 996 000), una de 2000 «x» y
-   * 998 «ñ» (3996) con una etiqueta de `tagBytes` letras. Contar caracteres en
-   * lugar de bytes daría la cuarta parte.
+   * Entradas del owner («Owner», 5 bytes) cuya cota de bytes es
+   * `REPORT_EXPORT_MAX_BYTES - 1 + padding`. Todas van en un proyecto, su
+   * cliente y una tarea de 400 bytes cada uno, con las etiquetas «alfa» y
+   * «beta» (4 + 4 y un «, » de 2): 80 fijos + 5 + 1200 + 10 = 1295 por línea.
+   * Son 300 con 3000 emojis de descripción (12 000 bytes; 13 295 por línea) y
+   * una con 2551 emojis y `padding` letras (10 204 + `padding`). Sin
+   * cualquiera de los sumandos, la cota baja al menos 301 bytes.
    */
-  async function seedNearByteLimit(tagBytes: number) {
+  async function seedNearByteLimit(padding: number) {
+    const acme = await seedClient({ workspaceId, name: longName });
+    const web = await seedProject({ workspaceId, name: longName, clientId: acme.id });
+    const design = await seedTask({ workspaceId, projectId: web.id, name: longName });
+    await seedTag({ workspaceId, name: "alfa" });
+    await seedTag({ workspaceId, name: "beta" });
     await db.execute(sql`
-      insert into time_entry (workspace_id, user_id, description, started_at, ended_at, billable)
+      insert into time_entry (workspace_id, user_id, description, started_at, ended_at, project_id, task_id, billable)
       select ${workspaceId}, ${ownerId}, repeat('😀', 3000),
              timestamptz '2026-09-29 12:00:00+00',
              timestamptz '2026-09-29 12:01:00+00',
-             false
-        from generate_series(1, 333)`);
-    const label = await seedTag({ workspaceId, name: "x".repeat(tagBytes) });
+             ${web.id}, ${design.id}, false
+        from generate_series(1, 300)`);
     await seedClosed(ownerId, "2026-09-29T13:00:00Z", 600, {
-      description: "x".repeat(2000) + "ñ".repeat(998),
-      tagIds: [label.id],
+      projectId: web.id,
+      taskId: design.id,
+      description: "😀".repeat(2551) + "x".repeat(padding),
     });
+    await db.execute(sql`
+      insert into time_entry_tag (workspace_id, time_entry_id, tag_id)
+      select time_entry.workspace_id, time_entry.id, tag.id
+        from time_entry
+        join tag on tag.workspace_id = time_entry.workspace_id
+       where time_entry.workspace_id = ${workspaceId}
+         and time_entry.user_id = ${ownerId}`);
   }
 
-  it("con la cota de bytes pasada por uno, tooMany sin llamar a entryList, y report igual al de la página", async () => {
-    await seedNearByteLimit(5);
+  it("la cuenta del fixture llega al tope con una letra", () => {
+    expect(
+      300 * (80 + 5 + 3 * 400 + 10 + 12_000) + 80 + 5 + 3 * 400 + 10 + 2551 * 4,
+    ).toBe(REPORT_EXPORT_MAX_BYTES - 1);
+  });
+
+  it("con nombres largos de proyecto, cliente y tarea y la cota pasada por uno, tooMany sin llamar a entryList", async () => {
+    await seedNearByteLimit(2);
     const entryList = vi.spyOn(reportRepository, "entryList");
 
     const exported = await readyExport(owner, { range: lastWeek });
@@ -4783,20 +4809,18 @@ describe("la cota de las entradas antes de listarlas (S1 de las revisiones de R6
   });
 
   it("con la cota justo en el tope, listed", async () => {
-    // La cuenta de `seedNearByteLimit` contra el tope.
-    expect(333 * 3000 * 4 + 2000 + 998 * 2 + 4).toBe(REPORT_EXPORT_MAX_BYTES);
-    await seedNearByteLimit(4);
+    await seedNearByteLimit(1);
 
     const exported = await readyExport(owner, { range: lastWeek });
 
     const rows = listedRows(exported.entries);
-    expect(rows).toHaveLength(334);
-    expect(rows.at(-1)?.tags).toEqual(["xxxx"]);
+    expect(rows).toHaveLength(301);
+    expect(rows.at(-1)?.tags).toEqual(["alfa", "beta"]);
   });
 
   it("lo ajeno no cuenta en la cota de un member", async () => {
     const memberId = await seedPerson({ accountName: "Marta" });
-    await seedNearByteLimit(5);
+    await seedNearByteLimit(2);
     await seedClosed(memberId, "2026-09-29T15:00:00Z", 600, { description: "Propia" });
 
     const exported = await readyExport(actorIn(workspaceId, memberId), {
@@ -4808,7 +4832,60 @@ describe("la cota de las entradas antes de listarlas (S1 de las revisiones de R6
     ]);
   });
 
-  it("entryListSize cuenta las entradas de entryList y suma los bytes en UTF-8 de descripciones y etiquetas, con los filtros", async () => {
+  /** La cota de la única entrada del período y los bytes de su línea en el CSV escrito. */
+  async function boundAndLine() {
+    const { scope, span } = await realLevelRead();
+    const size = await reportRepository.entryListSize(scope, {
+      span,
+      filter: NO_ENTRY_FILTER,
+    });
+    const exported = await readyExport(owner, { range: lastWeek });
+    const csv = new TextDecoder("utf-8", { ignoreBOM: true }).decode(
+      csvBytesOf(exportDocumentOf({ ...exported, exporter: "Owner" }, settings)),
+    );
+    const lines = csv.split("\r\n");
+    const line =
+      lines[lines.findIndex((text) => text.startsWith('"Fecha de inicio"')) + 1];
+    return {
+      entries: size.entries,
+      bound: csvEntriesMinBytes(size),
+      lineBytes: new TextEncoder().encode(`${line ?? ""}\r\n`).byteLength,
+    };
+  }
+
+  it("la cota de una entrada sin textos es exactamente su línea del CSV", async () => {
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 30);
+
+    expect(await boundAndLine()).toEqual({ entries: 1, bound: 85, lineBytes: 85 });
+  });
+
+  it("la cota de una entrada completa no pasa su línea del CSV", async () => {
+    const inactiveId = await seedPerson({
+      accountName: "Inés Cuenta",
+      displayName: "Inés",
+      status: "inactive",
+    });
+    const acme = await seedClient({ workspaceId, name: "ACME" });
+    const web = await seedProject({ workspaceId, name: "Web", clientId: acme.id });
+    const design = await seedTask({ workspaceId, projectId: web.id, name: "Diseño" });
+    const alfa = await seedTag({ workspaceId, name: "alfa" });
+    const enie = await seedTag({ workspaceId, name: "año" });
+    await seedClosed(inactiveId, "2026-09-29T13:00:00Z", 7200, {
+      projectId: web.id,
+      taskId: design.id,
+      billable: true,
+      tagIds: [alfa.id, enie.id],
+      description: '=suma "uno"',
+    });
+
+    const { entries, bound, lineBytes } = await boundAndLine();
+
+    // 80 + «Inés» 5 + «Web» 3 + «ACME» 4 + «Diseño» 7 + 11 + «alfa» 4 + «año» 4 + 2.
+    expect([entries, bound]).toEqual([1, 120]);
+    expect(lineBytes).toBeGreaterThanOrEqual(bound);
+  });
+
+  it("entryListSize cuenta las entradas de entryList, los bytes de sus textos y sus etiquetas, con los filtros", async () => {
     const web = await seedProject({ workspaceId, name: "Web" });
     const alfa = await seedTag({ workspaceId, name: "alfa" });
     const enie = await seedTag({ workspaceId, name: "año" });
@@ -4837,14 +4914,14 @@ describe("la cota de las entradas antes de listarlas (S1 de las revisiones de R6
     ]) {
       const size = await reportRepository.entryListSize(scope, { span, filter });
       const rows = await reportRepository.entryList(scope, { span, filter, limit: 100 });
-      sizes.push([size.entries, rows.length, size.minBytes]);
+      sizes.push([rows.length, size]);
     }
 
-    // «Reunión» 8, «alfa» 4, «año» 4; «abc» 3; «alfa» 4.
+    // «Owner» 5 por entrada; «Reunión» 8, «Web» 3, «alfa» 4, «año» 4; «abc» 3; «alfa» 4.
     expect(sizes).toEqual([
-      [3, 3, 23],
-      [1, 1, 16],
-      [2, 2, 7],
+      [3, { entries: 3, textBytes: 15 + 19 + 3 + 4, tagLinks: 3, taggedEntries: 2 }],
+      [1, { entries: 1, textBytes: 5 + 19, tagLinks: 2, taggedEntries: 1 }],
+      [2, { entries: 2, textBytes: 10 + 3 + 4, tagLinks: 1, taggedEntries: 1 }],
     ]);
   });
 
@@ -4864,5 +4941,48 @@ describe("la cota de las entradas antes de listarlas (S1 de las revisiones de R6
       }),
     ).rejects.toThrow(RangeError);
     expect(select).not.toHaveBeenCalled();
+  });
+});
+
+describe("el tope de duración de la exportación (S3 de las revisiones de R6a)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  async function statementTimeoutIn(executor: Pick<typeof db, "execute">) {
+    const result = await executor.execute(
+      sql`select current_setting('statement_timeout') as value`,
+    );
+    return (result.rows[0] as { value: string }).value;
+  }
+
+  it("rige dentro de la transacción de la exportación y no queda en las conexiones del pool", async () => {
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 600);
+    const listEntries = reportRepository.entryList;
+    const inside: string[] = [];
+    vi.spyOn(reportRepository, "entryList").mockImplementation(
+      async (scope, read, tx) => {
+        inside.push(await statementTimeoutIn(tx ?? db));
+        return listEntries(scope, read, tx);
+      },
+    );
+
+    await readyExport(owner, { range: lastWeek });
+
+    expect(inside).toEqual(["8s"]);
+    // Todas las conexiones libres del pool a la vez, también la de la exportación.
+    const outside = await Promise.all(
+      Array.from({ length: 10 }, () => db.transaction((tx) => statementTimeoutIn(tx))),
+    );
+    expect(new Set(outside)).toEqual(new Set(["0"]));
+  });
+
+  it("getReportState no lo pone", async () => {
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 600);
+    const limit = vi.spyOn(reportRepository, "limitStatementTime");
+
+    await readyState(owner, { range: lastWeek });
+
+    expect(limit).not.toHaveBeenCalled();
   });
 });

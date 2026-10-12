@@ -34,6 +34,7 @@ import { getProjectFilterCatalog } from "@/modules/project/service";
 import { listWorkspacePeople, type WorkspacePerson } from "@/modules/workspace/service";
 
 import { chartGranularityOf } from "./chart";
+import { csvEntriesMinBytes } from "./export/csv";
 import { reportPeriodOf } from "./period";
 import {
   reportRepository,
@@ -56,6 +57,7 @@ import {
   projectFilterCount,
   REPORT_EXPORT_MAX_BYTES,
   REPORT_EXPORT_MAX_ENTRIES,
+  REPORT_EXPORT_STATEMENT_TIMEOUT_MS,
   REPORT_MAX_DAYS,
   REPORT_MAX_FILTER_VALUES,
   REPORT_MAX_ROWS,
@@ -750,6 +752,10 @@ async function readReport(
   scope: Scope,
   plan: ReadPlan,
 ): Promise<ReportRead> {
+  // S3: la exportación lee más y corre en una función con tope de duración.
+  if (plan.entries) {
+    await reportRepository.limitStatementTime(REPORT_EXPORT_STATEMENT_TIMEOUT_MS, tx);
+  }
   const catalog = await getProjectFilterCatalog(tx, actor);
   // D-R4-4: el catálogo de personas solo para quien ve a todos.
   const people =
@@ -790,15 +796,15 @@ async function readReport(
 }
 
 /**
- * S1: si las entradas no pueden entrar en el archivo, no se leen. `minBytes`
- * suma los bytes en UTF-8 de las descripciones y de los nombres de las
- * etiquetas; el CSV escribe cada uno entero, con comillas, separadores y
- * escapes de más, así que nunca pesa menos: la cota no deja afuera un archivo
- * que habría entrado. La guarda del peso escrito queda como respaldo.
+ * S1, S2: si las entradas no pueden entrar en el archivo, no se leen. La cota
+ * de los bytes nunca pasa al CSV escrito (`csvEntriesMinBytes`), así que no
+ * deja afuera un archivo que habría entrado; la guarda del peso escrito queda
+ * como respaldo.
  */
 function entriesFit(size: EntryListSize): boolean {
   return (
-    size.entries <= REPORT_EXPORT_MAX_ENTRIES && size.minBytes <= REPORT_EXPORT_MAX_BYTES
+    size.entries <= REPORT_EXPORT_MAX_ENTRIES &&
+    csvEntriesMinBytes(size) <= REPORT_EXPORT_MAX_BYTES
   );
 }
 
