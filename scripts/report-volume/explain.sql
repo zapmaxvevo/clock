@@ -6,10 +6,11 @@
 -- son las de §6.2 del contrato de R10, por semana y por mes, y Q31 a Q34 las
 -- de §6.3, por descripción, y Q35 a Q39 las de §6.2 del contrato de R5, la
 -- lectura del gráfico. Q40 a Q43 son las de §6.2 del contrato de R6, la
--- lectura de las entradas de la exportación. Desde R10b el primer nivel
--- también lleva el `limit` del tope, `REPORT_MAX_ROWS + 1` (D-R10-10): el `limit $n` lo llevan
--- solo Q2, Q5 y Q11; las demás de primer nivel no lo llevan, aunque el
--- repository lo mande.
+-- lectura de las entradas de la exportación, y Q44 a Q47 la lectura de
+-- agregados que va antes (S1 de las revisiones de R6a). Desde R10b el primer
+-- nivel también lleva el `limit` del tope, `REPORT_MAX_ROWS + 1`
+-- (D-R10-10): el `limit $n` lo llevan solo Q2, Q5 y Q11; las demás de primer
+-- nivel no lo llevan, aunque el repository lo mande.
 -- Cada sentencia es el texto que emite el repository (`.toSQL()`), preparada
 -- con sus parámetros como los manda el driver: los instantes son los que
 -- calcula `startOfDayKey` en Buenos Aires, que no tiene cambio de horario.
@@ -1390,5 +1391,75 @@ explain (analyze, buffers) execute q43(:workspace, :member, :year_from, :year_to
 explain (analyze, buffers) execute q43(:workspace, :member, :year_from, :year_to, 10001);
 \echo '-- medida 5'
 explain (analyze, buffers) execute q43(:workspace, :member, :year_from, :year_to, 10001);
+
+-- Q44 a Q47: `entryListSize` (S1 de las revisiones de R6a), la lectura de
+-- agregados que va antes de `entryList` con el mismo `where` y sin `limit`:
+-- los mismos cuatro pedidos que Q40 a Q43.
+
+-- Q44: entryListSize, everyone, el mes pasado entero.
+\echo '== Q44'
+prepare q44 as
+with "export_entries" as (select "workspace_id", "id", "description" from "time_entry" where ("time_entry"."workspace_id" = $1 and ("time_entry"."ended_at" is not null and "time_entry"."started_at" >= $2 and "time_entry"."started_at" < $3))) select count(*)::bigint, coalesce(sum(octet_length("export_entries"."description")), 0)::bigint, ( select coalesce(sum(octet_length("tag"."name")), 0)::bigint from "export_entries" inner join "time_entry_tag" on "time_entry_tag"."workspace_id" = "export_entries"."workspace_id" and "time_entry_tag"."time_entry_id" = "export_entries"."id" inner join "tag" on "tag"."workspace_id" = "time_entry_tag"."workspace_id" and "tag"."id" = "time_entry_tag"."tag_id" ) from "export_entries";
+
+\echo '-- calentamiento'
+explain (analyze, buffers) execute q44(:workspace, :month_from, :month_to);
+\echo '-- medida 1'
+explain (analyze, buffers) execute q44(:workspace, :month_from, :month_to);
+\echo '-- medida 2'
+explain (analyze, buffers) execute q44(:workspace, :month_from, :month_to);
+\echo '-- medida 3'
+explain (analyze, buffers) execute q44(:workspace, :month_from, :month_to);
+\echo '-- medida 4'
+explain (analyze, buffers) execute q44(:workspace, :month_from, :month_to);
+\echo '-- medida 5'
+explain (analyze, buffers) execute q44(:workspace, :month_from, :month_to);
+
+-- Q45: entryListSize, everyone, los 56 días que terminan ayer: el mismo texto que Q44.
+\echo '== Q45'
+\echo '-- calentamiento'
+explain (analyze, buffers) execute q44(:workspace, :days56_from, :days56_to);
+\echo '-- medida 1'
+explain (analyze, buffers) execute q44(:workspace, :days56_from, :days56_to);
+\echo '-- medida 2'
+explain (analyze, buffers) execute q44(:workspace, :days56_from, :days56_to);
+\echo '-- medida 3'
+explain (analyze, buffers) execute q44(:workspace, :days56_from, :days56_to);
+\echo '-- medida 4'
+explain (analyze, buffers) execute q44(:workspace, :days56_from, :days56_to);
+\echo '-- medida 5'
+explain (analyze, buffers) execute q44(:workspace, :days56_from, :days56_to);
+
+-- Q46: entryListSize, everyone, los 366 días desde el 1 de enero del año pasado: el mismo texto que Q44.
+\echo '== Q46'
+\echo '-- calentamiento'
+explain (analyze, buffers) execute q44(:workspace, :year_from, :year_to);
+\echo '-- medida 1'
+explain (analyze, buffers) execute q44(:workspace, :year_from, :year_to);
+\echo '-- medida 2'
+explain (analyze, buffers) execute q44(:workspace, :year_from, :year_to);
+\echo '-- medida 3'
+explain (analyze, buffers) execute q44(:workspace, :year_from, :year_to);
+\echo '-- medida 4'
+explain (analyze, buffers) execute q44(:workspace, :year_from, :year_to);
+\echo '-- medida 5'
+explain (analyze, buffers) execute q44(:workspace, :year_from, :year_to);
+
+-- Q47: entryListSize, self, los 366 días desde el 1 de enero del año pasado.
+\echo '== Q47'
+prepare q47 as
+with "export_entries" as (select "workspace_id", "id", "description" from "time_entry" where (("time_entry"."workspace_id" = $1 and "time_entry"."user_id" = $2) and ("time_entry"."ended_at" is not null and "time_entry"."started_at" >= $3 and "time_entry"."started_at" < $4))) select count(*)::bigint, coalesce(sum(octet_length("export_entries"."description")), 0)::bigint, ( select coalesce(sum(octet_length("tag"."name")), 0)::bigint from "export_entries" inner join "time_entry_tag" on "time_entry_tag"."workspace_id" = "export_entries"."workspace_id" and "time_entry_tag"."time_entry_id" = "export_entries"."id" inner join "tag" on "tag"."workspace_id" = "time_entry_tag"."workspace_id" and "tag"."id" = "time_entry_tag"."tag_id" ) from "export_entries";
+
+\echo '-- calentamiento'
+explain (analyze, buffers) execute q47(:workspace, :member, :year_from, :year_to);
+\echo '-- medida 1'
+explain (analyze, buffers) execute q47(:workspace, :member, :year_from, :year_to);
+\echo '-- medida 2'
+explain (analyze, buffers) execute q47(:workspace, :member, :year_from, :year_to);
+\echo '-- medida 3'
+explain (analyze, buffers) execute q47(:workspace, :member, :year_from, :year_to);
+\echo '-- medida 4'
+explain (analyze, buffers) execute q47(:workspace, :member, :year_from, :year_to);
+\echo '-- medida 5'
+explain (analyze, buffers) execute q47(:workspace, :member, :year_from, :year_to);
 
 deallocate all;
