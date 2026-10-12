@@ -491,6 +491,21 @@ export async function setWeekStart(email: string, weekStart: number): Promise<vo
 }
 
 /**
+ * Cambia desde cuándo existe la membresía de una persona (`created_at`), que
+ * hoy es su primer ingreso: el reporte no la muestra sin horas en un período
+ * que termina antes (D-R9-2). Como el rol, sobre su propia membresía o la de
+ * una persona sembrada, nunca sobre la del owner.
+ */
+export async function setJoinedAt(email: string, instant: Date): Promise<void> {
+  await updateOne(
+    `update membership
+        set created_at = $2, updated_at = now()
+      where ${OWN_MEMBERSHIP}`,
+    [email, instant.toISOString()],
+  );
+}
+
+/**
  * Lo que siembra `seedEntries`: una entrada terminada, con proyecto o sin él,
  * con tarea o sin ella y con sus etiquetas.
  */

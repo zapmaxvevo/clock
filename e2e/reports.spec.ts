@@ -14,6 +14,7 @@ import {
   seedProject,
   seedTag,
   setDisplayName,
+  setJoinedAt,
   setMembershipStatus,
   setRole,
   setWeekStart,
@@ -122,6 +123,7 @@ import {
   taskHeading,
   taskRow,
   weekRange,
+  withoutTimeToggle,
   xlsxNumberOf,
   zoneLine,
   type FilterName,
@@ -134,11 +136,12 @@ import { expect, TEST_EMAIL_DOMAIN, test } from "./session";
 import { trackerBar, uniqueSuffix } from "./tracker-page";
 
 /**
- * Recorridos de R2a a R10b, de R5 y de R6 del núcleo de reportes: el resumido
- * por persona, por proyecto, por cliente, por tarea, por etiqueta, por fecha,
- * por semana, por mes y por descripción, los atajos del período, los
- * subniveles, los filtros, el tope del primer nivel, el gráfico y la
- * exportación a CSV y a Excel (§8.2 de cada contrato), con la regla de §8.3 de R2a. Cada
+ * Recorridos de R2a a R10b, de R5, de R6 y de R9 del núcleo de reportes: el
+ * resumido por persona, por proyecto, por cliente, por tarea, por etiqueta,
+ * por fecha, por semana, por mes y por descripción, los atajos del período,
+ * los subniveles, los filtros, el tope del primer nivel, el gráfico, la
+ * exportación a CSV y a Excel y las personas sin horas (§8.2 de cada
+ * contrato), con la regla de §8.3 de R2a. Cada
  * recorrido tiene sus personas —la de la sesión y las que siembra—, todas con
  * un nombre editado que lleva el sufijo del test, y solo afirma sobre sus
  * filas o sobre proyectos con ese sufijo: la base acumula
@@ -2383,4 +2386,226 @@ test("exportar a Excel el resumen y las entradas, con números y sin fórmulas",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   );
   expect(headers["content-disposition"]).toBe(`attachment; filename="${fileName}"`);
+});
+
+/**
+ * D-R9-14: el ingreso de las personas de los recorridos 26 y 27, un mes antes
+ * del primer día de `range`: el período y el anterior son posteriores, así que
+ * cualquiera de ellas puede aparecer sin horas.
+ */
+function joinedBefore(range: ReportRange): Date {
+  return new Date(`${dayKeyOf(addDays(range.first, -31))}T00:00:00Z`);
+}
+
+test("un admin ve quién no cargó, con las inactivas solo si las elige", async ({
+  page,
+  email,
+}) => {
+  const day = today();
+  const lastWeek = lastWeekRange(day);
+  const tuesday = addDays(lastWeek.first, 1);
+  const suffix = uniqueSuffix();
+  const project = `P ${suffix}`;
+  const own = `Ana ${suffix}`;
+  const active = `Beto ${suffix}`;
+  const inactive = `Carla ${suffix}`;
+  const invited = `Dora ${suffix}`;
+  const idle = `Eva ${suffix}`;
+  const newcomer = `Nico ${suffix}`;
+  const inactiveHeading = `${inactive} ${INACTIVE_PERSON}`;
+
+  await enterApp(page);
+  await setRole(email, "admin");
+  await setDisplayName(email, own);
+  await seedProject({ name: project });
+  const activeEmail = await seedOtherPerson(active);
+  const inactiveEmail = await seedOtherPerson(inactive, "inactive");
+  const invitedEmail = await seedOtherPerson(invited, "invited");
+  const idleEmail = await seedOtherPerson(idle);
+  // D-R9-2: N entró hoy, después de la semana anterior: no está sin horas.
+  const newcomerEmail = await seedOtherPerson(newcomer);
+  for (const joined of [email, activeEmail, inactiveEmail, invitedEmail, idleEmail]) {
+    await setJoinedAt(joined, joinedBefore(lastWeek));
+  }
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
+    { description: "a", day: tuesday, start: "09:00", end: "10:00", project },
+  ]);
+  await seedPersonEntries(activeEmail, PERSON_TIMEZONE, [
+    { description: "b", day: tuesday, start: "09:00", end: "11:00", project },
+  ]);
+  const chosen = {
+    people: await Promise.all(
+      [email, activeEmail, inactiveEmail, idleEmail, newcomerEmail].map(userIdOf),
+    ),
+  };
+  const withoutTime = { peopleWithoutTime: true };
+
+  // D-R9-11: sin la opción, las que tienen horas y el enlace que la enciende.
+  await openReport(page, lastWeek, "persona", day, [], chosen);
+  await expect(page.getByText(SCOPE_EVERYONE, { exact: true })).toBeVisible();
+  await expectGroupNames(page, [active, own]);
+  await expect(groupDuration(groupRow(page, active))).toHaveText("2:00");
+  await expect(groupDuration(groupRow(page, own))).toHaveText("1:00");
+  await expect(withoutTimeToggle(page, false)).toBeVisible();
+  await expect(withoutTimeToggle(page, true)).toHaveCount(0);
+
+  // RP-47, D-R9-4: el enlace escribe `sin-horas=1` entre `agrupar` y
+  // `personas`. D-R9-2, D-R9-7: después de las que tienen horas, por nombre,
+  // C —elegida, aunque inactiva— y E; N no. RP-31: C lleva «(inactiva)».
+  await withoutTimeToggle(page, false).click();
+  await expectReport(page, lastWeek, "persona", day, [], chosen, withoutTime);
+  await expect(page).toHaveURL(
+    (url) =>
+      [...url.searchParams.keys()].join(",") === "desde,hasta,agrupar,sin-horas,personas",
+  );
+  const expectWithoutTime = async (): Promise<void> => {
+    await expectGroupNames(page, [active, own, inactiveHeading, idle]);
+    await expect(groupDuration(groupRow(page, active))).toHaveText("2:00");
+    await expect(groupDuration(groupRow(page, own))).toHaveText("1:00");
+    await expect(groupDuration(groupRow(page, inactive))).toHaveText("0:00");
+    await expect(groupDuration(groupRow(page, idle))).toHaveText("0:00");
+    await expect(inactiveMark(groupRow(page, inactive))).toBeVisible();
+    await expect(groupRow(page, newcomer)).toHaveCount(0);
+    await expect(reportTotal(page, "Total")).toHaveText("3:00");
+    await expect(withoutTimeToggle(page, true)).toBeVisible();
+    await expect(withoutTimeToggle(page, false)).toHaveCount(0);
+  };
+  await expectWithoutTime();
+
+  // D-R9-12: el subnivel conserva la opción. D-R9-3: las sin horas no tienen
+  // hijos, así que no tienen botón.
+  await pickSubgroup(page, "Segundo nivel", "proyecto", ["proyecto"]);
+  await expectReport(page, lastWeek, "persona", day, ["proyecto"], chosen, withoutTime);
+  const expectTree = async (): Promise<void> => {
+    await expectWithoutTime();
+    await expect(expandButton(page, active)).toBeVisible();
+    await expect(expandButton(page, own)).toBeVisible();
+    await expect(expandButton(page, inactive)).toHaveCount(0);
+    await expect(expandButton(page, idle)).toHaveCount(0);
+  };
+  await expectTree();
+
+  // D-R9-9: la semana de antes no tiene horas: las cuatro en 0:00, por
+  // nombre, en lugar de los vacíos, sin gráfico y sin «Exportar».
+  await periodLink(page, "Período anterior").click();
+  await expectReport(
+    page,
+    shiftRange(lastWeek, -7),
+    "persona",
+    day,
+    ["proyecto"],
+    chosen,
+    withoutTime,
+  );
+  await expectGroupNames(page, [own, active, inactiveHeading, idle]);
+  for (const name of [own, active, inactive, idle]) {
+    await expect(groupDuration(groupRow(page, name))).toHaveText("0:00");
+  }
+  await expect(groupHeaders(page).getByRole("button")).toHaveCount(0);
+  await expect(reportTable(page).getByText(EMPTY_REPORT, { exact: true })).toHaveCount(0);
+  await expect(emptyFiltered(page)).toHaveCount(0);
+  await expect(page.getByRole("figure")).toHaveCount(0);
+  await expect(exportGroup(page)).toHaveCount(0);
+  await expect(reportTotal(page, "Total")).toHaveText("0:00");
+  await expect(withoutTimeToggle(page, true)).toBeVisible();
+
+  await periodLink(page, "Período siguiente").click();
+  await expectReport(page, lastWeek, "persona", day, ["proyecto"], chosen, withoutTime);
+  await expectTree();
+
+  // D-R6-10, D-R9-12: «CSV» lleva la misma query que la página, con la opción.
+  const csvHref = await exportLink(page, "CSV").getAttribute("href");
+  const csvUrl = new URL(csvHref ?? "", page.url());
+  expect(csvUrl.pathname).toBe(`${REPORTS_PATH}/exportar/csv`);
+  expect(csvUrl.searchParams.getAll("sin-horas")).toEqual(["1"]);
+  expect(csvUrl.search).toBe(new URL(page.url()).search);
+
+  // RP-32: al recargar, lo mismo.
+  await page.reload();
+  await expectReport(page, lastWeek, "persona", day, ["proyecto"], chosen, withoutTime);
+  await expectTree();
+
+  // D-R9-2: sin el filtro de personas, E está sin horas; C, inactiva, ya no,
+  // y ni D, invitada, ni N, que entró hoy. La lista acumula las personas de
+  // todas las corridas, así que no se afirma nada más de ella (D-R9-14).
+  await openFilter(page, "Personas", "5");
+  await filterSearch(page, "Personas").fill(suffix);
+  for (const name of [own, active, inactive, idle, newcomer]) {
+    await filterOption(page, name).uncheck();
+  }
+  await applyFilter(page, "Personas", "todas");
+  await expectReport(page, lastWeek, "persona", day, ["proyecto"], {}, withoutTime);
+  await expect(groupDuration(groupRow(page, idle))).toHaveText("0:00");
+  await expect(groupRow(page, inactive)).toHaveCount(0);
+  await expect(groupRow(page, invited)).toHaveCount(0);
+  await expect(groupRow(page, newcomer)).toHaveCount(0);
+
+  // D-R9-12: «Proyecto» intercambia los niveles y apaga la opción, y sin la
+  // persona en el primer nivel no hay enlace. «Persona» la deja apagada.
+  await groupByLink(page, "proyecto").click();
+  await expectReport(page, lastWeek, "proyecto", day, ["persona"]);
+  await expectSubgroups(page, ["persona"]);
+  await expect(withoutTimeToggle(page, false)).toHaveCount(0);
+  await expect(withoutTimeToggle(page, true)).toHaveCount(0);
+  await groupByLink(page, "persona").click();
+  await expectReport(page, lastWeek, "persona", day, ["proyecto"]);
+  await expectSubgroups(page, ["proyecto"]);
+  await expect(withoutTimeToggle(page, false)).toBeVisible();
+  await expect(groupDuration(groupRow(page, active))).toHaveText("2:00");
+  await expect(groupRow(page, idle)).toHaveCount(0);
+});
+
+test("un member no tiene la opción de las personas sin horas", async ({
+  page,
+  email,
+}) => {
+  const day = today();
+  const lastWeek = lastWeekRange(day);
+  const tuesday = addDays(lastWeek.first, 1);
+  const suffix = uniqueSuffix();
+  const own = `Mara ${suffix}`;
+  const other = `Olga ${suffix}`;
+  const project = `P1 ${suffix}`;
+
+  await enterApp(page);
+  await setDisplayName(email, own);
+  await seedProject({ name: project });
+  await seedPersonEntries(email, PERSON_TIMEZONE, [
+    { description: "a", day: tuesday, start: "09:00", end: "10:00", project },
+  ]);
+  // D-R9-14: las dos con el ingreso antes del período, así O podría aparecer
+  // sin horas si la opción aplicara a un member.
+  const otherEmail = await seedOtherPerson(other);
+  for (const joined of [email, otherEmail]) {
+    await setJoinedAt(joined, joinedBefore(lastWeek));
+  }
+
+  // D-R9-5: el enlace que arma un admin. Para un member la opción no aplica y
+  // `personas` se ignora: lo propio, sin el enlace y sin O.
+  await page.goto(
+    reportsUrl(
+      lastWeek,
+      "persona",
+      [],
+      { people: [await userIdOf(otherEmail)] },
+      { peopleWithoutTime: true },
+    ),
+  );
+  await expect(rangeButton(page)).toHaveAccessibleName("Elegir período: Semana anterior");
+  await expectGroupBy(page, "persona");
+  await expect(page.getByText(SCOPE_SELF, { exact: true })).toBeVisible();
+  await expectGroupNames(page, [own]);
+  await expect(groupDuration(groupRow(page, own))).toHaveText("1:00");
+  await expect(page.getByText(other)).toHaveCount(0);
+  await expect(reportTotal(page, "Total")).toHaveText("1:00");
+  await expect(withoutTimeToggle(page, false)).toHaveCount(0);
+  await expect(withoutTimeToggle(page, true)).toHaveCount(0);
+
+  // D-R9-4: los enlaces escriben la opción efectiva, así que la siguiente
+  // navegación ya no lleva `sin-horas` ni `personas`.
+  await groupByLink(page, "proyecto").click();
+  await expectReport(page, lastWeek, "proyecto", day);
+  await groupByLink(page, "persona").click();
+  await expectReport(page, lastWeek, "persona", day);
+  await expectGroupNames(page, [own]);
 });
