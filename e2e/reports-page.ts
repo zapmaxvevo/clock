@@ -6,7 +6,9 @@
  * totales: una lista de definiciones, cuyo término no da nombre a su
  * definición, así que la cifra se busca como el hermano que sigue al término.
  */
-import { expect, type Locator, type Page } from "@playwright/test";
+import { readFile } from "node:fs/promises";
+
+import { expect, type Locator, type Page, type Request } from "@playwright/test";
 
 import {
   addDays,
@@ -248,22 +250,52 @@ function filterList(values: readonly string[]): string {
 }
 
 /**
- * La dirección de un período y una agrupación: los tres parámetros y, si hay
+ * La query de un período y una agrupación: los tres parámetros y, si hay
  * subniveles, `subagrupar` como cuarto, separados por coma (D-R3-5). Después,
  * los filtros que no están vacíos, cada uno con su lista (D-R4-2).
  */
-export function reportsUrl(
+function reportsQuery(
   range: ReportRange,
   groupBy: ReportGroupBy,
-  subgroups: readonly ReportGroupBy[] = [],
-  filters: ReportUrlFilters = {},
+  subgroups: readonly ReportGroupBy[],
+  filters: ReportUrlFilters,
 ): string {
   const levels = subgroups.length === 0 ? "" : `&subagrupar=${subgroups.join(",")}`;
   const lists = FILTER_PARAMS.map(([key, param]) => {
     const values = filters[key] ?? [];
     return values.length === 0 ? "" : `&${param}=${filterList(values)}`;
   }).join("");
-  return `${REPORTS_PATH}?desde=${dayKeyOf(range.first)}&hasta=${dayKeyOf(range.last)}&agrupar=${groupBy}${levels}${lists}`;
+  return `desde=${dayKeyOf(range.first)}&hasta=${dayKeyOf(range.last)}&agrupar=${groupBy}${levels}${lists}`;
+}
+
+/** La dirección de un período, una agrupación, sus subniveles y sus filtros. */
+export function reportsUrl(
+  range: ReportRange,
+  groupBy: ReportGroupBy,
+  subgroups: readonly ReportGroupBy[] = [],
+  filters: ReportUrlFilters = {},
+): string {
+  return `${REPORTS_PATH}?${reportsQuery(range, groupBy, subgroups, filters)}`;
+}
+
+/** D-R6-4: los formatos de la descarga, como los escribe su ruta. */
+export type ExportFormat = "csv";
+
+/** D-R6-4: la ruta de las descargas, `/reportes/exportar/<formato>`. */
+const EXPORT_PATH = `${REPORTS_PATH}/exportar/`;
+
+/**
+ * La descarga de un formato (D-R6-10): con la misma query que `reportsUrl`
+ * para los mismos argumentos, que es la de la página que la ofrece.
+ */
+export function exportUrl(
+  format: ExportFormat,
+  range: ReportRange,
+  groupBy: ReportGroupBy,
+  subgroups: readonly ReportGroupBy[] = [],
+  filters: ReportUrlFilters = {},
+): string {
+  return `${EXPORT_PATH}${format}?${reportsQuery(range, groupBy, subgroups, filters)}`;
 }
 
 /**
@@ -318,6 +350,43 @@ export function recordNavigations(
     }
   });
   return recorded;
+}
+
+/** Si un pedido va a la ruta de las descargas, de cualquier formato y de cualquier tipo. */
+export function isExportRequest(request: Request): boolean {
+  return new URL(request.url()).pathname.startsWith(EXPORT_PATH);
+}
+
+/**
+ * Registra, desde ahora, todos los pedidos a la ruta de las descargas, también
+ * los de prefetch: un `next/link` los haría al dibujar el enlace o al pasar el
+ * puntero, sin que nadie haga clic (D-R6-10). Se lee al final.
+ */
+export function recordExportRequests(page: Page): readonly string[] {
+  const recorded: string[] = [];
+  page.on("request", (request) => {
+    if (isExportRequest(request)) {
+      recorded.push(request.url());
+    }
+  });
+  return recorded;
+}
+
+/** El BOM de UTF-8, que el CSV lleva una vez al principio (D-R6-9). */
+const BYTE_ORDER_MARK = [0xef, 0xbb, 0xbf];
+
+/**
+ * Lee un CSV descargado: afirma que empieza con el BOM y devuelve el texto sin
+ * él. El decodificador no descarta ningún otro, así que uno de más se ve.
+ */
+export async function readCsv(path: string): Promise<string> {
+  const bytes = await readFile(path);
+  expect([...bytes.subarray(0, BYTE_ORDER_MARK.length)], "el BOM al principio").toEqual(
+    BYTE_ORDER_MARK,
+  );
+  return new TextDecoder("utf-8", { ignoreBOM: true }).decode(
+    bytes.subarray(BYTE_ORDER_MARK.length),
+  );
 }
 
 /**
@@ -804,6 +873,22 @@ export function emptyFiltered(page: Page): Locator {
 /** «Quitar filtros», en la fila del segundo vacío. */
 export function clearFiltersLink(page: Page): Locator {
   return reportTable(page).getByRole("link", { name: CLEAR_FILTERS, exact: true });
+}
+
+/** D-R6-10: el grupo de las descargas, al final de la barra. */
+export const EXPORT_GROUP = "Exportar";
+
+/** El texto visible del enlace de cada formato en «Exportar» (D-R6-10). */
+export type ExportLabel = "CSV";
+
+/** «Exportar», nombrado por su rótulo visible. En los vacíos de RP-33 no está. */
+export function exportGroup(page: Page): Locator {
+  return page.getByRole("group", { name: EXPORT_GROUP, exact: true });
+}
+
+/** El enlace de un formato, que se nombra por su texto. */
+export function exportLink(page: Page, label: ExportLabel): Locator {
+  return exportGroup(page).getByRole("link", { name: label, exact: true });
 }
 
 /** D-R5-9: el resumen del `<details>` con la tabla de datos del gráfico. */

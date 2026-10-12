@@ -13,6 +13,7 @@ import {
   durationSeconds,
   extraDays,
   formatClock,
+  formatDecimalHours,
   formatDuration,
   formatElapsed,
   roundMinutes,
@@ -846,6 +847,26 @@ describe("formatDuration", () => {
     expect(formatDuration(5)).toBe("0:05");
     expect(formatDuration(90)).toBe("1:30");
     expect(formatDuration(600)).toBe("10:00");
+  });
+});
+
+describe("formatDecimalHours (D-R6-6, D-R6-9; criterio 1 de R6)", () => {
+  it("escribe las horas con coma y dos decimales, sin separador de miles", () => {
+    expect(formatDecimalHours(0)).toBe("0,00");
+    expect(formatDecimalHours(30)).toBe("0,50");
+    expect(formatDecimalHours(90)).toBe("1,50");
+    expect(formatDecimalHours(120_000)).toBe("2000,00");
+  });
+
+  it("trunca al centésimo: la suma de las filas no pasa el total", () => {
+    expect(formatDecimalHours(1)).toBe("0,01");
+    expect(formatDecimalHours(2)).toBe("0,03");
+    expect(formatDecimalHours(89)).toBe("1,48");
+    expect(formatDecimalHours(1439)).toBe("23,98");
+  });
+
+  it("da 0,00 con un valor negativo, como formatDuration", () => {
+    expect(formatDecimalHours(-5)).toBe("0,00");
   });
 });
 

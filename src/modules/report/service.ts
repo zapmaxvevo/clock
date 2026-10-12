@@ -10,6 +10,7 @@ import {
   dayRangeLabel,
   daysBetweenKeys,
   earliestDayKey,
+  formatClock,
   formatDayKey,
   monthBuckets,
   monthEndKey,
@@ -33,14 +34,18 @@ import { getProjectFilterCatalog } from "@/modules/project/service";
 import { listWorkspacePeople, type WorkspacePerson } from "@/modules/workspace/service";
 
 import { chartGranularityOf } from "./chart";
+import { csvEntriesMinBytes } from "./export/csv";
 import { reportPeriodOf } from "./period";
 import {
   reportRepository,
   type BucketTotalRow,
+  type EntryListRow,
+  type EntryListSize,
   type EntryTotals,
   type ReportBucketRead,
   type ReportBuckets,
   type ReportEntryFilter,
+  type ReportEntryRead,
   type ReportLevelRead,
   type ReportSpan,
   type LevelGroupRow,
@@ -50,11 +55,17 @@ import {
 import {
   DEFAULT_GROUP_BY,
   projectFilterCount,
+  REPORT_EXPORT_MAX_BYTES,
+  REPORT_EXPORT_MAX_ENTRIES,
+  REPORT_EXPORT_STATEMENT_TIMEOUT_MS,
   REPORT_MAX_DAYS,
   REPORT_MAX_FILTER_VALUES,
   REPORT_MAX_ROWS,
   REPORT_TIME_GROUP_BYS,
+  reportLevelsOf,
   type ReportChart,
+  type ReportEntryRow,
+  type ReportExportEntries,
   type ReportFilters,
   type ReportGroup,
   type ReportGroupBy,
@@ -399,7 +410,17 @@ type ReportRead = {
   readonly filters: ReportFilters;
   /** Los tramos del gráfico con horas, con el alcance y los filtros de los niveles (D-R5-2). */
   readonly chart: readonly BucketTotalRow[];
+  /** D-R6-3: las entradas, o que no entran sin leerlas (S1); `null` si el plan no las pide. */
+  readonly entries: EntryRead | null;
 };
+
+/**
+ * D-R6-3: hasta `REPORT_EXPORT_MAX_ENTRIES + 1` entradas, sin orden, o
+ * `tooMany` si la lectura de agregados ya dijo que no entran (S1).
+ */
+type EntryRead =
+  | { readonly kind: "read"; readonly rows: readonly EntryListRow[] }
+  | { readonly kind: "tooMany" };
 
 /**
  * La invariante de los filtros: cada lista sin repetir y con hasta
@@ -653,6 +674,8 @@ type ReadPlan = {
   readonly filters: ReportFilters;
   /** Los cortes de `span` del gráfico, en la granularidad del período (D-R5-4). */
   readonly chartPlan: ChartPlan;
+  /** D-R6-2: la exportación lee además las entradas; la página no. */
+  readonly entries: boolean;
 };
 
 /** El gráfico de un pedido: su granularidad y sus tramos, que cubren `span`. */
@@ -718,7 +741,8 @@ function levelReadOf(
  * quien llama: primero los catálogos, que deciden los filtros efectivos
  * (D-R4-5), y después los niveles, el total y el gráfico con esos filtros y
  * el mismo alcance (D-R5-2), también cuando el primer nivel no entra o es de
- * la misma dimensión que el gráfico. El catálogo de personas se lee solo con
+ * la misma dimensión que el gráfico; las entradas, si el plan las pide, con lo
+ * mismo (D-R6-3). El catálogo de personas se lee solo con
  * el alcance `everyone`: `listWorkspacePeople` pide `team.view` y no
  * `timeEntry.others.view`, que responde `scopeOf` (D-R4-4).
  */
@@ -728,6 +752,10 @@ async function readReport(
   scope: Scope,
   plan: ReadPlan,
 ): Promise<ReportRead> {
+  // S3: la exportación lee más y corre en una función con tope de duración.
+  if (plan.entries) {
+    await reportRepository.limitStatementTime(REPORT_EXPORT_STATEMENT_TIMEOUT_MS, tx);
+  }
   const catalog = await getProjectFilterCatalog(tx, actor);
   // D-R4-4: el catálogo de personas solo para quien ve a todos.
   const people =
@@ -761,7 +789,41 @@ async function readReport(
     { span: plan.span, filter, ...plan.chartPlan },
     tx,
   );
-  return { levels, totals, catalog, people, filters, chart };
+  const entries = plan.entries
+    ? await readEntries(tx, readScope, { span: plan.span, filter })
+    : null;
+  return { levels, totals, catalog, people, filters, chart, entries };
+}
+
+/**
+ * S1, S2: si las entradas no pueden entrar en el archivo, no se leen. La cota
+ * de los bytes nunca pasa al CSV escrito (`csvEntriesMinBytes`), así que no
+ * deja afuera un archivo que habría entrado; la guarda del peso escrito queda
+ * como respaldo.
+ */
+function entriesFit(size: EntryListSize): boolean {
+  return (
+    size.entries <= REPORT_EXPORT_MAX_ENTRIES &&
+    csvEntriesMinBytes(size) <= REPORT_EXPORT_MAX_BYTES
+  );
+}
+
+/** D-R6-3, S1: las entradas de la lectura con su tope, o `tooMany` sin listarlas. */
+async function readEntries(
+  tx: Transaction,
+  scope: Scope,
+  read: ReportEntryRead,
+): Promise<EntryRead> {
+  if (!entriesFit(await reportRepository.entryListSize(scope, read, tx))) {
+    return { kind: "tooMany" };
+  }
+  // D-R6-3: una de más dice que no entran todas.
+  const rows = await reportRepository.entryList(
+    scope,
+    { ...read, limit: REPORT_EXPORT_MAX_ENTRIES + 1 },
+    tx,
+  );
+  return { kind: "read", rows };
 }
 
 /**
@@ -803,16 +865,41 @@ function chartOf(
   };
 }
 
+/** Lo que lee `readReportState`: el estado de la página y, si se pidieron, las entradas. */
+type ReportStateRead<Entries extends EntryRead | null> =
+  | { readonly kind: "forbidden" }
+  | {
+      readonly kind: "ready";
+      readonly report: ReportReadyState;
+      readonly entries: Entries;
+    };
+
 /**
- * RP-10: el resumido de quien mira, armado en el servidor con su zona y su
- * primer día de la semana. `now` existe para que los tests fijen el día.
+ * El cuerpo de `getReportState` y de `getReportExport` (D-R6-2): el mismo
+ * alcance, el mismo período, las mismas invariantes y la misma foto; con
+ * `withEntries`, la foto lee también las entradas.
  */
-export async function getReportState(
+async function readReportState(
   actor: Actor,
   settings: TimeSettings,
   request: ReportRequest,
-  now: Date = new Date(),
-): Promise<ReportState> {
+  now: Date,
+  withEntries: true,
+): Promise<ReportStateRead<EntryRead>>;
+async function readReportState(
+  actor: Actor,
+  settings: TimeSettings,
+  request: ReportRequest,
+  now: Date,
+  withEntries: false,
+): Promise<ReportStateRead<null>>;
+async function readReportState(
+  actor: Actor,
+  settings: TimeSettings,
+  request: ReportRequest,
+  now: Date,
+  withEntries: boolean,
+): Promise<ReportStateRead<EntryRead | null>> {
   // RP-07: sin permiso no se lee nada.
   if (!can(actor, "report.view", workspaceResource(actor))) {
     return { kind: "forbidden" };
@@ -823,7 +910,7 @@ export async function getReportState(
   const period = reportPeriodOf(todayKey, settings, request.range);
   const range = period.range;
   const groupBy = request.groupBy ?? DEFAULT_GROUP_BY;
-  const levels = [groupBy, ...request.subgroups];
+  const levels = reportLevelsOf({ groupBy, subgroups: request.subgroups });
   // La página los recibe de `reportSubgroupParams`, que ya lo garantiza; acá
   // es una invariante, para otro llamador (R6), antes de leer.
   if (levels.length > 3 || new Set(levels).size !== levels.length) {
@@ -867,6 +954,7 @@ export async function getReportState(
         buckets,
         filters: request.filters,
         chartPlan,
+        entries: withEntries,
       }),
     { isolationLevel: "repeatable read", accessMode: "read only" },
   );
@@ -878,7 +966,7 @@ export async function getReportState(
     format: settings.formats.date,
   };
   const levelsShown = levelsShownOf(read.levels, levels.length);
-  return {
+  const report: ReportReadyState = {
     kind: "ready",
     todayKey,
     range,
@@ -898,5 +986,96 @@ export async function getReportState(
     filters: read.filters,
     filterOptions: toFilterOptions(read.catalog, read.people),
     chart: chartOf(read.chart, chartPlan, time),
+  };
+  return { kind: "ready", report, entries: read.entries };
+}
+
+/**
+ * RP-10: el resumido de quien mira, armado en el servidor con su zona y su
+ * primer día de la semana. `now` existe para que los tests fijen el día.
+ */
+export async function getReportState(
+  actor: Actor,
+  settings: TimeSettings,
+  request: ReportRequest,
+  now: Date = new Date(),
+): Promise<ReportState> {
+  const read = await readReportState(actor, settings, request, now, false);
+  return read.kind === "forbidden" ? read : read.report;
+}
+
+export type ReportExportState =
+  /** RP-07: sin `report.view`. No se leyó nada. */
+  | { readonly kind: "forbidden" }
+  | {
+      readonly kind: "ready";
+      /** El mismo estado que `getReportState` para el mismo pedido y `now`. */
+      readonly report: ReportReadyState;
+      readonly entries: ReportExportEntries;
+      /** El `now` de la lectura: «Generado» (D-R6-8). */
+      readonly generatedAt: Date;
+    };
+
+/** En orden de inicio y, con el mismo inicio, de id (D-R6-3). */
+function compareEntries(left: EntryListRow, right: EntryListRow): number {
+  const byStart = left.startedAt.getTime() - right.startedAt.getTime();
+  if (byStart !== 0) {
+    return byStart;
+  }
+  if (left.id === right.id) {
+    return 0;
+  }
+  return left.id < right.id ? -1 : 1;
+}
+
+/** Una entrada del archivo en la zona de quien mira (RP-22, D-R6-9). */
+function entryRowOf(row: EntryListRow, timeZone: string): ReportEntryRow {
+  return {
+    id: row.id,
+    startDay: dayKey(row.startedAt, timeZone),
+    startClock: formatClock(row.startedAt, timeZone),
+    endDay: dayKey(row.endedAt, timeZone),
+    endClock: formatClock(row.endedAt, timeZone),
+    person: {
+      name: displayNameOf({ displayName: row.displayName }, row.accountName),
+      inactive: row.status !== "active",
+    },
+    project: row.projectName,
+    client: row.clientName,
+    task: row.taskName,
+    description: row.description,
+    tags: [...row.tags].sort(compareNames).map(({ name }) => name),
+    billable: row.billable,
+    seconds: row.seconds,
+  };
+}
+
+/** D-R6-3: todas, ordenadas, o ninguna si no entran o vinieron más que el tope. */
+function entriesOf(read: EntryRead, timeZone: string): ReportExportEntries {
+  if (read.kind === "tooMany" || read.rows.length > REPORT_EXPORT_MAX_ENTRIES) {
+    return { kind: "tooMany" };
+  }
+  return {
+    kind: "listed",
+    rows: [...read.rows].sort(compareEntries).map((row) => entryRowOf(row, timeZone)),
+  };
+}
+
+/** D-R6-2: el estado de la página y las entradas, en una sola foto. */
+export async function getReportExport(
+  actor: Actor,
+  settings: TimeSettings,
+  request: ReportRequest,
+  now: Date = new Date(),
+): Promise<ReportExportState> {
+  const read = await readReportState(actor, settings, request, now, true);
+  if (read.kind === "forbidden") {
+    return read;
+  }
+  return {
+    kind: "ready",
+    report: read.report,
+    entries: entriesOf(read.entries, settings.timezone),
+    generatedAt: now,
   };
 }

@@ -12,6 +12,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { alias, QueryBuilder, type PgSelect } from "drizzle-orm/pg-core";
+import { z } from "zod";
 
 import { db, type Transaction } from "@/server/db";
 import {
@@ -136,6 +137,44 @@ export const NO_ENTRY_FILTER: ReportEntryFilter = {
 export type ReportEntryRead = {
   readonly span: ReportSpan;
   readonly filter: ReportEntryFilter;
+};
+
+/** D-R6-3: lo que lee `entryList`: lo de `ReportEntryRead` y cuántas como mucho. */
+export type ReportEntryListRead = ReportEntryRead & {
+  /** Como mucho estas filas, cualesquiera: sin orden. Entero positivo. */
+  readonly limit: number;
+};
+
+/** S1, S2: lo que traería `entryList` sin el tope, contado sin leer las filas. */
+export type EntryListSize = {
+  readonly entries: number;
+  /**
+   * Los bytes en UTF-8 de los textos de cada entrada tal como los trae
+   * `entryList`: la descripción, el nombre que se muestra de la persona, el
+   * proyecto, el cliente, la tarea y los nombres de las etiquetas.
+   */
+  readonly textBytes: number;
+  /** Los vínculos con etiquetas, y cuántas entradas tienen al menos uno. */
+  readonly tagLinks: number;
+  readonly taggedEntries: number;
+};
+
+export type EntryListRow = {
+  readonly id: string;
+  readonly startedAt: Date;
+  readonly endedAt: Date;
+  readonly seconds: number;
+  readonly userId: string;
+  readonly accountName: string;
+  readonly displayName: string | null;
+  readonly status: MembershipStatus;
+  readonly projectName: string | null;
+  readonly clientName: string | null;
+  readonly taskName: string | null;
+  readonly description: string;
+  readonly billable: boolean;
+  /** Con id, para desempatar al ordenar. */
+  readonly tags: readonly { readonly id: string; readonly name: string }[];
 };
 
 /** D-R10-4: los tramos de cada dimensión de tiempo pedida, y solo de esas. */
@@ -573,6 +612,16 @@ function checkEntryRead({ filter }: ReportEntryRead): void {
   }
 }
 
+/** D-R6-3: las guardas de `entryList`; lanza `RangeError` antes de consultar. */
+function checkEntryListRead(read: ReportEntryListRead): void {
+  checkEntryRead(read);
+  if (!Number.isInteger(read.limit) || read.limit < 1) {
+    throw new RangeError(
+      `El tope de entradas tiene que ser un entero positivo: ${read.limit}.`,
+    );
+  }
+}
+
 /** Las guardas de §4.3 de R3 y R10: lanza `RangeError` antes de consultar. */
 function checkLevelRead(read: ReportLevelRead): void {
   const { dimensions, span, limit } = read;
@@ -716,6 +765,194 @@ async function levelTotals(
   }));
 }
 
+// D-R6-3: los nombres de cada entrada, con alias propios: no se cruzan con
+// `filterProject` ni con los de las dimensiones.
+const listProject = alias(project, "list_project");
+const listClient = alias(client, "list_client");
+const listTask = alias(task, "list_task");
+
+// Las uniones de `entryList` y de `entryListSize`, las mismas en las dos.
+/** R1: toda entrada tiene membresía en su workspace. */
+const membershipOfEntry = and(
+  eq(membership.workspaceId, timeEntry.workspaceId),
+  eq(membership.userId, timeEntry.userId),
+);
+/** Tablas de la cuenta, sin `workspace_id`: se unen por la persona. */
+const userOfEntry = eq(user.id, timeEntry.userId);
+const preferenceOfEntry = eq(userPreference.userId, timeEntry.userId);
+const projectOfEntry = and(
+  eq(listProject.workspaceId, timeEntry.workspaceId),
+  eq(listProject.id, timeEntry.projectId),
+);
+const clientOfProject = and(
+  eq(listClient.workspaceId, listProject.workspaceId),
+  eq(listClient.id, listProject.clientId),
+);
+const taskOfEntry = and(
+  eq(listTask.workspaceId, timeEntry.workspaceId),
+  eq(listTask.id, timeEntry.taskId),
+);
+
+/**
+ * Las etiquetas de la entrada de la fila exterior, en un arreglo JSON, como
+ * `entryTags` de `time-entry`: una subconsulta correlacionada no multiplica
+ * filas como un `join`. Las dos condiciones de workspace son las claves que
+ * atan la entrada y la etiqueta.
+ */
+const listTags = sql<unknown>`coalesce((
+  select json_agg(json_build_object('id', ${tag.id}, 'name', ${tag.name}))
+  from ${timeEntryTag}
+  inner join ${tag}
+    on ${tag.workspaceId} = ${timeEntryTag.workspaceId} and ${tag.id} = ${timeEntryTag.tagId}
+  where ${timeEntryTag.workspaceId} = ${timeEntry.workspaceId}
+    and ${timeEntryTag.timeEntryId} = ${timeEntry.id}
+), '[]'::json)`;
+
+/** El JSON de `listTags`, estrechado antes de salir del repository. */
+const listTagsShape = z.array(z.object({ id: z.string(), name: z.string() }));
+
+/** Un conteo o una suma de la base a número; lanza si no es un entero seguro no negativo. */
+function sizeOf(value: string): number {
+  const size = Number(value);
+  if (!Number.isSafeInteger(size) || size < 0) {
+    throw new RangeError(`Tamaño fuera de rango: ${value}.`);
+  }
+  return size;
+}
+
+/**
+ * S1, S2: cuántas entradas listaría `entryList` y cuánto pesan sus textos,
+ * con el mismo `where` y las mismas uniones. Las entradas se leen una vez, en
+ * una CTE, y las etiquetas se suman con una unión, sin una subconsulta por
+ * entrada.
+ */
+async function entrySize(
+  scope: ReportScope,
+  read: ReportEntryRead,
+  tx: Executor,
+): Promise<EntryListSize> {
+  checkEntryRead(read);
+  const entries = tx.$with("export_entries").as(
+    tx
+      .select({
+        workspaceId: timeEntry.workspaceId,
+        id: timeEntry.id,
+        // El nombre que se muestra es el de `displayNameOf`; nulo cuenta 0.
+        textBytes: sql<string>`octet_length(${timeEntry.description})
+          + octet_length(coalesce(${userPreference.displayName}, ${user.name}))
+          + coalesce(octet_length(${listProject.name}), 0)
+          + coalesce(octet_length(${listClient.name}), 0)
+          + coalesce(octet_length(${listTask.name}), 0)`.as("text_bytes"),
+      })
+      .from(timeEntry)
+      .innerJoin(membership, membershipOfEntry)
+      .innerJoin(user, userOfEntry)
+      .leftJoin(userPreference, preferenceOfEntry)
+      .leftJoin(listProject, projectOfEntry)
+      .leftJoin(listClient, clientOfProject)
+      .leftJoin(listTask, taskOfEntry)
+      .where(and(inScope(scope), closedIn(read.span), matchesFilter(read.filter))),
+  );
+  const tags = tx
+    .select({
+      bytes: sql`coalesce(sum(octet_length(${tag.name})), 0)`.as("bytes"),
+      links: sql`count(*)`.as("links"),
+      tagged: sql`count(distinct ${timeEntryTag.timeEntryId})`.as("tagged"),
+    })
+    .from(entries)
+    .innerJoin(
+      timeEntryTag,
+      and(
+        eq(timeEntryTag.workspaceId, entries.workspaceId),
+        eq(timeEntryTag.timeEntryId, entries.id),
+      ),
+    )
+    .innerJoin(
+      tag,
+      and(eq(tag.workspaceId, timeEntryTag.workspaceId), eq(tag.id, timeEntryTag.tagId)),
+    )
+    .as("export_tags");
+  const [row] = await tx
+    .with(entries)
+    .select({
+      entries: sql<string>`(select count(*) from ${entries})::bigint`,
+      textBytes: sql<string>`(select coalesce(sum(${entries.textBytes}), 0) from ${entries})::bigint`,
+      tagBytes: sql<string>`${tags.bytes}::bigint`,
+      tagLinks: sql<string>`${tags.links}::bigint`,
+      taggedEntries: sql<string>`${tags.tagged}::bigint`,
+    })
+    .from(tags);
+  return {
+    entries: sizeOf(row.entries),
+    textBytes: sizeOf(row.textBytes) + sizeOf(row.tagBytes),
+    tagLinks: sizeOf(row.tagLinks),
+    taggedEntries: sizeOf(row.taggedEntries),
+  };
+}
+
+/** D-R6-3: una fila por entrada cerrada del intervalo, del alcance y de los filtros. */
+async function entryRows(
+  scope: ReportScope,
+  read: ReportEntryListRead,
+  tx: Executor,
+): Promise<readonly EntryListRow[]> {
+  checkEntryListRead(read);
+  const rows = await tx
+    .select({
+      id: timeEntry.id,
+      startedAt: timeEntry.startedAt,
+      endedAt: timeEntry.endedAt,
+      seconds: sql<string>`(${entrySeconds})::bigint`,
+      userId: timeEntry.userId,
+      accountName: user.name,
+      displayName: userPreference.displayName,
+      status: membership.status,
+      projectName: listProject.name,
+      clientName: listClient.name,
+      taskName: listTask.name,
+      description: timeEntry.description,
+      billable: timeEntry.billable,
+      tags: listTags,
+    })
+    .from(timeEntry)
+    .innerJoin(membership, membershipOfEntry)
+    .innerJoin(user, userOfEntry)
+    .leftJoin(userPreference, preferenceOfEntry)
+    .leftJoin(listProject, projectOfEntry)
+    .leftJoin(listClient, clientOfProject)
+    .leftJoin(listTask, taskOfEntry)
+    .where(and(inScope(scope), closedIn(read.span), matchesFilter(read.filter)))
+    // Sin orden: con todo o nada, cuáles vuelven no importa, y la base corta al llegar.
+    .limit(read.limit);
+  return rows.map(({ endedAt, seconds, tags, ...row }) => {
+    if (endedAt === null) {
+      throw new Error(`La entrada ${row.id} llegó sin fin a una lectura de cerradas.`);
+    }
+    return {
+      ...row,
+      endedAt,
+      seconds: secondsOf(seconds),
+      tags: listTagsShape.parse(tags),
+    };
+  });
+}
+
+/**
+ * S3: el tope de duración de cada sentencia, solo dentro de la transacción
+ * (`set_config` con `is_local`, como `set local`): no queda en la conexión
+ * del pool.
+ */
+async function limitStatementTime(milliseconds: number, tx: Transaction): Promise<void> {
+  if (!Number.isInteger(milliseconds) || milliseconds < 1) {
+    throw new RangeError(
+      `El tope de duración tiene que ser un entero positivo: ${milliseconds}.`,
+    );
+  }
+  await tx.execute(
+    sql`select set_config('statement_timeout', ${String(milliseconds)}, true)`,
+  );
+}
+
 /**
  * Las lecturas del reporte. Cada función recibe primero el alcance y es una
  * sentencia: agrega sobre `time_entry` y después une los nombres a las filas
@@ -775,5 +1012,36 @@ export const reportRepository = {
       .from(timeEntry)
       .where(and(inScope(scope), closedIn(read.span), matchesFilter(read.filter)));
     return withSeconds(row);
+  },
+
+  /** S3: las sentencias que siguen en `tx` duran como mucho `milliseconds`. */
+  async limitStatementTime(milliseconds: number, tx: Transaction): Promise<void> {
+    return limitStatementTime(milliseconds, tx);
+  },
+
+  /**
+   * S1, S2: cuántas entradas trae `entryList` con la misma lectura y sin
+   * tope, los bytes en UTF-8 de sus textos y sus vínculos con etiquetas. Una
+   * sentencia, una fila.
+   */
+  async entryListSize(
+    scope: ReportScope,
+    read: ReportEntryRead,
+    tx: Executor = db,
+  ): Promise<EntryListSize> {
+    return entrySize(scope, read, tx);
+  },
+
+  /**
+   * D-R6-3: las entradas cerradas con el inicio en `read.span`, dentro de
+   * `scope` y de los filtros, una fila por entrada con sus etiquetas en un
+   * arreglo. Una sentencia; sin orden.
+   */
+  async entryList(
+    scope: ReportScope,
+    read: ReportEntryListRead,
+    tx: Executor = db,
+  ): Promise<readonly EntryListRow[]> {
+    return entryRows(scope, read, tx);
   },
 };

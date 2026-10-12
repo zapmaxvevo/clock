@@ -8,6 +8,7 @@ import {
   reportRepository,
   type ReportBucketRead,
   type ReportBuckets,
+  type ReportEntryListRead,
   type ReportEntryRead,
   type ReportLevelRead,
   type ReportSpan,
@@ -18,6 +19,7 @@ import type { ReportScope } from "./service";
 const span: ReportSpan = { from: new Date(0), to: new Date(0) };
 const entries: ReportEntryRead = { span, filter: NO_ENTRY_FILTER };
 const read: ReportLevelRead = { ...entries, dimensions: ["person"], buckets: {} };
+const listRead: ReportEntryListRead = { ...entries, limit: 1 };
 const bucketRead: ReportBucketRead = {
   ...entries,
   granularity: "date",
@@ -55,6 +57,12 @@ export async function readsWithoutScope() {
   await reportRepository.entryTotals(undefined, entries);
   // @ts-expect-error: el alcance de entryTotals no admite null.
   await reportRepository.entryTotals(null, entries);
+  // @ts-expect-error: entryList exige el alcance como primer parámetro (D-R6-3).
+  await reportRepository.entryList(listRead);
+  // @ts-expect-error: el alcance de entryList no admite undefined.
+  await reportRepository.entryList(undefined, listRead);
+  // @ts-expect-error: el alcance de entryList no admite null.
+  await reportRepository.entryList(null, listRead);
 }
 
 // @ts-expect-error: la clase del alcance no se exporta.

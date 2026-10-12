@@ -7,6 +7,9 @@ import {
   REPORT_CHART_MAX_BARS,
   REPORT_CHART_WEEKLY_MAX_DAYS,
   REPORT_DESCRIPTION_SHOWN,
+  REPORT_EXPORT_FORMATS,
+  REPORT_EXPORT_MAX_BYTES,
+  REPORT_EXPORT_MAX_ENTRIES,
   REPORT_GROUP_BYS,
   REPORT_GROUP_PARAMS,
   REPORT_MAX_DAYS,
@@ -15,8 +18,10 @@ import {
   REPORT_TIME_GROUP_BYS,
   REPORT_WITHOUT_PROJECT,
   reportClientParams,
+  reportEntryRow,
   reportFiltersOf,
   reportGroupParams,
+  reportLevelsOf,
   reportMessages,
   reportPeopleParams,
   reportProjectParams,
@@ -1321,5 +1326,79 @@ describe("reportReadyState con el gráfico (D-R5-2, D-R5-4, D-R5-5; criterio 3)"
     expect(
       reportReadyState.safeParse(withBars([dayBar(1, 60), dayBar(2, 30)])).success,
     ).toBe(true);
+  });
+});
+
+describe("reportEntryRow y las constantes de la exportación (D-R6-3, D-R6-4, D-R6-5; criterio 2 de R6)", () => {
+  const row = {
+    id: "8d1f0c2e-5b7a-4c3d-9e2f-1a2b3c4d5e6f",
+    startDay: "2026-09-30",
+    startClock: "23:30",
+    endDay: "2026-10-01",
+    endClock: "00:15",
+    person: { name: "Ana", inactive: false },
+    project: "Web",
+    client: "ACME",
+    task: "Diseño",
+    description: "Reunión de equipo",
+    tags: ["alfa", "Beta"],
+    billable: true,
+    seconds: 2700,
+  };
+
+  it("admite una fila completa", () => {
+    expect(reportEntryRow.safeParse(row).success).toBe(true);
+  });
+
+  it("admite proyecto, cliente y tarea nulos, sin etiquetas y con la descripción vacía", () => {
+    expect(
+      reportEntryRow.safeParse({
+        ...row,
+        project: null,
+        client: null,
+        task: null,
+        tags: [],
+        description: "",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rechaza un día que no es canónico, una hora fuera de 00:00 a 23:59 o sin cero y segundos que no son enteros no negativos", () => {
+    for (const invalid of [
+      { ...row, startDay: "1/10/2026" },
+      { ...row, endDay: "01/10/2026" },
+      { ...row, startClock: "24:00" },
+      { ...row, startClock: "9:30" },
+      { ...row, endClock: "24:00" },
+      { ...row, endClock: "9:30" },
+      { ...row, seconds: -1 },
+      { ...row, seconds: 1.5 },
+    ]) {
+      expect(reportEntryRow.safeParse(invalid).success).toBe(false);
+    }
+  });
+
+  it("fija los topes y los formatos", () => {
+    expect(REPORT_EXPORT_MAX_ENTRIES).toBe(10_000);
+    expect(REPORT_EXPORT_MAX_BYTES).toBe(4_000_000);
+    expect(REPORT_EXPORT_FORMATS).toEqual(["csv"]);
+  });
+
+  it("tiene los textos del 403 y del 500 de la ruta", () => {
+    expect(reportMessages.exportForbidden).toBe("No podés exportar reportes.");
+    expect(reportMessages.exportFailed).toBe(
+      "No se pudo exportar el reporte. Volvé y probá de nuevo.",
+    );
+  });
+});
+
+describe("reportLevelsOf", () => {
+  it("da el primer nivel y los de abajo, en orden", () => {
+    expect(reportLevelsOf({ groupBy: "project", subgroups: [] })).toEqual(["project"]);
+    expect(reportLevelsOf({ groupBy: "date", subgroups: ["tag", "person"] })).toEqual([
+      "date",
+      "tag",
+      "person",
+    ]);
   });
 });

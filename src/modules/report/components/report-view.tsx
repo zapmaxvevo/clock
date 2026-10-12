@@ -6,6 +6,7 @@ import {
   NO_REPORT_FILTERS,
   REPORT_MAX_ROWS,
   hasReportFilters,
+  reportLevelsOf,
   type ReportReadyState,
 } from "@/modules/report/schema";
 
@@ -27,7 +28,7 @@ export const REPORT_HEADING_ID = "reporte-titulo";
  * dice en lugar de las filas (D-R10-10).
  */
 export function ReportView({ state }: { readonly state: ReportReadyState }) {
-  const requested = [state.groupBy, ...state.subgroups];
+  const requested = reportLevelsOf(state);
   const shown = requested.slice(0, state.levelsShown);
   const firstLevelCut = state.levelsShown === 0;
   // Sin ningún nivel, la columna sigue nombrando el primero pedido (§5.4).

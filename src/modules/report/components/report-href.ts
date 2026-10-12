@@ -1,10 +1,19 @@
 import {
   REPORT_GROUP_PARAMS,
   REPORT_WITHOUT_PROJECT,
+  type ReportExportFormat,
   type ReportFilters,
   type ReportGroupBy,
   type ReportRange,
 } from "@/modules/report/schema";
+
+/** Lo que dice la URL de un reporte: el período, los niveles y los filtros. */
+type ReportLocation = {
+  readonly range: ReportRange;
+  readonly groupBy: ReportGroupBy;
+  readonly subgroups?: readonly ReportGroupBy[];
+  readonly filters: ReportFilters;
+};
 
 /**
  * La URL de un reporte (D-R2a-4), la única función que la arma: siempre con
@@ -13,17 +22,28 @@ import {
  * listas de los filtros que eligen algo (D-R4-2). `filters` es obligatorio: un
  * enlace que los olvide no compila (D-R4-10).
  */
-export function reportHref({
+export function reportHref(view: ReportLocation): string {
+  return `/reportes?${reportQuery(view)}`;
+}
+
+/**
+ * D-R6-4, D-R6-10: la descarga de un formato, con la misma query string que
+ * `reportHref` para los mismos argumentos.
+ */
+export function reportExportHref(
+  format: ReportExportFormat,
+  view: ReportLocation,
+): string {
+  return `/reportes/exportar/${format}?${reportQuery(view)}`;
+}
+
+/** La query de un reporte, la misma para la página y para sus descargas. */
+function reportQuery({
   range,
   groupBy,
   subgroups = [],
   filters,
-}: {
-  readonly range: ReportRange;
-  readonly groupBy: ReportGroupBy;
-  readonly subgroups?: readonly ReportGroupBy[];
-  readonly filters: ReportFilters;
-}): string {
+}: ReportLocation): string {
   const params = new URLSearchParams({
     desde: range.first,
     hasta: range.last,
@@ -51,5 +71,5 @@ export function reportHref({
   if (projects.length > 0) {
     params.set("proyectos", projects.join(","));
   }
-  return `/reportes?${params.toString()}`;
+  return params.toString();
 }

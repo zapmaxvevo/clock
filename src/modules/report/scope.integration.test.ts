@@ -2,7 +2,8 @@ import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { db } from "@/server/db";
-import { client, membership, project } from "@/server/db/schema";
+import { FOREIGN_KEY_VIOLATION, constraintOf } from "@/server/db/constraint-error";
+import { client, membership, project, timeEntry, timeEntryTag } from "@/server/db/schema";
 import type * as Permissions from "@/server/permissions";
 import type { Actor, MembershipStatus, Role } from "@/server/permissions";
 import { dayBuckets, monthBuckets, weekBuckets, type TimeBuckets } from "@/server/time";
@@ -23,14 +24,21 @@ import { projectRepository } from "@/modules/project/repository";
 import { workspaceRepository } from "@/modules/workspace/repository";
 
 import { chartGranularityOf } from "./chart";
-import { NO_ENTRY_FILTER, reportRepository } from "./repository";
+import {
+  NO_ENTRY_FILTER,
+  reportRepository,
+  type EntryListRow,
+  type ReportEntryRead,
+} from "./repository";
 import {
   NO_REPORT_FILTERS,
   REPORT_GROUP_BYS,
   reportFiltersOf,
+  reportEntryRow,
   reportGroupParams,
   reportRangeParams,
   reportSubgroupParams,
+  type ReportEntryRow,
   type ReportFilters,
   type ReportGroup,
   type ReportGroupBy,
@@ -38,7 +46,13 @@ import {
   type ReportState,
   type ReportTimeGroupBy,
 } from "./schema";
-import { getReportState, type ReportRequest, type ReportScope } from "./service";
+import {
+  getReportExport,
+  getReportState,
+  type ReportExportState,
+  type ReportRequest,
+  type ReportScope,
+} from "./service";
 
 /**
  * El alcance del reporte (D-R2a-2), escrito contra las firmas públicas y sin
@@ -52,6 +66,8 @@ import { getReportState, type ReportRequest, type ReportScope } from "./service"
  * y el mes, sueltos y en los árboles Mes → Semana → Persona y Persona → Semana →
  * Mes (criterio 9 de R10), y la descripción, suelta y en Descripción → Persona →
  * Proyecto, con una descripción propia en cada entrada (criterio 18 de R10).
+ * R6 suma `entryList` con cada alcance y la exportación con `personas` armado a
+ * mano, escritos sin mirar `entryList` (criterio 6 de R6).
  */
 const permissionOverrides = vi.hoisted(() => ({
   denied: [] as { readonly userId: string; readonly action: string }[],
@@ -2450,6 +2466,18 @@ async function scopeReadFor(
   actor: Actor,
   filters: ReportFilters = NO_REPORT_FILTERS,
 ): Promise<ReportScope> {
+  const [scope] = await levelReadFor(actor, filters);
+  return scope;
+}
+
+/**
+ * El alcance y la lectura que arma el service para `actor` con `filters`: los
+ * de su lectura por niveles, con el intervalo de `week` y el filtro efectivo.
+ */
+async function levelReadFor(
+  actor: Actor,
+  filters: ReportFilters = NO_REPORT_FILTERS,
+): Promise<readonly [ReportScope, ReportEntryRead]> {
   const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
   try {
     await getReportState(actor, settings, { ...request("person"), filters }, now);
@@ -2457,7 +2485,7 @@ async function scopeReadFor(
     if (call === undefined) {
       throw new Error("Se esperaba la lectura por niveles.");
     }
-    return call[0];
+    return [call[0], { span: call[1].span, filter: call[1].filter }];
   } finally {
     byLevels.mockRestore();
   }
@@ -2804,4 +2832,361 @@ describe("la misma foto del gráfico con cada alcance (D-R5-2; criterio 10 de R5
       );
     }
   });
+});
+
+describe("entryList con cada alcance (D-R6-3; criterio 6 de R6)", () => {
+  /** Más de las que hay sembradas: el tope no corta ninguna. */
+  const limit = 100;
+
+  /** Lo que el alcance decide de una fila; las etiquetas, por id. Sin orden. */
+  type ListedRow = {
+    readonly userId: string;
+    readonly status: MembershipStatus;
+    readonly seconds: number;
+    readonly description: string;
+    readonly tagIds: readonly string[];
+  };
+
+  function byPersonAndText(left: ListedRow, right: ListedRow): number {
+    return (
+      left.userId.localeCompare(right.userId) ||
+      left.description.localeCompare(right.description)
+    );
+  }
+
+  function listedSummaryOf(rows: readonly EntryListRow[]): ListedRow[] {
+    return rows
+      .map((row) => ({
+        userId: row.userId,
+        status: row.status,
+        seconds: row.seconds,
+        description: row.description,
+        tagIds: row.tags.map((tag) => tag.id).sort(),
+      }))
+      .sort(byPersonAndText);
+  }
+
+  /** Una fila por entrada; solo la persona inactiva de A tiene la membresía inactiva. */
+  function expectedListed(entries: readonly SeededEntry[]): ListedRow[] {
+    return entries
+      .map((entry) => ({
+        userId: entry.userId,
+        status:
+          entry.userId === a.inactiveId ? ("inactive" as const) : ("active" as const),
+        seconds: entry.minutes * 60,
+        description: entry.description,
+        tagIds: [...entry.place.tagIds].sort(),
+      }))
+      .sort(byPersonAndText);
+  }
+
+  /** `entryList` directo, con el alcance, el intervalo y el filtro efectivo de una lectura real de `actor`. */
+  async function listedOf(actor: Actor, filters: ReportFilters = NO_REPORT_FILTERS) {
+    const [scope, read] = await levelReadFor(actor, filters);
+    return reportRepository.entryList(scope, { ...read, limit });
+  }
+
+  async function expectListed(
+    actor: Actor,
+    entries: readonly SeededEntry[],
+    filters: ReportFilters = NO_REPORT_FILTERS,
+  ) {
+    expect(
+      listedSummaryOf(await listedOf(actor, filters)),
+      `${nameOf(actor.userId)}, ${JSON.stringify(filters)}`,
+    ).toEqual(expectedListed(entries));
+  }
+
+  for (const role of ["owner", "admin"] as const) {
+    it(`${role} de A lista todo A, también al inactivo, y nada de B`, async () => {
+      await expectListed(
+        actorIn(a.workspaceId, role === "owner" ? a.ownerId : a.adminId, { role }),
+        entriesIn(a.workspaceId),
+      );
+    });
+  }
+
+  it("project_manager, team_manager y member listan solo lo propio; el member, en A, no lista lo suyo de B", async () => {
+    for (const { role, userId } of selfOnlyInA()) {
+      await expectListed(
+        actorIn(a.workspaceId, userId, { role }),
+        entriesIn(a.workspaceId, userId),
+      );
+    }
+  });
+
+  it("un owner al que can() le niega timeEntry.others.view lista solo lo propio", async () => {
+    permissionOverrides.denied.push({
+      userId: a.ownerId,
+      action: "timeEntry.others.view",
+    });
+    await expectListed(
+      actorIn(a.workspaceId, a.ownerId, { role: "owner" }),
+      entriesIn(a.workspaceId, a.ownerId),
+    );
+  });
+
+  it("el owner de B lista todo B y nada de A; la persona de A y de B, en B, solo lo suyo de B", async () => {
+    await expectListed(
+      actorIn(b.workspaceId, b.ownerId, { role: "owner" }),
+      entriesIn(b.workspaceId),
+    );
+    await expectListed(
+      actorIn(b.workspaceId, a.memberId),
+      entriesIn(b.workspaceId, a.memberId),
+    );
+  });
+
+  it("el owner de A, member de B sin horas en B, no lista en B las suyas de A", async () => {
+    await db
+      .insert(membership)
+      .values({ workspaceId: b.workspaceId, userId: a.ownerId, role: "member" });
+    await expectListed(actorIn(b.workspaceId, a.ownerId), []);
+  });
+
+  it("con el alcance angostado a personas elegidas, solo las de ellas del workspace", async () => {
+    for (const role of ["owner", "admin"] as const) {
+      await expectListed(
+        actorIn(a.workspaceId, role === "owner" ? a.ownerId : a.adminId, { role }),
+        [
+          ...entriesIn(a.workspaceId, a.memberId),
+          ...entriesIn(a.workspaceId, a.inactiveId),
+        ],
+        peopleFromUrl(a.memberId, a.inactiveId, b.ownerId, unknownPersonId),
+      );
+    }
+    await expectListed(
+      actorIn(b.workspaceId, b.ownerId, { role: "owner" }),
+      entriesIn(b.workspaceId, a.memberId),
+      peopleFromUrl(a.memberId, a.ownerId),
+    );
+  });
+
+  it("los ids de proyecto y de cliente de otro workspace se ignoran: cada uno lista lo que lista sin ellos", async () => {
+    const ofB: ReportFilters = {
+      ...NO_REPORT_FILTERS,
+      projects: idsOf(b.places.member.projectId),
+      clients: idsOf(b.places.member.clientId),
+    };
+    await expectListed(
+      actorIn(a.workspaceId, a.ownerId, { role: "owner" }),
+      entriesIn(a.workspaceId),
+      ofB,
+    );
+    await expectListed(
+      actorIn(a.workspaceId, a.memberId),
+      entriesIn(a.workspaceId, a.memberId),
+      ofB,
+    );
+    await expectListed(
+      actorIn(b.workspaceId, b.ownerId, { role: "owner" }),
+      entriesIn(b.workspaceId),
+      { ...NO_REPORT_FILTERS, projects: [a.projectId], clients: [a.clientId] },
+    );
+  });
+
+  it("una etiqueta de B que se llama como una de A no cruza de workspace", async () => {
+    const tagEOfB = await seedTag({ workspaceId: b.workspaceId, name: "E" });
+    names.set(tagEOfB.id, "E de B");
+    await closedEntry({
+      workspaceId: b.workspaceId,
+      userId: b.ownerId,
+      hour: 19,
+      minutes: 90,
+      place: { ...noProject, tagIds: [tagEOfB.id] },
+      description: "Etiquetada con la E de B",
+    });
+
+    const inA = await listedOf(actorIn(a.workspaceId, a.ownerId, { role: "owner" }));
+    expect(listedSummaryOf(inA)).toEqual(expectedListed(entriesIn(a.workspaceId)));
+    expect(
+      inA
+        .flatMap((row) => row.tags.map((tag) => `${nameOf(tag.id)}: ${tag.name}`))
+        .sort(),
+    ).toEqual(["E: E", "E: E", "F: F", "F: F"]);
+
+    const inB = await listedOf(actorIn(b.workspaceId, b.ownerId, { role: "owner" }));
+    expect(listedSummaryOf(inB)).toEqual(expectedListed(entriesIn(b.workspaceId)));
+    expect(
+      inB
+        .flatMap((row) => row.tags.map((tag) => `${nameOf(tag.id)}: ${tag.name}`))
+        .sort(),
+    ).toEqual(["E de B: E", "G: G"]);
+  });
+
+  it("la base no deja atar una entrada de A a una etiqueta de B (la premisa del mutante equivalente de §8.1)", async () => {
+    const [entryOfA] = await db
+      .select({ id: timeEntry.id })
+      .from(timeEntry)
+      .where(
+        and(eq(timeEntry.workspaceId, a.workspaceId), eq(timeEntry.userId, a.ownerId)),
+      );
+    const tagG = b.places.member.tagIds[0];
+    if (entryOfA === undefined || tagG === undefined) {
+      throw new Error("Se esperaban la entrada del owner de A y la etiqueta G.");
+    }
+    for (const workspaceId of [a.workspaceId, b.workspaceId]) {
+      let rejected: unknown = null;
+      try {
+        await db
+          .insert(timeEntryTag)
+          .values({ workspaceId, timeEntryId: entryOfA.id, tagId: tagG });
+      } catch (error) {
+        rejected = error;
+      }
+      expect(constraintOf(rejected, FOREIGN_KEY_VIOLATION), nameOf(workspaceId)).toBe(
+        workspaceId === a.workspaceId
+          ? "time_entry_tag_tag_fk"
+          : "time_entry_tag_entry_fk",
+      );
+    }
+  });
+});
+
+describe("la exportación dentro del alcance (criterio 6 de R6)", () => {
+  /** La exportación de `week` por persona, con `filters`. */
+  async function exportOf(actor: Actor, filters: ReportFilters = NO_REPORT_FILTERS) {
+    return getReportExport(actor, settings, { ...request("person"), filters }, now);
+  }
+
+  /** Las filas de una exportación lista, por el esquema publicado; lanza si no hay. */
+  function rowsOfExport(state: ReportExportState): ReportEntryRow[] {
+    if (state.kind !== "ready") {
+      throw new Error(`Se esperaba la exportación y llegó ${state.kind}.`);
+    }
+    if (state.entries.kind !== "listed") {
+      throw new Error(`Se esperaban las entradas y llegó ${state.entries.kind}.`);
+    }
+    return state.entries.rows.map((row) => reportEntryRow.parse(row));
+  }
+
+  /** De cada fila, lo que dice de quién es: su texto, su duración y si la persona está inactiva. */
+  function ownershipOf(rows: readonly ReportEntryRow[]) {
+    return rows.map((row) => ({
+      description: row.description,
+      seconds: row.seconds,
+      inactive: row.person.inactive,
+    }));
+  }
+
+  /** En orden de inicio, como las lista la exportación. */
+  function expectedOwnership(entries: readonly SeededEntry[]) {
+    return entries.map((entry) => ({
+      description: entry.description,
+      seconds: entry.minutes * 60,
+      inactive: entry.userId === a.inactiveId,
+    }));
+  }
+
+  it("project_manager, team_manager y member con personas armado a mano reciben solo lo propio, igual que sin personas", async () => {
+    for (const { role, userId, minutes, description } of selfOnlyInA()) {
+      const actor = actorIn(a.workspaceId, userId, { role });
+      const others = [
+        a.ownerId,
+        a.adminId,
+        a.inactiveId,
+        b.ownerId,
+        unknownPersonId,
+        ...selfOnlyInA()
+          .map((person) => person.userId)
+          .filter((id) => id !== userId),
+      ];
+      const without = await exportOf(actor);
+      expect(ownershipOf(rowsOfExport(without)), role).toEqual([
+        { description, seconds: minutes * 60, inactive: false },
+      ]);
+      const hidden = seeded
+        .map((entry) => entry.description)
+        .filter((text) => text !== "" && text !== description);
+      for (const people of [
+        peopleFromUrl(...others),
+        peopleFromUrl(...others, userId),
+        peopleFromUrl(userId),
+      ]) {
+        const context = `${role}, ${people.people.map(nameOf).join(", ")}`;
+        const withPeople = await exportOf(actor, people);
+        expect(rowsOfExport(withPeople), context).toEqual(rowsOfExport(without));
+        const payload = JSON.stringify(withPeople);
+        for (const text of hidden) {
+          expect(payload, context).not.toContain(text);
+        }
+      }
+    }
+  });
+
+  it("owner y admin de A con personas: solo las elegidas de A, la inactiva incluida, y nada de B", async () => {
+    for (const role of ["owner", "admin"] as const) {
+      const actor = actorIn(a.workspaceId, role === "owner" ? a.ownerId : a.adminId, {
+        role,
+      });
+      expect(ownershipOf(rowsOfExport(await exportOf(actor))), role).toEqual(
+        expectedOwnership(entriesIn(a.workspaceId)),
+      );
+      expect(
+        ownershipOf(
+          rowsOfExport(
+            await exportOf(
+              actor,
+              peopleFromUrl(a.memberId, a.inactiveId, b.ownerId, unknownPersonId),
+            ),
+          ),
+        ),
+        role,
+      ).toEqual(
+        expectedOwnership([
+          ...entriesIn(a.workspaceId, a.memberId),
+          ...entriesIn(a.workspaceId, a.inactiveId),
+        ]),
+      );
+    }
+  });
+
+  it("el owner de B: todo B sin personas; con la persona de A y de B elegida, solo lo de ella en B", async () => {
+    const actor = actorIn(b.workspaceId, b.ownerId, { role: "owner" });
+    expect(ownershipOf(rowsOfExport(await exportOf(actor)))).toEqual(
+      expectedOwnership(entriesIn(b.workspaceId)),
+    );
+    expect(
+      ownershipOf(
+        rowsOfExport(await exportOf(actor, peopleFromUrl(a.memberId, a.ownerId))),
+      ),
+    ).toEqual(expectedOwnership(entriesIn(b.workspaceId, a.memberId)));
+  });
+
+  for (const status of notActive) {
+    it(`${status}: ningún rol exporta, tampoco con personas, y entryList no se llama`, async () => {
+      const entryList = vi.spyOn(reportRepository, "entryList");
+      try {
+        for (const role of roles) {
+          let userId: string;
+          if (role === "owner") {
+            await db
+              .update(membership)
+              .set({ status })
+              .where(
+                and(
+                  eq(membership.workspaceId, a.workspaceId),
+                  eq(membership.userId, a.ownerId),
+                ),
+              );
+            userId = a.ownerId;
+          } else {
+            userId = await seedMember(a.workspaceId, role, status);
+          }
+          const actor = actorIn(a.workspaceId, userId, { role, status });
+          expect(await exportOf(actor), role).toEqual({ kind: "forbidden" });
+          expect(
+            await exportOf(actor, peopleFromUrl(a.memberId, a.ownerId)),
+            role,
+          ).toEqual({ kind: "forbidden" });
+        }
+        expect(
+          await exportOf(actorIn(a.workspaceId, a.inactiveId, { status: "inactive" })),
+        ).toEqual({ kind: "forbidden" });
+        expect(entryList).not.toHaveBeenCalled();
+      } finally {
+        entryList.mockRestore();
+      }
+    });
+  }
 });

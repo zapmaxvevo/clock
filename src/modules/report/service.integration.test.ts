@@ -37,9 +37,14 @@ import { getTimesheetState } from "@/modules/time-entry/service";
 
 import {
   NO_REPORT_FILTERS,
+  REPORT_EXPORT_MAX_BYTES,
+  REPORT_EXPORT_MAX_ENTRIES,
   REPORT_GROUP_BYS,
   REPORT_MAX_FILTER_VALUES,
+  reportEntryRow,
   reportReadyState,
+  type ReportEntryRow,
+  type ReportExportEntries,
   type ReportFilters,
   type ReportGroup,
   type ReportGroupBy,
@@ -47,8 +52,10 @@ import {
   type ReportReadyState,
 } from "./schema";
 import { reportLabels } from "./components/labels";
+import { csvBytesOf, csvEntriesMinBytes } from "./export/csv";
+import { exportDocumentOf } from "./export/document";
 import { NO_ENTRY_FILTER, reportRepository, type ReportLevelRead } from "./repository";
-import { getReportState, type ReportRequest } from "./service";
+import { getReportExport, getReportState, type ReportRequest } from "./service";
 
 const madrid = "Europe/Madrid";
 
@@ -4254,5 +4261,728 @@ describe("las guardas de totalsByBucket (D-R5-3; criterio 9 de R5)", () => {
       expect(txSelect).not.toHaveBeenCalled();
     });
     expect(select).not.toHaveBeenCalled();
+  });
+});
+
+/** El pedido entero, con lo que falte en su valor por omisión. */
+function fullRequest(request: Partial<ReportRequest>): ReportRequest {
+  return {
+    range: request.range ?? null,
+    groupBy: request.groupBy ?? null,
+    subgroups: request.subgroups ?? [],
+    filters: request.filters ?? NO_REPORT_FILTERS,
+  };
+}
+
+/** La exportación lista de un pedido; lanza si no llega `ready`. */
+async function readyExport(
+  actor: Actor,
+  request: Partial<ReportRequest> = {},
+  options: { readonly settings?: TimeSettings; readonly now?: Date } = {},
+) {
+  const state = await getReportExport(
+    actor,
+    options.settings ?? settings,
+    fullRequest(request),
+    options.now ?? readNow,
+  );
+  if (state.kind !== "ready") {
+    throw new Error(`Se esperaba la exportación y llegó ${state.kind}.`);
+  }
+  return state;
+}
+
+/** Las filas listadas; lanza con `tooMany`. */
+function listedRows(entries: ReportExportEntries): readonly ReportEntryRow[] {
+  if (entries.kind !== "listed") {
+    throw new Error(`Se esperaban las entradas y llegó ${entries.kind}.`);
+  }
+  return entries.rows.map((row) => reportEntryRow.parse(row));
+}
+
+function secondsSum(rows: readonly { readonly seconds: number }[]): number {
+  return rows.reduce((sum, row) => sum + row.seconds, 0);
+}
+
+/** `count` entradas de un minuto del owner, el martes 29/09 a las 09:00 de Buenos Aires. */
+async function seedMinutes(count: number) {
+  await db.execute(sql`
+    insert into time_entry (workspace_id, user_id, started_at, ended_at, billable)
+    select ${workspaceId}, ${ownerId},
+           timestamptz '2026-09-29 12:00:00+00',
+           timestamptz '2026-09-29 12:01:00+00',
+           false
+      from generate_series(1, ${count}) as n`);
+}
+
+describe("la lectura de las entradas (D-R6-3; criterio 4 de R6)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** La lectura de la semana anterior del owner, sin filtros, con un tope que no corta. */
+  async function ownerListRead() {
+    const { scope, span } = await realLevelRead();
+    return { scope, read: { span, filter: NO_ENTRY_FILTER, limit: 100 } };
+  }
+
+  it("una fila por entrada con todo: el proyecto y su cliente, la tarea, las dos etiquetas y la descripción entera", async () => {
+    const acme = await seedClient({ workspaceId, name: "ACME" });
+    const web = await seedProject({ workspaceId, name: "Web", clientId: acme.id });
+    const design = await seedTask({ workspaceId, projectId: web.id, name: "Diseño" });
+    const beta = await seedTag({ workspaceId, name: "Beta" });
+    const alfa = await seedTag({ workspaceId, name: "alfa" });
+    const description = "x".repeat(2999) + "ñ";
+    const entry = await seedClosed(ownerId, "2026-09-29T13:00:00Z", 5400, {
+      projectId: web.id,
+      taskId: design.id,
+      billable: true,
+      tagIds: [beta.id, alfa.id],
+      description,
+    });
+    const { scope, read } = await ownerListRead();
+
+    const rows = await reportRepository.entryList(scope, read);
+
+    expect(rows).toHaveLength(1);
+    const [row] = rows;
+    expect({ ...row, tags: undefined }).toEqual({
+      id: entry.id,
+      startedAt: new Date("2026-09-29T13:00:00Z"),
+      endedAt: new Date("2026-09-29T14:30:00Z"),
+      seconds: 5400,
+      userId: ownerId,
+      accountName: "Owner",
+      displayName: null,
+      status: "active",
+      projectName: "Web",
+      clientName: "ACME",
+      taskName: "Diseño",
+      description,
+      billable: true,
+      tags: undefined,
+    });
+    expect(row?.description).toHaveLength(3000);
+    expect(
+      [...(row?.tags ?? [])].sort((left, right) => left.id.localeCompare(right.id)),
+    ).toEqual(
+      [
+        { id: beta.id, name: "Beta" },
+        { id: alfa.id, name: "alfa" },
+      ].sort((left, right) => left.id.localeCompare(right.id)),
+    );
+  });
+
+  it("sin proyecto, proyecto, cliente y tarea nulos; con un proyecto sin cliente, el cliente nulo", async () => {
+    const loose = await seedProject({ workspaceId, name: "Suelto" });
+    const without = await seedClosed(ownerId, "2026-09-29T13:00:00Z", 60);
+    const clientless = await seedClosed(ownerId, "2026-09-29T14:00:00Z", 120, {
+      projectId: loose.id,
+    });
+    const { scope, read } = await ownerListRead();
+
+    const rows = await reportRepository.entryList(scope, read);
+    const byId = new Map(rows.map((row) => [row.id, row]));
+
+    expect(rows).toHaveLength(2);
+    const withoutRow = byId.get(without.id);
+    expect([
+      withoutRow?.projectName,
+      withoutRow?.clientName,
+      withoutRow?.taskName,
+    ]).toEqual([null, null, null]);
+    expect(withoutRow?.tags).toEqual([]);
+    expect(withoutRow?.description).toBe("");
+    const clientlessRow = byId.get(clientless.id);
+    expect([
+      clientlessRow?.projectName,
+      clientlessRow?.clientName,
+      clientlessRow?.taskName,
+    ]).toEqual(["Suelto", null, null]);
+  });
+
+  it("el timer en curso no viene; la que empieza un milisegundo antes del fin sí y la que empieza en el fin no", async () => {
+    const { scope, read } = await ownerListRead();
+    await seedTimeEntry({
+      workspaceId,
+      userId: ownerId,
+      startedAt: "2026-09-29T13:00:00Z",
+    });
+    const lastMillisecond = await seedTimeEntry({
+      workspaceId,
+      userId: ownerId,
+      startedAt: new Date(read.span.to.getTime() - 1),
+      endedAt: new Date(read.span.to.getTime() + 60_000),
+    });
+    await seedTimeEntry({
+      workspaceId,
+      userId: ownerId,
+      startedAt: read.span.to,
+      endedAt: new Date(read.span.to.getTime() + 60_000),
+    });
+
+    const rows = await reportRepository.entryList(scope, read);
+
+    expect(rows.map((row) => row.id)).toEqual([lastMillisecond.id]);
+  });
+
+  it("la suma de seconds es la de entryTotals, con microsegundos, sin filtros, con un proyecto, con «Sin proyecto» y con un cliente", async () => {
+    const acme = await seedClient({ workspaceId, name: "ACME" });
+    const web = await seedProject({ workspaceId, name: "Web", clientId: acme.id });
+    const loose = await seedProject({ workspaceId, name: "Suelto" });
+    const day = "2026-09-30";
+    await seedExact(
+      ownerId,
+      `${day} 10:00:00.000900-03`,
+      `${day} 10:00:01.000500-03`,
+      true,
+      {
+        projectId: web.id,
+      },
+    );
+    await seedExact(
+      ownerId,
+      `${day} 11:00:00.000500-03`,
+      `${day} 11:00:01.000400-03`,
+      false,
+    );
+    await seedExact(ownerId, `${day} 12:00:00-03`, `${day} 12:00:01.5-03`, true, {
+      projectId: loose.id,
+    });
+    await seedExact(ownerId, `${day} 13:00:00.75-03`, `${day} 13:00:02.25-03`, false, {
+      projectId: web.id,
+    });
+    const { scope, read } = await ownerListRead();
+    const filters = [
+      NO_ENTRY_FILTER,
+      { ...NO_ENTRY_FILTER, projectIds: [web.id] },
+      { ...NO_ENTRY_FILTER, withoutProject: true },
+      { ...NO_ENTRY_FILTER, clientIds: [acme.id] },
+    ];
+
+    const sums = [];
+    for (const filter of filters) {
+      const rows = await reportRepository.entryList(scope, { ...read, filter });
+      const totals = await reportRepository.entryTotals(scope, {
+        span: read.span,
+        filter,
+      });
+      sums.push([rows.length, secondsSum(rows), totals.seconds]);
+    }
+
+    expect(sums).toEqual([
+      [4, 4, 4],
+      [2, 2, 2],
+      [1, 1, 1],
+      [2, 2, 2],
+    ]);
+  });
+
+  it("con tres entradas y limit 2, dos filas", async () => {
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 60);
+    await seedClosed(ownerId, "2026-09-29T14:00:00Z", 60);
+    await seedClosed(ownerId, "2026-09-29T15:00:00Z", 60);
+    const { scope, read } = await ownerListRead();
+
+    const rows = await reportRepository.entryList(scope, { ...read, limit: 2 });
+
+    expect(rows).toHaveLength(2);
+  });
+
+  it("lanza RangeError sin consultar con 51 proyectos en el filtro y con limit 0, -1 y 1,5", async () => {
+    const { scope, read } = await ownerListRead();
+    const invalid = [
+      {
+        ...read,
+        filter: {
+          ...NO_ENTRY_FILTER,
+          projectIds: Array.from({ length: REPORT_MAX_FILTER_VALUES + 1 }, () =>
+            randomUUID(),
+          ),
+        },
+      },
+      { ...read, limit: 0 },
+      { ...read, limit: -1 },
+      { ...read, limit: 1.5 },
+    ];
+
+    const select = vi.spyOn(db, "select");
+    for (const listRead of invalid) {
+      await expect(reportRepository.entryList(scope, listRead)).rejects.toThrow(
+        RangeError,
+      );
+    }
+    expect(select).not.toHaveBeenCalled();
+  });
+});
+
+describe("la exportación (D-R6-2, D-R6-3; criterio 5 de R6)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("report es el de getReportState con tres niveles, filtros y personas", async () => {
+    const otherId = await seedPerson({ accountName: "Beto" });
+    const acme = await seedClient({ workspaceId, name: "ACME" });
+    const web = await seedProject({ workspaceId, name: "Web", clientId: acme.id });
+    const label = await seedTag({ workspaceId, name: "Etiqueta" });
+    await seedClosed(otherId, "2026-09-29T13:00:00Z", 600, {
+      projectId: web.id,
+      tagIds: [label.id],
+    });
+    await seedClosed(ownerId, "2026-09-30T13:00:00Z", 900, { projectId: web.id });
+    await seedClosed(otherId, "2026-10-01T13:00:00Z", 300);
+    const request: Partial<ReportRequest> = {
+      range: lastWeek,
+      groupBy: "project",
+      subgroups: ["person", "tag"],
+      filters: {
+        ...NO_REPORT_FILTERS,
+        people: [otherId],
+        projects: [web.id],
+        clients: [acme.id],
+      },
+    };
+
+    const exported = await readyExport(owner, request);
+
+    expect(exported.report).toEqual(await readyState(owner, request));
+    expect(listedRows(exported.entries).map((row) => row.seconds)).toEqual([600]);
+  });
+
+  it("con el primer nivel cortado, report es el de getReportState y las entradas se listan igual", async () => {
+    await seedUncappedDescriptions();
+    const request: Partial<ReportRequest> = { range: lastWeek, groupBy: "description" };
+
+    const exported = await readyExport(owner, request);
+
+    expect(exported.report).toEqual(await readyState(owner, request));
+    expect(exported.report.levelsShown).toBe(0);
+    const rows = listedRows(exported.entries);
+    expect(rows).toHaveLength(3001);
+    expect(secondsSum(rows)).toBe(exported.report.totalSeconds);
+  });
+
+  it("en orden de inicio y, con el mismo inicio, de id; la suma es totalSeconds, también por etiqueta", async () => {
+    const ids = [randomUUID(), randomUUID(), randomUUID()].sort();
+    const alfa = await seedTag({ workspaceId, name: "alfa" });
+    const beta = await seedTag({ workspaceId, name: "Beta" });
+    await seedClosed(ownerId, "2026-09-30T13:00:00Z", 60);
+    const sameStart = new Date("2026-09-29T13:00:00Z");
+    for (const id of [ids[2], ids[0], ids[1]]) {
+      await seedTimeEntry({
+        id,
+        workspaceId,
+        userId: ownerId,
+        startedAt: sameStart,
+        endedAt: new Date(sameStart.getTime() + 120_000),
+        tagIds: id === ids[0] ? [alfa.id, beta.id] : [],
+      });
+    }
+    await seedClosed(ownerId, "2026-09-28T13:00:00Z", 30);
+
+    const byPerson = await readyExport(owner, { range: lastWeek });
+    const byTag = await readyExport(owner, { range: lastWeek, groupBy: "tag" });
+
+    const rows = listedRows(byPerson.entries);
+    expect(rows.map((row) => [row.startDay, row.startClock, row.seconds])).toEqual([
+      ["2026-09-28", "10:00", 30],
+      ["2026-09-29", "10:00", 120],
+      ["2026-09-29", "10:00", 120],
+      ["2026-09-29", "10:00", 120],
+      ["2026-09-30", "10:00", 60],
+    ]);
+    expect(rows.slice(1, 4).map((row) => row.id)).toEqual(ids);
+    expect(secondsSum(rows)).toBe(byPerson.report.totalSeconds);
+    expect(secondsSum(listedRows(byTag.entries))).toBe(byTag.report.totalSeconds);
+    expect(byTag.report.totalSeconds).toBe(30 + 3 * 120 + 60);
+  });
+
+  it("el día y la hora en la zona de quien mira: Buenos Aires y Madrid, y el fin al día siguiente", async () => {
+    // 23:30 del 30/09 en Buenos Aires, 04:30 del 01/10 en Madrid; dura una hora.
+    await seedClosed(ownerId, "2026-10-01T02:30:00Z", 3600);
+
+    const fromBuenosAires = listedRows(
+      (await readyExport(owner, { range: lastWeek })).entries,
+    );
+    const fromMadrid = listedRows(
+      (await readyExport(owner, { range: lastWeek }, { settings: workspaceOf(madrid) }))
+        .entries,
+    );
+
+    const timesOf = (row: ReportEntryRow | undefined) => [
+      row?.startDay,
+      row?.startClock,
+      row?.endDay,
+      row?.endClock,
+    ];
+    expect(fromBuenosAires.map(timesOf)).toEqual([
+      ["2026-09-30", "23:30", "2026-10-01", "00:30"],
+    ]);
+    expect(fromMadrid.map(timesOf)).toEqual([
+      ["2026-10-01", "04:30", "2026-10-01", "05:30"],
+    ]);
+  });
+
+  it("la persona con su nombre editado e inactive con la membresía inactiva; las etiquetas por nombre", async () => {
+    const inactiveId = await seedPerson({
+      accountName: "Inés Cuenta",
+      displayName: "Inés",
+      status: "inactive",
+    });
+    // Ids fijos y la unión sembrada con «Beta» antes que «alfa»: sin ordenar,
+    // `json_agg` las da «Beta, alfa» por la clave de `time_entry_tag` y por el
+    // orden de inserción, como un orden por código.
+    const betaId = "00000000-0000-4000-8000-00000000000b";
+    const alfaId = "00000000-0000-4000-8000-00000000000c";
+    await db.insert(tag).values([
+      { id: alfaId, workspaceId, name: "alfa" },
+      { id: betaId, workspaceId, name: "Beta" },
+    ]);
+    await seedClosed(inactiveId, "2026-09-29T13:00:00Z", 600, {
+      tagIds: [betaId, alfaId],
+    });
+    await seedClosed(ownerId, "2026-09-30T13:00:00Z", 600);
+
+    const rows = listedRows((await readyExport(owner, { range: lastWeek })).entries);
+
+    expect(rows.map((row) => [row.person, row.tags])).toEqual([
+      [{ name: "Inés", inactive: true }, ["alfa", "Beta"]],
+      [{ name: "Owner", inactive: false }, []],
+    ]);
+  });
+
+  it("con REPORT_EXPORT_MAX_ENTRIES entradas, listed con todas; con una más, tooMany sin listarlas, y report igual en los dos", async () => {
+    await seedMinutes(REPORT_EXPORT_MAX_ENTRIES);
+    const atLimit = await readyExport(owner, { range: lastWeek });
+    expect(listedRows(atLimit.entries)).toHaveLength(REPORT_EXPORT_MAX_ENTRIES);
+    expect(atLimit.report).toEqual(await readyState(owner, { range: lastWeek }));
+    expect(atLimit.report.totalSeconds).toBe(REPORT_EXPORT_MAX_ENTRIES * 60);
+
+    await seedMinutes(1);
+    const entryList = vi.spyOn(reportRepository, "entryList");
+    const overLimit = await readyExport(owner, { range: lastWeek });
+    expect(overLimit.entries).toEqual({ kind: "tooMany" });
+    // S1: la lectura de agregados ya lo dijo.
+    expect(entryList).not.toHaveBeenCalled();
+    expect(overLimit.report).toEqual(await readyState(owner, { range: lastWeek }));
+    expect(overLimit.report.totalSeconds).toBe((REPORT_EXPORT_MAX_ENTRIES + 1) * 60);
+  });
+
+  it("la misma foto: una llamada a entryList en el Executor de la transacción, con MAX + 1, el filtro efectivo y el alcance angostado", async () => {
+    const otherId = await seedPerson({ accountName: "Beto" });
+    const web = (await seedProject({ workspaceId, name: "Web" })).id;
+    await seedClosed(otherId, "2026-09-29T13:00:00Z", 600, { projectId: web });
+    await seedClosed(ownerId, "2026-09-29T14:00:00Z", 900, { projectId: web });
+    const transaction = vi.spyOn(db, "transaction");
+    const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+    const entryTotals = vi.spyOn(reportRepository, "entryTotals");
+    const byBucket = vi.spyOn(reportRepository, "totalsByBucket");
+    const entryList = vi.spyOn(reportRepository, "entryList");
+    const entryListSize = vi.spyOn(reportRepository, "entryListSize");
+
+    const exported = await readyExport(owner, {
+      range: lastWeek,
+      groupBy: "tag",
+      filters: { ...NO_REPORT_FILTERS, people: [otherId], projects: [randomUUID(), web] },
+    });
+
+    expect(listedRows(exported.entries).map((row) => row.seconds)).toEqual([600]);
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(transaction.mock.calls[0]?.[1]).toEqual({
+      isolationLevel: "repeatable read",
+      accessMode: "read only",
+    });
+    expect(entryList).toHaveBeenCalledTimes(1);
+    const [listScope, listRead, listExecutor] = entryList.mock.calls[0] ?? [];
+    const [levelScope, levelRead, levelExecutor] = byLevels.mock.calls[0] ?? [];
+    expect(listExecutor).toBeDefined();
+    expect(listExecutor).not.toBe(db);
+    expect(entryListSize).toHaveBeenCalledTimes(1);
+    const [sizeScope, sizeRead, sizeExecutor] = entryListSize.mock.calls[0] ?? [];
+    expect([
+      levelExecutor,
+      entryTotals.mock.calls[0]?.[2],
+      byBucket.mock.calls[0]?.[2],
+      sizeExecutor,
+    ]).toEqual([listExecutor, listExecutor, listExecutor, listExecutor]);
+    expect(sizeScope).toBe(levelScope);
+    expect(sizeRead).toEqual({ span: levelRead?.span, filter: levelRead?.filter });
+    expect(listScope).toBe(levelScope);
+    expect(listScope?.people).toEqual({ kind: "chosen", userIds: [otherId] });
+    expect(listRead).toEqual({
+      span: levelRead?.span,
+      filter: { projectIds: [web], withoutProject: false, clientIds: [] },
+      limit: REPORT_EXPORT_MAX_ENTRIES + 1,
+    });
+  });
+
+  it("getReportState no llama a entryList ni a entryListSize", async () => {
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 600);
+    const entryList = vi.spyOn(reportRepository, "entryList");
+    const entryListSize = vi.spyOn(reportRepository, "entryListSize");
+    for (const groupBy of REPORT_GROUP_BYS) {
+      await readyState(owner, { range: lastWeek, groupBy });
+    }
+    expect(entryList).not.toHaveBeenCalled();
+    expect(entryListSize).not.toHaveBeenCalled();
+  });
+
+  it("sin report.view, forbidden y ninguna lectura; con él, generatedAt es now", async () => {
+    const inactiveId = await seedPerson({ accountName: "Inés", status: "inactive" });
+    const transaction = vi.spyOn(db, "transaction");
+    const entryList = vi.spyOn(reportRepository, "entryList");
+
+    const denied = await getReportExport(
+      actorIn(workspaceId, inactiveId, { status: "inactive" }),
+      settings,
+      fullRequest({ range: lastWeek }),
+      readNow,
+    );
+
+    expect(denied).toEqual({ kind: "forbidden" });
+    expect(transaction).not.toHaveBeenCalled();
+    expect(entryList).not.toHaveBeenCalled();
+    expect((await readyExport(owner, { range: lastWeek })).generatedAt).toEqual(readNow);
+  });
+});
+
+describe("la cota de las entradas antes de listarlas (S1 y S2 de las revisiones de R6a)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** 100 emojis de 4 bytes: el nombre más largo que admite la base, 400 bytes. */
+  const longName = "😀".repeat(100);
+
+  /**
+   * Entradas del owner («Owner», 5 bytes) cuya cota de bytes es
+   * `REPORT_EXPORT_MAX_BYTES - 1 + padding`. Todas van en un proyecto, su
+   * cliente y una tarea de 400 bytes cada uno, con las etiquetas «alfa» y
+   * «beta» (4 + 4 y un «, » de 2): 80 fijos + 5 + 1200 + 10 = 1295 por línea.
+   * Son 300 con 3000 emojis de descripción (12 000 bytes; 13 295 por línea) y
+   * una con 2551 emojis y `padding` letras (10 204 + `padding`). Sin
+   * cualquiera de los sumandos, la cota baja al menos 301 bytes.
+   */
+  async function seedNearByteLimit(padding: number) {
+    const acme = await seedClient({ workspaceId, name: longName });
+    const web = await seedProject({ workspaceId, name: longName, clientId: acme.id });
+    const design = await seedTask({ workspaceId, projectId: web.id, name: longName });
+    await seedTag({ workspaceId, name: "alfa" });
+    await seedTag({ workspaceId, name: "beta" });
+    await db.execute(sql`
+      insert into time_entry (workspace_id, user_id, description, started_at, ended_at, project_id, task_id, billable)
+      select ${workspaceId}, ${ownerId}, repeat('😀', 3000),
+             timestamptz '2026-09-29 12:00:00+00',
+             timestamptz '2026-09-29 12:01:00+00',
+             ${web.id}, ${design.id}, false
+        from generate_series(1, 300)`);
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 600, {
+      projectId: web.id,
+      taskId: design.id,
+      description: "😀".repeat(2551) + "x".repeat(padding),
+    });
+    await db.execute(sql`
+      insert into time_entry_tag (workspace_id, time_entry_id, tag_id)
+      select time_entry.workspace_id, time_entry.id, tag.id
+        from time_entry
+        join tag on tag.workspace_id = time_entry.workspace_id
+       where time_entry.workspace_id = ${workspaceId}
+         and time_entry.user_id = ${ownerId}`);
+  }
+
+  it("la cuenta del fixture llega al tope con una letra", () => {
+    expect(
+      300 * (80 + 5 + 3 * 400 + 10 + 12_000) + 80 + 5 + 3 * 400 + 10 + 2551 * 4,
+    ).toBe(REPORT_EXPORT_MAX_BYTES - 1);
+  });
+
+  it("con nombres largos de proyecto, cliente y tarea y la cota pasada por uno, tooMany sin llamar a entryList", async () => {
+    await seedNearByteLimit(2);
+    const entryList = vi.spyOn(reportRepository, "entryList");
+
+    const exported = await readyExport(owner, { range: lastWeek });
+
+    expect(exported.entries).toEqual({ kind: "tooMany" });
+    expect(entryList).not.toHaveBeenCalled();
+    expect(exported.report).toEqual(await readyState(owner, { range: lastWeek }));
+  });
+
+  it("con la cota justo en el tope, listed", async () => {
+    await seedNearByteLimit(1);
+
+    const exported = await readyExport(owner, { range: lastWeek });
+
+    const rows = listedRows(exported.entries);
+    expect(rows).toHaveLength(301);
+    expect(rows.at(-1)?.tags).toEqual(["alfa", "beta"]);
+  });
+
+  it("lo ajeno no cuenta en la cota de un member", async () => {
+    const memberId = await seedPerson({ accountName: "Marta" });
+    await seedNearByteLimit(2);
+    await seedClosed(memberId, "2026-09-29T15:00:00Z", 600, { description: "Propia" });
+
+    const exported = await readyExport(actorIn(workspaceId, memberId), {
+      range: lastWeek,
+    });
+
+    expect(listedRows(exported.entries).map((row) => row.description)).toEqual([
+      "Propia",
+    ]);
+  });
+
+  /** La cota de la única entrada del período y los bytes de su línea en el CSV escrito. */
+  async function boundAndLine() {
+    const { scope, span } = await realLevelRead();
+    const size = await reportRepository.entryListSize(scope, {
+      span,
+      filter: NO_ENTRY_FILTER,
+    });
+    const exported = await readyExport(owner, { range: lastWeek });
+    const csv = new TextDecoder("utf-8", { ignoreBOM: true }).decode(
+      csvBytesOf(exportDocumentOf({ ...exported, exporter: "Owner" }, settings)),
+    );
+    const lines = csv.split("\r\n");
+    const line =
+      lines[lines.findIndex((text) => text.startsWith('"Fecha de inicio"')) + 1];
+    return {
+      entries: size.entries,
+      bound: csvEntriesMinBytes(size),
+      lineBytes: new TextEncoder().encode(`${line ?? ""}\r\n`).byteLength,
+    };
+  }
+
+  it("la cota de una entrada sin textos es exactamente su línea del CSV", async () => {
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 30);
+
+    expect(await boundAndLine()).toEqual({ entries: 1, bound: 85, lineBytes: 85 });
+  });
+
+  it("la cota de una entrada completa no pasa su línea del CSV", async () => {
+    const inactiveId = await seedPerson({
+      accountName: "Inés Cuenta",
+      displayName: "Inés",
+      status: "inactive",
+    });
+    const acme = await seedClient({ workspaceId, name: "ACME" });
+    const web = await seedProject({ workspaceId, name: "Web", clientId: acme.id });
+    const design = await seedTask({ workspaceId, projectId: web.id, name: "Diseño" });
+    const alfa = await seedTag({ workspaceId, name: "alfa" });
+    const enie = await seedTag({ workspaceId, name: "año" });
+    await seedClosed(inactiveId, "2026-09-29T13:00:00Z", 7200, {
+      projectId: web.id,
+      taskId: design.id,
+      billable: true,
+      tagIds: [alfa.id, enie.id],
+      description: '=suma "uno"',
+    });
+
+    const { entries, bound, lineBytes } = await boundAndLine();
+
+    // 80 + «Inés» 5 + «Web» 3 + «ACME» 4 + «Diseño» 7 + 11 + «alfa» 4 + «año» 4 + 2.
+    expect([entries, bound]).toEqual([1, 120]);
+    expect(lineBytes).toBeGreaterThanOrEqual(bound);
+  });
+
+  it("entryListSize cuenta las entradas de entryList, los bytes de sus textos y sus etiquetas, con los filtros", async () => {
+    const web = await seedProject({ workspaceId, name: "Web" });
+    const alfa = await seedTag({ workspaceId, name: "alfa" });
+    const enie = await seedTag({ workspaceId, name: "año" });
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 60, {
+      projectId: web.id,
+      description: "Reunión",
+      tagIds: [alfa.id, enie.id],
+    });
+    await seedClosed(ownerId, "2026-09-29T14:00:00Z", 60, { description: "abc" });
+    await seedClosed(ownerId, "2026-09-29T15:00:00Z", 60, { tagIds: [alfa.id] });
+    // Fuera del período y el timer en curso: no cuentan.
+    await seedClosed(ownerId, "2026-10-06T13:00:00Z", 60, { description: "afuera" });
+    await seedTimeEntry({
+      workspaceId,
+      userId: ownerId,
+      description: "en curso",
+      startedAt: "2026-09-29T16:00:00Z",
+    });
+    const { scope, span } = await realLevelRead();
+
+    const sizes = [];
+    for (const filter of [
+      NO_ENTRY_FILTER,
+      { ...NO_ENTRY_FILTER, projectIds: [web.id] },
+      { ...NO_ENTRY_FILTER, withoutProject: true },
+    ]) {
+      const size = await reportRepository.entryListSize(scope, { span, filter });
+      const rows = await reportRepository.entryList(scope, { span, filter, limit: 100 });
+      sizes.push([rows.length, size]);
+    }
+
+    // «Owner» 5 por entrada; «Reunión» 8, «Web» 3, «alfa» 4, «año» 4; «abc» 3; «alfa» 4.
+    expect(sizes).toEqual([
+      [3, { entries: 3, textBytes: 15 + 19 + 3 + 4, tagLinks: 3, taggedEntries: 2 }],
+      [1, { entries: 1, textBytes: 5 + 19, tagLinks: 2, taggedEntries: 1 }],
+      [2, { entries: 2, textBytes: 10 + 3 + 4, tagLinks: 1, taggedEntries: 1 }],
+    ]);
+  });
+
+  it("entryListSize lanza RangeError sin consultar con 51 proyectos en el filtro", async () => {
+    const { scope, span } = await realLevelRead();
+    const select = vi.spyOn(db, "select");
+
+    await expect(
+      reportRepository.entryListSize(scope, {
+        span,
+        filter: {
+          ...NO_ENTRY_FILTER,
+          projectIds: Array.from({ length: REPORT_MAX_FILTER_VALUES + 1 }, () =>
+            randomUUID(),
+          ),
+        },
+      }),
+    ).rejects.toThrow(RangeError);
+    expect(select).not.toHaveBeenCalled();
+  });
+});
+
+describe("el tope de duración de la exportación (S3 de las revisiones de R6a)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  async function statementTimeoutIn(executor: Pick<typeof db, "execute">) {
+    const result = await executor.execute(
+      sql`select current_setting('statement_timeout') as value`,
+    );
+    return (result.rows[0] as { value: string }).value;
+  }
+
+  it("rige dentro de la transacción de la exportación y no queda en las conexiones del pool", async () => {
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 600);
+    const listEntries = reportRepository.entryList;
+    const inside: string[] = [];
+    vi.spyOn(reportRepository, "entryList").mockImplementation(
+      async (scope, read, tx) => {
+        inside.push(await statementTimeoutIn(tx ?? db));
+        return listEntries(scope, read, tx);
+      },
+    );
+
+    await readyExport(owner, { range: lastWeek });
+
+    expect(inside).toEqual(["8s"]);
+    // Todas las conexiones libres del pool a la vez, también la de la exportación.
+    const outside = await Promise.all(
+      Array.from({ length: 10 }, () => db.transaction((tx) => statementTimeoutIn(tx))),
+    );
+    expect(new Set(outside)).toEqual(new Set(["0"]));
+  });
+
+  it("getReportState no lo pone", async () => {
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 600);
+    const limit = vi.spyOn(reportRepository, "limitStatementTime");
+
+    await readyState(owner, { range: lastWeek });
+
+    expect(limit).not.toHaveBeenCalled();
   });
 });

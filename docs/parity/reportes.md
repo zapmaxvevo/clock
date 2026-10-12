@@ -141,6 +141,27 @@ chart» (FOUND); «zoom», «by week» y «by month» (NOT FOUND). Si Clockify p
 semanas o meses con períodos largos sigue _no verificado_, y no se puede mirar
 en el workspace del equipo, porque el plan Free no pasa de 31 días.
 
+_Actualizado el 2026-10-12, R6a, la primera parte del contrato de R6
+([`nucleo-reportes-r6-exportar-csv-y-excel.md`](../slices/nucleo-reportes-r6-exportar-csv-y-excel.md),
+§7 «parity-analyst», aprobado en la segunda pasada de
+[sus correcciones](../slices/correcciones-nucleo-reportes-r6-contrato.md))_: el
+contrato tiene dos partes (D-R6-1) y esta actualización cubre la primera, que
+se mergea como R6a —la ruta de exportación, el documento del archivo y el CSV
+con el resumen y las entradas—, y describe lo que hace el código de la rama
+`nucleo/r6a-csv`. Cada regla que precisa lleva su corrección fechada, y la
+[sección 15](#15-núcleo-r6) junta la pantalla y el archivo. Cambian RP-18,
+RP-22, RP-32, RP-33, RP-53 y RP-54. El Excel queda para R6b. Ese día se buscó
+en la página de exportación: «A PDF file can contain up to 3000 rows.»,
+«Export of Summary report doesn’t contain timestamps. If you need timestamps,
+you should export Detailed report.», «Grouping options in Summary report will
+affect how your exports look like.», «Only the data covered in the report will
+be exported.» y «To get a full export (with all time entries), go to Detailed
+report, choose the longest date range, and export the results.» (FOUND);
+«separator», «decimal», «file name» y «audit» (NOT FOUND). Cómo es el CSV de
+Clockify —separador, decimales, columnas, nombre del archivo— sigue _no
+verificado_ y no se puede mirar en el workspace del equipo, porque es pago
+(RP-54).
+
 ## Fuentes y límites del relevamiento
 
 Documentación pública del centro de ayuda de Clockify y referencia pública de su
@@ -737,6 +758,33 @@ que la cabecera, en la misma foto. En pantalla, cada barra se trunca al minuto
 por separado, como las filas: la suma de lo que dicen las barras queda en el
 total o unos minutos debajo. El gráfico no muestra el facturable (RP-16).
 
+_Actualizado el 2026-10-12, R6a (D-R6-6, D-R6-8, D-R6-9)_: **en el archivo,
+«Total» y «Facturable» van en la cabecera**, cada uno con dos celdas: la
+duración en `h:mm` y las horas en decimal. Son los mismos de la pantalla, leídos
+en la misma foto: los reales también agrupando por etiqueta y con el primer
+nivel que no entra.
+
+- **Cada cifra se trunca al minuto por separado**, como en pantalla: las dos de
+  la cabecera, la de cada fila del resumen y la de cada entrada. «Duración» y
+  «Horas» de una misma fila salen de los mismos minutos, así que dicen lo mismo
+  («1:29» y «1,48»).
+- **«Horas» se trunca además al centésimo** desde esos minutos, con aritmética
+  entera (`Math.floor(minutos × 5 / 3)` centésimos): 1 minuto es «0,01», 2 son
+  «0,03», 89 son «1,48», 1439 son «23,98»; 3599 s son «0:59» y «0,98».
+- **Así la suma de una columna queda en el total o por debajo, nunca arriba.**
+  En «Entradas», la suma de «Duración» o de «Horas» de todas las filas no pasa
+  la de «Total»: las entradas son exactamente las que suma el total, en la
+  misma foto, también agrupando por etiqueta, porque cada entrada es una sola
+  fila. En «Resumen», lo mismo vale para las filas de un mismo nivel (filtrar
+  «Nivel» = 1 da el primer nivel) y para los hijos de un grupo, **salvo con la
+  etiqueta en los niveles**, donde las filas ya pueden pasar lo de arriba en
+  segundos (correcciones de R3a y R3b, arriba) y el archivo lleva la nota de
+  etiquetas. Redondear «Horas» la dejaría arriba: tres entradas de 1 minuto
+  darían «0,02» cada una, 0,06, contra «0,05» del total de 3 minutos;
+  truncando dan «0,01» cada una, 0,03.
+- Con muchas entradas cortas la diferencia se nota: cien entradas de 1 minuto
+  suman «1,00» en «Horas» contra «1,66» de «Total».
+
 **RP-19 Formato de duración** — `adaptar`
 Documentado: el formato es del workspace («Find duration format in the General
 tab») y «Here’s how duration formats will appear in reports and other places in
@@ -897,6 +945,19 @@ en manos de `width_bucket`. Un día de 23 o 25 horas es una barra con sus horas.
 Las barras se cortan en la zona de quien mira: una entrada del 30/09 a las
 23:30 de Buenos Aires está en la barra del 30/09 desde ahí y en la del 01/10
 desde Madrid.
+
+_Actualizado el 2026-10-12, R6a (D-R6-8, D-R6-9)_: **el archivo dice la zona en
+la fila «Zona horaria» de la cabecera**, tal como está en el perfil y sin
+desplazamiento, como la línea de la pantalla. **Los días y las horas de cada
+entrada** —«Fecha de inicio», «Hora de inicio», «Fecha de fin» y «Hora de
+fin»— **están en la zona de quien exporta**, no en la de quien cargó la
+entrada: una entrada del 30/09 a las 23:30 de Buenos Aires es «2026-09-30» y
+«23:30» exportada desde Buenos Aires, y «2026-10-01» y «04:30» desde Madrid. Una
+que termina después de medianoche lleva el día siguiente en «Fecha de fin»; la
+entrada cuenta entera en el día de su inicio (RP-23). «Generado» es la fecha y
+la hora en esa misma zona, y el período y los rótulos de fecha, semana y mes del
+resumen son los de la pantalla. Dos personas en zonas distintas que exportan el
+mismo enlace bajan archivos distintos, y es correcto.
 
 **RP-23 Entrada que cruza la medianoche** — `adaptar`
 _No verificado_ en Clockify. Acá, la misma regla que TT-95 y TT-96: la entrada
@@ -1264,6 +1325,31 @@ descripción es de la fase 3 (RP-25). **Un member, un `project_manager` o un
 solo sus textos en todos los niveles, con «Ves solo tus horas.» y sin el
 botón «Personas»; la página no trae ningún texto ni nombre ajeno.
 
+_Actualizado el 2026-10-12, R6a (D-R6-2, D-R6-4, D-R6-8, D-R6-10)_:
+
+- **La misma URL da el mismo archivo**, el de lo que la pantalla muestra para
+  esa URL. La ruta `/reportes/exportar/csv` recibe la query de la página y la
+  lee con el mismo parseo (`reportRequestOf`): cada parámetro se valida por su
+  lado y uno inválido, desconocido o repetido se descarta igual que en la
+  página, sin error. Con `desde` repetido, el archivo es el de «Esta semana»
+  con la agrupación y los filtros de la URL.
+- **El enlace «CSV» lleva exactamente la query de la página**, con el rango, la
+  agrupación, los subniveles y los filtros efectivos; recargar o volver con
+  «Atrás» lo arma de nuevo con lo mismo.
+- **Lo abierto en pantalla no cambia el archivo**: el resumen sale entero, como
+  si todo estuviera expandido (sección 15.2).
+- **Un member, un `project_manager` o un `team_manager` que exporta con
+  `personas=…` armado a mano** baja lo propio: las mismas entradas que sin
+  `personas`, ninguna hora, descripción ni nombre de otra persona, sin la fila
+  «Personas» y con «Alcance» «Solo las horas de {su nombre}». El enlace «CSV»
+  de su pantalla no lleva `personas`, porque lleva los filtros efectivos.
+- **La cabecera nombra solo lo aplicado**: un id que no existe o que se ignoró
+  (RP-34) no aparece en «Personas», «Clientes» ni «Proyectos».
+- **El archivo no se guarda**: se arma en cada pedido y la respuesta lleva
+  `Cache-Control: no-store`. El mismo enlace exportado otra vez cambia en
+  «Generado» y en lo que haya cambiado en la base; un rótulo de fecha sin año
+  del resumen es del año en que se exporta, como en pantalla.
+
 **RP-33 Vacíos** — `adaptar`
 Sin entradas en el rango: «No hay horas en este período», con los gráficos
 ocultos y el total en cero. Con filtros que no dejan nada: «Ninguna entrada
@@ -1300,6 +1386,20 @@ primer nivel que no entra hay gráfico**, porque hay horas y es la única forma
 de verlas repartidas: se ven el gráfico, la fila del tope y los totales. Con
 una sola entrada de menos de un segundo hay gráfico, con todas las barras en
 «0:00». La regla mira las entradas, no los grupos.
+
+_Actualizado el 2026-10-12, R6a (D-R6-2, D-R6-10)_: **sin horas no hay grupo
+«Exportar»**, en los dos vacíos, con la misma condición que el gráfico (D-R5-6):
+sin entradas cerradas en el período y con filtros que no dejan nada. Un período
+con solo un timer en curso tampoco lo tiene, y una sola entrada de menos de un
+segundo sí. **Con el primer nivel que no entra hay «Exportar»**: el resumen del
+archivo es la fila «El primer nivel pasa de 3000 filas y no se muestra. Acortá
+el período, filtrá o agrupá por otra cosa.» y las entradas van si entran en su
+tope, que es la forma de ver las horas que la tabla no muestra. **La ruta igual
+responde** si se la pide a mano con un período vacío: 200, con la cabecera
+(«Total» y «Facturable» en «0:00» y «0,00»), «Resumen» con una sola fila, «No
+hay horas en este período» o, con filtros efectivos, «Ninguna entrada coincide
+con los filtros», y «Entradas» con su fila de encabezados y ninguna entrada. El
+archivo no lleva «Quitar filtros».
 
 **RP-34 Errores de validación** — `adaptar`
 
@@ -1470,6 +1570,26 @@ appearing on PDF» y «Only the data covered in the report will be exported.»
 _Actualizado el 2026-10-08, decisión del usuario (P-10)_: entra en el núcleo.
 Exporta lo que muestra la pantalla, con el mismo alcance de RP-01.
 
+_Actualizado el 2026-10-12, R6a (D-R6-2, D-R6-13)_: el PDF sigue para R7, que
+**reusa la ruta y el documento del archivo**: suma `/reportes/exportar/pdf` y
+un escritor más sobre la misma cabecera, el mismo resumen y las mismas
+entradas, con la misma sesión, el mismo alcance, `no-store` y el mismo nombre
+de archivo. Lo comparte ya con el CSV de R6a:
+
+- «Grouping options in Summary report will affect how your exports look like.»:
+  el resumen tiene una columna por cada nivel que se muestra (sección 15.2).
+- «Only the data covered in the report will be exported.»: la misma URL, el
+  mismo alcance y los mismos filtros efectivos que la pantalla (RP-32).
+- «A PDF file can contain up to 3000 rows.»: el tope del resumen es el de la
+  pantalla, 3000 filas (D-R3-6, D-R10-10), y el CSV ya lo usa.
+
+Documentado, confirmado el 2026-10-12: «Export of Summary report doesn’t
+contain timestamps. If you need timestamps, you should export Detailed
+report.» y «To get a full export (with all time entries), go to Detailed
+report, choose the longest date range, and export the results.» Si el PDF
+lleva las entradas, el gráfico, su tope de páginas y las fuentes lo decide el
+contrato de R7.
+
 **RP-54 Exportar a CSV y Excel** — `adaptar`
 Documentado: «CSV and Excel report exports are available only on paid plans».
 _Actualizado el 2026-10-08, decisión del usuario (P-10)_: entra en el núcleo.
@@ -1477,6 +1597,70 @@ Justificación: es pago y no se puede relevar, así que entra **como diseño
 propio y no como paridad**, igual que el facturable (P-16 de `proyectos.md`):
 el reviewer lo compara contra el contrato del slice, no contra Clockify. Exporta
 lo que muestra la pantalla, con el mismo alcance de RP-01.
+
+_Actualizado el 2026-10-12, R6a (D-R6-1 a D-R6-11)_: llega el CSV; el Excel
+queda para R6b. Sigue siendo diseño propio: el reviewer lo compara contra el
+contrato de R6 y la sección 15, no contra Clockify. Cómo es el CSV de Clockify
+sigue _no verificado_ («separator» y «decimal» NOT FOUND en la página de
+exportación el 2026-10-12).
+
+- **Dónde se pide**: el grupo «Exportar», el último de la barra, con el enlace
+  «CSV» (sección 15.1). La ruta es `/reportes/exportar/csv` con la query de la
+  página (RP-32).
+- **Qué trae**: un solo archivo con tres partes, en este orden: la cabecera, una
+  línea vacía, «Resumen» y sus filas, otra línea vacía, «Entradas» y sus filas.
+- **La cabecera**: el título «Reporte resumido», «Período», «Zona horaria»,
+  «Alcance», «Agrupado por», «Personas», «Clientes» y «Proyectos» si hay
+  filtros, «Total», «Facturable», «Generado» y las notas (sección 15.2).
+- **El resumen, entero, como si estuviera todo expandido**: lo contraído es solo
+  de la pantalla. Una fila por grupo, en el orden de la pantalla, con su nivel,
+  el camino entero y su duración (sección 15.2).
+- **Las entradas, una por una**, por decisión del usuario (mapa §5): las
+  cerradas con el inicio en el período, del alcance y de los filtros efectivos,
+  en orden de inicio y, con el mismo inicio, de id; sin el timer en curso
+  (P-07). La descripción va entera y las etiquetas, todas en una celda.
+  Agrupar por etiqueta no cambia esta parte: cada entrada es una fila.
+- **Los topes**:
+  - el resumen, **3000 filas**, el de la pantalla: si los niveles de abajo no
+    entran, trae los que entraron y la nota del tope; si no entra ni el primer
+    nivel, la nota del primer nivel en lugar de las filas (RP-33);
+  - las entradas, **10 000 o 4 000 000 bytes de archivo, todo o nada**: con
+    más de 10 000, o si el archivo con ellas pasa ese peso, no se lista
+    ninguna y la parte «Entradas» es la fila «Las entradas no entran en el
+    archivo: son más de 10 000 o pesan más de 4 MB. Acortá el período o
+    filtrá.» (con un espacio duro, U+00A0, entre los miles; corrección F2 de
+    [las revisiones de R6a](../slices/correcciones-nucleo-reportes-r6a-revisiones.md)). El resumen y la cabecera van igual. Justificación: cortar en las
+    primeras 10 000 daría un archivo que parece completo y no suma el total.
+- **CSV en español**: separador `;`, BOM UTF-8 una vez al principio, fin de
+  línea `\r\n` también en la última, todos los campos entre comillas —también
+  los vacíos, `""`— y las comillas internas duplicadas: `Revisión "final"; v2`
+  se escribe `"Revisión ""final""; v2"`. Un `;` o un salto de línea dentro de
+  un campo quedan adentro.
+- **Las duraciones van dos veces**: «Duración» en `h:mm` como en pantalla, sin
+  tope de 24 h («2000:00»), y «Horas» en decimal, con coma, dos decimales y sin
+  separador de miles («1,50», «2000,00»), truncadas (RP-18). «Horas» es la que
+  se suma en una planilla.
+- **Las fechas y las horas de las entradas, canónicas**: el día en
+  `yyyy-MM-dd` y la hora en `HH:mm` de 24 h, en la zona de quien exporta
+  (RP-22), sea cual sea su formato de fecha y de hora. La cabecera, que es para
+  leer, va en sus formatos: «28/09/2026 – 04/10/2026», «Generado» en 12 o 24 h.
+- **La inyección de fórmulas**: un campo que empieza con `=`, `+`, `-`, `@`,
+  una tabulación o un retorno de carro se escribe con un `'` adelante, en
+  cualquier columna. Una descripción «=1+1» queda «'=1+1» y una «- reunión»,
+  «'- reunión»; `a=b` o un espacio antes del `=` no llevan `'`.
+- **El nombre del archivo**: `reporte_<niveles>_<desde>_<hasta>.csv`, con los
+  niveles pedidos como se escriben en la URL, unidos con `-`, y los días del
+  período: `reporte_persona-proyecto_2026-09-28_2026-10-04.csv`. Es solo ASCII
+  y no lleva ningún texto que alguien escriba.
+- **Las respuestas**: 200 con `Content-Type: text/csv; charset=utf-8`,
+  `Content-Disposition: attachment; filename="…"` y `Cache-Control: no-store`;
+  sin sesión, 307 al login; una membresía que no está activa, 403 con «No podés
+  exportar reportes.»; un error al leer o al escribir, 500 con «No se pudo
+  exportar el reporte. Volvé y probá de nuevo.». El 403 y el 500 son texto, con
+  `no-store` y sin archivo.
+- **Ninguna exportación queda en el `audit_log`**, por decisión del usuario
+  (2026-10-12): el archivo trae lo que la pantalla ya muestra, y ninguna
+  lectura se audita.
 
 **RP-55 Reportes compartidos** — `fuera de alcance`
 Documentado: «Share reports is a paid feature available on any paid plan.»;
@@ -2684,3 +2868,177 @@ promedios o comparación con otro período, y numerar las semanas en el eje
 | `owner`, `admin` activas                            | Las barras de todas las personas del workspace con horas, también las inactivas, o solo de las elegidas, filtradas por cliente y proyecto | Las de 13.5 y 13.9, y recorrer las barras con el puntero y el teclado y abrir la tabla de datos |
 | `project_manager`, `team_manager`, `member` activas | Solo lo propio, filtrado, también con el enlace de un admin con `personas=…`: las barras suman lo mismo que sin `personas`                | Las mismas, sin filtro de personas                                                              |
 | Cualquiera no activa (`inactive`, `invited`)        | El aviso de RP-07                                                                                                                         | Ninguna                                                                                         |
+
+## 15. Núcleo, R6
+
+_2026-10-12._ Contrato:
+[`nucleo-reportes-r6-exportar-csv-y-excel.md`](../slices/nucleo-reportes-r6-exportar-csv-y-excel.md),
+aprobado en la segunda pasada de `architecture-reviewer`
+([correcciones](../slices/correcciones-nucleo-reportes-r6-contrato.md)). Tiene
+dos partes (D-R6-1): **R6a**, la ruta, el documento del archivo, el CSV con el
+resumen y las entradas, y el enlace en la pantalla; **R6b**, el Excel. Esta
+sección cubre R6a. La regla de cada comportamiento está en la corrección
+fechada de su RP; esta sección junta lo que cambia en la pantalla y lo que trae
+el archivo, y lo que no nombra sigue como en las secciones
+[9](#9-núcleo-r2a) a [14](#14-núcleo-r5).
+
+**Cubre:** RP-54 (el CSV, con la cabecera, el resumen entero y las entradas una
+por una, sus topes, el formato en español, la inyección de fórmulas y el nombre
+del archivo), RP-53 (lo que el PDF de R7 reusa), RP-18 (los totales en la
+cabecera y las cifras truncadas), RP-22 (la zona en la cabecera y las entradas
+en la zona de quien exporta), RP-32 (la misma URL, el mismo archivo) y RP-33
+(sin «Exportar» en los vacíos). Los permisos y el alcance no cambian: no hay
+acción nueva; exporta quien tiene `report.view` y el archivo pasa por el mismo
+service, el mismo alcance, las mismas personas elegidas y los mismos filtros
+que la pantalla, en la misma foto. De la URL no llega ningún parámetro nuevo:
+el formato es la carpeta de la ruta.
+
+**Queda para después:** el Excel (R6b), con las mismas partes en dos hojas; el
+PDF (R7), con la misma ruta y el mismo documento. No tienen slice: elegir
+columnas, su orden o el separador; un CSV por parte o un ZIP; exportar solo lo
+expandido; exportaciones programadas o por correo (RP-56); importar archivos;
+un tope de pedidos por persona.
+
+### 15.1 La barra
+
+- **El grupo «Exportar»** es el último de la barra, después de «Filtrar por»,
+  con el mismo patrón que los otros: el rótulo «Exportar» y un grupo nombrado
+  por él, con un enlace por formato. En R6a, «CSV», con el ícono de descarga y
+  el estilo de los botones de contorno chicos.
+- **Es un enlace común**: no se pide nada al abrir la pantalla ni al pasar el
+  puntero, y funciona antes de hidratar. Al hacer clic, el navegador descarga
+  `reporte_….csv` y la pantalla sigue en `/reportes`.
+- **Solo aparece con horas**: en los dos vacíos no está (RP-33); con el primer
+  nivel que no entra o con los niveles cortados por el tope, sí.
+- **Lector de pantalla**: el grupo se anuncia «Exportar» y el enlace, «CSV»; el
+  foco visible es el de los botones del módulo.
+
+### 15.2 El archivo
+
+**La cabecera**, una fila por dato, con el nombre en la primera celda y el
+valor en la segunda:
+
+| Fila           | Valor                                                                                                                                                      |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Título         | «Reporte resumido», solo, en una celda                                                                                                                     |
+| «Período»      | las dos fechas con año en el formato de quien exporta, «28/09/2026 – 04/10/2026»; un solo día, una fecha                                                   |
+| «Zona horaria» | la del perfil, tal cual (RP-22)                                                                                                                            |
+| «Alcance»      | «Todas las personas del workspace» u «Solo las horas de {nombre de quien exporta}»                                                                         |
+| «Agrupado por» | los niveles pedidos, «Persona / Proyecto / Fecha», también los que el tope cortó                                                                           |
+| «Personas»     | solo si hay personas elegidas: sus nombres con « (inactiva)», en el orden de las opciones, en una celda unidos con «, »                                    |
+| «Clientes»     | solo si hay clientes elegidos, igual                                                                                                                       |
+| «Proyectos»    | solo si hay proyectos elegidos o «Sin proyecto», igual, con «Sin proyecto» al final                                                                        |
+| «Total»        | dos celdas: la duración y las horas (RP-18)                                                                                                                |
+| «Facturable»   | ídem                                                                                                                                                       |
+| «Generado»     | la fecha con año y la hora en los formatos de quien exporta, en su zona                                                                                    |
+| «Nota»         | una fila por nota: la de etiquetas, si la etiqueta es uno de los niveles que se muestran, y después la del tope, si se cortaron niveles y el primero entró |
+
+**El resumen** («Resumen»):
+
+- Una fila de encabezados, «Nivel», una columna por cada nivel que se muestra
+  (con los rótulos de «Agrupar por») y «Duración» y «Horas»; y una fila por
+  grupo, primero el grupo y después sus hijos, en el orden de la pantalla, con
+  el número de nivel, los rótulos de sus antepasados y el suyo, vacías las
+  columnas de abajo, y su duración:
+
+  | Nivel | Persona | Proyecto     | Duración | Horas |
+  | ----- | ------- | ------------ | -------- | ----- |
+  | 1     | Ana     |              | 10:00    | 10,00 |
+  | 2     | Ana     | Web (ACME)   | 6:00     | 6,00  |
+  | 2     | Ana     | Sin proyecto | 4:00     | 4,00  |
+
+- **El rótulo de cada grupo es el texto de la pantalla**: la persona con
+  « (inactiva)»; el proyecto con su cliente entre paréntesis; la tarea con su
+  proyecto entre paréntesis; los «Sin …» (RP-28); la fecha, la semana y el mes
+  con su rótulo y, si el período los corta, « solo …»; la descripción recortada
+  con «…» o «Sin descripción».
+- Sin grupos, una sola fila con el vacío que corresponde (RP-33); con el primer
+  nivel que no entra, una sola fila con su nota. En los dos casos, sin
+  encabezados.
+
+**Las entradas** («Entradas»): una fila de encabezados, «Fecha de inicio»,
+«Hora de inicio», «Fecha de fin», «Hora de fin», «Persona», «Cliente»,
+«Proyecto», «Tarea», «Descripción», «Etiquetas», «Facturable», «Duración» y
+«Horas», y una fila por entrada. La persona con « (inactiva)» si su membresía no
+está activa; el cliente, el proyecto, la tarea, la descripción y las etiquetas,
+vacíos si no hay; las etiquetas en orden de nombre, unidas con «, »;
+«Facturable», «Sí» o «No». Con más de las que entran, una sola fila con la nota
+del tope (RP-54).
+
+Con las entradas del recorrido 23 del contrato (del 15/09/2025 al 21/09/2025,
+por Proyecto → Fecha, de un member): «Alcance» «Solo las horas de {nombre}»;
+en el resumen, «Web {sufijo} (ACME {sufijo})» 2:15 y 2,25, su 15/09 1:30 y
+1,50, y «Sin proyecto» 0:30 y 0,50; en las entradas, la del 15/09 con
+«2025-09-15», «09:00», «2025-09-15», «10:30», el cliente, el proyecto,
+«Diseño», `Revisión "final"; v2`, la etiqueta, «No», «1:30» y «1,50»; las
+descripciones «=1+1» y «-guion …» con el `'` adelante.
+
+### 15.3 Estados y casos borde
+
+- **Vacío y segundo vacío** (RP-33): sin «Exportar». La ruta pedida a mano
+  responde 200 con la cabecera, el vacío en «Resumen» y los encabezados de
+  «Entradas» sin filas.
+- **El primer nivel que no entra**: «Exportar» está; el resumen es la nota y las
+  entradas van si entran. La cabecera no repite la nota del tope.
+- **Los niveles cortados por el tope**: el resumen trae los que entraron, con
+  sus columnas, y la cabecera, la nota del tope.
+- **Más de 10 000 entradas o un archivo de más de 4 MB con ellas**: la cabecera
+  y el resumen completos, y la nota en «Entradas» (RP-54).
+- **Al recargar o con «Atrás»**: el enlace es el mismo, porque sale de la URL
+  (RP-32).
+- **Una sesión vencida**: el clic en «CSV» lleva al login, como cualquier otra
+  pantalla.
+- **Una membresía que deja de estar activa**: la pantalla muestra el aviso de
+  RP-07 y no hay barra; la ruta pedida a mano responde 403 con «No podés
+  exportar reportes.», una página de texto.
+- **Un error al leer o al escribir**: 500 con «No se pudo exportar el reporte.
+  Volvé y probá de nuevo.», una página de texto; «Atrás» vuelve al reporte.
+- **Cargando, error de lectura y sin `report.view`**: la pantalla, como en la
+  sección 9.3.
+
+### 15.4 Divergencias visibles que el reviewer no debe marcar como errores
+
+- **RP-54 es diseño propio**: el CSV de Clockify es pago y no se puede relevar.
+  Se compara contra el contrato de R6 y esta sección.
+- **Un solo archivo por formato, con partes**: la cabecera, «Resumen» y
+  «Entradas» en el mismo CSV, y no un CSV por tabla. Ninguno de los dos sería
+  una tabla pura, por la cabecera, y dos descargas por formato duplicarían la
+  ruta.
+- **Las entradas, en el mismo archivo que el resumen**: en Clockify «Export of
+  Summary report doesn’t contain timestamps.» y la exportación con todas las
+  entradas sale del detallado; acá el resumido las trae, por decisión del
+  usuario (mapa §5), porque el detallado no está en el núcleo.
+- **Sin gráfico**: una parte por día repetiría lo que da agrupar por fecha, y
+  las entradas ya traen el día de cada una (D-R6-2). El PDF de R7 decide por su
+  cuenta.
+- **Ninguna exportación queda en el `audit_log`**, por decisión del usuario
+  (2026-10-12).
+- **El resumen sale entero aunque en pantalla esté contraído**.
+- **La suma de una columna puede quedar debajo del total, nunca arriba** (RP-18):
+  cien entradas de 1 minuto suman «1,00» en «Horas» contra «1,66» de «Total».
+- **Una descripción o un nombre que empieza con `=`, `+`, `-` o `@` lleva un
+  `'` adelante** en el CSV: «- reunión» se lee «'- reunión». Es el precio de la
+  protección contra fórmulas.
+- **Las fechas de las entradas no siguen el formato de quien exporta**: van en
+  `yyyy-MM-dd` y `HH:mm`, para que una planilla las ordene y las lea como fecha;
+  la cabecera sí lo sigue.
+- **Un rótulo de fecha sin año en el resumen** es del año en que se exporta,
+  como en pantalla; «Período» y «Generado» dicen los años.
+- **«Horas» lleva coma decimal**: un Excel configurado en inglés la lee como
+  texto u otro número. El destinatario trabaja en español; el `.xlsx` de R6b
+  guarda números.
+- **Dos archivos del mismo período y la misma agrupación con filtros distintos
+  se llaman igual**: el nombre no lleva los filtros, y el navegador agrega un
+  número.
+- **Un 403 o un 500 se ven como una página de texto**, sin la interfaz de la
+  aplicación: el enlace no abre otra pestaña y «Atrás» vuelve al reporte.
+- **El aviso de las entradas une las dos causas** —la cantidad y el peso— en
+  una sola frase.
+
+### 15.5 Qué puede hacer cada rol
+
+| Membresía                                           | El archivo trae                                                                                                                                                           | Acciones                                       |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `owner`, `admin` activas                            | Las horas, los nombres y las descripciones de todas las personas del workspace con horas, también las inactivas, o solo de las elegidas, filtradas por cliente y proyecto | Las de 14.5, y exportar a CSV cuando hay horas |
+| `project_manager`, `team_manager`, `member` activas | Solo lo propio, filtrado, con «Alcance» «Solo las horas de {nombre}», también con un enlace con `personas=…`: las mismas entradas que sin `personas`                      | Las mismas, sin filtro de personas             |
+| Cualquiera no activa (`inactive`, `invited`)        | Nada: la ruta responde 403                                                                                                                                                | Ninguna                                        |
