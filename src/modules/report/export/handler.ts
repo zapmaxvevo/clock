@@ -22,6 +22,12 @@ const EXPORT_WRITERS = {
     contentType: "text/csv; charset=utf-8",
     write: async (document: ExportDocument) => csvBytesOf(document),
   },
+  xlsx: {
+    contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    // D-R6-12: con `import()`, ni la página ni el CSV cargan `exceljs`.
+    write: async (document: ExportDocument) =>
+      (await import("./xlsx")).xlsxBytesOf(document),
+  },
 } as const satisfies Record<ReportExportFormat, ExportWriter>;
 
 /** D-R6-5: el archivo tiene horas y nombres de otras personas; ninguna caché lo guarda. */
