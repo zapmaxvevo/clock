@@ -1,12 +1,9 @@
 import {
   REPORT_GROUP_BYS,
+  reportLevelsOf,
   type ReportGroupBy,
   type ReportGrouping,
 } from "@/modules/report/schema";
-
-function levelsOf({ groupBy, subgroups }: ReportGrouping): ReportGroupBy[] {
-  return [groupBy, ...subgroups];
-}
 
 function groupingOf([groupBy, ...subgroups]: readonly ReportGroupBy[]): ReportGrouping {
   if (groupBy === undefined) {
@@ -28,7 +25,7 @@ export function withLevel(
   level: 0 | 1 | 2,
   dimension: ReportGroupBy | null,
 ): ReportGrouping {
-  const levels = levelsOf(grouping);
+  const levels = [...reportLevelsOf(grouping)];
   if (level > levels.length) {
     throw new RangeError(`El nivel ${level} no tiene el de arriba.`);
   }
@@ -57,6 +54,6 @@ export function levelOptions(
   grouping: ReportGrouping,
   level: 1 | 2,
 ): readonly ReportGroupBy[] {
-  const above = levelsOf(grouping).slice(0, level);
+  const above = reportLevelsOf(grouping).slice(0, level);
   return REPORT_GROUP_BYS.filter((dimension) => !above.includes(dimension));
 }

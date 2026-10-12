@@ -4,6 +4,7 @@ import {
   REPORT_EXPORT_MAX_ENTRIES,
   REPORT_MAX_ROWS,
   hasReportFilters,
+  reportLevelsOf,
   type ReportEntryRow,
   type ReportExportEntries,
   type ReportGroup,
@@ -122,19 +123,15 @@ function durationCells(seconds: number): readonly [ExportCell, ExportCell] {
   ];
 }
 
-/** Los niveles pedidos y los que entraron en el tope (D-R3-6, D-R10-10). */
-function levelsOf(report: ReportReadyState) {
-  const requested = [report.groupBy, ...report.subgroups];
-  return { requested, shown: requested.slice(0, report.levelsShown) };
-}
-
 /** D-R6-8: una fila por dato, el nombre en la primera celda. */
 function headerOf(
   input: ReportExportInput,
   settings: TimeSettings,
 ): readonly ExportRow[] {
   const { report } = input;
-  const { requested, shown } = levelsOf(report);
+  const requested = reportLevelsOf(report);
+  // Los que entraron en el tope (D-R3-6, D-R10-10).
+  const shown = requested.slice(0, report.levelsShown);
   const rows: ExportRow[] = [
     [text(exportLabels.title)],
     [text(exportLabels.period), text(periodText(report.range, settings.formats.date))],
@@ -221,7 +218,7 @@ function filterRows({ filters, filterOptions }: ReportReadyState): readonly Expo
  * abajo; todo el árbol, como si estuviera expandido (D-R6-2).
  */
 function summaryOf(report: ReportReadyState): ExportSection {
-  const { shown } = levelsOf(report);
+  const shown = reportLevelsOf(report).slice(0, report.levelsShown);
   if (report.levelsShown === 0) {
     return note(exportLabels.summary, reportLabels.firstLevelLimit(REPORT_MAX_ROWS));
   }
