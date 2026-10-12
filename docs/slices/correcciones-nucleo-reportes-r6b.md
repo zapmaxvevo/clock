@@ -18,3 +18,16 @@ después de escribir sigue mirando el peso de cada archivo (4 MB) como respaldo.
 entradas no cambia. Consecuencia: un Excel que habría pesado menos de 4 MB comprimido puede
 salir sin entradas; se acepta a cambio de una sola regla. La medida deja de ser «del CSV» en el
 código: vive como medida del documento y no la importa el service desde `csv.ts`.
+
+## Implementación
+
+`backend-dev`: `abc204e` (`"xlsx"` en los formatos; no compila hasta `dda1265`) y `25033f6` (paso
+12 y B4: la cota pasa a `export/entry-size.ts`). `frontend-dev`: `dda1265` («Excel»). Medición
+de §6.5: E1 en Excel 697 ms, 322 KB, pico de `heapUsed` 142 MB; E2 1077 ms, 538 KB, 254 MB;
+`exceljs` en un chunk aparte que el CSV no carga; sin `serverExternalPackages`.
+
+**Regla rota otra vez**: `backend-dev` creó dos veces en el árbol compartido un archivo de
+prueba (`export/zz-probe.test.ts`, la lectura de `exceljs`), además de uno de la regla de
+ESLint; `frontend-dev` lo vio en una corrida. Es la segunda vez en R6 (la primera, los mutantes
+del paso 3 de R6a). Los encargos que siguen lo repiten: toda prueba descartable, en el
+worktree.
