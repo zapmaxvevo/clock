@@ -1,9 +1,16 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { db } from "@/server/db";
 import { FOREIGN_KEY_VIOLATION, constraintOf } from "@/server/db/constraint-error";
-import { client, membership, project, timeEntry, timeEntryTag } from "@/server/db/schema";
+import {
+  client,
+  membership,
+  project,
+  timeEntry,
+  timeEntryTag,
+  user,
+} from "@/server/db/schema";
 import type * as Permissions from "@/server/permissions";
 import type { Actor, MembershipStatus, Role } from "@/server/permissions";
 import { dayBuckets, monthBuckets, weekBuckets, type TimeBuckets } from "@/server/time";
@@ -30,6 +37,7 @@ import {
   type EntryListRow,
   type ReportEntryRead,
 } from "./repository";
+import { reportRequestOf } from "./request";
 import {
   NO_REPORT_FILTERS,
   REPORT_GROUP_BYS,
@@ -67,7 +75,9 @@ import {
  * Mes (criterio 9 de R10), y la descripción, suelta y en Descripción → Persona →
  * Proyecto, con una descripción propia en cada entrada (criterio 18 de R10).
  * R6 suma `entryList` con cada alcance y la exportación con `personas` armado a
- * mano, escritos sin mirar `entryList` (criterio 6 de R6).
+ * mano, escritos sin mirar `entryList` (criterio 6 de R6). R9 suma las personas
+ * sin horas con cada alcance, escritas sin mirar cómo el service elige las
+ * candidatas ni arma sus filas (criterio 14 de R9).
  */
 const permissionOverrides = vi.hoisted(() => ({
   denied: [] as { readonly userId: string; readonly action: string }[],
@@ -3198,6 +3208,567 @@ describe("la exportación dentro del alcance (criterio 6 de R6)", () => {
         expect(entryList).not.toHaveBeenCalled();
       } finally {
         entryList.mockRestore();
+      }
+    });
+  }
+});
+
+describe("las personas sin horas dentro del alcance (criterio 14 de R9)", () => {
+  /** Antes de `week`: toda membresía del test ya existía en el período (§8 de R9). */
+  const joinedBefore = new Date("2026-09-01T03:00:00Z");
+
+  /** Una persona activa sin horas en el período, con un nombre que no lleva nadie más. */
+  type WithoutTime = {
+    readonly role: Role;
+    readonly userId: string;
+    readonly name: string;
+  };
+
+  /** En A, una por cada rol que ve solo lo propio, en el orden de sus nombres. */
+  let withoutTimeInA: readonly WithoutTime[];
+  let withoutTimeInB: WithoutTime;
+
+  async function seedWithoutTime(
+    workspaceId: string,
+    role: Role,
+    name: string,
+  ): Promise<WithoutTime> {
+    const userId = await seedMember(workspaceId, role);
+    await db.update(user).set({ name }).where(eq(user.id, userId));
+    names.set(userId, name);
+    return { role, userId, name };
+  }
+
+  beforeEach(async () => {
+    withoutTimeInA = [
+      await seedWithoutTime(a.workspaceId, "project_manager", "Ana, sin horas en A"),
+      await seedWithoutTime(a.workspaceId, "team_manager", "Bruno, sin horas en A"),
+      await seedWithoutTime(a.workspaceId, "member", "Carla, sin horas en A"),
+    ];
+    withoutTimeInB = await seedWithoutTime(
+      b.workspaceId,
+      "member",
+      "Ximena, sin horas en B",
+    );
+    await db
+      .update(membership)
+      .set({ createdAt: joinedBefore })
+      .where(inArray(membership.workspaceId, [a.workspaceId, b.workspaceId]));
+  });
+
+  /** Los niveles con que se pide la opción: sin `agrupar`, la persona sola y dos árboles. */
+  const optionShapes: readonly (readonly ReportGroupBy[] | null)[] = [
+    null,
+    ["person"],
+    ["person", "project"],
+    ["person", "project", "date"],
+  ];
+
+  function depthOf(levels: readonly ReportGroupBy[] | null): number {
+    return levels?.length ?? 1;
+  }
+
+  function withOption(
+    levels: readonly ReportGroupBy[] | null,
+    filters: ReportFilters = NO_REPORT_FILTERS,
+  ): ReportRequest {
+    return {
+      range: week,
+      groupBy: levels?.[0] ?? null,
+      subgroups: levels?.slice(1) ?? [],
+      filters,
+      peopleWithoutTime: true,
+    };
+  }
+
+  function people(...ids: readonly string[]): ReportFilters {
+    return { ...NO_REPORT_FILTERS, people: ids };
+  }
+
+  /**
+   * Lo que decide quién aparece: el alcance, la opción efectiva, los niveles,
+   * los totales, si hay gráfico, las personas elegidas y las que ofrece el
+   * filtro, y cada fila del primer nivel con sus segundos y si tiene hijos.
+   */
+  function firstLevelOf(state: ReportState) {
+    if (state.kind !== "ready") {
+      return state;
+    }
+    return {
+      scope: state.scope,
+      peopleWithoutTime: state.peopleWithoutTime,
+      levelsShown: state.levelsShown,
+      totalSeconds: state.totalSeconds,
+      billableSeconds: state.billableSeconds,
+      chart: state.chart !== null,
+      chosen: [...state.filters.people].sort(),
+      offered: state.filterOptions.people?.map((person) => person.id).sort() ?? null,
+      rows: state.groups.map((group) =>
+        group.kind === "person"
+          ? {
+              userId: group.userId,
+              inactive: group.inactive,
+              seconds: group.seconds,
+              expandable: group.children !== undefined,
+            }
+          : { kind: group.kind },
+      ),
+    };
+  }
+
+  /** Una persona que ve solo lo propio, con su única entrada: su fila y nada más. */
+  function ownFirstLevel(
+    levels: readonly ReportGroupBy[] | null,
+    values: { readonly userId: string; readonly minutes: number; readonly place: Place },
+  ) {
+    const seconds = values.minutes * 60;
+    return {
+      scope: "self",
+      peopleWithoutTime: false,
+      levelsShown: depthOf(levels),
+      totalSeconds: seconds,
+      billableSeconds: values.place.projectId === null ? 0 : seconds,
+      chart: true,
+      chosen: [],
+      offered: null,
+      rows: [
+        {
+          userId: values.userId,
+          inactive: false,
+          seconds,
+          expandable: depthOf(levels) > 1,
+        },
+      ],
+    };
+  }
+
+  /** Una persona que ve solo lo propio y no cargó: el primer vacío, sin su fila en cero. */
+  function ownEmpty(levels: readonly ReportGroupBy[] | null) {
+    return {
+      scope: "self",
+      peopleWithoutTime: false,
+      levelsShown: depthOf(levels),
+      totalSeconds: 0,
+      billableSeconds: 0,
+      chart: false,
+      chosen: [],
+      offered: null,
+      rows: [],
+    };
+  }
+
+  function withoutTimeRow(userId: string) {
+    return { userId, inactive: false, seconds: 0, expandable: false };
+  }
+
+  /** Las personas que ofrece el filtro en A: activas e inactivas. */
+  function catalogOfA(): string[] {
+    return [
+      a.ownerId,
+      a.adminId,
+      a.managerId,
+      a.teamManagerId,
+      a.memberId,
+      a.inactiveId,
+      ...withoutTimeInA.map((person) => person.userId),
+    ].sort();
+  }
+
+  /** Owner o admin de A sin filtro de personas: todo A con horas y, después, las sin horas de A. */
+  function everyoneInAFirstLevel(levels: readonly ReportGroupBy[] | null) {
+    return {
+      scope: "everyone",
+      peopleWithoutTime: true,
+      levelsShown: depthOf(levels),
+      totalSeconds: 210 * 60,
+      billableSeconds: 150 * 60,
+      chart: true,
+      chosen: [],
+      offered: catalogOfA(),
+      rows: [
+        ...everyoneInAGroups("person").map((row) => ({
+          ...row,
+          expandable: depthOf(levels) > 1,
+        })),
+        ...withoutTimeInA.map((person) => withoutTimeRow(person.userId)),
+      ],
+    };
+  }
+
+  /** El owner de B sin filtro de personas: todo B con horas y, después, la sin horas de B. */
+  function everyoneInBFirstLevel(levels: readonly ReportGroupBy[] | null) {
+    return {
+      scope: "everyone",
+      peopleWithoutTime: true,
+      levelsShown: depthOf(levels),
+      totalSeconds: 150 * 60,
+      billableSeconds: 70 * 60,
+      chart: true,
+      chosen: [],
+      offered: [b.ownerId, a.memberId, withoutTimeInB.userId].sort(),
+      rows: [
+        {
+          userId: b.ownerId,
+          inactive: false,
+          seconds: 80 * 60,
+          expandable: depthOf(levels) > 1,
+        },
+        {
+          userId: a.memberId,
+          inactive: false,
+          seconds: 70 * 60,
+          expandable: depthOf(levels) > 1,
+        },
+        withoutTimeRow(withoutTimeInB.userId),
+      ],
+    };
+  }
+
+  /** Todas las personas de A y de B: ninguna puede viajar a quien ve solo lo propio, salvo la suya. */
+  function everyoneSeeded(): readonly string[] {
+    return [
+      a.ownerId,
+      a.adminId,
+      a.managerId,
+      a.teamManagerId,
+      a.memberId,
+      a.inactiveId,
+      b.ownerId,
+      ...withoutTimeInA.map((person) => person.userId),
+      withoutTimeInB.userId,
+    ];
+  }
+
+  /**
+   * Lo que no puede viajar a `userId`: los ids de las demás personas de A y de B
+   * y el nombre de cada persona sin horas, el suyo incluido.
+   */
+  function foreignTo(userId: string): readonly string[] {
+    return [
+      ...everyoneSeeded().filter((id) => id !== userId),
+      ...withoutTimeInA.map((person) => person.name),
+      withoutTimeInB.name,
+    ];
+  }
+
+  function expectNothingForeign(payload: unknown, userId: string, context: string) {
+    const text = JSON.stringify(payload);
+    for (const foreign of foreignTo(userId)) {
+      expect(text, `${context}: ${nameOf(foreign)}`).not.toContain(foreign);
+    }
+  }
+
+  /**
+   * Las personas de A que ven solo lo propio: las tres con horas y las tres sin
+   * horas, con lo que tiene que ver cada una con `levels`.
+   */
+  function selfActorsInA() {
+    return [
+      ...selfOnlyInA().map(({ role, userId, minutes, place }) => ({
+        role,
+        userId,
+        expected: (levels: readonly ReportGroupBy[] | null) =>
+          ownFirstLevel(levels, { userId, minutes, place }),
+      })),
+      ...withoutTimeInA.map(({ role, userId }) => ({
+        role,
+        userId,
+        expected: ownEmpty,
+      })),
+    ];
+  }
+
+  /** Lo que pide un enlace ajeno con la opción: otras personas de A, de B, o la propia con otras. */
+  function othersRequested(userId: string): readonly ReportFilters[] {
+    const others = everyoneSeeded().filter((id) => id !== userId);
+    return [
+      NO_REPORT_FILTERS,
+      people(...others),
+      people(
+        ...withoutTimeInA.map((person) => person.userId).filter((id) => id !== userId),
+      ),
+      people(a.ownerId, a.adminId),
+      people(userId),
+      people(userId, ...others),
+      people(withoutTimeInB.userId, unknownPersonId),
+    ];
+  }
+
+  /**
+   * Cada pedido con la opción para quien ve solo lo propio: lo suyo, la opción
+   * apagada, sin el catálogo de personas, sin leerlo y sin ningún nombre ajeno,
+   * tampoco en la exportación.
+   */
+  async function expectOwnOnly(
+    actor: Actor,
+    expected: (levels: readonly ReportGroupBy[] | null) => unknown,
+    requests: readonly {
+      readonly levels: readonly ReportGroupBy[] | null;
+      readonly request: ReportRequest;
+    }[],
+  ) {
+    const listPeople = vi.spyOn(workspaceRepository, "listPeople");
+    try {
+      for (const { levels, request: requested } of requests) {
+        const context = `${nameOf(actor.userId)}, ${requested.groupBy ?? "sin agrupar"} ${requested.subgroups.join(" → ")}, ${requested.filters.people.map(nameOf).join(", ")}`;
+        const state = await getReportState(actor, settings, requested, now);
+        expect(firstLevelOf(state), context).toEqual(expected(levels));
+        expectNothingForeign(state, actor.userId, context);
+        const exported = await getReportExport(actor, settings, requested, now);
+        if (exported.kind !== "ready") {
+          throw new Error(
+            `${context}: se esperaba la exportación y llegó ${exported.kind}.`,
+          );
+        }
+        expect(exported.report, context).toEqual(state);
+        expectNothingForeign(exported, actor.userId, context);
+      }
+      expect(listPeople).not.toHaveBeenCalled();
+    } finally {
+      listPeople.mockRestore();
+    }
+  }
+
+  function requestsWithOption(userId: string) {
+    return optionShapes.flatMap((levels) =>
+      othersRequested(userId).map((filters) => ({
+        levels,
+        request: withOption(levels, filters),
+      })),
+    );
+  }
+
+  it("project_manager, team_manager y member con la opción, con horas o sin ellas, ven solo lo suyo, sin la opción ni el catálogo de personas", async () => {
+    for (const { role, userId, expected } of selfActorsInA()) {
+      await expectOwnOnly(
+        actorIn(a.workspaceId, userId, { role }),
+        expected,
+        requestsWithOption(userId),
+      );
+    }
+  });
+
+  it("un owner de A al que can() le niega timeEntry.others.view, con la opción, ve solo lo suyo", async () => {
+    permissionOverrides.denied.push({
+      userId: a.ownerId,
+      action: "timeEntry.others.view",
+    });
+    await expectOwnOnly(
+      actorIn(a.workspaceId, a.ownerId, { role: "owner" }),
+      (levels) =>
+        ownFirstLevel(levels, { userId: a.ownerId, minutes: 10, place: a.places.owner }),
+      requestsWithOption(a.ownerId),
+    );
+  });
+
+  it("la persona miembro de A y de B, en B, con la opción ve solo lo suyo de B", async () => {
+    await expectOwnOnly(
+      actorIn(b.workspaceId, a.memberId),
+      (levels) =>
+        ownFirstLevel(levels, {
+          userId: a.memberId,
+          minutes: 70,
+          place: b.places.member,
+        }),
+      requestsWithOption(a.memberId),
+    );
+  });
+
+  describe("desde la URL, con reportRequestOf", () => {
+    /** Las query de un enlace con `sin-horas=1` y los niveles que tienen que salir. */
+    const linked = [
+      [{}, null],
+      [{ agrupar: "persona" }, ["person"]],
+      [{ agrupar: "persona", subagrupar: "proyecto" }, ["person", "project"]],
+      [
+        { agrupar: "persona", subagrupar: "proyecto,fecha" },
+        ["person", "project", "date"],
+      ],
+    ] as const;
+
+    function fromUrl(query: Readonly<Record<string, string>>, ids: readonly string[]) {
+      const requested = reportRequestOf({
+        desde: week.first,
+        hasta: week.last,
+        ...query,
+        "sin-horas": "1",
+        ...(ids.length === 0 ? {} : { personas: [...ids].sort().join(",") }),
+      });
+      // El esquema no decide si aplica (D-R9-4): la URL la pide para todos.
+      expect(requested.peopleWithoutTime).toBe(true);
+      return requested;
+    }
+
+    it("project_manager, team_manager y member ven solo lo suyo con el enlace de un admin, con personas o sin ellas", async () => {
+      for (const { role, userId, expected } of selfActorsInA()) {
+        const others = everyoneSeeded().filter((id) => id !== userId);
+        await expectOwnOnly(
+          actorIn(a.workspaceId, userId, { role }),
+          expected,
+          linked.flatMap(([query, levels]) => [
+            { levels, request: fromUrl(query, []) },
+            { levels, request: fromUrl(query, others) },
+            { levels, request: fromUrl(query, [userId, ...others]) },
+          ]),
+        );
+      }
+    });
+
+    it("owner y admin de A con el enlace ven las sin horas de A; las personas de B se ignoran", async () => {
+      for (const actor of [
+        actorIn(a.workspaceId, a.ownerId, { role: "owner" }),
+        actorIn(a.workspaceId, a.adminId, { role: "admin" }),
+      ]) {
+        for (const [query, levels] of linked) {
+          for (const ids of [[], [b.ownerId, withoutTimeInB.userId, unknownPersonId]]) {
+            expect(
+              firstLevelOf(
+                await getReportState(actor, settings, fromUrl(query, ids), now),
+              ),
+              `${nameOf(actor.userId)}, ${JSON.stringify(query)}, ${ids.map(nameOf).join(", ")}`,
+            ).toEqual(everyoneInAFirstLevel(levels));
+          }
+        }
+      }
+    });
+  });
+
+  it("owner y admin de A con la opción: las sin horas son las activas de A, después de las que tienen horas, y ninguna de B", async () => {
+    for (const actor of [
+      actorIn(a.workspaceId, a.ownerId, { role: "owner" }),
+      actorIn(a.workspaceId, a.adminId, { role: "admin" }),
+    ]) {
+      for (const levels of optionShapes) {
+        const context = `${nameOf(actor.userId)}, ${levels?.join(" → ") ?? "sin agrupar"}`;
+        const state = await getReportState(actor, settings, withOption(levels), now);
+        expect(firstLevelOf(state), context).toEqual(everyoneInAFirstLevel(levels));
+        const payload = JSON.stringify(state);
+        for (const foreign of [b.ownerId, withoutTimeInB.userId, withoutTimeInB.name]) {
+          expect(payload, `${context}: ${nameOf(foreign)}`).not.toContain(foreign);
+        }
+      }
+    }
+  });
+
+  it("owner y admin de A con personas de A y de B: solo las elegidas de A, las sin horas en cero", async () => {
+    const [ana, , carla] = withoutTimeInA;
+    for (const actor of [
+      actorIn(a.workspaceId, a.ownerId, { role: "owner" }),
+      actorIn(a.workspaceId, a.adminId, { role: "admin" }),
+    ]) {
+      for (const levels of optionShapes) {
+        const context = `${nameOf(actor.userId)}, ${levels?.join(" → ") ?? "sin agrupar"}`;
+        expect(
+          firstLevelOf(
+            await getReportState(
+              actor,
+              settings,
+              withOption(levels, people(carla.userId, withoutTimeInB.userId, b.ownerId)),
+              now,
+            ),
+          ),
+          context,
+        ).toEqual({
+          scope: "everyone",
+          peopleWithoutTime: true,
+          levelsShown: depthOf(levels),
+          totalSeconds: 0,
+          billableSeconds: 0,
+          chart: false,
+          chosen: [carla.userId],
+          offered: catalogOfA(),
+          rows: [withoutTimeRow(carla.userId)],
+        });
+        expect(
+          firstLevelOf(
+            await getReportState(
+              actor,
+              settings,
+              withOption(
+                levels,
+                people(a.memberId, ana.userId, carla.userId, withoutTimeInB.userId),
+              ),
+              now,
+            ),
+          ),
+          context,
+        ).toEqual({
+          scope: "everyone",
+          peopleWithoutTime: true,
+          levelsShown: depthOf(levels),
+          totalSeconds: 50 * 60,
+          billableSeconds: 50 * 60,
+          chart: true,
+          chosen: [a.memberId, ana.userId, carla.userId].sort(),
+          offered: catalogOfA(),
+          rows: [
+            {
+              userId: a.memberId,
+              inactive: false,
+              seconds: 50 * 60,
+              expandable: depthOf(levels) > 1,
+            },
+            withoutTimeRow(ana.userId),
+            withoutTimeRow(carla.userId),
+          ],
+        });
+      }
+    }
+  });
+
+  it("el owner de B con la opción no ve a nadie de A, tampoco con personas de A", async () => {
+    const actor = actorIn(b.workspaceId, b.ownerId, { role: "owner" });
+    const fromA = [
+      a.ownerId,
+      a.adminId,
+      a.inactiveId,
+      ...withoutTimeInA.map((person) => person.userId),
+    ];
+    for (const levels of optionShapes) {
+      for (const filters of [NO_REPORT_FILTERS, people(...fromA)]) {
+        const context = `${levels?.join(" → ") ?? "sin agrupar"}, ${filters.people.map(nameOf).join(", ")}`;
+        const state = await getReportState(
+          actor,
+          settings,
+          withOption(levels, filters),
+          now,
+        );
+        expect(firstLevelOf(state), context).toEqual(everyoneInBFirstLevel(levels));
+        const payload = JSON.stringify(state);
+        for (const foreign of [
+          ...fromA,
+          a.managerId,
+          a.teamManagerId,
+          ...withoutTimeInA.map((person) => person.name),
+        ]) {
+          expect(payload, `${context}: ${nameOf(foreign)}`).not.toContain(foreign);
+        }
+      }
+    }
+  });
+
+  for (const status of notActive) {
+    it(`${status}: ningún rol lee con la opción, tampoco el catálogo de personas`, async () => {
+      const listPeople = vi.spyOn(workspaceRepository, "listPeople");
+      const transaction = vi.spyOn(db, "transaction");
+      try {
+        for (const role of roles) {
+          const actor = actorIn(a.workspaceId, withoutTimeInA[0].userId, {
+            role,
+            status,
+          });
+          for (const filters of [NO_REPORT_FILTERS, people(a.ownerId, a.memberId)]) {
+            expect(
+              await getReportState(actor, settings, withOption(["person"], filters), now),
+              role,
+            ).toEqual({ kind: "forbidden" });
+          }
+        }
+        expect(listPeople).not.toHaveBeenCalled();
+        expect(transaction).not.toHaveBeenCalled();
+      } finally {
+        listPeople.mockRestore();
+        transaction.mockRestore();
       }
     });
   }
