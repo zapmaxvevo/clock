@@ -118,3 +118,24 @@ vale tal cual para el `.xlsx` comprimido: **R6b tiene que revisarla**.
 - **Backend**: aprobado. **B2 (menor)**: la suma de etiquetas como `select` propio con uniones
   en lugar de nombres escritos como texto. **Se corrige**. El hash join con Seq Scan es mejor
   que forzar el índice en el año (59 frente a 87 ms): sin cambio.
+
+## Segunda ronda de correcciones
+
+`backend-dev`: `1d2959b` (B2, S2, S3) y `5b3aeff` (Q44–Q47). La cota de las entradas es la de la
+línea entera del CSV (`csvEntriesMinBytes`: 80 bytes fijos, los textos y los separadores de
+etiquetas); `set_config('statement_timeout', '8000', true)` solo en la transacción de la
+exportación. Once mutantes caen. Q46 sube de 73 a 140 ms (uniones de nombres en la CTE) y E3 de
+314 a 369 ms; todo dentro del presupuesto.
+
+- **Seguridad**: aprobado. El escenario de nombres largos ya no lee (251 ms, RSS de 117 a 124
+  MB); la cota queda debajo de lo escrito en todos los casos medidos; un `pg_sleep(12)` se
+  cancela a los 8 s y el tope no queda en el pool. Lo que no se cuenta (el `id` y el JSON de
+  cada etiqueta) tiene un techo fijo por diseño: mejora opcional, sin cambio.
+- **Backend**: aprobado. `entryList` no cambió (`toSQL()` idéntico). El `count(distinct)` no
+  vale la pena sacarlo (124 frente a 112 ms en el año). Dos menores:
+  - **B3**: el JSDoc de `entryListSize` quedó arriba de `limitStatementTime`. **Se corrige**
+    (solo el comentario). → `backend-dev`.
+  - **B4, para R6b**: `entriesFit` usa la cota del CSV sea cual sea el formato, contra D-R6-6;
+    con el `.xlsx` comprimido cortaría un archivo que habría entrado. **R6b** pasa la cota por
+    la tabla de escritores (un `minBytes` por formato que `getReportExport` reciba del
+    handler) o su contrato dice cómo queda.
