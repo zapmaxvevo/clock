@@ -21,8 +21,14 @@ de permisos, y sin consultas nuevas.
   cargó en el período. Va después de R4.». Depende de R4, que está entero en
   `main`, porque la lista de personas con su estado es la del filtro
   (`listWorkspacePeople`).
-- **Un solo slice** (D-R9-1).
-- **Revisión del contrato:** pendiente de `architecture-reviewer`.
+- **Un solo slice** (D-R9-1). **Va antes que R7a**, por decisión del team-lead
+  (§0, §10).
+- **Revisión del contrato:** aprobado en la primera pasada de
+  `architecture-reviewer`, con cuatro menores aplicados
+  ([correcciones](correcciones-nucleo-reportes-r9-contrato.md)): los archivos
+  que comparte con R7 y el orden (§0, §10), la fecha de ingreso de las 3001
+  personas del criterio 11, `setJoinedAt` con el email (§7) y lo que
+  `joinedAt` va a dejar de ser con las invitaciones (D-R9-2, §4.5, §9).
 - **Decisiones de arquitectura asociadas**, todas aceptadas:
   - [ADR 0020](../adr/0020-nucleo-de-reportes-antes-de-la-fase-2.md): toda
     lectura recibe el `ReportScope`, que solo arma el service; toda puerta de
@@ -83,10 +89,12 @@ deja afuera a las invitadas por su estado:
 - **Quien entró después del período no está.** Una candidata cuya
   `membership.created_at` es igual o posterior al fin del período (`span.to`,
   el inicio del día siguiente al último en la zona de quien mira) no aparece.
-  `ensureWorkspaceContext` crea la membresía en el primer ingreso
-  (`workspace/service.ts:57-74`), y nadie carga horas antes de entrar: la fila
-  de alguien que todavía no estaba diría «no cargó» de un período en que no
-  podía. Es la pregunta 2 de §10; el contrato implementa la recomendación.
+  Hoy `ensureWorkspaceContext` crea la membresía en el primer ingreso
+  (`workspace/service.ts:57-74`) y nada crea membresías `invited`, así que
+  `created_at` es el primer ingreso, y nadie carga horas antes de entrar: la
+  fila de alguien que todavía no estaba diría «no cargó» de un período en que
+  no podía. Con las invitaciones de la fase 2 deja de ser cierto (§9). Es la
+  pregunta 2 de §10; el contrato implementa la recomendación.
 - **El estado es el de hoy.** La base no guarda cuándo se desactivó una persona:
   alguien activo durante el período y desactivado después no aparece sin horas
   salvo que se lo elija. Va en §9.
@@ -234,8 +242,8 @@ filas hijas (`summaryOf`, `document.ts:220-255`, no cambia).
   opción y uno sin ella no se distinguen sin mirar las filas, y la cabecera
   nombra todo lo demás que cambia el resumen (D-R6-8).
 - **«Entradas» no cambia**: una persona sin horas no tiene entradas.
-- **El PDF de R7 lo hereda sin cambios** si lee el mismo documento, como dice su
-  contrato (D-R7-2, D-R7-6).
+- **El PDF de R7, que va después, lo hereda sin cambios** si lee el mismo
+  documento, como dice su contrato.
 - Los topes de R6 no cambian: el resumen sigue acotado por las 3000 filas.
 
 **D-R9-11 — El control: un enlace que dice lo que hace.** Después del grupo de
@@ -293,18 +301,31 @@ de los popovers la conserven al usarlos, de e2e.
 - **`main` en `31a83b3`**, con R6 entero. Las citas de abajo son de ese árbol
   (la rama `nucleo/r7-contrato` solo suma documentos). Los tests de integración
   usan `postgres:18-alpine`; todo test de tiempo fija reloj y zona.
-- **R7 y R9 no van en paralelo**: los dos tocan `report/service.ts` (`ReadPlan`,
-  `readReport`), `report/schema.ts`, `export/document.ts`, `export/labels.ts`,
-  `e2e/reports.spec.ts` y `e2e/reports-page.ts`. El segundo arranca con el
-  primero mergeado (§10, «Para el team-lead»). Si R7a entra antes,
-  `backend-dev` vuelve a ubicar las citas de `service.ts` y `document.ts` antes
-  del paso 1; ninguna decisión de este contrato depende de R7.
+- **R9 va antes que R7a, y no en paralelo** (decisión del team-lead, §10). Los
+  dos tocan:
+  - `report/schema.ts`;
+  - `report/service.ts`: R7, `ReadPlan.exporting` y las firmas de
+    `readReportState` y `getReportExport`; R9, `ReadPlan`, `readReport`,
+    `readLevelsWithinLimit` y el estado;
+  - `export/document.ts` (R7, `exportDocumentOf`; R9, `headerOf`) y
+    `export/labels.ts`;
+  - `components/labels.ts` y `report-toolbar.test.tsx` (R7,
+    `exportFormatLabels.pdf`; R9, los textos y el enlace);
+  - `service.integration.test.ts`, `scope.integration.test.ts` y
+    `handler.integration.test.ts`, que los dos editan en su paso 1 (R7 por la
+    firma de `getReportExport`, R9 por `ReportRequest`);
+  - `export/document.test.ts`;
+  - `e2e/reports-page.ts` y `e2e/reports.spec.ts`.
+
+  R7a arranca con R9 mergeado y escribe sus casos nuevos con
+  `peopleWithoutTime`.
+
 - **Sin pendientes del usuario para arrancar.** Las preguntas de §10 no
   bloquean: el contrato implementa sus recomendaciones.
 - **Las membresías no activas y la fecha de ingreso se siembran por base**:
   `seedMember(workspaceId, role, status, id?)` y un `update` de
   `membership.created_at` en integración; `seedPerson({ status })` y
-  `setJoinedAt` (nuevo, §7) en e2e.
+  `setJoinedAt(email, instant)` (nuevo, §7) en e2e.
 
 ### Supuestos sobre el árbol, con archivo y línea en `31a83b3`
 
@@ -340,6 +361,7 @@ de los popovers la conserven al usarlos, de e2e.
 | `exportLabels.yes` es «Sí»                                                                                                                                                      | `export/labels.ts:28`                                                                                                                               |
 | `readyState(actor, Partial<ReportRequest>)` completa el pedido con valores por omisión                                                                                          | `src/modules/report/service.integration.test.ts:132-152`                                                                                            |
 | e2e: `reportsQuery`, `reportsUrl`, `exportUrl` y `reportsUrlOf` conocen `subagrupar` y los filtros, y `reportsUrlOf` afirma que no hay filtros que no se pidieron               | `e2e/reports-page.ts:230-329`                                                                                                                       |
+| e2e: los helpers que cambian a una persona (`setRole`, `setDisplayName`, `setWeekStart`) reciben su email                                                                       | `e2e/database.ts:433-490`                                                                                                                           |
 | `compareNames` compara `{ id, name }` y desempata por id                                                                                                                        | `src/lib/text.ts:27-39`                                                                                                                             |
 
 ## 1. Alcance
@@ -429,7 +451,8 @@ export function reportLevelsOf(
  */
 export const reportPeopleWithoutTimeParams; // { "sin-horas": "1" } → true
 
-// reportReadyState suma:
+// reportReadyState suma, dentro de su `z.object` (en zod 4 un esquema ya
+// refinado no se extiende):
 //   /**
 //    * D-R9-4, D-R9-5: la opción efectiva. Las personas sin horas, si hay, están
 //    * en `groups`, al final del primer nivel y sin `children`.
@@ -556,8 +579,9 @@ export type WorkspacePerson = {
   readonly displayName: string | null;
   readonly status: "active" | "inactive";
   /**
-   * `membership.created_at`: desde cuándo está en el workspace, que es su primer
-   * ingreso (D-R9-2). Para decidir, no para mostrar.
+   * `membership.created_at`: desde cuándo existe la membresía; hoy, el primer
+   * ingreso (D-R9-2). Con las invitaciones de la fase 2 pasa a ser la fecha de
+   * la invitación (§9). Para decidir, no para mostrar.
    */
   readonly joinedAt: Date;
 };
@@ -709,14 +733,14 @@ mutantes de §8.1 en una copia propia, con su base.
 ### e2e-tester
 
 ```
-/home/maxi/program/clock/e2e/reports.spec.ts       (recorridos 28 y 29)
+/home/maxi/program/clock/e2e/reports.spec.ts       (recorridos 26 y 27)
 /home/maxi/program/clock/e2e/reports-page.ts
 /home/maxi/program/clock/e2e/database.ts
 ```
 
-- `database.ts`: `setJoinedAt(userId, instant)`, que cambia
-  `membership.created_at` de esa persona en el workspace de los e2e y corta si
-  no hay exactamente una fila, como `updateOneRow`.
+- `database.ts`: `setJoinedAt(email, instant)`, como `setRole`: cambia
+  `membership.created_at` de esa persona en el workspace de los e2e, con la
+  misma guarda de exactamente una fila.
 - `reports-page.ts`: `reportsUrl`, `exportUrl` y `reportsUrlOf` reciben la
   opción (`{ peopleWithoutTime?: boolean }`, después de los filtros) y la
   escriben como `sin-horas=1` después de `subagrupar`; **`reportsUrlOf` afirma
@@ -731,8 +755,7 @@ mutantes de §8.1 en una copia propia, con su base.
 ```
 
 No escribe archivos: entrega el texto y **lo aplica el team-lead**, antes del
-merge, con su corrección fechada y una sección «16. Núcleo, R9» (o la que siga a
-la última, si R7 suma una):
+merge, con su corrección fechada y una sección «16. Núcleo, R9»:
 
 - **RP-47**: pasa del semanal al resumido, de `replicar` a `adaptar`, con la
   justificación: solo owner y admin (P-01, P-03); las activas y las elegidas;
@@ -776,7 +799,7 @@ estado los actualiza el team-lead.
    `ReportLocation` y `reportQuery`, `groupingOf` y `withLevel`, el enlace, la
    vista y los tests del criterio 16. `test-engineer`: los casos del criterio
    14, sin commitear hasta el paso 3. `e2e-tester`: los helpers y los
-   recorridos 28 y 29, confirmando que fallan por la funcionalidad y no por el
+   recorridos 26 y 27, confirmando que fallan por la funcionalidad y no por el
    arnés.
 3. **`backend-dev`**: `listPeople` con `joinedAt` y su test; las candidatas, las
    filas sin horas, el tope y el estado en el service; la fila de la cabecera;
@@ -794,9 +817,10 @@ estado los actualiza el team-lead.
 ## 8. Criterios de aceptación
 
 **Las personas de los criterios de integración se siembran con `joinedAt`
-anterior al período** (un `update` de `membership.created_at`), el owner del
-`beforeEach` incluido, salvo las que prueban lo contrario. Los espías van sobre
-los métodos de los repositories, como en R4 (§8 de R4).
+anterior al período** (un `update` de `membership.created_at`, o el valor en el
+mismo `insert`), el owner del `beforeEach` incluido, salvo las que prueban lo
+contrario. Los espías van sobre los métodos de los repositories, como en R4
+(§8 de R4).
 
 1. **Los esquemas** (unidad, `schema.test.ts`) — `reportPeopleWithoutTimeParams`
    pasa con `sin-horas=1`; no pasa con `0`, `true`, `si`, `""`, `" 1"`, `"1 "` ni
@@ -854,8 +878,9 @@ los métodos de los repositories, como en R4 (§8 de R4).
     `groups` son A1 y después las sin horas por nombre, D entre ellas, todas
     sin `children`. Sin la opción, con D, `levelsShown: 2`. **El primer
     nivel**: con 3001 personas activas sin horas más, sembradas con una sola
-    sentencia (`insert … select generate_series`) en `user` y `membership`, por
-    persona con la opción: `levelsShown: 0`, `groups` vacío y los totales de
+    sentencia (`insert … select generate_series`) en `user` y `membership`,
+    **con `created_at` anterior al período en el mismo `insert`**, por persona
+    con la opción: `levelsShown: 0`, `groups` vacío y los totales de
     `entryTotals`.
 12. **Una foto, sin lectura nueva** (integración) — con la opción,
     `workspaceRepository.listPeople` se llama **una vez**, con el mismo
@@ -883,9 +908,10 @@ los métodos de los repositories, como en R4 (§8 de R4).
       cabecera y las filas sin horas en el resumen, y «Entradas» igual que sin
       la opción; el Excel, las mismas filas en «Resumen»; un member con
       `sin-horas=1&personas=<otra>` baja el mismo archivo que sin esos
-      parámetros, sin la fila ni el nombre de la otra persona;
-    - **si R7a está en `main`**: el texto del PDF del admin trae «Personas sin
-      horas» y el nombre de una persona sin horas.
+      parámetros, sin la fila ni el nombre de la otra persona.
+
+    El caso del PDF lo suma R7a, que va después (§10).
+
 16. **La pantalla** (unidad) —
     - `grouping-model.test.ts`: con la opción, cambiar el nivel 1 o el 2, o
       «Ninguno», la conserva; «Persona» en el nivel 0 la conserva; «Proyecto»
@@ -906,7 +932,7 @@ los métodos de los repositories, como en R4 (§8 de R4).
     - `report-tree.test.tsx`: en un árbol de dos niveles, una persona sin
       `children` no tiene botón y tiene el espacio del chevrón, y la de al lado
       tiene botón.
-17. **De punta a punta** — los recorridos 28 y 29 de §8.2.
+17. **De punta a punta** — los recorridos 26 y 27 de §8.2.
 18. **Lo existente sigue verde** — lint, typecheck, `format:check`,
     `npm run test:all`, `next build` y la suite e2e entera. Ninguna afirmación
     existente cambia de valor.
@@ -925,7 +951,7 @@ los métodos de los repositories, como en R4 (§8 de R4).
 | 8        | integración         | `service.integration.test.ts`                                                                                                                                                    | las personas con horas leídas sin los filtros (A1 no aparece con `[P1]`)                                                                                                                                                                                                              |
 | 9        | integración         | `service.integration.test.ts`                                                                                                                                                    | las sin horas por `treeOf` (lanza «sin hijos»); `children: []`; las sin horas solo con un nivel                                                                                                                                                                                       |
 | 10       | integración         | `service.integration.test.ts`                                                                                                                                                    | la opción efectiva sin mirar el primer nivel (filas sin horas por proyecto, o debajo de proyectos); el primer nivel tomado de `request.groupBy` sin el valor por omisión (falla con `null`)                                                                                           |
-| 11       | integración         | `service.integration.test.ts`                                                                                                                                                    | las sin horas fuera del conteo (`levelsShown: 2` con D); contadas en el primer nivel y no en el presupuesto de abajo, o al revés; sin el corte del primer nivel por ellas (las 3001)                                                                                                  |
+| 11       | integración         | `service.integration.test.ts`                                                                                                                                                    | las sin horas fuera del conteo (`levelsShown: 2` con D); contadas en el primer nivel y no en el presupuesto de abajo, o al revés; sin el corte del primer nivel por ellas (las 3001); las 3001 con `created_at` por omisión (quedan fuera de las candidatas y `levelsShown` no da 0)  |
 | 12       | integración         | `service.integration.test.ts`                                                                                                                                                    | una segunda lectura del catálogo, o con `db`; una lectura del primer nivel sin filtros para saber quién tiene horas                                                                                                                                                                   |
 | 13       | integración         | `workspace/service.integration.test.ts`                                                                                                                                          | `updatedAt` en lugar de `createdAt`; `joinedAt` sin copiar en `toWorkspacePerson`                                                                                                                                                                                                     |
 | 14       | integración         | `scope.integration.test.ts`                                                                                                                                                      | la opción efectiva sin mirar el alcance (el catálogo leído con `self`: nombres ajenos); la fila propia en cero para `self`; las candidatas de todos los workspaces                                                                                                                    |
@@ -940,13 +966,13 @@ rango.
 
 ### 8.2 Recorridos de `e2e/reports.spec.ts`
 
-Dueño: `e2e-tester`. Los de R2a a R6 (y los de R7, si ya están) no cambian,
-salvo que `reportsUrlOf` ahora afirma que no hay `sin-horas`. Se suman dos, con
-la regla de §8.3 de R2a y D-R9-14; las entradas van en la semana anterior a la
-de hoy, en la zona de la persona, y se siembran antes de abrir la pantalla. Si
-R7 no está en `main`, se numeran 26 y 27.
+Dueño: `e2e-tester`. Los veinticinco de R2a a R6 no cambian, salvo que
+`reportsUrlOf` ahora afirma que no hay `sin-horas`. Se suman dos, con la regla
+de §8.3 de R2a y D-R9-14; las entradas van en la semana anterior a la de hoy,
+en la zona de la persona, y se siembran antes de abrir la pantalla. R7a, que va
+después, numera los suyos a continuación.
 
-28. **Un admin ve quién no cargó, con las inactivas solo elegidas** (RP-47;
+26. **Un admin ve quién no cargó, con las inactivas solo elegidas** (RP-47;
     D-R9-2 a D-R9-5, D-R9-7, D-R9-11, D-R9-12). La persona del test pasa a
     admin y se llama A. Se siembran B (activa), C (inactiva), D (invitada) y E
     (activa), y a las cuatro y a A se les pone `setJoinedAt` un mes antes de la
@@ -971,7 +997,7 @@ R7 no está en `main`, se numeran 26 y 27.
     - «Proyecto» en «Agrupar por»: la URL no lleva `sin-horas` y el enlace no
       está. «Persona» de nuevo: el enlace dice «Mostrar personas sin horas» y E
       no tiene fila.
-29. **Un member no tiene la opción** (D-R9-5). Member M con P1 de 1:00; otra
+27. **Un member no tiene la opción** (D-R9-5). Member M con P1 de 1:00; otra
     persona O, activa y sin horas. La URL de la semana anterior por «Persona»
     con `sin-horas=1` y `personas=<id de O>`: «Ves solo tus horas.»; no hay
     enlace «Mostrar personas sin horas» ni «Ocultar…»; una fila, la suya, con
@@ -979,16 +1005,16 @@ R7 no está en `main`, se numeran 26 y 27.
     no lleva `sin-horas` ni `personas`.
 
 Los mutantes que tienen que caer en e2e, en una copia con puerto propio: un
-enlace que pierde la opción (el subnivel y la flecha del 28); la inactiva que
-nadie eligió o la invitada en la lista (28, sin filtro); N en la lista (28);
-una fila sin horas con botón (28); el enlace que no cambia de texto (28); un
-member que ve el enlace o a O (29).
+enlace que pierde la opción (el subnivel y la flecha del 26); la inactiva que
+nadie eligió o la invitada en la lista (26, sin filtro); N en la lista (26);
+una fila sin horas con botón (26); el enlace que no cambia de texto (26); un
+member que ve el enlace o a O (27).
 
 ### 8.3 La regla de los e2e
 
-La de §8.3 de R2a, con D-R4-13 y D-R9-14. El 28 afirma el orden y el total con
+La de §8.3 de R2a, con D-R4-13 y D-R9-14. El 26 afirma el orden y el total con
 personas elegidas, todas del test; sin filtro, solo que una fila del test está
-o no. El 29 es de alcance propio.
+o no. El 27 es de alcance propio.
 
 ### 8.4 Lo que no se prueba en e2e
 
@@ -1005,12 +1031,19 @@ o no. El 29 es de alcance propio.
   catálogo de R4b, que ya deja afuera a las invitadas y a otros workspaces), una
   sola función que dice quiénes son (`peopleWithoutTimeOf`, para el tope y para
   el estado) y la opción efectiva solo con `everyone`; los criterios 5, 7 y 14.
-- **`membership.created_at` es el primer ingreso a Clock, no la fecha de
+- **`membership.created_at` es hoy el primer ingreso a Clock, no la fecha de
   alta en la empresa.** Para «quién no cargó» es la correcta: antes de entrar
   no se podía cargar. Las membresías que creó la migración de R1 tienen la fecha
   de la migración; son inactivas con horas, y solo aparecerían sin horas si
   alguien las elige para un período anterior a la migración en que no tienen
   entradas: no aparecen.
+- **Deuda para la fase 2: con invitaciones, `created_at` deja de ser el primer
+  ingreso.** La membresía se va a crear al invitar, con `created_at` en la fecha
+  de la invitación, y una invitada que entra semanas después aparecería sin
+  horas en los períodos del medio. Ese slice tiene que darle a la candidata la
+  fecha de activación, no la de creación (una columna nueva o la primera fila
+  de auditoría de la activación), y cambiar `joinedAt` en
+  `listPeople`.
 - **El estado es el de hoy**: quien estaba activo en el período y se desactivó
   después no aparece sin horas salvo que se lo elija (D-R9-2). Guardar la
   historia del estado es de la fase 2.
@@ -1021,7 +1054,7 @@ o no. El 29 es de alcance propio.
   pedida a mano responde con esas filas.
 - **El segundo nivel puede quedar cortado al encender la opción** (D-R9-8), con
   la línea del tope de siempre, que no nombra la opción.
-- **El workspace de los e2e acumula personas activas**: el 28 sin filtro solo
+- **El workspace de los e2e acumula personas activas**: el 26 sin filtro solo
   afirma filas del test. Con más de 3000 activas en una base vieja, el primer
   nivel no entraría; los e2e corren sobre base nueva.
 - **Las ediciones mecánicas del paso 1** tocan muchos fixtures (`ReportGrouping`
@@ -1042,13 +1075,13 @@ cambio chico en `withoutTimeCandidates` y en los criterios que se nombran.
    las elige en «Personas»** (recomendación); (b) nunca; (c) siempre.
    Recomendación (a): una inactiva es alguien que ya no está, y en cada semana
    posterior a su salida sería una fila de más; quien la elige pregunta por
-   ella. Si elige (b) o (c), cambian los criterios 5 y 7 y el recorrido 28.
+   ella. Si elige (b) o (c), cambian los criterios 5 y 7 y el recorrido 26.
 2. **¿Aparece quien entró después del período?** Opciones: (a) **no**
-   (recomendación), con la fecha de su primer ingreso a Clock; (b) sí, toda
-   activa de hoy. Recomendación (a): en «Mes pasado», alguien que entró este
-   mes aparecería como que no cargó. Si elige (b), sale `joinedAt` del
-   catálogo, y se van los casos de N y K del criterio 5, el de N del 7, el
-   criterio 13 y `setJoinedAt`.
+   (recomendación), con la fecha en que se creó su membresía, que hoy es su
+   primer ingreso a Clock; (b) sí, toda activa de hoy. Recomendación (a): en
+   «Mes pasado», alguien que entró este mes aparecería como que no cargó. Si
+   elige (b), sale `joinedAt` del catálogo, y se van los casos de N y K del
+   criterio 5, el de N del 7, el criterio 13 y `setJoinedAt`.
 3. **P-05, en la sesión del workspace de Clockify** (no es decisión): en el
    semanal con «Show users without time», si aparecen las inactivas, quien
    entró después de la semana, y si es una casilla o un interruptor. Mientras
@@ -1061,14 +1094,13 @@ exportación va al `audit_log` (2026-10-12).
 
 ### Para el team-lead
 
-- **R7 y R9 no van en paralelo** (§0). Recomendación: el que tenga el contrato
-  aprobado primero arranca primero; R7 espera la medición R7-0 y el ADR del
-  usuario sobre la biblioteca, y R9 no espera nada. El segundo rebasa sobre
-  `service.ts` (`ReadPlan` y `readReport`: R7 suma `exporting`, R9 suma
-  `peopleWithoutTime`), `document.ts` (R7 cambia `exportDocumentOf`, R9
-  `headerOf`), `export/labels.ts` y los e2e.
-- **El PDF hereda R9 sin cambios** (D-R9-10). Si R7a ya está en `main`, el
-  criterio 15 suma el caso del PDF.
+- **R9 va primero y R7a después** (decisión del team-lead, 2026-10-12): R7 está
+  rehaciendo su contrato para `pdfkit`, y así su PDF hereda «Personas sin
+  horas» sin cambios (D-R9-10). R7a arranca con R9 mergeado: rebasa sobre los
+  archivos de §0, escribe sus casos nuevos (los pedidos del PDF en
+  `handler.integration.test.ts`) con `peopleWithoutTime`, suma el caso del PDF
+  al criterio 15 de este contrato en el suyo y numera sus recorridos después
+  del 27.
 - **Sin ADR.** Nada de este contrato contradice un ADR aceptado ni deja una
   regla que otro slice tenga que seguir fuera del reporte.
 - **CLAUDE.md no cambia.**
@@ -1081,7 +1113,8 @@ exportación va al `audit_log` (2026-10-12).
   `reportes.md`).
 - La fila propia en cero para quien ve solo lo suyo (D-R9-5).
 - La opción para `team_manager` (P-03, RP-06).
-- La historia del estado de una membresía (fase 2).
+- La historia del estado de una membresía y la fecha de activación de una
+  invitada (fase 2, §9).
 - El reporte semanal (RP-45, RP-46): fase 3.
 - Una marca visual propia de la fila sin horas, más allá de «0:00» y la falta de
   botón.

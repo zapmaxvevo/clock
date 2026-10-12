@@ -154,3 +154,36 @@ los niveles pedidos, como pide el criterio 9.
   está en el criterio 5 y el tope en el criterio 11 (con el hallazgo 2).
 - **Permisos y ADR:** sin acción nueva ni ADR, y ninguno aceptado queda
   contradicho.
+
+## Respuesta del architect
+
+Los cuatro menores están aplicados en el contrato, sin otra pasada.
+
+1. **Archivos compartidos y orden.** §0 nombra todos los archivos que R9 comparte
+   con R7: los de la lista de arriba, con `components/labels.ts`,
+   `report-toolbar.test.tsx`, `document.test.ts` y los tres tests de
+   integración. El orden es **R9 primero**, por decisión del team-lead: R7 está
+   rehaciendo su contrato para `pdfkit`, y así su PDF hereda «Personas sin
+   horas» sin cambios. Eso arrastra tres ajustes de coherencia:
+   - el criterio 15 ya no tiene el caso condicional del PDF: lo suma R7a en su
+     contrato, y §10 se lo indica;
+   - D-R9-10 dice que el PDF, que va después, hereda la fila;
+   - los recorridos pasan a ser el **26 y el 27** (antes, 28 y 29), y R7a
+     numera los suyos a continuación. Este cambio también alcanza a la mención
+     del recorrido 29 en «Lo que se verificó y quedó bien», que ahora es el 27.
+2. **Criterio 11.** Las 3001 personas llevan `created_at` anterior al período en
+   el mismo `insert`, y la regla general del principio de §8 dice que el valor
+   puede ir en el `update` o en el `insert`. §8.1 suma el mutante «las 3001 con
+   `created_at` por omisión», que cae porque `levelsShown` no llega a 0.
+3. **`setJoinedAt(email, instant)`**, como `setRole`, con la misma guarda de una
+   fila (§0 y §7). La tabla de supuestos suma la convención
+   (`e2e/database.ts:433-490`).
+4. **`joinedAt`.** El comentario de §4.5 dice «desde cuándo existe la membresía;
+   hoy, el primer ingreso», y aclara que con las invitaciones de la fase 2 pasa
+   a ser la fecha de la invitación. D-R9-2 y la pregunta 2 de §10 dicen lo
+   mismo. §9 suma la deuda: con invitaciones, la candidata necesita la fecha de
+   activación y no la de creación, y ese slice cambia `joinedAt` en
+   `listPeople`. §11 la nombra entre lo que queda fuera.
+
+El encabezado del contrato registra la revisión aprobada y enlaza este
+documento.
