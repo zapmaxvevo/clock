@@ -273,7 +273,7 @@ vacío del owner y `renewWorkspace` se corta.
      `@react-pdf/renderer` en el paso 1 de R7a (decisión del `architect`; la regla de ESLint lo
      prohíbe igual). La medición no tiene M8 (peor pedido en frío) ni M9 (`pdfjs-dist` bajo
      Vitest): M8 pasó a P2 en frío en §6.2 y M9 lo prueba `backend-dev` en el paso 1 de R7a; si
-     falla, se detiene. R7b (el gráfico en el PDF) solo si el usuario lo pide. Lección de R6:
+     falla, se detiene. **Actualización**: `backend-dev` rehízo R7-0 contra el contrato corregido (`7644438`, en `main`): M8 con pdfkit 0,83 s (react-pdf, 35 a 44 s y pierde texto); M9 funciona (`pdfjs-dist` 6.4.299 legacy, sin worker; los tests afirman el texto unido de cada fila, no celda por celda); y **la fuente sí entra sola al trazado** (Turbopack sigue `path.join(process.cwd(), …)`), así que `outputFileTracingIncludes` del contrato sobra. La pasada de `architecture-reviewer` sobre R7 tiene que alinear el contrato con `7644438`. R7b (el gráfico en el PDF) solo si el usuario lo pide. Lección de R6:
      `backend-dev` probó dos veces en el árbol compartido; repetir en cada encargo que las
      pruebas descartables y los mutantes van en un worktree. Bases que se pueden borrar:
      `clock_r6a_*`, `clock_r6b_*`, `clock_r10a_*`, `clock_r10b_final_*`.
