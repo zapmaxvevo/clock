@@ -33,10 +33,9 @@ const EXPORT_WRITERS = {
   pdf: {
     contentType: "application/pdf",
     entries: false,
-    // El escritor del PDF llega en el paso 4 de R7a; hasta entonces no hay ruta.
-    write: async () => {
-      throw new Error("El escritor del PDF llega en el paso 4 de R7a.");
-    },
+    // D-R7-4: con `import()`, ni la página ni el CSV ni el Excel cargan pdfkit.
+    write: async (document: ExportDocument) =>
+      (await import("./pdf")).pdfBytesOf(document),
   },
 } as const satisfies Record<ReportExportFormat, ExportWriter>;
 
@@ -72,7 +71,8 @@ export function exportFileNameOf(
 /**
  * B4: el documento que se escribe. Las entradas entran si el documento
  * entero, escrito como CSV, no pasa `maxBytes`, sea cual sea el formato
- * pedido: CSV y Excel deciden lo mismo. Si no, van en «no entran».
+ * pedido: CSV y Excel deciden lo mismo. Si no, van en «no entran». Sin
+ * entradas leídas (D-R7-3), no hay nada que medir.
  */
 function fittingDocumentOf(
   input: ReportExportInput,
@@ -80,7 +80,7 @@ function fittingDocumentOf(
   maxBytes: number,
 ): ExportDocument {
   const document = exportDocumentOf(input, settings);
-  if (csvBytesOf(document).byteLength <= maxBytes) {
+  if (input.entries === null || csvBytesOf(document).byteLength <= maxBytes) {
     return document;
   }
   return exportDocumentOf({ ...input, entries: { kind: "tooMany" } }, settings);
@@ -89,7 +89,8 @@ function fittingDocumentOf(
 /**
  * D-R6-3, B4: el archivo del documento que entra (`fittingDocumentOf`). Si el
  * archivo escrito igual pasa `maxBytes`, lo escribe otra vez con las entradas
- * en «no entran», como respaldo.
+ * en «no entran», como respaldo. Sin entradas no hay qué sacar: pasar
+ * `maxBytes` es una invariante rota (D-R7-7).
  */
 export async function exportBodyOf(
   input: ReportExportInput,
@@ -101,6 +102,11 @@ export async function exportBodyOf(
   const body = await write(fittingDocumentOf(input, settings, maxBytes));
   if (body.byteLength <= maxBytes) {
     return body;
+  }
+  if (input.entries === null) {
+    throw new RangeError(
+      `El ${format} sin entradas pesa ${body.byteLength} bytes, más que ${maxBytes}.`,
+    );
   }
   return write(exportDocumentOf({ ...input, entries: { kind: "tooMany" } }, settings));
 }
