@@ -12,6 +12,7 @@ describe("entriesMinBytes (S1, S2 de las revisiones de R6a, B4)", () => {
   it("una línea de «Entradas» sin textos pesa en el CSV escrito lo fijo de cada línea", () => {
     const document: ExportDocument = {
       header: [],
+      chart: null,
       sections: [
         {
           title: "",

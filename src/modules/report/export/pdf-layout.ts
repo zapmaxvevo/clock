@@ -1,3 +1,13 @@
+import {
+  barHeightPercent,
+  chartScaleOf,
+  tickAlignOf,
+  tickIndexesOf,
+  type TickAlign,
+} from "@/modules/report/components/chart-model";
+import { chartCaptions } from "@/modules/report/components/labels";
+import type { ReportChart } from "@/modules/report/schema";
+
 import { cellText } from "./cell-text";
 import type { ExportCell, ExportDocument, ExportRow, ExportSection } from "./types";
 
@@ -30,10 +40,31 @@ export type PdfSection =
   /** Un aviso en lugar de la tabla: los vacíos y el primer nivel cortado. */
   | { readonly kind: "note"; readonly title: string; readonly text: string };
 
+/** R7b: una barra, con su alto como fracción del techo de la escala. */
+type PdfChartBar = {
+  /** `barHeightPercent(seconds, scale) / 100`, de 0 a 1. */
+  readonly height: number;
+  /** `seconds > 0`: se dibuja con el alto mínimo aunque `height` sea casi 0. */
+  readonly hasHours: boolean;
+  /** La marca de la barra si su índice está en `tickIndexesOf`, con `pdfTextOf`; si no, `null`. */
+  readonly tick: string | null;
+  readonly tickAlign: TickAlign;
+};
+
+export type PdfChart = {
+  /** `chartCaptions[granularity]`, con `pdfTextOf`: «Horas por día». */
+  readonly caption: string;
+  /** Las líneas de `chartScaleOf`, de abajo arriba: el rótulo y su alto de 0 a 1. */
+  readonly scale: readonly { readonly label: string; readonly height: number }[];
+  readonly bars: readonly PdfChartBar[];
+};
+
 export type PdfLayout = {
   readonly title: string;
   /** D-R6-8 sin el título: el nombre y uno o dos valores por fila. */
   readonly header: readonly (readonly string[])[];
+  /** R7b: `null` si el documento no trae gráfico (D-R5-6). */
+  readonly chart: PdfChart | null;
   readonly sections: readonly PdfSection[];
 };
 
@@ -87,7 +118,32 @@ export function pdfLayoutOf(document: ExportDocument, covers: GlyphCoverage): Pd
     header: document.header
       .slice(1)
       .map((row) => row.map((cell) => pdfCellText(cell, covers))),
+    chart: document.chart === null ? null : chartOf(document.chart, covers),
     sections: document.sections.map((section) => sectionOf(section, covers)),
+  };
+}
+
+/**
+ * D-R7-12: lo que arma `ReportChart` de la pantalla, sin importar ese `.tsx`:
+ * la escala, las alturas y las marcas salen de `chart-model.ts`; el rótulo de
+ * cada línea es el texto de `durationLabel`, la duración truncada al minuto.
+ */
+function chartOf(chart: ReportChart, covers: GlyphCoverage): PdfChart {
+  const scale = chartScaleOf(chart.bars);
+  // Las siete de `tickIndexesOf`: el ancho del A4 alcanza, sin las de la pantalla angosta.
+  const ticks = new Set(tickIndexesOf(chart.bars.length));
+  return {
+    caption: pdfTextOf(chartCaptions[chart.granularity], covers),
+    scale: scale.lines.map((seconds) => ({
+      label: pdfCellText({ kind: "duration", minutes: Math.floor(seconds / 60) }, covers),
+      height: barHeightPercent(seconds, scale) / 100,
+    })),
+    bars: chart.bars.map((bar, index) => ({
+      height: barHeightPercent(bar.seconds, scale) / 100,
+      hasHours: bar.seconds > 0,
+      tick: ticks.has(index) ? pdfTextOf(bar.tick, covers) : null,
+      tickAlign: tickAlignOf(index, chart.bars.length),
+    })),
   };
 }
 

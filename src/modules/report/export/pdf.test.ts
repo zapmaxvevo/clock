@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import type { ReportChart } from "@/modules/report/schema";
 import { pdfFacts, pdfPageTexts } from "@/test/pdf";
 
 import { pdfBytesOf } from "./pdf";
@@ -33,7 +34,10 @@ function row(level: number, labels: readonly string[]): ExportRow {
   ];
 }
 
-/** El documento de `exportDocumentOf` por Persona → Proyecto → Fecha, con `rows` en el resumen. */
+/**
+ * El documento de `exportDocumentOf` por Persona → Proyecto → Fecha, con `rows`
+ * en el resumen y sin gráfico.
+ */
 function documentOf(rows: readonly ExportRow[]): ExportDocument {
   return {
     header: [
@@ -50,6 +54,7 @@ function documentOf(rows: readonly ExportRow[]): ExportDocument {
       ],
       [text("Generado"), text("08/10/2026 12:00")],
     ],
+    chart: null,
     sections: [
       {
         title: "Resumen",
@@ -197,5 +202,111 @@ describe("pdfBytesOf (D-R7-4 a D-R7-6; criterio 8 de R7)", () => {
     expect(leftText).not.toContain("Solo Derecha");
     expect(rightText).toContain("Solo Derecha");
     expect(rightText).not.toContain("Solo Izquierda");
+  });
+});
+
+/**
+ * El del criterio 17: octubre por día, 31 barras con las marcas «01/10» a
+ * «31/10»; la del 13, de 6000 s, es la más alta; la del 4, de 30 s.
+ */
+const october: ReportChart = {
+  granularity: "date",
+  bars: Array.from({ length: 31 }, (_, index) => {
+    const day = String(index + 1).padStart(2, "0");
+    return {
+      firstDay: `2026-10-${day}`,
+      label: `${day}/10`,
+      partial: null,
+      tick: `${day}/10`,
+      seconds: index === 12 ? 6000 : index === 3 ? 30 : 0,
+    };
+  }),
+};
+
+/** La leyenda, la escala de abajo arriba y las siete marcas, en el orden de dibujo. */
+const OCTOBER_TEXT =
+  "Horas por día 0:00 0:30 1:00 1:30 2:00 01/10 06/10 11/10 16/10 21/10 26/10 31/10";
+
+function withChart(document: ExportDocument): ExportDocument {
+  return { ...document, chart: october };
+}
+
+/** Lo que va de la leyenda a «Resumen», sin incluirlo; `null` sin leyenda. */
+function chartTextOf(text: string): string | null {
+  const start = text.indexOf("Horas por día");
+  const end = text.indexOf("Resumen", start);
+  return start === -1 || end === -1 ? null : text.slice(start, end).trim();
+}
+
+describe("pdfBytesOf: el gráfico (D-R7-12; criterio 18 de R7)", () => {
+  it("debajo de la cabecera: la leyenda, la escala de abajo arriba y las siete marcas enteras", async () => {
+    const pages = await pdfPageTexts(await pdfBytesOf(withChart(small)));
+
+    expect(pages).toHaveLength(1);
+    expect(chartTextOf(pages[0]?.text ?? "")).toBe(OCTOBER_TEXT);
+    expect(pages[0]?.rows).toEqual(
+      (await pdfPageTexts(await pdfBytesOf(small)))[0]?.rows,
+    );
+  });
+
+  it("baja la tabla de la primera página y se dibuja una sola vez", async () => {
+    const [charted, plain] = await Promise.all(
+      [withChart(documentOf(longRows)), documentOf(longRows)].map(async (document) =>
+        pdfPageTexts(await pdfBytesOf(document)),
+      ),
+    );
+
+    expect(charted[0]?.rows.length).toBeLessThan(plain[0]?.rows.length ?? 0);
+    expect(charted.flatMap(({ rows }) => rows)).toEqual(
+      plain.flatMap(({ rows }) => rows),
+    );
+    expect(charted.map(({ text }) => text.includes("Horas por día"))).toEqual(
+      charted.map((_, index) => index === 0),
+    );
+  });
+
+  it("no se parte: si en la primera página entra la leyenda y no el bloque, va entero a la segunda", async () => {
+    // Con 46 «Nota» quedan unos 85 pt: la leyenda mide 15 y el bloque, unos 160.
+    const notes = Array.from({ length: 46 }, (_, index) => [
+      text("Nota"),
+      text(`Aviso ${index + 1}`),
+    ]);
+    const document = withChart({ ...small, header: [...small.header, ...notes] });
+
+    const pages = await pdfPageTexts(await pdfBytesOf(document));
+
+    expect(pages).toHaveLength(2);
+    const [first, second] = pages.map(({ text }) => text);
+    // El pie va al final: entre la última «Nota» y él, nada del gráfico.
+    expect(first).toMatch(/Nota Aviso 46 Página 1 de 2$/);
+    expect(first).not.toContain("Horas por día");
+    expect(chartTextOf(second ?? "")).toBe(OCTOBER_TEXT);
+  });
+
+  it("con el primer nivel cortado, la leyenda va antes del aviso", async () => {
+    const notice =
+      "El primer nivel pasa de 3000 filas y no se muestra. Acortá el período, filtrá o agrupá por otra cosa.";
+    const document = withChart({
+      ...small,
+      sections: [{ title: "Resumen", rows: [[text(notice)]] }],
+    });
+
+    const [page] = await pdfPageTexts(await pdfBytesOf(document));
+
+    expect(chartTextOf(page?.text ?? "")).toBe(OCTOBER_TEXT);
+    expect(page?.text.indexOf(notice)).toBeGreaterThan(
+      page?.text.indexOf("Horas por día") ?? Infinity,
+    );
+  });
+
+  it("sin gráfico, ninguna página dice «Horas por»", async () => {
+    const pages = [
+      ...(await pdfPageTexts(await pdfBytesOf(small))),
+      ...(await pdfPageTexts(await pdfBytesOf(documentOf(longRows)))),
+    ];
+
+    for (const { text } of pages) {
+      expect(text).not.toContain("Horas por");
+    }
   });
 });

@@ -8,6 +8,7 @@ import { exportLabels } from "./labels";
 import {
   pdfLayoutOf,
   type GlyphCoverage,
+  type PdfChart,
   type PdfColumn,
   type PdfLayout,
   type PdfRow,
@@ -35,6 +36,18 @@ const TEXT_COLOR = "#000000";
 const MUTED_COLOR = "#6b6b6b";
 const HEADINGS_FILL = "#d9d9d9";
 const LEVEL_ONE_FILL = "#eeeeee";
+
+/**
+ * D-R7-12: el gráfico. El área, entre la columna de la escala y el margen
+ * derecho; la barra sola, como `SINGLE_COLUMN_WIDTH` de la pantalla (48 px).
+ */
+const CHART_HEIGHT = 120;
+const SINGLE_BAR_WIDTH = 36;
+const BAR_MIN_HEIGHT = 1;
+const BAR_GAP = 1;
+const CHART_LINE_WIDTH = 0.5;
+/** Impresa en gris, la barra se distingue de las líneas y del fondo del nivel 1. */
+const BAR_FILL = "#808080";
 
 const FONT_NAME = "NotoSans";
 
@@ -202,6 +215,94 @@ function draw(doc: PDFKit.PDFDocument, layout: PdfLayout): void {
     }
   }
 
+  /** Un texto en un renglón, sin ancho: `pdfkit` no lo parte ni agrega una página. */
+  function drawLine(text: string, x: number, lineY: number): void {
+    doc.text(text, x, lineY, { lineBreak: false });
+  }
+
+  /**
+   * D-R7-12: la leyenda, la escala, las líneas, las barras y las marcas, en ese
+   * orden. El bloque no se parte: si no entra, empieza en una página nueva.
+   */
+  function drawChart(chart: PdfChart): void {
+    doc.fontSize(SECTION_SIZE);
+    const captionHeight = doc.heightOfString(chart.caption, { width });
+    doc.fontSize(BODY_SIZE);
+    const lineHeight = doc.currentLineHeight();
+    // El rótulo del techo sobresale medio renglón arriba del área.
+    const blockHeight =
+      captionHeight +
+      BLOCK_GAP / 2 +
+      lineHeight / 2 +
+      CHART_HEIGHT +
+      CELL_PADDING +
+      lineHeight;
+    if (y + blockHeight > bottom) {
+      newPage();
+    }
+    doc.fontSize(SECTION_SIZE).fillColor(TEXT_COLOR).text(chart.caption, left, y, {
+      width,
+    });
+    doc.fontSize(BODY_SIZE);
+    const areaTop = y + captionHeight + BLOCK_GAP / 2 + lineHeight / 2;
+    const areaBottom = areaTop + CHART_HEIGHT;
+    const lineYOf = (height: number) => areaBottom - height * CHART_HEIGHT;
+
+    const labelWidth = Math.max(
+      ...chart.scale.map(({ label }) => doc.widthOfString(label)),
+    );
+    doc.fillColor(MUTED_COLOR);
+    for (const { label, height } of chart.scale) {
+      drawLine(
+        label,
+        left + CELL_PADDING + labelWidth - doc.widthOfString(label),
+        lineYOf(height) - lineHeight / 2,
+      );
+    }
+
+    const areaLeft = left + labelWidth + 2 * CELL_PADDING;
+    const areaWidth = left + width - areaLeft;
+    doc.lineWidth(CHART_LINE_WIDTH).strokeColor(HEADINGS_FILL);
+    for (const { height } of chart.scale) {
+      doc
+        .moveTo(areaLeft, lineYOf(height))
+        .lineTo(areaLeft + areaWidth, lineYOf(height))
+        .stroke();
+    }
+
+    const count = chart.bars.length;
+    const columnWidth = (areaWidth - (count - 1) * BAR_GAP) / count;
+    const columnLeftOf = (index: number) => areaLeft + index * (columnWidth + BAR_GAP);
+    const barWidth = count === 1 ? Math.min(SINGLE_BAR_WIDTH, columnWidth) : columnWidth;
+    chart.bars.forEach((bar, index) => {
+      if (!bar.hasHours) {
+        return;
+      }
+      const barHeight = Math.max(bar.height * CHART_HEIGHT, BAR_MIN_HEIGHT);
+      doc
+        .rect(
+          columnLeftOf(index) + (columnWidth - barWidth) / 2,
+          areaBottom - barHeight,
+          barWidth,
+          barHeight,
+        )
+        .fill(BAR_FILL);
+    });
+
+    // En un renglón: con el ancho de una columna de 31, «01/10» saldría partida.
+    const tickY = areaBottom + CELL_PADDING;
+    doc.fillColor(MUTED_COLOR);
+    chart.bars.forEach((bar, index) => {
+      if (bar.tick === null) {
+        return;
+      }
+      const free = columnWidth - doc.widthOfString(bar.tick);
+      const offset = { start: 0, center: free / 2, end: free }[bar.tickAlign];
+      drawLine(bar.tick, columnLeftOf(index) + offset, tickY);
+    });
+    y = tickY + lineHeight;
+  }
+
   function drawNote(section: Extract<PdfSection, { kind: "note" }>): void {
     doc.fontSize(BODY_SIZE);
     drawSectionTitle(section.title, doc.currentLineHeight());
@@ -215,6 +316,10 @@ function draw(doc: PDFKit.PDFDocument, layout: PdfLayout): void {
   doc.fontSize(BODY_SIZE);
   for (const row of layout.header) {
     drawHeaderRow(row);
+  }
+  if (layout.chart !== null) {
+    y += BLOCK_GAP;
+    drawChart(layout.chart);
   }
   for (const section of layout.sections) {
     y += BLOCK_GAP;
