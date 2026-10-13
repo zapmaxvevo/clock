@@ -56,9 +56,9 @@ describe("changeRoleInput (D-R8-4, D-R8-6)", () => {
     ["un número", 42],
     ["un nulo", null],
   ])("rechaza %s como id con «Esa persona ya no está en el equipo.»", (_label, id) => {
-    expect(messageOf(changeRoleInput.safeParse({ membershipId: id, role: "admin" }))).toBe(
-      teamMessages.notFound,
-    );
+    expect(
+      messageOf(changeRoleInput.safeParse({ membershipId: id, role: "admin" })),
+    ).toBe(teamMessages.notFound);
   });
 
   it("rechaza un pedido sin id con «Esa persona ya no está en el equipo.»", () => {
@@ -71,9 +71,14 @@ describe("changeRoleInput (D-R8-4, D-R8-6)", () => {
     ["un nulo", null],
     ["un texto", "admin"],
     ["una lista", [membershipId, "admin"]],
-  ])("rechaza %s en lugar del objeto con «Ese rol no está disponible.»", (_label, input) => {
-    expect(messageOf(changeRoleInput.safeParse(input))).toBe(teamMessages.roleUnavailable);
-  });
+  ])(
+    "rechaza %s en lugar del objeto con «Ese rol no está disponible.»",
+    (_label, input) => {
+      expect(messageOf(changeRoleInput.safeParse(input))).toBe(
+        teamMessages.roleUnavailable,
+      );
+    },
+  );
 });
 
 describe("teamView", () => {
@@ -81,7 +86,9 @@ describe("teamView", () => {
     for (const reason of ["inactive", "role"] as const) {
       expect(teamView.safeParse({ kind: "forbidden", reason }).success).toBe(true);
     }
-    expect(teamView.safeParse({ kind: "forbidden", reason: "other" }).success).toBe(false);
+    expect(teamView.safeParse({ kind: "forbidden", reason: "other" }).success).toBe(
+      false,
+    );
   });
 
   it("admite la lista con una fila de cada uno de los cinco roles", () => {

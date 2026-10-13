@@ -1,4 +1,7 @@
-import type { Transaction } from "@/server/db";
+import { and, asc, eq, or } from "drizzle-orm";
+
+import { db, type Transaction } from "@/server/db";
+import { membership, user, userPreference } from "@/server/db/schema";
 import type { MembershipStatus, Role } from "@/server/permissions";
 
 import type { ChangeableRole } from "./schema";
@@ -29,8 +32,22 @@ export const teamRepository = {
    * Las membresías `active` de `workspaceId`, con `"user"` interno y
    * `user_preference` con `left join`. Sin orden.
    */
-  async listActiveMembers(_workspaceId: string): Promise<readonly TeamMemberRow[]> {
-    throw new Error("R8: listActiveMembers sin implementar.");
+  async listActiveMembers(workspaceId: string): Promise<readonly TeamMemberRow[]> {
+    return db
+      .select({
+        membershipId: membership.id,
+        userId: membership.userId,
+        role: membership.role,
+        accountName: user.name,
+        email: user.email,
+        displayName: userPreference.displayName,
+      })
+      .from(membership)
+      .innerJoin(user, eq(user.id, membership.userId))
+      .leftJoin(userPreference, eq(userPreference.userId, membership.userId))
+      .where(
+        and(eq(membership.workspaceId, workspaceId), eq(membership.status, "active")),
+      );
   },
 
   /**
@@ -38,23 +55,48 @@ export const teamRepository = {
    * `id = membershipId` o `user_id = actorUserId`, `order by id`,
    * `for no key update`. Devuelve las que existen: ninguna, una (también si
    * son la misma) o dos.
+   *
+   * Una sola sentencia ordenada: dos, o el orden de los parámetros, pueden
+   * esperarse en círculo con otro cambio que pide las mismas dos (ADR 0011).
+   * `for no key update` no choca con el `for key share` que toma un alta de
+   * horas sobre la membresía por su clave foránea.
    */
   async lockForRoleChange(
-    _tx: Transaction,
-    _workspaceId: string,
-    _membershipId: string,
-    _actorUserId: string,
+    tx: Transaction,
+    workspaceId: string,
+    membershipId: string,
+    actorUserId: string,
   ): Promise<readonly LockedMembership[]> {
-    throw new Error("R8: lockForRoleChange sin implementar.");
+    return tx
+      .select({
+        id: membership.id,
+        userId: membership.userId,
+        role: membership.role,
+        status: membership.status,
+      })
+      .from(membership)
+      .where(
+        and(
+          eq(membership.workspaceId, workspaceId),
+          or(eq(membership.id, membershipId), eq(membership.userId, actorUserId)),
+        ),
+      )
+      .orderBy(asc(membership.id))
+      .for("no key update");
   },
 
   /** El rol de `(workspaceId, membershipId)`. `updated_at` lo pone `$onUpdate`. */
   async updateRole(
-    _tx: Transaction,
-    _workspaceId: string,
-    _membershipId: string,
-    _role: ChangeableRole,
+    tx: Transaction,
+    workspaceId: string,
+    membershipId: string,
+    role: ChangeableRole,
   ): Promise<void> {
-    throw new Error("R8: updateRole sin implementar.");
+    await tx
+      .update(membership)
+      .set({ role })
+      .where(
+        and(eq(membership.workspaceId, workspaceId), eq(membership.id, membershipId)),
+      );
   },
 };
