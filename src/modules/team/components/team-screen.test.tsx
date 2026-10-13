@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { teamView, type TeamActions } from "@/modules/team/schema";
-import { bodyRows } from "@/test/markup";
+import { bodyRows, buttonsOf, textOf } from "@/test/markup";
 
 import { TEAM_HEADING_ID } from "./team-members-model";
 import { TeamScreen } from "./team-screen";
@@ -65,20 +65,10 @@ function render(view: unknown): string {
   );
 }
 
-/** El texto visible, sin etiquetas. */
-function textOf(markup: string): string {
-  return markup.replace(/<[^>]*>/g, "");
-}
-
 /** La fila del cuerpo de la tabla cuyo encabezado empieza con `name`. */
 function rowOf(markup: string, name: string): string {
   const rows = markup.match(/<tr[^>]*><th scope="row".*?<\/tr>/g) ?? [];
   return rows.find((row) => textOf(row).startsWith(name)) ?? "";
-}
-
-/** Los botones de `markup`, con su apertura y su texto. */
-function buttonsOf(markup: string): string[] {
-  return markup.match(/<button[^>]*>.*?<\/button>/g) ?? [];
 }
 
 describe("TeamScreen", () => {

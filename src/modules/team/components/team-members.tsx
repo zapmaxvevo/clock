@@ -45,23 +45,23 @@ export function TeamMembers({ members, changeRole }: TeamMembersProps) {
   const [confirming, setConfirming] = useState<TeamMember | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   /** El nombre de la fila del último pedido: la fila puede irse con la revalidación. */
-  const target = useRef("");
+  const targetName = useRef("");
 
   const { pending, run, retry } = useAction(changeRole, {
     unreachableMessage: teamMessages.unexpected,
     onSuccess: (data) =>
-      setOutcome({ kind: "changed", name: target.current, role: data.role }),
+      setOutcome({ kind: "changed", name: targetName.current, role: data.role }),
     onFailure: (failure) =>
       setOutcome({
         kind: "failed",
-        name: target.current,
+        name: targetName.current,
         code: failure.code,
         message: failure.message,
       }),
   });
 
   function send(input: ChangeRoleInput): void {
-    target.current =
+    targetName.current =
       members.find((member) => member.membershipId === input.membershipId)?.name ?? "";
     setOutcome(null);
     run(input);
@@ -80,10 +80,8 @@ export function TeamMembers({ members, changeRole }: TeamMembersProps) {
         feedback={feedbackOf(outcome)}
         onActivate={(member) => activate(member, pending, { send, confirm })}
         onRetry={() => {
-          if (pending) {
-            return;
-          }
-          // El aviso se va mientras viaja, como el de `useAction`.
+          // El aviso se va mientras viaja, como el de `useAction`: sin él no hay
+          // un segundo «Reintentar» con el pedido en curso.
           setOutcome(null);
           retry();
         }}
@@ -114,7 +112,7 @@ type TeamMembersViewProps = {
   readonly feedback: TeamFeedback | null;
   /** El clic en el botón de una fila. */
   readonly onActivate: (member: TeamMember) => void;
-  /** Siempre el `retry` de `useAction`; se ofrece solo si `feedback.retry`. */
+  /** Reenvía el último pedido; se ofrece solo si `feedback.retry`. */
   readonly onRetry: () => void;
 };
 

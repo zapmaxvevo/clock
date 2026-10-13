@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { teamView, type TeamMember } from "@/modules/team/schema";
+import { buttonsOf, textOf } from "@/test/markup";
 
 import { TeamMembersView } from "./team-members";
 import type { TeamFeedback } from "./team-members-model";
@@ -39,17 +40,6 @@ function render(pending: boolean, feedback: TeamFeedback | null): string {
       onRetry={() => undefined}
     />,
   );
-}
-
-/** Los botones de la tabla, con su apertura y su texto. */
-function buttonsOf(markup: string): string[] {
-  const table = markup.slice(markup.indexOf("<table"));
-  return table.match(/<button[^>]*>.*?<\/button>/g) ?? [];
-}
-
-/** El texto visible, sin etiquetas. */
-function textOf(markup: string): string {
-  return markup.replace(/<[^>]*>/g, "");
 }
 
 describe("TeamMembersView", () => {
