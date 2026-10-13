@@ -9,9 +9,9 @@ import { db, type Transaction } from "@/server/db";
 import type { Actor } from "@/server/permissions";
 import { startOfDayKey } from "@/server/time";
 import {
+  outcomeWhileHeld,
   queueBehindBarrier,
   raceThroughBarrier,
-  waitForBlockedBackends,
   warmPool,
 } from "@/test/concurrency";
 import {
@@ -104,47 +104,6 @@ function holdCell(date: string, pair: ProjectPair, timeZone = buenosAires) {
       pair,
       from: startOfDayKey(date, timeZone),
     });
-}
-
-/**
- * Lo que termina `work` mientras otra transacción sostiene el bloqueo de
- * `hold`, o `"blocked"` si se trabó esperándolo. Es `outcomeWhileLocked` con
- * cualquier bloqueo, también el consultivo de una celda.
- */
-async function outcomeWhileHeld(
-  hold: (tx: Transaction) => Promise<unknown>,
-  work: () => Promise<unknown>,
-) {
-  let holding = () => {};
-  const held = new Promise<void>((resolve) => {
-    holding = resolve;
-  });
-  let release = () => {};
-  const released = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const holder = db.transaction(async (tx) => {
-    await hold(tx);
-    holding();
-    await released;
-  });
-  await Promise.race([held, holder]);
-  const running = work().then(
-    () => "resolved",
-    (error: unknown) => error,
-  );
-  const waiting = new AbortController();
-  try {
-    return await Promise.race([
-      running,
-      waitForBlockedBackends({ count: 1, signal: waiting.signal }).then(() => "blocked"),
-    ]);
-  } finally {
-    waiting.abort();
-    release();
-    await holder;
-    await running;
-  }
 }
 
 /** Lo que hay en la base, para comparar antes y después de un pedido que no escribe. */
