@@ -432,6 +432,102 @@ describe("can sobre el reporte (ADR 0020, P-01, RP-07)", () => {
   });
 });
 
+describe("team.manage sobre una membresía (R8, §3)", () => {
+  const otherWorkspace = "22222222-2222-2222-2222-222222222222";
+
+  function target(role: Role, userId = "u2", inWorkspace = workspaceId) {
+    return { kind: "membership", workspaceId: inWorkspace, userId, role } as const;
+  }
+
+  const member = target("member");
+  const admin = target("admin");
+  const ownerMembership = target("owner", "u9");
+
+  it("el owner activo cambia a un member y a un admin, y la regla le deja tocar la suya", () => {
+    expect([
+      can(actor("owner"), "team.manage", member),
+      can(actor("owner"), "team.manage", admin),
+      can(actor("owner"), "team.manage", target("owner", "u1")),
+    ]).toEqual([true, true, true]);
+  });
+
+  it("un admin activo cambia a un member, a otro admin y a sí mismo, y no al owner", () => {
+    expect([
+      can(actor("admin"), "team.manage", member),
+      can(actor("admin"), "team.manage", admin),
+      can(actor("admin"), "team.manage", target("admin", "u1")),
+      can(actor("admin"), "team.manage", ownerMembership),
+    ]).toEqual([true, true, true, false]);
+  });
+
+  it("project_manager, team_manager y member activos no cambian ninguna", () => {
+    for (const role of ["project_manager", "team_manager", "member"] as const) {
+      expect([
+        role,
+        can(actor(role), "team.manage", member),
+        can(actor(role), "team.manage", admin),
+        can(actor(role), "team.manage", ownerMembership),
+        can(actor(role), "team.manage", target(role, "u1")),
+      ]).toEqual([role, false, false, false, false]);
+    }
+  });
+
+  it("un owner o un admin inactive o invited no cambian ninguna, tampoco la propia", () => {
+    for (const status of ["inactive", "invited"] as const) {
+      for (const role of ["owner", "admin"] as const) {
+        expect([
+          status,
+          role,
+          can(actor(role, { status }), "team.manage", member),
+          can(actor(role, { status }), "team.manage", admin),
+          can(actor(role, { status }), "team.manage", ownerMembership),
+          can(actor(role, { status }), "team.manage", target(role, "u1")),
+        ]).toEqual([status, role, false, false, false, false]);
+      }
+    }
+  });
+
+  it("nadie cambia una membresía de otro workspace, tampoco el owner sobre un member", () => {
+    for (const role of ["owner", "admin"] as const) {
+      for (const targetRole of ["member", "admin", "owner"] as const) {
+        expect([
+          role,
+          targetRole,
+          can(actor(role), "team.manage", target(targetRole, "u2", otherWorkspace)),
+        ]).toEqual([role, targetRole, false]);
+      }
+    }
+  });
+
+  it("sobre el workspace, la puerta de la pantalla: solo owner y admin activos", () => {
+    const roles = [
+      "owner",
+      "admin",
+      "project_manager",
+      "team_manager",
+      "member",
+    ] as const;
+    expect(
+      roles.map((role) => [role, can(actor(role), "team.manage", workspace)]),
+    ).toEqual([
+      ["owner", true],
+      ["admin", true],
+      ["project_manager", false],
+      ["team_manager", false],
+      ["member", false],
+    ]);
+    for (const status of ["inactive", "invited"] as const) {
+      for (const role of ["owner", "admin"] as const) {
+        expect([
+          status,
+          role,
+          can(actor(role, { status }), "team.manage", workspace),
+        ]).toEqual([status, role, false]);
+      }
+    }
+  });
+});
+
 describe("assertCan", () => {
   it("lanza ForbiddenError cuando can devuelve false", () => {
     expect(() => assertCan(actor("member"), "team.manage", workspace)).toThrow(
