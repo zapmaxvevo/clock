@@ -22,8 +22,8 @@ cambios de tablas, de índices ni de permisos.
   R9, que va antes (§0), y, solo si el PDF lleva el gráfico, de R5.
 - **Tres partes** (D-R7-1): **R7-0**, la medición, **hecha**
   ([informe](nucleo-reportes-r7-medicion.md), `7644438`); **R7a**, el PDF de la
-  cabecera y el resumen; **R7b**, el gráfico de R5 dentro del PDF, que no se
-  arranca hasta que el usuario lo pida (§10).
+  cabecera y el resumen; **R7b**, el gráfico de R5 dentro del PDF, que el
+  usuario pidió el 2026-10-13 (§10).
 - **Los números de este contrato salen del informe de R7-0.** El architect no
   tuvo shell. Lo único sin verificar que queda son los límites de Vercel,
   _no verificados_, y el paso de `pdfkit` 0.20.1, la medida, a 0.20.2, que
@@ -34,7 +34,14 @@ cambios de tablas, de índices ni de permisos.
   cuatro menores; aplicada el 2026-10-12, con las decisiones del team-lead
   ([correcciones](correcciones-nucleo-reportes-r7-contrato.md)). Las líneas tocadas
   se verificaron el mismo día: **aprobado con menores**, aplicados por el
-  team-lead.
+  team-lead. **La ronda de R7b**, el 2026-10-13, contra `main` en `10b8af0`
+  (R7a mergeado en `bb93255`), dio «pide cambios» en R7b, con tres mayores (el
+  diseño del gráfico, los criterios 16 a 19 y el reparto), cuatro menores y dos
+  de texto; aplicados el mismo día por decisión del team-lead, con tres citas
+  corregidas (`reports-page.ts:990-1001`, `service.ts:947-950`,
+  `reports.spec.ts:2702-2710`) y las medidas y colores de §4.6 decididos por
+  `architect`; la segunda pasada, sobre el diff, dio «aprobado con retoques»,
+  aplicados por el team-lead. R7a no cambia.
 - **Decisiones de arquitectura asociadas**, todas aceptadas:
   - [ADR 0022](../adr/0022-el-pdf-del-reporte-se-dibuja-con-pdfkit.md): el PDF
     se dibuja en el servidor con `pdfkit`, empaquetado, con la tabla y la
@@ -109,8 +116,8 @@ Opciones: (1) un slice; (2) **R7-0, R7a y R7b**. **(2).**
 - **R7a** es un escritor más sobre el documento de R6, una entrada en la tabla
   de formatos, la lectura sin entradas, una ruta de una línea, un texto en la
   barra y la regla de ESLint. Se despliega sola.
-- **R7b** suma el gráfico al PDF. Depende de que el usuario lo pida y de R7a. Si
-  no lo pide, no existe.
+- **R7b** suma el gráfico al PDF. Depende de R7a, que está en `main`
+  (`bb93255`), y la pidió el usuario el 2026-10-13 (§10).
 
 **D-R7-2 — Qué trae el PDF: la cabecera y el resumen, sin las entradas.**
 Opciones: (1) **cabecera y resumen**; (2) también las entradas, como el CSV.
@@ -129,7 +136,8 @@ Opciones: (1) **cabecera y resumen**; (2) también las entradas, como el CSV.
   nota del primer nivel cortado. El tope de 3000 filas es `REPORT_MAX_ROWS`, el
   de la pantalla y el de Clockify («A PDF file can contain up to 3000 rows.»);
   no hay tope nuevo.
-- **Sin gráfico en R7a** (D-R7-12): queda pendiente del usuario (§10).
+- **Sin gráfico en R7a** (D-R7-12): lo suma R7b, que el usuario pidió el
+  2026-10-13 (§10).
 
 **D-R7-3 — Una exportación sin entradas, con el tope de duración igual.**
 
@@ -376,17 +384,21 @@ local, con `pdfkit` 0.20.1 y Noto: 3000 filas en 0,28 s y 122 MB de pico de
 nuevo, la lectura real de 780 filas y la escritura de 3000) da 0,85 s de
 mediana contra el presupuesto de 5 s. §6.2 lo repite con un pedido real.
 
-**D-R7-12 — El gráfico en el PDF (R7b), si el usuario lo pide.**
+**D-R7-12 — El gráfico en el PDF (R7b), pedido por el usuario el 2026-10-13.**
 
 - RP-53 dice que en Clockify se puede sacar el gráfico del PDF («you can
   disable certain information (user, charts, etc.)»): Clockify lo trae. El CSV
   y el Excel no (D-R6-2).
-- **Si va**: el documento suma `chart: ReportChart | null`, que CSV y Excel no
-  escriben; el PDF dibuja, debajo de la cabecera y antes de la tabla, las barras
-  de `state.chart` como rectángulos de `pdfkit`, con la escala, las marcas y
-  los rótulos de `chart-model.ts` (`chartScaleOf`, `tickIndexesOf`,
-  `tickAlignOf`, `barHeightPercent`), que no importa React ni nada del
-  navegador. Ninguna imagen.
+- **Cómo va**: el documento suma `chart: ReportChart | null`, que CSV y Excel
+  no escriben; el PDF dibuja, debajo de la cabecera y antes de la primera
+  sección, el gráfico de `input.report.chart` con rectángulos y líneas de
+  `pdfkit`: la escala, las alturas, las marcas y su alineación salen de
+  `chart-model.ts` (`chartScaleOf`, `tickIndexesOf`, `tickAlignOf`,
+  `barHeightPercent`), que no importa nada; la leyenda, de `chartCaptions`; las
+  marcas, de `bar.tick`; los rótulos de la escala, de `cellText` con la
+  duración truncada al minuto (el texto de `durationLabel`, sin importar
+  `group-heading.tsx`). Ninguna imagen, ningún valor por barra ni tabla de
+  datos (§4.5, §4.6).
 - **Sin opciones de qué mostrar** («you can disable…»): la URL no lleva
   parámetros de exportación (D-R6-4).
 
@@ -410,7 +422,8 @@ en `npm test`. A mano: cómo se ve en un visor y al imprimir.
 - **R7-0 está hecha** (`7644438`) y el ADR 0022, aceptado. **R7a no tiene
   pendientes del usuario**: la biblioteca, la fuente y `pdfjs-dist` están
   decididas (§10).
-- **R7b espera que el usuario pida el gráfico.**
+- **R7b la pidió el usuario el 2026-10-13**; parte de `main` con R7a
+  (`10b8af0`).
 - **Sin comprobación contra Neon antes de mergear**: ninguna sentencia nueva;
   la lectura del PDF es la de la página más el tope de duración, que ya corre
   en producción desde R6a. La comprobación en Vercel (la descarga, las
@@ -497,6 +510,63 @@ Las líneas se corren con R9; mandan los nombres.
   del PDF. Midió también M8 (el peor pedido entero en frío) y M9
   (`pdfjs-dist` bajo Vitest).
 
+### Supuestos de R7b, con archivo y línea en `10b8af0`
+
+Verificados por la revisión del 2026-10-13 y otra vez al aplicarla; mandan los
+nombres.
+
+- **El documento**: `ExportDocument`, con solo `header` y `sections`
+  (`export/types.ts:24-29`); `ExportWriter` (`:32-37`). `exportDocumentOf`
+  (`export/document.ts:34-46`) recibe `ReportExportInput` (`:28-31`), que lleva
+  el estado de la página en `report`: el gráfico es `input.report.chart`. Ya
+  importa de `components/labels.ts` (`:2`), donde está `chartCaptions`
+  (`components/labels.ts:163-167`).
+- **El diseño**: `PdfCell` sin `export` (`export/pdf-layout.ts:8`), `PdfLayout`
+  (`:33-38`), `pdfTextOf` (`:54-62`) y `pdfLayoutOf` (`:79-92`), que no pagina.
+- **El escritor** (`export/pdf.ts`): `draw` (`:60-227`) dibuja el título y la
+  cabecera, y después cada sección con `BLOCK_GAP` antes (`:212-226`); pagina
+  por `y` (`:65`, `:189-192`); `drawSectionTitle` lleva el título junto con los
+  encabezados y la primera fila (`:150-159`); el alto útil de una página nueva
+  se calcula debajo de los encabezados (`:169`), y el gráfico no lo cambia;
+  `SECTION_SIZE = 11` (`:21`), `CELL_PADDING` (`:23`), `BLOCK_GAP` (`:25`),
+  `MUTED_COLOR` y `HEADINGS_FILL` (`:35-36`); el pie se escribe con
+  `lineBreak: false` (`:241-246`).
+- **`cellText`** escribe `duration` con `formatDuration(minutes)`
+  (`export/cell-text.ts:19-20`).
+- **`chart-model.ts` no importa nada**: `TickAlign` (`:20`), `chartScaleOf`
+  (`:29`, el techo en `:32`), `tickIndexesOf` (`:52-55`), `tickAlignOf`
+  (`:70-78`) y `barHeightPercent` (`:81-83`). `ChartScale` no se exporta
+  (`:2`), y no hace falta.
+- **`durationLabel`** (`components/group-heading.tsx:21-23`) vive en un `.tsx`
+  con componentes, que importa la paleta de proyectos (`:4`).
+- **La pantalla**: `ReportChart` arma la escala, las alturas y las marcas
+  (`components/report-chart.tsx:20-46`); `ChartBars` dibuja 1 px entre
+  columnas (`chart-bars.tsx:139`), la barra con el alto mínimo solo con horas
+  (`:164-167`), la barra sola con un ancho tope y centrada
+  (`SINGLE_COLUMN_WIDTH = "max-w-12"`, 48 px, `:42`) y cada marca en un renglón
+  (`whitespace-nowrap`, `:198`).
+- **El estado**: `ReportChart` (`schema.ts:615`), con `bars` de 1 a
+  `REPORT_CHART_MAX_BARS = 31` (`:105`, `:532-537`), y cada barra con `label`,
+  `partial`, `tick` y `seconds` (`:517-530`). `chart` es `null` solo sin filas
+  (`service.ts:929-931`); la marca es `bar.tick` (`:947-950`). **Toda
+  exportación ya lee el gráfico**: `totalsByBucket` corre dentro de
+  `readReport` (`:876-880`). La pantalla lo muestra siempre que no es `null`,
+  también con el primer nivel cortado (`report-view.tsx:73`).
+- **El lector**: `pdfPageTexts` (`src/test/pdf.ts:104-134`) devuelve `text` en
+  el orden de dibujo, y `rows` solo con lo que está debajo del fragmento
+  «Nivel» (`:40-58`, el filtro en `:46`): un gráfico dibujado arriba de la
+  tabla no ensucia `rows`. `pdfFacts` (`:144-157`).
+- **e2e**: `readPdf` (`e2e/reports-page.ts:440-447`) devuelve `pdfPageTexts`;
+  `chartCaption(granularity)` recibe `"fecha"`, `"semana"` o `"mes"`
+  (`:990-1001`). El recorrido 28 (`e2e/reports.spec.ts:2653`) afirma una página
+  (`:2690`), el período (`:2693-2695`) y las `rows` exactas (`:2702-2710`); sus
+  entradas son de 1:30 el 15/09, 0:30 el 16/09 y 0:45 el 17/09
+  (`seedExportEntries`, `:2123-2153`).
+- **Los documentos escritos a mano** que `chart` obligatorio deja sin compilar:
+  `csv.test.ts:19` y `:28`; `xlsx.test.ts:16`, `:156` y `:173`;
+  `entry-size.test.ts:13`; `document.test.ts:81`; `pdf.test.ts:38`;
+  `pdf-layout.test.ts:290`, `:330` y `:349`.
+
 ## 1. Alcance
 
 **R7a** entra:
@@ -513,7 +583,7 @@ Las líneas se corren con R9; mandan los nombres.
 - **Los tests**: el lector `src/test/pdf.ts` y la regla de ESLint de D-R7-9.
 - **La medición** de §6.2.
 
-**R7b**, si el usuario lo pide: el gráfico en el documento y en el PDF
+**R7b**, pedido el 2026-10-13: el gráfico en el documento y en el PDF
 (D-R7-12).
 
 Queda afuera: ver §11.
@@ -553,6 +623,13 @@ Queda afuera: ver §11.
 - **`e2e/reports-page.ts`, `e2e/reports.spec.ts`**: `"pdf"` en `ExportFormat`,
   `"PDF"` en `ExportLabel`, `readPdf(path)` y el recorrido 28 (29 en R7b).
   Ningún export se renombra. Vuelve a probar: `reports.spec.ts` entero.
+- **R7b** (§7): `export/types.ts` suma `ExportDocument.chart`;
+  `export/document.ts` lo llena; `pdf-layout.ts` arma `PdfChart` y `pdf.ts` lo
+  dibuja. Los documentos escritos a mano de los tests (§0, «Supuestos de R7b»)
+  suman `chart: null`, sin otro cambio. Vuelve a probar: `csv.test.ts`,
+  `xlsx.test.ts` y `entry-size.test.ts` con los mismos valores, los criterios 5
+  a 9 con los suyos (el 9 ahora escribe el gráfico real del estado: «Página 1
+  de 1» y las mismas `rows`) y el recorrido 28 entero.
 
 La página no lee nada nuevo y la barra suma un enlace. `next.config.ts` no
 cambia. Las ediciones fuera del reparto siguen la regla de R3 a R6: las hace el
@@ -653,6 +730,27 @@ export type ExportWriter = {
   sección «Resumen», y ninguna más. `ReportExportInput` no cambia de forma: la
   toma de `ReportExportState`.
 
+**R7b (D-R7-12).** El documento suma el gráfico, que solo dibuja el PDF:
+
+```ts
+// export/types.ts
+export type ExportDocument = {
+  /** D-R6-8, una fila por dato. */
+  readonly header: readonly ExportRow[];
+  /** D-R7-12: el de la pantalla; `null` sin filas (D-R5-6). CSV y Excel no lo escriben. */
+  readonly chart: ReportChart | null;
+  /** El resumen y, si se leyeron, las entradas, en ese orden (D-R7-3). */
+  readonly sections: readonly ExportSection[];
+};
+```
+
+- **`exportDocumentOf`** pone `chart: input.report.chart`, el mismo valor, con
+  o sin entradas y también con el primer nivel cortado (`levelsShown: 0`),
+  como la pantalla (`report-view.tsx:73`). `types.ts` toma `ReportChart` de
+  `report/schema.ts` con `import type`.
+- `csv.ts`, `xlsx.ts`, `entry-size.ts` y `handler.ts` no cambian: ninguno lee
+  `chart`, y el handler arma el documento con `exportDocumentOf`.
+
 ### 4.4 El texto de una celda (`export/cell-text.ts`, nuevo)
 
 ```ts
@@ -675,7 +773,7 @@ Puro y sin biblioteca: decide qué va en cada lugar. `pdf.ts` solo lo dibuja.
 export type GlyphCoverage = (codePoint: number) => boolean;
 
 /** Una celda ya escrita; `muted`, el rótulo de un antepasado (D-R7-6). */
-export type PdfCell = { readonly text: string; readonly muted: boolean };
+type PdfCell = { readonly text: string; readonly muted: boolean };
 
 export type PdfColumn = {
   readonly label: string;
@@ -738,6 +836,62 @@ export function pdfLayoutOf(document: ExportDocument, covers: GlyphCoverage): Pd
 - **Todo texto** sale de `cellText` y pasa por `pdfTextOf`, también los
   encabezados, los títulos y los avisos. Ningún `'`.
 
+**R7b (D-R7-12).** `PdfLayout` suma `chart`, con `TickAlign` de
+`components/chart-model.ts`:
+
+```ts
+/** R7b: una barra, con su alto como fracción del techo de la escala. */
+type PdfChartBar = {
+  /** `barHeightPercent(seconds, scale) / 100`, de 0 a 1. */
+  readonly height: number;
+  /** `seconds > 0`: se dibuja con el alto mínimo aunque `height` sea casi 0. */
+  readonly hasHours: boolean;
+  /** La marca de la barra si su índice está en `tickIndexesOf`, con `pdfTextOf`; si no, `null`. */
+  readonly tick: string | null;
+  readonly tickAlign: TickAlign;
+};
+
+export type PdfChart = {
+  /** `chartCaptions[granularity]`, con `pdfTextOf`: «Horas por día». */
+  readonly caption: string;
+  /** Las líneas de `chartScaleOf`, de abajo arriba: el rótulo y su alto de 0 a 1. */
+  readonly scale: readonly { readonly label: string; readonly height: number }[];
+  readonly bars: readonly PdfChartBar[];
+};
+
+export type PdfLayout = {
+  readonly title: string;
+  /** D-R6-8 sin el título: el nombre y uno o dos valores por fila. */
+  readonly header: readonly (readonly string[])[];
+  /** R7b: `null` si el documento no trae gráfico (D-R5-6). */
+  readonly chart: PdfChart | null;
+  readonly sections: readonly PdfSection[];
+};
+```
+
+- `pdfLayoutOf` usa `chartScaleOf`, `tickIndexesOf` (no `narrowTickIndexesOf`:
+  el ancho del A4 alcanza para siete marcas), `tickAlignOf` y `barHeightPercent`
+  de `components/chart-model.ts`, y `chartCaptions` de `components/labels.ts`.
+  Arma lo mismo que `ReportChart` de la pantalla
+  (`components/report-chart.tsx:20-46`), sin importar ese `.tsx`.
+- **El rótulo de cada línea de la escala** es
+  `cellText({ kind: "duration", minutes: Math.floor(seconds / 60) })`, el mismo
+  texto que `durationLabel` (`components/group-heading.tsx:21-23`), sin
+  importar ese `.tsx`. Su `height` es `barHeightPercent(seconds, scale) / 100`:
+  0 la de abajo y 1 la del techo.
+- **Todo texto del gráfico pasa por `pdfTextOf`**: la leyenda, los rótulos de
+  la escala y las marcas.
+- La marca es `bar.tick` del estado; `label` y `partial` no se dibujan (en la
+  pantalla solo se ven al pasar el puntero o en la tabla de datos).
+- **La barra sola**, la de un período de un día (D-R5-4): su marca, con
+  `tickAlign: "center"` (`tickAlignOf(0, 1)`).
+- **Las barras en cero**: `height: 0` y `hasHours: false`. Si todas lo fueran,
+  la escala es la de `chartScaleOf` («0:00» y «0:15»), sin caso propio.
+- Con `document.chart === null`, `chart: null`. Las secciones no cambian con o
+  sin gráfico: con el primer nivel cortado, el gráfico y después el aviso, como
+  la pantalla (`report-view.tsx:73`).
+- `PdfChartBar` no se exporta, como `PdfCell`; `pdf.ts` importa `PdfChart`.
+
 ### 4.6 El escritor (`export/pdf.ts`, nuevo)
 
 ```ts
@@ -760,6 +914,41 @@ En cada llamada, sin nada guardado en el módulo:
    `bufferPages: true`, `lang: "es"` e `info.Title` «Reporte resumido»;
    `registerFont` con los mismos bytes y la fuente para todo el texto.
 3. **La cabecera**: el título y las filas de nombre y valor.
+
+3 bis. **(R7b) El gráfico**, si `layout.chart` no es `null`, debajo de la
+cabecera y antes de la primera sección, con el mismo `BLOCK_GAP` antes que una
+sección, en este orden de dibujo: la leyenda, en 11 pt (como «Resumen») y en
+negro; los rótulos de la escala de abajo arriba; las líneas, las barras y las
+marcas de izquierda a derecha. Es el orden del `text` que leen los tests
+(criterio 18). **El bloque no se parte**: si no entra en lo que queda de la
+página, `addPage` antes de la leyenda. Se dibuja una sola vez, en la página
+donde empieza, y `y` queda debajo de las marcas: la primera sección empieza
+ahí, y la tabla de la primera página tiene menos filas sin tocar `pdfLayoutOf`.
+
+- **El alto del bloque** se mide antes de dibujar: la leyenda
+  (`heightOfString` en 11 pt), `BLOCK_GAP / 2`, medio renglón de 9 pt (lo que
+  el rótulo del techo sobresale del área), el área, `CELL_PADDING` y un renglón
+  de 9 pt para las marcas. Son unos 170 pt contra unos 770 de alto útil: entra
+  siempre en una página nueva, y no hace falta un `RangeError`.
+- La escala: una columna a la izquierda, tan ancha como su rótulo más ancho
+  (`widthOfString`) más `CELL_PADDING` a cada lado, con los rótulos en 9 pt,
+  en gris (`MUTED_COLOR`) y a la derecha, centrados en el alto de su línea y
+  escritos con `lineBreak: false`; las líneas, de 0,5 pt, del color del fondo
+  de los encabezados (`HEADINGS_FILL`), de lado a lado del área.
+- El área: 120 pt de alto, del borde de la escala al margen derecho; las
+  barras se reparten el ancho con 1 pt entre ellas; con una sola barra, 36 pt
+  de ancho como mucho y centrada (como `SINGLE_COLUMN_WIDTH`,
+  `chart-bars.tsx:42`: 48 px son 36 pt); el alto, `height` por el del área,
+  con 1 pt como mínimo si `hasHours`; sin barra si no. Las barras van encima
+  de las líneas.
+- Las marcas, en 9 pt y en gris, a `CELL_PADDING` debajo del área y debajo de
+  su columna según `tickAlign` (`start` desde su borde izquierdo, `end` hasta
+  el derecho, `center` centrada), **en un renglón**: la posición sale de
+  `widthOfString` y se escriben con `lineBreak: false`, nunca con el ancho de
+  la columna. Con 31 barras cada columna mide unos 15 pt y «01/10», unos
+  24 pt: con el `width` de la columna, `pdfkit` la parte (D-R7-5).
+- Sin valores por barra ni tabla de datos.
+
 4. **Cada sección**: su título; si es un aviso, el párrafo; si es una tabla,
    la fila de encabezados sobre fondo y después cada fila: su altura es la
    mayor de `heightOfString` de sus celdas, al ancho de cada columna menos el
@@ -776,9 +965,13 @@ En cada llamada, sin nada guardado en el módulo:
 
 **Las medidas y los colores** son constantes del archivo: márgenes 36 pt,
 cuerpo 9 pt, título 14 pt, el relleno de las celdas, el gris de los
-antepasados y el fondo del nivel 1 y de los encabezados. **La ruta de la
-fuente va literal en la llamada a `join`** (D-R7-5): ni una constante
-concatenada ni `import.meta.url`.
+antepasados y el fondo del nivel 1 y de los encabezados; en R7b, el alto del
+área del gráfico (120 pt), el ancho de la barra sola (36 pt), el alto mínimo
+de una barra (1 pt), el espacio entre barras (1 pt), el grosor de las líneas
+(0,5 pt) y el gris de las barras (`#808080`): impreso en gris, la barra se
+distingue de las líneas (`#d9d9d9`) y del fondo del nivel 1 (`#eeeeee`). **La
+ruta de la fuente va literal en la llamada a `join`** (D-R7-5): ni una
+constante concatenada ni `import.meta.url`.
 
 ### 4.7 El handler y la ruta
 
@@ -939,6 +1132,11 @@ lo que suman `pdfkit`, `fontkit` y sus dependencias, que **liste
 métricas de las fuentes estándar que carga `pdfkit` 0.20.2 (listadas en el
 trazado o resueltas en los fragmentos de `.next`, como en M1).
 
+**R7b no repite §6.2**: la lectura del gráfico ya está en toda exportación
+(`service.ts:876-880`) y en las cifras de R7a; dibujarlo suma como mucho 31
+rectángulos, 5 líneas y 13 textos en una sola página. El paso 14 anota el
+peso del PDF de P1 con gráfico; ninguna sentencia nueva (§4.10 sigue igual).
+
 ### 6.3 Lo que no se mide en local
 
 - **Los límites de Vercel Hobby** (D-R6-11, D-R7-11), _no verificados_: el
@@ -1049,14 +1247,27 @@ mostrar; el diseño de la página es propio.
 
 ### R7b
 
-Solo si el usuario pide el gráfico, con R7a mergeada:
+Pedido por el usuario el 2026-10-13, desde `main` con R7a (`10b8af0`).
 
-- **backend-dev**: `export/types.ts` (`chart` en el documento), `pdf.ts` (las
-  barras) y `pdf.test.ts`.
-- **frontend-dev**: `export/document.ts` (`chart` desde `state.report.chart`),
-  `pdf-layout.ts` (el modelo de las barras con `chart-model.ts`) y sus tests.
-- **e2e-tester**: el recorrido 29.
-- **parity-analyst**: RP-53 con el gráfico.
+- **backend-dev**, solo:
+  `export/types.ts`, `export/document.ts`, `export/document.test.ts`,
+  `export/pdf-layout.ts`, `export/pdf-layout.test.ts`, `export/pdf.ts`,
+  `export/pdf.test.ts`, y `chart: null` en los documentos escritos a mano de
+  `export/csv.test.ts`, `export/xlsx.test.ts` y `export/entry-size.test.ts`
+  (sin otro cambio). Criterios 16 a 18 y sus mutantes de §8.1.
+- **e2e-tester**: `e2e/reports.spec.ts` (29). `e2e/reports-page.ts` no cambia
+  (`readPdf` y `chartCaption` ya están).
+- **parity-analyst**: RP-53 con el gráfico (cita «you can disable certain
+  information (user, charts, etc.)»). Divergencias que el reviewer no marca:
+  sin opción de sacarlo; sin el valor de cada barra ni la tabla «Ver los datos
+  del gráfico» (en la pantalla se ven con el puntero o al abrirla); el diseño
+  del gráfico es propio.
+
+R8 se implementa en paralelo, en otro worktree, y no comparte código con R7b:
+su reparto deja fuera `src/modules/report/`, `src/test/`, `e2e/reports-page.ts`
+y `e2e/reports.spec.ts` (`nucleo-reportes-r8-cambiar-rol.md:906-909`). Lo
+único compartido es `docs/parity/reportes.md`, que el team-lead aplica de a
+uno, y el estado.
 
 ### Lo que no toca nadie
 
@@ -1134,11 +1345,11 @@ _R7a, cierre._
     el usuario con su visor si quiere.
 11. **Merge como R7a.**
 
-_R7b, solo si el usuario pide el gráfico._
+_R7b, pedida por el usuario el 2026-10-13, desde `main` con R7a (`10b8af0`)._
 
-12. **`frontend-dev`** y **`backend-dev`**: el gráfico; criterios 16 a 18.
-13. **`e2e-tester`**: el recorrido 29.
-14. **Paridad**, **abrir el archivo** y **merge como R7b**.
+12. `backend-dev`: criterios 16 a 18.
+13. `e2e-tester`: el recorrido 29 y su mutante.
+14. Paridad, abrir el archivo (lista de §8, criterio 13 bis) y merge como R7b.
 
 ## 8. Criterios de aceptación
 
@@ -1274,16 +1485,56 @@ attachment; filename="reporte_persona-proyecto_2026-09-28_2026-10-04.pdf"`,
     `npm run test:all`, `next build` y la suite e2e entera. Ninguna afirmación
     existente cambia de valor.
 
-_R7b, si el usuario lo pide._
+_R7b, pedida por el usuario el 2026-10-13._
 
-16. **El documento con gráfico** (unidad, `document.test.ts`) — `chart` es el
-    de `state.report.chart`; el CSV y el Excel salen con los mismos bytes que
-    sin él.
-17. **Las barras** (unidad, `pdf-layout.test.ts`) — una barra por tramo, con la
-    altura de `barHeightPercent` y las marcas de `tickIndexesOf`; sin gráfico
-    (`null`), ninguna.
-18. **El PDF con gráfico** (unidad, `pdf.test.ts`) — los rótulos de las marcas
-    se leen en la primera página, antes de «Resumen».
+13 bis. **(R7b) Abrir el archivo con gráfico** (manual, paso 14) — el PDF de un
+mes (31 barras por día), el de un trimestre (por semana), el de P3 (366
+días, por mes, con el aviso) y el de un solo día: la barra más alta
+respecto de su línea; la de pocos minutos, una línea fina; las en cero, sin
+barra; las siete marcas debajo de su columna, enteras y sin pisarse; la
+barra sola, angosta y centrada; la tabla empieza debajo del gráfico; impreso
+en gris, las barras se distinguen de las líneas.
+
+16. **El documento con gráfico** (unidad, `document.test.ts`) — `chart` es
+    `input.report.chart` (el mismo valor), también `null`, y sigue con el
+    primer nivel cortado; el CSV sale con los mismos bytes con y sin gráfico;
+    el Excel, con las mismas hojas y celdas leídas con `exceljs` (sus bytes
+    llevan la fecha de creación y cambian de una llamada a otra).
+17. **El modelo del gráfico** (unidad, `pdf-layout.test.ts`, con valores
+    escritos en el test, no calculados con `chart-model.ts`) —
+    - 31 barras por día, con las marcas «01/10» a «31/10», la más alta de
+      6000 s, una de 30 s y las demás en 0: `scale` es «0:00», «0:30», «1:00»,
+      «1:30», «2:00» con 0; 0,25; 0,5; 0,75 y 1; la de 6000 s, 0,8333…
+      (tolerancia 1e-9); la de 30 s, `hasHours: true` y 0,00416…; una en 0,
+      `hasHours: false` y 0;
+    - marca solo en las barras 0, 5, 10, 15, 20, 25 y 30 («01/10», «06/10»,
+      «11/10», «16/10», «21/10», «26/10» y «31/10»), con su `tick`; `start` la
+      0, `end` la 30, `center` las otras cinco;
+    - una barra sola: su marca, `center`;
+    - «Horas por día» y, con un gráfico por semana, «Horas por semana»;
+    - una marca con un carácter que la cobertura no tiene sale con U+FFFD;
+    - con `chart: null`, `layout.chart` es `null` y las secciones son las mismas
+      que con gráfico.
+18. **El PDF con gráfico** (unidad, `pdf.test.ts`) —
+    - `small` con el gráfico del 17: una página; en su `text`, lo que va desde
+      «Horas por día» hasta «Resumen» es exactamente «Horas por día», los cinco
+      rótulos de la escala de abajo arriba y las siete marcas en orden,
+      separados por un espacio («Horas por día 0:00 0:30 1:00 1:30 2:00 01/10
+      06/10 11/10 16/10 21/10 26/10 31/10»). Se compara con `trim()` y **sin
+      quitar blancos**: comparar sin blancos deja vivo el mutante de la marca
+      partida («01/» y «10» darían «01/10»). Si pdfjs devuelve otra separación
+      entre las marcas, `backend-dev` avisa al team-lead antes de cambiar la
+      comparación;
+    - el documento de unas 200 filas con ese gráfico: la página 1 tiene menos
+      `rows` que con `chart: null`; el total de `rows` del archivo es el mismo;
+      «Horas por día» está solo en el `text` de la página 1;
+    - una cabecera que deja en la página 1 menos alto que el gráfico (filas
+      «Nota» de más, tantas que lo que queda alcanza para la leyenda y no para
+      el bloque; la última «Nota» está en el `text` de la página 1): la
+      leyenda, la escala y las marcas están en la página 2 y ninguna en la 1;
+    - con el primer nivel cortado: la leyenda antes del aviso;
+    - con `chart: null`, ningún `text` tiene «Horas por»; las afirmaciones del
+      criterio 8 siguen con sus valores.
 19. **De punta a punta** — el recorrido 29.
 
 ### 8.1 Con qué se verifica cada criterio, y qué mutante mata
@@ -1333,10 +1584,24 @@ _R7b, si el usuario lo pide._
 - **12** (manual): la ruta de la fuente armada con una variable (la fuente
   falta en el `nft.json`).
 - **13** (manual): —.
+- **13 bis** (manual): —.
 - **14** (e2e): los del final de §8.2.
 - **15**: —.
-- **16 a 18** (unidad): el gráfico escrito en el CSV o el Excel; la escala de
-  otro máximo; las marcas de otro paso.
+- **16** (unidad): `chart: null` siempre; el gráfico escrito en el CSV o en el
+  Excel (cambian los bytes o las celdas); `chart: null` con el primer nivel
+  cortado.
+- **17** (unidad): el techo igual a la barra más alta (la de 6000 s da 1);
+  `narrowTickIndexesOf` o una marca por barra (cae con 31); todas `center`
+  (caen la 0 y la 30); `hasHours` desde el rótulo «0:00» o desde el alto
+  redondeado (cae con la de 30 s); la leyenda fija «Horas por día» (cae con la
+  semanal); las marcas sin `pdfTextOf`.
+- **18** (unidad): el gráfico sin dibujar (falta la leyenda); dibujado sin
+  bajar `y` (la página 1 tiene las mismas `rows` que sin gráfico); en cada
+  página (la leyenda en la 2); partido entre páginas (cae con la cabecera
+  larga); las marcas con el ancho de su columna (con 31 barras, «01/10» sale
+  partida y el texto no coincide); la escala de otro máximo (falta «2:00»); el
+  gráfico salteado con el primer nivel cortado (falta la leyenda antes del
+  aviso).
 - **19** (e2e): el PDF sin el gráfico.
 
 **Cualquier mutante declarado equivalente** se prueba antes con pedidos de una
@@ -1346,8 +1611,8 @@ rango.
 ### 8.2 Recorridos de `e2e/reports.spec.ts`
 
 Dueño: `e2e-tester`. Los veintisiete de R2a a R9 no cambian. R7a suma el 28
-y R7b, si el usuario pide el gráfico, el 29, con las entradas de los
-recorridos 23 a 25 (§8.2 de R6) y la misma regla.
+y R7b, el 29, con las entradas de los recorridos 23 a 25 (§8.2 de R6) y la
+misma regla.
 
 28. **Exportar a PDF el resumen, sin las entradas** (RP-53; D-R7-2, D-R7-6 a
     D-R7-8). Del 2025-09-15 al 2025-09-21, por Proyecto → Fecha:
@@ -1365,15 +1630,26 @@ recorridos 23 a 25 (§8.2 de R6) y la misma regla.
     - `page.request.get(href)`: 200; `content-type` `application/pdf`;
       `cache-control` contiene `no-store`; `content-disposition` con
       `attachment` y el nombre.
-29. **(R7b) El gráfico en el PDF**: con la misma URL, la primera página trae
-    los rótulos de las marcas del gráfico antes de «Resumen».
+29. **(R7b) El gráfico en el PDF** (RP-53; D-R7-12). Con el archivo del 28: en
+    el `text` de su única página, lo que va de `chartCaption("fecha")` a
+    «Resumen» es «Horas por día 0:00 0:30 1:00 1:30» y las siete marcas del
+    15/09 al 21/09, en orden y en el formato de las marcas del recorrido del
+    gráfico de R5 («Horas por día 0:00 0:30 1:00 1:30 15/09 16/09 17/09 18/09
+    19/09 20/09 21/09»). El 28 sigue con una página y las mismas `rows`.
 
 Los mutantes que tienen que caer en e2e, en una copia con puerto propio:
 `entries: true` en el PDF (28: no hay descarga; `pdfLayoutOf` rechaza la tabla «Entradas», cuya primera celda no es un entero, y la ruta responde 500; corregido el 2026-10-12 en la corrida de `e2e-tester`); `inline` (28: no hay
 `download`); sin `no-store` (28); `Link` en lugar de `<a>` (28: hay un pedido
-antes del clic); el rótulo «PDF» quitado (28). La ruta de la fuente armada
+antes del clic); el rótulo «PDF» quitado (28); en R7b, el PDF sin el gráfico
+(29: falta la leyenda). La ruta de la fuente armada
 fuera del literal no cae acá (`next start` lee del árbol), sino en el trazado
 de §6.2 y en la comprobación en Vercel (§10, «Para el team-lead», punto 4).
+
+Las cuentas del 29, con `chart-model.ts`: las barras son 1:30, 0:30 y 0:45 y
+cuatro en cero; la más alta, 5400 s, da un paso de 1800 y un techo de 5400,
+así que las líneas son 0:00, 0:30, 1:00 y 1:30; con siete barras,
+`tickIndexesOf` las marca todas. Las marcas del 16/09 al 20/09 no están en la
+cabecera, así que el mutante «sin gráfico» cae también por ellas.
 
 ### 8.3 Lo que no se prueba en e2e
 
@@ -1383,6 +1659,9 @@ de §6.2 y en la comprobación en Vercel (§10, «Para el team-lead», punto 4).
 - **El tope de duración**: criterio 3.
 - **El 403, el 500 y la guarda de peso**: criterio 9.
 - **Cómo se ve y cómo se imprime**: criterio 13.
+- **(R7b) La escala de otro máximo, las 31 barras, el bloque que no se parte y
+  el gráfico en una sola página**: criterios 17 y 18; **cómo se ven las
+  barras**: criterio 13 bis.
 - **Que la fuente viaje con la función en Vercel**: §6.2 la busca en el
   `nft.json` (criterio 12) y el usuario lo comprueba en producción.
 - **Los límites de Vercel**: §6.3 y la comprobación del usuario después del
@@ -1444,6 +1723,16 @@ de §6.2 y en la comprobación en Vercel (§10, «Para el team-lead», punto 4).
    `@types/pdfkit` 0.17.6, `@types/fontkit` 2.0.9 y `pdfjs-dist` 6.4.299, todo
    con `--save-exact` (D-R7-4).
 
+### Decisiones del 2026-10-13
+
+1. **El gráfico de R5 va en el PDF (R7b)**, decisión del usuario del
+   2026-10-13. Parte de `main` con R7a (`10b8af0`): el documento lleva el
+   gráfico y el PDF lo dibuja con rectángulos y líneas de `pdfkit`, sin
+   imágenes; CSV y Excel no cambian (D-R7-12).
+2. **R7b la hace un solo `backend-dev`**, más `e2e-tester` y `parity-analyst`
+   (decisión del team-lead, ronda de R7b de la revisión, §7): el tipo, su
+   productor, el modelo y su consumidor quedan en un dueño.
+
 ### Decisiones que este contrato hereda
 
 - **Ninguna exportación va al `audit_log`** (decisión del usuario, 2026-10-12,
@@ -1453,14 +1742,6 @@ de §6.2 y en la comprobación en Vercel (§10, «Para el team-lead», punto 4).
 - **R9 va antes que R7a** (decisión del team-lead, contrato de R9, §10): R7a
   parte de `main` con R9 mergeado, suma el caso del PDF que deja el criterio 15
   de R9 (criterio 9) y numera sus recorridos después del 27.
-
-### Pendiente del usuario
-
-1. **¿El gráfico de R5 va en el PDF? (R7b).** Clockify lo trae y deja sacarlo.
-   Sumarlo es R7b: el documento lleva el gráfico y el PDF lo dibuja con
-   rectángulos de `pdfkit`, sin imágenes; CSV y Excel no cambian. **No se
-   arranca hasta que lo pidas.** Recomendación: sí, después de R7a, porque
-   RP-53 es `replicar`; no bloquea nada de R7a.
 
 ### Nota para el usuario
 
@@ -1492,6 +1773,8 @@ de §6.2 y en la comprobación en Vercel (§10, «Para el team-lead», punto 4).
 - Las entradas una por una en el PDF (D-R7-2).
 - Elegir qué muestra el PDF («you can disable certain information»), la
   orientación, el tamaño de página o la fuente desde la pantalla.
+- El valor de cada barra y la tabla de datos del gráfico en el PDF (R7b,
+  D-R7-12).
 - Un PDF etiquetado (PDF/UA).
 - Imágenes, logos o enlaces dentro del PDF.
 - Un tope de filas propio del PDF distinto de 3000, salvo que §6.2 lo pida
