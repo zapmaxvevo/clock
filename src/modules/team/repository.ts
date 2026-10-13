@@ -21,6 +21,7 @@ export type TeamMemberRow = {
 /** Una membresía bloqueada para cambiar el rol. */
 export type LockedMembership = {
   readonly id: string;
+  readonly workspaceId: string;
   readonly userId: string;
   readonly role: Role;
   readonly status: MembershipStatus;
@@ -70,6 +71,7 @@ export const teamRepository = {
     return tx
       .select({
         id: membership.id,
+        workspaceId: membership.workspaceId,
         userId: membership.userId,
         role: membership.role,
         status: membership.status,

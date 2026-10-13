@@ -86,7 +86,9 @@ export async function getTeamView(actor: Actor): Promise<TeamView> {
  * entonces.
  */
 function freshActorOf(actor: Actor, locked: readonly LockedMembership[]): Actor {
-  const own = locked.find((row) => row.userId === actor.userId);
+  const own = locked.find(
+    (row) => row.workspaceId === actor.workspaceId && row.userId === actor.userId,
+  );
   if (own === undefined) {
     throw new TeamError("forbidden", teamMessages.forbidden);
   }
@@ -121,7 +123,7 @@ export async function changeRole(
     if (
       !can(fresh, "team.manage", {
         kind: "membership",
-        workspaceId: actor.workspaceId,
+        workspaceId: target.workspaceId,
         userId: target.userId,
         role: target.role,
       })
