@@ -14,12 +14,15 @@ ni de permisos.
   verificado_ (§9).
 - **Lugar en el plan:** depende de R2a, en `main`, que es lo que hace que el rol
   importe (`timeEntry.others.view`). No toca la pantalla ni el módulo del
-  reporte, así que se implementa en un worktree aparte, en paralelo a R4 (§6.6).
-  **Por decisión del usuario, R8 queda en contrato y no se implementa
-  todavía.**
+  reporte. **El usuario decidió implementarlo el 2026-10-13**, en un worktree
+  aparte y en paralelo a R7b (§6.6).
 - **Revisión del contrato:** la primera ronda de `architecture-reviewer` pidió
   cambios; están aplicados con las decisiones del team-lead (2026-10-09). La
-  segunda ronda lo aprobó, con retoques de texto ya aplicados.
+  segunda ronda lo aprobó, con retoques de texto ya aplicados. La tercera, una
+  ronda corta del 2026-10-13 contra `main` en `10b8af0`, lo aprobó con retoques,
+  ya aplicados: las citas corridas, las descargas en D-R8-8,
+  `listWorkspacePeople` ya en `main` (D-R8-1), la coordinación con R7b (§6.6),
+  el comentario de `setRole` y los ayudantes que se reusan (§6).
 - **Decisiones de arquitectura asociadas**, todas aceptadas:
   - [ADR 0010](../adr/0010-un-modulo-consulta-las-reglas-de-otro-por-su-service.md):
     lo que solo se muestra de otro módulo se lee con un `join` en el repository
@@ -68,17 +71,19 @@ en `src/modules/workspace/`, que ya lee y crea membresías; (2) un módulo nuevo
   columnas distintas con dueño distinto, y ninguna regla queda en dos lugares.
   `team/repository.ts` es el único lugar de `team` con acceso a datos y filtra
   siempre por el `workspace_id` de la sesión.
-- **Después de R4, `workspace` también lista personas**: `listWorkspacePeople`,
-  el catálogo del filtro de personas del reporte, con `team.view`, activas e
-  inactivas, el `userId` y los dos nombres
-  ([contrato de R4](nucleo-reportes-r4-filtros.md), §4.5, «`workspace/service.ts`»).
-  R8 no la extiende y lee su lista en `team` (`listActiveMembers`): cambian el
-  permiso (`team.manage` contra `team.view`), los estados (solo `active` contra
-  `active` e `inactive`), las columnas (además el email, el rol y el id de la
-  membresía) y quién la usa (la pantalla de equipo contra el catálogo de otro
-  módulo, que la recibe con la transacción del que llama). Las dos leen los
-  nombres con un `join` en el repository del módulo que dibuja, que es lo que
-  pide el ADR 0010; ninguna aplica una regla de la otra.
+- **`workspace` también lista personas**: `listWorkspacePeople`
+  (`workspace/service.ts:105-124`, que lee con `listPeople`,
+  `workspace/repository.ts:103-122`), el catálogo del filtro de personas y de
+  las personas sin horas del reporte, con `team.view`, activas e inactivas, el
+  `userId`, los dos nombres, el estado y `joinedAt` (`WorkspacePerson`,
+  `workspace/service.ts:89-103`). R8 no la extiende y lee su lista en `team`
+  (`listActiveMembers`): cambian el permiso (`team.manage` contra `team.view`),
+  los estados (solo `active` contra `active` e `inactive`), las columnas
+  (además el email, el rol y el id de la membresía) y quién la usa (la pantalla
+  de equipo contra el catálogo de otro módulo, que la recibe con la transacción
+  del que llama). Las dos leen los nombres con un `join` en el repository del
+  módulo que dibuja, que es lo que pide el ADR 0010; ninguna aplica una regla
+  de la otra.
 - **Es el módulo de la pantalla de equipo de la fase 2**, que lo extiende sin
   moverlo: invitar, desactivar, el primer día de la semana y la capacidad entran
   acá.
@@ -198,18 +203,25 @@ de admins.**
 sesión lee la membresía en cada pedido (`currentSession` →
 `ensureWorkspaceContext`, con `cache` de React, que dura un pedido,
 `session.ts:34-55`), y el reporte decide el alcance en cada lectura
-(`scopeOf`, `report/service.ts:76-85`). Entonces, para la persona cuyo rol
-cambia:
+(`scopeOf`, `report/service.ts:121-131`; lo llama `readReportState` en
+`:986-997`, el cuerpo común de `getReportState`, `:1095`, y de
+`getReportExport`, `:1176`; el handler de una descarga pide la sesión con
+`requireSession()`, `report/export/handler.ts:122`). Entonces, para la persona
+cuyo rol cambia:
 
 - **Todo pedido posterior al commit decide con el rol nuevo**: recargar, navegar
   a otra pantalla o dentro del reporte (cambiar el período o la agrupación es
-  navegar), y cualquier server action. Un admin bajado no lee una hora ajena
-  más; uno ascendido ve las de todos al próximo pedido.
+  navegar), y cualquier server action. También una descarga de
+  `/reportes/exportar/<formato>/` (R6, R7), que lee con `getReportExport` por el
+  mismo `scopeOf`, y una URL con `personas` o con las personas sin horas, que
+  con el alcance propio no aplican (D-R4-4, D-R9-5; `report/service.ts:832-842`
+  y `:1006-1007`). Un admin bajado no lee una hora ajena más; uno ascendido ve
+  las de todos al próximo pedido.
 - **Lo que ya está dibujado en su navegador queda** hasta ese pedido. Un
-  reporte de equipo abierto sigue mostrando lo que ya leyó; no puede pedir más.
-  Volver con «Atrás» puede mostrar una página ya dibujada desde la caché del
-  cliente, sin leer de nuevo (`staleTimes.md`: el caché de atrás y adelante no
-  cambia).
+  reporte de equipo abierto sigue mostrando lo que ya leyó; no puede pedir más;
+  si exporta desde esa pantalla, el archivo sale con el rol nuevo. Volver con
+  «Atrás» puede mostrar una página ya dibujada desde la caché del cliente, sin
+  leer de nuevo (`staleTimes.md`: el caché de atrás y adelante no cambia).
 - **La entrada «Equipo» de su navegación cambia en la próxima carga completa o
   en la próxima server action suya que revalide**: Next no vuelve a pedir el
   layout en una navegación del cliente (`staleTimes.md`: «shared layouts won't
@@ -250,7 +262,7 @@ ver el efecto en la sesión de la otra persona, el recorrido abre un segundo
 contexto del navegador y entra con su email (`signIn` acepta una cuenta que ya
 existe, `test-session.ts:84-99`). **El email de la persona sembrada es
 `…@${TEST_EMAIL_DOMAIN}`**, como en `seedOtherPerson`
-(`e2e/reports.spec.ts:113-119`): el hook `session.create` de Better Auth
+(`e2e/reports.spec.ts:177-185`): el hook `session.create` de Better Auth
 vuelve a comprobar el dominio en cada inicio de sesión
 (`src/server/auth.ts:104-112`), así que con otro dominio el segundo contexto no
 entra.
@@ -266,16 +278,17 @@ comprobación vuelve con el procedimiento de §6.3 de R2b.
 
 ## 0. Precondición de arranque
 
-- **`main` en `d5765ea`**, con R3 entero. Las citas de abajo son de ese árbol.
-  Los tests de integración y CI usan `postgres:18-alpine`, la versión mayor de
-  Neon.
-- **Sin pendientes del usuario para arrancar** cuando decida implementarlo. Las
-  preguntas de §9 no bloquean.
-- **Si `main` ya no está en `d5765ea` cuando se decida implementarlo**, una
-  ronda corta de `architecture-reviewer` confirma las citas de §0 (lección de
-  los contratos viejos en `estado-fase1.md`).
+- **`main` en `10b8af0`**, con R4a, R4b, R10a, R10b, R5, R6a, R6b, R9 y R7a. Las
+  citas de abajo son de ese árbol. Los tests de integración y CI usan
+  `postgres:18-alpine`, la versión mayor de Neon.
+- **Sin pendientes del usuario para arrancar**: decidió implementarlo el
+  2026-10-13. Las preguntas de §9 no bloquean.
+- **La ronda corta de `architecture-reviewer` contra `10b8af0`** (lección de los
+  contratos viejos en `estado-fase1.md`) se hizo el 2026-10-13, y sus retoques
+  están aplicados. Si `main` ya no está en `10b8af0` al crear el worktree, otra
+  ronda corta confirma las citas de §0.
 
-### Supuestos sobre el árbol, con archivo y línea en `d5765ea`
+### Supuestos sobre el árbol, con archivo y línea en `10b8af0`
 
 | Supuesto                                                                                                                                                                                                            | Dónde                                                                                                                                       |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -283,7 +296,7 @@ comprobación vuelve con el procedimiento de §6.3 de R2b.
 | `can()` corta por estado y por workspace antes que por rol; la membresía del owner solo la toca el owner (y el owner, también la suya)                                                                              | `permissions/index.ts:181-186`, `:202-209`; `permissions.test.ts:56-65`                                                                     |
 | `permissions.test.ts` ya prueba `team.manage` con otro workspace, la membresía del owner y los dos tipos de recurso                                                                                                 | `src/server/permissions/permissions.test.ts:47-65`, `:307-317`, `:437-443`                                                                  |
 | `currentSession` lee la membresía en cada pedido con `ensureWorkspaceContext`, con `cache` de React por pedido                                                                                                      | `src/server/session.ts:34-55`                                                                                                               |
-| `ensureWorkspaceContext` toma el workspace más viejo, busca la membresía y, si no existe, la crea como `owner` o `member`                                                                                           | `src/modules/workspace/service.ts:30-82`; `workspace/repository.ts:23-45`, `:61-82`                                                         |
+| `ensureWorkspaceContext` toma el workspace más viejo, busca la membresía y, si no existe, la crea como `owner` o `member`                                                                                           | `src/modules/workspace/service.ts:35-87`; `workspace/repository.ts:42-64`, `:80-101`                                                        |
 | `profile/service.ts` importa de `workspace/service.ts`; `displayNameOf` es la única regla del nombre                                                                                                                | `src/modules/profile/service.ts:20`, `:113-118`                                                                                             |
 | `membership`: `id` uuid, `role` y `status` con sus enums, única por `(workspace_id, user_id)`, `updated_at` con `$onUpdate`                                                                                         | `src/server/db/schema.ts:25-37`, `:97-123`                                                                                                  |
 | `time_entry_membership_fk` apunta a `membership(workspace_id, user_id)`; también `project_member_membership_fk` y `task_assignee_membership_fk`                                                                     | `schema.ts:477-481`, `:553-555`, `:587-589`                                                                                                 |
@@ -291,7 +304,7 @@ comprobación vuelve con el procedimiento de §6.3 de R2b.
 | `DomainError` con código, `failure` y `handle` con la revalidación también en el error                                                                                                                              | `src/server/action.ts:8`, `:28-36`, `:72-99`, `:106-123`                                                                                    |
 | Una action que revalida el árbol entero                                                                                                                                                                             | `src/modules/profile/actions.ts:18-27`                                                                                                      |
 | Una action que deja el permiso al service, porque el recurso necesita la fila leída; primero `not_found`, después `can()` sobre la fila                                                                             | `src/modules/project/actions.ts:30-32`; `src/modules/time-entry/service.ts:239-276`                                                         |
-| `scopeOf` decide `everyone` o `self` con `timeEntry.others.view` en cada lectura                                                                                                                                    | `src/modules/report/service.ts:76-85`, `:335-338`                                                                                           |
+| `scopeOf` decide `everyone` o `self` con `timeEntry.others.view` en cada lectura; la página (`getReportState`) y las descargas (`getReportExport`) lo leen por `readReportState`                                    | `src/modules/report/service.ts:121-131`, `:986-997`, `:1095`, `:1176`                                                                       |
 | `AppNav` es de cliente, con la lista fija de entradas; el layout de `(app)` la dibuja sin props                                                                                                                     | `src/components/layout/app-nav.tsx:9-15`; `src/app/(app)/layout.tsx:7-30`                                                                   |
 | La página compone y pasa las actions por props; `error.tsx` con «Reintentar»                                                                                                                                        | `src/app/(app)/perfil/page.tsx:6-15`; `src/app/(app)/planilla/error.tsx`                                                                    |
 | `useAction`, `retryHandlerOf`, `ActionFeedback` e `InactiveMembershipNotice`                                                                                                                                        | `src/hooks/use-action.ts:46-111`; `src/components/action-feedback.tsx`; `src/components/inactive-membership-notice.tsx`                     |
@@ -299,11 +312,11 @@ comprobación vuelve con el procedimiento de §6.3 de R2b.
 | La lógica de un control de cliente en un modelo puro con pruebas de unidad, y el hook que la cablea                                                                                                                 | `src/modules/time-entry/components/timesheet/row-removals.ts`, `use-row-removals.ts`                                                        |
 | El arnés de unidad es `environment: "node"`, sin DOM: los componentes se prueban con `renderToStaticMarkup`                                                                                                         | `vitest.config.ts:11`                                                                                                                       |
 | `compareNames` desempata por id                                                                                                                                                                                     | `src/lib/text.ts:27-39`                                                                                                                     |
-| Fábricas e instrumentos de test: `seedWorkspace`, `seedMember` (rol y estado; devuelve el `userId`), `seedPreferences`, `seedTimeEntry`; `auditFor`; `failureOf`; las barreras de concurrencia, con `finishedEarly` | `src/test/factories.ts:46-68`, `:79`, `:111`; `src/test/queries.ts:37-43`; `src/test/time-entry.ts:48-92`; `src/test/concurrency.ts:56-172` |
+| Fábricas e instrumentos de test: `seedWorkspace`, `seedMember` (rol, estado, id; devuelve `userId`), `seedPreferences`, `seedTimeEntry`; `auditFor`; `failureOf`; las barreras de concurrencia, con `finishedEarly` | `src/test/factories.ts:47-74`, `:85`, `:117`; `src/test/queries.ts:37-43`; `src/test/time-entry.ts:48-92`; `src/test/concurrency.ts:56-172` |
 | Las actions se prueban con `next/headers`, `next/cache`, `next/navigation` y `auth` reemplazados; `signInAs` siembra un solo workspace                                                                              | `src/modules/profile/actions.integration.test.ts:24-90`; `src/modules/project/actions.integration.test.ts:76-90`                            |
-| e2e: `seedPerson` siembra un `member` activo con nombre editado; `setRole` y `setMembershipStatus` cambian la membresía de una persona que no es el owner; `setDisplayName`                                         | `e2e/database.ts:338-362`, `:369-381`, `:388-413`                                                                                           |
+| e2e: `seedPerson` siembra un `member` activo con nombre editado; `setRole` y `setMembershipStatus` cambian la membresía de una persona que no es el owner; `setDisplayName`                                         | `e2e/database.ts:402-426`, `:433-445`, `:452-477`                                                                                           |
 | e2e: cada test entra con un usuario propio; `signIn` entra con una cuenta existente si el email ya está; el dominio se comprueba en cada sesión                                                                     | `e2e/session.ts:24-37`, `:63-71`; `src/server/test-session.ts:84-99`; `src/server/auth.ts:104-112`                                          |
-| e2e: `REPORTS_PATH`, `SCOPE_SELF` y `SCOPE_EVERYONE` exportados; `seedOtherPerson` arma el email con `TEST_EMAIL_DOMAIN`                                                                                            | `e2e/reports-page.ts:27`, `:36`, `:39`; `e2e/reports.spec.ts:113-119`                                                                       |
+| e2e: `REPORTS_PATH`, `SCOPE_SELF` y `SCOPE_EVERYONE` exportados; `seedOtherPerson` arma el email con `TEST_EMAIL_DOMAIN`                                                                                            | `e2e/reports-page.ts:32`, `:41`, `:44`; `e2e/reports.spec.ts:177-185`                                                                       |
 | e2e: retener la respuesta de una server action y contar los pedidos; un clic con `{ force: true }` sobre un control con `aria-disabled="true"`                                                                      | `e2e/network.ts` (`holdActionResponses`, `recordActions`); `e2e/manual-entry.spec.ts:236`                                                   |
 | Next no vuelve a pedir un layout compartido en una navegación del cliente; el caché de atrás y adelante no cambia                                                                                                   | `node_modules/next/dist/docs/01-app/03-api-reference/05-config/01-next-config-js/staleTimes.md:32-36`                                       |
 | Next 16.3.8: una server action que revalida redibuja desde la raíz                                                                                                                                                  | `server-action-reducer.js:296-299`; `action-handler.js:963`                                                                                 |
@@ -329,6 +342,7 @@ Queda afuera: ver §10.
 | `src/app/(app)/layout.tsx`                   | Pasa `showTeam={canManageTeam(session.actor)}` a `AppNav`                            | e2e entera (todas pasan por acá) |
 | `src/components/layout/app-nav.tsx`          | Recibe `showTeam`; suma `{ href: "/equipo", label: "Equipo" }` al final si es `true` | `app-nav.test.tsx` (nuevo)       |
 | `src/server/permissions/permissions.test.ts` | Suma los casos del criterio 2. **`index.ts` no cambia**                              | —                                |
+| `e2e/database.ts`                            | El comentario de `setRole` (`:456`) deja de decir que no hay pantalla                | —                                |
 
 - **Ninguna afirmación existente cambia de valor.** Ningún e2e cuenta las
   entradas de la navegación (`goToReportsByNav` busca «Reportes» por nombre).
@@ -842,6 +856,10 @@ El diálogo puede ir en su propio archivo de `team/components/`; los nombres de
 los componentes son orientativos salvo los que citan los tests (el modelo y
 `TeamMembersView`, con sus props de §5.4).
 
+**Reuso recomendado**: para «las filas en el orden recibido» del criterio 17,
+`team-screen.test.tsx` lee las celdas con `bodyRows` de `src/test/markup.ts:7-14`
+(importarlo no es editar `src/test/`).
+
 ### test-engineer
 
 ```
@@ -854,15 +872,17 @@ implementación de `lockForRoleChange`, y corre las tablas de mutantes de §7.1
 en una copia propia.
 
 **Para `backend-dev` y `test-engineer`**: `seedMember` devuelve el `userId`, no
-el id de la membresía (`src/test/factories.ts:59-67`). El id de la membresía,
-que es lo que recibe `changeRole`, lo busca cada test con un `select` en su
-propio archivo: `src/test/` no está en el reparto.
+el id de la membresía (`src/test/factories.ts:61-74`); su cuarto parámetro,
+opcional, es el id del usuario. El id de la membresía, que es lo que recibe
+`changeRole`, lo busca cada test con un `select` en su propio archivo:
+`src/test/` no está en el reparto.
 
 ### e2e-tester
 
 ```
 e2e/team.spec.ts                                   (nuevo)
 e2e/team-page.ts                                   (nuevo)
+e2e/database.ts
 ```
 
 - `team-page.ts`: `TEAM_PATH`, los textos de §5.6 que afirman los recorridos,
@@ -870,10 +890,18 @@ e2e/team-page.ts                                   (nuevo)
   fila empieza con el nombre), `roleCell(row)`, `roleButton(page, acción,
 nombre)` por su nombre accesible, `selfDemoteDialog(page)` y
   `teamFeedback(page)`.
-- **`e2e/database.ts` no cambia**: alcanzan `seedPerson`, `setRole` y
-  `setDisplayName`. De `e2e/reports-page.ts` solo importa `REPORTS_PATH`,
-  `SCOPE_SELF` y `SCOPE_EVERYONE`, sin editarlo. De `e2e/network.ts`, sin
-  editarlo, `holdActionResponses` y `recordActions`.
+- **De `e2e/database.ts` cambia solo el comentario de `setRole`** (`:456`), que
+  dice «La fase 1 no tiene pantalla para eso (R8).»; por ejemplo, «La pantalla
+  /equipo (R8) solo pasa entre member y admin; esto prepara el estado del
+  test». Las funciones alcanzan: `seedPerson`, `setRole` y `setDisplayName`. De
+  `e2e/reports-page.ts` solo importa `REPORTS_PATH`, `SCOPE_SELF`,
+  `SCOPE_EVERYONE` y `goToReportsByNav`, sin editarlo. De `e2e/network.ts`, sin
+  editarlo, `holdActionResponses`, `recordActions` y `openSecondTab`.
+- **Reuso recomendado**: `openSecondTab(browser, email, path)`
+  (`e2e/network.ts:60-70`) para el segundo contexto de P, y `goToReportsByNav`
+  (`e2e/reports-page.ts:505-509`) para «P, sin recargar, navega a Reportes»:
+  espera la tabla, que está aunque el reporte esté vacío (un member sin horas,
+  `e2e/reports.spec.ts:272`, `:285`).
 - **Un clic sobre un botón con `aria-disabled="true"`** lleva
   `{ force: true }`: Playwright 1.63 lo trata como no habilitado y, sin
   `force`, espera hasta el tope en vez de hacer clic. Precedente:
@@ -888,16 +916,18 @@ docs/parity/reportes.md
 No escribe: manda el texto con su lugar exacto y lo aplica el team-lead, antes
 del merge:
 
-- **RP-02**: corrección fechada: desde R8, owner y admin ven el reporte de
-  equipo, y un admin se nombra en `/equipo`.
-- **§9.5**: corrección fechada de «Hasta R8, solo el owner ve el reporte de
-  equipo (RP-02).».
-- **Sección «Núcleo, R8»** al final: la pantalla, quién la ve, las reglas
-  (D-R8-3 a D-R8-6), el efecto en una sesión abierta (D-R8-8) y las
-  divergencias visibles: un member no ve `/equipo` (en Clockify ve la página de
-  equipo salvo que se la escondan, RP-08); un solo rol por persona.
+- **RP-02** (`reportes.md:345-356`): corrección fechada: desde R8, owner y
+  admin ven el reporte de equipo, y un admin se nombra en `/equipo`. Cubre
+  también «Hasta R8 el único que lo ve es el owner…» (`:355-356`).
+- **§9.5** (`:2344`): corrección fechada de «Hasta R8, solo el owner ve el
+  reporte de equipo (RP-02).».
+- **Sección «18. Núcleo, R8»** al final, después de «17. Núcleo, R7»
+  (`:3656`), que R7b amplía: la pantalla, quién la ve, las reglas (D-R8-3 a
+  D-R8-6), el efecto en una sesión abierta (D-R8-8) y las divergencias
+  visibles: un member no ve `/equipo` (en Clockify ve la página de equipo salvo
+  que se la escondan, RP-08); un solo rol por persona.
 - **§7, un punto P-12 nuevo** con lo _no verificado_ de §9, para la sesión del
-  usuario en Clockify.
+  usuario en Clockify. P-12 está libre: P-11 es el último (`:2236`).
 
 ### Lo que no toca nadie
 
@@ -905,28 +935,42 @@ del merge:
 `src/server/session.ts`, `src/server/action.ts`, `src/server/audit.ts`,
 `src/modules/workspace/`, `src/modules/profile/`, `src/modules/report/`,
 `src/modules/time-entry/`, `src/modules/project/`, `src/test/`,
-`e2e/database.ts`, `e2e/reports-page.ts`, `e2e/reports.spec.ts`,
-`e2e/network.ts`, los ADR. El mapa y el estado los actualiza el team-lead.
+`e2e/reports-page.ts`, `e2e/reports.spec.ts`, `e2e/network.ts`, los ADR. El
+mapa y el estado los actualiza el team-lead.
 
-### 6.6 Coordinación con R4
+### 6.6 Coordinación con R7b
 
-R8 se implementa en un worktree propio, en paralelo a R4. Los archivos que
-pueden cruzarse, con lo que confirmó el `architect` de R4:
+R8 se implementa en un worktree propio, en paralelo a R7b, el gráfico en el PDF
+del reporte. Los archivos que pueden cruzarse, contra el reparto de R7b en el
+[contrato de R7](nucleo-reportes-r7-exportar-pdf.md), §7, «R7b» y «Lo que no
+toca nadie» (`:1050-1069`):
 
-| Archivo                                      | R8                               | R4                                                                                      | Riesgo                                                                                                                                                                                                                                                               |
-| -------------------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/app/(app)/layout.tsx`, `app-nav.tsx`    | edita                            | no los toca (confirmado)                                                                | ninguno                                                                                                                                                                                                                                                              |
-| `src/server/permissions/permissions.test.ts` | suma casos                       | no toca `permissions/` (confirmado)                                                     | ninguno                                                                                                                                                                                                                                                              |
-| `docs/parity/reportes.md`                    | RP-02, §9.5, sección nueva, P-12 | sus RP y su sección                                                                     | **conflicto de texto**; lo aplica el team-lead, uno por vez                                                                                                                                                                                                          |
-| `e2e/reports-page.ts`                        | importa tres constantes          | suma exports; no renombra `REPORTS_PATH`, `SCOPE_SELF` ni `SCOPE_EVERYONE` (confirmado) | bajo: el segundo merge rebasa                                                                                                                                                                                                                                        |
-| `src/modules/workspace/`                     | no toca                          | suma `listWorkspacePeople` y `listPeople` (R4, §4.5)                                    | sin cruce de archivos. **R8 no extiende esa lectura**: otro permiso (`team.manage`), otros estados (solo `active`), otras columnas (email, rol, id de la membresía) y otro consumidor (D-R8-1); el ADR 0010 permite el `join` en el repository del módulo que dibuja |
+| Archivo                                             | R8                                           | R7b                                                                   | Riesgo                                                   |
+| --------------------------------------------------- | -------------------------------------------- | --------------------------------------------------------------------- | -------------------------------------------------------- |
+| `src/app/(app)/layout.tsx`, `app-nav.tsx`           | edita                                        | no los toca: excluye `src/components/` y «el resto de `src/app/`»     | ninguno                                                  |
+| `src/server/permissions/permissions.test.ts`        | suma casos                                   | no toca `src/server/`                                                 | ninguno                                                  |
+| `e2e/database.ts`                                   | el comentario de `setRole`                   | no lo toca                                                            | ninguno                                                  |
+| `e2e/reports.spec.ts`, `src/modules/report/export/` | no los toca                                  | el recorrido 29; `types.ts`, `document.ts`, `pdf.ts`, `pdf-layout.ts` | sin cruce                                                |
+| `e2e/reports-page.ts`                               | importa tres constantes y `goToReportsByNav` | puede sumar ayudantes para el recorrido 29                            | bajo: el segundo merge rebasa                            |
+| `docs/parity/reportes.md`                           | RP-02, §9.5, §18 nueva, P-12                 | RP-53 y la §17                                                        | **conflicto de texto**; lo aplica el team-lead, de a uno |
 
-El que mergea segundo rebasa. Si el worktree vive dentro del árbol principal
-(`.claude/worktrees/`), `npm run lint` del árbol principal lo recorre (deuda
-anotada en `estado-fase1.md`): correr lint desde cada árbol. Lo que dice R4
-sobre las dos lecturas de personas está en su §4.5 y en su §10, pregunta 2; la
-respuesta de R8 es D-R8-1, y dónde vive la lectura de la fase 2 queda abierto
-(§9, punto 4).
+- **El que mergea segundo rebasa.** R4 ya está en `main`: `listWorkspacePeople`
+  existe y D-R8-1 dice por qué R8 no la extiende; dónde vive la lectura de la
+  fase 2 queda abierto (§9, punto 4).
+- **Los e2e de los dos worktrees no comparten servidor.** Con el `webServer`
+  por omisión, los dos usan `http://localhost:3000` (`playwright.config.ts:16`)
+  y, fuera de CI, `reuseExistingServer` es `true` (`:62-71`): un worktree puede
+  correr la suite contra el servidor del otro sin darse cuenta. Cada uno
+  compila y levanta el suyo con `next start -p <puerto>`, con el entorno de
+  `localServerEnv` (`playwright.config.ts:23-37`) y `BETTER_AUTH_URL` en ese
+  puerto, y corre la suite con `E2E_BASE_URL` apuntando ahí, el mismo
+  `E2E_TEST_SESSION_SECRET` que el servidor (`e2e/environment.ts:22-40`) y
+  `E2E_DATABASE_URL` con su base de e2e (`:60-71`). Es la regla de un servidor
+  por directorio, con su puerto (`estado-fase1.md:485-487`).
+- **Lint desde cada árbol.** Si el worktree vive dentro del árbol principal
+  (`.claude/worktrees/`), `npm run lint` del árbol principal lo recorre: los
+  `ignores` de `eslint.config.mjs:105-112` no lo excluyen (deuda anotada en
+  `estado-fase1.md:334-335`).
 
 ### Orden
 
@@ -1153,6 +1197,8 @@ mata el criterio 15.
 - **Los avisos de error por código**: criterios 15 y 17.
 - **«Atrás» después de perder el rol** (D-R8-8): es el caché del navegador, no
   una lectura.
+- **La descarga de un admin bajado** (D-R8-8): la cubren los criterios de R6,
+  porque la exportación y la página comparten `readReportState`.
 
 ## 8. Riesgos y deuda conocida
 
@@ -1169,8 +1215,9 @@ mata el criterio 15.
   por SQL sigue con `admin`, sin efecto (`can()` corta por estado). Al
   reactivar, en la fase 2, vuelve admin; esa pantalla decide si lo baja.
 - **Dos lecturas de personas en dos módulos** (D-R8-1): `team.listActiveMembers`
-  y, después de R4, `workspace.listWorkspacePeople`. Comparten los dos nombres
-  por `join` y nada más; dónde vive la de la fase 2 queda abierto (§9, punto 4).
+  y `workspace.listWorkspacePeople` (`workspace/service.ts:105-124`). Comparten
+  los dos nombres por `join` y nada más; dónde vive la de la fase 2 queda
+  abierto (§9, punto 4).
 - **La lista no tiene tope ni búsqueda.** Lo acota el tamaño de la empresa: el
   login está restringido al dominio. En la base de e2e, una corrida deja
   cientos de filas; los recorridos buscan por nombre. La fase 2 suma búsqueda
