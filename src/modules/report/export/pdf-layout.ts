@@ -40,21 +40,21 @@ export type PdfSection =
   /** Un aviso en lugar de la tabla: los vacíos y el primer nivel cortado. */
   | { readonly kind: "note"; readonly title: string; readonly text: string };
 
-/** R7b: una barra, con su alto como fracción del techo de la escala. */
+/** R7b: una columna del gráfico (D-R7-12). */
 type PdfChartBar = {
-  /** `barHeightPercent(seconds, scale) / 100`, de 0 a 1. */
+  /** El alto de la barra, de 0 a 1 del techo de la escala (D-R5-8). */
   readonly height: number;
-  /** `seconds > 0`: se dibuja con el alto mínimo aunque `height` sea casi 0. */
+  /** Con horas: la barra lleva el alto mínimo. */
   readonly hasHours: boolean;
-  /** La marca de la barra si su índice está en `tickIndexesOf`, con `pdfTextOf`; si no, `null`. */
+  /** La marca, o `null` si esta columna no la muestra. */
   readonly tick: string | null;
   readonly tickAlign: TickAlign;
 };
 
 export type PdfChart = {
-  /** `chartCaptions[granularity]`, con `pdfTextOf`: «Horas por día». */
+  /** La leyenda: «Horas por día». */
   readonly caption: string;
-  /** Las líneas de `chartScaleOf`, de abajo arriba: el rótulo y su alto de 0 a 1. */
+  /** Las líneas de la escala, de abajo arriba: el rótulo y su alto, de 0 a 1 del techo. */
   readonly scale: readonly { readonly label: string; readonly height: number }[];
   readonly bars: readonly PdfChartBar[];
 };

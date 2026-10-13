@@ -216,8 +216,8 @@ function draw(doc: PDFKit.PDFDocument, layout: PdfLayout): void {
   }
 
   /** Un texto en un renglón, sin ancho: `pdfkit` no lo parte ni agrega una página. */
-  function drawLine(text: string, x: number, lineY: number): void {
-    doc.text(text, x, lineY, { lineBreak: false });
+  function drawUnwrappedText(text: string, x: number, textY: number): void {
+    doc.text(text, x, textY, { lineBreak: false });
   }
 
   /**
@@ -225,26 +225,15 @@ function draw(doc: PDFKit.PDFDocument, layout: PdfLayout): void {
    * orden. El bloque no se parte: si no entra, empieza en una página nueva.
    */
   function drawChart(chart: PdfChart): void {
-    doc.fontSize(SECTION_SIZE);
-    const captionHeight = doc.heightOfString(chart.caption, { width });
     doc.fontSize(BODY_SIZE);
     const lineHeight = doc.currentLineHeight();
-    // El rótulo del techo sobresale medio renglón arriba del área.
-    const blockHeight =
-      captionHeight +
-      BLOCK_GAP / 2 +
-      lineHeight / 2 +
-      CHART_HEIGHT +
-      CELL_PADDING +
-      lineHeight;
-    if (y + blockHeight > bottom) {
-      newPage();
-    }
-    doc.fontSize(SECTION_SIZE).fillColor(TEXT_COLOR).text(chart.caption, left, y, {
-      width,
-    });
-    doc.fontSize(BODY_SIZE);
-    const areaTop = y + captionHeight + BLOCK_GAP / 2 + lineHeight / 2;
+    // La leyenda va con el resto del bloque: medio renglón que sobresale el
+    // rótulo del techo, el área y el renglón de las marcas.
+    drawSectionTitle(
+      chart.caption,
+      BLOCK_GAP / 2 + lineHeight / 2 + CHART_HEIGHT + CELL_PADDING + lineHeight,
+    );
+    const areaTop = y + lineHeight / 2;
     const areaBottom = areaTop + CHART_HEIGHT;
     const lineYOf = (height: number) => areaBottom - height * CHART_HEIGHT;
 
@@ -253,7 +242,7 @@ function draw(doc: PDFKit.PDFDocument, layout: PdfLayout): void {
     );
     doc.fillColor(MUTED_COLOR);
     for (const { label, height } of chart.scale) {
-      drawLine(
+      drawUnwrappedText(
         label,
         left + CELL_PADDING + labelWidth - doc.widthOfString(label),
         lineYOf(height) - lineHeight / 2,
@@ -298,7 +287,7 @@ function draw(doc: PDFKit.PDFDocument, layout: PdfLayout): void {
       }
       const free = columnWidth - doc.widthOfString(bar.tick);
       const offset = { start: 0, center: free / 2, end: free }[bar.tickAlign];
-      drawLine(bar.tick, columnLeftOf(index) + offset, tickY);
+      drawUnwrappedText(bar.tick, columnLeftOf(index) + offset, tickY);
     });
     y = tickY + lineHeight;
   }

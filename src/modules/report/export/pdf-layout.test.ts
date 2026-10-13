@@ -7,6 +7,7 @@ import {
   type ReportReadyState,
 } from "@/modules/report/schema";
 import type { TimeSettings } from "@/server/time";
+import { octoberByDay } from "@/test/report";
 
 import { exportDocumentOf, type ReportExportInput } from "./document";
 import {
@@ -356,24 +357,6 @@ describe("pdfLayoutOf (D-R7-6; criterio 7 de R7)", () => {
   });
 });
 
-/**
- * Octubre por día: 31 barras con las marcas «01/10» a «31/10»; la del 13, de
- * 6000 s, es la más alta; la del 4, de 30 s; las demás, en cero.
- */
-const october: ReportChart = {
-  granularity: "date",
-  bars: Array.from({ length: 31 }, (_, index) => {
-    const day = String(index + 1).padStart(2, "0");
-    return {
-      firstDay: `2026-10-${day}`,
-      label: `${day}/10`,
-      partial: null,
-      tick: `${day}/10`,
-      seconds: index === 12 ? 6000 : index === 3 ? 30 : 0,
-    };
-  }),
-};
-
 function chartOf(chart: ReportChart, covered = coversAll): PdfChart {
   const layout = layoutOf({ ...threeLevels, chart }, covered);
   if (layout.chart === null) {
@@ -384,7 +367,7 @@ function chartOf(chart: ReportChart, covered = coversAll): PdfChart {
 
 describe("pdfLayoutOf: el gráfico (D-R7-12; criterio 17 de R7)", () => {
   it("la escala de 31 barras por día: cinco líneas de 0:00 a 2:00, de abajo arriba", () => {
-    expect(chartOf(october).scale).toEqual([
+    expect(chartOf(octoberByDay).scale).toEqual([
       { label: "0:00", height: 0 },
       { label: "0:30", height: 0.25 },
       { label: "1:00", height: 0.5 },
@@ -394,7 +377,7 @@ describe("pdfLayoutOf: el gráfico (D-R7-12; criterio 17 de R7)", () => {
   });
 
   it("el alto de cada barra es una fracción del techo, y una de pocos segundos tiene horas", () => {
-    const { bars } = chartOf(october);
+    const { bars } = chartOf(octoberByDay);
     expect(bars).toHaveLength(31);
     expect(bars[12]?.height).toBeCloseTo(0.8333333333, 9);
     expect(bars[12]?.hasHours).toBe(true);
@@ -404,7 +387,7 @@ describe("pdfLayoutOf: el gráfico (D-R7-12; criterio 17 de R7)", () => {
   });
 
   it("siete marcas, cada cinco barras desde la primera; la primera al borde izquierdo y la última al derecho", () => {
-    const { bars } = chartOf(october);
+    const { bars } = chartOf(octoberByDay);
     const marked = [0, 5, 10, 15, 20, 25, 30];
     expect(bars.map(({ tick }) => tick)).toEqual(
       bars.map((_, index) =>
@@ -423,7 +406,7 @@ describe("pdfLayoutOf: el gráfico (D-R7-12; criterio 17 de R7)", () => {
   });
 
   it("una barra sola lleva su marca, centrada", () => {
-    const [bar] = october.bars;
+    const [bar] = octoberByDay.bars;
     const { bars } = chartOf({ granularity: "date", bars: [{ ...bar, seconds: 5400 }] });
     expect(bars).toEqual([
       { height: 1, hasHours: true, tick: "01/10", tickAlign: "center" },
@@ -431,7 +414,7 @@ describe("pdfLayoutOf: el gráfico (D-R7-12; criterio 17 de R7)", () => {
   });
 
   it("la leyenda sale de la granularidad: por día y por semana", () => {
-    expect(chartOf(october).caption).toBe("Horas por día");
+    expect(chartOf(octoberByDay).caption).toBe("Horas por día");
     const week: ReportChart = {
       granularity: "week",
       bars: [
@@ -455,7 +438,7 @@ describe("pdfLayoutOf: el gráfico (D-R7-12; criterio 17 de R7)", () => {
   });
 
   it("una marca con lo que la fuente no dibuja sale con U+FFFD", () => {
-    const [first, ...rest] = october.bars;
+    const [first, ...rest] = octoberByDay.bars;
     const { bars } = chartOf(
       { granularity: "date", bars: [{ ...first, tick: "01→10" }, ...rest] },
       covers,
@@ -466,7 +449,7 @@ describe("pdfLayoutOf: el gráfico (D-R7-12; criterio 17 de R7)", () => {
   it("sin gráfico, `chart` es `null` y las secciones son las mismas que con gráfico", () => {
     const without = layoutOf(threeLevels);
     expect(without.chart).toBeNull();
-    expect(layoutOf({ ...threeLevels, chart: october }).sections).toEqual(
+    expect(layoutOf({ ...threeLevels, chart: octoberByDay }).sections).toEqual(
       without.sections,
     );
   });

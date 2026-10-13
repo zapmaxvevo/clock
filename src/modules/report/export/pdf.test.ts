@@ -4,8 +4,8 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import type { ReportChart } from "@/modules/report/schema";
 import { pdfFacts, pdfPageTexts } from "@/test/pdf";
+import { octoberByDay } from "@/test/report";
 
 import { pdfBytesOf } from "./pdf";
 import type { ExportCell, ExportDocument, ExportRow } from "./types";
@@ -205,37 +205,41 @@ describe("pdfBytesOf (D-R7-4 a D-R7-6; criterio 8 de R7)", () => {
   });
 });
 
-/**
- * El del criterio 17: octubre por día, 31 barras con las marcas «01/10» a
- * «31/10»; la del 13, de 6000 s, es la más alta; la del 4, de 30 s.
- */
-const october: ReportChart = {
-  granularity: "date",
-  bars: Array.from({ length: 31 }, (_, index) => {
-    const day = String(index + 1).padStart(2, "0");
-    return {
-      firstDay: `2026-10-${day}`,
-      label: `${day}/10`,
-      partial: null,
-      tick: `${day}/10`,
-      seconds: index === 12 ? 6000 : index === 3 ? 30 : 0,
-    };
-  }),
-};
-
 /** La leyenda, la escala de abajo arriba y las siete marcas, en el orden de dibujo. */
 const OCTOBER_TEXT =
   "Horas por día 0:00 0:30 1:00 1:30 2:00 01/10 06/10 11/10 16/10 21/10 26/10 31/10";
 
 function withChart(document: ExportDocument): ExportDocument {
-  return { ...document, chart: october };
+  return { ...document, chart: octoberByDay };
 }
 
-/** Lo que va de la leyenda a «Resumen», sin incluirlo; `null` sin leyenda. */
+/** Las marcas, que no están en ninguna otra parte del documento. */
+const OCTOBER_TICKS = OCTOBER_TEXT.split(" ").slice(8);
+
+/** D-R7-6: el margen de la página, en puntos. */
+const MARGIN = 36;
+
+/**
+ * Lo que va de la leyenda a «Resumen» o, si la tabla empieza en la página
+ * siguiente, al pie, que se escribe al final; `null` sin leyenda.
+ */
 function chartTextOf(text: string): string | null {
   const start = text.indexOf("Horas por día");
-  const end = text.indexOf("Resumen", start);
-  return start === -1 || end === -1 ? null : text.slice(start, end).trim();
+  if (start === -1) {
+    return null;
+  }
+  const summary = text.indexOf("Resumen", start);
+  const end = summary === -1 ? text.indexOf("Página", start) : summary;
+  return end === -1 ? null : text.slice(start, end).trim();
+}
+
+/** `small` con el gráfico y `count` filas «Nota» de más en la cabecera. */
+function withNotes(count: number): ExportDocument {
+  const notes = Array.from({ length: count }, (_, index) => [
+    text("Nota"),
+    text(`Aviso ${index + 1}`),
+  ]);
+  return withChart({ ...small, header: [...small.header, ...notes] });
 }
 
 describe("pdfBytesOf: el gráfico (D-R7-12; criterio 18 de R7)", () => {
@@ -267,13 +271,7 @@ describe("pdfBytesOf: el gráfico (D-R7-12; criterio 18 de R7)", () => {
 
   it("no se parte: si en la primera página entra la leyenda y no el bloque, va entero a la segunda", async () => {
     // Con 46 «Nota» quedan unos 85 pt: la leyenda mide 15 y el bloque, unos 160.
-    const notes = Array.from({ length: 46 }, (_, index) => [
-      text("Nota"),
-      text(`Aviso ${index + 1}`),
-    ]);
-    const document = withChart({ ...small, header: [...small.header, ...notes] });
-
-    const pages = await pdfPageTexts(await pdfBytesOf(document));
+    const pages = await pdfPageTexts(await pdfBytesOf(withNotes(46)));
 
     expect(pages).toHaveLength(2);
     const [first, second] = pages.map(({ text }) => text);
@@ -282,6 +280,27 @@ describe("pdfBytesOf: el gráfico (D-R7-12; criterio 18 de R7)", () => {
     expect(first).not.toContain("Horas por día");
     expect(chartTextOf(second ?? "")).toBe(OCTOBER_TEXT);
   });
+
+  // Cada «Nota» mide un renglón de 9 pt, como el de las marcas: alguna de estas
+  // cabeceras deja menos lugar que el bloque entero y más que el bloque sin
+  // alguna de sus partes.
+  it.each(Array.from({ length: 13 }, (_, index) => 40 + index))(
+    "con %i «Nota», el gráfico entero en una sola página y nada debajo del margen",
+    async (count) => {
+      const pages = await pdfPageTexts(await pdfBytesOf(withNotes(count)));
+
+      const charted = pages.filter(({ text }) => text.includes("Horas por día"));
+      expect(charted).toHaveLength(1);
+      expect(chartTextOf(charted[0]?.text ?? "")).toBe(OCTOBER_TEXT);
+      for (const page of pages.filter((page) => page !== charted[0])) {
+        const words = new Set(page.text.split(" "));
+        expect(OCTOBER_TICKS.filter((tick) => words.has(tick))).toEqual([]);
+      }
+      for (const { lowestY } of pages) {
+        expect(lowestY).toBeGreaterThanOrEqual(MARGIN);
+      }
+    },
+  );
 
   it("con el primer nivel cortado, la leyenda va antes del aviso", async () => {
     const notice =
