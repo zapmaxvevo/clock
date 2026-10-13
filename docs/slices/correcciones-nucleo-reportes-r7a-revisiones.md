@@ -59,3 +59,35 @@ Desvíos aceptados por el team-lead:
 - **Mutantes de `test-engineer`** (criterios 3, 4, 8 y 9): caen los 26.
   - 3.6, 4.2, 4.3 y 8.8b los sumó `test-engineer`; no figuran en §8.1.
   - El criterio 4 también cubre owner y admin con personas, el aislamiento de B y las membresías no activas. Sin eso no caía el 4.2.
+
+## Revisiones
+
+- **Backend:** aprobado, sin hallazgos. Probó 20 `pdfBytesOf` en paralelo, una cabecera de 40 000 caracteres y 80 filas de cabecera.
+- **Seguridad:** aprobado, sin hallazgos.
+  - **Texto hostil:** probó con sintaxis PDF y controles. No aparece nada activo (sin /URI, /JavaScript, /OpenAction, /Annots ni imágenes). El texto va como glifos en hex.
+  - **Metadatos:** no dicen nada de quién lo generó.
+  - **Regla de ESLint:** 12 importaciones prohibidas, todas con error.
+  - **Dependencias:** `npm ls` sin `@react-pdf/*`.
+  - **Fuera del slice:** `npm audit` sin `--omit=dev` da 9 altas de desarrollo (`braces`, `micromatch`, `fast-glob`), las mismas que en `main`. CI audita con `--omit=dev`. Cambiar la regla es decisión del usuario.
+- **Frontend:** aprobado, sin hallazgos. Miró siete PDF reales con `pdftoppm`. Fuera del contrato: el PDF no lleva etiquetas de estructura.
+- **Clean code:** no aprobado, con un mayor.
+  1. **Mayor:** `readPdf` copiaba `src/test/pdf.ts`, con un comentario falso: ESLint deja a `e2e/` importar `@/test/*`.
+  2. **Menores:**
+     - casts y aserciones redundantes en `pdf.test.ts`;
+     - una tercera copia de la carga de pdfjs;
+     - `cellText` interno de `pdf.ts`;
+     - `PdfCell` exportado sin uso;
+     - la copia a mano de los bytes.
+- **Tests:** aprobado con menores.
+  - El mismo lector duplicado.
+  - El documento chico no afirmaba toda la cabecera: el mutante `layout.header.slice(0, -1)` sobrevivía.
+- **Paridad:** aprobado con menores. El texto decía «uno por emoji», pero el reemplazo es por punto de código: un emoji compuesto deja varios «�». Lo corrigió el team-lead en `reportes.md`, en tres lugares.
+  - **Criterio 13:** lo miraron en imagen paridad y frontend, y se lee bien. El usuario puede abrirlo con su visor si quiere (§10).
+
+## Correcciones
+
+- **`backend-dev`, en `5a65a77`:**
+  - **`src/test/pdf.ts`:** suma `pdfFacts`, con un solo `getDocument` y `destroy`.
+  - **`pdf.test.ts`:** sin casts y con la cabecera completa. Los mutantes `slice(0, -1)` y `slice(1)` caen.
+  - **`pdf.ts`:** `drawCellText` y `Buffer.concat`.
+  - **`pdf-layout.ts`:** `PdfCell` deja de exportarse.

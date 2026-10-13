@@ -1816,7 +1816,7 @@ sección 17.
   « (inactiva)», «=1+1» tal cual. **Una corrida seguida de tabulaciones, saltos
   de línea y retornos de carro se escribe como un solo espacio**, como la
   muestra la pantalla. **Lo que la fuente no dibuja se escribe «�» (U+FFFD)**:
-  los emoji —uno por emoji—, «→» y el griego que falta; y siempre, los demás
+  los emoji —uno por cada punto de código que la fuente no dibuja: un emoji simple deja un «�» y uno compuesto (tono de piel, bandera, «❤️», familia) deja varios—, «→» y el griego que falta; y siempre, los demás
   caracteres de control, U+FFFE, U+FFFF y las mitades sueltas de un par
   sustituto. La fuente, Noto Sans, va incrustada y cubre el latín con sus
   acentos («Łukasz», «Żółć») y el cirílico («Дмитрий»). El CSV y el Excel
@@ -3738,7 +3738,7 @@ ni asunto: el nombre de quien exporta está en la cabecera.
 - una descripción «=1+1» o «- reunión», tal cual;
 - una corrida seguida de tabulaciones, saltos de línea y retornos de carro, un
   solo espacio: `a\r\n\tb` se lee «a b»;
-- un emoji, un solo «�» (U+FFFD); «→» y el griego que la fuente no tiene, «�»;
+- un emoji simple, un solo «�» (U+FFFD), y uno compuesto, un «�» por cada punto de código que la fuente no dibuja («❤️» y «🇦🇷» dejan dos cada uno); «→» y el griego que la fuente no tiene, «�»;
 - los demás caracteres de control, U+FFFE, U+FFFF y las mitades sueltas de un
   par sustituto, «�» siempre;
 - «Łukasz», «Żółć» y «Дмитрий», tal cual.
@@ -3800,7 +3800,7 @@ que se haga.
 - **Sin las entradas, a diferencia del CSV y el Excel**: es lo de Clockify
   («Export of Summary report doesn’t contain timestamps.»), y las entradas una
   por una son para una planilla. El PDF no avisa que no las trae.
-- **Lo que la fuente no dibuja sale «�»**: un emoji, «→» o el griego que falta;
+- **Lo que la fuente no dibuja sale «�»**: un emoji (uno compuesto deja varios «�»), «→» o el griego que falta;
   el CSV y el Excel los conservan.
 - **El blanco se junta**: un nombre o una descripción con saltos de línea o
   tabulaciones se lee en un renglón, como en la pantalla; el CSV y el Excel los
