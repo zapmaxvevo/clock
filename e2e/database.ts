@@ -466,7 +466,7 @@ export async function setRole(email: string, role: WorkspaceRole): Promise<void>
   );
 }
 
-/** Cambia el estado de la membresía de una persona, que tampoco tiene pantalla. */
+/** Cambia el estado de la membresía de una persona, que no tiene pantalla en la fase 1. */
 export async function setMembershipStatus(
   email: string,
   status: MembershipStatus,
