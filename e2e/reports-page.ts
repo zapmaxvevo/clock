@@ -302,7 +302,7 @@ export function reportsUrl(
 }
 
 /** D-R6-4: los formatos de la descarga, como los escribe su ruta. */
-export type ExportFormat = "csv" | "xlsx";
+export type ExportFormat = "csv" | "xlsx" | "pdf";
 
 /** D-R6-4: la ruta de las descargas, `/reportes/exportar/<formato>`. */
 const EXPORT_PATH = `${REPORTS_PATH}/exportar/`;
@@ -426,6 +426,140 @@ export async function readXlsx(path: string): Promise<Workbook> {
   const workbook = new Workbook();
   await workbook.xlsx.readFile(path);
   return workbook;
+}
+
+/** El comienzo de todo PDF (D-R7-7). */
+const PDF_SIGNATURE = "%PDF-";
+
+/**
+ * El texto de una página del PDF, con la forma de `PdfPageText` de
+ * `src/test/pdf.ts`, que `e2e/` no puede importar (D-R7-9).
+ */
+export type PdfPageText = {
+  /** Todos los fragmentos de la página en orden, con un espacio y el blanco colapsado. */
+  readonly text: string;
+  /** Las filas del resumen: del entero de «Nivel» a la siguiente, sin el pie. */
+  readonly rows: readonly string[];
+};
+
+/** D-R7-6: los márgenes de la página y el ancho de «Nivel», la primera columna. */
+const PDF_PAGE_MARGIN = 36;
+const PDF_LEVEL_WIDTH = 0.08;
+
+/** En puntos: dos fragmentos del mismo renglón o de la misma columna. */
+const PDF_TOLERANCE = 1;
+
+/** El entero de «Nivel», solo o junto con lo que pdfjs pegó del mismo renglón. */
+const PDF_ROW_START = /^\d+(\s|$)/;
+
+const PDF_HEADER_START = "Nivel";
+
+/** Un fragmento con su lugar: `x` a la izquierda y `y` en la línea de base, desde abajo. */
+type PdfFragment = {
+  readonly text: string;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+};
+
+/**
+ * Los fragmentos de cada fila, de la fila de encabezados para abajo y sin el
+ * pie, que va dentro del margen inferior. Una fila empieza en un fragmento
+ * que empieza con un entero dentro de la columna «Nivel».
+ */
+function pdfRowFragmentsOf(
+  fragments: readonly PdfFragment[],
+  pageWidth: number,
+): PdfFragment[][] {
+  const header = fragments.find(({ text }) => text.startsWith(PDF_HEADER_START));
+  if (header === undefined) {
+    return [];
+  }
+  const levelRight =
+    PDF_PAGE_MARGIN + PDF_LEVEL_WIDTH * (pageWidth - 2 * PDF_PAGE_MARGIN);
+  const body = fragments.filter(
+    ({ y }) => y < header.y - PDF_TOLERANCE && y > PDF_PAGE_MARGIN,
+  );
+  const starts = body
+    .filter(({ text, x }) => PDF_ROW_START.test(text) && x < levelRight)
+    .map(({ y }) => y)
+    .sort((left, right) => right - left);
+  const rows = starts.map((): PdfFragment[] => []);
+  for (const fragment of body) {
+    // La fila es la última que empieza en el renglón del fragmento o más arriba.
+    const index = starts.findLastIndex((y) => y >= fragment.y - PDF_TOLERANCE);
+    rows[index]?.push(fragment);
+  }
+  return rows;
+}
+
+/**
+ * Por columna y renglón: los renglones de una celda, pegados; las celdas,
+ * con un espacio. Un fragmento sigue la celda del anterior si empieza dentro
+ * de él, como el segundo renglón de un rótulo partido.
+ */
+function pdfRowTextOf(fragments: readonly PdfFragment[]): string {
+  const ordered = [...fragments].sort((left, right) =>
+    Math.abs(left.x - right.x) > PDF_TOLERANCE ? left.x - right.x : right.y - left.y,
+  );
+  let text = "";
+  let previous: PdfFragment | null = null;
+  for (const fragment of ordered) {
+    const sameCell =
+      previous !== null && fragment.x <= previous.x + previous.width - PDF_TOLERANCE;
+    text += previous === null || sameCell ? fragment.text : ` ${fragment.text}`;
+    previous = fragment;
+  }
+  return text;
+}
+
+/**
+ * Lee un PDF descargado (D-R7-10): afirma que empieza con `%PDF-` y devuelve
+ * el texto de cada página como `pdfPageTexts` de `src/test/pdf.ts`, con
+ * `pdfjs-dist` 6.4.299 (`legacy`, sin worker, `disableFontFace: true`), que
+ * la regla de ESLint admite en `e2e/`. Con la fuente incrustada, los bytes
+ * son números de glifo: sin un lector no hay texto que afirmar.
+ */
+export async function readPdf(path: string): Promise<readonly PdfPageText[]> {
+  const bytes = await readFile(path);
+  expect(
+    new TextDecoder().decode(bytes.subarray(0, PDF_SIGNATURE.length)),
+    "el comienzo del PDF",
+  ).toBe(PDF_SIGNATURE);
+  const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const loading = getDocument({ data: new Uint8Array(bytes), disableFontFace: true });
+  try {
+    const pdf = await loading.promise;
+    const pages: PdfPageText[] = [];
+    for (let number = 1; number <= pdf.numPages; number++) {
+      const page = await pdf.getPage(number);
+      const { items } = await page.getTextContent();
+      const fragments = items.flatMap((item): PdfFragment[] =>
+        "str" in item && item.str.trim() !== ""
+          ? [
+              {
+                text: item.str,
+                x: Number(item.transform[4]),
+                y: Number(item.transform[5]),
+                width: item.width,
+              },
+            ]
+          : [],
+      );
+      const pageWidth = page.getViewport({ scale: 1 }).width;
+      pages.push({
+        text: fragments
+          .map(({ text }) => text)
+          .join(" ")
+          .replace(/\s+/g, " ")
+          .trim(),
+        rows: pdfRowFragmentsOf(fragments, pageWidth).map(pdfRowTextOf),
+      });
+    }
+    return pages;
+  } finally {
+    await loading.destroy();
+  }
 }
 
 /** Los milisegundos de un día, y los días del 30/12/1899 de Excel al 01/01/1970. */
@@ -953,7 +1087,7 @@ export function clearFiltersLink(page: Page): Locator {
 export const EXPORT_GROUP = "Exportar";
 
 /** El texto visible del enlace de cada formato en «Exportar» (D-R6-10). */
-export type ExportLabel = "CSV" | "Excel";
+export type ExportLabel = "CSV" | "Excel" | "PDF";
 
 /** «Exportar», nombrado por su rótulo visible. En los vacíos de RP-33 no está. */
 export function exportGroup(page: Page): Locator {
