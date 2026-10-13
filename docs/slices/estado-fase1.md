@@ -1,7 +1,7 @@
 # Estado de la fase 1
 
 Registro vivo de por dónde va la ejecución. Se actualiza al cerrar cada paso;
-quien retome el trabajo empieza acá. Última actualización: 2026-10-12 (décima sesión).
+quien retome el trabajo empieza acá. Última actualización: 2026-10-12 (undécima sesión).
 
 ## Dónde estamos
 
@@ -38,6 +38,9 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-12 (décim
 | Núcleo de reportes, R10a                    | En `main` |
 | Núcleo de reportes, R10b                    | En `main` |
 | Núcleo de reportes, R5                      | En `main` |
+| Núcleo de reportes, R6a y R6b               | En `main` |
+| Núcleo de reportes, R9                      | En `main` |
+| Núcleo de reportes, R7a                     | En `main` |
 
 Los slices 1 a 13 (con 2b, 2c, 7b, 8b, 8c, 11a y 11b) y el arreglo del piso fijo están en `main`.
 El 13 (planilla de horarios) se mergeó el 2026-10-08 con lint, typecheck, 1279 de unidad, 1223 de
@@ -277,6 +280,38 @@ vacío del owner y `renewWorkspace` se corta.
      `backend-dev` probó dos veces en el árbol compartido; repetir en cada encargo que las
      pruebas descartables y los mutantes van en un worktree. Bases que se pueden borrar:
      `clock_r6a_*`, `clock_r6b_*`, `clock_r10a_*`, `clock_r10b_final_*`.
+     **Undécima sesión** (2026-10-12):
+     - **R9 en `main`** (`b255b99`). Mostrar personas sin horas. Las seis revisiones aprobaron.
+       Test-reviewer encontró que el recorrido 26 fallaba con una base de e2e reusada (el primer
+       nivel pasaba de 3000 filas). Desde entonces va en una semana fija de 2001. Corrida final:
+       e2e 212/212 dos veces. La CI de `main` quedó en verde. Detalle en
+       `correcciones-nucleo-reportes-r9-revisiones.md`. Deuda: `peopleWithoutTimeOf` repite el
+       nombre y el orden de `toPersonOptions`.
+     - **Contrato de R7** con la tercera pasada aprobada (`ebc4f33`). Tiene las cifras de
+       `7644438`, va sin `outputFileTracingIncludes` y fija `pdfkit` 0.20.2. El ADR 0022 suma un
+       párrafo «Corrección», sin cambiar la decisión.
+     - **R7a en `main`** (`bb93255`). El PDF lleva la cabecera y el resumen, sin las entradas.
+       pdfkit 0.20.2 con Noto Sans incrustada. La medición entra en todos los presupuestos: el
+       peor pedido en frío, 0,755 s.
+       - Revisiones: backend, frontend y seguridad aprobaron sin hallazgos. Clean code marcó un
+         mayor: `readPdf` copiaba `src/test/pdf.ts` y ahora lo importa. Paridad corrigió el texto
+         de los emoji compuestos.
+       - Corrida final: e2e 213/213 dos veces. Detalle en
+         `correcciones-nucleo-reportes-r7a-revisiones.md`.
+     - **Host colgado** desde las 21:20 hora local: Xorg y un kworker en estado D. El Chromium
+       headless del host no dispara `requestAnimationFrame` y el e2e local falla hasta el setup.
+       La corrida final usó Playwright en `mcr.microsoft.com/playwright:v1.63.0-noble`
+       (`--network host`) contra `next start` en el host. El usuario tiene que reiniciar.
+     - **Pendiente del usuario**:
+       - R7b (el gráfico en el PDF);
+       - R8;
+       - abrir un PDF con su visor (criterio 13, opcional);
+       - en Vercel, después del despliegue, la comprobación de §10 punto 4 del contrato de R7;
+       - las dos preguntas de R9 (inactivas sin horas, ingreso posterior), que ya van con la
+         recomendación;
+       - mirar un PDF de Clockify (P-05).
+     - Bases que se pueden borrar: `clock_r7a_*`. Queda la rama local `nucleo/r7-contrato-3`, ya
+       en `main`. El modo automático no dejó borrarla.
 
    - **R3 en contrato** (historia; subgrupos, tarea y etiqueta), rama `nucleo/r3-contrato` desde `main`
      (`7b66b03`), en checkout en el árbol principal. `architect-r3` quedó escribiendo
