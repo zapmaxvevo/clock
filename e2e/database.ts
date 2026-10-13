@@ -453,7 +453,10 @@ const OWN_MEMBERSHIP = `workspace_id = ${FIRST_WORKSPACE}
           and user_id = (select id from "user" where email = $1)
           and user_id <> (select owner_id from workspace where id = ${FIRST_WORKSPACE})`;
 
-/** Cambia el rol de una persona. La fase 1 no tiene pantalla para eso (R8). */
+/**
+ * Cambia el rol de una persona. La pantalla /equipo (R8) solo pasa entre member
+ * y admin; esto prepara el estado del test.
+ */
 export async function setRole(email: string, role: WorkspaceRole): Promise<void> {
   await updateOne(
     `update membership
