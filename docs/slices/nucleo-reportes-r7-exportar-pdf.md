@@ -1369,7 +1369,7 @@ recorridos 23 a 25 (§8.2 de R6) y la misma regla.
     los rótulos de las marcas del gráfico antes de «Resumen».
 
 Los mutantes que tienen que caer en e2e, en una copia con puerto propio:
-`entries: true` en el PDF (28: trae `Revisión`); `inline` (28: no hay
+`entries: true` en el PDF (28: no hay descarga; `pdfLayoutOf` rechaza la tabla «Entradas», cuya primera celda no es un entero, y la ruta responde 500; corregido el 2026-10-12 en la corrida de `e2e-tester`); `inline` (28: no hay
 `download`); sin `no-store` (28); `Link` en lugar de `<a>` (28: hay un pedido
 antes del clic); el rótulo «PDF» quitado (28). La ruta de la fuente armada
 fuera del literal no cae acá (`next start` lee del árbol), sino en el trazado
