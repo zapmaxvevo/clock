@@ -658,7 +658,7 @@ describe("ReportToolbar con «Exportar» (D-R6-10)", () => {
   it("«Excel», después de «CSV», descarga el `.xlsx` con la misma query (R6b)", () => {
     const markup = render({ chart, subgroups: ["date", "tag"], filters });
     const found = [...links(exportGroup(markup))];
-    expect(found.map(([label]) => label)).toEqual(["CSV", "Excel"]);
+    expect(found.map(([label]) => label)).toEqual(["CSV", "Excel", "PDF"]);
     const view = {
       range: lastWeek,
       groupBy: "project",
@@ -672,17 +672,38 @@ describe("ReportToolbar con «Exportar» (D-R6-10)", () => {
     );
   });
 
+  it("«PDF», después de «Excel», descarga el `.pdf` con la misma query (R7a)", () => {
+    const markup = render({ chart, subgroups: ["date", "tag"], filters });
+    const pdf = links(exportGroup(markup)).get("PDF");
+    expect(pdf?.href).toBe(
+      reportExportHref("pdf", {
+        range: lastWeek,
+        groupBy: "project",
+        subgroups: ["date", "tag"],
+        peopleWithoutTime: false,
+        filters,
+      }),
+    );
+    expect(pdf?.href).toBe(
+      "/reportes/exportar/pdf?desde=2026-09-28&hasta=2026-10-04&agrupar=proyecto" +
+        `&subagrupar=fecha%2Cetiqueta&clientes=${C1}&proyectos=${P1}%2Csin-proyecto`,
+    );
+  });
+
   it("cada uno es un enlace común, sin `download`, con el ícono oculto y el nombre de su texto", () => {
     const group = exportGroup(render({ chart }));
     const anchors = [...group.matchAll(/<a ([^>]*)>(.*?)<\/a>/g)];
     expect(anchors.map(([, , content]) => content.replace(/<[^>]+>/g, ""))).toEqual([
       "CSV",
       "Excel",
+      "PDF",
     ]);
     for (const [, attributes, content] of anchors) {
       expect(attributes).not.toMatch(/\bdownload\b/);
       expect(attributes).not.toContain("aria-label");
-      expect(content).toMatch(/^<svg [^>]*aria-hidden="true"[^>]*>.*<\/svg>(CSV|Excel)$/);
+      expect(content).toMatch(
+        /^<svg [^>]*aria-hidden="true"[^>]*>.*<\/svg>(CSV|Excel|PDF)$/,
+      );
     }
   });
 });
@@ -803,6 +824,9 @@ describe("ReportToolbar con las personas sin horas (D-R9-11, D-R9-12)", () => {
     );
     expect(found.get("Excel")?.href).toBe(
       `/reportes/exportar/xlsx?desde=2026-09-28&hasta=2026-10-04${kept}`,
+    );
+    expect(found.get("PDF")?.href).toBe(
+      `/reportes/exportar/pdf?desde=2026-09-28&hasta=2026-10-04${kept}`,
     );
   });
 

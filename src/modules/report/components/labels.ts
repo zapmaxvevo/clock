@@ -112,6 +112,7 @@ export const reportLabels = {
 export const exportFormatLabels = {
   csv: "CSV",
   xlsx: "Excel",
+  pdf: "PDF",
 } as const satisfies Record<ReportExportFormat, string>;
 
 /** El nombre de cada filtro: su botón y el grupo de sus opciones vigentes. */

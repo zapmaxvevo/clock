@@ -194,6 +194,33 @@ la opción solo en el semanal. Si muestra a las inactivas o a quien entró despu
 de la semana, en qué orden pone las filas sin horas y si el control es una
 casilla o un interruptor siguen _no verificados_ (P-05).
 
+_Actualizado el 2026-10-12, contrato de R7
+([`nucleo-reportes-r7-exportar-pdf.md`](../slices/nucleo-reportes-r7-exportar-pdf.md),
+§7 «R7a — parity-analyst», aprobado con menores en la verificación de la tercera
+pasada de `architecture-reviewer`, con
+[sus correcciones](../slices/correcciones-nucleo-reportes-r7-contrato.md))_: el
+contrato tiene tres partes (D-R7-1) y esta actualización cubre R7a —el PDF de
+la cabecera y el resumen— y describe lo que fija el contrato. R7-0 fue la
+medición; R7b, el gráfico dentro del PDF, no se arranca hasta que el usuario lo
+pida. Cada regla que precisa lleva su corrección fechada, y la
+[sección 17](#17-núcleo-r7) junta la pantalla y el archivo. Cambian RP-53, con
+la corrección del texto de R6a que decía que el PDF traía las entradas, y P-05.
+Ese día se buscó en la página de exportación: «PDF (Free plan) or CSV/Excel
+(Basic plan or higher)», «A PDF file can contain up to 3000 rows.», «Export of
+Summary report doesn’t contain timestamps.», «If you need timestamps, you should
+export Detailed report.», «Grouping options in Summary report will affect how
+your exports look like.», «Only the data covered in the report will be
+exported.», «You can control what you wish to get in exports by using customize
+export feature.», «Customize export», «you can disable certain information
+(user, charts, etc.) from appearing on PDF» y «change report name, use your
+company’s logo, and more» (FOUND); «A4», «Letter», «portrait», «landscape»,
+«orientation», «header», «page number», «font», «file name», «emoji» y «special
+characters» (NOT FOUND). La página no dice en qué plan está «Customize export».
+Cómo es el PDF de Clockify —la página, los encabezados, los números de página,
+la fuente, el nombre del archivo, qué hace con más de 3000 filas— sigue _no
+verificado_; a diferencia del CSV y el Excel, **se puede mirar en el workspace
+del equipo**, porque el PDF es del plan Free (P-05).
+
 ## Fuentes y límites del relevamiento
 
 Documentación pública del centro de ayuda de Clockify y referencia pública de su
@@ -1745,6 +1772,75 @@ report, choose the longest date range, and export the results.» Si el PDF
 lleva las entradas, el gráfico, su tope de páginas y las fuentes lo decide el
 contrato de R7.
 
+_Corregido el 2026-10-12, contrato de R7 (D-R7-2)_: **el PDF no trae las
+entradas.** Reemplaza lo que el texto de R6a, arriba, decía de «las mismas
+entradas»: el PDF reusa la ruta, la cabecera y el resumen del documento del
+archivo, con la misma sesión, el mismo alcance, `no-store` y el mismo nombre de
+archivo salvo la extensión, pero no la parte «Entradas», que queda solo en el
+CSV y el Excel. Es lo de Clockify: «Export of Summary report doesn’t contain
+timestamps. If you need timestamps, you should export Detailed report.» (FOUND
+el 2026-10-12). La decisión del usuario que sumó las entradas nombra el CSV y
+el Excel (mapa §5), no el PDF.
+
+_Actualizado el 2026-10-12, contrato de R7, R7a (D-R7-2, D-R7-5 a D-R7-8)_:
+llega el PDF. La marca sigue en `replicar` para lo documentado; lo que la página
+de Clockify no dice es diseño propio y se compara contra el contrato de R7 y la
+sección 17.
+
+- **Dónde se pide**: el enlace «PDF», después de «Excel» en el grupo
+  «Exportar» (sección 17.1). La ruta es `/reportes/exportar/pdf`, con la misma
+  query que la página (RP-32).
+- **Qué trae**: la cabecera y el resumen, **sin las entradas una por una**. La
+  cabecera es la del CSV, con las mismas filas y en el mismo orden (sección
+  15.2), también «Personas sin horas» con «Sí» si la opción de R9 es efectiva.
+  El resumen es el mismo, entero como si estuviera todo expandido, con las
+  mismas columnas, los mismos rótulos, las filas sin horas de R9, los mismos
+  vacíos y la misma nota del primer nivel cortado. Ninguna parte ni aviso nombra
+  las entradas. «Only the data covered in the report will be exported.» y
+  «Grouping options in Summary report will affect how your exports look like.»
+  valen como en el CSV: la misma URL, el mismo alcance y una columna por cada
+  nivel que se muestra.
+- **El tope**: **3000 filas del resumen**, el de la pantalla y el del CSV
+  (D-R3-6, D-R10-10), que es el de «A PDF file can contain up to 3000 rows.»;
+  no hay tope propio del PDF. Cada nivel entra entero o no entra: con los
+  niveles de abajo cortados, el PDF trae los que entraron y la nota del tope en
+  la cabecera; sin el primero, el aviso en lugar de la tabla. Qué cuenta
+  Clockify como fila y qué hace con más de 3000 siguen _no verificados_ (P-05).
+- **La página**: A4 vertical. Arriba de la primera, el título «Reporte
+  resumido» y la cabecera como una lista de nombre y valor; después, «Resumen» y
+  la tabla. **La fila de encabezados se repite arriba de cada página** y **una
+  fila no se parte entre dos páginas**: si no entra, pasa entera a la
+  siguiente. **Abajo a la derecha de cada página, «Página {n} de {total}».**
+- **El texto**: el del CSV, sin el `'` de la inyección de fórmulas, porque un
+  PDF no tiene fórmulas: «1:30», «1,50», «Sin proyecto», la persona con
+  « (inactiva)», «=1+1» tal cual. **Una corrida seguida de tabulaciones, saltos
+  de línea y retornos de carro se escribe como un solo espacio**, como la
+  muestra la pantalla. **Lo que la fuente no dibuja se escribe «�» (U+FFFD)**:
+  los emoji —uno por cada punto de código que la fuente no dibuja: un emoji simple deja un «�» y uno compuesto (tono de piel, bandera, «❤️», familia) deja varios—, «→» y el griego que falta; y siempre, los demás
+  caracteres de control, U+FFFE, U+FFFF y las mitades sueltas de un par
+  sustituto. La fuente, Noto Sans, va incrustada y cubre el latín con sus
+  acentos («Łukasz», «Żółć») y el cirílico («Дмитрий»). El CSV y el Excel
+  conservan lo que el PDF reemplaza.
+- **El nombre del archivo**: `reporte_<niveles>_<desde>_<hasta>.pdf`, como el
+  del CSV salvo la extensión: `reporte_persona-proyecto_2026-09-28_2026-10-04.pdf`.
+- **Las respuestas**: 200 con `Content-Type: application/pdf`,
+  `Content-Disposition: attachment; filename="….pdf"` y `Cache-Control:
+no-store`: el navegador lo descarga y no lo abre en la pestaña. El 307 al
+  login, el 403 («No podés exportar reportes.») y el 500 («No se pudo exportar
+  el reporte. Volvé y probá de nuevo.»), como en el CSV.
+- **Ninguna exportación queda en el `audit_log`** (decisión del usuario,
+  2026-10-12): tampoco el PDF.
+- **Lo que no tiene**:
+  - el gráfico de R5, que Clockify trae y deja sacar («you can disable certain
+    information (user, charts, etc.) from appearing on PDF»): pendiente de que
+    el usuario lo pida (R7b);
+  - las opciones de «Customize export» —sacar datos, cambiar el nombre del
+    reporte, poner un logo—: `fuera de alcance`. Justificación: la URL de la
+    exportación no lleva parámetros propios (D-R6-4) y nadie lo pidió;
+  - el diseño de la página de Clockify: `adaptar`. Justificación: la página de
+    ayuda no lo documenta, así que A4, la fuente, los márgenes, los colores, la
+    cabecera como lista y el pie los fija el contrato; P-05 dice qué mirar.
+
 **RP-54 Exportar a CSV y Excel** — `adaptar`
 Documentado: «CSV and Excel report exports are available only on paid plans».
 _Actualizado el 2026-10-08, decisión del usuario (P-10)_: entra en el núcleo.
@@ -2126,6 +2222,16 @@ horas y si el control es una casilla, un interruptor u otra cosa. No está
 verificado que el semanal exista en el plan Free: la página de cambios del plan
 Free no lo nombra («weekly» NOT FOUND el 2026-10-12). Mientras tanto vale lo de
 R9 (sección 16). No bloquea.
+
+_Actualizado el 2026-10-12, contrato de R7 (R7a)_: P-05 suma el PDF del
+resumido, que **es del plan Free y se puede bajar en el workspace del equipo**:
+el tamaño y la orientación de la página; qué trae arriba (título, período,
+filtros, totales) y si trae el gráfico por omisión; si repite los encabezados
+de la tabla en cada página y si numera las páginas; cómo muestra los subgrupos;
+cómo escribe un nombre con letras no latinas o un emoji; el nombre del archivo;
+qué cuenta como fila y qué hace con más de 3000; y si «Customize export» está
+en el plan Free y qué deja sacar. Mientras tanto vale lo de R7a (sección 17).
+No bloquea.
 
 _Agregado el 2026-10-09, relevamiento de R3b_: **P-11 — Agrupar por
 descripción, mes y semana.** La página de filtros los lista entre las opciones
@@ -3546,3 +3652,183 @@ horas; «Exportar» con solo filas sin horas.
 | `owner`, `admin` activas                            | Con «Persona» primero y la opción, además de las personas con horas, una fila en «0:00» por cada activa sin horas —o por cada elegida sin horas, también inactiva— que ya estaba en el workspace en el período; nunca invitadas ni de otro workspace | Las de 15.5, y mostrar u ocultar las personas sin horas; exportarlas en el resumen cuando hay horas |
 | `project_manager`, `team_manager`, `member` activas | Solo lo propio, como sin la opción, también con `sin-horas=1` y `personas=…` en la URL; sin su fila en «0:00»                                                                                                                                        | Las mismas, sin filtro de personas ni el enlace                                                     |
 | Cualquiera no activa (`inactive`, `invited`)        | El aviso de RP-07                                                                                                                                                                                                                                    | Ninguna                                                                                             |
+
+## 17. Núcleo, R7
+
+_2026-10-12._ Contrato:
+[`nucleo-reportes-r7-exportar-pdf.md`](../slices/nucleo-reportes-r7-exportar-pdf.md),
+aprobado con menores en la verificación de la tercera pasada de
+`architecture-reviewer`
+([correcciones](../slices/correcciones-nucleo-reportes-r7-contrato.md)). Tiene
+tres partes (D-R7-1): **R7-0**, la medición, hecha; **R7a**, el PDF de la
+cabecera y el resumen; **R7b**, el gráfico de R5 dentro del PDF, que no se
+arranca hasta que el usuario lo pida. Esta sección cubre R7a. La regla de cada
+comportamiento está en la corrección fechada de su RP; esta sección junta lo
+que cambia en la pantalla y lo que trae el archivo, y lo que no nombra sigue
+como en las secciones [9](#9-núcleo-r2a) a [16](#16-núcleo-r9).
+
+**Cubre:** RP-53 (el PDF: la cabecera y el resumen sin las entradas, A4, los
+encabezados en cada página, el número de página, el tope de 3000 filas, el
+blanco y lo que la fuente no dibuja, el nombre del archivo), con la corrección
+del texto de R6a que decía que traía las entradas. Los permisos y el alcance no
+cambian: no hay acción nueva; exporta quien tiene `report.view`, y el PDF pasa
+por el mismo service, el mismo alcance, las mismas personas elegidas, los mismos
+filtros y la misma opción de personas sin horas que la pantalla, en la misma
+foto. De la URL no llega ningún parámetro nuevo: el formato es la carpeta de la
+ruta.
+
+**Queda para después:** el gráfico en el PDF (R7b), si el usuario lo pide. No
+tienen slice: elegir qué muestra el PDF, la orientación, el tamaño de página o
+la fuente; imágenes, logos o enlaces; un PDF etiquetado (PDF/UA); el detallado y
+su PDF; exportaciones programadas o por correo (RP-56).
+
+### 17.1 La barra
+
+- **El grupo «Exportar»** suma **«PDF», después de «Excel»**, con el mismo
+  ícono de descarga y el mismo estilo; el lector de pantalla lo nombra «PDF».
+- **Es un enlace común**, como «CSV» y «Excel»: no se pide nada al abrir la
+  pantalla ni al pasar el puntero, y funciona antes de hidratar. Al hacer clic,
+  el navegador descarga `reporte_….pdf` y la pantalla sigue en `/reportes`.
+- **Aparece y falta junto con «CSV» y «Excel»** (RP-33): no está en los dos
+  vacíos ni con solo filas sin horas; con el primer nivel que no entra o con
+  los niveles cortados por el tope, sí. Con la opción de personas sin horas, su
+  enlace la conserva (`sin-horas=1`), como los otros dos.
+
+### 17.2 El archivo
+
+**La primera página empieza con el título** «Reporte resumido», más grande que
+el cuerpo, y **la cabecera** como una lista de nombre y valor, sin bordes, con
+las filas de la sección 15.2 en el mismo orden: «Período», «Zona horaria»,
+«Alcance», «Agrupado por», «Personas sin horas» con «Sí» si la opción es
+efectiva (sección 16), «Personas», «Clientes» y «Proyectos» si hay filtros,
+«Total» y «Facturable» con la duración y las horas, «Generado» y las notas. La
+cabecera va una sola vez, en la primera página.
+
+**El resumen**, con el título «Resumen» y la tabla del CSV: «Nivel», una
+columna por cada nivel que se muestra, «Duración» y «Horas»; una fila por grupo,
+en el orden de la pantalla, con el árbol entero.
+
+- «Nivel», «Duración» y «Horas» van alineadas a la derecha; los rótulos, a la
+  izquierda.
+- **Los rótulos de los antepasados van en gris** y el propio de cada fila, en
+  el color del texto; **las filas de nivel 1 van sobre un fondo gris claro**. El
+  texto es el del CSV; cambia solo el color.
+- **La fila de encabezados va sobre fondo**, sin negrita (la fuente tiene una
+  sola cara), y **se repite arriba de cada página**.
+- **Un rótulo largo se parte en renglones dentro de su columna**, también una
+  palabra sin espacios, y la fila crece. **Una fila no se parte entre dos
+  páginas**: si no entra en lo que queda, pasa entera a la siguiente, debajo de
+  los encabezados.
+- Sin grupos, el vacío que corresponde; con el primer nivel que no entra, su
+  nota. En los dos casos, como un párrafo debajo de «Resumen», sin tabla ni
+  encabezados.
+
+**Abajo a la derecha de cada página**, «Página {n} de {total}»; ninguna página
+queda sin filas.
+
+**La página** es A4 vertical, con márgenes de 36 pt, el cuerpo en 9 pt y el
+título en 14 pt. **La fuente es Noto Sans**, incrustada en el archivo. **Los
+metadatos** llevan el título «Reporte resumido» y el idioma español, sin autor
+ni asunto: el nombre de quien exporta está en la cabecera.
+
+**El texto de cada celda** es el del CSV, sin el `'`:
+
+- una duración, «1:30», sin tope de 24 h («2000:00»); las horas, «1,50», con
+  coma y truncadas al centésimo (RP-18);
+- una descripción «=1+1» o «- reunión», tal cual;
+- una corrida seguida de tabulaciones, saltos de línea y retornos de carro, un
+  solo espacio: `a\r\n\tb` se lee «a b»;
+- un emoji simple, un solo «�» (U+FFFD), y uno compuesto, un «�» por cada punto de código que la fuente no dibuja («❤️» y «🇦🇷» dejan dos cada uno); «→» y el griego que la fuente no tiene, «�»;
+- los demás caracteres de control, U+FFFE, U+FFFF y las mitades sueltas de un
+  par sustituto, «�» siempre;
+- «Łukasz», «Żółć» y «Дмитрий», tal cual.
+
+Con las entradas del recorrido 28 del contrato (del 15/09/2025 al 21/09/2025,
+por Proyecto → Fecha, de un member): una página, con «Reporte resumido»,
+«Período» «15/09/2025 – 21/09/2025», «Alcance» «Solo las horas de {nombre}» y
+«Página 1 de 1»; en el resumen, «Web {sufijo} (ACME {sufijo})» 2:15 y 2,25, y
+«Sin proyecto» 0:30 y 0,50; ni `Revisión "final"; v2`, ni «=1+1», ni
+«Entradas». Con la opción de R9, un admin que agrupa por persona ve «Personas
+sin horas» «Sí» después de «Agrupado por» y la fila `1 {nombre} 0:00 0,00`.
+
+Cómo se ve en un visor y al imprimir —el texto seleccionable y buscable con los
+acentos, «…», «–» y «(inactiva)», las columnas alineadas, la página que entra
+en A4— es el criterio 13 del contrato, a mano, y queda _no verificado_ hasta
+que se haga.
+
+### 17.3 Estados y casos borde
+
+- **Vacío y segundo vacío** (RP-33): sin «Exportar». La ruta pedida a mano
+  responde 200 con un PDF de una página: la cabecera y, debajo de «Resumen», el
+  vacío como párrafo.
+- **Con solo filas sin horas** (sección 16): sin «Exportar»; la ruta pedida a
+  mano responde con esas filas en la tabla, con su fila de encabezados.
+- **El primer nivel que no entra**: «Exportar» está; debajo de «Resumen», la
+  nota del primer nivel como párrafo, y la cabecera no la repite.
+- **Los niveles cortados por el tope**: la tabla trae las columnas de los que
+  entraron, y la cabecera, la nota del tope.
+- **Muchas filas**: hasta 3000, en tantas páginas como hagan falta, cada una
+  con sus encabezados y su número; la medición del contrato dio 88 páginas con
+  3000 filas y 273 con rótulos de 100 caracteres.
+- **Un PDF de más de 4 MB**: 500 con el mensaje de siempre. Con el tope de 3000
+  filas no se espera: el peor caso medido pesa 627 KB.
+- **Una lectura que pasa el tope de duración** de las exportaciones: 500, como
+  en el CSV y el Excel.
+- **Al recargar o con «Atrás»**: el enlace es el mismo, porque sale de la URL
+  (RP-32). Bajar el PDF no cambia la pantalla.
+- **Una sesión vencida**: el clic en «PDF» lleva al login.
+- **Una membresía que deja de estar activa**: la pantalla muestra el aviso de
+  RP-07 y no hay barra; la ruta pedida a mano responde 403 con «No podés
+  exportar reportes.», una página de texto.
+- **Un error al leer o al escribir**: 500 con «No se pudo exportar el reporte.
+  Volvé y probá de nuevo.», una página de texto; «Atrás» vuelve al reporte.
+- **Dos descargas del mismo reporte** traen el mismo texto, pero no son iguales
+  byte a byte: la fecha de creación va en los metadatos.
+
+### 17.4 Divergencias visibles que el reviewer no debe marcar como errores
+
+- **Sin gráfico**: Clockify lo trae y deja sacarlo («you can disable certain
+  information (user, charts, etc.) from appearing on PDF»). Sumarlo es R7b,
+  pendiente del usuario; mientras no lo pida, el PDF no lo tiene.
+- **Sin opciones de qué mostrar**: «Customize export» deja sacar datos, cambiar
+  el nombre del reporte y poner un logo; acá el PDF trae siempre lo mismo para
+  la misma URL, sin parámetros de exportación (D-R6-4). En qué plan está esa
+  función sigue _no verificado_ (P-05).
+- **El diseño de la página es propio**: A4 vertical, la fuente, los márgenes,
+  los grises, la cabecera como lista y el pie con «Página n de N». Cómo es el
+  PDF de Clockify sigue _no verificado_ (P-05).
+- **Sin las entradas, a diferencia del CSV y el Excel**: es lo de Clockify
+  («Export of Summary report doesn’t contain timestamps.»), y las entradas una
+  por una son para una planilla. El PDF no avisa que no las trae.
+- **Lo que la fuente no dibuja sale «�»**: un emoji (uno compuesto deja varios «�»), «→» o el griego que falta;
+  el CSV y el Excel los conservan.
+- **El blanco se junta**: un nombre o una descripción con saltos de línea o
+  tabulaciones se lee en un renglón, como en la pantalla; el CSV y el Excel los
+  conservan.
+- **El texto va sin `'`**: «=1+1» y «- reunión» se leen tal cual.
+- **Los encabezados van sobre fondo y no en negrita**: la fuente tiene una sola
+  cara.
+- **Los antepasados en gris y el nivel 1 sobre fondo**: cada fila repite los
+  rótulos de arriba, como en el CSV, y en el papel se apagan para que se lea el
+  propio.
+- **Una fila que no entra pasa entera a la página siguiente** y deja espacio
+  libre al pie de la anterior.
+- **El tope de 3000 filas es el del resumen**, el de la pantalla: cada nivel
+  entra entero o no entra, así que un PDF puede tener bastante menos de 3000
+  filas y la nota del tope.
+- **El archivo se descarga y no se abre en la pestaña** (`attachment`), como
+  los otros dos formatos.
+- **Sin estructura para lectores de pantalla** (no es un PDF etiquetado): se lee
+  el texto en orden. El CSV y el Excel son la forma accesible de los mismos
+  datos.
+- **Dos descargas del mismo reporte no son iguales byte a byte**: la fecha de
+  creación va en los metadatos.
+
+### 17.5 Qué puede hacer cada rol
+
+Quien exporta a CSV y a Excel exporta también a PDF, con el mismo alcance
+(sección 15.5) y la misma cabecera y el mismo resumen; quien recibe 403 en un
+formato lo recibe en los tres. Un member, un `project_manager` o un
+`team_manager` con `personas=…` o `sin-horas=1` en la URL baja el mismo PDF que
+sin esos parámetros: «Alcance» «Solo las horas de {nombre}», sin la fila
+«Personas sin horas» y sin ningún nombre ajeno.

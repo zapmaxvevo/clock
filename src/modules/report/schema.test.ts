@@ -1497,7 +1497,7 @@ describe("reportEntryRow y las constantes de la exportación (D-R6-3, D-R6-4, D-
   it("fija los topes y los formatos", () => {
     expect(REPORT_EXPORT_MAX_ENTRIES).toBe(10_000);
     expect(REPORT_EXPORT_MAX_BYTES).toBe(4_000_000);
-    expect(REPORT_EXPORT_FORMATS).toEqual(["csv", "xlsx"]);
+    expect(REPORT_EXPORT_FORMATS).toEqual(["csv", "xlsx", "pdf"]);
   });
 
   it("tiene los textos del 403 y del 500 de la ruta", () => {

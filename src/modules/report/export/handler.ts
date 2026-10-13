@@ -16,17 +16,26 @@ import { csvBytesOf } from "./csv";
 import { exportDocumentOf, type ReportExportInput } from "./document";
 import type { ExportDocument, ExportWriter } from "./types";
 
-/** D-R6-6, D-R6-13: cómo se escribe y se sirve cada formato. R7 suma pdf. */
+/** D-R6-6, D-R6-13, D-R7-2: cómo se escribe y se sirve cada formato. */
 const EXPORT_WRITERS = {
   csv: {
     contentType: "text/csv; charset=utf-8",
+    entries: true,
     write: async (document: ExportDocument) => csvBytesOf(document),
   },
   xlsx: {
     contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    entries: true,
     // D-R6-12: con `import()`, ni la página ni el CSV cargan `exceljs`.
     write: async (document: ExportDocument) =>
       (await import("./xlsx")).xlsxBytesOf(document),
+  },
+  pdf: {
+    contentType: "application/pdf",
+    entries: false,
+    // D-R7-4: con `import()`, ni la página ni el CSV ni el Excel cargan pdfkit.
+    write: async (document: ExportDocument) =>
+      (await import("./pdf")).pdfBytesOf(document),
   },
 } as const satisfies Record<ReportExportFormat, ExportWriter>;
 
@@ -62,7 +71,8 @@ export function exportFileNameOf(
 /**
  * B4: el documento que se escribe. Las entradas entran si el documento
  * entero, escrito como CSV, no pasa `maxBytes`, sea cual sea el formato
- * pedido: CSV y Excel deciden lo mismo. Si no, van en «no entran».
+ * pedido: CSV y Excel deciden lo mismo. Si no, van en «no entran». Sin
+ * entradas leídas (D-R7-3), no hay nada que medir.
  */
 function fittingDocumentOf(
   input: ReportExportInput,
@@ -70,7 +80,7 @@ function fittingDocumentOf(
   maxBytes: number,
 ): ExportDocument {
   const document = exportDocumentOf(input, settings);
-  if (csvBytesOf(document).byteLength <= maxBytes) {
+  if (input.entries === null || csvBytesOf(document).byteLength <= maxBytes) {
     return document;
   }
   return exportDocumentOf({ ...input, entries: { kind: "tooMany" } }, settings);
@@ -79,7 +89,8 @@ function fittingDocumentOf(
 /**
  * D-R6-3, B4: el archivo del documento que entra (`fittingDocumentOf`). Si el
  * archivo escrito igual pasa `maxBytes`, lo escribe otra vez con las entradas
- * en «no entran», como respaldo.
+ * en «no entran», como respaldo. Sin entradas no hay qué sacar: pasar
+ * `maxBytes` es una invariante rota (D-R7-7).
  */
 export async function exportBodyOf(
   input: ReportExportInput,
@@ -91,6 +102,11 @@ export async function exportBodyOf(
   const body = await write(fittingDocumentOf(input, settings, maxBytes));
   if (body.byteLength <= maxBytes) {
     return body;
+  }
+  if (input.entries === null) {
+    throw new RangeError(
+      `El ${format} sin entradas pesa ${body.byteLength} bytes, más que ${maxBytes}.`,
+    );
   }
   return write(exportDocumentOf({ ...input, entries: { kind: "tooMany" } }, settings));
 }
@@ -109,7 +125,9 @@ export async function handleReportExport(
     const reportRequest = reportRequestOf(
       searchParamsRecord(new URL(request.url).searchParams),
     );
-    const state = await getReportExport(session.actor, settings, reportRequest);
+    const state = await getReportExport(session.actor, settings, reportRequest, {
+      entries: EXPORT_WRITERS[format].entries,
+    });
     if (state.kind === "forbidden") {
       return textResponse(403, reportMessages.exportForbidden);
     }

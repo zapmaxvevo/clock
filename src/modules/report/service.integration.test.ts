@@ -57,7 +57,12 @@ import { csvBytesOf } from "./export/csv";
 import { entriesMinBytes } from "./export/entry-size";
 import { exportDocumentOf } from "./export/document";
 import { NO_ENTRY_FILTER, reportRepository, type ReportLevelRead } from "./repository";
-import { getReportExport, getReportState, type ReportRequest } from "./service";
+import {
+  getReportExport,
+  getReportState,
+  type ReportExportRead,
+  type ReportRequest,
+} from "./service";
 
 const madrid = "Europe/Madrid";
 
@@ -4292,16 +4297,21 @@ function fullRequest(request: Partial<ReportRequest>): ReportRequest {
   };
 }
 
-/** La exportación lista de un pedido; lanza si no llega `ready`. */
+/** La exportación lista de un pedido, con las entradas salvo que `read` diga otra cosa; lanza si no llega `ready`. */
 async function readyExport(
   actor: Actor,
   request: Partial<ReportRequest> = {},
-  options: { readonly settings?: TimeSettings; readonly now?: Date } = {},
+  options: {
+    readonly settings?: TimeSettings;
+    readonly now?: Date;
+    readonly read?: ReportExportRead;
+  } = {},
 ) {
   const state = await getReportExport(
     actor,
     options.settings ?? settings,
     fullRequest(request),
+    options.read ?? { entries: true },
     options.now ?? readNow,
   );
   if (state.kind !== "ready") {
@@ -4310,10 +4320,10 @@ async function readyExport(
   return state;
 }
 
-/** Las filas listadas; lanza con `tooMany`. */
-function listedRows(entries: ReportExportEntries): readonly ReportEntryRow[] {
-  if (entries.kind !== "listed") {
-    throw new Error(`Se esperaban las entradas y llegó ${entries.kind}.`);
+/** Las filas listadas; lanza con `tooMany` o sin entradas leídas. */
+function listedRows(entries: ReportExportEntries | null): readonly ReportEntryRow[] {
+  if (entries?.kind !== "listed") {
+    throw new Error(`Se esperaban las entradas y llegó ${entries?.kind ?? "null"}.`);
   }
   return entries.rows.map((row) => reportEntryRow.parse(row));
 }
@@ -4755,6 +4765,7 @@ describe("la exportación (D-R6-2, D-R6-3; criterio 5 de R6)", () => {
       actorIn(workspaceId, inactiveId, { status: "inactive" }),
       settings,
       fullRequest({ range: lastWeek }),
+      { entries: true },
       readNow,
     );
 
@@ -5002,6 +5013,114 @@ describe("el tope de duración de la exportación (S3 de las revisiones de R6a)"
     await readyState(owner, { range: lastWeek });
 
     expect(limit).not.toHaveBeenCalled();
+  });
+});
+
+describe("la exportación sin entradas (D-R7-3; criterio 3 de R7)", () => {
+  const summaryOnly: ReportExportRead = { entries: false };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("entries es null, report es el de getReportState y no se cuentan ni se listan las entradas", async () => {
+    const otherId = await seedPerson({ accountName: "Beto" });
+    const web = (await seedProject({ workspaceId, name: "Web" })).id;
+    await seedClosed(otherId, "2026-09-29T13:00:00Z", 600, { projectId: web });
+    await seedClosed(ownerId, "2026-09-30T13:00:00Z", 900);
+    const entryList = vi.spyOn(reportRepository, "entryList");
+    const entryListSize = vi.spyOn(reportRepository, "entryListSize");
+    const request: Partial<ReportRequest> = {
+      range: lastWeek,
+      groupBy: "project",
+      subgroups: ["person"],
+    };
+
+    const exported = await readyExport(owner, request, { read: summaryOnly });
+
+    expect(exported.entries).toBeNull();
+    expect(exported.report).toEqual(await readyState(owner, request));
+    expect(exported.report.groups).toHaveLength(2);
+    expect(entryList).not.toHaveBeenCalled();
+    expect(entryListSize).not.toHaveBeenCalled();
+  });
+
+  it("con el primer nivel cortado, el mismo report que getReportState y sin entradas", async () => {
+    await seedUncappedDescriptions();
+    const entryList = vi.spyOn(reportRepository, "entryList");
+    const entryListSize = vi.spyOn(reportRepository, "entryListSize");
+    const request: Partial<ReportRequest> = { range: lastWeek, groupBy: "description" };
+
+    const exported = await readyExport(owner, request, { read: summaryOnly });
+
+    expect(exported.entries).toBeNull();
+    expect([exported.report.levelsShown, exported.report.groups]).toEqual([0, []]);
+    expect(exported.report).toEqual(await readyState(owner, request));
+    expect(entryList).not.toHaveBeenCalled();
+    expect(entryListSize).not.toHaveBeenCalled();
+  });
+
+  it("limitStatementTime una vez, con 8000 y el Executor de las lecturas, antes de la primera, con y sin entradas; getReportState no lo llama", async () => {
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 600);
+    const limit = vi.spyOn(reportRepository, "limitStatementTime");
+    const listClients = vi.spyOn(projectRepository, "listClients");
+    const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+    const byBucket = vi.spyOn(reportRepository, "totalsByBucket");
+
+    for (const read of [summaryOnly, { entries: true }]) {
+      vi.clearAllMocks();
+      await readyExport(owner, { range: lastWeek }, { read });
+
+      expect(limit, `entries: ${read.entries}`).toHaveBeenCalledTimes(1);
+      const [milliseconds, executor] = limit.mock.calls[0] ?? [];
+      expect(milliseconds).toBe(8000);
+      expect(executor).toBeDefined();
+      expect(executor).not.toBe(db);
+      expect([
+        listClients.mock.calls[0]?.[0],
+        byLevels.mock.calls[0]?.[2],
+        byBucket.mock.calls[0]?.[2],
+      ]).toEqual([executor, executor, executor]);
+      // La primera lectura es la de los clientes del catálogo (D-R4-5).
+      expect(limit.mock.invocationCallOrder[0]).toBeLessThan(
+        Math.min(
+          ...listClients.mock.invocationCallOrder,
+          ...byLevels.mock.invocationCallOrder,
+          ...byBucket.mock.invocationCallOrder,
+        ),
+      );
+    }
+
+    vi.clearAllMocks();
+    await readyState(owner, { range: lastWeek });
+    expect(limit).not.toHaveBeenCalled();
+  });
+
+  it("show statement_timeout da 8s dentro de la transacción y el de siempre en las conexiones del pool", async () => {
+    await seedClosed(ownerId, "2026-09-29T13:00:00Z", 600);
+    const levelsOf = reportRepository.totalsByLevels;
+    const inside: unknown[] = [];
+    vi.spyOn(reportRepository, "totalsByLevels").mockImplementation(
+      async (scope, read, tx) => {
+        const shown = await (tx ?? db).execute(sql`show statement_timeout`);
+        inside.push(shown.rows[0]?.statement_timeout);
+        return levelsOf(scope, read, tx);
+      },
+    );
+
+    await readyExport(owner, { range: lastWeek }, { read: summaryOnly });
+
+    expect(inside).toEqual(["8s"]);
+    // Todas las conexiones libres del pool a la vez, también la de la exportación.
+    const outside = await Promise.all(
+      Array.from({ length: 10 }, () =>
+        db.transaction(async (tx) => {
+          const shown = await tx.execute(sql`show statement_timeout`);
+          return shown.rows[0]?.statement_timeout;
+        }),
+      ),
+    );
+    expect(new Set(outside)).toEqual(new Set(["0"]));
   });
 });
 

@@ -95,6 +95,7 @@ import {
   rangeCalendar,
   rangePopover,
   readCsv,
+  readPdf,
   readXlsx,
   recordExportRequests,
   recordNavigations,
@@ -136,11 +137,11 @@ import { expect, TEST_EMAIL_DOMAIN, test } from "./session";
 import { trackerBar, uniqueSuffix } from "./tracker-page";
 
 /**
- * Recorridos de R2a a R10b, de R5, de R6 y de R9 del núcleo de reportes: el
+ * Recorridos de R2a a R10b, de R5, de R6, de R9 y de R7a del núcleo de reportes: el
  * resumido por persona, por proyecto, por cliente, por tarea, por etiqueta,
  * por fecha, por semana, por mes y por descripción, los atajos del período,
  * los subniveles, los filtros, el tope del primer nivel, el gráfico, la
- * exportación a CSV y a Excel y las personas sin horas (§8.2 de cada
+ * exportación a CSV, a Excel y a PDF y las personas sin horas (§8.2 de cada
  * contrato), con la regla de §8.3 de R2a. Cada
  * recorrido tiene sus personas —la de la sesión y las que siembra—, todas con
  * un nombre editado que lleva el sufijo del test, y solo afirma sobre sus
@@ -2325,10 +2326,13 @@ test("exportar a Excel el resumen y las entradas, con números y sin fórmulas",
   const web = `Web ${suffix} (ACME ${suffix})`;
   const fileName = "reporte_proyecto-fecha_2025-09-15_2025-09-21.xlsx";
 
-  // D-R6-10: «Excel» después de «CSV», con la misma query que la página.
+  // D-R6-10: «Excel» después de «CSV», con la misma query que la página. Lo
+  // que sigue, «PDF», lo afirma el recorrido 28.
   await openReport(page, EXPORT_WEEK, "proyecto", day, ["fecha"]);
   await expectSubgroups(page, ["fecha"]);
-  await expect(exportGroup(page).getByRole("link")).toHaveText(["CSV", "Excel"]);
+  const links = exportGroup(page).getByRole("link");
+  await expect(links.nth(0)).toHaveText("CSV");
+  await expect(links.nth(1)).toHaveText("Excel");
   const excel = exportLink(page, "Excel");
   await expect(excel).toHaveAttribute(
     "href",
@@ -2644,4 +2648,77 @@ test("un member no tiene la opción de las personas sin horas", async ({
   await groupByLink(page, "persona").click();
   await expectReport(page, lastWeek, "persona", day);
   await expectGroupNames(page, [own]);
+});
+
+test("exportar a PDF el resumen, sin las entradas, sin prefetch y con la descarga", async ({
+  page,
+  email,
+}) => {
+  const day = today();
+  await enterApp(page);
+  const { suffix, name } = await seedExportEntries(email);
+  const web = `Web ${suffix} (ACME ${suffix})`;
+  const fileName = "reporte_proyecto-fecha_2025-09-15_2025-09-21.pdf";
+  const href = exportUrl("pdf", EXPORT_WEEK, "proyecto", ["fecha"]);
+
+  // D-R7-8: «PDF» después de «Excel», con la misma query que la página. Los
+  // pedidos a la ruta se graban desde que se abre la página, como en el 23.
+  const requests = recordExportRequests(page);
+  const prefetched = page.waitForRequest(isExportRequest).catch(() => null);
+  await openReport(page, EXPORT_WEEK, "proyecto", day, ["fecha"]);
+  await expectSubgroups(page, ["fecha"]);
+  await expect(exportGroup(page).getByRole("link")).toHaveText(["CSV", "Excel", "PDF"]);
+  const pdf = exportLink(page, "PDF");
+  await expect(pdf).toHaveAttribute("href", href);
+
+  // D-R7-8: un enlace común, sin prefetch, como el del CSV.
+  await pdf.hover();
+  await Promise.race([page.waitForLoadState("networkidle"), prefetched]);
+  expect(requests, "pedidos a la ruta antes del clic").toEqual([]);
+
+  // D-R7-7: `attachment` descarga y la página queda donde estaba.
+  const downloading = page.waitForEvent("download");
+  await pdf.click();
+  const download = await downloading;
+  expect(download.suggestedFilename()).toBe(fileName);
+  await expectReport(page, EXPORT_WEEK, "proyecto", day, ["fecha"]);
+  await expect(reportTable(page)).toBeVisible();
+
+  // D-R7-6: una página, con el título, la cabecera de D-R6-8 y el pie.
+  // `readPdf` afirma el `%PDF-`.
+  const pages = await readPdf(await download.path());
+  expect(pages).toHaveLength(1);
+  const [{ text, rows }] = pages;
+  expect(text).toContain("Reporte resumido");
+  expect(text).toContain(
+    `Período ${dayRangeLabel(EXPORT_WEEK.first, EXPORT_WEEK.last, day)}`,
+  );
+  expect(text).toContain(`Solo las horas de ${name}`);
+  expect(text).toContain("Página 1 de 1");
+
+  // D-R7-2, D-R6-7: el resumen como el del CSV. Un rótulo puede partirse en
+  // renglones dentro de su columna, así que las filas se comparan sin blancos.
+  const compact = (row: string) => row.replace(/\s+/g, "");
+  expect(rows.map(compact)).toEqual(
+    [
+      `1 ${web} 2:15 2,25`,
+      `2 ${web} ${weekdayLabel(in2025(9, 15), day)} 1:30 1,50`,
+      `2 ${web} ${weekdayLabel(in2025(9, 17), day)} 0:45 0,75`,
+      `1 ${NO_PROJECT} 0:30 0,50`,
+      `2 ${NO_PROJECT} ${weekdayLabel(in2025(9, 16), day)} 0:30 0,50`,
+    ].map(compact),
+  );
+
+  // D-R7-2: sin las entradas una por una.
+  expect(text).not.toContain('Revisión "final"; v2');
+  expect(text).not.toContain("=1+1");
+  expect(text).not.toContain("Entradas");
+
+  // D-R7-7: las cabeceras que sobreviven a `next start`.
+  const response = await page.request.get(href);
+  expect(response.status()).toBe(200);
+  const headers = response.headers();
+  expect(headers["cache-control"]).toContain("no-store");
+  expect(headers["content-type"]).toBe("application/pdf");
+  expect(headers["content-disposition"]).toBe(`attachment; filename="${fileName}"`);
 });

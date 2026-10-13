@@ -634,8 +634,8 @@ export const REPORT_EXPORT_MAX_BYTES = 4_000_000;
  */
 export const REPORT_EXPORT_STATEMENT_TIMEOUT_MS = 8_000;
 
-/** D-R6-4: una carpeta de `reportes/exportar/` por formato. R7 suma "pdf". */
-export const REPORT_EXPORT_FORMATS = ["csv", "xlsx"] as const;
+/** D-R6-4, D-R7-1: una carpeta de `reportes/exportar/` por formato. */
+export const REPORT_EXPORT_FORMATS = ["csv", "xlsx", "pdf"] as const;
 export type ReportExportFormat = (typeof REPORT_EXPORT_FORMATS)[number];
 
 const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;

@@ -37,7 +37,11 @@ export function exportDocumentOf(
 ): ExportDocument {
   return {
     header: headerOf(input, settings),
-    sections: [summaryOf(input.report), entriesSectionOf(input.entries)],
+    // D-R7-3: sin las entradas leídas, solo el resumen.
+    sections:
+      input.entries === null
+        ? [summaryOf(input.report)]
+        : [summaryOf(input.report), entriesSectionOf(input.entries)],
   };
 }
 

@@ -77,7 +77,8 @@ import {
  * R6 suma `entryList` con cada alcance y la exportación con `personas` armado a
  * mano, escritos sin mirar `entryList` (criterio 6 de R6). R9 suma las personas
  * sin horas con cada alcance, escritas sin mirar cómo el service elige las
- * candidatas ni arma sus filas (criterio 14 de R9).
+ * candidatas ni arma sus filas (criterio 14 de R9). R7a suma la exportación sin
+ * entradas, la del PDF, con `personas` armado a mano (criterio 4 de R7a).
  */
 const permissionOverrides = vi.hoisted(() => ({
   denied: [] as { readonly userId: string; readonly action: string }[],
@@ -3068,7 +3069,13 @@ describe("entryList con cada alcance (D-R6-3; criterio 6 de R6)", () => {
 describe("la exportación dentro del alcance (criterio 6 de R6)", () => {
   /** La exportación de `week` por persona, con `filters`. */
   async function exportOf(actor: Actor, filters: ReportFilters = NO_REPORT_FILTERS) {
-    return getReportExport(actor, settings, { ...request("person"), filters }, now);
+    return getReportExport(
+      actor,
+      settings,
+      { ...request("person"), filters },
+      { entries: true },
+      now,
+    );
   }
 
   /** Las filas de una exportación lista, por el esquema publicado; lanza si no hay. */
@@ -3076,8 +3083,10 @@ describe("la exportación dentro del alcance (criterio 6 de R6)", () => {
     if (state.kind !== "ready") {
       throw new Error(`Se esperaba la exportación y llegó ${state.kind}.`);
     }
-    if (state.entries.kind !== "listed") {
-      throw new Error(`Se esperaban las entradas y llegó ${state.entries.kind}.`);
+    if (state.entries?.kind !== "listed") {
+      throw new Error(
+        `Se esperaban las entradas y llegó ${state.entries?.kind ?? "null"}.`,
+      );
     }
     return state.entries.rows.map((row) => reportEntryRow.parse(row));
   }
@@ -3208,6 +3217,196 @@ describe("la exportación dentro del alcance (criterio 6 de R6)", () => {
         expect(entryList).not.toHaveBeenCalled();
       } finally {
         entryList.mockRestore();
+      }
+    });
+  }
+});
+
+describe("la exportación sin entradas dentro del alcance (criterio 4 de R7a)", () => {
+  /** Por persona y los árboles: cada forma del resumen que escribe el PDF. */
+  const summaryShapes: readonly (readonly ReportGroupBy[])[] = [["person"], ...trees];
+
+  /**
+   * La exportación sin entradas, la del PDF (D-R7-3), de `week` con `levels` y
+   * `filters`: lista, sin entradas y sin leerlas; lanza si no está lista.
+   */
+  async function summaryExportOf(
+    actor: Actor,
+    levels: readonly ReportGroupBy[],
+    filters: ReportFilters,
+  ) {
+    const entryListSize = vi.spyOn(reportRepository, "entryListSize");
+    const entryList = vi.spyOn(reportRepository, "entryList");
+    try {
+      const exported = await getReportExport(
+        actor,
+        settings,
+        { ...treeRequest(levels), filters },
+        { entries: false },
+        now,
+      );
+      if (exported.kind !== "ready") {
+        throw new Error(`Se esperaba la exportación y llegó ${exported.kind}.`);
+      }
+      expect(exported.entries).toBeNull();
+      expect(entryListSize).not.toHaveBeenCalled();
+      expect(entryList).not.toHaveBeenCalled();
+      return exported;
+    } finally {
+      entryListSize.mockRestore();
+      entryList.mockRestore();
+    }
+  }
+
+  /** Lo que no puede viajar a `userId`: los ids y las descripciones de las demás personas. */
+  function foreignTo(userId: string): readonly string[] {
+    return seeded
+      .filter((entry) => entry.userId !== userId)
+      .flatMap((entry) => [entry.userId, entry.description])
+      .filter((text) => text !== "");
+  }
+
+  it("project_manager, team_manager y member con personas armado a mano: el resumen de su pedido sin personas, solo lo propio", async () => {
+    for (const { role, userId } of selfOnlyInA()) {
+      const actor = actorIn(a.workspaceId, userId, { role });
+      const own = entriesIn(a.workspaceId, userId);
+      const others = [
+        a.ownerId,
+        a.adminId,
+        a.inactiveId,
+        b.ownerId,
+        unknownPersonId,
+        ...selfOnlyInA()
+          .map((person) => person.userId)
+          .filter((id) => id !== userId),
+      ];
+      for (const levels of summaryShapes) {
+        const without = await getReportState(actor, settings, treeRequest(levels), now);
+        expect(treeSummaryOf(without), `${role}, ${levels.join(" → ")}`).toEqual(
+          expectedTree("self", levels, own),
+        );
+        for (const people of [
+          NO_REPORT_FILTERS,
+          peopleFromUrl(...others),
+          peopleFromUrl(...others, userId),
+          peopleFromUrl(userId),
+        ]) {
+          const context = `${role}, ${levels.join(" → ")}, ${people.people.map(nameOf).join(", ")}`;
+          const exported = await summaryExportOf(actor, levels, people);
+          expect(exported.report, context).toEqual(without);
+          const payload = JSON.stringify(exported);
+          for (const foreign of foreignTo(userId)) {
+            expect(payload, `${context}: ${nameOf(foreign)}`).not.toContain(foreign);
+          }
+        }
+      }
+    }
+  });
+
+  it("owner y admin de A con personas: solo las elegidas de A, la inactiva incluida, y nada de B", async () => {
+    for (const role of ["owner", "admin"] as const) {
+      const actor = actorIn(a.workspaceId, role === "owner" ? a.ownerId : a.adminId, {
+        role,
+      });
+      for (const levels of summaryShapes) {
+        const context = `${role}, ${levels.join(" → ")}`;
+        expect(
+          treeSummaryOf((await summaryExportOf(actor, levels, NO_REPORT_FILTERS)).report),
+          context,
+        ).toEqual(expectedTree("everyone", levels, entriesIn(a.workspaceId)));
+        expect(
+          treeSummaryOf(
+            (
+              await summaryExportOf(
+                actor,
+                levels,
+                peopleFromUrl(a.memberId, a.inactiveId, b.ownerId, unknownPersonId),
+              )
+            ).report,
+          ),
+          context,
+        ).toEqual(
+          expectedTree("everyone", levels, [
+            ...entriesIn(a.workspaceId, a.memberId),
+            ...entriesIn(a.workspaceId, a.inactiveId),
+          ]),
+        );
+      }
+    }
+  });
+
+  it("el owner de B: todo B, y con la persona de A y de B elegida, solo lo de ella en B; ella, en B, solo lo suyo de B", async () => {
+    const owner = actorIn(b.workspaceId, b.ownerId, { role: "owner" });
+    const member = actorIn(b.workspaceId, a.memberId);
+    for (const levels of summaryShapes) {
+      const context = levels.join(" → ");
+      expect(
+        treeSummaryOf((await summaryExportOf(owner, levels, NO_REPORT_FILTERS)).report),
+        context,
+      ).toEqual(expectedTree("everyone", levels, entriesIn(b.workspaceId)));
+      expect(
+        treeSummaryOf(
+          (await summaryExportOf(owner, levels, peopleFromUrl(a.memberId, a.ownerId)))
+            .report,
+        ),
+        context,
+      ).toEqual(expectedTree("everyone", levels, entriesIn(b.workspaceId, a.memberId)));
+      expect(
+        treeSummaryOf(
+          (await summaryExportOf(member, levels, peopleFromUrl(b.ownerId, a.ownerId)))
+            .report,
+        ),
+        context,
+      ).toEqual(expectedTree("self", levels, entriesIn(b.workspaceId, a.memberId)));
+    }
+  });
+
+  for (const status of notActive) {
+    it(`${status}: ningún rol exporta sin entradas, tampoco con personas, y no se lee nada`, async () => {
+      const byLevels = vi.spyOn(reportRepository, "totalsByLevels");
+      const limit = vi.spyOn(reportRepository, "limitStatementTime");
+      const transaction = vi.spyOn(db, "transaction");
+      try {
+        for (const role of roles) {
+          let userId: string;
+          if (role === "owner") {
+            await db
+              .update(membership)
+              .set({ status })
+              .where(
+                and(
+                  eq(membership.workspaceId, a.workspaceId),
+                  eq(membership.userId, a.ownerId),
+                ),
+              );
+            userId = a.ownerId;
+          } else {
+            userId = await seedMember(a.workspaceId, role, status);
+          }
+          const actor = actorIn(a.workspaceId, userId, { role, status });
+          for (const filters of [
+            NO_REPORT_FILTERS,
+            peopleFromUrl(a.memberId, a.ownerId),
+          ]) {
+            expect(
+              await getReportExport(
+                actor,
+                settings,
+                { ...request("person"), filters },
+                { entries: false },
+                now,
+              ),
+              role,
+            ).toEqual({ kind: "forbidden" });
+          }
+        }
+        expect(byLevels).not.toHaveBeenCalled();
+        expect(limit).not.toHaveBeenCalled();
+        expect(transaction).not.toHaveBeenCalled();
+      } finally {
+        byLevels.mockRestore();
+        limit.mockRestore();
+        transaction.mockRestore();
       }
     });
   }
@@ -3514,7 +3713,13 @@ describe("las personas sin horas dentro del alcance (criterio 14 de R9)", () => 
         const state = await getReportState(actor, settings, requested, now);
         expect(firstLevelOf(state), context).toEqual(expected(levels));
         expectNothingForeign(state, actor.userId, context);
-        const exported = await getReportExport(actor, settings, requested, now);
+        const exported = await getReportExport(
+          actor,
+          settings,
+          requested,
+          { entries: true },
+          now,
+        );
         if (exported.kind !== "ready") {
           throw new Error(
             `${context}: se esperaba la exportación y llegó ${exported.kind}.`,

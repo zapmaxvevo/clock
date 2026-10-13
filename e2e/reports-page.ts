@@ -11,6 +11,8 @@ import { readFile } from "node:fs/promises";
 import { expect, type Locator, type Page, type Request } from "@playwright/test";
 import { Workbook, type Cell } from "exceljs";
 
+import { pdfPageTexts, type PdfPageText } from "@/test/pdf";
+
 import {
   addDays,
   calendarDayName,
@@ -302,7 +304,7 @@ export function reportsUrl(
 }
 
 /** D-R6-4: los formatos de la descarga, como los escribe su ruta. */
-export type ExportFormat = "csv" | "xlsx";
+export type ExportFormat = "csv" | "xlsx" | "pdf";
 
 /** D-R6-4: la ruta de las descargas, `/reportes/exportar/<formato>`. */
 const EXPORT_PATH = `${REPORTS_PATH}/exportar/`;
@@ -426,6 +428,22 @@ export async function readXlsx(path: string): Promise<Workbook> {
   const workbook = new Workbook();
   await workbook.xlsx.readFile(path);
   return workbook;
+}
+
+/** El comienzo de todo PDF (D-R7-7). */
+const PDF_SIGNATURE = "%PDF-";
+
+/**
+ * Lee un PDF descargado (D-R7-10): afirma que empieza con `%PDF-` y devuelve
+ * el texto de cada página con el lector de los tests de Vitest.
+ */
+export async function readPdf(path: string): Promise<readonly PdfPageText[]> {
+  const bytes = await readFile(path);
+  expect(
+    new TextDecoder().decode(bytes.subarray(0, PDF_SIGNATURE.length)),
+    "el comienzo del PDF",
+  ).toBe(PDF_SIGNATURE);
+  return pdfPageTexts(bytes);
 }
 
 /** Los milisegundos de un día, y los días del 30/12/1899 de Excel al 01/01/1970. */
@@ -953,7 +971,7 @@ export function clearFiltersLink(page: Page): Locator {
 export const EXPORT_GROUP = "Exportar";
 
 /** El texto visible del enlace de cada formato en «Exportar» (D-R6-10). */
-export type ExportLabel = "CSV" | "Excel";
+export type ExportLabel = "CSV" | "Excel" | "PDF";
 
 /** «Exportar», nombrado por su rótulo visible. En los vacíos de RP-33 no está. */
 export function exportGroup(page: Page): Locator {

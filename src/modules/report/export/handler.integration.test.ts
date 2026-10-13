@@ -4,6 +4,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { Workbook, type Worksheet } from "exceljs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { projectLabels } from "@/modules/project/components/labels";
 import { db } from "@/server/db";
 import { membership, user } from "@/server/db/schema";
 import type { MembershipStatus, Role } from "@/server/permissions";
@@ -14,6 +15,7 @@ import {
   seedWorkspace,
   type SeededWorkspace,
 } from "@/test/factories";
+import { pdfPageTexts, type PdfPageText } from "@/test/pdf";
 import { actorIn, workspaceOf } from "@/test/time-entry";
 
 import {
@@ -25,16 +27,20 @@ import {
 import { reportRepository } from "../repository";
 import { getReportExport } from "../service";
 import { exportLabels } from "./labels";
+import type * as pdfModule from "./pdf";
+import type { ExportDocument } from "./types";
 
 /**
  * La ruta de exportación con las tres puertas de Next y de Better Auth
  * reemplazadas, como en las actions: el resto corre de verdad
  * (`requireSession`, `reportRequestOf`, `can()`, el service, la base, el
- * documento y los escritores de CSV y de Excel).
+ * documento y los escritores de CSV, de Excel y de PDF).
  */
 const mocks = vi.hoisted(() => ({
   sessionUser: null as null | { id: string; email: string },
   redirects: [] as string[],
+  /** Los bytes que se le suman al PDF escrito: la guarda del peso (D-R7-7). */
+  pdfPadding: 0,
 }));
 
 class RedirectError extends Error {
@@ -72,6 +78,19 @@ vi.mock("@/server/auth", () => ({
   },
 }));
 
+// El escritor de verdad; solo el caso de la guarda del peso le suma bytes.
+vi.mock("./pdf", async (importOriginal) => {
+  const original = await importOriginal<typeof pdfModule>();
+  return {
+    pdfBytesOf: async (document: ExportDocument) => {
+      const bytes = await original.pdfBytesOf(document);
+      const padded = new Uint8Array(bytes.byteLength + mocks.pdfPadding);
+      padded.set(bytes);
+      return padded;
+    },
+  };
+});
+
 const { exportBodyOf, exportFileNameOf, handleReportExport } = await import("./handler");
 
 /** La semana del lunes 28/09/2026 con agrupar persona → proyecto. */
@@ -92,6 +111,7 @@ let seeded: SeededWorkspace;
 beforeEach(async () => {
   mocks.sessionUser = null;
   mocks.redirects.length = 0;
+  mocks.pdfPadding = 0;
   seeded = await seedWorkspace(buenosAires);
 });
 
@@ -163,6 +183,16 @@ async function textOf(response: Response): Promise<string> {
   return new TextDecoder("utf-8", { ignoreBOM: true }).decode(
     await response.arrayBuffer(),
   );
+}
+
+/** D-R7-10: el texto de cada página del PDF descargado. */
+async function pdfTextsOf(response: Response): Promise<readonly PdfPageText[]> {
+  return pdfPageTexts(new Uint8Array(await response.arrayBuffer()));
+}
+
+/** Todo el texto del PDF, página tras página. */
+function allTextOf(pages: readonly PdfPageText[]): string {
+  return pages.map(({ text }) => text).join(" ");
 }
 
 function fileNameOf(response: Response): string | undefined {
@@ -312,6 +342,7 @@ describe("exportBodyOf y exportFileNameOf (D-R6-3, D-R6-5; criterio 10 de R6)", 
         filters: { people: [], clients: [], projects: [], withoutProject: false },
         peopleWithoutTime: false,
       },
+      { entries: true },
       new Date("2026-10-08T15:00:00Z"),
     );
     if (state.kind !== "ready") {
@@ -416,6 +447,41 @@ describe("las personas sin horas en el archivo (D-R9-10; criterio 15 de R9)", ()
     expect(text).not.toContain("Otra Persona");
     expect(text).toContain('"Entrada propia"');
   });
+
+  it("el PDF de un admin con sin-horas=1: «Personas sin horas Sí» después de «Agrupado por» y la fila sin horas (criterio 9 de R7)", async () => {
+    const adminId = await signInAs("active", "admin");
+    await prepare(adminId, "Admin");
+    await prepare(seeded.ownerId, "Owner");
+    await seedIdle("Beto");
+    await seedHour(adminId, "Entrada del admin");
+
+    const pages = await pdfTextsOf(await exportAs("pdf", `${weekQuery}&sin-horas=1`));
+
+    expect(allTextOf(pages)).toContain(
+      "Agrupado por Persona / Proyecto Personas sin horas Sí",
+    );
+    const rows = pages.flatMap((page) => page.rows);
+    expect(rows).toContain("1 Beto 0:00 0,00");
+    expect(rows).toContain("1 Owner 0:00 0,00");
+    expect(rows).toContain("1 Admin 1:00 1,00");
+  });
+
+  it("el PDF de un member con sin-horas=1&personas=<otra> es el mismo que sin esos parámetros (criterio 9 de R7)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: fakeNow });
+    const otherId = await seedIdle("Otra Persona");
+    const memberId = await signInAs();
+    await prepare(memberId, "Member");
+    await seedHour(memberId, "Entrada propia");
+
+    const pages = await pdfTextsOf(
+      await exportAs("pdf", `${weekQuery}&sin-horas=1&personas=${otherId}`),
+    );
+
+    expect(pages).toEqual(await pdfTextsOf(await exportAs("pdf", weekQuery)));
+    expect(allTextOf(pages)).not.toContain("Personas sin horas");
+    expect(allTextOf(pages)).not.toContain("Otra Persona");
+    expect(pages.flatMap((page) => page.rows)).toContain("1 Member 1:00 1,00");
+  });
 });
 
 describe("la ruta en Excel (D-R6-12; criterio 17 de R6)", () => {
@@ -513,5 +579,128 @@ describe("el tope de las entradas es el mismo en CSV y en Excel (B4 de R6a)", ()
     const texts = sheetTexts(await sheetOf(xlsx, "Entradas"));
     expect(texts).toContain(note);
     expect(texts).not.toContain(quotes);
+  });
+});
+
+describe("la ruta en PDF (D-R7-2, D-R7-3, D-R7-7; criterio 9 de R7)", () => {
+  it("200 con application/pdf, attachment con el nombre .pdf, no-store exacto y el resumen sin leer las entradas", async () => {
+    const memberId = await signInAs();
+    await db.update(user).set({ name: "Persona Miembro" }).where(eq(user.id, memberId));
+    await seedHour(memberId, "Entrada propia");
+    const entryList = vi.spyOn(reportRepository, "entryList");
+    const entryListSize = vi.spyOn(reportRepository, "entryListSize");
+    const limit = vi.spyOn(reportRepository, "limitStatementTime");
+
+    const response = await exportAs("pdf", weekQuery);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe("application/pdf");
+    expect(response.headers.get("Content-Disposition")).toBe(
+      'attachment; filename="reporte_persona-proyecto_2026-09-28_2026-10-04.pdf"',
+    );
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    const body = new Uint8Array(await response.clone().arrayBuffer());
+    expect(new TextDecoder("latin1").decode(body.slice(0, 5))).toBe("%PDF-");
+    expect(entryList).not.toHaveBeenCalled();
+    expect(entryListSize).not.toHaveBeenCalled();
+    expect(limit).toHaveBeenCalledTimes(1);
+    const pages = await pdfTextsOf(response);
+    const text = allTextOf(pages);
+    expect(text).toContain("Solo las horas de Persona de prueba");
+    expect(text).toContain("Página 1 de 1");
+    expect(text).not.toContain("Entrada propia");
+    expect(text).not.toContain(exportLabels.entries);
+    expect(pages.flatMap((page) => page.rows)).toEqual([
+      "1 Persona Miembro 1:00 1,00",
+      `2 Persona Miembro ${projectLabels.noProject} 1:00 1,00`,
+    ]);
+  });
+
+  it("un member con personas=<otra> no recibe el nombre de la otra persona", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: fakeNow });
+    const otherId = await seedUser();
+    await db.update(user).set({ name: "Otra Persona" }).where(eq(user.id, otherId));
+    await db
+      .insert(membership)
+      .values({ workspaceId: seeded.workspaceId, userId: otherId, role: "member" });
+    await seedHour(otherId, "Entrada ajena");
+    const memberId = await signInAs();
+    await seedHour(memberId, "Entrada propia");
+
+    const pages = await pdfTextsOf(
+      await exportAs("pdf", `${weekQuery}&personas=${otherId}`),
+    );
+
+    expect(pages.some(({ text }) => text.includes("Otra Persona"))).toBe(false);
+    expect(pages).toEqual(await pdfTextsOf(await exportAs("pdf", weekQuery)));
+  });
+
+  it("con la membresía inactiva, 403 con no-store; si totalsByLevels rechaza, 500 con no-store", async () => {
+    await signInAs("inactive");
+    const forbidden = await exportAs("pdf", weekQuery);
+    expect(forbidden.status).toBe(403);
+    expect(forbidden.headers.get("Cache-Control")).toBe("no-store");
+    expect(forbidden.headers.get("Content-Disposition")).toBeNull();
+
+    await signInAs();
+    const failure = new Error("la base no responde");
+    vi.spyOn(reportRepository, "totalsByLevels").mockRejectedValue(failure);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const failed = await exportAs("pdf", weekQuery);
+    expect(failed.status).toBe(500);
+    expect(failed.headers.get("Cache-Control")).toBe("no-store");
+    expect(failed.headers.get("Content-Disposition")).toBeNull();
+    expect(await failed.text()).toBe(reportMessages.exportFailed);
+    expect(consoleError).toHaveBeenCalledWith(failure);
+  });
+
+  it("sin entradas, un PDF que pasa maxBytes es un RangeError; por la ruta, 500", async () => {
+    const memberId = await signInAs();
+    await seedHour(memberId, "Entrada propia");
+    const state = await getReportExport(
+      actorIn(seeded.workspaceId, memberId),
+      settings,
+      {
+        range: { first: "2026-09-28", last: "2026-10-04" },
+        groupBy: null,
+        subgroups: [],
+        filters: { people: [], clients: [], projects: [], withoutProject: false },
+        peopleWithoutTime: false,
+      },
+      { entries: false },
+      new Date("2026-10-08T15:00:00Z"),
+    );
+    if (state.kind !== "ready") {
+      throw new Error(`Se esperaba la exportación y llegó ${state.kind}.`);
+    }
+    const input = { ...state, exporter: "Persona de prueba" };
+
+    const body = await exportBodyOf(input, settings, "pdf", REPORT_EXPORT_MAX_BYTES);
+    await expect(
+      exportBodyOf(input, settings, "pdf", body.byteLength - 1),
+    ).rejects.toBeInstanceOf(RangeError);
+    expect((await exportBodyOf(input, settings, "pdf", body.byteLength)).byteLength).toBe(
+      body.byteLength,
+    );
+
+    mocks.pdfPadding = REPORT_EXPORT_MAX_BYTES;
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const response = await exportAs("pdf", weekQuery);
+    expect(response.status).toBe(500);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(consoleError.mock.calls[0]?.[0]).toBeInstanceOf(RangeError);
+  });
+
+  it("CSV y Excel siguen pidiendo las entradas", async () => {
+    const memberId = await signInAs();
+    await seedHour(memberId, "Entrada propia");
+    const entryListSize = vi.spyOn(reportRepository, "entryListSize");
+    const entryList = vi.spyOn(reportRepository, "entryList");
+
+    await exportAs("csv", weekQuery);
+    await exportAs("xlsx", weekQuery);
+
+    expect(entryListSize).toHaveBeenCalledTimes(2);
+    expect(entryList).toHaveBeenCalledTimes(2);
   });
 });
