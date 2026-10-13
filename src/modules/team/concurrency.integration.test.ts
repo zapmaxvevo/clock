@@ -1,17 +1,19 @@
-import { and, asc, eq, inArray, sql, TransactionRollbackError } from "drizzle-orm";
+import { asc, inArray, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { db, type Transaction } from "@/server/db";
 import { membership, timeEntry } from "@/server/db/schema";
-import type { Actor, Role } from "@/server/permissions";
+import type { Role } from "@/server/permissions";
 import {
+  outcomeWhileHeld,
   queueBehindBarrier,
   raceThroughBarrier,
-  waitForBlockedBackends,
 } from "@/test/concurrency";
 import { seedMember, seedWorkspace } from "@/test/factories";
-import { auditFor } from "@/test/queries";
+import { auditFor, membershipById, membershipOf } from "@/test/queries";
+import { actorIn } from "@/test/time-entry";
 
+import { teamMessages } from "./schema";
 import { changeRole, TeamError } from "./service";
 
 /**
@@ -27,26 +29,18 @@ beforeEach(async () => {
   ({ workspaceId, ownerId } = await seedWorkspace());
 });
 
-/** El actor de la sesión, armado como lo arma `ensureWorkspaceContext`. */
-function actorFor(userId: string, role: Role): Actor {
-  return { userId, workspaceId, role, status: "active" };
+/** El actor de la sesión, activo y con el rol de su membresía. */
+function actorFor(userId: string, role: Role) {
+  return actorIn(workspaceId, userId, { role });
 }
 
 /** El id de la membresía de la persona: `seedMember` devuelve el del usuario. */
 async function membershipIdOf(userId: string): Promise<string> {
-  const [row] = await db
-    .select({ id: membership.id })
-    .from(membership)
-    .where(and(eq(membership.workspaceId, workspaceId), eq(membership.userId, userId)));
-  return row.id;
+  return (await membershipOf(workspaceId, userId)).id;
 }
 
 async function roleOf(membershipId: string) {
-  const [row] = await db
-    .select({ role: membership.role })
-    .from(membership)
-    .where(eq(membership.id, membershipId));
-  return row.role;
+  return (await membershipById(membershipId))?.role;
 }
 
 /** Lo que terminó la operación: su resultado o su error, sin lanzar. */
@@ -66,54 +60,6 @@ function holdMemberships(...ids: string[]) {
       .where(inArray(membership.id, ids))
       .orderBy(asc(membership.id))
       .for("no key update");
-}
-
-/**
- * Lo que termina `work` mientras otra transacción sostiene lo que toma `hold`,
- * o `"blocked"` si se trabó esperándolo. Al final la otra transacción se
- * descarta, para que lo que haya escrito no quede.
- */
-async function outcomeWhileHeld(
-  hold: (tx: Transaction) => Promise<unknown>,
-  work: () => Promise<unknown>,
-) {
-  let holding = () => {};
-  const held = new Promise<void>((resolve) => {
-    holding = resolve;
-  });
-  let release = () => {};
-  const released = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const holder = db
-    .transaction(async (tx) => {
-      await hold(tx);
-      holding();
-      await released;
-      tx.rollback();
-    })
-    .catch((error: unknown) => {
-      if (!(error instanceof TransactionRollbackError)) {
-        throw error;
-      }
-    });
-  await Promise.race([held, holder]);
-  const running = work().then(
-    () => "resolved",
-    (error: unknown) => error,
-  );
-  const waiting = new AbortController();
-  try {
-    return await Promise.race([
-      running,
-      waitForBlockedBackends({ count: 1, signal: waiting.signal }).then(() => "blocked"),
-    ]);
-  } finally {
-    waiting.abort();
-    release();
-    await holder;
-    await running;
-  }
 }
 
 describe("dos admins que se bajan uno al otro a la vez (criterio 11)", () => {
@@ -140,7 +86,7 @@ describe("dos admins que se bajan uno al otro a la vez (criterio 11)", () => {
     expect(failed).toEqual([expect.any(TeamError)]);
     expect(failed[0]).toMatchObject({
       code: "forbidden",
-      message: "No tenés permiso para cambiar roles.",
+      message: teamMessages.forbidden,
     });
 
     // El ganador es quien sigue admin; el otro quedó member.

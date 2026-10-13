@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { db } from "@/server/db";
@@ -12,7 +11,7 @@ import {
   seedWorkspace,
   type SeededWorkspace,
 } from "@/test/factories";
-import { auditFor } from "@/test/queries";
+import { auditFor, membershipOf } from "@/test/queries";
 
 import { teamMessages } from "./schema";
 
@@ -91,23 +90,11 @@ async function signInAs(role: Role, status: MembershipStatus = "active") {
   return id;
 }
 
-/** La membresía de una persona sembrada en el workspace, con el id que recibe la action. */
-async function membershipOf(userId: string) {
-  const rows = await db
-    .select()
-    .from(membership)
-    .where(
-      and(eq(membership.workspaceId, seeded.workspaceId), eq(membership.userId, userId)),
-    );
-  const row = rows.at(0);
-  if (row === undefined) {
-    throw new Error(`Sin membresía de ${userId}.`);
-  }
-  return row;
-}
-
 async function seedTarget(role: Role, status: MembershipStatus = "active") {
-  return membershipOf(await seedMember(seeded.workspaceId, role, status));
+  return membershipOf(
+    seeded.workspaceId,
+    await seedMember(seeded.workspaceId, role, status),
+  );
 }
 
 beforeEach(async () => {
@@ -131,7 +118,7 @@ describe("changeRole sin sesión (criterio 15)", () => {
 
     expect(mocks.redirects).toEqual(["/login"]);
     expect(mocks.revalidated).toEqual([]);
-    expect(await membershipOf(target.userId)).toEqual(target);
+    expect(await membershipOf(seeded.workspaceId, target.userId)).toEqual(target);
     expect(await auditFor("membership")).toEqual([]);
   });
 });
@@ -147,7 +134,7 @@ describe("changeRole (criterio 15)", () => {
       ok: true,
       data: { membershipId: target.id, role: "admin" },
     });
-    expect((await membershipOf(target.userId)).role).toBe("admin");
+    expect((await membershipOf(seeded.workspaceId, target.userId)).role).toBe("admin");
     expect(mocks.revalidated).toEqual([wholeTree]);
   });
 
@@ -162,7 +149,7 @@ describe("changeRole (criterio 15)", () => {
       code: "forbidden",
       message: teamMessages.forbidden,
     });
-    expect(await membershipOf(target.userId)).toEqual(target);
+    expect(await membershipOf(seeded.workspaceId, target.userId)).toEqual(target);
     expect(mocks.revalidated).toEqual([wholeTree]);
   });
 
@@ -193,13 +180,13 @@ describe("changeRole (criterio 15)", () => {
       code: "role_locked",
       message: teamMessages.roleLocked,
     });
-    expect(await membershipOf(target.userId)).toEqual(target);
+    expect(await membershipOf(seeded.workspaceId, target.userId)).toEqual(target);
     expect(mocks.revalidated).toEqual([wholeTree]);
   });
 
   it("el owner sobre la suya responde role_locked con el texto del propietario", async () => {
     mocks.sessionUser = { id: seeded.ownerId, email: `${seeded.ownerId}@empresa.com` };
-    const own = await membershipOf(seeded.ownerId);
+    const own = await membershipOf(seeded.workspaceId, seeded.ownerId);
 
     const result = await actions.changeRole({ membershipId: own.id, role: "member" });
 
@@ -208,7 +195,7 @@ describe("changeRole (criterio 15)", () => {
       code: "role_locked",
       message: teamMessages.ownerLocked,
     });
-    expect(await membershipOf(seeded.ownerId)).toEqual(own);
+    expect(await membershipOf(seeded.workspaceId, seeded.ownerId)).toEqual(own);
     expect(mocks.revalidated).toEqual([wholeTree]);
   });
 
@@ -223,7 +210,7 @@ describe("changeRole (criterio 15)", () => {
       code: "inactive_membership",
       message: teamMessages.inactive,
     });
-    expect(await membershipOf(target.userId)).toEqual(target);
+    expect(await membershipOf(seeded.workspaceId, target.userId)).toEqual(target);
     expect(mocks.revalidated).toEqual([wholeTree]);
   });
 
@@ -244,7 +231,7 @@ describe("changeRole (criterio 15)", () => {
         code: "validation",
         message: teamMessages.roleUnavailable,
       });
-      expect(await membershipOf(target.userId)).toEqual(target);
+      expect(await membershipOf(seeded.workspaceId, target.userId)).toEqual(target);
       expect(await auditFor("membership")).toEqual([]);
       expect(mocks.revalidated).toEqual([wholeTree]);
     },

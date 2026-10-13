@@ -12,34 +12,13 @@ import {
   seedWorkspace,
   type SeededWorkspace,
 } from "@/test/factories";
-import { auditFor } from "@/test/queries";
+import { auditFor, membershipById, membershipOf } from "@/test/queries";
 import { actorIn, failureOf } from "@/test/time-entry";
 import { ensureWorkspaceContext } from "@/modules/workspace/service";
 
 import { teamRepository } from "./repository";
 import { teamMessages, type ChangeableRole, type TeamMember } from "./schema";
 import { changeRole, getTeamView } from "./service";
-
-/**
- * `seedMember` devuelve el id del usuario; `changeRole` recibe el de la
- * membresía (contrato de R8, §6).
- */
-async function membershipOf(workspaceId: string, userId: string) {
-  const rows = await db
-    .select()
-    .from(membership)
-    .where(and(eq(membership.workspaceId, workspaceId), eq(membership.userId, userId)));
-  const row = rows.at(0);
-  if (row === undefined) {
-    throw new Error(`Sin membresía de ${userId} en ${workspaceId}.`);
-  }
-  return row;
-}
-
-async function membershipById(id: string) {
-  const rows = await db.select().from(membership).where(eq(membership.id, id));
-  return rows.at(0);
-}
 
 /**
  * Una persona del workspace con la membresía en un instante viejo: así
