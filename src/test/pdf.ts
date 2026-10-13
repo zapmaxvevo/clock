@@ -18,7 +18,7 @@ export type PdfPageText = {
 };
 
 /** D-R7-6: los márgenes de la página y el ancho de «Nivel», la primera columna. */
-const PAGE_MARGIN = 36;
+export const PAGE_MARGIN = 36;
 const LEVEL_WIDTH = 0.08;
 
 /** En puntos: dos fragmentos del mismo renglón o de la misma columna. */

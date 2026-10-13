@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { pdfFacts, pdfPageTexts } from "@/test/pdf";
+import { PAGE_MARGIN, pdfFacts, pdfPageTexts } from "@/test/pdf";
 import { octoberByDay } from "@/test/report";
 
 import { pdfBytesOf } from "./pdf";
@@ -213,11 +213,10 @@ function withChart(document: ExportDocument): ExportDocument {
   return { ...document, chart: octoberByDay };
 }
 
-/** Las marcas, que no están en ninguna otra parte del documento. */
-const OCTOBER_TICKS = OCTOBER_TEXT.split(" ").slice(8);
-
-/** D-R7-6: el margen de la página, en puntos. */
-const MARGIN = 36;
+/** Las siete marcas, que no están en ninguna otra parte del documento. */
+const OCTOBER_TICKS = [0, 5, 10, 15, 20, 25, 30].map(
+  (index) => octoberByDay.bars[index]?.tick,
+);
 
 /**
  * Lo que va de la leyenda a «Resumen» o, si la tabla empieza en la página
@@ -297,7 +296,7 @@ describe("pdfBytesOf: el gráfico (D-R7-12; criterio 18 de R7)", () => {
         expect(OCTOBER_TICKS.filter((tick) => words.has(tick))).toEqual([]);
       }
       for (const { lowestY } of pages) {
-        expect(lowestY).toBeGreaterThanOrEqual(MARGIN);
+        expect(lowestY).toBeGreaterThanOrEqual(PAGE_MARGIN);
       }
     },
   );
