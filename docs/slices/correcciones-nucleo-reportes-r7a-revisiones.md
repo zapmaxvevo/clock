@@ -91,3 +91,19 @@ Desvíos aceptados por el team-lead:
   - **`pdf.test.ts`:** sin casts y con la cabecera completa. Los mutantes `slice(0, -1)` y `slice(1)` caen.
   - **`pdf.ts`:** `drawCellText` y `Buffer.concat`.
   - **`pdf-layout.ts`:** `PdfCell` deja de exportarse.
+- **`e2e-tester`, en `3100495`**: `readPdf` afirma `%PDF-` y devuelve `pdfPageTexts(bytes)`. Importa `@/test/pdf`, que resuelve bajo Playwright, y ya no tiene la copia. Lo probaron leyendo un PDF real de la ruta.
+
+## La corrida final y el host
+
+- **Qué pasó:** desde las 21:20 (hora local) quedaron colgados en estado D Xorg y un kworker, y el Chromium headless del host dejó de disparar `requestAnimationFrame`. Con eso, React no revela los boundaries de Suspense y falla hasta el setup de la suite.
+- **Qué se descartó:** no es de la app. Sin la GPU (`--disable-gpu`, SwiftShader) pasa lo mismo.
+- **Cómo se corre:** la corrida final ejecuta Playwright en `mcr.microsoft.com/playwright:v1.63.0-noble`, con `--network host`, contra `next start` en el host. Ahí `requestAnimationFrame` responde en 11 ms.
+- **Pendiente para el usuario:** reiniciar la máquina, o al menos la sesión gráfica, para que el Chromium del host vuelva a andar.
+
+Corrida final sobre `3100495`:
+
+- lint, typecheck y `format:check` limpios;
+- unidad: 1955 tests;
+- time-ar: 305 tests;
+- integración: 1581 tests;
+- e2e en el contenedor, sobre una base nueva: 213/213, dos veces.
