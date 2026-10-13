@@ -2722,3 +2722,33 @@ test("exportar a PDF el resumen, sin las entradas, sin prefetch y con la descarg
   expect(headers["content-type"]).toBe("application/pdf");
   expect(headers["content-disposition"]).toBe(`attachment; filename="${fileName}"`);
 });
+
+test("el PDF del resumen trae el gráfico por día, con su escala y sus marcas", async ({
+  page,
+  email,
+}) => {
+  const day = today();
+  await enterApp(page);
+  await seedExportEntries(email);
+
+  // El archivo del 28: la misma URL y la misma descarga.
+  await openReport(page, EXPORT_WEEK, "proyecto", day, ["fecha"]);
+  const downloading = page.waitForEvent("download");
+  await exportLink(page, "PDF").click();
+  const pages = await readPdf(await (await downloading).path());
+  expect(pages).toHaveLength(1);
+  const [{ text }] = pages;
+
+  // D-R7-12: entre la cabecera y «Resumen», la leyenda, la escala de abajo
+  // arriba y una marca por día. Las barras son 1:30, 0:30 y 0:45: el techo es
+  // 1:30, con un paso de 0:30. Las marcas del 16/09 al 20/09 no están en la
+  // cabecera.
+  const caption = chartCaption("fecha");
+  const start = text.indexOf(caption);
+  expect(start, `«${caption}» en el PDF`).toBeGreaterThanOrEqual(0);
+  const end = text.indexOf("Resumen", start);
+  expect(end, "«Resumen» después del gráfico").toBeGreaterThan(start);
+  expect(text.slice(start, end).trim()).toBe(
+    `${caption} 0:00 0:30 1:00 1:30 15/09 16/09 17/09 18/09 19/09 20/09 21/09`,
+  );
+});

@@ -18,6 +18,7 @@ const document: ExportDocument = {
     [text("Reporte resumido")],
     [text("Zona horaria"), text("America/Argentina/Buenos_Aires")],
   ],
+  chart: null,
   sections: [
     {
       title: "Resumen",
@@ -154,6 +155,7 @@ describe("xlsxBytesOf (D-R6-12; criterio 16 de R6)", () => {
     const oneMinute: ExportCell = { kind: "hours", minutes: 1 };
     const workbook = await readBack({
       header: [[text("Total"), { kind: "hours", minutes: 3 }]],
+      chart: null,
       sections: [
         {
           title: "Entradas",
@@ -171,6 +173,7 @@ describe("xlsxBytesOf (D-R6-12; criterio 16 de R6)", () => {
   it("reemplaza por U+FFFD lo que no es un carácter de XML 1.0, y el archivo se puede releer", async () => {
     const workbook = await readBack({
       header: [],
+      chart: null,
       sections: [
         {
           title: "Entradas",

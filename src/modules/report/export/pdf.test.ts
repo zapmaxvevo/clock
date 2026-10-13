@@ -4,7 +4,8 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { pdfFacts, pdfPageTexts } from "@/test/pdf";
+import { PAGE_MARGIN, pdfFacts, pdfPageTexts } from "@/test/pdf";
+import { octoberByDay } from "@/test/report";
 
 import { pdfBytesOf } from "./pdf";
 import type { ExportCell, ExportDocument, ExportRow } from "./types";
@@ -33,7 +34,10 @@ function row(level: number, labels: readonly string[]): ExportRow {
   ];
 }
 
-/** El documento de `exportDocumentOf` por Persona → Proyecto → Fecha, con `rows` en el resumen. */
+/**
+ * El documento de `exportDocumentOf` por Persona → Proyecto → Fecha, con `rows`
+ * en el resumen y sin gráfico.
+ */
 function documentOf(rows: readonly ExportRow[]): ExportDocument {
   return {
     header: [
@@ -50,6 +54,7 @@ function documentOf(rows: readonly ExportRow[]): ExportDocument {
       ],
       [text("Generado"), text("08/10/2026 12:00")],
     ],
+    chart: null,
     sections: [
       {
         title: "Resumen",
@@ -197,5 +202,129 @@ describe("pdfBytesOf (D-R7-4 a D-R7-6; criterio 8 de R7)", () => {
     expect(leftText).not.toContain("Solo Derecha");
     expect(rightText).toContain("Solo Derecha");
     expect(rightText).not.toContain("Solo Izquierda");
+  });
+});
+
+/** La leyenda, la escala de abajo arriba y las siete marcas, en el orden de dibujo. */
+const OCTOBER_TEXT =
+  "Horas por día 0:00 0:30 1:00 1:30 2:00 01/10 06/10 11/10 16/10 21/10 26/10 31/10";
+
+function withChart(document: ExportDocument): ExportDocument {
+  return { ...document, chart: octoberByDay };
+}
+
+/** Las siete marcas, que no están en ninguna otra parte del documento. */
+const OCTOBER_TICKS = [0, 5, 10, 15, 20, 25, 30].map(
+  (index) => octoberByDay.bars[index]?.tick,
+);
+
+/**
+ * Lo que va de la leyenda a «Resumen» o, si la tabla empieza en la página
+ * siguiente, al pie, que se escribe al final; `null` sin leyenda.
+ */
+function chartTextOf(text: string): string | null {
+  const start = text.indexOf("Horas por día");
+  if (start === -1) {
+    return null;
+  }
+  const summary = text.indexOf("Resumen", start);
+  const end = summary === -1 ? text.indexOf("Página", start) : summary;
+  return end === -1 ? null : text.slice(start, end).trim();
+}
+
+/** `small` con el gráfico y `count` filas «Nota» de más en la cabecera. */
+function withNotes(count: number): ExportDocument {
+  const notes = Array.from({ length: count }, (_, index) => [
+    text("Nota"),
+    text(`Aviso ${index + 1}`),
+  ]);
+  return withChart({ ...small, header: [...small.header, ...notes] });
+}
+
+describe("pdfBytesOf: el gráfico (D-R7-12; criterio 18 de R7)", () => {
+  it("debajo de la cabecera: la leyenda, la escala de abajo arriba y las siete marcas enteras", async () => {
+    const pages = await pdfPageTexts(await pdfBytesOf(withChart(small)));
+
+    expect(pages).toHaveLength(1);
+    expect(chartTextOf(pages[0]?.text ?? "")).toBe(OCTOBER_TEXT);
+    expect(pages[0]?.rows).toEqual(
+      (await pdfPageTexts(await pdfBytesOf(small)))[0]?.rows,
+    );
+  });
+
+  it("baja la tabla de la primera página y se dibuja una sola vez", async () => {
+    const [charted, plain] = await Promise.all(
+      [withChart(documentOf(longRows)), documentOf(longRows)].map(async (document) =>
+        pdfPageTexts(await pdfBytesOf(document)),
+      ),
+    );
+
+    expect(charted[0]?.rows.length).toBeLessThan(plain[0]?.rows.length ?? 0);
+    expect(charted.flatMap(({ rows }) => rows)).toEqual(
+      plain.flatMap(({ rows }) => rows),
+    );
+    expect(charted.map(({ text }) => text.includes("Horas por día"))).toEqual(
+      charted.map((_, index) => index === 0),
+    );
+  });
+
+  it("no se parte: si en la primera página entra la leyenda y no el bloque, va entero a la segunda", async () => {
+    // Con 46 «Nota» quedan unos 85 pt: la leyenda mide 15 y el bloque, unos 160.
+    const pages = await pdfPageTexts(await pdfBytesOf(withNotes(46)));
+
+    expect(pages).toHaveLength(2);
+    const [first, second] = pages.map(({ text }) => text);
+    // El pie va al final: entre la última «Nota» y él, nada del gráfico.
+    expect(first).toMatch(/Nota Aviso 46 Página 1 de 2$/);
+    expect(first).not.toContain("Horas por día");
+    expect(chartTextOf(second ?? "")).toBe(OCTOBER_TEXT);
+  });
+
+  // Cada «Nota» mide un renglón de 9 pt, como el de las marcas: alguna de estas
+  // cabeceras deja menos lugar que el bloque entero y más que el bloque sin
+  // alguna de sus partes.
+  it.each(Array.from({ length: 13 }, (_, index) => 40 + index))(
+    "con %i «Nota», el gráfico entero en una sola página y nada debajo del margen",
+    async (count) => {
+      const pages = await pdfPageTexts(await pdfBytesOf(withNotes(count)));
+
+      const charted = pages.filter(({ text }) => text.includes("Horas por día"));
+      expect(charted).toHaveLength(1);
+      expect(chartTextOf(charted[0]?.text ?? "")).toBe(OCTOBER_TEXT);
+      for (const page of pages.filter((page) => page !== charted[0])) {
+        const words = new Set(page.text.split(" "));
+        expect(OCTOBER_TICKS.filter((tick) => words.has(tick))).toEqual([]);
+      }
+      for (const { lowestY } of pages) {
+        expect(lowestY).toBeGreaterThanOrEqual(PAGE_MARGIN);
+      }
+    },
+  );
+
+  it("con el primer nivel cortado, la leyenda va antes del aviso", async () => {
+    const notice =
+      "El primer nivel pasa de 3000 filas y no se muestra. Acortá el período, filtrá o agrupá por otra cosa.";
+    const document = withChart({
+      ...small,
+      sections: [{ title: "Resumen", rows: [[text(notice)]] }],
+    });
+
+    const [page] = await pdfPageTexts(await pdfBytesOf(document));
+
+    expect(chartTextOf(page?.text ?? "")).toBe(OCTOBER_TEXT);
+    expect(page?.text.indexOf(notice)).toBeGreaterThan(
+      page?.text.indexOf("Horas por día") ?? Infinity,
+    );
+  });
+
+  it("sin gráfico, ninguna página dice «Horas por»", async () => {
+    const pages = [
+      ...(await pdfPageTexts(await pdfBytesOf(small))),
+      ...(await pdfPageTexts(await pdfBytesOf(documentOf(longRows)))),
+    ];
+
+    for (const { text } of pages) {
+      expect(text).not.toContain("Horas por");
+    }
   });
 });

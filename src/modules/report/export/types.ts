@@ -1,3 +1,5 @@
+import type { ReportChart } from "@/modules/report/schema";
+
 /** D-R6-6: qué es cada celda; cómo se escribe lo decide cada formato. */
 export type ExportCell =
   | { readonly kind: "text"; readonly text: string }
@@ -24,6 +26,8 @@ export type ExportSection = {
 export type ExportDocument = {
   /** D-R6-8, una fila por dato. */
   readonly header: readonly ExportRow[];
+  /** D-R7-12: el de la pantalla; `null` sin filas (D-R5-6). CSV y Excel no lo escriben. */
+  readonly chart: ReportChart | null;
   /** El resumen y, si se leyeron, las entradas, en ese orden (D-R7-3). */
   readonly sections: readonly ExportSection[];
 };

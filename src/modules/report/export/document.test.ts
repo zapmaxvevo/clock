@@ -1,8 +1,10 @@
+import { Workbook } from "exceljs";
 import { describe, expect, it } from "vitest";
 
 import { durationLabel } from "@/modules/report/components/group-heading";
 import {
   NO_REPORT_FILTERS,
+  type ReportChart,
   type ReportEntryRow,
   type ReportGroup,
   type ReportReadyState,
@@ -11,7 +13,8 @@ import type { TimeSettings } from "@/server/time";
 
 import { csvBytesOf } from "./csv";
 import { exportDocumentOf, groupTextOf, type ReportExportInput } from "./document";
-import type { ExportRow } from "./types";
+import type { ExportDocument, ExportRow } from "./types";
+import { xlsxBytesOf } from "./xlsx";
 
 const settings: TimeSettings = {
   timezone: "America/Argentina/Buenos_Aires",
@@ -78,7 +81,9 @@ function input(
  * salto de línea, así que cada línea es una fila.
  */
 function texts(rows: readonly ExportRow[]): string[][] {
-  const csv = new TextDecoder().decode(csvBytesOf({ header: rows, sections: [] }));
+  const csv = new TextDecoder().decode(
+    csvBytesOf({ header: rows, chart: null, sections: [] }),
+  );
   return csv
     .split("\r\n")
     .slice(0, -1)
@@ -824,5 +829,83 @@ describe("exportDocumentOf sin las entradas leídas (D-R7-3; criterio 5 de R7)",
     expect(exportDocumentOf(input(cut, { entries: null }), settings).sections).toEqual([
       section(exportDocumentOf(input(cut), settings), "Resumen"),
     ]);
+  });
+});
+
+describe("exportDocumentOf: el gráfico (D-R7-12; criterio 16 de R7)", () => {
+  const chart: ReportChart = {
+    granularity: "date",
+    bars: [
+      {
+        firstDay: "2026-09-28",
+        label: "lun, 28/09",
+        partial: null,
+        tick: "28/09",
+        seconds: 3599,
+      },
+      {
+        firstDay: "2026-09-29",
+        label: "mar, 29/09",
+        partial: null,
+        tick: "29/09",
+        seconds: 0,
+      },
+    ],
+  };
+
+  it("es el del estado, el mismo valor, también `null`", () => {
+    expect(exportDocumentOf(input({ chart }), settings).chart).toBe(chart);
+    expect(exportDocumentOf(input({ chart }, { entries: null }), settings).chart).toBe(
+      chart,
+    );
+    expect(exportDocumentOf(input(), settings).chart).toBeNull();
+  });
+
+  it("sigue con el primer nivel cortado, como la pantalla", () => {
+    const cut: Partial<ReportReadyState> = {
+      groupBy: "description",
+      levelsShown: 0,
+      groups: [],
+      chart,
+    };
+    expect(exportDocumentOf(input(cut, { entries: null }), settings).chart).toBe(chart);
+  });
+
+  /** El documento con el gráfico y el mismo sin él. */
+  function withAndWithout(): readonly [ExportDocument, ExportDocument] {
+    const document = exportDocumentOf(input({ chart }), settings);
+    return [document, { ...document, chart: null }];
+  }
+
+  it("el CSV no lo escribe: los mismos bytes con y sin gráfico", () => {
+    const [withChart, withoutChart] = withAndWithout();
+    expect(csvBytesOf(withChart)).toEqual(csvBytesOf(withoutChart));
+  });
+
+  /** Las hojas y los valores de sus celdas: los bytes llevan la fecha de creación. */
+  async function cellsOf(document: ExportDocument) {
+    const workbook = new Workbook();
+    await workbook.xlsx.load((await xlsxBytesOf(document)).buffer);
+    return workbook.worksheets.map((sheet) => {
+      const rows: unknown[][] = [];
+      sheet.eachRow({ includeEmpty: true }, (row) => {
+        const cells: unknown[] = [];
+        row.eachCell({ includeEmpty: true }, (cell) => {
+          cells.push([cell.address, cell.value, cell.numFmt]);
+        });
+        rows.push(cells);
+      });
+      return { name: sheet.name, rows };
+    });
+  }
+
+  it("el Excel no lo escribe: las mismas hojas y celdas con y sin gráfico", async () => {
+    const [withChart, withoutChart] = withAndWithout();
+    const [cellsWith, cellsWithout] = await Promise.all([
+      cellsOf(withChart),
+      cellsOf(withoutChart),
+    ]);
+    expect(cellsWith.map(({ name }) => name)).toEqual(["Resumen", "Entradas"]);
+    expect(cellsWith).toEqual(cellsWithout);
   });
 });

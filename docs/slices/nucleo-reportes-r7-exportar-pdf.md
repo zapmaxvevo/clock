@@ -928,7 +928,7 @@ ahí, y la tabla de la primera página tiene menos filas sin tocar `pdfLayoutOf`
 - **El alto del bloque** se mide antes de dibujar: la leyenda
   (`heightOfString` en 11 pt), `BLOCK_GAP / 2`, medio renglón de 9 pt (lo que
   el rótulo del techo sobresale del área), el área, `CELL_PADDING` y un renglón
-  de 9 pt para las marcas. Son unos 170 pt contra unos 770 de alto útil: entra
+  de 9 pt para las marcas. Son unos 160 pt (160,4 medidos en R7b) contra unos 770 de alto útil: entra
   siempre en una página nueva, y no hace falta un `RangeError`.
 - La escala: una columna a la izquierda, tan ancha como su rótulo más ancho
   (`widthOfString`) más `CELL_PADDING` a cada lado, con los rótulos en 9 pt,
