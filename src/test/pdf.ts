@@ -3,6 +3,8 @@
  * texto del archivo son números de glifo, y solo un lector lo devuelve.
  */
 
+import type { PDFDocumentProxy } from "pdfjs-dist";
+
 export type PdfPageText = {
   /** Todos los fragmentos de la página en orden, con un espacio y el blanco colapsado. */
   readonly text: string;
@@ -76,18 +78,31 @@ function rowTextOf(fragments: readonly Fragment[]): string {
 }
 
 /**
- * D-R7-10: el texto de cada página de un PDF, con `pdfjs-dist` 6.4.299
- * (`legacy`, sin worker, `disableFontFace: true`; esta versión ya no tiene
- * `isEvalSupported` ni evalúa código). En cada fila, los fragmentos por
- * columna y renglón, los renglones de una celda pegados y las celdas
- * separadas por un espacio.
+ * Abre `bytes` con `pdfjs-dist` 6.4.299 (`legacy`, sin worker,
+ * `disableFontFace: true`; esta versión ya no tiene `isEvalSupported` ni
+ * evalúa código), lee con `read` y lo cierra.
  */
-export async function pdfPageTexts(bytes: Uint8Array): Promise<readonly PdfPageText[]> {
+async function readPdf<T>(
+  bytes: Uint8Array,
+  read: (pdf: PDFDocumentProxy) => Promise<T>,
+): Promise<T> {
   const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
   // Una copia: pdfjs puede quedarse con el buffer que recibe.
   const loading = getDocument({ data: new Uint8Array(bytes), disableFontFace: true });
   try {
-    const pdf = await loading.promise;
+    return await read(await loading.promise);
+  } finally {
+    await loading.destroy();
+  }
+}
+
+/**
+ * D-R7-10: el texto de cada página de un PDF. En cada fila, los fragmentos
+ * por columna y renglón, los renglones de una celda pegados y las celdas
+ * separadas por un espacio.
+ */
+export async function pdfPageTexts(bytes: Uint8Array): Promise<readonly PdfPageText[]> {
+  return readPdf(bytes, async (pdf) => {
     const pages: PdfPageText[] = [];
     for (let number = 1; number <= pdf.numPages; number++) {
       const page = await pdf.getPage(number);
@@ -115,7 +130,28 @@ export async function pdfPageTexts(bytes: Uint8Array): Promise<readonly PdfPageT
       });
     }
     return pages;
-  } finally {
-    await loading.destroy();
-  }
+  });
+}
+
+export type PdfFacts = {
+  /** `info.Title`, o `null` si el archivo no lo trae. */
+  readonly title: string | null;
+  /** El ancho y el alto de cada página, en puntos. */
+  readonly pageSizes: readonly (readonly [width: number, height: number])[];
+};
+
+/** D-R7-6: el título de los metadatos y el tamaño de cada página. */
+export async function pdfFacts(bytes: Uint8Array): Promise<PdfFacts> {
+  return readPdf(bytes, async (pdf) => {
+    const { info } = await pdf.getMetadata();
+    const pageSizes: (readonly [number, number])[] = [];
+    for (let number = 1; number <= pdf.numPages; number++) {
+      const { width, height } = (await pdf.getPage(number)).getViewport({ scale: 1 });
+      pageSizes.push([width, height]);
+    }
+    return {
+      title: "Title" in info && typeof info.Title === "string" ? info.Title : null,
+      pageSizes,
+    };
+  });
 }

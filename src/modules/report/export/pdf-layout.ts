@@ -5,7 +5,7 @@ import type { ExportCell, ExportDocument, ExportRow, ExportSection } from "./typ
 export type GlyphCoverage = (codePoint: number) => boolean;
 
 /** Una celda ya escrita; `muted`, el rótulo de un antepasado (D-R7-6). */
-export type PdfCell = { readonly text: string; readonly muted: boolean };
+type PdfCell = { readonly text: string; readonly muted: boolean };
 
 export type PdfColumn = {
   readonly label: string;

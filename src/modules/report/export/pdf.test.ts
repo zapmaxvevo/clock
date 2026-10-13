@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { pdfPageTexts, type PdfPageText } from "@/test/pdf";
+import { pdfFacts, pdfPageTexts } from "@/test/pdf";
 
 import { pdfBytesOf } from "./pdf";
 import type { ExportCell, ExportDocument, ExportRow } from "./types";
@@ -82,24 +82,6 @@ const longRows = Array.from({ length: 200 }, (_, index) =>
 const tallRow = row(2, ["Ana", "x".repeat(100)]);
 const tallText = `2 Ana ${"x".repeat(100)} 1:30 1,50`;
 
-/** El título y el tamaño de cada página, leídos con pdfjs. */
-async function pdfFactsOf(bytes: Uint8Array) {
-  const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const loading = getDocument({ data: new Uint8Array(bytes), disableFontFace: true });
-  try {
-    const pdf = await loading.promise;
-    const { info } = await pdf.getMetadata();
-    const sizes = [];
-    for (let number = 1; number <= pdf.numPages; number++) {
-      const { width, height } = (await pdf.getPage(number)).getViewport({ scale: 1 });
-      sizes.push([width, height]);
-    }
-    return { title: (info as { Title?: string }).Title, sizes };
-  } finally {
-    await loading.destroy();
-  }
-}
-
 /** Lo que dice el PDF de sí mismo, sin comprimir: sus fuentes. */
 function latin1Of(bytes: Uint8Array): string {
   return new TextDecoder("latin1").decode(bytes);
@@ -110,28 +92,29 @@ describe("pdfBytesOf (D-R7-4 a D-R7-6; criterio 8 de R7)", () => {
     const bytes = await pdfBytesOf(small);
 
     expect(latin1Of(bytes.slice(0, 5))).toBe("%PDF-");
-    const { title, sizes } = await pdfFactsOf(bytes);
+    const { title, pageSizes } = await pdfFacts(bytes);
     expect(title).toBe("Reporte resumido");
-    expect(sizes).toHaveLength(1);
-    const [[width, height]] = sizes as [[number, number]];
-    expect(width).toBeCloseTo(595.28, 0);
-    expect(height).toBeCloseTo(841.89, 0);
-    expect(Math.abs(width - 595.28)).toBeLessThanOrEqual(0.5);
-    expect(Math.abs(height - 841.89)).toBeLessThanOrEqual(0.5);
+    expect(pageSizes).toHaveLength(1);
+    for (const [width, height] of pageSizes) {
+      expect(Math.abs(width - 595.28)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(height - 841.89)).toBeLessThanOrEqual(0.5);
+    }
   });
 
   it("un documento chico: una página con la cabecera, los encabezados, las filas y el pie", async () => {
     const pages = await pdfPageTexts(await pdfBytesOf(small));
 
     expect(pages).toHaveLength(1);
-    const [page] = pages as [PdfPageText];
+    const [page] = pages;
     for (const expected of [
       "Reporte resumido",
       "Período 28/09/2026 – 04/10/2026",
       "Zona horaria America/Argentina/Buenos_Aires",
+      "Alcance Todas las personas del workspace",
       "Agrupado por Persona / Proyecto / Fecha",
       "Total 0:59 0,98",
       "Facturable 0:30 0,50",
+      "Generado 08/10/2026 12:00",
       "Resumen",
       HEADINGS,
       "Página 1 de 1",
@@ -163,7 +146,7 @@ describe("pdfBytesOf (D-R7-4 a D-R7-6; criterio 8 de R7)", () => {
           `Proyecto ${index}`,
           `2026-09-${10 + (index % 20)}`,
         ];
-        return [level, ...labels.slice(0, 3), "1:30", "1,50"].join(" ");
+        return [level, ...labels, "1:30", "1,50"].join(" ");
       }),
     );
   });

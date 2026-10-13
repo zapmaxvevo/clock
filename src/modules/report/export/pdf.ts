@@ -70,7 +70,7 @@ function draw(doc: PDFKit.PDFDocument, layout: PdfLayout): void {
   }
 
   /** El texto en un recuadro; lo deja en `y + CELL_PADDING`, sin partir de página. */
-  function cellText(
+  function drawCellText(
     text: string,
     x: number,
     cellWidth: number,
@@ -111,7 +111,7 @@ function draw(doc: PDFKit.PDFDocument, layout: PdfLayout): void {
       const cellWidth = column.width * width;
       const cell = texts[index];
       if (cell !== undefined) {
-        cellText(cell.text, x, cellWidth, column.align, cell.color);
+        drawCellText(cell.text, x, cellWidth, column.align, cell.color);
       }
       x += cellWidth;
     });
@@ -278,11 +278,5 @@ export async function pdfBytesOf(
   doc.end();
   await finished;
   // Los fragmentos son vistas de Node: la copia es un `ArrayBuffer` propio.
-  const bytes = new Uint8Array(chunks.reduce((total, chunk) => total + chunk.length, 0));
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return bytes;
+  return new Uint8Array(Buffer.concat(chunks));
 }
