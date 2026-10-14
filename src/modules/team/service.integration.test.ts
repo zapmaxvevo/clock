@@ -208,52 +208,29 @@ describe("changeRole: el owner y el rol de admin (criterio 5)", () => {
     },
   );
 
-  it("un admin que pide member para otro admin responde adminOwnerOnly (D-R8-5)", async () => {
-    const seeded = await seedWorkspace();
-    const admin = await seedPerson(seeded.workspaceId, "admin");
-    const target = await seedPerson(seeded.workspaceId, "admin");
-    const before = await membershipById(target.membershipId);
+  it.each([
+    ["para otro admin", "other", "active"],
+    ["para sí mismo", "self", "active"],
+    ["para un admin inactive: el acceso va antes que el estado", "other", "inactive"],
+  ] as const)(
+    "un admin responde adminOwnerOnly al pedir member %s (D-R8-5)",
+    async (_label, whom, status) => {
+      const seeded = await seedWorkspace();
+      const admin = await seedPerson(seeded.workspaceId, "admin");
+      const target =
+        whom === "self" ? admin : await seedPerson(seeded.workspaceId, "admin", status);
+      const before = await membershipById(target.membershipId);
 
-    const error = await failureOf(
-      changeRole(admin.actor, { membershipId: target.membershipId, role: "member" }),
-    );
+      const error = await failureOf(
+        changeRole(admin.actor, { membershipId: target.membershipId, role: "member" }),
+      );
 
-    expect(error.code).toBe("forbidden");
-    expect(error.message).toBe(teamMessages.adminOwnerOnly);
-    expect(await membershipById(target.membershipId)).toEqual(before);
-    expect(await auditFor("membership")).toEqual([]);
-  });
-
-  it("un admin que pide member para sí mismo responde adminOwnerOnly (D-R8-5)", async () => {
-    const seeded = await seedWorkspace();
-    const admin = await seedPerson(seeded.workspaceId, "admin");
-    const before = await membershipById(admin.membershipId);
-
-    const error = await failureOf(
-      changeRole(admin.actor, { membershipId: admin.membershipId, role: "member" }),
-    );
-
-    expect(error.code).toBe("forbidden");
-    expect(error.message).toBe(teamMessages.adminOwnerOnly);
-    expect(await membershipById(admin.membershipId)).toEqual(before);
-    expect(await auditFor("membership")).toEqual([]);
-  });
-
-  it("un admin que pide member para un admin inactive responde adminOwnerOnly: el acceso va antes que el estado", async () => {
-    const seeded = await seedWorkspace();
-    const admin = await seedPerson(seeded.workspaceId, "admin");
-    const target = await seedPerson(seeded.workspaceId, "admin", "inactive");
-    const before = await membershipById(target.membershipId);
-
-    const error = await failureOf(
-      changeRole(admin.actor, { membershipId: target.membershipId, role: "member" }),
-    );
-
-    expect(error.code).toBe("forbidden");
-    expect(error.message).toBe(teamMessages.adminOwnerOnly);
-    expect(await membershipById(target.membershipId)).toEqual(before);
-    expect(await auditFor("membership")).toEqual([]);
-  });
+      expect(error.code).toBe("forbidden");
+      expect(error.message).toBe(teamMessages.adminOwnerOnly);
+      expect(await membershipById(target.membershipId)).toEqual(before);
+      expect(await auditFor("membership")).toEqual([]);
+    },
+  );
 });
 
 describe("changeRole: los otros roles (criterio 6)", () => {
