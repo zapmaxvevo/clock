@@ -528,6 +528,59 @@ describe("team.manage sobre una membresía (R8, §3)", () => {
   });
 });
 
+describe("team.admin.revoke sobre una membresía admin (R8, D-R8-13)", () => {
+  const otherAdmin = {
+    kind: "membership",
+    workspaceId,
+    userId: "u2",
+    role: "admin",
+  } as const;
+  const ownAdmin = { ...otherAdmin, userId: "u1" } as const;
+
+  it("el owner activo le quita el rol a un admin", () => {
+    expect(can(actor("owner"), "team.admin.revoke", otherAdmin)).toBe(true);
+  });
+
+  it("un admin no se lo quita a otro admin ni a sí mismo", () => {
+    expect([
+      can(actor("admin"), "team.admin.revoke", otherAdmin),
+      can(actor("admin"), "team.admin.revoke", ownAdmin),
+    ]).toEqual([false, false]);
+  });
+
+  it("project_manager, team_manager y member activos no se lo quitan a nadie", () => {
+    for (const role of ["project_manager", "team_manager", "member"] as const) {
+      expect([role, can(actor(role), "team.admin.revoke", otherAdmin)]).toEqual([
+        role,
+        false,
+      ]);
+    }
+  });
+
+  it("un owner inactive o invited no se lo quita a nadie", () => {
+    for (const status of ["inactive", "invited"] as const) {
+      expect([
+        status,
+        can(actor("owner", { status }), "team.admin.revoke", otherAdmin),
+      ]).toEqual([status, false]);
+    }
+  });
+
+  it("el owner no se lo quita a un admin de otro workspace", () => {
+    expect(
+      can(actor("owner"), "team.admin.revoke", {
+        ...otherAdmin,
+        workspaceId: "22222222-2222-2222-2222-222222222222",
+      }),
+    ).toBe(false);
+  });
+
+  it("niega un recurso workspace, aunque actúe el owner", () => {
+    // @ts-expect-error: team.admin.revoke pide un recurso membership.
+    expect(can(actor("owner"), "team.admin.revoke", workspace)).toBe(false);
+  });
+});
+
 describe("assertCan", () => {
   it("lanza ForbiddenError cuando can devuelve false", () => {
     expect(() => assertCan(actor("member"), "team.manage", workspace)).toThrow(
