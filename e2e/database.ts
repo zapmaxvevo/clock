@@ -102,6 +102,22 @@ export async function workspaceCreatedAt(): Promise<Date> {
   });
 }
 
+/**
+ * Cuántas membresías `active` tiene el workspace de los e2e. Cada test suma
+ * una persona, y en una base que se reusa se acumulan corrida tras corrida.
+ */
+export async function activeMembershipCount(): Promise<number> {
+  return withDatabase(async (client) => {
+    const result = await client.query<{ count: number }>(
+      `select count(*)::int as count
+         from membership
+        where workspace_id = ${FIRST_WORKSPACE}
+          and status = 'active'`,
+    );
+    return result.rows.at(0)?.count ?? 0;
+  });
+}
+
 /** Zona horaria del workspace, que fija qué día es hoy para la pantalla. */
 export async function workspaceTimeZone(): Promise<string> {
   return withDatabase(async (client) => {
