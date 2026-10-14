@@ -57,6 +57,10 @@ type ResourceByAction = {
   "workspace.delete": WorkspaceResource;
   "team.view": WorkspaceResource;
   "team.manage": WorkspaceResource | MembershipResource;
+  // D-R8-5, ADR 0023: «Only the Workspace owner can remove an admin role from
+  // someone». Se consulta solo sobre una membresía `admin`: `can()` no mira el
+  // rol de la membresía para esta acción.
+  "team.admin.revoke": MembershipResource;
   "member.invite": WorkspaceResource;
   "timeEntry.own.create": TimeEntryResource;
   "timeEntry.own.update": TimeEntryResource;
@@ -94,6 +98,7 @@ const resourceKinds = {
   "workspace.delete": ["workspace"],
   "team.view": ["workspace"],
   "team.manage": ["workspace", "membership"],
+  "team.admin.revoke": ["membership"],
   "member.invite": ["workspace"],
   "timeEntry.own.create": ["timeEntry"],
   "timeEntry.own.update": ["timeEntry"],
@@ -124,6 +129,7 @@ const allowedRoles: Record<Action, readonly Role[]> = {
   "workspace.delete": ["owner"],
   "team.view": everyone,
   "team.manage": ["owner", "admin"],
+  "team.admin.revoke": ["owner"],
   "member.invite": ["owner", "admin"],
   "timeEntry.own.create": everyone,
   "timeEntry.own.update": everyone,

@@ -23,6 +23,8 @@ export type ChangeableRole = (typeof CHANGEABLE_ROLES)[number];
 /** Textos que la interfaz muestra tal cual (§5.6). */
 export const teamMessages = {
   forbidden: "No tenés permiso para cambiar roles.",
+  /** D-R8-5: un admin que pide quitar el rol de admin, a otro o a sí mismo. */
+  adminOwnerOnly: "Solo el propietario quita el rol de administrador.",
   notFound: "Esa persona ya no está en el equipo.",
   inactive: "Esa persona ya no está activa en el workspace.",
   ownerLocked: "El rol del propietario no se cambia.",
@@ -55,9 +57,12 @@ const teamMember = z.object({
   name: z.string(),
   email: z.string(),
   role: z.enum(ROLE_VALUES),
-  /** La fila de quien mira: «(vos)», y bajarse pide confirmación (D-R8-5). */
+  /** La fila de quien mira: «(vos)». */
   isSelf: z.boolean(),
-  /** D-R8-3: `promote` para `member`, `demote` para `admin`, `null` sin control. */
+  /**
+   * D-R8-3: `promote` si `can()` deja ascender a un `member`, `demote` si deja
+   * quitarle el rol a un `admin` (`team.admin.revoke`), `null` sin control.
+   */
   change: z.enum(["promote", "demote"]).nullable(),
 });
 
