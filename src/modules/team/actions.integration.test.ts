@@ -153,6 +153,22 @@ describe("changeRole (criterio 15)", () => {
     expect(mocks.revalidated).toEqual([wholeTree]);
   });
 
+  it("un admin que pide member para otro admin responde forbidden con adminOwnerOnly y revalida", async () => {
+    await signInAs("admin");
+    const target = await seedTarget("admin");
+
+    const result = await actions.changeRole({ membershipId: target.id, role: "member" });
+
+    expect(result).toEqual({
+      ok: false,
+      code: "forbidden",
+      message: teamMessages.adminOwnerOnly,
+    });
+    expect(await membershipOf(seeded.workspaceId, target.userId)).toEqual(target);
+    expect(await auditFor("membership")).toEqual([]);
+    expect(mocks.revalidated).toEqual([wholeTree]);
+  });
+
   it("un id que no existe responde not_found y revalida", async () => {
     await signInAs("admin");
 

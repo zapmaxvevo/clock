@@ -79,42 +79,54 @@ describe("changeRole: ascender y bajar (criterio 3)", () => {
     });
   });
 
-  it("un admin baja a otro admin a member, con el admin como actor", async () => {
+  it("un admin pasa a un member a admin, con el admin como actor", async () => {
     const seeded = await seedWorkspace();
     const admin = await seedPerson(seeded.workspaceId, "admin");
-    const target = await seedPerson(seeded.workspaceId, "admin");
+    const target = await seedPerson(seeded.workspaceId, "member");
 
     const result = await changeRole(admin.actor, {
       membershipId: target.membershipId,
-      role: "member",
+      role: "admin",
     });
 
-    expect(result).toEqual({ membershipId: target.membershipId, role: "member" });
-    expect((await membershipById(target.membershipId))?.role).toBe("member");
-    expect((await membershipById(admin.membershipId))?.role).toBe("admin");
+    expect(result).toEqual({ membershipId: target.membershipId, role: "admin" });
+    expect((await membershipById(target.membershipId))?.role).toBe("admin");
     const audit = await auditFor("membership");
     expect(audit).toHaveLength(1);
     expect(audit[0]).toMatchObject({
       workspaceId: seeded.workspaceId,
       actorId: admin.userId,
       entityId: target.membershipId,
-      previousValue: JSON.stringify({ role: "admin" }),
-      nextValue: JSON.stringify({ role: "member" }),
+      previousValue: JSON.stringify({ role: "member" }),
+      nextValue: JSON.stringify({ role: "admin" }),
     });
   });
 
-  it("un admin se baja a sí mismo (D-R8-5)", async () => {
+  it("el owner pasa a un admin a member, con la fila y la auditoría", async () => {
     const seeded = await seedWorkspace();
-    const admin = await seedPerson(seeded.workspaceId, "admin");
+    const target = await seedPerson(seeded.workspaceId, "admin");
+    const before = await membershipById(target.membershipId);
 
-    const result = await changeRole(admin.actor, {
-      membershipId: admin.membershipId,
+    const result = await changeRole(ownerOf(seeded), {
+      membershipId: target.membershipId,
       role: "member",
     });
 
-    expect(result).toEqual({ membershipId: admin.membershipId, role: "member" });
-    expect((await membershipById(admin.membershipId))?.role).toBe("member");
-    expect(await auditFor("membership", admin.membershipId)).toHaveLength(1);
+    expect(result).toEqual({ membershipId: target.membershipId, role: "member" });
+    const after = await membershipById(target.membershipId);
+    expect(after?.role).toBe("member");
+    expect(after?.updatedAt.getTime()).toBeGreaterThan(before?.updatedAt.getTime() ?? 0);
+    const audit = await auditFor("membership");
+    expect(audit).toHaveLength(1);
+    expect(audit[0]).toMatchObject({
+      workspaceId: seeded.workspaceId,
+      actorId: seeded.ownerId,
+      action: "membership.changeRole",
+      entity: "membership",
+      entityId: target.membershipId,
+      previousValue: JSON.stringify({ role: "admin" }),
+      nextValue: JSON.stringify({ role: "member" }),
+    });
   });
 });
 
@@ -136,9 +148,31 @@ describe("changeRole: sin efecto (criterio 4)", () => {
       expect(await auditFor("membership")).toEqual([]);
     },
   );
+
+  it.each([
+    ["admin para quien ya es admin, el reintento de su ascenso", "admin"],
+    ["member para quien ya es member", "member"],
+  ] as const)(
+    "un admin que pide %s responde éxito sin escribir ni auditar (D-R8-13)",
+    async (_label, role) => {
+      const seeded = await seedWorkspace();
+      const admin = await seedPerson(seeded.workspaceId, "admin");
+      const target = await seedPerson(seeded.workspaceId, role);
+      const before = await membershipById(target.membershipId);
+
+      const result = await changeRole(admin.actor, {
+        membershipId: target.membershipId,
+        role,
+      });
+
+      expect(result).toEqual({ membershipId: target.membershipId, role });
+      expect(await membershipById(target.membershipId)).toEqual(before);
+      expect(await auditFor("membership")).toEqual([]);
+    },
+  );
 });
 
-describe("changeRole: el owner (criterio 5)", () => {
+describe("changeRole: el owner y el rol de admin (criterio 5)", () => {
   it.each(["member", "admin"] as const)(
     "el owner sobre la suya con %s responde role_locked y no cambia nada",
     async (role) => {
@@ -173,6 +207,53 @@ describe("changeRole: el owner (criterio 5)", () => {
       expect(await auditFor("membership")).toEqual([]);
     },
   );
+
+  it("un admin que pide member para otro admin responde adminOwnerOnly (D-R8-5)", async () => {
+    const seeded = await seedWorkspace();
+    const admin = await seedPerson(seeded.workspaceId, "admin");
+    const target = await seedPerson(seeded.workspaceId, "admin");
+    const before = await membershipById(target.membershipId);
+
+    const error = await failureOf(
+      changeRole(admin.actor, { membershipId: target.membershipId, role: "member" }),
+    );
+
+    expect(error.code).toBe("forbidden");
+    expect(error.message).toBe(teamMessages.adminOwnerOnly);
+    expect(await membershipById(target.membershipId)).toEqual(before);
+    expect(await auditFor("membership")).toEqual([]);
+  });
+
+  it("un admin que pide member para sí mismo responde adminOwnerOnly (D-R8-5)", async () => {
+    const seeded = await seedWorkspace();
+    const admin = await seedPerson(seeded.workspaceId, "admin");
+    const before = await membershipById(admin.membershipId);
+
+    const error = await failureOf(
+      changeRole(admin.actor, { membershipId: admin.membershipId, role: "member" }),
+    );
+
+    expect(error.code).toBe("forbidden");
+    expect(error.message).toBe(teamMessages.adminOwnerOnly);
+    expect(await membershipById(admin.membershipId)).toEqual(before);
+    expect(await auditFor("membership")).toEqual([]);
+  });
+
+  it("un admin que pide member para un admin inactive responde adminOwnerOnly: el acceso va antes que el estado", async () => {
+    const seeded = await seedWorkspace();
+    const admin = await seedPerson(seeded.workspaceId, "admin");
+    const target = await seedPerson(seeded.workspaceId, "admin", "inactive");
+    const before = await membershipById(target.membershipId);
+
+    const error = await failureOf(
+      changeRole(admin.actor, { membershipId: target.membershipId, role: "member" }),
+    );
+
+    expect(error.code).toBe("forbidden");
+    expect(error.message).toBe(teamMessages.adminOwnerOnly);
+    expect(await membershipById(target.membershipId)).toEqual(before);
+    expect(await auditFor("membership")).toEqual([]);
+  });
 });
 
 describe("changeRole: los otros roles (criterio 6)", () => {
@@ -350,6 +431,8 @@ describe("getTeamView: la lista (criterio 14)", () => {
     const owner = await membershipOf(workspaceId, seeded.ownerId);
     const admin = await seedPerson(workspaceId, "admin");
     await nameAccount(admin.userId, "Bruno Admin");
+    const secondAdmin = await seedPerson(workspaceId, "admin");
+    await nameAccount(secondAdmin.userId, "Beatriz Admin");
     const edited = await seedPerson(workspaceId, "member");
     await nameAccount(edited.userId, "Zulema Cuenta");
     await seedPreferences(edited.userId, { displayName: "Ana Editada" });
@@ -379,6 +462,13 @@ describe("getTeamView: la lista (criterio 14)", () => {
         userId: admin.userId,
         membershipId: admin.membershipId,
         name: "Bruno Admin",
+        role: "admin",
+        change: "demote",
+      }),
+      secondAdmin: expectedRow({
+        userId: secondAdmin.userId,
+        membershipId: secondAdmin.membershipId,
+        name: "Beatriz Admin",
         role: "admin",
         change: "demote",
       }),
@@ -423,6 +513,7 @@ describe("getTeamView: la lista (criterio 14)", () => {
       kind: "ready",
       members: [
         rows.edited,
+        rows.secondAdmin,
         rows.admin,
         rows.google,
         rows.projectManager,
@@ -432,14 +523,15 @@ describe("getTeamView: la lista (criterio 14)", () => {
     });
   });
 
-  it("para un admin: su fila es la propia, con demote", async () => {
+  it("para un admin: asciende a los members y no quita el rol a ningún admin, tampoco al suyo (D-R8-5)", async () => {
     const { admin, rows } = await seedTeam();
 
     const view = await getTeamView(admin.actor);
 
     expect(view.kind === "ready" && view.members).toEqual([
       rows.edited,
-      { ...rows.admin, isSelf: true },
+      { ...rows.secondAdmin, change: null },
+      { ...rows.admin, isSelf: true, change: null },
       rows.google,
       rows.projectManager,
       rows.teamManager,

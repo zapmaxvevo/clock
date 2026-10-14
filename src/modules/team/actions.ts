@@ -14,7 +14,7 @@ import {
 // El permiso lo consulta el service: el recurso necesita la membresía leída, y
 // la autoridad se vuelve a leer bajo el bloqueo (D-R8-7).
 const options = {
-  // D-R8-8: bajarse a sí mismo cambia la navegación y todas las pantallas.
+  // D-R8-8: el árbol entero, como el perfil.
   paths: [{ path: "/", type: "layout" }],
   messages: { forbidden: teamMessages.forbidden, unexpected: teamMessages.unexpected },
 } as const;

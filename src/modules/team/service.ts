@@ -2,7 +2,12 @@ import { compareNames } from "@/lib/text";
 import { DomainError } from "@/server/action";
 import { recordAudit } from "@/server/audit";
 import { db } from "@/server/db";
-import { can, type Actor, type Role } from "@/server/permissions";
+import {
+  can,
+  type Actor,
+  type MembershipResource,
+  type Role,
+} from "@/server/permissions";
 import { displayNameOf } from "@/modules/profile/service";
 
 import { teamRepository, type LockedMembership, type TeamMemberRow } from "./repository";
@@ -38,13 +43,24 @@ function changeableRoleOf(role: Role): ChangeableRole | undefined {
   return CHANGEABLE_ROLES.find((changeable) => changeable === role);
 }
 
-/** D-R8-3: el control de la fila, por su rol. */
-function changeOf(role: Role): TeamMember["change"] {
-  switch (changeableRoleOf(role)) {
+function membershipResource(
+  workspaceId: string,
+  row: { readonly userId: string; readonly role: Role },
+): MembershipResource {
+  return { kind: "membership", workspaceId, userId: row.userId, role: row.role };
+}
+
+/**
+ * D-R8-3, D-R8-13: el control de la fila, con `can()` sobre su membresía.
+ * `team.admin.revoke` se consulta solo sobre una fila `admin`.
+ */
+function changeOf(actor: Actor, row: TeamMemberRow): TeamMember["change"] {
+  const resource = membershipResource(actor.workspaceId, row);
+  switch (changeableRoleOf(row.role)) {
     case "member":
-      return "promote";
+      return can(actor, "team.manage", resource) ? "promote" : null;
     case "admin":
-      return "demote";
+      return can(actor, "team.admin.revoke", resource) ? "demote" : null;
     case undefined:
       return null;
   }
@@ -57,7 +73,7 @@ function toTeamMember(actor: Actor, row: TeamMemberRow): TeamMember {
     email: row.email,
     role: row.role,
     isSelf: row.userId === actor.userId,
-    change: changeOf(row.role),
+    change: changeOf(actor, row),
   };
 }
 
@@ -100,7 +116,7 @@ function freshActorOf(actor: Actor, locked: readonly LockedMembership[]): Actor 
   };
 }
 
-/** D-R8-4 a D-R8-9. */
+/** D-R8-4 a D-R8-9, D-R8-13. */
 export async function changeRole(
   actor: Actor,
   input: ChangeRoleInput,
@@ -120,15 +136,19 @@ export async function changeRole(
       throw new TeamError("not_found", teamMessages.notFound);
     }
     const fresh = freshActorOf(actor, locked);
-    if (
-      !can(fresh, "team.manage", {
-        kind: "membership",
-        workspaceId: target.workspaceId,
-        userId: target.userId,
-        role: target.role,
-      })
-    ) {
+    const resource = membershipResource(target.workspaceId, target);
+    if (!can(fresh, "team.manage", resource)) {
       throw new TeamError("forbidden", teamMessages.forbidden);
+    }
+    // D-R8-13: quitar el rol de admin pide además `team.admin.revoke`. La
+    // acción se elige por el pedido y la decide `can()`; pedir `admin` para
+    // quien ya lo es no quita nada y sigue siendo idempotente.
+    if (
+      target.role === "admin" &&
+      input.role === "member" &&
+      !can(fresh, "team.admin.revoke", resource)
+    ) {
+      throw new TeamError("forbidden", teamMessages.adminOwnerOnly);
     }
     // `can()` deja al owner tocar su propia membresía; bajarlo dejaría el
     // workspace con un `owner_id` sin el rol `owner` (D-R8-4).
