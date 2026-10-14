@@ -6,6 +6,7 @@
  */
 import type { Locator, Page } from "@playwright/test";
 
+import { TEST_EMAIL_DOMAIN } from "./environment";
 import { escapeRegExp } from "./tracker-page";
 
 export const TEAM_PATH = "/equipo";
@@ -29,10 +30,11 @@ export const ADMIN_ROLE = "Administrador";
 export const MEMBER_ROLE = "Miembro";
 export type RoleLabel = typeof ADMIN_ROLE | typeof MEMBER_ROLE;
 
-/** §5.5: la confirmación de bajarse a sí mismo. */
-export const SELF_DEMOTE_TITLE = "¿Dejar de ser administrador?";
-export const SELF_DEMOTE_CONFIRM = "Dejar de ser administrador";
-export const CANCEL = "Cancelar";
+/**
+ * La cuenta del owner de la suite, la misma con que entra el setup. Solo el
+ * owner quita el rol de admin (D-R8-5); su membresía no se toca (D-R8-11).
+ */
+export const OWNER_EMAIL = `owner@${TEST_EMAIL_DOMAIN}`;
 
 /** §5.6: el aviso de un cambio que salió bien. */
 export function changedMessage(name: string, role: RoleLabel): string {
@@ -85,13 +87,14 @@ export function roleCell(row: Locator): Locator {
   return row.getByRole("cell").first();
 }
 
+/** Los botones de una fila: uno si quien mira puede cambiarle el rol, si no ninguno. */
+export function rowButtons(row: Locator): Locator {
+  return row.getByRole("button");
+}
+
 /** El botón de una fila por su nombre accesible, «{acción}: {nombre}» (§5.4). */
 export function roleButton(page: Page, action: RoleAction, name: string): Locator {
   return teamTable(page).getByRole("button", { name: `${action}: ${name}`, exact: true });
-}
-
-export function selfDemoteDialog(page: Page): Locator {
-  return page.getByRole("dialog", { name: SELF_DEMOTE_TITLE, exact: true });
 }
 
 /**
