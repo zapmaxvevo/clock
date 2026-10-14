@@ -62,52 +62,73 @@ function holdMemberships(...ids: string[]) {
       .for("no key update");
 }
 
-describe("dos admins que se bajan uno al otro a la vez (criterio 11)", () => {
-  it("gana uno y el otro recibe forbidden: quedan un admin, un member y una sola auditoría", async () => {
+describe("la autoridad bajo el bloqueo (criterio 11)", () => {
+  it("el owner baja a A mientras A asciende a M: A decide con el rol que leyó bajo el bloqueo", async () => {
     const a = await seedMember(workspaceId, "admin");
-    const b = await seedMember(workspaceId, "admin");
+    const m = await seedMember(workspaceId, "member");
     const aMembership = await membershipIdOf(a);
-    const bMembership = await membershipIdOf(b);
+    const mMembership = await membershipIdOf(m);
 
-    const outcomes = await raceThroughBarrier(holdMemberships(aMembership, bMembership), [
+    const outcomes = await queueBehindBarrier(holdMemberships(aMembership), [
       () =>
-        settle(
-          changeRole(actorFor(a, "admin"), { membershipId: bMembership, role: "member" }),
-        ),
+        changeRole(actorFor(ownerId, "owner"), {
+          membershipId: aMembership,
+          role: "member",
+        }),
       () =>
-        settle(
-          changeRole(actorFor(b, "admin"), { membershipId: aMembership, role: "member" }),
-        ),
+        changeRole(actorFor(a, "admin"), { membershipId: mMembership, role: "admin" }),
     ]);
 
-    const succeeded = outcomes.filter((outcome) => !(outcome instanceof Error));
-    const failed = outcomes.filter((outcome) => outcome instanceof Error);
-    expect(succeeded).toHaveLength(1);
-    expect(failed).toEqual([expect.any(TeamError)]);
-    expect(failed[0]).toMatchObject({
-      code: "forbidden",
-      message: teamMessages.forbidden,
+    expect(outcomes).toEqual([
+      { status: "fulfilled", value: { membershipId: aMembership, role: "member" } },
+      { status: "rejected", reason: expect.any(TeamError) },
+    ]);
+    expect(outcomes[1]).toMatchObject({
+      reason: { code: "forbidden", message: teamMessages.forbidden },
     });
-
-    // El ganador es quien sigue admin; el otro quedó member.
-    const winner = outcomes[0] === succeeded[0] ? a : b;
-    const loserMembership = winner === a ? bMembership : aMembership;
-    expect(succeeded[0]).toEqual({
-      value: { membershipId: loserMembership, role: "member" },
-    });
-    expect([await roleOf(aMembership), await roleOf(bMembership)]).toEqual(
-      winner === a ? ["admin", "member"] : ["member", "admin"],
-    );
+    expect([await roleOf(aMembership), await roleOf(mMembership)]).toEqual([
+      "member",
+      "member",
+    ]);
     expect(await auditFor("membership")).toEqual([
       expect.objectContaining({
         workspaceId,
-        actorId: winner,
+        actorId: ownerId,
         action: "membership.changeRole",
-        entityId: loserMembership,
+        entityId: aMembership,
         previousValue: JSON.stringify({ role: "admin" }),
         nextValue: JSON.stringify({ role: "member" }),
       }),
     ]);
+  });
+
+  it("dos admins que se piden admin uno al otro: los dos responden éxito sin escribir, sin esperarse en círculo", async () => {
+    const a = await seedMember(workspaceId, "admin");
+    const b = await seedMember(workspaceId, "admin");
+    const aMembership = await membershipIdOf(a);
+    const bMembership = await membershipIdOf(b);
+    const before = [await membershipById(aMembership), await membershipById(bMembership)];
+
+    const outcomes = await raceThroughBarrier(holdMemberships(aMembership, bMembership), [
+      () =>
+        settle(
+          changeRole(actorFor(a, "admin"), { membershipId: bMembership, role: "admin" }),
+        ),
+      () =>
+        settle(
+          changeRole(actorFor(b, "admin"), { membershipId: aMembership, role: "admin" }),
+        ),
+    ]);
+
+    expect(outcomes).toEqual([
+      { value: { membershipId: bMembership, role: "admin" } },
+      { value: { membershipId: aMembership, role: "admin" } },
+    ]);
+    expect([
+      await membershipById(aMembership),
+      await membershipById(bMembership),
+    ]).toEqual(before);
+    expect(await auditFor("membership")).toEqual([]);
   });
 });
 
@@ -119,12 +140,12 @@ describe("dos cambios de la misma membresía (criterio 12)", () => {
 
     const outcomes = await queueBehindBarrier(holdMemberships(mMembership), [
       () =>
+        changeRole(actorFor(d, "admin"), { membershipId: mMembership, role: "admin" }),
+      () =>
         changeRole(actorFor(ownerId, "owner"), {
           membershipId: mMembership,
-          role: "admin",
+          role: "member",
         }),
-      () =>
-        changeRole(actorFor(d, "admin"), { membershipId: mMembership, role: "member" }),
     ]);
 
     expect(outcomes).toEqual([
@@ -134,8 +155,8 @@ describe("dos cambios de la misma membresía (criterio 12)", () => {
     expect(await roleOf(mMembership)).toBe("member");
 
     const rows = await auditFor("membership", mMembership);
-    const first = rows.find((row) => row.actorId === ownerId);
-    const second = rows.find((row) => row.actorId === d);
+    const first = rows.find((row) => row.actorId === d);
+    const second = rows.find((row) => row.actorId === ownerId);
     expect(rows).toHaveLength(2);
     expect(first).toMatchObject({
       workspaceId,
