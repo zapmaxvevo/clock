@@ -14,47 +14,24 @@ import { teamLabels } from "./labels";
  */
 export const TEAM_HEADING_ID = "equipo-titulo";
 
-/** Lo que hace la tabla con un clic; los dos los pasa el componente. */
-export type RowHandlers = {
-  /** `run` de `useAction` con `changeRole`. */
-  readonly send: (input: ChangeRoleInput) => void;
-  /** Abre la confirmación de §5.5 para la fila. */
-  readonly confirm: (member: TeamMember) => void;
-};
-
 /**
- * El clic en el botón de una fila. Con un pedido en curso no hace nada. La fila
- * propia con `demote` pide confirmación y no manda; las demás mandan
- * `{ membershipId, role }` con `admin` (`promote`) o `member` (`demote`).
+ * El clic en el botón de una fila. Con un pedido en curso, o sin `change`, no
+ * hace nada; si no, manda `{ membershipId, role }` con `admin` (`promote`) o
+ * `member` (`demote`).
  */
 export function activate(
   member: TeamMember,
   pending: boolean,
-  handlers: RowHandlers,
+  /** `run` de `useAction` con `changeRole`. */
+  send: (input: ChangeRoleInput) => void,
 ): void {
   if (pending || member.change === null) {
     return;
   }
-  if (member.isSelf && member.change === "demote") {
-    handlers.confirm(member);
-    return;
-  }
-  handlers.send({
+  send({
     membershipId: member.membershipId,
     role: member.change === "promote" ? "admin" : "member",
   });
-}
-
-/** «Dejar de ser administrador» en la confirmación: manda `member`. Con un pedido en curso, nada. */
-export function confirmSelfDemotion(
-  member: TeamMember,
-  pending: boolean,
-  send: RowHandlers["send"],
-): void {
-  if (pending) {
-    return;
-  }
-  send({ membershipId: member.membershipId, role: "member" });
 }
 
 /** El último desenlace de la tabla, con el nombre de la fila al hacer clic. */
@@ -80,7 +57,8 @@ export type TeamFeedback = {
 /**
  * El aviso de un desenlace, o `null` sin desenlace. «Reintentar» solo con
  * `unexpected`, como `retryHandlerOf`: los demás códigos ya describen el
- * estado real.
+ * estado real. Con `unexpected`, el cuerpo es `unexpectedBody` y no el mensaje
+ * del resultado: el título ya dice que no se pudo cambiar el rol.
  */
 export function feedbackOf(outcome: TeamOutcome | null): TeamFeedback | null {
   if (outcome === null) {
@@ -93,10 +71,11 @@ export function feedbackOf(outcome: TeamOutcome | null): TeamFeedback | null {
       retry: false,
     };
   }
+  const unexpected = outcome.code === "unexpected";
   return {
     tone: "error",
     title: teamLabels.changeFailed(outcome.name),
-    message: outcome.message,
-    retry: outcome.code === "unexpected",
+    message: unexpected ? teamLabels.unexpectedBody : outcome.message,
+    retry: unexpected,
   };
 }

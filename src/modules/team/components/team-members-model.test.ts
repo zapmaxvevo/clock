@@ -1,13 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { teamView, type TeamMember } from "@/modules/team/schema";
+import { teamView, type ChangeRoleInput, type TeamMember } from "@/modules/team/schema";
 
-import {
-  activate,
-  confirmSelfDemotion,
-  feedbackOf,
-  type RowHandlers,
-} from "./team-members-model";
+import { activate, feedbackOf } from "./team-members-model";
 
 /** Una fila de la vista, validada con el esquema de la vista. */
 function memberOf(fields: Partial<TeamMember>): TeamMember {
@@ -39,80 +34,52 @@ const otherAdmin = memberOf({
   role: "admin",
   change: "demote",
 });
+/** La fila propia de un admin, como la ve él: sin control (D-R8-5). */
 const selfAdmin = memberOf({
   membershipId: "2a7e9f3c-ab64-4e6d-9c73-3f4b5a6c7d83",
   name: "Carla",
   role: "admin",
   isSelf: true,
-  change: "demote",
+  change: null,
 });
 
-function handlers() {
-  return { send: vi.fn<RowHandlers["send"]>(), confirm: vi.fn<RowHandlers["confirm"]>() };
-}
-
 describe("activate", () => {
-  it("en una fila `promote` manda `admin`, sin confirmar", () => {
-    const row = handlers();
+  it("en una fila `promote` manda `admin`", () => {
+    const send = vi.fn<(input: ChangeRoleInput) => void>();
 
-    activate(promotable, false, row);
+    activate(promotable, false, send);
 
-    expect(row.send).toHaveBeenCalledExactlyOnceWith({
+    expect(send).toHaveBeenCalledExactlyOnceWith({
       membershipId: promotable.membershipId,
       role: "admin",
     });
-    expect(row.confirm).not.toHaveBeenCalled();
   });
 
-  it("en una fila `demote` ajena manda `member`, sin confirmar", () => {
-    const row = handlers();
+  it("en una fila `demote` manda `member`", () => {
+    const send = vi.fn<(input: ChangeRoleInput) => void>();
 
-    activate(otherAdmin, false, row);
+    activate(otherAdmin, false, send);
 
-    expect(row.send).toHaveBeenCalledExactlyOnceWith({
+    expect(send).toHaveBeenCalledExactlyOnceWith({
       membershipId: otherAdmin.membershipId,
       role: "member",
     });
-    expect(row.confirm).not.toHaveBeenCalled();
   });
 
-  it("en la fila propia con `demote` pide confirmación y no manda (D-R8-5)", () => {
-    const row = handlers();
+  it("en una fila sin `change`, no manda", () => {
+    const send = vi.fn<(input: ChangeRoleInput) => void>();
 
-    activate(selfAdmin, false, row);
+    activate(selfAdmin, false, send);
 
-    expect(row.confirm).toHaveBeenCalledExactlyOnceWith(selfAdmin);
-    expect(row.send).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
   });
 
-  it("con un pedido en curso, ninguna fila llama a nada", () => {
-    const row = handlers();
+  it("con un pedido en curso, ninguna fila manda", () => {
+    const send = vi.fn<(input: ChangeRoleInput) => void>();
 
     for (const member of [promotable, otherAdmin, selfAdmin]) {
-      activate(member, true, row);
+      activate(member, true, send);
     }
-
-    expect(row.send).not.toHaveBeenCalled();
-    expect(row.confirm).not.toHaveBeenCalled();
-  });
-});
-
-describe("confirmSelfDemotion", () => {
-  it("manda `member` para la fila propia", () => {
-    const send = vi.fn();
-
-    confirmSelfDemotion(selfAdmin, false, send);
-
-    expect(send).toHaveBeenCalledExactlyOnceWith({
-      membershipId: selfAdmin.membershipId,
-      role: "member",
-    });
-  });
-
-  it("con un pedido en curso, no manda", () => {
-    const send = vi.fn();
-
-    confirmSelfDemotion(selfAdmin, true, send);
 
     expect(send).not.toHaveBeenCalled();
   });
@@ -123,7 +90,8 @@ describe("feedbackOf", () => {
     expect(feedbackOf(null)).toBeNull();
   });
 
-  it("una falla inesperada es un error con el nombre, el mensaje y «Reintentar»", () => {
+  it("una falla inesperada es un error con el nombre, el cuerpo propio y «Reintentar»", () => {
+    // El cuerpo no repite «No se pudo cambiar el rol», que ya dice el título.
     expect(
       feedbackOf({
         kind: "failed",
@@ -134,7 +102,7 @@ describe("feedbackOf", () => {
     ).toEqual({
       tone: "error",
       title: "No se pudo cambiar el rol de Ana.",
-      message: "No se pudo cambiar el rol. Revisá la conexión y volvé a intentar.",
+      message: "Revisá la conexión y volvé a intentar.",
       retry: true,
     });
   });

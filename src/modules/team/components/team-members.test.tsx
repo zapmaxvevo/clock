@@ -7,6 +7,7 @@ import { buttonsOf, textOf } from "@/test/markup";
 import { TeamMembersView } from "./team-members";
 import type { TeamFeedback } from "./team-members-model";
 
+/** Como la ve el owner: un member con `promote` y un admin ajeno con `demote`. */
 const view = teamView.parse({
   kind: "ready",
   members: [
@@ -23,7 +24,7 @@ const view = teamView.parse({
       name: "Bruno",
       email: "bruno@empresa.com",
       role: "admin",
-      isSelf: true,
+      isSelf: false,
       change: "demote",
     },
   ],
@@ -61,20 +62,18 @@ describe("TeamMembersView", () => {
     }
   });
 
-  it("con un error que se reintenta, el aviso con el título, el mensaje y «Reintentar»", () => {
+  it("con un error que se reintenta, el aviso con el título, el cuerpo y «Reintentar»", () => {
     const markup = render(false, {
       tone: "error",
       title: "No se pudo cambiar el rol de Ana.",
-      message: "No se pudo cambiar el rol. Revisá la conexión y volvé a intentar.",
+      message: "Revisá la conexión y volvé a intentar.",
       retry: true,
     });
     const alert = markup.slice(0, markup.indexOf("<table"));
 
     expect(alert).toContain('role="alert"');
     expect(textOf(alert)).toContain("No se pudo cambiar el rol de Ana.");
-    expect(textOf(alert)).toContain(
-      "No se pudo cambiar el rol. Revisá la conexión y volvé a intentar.",
-    );
+    expect(textOf(alert)).toContain("Revisá la conexión y volvé a intentar.");
     expect(textOf(alert)).toContain("Reintentar");
   });
 

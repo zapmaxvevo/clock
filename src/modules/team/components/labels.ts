@@ -9,7 +9,7 @@ export const teamLabels = {
   /** El título visible, que también nombra la tabla. */
   heading: "Equipo",
   intro:
-    "Un administrador ve las horas de todas las personas en los reportes y cambia roles. El rol del propietario no se cambia.",
+    "Un administrador ve las horas de todas las personas en los reportes y puede hacer administradoras a otras personas. Solo el propietario quita el rol de administrador, y el suyo no se cambia.",
   /** D-R8-2: un member, un `project_manager` o un `team_manager` activos. */
   forbiddenRole: "No tenés permiso para administrar el equipo.",
   /** RP-07: el cuerpo del aviso de membresía desactivada, propio de esta pantalla. */
@@ -26,13 +26,9 @@ export const teamLabels = {
   actionName: (action: string, name: string) => `${action}: ${name}`,
   /** El aviso vive en la tabla y nombra a la persona de la fila (§5.4). */
   changeFailed: (name: string) => `No se pudo cambiar el rol de ${name}.`,
+  /** El cuerpo del aviso con `unexpected`: el título ya dice qué no se hizo. */
+  unexpectedBody: "Revisá la conexión y volvé a intentar.",
   changed: (name: string, role: string) => `Rol de ${name}: ${role}.`,
-  /** D-R8-5: la confirmación de un admin que se baja a sí mismo. */
-  selfDemoteTitle: "¿Dejar de ser administrador?",
-  selfDemoteBody:
-    "Vas a dejar de ver las horas de las otras personas en los reportes y de administrar el equipo. Para volver, el propietario u otro administrador te tiene que cambiar el rol.",
-  selfDemoteConfirm: "Dejar de ser administrador",
-  cancel: "Cancelar",
   roles: {
     owner: "Propietario",
     admin: "Administrador",

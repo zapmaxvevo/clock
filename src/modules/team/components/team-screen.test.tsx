@@ -12,7 +12,10 @@ const actions: TeamActions = {
   changeRole: () => Promise.resolve({ ok: false, code: "unexpected", message: "doble" }),
 };
 
-/** Las cinco filas posibles, en un orden que no es el alfabético: la vista ya viene ordenada. */
+/**
+ * Como la ve el owner, con los cinco roles, en un orden que no es el
+ * alfabético: la vista ya viene ordenada.
+ */
 const ready = teamView.parse({
   kind: "ready",
   members: [
@@ -21,7 +24,7 @@ const ready = teamView.parse({
       name: "Olga",
       email: "olga@empresa.com",
       role: "owner",
-      isSelf: false,
+      isSelf: true,
       change: null,
     },
     {
@@ -29,7 +32,7 @@ const ready = teamView.parse({
       name: "Diego",
       email: "diego@empresa.com",
       role: "admin",
-      isSelf: true,
+      isSelf: false,
       change: "demote",
     },
     {
@@ -55,6 +58,37 @@ const ready = teamView.parse({
       role: "team_manager",
       isSelf: false,
       change: null,
+    },
+  ],
+});
+
+/** Como la ve un admin: ningún admin tiene control, tampoco el propio (D-R8-5). */
+const readyForAdmin = teamView.parse({
+  kind: "ready",
+  members: [
+    {
+      membershipId: "1f6d8e2b-9a53-4d5c-8b62-2e3a4f5b6c72",
+      name: "Diego",
+      email: "diego@empresa.com",
+      role: "admin",
+      isSelf: true,
+      change: null,
+    },
+    {
+      membershipId: "5dabc26f-de97-4b9a-8fa6-6c7e8d9fab16",
+      name: "Elena",
+      email: "elena@empresa.com",
+      role: "admin",
+      isSelf: false,
+      change: null,
+    },
+    {
+      membershipId: "2a7e9f3c-ab64-4e6d-9c73-3f4b5a6c7d83",
+      name: "Mara",
+      email: "mara@empresa.com",
+      role: "member",
+      isSelf: false,
+      change: "promote",
     },
   ],
 });
@@ -98,7 +132,7 @@ describe("TeamScreen", () => {
     expect(markup).toContain(`<h1 id="${TEAM_HEADING_ID}"`);
     expect(markup).toContain(`<table aria-labelledby="${TEAM_HEADING_ID}"`);
     expect(textOf(markup)).toContain(
-      "Un administrador ve las horas de todas las personas en los reportes y cambia roles. El rol del propietario no se cambia.",
+      "Un administrador ve las horas de todas las personas en los reportes y puede hacer administradoras a otras personas. Solo el propietario quita el rol de administrador, y el suyo no se cambia.",
     );
     const head = markup.slice(markup.indexOf("<thead"), markup.indexOf("</thead>"));
     expect(head.match(/<th scope="col"[^>]*>(.*?)<\/th>/g)?.map(textOf)).toEqual([
@@ -110,8 +144,8 @@ describe("TeamScreen", () => {
 
   it("las filas en el orden recibido, con «(vos)», el email, el rótulo del rol y el texto del botón", () => {
     expect(bodyRows(render(ready))).toEqual([
-      ["Olgaolga@empresa.com", "Propietario", ""],
-      ["Diego (vos)diego@empresa.com", "Administrador", "Quitar administrador"],
+      ["Olga (vos)olga@empresa.com", "Propietario", ""],
+      ["Diegodiego@empresa.com", "Administrador", "Quitar administrador"],
       ["Maramara@empresa.com", "Miembro", "Hacer administrador"],
       ["Pablopablo@empresa.com", "Responsable de proyectos", ""],
       ["Tinatina@empresa.com", "Responsable de equipo", ""],
@@ -144,10 +178,34 @@ describe("TeamScreen", () => {
     expect(buttonsOf(markup.slice(markup.indexOf("<table")))).toHaveLength(2);
   });
 
+  it("para un admin, ningún botón en las filas de admin, tampoco en la propia", () => {
+    const markup = render(readyForAdmin);
+
+    expect(bodyRows(markup)).toEqual([
+      ["Diego (vos)diego@empresa.com", "Administrador", ""],
+      ["Elenaelena@empresa.com", "Administrador", ""],
+      ["Maramara@empresa.com", "Miembro", "Hacer administrador"],
+    ]);
+    expect(buttonsOf(rowOf(markup, "Diego"))).toEqual([]);
+    expect(buttonsOf(rowOf(markup, "Elena"))).toEqual([]);
+    expect(buttonsOf(markup.slice(markup.indexOf("<table")))).toHaveLength(1);
+  });
+
+  it("cada encabezado de fila recibe el foco por código, con su id", () => {
+    const headers = render(ready).match(/<th scope="row"[^>]*>/g) ?? [];
+    const members = ready.kind === "ready" ? ready.members : [];
+
+    expect(headers).toHaveLength(members.length);
+    headers.forEach((header, index) => {
+      expect(header).toContain('tabindex="-1"');
+      expect(header).toContain(`id="persona-${members[index]?.membershipId ?? ""}"`);
+    });
+  });
+
   it("«(vos)» solo en la fila de quien mira", () => {
     const markup = render(ready);
 
-    expect(textOf(rowOf(markup, "Diego"))).toContain("(vos)");
+    expect(textOf(rowOf(markup, "Olga"))).toContain("(vos)");
     expect(textOf(markup).match(/\(vos\)/g)).toHaveLength(1);
   });
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ActionFeedback } from "@/components/action-feedback";
 import { Button } from "@/components/ui/button";
@@ -8,24 +8,23 @@ import { useAction } from "@/hooks/use-action";
 import {
   teamMessages,
   type ChangeRoleInput,
+  type ChangeRoleResult,
   type TeamActions,
   type TeamMember,
 } from "@/modules/team/schema";
 
 import { teamLabels } from "./labels";
-import { SelfDemotionDialog } from "./self-demotion-dialog";
 import {
   activate,
-  confirmSelfDemotion,
   feedbackOf,
   TEAM_HEADING_ID,
   type TeamFeedback,
   type TeamOutcome,
 } from "./team-members-model";
 
-/** El botón de una fila, adonde vuelve el foco al cerrar la confirmación (§5.5). */
-function changeButtonId(membershipId: string): string {
-  return `cambiar-rol-${membershipId}`;
+/** El encabezado de una fila, adonde va el foco si el éxito le saca el botón (§5.4). */
+function rowHeaderId(membershipId: string): string {
+  return `persona-${membershipId}`;
 }
 
 type TeamMembersProps = {
@@ -35,22 +34,25 @@ type TeamMembersProps = {
 };
 
 /**
- * La tabla con su único pedido en curso, el aviso del último desenlace y la
- * confirmación de bajarse a sí mismo (D-R8-5). Sin vista optimista: el botón
- * dice el rol que hay hasta que el servidor responde, y la revalidación trae
- * el nuevo.
+ * La tabla con su único pedido en curso y el aviso del último desenlace. Sin
+ * vista optimista: el botón dice el rol que hay hasta que el servidor
+ * responde, y la revalidación trae el nuevo.
  */
 export function TeamMembers({ members, changeRole }: TeamMembersProps) {
   const [outcome, setOutcome] = useState<TeamOutcome | null>(null);
-  const [confirming, setConfirming] = useState<TeamMember | null>(null);
-  const [dialogOpen, setDialogOpen] = useState(false);
+  /** El último éxito, para llevar el foco cuando la fila revalidada trae su rol (§5.4). */
+  const [lastChange, setLastChange] = useState<ChangeRoleResult | null>(null);
+  /** El éxito cuyo foco ya se resolvió: cada respuesta es un objeto nuevo. */
+  const settledChange = useRef<ChangeRoleResult | null>(null);
   /** El nombre de la fila del último pedido: la fila puede irse con la revalidación. */
   const targetName = useRef("");
 
   const { pending, run, retry } = useAction(changeRole, {
     unreachableMessage: teamMessages.unexpected,
-    onSuccess: (data) =>
-      setOutcome({ kind: "changed", name: targetName.current, role: data.role }),
+    onSuccess: (data) => {
+      setOutcome({ kind: "changed", name: targetName.current, role: data.role });
+      setLastChange(data);
+    },
     onFailure: (failure) =>
       setOutcome({
         kind: "failed",
@@ -60,48 +62,45 @@ export function TeamMembers({ members, changeRole }: TeamMembersProps) {
       }),
   });
 
+  // La respuesta y la revalidación llegan en transiciones distintas, en
+  // cualquier orden: se espera a que la fila traiga el rol del éxito. Si se
+  // quedó sin botón (un admin que asciende), el foco pasa a su encabezado y no
+  // cae a `body`; si lo conserva, el botón ya tiene el foco.
+  useEffect(() => {
+    if (lastChange === null || settledChange.current === lastChange) {
+      return;
+    }
+    const row = members.find((member) => member.membershipId === lastChange.membershipId);
+    if (row?.role !== lastChange.role) {
+      return;
+    }
+    settledChange.current = lastChange;
+    if (row.change === null) {
+      document.getElementById(rowHeaderId(row.membershipId))?.focus();
+    }
+  }, [lastChange, members]);
+
   function send(input: ChangeRoleInput): void {
     targetName.current =
       members.find((member) => member.membershipId === input.membershipId)?.name ?? "";
     setOutcome(null);
+    setLastChange(null);
     run(input);
   }
 
-  function confirm(member: TeamMember): void {
-    setConfirming(member);
-    setDialogOpen(true);
-  }
-
   return (
-    <>
-      <TeamMembersView
-        members={members}
-        pending={pending}
-        feedback={feedbackOf(outcome)}
-        onActivate={(member) => activate(member, pending, { send, confirm })}
-        onRetry={() => {
-          // El aviso se va mientras viaja, como el de `useAction`: sin él no hay
-          // un segundo «Reintentar» con el pedido en curso.
-          setOutcome(null);
-          retry();
-        }}
-      />
-      <SelfDemotionDialog
-        open={dialogOpen}
-        onCancel={() => setDialogOpen(false)}
-        onConfirm={() => {
-          setDialogOpen(false);
-          if (confirming !== null) {
-            confirmSelfDemotion(confirming, pending, send);
-          }
-        }}
-        returnFocus={() =>
-          confirming === null
-            ? null
-            : document.getElementById(changeButtonId(confirming.membershipId))
-        }
-      />
-    </>
+    <TeamMembersView
+      members={members}
+      pending={pending}
+      feedback={feedbackOf(outcome)}
+      onActivate={(member) => activate(member, pending, send)}
+      onRetry={() => {
+        // El aviso se va mientras viaja, como el de `useAction`: sin él no hay
+        // un segundo «Reintentar» con el pedido en curso.
+        setOutcome(null);
+        retry();
+      }}
+    />
   );
 }
 
@@ -178,7 +177,13 @@ type TeamMemberRowProps = {
 function TeamMemberRow({ member, pending, onActivate }: TeamMemberRowProps) {
   return (
     <tr className="border-b last:border-b-0">
-      <th scope="row" className="px-3 py-2 text-left font-normal">
+      {/* Con `tabIndex={-1}`: recibe el foco cuando el éxito le saca el botón (§5.4). */}
+      <th
+        scope="row"
+        id={rowHeaderId(member.membershipId)}
+        tabIndex={-1}
+        className="focus-visible:ring-ring/50 px-3 py-2 text-left font-normal outline-none focus-visible:ring-3"
+      >
         <span className="flex flex-col">
           <span className="font-medium">
             {member.name}
@@ -211,7 +216,6 @@ function ChangeButton({ member, pending, onActivate }: TeamMemberRowProps) {
       type="button"
       variant="outline"
       size="sm"
-      id={changeButtonId(member.membershipId)}
       aria-label={teamLabels.actionName(label, member.name)}
       // Con `aria-disabled` y no con `disabled`: el botón conserva el foco
       // mientras el pedido viaja. Que el clic no mande lo decide `activate`.
