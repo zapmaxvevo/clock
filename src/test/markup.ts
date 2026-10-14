@@ -12,3 +12,13 @@ export function bodyRows(markup: string): string[][] {
     ),
   );
 }
+
+/** El texto visible de `markup`, sin etiquetas. */
+export function textOf(markup: string): string {
+  return markup.replace(/<[^>]*>/g, "");
+}
+
+/** Los botones de `markup`, cada uno con su apertura y su contenido. */
+export function buttonsOf(markup: string): string[] {
+  return markup.match(/<button[^>]*>.*?<\/button>/g) ?? [];
+}

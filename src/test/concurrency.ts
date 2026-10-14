@@ -105,6 +105,34 @@ async function holdBarrier(hold: (tx: Transaction) => Promise<unknown>) {
 }
 
 /**
+ * Lo que termina `work` mientras otra transacción sostiene el bloqueo de
+ * `hold`, su error incluido, o `"blocked"` si se trabó esperándolo. Al final
+ * suelta el bloqueo y espera a `work`, que no queda corriendo en el test
+ * siguiente.
+ */
+export async function outcomeWhileHeld(
+  hold: (tx: Transaction) => Promise<unknown>,
+  work: () => Promise<unknown>,
+): Promise<unknown> {
+  const barrier = await holdBarrier(hold);
+  const running = work().then(
+    () => "resolved",
+    (error: unknown) => error,
+  );
+  const waiting = new AbortController();
+  try {
+    return await Promise.race([
+      running,
+      waitForBlockedBackends({ count: 1, signal: waiting.signal }).then(() => "blocked"),
+    ]);
+  } finally {
+    waiting.abort();
+    await barrier.open();
+    await running;
+  }
+}
+
+/**
  * Un corredor que termina mientras la barrera sostiene el bloqueo no se trabó:
  * la espera se corta ahí, con su error o con este.
  */

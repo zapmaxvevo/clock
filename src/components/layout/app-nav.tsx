@@ -14,13 +14,22 @@ const items = [
   { href: "/proyectos", label: "Proyectos" },
 ] as const;
 
-export function AppNav() {
+/** D-R8-2: solo con `team.manage`, que decide el layout. */
+const teamItem = { href: "/equipo", label: "Equipo" } as const;
+
+type AppNavProps = {
+  /** `canManageTeam` de quien mira. */
+  readonly showTeam: boolean;
+};
+
+export function AppNav({ showTeam }: AppNavProps) {
   const pathname = usePathname();
+  const shown = showTeam ? [...items, teamItem] : items;
 
   return (
     <nav aria-label="Principal">
       <ul className="flex items-center gap-4 text-sm">
-        {items.map((item) => (
+        {shown.map((item) => (
           <li key={item.href}>
             <Link
               href={item.href}

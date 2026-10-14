@@ -45,6 +45,12 @@ export const TEST_SESSION_SECRET = testSessionSecret();
  */
 export const TEST_EMAIL_DOMAIN = process.env.E2E_EMAIL_DOMAIN ?? "empresa.com";
 
+/**
+ * La cuenta del owner de la suite: la que el setup usa para crear el
+ * workspace, y la única que quita el rol de admin (D-R8-5 de R8).
+ */
+export const OWNER_EMAIL = `owner@${TEST_EMAIL_DOMAIN}`;
+
 /** La base del servidor local cuando DATABASE_URL no viene del entorno. */
 export const LOCAL_DATABASE_URL = "postgresql://clock:clock@localhost:5432/clock";
 

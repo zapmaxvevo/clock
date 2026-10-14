@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 
 import { dayKeyOf, type CivilDay } from "./days";
-import { TEST_EMAIL_DOMAIN, testDatabaseUrl } from "./environment";
+import { OWNER_EMAIL, testDatabaseUrl } from "./environment";
 import { PERSON_NAME } from "./session";
 
 /**
@@ -61,7 +61,6 @@ async function withTransaction<T>(work: (client: Client) => Promise<T>): Promise
  * corta sin dejar nada.
  */
 export async function renewWorkspace(): Promise<void> {
-  const expectedOwner = `owner@${TEST_EMAIL_DOMAIN}`;
   await withTransaction(async (client) => {
     const found = await client.query<{ id: string; email: string }>(
       `select workspace.id, "user".email
@@ -73,9 +72,9 @@ export async function renewWorkspace(): Promise<void> {
     if (workspace === undefined) {
       throw new Error("No hay ningún workspace que renovar.");
     }
-    if (workspace.email !== expectedOwner) {
+    if (workspace.email !== OWNER_EMAIL) {
       throw new Error(
-        `El owner del workspace no es ${expectedOwner}: la base no es la de los e2e y no se renueva.`,
+        `El owner del workspace no es ${OWNER_EMAIL}: la base no es la de los e2e y no se renueva.`,
       );
     }
     await client.query("update workspace set created_at = now() where id = $1", [
@@ -99,6 +98,22 @@ export async function workspaceCreatedAt(): Promise<Date> {
       throw new Error("No hay ningún workspace del que leer la creación.");
     }
     return row.created_at;
+  });
+}
+
+/**
+ * Cuántas membresías `active` tiene el workspace de los e2e. Cada test suma
+ * una persona, y en una base que se reusa se acumulan corrida tras corrida.
+ */
+export async function activeMembershipCount(): Promise<number> {
+  return withDatabase(async (client) => {
+    const result = await client.query<{ count: number }>(
+      `select count(*)::int as count
+         from membership
+        where workspace_id = ${FIRST_WORKSPACE}
+          and status = 'active'`,
+    );
+    return result.rows.at(0)?.count ?? 0;
   });
 }
 
@@ -453,7 +468,10 @@ const OWN_MEMBERSHIP = `workspace_id = ${FIRST_WORKSPACE}
           and user_id = (select id from "user" where email = $1)
           and user_id <> (select owner_id from workspace where id = ${FIRST_WORKSPACE})`;
 
-/** Cambia el rol de una persona. La fase 1 no tiene pantalla para eso (R8). */
+/**
+ * Cambia el rol de una persona. La pantalla /equipo (R8) solo pasa entre member
+ * y admin; esto prepara el estado del test.
+ */
 export async function setRole(email: string, role: WorkspaceRole): Promise<void> {
   await updateOne(
     `update membership
@@ -463,7 +481,7 @@ export async function setRole(email: string, role: WorkspaceRole): Promise<void>
   );
 }
 
-/** Cambia el estado de la membresía de una persona, que tampoco tiene pantalla. */
+/** Cambia el estado de la membresía de una persona, que no tiene pantalla en la fase 1. */
 export async function setMembershipStatus(
   email: string,
   status: MembershipStatus,

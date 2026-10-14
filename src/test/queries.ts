@@ -1,7 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 
 import { db } from "@/server/db";
-import { auditLog, timeEntry } from "@/server/db/schema";
+import { auditLog, membership, timeEntry } from "@/server/db/schema";
 
 /**
  * Consultas de verificación de los tests de integración. Leen el estado que
@@ -26,6 +26,28 @@ export async function timeEntriesOf(workspaceId: string, userId: string) {
     .from(timeEntry)
     .where(and(eq(timeEntry.workspaceId, workspaceId), eq(timeEntry.userId, userId)))
     .orderBy(asc(timeEntry.startedAt));
+}
+
+/**
+ * La membresía de una persona en un workspace; lanza si no la tiene. `seedMember`
+ * devuelve el id del usuario, y lo que nombra una membresía es su `id`.
+ */
+export async function membershipOf(workspaceId: string, userId: string) {
+  const rows = await db
+    .select()
+    .from(membership)
+    .where(and(eq(membership.workspaceId, workspaceId), eq(membership.userId, userId)));
+  const row = rows.at(0);
+  if (row === undefined) {
+    throw new Error(`Sin membresía de ${userId} en ${workspaceId}.`);
+  }
+  return row;
+}
+
+/** La membresía, o `undefined` si no está. */
+export async function membershipById(id: string) {
+  const rows = await db.select().from(membership).where(eq(membership.id, id)).limit(1);
+  return rows.at(0);
 }
 
 /**

@@ -2,6 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 import {
   LOCAL_DATABASE_URL,
+  OWNER_EMAIL,
   TEST_EMAIL_DOMAIN,
   TEST_SESSION_SECRET,
 } from "./e2e/environment";
@@ -28,7 +29,7 @@ const localServerEnv = {
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID ?? "x",
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET ?? "x",
   GOOGLE_WORKSPACE_DOMAINS: TEST_EMAIL_DOMAIN,
-  WORKSPACE_OWNER_EMAIL: `owner@${TEST_EMAIL_DOMAIN}`,
+  WORKSPACE_OWNER_EMAIL: OWNER_EMAIL,
   CRON_SECRET: process.env.CRON_SECRET ?? "desarrollo-local-cron-secret",
   // El endpoint de sesión de prueba es opt-in explícito: sin esta variable no
   // se registra y la suite con sesión responde 404.

@@ -236,6 +236,33 @@ certain information (user, charts, etc.) from appearing on PDF» (FOUND), la
 en su PDF sigue _no verificado_; se puede mirar en el workspace del equipo,
 porque el PDF es del plan Free (P-05).
 
+_Actualizado el 2026-10-13, contrato de R8
+([`nucleo-reportes-r8-cambiar-rol.md`](../slices/nucleo-reportes-r8-cambiar-rol.md),
+§6 «parity-analyst», aprobado en la segunda ronda de `architecture-reviewer` y
+corregido el mismo día por decisión del usuario, con la revisión de la
+corrección aprobada con retoques)_: el contrato es un solo slice, que implementa
+la rama `nucleo/r8-cambiar-rol`, y esta actualización describe lo que fija y lo
+que hace el código de esa rama, leído y no recorrido con la aplicación: la
+pantalla `/equipo`, donde el owner y los admins hacen administradora a una
+persona activa, y solo el owner le quita el rol. Cada regla que precisa lleva
+su corrección fechada, y la [sección 18](#18-núcleo-r8) junta la pantalla.
+Cambian RP-02 y las secciones 6 y 9.5; se suman RP-67 a RP-70 en la sección 5,
+P-12 y cuatro filas del vocabulario. Ese día se buscó en la página de admins, en
+su tabla «Action | Permission»: «Manage users | Yes (except removing Admin role
+– Owner only)», «Assign user roles | Yes» y «Transfer owner role | Yes (Owner
+only)» (FOUND); en la de invitar personas: «Click on +Role next to the person
+you wish to make admin», «Tick the Admin checkbox», «To remove them as admin,
+untick the checkbox Admin.», «Only the Workspace owner can remove an admin role
+from someone, transfer ownership to another user, and delete the workspace.»,
+«To make someone an owner, current owner needs to:» y «Click Transfer
+ownership» (FOUND), y «Edit roles» y «Are you sure» (NOT FOUND); en la de quién
+puede qué: «Admins can perform actions such as creating and managing projects,
+assigning user roles, and defining billable rates.» (FOUND), y «transfer»,
+«Make admin», «Remove admin» y «Edit roles» (NOT FOUND). Con ese hallazgo el
+usuario decidió **replicar Clockify: solo el owner quita el rol de admin**
+(RP-68). Si quitarlo pide confirmación, si los roles se combinan y si el cambio
+vale en una sesión abierta siguen _no verificados_ (P-12).
+
 ## Fuentes y límites del relevamiento
 
 Documentación pública del centro de ayuda de Clockify y referencia pública de su
@@ -258,6 +285,8 @@ API, consultadas el 2026-10-08:
 - https://clockify.me/help/administration/user-roles-and-permissions/regular-users
 - https://clockify.me/help/administration/user-roles-and-permissions/manager-role
 - https://clockify.me/help/administration/user-roles-and-permissions/who-can-do-what
+- https://clockify.me/help/administration/user-roles-and-permissions/admins
+  (consultada el 2026-10-13, para R8)
 - https://clockify.me/help/track-time-and-expenses/time-rounding
 - https://clockify.me/help/track-time-and-expenses/duration-format
 - https://docs.clockify.me/openapi.json (esquemas `SummaryReportFilterV1`,
@@ -326,6 +355,10 @@ documentado pero no se puede relevar en ese workspace (P-01 a P-03).
 | Rounding                | Redondeo                    |
 | Shared report           | Reporte compartido          |
 | Show users without time | Mostrar personas sin horas  |
+| Team (página)           | Equipo                      |
+| Owner                   | Propietario                 |
+| Admin                   | Administrador               |
+| Regular user            | Miembro                     |
 
 `adaptar`: la interfaz va en español y toda la copia visible se traduce; no se
 vuelve a justificar en cada comportamiento. El filtro _Team_ se traduce
@@ -369,6 +402,16 @@ _Actualizado el 2026-10-08, contrato de R2a (D-R2a-2)_: owner y admin activos
 ven «Ves las horas de todas las personas del workspace.» y una fila por cada
 persona con horas cerradas en el período, activa o no (RP-31). Hasta R8 el
 único que lo ve es el owner, porque nadie más tiene el rol de admin.
+_Corregido el 2026-10-13, R8 (D-R8-2, D-R8-8)_: **desde R8, owner y admin
+activos ven el reporte de equipo**, y el owner o un admin nombra admins en
+`/equipo` (RP-67, sección 18). Reemplaza «Hasta R8 el único que lo ve es el
+owner, porque nadie más tiene el rol de admin.» de la corrección de R2a,
+arriba. El alcance se decide en cada pedido: una persona ascendida ve «Ves las
+horas de todas las personas del workspace.» en su pedido siguiente —recargar,
+navegar o exportar—, y una a la que el owner le quita el rol vuelve a «Ves solo
+tus horas.» sin volver a entrar; lo que ya estaba dibujado en su pantalla queda
+hasta ese pedido. Un `project_manager` o un `team_manager` sigue viendo lo
+propio: R8 no les cambia el rol.
 
 **RP-03 El acceso al proyecto condiciona el reporte** — `replicar`
 Relevado en `proyectos.md` (PR-16, PR-17): en un proyecto público «Everyone can
@@ -2158,6 +2201,52 @@ usuario o una membresía con horas falla en la base.
 Documentado: «5 active users (including the Owner and active members).»
 Justificación: límite comercial del plan.
 
+**RP-67 Dar el rol de admin** — `adaptar`
+Documentado: «Click on +Role next to the person you wish to make admin» y
+«Tick the Admin checkbox» (invitar personas); en la tabla de la página de
+admins, «Assign user roles | Yes», y la única excepción de los admins sobre los
+roles es quitar el de admin (RP-68).
+_Agregado el 2026-10-13, R8 (D-R8-3, D-R8-10)_: el owner y los admins activos
+lo dan en `/equipo` con «Hacer administrador», en la fila de un `member` activo;
+el clic escribe, sin casilla ni paso de guardar. Justificación: Clock tiene un
+rol por membresía, así que no hay roles que sumar con casillas; y
+`project_manager` y `team_manager`, de plan pago y hoy solo por SQL, no se dan
+ni se quitan desde acá (D-R8-4).
+
+**RP-68 Quitar el rol de admin: solo el owner** — `replicar`
+Documentado: «To remove them as admin, untick the checkbox Admin.» y «Only the
+Workspace owner can remove an admin role from someone, transfer ownership to
+another user, and delete the workspace.» (invitar personas); en la tabla de la
+página de admins, «Manage users | Yes (except removing Admin role – Owner
+only)».
+_Agregado el 2026-10-13, R8 (D-R8-5, D-R8-13), decisión del usuario_: **solo el
+owner lo quita**, con «Quitar administrador» en la fila de un admin. Un admin no
+tiene ese botón en ninguna fila, tampoco en la suya: no baja a otro admin ni se
+baja a sí mismo, y un pedido armado a mano responde «Solo el propietario quita
+el rol de administrador.». Es una acción de permiso propia, `team.admin.revoke`,
+solo del owner ([ADR 0023](../adr/0023-quitar-el-rol-de-admin-es-una-accion-propia.md),
+propuesto). No hay mínimo de admins: el piso es el owner. Un admin que hace
+admin a alguien por error no lo puede deshacer: lo hace el owner.
+
+**RP-69 El rol del owner** — `replicar`
+Documentado: «Transfer owner role | Yes (Owner only)» (página de admins), «To
+make someone an owner, current owner needs to:» y «Click Transfer ownership»
+(invitar personas).
+_Agregado el 2026-10-13, R8 (D-R8-4)_: la fila del owner no tiene botón y su rol
+no cambia desde `/equipo`, tampoco por el owner mismo; un pedido armado a mano
+responde «El rol del propietario no se cambia.». Transferir el workspace
+(`workspace.transfer`) queda para la fase 2.
+
+**RP-70 La pantalla de equipo para un member** — `adaptar`
+Documentado que se pueden «hide Projects, Team, and reports pages» del menú de
+los members (RP-08): si no se la esconden, un member la ve.
+_Agregado el 2026-10-13, R8 (D-R8-2)_: en Clock la ven solo owner y admin
+activos. Un member, un `project_manager` o un `team_manager` no tiene la
+entrada «Equipo» y, si abre `/equipo`, ve «No tenés permiso para administrar el
+equipo.», sin lista. Justificación: R8 solo trae el control de rol; qué ve un
+member es de la pantalla de equipo de la fase 2 (`team.view`), que puede
+abrirla.
+
 ## 6. Qué entra en el núcleo
 
 _Actualizado el 2026-10-08_: era la recomendación de este documento; ahora es
@@ -2201,6 +2290,12 @@ _Actualizado el 2026-10-12, contrato de R9_: **RP-47 entra en el núcleo**, en e
 reporte resumido agrupado por persona y no en el semanal, por la decisión del
 usuario del 2026-10-08 (sección 8), y sale de la fase 3. El semanal (RP-45,
 RP-46) sigue en la fase 3.
+
+_Actualizado el 2026-10-13, R8_: **entran RP-67, RP-68 y RP-69** (dar el rol de
+admin, quitarlo solo el owner y el owner que no cambia) y RP-70 como
+divergencia, con la pantalla `/equipo` (sección 18). Transferir el workspace
+(RP-69) y lo demás de la pantalla de equipo —invitar, desactivar (RP-60,
+RP-63), la lista para un member (RP-70)— quedan para la fase 2.
 
 ## 7. Pendientes de definición del equipo
 
@@ -2305,6 +2400,23 @@ tienen marca. No bloquea R3b.
 _Resuelto el 2026-10-09 por el usuario_: entran las tres en el núcleo, como
 R10. Semana y mes, con R10a (sección 13); descripción, con R10b.
 
+_Agregado el 2026-10-13, contrato de R8 (§9, punto 2)_: **P-12 — Los roles en
+la pantalla de equipo de Clockify.** Lo documentado está en RP-67 a RP-70, con
+la búsqueda de ese día. **Para la sesión en el workspace del equipo** (no es
+decisión, es mirar; el rol de admin es del plan Free): que un admin ve «+Role»
+con la casilla «Admin» en la fila de otra persona (la tabla de admins dice
+«Assign user roles | Yes» sin nombrar el rol de admin); si el owner quita el rol
+con confirmación; si su propio rol cambia de otra forma que transfiriendo el
+workspace; si la casilla «Admin» se combina con otros roles; si se puede
+cambiar el rol de una persona inactiva o invitada; si el cambio vale en una
+sesión abierta sin volver a entrar; cómo se llaman los roles y «+Role» en la
+interfaz en español; y qué columnas muestra la página de equipo (email, rol) y
+para quién. Mientras tanto vale lo de R8 (sección 18). No bloquea.
+
+_Resuelto el 2026-10-13 por el usuario_, con la búsqueda de ese día: **quitar el
+rol de admin es solo del owner, como en Clockify** (RP-68). R8 lo implementa
+así.
+
 ## 8. Decisiones del usuario (2026-10-08)
 
 - **P-01**: solo owner y admin ven las horas de otros; el resto ve solo las propias. Divergencia
@@ -2403,11 +2515,14 @@ roles. De arriba abajo:
   total (RP-18).
 - Un rango inválido en la URL se descarta sin aviso (RP-32).
 - Dos personas con el mismo nombre se ven iguales (RP-31).
-- Hasta R8, solo el owner ve el reporte de equipo (RP-02).
 
 _Corregido el 2026-10-08, contrato de R2b (D-R2b-3)_: se retiró «Las flechas
 mueven por días, también un período de un mes (RP-20)»; desde R2b un período de
 meses enteros se mueve por meses (RP-20).
+
+_Corregido el 2026-10-13, R8_: se retiró «Hasta R8, solo el owner ve el reporte
+de equipo (RP-02).»; desde R8 lo ven owner y admin, y los admins se nombran en
+`/equipo` (RP-02, sección 18).
 
 ## 10. Núcleo, R2b
 
@@ -3986,3 +4101,161 @@ sin esos parámetros: «Alcance» «Solo las horas de {nombre}», sin la fila
 14.5): un member, un `project_manager` o un `team_manager` ve barras solo con
 lo propio, también con `personas=…` en la URL; owner y admin, las de todo el
 workspace o las de las personas elegidas.
+
+## 18. Núcleo, R8
+
+_2026-10-13._ Contrato:
+[`nucleo-reportes-r8-cambiar-rol.md`](../slices/nucleo-reportes-r8-cambiar-rol.md),
+aprobado en la segunda ronda de `architecture-reviewer` y corregido el mismo día
+por decisión del usuario (D-R8-5, D-R8-13), con la revisión de la corrección
+aprobada con retoques. Es un solo slice, con la pantalla `/equipo`, que no toca
+la pantalla ni el módulo del reporte. La regla de cada comportamiento está en
+la corrección fechada de su RP; esta sección junta la pantalla. Describe lo que
+hace el código de la rama `nucleo/r8-cambiar-rol`, leído y no recorrido con la
+aplicación.
+
+**Cubre:** RP-02 (desde R8, owner y admin ven el reporte de equipo), RP-67 (dar
+el rol de admin), RP-68 (quitarlo, solo el owner), RP-69 (el owner que no
+cambia), RP-70 (la pantalla solo para owner y admin), RP-07 (el aviso común
+para una membresía que no está activa) y RP-31 (el email, porque dos personas
+pueden llamarse igual). **Una acción de permiso nueva**, `team.admin.revoke`,
+solo del owner
+([ADR 0023](../adr/0023-quitar-el-rol-de-admin-es-una-accion-propia.md),
+propuesto); lo demás pasa por `team.manage`, que ya era de owner y admin. Cada
+cambio efectivo deja una fila de auditoría, que no se ve en pantalla.
+
+**Queda para la fase 2:** invitar, desactivar, reactivar y quitar personas
+(RP-60, RP-63); transferir el workspace (RP-69); la lista para un member
+(RP-70); las personas inactivas e invitadas en la lista; el primer día de la
+semana (PF-01, PF-17), la capacidad y los días laborables. No tienen slice: dar
+o quitar `project_manager` y `team_manager`; búsqueda, orden por columnas y
+paginación; cerrar las sesiones de quien pierde el rol; ver la auditoría en
+pantalla.
+
+### 18.1 La navegación y la pantalla
+
+- **«Equipo»** va en la navegación después de «Proyectos», solo para owner y
+  admin activos, con `aria-current="page"` en `/equipo` como las demás.
+- **De arriba abajo**, para owner y admin activos:
+
+| Parte  | Contenido                                                                                                                                                                                                           |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Título | «Equipo»                                                                                                                                                                                                            |
+| Texto  | «Un administrador ve las horas de todas las personas en los reportes y puede hacer administradoras a otras personas. Solo el propietario quita el rol de administrador, y el suyo no se cambia.»                    |
+| Aviso  | El del último cambio, si hubo (sección 18.2)                                                                                                                                                                        |
+| Tabla  | Nombrada por el título, con «Persona», «Rol» y «Cambiar rol». Persona: el nombre (el editado o el de Google), «(vos)» en gris en la propia y el email en gris debajo. Rol: el rótulo. Cambiar rol: el botón, si hay |
+
+- **Se listan las membresías activas** del workspace, una fila por persona, por
+  nombre, con el mismo orden que las demás listas de personas; con el mismo
+  nombre, por el id de la membresía. Las inactivas y las invitadas no están.
+- **Los rótulos del rol**: «Propietario», «Administrador», «Responsable de
+  proyectos», «Responsable de equipo» y «Miembro». Los dos del medio aparecen
+  solo si alguien los puso por SQL; «Responsable de proyectos» no es la marca de
+  responsable de un proyecto (PR-19).
+- **El botón**: «Hacer administrador» en la fila de un `member`, para owner y
+  admin; «Quitar administrador» en la de un `admin`, **solo para el owner**. Sin
+  botón: la fila del owner, las de `project_manager` y `team_manager` y, para un
+  admin, todas las de rol `admin`, también la suya. El lector de pantalla lo
+  nombra «{acción}: {nombre}», porque la acción se repite en cada fila.
+
+### 18.2 Cambiar el rol
+
+- **El clic escribe**, sin casilla, paso de guardar ni confirmación. Mientras el
+  pedido viaja, todos los botones quedan con `aria-disabled="true"` (no
+  `disabled`, para que el foco no se pierda) y otro clic no manda nada. No hay
+  vista optimista: la fila dice el rol que había hasta que llega la respuesta.
+- **Al volver**, encima de la tabla, «Rol de {nombre}: {rol}.» como aviso de
+  estado, y la fila muestra el rol nuevo. **El foco**: si la fila sigue con
+  botón —el owner asciende o baja a alguien—, el botón lo conserva y cambia de
+  texto; si se queda sin botón —un admin asciende a alguien—, pasa al
+  encabezado de esa fila. Pedir el rol que ya tiene, por ejemplo desde otra
+  pestaña que no vio un cambio, responde igual, sin escribir ni auditar.
+- **Un error** muestra, encima de la tabla, «No se pudo cambiar el rol de
+  {nombre}.» con el mensaje de abajo como cuerpo, y «Reintentar» solo con el
+  error inesperado. La lista se vuelve a leer también en el error, así que una
+  fila que ya no vale se va y el aviso queda arriba:
+
+| Situación                                                              | Cuerpo del aviso                                                       |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Quien actúa ya no tiene `team.manage`                                  | «No tenés permiso para cambiar roles.»                                 |
+| La persona ya no existe, o es de otro workspace                        | «Esa persona ya no está en el equipo.»                                 |
+| La persona quedó inactiva o es invitada                                | «Esa persona ya no está activa en el workspace.»                       |
+| Error inesperado, con «Reintentar»                                     | «Revisá la conexión y volvé a intentar.»                               |
+| Un admin que pide quitar el rol a un admin (solo con un pedido a mano) | «Solo el propietario quita el rol de administrador.»                   |
+| Un admin sobre la fila del owner (ídem)                                | «No tenés permiso para cambiar roles.»                                 |
+| El owner sobre la suya (ídem)                                          | «El rol del propietario no se cambia.»                                 |
+| Un `project_manager` o `team_manager` (ídem)                           | «Este rol no se cambia desde acá.»                                     |
+| Un rol que no es member ni admin, o un id inválido (ídem)              | «Ese rol no está disponible.» o «Esa persona ya no está en el equipo.» |
+
+### 18.3 Estados y casos borde
+
+| Estado                                               | Qué se ve                                                                                                                      |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `member`, `project_manager` o `team_manager` activos | Sin «Equipo»; en `/equipo`, el título y «No tenés permiso para administrar el equipo.», sin tabla; no se lee ninguna membresía |
+| Membresía `inactive` o `invited`                     | El título, «Tu acceso al workspace está desactivado.» y «No podés administrar el equipo.» (RP-07)                              |
+| Lista                                                | Nunca vacía: tiene, al menos, la fila de quien mira                                                                            |
+| Cargando                                             | Sin esqueleto propio: la navegación espera la lista                                                                            |
+| Error de lectura                                     | El título y «No se pudo cargar el equipo.» con «Reintentar»                                                                    |
+| Al recargar                                          | La lista leída de nuevo; el aviso del último cambio no queda. Nada va en la URL                                                |
+| Sin sesión                                           | El login                                                                                                                       |
+
+- **Para la persona cuyo rol cambió**, todo pedido siguiente decide con el rol
+  nuevo: recargar, navegar —también dentro del reporte—, una server action o una
+  descarga. Una ascendida ve el reporte de equipo en su pedido siguiente; a una
+  que el owner bajó no se le lee una hora ajena más, y un enlace con `personas`
+  o con las personas sin horas le muestra lo propio (RP-32). **Lo ya dibujado
+  queda** hasta ese pedido, también lo que muestra «Atrás». No se cierra su
+  sesión.
+- **«Equipo» en su navegación** cambia en la carga completa siguiente o después
+  de una action suya: navegar no vuelve a pedir el layout. Una persona bajada
+  que todavía la ve y la usa llega a la vista sin permiso.
+- **Un admin al que el owner bajó** mientras tenía `/equipo` abierto, si hace
+  clic en «Hacer administrador», recibe «No tenés permiso para cambiar roles.»:
+  su autoridad se vuelve a leer en el cambio.
+- **Dos cambios a la vez de la misma persona**: gana el último. Dos admins que
+  ascienden a la misma persona a la vez: los dos responden con éxito y queda una
+  sola fila de auditoría.
+- **Cambiar el rol de alguien no espera** a que termine una carga de horas suya
+  en curso, ni al revés.
+- **Sin piso de admins**: el piso es el owner. Con el owner inactivo por SQL,
+  nadie puede quitarle el rol a un admin; la salida es SQL.
+- **Un admin desactivado por SQL** conserva el rol `admin`, sin efecto mientras
+  esté inactivo; al reactivarlo, en la fase 2, vuelve admin.
+- **Muchas personas**: la lista no tiene tope, búsqueda ni paginación.
+
+### 18.4 Divergencias visibles que el reviewer no debe marcar como errores
+
+- **Un member no ve `/equipo`** ni la entrada (RP-70); en Clockify la ve salvo
+  que se la escondan (RP-08).
+- **Un rol por persona y un botón por fila**, en lugar de «+Role» y la casilla
+  «Admin» (RP-67); el clic escribe, sin guardar.
+- **Las filas del owner, de `project_manager` y de `team_manager` no tienen
+  botón** (RP-69; D-R8-4), y para un admin tampoco las de rol `admin` (RP-68).
+- **Las inactivas y las invitadas no están en la lista**; la pantalla de equipo
+  de Clockify tacha a las inactivas («All inactive user names are struck out.»,
+  RP-62).
+- **Sin mínimo de admins**: el piso es el owner.
+- **La navegación de la persona cambiada** se actualiza en su carga completa
+  siguiente o después de una action suya, y lo ya dibujado queda hasta su pedido
+  siguiente.
+- **El aviso de éxito sale también sin cambio**, si la persona ya tenía ese rol.
+- **Después de que un admin asciende a alguien, el foco va al encabezado de la
+  fila**, que se quedó sin botón.
+- **Dos personas con el mismo nombre dan dos botones con el mismo nombre para
+  el lector de pantalla**; el email las distingue en la fila (RP-31). Es deuda
+  anotada en el contrato.
+- **Un solo cambio a la vez** en toda la tabla.
+- **Sin búsqueda, orden por columnas ni paginación.**
+- **La auditoría no se ve en pantalla.**
+
+### 18.5 Qué puede hacer cada rol
+
+| Membresía                                           | Ve                                                                         | Acciones                                                                                                                                                                                                     |
+| --------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `owner` activa                                      | «Equipo» y la lista                                                        | Hacer administrador a un member; quitar el rol a un admin. Su propia fila, sin botón                                                                                                                         |
+| `admin` activa                                      | «Equipo» y la lista                                                        | Hacer administrador a un member. Las filas de admin, también la suya, y la del owner, sin botón; un pedido armado a mano para quitar el rol a un admin: «Solo el propietario quita el rol de administrador.» |
+| `project_manager`, `team_manager`, `member` activas | Sin «Equipo»; en `/equipo`, «No tenés permiso para administrar el equipo.» | Ninguna; un pedido armado a mano: «No tenés permiso para cambiar roles.», sin cambios                                                                                                                        |
+| Cualquiera no activa (`inactive`, `invited`)        | El aviso de RP-07                                                          | Ninguna                                                                                                                                                                                                      |
+
+En los reportes, una membresía `admin` activa ve lo mismo que el owner (RP-02,
+sección 9.2).

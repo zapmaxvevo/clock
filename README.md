@@ -40,6 +40,25 @@ también en CI, con un Postgres de servicio. Con `E2E_BASE_URL` y
 `E2E_DATABASE_URL` corren a mano contra un servidor ya levantado, por ejemplo un
 preview.
 
+Cada corrida suma personas al workspace de los e2e, y en una base que se reusa
+se acumulan. Por encima de 1.500 membresías activas, el setup corta antes de
+los recorridos: `/equipo` las lista todas y el recorrido que asciende a alguien
+no llega a tiempo. Para seguir sin tocar la base de desarrollo, se crea y se
+migra una base nueva, y la suite corre con ese `DATABASE_URL`:
+
+```bash
+docker compose exec postgres psql -U clock -d postgres -c "CREATE DATABASE clock_e2e_<fecha>"
+DATABASE_URL=postgresql://clock:clock@localhost:5432/clock_e2e_<fecha> npm run db:migrate
+DATABASE_URL=postgresql://clock:clock@localhost:5432/clock_e2e_<fecha> npm run test:e2e
+```
+
+La última línea corre **sin otro servidor en el puerto 3000** (pará el de
+desarrollo): en local, Playwright reusa el que encuentre ahí, y uno levantado
+contra `clock` haría que el login de prueba cree usuarios, sesiones y
+membresías en la base de desarrollo. `E2E_DATABASE_URL` solo cuenta con
+`E2E_BASE_URL`, contra un servidor ya levantado; en local alcanza con
+`DATABASE_URL`.
+
 Los e2e entran por un fixture de sesión que evita el login de Google:
 `POST /api/auth/test-session/sign-in` con la cabecera `x-test-session`. El
 endpoint se registra solo con tres condiciones: `ALLOW_TEST_SESSION=true`, un

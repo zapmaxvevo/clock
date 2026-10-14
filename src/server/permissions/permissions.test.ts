@@ -432,6 +432,155 @@ describe("can sobre el reporte (ADR 0020, P-01, RP-07)", () => {
   });
 });
 
+describe("team.manage sobre una membresía (R8, §3)", () => {
+  const otherWorkspace = "22222222-2222-2222-2222-222222222222";
+
+  function target(role: Role, userId = "u2", inWorkspace = workspaceId) {
+    return { kind: "membership", workspaceId: inWorkspace, userId, role } as const;
+  }
+
+  const member = target("member");
+  const admin = target("admin");
+  const ownerMembership = target("owner", "u9");
+
+  it("el owner activo cambia a un member y a un admin, y la regla le deja tocar la suya", () => {
+    expect([
+      can(actor("owner"), "team.manage", member),
+      can(actor("owner"), "team.manage", admin),
+      can(actor("owner"), "team.manage", target("owner", "u1")),
+    ]).toEqual([true, true, true]);
+  });
+
+  it("un admin activo cambia a un member, a otro admin y a sí mismo, y no al owner", () => {
+    expect([
+      can(actor("admin"), "team.manage", member),
+      can(actor("admin"), "team.manage", admin),
+      can(actor("admin"), "team.manage", target("admin", "u1")),
+      can(actor("admin"), "team.manage", ownerMembership),
+    ]).toEqual([true, true, true, false]);
+  });
+
+  it("project_manager, team_manager y member activos no cambian ninguna", () => {
+    for (const role of ["project_manager", "team_manager", "member"] as const) {
+      expect([
+        role,
+        can(actor(role), "team.manage", member),
+        can(actor(role), "team.manage", admin),
+        can(actor(role), "team.manage", ownerMembership),
+        can(actor(role), "team.manage", target(role, "u1")),
+      ]).toEqual([role, false, false, false, false]);
+    }
+  });
+
+  it("un owner o un admin inactive o invited no cambian ninguna, tampoco la propia", () => {
+    for (const status of ["inactive", "invited"] as const) {
+      for (const role of ["owner", "admin"] as const) {
+        expect([
+          status,
+          role,
+          can(actor(role, { status }), "team.manage", member),
+          can(actor(role, { status }), "team.manage", admin),
+          can(actor(role, { status }), "team.manage", ownerMembership),
+          can(actor(role, { status }), "team.manage", target(role, "u1")),
+        ]).toEqual([status, role, false, false, false, false]);
+      }
+    }
+  });
+
+  it("nadie cambia una membresía de otro workspace, tampoco el owner sobre un member", () => {
+    for (const role of ["owner", "admin"] as const) {
+      for (const targetRole of ["member", "admin", "owner"] as const) {
+        expect([
+          role,
+          targetRole,
+          can(actor(role), "team.manage", target(targetRole, "u2", otherWorkspace)),
+        ]).toEqual([role, targetRole, false]);
+      }
+    }
+  });
+
+  it("sobre el workspace, la puerta de la pantalla: solo owner y admin activos", () => {
+    const roles = [
+      "owner",
+      "admin",
+      "project_manager",
+      "team_manager",
+      "member",
+    ] as const;
+    expect(
+      roles.map((role) => [role, can(actor(role), "team.manage", workspace)]),
+    ).toEqual([
+      ["owner", true],
+      ["admin", true],
+      ["project_manager", false],
+      ["team_manager", false],
+      ["member", false],
+    ]);
+    for (const status of ["inactive", "invited"] as const) {
+      for (const role of ["owner", "admin"] as const) {
+        expect([
+          status,
+          role,
+          can(actor(role, { status }), "team.manage", workspace),
+        ]).toEqual([status, role, false]);
+      }
+    }
+  });
+});
+
+describe("team.admin.revoke sobre una membresía admin (R8, D-R8-13)", () => {
+  const otherAdmin = {
+    kind: "membership",
+    workspaceId,
+    userId: "u2",
+    role: "admin",
+  } as const;
+  const ownAdmin = { ...otherAdmin, userId: "u1" } as const;
+
+  it("el owner activo le quita el rol a un admin", () => {
+    expect(can(actor("owner"), "team.admin.revoke", otherAdmin)).toBe(true);
+  });
+
+  it("un admin no se lo quita a otro admin ni a sí mismo", () => {
+    expect([
+      can(actor("admin"), "team.admin.revoke", otherAdmin),
+      can(actor("admin"), "team.admin.revoke", ownAdmin),
+    ]).toEqual([false, false]);
+  });
+
+  it("project_manager, team_manager y member activos no se lo quitan a nadie", () => {
+    for (const role of ["project_manager", "team_manager", "member"] as const) {
+      expect([role, can(actor(role), "team.admin.revoke", otherAdmin)]).toEqual([
+        role,
+        false,
+      ]);
+    }
+  });
+
+  it("un owner inactive o invited no se lo quita a nadie", () => {
+    for (const status of ["inactive", "invited"] as const) {
+      expect([
+        status,
+        can(actor("owner", { status }), "team.admin.revoke", otherAdmin),
+      ]).toEqual([status, false]);
+    }
+  });
+
+  it("el owner no se lo quita a un admin de otro workspace", () => {
+    expect(
+      can(actor("owner"), "team.admin.revoke", {
+        ...otherAdmin,
+        workspaceId: "22222222-2222-2222-2222-222222222222",
+      }),
+    ).toBe(false);
+  });
+
+  it("niega un recurso workspace, aunque actúe el owner", () => {
+    // @ts-expect-error: team.admin.revoke pide un recurso membership.
+    expect(can(actor("owner"), "team.admin.revoke", workspace)).toBe(false);
+  });
+});
+
 describe("assertCan", () => {
   it("lanza ForbiddenError cuando can devuelve false", () => {
     expect(() => assertCan(actor("member"), "team.manage", workspace)).toThrow(
