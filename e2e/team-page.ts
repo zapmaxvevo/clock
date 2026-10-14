@@ -6,7 +6,6 @@
  */
 import type { Locator, Page } from "@playwright/test";
 
-import { TEST_EMAIL_DOMAIN } from "./environment";
 import { escapeRegExp } from "./tracker-page";
 
 export const TEAM_PATH = "/equipo";
@@ -29,12 +28,6 @@ export type RoleAction = typeof PROMOTE | typeof DEMOTE;
 export const ADMIN_ROLE = "Administrador";
 export const MEMBER_ROLE = "Miembro";
 export type RoleLabel = typeof ADMIN_ROLE | typeof MEMBER_ROLE;
-
-/**
- * La cuenta del owner de la suite, la misma con que entra el setup. Solo el
- * owner quita el rol de admin (D-R8-5); su membresía no se toca (D-R8-11).
- */
-export const OWNER_EMAIL = `owner@${TEST_EMAIL_DOMAIN}`;
 
 /** §5.6: el aviso de un cambio que salió bien. */
 export function changedMessage(name: string, role: RoleLabel): string {

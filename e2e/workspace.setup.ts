@@ -1,7 +1,7 @@
 import { expect, test as setup } from "@playwright/test";
 
 import { activeMembershipCount, renewWorkspace } from "./database";
-import { TEST_EMAIL_DOMAIN } from "./environment";
+import { OWNER_EMAIL } from "./environment";
 import { signIn } from "./session";
 
 /**
@@ -24,7 +24,7 @@ const MAX_ACTIVE_MEMBERSHIPS = 1500;
  * es de todos los tests y ninguno debería tocarlo.
  */
 setup("el workspace existe antes de los tests", async ({ page }) => {
-  await signIn(page.context(), `owner@${TEST_EMAIL_DOMAIN}`);
+  await signIn(page.context(), OWNER_EMAIL);
   await page.goto("/");
 
   await expect(page.getByRole("region", { name: "Rastreador" })).toBeVisible();
@@ -40,7 +40,8 @@ setup("el workspace existe antes de los tests", async ({ page }) => {
         "Seguí en una base nueva, sin tocar la de desarrollo (clock), que es la de los e2e por omisión:",
         '  1. docker compose exec postgres psql -U clock -d postgres -c "CREATE DATABASE clock_e2e_<fecha>"',
         "  2. DATABASE_URL=postgresql://clock:clock@localhost:5432/clock_e2e_<fecha> npm run db:migrate",
-        "  3. corré la suite con ese DATABASE_URL (contra un servidor ya levantado, el mismo valor en E2E_DATABASE_URL y en el DATABASE_URL del servidor).",
+        "  3. DATABASE_URL=postgresql://clock:clock@localhost:5432/clock_e2e_<fecha> npm run test:e2e, sin otro servidor en :3000 (pará el de desarrollo): Playwright reusa el que encuentre, y uno contra clock escribiría ahí.",
+        "E2E_DATABASE_URL solo cuenta con E2E_BASE_URL, contra un servidor ya levantado; en local alcanza con DATABASE_URL.",
       ].join("\n"),
     );
   }

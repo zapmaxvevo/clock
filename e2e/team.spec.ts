@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { Page } from "@playwright/test";
 
 import { seedPerson, setDisplayName, setRole } from "./database";
+import { OWNER_EMAIL } from "./environment";
 import { holdActionResponses, openSecondTab, recordActions } from "./network";
 import {
   goToReportsByNav,
@@ -21,7 +22,6 @@ import {
   MEMBER_ROLE,
   memberHeader,
   memberRow,
-  OWNER_EMAIL,
   PROMOTE,
   roleButton,
   roleCell,

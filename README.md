@@ -52,6 +52,13 @@ DATABASE_URL=postgresql://clock:clock@localhost:5432/clock_e2e_<fecha> npm run d
 DATABASE_URL=postgresql://clock:clock@localhost:5432/clock_e2e_<fecha> npm run test:e2e
 ```
 
+La última línea corre **sin otro servidor en el puerto 3000** (pará el de
+desarrollo): en local, Playwright reusa el que encuentre ahí, y uno levantado
+contra `clock` haría que el login de prueba cree usuarios, sesiones y
+membresías en la base de desarrollo. `E2E_DATABASE_URL` solo cuenta con
+`E2E_BASE_URL`, contra un servidor ya levantado; en local alcanza con
+`DATABASE_URL`.
+
 Los e2e entran por un fixture de sesión que evita el login de Google:
 `POST /api/auth/test-session/sign-in` con la cabecera `x-test-session`. El
 endpoint se registra solo con tres condiciones: `ALLOW_TEST_SESSION=true`, un

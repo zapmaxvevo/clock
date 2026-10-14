@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 
 import { dayKeyOf, type CivilDay } from "./days";
-import { TEST_EMAIL_DOMAIN, testDatabaseUrl } from "./environment";
+import { OWNER_EMAIL, testDatabaseUrl } from "./environment";
 import { PERSON_NAME } from "./session";
 
 /**
@@ -61,7 +61,6 @@ async function withTransaction<T>(work: (client: Client) => Promise<T>): Promise
  * corta sin dejar nada.
  */
 export async function renewWorkspace(): Promise<void> {
-  const expectedOwner = `owner@${TEST_EMAIL_DOMAIN}`;
   await withTransaction(async (client) => {
     const found = await client.query<{ id: string; email: string }>(
       `select workspace.id, "user".email
@@ -73,9 +72,9 @@ export async function renewWorkspace(): Promise<void> {
     if (workspace === undefined) {
       throw new Error("No hay ningún workspace que renovar.");
     }
-    if (workspace.email !== expectedOwner) {
+    if (workspace.email !== OWNER_EMAIL) {
       throw new Error(
-        `El owner del workspace no es ${expectedOwner}: la base no es la de los e2e y no se renueva.`,
+        `El owner del workspace no es ${OWNER_EMAIL}: la base no es la de los e2e y no se renueva.`,
       );
     }
     await client.query("update workspace set created_at = now() where id = $1", [
