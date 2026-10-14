@@ -38,8 +38,18 @@ cambios de permisos.
   accesible, como deuda (revisión de paridad; §8). También deja en §4.2 y §4.3
   el `workspaceId` de la membresía bloqueada, que la rama ya tiene desde
   `0d48375` (B1 de la revisión de backend). El reparto de esa ronda está en §6,
-  en «Ronda de la corrección del 2026-10-13».
-- **Decisiones de arquitectura asociadas**, todas aceptadas:
+  en «Ronda de la corrección del 2026-10-13». La revisión de la corrección
+  (`1379b29`) la aprobó con retoques, ya aplicados: el reintento de un admin
+  con `member` (criterio 4), el foco sin suponer el orden de la respuesta y la
+  revalidación (§5.4), los ayudantes de `src/test/` (§6), la coordinación con
+  R7b ya mergeada, con `main` mergeado en la rama en `ed87784` (§6.6), el
+  procedimiento para seguir en una base de e2e nueva (§6), el ADR como pregunta
+  para el usuario (§9) y retoques de texto en D-R8-13 y §7. Después el usuario
+  decidió abrir el
+  [ADR 0023](../adr/0023-quitar-el-rol-de-admin-es-una-accion-propia.md) para
+  D-R8-13 (§9, punto 5).
+- **Decisiones de arquitectura asociadas**, aceptadas salvo la 0023, que está
+  propuesta:
   - [ADR 0010](../adr/0010-un-modulo-consulta-las-reglas-de-otro-por-su-service.md):
     lo que solo se muestra de otro módulo se lee con un `join` en el repository
     propio; «un ciclo entre módulos es la señal de que una regla o una pieza
@@ -55,12 +65,18 @@ cambios de permisos.
   - [ADR 0020](../adr/0020-nucleo-de-reportes-antes-de-la-fase-2.md):
     `timeEntry.others.view` para `owner` y `admin`; «Hasta que exista una forma
     de nombrar admins, solo el owner ve el reporte de equipo». R8 es esa forma.
+  - [ADR 0023](../adr/0023-quitar-el-rol-de-admin-es-una-accion-propia.md),
+    **propuesto** (lo aprueba el usuario): quitar el rol de admin es una acción
+    propia, `team.admin.revoke`, solo del owner y consultada solo sobre una
+    membresía `admin` (D-R8-5, D-R8-13).
 
-  **Este contrato no abre ningún ADR y no contradice ninguno aceptado.** La
-  elección de mayor alcance, el módulo nuevo (D-R8-1), la impone el ADR 0010;
-  el team-lead decidió no llevarla a un ADR propio (§9, punto 1). La acción
-  nueva de D-R8-13 suma una fila a las tablas de `can()` sin cambiar su forma
-  (§9, punto 5).
+  **Este contrato abre el ADR 0023 y no contradice ninguno aceptado.** La
+  elección de mayor alcance de la primera versión, el módulo nuevo (D-R8-1), la
+  impone el ADR 0010; el team-lead decidió no llevarla a un ADR propio (§9,
+  punto 1). La acción nueva de D-R8-13 va al ADR 0023, por decisión del usuario
+  (§9, punto 5). _Corrección del 2026-10-13_: decía «Este contrato no abre
+  ningún ADR», y que la acción nueva solo sumaba una fila a las tablas de
+  `can()`.
 
 Decisiones que el contrato da por tomadas (mapa §5, ADR 0020, `reportes.md` §8):
 solo owner y admin ven horas ajenas (P-01); `project_manager` y `team_manager`
@@ -321,11 +337,13 @@ bloqueo con `neon-serverless` es el `for update` de una fila de
 comprobación vuelve con el procedimiento de §6.3 de R2b.
 
 **D-R8-13 — Quitar el rol de admin es una acción propia, `team.admin.revoke`,
-solo del owner.** _Agregada el 2026-10-13 con la corrección de D-R8-5._
-Opciones: (1) una regla dentro de `team.manage`: sobre un `MembershipResource`
-con rol `admin`, solo el owner; (2) una acción nueva, `team.admin.revoke`,
-sobre `MembershipResource`, con `["owner"]` en la tabla de roles; (3) la regla
-en el service. **(2).**
+solo del owner.** _Agregada el 2026-10-13 con la corrección de D-R8-5._ La
+registra el
+[ADR 0023](../adr/0023-quitar-el-rol-de-admin-es-una-accion-propia.md),
+propuesto. Opciones: (1) una regla dentro de `team.manage`: sobre un
+`MembershipResource` con rol `admin`, solo el owner; (2) una acción nueva,
+`team.admin.revoke`, sobre `MembershipResource`, con `["owner"]` en la tabla de
+roles; (3) la regla en el service. **(2).**
 
 - **(3) no**: es una regla de acceso, y ninguna decisión de acceso vive fuera
   de `can()`.
@@ -350,6 +368,10 @@ en el service. **(2).**
   como `workspace.transfer` y `workspace.delete`, que también son solo del
   owner. La regla de la membresía del owner (`permissions/index.ts:202-209`)
   no entra en juego: el owner nunca tiene rol `admin`.
+- **`can()` no mira el rol de la membresía para esta acción**: sobre una
+  `member`, el owner también recibe `true`. Por eso la vista y el service la
+  consultan solo sobre una fila `admin`, y así tiene que hacerlo quien la reuse
+  en la fase 2. _Agregado el 2026-10-13, revisión de la corrección._
 
 ## 0. Precondición de arranque
 
@@ -408,7 +430,7 @@ Entra:
   confirmación de bajarse a sí mismo (D-R8-5).
 - **La entrada «Equipo»** en la navegación, solo con `team.manage`.
 - **La acción `team.admin.revoke`** en `src/server/permissions/index.ts`
-  (D-R8-13). _Agregado el 2026-10-13._
+  (D-R8-13, ADR 0023). _Agregado el 2026-10-13._
 - **Tests** de unidad, integración, concurrencia y e2e (§7).
 
 Queda afuera: ver §10.
@@ -421,8 +443,8 @@ Queda afuera: ver §10.
 | `src/components/layout/app-nav.tsx`          | Recibe `showTeam`; suma `{ href: "/equipo", label: "Equipo" }` al final si es `true`                                                        | `app-nav.test.tsx` (nuevo)        |
 | `src/server/permissions/index.ts`            | Suma `team.admin.revoke` a `ResourceByAction`, `resourceKinds` y `allowedRoles`; el cuerpo de `can()` no cambia (corrección del 2026-10-13) | `permissions.test.ts` entero      |
 | `src/server/permissions/permissions.test.ts` | Suma los casos del criterio 2                                                                                                               | —                                 |
-| `e2e/database.ts`                            | El comentario de `setRole` (`:456`) deja de decir que no hay pantalla; suma el conteo de membresías activas (corrección del 2026-10-13)     | —                                 |
-| `e2e/workspace.setup.ts`                     | Corta con «recreá la base de e2e» por encima de 1.500 membresías activas (corrección del 2026-10-13)                                        | e2e entera (todas dependen de él) |
+| `e2e/database.ts`                            | El comentario de `setRole` ya está (`:456-458`); suma el conteo de membresías activas (corrección del 2026-10-13)                           | —                                 |
+| `e2e/workspace.setup.ts`                     | Corta por encima de 1.500 membresías activas y dice cómo seguir en una base nueva (corrección del 2026-10-13)                               | e2e entera (todas dependen de él) |
 
 - **Ninguna afirmación existente cambia de valor.** Ningún e2e cuenta las
   entradas de la navegación (`goToReportsByNav` busca «Reportes» por nombre), y
@@ -440,7 +462,7 @@ Queda afuera: ver §10.
 
 ## 3. Permisos
 
-**Una acción nueva, `team.admin.revoke`** (D-R8-13): sobre
+**Una acción nueva, `team.admin.revoke`** (D-R8-13, ADR 0023): sobre
 `MembershipResource`, solo para `owner`. `team.manage` sigue como estaba, para
 `owner` y `admin`, sobre `WorkspaceResource` y `MembershipResource`. Cómo
 deciden sobre una membresía, que el criterio 2 fija:
@@ -926,13 +948,21 @@ la vista entera; tiene un solo `useAction` para la tabla y el último
 - **Si la fila se queda sin botón**, el foco pasa a su encabezado de fila. Pasa
   cuando un admin asciende a alguien: la fila queda `admin`, y un admin no la
   puede bajar (D-R8-5). Sin esto, el foco caería a `body` con el botón que se
-  desmonta. El componente recuerda la membresía del último éxito y, cuando
-  llegan los `members` revalidados, si esa fila tiene `change` `null`, enfoca
-  su encabezado una vez.
+  desmonta. El componente guarda el `membershipId` y el `role` del último
+  éxito (`data`). Un efecto que depende de esa marca y de `members` busca la
+  fila. Si la fila todavía no trae ese rol, espera. Cuando lo trae, enfoca su
+  encabezado si su `change` es `null` y borra la marca; si tiene botón, solo la
+  borra. Un `send` nuevo también la borra. No supone si llega primero la
+  respuesta o la revalidación: `onSuccess` corre en su propia transición
+  (`use-action.ts:72-78`).
 
 _Corrección del 2026-10-13_: el componente tenía además la fila de la
 confirmación abierta y el diálogo de §5.5, y el foco siempre quedaba en el
-botón, porque toda fila con control lo conservaba.
+botón, porque toda fila con control lo conservaba. La revisión de la
+corrección cambió el segundo punto, que decía «El componente recuerda la
+membresía del último éxito y, cuando llegan los `members` revalidados, si esa
+fila tiene `change` `null`, enfoca su encabezado una vez»: suponía que la
+revalidación llega después de `onSuccess`.
 
 ### 5.5 La confirmación de bajarse a sí mismo
 
@@ -1037,9 +1067,11 @@ en una copia propia.
 
 **Para `backend-dev` y `test-engineer`**: `seedMember` devuelve el `userId`, no
 el id de la membresía (`src/test/factories.ts:61-74`); su cuarto parámetro,
-opcional, es el id del usuario. El id de la membresía, que es lo que recibe
-`changeRole`, lo busca cada test con un `select` en su propio archivo:
-`src/test/` no está en el reparto.
+opcional, es el id del usuario. El id de la membresía lo da
+`membershipOf(workspaceId, userId)` (`src/test/queries.ts`), sumado en la ronda
+de revisión de código. _Corrección del 2026-10-13_: decía que cada test lo
+buscaba con un `select` en su propio archivo, porque `src/test/` no estaba en
+el reparto.
 
 ### e2e-tester
 
@@ -1048,6 +1080,7 @@ e2e/team.spec.ts                                   (nuevo)
 e2e/team-page.ts                                   (nuevo)
 e2e/database.ts
 e2e/workspace.setup.ts
+README.md
 ```
 
 - `team-page.ts`: `TEAM_PATH`, los textos de §5.6 que afirman los recorridos,
@@ -1055,24 +1088,39 @@ e2e/workspace.setup.ts
   fila empieza con el nombre), `roleCell(row)`, `roleButton(page, acción,
 nombre)` por su nombre accesible y `teamFeedback(page)`. _Corrección del
   2026-10-13_: también `selfDemoteDialog(page)`, que sale.
-- **De `e2e/database.ts` cambia el comentario de `setRole`** (`:456`), que
-  dice «La fase 1 no tiene pantalla para eso (R8).»; por ejemplo, «La pantalla
-  /equipo (R8) solo pasa entre member y admin; esto prepara el estado del
-  test». Las funciones alcanzan: `seedPerson`, `setRole` y `setDisplayName`. De
+- **El comentario de `setRole` ya está** (`e2e/database.ts:456-458`); de ese
+  archivo queda solo el conteo de membresías activas (abajo). Las funciones
+  alcanzan: `seedPerson`, `setRole` y `setDisplayName`. De
   `e2e/reports-page.ts` solo importa `REPORTS_PATH`, `SCOPE_SELF`,
   `SCOPE_EVERYONE` y `goToReportsByNav`, sin editarlo. De `e2e/network.ts`, sin
   editarlo, `holdActionResponses`, `recordActions` y `openSecondTab`.
-  _Corrección del 2026-10-13_: decía «cambia solo el comentario»; ahora suma
-  también el conteo de membresías activas (abajo).
+  _Corrección del 2026-10-13_: decía que cambiaba el comentario de `setRole`,
+  que ya se cambió.
 - **El tope de membresías activas** (corrección del 2026-10-13, revisión de
   tests): `e2e/database.ts` exporta una función que cuenta las membresías
   `active` del workspace de los e2e (`${FIRST_WORKSPACE}`), y
   `e2e/workspace.setup.ts`, después de `renewWorkspace()` (`:24`), corta con
-  un error por encima de **1.500**. El mensaje dice cuántas hay, el tope, por
-  qué (`/equipo` lista todas y por encima de eso el recorrido 1 no llega a
-  tiempo, §8) y qué hacer: «recreá la base de e2e». El tope es una constante
-  con nombre en `workspace.setup.ts`. Así una base reusada demasiado grande
-  falla en el setup, con su causa, y no aparece como un recorrido _flaky_.
+  un error por encima de **1.500**. El tope es una constante con nombre en
+  `workspace.setup.ts`. Así una base reusada demasiado grande falla en el
+  setup, con su causa, y no aparece como un recorrido _flaky_. El mensaje dice
+  cuántas hay, el tope, por qué (`/equipo` lista todas y por encima de eso el
+  recorrido 1 no llega a tiempo, §8) y cómo seguir **sin tocar la base de
+  desarrollo**, que es la de los e2e por omisión (`clock`: `README.md:37-38`,
+  `e2e/environment.ts:62`):
+  1. crear una base nueva:
+     `docker compose exec postgres psql -U clock -d postgres -c "CREATE DATABASE clock_e2e_<fecha>"`;
+  2. migrarla:
+     `DATABASE_URL=postgresql://clock:clock@localhost:5432/clock_e2e_<fecha> npm run db:migrate`;
+  3. correr la suite con ese `DATABASE_URL`.
+
+  _Corrección del 2026-10-13, revisión de la corrección_: el mensaje decía solo
+  «recreá la base de e2e», y la base de e2e por omisión es la de desarrollo.
+
+- **`README.md`**, en la sección de los e2e (`:37-41`): el tope de 1.500
+  membresías activas y el procedimiento de arriba. _Agregado el 2026-10-13._
+- **La cabecera de `e2e/team.spec.ts`** (`:39-45`) dice «El owner de la suite
+  no se toca»: pasa a decir que su membresía no se toca y que el recorrido 2
+  entra con su cuenta (D-R8-11). _Agregado el 2026-10-13._
 - **Reuso recomendado**: `openSecondTab(browser, email, path)`
   (`e2e/network.ts:60-70`) para el segundo contexto de P, y `goToReportsByNav`
   (`e2e/reports-page.ts:505-509`) para «P, sin recargar, navega a Reportes»:
@@ -1090,59 +1138,66 @@ docs/parity/reportes.md
 ```
 
 No escribe: manda el texto con su lugar exacto y lo aplica el team-lead, antes
-del merge:
+del merge. Las citas son de la rama en `ed87784`, con R7b:
 
-- **RP-02** (`reportes.md:345-356`): corrección fechada: desde R8, owner y
+- **RP-02** (`reportes.md:360-371`): corrección fechada: desde R8, owner y
   admin ven el reporte de equipo, y un admin se nombra en `/equipo`. Cubre
-  también «Hasta R8 el único que lo ve es el owner…» (`:355-356`).
-- **§9.5** (`:2344`): corrección fechada de «Hasta R8, solo el owner ve el
+  también «Hasta R8 el único que lo ve es el owner…» (`:370-371`).
+- **§9.5** (`:2406`): corrección fechada de «Hasta R8, solo el owner ve el
   reporte de equipo (RP-02).».
 - **Sección «18. Núcleo, R8»** al final, después de «17. Núcleo, R7»
-  (`:3656`), que R7b amplía: la pantalla, quién la ve, las reglas (D-R8-3 a
-  D-R8-6), el efecto en una sesión abierta (D-R8-8) y las divergencias
-  visibles: un member no ve `/equipo` (en Clockify ve la página de equipo salvo
-  que se la escondan, RP-08); un solo rol por persona. _Corrección del
-  2026-10-13_: la regla de D-R8-5 se replica, con las dos citas que relevó
-  `parity-analyst` ese día; no es una divergencia.
+  (`:3718`), que con R7b termina en «17.5 Qué puede hacer cada rol»
+  (`:3976-3988`): la pantalla, quién la ve, las reglas (D-R8-3 a D-R8-6), el
+  efecto en una sesión abierta (D-R8-8) y las divergencias visibles: un member
+  no ve `/equipo` (en Clockify ve la página de equipo salvo que se la
+  escondan, RP-08); un solo rol por persona. _Corrección del 2026-10-13_: la
+  regla de D-R8-5 se replica, con las dos citas que relevó `parity-analyst` ese
+  día; no es una divergencia.
 - **§7, un punto P-12 nuevo** con lo _no verificado_ de §9, para la sesión del
-  usuario en Clockify. P-12 está libre: P-11 es el último (`:2236`).
+  usuario en Clockify. P-12 está libre: P-11 es el último (`:2298`).
   _Corrección del 2026-10-13_: sin los dos puntos que quedaron documentados
   (§9, punto 2).
+
+_Corrección del 2026-10-13_: las citas eran de `10b8af0` (RP-02 `:345-356`,
+§9.5 `:2344`, la §17 `:3656`, P-11 `:2236`); R7b corrió el archivo.
 
 ### Lo que no toca nadie
 
 `src/server/db/`, `drizzle/`, `src/server/session.ts`, `src/server/action.ts`,
 `src/server/audit.ts`, `src/modules/workspace/`, `src/modules/profile/`,
-`src/modules/report/`, `src/modules/time-entry/`, `src/modules/project/`,
-`src/test/`, `e2e/reports-page.ts`, `e2e/reports.spec.ts`, `e2e/network.ts`,
-los ADR. El mapa y el estado los actualiza el team-lead. _Corrección del
-2026-10-13_: `src/server/permissions/index.ts` estaba en esta lista; ahora es de
-`backend-dev` (D-R8-13).
+`src/modules/report/`, `src/modules/project/`, `e2e/reports-page.ts`,
+`e2e/reports.spec.ts`, `e2e/network.ts`, los ADR salvo el 0023, que escribe el
+arquitecto del slice. El mapa y el estado los actualiza el team-lead.
+_Corrección del 2026-10-13_: `src/server/permissions/index.ts` estaba en esta
+lista; ahora es de `backend-dev` (D-R8-13). También estaban `src/test/` y
+`src/modules/time-entry/`: la revisión de código movió a `src/test/` los
+ayudantes de equipo y `outcomeWhileHeld` (`f641c85`, `363a5c0`); esta ronda no
+los toca.
 
 ### 6.6 Coordinación con R7b
 
-R8 se implementa en un worktree propio, en paralelo a R7b, el gráfico en el PDF
-del reporte. Los archivos que pueden cruzarse, contra el reparto de R7b en el
+R7b se mergeó a `main` el 2026-10-13 (`a8f3e70`) y `main` se mergeó en R8
+(`ed87784`); no comparten archivos de código. Lo compartido es
+`docs/parity/reportes.md`, que se corrió con R7b. El reparto de R7b está en el
 [contrato de R7](nucleo-reportes-r7-exportar-pdf.md), §7, «R7b» y «Lo que no
-toca nadie» (`:1050-1069`):
+toca nadie» (`:1248-1279`).
 
-| Archivo                                                   | R8                                                   | R7b                                                                   | Riesgo                                                                                       |
-| --------------------------------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `src/app/(app)/layout.tsx`, `app-nav.tsx`                 | edita                                                | no los toca: excluye `src/components/` y «el resto de `src/app/`»     | ninguno                                                                                      |
-| `src/server/permissions/index.ts` y `permissions.test.ts` | suma `team.admin.revoke` y sus casos                 | no toca `src/server/`                                                 | ninguno                                                                                      |
-| `e2e/database.ts`                                         | el comentario de `setRole` y el conteo de membresías | no lo toca                                                            | ninguno                                                                                      |
-| `e2e/workspace.setup.ts`                                  | el tope de membresías activas                        | no lo toca: solo el recorrido 29                                      | bajo: con R8 mergeada, la suite de R7b corta en una base con más de 1.500 membresías activas |
-| `e2e/reports.spec.ts`, `src/modules/report/export/`       | no los toca                                          | el recorrido 29; `types.ts`, `document.ts`, `pdf.ts`, `pdf-layout.ts` | sin cruce                                                                                    |
-| `e2e/reports-page.ts`                                     | importa tres constantes y `goToReportsByNav`         | puede sumar ayudantes para el recorrido 29                            | bajo: el segundo merge rebasa                                                                |
-| `docs/parity/reportes.md`                                 | RP-02, §9.5, §18 nueva, P-12                         | RP-53 y la §17                                                        | **conflicto de texto**; lo aplica el team-lead, de a uno                                     |
+| Archivo                                                   | R8                                                           | R7b                                                                   | Riesgo                                                                                                     |
+| --------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `src/app/(app)/layout.tsx`, `app-nav.tsx`                 | edita                                                        | no los toca: excluye `src/components/` y «el resto de `src/app/`»     | ninguno                                                                                                    |
+| `src/server/permissions/index.ts` y `permissions.test.ts` | suma `team.admin.revoke` y sus casos                         | no toca `src/server/`                                                 | ninguno                                                                                                    |
+| `e2e/database.ts`                                         | el conteo de membresías (el comentario de `setRole` ya está) | no lo toca                                                            | ninguno                                                                                                    |
+| `e2e/workspace.setup.ts`                                  | el tope de membresías activas                                | no lo toca: solo el recorrido 29                                      | con R8 en main, cualquier suite local sobre una base con más de 1.500 membresías activas corta en el setup |
+| `e2e/reports.spec.ts`, `src/modules/report/export/`       | no los toca                                                  | el recorrido 29; `types.ts`, `document.ts`, `pdf.ts`, `pdf-layout.ts` | sin cruce                                                                                                  |
+| `e2e/reports-page.ts`                                     | importa tres constantes y `goToReportsByNav`                 | no cambia (`readPdf` y `chartCaption` ya estaban)                     | ninguno                                                                                                    |
+| `docs/parity/reportes.md`                                 | RP-02, §9.5, §18 nueva, P-12                                 | RP-53 y la §17                                                        | **conflicto de texto**, ya resuelto en `ed87784`; las citas de §6 son de la rama                           |
 
-- **El que mergea segundo rebasa.** R4 ya está en `main`: `listWorkspacePeople`
-  existe y D-R8-1 dice por qué R8 no la extiende; dónde vive la lectura de la
-  fase 2 queda abierto (§9, punto 4).
-- **Los e2e de los dos worktrees no comparten servidor.** Con el `webServer`
-  por omisión, los dos usan `http://localhost:3000` (`playwright.config.ts:16`)
-  y, fuera de CI, `reuseExistingServer` es `true` (`:62-71`): un worktree puede
-  correr la suite contra el servidor del otro sin darse cuenta. Cada uno
+- R4 ya está en `main`: `listWorkspacePeople` existe y D-R8-1 dice por qué R8 no
+  la extiende; dónde vive la lectura de la fase 2 queda abierto (§9, punto 4).
+- **Los e2e no comparten servidor con otro árbol.** Con el `webServer` por
+  omisión, todos usan `http://localhost:3000` (`playwright.config.ts:16`) y,
+  fuera de CI, `reuseExistingServer` es `true` (`:62-71`): un worktree puede
+  correr la suite contra el servidor de otro árbol sin darse cuenta. Cada uno
   compila y levanta el suyo con `next start -p <puerto>`, con el entorno de
   `localServerEnv` (`playwright.config.ts:23-37`) y `BETTER_AUTH_URL` en ese
   puerto, y corre la suite con `E2E_BASE_URL` apuntando ahí, el mismo
@@ -1153,6 +1208,10 @@ toca nadie» (`:1050-1069`):
   (`.claude/worktrees/`), `npm run lint` del árbol principal lo recorre: los
   `ignores` de `eslint.config.mjs:105-112` no lo excluyen (deuda anotada en
   `estado-fase1.md:334-335`).
+- _Corrección del 2026-10-13, revisión de la corrección_: la sección hablaba de
+  R7b en paralelo, con «El que mergea segundo rebasa», las citas del contrato
+  de R7 en `:1050-1069` y, para `e2e/workspace.setup.ts`, el riesgo de que la
+  suite de R7b cortara con R8 mergeada.
 
 ### Orden
 
@@ -1195,8 +1254,8 @@ base de test. El `workspaceId` de `LockedMembership` y de los recursos de
 - `src/server/permissions/index.ts`: `"team.admin.revoke": MembershipResource`
   en `ResourceByAction` (`:54-81`), `["membership"]` en `resourceKinds`
   (`:91-111`) y `["owner"]` en `allowedRoles` (`:121-141`), con un comentario
-  que cite D-R8-5 y la frase de Clockify. El cuerpo de `can()` (`:176-214`) no
-  cambia.
+  que cite D-R8-5, la frase de Clockify y el ADR 0023. El cuerpo de `can()`
+  (`:176-214`) no cambia.
 - `src/modules/team/schema.ts`: `adminOwnerOnly` en `teamMessages` (`:24-32`) y
   los comentarios de `isSelf` y `change` (`:58-61`), como en §4.1.
   `unexpected` (`:31`) no cambia.
@@ -1209,9 +1268,9 @@ base de test. El `workspaceId` de `LockedMembership` y de los recursos de
 - `src/modules/team/service.integration.test.ts`: criterio 3 (`:54-119`: el
   caso de `:82-104` pasa a ser el de un admin que asciende, sale el de
   `:106-118` y entra el owner que baja a un admin); criterio 4 (`:121-139`,
-  con el caso del admin); criterio 5 (`:141-176`); criterio 14 (`:345-448`,
-  con el segundo admin, y el caso de `:435-448`, que hoy espera `demote` en la
-  fila propia del admin).
+  con los dos casos del admin); criterio 5 (`:141-176`); criterio 14
+  (`:345-448`, con el segundo admin, y el caso de `:435-448`, que hoy espera
+  `demote` en la fila propia del admin).
 - `src/modules/team/actions.integration.test.ts`: el caso de `adminOwnerOnly`
   del criterio 15, junto al de `forbidden` (`:141-155`).
 
@@ -1224,8 +1283,8 @@ base de test. El `workspaceId` de `LockedMembership` y de los recursos de
 - `src/modules/team/concurrency.integration.test.ts`: el criterio 11 nuevo, con
   sus dos casos, reemplaza `:65-112`; en el 12 (`:114-153`) se invierten los
   actores.
-- Los mutantes de §7.1 que cambian (criterios 2, 3, 4, 5, 11, 12 y 14), en su
-  copia.
+- Los mutantes de §7.1 que cambian (criterios 2, 3, 4, 5, 11, 12 y 14) y los
+  dos equivalentes declarados, en su copia.
 
 **`frontend-dev`**:
 
@@ -1236,8 +1295,9 @@ base de test. El `workspaceId` de `LockedMembership` y de los recursos de
 - `team-members.tsx`: salen el diálogo, `confirm`, `confirming` y `dialogOpen`
   (`:16`, `:19`, `:45-46`, `:70-73`, `:89-103`), y `changeButtonId` con el `id`
   del botón (`:26-29`, `:214`), que solo servían al `finalFocus`. Entran el
-  `tabIndex={-1}` y el `id` del encabezado de fila (`:181`) y el foco de §5.4.
-  El comentario de `:37-42` deja de nombrar la confirmación.
+  `tabIndex={-1}` y el `id` del encabezado de fila (`:181`) y el foco de §5.4,
+  con la marca del último éxito. El comentario de `:37-42` deja de nombrar la
+  confirmación.
 - `self-demotion-dialog.tsx`: se borra.
 - `labels.ts`: `intro` (`:11-12`); salen `selfDemoteTitle`, `selfDemoteBody`,
   `selfDemoteConfirm` y `cancel` (`:30-35`); entra `unexpectedBody`.
@@ -1256,14 +1316,19 @@ base de test. El `workspaceId` de `LockedMembership` y de los recursos de
   (`:32-35`) y `selfDemoteDialog` (`:93-95`); entra `OWNER_EMAIL`,
   `` `owner@${TEST_EMAIL_DOMAIN}` `` con el dominio de `e2e/environment.ts`,
   como `e2e/workspace.setup.ts:19`.
-- `e2e/team.spec.ts`: los recorridos 1 (`:94-164`) y 2 (`:166-205`) de §7.2; el
-  3 (`:207-214`) no cambia.
+- `e2e/team.spec.ts`: los recorridos 1 (`:94-164`) y 2 (`:166-205`) de §7.2, y
+  la cabecera (`:39-45`); el 3 (`:207-214`) no cambia.
 - `e2e/database.ts` y `e2e/workspace.setup.ts` (`:18-25`): el tope de 1.500
-  membresías activas, como dice la lista de `e2e-tester` de arriba (revisión de
-  tests).
+  membresías activas, con el mensaje que dice cómo seguir en una base nueva;
+  `README.md` (`:37-41`), el tope y ese procedimiento. Como dice la lista de
+  `e2e-tester` de arriba (revisión de tests y de la corrección).
 
 **`parity-analyst`**: los textos de su lista de arriba, con las correcciones
-del 2026-10-13.
+del 2026-10-13 y las citas de la rama en `ed87784`.
+
+**El arquitecto del slice**: el
+[ADR 0023](../adr/0023-quitar-el-rol-de-admin-es-una-accion-propia.md), en
+estado «Propuesto», que aprueba el usuario (§9, punto 5).
 
 **Orden**:
 
@@ -1280,8 +1345,9 @@ del 2026-10-13.
    seguridad: que la vista y la mutación preguntan `team.admin.revoke` y nada
    más decide quitar el rol, y que un admin con un pedido armado a mano no
    baja a nadie, tampoco a sí mismo. Después, la suite entera, sobre una base
-   de e2e recién creada: las locales que ya existen tienen entre 1.800 y 1.965
-   membresías activas y cortan en el setup.
+   de e2e recién creada con el procedimiento de §6 (`e2e-tester`): las locales
+   que ya existen tienen entre 1.800 y 1.965 membresías activas y cortan en el
+   setup.
 
 ## 7. Criterios de aceptación
 
@@ -1315,7 +1381,8 @@ cada uno dice qué decía antes.
 4. **Sin efecto** (integración) — pedir el rol que ya tiene responde éxito, no
    cambia `updated_at` y no deja fila de auditoría, para `member` y para
    `admin`, pedido por el owner; y un admin que pide `admin` para quien ya es
-   admin, que es el reintento de su ascenso (D-R8-7, D-R8-13). Antes: solo el
+   admin, que es el reintento de su ascenso, y `member` para quien ya es
+   member: los dos, éxito sin escribir (D-R8-7, D-R8-13). Antes: solo el
    owner.
 5. **El owner y el rol de admin** (integración) — el owner sobre la suya, con
    `member` y con `admin`: `role_locked` con `ownerLocked`, la fila igual y sin
@@ -1351,8 +1418,8 @@ cada uno dice qué decía antes.
     - **Dos admins que se piden `admin` uno al otro.** A y B `admin`; con una
       barrera sobre las dos filas, los dos trabados antes de soltarla
       (`raceThroughBarrier`), A pide `admin` para B y B para A. Los dos
-      responden éxito sin escribir y sin auditoría; ninguno sale con
-      `unexpected` (`40P01`).
+      responden éxito sin escribir y sin auditoría; ninguno de los dos rechaza
+      con `40P01`.
 
     Antes: «Dos admins que se bajan uno al otro», con un ganador y un
     `forbidden`, que con D-R8-5 ya no puede pasar.
@@ -1366,8 +1433,8 @@ cada uno dice qué decía antes.
 13. **El bloqueo no espera a las horas** (concurrencia) — con otra transacción
     abierta que insertó una entrada de M (y sostiene `for key share` sobre su
     membresía), el cambio de rol de M termina sin trabarse; la espera se mide
-    con `waitForBlockedBackends` contra la respuesta, como `outcomeWhileLocked`,
-    sin esperas fijas.
+    con `waitForBlockedBackends` contra la respuesta, con `outcomeWhileHeld`
+    (`src/test/concurrency.ts:113`), sin esperas fijas.
 14. **La lista** (integración) — workspace A con el owner O, los admins D y E,
     M con nombre editado, N sin nombre editado, una `project_manager`, una
     `team_manager`, una `inactive` y una `invited`, y el workspace B con un
@@ -1397,7 +1464,8 @@ cada uno dice qué decía antes.
       el orden recibido, «(vos)», el email, el rótulo de cada rol, y el botón
       solo con `change`, con su texto y su nombre accesible; ningún botón en la
       fila del owner ni en una de admin con `change` `null`; cada encabezado de
-      fila con `tabIndex="-1"` y su `id`.
+      fila con `tabindex="-1"`, en minúsculas como sale de
+      `renderToStaticMarkup`, y su `id`.
     - `team-members-model.test.ts`, con `send` simulado (`vi.fn()`): `activate`
       en una fila `promote` llama a `send` con `{ membershipId, role: "admin" }`
       y en una `demote` con `member`; en una fila sin `change`, no llama; **con
@@ -1433,15 +1501,15 @@ cada uno dice qué decía antes.
 | 1        | unidad       | `team/schema.test.ts`                  | `role` como `z.string()`; `owner` en `CHANGEABLE_ROLES`; `membershipId` como texto libre. **Cae en typecheck**: un rol de menos en `ROLE_VALUES`                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | 2        | unidad       | `permissions.test.ts`                  | la regla del owner quitada; `project_manager` en `team.manage`; el corte por estado quitado; `admin` en `team.admin.revoke`; `team.admin.revoke` con `workspace` en `resourceKinds`                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 3        | integración  | `team/service.integration.test.ts`     | sin `recordAudit`; anterior y siguiente invertidos; `entityId` con el `userId`; el actor de la auditoría con la persona cambiada; `team.admin.revoke` consultado también al ascender (el admin no asciende a N)                                                                                                                                                                                                                                                                                                                                                                                                               |
-| 4        | integración  | ídem                                   | escribir y auditar siempre, también sin cambio; `team.admin.revoke` consultado por el rol de la fila y no por el pedido (el reintento del admin responde `forbidden`)                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 4        | integración  | ídem                                   | escribir y auditar siempre, también sin cambio; `team.admin.revoke` consultado por el rol de la fila y no por el pedido (el reintento del admin responde `forbidden`); `team.admin.revoke` consultado por el rol pedido y no por la fila (el admin que pide `member` para un member responde `adminOwnerOnly`)                                                                                                                                                                                                                                                                                                                |
 | 5        | integración  | ídem                                   | la regla del owner quitada: el owner sobre la suya cae en la de los otros roles y responde `role_locked` con `roleLocked`, así que **muere por el texto** (`roleLocked` en lugar de `ownerLocked`), no porque el workspace quede sin owner (B2 de la revisión de backend); la regla del owner antes de `can()` (el admin recibe `role_locked`); la consulta de `team.admin.revoke` quitada (el admin baja a otro y a sí mismo); esa consulta después de la regla del estado (el admin sobre un admin `inactive` recibe `inactive_membership`)                                                                                 |
 | 6        | integración  | ídem                                   | solo la regla del owner, sin la de los otros roles                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | 7        | integración  | ídem                                   | la regla del estado quitada                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | 8        | integración  | ídem                                   | `lockForRoleChange` sin `workspace_id` (la de B se encuentra y responde `forbidden`, no `not_found`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | 9        | integración  | ídem                                   | la puerta de antes de la transacción quitada (abre la transacción); `team.manage` cambiado por `team.view`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | 10       | integración  | ídem                                   | `can()` dentro de la transacción con el actor de la sesión                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| 11       | concurrencia | `team/concurrency.integration.test.ts` | bloquear solo la membresía pedida, o leer la de quien actúa sin bloqueo: A no se traba en la barrera y cae por `finishedEarly`, o asciende a M con la autoridad vieja (primer caso); dos sentencias en el orden pedido (`40P01`, sale `unexpected`; segundo caso)                                                                                                                                                                                                                                                                                                                                                             |
-| 12       | concurrencia | ídem                                   | `lockForRoleChange` sin bloqueo: no se traba en la barrera y la segunda vuelve sin escribir; cae por `finishedEarly` (`src/test/concurrency.ts:111-115`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 11       | concurrencia | `team/concurrency.integration.test.ts` | bloquear solo la membresía pedida, o leer la de quien actúa sin bloqueo: A no se traba en la barrera y cae por `finishedEarly`, o asciende a M con la autoridad vieja (primer caso); dos sentencias en el orden pedido (`40P01`: en el test de concurrencia uno de los dos rechaza; en la action sería `unexpected`; segundo caso)                                                                                                                                                                                                                                                                                            |
+| 12       | concurrencia | ídem                                   | `lockForRoleChange` sin bloqueo: no se traba en la barrera y la segunda vuelve sin escribir; cae por `finishedEarly` (`src/test/concurrency.ts:139-143`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | 13       | concurrencia | ídem                                   | `for update` en lugar de `for no key update` (queda trabado)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | 14       | integración  | `team/service.integration.test.ts`     | sin `status = 'active'` (aparecen la inactiva y la invitada); sin `workspace_id` (aparece la de B); `user_preference` con `inner join` (se pierde N); `change` en el owner; la lista leída sin `team.manage`; `change` por el rol, sin `can()` (para D, `demote` en D y en E)                                                                                                                                                                                                                                                                                                                                                 |
 | 15       | integración  | `team/actions.integration.test.ts`     | `paths` solo con `/equipo`; el parseo de la entrada después del service; el texto de `adminOwnerOnly` cambiado por el `forbidden` de la action                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
@@ -1457,12 +1525,17 @@ mutantes por D-R8-5 y D-R8-13; la 17 pierde «la fila propia que manda sin
 confirmar» y «confirmar con `admin`», y suma el cuerpo de `unexpected`. La
 fila 8 no cambia: con `0d48375`, el mutante sin `workspace_id` muere con
 `forbidden`, como dice (revisión de tests), porque el recurso de `can()` lleva
-el workspace de la fila leída (§4.3).
+el workspace de la fila leída (§4.3). La revisión de la corrección sumó a la
+fila 4 el mutante del rol pedido, cambió el texto del `40P01` de la fila 11 y
+corrigió la cita de `finishedEarly` de la fila 12 (decía `:111-115`).
 
-**Sin mutante declarado equivalente.** _Corrección del 2026-10-13_: «`change`
-armado también con `can()` por fila, o sin él» era equivalente mientras
-`can()` decidía igual para el owner y para un admin sobre una membresía
-`member` o `admin`; con D-R8-13 ya no, y lo mata el criterio 14.
+**Mutantes declarados equivalentes:** `promote` sin `can()` por fila y `demote`
+sin `team.manage`: con la puerta de `getTeamView` ya pasada, `can()` responde
+`true` en los dos casos. `test-engineer` corre el criterio 14 con cada uno y
+anota que las vistas son iguales. _Corrección del 2026-10-13_: decía «Sin
+mutante declarado equivalente»; antes de la corrección, el equivalente era
+«`change` armado también con `can()` por fila, o sin él», que con D-R8-13 ya
+no lo es para `demote`.
 
 ### 7.2 Recorridos de `e2e/team.spec.ts`
 
@@ -1568,9 +1641,10 @@ pedido» salen con el diálogo.
   22,9 s con 3.023, y falla 3 de 3 con 5.233: la respuesta de la action no
   vuelve en 5 s. Las bases locales que ya existen tienen entre 1.800 y 1.965.
   Decisión del team-lead: el setup de los e2e corta por encima de 1.500
-  membresías activas con «recreá la base de e2e» (§6, `e2e-tester`), para que
-  no aparezca como un recorrido _flaky_. Con una base nueva por corrida, como
-  en CI, el tope no se alcanza.
+  membresías activas y dice cómo seguir en una base nueva sin tocar la de
+  desarrollo, que es la de los e2e por omisión (§6, `e2e-tester`), para que no
+  aparezca como un recorrido _flaky_. Con una base nueva por corrida, como en
+  CI, el tope no se alcanza.
 - **La deuda de `ensureWorkspaceContext`** (mapa §6) sigue: cualquiera del
   dominio que entra queda `member`. R8 no la agrava: solo cambia el rol de
   membresías que existen y nunca crea una.
@@ -1591,9 +1665,10 @@ pedido» salen con el diálogo.
 - **Los rótulos de `project_manager` y `team_manager`** aparecen solo si alguien
   los puso por SQL; «Responsable de proyectos» no es la marca de responsable de
   un proyecto (PR-19).
-- **`team.admin.revoke` es de R8 y de la fase 2** (D-R8-13): la pantalla de
-  equipo de la fase 2 la reusa si ofrece quitar el rol de admin desde otro
-  lugar, y decide aparte qué más de un admin puede tocar otro admin.
+- **`team.admin.revoke` es de R8 y de la fase 2** (D-R8-13, ADR 0023): la
+  pantalla de equipo de la fase 2 la reusa si ofrece quitar el rol de admin
+  desde otro lugar, la consulta solo sobre una fila `admin` y decide aparte qué
+  más de un admin puede tocar otro admin.
 
 ## 9. Pendiente del usuario y preguntas abiertas
 
@@ -1632,10 +1707,14 @@ pedido» salen con el diálogo.
    `team.view`, ¿`listWorkspacePeople` sigue en `workspace` como catálogo del
    reporte o se muda a `team`, junto a `listActiveMembers`? Lo decide el
    contrato de esa pantalla. No bloquea R8.
-5. **ADR para `team.admin.revoke`: decidido, no hay** (team-lead,
-   2026-10-13). D-R8-13 suma una fila a las tablas de `can()` sin cambiar su
-   forma, como cada fase agrega las suyas (`permissions/index.ts:49-53`), y
-   las alternativas quedan escritas en D-R8-13.
+5. **ADR para `team.admin.revoke`: el usuario decidió abrirlo** (2026-10-13):
+   [ADR 0023](../adr/0023-quitar-el-rol-de-admin-es-una-accion-propia.md), en
+   estado «Propuesto». **Pendiente del usuario: aprobarlo.** No bloquea la
+   implementación: el ADR registra D-R8-13 tal como está. _Corrección del
+   2026-10-13_: era una pregunta para el usuario, con la recomendación de no
+   abrir ADR porque la acción es una fila más de las tablas de `can()`
+   (`permissions/index.ts:49-53`); antes, el team-lead lo había dado por
+   decidido sin ADR.
 
 ## 10. Fuera de alcance
 
