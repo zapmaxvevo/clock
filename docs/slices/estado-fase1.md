@@ -1,7 +1,7 @@
 # Estado de la fase 1
 
 Registro vivo de por dónde va la ejecución. Se actualiza al cerrar cada paso;
-quien retome el trabajo empieza acá. Última actualización: 2026-10-12 (undécima sesión).
+quien retome el trabajo empieza acá. Última actualización: 2026-10-13 (duodécima sesión).
 
 ## Dónde estamos
 
@@ -41,6 +41,7 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-12 (undéc
 | Núcleo de reportes, R6a y R6b               | En `main` |
 | Núcleo de reportes, R9                      | En `main` |
 | Núcleo de reportes, R7a                     | En `main` |
+| Núcleo de reportes, R7b                     | En `main` |
 
 Los slices 1 a 13 (con 2b, 2c, 7b, 8b, 8c, 11a y 11b) y el arreglo del piso fijo están en `main`.
 El 13 (planilla de horarios) se mergeó el 2026-10-08 con lint, typecheck, 1279 de unidad, 1223 de
@@ -280,6 +281,18 @@ vacío del owner y `renewWorkspace` se corta.
      `backend-dev` probó dos veces en el árbol compartido; repetir en cada encargo que las
      pruebas descartables y los mutantes van en un worktree. Bases que se pueden borrar:
      `clock_r6a_*`, `clock_r6b_*`, `clock_r10a_*`, `clock_r10b_final_*`.
+     **Duodécima sesión** (2026-10-13): el usuario reinició el host (lo del 2026-10-12 quedó
+     resuelto; el e2e vuelve a correr en el host) y pidió «R7b y R8 en paralelo».
+     - **R7b en `main`** (`a8f3e70`): el gráfico de R5 en el PDF del resumen. Contrato con dos
+       rondas (`af04f91`); un solo `backend-dev`. Revisiones, correcciones y corrida final (e2e
+       214/214 dos veces) en `correcciones-nucleo-reportes-r7b-revisiones.md`.
+     - **R8 en curso**, rama `nucleo/r8-cambiar-rol` en el worktree `/home/maxi/program/clock-r8`
+       (fuera del repo para no romper el lint). **Decisión del usuario del 2026-10-13: replicar
+       Clockify, solo el owner quita el rol de admin** (`team.admin.revoke` en `can()`). Contrato
+       corregido en `1379b29`; falta su revisión, la ronda de implementación y las revisiones.
+     - Deuda nueva: `cellsOf` (document.test) repite `readBack` (xlsx.test); `chartOf` repite el
+       cableado de `ReportChart`; homónimos con el mismo nombre accesible en `/equipo`.
+
      **Undécima sesión** (2026-10-12):
      - **R9 en `main`** (`b255b99`). Mostrar personas sin horas. Las seis revisiones aprobaron.
        Test-reviewer encontró que el recorrido 26 fallaba con una base de e2e reusada (el primer

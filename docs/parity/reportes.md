@@ -221,6 +221,21 @@ la fuente, el nombre del archivo, qué hace con más de 3000 filas— sigue _no
 verificado_; a diferencia del CSV y el Excel, **se puede mirar en el workspace
 del equipo**, porque el PDF es del plan Free (P-05).
 
+_Actualizado el 2026-10-13, contrato de R7
+([`nucleo-reportes-r7-exportar-pdf.md`](../slices/nucleo-reportes-r7-exportar-pdf.md),
+§7 «R7b», con la ronda de R7b de `architecture-reviewer` del mismo día,
+«aprobado con retoques» en su segunda pasada)_: el usuario pidió R7b el
+2026-10-13 (D-R7-12). La implementa la rama `nucleo/r7b-grafico`, y esta
+actualización describe lo que fija el contrato: el gráfico de R5 dentro del PDF
+del reporte resumido. Reemplaza lo que el párrafo anterior decía de R7b («no se
+arranca hasta que el usuario lo pida»). La regla está en la corrección fechada
+de RP-53, y la [sección 17](#17-núcleo-r7) suma el gráfico. Cambian RP-53, P-05
+y la sección 17. Ese día se buscó en la página de exportación: «you can disable
+certain information (user, charts, etc.) from appearing on PDF» (FOUND), la
+única oración con «chart»; «graph» (NOT FOUND). Cómo dibuja Clockify el gráfico
+en su PDF sigue _no verificado_; se puede mirar en el workspace del equipo,
+porque el PDF es del plan Free (P-05).
+
 ## Fuentes y límites del relevamiento
 
 Documentación pública del centro de ayuda de Clockify y referencia pública de su
@@ -1841,6 +1856,45 @@ no-store`: el navegador lo descarga y no lo abre en la pestaña. El 307 al
     ayuda no lo documenta, así que A4, la fuente, los márgenes, los colores, la
     cabecera como lista y el pie los fija el contrato; P-05 dice qué mirar.
 
+_Actualizado el 2026-10-13, contrato de R7, R7b (D-R7-12)_: **el PDF trae el
+gráfico de R5**, a pedido del usuario del 2026-10-13. Reemplaza el primer
+punto de «Lo que no tiene», arriba, que lo dejaba pendiente. Es lo que la cita
+de Clockify da por hecho: «you can disable certain information (user, charts,
+etc.) from appearing on PDF» (FOUND el 2026-10-13) dice que se puede sacar, así
+que por omisión está. La marca sigue en `replicar` en cuanto a que el PDF trae
+el gráfico; cómo se dibuja es diseño propio y se compara contra el contrato de
+R7 (§4.5, §4.6) y la sección 17.
+
+- **Qué gráfico**: el de la pantalla para la misma URL (sección 14), el mismo
+  valor que lee la página, con el mismo alcance, las mismas personas elegidas y
+  los mismos filtros, en la misma foto. Tiene la misma granularidad según el
+  largo del período, una barra por tramo (también las que están en cero), la
+  misma escala desde «0:00» y las mismas marcas, en el formato de fecha del
+  perfil. El CSV y el Excel no lo traen (D-R6-2).
+- **Dónde**: debajo de la cabecera y antes de «Resumen», una sola vez. **El
+  bloque no se parte**: si no entra en lo que queda de la primera página, pasa
+  entero a la siguiente. La tabla empieza debajo, así que esa página tiene
+  menos filas; el total de filas no cambia.
+- **Qué tiene**: la leyenda («Horas por día», «Horas por semana» u «Horas por
+  mes»), los rótulos de la escala a la izquierda con sus líneas, las barras y
+  hasta siete marcas debajo, cada una en un renglón.
+- **Cuándo no está**: cuando la pantalla no lo muestra, es decir en los dos
+  vacíos y con solo filas sin horas (RP-33, sección 16). En esos casos no hay
+  «Exportar» y la ruta se pide a mano. Con el primer nivel que no entra sí
+  está: el gráfico y después el aviso, como en la pantalla.
+- **Lo que no tiene**:
+  - la opción de sacarlo: `fuera de alcance`. Justificación: la URL de la
+    exportación no lleva parámetros propios (D-R6-4) y nadie lo pidió; es lo
+    mismo que «Customize export»;
+  - el valor de cada barra y la tabla «Ver los datos del gráfico»: `adaptar`.
+    Justificación: en la pantalla se ven con el puntero, con el foco o al
+    abrir la tabla, y en el papel no hay ninguna de las tres cosas; las horas
+    por grupo están en el resumen;
+  - el diseño del gráfico de Clockify: `adaptar`. Justificación: la página de
+    ayuda no lo documenta («graph» NOT FOUND, «chart» solo en la cita de
+    arriba), así que el contrato fija el alto, los grises, las líneas y la
+    barra sola; P-05 dice qué mirar.
+
 **RP-54 Exportar a CSV y Excel** — `adaptar`
 Documentado: «CSV and Excel report exports are available only on paid plans».
 _Actualizado el 2026-10-08, decisión del usuario (P-10)_: entra en el núcleo.
@@ -2232,6 +2286,14 @@ cómo escribe un nombre con letras no latinas o un emoji; el nombre del archivo;
 qué cuenta como fila y qué hace con más de 3000; y si «Customize export» está
 en el plan Free y qué deja sacar. Mientras tanto vale lo de R7a (sección 17).
 No bloquea.
+
+_Actualizado el 2026-10-13, contrato de R7 (R7b)_: P-05 suma, para el gráfico
+en el PDF del resumido: si está por omisión y dónde va; si lleva el valor de
+cada barra o una tabla; cómo rotula la escala y el eje; si parte las barras por
+facturable o por proyecto, como la pantalla de Clockify (RP-16); y si la opción
+de sacarlo («you can disable certain information (user, charts, etc.) from
+appearing on PDF») está en el plan Free. Mientras tanto vale lo de R7b
+(sección 17). No bloquea.
 
 _Agregado el 2026-10-09, relevamiento de R3b_: **P-11 — Agrupar por
 descripción, mes y semana.** La página de filtros los lista entre las opciones
@@ -3655,17 +3717,19 @@ horas; «Exportar» con solo filas sin horas.
 
 ## 17. Núcleo, R7
 
-_2026-10-12._ Contrato:
+_2026-10-12; R7b, 2026-10-13._ Contrato:
 [`nucleo-reportes-r7-exportar-pdf.md`](../slices/nucleo-reportes-r7-exportar-pdf.md),
 aprobado con menores en la verificación de la tercera pasada de
 `architecture-reviewer`
-([correcciones](../slices/correcciones-nucleo-reportes-r7-contrato.md)). Tiene
-tres partes (D-R7-1): **R7-0**, la medición, hecha; **R7a**, el PDF de la
-cabecera y el resumen; **R7b**, el gráfico de R5 dentro del PDF, que no se
-arranca hasta que el usuario lo pida. Esta sección cubre R7a. La regla de cada
-comportamiento está en la corrección fechada de su RP; esta sección junta lo
-que cambia en la pantalla y lo que trae el archivo, y lo que no nombra sigue
-como en las secciones [9](#9-núcleo-r2a) a [16](#16-núcleo-r9).
+([correcciones](../slices/correcciones-nucleo-reportes-r7-contrato.md)); la
+ronda de R7b, del 2026-10-13, quedó «aprobado con retoques» en su segunda
+pasada. Tiene tres partes (D-R7-1): **R7-0**, la medición, hecha; **R7a**, el
+PDF de la cabecera y el resumen; **R7b**, el gráfico de R5 dentro del PDF, que
+el usuario pidió el 2026-10-13 (D-R7-12). Esta sección cubre R7a y R7b; lo de
+R7b va marcado «(R7b)». La regla de cada comportamiento está en la corrección
+fechada de su RP; esta sección junta lo que cambia en la pantalla y lo que trae
+el archivo, y lo que no nombra sigue como en las secciones
+[9](#9-núcleo-r2a) a [16](#16-núcleo-r9).
 
 **Cubre:** RP-53 (el PDF: la cabecera y el resumen sin las entradas, A4, los
 encabezados en cada página, el número de página, el tope de 3000 filas, el
@@ -3677,10 +3741,16 @@ filtros y la misma opción de personas sin horas que la pantalla, en la misma
 foto. De la URL no llega ningún parámetro nuevo: el formato es la carpeta de la
 ruta.
 
-**Queda para después:** el gráfico en el PDF (R7b), si el usuario lo pide. No
-tienen slice: elegir qué muestra el PDF, la orientación, el tamaño de página o
-la fuente; imágenes, logos o enlaces; un PDF etiquetado (PDF/UA); el detallado y
-su PDF; exportaciones programadas o por correo (RP-56).
+**R7b suma** RP-53 con el gráfico: el de R5 (sección 14), entre la cabecera y
+el resumen. La barra, la ruta, la lectura y los permisos no cambian, porque
+toda exportación ya leía el gráfico en la misma foto; el CSV y el Excel no lo
+escriben.
+
+**Queda para después**, sin slice: elegir qué muestra el PDF (también sacar el
+gráfico), la orientación, el tamaño de página o la fuente; el valor de cada
+barra y la tabla de datos del gráfico en el PDF; imágenes, logos o enlaces; un
+PDF etiquetado (PDF/UA); el detallado y su PDF; exportaciones programadas o por
+correo (RP-56).
 
 ### 17.1 La barra
 
@@ -3704,6 +3774,30 @@ efectiva (sección 16), «Personas», «Clientes» y «Proyectos» si hay filtro
 «Total» y «Facturable» con la duración y las horas, «Generado» y las notas. La
 cabecera va una sola vez, en la primera página.
 
+**(R7b) El gráfico**, debajo de la cabecera y antes de «Resumen», es el de la
+pantalla para la misma URL (sección 14.1):
+
+- **La leyenda**: «Horas por día», «Horas por semana» u «Horas por mes», en el
+  tamaño de «Resumen» y en negro.
+- **La escala**: los rótulos de la sección 14.1 («0:00», «0:30»…, de dos a
+  cinco), en gris, a la izquierda, alineados a la derecha y cada uno a la
+  altura de su línea. Las líneas son finas, en el gris de los encabezados, y
+  van de lado a lado del área.
+- **Las barras**: una por tramo y en orden, en un gris medio, por encima de las
+  líneas; se reparten el ancho del área con un espacio mínimo entre ellas. Una
+  barra con horas tiene al menos un trazo fino, aunque su alto redondee a cero;
+  una en cero no se dibuja, pero su lugar está. La barra sola (un período de un
+  día) va angosta y centrada.
+- **Las marcas**: las de la pantalla ancha, hasta siete, una cada `ceil(n / 7)`
+  barras desde la primera; con 31 barras, las siete. La primera va al inicio de
+  su columna, la de la última columna (si la lleva) al final y las demás
+  centradas. Cada una va en un renglón, aunque sea más ancha que su columna.
+- **Sin valor por barra, sin línea del valor y sin tabla de datos.**
+- **El bloque no se parte**: si no entra en lo que queda de la primera página
+  (con una cabecera de muchas notas), pasa entero a la siguiente y deja libre
+  el pie de la primera. Va una sola vez y la tabla empieza debajo: la página
+  donde está tiene menos filas que sin gráfico, y el total de filas no cambia.
+
 **El resumen**, con el título «Resumen» y la tabla del CSV: «Nivel», una
 columna por cada nivel que se muestra, «Duración» y «Horas»; una fila por grupo,
 en el orden de la pantalla, con el árbol entero.
@@ -3723,8 +3817,9 @@ en el orden de la pantalla, con el árbol entero.
   nota. En los dos casos, como un párrafo debajo de «Resumen», sin tabla ni
   encabezados.
 
-**Abajo a la derecha de cada página**, «Página {n} de {total}»; ninguna página
-queda sin filas.
+**Abajo a la derecha de cada página**, «Página {n} de {total}»; el pie no
+agrega páginas. Ninguna página queda sin filas, salvo la primera cuando el
+gráfico no entra en ella (R7b): en ese caso lleva solo el título y la cabecera.
 
 **La página** es A4 vertical, con márgenes de 36 pt, el cuerpo en 9 pt y el
 título en 14 pt. **La fuente es Noto Sans**, incrustada en el archivo. **Los
@@ -3751,10 +3846,24 @@ por Proyecto → Fecha, de un member): una página, con «Reporte resumido»,
 «Entradas». Con la opción de R9, un admin que agrupa por persona ve «Personas
 sin horas» «Sí» después de «Agrupado por» y la fila `1 {nombre} 0:00 0,00`.
 
+(R7b) Con las mismas entradas (1:30 el 15/09, 0:30 el 16/09 y 0:45 el 17/09),
+el texto que va de «Horas por día» a «Resumen» es «Horas por día 0:00 0:30 1:00
+1:30 15/09 16/09 17/09 18/09 19/09 20/09 21/09». Son siete barras, cuatro en
+cero, la más alta llega a la línea de 1:30 y cada barra tiene su marca. Sigue
+siendo una página y el resumen trae las mismas filas.
+
 Cómo se ve en un visor y al imprimir —el texto seleccionable y buscable con los
 acentos, «…», «–» y «(inactiva)», las columnas alineadas, la página que entra
 en A4— es el criterio 13 del contrato, a mano, y queda _no verificado_ hasta
 que se haga.
+
+(R7b) Cómo se ven las barras es el criterio 13 bis, a mano: la más alta
+respecto de su línea; la de pocos minutos, como una línea fina; las que están
+en cero, sin barra; las siete marcas enteras y sin pisarse; la barra sola,
+angosta y centrada; la tabla debajo del gráfico; y, impresas en gris, las
+barras distintas de las líneas. Se mira con el PDF de un mes, el de un
+trimestre, el de 366 días con el aviso y el de un día. Queda _no verificado_
+hasta que se haga.
 
 ### 17.3 Estados y casos borde
 
@@ -3784,12 +3893,52 @@ que se haga.
   Volvé y probá de nuevo.», una página de texto; «Atrás» vuelve al reporte.
 - **Dos descargas del mismo reporte** traen el mismo texto, pero no son iguales
   byte a byte: la fecha de creación va en los metadatos.
+- **(R7b) El gráfico en cada estado**, el mismo que en la pantalla. No está en
+  los dos vacíos ni con solo filas sin horas (rutas pedidas a mano). Con el
+  primer nivel que no entra, va el gráfico y debajo, bajo «Resumen», la nota.
+  Con los niveles cortados por el tope, va el gráfico entero, porque no depende
+  del árbol.
+- **(R7b) Todo en cero** (una sola entrada de menos de un segundo): la escala
+  «0:00» y «0:15», las marcas, sin barras.
+- **(R7b) El largo del período**: hasta 31 días, una barra por día (31 barras
+  angostas y siete marcas); de 32 a 182, por semana; de 183 a 366, por mes, con
+  el nombre abreviado («oct») como marca.
+- **(R7b) Un solo día**: una barra angosta y centrada, con su marca centrada.
+- **(R7b) Una cabecera larga**: el gráfico pasa entero a la página 2 y la 1
+  lleva solo el título y la cabecera.
+- **(R7b) El peso**: el gráfico suma como mucho 31 rectángulos, 5 líneas y 13
+  textos. El peso del PDF con gráfico lo anota el paso 14 del contrato y queda
+  _no verificado_ hasta entonces.
+- **(R7b) Al recargar o con «Atrás»**: el mismo gráfico, porque sale de la URL.
 
 ### 17.4 Divergencias visibles que el reviewer no debe marcar como errores
 
-- **Sin gráfico**: Clockify lo trae y deja sacarlo («you can disable certain
-  information (user, charts, etc.) from appearing on PDF»). Sumarlo es R7b,
-  pendiente del usuario; mientras no lo pida, el PDF no lo tiene.
+- **(R7b) El gráfico, sin opción de sacarlo**: Clockify lo trae y deja sacarlo
+  («you can disable certain information (user, charts, etc.) from appearing on
+  PDF»). Acá el PDF lo trae siempre que la pantalla lo muestra, sin parámetros
+  de exportación (D-R6-4).
+- **(R7b) Sin el valor de cada barra ni la tabla «Ver los datos del
+  gráfico»**: en la pantalla se ven con el puntero, con el foco o al abrir la
+  tabla, y en el papel no hay ninguna de las tres cosas. Las horas por grupo
+  están en el resumen, y las de cada día se ven agrupando por fecha.
+- **(R7b) El diseño del gráfico es propio**: el contrato fija el alto del área,
+  los grises, el grosor de las líneas, el trazo mínimo de una barra con horas y
+  la barra sola angosta (§4.6). Cómo es el gráfico del PDF de Clockify sigue
+  _no verificado_ (P-05).
+- **(R7b) Siempre las marcas de la pantalla ancha**: hasta siete, porque el
+  ancho del A4 alcanza; la pantalla angosta muestra una de cada dos.
+- **(R7b) Sin «solo …»**: la primera y la última barra de un período por semana
+  o por mes pueden ser más bajas si el período las corta. La pantalla lo dice
+  en el nombre de la columna y en la tabla de datos; el PDF no tiene ninguno de
+  los dos.
+- **(R7b) La nota del tope va arriba del gráfico**: en la pantalla, la línea
+  del tope está debajo del gráfico; en el PDF es una fila de la cabecera, que
+  va antes.
+- **(R7b) Las barras no se leen con un lector de pantalla**: el PDF no es
+  etiquetado, así que se leen la leyenda, los rótulos de la escala y las
+  marcas, en ese orden, y no el alto de cada barra. En la pantalla, cada columna
+  tiene su nombre.
+- **(R7b) El gráfico solo en el PDF**: el CSV y el Excel no lo traen (D-R6-2).
 - **Sin opciones de qué mostrar**: «Customize export» deja sacar datos, cambiar
   el nombre del reporte y poner un logo; acá el PDF trae siempre lo mismo para
   la misma URL, sin parámetros de exportación (D-R6-4). En qué plan está esa
@@ -3832,3 +3981,8 @@ formato lo recibe en los tres. Un member, un `project_manager` o un
 `team_manager` con `personas=…` o `sin-horas=1` en la URL baja el mismo PDF que
 sin esos parámetros: «Alcance» «Solo las horas de {nombre}», sin la fila
 «Personas sin horas» y sin ningún nombre ajeno.
+
+(R7b) El gráfico del PDF es el que ve en la pantalla quien exporta (sección
+14.5): un member, un `project_manager` o un `team_manager` ve barras solo con
+lo propio, también con `personas=…` en la URL; owner y admin, las de todo el
+workspace o las de las personas elegidas.

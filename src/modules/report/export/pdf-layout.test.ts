@@ -2,16 +2,19 @@ import { describe, expect, it } from "vitest";
 
 import {
   NO_REPORT_FILTERS,
+  type ReportChart,
   type ReportGroup,
   type ReportReadyState,
 } from "@/modules/report/schema";
 import type { TimeSettings } from "@/server/time";
+import { octoberByDay } from "@/test/report";
 
 import { exportDocumentOf, type ReportExportInput } from "./document";
 import {
   pdfLayoutOf,
   pdfTextOf,
   type GlyphCoverage,
+  type PdfChart,
   type PdfSection,
 } from "./pdf-layout";
 import type { ExportCell, ExportDocument } from "./types";
@@ -292,6 +295,7 @@ describe("pdfLayoutOf (D-R7-6; criterio 7 de R7)", () => {
         [text("Reporte → resumido")],
         [text("Período"), text("28/09/2026 → 04/10/2026")],
       ],
+      chart: null,
       sections: [
         {
           title: "Resumen →",
@@ -329,6 +333,7 @@ describe("pdfLayoutOf (D-R7-6; criterio 7 de R7)", () => {
     ];
     const entries = (rows: ExportCell[][]): ExportDocument => ({
       header: [[{ kind: "text", text: "Reporte resumido" }]],
+      chart: null,
       sections: [{ title: "Entradas", rows: [headings, ...rows] }],
     });
     expect(() =>
@@ -346,6 +351,106 @@ describe("pdfLayoutOf (D-R7-6; criterio 7 de R7)", () => {
   });
 
   it("una cabecera sin el título es un `RangeError`", () => {
-    expect(() => pdfLayoutOf({ header: [], sections: [] }, covers)).toThrow(RangeError);
+    expect(() => pdfLayoutOf({ header: [], chart: null, sections: [] }, covers)).toThrow(
+      RangeError,
+    );
+  });
+});
+
+function chartOf(chart: ReportChart, covered = coversAll): PdfChart {
+  const layout = layoutOf({ ...threeLevels, chart }, covered);
+  if (layout.chart === null) {
+    throw new Error("El diseño no trae el gráfico");
+  }
+  return layout.chart;
+}
+
+describe("pdfLayoutOf: el gráfico (D-R7-12; criterio 17 de R7)", () => {
+  it("la escala de 31 barras por día: cinco líneas de 0:00 a 2:00, de abajo arriba", () => {
+    expect(chartOf(octoberByDay).scale).toEqual([
+      { label: "0:00", height: 0 },
+      { label: "0:30", height: 0.25 },
+      { label: "1:00", height: 0.5 },
+      { label: "1:30", height: 0.75 },
+      { label: "2:00", height: 1 },
+    ]);
+  });
+
+  it("el alto de cada barra es una fracción del techo, y una de pocos segundos tiene horas", () => {
+    const { bars } = chartOf(octoberByDay);
+    expect(bars).toHaveLength(31);
+    expect(bars[12]?.height).toBeCloseTo(0.8333333333, 9);
+    expect(bars[12]?.hasHours).toBe(true);
+    expect(bars[3]?.height).toBeCloseTo(0.0041666666, 9);
+    expect(bars[3]?.hasHours).toBe(true);
+    expect([bars[0]?.height, bars[0]?.hasHours]).toEqual([0, false]);
+  });
+
+  it("siete marcas, cada cinco barras desde la primera; la primera al borde izquierdo y la última al derecho", () => {
+    const { bars } = chartOf(octoberByDay);
+    const marked = [0, 5, 10, 15, 20, 25, 30];
+    expect(bars.map(({ tick }) => tick)).toEqual(
+      bars.map((_, index) =>
+        marked.includes(index) ? `${String(index + 1).padStart(2, "0")}/10` : null,
+      ),
+    );
+    expect(marked.map((index) => [bars[index]?.tick, bars[index]?.tickAlign])).toEqual([
+      ["01/10", "start"],
+      ["06/10", "center"],
+      ["11/10", "center"],
+      ["16/10", "center"],
+      ["21/10", "center"],
+      ["26/10", "center"],
+      ["31/10", "end"],
+    ]);
+  });
+
+  it("una barra sola lleva su marca, centrada", () => {
+    const [bar] = octoberByDay.bars;
+    const { bars } = chartOf({ granularity: "date", bars: [{ ...bar, seconds: 5400 }] });
+    expect(bars).toEqual([
+      { height: 1, hasHours: true, tick: "01/10", tickAlign: "center" },
+    ]);
+  });
+
+  it("la leyenda sale de la granularidad: por día y por semana", () => {
+    expect(chartOf(octoberByDay).caption).toBe("Horas por día");
+    const week: ReportChart = {
+      granularity: "week",
+      bars: [
+        {
+          firstDay: "2026-09-28",
+          label: "28/09 – 04/10",
+          partial: null,
+          tick: "28/09",
+          seconds: 3600,
+        },
+        {
+          firstDay: "2026-10-05",
+          label: "05/10 – 11/10",
+          partial: null,
+          tick: "05/10",
+          seconds: 0,
+        },
+      ],
+    };
+    expect(chartOf(week).caption).toBe("Horas por semana");
+  });
+
+  it("una marca con lo que la fuente no dibuja sale con U+FFFD", () => {
+    const [first, ...rest] = octoberByDay.bars;
+    const { bars } = chartOf(
+      { granularity: "date", bars: [{ ...first, tick: "01→10" }, ...rest] },
+      covers,
+    );
+    expect(bars[0]?.tick).toBe(`01${REPLACEMENT}10`);
+  });
+
+  it("sin gráfico, `chart` es `null` y las secciones son las mismas que con gráfico", () => {
+    const without = layoutOf(threeLevels);
+    expect(without.chart).toBeNull();
+    expect(layoutOf({ ...threeLevels, chart: octoberByDay }).sections).toEqual(
+      without.sections,
+    );
   });
 });

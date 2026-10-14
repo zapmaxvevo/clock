@@ -10,10 +10,15 @@ export type PdfPageText = {
   readonly text: string;
   /** Las filas del resumen como en M9: del entero de «Nivel» a la siguiente, sin el pie. */
   readonly rows: readonly string[];
+  /**
+   * El borde de abajo del texto más bajo, sin el pie, en puntos desde el pie
+   * de la página: la línea de base menos lo que baja la fuente. `null` sin texto.
+   */
+  readonly lowestY: number | null;
 };
 
 /** D-R7-6: los márgenes de la página y el ancho de «Nivel», la primera columna. */
-const PAGE_MARGIN = 36;
+export const PAGE_MARGIN = 36;
 const LEVEL_WIDTH = 0.08;
 
 /** En puntos: dos fragmentos del mismo renglón o de la misma columna. */
@@ -24,11 +29,18 @@ const ROW_START = /^\d+(\s|$)/;
 
 const HEADER_START = "Nivel";
 
-/** Un fragmento con su lugar: `x` a la izquierda y `y` en la línea de base, desde abajo. */
+/** «Página n de N», que va dentro del margen inferior (D-R7-6). */
+const FOOTER = /^Página \d+ de \d+$/;
+
+/**
+ * Un fragmento con su lugar: `x` a la izquierda, `y` en la línea de base y
+ * `bottom` en lo más bajo que llega la fuente, los dos desde abajo.
+ */
 type Fragment = {
   readonly text: string;
   readonly x: number;
   readonly y: number;
+  readonly bottom: number;
   readonly width: number;
 };
 
@@ -106,19 +118,27 @@ export async function pdfPageTexts(bytes: Uint8Array): Promise<readonly PdfPageT
     const pages: PdfPageText[] = [];
     for (let number = 1; number <= pdf.numPages; number++) {
       const page = await pdf.getPage(number);
-      const { items } = await page.getTextContent();
-      const fragments = items.flatMap((item): Fragment[] =>
-        "str" in item && item.str.trim() !== ""
-          ? [
-              {
-                text: item.str,
-                x: Number(item.transform[4]),
-                y: Number(item.transform[5]),
-                width: item.width,
-              },
-            ]
-          : [],
-      );
+      const { items, styles } = await page.getTextContent();
+      const fragments = items.flatMap((item): Fragment[] => {
+        if (!("str" in item) || item.str.trim() === "") {
+          return [];
+        }
+        const y = Number(item.transform[5]);
+        // `descent` es negativo y relativo al cuerpo, que en texto horizontal es `height`.
+        const descent = styles[item.fontName]?.descent ?? 0;
+        return [
+          {
+            text: item.str,
+            x: Number(item.transform[4]),
+            y,
+            bottom: y + descent * item.height,
+            width: item.width,
+          },
+        ];
+      });
+      const bottoms = fragments
+        .filter(({ text }) => !FOOTER.test(text))
+        .map(({ bottom }) => bottom);
       const pageWidth = page.getViewport({ scale: 1 }).width;
       pages.push({
         text: fragments
@@ -127,6 +147,7 @@ export async function pdfPageTexts(bytes: Uint8Array): Promise<readonly PdfPageT
           .replace(/\s+/g, " ")
           .trim(),
         rows: rowFragmentsOf(fragments, pageWidth).map(rowTextOf),
+        lowestY: bottoms.length === 0 ? null : Math.min(...bottoms),
       });
     }
     return pages;

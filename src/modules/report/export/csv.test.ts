@@ -18,6 +18,7 @@ function text(value: string): ExportCell {
 function fieldOf(cell: ExportCell): string {
   const document: ExportDocument = {
     header: [[cell]],
+    chart: null,
     sections: [],
   };
   return textOf(csvBytesOf(document)).slice(1, -2);
@@ -35,6 +36,7 @@ describe("csvBytesOf (D-R6-9; criterio 8 de R6)", () => {
           { kind: "hours", minutes: 90 },
         ],
       ],
+      chart: null,
       sections: [
         {
           title: "Resumen",

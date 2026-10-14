@@ -37,6 +37,8 @@ export function exportDocumentOf(
 ): ExportDocument {
   return {
     header: headerOf(input, settings),
+    // D-R7-12: el mismo de la pantalla, también con el primer nivel cortado.
+    chart: input.report.chart,
     // D-R7-3: sin las entradas leídas, solo el resumen.
     sections:
       input.entries === null
