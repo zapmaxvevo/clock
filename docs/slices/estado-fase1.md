@@ -42,6 +42,7 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-13 (duodé
 | Núcleo de reportes, R9                      | En `main` |
 | Núcleo de reportes, R7a                     | En `main` |
 | Núcleo de reportes, R7b                     | En `main` |
+| Núcleo de reportes, R8                      | En `main` |
 
 Los slices 1 a 13 (con 2b, 2c, 7b, 8b, 8c, 11a y 11b) y el arreglo del piso fijo están en `main`.
 El 13 (planilla de horarios) se mergeó el 2026-10-08 con lint, typecheck, 1279 de unidad, 1223 de
@@ -286,12 +287,19 @@ vacío del owner y `renewWorkspace` se corta.
      - **R7b en `main`** (`a8f3e70`): el gráfico de R5 en el PDF del resumen. Contrato con dos
        rondas (`af04f91`); un solo `backend-dev`. Revisiones, correcciones y corrida final (e2e
        214/214 dos veces) en `correcciones-nucleo-reportes-r7b-revisiones.md`.
-     - **R8 en curso**, rama `nucleo/r8-cambiar-rol` en el worktree `/home/maxi/program/clock-r8`
-       (fuera del repo para no romper el lint). **Decisión del usuario del 2026-10-13: replicar
-       Clockify, solo el owner quita el rol de admin** (`team.admin.revoke` en `can()`). Contrato
-       corregido en `1379b29`; falta su revisión, la ronda de implementación y las revisiones.
+     - **R8 en `main`** (`1e95b56`): `/equipo`, cambiar el rol entre member y admin. Worktree
+       aparte, ya borrado. **Decisión del usuario del 2026-10-13: replicar Clockify, solo el owner
+       quita el rol de admin** (`team.admin.revoke` en `can()`, [ADR 0023](../adr/0023-quitar-el-rol-de-admin-es-una-accion-propia.md)
+       **propuesto: lo aprueba el usuario**). Dos rondas de implementación y de revisiones; corrida
+       final con e2e 217/217 dos veces. Detalle en `correcciones-nucleo-reportes-r8-revisiones.md`.
+     - **Desde R8, el setup de e2e corta** si la base tiene más de 1.500 membresías activas: las
+       bases locales viejas (`clock` incluida) hay que reemplazarlas por una nueva (procedimiento en
+       el README), sin un servidor de desarrollo en :3000.
+     - **Pendiente del usuario**: aprobar el ADR 0023; P-12 de `reportes.md` (roles en Clockify);
+       P-05 (el PDF de Clockify con gráfico); ver un PDF con gráfico impreso (criterio 13 bis de R7).
      - Deuda nueva: `cellsOf` (document.test) repite `readBack` (xlsx.test); `chartOf` repite el
-       cableado de `ReportChart`; homónimos con el mismo nombre accesible en `/equipo`.
+       cableado de `ReportChart`; homónimos con el mismo nombre accesible en `/equipo`; las otras copias de `textOf` y la
+       tercera de `signInAs`.
 
      **Undécima sesión** (2026-10-12):
      - **R9 en `main`** (`b255b99`). Mostrar personas sin horas. Las seis revisiones aprobaron.
