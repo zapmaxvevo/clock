@@ -453,6 +453,21 @@ cuentas sin Google antes de desplegar el 7b dio cero filas en producción el 202
   si se puede elegir la entrada que corre y qué pasa con más de 50 etiquetas.
 - **Relevar Clockify con WebFetch**: el resumidor inventa citas (en el 11 inventó un tope de 50
   etiquetas); antes de escribir «Documentado» se confirma la oración literal.
+- **Importar las horas reales de Clockify** (pedido del 2026-10-13, en espera): septiembre y del
+  1 al 13 de octubre de 2026, 624 entradas (1125:04:17 y 159:43:20), leídas de los PDF del
+  informe detallado. El CSV es del plan pago. Los datos y el parser están fuera del repo, en
+  `/home/maxi/program/clock-importacion-clockify/`, porque tienen nombres y emails reales. El
+  script `--dry-run`/`--apply` está en la rama `ops/importar-clockify`, sin mergear.
+  - **Decidido por el usuario:** el texto es «CLIENTE - PROYECTO», cortado en el primer « - »
+    (13 clientes y 39 proyectos). Etiquetas, facturable y segundos no importan. Las horas de
+    prueba de la base real se borran; los clientes y proyectos existentes, no.
+  - **Bloqueo:** con `disableImplicitLinking` no se puede crear a mano un usuario que todavía no
+    entró sin dejarlo afuera. Las seis personas desactivadas en Clockify se crean como
+    `inactive`. Las cinco activas tienen que entrar una vez a Clock antes de la corrida, y
+    todavía no entraron. Una usa un dominio externo: hay que habilitarle el ingreso.
+  - **Corrida real:** la hace el usuario con `!`, porque el team-lead no tiene acceso a la base
+    de producción. Primero `--dry-run`, se revisa junto con el team-lead, y recién después
+    `--apply`.
 
 ## Cómo se trabaja (lo que este proyecto aprendió)
 
