@@ -1,5 +1,6 @@
 import { normalizeEmail } from "@/lib/email";
 import { DomainError, RejectedError } from "@/server/errors";
+import type { EntryFacts } from "@/server/access";
 import { recordAudit, recordAudits, type AuditEntry } from "@/server/audit";
 import { db, type Transaction } from "@/server/db";
 import { env } from "@/server/env";
@@ -47,97 +48,109 @@ const DEFAULT_TIMEZONE = "America/Argentina/Buenos_Aires";
 const INVITATION_ENTITY = "invitation";
 
 /**
- * El workspace es uno solo. La lectura sin bloqueo cubre el caso normal, en
- * que ya existe; solo el primer ingreso toma el bloqueo y vuelve a leer, para
- * que dos personas entrando a la vez no creen dos workspaces.
- */
-async function ensureWorkspace(tx: Transaction, userId: string): Promise<WorkspaceRow> {
-  const existing = await workspaceRepository.findFirstWorkspace(tx);
-  if (existing !== undefined) {
-    return existing;
-  }
-  await workspaceRepository.lockWorkspaceBootstrap(tx);
-  const created = await workspaceRepository.findFirstWorkspace(tx);
-  return (
-    created ??
-    (await workspaceRepository.createWorkspace(tx, {
-      name: DEFAULT_WORKSPACE_NAME,
-      ownerId: userId,
-      timezone: DEFAULT_TIMEZONE,
-    }))
-  );
-}
-
-/**
- * La membresía nueva, y en la misma transacción la aceptación de la invitación
- * pendiente de su correo (D-E1a-5). La rama que encuentra la membresía no pasa
- * por acá: el costo por pedido no cambia.
+ * La membresía nueva, con el rol que recibe. Es el único lugar donde nace una
+ * membresía en la aplicación (D-E1b-4): de una invitación aceptada o del
+ * arranque. E4 copia acá el primer día por defecto del workspace (WS-08).
  */
 async function createMembership(
   tx: Transaction,
   workspaceId: string,
-  user: { id: string; email: string },
+  userId: string,
   role: Role,
 ): Promise<MembershipRow> {
-  const created = await workspaceRepository.createMembership(tx, {
-    workspaceId,
-    userId: user.id,
-    role,
-  });
+  return workspaceRepository.createMembership(tx, { workspaceId, userId, role });
+}
+
+function contextOf(
+  current: WorkspaceRow,
+  row: MembershipRow,
+  userId: string,
+): WorkspaceContext {
+  return {
+    workspace: current,
+    membership: row,
+    actor: {
+      userId,
+      workspaceId: current.id,
+      role: row.role,
+      status: row.status,
+    },
+  };
+}
+
+/**
+ * D-E1b-4: la membresía de quien pide, o la que nace de su invitación
+ * pendiente. Acepta primero: la aceptación y la revocación son `update … where
+ * status = 'pending'` sobre la misma fila, y la segunda vuelve a evaluar el
+ * `where` después del bloqueo (EQ-107). `undefined`: sin acceso, sin escribir.
+ */
+async function membershipOf(
+  tx: Transaction,
+  workspaceId: string,
+  user: { id: string; email: string },
+): Promise<MembershipRow | undefined> {
+  const found = await workspaceRepository.findMembership(workspaceId, user.id, tx);
+  if (found !== undefined) {
+    // El costo por pedido no cambia: ni acepta ni audita (EQ-31).
+    return found;
+  }
   const accepted = await workspaceRepository.acceptPending(
     tx,
     workspaceId,
     normalizeEmail(user.email),
   );
-  if (accepted !== undefined) {
-    await recordAudit(tx, {
-      workspaceId,
-      actorId: user.id,
-      action: "invitation.accept",
-      entity: INVITATION_ENTITY,
-      entityId: accepted,
-      previousValue: { status: "pending" },
-      nextValue: { status: "accepted" },
-    });
+  if (accepted === undefined) {
+    // Otro pedido de la misma persona pudo aceptar y crear mientras este
+    // esperaba el bloqueo de la invitación: una sentencia nueva lo ve.
+    return workspaceRepository.findMembership(workspaceId, user.id, tx);
   }
+  const created = await createMembership(tx, workspaceId, user.id, "member");
+  await recordAudit(tx, {
+    workspaceId,
+    actorId: user.id,
+    action: "invitation.accept",
+    entity: INVITATION_ENTITY,
+    entityId: accepted,
+    previousValue: { status: "pending" },
+    nextValue: { status: "accepted" },
+  });
   return created;
 }
 
 /**
- * Devuelve el workspace y la membresía de quien entra, creándolos la primera
- * vez. El workspace se crea una sola vez y su owner es la cuenta configurada
- * en WORKSPACE_OWNER_EMAIL; el resto entra como member.
+ * El workspace y la membresía de quien pide. La membresía nace solo de una
+ * invitación pendiente, que se acepta primero; el workspace, solo para
+ * `WORKSPACE_OWNER_EMAIL` cuando no hay ninguno. `null`: sin acceso.
+ *
+ * El workspace es uno solo. La lectura sin bloqueo cubre el caso normal, en
+ * que ya existe; solo el arranque toma el bloqueo y vuelve a leer, para que
+ * dos pedidos del owner a la vez no creen dos workspaces (D-E1b-3).
  */
 export async function ensureWorkspaceContext(user: {
   id: string;
   email: string;
-}): Promise<WorkspaceContext> {
-  const ownerEmail = env().WORKSPACE_OWNER_EMAIL.toLowerCase();
-  const isOwner = user.email.toLowerCase() === ownerEmail;
-
+}): Promise<WorkspaceContext | null> {
   return db.transaction(async (tx) => {
-    const current = await ensureWorkspace(tx, user.id);
-
-    const found = await workspaceRepository.findMembership(current.id, user.id, tx);
-    const row =
-      found ??
-      (await createMembership(
-        tx,
-        current.id,
-        user,
-        isOwner || current.ownerId === user.id ? "owner" : "member",
-      ));
-
-    return {
-      workspace: current,
-      membership: row,
-      actor: {
-        userId: user.id,
-        workspaceId: current.id,
-        role: row.role,
-        status: row.status,
-      },
-    };
+    let current = await workspaceRepository.findFirstWorkspace(tx);
+    if (current === undefined) {
+      if (normalizeEmail(user.email) !== normalizeEmail(env().WORKSPACE_OWNER_EMAIL)) {
+        return null;
+      }
+      await workspaceRepository.lockWorkspaceBootstrap(tx);
+      current = await workspaceRepository.findFirstWorkspace(tx);
+      if (current === undefined) {
+        // El rol `owner` nace solo con el workspace (D-E1b-3).
+        const created = await workspaceRepository.createWorkspace(tx, {
+          name: DEFAULT_WORKSPACE_NAME,
+          ownerId: user.id,
+          timezone: DEFAULT_TIMEZONE,
+        });
+        const row = await createMembership(tx, created.id, user.id, "owner");
+        return contextOf(created, row, user.id);
+      }
+    }
+    const row = await membershipOf(tx, current.id, user);
+    return row === undefined ? null : contextOf(current, row, user.id);
   });
 }
 
@@ -258,12 +271,15 @@ export async function inviteMembers(
 
   return db.transaction(async (tx) => {
     await assertCanInviteLocked(tx, actor);
-    const members = await workspaceRepository.membersByEmail(
+    const invitations = await workspaceRepository.lockInvitationsByEmail(
       tx,
       actor.workspaceId,
       valid,
     );
-    const invitations = await workspaceRepository.lockInvitationsByEmail(
+    // D-E1b-11: después del bloqueo. Un primer ingreso que aceptó una de estas
+    // invitaciones ya confirmó su membresía, y esta sentencia nueva la ve: sin
+    // eso, la fila `accepted` sin membresía volvería a `pending`.
+    const members = await workspaceRepository.membersByEmail(
       tx,
       actor.workspaceId,
       valid,
@@ -358,10 +374,14 @@ export async function revokeInvitation(
 }
 
 /**
- * D-E1a-4: el hecho de la vía externa, para `src/server/entry.ts`: una
- * invitación `pending` o `accepted` del correo, que llega ya normalizado. Lee
- * sin actor: no hay sesión.
+ * D-E1b-1: lo que la base sabe del correo, para `src/server/entry.ts`. Lee sin
+ * actor: no hay sesión todavía. `email` ya normalizado.
  */
-export async function hasOpenInvitation(email: string): Promise<boolean> {
-  return workspaceRepository.hasOpenInvitation(email);
+export async function entryFactsOf(email: string): Promise<EntryFacts> {
+  const facts = await workspaceRepository.entryFacts(email);
+  return {
+    bootstrap: facts.workspaceId === null,
+    invitation: facts.invitation,
+    membership: facts.membership,
+  };
 }

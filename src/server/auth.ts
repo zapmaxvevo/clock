@@ -100,9 +100,8 @@ export const auth = betterAuth({
     },
     session: {
       create: {
-        // Se vuelve a comprobar en cada inicio de sesión: quitar a alguien de
-        // la lista de invitados, o revocar su invitación antes de que entre, le
-        // cierra el acceso.
+        // Se vuelve a comprobar en cada inicio de sesión: revocar la invitación
+        // de alguien antes de su primer ingreso le cierra la entrada.
         before: async (session) => {
           const user = await db.query.user.findFirst({
             where: (table, { eq }) => eq(table.id, session.userId),

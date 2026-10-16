@@ -2,36 +2,47 @@ import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { changeRole } from "@/modules/team/service";
-import type { Transaction } from "@/server/db";
-import { invitation, membership } from "@/server/db/schema";
+import { db, type Transaction } from "@/server/db";
+import { invitation, membership, workspace } from "@/server/db/schema";
 import {
   outcomeWhileHeld,
   queueBehindBarrier,
   raceThroughBarrier,
+  waitForBlockedBackends,
 } from "@/test/concurrency";
 import { seedInvitation, seedMember, seedUser } from "@/test/factories";
 import { auditFor, invitationOf, invitationsOf, membershipOf } from "@/test/queries";
 import { actorIn } from "@/test/time-entry";
 
+import { workspaceRepository } from "./repository";
 import { INVITE_LIMIT, invitationMessages } from "./schema";
-import { ensureWorkspaceContext, inviteMembers, revokeInvitation } from "./service";
+import {
+  ensureWorkspaceContext,
+  inviteMembers,
+  revokeInvitation,
+  type WorkspaceContext,
+} from "./service";
 
 /**
- * La concurrencia de las invitaciones (contrato de E1a, §4.4 y §9.2): dos
- * pedidos con el mismo correo (criterio 9, EQ-106), revocar contra aceptar
- * (EQ-107) y la autoridad releída bajo el bloqueo (D-E1a-9).
+ * La concurrencia de las invitaciones (contrato de E1a, §4.4 y §9.2, y de
+ * E1b, §9.2): dos pedidos con el mismo correo (criterio 9, EQ-106), revocar
+ * contra aceptar (EQ-107), la autoridad releída bajo el bloqueo (D-E1a-9), el
+ * primer ingreso contra sí mismo y contra invitar (D-E1b-11), y el arranque.
  */
 
 let workspaceId: string;
 let ownerId: string;
 
-/** El workspace nace por `ensureWorkspaceContext`, que es quien acepta. */
+/** El workspace nace por `ensureWorkspaceContext`, por el arranque (D-E1b-3). */
 beforeEach(async () => {
   ownerId = await seedUser("owner@empresa.com");
   const context = await ensureWorkspaceContext({
     id: ownerId,
     email: "owner@empresa.com",
   });
+  if (context === null) {
+    throw new Error("El owner no arrancó el workspace.");
+  }
   workspaceId = context.workspace.id;
 });
 
@@ -100,8 +111,8 @@ describe("dos pedidos con los mismos correos en otro orden (criterio 9, EQ-106)"
   });
 });
 
-describe("revocar contra aceptar (EQ-107)", () => {
-  it("si gana la revocación, la membresía nace igual y la invitación queda revoked", async () => {
+describe("revocar contra aceptar (EQ-107, criterio 12)", () => {
+  it("si gana la revocación, ensureWorkspaceContext devuelve null y no nace la membresía", async () => {
     const seeded = await seedInvitation({ workspaceId, email: "ana@gmail.com" });
     const userId = await seedUser("ana@gmail.com");
 
@@ -111,15 +122,15 @@ describe("revocar contra aceptar (EQ-107)", () => {
     ]);
 
     expect(revoked).toEqual({ status: "fulfilled", value: { invitationId: seeded.id } });
-    expect(entered.status).toBe("fulfilled");
-    expect((await membershipOf(workspaceId, userId)).status).toBe("active");
+    expect(entered).toEqual({ status: "fulfilled", value: null });
+    await expect(membershipOf(workspaceId, userId)).rejects.toThrow("Sin membresía");
     expect((await invitationOf(workspaceId, "ana@gmail.com"))?.status).toBe("revoked");
     expect((await auditFor("invitation")).map((audit) => audit.action)).toEqual([
       "invitation.revoke",
     ]);
   });
 
-  it("si gana la aceptación, revocar responde not_pending", async () => {
+  it("si gana el ingreso, la membresía nace y revocar responde not_pending", async () => {
     const seeded = await seedInvitation({ workspaceId, email: "ana@gmail.com" });
     const userId = await seedUser("ana@gmail.com");
 
@@ -128,14 +139,148 @@ describe("revocar contra aceptar (EQ-107)", () => {
       () => revokeInvitation(owner(), { invitationId: seeded.id }),
     ]);
 
-    expect(entered.status).toBe("fulfilled");
+    expect(entered).toMatchObject({
+      status: "fulfilled",
+      value: { membership: { userId, role: "member", status: "active" } },
+    });
     expect(revoked).toMatchObject({
       status: "rejected",
       reason: { code: "not_pending", message: invitationMessages.notPending },
     });
+    expect((await membershipOf(workspaceId, userId)).status).toBe("active");
     expect((await invitationOf(workspaceId, "ana@gmail.com"))?.status).toBe("accepted");
     expect((await auditFor("invitation")).map((audit) => audit.action)).toEqual([
       "invitation.accept",
+    ]);
+  });
+});
+
+describe("dos primeros pedidos de la misma persona (criterio 13)", () => {
+  it("dejan una membresía, una aceptación y un invitation.accept; los dos devuelven el contexto", async () => {
+    const seeded = await seedInvitation({ workspaceId, email: "ana@gmail.com" });
+    const userId = await seedUser("ana@gmail.com");
+
+    const contexts = await raceThroughBarrier(holdInvitation(seeded.id), [
+      () => ensureWorkspaceContext({ id: userId, email: "ana@gmail.com" }),
+      () => ensureWorkspaceContext({ id: userId, email: "ana@gmail.com" }),
+    ]);
+
+    const membershipIds = contexts.map((context) => context?.membership.id);
+    expect(membershipIds[0]).toBeDefined();
+    expect(membershipIds[1]).toBe(membershipIds[0]);
+    expect(
+      await db.select().from(membership).where(eq(membership.userId, userId)),
+    ).toHaveLength(1);
+    expect((await invitationOf(workspaceId, "ana@gmail.com"))?.status).toBe("accepted");
+    expect((await auditFor("invitation")).map((audit) => audit.action)).toEqual([
+      "invitation.accept",
+    ]);
+  });
+});
+
+describe("invitar contra el primer ingreso (D-E1b-11, criterio 19)", () => {
+  it("invitar espera al ingreso, ve la membresía y responde already_member sin reinvitar", async () => {
+    const seeded = await seedInvitation({ workspaceId, email: "ana@gmail.com" });
+    const userId = await seedUser("ana@gmail.com");
+
+    const [entered, invited] = await queueBehindBarrier(holdInvitation(seeded.id), [
+      () => ensureWorkspaceContext({ id: userId, email: "ana@gmail.com" }),
+      () => inviteMembers(owner(), { emails: ["ana@gmail.com"] }),
+    ]);
+
+    expect(entered).toMatchObject({
+      status: "fulfilled",
+      value: { membership: { userId } },
+    });
+    expect(invited).toEqual({
+      status: "fulfilled",
+      value: {
+        outcomes: [{ email: "ana@gmail.com", result: "already_member", external: true }],
+      },
+    });
+    expect((await invitationOf(workspaceId, "ana@gmail.com"))?.status).toBe("accepted");
+    expect((await auditFor("invitation")).map((audit) => audit.action)).toEqual([
+      "invitation.accept",
+    ]);
+  });
+});
+
+describe("el arranque a la vez (D-E1b-3, criterio 7)", () => {
+  /** El bloqueo del arranque, el que toma `ensureWorkspaceContext` sin workspace. */
+  function holdBootstrap(tx: Transaction) {
+    return workspaceRepository.lockWorkspaceBootstrap(tx);
+  }
+
+  beforeEach(async () => {
+    // El arranque necesita la base sin workspace: se borra el que deja el
+    // `beforeEach` del archivo, con su membresía.
+    await db.delete(workspace);
+  });
+
+  it("dos primeros pedidos del owner dejan un workspace y una membresía owner", async () => {
+    const contexts = await raceThroughBarrier(holdBootstrap, [
+      () => ensureWorkspaceContext({ id: ownerId, email: "owner@empresa.com" }),
+      () => ensureWorkspaceContext({ id: ownerId, email: "owner@empresa.com" }),
+    ]);
+
+    expect(contexts[0]?.workspace.id).toBeDefined();
+    expect(contexts[1]?.workspace.id).toBe(contexts[0]?.workspace.id);
+    expect(contexts[1]?.membership.id).toBe(contexts[0]?.membership.id);
+    expect(await db.select().from(workspace)).toHaveLength(1);
+    expect(await db.select().from(membership)).toEqual([
+      expect.objectContaining({ userId: ownerId, role: "owner" }),
+    ]);
+  });
+
+  it("otra persona mientras el owner espera el arranque recibe null y no crea nada", async () => {
+    const otherId = await seedUser("ana@empresa.com");
+    // Una barrera a mano: la otra persona tiene que correr entera mientras el
+    // owner espera el bloqueo, y `outcomeWhileHeld` lo suelta antes.
+    let release = () => {};
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let holding = () => {};
+    const held = new Promise<void>((resolve) => {
+      holding = resolve;
+    });
+    const barrier = db.transaction(async (tx) => {
+      await holdBootstrap(tx);
+      holding();
+      await released;
+    });
+    await held;
+
+    const ownerEntry = ensureWorkspaceContext({
+      id: ownerId,
+      email: "owner@empresa.com",
+    });
+    let otherEntry: Promise<WorkspaceContext | null> | undefined;
+    let other: WorkspaceContext | null | "blocked" | undefined;
+    const waiting = new AbortController();
+    try {
+      await waitForBlockedBackends({ count: 1 });
+      // Si la otra persona también esperara el bloqueo, el test falla acá en
+      // vez de colgarse.
+      otherEntry = ensureWorkspaceContext({ id: otherId, email: "ana@empresa.com" });
+      other = await Promise.race([
+        otherEntry,
+        waitForBlockedBackends({ count: 2, signal: waiting.signal }).then(
+          () => "blocked" as const,
+        ),
+      ]);
+    } finally {
+      waiting.abort();
+      release();
+      await barrier;
+      await Promise.allSettled([ownerEntry, otherEntry]);
+    }
+
+    expect(other).toBeNull();
+    expect((await ownerEntry)?.membership.role).toBe("owner");
+    expect(await db.select().from(workspace)).toHaveLength(1);
+    expect(await db.select().from(membership)).toEqual([
+      expect.objectContaining({ userId: ownerId, role: "owner" }),
     ]);
   });
 });

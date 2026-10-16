@@ -61,9 +61,8 @@ import { trackerBar, uniqueSuffix } from "./tracker-page";
  */
 const EXTERNAL_DOMAIN = "externo-e2e.test";
 
-/** D-E1a-14: el texto de `/login` para `dominio_no_habilitado`. */
-const DOMAIN_DENIED =
-  "La cuenta no pertenece al dominio de la empresa ni tiene una invitación vigente.";
+/** D-E1b-2: el texto de `/login` para `dominio_no_habilitado`. */
+const DOMAIN_DENIED = "La cuenta no es la de Google Workspace de la empresa.";
 
 /** D-E1a-14: el texto de `/login` para un motivo que no conoce. */
 const LOGIN_FAILED = "No se pudo iniciar sesión. Volvé a intentar.";

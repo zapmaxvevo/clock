@@ -4,8 +4,8 @@ import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { db } from "@/server/db";
-import { membership, user } from "@/server/db/schema";
-import { seedUser, seedWorkspace } from "@/test/factories";
+import { auditLog, invitation, membership, user } from "@/server/db/schema";
+import { seedInvitation, seedUser, seedWorkspace } from "@/test/factories";
 import { updateName } from "@/modules/profile/service";
 
 /**
@@ -18,7 +18,13 @@ const mocks = vi.hoisted(() => ({
   user: null as null | { id: string; email: string },
   name: undefined as string | undefined,
   image: null as string | null | undefined,
+  /** `redirect` de Next lanza; acá lanza con el destino, para afirmarlo. */
+  redirect: vi.fn((url: string): never => {
+    throw new Error(`redirect ${url}`);
+  }),
 }));
+
+vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 
 vi.mock("next/headers", () => ({
   headers: async () => new Headers(),
@@ -43,7 +49,7 @@ vi.mock("@/server/auth", () => ({
   },
 }));
 
-const { currentSession } = await import("./session");
+const { currentSession, requireSession } = await import("./session");
 
 let workspaceId: string;
 
@@ -60,6 +66,7 @@ beforeEach(async () => {
   mocks.user = await seedPerson();
   mocks.name = undefined;
   mocks.image = null;
+  mocks.redirect.mockClear();
 });
 
 describe("la foto de la sesión (PF-09, PF-44)", () => {
@@ -122,5 +129,58 @@ describe("el nombre de la sesión (criterio 7: PF-08, PF-45)", () => {
   it("sin nombre editado, da el nombre que trae la sesión de Better Auth", async () => {
     mocks.name = "Nombre de la sesión";
     expect((await currentSession())?.user.name).toBe("Nombre de la sesión");
+  });
+});
+
+describe("una sesión sin acceso (D-E1b-5, criterio 11)", () => {
+  it("sin sesión: currentSession da null y requireSession manda a /login", async () => {
+    mocks.user = null;
+
+    expect(await currentSession()).toBeNull();
+    await expect(requireSession()).rejects.toThrow("redirect /login");
+    expect(mocks.redirect.mock.calls).toEqual([["/login"]]);
+  });
+
+  it("con sesión y sin membresía ni invitación: null, y a /login?error=sin_invitacion sin escribir", async () => {
+    const email = `${randomUUID()}@empresa.com`;
+    mocks.user = { id: await seedUser(email), email };
+
+    expect(await currentSession()).toBeNull();
+    await expect(requireSession()).rejects.toThrow(
+      "redirect /login?error=sin_invitacion",
+    );
+    expect(mocks.redirect.mock.calls).toEqual([["/login?error=sin_invitacion"]]);
+    expect(
+      await db.select().from(membership).where(eq(membership.userId, mocks.user.id)),
+    ).toEqual([]);
+    expect(await db.select().from(auditLog)).toEqual([]);
+  });
+
+  it("con la invitación revocada después de crear la sesión, lo mismo", async () => {
+    const email = `${randomUUID()}@gmail.com`;
+    await seedInvitation({ workspaceId, email, status: "revoked" });
+    mocks.user = { id: await seedUser(email), email };
+
+    expect(await currentSession()).toBeNull();
+    await expect(requireSession()).rejects.toThrow(
+      "redirect /login?error=sin_invitacion",
+    );
+    expect((await db.select().from(invitation))[0].status).toBe("revoked");
+  });
+
+  it("si la vuelven a invitar, el pedido siguiente acepta y entra", async () => {
+    const email = `${randomUUID()}@gmail.com`;
+    mocks.user = { id: await seedUser(email), email };
+    expect(await currentSession()).toBeNull();
+
+    await seedInvitation({ workspaceId, email });
+
+    expect((await requireSession()).membership.role).toBe("member");
+    expect(mocks.redirect).not.toHaveBeenCalled();
+  });
+
+  it("con acceso, requireSession devuelve el contexto sin redirigir", async () => {
+    expect((await requireSession()).user.id).toBe(mocks.user?.id);
+    expect(mocks.redirect).not.toHaveBeenCalled();
   });
 });

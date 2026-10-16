@@ -1,11 +1,12 @@
 import { APIError } from "better-auth/api";
 
 import { normalizeEmail } from "@/lib/email";
-import { hasOpenInvitation } from "@/modules/workspace/service";
+import { entryFactsOf } from "@/modules/workspace/service";
 import {
   accessDenialMessage,
   decideGoogleAccess,
   decideStoredEmail,
+  NO_ENTRY_FACTS,
   type AccessDecision,
   type AccessDenialReason,
   type AccessPolicy,
@@ -15,55 +16,37 @@ import { env } from "@/server/env";
 
 /**
  * El ingreso (ADR 0024, decisión 4): arma la decisión pura de `access.ts` con
- * la variable y los hechos de la base que lee el service de `workspace`.
- * `auth.ts` solo traduce lo que devuelve.
+ * la política del entorno y los hechos de la base que lee el service de
+ * `workspace`. `auth.ts` solo traduce lo que devuelve.
  */
 
 function policy(): AccessPolicy {
-  return { domains: env().GOOGLE_WORKSPACE_DOMAINS };
+  const config = env();
+  return {
+    domains: config.GOOGLE_WORKSPACE_DOMAINS,
+    bootstrapOwnerEmail: config.WORKSPACE_OWNER_EMAIL,
+  };
 }
 
 /**
- * D-E1a-4: invitado por la variable, que se lee hasta E1b, o por una invitación
- * `pending` o `accepted` de la base. Normaliza una vez, para las dos.
+ * D-E1b-1: el ingreso desde el perfil de Google. Sin correo o sin verificar,
+ * la decisión no lee los hechos y no se consulta la base.
  */
-async function isInvited(email: string): Promise<boolean> {
-  const normalized = normalizeEmail(email);
-  return (
-    env().EXTERNAL_INVITE_EMAILS.includes(normalized) ||
-    (await hasOpenInvitation(normalized))
-  );
-}
-
-/**
- * Decide primero sin la invitación: solo un correo que no entra por su dominio
- * la necesita, así que un correo del dominio con `hd` no consulta la base.
- */
-async function decideWithInvitation(
-  email: string,
-  decide: (invited: boolean) => AccessDecision,
-): Promise<AccessDecision> {
-  const withoutInvitation = decide(false);
-  if (withoutInvitation.allowed || withoutInvitation.reason !== "dominio_no_habilitado") {
-    return withoutInvitation;
-  }
-  return decide(await isInvited(email));
-}
-
-/** D-E1a-4: el ingreso desde el perfil de Google. Lee la variable y la invitación. */
 export async function decideProfileEntry(
   profile: GoogleProfile,
 ): Promise<AccessDecision> {
-  return decideWithInvitation(profile.email ?? "", (invited) =>
-    decideGoogleAccess(profile, policy(), invited),
-  );
+  const email = normalizeEmail(profile.email ?? "");
+  const facts =
+    email.length === 0 || profile.email_verified !== true
+      ? NO_ENTRY_FACTS
+      : await entryFactsOf(email);
+  return decideGoogleAccess(profile, policy(), facts);
 }
 
 /** En cada inicio de sesión, con el correo guardado. */
 export async function decideStoredEmailEntry(email: string): Promise<AccessDecision> {
-  return decideWithInvitation(email, (invited) =>
-    decideStoredEmail(email, policy(), invited),
-  );
+  const facts = await entryFactsOf(normalizeEmail(email));
+  return decideStoredEmail(email, policy(), facts);
 }
 
 /** D-E1a-14: `<BETTER_AUTH_URL>/login?error=<motivo>`, absoluta. */
