@@ -2,11 +2,12 @@ import { randomUUID } from "node:crypto";
 
 import { handleOAuthUserInfo } from "better-auth/oauth2";
 import { eq } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
+import { workspaceRepository } from "@/modules/workspace/repository";
 import { db } from "@/server/db";
 import { account, session, user } from "@/server/db/schema";
-import { seedUser } from "@/test/factories";
+import { seedInvitation, seedUser, seedWorkspace } from "@/test/factories";
 
 /**
  * El handler real de Better Auth. La sesión de prueba se habilita antes de
@@ -255,5 +256,145 @@ describe("una cuenta de Google se enlaza solo a la fila que creó (criterio 16)"
       image: "https://lh3.googleusercontent.com/a/nueva",
     });
     expect(await accountsOf(id)).toEqual([sub]);
+  });
+});
+
+describe("el callback de Google termina en /login con el motivo (criterio 25, D-E1a-14)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** La parte `nombre=valor` de cada `set-cookie`, como la manda el navegador. */
+  function cookiesOf(response: Response): string {
+    return response.headers
+      .getSetCookie()
+      .map((value) => value.split(";")[0])
+      .join("; ");
+  }
+
+  function base64url(value: unknown): string {
+    return Buffer.from(JSON.stringify(value)).toString("base64url");
+  }
+
+  /**
+   * Un `id_token` sin firmar: el callback lo decodifica sin verificar la firma
+   * (`google.mjs:119`). Si una versión nueva la verifica, este test falla.
+   */
+  function idToken(claims: Record<string, unknown>): string {
+    const now = Math.floor(Date.now() / 1000);
+    return [
+      base64url({ alg: "RS256", typ: "JWT", kid: "prueba" }),
+      base64url({
+        iss: "https://accounts.google.com",
+        aud: process.env.GOOGLE_CLIENT_ID,
+        iat: now,
+        exp: now + 3600,
+        email_verified: true,
+        name: "Nombre de Google",
+        ...claims,
+      }),
+      "firma",
+    ].join(".");
+  }
+
+  /**
+   * El recorrido entero por `auth.handler`: el pedido de ingreso, y el callback
+   * con el `state` y la cookie que dejó, con el endpoint de token de Google
+   * simulado. Es el único I/O externo del camino.
+   */
+  async function signInWithGoogle(claims: { email: string; sub: string; hd?: string }) {
+    const started = await post("/sign-in/social", {
+      provider: "google",
+      callbackURL: "/",
+    });
+    expect(started.status).toBe(200);
+    const { url } = (await started.json()) as { url: string };
+    const authorization = new URL(url);
+    const state = authorization.searchParams.get("state");
+    const nonce = authorization.searchParams.get("nonce");
+    expect(state).not.toBeNull();
+
+    const realFetch = globalThis.fetch;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const target = input instanceof Request ? input.url : String(input);
+      if (!target.startsWith("https://oauth2.googleapis.com/token")) {
+        return realFetch(input, init);
+      }
+      return Response.json({
+        access_token: "token-de-prueba",
+        token_type: "Bearer",
+        expires_in: 3600,
+        scope: "openid email profile",
+        id_token: idToken({ ...claims, ...(nonce === null ? {} : { nonce }) }),
+      });
+    });
+
+    return auth.handler(
+      new Request(
+        `${origin}/api/auth/callback/google?code=codigo&state=${encodeURIComponent(state ?? "")}`,
+        { headers: { cookie: cookiesOf(started) } },
+      ),
+    );
+  }
+
+  const deniedLocation = `${new URL("/login", origin).toString()}?error=dominio_no_habilitado`;
+
+  async function usersWith(email: string) {
+    return db.select({ id: user.id }).from(user).where(eq(user.email, email));
+  }
+
+  it("un externo sin invitación recibe 302 a /login con el motivo y no queda fila user", async () => {
+    await seedWorkspace();
+    const email = `${randomUUID()}@gmail.com`;
+
+    const response = await signInWithGoogle({ email, sub: randomUUID() });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe(deniedLocation);
+    expect(await usersWith(email)).toEqual([]);
+  });
+
+  it("el rechazo del gancho de sesión recibe 302 al mismo lugar, con user y account y sin sesión", async () => {
+    await seedWorkspace();
+    const email = `${randomUUID()}@gmail.com`;
+    const sub = randomUUID();
+    // Invitada al pasar `mapProfileToUser`, revocada al llegar al gancho.
+    vi.spyOn(workspaceRepository, "hasOpenInvitation")
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+
+    const response = await signInWithGoogle({ email, sub });
+
+    expect(response.status).toBe(302);
+    // El callback suma `error_description`, que `/login` no muestra.
+    const location = new URL(response.headers.get("location") ?? "");
+    expect(`${location.origin}${location.pathname}`).toBe(
+      new URL("/login", origin).toString(),
+    );
+    expect(location.searchParams.get("error")).toBe("dominio_no_habilitado");
+    const [created] = await usersWith(email);
+    expect(created).toBeDefined();
+    expect(
+      await db.select().from(account).where(eq(account.accountId, sub)),
+    ).toHaveLength(1);
+    expect(await db.select().from(session).where(eq(session.userId, created.id))).toEqual(
+      [],
+    );
+  });
+
+  it("un externo invitado recibe 302 a / con la cookie de sesión", async () => {
+    const { workspaceId } = await seedWorkspace();
+    const email = `${randomUUID()}@gmail.com`;
+    await seedInvitation({ workspaceId, email });
+
+    const response = await signInWithGoogle({ email, sub: randomUUID() });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("/");
+    expect(cookiesOf(response)).toMatch(/better-auth\.session_token=/);
+    const [created] = await usersWith(email);
+    expect(
+      await db.select().from(session).where(eq(session.userId, created.id)),
+    ).toHaveLength(1);
   });
 });
