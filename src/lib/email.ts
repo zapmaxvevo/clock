@@ -1,6 +1,6 @@
 /**
- * Utilidades de correo que comparten el ingreso, el módulo `workspace`, la
- * pantalla y el script de la variable (ADR 0024). Son puras.
+ * Utilidades de correo que comparten el ingreso, el módulo `workspace` y la
+ * pantalla (ADR 0024). Son puras.
  */
 
 /** Recortado y en minúsculas: la forma con que se guarda y se compara (EQ-105). */
@@ -24,7 +24,7 @@ export function isCompanyEmail(email: string, domains: readonly string[]): boole
   return domains.some((candidate) => normalizeEmail(candidate) === domain);
 }
 
-/** La lista de la variable de entorno, separada por comas; la usa `env.ts` y el script de la variable. */
+/** Una lista separada por comas; la usa `env.ts` para `GOOGLE_WORKSPACE_DOMAINS`. */
 export function parseEmailList(value: string): string[] {
   return value
     .split(",")

@@ -11,9 +11,10 @@ npm run db:migrate
 npm run dev
 ```
 
-`GOOGLE_WORKSPACE_DOMAINS` lista los dominios de Google Workspace habilitados y
-`EXTERNAL_INVITE_EMAILS` los invitados externos. `WORKSPACE_OWNER_EMAIL` define
-qué cuenta queda como owner del workspace la primera vez que entra.
+`GOOGLE_WORKSPACE_DOMAINS` lista los dominios de Google Workspace habilitados.
+`WORKSPACE_OWNER_EMAIL` es el correo que arranca el workspace en una base vacía
+y queda como su owner. Con el workspace creado, todos entran por invitación
+desde `/equipo`, también este correo.
 
 ## Verificación
 
