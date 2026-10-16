@@ -3,7 +3,11 @@ import { describe, expect, it } from "vitest";
 
 import { Dialog } from "@/components/ui/dialog";
 import type { ActionFailure } from "@/hooks/use-action";
-import type { InvitationErrorCode, InviteOutcome } from "@/modules/workspace/schema";
+import {
+  invitationMessages,
+  type InvitationErrorCode,
+  type InviteOutcome,
+} from "@/modules/workspace/schema";
 import { buttonsOf, textOf } from "@/test/markup";
 
 import { InviteForm, InviteResult } from "./invite-dialog";
@@ -137,18 +141,24 @@ describe("InviteForm", () => {
     expect(buttonsOf(alert).map(textOf)).toEqual(["Reintentar"]);
   });
 
-  it("con `validation` del servidor, el mensaje sin «Reintentar» ni lista", () => {
-    const markup = renderForm({
-      failure: {
-        code: "validation",
-        message: "Se pueden invitar hasta 50 correos por vez.",
-      },
-    });
+  it.each([
+    invitationMessages.noEmails,
+    invitationMessages.tooMany,
+    invitationMessages.inputTooLong,
+  ])(
+    "con `validation` del servidor, «%s» arriba, sin «Reintentar» ni lista",
+    (message) => {
+      const markup = renderForm({ failure: { code: "validation", message } });
+      const alert = markup.slice(
+        markup.indexOf('role="alert"'),
+        markup.indexOf("<textarea"),
+      );
 
-    expect(textOf(markup)).toContain("Se pueden invitar hasta 50 correos por vez.");
-    expect(textOf(markup)).not.toContain("Reintentar");
-    expect(markup).not.toContain("<li>");
-  });
+      expect(textOf(alert)).toContain(message);
+      expect(textOf(markup)).not.toContain("Reintentar");
+      expect(markup).not.toContain("<li>");
+    },
+  );
 
   it("con el pedido en vuelo, «Invitando…» y los botones con aria-disabled, sin disabled", () => {
     const buttons = buttonsOf(renderForm({ pending: true }));

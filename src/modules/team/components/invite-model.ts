@@ -1,6 +1,10 @@
 import { normalizeEmail } from "@/lib/email";
 import type { Rejection } from "@/server/errors";
-import { INVITE_LIMIT, invitationMessages } from "@/modules/workspace/schema";
+import {
+  EMAIL_INPUT_MAX_LENGTH,
+  INVITE_LIMIT,
+  invitationMessages,
+} from "@/modules/workspace/schema";
 
 /**
  * Los correos escritos en el campo, en el orden en que aparecen: partidos por
@@ -27,7 +31,8 @@ export type EmailsCheck =
 
 /**
  * Lo que el diálogo manda, o el aviso que muestra sin mandar: EQ-77 sin
- * correos, EQ-78 con más del tope. El servidor vuelve a comprobar los dos.
+ * correos, EQ-78 con más del tope, e `inputTooLong` con un texto que el
+ * servidor ni clasifica. El servidor vuelve a comprobar los tres.
  */
 export function checkEmails(text: string): EmailsCheck {
   const emails = splitEmails(text);
@@ -36,6 +41,9 @@ export function checkEmails(text: string): EmailsCheck {
   }
   if (emails.length > INVITE_LIMIT) {
     return { ok: false, message: invitationMessages.tooMany };
+  }
+  if (emails.some((email) => email.length > EMAIL_INPUT_MAX_LENGTH)) {
+    return { ok: false, message: invitationMessages.inputTooLong };
   }
   return { ok: true, emails };
 }

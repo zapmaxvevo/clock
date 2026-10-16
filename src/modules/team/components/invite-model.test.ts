@@ -58,6 +58,23 @@ describe("checkEmails", () => {
     });
   });
 
+  it("con un texto de más de 1000 caracteres, el tope del servidor, sin mandar", () => {
+    const long = `${"a".repeat(990)}@empresa.com`;
+
+    expect(checkEmails(`ana@empresa.com ${long}`)).toEqual({
+      ok: false,
+      message: invitationMessages.inputTooLong,
+    });
+  });
+
+  it("uno de 1000 caracteres justos se manda: entre 321 y 1000 lo rechaza el servidor por correo", () => {
+    const limit = `${"a".repeat(988)}@empresa.com`;
+    const check = checkEmails(limit);
+
+    expect(limit).toHaveLength(1000);
+    expect(check.ok && check.emails).toEqual([limit]);
+  });
+
   it("cuenta los correos sin repetidos: 51 con uno repetido son 50", () => {
     const check = checkEmails(`${emailsText(50)}, PERSONA0@empresa.com`);
     expect(check.ok && check.emails).toHaveLength(50);
