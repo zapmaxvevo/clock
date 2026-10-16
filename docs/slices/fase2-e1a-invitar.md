@@ -23,8 +23,8 @@ el usuario.
   en `c879d57`, con un cambio también aplicado: el test que recorre el handler
   de Better Auth (§9.2), que vuelve la comprobación de §6.4 una verificación de
   humo.
-- **Decisiones de arquitectura**, las dos **propuestas** con este contrato; las
-  aprueba el usuario (§11):
+- **Decisiones de arquitectura**, las dos **aceptadas** por el usuario el
+  2026-10-16 (§11):
   - [ADR 0024](../adr/0024-donde-vive-una-invitacion-y-donde-se-corta-el-ingreso.md):
     la invitación es del módulo `workspace`, una fila por correo, la regla de
     ingreso por vía, el corte en `mapProfileToUser` con el rechazo en `/login`,
@@ -127,9 +127,9 @@ minúsculas (EQ-105) y de quitar los repetidos del pedido:
 
 - **`pending`**: pasa a `revoked`, con quién y cuándo (EQ-23).
 - **`revoked`**: éxito sin escribir. Es el reintento de una revocación cuya
-  respuesta se perdió (EQ-97). **Se aparta del texto de EQ-81**, que da el
-  mensaje también para «se revocó»: lo registra `parity-analyst` (§7) y lo
-  confirma el usuario (§11).
+  respuesta se perdió (EQ-97). **Se aparta del texto anterior de EQ-81**, que
+  daba el mensaje también para «se revocó»: lo decidió el usuario el 2026-10-16
+  (§11), y EQ-81 está corregido en `equipo.md`.
 - **`accepted`**: `not_pending`, «Esa invitación ya no está pendiente.» (EQ-81).
   Cortarle el acceso a quien entró es desactivarlo (EQ-32), con E2.
 - **Un id que no existe o es de otro workspace**: `not_found`, con el mismo
@@ -231,7 +231,7 @@ lugar de dejar pasar.
 - **`main` en `424ac1b`**, con el mapa de la fase 2 y los documentos de paridad
   de las decisiones del 2026-10-16. Las citas de abajo son de ese árbol y de
   `node_modules` con `better-auth` 1.7.7.
-- **Los ADR 0024 y 0025 aprobados por el usuario** antes de implementar (§11).
+- **Los ADR 0024 y 0025, aceptados** por el usuario el 2026-10-16 (§11).
 - **La consulta previa de §6.1 corrida en producción** antes de desplegar, no
   antes de implementar.
 
@@ -986,9 +986,9 @@ cliente de Google—, que el test no ve.
 
 ### parity-analyst
 
-- `equipo.md`: EQ-81 con D-E1a-8 (revocar una revocada es éxito sin escribir),
-  si el usuario lo confirma; EQ-04 con el orden de D-E1a-12; EQ-32 con el
-  script; la nota de §10 sobre EQ-91 y EQ-92, con D-E1a-14.
+- `equipo.md`: EQ-04 con el orden de D-E1a-12; EQ-32 con el script; la nota de
+  §10 sobre EQ-91 y EQ-92, con D-E1a-14. EQ-81 ya quedó corregido el
+  2026-10-16, con D-E1a-8.
 
 ### Lo que no toca nadie
 
@@ -1200,7 +1200,7 @@ migración se prueban en integración.
   callback** —un estado vencido, `account_not_linked` (PF-47)— que hoy van a la
   página de error de Better Auth. Ven el texto genérico. Es una mejora sobre la
   deuda del 7b, no su cierre: el texto propio de una cuenta no enlazada sigue
-  siendo P-11 de `perfil.md`.
+  siendo P-11 de `perfil.md`, que entra con E2b.
 - **Un correo del dominio en la variable deja de entrar sin `hd`** (D-E1a-4). El
   script lo muestra en seco antes de que importe.
 - **EQ-79 dice «reactivala desde la lista»**, y reactivar llega con E2. Hasta
@@ -1216,15 +1216,17 @@ migración se prueban en integración.
 - **Revertir** pide sumar antes los externos de la base a la variable (§2), y no
   se revierte después de E1b.
 
-## 11. Preguntas para el usuario
+## 11. Decidido el 2026-10-16
 
-1. **¿Aprobás los ADR 0024 y 0025?** El 0024 decide que la invitación es de
+El usuario respondió las dos preguntas del contrato con las recomendaciones:
+
+1. **Los ADR 0024 y 0025, aceptados.** El 0024 decide que la invitación es de
    `workspace`, una fila por correo, el corte en `mapProfileToUser` con el
    rechazo en `/login` y la excepción al ADR 0007; el 0025, cómo escribe un
    módulo en las tablas de otro, que se usa desde E2.
-2. **Revocar una invitación ya revocada, ¿éxito sin escribir?** (D-E1a-8). Es
-   lo que hace seguro el reintento; EQ-81 hoy da el mensaje de error también
-   para ese caso. Recomendación: sí.
+2. **Revocar una invitación ya revocada responde éxito sin escribir**
+   (D-E1a-8). Es lo que hace seguro el reintento. EQ-81 de `equipo.md` está
+   corregido: su mensaje vale para la invitación que ya se usó.
 
 ## 12. Fuera de alcance
 

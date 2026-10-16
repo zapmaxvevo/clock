@@ -1,6 +1,6 @@
 # 0025. Un módulo escribe en las tablas de otro por su service
 
-Fecha: 2026-10-16. Estado: **Propuesto (lo aprueba el usuario)**.
+Fecha: 2026-10-16. Estado: Aceptado (2026-10-16, decisión del usuario).
 Origen: el [mapa de la fase 2](../slices/fase2-mapa.md) (revisión,
 hallazgo 10), que lo asigna al contrato de E1a
 ([`fase2-e1a-invitar.md`](../slices/fase2-e1a-invitar.md)) porque E1a es el

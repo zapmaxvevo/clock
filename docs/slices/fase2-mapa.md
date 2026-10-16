@@ -34,6 +34,9 @@ abrir:
   después el resto de equipo y por último la administración de proyectos,
   clientes, tareas y etiquetas. Grupos, solo si existen en el plan Free (P-10 de
   `equipo.md`, sin verificar).
+- **Las preguntas de este mapa** (§7): WS0 borra también
+  `membership.weekly_capacity_minutes`; los grupos van justo antes de P9; las
+  plantillas, al final de la fase; TT-110 y P-10 de `perfil.md` no entran.
 
 ## 1. Qué entra y qué no
 
@@ -54,7 +57,7 @@ abrir:
   PR-06 —archivar un cliente ofrece archivar sus proyectos—; la edición masiva de
   proyectos es paga (PR-32).
 - **Planilla**: las plantillas (TS-62 … TS-66), que timesheet P-09 mandó a la
-  fase 2. Ver la pregunta 3 de la §7.
+  fase 2. Van al final de la fase (§7).
 
 **No entra**:
 
@@ -64,6 +67,7 @@ abrir:
   (P-06), WS-10, WS-19 … WS-25, WS-27 … WS-35, WS-37, WS-38, WS-43 … WS-47;
   PR-11, PR-28, PR-29 (estimaciones, presupuesto, tarifas), PR-32 … PR-34,
   PR-41; TS-55 … TS-61 y TS-67 … TS-74.
+- Por decisión del usuario (§7): TT-110 y P-10 de `perfil.md`.
 - Fase 3: EQ-66 (grupos en los reportes).
 - Ya cumplido o sin trabajo nuevo: EQ-02 y EQ-34 (R8, con P-01), EQ-35 (R8,
   ADR 0023); WS-11, WS-12, WS-13, WS-18, WS-36, WS-39 (P-03, queda fijo),
@@ -138,38 +142,41 @@ procedimiento SQL del §5, que hasta E2 es la única forma.
 
 Cada slice es vertical y se puede desplegar solo, salvo WS0, que es un paso de
 esquema sin pantalla, y WS2a, que no cambia nada visible. El orden es el que
-pidió el usuario, con las dependencias de la tabla.
+pidió el usuario, con las dependencias de la tabla y los cambios de la §7: los
+grupos (E7) van justo antes de P9, y las plantillas, al final.
 
-| Slice | Nombre                                        | Depende de                               |
-| ----- | --------------------------------------------- | ---------------------------------------- |
-| E1a   | Invitar y revocar                             | —                                        |
-| E1b   | El ingreso exige invitación                   | E1a, y las invitaciones hechas en prod   |
-| E2    | Desactivar y reactivar                        | E1b                                      |
-| E2b   | Volver a entrar sin `account`                 | E1b, E2                                  |
-| WS0   | Las columnas sin efecto                       | —                                        |
-| WS1   | Configuración: la pantalla y el nombre        | —                                        |
-| WS2a  | Formato de duración: el dato y sus lectores   | WS0 (el árbol)                           |
-| WS2b  | Formato de duración: el selector y el reporte | WS1, WS2a                                |
-| E3    | Transferir la propiedad                       | E1b, E2                                  |
-| E4    | El primer día de la semana                    | E1b, E2, WS1; WS0 (el árbol)             |
-| E5    | Búsqueda y filtro por rol                     | E2                                       |
-| E6    | Quitar del equipo                             | E1b, E2                                  |
-| E7    | Grupos                                        | E2, P-10 verificado (ver §7, pregunta 2) |
-| P1    | Editar proyectos y la lista completa          | —                                        |
-| P2    | Archivar, restaurar y borrar proyectos        | P1                                       |
-| P3    | Clientes                                      | P2                                       |
-| P4    | Tareas                                        | P2                                       |
-| P5    | Etiquetas                                     | P2                                       |
-| P6    | Proyectos privados, miembros y responsables   | P1, E2                                   |
-| P7    | Asignados de tarea                            | P4, P6                                   |
-| P8    | Favoritos                                     | —                                        |
-| P9    | Grupos en proyectos y tareas                  | E7, P6, P7                               |
-| T1    | Plantillas de la planilla                     | —                                        |
-| T2    | Plantillas con tiempo                         | T1                                       |
+| Slice | Nombre                                        | Depende de                                |
+| ----- | --------------------------------------------- | ----------------------------------------- |
+| E1a   | Invitar y revocar                             | —                                         |
+| E1b   | El ingreso exige invitación                   | E1a, y las invitaciones hechas en prod    |
+| E2    | Desactivar y reactivar                        | E1b                                       |
+| E2b   | Volver a entrar sin `account`                 | E1b, E2                                   |
+| WS0   | Las columnas sin efecto                       | —                                         |
+| WS1   | Configuración: la pantalla y el nombre        | —                                         |
+| WS2a  | Formato de duración: el dato y sus lectores   | WS0 (el árbol)                            |
+| WS2b  | Formato de duración: el selector y el reporte | WS1, WS2a                                 |
+| E3    | Transferir la propiedad                       | E1b, E2                                   |
+| E4    | El primer día de la semana                    | E1b, E2, WS1; WS0 (el árbol)              |
+| E5    | Búsqueda y filtro por rol                     | E2                                        |
+| E6    | Quitar del equipo                             | E1b, E2                                   |
+| P1    | Editar proyectos y la lista completa          | —                                         |
+| P2    | Archivar, restaurar y borrar proyectos        | P1                                        |
+| P3    | Clientes                                      | P2                                        |
+| P4    | Tareas                                        | P2                                        |
+| P5    | Etiquetas                                     | P2                                        |
+| P6    | Proyectos privados, miembros y responsables   | P1, E2                                    |
+| P7    | Asignados de tarea                            | P4, P6                                    |
+| P8    | Favoritos                                     | —                                         |
+| E7    | Grupos                                        | E2, y P-10 de `equipo.md` confirmado (§7) |
+| P9    | Grupos en proyectos y tareas                  | E7, P6, P7                                |
+| T1    | Plantillas de la planilla                     | — (al final de la fase, §7)               |
+| T2    | Plantillas con tiempo                         | T1, y timesheet P-15 respondida           |
 
 E2, E3, E4, E5 y E6 tocan la misma pantalla, el mismo menú de fila y el mismo
-service: van en serie. P1 a P7 tocan `/proyectos` y el módulo `project`: van en
-serie salvo que el contrato de P1 separe las pantallas (ver P1).
+service: van en serie. E7 toca la misma pantalla de equipo, pero va después,
+cuando ya no queda otro slice de equipo en curso. P1 a P7 tocan `/proyectos` y
+el módulo `project`: van en serie salvo que el contrato de P1 separe las
+pantallas (ver P1).
 
 ### Lo que vale para todos
 
@@ -233,19 +240,20 @@ Riesgos:
 - **El texto para avisar** nombra la dirección de Clock: sale de
   `BETTER_AUTH_URL`, que en un preview puede no ser la del preview.
 
-ADR, los dos con el contrato de E1a:
+ADR, los dos con el contrato de E1a y aceptados el 2026-10-16:
 
 - **dónde vive una invitación y dónde se corta el ingreso** (EQ-17, EQ-18,
-  EQ-29): externos e invitaciones, si `invited` de `membership_status` sigue
-  teniendo uso, en qué punto del login se corta (`mapProfileToUser`, el gancho
-  de sesión o `ensureWorkspaceContext`), la transición con la variable, **qué
-  habilita una invitación aceptada** (nada para volver a entrar: vuelve quien
-  tiene membresía o una invitación pendiente), la excepción al ADR 0007 y el
-  índice;
-- **escrituras entre módulos**, que extiende el 0010: aceptar la invitación
-  (E1a, E1b), detener el timer y borrar las sesiones (E2) y escribir
-  `workspace.owner_id` desde `team` (E3). Va con E1a porque E1a escribe la
-  primera.
+  EQ-29), el [ADR 0024](../adr/0024-donde-vive-una-invitacion-y-donde-se-corta-el-ingreso.md):
+  externos e invitaciones, si `invited` de `membership_status` sigue teniendo
+  uso, en qué punto del login se corta (`mapProfileToUser`, el gancho de sesión
+  o `ensureWorkspaceContext`), la transición con la variable, **qué habilita una
+  invitación aceptada** (nada para volver a entrar: vuelve quien tiene membresía
+  o una invitación pendiente), la excepción al ADR 0007 y el índice;
+- **escrituras entre módulos**, que extiende el 0010, el
+  [ADR 0025](../adr/0025-un-modulo-escribe-en-otro-por-su-service.md): aceptar
+  la invitación (E1a, E1b), detener el timer y borrar las sesiones (E2) y
+  escribir `workspace.owner_id` desde `team` (E3). Va con E1a porque E1a escribe
+  la primera.
 
 ### E1b — El ingreso exige invitación
 
@@ -310,8 +318,7 @@ Riesgos:
 
 - **Escribe en datos de otros módulos**: detiene el timer de la persona
   (`time_entry`, con quien desactiva como actor del audit log, EQ-43) y borra
-  sus filas de `session`, que son de Better Auth (EQ-41). Lo cubre el ADR de
-  escrituras entre módulos de E1a.
+  sus filas de `session`, que son de Better Auth (EQ-41). Lo cubre el ADR 0025.
 - **Reactivar a quien no tiene `account`** (el grupo 2 de la §2 y quien pasó por
   el procedimiento SQL) no le devuelve la entrada hasta E2b. El contrato trae
   la consulta previa —membresías inactivas cuyo `user` no tiene `account`— y
@@ -328,8 +335,9 @@ Riesgos:
 
 Cubre EQ-110: una persona con `user` y membresía pero sin `account` no puede
 entrar, porque el enlace implícito está apagado (PF-47). Son las seis que creó
-la importación y quien se desactive con el procedimiento SQL antes de E2. Toca
-P-11 de `perfil.md` (un correo ocupado no se libera).
+la importación y quien se desactive con el procedimiento SQL antes de E2. Cubre
+además P-11 de `perfil.md` (un correo ocupado no se libera), por decisión del
+usuario (§7).
 
 **Se separa de E2** porque es otra área: el ingreso por Better Auth con
 `disableImplicitLinking`, no la pantalla de desactivar. Depende de E1b, que
@@ -352,8 +360,9 @@ Cubre la §14 de `workspace.md` con workspace P-05: borra `require_project`,
 `require_task`, `require_description`, `require_tag`, `force_timer`,
 `timesheet_enabled`, `rounding_minutes`, `who_sees_rates` y
 `who_creates_projects` de `workspace_settings`, y `currency` y `logo_url` de
-`workspace`. Sin pantalla y sin permisos. Si la pregunta 1 de la §7 lo extiende,
-suma `membership.weekly_capacity_minutes`.
+`workspace`. Borra también `membership.weekly_capacity_minutes`, que quedó sin
+destino con equipo P-09 (decisión del usuario, §7). Sin pantalla y sin
+permisos.
 
 No depende de nada. **Va antes de WS2a y de E4**, que suman columnas a
 `workspace_settings`: sus migraciones chocan en el diario de `drizzle-kit`, y es
@@ -364,25 +373,33 @@ Riesgos:
 - **El orden de despliegue es el inverso del habitual**: las lecturas con
   `select()` nombran todas las columnas del esquema, así que una instancia
   vieja falla si la columna ya no está. Primero se despliega el código que ya no
-  las nombra; después corre la migración.
+  las nombra; después corre la migración. Vale también para `membership`, que
+  `findMembership` lee entera en cada pedido (`workspace/repository.ts`): una
+  instancia vieja con la columna borrada deja de armar la sesión.
 - **El script de importación es un lector más**:
   `scripts/import-clockify/main.ts` de la rama `ops/importar-clockify` hace
   `tx.select().from(workspace)` con el esquema viejo, que nombra `currency` y
   `logo_url`. Las corridas que siguen pueden caer después de WS0: el script se
-  rebasa al esquema nuevo antes de correr la migración.
+  rebasa al esquema nuevo antes de correr la migración. De `membership` lee
+  columnas nombradas, sin `weekly_capacity_minutes`.
 - **Lo que las nombra en `src/`** se ajusta en el mismo slice: además del
-  esquema, dos archivos, `src/modules/project/schema.integration.test.ts`, que
-  afirma el valor de `who_creates_projects` (criterio 11, PR-59), y
+  esquema, `src/modules/project/schema.integration.test.ts`, que afirma el
+  valor de `who_creates_projects` (criterio 11, PR-59);
   `src/server/permissions/index.ts`, por el comentario de `project.create` y
-  `client.create` que remite a esa columna. El tercer lector es el script de
-  importación, del punto anterior. Un grep de `require_` o `currency` cuenta de
-  más, porque también encuentra `requireSession` y `concurrency`.
+  `client.create` que remite a esa columna; y dos tests que escriben
+  `weeklyCapacityMinutes`, `src/modules/workspace/service.integration.test.ts` y
+  `src/modules/time-entry/person-keys.integration.test.ts`. El script de
+  importación es el lector de fuera de `src/`. Un grep de `require_` o
+  `currency` cuenta de más, porque también encuentra `requireSession` y
+  `concurrency`.
 - **`who_creates_projects` sale con su camino previsto**: el ADR 0009 decía
   cómo entraría en `can()` si se volvía editable. Con workspace P-03 queda fijo
   en «cualquiera», que es lo que `can()` ya decide por rol; si alguna vez se
-  vuelve editable, la columna vuelve con ese ADR.
+  vuelve editable, la columna vuelve con ese ADR. Lo mismo para la capacidad:
+  si algún día entra (P-09), vuelve con su consumidor.
 - **La reversión** las vuelve a crear con su `default`; no se pierde nada,
-  porque no tenían efecto (`logo_url` está vacía).
+  porque no tenían efecto (`logo_url` está vacía, y la capacidad nunca se
+  leyó).
 
 ADR: **borrar columnas, primero el código y después la migración**, con el
 contrato de WS0.
@@ -459,7 +476,7 @@ Cubre EQ-55 … EQ-59, EQ-86 y EQ-112. Sin cambios de esquema;
 `workspace.transfer` ya existe con `["owner"]`. Una transacción con las dos
 membresías y el workspace bloqueados: `workspace.owner_id`, la membresía nueva
 en `owner`, la anterior en `admin` y el audit log. Escribir `owner_id` desde
-`team` lo cubre el ADR de escrituras entre módulos de E1a.
+`team` lo cubre el ADR 0025.
 
 Depende de E1b, que deja `WORKSPACE_OWNER_EMAIL` solo para el arranque (EQ-30,
 EQ-113): sin eso, la variable podría crear un segundo owner. Depende de E2 por el
@@ -503,22 +520,6 @@ ingreso recrea la membresía; con E1b, su migración garantiza que no quede una
 invitación pendiente que la deje volver). Riesgos: la clave `restrict` de
 `time_entry` hacia `membership` es la red, pero el service responde EQ-87
 antes; el audit log guarda la fila borrada.
-
-### E7 — Grupos
-
-Cubre EQ-01 (la pestaña «Grupos»), EQ-08 (el filtro por grupo), EQ-60 … EQ-63,
-EQ-67, EQ-68, EQ-89, EQ-95 y EQ-96. **Cambia el esquema**: el grupo y sus
-personas. Si es `team.manage` o una acción propia lo decide el contrato
-(EQ-68).
-
-**Precondición, no decisión**: la sesión del usuario en Clockify muestra la
-pestaña «Groups» en el plan Free (P-10 de `equipo.md`). Si no está, E7 y P9
-salen de la fase 2.
-
-Riesgo: **en todo el bloque de equipo un grupo no tiene efecto.** Con todos los
-proyectos públicos (PR-17) y sin asignados (PR-37), un grupo cambia algo recién
-con P6, P7 y P9. Es el «dato sin efecto» del ADR 0009. Ver la pregunta 2 de la
-§7.
 
 ### P1 — Editar proyectos y la lista completa
 
@@ -639,6 +640,24 @@ lo confirma), sin interruptor de workspace. Sin dependencias; toca los
 selectores del rastreador, la planilla y el calendario, que comparten
 `picker-model`.
 
+### E7 — Grupos
+
+Cubre EQ-01 (la pestaña «Grupos»), EQ-08 (el filtro por grupo), EQ-60 … EQ-63,
+EQ-67, EQ-68, EQ-89, EQ-95 y EQ-96. **Cambia el esquema**: el grupo y sus
+personas. Si es `team.manage` o una acción propia lo decide el contrato
+(EQ-68).
+
+**Va justo antes de P9, y solo si P-10 de `equipo.md` confirma que los grupos
+existen en el plan Free** (decisión del usuario del 2026-10-16, §7). En el
+bloque de equipo un grupo no tendría efecto: con todos los proyectos públicos
+(PR-17) y sin asignados (PR-37), cambia algo recién con P6, P7 y P9, y un dato
+sin efecto es lo que el ADR 0009 pide no guardar. Pegado a P9, el grupo llega
+con su efecto. Si P-10 dice que no están en Free, E7 y P9 salen de la fase 2.
+
+Depende de E2 (la lista de personas con su estado, de donde se eligen los
+miembros de un grupo) y de la verificación de P-10, que hace el usuario con su
+sesión en Clockify (§5).
+
 ### P9 — Grupos en proyectos y tareas
 
 Cubre EQ-64, EQ-65 y PR-20: un grupo da acceso a un proyecto privado y puede ser
@@ -652,31 +671,33 @@ contrato de P9: el `ProjectResource` lleva hoy solo la fila directa de
 
 Cubre TS-62, TS-63, TS-65 y TS-66 sin tiempo: guardar las filas de una semana
 como plantilla personal y aplicarlas. **Cambia el esquema**: la plantilla y sus
-filas. Las filas sin horas siguen siendo del navegador (TS-19).
+filas. Las filas sin horas siguen siendo del navegador (TS-19). Va al final de
+la fase (§7).
 
 ### T2 — Plantillas con tiempo
 
 Cubre TS-64 y la casilla de TS-62 que guarda el tiempo. Depende de T1 y de
-timesheet P-15, abierto: si la plantilla guarda el total de cada celda o las
-entradas, y a qué hora empiezan las entradas que crea. «Reemplazar» es
-destructivo: todo o nada (ADR 0011), con las reglas de celda de los ADR 0018 y 0019.
+timesheet P-15, que está abierta y tiene que responderse antes del contrato: si
+la plantilla guarda el total de cada celda o las entradas, y a qué hora empiezan
+las entradas que crea. «Reemplazar» es destructivo: todo o nada (ADR 0011), con
+las reglas de celda de los ADR 0018 y 0019.
 
 ## 4. Los ADR
 
-Ninguno hace falta para decidir este orden, así que no se escriben ahora: cada
-uno va con el contrato del slice que lo necesita. Se numeran desde 0024 al
-escribirse.
+Cada uno va con el contrato del slice que lo necesita. Los dos de E1a ya están
+escritos y aceptados (2026-10-16, decisión del usuario); los demás se numeran
+desde 0026 al escribirse.
 
-| ADR                                                      | Slice | Qué decide                                                            |
-| -------------------------------------------------------- | ----- | --------------------------------------------------------------------- |
-| Dónde vive una invitación y dónde se corta el ingreso    | E1a   | Externos, invitaciones, `invited`, el corte, la aceptada y el 0007    |
-| Escrituras entre módulos                                 | E1a   | Aceptar la invitación, timer, sesiones y `owner_id`; extiende el 0010 |
-| Una fila `user` sin cuenta de Google                     | E2b   | La salida de EQ-110, de las seis importadas y de P-11 de `perfil`     |
-| Borrar columnas: primero el código, después la migración | WS0   | El orden de despliegue de un borrado                                  |
-| El formato de duración es del workspace                  | WS2a  | Extiende el 0012 y fija la regla del compacto (WS-16)                 |
-| Crea tareas quien ve el proyecto                         | P4    | El cambio de `task.create` (WS-40, PR-40, PR-58)                      |
-| Los asignados de una tarea en `can()`                    | P7    | El recurso de tarea                                                   |
-| La pertenencia por grupo en el recurso del proyecto      | P9    | Cómo llega el grupo al `ProjectResource`                              |
+| ADR                                                         | Slice | Qué decide                                                            |
+| ----------------------------------------------------------- | ----- | --------------------------------------------------------------------- |
+| 0024, dónde vive una invitación y dónde se corta el ingreso | E1a   | Externos, invitaciones, `invited`, el corte, la aceptada y el 0007    |
+| 0025, escrituras entre módulos                              | E1a   | Aceptar la invitación, timer, sesiones y `owner_id`; extiende el 0010 |
+| Una fila `user` sin cuenta de Google                        | E2b   | La salida de EQ-110, de las seis importadas y de P-11 de `perfil`     |
+| Borrar columnas: primero el código, después la migración    | WS0   | El orden de despliegue de un borrado                                  |
+| El formato de duración es del workspace                     | WS2a  | Extiende el 0012 y fija la regla del compacto (WS-16)                 |
+| Crea tareas quien ve el proyecto                            | P4    | El cambio de `task.create` (WS-40, PR-40, PR-58)                      |
+| Los asignados de una tarea en `can()`                       | P7    | El recurso de tarea                                                   |
+| La pertenencia por grupo en el recurso del proyecto         | P9    | Cómo llega el grupo al `ProjectResource`                              |
 
 No necesitan ADR: la acción del owner para desactivar a un admin (E2) y la de
 quitar del equipo (E6) siguen el 0023; transferir (E3) sigue el bloqueo de
@@ -699,36 +720,37 @@ No son slices:
   núcleo.
 - **La sesión del usuario en Clockify** verifica P-10 de `equipo.md` antes del
   contrato de E7.
+- **Timesheet P-15** se responde antes del contrato de T2.
 
 ## 6. Deudas que el mapa arrastra
 
-- **TT-110** sigue sin slice: una entrada que el trío no puede expresar queda con
-  sus horarios en solo lectura (mapa de la fase 1, §5).
-- **P-10 y P-11 de `perfil.md`**: volver a seguir el nombre de Google y liberar
-  un correo ocupado (EQ-109). El ADR de E2b sobre la fila sin cuenta toca P-11
-  pero no lo cierra.
-- **`invited` en `membership_status`**: con las invitaciones por correo puede
-  quedar sin uso (EQ-18). Quitar un valor de un enum de Postgres pide recrear el
-  tipo; si el ADR de E1a lo deja, queda como deuda.
+- **TT-110** queda sin slice y fuera de la fase 2 (§7): una entrada que el trío
+  no puede expresar queda con sus horarios en solo lectura (mapa de la fase 1,
+  §5).
+- **P-10 de `perfil.md`**, volver a seguir el nombre de Google, queda fuera de la
+  fase 2 (§7). P-11, liberar un correo ocupado (EQ-109), entra con E2b.
+- **`invited` en `membership_status`**: queda sin escritor (ADR 0024, decisión
+  7). Quitar un valor de un enum de Postgres pide recrear el tipo, y nada nuevo
+  lo produce.
 - **`who_sees_all_entries`** sigue congelado y sin efecto (ADR 0020, WS-42): es
-  la única columna sin efecto de los ajustes que WS0 no borra, porque la congeló
-  una decisión anterior. Lo mismo vale para `membership.weekly_capacity_minutes`
-  si la pregunta 1 dice que no.
+  la única columna sin efecto que WS0 no borra, porque la congeló una decisión
+  anterior.
 - **RP-61 y RP-62**: la §15 de `equipo.md` registra que la página de Clockify
   cambió; es una corrección de `reportes.md`, no un slice.
 - **`estado-fase1.md` no nombra la fase 2.** Cuando se apruebe el mapa, el
   registro de estado suma sus slices.
 
-## 7. Preguntas para el usuario
+## 7. Decidido el 2026-10-16
 
-1. **¿El borrado de WS0 suma `membership.weekly_capacity_minutes`?** Quedó sin
-   destino con equipo P-09 (capacidad fuera) y cae en el mismo criterio del ADR
-   0009 que las columnas de workspace P-05. Recomendación: sí.
-2. **¿Grupos en el bloque de equipo, como pidió, o justo antes de P9?** En su
-   lugar (E7), un grupo existe sin efecto hasta P6, P7 y P9. Recomendación:
-   moverlo justo antes de P9, si P-10 confirma que está en Free.
-3. **¿Las plantillas de la planilla (T1, T2) entran en esta fase, al final?**
-   Timesheet P-09 las mandó a la fase 2 y no estaban en el orden que dio.
-   Recomendación: sí, al final, y T2 después de responder timesheet P-15.
-4. **¿Entra alguno de TT-110, P-10 o P-11 de `perfil.md`?** Hoy no tienen slice.
-   Recomendación: no, salvo P-11 si el ADR de E2b lo resuelve sin costo.
+El usuario respondió las cuatro preguntas de este mapa con las recomendaciones:
+
+1. **WS0 borra también `membership.weekly_capacity_minutes`**, que quedó sin
+   destino con equipo P-09 y cae en el mismo criterio del ADR 0009 que las
+   columnas de workspace P-05.
+2. **Los grupos (E7) van justo antes de P9**, y solo si P-10 de `equipo.md`
+   confirma que existen en el plan Free. En el bloque de equipo un grupo
+   existiría sin efecto hasta P6, P7 y P9.
+3. **Las plantillas de la planilla (T1, T2) van al final de la fase**; T2,
+   después de responder timesheet P-15.
+4. **TT-110 y P-10 de `perfil.md` no entran.** P-11 de `perfil.md` entra con
+   E2b.

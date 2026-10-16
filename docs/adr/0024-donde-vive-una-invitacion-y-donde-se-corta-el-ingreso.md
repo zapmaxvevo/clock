@@ -1,6 +1,6 @@
 # 0024. Dónde vive una invitación y dónde se corta el ingreso
 
-Fecha: 2026-10-16. Estado: **Propuesto (lo aprueba el usuario)**.
+Fecha: 2026-10-16. Estado: Aceptado (2026-10-16, decisión del usuario).
 Origen: el contrato de E1a
 ([`fase2-e1a-invitar.md`](../slices/fase2-e1a-invitar.md)), con el
 [mapa de la fase 2](../slices/fase2-mapa.md) (§2, E1a y E1b) y

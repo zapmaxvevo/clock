@@ -768,7 +768,7 @@ redacción por causa de `time-tracker.md`.
 | EQ-78 | Más de 50 correos en un pedido                     | «Se pueden invitar hasta 50 correos por vez.»                                                           | `adaptar`          |
 | EQ-79 | Correo de una persona inactiva (EQ-21)             | «{correo} está desactivada: reactivala desde la lista.»                                                 | `adaptar`          |
 | EQ-80 | Correo de otro dominio: sin uso, P-03 los admite   | —                                                                                                       | `fuera de alcance` |
-| EQ-81 | Revocar una invitación que ya se usó o se revocó   | «Esa invitación ya no está pendiente.»                                                                  | `adaptar`          |
+| EQ-81 | Revocar una invitación que ya se usó               | «Esa invitación ya no está pendiente.»                                                                  | `adaptar`          |
 | EQ-82 | La persona ya no está                              | «Esa persona ya no está en el equipo.» (R8)                                                             | `replicar`         |
 | EQ-83 | Desactivar al owner                                | «El propietario no se desactiva.»                                                                       | `adaptar`          |
 | EQ-84 | Desactivarse a sí mismo                            | «No podés desactivar tu propia membresía.»                                                              | `adaptar`          |
@@ -783,6 +783,10 @@ redacción por causa de `time-tracker.md`.
 
 - **Idempotencia**: desactivar a una inactiva o reactivar a una activa responde
   éxito sin escribir, como pedir el rol que ya tiene en R8 (D-R8-7).
+- **EQ-81**: revocar una invitación ya revocada responde éxito sin escribir, como
+  el reintento de una revocación cuya respuesta se perdió (EQ-97; D-E1a-8 del
+  contrato de E1a). _Corregido el 2026-10-16, decisión del usuario_: la regla
+  decía «que ya se usó o se revocó».
 - **EQ-80** era el rechazo de un correo de otro dominio si P-03 cerraba esa
   puerta. P-03 la abrió el 2026-10-16 (EQ-22): el identificador se conserva y
   no tiene mensaje.
