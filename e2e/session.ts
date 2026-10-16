@@ -4,14 +4,20 @@ import {
   expect,
   test as base,
   type APIResponse,
+  type Browser,
   type BrowserContext,
+  type Page,
 } from "@playwright/test";
+
+import { isCompanyEmail } from "@/lib/email";
 
 import { inviteForSignIn } from "./database";
 import { PERSON_NAME, TEST_EMAIL_DOMAIN, TEST_SESSION_SECRET } from "./environment";
 
 /** Intentos de entrar antes de dar el 429 por definitivo. */
 const SIGN_IN_ATTEMPTS = 5;
+
+const SIGN_IN_PATH = "/api/auth/test-session/sign-in";
 
 /**
  * Pide la sesión de prueba, sin pasar por el login de Google. El endpoint
@@ -27,7 +33,7 @@ async function requestSession(
   email: string,
 ): Promise<APIResponse> {
   for (let attempt = 1; ; attempt += 1) {
-    const response = await context.request.post("/api/auth/test-session/sign-in", {
+    const response = await context.request.post(SIGN_IN_PATH, {
       headers: { "x-test-session": TEST_SESSION_SECRET },
       data: { email, name: PERSON_NAME },
     });
@@ -37,11 +43,6 @@ async function requestSession(
     const seconds = Number(response.headers()["x-retry-after"] ?? "1");
     await new Promise((resolve) => setTimeout(resolve, Math.max(seconds, 1) * 1000));
   }
-}
-
-/** Si el correo es del dominio que el servidor de los e2e habilita. */
-function inTestDomain(email: string): boolean {
-  return email.trim().toLowerCase().endsWith(`@${TEST_EMAIL_DOMAIN.toLowerCase()}`);
 }
 
 /**
@@ -54,7 +55,7 @@ function inTestDomain(email: string): boolean {
  * invitaciones llegan a esa fila por `/equipo`.
  */
 export async function signIn(context: BrowserContext, email: string): Promise<void> {
-  if (inTestDomain(email)) {
+  if (isCompanyEmail(email, [TEST_EMAIL_DOMAIN])) {
     await inviteForSignIn(email);
   }
   await signInUnseeded(context, email);
@@ -84,6 +85,12 @@ export async function signInRejected(
 ): Promise<void> {
   const response = await requestSession(context, email);
   expect(response.status(), await response.text()).toBe(403);
+}
+
+/** Una pestaña en un contexto propio, sin sesión: la de quien intenta entrar. */
+export async function guestPage(browser: Browser): Promise<Page> {
+  const context = await browser.newContext();
+  return context.newPage();
 }
 
 function slugOf(title: string): string {

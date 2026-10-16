@@ -1,23 +1,20 @@
 import { randomUUID } from "node:crypto";
 
-import type { Browser, Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
-import { invitationStatusOf, seedPerson, setDisplayName, setRole } from "./database";
+import { invitationStatusOf, seedPerson, setDisplayName } from "./database";
+import { DOMAIN_DENIED, googleButton, LOGIN_FAILED, loginNotice } from "./login-page";
 import { loseActionResponses } from "./network";
-import {
-  expect,
-  signInRejected,
-  signInUnseeded,
-  TEST_EMAIL_DOMAIN,
-  test,
-} from "./session";
+import { expect, guestPage, signInRejected, signInUnseeded, test } from "./session";
 import {
   ALREADY_INVITED,
   copyButton,
   dialogAlert,
   dialogButton,
+  domainEmail,
   DROP_FAILING,
   emailsField,
+  enterTeamAsAdmin,
   EXTERNAL_MARK,
   inactiveMemberMessage,
   invalidEmailMessage,
@@ -32,7 +29,6 @@ import {
   memberHeader,
   memberRow,
   NO_EMAIL_SENT,
-  NO_INVITATIONS_YET,
   NOBODY_INVITED,
   noticeText,
   NOTICE_COPIED,
@@ -45,10 +41,8 @@ import {
   revokedMessage,
   roleCell,
   sendInvitation,
-  TEAM_PATH,
   teamFeedback,
   teamHeading,
-  teamTable,
 } from "./team-page";
 import { trackerBar, uniqueSuffix } from "./tracker-page";
 
@@ -61,41 +55,9 @@ import { trackerBar, uniqueSuffix } from "./tracker-page";
  */
 const EXTERNAL_DOMAIN = "externo-e2e.test";
 
-/** D-E1b-2: el texto de `/login` para `dominio_no_habilitado`. */
-const DOMAIN_DENIED = "La cuenta no es la de Google Workspace de la empresa.";
-
-/** D-E1a-14: el texto de `/login` para un motivo que no conoce. */
-const LOGIN_FAILED = "No se pudo iniciar sesión. Volvé a intentar.";
-
-/** Un correo del dominio que nadie más usa, con `label` para leer el recorrido. */
-function domainEmail(label: string): string {
-  return `e2e-${label}-${randomUUID()}@${TEST_EMAIL_DOMAIN}`;
-}
-
 /** Un correo de otro dominio que nadie más usa. */
 function externalEmail(label: string): string {
   return `e2e-${label}-${randomUUID()}@${EXTERNAL_DOMAIN}`;
-}
-
-/**
- * La persona de la sesión entra, que es lo que le crea la membresía, pasa a
- * admin y abre `/equipo`, que lee el rol en el pedido (D-R8-8). El owner de la
- * suite entró en el setup, así que quien mira nunca está solo y no aparece el
- * vacío de EQ-93, con su segundo «Invitar».
- */
-async function enterTeamAsAdmin(page: Page, email: string): Promise<void> {
-  await page.goto("/");
-  await expect(trackerBar(page)).toBeVisible();
-  await setRole(email, "admin");
-  await page.goto(TEAM_PATH);
-  await expect(teamTable(page)).toBeVisible();
-  await expect(page.getByText(NO_INVITATIONS_YET, { exact: true })).toHaveCount(0);
-}
-
-/** Una pestaña en un contexto propio, sin sesión: la de la persona invitada. */
-async function guestPage(browser: Browser): Promise<Page> {
-  const context = await browser.newContext();
-  return context.newPage();
 }
 
 /**
@@ -306,7 +268,7 @@ test("/login explica el rechazo que conoce y nunca muestra el texto de la direcc
   // Sin sesión: con una, `/login` lleva a `/`.
   const context = await browser.newContext();
   const page = await context.newPage();
-  const notice = page.getByRole("main").getByRole("alert");
+  const notice = loginNotice(page);
 
   // Criterio 24: un motivo conocido muestra su texto.
   await page.goto("/login?error=dominio_no_habilitado");
@@ -324,7 +286,7 @@ test("/login explica el rechazo que conoce y nunca muestra el texto de la direcc
 
   // Sin `error`, ningún aviso.
   await page.goto("/login");
-  await expect(page.getByRole("button", { name: "Entrar con Google" })).toBeVisible();
+  await expect(googleButton(page)).toBeVisible();
   await expect(notice).toHaveCount(0);
   await context.close();
 });

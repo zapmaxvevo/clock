@@ -1,24 +1,16 @@
-import { randomUUID } from "node:crypto";
-
-import type { Browser, Locator, Page } from "@playwright/test";
-
 import {
   hasMembership,
   invitationStatusOf,
   inviteForSignIn,
   revokeInvitationOf,
   setDisplayName,
-  setRole,
 } from "./database";
-import {
-  expect,
-  signInRejected,
-  signInUnseeded,
-  TEST_EMAIL_DOMAIN,
-  test,
-} from "./session";
+import { googleButton, loginNotice, NO_INVITATION } from "./login-page";
+import { expect, guestPage, signInRejected, signInUnseeded, test } from "./session";
 import {
   dialogButton,
+  domainEmail,
+  enterTeamAsAdmin,
   invitationRow,
   inviteOne,
   MEMBER_ROLE,
@@ -28,9 +20,7 @@ import {
   revokeDialog,
   revokedMessage,
   roleCell,
-  TEAM_PATH,
   teamFeedback,
-  teamTable,
 } from "./team-page";
 import { trackerBar, uniqueSuffix } from "./tracker-page";
 
@@ -42,45 +32,8 @@ import { trackerBar, uniqueSuffix } from "./tracker-page";
  * daría la invitación que el recorrido tiene que conseguir (D-E1b-8).
  */
 
-/** EQ-91: el texto de `/login` para `sin_invitacion`. */
-const NO_INVITATION =
-  "Tu cuenta no tiene una invitación a Clock. Pedísela a quien administra el equipo.";
-
 /** Adonde lleva `requireSession` una sesión sin acceso (D-E1b-5). */
 const NO_INVITATION_URL = /\/login\?error=sin_invitacion$/;
-
-/** Un correo del dominio que nadie más usa, con `label` para leer el recorrido. */
-function domainEmail(label: string): string {
-  return `e2e-${label}-${randomUUID()}@${TEST_EMAIL_DOMAIN}`;
-}
-
-/** El aviso de `/login`, dentro de `main` para no tomar el anunciador de rutas. */
-function loginNotice(page: Page): Locator {
-  return page.getByRole("main").getByRole("alert");
-}
-
-/** El botón de `/login`, que sigue a la vista con el aviso. */
-function googleButton(page: Page): Locator {
-  return page.getByRole("button", { name: "Entrar con Google" });
-}
-
-/** Una pestaña en un contexto propio, sin sesión: la de quien intenta entrar. */
-async function guestPage(browser: Browser): Promise<Page> {
-  const context = await browser.newContext();
-  return context.newPage();
-}
-
-/**
- * La persona de la sesión entra, pasa a admin y abre `/equipo`, que lee el rol
- * en el pedido (D-R8-8). Su propia sesión es la de `signIn`, que la sembró.
- */
-async function enterTeamAsAdmin(page: Page, email: string): Promise<void> {
-  await page.goto("/");
-  await expect(trackerBar(page)).toBeVisible();
-  await setRole(email, "admin");
-  await page.goto(TEAM_PATH);
-  await expect(teamTable(page)).toBeVisible();
-}
 
 test("una persona del dominio sin invitación no entra, y entra cuando la invitan", async ({
   page,
