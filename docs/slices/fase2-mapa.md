@@ -145,7 +145,7 @@ pidió el usuario, con las dependencias de la tabla.
 | E1a   | Invitar y revocar                             | —                                        |
 | E1b   | El ingreso exige invitación                   | E1a, y las invitaciones hechas en prod   |
 | E2    | Desactivar y reactivar                        | E1b                                      |
-| E2b   | Volver a entrar sin `account`                 | E1b                                      |
+| E2b   | Volver a entrar sin `account`                 | E1b, E2                                  |
 | WS0   | Las columnas sin efecto                       | —                                        |
 | WS1   | Configuración: la pantalla y el nombre        | —                                        |
 | WS2a  | Formato de duración: el dato y sus lectores   | WS0 (el árbol)                           |
@@ -333,8 +333,11 @@ P-11 de `perfil.md` (un correo ocupado no se libera).
 
 **Se separa de E2** porque es otra área: el ingreso por Better Auth con
 `disableImplicitLinking`, no la pantalla de desactivar. Depende de E1b, que
-decide quién pasa la regla de ingreso. Va en el orden después de E2, y **antes
-de reactivar a cualquiera de las seis**.
+decide quién pasa la regla de ingreso, y de E2, que trae la exigencia de
+membresía activa (P-05): **restituye la entrada solo a una membresía activa**.
+Desplegado antes de E2, les devolvería la entrada a las seis inactivas y a
+quien se desactive con el procedimiento SQL, el mismo agujero de P-05 que
+cierra la §5. Va **antes de reactivar a cualquiera de las seis**.
 
 Riesgo: **reabrir lo que PF-47 cerró**. Sin enlace implícito, una cuenta de
 Google nueva con una dirección reciclada no entra a la fila de otra persona.
