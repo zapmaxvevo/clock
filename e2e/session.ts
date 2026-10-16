@@ -31,10 +31,11 @@ const SIGN_IN_PATH = "/api/auth/test-session/sign-in";
 async function requestSession(
   context: BrowserContext,
   email: string,
+  secret: string | null = TEST_SESSION_SECRET,
 ): Promise<APIResponse> {
   for (let attempt = 1; ; attempt += 1) {
     const response = await context.request.post(SIGN_IN_PATH, {
-      headers: { "x-test-session": TEST_SESSION_SECRET },
+      headers: secret === null ? {} : { "x-test-session": secret },
       data: { email, name: PERSON_NAME },
     });
     if (response.status() !== 429 || attempt === SIGN_IN_ATTEMPTS) {
@@ -43,6 +44,30 @@ async function requestSession(
     const seconds = Number(response.headers()["x-retry-after"] ?? "1");
     await new Promise((resolve) => setTimeout(resolve, Math.max(seconds, 1) * 1000));
   }
+}
+
+/** La comprobación de `assertTestServer`, una por worker. */
+let testServerChecked: Promise<void> | undefined;
+
+/**
+ * La siembra escribe directo en la base, así que antes de la primera se
+ * comprueba que el servidor es uno de prueba: el endpoint de sesión de prueba
+ * existe y, sin el secreto, responde 401. En producción no se registra y
+ * responde otra cosa; ahí se corta sin escribir nada.
+ */
+async function assertTestServer(context: BrowserContext): Promise<void> {
+  testServerChecked ??= (async () => {
+    const response = await requestSession(context, `sonda@${TEST_EMAIL_DOMAIN}`, null);
+    if (response.status() !== 401) {
+      throw new Error(
+        [
+          `Sin el secreto, ${SIGN_IN_PATH} respondió ${response.status()} y tenía que responder 401.`,
+          "El servidor no tiene el endpoint de sesión de prueba, como producción: signIn no siembra nada en su base.",
+        ].join("\n"),
+      );
+    }
+  })();
+  await testServerChecked;
 }
 
 /**
@@ -56,6 +81,7 @@ async function requestSession(
  */
 export async function signIn(context: BrowserContext, email: string): Promise<void> {
   if (isCompanyEmail(email, [TEST_EMAIL_DOMAIN])) {
+    await assertTestServer(context);
     await inviteForSignIn(email);
   }
   await signInUnseeded(context, email);
