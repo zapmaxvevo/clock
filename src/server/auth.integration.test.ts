@@ -6,8 +6,8 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 import { workspaceRepository } from "@/modules/workspace/repository";
 import { db } from "@/server/db";
-import { account, membership, session, user } from "@/server/db/schema";
-import { seedInvitation, seedUser, seedWorkspace } from "@/test/factories";
+import { account, session, user } from "@/server/db/schema";
+import { seedInvitation, seedMember, seedUser, seedWorkspace } from "@/test/factories";
 
 /**
  * El handler real de Better Auth. La sesión de prueba se habilita antes de
@@ -51,9 +51,7 @@ function post(path: string, body: unknown, headers: Record<string, string> = {})
 /** Una persona con ese correo y su membresía en un workspace nuevo: lo que el ingreso pide. */
 async function seedPerson(email: string): Promise<string> {
   const { workspaceId } = await seedWorkspace();
-  const userId = await seedUser(email);
-  await db.insert(membership).values({ workspaceId, userId, role: "member" });
-  return userId;
+  return seedMember(workspaceId, "member", "active", { email });
 }
 
 function testSessionSignIn(email: string) {
@@ -88,6 +86,21 @@ describe("la sesión de prueba pasa por el gancho (D-E1b-8, criterio 16)", () =>
 
     expect(response.status).toBe(403);
     expect(await response.json()).toMatchObject({ code: "sin_invitacion" });
+    expect(await db.select().from(session)).toEqual([]);
+  });
+});
+
+describe("el ingreso por id_token del cliente está apagado", () => {
+  it("/sign-in/social con un idToken responde 404 sin crear nada", async () => {
+    await seedWorkspace();
+
+    const response = await post("/sign-in/social", {
+      provider: "google",
+      idToken: { token: "cabecera.cuerpo.firma" },
+    });
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({ code: "ID_TOKEN_NOT_SUPPORTED" });
     expect(await db.select().from(session)).toEqual([]);
   });
 });

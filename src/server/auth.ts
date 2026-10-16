@@ -54,6 +54,10 @@ export const auth = betterAuth({
     google: {
       clientId: env().GOOGLE_CLIENT_ID,
       clientSecret: env().GOOGLE_CLIENT_SECRET,
+      // Solo el ingreso por redirección: sin esto, `/sign-in/social` también
+      // acepta un `id_token` que manda el cliente. Clock no lo usa, y es una
+      // entrada menos que cuidar.
+      disableIdTokenSignIn: true,
       // PF-45: el nombre y la foto de Google llegan en cada ingreso. El nombre que
       // la persona editó vive en `user_preference` y esto no lo toca (PF-08).
       overrideUserInfoOnSignIn: true,

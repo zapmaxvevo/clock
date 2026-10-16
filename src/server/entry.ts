@@ -1,6 +1,6 @@
 import { APIError } from "better-auth/api";
 
-import { normalizeEmail } from "@/lib/email";
+import { isCompanyEmail, normalizeEmail } from "@/lib/email";
 import { entryFactsOf } from "@/modules/workspace/service";
 import {
   accessDenialMessage,
@@ -11,6 +11,7 @@ import {
   type AccessDenialReason,
   type AccessPolicy,
   type GoogleProfile,
+  verifiedEmailOf,
 } from "@/server/access";
 import { env } from "@/server/env";
 
@@ -35,11 +36,8 @@ function policy(): AccessPolicy {
 export async function decideProfileEntry(
   profile: GoogleProfile,
 ): Promise<AccessDecision> {
-  const email = normalizeEmail(profile.email ?? "");
-  const facts =
-    email.length === 0 || profile.email_verified !== true
-      ? NO_ENTRY_FACTS
-      : await entryFactsOf(email);
+  const verified = verifiedEmailOf(profile);
+  const facts = verified.verified ? await entryFactsOf(verified.email) : NO_ENTRY_FACTS;
   return decideGoogleAccess(profile, policy(), facts);
 }
 
@@ -47,6 +45,20 @@ export async function decideProfileEntry(
 export async function decideStoredEmailEntry(email: string): Promise<AccessDecision> {
   const facts = await entryFactsOf(normalizeEmail(email));
   return decideStoredEmail(email, policy(), facts);
+}
+
+/**
+ * En cada pedido de una sesión abierta, la identidad de un correo fuera de los
+ * dominios vuelve a decidirse con el correo guardado: si su dominio sale de la
+ * política, quien entró sin invitación queda afuera aunque tenga membresía, y
+ * quien tiene una `accepted` sigue como externa (D-E1b-13). Un correo de los
+ * dominios no suma una consulta: su acceso lo decide `ensureWorkspaceContext`.
+ */
+export async function decideSessionIdentity(email: string): Promise<AccessDecision> {
+  if (isCompanyEmail(email, policy().domains)) {
+    return { allowed: true };
+  }
+  return decideStoredEmailEntry(email);
 }
 
 /** D-E1a-14: `<BETTER_AUTH_URL>/login?error=<motivo>`, absoluta. */

@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 
 import { eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { workspaceRepository } from "@/modules/workspace/repository";
 import { db } from "@/server/db";
 import { auditLog, invitation, membership, user } from "@/server/db/schema";
-import { seedInvitation, seedUser, seedWorkspace } from "@/test/factories";
+import { seedInvitation, seedMember, seedUser, seedWorkspace } from "@/test/factories";
 import { updateName } from "@/modules/profile/service";
 
 /**
@@ -56,8 +57,7 @@ let workspaceId: string;
 /** Una persona con su membresía activa en el workspace sembrado. */
 async function seedPerson() {
   const email = `${randomUUID()}@empresa.com`;
-  const id = await seedUser(email);
-  await db.insert(membership).values({ workspaceId, userId: id, role: "member" });
+  const id = await seedMember(workspaceId, "member", "active", { email });
   return { id, email };
 }
 
@@ -182,5 +182,58 @@ describe("una sesión sin acceso (D-E1b-5, criterio 11)", () => {
   it("con acceso, requireSession devuelve el contexto sin redirigir", async () => {
     expect((await requireSession()).user.id).toBe(mocks.user?.id);
     expect(mocks.redirect).not.toHaveBeenCalled();
+  });
+});
+
+describe("un dominio sacado de la política con la sesión abierta (D-E1b-13)", () => {
+  const domains = process.env.GOOGLE_WORKSPACE_DOMAINS;
+
+  beforeEach(() => {
+    process.env.GOOGLE_WORKSPACE_DOMAINS = "empresa.com, vieja.com";
+  });
+
+  afterEach(() => {
+    process.env.GOOGLE_WORKSPACE_DOMAINS = domains;
+    vi.restoreAllMocks();
+  });
+
+  /** Una persona de `vieja.com` con su membresía y la sesión abierta. */
+  async function signedInFromOldDomain() {
+    const email = `${randomUUID()}@vieja.com`;
+    mocks.user = {
+      id: await seedMember(workspaceId, "member", "active", { email }),
+      email,
+    };
+    expect(await currentSession()).not.toBeNull();
+    return email;
+  }
+
+  it("quien entró sin invitación queda sin acceso en el pedido siguiente", async () => {
+    await signedInFromOldDomain();
+
+    process.env.GOOGLE_WORKSPACE_DOMAINS = "empresa.com";
+
+    expect(await currentSession()).toBeNull();
+    await expect(requireSession()).rejects.toThrow(
+      "redirect /login?error=sin_invitacion",
+    );
+    expect(await db.select().from(auditLog)).toEqual([]);
+  });
+
+  it("quien tiene una invitación aceptada sigue entrando, como externa", async () => {
+    const email = await signedInFromOldDomain();
+    await seedInvitation({ workspaceId, email, status: "accepted" });
+
+    process.env.GOOGLE_WORKSPACE_DOMAINS = "empresa.com";
+
+    expect((await requireSession()).user.email).toBe(email);
+    expect(mocks.redirect).not.toHaveBeenCalled();
+  });
+
+  it("un correo de los dominios no suma la lectura de los hechos", async () => {
+    const entryFacts = vi.spyOn(workspaceRepository, "entryFacts");
+
+    expect(await currentSession()).not.toBeNull();
+    expect(entryFacts).not.toHaveBeenCalled();
   });
 });
