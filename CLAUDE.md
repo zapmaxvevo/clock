@@ -52,17 +52,20 @@ src/
   server/
     auth.ts            configuración de Better Auth
     access.ts          regla de dominio e invitados, función pura
+    entry.ts           el ingreso: arma access.ts con la variable y las invitaciones de la base (ADR 0024)
     session.ts         sesión, contexto de workspace y preferencias
     db/                esquema y cliente
     permissions/       can(actor, action, resource)
     time/              zonas horarias, semanas, duración, formatos, redondeo
     audit.ts
-    action.ts          ActionResult, DomainError, RejectedError (ADR 0011), failure y handle de las actions
+    errors.ts          DomainError, RejectedError, Rejection y ActionErrorCode (ADR 0011)
+    action.ts          ActionResult, failure y handle de las actions
     create-once.ts     altas idempotentes con el id que elige el cliente (ADR 0007)
     env.ts             variables de entorno validadas con Zod
   components/          piezas de interfaz que comparten los módulos; `ui/` es la salida de shadcn
   hooks/               hooks de cliente que comparten los módulos: useAction, useNewId
-  lib/                 utilidades puras que comparten servidor y navegador
+  lib/                 utilidades puras que comparten servidor y navegador; `email.ts` normaliza y valida correos
+scripts/               operaciones de una vez que corre el usuario con `--dry-run` y `--apply`
 e2e/                   Playwright
 drizzle/               migraciones SQL versionadas
 docs/parity/           especificación de paridad por módulo
@@ -89,7 +92,9 @@ importa un repository.
 
 Un service puede llamar a la función de validación que exporta el service de
 otro módulo, que solo lee con la transacción que recibe; lo que solo se muestra
-de otro módulo se lee con un `join` en el repository propio (ADR 0010).
+de otro módulo se lee con un `join` en el repository propio (ADR 0010). Un
+service escribe en las tablas de otro módulo solo por una función exportada del
+service dueño, que recibe la transacción (ADR 0025).
 
 ## Límites del entorno
 
