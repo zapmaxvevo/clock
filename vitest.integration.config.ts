@@ -10,7 +10,7 @@ export default defineConfig({
   test: {
     environment: "node",
     env: { TZ: process.env.TZ ?? "UTC" },
-    include: ["src/**/*.integration.test.ts"],
+    include: ["src/**/*.integration.test.ts", "scripts/**/*.integration.test.ts"],
     exclude: ["node_modules/**"],
     globals: false,
     globalSetup: ["src/test/global-setup.ts"],
