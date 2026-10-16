@@ -28,9 +28,9 @@ export function isValidEmail(email: string): boolean {
   return validEmail.safeParse(email).success;
 }
 
-/** EQ-105: normalizados, sin repetidos, conservando el primero. */
+/** EQ-105: normalizados, sin vacíos ni repetidos, conservando el primero. */
 export function distinctEmails(emails: readonly string[]): string[] {
-  return [...new Set(emails.map(normalizeEmail))];
+  return [...new Set(emails.map(normalizeEmail))].filter((email) => email.length > 0);
 }
 
 export type InvitationPlan = {

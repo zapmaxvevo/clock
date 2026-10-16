@@ -155,6 +155,12 @@ describe("inviteMembers", () => {
 
   it.each([
     ["ningún correo", [], invitationMessages.noEmails],
+    ["solo blancos", [" ", "\n"], invitationMessages.noEmails],
+    [
+      "un texto de más de 1000 caracteres",
+      ["a".repeat(1001)],
+      invitationMessages.inputTooLong,
+    ],
     [
       `${INVITE_LIMIT + 1} correos`,
       Array.from({ length: INVITE_LIMIT + 1 }, (_, index) => `p${index}@gmail.com`),
@@ -167,6 +173,17 @@ describe("inviteMembers", () => {
 
     expect(result).toEqual({ ok: false, code: "validation", message });
     expect(await invitationsOf(seeded.workspaceId)).toEqual([]);
+  });
+
+  it("descarta los blancos y no los devuelve como rechazo", async () => {
+    await signInAs("owner");
+
+    const result = await actions.inviteMembers({ emails: [" ", "ana@gmail.com", ""] });
+
+    expect(result).toEqual({
+      ok: true,
+      data: { outcomes: [{ email: "ana@gmail.com", result: "invited", external: true }] },
+    });
   });
 
   it("una entrada armada a mano responde validation", async () => {

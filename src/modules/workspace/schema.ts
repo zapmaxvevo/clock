@@ -8,11 +8,18 @@ export const INVITE_LIMIT = 50;
 /** El largo máximo de un correo, el mismo que el `check` de la base. */
 export const EMAIL_MAX_LENGTH = 320;
 
+/**
+ * El tope de cada texto del pedido: por encima, ni se clasifica. Entre
+ * `EMAIL_MAX_LENGTH` y este, es un rechazo por correo (EQ-76).
+ */
+export const EMAIL_INPUT_MAX_LENGTH = 1000;
+
 /** Textos que la interfaz muestra tal cual (EQ-76 … EQ-81, EQ-90). */
 export const invitationMessages = {
   forbidden: "No tenés permiso para hacer esto.",
   noEmails: "Escribí al menos un correo.",
   tooMany: `Se pueden invitar hasta ${INVITE_LIMIT} correos por vez.`,
+  inputTooLong: `Cada correo puede tener hasta ${EMAIL_INPUT_MAX_LENGTH} caracteres.`,
   invalidEmail: (email: string) => `${email} no es un correo válido.`,
   inactiveMember: (email: string) =>
     `${email} está desactivada: reactivala desde la lista.`,
@@ -27,17 +34,32 @@ export const invitationMessages = {
 export type InvitationErrorCode =
   ActionErrorCode | "rejected" | "invalid_email" | "inactive_member" | "not_pending";
 
+/** Un texto con algo más que blancos: vacío después de normalizar, no es un correo. */
+function hasContent(value: string): boolean {
+  return value.trim().length > 0;
+}
+
 /**
  * Lo que manda el diálogo: los correos ya separados, crudos. El servidor los
- * normaliza, quita los repetidos y clasifica (D-E1a-7). El formato y el largo
- * de cada uno no se validan acá: son un rechazo por correo (EQ-14).
+ * normaliza, descarta los vacíos, quita los repetidos y clasifica (D-E1a-7).
+ * El formato y el largo de cada uno no se validan acá: son un rechazo por
+ * correo (EQ-14). Sin ninguno con contenido, es una causa de todo el pedido
+ * (D-E1a-6).
  */
 export const inviteInput = z.object(
   {
     emails: z
-      .array(z.string(), { error: invitationMessages.noEmails })
+      .array(
+        z
+          .string({ error: invitationMessages.noEmails })
+          .max(EMAIL_INPUT_MAX_LENGTH, { error: invitationMessages.inputTooLong }),
+        { error: invitationMessages.noEmails },
+      )
       .min(1, { error: invitationMessages.noEmails })
-      .max(INVITE_LIMIT, { error: invitationMessages.tooMany }),
+      .max(INVITE_LIMIT, { error: invitationMessages.tooMany })
+      .refine((emails) => emails.some(hasContent), {
+        error: invitationMessages.noEmails,
+      }),
   },
   { error: invitationMessages.noEmails },
 );

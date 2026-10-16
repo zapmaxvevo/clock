@@ -15,6 +15,10 @@ function invitationRow(
 }
 
 describe("distinctEmails (EQ-105)", () => {
+  it("descarta los que quedan vacíos al normalizar", () => {
+    expect(distinctEmails([" ", "ana@empresa.com", "\n"])).toEqual(["ana@empresa.com"]);
+  });
+
   it("normaliza y quita los repetidos, conservando el primero y el orden", () => {
     expect(
       distinctEmails(["Ana@Empresa.com ", "leo@gmail.com", "ana@empresa.com"]),
