@@ -63,7 +63,7 @@ type EntryGesture = {
 type CreateGesture = {
   readonly kind: "create";
   readonly dayIndex: number;
-  /** El minuto de la franja tocada, el de `slotAt`. */
+  /** El minuto de la celda del paso tocada, el de `selectionAnchor`. */
   readonly anchor: number;
 };
 
@@ -135,12 +135,31 @@ export function initialCandidate(gesture: Gesture, grid: GestureGrid): TimeDraft
     return gesture.original;
   }
   const day = grid.days[gesture.dayIndex];
-  return slotDraft(day.date, gesture.anchor, grid.zoom, day.missingMinutes);
+  return slotDraft(
+    day.date,
+    slotOf(gesture.anchor, grid.zoom),
+    grid.zoom,
+    day.missingMinutes,
+  );
 }
 
-/** La recta del período con las marcas del zoom (§5.1). */
+/** CAL-53: el paso del borde que se mueve, `min(zoom, 15)`. La grilla se dibuja con el zoom. */
+export function dragStep(zoom: CalendarZoom): CalendarZoom {
+  return zoom < 15 ? zoom : 15;
+}
+
+/**
+ * CAL-44: el ancla de una selección, la celda del paso bajo el puntero en una
+ * columna: `slotOf(offsetPx / minuteHeight(zoom), dragStep(zoom))`.
+ */
+export function selectionAnchor(offsetPx: number, zoom: CalendarZoom): number {
+  return slotOf(offsetPx / minuteHeight(zoom), dragStep(zoom));
+}
+
+/** La recta del período con las marcas del paso (§5.1, CAL-53). */
 function lineOf(grid: GestureGrid) {
-  const { zoom, days } = grid;
+  const { days } = grid;
+  const step = dragStep(grid.zoom);
   const end = days.length * MINUTES_PER_DAY;
   const firstOpen = days.findIndex((day) => !day.beforeFloor);
   const floor =
@@ -150,9 +169,10 @@ function lineOf(grid: GestureGrid) {
   return {
     end,
     floor,
-    round: (x: number) => Math.round(x / zoom) * zoom,
-    nextMark: (x: number) => Math.floor(x / zoom) * zoom + zoom,
-    lastMark: (x: number) => Math.ceil(x / zoom) * zoom - zoom,
+    step,
+    round: (x: number) => Math.round(x / step) * step,
+    nextMark: (x: number) => Math.floor(x / step) * step + step,
+    lastMark: (x: number) => Math.ceil(x / step) * step - step,
     dayOf: (point: GridMinute) =>
       addDaysToKey(days[0].date, Math.floor(point / MINUTES_PER_DAY)),
     /** Un punto de un día visible que no existe; los días de afuera no se miran (§8). */
@@ -191,7 +211,7 @@ export function candidateAt(
       const startMinute = clamp(
         wanted,
         Math.max(line.floor, line.nextMark(-span)),
-        line.end - grid.zoom,
+        line.end - line.step,
       );
       if (line.missing(startMinute) || line.missing(startMinute + span)) {
         return null;
@@ -250,11 +270,11 @@ export function candidateAt(
     case "create": {
       const { dayIndex, anchor } = gesture;
       const base = dayIndex * MINUTES_PER_DAY;
-      const longest = MINUTES_PER_DAY - grid.zoom;
-      const slot = slotOf(pointer - base, grid.zoom);
+      const longest = MINUTES_PER_DAY - line.step;
+      const slot = slotOf(pointer - base, line.step);
       let from = Math.min(anchor, slot);
-      let to = Math.max(anchor, slot) + grid.zoom;
-      // Más de 24 horas menos una franja: se recorta del lado del puntero.
+      let to = Math.max(anchor, slot) + line.step;
+      // Más de 24 horas menos un paso: se recorta del lado del puntero.
       if (to - from > longest) {
         if (slot >= anchor) {
           to = from + longest;
