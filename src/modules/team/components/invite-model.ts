@@ -1,5 +1,5 @@
 import { normalizeEmail } from "@/lib/email";
-import type { Rejection } from "@/server/action";
+import type { Rejection } from "@/server/errors";
 import { INVITE_LIMIT, invitationMessages } from "@/modules/workspace/schema";
 
 /**

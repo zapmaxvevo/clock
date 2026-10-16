@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { teamView, type ChangeRoleInput, type TeamMember } from "@/modules/team/schema";
 
-import { activate, feedbackOf } from "./team-members-model";
+import { activate, feedbackOf, revokeLeavesTable } from "./team-members-model";
 
 /** Una fila de la vista, validada con el esquema de la vista. */
 function memberOf(fields: Partial<TeamMember>): TeamMember {
@@ -175,4 +175,47 @@ describe("feedbackOf", () => {
       });
     },
   );
+});
+
+describe("revokeLeavesTable", () => {
+  it("con éxito, la fila sale: el foco va al título", () => {
+    expect(revokeLeavesTable({ kind: "revoked", email: "ana@otro.com" })).toBe(true);
+  });
+
+  it.each(["not_pending", "not_found"] as const)(
+    "con `%s`, la revalidación también saca la fila",
+    (code) => {
+      expect(
+        revokeLeavesTable({
+          kind: "revokeFailed",
+          email: "ana@otro.com",
+          code,
+          message: "Esa invitación ya no está pendiente.",
+        }),
+      ).toBe(true);
+    },
+  );
+
+  it.each(["unexpected", "forbidden", "validation"] as const)(
+    "con `%s`, la fila sigue y el foco queda en su botón",
+    (code) => {
+      expect(
+        revokeLeavesTable({
+          kind: "revokeFailed",
+          email: "ana@otro.com",
+          code,
+          message: "El mensaje.",
+        }),
+      ).toBe(false);
+    },
+  );
+
+  it("un cambio de rol no saca ninguna invitación", () => {
+    expect(revokeLeavesTable({ kind: "changed", name: "Ana", role: "admin" })).toBe(
+      false,
+    );
+    expect(
+      revokeLeavesTable({ kind: "failed", name: "Ana", code: "not_found", message: "x" }),
+    ).toBe(false);
+  });
 });

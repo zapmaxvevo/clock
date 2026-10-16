@@ -91,6 +91,21 @@ export function feedbackOf(outcome: TeamOutcome | null): TeamFeedback | null {
   }
 }
 
+/**
+ * Si la revalidación saca de la tabla la fila de la invitación revocada: con
+ * éxito, y con `not_pending` o `not_found`, que dicen que ya no está pendiente.
+ * Con el botón se va el foco, que la pantalla lleva al título (§5.4).
+ */
+export function revokeLeavesTable(outcome: TeamOutcome): boolean {
+  if (outcome.kind === "revoked") {
+    return true;
+  }
+  return (
+    outcome.kind === "revokeFailed" &&
+    (outcome.code === "not_pending" || outcome.code === "not_found")
+  );
+}
+
 function failedFeedback(
   title: string,
   failure: { readonly code: string; readonly message: string },

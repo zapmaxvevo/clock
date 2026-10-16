@@ -23,7 +23,7 @@ import {
   type InvitationErrorCode,
   type InviteOutcome,
 } from "@/modules/workspace/schema";
-import type { Rejection } from "@/server/action";
+import type { Rejection } from "@/server/errors";
 
 import { checkEmails, withoutRejected } from "./invite-model";
 import { teamLabels } from "./labels";
@@ -254,6 +254,9 @@ export function InviteResult({ outcomes, appUrl }: InviteResultProps) {
   }, []);
 
   async function copy(notice: string): Promise<void> {
+    // Vaciar antes: si la región ya dice «Aviso copiado.», el lector no repite
+    // el mismo texto al copiar otro aviso.
+    setCopyStatus("");
     try {
       await navigator.clipboard.writeText(notice);
       setCopyStatus(teamLabels.copied);

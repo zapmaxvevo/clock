@@ -15,8 +15,8 @@ import {
 import {
   invitationMessages,
   type InvitationActions,
+  type InvitationsView,
   type PendingInvitation,
-  type RevokeInvitationResult,
 } from "@/modules/workspace/schema";
 
 import { InvitationRow } from "./invitation-row";
@@ -26,6 +26,7 @@ import { RevokeInvitationDialog } from "./revoke-invitation-dialog";
 import {
   activate,
   feedbackOf,
+  revokeLeavesTable,
   TEAM_HEADING_ID,
   type TeamFeedback,
   type TeamOutcome,
@@ -37,12 +38,10 @@ function rowHeaderId(membershipId: string): string {
 }
 
 /** Las invitaciones que la pantalla muestra, con `member.invite` (D-E1a-1). */
-export type TeamInvitations = {
-  /** En el orden del correo (D-E1a-12). */
-  readonly invitations: readonly PendingInvitation[];
-  /** `BETTER_AUTH_URL`, para el aviso (D-E1a-10). */
-  readonly appUrl: string;
-};
+export type TeamInvitations = Omit<Extract<InvitationsView, { kind: "ready" }>, "kind">;
+
+/** Una invitación cuya fila sale de la tabla con la revalidación. */
+type LeavingInvitation = { readonly invitationId: string };
 
 type TeamMembersProps = {
   /** El título de la pantalla, que nombra la tabla; «Invitar» va a su derecha. */
@@ -70,11 +69,17 @@ export function TeamMembers({
   const [lastChange, setLastChange] = useState<ChangeRoleResult | null>(null);
   /** El éxito cuyo foco ya se resolvió: cada respuesta es un objeto nuevo. */
   const settledChange = useRef<ChangeRoleResult | null>(null);
-  /** La última revocación, para llevar el foco al título cuando su fila sale. */
-  const [lastRevoke, setLastRevoke] = useState<RevokeInvitationResult | null>(null);
-  const settledRevoke = useRef<RevokeInvitationResult | null>(null);
+  /**
+   * La invitación del último pedido cuya fila sale con la revalidación —por
+   * éxito, `not_pending` o `not_found`—, para llevar el foco al título.
+   */
+  const [leaving, setLeaving] = useState<LeavingInvitation | null>(null);
+  /** La salida cuyo foco ya se resolvió: cada desenlace es un objeto nuevo. */
+  const settledLeaving = useRef<LeavingInvitation | null>(null);
   /** El nombre o el correo de la fila del último pedido: la fila puede irse con la revalidación. */
   const target = useRef("");
+  /** El id de la invitación del último pedido de revocar. */
+  const revokeTarget = useRef("");
   const [confirming, setConfirming] = useState<PendingInvitation | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -98,19 +103,27 @@ export function TeamMembers({
       }),
   });
 
+  function settleRevoke(next: TeamOutcome, invitationId: string): void {
+    setOutcome(next);
+    if (revokeLeavesTable(next)) {
+      setLeaving({ invitationId });
+    }
+  }
+
   const revoke = useAction(actions.revokeInvitation, {
     unreachableMessage: invitationMessages.unexpectedRevoke,
-    onSuccess: (data) => {
-      setOutcome({ kind: "revoked", email: target.current });
-      setLastRevoke(data);
-    },
+    onSuccess: (data) =>
+      settleRevoke({ kind: "revoked", email: target.current }, data.invitationId),
     onFailure: (failure) =>
-      setOutcome({
-        kind: "revokeFailed",
-        email: target.current,
-        code: failure.code,
-        message: failure.message,
-      }),
+      settleRevoke(
+        {
+          kind: "revokeFailed",
+          email: target.current,
+          code: failure.code,
+          message: failure.message,
+        },
+        revokeTarget.current,
+      ),
   });
 
   /** §5.4: un pedido a la vez en la tabla, de cualquiera de las dos clases. */
@@ -138,23 +151,23 @@ export function TeamMembers({
   // Lo mismo con la revocación: cuando la revalidación saca la fila, con el
   // botón que tenía el foco, el foco va al título que nombra la tabla.
   useEffect(() => {
-    if (lastRevoke === null || settledRevoke.current === lastRevoke) {
+    if (leaving === null || settledLeaving.current === leaving) {
       return;
     }
     const listed = invitations?.invitations.some(
-      (invitation) => invitation.id === lastRevoke.invitationId,
+      (invitation) => invitation.id === leaving.invitationId,
     );
     if (listed === true) {
       return;
     }
-    settledRevoke.current = lastRevoke;
+    settledLeaving.current = leaving;
     document.getElementById(TEAM_HEADING_ID)?.focus();
-  }, [lastRevoke, invitations]);
+  }, [leaving, invitations]);
 
   function resetOutcome(): void {
     setOutcome(null);
     setLastChange(null);
-    setLastRevoke(null);
+    setLeaving(null);
   }
 
   function sendChange(input: ChangeRoleInput): void {
@@ -177,6 +190,7 @@ export function TeamMembers({
       return;
     }
     target.current = confirming.email;
+    revokeTarget.current = confirming.id;
     resetOutcome();
     revoke.run({ invitationId: confirming.id });
   }
