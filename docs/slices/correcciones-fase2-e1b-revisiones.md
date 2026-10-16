@@ -428,3 +428,56 @@ select email, status, accepted_at is not null as con_aceptada, revoked_at is not
  revocada@empresa.com   | pending  | f            | f
 (4 rows)
 ```
+
+## Revisiones sobre `bf1e440`
+
+| Revisión   | Veredicto                     |
+| ---------- | ----------------------------- |
+| Backend    | Aprobado (1 m)                |
+| Frontend   | Aprobado, sin hallazgos       |
+| Clean code | Cambios requeridos (1 M, 6 m) |
+| Seguridad  | Aprobado (3 m)                |
+| Tests      | Aprobado (4 m)                |
+| Paridad    | Aprobado (3 m, de texto)      |
+
+Corregido:
+
+- **Seguridad 1**: con la sesión abierta, sacar un dominio no cortaba a quien
+  entró sin invitación. La sesión vuelve a decidir la identidad de un correo
+  fuera de los dominios en cada pedido (`decideSessionIdentity`, `e5f47ab`); un
+  correo del dominio no suma consultas.
+- **Seguridad 3**: `disableIdTokenSignIn: true` en Google (`e5f47ab`); un
+  `idToken` responde 404 y no crea nada.
+- **Seguridad 2**: `signIn` de e2e prueba el endpoint sin la cabecera antes de
+  sembrar y corta sin escribir si no da 401 (`591b845`).
+- **Clean code y tests**: `seedMember` con correo en lugar de cuatro
+  `seedPerson` y sin el espía de `acceptPending` (`4e78b1f`);
+  `verifiedEmailOf`, `isBootstrapOwner`, `bootstrapContext`, `parseDomainList`
+  y el caso del arranque con un correo externo (`b63089b`); los ayudantes de e2e
+  en `team-page.ts`, `session.ts` y `login-page.ts`, e `isCompanyEmail` en
+  `signIn` (`0cf560f`).
+- **Backend 1**: la tabla de mutaciones de arriba (`7d53140`).
+- **Paridad**: EQ-17, EQ-18, EQ-22, EQ-29, EQ-30, EQ-32 y EQ-33 al día con E1a y
+  E1b (`afc97f5`). El criterio 17 exceptúa el test del criterio 6 (`64af950`).
+- **Tests 1**: el texto nuevo de `dominio_no_habilitado` en e2e entró en el
+  commit de la regla (`73e5cd5`), así que cada commit de la rama queda verde.
+
+Desvíos de e2e-tester, aceptados: la siembra de `signIn` en un commit propio
+antes de la regla (`076ce04`, verde sobre E1a: 223/223); `PERSON_NAME` en
+`e2e/environment.ts` para cortar el ciclo `session.ts` ↔ `database.ts`; el
+criterio 11 en e2e solo con páginas, porque las actions y la descarga los cubre
+`session.integration.test.ts`.
+
+## Corrida final
+
+Sobre `7d53140`: lint, typecheck, `prettier --check .`, 2165 de unidad, 305 de
+`test:time-ar` y 1754 de integración (base nueva `clock_e1b_final`). E2E con
+build limpio y base nueva `clock_e1b_final_e2e`: 227/227 dos veces.
+
+## Pendiente
+
+- **Producción (§6)**: la consulta previa, la `0016` y su comprobación, antes del
+  push; después, la consulta de la ventana y la verificación de humo.
+- **Script de importación (D-E1b-10)**: hasta que `newMembership` deje de crear
+  membresías, ningún `--apply` con una línea «encontrada, se crea la membresía»
+  en la corrida en seco.
