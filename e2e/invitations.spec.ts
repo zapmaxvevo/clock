@@ -26,6 +26,7 @@ import {
   memberHeader,
   memberRow,
   NO_EMAIL_SENT,
+  NO_INVITATIONS_YET,
   NOBODY_INVITED,
   noticeText,
   NOTICE_COPIED,
@@ -72,7 +73,9 @@ function externalEmail(label: string): string {
 
 /**
  * La persona de la sesión entra, que es lo que le crea la membresía, pasa a
- * admin y abre `/equipo`, que lee el rol en el pedido (D-R8-8).
+ * admin y abre `/equipo`, que lee el rol en el pedido (D-R8-8). El owner de la
+ * suite entró en el setup, así que quien mira nunca está solo y no aparece el
+ * vacío de EQ-93, con su segundo «Invitar».
  */
 async function enterTeamAsAdmin(page: Page, email: string): Promise<void> {
   await page.goto("/");
@@ -80,6 +83,7 @@ async function enterTeamAsAdmin(page: Page, email: string): Promise<void> {
   await setRole(email, "admin");
   await page.goto(TEAM_PATH);
   await expect(teamTable(page)).toBeVisible();
+  await expect(page.getByText(NO_INVITATIONS_YET, { exact: true })).toHaveCount(0);
 }
 
 /** Abre «Invitar», escribe `emails` y manda el pedido. Devuelve el paso de carga. */

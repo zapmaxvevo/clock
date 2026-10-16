@@ -106,13 +106,20 @@ export function teamFeedback(page: Page): Locator {
 export const INVITE = "Invitar";
 
 /**
- * «Invitar» de la pantalla, dentro de `main`. Con el diálogo abierto, el resto
+ * «Invitar» junto al título, dentro de `main`. Con el diálogo abierto, el resto
  * de la página queda fuera del árbol accesible, así que no se confunde con el
- * botón del diálogo.
+ * botón del diálogo. Con quien mira solo en el equipo, el vacío de EQ-93 suma
+ * un segundo «Invitar» debajo de la tabla: el del título es el primero.
  */
 export function inviteButton(page: Page): Locator {
-  return page.getByRole("main").getByRole("button", { name: INVITE, exact: true });
+  return page
+    .getByRole("main")
+    .getByRole("button", { name: INVITE, exact: true })
+    .first();
 }
+
+/** EQ-93: el vacío, con quien mira solo en el equipo y sin invitadas. */
+export const NO_INVITATIONS_YET = "Todavía no invitaste a nadie.";
 
 /** E1a, §5.3: el paso de carga del diálogo. */
 export function inviteDialog(page: Page): Locator {
