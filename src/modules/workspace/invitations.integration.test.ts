@@ -123,8 +123,7 @@ describe("inviteMembers", () => {
   });
 
   it("compara con el correo de `user` recortado y en minúsculas (D-E1b-1)", async () => {
-    const userId = await seedUser("  Leo@Empresa.com ");
-    await db.insert(membership).values({ workspaceId, userId, role: "member" });
+    await seedMember(workspaceId, "member", "active", { email: "  Leo@Empresa.com " });
 
     const result = await inviteMembers(owner(), { emails: ["leo@empresa.com"] });
 
@@ -430,10 +429,7 @@ describe("entryFactsOf (D-E1b-1, criterio 20)", () => {
   });
 
   it("da el estado de la membresía, con el correo de `user` con mayúsculas y blancos", async () => {
-    const userId = await seedUser(" Ana@Empresa.com  ");
-    await db
-      .insert(membership)
-      .values({ workspaceId, userId, role: "member", status: "inactive" });
+    await seedMember(workspaceId, "member", "inactive", { email: " Ana@Empresa.com  " });
     await seedInvitation({ workspaceId, email: "ana@empresa.com", status: "accepted" });
 
     expect(await entryFactsOf("ana@empresa.com")).toEqual({
@@ -451,8 +447,7 @@ describe("entryFactsOf (D-E1b-1, criterio 20)", () => {
 
   it("dos `user` con el mismo correo normalizado dan la membresía en null; la pendiente sigue", async () => {
     for (const email of ["ana@empresa.com", "ANA@empresa.com "]) {
-      const userId = await seedUser(email);
-      await db.insert(membership).values({ workspaceId, userId, role: "member" });
+      await seedMember(workspaceId, "member", "active", { email });
     }
 
     expect(await entryFactsOf("ana@empresa.com")).toEqual(none);
@@ -468,10 +463,7 @@ describe("entryFactsOf (D-E1b-1, criterio 20)", () => {
   it("lee solo el workspace más viejo", async () => {
     const newer = await seedWorkspace();
     await seedInvitation({ workspaceId: newer.workspaceId, email: "ana@gmail.com" });
-    const userId = await seedUser("leo@gmail.com");
-    await db
-      .insert(membership)
-      .values({ workspaceId: newer.workspaceId, userId, role: "member" });
+    await seedMember(newer.workspaceId, "member", "active", { email: "leo@gmail.com" });
 
     expect(await entryFactsOf("ana@gmail.com")).toEqual(none);
     expect(await entryFactsOf("leo@gmail.com")).toEqual(none);

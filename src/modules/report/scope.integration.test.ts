@@ -2085,7 +2085,7 @@ describe("el filtro de personas dentro del alcance (criterio 19 de R4; criterios
   let invitedId: string;
 
   beforeEach(async () => {
-    await seedMember(a.workspaceId, "member", "active", betterAuthId);
+    await seedMember(a.workspaceId, "member", "active", { id: betterAuthId });
     invitedId = await seedMember(a.workspaceId, "member", "invited");
     names.set(betterAuthId, "Better Auth");
     names.set(invitedId, "invitada");

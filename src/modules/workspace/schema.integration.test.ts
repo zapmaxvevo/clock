@@ -10,8 +10,8 @@ import {
   constraintOf,
   UNIQUE_VIOLATION,
 } from "@/server/db/constraint-error";
-import { auditLog, invitation, membership } from "@/server/db/schema";
-import { seedInvitation, seedUser, seedWorkspace } from "@/test/factories";
+import { auditLog, invitation } from "@/server/db/schema";
+import { seedInvitation, seedMember, seedWorkspace } from "@/test/factories";
 import { invitationOf } from "@/test/queries";
 
 /**
@@ -161,14 +161,6 @@ describe("los check de invitation (criterio 20)", () => {
 });
 
 describe("la migración 0016 (D-E1b-6, criterio 15)", () => {
-  /** Una persona con ese correo guardado y su membresía en `workspace`. */
-  async function seedPerson(workspace: string, email: string) {
-    const userId = await seedUser(email);
-    await db
-      .insert(membership)
-      .values({ workspaceId: workspace, userId, role: "member" });
-  }
-
   async function runMigration() {
     const migration = await migrationSql("0016_invitation_accept_members");
     // Una sola sentencia: la 0016 no tiene cortes.
@@ -179,9 +171,9 @@ describe("la migración 0016 (D-E1b-6, criterio 15)", () => {
   it("acepta las pendientes cuyo correo tiene membresía en su workspace, con su constancia sin actor", async () => {
     const plain = await seedInvitation({ workspaceId, email: "ana@empresa.com" });
     const messy = await seedInvitation({ workspaceId, email: "leo@gmail.com" });
-    await seedPerson(workspaceId, "ana@empresa.com");
+    await seedMember(workspaceId, "member", "active", { email: "ana@empresa.com" });
     // El correo de `user` con mayúsculas y blancos: compara normalizado.
-    await seedPerson(workspaceId, "  Leo@Gmail.COM ");
+    await seedMember(workspaceId, "member", "active", { email: "  Leo@Gmail.COM " });
 
     await runMigration();
 
@@ -229,9 +221,9 @@ describe("la migración 0016 (D-E1b-6, criterio 15)", () => {
       await seedInvitation({ workspaceId, email: "acc@empresa.com", status: "accepted" }),
       await seedInvitation({ workspaceId, email: "rev@empresa.com", status: "revoked" }),
     ];
-    await seedPerson(workspaceId, "ana@empresa.com");
-    await seedPerson(workspaceId, "acc@empresa.com");
-    await seedPerson(workspaceId, "rev@empresa.com");
+    await seedMember(workspaceId, "member", "active", { email: "ana@empresa.com" });
+    await seedMember(workspaceId, "member", "active", { email: "acc@empresa.com" });
+    await seedMember(workspaceId, "member", "active", { email: "rev@empresa.com" });
 
     await runMigration();
 

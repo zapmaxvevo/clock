@@ -99,12 +99,9 @@ async function seedPerson(values: {
   readonly status?: MembershipStatus;
   readonly id?: string;
 }): Promise<string> {
-  const userId = await seedMember(
-    workspaceId,
-    values.role ?? "member",
-    values.status,
-    values.id,
-  );
+  const userId = await seedMember(workspaceId, values.role ?? "member", values.status, {
+    id: values.id,
+  });
   await renameAccount(userId, values.accountName);
   if (values.displayName !== undefined) {
     await seedPreferences(userId, { displayName: values.displayName });

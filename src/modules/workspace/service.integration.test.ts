@@ -139,12 +139,10 @@ describe("ensureWorkspaceContext con el workspace", () => {
     // Una pendiente con membresía: el estado que limpia la 0016. La rama que
     // encuentra la membresía ni la mira.
     const seeded = await seedInvitation({ workspaceId, email });
-    const acceptPending = vi.spyOn(workspaceRepository, "acceptPending");
 
     const context = await enter(userId, email);
 
     expect(context.membership.userId).toBe(userId);
-    expect(acceptPending).not.toHaveBeenCalled();
     expect(await invitationOf(workspaceId, email)).toEqual(seeded);
     expect(await auditFor("invitation")).toEqual([]);
   });

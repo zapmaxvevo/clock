@@ -2,11 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { workspaceRepository } from "@/modules/workspace/repository";
 import { accessDenialMessage } from "@/server/access";
-import { db } from "@/server/db";
-import { membership } from "@/server/db/schema";
 import { env } from "@/server/env";
-import type { MembershipStatus } from "@/server/permissions";
-import { seedInvitation, seedUser, seedWorkspace } from "@/test/factories";
+import { seedInvitation, seedMember, seedWorkspace } from "@/test/factories";
 
 import {
   decideProfileEntry,
@@ -36,17 +33,6 @@ async function bothEntries(email: string, hd?: string) {
     await decideProfileEntry(profile(email, hd)),
     await decideStoredEmailEntry(email),
   ];
-}
-
-/** Una persona con ese correo y su membresía en el workspace. */
-async function seedPerson(
-  workspaceId: string,
-  email: string,
-  status: MembershipStatus = "active",
-): Promise<string> {
-  const userId = await seedUser(email);
-  await db.insert(membership).values({ workspaceId, userId, role: "member", status });
-  return userId;
 }
 
 afterEach(() => {
@@ -79,7 +65,7 @@ describe("con el workspace", () => {
     });
 
     it("con membresía entra sin invitación (EQ-31)", async () => {
-      await seedPerson(workspaceId, "ana@empresa.com");
+      await seedMember(workspaceId, "member", "active", { email: "ana@empresa.com" });
 
       expect(await bothEntries("ana@empresa.com", "empresa.com")).toEqual([
         allowed,
@@ -102,7 +88,7 @@ describe("con el workspace", () => {
     });
 
     it("una membresía inactiva sigue dando acceso hasta E2 (criterio 9)", async () => {
-      await seedPerson(workspaceId, "ana@empresa.com", "inactive");
+      await seedMember(workspaceId, "member", "inactive", { email: "ana@empresa.com" });
 
       expect(await bothEntries("ana@empresa.com", "empresa.com")).toEqual([
         allowed,
@@ -128,7 +114,7 @@ describe("con el workspace", () => {
   describe("un correo del dominio sin hd (criterio 5)", () => {
     it("no entra, aunque tenga invitación o membresía", async () => {
       await seedInvitation({ workspaceId, email: "ana@empresa.com" });
-      await seedPerson(workspaceId, "leo@empresa.com");
+      await seedMember(workspaceId, "member", "active", { email: "leo@empresa.com" });
 
       expect(await decideProfileEntry(profile("ana@empresa.com"))).toEqual(notHosted);
       expect(await decideProfileEntry(profile("leo@empresa.com"))).toEqual(notHosted);
@@ -149,7 +135,7 @@ describe("con el workspace", () => {
 
     it("con la invitación aceptada y membresía entra, también con el correo guardado con mayúsculas", async () => {
       await seedInvitation({ workspaceId, email: "ana@gmail.com", status: "accepted" });
-      await seedPerson(workspaceId, " Ana@Gmail.com");
+      await seedMember(workspaceId, "member", "active", { email: " Ana@Gmail.com" });
 
       expect(await bothEntries("ana@gmail.com")).toEqual([allowed, allowed]);
     });
@@ -160,7 +146,7 @@ describe("con el workspace", () => {
 
     it("con membresía y la invitación revocada no entra (EQ-24)", async () => {
       await seedInvitation({ workspaceId, email: "ana@gmail.com", status: "revoked" });
-      await seedPerson(workspaceId, "ana@gmail.com");
+      await seedMember(workspaceId, "member", "active", { email: "ana@gmail.com" });
 
       expect(await bothEntries("ana@gmail.com")).toEqual([notInvited, notInvited]);
     });
