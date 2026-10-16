@@ -440,6 +440,30 @@ export async function seedPerson(person: SeedPerson): Promise<void> {
   });
 }
 
+/** El estado de una invitación, como lo guarda `invitation_status`. */
+export type InvitationStatus = "pending" | "accepted" | "revoked";
+
+/**
+ * El estado de la invitación de un correo en el workspace de los e2e, o
+ * `null` si no tiene. Hay una fila por correo, en minúsculas (D-E1a-3): un
+ * pedido que no escribió se ve como `null`, y uno que escribió dos veces no
+ * puede dejar dos filas.
+ */
+export async function invitationStatusOf(
+  email: string,
+): Promise<InvitationStatus | null> {
+  return withDatabase(async (client) => {
+    const result = await client.query<{ status: InvitationStatus }>(
+      `select status
+         from invitation
+        where workspace_id = ${FIRST_WORKSPACE}
+          and email = lower(btrim($1))`,
+      [email],
+    );
+    return result.rows.at(0)?.status ?? null;
+  });
+}
+
 /**
  * Le pone a una persona su nombre editado, el que guarda `/perfil` (PF-07).
  * Es para la persona de la sesión, que el reporte nombra: su nombre de Google

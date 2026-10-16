@@ -1,8 +1,10 @@
 /**
- * Localizadores de `/equipo` (R8 del núcleo de reportes). Como en
- * `reports-page.ts`, todo se busca por rol y por texto accesible: la tabla se
- * nombra por el título y cada persona es una fila con su encabezado de fila,
- * que empieza con el nombre y sigue con «(vos)» y el email.
+ * Localizadores de `/equipo` (R8 del núcleo de reportes, E1a de la fase 2).
+ * Como en `reports-page.ts`, todo se busca por rol y por texto accesible: la
+ * tabla se nombra por el título y cada persona es una fila con su encabezado
+ * de fila, que empieza con el nombre y sigue con «(vos)» y el email. Una
+ * invitada es una fila al final, cuyo encabezado empieza con el correo y sigue
+ * con sus marcas.
  */
 import type { Locator, Page } from "@playwright/test";
 
@@ -98,4 +100,130 @@ export function roleButton(page: Page, action: RoleAction, name: string): Locato
 export function teamFeedback(page: Page): Locator {
   const main = page.getByRole("main");
   return main.getByRole("status").or(main.getByRole("alert"));
+}
+
+/** E1a, §5.2: «Invitar», junto al título; el diálogo tiene su propio «Invitar». */
+export const INVITE = "Invitar";
+
+/**
+ * «Invitar» de la pantalla, dentro de `main`. Con el diálogo abierto, el resto
+ * de la página queda fuera del árbol accesible, así que no se confunde con el
+ * botón del diálogo.
+ */
+export function inviteButton(page: Page): Locator {
+  return page.getByRole("main").getByRole("button", { name: INVITE, exact: true });
+}
+
+/** E1a, §5.3: el paso de carga del diálogo. */
+export function inviteDialog(page: Page): Locator {
+  return page.getByRole("dialog", { name: "Invitar personas", exact: true });
+}
+
+/** El campo de los correos del paso de carga. */
+export function emailsField(dialog: Locator): Locator {
+  return dialog.getByRole("textbox", { name: "Correos", exact: true });
+}
+
+/** Un botón de un diálogo por su texto. */
+export function dialogButton(dialog: Locator, name: string): Locator {
+  return dialog.getByRole("button", { name, exact: true });
+}
+
+/** El aviso del diálogo: los rechazos o la falla de red, con «Reintentar». */
+export function dialogAlert(dialog: Locator): Locator {
+  return dialog.getByRole("alert");
+}
+
+/** E1a, §5.3: el título del aviso de un pedido rechazado (ADR 0011). */
+export const NOBODY_INVITED = "No se invitó a nadie.";
+
+/** EQ-76: un correo que no es válido. */
+export function invalidEmailMessage(email: string): string {
+  return `${email} no es un correo válido.`;
+}
+
+/** EQ-79: el correo de una persona desactivada. */
+export function inactiveMemberMessage(email: string): string {
+  return `${email} está desactivada: reactivala desde la lista.`;
+}
+
+/** E1a, §5.3: deja en el campo solo los correos sin rechazo. */
+export const DROP_FAILING = "Quitar los que fallan";
+
+/** E1a, §5.3: el paso de resultado del diálogo. */
+export function resultDialog(page: Page): Locator {
+  return page.getByRole("dialog", { name: "Invitaciones", exact: true });
+}
+
+/** P-04: Clock no manda correos, así que el resultado lo dice. */
+export const NO_EMAIL_SENT =
+  "Clock no manda correos: avisale a cada persona con este texto.";
+
+/** E1a, §5.3: el resultado de cada correo (D-E1a-7). */
+export const INVITED = "Invitada";
+export const ALREADY_INVITED = "Ya estaba invitada";
+export type InviteOutcomeLabel = typeof INVITED | typeof ALREADY_INVITED;
+
+/** D-E1a-10: el aviso para copiar, con la dirección de `BETTER_AUTH_URL`. */
+export function noticeText(appUrl: string, email: string): string {
+  return `Entrá a ${appUrl} con tu cuenta de Google ${email}.`;
+}
+
+/**
+ * El renglón de un correo en el paso de resultado. Los correos de los
+ * recorridos llevan un id único, así que ningún otro renglón lo nombra.
+ */
+export function outcomeItem(dialog: Locator, email: string): Locator {
+  return dialog.getByRole("listitem").filter({ hasText: email });
+}
+
+/** El resultado de un renglón, por su texto completo. */
+export function outcomeLabel(item: Locator, label: InviteOutcomeLabel): Locator {
+  return item.getByText(label, { exact: true });
+}
+
+/** «Copiar» de un renglón, con el correo en el nombre (§5.3). */
+export function copyButton(dialog: Locator, email: string): Locator {
+  return dialog.getByRole("button", { name: `Copiar aviso para ${email}`, exact: true });
+}
+
+/** Lo que anuncia «Copiar» cuando el portapapeles lo aceptó. */
+export const NOTICE_COPIED = "Aviso copiado.";
+
+/** E1a, §5.4: las marcas del encabezado de fila de una invitada (EQ-04, EQ-22). */
+export const INVITED_MARK = "Invitada";
+export const EXTERNAL_MARK = "Externa";
+
+/**
+ * La fila de una invitación pendiente, por el comienzo de su encabezado de
+ * fila, que es el correo. La de una persona empieza con el nombre, así que
+ * la invitada que entró deja de encontrarse por acá.
+ */
+export function invitationRow(page: Page, email: string): Locator {
+  return memberRow(page, email);
+}
+
+/** «Revocar invitación» de una fila, con el correo en el nombre (§5.4). */
+export function revokeButton(page: Page, email: string): Locator {
+  return teamTable(page).getByRole("button", {
+    name: `Revocar invitación: ${email}`,
+    exact: true,
+  });
+}
+
+/** E1a, §5.4: la confirmación de una revocación. */
+export function revokeDialog(page: Page, email: string): Locator {
+  return page.getByRole("dialog", {
+    name: `¿Revocar la invitación de ${email}?`,
+    exact: true,
+  });
+}
+
+/** El texto de la confirmación. */
+export const REVOKE_WARNING =
+  "No va a poder entrar con esta invitación. Podés volver a invitar a este correo cuando quieras.";
+
+/** El aviso de la tabla después de revocar. */
+export function revokedMessage(email: string): string {
+  return `Invitación de ${email} revocada.`;
 }
