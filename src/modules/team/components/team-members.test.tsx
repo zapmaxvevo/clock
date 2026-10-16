@@ -2,7 +2,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { teamView, type TeamMember } from "@/modules/team/schema";
-import { buttonsOf, textOf } from "@/test/markup";
+import type { PendingInvitation } from "@/modules/workspace/schema";
+import { bodyRows, buttonsOf, textOf } from "@/test/markup";
 
 import { TeamMembersView } from "./team-members";
 import type { TeamFeedback } from "./team-members-model";
@@ -31,13 +32,29 @@ const view = teamView.parse({
 });
 const members: readonly TeamMember[] = view.kind === "ready" ? view.members : [];
 
-function render(pending: boolean, feedback: TeamFeedback | null): string {
+/** Una invitada del dominio y una externa, en el orden del correo. */
+const invitations: readonly PendingInvitation[] = [
+  {
+    id: "6ebcd370-ef08-4cab-9a07-7d8e9fa0bc27",
+    email: "carla@empresa.com",
+    external: false,
+  },
+  { id: "7fcde481-f019-4dbc-8b18-8e9fa0b1cd38", email: "nico@otro.com", external: true },
+];
+
+function render(
+  pending: boolean,
+  feedback: TeamFeedback | null,
+  rows: readonly PendingInvitation[] = invitations,
+): string {
   return renderToStaticMarkup(
     <TeamMembersView
       members={members}
+      invitations={rows}
       pending={pending}
       feedback={feedback}
       onActivate={() => undefined}
+      onRevoke={() => undefined}
       onRetry={() => undefined}
     />,
   );
@@ -47,15 +64,15 @@ describe("TeamMembersView", () => {
   it("sin pedido ni aviso, ningún botón inactivo y ningún aviso", () => {
     const markup = render(false, null);
 
-    expect(buttonsOf(markup)).toHaveLength(2);
+    expect(buttonsOf(markup)).toHaveLength(4);
     expect(markup).not.toMatch(/\saria-disabled=/);
     expect(markup).not.toMatch(/role="(alert|status)"/);
   });
 
-  it("con un pedido en curso, todos los botones con aria-disabled y ninguno con disabled", () => {
+  it("con un pedido en curso, los botones de rol y de revocar con aria-disabled y ninguno con disabled", () => {
     const buttons = buttonsOf(render(true, null));
 
-    expect(buttons).toHaveLength(2);
+    expect(buttons).toHaveLength(4);
     for (const button of buttons) {
       expect(button).toContain('aria-disabled="true"');
       expect(button).not.toMatch(/\sdisabled(=|\s|>)/);
@@ -101,5 +118,54 @@ describe("TeamMembersView", () => {
     expect(markup).not.toContain('role="alert"');
     expect(textOf(markup)).toContain("Rol de Ana: Administrador.");
     expect(textOf(markup)).not.toContain("Reintentar");
+  });
+
+  it("las invitadas van después de las personas, con sus marcas, «Miembro» y «Revocar invitación»", () => {
+    expect(bodyRows(render(false, null))).toEqual([
+      ["Anaana@empresa.com", "Miembro", "Hacer administrador"],
+      ["Brunobruno@empresa.com", "Administrador", "Quitar administrador"],
+      ["carla@empresa.comInvitada", "Miembro", "Revocar invitación"],
+      ["nico@otro.comInvitadaExterna", "Miembro", "Revocar invitación"],
+    ]);
+  });
+
+  it("«Revocar invitación» nombra el correo y lleva el id al que vuelve el foco", () => {
+    const markup = render(false, null);
+    const revoke = buttonsOf(markup).filter(
+      (button) => textOf(button) === "Revocar invitación",
+    );
+
+    expect(revoke).toHaveLength(2);
+    expect(revoke[0]).toContain('aria-label="Revocar invitación: carla@empresa.com"');
+    expect(revoke[0]).toContain(`id="revocar-${invitations[0]?.id ?? ""}"`);
+    expect(revoke[1]).toContain('aria-label="Revocar invitación: nico@otro.com"');
+  });
+
+  it("el correo de la invitada es el encabezado de su fila", () => {
+    const markup = render(false, null);
+
+    expect(markup).toMatch(/<th scope="row"[^>]*>.*?nico@otro\.com.*?<\/th>/);
+  });
+
+  it("sin invitadas, solo las filas de las personas", () => {
+    const markup = render(false, null, []);
+
+    expect(bodyRows(markup)).toHaveLength(2);
+    expect(textOf(markup)).not.toContain("Invitada");
+  });
+
+  it("con una revocación fallida, el aviso nombra el correo", () => {
+    const markup = render(false, {
+      tone: "error",
+      title: "No se pudo revocar la invitación de nico@otro.com.",
+      message: "Esa invitación ya no está pendiente.",
+      retry: false,
+    });
+
+    expect(markup).toContain('role="alert"');
+    expect(textOf(markup)).toContain(
+      "No se pudo revocar la invitación de nico@otro.com.",
+    );
+    expect(textOf(markup)).toContain("Esa invitación ya no está pendiente.");
   });
 });

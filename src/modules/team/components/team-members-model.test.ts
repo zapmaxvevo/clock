@@ -131,4 +131,48 @@ describe("feedbackOf", () => {
       retry: false,
     });
   });
+
+  it("una revocación es informativa, con el correo", () => {
+    expect(feedbackOf({ kind: "revoked", email: "ana@otro.com" })).toEqual({
+      tone: "info",
+      title: "Invitación de ana@otro.com revocada.",
+      retry: false,
+    });
+  });
+
+  it("una revocación inesperada es un error con el correo, el cuerpo propio y «Reintentar»", () => {
+    expect(
+      feedbackOf({
+        kind: "revokeFailed",
+        email: "ana@otro.com",
+        code: "unexpected",
+        message:
+          "No se pudo revocar la invitación. Revisá la conexión y volvé a intentar.",
+      }),
+    ).toEqual({
+      tone: "error",
+      title: "No se pudo revocar la invitación de ana@otro.com.",
+      message: "Revisá la conexión y volvé a intentar.",
+      retry: true,
+    });
+  });
+
+  it.each(["forbidden", "not_found", "not_pending"] as const)(
+    "una revocación con `%s` es un error con la causa, sin «Reintentar»",
+    (code) => {
+      expect(
+        feedbackOf({
+          kind: "revokeFailed",
+          email: "ana@otro.com",
+          code,
+          message: "Esa invitación ya no está pendiente.",
+        }),
+      ).toEqual({
+        tone: "error",
+        title: "No se pudo revocar la invitación de ana@otro.com.",
+        message: "Esa invitación ya no está pendiente.",
+        retry: false,
+      });
+    },
+  );
 });

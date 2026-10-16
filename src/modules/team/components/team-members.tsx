@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { ActionFeedback } from "@/components/action-feedback";
 import { Button } from "@/components/ui/button";
@@ -12,8 +12,17 @@ import {
   type TeamActions,
   type TeamMember,
 } from "@/modules/team/schema";
+import {
+  invitationMessages,
+  type InvitationActions,
+  type PendingInvitation,
+  type RevokeInvitationResult,
+} from "@/modules/workspace/schema";
 
+import { InvitationRow } from "./invitation-row";
+import { InviteDialog } from "./invite-dialog";
 import { teamLabels } from "./labels";
+import { RevokeInvitationDialog } from "./revoke-invitation-dialog";
 import {
   activate,
   feedbackOf,
@@ -27,40 +36,86 @@ function rowHeaderId(membershipId: string): string {
   return `persona-${membershipId}`;
 }
 
+/** Las invitaciones que la pantalla muestra, con `member.invite` (D-E1a-1). */
+export type TeamInvitations = {
+  /** En el orden del correo (D-E1a-12). */
+  readonly invitations: readonly PendingInvitation[];
+  /** `BETTER_AUTH_URL`, para el aviso (D-E1a-10). */
+  readonly appUrl: string;
+};
+
 type TeamMembersProps = {
+  /** El título de la pantalla, que nombra la tabla; «Invitar» va a su derecha. */
+  readonly heading: ReactNode;
   /** Las membresías activas, ya en el orden de `compareNames`. */
   readonly members: readonly TeamMember[];
-  readonly changeRole: TeamActions["changeRole"];
+  /** `null` sin `member.invite`: sin «Invitar» ni filas de invitadas. */
+  readonly invitations: TeamInvitations | null;
+  readonly actions: TeamActions & InvitationActions;
 };
 
 /**
- * La tabla con su único pedido en curso y el aviso del último desenlace. Sin
- * vista optimista: el botón dice el rol que hay hasta que el servidor
- * responde, y la revalidación trae el nuevo.
+ * La tabla con su único pedido en curso —un cambio de rol o una revocación— y
+ * el aviso del último desenlace, más los dos diálogos de las invitaciones. Sin
+ * vista optimista: la fila cambia cuando el servidor responde y revalida.
  */
-export function TeamMembers({ members, changeRole }: TeamMembersProps) {
+export function TeamMembers({
+  heading,
+  members,
+  invitations,
+  actions,
+}: TeamMembersProps) {
   const [outcome, setOutcome] = useState<TeamOutcome | null>(null);
   /** El último éxito, para llevar el foco cuando la fila revalidada trae su rol (§5.4). */
   const [lastChange, setLastChange] = useState<ChangeRoleResult | null>(null);
   /** El éxito cuyo foco ya se resolvió: cada respuesta es un objeto nuevo. */
   const settledChange = useRef<ChangeRoleResult | null>(null);
-  /** El nombre de la fila del último pedido: la fila puede irse con la revalidación. */
-  const targetName = useRef("");
+  /** La última revocación, para llevar el foco al título cuando su fila sale. */
+  const [lastRevoke, setLastRevoke] = useState<RevokeInvitationResult | null>(null);
+  const settledRevoke = useRef<RevokeInvitationResult | null>(null);
+  /** El nombre o el correo de la fila del último pedido: la fila puede irse con la revalidación. */
+  const target = useRef("");
+  const [confirming, setConfirming] = useState<PendingInvitation | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  /** Cada apertura monta un diálogo nuevo, vacío y en el paso de carga. */
+  const [inviteKey, setInviteKey] = useState(0);
+  const headerInvite = useRef<HTMLButtonElement>(null);
+  const inviteOpener = useRef<HTMLElement | null>(null);
 
-  const { pending, run, retry } = useAction(changeRole, {
+  const change = useAction(actions.changeRole, {
     unreachableMessage: teamMessages.unexpected,
     onSuccess: (data) => {
-      setOutcome({ kind: "changed", name: targetName.current, role: data.role });
+      setOutcome({ kind: "changed", name: target.current, role: data.role });
       setLastChange(data);
     },
     onFailure: (failure) =>
       setOutcome({
         kind: "failed",
-        name: targetName.current,
+        name: target.current,
         code: failure.code,
         message: failure.message,
       }),
   });
+
+  const revoke = useAction(actions.revokeInvitation, {
+    unreachableMessage: invitationMessages.unexpectedRevoke,
+    onSuccess: (data) => {
+      setOutcome({ kind: "revoked", email: target.current });
+      setLastRevoke(data);
+    },
+    onFailure: (failure) =>
+      setOutcome({
+        kind: "revokeFailed",
+        email: target.current,
+        code: failure.code,
+        message: failure.message,
+      }),
+  });
+
+  /** §5.4: un pedido a la vez en la tabla, de cualquiera de las dos clases. */
+  const pending = change.pending || revoke.pending;
+  const pendingInvitations = invitations?.invitations ?? [];
 
   // La respuesta y la revalidación llegan en transiciones distintas, en
   // cualquier orden: se espera a que la fila traiga el rol del éxito. Si se
@@ -80,37 +135,146 @@ export function TeamMembers({ members, changeRole }: TeamMembersProps) {
     }
   }, [lastChange, members]);
 
-  function send(input: ChangeRoleInput): void {
-    targetName.current =
-      members.find((member) => member.membershipId === input.membershipId)?.name ?? "";
+  // Lo mismo con la revocación: cuando la revalidación saca la fila, con el
+  // botón que tenía el foco, el foco va al título que nombra la tabla.
+  useEffect(() => {
+    if (lastRevoke === null || settledRevoke.current === lastRevoke) {
+      return;
+    }
+    const listed = invitations?.invitations.some(
+      (invitation) => invitation.id === lastRevoke.invitationId,
+    );
+    if (listed === true) {
+      return;
+    }
+    settledRevoke.current = lastRevoke;
+    document.getElementById(TEAM_HEADING_ID)?.focus();
+  }, [lastRevoke, invitations]);
+
+  function resetOutcome(): void {
     setOutcome(null);
     setLastChange(null);
-    run(input);
+    setLastRevoke(null);
   }
 
+  function sendChange(input: ChangeRoleInput): void {
+    target.current =
+      members.find((member) => member.membershipId === input.membershipId)?.name ?? "";
+    resetOutcome();
+    change.run(input);
+  }
+
+  function requestRevoke(invitation: PendingInvitation): void {
+    if (pending) {
+      return;
+    }
+    setConfirming(invitation);
+    setConfirmOpen(true);
+  }
+
+  function confirmRevoke(): void {
+    if (confirming === null || pending) {
+      return;
+    }
+    target.current = confirming.email;
+    resetOutcome();
+    revoke.run({ invitationId: confirming.id });
+  }
+
+  function openInvite(opener: HTMLElement): void {
+    inviteOpener.current = opener;
+    setInviteKey((key) => key + 1);
+    setInviteOpen(true);
+  }
+
+  // EQ-93: quien mira está solo y no invitó a nadie todavía.
+  const empty =
+    invitations !== null && members.length === 1 && pendingInvitations.length === 0;
+
   return (
-    <TeamMembersView
-      members={members}
-      pending={pending}
-      feedback={feedbackOf(outcome)}
-      onActivate={(member) => activate(member, pending, send)}
-      onRetry={() => {
-        // El aviso se va mientras viaja, como el de `useAction`: sin él no hay
-        // un segundo «Reintentar» con el pedido en curso.
-        setOutcome(null);
-        retry();
-      }}
-    />
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        {heading}
+        {invitations !== null && (
+          <Button
+            ref={headerInvite}
+            type="button"
+            size="sm"
+            onClick={(event) => openInvite(event.currentTarget)}
+          >
+            {teamLabels.invite}
+          </Button>
+        )}
+      </div>
+      <p className="text-muted-foreground text-sm">{teamLabels.intro}</p>
+      <TeamMembersView
+        members={members}
+        invitations={pendingInvitations}
+        pending={pending}
+        feedback={feedbackOf(outcome)}
+        onActivate={(member) => activate(member, pending, sendChange)}
+        onRevoke={requestRevoke}
+        onRetry={() => {
+          // El aviso se va mientras viaja, como el de `useAction`: sin él no hay
+          // un segundo «Reintentar» con el pedido en curso.
+          setOutcome(null);
+          if (outcome?.kind === "revokeFailed") {
+            revoke.retry();
+          } else {
+            change.retry();
+          }
+        }}
+      />
+      {empty && (
+        <div className="flex flex-col items-start gap-2">
+          <p className="text-muted-foreground text-sm">{teamLabels.emptyInvitations}</p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={(event) => openInvite(event.currentTarget)}
+          >
+            {teamLabels.invite}
+          </Button>
+        </div>
+      )}
+      {invitations !== null && (
+        <InviteDialog
+          key={inviteKey}
+          open={inviteOpen}
+          onOpenChange={setInviteOpen}
+          // El «Invitar» del vacío se va con la primera invitada: el foco vuelve
+          // entonces al de la cabecera.
+          finalFocus={() =>
+            inviteOpener.current?.isConnected === true
+              ? inviteOpener.current
+              : headerInvite.current
+          }
+          appUrl={invitations.appUrl}
+          inviteMembers={actions.inviteMembers}
+        />
+      )}
+      <RevokeInvitationDialog
+        invitation={confirming}
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        onConfirm={confirmRevoke}
+      />
+    </>
   );
 }
 
 type TeamMembersViewProps = {
   readonly members: readonly TeamMember[];
+  /** Las invitaciones pendientes, al final y en el orden del correo (D-E1a-12). */
+  readonly invitations: readonly PendingInvitation[];
   readonly pending: boolean;
   /** Lo de `feedbackOf`; `null` sin aviso. */
   readonly feedback: TeamFeedback | null;
   /** El clic en el botón de una fila. */
   readonly onActivate: (member: TeamMember) => void;
+  /** El clic en «Revocar invitación»: abre la confirmación. */
+  readonly onRevoke: (invitation: PendingInvitation) => void;
   /** Reenvía el último pedido; se ofrece solo si `feedback.retry`. */
   readonly onRetry: () => void;
 };
@@ -122,9 +286,11 @@ type TeamMembersViewProps = {
  */
 export function TeamMembersView({
   members,
+  invitations,
   pending,
   feedback,
   onActivate,
+  onRevoke,
   onRetry,
 }: TeamMembersViewProps) {
   return (
@@ -148,7 +314,7 @@ export function TeamMembersView({
                 {teamLabels.roleColumn}
               </th>
               <th scope="col" className="px-3 py-2 text-right font-medium">
-                {teamLabels.changeColumn}
+                {teamLabels.actionsColumn}
               </th>
             </tr>
           </thead>
@@ -159,6 +325,14 @@ export function TeamMembersView({
                 member={member}
                 pending={pending}
                 onActivate={onActivate}
+              />
+            ))}
+            {invitations.map((invitation) => (
+              <InvitationRow
+                key={invitation.id}
+                invitation={invitation}
+                pending={pending}
+                onRevoke={onRevoke}
               />
             ))}
           </tbody>

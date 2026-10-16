@@ -4,6 +4,7 @@ import type {
   TeamErrorCode,
   TeamMember,
 } from "@/modules/team/schema";
+import type { InvitationErrorCode } from "@/modules/workspace/schema";
 
 import { teamLabels } from "./labels";
 
@@ -34,7 +35,10 @@ export function activate(
   });
 }
 
-/** El último desenlace de la tabla, con el nombre de la fila al hacer clic. */
+/**
+ * El último desenlace de la tabla, con el nombre de la fila al hacer clic: un
+ * cambio de rol o una revocación, que comparten el aviso (§5.4).
+ */
 export type TeamOutcome =
   | { readonly kind: "changed"; readonly name: string; readonly role: ChangeableRole }
   | {
@@ -42,6 +46,13 @@ export type TeamOutcome =
       readonly name: string;
       /** `unexpected` ya está en `ActionErrorCode`. */
       readonly code: TeamErrorCode;
+      readonly message: string;
+    }
+  | { readonly kind: "revoked"; readonly email: string }
+  | {
+      readonly kind: "revokeFailed";
+      readonly email: string;
+      readonly code: InvitationErrorCode;
       readonly message: string;
     };
 
@@ -58,24 +69,37 @@ export type TeamFeedback = {
  * El aviso de un desenlace, o `null` sin desenlace. «Reintentar» solo con
  * `unexpected`, como `retryHandlerOf`: los demás códigos ya describen el
  * estado real. Con `unexpected`, el cuerpo es `unexpectedBody` y no el mensaje
- * del resultado: el título ya dice que no se pudo cambiar el rol.
+ * del resultado: el título ya dice qué no se hizo.
  */
 export function feedbackOf(outcome: TeamOutcome | null): TeamFeedback | null {
   if (outcome === null) {
     return null;
   }
-  if (outcome.kind === "changed") {
-    return {
-      tone: "info",
-      title: teamLabels.changed(outcome.name, teamLabels.roles[outcome.role]),
-      retry: false,
-    };
+  switch (outcome.kind) {
+    case "changed":
+      return {
+        tone: "info",
+        title: teamLabels.changed(outcome.name, teamLabels.roles[outcome.role]),
+        retry: false,
+      };
+    case "revoked":
+      return { tone: "info", title: teamLabels.revoked(outcome.email), retry: false };
+    case "failed":
+      return failedFeedback(teamLabels.changeFailed(outcome.name), outcome);
+    case "revokeFailed":
+      return failedFeedback(teamLabels.revokeFailed(outcome.email), outcome);
   }
-  const unexpected = outcome.code === "unexpected";
+}
+
+function failedFeedback(
+  title: string,
+  failure: { readonly code: string; readonly message: string },
+): TeamFeedback {
+  const unexpected = failure.code === "unexpected";
   return {
     tone: "error",
-    title: teamLabels.changeFailed(outcome.name),
-    message: unexpected ? teamLabels.unexpectedBody : outcome.message,
+    title,
+    message: unexpected ? teamLabels.unexpectedBody : failure.message,
     retry: unexpected,
   };
 }
