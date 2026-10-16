@@ -295,8 +295,10 @@ vacío del owner y `renewWorkspace` se corta.
        corrida final en `correcciones-fase2-e1a-revisiones.md`.
      - **Hasta E2, el procedimiento SQL de desactivar sigue borrando `account`**: el login solo
        mira el dominio, y es lo único que deja afuera a una inactiva (mapa §5).
-     - **Pendiente del usuario**: la secuencia de producción de E1a (contrato §6) y decidir si
-       se vacía `EXTERNAL_INVITE_EMAILS` después del `--apply`.
+     - **Producción no tiene `EXTERNAL_INVITE_EMAILS`** (dicho por el usuario el 2026-10-16): el
+       script `invitations:from-env` no tiene nada que pasar y el bajo 1 de seguridad no aplica.
+       **Pendiente del usuario**: desplegar E1a, invitar desde `/equipo` a las activas de
+       Clockify que no entraron (Nicolas Veliz incluido) y la verificación de humo (§6.4).
 
      **Duodécima sesión** (2026-10-13): el usuario reinició el host (lo del 2026-10-12 quedó
      resuelto; el e2e vuelve a correr en el host) y pidió «R7b y R8 en paralelo».
