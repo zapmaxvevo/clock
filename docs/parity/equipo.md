@@ -41,6 +41,10 @@ Lo que ya existe y este documento no reabre:
   (`active`, `inactive`, `invited`), `week_start` y `weekly_capacity_minutes`
   (sin uso); `external_invite` (workspace, correo, quién invitó, `revoked_at`),
   **sin uso en el código**: el login lee la variable `EXTERNAL_INVITE_EMAILS`.
+  _Desde E1a_, `invitation`, del módulo `workspace`, reemplazó a
+  `external_invite` (migración `0015`;
+  [ADR 0024](../adr/0024-donde-vive-una-invitacion-y-donde-se-corta-el-ingreso.md),
+  decisión 1); desde E1b la variable no se lee (EQ-32).
 - **Una persona con horas no se borra** (P-09 de `reportes.md`, RP-65,
   [ADR 0020](../adr/0020-nucleo-de-reportes-antes-de-la-fase-2.md)): las claves
   de `time_entry` hacia `user` y hacia `membership` son `restrict`.
@@ -51,7 +55,7 @@ Lo que ya existe y este documento no reabre:
   (`src/modules/workspace/service.ts`) crea una membresía `member` a cualquiera
   que pase el login —el dominio con el claim `hd`, o la lista de invitados
   externos (`src/server/access.ts`)—. Viene del slice 1 y la fase 2 la cierra
-  (sección 3).
+  (sección 3). _Desde E1b_ está cerrada: sin invitación no se entra (EQ-29).
 
 ## Fuentes y límites del relevamiento
 
@@ -277,20 +281,25 @@ corner and click Accept» (invitar personas). Acá no hay registro ni campana: l
 invitación se acepta al entrar por primera vez con Google con ese correo, y en
 ese momento nace la membresía `active`. Justificación: Google es el único
 ingreso (`src/server/auth.ts`).
-**Consecuencia para el esquema, que decide `architect`**: `membership.user_id`
-apunta a `user`, que crea Better Auth en el primer ingreso, así que una
-invitación pendiente no puede ser una fila de `membership`. Hace falta una
-tabla por correo; `external_invite` ya tiene esa forma. **No se crean filas de
-`user` por adelantado**: con el enlace implícito apagado (PF-47), una fila de
-`user` con ese correo le cerraría la entrada a la cuenta de Google verdadera.
+**Consecuencia para el esquema**: `membership.user_id` apunta a `user`, que
+crea Better Auth en el primer ingreso, así que una invitación pendiente no
+puede ser una fila de `membership`. Hace falta una tabla por correo: es
+`invitation`, del módulo `workspace`, con una fila por workspace y correo en
+estado `pending`, `accepted` o `revoked`, que reemplazó a `external_invite` en
+E1a (migración `0015`;
+[ADR 0024](../adr/0024-donde-vive-una-invitacion-y-donde-se-corta-el-ingreso.md),
+decisiones 1 y 2). **No se crean filas de `user` por adelantado**: con el
+enlace implícito apagado (PF-47), una fila de `user` con ese correo le cerraría
+la entrada a la cuenta de Google verdadera.
 
 **EQ-18 Antes de aceptar, la invitada no accede a nada** — `replicar`
 Documentado: «A user remains “Pending” or “Inactive” until they click the link
 in their invitation email and verify their account.» (la guía). Acá: sin
 primer ingreso no hay cuenta ni membresía; la invitada no ve nada y no aparece
 en los reportes (RP-64). Con EQ-17, el estado `invited` de `membership_status`
-no representa una invitación pendiente; si sigue teniendo uso lo decide
-`architect`.
+no representa una invitación pendiente: queda sin escritor y no se quita,
+porque sacar un valor de un enum de Postgres pide recrear el tipo; es deuda del
+mapa de la fase 2 (ADR 0024, decisión 7).
 
 **EQ-19 Un correo que ya tiene invitación pendiente** — `adaptar`
 Documentado solo del lado del registro: «If the user is already invited, they
@@ -318,10 +327,16 @@ Clockify invita cualquier correo. En Clock el login acepta el dominio de la
 empresa, con el claim `hd`, o un correo de la lista de invitados externos, que
 hoy es la variable `EXTERNAL_INVITE_EMAILS`. Decidido el 2026-10-16 (P-03):
 invitar desde la pantalla un correo de otro dominio lo habilita como invitado
-externo —es lo que el comentario de `external_invite` describe: «La lista
-inicial llega por EXTERNAL_INVITE_EMAILS y a partir de ahí se administra desde
-la app.»—, y la fila lleva además la marca «Externa». Lo hacen el owner y los
-admins, como cualquier invitación (EQ-12).
+externo —es lo que describía el comentario de `external_invite`, la tabla que
+E1a reemplazó por `invitation` (migración `0015`): «La lista inicial llega por
+EXTERNAL_INVITE_EMAILS y a partir de ahí se administra desde la app.»—, y la
+fila lleva además la marca «Externa», que se deriva del dominio del correo
+(ADR 0024, decisión 9). Lo hacen el owner y los admins, como cualquier
+invitación (EQ-12).
+_Desde E1b_: `EXTERNAL_INVITE_EMAILS` ya no se lee. Un correo de otro dominio
+entra solo con su invitación en la base
+([ADR 0024](../adr/0024-donde-vive-una-invitacion-y-donde-se-corta-el-ingreso.md),
+decisión 3; EQ-32).
 
 **EQ-23 Revocar una invitación** — `replicar`
 Documentado: «Choose Revoke invite option» y «Once you confirm the action, the
@@ -379,19 +394,24 @@ ingreso crea la membresía solo si hay una invitación
 vigente para ese correo (o es el owner del arranque, EQ-30). Sin invitación, el
 ingreso se rechaza con EQ-91 y no se crean ni membresía ni sesión. La regla de
 dominio de `decideGoogleAccess` se conserva y se suma: hace falta pasar las
-dos. Dónde se corta —el gancho de sesión, que ya revalida en cada inicio, o
-`ensureWorkspaceContext`— lo decide `architect`; el requisito es que sin
-invitación no quede una sesión con la que pedir páginas.
+dos. Se corta en `mapProfileToUser`, y el gancho de sesión lo vuelve a
+comprobar en cada inicio
+([ADR 0024](../adr/0024-donde-vive-una-invitacion-y-donde-se-corta-el-ingreso.md),
+decisión 4); el requisito es que sin invitación no quede una sesión con la que
+pedir páginas.
 Justificación: replica cómo se entra en Clockify y cierra la deuda del slice 1.
 La alternativa —que el dominio entre solo y la invitación sirva únicamente a los
 externos— dejaba la deuda como está y quedó descartada.
 
 **EQ-30 El owner del arranque no necesita invitación** — `adaptar`
 `WORKSPACE_OWNER_EMAIL` crea el workspace y la membresía `owner` en el primer
-ingreso. Se conserva **solo para el arranque**, cuando no hay workspace. Hoy
-también da el rol `owner` a ese correo cada vez que su membresía no existe
-(`workspace/service.ts:73`); después de una transferencia (EQ-57) eso podría
-dejar dos owners si esa membresía se quitara (EQ-51) y se volviera a crear.
+ingreso. Se conserva **solo para el arranque**, cuando no hay workspace. Antes
+de E1b también daba el rol `owner` a ese correo cada vez que su membresía no
+existía (`workspace/service.ts:73` en `e9ba1ec`); después de una transferencia
+(EQ-57) eso podía dejar dos owners si esa membresía se quitaba (EQ-51) y se
+volvía a crear. Desde E1b, con un workspace, es un correo más: entra por
+membresía o por invitación, como `member` (D-E1b-3 del
+[contrato de E1b](../slices/fase2-e1b-ingreso.md)).
 Justificación: la variable nombra a quien arranca, no a quien es owner hoy.
 
 **EQ-31 Las membresías que ya existen no cambian** — `adaptar`
@@ -409,13 +429,16 @@ base y el chequeo de cada inicio la lee de ahí; los correos de la variable se
 migran una vez. Cortar a un externo que ya entró es desactivarlo (EQ-39), no
 revocar: revocar es solo para pendientes (EQ-23). Justificación: dos lugares
 para la misma lista es la regla de acceso en dos lugares.
+_Desde E1b_: la variable no se lee y el script que copiaba sus correos a la
+base salió (D-E1b-12 del [contrato de E1b](../slices/fase2-e1b-ingreso.md)).
+Producción nunca la tuvo, así que no hubo nada que migrar.
 
 **EQ-33 La fecha de alta es la de activación** — `adaptar`
 RP-64 y la §9 del contrato de R9 piden que, con invitaciones, «quien entró
 después del período» se decida por la fecha de activación y no por la de la
 invitación. Con EQ-17 la membresía nace al aceptar, así que
-`membership.created_at` ya es esa fecha. Si `architect` elige crear la
-membresía al invitar, hace falta una columna propia.
+`membership.created_at` ya es esa fecha y no hace falta una columna propia
+(ADR 0024, «Consecuencias»).
 
 ## 4. Roles
 
@@ -871,21 +894,21 @@ demás pantallas.
 consecuencias de las reglas de arriba con el login y el esquema de Clock.
 
 **EQ-111** — `adaptar`, decidido por el usuario el 2026-10-16 (P-11): la opción
-(a) de la §11 del [contrato de E1b](../slices/fase2-e1b-ingreso.md). No tiene
-equivalente relevado en Clockify, que no limita el ingreso por dominio en las
-páginas relevadas (sección 3). _Corregido el 2026-10-16, decisión del usuario_:
-decía que todas sus personas dejaban de entrar. Con E1b, un correo fuera de los
-dominios es externo, y un externo entra solo con su invitación (ADR 0024,
-decisión 3). Quien entró sin invitación —por la deuda, antes de E1b (EQ-31)— no
-tiene ninguna y deja de entrar, con EQ-91. Quien entró por invitación conserva
-su fila `accepted`, sigue entrando y su fila pasa a llevar la marca «Externa»,
-que se deriva del dominio (EQ-22); para cortarle la entrada se la desactiva
-(EQ-39, slice E2). En los dos casos la lista la sigue mostrando activa hasta
-que alguien la desactiva. Justificación: sacar un dominio es raro, y la
-alternativa —que deje de entrar salvo que se la vuelva a invitar como externa—
-pedía guardar por qué vía fue cada invitación, con una columna, un script de
-relleno, dos migraciones y un ADR. El costo: quien administra tiene que
-acordarse de desactivar a cada una.
+(a) de la §11 del [contrato de E1b](../slices/fase2-e1b-ingreso.md), D-E1b-13.
+No tiene equivalente relevado en Clockify, que no limita el ingreso por dominio
+en las páginas relevadas (sección 3). _Corregido el 2026-10-16, decisión del
+usuario_: decía que todas sus personas dejaban de entrar. Con E1b, un correo
+fuera de los dominios es externo, y un externo entra solo con su invitación
+(ADR 0024, decisión 3). Quien entró sin invitación —por la deuda, antes de E1b
+(EQ-31)— no tiene ninguna y deja de entrar, con EQ-91. Quien entró por
+invitación conserva su fila `accepted`, sigue entrando y su fila pasa a llevar
+la marca «Externa», que se deriva del dominio (EQ-22); para cortarle la entrada
+se la desactiva (EQ-39, slice E2). En los dos casos la lista la sigue mostrando
+activa hasta que alguien la desactiva. Justificación: sacar un dominio es raro,
+y la alternativa —que deje de entrar salvo que se la vuelva a invitar como
+externa— pedía guardar por qué vía fue cada invitación, con una columna, un
+script de relleno, dos migraciones y un ADR. El costo: quien administra tiene
+que acordarse de desactivar a cada una.
 
 ## 15. Correcciones para otros documentos
 
@@ -980,10 +1003,13 @@ porque el cuerpo del documento y los contratos de slice los citan.
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | P-10 | **Verificar en el workspace del equipo** (no es decisión, es mirar): si la pestaña «Groups» existe en el plan Free (EQ-60) y si «Edit profile» muestra capacidad y días laborables (EQ-72); las columnas por omisión y si se ve el correo (EQ-03); el nombre de la opción por omisión del filtro de estado y si incluye a las invitadas (EQ-06); si la fila desactivada de a una se queda hasta recargar (EQ-11); qué separadores acepta el campo de correos y si hay tope (EQ-13); qué pasa al reinvitar un correo invitado o de una persona activa o inactiva (EQ-19 … EQ-21); si desactivar pide confirmación (EQ-46); si un admin ve «Deactivate» en la fila de otro admin (EQ-38); la forma del diálogo de transferir (EQ-58); si se puede crear un grupo desde la fila de una persona (EQ-63); si los reportes filtran y agrupan por grupo (EQ-66); qué conserva la pantalla al recargar (EQ-100); y, en un reporte, si las horas de una inactiva aparecen sin el filtro «Inactive» (sección 15). |
 
-**Para `architect`, no para el usuario**: dónde vive una invitación pendiente
-y si `invited` sigue teniendo uso (EQ-17, EQ-18); dónde se corta el ingreso sin
-invitación (EQ-29); la acción de `can()` de EQ-38 y la de grupos (EQ-68); la
-pertenencia por grupo en `ProjectResource` (EQ-64); y la salida para EQ-110.
-EQ-29 y EQ-30 cambian `ensureWorkspaceContext`, la misma función donde WS-08 de
-[`workspace.md`](workspace.md) copia el primer día de la semana del workspace a
-la membresía nueva: el contrato que la toque lee las dos especificaciones.
+**Para `architect`, no para el usuario**: la acción de `can()` de EQ-38 y la de
+grupos (EQ-68); la pertenencia por grupo en `ProjectResource` (EQ-64); y la
+salida para EQ-110, que el contrato de E1b deja a E2b. Dónde vive una
+invitación, si `invited` sigue teniendo uso y dónde se corta el ingreso (EQ-17,
+EQ-18, EQ-29) los decidió el
+[ADR 0024](../adr/0024-donde-vive-una-invitacion-y-donde-se-corta-el-ingreso.md).
+La membresía nueva nace en `createMembership` de `workspace/service.ts`, donde
+WS-08 de [`workspace.md`](workspace.md) copia el primer día de la semana del
+workspace (E4, según la §12 del [contrato de E1b](../slices/fase2-e1b-ingreso.md)):
+el contrato que la toque lee las dos especificaciones.
