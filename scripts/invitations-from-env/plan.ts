@@ -1,4 +1,5 @@
-import { isCompanyEmail, normalizeEmail } from "@/lib/email";
+import { isCompanyEmail } from "@/lib/email";
+import { distinctEmails, isValidEmail } from "@/modules/workspace/invitation-plan";
 import type { InvitationStatus } from "@/server/db/schema";
 
 /**
@@ -27,8 +28,25 @@ export type EnvInvitationStep = {
 );
 
 /**
- * Un paso por correo, en el orden de la variable y sin repetidos. `members`:
- * los correos con membresía en el workspace, en cualquier estado.
+ * Los correos de la variable, normalizados y sin repetidos, en su orden.
+ * `invalid`: los que no son un correo (EQ-76), que no se insertan; el script
+ * los lista para que se corrijan a mano.
+ */
+export function splitEnvEmails(emails: readonly string[]): {
+  readonly valid: readonly string[];
+  readonly invalid: readonly string[];
+} {
+  const distinct = distinctEmails(emails);
+  return {
+    valid: distinct.filter(isValidEmail),
+    invalid: distinct.filter((email) => !isValidEmail(email)),
+  };
+}
+
+/**
+ * Un paso por correo, en el orden de `emails`, que llegan de `splitEnvEmails`.
+ * `members`: los correos con membresía en el workspace, en cualquier estado,
+ * ya normalizados.
  */
 export function planFromEnv(
   emails: readonly string[],
@@ -36,9 +54,9 @@ export function planFromEnv(
   members: readonly string[],
   invitations: readonly { readonly email: string; readonly status: InvitationStatus }[],
 ): EnvInvitationStep[] {
-  const withMembership = new Set(members.map(normalizeEmail));
+  const withMembership = new Set(members);
   const statusOf = new Map(invitations.map((row) => [row.email, row.status]));
-  return [...new Set(emails.map(normalizeEmail))].map((email) => {
+  return emails.map((email) => {
     const inDomain = isCompanyEmail(email, domains);
     const existing = statusOf.get(email);
     if (existing !== undefined) {

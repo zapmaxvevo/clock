@@ -2,10 +2,14 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
-import { normalizeEmail } from "@/lib/email";
 import * as schema from "@/server/db/schema";
 
-import { describeStep, planFromEnv, type EnvInvitationStep } from "./plan";
+import {
+  describeStep,
+  planFromEnv,
+  splitEnvEmails,
+  type EnvInvitationStep,
+} from "./plan";
 
 const { auditLog, invitation, membership, user, workspace } = schema;
 
@@ -43,33 +47,57 @@ async function oldestWorkspace(tx: Transaction) {
   return found;
 }
 
+type Plan = {
+  readonly steps: readonly EnvInvitationStep[];
+  /** Los textos de la variable que no son un correo: no se insertan. */
+  readonly invalid: readonly string[];
+};
+
 async function readPlan(
   tx: Transaction,
   workspaceId: string,
   options: RunOptions,
-): Promise<EnvInvitationStep[]> {
-  const emails = [...new Set(options.emails.map(normalizeEmail))];
-  if (emails.length === 0) {
-    return [];
+): Promise<Plan> {
+  const { valid, invalid } = splitEnvEmails(options.emails);
+  if (valid.length === 0) {
+    return { steps: [], invalid };
   }
   const email = sql<string>`lower(${user.email})`;
   const members = await tx
     .select({ email })
     .from(membership)
     .innerJoin(user, eq(user.id, membership.userId))
-    .where(and(eq(membership.workspaceId, workspaceId), inArray(email, emails)));
+    .where(and(eq(membership.workspaceId, workspaceId), inArray(email, [...valid])));
   const invitations = await tx
     .select({ email: invitation.email, status: invitation.status })
     .from(invitation)
     .where(
-      and(eq(invitation.workspaceId, workspaceId), inArray(invitation.email, emails)),
+      and(eq(invitation.workspaceId, workspaceId), inArray(invitation.email, [...valid])),
     );
-  return planFromEnv(
-    emails,
+  const steps = planFromEnv(
+    valid,
     options.domains,
     members.map((row) => row.email),
     invitations,
   );
+  return { steps, invalid };
+}
+
+/** Lo que se lee antes de decidir: los avisos y un paso por correo. */
+function printPlan(plan: Plan, options: RunOptions): void {
+  const { print } = options;
+  if (options.domains.length === 0) {
+    print(
+      "Aviso: sin GOOGLE_WORKSPACE_DOMAINS no se señalan los correos del dominio, " +
+        "que sin hd dejan de entrar por la variable (D-E1a-4). Pasala para revisar el plan.",
+    );
+  }
+  print(`Correos en la variable: ${plan.steps.length}`);
+  plan.steps.forEach((step) => print(describeStep(step)));
+  if (plan.invalid.length > 0) {
+    print(`Descartados, no son un correo: ${plan.invalid.length}`);
+    plan.invalid.forEach((text) => print(`  ${text}`));
+  }
 }
 
 /**
@@ -128,17 +156,16 @@ export async function runInvitationsFromEnv(
   return db.transaction(
     async (tx) => {
       const target = await oldestWorkspace(tx);
-      const steps = await readPlan(tx, target.id, options);
+      const plan = await readPlan(tx, target.id, options);
       const { print } = options;
       print(`Workspace: ${target.name} (${target.id})`);
-      print(`Correos en la variable: ${steps.length}`);
-      steps.forEach((step) => print(describeStep(step)));
-      const pending = steps.filter((step) => step.kind === "create").length;
+      printPlan(plan, options);
+      const pending = plan.steps.filter((step) => step.kind === "create").length;
       if (!options.apply) {
         print(`En seco: se crearían ${pending} filas. Con --apply se escriben.`);
         return 0;
       }
-      const created = await applyPlan(tx, target.id, steps);
+      const created = await applyPlan(tx, target.id, plan.steps);
       print(`Se crearon ${created} filas de invitation, con su constancia.`);
       return created;
     },

@@ -1,12 +1,30 @@
 import { describe, expect, it } from "vitest";
 
-import { describeStep, planFromEnv } from "./plan";
+import { describeStep, planFromEnv, splitEnvEmails } from "./plan";
+
+describe("splitEnvEmails", () => {
+  it("normaliza, quita los repetidos y conserva el orden de la variable", () => {
+    expect(splitEnvEmails(["B@gmail.com", "a@gmail.com", " b@gmail.com"])).toEqual({
+      valid: ["b@gmail.com", "a@gmail.com"],
+      invalid: [],
+    });
+  });
+
+  it("aparta los que no son un correo, para listarlos", () => {
+    expect(splitEnvEmails(["ana@gmail.com", "ana.gmail.com", "leo@", "x@y.com"])).toEqual(
+      {
+        valid: ["ana@gmail.com", "x@y.com"],
+        invalid: ["ana.gmail.com", "leo@"],
+      },
+    );
+  });
+});
 
 describe("planFromEnv (contrato de E1a, §4.6)", () => {
   it("crea accepted para el correo con membresía y pending para el que no", () => {
     expect(
       planFromEnv(
-        ["Ya@Gmail.com", "nueva@gmail.com"],
+        ["ya@gmail.com", "nueva@gmail.com"],
         ["empresa.com"],
         ["ya@gmail.com"],
         [],
@@ -31,11 +49,9 @@ describe("planFromEnv (contrato de E1a, §4.6)", () => {
     },
   );
 
-  it("quita los repetidos y conserva el orden de la variable", () => {
+  it("conserva el orden de los correos", () => {
     expect(
-      planFromEnv(["b@gmail.com", "a@gmail.com", "B@gmail.com"], [], [], []).map(
-        (step) => step.email,
-      ),
+      planFromEnv(["b@gmail.com", "a@gmail.com"], [], [], []).map((step) => step.email),
     ).toEqual(["b@gmail.com", "a@gmail.com"]);
   });
 

@@ -24,10 +24,14 @@ beforeEach(async () => {
   lines = [];
 });
 
-function run(apply: boolean, emails: readonly string[]) {
+function run(
+  apply: boolean,
+  emails: readonly string[],
+  domains: readonly string[] = ["empresa.com"],
+) {
   return runInvitationsFromEnv(db, {
     emails,
-    domains: ["empresa.com"],
+    domains,
     apply,
     print: (line) => lines.push(line),
   });
@@ -95,6 +99,32 @@ describe("runInvitationsFromEnv", () => {
     expect(await invitationsOf(workspaceId)).toEqual(rows);
     expect(await auditFor("invitation")).toHaveLength(2);
     expect(lines.join("\n")).toMatch(/ya existe \(pending\)\s+nueva@gmail\.com/);
+  });
+
+  it("no inserta los textos que no son un correo y los lista", async () => {
+    const created = await run(true, ["ana.gmail.com", "nueva@gmail.com", "leo@"]);
+
+    expect(created).toBe(1);
+    expect((await invitationsOf(workspaceId)).map((row) => row.email)).toEqual([
+      "nueva@gmail.com",
+    ]);
+    const output = lines.join("\n");
+    expect(output).toMatch(
+      /Descartados, no son un correo: 2\n {2}ana\.gmail\.com\n {2}leo@/,
+    );
+  });
+
+  it("sin dominios avisa que no puede señalar los correos del dominio", async () => {
+    await run(false, [memberEmail], []);
+
+    expect(lines.join("\n")).toMatch(/Aviso: sin GOOGLE_WORKSPACE_DOMAINS/);
+    expect(lines.join("\n")).not.toMatch(/¡del dominio!/);
+  });
+
+  it("con dominios no avisa", async () => {
+    await run(false, [memberEmail]);
+
+    expect(lines.join("\n")).not.toMatch(/Aviso/);
   });
 
   it("escribe en el workspace más viejo", async () => {
