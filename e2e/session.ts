@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test as base, type BrowserContext } from "@playwright/test";
+import {
+  expect,
+  test as base,
+  type APIResponse,
+  type BrowserContext,
+} from "@playwright/test";
 
 import { TEST_EMAIL_DOMAIN, TEST_SESSION_SECRET } from "./environment";
 
@@ -11,29 +16,52 @@ export const PERSON_NAME = "Persona de prueba";
 const SIGN_IN_ATTEMPTS = 5;
 
 /**
- * Entra sin pasar por el login de Google. El endpoint de sesión de prueba
- * solo se registra fuera de producción y exige el secreto en la cabecera. La
- * cookie queda en el contexto, así que todas las pestañas que se abran
- * después comparten la sesión.
+ * Pide la sesión de prueba, sin pasar por el login de Google. El endpoint
+ * solo se registra fuera de producción y exige el secreto en la cabecera.
  *
  * Better Auth limita los pedidos por IP en un build de producción, y todos
  * los workers salen de la misma: con la suite entera en paralelo, algunos
  * inicios de sesión reciben 429. No es una regla de la app que el test
  * afirme, así que se espera lo que indica `X-Retry-After` y se reintenta.
  */
-export async function signIn(context: BrowserContext, email: string): Promise<void> {
+async function requestSession(
+  context: BrowserContext,
+  email: string,
+): Promise<APIResponse> {
   for (let attempt = 1; ; attempt += 1) {
     const response = await context.request.post("/api/auth/test-session/sign-in", {
       headers: { "x-test-session": TEST_SESSION_SECRET },
       data: { email, name: PERSON_NAME },
     });
     if (response.status() !== 429 || attempt === SIGN_IN_ATTEMPTS) {
-      expect(response.status(), await response.text()).toBe(200);
-      return;
+      return response;
     }
     const seconds = Number(response.headers()["x-retry-after"] ?? "1");
     await new Promise((resolve) => setTimeout(resolve, Math.max(seconds, 1) * 1000));
   }
+}
+
+/**
+ * Entra con la sesión de prueba. La cookie queda en el contexto, así que
+ * todas las pestañas que se abran después comparten la sesión.
+ */
+export async function signIn(context: BrowserContext, email: string): Promise<void> {
+  const response = await requestSession(context, email);
+  expect(response.status(), await response.text()).toBe(200);
+}
+
+/**
+ * Intenta entrar con un correo que la regla de ingreso no deja pasar. La
+ * sesión de prueba no pasa por el callback de Google, así que el rechazo del
+ * gancho de sesión no termina en `/login`: es el 403 del endpoint (§4.5 y
+ * §9.4 de E1a). El endpoint crea la fila `user` antes del rechazo, sin sesión.
+ */
+export async function signInRejected(
+  context: BrowserContext,
+  email: string,
+): Promise<void> {
+  const response = await requestSession(context, email);
+  expect(response.status(), await response.text()).toBe(403);
 }
 
 function slugOf(title: string): string {

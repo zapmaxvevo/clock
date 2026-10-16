@@ -1,7 +1,7 @@
 import { eq, inArray } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { DomainError, RejectedError } from "@/server/action";
+import { DomainError, RejectedError } from "@/server/errors";
 import { db } from "@/server/db";
 import { project, tag, timeEntry } from "@/server/db/schema";
 import type { Actor } from "@/server/permissions";

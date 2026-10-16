@@ -7,6 +7,8 @@ import { randomUUID } from "node:crypto";
 
 import { Client } from "pg";
 
+import type { InvitationStatus } from "@/server/db/schema";
+
 import { dayKeyOf, type CivilDay } from "./days";
 import { OWNER_EMAIL, testDatabaseUrl } from "./environment";
 import { PERSON_NAME } from "./session";
@@ -437,6 +439,27 @@ export async function seedPerson(person: SeedPerson): Promise<void> {
        returning user_id as id`,
       [userId, person.displayName],
     );
+  });
+}
+
+/**
+ * El estado de la invitación de un correo en el workspace de los e2e, o
+ * `null` si no tiene. Hay una fila por correo, en minúsculas (D-E1a-3): un
+ * pedido que no escribió se ve como `null`, y uno que escribió dos veces no
+ * puede dejar dos filas.
+ */
+export async function invitationStatusOf(
+  email: string,
+): Promise<InvitationStatus | null> {
+  return withDatabase(async (client) => {
+    const result = await client.query<{ status: InvitationStatus }>(
+      `select status
+         from invitation
+        where workspace_id = ${FIRST_WORKSPACE}
+          and email = lower(btrim($1))`,
+      [email],
+    );
+    return result.rows.at(0)?.status ?? null;
   });
 }
 

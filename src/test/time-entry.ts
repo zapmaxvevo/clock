@@ -1,6 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 
-import { DomainError, RejectedError } from "@/server/action";
+import { DomainError, RejectedError } from "@/server/errors";
 import { db, type Transaction } from "@/server/db";
 import { timeEntryTag } from "@/server/db/schema";
 import type { Actor } from "@/server/permissions";

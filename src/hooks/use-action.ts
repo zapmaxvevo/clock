@@ -2,7 +2,8 @@
 
 import { useRef, useState, useTransition } from "react";
 
-import type { ActionResult, Rejection } from "@/server/action";
+import type { ActionResult } from "@/server/action";
+import type { Rejection } from "@/server/errors";
 
 export type ActionFailure<Code extends string = string> = {
   readonly code: Code;

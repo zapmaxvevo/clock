@@ -4,7 +4,7 @@ import { sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import type { ProjectPair } from "@/lib/project-pair";
-import { DomainError } from "@/server/action";
+import { DomainError } from "@/server/errors";
 import { db, type Transaction } from "@/server/db";
 import type { Actor } from "@/server/permissions";
 import { startOfDayKey } from "@/server/time";

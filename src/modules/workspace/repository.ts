@@ -2,7 +2,9 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import { db, type Transaction } from "@/server/db";
 import {
+  invitation,
   membership,
+  type InvitationStatus,
   user,
   userPreference,
   workspace,
@@ -22,6 +24,31 @@ export type PersonRow = {
   /** `membership.created_at` (D-R9-2). */
   readonly joinedAt: Date;
 };
+
+/** Una invitación, con lo que sus reglas leen (D-E1a-7, D-E1a-8). */
+export type InvitationRow = {
+  readonly id: string;
+  readonly email: string;
+  readonly status: InvitationStatus;
+};
+
+/** Una membresía encontrada por el correo de su `user` (D-E1a-7). */
+export type MemberByEmail = { readonly email: string; readonly status: MembershipStatus };
+
+const invitationColumns = {
+  id: invitation.id,
+  email: invitation.email,
+  status: invitation.status,
+};
+
+/** El workspace más viejo, como subconsulta: el mismo criterio que `findFirstWorkspace`. */
+function firstWorkspaceId() {
+  return db
+    .select({ id: workspace.id })
+    .from(workspace)
+    .orderBy(asc(workspace.createdAt), asc(workspace.id))
+    .limit(1);
+}
 
 /** Los estados de quien está en el workspace; `invited` todavía no (RP-64). */
 const PRESENT_STATUSES: readonly MembershipStatus[] = ["active", "inactive"];
@@ -128,5 +155,200 @@ export const workspaceRepository = {
    */
   async lockWorkspaceBootstrap(tx: Transaction): Promise<void> {
     await tx.execute(sql`select pg_advisory_xact_lock(${WORKSPACE_BOOTSTRAP_LOCK})`);
+  },
+
+  /**
+   * D-E1a-9: la membresía de quien actúa, `for share`. `undefined` si no está.
+   * Espera a un cambio de rol en curso, que toma `for no key update` sobre la
+   * misma fila, y no choca con el `for key share` de un alta de horas.
+   */
+  async lockActorMembership(
+    tx: Transaction,
+    workspaceId: string,
+    userId: string,
+  ): Promise<{ role: Role; status: MembershipStatus } | undefined> {
+    const rows = await tx
+      .select({ role: membership.role, status: membership.status })
+      .from(membership)
+      .where(and(eq(membership.workspaceId, workspaceId), eq(membership.userId, userId)))
+      .for("share");
+    return rows.at(0);
+  },
+
+  /** Las membresías de `workspaceId` cuyo `lower(user.email)` está en `emails`. */
+  async membersByEmail(
+    tx: Transaction,
+    workspaceId: string,
+    emails: readonly string[],
+  ): Promise<readonly MemberByEmail[]> {
+    if (emails.length === 0) {
+      return [];
+    }
+    const email = sql<string>`lower(${user.email})`;
+    return tx
+      .select({ email, status: membership.status })
+      .from(membership)
+      .innerJoin(user, eq(user.id, membership.userId))
+      .where(and(eq(membership.workspaceId, workspaceId), inArray(email, [...emails])));
+  },
+
+  /**
+   * Las invitaciones de esos correos, `order by id`, `for update`, en una
+   * sentencia: dos pedidos con correos en común se esperan en el mismo orden.
+   */
+  async lockInvitationsByEmail(
+    tx: Transaction,
+    workspaceId: string,
+    emails: readonly string[],
+  ): Promise<readonly InvitationRow[]> {
+    if (emails.length === 0) {
+      return [];
+    }
+    return tx
+      .select(invitationColumns)
+      .from(invitation)
+      .where(
+        and(
+          eq(invitation.workspaceId, workspaceId),
+          inArray(invitation.email, [...emails]),
+        ),
+      )
+      .orderBy(asc(invitation.id))
+      .for("update");
+  },
+
+  /**
+   * Filas nuevas `pending`; `on conflict do nothing`. Devuelve las que insertó:
+   * el correo que otro pedido insertó a la vez no vuelve (EQ-106). Van por
+   * correo: dos pedidos con los mismos correos en otro orden se esperarían en
+   * círculo en el índice único.
+   */
+  async insertInvitations(
+    tx: Transaction,
+    workspaceId: string,
+    emails: readonly string[],
+    invitedById: string,
+  ): Promise<readonly InvitationRow[]> {
+    if (emails.length === 0) {
+      return [];
+    }
+    return tx
+      .insert(invitation)
+      .values([...emails].sort().map((email) => ({ workspaceId, email, invitedById })))
+      .onConflictDoNothing()
+      .returning(invitationColumns);
+  },
+
+  /** Vuelve a `pending` las filas dadas, con quién y cuándo; limpia aceptada y revocada. */
+  async reinvite(
+    tx: Transaction,
+    workspaceId: string,
+    ids: readonly string[],
+    invitedById: string,
+  ): Promise<void> {
+    if (ids.length === 0) {
+      return;
+    }
+    await tx
+      .update(invitation)
+      .set({
+        status: "pending",
+        invitedById,
+        invitedAt: sql`now()`,
+        acceptedAt: null,
+        revokedAt: null,
+        revokedById: null,
+      })
+      .where(
+        and(eq(invitation.workspaceId, workspaceId), inArray(invitation.id, [...ids])),
+      );
+  },
+
+  /** La invitación `(workspaceId, id)`, `for update`. */
+  async lockInvitation(
+    tx: Transaction,
+    workspaceId: string,
+    id: string,
+  ): Promise<InvitationRow | undefined> {
+    const rows = await tx
+      .select(invitationColumns)
+      .from(invitation)
+      .where(and(eq(invitation.workspaceId, workspaceId), eq(invitation.id, id)))
+      .for("update");
+    return rows.at(0);
+  },
+
+  /** `pending` a `revoked`, con quién y cuándo. */
+  async revoke(
+    tx: Transaction,
+    workspaceId: string,
+    id: string,
+    revokedById: string,
+  ): Promise<void> {
+    await tx
+      .update(invitation)
+      .set({ status: "revoked", revokedAt: sql`now()`, revokedById })
+      .where(
+        and(
+          eq(invitation.workspaceId, workspaceId),
+          eq(invitation.id, id),
+          eq(invitation.status, "pending"),
+        ),
+      );
+  },
+
+  /**
+   * D-E1a-5: la pendiente de `email` pasa a `accepted`; `where status =
+   * 'pending'`, que se vuelve a evaluar después de esperar a una revocación en
+   * curso (EQ-107). `email` ya normalizado. Devuelve el id si cambió alguna.
+   */
+  async acceptPending(
+    tx: Transaction,
+    workspaceId: string,
+    email: string,
+  ): Promise<string | undefined> {
+    const rows = await tx
+      .update(invitation)
+      .set({ status: "accepted", acceptedAt: sql`now()` })
+      .where(
+        and(
+          eq(invitation.workspaceId, workspaceId),
+          eq(invitation.email, email),
+          eq(invitation.status, "pending"),
+        ),
+      )
+      .returning({ id: invitation.id });
+    return rows.at(0)?.id;
+  },
+
+  /** Las `pending` de `workspaceId`, `order by email`. */
+  async listPending(workspaceId: string): Promise<readonly InvitationRow[]> {
+    return db
+      .select(invitationColumns)
+      .from(invitation)
+      .where(
+        and(eq(invitation.workspaceId, workspaceId), eq(invitation.status, "pending")),
+      )
+      .orderBy(asc(invitation.email));
+  },
+
+  /**
+   * D-E1a-4: si el correo, ya normalizado, tiene una invitación `pending` o
+   * `accepted` en el workspace más viejo. Hay uno solo, y el login todavía no
+   * tiene membresía de la que sacarlo.
+   */
+  async hasOpenInvitation(email: string): Promise<boolean> {
+    const rows = await db
+      .select({ id: invitation.id })
+      .from(invitation)
+      .where(
+        and(
+          eq(invitation.workspaceId, sql`(${firstWorkspaceId()})`),
+          eq(invitation.email, email),
+          inArray(invitation.status, ["pending", "accepted"]),
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
   },
 };

@@ -1,6 +1,6 @@
 import { normalizedIds } from "@/lib/tag-ids";
 import { sortedByName } from "@/lib/text";
-import { DomainError, type ActionErrorCode } from "@/server/action";
+import { DomainError, type ActionErrorCode } from "@/server/errors";
 import { recordAudit } from "@/server/audit";
 import { createOnce } from "@/server/create-once";
 import { db, type Transaction } from "@/server/db";

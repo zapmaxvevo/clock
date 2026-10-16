@@ -1,5 +1,5 @@
 import { compareNames } from "@/lib/text";
-import { DomainError } from "@/server/action";
+import { DomainError } from "@/server/errors";
 import { recordAudit } from "@/server/audit";
 import { db } from "@/server/db";
 import {

@@ -43,6 +43,7 @@ quien retome el trabajo empieza acá. Última actualización: 2026-10-16 (decimo
 | Núcleo de reportes, R7a                     | En `main` |
 | Núcleo de reportes, R7b                     | En `main` |
 | Núcleo de reportes, R8                      | En `main` |
+| Fase 2, E1a — Invitar y revocar             | En `main` |
 
 Los slices 1 a 13 (con 2b, 2c, 7b, 8b, 8c, 11a y 11b) y el arreglo del piso fijo están en `main`.
 El 13 (planilla de horarios) se mergeó el 2026-10-08 con lint, typecheck, 1279 de unidad, 1223 de
@@ -285,7 +286,17 @@ vacío del owner y `renewWorkspace` se corta.
      **Decimotercera sesión** (2026-10-16): el usuario aprobó el
      [ADR 0023](../adr/0023-quitar-el-rol-de-admin-es-una-accion-propia.md) (solo el owner quita
      el rol de admin) y corrió la importación de Clockify en producción (ver «Decisiones
-     pendientes del usuario»). No hay slices en curso: lo que sigue no arranca sin pedido.
+     pendientes del usuario»). Después pidió «empecemos la fase 2»:
+     - Paridad nueva: `equipo.md` (EQ) y `workspace.md` (WS), con las decisiones del día en sus
+       apartados «Decididos». Mapa: [`fase2-mapa.md`](fase2-mapa.md), aprobado en dos rondas.
+       Orden: E1a, E1b, E2, E2b, WS0, WS1, WS2a, WS2b, E3 … E6, P1 … P8, E7, P9, T1, T2.
+     - **E1a en `main`**: invitar y revocar desde `/equipo`, la tabla `invitation`, el ingreso
+       con `entry.ts` y el script `invitations:from-env`. ADR 0024 y 0025 aceptados. Detalle y
+       corrida final en `correcciones-fase2-e1a-revisiones.md`.
+     - **Hasta E2, el procedimiento SQL de desactivar sigue borrando `account`**: el login solo
+       mira el dominio, y es lo único que deja afuera a una inactiva (mapa §5).
+     - **Pendiente del usuario**: la secuencia de producción de E1a (contrato §6) y decidir si
+       se vacía `EXTERNAL_INVITE_EMAILS` después del `--apply`.
 
      **Duodécima sesión** (2026-10-13): el usuario reinició el host (lo del 2026-10-12 quedó
      resuelto; el e2e vuelve a correr en el host) y pidió «R7b y R8 en paralelo».

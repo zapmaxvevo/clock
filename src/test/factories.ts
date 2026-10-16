@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import { db } from "@/server/db";
 import {
   client,
+  invitation,
+  type InvitationStatus,
   membership,
   project,
   projectMember,
@@ -249,6 +251,31 @@ export async function seedTag(values: {
       name: values.name ?? uniqueName("Etiqueta"),
       archivedAt: archivedAtOf(values.archived),
       createdBy: values.createdBy ?? null,
+    })
+    .returning();
+  return row;
+}
+
+/**
+ * Invitación escrita directo contra la tabla, `pending` salvo que se pida otro
+ * estado; las fechas de aceptada y revocada las pide el `check` de cada estado.
+ */
+export async function seedInvitation(values: {
+  readonly workspaceId: string;
+  readonly email: string;
+  readonly status?: InvitationStatus;
+  readonly invitedById?: string | null;
+}) {
+  const status = values.status ?? "pending";
+  const [row] = await db
+    .insert(invitation)
+    .values({
+      workspaceId: values.workspaceId,
+      email: values.email,
+      status,
+      invitedById: values.invitedById ?? null,
+      acceptedAt: status === "accepted" ? new Date() : null,
+      revokedAt: status === "revoked" ? new Date() : null,
     })
     .returning();
   return row;

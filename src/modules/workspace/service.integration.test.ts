@@ -7,12 +7,14 @@ import { membership, user, workspace, workspaceSettings } from "@/server/db/sche
 import type { Actor } from "@/server/permissions";
 import { warmPool, waitForBlockedBackends } from "@/test/concurrency";
 import {
+  seedInvitation,
   seedMember,
   seedPreferences,
   seedTimeEntry,
   seedUser,
   seedWorkspace,
 } from "@/test/factories";
+import { auditFor, invitationOf } from "@/test/queries";
 import { actorIn } from "@/test/time-entry";
 
 import { workspaceRepository } from "./repository";
@@ -205,6 +207,128 @@ describe("entrar dos veces deja una sola membresía", () => {
     expect(
       await db.select().from(membership).where(eq(membership.userId, otherId)),
     ).toHaveLength(1);
+  });
+});
+
+describe("ensureWorkspaceContext acepta la invitación pendiente (D-E1a-5)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  async function workspaceWithOwner() {
+    const ownerId = await seedUser("owner@empresa.com");
+    const context = await ensureWorkspaceContext({
+      id: ownerId,
+      email: "owner@empresa.com",
+    });
+    return context.workspace.id;
+  }
+
+  it("la membresía que nace acepta la pendiente de su correo, con su auditoría (criterio 14)", async () => {
+    const workspaceId = await workspaceWithOwner();
+    const seeded = await seedInvitation({ workspaceId, email: "ana@gmail.com" });
+    const userId = await seedUser("Ana@Gmail.com");
+
+    const context = await ensureWorkspaceContext({ id: userId, email: "Ana@Gmail.com" });
+
+    expect(context.membership).toMatchObject({ role: "member", status: "active" });
+    const row = await invitationOf(workspaceId, "ana@gmail.com");
+    expect(row).toMatchObject({ id: seeded.id, status: "accepted" });
+    expect(row?.acceptedAt).toBeInstanceOf(Date);
+    const audits = await auditFor("invitation", seeded.id);
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      workspaceId,
+      actorId: userId,
+      action: "invitation.accept",
+      previousValue: JSON.stringify({ status: "pending" }),
+      nextValue: JSON.stringify({ status: "accepted" }),
+    });
+  });
+
+  it("una persona del dominio sin invitación sigue entrando, sin auditoría (criterio 17)", async () => {
+    await workspaceWithOwner();
+    const userId = await seedUser("ana@empresa.com");
+
+    const context = await ensureWorkspaceContext({
+      id: userId,
+      email: "ana@empresa.com",
+    });
+
+    expect(context.membership.status).toBe("active");
+    expect(await auditFor("invitation")).toEqual([]);
+  });
+
+  it.each(["revoked", "accepted"] as const)(
+    "no toca una invitación %s",
+    async (status) => {
+      const workspaceId = await workspaceWithOwner();
+      const seeded = await seedInvitation({
+        workspaceId,
+        email: "ana@gmail.com",
+        status,
+      });
+      const userId = await seedUser("ana@gmail.com");
+
+      await ensureWorkspaceContext({ id: userId, email: "ana@gmail.com" });
+
+      expect(await invitationOf(workspaceId, "ana@gmail.com")).toEqual(seeded);
+      expect(await auditFor("invitation")).toEqual([]);
+    },
+  );
+
+  it("la rama que encuentra la membresía no escribe ni busca la invitación", async () => {
+    const workspaceId = await workspaceWithOwner();
+    const userId = await seedUser("ana@gmail.com");
+    await ensureWorkspaceContext({ id: userId, email: "ana@gmail.com" });
+    const seeded = await seedInvitation({ workspaceId, email: "ana@gmail.com" });
+    const acceptPending = vi.spyOn(workspaceRepository, "acceptPending");
+
+    await ensureWorkspaceContext({ id: userId, email: "ana@gmail.com" });
+
+    expect(acceptPending).not.toHaveBeenCalled();
+    expect(await invitationOf(workspaceId, "ana@gmail.com")).toEqual(seeded);
+  });
+
+  it("si la aceptación falla, la membresía no se crea (criterio 18)", async () => {
+    const workspaceId = await workspaceWithOwner();
+    const seeded = await seedInvitation({ workspaceId, email: "ana@gmail.com" });
+    const userId = await seedUser("ana@gmail.com");
+    vi.spyOn(workspaceRepository, "acceptPending").mockRejectedValueOnce(
+      new Error("falla simulada"),
+    );
+
+    await expect(
+      ensureWorkspaceContext({ id: userId, email: "ana@gmail.com" }),
+    ).rejects.toThrow("falla simulada");
+
+    expect(
+      await db.select().from(membership).where(eq(membership.userId, userId)),
+    ).toEqual([]);
+    expect(await invitationOf(workspaceId, "ana@gmail.com")).toEqual(seeded);
+  });
+
+  it("una falla después de aceptar deshace la membresía y la aceptación (criterio 18)", async () => {
+    const workspaceId = await workspaceWithOwner();
+    const seeded = await seedInvitation({ workspaceId, email: "ana@gmail.com" });
+    const userId = await seedUser("ana@gmail.com");
+    // La aceptación se escribe y la falla llega después, en la misma transacción.
+    const accept = workspaceRepository.acceptPending.bind(workspaceRepository);
+    vi.spyOn(workspaceRepository, "acceptPending").mockImplementationOnce(
+      async (tx, id, email) => {
+        await accept(tx, id, email);
+        throw new Error("falla después de aceptar");
+      },
+    );
+
+    await expect(
+      ensureWorkspaceContext({ id: userId, email: "ana@gmail.com" }),
+    ).rejects.toThrow("falla después de aceptar");
+
+    expect(
+      await db.select().from(membership).where(eq(membership.userId, userId)),
+    ).toEqual([]);
+    expect(await invitationOf(workspaceId, "ana@gmail.com")).toEqual(seeded);
   });
 });
 
