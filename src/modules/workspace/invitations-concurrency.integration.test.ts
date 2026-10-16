@@ -13,7 +13,7 @@ import { seedInvitation, seedMember, seedUser } from "@/test/factories";
 import { auditFor, invitationOf, invitationsOf, membershipOf } from "@/test/queries";
 import { actorIn } from "@/test/time-entry";
 
-import { invitationMessages } from "./schema";
+import { INVITE_LIMIT, invitationMessages } from "./schema";
 import { ensureWorkspaceContext, inviteMembers, revokeInvitation } from "./service";
 
 /**
@@ -72,6 +72,31 @@ describe("dos pedidos con el mismo correo (criterio 9, EQ-106)", () => {
     ]);
     expect(await invitationsOf(workspaceId)).toHaveLength(1);
     expect(await auditFor("invitation")).toHaveLength(1);
+  });
+});
+
+describe("dos pedidos con los mismos correos en otro orden (criterio 9, EQ-106)", () => {
+  // El cruce depende de cómo se intercalen los dos `insert`: varias rondas
+  // vuelven casi segura la espera en círculo si los correos no van ordenados.
+  it("no se esperan en círculo: los dos responden y queda una fila por correo", async () => {
+    for (let round = 0; round < 10; round += 1) {
+      const emails = Array.from(
+        { length: INVITE_LIMIT },
+        (_, index) => `r${round}p${index}@gmail.com`,
+      );
+
+      const results = await raceThroughBarrier(holdMembership(ownerId), [
+        () => inviteMembers(owner(), { emails }),
+        () => inviteMembers(owner(), { emails: [...emails].reverse() }),
+      ]);
+
+      const invited = results.flatMap((result) =>
+        result.outcomes.filter((outcome) => outcome.result === "invited"),
+      );
+      expect(invited.map((outcome) => outcome.email).sort()).toEqual([...emails].sort());
+    }
+    expect(await invitationsOf(workspaceId)).toHaveLength(10 * INVITE_LIMIT);
+    expect(await auditFor("invitation")).toHaveLength(10 * INVITE_LIMIT);
   });
 });
 

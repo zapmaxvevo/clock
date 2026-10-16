@@ -218,7 +218,9 @@ export const workspaceRepository = {
 
   /**
    * Filas nuevas `pending`; `on conflict do nothing`. Devuelve las que insertó:
-   * el correo que otro pedido insertó a la vez no vuelve (EQ-106).
+   * el correo que otro pedido insertó a la vez no vuelve (EQ-106). Van por
+   * correo: dos pedidos con los mismos correos en otro orden se esperarían en
+   * círculo en el índice único.
    */
   async insertInvitations(
     tx: Transaction,
@@ -231,7 +233,7 @@ export const workspaceRepository = {
     }
     return tx
       .insert(invitation)
-      .values(emails.map((email) => ({ workspaceId, email, invitedById })))
+      .values([...emails].sort().map((email) => ({ workspaceId, email, invitedById })))
       .onConflictDoNothing()
       .returning(invitationColumns);
   },
