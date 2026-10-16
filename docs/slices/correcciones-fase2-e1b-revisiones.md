@@ -6,6 +6,34 @@ Rama `fase2/e1b-ingreso` desde `main` en `e9ba1ec`, en el worktree
 [0024](../adr/0024-donde-vive-una-invitacion-y-donde-se-corta-el-ingreso.md) y
 [0025](../adr/0025-un-modulo-escribe-en-otro-por-su-service.md).
 
+## Mutaciones del backend
+
+Cada test nuevo se hizo fallar con una mutación en una copia del árbol, fuera
+del worktree, contra `clock_e1b_back`. Las de concurrencia, la sesión y el
+ingreso se volvieron a correr sobre el código con las correcciones de la
+revisión; las del repositorio, la `0016` y la regla, sobre `1fe6280` y
+`81a32f9`: las correcciones no cambian lo que esas mutaciones tocan.
+
+| Mutación                                                                                                                                               | Falla                                                                                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Invitar en el orden de E1a: `membersByEmail` antes de `lockInvitationsByEmail`                                                                         | criterio 19, «invitar espera al ingreso, ve la membresía y responde already_member sin reinvitar»                                                                    |
+| La membresía nace aunque `acceptPending` no acepte nada (el orden de E1a)                                                                              | criterio 12, «si gana la revocación…»; criterio 10 (tres casos); criterio 8                                                                                          |
+| Sin releer la membresía cuando `acceptPending` no acepta                                                                                               | criterio 13, «dejan una membresía, una aceptación y un invitation.accept…»                                                                                           |
+| El arranque no vuelve a leer el workspace después del bloqueo                                                                                          | criterio 7, «dos primeros pedidos del owner dejan un workspace y una membresía owner»                                                                                |
+| El arranque para cualquier correo                                                                                                                      | criterio 7, «otro correo del dominio, sin workspace, recibe null…» y «otra persona mientras el owner espera el arranque…» (falla rápido con `blocked`, sin colgarse) |
+| El arranque compara el correo sin normalizar                                                                                                           | «compara el correo del arranque recortado y en minúsculas»                                                                                                           |
+| La membresía aceptada nace `owner` para el correo configurado                                                                                          | criterio 8                                                                                                                                                           |
+| La sesión no vuelve a decidir la identidad de un correo externo (seguridad 1)                                                                          | D-E1b-13, «quien entró sin invitación queda sin acceso en el pedido siguiente»                                                                                       |
+| La sesión consulta los hechos también para un correo del dominio                                                                                       | «un correo de los dominios no suma la lectura de los hechos»                                                                                                         |
+| `requireSession` manda una sesión sin acceso a `/login` sin motivo                                                                                     | criterio 11 (dos casos) y D-E1b-13                                                                                                                                   |
+| `decideProfileEntry` consulta también sin correo verificado                                                                                            | «sin correo o sin verificar no lee los hechos»                                                                                                                       |
+| Sin `disableIdTokenSignIn` (seguridad 3)                                                                                                               | «/sign-in/social con un idToken responde 404 sin crear nada» (responde 401: intenta verificar el token)                                                              |
+| `entryFacts` con `count(*) >= 1`                                                                                                                       | criterio 20                                                                                                                                                          |
+| `lower(user.email)` sin `btrim`                                                                                                                        | `membersByEmail` con el correo recortado; `entryFactsOf` con mayúsculas y blancos; criterio 20; el externo aceptado con el correo guardado con mayúsculas            |
+| La `0016` sin `btrim`                                                                                                                                  | criterio 15, «acepta las pendientes cuyo correo tiene membresía…»                                                                                                    |
+| La `0016` sin la condición del workspace                                                                                                               | criterio 15, «no toca una pendiente sin membresía, ni una de otro workspace…»                                                                                        |
+| La regla: una `accepted` sola da acceso; la membresía vale de identidad externa; el arranque sin `bootstrap`; el dominio sin `hd` entra con invitación | `access.test.ts`: 4, 3, 2 y 1 casos                                                                                                                                  |
+
 ## Criterio 18: las consultas de §6
 
 `backend-dev` corrió cada consulta de §6 una vez, con `psql -e`, contra
