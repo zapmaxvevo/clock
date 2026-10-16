@@ -23,6 +23,7 @@ la misma transacción que la operación que las pide:
   `session`, que son de Better Auth.
 - **Transferir la propiedad** (E3, EQ-57): `team` escribe `workspace.owner_id`,
   del módulo `workspace`.
+- **Quitar del equipo** (E6, EQ-51): `team` borra una fila de `membership`.
 - **Aceptar una invitación** (E1a, E1b): la membresía nace en `workspace` y la
   invitación tiene que quedar aceptada en la misma transacción. El
   [ADR 0024](0024-donde-vive-una-invitacion-y-donde-se-corta-el-ingreso.md)
@@ -65,6 +66,9 @@ La opción 2, con estas reglas:
     fila y su lectura para la sesión son de `workspace`; `role`, `status`,
     `week_start` y lo que la fase 2 sume para administrar personas, de `team`
     (D-R8-1). Una columna nueva de `membership` dice en el esquema de quién es.
+    **Borrar la fila** —quitar del equipo, E6— es de `workspace`, dueño de la
+    fila: `team` decide si se puede y la pide por una función exportada de
+    `workspace`, con su transacción.
 - **Escribir en una tabla ajena es llamar a una función exportada del service
   del dueño** que:
   - recibe la transacción de quien llama (`tx: Transaction`) como primer
@@ -87,10 +91,11 @@ La opción 2, con estas reglas:
 ## Consecuencias
 
 - **E1a no escribe datos ajenos**: la invitación es de `workspace` y se acepta
-  ahí. La regla queda escrita para E2, E2b y E3.
+  ahí. La regla queda escrita para E2, E2b, E3 y E6.
 - **E2** suma a `time-entry` una función que detiene el timer de otra persona con
   el actor de quien desactiva, y a `src/server/` una que borra las sesiones de
-  una persona. **E3** suma a `workspace` la que cambia `owner_id`.
+  una persona. **E3** suma a `workspace` la que cambia `owner_id`, y **E6** la
+  que borra una membresía.
 - **Cada función se prueba en dos lugares**: en los tests de integración del
   dueño, sus reglas y su audit log; en los de quien llama, que un rechazo
   posterior en la misma transacción deshace también lo que escribió.

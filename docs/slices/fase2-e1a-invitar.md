@@ -6,8 +6,9 @@ o de otro, ven a las invitadas en la lista y revocan una invitación pendiente.
 Clock no manda correo: muestra el texto para avisar a mano. **No cierra la
 puerta**: el dominio sigue entrando sin invitación hasta E1b; lo que cambia en
 el ingreso es que un correo de otro dominio entra también por una invitación de
-la base. Trae además la migración única de `EXTERNAL_INVITE_EMAILS` a la base,
-como un script que corre el usuario.
+la base, y que quien no entra lo ve explicado en `/login`. Trae además la
+migración única de `EXTERNAL_INVITE_EMAILS` a la base, como un script que corre
+el usuario.
 
 - **Fuente:** [`equipo.md`](../parity/equipo.md), §2 y §3 (EQ-12 … EQ-33), §10
   (EQ-76 … EQ-92), §11 a §14; el [mapa de la fase 2](fase2-mapa.md), §2 (el
@@ -15,15 +16,19 @@ como un script que corre el usuario.
 - **Lugar en el plan:** primer slice de la fase 2. No depende de otro slice; E1b
   depende de este y de que en producción estén hechas las invitaciones y la
   migración de la variable (§6).
+- **Revisión:** `architecture-reviewer` aprobó con cambios en `dff919e`; están
+  aplicados: qué ve quien no entra (D-E1a-14), la decisión del ingreso en una
+  función probada (§4.5), la reversión con los externos de la base (§2), y en
+  los ADR, el rechazo del gancho de sesión y quién borra una membresía.
 - **Decisiones de arquitectura**, las dos **propuestas** con este contrato; las
   aprueba el usuario (§11):
   - [ADR 0024](../adr/0024-donde-vive-una-invitacion-y-donde-se-corta-el-ingreso.md):
     la invitación es del módulo `workspace`, una fila por correo, la regla de
-    ingreso por vía, el corte en `mapProfileToUser`, qué habilita una
-    invitación aceptada, la excepción al ADR 0007 y el índice.
+    ingreso por vía, el corte en `mapProfileToUser` con el rechazo en `/login`,
+    qué habilita una invitación aceptada, la excepción al ADR 0007 y el índice.
   - [ADR 0025](../adr/0025-un-modulo-escribe-en-otro-por-su-service.md): un
     módulo escribe en las tablas de otro solo por una función del service
-    dueño. E1a no la usa (D-E1a-1); la deja escrita para E2, E2b y E3.
+    dueño. E1a no la usa (D-E1a-1); la deja escrita para E2, E2b, E3 y E6.
   - Aceptados que se aplican: el
     [0010](../adr/0010-un-modulo-consulta-las-reglas-de-otro-por-su-service.md)
     (la pantalla de `team` lee las invitaciones por el service de `workspace`),
@@ -165,41 +170,94 @@ transacción del cambio, con `entity: "invitation"` y el id de la fila:
 Un correo que no escribe —ya invitado, ya en el equipo— y un pedido rechazado no
 dejan fila.
 
+**D-E1a-14 — Quien no entra lo ve en `/login`.** Hoy no ve nada útil: Better
+Auth 1.7.7 llama a `getUserInfo` —y con él a `mapProfileToUser`— fuera de todo
+`try` del callback (`node_modules/better-auth/dist/api/routes/callback.mjs:120`),
+así que su `APIError("FORBIDDEN")` sale como un JSON 403 en
+`/api/auth/callback/google`; el rechazo del gancho de sesión pasa por el `catch`
+de `handleOAuthUserInfo` (`:171-194`), que redirige a la dirección de error solo
+si el error trae `body.code` (`:192`), y el de hoy no lo trae. E1a suma un
+rechazo nuevo, el externo con la invitación revocada (criterio 15), así que lo
+resuelve acá y no en E1b. Los dos puntos terminan en
+`/login?error=<motivo>`, con el motivo de `AccessDenialReason`:
+
+- **`mapProfileToUser` lanza una redirección**:
+  `new APIError("FOUND", undefined, { Location: loginErrorUrl(reason) })`, con la
+  dirección absoluta sobre `BETTER_AUTH_URL`. El camino, leído en el código
+  instalado: el proveedor de Google la llama sin `try`
+  (`@better-auth/core/dist/social-providers/google.mjs:124`); el endpoint corre
+  dentro de `dispatchAuthEndpoint` con `asResponse: false`, así que el error se
+  relanza (`better-call/dist/endpoint.mjs:29-35`); `dispatch` lo atrapa y junta
+  sus cabeceras, `location` incluida, con `mergeAPIErrorHeaders`
+  (`better-auth/dist/api/dispatch.mjs:50-62`, `:231-241`), y arma la respuesta
+  con el estado 302 y esas cabeceras (`:258-260`;
+  `better-call/dist/to-response.mjs:125-129`). El `onError` del router ignora un
+  `FOUND` (`better-auth/dist/api/index.mjs:196`). Es lo mismo que hace
+  `c.redirect` (`better-call/dist/context.mjs:60-63`), con las cabeceras en el
+  error en lugar de en el contexto.
+- **El gancho `session.create` lanza un error con código**:
+  `new APIError("FORBIDDEN", { message: accessDenialMessage[reason], code: reason })`.
+  El callback lo atrapa y llama a `redirectOnError(code, message)`
+  (`callback.mjs:191-193`), que redirige a `errorURL ?? defaultErrorURL`
+  (`:78-84`); sin `errorCallbackURL` en el pedido de ingreso, vale
+  `onAPIError.errorURL` (`:35`). `auth.ts` suma
+  `onAPIError: { errorURL: <BETTER_AUTH_URL>/login }`.
+- **`/login` muestra el motivo** que conoce, con el texto de
+  `accessDenialMessage`, en un aviso con `role="alert"` encima del botón. Un
+  código que no conoce —los propios del callback de Better Auth, como
+  `state_not_found` o `account_not_linked`— muestra «No se pudo iniciar sesión.
+  Volvé a intentar.». **Nunca muestra el texto de la dirección**, ni
+  `error_description`: así nadie arma un enlace a `/login` con un mensaje
+  propio.
+- **La sesión de prueba de los e2e** no pasa por el callback: su rechazo sigue
+  siendo una respuesta 403 del endpoint de prueba, que es lo que espera
+  `signInRejected` (§9.3).
+
+El camino está leído, no ejecutado: el login de Google no corre en los tests.
+Lo comprueba el usuario después del despliegue (§6.4). Si falla, se ve lo de
+hoy —el JSON 403—, nunca un acceso de más: la redirección es lo que se lanza en
+lugar de dejar pasar.
+
 ## 0. Precondición de arranque
 
 - **`main` en `424ac1b`**, con el mapa de la fase 2 y los documentos de paridad
-  de las decisiones del 2026-10-16. Las citas de abajo son de ese árbol.
+  de las decisiones del 2026-10-16. Las citas de abajo son de ese árbol y de
+  `node_modules` con `better-auth` 1.7.7.
 - **Los ADR 0024 y 0025 aprobados por el usuario** antes de implementar (§11).
 - **La consulta previa de §6.1 corrida en producción** antes de desplegar, no
   antes de implementar.
 
 ### Supuestos sobre el árbol, con archivo y línea en `424ac1b`
 
-| Supuesto                                                                                                           | Dónde                                                                                            |
-| ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| `member.invite` existe sobre `WorkspaceResource`, para `owner` y `admin`; `can()` corta por estado y por workspace | `src/server/permissions/index.ts:64`, `:102`, `:133`, `:187-192`                                 |
-| `external_invite`: workspace, correo, quién invitó, `revoked_at`; índice único no parcial; sin uso en el código    | `src/server/db/schema.ts:178-199`                                                                |
-| `membership_status` con `active`, `inactive`, `invited`; `membership` única por `(workspace_id, user_id)`          | `schema.ts:33-37`, `:97-123`                                                                     |
-| La política de acceso sale de la variable; `mapProfileToUser` decide con el perfil y lanza `FORBIDDEN`             | `src/server/auth.ts:19-25`, `:72-88`                                                             |
-| El gancho `session.create` vuelve a comprobar el correo guardado con `isAllowedEmail`, sin `hd`                    | `auth.ts:104-121`                                                                                |
-| `decideGoogleAccess` exige dominio y `hd`, o la lista de invitados; `normalize` y `domainOf` son privadas          | `src/server/access.ts:26-71`, `:77-83`                                                           |
-| `OAuthProfileMapper` devuelve `Awaitable`: `mapProfileToUser` puede leer la base                                   | `node_modules/@better-auth/core/src/oauth2/oauth-provider.ts:291-293`                            |
-| `ensureWorkspaceContext` crea la membresía de cualquiera con sesión, en una transacción                            | `src/modules/workspace/service.ts:57-87`; `workspace/repository.ts:80-101`                       |
-| El comentario de `joinedAt` dice que con invitaciones pasaría a ser la fecha de la invitación                      | `workspace/service.ts:97-102`                                                                    |
-| `EXTERNAL_INVITE_EMAILS` se parsea con un `csv` privado de `env.ts`                                                | `src/server/env.ts:3-8`, `:19`                                                                   |
-| La sesión de prueba crea el `user` y la sesión por el adaptador, que pasa por el gancho `session.create`           | `src/server/test-session.ts:84-110`                                                              |
-| `/equipo`: la página compone la vista de `team` y pasa la action por props; la tabla y su tercera columna          | `src/app/(app)/equipo/page.tsx:1-10`; `team/components/team-members.tsx:140-166`; `labels.ts:21` |
-| `RejectedError`, `handle` con la revalidación también en el error, `recordAudits`                                  | `src/server/action.ts:39-49`, `:106-123`; `src/server/audit.ts:39-47`                            |
-| `useAction` con `rejections` y `retry`                                                                             | `src/hooks/use-action.ts:46-111`                                                                 |
-| `truncateAll` nombra `external_invite`                                                                             | `src/test/database.ts:11`                                                                        |
-| El precedente de script de operación: cliente `pg` propio, `--dry-run` por omisión, una transacción                | `scripts/import-clockify/main.ts:1-48` (rama `ops/importar-clockify`)                            |
+| Supuesto                                                                                                           | Dónde                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `member.invite` existe sobre `WorkspaceResource`, para `owner` y `admin`; `can()` corta por estado y por workspace | `src/server/permissions/index.ts:64`, `:102`, `:133`, `:187-192`                                  |
+| `external_invite`: workspace, correo, quién invitó, `revoked_at`; índice único no parcial; sin uso en el código    | `src/server/db/schema.ts:178-199`                                                                 |
+| `membership_status` con `active`, `inactive`, `invited`; `membership` única por `(workspace_id, user_id)`          | `schema.ts:33-37`, `:97-123`                                                                      |
+| La política de acceso sale de la variable; `mapProfileToUser` decide con el perfil y lanza `FORBIDDEN`             | `src/server/auth.ts:19-25`, `:72-88`                                                              |
+| El gancho `session.create` vuelve a comprobar el correo guardado con `isAllowedEmail`, sin `hd`, y sin código      | `auth.ts:104-121`                                                                                 |
+| `decideGoogleAccess` exige dominio y `hd`, o la lista de invitados; `normalize` y `domainOf` son privadas          | `src/server/access.ts:26-71`, `:77-83`                                                            |
+| `OAuthProfileMapper` devuelve `Awaitable`: `mapProfileToUser` puede leer la base                                   | `node_modules/@better-auth/core/src/oauth2/oauth-provider.ts:291-293`                             |
+| El callback de Better Auth: `getUserInfo` sin `try`; el rechazo con código redirige a la dirección de error        | `node_modules/better-auth/dist/api/routes/callback.mjs:35`, `:78-84`, `:120`, `:171-194`          |
+| Un `APIError` con cabeceras sale como respuesta con esas cabeceras                                                 | `better-auth/dist/api/dispatch.mjs:50-62`, `:231-260`; `better-call/dist/to-response.mjs:125-129` |
+| `/login` no lee ningún parámetro; el botón muestra solo el error de la llamada inicial                             | `src/app/login/page.tsx:6-25`; `src/components/layout/google-sign-in-button.tsx:15-18`            |
+| `ensureWorkspaceContext` crea la membresía de cualquiera con sesión, en una transacción                            | `src/modules/workspace/service.ts:57-87`; `workspace/repository.ts:80-101`                        |
+| El comentario de `joinedAt` dice que con invitaciones pasaría a ser la fecha de la invitación                      | `workspace/service.ts:97-102`                                                                     |
+| `EXTERNAL_INVITE_EMAILS` se parsea con un `csv` privado de `env.ts`                                                | `src/server/env.ts:3-8`, `:19`                                                                    |
+| La sesión de prueba crea el `user` y la sesión por el adaptador, que pasa por el gancho `session.create`           | `src/server/test-session.ts:84-110`                                                               |
+| `/equipo`: la página compone la vista de `team` y pasa la action por props; la tabla y su tercera columna          | `src/app/(app)/equipo/page.tsx:1-10`; `team/components/team-members.tsx:140-166`; `labels.ts:21`  |
+| `RejectedError`, `handle` con la revalidación también en el error, `recordAudits`                                  | `src/server/action.ts:39-49`, `:106-123`; `src/server/audit.ts:39-47`                             |
+| `useAction` con `rejections` y `retry`                                                                             | `src/hooks/use-action.ts:46-111`                                                                  |
+| `truncateAll` nombra `external_invite`                                                                             | `src/test/database.ts:11`                                                                         |
+| El precedente de script de operación: cliente `pg` propio, `--dry-run` por omisión, una transacción                | `scripts/import-clockify/main.ts:1-48` (rama `ops/importar-clockify`)                             |
 
 ## 1. Alcance
 
 Cubre EQ-04, EQ-12 … EQ-14, EQ-16, EQ-19 … EQ-23, EQ-25, EQ-26, EQ-32 (la
 migración única), EQ-76 … EQ-79, EQ-81, EQ-90, EQ-93, EQ-97, EQ-105 y EQ-106.
-Del ingreso, la vía externa por la base (EQ-22) y la aceptación al nacer la
-membresía (parte de EQ-17).
+Del ingreso, la vía externa por la base (EQ-22), la aceptación al nacer la
+membresía (parte de EQ-17) y el lugar donde se muestra un rechazo (la nota de
+§10 de `equipo.md` sobre EQ-91 y EQ-92, con los motivos de hoy).
 
 Entra:
 
@@ -207,7 +265,9 @@ Entra:
 - **En `workspace`**: `schema.ts` y `actions.ts` nuevos; las lecturas y las dos
   mutaciones en `service.ts` y `repository.ts`; la aceptación en
   `ensureWorkspaceContext`.
-- **En el ingreso**: la vía externa por la base en `access.ts` y `auth.ts`.
+- **En el ingreso**: la vía externa por la base, la decisión en una función
+  propia (`src/server/entry.ts`), los dos rechazos hacia `/login` y el aviso en
+  `/login` (D-E1a-14).
 - **En `/equipo`**: «Invitar» con su diálogo y su resultado, las invitadas en la
   tabla con «Revocar invitación» y su confirmación, y el vacío de EQ-93.
 - **El script** `scripts/invitations-from-env/` y su entrada en `package.json`.
@@ -220,9 +280,10 @@ Queda afuera: §12.
 | Archivo                                                            | Qué cambia                                                                                 | Qué hay que volver a probar                     |
 | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ | ----------------------------------------------- |
 | `src/server/db/schema.ts`                                          | Sale `externalInvite`; entran `invitationStatus` e `invitation`                            | `schema.integration.test.ts` de los módulos     |
-| `src/server/access.ts`, `access.test.ts`                           | La vía externa recibe un hecho (`invited`) en lugar de la lista; no vale para el dominio   | `access.test.ts` entero                         |
-| `src/server/auth.ts`                                               | `mapProfileToUser` y el gancho leen la invitación por `workspace`                          | integración del ingreso (§9.2), e2e entera      |
+| `src/server/access.ts`, `access.test.ts`                           | La vía externa recibe un hecho (`invited`); no vale para el dominio; `loginErrorMessage`   | `access.test.ts` entero                         |
+| `src/server/auth.ts`                                               | Delega en `entry.ts`; redirección y código en los rechazos; `onAPIError.errorURL`          | integración del ingreso (§9.2), e2e entera      |
 | `src/server/env.ts`                                                | El `csv` de correos sale a `src/lib/email.ts` como `parseEmailList`                        | `env` en los tests que lo cargan                |
+| `src/app/login/page.tsx`                                           | Lee `error` y muestra el motivo                                                            | `login` (test de componente nuevo)              |
 | `src/modules/workspace/service.ts`, `repository.ts`                | Aceptación en `ensureWorkspaceContext`; lecturas y mutaciones; el comentario de `joinedAt` | `workspace/service.integration.test.ts`         |
 | `src/app/(app)/equipo/page.tsx`                                    | Pide también la vista de invitaciones y pasa sus actions                                   | e2e de `team.spec.ts`                           |
 | `team/components/team-screen.tsx`, `team-members.tsx`, `labels.ts` | «Invitar», las filas de invitadas, la columna «Acciones», el vacío                         | `team-screen.test.tsx`, `team-members.test.tsx` |
@@ -312,8 +373,20 @@ export const invitation = pgTable(
   suma una tabla. Ningún código desplegado lee `external_invite`.
 - **Reversión**: una migración hacia adelante que borra `invitation` y su tipo y
   vuelve a crear `external_invite` vacía, y el despliegue del código anterior.
-  Se pierden las invitaciones; por eso **E1a no se revierte después de E1b**,
-  que depende de ellas.
+  **Antes de revertir**, el usuario lista en producción los externos que tienen
+  invitación en la base y los suma a `EXTERNAL_INVITE_EMAILS` en Vercel: el
+  código anterior solo los conoce por la variable, y un externo invitado desde
+  la pantalla —Nicolas Veliz, por ejemplo— quedaría afuera.
+
+  ```sql
+  select email, status from invitation
+  where status in ('pending', 'accepted')
+  order by email;
+  ```
+
+  De esa lista se suman los correos fuera de `GOOGLE_WORKSPACE_DOMAINS`. Se
+  pierden las invitaciones del dominio, que en E1a no dan acceso. **E1a no se
+  revierte después de E1b**, que depende de ellas.
 
 ## 3. Permisos
 
@@ -577,7 +650,7 @@ export async function revokeInvitation(
   input: RevokeInvitationInput,
 ): Promise<RevokeInvitationResult>;
 
-/** D-E1a-4: el hecho de la vía externa, para `auth.ts`. Lee sin actor: no hay sesión. */
+/** D-E1a-4: el hecho de la vía externa, para `src/server/entry.ts`. Lee sin actor: no hay sesión. */
 export async function hasOpenInvitation(email: string): Promise<boolean>;
 ```
 
@@ -624,7 +697,9 @@ La rama que encuentra la membresía no escribe: el costo por pedido no cambia.
 - **El comentario de `WorkspacePerson.joinedAt`** se corrige: la membresía nace
   al aceptar, así que `created_at` es la fecha de activación (EQ-33).
 
-### 4.5 El ingreso (`access.ts`, `auth.ts`)
+### 4.5 El ingreso (`access.ts`, `entry.ts`, `auth.ts`, `/login`)
+
+**`src/server/access.ts`** sigue puro:
 
 ```ts
 export type AccessPolicy = {
@@ -644,19 +719,59 @@ export function decideGoogleAccess(
 ): AccessDecision;
 
 /** El correo guardado, en cada inicio de sesión: por el sufijo, o externo e invitado. */
-export function isAllowedEmail(
+export function decideStoredEmail(
   email: string,
   policy: AccessPolicy,
   invited: boolean,
-): boolean;
+): AccessDecision;
+
+/**
+ * D-E1a-14: el texto de `/login` para el parámetro `error`. `null` sin
+ * parámetro; el de `accessDenialMessage` para un motivo conocido; un texto
+ * genérico para cualquier otro. Nunca devuelve el parámetro.
+ */
+export function loginErrorMessage(code: string | undefined): string | null;
 ```
 
-En `auth.ts`, una función local `isInvited(email)`:
-`parseEmailList(EXTERNAL_INVITE_EMAILS).includes(email) || await hasOpenInvitation(email)`,
-con el correo normalizado. `mapProfileToUser` pasa a ser `async` y la llama
-antes de decidir; el gancho `session.create` también. Los mensajes de
-`accessDenialMessage` no cambian: dicen lo mismo para el dominio y para la
-invitación.
+`isAllowedEmail` pasa a ser `decideStoredEmail`, que devuelve el motivo además
+de la decisión: el gancho lo necesita para el código.
+
+**`src/server/entry.ts`** (nuevo) arma la decisión con la variable y la base, y
+es lo que se prueba en integración:
+
+```ts
+/** D-E1a-4: el ingreso desde el perfil de Google. Lee la variable y la invitación. */
+export async function decideProfileEntry(profile: GoogleProfile): Promise<AccessDecision>;
+
+/** En cada inicio de sesión, con el correo guardado. */
+export async function decideStoredEmailEntry(email: string): Promise<AccessDecision>;
+
+/** D-E1a-14: `<BETTER_AUTH_URL>/login?error=<motivo>`, absoluta. */
+export function loginErrorUrl(reason: AccessDenialReason): string;
+
+/** D-E1a-14: el error que lanza el gancho, con el motivo como código. */
+export function sessionEntryError(reason: AccessDenialReason): APIError;
+```
+
+Las dos decisiones normalizan el correo, calculan `invited` como
+`parseEmailList(EXTERNAL_INVITE_EMAILS).includes(email) || await hasOpenInvitation(email)`
+—la base solo si hace falta: un correo del dominio con `hd` no la consulta— y
+llaman a la función pura.
+
+**`src/server/auth.ts`** solo traduce:
+
+- `mapProfileToUser` pasa a ser `async`: `decideProfileEntry(profile)`; si no
+  entra, `throw new APIError("FOUND", undefined, { Location: loginErrorUrl(reason) })`.
+- el gancho `session.create`: `decideStoredEmailEntry(user.email)`; sin `user`, o
+  si no entra, `throw sessionEntryError(reason)`;
+- `onAPIError: { errorURL: new URL("/login", BETTER_AUTH_URL).toString() }`.
+
+**`src/app/login/page.tsx`** lee `searchParams.error` y, si
+`loginErrorMessage` devuelve un texto, lo muestra en un aviso con
+`role="alert"` encima del botón. Una persona con sesión sigue yendo a `/`. Los
+textos de `accessDenialMessage` no cambian: dicen lo mismo para el dominio y
+para la invitación. El genérico es «No se pudo iniciar sesión. Volvé a
+intentar.».
 
 ### 4.6 El script (`scripts/invitations-from-env/`)
 
@@ -815,42 +930,53 @@ Hasta E1b nadie queda afuera por este slice: la variable se sigue leyendo y el
 dominio no necesita invitación. La consulta que compara la base con la lista de
 Clockify es la precondición de E1b, y la escribe su contrato.
 
+### 6.4 La comprobación del rechazo
+
+Después del despliegue, el usuario entra a Clock con una cuenta de Google de
+otro dominio, sin invitación y fuera de la variable: tiene que terminar en
+`/login` con «La cuenta no pertenece al dominio de la empresa ni tiene una
+invitación vigente.». Es el único camino de D-E1a-14 que los tests no ejecutan.
+Si no, se ve el JSON 403 de hoy y se abre una corrección; nadie entra de más.
+
 ## 7. Reparto de archivos
 
 ### backend-dev
 
 - `src/server/db/schema.ts` y la migración en `drizzle/` (§2).
 - `src/lib/email.ts` y su test; `src/server/env.ts` usa `parseEmailList`.
-- `src/server/access.ts`, `access.test.ts`, `src/server/auth.ts` (§4.5).
+- `src/server/access.ts`, `access.test.ts`, `src/server/entry.ts` y su test de
+  integración, `src/server/auth.ts` (§4.5).
 - `src/modules/workspace/schema.ts`, `repository.ts`, `service.ts`,
   `actions.ts` (§4.2 a §4.4, §4.7) y sus tests de integración.
 - `scripts/invitations-from-env/` y `package.json` (§4.6).
 - `src/test/database.ts` (`truncateAll`) y una fábrica `seedInvitation` en
   `src/test/factories.ts`.
-- **Primero fija** el esquema, `workspace/schema.ts` y las firmas de las actions,
-  y avisa a `frontend-dev`.
+- **Primero fija** el esquema, `workspace/schema.ts`, `loginErrorMessage` y las
+  firmas de las actions, y avisa a `frontend-dev`.
 
 ### frontend-dev
 
-- `src/app/(app)/equipo/page.tsx` (§5.1).
+- `src/app/(app)/equipo/page.tsx` (§5.1) y `src/app/login/page.tsx` (§4.5), con
+  su test de componente.
 - `team/components/`: `team-screen.tsx`, `team-members.tsx`, `labels.ts`, y los
   nuevos `invite-dialog.tsx`, `invite-model.ts` (con su test),
   `invitation-row.tsx`, `revoke-invitation-dialog.tsx`; los tests de
   componente con `renderToStaticMarkup`.
-- No toca `workspace/` salvo para importar tipos y textos de su `schema.ts`.
+- No toca `workspace/` ni `src/server/` salvo para importar tipos, textos y
+  `loginErrorMessage`.
 
 ### e2e-tester
 
 - `e2e/team.spec.ts` (o `e2e/invitations.spec.ts`), `e2e/team-page.ts`,
   `e2e/database.ts` (`invitationStatusOf`), `e2e/session.ts` (`signInRejected`,
-  que espera el rechazo del gancho). Recorridos de §9.3; confirma que fallan
-  antes de la implementación.
+  que espera el 403 del endpoint de prueba). Recorridos de §9.3; confirma que
+  fallan antes de la implementación.
 
 ### parity-analyst
 
 - `equipo.md`: EQ-81 con D-E1a-8 (revocar una revocada es éxito sin escribir),
   si el usuario lo confirma; EQ-04 con el orden de D-E1a-12; EQ-32 con el
-  script.
+  script; la nota de §10 sobre EQ-91 y EQ-92, con D-E1a-14.
 
 ### Lo que no toca nadie
 
@@ -860,7 +986,7 @@ Clockify es la precondición de E1b, y la escribe su contrato.
 
 1. `backend-dev`: esquema, migración, `workspace/schema.ts`, firmas.
 2. En paralelo: `backend-dev` con el service, el ingreso y el script;
-   `frontend-dev` con la pantalla contra las firmas; `e2e-tester` con el spec.
+   `frontend-dev` con las pantallas contra las firmas; `e2e-tester` con el spec.
 3. Las seis revisiones; correcciones; corrida final de e2e.
 
 ## 8. Criterios de aceptación
@@ -899,15 +1025,21 @@ Clockify es la precondición de E1b, y la escribe su contrato.
 13. **Sin permiso**: la action de un member responde EQ-90 sin escribir; la de
     un admin al que el owner le quitó el rol entre la sesión y el bloqueo,
     también.
-14. **Un correo externo sin invitación ni variable no entra**: ni por el login
-    ni por el gancho de sesión. **Con una invitación pendiente entra**: nace su
-    membresía `member` activa, la invitación pasa a `accepted` con
-    `invitation.accept`, y en `/equipo` deja de estar entre las invitadas y
-    aparece entre las personas.
-15. **Con la invitación revocada**, ese correo externo no entra, salvo que esté
-    en la variable.
+14. **Un correo externo sin invitación ni variable no entra**:
+    `decideProfileEntry` y `decideStoredEmailEntry` responden
+    `dominio_no_habilitado`; el login lo manda a
+    `/login?error=dominio_no_habilitado` y `/login` muestra «La cuenta no
+    pertenece al dominio de la empresa ni tiene una invitación vigente.». **Con
+    una invitación pendiente entra**: nace su membresía `member` activa, la
+    invitación pasa a `accepted` con `invitation.accept`, y en `/equipo` deja de
+    estar entre las invitadas y aparece entre las personas.
+15. **Con la invitación revocada**, ese correo externo no entra —con el mismo
+    destino y el mismo texto del criterio 14—, salvo que esté en la variable.
+    Si la revocación llega entre las dos comprobaciones, el gancho de sesión lo
+    rechaza con el error de código `dominio_no_habilitado`, que el callback
+    redirige al mismo lugar.
 16. **Un correo del dominio con invitación y sin `hd`** no entra: la vía externa
-    no vale para el dominio.
+    no vale para el dominio; el destino y el texto son los del criterio 14.
 17. **Una persona del dominio sin invitación sigue entrando** (E1a no cierra la
     puerta); si tenía una invitación pendiente, queda `accepted`.
 18. **La membresía y la aceptación caen juntas**: si la aceptación falla, la
@@ -925,6 +1057,10 @@ Clockify es la precondición de E1b, y la escribe su contrato.
     nadie.» con «Invitar».
 23. **Revalidación**: después de invitar o revocar, `/equipo` muestra el estado
     nuevo sin recargar.
+24. **`/login` con `error`**: un motivo conocido muestra su texto; uno
+    desconocido, «No se pudo iniciar sesión. Volvé a intentar.»; sin `error`,
+    ningún aviso. El texto del parámetro y `error_description` nunca aparecen en
+    la página.
 
 ## 9. Plan de tests
 
@@ -932,7 +1068,12 @@ Clockify es la precondición de E1b, y la escribe su contrato.
 
 - `src/lib/email.test.ts`: normalizar, dominio, la lista de la variable.
 - `access.test.ts`: la vía externa con `invited` solo fuera del dominio
-  (criterio 16); el dominio con y sin `hd`; `isAllowedEmail` con los tres casos.
+  (criterio 16); el dominio con y sin `hd`; `decideStoredEmail` con los tres
+  casos y su motivo; `loginErrorMessage` con un motivo conocido, uno
+  desconocido, `undefined` y un texto armado a mano (criterio 24).
+- `entry.ts`: `loginErrorUrl` sobre `BETTER_AUTH_URL`; `sessionEntryError` con
+  estado `FORBIDDEN`, `body.code` igual al motivo y el texto de
+  `accessDenialMessage`, que es lo que el callback necesita para redirigir.
 - `planInvitations`: cada fila de la tabla de D-E1a-7, la prioridad de la
   membresía, el largo, repetidos, el orden de los resultados y de los rechazos.
 - `invite-model.test.ts`: separar por coma, espacio y salto de línea; repetidos
@@ -940,7 +1081,8 @@ Clockify es la precondición de E1b, y la escribe su contrato.
 - `scripts/invitations-from-env/plan.test.ts`: el plan con membresía, sin ella y
   con fila existente.
 - Componentes, con `renderToStaticMarkup`: la tabla con invitadas y marcas, la
-  columna «Acciones», el vacío de EQ-93, los dos pasos del diálogo y el aviso.
+  columna «Acciones», el vacío de EQ-93, los dos pasos del diálogo y el aviso;
+  `/login` con y sin `error`.
 
 ### 9.2 Integración (Postgres)
 
@@ -952,9 +1094,10 @@ Clockify es la precondición de E1b, y la escribe su contrato.
   admin mientras invita.
 - **`ensureWorkspaceContext`**: acepta la pendiente al crear; no escribe al
   encontrar; la falla de la aceptación deshace la membresía (criterio 18).
-- **El ingreso**: `hasOpenInvitation` con `pending`, `accepted` y `revoked`; el
-  gancho de sesión con un externo invitado, revocado y en la variable
-  (criterios 14 y 15).
+- **El ingreso, `entry.ts`**: `decideProfileEntry` y `decideStoredEmailEntry`
+  con un externo con invitación `pending`, `accepted` y `revoked`, sin
+  invitación, solo en la variable, y un correo del dominio con invitación y sin
+  `hd` (criterios 14 a 16). Con la variable sembrada en `process.env` del test.
 - **Actions**: la traducción de `rejected` con su lista, `validation`,
   `forbidden`, `not_pending`, `not_found` y `unexpected`, y la revalidación de
   `/equipo`, con el arnés de `profile/actions.integration.test.ts`.
@@ -986,18 +1129,32 @@ sobre la tabla entera. Los externos son `…@externo-e2e.test`, fuera de
    externo no entra; invitarlo de nuevo lo deja entrar.
 5. **Reintentar**: la respuesta de la invitación se pierde
    (`route.fetch()` + `route.abort()`); «Reintentar» termina en una sola fila.
+6. **`/login` con `error`**: `/login?error=dominio_no_habilitado` muestra el
+   texto; `/login?error=<texto armado>` muestra el genérico y no el texto.
 
 ### 9.4 Lo que no se prueba en e2e
 
-El login de Google (`mapProfileToUser`): la sesión de prueba no pasa por él. Lo
-cubren `access.test.ts` y la integración del ingreso. El script y la migración
-se prueban en integración.
+El login de Google: la sesión de prueba no pasa por `mapProfileToUser` ni por el
+callback. La decisión la cubren `access.test.ts` y la integración de
+`entry.ts`; la forma de los dos errores, la unidad de `entry.ts`; el camino de
+Better Auth hasta `/login`, la lectura del código instalado (D-E1a-14) y la
+comprobación de §6.4. El script y la migración se prueban en integración.
 
 ## 10. Riesgos
 
+- **La redirección depende de Better Auth por dentro** (D-E1a-14): las líneas
+  citadas son de la 1.7.7. Una versión nueva puede cambiar el camino; el
+  comentario de `auth.ts` las nombra, y la comprobación de §6.4 se repite al
+  actualizar la biblioteca. Si se rompe, el rechazo vuelve a ser el JSON 403:
+  no deja entrar a nadie de más.
 - **El login lee la base.** `mapProfileToUser` pasa a ser asíncrona; una base
   caída deja de dejar entrar en lugar de dejar entrar de más. Una consulta por
-  índice por ingreso.
+  índice por ingreso, y ninguna para un correo del dominio con `hd`.
+- **`onAPIError.errorURL` manda a `/login` también los errores propios del
+  callback** —un estado vencido, `account_not_linked` (PF-47)— que hoy van a la
+  página de error de Better Auth. Ven el texto genérico. Es una mejora sobre la
+  deuda del 7b, no su cierre: el texto propio de una cuenta no enlazada sigue
+  siendo P-11 de `perfil.md`.
 - **Un correo del dominio en la variable deja de entrar sin `hd`** (D-E1a-4). El
   script lo muestra en seco antes de que importe.
 - **EQ-79 dice «reactivala desde la lista»**, y reactivar llega con E2. Hasta
@@ -1010,14 +1167,15 @@ se prueban en integración.
   no lo concede, el recorrido 1 afirma el texto del aviso y deja «Copiar» a la
   unidad.
 - **`drizzle-kit` y el renombre** (§2): responder que no es un renombre.
-- **Revertir después de E1b** pierde invitaciones (§2): no se revierte.
+- **Revertir** pide sumar antes los externos de la base a la variable (§2), y no
+  se revierte después de E1b.
 
 ## 11. Preguntas para el usuario
 
 1. **¿Aprobás los ADR 0024 y 0025?** El 0024 decide que la invitación es de
-   `workspace`, una fila por correo, el corte en `mapProfileToUser` y la
-   excepción al ADR 0007; el 0025, cómo escribe un módulo en las tablas de
-   otro, que se usa desde E2.
+   `workspace`, una fila por correo, el corte en `mapProfileToUser` con el
+   rechazo en `/login` y la excepción al ADR 0007; el 0025, cómo escribe un
+   módulo en las tablas de otro, que se usa desde E2.
 2. **Revocar una invitación ya revocada, ¿éxito sin escribir?** (D-E1a-8). Es
    lo que hace seguro el reintento; EQ-81 hoy da el mensaje de error también
    para ese caso. Recomendación: sí.
@@ -1025,8 +1183,10 @@ se prueban en integración.
 ## 12. Fuera de alcance
 
 - **Cerrar la puerta** (EQ-29 … EQ-31, EQ-33, EQ-91, EQ-107 … EQ-113): E1b,
-  con la migración que acepta las pendientes de quien ya tiene membresía y la
-  consulta contra la lista de Clockify.
+  con la migración que acepta las pendientes de quien ya tiene membresía, la
+  consulta contra la lista de Clockify y el motivo nuevo de EQ-91, que usa el
+  camino a `/login` de este slice.
+- **El motivo de una persona inactiva** (EQ-92): E2, por el mismo camino.
 - **Desactivar, reactivar y el filtro de estado** (EQ-05, EQ-06, EQ-11, EQ-37 …
   EQ-48): E2. EQ-94, el vacío de un filtro, llega con el filtro.
 - **Reenviar el aviso** desde la fila de una invitada: no está en la paridad

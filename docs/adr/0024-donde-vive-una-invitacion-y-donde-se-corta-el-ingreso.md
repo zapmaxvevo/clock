@@ -5,7 +5,7 @@ Origen: el contrato de E1a
 ([`fase2-e1a-invitar.md`](../slices/fase2-e1a-invitar.md)), con el
 [mapa de la fase 2](../slices/fase2-mapa.md) (§2, E1a y E1b) y
 [`equipo.md`](../parity/equipo.md) (EQ-17, EQ-18, EQ-22 … EQ-24, EQ-29,
-EQ-32, EQ-51).
+EQ-32, EQ-51, EQ-91).
 
 ## Contexto
 
@@ -21,6 +21,12 @@ Hoy entra a Clock quien pasa el login de Google
   inicio de sesión, sin el claim, con `isAllowedEmail`.
 - **`ensureWorkspaceContext`** (`src/modules/workspace/service.ts`) crea una
   membresía `member` a cualquiera que tenga sesión. Es la deuda del slice 1.
+
+Y quien es rechazado no ve nada útil: el error de `mapProfileToUser` sale fuera
+de todo `try` del callback de Better Auth y llega al navegador como un JSON 403
+en `/api/auth/callback/google`; el del gancho de sesión pasa por el `catch` del
+callback, que redirige a la página de error solo si el error trae un código, y
+el de hoy no lo trae.
 
 El usuario decidió el 2026-10-16 que **todos entran por invitación**, también el
 dominio de la empresa (P-02), y que owner y admin invitan **correos de otro
@@ -45,8 +51,9 @@ Lo que ya está fijado por otros lados:
   «Reintentar» no duplique.
 
 Hay que decidir dónde vive la invitación, qué forma tiene, cuál es la regla de
-ingreso, en qué punto del login se corta, qué habilita una invitación aceptada,
-cómo se reintenta y cómo se pasa de la variable a la base.
+ingreso, en qué punto del login se corta y qué ve quien no entra, qué habilita
+una invitación aceptada, cómo se reintenta y cómo se pasa de la variable a la
+base.
 
 ## Opciones
 
@@ -120,9 +127,14 @@ cómo se reintenta y cómo se pasa de la variable a la base.
    `user` y `account`. El gancho `session.create` vuelve a decidir con el
    correo guardado, sin el claim, como hoy; y `ensureWorkspaceContext` crea la
    membresía —desde E1b, solo desde una invitación pendiente—. La decisión
-   sigue siendo una función pura de `access.ts`; los hechos de la base (si hay
-   una invitación abierta para el correo, y desde E1b la membresía) los lee una
-   función del service de `workspace`, y `auth.ts` los junta.
+   pura sigue en `access.ts`; una función exportada de `src/server/` la arma
+   con la variable y con los hechos de la base que lee el service de
+   `workspace`, y `auth.ts` solo traduce su resultado.
+   **Los dos rechazos terminan en `/login` con el motivo**, que muestra el texto
+   de `accessDenialMessage`: `mapProfileToUser` lanza una redirección, y el
+   gancho lanza un error con código, que el callback de Better Auth redirige a
+   la dirección de error configurada (`onAPIError.errorURL`). `/login` muestra
+   solo los motivos que conoce, nunca el texto de la dirección.
 
 5. **Toda membresía que nace acepta la invitación pendiente de su correo**, en
    la misma transacción, desde E1a. Una invitación aceptada **sostiene la
@@ -155,13 +167,20 @@ cómo se reintenta y cómo se pasa de la variable a la base.
 
 ## Consecuencias
 
-- **Un ingreso rechazado no deja filas.** Desde E1b, quien no tiene invitación
-  no llega a tener `user` ni `account`, y el `newMembership` del script de
-  importación no tiene de dónde salir. En E1a nada cambia para el dominio.
+- **Un ingreso rechazado no deja filas, salvo cuando corta el gancho de sesión,
+  que es la segunda comprobación**: para entonces Better Auth ya creó `user` y
+  `account`. Pasa con una invitación revocada entre las dos comprobaciones, con
+  una membresía desactivada desde E2, y con la sesión de prueba de los e2e, que
+  no pasa por `mapProfileToUser`. Fuera de esos casos, desde E1b quien no tiene
+  invitación no llega a tener `user` ni `account`.
+- **Quien no entra ve por qué**, en `/login`, en los dos puntos de corte. Los
+  errores propios de Better Auth en el callback (un estado vencido, una cuenta
+  no enlazada) también llegan ahí, con un texto genérico.
 - **El login lee la base**: una consulta por índice en cada ingreso con Google
   y en cada inicio de sesión, no en cada pedido.
-- **La regla de ingreso vive en un lugar**: la decisión en `access.ts`, los
-  hechos en `workspace`. `auth.ts` no decide nada.
+- **La regla de ingreso vive en un lugar**: la decisión en `access.ts`, su
+  armado con la variable y la base en una función de `src/server/`, los hechos
+  en `workspace`. `auth.ts` no decide nada.
 - **D-R8-1 cambia en un punto**: «invitar entra acá» se cumple para la
   pantalla; los datos y las reglas son de `workspace`. El resto del reparto
   sigue: `workspace` crea las membresías, `team` las administra.
