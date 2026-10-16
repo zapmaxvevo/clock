@@ -159,7 +159,7 @@ grupos (E7) van justo antes de P9, y las plantillas, al final.
 | E4    | El primer día de la semana                    | E1b, E2, WS1; WS0 (el árbol)              |
 | E5    | Búsqueda y filtro por rol                     | E2                                        |
 | E6    | Quitar del equipo                             | E1b, E2                                   |
-| P1    | Editar proyectos y la lista completa          | —                                         |
+| P1    | Editar proyectos, la lista completa y TT-09   | —                                         |
 | P2    | Archivar, restaurar y borrar proyectos        | P1                                        |
 | P3    | Clientes                                      | P2                                        |
 | P4    | Tareas                                        | P2                                        |
@@ -528,6 +528,12 @@ ya creado (la deuda del 11a: el facturable por defecto no se ve ni se edita
 después del alta), PR-31 (columnas, buscador y filtro de estado), PR-55 y PR-56
 en lo que es editar, PR-89 y PR-95. **Acción nueva**: editar un proyecto, para
 owner, admin y su responsable, por el `ProjectResource` que ya lleva la marca.
+
+**Suma TT-09, por decisión del usuario del 2026-10-16**: crear un proyecto desde
+el selector del rastreador (y de los demás lugares que usan el selector) cuando
+la búsqueda no lo encuentra, con un diálogo que lo crea y lo deja elegido. Lo
+ofrece solo a quien tiene `project.create`. Reusa el alta del slice 9; no es una
+acción nueva.
 
 Va primero del bloque porque es la lista sobre la que se archiva, se borra y se
 filtra. Lo que una edición le hace a las entradas ya está construido y probado
