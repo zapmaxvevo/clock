@@ -1010,7 +1010,9 @@ del 2026-10-16 (D-E1b-13).
     en una que se reusa; una persona del dominio sin invitación recibe el 403 de
     la sesión de prueba.
 17. **Lo que sale**: `scripts/invitations-from-env/` y su entrada no están; ni
-    `src/`, ni `.env.example`, ni el README nombran `EXTERNAL_INVITE_EMAILS`;
+    `src/` fuera de los tests, ni `.env.example`, ni el README nombran
+    `EXTERNAL_INVITE_EMAILS` (el test del criterio 6 la nombra para probar que no
+    se lee);
     `.env.example` y el README describen `WORKSPACE_OWNER_EMAIL` con el texto de
     §4.6.
 18. **Las consultas de §6** corren sin error contra una base migrada y sembrada
