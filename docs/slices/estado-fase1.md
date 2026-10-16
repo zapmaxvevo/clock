@@ -283,6 +283,44 @@ vacío del owner y `renewWorkspace` se corta.
      `backend-dev` probó dos veces en el árbol compartido; repetir en cada encargo que las
      pruebas descartables y los mutantes van en un worktree. Bases que se pueden borrar:
      `clock_r6a_*`, `clock_r6b_*`, `clock_r10a_*`, `clock_r10b_final_*`.
+     **Decimocuarta sesión** (2026-10-16, tarde): el usuario pidió seguir el roadmap sin
+     frenar («E1b y después lo que siga») y dio permiso para desplegar.
+     - **E1a**: Vercel despliega `main` en cada push y el build no migra; E1a llegó a
+       producción antes que la `0015`, que el usuario aplicó después. Desde ahora, un merge
+       con migración no se pushea hasta que el usuario la corrió en producción.
+     - **E1b en `main` y en producción** (merge `db0991d`, CI verde). Seis revisiones
+       aprobadas; registro en `correcciones-fase2-e1b-revisiones.md`. En producción: la
+       consulta previa limpia, la `0016` aplicada (0 filas aceptadas), el push, la consulta
+       de control en 0 y el Gmail personal rechazado con EQ-91. **Decisión del usuario:**
+       EQ-111 con la opción (a) (D-E1b-13), y las diez membresías activas, incluidas
+       administracion@ y juan@soybot.com, tienen que tener acceso.
+     - **Mejoras pedidas** en [`../mejoras-pedidas.md`](../mejoras-pedidas.md). **Decisión del
+       usuario:** TT-09 (crear un proyecto desde el selector) entra en P1, y el arrastre de 15
+       minutos se hace ya, como slice chico **C1**. El MCP para cargar horas queda anotado.
+     - **C1** (rama `mejoras/c1-arrastre-15`, worktree `/home/maxi/program/clock-c1`, pusheada):
+       el contrato (`a1f3cf8`; paso `min(zoom, 15)`, decidido por el team-lead) y el código
+       con su unidad en verde (`61737df`). Quedó a medias, en commits `wip`: la paridad de
+       `calendario.md` (falta aclarar en CAL-53 y en P-07 que la verificación solo registra una
+       divergencia, porque el paso lo decidió el usuario) y el e2e de `calendar-drag.spec.ts`,
+       sin corrida verificada. Falta: terminar esos dos, revisiones (frontend, tests, clean
+       code), corrida final y merge. Base de e2e: `clock_c1_e2e`.
+     - **E2** (rama `fase2/e2-desactivar`, worktree `/home/maxi/program/clock-e2`, pusheada):
+       contrato en `4825ca9`, **aprobado con cambios** por architecture-reviewer y **sin
+       corregir** todavía. Las correcciones a aplicar (antes de implementar):
+       1. Mantener P-05 como la decidió el usuario: cerrar la carrera con un ingreso
+          simultáneo con un gancho `session.create.after` que relee la membresía `for share`
+          y borra la sesión si no está activa (sin lanzar); `auth.ts` pasa a backend-dev, con
+          test en `auth.integration.test.ts`; sale el riesgo aceptado de 14 días.
+       2. §6.1: la activa sin `account` sale de la consulta 2 a una consulta 3 informativa;
+          criterio 24 en consecuencia.
+       3. Recorrido e2e 1 y criterio 20: `seedGoogleAccount(P)` antes de desactivar.
+       4. Quitar el paso 6 de D-E2-3 (inalcanzable).
+       5. Criterio 23 como lo que se prueba (`revalidatePath` y el catálogo).
+       6. §10: el `UNAUTHORIZED` de un `getSession` que refresca después del borrado, aceptado.
+       7. frontend-dev es dueño de toda `src/modules/team/components/`.
+     - Deuda vista: el Postgres local tiene 68 bases (las de pruebas viejas); tras un apagado
+       sucio tardó minutos en arrancar. Se pueden borrar las `clock_e1a_*` y `clock_e1b_*`.
+
      **Decimotercera sesión** (2026-10-16): el usuario aprobó el
      [ADR 0023](../adr/0023-quitar-el-rol-de-admin-es-una-accion-propia.md) (solo el owner quita
      el rol de admin) y corrió la importación de Clockify en producción (ver «Decisiones
