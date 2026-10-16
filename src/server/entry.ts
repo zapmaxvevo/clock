@@ -25,7 +25,7 @@ function policy(): AccessPolicy {
 
 /**
  * D-E1a-4: invitado por la variable, que se lee hasta E1b, o por una invitación
- * `pending` o `accepted` de la base.
+ * `pending` o `accepted` de la base. Normaliza una vez, para las dos.
  */
 async function isInvited(email: string): Promise<boolean> {
   const normalized = normalizeEmail(email);

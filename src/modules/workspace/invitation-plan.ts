@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { domainOf, normalizeEmail } from "@/lib/email";
+import { isCompanyEmail, normalizeEmail } from "@/lib/email";
 import type { Rejection } from "@/server/errors";
 
 import type { InvitationRow, MemberByEmail } from "./repository";
@@ -18,7 +18,7 @@ import {
 
 /** Fuera de los dominios de la empresa: «Externa» se deriva, no se guarda (ADR 0024). */
 export function isExternal(email: string, domains: readonly string[]): boolean {
-  return !domains.includes(domainOf(email));
+  return !isCompanyEmail(email, domains);
 }
 
 const validEmail = z.email().max(EMAIL_MAX_LENGTH);

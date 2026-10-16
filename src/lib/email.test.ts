@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { domainOf, normalizeEmail, parseEmailList } from "./email";
+import { domainOf, isCompanyEmail, normalizeEmail, parseEmailList } from "./email";
 
 describe("normalizeEmail (EQ-105)", () => {
   it("recorta y pasa a minúsculas", () => {
@@ -20,6 +20,22 @@ describe("domainOf", () => {
 
   it("da la cadena vacía sin arroba", () => {
     expect(domainOf("ana.empresa.com")).toBe("");
+  });
+});
+
+describe("isCompanyEmail", () => {
+  it("compara el dominio del correo con los de la empresa, sin distinguir mayúsculas ni blancos", () => {
+    expect(isCompanyEmail(" Ana@EMPRESA.com", ["otra.com", " Empresa.com "])).toBe(true);
+  });
+
+  it("no toma un subdominio ni un sufijo como el dominio", () => {
+    expect(isCompanyEmail("ana@ventas.empresa.com", ["empresa.com"])).toBe(false);
+    expect(isCompanyEmail("ana@otraempresa.com", ["empresa.com"])).toBe(false);
+  });
+
+  it("es falso sin arroba o sin dominios", () => {
+    expect(isCompanyEmail("empresa.com", ["empresa.com"])).toBe(false);
+    expect(isCompanyEmail("ana@empresa.com", [])).toBe(false);
   });
 });
 

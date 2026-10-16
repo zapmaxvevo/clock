@@ -422,7 +422,7 @@ describe("hasOpenInvitation", () => {
     });
     await seedInvitation({ workspaceId, email: "revocada@gmail.com", status: "revoked" });
 
-    expect(await hasOpenInvitation(" Pendiente@Gmail.com")).toBe(true);
+    expect(await hasOpenInvitation("pendiente@gmail.com")).toBe(true);
     expect(await hasOpenInvitation("aceptada@gmail.com")).toBe(true);
     expect(await hasOpenInvitation("revocada@gmail.com")).toBe(false);
     expect(await hasOpenInvitation("nadie@gmail.com")).toBe(false);

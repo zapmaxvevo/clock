@@ -4,7 +4,7 @@
  * variable los arma `src/server/entry.ts`.
  */
 
-import { domainOf, normalizeEmail } from "@/lib/email";
+import { isCompanyEmail, normalizeEmail } from "@/lib/email";
 
 export type GoogleProfile = {
   readonly email?: string | null;
@@ -28,7 +28,7 @@ const denied = { allowed: false, reason: "dominio_no_habilitado" } as const;
 
 /** La vía externa: un correo fuera de los dominios, invitado (ADR 0024, decisión 3). */
 function isExternalInvited(email: string, domains: readonly string[], invited: boolean) {
-  return invited && !domains.includes(domainOf(email));
+  return invited && !isCompanyEmail(email, domains);
 }
 
 /**
@@ -63,9 +63,9 @@ export function decideGoogleAccess(
   const hostedDomain =
     profile.hd === null || profile.hd === undefined ? "" : normalizeEmail(profile.hd);
   const belongsToDomain =
-    domains.includes(domainOf(email)) && domains.includes(hostedDomain);
+    isCompanyEmail(email, policy.domains) && domains.includes(hostedDomain);
 
-  if (belongsToDomain || isExternalInvited(email, domains, invited)) {
+  if (belongsToDomain || isExternalInvited(email, policy.domains, invited)) {
     return { allowed: true };
   }
   return denied;
@@ -81,11 +81,9 @@ export function decideStoredEmail(
   policy: AccessPolicy,
   invited: boolean,
 ): AccessDecision {
-  const normalized = normalizeEmail(email);
-  const domains = policy.domains.map(normalizeEmail);
   if (
-    domains.includes(domainOf(normalized)) ||
-    isExternalInvited(normalized, domains, invited)
+    isCompanyEmail(email, policy.domains) ||
+    isExternalInvited(email, policy.domains, invited)
   ) {
     return { allowed: true };
   }

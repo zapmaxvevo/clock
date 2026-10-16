@@ -14,6 +14,16 @@ export function domainOf(email: string): string {
   return at === -1 ? "" : email.slice(at + 1);
 }
 
+/**
+ * Si el correo es de uno de los dominios de la empresa: el corte entre la vía
+ * del dominio y la externa (ADR 0024, decisión 3). Sin distinguir mayúsculas
+ * ni blancos, ni en el correo ni en los dominios.
+ */
+export function isCompanyEmail(email: string, domains: readonly string[]): boolean {
+  const domain = domainOf(normalizeEmail(email));
+  return domains.some((candidate) => normalizeEmail(candidate) === domain);
+}
+
 /** La lista de la variable de entorno, separada por comas; la usa `env.ts` y el script de la variable. */
 export function parseEmailList(value: string): string[] {
   return value

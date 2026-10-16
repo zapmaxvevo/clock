@@ -1,11 +1,10 @@
-import { domainOf, normalizeEmail } from "@/lib/email";
+import { isCompanyEmail, normalizeEmail } from "@/lib/email";
+import type { InvitationStatus } from "@/server/db/schema";
 
 /**
  * El plan del script de la variable (contrato de E1a, §4.6), puro: qué fila de
  * `invitation` le toca a cada correo de `EXTERNAL_INVITE_EMAILS`.
  */
-
-export type InvitationStatus = "pending" | "accepted" | "revoked";
 
 export type EnvInvitationStep = {
   readonly email: string;
@@ -39,9 +38,8 @@ export function planFromEnv(
 ): EnvInvitationStep[] {
   const withMembership = new Set(members.map(normalizeEmail));
   const statusOf = new Map(invitations.map((row) => [row.email, row.status]));
-  const companyDomains = domains.map(normalizeEmail);
   return [...new Set(emails.map(normalizeEmail))].map((email) => {
-    const inDomain = companyDomains.includes(domainOf(email));
+    const inDomain = isCompanyEmail(email, domains);
     const existing = statusOf.get(email);
     if (existing !== undefined) {
       return { email, inDomain, kind: "exists", status: existing };

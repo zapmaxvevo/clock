@@ -359,8 +359,9 @@ export async function revokeInvitation(
 
 /**
  * D-E1a-4: el hecho de la vía externa, para `src/server/entry.ts`: una
- * invitación `pending` o `accepted` del correo. Lee sin actor: no hay sesión.
+ * invitación `pending` o `accepted` del correo, que llega ya normalizado. Lee
+ * sin actor: no hay sesión.
  */
 export async function hasOpenInvitation(email: string): Promise<boolean> {
-  return workspaceRepository.hasOpenInvitation(normalizeEmail(email));
+  return workspaceRepository.hasOpenInvitation(email);
 }
