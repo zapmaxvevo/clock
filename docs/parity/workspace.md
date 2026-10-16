@@ -5,8 +5,8 @@ Alcance de este documento: la pantalla de configuración del workspace —el
 Free, cuáles entran en Clock y con qué forma, quién la ve y quién la cambia, y
 qué le pasa al resto de la aplicación cuando un ajuste cambia. No cubre la
 pantalla de equipo —roles, invitaciones, desactivar personas, transferir el
-workspace y el primer día de la semana de cada persona son de
-[`equipo.md`](equipo.md)—, ni los ajustes de la persona —están en
+workspace (EQ-55 … EQ-59) y el primer día de la semana de cada persona (EQ-71)
+son de [`equipo.md`](equipo.md)—, ni los ajustes de la persona —están en
 [`perfil.md`](perfil.md)—.
 
 Es la precondición de los slices de configuración de la fase 2. Escrito el
@@ -15,8 +15,8 @@ Es la precondición de los slices de configuración de la fase 2. Escrito el
 Cada comportamiento lleva un identificador `WS-nn` para que lo citen el reviewer
 de paridad y los flujos de Playwright, y una marca `replicar`, `adaptar` o
 `fuera de alcance`. Las dos últimas llevan una línea de justificación. Las
-referencias `TT-nn`, `PR-nn`, `PF-nn`, `TS-nn` y `RP-nn` apuntan a los otros
-documentos de paridad y no se reespecifican acá. Los pendientes de este
+referencias `TT-nn`, `PR-nn`, `PF-nn`, `TS-nn`, `RP-nn` y `EQ-nn` apuntan a los
+otros documentos de paridad y no se reespecifican acá. Los pendientes de este
 documento se citan como `workspace P-nn`.
 
 ## Fuentes y límites del relevamiento
@@ -40,6 +40,10 @@ API, consultadas el 2026-10-16:
 - https://clockify.me/help/track-time-and-expenses/lock-timesheets
 - https://clockify.me/pricing
 - https://docs.clockify.me/openapi.json (esquema `WorkspaceSettingsDtoV1`)
+
+Dos citas vienen de [`equipo.md`](equipo.md), que las confirmó con el mismo
+método: la de la página de perfiles en WS-08 (EQ-71) y la de la página de
+admins en WS-38 (EQ-53).
 
 **Método.** Toda cita marcada «Documentado» se confirmó con una segunda
 consulta que pedía la cadena literal y FOUND con la oración, o NOT FOUND, porque
@@ -220,11 +224,14 @@ de precios no lo resuelve) y qué formatos acepta Clockify (workspace P-09).
 pendiente de workspace P-02
 Documentado: «Week start: A dropdown menu that sets the first day of the week
 for reports and timesheets.» y «This acts as the default for all new members,
-though it can be overridden on an individual member's profile.»
+though it can be overridden on an individual member's profile.» La página de
+perfiles lo dice desde el lado de la persona: «Week start set up on the Team
+page overrides the default one in the Workspace settings.» (citada y
+verificada en EQ-71).
 **Esto completa PF-01**, que solo conocía la mitad por persona: en Clockify el
 primer día es un valor del workspace que reciben las personas nuevas, y un admin
-lo cambia después persona por persona desde la pantalla de equipo (PF-17, de
-`equipo.md`).
+lo cambia después persona por persona desde la pantalla de equipo (PF-17,
+EQ-71).
 Acá hoy no hay valor de workspace: `membership.week_start` nace en lunes por el
 `default` de la columna. Propuesta, si entra: una columna
 `workspace_settings.week_start`, con los siete días y lunes como valor inicial
@@ -232,8 +239,10 @@ Acá hoy no hay valor de workspace: `membership.week_start` nace en lunes por el
 **Cambiarla no toca ninguna membresía existente**: es el valor de las que se
 creen después.
 _No verificado_: si en Clockify cambiar el valor del workspace mueve a las
-personas que nunca tuvieron uno propio. Si lo hace, replicarlo pide distinguir
-«no eligió» de «eligió lunes», que hoy la columna no distingue (workspace P-09).
+personas que nunca tuvieron uno propio. «Overrides» sugiere que sí —el valor
+del workspace vale mientras nadie haya fijado otro—, pero no lo dice. Si lo
+hace, replicarlo pide distinguir «no eligió» de «eligió lunes», que hoy la
+columna no distingue (workspace P-09).
 Verificado en el workspace (2026-10-07, timesheet respuesta 13): la planilla de
 la persona que respondió empieza el lunes.
 
@@ -515,10 +524,14 @@ exportaciones de horas son las del reporte (RP-53, RP-54).
 
 **WS-38 Borrar el workspace** — `fuera de alcance`
 Documentado: «owners are the only ones who can initiate the deletion of the
-entire workspace» … Justificación: hay un solo workspace, borrarlo borra todo y
-no se puede deshacer; si alguna vez hace falta, es una operación en la base.
-`workspace.delete` existe en `can()` para `owner` y no la usa nadie.
-Transferir el workspace (`workspace.transfer`, RP-69) es de `equipo.md`.
+entire workspace» …, y de la página de admins, «If the Owner leaves the
+workspace, the entire workspace is deleted» (citada y verificada en EQ-53, que
+la deja de este lado). Justificación: hay un solo workspace, borrarlo borra
+todo y no se puede deshacer; si alguna vez hace falta, es una operación en la
+base. Tampoco hay un owner que se vaya: EQ-53 queda fuera de alcance por lo
+mismo. `workspace.delete` existe en `can()` para `owner` y no la usa nadie.
+Transferir el workspace (`workspace.transfer`) es EQ-55 … EQ-59 de
+`equipo.md`, y no está en esta pantalla.
 
 ## 6. Permisos
 
@@ -630,9 +643,9 @@ un módulo que no existe promete algo que no está.
 
 **WS-49 Owner y admin cambian todo lo que la pantalla ofrece** — `replicar`
 Con `workspace.settings.update` (WS-02). No hay ajuste que sea solo del owner:
-la documentación no nombra ninguno y los que serían solo del owner —borrar y
-transferir el workspace— no están en esta pantalla (WS-38). Un admin puede
-cambiar el nombre que eligió el owner.
+la documentación no nombra ninguno, y lo que es solo del owner —borrar el
+workspace (WS-38) y transferirlo (EQ-55)— no está en esta pantalla. Un admin
+puede cambiar el nombre que eligió el owner.
 
 **WS-50 Los otros tres roles no entran** — `adaptar`
 `project_manager`, `team_manager` y `member` no ven el enlace (WS-01). Si
@@ -654,7 +667,8 @@ como `/equipo` con su «No podés administrar el equipo.».
 Si el owner le quita el rol de admin a alguien que tiene la pantalla abierta, lo
 dibujado queda hasta el pedido siguiente, como en RP-02: el próximo cambio
 responde «No tenés permiso para hacer esto.» y el control vuelve a su valor; al
-recargar ve WS-50.
+recargar ve WS-50. Lo mismo para un owner que transfirió la propiedad, que pasa
+a admin (EQ-57) y sigue entrando.
 
 ## 9. Validaciones y mensajes
 
@@ -740,21 +754,22 @@ Playwright las prueben.
 Varias nunca tuvieron efecto, y el ADR 0009 dice por qué eso es un problema:
 «un dato que viaja sin efecto es una invitación a creer que tiene uno».
 
-| Columna                                                                 | Hoy                                     | Con este documento                              |
-| ----------------------------------------------------------------------- | --------------------------------------- | ----------------------------------------------- |
-| `workspace.name`                                                        | Se muestra; nadie la cambia             | Se cambia desde la pantalla (WS-05)             |
-| `workspace.logo_url`                                                    | Vacía, sin uso                          | Workspace P-01 (WS-07)                          |
-| `workspace.currency`                                                    | `ARS`, sin uso                          | Sin destino (WS-31)                             |
-| `workspace.timezone`                                                    | Día del cron (PF-05)                    | Igual; no se muestra (WS-12)                    |
-| `workspace_settings.who_sees_all_entries`                               | `admins`, sin efecto (ADR 0020)         | Igual (WS-42)                                   |
-| `workspace_settings.who_sees_rates`                                     | `admins`, sin efecto                    | Sin destino (WS-43)                             |
-| `workspace_settings.who_creates_projects`                               | `everyone`, sin efecto (P-18, ADR 0009) | Workspace P-03 (WS-39)                          |
-| `require_project`, `require_task`, `require_description`, `require_tag` | Falso, sin efecto (TT-84)               | Sin destino (WS-22)                             |
-| `workspace_settings.force_timer`                                        | Falso, sin efecto (TT-84)               | Sin destino (WS-23)                             |
-| `workspace_settings.timesheet_enabled`                                  | Verdadero, sin efecto (TS-01)           | Sin destino (WS-18)                             |
-| `workspace_settings.rounding_minutes`                                   | Cero, sin efecto (TT-83, RP-36)         | Sin destino (WS-24)                             |
-| _Falta_: formato de duración                                            | —                                       | Columna nueva, compacto por defecto (WS-15)     |
-| _Falta_: primer día por defecto                                         | —                                       | Columna nueva, si entra (WS-08, workspace P-02) |
+| Columna                                                                 | Hoy                                     | Con este documento                                   |
+| ----------------------------------------------------------------------- | --------------------------------------- | ---------------------------------------------------- |
+| `workspace.name`                                                        | Se muestra; nadie la cambia             | Se cambia desde la pantalla (WS-05)                  |
+| `workspace.logo_url`                                                    | Vacía, sin uso                          | Workspace P-01 (WS-07)                               |
+| `workspace.currency`                                                    | `ARS`, sin uso                          | Sin destino (WS-31)                                  |
+| `workspace.timezone`                                                    | Día del cron (PF-05)                    | Igual; no se muestra (WS-12)                         |
+| `workspace.owner_id`                                                    | El owner                                | Lo cambia la transferencia (EQ-57), no esta pantalla |
+| `workspace_settings.who_sees_all_entries`                               | `admins`, sin efecto (ADR 0020)         | Igual (WS-42)                                        |
+| `workspace_settings.who_sees_rates`                                     | `admins`, sin efecto                    | Sin destino (WS-43)                                  |
+| `workspace_settings.who_creates_projects`                               | `everyone`, sin efecto (P-18, ADR 0009) | Workspace P-03 (WS-39)                               |
+| `require_project`, `require_task`, `require_description`, `require_tag` | Falso, sin efecto (TT-84)               | Sin destino (WS-22)                                  |
+| `workspace_settings.force_timer`                                        | Falso, sin efecto (TT-84)               | Sin destino (WS-23)                                  |
+| `workspace_settings.timesheet_enabled`                                  | Verdadero, sin efecto (TS-01)           | Sin destino (WS-18)                                  |
+| `workspace_settings.rounding_minutes`                                   | Cero, sin efecto (TT-83, RP-36)         | Sin destino (WS-24)                                  |
+| _Falta_: formato de duración                                            | —                                       | Columna nueva, compacto por defecto (WS-15)          |
+| _Falta_: primer día por defecto                                         | —                                       | Columna nueva, si entra (WS-08, workspace P-02)      |
 
 Qué hacer con las columnas «sin destino» es workspace P-05.
 
@@ -788,7 +803,8 @@ No los toqué: son de otros dueños y van con su corrección fechada.
   rol que lo cambia está sin verificar. Está en «Time tracking» y lo cambian
   owner y admin (WS-14). Sale de la lista de perfil P-09.
 - **PF-01 y PF-16** no saben que el primer día de la semana tiene además un
-  valor de workspace para las personas nuevas (WS-08).
+  valor de workspace para las personas nuevas (WS-08). EQ-71 ya lo registra del
+  lado de equipo.
 - **PR-40, PR-58 y P-33 de `proyectos.md`**: la página del plan Free dice que
   cualquier miembro crea tareas (WS-40). Es la verificación que P-33 esperaba,
   hecha con la documentación y no con el workspace.
@@ -812,7 +828,7 @@ Sugerencia, no decisión. Cada uno es vertical y se despliega solo.
    workspace y no de la persona.
 3. **WS3 — El primer día por defecto**, si workspace P-02 lo aprueba. Una
    columna, un selector y la lectura en `ensureWorkspaceContext`. Conviene
-   después del slice de equipo que edite el primer día por persona (PF-17), para
+   después del slice de equipo que edite el primer día por persona (EQ-71), para
    que las dos caras del mismo dato lleguen juntas.
 4. **WS4 — El logo**, si workspace P-01 lo aprueba, después de un ADR sobre el
    almacenamiento de archivos.
