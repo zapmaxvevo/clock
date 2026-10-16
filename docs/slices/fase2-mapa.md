@@ -40,9 +40,10 @@ abrir:
 **Entra**:
 
 - **Equipo**: invitar y revocar, el ingreso por invitación, desactivar y
-  reactivar (con RP-60 y RP-63, que el núcleo dejó para acá), transferir la
-  propiedad, el primer día de la semana de cada persona, búsqueda y filtro por
-  rol, quitar a quien no tiene horas y, si P-10 los confirma en Free, los grupos.
+  reactivar (con RP-60 y RP-63, que el núcleo dejó para acá), volver a entrar
+  sin `account`, transferir la propiedad, el primer día de la semana de cada
+  persona, búsqueda y filtro por rol, quitar a quien no tiene horas y, si P-10
+  los confirma en Free, los grupos.
 - **Configuración del workspace**: la pantalla `/configuracion` con el nombre,
   el formato de duración y el primer día por defecto; y la baja de las columnas
   sin efecto.
@@ -58,11 +59,11 @@ abrir:
 **No entra**:
 
 - Por plan pago o por el documento de paridad: EQ-09, EQ-10, EQ-15, EQ-27,
-  EQ-28, EQ-36, EQ-49, EQ-52 … EQ-54, EQ-69, EQ-72 (P-09), EQ-73, EQ-74;
-  WS-07, WS-59 y WS-60 (sin logo, workspace P-01), WS-09 (P-06), WS-10,
-  WS-19 … WS-25, WS-27 … WS-35, WS-37, WS-38, WS-43 … WS-47; PR-11, PR-28,
-  PR-29 (estimaciones, presupuesto, tarifas), PR-32 … PR-34, PR-41; TS-55 …
-  TS-61 y TS-67 … TS-74.
+  EQ-28, EQ-36, EQ-49, EQ-52 … EQ-54, EQ-69, EQ-72 (P-09), EQ-73, EQ-74, EQ-80
+  (sin uso desde P-03); WS-07, WS-59 y WS-60 (sin logo, workspace P-01), WS-09
+  (P-06), WS-10, WS-19 … WS-25, WS-27 … WS-35, WS-37, WS-38, WS-43 … WS-47;
+  PR-11, PR-28, PR-29 (estimaciones, presupuesto, tarifas), PR-32 … PR-34,
+  PR-41; TS-55 … TS-61 y TS-67 … TS-74.
 - Fase 3: EQ-66 (grupos en los reportes).
 - Ya cumplido o sin trabajo nuevo: EQ-02 y EQ-34 (R8, con P-01), EQ-35 (R8,
   ADR 0023); WS-11, WS-12, WS-13, WS-18, WS-36, WS-39 (P-03, queda fijo),
@@ -81,7 +82,8 @@ parciales (`ops/importar-clockify`). Hoy hay cuatro grupos:
    membresía y sin horas cargadas. Sus horas las carga la corrida del script que
    sigue a su primer ingreso. Nicolas Veliz es de otro dominio y hoy necesita
    estar en `EXTERNAL_INVITE_EMAILS`.
-4. **Los invitados externos de la variable** `EXTERNAL_INVITE_EMAILS`.
+4. **Los invitados externos de la variable** `EXTERNAL_INVITE_EMAILS`, con
+   membresía o sin ella.
 
 Si el ingreso pasa a exigir invitación en el mismo despliegue que trae la
 pantalla de invitar, el grupo 3 queda afuera hasta que alguien lo invite, y en
@@ -89,31 +91,48 @@ la ventana entre el despliegue y la invitación no puede entrar. **Por eso E1 se
 parte en dos**:
 
 - **E1a trae las invitaciones sin cerrar la puerta**: el dominio sigue entrando
-  solo, como hoy, y una invitación abre además la entrada a un correo de otro
-  dominio (P-03). Con E1a en producción, el owner invita al grupo 3 —Nicolas
-  incluido— y a cada correo de la variable que todavía no tenga membresía.
-- **E1b cierra la puerta**: entra quien ya tiene membresía o tiene una
-  invitación pendiente; la variable deja de leerse.
+  solo, como hoy. E1a migra **una sola vez todos los correos de la variable** a
+  la lista de externos de la base (EQ-32), y los que todavía no tienen
+  membresía quedan además con una invitación pendiente, que es lo que hoy les
+  da la variable. Desde ahí, invitar desde la pantalla un correo de otro
+  dominio lo suma a esa lista (P-03). Con E1a en producción, el owner invita al
+  grupo 3, Nicolas incluido.
+- **E1b cierra la puerta**: la regla de ingreso se escribe por vía. Entra quien
+  pasa una de las dos vías de identidad —dominio de la empresa con el claim
+  `hd`, o correo externo registrado en la base— **y** tiene membresía o una
+  invitación pendiente. La variable deja de leerse.
+
+Desde E1a, **toda membresía que nace acepta la invitación pendiente de su
+correo**, en la misma transacción. Sin eso, quien entra por el dominio durante
+la ventana de E1a, o recibe su membresía del script de importación
+(`newMembership`), queda con una invitación pendiente vieja: la lista lo
+mostraría invitado y activo a la vez, y desde E1b esa invitación le dejaría
+volver sin una nueva aunque se lo quite con E6 (EQ-51).
 
 Lo que cada grupo vive con eso:
 
-- **Grupo 1**: nada cambia (EQ-31). No hay invitación retroactiva.
+- **Grupo 1**: nada cambia (EQ-31). No hay invitación retroactiva. Los externos
+  de este grupo quedan registrados por la migración de E1a y siguen entrando
+  por su membresía.
 - **Grupo 2**: nada cambia mientras sigan inactivas. Si alguna se reactiva, su
   `user` no tiene `account` y no puede entrar: es el caso de EQ-110, que resuelve
-  E2.
+  E2b. Lo mismo vale para quien se desactive con el procedimiento SQL antes de
+  E2 (§5).
 - **Grupo 3**: invitado en E1a; entra en cualquier momento, antes o después de
-  E1b, y en ese momento nace su membresía `active`. La corrida siguiente del
-  script la encuentra como `member` y carga sus horas, como con quien ya entró.
-  Nadie pierde horas: no hay horas suyas en la base hasta esa corrida.
-- **Grupo 4**: invitado en E1a si no tiene membresía; si ya la tiene, entra por
-  ella. Después de E1b el usuario saca la variable de Vercel.
+  E1b, y en ese momento nace su membresía `active` y se acepta su invitación. La
+  corrida siguiente del script la encuentra como `member` y carga sus horas,
+  como con quien ya entró. Nadie pierde horas: no hay horas suyas en la base
+  hasta esa corrida.
+- **Grupo 4**: registrado por la migración de E1a, con invitación pendiente si
+  no tiene membresía. Después de E1b el usuario saca la variable de Vercel.
 
 **Antes de desplegar E1b**, el usuario corre en producción una consulta
 informativa, como la de R1: las membresías con su correo, su estado y sus
-horas, y las invitaciones pendientes. La compara con la lista de activas de
-Clockify (`personas.json`, fuera del repositorio): nadie activo en Clockify
-puede quedar sin membresía y sin invitación. Si la consulta encuentra a alguien
-que entró por la deuda y no debía, se desactiva con E2 o se quita con E6.
+horas, los externos registrados y las invitaciones pendientes. La compara con
+la lista de activas de Clockify (`personas.json`, fuera del repositorio): nadie
+activo en Clockify puede quedar sin membresía y sin invitación. Si la consulta
+encuentra a alguien que entró por la deuda y no debía, se lo desactiva con el
+procedimiento SQL del §5, que hasta E2 es la única forma.
 
 ## 3. El mapa
 
@@ -126,12 +145,13 @@ pidió el usuario, con las dependencias de la tabla.
 | E1a   | Invitar y revocar                             | —                                        |
 | E1b   | El ingreso exige invitación                   | E1a, y las invitaciones hechas en prod   |
 | E2    | Desactivar y reactivar                        | E1b                                      |
+| E2b   | Volver a entrar sin `account`                 | E1b                                      |
 | WS0   | Las columnas sin efecto                       | —                                        |
-| WS1   | Configuración: la pantalla y el nombre        | — (WS0 antes, por el árbol)              |
+| WS1   | Configuración: la pantalla y el nombre        | —                                        |
 | WS2a  | Formato de duración: el dato y sus lectores   | WS0 (el árbol)                           |
 | WS2b  | Formato de duración: el selector y el reporte | WS1, WS2a                                |
 | E3    | Transferir la propiedad                       | E1b, E2                                  |
-| E4    | El primer día de la semana                    | E1b, E2, WS1                             |
+| E4    | El primer día de la semana                    | E1b, E2, WS1; WS0 (el árbol)             |
 | E5    | Búsqueda y filtro por rol                     | E2                                       |
 | E6    | Quitar del equipo                             | E1b, E2                                  |
 | E7    | Grupos                                        | E2, P-10 verificado (ver §7, pregunta 2) |
@@ -171,19 +191,24 @@ serie salvo que el contrato de P1 separe las pantallas (ver P1).
 ### E1a — Invitar y revocar
 
 Cubre EQ-04, EQ-12 … EQ-14, EQ-16, EQ-19 … EQ-23, EQ-25, EQ-26 (P-04: el texto
-para avisar a mano, con «Copiar»), la parte de EQ-32 que lleva la lista de
-externos a la base, EQ-76 … EQ-81, EQ-90, EQ-93, EQ-97, EQ-105 y EQ-106.
+para avisar a mano, con «Copiar»), EQ-32 (la migración única de la variable a
+la base), EQ-76 … EQ-79, EQ-81, EQ-90, EQ-93, EQ-97, EQ-105 y EQ-106.
 
-**Cambia el esquema**: la tabla de invitaciones por correo. `external_invite` ya
-tiene la forma (workspace, correo, quién invitó, revocada) y no la usa nadie;
-el contrato decide si se extiende —aceptada, quién revocó— o se reemplaza.
+**Cambia el esquema**: la lista de externos y las invitaciones, por correo.
+`external_invite` ya tiene la forma (workspace, correo, quién invitó, revocada)
+y no la usa nadie; el contrato decide si se extiende —aceptada, quién revocó—
+o se reemplaza, y si externos e invitaciones son una tabla o dos.
 `member.invite` ya existe con owner y admin; revocar es otra acción o la misma,
 lo decide el contrato.
 
-**El ingreso cambia solo para los externos**: una invitación vigente habilita un
-correo de otro dominio, además de la variable. El dominio sigue entrando sin
-invitación hasta E1b. Mientras convivan la tabla y la variable, la regla de
-acceso lee las dos, en un solo lugar (`access.ts` o su reemplazo).
+**La migración única de la variable** (§2, grupo 4): SQL no puede leer el
+entorno, así que el contrato decide si es un script que corre el usuario con la
+variable de producción o un paso del despliegue. Hasta E1b la regla de acceso
+lee la base y la variable, en un solo lugar (`access.ts` o su reemplazo).
+
+**Toda membresía que nace acepta la invitación pendiente de su correo** (§2):
+`ensureWorkspaceContext`, que en E1a sigue creando la membresía del dominio sin
+invitación, la acepta en la misma transacción.
 
 **Va primero** porque es lo que permite invitar al grupo 3 de la §2 antes de
 cerrar la puerta, y porque Nicolas Veliz entra por acá sin tocar la variable.
@@ -191,46 +216,70 @@ cerrar la puerta, y porque Nicolas Veliz entra por acá sin tocar la variable.
 Riesgos:
 
 - **El login lee la base**: `mapProfileToUser` y el gancho de sesión pasan a
-  consultar invitaciones. Una vez por ingreso o por inicio de sesión, no por
-  pedido.
+  consultar externos e invitaciones. Una vez por ingreso o por inicio de
+  sesión, no por pedido.
 - **Una sola invitación por workspace y correo** (EQ-106), con el correo
   recortado y en minúsculas (EQ-105). El reintento es seguro por el índice único
-  (EQ-19), sin id del cliente.
+  (EQ-19), sin id elegido por el cliente: **es una excepción al ADR 0007**, que
+  pide ese id en las altas de cualquier módulo, y la escribe el ADR de E1a.
+- **Volver a invitar después de revocar** (EQ-23): el índice
+  `external_invite_workspace_email_unq` no es parcial, así que una invitación
+  revocada ocupa el correo. O se reusa la fila revocada o el índice pasa a
+  cubrir solo las vigentes; lo decide el ADR de E1a.
+- **Escribe entre módulos**: aceptar la invitación desde
+  `ensureWorkspaceContext`, del módulo `workspace`, escribe una fila del módulo
+  que tenga las invitaciones.
 - **Todo o nada** con hasta 50 correos (EQ-14, ADR 0011).
 - **El texto para avisar** nombra la dirección de Clock: sale de
   `BETTER_AUTH_URL`, que en un preview puede no ser la del preview.
 
-ADR: **dónde vive una invitación y dónde se corta el ingreso** (EQ-17, EQ-18,
-EQ-29). Se escribe con el contrato de E1a porque lo usan E1a y E1b: la tabla por
-correo, si `invited` de `membership_status` sigue teniendo uso, en qué punto del
-login se corta (`mapProfileToUser`, el gancho de sesión o
-`ensureWorkspaceContext`) y la transición con la variable.
+ADR, los dos con el contrato de E1a:
+
+- **dónde vive una invitación y dónde se corta el ingreso** (EQ-17, EQ-18,
+  EQ-29): externos e invitaciones, si `invited` de `membership_status` sigue
+  teniendo uso, en qué punto del login se corta (`mapProfileToUser`, el gancho
+  de sesión o `ensureWorkspaceContext`), la transición con la variable, **qué
+  habilita una invitación aceptada** (nada para volver a entrar: vuelve quien
+  tiene membresía o una invitación pendiente), la excepción al ADR 0007 y el
+  índice;
+- **escrituras entre módulos**, que extiende el 0010: aceptar la invitación
+  (E1a, E1b), detener el timer y borrar las sesiones (E2) y escribir
+  `workspace.owner_id` desde `team` (E3). Va con E1a porque E1a escribe la
+  primera.
 
 ### E1b — El ingreso exige invitación
 
-Cubre EQ-17, EQ-18, EQ-24, EQ-29 … EQ-31, el resto de EQ-32 (la variable deja de
-leerse), EQ-33, EQ-91, EQ-107 … EQ-109, EQ-111 y EQ-113. **Cierra la deuda de
-`ensureWorkspaceContext`** que arrastran el slice 1, el mapa de la fase 1 (§5) y
-el del núcleo (§6).
+Cubre EQ-17, EQ-18, EQ-24, EQ-29 … EQ-31, EQ-33, EQ-91, EQ-107 … EQ-109,
+EQ-111 y EQ-113. **Cierra la deuda de `ensureWorkspaceContext`** que arrastran
+el slice 1, el mapa de la fase 1 (§5) y el del núcleo (§6).
 
-Sin tablas nuevas. Cambia `ensureWorkspaceContext`: la membresía nueva nace solo
-de una invitación pendiente, que queda aceptada en la misma transacción, y
-`WORKSPACE_OWNER_EMAIL` vale solo para el arranque, cuando no hay workspace
-(EQ-30).
+Sin tablas nuevas. Escribe la regla de ingreso por vía (§2): **identidad**
+—dominio con `hd`, o externo registrado en la base— **y acceso** —membresía, o
+invitación pendiente—. La variable deja de leerse. `ensureWorkspaceContext`
+crea una membresía solo desde una invitación pendiente, que acepta en la misma
+transacción, y `WORKSPACE_OWNER_EMAIL` vale solo para el arranque, cuando no
+hay workspace (EQ-30).
 
-Depende de E1a y de una condición operativa: **las invitaciones del grupo 3 y de
-la variable hechas en producción**, revisadas con la consulta de la §2. Se
-separa de E1a para que esa ventana exista y para que el cambio de mayor riesgo
-—quién entra— se despliegue y se revierta solo.
+**Trae una migración de datos**: acepta las invitaciones pendientes cuyo correo
+ya tiene membresía, las que quedaron de la ventana de E1a o de una corrida del
+script. Sin ella, quien se quite con E6 volvería a entrar por una invitación
+vieja (EQ-51).
+
+Depende de E1a y de una condición operativa: **las invitaciones del grupo 3
+hechas en producción y la migración de la variable corrida**, revisadas con la
+consulta de la §2. Se separa de E1a para que esa ventana exista y para que el
+cambio de mayor riesgo —quién entra— se despliegue y se revierta solo.
 
 Riesgos:
 
 - **Dejar afuera a alguien**: lo cubre la §2. La reversión de E1b es volver a
-  desplegar E1a; las invitaciones quedan.
+  desplegar E1a; las invitaciones y los externos quedan.
 - **Un ingreso rechazado no debe dejar una fila `user` que otra vía convierta en
   membresía.** El script de importación crea la membresía de cualquier `user`
   sin membresía que esté en `personas.json` (`newMembership`). El ADR de E1a
-  elige un corte que no deje esa fila o lo dice como consecuencia.
+  elige un corte que no deje esa fila o lo dice como consecuencia; si después
+  de E1b el script todavía crea una membresía, acepta la invitación en la misma
+  transacción.
 - **La sesión de los e2e**: el plugin de sesión de prueba crea personas sin
   invitación. El arnés de e2e y el de integración siembran la membresía o la
   invitación; si no, toda la suite cae en E1b.
@@ -245,28 +294,28 @@ Riesgos:
 ### E2 — Desactivar y reactivar
 
 Cubre EQ-03 (el menú de la fila), EQ-05, EQ-06, EQ-11, EQ-37 … EQ-48 (P-05,
-P-06, P-07), EQ-82 … EQ-85, EQ-92, EQ-94, EQ-98 … EQ-104 y EQ-110; y RP-60 y
-RP-63 de `reportes.md`. **Reemplaza el procedimiento SQL** del mapa del núcleo
-(§5).
+P-06, P-07), EQ-82 … EQ-85, EQ-92, EQ-94 y EQ-98 … EQ-104; y RP-60 y RP-63 de
+`reportes.md`. **Reemplaza el procedimiento SQL** del mapa del núcleo (§5): la
+desactivación desde la pantalla borra `session` y no `account` (EQ-41).
 
 Sin tablas nuevas. **Acción nueva** solo del owner para desactivar o reactivar
 a un admin (P-07), con la forma de `team.admin.revoke` (ADR 0023); el resto con
-`team.manage`. El ingreso rechaza a una persona inactiva (P-05) en el mismo
-corte de E1b, con EQ-92; TT-92 sigue cubriendo el pedido en vuelo.
+`team.manage`. La regla de ingreso de E1b pide además que la membresía esté
+activa (P-05), con EQ-92; TT-92 sigue cubriendo el pedido en vuelo.
 
-Depende de E1b, porque P-05 vive en el corte del ingreso y porque, sin E1b, una
+Depende de E1b, porque P-05 vive en la regla de ingreso y porque, sin E1b, una
 persona quitada o desactivada podía volver a nacer por la deuda.
 
 Riesgos:
 
 - **Escribe en datos de otros módulos**: detiene el timer de la persona
   (`time_entry`, con quien desactiva como actor del audit log, EQ-43) y borra
-  sus filas de `session`, que son de Better Auth (EQ-41). El ADR 0010 deja a un
-  service llamar a otro solo para validar y leer.
-- **EQ-110**: el procedimiento SQL borró `account`, y la importación creó seis
-  `user` sin `account`. Reactivada, esa persona no puede entrar. El contrato
-  trae una consulta previa —membresías inactivas cuyo `user` no tiene
-  `account`— y la salida que fije su ADR.
+  sus filas de `session`, que son de Better Auth (EQ-41). Lo cubre el ADR de
+  escrituras entre módulos de E1a.
+- **Reactivar a quien no tiene `account`** (el grupo 2 de la §2 y quien pasó por
+  el procedimiento SQL) no le devuelve la entrada hasta E2b. El contrato trae
+  la consulta previa —membresías inactivas cuyo `user` no tiene `account`— y
+  decide si la pantalla lo impide o lo avisa.
 - **La carrera con la propia persona**: desactivar mientras ella detiene su
   timer. El orden de los bloqueos lo fija el contrato.
 - **Dos lecturas de personas**: R4 lee las de `workspace`
@@ -275,10 +324,24 @@ Riesgos:
 - **Revalidación**: `/equipo`, el layout y el catálogo de personas del reporte
   (EQ-101).
 
-ADR: **desactivar escribe en otros módulos** (el timer y las sesiones; extiende
-el 0010) y **una fila `user` sin cuenta de Google** (la salida de EQ-110, que
-cubre también a las seis importadas y toca P-11 de `perfil.md`). Los dos con el
-contrato de E2.
+### E2b — Volver a entrar sin `account`
+
+Cubre EQ-110: una persona con `user` y membresía pero sin `account` no puede
+entrar, porque el enlace implícito está apagado (PF-47). Son las seis que creó
+la importación y quien se desactive con el procedimiento SQL antes de E2. Toca
+P-11 de `perfil.md` (un correo ocupado no se libera).
+
+**Se separa de E2** porque es otra área: el ingreso por Better Auth con
+`disableImplicitLinking`, no la pantalla de desactivar. Depende de E1b, que
+decide quién pasa la regla de ingreso. Va en el orden después de E2, y **antes
+de reactivar a cualquiera de las seis**.
+
+Riesgo: **reabrir lo que PF-47 cerró**. Sin enlace implícito, una cuenta de
+Google nueva con una dirección reciclada no entra a la fila de otra persona.
+La salida tiene que devolverle la entrada a la persona correcta sin dársela a
+cualquiera que traiga ese correo.
+
+ADR: **una fila `user` sin cuenta de Google**, con el contrato de E2b.
 
 ### WS0 — Las columnas sin efecto
 
@@ -289,8 +352,8 @@ Cubre la §14 de `workspace.md` con workspace P-05: borra `require_project`,
 `workspace`. Sin pantalla y sin permisos. Si la pregunta 1 de la §7 lo extiende,
 suma `membership.weekly_capacity_minutes`.
 
-No depende de nada. **Va antes de WS1 y de WS2a** porque los tres cambian
-`workspace_settings` y sus migraciones chocan en el diario de `drizzle-kit`; es
+No depende de nada. **Va antes de WS2a y de E4**, que suman columnas a
+`workspace_settings`: sus migraciones chocan en el diario de `drizzle-kit`, y es
 más barato que el borrado entre primero y solo.
 
 Riesgos:
@@ -299,10 +362,18 @@ Riesgos:
   `select()` nombran todas las columnas del esquema, así que una instancia
   vieja falla si la columna ya no está. Primero se despliega el código que ya no
   las nombra; después corre la migración.
-- **Lo que las nombra** se ajusta en el mismo slice: diez archivos de `src/`
-  además del esquema, entre ellos el test del slice 9 que afirma el valor de
-  `who_creates_projects` (criterio 11, PR-59) y el comentario de
-  `project.create` y `client.create` en `can()`, que remite a esa columna.
+- **El script de importación es un lector más**:
+  `scripts/import-clockify/main.ts` de la rama `ops/importar-clockify` hace
+  `tx.select().from(workspace)` con el esquema viejo, que nombra `currency` y
+  `logo_url`. Las corridas que siguen pueden caer después de WS0: el script se
+  rebasa al esquema nuevo antes de correr la migración.
+- **Lo que las nombra en `src/`** se ajusta en el mismo slice: además del
+  esquema, dos archivos, `src/modules/project/schema.integration.test.ts`, que
+  afirma el valor de `who_creates_projects` (criterio 11, PR-59), y
+  `src/server/permissions/index.ts`, por el comentario de `project.create` y
+  `client.create` que remite a esa columna. El tercer lector es el script de
+  importación, del punto anterior. Un grep de `require_` o `currency` cuenta de
+  más, porque también encuentra `requireSession` y `concurrency`.
 - **`who_creates_projects` sale con su camino previsto**: el ADR 0009 decía
   cómo entraría en `can()` si se volvía editable. Con workspace P-03 queda fijo
   en «cualquiera», que es lo que `can()` ya decide por rol; si alguna vez se
@@ -384,7 +455,8 @@ Riesgos:
 Cubre EQ-55 … EQ-59, EQ-86 y EQ-112. Sin cambios de esquema;
 `workspace.transfer` ya existe con `["owner"]`. Una transacción con las dos
 membresías y el workspace bloqueados: `workspace.owner_id`, la membresía nueva
-en `owner`, la anterior en `admin` y el audit log.
+en `owner`, la anterior en `admin` y el audit log. Escribir `owner_id` desde
+`team` lo cubre el ADR de escrituras entre módulos de E1a.
 
 Depende de E1b, que deja `WORKSPACE_OWNER_EMAIL` solo para el arranque (EQ-30,
 EQ-113): sin eso, la variable podría crear un segundo owner. Depende de E2 por el
@@ -404,7 +476,8 @@ columna del valor por defecto en `workspace_settings`.
 
 Junta las dos caras del mismo dato, como recomienda `workspace.md` §16. Depende
 de WS1 (la pantalla), de E1b (el valor por defecto se copia donde nace la
-membresía, que E1b deja en un solo lugar) y de E2 (la columna y el menú).
+membresía, que E1b deja en un solo lugar), de E2 (la columna y el menú) y, por
+el árbol, de WS0.
 
 Riesgos: el dato se sigue leyendo solo con `weekStartOf`; cambiarlo a alguien
 con la planilla abierta se ve en su pedido siguiente; el texto de PF-31 en
@@ -423,9 +496,10 @@ la membresía de una inactiva sin entradas; sus filas de `project_member` y
 `task_assignee` caen en cascada, y `user` y `account` quedan (EQ-108).
 
 Depende de E2 (solo se quita a una inactiva) y de E1b (sin E1b, el próximo
-ingreso recrea la membresía). Riesgos: la clave `restrict` de `time_entry` hacia
-`membership` es la red, pero el service responde EQ-87 antes; el audit log
-guarda la fila borrada.
+ingreso recrea la membresía; con E1b, su migración garantiza que no quede una
+invitación pendiente que la deje volver). Riesgos: la clave `restrict` de
+`time_entry` hacia `membership` es la red, pero el service responde EQ-87
+antes; el audit log guarda la fila borrada.
 
 ### E7 — Grupos
 
@@ -590,16 +664,16 @@ Ninguno hace falta para decidir este orden, así que no se escriben ahora: cada
 uno va con el contrato del slice que lo necesita. Se numeran desde 0024 al
 escribirse.
 
-| ADR                                                      | Slice | Qué decide                                                        |
-| -------------------------------------------------------- | ----- | ----------------------------------------------------------------- |
-| Dónde vive una invitación y dónde se corta el ingreso    | E1a   | La tabla por correo, `invited`, el corte y la transición          |
-| Desactivar escribe en otros módulos                      | E2    | El timer y las sesiones desde `team`; extiende el 0010            |
-| Una fila `user` sin cuenta de Google                     | E2    | La salida de EQ-110, de las seis importadas y de P-11 de `perfil` |
-| Borrar columnas: primero el código, después la migración | WS0   | El orden de despliegue de un borrado                              |
-| El formato de duración es del workspace                  | WS2a  | Extiende el 0012 y fija la regla del compacto (WS-16)             |
-| Crea tareas quien ve el proyecto                         | P4    | El cambio de `task.create` (WS-40, PR-40, PR-58)                  |
-| Los asignados de una tarea en `can()`                    | P7    | El recurso de tarea                                               |
-| La pertenencia por grupo en el recurso del proyecto      | P9    | Cómo llega el grupo al `ProjectResource`                          |
+| ADR                                                      | Slice | Qué decide                                                            |
+| -------------------------------------------------------- | ----- | --------------------------------------------------------------------- |
+| Dónde vive una invitación y dónde se corta el ingreso    | E1a   | Externos, invitaciones, `invited`, el corte, la aceptada y el 0007    |
+| Escrituras entre módulos                                 | E1a   | Aceptar la invitación, timer, sesiones y `owner_id`; extiende el 0010 |
+| Una fila `user` sin cuenta de Google                     | E2b   | La salida de EQ-110, de las seis importadas y de P-11 de `perfil`     |
+| Borrar columnas: primero el código, después la migración | WS0   | El orden de despliegue de un borrado                                  |
+| El formato de duración es del workspace                  | WS2a  | Extiende el 0012 y fija la regla del compacto (WS-16)                 |
+| Crea tareas quien ve el proyecto                         | P4    | El cambio de `task.create` (WS-40, PR-40, PR-58)                      |
+| Los asignados de una tarea en `can()`                    | P7    | El recurso de tarea                                                   |
+| La pertenencia por grupo en el recurso del proyecto      | P9    | Cómo llega el grupo al `ProjectResource`                              |
 
 No necesitan ADR: la acción del owner para desactivar a un admin (E2) y la de
 quitar del equipo (E6) siguen el 0023; transferir (E3) sigue el bloqueo de
@@ -611,11 +685,15 @@ No son slices:
 
 - **Los documentos de paridad con las decisiones del 2026-10-16** entran a
   `main` antes del contrato de E1a.
-- **El procedimiento SQL de desactivar deja de borrar `account`** desde ya y
-  hasta E2: sin esa fila la persona no vuelve a entrar aunque se la reactive
-  (EQ-110). Desactivar a mano pasa a ser membresía `inactive`, timer cerrado y
-  filas de `session` borradas; si la persona vuelve a entrar antes de E2, ve sus
-  horas en solo lectura (TT-92). La nota del §5 del mapa del núcleo se corrige.
+- **Hasta E2, desactivar sigue siendo el procedimiento SQL, y sigue borrando
+  `account`.** Hoy el login solo mira el dominio (`decideGoogleAccess` y el
+  gancho de sesión): una persona inactiva con `account` abre una sesión nueva al
+  instante y ve sus horas (TT-92), que es lo que EQ-42 descartó. Borrar
+  `account` es lo único que hace cumplir P-05 antes de E2. El costo es EQ-110
+  —reactivada, no vuelve a entrar—, que E2b resuelve igual para las seis
+  importadas y cubre también a quien se desactive mientras tanto. Con E2, la
+  pantalla borra solo `session` (EQ-41). Es lo que dice el §5 del mapa del
+  núcleo.
 - **La sesión del usuario en Clockify** verifica P-10 de `equipo.md` antes del
   contrato de E7.
 
@@ -624,7 +702,7 @@ No son slices:
 - **TT-110** sigue sin slice: una entrada que el trío no puede expresar queda con
   sus horarios en solo lectura (mapa de la fase 1, §5).
 - **P-10 y P-11 de `perfil.md`**: volver a seguir el nombre de Google y liberar
-  un correo ocupado (EQ-109). El ADR de E2 sobre la fila sin cuenta toca P-11
+  un correo ocupado (EQ-109). El ADR de E2b sobre la fila sin cuenta toca P-11
   pero no lo cierra.
 - **`invited` en `membership_status`**: con las invitaciones por correo puede
   quedar sin uso (EQ-18). Quitar un valor de un enum de Postgres pide recrear el
@@ -650,4 +728,4 @@ No son slices:
    Timesheet P-09 las mandó a la fase 2 y no estaban en el orden que dio.
    Recomendación: sí, al final, y T2 después de responder timesheet P-15.
 4. **¿Entra alguno de TT-110, P-10 o P-11 de `perfil.md`?** Hoy no tienen slice.
-   Recomendación: no, salvo P-11 si el ADR de E2 lo resuelve sin costo.
+   Recomendación: no, salvo P-11 si el ADR de E2b lo resuelve sin costo.

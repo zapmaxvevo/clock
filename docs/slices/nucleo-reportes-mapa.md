@@ -404,7 +404,11 @@ Ese mismo día decidió además:
   sin poder volver a entrar aunque se la reactive, porque el enlace implícito
   está apagado (PF-47). La desactivación de la fase 2 borra solo `session`
   (EQ-41), y reactivar a quien pasó por este procedimiento pide una corrección
-  a mano o la salida que defina `architect`.
+  a mano o la salida que defina `architect`. **Hasta E2 de la fase 2 el
+  procedimiento sigue borrando `account`**: el login todavía no mira la
+  membresía, así que es lo único que hace cumplir P-05 de `equipo.md` (una
+  inactiva no entra). La salida para volver a entrar es E2b del
+  [mapa de la fase 2](fase2-mapa.md).
 - **Un member con un enlace que nombra a otras personas ve lo propio** (RP-32): el parámetro
   se descarta.
 - **La exportación suma las entradas una por una** en CSV y Excel, además de lo que muestra el
