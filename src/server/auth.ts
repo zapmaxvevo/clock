@@ -2,27 +2,19 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { APIError } from "better-auth/api";
 
-import {
-  accessDenialMessage,
-  decideGoogleAccess,
-  isAllowedEmail,
-  type AccessPolicy,
-} from "@/server/access";
 import { db } from "@/server/db";
 import * as schema from "@/server/db/schema";
+import {
+  decideProfileEntry,
+  decideStoredEmailEntry,
+  loginErrorUrl,
+  sessionEntryError,
+} from "@/server/entry";
 import { env } from "@/server/env";
 import {
   assertTestSessionNotInProduction,
   testSessionPlugins,
 } from "@/server/test-session";
-
-function policy(): AccessPolicy {
-  const config = env();
-  return {
-    domains: config.GOOGLE_WORKSPACE_DOMAINS,
-    invitedEmails: config.EXTERNAL_INVITE_EMAILS,
-  };
-}
 
 assertTestSessionNotInProduction();
 
@@ -53,6 +45,10 @@ export const auth = betterAuth({
   // tampoco enlaza ni desenlaza cuentas: quién entra a qué fila lo decide solo
   // el ingreso por Google, sin enlace implícito.
   disabledPaths: ["/update-user", "/link-social", "/unlink-account"],
+  // D-E1a-14: el rechazo del gancho de sesión, con su código, y los errores
+  // propios del callback terminan en `/login`, que muestra solo los motivos que
+  // conoce.
+  onAPIError: { errorURL: new URL("/login", env().BETTER_AUTH_URL).toString() },
   plugins: testSessionPlugins(),
   socialProviders: {
     google: {
@@ -66,21 +62,22 @@ export const auth = betterAuth({
       // exacto y rechaza antes de llamar a mapProfileToUser, de modo que
       // dejaría afuera a todo dominio de GOOGLE_WORKSPACE_DOMAINS que no sea
       // el primero y a todos los invitados externos, que no traen `hd`.
-      // El control vive entero en decideGoogleAccess, que exige el claim para
+      // El control vive entero en decideProfileEntry, que exige el claim para
       // la vía de dominio, y en el hook de sesión, que lo revalida en cada
       // inicio.
-      mapProfileToUser: (profile) => {
-        const decision = decideGoogleAccess(
-          {
-            email: profile.email,
-            email_verified: profile.email_verified,
-            hd: "hd" in profile && typeof profile.hd === "string" ? profile.hd : null,
-          },
-          policy(),
-        );
+      //
+      // D-E1a-14: el rechazo es una redirección a `/login` con el motivo. Better
+      // Auth llama a esta función fuera de todo `try` del callback: un error
+      // sin cabeceras saldría como un JSON 403.
+      mapProfileToUser: async (profile) => {
+        const decision = await decideProfileEntry({
+          email: profile.email,
+          email_verified: profile.email_verified,
+          hd: "hd" in profile && typeof profile.hd === "string" ? profile.hd : null,
+        });
         if (!decision.allowed) {
-          throw new APIError("FORBIDDEN", {
-            message: accessDenialMessage[decision.reason],
+          throw new APIError("FOUND", undefined, {
+            Location: loginErrorUrl(decision.reason),
           });
         }
         return { name: profile.name, image: profile.picture };
@@ -104,16 +101,19 @@ export const auth = betterAuth({
     session: {
       create: {
         // Se vuelve a comprobar en cada inicio de sesión: quitar a alguien de
-        // la lista de invitados le cierra el acceso sin tocar la base.
+        // la lista de invitados, o revocar su invitación antes de que entre, le
+        // cierra el acceso.
         before: async (session) => {
           const user = await db.query.user.findFirst({
             where: (table, { eq }) => eq(table.id, session.userId),
             columns: { email: true },
           });
-          if (user === undefined || !isAllowedEmail(user.email, policy())) {
-            throw new APIError("FORBIDDEN", {
-              message: accessDenialMessage.dominio_no_habilitado,
-            });
+          if (user === undefined) {
+            throw sessionEntryError("dominio_no_habilitado");
+          }
+          const decision = await decideStoredEmailEntry(user.email);
+          if (!decision.allowed) {
+            throw sessionEntryError(decision.reason);
           }
           return { data: session };
         },

@@ -1,7 +1,10 @@
 /**
  * Regla de acceso al workspace. Es una función pura: la usan el login y los
- * tests, y no toca base de datos ni entorno.
+ * tests, y no toca base de datos ni entorno. Los hechos de la base y de la
+ * variable los arma `src/server/entry.ts`.
  */
+
+import { domainOf, normalizeEmail } from "@/lib/email";
 
 export type GoogleProfile = {
   readonly email?: string | null;
@@ -12,8 +15,6 @@ export type GoogleProfile = {
 export type AccessPolicy = {
   /** Dominios de Google Workspace habilitados. */
   readonly domains: readonly string[];
-  /** Emails externos al dominio con invitación vigente. */
-  readonly invitedEmails: readonly string[];
 };
 
 export type AccessDenialReason =
@@ -23,31 +24,34 @@ export type AccessDecision =
   | { readonly allowed: true }
   | { readonly allowed: false; readonly reason: AccessDenialReason };
 
-function normalize(value: string): string {
-  return value.trim().toLowerCase();
-}
+const denied = { allowed: false, reason: "dominio_no_habilitado" } as const;
 
-function domainOf(email: string): string {
-  const at = email.lastIndexOf("@");
-  return at === -1 ? "" : email.slice(at + 1);
+/** La vía externa: un correo fuera de los dominios, invitado (ADR 0024, decisión 3). */
+function isExternalInvited(email: string, domains: readonly string[], invited: boolean) {
+  return invited && !domains.includes(domainOf(email));
 }
 
 /**
- * Decide sobre el perfil de Google.
+ * Decide sobre el perfil de Google. `invited`: el correo tiene una invitación
+ * `pending` o `accepted` en la base o, hasta E1b, está en la variable. Vale solo
+ * para un correo fuera de los dominios (ADR 0024, decisión 3).
  *
  * La vía de dominio exige las dos cosas: que el email pertenezca a un dominio
  * habilitado y que el claim `hd` lo confirme. Exigir `hd` es el punto: una
  * cuenta de Google de consumo con un email del dominio —las «no gestionadas»,
  * creadas antes de que el dominio pasara a Workspace— no lo trae, y sin esa
- * comprobación entraría como si fuera del equipo. Quien no es del Workspace
- * entra solo por la lista de invitados.
+ * comprobación entraría como si fuera del equipo. Por eso tampoco entra por la
+ * vía externa, aunque tenga invitación.
  */
 export function decideGoogleAccess(
   profile: GoogleProfile,
   policy: AccessPolicy,
+  invited: boolean,
 ): AccessDecision {
   const email =
-    profile.email === null || profile.email === undefined ? "" : normalize(profile.email);
+    profile.email === null || profile.email === undefined
+      ? ""
+      : normalizeEmail(profile.email);
   if (email.length === 0) {
     return { allowed: false, reason: "sin_email" };
   }
@@ -55,31 +59,37 @@ export function decideGoogleAccess(
     return { allowed: false, reason: "email_no_verificado" };
   }
 
-  const domains = policy.domains.map(normalize);
+  const domains = policy.domains.map(normalizeEmail);
   const hostedDomain =
-    profile.hd === null || profile.hd === undefined ? "" : normalize(profile.hd);
+    profile.hd === null || profile.hd === undefined ? "" : normalizeEmail(profile.hd);
   const belongsToDomain =
     domains.includes(domainOf(email)) && domains.includes(hostedDomain);
 
-  if (belongsToDomain) {
+  if (belongsToDomain || isExternalInvited(email, domains, invited)) {
     return { allowed: true };
   }
-  if (policy.invitedEmails.map(normalize).includes(email)) {
-    return { allowed: true };
-  }
-  return { allowed: false, reason: "dominio_no_habilitado" };
+  return denied;
 }
 
 /**
- * Comprueba un email ya conocido contra la política. Se usa en cada inicio de
- * sesión, para que quitar a alguien de la lista le cierre el acceso.
+ * El correo guardado, en cada inicio de sesión: por el sufijo, o externo e
+ * invitado. Revocar la invitación de quien todavía no entró le cierra el acceso
+ * entre las dos comprobaciones.
  */
-export function isAllowedEmail(email: string, policy: AccessPolicy): boolean {
-  const normalized = normalize(email);
-  return (
-    policy.domains.map(normalize).includes(domainOf(normalized)) ||
-    policy.invitedEmails.map(normalize).includes(normalized)
-  );
+export function decideStoredEmail(
+  email: string,
+  policy: AccessPolicy,
+  invited: boolean,
+): AccessDecision {
+  const normalized = normalizeEmail(email);
+  const domains = policy.domains.map(normalizeEmail);
+  if (
+    domains.includes(domainOf(normalized)) ||
+    isExternalInvited(normalized, domains, invited)
+  ) {
+    return { allowed: true };
+  }
+  return denied;
 }
 
 export const accessDenialMessage: Record<AccessDenialReason, string> = {
