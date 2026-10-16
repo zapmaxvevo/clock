@@ -1,11 +1,8 @@
 import { z } from "zod";
 
-const csv = z.string().transform((value) =>
-  value
-    .split(",")
-    .map((item) => item.trim().toLowerCase())
-    .filter((item) => item.length > 0),
-);
+import { parseEmailList } from "@/lib/email";
+
+const csv = z.string().transform(parseEmailList);
 
 const serverSchema = z.object({
   DATABASE_URL: z.url(),

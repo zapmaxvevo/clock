@@ -175,26 +175,56 @@ export const userPreference = pgTable(
   ],
 );
 
+export const invitationStatus = pgEnum("invitation_status", [
+  "pending",
+  "accepted",
+  "revoked",
+]);
+
 /**
- * Invitación a alguien fuera del dominio de Google Workspace. La lista inicial
- * llega por EXTERNAL_INVITE_EMAILS y a partir de ahí se administra desde la app.
+ * Una invitación por correo y workspace (ADR 0024). La escribe solo el módulo
+ * `workspace`. Volver a invitar reusa la fila: la historia está en `audit_log`.
  */
-export const externalInvite = pgTable(
-  "external_invite",
+export const invitation = pgTable(
+  "invitation",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     workspaceId: uuid("workspace_id")
       .notNull()
       .references(() => workspace.id, { onDelete: "cascade" }),
+    /** Recortado y en minúsculas: el `check` lo exige. */
     email: text("email").notNull(),
+    status: invitationStatus("status").notNull().default("pending"),
     invitedById: text("invited_by_id").references(() => user.id, {
       onDelete: "set null",
     }),
+    invitedAt: timestamp("invited_at", { withTimezone: true }).notNull().defaultNow(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    revokedById: text("revoked_by_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
   },
   (table) => [
-    unique("external_invite_workspace_email_unq").on(table.workspaceId, table.email),
+    unique("invitation_workspace_email_unq").on(table.workspaceId, table.email),
+    check(
+      "invitation_email_normalized",
+      sql`${table.email} = lower(btrim(${table.email}))`,
+    ),
+    check("invitation_email_len", sql`char_length(${table.email}) between 3 and 320`),
+    check(
+      "invitation_accepted_at",
+      sql`(${table.status} = 'accepted') = (${table.acceptedAt} is not null)`,
+    ),
+    check(
+      "invitation_revoked_at",
+      sql`(${table.status} = 'revoked') = (${table.revokedAt} is not null)`,
+    ),
   ],
 );
 

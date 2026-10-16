@@ -1,3 +1,4 @@
+import { DomainError } from "@/server/action";
 import { db, type Transaction } from "@/server/db";
 import { env } from "@/server/env";
 import { can, type Actor } from "@/server/permissions";
@@ -9,6 +10,14 @@ import {
   type PersonRow,
   type WorkspaceRow,
 } from "./repository";
+import type {
+  InvitationErrorCode,
+  InvitationsView,
+  InviteInput,
+  InviteResult,
+  RevokeInvitationInput,
+  RevokeInvitationResult,
+} from "./schema";
 
 export type WorkspaceContext = {
   readonly workspace: WorkspaceRow;
@@ -135,4 +144,36 @@ function toWorkspacePerson(row: PersonRow): WorkspacePerson {
     status: row.status,
     joinedAt: row.joinedAt,
   };
+}
+
+/** Error de dominio de las invitaciones. La action lo traduce a un resultado tipado. */
+export class InvitationError extends DomainError<InvitationErrorCode> {
+  constructor(code: InvitationErrorCode, message: string) {
+    super(code, message);
+    this.name = "InvitationError";
+  }
+}
+
+/** Sin `member.invite`, `forbidden` sin leer. */
+export async function getInvitationsView(actor: Actor): Promise<InvitationsView> {
+  void actor;
+  throw new Error("E1a: pendiente de implementar.");
+}
+
+export async function inviteMembers(
+  actor: Actor,
+  input: InviteInput,
+): Promise<InviteResult> {
+  void actor;
+  void input;
+  throw new Error("E1a: pendiente de implementar.");
+}
+
+export async function revokeInvitation(
+  actor: Actor,
+  input: RevokeInvitationInput,
+): Promise<RevokeInvitationResult> {
+  void actor;
+  void input;
+  throw new Error("E1a: pendiente de implementar.");
 }

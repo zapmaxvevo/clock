@@ -88,3 +88,22 @@ export const accessDenialMessage: Record<AccessDenialReason, string> = {
   dominio_no_habilitado:
     "La cuenta no pertenece al dominio de la empresa ni tiene una invitación vigente.",
 };
+
+/** D-E1a-14: lo que ve `/login` con un código que no es un motivo propio. */
+const UNKNOWN_LOGIN_ERROR = "No se pudo iniciar sesión. Volvé a intentar.";
+
+function isAccessDenialReason(code: string): code is AccessDenialReason {
+  return Object.hasOwn(accessDenialMessage, code);
+}
+
+/**
+ * D-E1a-14: el texto de `/login` para el parámetro `error`. `null` sin
+ * parámetro; el de `accessDenialMessage` para un motivo conocido; un texto
+ * genérico para cualquier otro. Nunca devuelve el parámetro.
+ */
+export function loginErrorMessage(code: string | undefined): string | null {
+  if (code === undefined) {
+    return null;
+  }
+  return isAccessDenialReason(code) ? accessDenialMessage[code] : UNKNOWN_LOGIN_ERROR;
+}
