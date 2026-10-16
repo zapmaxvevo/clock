@@ -930,3 +930,6 @@ EQ-53, EQ-54, EQ-69, EQ-72 (según P-09), EQ-73, EQ-74.
 y si `invited` sigue teniendo uso (EQ-17, EQ-18); dónde se corta el ingreso sin
 invitación (EQ-29); la acción de `can()` de EQ-38 y la de grupos (EQ-68); la
 pertenencia por grupo en `ProjectResource` (EQ-64); y la salida para EQ-110.
+EQ-29 y EQ-30 cambian `ensureWorkspaceContext`, la misma función donde WS-08 de
+[`workspace.md`](workspace.md) copia el primer día de la semana del workspace a
+la membresía nueva: el contrato que la toque lee las dos especificaciones.
