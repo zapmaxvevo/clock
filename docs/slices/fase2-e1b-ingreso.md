@@ -19,19 +19,19 @@ datos.
   hechas en producción, revisadas con la consulta de §6.1. E2, E2b, E3, E4 y E6
   dependen de este.
 - **Revisión:** `architecture-reviewer` aprobó con cambios; están aplicados: la
-  carrera entre invitar y el primer ingreso (D-E1b-11), EQ-111 como decisión del
-  usuario (§11), el texto de `dominio_no_habilitado` (D-E1b-2), una sola
-  normalización del correo (D-E1b-1), la reversión que conserva la `0016`
-  (§6.5), los previews y la base local (§6.7), los archivos que faltaban en el
-  reparto (§7) y la evidencia de las consultas (criterio 18).
-- **Decisiones de arquitectura:** **ningún ADR nuevo**, salvo que el usuario
-  elija la opción (b) de §11. Todo lo que el slice decide cae dentro de ADR
-  aceptados; las alternativas propias del slice (D-E1b-5 y D-E1b-8) son locales
-  y quedan acá, como D-E1a-14 en E1a.
+  carrera entre invitar y el primer ingreso (D-E1b-11), EQ-111 llevado al
+  usuario, que lo decidió (§11), el texto de `dominio_no_habilitado` (D-E1b-2),
+  una sola normalización del correo (D-E1b-1), la reversión que conserva la
+  `0016` (§6.5), los previews y la base local (§6.7), los archivos que faltaban
+  en el reparto (§7) y la evidencia de las consultas (criterio 18).
+- **Decisiones de arquitectura:** **ningún ADR nuevo**. Todo lo que el slice
+  decide cae dentro de ADR aceptados; las alternativas propias del slice
+  (D-E1b-5 y D-E1b-8) son locales y quedan acá, como D-E1a-14 en E1a.
   - [ADR 0024](../adr/0024-donde-vive-una-invitacion-y-donde-se-corta-el-ingreso.md),
     aceptado: la regla por vía (decisión 3), el corte en `mapProfileToUser` con
     el gancho como segunda comprobación (decisión 4), qué habilita una
-    invitación aceptada (decisión 5). Este slice escribe la parte «desde E1b».
+    invitación aceptada (decisión 5), «Externa» que no se guarda (decisión 9).
+    Este slice escribe la parte «desde E1b».
   - [ADR 0025](../adr/0025-un-modulo-escribe-en-otro-por-su-service.md),
     aceptado: E1b no escribe datos ajenos. La invitación y la membresía son de
     `workspace`, y se aceptan ahí.
@@ -45,7 +45,8 @@ datos.
 Decisiones del usuario que el contrato da por tomadas (2026-10-16): todos entran
 por invitación, también el dominio de la empresa (P-02 de `equipo.md`); los
 externos se invitan desde la pantalla (P-03); una persona inactiva no entra
-(P-05), que llega con E2.
+(P-05), que llega con E2; y, para este contrato, **si se saca un dominio, quien
+tiene una invitación `accepted` sigue entrando como externa** (EQ-111, §11).
 
 ## Decisiones del contrato
 
@@ -233,13 +234,22 @@ producción nunca la tuvo (§6). Salen `scripts/invitations-from-env/` y su
 entrada de `package.json`. Si E1b se revierte (§6.5), vuelve con el código de
 E1a.
 
+**D-E1b-13 — Sacar un dominio corta solo a quien entró sin invitación (EQ-111),
+por decisión del usuario del 2026-10-16** (§11). Quien entró por invitación
+tiene su fila `accepted`; si su dominio sale de `GOOGLE_WORKSPACE_DOMAINS`, para
+la regla pasa a ser un externo invitado y sigue entrando. Es lo que dicen las
+decisiones 3 y 9 del ADR 0024: la vía externa acepta una `accepted`, y
+«Externa» se deriva del dominio, no se guarda. Para cortarle la entrada a una
+persona se la desactiva, con E2. Quien entró sin invitación (el grupo 1 del
+mapa) deja de entrar, porque su correo pasa a ser externo y no tiene invitación
+abierta. Ningún cambio de código ni de esquema; `parity-analyst` corrige el
+texto de EQ-111.
+
 ## 0. Precondición de arranque
 
 - **`main` en `e9ba1ec`**, con E1a mergeado y desplegado. Las citas de abajo son
   de ese árbol y de `node_modules` con `better-auth` 1.7.7.
 - **Los ADR 0024 y 0025, aceptados** (2026-10-16).
-- **EQ-111 decidido por el usuario** el 2026-10-16: la opción (a) de §11; el
-  contrato queda como está.
 - **La consulta de §6.1 corrida en producción** antes de desplegar, no antes de
   implementar.
 
@@ -285,8 +295,7 @@ E1a.
 Cubre EQ-17 y EQ-18 (la membresía nace al aceptar y antes no hay nada), EQ-24,
 EQ-29 … EQ-31, EQ-32 (la variable deja de leerse), EQ-33, EQ-91, EQ-107,
 EQ-108 (la regla que lo permite; el caso llega con E6), EQ-109 (sin cambio:
-sigue en P-11 de `perfil.md`, E2b) y EQ-113. **EQ-111** queda como decidió el
-usuario (§11, opción (a)).
+sigue en P-11 de `perfil.md`, E2b), EQ-111 (D-E1b-13, sin código) y EQ-113.
 
 Entra:
 
@@ -333,7 +342,7 @@ Queda afuera: §12.
 
 ## 2. Esquema y migración
 
-**Ningún cambio de esquema** con la opción (a) de §11. `schema.ts` no se toca.
+**Ningún cambio de esquema.** `schema.ts` no se toca.
 
 **`0016_invitation_accept_members`, la custom** (D-E1b-6):
 `npm run db:generate -- --custom --name=invitation_accept_members`. Un
@@ -930,7 +939,8 @@ Sin trabajo en este slice: `/login` no cambia de código (§5).
 
 `equipo.md`: EQ-24 y EQ-91 con D-E1b-2; EQ-29 (el corte quedó en
 `mapProfileToUser`, ADR 0024); EQ-30 y EQ-113 con D-E1b-3; EQ-32 (la variable ya
-no se lee); EQ-107 con D-E1b-4; EQ-111 con la decisión del usuario de §11.
+no se lee); EQ-107 con D-E1b-4; el texto de EQ-111 con la decisión del usuario
+del 2026-10-16 (D-E1b-13).
 
 ### Lo que no toca nadie
 
@@ -1015,6 +1025,10 @@ no se lee); EQ-107 con D-E1b-4; EQ-111 con la decisión del usuario de §11.
 20. **Dos `user` con el mismo correo normalizado**: `entryFactsOf` devuelve
     `membership: null` aunque los dos tengan membresía; con una invitación
     pendiente, el acceso sale de ella.
+21. **Un dominio sacado** (EQ-111, D-E1b-13): con un correo de un dominio que ya
+    no está en la política, `decideStoredEmail` deja entrar a quien tiene una
+    `accepted` y membresía, y responde `sin_invitacion` a quien tiene membresía
+    sin invitación.
 
 ## 9. Plan de tests
 
@@ -1024,9 +1038,9 @@ no se lee); EQ-107 con D-E1b-4; EQ-111 con la decisión del usuario de §11.
   sin correo y sin verificar (sin leer `facts`); dominio con y sin `hd`;
   externo con cada estado de invitación; acceso por membresía de cada estado,
   por pendiente, por aceptada sola (no), y por el arranque, con el correo con
-  mayúsculas y espacios y con otro correo; `loginErrorMessage` con
-  `sin_invitacion` y `dominio_no_habilitado`, con sus textos (criterios 1, 4,
-  5, 7, 9).
+  mayúsculas y espacios y con otro correo; el dominio sacado del criterio 21;
+  `loginErrorMessage` con `sin_invitacion` y `dominio_no_habilitado`, con sus
+  textos (criterios 1, 4, 5, 7, 9, 21).
 - `src/app/login/page.test.tsx` con los dos motivos.
 
 ### 9.2 Integración (Postgres)
@@ -1108,7 +1122,9 @@ El login de Google: la sesión de prueba no pasa por `mapProfileToUser`. Lo
 cubren `access.test.ts`, `entry.integration.test.ts` y el handler en
 `auth.integration.test.ts`; la configuración de producción, la verificación de
 humo (§6.4). La migración y la carrera de D-E1b-11 se prueban en integración, y
-las consultas de §6, a mano (criterio 18).
+las consultas de §6, a mano (criterio 18). El dominio sacado (criterio 21), en
+unidad: cambiar los dominios del servidor de los e2e cambiaría lo que ven los
+demás specs.
 
 ## 10. Riesgos
 
@@ -1135,55 +1151,26 @@ las consultas de §6, a mano (criterio 18).
   invitaciones usan `signInUnseeded` (D-E1b-8).
 - **Una sesión sin acceso queda en `session`** hasta vencer (D-E1b-5). No
   habilita nada: cada pedido vuelve a decidir.
-- **EQ-111** queda como decidió el usuario (§11): quien tiene una `accepted`
-  sigue entrando como externa.
+- **Sacar un dominio no corta a quien entró por invitación** (D-E1b-13): quien
+  administra tiene que desactivar a cada una con E2.
 - **Previews y base local**: quien prueba sin membresía ve EQ-91 hasta que lo
   invitan (§6.7).
 - **La reversión sin el `checkout` de `drizzle/`** desalinea el diario con la
   base (§6.5).
 
-## 11. Decidido por el usuario
+## 11. Decidido el 2026-10-16
 
-**P-1 — Qué pasa al sacar un dominio de `GOOGLE_WORKSPACE_DOMAINS` (EQ-111).**
-Es una regla de quién entra. Hoy EQ-111 dice que esas personas dejan de entrar.
-Con E1b, eso se cumple para quien entró sin invitación (el grupo 1 del mapa):
-su correo pasa a ser externo y no tiene invitación abierta. Para quien entró por
-invitación, que tiene su fila `accepted`, hay dos opciones:
+El usuario respondió la pregunta del contrato. No quedan preguntas abiertas.
 
-- **(a) Sigue entrando, como externa.** Para la regla, un correo fuera de los
-  dominios con una invitación `accepted` es un externo invitado (ADR 0024,
-  decisión 3); que la invitación se haya hecho cuando el dominio estaba en la
-  lista no se guarda, porque «Externa» se deriva del dominio (decisión 9). Para
-  cortarle la entrada se la desactiva, con E2. **No cambia nada de este
-  contrato**; `parity-analyst` corrige EQ-111.
-- **(b) Deja de entrar, aunque tenga una `accepted` del dominio, salvo que se la
-  invite de nuevo como externa.** Hay que saber de qué vía fue cada invitación,
-  y eso hoy no se guarda. Cambia:
-  - **El esquema**: una columna `invitation.external boolean not null`, que
-    invitar escribe con los dominios del momento. Las filas que ya existen se
-    llenan con un script que corre el usuario con `GOOGLE_WORKSPACE_DOMAINS`
-    —SQL no lee el entorno, como D-E1a-11—: la migración agrega la columna
-    nulable, el script la llena y una segunda migración la pasa a `not null`.
-  - **El ADR**: reemplaza la decisión 9 del ADR 0024 («Externa» no se guarda).
-    Un ADR nuevo, el 0026, propuesto, con el contrato.
-  - **La regla**: `EntryFacts.invitation` suma `external`, y la vía externa
-    acepta `pending` o `accepted` solo con `external = true`. La vía del dominio
-    no cambia.
-  - **Invitar**: hoy una persona activa da `already_member` sin escribir
-    (D-E1a-7), así que no se la podría volver a invitar. Con (b), una persona
-    activa cuyo correo está fuera de los dominios y cuya fila no es externa (o
-    no tiene fila) se registra como externa: la fila pasa a `accepted` con
-    `external = true`, sin pasar por `pending` —una pendiente con membresía es
-    lo que la `0016` limpia—, con un resultado propio en el diálogo y su
-    auditoría.
-  - **La pantalla**: la marca «Externa» lee la columna en lugar del dominio.
-  - **Tests**: la regla con cada combinación de vía y estado; invitar a una
-    activa del dominio sacado; el script de relleno y las dos migraciones.
-
-**Decisión del usuario del 2026-10-16: (a)**, la recomendada. Sacar un dominio es raro, (b) agrega una columna, un
-script, dos migraciones y un ADR para ese caso, y E2 da la forma de cortar a una
-persona puntual. Con (a) quien administra tiene que acordarse de desactivar a
-cada una; (b) lo hace sola.
+1. **Sacar un dominio de `GOOGLE_WORKSPACE_DOMAINS` (EQ-111): quien tiene una
+   invitación `accepted` sigue entrando, como externa, y para cortar a alguien
+   se usa E2** (D-E1b-13). Quien entró sin invitación deja de entrar. Ningún
+   cambio de código ni de esquema; `parity-analyst` corrige el texto de EQ-111
+   en `equipo.md`. La alternativa descartada —que dejara de entrar aunque
+   tuviera una `accepted` del dominio, salvo que se la invitara de nuevo como
+   externa— pedía guardar la vía de cada invitación (una columna, un script de
+   relleno, dos migraciones), reemplazar la decisión 9 del ADR 0024 con un ADR
+   nuevo y que invitar registrara como externa a una persona activa.
 
 ## 12. Fuera de alcance
 
