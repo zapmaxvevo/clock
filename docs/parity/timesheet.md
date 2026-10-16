@@ -238,8 +238,10 @@ Justificación del `adaptar`: el rótulo de día es el mismo del rastreador, par
 que un día se escriba igual en las dos pantallas.
 _No verificado_: si Clockify resalta la columna de hoy, porque la captura era de
 una semana pasada. Tampoco si el fondo distinto sigue a sábado y domingo fijos o
-a los días laborables de la persona, que acá son de la fase 2 (PF-19); acá,
-sábado y domingo.
+a los días laborables de la persona, que acá están fuera de alcance (PF-19);
+acá, sábado y domingo.
+_Corregido el 2026-10-16, PF-19 (equipo P-09, workspace P-06)_: decía que los
+días laborables de la persona eran de la fase 2.
 _Corregido el 2026-10-07, P-12_: era `replicar`, el rótulo propuesto era
 `lun 29/09` y no decía nada del encabezado ni de los fines de semana.
 _Corregido el 2026-10-07, slice 13_: la columna de hoy resaltada era una

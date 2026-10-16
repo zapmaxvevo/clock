@@ -54,21 +54,25 @@ Esta es la pregunta de la precedencia, y la respuesta del relevamiento es que
 lugar**. No existe ningún ajuste que esté a la vez en el perfil y en el
 workspace, así que nunca hay dos candidatos para el mismo dato.
 
-| Ajuste                   | Dónde vive en Clockify                                 | Quién lo cambia |
-| ------------------------ | ------------------------------------------------------ | --------------- |
-| Nombre, foto, email      | Cuenta centralizada de CAKE.com, fuera de Clockify     | La persona      |
-| Zona horaria             | Perfil                                                 | La persona      |
-| Formato de fecha         | Perfil                                                 | La persona      |
-| Formato de hora          | Perfil                                                 | La persona      |
-| Inicio del día           | Perfil                                                 | La persona      |
-| Tema                     | Perfil                                                 | La persona      |
-| Idioma                   | Perfil                                                 | La persona      |
-| Agrupar entradas         | Perfil                                                 | La persona      |
-| **Primer día de semana** | Perfil de la persona, pero **escrito desde el equipo** | Admin u owner   |
-| **Formato de duración**  | Ajustes del workspace, pestaña General                 | Workspace       |
+| Ajuste                   | Dónde vive en Clockify                                                                   | Quién lo cambia |
+| ------------------------ | ---------------------------------------------------------------------------------------- | --------------- |
+| Nombre, foto, email      | Cuenta centralizada de CAKE.com, fuera de Clockify                                       | La persona      |
+| Zona horaria             | Perfil                                                                                   | La persona      |
+| Formato de fecha         | Perfil                                                                                   | La persona      |
+| Formato de hora          | Perfil                                                                                   | La persona      |
+| Inicio del día           | Perfil                                                                                   | La persona      |
+| Tema                     | Perfil                                                                                   | La persona      |
+| Idioma                   | Perfil                                                                                   | La persona      |
+| Agrupar entradas         | Perfil                                                                                   | La persona      |
+| **Primer día de semana** | Perfil de la persona, pero **escrito desde el equipo**; el workspace da el de las nuevas | Admin u owner   |
+| **Formato de duración**  | Ajustes del workspace, sección «Time tracking»                                           | Owner y admin   |
 
 La tabla sigue a la documentación. «Inicio del día» figura en ella, pero en el
 perfil del workspace del equipo no hay ningún ajuste parecido (PF-15).
+_Corregido el 2026-10-16, workspace WS-08 y WS-14_: la fila del formato de
+duración decía «pestaña General» y «Workspace» como quien lo cambia, y la del
+primer día no nombraba el valor del workspace (PF-01, PF-02). El valor del
+workspace no es un segundo candidato: la membresía lo copia al nacer.
 
 Las dos filas en negrita son las que rompen la intuición de «todo lo del perfil
 lo decide la persona»:
@@ -84,13 +88,29 @@ por persona y por workspace, y la escritura es del admin. La pantalla de perfil
 lo muestra en solo lectura.
 Decidido por el equipo el 2026-10-02: el campo va en `membership`, que es la
 tabla por persona y por workspace, y lo edita un admin.
+Además hay un valor del workspace, que reciben las personas nuevas: «This acts
+as the default for all new members, though it can be overridden on an
+individual member's profile.» (ajustes del workspace) y «Week start set up on
+the Team page overrides the default one in the Workspace settings.»
+(perfiles). Entra en la fase 2, solo para las membresías nuevas (WS-08,
+workspace P-02); el de cada persona lo edita un admin desde la pantalla de
+equipo (EQ-71).
+_Corregido el 2026-10-16, workspace WS-08 y equipo EQ-71_: no decía que el
+primer día tiene también un valor del workspace; solo conocía la mitad por
+persona.
 
 **PF-02 El formato de duración es del workspace** — `replicar`
-Documentado: vive en los ajustes del workspace, pestaña General, y no en el
-perfil. Una persona no puede ver las duraciones en otro formato que el resto
-del equipo.
-_No verificado_: la documentación no dice qué rol puede cambiarlo. Suponer
-admin y owner, como el resto de los ajustes de workspace, y confirmarlo.
+Documentado: vive en los ajustes del workspace, en la sección «Time tracking»
+—«Select Time tracking from the sidebar» y «Set the format you want from the
+dropdown menu in the Duration format section»—, y no en el perfil. Lo cambian
+owner y admin, los únicos que entran a esa pantalla: «Only Workspace owners and
+Admins can see and edit the Workspace settings.» Se cambia en cualquier plan:
+«you can change the duration format in the Workspace settings on any plan,
+including the free plan.» Una persona no puede ver las duraciones en otro
+formato que el resto del equipo.
+_Corregido el 2026-10-16, workspace WS-14_: decía que vivía en la pestaña
+General y que el rol que lo cambia estaba _no verificado_, con la suposición de
+owner y admin. La documentación confirma la suposición y corrige la sección.
 
 **PF-03 Los ajustes del perfil son de la cuenta, no del workspace** —
 `adaptar`
@@ -381,8 +401,14 @@ el workspace.
 Los siete días, con los nombres de la API (`MONDAY` … `SUNDAY`). Nuestro tipo
 `WeekStart` de `src/server/time` ya es `0 | 1 | … | 6` con domingo en cero, que
 es la misma información en otra forma.
-Predeterminado decidido por el equipo el 2026-10-02: lunes.
+Predeterminado decidido por el equipo el 2026-10-02: lunes. Desde la fase 2,
+lunes es el valor inicial del primer día del workspace, que cada membresía
+nueva copia al crearse; cambiar el del workspace no mueve las membresías que ya
+existen (WS-08, workspace P-02).
 _No verificado_: cuál es el predeterminado de Clockify.
+_Corregido el 2026-10-16, workspace WS-08 y equipo EQ-71_: el predeterminado era
+solo el `default` de `membership.week_start`; no decía que en Clockify el valor
+de las personas nuevas sale del workspace.
 
 **PF-17 Quién lo edita** — `replicar`
 Owner y admin, sobre el perfil de cualquier miembro, desde la pantalla de
@@ -399,9 +425,12 @@ El mismo endpoint de perfil de miembro acepta `workingDays` con el mismo enum
 de días, y `membership.weeklyCapacityMinutes` ya existe en nuestro esquema sin
 ningún uso. Justificación, decidida por el equipo el 2026-10-02: alimentan
 objetivos, capacidad y planificación, y Clockify los administra desde la
-pantalla de equipo, igual que el primer día de la semana. Van a la fase 2 con
-el resto de la administración de equipo, no a la pantalla de perfil. Se nombran
-acá solo porque viajan en el mismo payload que PF-16.
+pantalla de equipo, igual que el primer día de la semana. No van a la pantalla
+de perfil, y tampoco a la de equipo: quedan fuera hasta que algo los consuma, y
+`weekly_capacity_minutes` sigue sin uso (EQ-72, WS-09). Se nombran acá solo
+porque viajan en el mismo payload que PF-16.
+_Corregido el 2026-10-16, equipo EQ-72 (equipo P-09, workspace P-06)_: decía
+que iban a la fase 2 con el resto de la administración de equipo.
 
 ## 5. Formato de duración
 
@@ -761,7 +790,6 @@ respuesta de CAL-14 en calendario P-07. Pasó a cerrados.
 Todo lo marcado como _no verificado_ en este documento, junto y con qué hay que
 mirar en cada caso. Es lo único que necesita una cuenta de Clockify a mano.
 
-- **PF-02** — Qué rol puede cambiar el formato de duración del workspace.
 - **PF-05** — Que no exista ningún ajuste de zona horaria a nivel de workspace.
   Es una ausencia, no una afirmación de la documentación.
 - **PF-07** — Que el «username» que se cambia en la cuenta de CAKE.com (PF-06)
@@ -800,6 +828,9 @@ hace Clockify con la identidad de Google.
 _Corregido el 2026-10-07, timesheet P-12_: se quitó «**PF-15** — Qué hace
 «inicio del día». Es lo que destraba P-02.»; el workspace mostró que el ajuste
 no existe.
+_Corregido el 2026-10-16, workspace WS-14_: se quitó «**PF-02** — Qué rol puede
+cambiar el formato de duración del workspace.»; lo resolvió la documentación:
+owner y admin.
 
 ### Cerrados
 
@@ -821,3 +852,6 @@ horaria la del workspace». Leída como vínculo, cambiar la zona del cron mover
 de día a todo el que no eligió, contra P-08; el equipo confirmó el 2026-10-03
 que es el valor `America/Argentina/Buenos_Aires`, que hoy coincide con la del
 workspace.
+_Corregido el 2026-10-16, equipo EQ-72 (equipo P-09, workspace P-06)_: P-07
+mandaba los días laborables y la capacidad semanal a la pantalla de equipo de
+la fase 2. Quedan fuera de alcance hasta que algo los consuma (PF-19).

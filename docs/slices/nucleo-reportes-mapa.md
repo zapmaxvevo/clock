@@ -400,6 +400,15 @@ Ese mismo día decidió además:
   fase 2: pasa la membresía a `inactive`, cierra el timer que corra (RP-63) y borra las filas de
   `session` y `account` de esa persona, porque inactivar la membresía no corta una sesión
   abierta y con R1 el usuario ya no se borra (S1 de la revisión de R1).
+  _Corregido el 2026-10-16, equipo EQ-110_: borrar `account` deja a la persona
+  sin poder volver a entrar aunque se la reactive, porque el enlace implícito
+  está apagado (PF-47). La desactivación de la fase 2 borra solo `session`
+  (EQ-41), y reactivar a quien pasó por este procedimiento pide una corrección
+  a mano o la salida que defina `architect`. **Hasta E2 de la fase 2 el
+  procedimiento sigue borrando `account`**: el login todavía no mira la
+  membresía, así que es lo único que hace cumplir P-05 de `equipo.md` (una
+  inactiva no entra). La salida para volver a entrar es E2b del
+  [mapa de la fase 2](fase2-mapa.md).
 - **Un member con un enlace que nombra a otras personas ve lo propio** (RP-32): el parámetro
   se descarta.
 - **La exportación suma las entradas una por una** en CSV y Excel, además de lo que muestra el
@@ -413,6 +422,8 @@ Ese mismo día decidió además:
 - **`ensureWorkspaceContext` sigue creando la membresía** de cualquiera que
   pase el login. El núcleo no la agrava —un `member` nuevo ve solo lo propio—,
   y con R1 la revocación borrando la membresía, que ya no funcionaba, pasa a
-  fallar en la base para quien tiene horas.
+  fallar en la base para quien tiene horas. _Actualizado el 2026-10-16, equipo
+  P-02_: la fase 2 la cierra; todos entran por invitación, también los del
+  dominio de la empresa (EQ-29).
 - **`estado-fase1.md` y `fase1-mapa.md` no nombran el núcleo.** Cuando se
   apruebe, el registro de estado suma sus slices.

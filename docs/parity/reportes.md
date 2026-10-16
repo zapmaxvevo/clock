@@ -2113,9 +2113,10 @@ Desactivar es de la fase 2; lo que el reporte necesita es saber que las horas
 siguen ahí.
 
 **RP-61 Las horas de una persona inactiva siguen en los reportes** — `replicar`
-Documentado: «The time entries of deleted/inactive users will remain but you
-won’t be able to filter reports by them.» y «You can see their time in the
-summary report when you group it by user.» Cuentan en los totales y aparecen
+Documentado: «The time entries of both inactive and deleted users will remain.»
+y «You can still filter reports by inactive users using their name.» (página de
+invitar personas, 2026-10-16), y «You can see their time in the summary report
+when you group it by user.» (2026-10-08). Cuentan en los totales y aparecen
 agrupando por persona.
 Consecuencia de modelo: el reporte lee `time_entry` por `workspace_id`, y el
 nombre de la persona sale de `user`; **no puede exigir una membresía activa**,
@@ -2125,11 +2126,27 @@ _Actualizado el 2026-10-08, contrato de R2a_: la consulta no pone ninguna
 condición sobre el estado de la membresía, del proyecto ni de la tarea, y la
 fila de la persona lleva «(inactiva)» (RP-31). El filtro por persona inactiva
 (RP-62) llega con R4.
+_Corregido el 2026-10-16, equipo EQ-44 (sección 15 de `equipo.md`)_: la
+primera cita era «The time entries of deleted/inactive users will remain but
+you won’t be able to filter reports by them.», del 2026-10-08. El 2026-10-16
+«won’t be able to filter» dio NOT FOUND en esa página, que ahora dice las dos
+oraciones de arriba, y la tabla de la guía dice «All time entries remain in
+reports can still be filtered by that user». La regla no cambia. La misma guía
+dice además «All past time entries, descriptions, and tags remain in the
+system, but these won't appear in reports by default.» y «You would need to
+use the Inactive filter to see their data.», que contradicen a su tabla y a
+esta regla; no la cambian, y van a la lista de verificación de `equipo.md`
+(P-10).
 
-**RP-62 Filtrar por una persona inactiva** — `adaptar`
-Documentado que en Clockify no se puede (RP-61), aunque la API tiene `status`
-en el filtro de personas con `ALL`, `ACTIVE_WITH_PENDING`, `ACTIVE`, `PENDING` e
-`INACTIVE`.
+**RP-62 Filtrar por una persona inactiva** — `replicar`
+Documentado: «You can still filter reports by inactive users using their name.»
+(RP-61), y la API tiene `status` en el filtro de personas con `ALL`,
+`ACTIVE_WITH_PENDING`, `ACTIVE`, `PENDING` e `INACTIVE`.
+_Corregido el 2026-10-16, equipo EQ-44 (sección 15 de `equipo.md`)_: era
+`adaptar` y decía «Documentado que en Clockify no se puede (RP-61)». La página
+de Clockify cambió: filtrar por una inactiva es paridad y deja de ser una
+divergencia. La forma —el grupo «Inactivas» con el nombre tachado— es la de
+abajo, y lo que hace con «Mostrar personas sin horas» sigue _no verificado_.
 _Actualizado el 2026-10-08, decisión del usuario (P-08)_: entra en el núcleo.
 El filtro de personas ofrece las activas y, aparte, las inactivas, con el
 nombre tachado como en la pantalla de equipo («All inactive user names are
@@ -2196,6 +2213,13 @@ los totales del pasado, que es lo que RP-61 protege. El ADR 0020 pasa
 `time_entry.user_id` de `cascade` a `restrict` y suma una clave compuesta
 `(workspace_id, user_id)` contra `membership`, también `restrict`: borrar un
 usuario o una membresía con horas falla en la base.
+_Corregido el 2026-10-16, equipo EQ-50_: la página actual resuelve la
+contradicción. Las entradas de una persona borrada quedan bajo un alias:
+«However, for deleted users, their time entries will only be shown under the
+alias deleted user…», y la tabla de la guía dice «Time entries remain in
+reports, but you can no longer filter data by that specific user's name». No
+cambia la decisión P-09: el alias cambiaría el nombre de los totales del
+pasado.
 
 **RP-66 Tope de cinco personas activas** — `fuera de alcance`
 Documentado: «5 active users (including the Owner and active members).»
@@ -2427,6 +2451,8 @@ así.
   `architect`.
 - **P-07**: el timer en curso no se muestra ni se suma (RP-30).
 - **P-08**: las personas inactivas se pueden filtrar, separadas y tachadas (RP-62).
+  _Corregido el 2026-10-16, equipo EQ-44_: la pregunta decía que Clockify no lo
+  permite; la página actual dice que sí, y RP-62 pasó a ser paridad.
 - **P-09**: a una persona con horas no se la borra, solo se desactiva (RP-65).
 - **P-10**: exportación a PDF, CSV y Excel (RP-53, RP-54).
 

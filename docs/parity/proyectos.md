@@ -431,19 +431,25 @@ pierde la tarea y conserva el proyecto y las horas.
 **PR-40 Quién crea, edita y borra tareas** — `adaptar`
 Documentado: la creación la gobierna una configuración de workspace con los
 mismos tres valores que la de proyectos, y «Only admins and project managers can
-delete tasks». Acá la creación y el borrado siguen el rol y la marca de
-responsable del proyecto, igual que el resto del módulo (PR-55 … PR-59): crean
-tareas el owner, los admins y el responsable del proyecto. Es la regla de
-`task.create` que trae el slice 9.
-_No verificado_: la misma página se contradice sobre el valor por defecto de esa
-configuración. El texto dice «By default, anyone in the workspace can create a
+delete tasks». En el plan Free crea tareas cualquier miembro: «Every workspace
+member can create clients, projects, tasks, and tags.» (WS-40). Acá, desde la
+fase 2, **crea tareas toda membresía activa que ve el proyecto**, como en Free.
+El borrado sigue el rol y la marca de responsable del proyecto, igual que el
+resto del módulo (PR-55 … PR-59). La regla de `task.create` que trajo el slice
+9 —owner, admins y el responsable del proyecto— vale hasta ese cambio.
+La página de tareas se contradice sobre el valor por defecto de esa
+configuración: el texto dice «By default, anyone in the workspace can create a
 task. If you subscribe to a paid plan, you can change this permission», y la
-tabla de valores de la misma página marca «Admins (Default)». No lo doy por
-relevado. Si en el plan Free crea tareas cualquiera, la regla de acá deja de ser
-paridad: ver PR-58.
+tabla de valores de la misma página marca «Admins (Default)». La página del plan
+Free resuelve la contradicción para Free.
 _Corregido el 2026-10-03, relevamiento_: las dos lecturas que se contradecían
 son de la misma página y ahora van citadas, y la regla de creación queda escrita
 en vez de remitida.
+_Corregido el 2026-10-16, workspace WS-40 (workspace P-04)_: decía que crean
+tareas el owner, los admins y el responsable del proyecto, y que el valor por
+defecto estaba _no verificado_. La página del plan Free lo verificó y el usuario
+decidió replicarlo: `task.create` pasa a tenerlo toda membresía activa que ve
+el proyecto.
 
 **PR-41 Estimación y tarifa por tarea** — `fuera de alcance`
 Justificación: pagas, no relevables (P-32).
@@ -613,19 +619,19 @@ todas las acciones de proyectos, clientes, tareas y etiquetas.
 **PR-58 Member** — `adaptar`
 En el plan Free crea proyectos y clientes, porque la configuración está fijada
 en «cualquiera» y no se puede cambiar, y queda responsable de lo que crea
-(PR-19). Puede crear etiquetas. Crea tareas solo en los proyectos de los que es
-responsable, por la regla de PR-40. No archiva ni borra lo que no es suyo.
+(PR-19). Puede crear etiquetas. Desde la fase 2 crea tareas en cualquier
+proyecto que ve, como en el plan Free (PR-40); hasta ese cambio, solo en los
+proyectos de los que es responsable. No archiva ni borra lo que no es suyo.
 Justificación: lo relevable es el comportamiento del plan Free.
-**Pendiente de verificación (P-33)**: la regla de las tareas no está relevada.
-Si el workspace del equipo muestra que en el plan Free un `member` crea tareas
-en cualquier proyecto que ve —la lectura del texto de la página de tareas, ver
-PR-40—, el equipo tiene que elegir entre cambiar `task.create` en `can()` o
-registrar acá la divergencia con su motivo. Hoy no hay ningún motivo escrito
-para divergir: el contrato del slice 9 adopta la regla por coherencia con
-PR-56, no por una razón de producto.
 _Corregido el 2026-10-03, revisión del slice 9 (M-5)_: decía «Puede crear
 etiquetas y tareas», que contradecía sin decirlo el criterio 7 del contrato del
 slice 9, donde un `member` que no es responsable recibe PR-84.
+_Corregido el 2026-10-16, workspace WS-40 (workspace P-04)_: decía que crea
+tareas solo en los proyectos de los que es responsable, con la regla pendiente
+de verificación (P-33) y la elección entre cambiar `task.create` o registrar la
+divergencia. La página del plan Free dice «Every workspace member can create
+clients, projects, tasks, and tags.», y el usuario decidió cambiar
+`task.create`.
 
 **PR-59 Quién crea, en la fase 1** — `adaptar`
 `workspace_settings.whoCreatesProjects` ya existe, con los tres valores
@@ -639,6 +645,10 @@ Esto obliga a un cambio de esquema que el slice 9 tiene que traer: hoy el
 `default` de la columna es `admins`, que contradice la decisión. **No lo toqué**
 —no escribo código— y va con su migración, porque cambiar el `default` sin
 migración deja la base y el esquema desalineados.
+_Corregido el 2026-10-16, workspace WS-39 (workspace P-03)_: la configuración
+editable no va a la fase 2. Queda fija en `everyone`, como en Clockify Free,
+donde «This setting is set to Anyone and can not be changed on a Free plan.»,
+y la columna `who_creates_projects` se borra (workspace P-05).
 
 **PR-60 Una membresía que no está activa no puede nada** — `replicar`
 Igual que en el rastreador (TT-66, TT-92): `can()` ya corta por `status` antes
@@ -979,7 +989,9 @@ etiquetas de PR-53, PR-54, PR-58 y PR-62.
   `/proyectos`, y su diálogo de proyecto es el que deja el cliente vacío.
 - **Quién crea tareas, al slice 9:** PR-40. _Corregido el 2026-10-03_: decía
   fase 2. El 9 trae `task.create` y tiene que decidir la regla. Sigue sin
-  verificar (P-33) y condiciona PR-58.
+  verificar (P-33) y condiciona PR-58. _Corregido el 2026-10-16, workspace
+  WS-40_: quedó verificado y decidido (workspace P-04); el cambio de
+  `task.create` va a la fase 2.
 - **Un solo camino de creación, al slice 9:** PR-04. _Corregido el 2026-10-03_:
   decía fase 2. Lo que PR-04 adapta es que en la fase 1 cada entidad se crea por
   separado, y eso es lo que entrega el 9.
@@ -1049,39 +1061,41 @@ que el 9 no trae es quien las escriba después del alta.
 
 Se dejan con su identificador porque los contratos de slice los citan.
 
-| ID   | Decisión                                                                                                                                                                                                                                                     |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| P-16 | **El facturable entra, como diseño propio y no como paridad.** No es relevable en el plan Free. TT-14, TT-15 y PR-21 quedaron reescritos para decirlo: el slice 11 no pierde alcance, pierde la referencia contra la cual compararse.                        |
-| P-17 | **Proyectos privados: se modelan la columna, los miembros y el filtro desde el slice 9, y todo se crea público** (PR-17). Barato ahora, carísimo como migración después.                                                                                     |
-| P-18 | **`whoCreatesProjects` congelado en `everyone` en la fase 1** (PR-59). El `default` de la columna, hoy `admins`, cambia con su migración en el slice 9. La configuración editable va a la fase 2 y el valor no entra todavía en `can()`.                     |
-| P-19 | **Unicidad**: cliente y etiqueta por workspace, proyecto por workspace y cliente —con los «sin cliente» como un grupo—, tarea por proyecto; sin distinguir mayúsculas y contando los archivados (PR-49 … PR-53). Decisión nuestra: Clockify no lo documenta. |
-| P-20 | **100 caracteres** para los nombres de las cuatro entidades (PR-54). El del cliente está documentado; los otros tres son por coherencia.                                                                                                                     |
-| P-21 | **Los proyectos de un cliente borrado quedan sin cliente** (PR-09). `on delete set null`.                                                                                                                                                                    |
-| P-22 | **Una etiqueta archivada se sigue mostrando** en las entradas que ya la tienen y no aparece en el selector (PR-47, PR-68). Misma regla que TT-104.                                                                                                           |
-| P-23 | **Los asignados de tarea se modelan en la fase 1 y la regla de acceso se aplica en la fase 2** (PR-37). Es una regla de acceso real, no una lista decorativa.                                                                                                |
-| P-24 | **La marca de responsable va en la tabla de miembros de proyecto y `can()` recibe el recurso con esa marca** (PR-19, PR-56). No se aproxima con el rol de workspace.                                                                                         |
-| P-25 | **Grupos de usuarios: fuera de la fase 1, a la fase 2** (PR-20).                                                                                                                                                                                             |
-| P-26 | **Favoritos: fuera de la fase 1, a la fase 2**, y sin el interruptor de workspace (PR-27).                                                                                                                                                                   |
-| P-27 | **Quien queda fuera de un proyecto privado sigue viendo sus propias entradas**, con el nombre del proyecto, porque son suyas (TT-01). Pierde el proyecto en el selector (PR-71).                                                                             |
-| P-30 | **Paleta fija nuestra** (PR-15). La de Clockify no está documentada.                                                                                                                                                                                         |
-| P-31 | **La nota y la dirección del cliente y la nota del proyecto entran**, como campos de texto sin formato (PR-01, PR-30).                                                                                                                                       |
-| P-32 | **Lo pago queda fuera de la fase 1** y sin fase asignada: tarifas, estimaciones, presupuesto, progreso, plantillas, edición masiva de proyectos, moneda y correos del cliente, campos personalizados. No se puede relevar y el equipo no lo pidió.           |
+| ID   | Decisión                                                                                                                                                                                                                                                                                                                                                              |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P-16 | **El facturable entra, como diseño propio y no como paridad.** No es relevable en el plan Free. TT-14, TT-15 y PR-21 quedaron reescritos para decirlo: el slice 11 no pierde alcance, pierde la referencia contra la cual compararse.                                                                                                                                 |
+| P-17 | **Proyectos privados: se modelan la columna, los miembros y el filtro desde el slice 9, y todo se crea público** (PR-17). Barato ahora, carísimo como migración después.                                                                                                                                                                                              |
+| P-18 | **`whoCreatesProjects` congelado en `everyone` en la fase 1** (PR-59). El `default` de la columna, hoy `admins`, cambia con su migración en el slice 9. La configuración editable iba a la fase 2 y el valor no entra todavía en `can()`. _Corregido el 2026-10-16, workspace P-03_: queda fija también en la fase 2 (WS-39), y la columna se borra (workspace P-05). |
+| P-19 | **Unicidad**: cliente y etiqueta por workspace, proyecto por workspace y cliente —con los «sin cliente» como un grupo—, tarea por proyecto; sin distinguir mayúsculas y contando los archivados (PR-49 … PR-53). Decisión nuestra: Clockify no lo documenta.                                                                                                          |
+| P-20 | **100 caracteres** para los nombres de las cuatro entidades (PR-54). El del cliente está documentado; los otros tres son por coherencia.                                                                                                                                                                                                                              |
+| P-21 | **Los proyectos de un cliente borrado quedan sin cliente** (PR-09). `on delete set null`.                                                                                                                                                                                                                                                                             |
+| P-22 | **Una etiqueta archivada se sigue mostrando** en las entradas que ya la tienen y no aparece en el selector (PR-47, PR-68). Misma regla que TT-104.                                                                                                                                                                                                                    |
+| P-23 | **Los asignados de tarea se modelan en la fase 1 y la regla de acceso se aplica en la fase 2** (PR-37). Es una regla de acceso real, no una lista decorativa.                                                                                                                                                                                                         |
+| P-24 | **La marca de responsable va en la tabla de miembros de proyecto y `can()` recibe el recurso con esa marca** (PR-19, PR-56). No se aproxima con el rol de workspace.                                                                                                                                                                                                  |
+| P-25 | **Grupos de usuarios: fuera de la fase 1, a la fase 2** (PR-20).                                                                                                                                                                                                                                                                                                      |
+| P-26 | **Favoritos: fuera de la fase 1, a la fase 2**, y sin el interruptor de workspace (PR-27).                                                                                                                                                                                                                                                                            |
+| P-27 | **Quien queda fuera de un proyecto privado sigue viendo sus propias entradas**, con el nombre del proyecto, porque son suyas (TT-01). Pierde el proyecto en el selector (PR-71).                                                                                                                                                                                      |
+| P-30 | **Paleta fija nuestra** (PR-15). La de Clockify no está documentada.                                                                                                                                                                                                                                                                                                  |
+| P-31 | **La nota y la dirección del cliente y la nota del proyecto entran**, como campos de texto sin formato (PR-01, PR-30).                                                                                                                                                                                                                                                |
+| P-32 | **Lo pago queda fuera de la fase 1** y sin fase asignada: tarifas, estimaciones, presupuesto, progreso, plantillas, edición masiva de proyectos, moneda y correos del cliente, campos personalizados. No se puede relevar y el equipo no lo pidió.                                                                                                                    |
 
 Los identificadores P-28 y P-29 no se usan: se dejan libres para no pisar
 numeración que otro documento pueda estar escribiendo en paralelo.
 
 ### Abierto
 
-| ID   | Punto                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P-33 | **Verificar en el workspace real del equipo lo marcado como _no verificado_.** No es una decisión: es abrir la cuenta y mirar. Son trece puntos y se resuelven de una sentada: PR-01 (largos de los campos del cliente), PR-07 (restaurar un cliente no restaura sus proyectos), PR-14 (rótulo del grupo sin cliente), PR-24 (restaurar un proyecto no desmarca sus tareas), PR-31 (columnas, orden y filtros de la lista de proyectos), PR-40 (valor por defecto de quién crea tareas), PR-47 (cómo muestra el selector una etiqueta archivada que la entrada ya tiene), PR-48 (tope de etiquetas por entrada; acá, 50), PR-51 (si Clockify exige nombres de tarea únicos), PR-67 (qué pasa con las tareas de un proyecto borrado), PR-101 (cambiar el cliente de un proyecto con entradas), PR-106 y PR-107 (archivar y borrar un proyecto con un timer corriendo). |
+| ID   | Punto                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P-33 | **Verificar en el workspace real del equipo lo marcado como _no verificado_.** No es una decisión: es abrir la cuenta y mirar. Son doce puntos y se resuelven de una sentada: PR-01 (largos de los campos del cliente), PR-07 (restaurar un cliente no restaura sus proyectos), PR-14 (rótulo del grupo sin cliente), PR-24 (restaurar un proyecto no desmarca sus tareas), PR-31 (columnas, orden y filtros de la lista de proyectos), PR-47 (cómo muestra el selector una etiqueta archivada que la entrada ya tiene), PR-48 (tope de etiquetas por entrada; acá, 50), PR-51 (si Clockify exige nombres de tarea únicos), PR-67 (qué pasa con las tareas de un proyecto borrado), PR-101 (cambiar el cliente de un proyecto con entradas), PR-106 y PR-107 (archivar y borrar un proyecto con un timer corriendo). |
 
-Ninguno de los trece bloquea el slice 9 ni el 11: todos tienen una regla
+Ninguno de los doce bloquea el slice 9 ni el 11: todos tienen una regla
 escrita en este documento y lo que la verificación puede hacer es corregirla, no
 destrabarla.
 
-PR-58 depende de la misma verificación que PR-40 y no suma un punto: si en el
-plan Free cualquier miembro crea tareas, cambia la regla de `task.create` o se
-registra la divergencia con su motivo. _Agregado el 2026-10-03._
+_Agregado el 2026-10-03_: PR-58 dependía de la misma verificación que PR-40.
 _Corregido el 2026-10-05, slice 11_: P-33 suma PR-47 y dice el tope que el 11
 fija en PR-48.
+_Corregido el 2026-10-16, workspace WS-40 (workspace P-04)_: P-33 tenía trece
+puntos; se quitó PR-40 (valor por defecto de quién crea tareas), y con él la
+dependencia de PR-58. La página del plan Free dice que cualquier miembro crea
+tareas, y el usuario decidió cambiar `task.create` para replicarlo.
