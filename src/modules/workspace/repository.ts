@@ -4,6 +4,7 @@ import { db, type Transaction } from "@/server/db";
 import {
   invitation,
   membership,
+  type InvitationStatus,
   user,
   userPreference,
   workspace,
@@ -28,7 +29,7 @@ export type PersonRow = {
 export type InvitationRow = {
   readonly id: string;
   readonly email: string;
-  readonly status: "pending" | "accepted" | "revoked";
+  readonly status: InvitationStatus;
 };
 
 /** Una membresía encontrada por el correo de su `user` (D-E1a-7). */

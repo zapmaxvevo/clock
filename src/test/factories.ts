@@ -4,6 +4,7 @@ import { db } from "@/server/db";
 import {
   client,
   invitation,
+  type InvitationStatus,
   membership,
   project,
   projectMember,
@@ -262,7 +263,7 @@ export async function seedTag(values: {
 export async function seedInvitation(values: {
   readonly workspaceId: string;
   readonly email: string;
-  readonly status?: "pending" | "accepted" | "revoked";
+  readonly status?: InvitationStatus;
   readonly invitedById?: string | null;
 }) {
   const status = values.status ?? "pending";

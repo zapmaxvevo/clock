@@ -181,6 +181,8 @@ export const invitationStatus = pgEnum("invitation_status", [
   "revoked",
 ]);
 
+export type InvitationStatus = (typeof invitationStatus.enumValues)[number];
+
 /**
  * Una invitación por correo y workspace (ADR 0024). La escribe solo el módulo
  * `workspace`. Volver a invitar reusa la fila: la historia está en `audit_log`.

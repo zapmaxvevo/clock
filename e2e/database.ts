@@ -7,6 +7,8 @@ import { randomUUID } from "node:crypto";
 
 import { Client } from "pg";
 
+import type { InvitationStatus } from "@/server/db/schema";
+
 import { dayKeyOf, type CivilDay } from "./days";
 import { OWNER_EMAIL, testDatabaseUrl } from "./environment";
 import { PERSON_NAME } from "./session";
@@ -439,9 +441,6 @@ export async function seedPerson(person: SeedPerson): Promise<void> {
     );
   });
 }
-
-/** El estado de una invitación, como lo guarda `invitation_status`. */
-export type InvitationStatus = "pending" | "accepted" | "revoked";
 
 /**
  * El estado de la invitación de un correo en el workspace de los e2e, o
