@@ -48,8 +48,8 @@ cambios de permisos.
   decidió abrir el
   [ADR 0023](../adr/0023-quitar-el-rol-de-admin-es-una-accion-propia.md) para
   D-R8-13 (§9, punto 5).
-- **Decisiones de arquitectura asociadas**, aceptadas salvo la 0023, que está
-  propuesta:
+- **Decisiones de arquitectura asociadas**, todas aceptadas (la 0023, el
+  2026-10-16):
   - [ADR 0010](../adr/0010-un-modulo-consulta-las-reglas-de-otro-por-su-service.md):
     lo que solo se muestra de otro módulo se lee con un `join` en el repository
     propio; «un ciclo entre módulos es la señal de que una regla o una pieza
@@ -66,7 +66,7 @@ cambios de permisos.
     `timeEntry.others.view` para `owner` y `admin`; «Hasta que exista una forma
     de nombrar admins, solo el owner ve el reporte de equipo». R8 es esa forma.
   - [ADR 0023](../adr/0023-quitar-el-rol-de-admin-es-una-accion-propia.md),
-    **propuesto** (lo aprueba el usuario): quitar el rol de admin es una acción
+    aceptado el 2026-10-16: quitar el rol de admin es una acción
     propia, `team.admin.revoke`, solo del owner y consultada solo sobre una
     membresía `admin` (D-R8-5, D-R8-13).
 
@@ -340,7 +340,7 @@ comprobación vuelve con el procedimiento de §6.3 de R2b.
 solo del owner.** _Agregada el 2026-10-13 con la corrección de D-R8-5._ La
 registra el
 [ADR 0023](../adr/0023-quitar-el-rol-de-admin-es-una-accion-propia.md),
-propuesto. Opciones: (1) una regla dentro de `team.manage`: sobre un
+aceptado el 2026-10-16. Opciones: (1) una regla dentro de `team.manage`: sobre un
 `MembershipResource` con rol `admin`, solo el owner; (2) una acción nueva,
 `team.admin.revoke`, sobre `MembershipResource`, con `["owner"]` en la tabla de
 roles; (3) la regla en el service. **(2).**

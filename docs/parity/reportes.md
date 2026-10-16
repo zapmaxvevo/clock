@@ -2225,7 +2225,7 @@ tiene ese botón en ninguna fila, tampoco en la suya: no baja a otro admin ni se
 baja a sí mismo, y un pedido armado a mano responde «Solo el propietario quita
 el rol de administrador.». Es una acción de permiso propia, `team.admin.revoke`,
 solo del owner ([ADR 0023](../adr/0023-quitar-el-rol-de-admin-es-una-accion-propia.md),
-propuesto). No hay mínimo de admins: el piso es el owner. Un admin que hace
+aceptado). No hay mínimo de admins: el piso es el owner. Un admin que hace
 admin a alguien por error no lo puede deshacer: lo hace el owner.
 
 **RP-69 El rol del owner** — `replicar`
@@ -4121,7 +4121,7 @@ para una membresía que no está activa) y RP-31 (el email, porque dos personas
 pueden llamarse igual). **Una acción de permiso nueva**, `team.admin.revoke`,
 solo del owner
 ([ADR 0023](../adr/0023-quitar-el-rol-de-admin-es-una-accion-propia.md),
-propuesto); lo demás pasa por `team.manage`, que ya era de owner y admin. Cada
+aceptado); lo demás pasa por `team.manage`, que ya era de owner y admin. Cada
 cambio efectivo deja una fila de auditoría, que no se ve en pantalla.
 
 **Queda para la fase 2:** invitar, desactivar, reactivar y quitar personas

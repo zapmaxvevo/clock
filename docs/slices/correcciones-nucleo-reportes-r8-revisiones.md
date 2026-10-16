@@ -4,7 +4,7 @@ Rama `nucleo/r8-cambiar-rol` desde `main` en `af04f91`, en el worktree
 `/home/maxi/program/clock-r8` (fuera del repositorio, para no romper el lint),
 en paralelo a R7b. Contrato:
 [`nucleo-reportes-r8-cambiar-rol.md`](nucleo-reportes-r8-cambiar-rol.md). ADR:
-[0023](../adr/0023-quitar-el-rol-de-admin-es-una-accion-propia.md), propuesto.
+[0023](../adr/0023-quitar-el-rol-de-admin-es-una-accion-propia.md), aceptado el 2026-10-16.
 
 ## Contrato antes de implementar
 
@@ -103,7 +103,7 @@ suite 217/217 dos veces, sin flaky.
 
 ## Pendiente del usuario
 
-- Aprobar el ADR 0023.
+- ~~Aprobar el ADR 0023.~~ Aprobado el 2026-10-16.
 - P-12 en el workspace de Clockify (si un admin da el rol de admin con «+Role»,
   si quitar pide confirmación, nombres en español, columnas de la página de
   equipo).

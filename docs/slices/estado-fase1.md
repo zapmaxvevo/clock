@@ -1,7 +1,7 @@
 # Estado de la fase 1
 
 Registro vivo de por dónde va la ejecución. Se actualiza al cerrar cada paso;
-quien retome el trabajo empieza acá. Última actualización: 2026-10-13 (duodécima sesión).
+quien retome el trabajo empieza acá. Última actualización: 2026-10-16 (decimotercera sesión).
 
 ## Dónde estamos
 
@@ -282,6 +282,11 @@ vacío del owner y `renewWorkspace` se corta.
      `backend-dev` probó dos veces en el árbol compartido; repetir en cada encargo que las
      pruebas descartables y los mutantes van en un worktree. Bases que se pueden borrar:
      `clock_r6a_*`, `clock_r6b_*`, `clock_r10a_*`, `clock_r10b_final_*`.
+     **Decimotercera sesión** (2026-10-16): el usuario aprobó el
+     [ADR 0023](../adr/0023-quitar-el-rol-de-admin-es-una-accion-propia.md) (solo el owner quita
+     el rol de admin) y corrió la importación de Clockify en producción (ver «Decisiones
+     pendientes del usuario»). No hay slices en curso: lo que sigue no arranca sin pedido.
+
      **Duodécima sesión** (2026-10-13): el usuario reinició el host (lo del 2026-10-12 quedó
      resuelto; el e2e vuelve a correr en el host) y pidió «R7b y R8 en paralelo».
      - **R7b en `main`** (`a8f3e70`): el gráfico de R5 en el PDF del resumen. Contrato con dos
@@ -289,13 +294,13 @@ vacío del owner y `renewWorkspace` se corta.
        214/214 dos veces) en `correcciones-nucleo-reportes-r7b-revisiones.md`.
      - **R8 en `main`** (`1e95b56`): `/equipo`, cambiar el rol entre member y admin. Worktree
        aparte, ya borrado. **Decisión del usuario del 2026-10-13: replicar Clockify, solo el owner
-       quita el rol de admin** (`team.admin.revoke` en `can()`, [ADR 0023](../adr/0023-quitar-el-rol-de-admin-es-una-accion-propia.md)
-       **propuesto: lo aprueba el usuario**). Dos rondas de implementación y de revisiones; corrida
+       quita el rol de admin** (`team.admin.revoke` en `can()`, [ADR 0023](../adr/0023-quitar-el-rol-de-admin-es-una-accion-propia.md),
+       aceptado el 2026-10-16). Dos rondas de implementación y de revisiones; corrida
        final con e2e 217/217 dos veces. Detalle en `correcciones-nucleo-reportes-r8-revisiones.md`.
      - **Desde R8, el setup de e2e corta** si la base tiene más de 1.500 membresías activas: las
        bases locales viejas (`clock` incluida) hay que reemplazarlas por una nueva (procedimiento en
        el README), sin un servidor de desarrollo en :3000.
-     - **Pendiente del usuario**: aprobar el ADR 0023; P-12 de `reportes.md` (roles en Clockify);
+     - **Pendiente del usuario**: P-12 de `reportes.md` (roles en Clockify);
        P-05 (el PDF de Clockify con gráfico); ver un PDF con gráfico impreso (criterio 13 bis de R7).
      - Deuda nueva: `cellsOf` (document.test) repite `readBack` (xlsx.test); `chartOf` repite el
        cableado de `ReportChart`; homónimos con el mismo nombre accesible en `/equipo`; las otras copias de `textOf` y la
@@ -453,7 +458,8 @@ cuentas sin Google antes de desplegar el 7b dio cero filas en producción el 202
   si se puede elegir la entrada que corre y qué pasa con más de 50 etiquetas.
 - **Relevar Clockify con WebFetch**: el resumidor inventa citas (en el 11 inventó un tope de 50
   etiquetas); antes de escribir «Documentado» se confirma la oración literal.
-- **Importar las horas reales de Clockify** (pedido del 2026-10-13, en espera): septiembre y del
+- **Importar las horas reales de Clockify** (pedido del 2026-10-13; corrida en producción
+  hecha por el usuario el 2026-10-16): septiembre y del
   1 al 13 de octubre de 2026, 624 entradas (1125:04:17 y 159:43:20), leídas de los PDF del
   informe detallado. El CSV es del plan pago. Los datos y el parser están fuera del repo, en
   `/home/maxi/program/clock-importacion-clockify/`, porque tienen nombres y emails reales. El
@@ -461,10 +467,14 @@ cuentas sin Google antes de desplegar el 7b dio cero filas en producción el 202
   - **Decidido por el usuario:** el texto es «CLIENTE - PROYECTO», cortado en el primer « - »
     (13 clientes y 39 proyectos). Etiquetas, facturable y segundos no importan. Las horas de
     prueba de la base real se borran; los clientes y proyectos existentes, no.
-  - **Bloqueo:** con `disableImplicitLinking` no se puede crear a mano un usuario que todavía no
-    entró sin dejarlo afuera. Las seis personas desactivadas en Clockify se crean como
-    `inactive`. Las cinco activas tienen que entrar una vez a Clock antes de la corrida, y
-    todavía no entraron. Una usa un dominio externo: hay que habilitarle el ingreso.
+  - **Por corridas parciales** (`dae5193`, desde el 2026-10-14): con `disableImplicitLinking`
+    no se puede crear a mano un usuario que todavía no entró sin dejarlo afuera, así que cada
+    corrida carga a quienes ya tienen fila `user` y a las seis desactivadas en Clockify (como
+    `inactive`), y deja pendientes a los activos que no entraron. Las corridas que siguen
+    cargan solo a las personas nuevas y no borran nada; solo la primera borró las horas de
+    prueba. Las corridas previas se leen de la auditoría `timeEntry.importClockify`. daniel
+    pasó a `active: false`. Nicolas Veliz usa un dominio externo: hay que habilitarle el
+    ingreso.
   - **Corrida real:** la hace el usuario con `!`, porque el team-lead no tiene acceso a la base
     de producción. Primero `--dry-run`, se revisa junto con el team-lead, y recién después
     `--apply`.

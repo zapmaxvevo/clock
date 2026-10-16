@@ -1,6 +1,6 @@
 # 0023. Quitar el rol de admin es una acción propia, solo del owner
 
-Fecha: 2026-10-13. Estado: Propuesto (lo aprueba el usuario).
+Fecha: 2026-10-13. Estado: Aceptado (2026-10-16, decisión del usuario).
 Origen: la corrección del 2026-10-13 al contrato de R8
 ([`nucleo-reportes-r8-cambiar-rol.md`](../slices/nucleo-reportes-r8-cambiar-rol.md),
 D-R8-5 y D-R8-13), revisada por `architecture-reviewer` en `1379b29`.
