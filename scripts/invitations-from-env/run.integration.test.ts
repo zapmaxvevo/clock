@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { seedMember, seedUser, seedWorkspace } from "@/test/factories";
 import { testDatabaseUrl } from "@/test/database-url";
-import { auditFor, invitationsOf } from "@/test/queries";
+import { auditFor, emailOf, invitationsOf } from "@/test/queries";
 
 import { createDatabase, runInvitationsFromEnv } from "./run";
 
@@ -20,7 +20,7 @@ let lines: string[];
 
 beforeEach(async () => {
   ({ workspaceId } = await seedWorkspace());
-  memberEmail = `${await seedMember(workspaceId, "member")}@empresa.com`;
+  memberEmail = await emailOf(await seedMember(workspaceId, "member"));
   lines = [];
 });
 

@@ -5,10 +5,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { RejectedError } from "@/server/action";
 import { db } from "@/server/db";
-import { membership, user } from "@/server/db/schema";
+import { membership } from "@/server/db/schema";
 import type { MembershipStatus, Role } from "@/server/permissions";
 import { seedInvitation, seedMember, seedWorkspace } from "@/test/factories";
-import { auditFor, invitationOf, invitationsOf } from "@/test/queries";
+import { auditFor, emailOf, invitationOf, invitationsOf } from "@/test/queries";
 import { actorIn } from "@/test/time-entry";
 
 import { invitationMessages } from "./schema";
@@ -39,15 +39,6 @@ function owner() {
 async function memberWith(role: Role, status: MembershipStatus = "active") {
   const userId = await seedMember(workspaceId, role, status);
   return actorIn(workspaceId, userId, { role, status });
-}
-
-/** El correo con que `seedMember` sembró a la persona. */
-async function emailOf(userId: string): Promise<string> {
-  const [row] = await db
-    .select({ email: user.email })
-    .from(user)
-    .where(eq(user.id, userId));
-  return row.email;
 }
 
 function settle(work: Promise<unknown>): Promise<unknown> {

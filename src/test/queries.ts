@@ -1,7 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 
 import { db } from "@/server/db";
-import { auditLog, invitation, membership, timeEntry } from "@/server/db/schema";
+import { auditLog, invitation, membership, timeEntry, user } from "@/server/db/schema";
 
 /**
  * Consultas de verificación de los tests de integración. Leen el estado que
@@ -80,4 +80,17 @@ export async function invitationOf(workspaceId: string, email: string) {
     .from(invitation)
     .where(and(eq(invitation.workspaceId, workspaceId), eq(invitation.email, email)));
   return rows.at(0);
+}
+
+/** El correo de una persona, tal como lo sembró la fábrica; lanza si no está. */
+export async function emailOf(userId: string): Promise<string> {
+  const rows = await db
+    .select({ email: user.email })
+    .from(user)
+    .where(eq(user.id, userId));
+  const row = rows.at(0);
+  if (row === undefined) {
+    throw new Error(`Sin usuario ${userId}.`);
+  }
+  return row.email;
 }

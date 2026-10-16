@@ -12,7 +12,7 @@ import {
   seedWorkspace,
   type SeededWorkspace,
 } from "@/test/factories";
-import { auditFor, invitationOf, invitationsOf } from "@/test/queries";
+import { auditFor, emailOf, invitationOf, invitationsOf } from "@/test/queries";
 
 import { INVITE_LIMIT, invitationMessages } from "./schema";
 import { workspaceRepository } from "./repository";
@@ -126,10 +126,12 @@ describe("inviteMembers", () => {
 
   it("un rechazo responde rejected con la lista y revalida (ADR 0011)", async () => {
     await signInAs("owner");
-    const inactive = await seedMember(seeded.workspaceId, "member", "inactive");
+    const inactive = await emailOf(
+      await seedMember(seeded.workspaceId, "member", "inactive"),
+    );
 
     const result = await actions.inviteMembers({
-      emails: ["no-es-correo", `${inactive}@empresa.com`, "ana@gmail.com"],
+      emails: ["no-es-correo", inactive, "ana@gmail.com"],
     });
 
     expect(result).toEqual({
@@ -143,9 +145,9 @@ describe("inviteMembers", () => {
           message: invitationMessages.invalidEmail("no-es-correo"),
         },
         {
-          id: `${inactive}@empresa.com`,
+          id: inactive,
           code: "inactive_member",
-          message: invitationMessages.inactiveMember(`${inactive}@empresa.com`),
+          message: invitationMessages.inactiveMember(inactive),
         },
       ],
     });
