@@ -1,6 +1,6 @@
 import { normalizeEmail } from "@/lib/email";
 import { DomainError, RejectedError } from "@/server/errors";
-import type { EntryFacts } from "@/server/access";
+import { isBootstrapOwner, type EntryFacts } from "@/server/access";
 import { recordAudit, recordAudits, type AuditEntry } from "@/server/audit";
 import { db, type Transaction } from "@/server/db";
 import { env } from "@/server/env";
@@ -117,40 +117,59 @@ async function membershipOf(
   return created;
 }
 
+/** El contexto con la membresía de quien pide en `current`, o `null` sin acceso. */
+async function joinedContext(
+  tx: Transaction,
+  current: WorkspaceRow,
+  user: { id: string; email: string },
+): Promise<WorkspaceContext | null> {
+  const row = await membershipOf(tx, current.id, user);
+  return row === undefined ? null : contextOf(current, row, user.id);
+}
+
+/**
+ * D-E1b-3: sin workspace, solo `WORKSPACE_OWNER_EMAIL` lo arranca; cualquier
+ * otro correo recibe `null`. Toma el bloqueo y vuelve a leer, para que dos
+ * pedidos del owner a la vez no creen dos workspaces: el que esperó encuentra
+ * el que creó el otro y entra por su membresía.
+ */
+async function bootstrapContext(
+  tx: Transaction,
+  user: { id: string; email: string },
+): Promise<WorkspaceContext | null> {
+  if (!isBootstrapOwner(user.email, env().WORKSPACE_OWNER_EMAIL)) {
+    return null;
+  }
+  await workspaceRepository.lockWorkspaceBootstrap(tx);
+  const existing = await workspaceRepository.findFirstWorkspace(tx);
+  if (existing !== undefined) {
+    return joinedContext(tx, existing, user);
+  }
+  const created = await workspaceRepository.createWorkspace(tx, {
+    name: DEFAULT_WORKSPACE_NAME,
+    ownerId: user.id,
+    timezone: DEFAULT_TIMEZONE,
+  });
+  // El rol `owner` nace solo con el workspace.
+  const row = await createMembership(tx, created.id, user.id, "owner");
+  return contextOf(created, row, user.id);
+}
+
 /**
  * El workspace y la membresía de quien pide. La membresía nace solo de una
- * invitación pendiente, que se acepta primero; el workspace, solo para
- * `WORKSPACE_OWNER_EMAIL` cuando no hay ninguno. `null`: sin acceso.
- *
- * El workspace es uno solo. La lectura sin bloqueo cubre el caso normal, en
- * que ya existe; solo el arranque toma el bloqueo y vuelve a leer, para que
- * dos pedidos del owner a la vez no creen dos workspaces (D-E1b-3).
+ * invitación pendiente, que se acepta primero; el workspace, solo en el
+ * arranque. `null`: sin acceso. La lectura sin bloqueo cubre el caso normal,
+ * en que el workspace ya existe.
  */
 export async function ensureWorkspaceContext(user: {
   id: string;
   email: string;
 }): Promise<WorkspaceContext | null> {
   return db.transaction(async (tx) => {
-    let current = await workspaceRepository.findFirstWorkspace(tx);
-    if (current === undefined) {
-      if (normalizeEmail(user.email) !== normalizeEmail(env().WORKSPACE_OWNER_EMAIL)) {
-        return null;
-      }
-      await workspaceRepository.lockWorkspaceBootstrap(tx);
-      current = await workspaceRepository.findFirstWorkspace(tx);
-      if (current === undefined) {
-        // El rol `owner` nace solo con el workspace (D-E1b-3).
-        const created = await workspaceRepository.createWorkspace(tx, {
-          name: DEFAULT_WORKSPACE_NAME,
-          ownerId: user.id,
-          timezone: DEFAULT_TIMEZONE,
-        });
-        const row = await createMembership(tx, created.id, user.id, "owner");
-        return contextOf(created, row, user.id);
-      }
-    }
-    const row = await membershipOf(tx, current.id, user);
-    return row === undefined ? null : contextOf(current, row, user.id);
+    const current = await workspaceRepository.findFirstWorkspace(tx);
+    return current === undefined
+      ? bootstrapContext(tx, user)
+      : joinedContext(tx, current, user);
   });
 }
 

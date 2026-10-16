@@ -1,8 +1,8 @@
 import { z } from "zod";
 
-import { parseEmailList } from "@/lib/email";
+import { parseDomainList } from "@/lib/email";
 
-const csv = z.string().transform(parseEmailList);
+const csv = z.string().transform(parseDomainList);
 
 const serverSchema = z.object({
   DATABASE_URL: z.url(),

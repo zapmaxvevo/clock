@@ -4,11 +4,13 @@ import {
   accessDenialMessage,
   decideGoogleAccess,
   decideStoredEmail,
+  isBootstrapOwner,
   loginErrorMessage,
   NO_ENTRY_FACTS,
   type AccessPolicy,
   type EntryFacts,
   type GoogleProfile,
+  verifiedEmailOf,
 } from "./access";
 
 const policy: AccessPolicy = {
@@ -45,6 +47,39 @@ const unreadableFacts = new Proxy({} as EntryFacts, {
   get() {
     throw new Error("Leyó los hechos.");
   },
+});
+
+describe("verifiedEmailOf", () => {
+  it("da el correo normalizado si viene y está verificado", () => {
+    expect(verifiedEmailOf({ email: " Ana@Empresa.com ", email_verified: true })).toEqual(
+      {
+        verified: true,
+        email: "ana@empresa.com",
+      },
+    );
+  });
+
+  it("da el motivo sin correo, con uno en blanco o sin verificar", () => {
+    expect(verifiedEmailOf({ email: null, email_verified: true })).toEqual({
+      verified: false,
+      reason: "sin_email",
+    });
+    expect(verifiedEmailOf({ email: " ", email_verified: true })).toEqual({
+      verified: false,
+      reason: "sin_email",
+    });
+    expect(verifiedEmailOf({ email: "ana@empresa.com" })).toEqual({
+      verified: false,
+      reason: "email_no_verificado",
+    });
+  });
+});
+
+describe("isBootstrapOwner", () => {
+  it("compara recortado y en minúsculas", () => {
+    expect(isBootstrapOwner(" Owner@Empresa.com", "owner@EMPRESA.com ")).toBe(true);
+    expect(isBootstrapOwner("ana@empresa.com", "owner@empresa.com")).toBe(false);
+  });
 });
 
 describe("decideGoogleAccess, el perfil", () => {
@@ -272,6 +307,16 @@ describe("decideStoredEmail", () => {
     expect(decideStoredEmail("owner@empresa.com", policy, NO_ENTRY_FACTS)).toEqual(
       notInvited,
     );
+  });
+
+  it("sin workspace, un correo del arranque externo no entra: la identidad sigue valiendo", () => {
+    expect(
+      decideStoredEmail(
+        "freelance@gmail.com",
+        { ...policy, bootstrapOwnerEmail: "freelance@gmail.com" },
+        facts({ bootstrap: true }),
+      ),
+    ).toEqual(notInvited);
   });
 });
 

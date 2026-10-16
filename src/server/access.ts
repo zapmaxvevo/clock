@@ -55,6 +55,38 @@ function deny(reason: AccessDenialReason): AccessDecision {
   return { allowed: false, reason };
 }
 
+/** El correo del perfil, normalizado, o el motivo por el que no sirve. */
+export type VerifiedEmail =
+  | { readonly verified: true; readonly email: string }
+  | { readonly verified: false; readonly reason: "sin_email" | "email_no_verificado" };
+
+/**
+ * El paso de perfil de D-E1b-1: el correo, si viene y Google lo verificó. Es
+ * lo único que se decide sin los hechos de la base: `entry.ts` no consulta
+ * cuando no hay correo verificado.
+ */
+export function verifiedEmailOf(profile: GoogleProfile): VerifiedEmail {
+  const email =
+    profile.email === null || profile.email === undefined
+      ? ""
+      : normalizeEmail(profile.email);
+  if (email.length === 0) {
+    return { verified: false, reason: "sin_email" };
+  }
+  if (profile.email_verified !== true) {
+    return { verified: false, reason: "email_no_verificado" };
+  }
+  return { verified: true, email };
+}
+
+/**
+ * Si el correo es el de `WORKSPACE_OWNER_EMAIL`, sin distinguir mayúsculas ni
+ * blancos. Solo vale para arrancar un workspace que no existe (D-E1b-3).
+ */
+export function isBootstrapOwner(email: string, bootstrapOwnerEmail: string): boolean {
+  return normalizeEmail(email) === normalizeEmail(bootstrapOwnerEmail);
+}
+
 /** La vía externa: una invitación `pending` o `accepted` (ADR 0024, decisión 3). */
 function hasOpenInvitation(facts: EntryFacts): boolean {
   return facts.invitation === "pending" || facts.invitation === "accepted";
@@ -73,10 +105,7 @@ function decideAccess(
   if (facts.membership !== null || facts.invitation === "pending") {
     return allowed;
   }
-  if (
-    facts.bootstrap &&
-    normalizeEmail(email) === normalizeEmail(policy.bootstrapOwnerEmail)
-  ) {
+  if (facts.bootstrap && isBootstrapOwner(email, policy.bootstrapOwnerEmail)) {
     return allowed;
   }
   return deny("sin_invitacion");
@@ -98,16 +127,11 @@ export function decideGoogleAccess(
   policy: AccessPolicy,
   facts: EntryFacts,
 ): AccessDecision {
-  const email =
-    profile.email === null || profile.email === undefined
-      ? ""
-      : normalizeEmail(profile.email);
-  if (email.length === 0) {
-    return deny("sin_email");
+  const verified = verifiedEmailOf(profile);
+  if (!verified.verified) {
+    return deny(verified.reason);
   }
-  if (profile.email_verified !== true) {
-    return deny("email_no_verificado");
-  }
+  const { email } = verified;
 
   if (isCompanyEmail(email, policy.domains)) {
     const domains = policy.domains.map(normalizeEmail);

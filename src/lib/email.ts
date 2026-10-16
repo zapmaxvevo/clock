@@ -24,10 +24,13 @@ export function isCompanyEmail(email: string, domains: readonly string[]): boole
   return domains.some((candidate) => normalizeEmail(candidate) === domain);
 }
 
-/** Una lista separada por comas; la usa `env.ts` para `GOOGLE_WORKSPACE_DOMAINS`. */
-export function parseEmailList(value: string): string[] {
+/**
+ * Una lista de dominios separada por comas, recortados y en minúsculas; la usa
+ * `env.ts` para `GOOGLE_WORKSPACE_DOMAINS`.
+ */
+export function parseDomainList(value: string): string[] {
   return value
     .split(",")
     .map(normalizeEmail)
-    .filter((email) => email.length > 0);
+    .filter((domain) => domain.length > 0);
 }

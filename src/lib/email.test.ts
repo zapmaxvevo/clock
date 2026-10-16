@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { domainOf, isCompanyEmail, normalizeEmail, parseEmailList } from "./email";
+import { domainOf, isCompanyEmail, normalizeEmail, parseDomainList } from "./email";
 
 describe("normalizeEmail (EQ-105)", () => {
   it("recorta y pasa a minúsculas", () => {
@@ -39,15 +39,15 @@ describe("isCompanyEmail", () => {
   });
 });
 
-describe("parseEmailList", () => {
+describe("parseDomainList", () => {
   it("separa por comas, normaliza y descarta los vacíos", () => {
-    expect(parseEmailList(" Freelance@Gmail.com, ,otra@yahoo.com,")).toEqual([
-      "freelance@gmail.com",
-      "otra@yahoo.com",
+    expect(parseDomainList(" Empresa.com, ,OTRA-empresa.com,")).toEqual([
+      "empresa.com",
+      "otra-empresa.com",
     ]);
   });
 
   it("da una lista vacía con la cadena vacía", () => {
-    expect(parseEmailList("")).toEqual([]);
+    expect(parseDomainList("")).toEqual([]);
   });
 });
