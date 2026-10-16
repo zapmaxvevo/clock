@@ -19,7 +19,8 @@ respondió las preguntas P-01 a P-09 de la
 [sección 18](#18-pendientes-de-definición-del-equipo) con las recomendaciones:
 lo que este documento proponía atado a ellas quedó decidido, y cada
 comportamiento dice qué pregunta lo decidió. Sigue abierta P-10, que no es una
-decisión sino la lista de verificación.
+decisión sino la lista de verificación. P-11, sobre EQ-111, la respondió
+también el 2026-10-16, con la recomendación del contrato de E1b.
 
 ## Punto de partida en Clock
 
@@ -862,12 +863,29 @@ demás pantallas.
 | EQ-108 | Invitar el correo de una persona quitada (EQ-51) que vuelve con la misma cuenta de Google       | La invitación crea la membresía nueva al entrar; su `user` y su `account` siguen ahí.                                                                                                                                |
 | EQ-109 | La misma dirección con otra cuenta de Google                                                    | No entra (PF-47); la pantalla de equipo no lo resuelve. Es P-11 de `perfil.md`, que sigue abierto.                                                                                                                   |
 | EQ-110 | Reactivar a alguien desactivado con el procedimiento SQL del núcleo                             | Ese procedimiento borró su `account`: reactivada, igual no puede entrar (PF-47). Hace falta una corrección a mano o que `architect` defina la salida; la desactivación desde la pantalla no borra `account` (EQ-41). |
-| EQ-111 | Se saca un dominio de `GOOGLE_WORKSPACE_DOMAINS`                                                | Sus personas dejan de entrar por el gancho de sesión, pero la lista las sigue mostrando activas: desactivarlas es manual.                                                                                            |
+| EQ-111 | Se saca un dominio de `GOOGLE_WORKSPACE_DOMAINS`                                                | Deja de entrar quien entró sin invitación (antes de E1b); quien tiene una `accepted` sigue entrando, como externa, y se la corta desactivándola (EQ-39). Decidido el 2026-10-16 (P-11).                              |
 | EQ-112 | El owner pide transferirse a sí mismo con un pedido armado                                      | Éxito sin escribir; su fila no tiene el control.                                                                                                                                                                     |
 | EQ-113 | La membresía de `WORKSPACE_OWNER_EMAIL` se quita después de una transferencia y vuelve a entrar | Con EQ-30 entra como cualquiera, por invitación y como `member`; nunca crea un segundo owner.                                                                                                                        |
 
 **EQ-102 … EQ-113** — `adaptar`: ninguno está documentado en Clockify; son
 consecuencias de las reglas de arriba con el login y el esquema de Clock.
+
+**EQ-111** — `adaptar`, decidido por el usuario el 2026-10-16 (P-11): la opción
+(a) de la §11 del [contrato de E1b](../slices/fase2-e1b-ingreso.md). No tiene
+equivalente relevado en Clockify, que no limita el ingreso por dominio en las
+páginas relevadas (sección 3). _Corregido el 2026-10-16, decisión del usuario_:
+decía que todas sus personas dejaban de entrar. Con E1b, un correo fuera de los
+dominios es externo, y un externo entra solo con su invitación (ADR 0024,
+decisión 3). Quien entró sin invitación —por la deuda, antes de E1b (EQ-31)— no
+tiene ninguna y deja de entrar, con EQ-91. Quien entró por invitación conserva
+su fila `accepted`, sigue entrando y su fila pasa a llevar la marca «Externa»,
+que se deriva del dominio (EQ-22); para cortarle la entrada se la desactiva
+(EQ-39, slice E2). En los dos casos la lista la sigue mostrando activa hasta
+que alguien la desactiva. Justificación: sacar un dominio es raro, y la
+alternativa —que deje de entrar salvo que se la vuelva a invitar como externa—
+pedía guardar por qué vía fue cada invitación, con una columna, un script de
+relleno, dos migraciones y un ADR. El costo: quien administra tiene que
+acordarse de desactivar a cada una.
 
 ## 15. Correcciones para otros documentos
 
@@ -954,6 +972,7 @@ porque el cuerpo del documento y los contratos de slice los citan.
 | P-07 | **Solo el owner desactiva o reactiva a un admin** (EQ-38, EQ-85), con una acción propia, como dejó dicho el ADR 0023. Sigue la página de acción en masa: «Admins cannot manage owners or other admins».                                                      |
 | P-08 | **Entra «Quitar del equipo» para quien no tiene horas, solo para el owner** (EQ-51), sobre una inactiva sin entradas. Sirve porque P-02 hace que volver pida una invitación nueva.                                                                           |
 | P-09 | **Capacidad y días laborables, fuera de alcance** hasta que exista algo que los use (EQ-72); la columna `weekly_capacity_minutes` queda sin uso. Corrige PF-19, que los mandaba a esta pantalla. Es la misma respuesta que workspace P-06.                   |
+| P-11 | **Al sacar un dominio de `GOOGLE_WORKSPACE_DOMAINS`, quien tiene una `accepted` sigue entrando, como externa** (EQ-111), y para cortarla se la desactiva (EQ-39); solo deja de entrar quien entró sin invitación. Sin equivalente relevado en Clockify.      |
 
 ### Abierto
 
