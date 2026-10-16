@@ -52,7 +52,7 @@ src/
   server/
     auth.ts            configuración de Better Auth
     access.ts          regla de dominio e invitados, función pura
-    entry.ts           el ingreso: arma access.ts con la variable y las invitaciones de la base (ADR 0024)
+    entry.ts           el ingreso: arma access.ts con la política y los hechos de la base (ADR 0024)
     session.ts         sesión, contexto de workspace y preferencias
     db/                esquema y cliente
     permissions/       can(actor, action, resource)
