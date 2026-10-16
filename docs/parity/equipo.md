@@ -14,9 +14,12 @@ Cada comportamiento lleva un identificador `EQ-nn` y una marca `replicar`,
 justificación. Las preguntas abiertas son `P-nn` de este documento; las de otro
 documento se nombran con el suyo («P-09 de `reportes.md`»).
 
-Relevado el 2026-10-16 para el arranque de la fase 2. **Nada de lo que este
-documento llama «propuesta» está decidido**: cada una remite a su pregunta de la
-[sección 18](#18-pendientes-de-definición-del-equipo).
+Relevado el 2026-10-16 para el arranque de la fase 2. El mismo día el usuario
+respondió las preguntas P-01 a P-09 de la
+[sección 18](#18-pendientes-de-definición-del-equipo) con las recomendaciones:
+lo que este documento proponía atado a ellas quedó decidido, y cada
+comportamiento dice qué pregunta lo decidió. Sigue abierta P-10, que no es una
+decisión sino la lista de verificación.
 
 ## Punto de partida en Clock
 
@@ -137,7 +140,7 @@ tabs based on the information you have permission to view in the table.»
 pestaña de limitadas. Justificación: las limitadas son del kiosco, pago
 (EQ-28).
 
-**EQ-02 Quién ve la pantalla** — `adaptar` (P-01)
+**EQ-02 Quién ve la pantalla** — `adaptar`
 Documentado: un member ve a las demás personas, «See other members» / «Yes
 (unless disabled)» (regular users), y filtra la lista con lo que tiene permiso
 de ver (la cita de EQ-01). Esconder la página es pago (tabla del plan Free).
@@ -146,7 +149,8 @@ entrada «Equipo» y, en `/equipo`, ven «No tenés permiso para administrar el
 equipo.» sin lista. Justificación: un member no tiene ninguna acción en esta
 pantalla y, con P-01 de `reportes.md`, tampoco ve horas ajenas; abrirle la
 lista solo le muestra el directorio de la empresa, que ya tiene en Google. Es
-la decisión que R8 dejó a la fase 2 (`team.view`): P-01.
+la decisión que R8 dejó a la fase 2 (`team.view`), tomada por el usuario el
+2026-10-16 (P-01): un member no ve `/equipo`.
 
 **EQ-03 Columnas** — `adaptar`
 Documentado a medias: la columna «Name» (EQ-04) y, en la oración de orden por
@@ -246,7 +250,7 @@ Documentado: «Invalid emails will be highlighted in red.» y «…click Remove 
 invalid emails (located in the bottom-right corner of the list)» (invitar
 personas). Acá: el pedido es todo o nada
 ([ADR 0011](../adr/0011-las-acciones-en-masa-son-todo-o-nada.md)): si un correo
-no pasa (EQ-76, EQ-79, EQ-80), no se crea ninguna invitación y el diálogo queda
+no pasa (EQ-76, EQ-79), no se crea ninguna invitación y el diálogo queda
 abierto con la lista, cada correo con problema marcado y su causa. «Quitar los
 que fallan» deja en el campo solo los válidos.
 
@@ -308,15 +312,15 @@ inactiva vuelve reactivándola. Acá: error de ese correo (EQ-79), y por EQ-14 n
 se crea ninguna. Justificación: reactivar le devuelve rol, proyectos y grupos
 (EQ-45, EQ-47), y una invitación no; que el admin elija a sabiendas.
 
-**EQ-22 Correos de otro dominio** — `adaptar` (P-03)
+**EQ-22 Correos de otro dominio** — `adaptar`
 Clockify invita cualquier correo. En Clock el login acepta el dominio de la
 empresa, con el claim `hd`, o un correo de la lista de invitados externos, que
-hoy es la variable `EXTERNAL_INVITE_EMAILS`. Propuesta: invitar desde la
-pantalla un correo de otro dominio lo habilita como invitado externo —es lo que
-el comentario de `external_invite` describe: «La lista inicial llega por
-EXTERNAL_INVITE_EMAILS y a partir de ahí se administra desde la app.»—, y la
-fila lleva además la marca «Externa». Abre a un admin la puerta de entrada de
-alguien de afuera: lo decide el usuario (P-03).
+hoy es la variable `EXTERNAL_INVITE_EMAILS`. Decidido el 2026-10-16 (P-03):
+invitar desde la pantalla un correo de otro dominio lo habilita como invitado
+externo —es lo que el comentario de `external_invite` describe: «La lista
+inicial llega por EXTERNAL_INVITE_EMAILS y a partir de ahí se administra desde
+la app.»—, y la fila lleva además la marca «Externa». Lo hacen el owner y los
+admins, como cualquier invitación (EQ-12).
 
 **EQ-23 Revocar una invitación** — `replicar`
 Documentado: «Choose Revoke invite option» y «Once you confirm the action, the
@@ -329,8 +333,8 @@ se puede volver a invitar.
 Documentado: «If the user tries to accept the invite after it has been revoked,
 they will be redirected to the landing page…» y «…with the info that the
 invite has expired» (invitar personas). Acá: el ingreso con ese correo se
-responde como un ingreso sin invitación (EQ-91), salvo que tenga otra vía de
-entrada (P-02).
+responde como un ingreso sin invitación (EQ-91). El dominio de la empresa no es
+otra vía de entrada: también entra por invitación (EQ-29, P-02).
 
 **EQ-25 Las invitaciones no vencen** — `adaptar`
 No hay vencimiento documentado; la página solo dice «expired» de la revocada.
@@ -338,15 +342,15 @@ Acá: una invitación vale hasta que se usa o se revoca. Justificación: con poc
 invitaciones y un solo cron diario, un vencimiento suma estado sin resolver
 nada que revocar no resuelva.
 
-**EQ-26 Correo de invitación y reenvío** — `adaptar` (P-04)
+**EQ-26 Correo de invitación y reenvío** — `adaptar`
 Documentado: Clockify manda un correo al invitar, y se reenvía: «Click on three
 dots next to member and choose Resend an invite email» (invitar personas). La
 API tiene `send-email` en `POST /users`, «Indicates whether to send an email
 when user is added to the workspace.». Clock no manda correos (PF-28), aunque
 `RESEND_API_KEY` y `EMAIL_FROM` existen como variables opcionales en
-`src/server/env.ts`. Propuesta: sin correo ni reenvío; al invitar, el resultado
-muestra un texto para avisar a mano —«Entrá a {dirección de Clock} con tu
-cuenta de Google {correo}.»— con «Copiar». Lo decide el usuario (P-04).
+`src/server/env.ts`. Decidido el 2026-10-16 (P-04): sin correo ni reenvío; al
+invitar, el resultado muestra un texto para avisar a mano —«Entrá a {dirección
+de Clock} con tu cuenta de Google {correo}.»— con «Copiar».
 
 **EQ-27 Tope de personas** — `fuera de alcance`
 Documentado y contradictorio: las citas del tope en la tabla del plan Free y,
@@ -362,14 +366,15 @@ compartido sin ingreso por Google.
 ## 3. El ingreso: la invitación cierra la deuda
 
 En Clockify se entra a un workspace ajeno solo por invitación (EQ-17). En Clock,
-hoy, entra cualquiera que pase el login y queda `member`. Esta sección propone
-cómo se cierra; todo es `adaptar`, porque el login de Clock no tiene
-equivalente en Clockify.
+hoy, entra cualquiera que pase el login y queda `member`. Esta sección dice
+cómo se cierra, con P-02 decidido el 2026-10-16; todo es `adaptar`, porque el
+login de Clock no tiene equivalente en Clockify.
 _No verificado_: si Clockify tiene alguna forma de unirse a un workspace por
 dominio sin invitación; no la encontré en las páginas relevadas.
 
-**EQ-29 Una membresía nueva nace de una invitación** — `adaptar` (P-02)
-Propuesta: el primer ingreso crea la membresía solo si hay una invitación
+**EQ-29 Una membresía nueva nace de una invitación** — `adaptar`
+Decidido el 2026-10-16 (P-02), también para el dominio de la empresa: el primer
+ingreso crea la membresía solo si hay una invitación
 vigente para ese correo (o es el owner del arranque, EQ-30). Sin invitación, el
 ingreso se rechaza con EQ-91 y no se crean ni membresía ni sesión. La regla de
 dominio de `decideGoogleAccess` se conserva y se suma: hace falta pasar las
@@ -378,7 +383,7 @@ dos. Dónde se corta —el gancho de sesión, que ya revalida en cada inicio, o
 invitación no quede una sesión con la que pedir páginas.
 Justificación: replica cómo se entra en Clockify y cierra la deuda del slice 1.
 La alternativa —que el dominio entre solo y la invitación sirva únicamente a los
-externos— deja la deuda como está: lo decide el usuario (P-02).
+externos— dejaba la deuda como está y quedó descartada.
 
 **EQ-30 El owner del arranque no necesita invitación** — `adaptar`
 `WORKSPACE_OWNER_EMAIL` crea el workspace y la membresía `owner` en el primer
@@ -397,7 +402,6 @@ que el usuario revise la lista. Justificación: cerrar la puerta no debe sacar a
 nadie que ya trabaja con Clock.
 
 **EQ-32 Los invitados externos pasan de la variable a la base** — `adaptar`
-(P-03)
 Hoy `EXTERNAL_INVITE_EMAILS` se lee en el login y en cada inicio de sesión, y
 sacar un correo de la lista le cierra el acceso. Con EQ-22, la lista vive en la
 base y el chequeo de cada inicio la lee de ahí; los correos de la variable se
@@ -434,17 +438,18 @@ Justificación: pagos (EQ-34). Las membresías que los tengan por SQL se ven con
 su rótulo y sin control, como en R8. La marca de responsable de un proyecto es
 otra cosa, por proyecto (PR-19).
 
-**EQ-37 El rol de una persona inactiva** — `adaptar` (P-06)
-No documentado (P-12 de `reportes.md`). Propuesta: desactivar y reactivar
-conservan el rol, y mientras la persona está inactiva el rol no se cambia
-(R8 ya responde `inactive_membership`). Justificación: reactivar devuelve a la
-persona como estaba, y mientras tanto `can()` ya le corta todo por estado. R8
+**EQ-37 El rol de una persona inactiva** — `adaptar`
+No documentado (P-12 de `reportes.md`). Decidido el 2026-10-16 (P-06):
+desactivar y reactivar conservan el rol, y mientras la persona está inactiva el
+rol no se cambia (R8 ya responde `inactive_membership`). Justificación:
+reactivar devuelve a la persona como estaba, y mientras tanto `can()` ya le
+corta todo por estado. R8
 lo dejó a esta pantalla (§8 de su contrato: «Al reactivar, en la fase 2, vuelve
 admin; esa pantalla decide si lo baja.»). La alternativa —bajarla a `member`
-al desactivar— es P-06.
+al desactivar— quedó descartada.
 
 **EQ-38 Lo que un admin no puede hacerle a otro admin ni al owner** —
-`replicar` (P-07)
+`replicar`
 Documentado (desactivar en masa): «Owners can activate or deactivate anyone in
 the workspace», «Admins can bulk manage all regular roles (Team Members,
 Project Managers, etc.)» y «Admins cannot manage owners or other admins». La
@@ -452,12 +457,12 @@ página de admins, en cambio, da «Set up user’s status (active/inactive)» /
 «Yes» sin excepción, y su única excepción es «Manage users» / «Yes (except
 removing Admin role – Owner only)». O se contradicen, o la primera habla solo
 de la acción en masa.
-Propuesta: **desactivar y reactivar a un admin es solo del owner**, con una
+Decidido el 2026-10-16 (P-07): **desactivar y reactivar a un admin es solo del
+owner**, con una
 acción propia, como dejó dicho el ADR 0023 («si Clockify exceptúa algo más,
 entra como otra acción propia, no como una regla por rol dentro de
 `team.manage`»). Editar el primer día de un admin sigue en `team.manage`, porque
 «Owners and Admins can edit users’ profile.» (perfiles) no exceptúa a nadie.
-Lo confirma el usuario (P-07).
 
 ## 5. Desactivar y reactivar
 
@@ -488,15 +493,16 @@ volver a entrar aunque se la reactive (PF-47; EQ-110). Better Auth no guarda
 la sesión en la cookie (`auth.ts` no configura caché), así que el próximo
 pedido de esa persona ya no tiene sesión.
 
-**EQ-42 Qué pasa si una inactiva vuelve a entrar** — `adaptar` (P-05)
+**EQ-42 Qué pasa si una inactiva vuelve a entrar** — `adaptar`
 Documentado que en Clockify no entra (la tabla de EQ-41) y que, si era su único
 workspace, «…they’ll be logged out and redirected…» (invitar personas). En
 Clock hay una decisión anterior, TT-92: una membresía desactivada con la
 sesión abierta ve sus horas en solo lectura, con el aviso «Tu acceso al
 workspace está desactivado.». Con EQ-41 ya no queda sesión abierta, y la
-pregunta es el ingreso siguiente. Propuesta: **rechazarlo**, con EQ-92, como
-Clockify; TT-92 sigue cubriendo el pedido que llega entre la desactivación y el
-borrado de la sesión. La alternativa —dejarla entrar a ver sus horas— es P-05.
+pregunta es el ingreso siguiente. Decidido el 2026-10-16 (P-05):
+**rechazarlo**, con EQ-92, como Clockify; TT-92 sigue cubriendo el pedido que
+llega entre la desactivación y el borrado de la sesión. La alternativa
+—dejarla entrar a ver sus horas— quedó descartada.
 
 **EQ-43 El timer en curso se detiene** — `replicar`
 Documentado: «Also, when a user is deactivated, their current timer is stopped
@@ -564,16 +570,18 @@ Acá: a una persona con horas no se la quita; desactivarla es la salida.
 Justificación: es P-09 de `reportes.md` (RP-65, ADR 0020), y la base lo
 impide. El alias «deleted user» cambiaría el nombre de los totales del pasado.
 
-**EQ-51 Quitar a una persona sin horas** — `adaptar` (P-08)
+**EQ-51 Quitar a una persona sin horas** — `adaptar`
 El ADR 0020 deja abierta una sola puerta: «borrar una membresía queda para quien
-no tiene horas, como una invitación». Propuesta: «Quitar del equipo», solo para
+no tiene horas, como una invitación». Decidido el 2026-10-16 (P-08): «Quitar del
+equipo», solo para
 el owner —como «Only Organization owners can delete a user.»—, solo sobre una
 inactiva —como «Users can only be deleted once they are deactivated.»— y solo
 si no tiene entradas. Borra la membresía y, por sus claves en `cascade`, sus
 filas de `project_member` y `task_assignee`; no borra `user` ni `account`, así
 que volver pide una invitación nueva (EQ-29). Con horas responde EQ-87.
 Justificación: sirve para quien entró por error, típicamente por la deuda de
-EQ-31. Sin EQ-29 no sirve, porque el próximo ingreso recrea la membresía: P-08.
+EQ-31. Sirve porque entra EQ-29 (P-02): sin él, el próximo ingreso recrearía
+la membresía.
 
 **EQ-52 Irse del workspace por cuenta propia** — `fuera de alcance`
 Documentado: se hace en CAKE.com, con «Choose Manage workspaces» (perfiles).
@@ -713,20 +721,23 @@ ventana aparte. Justificación de no tener ventana: es un solo dato.
 Ya relevado y decidido: PF-01, PF-16, PF-17, PF-18, de la fase 2. Se suma:
 «Week start set up on the Team page overrides the default one in the Workspace
 settings.» (perfiles), es decir, hay un valor del workspace por omisión, que
-es de la especificación del workspace. «Week start* cannot be changed if there
+es de la especificación del workspace: WS-08, que entra solo para las personas
+nuevas (workspace P-02). «Week start* cannot be changed if there
 are pending approvals» no aplica: no hay aprobaciones. Acá: owner y admin,
 también sobre otro admin (EQ-38); solo sobre una persona activa, como el rol en
 R8; el valor inválido responde «Ese día no existe.» (PF-35).
 
-**EQ-72 Capacidad diaria y días laborables** — `fuera de alcance` (P-09)
+**EQ-72 Capacidad diaria y días laborables** — `fuera de alcance`
 Documentado: «Daily capacity and working days can be edited regardless of the
 number of workspaces that the user has.» (perfiles). Plan _no verificado_:
 «capacity» NOT FOUND en la lista de funciones pagas. PF-19 los mandó a la
 pantalla de equipo de la fase 2, y `membership.weekly_capacity_minutes` existe
-sin uso (semanal; la de Clockify es diaria). Justificación propuesta: nada en
-Clock la consume —los objetivos, la planificación y los recordatorios no
-existen—, y un dato guardado sin efecto invita a creer que tiene uno, el mismo
-criterio del ADR 0020 con `who_sees_all_entries`. Lo decide el usuario (P-09).
+sin uso (semanal; la de Clockify es diaria). Decidido el 2026-10-16 (P-09, y
+workspace P-06 para el valor del workspace): quedan fuera hasta que exista algo
+que los use, y la columna sigue sin uso. Justificación: nada en Clock la
+consume —los objetivos, la planificación y los recordatorios no existen—, y un
+dato guardado sin efecto invita a creer que tiene uno, el mismo criterio del
+ADR 0020 con `who_sees_all_entries`.
 
 **EQ-73 Identificador, tipo de empleo y campos de usuario** —
 `fuera de alcance`
@@ -750,28 +761,31 @@ vienen de Google (PF-06, PF-09).
 Los mensajes son nuestros. Se reusan los que ya existen, por la regla de una
 redacción por causa de `time-tracker.md`.
 
-| ID    | Regla                                               | Mensaje                                                                                                 | Marca      |
-| ----- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ---------- |
-| EQ-76 | Correo con forma inválida                           | «{correo} no es un correo válido.»                                                                      | `adaptar`  |
-| EQ-77 | Invitar sin ningún correo                           | «Escribí al menos un correo.»                                                                           | `adaptar`  |
-| EQ-78 | Más de 50 correos en un pedido                      | «Se pueden invitar hasta 50 correos por vez.»                                                           | `adaptar`  |
-| EQ-79 | Correo de una persona inactiva (EQ-21)              | «{correo} está desactivada: reactivala desde la lista.»                                                 | `adaptar`  |
-| EQ-80 | Correo de otro dominio, si P-03 lo cierra           | «{correo} no es del dominio de la empresa.»                                                             | `adaptar`  |
-| EQ-81 | Revocar una invitación que ya se usó o se revocó    | «Esa invitación ya no está pendiente.»                                                                  | `adaptar`  |
-| EQ-82 | La persona ya no está                               | «Esa persona ya no está en el equipo.» (R8)                                                             | `replicar` |
-| EQ-83 | Desactivar al owner                                 | «El propietario no se desactiva.»                                                                       | `adaptar`  |
-| EQ-84 | Desactivarse a sí mismo                             | «No podés desactivar tu propia membresía.»                                                              | `adaptar`  |
-| EQ-85 | Un admin desactiva o reactiva a otro admin (EQ-38)  | «Solo el propietario desactiva o reactiva a un administrador.»                                          | `replicar` |
-| EQ-86 | Transferir a una inactiva o invitada                | «Esa persona ya no está activa en el workspace.» (R8)                                                   | `adaptar`  |
-| EQ-87 | Quitar a una persona con horas                      | «{nombre} tiene horas cargadas: no se puede quitar, solo desactivar.»                                   | `adaptar`  |
-| EQ-88 | Quitar a una persona activa                         | «Desactivá a {nombre} antes de quitarla.»                                                               | `replicar` |
-| EQ-89 | Nombre de grupo vacío, largo o repetido             | PR-75, PR-76 y «Ya hay un grupo con ese nombre.»                                                        | `adaptar`  |
-| EQ-90 | Sin permiso                                         | «No tenés permiso para hacer esto.» (TT-79)                                                             | `replicar` |
-| EQ-91 | Ingreso sin invitación (EQ-29)                      | «Tu cuenta no tiene una invitación a Clock. Pedísela a quien administra el equipo.»                     | `adaptar`  |
-| EQ-92 | Ingreso de una inactiva, si P-05 sigue la propuesta | «Tu acceso al workspace está desactivado. Pedile a quien administra el equipo que te vuelva a activar.» | `adaptar`  |
+| ID    | Regla                                              | Mensaje                                                                                                 | Marca              |
+| ----- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------ |
+| EQ-76 | Correo con forma inválida                          | «{correo} no es un correo válido.»                                                                      | `adaptar`          |
+| EQ-77 | Invitar sin ningún correo                          | «Escribí al menos un correo.»                                                                           | `adaptar`          |
+| EQ-78 | Más de 50 correos en un pedido                     | «Se pueden invitar hasta 50 correos por vez.»                                                           | `adaptar`          |
+| EQ-79 | Correo de una persona inactiva (EQ-21)             | «{correo} está desactivada: reactivala desde la lista.»                                                 | `adaptar`          |
+| EQ-80 | Correo de otro dominio: sin uso, P-03 los admite   | —                                                                                                       | `fuera de alcance` |
+| EQ-81 | Revocar una invitación que ya se usó o se revocó   | «Esa invitación ya no está pendiente.»                                                                  | `adaptar`          |
+| EQ-82 | La persona ya no está                              | «Esa persona ya no está en el equipo.» (R8)                                                             | `replicar`         |
+| EQ-83 | Desactivar al owner                                | «El propietario no se desactiva.»                                                                       | `adaptar`          |
+| EQ-84 | Desactivarse a sí mismo                            | «No podés desactivar tu propia membresía.»                                                              | `adaptar`          |
+| EQ-85 | Un admin desactiva o reactiva a otro admin (EQ-38) | «Solo el propietario desactiva o reactiva a un administrador.»                                          | `replicar`         |
+| EQ-86 | Transferir a una inactiva o invitada               | «Esa persona ya no está activa en el workspace.» (R8)                                                   | `adaptar`          |
+| EQ-87 | Quitar a una persona con horas                     | «{nombre} tiene horas cargadas: no se puede quitar, solo desactivar.»                                   | `adaptar`          |
+| EQ-88 | Quitar a una persona activa                        | «Desactivá a {nombre} antes de quitarla.»                                                               | `replicar`         |
+| EQ-89 | Nombre de grupo vacío, largo o repetido            | PR-75, PR-76 y «Ya hay un grupo con ese nombre.»                                                        | `adaptar`          |
+| EQ-90 | Sin permiso                                        | «No tenés permiso para hacer esto.» (TT-79)                                                             | `replicar`         |
+| EQ-91 | Ingreso sin invitación (EQ-29)                     | «Tu cuenta no tiene una invitación a Clock. Pedísela a quien administra el equipo.»                     | `adaptar`          |
+| EQ-92 | Ingreso de una inactiva (EQ-42)                    | «Tu acceso al workspace está desactivado. Pedile a quien administra el equipo que te vuelva a activar.» | `adaptar`          |
 
 - **Idempotencia**: desactivar a una inactiva o reactivar a una activa responde
   éxito sin escribir, como pedir el rol que ya tiene en R8 (D-R8-7).
+- **EQ-80** era el rechazo de un correo de otro dominio si P-03 cerraba esa
+  puerta. P-03 la abrió el 2026-10-16 (EQ-22): el identificador se conserva y
+  no tiene mensaje.
 - **EQ-82, EQ-86**: los textos son los de `teamMessages`, de R8.
 - **EQ-88** replica «Users can only be deleted once they are deactivated.»;
   **EQ-85**, la lectura de EQ-38.
@@ -855,6 +869,11 @@ consecuencias de las reglas de arriba con el login y el esquema de Clock.
 
 No toqué otros documentos; esto es para quien los mantiene.
 
+_Aplicadas el 2026-10-16_: RP-61, RP-62, RP-65 y la decisión P-08 en
+`reportes.md`, y el procedimiento de la §5 y la deuda de la §6 del
+[mapa del núcleo](../slices/nucleo-reportes-mapa.md), cada una con su
+corrección fechada. RP-62 pasó a `replicar`; la regla de RP-61 no cambió.
+
 - **RP-61 y RP-62 (`reportes.md`)**: RP-61 cita «…but you won’t be able to filter
   reports by them.». El 2026-10-16, en la página de invitar personas, «won’t be
   able to filter» dio NOT FOUND, y la página dice ahora «You can still filter
@@ -874,24 +893,26 @@ No toqué otros documentos; esto es para quien los mantiene.
 
 ## 16. Qué es de la fase 2
 
-**Entra**, con las preguntas que la condicionan:
+**Entra**. Las preguntas que lo condicionaban (P-01 a P-09) se decidieron el
+2026-10-16; solo los grupos esperan la verificación del plan (P-10):
 
-- La lista: EQ-01 … EQ-08, EQ-11 (EQ-02 según P-01).
-- Invitar: EQ-12 … EQ-14, EQ-16 … EQ-26 (EQ-22 según P-03, EQ-26 según P-04).
-- El ingreso: EQ-29 … EQ-33 (según P-02 y P-03).
-- Roles: EQ-34, EQ-35 (hecho), EQ-37, EQ-38 (según P-06 y P-07).
-- Desactivar y reactivar: EQ-39 … EQ-48 (EQ-42 según P-05). Con esto entran
-  RP-60 y RP-63, que `reportes.md` dejó para la fase 2.
-- Quitar: EQ-50 como regla; EQ-51 según P-08.
+- La lista: EQ-01 … EQ-08, EQ-11.
+- Invitar: EQ-12 … EQ-14, EQ-16 … EQ-26.
+- El ingreso: EQ-29 … EQ-33.
+- Roles: EQ-34, EQ-35 (hecho), EQ-37, EQ-38.
+- Desactivar y reactivar: EQ-39 … EQ-48. Con esto entran RP-60 y RP-63, que
+  `reportes.md` dejó para la fase 2.
+- Quitar: EQ-50 como regla y EQ-51.
 - Transferir: EQ-55 … EQ-59 (`workspace.transfer`, que R8 dejó para la fase 2).
 - Grupos: EQ-60 … EQ-65, EQ-67, EQ-68 (según P-10 para el plan).
 - Perfil desde el equipo: EQ-70, EQ-71, EQ-75.
-- Validaciones, vacíos, errores, recarga y bordes: EQ-76 … EQ-113.
+- Validaciones, vacíos, errores, recarga y bordes: EQ-76 … EQ-79,
+  EQ-81 … EQ-113.
 
 **Fase 3**: EQ-66.
 
 **Fuera de alcance**: EQ-09, EQ-10, EQ-15, EQ-27, EQ-28, EQ-36, EQ-49, EQ-52,
-EQ-53, EQ-54, EQ-69, EQ-72 (según P-09), EQ-73, EQ-74.
+EQ-53, EQ-54, EQ-69, EQ-72, EQ-73, EQ-74, y EQ-80, sin uso desde P-03.
 
 ## 17. Orden de slices (sugerencia, no decisión)
 
@@ -909,21 +930,31 @@ EQ-53, EQ-54, EQ-69, EQ-72 (según P-09), EQ-73, EQ-74.
 5. **E5 — Grupos** (EQ-60 … EQ-68), después de verificar el plan (P-10). Su
    efecto sobre los proyectos (EQ-64, EQ-65) se junta con los slices de
    proyectos privados y asignados de la fase 2, de `proyectos.md`.
-6. **E6 — Quitar a una persona sin horas** (EQ-51), si P-08 dice que entra.
+6. **E6 — Quitar a una persona sin horas** (EQ-51, que entra por P-08).
 
 ## 18. Pendientes de definición del equipo
 
+### Decididos el 2026-10-16
+
+El usuario respondió todas con la recomendación. Se dejan con su identificador
+porque el cuerpo del documento y los contratos de slice los citan.
+
+| ID   | Decisión                                                                                                                                                                                                                                                     |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| P-01 | **Un member no ve `/equipo`** (EQ-02), porque no tiene ninguna acción ahí. Sigue RP-70: la ven owner y admin activos. En Clockify la ve, salvo que se la escondan, que es pago.                                                                              |
+| P-02 | **Todos entran por invitación, también los del dominio de la empresa** (EQ-29). Cierra la deuda de `ensureWorkspaceContext` y replica Clockify; la regla de dominio se conserva y se suma (EQ-24, EQ-91).                                                    |
+| P-03 | **Los correos de otro dominio se invitan desde la pantalla, y lo hacen el owner y los admins**, como en Clockify, con la marca «Externa» en la fila (EQ-22). La lista de externos pasa de `EXTERNAL_INVITE_EMAILS` a la base (EQ-32), y EQ-80 queda sin uso. |
+| P-04 | **Clock no manda el correo de invitación** (EQ-26): muestra un texto para avisar a mano, con «Copiar», y no hay «Reenviar». Las variables de Resend siguen sin uso.                                                                                          |
+| P-05 | **Una persona inactiva no puede entrar, como en Clockify** (EQ-42): el ingreso se rechaza con EQ-92. TT-92 cubre solo el pedido que llega entre la desactivación y el borrado de la sesión.                                                                  |
+| P-06 | **Desactivar conserva el rol**, y reactivar devuelve el mismo (EQ-37). Mientras la persona está inactiva, el rol no se cambia.                                                                                                                               |
+| P-07 | **Solo el owner desactiva o reactiva a un admin** (EQ-38, EQ-85), con una acción propia, como dejó dicho el ADR 0023. Sigue la página de acción en masa: «Admins cannot manage owners or other admins».                                                      |
+| P-08 | **Entra «Quitar del equipo» para quien no tiene horas, solo para el owner** (EQ-51), sobre una inactiva sin entradas. Sirve porque P-02 hace que volver pida una invitación nueva.                                                                           |
+| P-09 | **Capacidad y días laborables, fuera de alcance** hasta que exista algo que los use (EQ-72); la columna `weekly_capacity_minutes` queda sin uso. Corrige PF-19, que los mandaba a esta pantalla. Es la misma respuesta que workspace P-06.                   |
+
+### Abierto
+
 | ID   | Punto                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P-01 | **¿Un member ve `/equipo`?** (EQ-02) En Clockify, sí, salvo que se la escondan, que es pago. Hoy no (RP-70). Recomendación: no, porque no tiene ninguna acción ahí.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| P-02 | **¿Una persona del dominio de la empresa necesita invitación?** (EQ-29) Con «sí», se cierra la deuda de `ensureWorkspaceContext` y se replica Clockify; con «no», la deuda sigue para el dominio y la invitación solo ordena a los externos. Recomendación: sí, todos por invitación.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| P-03 | **¿Se invitan correos de otro dominio desde la pantalla, y quién?** (EQ-22, EQ-32) Hoy solo por la variable de entorno. Opciones: owner y admin, como Clockify; solo el owner; o seguir con la variable. Recomendación: owner y admin, con la marca «Externa» en la fila.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| P-04 | **¿Clock manda el correo de invitación?** (EQ-26) Las variables de Resend existen y no se usan. Recomendación: no; un texto para avisar a mano, con «Copiar». Si se manda, entra también «Reenviar».                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| P-05 | **¿Una persona inactiva puede volver a entrar?** (EQ-42) Clockify no la deja; TT-92 previó que viera sus horas en solo lectura. Recomendación: no entra, con EQ-92.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| P-06 | **¿Desactivar conserva el rol?** (EQ-37) Recomendación: sí, y reactivar devuelve el mismo rol.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| P-07 | **¿Un admin desactiva o reactiva a otro admin?** (EQ-38) La página de acción en masa dice «Admins cannot manage owners or other admins»; la de admins no lo exceptúa. Recomendación: solo el owner, con una acción propia (ADR 0023).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| P-08 | **¿Entra «Quitar del equipo» para quien no tiene horas?** (EQ-51) Solo sirve si P-02 es sí. Recomendación: sí, solo el owner, sobre una inactiva sin entradas.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| P-09 | **Capacidad y días laborables** (EQ-72). PF-19 los mandó a esta pantalla; nada los consume. Recomendación: fuera de alcance hasta que exista algo que los use, y dejar sin uso la columna `weekly_capacity_minutes`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | P-10 | **Verificar en el workspace del equipo** (no es decisión, es mirar): si la pestaña «Groups» existe en el plan Free (EQ-60) y si «Edit profile» muestra capacidad y días laborables (EQ-72); las columnas por omisión y si se ve el correo (EQ-03); el nombre de la opción por omisión del filtro de estado y si incluye a las invitadas (EQ-06); si la fila desactivada de a una se queda hasta recargar (EQ-11); qué separadores acepta el campo de correos y si hay tope (EQ-13); qué pasa al reinvitar un correo invitado o de una persona activa o inactiva (EQ-19 … EQ-21); si desactivar pide confirmación (EQ-46); si un admin ve «Deactivate» en la fila de otro admin (EQ-38); la forma del diálogo de transferir (EQ-58); si se puede crear un grupo desde la fila de una persona (EQ-63); si los reportes filtran y agrupan por grupo (EQ-66); qué conserva la pantalla al recargar (EQ-100); y, en un reporte, si las horas de una inactiva aparecen sin el filtro «Inactive» (sección 15). |
 
 **Para `architect`, no para el usuario**: dónde vive una invitación pendiente

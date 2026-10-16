@@ -10,7 +10,9 @@ son de [`equipo.md`](equipo.md)—, ni los ajustes de la persona —están en
 [`perfil.md`](perfil.md)—.
 
 Es la precondición de los slices de configuración de la fase 2. Escrito el
-2026-10-16.
+2026-10-16. El mismo día el usuario respondió workspace P-01 a P-08 con las
+recomendaciones (sección 17), y cada comportamiento que dependía de una dice
+cuál lo decidió.
 
 Cada comportamiento lleva un identificador `WS-nn` para que lo citen el reviewer
 de paridad y los flujos de Playwright, y una marca `replicar`, `adaptar` o
@@ -163,10 +165,12 @@ Según el índice de la página de ayuda, la pantalla tiene once secciones
 —General, Time tracking, Finances, Time planning, User activity, Kiosk,
 Security, Accounts, Permissions, Integrations & add-ons, Import/Export—.
 Acá hay **dos**: «General» y «Registro de tiempo», con lo que la sección 15
-deja en la fase 2. «Permisos» aparece solo si el equipo vuelve editable alguno
-(workspace P-03, P-04). Justificación: las demás secciones configuran módulos
-que Clock no tiene o ajustes de plan pago (secciones 4 a 6); una sección vacía
-o llena de controles bloqueados es configuración que no configura nada.
+deja en la fase 2. No hay «Permisos»: «quién crea proyectos y clientes» queda
+fijo (workspace P-03), y que cualquier miembro cree tareas es un cambio de
+`task.create`, no un ajuste (workspace P-04). Justificación: las demás
+secciones configuran módulos que Clock no tiene o ajustes de plan pago
+(secciones 4 a 6); una sección vacía o llena de controles bloqueados es
+configuración que no configura nada.
 _No verificado_: cómo se ven en un workspace Free las secciones y los ajustes
 que el plan no habilita —ocultos, bloqueados con candado o con un aviso para
 mejorar el plan— (workspace P-09).
@@ -201,7 +205,9 @@ la base: el valor con que se creó el workspace es «Workspace»
 lo cambia. El PDF del reporte no lo muestra. Justificación: Clockify lo muestra
 también en el selector de workspaces, que acá no existe porque hay uno solo.
 
-**WS-07 Logo del workspace** — `adaptar`, pendiente de workspace P-01
+**WS-07 Logo del workspace** — `fuera de alcance`
+Decidido el 2026-10-16 (workspace P-01): **no entra** hasta que haya un segundo
+uso; lo que sigue queda como la propuesta para entonces.
 Documentado: «Adding an image or logo for your workspace helps with your
 company’s branding, as this image will appear on reports and invoices.», y en
 la página de workspaces, «Upload company logo (which will be displayed in
@@ -209,7 +215,8 @@ branded reports)». No dice formatos ni tamaños.
 Propuesta, si entra: un archivo PNG o JPEG de hasta 1 MB, que se muestra en el
 encabezado al lado del nombre, y se quita con «Quitar logo». No es SVG: un SVG
 subido es un documento con scripts, y servirlo exige una sanitización que no
-hace falta para un logo. La columna `workspace.logo_url` ya existe y está vacía.
+hace falta para un logo. La columna `workspace.logo_url` existe, vacía, y se
+borra (workspace P-05).
 Justificación de la marca: Clockify lo pone en reportes y facturas, que acá son
 el PDF del reporte y nada; sin decidir dónde va, no hay comportamiento que
 replicar. **Trae infraestructura nueva**: subir archivos pide un almacenamiento
@@ -220,8 +227,7 @@ necesidad que levantaría la divergencia.
 _No verificado_: si los «branded reports» con logo son de plan pago (la página
 de precios no lo resuelve) y qué formatos acepta Clockify (workspace P-09).
 
-**WS-08 Primer día de la semana por defecto del workspace** — `replicar`,
-pendiente de workspace P-02
+**WS-08 Primer día de la semana por defecto del workspace** — `replicar`
 Documentado: «Week start: A dropdown menu that sets the first day of the week
 for reports and timesheets.» y «This acts as the default for all new members,
 though it can be overridden on an individual member's profile.» La página de
@@ -233,7 +239,8 @@ primer día es un valor del workspace que reciben las personas nuevas, y un admi
 lo cambia después persona por persona desde la pantalla de equipo (PF-17,
 EQ-71).
 Acá hoy no hay valor de workspace: `membership.week_start` nace en lunes por el
-`default` de la columna. Propuesta, si entra: una columna
+`default` de la columna. Decidido el 2026-10-16 (workspace P-02): entra, solo
+para las personas nuevas. Una columna
 `workspace_settings.week_start`, con los siete días y lunes como valor inicial
 (perfil P-03), que `ensureWorkspaceContext` copia en la membresía al crearla.
 **Cambiarla no toca ninguna membresía existente**: es el valor de las que se
@@ -254,11 +261,11 @@ adjustable via the Edit button.», los dos como valores para las personas nuevas
 que se cambian por persona, y «Overtime calculation period: A dropdown menu
 (e.g., Daily) that sets the timeframe used to calculate overtime.»
 Justificación: alimentan objetivos, capacidad, planificación y el reporte de
-asistencia, que Clock no tiene. La versión por persona está en PF-19, asignada a
-la pantalla de equipo de la fase 2 (perfil P-07);
-`membership.weekly_capacity_minutes` existe sin ningún uso. Si la fase 2 trae la
-de equipo, el valor de workspace es su predeterminado, como WS-08 (workspace
-P-06).
+asistencia, que Clock no tiene. PF-19 asignaba la versión por persona a la
+pantalla de equipo de la fase 2 (perfil P-07), y
+`membership.weekly_capacity_minutes` existe sin ningún uso. Decidido el
+2026-10-16 (workspace P-06, equipo P-09): la fase 2 no los trae, ni el valor del
+workspace ni el de cada persona (EQ-72), hasta que algo los consuma.
 
 **WS-10 Proyectos facturables por defecto** — `fuera de alcance`
 Documentado: «Default billable projects: A toggle switch that, when enabled,
@@ -324,8 +331,9 @@ P-03). Hoy no hay columna: `formatDuration` fija `h:mm`
 «Compacto (h:mm)» con «Lo define el workspace.» (PF-31).
 Justificación del `adaptar`: se implementan dos de los tres formatos.
 Dato del workspace del equipo: la planilla muestra `06:00:00` (timesheet,
-respuesta 13), que es el completo. El predeterminado no se reabre; qué valor
-tiene el workspace de Clock en producción es workspace P-07.
+respuesta 13), que es el completo. El predeterminado no se reabre. Decidido el
+2026-10-16 (workspace P-07): el workspace de producción arranca con el formato
+completo (`06:00:00`), el que el equipo veía en Clockify.
 
 **WS-16 El formato decide también cómo se calcula** — `replicar`, con la regla
 pendiente de workspace P-09
@@ -550,9 +558,11 @@ dejó la configuración editable «para la fase 2», y el ADR 0009 ya fijó cóm
 entraría —un recurso propio para `project.create` y `client.create` con el
 valor y, para `managers`, si quien actúa es responsable de algún proyecto—.
 Volverla editable es salir del plan Free hacia un ajuste pago, que no se puede
-relevar: es workspace P-03.
+relevar. Decidido el 2026-10-16 (workspace P-03): **queda fija**, como en
+Clockify Free, y la pantalla no la muestra. Sin valor que leer,
+`who_creates_projects` se borra (workspace P-05).
 
-**WS-40 Quién crea tareas** — `replicar`, pendiente de workspace P-04
+**WS-40 Quién crea tareas** — `replicar`
 Documentado: «Who can create tasks: Determines who is authorized to create
 tasks within projects, selectable between Admins, Admins and project managers,
 or Anyone.», y en Free, «Every workspace member can create clients, projects,
@@ -560,10 +570,10 @@ tasks, and tags.»
 **Esto es evidencia para P-33 de `proyectos.md`.** PR-40 tenía dos lecturas de
 la página de tareas que se contradecían y PR-58 dejó a `task.create` en
 «owner, admin y el responsable del proyecto», sin un motivo de producto. La
-página del plan Free dice que en Free crea tareas cualquier miembro. Según
-PR-58, con eso el equipo elige entre cambiar `task.create` para que lo tenga
-toda membresía activa que ve el proyecto, o registrar la divergencia con su
-motivo.
+página del plan Free dice que en Free crea tareas cualquier miembro. Decidido
+el 2026-10-16 (workspace P-04): se replica, y `task.create` pasa a tenerlo toda
+membresía activa que ve el proyecto. Es un cambio de `can()`, no un ajuste de
+esta pantalla.
 
 **WS-41 Quién crea etiquetas** — `replicar`
 Documentado: «Who can create tags: Sets whether only Admins or Anyone can
@@ -675,23 +685,24 @@ a admin (EQ-57) y sigue entrando.
 Clockify no documenta ninguna. Los textos reusan los del perfil, que son la
 misma causa.
 
-| ID    | Regla                                                      | Mensaje                                                        | Marca      |
-| ----- | ---------------------------------------------------------- | -------------------------------------------------------------- | ---------- |
-| WS-53 | Nombre vacío, con solo espacios o que no es texto          | «Escribí un nombre.» (PF-35)                                   | `adaptar`  |
-| WS-54 | Nombre de más de 100 caracteres                            | «El nombre no puede superar los 100 caracteres.» (PF-35)       | `adaptar`  |
-| WS-55 | Nombre con el carácter nulo                                | «El nombre tiene un carácter que no se puede guardar.» (PF-35) | `adaptar`  |
-| WS-56 | Formato de duración desconocido, o un ajuste que no existe | «Ese formato no está disponible.» (PF-35)                      | `adaptar`  |
-| WS-57 | Día de la semana fuera de los siete (si entra WS-08)       | «Ese día no existe.» (PF-35)                                   | `adaptar`  |
-| WS-58 | Sin permiso, o membresía no activa                         | «No tenés permiso para hacer esto.» (TT-79)                    | `replicar` |
-| WS-59 | Logo que no es PNG ni JPEG (si entra WS-07)                | «El logo tiene que ser una imagen PNG o JPEG.»                 | `adaptar`  |
-| WS-60 | Logo de más de 1 MB (si entra WS-07)                       | «El logo no puede pesar más de 1 MB.»                          | `adaptar`  |
+| ID    | Regla                                                      | Mensaje                                                        | Marca              |
+| ----- | ---------------------------------------------------------- | -------------------------------------------------------------- | ------------------ |
+| WS-53 | Nombre vacío, con solo espacios o que no es texto          | «Escribí un nombre.» (PF-35)                                   | `adaptar`          |
+| WS-54 | Nombre de más de 100 caracteres                            | «El nombre no puede superar los 100 caracteres.» (PF-35)       | `adaptar`          |
+| WS-55 | Nombre con el carácter nulo                                | «El nombre tiene un carácter que no se puede guardar.» (PF-35) | `adaptar`          |
+| WS-56 | Formato de duración desconocido, o un ajuste que no existe | «Ese formato no está disponible.» (PF-35)                      | `adaptar`          |
+| WS-57 | Día de la semana fuera de los siete (WS-08)                | «Ese día no existe.» (PF-35)                                   | `adaptar`          |
+| WS-58 | Sin permiso, o membresía no activa                         | «No tenés permiso para hacer esto.» (TT-79)                    | `replicar`         |
+| WS-59 | Logo que no es PNG ni JPEG (WS-07, no entra)               | «El logo tiene que ser una imagen PNG o JPEG.»                 | `fuera de alcance` |
+| WS-60 | Logo de más de 1 MB (WS-07, no entra)                      | «El logo no puede pesar más de 1 MB.»                          | `fuera de alcance` |
 
 Justificación común: son validaciones de un payload cerrado, no reglas de
 producto. El nombre se guarda recortado, así que uno con solo espacios es
 vacío. WS-56 y WS-57 solo llegan en un pedido armado a mano, porque el selector
-ofrece lo que se acepta. WS-59 y WS-60 son propuesta atada a workspace P-01: el
-tipo se comprueba por el contenido del archivo, no por la extensión ni por el
-tipo que declara el navegador.
+ofrece lo que se acepta. WS-59 y WS-60 quedan fuera con el logo (workspace
+P-01) y se conservan como la propuesta para cuando entre: el tipo se comprueba
+por el contenido del archivo, no por la extensión ni por el tipo que declara el
+navegador.
 
 ## 10. Estados vacíos
 
@@ -739,7 +750,7 @@ los formatos de la persona por `useDisplayFormats`
 | WS-67 | Cambiar el formato con un borrador de duración a medio escribir | Lo tecleado se interpreta igual con los dos formatos (PF-21). El borrador se muestra con el formato nuevo cuando la pantalla recibe el valor.                                                    |
 | WS-68 | Entrada del timer con segundos, con formato compacto            | Regla del contrato (WS-16). Lo que no puede pasar es que la fila, el total del día y el reporte muestren totales que no cierran entre sí sin una regla escrita.                                  |
 | WS-69 | Cambiar el formato con un reporte abierto o exportado           | Lo abierto queda hasta el pedido siguiente (WS-64). Un archivo ya descargado no cambia. La exportación nueva usa el formato nuevo en sus columnas de duración; «Horas» sigue en decimal (WS-17). |
-| WS-70 | Cambiar el primer día por defecto (si entra WS-08)              | Ninguna membresía cambia. La persona que entra después nace con el valor nuevo. _No verificado_ contra Clockify (WS-08).                                                                         |
+| WS-70 | Cambiar el primer día por defecto (WS-08)                       | Ninguna membresía cambia. La persona que entra después nace con el valor nuevo. _No verificado_ contra Clockify (WS-08).                                                                         |
 | WS-71 | Nombre con espacios al principio o al final                     | Se recortan antes de validar y de guardar. Si el recortado es igual al guardado, no se escribe.                                                                                                  |
 | WS-72 | Un owner o admin con la membresía desactivada                   | Ve WS-51 y no cambia nada (WS-58).                                                                                                                                                               |
 | WS-73 | Falta la fila de `workspace_settings`                           | No pasa: se crea con el workspace. Si pasara, la pantalla responde con el error inesperado y no la crea por su cuenta; un ajuste que aparece con valores de omisión ocultaría el problema.       |
@@ -757,47 +768,59 @@ Varias nunca tuvieron efecto, y el ADR 0009 dice por qué eso es un problema:
 | Columna                                                                 | Hoy                                     | Con este documento                                   |
 | ----------------------------------------------------------------------- | --------------------------------------- | ---------------------------------------------------- |
 | `workspace.name`                                                        | Se muestra; nadie la cambia             | Se cambia desde la pantalla (WS-05)                  |
-| `workspace.logo_url`                                                    | Vacía, sin uso                          | Workspace P-01 (WS-07)                               |
-| `workspace.currency`                                                    | `ARS`, sin uso                          | Sin destino (WS-31)                                  |
+| `workspace.logo_url`                                                    | Vacía, sin uso                          | Se borra (WS-07, workspace P-01 y P-05)              |
+| `workspace.currency`                                                    | `ARS`, sin uso                          | Se borra (WS-31, workspace P-05)                     |
 | `workspace.timezone`                                                    | Día del cron (PF-05)                    | Igual; no se muestra (WS-12)                         |
 | `workspace.owner_id`                                                    | El owner                                | Lo cambia la transferencia (EQ-57), no esta pantalla |
 | `workspace_settings.who_sees_all_entries`                               | `admins`, sin efecto (ADR 0020)         | Igual (WS-42)                                        |
-| `workspace_settings.who_sees_rates`                                     | `admins`, sin efecto                    | Sin destino (WS-43)                                  |
-| `workspace_settings.who_creates_projects`                               | `everyone`, sin efecto (P-18, ADR 0009) | Workspace P-03 (WS-39)                               |
-| `require_project`, `require_task`, `require_description`, `require_tag` | Falso, sin efecto (TT-84)               | Sin destino (WS-22)                                  |
-| `workspace_settings.force_timer`                                        | Falso, sin efecto (TT-84)               | Sin destino (WS-23)                                  |
-| `workspace_settings.timesheet_enabled`                                  | Verdadero, sin efecto (TS-01)           | Sin destino (WS-18)                                  |
-| `workspace_settings.rounding_minutes`                                   | Cero, sin efecto (TT-83, RP-36)         | Sin destino (WS-24)                                  |
+| `workspace_settings.who_sees_rates`                                     | `admins`, sin efecto                    | Se borra (WS-43, workspace P-05)                     |
+| `workspace_settings.who_creates_projects`                               | `everyone`, sin efecto (P-18, ADR 0009) | Se borra (WS-39, workspace P-03 y P-05)              |
+| `require_project`, `require_task`, `require_description`, `require_tag` | Falso, sin efecto (TT-84)               | Se borra (WS-22, workspace P-05)                     |
+| `workspace_settings.force_timer`                                        | Falso, sin efecto (TT-84)               | Se borra (WS-23, workspace P-05)                     |
+| `workspace_settings.timesheet_enabled`                                  | Verdadero, sin efecto (TS-01)           | Se borra (WS-18, workspace P-05)                     |
+| `workspace_settings.rounding_minutes`                                   | Cero, sin efecto (TT-83, RP-36)         | Se borra (WS-24, workspace P-05)                     |
 | _Falta_: formato de duración                                            | —                                       | Columna nueva, compacto por defecto (WS-15)          |
-| _Falta_: primer día por defecto                                         | —                                       | Columna nueva, si entra (WS-08, workspace P-02)      |
+| _Falta_: primer día por defecto                                         | —                                       | Columna nueva (WS-08, workspace P-02)                |
 
-Qué hacer con las columnas «sin destino» es workspace P-05.
+Decidido el 2026-10-16 (workspace P-05): las columnas sin efecto que dicen «Se
+borra» se quitan con una migración, con el criterio del ADR 0009. Entre ellas
+están `logo_url` y `who_creates_projects`, que P-05 ataba a P-01 y P-03: sin
+logo y con la regla fija, las dos quedan sin efecto.
 
 ## 15. Qué es de la fase 2
 
 **Cada identificador tiene un solo destino.** Son 73, WS-01 a WS-73.
 
-- **Fase 2, sin condición (31):** WS-01 … WS-06, WS-14 … WS-17,
-  WS-49 … WS-56, WS-58, WS-61 … WS-69, WS-71 … WS-73. Es la pantalla con dos
-  ajustes: el nombre y el formato de duración.
-- **Fase 2, si el usuario lo decide (7):** WS-07, WS-59 y WS-60 (logo,
-  workspace P-01); WS-08, WS-57 y WS-70 (primer día por defecto, workspace
-  P-02); WS-40 (quién crea tareas, workspace P-04, que es un cambio de
-  `task.create` y no de esta pantalla).
-- **Ya cumplido o decidido en otro documento, sin trabajo nuevo (8):** WS-11,
-  WS-12, WS-13, WS-18, WS-26 (va con los favoritos de PR-27), WS-36, WS-41,
-  WS-48.
-- **Cumplido hoy, editable solo si el usuario lo decide (1):** WS-39
-  (workspace P-03).
+- **Fase 2 (34):** WS-01 … WS-06, WS-08, WS-14 … WS-17, WS-49 … WS-58,
+  WS-61 … WS-73. Es la pantalla con tres ajustes: el nombre, el formato de
+  duración y el primer día de la semana por defecto (workspace P-02).
+- **Fase 2, fuera de esta pantalla (1):** WS-40 (quién crea tareas, workspace
+  P-04), que es un cambio de `task.create`.
+- **Ya cumplido o decidido en otro documento, sin trabajo nuevo (9):** WS-11,
+  WS-12, WS-13, WS-18, WS-26 (va con los favoritos de PR-27), WS-36, WS-39
+  (queda fijo, workspace P-03), WS-41, WS-48.
 - **Congelado por una decisión anterior (1):** WS-42.
-- **Fuera de alcance (25):** WS-09, WS-10, WS-19 … WS-25, WS-27 … WS-35,
-  WS-37, WS-38, WS-43 … WS-47.
+- **Fuera de alcance (28):** WS-07, WS-09, WS-10, WS-19 … WS-25,
+  WS-27 … WS-35, WS-37, WS-38, WS-43 … WS-47, WS-59, WS-60. El logo y sus
+  validaciones, por workspace P-01; los días laborables y la capacidad, por
+  workspace P-06.
 
-31 + 7 + 8 + 1 + 1 + 25 = 73.
+34 + 1 + 9 + 1 + 28 = 73.
+
+_Corregido el 2026-10-16, decisiones de la sección 17_: había siete
+identificadores en «Fase 2, si el usuario lo decide» y WS-39 en «editable solo
+si el usuario lo decide». WS-08, WS-57 y WS-70 pasaron a la fase 2; WS-07,
+WS-59 y WS-60, fuera de alcance; WS-40, a la fase 2 fuera de esta pantalla, y
+WS-39, a cumplido.
 
 ### Lo que este relevamiento cambia en otros documentos
 
 No los toqué: son de otros dueños y van con su corrección fechada.
+
+_Aplicadas el 2026-10-16_: PF-01, PF-02, PF-16 y la lista de perfil P-09 en
+`perfil.md`; PR-40, PR-58 y P-33 en `proyectos.md`, cada una con su corrección
+fechada. Con las decisiones de la sección 17 se corrigieron además PF-19 y
+perfil P-07 (workspace P-06) y PR-59 (workspace P-03).
 
 - **PF-02** dice que el formato de duración está en la pestaña General y que el
   rol que lo cambia está sin verificar. Está en «Time tracking» y lo cambian
@@ -826,33 +849,43 @@ Sugerencia, no decisión. Cada uno es vertical y se despliega solo.
    construidas. Necesita decidir antes la regla de WS-16 y WS-68, y
    probablemente un ADR que extienda el 0012 con un formato que es del
    workspace y no de la persona.
-3. **WS3 — El primer día por defecto**, si workspace P-02 lo aprueba. Una
+3. **WS3 — El primer día por defecto**, aprobado en workspace P-02. Una
    columna, un selector y la lectura en `ensureWorkspaceContext`. Conviene
    después del slice de equipo que edite el primer día por persona (EQ-71), para
    que las dos caras del mismo dato lleguen juntas.
-4. **WS4 — El logo**, si workspace P-01 lo aprueba, después de un ADR sobre el
-   almacenamiento de archivos.
+4. **WS4 — El logo** no entra en la fase 2 (workspace P-01). Si alguna vez
+   entra, va después de un ADR sobre el almacenamiento de archivos.
 
-El cambio de `task.create` de WS-40, si se aprueba, no es de esta pantalla: va
-con el primer slice de administración de proyectos de la fase 2. Quitar las
-columnas sin destino (workspace P-05), si se aprueba, es una migración que
-puede ir sola o con WS1.
+El cambio de `task.create` de WS-40, aprobado en workspace P-04, no es de esta
+pantalla: va con el primer slice de administración de proyectos de la fase 2.
+Quitar las columnas sin efecto, aprobado en workspace P-05, es una migración
+que puede ir sola o con WS1.
 
 ## 17. Pendientes de definición del equipo
 
 Numeración propia de este documento. Se cita como `workspace P-nn`.
 
-| ID   | Punto                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P-01 | **¿Entra el logo del workspace en la fase 2?** (WS-07) Trae almacenamiento de archivos (Vercel Blob), validación de tipo y tamaño, y un ADR. En Clock solo tendría el encabezado como lugar, y quizás el PDF del reporte. Recomendación: no, hasta que haya un segundo uso; si entra, con la propuesta de WS-07 y en un slice propio.                                                                                      |
-| P-02 | **¿Entra el primer día de la semana por defecto del workspace?** (WS-08) Hoy toda membresía nace en lunes. Recomendación: sí, solo para las membresías nuevas, que es barato; replicar que mueva a quien nunca eligió pide distinguir «no eligió» y depende de la verificación de P-09.                                                                                                                                    |
-| P-03 | **¿Se vuelve editable «quién crea proyectos y clientes»?** (WS-39) P-18 de `proyectos.md` lo dejó para la fase 2 y el ADR 0009 dice cómo. En Free está fijo en «cualquiera» y el resto no se puede relevar. Recomendación: no; queda fijo, y `who_creates_projects` sigue congelado o se quita (P-05).                                                                                                                     |
-| P-04 | **Quién crea tareas** (WS-40). En Free, cualquier miembro; en Clock, owner, admin y el responsable del proyecto (PR-40, PR-58). ¿Se cambia `task.create` para que lo tenga toda membresía activa que ve el proyecto, o se registra la divergencia con su motivo? Recomendación: cambiarlo; PR-58 dice que no había motivo de producto para la regla actual.                                                                |
-| P-05 | **Las columnas sin destino** (sección 14): `who_sees_rates`, los cuatro `require_*`, `force_timer`, `timesheet_enabled`, `rounding_minutes` y `currency`, y `logo_url` y `who_creates_projects` según P-01 y P-03. ¿Se quitan con una migración o se conservan con un comentario que diga que no tienen efecto? Recomendación: quitarlas; el criterio del ADR 0009 es que un dato sin efecto invita a creer que tiene uno. |
-| P-06 | **Días laborables y capacidad** (WS-09, PF-19, perfil P-07). Van a la pantalla de equipo de la fase 2 por persona, y en Clockify tienen un valor de workspace. Ninguna pantalla de Clock los consume. ¿Entran en la fase 2? Recomendación: no, hasta que haya un consumidor. Coordinar con `equipo.md`.                                                                                                                    |
-| P-07 | **Qué formato de duración tiene el workspace de Clock en producción.** El predeterminado es compacto (perfil P-01) y no se reabre, pero la planilla del workspace de Clockify muestra `06:00:00`, que es el completo (WS-15). ¿El owner lo pone en completo cuando llegue WS2, para que el equipo vea lo mismo que veía? Depende de la regla de WS-16.                                                                     |
-| P-08 | **Confirmar las propuestas de diseño** de este documento, que no son paridad: la ruta y el rótulo «Configuración» (WS-01), dos secciones (WS-03), el guardado por control (WS-04), proyectos siempre públicos al nacer sin interruptor (WS-11), la zona horaria del cron fuera de la pantalla (WS-12) y los textos de WS-50 a WS-62.                                                                                       |
-| P-09 | **La lista de verificación contra el workspace real.** Está abajo, entera, para resolverla en una sentada. No es una decisión.                                                                                                                                                                                                                                                                                             |
+### Decididos el 2026-10-16
+
+El usuario respondió todas con la recomendación. Se dejan con su identificador
+porque el cuerpo del documento y los contratos de slice los citan.
+
+| ID   | Decisión                                                                                                                                                                                                                                                                                                                                                    |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P-01 | **El logo del workspace no entra** (WS-07, WS-59, WS-60), hasta que haya un segundo uso. Traería almacenamiento de archivos (Vercel Blob), validación de tipo y tamaño, y un ADR, y en Clock solo tendría el encabezado como lugar. Si entra, con la propuesta de WS-07 y en un slice propio.                                                               |
+| P-02 | **Entra el primer día de la semana por defecto del workspace, solo para las personas nuevas** (WS-08, WS-57, WS-70). Cambiarlo no mueve ninguna membresía existente; replicar que mueva a quien nunca eligió pediría distinguir «no eligió» y depende de la verificación de P-09.                                                                           |
+| P-03 | **«Quién crea proyectos y clientes» queda fijo, como en Clockify Free** (WS-39): todos crean, y la pantalla no lo muestra. Corrige lo que P-18 de `proyectos.md` dejaba para la fase 2 (PR-59).                                                                                                                                                             |
+| P-04 | **Cualquier miembro crea tareas en los proyectos que ve, como en Free** (WS-40): `task.create` pasa a tenerlo toda membresía activa que ve el proyecto. PR-58 decía que no había motivo de producto para la regla anterior (owner, admin y el responsable del proyecto).                                                                                    |
+| P-05 | **Se borran con una migración las columnas sin efecto** (sección 14): `who_sees_rates`, los cuatro `require_*`, `force_timer`, `timesheet_enabled`, `rounding_minutes` y `currency`, y también `logo_url` y `who_creates_projects`, que quedan sin efecto con P-01 y P-03. El criterio del ADR 0009 es que un dato sin efecto invita a creer que tiene uno. |
+| P-06 | **Días laborables y capacidad, fuera de alcance** hasta que haya un consumidor (WS-09): ni el valor del workspace ni el de cada persona. Es la misma respuesta que P-09 de `equipo.md` (EQ-72), y corrige PF-19 y perfil P-07.                                                                                                                              |
+| P-07 | **Producción arranca con el formato de duración completo (`06:00:00`)**, el que muestra la planilla del workspace de Clockify (WS-15). El predeterminado de la columna sigue siendo compacto (perfil P-01).                                                                                                                                                 |
+| P-08 | **Se aceptan las propuestas de diseño** de este documento, que no son paridad: la ruta y el rótulo «Configuración» (WS-01), dos secciones (WS-03), el guardado por control (WS-04), proyectos siempre públicos al nacer sin interruptor (WS-11), la zona horaria del cron fuera de la pantalla (WS-12) y los textos de WS-50 a WS-62.                       |
+
+### Abierto
+
+| ID   | Punto                                                                                                                          |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------ |
+| P-09 | **La lista de verificación contra el workspace real.** Está abajo, entera, para resolverla en una sentada. No es una decisión. |
 
 ### P-09, la lista de verificación
 

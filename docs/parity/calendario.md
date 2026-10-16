@@ -225,8 +225,12 @@ _No verificado_: si Clockify lo recuerda, y dónde.
 Documentado: el engranaje de la página tiene «Show working days only», que
 oculta los fines de semana y los días no laborables. Justificación: los días
 laborables son un dato por persona que Clockify administra desde el equipo, y
-acá quedaron para la fase 2 (PF-19). Ocultar sábado y domingo fijos sería
-inventar una regla que Clockify no tiene. Ver calendario P-05.
+acá quedan fuera de alcance hasta que algo los consuma (PF-19). Ocultar sábado
+y domingo fijos sería inventar una regla que Clockify no tiene. Ver calendario
+P-05.
+_Corregido el 2026-10-16, PF-19 (equipo P-09, workspace P-06)_: decía que los
+días laborables quedaron para la fase 2; el usuario los dejó fuera de alcance,
+por persona y del workspace.
 
 **CAL-14 Posición inicial del desplazamiento** — `adaptar`
 Al abrir, si el período visible contiene hoy, la grilla queda con la línea de
@@ -1593,8 +1597,10 @@ bloquea un contrato.
   tope en «ahora», que avanza mientras se arrastra (TT-29)— y su propia
   mutación, `updateRunningStart`.
 - **P-05 Mostrar solo días laborables** (CAL-13). Propuesta: fuera hasta que
-  existan los días laborables por persona (PF-19, fase 2). La alternativa
-  —ocultar sábado y domingo fijos— es una regla que Clockify no tiene.
+  existan los días laborables por persona (PF-19), que también están fuera de
+  alcance. La alternativa —ocultar sábado y domingo fijos— es una regla que
+  Clockify no tiene. _Corregido el 2026-10-16, PF-19 (equipo P-09, workspace
+  P-06)_: decía que los días laborables por persona eran de la fase 2.
 - **P-07** La lista de verificación contra el workspace real, abajo.
 
 _Corregido el 2026-10-04, slice 8_: P-02 pasó a «Cerrados».
