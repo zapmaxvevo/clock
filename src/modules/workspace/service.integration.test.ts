@@ -3,7 +3,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { db } from "@/server/db";
 import { CHECK_VIOLATION, constraintOf } from "@/server/db/constraint-error";
-import { membership, user, workspace, workspaceSettings } from "@/server/db/schema";
+import {
+  auditLog,
+  invitation,
+  membership,
+  user,
+  workspace,
+  workspaceSettings,
+} from "@/server/db/schema";
 import type { Actor } from "@/server/permissions";
 import { warmPool, waitForBlockedBackends } from "@/test/concurrency";
 import {
@@ -18,67 +25,189 @@ import { auditFor, invitationOf } from "@/test/queries";
 import { actorIn } from "@/test/time-entry";
 
 import { workspaceRepository } from "./repository";
-import { ensureWorkspaceContext, listWorkspacePeople, weekStartOf } from "./service";
+import {
+  ensureWorkspaceContext,
+  listWorkspacePeople,
+  weekStartOf,
+  type WorkspaceContext,
+} from "./service";
 
-describe("ensureWorkspaceContext", () => {
+/** `ensureWorkspaceContext` de quien tiene acceso: sin él, el test falla acá. */
+async function enter(id: string, email: string): Promise<WorkspaceContext> {
+  const context = await ensureWorkspaceContext({ id, email });
+  if (context === null) {
+    throw new Error(`${email} no tiene acceso.`);
+  }
+  return context;
+}
+
+/** El workspace arrancado por el owner configurado en `src/test/setup.ts`. */
+async function workspaceWithOwner() {
+  const ownerId = await seedUser("owner@empresa.com");
+  const context = await enter(ownerId, "owner@empresa.com");
+  return { workspaceId: context.workspace.id, ownerId };
+}
+
+/** Lo que `ensureWorkspaceContext` puede escribir, para afirmar que no escribió. */
+async function writes() {
+  return {
+    workspaces: await db.select().from(workspace),
+    memberships: await db.select().from(membership),
+    invitations: await db.select().from(invitation),
+    audits: await db.select().from(auditLog),
+  };
+}
+
+describe("ensureWorkspaceContext, el arranque (D-E1b-3, criterio 7)", () => {
   it("crea el workspace y deja como owner a la cuenta configurada", async () => {
     const userId = await seedUser("owner@empresa.com");
 
-    const context = await ensureWorkspaceContext({
-      id: userId,
-      email: "owner@empresa.com",
-    });
+    const context = await enter(userId, "owner@empresa.com");
 
     expect(context.workspace.name).toBe("Workspace");
+    expect(context.workspace.ownerId).toBe(userId);
     expect(context.actor.role).toBe("owner");
     expect(context.actor.status).toBe("active");
     expect(context.actor.workspaceId).toBe(context.workspace.id);
   });
 
+  it("compara el correo del arranque recortado y en minúsculas", async () => {
+    const userId = await seedUser("Owner@Empresa.com");
+
+    const context = await enter(userId, " Owner@Empresa.com");
+
+    expect(context.actor.role).toBe("owner");
+  });
+
+  it("otro correo del dominio, sin workspace, recibe null y no crea nada", async () => {
+    const userId = await seedUser("ana@empresa.com");
+
+    expect(
+      await ensureWorkspaceContext({ id: userId, email: "ana@empresa.com" }),
+    ).toBeNull();
+    expect(await writes()).toEqual({
+      workspaces: [],
+      memberships: [],
+      invitations: [],
+      audits: [],
+    });
+  });
+
   it("reutiliza el workspace existente y no duplica la membresía", async () => {
     const userId = await seedUser("owner@empresa.com");
 
-    const first = await ensureWorkspaceContext({
-      id: userId,
-      email: "owner@empresa.com",
-    });
-    const second = await ensureWorkspaceContext({
-      id: userId,
-      email: "owner@empresa.com",
-    });
+    const first = await enter(userId, "owner@empresa.com");
+    const second = await enter(userId, "owner@empresa.com");
 
     expect(second.workspace.id).toBe(first.workspace.id);
     expect(second.membership.id).toBe(first.membership.id);
   });
+});
 
-  it("suma al resto del equipo como member en el workspace que ya existe", async () => {
-    const ownerId = await seedUser("owner@empresa.com");
-    await ensureWorkspaceContext({ id: ownerId, email: "owner@empresa.com" });
-
-    const otherId = await seedUser("ana@empresa.com");
-    const context = await ensureWorkspaceContext({
-      id: otherId,
-      email: "ana@empresa.com",
-    });
-
-    expect(context.actor.role).toBe("member");
-    expect(context.workspace.ownerId).toBe(ownerId);
+describe("ensureWorkspaceContext con el workspace", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
-  it("crea un solo workspace con dos personas entrando por primera vez a la vez", async () => {
-    const ownerId = await seedUser("owner@empresa.com");
-    const otherId = await seedUser("ana@empresa.com");
-    await warmPool(2);
+  it("con una invitación pendiente crea la membresía member y la acepta, con su auditoría (criterio 2)", async () => {
+    const { workspaceId } = await workspaceWithOwner();
+    const seeded = await seedInvitation({ workspaceId, email: "ana@gmail.com" });
+    const userId = await seedUser("Ana@Gmail.com");
 
-    const contexts = await Promise.all([
-      ensureWorkspaceContext({ id: ownerId, email: "owner@empresa.com" }),
-      ensureWorkspaceContext({ id: otherId, email: "ana@empresa.com" }),
-    ]);
+    const context = await enter(userId, "Ana@Gmail.com");
 
-    expect(contexts[0].workspace.id).toBe(contexts[1].workspace.id);
-    expect(await db.select().from(workspace)).toHaveLength(1);
-    expect(await db.select().from(workspaceSettings)).toHaveLength(1);
-    expect(await db.select().from(membership)).toHaveLength(2);
+    expect(context.workspace.id).toBe(workspaceId);
+    expect(context.membership).toMatchObject({ role: "member", status: "active" });
+    const row = await invitationOf(workspaceId, "ana@gmail.com");
+    expect(row).toMatchObject({ id: seeded.id, status: "accepted" });
+    expect(row?.acceptedAt).toBeInstanceOf(Date);
+    const audits = await auditFor("invitation", seeded.id);
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      workspaceId,
+      actorId: userId,
+      action: "invitation.accept",
+      previousValue: JSON.stringify({ status: "pending" }),
+      nextValue: JSON.stringify({ status: "accepted" }),
+    });
+  });
+
+  it("quien ya tiene membresía entra sin aceptar ni auditar (criterio 3, EQ-31)", async () => {
+    const { workspaceId } = await workspaceWithOwner();
+    const userId = await seedMember(workspaceId, "member", "active");
+    const email = `${userId}@empresa.com`;
+    // Una pendiente con membresía: el estado que limpia la 0016. La rama que
+    // encuentra la membresía ni la mira.
+    const seeded = await seedInvitation({ workspaceId, email });
+
+    const context = await enter(userId, email);
+
+    expect(context.membership.userId).toBe(userId);
+    expect(await invitationOf(workspaceId, email)).toEqual(seeded);
+    expect(await auditFor("invitation")).toEqual([]);
+  });
+
+  it("sin membresía ni pendiente devuelve null sin escribir (criterio 10)", async () => {
+    await workspaceWithOwner();
+    const userId = await seedUser("ana@empresa.com");
+    const before = await writes();
+
+    expect(
+      await ensureWorkspaceContext({ id: userId, email: "ana@empresa.com" }),
+    ).toBeNull();
+    expect(await writes()).toEqual(before);
+  });
+
+  it.each(["revoked", "accepted"] as const)(
+    "con una invitación %s y sin membresía devuelve null y no la toca (criterio 10)",
+    async (status) => {
+      const { workspaceId } = await workspaceWithOwner();
+      await seedInvitation({ workspaceId, email: "ana@gmail.com", status });
+      const userId = await seedUser("ana@gmail.com");
+      const before = await writes();
+
+      expect(
+        await ensureWorkspaceContext({ id: userId, email: "ana@gmail.com" }),
+      ).toBeNull();
+      expect(await writes()).toEqual(before);
+    },
+  );
+
+  it("una membresía inactiva sigue dando el contexto hasta E2 (criterio 9)", async () => {
+    const { workspaceId } = await workspaceWithOwner();
+    const userId = await seedMember(workspaceId, "member", "inactive");
+
+    const context = await enter(userId, `${userId}@empresa.com`);
+
+    expect(context.actor.status).toBe("inactive");
+  });
+
+  it("después del arranque, el correo configurado sin membresía no entra; con invitación, entra como member (criterio 8)", async () => {
+    // Otro owner: el workspace lo arrancó alguien que no es el correo configurado.
+    const { workspaceId } = await seedWorkspace();
+    const userId = await seedUser("owner@empresa.com");
+
+    expect(
+      await ensureWorkspaceContext({ id: userId, email: "owner@empresa.com" }),
+    ).toBeNull();
+
+    await seedInvitation({ workspaceId, email: "owner@empresa.com" });
+    const context = await enter(userId, "owner@empresa.com");
+
+    expect(context.membership.role).toBe("member");
+    expect(
+      await db.select().from(membership).where(eq(membership.role, "owner")),
+    ).toHaveLength(1);
+  });
+
+  it("el owner_id del workspace sin membresía tampoco vuelve como owner (D-E1b-3)", async () => {
+    const { workspaceId, ownerId } = await seedWorkspace();
+    await db.delete(membership).where(eq(membership.userId, ownerId));
+    await seedInvitation({ workspaceId, email: `${ownerId}@empresa.com` });
+
+    const context = await enter(ownerId, `${ownerId}@empresa.com`);
+
+    expect(context.membership.role).toBe("member");
   });
 
   it("elige siempre el workspace más viejo, no el que la base devuelva primero", async () => {
@@ -105,31 +234,60 @@ describe("ensureWorkspaceContext", () => {
     await db
       .insert(workspaceSettings)
       .values([{ workspaceId: newer.id }, { workspaceId: older.id }]);
+    await seedInvitation({ workspaceId: newer.id, email: "ana@empresa.com" });
+    await seedInvitation({ workspaceId: older.id, email: "ana@empresa.com" });
 
     const userId = await seedUser("ana@empresa.com");
-    const context = await ensureWorkspaceContext({
-      id: userId,
-      email: "ana@empresa.com",
-    });
+    const context = await enter(userId, "ana@empresa.com");
 
     expect(context.workspace.id).toBe(older.id);
     expect(context.workspace.name).toBe("El viejo");
+    expect((await invitationOf(newer.id, "ana@empresa.com"))?.status).toBe("pending");
+  });
+
+  it("si la aceptación falla, la membresía no se crea (criterio 18 de E1a)", async () => {
+    const { workspaceId } = await workspaceWithOwner();
+    const seeded = await seedInvitation({ workspaceId, email: "ana@gmail.com" });
+    const userId = await seedUser("ana@gmail.com");
+    vi.spyOn(workspaceRepository, "acceptPending").mockRejectedValueOnce(
+      new Error("falla simulada"),
+    );
+
+    await expect(
+      ensureWorkspaceContext({ id: userId, email: "ana@gmail.com" }),
+    ).rejects.toThrow("falla simulada");
+
+    expect(
+      await db.select().from(membership).where(eq(membership.userId, userId)),
+    ).toEqual([]);
+    expect(await invitationOf(workspaceId, "ana@gmail.com")).toEqual(seeded);
+  });
+
+  it("una falla al crear la membresía, después de aceptar, deshace la aceptación (criterio 18 de E1a)", async () => {
+    const { workspaceId } = await workspaceWithOwner();
+    const seeded = await seedInvitation({ workspaceId, email: "ana@gmail.com" });
+    const userId = await seedUser("ana@gmail.com");
+    vi.spyOn(workspaceRepository, "createMembership").mockRejectedValueOnce(
+      new Error("falla después de aceptar"),
+    );
+
+    await expect(
+      ensureWorkspaceContext({ id: userId, email: "ana@gmail.com" }),
+    ).rejects.toThrow("falla después de aceptar");
+
+    expect(
+      await db.select().from(membership).where(eq(membership.userId, userId)),
+    ).toEqual([]);
+    expect(await invitationOf(workspaceId, "ana@gmail.com")).toEqual(seeded);
+    expect(await auditFor("invitation")).toEqual([]);
   });
 });
 
 describe("entrar dos veces deja una sola membresía", () => {
   it("la segunda alta devuelve la fila que ya está", async () => {
-    const ownerId = await seedUser("owner@empresa.com");
-    const context = await ensureWorkspaceContext({
-      id: ownerId,
-      email: "owner@empresa.com",
-    });
+    const { workspaceId } = await workspaceWithOwner();
     const otherId = await seedUser("ana@empresa.com");
-    const values = {
-      workspaceId: context.workspace.id,
-      userId: otherId,
-      role: "member",
-    } as const;
+    const values = { workspaceId, userId: otherId, role: "member" } as const;
 
     const first = await db.transaction((tx) =>
       workspaceRepository.createMembership(tx, values),
@@ -147,17 +305,9 @@ describe("entrar dos veces deja una sola membresía", () => {
   it("el alta que pierde la carrera se queda con la fila de la que ganó", async () => {
     // El layout y la página llaman requireSession() en el mismo render, así
     // que el primer ingreso de alguien nuevo corre dos veces en paralelo.
-    const ownerId = await seedUser("owner@empresa.com");
-    const context = await ensureWorkspaceContext({
-      id: ownerId,
-      email: "owner@empresa.com",
-    });
+    const { workspaceId } = await workspaceWithOwner();
     const otherId = await seedUser("ana@empresa.com");
-    const values = {
-      workspaceId: context.workspace.id,
-      userId: otherId,
-      role: "member",
-    } as const;
+    const values = { workspaceId, userId: otherId, role: "member" } as const;
     await warmPool(2);
 
     // Las dos barreras son necesarias y ninguna se puede sacar.
@@ -210,136 +360,11 @@ describe("entrar dos veces deja una sola membresía", () => {
   });
 });
 
-describe("ensureWorkspaceContext acepta la invitación pendiente (D-E1a-5)", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  async function workspaceWithOwner() {
-    const ownerId = await seedUser("owner@empresa.com");
-    const context = await ensureWorkspaceContext({
-      id: ownerId,
-      email: "owner@empresa.com",
-    });
-    return context.workspace.id;
-  }
-
-  it("la membresía que nace acepta la pendiente de su correo, con su auditoría (criterio 14)", async () => {
-    const workspaceId = await workspaceWithOwner();
-    const seeded = await seedInvitation({ workspaceId, email: "ana@gmail.com" });
-    const userId = await seedUser("Ana@Gmail.com");
-
-    const context = await ensureWorkspaceContext({ id: userId, email: "Ana@Gmail.com" });
-
-    expect(context.membership).toMatchObject({ role: "member", status: "active" });
-    const row = await invitationOf(workspaceId, "ana@gmail.com");
-    expect(row).toMatchObject({ id: seeded.id, status: "accepted" });
-    expect(row?.acceptedAt).toBeInstanceOf(Date);
-    const audits = await auditFor("invitation", seeded.id);
-    expect(audits).toHaveLength(1);
-    expect(audits[0]).toMatchObject({
-      workspaceId,
-      actorId: userId,
-      action: "invitation.accept",
-      previousValue: JSON.stringify({ status: "pending" }),
-      nextValue: JSON.stringify({ status: "accepted" }),
-    });
-  });
-
-  it("una persona del dominio sin invitación sigue entrando, sin auditoría (criterio 17)", async () => {
-    await workspaceWithOwner();
-    const userId = await seedUser("ana@empresa.com");
-
-    const context = await ensureWorkspaceContext({
-      id: userId,
-      email: "ana@empresa.com",
-    });
-
-    expect(context.membership.status).toBe("active");
-    expect(await auditFor("invitation")).toEqual([]);
-  });
-
-  it.each(["revoked", "accepted"] as const)(
-    "no toca una invitación %s",
-    async (status) => {
-      const workspaceId = await workspaceWithOwner();
-      const seeded = await seedInvitation({
-        workspaceId,
-        email: "ana@gmail.com",
-        status,
-      });
-      const userId = await seedUser("ana@gmail.com");
-
-      await ensureWorkspaceContext({ id: userId, email: "ana@gmail.com" });
-
-      expect(await invitationOf(workspaceId, "ana@gmail.com")).toEqual(seeded);
-      expect(await auditFor("invitation")).toEqual([]);
-    },
-  );
-
-  it("la rama que encuentra la membresía no escribe ni busca la invitación", async () => {
-    const workspaceId = await workspaceWithOwner();
-    const userId = await seedUser("ana@gmail.com");
-    await ensureWorkspaceContext({ id: userId, email: "ana@gmail.com" });
-    const seeded = await seedInvitation({ workspaceId, email: "ana@gmail.com" });
-    const acceptPending = vi.spyOn(workspaceRepository, "acceptPending");
-
-    await ensureWorkspaceContext({ id: userId, email: "ana@gmail.com" });
-
-    expect(acceptPending).not.toHaveBeenCalled();
-    expect(await invitationOf(workspaceId, "ana@gmail.com")).toEqual(seeded);
-  });
-
-  it("si la aceptación falla, la membresía no se crea (criterio 18)", async () => {
-    const workspaceId = await workspaceWithOwner();
-    const seeded = await seedInvitation({ workspaceId, email: "ana@gmail.com" });
-    const userId = await seedUser("ana@gmail.com");
-    vi.spyOn(workspaceRepository, "acceptPending").mockRejectedValueOnce(
-      new Error("falla simulada"),
-    );
-
-    await expect(
-      ensureWorkspaceContext({ id: userId, email: "ana@gmail.com" }),
-    ).rejects.toThrow("falla simulada");
-
-    expect(
-      await db.select().from(membership).where(eq(membership.userId, userId)),
-    ).toEqual([]);
-    expect(await invitationOf(workspaceId, "ana@gmail.com")).toEqual(seeded);
-  });
-
-  it("una falla después de aceptar deshace la membresía y la aceptación (criterio 18)", async () => {
-    const workspaceId = await workspaceWithOwner();
-    const seeded = await seedInvitation({ workspaceId, email: "ana@gmail.com" });
-    const userId = await seedUser("ana@gmail.com");
-    // La aceptación se escribe y la falla llega después, en la misma transacción.
-    const accept = workspaceRepository.acceptPending.bind(workspaceRepository);
-    vi.spyOn(workspaceRepository, "acceptPending").mockImplementationOnce(
-      async (tx, id, email) => {
-        await accept(tx, id, email);
-        throw new Error("falla después de aceptar");
-      },
-    );
-
-    await expect(
-      ensureWorkspaceContext({ id: userId, email: "ana@gmail.com" }),
-    ).rejects.toThrow("falla después de aceptar");
-
-    expect(
-      await db.select().from(membership).where(eq(membership.userId, userId)),
-    ).toEqual([]);
-    expect(await invitationOf(workspaceId, "ana@gmail.com")).toEqual(seeded);
-  });
-});
-
 describe("membership.week_start", () => {
   it("una membresía nace con lunes", async () => {
     const userId = await seedUser("owner@empresa.com");
 
-    const context = await ensureWorkspaceContext({
-      id: userId,
-      email: "owner@empresa.com",
-    });
+    const context = await enter(userId, "owner@empresa.com");
 
     expect(context.membership.weekStart).toBe(1);
     const [row] = await db
@@ -351,10 +376,7 @@ describe("membership.week_start", () => {
 
   it.each([7, -1])("el check rechaza %i", async (value) => {
     const userId = await seedUser("owner@empresa.com");
-    const context = await ensureWorkspaceContext({
-      id: userId,
-      email: "owner@empresa.com",
-    });
+    const context = await enter(userId, "owner@empresa.com");
 
     const error = await db
       .update(membership)
@@ -369,12 +391,10 @@ describe("membership.week_start", () => {
 describe("weekStartOf", () => {
   it("devuelve el valor de la membresía de quien pide", async () => {
     const ownerId = await seedUser("owner@empresa.com");
-    const owner = await ensureWorkspaceContext({
-      id: ownerId,
-      email: "owner@empresa.com",
-    });
+    const owner = await enter(ownerId, "owner@empresa.com");
+    await seedInvitation({ workspaceId: owner.workspace.id, email: "ana@empresa.com" });
     const otherId = await seedUser("ana@empresa.com");
-    const other = await ensureWorkspaceContext({ id: otherId, email: "ana@empresa.com" });
+    const other = await enter(otherId, "ana@empresa.com");
     await db
       .update(membership)
       .set({ weekStart: 6 })
@@ -384,14 +404,8 @@ describe("weekStartOf", () => {
       .set({ weekStart: 0 })
       .where(eq(membership.id, other.membership.id));
 
-    const ownerAgain = await ensureWorkspaceContext({
-      id: ownerId,
-      email: "owner@empresa.com",
-    });
-    const otherAgain = await ensureWorkspaceContext({
-      id: otherId,
-      email: "ana@empresa.com",
-    });
+    const ownerAgain = await enter(ownerId, "owner@empresa.com");
+    const otherAgain = await enter(otherId, "ana@empresa.com");
 
     expect(weekStartOf(ownerAgain)).toBe(6);
     expect(weekStartOf(otherAgain)).toBe(0);
@@ -399,10 +413,7 @@ describe("weekStartOf", () => {
 
   it("lanza con un valor fuera de rango", async () => {
     const userId = await seedUser("owner@empresa.com");
-    const context = await ensureWorkspaceContext({
-      id: userId,
-      email: "owner@empresa.com",
-    });
+    const context = await enter(userId, "owner@empresa.com");
 
     expect(() =>
       weekStartOf({ ...context, membership: { ...context.membership, weekStart: 7 } }),

@@ -4,16 +4,20 @@ import {
   expect,
   test as base,
   type APIResponse,
+  type Browser,
   type BrowserContext,
+  type Page,
 } from "@playwright/test";
 
-import { TEST_EMAIL_DOMAIN, TEST_SESSION_SECRET } from "./environment";
+import { isCompanyEmail } from "@/lib/email";
 
-/** El nombre de la cuenta con que `signIn` crea a cada persona. */
-export const PERSON_NAME = "Persona de prueba";
+import { inviteForSignIn } from "./database";
+import { PERSON_NAME, TEST_EMAIL_DOMAIN, TEST_SESSION_SECRET } from "./environment";
 
 /** Intentos de entrar antes de dar el 429 por definitivo. */
 const SIGN_IN_ATTEMPTS = 5;
+
+const SIGN_IN_PATH = "/api/auth/test-session/sign-in";
 
 /**
  * Pide la sesión de prueba, sin pasar por el login de Google. El endpoint
@@ -27,10 +31,11 @@ const SIGN_IN_ATTEMPTS = 5;
 async function requestSession(
   context: BrowserContext,
   email: string,
+  secret: string | null = TEST_SESSION_SECRET,
 ): Promise<APIResponse> {
   for (let attempt = 1; ; attempt += 1) {
-    const response = await context.request.post("/api/auth/test-session/sign-in", {
-      headers: { "x-test-session": TEST_SESSION_SECRET },
+    const response = await context.request.post(SIGN_IN_PATH, {
+      headers: secret === null ? {} : { "x-test-session": secret },
       data: { email, name: PERSON_NAME },
     });
     if (response.status() !== 429 || attempt === SIGN_IN_ATTEMPTS) {
@@ -41,11 +46,55 @@ async function requestSession(
   }
 }
 
+/** La comprobación de `assertTestServer`, una por worker. */
+let testServerChecked: Promise<void> | undefined;
+
+/**
+ * La siembra escribe directo en la base, así que antes de la primera se
+ * comprueba que el servidor es uno de prueba: el endpoint de sesión de prueba
+ * existe y, sin el secreto, responde 401. En producción no se registra y
+ * responde otra cosa; ahí se corta sin escribir nada.
+ */
+async function assertTestServer(context: BrowserContext): Promise<void> {
+  testServerChecked ??= (async () => {
+    const response = await requestSession(context, `sonda@${TEST_EMAIL_DOMAIN}`, null);
+    if (response.status() !== 401) {
+      throw new Error(
+        [
+          `Sin el secreto, ${SIGN_IN_PATH} respondió ${response.status()} y tenía que responder 401.`,
+          "El servidor no tiene el endpoint de sesión de prueba, como producción: signIn no siembra nada en su base.",
+        ].join("\n"),
+      );
+    }
+  })();
+  await testServerChecked;
+}
+
 /**
  * Entra con la sesión de prueba. La cookie queda en el contexto, así que
  * todas las pestañas que se abran después comparten la sesión.
+ *
+ * Desde E1b solo entra quien tiene membresía o una invitación pendiente, así
+ * que antes siembra la invitación de un correo del dominio que no tiene
+ * ninguna de las dos (D-E1b-8). Nunca la de un externo: los recorridos de
+ * invitaciones llegan a esa fila por `/equipo`.
  */
 export async function signIn(context: BrowserContext, email: string): Promise<void> {
+  if (isCompanyEmail(email, [TEST_EMAIL_DOMAIN])) {
+    await assertTestServer(context);
+    await inviteForSignIn(email);
+  }
+  await signInUnseeded(context, email);
+}
+
+/**
+ * Entra con la sesión de prueba sin sembrar nada: para los recorridos del
+ * ingreso, que llegan a la invitación por la pantalla o la siembran ellos.
+ */
+export async function signInUnseeded(
+  context: BrowserContext,
+  email: string,
+): Promise<void> {
   const response = await requestSession(context, email);
   expect(response.status(), await response.text()).toBe(200);
 }
@@ -62,6 +111,12 @@ export async function signInRejected(
 ): Promise<void> {
   const response = await requestSession(context, email);
   expect(response.status(), await response.text()).toBe(403);
+}
+
+/** Una pestaña en un contexto propio, sin sesión: la de quien intenta entrar. */
+export async function guestPage(browser: Browser): Promise<Page> {
+  const context = await browser.newContext();
+  return context.newPage();
 }
 
 function slugOf(title: string): string {
@@ -98,4 +153,4 @@ export const test = base.extend<SessionFixtures>({
   },
 });
 
-export { expect, TEST_EMAIL_DOMAIN };
+export { expect, PERSON_NAME, TEST_EMAIL_DOMAIN };

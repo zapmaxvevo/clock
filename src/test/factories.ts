@@ -62,15 +62,15 @@ export async function seedWorkspace(timezone = buenosAires): Promise<SeededWorks
 
 /**
  * Agrega un miembro con el rol pedido al workspace, activo salvo que se pida
- * otro estado, y con el id de usuario que se pase.
+ * otro estado, y con el id de usuario y el correo que se pasen.
  */
 export async function seedMember(
   workspaceId: string,
   role: Role,
   status: MembershipStatus = "active",
-  id?: string,
+  person: { readonly id?: string; readonly email?: string } = {},
 ): Promise<string> {
-  const userId = await seedUser(undefined, id);
+  const userId = await seedUser(person.email, person.id);
   await db.insert(membership).values({ workspaceId, userId, role, status });
   return userId;
 }

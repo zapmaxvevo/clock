@@ -1,9 +1,11 @@
 import { expect, test } from "@playwright/test";
 
+import { googleButton } from "./login-page";
+
 test("sin sesión, la aplicación lleva al login", async ({ page }) => {
   await page.goto("/");
   await expect(page).toHaveURL(/\/login$/);
-  await expect(page.getByRole("button", { name: "Entrar con Google" })).toBeVisible();
+  await expect(googleButton(page)).toBeVisible();
 });
 
 test("el cron rechaza una llamada sin el secreto", async ({ request }) => {

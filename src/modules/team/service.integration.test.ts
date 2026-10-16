@@ -558,6 +558,9 @@ describe("la sesión siguiente decide con el rol nuevo (criterio 16)", () => {
       id: userId,
       email: `${userId}@empresa.com`,
     });
+    if (context === null) {
+      throw new Error(`${userId} no tiene acceso.`);
+    }
     return {
       role: context.actor.role,
       seesOthers: can(context.actor, "timeEntry.others.view", {

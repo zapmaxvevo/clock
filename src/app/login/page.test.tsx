@@ -37,9 +37,19 @@ describe("LoginPage", () => {
     const markup = await render("dominio_no_habilitado");
 
     expect(textOf(alertOf(markup))).toBe(
-      "La cuenta no pertenece al dominio de la empresa ni tiene una invitación vigente.",
+      "La cuenta no es la de Google Workspace de la empresa.",
     );
     expect(markup.indexOf('role="alert"')).toBeLessThan(markup.indexOf("<button"));
+  });
+
+  it("sin invitación, el texto de EQ-91 en un aviso encima del botón", async () => {
+    const markup = await render("sin_invitacion");
+
+    expect(textOf(alertOf(markup))).toBe(
+      "Tu cuenta no tiene una invitación a Clock. Pedísela a quien administra el equipo.",
+    );
+    expect(markup.indexOf('role="alert"')).toBeLessThan(markup.indexOf("<button"));
+    expect(textOf(markup)).toContain("Entrar con Google");
   });
 
   it("con un código que no conoce, el texto genérico", async () => {

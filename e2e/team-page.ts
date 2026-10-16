@@ -6,9 +6,13 @@
  * invitada es una fila al final, cuyo encabezado empieza con el correo y sigue
  * con sus marcas.
  */
-import type { Locator, Page } from "@playwright/test";
+import { randomUUID } from "node:crypto";
 
-import { escapeRegExp } from "./tracker-page";
+import { expect, type Locator, type Page } from "@playwright/test";
+
+import { setRole } from "./database";
+import { TEST_EMAIL_DOMAIN } from "./environment";
+import { escapeRegExp, trackerBar } from "./tracker-page";
 
 export const TEAM_PATH = "/equipo";
 
@@ -233,4 +237,47 @@ export const REVOKE_WARNING =
 /** El aviso de la tabla después de revocar. */
 export function revokedMessage(email: string): string {
   return `Invitación de ${email} revocada.`;
+}
+
+/** Abre «Invitar», escribe `emails` y manda el pedido. Devuelve el paso de carga. */
+export async function sendInvitation(page: Page, emails: string): Promise<Locator> {
+  await inviteButton(page).click();
+  const dialog = inviteDialog(page);
+  await emailsField(dialog).fill(emails);
+  await dialogButton(dialog, INVITE).click();
+  return dialog;
+}
+
+/**
+ * Invita a `email`, espera que el resultado lo dé por invitado y cierra el
+ * diálogo con «Listo». La revalidación trae su fila sin recargar (criterio 23
+ * de E1a).
+ */
+export async function inviteOne(page: Page, email: string): Promise<void> {
+  await sendInvitation(page, email);
+  const result = resultDialog(page);
+  await expect(outcomeLabel(outcomeItem(result, email), INVITED)).toBeVisible();
+  await dialogButton(result, "Listo").click();
+  await expect(result).toBeHidden();
+  await expect(invitationRow(page, email)).toBeVisible();
+}
+
+/** Un correo del dominio que nadie más usa, con `label` para leer el recorrido. */
+export function domainEmail(label: string): string {
+  return `e2e-${label}-${randomUUID()}@${TEST_EMAIL_DOMAIN}`;
+}
+
+/**
+ * La persona de la sesión entra, que es lo que le crea la membresía, pasa a
+ * admin y abre `/equipo`, que lee el rol en el pedido (D-R8-8). El owner de la
+ * suite entró en el setup, así que quien mira nunca está solo y no aparece el
+ * vacío de EQ-93, con su segundo «Invitar».
+ */
+export async function enterTeamAsAdmin(page: Page, email: string): Promise<void> {
+  await page.goto("/");
+  await expect(trackerBar(page)).toBeVisible();
+  await setRole(email, "admin");
+  await page.goto(TEAM_PATH);
+  await expect(teamTable(page)).toBeVisible();
+  await expect(page.getByText(NO_INVITATIONS_YET, { exact: true })).toHaveCount(0);
 }

@@ -4,7 +4,9 @@ import { cache } from "react";
 
 import { displayNameOf, profileOf, type ProfileContext } from "@/modules/profile/service";
 import { ensureWorkspaceContext } from "@/modules/workspace/service";
+import type { AccessDenialReason } from "@/server/access";
 import { auth } from "@/server/auth";
+import { decideSessionIdentity } from "@/server/entry";
 
 export type CurrentUser = {
   readonly id: string;
@@ -26,39 +28,75 @@ function googlePhotoOf(image: string | null | undefined): string | null {
   return image?.startsWith(GOOGLE_PHOTO_PREFIX) === true ? image : null;
 }
 
+/** D-E1b-5: el motivo con que `requireSession` manda a `/login` una sesión sin acceso. */
+const NO_ACCESS: AccessDenialReason = "sin_invitacion";
+
+/** D-E1b-5: la lectura de un pedido, con sus tres resultados. */
+type SessionRead =
+  | { readonly kind: "anonymous" }
+  | { readonly kind: "denied"; readonly reason: AccessDenialReason }
+  | { readonly kind: "ready"; readonly context: SessionContext };
+
 /**
  * Punto central de autenticación del servidor. Toda lectura y toda mutación
  * arranca por acá, y ninguna repite la comprobación por su cuenta. Una lectura
  * por pedido (ADR 0015): el layout raíz, el del shell y la página la comparten.
+ *
+ * Una sesión sin acceso existe si la invitación se revoca entre la creación de
+ * la sesión y el primer pedido (D-E1b-5), o si sale de la política el dominio
+ * de quien entró sin invitación (D-E1b-13). Su fila queda: cada pedido vuelve
+ * a decidir, y si a la persona la vuelven a invitar, el siguiente acepta.
  */
-export const currentSession = cache(async (): Promise<SessionContext | null> => {
+const readSession = cache(async (): Promise<SessionRead> => {
   const session = await auth.api.getSession({ headers: await headers() });
   if (session === null) {
-    return null;
+    return { kind: "anonymous" };
+  }
+  const identity = await decideSessionIdentity(session.user.email);
+  if (!identity.allowed) {
+    return { kind: "denied", reason: identity.reason };
   }
   // Dos lecturas independientes, fuera de toda transacción común.
   const [context, stored] = await Promise.all([
     ensureWorkspaceContext({ id: session.user.id, email: session.user.email }),
     profileOf(session.user.id),
   ]);
+  if (context === null) {
+    return { kind: "denied", reason: NO_ACCESS };
+  }
   return {
-    ...context,
-    preferences: stored.preferences,
-    user: {
-      id: session.user.id,
-      // Único lugar que compone el nombre de quien mira (PF-08, PF-45).
-      name: displayNameOf(stored, session.user.name),
-      email: session.user.email,
-      image: googlePhotoOf(session.user.image),
+    kind: "ready",
+    context: {
+      ...context,
+      preferences: stored.preferences,
+      user: {
+        id: session.user.id,
+        // Único lugar que compone el nombre de quien mira (PF-08, PF-45).
+        name: displayNameOf(stored, session.user.name),
+        email: session.user.email,
+        image: googlePhotoOf(session.user.image),
+      },
     },
   };
 });
 
-/** Variante para páginas y actions que exigen sesión. */
+/** El contexto de quien pide, o `null` sin sesión o sin acceso (D-E1b-5). */
+export const currentSession = async (): Promise<SessionContext | null> => {
+  const read = await readSession();
+  return read.kind === "ready" ? read.context : null;
+};
+
+/**
+ * Sin sesión, redirige a `/login`; con sesión y sin acceso, a `/login` con el
+ * motivo, `sin_invitacion`. Relativa: vale en cualquier preview.
+ */
 export async function requireSession(): Promise<SessionContext> {
-  const session = await currentSession();
-  if (session === null) {
+  const read = await readSession();
+  if (read.kind === "anonymous") {
     redirect("/login");
   }
-  return session;
+  if (read.kind === "denied") {
+    redirect(`/login?error=${read.reason}`);
+  }
+  return read.context;
 }

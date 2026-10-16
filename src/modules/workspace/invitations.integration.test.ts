@@ -5,16 +5,16 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { RejectedError } from "@/server/errors";
 import { db } from "@/server/db";
-import { membership } from "@/server/db/schema";
+import { membership, workspace } from "@/server/db/schema";
 import type { MembershipStatus, Role } from "@/server/permissions";
-import { seedInvitation, seedMember, seedWorkspace } from "@/test/factories";
+import { seedInvitation, seedMember, seedUser, seedWorkspace } from "@/test/factories";
 import { auditFor, emailOf, invitationOf, invitationsOf } from "@/test/queries";
 import { actorIn } from "@/test/time-entry";
 
 import { invitationMessages } from "./schema";
 import {
+  entryFactsOf,
   getInvitationsView,
-  hasOpenInvitation,
   InvitationError,
   inviteMembers,
   revokeInvitation,
@@ -120,6 +120,17 @@ describe("inviteMembers", () => {
     ]);
     expect(await invitationsOf(workspaceId)).toEqual([]);
     expect(await auditFor("invitation")).toEqual([]);
+  });
+
+  it("compara con el correo de `user` recortado y en minúsculas (D-E1b-1)", async () => {
+    await seedMember(workspaceId, "member", "active", { email: "  Leo@Empresa.com " });
+
+    const result = await inviteMembers(owner(), { emails: ["leo@empresa.com"] });
+
+    expect(result.outcomes).toEqual([
+      { email: "leo@empresa.com", result: "already_member", external: false },
+    ]);
+    expect(await invitationsOf(workspaceId)).toEqual([]);
   });
 
   it("el correo de una persona inactiva rechaza todo el pedido sin escribir (criterio 5, EQ-21)", async () => {
@@ -403,26 +414,71 @@ describe("getInvitationsView", () => {
   });
 });
 
-describe("hasOpenInvitation", () => {
-  it("es verdadero con una pendiente o una aceptada, y falso con una revocada o sin fila", async () => {
-    await seedInvitation({ workspaceId, email: "pendiente@gmail.com" });
-    await seedInvitation({
-      workspaceId,
-      email: "aceptada@gmail.com",
-      status: "accepted",
-    });
-    await seedInvitation({ workspaceId, email: "revocada@gmail.com", status: "revoked" });
+describe("entryFactsOf (D-E1b-1, criterio 20)", () => {
+  const none = { bootstrap: false, invitation: null, membership: null };
 
-    expect(await hasOpenInvitation("pendiente@gmail.com")).toBe(true);
-    expect(await hasOpenInvitation("aceptada@gmail.com")).toBe(true);
-    expect(await hasOpenInvitation("revocada@gmail.com")).toBe(false);
-    expect(await hasOpenInvitation("nadie@gmail.com")).toBe(false);
+  it("da el estado de la invitación del correo, en cada estado", async () => {
+    for (const status of ["pending", "accepted", "revoked"] as const) {
+      await seedInvitation({ workspaceId, email: `${status}@gmail.com`, status });
+      expect(await entryFactsOf(`${status}@gmail.com`)).toEqual({
+        ...none,
+        invitation: status,
+      });
+    }
+    expect(await entryFactsOf("nadie@gmail.com")).toEqual(none);
+  });
+
+  it("da el estado de la membresía, con el correo de `user` con mayúsculas y blancos", async () => {
+    await seedMember(workspaceId, "member", "inactive", { email: " Ana@Empresa.com  " });
+    await seedInvitation({ workspaceId, email: "ana@empresa.com", status: "accepted" });
+
+    expect(await entryFactsOf("ana@empresa.com")).toEqual({
+      bootstrap: false,
+      invitation: "accepted",
+      membership: "inactive",
+    });
+  });
+
+  it("un `user` sin membresía en el workspace da la membresía en null", async () => {
+    await seedUser("leo@empresa.com");
+
+    expect(await entryFactsOf("leo@empresa.com")).toEqual(none);
+  });
+
+  it("dos `user` con el mismo correo normalizado dan la membresía en null; la pendiente sigue", async () => {
+    for (const email of ["ana@empresa.com", "ANA@empresa.com "]) {
+      await seedMember(workspaceId, "member", "active", { email });
+    }
+
+    expect(await entryFactsOf("ana@empresa.com")).toEqual(none);
+
+    await seedInvitation({ workspaceId, email: "ana@empresa.com" });
+
+    expect(await entryFactsOf("ana@empresa.com")).toEqual({
+      ...none,
+      invitation: "pending",
+    });
   });
 
   it("lee solo el workspace más viejo", async () => {
     const newer = await seedWorkspace();
     await seedInvitation({ workspaceId: newer.workspaceId, email: "ana@gmail.com" });
+    await seedMember(newer.workspaceId, "member", "active", { email: "leo@gmail.com" });
 
-    expect(await hasOpenInvitation("ana@gmail.com")).toBe(false);
+    expect(await entryFactsOf("ana@gmail.com")).toEqual(none);
+    expect(await entryFactsOf("leo@gmail.com")).toEqual(none);
+  });
+});
+
+describe("entryFactsOf sin workspace", () => {
+  it("es el arranque, con la invitación y la membresía en null", async () => {
+    await db.delete(workspace);
+    await seedUser("ana@empresa.com");
+
+    expect(await entryFactsOf("ana@empresa.com")).toEqual({
+      bootstrap: true,
+      invitation: null,
+      membership: null,
+    });
   });
 });

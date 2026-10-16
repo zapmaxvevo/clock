@@ -10,8 +10,7 @@ import { Client } from "pg";
 import type { InvitationStatus } from "@/server/db/schema";
 
 import { dayKeyOf, type CivilDay } from "./days";
-import { OWNER_EMAIL, testDatabaseUrl } from "./environment";
-import { PERSON_NAME } from "./session";
+import { OWNER_EMAIL, PERSON_NAME, testDatabaseUrl } from "./environment";
 
 /**
  * El workspace que lee la aplicación: el más viejo, con el mismo desempate
@@ -460,6 +459,66 @@ export async function invitationStatusOf(
       [email],
     );
     return result.rows.at(0)?.status ?? null;
+  });
+}
+
+/**
+ * La siembra de `signIn` (D-E1b-8 de E1b): una invitación `pending`, sin quien
+ * invita, para un correo que no tiene membresía ni fila de invitación en el
+ * workspace de los e2e. No toca una fila que existe —una revocada sigue
+ * revocada— y sin workspace no siembra: en una base nueva, el owner del setup
+ * entra por el arranque (D-E1b-3). Un recorrido del ingreso la llama directo
+ * para tener la invitación sin pasar por `/equipo`.
+ */
+export async function inviteForSignIn(email: string): Promise<void> {
+  await withDatabase(async (client) => {
+    await client.query(
+      `insert into invitation (workspace_id, email)
+       select workspace.id, lower(btrim($1))
+         from workspace
+        where workspace.id = ${FIRST_WORKSPACE}
+          and not exists (
+            select 1
+              from membership
+              join "user" on "user".id = membership.user_id
+             where membership.workspace_id = workspace.id
+               and lower(btrim("user".email)) = lower(btrim($1)))
+       on conflict (workspace_id, email) do nothing`,
+      [email],
+    );
+  });
+}
+
+/**
+ * Revoca la invitación pendiente de un correo, como lo haría un admin desde
+ * `/equipo` mientras la persona ya tiene la sesión abierta: es el estado que
+ * la pantalla no puede producir entre la sesión y su primer pedido (D-E1b-5).
+ */
+export async function revokeInvitationOf(email: string): Promise<void> {
+  await updateOne(
+    `update invitation
+        set status = 'revoked', revoked_at = now(), updated_at = now()
+      where workspace_id = ${FIRST_WORKSPACE}
+        and email = lower(btrim($1))
+        and status = 'pending'`,
+    [email],
+  );
+}
+
+/** Si un correo tiene membresía, en cualquier estado, en el workspace de los e2e. */
+export async function hasMembership(email: string): Promise<boolean> {
+  return withDatabase(async (client) => {
+    const result = await client.query<{ found: boolean }>(
+      `select exists (
+         select 1
+           from membership
+           join "user" on "user".id = membership.user_id
+          where membership.workspace_id = ${FIRST_WORKSPACE}
+            and lower(btrim("user".email)) = lower(btrim($1))
+       ) as found`,
+      [email],
+    );
+    return result.rows.at(0)?.found ?? false;
   });
 }
 

@@ -1,8 +1,8 @@
 import { z } from "zod";
 
-import { parseEmailList } from "@/lib/email";
+import { parseDomainList } from "@/lib/email";
 
-const csv = z.string().transform(parseEmailList);
+const csv = z.string().transform(parseDomainList);
 
 const serverSchema = z.object({
   DATABASE_URL: z.url(),
@@ -12,9 +12,7 @@ const serverSchema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().min(1),
   /** Dominios de Google Workspace aceptados por el login, separados por coma. */
   GOOGLE_WORKSPACE_DOMAINS: csv.pipe(z.array(z.string().min(1)).min(1)),
-  /** Emails externos al dominio habilitados para entrar, separados por coma. */
-  EXTERNAL_INVITE_EMAILS: csv.default([]),
-  /** Email del owner inicial del workspace. */
+  /** El correo que arranca el workspace en una base vacía y queda como su owner (D-E1b-3). */
   WORKSPACE_OWNER_EMAIL: z.email(),
   RESEND_API_KEY: z.string().min(1).optional(),
   EMAIL_FROM: z.email().optional(),

@@ -7,7 +7,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { workspaceRepository } from "@/modules/workspace/repository";
 import { db } from "@/server/db";
 import { account, session, user } from "@/server/db/schema";
-import { seedInvitation, seedUser, seedWorkspace } from "@/test/factories";
+import { seedInvitation, seedMember, seedUser, seedWorkspace } from "@/test/factories";
 
 /**
  * El handler real de Better Auth. La sesión de prueba se habilita antes de
@@ -48,13 +48,27 @@ function post(path: string, body: unknown, headers: Record<string, string> = {})
   );
 }
 
-/** Entra con la sesión de prueba y devuelve la cookie y el id de la persona. */
-async function signIn() {
-  const response = await post(
+/** Una persona con ese correo y su membresía en un workspace nuevo: lo que el ingreso pide. */
+async function seedPerson(email: string): Promise<string> {
+  const { workspaceId } = await seedWorkspace();
+  return seedMember(workspaceId, "member", "active", { email });
+}
+
+function testSessionSignIn(email: string) {
+  return post(
     "/test-session/sign-in",
-    { email: "ana@empresa.com", name: "Ana López" },
+    { email, name: "Ana López" },
     { "x-test-session": secret },
   );
+}
+
+/**
+ * Entra con la sesión de prueba y devuelve la cookie y el id de la persona.
+ * Siembra el workspace y la membresía: sin ellos, el gancho la rechaza (D-E1b-8).
+ */
+async function signIn() {
+  await seedPerson("ana@empresa.com");
+  const response = await testSessionSignIn("ana@empresa.com");
   expect(response.status).toBe(200);
   const { userId } = (await response.json()) as { userId: string };
   const cookie = response.headers
@@ -63,6 +77,33 @@ async function signIn() {
     .join("; ");
   return { userId, cookie };
 }
+
+describe("la sesión de prueba pasa por el gancho (D-E1b-8, criterio 16)", () => {
+  it("una persona del dominio sin membresía ni invitación recibe 403 y no queda sesión", async () => {
+    await seedWorkspace();
+
+    const response = await testSessionSignIn("nadie@empresa.com");
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: "sin_invitacion" });
+    expect(await db.select().from(session)).toEqual([]);
+  });
+});
+
+describe("el ingreso por id_token del cliente está apagado", () => {
+  it("/sign-in/social con un idToken responde 404 sin crear nada", async () => {
+    await seedWorkspace();
+
+    const response = await post("/sign-in/social", {
+      provider: "google",
+      idToken: { token: "cabecera.cuerpo.firma" },
+    });
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({ code: "ID_TOKEN_NOT_SUPPORTED" });
+    expect(await db.select().from(session)).toEqual([]);
+  });
+});
 
 describe("la identidad no se edita por la API de Better Auth (PF-09)", () => {
   it("/update-user responde 404 a una sesión válida y no cambia el nombre ni la foto", async () => {
@@ -79,7 +120,8 @@ describe("la identidad no se edita por la API de Better Auth (PF-09)", () => {
       .select({ name: user.name, image: user.image })
       .from(user)
       .where(eq(user.id, userId));
-    expect(row).toEqual({ name: "Ana López", image: null });
+    // El de la fila sembrada: la sesión de prueba no reescribe una que ya existe.
+    expect(row).toEqual({ name: "Persona de prueba", image: null });
   });
 });
 
@@ -215,7 +257,7 @@ describe("una cuenta de Google se enlaza solo a la fila que creó (criterio 16)"
 
   it("un sub nuevo con el correo de una fila existente no se enlaza ni entra", async () => {
     const email = `${randomUUID()}@empresa.com`;
-    const id = await seedUser(email);
+    const id = await seedPerson(email);
     const originalSub = randomUUID();
     await seedGoogleAccount(id, originalSub);
     const newSub = randomUUID();
@@ -236,7 +278,8 @@ describe("una cuenta de Google se enlaza solo a la fila que creó (criterio 16)"
 
   it("la cuenta que creó la fila entra con el correo de otra fila: cambia el nombre y la foto y conserva el correo", async () => {
     const email = `${randomUUID()}@empresa.com`;
-    const id = await seedUser(email);
+    // El gancho decide con el correo guardado, que tiene membresía.
+    const id = await seedPerson(email);
     const sub = randomUUID();
     await seedGoogleAccount(id, sub);
     const otherEmail = `${randomUUID()}@empresa.com`;
@@ -337,31 +380,84 @@ describe("el callback de Google termina en /login con el motivo (criterio 25, D-
     );
   }
 
-  const deniedLocation = `${new URL("/login", origin).toString()}?error=dominio_no_habilitado`;
+  function deniedLocation(reason: string) {
+    return `${new URL("/login", origin).toString()}?error=${reason}`;
+  }
 
   async function usersWith(email: string) {
     return db.select({ id: user.id }).from(user).where(eq(user.email, email));
   }
 
-  it("un externo sin invitación recibe 302 a /login con el motivo y no queda fila user", async () => {
+  async function sessionsWith(email: string) {
+    const [created] = await usersWith(email);
+    return db.select().from(session).where(eq(session.userId, created.id));
+  }
+
+  it("un externo sin invitación recibe 302 a /login con sin_invitacion y no queda fila user", async () => {
     await seedWorkspace();
     const email = `${randomUUID()}@gmail.com`;
 
     const response = await signInWithGoogle({ email, sub: randomUUID() });
 
     expect(response.status).toBe(302);
-    expect(response.headers.get("location")).toBe(deniedLocation);
+    expect(response.headers.get("location")).toBe(deniedLocation("sin_invitacion"));
     expect(await usersWith(email)).toEqual([]);
   });
 
-  it("el rechazo del gancho de sesión recibe 302 al mismo lugar, con user y account y sin sesión", async () => {
+  it("un correo del dominio con hd y sin invitación recibe lo mismo (criterio 1)", async () => {
     await seedWorkspace();
+    const email = `${randomUUID()}@empresa.com`;
+
+    const response = await signInWithGoogle({
+      email,
+      sub: randomUUID(),
+      hd: "empresa.com",
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe(deniedLocation("sin_invitacion"));
+    expect(await usersWith(email)).toEqual([]);
+  });
+
+  it("un correo del dominio con hd e invitación pendiente recibe 302 a / con la cookie", async () => {
+    const { workspaceId } = await seedWorkspace();
+    const email = `${randomUUID()}@empresa.com`;
+    await seedInvitation({ workspaceId, email });
+
+    const response = await signInWithGoogle({
+      email,
+      sub: randomUUID(),
+      hd: "empresa.com",
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("/");
+    expect(cookiesOf(response)).toMatch(/better-auth\.session_token=/);
+    expect(await sessionsWith(email)).toHaveLength(1);
+  });
+
+  it("un correo del dominio sin hd, con invitación, recibe dominio_no_habilitado (criterio 5)", async () => {
+    const { workspaceId } = await seedWorkspace();
+    const email = `${randomUUID()}@empresa.com`;
+    await seedInvitation({ workspaceId, email });
+
+    const response = await signInWithGoogle({ email, sub: randomUUID() });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe(
+      deniedLocation("dominio_no_habilitado"),
+    );
+    expect(await usersWith(email)).toEqual([]);
+  });
+
+  it("el rechazo del gancho de sesión recibe 302 a /login con sin_invitacion, con user y account y sin sesión (criterio 14)", async () => {
+    const { workspaceId } = await seedWorkspace();
     const email = `${randomUUID()}@gmail.com`;
     const sub = randomUUID();
     // Invitada al pasar `mapProfileToUser`, revocada al llegar al gancho.
-    vi.spyOn(workspaceRepository, "hasOpenInvitation")
-      .mockResolvedValueOnce(true)
-      .mockResolvedValueOnce(false);
+    vi.spyOn(workspaceRepository, "entryFacts")
+      .mockResolvedValueOnce({ workspaceId, invitation: "pending", membership: null })
+      .mockResolvedValueOnce({ workspaceId, invitation: "revoked", membership: null });
 
     const response = await signInWithGoogle({ email, sub });
 
@@ -371,15 +467,13 @@ describe("el callback de Google termina en /login con el motivo (criterio 25, D-
     expect(`${location.origin}${location.pathname}`).toBe(
       new URL("/login", origin).toString(),
     );
-    expect(location.searchParams.get("error")).toBe("dominio_no_habilitado");
+    expect(location.searchParams.get("error")).toBe("sin_invitacion");
     const [created] = await usersWith(email);
     expect(created).toBeDefined();
     expect(
       await db.select().from(account).where(eq(account.accountId, sub)),
     ).toHaveLength(1);
-    expect(await db.select().from(session).where(eq(session.userId, created.id))).toEqual(
-      [],
-    );
+    expect(await sessionsWith(email)).toEqual([]);
   });
 
   it("un externo invitado recibe 302 a / con la cookie de sesión", async () => {
@@ -392,9 +486,6 @@ describe("el callback de Google termina en /login con el motivo (criterio 25, D-
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe("/");
     expect(cookiesOf(response)).toMatch(/better-auth\.session_token=/);
-    const [created] = await usersWith(email);
-    expect(
-      await db.select().from(session).where(eq(session.userId, created.id)),
-    ).toHaveLength(1);
+    expect(await sessionsWith(email)).toHaveLength(1);
   });
 });

@@ -1,32 +1,34 @@
 import { randomUUID } from "node:crypto";
 
-import type { Browser, Locator, Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
-import { invitationStatusOf, seedPerson, setDisplayName, setRole } from "./database";
+import { invitationStatusOf, seedPerson, setDisplayName } from "./database";
+import { DOMAIN_DENIED, googleButton, LOGIN_FAILED, loginNotice } from "./login-page";
 import { loseActionResponses } from "./network";
-import { expect, signIn, signInRejected, TEST_EMAIL_DOMAIN, test } from "./session";
+import { expect, guestPage, signInRejected, signInUnseeded, test } from "./session";
 import {
   ALREADY_INVITED,
   copyButton,
   dialogAlert,
   dialogButton,
+  domainEmail,
   DROP_FAILING,
   emailsField,
+  enterTeamAsAdmin,
   EXTERNAL_MARK,
   inactiveMemberMessage,
   invalidEmailMessage,
   INVITE,
   inviteButton,
-  inviteDialog,
   invitationRow,
   INVITED,
   INVITED_MARK,
+  inviteOne,
   isTeamPage,
   MEMBER_ROLE,
   memberHeader,
   memberRow,
   NO_EMAIL_SENT,
-  NO_INVITATIONS_YET,
   NOBODY_INVITED,
   noticeText,
   NOTICE_COPIED,
@@ -38,10 +40,9 @@ import {
   revokeDialog,
   revokedMessage,
   roleCell,
-  TEAM_PATH,
+  sendInvitation,
   teamFeedback,
   teamHeading,
-  teamTable,
 } from "./team-page";
 import { trackerBar, uniqueSuffix } from "./tracker-page";
 
@@ -54,69 +55,14 @@ import { trackerBar, uniqueSuffix } from "./tracker-page";
  */
 const EXTERNAL_DOMAIN = "externo-e2e.test";
 
-/** D-E1a-14: el texto de `/login` para `dominio_no_habilitado`. */
-const DOMAIN_DENIED =
-  "La cuenta no pertenece al dominio de la empresa ni tiene una invitación vigente.";
-
-/** D-E1a-14: el texto de `/login` para un motivo que no conoce. */
-const LOGIN_FAILED = "No se pudo iniciar sesión. Volvé a intentar.";
-
-/** Un correo del dominio que nadie más usa, con `label` para leer el recorrido. */
-function domainEmail(label: string): string {
-  return `e2e-${label}-${randomUUID()}@${TEST_EMAIL_DOMAIN}`;
-}
-
 /** Un correo de otro dominio que nadie más usa. */
 function externalEmail(label: string): string {
   return `e2e-${label}-${randomUUID()}@${EXTERNAL_DOMAIN}`;
 }
 
 /**
- * La persona de la sesión entra, que es lo que le crea la membresía, pasa a
- * admin y abre `/equipo`, que lee el rol en el pedido (D-R8-8). El owner de la
- * suite entró en el setup, así que quien mira nunca está solo y no aparece el
- * vacío de EQ-93, con su segundo «Invitar».
- */
-async function enterTeamAsAdmin(page: Page, email: string): Promise<void> {
-  await page.goto("/");
-  await expect(trackerBar(page)).toBeVisible();
-  await setRole(email, "admin");
-  await page.goto(TEAM_PATH);
-  await expect(teamTable(page)).toBeVisible();
-  await expect(page.getByText(NO_INVITATIONS_YET, { exact: true })).toHaveCount(0);
-}
-
-/** Abre «Invitar», escribe `emails` y manda el pedido. Devuelve el paso de carga. */
-async function sendInvitation(page: Page, emails: string): Promise<Locator> {
-  await inviteButton(page).click();
-  const dialog = inviteDialog(page);
-  await emailsField(dialog).fill(emails);
-  await dialogButton(dialog, INVITE).click();
-  return dialog;
-}
-
-/**
- * Invita a `email`, espera que el resultado lo dé por invitado y cierra el
- * diálogo con «Listo». La revalidación trae su fila sin recargar (criterio 23).
- */
-async function inviteOne(page: Page, email: string): Promise<void> {
-  await sendInvitation(page, email);
-  const result = resultDialog(page);
-  await expect(outcomeLabel(outcomeItem(result, email), INVITED)).toBeVisible();
-  await dialogButton(result, "Listo").click();
-  await expect(result).toBeHidden();
-  await expect(invitationRow(page, email)).toBeVisible();
-}
-
-/** Una pestaña en un contexto propio, sin sesión: la de la persona invitada. */
-async function guestPage(browser: Browser): Promise<Page> {
-  const context = await browser.newContext();
-  return context.newPage();
-}
-
-/**
- * Con la sesión ya en su contexto, entra a la aplicación, que es lo que le
- * crea la membresía y acepta su invitación pendiente (D-E1a-5).
+ * Con la sesión ya en su contexto, entra a la aplicación, que es lo que acepta
+ * su invitación pendiente y le crea la membresía (D-E1b-4).
  */
 async function enterApp(page: Page): Promise<void> {
   await page.goto("/");
@@ -227,17 +173,18 @@ test("una persona externa entra recién cuando la invitan, y pasa de invitada a 
   const outside = externalEmail("externa");
   const name = `Ximena ${uniqueSuffix()}`;
 
-  // Criterio 14: sin invitación ni variable, no entra.
+  // Criterio 14 de E1a: sin invitación, no entra.
   const guest = await guestPage(browser);
   await signInRejected(guest.context(), outside);
 
   await enterTeamAsAdmin(page, email);
   await inviteOne(page, outside);
 
-  // Con la invitación pendiente entra: nace su membresía y la invitación
-  // pasa a `accepted` (D-E1a-5). El rechazo de antes ya le creó el `user`,
-  // así que se le puede poner un nombre único para encontrar su fila.
-  await signIn(guest.context(), outside);
+  // Con la invitación pendiente entra: la invitación pasa a `accepted` y nace
+  // su membresía (D-E1b-4). El rechazo de antes ya le creó el `user`, así que
+  // se le puede poner un nombre único para encontrar su fila. Entra sin la
+  // siembra de `signIn`: la invitación es la que hizo la pantalla (D-E1b-8).
+  await signInUnseeded(guest.context(), outside);
   await setDisplayName(outside, name);
   await enterApp(guest);
   expect(await invitationStatusOf(outside)).toBe("accepted");
@@ -286,7 +233,7 @@ test("revocar saca la invitación y deja afuera a la persona externa, y volver a
   // Criterio 11: volver a invitarla reusa la fila, y ahora entra.
   await inviteOne(page, outside);
   expect(await invitationStatusOf(outside)).toBe("pending");
-  await signIn(guest.context(), outside);
+  await signInUnseeded(guest.context(), outside);
   await enterApp(guest);
   expect(await invitationStatusOf(outside)).toBe("accepted");
   await guest.context().close();
@@ -321,7 +268,7 @@ test("/login explica el rechazo que conoce y nunca muestra el texto de la direcc
   // Sin sesión: con una, `/login` lleva a `/`.
   const context = await browser.newContext();
   const page = await context.newPage();
-  const notice = page.getByRole("main").getByRole("alert");
+  const notice = loginNotice(page);
 
   // Criterio 24: un motivo conocido muestra su texto.
   await page.goto("/login?error=dominio_no_habilitado");
@@ -339,7 +286,7 @@ test("/login explica el rechazo que conoce y nunca muestra el texto de la direcc
 
   // Sin `error`, ningún aviso.
   await page.goto("/login");
-  await expect(page.getByRole("button", { name: "Entrar con Google" })).toBeVisible();
+  await expect(googleButton(page)).toBeVisible();
   await expect(notice).toHaveCount(0);
   await context.close();
 });

@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 
 import { eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { workspaceRepository } from "@/modules/workspace/repository";
 import { db } from "@/server/db";
-import { membership, user } from "@/server/db/schema";
-import { seedUser, seedWorkspace } from "@/test/factories";
+import { auditLog, invitation, membership, user } from "@/server/db/schema";
+import { seedInvitation, seedMember, seedUser, seedWorkspace } from "@/test/factories";
 import { updateName } from "@/modules/profile/service";
 
 /**
@@ -18,7 +19,13 @@ const mocks = vi.hoisted(() => ({
   user: null as null | { id: string; email: string },
   name: undefined as string | undefined,
   image: null as string | null | undefined,
+  /** `redirect` de Next lanza; acá lanza con el destino, para afirmarlo. */
+  redirect: vi.fn((url: string): never => {
+    throw new Error(`redirect ${url}`);
+  }),
 }));
+
+vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 
 vi.mock("next/headers", () => ({
   headers: async () => new Headers(),
@@ -43,15 +50,14 @@ vi.mock("@/server/auth", () => ({
   },
 }));
 
-const { currentSession } = await import("./session");
+const { currentSession, requireSession } = await import("./session");
 
 let workspaceId: string;
 
 /** Una persona con su membresía activa en el workspace sembrado. */
 async function seedPerson() {
   const email = `${randomUUID()}@empresa.com`;
-  const id = await seedUser(email);
-  await db.insert(membership).values({ workspaceId, userId: id, role: "member" });
+  const id = await seedMember(workspaceId, "member", "active", { email });
   return { id, email };
 }
 
@@ -60,6 +66,7 @@ beforeEach(async () => {
   mocks.user = await seedPerson();
   mocks.name = undefined;
   mocks.image = null;
+  mocks.redirect.mockClear();
 });
 
 describe("la foto de la sesión (PF-09, PF-44)", () => {
@@ -122,5 +129,111 @@ describe("el nombre de la sesión (criterio 7: PF-08, PF-45)", () => {
   it("sin nombre editado, da el nombre que trae la sesión de Better Auth", async () => {
     mocks.name = "Nombre de la sesión";
     expect((await currentSession())?.user.name).toBe("Nombre de la sesión");
+  });
+});
+
+describe("una sesión sin acceso (D-E1b-5, criterio 11)", () => {
+  it("sin sesión: currentSession da null y requireSession manda a /login", async () => {
+    mocks.user = null;
+
+    expect(await currentSession()).toBeNull();
+    await expect(requireSession()).rejects.toThrow("redirect /login");
+    expect(mocks.redirect.mock.calls).toEqual([["/login"]]);
+  });
+
+  it("con sesión y sin membresía ni invitación: null, y a /login?error=sin_invitacion sin escribir", async () => {
+    const email = `${randomUUID()}@empresa.com`;
+    mocks.user = { id: await seedUser(email), email };
+
+    expect(await currentSession()).toBeNull();
+    await expect(requireSession()).rejects.toThrow(
+      "redirect /login?error=sin_invitacion",
+    );
+    expect(mocks.redirect.mock.calls).toEqual([["/login?error=sin_invitacion"]]);
+    expect(
+      await db.select().from(membership).where(eq(membership.userId, mocks.user.id)),
+    ).toEqual([]);
+    expect(await db.select().from(auditLog)).toEqual([]);
+  });
+
+  it("con la invitación revocada después de crear la sesión, lo mismo", async () => {
+    const email = `${randomUUID()}@gmail.com`;
+    await seedInvitation({ workspaceId, email, status: "revoked" });
+    mocks.user = { id: await seedUser(email), email };
+
+    expect(await currentSession()).toBeNull();
+    await expect(requireSession()).rejects.toThrow(
+      "redirect /login?error=sin_invitacion",
+    );
+    expect((await db.select().from(invitation))[0].status).toBe("revoked");
+  });
+
+  it("si la vuelven a invitar, el pedido siguiente acepta y entra", async () => {
+    const email = `${randomUUID()}@gmail.com`;
+    mocks.user = { id: await seedUser(email), email };
+    expect(await currentSession()).toBeNull();
+
+    await seedInvitation({ workspaceId, email });
+
+    expect((await requireSession()).membership.role).toBe("member");
+    expect(mocks.redirect).not.toHaveBeenCalled();
+  });
+
+  it("con acceso, requireSession devuelve el contexto sin redirigir", async () => {
+    expect((await requireSession()).user.id).toBe(mocks.user?.id);
+    expect(mocks.redirect).not.toHaveBeenCalled();
+  });
+});
+
+describe("un dominio sacado de la política con la sesión abierta (D-E1b-13)", () => {
+  const domains = process.env.GOOGLE_WORKSPACE_DOMAINS;
+
+  beforeEach(() => {
+    process.env.GOOGLE_WORKSPACE_DOMAINS = "empresa.com, vieja.com";
+  });
+
+  afterEach(() => {
+    process.env.GOOGLE_WORKSPACE_DOMAINS = domains;
+    vi.restoreAllMocks();
+  });
+
+  /** Una persona de `vieja.com` con su membresía y la sesión abierta. */
+  async function signedInFromOldDomain() {
+    const email = `${randomUUID()}@vieja.com`;
+    mocks.user = {
+      id: await seedMember(workspaceId, "member", "active", { email }),
+      email,
+    };
+    expect(await currentSession()).not.toBeNull();
+    return email;
+  }
+
+  it("quien entró sin invitación queda sin acceso en el pedido siguiente", async () => {
+    await signedInFromOldDomain();
+
+    process.env.GOOGLE_WORKSPACE_DOMAINS = "empresa.com";
+
+    expect(await currentSession()).toBeNull();
+    await expect(requireSession()).rejects.toThrow(
+      "redirect /login?error=sin_invitacion",
+    );
+    expect(await db.select().from(auditLog)).toEqual([]);
+  });
+
+  it("quien tiene una invitación aceptada sigue entrando, como externa", async () => {
+    const email = await signedInFromOldDomain();
+    await seedInvitation({ workspaceId, email, status: "accepted" });
+
+    process.env.GOOGLE_WORKSPACE_DOMAINS = "empresa.com";
+
+    expect((await requireSession()).user.email).toBe(email);
+    expect(mocks.redirect).not.toHaveBeenCalled();
+  });
+
+  it("un correo de los dominios no suma la lectura de los hechos", async () => {
+    const entryFacts = vi.spyOn(workspaceRepository, "entryFacts");
+
+    expect(await currentSession()).not.toBeNull();
+    expect(entryFacts).not.toHaveBeenCalled();
   });
 });

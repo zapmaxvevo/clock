@@ -54,6 +54,10 @@ export const auth = betterAuth({
     google: {
       clientId: env().GOOGLE_CLIENT_ID,
       clientSecret: env().GOOGLE_CLIENT_SECRET,
+      // Solo el ingreso por redirección: sin esto, `/sign-in/social` también
+      // acepta un `id_token` que manda el cliente. Clock no lo usa, y es una
+      // entrada menos que cuidar.
+      disableIdTokenSignIn: true,
       // PF-45: el nombre y la foto de Google llegan en cada ingreso. El nombre que
       // la persona editó vive en `user_preference` y esto no lo toca (PF-08).
       overrideUserInfoOnSignIn: true,
@@ -100,9 +104,8 @@ export const auth = betterAuth({
     },
     session: {
       create: {
-        // Se vuelve a comprobar en cada inicio de sesión: quitar a alguien de
-        // la lista de invitados, o revocar su invitación antes de que entre, le
-        // cierra el acceso.
+        // Se vuelve a comprobar en cada inicio de sesión: revocar la invitación
+        // de alguien antes de su primer ingreso le cierra la entrada.
         before: async (session) => {
           const user = await db.query.user.findFirst({
             where: (table, { eq }) => eq(table.id, session.userId),

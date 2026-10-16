@@ -41,14 +41,11 @@ const invitationColumns = {
   status: invitation.status,
 };
 
-/** El workspace más viejo, como subconsulta: el mismo criterio que `findFirstWorkspace`. */
-function firstWorkspaceId() {
-  return db
-    .select({ id: workspace.id })
-    .from(workspace)
-    .orderBy(asc(workspace.createdAt), asc(workspace.id))
-    .limit(1);
-}
+/**
+ * El correo de `user` con la normalización de `normalizeEmail`, la única que
+ * compara correos en SQL (D-E1b-1).
+ */
+const normalizedUserEmail = sql<string>`lower(btrim(${user.email}))`;
 
 /** Los estados de quien está en el workspace; `invited` todavía no (RP-64). */
 const PRESENT_STATUSES: readonly MembershipStatus[] = ["active", "inactive"];
@@ -175,7 +172,7 @@ export const workspaceRepository = {
     return rows.at(0);
   },
 
-  /** Las membresías de `workspaceId` cuyo `lower(user.email)` está en `emails`. */
+  /** Las membresías de `workspaceId` cuyo `lower(btrim(user.email))` está en `emails`. */
   async membersByEmail(
     tx: Transaction,
     workspaceId: string,
@@ -184,12 +181,16 @@ export const workspaceRepository = {
     if (emails.length === 0) {
       return [];
     }
-    const email = sql<string>`lower(${user.email})`;
     return tx
-      .select({ email, status: membership.status })
+      .select({ email: normalizedUserEmail, status: membership.status })
       .from(membership)
       .innerJoin(user, eq(user.id, membership.userId))
-      .where(and(eq(membership.workspaceId, workspaceId), inArray(email, [...emails])));
+      .where(
+        and(
+          eq(membership.workspaceId, workspaceId),
+          inArray(normalizedUserEmail, [...emails]),
+        ),
+      );
   },
 
   /**
@@ -333,22 +334,46 @@ export const workspaceRepository = {
   },
 
   /**
-   * D-E1a-4: si el correo, ya normalizado, tiene una invitación `pending` o
-   * `accepted` en el workspace más viejo. Hay uno solo, y el login todavía no
-   * tiene membresía de la que sacarlo.
+   * D-E1b-1: en una sentencia, sobre el workspace más viejo: si existe, el
+   * estado de la invitación de `email` y el de la membresía del `user` cuyo
+   * `lower(btrim(user.email))` es `email`. `email` ya normalizado. Sin
+   * workspace, los dos en `null`. Si más de una fila `user` tiene ese correo
+   * normalizado, la membresía es `null`: el ingreso no elige entre dos
+   * personas, y la que tenga invitación pendiente entra por ella.
+   *
+   * `lower(btrim(user.email))` no usa el índice único de `user`, como
+   * `membersByEmail`; la tabla tiene decenas de filas.
    */
-  async hasOpenInvitation(email: string): Promise<boolean> {
+  async entryFacts(email: string): Promise<{
+    readonly workspaceId: string | null;
+    readonly invitation: InvitationStatus | null;
+    readonly membership: MembershipStatus | null;
+  }> {
     const rows = await db
-      .select({ id: invitation.id })
-      .from(invitation)
-      .where(
-        and(
-          eq(invitation.workspaceId, sql`(${firstWorkspaceId()})`),
-          eq(invitation.email, email),
-          inArray(invitation.status, ["pending", "accepted"]),
-        ),
+      .select({
+        workspaceId: workspace.id,
+        invitation: invitation.status,
+        membership: sql<MembershipStatus | null>`(
+          select case when count(*) = 1 then max(${membership.status}) end
+          from ${user}
+          left join ${membership}
+            on ${membership.userId} = ${user.id}
+            and ${membership.workspaceId} = ${workspace.id}
+          where ${normalizedUserEmail} = ${email}
+        )`,
+      })
+      .from(workspace)
+      .leftJoin(
+        invitation,
+        and(eq(invitation.workspaceId, workspace.id), eq(invitation.email, email)),
       )
+      .orderBy(asc(workspace.createdAt), asc(workspace.id))
       .limit(1);
-    return rows.length > 0;
+    const row = rows.at(0);
+    return {
+      workspaceId: row?.workspaceId ?? null,
+      invitation: row?.invitation ?? null,
+      membership: row?.membership ?? null,
+    };
   },
 };
