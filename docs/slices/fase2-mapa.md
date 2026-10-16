@@ -25,9 +25,11 @@ abrir:
 - **Workspace**: sin logo (P-01); entra el primer día de la semana por defecto
   del workspace, solo para las personas nuevas (P-02); «quién crea proyectos y
   clientes» queda fijo (P-03); cualquier miembro crea tareas en los proyectos que
-  ve (P-04); se borran las columnas sin efecto (P-05); días laborables y
-  capacidad, fuera (P-06); producción arranca con el formato de duración
-  completo, `06:00:00` (P-07); se acepta el diseño de `/configuracion` (P-08).
+  ve (P-04); se borran las columnas sin efecto, también `logo_url` y
+  `who_creates_projects`, que P-01 y P-03 dejan sin efecto (P-05); días
+  laborables y capacidad, fuera (P-06); producción arranca con el formato de
+  duración completo, `06:00:00` (P-07); se acepta el diseño de `/configuracion`
+  (P-08).
 - **El orden**: primero E1 y E2 de equipo, después WS1 y WS2 de configuración,
   después el resto de equipo y por último la administración de proyectos,
   clientes, tareas y etiquetas. Grupos, solo si existen en el plan Free (P-10 de
@@ -283,9 +285,9 @@ contrato de E2.
 Cubre la §14 de `workspace.md` con workspace P-05: borra `require_project`,
 `require_task`, `require_description`, `require_tag`, `force_timer`,
 `timesheet_enabled`, `rounding_minutes`, `who_sees_rates` y
-`workspace.currency`. Sin pantalla y sin permisos. Si la pregunta 1 de la §7 lo
-extiende, suma `logo_url`, `who_creates_projects` y
-`membership.weekly_capacity_minutes`.
+`who_creates_projects` de `workspace_settings`, y `currency` y `logo_url` de
+`workspace`. Sin pantalla y sin permisos. Si la pregunta 1 de la §7 lo extiende,
+suma `membership.weekly_capacity_minutes`.
 
 No depende de nada. **Va antes de WS1 y de WS2a** porque los tres cambian
 `workspace_settings` y sus migraciones chocan en el diario de `drizzle-kit`; es
@@ -297,10 +299,16 @@ Riesgos:
   `select()` nombran todas las columnas del esquema, así que una instancia
   vieja falla si la columna ya no está. Primero se despliega el código que ya no
   las nombra; después corre la migración.
-- **Los tests que las siembran o las leen** (nueve archivos de `src/` las
-  nombran hoy, además del esquema) se ajustan en el mismo slice.
+- **Lo que las nombra** se ajusta en el mismo slice: diez archivos de `src/`
+  además del esquema, entre ellos el test del slice 9 que afirma el valor de
+  `who_creates_projects` (criterio 11, PR-59) y el comentario de
+  `project.create` y `client.create` en `can()`, que remite a esa columna.
+- **`who_creates_projects` sale con su camino previsto**: el ADR 0009 decía
+  cómo entraría en `can()` si se volvía editable. Con workspace P-03 queda fijo
+  en «cualquiera», que es lo que `can()` ya decide por rol; si alguna vez se
+  vuelve editable, la columna vuelve con ese ADR.
 - **La reversión** las vuelve a crear con su `default`; no se pierde nada,
-  porque no tenían efecto.
+  porque no tenían efecto (`logo_url` está vacía).
 
 ADR: **borrar columnas, primero el código y después la migración**, con el
 contrato de WS0.
@@ -621,9 +629,10 @@ No son slices:
 - **`invited` en `membership_status`**: con las invitaciones por correo puede
   quedar sin uso (EQ-18). Quitar un valor de un enum de Postgres pide recrear el
   tipo; si el ADR de E1a lo deja, queda como deuda.
-- **`who_sees_all_entries`** sigue congelado (ADR 0020), y `who_creates_projects`
-  queda fijo (workspace P-03): siguen en la tabla salvo que la pregunta 1 diga
-  otra cosa.
+- **`who_sees_all_entries`** sigue congelado y sin efecto (ADR 0020, WS-42): es
+  la única columna sin efecto de los ajustes que WS0 no borra, porque la congeló
+  una decisión anterior. Lo mismo vale para `membership.weekly_capacity_minutes`
+  si la pregunta 1 dice que no.
 - **RP-61 y RP-62**: la §15 de `equipo.md` registra que la página de Clockify
   cambió; es una corrección de `reportes.md`, no un slice.
 - **`estado-fase1.md` no nombra la fase 2.** Cuando se apruebe el mapa, el
@@ -631,10 +640,9 @@ No son slices:
 
 ## 7. Preguntas para el usuario
 
-1. **¿El borrado de WS0 suma `logo_url`, `who_creates_projects` y
-   `membership.weekly_capacity_minutes`?** Quedaron sin destino con workspace
-   P-01 (sin logo), P-03 (queda fijo) y equipo P-09 (capacidad fuera), y caen en
-   el mismo criterio del ADR 0009 que las demás. Recomendación: sí.
+1. **¿El borrado de WS0 suma `membership.weekly_capacity_minutes`?** Quedó sin
+   destino con equipo P-09 (capacidad fuera) y cae en el mismo criterio del ADR
+   0009 que las columnas de workspace P-05. Recomendación: sí.
 2. **¿Grupos en el bloque de equipo, como pidió, o justo antes de P9?** En su
    lugar (E7), un grupo existe sin efecto hasta P6, P7 y P9. Recomendación:
    moverlo justo antes de P9, si P-10 confirma que está en Free.
