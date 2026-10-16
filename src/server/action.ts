@@ -10,13 +10,6 @@ import {
 import { ForbiddenError } from "@/server/permissions";
 import { requireSession, type SessionContext } from "@/server/session";
 
-export {
-  DomainError,
-  RejectedError,
-  type ActionErrorCode,
-  type Rejection,
-} from "@/server/errors";
-
 export type ActionResult<T, Code extends string = ActionErrorCode> =
   | { readonly ok: true; readonly data: T }
   | {

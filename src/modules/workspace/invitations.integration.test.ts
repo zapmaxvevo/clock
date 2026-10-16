@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { RejectedError } from "@/server/action";
+import { RejectedError } from "@/server/errors";
 import { db } from "@/server/db";
 import { membership } from "@/server/db/schema";
 import type { MembershipStatus, Role } from "@/server/permissions";

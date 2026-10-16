@@ -1,7 +1,8 @@
 /**
- * Los errores de dominio que traducen las actions. Viven aparte de `action.ts`,
- * que importa la sesión: un service que la sesión carga —el de `workspace`—
- * puede extenderlos sin cerrar un ciclo de imports. `action.ts` los reexporta.
+ * Los errores de dominio que traducen las actions, y la única ruta para
+ * importarlos. Viven aparte de `action.ts`, que importa la sesión: un service
+ * que la sesión carga —el de `workspace`— puede extenderlos sin cerrar un
+ * ciclo de imports.
  */
 
 /** Los códigos que puede devolver cualquier action. Un módulo los amplía. */

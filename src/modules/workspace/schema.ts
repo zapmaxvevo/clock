@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import type { ActionErrorCode, ActionResult } from "@/server/action";
+import type { ActionResult } from "@/server/action";
+import type { ActionErrorCode } from "@/server/errors";
 
 /** EQ-78: el tope de correos por pedido. */
 export const INVITE_LIMIT = 50;

@@ -5,7 +5,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { ActionFeedback } from "@/components/action-feedback";
 import { Button } from "@/components/ui/button";
 import { retryHandlerOf, useAction, type ActionFailure } from "@/hooks/use-action";
-import type { Rejection } from "@/server/action";
+import type { Rejection } from "@/server/errors";
 import { bulkDeleteEntries, bulkEditEntries } from "@/modules/time-entry/actions";
 import {
   BULK_MAX,

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { sameId, type ProjectPair } from "@/lib/project-pair";
 import { normalizedIds } from "@/lib/tag-ids";
 import { noNullCharacter } from "@/lib/text";
-import type { ActionErrorCode } from "@/server/action";
+import type { ActionErrorCode } from "@/server/errors";
 import { isClock, MINUTES_PER_DAY, parseDayKey } from "@/server/time";
 import { PALETTE_KEYS } from "@/modules/project/palette";
 

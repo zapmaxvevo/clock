@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import type { ActionErrorCode, ActionResult } from "@/server/action";
+import type { ActionResult } from "@/server/action";
+import type { ActionErrorCode } from "@/server/errors";
 import type { Role } from "@/server/permissions";
 
 /**

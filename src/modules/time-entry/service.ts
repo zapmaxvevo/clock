@@ -2,7 +2,7 @@ import { billableFor, NEW_ENTRY_BILLABLE } from "@/lib/billable";
 import { samePair, type ProjectPair } from "@/lib/project-pair";
 import { normalizedIds, sameTagIds } from "@/lib/tag-ids";
 import { compareNames, sortedByName } from "@/lib/text";
-import { DomainError, RejectedError, type Rejection } from "@/server/action";
+import { DomainError, RejectedError, type Rejection } from "@/server/errors";
 import { db, type Transaction } from "@/server/db";
 import { recordAudit, recordAudits } from "@/server/audit";
 import { createOnce, type ConflictOutcome } from "@/server/create-once";
