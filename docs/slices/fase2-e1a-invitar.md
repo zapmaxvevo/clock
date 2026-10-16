@@ -19,7 +19,10 @@ el usuario.
 - **Revisión:** `architecture-reviewer` aprobó con cambios en `dff919e`; están
   aplicados: qué ve quien no entra (D-E1a-14), la decisión del ingreso en una
   función probada (§4.5), la reversión con los externos de la base (§2), y en
-  los ADR, el rechazo del gancho de sesión y quién borra una membresía.
+  los ADR, el rechazo del gancho de sesión y quién borra una membresía. Aprobado
+  en `c879d57`, con un cambio también aplicado: el test que recorre el handler
+  de Better Auth (§9.2), que vuelve la comprobación de §6.4 una verificación de
+  humo.
 - **Decisiones de arquitectura**, las dos **propuestas** con este contrato; las
   aprueba el usuario (§11):
   - [ADR 0024](../adr/0024-donde-vive-una-invitacion-y-donde-se-corta-el-ingreso.md):
@@ -213,8 +216,13 @@ resuelve acá y no en E1b. Los dos puntos terminan en
   siendo una respuesta 403 del endpoint de prueba, que es lo que espera
   `signInRejected` (§9.3).
 
-El camino está leído, no ejecutado: el login de Google no corre en los tests.
-Lo comprueba el usuario después del despliegue (§6.4). Si falla, se ve lo de
+**El camino se prueba antes del despliegue**, con
+`src/server/auth.integration.test.ts` (§9.2): el callback decodifica el
+`id_token` sin verificar la firma (`google.mjs:119`), y el único I/O externo es
+el POST al endpoint de token de Google, que el test simula. El mismo test
+cubre las actualizaciones de Better Auth: si una versión nueva cambia el
+camino, falla ahí. La comprobación del usuario después del despliegue (§6.4)
+queda como verificación de humo. Si algo fallara en producción, se ve lo de
 hoy —el JSON 403—, nunca un acceso de más: la redirección es lo que se lanza en
 lugar de dejar pasar.
 
@@ -238,6 +246,7 @@ lugar de dejar pasar.
 | El gancho `session.create` vuelve a comprobar el correo guardado con `isAllowedEmail`, sin `hd`, y sin código      | `auth.ts:104-121`                                                                                 |
 | `decideGoogleAccess` exige dominio y `hd`, o la lista de invitados; `normalize` y `domainOf` son privadas          | `src/server/access.ts:26-71`, `:77-83`                                                            |
 | `OAuthProfileMapper` devuelve `Awaitable`: `mapProfileToUser` puede leer la base                                   | `node_modules/@better-auth/core/src/oauth2/oauth-provider.ts:291-293`                             |
+| El proveedor de Google decodifica el `id_token` sin verificar la firma y llama a `mapProfileToUser` sin `try`      | `node_modules/@better-auth/core/dist/social-providers/google.mjs:116-124`                         |
 | El callback de Better Auth: `getUserInfo` sin `try`; el rechazo con código redirige a la dirección de error        | `node_modules/better-auth/dist/api/routes/callback.mjs:35`, `:78-84`, `:120`, `:171-194`          |
 | Un `APIError` con cabeceras sale como respuesta con esas cabeceras                                                 | `better-auth/dist/api/dispatch.mjs:50-62`, `:231-260`; `better-call/dist/to-response.mjs:125-129` |
 | `/login` no lee ningún parámetro; el botón muestra solo el error de la llamada inicial                             | `src/app/login/page.tsx:6-25`; `src/components/layout/google-sign-in-button.tsx:15-18`            |
@@ -271,7 +280,8 @@ Entra:
 - **En `/equipo`**: «Invitar» con su diálogo y su resultado, las invitadas en la
   tabla con «Revocar invitación» y su confirmación, y el vacío de EQ-93.
 - **El script** `scripts/invitations-from-env/` y su entrada en `package.json`.
-- **Tests** de unidad, integración y e2e (§9).
+- **Tests** de unidad, integración —con el recorrido del handler de Better Auth—
+  y e2e (§9).
 
 Queda afuera: §12.
 
@@ -281,7 +291,7 @@ Queda afuera: §12.
 | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ | ----------------------------------------------- |
 | `src/server/db/schema.ts`                                          | Sale `externalInvite`; entran `invitationStatus` e `invitation`                            | `schema.integration.test.ts` de los módulos     |
 | `src/server/access.ts`, `access.test.ts`                           | La vía externa recibe un hecho (`invited`); no vale para el dominio; `loginErrorMessage`   | `access.test.ts` entero                         |
-| `src/server/auth.ts`                                               | Delega en `entry.ts`; redirección y código en los rechazos; `onAPIError.errorURL`          | integración del ingreso (§9.2), e2e entera      |
+| `src/server/auth.ts`                                               | Delega en `entry.ts`; redirección y código en los rechazos; `onAPIError.errorURL`          | `auth.integration.test.ts` (nuevo), e2e entera  |
 | `src/server/env.ts`                                                | El `csv` de correos sale a `src/lib/email.ts` como `parseEmailList`                        | `env` en los tests que lo cargan                |
 | `src/app/login/page.tsx`                                           | Lee `error` y muestra el motivo                                                            | `login` (test de componente nuevo)              |
 | `src/modules/workspace/service.ts`, `repository.ts`                | Aceptación en `ensureWorkspaceContext`; lecturas y mutaciones; el comentario de `joinedAt` | `workspace/service.integration.test.ts`         |
@@ -930,13 +940,14 @@ Hasta E1b nadie queda afuera por este slice: la variable se sigue leyendo y el
 dominio no necesita invitación. La consulta que compara la base con la lista de
 Clockify es la precondición de E1b, y la escribe su contrato.
 
-### 6.4 La comprobación del rechazo
+### 6.4 La verificación de humo
 
 Después del despliegue, el usuario entra a Clock con una cuenta de Google de
 otro dominio, sin invitación y fuera de la variable: tiene que terminar en
 `/login` con «La cuenta no pertenece al dominio de la empresa ni tiene una
-invitación vigente.». Es el único camino de D-E1a-14 que los tests no ejecutan.
-Si no, se ve el JSON 403 de hoy y se abre una corrección; nadie entra de más.
+invitación vigente.». El camino ya lo prueba `src/server/auth.integration.test.ts`
+(§9.2); esto confirma la configuración de producción —`BETTER_AUTH_URL` y el
+cliente de Google—, que el test no ve.
 
 ## 7. Reparto de archivos
 
@@ -945,7 +956,8 @@ Si no, se ve el JSON 403 de hoy y se abre una corrección; nadie entra de más.
 - `src/server/db/schema.ts` y la migración en `drizzle/` (§2).
 - `src/lib/email.ts` y su test; `src/server/env.ts` usa `parseEmailList`.
 - `src/server/access.ts`, `access.test.ts`, `src/server/entry.ts` y su test de
-  integración, `src/server/auth.ts` (§4.5).
+  integración, `src/server/auth.ts` y `src/server/auth.integration.test.ts`
+  (§4.5, §9.2).
 - `src/modules/workspace/schema.ts`, `repository.ts`, `service.ts`,
   `actions.ts` (§4.2 a §4.4, §4.7) y sus tests de integración.
 - `scripts/invitations-from-env/` y `package.json` (§4.6).
@@ -1027,17 +1039,18 @@ Si no, se ve el JSON 403 de hoy y se abre una corrección; nadie entra de más.
     también.
 14. **Un correo externo sin invitación ni variable no entra**:
     `decideProfileEntry` y `decideStoredEmailEntry` responden
-    `dominio_no_habilitado`; el login lo manda a
-    `/login?error=dominio_no_habilitado` y `/login` muestra «La cuenta no
-    pertenece al dominio de la empresa ni tiene una invitación vigente.». **Con
-    una invitación pendiente entra**: nace su membresía `member` activa, la
-    invitación pasa a `accepted` con `invitation.accept`, y en `/equipo` deja de
-    estar entre las invitadas y aparece entre las personas.
+    `dominio_no_habilitado`; el callback de Google responde 302 a
+    `/login?error=dominio_no_habilitado` sin crear la fila `user` (criterio 25),
+    y `/login` muestra «La cuenta no pertenece al dominio de la empresa ni tiene
+    una invitación vigente.». **Con una invitación pendiente entra**: nace su
+    membresía `member` activa, la invitación pasa a `accepted` con
+    `invitation.accept`, y en `/equipo` deja de estar entre las invitadas y
+    aparece entre las personas.
 15. **Con la invitación revocada**, ese correo externo no entra —con el mismo
     destino y el mismo texto del criterio 14—, salvo que esté en la variable.
     Si la revocación llega entre las dos comprobaciones, el gancho de sesión lo
     rechaza con el error de código `dominio_no_habilitado`, que el callback
-    redirige al mismo lugar.
+    redirige al mismo lugar, con `user` y `account` ya creados (criterio 25).
 16. **Un correo del dominio con invitación y sin `hd`** no entra: la vía externa
     no vale para el dominio; el destino y el texto son los del criterio 14.
 17. **Una persona del dominio sin invitación sigue entrando** (E1a no cierra la
@@ -1061,6 +1074,11 @@ Si no, se ve el JSON 403 de hoy y se abre una corrección; nadie entra de más.
     desconocido, «No se pudo iniciar sesión. Volvé a intentar.»; sin `error`,
     ningún aviso. El texto del parámetro y `error_description` nunca aparecen en
     la página.
+25. **El handler de Better Auth**, recorrido de punta a punta con el endpoint de
+    token simulado (§9.2): un externo sin invitación recibe 302 a
+    `/login?error=dominio_no_habilitado` y no queda fila `user`; un rechazo del
+    gancho de sesión recibe 302 al mismo lugar, con `user` y `account` creados;
+    un externo invitado recibe 302 a `/` con la cookie de sesión.
 
 ## 9. Plan de tests
 
@@ -1098,6 +1116,30 @@ Si no, se ve el JSON 403 de hoy y se abre una corrección; nadie entra de más.
   con un externo con invitación `pending`, `accepted` y `revoked`, sin
   invitación, solo en la variable, y un correo del dominio con invitación y sin
   `hd` (criterios 14 a 16). Con la variable sembrada en `process.env` del test.
+- **El handler de Better Auth, `src/server/auth.integration.test.ts`**
+  (criterio 25). Recorre `auth.handler(new Request(…))` contra la base de test:
+  1. `POST /api/auth/sign-in/social` con `provider: "google"` y
+     `callbackURL: "/"`, con el `Origin` de `BETTER_AUTH_URL`; da la dirección
+     de Google con el `state` y la cookie del estado, que el test guarda;
+  2. `GET /api/auth/callback/google?code=x&state=…` con esa cookie, y `fetch`
+     simulado para el POST a `https://oauth2.googleapis.com/token`, que devuelve
+     un `id_token` sin firmar con `email`, `email_verified`, `hd` y `sub` —y el
+     `nonce` del estado, si el proveedor lo exige—. El callback lo decodifica
+     sin verificar la firma (`google.mjs:119`); no hay otro I/O externo.
+
+  Tres casos:
+  1. **Externo sin invitación**: 302 con `location`
+     `<BETTER_AUTH_URL>/login?error=dominio_no_habilitado`, y ninguna fila
+     `user` con ese correo.
+  2. **Rechazo del gancho**: `hasOpenInvitation` simulado, `true` en la primera
+     llamada (`mapProfileToUser`) y `false` en la segunda (el gancho): 302 al
+     mismo lugar, con `user` y `account` creados y sin `session`.
+  3. **Externo invitado**, con una invitación `pending` sembrada: 302 a `/` y la
+     cookie de sesión en la respuesta.
+
+  Este test es el que cubre las actualizaciones de Better Auth: si una versión
+  nueva cambia el camino de D-E1a-14, falla acá.
+
 - **Actions**: la traducción de `rejected` con su lista, `validation`,
   `forbidden`, `not_pending`, `not_found` y `unexpected`, y la revalidación de
   `/equipo`, con el arnés de `profile/actions.integration.test.ts`.
@@ -1135,18 +1177,22 @@ sobre la tabla entera. Los externos son `…@externo-e2e.test`, fuera de
 ### 9.4 Lo que no se prueba en e2e
 
 El login de Google: la sesión de prueba no pasa por `mapProfileToUser` ni por el
-callback. La decisión la cubren `access.test.ts` y la integración de
-`entry.ts`; la forma de los dos errores, la unidad de `entry.ts`; el camino de
-Better Auth hasta `/login`, la lectura del código instalado (D-E1a-14) y la
-comprobación de §6.4. El script y la migración se prueban en integración.
+callback. Lo cubren `access.test.ts`, la integración de `entry.ts` y el
+recorrido del handler de Better Auth en `auth.integration.test.ts`; la
+configuración de producción, la verificación de humo de §6.4. El script y la
+migración se prueban en integración.
 
 ## 10. Riesgos
 
 - **La redirección depende de Better Auth por dentro** (D-E1a-14): las líneas
-  citadas son de la 1.7.7. Una versión nueva puede cambiar el camino; el
-  comentario de `auth.ts` las nombra, y la comprobación de §6.4 se repite al
-  actualizar la biblioteca. Si se rompe, el rechazo vuelve a ser el JSON 403:
-  no deja entrar a nadie de más.
+  citadas son de la 1.7.7. Una versión nueva puede cambiar el camino; lo detecta
+  `auth.integration.test.ts`, que recorre el handler (§9.2). Si igual llegara a
+  producción, el rechazo vuelve a ser el JSON 403: no deja entrar a nadie de
+  más.
+- **El test del handler simula a Google por dentro**: arma la respuesta del
+  endpoint de token y un `id_token` sin firmar. Si una versión nueva de Better
+  Auth empieza a verificar la firma en el callback, el test lo dice fallando, y
+  habrá que firmar el `id_token` con una clave de prueba.
 - **El login lee la base.** `mapProfileToUser` pasa a ser asíncrona; una base
   caída deja de dejar entrar en lugar de dejar entrar de más. Una consulta por
   índice por ingreso, y ninguna para un correo del dominio con `hd`.
