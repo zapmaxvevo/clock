@@ -1,10 +1,16 @@
 import { randomUUID } from "node:crypto";
 
-import type { Browser, Locator, Page } from "@playwright/test";
+import type { Browser, Page } from "@playwright/test";
 
 import { invitationStatusOf, seedPerson, setDisplayName, setRole } from "./database";
 import { loseActionResponses } from "./network";
-import { expect, signIn, signInRejected, TEST_EMAIL_DOMAIN, test } from "./session";
+import {
+  expect,
+  signInRejected,
+  signInUnseeded,
+  TEST_EMAIL_DOMAIN,
+  test,
+} from "./session";
 import {
   ALREADY_INVITED,
   copyButton,
@@ -17,10 +23,10 @@ import {
   invalidEmailMessage,
   INVITE,
   inviteButton,
-  inviteDialog,
   invitationRow,
   INVITED,
   INVITED_MARK,
+  inviteOne,
   isTeamPage,
   MEMBER_ROLE,
   memberHeader,
@@ -38,6 +44,7 @@ import {
   revokeDialog,
   revokedMessage,
   roleCell,
+  sendInvitation,
   TEAM_PATH,
   teamFeedback,
   teamHeading,
@@ -86,28 +93,6 @@ async function enterTeamAsAdmin(page: Page, email: string): Promise<void> {
   await expect(page.getByText(NO_INVITATIONS_YET, { exact: true })).toHaveCount(0);
 }
 
-/** Abre «Invitar», escribe `emails` y manda el pedido. Devuelve el paso de carga. */
-async function sendInvitation(page: Page, emails: string): Promise<Locator> {
-  await inviteButton(page).click();
-  const dialog = inviteDialog(page);
-  await emailsField(dialog).fill(emails);
-  await dialogButton(dialog, INVITE).click();
-  return dialog;
-}
-
-/**
- * Invita a `email`, espera que el resultado lo dé por invitado y cierra el
- * diálogo con «Listo». La revalidación trae su fila sin recargar (criterio 23).
- */
-async function inviteOne(page: Page, email: string): Promise<void> {
-  await sendInvitation(page, email);
-  const result = resultDialog(page);
-  await expect(outcomeLabel(outcomeItem(result, email), INVITED)).toBeVisible();
-  await dialogButton(result, "Listo").click();
-  await expect(result).toBeHidden();
-  await expect(invitationRow(page, email)).toBeVisible();
-}
-
 /** Una pestaña en un contexto propio, sin sesión: la de la persona invitada. */
 async function guestPage(browser: Browser): Promise<Page> {
   const context = await browser.newContext();
@@ -115,8 +100,8 @@ async function guestPage(browser: Browser): Promise<Page> {
 }
 
 /**
- * Con la sesión ya en su contexto, entra a la aplicación, que es lo que le
- * crea la membresía y acepta su invitación pendiente (D-E1a-5).
+ * Con la sesión ya en su contexto, entra a la aplicación, que es lo que acepta
+ * su invitación pendiente y le crea la membresía (D-E1b-4).
  */
 async function enterApp(page: Page): Promise<void> {
   await page.goto("/");
@@ -227,17 +212,18 @@ test("una persona externa entra recién cuando la invitan, y pasa de invitada a 
   const outside = externalEmail("externa");
   const name = `Ximena ${uniqueSuffix()}`;
 
-  // Criterio 14: sin invitación ni variable, no entra.
+  // Criterio 14 de E1a: sin invitación, no entra.
   const guest = await guestPage(browser);
   await signInRejected(guest.context(), outside);
 
   await enterTeamAsAdmin(page, email);
   await inviteOne(page, outside);
 
-  // Con la invitación pendiente entra: nace su membresía y la invitación
-  // pasa a `accepted` (D-E1a-5). El rechazo de antes ya le creó el `user`,
-  // así que se le puede poner un nombre único para encontrar su fila.
-  await signIn(guest.context(), outside);
+  // Con la invitación pendiente entra: la invitación pasa a `accepted` y nace
+  // su membresía (D-E1b-4). El rechazo de antes ya le creó el `user`, así que
+  // se le puede poner un nombre único para encontrar su fila. Entra sin la
+  // siembra de `signIn`: la invitación es la que hizo la pantalla (D-E1b-8).
+  await signInUnseeded(guest.context(), outside);
   await setDisplayName(outside, name);
   await enterApp(guest);
   expect(await invitationStatusOf(outside)).toBe("accepted");
@@ -286,7 +272,7 @@ test("revocar saca la invitación y deja afuera a la persona externa, y volver a
   // Criterio 11: volver a invitarla reusa la fila, y ahora entra.
   await inviteOne(page, outside);
   expect(await invitationStatusOf(outside)).toBe("pending");
-  await signIn(guest.context(), outside);
+  await signInUnseeded(guest.context(), outside);
   await enterApp(guest);
   expect(await invitationStatusOf(outside)).toBe("accepted");
   await guest.context().close();

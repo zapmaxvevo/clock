@@ -6,7 +6,7 @@
  * invitada es una fila al final, cuyo encabezado empieza con el correo y sigue
  * con sus marcas.
  */
-import type { Locator, Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 import { escapeRegExp } from "./tracker-page";
 
@@ -233,4 +233,27 @@ export const REVOKE_WARNING =
 /** El aviso de la tabla después de revocar. */
 export function revokedMessage(email: string): string {
   return `Invitación de ${email} revocada.`;
+}
+
+/** Abre «Invitar», escribe `emails` y manda el pedido. Devuelve el paso de carga. */
+export async function sendInvitation(page: Page, emails: string): Promise<Locator> {
+  await inviteButton(page).click();
+  const dialog = inviteDialog(page);
+  await emailsField(dialog).fill(emails);
+  await dialogButton(dialog, INVITE).click();
+  return dialog;
+}
+
+/**
+ * Invita a `email`, espera que el resultado lo dé por invitado y cierra el
+ * diálogo con «Listo». La revalidación trae su fila sin recargar (criterio 23
+ * de E1a).
+ */
+export async function inviteOne(page: Page, email: string): Promise<void> {
+  await sendInvitation(page, email);
+  const result = resultDialog(page);
+  await expect(outcomeLabel(outcomeItem(result, email), INVITED)).toBeVisible();
+  await dialogButton(result, "Listo").click();
+  await expect(result).toBeHidden();
+  await expect(invitationRow(page, email)).toBeVisible();
 }

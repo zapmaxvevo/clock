@@ -51,6 +51,12 @@ export const TEST_EMAIL_DOMAIN = process.env.E2E_EMAIL_DOMAIN ?? "empresa.com";
  */
 export const OWNER_EMAIL = `owner@${TEST_EMAIL_DOMAIN}`;
 
+/**
+ * El nombre de la cuenta con que la sesión de prueba crea a cada persona. Lo
+ * leen la sesión y la base de los e2e, que siembra personas con el mismo.
+ */
+export const PERSON_NAME = "Persona de prueba";
+
 /** La base del servidor local cuando DATABASE_URL no viene del entorno. */
 export const LOCAL_DATABASE_URL = "postgresql://clock:clock@localhost:5432/clock";
 

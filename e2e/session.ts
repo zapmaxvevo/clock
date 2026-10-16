@@ -7,10 +7,8 @@ import {
   type BrowserContext,
 } from "@playwright/test";
 
-import { TEST_EMAIL_DOMAIN, TEST_SESSION_SECRET } from "./environment";
-
-/** El nombre de la cuenta con que `signIn` crea a cada persona. */
-export const PERSON_NAME = "Persona de prueba";
+import { inviteForSignIn } from "./database";
+import { PERSON_NAME, TEST_EMAIL_DOMAIN, TEST_SESSION_SECRET } from "./environment";
 
 /** Intentos de entrar antes de dar el 429 por definitivo. */
 const SIGN_IN_ATTEMPTS = 5;
@@ -41,11 +39,35 @@ async function requestSession(
   }
 }
 
+/** Si el correo es del dominio que el servidor de los e2e habilita. */
+function inTestDomain(email: string): boolean {
+  return email.trim().toLowerCase().endsWith(`@${TEST_EMAIL_DOMAIN.toLowerCase()}`);
+}
+
 /**
  * Entra con la sesión de prueba. La cookie queda en el contexto, así que
  * todas las pestañas que se abran después comparten la sesión.
+ *
+ * Desde E1b solo entra quien tiene membresía o una invitación pendiente, así
+ * que antes siembra la invitación de un correo del dominio que no tiene
+ * ninguna de las dos (D-E1b-8). Nunca la de un externo: los recorridos de
+ * invitaciones llegan a esa fila por `/equipo`.
  */
 export async function signIn(context: BrowserContext, email: string): Promise<void> {
+  if (inTestDomain(email)) {
+    await inviteForSignIn(email);
+  }
+  await signInUnseeded(context, email);
+}
+
+/**
+ * Entra con la sesión de prueba sin sembrar nada: para los recorridos del
+ * ingreso, que llegan a la invitación por la pantalla o la siembran ellos.
+ */
+export async function signInUnseeded(
+  context: BrowserContext,
+  email: string,
+): Promise<void> {
   const response = await requestSession(context, email);
   expect(response.status(), await response.text()).toBe(200);
 }
@@ -98,4 +120,4 @@ export const test = base.extend<SessionFixtures>({
   },
 });
 
-export { expect, TEST_EMAIL_DOMAIN };
+export { expect, PERSON_NAME, TEST_EMAIL_DOMAIN };
