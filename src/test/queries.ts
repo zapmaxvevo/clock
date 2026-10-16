@@ -1,7 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 
 import { db } from "@/server/db";
-import { auditLog, membership, timeEntry } from "@/server/db/schema";
+import { auditLog, invitation, membership, timeEntry } from "@/server/db/schema";
 
 /**
  * Consultas de verificación de los tests de integración. Leen el estado que
@@ -62,4 +62,22 @@ export async function auditFor(entity: string, entityId?: string) {
       ? eq(auditLog.entity, entity)
       : and(eq(auditLog.entity, entity), eq(auditLog.entityId, entityId));
   return db.select().from(auditLog).where(scope).orderBy(asc(auditLog.createdAt));
+}
+
+/** Las invitaciones de un workspace, por correo. */
+export async function invitationsOf(workspaceId: string) {
+  return db
+    .select()
+    .from(invitation)
+    .where(eq(invitation.workspaceId, workspaceId))
+    .orderBy(asc(invitation.email));
+}
+
+/** La invitación de un correo en un workspace, o `undefined`. */
+export async function invitationOf(workspaceId: string, email: string) {
+  const rows = await db
+    .select()
+    .from(invitation)
+    .where(and(eq(invitation.workspaceId, workspaceId), eq(invitation.email, email)));
+  return rows.at(0);
 }

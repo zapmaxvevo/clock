@@ -25,7 +25,11 @@ describe("decideGoogleAccess", () => {
 
   it("rechaza una cuenta de otro dominio sin invitación", () => {
     expect(
-      decideGoogleAccess({ email: "otro@gmail.com", email_verified: true }, policy, false),
+      decideGoogleAccess(
+        { email: "otro@gmail.com", email_verified: true },
+        policy,
+        false,
+      ),
     ).toEqual(denied);
   });
 
@@ -43,13 +47,21 @@ describe("decideGoogleAccess", () => {
     // Las cuentas «no gestionadas», creadas antes de que el dominio pasara a
     // Workspace, tienen el email del dominio y no traen el claim.
     expect(
-      decideGoogleAccess({ email: "ana@empresa.com", email_verified: true }, policy, false),
+      decideGoogleAccess(
+        { email: "ana@empresa.com", email_verified: true },
+        policy,
+        false,
+      ),
     ).toEqual(denied);
   });
 
   it("rechaza un correo del dominio sin hd aunque tenga invitación (criterio 16)", () => {
     expect(
-      decideGoogleAccess({ email: "ana@empresa.com", email_verified: true }, policy, true),
+      decideGoogleAccess(
+        { email: "ana@empresa.com", email_verified: true },
+        policy,
+        true,
+      ),
     ).toEqual(denied);
   });
 
