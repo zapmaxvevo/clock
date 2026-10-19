@@ -59,7 +59,7 @@ type TeamMembersProps = {
   readonly members: readonly TeamMember[];
   /** `null` sin `member.invite`: sin «Invitar» ni filas de invitadas. */
   readonly invitations: TeamInvitations | null;
-  /** El de `?estado=`; la página monta la pantalla de nuevo cuando cambia (§5.2). */
+  /** El de `?estado=`; cuando cambia, la tabla olvida las filas que se quedaban y el aviso (§5.2). */
   readonly filter: TeamFilter;
   readonly actions: TeamActions & InvitationActions;
 };
@@ -114,6 +114,17 @@ export function TeamMembers({
   const [inviteKey, setInviteKey] = useState(0);
   const headerInvite = useRef<HTMLButtonElement>(null);
   const inviteOpener = useRef<HTMLElement | null>(null);
+  /** El filtro con que se guardaron `kept` y el último desenlace. */
+  const [seenFilter, setSeenFilter] = useState(filter);
+
+  // §5.2: otro filtro olvida las filas que se quedaban (EQ-11) y el último
+  // aviso. Se ajusta durante el dibujo y no con una `key`: volver a montar la
+  // pantalla se lleva el selector, y el foco del teclado caería a `body`.
+  if (seenFilter !== filter) {
+    setSeenFilter(filter);
+    setKept(new Set());
+    resetOutcome();
+  }
 
   const change = useAction(actions.changeRole, {
     unreachableMessage: teamMessages.unexpected,

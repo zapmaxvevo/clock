@@ -25,7 +25,8 @@ export const statusFilterItems = TEAM_FILTERS.map((filter) => ({
 /**
  * D-E2-8: el filtro de estado, que vive en la URL. Elegir navega, como los
  * filtros del reporte; mientras la página nueva llega, el disparador ya dice
- * lo elegido. La pantalla se vuelve a montar con el filtro nuevo (§5.2).
+ * lo elegido. No se vuelve a montar con el filtro nuevo: el foco se queda en
+ * el disparador (§5.2).
  */
 export function StatusFilter({ filter }: { readonly filter: TeamFilter }) {
   const router = useRouter();

@@ -17,10 +17,7 @@ export default async function TeamPage({ searchParams }: PageProps<"/equipo">) {
     view.kind === "ready" ? await getInvitationsView(session.actor) : null;
 
   return (
-    // §5.2: con otro filtro, la pantalla se monta de nuevo y olvida las filas
-    // que se quedaban (EQ-11) y el último aviso.
     <TeamScreen
-      key={filter}
       view={view}
       invitations={invitations}
       filter={filter}
