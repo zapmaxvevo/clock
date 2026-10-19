@@ -897,6 +897,10 @@ como D-R8-7, y decide con lo leído: desactivar a quien otro admin ya desactivó
 es éxito sin escribir; transferir a quien otro acaba de desactivar responde
 EQ-86; un admin que perdió el rol mientras tanto recibe EQ-90. Justificación:
 el `Actor` de la sesión se armó en otra transacción.
+_Aclarado el 2026-10-19, revisión de paridad de E2_: la action responde EQ-90,
+pero la revalidación corre también con error (`handle`), y la página vuelve a
+dibujarse sin `team.manage`: lo que se ve es EQ-02, no el aviso de la fila. La
+base no cambia. Es el mismo mecanismo que en R8.
 
 **EQ-99 La lista no carga** — `replicar`
 «No se pudo cargar el equipo.», de R8, nunca una tabla vacía.
