@@ -771,13 +771,16 @@ múltiplos de 15 minutos con el zoom en 60, 30 o 15, y de 5 con el de 5. El
 zoom, el alto de la franja y el dibujo de la grilla no cambian (CAL-11), ni el
 alta por clic, que propone una franja del zoom (CAL-43). Para un ajuste de 5
 minutos se acerca el zoom a 5; para uno más fino, el diálogo. Justificación:
-decisión del usuario del 2026-10-16 («cuando arrastrás solo va por hora;
-debería ser que pueda cada 15 minutos»): con el zoom en 60, ajustar a la franja
-no dejaba llevar un borde a un cuarto de hora sin cambiar el zoom.
-_No verificado_: a qué múltiplo ajusta Clockify en cada zoom. **La
-verificación solo puede registrar una divergencia**: el paso lo decidió el
-usuario y no se corrige por lo que haga Clockify. Si Clockify ajusta a otro
-múltiplo, esta regla queda como está y se anota como divergencia.
+el paso de 15 minutos es un pedido del usuario del 2026-10-16 («cuando
+arrastrás solo va por hora; debería ser que pueda cada 15 minutos»): con el
+zoom en 60, ajustar a la franja no dejaba llevar un borde a un cuarto de hora
+sin cambiar el zoom. Que con el zoom en 5 el paso siga siendo la franja, de 5
+minutos, es la D1 del contrato de C1, del team-lead.
+_No verificado_: a qué múltiplo ajusta Clockify en cada zoom. **Sobre el paso
+de 15 minutos, la verificación solo puede registrar una divergencia**: lo pidió
+el usuario y no se corrige por lo que haga Clockify. Si Clockify ajusta a otro
+múltiplo con el zoom en 60, 30 o 15, esta regla queda como está y se anota
+como divergencia.
 _Corregido el 2026-10-16, C1_: el título era «Ajuste a la franja del zoom» y el
 texto, «Propuesta: el borde que se mueve cae en múltiplos de la franja del zoom
 actual —60, 30, 15 o 5 minutos—. Para un ajuste más fino, se acerca el zoom o
@@ -1606,8 +1609,9 @@ cambia nada del servidor, ni el esquema, ni los permisos. Contrato:
 
 - **El paso del arrastre es `min(zoom, 15)`** (CAL-53): 15 minutos con el zoom
   en 60, 30 o 15, y 5 con el de 5, en todo borde que se mueve —mover, estirar
-  el inicio o el fin y crear arrastrando—. Los topes de CAL-55 y CAL-56 y la
-  marca de casa de CAL-57 son marcas del paso.
+  el inicio o el fin y crear arrastrando—. Los 15 minutos son el pedido del
+  usuario; el caso del zoom en 5, la D1 del contrato, del team-lead. Los topes
+  de CAL-55 y CAL-56 y la marca de casa de CAL-57 son marcas del paso.
 - **La grilla no cambia**: el zoom, el alto de la franja, el dibujo y el alta
   por clic, que propone una franja del zoom (CAL-11, CAL-43).
 - **Lo que se acepta**: con el zoom en 60, la banda de la marca de casa
@@ -1615,8 +1619,8 @@ cambia nada del servidor, ni el esquema, ni los permisos. Contrato:
   arrastre corto sobre el fondo propone una celda de 15 minutos, no la hora
   tocada.
 - **Sigue _no verificado_** a qué múltiplo ajusta Clockify (P-07), pero la
-  respuesta ya no corrige el paso, que decidió el usuario: solo puede
-  registrar una divergencia.
+  respuesta ya no corrige el paso de 15 minutos, que pidió el usuario: sobre
+  él solo puede registrar una divergencia.
 
 ### Lo que queda
 
@@ -1684,8 +1688,9 @@ cerraba solo.
 
 Todo lo marcado como _no verificado_, con la pregunta concreta que hay que
 contestar mirando el workspace del equipo. Ninguna bloquea: todas tienen una
-regla escrita y lo que la verificación puede hacer es corregirla, salvo en
-CAL-53, donde solo puede registrar una divergencia. Las marcadas
+regla escrita y lo que la verificación puede hacer es corregirla, salvo en el
+paso de 15 minutos de CAL-53, donde solo puede registrar una divergencia. Las
+marcadas
 **(divergencia)** son las que, según la respuesta, confirman o retiran una
 divergencia de las que este documento propone.
 
@@ -1728,8 +1733,8 @@ divergencia de las que este documento propone.
 - **CAL-47** — Con un timer corriendo, hacer clic en una franja libre y
   agregar: ¿lo deja? **(divergencia)**
 - **CAL-53** — Con cada zoom, arrastrar un bloque despacio: ¿a qué múltiplo
-  salta? La respuesta no corrige el paso, `min(zoom, 15)`, que decidió el
-  usuario (C1): si no coincide, se anota como divergencia.
+  salta? La respuesta no corrige el paso de 15 minutos con el zoom en 60, 30 o
+  15, que pidió el usuario (C1): si no coincide, se anota como divergencia.
 - **CAL-55** — Estirar el fin de un bloque de 10:00 hasta pasar las 10:00 del
   día siguiente: ¿lo deja? **(divergencia)**
 - **CAL-58** — Arrastrar un bloque de más de 24 horas: ¿se mueve?
@@ -1753,8 +1758,8 @@ _Corregido el 2026-10-07_: la pregunta de CAL-14 pedía además cambiar «inicio
 del día» en el perfil y decía que la respuesta cerraba también perfil P-02. Ese
 ajuste no existe en el workspace del equipo y perfil P-02 se cerró.
 _Corregido el 2026-10-16, C1_: decía que la verificación podía corregir todas
-las reglas, también la de CAL-53. El paso del arrastre lo decidió el usuario, y
-la respuesta de CAL-53 solo puede registrar una divergencia.
+las reglas, también la de CAL-53. El paso de 15 minutos lo pidió el usuario, y
+sobre él la respuesta de CAL-53 solo puede registrar una divergencia.
 
 ### Cerrados
 
