@@ -70,6 +70,9 @@ Lo que fija la librería:
   único por esa clave (`src/server/db/auth-schema.ts:36-58`), y la tabla la
   regenera `npm run auth:schema`.
 
+En la 1.7.10, que trae el MCP, esto se sostiene con otras líneas en `google.mjs`
+e `internal-adapter.mjs`; el contrato las lista (§0).
+
 ## Opciones
 
 1. **Enlace implícito para las filas sin cuenta con membresía activa**: en
@@ -130,18 +133,23 @@ estas reglas:
    para su propia fila.
 3. **La usa el próximo ingreso que pasa la regla de ingreso**, con el correo de
    esa fila y mientras la marca esté vigente, si su `sub` no es la cuenta de
-   ninguna fila. **La regla se decide primero**: un perfil sin `hd` en un correo
-   del dominio, o sin correo verificado, no toca la marca. En una transacción
-   que bloquea la membresía: limpia la marca, borra las otras cuentas, las
-   sesiones y las autorizaciones de MCP de la fila, si las hay, e inserta la
-   cuenta nueva. Better Auth la encuentra y entra a esa fila
-   (`link-account.mjs:96-106`, `:190-237`). Una sola vez: un segundo ingreso con
-   otro `sub` encuentra la marca limpia y es rechazado. Si la transacción falla,
-   no escribe nada y el ingreso termina en `/login` con el texto genérico; si la
-   membresía resulta inactiva bajo el bloqueo, con el motivo de una inactiva.
+   ninguna fila y el correo es de una sola fila `user`. **La regla se decide
+   primero**: un perfil sin `hd` en un correo del dominio, o sin correo
+   verificado, no toca la marca. En una transacción que bloquea la membresía:
+   limpia la marca, borra las otras cuentas, las sesiones y las autorizaciones
+   de MCP de la fila, si las hay, e inserta la cuenta nueva. Better Auth la
+   encuentra y entra a esa fila (`link-account.mjs:96-106`, `:190-237`). Una
+   sola vez: un segundo ingreso con otro `sub` encuentra la marca limpia y es
+   rechazado. Si la transacción falla, no escribe nada y el ingreso termina en
+   `/login` con el texto genérico; si la membresía resulta inactiva bajo el
+   bloqueo, con el motivo de una inactiva.
 4. **Vence**: la marca vale un plazo desde que se pide (el contrato propone
-   siete días y lo deja como pregunta al usuario), calculado al leerla, sin
-   cron. Vencida, no se usa; el owner la vuelve a pedir.
+   siete días y lo deja como pregunta al usuario), sin cron. Las lecturas lo
+   calculan para describir la fila y decidir si vale la pena intentar; **lo
+   decide la escritura que limpia la marca**, con la hora del reloj y no con la
+   del inicio de la transacción, para que una marca que vence mientras el
+   ingreso espera el bloqueo no se use. Vencida, no se usa; el owner la vuelve
+   a pedir.
 5. **Desactivar la cancela**, en la misma transacción.
 6. **Liberar el correo es otra acción solo del owner**, `team.email.release`,
    sobre una membresía inactiva. El correo pasa a una dirección que no se
