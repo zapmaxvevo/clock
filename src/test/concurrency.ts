@@ -198,3 +198,14 @@ export async function queueBehindBarrier(
   }
   return Promise.allSettled(running);
 }
+
+/**
+ * El valor de un corredor que terminó bien, para leer lo que devolvió
+ * `queueBehindBarrier`; si se rechazó, lanza con su motivo.
+ */
+export function fulfilledValue(outcome: PromiseSettledResult<unknown>): unknown {
+  if (outcome.status !== "fulfilled") {
+    throw new Error("El corredor se rechazó.", { cause: outcome.reason });
+  }
+  return outcome.value;
+}

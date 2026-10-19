@@ -842,10 +842,13 @@ describe("changeStatus: desactivar (criterio 1, EQ-39, EQ-41, EQ-43)", () => {
 });
 
 describe("changeStatus: reactivar (criterio 3, EQ-37, EQ-47)", () => {
-  it("una admin inactiva con cuenta vuelve active y admin, sin timer nuevo, con membership.reactivate", async () => {
+  it("una admin inactiva con cuenta vuelve active y admin, sin timer nuevo ni tocar sus sesiones, con membership.reactivate", async () => {
     const seeded = await seedWorkspace();
     const target = await seedPerson(seeded.workspaceId, "admin", "inactive");
     await seedAccount(target.userId);
+    // Una sesión que quedó de un estado escrito por SQL (D-E2-2): reactivar no la toca.
+    await seedSession(target.userId);
+    const sessions = await sessionsOf(target.userId);
 
     const result = await reactivate(ownerOf(seeded), target.membershipId);
 
@@ -855,6 +858,7 @@ describe("changeStatus: reactivar (criterio 3, EQ-37, EQ-47)", () => {
       status: "active",
     });
     expect(await db.select().from(timeEntry)).toEqual([]);
+    expect(await sessionsOf(target.userId)).toEqual(sessions);
     expect(await auditTrail()).toEqual([
       {
         actorId: seeded.ownerId,
@@ -885,6 +889,17 @@ describe("changeStatus: idempotente por el estado pedido (criterio 4, EQ-97, EQ-
     });
 
     expect(result).toEqual({ membershipId: target.membershipId, status });
+    expect(await statusWrites()).toEqual(before);
+  });
+
+  it("reactivar a una activa sin account responde éxito sin escribir: el paso 7 va antes del 8", async () => {
+    const seeded = await seedWorkspace();
+    const target = await seedPerson(seeded.workspaceId, "member");
+    const before = await statusWrites();
+
+    const result = await reactivate(ownerOf(seeded), target.membershipId);
+
+    expect(result).toEqual({ membershipId: target.membershipId, status: "active" });
     expect(await statusWrites()).toEqual(before);
   });
 });

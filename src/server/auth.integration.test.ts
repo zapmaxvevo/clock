@@ -7,7 +7,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { workspaceRepository } from "@/modules/workspace/repository";
 import { db } from "@/server/db";
 import { account, membership, session, user } from "@/server/db/schema";
-import { queueBehindBarrier } from "@/test/concurrency";
+import { fulfilledValue, queueBehindBarrier } from "@/test/concurrency";
 import {
   seedAccount,
   seedInvitation,
@@ -159,13 +159,7 @@ describe("las cuentas no se enlazan ni se desenlazan por la API de Better Auth (
     // Dos cuentas: con una sola, Better Auth rechazaría el pedido por ser la última.
     const subs = [randomUUID(), randomUUID()].sort();
     for (const sub of subs) {
-      await db.insert(account).values({
-        id: randomUUID(),
-        accountId: sub,
-        providerId: "google",
-        userId,
-        updatedAt: new Date(),
-      });
+      await seedAccount(userId, sub);
     }
 
     const response = await post(
@@ -230,16 +224,6 @@ describe("una cuenta de Google se enlaza solo a la fila que creó (criterio 16)"
     };
   }
 
-  async function seedGoogleAccount(userId: string, sub: string) {
-    await db.insert(account).values({
-      id: randomUUID(),
-      accountId: sub,
-      providerId: "google",
-      userId,
-      updatedAt: new Date(),
-    });
-  }
-
   async function accountsOf(userId: string) {
     const rows = await db
       .select({ accountId: account.accountId })
@@ -266,7 +250,7 @@ describe("una cuenta de Google se enlaza solo a la fila que creó (criterio 16)"
     const email = `${randomUUID()}@empresa.com`;
     const id = await seedPerson(email);
     const originalSub = randomUUID();
-    await seedGoogleAccount(id, originalSub);
+    await seedAccount(id, originalSub);
     const newSub = randomUUID();
 
     const result = await handleOAuthUserInfo(
@@ -288,7 +272,7 @@ describe("una cuenta de Google se enlaza solo a la fila que creó (criterio 16)"
     // El gancho decide con el correo guardado, que tiene membresía.
     const id = await seedPerson(email);
     const sub = randomUUID();
-    await seedGoogleAccount(id, sub);
+    await seedAccount(id, sub);
     const otherEmail = `${randomUUID()}@empresa.com`;
     await seedUser(otherEmail);
 
@@ -577,7 +561,8 @@ describe("el gancho session.create.after cierra la carrera con una desactivació
       "fulfilled",
     ]);
     // El ingreso no se entera: responde con la cookie de una sesión que ya no está.
-    expect((signInAttempt as PromiseFulfilledResult<Response>).value.status).toBe(200);
+    const response = fulfilledValue(signInAttempt);
+    expect(response instanceof Response && response.status).toBe(200);
     const [row] = await db
       .select({ status: membership.status })
       .from(membership)

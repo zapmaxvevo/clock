@@ -7,6 +7,7 @@ import { db, type Transaction } from "@/server/db";
 import { membership, timeEntry } from "@/server/db/schema";
 import type { Role } from "@/server/permissions";
 import {
+  fulfilledValue,
   outcomeWhileHeld,
   queueBehindBarrier,
   raceThroughBarrier,
@@ -287,11 +288,12 @@ describe("desactivar contra abrir un timer (criterio 13, D-E2-6)", () => {
     );
 
     expect(outcomes.map((outcome) => outcome.status)).toEqual(["fulfilled", "fulfilled"]);
-    const started = (outcomes[0] as PromiseFulfilledResult<{ running: { id: string } }>)
-      .value.running.id;
+    // La barrera se soltó con `rollback`: la única entrada de P es la que abrió el arranque.
+    const [started] = await timeEntriesOf(workspaceId, p);
+    expect(fulfilledValue(outcomes[0])).toMatchObject({ running: { id: started.id } });
     expect(await statusOf(pMembership)).toBe("inactive");
     expect(await runningOf(p)).toEqual([]);
-    expect(await auditFor("time_entry", started)).toEqual([
+    expect(await auditFor("time_entry", started.id)).toEqual([
       expect.objectContaining({ action: "timeEntry.start", actorId: p }),
       expect.objectContaining({ action: "timeEntry.stop", actorId: ownerId }),
     ]);

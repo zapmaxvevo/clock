@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { ActionResult } from "@/server/action";
 import type { ActionErrorCode } from "@/server/errors";
 import type { Role } from "@/server/permissions";
+import { MEMBER_STATUSES, type MemberStatus } from "@/modules/workspace/schema";
 
 /**
  * Los cinco roles, para la vista. El tipo mapeado exige una clave por cada
@@ -21,9 +22,8 @@ const ROLE_VALUES = {
 export const CHANGEABLE_ROLES = ["member", "admin"] as const;
 export type ChangeableRole = (typeof CHANGEABLE_ROLES)[number];
 
-/** Los estados que la pantalla muestra y escribe (D-E2-3). `invited` no está. */
-export const MEMBER_STATUSES = ["active", "inactive"] as const;
-export type MemberStatus = (typeof MEMBER_STATUSES)[number];
+/** Los estados que la pantalla muestra y escribe (D-E2-3), los de `workspace`. */
+export { MEMBER_STATUSES, type MemberStatus };
 
 /** D-E2-8: el filtro de `?estado=`; sin parámetro, `activas`. */
 export const TEAM_FILTERS = ["activas", "inactivas", "invitadas", "todas"] as const;

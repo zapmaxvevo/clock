@@ -284,11 +284,14 @@ export async function seedInvitation(values: {
 }
 
 /**
- * Una cuenta de Google de `userId`, escrita directo contra la tabla: la que
- * deja un ingreso y la que pide reactivar (D-E2-7). Devuelve su `sub`.
+ * Una cuenta de Google de `userId` con ese `sub`, o uno nuevo, escrita directo
+ * contra la tabla: la que deja un ingreso y la que pide reactivar (D-E2-7).
+ * Devuelve el `sub`.
  */
-export async function seedAccount(userId: string): Promise<string> {
-  const sub = randomUUID();
+export async function seedAccount(
+  userId: string,
+  sub: string = randomUUID(),
+): Promise<string> {
   await db.insert(account).values({
     id: randomUUID(),
     accountId: sub,

@@ -4,7 +4,13 @@ import { db, type Transaction } from "@/server/db";
 import { account, membership, user, userPreference } from "@/server/db/schema";
 import type { MembershipStatus, Role } from "@/server/permissions";
 
-import { MEMBER_STATUSES, type ChangeableRole, type MemberStatus } from "./schema";
+import {
+  MEMBER_STATUSES,
+  memberStatusOf,
+  type MemberStatus,
+} from "@/modules/workspace/schema";
+
+import type { ChangeableRole } from "./schema";
 
 /** Lo que la lista muestra de una membresía (ADR 0010: `join`, sin reglas). */
 export type TeamMemberRow = {
@@ -29,14 +35,6 @@ export type LockedMembership = {
   readonly role: Role;
   readonly status: MembershipStatus;
 };
-
-/** El estado estrechado: la consulta solo deja pasar `active` e `inactive`. */
-function memberStatusOf(status: MembershipStatus): MemberStatus {
-  if (status === "invited") {
-    throw new Error("Una membresía invitada llegó a la lista de equipo.");
-  }
-  return status;
-}
 
 /** Único lugar del módulo con acceso a datos. */
 export const teamRepository = {

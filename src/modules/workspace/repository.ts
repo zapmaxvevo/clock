@@ -12,6 +12,8 @@ import {
 } from "@/server/db/schema";
 import type { MembershipStatus, Role } from "@/server/permissions";
 
+import { MEMBER_STATUSES, memberStatusOf, type MemberStatus } from "./schema";
+
 export type WorkspaceRow = typeof workspace.$inferSelect;
 export type MembershipRow = typeof membership.$inferSelect;
 
@@ -20,7 +22,7 @@ export type PersonRow = {
   readonly userId: string;
   readonly accountName: string;
   readonly displayName: string | null;
-  readonly status: MembershipStatus;
+  readonly status: MemberStatus;
   /** `membership.created_at` (D-R9-2). */
   readonly joinedAt: Date;
 };
@@ -46,9 +48,6 @@ const invitationColumns = {
  * compara correos en SQL (D-E1b-1).
  */
 const normalizedUserEmail = sql<string>`lower(btrim(${user.email}))`;
-
-/** Los estados de quien está en el workspace; `invited` todavía no (RP-64). */
-const PRESENT_STATUSES: readonly MembershipStatus[] = ["active", "inactive"];
 
 /**
  * Clave del bloqueo que serializa la creación del primer workspace. Es
@@ -126,7 +125,7 @@ export const workspaceRepository = {
 
   /** Las membresías `active` e `inactive` del workspace, con los dos nombres. Sin orden. */
   async listPeople(tx: Transaction, workspaceId: string): Promise<PersonRow[]> {
-    return tx
+    const rows = await tx
       .select({
         userId: membership.userId,
         accountName: user.name,
@@ -140,9 +139,10 @@ export const workspaceRepository = {
       .where(
         and(
           eq(membership.workspaceId, workspaceId),
-          inArray(membership.status, [...PRESENT_STATUSES]),
+          inArray(membership.status, [...MEMBER_STATUSES]),
         ),
       );
+    return rows.map((row) => ({ ...row, status: memberStatusOf(row.status) }));
   },
 
   /**

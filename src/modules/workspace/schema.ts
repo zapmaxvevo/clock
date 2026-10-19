@@ -2,6 +2,29 @@ import { z } from "zod";
 
 import type { ActionResult } from "@/server/action";
 import type { ActionErrorCode } from "@/server/errors";
+import type { MembershipStatus } from "@/server/permissions";
+
+/**
+ * Los estados de quien está en el workspace; `invited` todavía no (RP-64). Los
+ * leen el catálogo de personas del reporte y la lista de equipo, y los escribe
+ * `changeStatus` (D-E2-3, D-E2-10).
+ */
+export const MEMBER_STATUSES = [
+  "active",
+  "inactive",
+] as const satisfies readonly MembershipStatus[];
+export type MemberStatus = (typeof MEMBER_STATUSES)[number];
+
+/**
+ * El estado de una fila leída con `MEMBER_STATUSES`, estrechado. Una `invited`
+ * es un error de la consulta, no un dato.
+ */
+export function memberStatusOf(status: MembershipStatus): MemberStatus {
+  if (status === "invited") {
+    throw new Error("Una membresía invitada llegó a una lectura de personas presentes.");
+  }
+  return status;
+}
 
 /** EQ-78: el tope de correos por pedido. */
 export const INVITE_LIMIT = 50;

@@ -79,18 +79,47 @@ function changeOf(actor: Actor, row: TeamMemberRow): TeamMember["change"] {
   }
 }
 
+/** Por qué una fila no cambia de estado, con `team.manage` ya decidido. */
+type StatusLock = "self" | "owner" | "adminOwnerOnly";
+
 /**
- * D-E2-3, D-E2-4, D-E2-7: los pasos 3 a 6 y 8 de `changeStatus` sobre el
- * `Actor` de la sesión. Ni la propia ni la del owner; `team.admin.setStatus`
- * se consulta solo sobre una fila `admin`; una inactiva sin cuenta no se
- * reactiva.
+ * D-E2-3, pasos 4 a 6, D-E2-4: la propia, la del owner, o la de un admin sin
+ * `team.admin.setStatus`, que se consulta solo sobre una fila `admin`. `null`
+ * si la fila se puede desactivar o reactivar. La comparten la vista y la
+ * mutación, para que el menú no ofrezca lo que el servidor rechaza.
+ */
+function statusLockOf(
+  actor: Actor,
+  row: { readonly workspaceId: string; readonly userId: string; readonly role: Role },
+): StatusLock | null {
+  if (row.userId === actor.userId) {
+    return "self";
+  }
+  if (row.role === "owner") {
+    return "owner";
+  }
+  if (
+    row.role === "admin" &&
+    !can(actor, "team.admin.setStatus", membershipResource(row.workspaceId, row))
+  ) {
+    return "adminOwnerOnly";
+  }
+  return null;
+}
+
+const STATUS_LOCK_ERROR: Record<StatusLock, () => TeamError> = {
+  self: () => new TeamError("status_locked", teamMessages.selfStatusLocked),
+  owner: () => new TeamError("status_locked", teamMessages.ownerStatusLocked),
+  adminOwnerOnly: () => new TeamError("forbidden", teamMessages.adminStatusOwnerOnly),
+};
+
+/**
+ * D-E2-3, D-E2-7: los pasos 4 a 6 y 8 de `changeStatus` sobre el `Actor` de la
+ * sesión; el 3, `team.manage`, ya lo decidió `getTeamView`. Una inactiva sin
+ * cuenta no se reactiva.
  */
 function statusChangeOf(actor: Actor, row: TeamMemberRow): TeamMember["statusChange"] {
-  if (!canManageTeam(actor) || row.userId === actor.userId || row.role === "owner") {
-    return null;
-  }
-  const resource = membershipResource(actor.workspaceId, row);
-  if (row.role === "admin" && !can(actor, "team.admin.setStatus", resource)) {
+  if (statusLockOf(actor, { ...row, workspaceId: actor.workspaceId }) !== null) {
     return null;
   }
   if (row.status === "active") {
@@ -221,49 +250,34 @@ export async function changeRole(
 }
 
 /**
- * D-E2-5: la membresía pasa a `inactive` con su rol, su timer se detiene y sus
- * sesiones se borran, en la transacción de `changeStatus`. Las dos escrituras
- * ajenas son funciones de su dueño, que no consultan `can()` (ADR 0025).
+ * La membresía con su estado nuevo y el mismo rol (EQ-37), con su constancia.
+ * Desactivar además detiene el timer y borra las sesiones (D-E2-5, EQ-41,
+ * EQ-43); reactivar no pone en marcha nada (EQ-47). Las dos escrituras ajenas
+ * son funciones de su dueño, que no consultan `can()` (ADR 0025).
  */
-async function deactivate(
+async function writeStatus(
   tx: Transaction,
   actor: Actor,
   target: LockedMembership,
+  change: { readonly previous: MemberStatus; readonly next: MemberStatus },
 ): Promise<void> {
-  await teamRepository.updateStatus(tx, actor.workspaceId, target.id, "inactive");
-  await recordStatusAudit(tx, actor, target.id, "inactive");
-  await stopRunningTimerOf(tx, actor, {
-    workspaceId: actor.workspaceId,
-    userId: target.userId,
-  });
-  await deleteSessionsOf(tx, actor, target.userId);
-}
-
-/** EQ-47, EQ-43: solo la membresía, con el mismo rol; ningún timer. */
-async function reactivate(
-  tx: Transaction,
-  actor: Actor,
-  target: LockedMembership,
-): Promise<void> {
-  await teamRepository.updateStatus(tx, actor.workspaceId, target.id, "active");
-  await recordStatusAudit(tx, actor, target.id, "active");
-}
-
-async function recordStatusAudit(
-  tx: Transaction,
-  actor: Actor,
-  membershipId: string,
-  status: MemberStatus,
-): Promise<void> {
+  await teamRepository.updateStatus(tx, actor.workspaceId, target.id, change.next);
   await recordAudit(tx, {
     workspaceId: actor.workspaceId,
     actorId: actor.userId,
-    action: STATUS_AUDIT_ACTION[status],
+    action: STATUS_AUDIT_ACTION[change.next],
     entity: AUDIT_ENTITY,
-    entityId: membershipId,
-    previousValue: { status: status === "active" ? "inactive" : "active" },
-    nextValue: { status },
+    entityId: target.id,
+    previousValue: { status: change.previous },
+    nextValue: { status: change.next },
   });
+  if (change.next === "inactive") {
+    await stopRunningTimerOf(tx, actor, {
+      workspaceId: actor.workspaceId,
+      userId: target.userId,
+    });
+    await deleteSessionsOf(tx, actor, target.userId);
+  }
 }
 
 /** D-E2-3 a D-E2-7. */
@@ -291,20 +305,11 @@ export async function changeStatus(
     if (!canManageTeam(fresh)) {
       throw new TeamError("forbidden", teamMessages.forbiddenAction);
     }
-    // 4 y 5, antes del 6, que mira el rol de la fila: un pedido armado
-    // responde EQ-84 o EQ-83 (EQ-40).
-    if (target.userId === actor.userId) {
-      throw new TeamError("status_locked", teamMessages.selfStatusLocked);
-    }
-    if (target.role === "owner") {
-      throw new TeamError("status_locked", teamMessages.ownerStatusLocked);
-    }
-    // 6. D-E2-4: `team.admin.setStatus` se consulta solo sobre una fila `admin`.
-    if (
-      target.role === "admin" &&
-      !can(fresh, "team.admin.setStatus", membershipResource(target.workspaceId, target))
-    ) {
-      throw new TeamError("forbidden", teamMessages.adminStatusOwnerOnly);
+    // 4 a 6. La propia y la del owner antes de mirar el rol de la fila: un
+    // pedido armado responde EQ-84 o EQ-83 (EQ-40).
+    const lock = statusLockOf(fresh, target);
+    if (lock !== null) {
+      throw STATUS_LOCK_ERROR[lock]();
     }
     // 7. Idempotente por el estado pedido (EQ-97, EQ-98).
     const result = { membershipId: target.id, status: input.status };
@@ -315,11 +320,10 @@ export async function changeStatus(
     if (input.status === "active" && !(await hasAccount(tx, target.userId))) {
       throw new TeamError("no_account", teamMessages.noAccount);
     }
-    if (input.status === "inactive") {
-      await deactivate(tx, actor, target);
-    } else {
-      await reactivate(tx, actor, target);
-    }
+    await writeStatus(tx, actor, target, {
+      previous: target.status,
+      next: input.status,
+    });
     return result;
   });
 }

@@ -13,18 +13,14 @@ import {
   isValidEmail,
   planInvitations,
 } from "./invitation-plan";
-import {
-  workspaceRepository,
-  type MembershipRow,
-  type PersonRow,
-  type WorkspaceRow,
-} from "./repository";
+import { workspaceRepository, type MembershipRow, type WorkspaceRow } from "./repository";
 import {
   invitationMessages,
   type InvitationErrorCode,
   type InvitationsView,
   type InviteInput,
   type InviteResult,
+  type MemberStatus,
   type RevokeInvitationInput,
   type RevokeInvitationResult,
 } from "./schema";
@@ -180,7 +176,7 @@ export type WorkspacePerson = {
   readonly accountName: string;
   /** `user_preference.display_name`, o `null`: el nombre lo arma `displayNameOf` (ADR 0021). */
   readonly displayName: string | null;
-  readonly status: "active" | "inactive";
+  readonly status: MemberStatus;
   /**
    * `membership.created_at`: desde cuándo existe la membresía (D-R9-2). La
    * membresía nace al aceptar la invitación, en el primer ingreso: es la fecha
@@ -206,22 +202,7 @@ export async function listWorkspacePeople(
   if (!can(actor, "team.view", { kind: "workspace", workspaceId: actor.workspaceId })) {
     return [];
   }
-  const rows = await workspaceRepository.listPeople(tx, actor.workspaceId);
-  return rows.map(toWorkspacePerson);
-}
-
-/** La fila con el estado estrechado: la consulta solo deja pasar `active` e `inactive`. */
-function toWorkspacePerson(row: PersonRow): WorkspacePerson {
-  if (row.status === "invited") {
-    throw new Error(`La persona ${row.userId} llegó invitada al catálogo.`);
-  }
-  return {
-    userId: row.userId,
-    accountName: row.accountName,
-    displayName: row.displayName,
-    status: row.status,
-    joinedAt: row.joinedAt,
-  };
+  return workspaceRepository.listPeople(tx, actor.workspaceId);
 }
 
 /** Error de dominio de las invitaciones. La action lo traduce a un resultado tipado. */
