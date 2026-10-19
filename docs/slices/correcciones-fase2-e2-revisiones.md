@@ -190,7 +190,7 @@ Las 18 mutaciones de la primera tabla se volvieron a correr sobre este código y
 fallan igual, salvo «sin el paso de la propia», que ahora es la de
 `statusLockOf` de arriba.
 
-**La enmienda de §4.8**, que hace el team-lead: `statusChange` sale de
+**La enmienda de §4.8**, hecha en `f344883`: `statusChange` sale de
 `statusChangeOf(actor, row)`, que aplica los pasos 4 a 6 y 8 de D-E2-3 sobre
 el `Actor` de la sesión; el paso 3 (`team.manage` sobre el workspace) ya lo
 decidió `getTeamView` antes de leer la lista. Los pasos 4 a 6 son
@@ -199,8 +199,35 @@ bloqueo.
 
 ### Frontend
 
-_Pendiente: los hallazgos y las correcciones de `frontend-dev`._
+`frontend-reviewer` aprobó con cambios y aceptó los cinco desvíos de
+`frontend-dev`: las filas de EQ-11 se anotan al mandar el pedido, porque la
+revalidación puede llegar antes que la respuesta; «Desactivar» del menú no es
+`destructive`, sí el botón de la confirmación; «Sin cuenta de Google
+vinculada.» solo en filas inactivas, que es lo que pide §5.3;
+`statusFilterItems` exportado para el test; `rowHeaderId` y `rowActionsId` en
+`team-members-model.ts`.
+
+| Hallazgo                                                                                                                                           | Qué se hizo                                                                                                                                                                                                                               |
+| -------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mayor: `key={filter}` volvía a montar la pantalla y, al elegir un filtro con el teclado, el foco caía a `body` (reproducido con ArrowDown y Enter) | `d810bdd`: sin la `key`; `TeamMembers` recuerda con qué filtro dibujó y, si cambió, en ese mismo dibujo olvida `kept`, el aviso y los marcadores de foco. Un pedido en curso sobrevive al cambio de filtro. Enmienda de §5.2 en `f344883` |
+
+Sin test de componente para el cambio de filtro: los de unidad corren sin DOM y
+dibujan una sola vez. Lo cubren dos recorridos e2e (abajo).
 
 ### E2E
 
-_Pendiente: los hallazgos y las correcciones de `e2e-tester`._
+| Hallazgo                                                                                                                                 | Qué se hizo                                                                                                                                                                                                                  |
+| ---------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mayor (tests): ningún test cubría que «Reintentar», tras un `changeStatus` con `unexpected`, vuelva a mandar el cambio de estado (TT-89) | `1da2c8a`: 7.º recorrido. Corta el POST una vez antes de que salga, afirma el aviso con «Revisá la conexión y volvé a intentar.» (el cuerpo de §5.4) y que «Reintentar» desactiva con 2 pedidos. Sin `status.retry()`, falla |
+| Mayor (frontend), la parte e2e: el foco al elegir el filtro                                                                              | `1da2c8a`: `toBeFocused()` sobre el selector después de cada elección. Fallaba con `key={filter}` y pasa con `d810bdd`                                                                                                       |
+| Propuesto por `frontend-dev`: nada cubría que las filas y el aviso se olviden al cambiar de filtro sin recargar                          | `115626c`: en el recorrido 1, «Inactivas» y «Activas» sin recargar; P ya no está en «Activas» y el aviso se fue. Sin `setKept(new Set())`, falla en `team-status.spec.ts:202`                                                |
+| Menor (tests): el título «un admin desactiva a un member» no decía lo que se afirma                                                      | «un admin ve el menú de un member y no el de otra admin, el del owner ni el propio, y el servidor decide con el rol de la base»                                                                                              |
+| Menor (clean code): `isNameStruck` repetía `isStruckThrough` y comparaba `role="rowheader"`, que nunca se cumple                         | `isTextStruck(text, boundary)` en `e2e/tracker-page.ts`, usado por las dos; sin la comparación con `role`                                                                                                                    |
+| Menor (clean code): `hasMembership` equivalía a `membershipStatusOf(email) !== null` y normalizaba el correo distinto                    | `hasMembership` se apoya en `membershipStatusOf`, que compara con `lower(btrim)`                                                                                                                                             |
+
+Corridas de `e2e-tester` después de las correcciones: `team-status.spec.ts` tres
+veces seguidas, 8 de 8 cada vez, y la suite completa, 234 de 234.
+
+`parity-reviewer` aprobó con un menor de documentación: un admin que pierde el
+rol con la pantalla abierta no ve EQ-90 sino EQ-02, porque `handle` revalida
+también con error. Se aclaró en EQ-98 (`8ff0fac`), sin cambio de código.
