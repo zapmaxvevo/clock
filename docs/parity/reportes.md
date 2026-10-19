@@ -2111,6 +2111,17 @@ Documentado: «However, all their data is saved, including their activity and
 history.» y «Only Workspace admins and owners can deactivate a user.»
 Desactivar es de la fase 2; lo que el reporte necesita es saber que las horas
 siguen ahí.
+_Agregado el 2026-10-19, E2 (D-E2-5, D-E2-11 del
+[contrato](../slices/fase2-e2-desactivar.md))_: **construido.** Owner y admin
+desactivan desde `/equipo`, con «Desactivar» en el menú de la fila y una
+confirmación (EQ-39, EQ-46 de `equipo.md`); a un admin lo desactiva solo el
+owner (EQ-38). Desactivar pasa la membresía a `inactive` con su rol, detiene
+el timer (RP-63) y borra las sesiones, en una transacción; no borra entradas,
+proyectos ni asignaciones (EQ-44, EQ-45). Reactivar, desde la misma fila,
+devuelve la membresía a `active` con el mismo rol. El reporte no cambia: lee
+las horas sin mirar el estado (RP-61), y como la acción revalida el árbol
+entero, el filtro de personas pasa a la persona a «Inactivas» (RP-62) en la
+carga siguiente.
 
 **RP-61 Las horas de una persona inactiva siguen en los reportes** — `replicar`
 Documentado: «The time entries of both inactive and deleted users will remain.»
@@ -2178,6 +2189,15 @@ las inactivas (P-05).
 Documentado: al desactivar, «…their current timer is stopped (if they have one
 running).» Es de la fase 2; se anota porque, al detenerse, esa entrada pasa a
 contar en el reporte (RP-30).
+_Agregado el 2026-10-19, E2 (D-E2-5, D-E2-6 del
+[contrato](../slices/fase2-e2-desactivar.md))_: **construido.** En la
+transacción de la desactivación, el timer abierto de la persona se cierra con
+el instante de la transacción, con piso en su inicio (TT-101), y deja
+`timeEntry.stop` con quien desactivó como actor; desde ahí cuenta en el
+reporte (RP-30). Sin timer, no escribe nada. Si la persona estaba abriendo un
+timer en ese momento, o la desactivación lo cierra o el arranque responde «No
+tenés permiso para hacer esto.» sin abrirlo: no queda un timer corriendo de
+una inactiva. Reactivar no lo vuelve a poner en marcha (EQ-43 de `equipo.md`).
 
 **RP-64 Personas invitadas** — `adaptar`
 La API distingue `PENDING`. Una membresía `invited` no tiene entradas y no

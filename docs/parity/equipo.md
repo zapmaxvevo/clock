@@ -50,7 +50,9 @@ Lo que ya existe y este documento no reabre:
   de `time_entry` hacia `user` y hacia `membership` son `restrict`.
 - **Desactivar hoy es un procedimiento SQL** (mapa del núcleo, §5): pasa la
   membresía a `inactive`, cierra el timer y borra las filas de `session` y de
-  `account` de la persona.
+  `account` de la persona. _Desde E2_, desactivar y reactivar se hacen en
+  `/equipo` (EQ-39, EQ-47) y el procedimiento se retira (D-E2-12 del
+  [contrato de E2](../slices/fase2-e2-desactivar.md)).
 - **La deuda de seguridad**: `ensureWorkspaceContext`
   (`src/modules/workspace/service.ts`) crea una membresía `member` a cualquiera
   que pase el login —el dominio con el claim `hd`, o la lista de invitados
@@ -161,12 +163,15 @@ la decisión que R8 dejó a la fase 2 (`team.view`), tomada por el usuario el
 Documentado a medias: la columna «Name» (EQ-04) y, en la oración de orden por
 columnas, «(e.g. Billable rate, Cost rate, Role, Week start, Daily working
 capacity)». Acá: **Persona** (nombre, correo en gris y «(vos)», como R8),
-**Rol** (con el control de R8), **Grupos** (EQ-63), **Primer día de la semana**
-(EQ-71) y un menú de acciones por fila. Justificación: tarifas, capacidad y
-campos de usuario están fuera (EQ-72 … EQ-74), y el correo se queda porque dos
-personas pueden llamarse igual (RP-31).
+**Rol**, **Grupos** (EQ-63), **Primer día de la semana** (EQ-71) y
+**Acciones**, con el botón de rol de R8 y, a su derecha, el menú de la fila.
+Justificación: tarifas, capacidad y campos de usuario están fuera (EQ-72 …
+EQ-74), y el correo se queda porque dos personas pueden llamarse igual (RP-31).
 _No verificado_: qué columnas muestra Clockify por omisión y si muestra el
 correo.
+_Corregido el 2026-10-19, E2 (D-E2-9)_: decía «**Rol** (con el control de R8)»
+y «un menú de acciones por fila». El botón de R8 está en la tercera columna,
+que E1a llamó «Acciones» (D-E1a-12), y ahí se queda (EQ-35).
 
 **EQ-04 Las invitadas están en la lista, marcadas** — `replicar`
 Documentado: «your Team page will show invited users with the envelope icon
@@ -454,8 +459,14 @@ Ya construido: RP-67, RP-68 y RP-69, con el
 [ADR 0023](../adr/0023-quitar-el-rol-de-admin-es-una-accion-propia.md). Vuelto a
 confirmar el 2026-10-16: «Only the Workspace owner can remove an admin role
 from someone» (invitar personas) y «Only the Workspace Owner can remove the
-Admin role from someone.» (la guía). La fase 2 no lo toca: el control de R8 se
-queda en la columna «Rol» y las acciones nuevas van al menú de la fila.
+Admin role from someone.» (la guía). La fase 2 no lo toca: el botón de R8 se
+queda en la columna «Acciones», y las acciones nuevas van al menú de la fila,
+«Acciones de {nombre}», a su derecha (D-E2-9 del
+[contrato de E2](../slices/fase2-e2-desactivar.md)).
+_Corregido el 2026-10-19, E2_: decía que el control de R8 se quedaba en la
+columna «Rol». No estaba ahí: R8 lo puso en la tercera columna, que E1a
+renombró «Acciones» (D-E1a-12). E2 no lo mueve a «Rol» ni lo mete en el menú,
+porque eso reescribía los recorridos de R8 y de E1a sin que E2 lo necesitara.
 
 **EQ-36 Responsable de proyectos y de equipo** — `fuera de alcance`
 Justificación: pagos (EQ-34). Las membresías que los tengan por SQL se ven con
@@ -494,8 +505,13 @@ entra como otra acción propia, no como una regla por rol dentro de
 Documentado: «Only Workspace admins and owners can deactivate a user.»
 (invitar personas, RP-60); «Set up user’s status (active/inactive)» / «No»
 para regular users y roles de manager. Acá: «Desactivar» en el menú de la fila
-de una persona activa, para owner y admin, con la excepción de EQ-38. Reemplaza
-el procedimiento SQL del mapa del núcleo.
+de una persona activa, para owner y admin, con la excepción de EQ-38. El
+procedimiento SQL del mapa del núcleo se retira, sin migración (D-E2-12 del
+[contrato de E2](../slices/fase2-e2-desactivar.md)).
+_Corregido el 2026-10-19, E2_: decía «Reemplaza el procedimiento SQL del mapa
+del núcleo.». Desde que E2 llega a producción, desactivar es la pantalla; hasta
+entonces sigue el procedimiento, que borra `account`, y quien pase por él queda
+en EQ-110.
 
 **EQ-40 El owner no se desactiva, y nadie se desactiva a sí mismo** — `adaptar`
 No documentado. Acá: ni la fila del owner ni la propia tienen «Desactivar», y
@@ -511,11 +527,14 @@ stopped.» (la guía); «When you deactivate a user, you temporarily end their
 login, access to the application and all their billing actions.» (invitar
 personas); «User can no longer log in or track time in the workspace» (tabla de
 la guía). Acá, en una transacción: la membresía pasa a `inactive`, se detiene
-el timer (EQ-43) y se borran las filas de `session` de la persona. **No las de
-`account`**, como hace el procedimiento SQL: sin ellas la persona no puede
-volver a entrar aunque se la reactive (PF-47; EQ-110). Better Auth no guarda
-la sesión en la cookie (`auth.ts` no configura caché), así que el próximo
-pedido de esa persona ya no tiene sesión.
+el timer (EQ-43) y se borran las filas de `session` de la persona; si borró
+alguna, `audit_log` guarda `session.revokeAll` con la cantidad y con quien
+desactivó como actor. **No las de `account`**, como hacía el procedimiento
+SQL: sin ellas la persona no puede volver a entrar aunque se la reactive
+(PF-47; EQ-110). Better Auth no guarda la sesión en la cookie (`auth.ts` no
+configura caché), así que el próximo pedido de esa persona ya no tiene sesión.
+_Corregido el 2026-10-19, E2_: decía «como hace el procedimiento SQL»; el
+procedimiento se retira con E2 (EQ-39).
 
 **EQ-42 Qué pasa si una inactiva vuelve a entrar** — `adaptar`
 Documentado que en Clockify no entra (la tabla de EQ-41) y que, si era su único
@@ -524,9 +543,23 @@ Clock hay una decisión anterior, TT-92: una membresía desactivada con la
 sesión abierta ve sus horas en solo lectura, con el aviso «Tu acceso al
 workspace está desactivado.». Con EQ-41 ya no queda sesión abierta, y la
 pregunta es el ingreso siguiente. Decidido el 2026-10-16 (P-05):
-**rechazarlo**, con EQ-92, como Clockify; TT-92 sigue cubriendo el pedido que
-llega entre la desactivación y el borrado de la sesión. La alternativa
-—dejarla entrar a ver sus horas— quedó descartada.
+**rechazarlo**, con EQ-92, como Clockify. La alternativa —dejarla entrar a ver
+sus horas— quedó descartada. TT-92 queda solo para el pedido en vuelo, que leyó
+la sesión antes de la desactivación (EQ-104), y para una membresía pasada a
+`inactive` por SQL.
+La carrera de un ingreso con una desactivación la cierra el contrato de E2
+(D-E2-2): el gancho `session.create.before` puede leer la membresía activa, la
+desactivación confirmar sin sesiones que borrar y Better Auth insertar la
+sesión después. Un gancho `session.create.after` relee la membresía
+`for share`, que espera a la desactivación en curso, y si existe y no está
+activa borra la sesión, sin lanzar. El pedido siguiente no tiene sesión y va a
+`/login`, sin motivo; si la persona vuelve a intentar, recibe EQ-92.
+_Corregido el 2026-10-19, E2_: decía que TT-92 «sigue cubriendo el pedido que
+llega entre la desactivación y el borrado de la sesión». Desactivar borra las
+sesiones en la misma transacción (D-E2-5), así que no hay un pedido entre las
+dos: hay uno que leyó la sesión antes del `commit`, que termina con lo que leyó
+(EQ-104), y un ingreso que se cruza con la desactivación, que el gancho deja
+sin sesión. La decisión P-05 no cambia.
 
 **EQ-43 El timer en curso se detiene** — `replicar`
 Documentado: «Also, when a user is deactivated, their current timer is stopped
@@ -565,6 +598,8 @@ at any time from the Team page» (tabla de la guía). Acá: «Reactivar» en el
 menú de la fila de una inactiva, sin confirmación; vuelve `active` con su rol
 (EQ-37), sus proyectos y sus grupos (EQ-45). Quién: owner y admin, con la
 excepción de EQ-38.
+_Desde E2_: una inactiva sin cuenta de Google no se reactiva hasta E2b
+(EQ-110, EQ-114).
 
 **EQ-48 Reactivar no avisa** — `replicar`
 Documentado: «Inactive users won't receive an email notification when they are
@@ -785,25 +820,26 @@ vienen de Google (PF-06, PF-09).
 Los mensajes son nuestros. Se reusan los que ya existen, por la regla de una
 redacción por causa de `time-tracker.md`.
 
-| ID    | Regla                                              | Mensaje                                                                                                 | Marca              |
-| ----- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------ |
-| EQ-76 | Correo con forma inválida                          | «{correo} no es un correo válido.»                                                                      | `adaptar`          |
-| EQ-77 | Invitar sin ningún correo                          | «Escribí al menos un correo.»                                                                           | `adaptar`          |
-| EQ-78 | Más de 50 correos en un pedido                     | «Se pueden invitar hasta 50 correos por vez.»                                                           | `adaptar`          |
-| EQ-79 | Correo de una persona inactiva (EQ-21)             | «{correo} está desactivada: reactivala desde la lista.»                                                 | `adaptar`          |
-| EQ-80 | Correo de otro dominio: sin uso, P-03 los admite   | —                                                                                                       | `fuera de alcance` |
-| EQ-81 | Revocar una invitación que ya se usó               | «Esa invitación ya no está pendiente.»                                                                  | `adaptar`          |
-| EQ-82 | La persona ya no está                              | «Esa persona ya no está en el equipo.» (R8)                                                             | `replicar`         |
-| EQ-83 | Desactivar al owner                                | «El propietario no se desactiva.»                                                                       | `adaptar`          |
-| EQ-84 | Desactivarse a sí mismo                            | «No podés desactivar tu propia membresía.»                                                              | `adaptar`          |
-| EQ-85 | Un admin desactiva o reactiva a otro admin (EQ-38) | «Solo el propietario desactiva o reactiva a un administrador.»                                          | `replicar`         |
-| EQ-86 | Transferir a una inactiva o invitada               | «Esa persona ya no está activa en el workspace.» (R8)                                                   | `adaptar`          |
-| EQ-87 | Quitar a una persona con horas                     | «{nombre} tiene horas cargadas: no se puede quitar, solo desactivar.»                                   | `adaptar`          |
-| EQ-88 | Quitar a una persona activa                        | «Desactivá a {nombre} antes de quitarla.»                                                               | `replicar`         |
-| EQ-89 | Nombre de grupo vacío, largo o repetido            | PR-75, PR-76 y «Ya hay un grupo con ese nombre.»                                                        | `adaptar`          |
-| EQ-90 | Sin permiso                                        | «No tenés permiso para hacer esto.» (TT-79)                                                             | `replicar`         |
-| EQ-91 | Ingreso sin invitación (EQ-29)                     | «Tu cuenta no tiene una invitación a Clock. Pedísela a quien administra el equipo.»                     | `adaptar`          |
-| EQ-92 | Ingreso de una inactiva (EQ-42)                    | «Tu acceso al workspace está desactivado. Pedile a quien administra el equipo que te vuelva a activar.» | `adaptar`          |
+| ID     | Regla                                              | Mensaje                                                                                                 | Marca              |
+| ------ | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------ |
+| EQ-76  | Correo con forma inválida                          | «{correo} no es un correo válido.»                                                                      | `adaptar`          |
+| EQ-77  | Invitar sin ningún correo                          | «Escribí al menos un correo.»                                                                           | `adaptar`          |
+| EQ-78  | Más de 50 correos en un pedido                     | «Se pueden invitar hasta 50 correos por vez.»                                                           | `adaptar`          |
+| EQ-79  | Correo de una persona inactiva (EQ-21)             | «{correo} está desactivada: reactivala desde la lista.»                                                 | `adaptar`          |
+| EQ-80  | Correo de otro dominio: sin uso, P-03 los admite   | —                                                                                                       | `fuera de alcance` |
+| EQ-81  | Revocar una invitación que ya se usó               | «Esa invitación ya no está pendiente.»                                                                  | `adaptar`          |
+| EQ-82  | La persona ya no está                              | «Esa persona ya no está en el equipo.» (R8)                                                             | `replicar`         |
+| EQ-83  | Desactivar al owner                                | «El propietario no se desactiva.»                                                                       | `adaptar`          |
+| EQ-84  | Desactivarse a sí mismo                            | «No podés desactivar tu propia membresía.»                                                              | `adaptar`          |
+| EQ-85  | Un admin desactiva o reactiva a otro admin (EQ-38) | «Solo el propietario desactiva o reactiva a un administrador.»                                          | `replicar`         |
+| EQ-86  | Transferir a una inactiva o invitada               | «Esa persona ya no está activa en el workspace.» (R8)                                                   | `adaptar`          |
+| EQ-87  | Quitar a una persona con horas                     | «{nombre} tiene horas cargadas: no se puede quitar, solo desactivar.»                                   | `adaptar`          |
+| EQ-88  | Quitar a una persona activa                        | «Desactivá a {nombre} antes de quitarla.»                                                               | `replicar`         |
+| EQ-89  | Nombre de grupo vacío, largo o repetido            | PR-75, PR-76 y «Ya hay un grupo con ese nombre.»                                                        | `adaptar`          |
+| EQ-90  | Sin permiso                                        | «No tenés permiso para hacer esto.» (TT-79)                                                             | `replicar`         |
+| EQ-91  | Ingreso sin invitación (EQ-29)                     | «Tu cuenta no tiene una invitación a Clock. Pedísela a quien administra el equipo.»                     | `adaptar`          |
+| EQ-92  | Ingreso de una inactiva (EQ-42)                    | «Tu acceso al workspace está desactivado. Pedile a quien administra el equipo que te vuelva a activar.» | `adaptar`          |
+| EQ-114 | Reactivar a una persona sin cuenta de Google       | «Esa persona no tiene una cuenta de Google vinculada: todavía no se puede reactivar.»                   | `adaptar`          |
 
 - **Idempotencia**: desactivar a una inactiva o reactivar a una activa responde
   éxito sin escribir, como pedir el rol que ya tiene en R8 (D-R8-7).
@@ -821,6 +857,13 @@ redacción por causa de `time-tracker.md`.
   acción; cada acción nueva usa TT-79, salvo que su contrato diga otra cosa.
 - **EQ-91 y EQ-92** se muestran en `/login`, donde hoy se muestran los motivos
   de `accessDenialMessage`.
+- **EQ-114**, agregado el 2026-10-19 con E2 (D-E2-7 del
+  [contrato de E2](../slices/fase2-e2-desactivar.md)): la fila de una inactiva
+  sin cuenta no tiene «Reactivar» y muestra «Sin cuenta de Google vinculada.»
+  debajo del correo; el mensaje es el de un pedido armado, que no escribe. Sin
+  equivalente relevado en Clockify. Justificación: con el enlace implícito
+  apagado (PF-47), reactivarla dejaría una fila activa que no puede entrar; lo
+  levanta E2b (EQ-110).
 
 ## 11. Estados vacíos
 
@@ -879,19 +922,42 @@ demás pantallas.
 | ------ | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | EQ-102 | Desactivar a quien tiene un timer corriendo desde ayer                                          | Se detiene en el instante de la desactivación, como cualquier entrada detenida (EQ-43); si cruza la medianoche, vale lo que el rastreador ya hace con esa entrada.                                                   |
 | EQ-103 | Desactivar a la única responsable de un proyecto                                                | Conserva la marca (EQ-45); el proyecto lo administran owner y admin (PR-55) hasta que se nombre otro responsable.                                                                                                    |
-| EQ-104 | La persona tiene un pedido en vuelo cuando la desactivan                                        | `can()` lo rechaza por estado y TT-92 cubre la pantalla; el pedido siguiente ya no tiene sesión (EQ-41).                                                                                                             |
+| EQ-104 | La persona tiene un pedido en vuelo cuando la desactivan                                        | El pedido que leyó la sesión antes termina con lo que leyó; abrir un timer espera a la desactivación y responde TT-79 (D-E2-6). El pedido siguiente ya no tiene sesión (EQ-41).                                      |
 | EQ-105 | El mismo correo con mayúsculas o espacios                                                       | Se recorta y se pasa a minúsculas, como `access.ts`; dos variantes son el mismo correo (EQ-19).                                                                                                                      |
 | EQ-106 | Dos admins invitan el mismo correo a la vez                                                     | Una sola invitación por workspace y correo, con su índice único; el segundo pedido la cuenta como hecha (EQ-19).                                                                                                     |
 | EQ-107 | La invitada entra en el mismo instante en que la revocan                                        | El ingreso lee la invitación bajo bloqueo; gana la transacción que llega primero, y si gana el ingreso, la persona queda activa y se la desactiva (EQ-39).                                                           |
 | EQ-108 | Invitar el correo de una persona quitada (EQ-51) que vuelve con la misma cuenta de Google       | La invitación crea la membresía nueva al entrar; su `user` y su `account` siguen ahí.                                                                                                                                |
 | EQ-109 | La misma dirección con otra cuenta de Google                                                    | No entra (PF-47); la pantalla de equipo no lo resuelve. Es P-11 de `perfil.md`, que sigue abierto.                                                                                                                   |
-| EQ-110 | Reactivar a alguien desactivado con el procedimiento SQL del núcleo                             | Ese procedimiento borró su `account`: reactivada, igual no puede entrar (PF-47). Hace falta una corrección a mano o que `architect` defina la salida; la desactivación desde la pantalla no borra `account` (EQ-41). |
+| EQ-110 | Reactivar a alguien desactivado con el procedimiento SQL del núcleo                             | Ese procedimiento borró su `account` y, reactivada, no podría entrar (PF-47): la fila no ofrece «Reactivar», muestra «Sin cuenta de Google vinculada.» y un pedido armado responde EQ-114. Lo resuelve E2b (D-E2-7). |
 | EQ-111 | Se saca un dominio de `GOOGLE_WORKSPACE_DOMAINS`                                                | Deja de entrar quien entró sin invitación (antes de E1b); quien tiene una `accepted` sigue entrando, como externa, y se la corta desactivándola (EQ-39). Decidido el 2026-10-16 (P-11).                              |
 | EQ-112 | El owner pide transferirse a sí mismo con un pedido armado                                      | Éxito sin escribir; su fila no tiene el control.                                                                                                                                                                     |
 | EQ-113 | La membresía de `WORKSPACE_OWNER_EMAIL` se quita después de una transferencia y vuelve a entrar | Con EQ-30 entra como cualquiera, por invitación y como `member`; nunca crea un segundo owner.                                                                                                                        |
 
 **EQ-102 … EQ-113** — `adaptar`: ninguno está documentado en Clockify; son
 consecuencias de las reglas de arriba con el login y el esquema de Clock.
+
+**EQ-104** — _Corregido el 2026-10-19, E2 (D-E2-6 del
+[contrato de E2](../slices/fase2-e2-desactivar.md))_: decía «`can()` lo rechaza
+por estado y TT-92 cubre la pantalla». `can()` decide con el `Actor` que el
+pedido armó al leer la sesión. Si leyó la membresía activa, una entrada
+cerrada, la planilla o una edición confirman aunque la desactivación confirme
+antes, y dejan lo que la persona mandó antes de que la desactivaran, como si
+hubiera llegado un instante antes; si la leyó ya inactiva, `can()` corta y la
+pantalla queda en TT-92. Abrir un timer es la excepción, porque dejaría un
+timer que nadie detiene: relee la membresía propia `for share` antes de tocar
+`time_entry`. Si la desactivación la tomó primero, espera, lee `inactive` y
+responde TT-79 sin escribir; si la lectura llegó primero, la desactivación
+espera y detiene el timer recién abierto (EQ-43).
+
+**EQ-110** — _Corregido el 2026-10-19, E2 (D-E2-7)_: decía «Hace falta una
+corrección a mano o que `architect` defina la salida». El contrato de E2 impide
+reactivar sin cuenta hasta E2b: dejaría una fila activa que no puede entrar y
+que el reporte y los selectores tratan como activa. Están en este caso las tres
+inactivas que la importación de Clockify creó en producción sin cuenta, y quien
+se desactive con el procedimiento antes de que E2 llegue a producción (EQ-39).
+Tampoco tienen salida por EQ-21: invitar su correo responde EQ-79. Quien se
+desactiva desde la pantalla conserva `account` (EQ-41) y se reactiva sin este
+problema.
 
 **EQ-111** — `adaptar`, decidido por el usuario el 2026-10-16 (P-11): la opción
 (a) de la §11 del [contrato de E1b](../slices/fase2-e1b-ingreso.md), D-E1b-13.
@@ -918,6 +984,10 @@ _Aplicadas el 2026-10-16_: RP-61, RP-62, RP-65 y la decisión P-08 en
 `reportes.md`, y el procedimiento de la §5 y la deuda de la §6 del
 [mapa del núcleo](../slices/nucleo-reportes-mapa.md), cada una con su
 corrección fechada. RP-62 pasó a `replicar`; la regla de RP-61 no cambió.
+
+_Aplicadas el 2026-10-19, con E2_: RP-60 y RP-63 en `reportes.md`, TT-92 en
+`time-tracker.md` y el retiro del procedimiento en la §5 del mapa del núcleo
+(D-E2-12), cada una con su nota fechada.
 
 - **RP-61 y RP-62 (`reportes.md`)**: RP-61 cita «…but you won’t be able to filter
   reports by them.». El 2026-10-16, en la página de invitar personas, «won’t be
@@ -952,7 +1022,7 @@ corrección fechada. RP-62 pasó a `replicar`; la regla de RP-61 no cambió.
 - Grupos: EQ-60 … EQ-65, EQ-67, EQ-68 (según P-10 para el plan).
 - Perfil desde el equipo: EQ-70, EQ-71, EQ-75.
 - Validaciones, vacíos, errores, recarga y bordes: EQ-76 … EQ-79,
-  EQ-81 … EQ-113.
+  EQ-81 … EQ-114.
 
 **Fase 3**: EQ-66.
 
@@ -990,12 +1060,20 @@ porque el cuerpo del documento y los contratos de slice los citan.
 | P-02 | **Todos entran por invitación, también los del dominio de la empresa** (EQ-29). Cierra la deuda de `ensureWorkspaceContext` y replica Clockify; la regla de dominio se conserva y se suma (EQ-24, EQ-91).                                                    |
 | P-03 | **Los correos de otro dominio se invitan desde la pantalla, y lo hacen el owner y los admins**, como en Clockify, con la marca «Externa» en la fila (EQ-22). La lista de externos pasa de `EXTERNAL_INVITE_EMAILS` a la base (EQ-32), y EQ-80 queda sin uso. |
 | P-04 | **Clock no manda el correo de invitación** (EQ-26): muestra un texto para avisar a mano, con «Copiar», y no hay «Reenviar». Las variables de Resend siguen sin uso.                                                                                          |
-| P-05 | **Una persona inactiva no puede entrar, como en Clockify** (EQ-42): el ingreso se rechaza con EQ-92. TT-92 cubre solo el pedido que llega entre la desactivación y el borrado de la sesión.                                                                  |
+| P-05 | **Una persona inactiva no puede entrar, como en Clockify** (EQ-42): el ingreso se rechaza con EQ-92. TT-92 cubre solo el pedido en vuelo, que leyó la sesión antes de la desactivación (EQ-104).                                                             |
 | P-06 | **Desactivar conserva el rol**, y reactivar devuelve el mismo (EQ-37). Mientras la persona está inactiva, el rol no se cambia.                                                                                                                               |
 | P-07 | **Solo el owner desactiva o reactiva a un admin** (EQ-38, EQ-85), con una acción propia, como dejó dicho el ADR 0023. Sigue la página de acción en masa: «Admins cannot manage owners or other admins».                                                      |
 | P-08 | **Entra «Quitar del equipo» para quien no tiene horas, solo para el owner** (EQ-51), sobre una inactiva sin entradas. Sirve porque P-02 hace que volver pida una invitación nueva.                                                                           |
 | P-09 | **Capacidad y días laborables, fuera de alcance** hasta que exista algo que los use (EQ-72); la columna `weekly_capacity_minutes` queda sin uso. Corrige PF-19, que los mandaba a esta pantalla. Es la misma respuesta que workspace P-06.                   |
 | P-11 | **Al sacar un dominio de `GOOGLE_WORKSPACE_DOMAINS`, quien tiene una `accepted` sigue entrando, como externa** (EQ-111), y para cortarla se la desactiva (EQ-39); solo deja de entrar quien entró sin invitación. Sin equivalente relevado en Clockify.      |
+
+_Corregido el 2026-10-19, E2_: P-05 decía «TT-92 cubre solo el pedido que llega
+entre la desactivación y el borrado de la sesión.». Desactivar y borrar las
+sesiones van en la misma transacción (D-E2-5 del
+[contrato de E2](../slices/fase2-e2-desactivar.md)); la decisión del usuario no
+cambia, y lo que esa redacción no nombraba —un ingreso que se cruza con una
+desactivación— lo cierra el contrato con el gancho `session.create.after`
+(D-E2-2, EQ-42).
 
 ### Abierto
 
@@ -1013,3 +1091,5 @@ La membresía nueva nace en `createMembership` de `workspace/service.ts`, donde
 WS-08 de [`workspace.md`](workspace.md) copia el primer día de la semana del
 workspace (E4, según la §12 del [contrato de E1b](../slices/fase2-e1b-ingreso.md)):
 el contrato que la toque lee las dos especificaciones.
+_Actualizado el 2026-10-19, E2_: la acción de EQ-38 es `team.admin.setStatus`,
+solo del owner (D-E2-4 del [contrato de E2](../slices/fase2-e2-desactivar.md)).

@@ -409,6 +409,17 @@ Ese mismo día decidió además:
   membresía, así que es lo único que hace cumplir P-05 de `equipo.md` (una
   inactiva no entra). La salida para volver a entrar es E2b del
   [mapa de la fase 2](fase2-mapa.md).
+  _Corregido el 2026-10-19, E2 (D-E2-12 del
+  [contrato de E2](fase2-e2-desactivar.md))_: **desde que E2 llega a
+  producción, el procedimiento se retira**, sin migración. Desactivar y
+  reactivar se hacen en `/equipo`: desactivar pasa la membresía a `inactive`,
+  detiene el timer y borra las sesiones en una transacción, sin tocar
+  `account` (EQ-41), y el ingreso rechaza a una inactiva (EQ-92). No hay datos
+  que mover: las tres inactivas de producción no tienen `account`, sesiones ni
+  timer, y quedan como están, en «Inactivas» y sin «Reactivar» hasta E2b
+  (EQ-110). Hasta el despliegue, si hay que desactivar a alguien, se usa este
+  procedimiento, que sigue borrando `account`: esa persona se suma a las de
+  EQ-110.
 - **Un member con un enlace que nombra a otras personas ve lo propio** (RP-32): el parámetro
   se descarta.
 - **La exportación suma las entradas una por una** en CSV y Excel, además de lo que muestra el
