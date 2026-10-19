@@ -186,16 +186,25 @@ test("el owner desactiva a una persona con un timer en curso y la deja afuera en
   await signInRejected(personPage.context(), person);
   expect(await sessionCountOf(person)).toBe(0);
 
-  // EQ-11: al recargar, P ya no está en «Activas» y sí en «Inactivas», con
-  // cuenta: sin la nota y con el menú.
-  await ownerPage.reload();
-  await expect(teamTable(ownerPage)).toBeVisible();
-  await expect(row).toHaveCount(0);
+  // EQ-11, §5.2: cambiar el filtro, sin recargar, olvida la fila que se
+  // quedaba y el aviso. P está en «Inactivas», con cuenta: sin la nota y con
+  // el menú; de vuelta en «Activas», ya no está.
   await chooseStatusFilter(ownerPage, "Inactivas");
   await expect(inactiveMark(row)).toBeVisible();
   expect(await isNameStruck(row, name)).toBe(true);
   await expect(noAccountNote(row)).toHaveCount(0);
   await expect(menu).toBeVisible();
+  await expect(
+    ownerPage.getByText(deactivatedMessage(name), { exact: true }),
+  ).toHaveCount(0);
+  await chooseStatusFilter(ownerPage, "Activas");
+  await expect(teamTable(ownerPage)).toBeVisible();
+  await expect(row).toHaveCount(0);
+
+  // Al recargar, tampoco.
+  await ownerPage.reload();
+  await expect(teamTable(ownerPage)).toBeVisible();
+  await expect(row).toHaveCount(0);
 
   await personPage.context().close();
   await ownerPage.context().close();
