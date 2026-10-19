@@ -283,6 +283,27 @@ vacío del owner y `renewWorkspace` se corta.
      `backend-dev` probó dos veces en el árbol compartido; repetir en cada encargo que las
      pruebas descartables y los mutantes van en un worktree. Bases que se pueden borrar:
      `clock_r6a_*`, `clock_r6b_*`, `clock_r10a_*`, `clock_r10b_final_*`.
+     **Decimoquinta sesión** (2026-10-19): se retomaron C1 y E2.
+     - **C1 en `main` y en producción** (merge `78820d8`, CI verde). Tres revisiones con
+       cambios: el e2e no cubría el ancla de la selección (se aprieta a 08:40), el rótulo de la
+       selección desbordaba con zoom 60 y la paridad le atribuía al usuario el `min(zoom, 15)`;
+       los 15 minutos son del usuario y el caso del zoom en 5 es la D1 del contrato.
+     - **E2 en `main` y pusheado** (merge `27774d6`). Contrato con dos rondas de
+       architecture-reviewer (la segunda: el test del gancho `after` se arma con
+       `queueBehindBarrier`). Seis revisiones; registro en
+       `correcciones-fase2-e2-revisiones.md`. Corrida final: integración 1840, e2e 234 en base
+       nueva y en reusada. Consulta previa de §6.1 en producción: 10 activas con cuenta, 3
+       inactivas sin cuenta (daniel, naara, sofia), la 2 y la 3 vacías.
+     - **El merge y el push a `main` los bloquea el clasificador de permisos**: el team-lead
+       mergea en local cuando el usuario lo pide y el usuario pushea.
+     - **En paralelo:** E2b (worktree `/home/maxi/program/clock-e2b`, rama
+       `fase2/e2b-sin-cuenta`, ADR 0027) y, **pedido por el usuario**, el **MCP** para cargar
+       horas (worktree `/home/maxi/program/clock-mcp`, rama `mejoras/mcp`, ADR 0026): lo quiere
+       usar desde claude.ai y desde Claude Code, así que va con OAuth. Los dos en contrato de
+       `architect`.
+     - Deuda: `npm audit` da 9 high en dependencias de desarrollo (también en `main`); es del
+       usuario decidir (control de seguridad de CI).
+
      **Decimocuarta sesión** (2026-10-16, tarde): el usuario pidió seguir el roadmap sin
      frenar («E1b y después lo que siga») y dio permiso para desplegar.
      - **E1a**: Vercel despliega `main` en cada push y el build no migra; E1a llegó a
