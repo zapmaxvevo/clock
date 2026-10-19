@@ -12,7 +12,7 @@ import { expect, type Locator, type Page } from "@playwright/test";
 
 import { setRole } from "./database";
 import { TEST_EMAIL_DOMAIN } from "./environment";
-import { escapeRegExp, trackerBar } from "./tracker-page";
+import { escapeRegExp, isTextStruck, trackerBar } from "./tracker-page";
 
 export const TEAM_PATH = "/equipo";
 
@@ -349,29 +349,9 @@ export function noAccountNote(row: Locator): Locator {
   return memberHeader(row).getByText(NO_ACCOUNT, { exact: true });
 }
 
-/**
- * Si el nombre de una fila está tachado (EQ-05). El tachado no se hereda en el
- * estilo computado de los hijos: se mira el del nombre y el de sus ancestros
- * hasta el encabezado de fila, como `backgroundRgb` mira el fondo.
- */
+/** Si el nombre de una fila está tachado (EQ-05), hasta su encabezado de fila. */
 export async function isNameStruck(row: Locator, name: string): Promise<boolean> {
-  return memberHeader(row)
-    .getByText(name, { exact: true })
-    .evaluate((node) => {
-      let element: Element | null = node;
-      while (element !== null) {
-        if (
-          window.getComputedStyle(element).textDecorationLine.includes("line-through")
-        ) {
-          return true;
-        }
-        if (element.getAttribute("role") === "rowheader" || element.tagName === "TH") {
-          return false;
-        }
-        element = element.parentElement;
-      }
-      return false;
-    });
+  return isTextStruck(memberHeader(row).getByText(name, { exact: true }), "th");
 }
 
 /** E2, §5.3: el menú de una fila, con el nombre en el suyo (D-E2-9). */
@@ -428,6 +408,12 @@ export function deactivateFailedTitle(name: string): string {
 /** EQ-85: un admin sobre otro admin. */
 export const ADMIN_STATUS_OWNER_ONLY =
   "Solo el propietario desactiva o reactiva a un administrador.";
+
+/**
+ * TT-89, §5.4 de E2: el cuerpo del aviso de una falla de red, debajo del título
+ * con el nombre, el mismo para cualquier pedido de la tabla.
+ */
+export const UNEXPECTED_BODY = "Revisá la conexión y volvé a intentar.";
 
 /** TT-89: el botón del aviso de una falla de red. */
 export const RETRY = "Reintentar";

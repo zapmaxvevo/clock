@@ -16,7 +16,12 @@ import {
 } from "./database";
 import { OWNER_EMAIL } from "./environment";
 import { googleButton, loginNotice, MEMBERSHIP_INACTIVE } from "./login-page";
-import { holdActionResponses, openSecondTab, recordActions } from "./network";
+import {
+  dropActionRequests,
+  holdActionResponses,
+  openSecondTab,
+  recordActions,
+} from "./network";
 import {
   expect,
   guestPage,
@@ -62,6 +67,7 @@ import {
   statusFilterOption,
   TEAM_PATH,
   teamFeedback,
+  UNEXPECTED_BODY,
   teamTable,
 } from "./team-page";
 import { trackerBar, uniqueSuffix } from "./tracker-page";
@@ -270,6 +276,8 @@ test("el filtro de estado vive en la URL", async ({ page, email }) => {
   await expect(page.getByRole("option")).toHaveText(Object.keys(STATUS_FILTERS));
   await statusFilterOption(page, "Inactivas").click();
   await expect(page).toHaveURL(isTeamFilterUrl("Inactivas"));
+  // §5.2: la página nueva no le quita el foco al selector.
+  await expect(statusFilter(page)).toBeFocused();
 
   // EQ-05, D-E2-7: la inactiva sin cuenta, tachada, con la nota y sin menú;
   // ni la activa ni la invitada.
@@ -287,16 +295,19 @@ test("el filtro de estado vive en la URL", async ({ page, email }) => {
   await expect(inactiveMark(inactiveRow)).toBeVisible();
 
   await chooseStatusFilter(page, "Invitadas");
+  await expect(statusFilter(page)).toBeFocused();
   await expect(invitedRow).toBeVisible();
   await expect(activeRow).toHaveCount(0);
   await expect(inactiveRow).toHaveCount(0);
 
   await chooseStatusFilter(page, "Todas");
+  await expect(statusFilter(page)).toBeFocused();
   await expect(activeRow).toBeVisible();
   await expect(inactiveMark(inactiveRow)).toBeVisible();
   await expect(invitedRow).toBeVisible();
 
   await chooseStatusFilter(page, "Activas");
+  await expect(statusFilter(page)).toBeFocused();
   await expect(activeRow).toBeVisible();
   await expect(inactiveRow).toHaveCount(0);
 
@@ -309,7 +320,7 @@ test("el filtro de estado vive en la URL", async ({ page, email }) => {
   }
 });
 
-test("un admin desactiva a un member y no a otra admin, ni al owner, ni a sí mismo", async ({
+test("un admin ve el menú de un member y no el de otra admin, el del owner ni el propio, y el servidor decide con el rol de la base", async ({
   page,
   email,
 }) => {
@@ -395,6 +406,35 @@ test("con un cambio de estado en curso, la tabla no manda otro pedido", async ({
   expect(await membershipStatusOf(firstEmail)).toBe("inactive");
   expect(await membershipStatusOf(secondEmail)).toBe("active");
   await expect(roleCell(memberRow(page, second))).toContainText(MEMBER_ROLE);
+});
+
+test("«Reintentar» vuelve a mandar una desactivación que no llegó al servidor", async ({
+  page,
+  email,
+}) => {
+  const name = `Tobías ${uniqueSuffix()}`;
+  const person = await seedOtherPerson(name);
+  await enterTeamAsAdmin(page, email);
+
+  // TT-89: el pedido se corta antes de salir, así que el servidor no escribe y
+  // la tabla avisa con el nombre, el cuerpo de una falla de red y «Reintentar».
+  const sent = recordActions(page);
+  const restore = await dropActionRequests(page, isTeamPage);
+  await chooseRowAction(page, name, DEACTIVATE);
+  await dialogButton(deactivateDialog(page, name), DEACTIVATE).click();
+  const alert = page.getByRole("main").getByRole("alert");
+  await expect(alert).toContainText(deactivateFailedTitle(name));
+  await expect(alert).toContainText(UNEXPECTED_BODY);
+  expect(await membershipStatusOf(person)).toBe("active");
+  await restore();
+
+  // «Reintentar» manda el mismo cambio de estado, sin volver a confirmar.
+  await alert.getByRole("button", { name: RETRY, exact: true }).click();
+  await expect(teamFeedback(page)).toContainText(deactivatedMessage(name));
+  await expect(inactiveMark(memberRow(page, name))).toBeVisible();
+  await expect(deactivateDialog(page, name)).toHaveCount(0);
+  expect(await membershipStatusOf(person)).toBe("inactive");
+  expect(sent).toHaveLength(2);
 });
 
 test("/login con membresia_inactiva explica que el acceso está desactivado", async ({

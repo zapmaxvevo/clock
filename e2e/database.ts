@@ -507,19 +507,7 @@ export async function revokeInvitationOf(email: string): Promise<void> {
 
 /** Si un correo tiene membresía, en cualquier estado, en el workspace de los e2e. */
 export async function hasMembership(email: string): Promise<boolean> {
-  return withDatabase(async (client) => {
-    const result = await client.query<{ found: boolean }>(
-      `select exists (
-         select 1
-           from membership
-           join "user" on "user".id = membership.user_id
-          where membership.workspace_id = ${FIRST_WORKSPACE}
-            and lower(btrim("user".email)) = lower(btrim($1))
-       ) as found`,
-      [email],
-    );
-    return result.rows.at(0)?.found ?? false;
-  });
+  return (await membershipStatusOf(email)) !== null;
 }
 
 /**
@@ -583,7 +571,8 @@ export async function setMembershipStatus(
 /**
  * El estado de la membresía de una persona en el workspace de los e2e, o
  * `null` si no tiene. Es lo que deja `/equipo` al desactivarla o reactivarla
- * (D-E2-5 de E2).
+ * (D-E2-5 de E2). El correo se compara en minúsculas y sin espacios, como en
+ * la regla de ingreso (D-E1b-1).
  */
 export async function membershipStatusOf(
   email: string,
@@ -594,7 +583,7 @@ export async function membershipStatusOf(
          from membership
          join "user" on "user".id = membership.user_id
         where membership.workspace_id = ${FIRST_WORKSPACE}
-          and "user".email = $1`,
+          and lower(btrim("user".email)) = lower(btrim($1))`,
       [email],
     );
     return result.rows.at(0)?.status ?? null;
