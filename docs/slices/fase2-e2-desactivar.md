@@ -759,11 +759,16 @@ export async function changeStatus(
 - **Reactivar**: `updateStatus` a `active` y `membership.reactivate`, con los
   estados al revés.
 - **`getTeamView`**: `listMembers`; cada fila con `status`, `hasAccount`,
-  `change` (`null` si es inactiva) y `statusChange`, que calcula
-  `statusChangeOf(actor, row)` con los mismos pasos 3 a 6 y 8 de D-E2-3 sobre
-  el `Actor` de la sesión: `team.manage` sobre el workspace; ni la propia ni la
-  del owner; `team.admin.setStatus` si es `admin`; `deactivate` si es activa,
-  `reactivate` si es inactiva con cuenta, si no `null`.
+  `change` (`null` si es inactiva) y `statusChange`, que sale de
+  `statusChangeOf(actor, row)`: aplica los pasos 4 a 6 y 8 de D-E2-3 sobre el
+  `Actor` de la sesión —ni la propia ni la del owner; `team.admin.setStatus` si
+  es `admin`; `deactivate` si es activa, `reactivate` si es inactiva con
+  cuenta, si no `null`—. El paso 3 (`team.manage` sobre el workspace) ya lo
+  decidió `getTeamView` antes de leer la lista. Los pasos 4 a 6 son
+  `statusLockOf`, la misma función con que `changeStatus` los decide bajo el
+  bloqueo.
+  _Corregido el 2026-10-19, revisión de clean code_: decía «con los mismos
+  pasos 3 a 6 y 8», y repetir el paso 3 era código muerto.
 - **Exporta** `changeStatus` además de lo que ya exporta. Importa
   `stopRunningTimerOf` de `time-entry` y `deleteSessionsOf` y `hasAccount` de
   `@/server/auth-records`. Las dependencias siguen en una dirección: `team` →
@@ -818,8 +823,13 @@ actions (`changeRole`, `changeStatus`, `inviteMembers`, `revokeInvitation`).
   «Invitadas» y «Todas», en ese orden.
 - **Elegir navega**: `router.push` a `/equipo` (Activas) o a
   `/equipo?estado=<valor>`, como los filtros del reporte. La página se vuelve
-  a dibujar con el filtro nuevo; la pantalla se monta con `key={filter}`, así
-  que olvida las filas que se quedaban (EQ-11) y el último aviso.
+  a dibujar con el filtro nuevo, sin volver a montar la pantalla: `TeamMembers`
+  recuerda con qué filtro dibujó y, si cambió, en ese mismo dibujo olvida las
+  filas que se quedaban (EQ-11) y el último aviso. El selector conserva el
+  foco.
+  _Corregido el 2026-10-19, revisión de frontend_: decía «la pantalla se monta
+  con `key={filter}`». El remontaje sacaba del DOM el selector que tenía el
+  foco, y quien elegía con el teclado quedaba en `body`.
 - Lo que muestra cada filtro, el orden y las filas que se quedan: D-E2-8, en
   funciones puras de `team-members-model.ts` (`visibleMembers`,
   `visibleInvitations`, `filterHref`).
