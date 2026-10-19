@@ -43,7 +43,11 @@ export const NO_ENTRY_FACTS: EntryFacts = {
 };
 
 export type AccessDenialReason =
-  "sin_email" | "email_no_verificado" | "dominio_no_habilitado" | "sin_invitacion";
+  | "sin_email"
+  | "email_no_verificado"
+  | "dominio_no_habilitado"
+  | "sin_invitacion"
+  | "membresia_inactiva";
 
 export type AccessDecision =
   | { readonly allowed: true }
@@ -168,6 +172,8 @@ export const accessDenialMessage: Record<AccessDenialReason, string> = {
   dominio_no_habilitado: "La cuenta no es la de Google Workspace de la empresa.",
   sin_invitacion:
     "Tu cuenta no tiene una invitación a Clock. Pedísela a quien administra el equipo.",
+  membresia_inactiva:
+    "Tu acceso al workspace está desactivado. Pedile a quien administra el equipo que te vuelva a activar.",
 };
 
 /** D-E1a-14: lo que ve `/login` con un código que no es un motivo propio. */
