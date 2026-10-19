@@ -87,6 +87,7 @@ import {
   getCalendarState,
   getTrackerState,
   startTimer,
+  stopRunningTimerOf,
   stopTimer,
   TimeEntryError,
   trackerWorkspaceOf,
@@ -8904,5 +8905,133 @@ describe("la vista trae las etiquetas (criterio 9 del 11b: PR-47, PR-68, TT-105)
     );
     expect(result.stopped?.tags).toEqual([refOf(gamma)]);
     expect(result.running.tags).toEqual([]);
+  });
+});
+
+describe("stopRunningTimerOf (ADR 0025, EQ-43)", () => {
+  it("cierra el timer de otra persona con piso en un inicio futuro (TT-101) y deja timeEntry.stop con el actor que recibe", async () => {
+    const personId = await seedMember(workspaceId, "member");
+    const row = await seedTimeEntry({
+      workspaceId,
+      userId: personId,
+      description: "en curso",
+      startedAt: new Date(Date.now() + 3_600_000),
+      billable: true,
+    });
+
+    const stopped = await db.transaction((tx) =>
+      stopRunningTimerOf(tx, actor, { workspaceId, userId: personId }),
+    );
+
+    expect(stopped).toEqual({ id: row.id, endedAt: row.startedAt });
+    const after = await timeEntryById(row.id);
+    expect(after).toEqual({
+      ...row,
+      endedAt: row.startedAt,
+      updatedAt: after?.updatedAt,
+    });
+    expect(
+      (await auditFor("time_entry", row.id)).map((entry) => ({
+        actorId: entry.actorId,
+        action: entry.action,
+        previousValue: entry.previousValue,
+        nextValue: entry.nextValue,
+      })),
+    ).toEqual([
+      {
+        actorId: actor.userId,
+        action: "timeEntry.stop",
+        previousValue: JSON.stringify({ endedAt: null }),
+        nextValue: JSON.stringify({ endedAt: row.startedAt }),
+      },
+    ]);
+  });
+
+  it("sin timer devuelve null sin escribir; las entradas cerradas no cambian", async () => {
+    const personId = await seedMember(workspaceId, "member");
+    const closed = await seedTimeEntry({
+      workspaceId,
+      userId: personId,
+      startedAt: "2026-10-01T12:00:00Z",
+      endedAt: "2026-10-01T13:00:00Z",
+    });
+
+    const stopped = await db.transaction((tx) =>
+      stopRunningTimerOf(tx, actor, { workspaceId, userId: personId }),
+    );
+
+    expect(stopped).toBeNull();
+    expect(await timeEntryById(closed.id)).toEqual(closed);
+    expect(await auditFor("time_entry")).toEqual([]);
+  });
+
+  it("no toca el timer de otra persona", async () => {
+    const personId = await seedMember(workspaceId, "member");
+    const other = await seedRunning();
+
+    await db.transaction((tx) =>
+      stopRunningTimerOf(tx, actor, { workspaceId, userId: personId }),
+    );
+
+    expect(await timeEntryById(other.id)).toEqual(other);
+  });
+});
+
+describe("abrir un timer lee la membresía propia bajo bloqueo (D-E2-6)", () => {
+  /** Una persona cuyo `Actor` dice activa y cuya membresía en la base ya no lo está. */
+  async function deactivatedInTheDatabase(): Promise<Actor> {
+    const personId = await seedMember(workspaceId, "member");
+    await db
+      .update(membership)
+      .set({ status: "inactive" })
+      .where(eq(membership.userId, personId));
+    return actorFor(personId);
+  }
+
+  it("startTimer responde forbidden con TT-79 sin escribir", async () => {
+    const person = await deactivatedInTheDatabase();
+
+    await expect(
+      startTimer(person, workspaceOf(buenosAires), {
+        projectId: null,
+        taskId: null,
+        tagIds: [],
+        id: randomUUID(),
+        description: "no abre",
+      }),
+    ).rejects.toMatchObject({ code: "forbidden", message: timeEntryMessages.forbidden });
+
+    expect(await timeEntriesOf(workspaceId, person.userId)).toEqual([]);
+    expect(await auditFor("time_entry")).toEqual([]);
+  });
+
+  it("continueEntry responde lo mismo, sin cerrar el timer que corría ni abrir otro", async () => {
+    const person = await deactivatedInTheDatabase();
+    const source = await seedTimeEntry({
+      workspaceId,
+      userId: person.userId,
+      description: "fuente",
+      startedAt: "2026-10-01T12:00:00Z",
+      endedAt: "2026-10-01T13:00:00Z",
+    });
+    const running = await seedTimeEntry({
+      workspaceId,
+      userId: person.userId,
+      description: "corriendo",
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+
+    await expect(
+      continueEntry(person, workspaceOf(buenosAires), {
+        id: randomUUID(),
+        sourceId: source.id,
+      }),
+    ).rejects.toMatchObject({ code: "forbidden", message: timeEntryMessages.forbidden });
+
+    expect(await timeEntriesOf(workspaceId, person.userId)).toEqual(
+      expect.arrayContaining([source, running]),
+    );
+    expect(await timeEntriesOf(workspaceId, person.userId)).toHaveLength(2);
+    expect(await auditFor("time_entry")).toEqual([]);
   });
 });

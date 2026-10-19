@@ -61,6 +61,10 @@ type ResourceByAction = {
   // someone». Se consulta solo sobre una membresía `admin`: `can()` no mira el
   // rol de la membresía para esta acción.
   "team.admin.revoke": MembershipResource;
+  // D-E2-4, P-07: solo el owner desactiva o reactiva a un admin. Se consulta
+  // solo sobre una membresía `admin`: `can()` no mira el rol de la membresía
+  // para esta acción.
+  "team.admin.setStatus": MembershipResource;
   "member.invite": WorkspaceResource;
   "timeEntry.own.create": TimeEntryResource;
   "timeEntry.own.update": TimeEntryResource;
@@ -99,6 +103,7 @@ const resourceKinds = {
   "team.view": ["workspace"],
   "team.manage": ["workspace", "membership"],
   "team.admin.revoke": ["membership"],
+  "team.admin.setStatus": ["membership"],
   "member.invite": ["workspace"],
   "timeEntry.own.create": ["timeEntry"],
   "timeEntry.own.update": ["timeEntry"],
@@ -130,6 +135,7 @@ const allowedRoles: Record<Action, readonly Role[]> = {
   "team.view": everyone,
   "team.manage": ["owner", "admin"],
   "team.admin.revoke": ["owner"],
+  "team.admin.setStatus": ["owner"],
   "member.invite": ["owner", "admin"],
   "timeEntry.own.create": everyone,
   "timeEntry.own.update": everyone,

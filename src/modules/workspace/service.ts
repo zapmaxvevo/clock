@@ -4,7 +4,7 @@ import { isBootstrapOwner, type EntryFacts } from "@/server/access";
 import { recordAudit, recordAudits, type AuditEntry } from "@/server/audit";
 import { db, type Transaction } from "@/server/db";
 import { env } from "@/server/env";
-import { can, type Actor, type Role } from "@/server/permissions";
+import { can, type Actor, type MembershipStatus, type Role } from "@/server/permissions";
 import { parseWeekStart, type WeekStart } from "@/server/time";
 
 import {
@@ -403,4 +403,42 @@ export async function entryFactsOf(email: string): Promise<EntryFacts> {
     invitation: facts.invitation,
     membership: facts.membership,
   };
+}
+
+/**
+ * D-E2-6: si la membresía de `actor` sigue activa, leída `for share` con `tx`.
+ * Espera a una desactivación o a un cambio de rol en curso (`for no key
+ * update`) y lee lo que confirmaron. No choca con el `for key share` de un
+ * alta. La usa `time-entry` al abrir un timer, antes de tocar `time_entry`.
+ * Solo lee; el bloqueo lo nombra el contrato de E2 (ADR 0010).
+ */
+export async function isMembershipActiveLocked(
+  tx: Transaction,
+  actor: Actor,
+): Promise<boolean> {
+  const own = await workspaceRepository.lockActorMembership(
+    tx,
+    actor.workspaceId,
+    actor.userId,
+  );
+  return own?.status === "active";
+}
+
+/**
+ * D-E2-2: el estado de la membresía de `userId` en el workspace, leído `for share`
+ * con `tx`; `null` sin workspace o sin membresía. Lee sin actor: no hay sesión
+ * todavía. La usa `entry.ts` en el gancho `session.create.after`. Solo lee; el
+ * bloqueo lo nombra el contrato de E2 (ADR 0010).
+ */
+export async function entryMembershipStatusLocked(
+  tx: Transaction,
+  userId: string,
+): Promise<MembershipStatus | null> {
+  // El workspace más viejo, como `entryFactsOf` (ADR 0024, decisión 3).
+  const current = await workspaceRepository.findFirstWorkspace(tx);
+  if (current === undefined) {
+    return null;
+  }
+  const own = await workspaceRepository.lockActorMembership(tx, current.id, userId);
+  return own?.status ?? null;
 }

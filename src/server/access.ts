@@ -29,8 +29,8 @@ export type EntryFacts = {
   readonly invitation: InvitationStatus | null;
   /**
    * El estado de la membresía del `user` con ese correo, o `null`, también si
-   * más de una fila `user` tiene ese correo (§4.2). Hasta E2, cualquier estado
-   * da acceso (D-E1b-7); E2 exige `active` (P-05).
+   * más de una fila `user` tiene ese correo (§4.2). Solo `active` da acceso;
+   * cualquier otro estado responde `membresia_inactiva` (D-E2-1, P-05).
    */
   readonly membership: MembershipStatus | null;
 };
@@ -97,16 +97,21 @@ function hasOpenInvitation(facts: EntryFacts): boolean {
 }
 
 /**
- * D-E1b-1, el paso de acceso: una membresía en cualquier estado (D-E1b-7), una
- * invitación pendiente, o el arranque con el correo configurado (D-E1b-3).
- * Una aceptada sola no alcanza: es la de alguien a quien se quitó (EQ-51).
+ * D-E2-1, el paso de acceso: una membresía activa, una invitación pendiente
+ * sin membresía, o el arranque con el correo configurado (D-E1b-3). La
+ * membresía gana sobre la invitación: una en cualquier otro estado, también
+ * `invited`, no entra aunque haya una pendiente (EQ-92). Una aceptada sola no
+ * alcanza: es la de alguien a quien se quitó (EQ-51).
  */
 function decideAccess(
   email: string,
   policy: AccessPolicy,
   facts: EntryFacts,
 ): AccessDecision {
-  if (facts.membership !== null || facts.invitation === "pending") {
+  if (facts.membership !== null) {
+    return facts.membership === "active" ? allowed : deny("membresia_inactiva");
+  }
+  if (facts.invitation === "pending") {
     return allowed;
   }
   if (facts.bootstrap && isBootstrapOwner(email, policy.bootstrapOwnerEmail)) {
@@ -151,11 +156,11 @@ export function decideGoogleAccess(
 }
 
 /**
- * El correo guardado, en cada inicio de sesión: la identidad por el sufijo o
- * externa, y el acceso. Revocar la invitación de quien todavía no entró le
- * cierra la entrada entre las dos comprobaciones.
+ * D-E2-2: solo la identidad del correo guardado: el sufijo de un dominio, o
+ * una invitación `pending` o `accepted`. La usa `entry.ts` en cada pedido de
+ * una sesión abierta; el acceso lo decide `ensureWorkspaceContext`.
  */
-export function decideStoredEmail(
+export function decideStoredIdentity(
   email: string,
   policy: AccessPolicy,
   facts: EntryFacts,
@@ -163,7 +168,21 @@ export function decideStoredEmail(
   if (!isCompanyEmail(email, policy.domains) && !hasOpenInvitation(facts)) {
     return deny("sin_invitacion");
   }
-  return decideAccess(email, policy, facts);
+  return allowed;
+}
+
+/**
+ * Identidad (`decideStoredIdentity`) y acceso, en cada inicio de sesión.
+ * Revocar la invitación de quien todavía no entró le cierra la entrada entre
+ * las dos comprobaciones.
+ */
+export function decideStoredEmail(
+  email: string,
+  policy: AccessPolicy,
+  facts: EntryFacts,
+): AccessDecision {
+  const identity = decideStoredIdentity(email, policy, facts);
+  return identity.allowed ? decideAccess(email, policy, facts) : identity;
 }
 
 export const accessDenialMessage: Record<AccessDenialReason, string> = {

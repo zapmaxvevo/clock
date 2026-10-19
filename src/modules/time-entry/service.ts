@@ -45,6 +45,7 @@ import {
 } from "@/modules/project/schema";
 import { assertTaggable, assertTrackable } from "@/modules/project/service";
 import { timeSettingsOf, type ProfileContext } from "@/modules/profile/service";
+import { isMembershipActiveLocked } from "@/modules/workspace/service";
 
 import { pairToCheck, tagsAfter, tagsToCheck } from "./assignment";
 import {
@@ -320,6 +321,32 @@ async function closeRunning(
 }
 
 /**
+ * ADR 0025, EQ-43: detiene el timer abierto de `person` con el instante de la
+ * transacción y deja `timeEntry.stop` con `actor` —quien desactiva— como
+ * autor. No consulta permisos: la usa `changeStatus` de `team`, que ya los
+ * decidió. `null` si no había timer o si otro pedido lo cerró mientras tanto.
+ */
+export async function stopRunningTimerOf(
+  tx: Transaction,
+  actor: Actor,
+  person: { readonly workspaceId: string; readonly userId: string },
+): Promise<{ readonly id: string; readonly endedAt: Date } | null> {
+  const current = await timeEntryRepository.findRunning(
+    person.workspaceId,
+    person.userId,
+    tx,
+  );
+  if (current === undefined) {
+    return null;
+  }
+  const stopped = await closeRunning(tx, actor, current);
+  if (stopped === undefined || stopped.endedAt === null) {
+    return null;
+  }
+  return { id: stopped.id, endedAt: stopped.endedAt };
+}
+
+/**
  * La vuelta del timer abierto del ADR 0003: ante el choque del índice responde
  * el timer que ganó y, si el ganador ya lo detuvo, pide otra vuelta.
  */
@@ -478,12 +505,21 @@ type OpenedEntry = {
  * Cierra el timer abierto, si hay, y abre la entrada nueva con el mismo
  * `now()` (ADR 0003). Un choque con otro arranque sale como error de la base:
  * lo resuelve `createEntryOnce`. Cada operación escribe su propio registro.
+ *
+ * Es el único camino que crea un timer: uno nuevo tiene que pasar por acá.
  */
 async function closeAndOpen(
   tx: Transaction,
   actor: Actor,
   entry: { readonly id: string; readonly fields: CopiedFields },
 ): Promise<OpenedEntry> {
+  // D-E2-6: la membresía propia `for share`, antes de tocar `time_entry`. Con
+  // una desactivación en curso, espera y no abre; si la lectura llega primero,
+  // la desactivación espera y cierra el timer que esto abre. Sin ella, una
+  // persona inactiva puede quedar con un timer que nadie detiene.
+  if (!(await isMembershipActiveLocked(tx, actor))) {
+    throw new TimeEntryError("forbidden", timeEntryMessages.forbidden);
+  }
   const current = await timeEntryRepository.findRunning(
     actor.workspaceId,
     actor.userId,

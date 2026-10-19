@@ -1,4 +1,6 @@
-import { asc, inArray, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { db, type Transaction } from "@/server/db";
@@ -9,17 +11,22 @@ import {
   queueBehindBarrier,
   raceThroughBarrier,
 } from "@/test/concurrency";
-import { seedMember, seedWorkspace } from "@/test/factories";
-import { auditFor, membershipById, membershipOf } from "@/test/queries";
-import { actorIn } from "@/test/time-entry";
+import { seedMember, seedSession, seedTimeEntry, seedWorkspace } from "@/test/factories";
+import { auditFor, membershipById, membershipOf, timeEntriesOf } from "@/test/queries";
+import { actorIn, lockRow, workspaceOf } from "@/test/time-entry";
+import { timeEntryMessages } from "@/modules/time-entry/schema";
+import { startTimer, stopTimer, TimeEntryError } from "@/modules/time-entry/service";
 
+import { teamRepository } from "./repository";
 import { teamMessages } from "./schema";
-import { changeRole, TeamError } from "./service";
+import { changeRole, changeStatus, TeamError } from "./service";
 
 /**
  * Criterios 11 a 13 de R8 (D-R8-7): la autoridad se lee bajo el mismo bloqueo
  * que la membresía pedida, dos cambios de la misma membresía se ponen en fila y
- * el bloqueo no choca con el `for key share` de un alta de horas.
+ * el bloqueo no choca con el `for key share` de un alta de horas. Criterios 13
+ * a 16 de E2 (D-E2-6): desactivar contra abrir y detener un timer, dos cambios
+ * de estado de la misma fila y lo que espera y lo que no.
  */
 
 let workspaceId: string;
@@ -212,5 +219,195 @@ describe("el bloqueo no espera a las horas (criterio 13)", () => {
     expect(outcome).toBe("resolved");
     expect(await roleOf(mMembership)).toBe("admin");
     expect(await auditFor("membership", mMembership)).toHaveLength(1);
+  });
+});
+
+/** El estado de la membresía. */
+async function statusOf(membershipId: string) {
+  return (await membershipById(membershipId))?.status;
+}
+
+/** Los timers abiertos de la persona. */
+async function runningOf(userId: string) {
+  return db
+    .select({ id: timeEntry.id })
+    .from(timeEntry)
+    .where(and(eq(timeEntry.userId, userId), isNull(timeEntry.endedAt)));
+}
+
+function deactivateAs(userId: string, role: Role, membershipId: string) {
+  return changeStatus(actorFor(userId, role), { membershipId, status: "inactive" });
+}
+
+function startTimerOf(userId: string) {
+  return startTimer(actorFor(userId, "member"), workspaceOf("UTC"), {
+    projectId: null,
+    taskId: null,
+    tagIds: [],
+    id: randomUUID(),
+    description: "arranque",
+  });
+}
+
+describe("desactivar contra abrir un timer (criterio 13, D-E2-6)", () => {
+  it("si la desactivación bloquea primero, el arranque responde forbidden con TT-79 y no deja entrada", async () => {
+    const p = await seedMember(workspaceId, "member");
+    const pMembership = await membershipIdOf(p);
+
+    const outcomes = await queueBehindBarrier(holdMemberships(pMembership), [
+      () => deactivateAs(ownerId, "owner", pMembership),
+      () => startTimerOf(p),
+    ]);
+
+    expect(outcomes).toEqual([
+      { status: "fulfilled", value: { membershipId: pMembership, status: "inactive" } },
+      { status: "rejected", reason: expect.any(TimeEntryError) },
+    ]);
+    expect(outcomes[1]).toMatchObject({
+      reason: { code: "forbidden", message: timeEntryMessages.forbidden },
+    });
+    expect(await timeEntriesOf(workspaceId, p)).toEqual([]);
+    expect(await statusOf(pMembership)).toBe("inactive");
+  });
+
+  it("si el arranque lee primero, la desactivación espera y cierra el timer que abrió", async () => {
+    const p = await seedMember(workspaceId, "member");
+    const pMembership = await membershipIdOf(p);
+
+    // La barrera es un timer de P sin confirmar: el arranque, que ya tomó la
+    // membresía `for share`, se traba en el índice de un solo timer abierto.
+    const outcomes = await queueBehindBarrier(
+      (tx) =>
+        tx.insert(timeEntry).values({
+          workspaceId,
+          userId: p,
+          startedAt: new Date("2026-10-13T12:00:00Z"),
+        }),
+      [() => startTimerOf(p), () => deactivateAs(ownerId, "owner", pMembership)],
+    );
+
+    expect(outcomes.map((outcome) => outcome.status)).toEqual(["fulfilled", "fulfilled"]);
+    const started = (outcomes[0] as PromiseFulfilledResult<{ running: { id: string } }>)
+      .value.running.id;
+    expect(await statusOf(pMembership)).toBe("inactive");
+    expect(await runningOf(p)).toEqual([]);
+    expect(await auditFor("time_entry", started)).toEqual([
+      expect.objectContaining({ action: "timeEntry.start", actorId: p }),
+      expect.objectContaining({ action: "timeEntry.stop", actorId: ownerId }),
+    ]);
+  });
+});
+
+describe("desactivar contra detener (criterio 14, D-E2-6)", () => {
+  it("con la persona deteniendo su timer bajo su bloqueo, la desactivación termina y queda un solo timeEntry.stop", async () => {
+    const p = await seedMember(workspaceId, "member");
+    const pMembership = await membershipIdOf(p);
+    const running = await seedTimeEntry({
+      workspaceId,
+      userId: p,
+      startedAt: "2026-10-02T11:00:00Z",
+    });
+
+    const outcomes = await queueBehindBarrier(lockRow(running.id), [
+      () => stopTimer(actorFor(p, "member"), workspaceOf("UTC"), { id: running.id }),
+      () => deactivateAs(ownerId, "owner", pMembership),
+    ]);
+
+    expect(outcomes.map((outcome) => outcome.status)).toEqual(["fulfilled", "fulfilled"]);
+    expect(await statusOf(pMembership)).toBe("inactive");
+    expect(await runningOf(p)).toEqual([]);
+    expect(await auditFor("time_entry", running.id)).toEqual([
+      expect.objectContaining({ action: "timeEntry.stop", actorId: p }),
+    ]);
+  });
+});
+
+describe("dos sobre la misma fila (criterio 15, EQ-98)", () => {
+  it("dos desactivaciones a la vez: una escribe y la otra responde éxito sin escribir", async () => {
+    const admin = await seedMember(workspaceId, "admin");
+    const m = await seedMember(workspaceId, "member");
+    const mMembership = await membershipIdOf(m);
+    await seedSession(m);
+
+    const outcomes = await queueBehindBarrier(holdMemberships(mMembership), [
+      () => deactivateAs(ownerId, "owner", mMembership),
+      () => deactivateAs(admin, "admin", mMembership),
+    ]);
+
+    const done = { membershipId: mMembership, status: "inactive" };
+    expect(outcomes).toEqual([
+      { status: "fulfilled", value: done },
+      { status: "fulfilled", value: done },
+    ]);
+    expect(await auditFor("membership", mMembership)).toEqual([
+      expect.objectContaining({ action: "membership.deactivate", actorId: ownerId }),
+    ]);
+    expect(await auditFor("user", m)).toEqual([
+      expect.objectContaining({ action: "session.revokeAll", actorId: ownerId }),
+    ]);
+  });
+
+  it("el owner baja a la admin A mientras A desactiva a M: A decide con el rol que leyó bajo el bloqueo", async () => {
+    const a = await seedMember(workspaceId, "admin");
+    const m = await seedMember(workspaceId, "member");
+    const aMembership = await membershipIdOf(a);
+    const mMembership = await membershipIdOf(m);
+
+    const outcomes = await queueBehindBarrier(holdMemberships(aMembership), [
+      () =>
+        changeRole(actorFor(ownerId, "owner"), {
+          membershipId: aMembership,
+          role: "member",
+        }),
+      () => deactivateAs(a, "admin", mMembership),
+    ]);
+
+    expect(outcomes).toEqual([
+      { status: "fulfilled", value: { membershipId: aMembership, role: "member" } },
+      { status: "rejected", reason: expect.any(TeamError) },
+    ]);
+    expect(outcomes[1]).toMatchObject({
+      reason: { code: "forbidden", message: teamMessages.forbiddenAction },
+    });
+    expect(await statusOf(mMembership)).toBe("active");
+    expect(await auditFor("membership", mMembership)).toEqual([]);
+  });
+});
+
+describe("lo que espera y lo que no (criterio 16, D-E2-6)", () => {
+  /** Un alta de horas cerrada de la persona sin confirmar: `for key share` sobre su membresía. */
+  function holdClosedEntryInsert(userId: string) {
+    return (tx: Transaction) =>
+      tx.insert(timeEntry).values({
+        workspaceId,
+        userId,
+        startedAt: new Date("2026-10-13T12:00:00Z"),
+        endedAt: new Date("2026-10-13T13:00:00Z"),
+      });
+  }
+
+  it("desactivar no espera a un alta de una entrada cerrada en curso de esa persona", async () => {
+    const m = await seedMember(workspaceId, "member");
+    const mMembership = await membershipIdOf(m);
+
+    const outcome = await outcomeWhileHeld(holdClosedEntryInsert(m), () =>
+      deactivateAs(ownerId, "owner", mMembership),
+    );
+
+    expect(outcome).toBe("resolved");
+    expect(await statusOf(mMembership)).toBe("inactive");
+  });
+
+  it("un arranque de timer espera a una desactivación o a un cambio de rol en curso de esa membresía", async () => {
+    const m = await seedMember(workspaceId, "member");
+    const mMembership = await membershipIdOf(m);
+
+    // El bloqueo que toman `changeStatus` y `changeRole`.
+    const outcome = await outcomeWhileHeld(
+      (tx) => teamRepository.lockForChange(tx, workspaceId, mMembership, ownerId),
+      () => startTimerOf(m),
+    );
+
+    expect(outcome).toBe("blocked");
   });
 });

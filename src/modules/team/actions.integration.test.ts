@@ -6,6 +6,7 @@ import { db } from "@/server/db";
 import { membership } from "@/server/db/schema";
 import type { MembershipStatus, Role } from "@/server/permissions";
 import {
+  seedAccount,
   seedMember,
   seedUser,
   seedWorkspace,
@@ -13,6 +14,7 @@ import {
 } from "@/test/factories";
 import { auditFor, membershipOf } from "@/test/queries";
 
+import { teamRepository } from "./repository";
 import { teamMessages } from "./schema";
 
 /**
@@ -106,6 +108,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   mocks.sessionUser = null;
+  vi.restoreAllMocks();
 });
 
 describe("changeRole sin sesión (criterio 15)", () => {
@@ -262,6 +265,237 @@ describe("changeRole (criterio 15)", () => {
       ok: false,
       code: "validation",
       message: teamMessages.notFound,
+    });
+    expect(mocks.revalidated).toEqual([wholeTree]);
+  });
+});
+
+describe("changeStatus sin sesión (§4.10)", () => {
+  it("manda al login sin cambiar nada ni revalidar", async () => {
+    const target = await seedTarget("member");
+
+    await expect(
+      actions.changeStatus({ membershipId: target.id, status: "inactive" }),
+    ).rejects.toBeInstanceOf(RedirectError);
+
+    expect(mocks.redirects).toEqual(["/login"]);
+    expect(mocks.revalidated).toEqual([]);
+    expect(await membershipOf(seeded.workspaceId, target.userId)).toEqual(target);
+    expect(await auditFor("membership")).toEqual([]);
+  });
+});
+
+describe("changeStatus (§4.10, criterio 23)", () => {
+  it("desactivar responde el estado que quedó y revalida el árbol", async () => {
+    await signInAs("admin");
+    const target = await seedTarget("member");
+
+    const result = await actions.changeStatus({
+      membershipId: target.id,
+      status: "inactive",
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      data: { membershipId: target.id, status: "inactive" },
+    });
+    expect((await membershipOf(seeded.workspaceId, target.userId)).status).toBe(
+      "inactive",
+    );
+    expect(mocks.revalidated).toEqual([wholeTree]);
+  });
+
+  it("reactivar con cuenta responde el estado que quedó y revalida el árbol", async () => {
+    await signInAs("admin");
+    const target = await seedTarget("member", "inactive");
+    await seedAccount(target.userId);
+
+    const result = await actions.changeStatus({
+      membershipId: target.id,
+      status: "active",
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      data: { membershipId: target.id, status: "active" },
+    });
+    expect(mocks.revalidated).toEqual([wholeTree]);
+  });
+
+  it("el estado que ya tenía responde éxito sin escribir", async () => {
+    await signInAs("admin");
+    const target = await seedTarget("member", "inactive");
+
+    const result = await actions.changeStatus({
+      membershipId: target.id,
+      status: "inactive",
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      data: { membershipId: target.id, status: "inactive" },
+    });
+    expect(await membershipOf(seeded.workspaceId, target.userId)).toEqual(target);
+    expect(await auditFor("membership")).toEqual([]);
+  });
+
+  it.each([
+    ["un id que no existe", async () => randomUUID()],
+    ["una membresía invited", async () => (await seedTarget("member", "invited")).id],
+  ])("%s responde not_found con EQ-82 y revalida", async (_label, idOf) => {
+    await signInAs("admin");
+
+    const result = await actions.changeStatus({
+      membershipId: await idOf(),
+      status: "inactive",
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      code: "not_found",
+      message: teamMessages.notFound,
+    });
+    expect(mocks.revalidated).toEqual([wholeTree]);
+  });
+
+  it("un id que no es uuid responde validation con EQ-82", async () => {
+    await signInAs("admin");
+
+    const result = await actions.changeStatus({ membershipId: "42", status: "inactive" });
+
+    expect(result).toEqual({
+      ok: false,
+      code: "validation",
+      message: teamMessages.notFound,
+    });
+    expect(mocks.revalidated).toEqual([wholeTree]);
+  });
+
+  it.each(["invited", "Inactive", "deleted"])(
+    "el estado %s responde validation con «Ese estado no está disponible.» sin escribir",
+    async (status) => {
+      await signInAs("admin");
+      const target = await seedTarget("member");
+
+      const result = await actions.changeStatus({
+        membershipId: target.id,
+        // @ts-expect-error: un pedido armado a mano, con un estado fuera de active e inactive.
+        status,
+      });
+
+      expect(result).toEqual({
+        ok: false,
+        code: "validation",
+        message: teamMessages.statusUnavailable,
+      });
+      expect(await membershipOf(seeded.workspaceId, target.userId)).toEqual(target);
+      expect(mocks.revalidated).toEqual([wholeTree]);
+    },
+  );
+
+  it("un member responde forbidden con EQ-90 sin escribir", async () => {
+    await signInAs("member");
+    const target = await seedTarget("member");
+
+    const result = await actions.changeStatus({
+      membershipId: target.id,
+      status: "inactive",
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      code: "forbidden",
+      message: teamMessages.forbiddenAction,
+    });
+    expect(await membershipOf(seeded.workspaceId, target.userId)).toEqual(target);
+    expect(mocks.revalidated).toEqual([wholeTree]);
+  });
+
+  it("un admin sobre otro admin responde forbidden con EQ-85", async () => {
+    await signInAs("admin");
+    const target = await seedTarget("admin");
+
+    const result = await actions.changeStatus({
+      membershipId: target.id,
+      status: "inactive",
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      code: "forbidden",
+      message: teamMessages.adminStatusOwnerOnly,
+    });
+    expect(await membershipOf(seeded.workspaceId, target.userId)).toEqual(target);
+  });
+
+  it("la propia responde status_locked con EQ-84", async () => {
+    const id = await signInAs("admin");
+    const own = await membershipOf(seeded.workspaceId, id);
+
+    const result = await actions.changeStatus({
+      membershipId: own.id,
+      status: "inactive",
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      code: "status_locked",
+      message: teamMessages.selfStatusLocked,
+    });
+  });
+
+  it("la del owner, pedida por un admin, responde status_locked con EQ-83", async () => {
+    await signInAs("admin");
+    const owner = await membershipOf(seeded.workspaceId, seeded.ownerId);
+
+    const result = await actions.changeStatus({
+      membershipId: owner.id,
+      status: "inactive",
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      code: "status_locked",
+      message: teamMessages.ownerStatusLocked,
+    });
+    expect(await membershipOf(seeded.workspaceId, seeded.ownerId)).toEqual(owner);
+  });
+
+  it("reactivar sin account responde no_account con EQ-114 sin escribir", async () => {
+    await signInAs("admin");
+    const target = await seedTarget("member", "inactive");
+
+    const result = await actions.changeStatus({
+      membershipId: target.id,
+      status: "active",
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      code: "no_account",
+      message: teamMessages.noAccount,
+    });
+    expect(await membershipOf(seeded.workspaceId, target.userId)).toEqual(target);
+    expect(mocks.revalidated).toEqual([wholeTree]);
+  });
+
+  it("un error de la base responde unexpected con su texto y revalida", async () => {
+    await signInAs("admin");
+    const target = await seedTarget("member");
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(teamRepository, "lockForChange").mockRejectedValueOnce(
+      new Error("conexión cortada"),
+    );
+
+    const result = await actions.changeStatus({
+      membershipId: target.id,
+      status: "inactive",
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      code: "unexpected",
+      message: teamMessages.unexpectedStatus,
     });
     expect(mocks.revalidated).toEqual([wholeTree]);
   });

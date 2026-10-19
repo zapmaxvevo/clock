@@ -53,7 +53,8 @@ export const teamMessages = {
   noAccount:
     "Esa persona no tiene una cuenta de Google vinculada: todavía no se puede reactivar.",
   statusUnavailable: "Ese estado no está disponible.",
-  unexpectedStatus: "No se pudo cambiar el estado. Revisá la conexión y volvé a intentar.",
+  unexpectedStatus:
+    "No se pudo cambiar el estado. Revisá la conexión y volvé a intentar.",
 } as const;
 
 export type TeamErrorCode =

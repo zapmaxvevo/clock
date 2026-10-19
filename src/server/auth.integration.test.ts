@@ -6,8 +6,15 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 import { workspaceRepository } from "@/modules/workspace/repository";
 import { db } from "@/server/db";
-import { account, session, user } from "@/server/db/schema";
-import { seedInvitation, seedMember, seedUser, seedWorkspace } from "@/test/factories";
+import { account, membership, session, user } from "@/server/db/schema";
+import { queueBehindBarrier } from "@/test/concurrency";
+import {
+  seedAccount,
+  seedInvitation,
+  seedMember,
+  seedUser,
+  seedWorkspace,
+} from "@/test/factories";
 
 /**
  * El handler real de Better Auth. La sesión de prueba se habilita antes de
@@ -476,6 +483,57 @@ describe("el callback de Google termina en /login con el motivo (criterio 25, D-
     expect(await sessionsWith(email)).toEqual([]);
   });
 
+  /** Una persona del dominio con su membresía en el estado pedido y su cuenta de Google. */
+  async function seedGooglePerson(status: "active" | "inactive") {
+    const { workspaceId } = await seedWorkspace();
+    const email = `${randomUUID()}@empresa.com`;
+    const id = await seedMember(workspaceId, "member", status, { email });
+    const sub = await seedAccount(id);
+    return { id, email, sub };
+  }
+
+  it("una persona del dominio con cuenta y la membresía inactiva recibe 302 a /login con membresia_inactiva, sin sesión (criterio 10)", async () => {
+    const person = await seedGooglePerson("inactive");
+
+    const response = await signInWithGoogle({
+      email: person.email,
+      sub: person.sub,
+      hd: "empresa.com",
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe(deniedLocation("membresia_inactiva"));
+    expect(await sessionsWith(person.email)).toEqual([]);
+  });
+
+  it("el gancho de sesión rechaza con membresia_inactiva si la membresía se desactivó después de mapProfileToUser (criterio 10)", async () => {
+    const person = await seedGooglePerson("active");
+    // `mapProfileToUser` lee la membresía activa; antes del gancho, pasa a inactiva.
+    const entryFacts = workspaceRepository.entryFacts.bind(workspaceRepository);
+    vi.spyOn(workspaceRepository, "entryFacts").mockImplementationOnce(async (email) => {
+      const facts = await entryFacts(email);
+      await db
+        .update(membership)
+        .set({ status: "inactive" })
+        .where(eq(membership.userId, person.id));
+      return facts;
+    });
+
+    const response = await signInWithGoogle({
+      email: person.email,
+      sub: person.sub,
+      hd: "empresa.com",
+    });
+
+    expect(response.status).toBe(302);
+    const location = new URL(response.headers.get("location") ?? "");
+    expect(`${location.origin}${location.pathname}`).toBe(
+      new URL("/login", origin).toString(),
+    );
+    expect(location.searchParams.get("error")).toBe("membresia_inactiva");
+    expect(await sessionsWith(person.email)).toEqual([]);
+  });
+
   it("un externo invitado recibe 302 a / con la cookie de sesión", async () => {
     const { workspaceId } = await seedWorkspace();
     const email = `${randomUUID()}@gmail.com`;
@@ -487,5 +545,46 @@ describe("el callback de Google termina en /login con el motivo (criterio 25, D-
     expect(response.headers.get("location")).toBe("/");
     expect(cookiesOf(response)).toMatch(/better-auth\.session_token=/);
     expect(await sessionsWith(email)).toHaveLength(1);
+  });
+});
+
+describe("el gancho session.create.after cierra la carrera con una desactivación (D-E2-2, criterio 26)", () => {
+  it("la sesión que pasó el before con la membresía activa se borra cuando la desactivación confirma", async () => {
+    const email = `${randomUUID()}@empresa.com`;
+    const personId = await seedPerson(email);
+    const ofPerson = eq(membership.userId, personId);
+
+    const [deactivation, signInAttempt] = await queueBehindBarrier(
+      // La barrera solo bloquea, como una desactivación en curso: se suelta con
+      // `rollback`, así que lo que tiene que confirmar no puede escribirlo ella.
+      (tx) => tx.select().from(membership).where(ofPerson).for("no key update"),
+      [
+        // Confirma solo. No es `changeStatus`: su `delete from session` correría
+        // después de abrir la barrera y vería la sesión ya insertada, y el test
+        // pasaría sin el gancho.
+        () =>
+          db.transaction(async (tx) => {
+            await tx.update(membership).set({ status: "inactive" }).where(ofPerson);
+          }),
+        // Pasa el `before` con lo confirmado —activa—, inserta la sesión y queda
+        // en el `for share` del `after`, en la cola detrás de la desactivación.
+        () => testSessionSignIn(email),
+      ],
+    );
+
+    expect([deactivation.status, signInAttempt.status]).toEqual([
+      "fulfilled",
+      "fulfilled",
+    ]);
+    // El ingreso no se entera: responde con la cookie de una sesión que ya no está.
+    expect((signInAttempt as PromiseFulfilledResult<Response>).value.status).toBe(200);
+    const [row] = await db
+      .select({ status: membership.status })
+      .from(membership)
+      .where(ofPerson);
+    expect(row.status).toBe("inactive");
+    expect(await db.select().from(session).where(eq(session.userId, personId))).toEqual(
+      [],
+    );
   });
 });

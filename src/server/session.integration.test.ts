@@ -237,3 +237,44 @@ describe("un dominio sacado de la política con la sesión abierta (D-E1b-13)", 
     expect(entryFacts).not.toHaveBeenCalled();
   });
 });
+
+describe("la sesión abierta de una membresía inactiva sigue en TT-92 (D-E2-2, criterio 11)", () => {
+  /** Lo que hace `setMembershipStatus` de los e2e: el estado escrito por SQL. */
+  async function deactivateBySql(userId: string) {
+    await db
+      .update(membership)
+      .set({ status: "inactive" })
+      .where(eq(membership.userId, userId));
+  }
+
+  it("una persona del dominio recibe el contexto con status inactive, sin redirigir", async () => {
+    const person = mocks.user;
+    if (person === null) {
+      throw new Error("Sin persona sembrada.");
+    }
+    await deactivateBySql(person.id);
+
+    const context = await requireSession();
+
+    expect([context.actor.status, context.membership.status]).toEqual([
+      "inactive",
+      "inactive",
+    ]);
+    expect(mocks.redirect).not.toHaveBeenCalled();
+  });
+
+  it("una externa con la invitación aceptada, lo mismo", async () => {
+    const email = `${randomUUID()}@gmail.com`;
+    await seedInvitation({ workspaceId, email, status: "accepted" });
+    mocks.user = {
+      id: await seedMember(workspaceId, "member", "active", { email }),
+      email,
+    };
+    await deactivateBySql(mocks.user.id);
+
+    const context = await requireSession();
+
+    expect([context.actor.status, context.user.email]).toEqual(["inactive", email]);
+    expect(mocks.redirect).not.toHaveBeenCalled();
+  });
+});

@@ -581,6 +581,59 @@ describe("team.admin.revoke sobre una membresía admin (R8, D-R8-13)", () => {
   });
 });
 
+describe("team.admin.setStatus sobre una membresía admin (E2, D-E2-4, P-07)", () => {
+  const otherAdmin = {
+    kind: "membership",
+    workspaceId,
+    userId: "u2",
+    role: "admin",
+  } as const;
+  const ownAdmin = { ...otherAdmin, userId: "u1" } as const;
+
+  it("el owner activo desactiva o reactiva a un admin", () => {
+    expect(can(actor("owner"), "team.admin.setStatus", otherAdmin)).toBe(true);
+  });
+
+  it("un admin no lo hace sobre otro admin ni sobre sí mismo", () => {
+    expect([
+      can(actor("admin"), "team.admin.setStatus", otherAdmin),
+      can(actor("admin"), "team.admin.setStatus", ownAdmin),
+    ]).toEqual([false, false]);
+  });
+
+  it("project_manager, team_manager y member activos no lo hacen sobre nadie", () => {
+    for (const role of ["project_manager", "team_manager", "member"] as const) {
+      expect([role, can(actor(role), "team.admin.setStatus", otherAdmin)]).toEqual([
+        role,
+        false,
+      ]);
+    }
+  });
+
+  it("un owner inactive o invited no lo hace sobre nadie", () => {
+    for (const status of ["inactive", "invited"] as const) {
+      expect([
+        status,
+        can(actor("owner", { status }), "team.admin.setStatus", otherAdmin),
+      ]).toEqual([status, false]);
+    }
+  });
+
+  it("el owner no lo hace sobre un admin de otro workspace", () => {
+    expect(
+      can(actor("owner"), "team.admin.setStatus", {
+        ...otherAdmin,
+        workspaceId: "22222222-2222-2222-2222-222222222222",
+      }),
+    ).toBe(false);
+  });
+
+  it("niega un recurso workspace, aunque actúe el owner", () => {
+    // @ts-expect-error: team.admin.setStatus pide un recurso membership.
+    expect(can(actor("owner"), "team.admin.setStatus", workspace)).toBe(false);
+  });
+});
+
 describe("assertCan", () => {
   it("lanza ForbiddenError cuando can devuelve false", () => {
     expect(() => assertCan(actor("member"), "team.manage", workspace)).toThrow(
