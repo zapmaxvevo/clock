@@ -260,7 +260,7 @@ function CalendarSelection({
     <div
       aria-hidden="true"
       data-calendar-selection=""
-      className="bg-primary/15 border-primary pointer-events-none absolute inset-x-0.5 z-10 rounded-md border px-1.5 py-0.5 text-xs"
+      className="bg-primary/15 border-primary pointer-events-none absolute inset-x-0.5 z-10 overflow-hidden rounded-md border px-1.5 py-0.5 text-xs leading-tight"
       style={{ top: segment.from * scale, height: (segment.to - segment.from) * scale }}
     >
       {clockLabel(times.start, time)} – {clockLabel(times.end, time)}
