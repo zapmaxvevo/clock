@@ -21,8 +21,8 @@ propio en `/login` cuando una cuenta de Google nueva choca con un correo en uso.
   dos en `main` (`27774d6`). Va **antes de reactivar a cualquiera de las tres
   inactivas que creó la importación**; mientras tanto, E2 ya lo impide
   (D-E2-7).
-- **Revisión:** `architecture-reviewer` lo aprobó con cambios; las doce
-  correcciones (seis mayores y seis menores) están aplicadas.
+- **Revisión:** `architecture-reviewer` lo aprobó con cambios en dos rondas; las
+  doce correcciones de la primera y las cinco de la segunda están aplicadas.
 - **Decisiones de arquitectura:** el
   [ADR 0027](../adr/0027-una-fila-user-sin-cuenta-de-google.md), **una fila
   `user` sin cuenta de Google**, en estado «Propuesto»: la vinculación pendiente
@@ -116,6 +116,8 @@ para Google es `profile.sub` (`google.mjs:56`; `callback.mjs:137`;
 - los `databaseHooks` de `account` no corren: Better Auth no crea una cuenta
   para un correo que ya tiene fila (`link-account.mjs:134-145`).
 
+Las líneas son de la 1.7.7; las de la 1.7.10 están en §0.
+
 **Cuándo.** `decideProfileEntry` decide la regla como hoy, **primero**: un
 correo del dominio sin `hd`, un correo sin verificar, un externo sin invitación
 abierta o una membresía inactiva responden su motivo y no tocan la marca. Solo
@@ -135,25 +137,48 @@ lectura de los hechos.
    hacen lanzar a `findAccountOwnerByKey`
    (`better-auth/dist/db/internal-adapter.mjs:555`) en todo ingreso de esa
    cuenta.
-2. **`claimAccountLink(tx, email)`** (`team`): bloquea `for no key update` la
-   membresía del `user` cuyo correo normalizado es `email`, en el workspace del
-   ingreso, y decide con lo que lee bajo el bloqueo:
-   - una sola fila `user` con ese correo, membresía `active` y marca vigente:
-     limpia la marca, deja `membership.linkUse` y devuelve `claimed` con la
-     persona;
-   - una sola fila con la membresía no activa: devuelve `inactive`, sin
-     escribir; la perdió en la carrera con una desactivación;
-   - cualquier otra cosa (sin marca, vencida, otra cantidad de filas): devuelve
-     `none`, sin escribir.
+2. **`claimAccountLink(tx, email)`** (`team`) parte de las filas `user` cuyo
+   correo normalizado es `email`, como `entryFacts`
+   (`workspace/repository.ts:356-363`):
+   - **más de una fila `user`, o ninguna, o una sin membresía en el workspace
+     del ingreso**: `none`, sin bloquear ni escribir;
+   - **una sola**: bloquea `for no key update` su membresía y decide con lo que
+     lee bajo el bloqueo. **No activa**: `inactive`, sin escribir; la perdió en
+     la carrera con una desactivación. **Activa**: intenta limpiar la marca con
+     una sentencia que **decide la vigencia en el momento de escribir**, con
+     `clock_timestamp()` y no con `now()`, que es la hora de inicio de la
+     transacción:
+
+     ```sql
+     update membership
+     set account_link_requested_at = null, account_link_requested_by_id = null
+     where id = $1
+       and account_link_requested_at > clock_timestamp() - make_interval(days => $ttl)
+     returning account_link_requested_by_id
+     ```
+
+     Si devuelve una fila, deja `membership.linkUse` y devuelve `claimed` con
+     la persona. Si no devuelve ninguna —no había marca, o venció, también
+     mientras el ingreso esperaba el bloqueo—, `none`, sin escribir.
+
+   Con `none`, `bindRequestedAccount` devuelve `skipped`; con `inactive`,
+   `inactive`.
+
 3. Con `claimed`, **`bindGoogleAccount(tx, person, sub)`** (`auth-records`):
    borra las otras filas de `account` de la persona, borra sus sesiones con
    `deleteSessionsOf` (E2) e inserta la cuenta de `sub`, sin tokens; deja
    `account.link`. **Con el MCP en `main`** borra además sus autorizaciones con
    `deleteGrantsOf` (D-MCP-5), después de las sesiones: un asistente que la
-   cuenta vieja conectó no sigue con la nueva.
+   cuenta vieja conectó no sigue con la nueva. Devuelve `linked`.
 
-`bindRequestedAccount` devuelve `linked`, `skipped` o `inactive`, y
-`decideProfileEntry` lo traduce:
+**Por qué el bloqueo no va en una sola sentencia con el `left join`**: Postgres
+no acepta `for no key update` sobre el lado nulable de un `outer join`. Son dos
+lecturas en la misma transacción: las filas `user` del correo, sin bloqueo, y
+el bloqueo de la membresía del único `user_id`. Una segunda fila `user` con el
+mismo correo normalizado que aparezca entre las dos solo la crea el script de
+importación, y la consulta 2 de §6.1 la detecta.
+
+`decideProfileEntry` traduce lo que devuelve `bindRequestedAccount`:
 
 - `linked` o `skipped`: la decisión de la regla, `allowed`. Better Auth sigue.
   Con `skipped` y una fila sin la cuenta de ese `sub`, Better Auth responde
@@ -171,9 +196,9 @@ lectura de los hechos.
   vuelve a intentar la vinculación.
 
 `person` es el `Actor` de la persona, armado con la membresía bloqueada: las
-constancias de este ingreso tienen a la persona como autora, y
-`account_link_requested_by_id`, que va en `membership.linkUse`, dice quién la
-autorizó.
+constancias de este ingreso tienen a la persona como autora, y el
+`account_link_requested_by_id` que devolvió la sentencia, que va en
+`membership.linkUse`, dice quién la autorizó.
 
 **Lo que hace Better Auth después**: `findAccountOwnerByKey` encuentra la cuenta
 (`link-account.mjs:80-106`; `internal-adapter.mjs:542-566`) y sigue el camino de
@@ -206,8 +231,9 @@ después `invitation` (D-E2b-8); liberar, las membresías, después `user`,
   borra la que Better Auth crea después (D-E2-2). En los dos, la persona termina
   sin sesión.
 - **Dos ingresos a la vez con dos `sub` distintos y la misma marca**: el segundo
-  espera el bloqueo de la membresía, encuentra la marca limpia (`none`) y no
-  vincula: `account_not_linked`. Queda una cuenta.
+  espera el bloqueo de la membresía, su `update` no encuentra la marca (`none`,
+  y `bindRequestedAccount` devuelve `skipped`) y Better Auth responde
+  `account_not_linked`. Queda una cuenta.
 
 **Si algo falla después del `commit`** —la sesión, por ejemplo—, la cuenta queda
 vinculada: es lo que el owner pidió, y el reintento entra por el camino normal.
@@ -387,11 +413,15 @@ y acotan cuánto tiempo una dirección reasignada podría entrar a la fila.
 
 - **`ACCOUNT_LINK_TTL_DAYS = 7`**, en `src/server/access.ts`, al lado de
   `EntryFacts`: es parte de la regla del ingreso.
-- **Se calcula al leer, con el reloj de la base**, sin cron: `entryFacts` y
-  `lockByEmail` llaman vigente a una marca con `account_link_requested_at >
-now() - make_interval(days => 7)`, y `listMembers` trae el vencimiento y si ya
-  pasó, con la misma expresión. Ningún código de TypeScript suma días a una
-  fecha.
+- **Se calcula sin cron, con el reloj de la base.** Las lecturas lo calculan
+  para describir y para decidir si vale la pena intentar: `entryFacts` llama
+  vigente a una marca con `account_link_requested_at > now() - make_interval(days
+=> 7)`, y `listMembers` y `lockForChange` traen el vencimiento y si ya pasó, con
+  la misma expresión. **Lo decide la escritura que la usa**: el `update` de
+  `claimAccountLink` (D-E2b-3) compara con `clock_timestamp()`, la hora del
+  momento, porque `now()` es la del inicio de la transacción y una marca que
+  vence mientras el ingreso espera el bloqueo se usaría igual. Ningún código de
+  TypeScript suma días a una fecha.
 - **Vencida, la marca queda** hasta que el owner la renueva, la cancela o
   desactiva a la persona (D-E2b-6, D-E2b-7). No se usa: un ingreso con un `sub`
   nuevo termina en `account_not_linked`.
@@ -407,8 +437,8 @@ now() - make_interval(days => 7)`, y `listMembers` trae el vencimiento y si ya
 - **El owner sin cuenta y sin vinculación pedida**: §6.8.
 - **Dos filas `user` con el mismo correo normalizado**: `entryFacts` ya devuelve
   la membresía en `null` (`workspace/repository.ts:336-346`), y
-  `claimAccountLink` no elige entre dos: no vincula. La consulta 2 de §6.1 lo
-  detecta.
+  `claimAccountLink` no elige entre dos: `none`, sin vincular. La consulta 2 de
+  §6.1 lo detecta.
 
 ## 0. Precondición de arranque
 
@@ -418,9 +448,11 @@ now() - make_interval(days => 7)`, y `listMembers` trae el vencimiento y si ya
   implementar.
 - **La consulta de §6.1 corrida en producción** antes de migrar, no antes de
   implementar.
-- **Si `main` ya trae otra versión de Better Auth** (el MCP la sube a 1.7.11),
-  `backend-dev` vuelve a verificar en esa versión, antes de implementar, y deja
-  en el registro del slice el archivo y la línea de cada punto:
+- **Si `main` ya trae Better Auth 1.7.10** (la sube el MCP), los seis puntos de
+  abajo tienen que sostenerse en esa versión. **`architecture-reviewer` ya los
+  verificó** sobre el paquete de la 1.7.10 (`npm pack`) contra la 1.7.7, y ese
+  es el punto de partida de `backend-dev`, que **solo confirma** sobre el árbol
+  real y deja el resultado en el registro del slice:
   1. que el `getUserInfo` de Google siga llamando a `mapProfileToUser` antes de
      que el callback llame a `resolveOAuthAccountKey` y a `handleOAuthUserInfo`;
   2. que `handleOAuthUserInfo` siga buscando por la clave de la cuenta antes que
@@ -434,43 +466,53 @@ now() - make_interval(days => 7)`, y `listMembers` trae el vencimiento y si ya
      `getUserInfo`, o a `handleOAuthUserInfo` con `selectedUser`;
   6. que `disableIdTokenSignIn` se siga respetando en `/sign-in/social`.
 
-  Si algún punto cambió, el contrato vuelve a `architect` antes de seguir.
+  Lo que encontró el revisor en la 1.7.10: `callback.mjs`, `link-account.mjs`,
+  `account-key.mjs` y `account.mjs` son idénticos a los de la 1.7.7; en
+  `google.mjs`, `decodeJwt` pasa a la línea 120 y la llamada a
+  `mapProfileToUser` a la 125; en `internal-adapter.mjs`,
+  `findAccountOwnerByKey` pasa a la 557 y su lanzamiento con claves repetidas a
+  la 570; `disableIdTokenSignIn` se evalúa en
+  `@better-auth/core/dist/oauth2/verify-id-token.mjs:23` y `:39`; el plugin de
+  OAuth no llama a `getUserInfo`, a `handleOAuthUserInfo` ni usa `selectedUser`.
+  Los seis puntos se sostienen. Si la confirmación de `backend-dev` da otra
+  cosa, el contrato vuelve a `architect` antes de seguir.
 
 - **Las citas de `auth-schema.ts`** se corren si el MCP regenera ese archivo
   (`npm run auth:schema`); lo que dicen no cambia.
 
 ### Supuestos sobre el árbol, con archivo y línea en `27774d6`
 
-| Supuesto                                                                                                     | Dónde                                                                                        |
-| ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
-| Enlace implícito apagado; `/link-social` y `/unlink-account` deshabilitados; errores del callback a `/login` | `src/server/auth.ts:38-43`, `:48`, `:52`                                                     |
-| Sin ingreso por `id_token`                                                                                   | `auth.ts:58-61`                                                                              |
-| `mapProfileToUser` arma `decideProfileEntry` con correo, verificación y `hd`; no pasa `sub`; corre sin `try` | `auth.ts:74-89`; `src/server/entry.ts:39-45`                                                 |
-| El correo de `user` no cambia en ningún ingreso                                                              | `auth.ts:98-103`                                                                             |
-| Los dos ganchos de `session.create`                                                                          | `auth.ts:106-134`; `entry.ts:77-89`                                                          |
-| `loginErrorUrl` recibe un `AccessDenialReason`                                                               | `entry.ts:91-96`                                                                             |
-| `EntryFacts` con invitación y membresía; solo `active` entra                                                 | `src/server/access.ts:25-43`, `:106-121`                                                     |
-| La identidad de un externo pide una invitación `pending` o `accepted`                                        | `access.ts:94-97`, `:152-154`, `:163-172`                                                    |
-| `/login` muestra un genérico para un código que no es un motivo                                              | `access.ts:188-215`                                                                          |
-| Un error inesperado se registra con `console.error`                                                          | `src/server/action.ts:69`                                                                    |
-| `entryFacts`: una sentencia sobre el workspace más viejo; dos `user` con el correo dan membresía `null`      | `src/modules/workspace/repository.ts:336-378`                                                |
-| `entryFactsOf` y `entryMembershipStatusLocked`                                                               | `src/modules/workspace/service.ts:380-387`, `:414-425`                                       |
-| `deleteSessionsOf` y `hasAccount`                                                                            | `src/server/auth-records.ts:22-44`, `:55-62`                                                 |
-| `account` sin índice único por `(provider_id, account_id)`; `user.email` único                               | `src/server/db/auth-schema.ts:7`, `:36-58`                                                   |
-| `account.updated_at` sin valor por omisión                                                                   | `auth-schema.ts:53-55`                                                                       |
-| `membership` e `invitation`                                                                                  | `src/server/db/schema.ts:97-123`, `:190-231`                                                 |
-| `can()`: la forma de `team.admin.setStatus`; la membresía del owner solo la toca el owner                    | `src/server/permissions/index.ts:64-67`, `:106`, `:138`, `:214-221`                          |
-| D-E2-7 en el service: la vista no ofrece reactivar sin cuenta; `changeStatus` responde `no_account`          | `src/modules/team/service.ts:121-129`, `:319-322`                                            |
-| `writeStatus`: estado, constancia, timer y sesiones                                                          | `team/service.ts:258-281`                                                                    |
-| La lista y el bloqueo de `team`                                                                              | `src/modules/team/repository.ts:46-70`, `:83-106`, `:124-136`                                |
-| Textos, códigos, la fila y las actions de `team`                                                             | `src/modules/team/schema.ts:34-65`, `:99-121`, `:134-141`; `team/actions.ts:17-51`           |
-| El menú de la fila recibe una sola entrada                                                                   | `src/modules/team/components/member-actions-menu.tsx:18-26`, `:53-58`                        |
-| Invitar: la membresía gana; una `accepted` sin membresía se reinvita                                         | `src/modules/workspace/invitation-plan.ts:75-98`                                             |
-| `user.email` lo leen la lista de equipo, el perfil propio y el encabezado propio                             | `team/repository.ts:57`; `src/modules/profile/service.ts:210`; `src/app/(app)/layout.tsx:20` |
-| El callback por `auth.handler` con un `id_token` sin firmar y `fetch` reemplazado en cada llamada            | `src/server/auth.integration.test.ts:313-372`                                                |
-| La e2e de E2 afirma «sin menú» en una inactiva sin cuenta, mirada por un admin                               | `e2e/team-status.spec.ts:263-296`                                                            |
+| Supuesto                                                                                                                                                | Dónde                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Enlace implícito apagado; `/link-social` y `/unlink-account` deshabilitados; errores del callback a `/login`                                            | `src/server/auth.ts:38-43`, `:48`, `:52`                                                     |
+| Sin ingreso por `id_token`                                                                                                                              | `auth.ts:58-61`                                                                              |
+| `mapProfileToUser` arma `decideProfileEntry` con correo, verificación y `hd`; no pasa `sub`; corre sin `try`                                            | `auth.ts:74-89`; `src/server/entry.ts:39-45`                                                 |
+| El correo de `user` no cambia en ningún ingreso                                                                                                         | `auth.ts:98-103`                                                                             |
+| Los dos ganchos de `session.create`                                                                                                                     | `auth.ts:106-134`; `entry.ts:77-89`                                                          |
+| `loginErrorUrl` recibe un `AccessDenialReason`                                                                                                          | `entry.ts:91-96`                                                                             |
+| `EntryFacts` con invitación y membresía; solo `active` entra                                                                                            | `src/server/access.ts:25-43`, `:106-121`                                                     |
+| La identidad de un externo pide una invitación `pending` o `accepted`                                                                                   | `access.ts:94-97`, `:152-154`, `:163-172`                                                    |
+| `/login` muestra un genérico para un código que no es un motivo                                                                                         | `access.ts:188-215`                                                                          |
+| Un error inesperado se registra con `console.error`                                                                                                     | `src/server/action.ts:69`                                                                    |
+| `entryFacts`: una sentencia sobre el workspace más viejo; parte de `user` con `left join` a `membership`; dos `user` con el correo dan membresía `null` | `src/modules/workspace/repository.ts:336-378`, `:356-363`                                    |
+| `entryFactsOf` y `entryMembershipStatusLocked`                                                                                                          | `src/modules/workspace/service.ts:380-387`, `:414-425`                                       |
+| `deleteSessionsOf` y `hasAccount`                                                                                                                       | `src/server/auth-records.ts:22-44`, `:55-62`                                                 |
+| `account` sin índice único por `(provider_id, account_id)`; `user.email` único                                                                          | `src/server/db/auth-schema.ts:7`, `:36-58`                                                   |
+| `account.updated_at` sin valor por omisión                                                                                                              | `auth-schema.ts:53-55`                                                                       |
+| `membership` e `invitation`                                                                                                                             | `src/server/db/schema.ts:97-123`, `:190-231`                                                 |
+| `can()`: la forma de `team.admin.setStatus`; la membresía del owner solo la toca el owner                                                               | `src/server/permissions/index.ts:64-67`, `:106`, `:138`, `:214-221`                          |
+| D-E2-7 en el service: la vista no ofrece reactivar sin cuenta; `changeStatus` responde `no_account`                                                     | `src/modules/team/service.ts:121-129`, `:319-322`                                            |
+| `writeStatus`: estado, constancia, timer y sesiones                                                                                                     | `team/service.ts:258-281`                                                                    |
+| La lista y el bloqueo de `team`                                                                                                                         | `src/modules/team/repository.ts:46-70`, `:83-106`, `:124-136`                                |
+| Textos, códigos, la fila y las actions de `team`                                                                                                        | `src/modules/team/schema.ts:34-65`, `:99-121`, `:134-141`; `team/actions.ts:17-51`           |
+| El menú de la fila recibe una sola entrada                                                                                                              | `src/modules/team/components/member-actions-menu.tsx:18-26`, `:53-58`                        |
+| Invitar: la membresía gana; una `accepted` sin membresía se reinvita                                                                                    | `src/modules/workspace/invitation-plan.ts:75-98`                                             |
+| `user.email` lo leen la lista de equipo, el perfil propio y el encabezado propio                                                                        | `team/repository.ts:57`; `src/modules/profile/service.ts:210`; `src/app/(app)/layout.tsx:20` |
+| El callback por `auth.handler` con un `id_token` sin firmar y `fetch` reemplazado en cada llamada                                                       | `src/server/auth.integration.test.ts:313-372`                                                |
+| La e2e de E2 afirma «sin menú» en una inactiva sin cuenta, mirada por un admin                                                                          | `e2e/team-status.spec.ts:263-296`                                                            |
 
-Las citas de `node_modules` están en D-E2b-3 y D-E2b-10.
+Las citas de `node_modules` están en D-E2b-3 y D-E2b-10 (1.7.7) y en la lista de
+arriba (1.7.10).
 
 ## 1. Alcance
 
@@ -616,8 +658,8 @@ export type EntryFacts = {
 };
 
 /**
- * D-E2b-3: si el ingreso usa la vinculación: la regla deja entrar por una
- * membresía activa con una marca vigente.
+ * D-E2b-3: si el ingreso intenta usar la vinculación: la regla deja entrar por
+ * una membresía activa con una marca vigente.
  */
 export function usesAccountLink(decision: AccessDecision, facts: EntryFacts): boolean;
 
@@ -666,8 +708,10 @@ export type AccountLinkOutcome = "linked" | "skipped" | "inactive";
 /**
  * D-E2b-3: en una transacción, si `sub` no es la cuenta de ninguna fila,
  * `claimAccountLink` (team) toma la marca del correo y `bindGoogleAccount`
- * deja `sub` como la única cuenta de la persona. `skipped` y `inactive` no
- * escriben. `email` ya normalizado. Lanza si la base falla; no atrapa.
+ * deja `sub` como la única cuenta de la persona. Devuelve `skipped` si `sub` ya
+ * tiene cuenta o si `claimAccountLink` devuelve `none`, e `inactive` si devuelve
+ * `inactive`; los dos sin escribir. `email` ya normalizado. Lanza si la base
+ * falla; no atrapa.
  */
 export async function bindRequestedAccount(
   email: string,
@@ -779,8 +823,9 @@ export async function registerExternalMember(
 
 - **`entryFacts`** suma `accountLink`, en la misma sentencia: `true` si hay una
   sola fila `user` con ese correo normalizado y su membresía en el workspace
-  tiene una marca vigente (D-E2b-11, con `ACCOUNT_LINK_TTL_DAYS` de
-  `@/server/access`). `entryFactsOf` lo pasa a `EntryFacts`.
+  tiene una marca vigente según `now()` (D-E2b-11, con `ACCOUNT_LINK_TTL_DAYS`
+  de `@/server/access`). Solo decide si el ingreso intenta; la vigencia final la
+  decide `claimAccountLink`. `entryFactsOf` lo pasa a `EntryFacts`.
 - **`entryMembershipStatusLocked`** usa `entryWorkspaceIdOf`, sin cambiar lo que
   devuelve.
 - `registerExternalMember` bloquea la fila de `invitation` del correo
@@ -872,22 +917,33 @@ valor de `ACCOUNT_LINK_TTL_DAYS`, para los textos de §5.4.
 ### 4.7 Repository (`src/modules/team/repository.ts`)
 
 - **`listMembers`** suma `linkRequestedAt`, `linkExpiresAt` y `linkExpired`,
-  calculados en la sentencia con el reloj de la base y `ACCOUNT_LINK_TTL_DAYS`
-  (D-E2b-11), y `invitationStatus`, el estado de la invitación del correo
-  normalizado en el workspace, con un `left join` (ADR 0010: se muestra).
-  `email` sigue siendo el de `user`; el service lo pasa a `null` si es uno
-  liberado.
+  calculados en la sentencia con `now()` y `ACCOUNT_LINK_TTL_DAYS` (D-E2b-11), y
+  `invitationStatus`, el estado de la invitación del correo normalizado en el
+  workspace, con un `left join` (ADR 0010: se muestra). `email` sigue siendo el
+  de `user`; el service lo pasa a `null` si es uno liberado.
 - **`lockForChange`** suma `linkPending` (hay marca, vigente o vencida) y
-  `linkValid` (vigente) a `LockedMembership`.
-- **`lockByEmail(tx, workspaceId, email)`**, nueva: las membresías de
-  `workspaceId` cuyo `user` tiene `lower(btrim(email)) = email`, con `id`,
-  `userId`, `role`, `status`, `linkValid` y `linkRequestedById`,
-  `for no key update of membership`. Devuelve todas: el service decide con una
-  sola.
+  `linkValid` (vigente según `now()`) a `LockedMembership`. `setAccountLink` los
+  usa para decidir entre «ya está», renovar o cancelar: ahí no importa la hora
+  del momento, porque el peor caso es renovar una marca que venció hace
+  instantes.
+- **`usersByEmail(tx, email)`**, nueva: los `id` de las filas `user` cuyo
+  `lower(btrim(email))` es `email`, sin bloqueo. Parte de `user`, como la
+  subconsulta de `entryFacts` (`workspace/repository.ts:356-363`).
+- **`lockMembershipOf(tx, workspaceId, userId)`**, nueva: la membresía de ese
+  `user_id` en el workspace, con `id`, `role`, `status` y `linkValid` (solo
+  para describir), `for no key update`. `undefined` si no tiene.
+- **`consumeAccountLink(tx, membershipId, ttlDays)`**, nueva: la sentencia de
+  D-E2b-3, paso 2, con `clock_timestamp()`. Devuelve `{ requestedById: string |
+null }` si limpió la marca, o `undefined` si no había una vigente en ese
+  momento.
 - **`updateAccountLink(tx, workspaceId, membershipId, requestedById: string |
 null)`**, nueva: con un id, `account_link_requested_at = now()` y
   `account_link_requested_by_id`; con `null`, las dos en nulo. La sentencia de
   §6.8 no pasa por acá: es SQL a mano.
+
+`lockByEmail`, que la versión anterior del contrato nombraba, no existe: contaba
+membresías en lugar de filas `user`, y no se puede bloquear el lado nulable de
+un `left join`.
 
 ### 4.8 Service (`src/modules/team/service.ts`)
 
@@ -904,7 +960,7 @@ export async function releaseEmail(
   input: ReleaseEmailInput,
 ): Promise<ReleaseEmailResult>;
 
-/** D-E2b-3: lo que `claimAccountLink` leyó bajo el bloqueo. */
+/** D-E2b-3: lo que `claimAccountLink` leyó y escribió. */
 export type ClaimedAccountLink =
   | { readonly kind: "claimed"; readonly person: Actor }
   | { readonly kind: "inactive" }
@@ -912,12 +968,13 @@ export type ClaimedAccountLink =
 
 /**
  * D-E2b-3, ADR 0025: toma la marca vigente del `user` cuyo correo normalizado es
- * `email`, en el workspace del ingreso. Bloquea su membresía `for no key
- * update`. Con una sola fila, activa y con marca vigente, la limpia, deja
- * `membership.linkUse` con la persona como autora y `nextValue: { requestedById
- * }`, y devuelve `claimed`; con una sola fila no activa, `inactive`; si no,
- * `none`. Los dos últimos no escriben. No consulta permisos: la usa `entry.ts`
- * en el ingreso, sin sesión.
+ * `email`, en el workspace del ingreso. Con más de una fila `user`, ninguna o una
+ * sin membresía, `none` sin bloquear. Con una, bloquea su membresía `for no key
+ * update`: no activa, `inactive`; activa, intenta limpiar la marca con
+ * `consumeAccountLink`, que decide la vigencia con la hora del momento; si la
+ * limpió, deja `membership.linkUse` con la persona como autora y `nextValue: {
+ * requestedById }` y devuelve `claimed`; si no, `none`. `inactive` y `none` no
+ * escriben. No consulta permisos: la usa `entry.ts` en el ingreso, sin sesión.
  */
 export async function claimAccountLink(
   tx: Transaction,
@@ -942,9 +999,10 @@ linkRequestedAt: <anterior o null> }`, `nextValue: { linkRequestedAt: <nueva>
   `updateAccountLink(…, null)` y `membership.linkCancel` **antes** de
   `updateStatus` (D-E2b-7).
 - **`claimAccountLink`**: `entryWorkspaceIdOf(tx)`; sin workspace, `none`.
-  `lockByEmail`; con otra cantidad que una fila, `none`; con una no `active`,
-  `inactive`; activa sin `linkValid`, `none`. Si no, `updateAccountLink(…,
-null)`, la constancia y `claimed` con el `Actor` (`status: "active"`).
+  `usersByEmail`; con otra cantidad que una, `none`. `lockMembershipOf`; sin
+  membresía, `none`; no `active`, `inactive`. `consumeAccountLink`; sin fila,
+  `none`; con una, la constancia y `claimed` con el `Actor` (`status:
+"active"`).
 - **`getTeamView`**: cada fila suma `email` (`null` si `isReleasedEmail`),
   `link`, `linkActions` (`linkActionsOf`), `registersExternal` y
   `canReleaseEmail` (`releaseOf`):
@@ -1320,7 +1378,7 @@ Sirve para cualquier persona activa, no solo para el owner.
 ```sql
 with ws as (select id from workspace order by created_at, id limit 1),
 target as (
-  select m.id, m.workspace_id
+  select m.id, m.workspace_id, m.account_link_requested_at as anterior
   from membership m
   join ws on ws.id = m.workspace_id
   join "user" u on u.id = m.user_id
@@ -1332,17 +1390,18 @@ requested as (
   set account_link_requested_at = now(), account_link_requested_by_id = null
   from target
   where m.id = target.id
-  returning m.id, m.workspace_id
+  returning m.id, m.workspace_id, target.anterior
 )
 insert into audit_log (workspace_id, actor_id, action, entity, entity_id, previous_value, next_value)
 select workspace_id, null, 'membership.linkRequest', 'membership', id::text,
-       null,
+       json_build_object('linkRequestedAt', anterior)::text,
        json_build_object('linkRequestedAt', now())::text
 from requested;
 ```
 
-Lo esperado: una fila insertada en `audit_log`. Cero filas: el correo no es el
-de una membresía activa. Si ya había una marca, vigente o vencida, la renueva.
+Lo esperado: una fila insertada en `audit_log`, con la fecha anterior o `null`
+en `previous_value`. Cero filas: el correo no es el de una membresía activa. Si
+ya había una marca, vigente o vencida, la renueva.
 
 **Si el correo es de fuera de los dominios**, el ingreso pide además una
 invitación abierta (D-E2b-8). Antes de la sentencia de arriba, el usuario mira
@@ -1379,8 +1438,8 @@ de E2b: el usuario la corre con `!` contra esa rama. La base local la recibe con
 
 ### backend-dev
 
-- La verificación de §0 si `main` trae otra versión de Better Auth, en el
-  registro del slice.
+- La confirmación de §0 si `main` trae Better Auth 1.7.10, en el registro del
+  slice.
 - `src/server/db/schema.ts` y la migración generada (§2).
 - `src/server/access.ts` y `access.test.ts` (§4.1).
 - `src/server/entry.ts`, `auth.ts` (§4.2), `entry.integration.test.ts` y
@@ -1394,8 +1453,9 @@ de E2b: el usuario la corre con `!` contra esa rama. La base local la recibe con
   `schema.test.ts`, `service.integration.test.ts`,
   `actions.integration.test.ts` y `concurrency.integration.test.ts` (§4.6 a
   §4.9).
-- `src/test/factories.ts`: `seedAccountLink(membershipId, requestedById,
-daysAgo)`, que escribe la marca con `now() - make_interval(days => daysAgo)`.
+- `src/test/factories.ts`: `seedAccountLink(membershipId, requestedById, age)`,
+  que escribe la marca con `now()` menos `age`, un intervalo de Postgres (`'8
+days'`, `'7 days' - '5 seconds'`).
 - `src/app/login/page.test.tsx`: los casos de `account_not_linked` y
   `vinculacion_fallida`.
 - Con el MCP mergeado antes, la llamada a `deleteGrantsOf` (§1).
@@ -1466,7 +1526,7 @@ daysAgo)`, que escribe la marca con `now() - make_interval(days => daysAgo)`.
 
 ### Orden
 
-1. `backend-dev`: la verificación de §0, los tipos y textos de §4.1 y §4.6, y la
+1. `backend-dev`: la confirmación de §0, los tipos y textos de §4.1 y §4.6, y la
    migración.
 2. En paralelo: `backend-dev` con el ingreso, `can()`, las funciones ajenas y el
    service; `frontend-dev` con la pantalla; `e2e-tester` con el arnés y el spec.
@@ -1502,9 +1562,13 @@ daysAgo)`, que escribe la marca con `now() - make_interval(days => daysAgo)`.
    mismo una con cuenta y un `sub` nuevo. `/login` muestra EQ-122.
 6. **Vencida** (D-E2b-11): con una marca de hace ocho días, un `sub` nuevo
    termina en `account_not_linked` y la marca queda; con una de hace seis, se
-   usa. La vista trae `link.expired` y `linkActions` `["request", "cancel"]`;
-   pedirla de nuevo la renueva (fecha nueva, `membership.linkRequest` con la
-   fecha anterior) y vuelve a servir.
+   usa. **Una marca que vence mientras el ingreso espera el bloqueo no se usa**:
+   sembrada con siete días menos unos segundos, con la membresía tomada por una
+   barrera (`queueBehindBarrier`) hasta que pasa el vencimiento, el ingreso
+   termina en `account_not_linked`, sin `account` nueva y con la marca intacta.
+   La vista trae `link.expired` y `linkActions` `["request", "cancel"]`; pedirla
+   de nuevo la renueva (fecha nueva, `membership.linkRequest` con la fecha
+   anterior) y vuelve a servir.
 7. **Solo una activa** (D-E2b-2, P-05): la base rechaza poner la marca en una
    inactiva; una inactiva sin cuenta que entra sigue viendo EQ-92 sin escribir.
 8. **Cancelar** (D-E2b-6): limpia la marca, vigente o vencida, con
@@ -1580,9 +1644,10 @@ daysAgo)`, que escribe la marca con `now() - make_interval(days => daysAgo)`.
     inactiva sin cuenta con un correo externo sin normalizar, una activa sin
     cuenta, dos `user` con el mismo correo normalizado, una cuenta repetida— y
     dan lo que su comentario dice; las sentencias de §6.8 escriben la marca, la
-    invitación de un externo y sus constancias, y una segunda corrida de la de
-    la invitación no escribe. `backend-dev` pega la salida en el registro del
-    slice, con la siembra.
+    invitación de un externo y sus constancias —la de la marca, con la fecha
+    anterior en `previous_value`—, y una segunda corrida de la de la invitación
+    no escribe. `backend-dev` pega la salida en el registro del slice, con la
+    siembra.
 26. **La e2e entera en verde**, en una base nueva y en una que se reusa; los
     recorridos de R8, E1a, E1b y E2 sin cambiar lo que afirman.
 
@@ -1626,21 +1691,31 @@ daysAgo)`, que escribe la marca con `now() - make_interval(days => daysAgo)`.
   - **El 3 frena una vinculación antes de la regla**: se verifica que falla
     llamando a `bindRequestedAccount` antes de `decideGoogleAccess` (queda una
     `account` nueva y la marca limpia).
+  - **El 6, la marca que vence durante la espera**: `seedAccountLink` con `'7
+days' - '5 seconds'`; la barrera toma la membresía `for no key update` sin
+    escribir; el ingreso pasa `entryFacts` (vigente) y queda trabado en
+    `lockMembershipOf`; la barrera se suelta cuando pasaron los segundos de
+    margen. Se verifica que falla con `now()` en lugar de `clock_timestamp()`
+    en `consumeAccountLink` (vincula). El margen se espera con la condición de
+    vencimiento, no con una espera fija.
   - **El 21** inyecta el fallo con `vi.spyOn` sobre el módulo de
     `auth-records` y verifica que, sin el `try` de `decideProfileEntry`, el
     callback responde un 500.
 - **Criterio 13**, con `queueBehindBarrier` (`src/test/concurrency.ts`): la
   barrera toma la membresía `for no key update` sin escribir; dos
   `signInWithGoogle` con dos `sub` y dos `code` quedan trabados en
-  `claimAccountLink`; al abrir, uno vincula y el otro termina en
-  `account_not_linked`. Se verifica que falla sin el bloqueo de `lockByEmail`
-  (quedan dos cuentas).
+  `lockMembershipOf`; al abrir, uno vincula y el otro termina en
+  `account_not_linked`. Se verifica que falla sin el bloqueo (quedan dos
+  cuentas).
 - **Criterio 14**, con la misma barrera y `changeStatus` como corredor en los
   dos órdenes, como el criterio 26 de E2; en el primero, el ingreso termina en
   `membresia_inactiva`.
 - **`entry.integration.test.ts`**: `bindRequestedAccount` con marca vigente,
-  vencida y sin marca, con un `sub` con cuenta, con dos `user` del mismo correo,
-  con la membresía inactiva y sin workspace, con cada `AccountLinkOutcome`.
+  vencida y sin marca, con un `sub` con cuenta, con la membresía inactiva, sin
+  workspace, con cada `AccountLinkOutcome`, y **con dos filas `user` del mismo
+  correo normalizado y una sola membresía con la marca**: `skipped`, sin
+  `account` nueva y con la marca intacta. Se verifica que falla contando
+  membresías en lugar de filas `user`.
 - **`auth-records.integration.test.ts`**: `googleAccountOwnerOf`;
   `bindGoogleAccount` borra las otras cuentas y las sesiones de la persona y no
   las de otra, inserta la nueva con `updated_at`, y deja sus constancias;
@@ -1652,7 +1727,8 @@ daysAgo)`, que escribe la marca con `now() - make_interval(days => daysAgo)`.
 - **`team/service.integration.test.ts`**: criterios 1, 4, 6 (la vista y la
   renovación), 7 a 11, 15 (la vista), 16 a 18 y 22. El 7, con un `update`
   directo que choca con el `check`. El 22, con un fallo inyectado después de
-  cada función ajena.
+  cada función ajena. `consumeAccountLink` con una marca vigente, una vencida y
+  sin marca.
 - **`team/actions.integration.test.ts`**: cada fila de §4.10 de
   `setAccountLink` y `releaseEmail` con su código y su texto; con éxito,
   `revalidatePath("/", "layout")` (criterio 23); sin sesión, a `/login` sin
@@ -1720,12 +1796,13 @@ consultas de §6 (a mano).
   `commit`, el error vuelve como `vinculacion_fallida` (criterio 21).
 - **Una versión de Better Auth que mueva `getUserInfo`** después de la búsqueda
   deja la vinculación sin efecto: el criterio 2, por el handler, lo frena, y §0
-  pide volver a verificar en cada actualización.
+  pide confirmar los seis puntos en cada actualización.
 - **Otros caminos que llaman a `getUserInfo`** correrían `mapProfileToUser`, y
   con él la vinculación:
   - **`/sign-in/social` con `idToken`** (`better-auth/dist/api/routes/sign-in.mjs:155-171`):
     llama a `getUserInfo` con un `id_token` que manda el cliente. Lo cierra
-    `disableIdTokenSignIn` (`auth.ts:58-61`), y el test de
+    `disableIdTokenSignIn` (`auth.ts:58-61`; en la 1.7.10,
+    `verify-id-token.mjs:23` y `:39`), y el test de
     `auth.integration.test.ts:101` afirma el 404. Si alguna vez se abre, la
     vinculación correría con un token verificado por firma, pero por un camino
     que este contrato no revisó.
@@ -1764,12 +1841,12 @@ consultas de §6 (a mano).
    Alternativa: owner y admin, con las filas `admin` solo del owner, como
    desactivar (P-07). Con la alternativa, un admin también reactiva a una
    persona `member` sin cuenta.
-2. **¿La vinculación vence?** Recomendado: **sí, a los siete días**, calculado
-   al leer, sin cron, con la fecha del pedido y la del vencimiento en la fila
-   (D-E2b-11). Una vinculación abre una fila con rol y horas; siete días
-   alcanzan para coordinar el ingreso y acotan la exposición. Alternativas: otro
-   plazo, que es cambiar la constante; o que no venza, como una invitación
-   (EQ-25), y se cancele a mano.
+2. **¿La vinculación vence?** Recomendado: **sí, a los siete días**, sin cron,
+   con la fecha del pedido y la del vencimiento en la fila (D-E2b-11). Una
+   vinculación abre una fila con rol y horas; siete días alcanzan para coordinar
+   el ingreso y acotan la exposición. Alternativas: otro plazo, que es cambiar
+   la constante; o que no venza, como una invitación (EQ-25), y se cancele a
+   mano.
 3. **¿Un código de un solo uso además del correo?** Recomendado: **no**
    (D-E2b-1). El owner confirma, al pedirla, que la dirección sigue siendo de
    esa persona, la marca vence, y para el dominio la dirección la controla la
