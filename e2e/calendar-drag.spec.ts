@@ -436,7 +436,7 @@ test("las asas estiran un extremo entre sus topes, y la medianoche se cruza movi
   ).toBeVisible();
 });
 
-test("arrastrar sobre el fondo de una columna selecciona las franjas y abre el alta con ese rango", async ({
+test("arrastrar sobre el fondo de una columna selecciona las celdas del paso entre la tocada y la del puntero, y abre el alta con ese rango", async ({
   page,
 }) => {
   const requests = countRequests(page);
@@ -570,21 +570,22 @@ test("a «1 h» el arrastre ajusta a 15 minutos al mover, estirar y seleccionar"
   );
 
   // Crear arrastrando (CAL-44): de la celda de 15 minutos tocada a la del
-  // puntero, y el alta abre con ese rango. La grilla baja a las 07:00 para que
-  // ni el punto apretado ni el recorrido caigan en la banda del desplazamiento
-  // automático del borde superior.
+  // puntero, y el alta abre con ese rango. Apretar a las 08:40 ancla en las
+  // 08:30, no en la franja de la hora tocada, las 08:00. La grilla baja a las
+  // 07:00 para que ni el punto apretado ni el recorrido caigan en la banda del
+  // desplazamiento automático del borde superior.
   await scrollGridTo(page, "07:00");
-  await pressAt(page, { on: fridayColumn, y: slotOffset("08:00") });
+  await pressAt(page, { on: fridayColumn, y: slotOffset("08:40") });
   await moveTo(page, await slotPoint(page, friday, today, "09:15"));
-  await expect(calendarSelection(fridayColumn)).toContainText("08:00 – 09:30");
+  await expect(calendarSelection(fridayColumn)).toContainText("08:30 – 09:30");
   await page.mouse.up();
   const adding = entryDialog(page, "Agregar entrada");
   await expectEditDialog(adding, {
     description: "",
     date: dayLabel(friday, today),
-    start: "08:00",
+    start: "08:30",
     end: "09:30",
-    duration: "1:30",
+    duration: "1:00",
   });
   await page.keyboard.press("Escape");
   await expect(adding).toBeHidden();

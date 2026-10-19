@@ -309,7 +309,8 @@ describe("candidateAt: mover (CAL-50, CAL-51, CAL-53, CAL-57, CAL-61)", () => {
       start: "23:00",
       end: "03:00",
     });
-    // El puntero en el borde de arriba: el bloque conserva una hora en el período.
+    // El puntero en el borde de arriba: el inicio queda donde lo deja el agarre,
+    // a una hora del período.
     expect(candidateAt(gesture, 0, gridOf(60))).toEqual({
       date: "2026-09-27",
       start: "21:00",
@@ -531,13 +532,16 @@ describe("candidateAt: estirar (CAL-52, CAL-55, CAL-56, CAL-57)", () => {
     );
     expect(candidateAt(end, at(6, "02:00"), madridGrid(60))).toBeNull();
     expect(candidateAt(end, at(6, "03:00"), madridGrid(60))?.end).toBe("03:00");
+    // Con el paso de 15 minutos, el fin llega a la última marca antes del salto.
+    expect(candidateAt(end, at(6, "01:50"), madridGrid(60))?.end).toBe("01:45");
+    expect(candidateAt(end, at(6, "02:20"), madridGrid(60))).toBeNull();
   });
 });
 
 describe("candidateAt: crear (CAL-44)", () => {
   const friday = 4;
 
-  it("cubre las franjas entre la tocada y la del puntero, hacia abajo y hacia arriba", () => {
+  it("cubre las celdas del paso entre la tocada y la del puntero, hacia abajo y hacia arriba", () => {
     const down = { kind: "create", dayIndex: friday, anchor: 510 } as const;
     expect(candidateAt(down, at(friday, "09:35"), gridOf(15))).toEqual({
       date: "2026-10-02",
