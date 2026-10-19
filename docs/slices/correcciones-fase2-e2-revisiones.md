@@ -1,0 +1,159 @@
+# E2: implementación y revisiones
+
+Rama `fase2/e2-desactivar` desde `main` en `e4a6c60`, en el worktree
+`/home/maxi/program/clock-e2` (fuera del repositorio). Contrato:
+[`fase2-e2-desactivar.md`](fase2-e2-desactivar.md).
+
+## Mutaciones del backend
+
+Cada mutación se aplicó sobre el código de `53995f1` (las dos del gancho, sobre
+el mismo código antes de commitearlo), se corrieron los tests que la tienen que
+ver contra `clock_e2_back` y se revirtió.
+
+| Mutación                                                            | Falla                                                                                                                                                                       |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sin el gancho `session.create.after`                                | criterio 26: «Un corredor terminó sin trabarse en la barrera.»                                                                                                              |
+| Un `after` que espera y no borra                                    | criterio 26, en la cuenta de `session`; `dropSessionOfInactive` con `inactive` e `invited`, y «borra solo la sesión que recibe»                                             |
+| `closeAndOpen` sin `isMembershipActiveLocked`                       | criterio 13, los dos órdenes (el corredor del arranque termina sin trabarse); criterio 16, el arranque; `startTimer` y `continueEntry` con la membresía inactiva en la base |
+| Cualquier membresía da acceso (la regla de E1b)                     | `access.test.ts` (6 casos); criterio 10 en `entry.integration.test.ts` (5) y en el callback                                                                                 |
+| La membresía no gana sobre una invitación pendiente                 | `access.test.ts` (4 casos); «una membresía inactiva con una invitación pendiente tampoco entra»                                                                             |
+| Por pedido, la decisión completa en lugar de `decideStoredIdentity` | criterio 11: el externo con `accepted` inactivo, en `entry` y en `session`                                                                                                  |
+| `dropSessionOfInactive` borra también sin membresía                 | «sin membresía, la deja» y «sin workspace, la deja»                                                                                                                         |
+| `entryMembershipStatusLocked` lee sin bloqueo                       | criterio 26; «las dos esperan a una desactivación en curso»                                                                                                                 |
+| `isMembershipActiveLocked` da `true` sin membresía                  | «isMembershipActiveLocked sin membresía: false»                                                                                                                             |
+| `team.admin.setStatus` también para admin                           | `permissions.test.ts`; criterio 5 (EQ-85, para desactivar y para reactivar); criterio 18 (la vista del admin)                                                               |
+| Desactivar sin `deleteSessionsOf`                                   | criterios 1 y 17                                                                                                                                                            |
+| Desactivar sin `stopRunningTimerOf`                                 | criterio 1; criterio 13, el arranque que lee primero; criterio 14                                                                                                           |
+| `deleteSessionsOf` deja constancia sin sesiones                     | criterio 2; criterio 5 (tres casos); «sin sesiones no escribe nada»                                                                                                         |
+| Reactivar sin exigir `account`                                      | criterio 9, en el service y en la action                                                                                                                                    |
+| Sin el paso de la propia                                            | criterio 7, el owner y un admin; la action con EQ-84                                                                                                                        |
+| Una `invited` no responde `not_found`                               | criterio 8, en el service y en la action                                                                                                                                    |
+| La autoridad de la sesión en lugar de la releída bajo el bloqueo    | criterio 6 (dos casos); criterio 15, «el owner baja a la admin A mientras A desactiva a M»                                                                                  |
+| Una inactiva conserva el control de rol                             | criterio 18, la vista del owner y la del admin                                                                                                                              |
+| «Reactivar» en una inactiva sin cuenta                              | criterio 18, las dos vistas                                                                                                                                                 |
+| `listMembers` solo con las activas                                  | criterio 18, las dos vistas                                                                                                                                                 |
+
+## Criterio 24: las consultas de §6
+
+`backend-dev` corrió las tres consultas de §6.1, las dos sentencias y otra vez
+las consultas, con `psql`, contra `clock_e2_queries2` migrada hasta la última,
+sobre esta siembra:
+
+```sql
+insert into "user" (id, name, email, email_verified) values
+  ('u-owner', 'Owner', 'owner@empresa.com', true),
+  ('u-sesion', 'Inactiva con sesión', ' Sesion@Empresa.com', true),
+  ('u-timer', 'Inactiva con timer', 'timer@empresa.com', true),
+  ('u-activa', 'Activa sin cuenta', 'activa.sincuenta@empresa.com', true),
+  ('u-inactiva', 'Inactiva sin cuenta', 'inactiva.sincuenta@empresa.com', true);
+insert into workspace (id, name, owner_id) values
+  ('00000000-0000-0000-0000-0000000000a1', 'Workspace', 'u-owner');
+insert into workspace_settings (workspace_id) values ('00000000-0000-0000-0000-0000000000a1');
+insert into membership (workspace_id, user_id, role, status) values
+  ('00000000-0000-0000-0000-0000000000a1', 'u-owner', 'owner', 'active'),
+  ('00000000-0000-0000-0000-0000000000a1', 'u-sesion', 'member', 'inactive'),
+  ('00000000-0000-0000-0000-0000000000a1', 'u-timer', 'admin', 'inactive'),
+  ('00000000-0000-0000-0000-0000000000a1', 'u-activa', 'member', 'active'),
+  ('00000000-0000-0000-0000-0000000000a1', 'u-inactiva', 'member', 'inactive');
+insert into account (id, account_id, provider_id, user_id, updated_at) values
+  ('a-owner', 'sub-owner', 'google', 'u-owner', now()),
+  ('a-sesion', 'sub-sesion', 'google', 'u-sesion', now()),
+  ('a-timer', 'sub-timer', 'google', 'u-timer', now());
+insert into session (id, token, user_id, expires_at, updated_at) values
+  ('s-owner', 't-owner', 'u-owner', now() + interval '1 day', now()),
+  ('s-sesion-1', 't-sesion-1', 'u-sesion', now() + interval '1 day', now()),
+  ('s-sesion-2', 't-sesion-2', 'u-sesion', now() + interval '1 day', now());
+insert into time_entry (id, workspace_id, user_id, description, started_at, ended_at) values
+  ('00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000a1', 'u-timer', 'en curso', now() - interval '2 hours', null),
+  ('00000000-0000-0000-0000-0000000000e2', '00000000-0000-0000-0000-0000000000a1', 'u-sesion', 'cerrada', now() - interval '1 day', now() - interval '23 hours');
+```
+
+Lo que muestra, contra el comentario de cada consulta: la **1** trae las cinco
+membresías con su cuenta, sus sesiones y su timer; la **2** trae a la inactiva
+con sesiones y a la inactiva con timer, y no a la inactiva sin cuenta, que no
+tiene ninguna de las dos; la **3**, a la activa sin cuenta. Después de las dos
+sentencias, la **2** da cero filas y la **3** sigue trayendo a la activa sin
+cuenta. Las sentencias dejan una constancia cada una, sin actor; la sesión del
+owner y la entrada cerrada no cambian.
+
+La salida (`-- q.sql` son las tres consultas, en orden; `-- fix.sql`, las dos
+sentencias; `-- after.sql`, el registro, las sesiones y las entradas):
+
+```text
+-- seed.sql
+INSERT 0 5
+INSERT 0 1
+INSERT 0 1
+INSERT 0 5
+INSERT 0 3
+INSERT 0 3
+INSERT 0 2
+-- q.sql
+             correo             |  rol   |  estado  | con_cuenta | sesiones | timer_en_curso
+--------------------------------+--------+----------+------------+----------+----------------
+ activa.sincuenta@empresa.com   | member | active   | f          |        0 | f
+ owner@empresa.com              | owner  | active   | t          |        1 | f
+ inactiva.sincuenta@empresa.com | member | inactive | f          |        0 | f
+ sesion@empresa.com             | member | inactive | t          |        2 | f
+ timer@empresa.com              | admin  | inactive | t          |        0 | t
+(5 rows)
+
+       correo       |  estado
+--------------------+----------
+ sesion@empresa.com | inactive
+ timer@empresa.com  | inactive
+(2 rows)
+
+            correo            |  rol
+------------------------------+--------
+ activa.sincuenta@empresa.com | member
+(1 row)
+
+-- fix.sql
+INSERT 0 1
+INSERT 0 1
+-- q.sql
+             correo             |  rol   |  estado  | con_cuenta | sesiones | timer_en_curso
+--------------------------------+--------+----------+------------+----------+----------------
+ activa.sincuenta@empresa.com   | member | active   | f          |        0 | f
+ owner@empresa.com              | owner  | active   | t          |        1 | f
+ inactiva.sincuenta@empresa.com | member | inactive | f          |        0 | f
+ sesion@empresa.com             | member | inactive | t          |        0 | f
+ timer@empresa.com              | admin  | inactive | t          |        0 | f
+(5 rows)
+
+ correo | estado
+--------+--------
+(0 rows)
+
+            correo            |  rol
+------------------------------+--------
+ activa.sincuenta@empresa.com | member
+(1 row)
+
+-- after.sql
+      action       |   entity   |              entity_id               | actor_id |   previous_value   |                    next_value
+-------------------+------------+--------------------------------------+----------+--------------------+--------------------------------------------------
+ session.revokeAll | user       | u-sesion                             |          | {"sessions" : 2}   |
+ timeEntry.stop    | time_entry | 00000000-0000-0000-0000-0000000000e1 |          | {"endedAt" : null} | {"endedAt" : "2026-10-19T20:41:47.871143+00:00"}
+(2 rows)
+
+   id    | user_id
+---------+---------
+ s-owner | u-owner
+(1 row)
+
+                  id                  | user_id  | abierta
+--------------------------------------+----------+---------
+ 00000000-0000-0000-0000-0000000000e1 | u-timer  | f
+ 00000000-0000-0000-0000-0000000000e2 | u-sesion | f
+(2 rows)
+
+```
+
+Una diferencia de forma, que no cambia lo que la consulta 2 detecta: las
+constancias que escriben las sentencias de §6.1 con `json_build_object(...)::text`
+llevan blancos (`{"sessions" : 2}`) y el instante con el formato de Postgres
+(`2026-10-19T20:41:47.871143+00:00`); las que escribe la aplicación con
+`recordAudit` son `{"sessions":2}` y `"2026-10-19T20:41:47.871Z"`. Quien lea
+`audit_log` comparando el texto las ve distintas.
