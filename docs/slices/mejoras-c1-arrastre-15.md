@@ -29,11 +29,16 @@ crear arrastrando—. **El zoom, el alto de la franja y el dibujo de la grilla n
 | `initialCandidate` de `create`, `slotDraft(…, grid.zoom, …)` (`calendar-gestures.ts:137-138`)          | borrador de un clic (CAL-43)    | sigue siendo el de un clic        |
 | `gridMinuteAt` y `minuteHeight(zoom)` (`:299-307`; `calendar-layout.ts:27-29`)                         | escala en píxeles               | no cambia                         |
 | `slotOf`, `minuteAt`, `slotAt`, `slotDraft`, `addEntryDraft` (`calendar-layout.ts:154-224`)            | clic y «Agregar entrada»        | no cambian                        |
-| `CalendarSelection` y `layoutColumn` (`calendar-day-column.tsx:225-233`; `calendar-layout.ts:300-303`) | dibujo                          | no cambian                        |
+| `CalendarSelection` y `layoutColumn` (`calendar-day-column.tsx:225-233`; `calendar-layout.ts:300-303`) | dibujo                          | no cambian (ver abajo)            |
 | Cancelar con otro zoom (`use-calendar-gesture.ts:419-429`)                                             | ciclo del gesto                 | no cambia                         |
 | Desplazamiento automático y umbral (`calendar-gestures.ts:339-354`)                                    | píxeles                         | no cambian                        |
 
 **Teclado**: no hay gestos de teclado (§5.9 del 8b); nada que cambiar.
+
+_Corregido el 2026-10-19_: `CalendarSelection` suma `overflow-hidden leading-tight` a su clase,
+por decisión del team-lead tras la revisión de frontend. Con el zoom en 60 una selección de un
+paso mide 12 px y el rótulo desbordaba. La tabla decía que el dibujo no cambiaba; la posición y
+el alto siguen igual.
 
 ## Contrato de código
 
@@ -168,9 +173,13 @@ En la recta de §5.1 del 8b; «a las HH:MM» es el punto bajo el puntero, sin el
    en 10:30 es ese mismo borrador; en Madrid el 2026-03-29, con el ancla en 01:15, es 01:00–03:00.
 9. **En la pantalla, a «1 h»** (e2e): un bloque llevado con `grabPoint(…, "14:15")` queda de
    14:15 a 15:15; el asa de fin llevada a `slotPoint(…, "11:15")` deja el fin en 11:15; apretar
-   el fondo en `slotOffset("08:00")` y llevar el puntero a `slotPoint(…, "09:15")` muestra la
-   selección «08:00 – 09:30» y abre el alta con ese rango. Los tres fallan con el paso viejo
-   (14:00, 11:00 y 08:00 – 10:00).
+   el fondo en `slotOffset("08:40")` y llevar el puntero a `slotPoint(…, "09:15")` muestra la
+   selección «08:30 – 09:30» y abre el alta con inicio 08:30 y «1:00». Los tres fallan con el
+   paso viejo (14:00, 11:00 y 08:00 – 10:00), y el tercero también si `DayColumn` le pasa a
+   `onCreateStart` el minuto de `slotAt` en vez del de `selectionAnchor` (08:00 – 09:30).
+   _Corregido el 2026-10-19_: apretaba en `slotOffset("08:00")` y esperaba «08:00 – 09:30».
+   Ahí `slotAt` y `selectionAnchor` dan los dos 480, así que el recorrido no probaba de dónde
+   sale el ancla.
 10. **La grilla no cambia**: los tests de `calendar-layout.test.ts`, `calendar-zoom.test.ts` y
     los e2e del zoom y del clic (`calendar.spec.ts`, `calendar-edit.spec.ts`) siguen en verde sin
     tocarlos.
