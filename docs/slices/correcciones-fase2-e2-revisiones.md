@@ -157,3 +157,50 @@ llevan blancos (`{"sessions" : 2}`) y el instante con el formato de Postgres
 (`2026-10-19T20:41:47.871143+00:00`); las que escribe la aplicación con
 `recordAudit` son `{"sessions":2}` y `"2026-10-19T20:41:47.871Z"`. Quien lea
 `audit_log` comparando el texto las ve distintas.
+
+## Revisiones y correcciones
+
+`backend-reviewer` y `security-auditor` aprobaron el backend sin hallazgos.
+Los hallazgos de clean code y de tests sobre el backend, y qué se hizo con
+cada uno:
+
+| Hallazgo                                                                                                                          | Qué se hizo                                                                                                                                                                                                                                                        |
+| --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `auth.integration.test.ts` repetía `seedAccount` en una función local y en el alta de dos cuentas de `/unlink-account`            | `seedAccount(userId, sub?)` recibe el `sub`, con uno nuevo por defecto; las dos copias se borraron                                                                                                                                                                 |
+| `MEMBER_STATUSES` y el estrechamiento de `team` repetían `PRESENT_STATUSES` y `toWorkspacePerson` de `workspace`                  | `MEMBER_STATUSES`, `MemberStatus` y `memberStatusOf` viven una vez en `workspace/schema.ts`; `team/schema.ts` los reexporta para la pantalla. Los dos repositories estrechan el estado al leer, y `listWorkspacePeople` devuelve las filas sin `toWorkspacePerson` |
+| `statusChangeOf` volvía a consultar `team.manage`, que `getTeamView` ya decidió                                                   | Se quitó. La vista calcula los pasos 4 a 6 y 8 de D-E2-3; el 3 lo decide `getTeamView` antes de leer                                                                                                                                                               |
+| La constancia de un cambio de estado calculaba el previo invirtiendo el nuevo                                                     | El previo es el estado leído bajo el bloqueo (`target.status`)                                                                                                                                                                                                     |
+| `as PromiseFulfilledResult<…>` en dos tests de carreras                                                                           | `fulfilledValue` en `src/test/concurrency.ts` estrecha y lanza si el corredor se rechazó; el del criterio 13 lee la entrada de la base y compara, y el del 26 estrecha la respuesta con `instanceof Response`                                                      |
+| Opcional: que la vista y la mutación no puedan desalinearse                                                                       | `statusLockOf` devuelve el motivo del bloqueo (la propia, el owner, un admin sin `team.admin.setStatus`) o `null`; la usan `statusChangeOf` y `changeStatus`. Desactivar y reactivar se juntaron en `writeStatus`                                                  |
+| El criterio 4 sembraba `account` en «reactivar a una activa»: no fijaba que el paso 7 (idempotente) va antes del 8 (`no_account`) | Caso nuevo: reactivar a una activa sin cuenta responde éxito sin escribir                                                                                                                                                                                          |
+
+Mutaciones sobre el código corregido, contra `clock_e2_back`:
+
+| Mutación                                                 | Falla                                                                                     |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| El paso 8 antes que el 7                                 | el caso nuevo del criterio 4                                                              |
+| La constancia con el estado nuevo como previo            | criterios 1 y 3                                                                           |
+| `statusChangeOf` sin `statusLockOf`                      | criterio 18, las dos vistas                                                               |
+| `statusLockOf` sin la propia                             | criterio 7, el owner y un admin; la action con EQ-84                                      |
+| `statusLockOf` sin `team.admin.setStatus`                | criterio 5 (EQ-85, los dos sentidos); criterio 18, la vista del admin                     |
+| Reactivar también detiene el timer y borra las sesiones  | criterio 3, que ahora siembra una sesión que reactivar no toca (antes la mutación pasaba) |
+| `listPeople` deja pasar `invited` hasta `memberStatusOf` | criterio 17 de R4, «… ni las invitadas …»                                                 |
+
+Las 18 mutaciones de la primera tabla se volvieron a correr sobre este código y
+fallan igual, salvo «sin el paso de la propia», que ahora es la de
+`statusLockOf` de arriba.
+
+**La enmienda de §4.8**, que hace el team-lead: `statusChange` sale de
+`statusChangeOf(actor, row)`, que aplica los pasos 4 a 6 y 8 de D-E2-3 sobre
+el `Actor` de la sesión; el paso 3 (`team.manage` sobre el workspace) ya lo
+decidió `getTeamView` antes de leer la lista. Los pasos 4 a 6 son
+`statusLockOf`, la misma función con que `changeStatus` los decide bajo el
+bloqueo.
+
+### Frontend
+
+_Pendiente: los hallazgos y las correcciones de `frontend-dev`._
+
+### E2E
+
+_Pendiente: los hallazgos y las correcciones de `e2e-tester`._
