@@ -1266,13 +1266,35 @@ un `update membership set status = 'active'` en esa rama.
   dominio con `account` (`seedAccount`) y membresía inactiva, 302 a
   `/login?error=membresia_inactiva` sin `session`; el rechazo del gancho
   `before` con la membresía pasada a `inactive` entre `mapProfileToUser` y el
-  gancho. **El gancho `after`** (criterio 26), con las barreras de
-  `src/test/concurrency.ts`: una transacción pasa la membresía de P a
-  `inactive` y queda abierta; el pedido de una sesión de prueba de P queda
-  `blocked` (`outcomeWhileHeld`) con la fila de `session` ya insertada; al
-  confirmar la transacción, P no tiene filas de `session`. Sin transacción
-  abierta, `dropSessionOfInactive` con cada estado de la membresía y sin
-  membresía. Se verifica que el primero falla sin el `after` (la sesión queda).
+  gancho. **El gancho `after`** (criterio 26) se arma con `queueBehindBarrier`
+  de `src/test/concurrency.ts`, que no cambia. Toda barrera de ese archivo se
+  suelta con `rollback` (`concurrency.ts:86-99`), así que lo que tiene que
+  confirmar no puede escribirlo la barrera:
+  - **La barrera** toma la membresía de P con `select … for no key update` y no
+    escribe.
+  - **Corredor 1**: un `db.transaction` propio que hace `update membership set
+status = 'inactive'` sobre P y confirma solo. Queda trabado detrás de la
+    barrera.
+  - **Corredor 2**: `testSessionSignIn(P)`, el helper de
+    `auth.integration.test.ts:57`. Pasa el `before` con lo confirmado —P sigue
+    `active`—, inserta la sesión y queda trabado en el `for share` del `after`,
+    en la cola detrás del corredor 1.
+  - **Al abrir la barrera**, el corredor 1 confirma y el `after` lee `inactive`
+    y borra: los dos corredores `fulfilled`, P `inactive` y cero filas de
+    `session` de P.
+  - **El corredor 1 no es `changeStatus`.** Su `delete from session` correría
+    después de que se abre la barrera y vería la sesión ya insertada: el test
+    pasaría sin el gancho y no probaría el único caso que cierra el `after`, el
+    de una sesión que confirma después del `delete` de la desactivación.
+  - **La mutación**: sin el `after` la sesión queda, y el test tiene que fallar.
+    Falla antes de contar filas: el corredor 2 termina sin trabarse y
+    `queueBehindBarrier` rechaza con «Un corredor terminó sin trabarse en la
+    barrera.» (`concurrency.ts:139-143`). Un `after` que espera pero no borra
+    llega a la cuenta de `session` y falla ahí.
+
+  Sin barrera, `dropSessionOfInactive` con cada estado de la membresía y sin
+  membresía.
+
 - **`session.integration.test.ts`**: criterio 11, con `getSession` simulado.
 - **`auth-records.integration.test.ts`**: `deleteSessionsOf` borra las de la
   persona y no las de otra, deja `session.revokeAll` con la cantidad y sin
