@@ -332,14 +332,14 @@ test("las asas estiran un extremo entre sus topes, y la medianoche se cruza movi
   await expect(stretched).toContainText("10:00 – 12:30");
   await expect(stretched).toBeFocused();
 
-  // CAL-55: por encima del inicio, el fin se detiene una franja después.
+  // CAL-56: por encima del inicio, el fin se detiene un paso después.
   await expect(blockHandle(stretched, "end")).toHaveCount(1);
   await withServerAction(page, async () =>
     dragBetween(page, { on: blockHandle(stretched, "end") }, () =>
       slotPoint(page, tuesday, today, "09:00", "30 min"),
     ),
   );
-  await expect(stretched).toContainText("10:00 – 10:30");
+  await expect(stretched).toContainText("10:00 – 10:15");
   await expect(stretched).toBeFocused();
 
   await expect(blockHandle(stretched, "start")).toHaveCount(1);
@@ -354,8 +354,8 @@ test("las asas estiran un extremo entre sus topes, y la medianoche se cruza movi
       day: tuesday,
       today,
       start: "09:00",
-      end: "10:30",
-      duration: "1:30",
+      end: "10:15",
+      duration: "1:15",
     }),
   );
   await expect(stretched).toBeFocused();
@@ -412,7 +412,7 @@ test("las asas estiran un extremo entre sus topes, y la medianoche se cruza movi
   await expect(segmentText(tuesdayColumn, "Lunes tarde")).toBeVisible();
 
   // El asa de fin sigue al puntero a la columna siguiente, y se detiene en la
-  // última marca antes de 24 horas del inicio (CAL-56): las 21:00 del jueves.
+  // última marca antes de 24 horas del inicio (CAL-55): las 21:45 del jueves.
   const evening = entryBlocks(dayColumn(page, wednesday, today), "Miércoles tarde");
   await expect(blockHandle(evening, "end")).toHaveCount(1);
   await withServerAction(page, async () =>
@@ -428,9 +428,9 @@ test("las asas estiran un extremo entre sus topes, y la medianoche se cruza movi
         day: wednesday,
         today,
         start: "22:00",
-        end: "21:00",
+        end: "21:45",
         extraDays: 1,
-        duration: "23:00",
+        duration: "23:45",
       }),
     ),
   ).toBeVisible();
@@ -514,6 +514,80 @@ test("arrastrar sobre el fondo de una columna selecciona las franjas y abre el a
       }),
     ),
   ).toBeVisible();
+});
+
+test("a «1 h» el arrastre ajusta a 15 minutos al mover, estirar y seleccionar", async ({
+  page,
+}) => {
+  const today = todayIn(PERSON_TIMEZONE);
+  const lastWeek = await openLastWeek(page, today);
+  const tuesday = addDays(lastWeek, 1);
+  const wednesday = addDays(lastWeek, 2);
+  const friday = addDays(lastWeek, 4);
+  const tuesdayColumn = dayColumn(page, tuesday, today);
+  const wednesdayColumn = dayColumn(page, wednesday, today);
+  const fridayColumn = dayColumn(page, friday, today);
+
+  // Criterio 9 (CAL-53, D1 de C1): con el zoom en «1 h» el paso es de 15
+  // minutos. El bloque llevado a las 14:15 queda ahí, no en las 14:00.
+  await addEntry(page, { day: wednesday, today, start: "10:00", description: "Mover" });
+  const quarter = entryBlock(
+    wednesdayColumn,
+    closedBlockName({
+      description: "Mover",
+      day: wednesday,
+      today,
+      start: "14:15",
+      end: "15:15",
+      duration: "1:00",
+    }),
+  );
+  await pressAt(page, { on: entryBlocks(wednesdayColumn, "Mover"), y: BODY_GRIP_PX });
+  await moveTo(page, await grabPoint(page, wednesday, today, "14:15"));
+  await expect(quarter).toBeVisible();
+  await withServerAction(page, () => page.mouse.up());
+  await expect(quarter).toContainText("14:15 – 15:15");
+  await expect(quarter).toBeFocused();
+
+  // El asa de fin de un bloque de 10:00 a 11:00 llevada a las 11:15 deja ahí el
+  // fin (CAL-52), fuera de la banda de su marca de casa, de ±7,5 minutos.
+  await addEntry(page, { day: tuesday, today, start: "10:00", description: "Estirar" });
+  const stretched = entryBlocks(tuesdayColumn, "Estirar");
+  await expect(stretched).toContainText("10:00 – 11:00");
+  await pressAt(page, { on: blockHandle(stretched, "end") });
+  await moveTo(page, await slotPoint(page, tuesday, today, "11:15"));
+  await expect(stretched).toContainText("10:00 – 11:15");
+  await withServerAction(page, () => page.mouse.up());
+  await expect(stretched).toHaveAccessibleName(
+    closedBlockName({
+      description: "Estirar",
+      day: tuesday,
+      today,
+      start: "10:00",
+      end: "11:15",
+      duration: "1:15",
+    }),
+  );
+
+  // Crear arrastrando (CAL-44): de la celda de 15 minutos tocada a la del
+  // puntero, y el alta abre con ese rango. La grilla baja a las 07:00 para que
+  // ni el punto apretado ni el recorrido caigan en la banda del desplazamiento
+  // automático del borde superior.
+  await scrollGridTo(page, "07:00");
+  await pressAt(page, { on: fridayColumn, y: slotOffset("08:00") });
+  await moveTo(page, await slotPoint(page, friday, today, "09:15"));
+  await expect(calendarSelection(fridayColumn)).toContainText("08:00 – 09:30");
+  await page.mouse.up();
+  const adding = entryDialog(page, "Agregar entrada");
+  await expectEditDialog(adding, {
+    description: "",
+    date: dayLabel(friday, today),
+    start: "08:00",
+    end: "09:30",
+    duration: "1:30",
+  });
+  await page.keyboard.press("Escape");
+  await expect(adding).toBeHidden();
 });
 
 test("un gesto que falla vuelve con su aviso y «Reintentar», y la revalidación espera a que termine", async ({
