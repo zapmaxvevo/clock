@@ -2,12 +2,14 @@ import { randomUUID } from "node:crypto";
 
 import { db } from "@/server/db";
 import {
+  account,
   client,
   invitation,
   type InvitationStatus,
   membership,
   project,
   projectMember,
+  session,
   tag,
   task,
   timeEntry,
@@ -279,4 +281,39 @@ export async function seedInvitation(values: {
     })
     .returning();
   return row;
+}
+
+/**
+ * Una cuenta de Google de `userId` con ese `sub`, o uno nuevo, escrita directo
+ * contra la tabla: la que deja un ingreso y la que pide reactivar (D-E2-7).
+ * Devuelve el `sub`.
+ */
+export async function seedAccount(
+  userId: string,
+  sub: string = randomUUID(),
+): Promise<string> {
+  await db.insert(account).values({
+    id: randomUUID(),
+    accountId: sub,
+    providerId: "google",
+    userId,
+    updatedAt: new Date(),
+  });
+  return sub;
+}
+
+/**
+ * Una sesión de `userId` que vence en un día, escrita directo contra la tabla,
+ * sin pasar por los ganchos del ingreso. Devuelve su id.
+ */
+export async function seedSession(userId: string): Promise<string> {
+  const id = randomUUID();
+  await db.insert(session).values({
+    id,
+    token: randomUUID(),
+    userId,
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    updatedAt: new Date(),
+  });
+  return id;
 }

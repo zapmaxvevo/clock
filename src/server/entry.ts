@@ -1,11 +1,12 @@
 import { APIError } from "better-auth/api";
 
 import { isCompanyEmail, normalizeEmail } from "@/lib/email";
-import { entryFactsOf } from "@/modules/workspace/service";
+import { entryFactsOf, entryMembershipStatusLocked } from "@/modules/workspace/service";
 import {
   accessDenialMessage,
   decideGoogleAccess,
   decideStoredEmail,
+  decideStoredIdentity,
   NO_ENTRY_FACTS,
   type AccessDecision,
   type AccessDenialReason,
@@ -13,6 +14,8 @@ import {
   type GoogleProfile,
   verifiedEmailOf,
 } from "@/server/access";
+import { deleteSession } from "@/server/auth-records";
+import { db } from "@/server/db";
 import { env } from "@/server/env";
 
 /**
@@ -48,17 +51,41 @@ export async function decideStoredEmailEntry(email: string): Promise<AccessDecis
 }
 
 /**
- * En cada pedido de una sesión abierta, la identidad de un correo fuera de los
- * dominios vuelve a decidirse con el correo guardado: si su dominio sale de la
- * política, quien entró sin invitación queda afuera aunque tenga membresía, y
- * quien tiene una `accepted` sigue como externa (D-E1b-13). Un correo de los
- * dominios no suma una consulta: su acceso lo decide `ensureWorkspaceContext`.
+ * En cada pedido de una sesión abierta se decide solo la identidad (D-E2-2): la
+ * de un correo fuera de los dominios vuelve a decidirse con el correo guardado.
+ * Si su dominio sale de la política, quien entró sin invitación queda afuera
+ * aunque tenga membresía, y quien tiene una `accepted` sigue como externa
+ * (D-E1b-13). Un correo de los dominios no suma una consulta. El acceso lo
+ * decide `ensureWorkspaceContext`: una membresía inactiva recibe su contexto y
+ * la pantalla queda en solo lectura (TT-92).
  */
 export async function decideSessionIdentity(email: string): Promise<AccessDecision> {
   if (isCompanyEmail(email, policy().domains)) {
     return { allowed: true };
   }
-  return decideStoredEmailEntry(email);
+  const facts = await entryFactsOf(normalizeEmail(email));
+  return decideStoredIdentity(email, policy(), facts);
+}
+
+/**
+ * D-E2-2: cierra la carrera de un ingreso con una desactivación. La llama el gancho
+ * `session.create.after`, con la fila de `session` ya confirmada: en una transacción,
+ * lee `for share` la membresía de `session.userId` —espera a una desactivación en
+ * curso— y, si existe y no está activa, borra la sesión. No lanza por eso. Devuelve
+ * si la borró.
+ */
+export async function dropSessionOfInactive(session: {
+  readonly id: string;
+  readonly userId: string;
+}): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const status = await entryMembershipStatusLocked(tx, session.userId);
+    if (status === null || status === "active") {
+      return false;
+    }
+    await deleteSession(tx, session.id);
+    return true;
+  });
 }
 
 /** D-E1a-14: `<BETTER_AUTH_URL>/login?error=<motivo>`, absoluta. */

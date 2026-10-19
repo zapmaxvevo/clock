@@ -2,9 +2,9 @@
  * Localizadores de `/equipo` (R8 del núcleo de reportes, E1a de la fase 2).
  * Como en `reports-page.ts`, todo se busca por rol y por texto accesible: la
  * tabla se nombra por el título y cada persona es una fila con su encabezado
- * de fila, que empieza con el nombre y sigue con «(vos)» y el email. Una
- * invitada es una fila al final, cuyo encabezado empieza con el correo y sigue
- * con sus marcas.
+ * de fila, que empieza con el nombre y sigue con «(vos)» o «(inactiva)» y el
+ * email. Una invitada es una fila al final, cuyo encabezado empieza con el
+ * correo y sigue con sus marcas.
  */
 import { randomUUID } from "node:crypto";
 
@@ -12,7 +12,7 @@ import { expect, type Locator, type Page } from "@playwright/test";
 
 import { setRole } from "./database";
 import { TEST_EMAIL_DOMAIN } from "./environment";
-import { escapeRegExp, trackerBar } from "./tracker-page";
+import { escapeRegExp, isTextStruck, trackerBar } from "./tracker-page";
 
 export const TEAM_PATH = "/equipo";
 
@@ -86,7 +86,11 @@ export function roleCell(row: Locator): Locator {
   return row.getByRole("cell").first();
 }
 
-/** Los botones de una fila: uno si quien mira puede cambiarle el rol, si no ninguno. */
+/**
+ * Los botones de una fila: el de rol, si quien mira puede cambiárselo, y el
+ * menú «Acciones de {nombre}», si puede desactivarla o reactivarla (D-E2-9 de
+ * E2). Una fila sin ninguna de las dos acciones no tiene botones.
+ */
 export function rowButtons(row: Locator): Locator {
   return row.getByRole("button");
 }
@@ -281,3 +285,135 @@ export async function enterTeamAsAdmin(page: Page, email: string): Promise<void>
   await expect(teamTable(page)).toBeVisible();
   await expect(page.getByText(NO_INVITATIONS_YET, { exact: true })).toHaveCount(0);
 }
+
+/** E2, §5.2: el filtro de estado, con su etiqueta visible. */
+export const STATUS_FILTER = "Estado";
+
+/** E2, §5.2: las opciones del filtro, en su orden, y el valor de `?estado=` de cada una. */
+export const STATUS_FILTERS = {
+  Activas: null,
+  Inactivas: "inactivas",
+  Invitadas: "invitadas",
+  Todas: "todas",
+} as const;
+export type StatusFilterLabel = keyof typeof STATUS_FILTERS;
+
+/**
+ * El disparador del filtro de estado. Es un `Select`: su nombre empieza con la
+ * etiqueta y puede seguir con la opción elegida, que se lee con `toContainText`.
+ */
+export function statusFilter(page: Page): Locator {
+  return page
+    .getByRole("main")
+    .getByRole("combobox", { name: new RegExp(`^${STATUS_FILTER}`) });
+}
+
+/** Una opción del filtro abierto. La lista va en un portal, así que se busca en `page`. */
+export function statusFilterOption(page: Page, label: StatusFilterLabel): Locator {
+  return page.getByRole("option", { name: label, exact: true });
+}
+
+/** La URL de `/equipo` con un filtro: «Activas» es la página sin parámetro (D-E2-8). */
+export function isTeamFilterUrl(label: StatusFilterLabel): (url: URL) => boolean {
+  const value = STATUS_FILTERS[label];
+  return (url) =>
+    url.pathname === TEAM_PATH &&
+    (value === null ? url.search === "" : url.search === `?estado=${value}`);
+}
+
+/**
+ * Elige un filtro de estado y espera la página que lo dibuja: elegir navega
+ * (§5.2), así que la URL cambia y el disparador muestra la opción.
+ */
+export async function chooseStatusFilter(
+  page: Page,
+  label: StatusFilterLabel,
+): Promise<void> {
+  await statusFilter(page).click();
+  await statusFilterOption(page, label).click();
+  await expect(page).toHaveURL(isTeamFilterUrl(label));
+  await expect(statusFilter(page)).toContainText(label);
+}
+
+/** EQ-05: la marca de una persona inactiva, después del nombre tachado. */
+export const INACTIVE_MARK = "(inactiva)";
+
+export function inactiveMark(row: Locator): Locator {
+  return memberHeader(row).getByText(INACTIVE_MARK, { exact: true });
+}
+
+/** D-E2-7: debajo del correo de una persona sin `account`. */
+export const NO_ACCOUNT = "Sin cuenta de Google vinculada.";
+
+export function noAccountNote(row: Locator): Locator {
+  return memberHeader(row).getByText(NO_ACCOUNT, { exact: true });
+}
+
+/** Si el nombre de una fila está tachado (EQ-05), hasta su encabezado de fila. */
+export async function isNameStruck(row: Locator, name: string): Promise<boolean> {
+  return isTextStruck(memberHeader(row).getByText(name, { exact: true }), "th");
+}
+
+/** E2, §5.3: el menú de una fila, con el nombre en el suyo (D-E2-9). */
+export function rowActionsButton(page: Page, name: string): Locator {
+  return teamTable(page).getByRole("button", {
+    name: `Acciones de ${name}`,
+    exact: true,
+  });
+}
+
+/** E2, §5.3: las dos entradas del menú de una fila. */
+export const DEACTIVATE = "Desactivar";
+export const REACTIVATE = "Reactivar";
+export type StatusAction = typeof DEACTIVATE | typeof REACTIVATE;
+
+/** Una entrada del menú abierto, que vive en un portal. */
+export function menuItem(page: Page, action: StatusAction): Locator {
+  return page.getByRole("menuitem", { name: action, exact: true });
+}
+
+/** Abre el menú de una fila y elige una entrada. */
+export async function chooseRowAction(
+  page: Page,
+  name: string,
+  action: StatusAction,
+): Promise<void> {
+  await rowActionsButton(page, name).click();
+  await menuItem(page, action).click();
+}
+
+/** E2, §5.4: la confirmación de desactivar (EQ-46). */
+export function deactivateDialog(page: Page, name: string): Locator {
+  return page.getByRole("dialog", { name: `¿Desactivar a ${name}?`, exact: true });
+}
+
+/** El texto de la confirmación. */
+export const DEACTIVATE_WARNING =
+  "No va a poder entrar. Si tiene un timer en curso, se detiene. Sus horas quedan.";
+
+/** E2, §5.4: el aviso de la tabla después de un cambio de estado. */
+export function deactivatedMessage(name: string): string {
+  return `Desactivaste a ${name}.`;
+}
+
+export function reactivatedMessage(name: string): string {
+  return `Reactivaste a ${name}.`;
+}
+
+/** E2, §5.4: el título del aviso de un cambio de estado que falló. */
+export function deactivateFailedTitle(name: string): string {
+  return `No se pudo desactivar a ${name}.`;
+}
+
+/** EQ-85: un admin sobre otro admin. */
+export const ADMIN_STATUS_OWNER_ONLY =
+  "Solo el propietario desactiva o reactiva a un administrador.";
+
+/**
+ * TT-89, §5.4 de E2: el cuerpo del aviso de una falla de red, debajo del título
+ * con el nombre, el mismo para cualquier pedido de la tabla.
+ */
+export const UNEXPECTED_BODY = "Revisá la conexión y volvé a intentar.";
+
+/** TT-89: el botón del aviso de una falla de red. */
+export const RETRY = "Reintentar";

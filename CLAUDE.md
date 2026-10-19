@@ -51,6 +51,7 @@ src/
     *.test.ts
   server/
     auth.ts            configuración de Better Auth
+    auth-records.ts    lo que se lee y escribe de las tablas de Better Auth fuera del login (ADR 0025)
     access.ts          regla de dominio e invitados, función pura
     entry.ts           el ingreso: arma access.ts con la política y los hechos de la base (ADR 0024)
     session.ts         sesión, contexto de workspace y preferencias

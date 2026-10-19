@@ -507,19 +507,7 @@ export async function revokeInvitationOf(email: string): Promise<void> {
 
 /** Si un correo tiene membresía, en cualquier estado, en el workspace de los e2e. */
 export async function hasMembership(email: string): Promise<boolean> {
-  return withDatabase(async (client) => {
-    const result = await client.query<{ found: boolean }>(
-      `select exists (
-         select 1
-           from membership
-           join "user" on "user".id = membership.user_id
-          where membership.workspace_id = ${FIRST_WORKSPACE}
-            and lower(btrim("user".email)) = lower(btrim($1))
-       ) as found`,
-      [email],
-    );
-    return result.rows.at(0)?.found ?? false;
-  });
+  return (await membershipStatusOf(email)) !== null;
 }
 
 /**
@@ -563,7 +551,11 @@ export async function setRole(email: string, role: WorkspaceRole): Promise<void>
   );
 }
 
-/** Cambia el estado de la membresía de una persona, que no tiene pantalla en la fase 1. */
+/**
+ * Cambia el estado de la membresía de una persona por SQL, sin pasar por
+ * `/equipo`: no detiene su timer ni borra sus sesiones, así que deja la sesión
+ * abierta de una inactiva, en solo lectura (TT-92, D-E2-2 de E2).
+ */
 export async function setMembershipStatus(
   email: string,
   status: MembershipStatus,
@@ -574,6 +566,124 @@ export async function setMembershipStatus(
       where ${OWN_MEMBERSHIP}`,
     [email, status],
   );
+}
+
+/**
+ * El estado de la membresía de una persona en el workspace de los e2e, o
+ * `null` si no tiene. Es lo que deja `/equipo` al desactivarla o reactivarla
+ * (D-E2-5 de E2). El correo se compara en minúsculas y sin espacios, como en
+ * la regla de ingreso (D-E1b-1).
+ */
+export async function membershipStatusOf(
+  email: string,
+): Promise<MembershipStatus | null> {
+  return withDatabase(async (client) => {
+    const result = await client.query<{ status: MembershipStatus }>(
+      `select membership.status
+         from membership
+         join "user" on "user".id = membership.user_id
+        where membership.workspace_id = ${FIRST_WORKSPACE}
+          and lower(btrim("user".email)) = lower(btrim($1))`,
+      [email],
+    );
+    return result.rows.at(0)?.status ?? null;
+  });
+}
+
+/**
+ * Le da a una persona una fila de `account` de Google, como la que deja su
+ * primer ingreso por el callback. La sesión de prueba y `seedPerson` no la
+ * crean, y sin ella `/equipo` no ofrece «Reactivar» (D-E2-7 de E2). La persona
+ * tiene que tener su `user`: haber entrado o haberse sembrado.
+ */
+export async function seedGoogleAccount(email: string): Promise<void> {
+  await withDatabase(async (client) => {
+    await insertOneRow(
+      client,
+      `insert into account (id, account_id, provider_id, user_id, updated_at)
+       select $2, $3, 'google', "user".id, now()
+         from "user"
+        where "user".email = $1
+       returning id`,
+      [email, randomUUID(), randomUUID()],
+    );
+  });
+}
+
+/** Cuántas filas de `session` tiene una persona: desactivarla las borra (EQ-41). */
+export async function sessionCountOf(email: string): Promise<number> {
+  return withDatabase(async (client) => {
+    const result = await client.query<{ count: number }>(
+      `select count(*)::int as count
+         from session
+         join "user" on "user".id = session.user_id
+        where "user".email = $1`,
+      [email],
+    );
+    return result.rows.at(0)?.count ?? 0;
+  });
+}
+
+/**
+ * Le abre a una persona un timer que empezó hace diez minutos, sin proyecto.
+ * Es el que desactivarla detiene (EQ-43): arrancarlo desde su pestaña sumaría
+ * un recorrido del rastreador que no es el que se prueba. Devuelve el id de la
+ * entrada. Si la persona no tiene membresía o ya tiene un timer, se corta.
+ */
+export async function seedRunningEntry(
+  email: string,
+  description: string,
+): Promise<string> {
+  return withDatabase((client) =>
+    insertOneRow(
+      client,
+      `insert into time_entry (workspace_id, user_id, description, started_at)
+       select membership.workspace_id, membership.user_id, $2,
+              now() - interval '10 minutes'
+         from membership
+         join "user" on "user".id = membership.user_id
+        where membership.workspace_id = ${FIRST_WORKSPACE}
+          and "user".email = $1
+       returning time_entry.id`,
+      [email, description],
+    ),
+  );
+}
+
+/** El timer abierto de una persona, o `null` si no tiene. */
+export async function runningEntryOf(
+  email: string,
+): Promise<{ readonly id: string; readonly description: string } | null> {
+  return withDatabase(async (client) => {
+    const result = await client.query<{ id: string; description: string }>(
+      `select time_entry.id, time_entry.description
+         from time_entry
+         join "user" on "user".id = time_entry.user_id
+        where time_entry.workspace_id = ${FIRST_WORKSPACE}
+          and "user".email = $1
+          and time_entry.ended_at is null`,
+      [email],
+    );
+    return result.rows.at(0) ?? null;
+  });
+}
+
+/**
+ * Cuándo terminó una entrada, `null` si sigue abierta. Lanza si no existe: un
+ * timer que se detuvo sigue siendo la misma fila, con su fin.
+ */
+export async function entryEndedAt(id: string): Promise<Date | null> {
+  return withDatabase(async (client) => {
+    const result = await client.query<{ ended_at: Date | null }>(
+      `select ended_at from time_entry where id = $1`,
+      [id],
+    );
+    const row = result.rows.at(0);
+    if (row === undefined) {
+      throw new Error("La entrada no existe: se borró en lugar de detenerse.");
+    }
+    return row.ended_at;
+  });
 }
 
 /**

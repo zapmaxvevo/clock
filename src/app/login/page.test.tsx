@@ -52,6 +52,16 @@ describe("LoginPage", () => {
     expect(textOf(markup)).toContain("Entrar con Google");
   });
 
+  it("con la membresía inactiva, el texto de EQ-92 en un aviso encima del botón", async () => {
+    const markup = await render("membresia_inactiva");
+
+    expect(textOf(alertOf(markup))).toBe(
+      "Tu acceso al workspace está desactivado. Pedile a quien administra el equipo que te vuelva a activar.",
+    );
+    expect(markup.indexOf('role="alert"')).toBeLessThan(markup.indexOf("<button"));
+    expect(textOf(markup)).toContain("Entrar con Google");
+  });
+
   it("con un código que no conoce, el texto genérico", async () => {
     const markup = await render("state_not_found");
 

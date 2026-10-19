@@ -1690,6 +1690,17 @@ tus horas, pero no cargar ni modificar entradas. Pedile a quien administra el
 workspace que vuelva a activar tu membresía.» Un pedido que llegue igual recibe
 el mensaje neutro de TT-79. Justificación: `membership_status` es nuestro
 modelo.
+_Actualizado el 2026-10-19, E2 ([contrato](../slices/fase2-e2-desactivar.md),
+D-E2-2)_: **desde E2 este estado aparece solo con un pedido en vuelo o por
+SQL.** Desactivar desde `/equipo` borra las sesiones de la persona en la misma
+transacción (EQ-41 de `equipo.md`), y una inactiva no vuelve a entrar (EQ-92,
+P-05 de `equipo.md`). Quedan dos casos: el pedido que leyó la sesión antes de
+que la desactivación confirmara (EQ-104) y una membresía pasada a `inactive`
+por SQL con la sesión abierta. En los dos, la pantalla es la de arriba. Un
+ingreso que se cruza con una desactivación no deja sesión: el gancho
+`session.create.after` la borra (D-E2-2). Abrir un timer relee la membresía
+bajo bloqueo y, si ya no está activa, responde el mensaje neutro de TT-79 sin
+abrirlo (D-E2-6).
 
 ## 10. Casos borde
 

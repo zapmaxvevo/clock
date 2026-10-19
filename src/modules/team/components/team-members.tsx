@@ -9,7 +9,11 @@ import {
   teamMessages,
   type ChangeRoleInput,
   type ChangeRoleResult,
+  type ChangeStatusInput,
+  type ChangeStatusResult,
+  type MemberStatus,
   type TeamActions,
+  type TeamFilter,
   type TeamMember,
 } from "@/modules/team/schema";
 import {
@@ -19,23 +23,28 @@ import {
   type PendingInvitation,
 } from "@/modules/workspace/schema";
 
+import { DeactivateDialog } from "./deactivate-dialog";
 import { InvitationRow } from "./invitation-row";
 import { InviteDialog } from "./invite-dialog";
 import { teamLabels } from "./labels";
+import { MemberActionsMenu } from "./member-actions-menu";
 import { RevokeInvitationDialog } from "./revoke-invitation-dialog";
+import { StatusFilter } from "./status-filter";
 import {
   activate,
+  chooseStatusChange,
+  confirmDeactivation,
+  emptyOf,
   feedbackOf,
   revokeLeavesTable,
+  rowActionsId,
+  rowHeaderId,
   TEAM_HEADING_ID,
+  visibleInvitations,
+  visibleMembers,
   type TeamFeedback,
   type TeamOutcome,
 } from "./team-members-model";
-
-/** El encabezado de una fila, adonde va el foco si el éxito le saca el botón (§5.4). */
-function rowHeaderId(membershipId: string): string {
-  return `persona-${membershipId}`;
-}
 
 /** Las invitaciones que la pantalla muestra, con `member.invite` (D-E1a-1). */
 export type TeamInvitations = Omit<Extract<InvitationsView, { kind: "ready" }>, "kind">;
@@ -46,22 +55,26 @@ type LeavingInvitation = { readonly invitationId: string };
 type TeamMembersProps = {
   /** El título de la pantalla, que nombra la tabla; «Invitar» va a su derecha. */
   readonly heading: ReactNode;
-  /** Las membresías activas, ya en el orden de `compareNames`. */
+  /** Las membresías activas e inactivas, ya en el orden de `compareNames`. */
   readonly members: readonly TeamMember[];
   /** `null` sin `member.invite`: sin «Invitar» ni filas de invitadas. */
   readonly invitations: TeamInvitations | null;
+  /** El de `?estado=`; cuando cambia, la tabla olvida las filas que se quedaban y el aviso (§5.2). */
+  readonly filter: TeamFilter;
   readonly actions: TeamActions & InvitationActions;
 };
 
 /**
- * La tabla con su único pedido en curso —un cambio de rol o una revocación— y
- * el aviso del último desenlace, más los dos diálogos de las invitaciones. Sin
- * vista optimista: la fila cambia cuando el servidor responde y revalida.
+ * La tabla con su único pedido en curso —un cambio de rol, uno de estado o una
+ * revocación— y el aviso del último desenlace, el filtro de estado y los
+ * diálogos de desactivar y de las invitaciones. Sin vista optimista: la fila
+ * cambia cuando el servidor responde y revalida.
  */
 export function TeamMembers({
   heading,
   members,
   invitations,
+  filter,
   actions,
 }: TeamMembersProps) {
   const [outcome, setOutcome] = useState<TeamOutcome | null>(null);
@@ -69,6 +82,16 @@ export function TeamMembers({
   const [lastChange, setLastChange] = useState<ChangeRoleResult | null>(null);
   /** El éxito cuyo foco ya se resolvió: cada respuesta es un objeto nuevo. */
   const settledChange = useRef<ChangeRoleResult | null>(null);
+  /** Lo mismo con el último cambio de estado (§5.4). */
+  const [lastStatus, setLastStatus] = useState<ChangeStatusResult | null>(null);
+  const settledStatus = useRef<ChangeStatusResult | null>(null);
+  /**
+   * EQ-11: las membresías que la pantalla cambió con este filtro, que se
+   * muestran aunque el filtro ya no las incluya. Se guardan al mandar: la
+   * revalidación puede llegar antes que la respuesta y esconder la fila un
+   * instante. Lo que se dibuja de ellas es siempre lo del servidor.
+   */
+  const [kept, setKept] = useState<ReadonlySet<string>>(() => new Set());
   /**
    * La invitación del último pedido cuya fila sale con la revalidación —por
    * éxito, `not_pending` o `not_found`—, para llevar el foco al título.
@@ -80,6 +103,10 @@ export function TeamMembers({
   const target = useRef("");
   /** El id de la invitación del último pedido de revocar. */
   const revokeTarget = useRef("");
+  /** El estado del último pedido de `changeStatus`, para el título de su falla. */
+  const statusTarget = useRef<MemberStatus>("inactive");
+  const [deactivating, setDeactivating] = useState<TeamMember | null>(null);
+  const [deactivateOpen, setDeactivateOpen] = useState(false);
   const [confirming, setConfirming] = useState<PendingInvitation | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -87,6 +114,17 @@ export function TeamMembers({
   const [inviteKey, setInviteKey] = useState(0);
   const headerInvite = useRef<HTMLButtonElement>(null);
   const inviteOpener = useRef<HTMLElement | null>(null);
+  /** El filtro con que se guardaron `kept` y el último desenlace. */
+  const [seenFilter, setSeenFilter] = useState(filter);
+
+  // §5.2: otro filtro olvida las filas que se quedaban (EQ-11) y el último
+  // aviso. Se ajusta durante el dibujo y no con una `key`: volver a montar la
+  // pantalla se lleva el selector, y el foco del teclado caería a `body`.
+  if (seenFilter !== filter) {
+    setSeenFilter(filter);
+    setKept(new Set());
+    resetOutcome();
+  }
 
   const change = useAction(actions.changeRole, {
     unreachableMessage: teamMessages.unexpected,
@@ -98,6 +136,22 @@ export function TeamMembers({
       setOutcome({
         kind: "failed",
         name: target.current,
+        code: failure.code,
+        message: failure.message,
+      }),
+  });
+
+  const status = useAction(actions.changeStatus, {
+    unreachableMessage: teamMessages.unexpectedStatus,
+    onSuccess: (data) => {
+      setOutcome({ kind: "statusChanged", name: target.current, status: data.status });
+      setLastStatus(data);
+    },
+    onFailure: (failure) =>
+      setOutcome({
+        kind: "statusFailed",
+        name: target.current,
+        status: statusTarget.current,
         code: failure.code,
         message: failure.message,
       }),
@@ -126,9 +180,20 @@ export function TeamMembers({
       ),
   });
 
-  /** §5.4: un pedido a la vez en la tabla, de cualquiera de las dos clases. */
-  const pending = change.pending || revoke.pending;
+  /** §5.4: un pedido a la vez en la tabla, de cualquiera de las tres clases. */
+  const pending = change.pending || status.pending || revoke.pending;
   const pendingInvitations = invitations?.invitations ?? [];
+  const shownMembers = visibleMembers(members, filter, kept);
+  const shownInvitations = visibleInvitations(pendingInvitations, filter);
+  const empty = emptyOf(
+    filter,
+    { members: shownMembers.length, invitations: shownInvitations.length },
+    {
+      members: members.length,
+      invitations: pendingInvitations.length,
+      canInvite: invitations !== null,
+    },
+  );
 
   // La respuesta y la revalidación llegan en transiciones distintas, en
   // cualquier orden: se espera a que la fila traiga el rol del éxito. Si se
@@ -147,6 +212,27 @@ export function TeamMembers({
       document.getElementById(rowHeaderId(row.membershipId))?.focus();
     }
   }, [lastChange, members]);
+
+  // Lo mismo con un cambio de estado: cuando la fila trae el estado del
+  // resultado, el foco va a su menú si lo tiene —adonde ya lo dejó la
+  // confirmación o el menú al cerrarse— y si no, a su encabezado.
+  useEffect(() => {
+    if (lastStatus === null || settledStatus.current === lastStatus) {
+      return;
+    }
+    const row = members.find((member) => member.membershipId === lastStatus.membershipId);
+    if (row?.status !== lastStatus.status) {
+      return;
+    }
+    settledStatus.current = lastStatus;
+    document
+      .getElementById(
+        row.statusChange === null
+          ? rowHeaderId(row.membershipId)
+          : rowActionsId(row.membershipId),
+      )
+      ?.focus();
+  }, [lastStatus, members]);
 
   // Lo mismo con la revocación: cuando la revalidación saca la fila, con el
   // botón que tenía el foco, el foco va al título que nombra la tabla.
@@ -167,6 +253,7 @@ export function TeamMembers({
   function resetOutcome(): void {
     setOutcome(null);
     setLastChange(null);
+    setLastStatus(null);
     setLeaving(null);
   }
 
@@ -175,6 +262,20 @@ export function TeamMembers({
       members.find((member) => member.membershipId === input.membershipId)?.name ?? "";
     resetOutcome();
     change.run(input);
+  }
+
+  function sendStatus(input: ChangeStatusInput): void {
+    target.current =
+      members.find((member) => member.membershipId === input.membershipId)?.name ?? "";
+    statusTarget.current = input.status;
+    setKept((current) => new Set(current).add(input.membershipId));
+    resetOutcome();
+    status.run(input);
+  }
+
+  function requestDeactivate(member: TeamMember): void {
+    setDeactivating(member);
+    setDeactivateOpen(true);
   }
 
   function requestRevoke(invitation: PendingInvitation): void {
@@ -201,10 +302,6 @@ export function TeamMembers({
     setInviteOpen(true);
   }
 
-  // EQ-93: quien mira está solo y no invitó a nadie todavía.
-  const empty =
-    invitations !== null && members.length === 1 && pendingInvitations.length === 0;
-
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -221,12 +318,26 @@ export function TeamMembers({
         )}
       </div>
       <p className="text-muted-foreground text-sm">{teamLabels.intro}</p>
+      <StatusFilter filter={filter} />
       <TeamMembersView
-        members={members}
-        invitations={pendingInvitations}
+        members={shownMembers}
+        invitations={shownInvitations}
         pending={pending}
         feedback={feedbackOf(outcome)}
+        empty={
+          empty === "inactive"
+            ? teamLabels.emptyInactive
+            : empty === "invited"
+              ? teamLabels.emptyInvited
+              : null
+        }
         onActivate={(member) => activate(member, pending, sendChange)}
+        onChooseStatus={(member) =>
+          chooseStatusChange(member, pending, {
+            confirm: requestDeactivate,
+            send: sendStatus,
+          })
+        }
         onRevoke={requestRevoke}
         onRetry={() => {
           // El aviso se va mientras viaja, como el de `useAction`: sin él no hay
@@ -234,12 +345,14 @@ export function TeamMembers({
           setOutcome(null);
           if (outcome?.kind === "revokeFailed") {
             revoke.retry();
+          } else if (outcome?.kind === "statusFailed") {
+            status.retry();
           } else {
             change.retry();
           }
         }}
       />
-      {empty && (
+      {empty === "invitations" && (
         <div className="flex flex-col items-start gap-2">
           <p className="text-muted-foreground text-sm">{teamLabels.emptyInvitations}</p>
           <Button
@@ -268,6 +381,12 @@ export function TeamMembers({
           inviteMembers={actions.inviteMembers}
         />
       )}
+      <DeactivateDialog
+        member={deactivating}
+        open={deactivateOpen}
+        onOpenChange={setDeactivateOpen}
+        onConfirm={() => confirmDeactivation(deactivating, pending, sendStatus)}
+      />
       <RevokeInvitationDialog
         invitation={confirming}
         open={confirmOpen}
@@ -279,14 +398,19 @@ export function TeamMembers({
 }
 
 type TeamMembersViewProps = {
+  /** Las que muestra el filtro (`visibleMembers`). */
   readonly members: readonly TeamMember[];
   /** Las invitaciones pendientes, al final y en el orden del correo (D-E1a-12). */
   readonly invitations: readonly PendingInvitation[];
   readonly pending: boolean;
   /** Lo de `feedbackOf`; `null` sin aviso. */
   readonly feedback: TeamFeedback | null;
+  /** EQ-94: el texto que va en lugar de la tabla; `null` con la tabla. */
+  readonly empty: string | null;
   /** El clic en el botón de una fila. */
   readonly onActivate: (member: TeamMember) => void;
+  /** Elegir la entrada del menú de una fila. */
+  readonly onChooseStatus: (member: TeamMember) => void;
   /** El clic en «Revocar invitación»: abre la confirmación. */
   readonly onRevoke: (invitation: PendingInvitation) => void;
   /** Reenvía el último pedido; se ofrece solo si `feedback.retry`. */
@@ -296,14 +420,16 @@ type TeamMembersViewProps = {
 /**
  * La tabla sin estado. El aviso vive encima de la tabla y no en la fila: una
  * fila puede irse con la revalidación (`not_found`, `inactive_membership`) y
- * llevarse su aviso.
+ * llevarse su aviso; y sigue cuando el vacío reemplaza a la tabla.
  */
 export function TeamMembersView({
   members,
   invitations,
   pending,
   feedback,
+  empty,
   onActivate,
+  onChooseStatus,
   onRevoke,
   onRetry,
 }: TeamMembersViewProps) {
@@ -317,41 +443,46 @@ export function TeamMembersView({
           onRetry={feedback.retry ? onRetry : undefined}
         />
       )}
-      <div className="overflow-x-auto rounded-lg border">
-        <table aria-labelledby={TEAM_HEADING_ID} className="w-full text-sm">
-          <thead className="border-b">
-            <tr>
-              <th scope="col" className="px-3 py-2 text-left font-medium">
-                {teamLabels.personColumn}
-              </th>
-              <th scope="col" className="px-3 py-2 text-left font-medium">
-                {teamLabels.roleColumn}
-              </th>
-              <th scope="col" className="px-3 py-2 text-right font-medium">
-                {teamLabels.actionsColumn}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {members.map((member) => (
-              <TeamMemberRow
-                key={member.membershipId}
-                member={member}
-                pending={pending}
-                onActivate={onActivate}
-              />
-            ))}
-            {invitations.map((invitation) => (
-              <InvitationRow
-                key={invitation.id}
-                invitation={invitation}
-                pending={pending}
-                onRevoke={onRevoke}
-              />
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {empty !== null ? (
+        <p className="text-muted-foreground text-sm">{empty}</p>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border">
+          <table aria-labelledby={TEAM_HEADING_ID} className="w-full text-sm">
+            <thead className="border-b">
+              <tr>
+                <th scope="col" className="px-3 py-2 text-left font-medium">
+                  {teamLabels.personColumn}
+                </th>
+                <th scope="col" className="px-3 py-2 text-left font-medium">
+                  {teamLabels.roleColumn}
+                </th>
+                <th scope="col" className="px-3 py-2 text-right font-medium">
+                  {teamLabels.actionsColumn}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {members.map((member) => (
+                <TeamMemberRow
+                  key={member.membershipId}
+                  member={member}
+                  pending={pending}
+                  onActivate={onActivate}
+                  onChooseStatus={onChooseStatus}
+                />
+              ))}
+              {invitations.map((invitation) => (
+                <InvitationRow
+                  key={invitation.id}
+                  invitation={invitation}
+                  pending={pending}
+                  onRevoke={onRevoke}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -360,12 +491,20 @@ type TeamMemberRowProps = {
   readonly member: TeamMember;
   readonly pending: boolean;
   readonly onActivate: (member: TeamMember) => void;
+  readonly onChooseStatus: (member: TeamMember) => void;
 };
 
-function TeamMemberRow({ member, pending, onActivate }: TeamMemberRowProps) {
+function TeamMemberRow({
+  member,
+  pending,
+  onActivate,
+  onChooseStatus,
+}: TeamMemberRowProps) {
+  const inactive = member.status === "inactive";
+
   return (
     <tr className="border-b last:border-b-0">
-      {/* Con `tabIndex={-1}`: recibe el foco cuando el éxito le saca el botón (§5.4). */}
+      {/* Con `tabIndex={-1}`: recibe el foco cuando el éxito le saca el control (§5.4). */}
       <th
         scope="row"
         id={rowHeaderId(member.membershipId)}
@@ -374,29 +513,54 @@ function TeamMemberRow({ member, pending, onActivate }: TeamMemberRowProps) {
       >
         <span className="flex flex-col">
           <span className="font-medium">
-            {member.name}
+            {/* EQ-05, como RP-62: el tachado y, aparte y sin tachar, la marca en texto. */}
+            {inactive ? <span className="line-through">{member.name}</span> : member.name}
             {member.isSelf && (
               <span className="text-muted-foreground font-normal">
                 {" "}
                 {teamLabels.self}
               </span>
             )}
+            {inactive && (
+              <span className="text-muted-foreground font-normal">
+                {" "}
+                {teamLabels.inactiveMark}
+              </span>
+            )}
           </span>
           {/* RP-31: dos personas pueden llamarse igual. */}
           <span className="text-muted-foreground">{member.email}</span>
+          {inactive && !member.hasAccount && (
+            <span className="text-muted-foreground">{teamLabels.noAccount}</span>
+          )}
         </span>
       </th>
+      {/* EQ-37: una inactiva conserva su rol, sin botón (`change` en `null`). */}
       <td className="px-3 py-2">{teamLabels.roles[member.role]}</td>
-      <td className="px-3 py-2 text-right">
-        {member.change !== null && (
-          <ChangeButton member={member} pending={pending} onActivate={onActivate} />
-        )}
+      <td className="px-3 py-2">
+        <span className="flex items-center justify-end gap-1">
+          {member.change !== null && (
+            <ChangeButton member={member} pending={pending} onActivate={onActivate} />
+          )}
+          {member.statusChange !== null && (
+            <MemberActionsMenu
+              member={member}
+              action={member.statusChange}
+              pending={pending}
+              onChoose={onChooseStatus}
+            />
+          )}
+        </span>
       </td>
     </tr>
   );
 }
 
-function ChangeButton({ member, pending, onActivate }: TeamMemberRowProps) {
+function ChangeButton({
+  member,
+  pending,
+  onActivate,
+}: Omit<TeamMemberRowProps, "onChooseStatus">) {
   const label = member.change === "promote" ? teamLabels.promote : teamLabels.demote;
 
   return (

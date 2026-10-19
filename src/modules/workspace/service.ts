@@ -4,7 +4,7 @@ import { isBootstrapOwner, type EntryFacts } from "@/server/access";
 import { recordAudit, recordAudits, type AuditEntry } from "@/server/audit";
 import { db, type Transaction } from "@/server/db";
 import { env } from "@/server/env";
-import { can, type Actor, type Role } from "@/server/permissions";
+import { can, type Actor, type MembershipStatus, type Role } from "@/server/permissions";
 import { parseWeekStart, type WeekStart } from "@/server/time";
 
 import {
@@ -13,18 +13,14 @@ import {
   isValidEmail,
   planInvitations,
 } from "./invitation-plan";
-import {
-  workspaceRepository,
-  type MembershipRow,
-  type PersonRow,
-  type WorkspaceRow,
-} from "./repository";
+import { workspaceRepository, type MembershipRow, type WorkspaceRow } from "./repository";
 import {
   invitationMessages,
   type InvitationErrorCode,
   type InvitationsView,
   type InviteInput,
   type InviteResult,
+  type MemberStatus,
   type RevokeInvitationInput,
   type RevokeInvitationResult,
 } from "./schema";
@@ -180,7 +176,7 @@ export type WorkspacePerson = {
   readonly accountName: string;
   /** `user_preference.display_name`, o `null`: el nombre lo arma `displayNameOf` (ADR 0021). */
   readonly displayName: string | null;
-  readonly status: "active" | "inactive";
+  readonly status: MemberStatus;
   /**
    * `membership.created_at`: desde cuándo existe la membresía (D-R9-2). La
    * membresía nace al aceptar la invitación, en el primer ingreso: es la fecha
@@ -206,22 +202,7 @@ export async function listWorkspacePeople(
   if (!can(actor, "team.view", { kind: "workspace", workspaceId: actor.workspaceId })) {
     return [];
   }
-  const rows = await workspaceRepository.listPeople(tx, actor.workspaceId);
-  return rows.map(toWorkspacePerson);
-}
-
-/** La fila con el estado estrechado: la consulta solo deja pasar `active` e `inactive`. */
-function toWorkspacePerson(row: PersonRow): WorkspacePerson {
-  if (row.status === "invited") {
-    throw new Error(`La persona ${row.userId} llegó invitada al catálogo.`);
-  }
-  return {
-    userId: row.userId,
-    accountName: row.accountName,
-    displayName: row.displayName,
-    status: row.status,
-    joinedAt: row.joinedAt,
-  };
+  return workspaceRepository.listPeople(tx, actor.workspaceId);
 }
 
 /** Error de dominio de las invitaciones. La action lo traduce a un resultado tipado. */
@@ -403,4 +384,42 @@ export async function entryFactsOf(email: string): Promise<EntryFacts> {
     invitation: facts.invitation,
     membership: facts.membership,
   };
+}
+
+/**
+ * D-E2-6: si la membresía de `actor` sigue activa, leída `for share` con `tx`.
+ * Espera a una desactivación o a un cambio de rol en curso (`for no key
+ * update`) y lee lo que confirmaron. No choca con el `for key share` de un
+ * alta. La usa `time-entry` al abrir un timer, antes de tocar `time_entry`.
+ * Solo lee; el bloqueo lo nombra el contrato de E2 (ADR 0010).
+ */
+export async function isMembershipActiveLocked(
+  tx: Transaction,
+  actor: Actor,
+): Promise<boolean> {
+  const own = await workspaceRepository.lockActorMembership(
+    tx,
+    actor.workspaceId,
+    actor.userId,
+  );
+  return own?.status === "active";
+}
+
+/**
+ * D-E2-2: el estado de la membresía de `userId` en el workspace, leído `for share`
+ * con `tx`; `null` sin workspace o sin membresía. Lee sin actor: no hay sesión
+ * todavía. La usa `entry.ts` en el gancho `session.create.after`. Solo lee; el
+ * bloqueo lo nombra el contrato de E2 (ADR 0010).
+ */
+export async function entryMembershipStatusLocked(
+  tx: Transaction,
+  userId: string,
+): Promise<MembershipStatus | null> {
+  // El workspace más viejo, como `entryFactsOf` (ADR 0024, decisión 3).
+  const current = await workspaceRepository.findFirstWorkspace(tx);
+  if (current === undefined) {
+    return null;
+  }
+  const own = await workspaceRepository.lockActorMembership(tx, current.id, userId);
+  return own?.status ?? null;
 }

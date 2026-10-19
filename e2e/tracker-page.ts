@@ -78,6 +78,31 @@ export async function backgroundRgb(
   });
 }
 
+/**
+ * Si `text` se ve tachado: él o alguno de sus contenedores, hasta el primero
+ * que cumple el selector `boundary` inclusive, lleva `line-through`. El
+ * tachado no se anuncia, así que no hay rol ni nombre que lo muestre y se lee
+ * el estilo calculado; `text-decoration` no se hereda, por eso se miran los
+ * contenedores, como `backgroundRgb` mira el fondo.
+ */
+export async function isTextStruck(text: Locator, boundary: string): Promise<boolean> {
+  return text.evaluate((node, stop) => {
+    for (
+      let element: Element | null = node;
+      element !== null;
+      element = element.parentElement
+    ) {
+      if (getComputedStyle(element).textDecorationLine.includes("line-through")) {
+        return true;
+      }
+      if (element.matches(stop)) {
+        return false;
+      }
+    }
+    return false;
+  }, boundary);
+}
+
 /** Lee el contador en segundos, para compararlo sin depender del formato. */
 export async function elapsedOf(counter: Locator): Promise<number> {
   const text = (await counter.textContent()) ?? "";

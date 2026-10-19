@@ -1,5 +1,5 @@
 import { InactiveMembershipNotice } from "@/components/inactive-membership-notice";
-import type { TeamActions, TeamView } from "@/modules/team/schema";
+import type { TeamActions, TeamFilter, TeamView } from "@/modules/team/schema";
 import type { InvitationActions, InvitationsView } from "@/modules/workspace/schema";
 
 import { teamLabels } from "./labels";
@@ -15,6 +15,8 @@ type TeamScreenProps = {
    * sin invitadas ni «Invitar».
    */
   readonly invitations: InvitationsView | null;
+  /** El filtro de `?estado=`, ya parseado por la página (D-E2-8). */
+  readonly filter: TeamFilter;
   /**
    * Las actions de `team` y de `workspace` llegan por props desde `page.tsx`,
    * el único que importa los `actions.ts` (D-E1a-1).
@@ -23,12 +25,13 @@ type TeamScreenProps = {
 };
 
 /**
- * `/equipo`: las membresías activas, con el botón que pasa una de `member` a
- * `admin` y de vuelta (D-R8-3), y las invitaciones pendientes, con «Invitar» y
- * «Revocar invitación» (E1a). Una vista `ready` nunca está vacía: tiene, al
- * menos, la fila de quien mira.
+ * `/equipo`: las membresías activas e inactivas, con el botón que pasa una de
+ * `member` a `admin` y de vuelta (D-R8-3) y el menú que la desactiva o la
+ * reactiva (E2), y las invitaciones pendientes, con «Invitar» y «Revocar
+ * invitación» (E1a), según el filtro de estado. Una vista `ready` nunca está
+ * vacía: tiene, al menos, la fila de quien mira.
  */
-export function TeamScreen({ view, invitations, actions }: TeamScreenProps) {
+export function TeamScreen({ view, invitations, filter, actions }: TeamScreenProps) {
   // Con `tabIndex={-1}`: recibe el foco cuando una revocación saca la fila (§5.4).
   const heading = (
     <h1
@@ -47,6 +50,7 @@ export function TeamScreen({ view, invitations, actions }: TeamScreenProps) {
           heading={heading}
           members={view.members}
           invitations={invitations?.kind === "ready" ? invitations : null}
+          filter={filter}
           actions={actions}
         />
       ) : (

@@ -27,7 +27,7 @@ import {
   weekStartOf,
   type CivilDay,
 } from "./days";
-import { escapeRegExp } from "./tracker-page";
+import { escapeRegExp, isTextStruck } from "./tracker-page";
 
 export const REPORTS_PATH = "/reportes";
 
@@ -924,29 +924,14 @@ export async function expectFilterOptions(
 }
 
 /**
- * Si el nombre visible de una opción del panel abierto se ve tachado (P-08):
- * el texto o alguno de sus contenedores, hasta el panel, lleva
- * `line-through`. El tachado no se anuncia (el grupo dice por qué está
- * aparte), así que no hay rol ni nombre que lo muestre y se lee el estilo
- * calculado; `text-decoration` no se hereda, por eso se miran los
- * contenedores.
+ * Si el nombre visible de una opción del panel abierto se ve tachado (P-08),
+ * hasta el panel. El tachado no se anuncia: el grupo dice por qué está aparte.
  */
 export async function isStruckThrough(page: Page, name: string): Promise<boolean> {
-  return page
-    .getByRole("dialog")
-    .getByText(name, { exact: true })
-    .evaluate((text) => {
-      for (
-        let node: Element | null = text;
-        node !== null && node.getAttribute("role") !== "dialog";
-        node = node.parentElement
-      ) {
-        if (getComputedStyle(node).textDecorationLine.includes("line-through")) {
-          return true;
-        }
-      }
-      return false;
-    });
+  return isTextStruck(
+    page.getByRole("dialog").getByText(name, { exact: true }),
+    '[role="dialog"]',
+  );
 }
 
 /** «Aplicar», al pie del panel abierto de un filtro, que va en un portal. */

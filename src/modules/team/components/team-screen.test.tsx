@@ -1,16 +1,20 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { teamView, type TeamActions } from "@/modules/team/schema";
+import { teamView, type TeamActions, type TeamFilter } from "@/modules/team/schema";
 import type { InvitationActions, InvitationsView } from "@/modules/workspace/schema";
 import { bodyRows, buttonsOf, textOf } from "@/test/markup";
 
 import { TEAM_HEADING_ID } from "./team-members-model";
 import { TeamScreen } from "./team-screen";
 
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: () => undefined }) }));
+
 /** Doble escrito a mano: el marcado inicial no llama a las actions. */
 const actions: TeamActions & InvitationActions = {
   changeRole: () => Promise.resolve({ ok: false, code: "unexpected", message: "doble" }),
+  changeStatus: () =>
+    Promise.resolve({ ok: false, code: "unexpected", message: "doble" }),
   inviteMembers: () =>
     Promise.resolve({ ok: false, code: "unexpected", message: "doble" }),
   revokeInvitation: () =>
@@ -51,6 +55,9 @@ const alone = teamView.parse({
       role: "owner",
       isSelf: true,
       change: null,
+      status: "active",
+      hasAccount: true,
+      statusChange: null,
     },
   ],
 });
@@ -69,6 +76,9 @@ const ready = teamView.parse({
       role: "owner",
       isSelf: true,
       change: null,
+      status: "active",
+      hasAccount: true,
+      statusChange: null,
     },
     {
       membershipId: "1f6d8e2b-9a53-4d5c-8b62-2e3a4f5b6c72",
@@ -77,6 +87,9 @@ const ready = teamView.parse({
       role: "admin",
       isSelf: false,
       change: "demote",
+      status: "active",
+      hasAccount: true,
+      statusChange: null,
     },
     {
       membershipId: "2a7e9f3c-ab64-4e6d-9c73-3f4b5a6c7d83",
@@ -85,6 +98,9 @@ const ready = teamView.parse({
       role: "member",
       isSelf: false,
       change: "promote",
+      status: "active",
+      hasAccount: true,
+      statusChange: null,
     },
     {
       membershipId: "3b8fa04d-bc75-4f7e-8d84-4a5c6b7d8e94",
@@ -93,6 +109,9 @@ const ready = teamView.parse({
       role: "project_manager",
       isSelf: false,
       change: null,
+      status: "active",
+      hasAccount: true,
+      statusChange: null,
     },
     {
       membershipId: "4c9ab15e-cd86-4a8f-9e95-5b6d7c8e9fa5",
@@ -101,6 +120,9 @@ const ready = teamView.parse({
       role: "team_manager",
       isSelf: false,
       change: null,
+      status: "active",
+      hasAccount: true,
+      statusChange: null,
     },
   ],
 });
@@ -116,6 +138,9 @@ const readyForAdmin = teamView.parse({
       role: "admin",
       isSelf: true,
       change: null,
+      status: "active",
+      hasAccount: true,
+      statusChange: null,
     },
     {
       membershipId: "5dabc26f-de97-4b9a-8fa6-6c7e8d9fab16",
@@ -124,6 +149,9 @@ const readyForAdmin = teamView.parse({
       role: "admin",
       isSelf: false,
       change: null,
+      status: "active",
+      hasAccount: true,
+      statusChange: null,
     },
     {
       membershipId: "2a7e9f3c-ab64-4e6d-9c73-3f4b5a6c7d83",
@@ -132,6 +160,9 @@ const readyForAdmin = teamView.parse({
       role: "member",
       isSelf: false,
       change: "promote",
+      status: "active",
+      hasAccount: true,
+      statusChange: null,
     },
   ],
 });
@@ -139,14 +170,75 @@ const readyForAdmin = teamView.parse({
 function render(
   view: unknown,
   invitations: InvitationsView | null = noInvitations,
+  filter: TeamFilter = "activas",
 ): string {
   return renderToStaticMarkup(
     <TeamScreen
       view={teamView.parse(view)}
       invitations={invitations}
+      filter={filter}
       actions={actions}
     />,
   );
+}
+
+/**
+ * Como la ve el owner con E2: quien mira, una activa y dos inactivas, una sin
+ * cuenta, en el orden de `compareNames` sin mirar el estado.
+ */
+const withInactive = teamView.parse({
+  kind: "ready",
+  members: [
+    {
+      membershipId: "0e5c7d1a-8f42-4c4b-9a51-1d2f3e4a5b61",
+      name: "Olga",
+      email: "olga@empresa.com",
+      role: "owner",
+      isSelf: true,
+      change: null,
+      status: "active",
+      hasAccount: true,
+      statusChange: null,
+    },
+    {
+      membershipId: "5dabc26f-de97-4b9a-8fa6-6c7e8d9fab16",
+      name: "Elena",
+      email: "elena@empresa.com",
+      role: "member",
+      isSelf: false,
+      change: null,
+      status: "inactive",
+      hasAccount: false,
+      statusChange: null,
+    },
+    {
+      membershipId: "2a7e9f3c-ab64-4e6d-9c73-3f4b5a6c7d83",
+      name: "Mara",
+      email: "mara@empresa.com",
+      role: "member",
+      isSelf: false,
+      change: "promote",
+      status: "active",
+      hasAccount: true,
+      statusChange: "deactivate",
+    },
+    {
+      membershipId: "4c9ab15e-cd86-4a8f-9e95-5b6d7c8e9fa5",
+      name: "Tina",
+      email: "tina@empresa.com",
+      role: "admin",
+      isSelf: false,
+      change: null,
+      status: "inactive",
+      hasAccount: true,
+      statusChange: "reactivate",
+    },
+  ],
+});
+
+/** Los encabezados de fila del cuerpo, sin marcas. */
+function rowNames(markup: string): string[] {
+  return bodyRows(markup).map(([person]) => person ?? "");
 }
 
 /** Los botones fuera de la tabla con el texto «Invitar». */
@@ -195,7 +287,7 @@ describe("TeamScreen", () => {
     expect(markup).toContain(`<h1 id="${TEAM_HEADING_ID}"`);
     expect(markup).toContain(`<table aria-labelledby="${TEAM_HEADING_ID}"`);
     expect(textOf(markup)).toContain(
-      "Un administrador ve las horas de todas las personas en los reportes y puede hacer administradoras a otras personas. Solo el propietario quita el rol de administrador, y el suyo no se cambia.",
+      "Un administrador ve las horas de todas las personas en los reportes y puede hacer administradoras a otras personas. Solo el propietario quita el rol de administrador, y el suyo no se cambia. Solo el propietario desactiva o reactiva a un administrador.",
     );
     const head = markup.slice(markup.indexOf("<thead"), markup.indexOf("</thead>"));
     expect(head.match(/<th scope="col"[^>]*>(.*?)<\/th>/g)?.map(textOf)).toEqual([
@@ -325,5 +417,96 @@ describe("TeamScreen", () => {
     );
     expect(textOf(render(ready))).not.toContain("Todavía no invitaste a nadie.");
     expect(inviteButtons(render(ready))).toHaveLength(1);
+  });
+
+  it("§5.2: el selector «Estado» va debajo de la introducción y antes de la tabla", () => {
+    const markup = render(withInactive);
+    const label = markup.search(/<label[^>]*>Estado<\/label>/);
+
+    expect(label).toBeGreaterThan(markup.indexOf("Solo el propietario desactiva"));
+    expect(label).toBeLessThan(markup.indexOf("<table"));
+  });
+
+  it("D-E2-8: «Activas», por omisión, sin las inactivas y con las invitadas", () => {
+    expect(rowNames(render(withInactive, withInvitations))).toEqual([
+      "Olga (vos)olga@empresa.com",
+      "Maramara@empresa.com",
+      "carla@empresa.comInvitada",
+      "nico@otro.comInvitadaExterna",
+    ]);
+  });
+
+  it("D-E2-8: «Inactivas», solo las inactivas, sin invitadas", () => {
+    expect(rowNames(render(withInactive, withInvitations, "inactivas"))).toEqual([
+      "Elena (inactiva)elena@empresa.comSin cuenta de Google vinculada.",
+      "Tina (inactiva)tina@empresa.com",
+    ]);
+  });
+
+  it("D-E2-8: «Invitadas», solo las invitadas", () => {
+    expect(rowNames(render(withInactive, withInvitations, "invitadas"))).toEqual([
+      "carla@empresa.comInvitada",
+      "nico@otro.comInvitadaExterna",
+    ]);
+  });
+
+  it("D-E2-8: «Todas», las personas en el orden de la vista sin mirar el estado, y las invitadas", () => {
+    expect(rowNames(render(withInactive, withInvitations, "todas"))).toEqual([
+      "Olga (vos)olga@empresa.com",
+      "Elena (inactiva)elena@empresa.comSin cuenta de Google vinculada.",
+      "Maramara@empresa.com",
+      "Tina (inactiva)tina@empresa.com",
+      "carla@empresa.comInvitada",
+      "nico@otro.comInvitadaExterna",
+    ]);
+  });
+
+  it("el selector dice el filtro de la página", () => {
+    expect(render(withInactive, noInvitations, "invitadas")).toMatch(
+      /data-slot="select-value"[^>]*>Invitadas<\/span>/,
+    );
+  });
+
+  it("EQ-94: «Inactivas» sin ninguna, el párrafo en lugar de la tabla", () => {
+    const markup = render(ready, withInvitations, "inactivas");
+
+    expect(markup).not.toContain("<table");
+    expect(textOf(markup)).toContain("No hay personas inactivas.");
+    expect(textOf(markup)).not.toContain("Todavía no invitaste a nadie.");
+  });
+
+  it("EQ-94: «Invitadas» sin ninguna, el párrafo en lugar de la tabla", () => {
+    const markup = render(withInactive, noInvitations, "invitadas");
+
+    expect(markup).not.toContain("<table");
+    expect(textOf(markup)).toContain("No hay invitaciones pendientes.");
+  });
+
+  it("EQ-93 también con «Todas»", () => {
+    expect(textOf(render(alone, noInvitations, "todas"))).toContain(
+      "Todavía no invitaste a nadie.",
+    );
+  });
+
+  it("EQ-93: una inactiva cuenta como otra persona, aunque «Activas» muestre solo a quien mira", () => {
+    const onlyInactive = teamView.parse({
+      kind: "ready",
+      members: [
+        ...(alone.kind === "ready" ? alone.members : []),
+        ...(withInactive.kind === "ready"
+          ? withInactive.members.filter((member) => member.name === "Elena")
+          : []),
+      ],
+    });
+    const markup = render(onlyInactive);
+
+    expect(rowNames(markup)).toEqual(["Olga (vos)olga@empresa.com"]);
+    expect(textOf(markup)).not.toContain("Todavía no invitaste a nadie.");
+  });
+
+  it("sin la vista de team, sin selector", () => {
+    expect(render({ kind: "forbidden", reason: "role" }, null)).not.toContain(
+      ">Estado</label>",
+    );
   });
 });

@@ -4,6 +4,7 @@ import {
   accessDenialMessage,
   decideGoogleAccess,
   decideStoredEmail,
+  decideStoredIdentity,
   isBootstrapOwner,
   loginErrorMessage,
   NO_ENTRY_FACTS,
@@ -21,6 +22,7 @@ const policy: AccessPolicy = {
 const allowed = { allowed: true } as const;
 const notHosted = { allowed: false, reason: "dominio_no_habilitado" } as const;
 const notInvited = { allowed: false, reason: "sin_invitacion" } as const;
+const inactive = { allowed: false, reason: "membresia_inactiva" } as const;
 
 function facts(values: Partial<EntryFacts>): EntryFacts {
   return { ...NO_ENTRY_FACTS, ...values };
@@ -205,12 +207,64 @@ describe("decideGoogleAccess, la identidad externa (criterio 4)", () => {
 });
 
 describe("decideGoogleAccess, el acceso", () => {
-  it("una membresía en cualquier estado da acceso hasta E2 (criterio 9)", () => {
-    for (const membership of ["active", "inactive", "invited"] as const) {
-      expect(decideGoogleAccess(domainProfile, policy, facts({ membership }))).toEqual(
-        allowed,
-      );
+  it("solo una membresía activa da acceso; inactive e invited, membresia_inactiva (D-E2-1)", () => {
+    expect(
+      decideGoogleAccess(domainProfile, policy, facts({ membership: "active" })),
+    ).toEqual(allowed);
+    for (const membership of ["inactive", "invited"] as const) {
+      expect([
+        membership,
+        decideGoogleAccess(domainProfile, policy, facts({ membership })),
+      ]).toEqual([membership, inactive]);
     }
+  });
+
+  it("la membresía no activa gana sobre una invitación pendiente (D-E2-1)", () => {
+    for (const membership of ["inactive", "invited"] as const) {
+      expect([
+        membership,
+        decideGoogleAccess(
+          domainProfile,
+          policy,
+          facts({ invitation: "pending", membership }),
+        ),
+      ]).toEqual([membership, inactive]);
+    }
+  });
+
+  it("un externo con aceptada o pendiente y la membresía inactiva, membresia_inactiva (criterio 10)", () => {
+    for (const invitation of ["accepted", "pending"] as const) {
+      expect([
+        invitation,
+        decideGoogleAccess(
+          externalProfile,
+          policy,
+          facts({ invitation, membership: "inactive" }),
+        ),
+      ]).toEqual([invitation, inactive]);
+    }
+  });
+
+  it("la identidad va primero: un externo inactivo sin invitación abierta, sin_invitacion", () => {
+    for (const invitation of ["revoked", null] as const) {
+      expect(
+        decideGoogleAccess(
+          externalProfile,
+          policy,
+          facts({ invitation, membership: "inactive" }),
+        ),
+      ).toEqual(notInvited);
+    }
+  });
+
+  it("la identidad va primero: el dominio sin hd e inactivo, dominio_no_habilitado", () => {
+    expect(
+      decideGoogleAccess(
+        { email: "ana@empresa.com", email_verified: true },
+        policy,
+        facts({ membership: "inactive" }),
+      ),
+    ).toEqual(notHosted);
   });
 
   it("sin workspace, el correo del arranque entra, con mayúsculas y blancos (criterio 7)", () => {
@@ -266,15 +320,40 @@ describe("decideStoredEmail", () => {
     }
   });
 
-  it("un externo con pendiente, o con aceptada y membresía, entra", () => {
+  it("un externo con pendiente, o con aceptada y membresía activa, entra", () => {
     expect(decideStoredEmail("Freelance@gmail.com", policy, pending)).toEqual(allowed);
     expect(
       decideStoredEmail(
         "freelance@gmail.com",
         policy,
-        facts({ invitation: "accepted", membership: "inactive" }),
+        facts({ invitation: "accepted", membership: "active" }),
       ),
     ).toEqual(allowed);
+  });
+
+  it("un externo con aceptada o pendiente y la membresía inactiva, membresia_inactiva (criterio 10)", () => {
+    for (const invitation of ["accepted", "pending"] as const) {
+      expect([
+        invitation,
+        decideStoredEmail(
+          "freelance@gmail.com",
+          policy,
+          facts({ invitation, membership: "inactive" }),
+        ),
+      ]).toEqual([invitation, inactive]);
+    }
+  });
+
+  it("un externo inactivo sin invitación abierta, sin_invitacion: la identidad va primero", () => {
+    for (const invitation of ["revoked", null] as const) {
+      expect(
+        decideStoredEmail(
+          "freelance@gmail.com",
+          policy,
+          facts({ invitation, membership: "inactive" }),
+        ),
+      ).toEqual(notInvited);
+    }
   });
 
   it("un externo sin fila, revocado o aceptado sin membresía, no entra", () => {
@@ -292,11 +371,28 @@ describe("decideStoredEmail", () => {
     ).toEqual(notInvited);
   });
 
-  it("una membresía en cualquier estado da acceso hasta E2 (criterio 9)", () => {
-    for (const membership of ["active", "inactive", "invited"] as const) {
-      expect(decideStoredEmail("ana@empresa.com", policy, facts({ membership }))).toEqual(
-        allowed,
-      );
+  it("solo una membresía activa da acceso; inactive e invited, membresia_inactiva (D-E2-1)", () => {
+    expect(
+      decideStoredEmail("ana@empresa.com", policy, facts({ membership: "active" })),
+    ).toEqual(allowed);
+    for (const membership of ["inactive", "invited"] as const) {
+      expect([
+        membership,
+        decideStoredEmail("ana@empresa.com", policy, facts({ membership })),
+      ]).toEqual([membership, inactive]);
+    }
+  });
+
+  it("la membresía no activa gana sobre una invitación pendiente (D-E2-1)", () => {
+    for (const membership of ["inactive", "invited"] as const) {
+      expect([
+        membership,
+        decideStoredEmail(
+          "ana@empresa.com",
+          policy,
+          facts({ invitation: "pending", membership }),
+        ),
+      ]).toEqual([membership, inactive]);
     }
   });
 
@@ -317,6 +413,66 @@ describe("decideStoredEmail", () => {
         facts({ bootstrap: true }),
       ),
     ).toEqual(notInvited);
+  });
+});
+
+describe("decideStoredIdentity (D-E2-2)", () => {
+  const memberships = [null, "active", "inactive", "invited"] as const;
+
+  it("el dominio, por el sufijo, sin mirar la membresía ni la invitación", () => {
+    for (const membership of memberships) {
+      for (const invitation of [null, "pending", "accepted", "revoked"] as const) {
+        expect([
+          membership,
+          invitation,
+          decideStoredIdentity(
+            "ANA@empresa.com",
+            policy,
+            facts({ membership, invitation }),
+          ),
+        ]).toEqual([membership, invitation, allowed]);
+      }
+    }
+  });
+
+  it("un externo con pendiente o aceptada, sin mirar la membresía", () => {
+    for (const membership of memberships) {
+      for (const invitation of ["pending", "accepted"] as const) {
+        expect([
+          membership,
+          invitation,
+          decideStoredIdentity(
+            "freelance@gmail.com",
+            policy,
+            facts({ membership, invitation }),
+          ),
+        ]).toEqual([membership, invitation, allowed]);
+      }
+    }
+  });
+
+  it("un externo revocado o sin fila, sin_invitacion, aunque tenga membresía activa", () => {
+    for (const membership of memberships) {
+      for (const invitation of ["revoked", null] as const) {
+        expect([
+          membership,
+          invitation,
+          decideStoredIdentity(
+            "freelance@gmail.com",
+            policy,
+            facts({ membership, invitation }),
+          ),
+        ]).toEqual([membership, invitation, notInvited]);
+      }
+    }
+  });
+
+  it("sin workspace, no decide el arranque: el dominio pasa y el externo sin invitación no", () => {
+    const bootstrap = facts({ bootstrap: true });
+    expect(decideStoredIdentity("ana@empresa.com", policy, bootstrap)).toEqual(allowed);
+    expect(decideStoredIdentity("freelance@gmail.com", policy, bootstrap)).toEqual(
+      notInvited,
+    );
   });
 });
 
@@ -352,6 +508,12 @@ describe("loginErrorMessage (criterio 24 de E1a)", () => {
   it("sin_invitacion da el texto de EQ-91", () => {
     expect(loginErrorMessage("sin_invitacion")).toBe(
       "Tu cuenta no tiene una invitación a Clock. Pedísela a quien administra el equipo.",
+    );
+  });
+
+  it("membresia_inactiva da el texto de EQ-92 (criterio 10)", () => {
+    expect(loginErrorMessage("membresia_inactiva")).toBe(
+      "Tu acceso al workspace está desactivado. Pedile a quien administra el equipo que te vuelva a activar.",
     );
   });
 

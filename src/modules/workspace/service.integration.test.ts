@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { db } from "@/server/db";
+import { db, type Transaction } from "@/server/db";
 import { CHECK_VIOLATION, constraintOf } from "@/server/db/constraint-error";
 import {
   auditLog,
@@ -12,7 +12,7 @@ import {
   workspaceSettings,
 } from "@/server/db/schema";
 import type { Actor } from "@/server/permissions";
-import { warmPool, waitForBlockedBackends } from "@/test/concurrency";
+import { outcomeWhileHeld, warmPool, waitForBlockedBackends } from "@/test/concurrency";
 import {
   seedInvitation,
   seedMember,
@@ -27,6 +27,8 @@ import { actorIn } from "@/test/time-entry";
 import { workspaceRepository } from "./repository";
 import {
   ensureWorkspaceContext,
+  entryMembershipStatusLocked,
+  isMembershipActiveLocked,
   listWorkspacePeople,
   weekStartOf,
   type WorkspaceContext,
@@ -173,7 +175,7 @@ describe("ensureWorkspaceContext con el workspace", () => {
     },
   );
 
-  it("una membresía inactiva sigue dando el contexto hasta E2 (criterio 9)", async () => {
+  it("una membresía inactiva da el contexto con su estado: la pantalla en solo lectura (TT-92, D-E2-2)", async () => {
     const { workspaceId } = await workspaceWithOwner();
     const userId = await seedMember(workspaceId, "member", "inactive");
 
@@ -545,5 +547,100 @@ describe("listWorkspacePeople (RP-62, RP-64; criterio 17 de R4)", () => {
     });
     expect(listPeople).toHaveBeenCalledTimes(1);
     expect(listPeople.mock.calls[0]?.[0]).toBe(transaction);
+  });
+});
+
+describe("las lecturas con bloqueo de E2 (D-E2-2, D-E2-6)", () => {
+  /** Toma la membresía como una desactivación en curso. */
+  function lockMembership(userId: string) {
+    return (tx: Transaction) =>
+      tx
+        .select()
+        .from(membership)
+        .where(eq(membership.userId, userId))
+        .for("no key update");
+  }
+
+  it.each([
+    ["active", true],
+    ["inactive", false],
+    ["invited", false],
+  ] as const)(
+    "isMembershipActiveLocked con la membresía %s: %s",
+    async (status, active) => {
+      const { workspaceId } = await seedWorkspace();
+      const userId = await seedMember(workspaceId, "member", status);
+
+      expect(
+        await db.transaction((tx) =>
+          // El `Actor` dice activa: lo que vale es lo que está en la base.
+          isMembershipActiveLocked(tx, actorIn(workspaceId, userId)),
+        ),
+      ).toBe(active);
+    },
+  );
+
+  it("isMembershipActiveLocked sin membresía: false", async () => {
+    const { workspaceId } = await seedWorkspace();
+    const userId = await seedUser();
+
+    expect(
+      await db.transaction((tx) =>
+        isMembershipActiveLocked(tx, actorIn(workspaceId, userId)),
+      ),
+    ).toBe(false);
+  });
+
+  it.each(["active", "inactive", "invited"] as const)(
+    "entryMembershipStatusLocked con la membresía %s la devuelve",
+    async (status) => {
+      const { workspaceId } = await seedWorkspace();
+      const userId = await seedMember(workspaceId, "member", status);
+
+      expect(await db.transaction((tx) => entryMembershipStatusLocked(tx, userId))).toBe(
+        status,
+      );
+    },
+  );
+
+  it("entryMembershipStatusLocked sin membresía o sin workspace: null", async () => {
+    const userId = await seedUser();
+    expect(await db.transaction((tx) => entryMembershipStatusLocked(tx, userId))).toBe(
+      null,
+    );
+
+    await seedWorkspace();
+    expect(await db.transaction((tx) => entryMembershipStatusLocked(tx, userId))).toBe(
+      null,
+    );
+  });
+
+  it("entryMembershipStatusLocked lee el workspace más viejo, como entryFactsOf", async () => {
+    const { workspaceId: oldest } = await seedWorkspace();
+    const userId = await seedMember(oldest, "member", "inactive");
+    const { workspaceId: newer } = await seedWorkspace();
+    await db.insert(membership).values({ workspaceId: newer, userId, role: "member" });
+
+    expect(await db.transaction((tx) => entryMembershipStatusLocked(tx, userId))).toBe(
+      "inactive",
+    );
+  });
+
+  it("las dos esperan a una desactivación en curso", async () => {
+    const { workspaceId } = await seedWorkspace();
+    const userId = await seedMember(workspaceId, "member");
+
+    expect(
+      await outcomeWhileHeld(lockMembership(userId), () =>
+        db.transaction((tx) =>
+          isMembershipActiveLocked(tx, actorIn(workspaceId, userId)),
+        ),
+      ),
+    ).toBe("blocked");
+    expect(
+      await outcomeWhileHeld(lockMembership(userId), () =>
+        db.transaction((tx) => entryMembershipStatusLocked(tx, userId)),
+      ),
+    ).toBe("blocked");
   });
 });

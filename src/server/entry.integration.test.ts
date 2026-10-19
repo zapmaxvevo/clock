@@ -1,13 +1,24 @@
+import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { workspaceRepository } from "@/modules/workspace/repository";
 import { accessDenialMessage } from "@/server/access";
+import { db } from "@/server/db";
+import { auditLog, session } from "@/server/db/schema";
 import { env } from "@/server/env";
-import { seedInvitation, seedMember, seedWorkspace } from "@/test/factories";
+import {
+  seedInvitation,
+  seedMember,
+  seedSession,
+  seedUser,
+  seedWorkspace,
+} from "@/test/factories";
 
 import {
   decideProfileEntry,
+  decideSessionIdentity,
   decideStoredEmailEntry,
+  dropSessionOfInactive,
   loginErrorUrl,
   sessionEntryError,
 } from "./entry";
@@ -21,6 +32,7 @@ import {
 const allowed = { allowed: true };
 const notHosted = { allowed: false, reason: "dominio_no_habilitado" };
 const notInvited = { allowed: false, reason: "sin_invitacion" };
+const inactive = { allowed: false, reason: "membresia_inactiva" };
 
 /** Un perfil de Google verificado, sin `hd` salvo que se pase. */
 function profile(email: string, hd?: string) {
@@ -87,12 +99,22 @@ describe("con el workspace", () => {
       ]);
     });
 
-    it("una membresía inactiva sigue dando acceso hasta E2 (criterio 9)", async () => {
+    it("una membresía inactiva no entra, con membresia_inactiva (criterio 10)", async () => {
       await seedMember(workspaceId, "member", "inactive", { email: "ana@empresa.com" });
 
       expect(await bothEntries("ana@empresa.com", "empresa.com")).toEqual([
-        allowed,
-        allowed,
+        inactive,
+        inactive,
+      ]);
+    });
+
+    it("una membresía inactiva con una invitación pendiente tampoco entra (D-E2-1)", async () => {
+      await seedMember(workspaceId, "member", "inactive", { email: "ana@empresa.com" });
+      await seedInvitation({ workspaceId, email: "ana@empresa.com" });
+
+      expect(await bothEntries("ana@empresa.com", "empresa.com")).toEqual([
+        inactive,
+        inactive,
       ]);
     });
 
@@ -142,6 +164,20 @@ describe("con el workspace", () => {
 
     it("sin invitación no entra, con sin_invitacion", async () => {
       expect(await bothEntries("nadie@gmail.com")).toEqual([notInvited, notInvited]);
+    });
+
+    it("con la invitación aceptada y la membresía inactiva no entra, con membresia_inactiva (criterio 10)", async () => {
+      await seedInvitation({ workspaceId, email: "ana@gmail.com", status: "accepted" });
+      await seedMember(workspaceId, "member", "inactive", { email: "ana@gmail.com" });
+
+      expect(await bothEntries("ana@gmail.com")).toEqual([inactive, inactive]);
+    });
+
+    it("inactivo y sin invitación abierta, sin_invitacion: la identidad va primero (criterio 10)", async () => {
+      await seedInvitation({ workspaceId, email: "ana@gmail.com", status: "revoked" });
+      await seedMember(workspaceId, "member", "inactive", { email: "ana@gmail.com" });
+
+      expect(await bothEntries("ana@gmail.com")).toEqual([notInvited, notInvited]);
     });
 
     it("con membresía y la invitación revocada no entra (EQ-24)", async () => {
@@ -199,6 +235,98 @@ describe("con el workspace", () => {
 
       expect(entryFacts.mock.calls).toEqual([["ana@empresa.com"], ["ana@empresa.com"]]);
     });
+  });
+});
+
+describe("decideSessionIdentity, por pedido (D-E2-2, criterio 11)", () => {
+  let workspaceId: string;
+
+  beforeEach(async () => {
+    ({ workspaceId } = await seedWorkspace());
+  });
+
+  it("un externo con aceptada y la membresía inactiva pasa: el acceso lo decide el contexto", async () => {
+    await seedInvitation({ workspaceId, email: "ana@gmail.com", status: "accepted" });
+    await seedMember(workspaceId, "member", "inactive", { email: "ana@gmail.com" });
+
+    expect(await decideSessionIdentity("Ana@Gmail.com")).toEqual(allowed);
+  });
+
+  it("un externo revocado sigue afuera por la identidad, aunque tenga membresía activa", async () => {
+    await seedInvitation({ workspaceId, email: "ana@gmail.com", status: "revoked" });
+    await seedMember(workspaceId, "member", "active", { email: "ana@gmail.com" });
+
+    expect(await decideSessionIdentity("ana@gmail.com")).toEqual(notInvited);
+  });
+
+  it("un correo del dominio con la membresía inactiva pasa sin leer los hechos", async () => {
+    await seedMember(workspaceId, "member", "inactive", { email: "ana@empresa.com" });
+    const entryFacts = vi.spyOn(workspaceRepository, "entryFacts");
+
+    expect(await decideSessionIdentity("ana@empresa.com")).toEqual(allowed);
+    expect(entryFacts).not.toHaveBeenCalled();
+  });
+});
+
+describe("dropSessionOfInactive, sin una desactivación en curso (D-E2-2, criterio 26)", () => {
+  let workspaceId: string;
+
+  beforeEach(async () => {
+    ({ workspaceId } = await seedWorkspace());
+  });
+
+  async function sessionIds() {
+    const rows = await db.select({ id: session.id }).from(session);
+    return rows.map((row) => row.id).sort();
+  }
+
+  it.each([
+    ["inactive", true],
+    ["invited", true],
+    ["active", false],
+  ] as const)(
+    "con la membresía %s, borrada: %s, sin constancia",
+    async (status, dropped) => {
+      const userId = await seedMember(workspaceId, "member", status);
+      const id = await seedSession(userId);
+      const other = await seedSession(
+        await seedMember(workspaceId, "member", "inactive"),
+      );
+
+      expect(await dropSessionOfInactive({ id, userId })).toBe(dropped);
+
+      expect(await sessionIds()).toEqual(dropped ? [other] : [id, other].sort());
+      expect(await db.select().from(auditLog)).toEqual([]);
+    },
+  );
+
+  it("sin membresía, la deja: una invitación pendiente se acepta en el primer pedido", async () => {
+    const userId = await seedUser();
+    const id = await seedSession(userId);
+
+    expect(await dropSessionOfInactive({ id, userId })).toBe(false);
+    expect(await sessionIds()).toEqual([id]);
+  });
+
+  it("borra solo la sesión que recibe, no las otras de la persona", async () => {
+    const userId = await seedMember(workspaceId, "member", "inactive");
+    const id = await seedSession(userId);
+    const older = await seedSession(userId);
+
+    expect(await dropSessionOfInactive({ id, userId })).toBe(true);
+    expect(
+      await db.select({ id: session.id }).from(session).where(eq(session.userId, userId)),
+    ).toEqual([{ id: older }]);
+  });
+});
+
+describe("dropSessionOfInactive sin workspace", () => {
+  it("la deja: es el arranque", async () => {
+    const userId = await seedUser();
+    const id = await seedSession(userId);
+
+    expect(await dropSessionOfInactive({ id, userId })).toBe(false);
+    expect(await db.select({ id: session.id }).from(session)).toEqual([{ id }]);
   });
 });
 

@@ -7,6 +7,7 @@ import * as schema from "@/server/db/schema";
 import {
   decideProfileEntry,
   decideStoredEmailEntry,
+  dropSessionOfInactive,
   loginErrorUrl,
   sessionEntryError,
 } from "@/server/entry";
@@ -119,6 +120,16 @@ export const auth = betterAuth({
             throw sessionEntryError(decision.reason);
           }
           return { data: session };
+        },
+        // D-E2-2: el `before` lee lo confirmado, así que una desactivación en
+        // curso no lo frena y la sesión se inserta igual. Esto relee la membresía
+        // `for share`, que espera a esa desactivación, y borra la sesión si quedó
+        // inactiva. No lanza: la fila ya está confirmada y un error no la
+        // deshace; solo saldría de `createSession` en todo camino que crea
+        // sesiones. La cookie de una sesión borrada no sirve en el pedido
+        // siguiente, que va a `/login`.
+        after: async (session) => {
+          await dropSessionOfInactive(session);
         },
       },
     },

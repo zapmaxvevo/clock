@@ -3,7 +3,14 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { z } from "zod";
 
-import { changeRoleInput, teamMessages, teamView, type TeamMember } from "./schema";
+import {
+  changeRoleInput,
+  changeStatusInput,
+  teamMessages,
+  teamSearchParams,
+  teamView,
+  type TeamMember,
+} from "./schema";
 
 function messageOf(result: z.ZodSafeParseResult<unknown>): string | undefined {
   return result.success ? undefined : result.error.issues.at(0)?.message;
@@ -19,6 +26,9 @@ function member(overrides: Partial<TeamMember> = {}): TeamMember {
     role: "member",
     isSelf: false,
     change: "promote",
+    status: "active",
+    hasAccount: true,
+    statusChange: "deactivate",
     ...overrides,
   };
 }
@@ -81,6 +91,78 @@ describe("changeRoleInput (D-R8-4, D-R8-6)", () => {
   );
 });
 
+describe("changeStatusInput (D-E2-3)", () => {
+  it.each(["active", "inactive"] as const)("acepta %s con un uuid", (status) => {
+    const result = changeStatusInput.safeParse({ membershipId, status });
+    expect(result.success && result.data).toEqual({ membershipId, status });
+  });
+
+  it.each([
+    ["invited", "invited"],
+    ["un estado con otra capitalización", "Inactive"],
+    ["el texto vacío", ""],
+    ["un número", 1],
+    ["un nulo", null],
+  ])("rechaza %s con «Ese estado no está disponible.»", (_label, status) => {
+    expect(messageOf(changeStatusInput.safeParse({ membershipId, status }))).toBe(
+      teamMessages.statusUnavailable,
+    );
+  });
+
+  it("rechaza un pedido sin estado con «Ese estado no está disponible.»", () => {
+    expect(messageOf(changeStatusInput.safeParse({ membershipId }))).toBe(
+      teamMessages.statusUnavailable,
+    );
+  });
+
+  it.each([
+    ["un texto que no es uuid", "abc"],
+    ["el texto vacío", ""],
+    ["un número", 42],
+    ["un nulo", null],
+  ])("rechaza %s como id con «Esa persona ya no está en el equipo.»", (_label, id) => {
+    expect(
+      messageOf(changeStatusInput.safeParse({ membershipId: id, status: "inactive" })),
+    ).toBe(teamMessages.notFound);
+  });
+
+  it.each([
+    ["un nulo", null],
+    ["un texto", "inactive"],
+  ])(
+    "rechaza %s en lugar del objeto con «Ese estado no está disponible.»",
+    (_label, input) => {
+      expect(messageOf(changeStatusInput.safeParse(input))).toBe(
+        teamMessages.statusUnavailable,
+      );
+    },
+  );
+});
+
+describe("teamSearchParams (D-E2-8)", () => {
+  it.each(["activas", "inactivas", "invitadas", "todas"] as const)(
+    "acepta ?estado=%s",
+    (estado) => {
+      const result = teamSearchParams.safeParse({ estado });
+      expect(result.success && result.data).toEqual({ estado });
+    },
+  );
+
+  it("sin parámetro, no trae estado", () => {
+    const result = teamSearchParams.safeParse({});
+    expect(result.success && result.data).toEqual({});
+  });
+
+  it.each([
+    ["un valor desconocido", "suspendidas"],
+    ["otra capitalización", "Inactivas"],
+    ["el texto vacío", ""],
+    ["un parámetro repetido", ["inactivas", "todas"]],
+  ])("rechaza %s", (_label, estado) => {
+    expect(teamSearchParams.safeParse({ estado }).success).toBe(false);
+  });
+});
+
 describe("teamView", () => {
   it("admite la vista sin permiso con sus dos motivos", () => {
     for (const reason of ["inactive", "role"] as const) {
@@ -95,11 +177,18 @@ describe("teamView", () => {
     const view = {
       kind: "ready",
       members: [
-        member({ role: "owner", change: null, isSelf: true }),
+        member({ role: "owner", change: null, isSelf: true, statusChange: null }),
         member({ role: "admin", change: "demote" }),
         member({ role: "project_manager", change: null }),
         member({ role: "team_manager", change: null }),
         member({ role: "member", change: "promote" }),
+        member({ status: "inactive", change: null, statusChange: "reactivate" }),
+        member({
+          status: "inactive",
+          change: null,
+          hasAccount: false,
+          statusChange: null,
+        }),
       ],
     };
     expect(teamView.parse(view)).toEqual(view);
@@ -119,6 +208,19 @@ describe("teamView", () => {
   ])("rechaza %s en `change`", (_label, change) => {
     expect(
       teamView.safeParse({ kind: "ready", members: [{ ...member(), change }] }).success,
+    ).toBe(false);
+  });
+
+  it.each([
+    ["invited", "status", "invited"],
+    ["la ausencia del estado", "status", undefined],
+    ["otra acción", "statusChange", "remove"],
+    ["la ausencia de la acción", "statusChange", undefined],
+    ["la ausencia de la cuenta", "hasAccount", undefined],
+  ])("rechaza %s", (_label, key, value) => {
+    expect(
+      teamView.safeParse({ kind: "ready", members: [{ ...member(), [key]: value }] })
+        .success,
     ).toBe(false);
   });
 });

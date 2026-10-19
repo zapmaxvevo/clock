@@ -8,6 +8,10 @@ import type { Locator, Page } from "@playwright/test";
 export const NO_INVITATION =
   "Tu cuenta no tiene una invitación a Clock. Pedísela a quien administra el equipo.";
 
+/** EQ-92: el texto para `membresia_inactiva` (D-E2-1 de E2). */
+export const MEMBERSHIP_INACTIVE =
+  "Tu acceso al workspace está desactivado. Pedile a quien administra el equipo que te vuelva a activar.";
+
 /** D-E1b-2: el texto para `dominio_no_habilitado`. */
 export const DOMAIN_DENIED = "La cuenta no es la de Google Workspace de la empresa.";
 
