@@ -20,7 +20,8 @@ cambios de esquema y sin migración.
 - **Lugar en el plan:** tercer slice de la fase 2. Depende de E1b (en `main`
   desde `db0991d` y en producción). E2b, E3, E4, E5, E6, P6 y E7 dependen de
   este.
-- **Revisión:** pendiente de `architecture-reviewer`.
+- **Revisión:** `architecture-reviewer` lo aprobó con cambios; las siete
+  correcciones están aplicadas.
 - **Decisiones de arquitectura:** **ningún ADR nuevo**. Lo que el slice decide
   cae dentro de ADR aceptados:
   - [ADR 0023](../adr/0023-quitar-el-rol-de-admin-es-una-accion-propia.md): la
@@ -28,16 +29,18 @@ cambios de esquema y sin migración.
     (D-E2-4). El mapa (§4) ya dice que no necesita ADR.
   - [ADR 0025](../adr/0025-un-modulo-escribe-en-otro-por-su-service.md): detener
     el timer es una función del service de `time-entry` y borrar las sesiones,
-    una de `src/server/` al lado de `auth.ts` (D-E2-5). `status` es una columna
-    de `team`.
+    una de `src/server/` al lado de `auth.ts` (D-E2-5, D-E2-2). `status` es una
+    columna de `team`.
   - [ADR 0010](../adr/0010-un-modulo-consulta-las-reglas-de-otro-por-su-service.md):
     la lectura con bloqueo que `time-entry` pide a `workspace` al abrir un timer
-    es el caso que el 0010 deja «al contrato que la pida» (D-E2-6); la cuenta
-    de Google se muestra con un `join` y se exige con una función del dueño
-    (D-E2-7).
+    y la que pide `entry.ts` al crear una sesión son el caso que el 0010 deja
+    «al contrato que la pida» (D-E2-6, D-E2-2); la cuenta de Google se muestra
+    con un `join` y se exige con una función del dueño (D-E2-7).
   - [ADR 0024](../adr/0024-donde-vive-una-invitacion-y-donde-se-corta-el-ingreso.md):
-    el corte sigue en `mapProfileToUser` y el gancho de sesión (decisión 4); E2
-    suma la rama del estado que E1b dejó preparada en `EntryFacts.membership`.
+    el corte sigue en `mapProfileToUser` y el gancho `session.create.before`
+    (decisión 4), armado por `entry.ts`; el gancho `session.create.after` que
+    cierra la carrera con una desactivación es parte del mismo armado (D-E2-2).
+    E2 suma la rama del estado que E1b dejó preparada en `EntryFacts.membership`.
   - El [0008](../adr/0008-la-ventana-de-la-lista-vive-en-la-url.md): el filtro
     de estado vive en la URL (EQ-100). El
     [0007](../adr/0007-el-cliente-elige-el-id-de-las-altas.md) y el
@@ -76,34 +79,79 @@ EQ-92).** El paso de acceso de D-E1b-1 queda así, en este orden:
   responde `sin_invitacion` aunque su membresía esté inactiva; un correo del
   dominio sin `hd`, `dominio_no_habilitado`.
 - Rige en los dos puntos de corte: `mapProfileToUser` (`decideGoogleAccess`) y
-  el gancho `session.create` (`decideStoredEmail`). Ninguno crea sesión.
+  el gancho `session.create.before` (`decideStoredEmail`). Ninguno crea sesión.
+  El gancho `session.create.after` de D-E2-2 no decide el ingreso: borra la
+  sesión que dejó la carrera con una desactivación.
 - **Cambia el criterio 9 de E1b** («una membresía inactiva sigue dando acceso
   hasta E2»), y con él los tests que lo afirman (§1).
 
-**D-E2-2 — Una sesión abierta con una membresía inactiva sigue en TT-92; por
-pedido se vuelve a decidir solo la identidad.** Desactivar borra las sesiones en
-la misma transacción (D-E2-5), así que en el uso normal no queda ninguna. Las
-que pueden quedar:
+**D-E2-2 — La carrera con un ingreso se cierra en `session.create.after`; una
+sesión abierta con una membresía inactiva sigue en TT-92, y por pedido se vuelve
+a decidir solo la identidad.** Desactivar borra las sesiones en la misma
+transacción (D-E2-5), así que en el uso normal no queda ninguna. Las que pueden
+quedar son dos:
 
 - **El pedido en vuelo** que leyó la sesión antes del `commit`: termina con lo
   que leyó (EQ-104). Es lo que P-05 deja a TT-92.
-- **La carrera con un ingreso**: el gancho `session.create` lee la membresía
-  activa, la desactivación confirma (y borra cero sesiones), y Better Auth
-  inserta la sesión después. El gancho y la inserción no comparten transacción
-  con nada que la desactivación pueda bloquear. Queda una sesión viva de una
-  inactiva hasta que vence (14 días, `auth.ts:27`).
 - **Un estado escrito por SQL**: una membresía pasada a `inactive` a mano, como
   hace `setMembershipStatus` de los e2e.
 
-En los tres casos **la pantalla queda en solo lectura con el aviso de TT-92**,
+En los dos casos **la pantalla queda en solo lectura con el aviso de TT-92**,
 como hoy: `ensureWorkspaceContext` devuelve el contexto con el estado y `can()`
-corta todo. **Alternativa descartada**: que `readSession` mande a `/login`
-toda sesión con una membresía no activa. Cierra la carrera, pero vuelve
-inalcanzable TT-92 —el estado que P-05 conserva— y cambia el recorrido de
-decenas de tests de integración de las actions y de RP-07 en e2e, que entran
-con una sesión y pasan la membresía a `inactive`. La carrera pide un ingreso en
-el mismo instante en que alguien desactiva a esa persona; la consulta de §6.3 la
-detecta, y la salida es reactivar y volver a desactivar.
+corta todo.
+
+**La carrera con un ingreso no deja sesión (P-05).** El gancho
+`session.create.before` lee la membresía activa, la desactivación confirma (y
+borra cero sesiones), y Better Auth inserta la sesión después: el `before` y la
+inserción no comparten transacción con nada que la desactivación pueda bloquear.
+Desde E2, **un gancho `session.create.after` relee la membresía `for share` y,
+si existe y no está activa, borra la sesión, sin lanzar**:
+
+- **Lo que ofrece Better Auth 1.7.7.** `databaseHooks.session.create.after`
+  existe, con la firma `(session: Session & Record<string, unknown>, context:
+GenericEndpointContext | null) => Promise<void>`
+  (`node_modules/@better-auth/core/dist/types/init-options.d.mts:1324`).
+  `createWithHooks` lo llama con la fila que devolvió el `insert`, después de
+  insertarla (`node_modules/better-auth/dist/db/with-hooks.mjs:25-41`), por
+  `queueAfterTransactionHook`: fuera de una transacción corre en el acto, y
+  dentro de una, después del `commit`
+  (`node_modules/@better-auth/core/dist/context/transaction.mjs:96-114`). En el
+  callback de OAuth, `createSession` corre fuera de toda transacción —la del
+  alta de `user` y `account` ya cerró—
+  (`node_modules/better-auth/dist/oauth2/link-account.mjs:274-289`, `:322`), así
+  que el gancho ve la fila de `session` confirmada. Lo que el gancho lance sale
+  de `createSession`.
+- **Por qué cierra la carrera.** La desactivación toma la membresía
+  `for no key update` antes de borrar las sesiones y la suelta en el `commit`
+  (D-E2-6); el gancho la lee `for share`, que choca con ese bloqueo. Si la
+  sesión confirmó antes de que empezara el `delete` de la desactivación, ese
+  `delete` la ve y la borra. Si confirmó después, la desactivación ya tenía la
+  membresía: el gancho espera su `commit`, lee `inactive` y la borra. Si el
+  gancho leyó `active` antes de que la desactivación tomara la membresía, la
+  sesión ya estaba confirmada, y es el primer caso.
+- **Sin lanzar.** El `after` corre con la fila ya confirmada: lanzar no deshace
+  la inserción, y un error ahí sale de `createSession` en todo camino que crea
+  sesiones, también el de la sesión de prueba. El gancho borra y vuelve. El
+  callback termina, el navegador recibe la cookie de una sesión que ya no está,
+  y el pedido siguiente no tiene sesión y va a `/login`, sin motivo; si la
+  persona vuelve a intentar, `mapProfileToUser` responde EQ-92 (§10). Ningún
+  pedido usó esa sesión —la cookie sale con la respuesta del callback, después
+  del gancho—, así que el borrado no deja constancia.
+- **Lo que borra**: solo la sesión de una membresía que existe y no es
+  `active`. Sin membresía —una invitación pendiente que se acepta en el primer
+  pedido, o el arranque— la sesión queda, como en D-E1b-5. Un error de la base
+  en el gancho sale como hoy uno en el `before`: el ingreso falla, y la fila de
+  `session` queda sin ninguna cookie que la use (§6.3).
+- **El costo**: cada ingreso suma una transacción con una lectura `for share`,
+  que espera unos milisegundos a una desactivación o a un cambio de rol en
+  curso de esa persona.
+
+**Alternativa descartada**: que `readSession` mande a `/login` toda sesión con
+una membresía no activa. También cierra la carrera, pero vuelve inalcanzable
+TT-92 —el estado que P-05 conserva para el pedido en vuelo— y cambia el
+recorrido de decenas de tests de integración de las actions y de RP-07 en e2e,
+que entran con una sesión y pasan la membresía a `inactive`. El gancho cierra la
+carrera en el único lugar donde nace una sesión.
 
 **Lo que cambia por pedido**: `decideSessionIdentity` (`entry.ts:57-62`) llama
 hoy a la decisión completa para un correo fuera de los dominios. Con D-E2-1, un
@@ -129,17 +177,20 @@ del bloqueo (D-E2-6), en este orden:
    EQ-90.
 4. La membresía pedida es la propia: `status_locked`, EQ-84.
 5. La membresía pedida es `owner`: `status_locked`, EQ-83.
-6. Sin `team.manage` sobre la membresía: `forbidden`, EQ-90.
-7. La membresía pedida es `admin` y falta `team.admin.setStatus`: `forbidden`,
+6. La membresía pedida es `admin` y falta `team.admin.setStatus`: `forbidden`,
    EQ-85.
-8. Ya tiene el estado pedido: éxito sin escribir.
-9. Reactivar a quien no tiene `account`: `no_account` (D-E2-7).
-10. Escribe (D-E2-5).
+7. Ya tiene el estado pedido: éxito sin escribir.
+8. Reactivar a quien no tiene `account`: `no_account` (D-E2-7).
+9. Escribe (D-E2-5).
 
-Los pasos 4 y 5 van antes de los de la fila porque EQ-40 pide que un pedido
-armado responda EQ-83 o EQ-84; el 3 va antes para que un member no reciba un
-texto que describe la fila. El 5 alcanza también a reactivar una membresía
-`owner` inactiva por SQL: «la salida es SQL» (ADR 0023, «Sin piso de admins»).
+Los pasos 4 y 5 van antes del 6, que mira el rol de la fila, porque EQ-40 pide
+que un pedido armado responda EQ-83 o EQ-84; el 3 va antes para que un member no
+reciba un texto que describe la fila. **No hay un paso de `team.manage` sobre la
+membresía**: con el 1 y el 5 antes, no agrega nada al 3, porque `can()` solo lo
+distingue del de workspace en el workspace y en la membresía del owner
+(`permissions/index.ts:190-192`, `:208-215`). El 5 alcanza también a reactivar
+una membresía `owner` inactiva por SQL: «la salida es SQL» (ADR 0023, «Sin piso
+de admins»).
 
 **D-E2-4 — `team.admin.setStatus`, solo del owner (P-07, EQ-38, EQ-85).** Con
 la forma de `team.admin.revoke`: `MembershipResource`, `["membership"]` en
@@ -207,13 +258,16 @@ configura—, así que el pedido siguiente de la persona no tiene sesión y va a
     responde `forbidden` sin escribir.
 
   `for share` choca con `for no key update` y no con `for key share`: solo el
-  arranque de un timer se pone en fila con una desactivación o con un cambio de
-  rol, y unos milisegundos. Las demás altas no cambian.
+  arranque de un timer y el gancho de un ingreso (D-E2-2) se ponen en fila con
+  una desactivación o con un cambio de rol, y unos milisegundos. Las demás altas
+  no cambian.
 
 - **El orden, con todo junto**: desactivar toma las membresías, después la fila
   del timer, después las de `session`. El arranque toma la membresía propia y
-  después las filas de `time_entry`. Detener toma solo `time_entry`. Ninguno
-  toma una membresía después de una fila de `time_entry`, así que no hay ciclo.
+  después las filas de `time_entry`. El gancho de un ingreso toma la membresía
+  propia y después, si borra, la fila de su `session`. Detener toma solo
+  `time_entry`. Ninguno toma una membresía después de una fila de `time_entry`
+  o de `session`, así que no hay ciclo.
 - **Alternativas descartadas**: aceptar la carrera (deja el timer huérfano);
   `for update` en la desactivación (choca con el `for key share` de toda alta y
   abre un ciclo con un arranque que ya cerró el timer anterior y espera la
@@ -355,6 +409,9 @@ escribe `parity-analyst` (§7).
 | Tests que afirman D-E1b-7                                                                                                  | `src/server/access.test.ts:208`, `:295`; `src/server/entry.integration.test.ts:90`; `workspace/service.integration.test.ts:176` |
 | El script de importación lee el estado y no cambia el de una membresía que existe                                          | `scripts/import-clockify/main.ts:237-263`, `:506-516` (rama `ops/importar-clockify`)                                            |
 
+Las citas de `node_modules` del gancho `session.create.after` están en D-E2-2, y
+la del refresco de una sesión borrada, en §10.
+
 ## 1. Alcance
 
 Cubre EQ-03 (el menú de la fila), EQ-05, EQ-06, EQ-11, EQ-37 … EQ-48, EQ-82 …
@@ -366,6 +423,9 @@ Entra:
 
 - **La regla de ingreso** con `membresia_inactiva` y la identidad por pedido
   (D-E2-1, D-E2-2).
+- **El gancho `session.create.after`** en `auth.ts`, con `dropSessionOfInactive`
+  en `entry.ts`, `deleteSession` en `auth-records.ts` y
+  `entryMembershipStatusLocked` en `workspace` (D-E2-2).
 - **`team.admin.setStatus`** en `can()` (D-E2-4).
 - **`changeStatus`** en `team`, con sus escrituras ajenas: `stopRunningTimerOf`
   en `time-entry` y `deleteSessionsOf` y `hasAccount` en
@@ -383,11 +443,11 @@ Queda afuera: §12.
 | Archivo                                                                   | Qué cambia                                                                                                   | Qué hay que volver a probar                                      |
 | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
 | `src/server/access.ts`, `access.test.ts`                                  | `membresia_inactiva`; el acceso exige `active`; `decideStoredIdentity`                                       | `access.test.ts` entero; `:208` y `:295` se invierten            |
-| `src/server/entry.ts`, `entry.integration.test.ts`                        | `decideSessionIdentity` decide solo la identidad                                                             | el archivo; `:90` se invierte                                    |
-| `src/server/auth.integration.test.ts`                                     | El callback y el gancho con una inactiva                                                                     | el archivo                                                       |
+| `src/server/entry.ts`, `entry.integration.test.ts`                        | `decideSessionIdentity` decide solo la identidad; `dropSessionOfInactive`                                    | el archivo; `:90` se invierte                                    |
+| `src/server/auth.ts`, `auth.integration.test.ts`                          | El gancho `session.create.after`; el callback y el `before` con una inactiva                                 | el archivo                                                       |
 | `src/server/session.integration.test.ts`                                  | Un externo inactivo con sesión abierta recibe el contexto (TT-92)                                            | el archivo                                                       |
 | `src/server/permissions/index.ts`, `permissions.test.ts`                  | `team.admin.setStatus`                                                                                       | la tabla entera                                                  |
-| `src/modules/workspace/service.ts`                                        | `isMembershipActiveLocked`                                                                                   | `workspace/service.integration.test.ts`; `:176` cambia el título |
+| `src/modules/workspace/service.ts`                                        | `isMembershipActiveLocked` y `entryMembershipStatusLocked`                                                   | `workspace/service.integration.test.ts`; `:176` cambia el título |
 | `src/modules/time-entry/service.ts`                                       | `stopRunningTimerOf`; `closeAndOpen` lee la membresía primero                                                | los tests de arranque y de continuar, y los de TT-92 de actions  |
 | `src/modules/team/schema.ts`, `repository.ts`, `service.ts`, `actions.ts` | La vista con estado, cuenta y acciones; `changeStatus`; `listMembers` y `lockForChange` renombran            | `team/*.test.ts` y `team/*.integration.test.ts`                  |
 | `src/modules/team/components/*`, `src/app/(app)/equipo/page.tsx`          | El filtro, las inactivas, el menú, la confirmación                                                           | los tests de componente de `team`                                |
@@ -397,7 +457,7 @@ Queda afuera: §12.
 | `CLAUDE.md`, «Estructura»                                                 | La línea de `src/server/auth-records.ts`                                                                     | —                                                                |
 
 - **Sin cambio**: `report`, `project`, `profile`, `drizzle/`,
-  `src/server/db/schema.ts`, `src/server/auth.ts`, `src/server/session.ts`,
+  `src/server/db/schema.ts`, `src/server/session.ts`,
   `src/server/test-session.ts` y `/login` (el código; su test suma un caso).
 - **TT-92 no cambia**: `ensureWorkspaceContext` sigue devolviendo el contexto de
   una membresía inactiva, y todo lo que hoy se dibuja en solo lectura sigue
@@ -426,7 +486,8 @@ desactiva o reactiva a un admin. Se consulta solo sobre una membresía `admin`:
 
 El resto sigue en `team.manage` sobre `MembershipResource`: owner y admin, con
 la regla existente de que la membresía del owner solo la toca el owner. **El
-ingreso no pasa por `can()`**: es la regla de `access.ts`, sin actor (ADR 0024).
+ingreso no pasa por `can()`**: es la regla de `access.ts`, sin actor (ADR 0024),
+y el gancho de D-E2-2 tampoco: no hay actor todavía.
 
 ## 4. Contrato
 
@@ -470,12 +531,35 @@ export function decideStoredEmail(
 - `decideGoogleAccess`, `verifiedEmailOf`, `isBootstrapOwner` y
   `loginErrorMessage` no cambian de firma.
 
-### 4.2 El armado (`src/server/entry.ts`)
+### 4.2 El armado y el gancho (`src/server/entry.ts`, `src/server/auth.ts`)
 
 `decideSessionIdentity` llama a `decideStoredIdentity` con los hechos del
 correo, en lugar de `decideStoredEmailEntry`. Un correo de los dominios sigue
 sin consultar. El comentario dice que por pedido se decide solo la identidad
-(D-E2-2). Las demás funciones no cambian.
+(D-E2-2). Suma:
+
+```ts
+/**
+ * D-E2-2: cierra la carrera de un ingreso con una desactivación. La llama el gancho
+ * `session.create.after`, con la fila de `session` ya confirmada: en una transacción,
+ * lee `for share` la membresía de `session.userId` —espera a una desactivación en
+ * curso— y, si existe y no está activa, borra la sesión. No lanza por eso. Devuelve
+ * si la borró.
+ */
+export async function dropSessionOfInactive(session: {
+  readonly id: string;
+  readonly userId: string;
+}): Promise<boolean>;
+```
+
+Por dentro: `db.transaction`, `entryMembershipStatusLocked(tx, session.userId)`
+(§4.4) y, si devuelve un estado distinto de `active`, `deleteSession(tx,
+session.id)` (§4.3). `null` no borra. Las demás funciones no cambian.
+
+**`auth.ts`** suma `after` a `databaseHooks.session.create`, al lado del
+`before`, que no cambia: llama a `dropSessionOfInactive` con la fila que recibe
+y no devuelve nada. El comentario remite a D-E2-2 y dice por qué no lanza. Nada
+más de `auth.ts` cambia.
 
 ### 4.3 Las tablas de Better Auth (`src/server/auth-records.ts`, nuevo)
 
@@ -500,6 +584,12 @@ export async function deleteSessionsOf(
   userId: string,
 ): Promise<number>;
 
+/**
+ * D-E2-2: borra la sesión `sessionId`, sin constancia: ningún pedido la usó, porque
+ * la cookie sale con la respuesta del callback, después del gancho que la borra.
+ */
+export async function deleteSession(tx: Transaction, sessionId: string): Promise<void>;
+
 /** D-E2-7: si `userId` tiene alguna fila de `account`. Solo lee (ADR 0010). */
 export async function hasAccount(tx: Transaction, userId: string): Promise<boolean>;
 ```
@@ -507,7 +597,7 @@ export async function hasAccount(tx: Transaction, userId: string): Promise<boole
 - El audit nunca guarda tokens ni ids de sesión: solo la cantidad.
 - `CLAUDE.md` suma la línea del archivo en «Estructura», debajo de `auth.ts`.
 
-### 4.4 `workspace`: la lectura con bloqueo (`service.ts`)
+### 4.4 `workspace`: las lecturas con bloqueo (`service.ts`)
 
 ```ts
 /**
@@ -521,10 +611,22 @@ export async function isMembershipActiveLocked(
   tx: Transaction,
   actor: Actor,
 ): Promise<boolean>;
+
+/**
+ * D-E2-2: el estado de la membresía de `userId` en el workspace, leído `for share`
+ * con `tx`; `null` sin workspace o sin membresía. Lee sin actor: no hay sesión
+ * todavía. La usa `entry.ts` en el gancho `session.create.after`. Solo lee; el
+ * bloqueo lo nombra el contrato de E2 (ADR 0010).
+ */
+export async function entryMembershipStatusLocked(
+  tx: Transaction,
+  userId: string,
+): Promise<MembershipStatus | null>;
 ```
 
-Usa `lockActorMembership` del repository, que ya lee `for share`. Sin membresía,
-`false`.
+Las dos usan `lockActorMembership` del repository, que ya lee `for share`.
+`isMembershipActiveLocked`, sin membresía, devuelve `false`.
+`entryMembershipStatusLocked` busca el workspace como `entryFactsOf`.
 
 ### 4.5 `time-entry` (`service.ts`)
 
@@ -646,10 +748,9 @@ export async function changeStatus(
   `forbiddenAction`, como `changeRole`.
 - **En la transacción**: `lockForChange`, `freshActorOf`, y los pasos de
   D-E2-3 con estos códigos y textos: `not_found`/`notFound`,
-  `forbidden`/`forbiddenAction`, `status_locked`/`selfStatusLocked`,
-  `status_locked`/`ownerStatusLocked`, `forbidden`/`forbiddenAction`,
-  `forbidden`/`adminStatusOwnerOnly`, éxito sin escribir,
-  `no_account`/`noAccount` (con `hasAccount(tx, target.userId)`).
+  `forbidden`/`forbiddenAction` (pasos 2 y 3), `status_locked`/`selfStatusLocked`,
+  `status_locked`/`ownerStatusLocked`, `forbidden`/`adminStatusOwnerOnly`, éxito
+  sin escribir, `no_account`/`noAccount` (con `hasAccount(tx, target.userId)`).
 - **Desactivar** (D-E2-5): `updateStatus` a `inactive`; `recordAudit` de
   `membership.deactivate` (`entity: "membership"`, `previousValue: { status:
 "active" }`, `nextValue: { status: "inactive" }`, quien actúa como actor);
@@ -659,9 +760,9 @@ export async function changeStatus(
   estados al revés.
 - **`getTeamView`**: `listMembers`; cada fila con `status`, `hasAccount`,
   `change` (`null` si es inactiva) y `statusChange`, que calcula
-  `statusChangeOf(actor, row)` con los mismos pasos 3 a 7 y 9 de D-E2-3 sobre
-  el `Actor` de la sesión: ni la propia ni la del owner; `team.manage` sobre la
-  fila; `team.admin.setStatus` si es `admin`; `deactivate` si es activa,
+  `statusChangeOf(actor, row)` con los mismos pasos 3 a 6 y 8 de D-E2-3 sobre
+  el `Actor` de la sesión: `team.manage` sobre el workspace; ni la propia ni la
+  del owner; `team.admin.setStatus` si es `admin`; `deactivate` si es activa,
   `reactivate` si es inactiva con cuenta, si no `null`.
 - **Exporta** `changeStatus` además de lo que ya exporta. Importa
   `stopRunningTimerOf` de `time-entry` y `deleteSessionsOf` y `hasAccount` de
@@ -698,6 +799,7 @@ export async function changeStatus(
 | Red o servidor                                           | `unexpected`                      | `unexpectedStatus`          | sí         |
 | Abrir un timer con la membresía ya inactiva bajo bloqueo | `forbidden` (timer)               | TT-79                       | no         |
 | Ingreso de una inactiva                                  | `/login?error=membresia_inactiva` | EQ-92                       | —          |
+| Ingreso que pierde la carrera con una desactivación      | `/login`, sin motivo              | EQ-92 al reintentar         | —          |
 
 ## 5. Pantalla
 
@@ -804,27 +906,35 @@ join ws on ws.id = m.workspace_id
 join "user" u on u.id = m.user_id
 order by m.status, correo;
 
--- 2. Lo que tiene que dar cero filas: una no activa con sesiones o con timer,
---    o una activa sin cuenta.
+-- 2. Lo que tiene que dar cero filas: una no activa con sesiones o con timer.
 with ws as (select id from workspace order by created_at, id limit 1)
 select lower(btrim(u.email)) as correo, m.status as estado
 from membership m
 join ws on ws.id = m.workspace_id
 join "user" u on u.id = m.user_id
-where (m.status <> 'active'
-       and (exists (select 1 from session s where s.user_id = u.id)
-            or exists (select 1 from time_entry t
-                        where t.workspace_id = m.workspace_id and t.user_id = m.user_id
-                          and t.ended_at is null)))
-   or (m.status = 'active'
-       and not exists (select 1 from account a where a.user_id = u.id));
+where m.status <> 'active'
+  and (exists (select 1 from session s where s.user_id = u.id)
+       or exists (select 1 from time_entry t
+                   where t.workspace_id = m.workspace_id and t.user_id = m.user_id
+                     and t.ended_at is null));
+
+-- 3. Informativa, no frena: las activas sin cuenta, que hoy no pueden entrar (PF-47).
+with ws as (select id from workspace order by created_at, id limit 1)
+select lower(btrim(u.email)) as correo, m.role as rol
+from membership m
+join ws on ws.id = m.workspace_id
+join "user" u on u.id = m.user_id
+where m.status = 'active'
+  and not exists (select 1 from account a where a.user_id = u.id)
+order by correo;
 ```
 
 Lo esperado: la consulta 1 con diez `active` con cuenta y tres `inactive` sin
-cuenta, sin sesiones ni timer; la 2, vacía. Qué se hace si no:
+cuenta, sin sesiones ni timer; la 2 y la 3, vacías. Qué se hace si no:
 
-- **Una no activa con sesiones** se para: con E2 su sesión seguiría abierta en
-  solo lectura (D-E2-2). Se borran con su constancia y se repite la consulta:
+- **Una no activa con sesiones** (la 2) se para: con E2 su sesión seguiría
+  abierta en solo lectura (D-E2-2). Se borran con su constancia y se repite la
+  consulta:
 
   ```sql
   with ws as (select id from workspace order by created_at, id limit 1),
@@ -841,7 +951,7 @@ cuenta, sin sesiones ni timer; la 2, vacía. Qué se hace si no:
   group by workspace_id, user_id;
   ```
 
-- **Una no activa con timer** se para: nadie lo puede detener desde la
+- **Una no activa con timer** (la 2) se para: nadie lo puede detener desde la
   aplicación. Se cierra como lo haría `stopRunningTimerOf`, sin actor, y se
   repite:
 
@@ -863,9 +973,9 @@ cuenta, sin sesiones ni timer; la 2, vacía. Qué se hace si no:
   from stopped;
   ```
 
-- **Una activa sin cuenta** no frena: no puede entrar hoy (PF-47) y E2 no lo
-  cambia. Se anota para E2b; si se la desactiva, no se va a poder reactivar
-  hasta E2b (D-E2-7).
+- **Una activa sin cuenta** (la 3) no frena y no tiene sentencia: no puede
+  entrar hoy (PF-47) y E2 no lo cambia. Se anota para E2b; si se la desactiva,
+  no se va a poder reactivar hasta E2b (D-E2-7).
 
 ### 6.2 El despliegue, en este orden
 
@@ -880,9 +990,10 @@ desactivar desde la pantalla hasta que la versión nueva atiende.
 ### 6.3 Después del despliegue
 
 La consulta 2 de §6.1 vuelve a dar cero filas. Se repite, sin urgencia, después
-de las primeras desactivaciones: una fila con sesiones es la carrera de D-E2-2,
-y la salida es reactivar y volver a desactivar desde la pantalla, o la
-sentencia de borrado de §6.1.
+de las primeras desactivaciones. Con el gancho de D-E2-2 la carrera con un
+ingreso no deja sesiones, así que una fila con sesiones es un estado escrito por
+SQL o la fila de un ingreso que falló en el gancho, sin cookie que la use; la
+salida es la sentencia de borrado de §6.1.
 
 ### 6.4 La verificación de humo
 
@@ -951,8 +1062,9 @@ un `update membership set status = 'active'` en esa rama.
 ### backend-dev
 
 - `src/server/access.ts` y `access.test.ts` (§4.1).
-- `src/server/entry.ts` y `entry.integration.test.ts` (§4.2);
-  `auth.integration.test.ts` y `session.integration.test.ts` (§9.2).
+- `src/server/entry.ts` y `entry.integration.test.ts`; `src/server/auth.ts`, el
+  gancho `session.create.after` (§4.2); `auth.integration.test.ts` y
+  `session.integration.test.ts` (§9.2).
 - `src/server/auth-records.ts` y `auth-records.integration.test.ts`, nuevos
   (§4.3); la línea de `CLAUDE.md`.
 - `src/server/permissions/index.ts` y `permissions.test.ts` (§3).
@@ -974,10 +1086,11 @@ un `update membership set status = 'active'` en esa rama.
 ### frontend-dev
 
 - `src/app/(app)/equipo/page.tsx` (§5.1).
-- `src/modules/team/components/`: `team-screen.tsx`, `team-members.tsx`,
-  `team-members-model.ts`, `labels.ts`, y los nuevos `status-filter.tsx`,
-  `member-actions-menu.tsx` y `deactivate-dialog.tsx`, con sus tests de
-  componente y de modelo (§5).
+- **Toda `src/modules/team/components/`** (§5): `team-screen.tsx`,
+  `team-members.tsx`, `team-members-model.ts`, `labels.ts`, los nuevos
+  `status-filter.tsx`, `member-actions-menu.tsx` y `deactivate-dialog.tsx`, lo
+  que haya que tocar del resto de la carpeta, y los tests de componente y de
+  modelo de todos ellos.
 
 ### e2e-tester
 
@@ -995,28 +1108,29 @@ un `update membership set status = 'active'` en esa rama.
 ### parity-analyst
 
 - `equipo.md`: EQ-35 (el botón de R8 se queda en «Acciones», D-E2-9); EQ-42 y
-  P-05 (TT-92 cubre el pedido en vuelo y la carrera de D-E2-2); EQ-104 (el
-  pedido que leyó la sesión antes termina con lo que leyó; abrir un timer
-  espera y responde TT-79, D-E2-6); EQ-110 (D-E2-7); **EQ-114** nuevo en la §10,
-  «Reactivar a una persona sin cuenta de Google» con el texto de `noAccount`,
-  `adaptar`; EQ-39 y EQ-41 (el procedimiento se retiró).
+  P-05 (TT-92 cubre solo el pedido en vuelo; la carrera de un ingreso con una
+  desactivación la cierra el gancho de D-E2-2); EQ-104 (el pedido que leyó la
+  sesión antes termina con lo que leyó; abrir un timer espera y responde TT-79,
+  D-E2-6); EQ-110 (D-E2-7); **EQ-114** nuevo en la §10, «Reactivar a una
+  persona sin cuenta de Google» con el texto de `noAccount`, `adaptar`; EQ-39 y
+  EQ-41 (el procedimiento se retiró).
 - `time-tracker.md`, TT-92: desde E2 el estado aparece solo con un pedido en
-  vuelo, con la carrera de D-E2-2 o por SQL.
+  vuelo o por SQL.
 - `reportes.md`: RP-60 y RP-63, construidos en E2.
 - `nucleo-reportes-mapa.md`, §5: la corrección fechada de D-E2-12.
 
 ### Lo que no toca nadie
 
 `report`, `project`, `profile`, `drizzle/`, `src/server/db/`,
-`src/server/auth.ts`, `src/server/session.ts`, `src/server/test-session.ts`,
-`src/components/` y `src/app/` fuera de `equipo/page.tsx` y del test de `/login`.
+`src/server/session.ts`, `src/server/test-session.ts`, `src/components/` y
+`src/app/` fuera de `equipo/page.tsx` y del test de `/login`.
 
 ### Orden
 
 1. `backend-dev`: los tipos y textos de §4.1 y §4.6.
-2. En paralelo: `backend-dev` con la regla, `can()`, las funciones ajenas y
-   `changeStatus`; `frontend-dev` con la pantalla; `e2e-tester` con el arnés y
-   el spec.
+2. En paralelo: `backend-dev` con la regla, el gancho, `can()`, las funciones
+   ajenas y `changeStatus`; `frontend-dev` con la pantalla; `e2e-tester` con el
+   arnés y el spec.
 3. Las revisiones; correcciones; corrida final de e2e en una base nueva **y** en
    una que se reusa.
 
@@ -1088,25 +1202,37 @@ un `update membership set status = 'active'` en esa rama.
     `?estado=inactivas`, `invitadas` y `todas` muestran lo de D-E2-8; uno
     inválido o repetido se ignora; elegir en el selector cambia la URL, y
     recargar la conserva.
-20. **La fila que cambió se queda** (EQ-11): con «Activas», desactivar deja la
-    fila en su lugar, tachada, con «(inactiva)» y el menú con «Reactivar»;
-    después de recargar o de cambiar el filtro ya no está en «Activas» y está en
-    «Inactivas».
+20. **La fila que cambió se queda** (EQ-11): con «Activas», desactivar a una
+    persona con cuenta (`seedGoogleAccount`) deja la fila en su lugar, tachada,
+    con «(inactiva)» y el menú con «Reactivar»; después de recargar o de cambiar
+    el filtro ya no está en «Activas» y está en «Inactivas».
 21. **La pantalla** (EQ-03, EQ-46, EQ-47): la confirmación con su título, su
     texto y sus botones; reactivar sin confirmar; los avisos de éxito y de
     error con el nombre; «Reintentar» solo con `unexpected`; un pedido a la vez
     en toda la tabla; el foco según §5.4.
 22. **Los vacíos** (EQ-93, EQ-94): los dos textos de §5.5 en su filtro; EQ-93
     con quien mira solo.
-23. **Revalidación** (EQ-101): después de desactivar, el filtro de personas del
-    reporte de quien desactivó la muestra entre las inactivas sin recargar.
+23. **Revalidación** (EQ-101, D-E2-11): `changeStatus` con éxito llama a
+    `revalidatePath("/", "layout")`, y después de desactivar a una persona,
+    `listWorkspacePeople` con la transacción de un reporte la devuelve con
+    `status: "inactive"`. Las dos cosas juntas son las que hacen que el filtro
+    de personas del reporte de quien desactivó la muestre entre las inactivas
+    sin recargar; eso último no se prueba en e2e (§9.4).
 24. **Las consultas de §6** corren sin error contra una base sembrada —una
     inactiva con sesión, una con timer, una activa sin cuenta, una inactiva sin
-    cuenta— y dan lo que su comentario dice; después de las dos sentencias, la
-    consulta 2 da cero. `backend-dev` pega la salida en el registro del slice,
-    con la siembra.
+    cuenta— y dan lo que su comentario dice: la 2 trae a las dos primeras y la
+    3, a la activa sin cuenta. Después de las dos sentencias, la 2 da cero y la
+    3 sigue trayendo a la activa sin cuenta. `backend-dev` pega la salida en el
+    registro del slice, con la siembra.
 25. **La e2e entera en verde**, en una base nueva y en una que se reusa; los
     recorridos de R8, E1a y E1b sin cambiar lo que afirman.
+26. **La carrera con un ingreso** (D-E2-2, P-05): con una transacción que pasó
+    la membresía de P a `inactive` y no confirmó, una sesión de prueba de P pasa
+    el gancho `before` —lee lo confirmado— y queda esperando en el `after`; al
+    confirmar, P no tiene ninguna fila de `session`. Sin transacción en curso,
+    `dropSessionOfInactive` borra la sesión de una membresía `inactive` o
+    `invited`, deja la de una `active` y la de quien no tiene membresía, no deja
+    constancia y no lanza.
 
 ## 9. Plan de tests
 
@@ -1138,24 +1264,34 @@ un `update membership set status = 'active'` en esa rama.
   devuelve `allowed` (criterio 11).
 - **`auth.integration.test.ts`**, por el handler: el callback de una persona del
   dominio con `account` (`seedAccount`) y membresía inactiva, 302 a
-  `/login?error=membresia_inactiva` sin `session`; el rechazo del gancho con la
-  membresía pasada a `inactive` entre `mapProfileToUser` y el gancho.
+  `/login?error=membresia_inactiva` sin `session`; el rechazo del gancho
+  `before` con la membresía pasada a `inactive` entre `mapProfileToUser` y el
+  gancho. **El gancho `after`** (criterio 26), con las barreras de
+  `src/test/concurrency.ts`: una transacción pasa la membresía de P a
+  `inactive` y queda abierta; el pedido de una sesión de prueba de P queda
+  `blocked` (`outcomeWhileHeld`) con la fila de `session` ya insertada; al
+  confirmar la transacción, P no tiene filas de `session`. Sin transacción
+  abierta, `dropSessionOfInactive` con cada estado de la membresía y sin
+  membresía. Se verifica que el primero falla sin el `after` (la sesión queda).
 - **`session.integration.test.ts`**: criterio 11, con `getSession` simulado.
 - **`auth-records.integration.test.ts`**: `deleteSessionsOf` borra las de la
   persona y no las de otra, deja `session.revokeAll` con la cantidad y sin
-  sesiones no escribe; no toca `account`; `hasAccount` con y sin fila.
-- **`workspace/service.integration.test.ts`**: `isMembershipActiveLocked` con
-  cada estado y sin membresía; `:176` cambia el título a TT-92 y sigue
-  afirmando el contexto.
+  sesiones no escribe; no toca `account`; `deleteSession` borra solo la fila
+  pedida y no deja constancia; `hasAccount` con y sin fila.
+- **`workspace/service.integration.test.ts`**: `isMembershipActiveLocked` y
+  `entryMembershipStatusLocked` con cada estado y sin membresía; `:176` cambia
+  el título a TT-92 y sigue afirmando el contexto.
 - **`time-entry`**: `stopRunningTimerOf` cierra el timer de otra persona con
   piso en un inicio futuro (TT-101), con el actor que recibe en
   `timeEntry.stop`, y sin timer devuelve `null` sin escribir; `startTimer` y
   `continueEntry` con la membresía inactiva en la base y el `Actor` activo
   responden `forbidden` sin escribir.
 - **`team/service.integration.test.ts`**: criterios 1 a 9, 17 y 18. El 17, con
-  un fallo inyectado después de `deleteSessionsOf`.
-- **`team/actions.integration.test.ts`**: cada fila de §4.10 con su código, su
-  texto y la revalidación del árbol; sin sesión, a `/login` sin escribir.
+  un fallo inyectado después de `deleteSessionsOf`. Y la mitad de servicio del
+  23: `listWorkspacePeople` después de desactivar.
+- **`team/actions.integration.test.ts`**: cada fila de §4.10 que es de
+  `changeStatus` con su código, su texto y, con éxito, `revalidatePath("/",
+"layout")` (criterio 23); sin sesión, a `/login` sin escribir.
 - **`team/concurrency.integration.test.ts`**, con las barreras de
   `src/test/concurrency.ts`: criterios 13 a 16. El 13, con `queueBehindBarrier`
   en los dos órdenes; se verifica que falla sin la lectura de `closeAndOpen`
@@ -1173,11 +1309,12 @@ copia, como en los slices anteriores.
 Heredan la regla de R2a, R8, E1a y E1b: correos y nombres únicos, nunca afirmar
 sobre la tabla entera ni sobre un vacío de la base común. `e2e/team-status.spec.ts`:
 
-1. **Desactivar corta en el acto**: P entra (`signIn`) y queda con
-   `seedRunningEntry`; el owner, en su pestaña, abre «Acciones de P», elige
-   «Desactivar», lee la confirmación y confirma. La fila se queda tachada con
-   «(inactiva)», el aviso dice «Desactivaste a P.», y el menú ofrece
-   «Reactivar». En la base: `membershipStatusOf` en `inactive`,
+1. **Desactivar corta en el acto**: P entra (`signIn`), recibe una cuenta con
+   `seedGoogleAccount(P)` —sin ella la fila no ofrecería «Reactivar»
+   (D-E2-7)— y queda con `seedRunningEntry`; el owner, en su pestaña, abre
+   «Acciones de P», elige «Desactivar», lee la confirmación y confirma. La fila
+   se queda tachada con «(inactiva)», el aviso dice «Desactivaste a P.», y el
+   menú ofrece «Reactivar». En la base: `membershipStatusOf` en `inactive`,
    `runningEntryOf` en nada, `sessionCountOf` en 0. La página de P, al
    recargar, termina en `/login`; `signInRejected` para P.
 2. **Reactivar**: con `seedGoogleAccount(P)`, el owner elige «Inactivas», abre
@@ -1202,18 +1339,32 @@ menú, que son las mismas que hoy (D-E2-9).
 ### 9.4 Lo que no se prueba en e2e
 
 El login de Google (lo cubren `access.test.ts`, `entry.integration.test.ts` y
-el handler en `auth.integration.test.ts`); la carrera de D-E2-2 y las de D-E2-6
-(integración); el reporte después de desactivar más allá de la revalidación
-(criterio 23, en integración por `listWorkspacePeople`); y las consultas de §6,
-a mano.
+el handler en `auth.integration.test.ts`); la carrera de D-E2-2 (criterio 26) y
+las de D-E2-6 (integración); el reporte después de desactivar más allá de la
+revalidación (criterio 23, en integración); y las consultas de §6, a mano.
 
 ## 10. Riesgos
 
-- **La carrera de un ingreso con la desactivación** (D-E2-2): deja una sesión
-  en solo lectura hasta que vence. Rara; §6.3 la detecta.
+- **Quien pierde la carrera con un ingreso llega a `/login` sin motivo**
+  (D-E2-2): el gancho `after` borra la sesión sin lanzar, y `/login` no sabe
+  por qué. Al reintentar, `mapProfileToUser` responde EQ-92. Aceptado: pide un
+  ingreso en el mismo instante en que alguien desactiva a esa persona.
+- **Un `getSession` que refresca una sesión ya borrada responde
+  `UNAUTHORIZED`**: si la sesión de la persona tiene más de un día
+  (`updateAge`, `auth.ts:28`), el pedido que la leyó antes de que la
+  desactivación confirmara y la renueva después no encuentra la fila, borra la
+  cookie y lanza
+  (`node_modules/better-auth/dist/api/routes/session.mjs:198-209`).
+  `readSession` no lo atrapa, así que ese pedido termina en un error en lugar
+  de terminar con lo que leyó (EQ-104). El siguiente no tiene sesión y va a
+  `/login`. Aceptado: es un pedido en vuelo de la persona desactivada, una vez,
+  y no escribe nada.
 - **Un timer huérfano** si la lectura de `closeAndOpen` se pierde en un cambio
   futuro: el criterio 13 lo frena, y el comentario de `closeAndOpen` remite a
   D-E2-6. Un camino nuevo que cree un timer tiene que pasar por ahí.
+- **Una sesión de una inactiva** si el gancho `after` se pierde en un cambio
+  futuro o en una versión de Better Auth que lo llame de otro modo: el criterio
+  26 lo frena, y §6.3 lo detecta en producción.
 - **Las escrituras cerradas en vuelo** confirman después de desactivar
   (D-E2-6). Aceptado: son pedidos que la persona mandó antes.
 - **EQ-21 sin salida para las inactivas sin cuenta** (D-E2-7): no se las invita
@@ -1221,8 +1372,8 @@ a mano.
   por el procedimiento antes del push.
 - **La reversión** devuelve el acceso de solo lectura a quien se desactivó desde
   la pantalla (§6.5).
-- **Un arranque de timer espera a un cambio de rol** de esa persona: unos
-  milisegundos, solo para ella (D-E2-6).
+- **Un arranque de timer y un ingreso esperan a un cambio de rol** de esa
+  persona: unos milisegundos, solo para ella (D-E2-6, D-E2-2).
 - **La e2e común acumula inactivas** sembradas sin cuenta: la lista de
   «Inactivas» crece en la base que se reusa. Ningún recorrido afirma sobre su
   tamaño.
@@ -1234,7 +1385,8 @@ a mano.
 
 Ninguna abierta. Lo que el mapa dejaba al contrato —impedir o avisar al
 reactivar sin cuenta, la carrera con la propia persona y las dos lecturas de
-personas— está en D-E2-7, D-E2-6 y D-E2-10.
+personas— está en D-E2-7, D-E2-6 y D-E2-10; la carrera con un ingreso, en
+D-E2-2.
 
 ## 12. Fuera de alcance
 
