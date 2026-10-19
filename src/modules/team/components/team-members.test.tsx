@@ -19,6 +19,9 @@ const view = teamView.parse({
       role: "member",
       isSelf: false,
       change: "promote",
+      status: "active",
+      hasAccount: true,
+      statusChange: null,
     },
     {
       membershipId: "1f6d8e2b-9a53-4d5c-8b62-2e3a4f5b6c72",
@@ -27,6 +30,9 @@ const view = teamView.parse({
       role: "admin",
       isSelf: false,
       change: "demote",
+      status: "active",
+      hasAccount: true,
+      statusChange: null,
     },
   ],
 });
@@ -46,18 +52,73 @@ function render(
   pending: boolean,
   feedback: TeamFeedback | null,
   rows: readonly PendingInvitation[] = invitations,
+  people: readonly TeamMember[] = members,
+  empty: string | null = null,
 ): string {
   return renderToStaticMarkup(
     <TeamMembersView
-      members={members}
+      members={people}
       invitations={rows}
       pending={pending}
       feedback={feedback}
+      empty={empty}
       onActivate={() => undefined}
+      onChooseStatus={() => undefined}
       onRevoke={() => undefined}
       onRetry={() => undefined}
     />,
   );
+}
+
+/**
+ * Como la ve el owner con E2: una activa con los dos controles, una inactiva
+ * con cuenta («Reactivar») y una inactiva sin cuenta, sin menú (D-E2-7).
+ */
+const statusView = teamView.parse({
+  kind: "ready",
+  members: [
+    {
+      membershipId: "2a7e9f3c-ab64-4e6d-9c73-3f4b5a6c7d83",
+      name: "Dora",
+      email: "dora@empresa.com",
+      role: "member",
+      isSelf: false,
+      change: "promote",
+      status: "active",
+      hasAccount: true,
+      statusChange: "deactivate",
+    },
+    {
+      membershipId: "3b8fa04d-bc75-4f7e-8d84-4a5c6b7d8e94",
+      name: "Ema",
+      email: "ema@empresa.com",
+      role: "admin",
+      isSelf: false,
+      change: null,
+      status: "inactive",
+      hasAccount: true,
+      statusChange: "reactivate",
+    },
+    {
+      membershipId: "4c9ab15e-cd86-4a8f-9e95-5b6d7c8e9fa5",
+      name: "Fede",
+      email: "fede@empresa.com",
+      role: "member",
+      isSelf: false,
+      change: null,
+      status: "inactive",
+      hasAccount: false,
+      statusChange: null,
+    },
+  ],
+});
+const statusMembers: readonly TeamMember[] =
+  statusView.kind === "ready" ? statusView.members : [];
+
+/** La fila del cuerpo de la tabla cuyo encabezado empieza con `name`. */
+function rowOf(markup: string, name: string): string {
+  const rows = markup.match(/<tr[^>]*><th scope="row".*?<\/tr>/g) ?? [];
+  return rows.find((row) => textOf(row).startsWith(name)) ?? "";
 }
 
 describe("TeamMembersView", () => {
@@ -167,5 +228,94 @@ describe("TeamMembersView", () => {
       "No se pudo revocar la invitación de nico@otro.com.",
     );
     expect(textOf(markup)).toContain("Esa invitación ya no está pendiente.");
+  });
+
+  it("EQ-05: la inactiva, con el nombre tachado y «(inactiva)» después, sin tachar y en texto", () => {
+    const row = rowOf(render(false, null, [], statusMembers), "Ema");
+
+    expect(row).toMatch(
+      /<span class="line-through">Ema<\/span><span class="[^"]*text-muted-foreground[^"]*"> \(inactiva\)<\/span>/,
+    );
+    expect(textOf(row)).toContain("Ema (inactiva)");
+  });
+
+  it("la activa, sin tachado ni «(inactiva)»", () => {
+    const row = rowOf(render(false, null, [], statusMembers), "Dora");
+
+    expect(row).not.toContain("line-through");
+    expect(textOf(row)).not.toContain("(inactiva)");
+  });
+
+  it("D-E2-7: «Sin cuenta de Google vinculada.» solo debajo del correo de la inactiva sin cuenta", () => {
+    const markup = render(false, null, [], statusMembers);
+
+    expect(rowOf(markup, "Fede")).toMatch(
+      /fede@empresa\.com<\/span><span class="text-muted-foreground">Sin cuenta de Google vinculada\.<\/span>/,
+    );
+    expect(textOf(markup).match(/Sin cuenta de Google vinculada\./g)).toHaveLength(1);
+  });
+
+  it("EQ-37: la inactiva muestra su rol sin botón", () => {
+    expect(bodyRows(render(false, null, [], statusMembers))).toEqual([
+      ["Doradora@empresa.com", "Miembro", "Hacer administrador"],
+      ["Ema (inactiva)ema@empresa.com", "Administrador", ""],
+      ["Fede (inactiva)fede@empresa.comSin cuenta de Google vinculada.", "Miembro", ""],
+    ]);
+  });
+
+  it("D-E2-9: el menú solo con `statusChange`, a la derecha del botón de rol, nombrado con la persona", () => {
+    const markup = render(false, null, [], statusMembers);
+
+    const dora = buttonsOf(rowOf(markup, "Dora"));
+    expect(dora).toHaveLength(2);
+    expect(dora[0]).toContain('aria-label="Hacer administrador: Dora"');
+    expect(dora[1]).toContain('aria-label="Acciones de Dora"');
+    expect(dora[1]).toContain('aria-haspopup="menu"');
+
+    const ema = buttonsOf(rowOf(markup, "Ema"));
+    expect(ema).toHaveLength(1);
+    expect(ema[0]).toContain('aria-label="Acciones de Ema"');
+
+    expect(buttonsOf(rowOf(markup, "Fede"))).toEqual([]);
+  });
+
+  it("con un pedido en curso, los menús también con aria-disabled y ninguno con disabled", () => {
+    const buttons = buttonsOf(render(true, null, invitations, statusMembers));
+
+    // Dora: rol y menú; Ema: menú; dos «Revocar invitación».
+    expect(buttons).toHaveLength(5);
+    for (const button of buttons) {
+      expect(button).toContain('aria-disabled="true"');
+      expect(button).not.toMatch(/\sdisabled(=|\s|>)/);
+    }
+  });
+
+  it("con un cambio de estado, el aviso de estado con el nombre", () => {
+    const markup = render(
+      false,
+      { tone: "info", title: "Desactivaste a Dora.", retry: false },
+      [],
+      statusMembers,
+    );
+
+    expect(markup).toContain('role="status"');
+    expect(textOf(markup)).toContain("Desactivaste a Dora.");
+  });
+
+  it("EQ-94: el vacío va en lugar de la tabla, y el aviso sigue encima", () => {
+    const markup = render(
+      false,
+      { tone: "info", title: "Invitación de nico@otro.com revocada.", retry: false },
+      [],
+      [],
+      "No hay invitaciones pendientes.",
+    );
+
+    expect(markup).not.toContain("<table");
+    expect(markup).toContain('role="status"');
+    expect(markup.indexOf("Invitación de nico@otro.com revocada.")).toBeLessThan(
+      markup.indexOf("No hay invitaciones pendientes."),
+    );
+    expect(markup).toMatch(/<p[^>]*>No hay invitaciones pendientes\.<\/p>/);
   });
 });
