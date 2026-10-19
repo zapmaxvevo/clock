@@ -5,6 +5,7 @@ import type { TimeEntryView } from "@/modules/time-entry/schema";
 import {
   autoScrollStep,
   candidateAt,
+  dragStep,
   entryGesture,
   gridMinuteAt,
   initialCandidate,
@@ -13,12 +14,15 @@ import {
   NO_GESTURES,
   passedThreshold,
   segmentGestures,
+  selectionAnchor,
   startsGesture,
   type GestureGrid,
 } from "./calendar-gestures";
 import {
   entrySegments,
   isOutsidePeriod,
+  minuteHeight,
+  slotAt,
   slotDraft,
   type ClosedEntryView,
 } from "./calendar-layout";
@@ -231,6 +235,15 @@ describe("entryGesture", () => {
   });
 });
 
+describe("dragStep (CAL-53)", () => {
+  it("15 minutos, o el zoom si es más chico", () => {
+    expect(dragStep(60)).toBe(15);
+    expect(dragStep(30)).toBe(15);
+    expect(dragStep(15)).toBe(15);
+    expect(dragStep(5)).toBe(5);
+  });
+});
+
 describe("candidateAt: mover (CAL-50, CAL-51, CAL-53, CAL-57, CAL-61)", () => {
   const hour = closedEntry("2026-09-30", "10:00", "11:00");
 
@@ -238,23 +251,42 @@ describe("candidateAt: mover (CAL-50, CAL-51, CAL-53, CAL-57, CAL-61)", () => {
     const gesture = entryGesture("move", hour, week, at(2, "10:30"));
     expect(candidateAt(gesture, at(3, "14:40"), gridOf(60))).toEqual({
       date: "2026-10-01",
-      start: "14:00",
-      end: "15:00",
+      start: "14:15",
+      end: "15:15",
     });
   });
 
-  it("ajusta a la marca más cercana con cada zoom", () => {
+  it("ajusta a la marca más cercana con el paso de cada zoom", () => {
     const gesture = entryGesture("move", hour, week, at(2, "10:00"));
-    expect(candidateAt(gesture, at(2, "13:20"), gridOf(60))?.start).toBe("13:00");
-    expect(candidateAt(gesture, at(2, "13:20"), gridOf(30))?.start).toBe("13:30");
+    expect(candidateAt(gesture, at(2, "13:20"), gridOf(60))?.start).toBe("13:15");
+    expect(candidateAt(gesture, at(2, "13:20"), gridOf(30))?.start).toBe("13:15");
     expect(candidateAt(gesture, at(2, "13:20"), gridOf(15))?.start).toBe("13:15");
     expect(candidateAt(gesture, at(2, "13:23"), gridOf(5))?.start).toBe("13:25");
+  });
+
+  it("con el zoom en 60 va de a 15 minutos: la marca cambia pasada la mitad del paso", () => {
+    const gesture = entryGesture("move", hour, week, at(2, "10:00"));
+    expect(candidateAt(gesture, at(2, "13:07"), gridOf(60))).toEqual({
+      date: "2026-09-30",
+      start: "13:00",
+      end: "14:00",
+    });
+    expect(candidateAt(gesture, at(2, "13:08"), gridOf(60))).toEqual({
+      date: "2026-09-30",
+      start: "13:15",
+      end: "14:15",
+    });
   });
 
   it("de vuelta en su marca de casa, el original: una de 10:07 no se escribe a 10:00", () => {
     const offMark = closedEntry("2026-09-30", "10:07", "10:37");
     const gesture = entryGesture("move", offMark, week, at(2, "10:17"));
-    expect(candidateAt(gesture, at(2, "10:21"), gridOf(60))).toEqual(gesture.original);
+    expect(candidateAt(gesture, at(2, "10:14"), gridOf(60))).toEqual(gesture.original);
+    expect(candidateAt(gesture, at(2, "10:19"), gridOf(60))).toEqual({
+      date: "2026-09-30",
+      start: "10:15",
+      end: "10:45",
+    });
     expect(candidateAt(gesture, at(2, "11:17"), gridOf(60))).toEqual({
       date: "2026-09-30",
       start: "11:00",
@@ -277,7 +309,8 @@ describe("candidateAt: mover (CAL-50, CAL-51, CAL-53, CAL-57, CAL-61)", () => {
       start: "23:00",
       end: "03:00",
     });
-    // El puntero en el borde de arriba: el bloque conserva una franja en el período.
+    // El puntero en el borde de arriba: el inicio queda donde lo deja el agarre,
+    // a una hora del período.
     expect(candidateAt(gesture, 0, gridOf(60))).toEqual({
       date: "2026-09-27",
       start: "21:00",
@@ -285,24 +318,24 @@ describe("candidateAt: mover (CAL-50, CAL-51, CAL-53, CAL-57, CAL-61)", () => {
     });
   });
 
-  it("tomada lejos de su inicio, el tope de arriba le deja una franja en el período", () => {
+  it("tomada lejos de su inicio, el tope de arriba le deja un paso en el período", () => {
     const longer = closedEntry("2026-09-27", "20:00", "02:00");
     // Tomada a las 01:50 del lunes: con el puntero arriba, el inicio quedaría a
-    // las 18:00 del domingo y el bloque no tendría nada en el período.
+    // las 18:10 del domingo y el bloque no tendría nada en el período.
     const gesture = entryGesture("move", longer, week, at(0, "01:50"));
     expect(candidateAt(gesture, 0, gridOf(60))).toEqual({
       date: "2026-09-27",
-      start: "19:00",
-      end: "01:00",
+      start: "18:15",
+      end: "00:15",
     });
   });
 
-  it("no sale por el final: empieza a lo sumo en la última franja", () => {
+  it("no sale por el final: empieza a lo sumo en el último paso", () => {
     const gesture = entryGesture("move", hour, week, at(2, "10:00"));
     expect(candidateAt(gesture, 7 * DAY, gridOf(60))).toEqual({
       date: "2026-10-04",
-      start: "23:00",
-      end: "00:00",
+      start: "23:45",
+      end: "00:45",
     });
   });
 
@@ -372,23 +405,50 @@ describe("candidateAt: estirar (CAL-52, CAL-55, CAL-56, CAL-57)", () => {
     const gesture = entryGesture("start", offStart, week, at(2, "10:07"));
     expect(candidateAt(gesture, at(2, "08:50"), gridOf(60))).toEqual({
       date: "2026-09-30",
-      start: "09:00",
+      start: "08:45",
       end: "11:00",
     });
   });
 
   it("el inicio de 10:07 que vuelve a su marca de casa toma su valor original", () => {
     const gesture = entryGesture("start", offStart, week, at(2, "10:07"));
-    expect(candidateAt(gesture, at(2, "10:25"), gridOf(60))).toEqual(gesture.original);
+    expect(candidateAt(gesture, at(2, "10:05"), gridOf(60))).toEqual(gesture.original);
+    expect(candidateAt(gesture, at(2, "10:25"), gridOf(60))?.start).toBe("10:30");
   });
 
   it("el inicio se detiene en la última marca anterior al fin y a 24 horas de él", () => {
     const gesture = entryGesture("start", offStart, week, at(2, "10:07"));
-    expect(candidateAt(gesture, at(2, "13:00"), gridOf(60))?.start).toBe("10:00");
+    expect(candidateAt(gesture, at(2, "13:00"), gridOf(60))?.start).toBe("10:45");
     expect(candidateAt(gesture, at(0, "00:00"), gridOf(60))).toEqual({
       date: "2026-09-29",
-      start: "12:00",
+      start: "11:15",
       end: "11:00",
+    });
+  });
+
+  it("con el zoom en 60, cada extremo va de a 15 minutos y se queda en su marca de casa", () => {
+    const nine = closedEntry("2026-09-30", "09:00", "10:00");
+    const end = entryGesture("end", nine, week, at(2, "10:00"));
+    expect(candidateAt(end, at(2, "10:07"), gridOf(60))).toEqual(end.original);
+    expect(candidateAt(end, at(2, "10:08"), gridOf(60))?.end).toBe("10:15");
+    const start = entryGesture("start", nine, week, at(2, "09:00"));
+    expect(candidateAt(start, at(2, "08:37"), gridOf(60))?.start).toBe("08:30");
+    expect(candidateAt(start, at(2, "08:38"), gridOf(60))?.start).toBe("08:45");
+  });
+
+  it("deja al menos un paso entre los extremos (CAL-56)", () => {
+    const nine = closedEntry("2026-09-30", "09:00", "10:00");
+    const end = entryGesture("end", nine, week, at(2, "10:00"));
+    expect(candidateAt(end, at(2, "07:00"), gridOf(60))).toEqual({
+      date: "2026-09-30",
+      start: "09:00",
+      end: "09:15",
+    });
+    const start = entryGesture("start", nine, week, at(2, "09:00"));
+    expect(candidateAt(start, at(2, "12:00"), gridOf(60))).toEqual({
+      date: "2026-09-30",
+      start: "09:45",
+      end: "10:00",
     });
   });
 
@@ -424,9 +484,9 @@ describe("candidateAt: estirar (CAL-52, CAL-55, CAL-56, CAL-57)", () => {
     expect(candidateAt(gesture, at(1, "12:40"), gridOf(30))).toEqual({
       date: "2026-09-29",
       start: "10:00",
-      end: "12:30",
+      end: "12:45",
     });
-    expect(candidateAt(gesture, at(1, "09:00"), gridOf(30))?.end).toBe("10:30");
+    expect(candidateAt(gesture, at(1, "09:00"), gridOf(30))?.end).toBe("10:15");
     const late = entryGesture(
       "end",
       closedEntry("2026-09-30", "22:00", "23:00"),
@@ -436,14 +496,14 @@ describe("candidateAt: estirar (CAL-52, CAL-55, CAL-56, CAL-57)", () => {
     expect(candidateAt(late, at(3, "23:00"), gridOf(60))).toEqual({
       date: "2026-09-30",
       start: "22:00",
-      end: "21:00",
+      end: "21:45",
     });
   });
 
   it("el fin de 10:07 que vuelve a su marca de casa toma su valor original", () => {
     const gesture = entryGesture("end", offEnd, week, at(2, "10:07"));
     expect(candidateAt(gesture, at(2, "09:55"), gridOf(60))).toEqual(gesture.original);
-    expect(candidateAt(gesture, at(2, "11:10"), gridOf(60))?.end).toBe("11:00");
+    expect(candidateAt(gesture, at(2, "11:10"), gridOf(60))?.end).toBe("11:15");
   });
 
   it("el fin al final del período es 24:00, escrito «00:00» (TT-72)", () => {
@@ -472,13 +532,16 @@ describe("candidateAt: estirar (CAL-52, CAL-55, CAL-56, CAL-57)", () => {
     );
     expect(candidateAt(end, at(6, "02:00"), madridGrid(60))).toBeNull();
     expect(candidateAt(end, at(6, "03:00"), madridGrid(60))?.end).toBe("03:00");
+    // Con el paso de 15 minutos, el fin llega a la última marca antes del salto.
+    expect(candidateAt(end, at(6, "01:50"), madridGrid(60))?.end).toBe("01:45");
+    expect(candidateAt(end, at(6, "02:20"), madridGrid(60))).toBeNull();
   });
 });
 
 describe("candidateAt: crear (CAL-44)", () => {
   const friday = 4;
 
-  it("cubre las franjas entre la tocada y la del puntero, hacia abajo y hacia arriba", () => {
+  it("cubre las celdas del paso entre la tocada y la del puntero, hacia abajo y hacia arriba", () => {
     const down = { kind: "create", dayIndex: friday, anchor: 510 } as const;
     expect(candidateAt(down, at(friday, "09:35"), gridOf(15))).toEqual({
       date: "2026-10-02",
@@ -493,17 +556,31 @@ describe("candidateAt: crear (CAL-44)", () => {
     });
   });
 
-  it("mide como máximo 24 horas menos una franja, recortada del lado del puntero", () => {
+  it("con el zoom en 60, cubre las celdas de 15 minutos en las dos direcciones", () => {
+    const anchor = { kind: "create", dayIndex: friday, anchor: 630 } as const;
+    expect(candidateAt(anchor, at(friday, "11:10"), gridOf(60))).toEqual({
+      date: "2026-10-02",
+      start: "10:30",
+      end: "11:15",
+    });
+    expect(candidateAt(anchor, at(friday, "09:50"), gridOf(60))).toEqual({
+      date: "2026-10-02",
+      start: "09:45",
+      end: "10:45",
+    });
+  });
+
+  it("mide como máximo 24 horas menos un paso, recortada del lado del puntero", () => {
     const fromTop = { kind: "create", dayIndex: 0, anchor: 0 } as const;
     expect(candidateAt(fromTop, at(0, "23:59"), gridOf(60))).toEqual({
       date: "2026-09-28",
       start: "00:00",
-      end: "23:00",
+      end: "23:45",
     });
-    const fromBottom = { kind: "create", dayIndex: 0, anchor: 1380 } as const;
+    const fromBottom = { kind: "create", dayIndex: 0, anchor: 1425 } as const;
     expect(candidateAt(fromBottom, at(0, "00:00"), gridOf(60))).toEqual({
       date: "2026-09-28",
-      start: "01:00",
+      start: "00:15",
       end: "00:00",
     });
   });
@@ -516,8 +593,8 @@ describe("candidateAt: crear (CAL-44)", () => {
     expect(candidateAt(up, at(6, "02:10"), madridGrid(30))).toBeNull();
     expect(candidateAt(up, at(6, "03:10"), madridGrid(30))?.start).toBe("03:00");
     // Un fin a las 02:00 tampoco existe: el reloj pasa de 01:59 a 03:00.
-    expect(candidateAt(gesture, at(6, "01:30"), madridGrid(30))).toBeNull();
-    expect(candidateAt(gesture, at(6, "01:10"), madridGrid(30))?.end).toBe("01:30");
+    expect(candidateAt(gesture, at(6, "01:50"), madridGrid(30))).toBeNull();
+    expect(candidateAt(gesture, at(6, "01:10"), madridGrid(30))?.end).toBe("01:15");
   });
 
   it("parte del mismo borrador que un clic (CAL-43)", () => {
@@ -525,6 +602,37 @@ describe("candidateAt: crear (CAL-44)", () => {
     expect(initialCandidate(gesture, madridGrid(60))).toEqual(
       slotDraft("2026-03-29", 60, 60, [{ from: 120, to: 180 }]),
     );
+  });
+
+  it("el clic sin recorrido no cambia: el ancla es la celda del paso, el borrador el de la franja", () => {
+    const tenForty = 640 * minuteHeight(60);
+    const day = { beforeFloor: false, missingMinutes: [] };
+    expect(slotAt(day, tenForty, 60, true)).toBe(600);
+    const anchor = selectionAnchor(tenForty, 60);
+    expect(anchor).toBe(630);
+    const gesture = { kind: "create", dayIndex: friday, anchor } as const;
+    expect(initialCandidate(gesture, gridOf(60))).toEqual({
+      date: "2026-10-02",
+      start: "10:00",
+      end: "11:00",
+    });
+    // Madrid, con el ancla en 01:15: la franja de 01:00 llega al final del hueco.
+    const madrid = { kind: "create", dayIndex: 6, anchor: 75 } as const;
+    expect(initialCandidate(madrid, madridGrid(60))).toEqual({
+      date: "2026-03-29",
+      start: "01:00",
+      end: "03:00",
+    });
+  });
+});
+
+describe("selectionAnchor (CAL-44)", () => {
+  it("la celda del paso bajo el puntero, dentro del día", () => {
+    expect(selectionAnchor(640 * minuteHeight(60), 60)).toBe(630);
+    expect(selectionAnchor(642 * minuteHeight(5), 5)).toBe(640);
+    expect(selectionAnchor(-30, 60)).toBe(0);
+    expect(selectionAnchor(1440 * minuteHeight(60), 60)).toBe(1425);
+    expect(selectionAnchor(1440 * minuteHeight(5), 5)).toBe(1435);
   });
 });
 

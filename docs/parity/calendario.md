@@ -599,15 +599,20 @@ _No verificado_: qué duración propone Clockify con el clic.
 
 **CAL-44 Arrastrar para elegir el rango** — `adaptar`
 Propuesta: arrastrar sobre franjas libres de una columna dibuja una selección
-ajustada al zoom (CAL-53) y, al soltar, abre el mismo diálogo con ese inicio y
-ese fin. **La selección no sale de la columna en que empezó.** Una entrada de
-22:00 a 02:00 se crea con un clic a las 22:00 y el fin corregido en el diálogo,
-que TT-72 lee como el día siguiente. Justificación: la documentación solo
-describe el clic. Un arrastre entre columnas no tiene una lectura única en una
-semana —un rango continuo o el mismo horario en varios días—, y la segunda
-crearía varias entradas de un gesto, que no es ninguna mutación que exista.
+ajustada al paso del arrastre (CAL-53) y, al soltar, abre el mismo diálogo con
+ese inicio y ese fin. Con el zoom en 60, la selección va de a 15 minutos; **un
+clic sin recorrido sigue siendo CAL-43**, con una franja del zoom. **La
+selección no sale de la columna en que empezó.** Una entrada de 22:00 a 02:00
+se crea con un clic a las 22:00 y el fin corregido en el diálogo, que TT-72 lee
+como el día siguiente. Justificación: la documentación solo describe el clic.
+Un arrastre entre columnas no tiene una lectura única en una semana —un rango
+continuo o el mismo horario en varios días—, y la segunda crearía varias
+entradas de un gesto, que no es ninguna mutación que exista.
 **Es una divergencia si Clockify deja crear entre columnas.**
 _No verificado_: si Clockify permite crear arrastrando, y si cruza columnas.
+_Corregido el 2026-10-16, C1_: decía «dibuja una selección ajustada al zoom
+(CAL-53)». El clic sin recorrido no cambia; se nombra para que no se confunda
+con la selección.
 
 **CAL-45 Diálogo de alta** — `replicar`
 Documentado: «Duration, Start/End Time, Date, Description, Project, Tag, and
@@ -737,8 +742,10 @@ choca con lo que Clockify deja hacer, está marcado como divergencia.
 **CAL-50 Mover un bloque** — `replicar`
 Documentado: «Drag and drop the whole time block to move it to another time
 slot or date.» Al soltar: la fecha es el día de la columna, el inicio es la hora
-del borde superior ajustada al zoom, y el fin es el inicio más la distancia de
-reloj original del bloque.
+del borde superior ajustada al paso del arrastre (CAL-53), y el fin es el inicio
+más la distancia de reloj original del bloque.
+_Corregido el 2026-10-16, C1_: decía «el inicio es la hora del borde superior
+ajustada al zoom».
 
 **CAL-51 Mover conserva la distancia de reloj, no la duración real** —
 `adaptar`
@@ -751,15 +758,34 @@ conserva al mover; el trío solo puede expresar esto.
 
 **CAL-52 Estirar un bloque** — `replicar`
 Documentado: «Drag the start/end time edges of the time block to shorten or
-extend the entry.» El borde arrastrado toma la hora ajustada al zoom; el otro
-extremo no cambia de rótulo y **conserva su instante**, con segundos y
-ocurrencia (ADR 0006).
+extend the entry.» El borde arrastrado toma la hora ajustada al paso del
+arrastre (CAL-53); el otro extremo no cambia de rótulo y **conserva su
+instante**, con segundos y ocurrencia (ADR 0006).
+_Corregido el 2026-10-16, C1_: decía «El borde arrastrado toma la hora ajustada
+al zoom».
 
-**CAL-53 Ajuste a la franja del zoom** — `adaptar`
-Propuesta: el borde que se mueve cae en múltiplos de la franja del zoom actual
-—60, 30, 15 o 5 minutos—. Para un ajuste más fino, se acerca el zoom o se usa
-el diálogo. Justificación: no documentado; es lo que una franja significa.
-_No verificado_: a qué múltiplo ajusta Clockify en cada zoom.
+**CAL-53 Ajuste al paso del arrastre** — `adaptar`
+Propuesta: el borde que se mueve —al mover, al estirar el inicio o el fin y al
+crear arrastrando— cae en las marcas del **paso del arrastre**, `min(zoom, 15)`:
+múltiplos de 15 minutos con el zoom en 60, 30 o 15, y de 5 con el de 5. El
+zoom, el alto de la franja y el dibujo de la grilla no cambian (CAL-11), ni el
+alta por clic, que propone una franja del zoom (CAL-43). Para un ajuste de 5
+minutos se acerca el zoom a 5; para uno más fino, el diálogo. Justificación:
+el paso de 15 minutos es un pedido del usuario del 2026-10-16 («cuando
+arrastrás solo va por hora; debería ser que pueda cada 15 minutos»): con el
+zoom en 60, ajustar a la franja no dejaba llevar un borde a un cuarto de hora
+sin cambiar el zoom. Que con el zoom en 5 el paso siga siendo la franja, de 5
+minutos, es la D1 del contrato de C1, del team-lead.
+_No verificado_: a qué múltiplo ajusta Clockify en cada zoom. **Sobre el paso
+de 15 minutos, la verificación solo puede registrar una divergencia**: lo pidió
+el usuario y no se corrige por lo que haga Clockify. Si Clockify ajusta a otro
+múltiplo con el zoom en 60, 30 o 15, esta regla queda como está y se anota
+como divergencia.
+_Corregido el 2026-10-16, C1_: el título era «Ajuste a la franja del zoom» y el
+texto, «Propuesta: el borde que se mueve cae en múltiplos de la franja del zoom
+actual —60, 30, 15 o 5 minutos—. Para un ajuste más fino, se acerca el zoom o
+se usa el diálogo. Justificación: no documentado; es lo que una franja
+significa.»
 
 **CAL-54 Cruzar la medianoche al mover o estirar** — `replicar`
 Se permite mientras el resultado tenga menos de 24 horas de reloj. Un bloque de
@@ -776,37 +802,44 @@ que no había de dónde tomarlo.
 
 **CAL-55 Ni mover ni estirar llega a 24 horas de reloj** — `adaptar`
 **Divergencia.** El gesto se detiene antes de que la distancia de reloj llegue a
-24 horas: el borde estirado llega como máximo a la última marca de franja
-anterior a 24 horas del otro extremo. Con el otro extremo en una marca, eso es
-24 horas menos una franja; con uno fuera de marca, un poco menos: el fin de una
-entrada que empieza a las 10:07 llega hasta las 10:00 del día siguiente con el
-zoom en 15. Vale para los dos bordes y para los dos segmentos de una entrada
-que cruza la medianoche. Mover conserva la distancia de reloj, que en una
-entrada que se arrastra ya es menor que 24 horas (CAL-58), y una selección de
-CAL-44 mide como máximo 24 horas menos una franja. Clockify no tiene tope
-(TT-74) y es probable que lo permita. Justificación: es TT-110 desde el otro
-lado. Un fin a las 10:00 del día siguiente de un inicio a las 10:00 llega al
-servidor como un trío de duración cero y se rechaza con TT-73; uno a las 11:00
-se lee como una entrada de una hora. Ofrecer el gesto y que el servidor
-entienda otra cosa es truncar en silencio. **Cómo se cierra**: con el editor de
-fecha de fin que TT-110 ya nombra.
+24 horas: el borde estirado llega como máximo a la última marca del paso
+(CAL-53) anterior a 24 horas del otro extremo. Con el otro extremo en una
+marca, eso es 24 horas menos un paso; con uno fuera de marca, un poco menos: el
+fin de una entrada que empieza a las 10:07 llega hasta las 10:00 del día
+siguiente con cualquier zoom salvo el de 5, con el que llega hasta las 10:05.
+Vale para los dos bordes y para los dos segmentos de una entrada que cruza la
+medianoche. Mover conserva la distancia de reloj, que en una entrada que se
+arrastra ya es menor que 24 horas (CAL-58), y una selección de CAL-44 mide como
+máximo 24 horas menos un paso. Clockify no tiene tope (TT-74) y es probable que
+lo permita. Justificación: es TT-110 desde el otro lado. Un fin a las 10:00 del
+día siguiente de un inicio a las 10:00 llega al servidor como un trío de
+duración cero y se rechaza con TT-73; uno a las 11:00 se lee como una entrada
+de una hora. Ofrecer el gesto y que el servidor entienda otra cosa es truncar
+en silencio. **Cómo se cierra**: con el editor de fecha de fin que TT-110 ya
+nombra.
 _No verificado_: si Clockify deja estirar un bloque a más de 24 horas.
 _Corregido el 2026-10-05, slice 8b_: decía que el último valor era siempre 24
 horas menos una franja. Con el otro extremo fuera de una marca, es la última
 marca anterior a 24 horas. Se suman mover y la selección de CAL-44.
+_Corregido el 2026-10-16, C1_: decía «la última marca de franja anterior a 24
+horas», «24 horas menos una franja», también para la selección de CAL-44, y
+que el fin llegaba a las 10:00 «con el zoom en 15».
 
-**CAL-56 Mínimo una franja** — `adaptar`
-El borde estirado llega como mínimo a la primera marca de franja posterior al
-otro extremo, y no lo pasa: el bloque no se invierte. Con el otro extremo en
-una marca, el mínimo es una franja del zoom; con uno fuera de marca puede ser
+**CAL-56 Mínimo un paso** — `adaptar`
+El borde estirado llega como mínimo a la primera marca del paso (CAL-53)
+posterior al otro extremo, y no lo pasa: el bloque no se invierte. Con el otro
+extremo en una marca, el mínimo es un paso; con uno fuera de marca puede ser
 menos: el fin de una entrada que empieza a las 10:07 baja hasta las 10:15 con
-el zoom en 15. Un pedido que llegue igual por debajo del minuto recibe «La
-entrada tiene que durar al menos un minuto.» (TT-73). Justificación: con el
-ajuste a las marcas, un borde en la marca del otro extremo daría una entrada de
-cero minutos.
+cualquier zoom salvo el de 5, con el que baja hasta las 10:10. Un pedido que
+llegue igual por debajo del minuto recibe «La entrada tiene que durar al menos
+un minuto.» (TT-73). Justificación: con el ajuste a las marcas, un borde en la
+marca del otro extremo daría una entrada de cero minutos.
 _Corregido el 2026-10-05, slice 8b_: decía que el gesto no dejaba un bloque de
 menos de una franja del zoom. Con el otro extremo fuera de una marca, una
 franja exacta no cae en ninguna marca.
+_Corregido el 2026-10-16, C1_: el título era «Mínimo una franja», y decía «la
+primera marca de franja posterior al otro extremo», «el mínimo es una franja
+del zoom» y que el fin bajaba hasta las 10:15 «con el zoom en 15».
 
 **CAL-57 Soltar donde estaba no escribe** — `adaptar`
 Si el trío que resulta del gesto es el mismo que el de la entrada, no hay
@@ -1388,8 +1421,9 @@ lo resolvió.
   también cuando fallan: la pantalla desde la que se escribe se pone al día,
   sea cual sea.
 - **La conversión de los gestos al trío** (slice 8b) sale de horas de pared
-  ajustadas al zoom y de `shiftClock`, sin aritmética de instantes en el
-  cliente (ADR 0005).
+  ajustadas al paso del arrastre (CAL-53) y de `shiftClock`, sin aritmética de
+  instantes en el cliente (ADR 0005).
+  _Corregido el 2026-10-16, C1_: decía «horas de pared ajustadas al zoom».
 - **Las franjas que no existen** (CAL-30): el cliente no sabe de husos
   (ADR 0005), así que los minutos que no existen llegan del servidor con cada
   día del período (slice 8).
@@ -1532,16 +1566,22 @@ timer no ofrece ningún gesto. No cambia nada del servidor: mover y estirar son
 - **Lo que el slice decide**, diseño propio _no verificado_ (P-07):
   - **CAL-23, CAL-54 a CAL-57, CAL-59, CAL-61 a CAL-63, CAL-77, CAL-89, CAL-90
     y CAL-97**, en su entrada.
-  - **CAL-50 y CAL-53.** El inicio del bloque movido cae en la marca de franja
-    más cercana al lugar donde quedaría con el puntero; el fin es ese inicio
-    más la distancia de reloj original. Se toma de cualquier segmento y se
-    arrastra por las columnas visibles.
-  - **CAL-52 y CAL-53.** El borde estirado cae en la marca más cercana al
-    puntero.
-  - **CAL-44.** La selección cubre las franjas entre la tocada y la que está
-    bajo el puntero, en las dos direcciones, sin salir de su columna, y mide
-    como máximo 24 horas menos una franja. Al soltar abre «Agregar entrada» con
-    ese rango. Un clic sin recorrido sigue siendo CAL-43.
+  - **CAL-50 y CAL-53.** El inicio del bloque movido cae en la marca del paso
+    del arrastre más cercana al lugar donde quedaría con el puntero; el fin es
+    ese inicio más la distancia de reloj original. Se toma de cualquier
+    segmento y se arrastra por las columnas visibles.
+    _Corregido el 2026-10-16, C1_: decía «cae en la marca de franja más
+    cercana».
+  - **CAL-52 y CAL-53.** El borde estirado cae en la marca del paso más
+    cercana al puntero.
+    _Corregido el 2026-10-16, C1_: decía «cae en la marca más cercana al
+    puntero», que en el 8b era la de la franja del zoom.
+  - **CAL-44.** La selección cubre las celdas del paso entre la tocada y la que
+    está bajo el puntero, en las dos direcciones, sin salir de su columna, y
+    mide como máximo 24 horas menos un paso. Al soltar abre «Agregar entrada»
+    con ese rango. Un clic sin recorrido sigue siendo CAL-43.
+    _Corregido el 2026-10-16, C1_: decía «cubre las franjas entre la tocada y
+    la que está bajo el puntero» y «24 horas menos una franja».
   - **CAL-30 y CAL-48.** Un candidato con un extremo en un minuto que no existe
     no se ofrece: el gesto se queda con el anterior. El inicio de un bloque
     movido no pasa del piso de fechas: el gesto se detiene en él.
@@ -1558,6 +1598,29 @@ timer no ofrece ningún gesto. No cambia nada del servidor: mover y estirar son
 - **Afuera**: P-03, el asa del inicio del timer (CAL-39), sigue abierto; los
   atajos de teclado para mover o estirar; llevar un bloque a otra semana
   arrastrando (CAL-61), que va por el diálogo.
+
+### Mejoras C1 — el arrastre ajusta a 15 minutos
+
+Pedido del usuario del 2026-10-16, fuera del orden de la fase 2: «en el
+calendario, cuando arrastrás solo va por hora; debería ser que pueda cada 15
+minutos». Corrige CAL-53, y con él CAL-44, CAL-50, CAL-52, CAL-55 y CAL-56. No
+cambia nada del servidor, ni el esquema, ni los permisos. Contrato:
+[mejoras-c1-arrastre-15.md](../slices/mejoras-c1-arrastre-15.md).
+
+- **El paso del arrastre es `min(zoom, 15)`** (CAL-53): 15 minutos con el zoom
+  en 60, 30 o 15, y 5 con el de 5, en todo borde que se mueve —mover, estirar
+  el inicio o el fin y crear arrastrando—. Los 15 minutos son el pedido del
+  usuario; el caso del zoom en 5, la D1 del contrato, del team-lead. Los topes
+  de CAL-55 y CAL-56 y la marca de casa de CAL-57 son marcas del paso.
+- **La grilla no cambia**: el zoom, el alto de la franja, el dibujo y el alta
+  por clic, que propone una franja del zoom (CAL-11, CAL-43).
+- **Lo que se acepta**: con el zoom en 60, la banda de la marca de casa
+  (CAL-57) se achica de ±30 a ±7,5 minutos alrededor del lugar original, y un
+  arrastre corto sobre el fondo propone una celda de 15 minutos, no la hora
+  tocada.
+- **Sigue _no verificado_** a qué múltiplo ajusta Clockify (P-07), pero la
+  respuesta ya no corrige el paso de 15 minutos, que pidió el usuario: sobre
+  él solo puede registrar una divergencia.
 
 ### Lo que queda
 
@@ -1625,7 +1688,9 @@ cerraba solo.
 
 Todo lo marcado como _no verificado_, con la pregunta concreta que hay que
 contestar mirando el workspace del equipo. Ninguna bloquea: todas tienen una
-regla escrita y lo que la verificación puede hacer es corregirla. Las marcadas
+regla escrita y lo que la verificación puede hacer es corregirla, salvo en el
+paso de 15 minutos de CAL-53, donde solo puede registrar una divergencia. Las
+marcadas
 **(divergencia)** son las que, según la respuesta, confirman o retiran una
 divergencia de las que este documento propone.
 
@@ -1668,7 +1733,8 @@ divergencia de las que este documento propone.
 - **CAL-47** — Con un timer corriendo, hacer clic en una franja libre y
   agregar: ¿lo deja? **(divergencia)**
 - **CAL-53** — Con cada zoom, arrastrar un bloque despacio: ¿a qué múltiplo
-  salta?
+  salta? La respuesta no corrige el paso de 15 minutos con el zoom en 60, 30 o
+  15, que pidió el usuario (C1): si no coincide, se anota como divergencia.
 - **CAL-55** — Estirar el fin de un bloque de 10:00 hasta pasar las 10:00 del
   día siguiente: ¿lo deja? **(divergencia)**
 - **CAL-58** — Arrastrar un bloque de más de 24 horas: ¿se mueve?
@@ -1691,6 +1757,9 @@ Free (P-16 de [la paridad de proyectos](proyectos.md)).
 _Corregido el 2026-10-07_: la pregunta de CAL-14 pedía además cambiar «inicio
 del día» en el perfil y decía que la respuesta cerraba también perfil P-02. Ese
 ajuste no existe en el workspace del equipo y perfil P-02 se cerró.
+_Corregido el 2026-10-16, C1_: decía que la verificación podía corregir todas
+las reglas, también la de CAL-53. El paso de 15 minutos lo pidió el usuario, y
+sobre él la respuesta de CAL-53 solo puede registrar una divergencia.
 
 ### Cerrados
 

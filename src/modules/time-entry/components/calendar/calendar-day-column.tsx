@@ -19,7 +19,11 @@ import { clockLabel, MINUTES_PER_DAY } from "@/server/time";
 
 import { draftExtraDays, type TimeDraft } from "../time-draft";
 import { CalendarBlock } from "./calendar-block";
-import type { EntryGestureKind, SegmentGestures } from "./calendar-gestures";
+import {
+  selectionAnchor,
+  type EntryGestureKind,
+  type SegmentGestures,
+} from "./calendar-gestures";
 import {
   entrySegments,
   layoutColumn,
@@ -81,7 +85,7 @@ type DayColumnProps = {
     kind: EntryGestureKind,
     event: PointerEvent<HTMLElement>,
   ) => void;
-  /** Apretar el fondo, en la franja de `slotAt`: puede empezar una selección (CAL-44). */
+  /** Apretar el fondo, en la celda de `selectionAnchor`: puede empezar una selección (CAL-44). */
   readonly onCreateStart: (anchor: number, event: PointerEvent<HTMLElement>) => void;
 };
 
@@ -114,8 +118,13 @@ export function DayColumn({
    */
   const pressedOnBlock = useRef(false);
 
-  /** El minuto de la franja bajo el puntero, o `null` si ahí no se abre nada. */
-  function slotUnder(event: MouseEvent<HTMLDivElement>): number | null {
+  /**
+   * El minuto de la franja bajo el puntero y su altura en la columna, o `null`
+   * si ahí no se abre nada.
+   */
+  function slotUnder(
+    event: MouseEvent<HTMLDivElement>,
+  ): { readonly minute: number; readonly offset: number } | null {
     // Lo que se dibuja en un portal —el detalle de un bloque— propaga sus
     // eventos por el árbol de React hasta acá sin estar en la columna.
     if (!(event.target instanceof Node) || !event.currentTarget.contains(event.target)) {
@@ -125,7 +134,8 @@ export function DayColumn({
       return null;
     }
     const offset = event.clientY - event.currentTarget.getBoundingClientRect().top;
-    return slotAt(day, offset, zoom, state.canTrack);
+    const minute = slotAt(day, offset, zoom, state.canTrack);
+    return minute === null ? null : { minute, offset };
   }
 
   /**
@@ -136,9 +146,9 @@ export function DayColumn({
   function handleClick(event: MouseEvent<HTMLDivElement>): void {
     const fromBlock = pressedOnBlock.current;
     pressedOnBlock.current = false;
-    const minute = slotUnder(event);
-    if (minute !== null && !fromBlock) {
-      onSlot(day.date, minute);
+    const slot = slotUnder(event);
+    if (slot !== null && !fromBlock) {
+      onSlot(day.date, slot.minute);
     }
   }
 
@@ -147,9 +157,10 @@ export function DayColumn({
       event.target instanceof Element &&
       event.currentTarget.contains(event.target) &&
       event.target.closest("[data-entry-block]") !== null;
-    const minute = slotUnder(event);
-    if (minute !== null) {
-      onCreateStart(minute, event);
+    // Donde un clic no abre nada, tampoco empieza una selección.
+    const slot = slotUnder(event);
+    if (slot !== null) {
+      onCreateStart(selectionAnchor(slot.offset, zoom), event);
     }
   }
 
@@ -221,7 +232,7 @@ export function DayColumn({
   );
 }
 
-/** CAL-44: las franjas que cubre el alta que se arrastra, con su rango. */
+/** CAL-44: lo que cubre el alta que se arrastra, con su rango. */
 function CalendarSelection({
   times,
   zoom,
@@ -249,7 +260,7 @@ function CalendarSelection({
     <div
       aria-hidden="true"
       data-calendar-selection=""
-      className="bg-primary/15 border-primary pointer-events-none absolute inset-x-0.5 z-10 rounded-md border px-1.5 py-0.5 text-xs"
+      className="bg-primary/15 border-primary pointer-events-none absolute inset-x-0.5 z-10 overflow-hidden rounded-md border px-1.5 py-0.5 text-xs leading-tight"
       style={{ top: segment.from * scale, height: (segment.to - segment.from) * scale }}
     >
       {clockLabel(times.start, time)} – {clockLabel(times.end, time)}
