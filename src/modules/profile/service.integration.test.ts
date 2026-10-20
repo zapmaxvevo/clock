@@ -16,10 +16,12 @@ import {
   seedMember,
   seedPreferences,
   seedWorkspace,
+  setDurationFormat,
   type SeedPreferenceValues,
 } from "@/test/factories";
 import { auditFor } from "@/test/queries";
 import { workspaceRepository } from "@/modules/workspace/repository";
+import { resolveDurationFormat } from "@/modules/workspace/service";
 
 import { type UserPreferenceRow } from "./repository";
 import type { Theme, UpdatePreferenceInput } from "./schema";
@@ -30,6 +32,7 @@ import {
   profileOf,
   resolvePreferences,
   themeClassOf,
+  timeSettingsOf,
   updateName,
   updatePreference,
   type ProfileContext,
@@ -67,8 +70,8 @@ async function contextFor(id: string): Promise<ProfileContext> {
     throw new Error("Falta el workspace o la membresía sembrados.");
   }
   return {
-    workspace: row,
-    settings: { durationFormat: "compact" },
+    workspace: row.workspace,
+    settings: { durationFormat: resolveDurationFormat(row.durationFormat) },
     membership: member,
     actor: { userId: id, workspaceId, role: member.role, status: member.status },
     preferences: (await profileOf(id)).preferences,
@@ -115,6 +118,36 @@ beforeEach(async () => {
   const seeded = await seedWorkspace();
   workspaceId = seeded.workspaceId;
   userId = await seedMember(workspaceId, "member");
+});
+
+describe("timeSettingsOf con el formato de duración (D-WS2a-3)", () => {
+  it("toma la duración del workspace y la hora y la fecha de la persona", async () => {
+    await seedPreferences(userId, { timeFormat: "12h", dateFormat: "MM/dd/yyyy" });
+    const compact = await contextFor(userId);
+    await setDurationFormat(workspaceId, "full");
+    const full = await contextFor(userId);
+
+    expect(full.preferences).toEqual(compact.preferences);
+    expect(timeSettingsOf(compact).formats).toEqual({
+      time: "12h",
+      date: "MM/dd/yyyy",
+      duration: "compact",
+    });
+    expect(timeSettingsOf(full).formats).toEqual({
+      time: "12h",
+      date: "MM/dd/yyyy",
+      duration: "full",
+    });
+  });
+
+  it("solo lee context.settings para la duración", async () => {
+    const context = await contextFor(userId);
+
+    expect(timeSettingsOf({ ...context, settings: { durationFormat: "full" } })).toEqual({
+      ...timeSettingsOf(context),
+      formats: { ...timeSettingsOf(context).formats, duration: "full" },
+    });
+  });
 });
 
 describe("los predeterminados (criterio 2: PF-11, PF-12, PF-13, PF-37)", () => {

@@ -16,7 +16,12 @@ import {
   type MembershipStatus,
   type Role,
 } from "@/server/permissions";
-import { parseWeekStart, type DurationFormat, type WeekStart } from "@/server/time";
+import {
+  DURATION_FORMATS,
+  parseWeekStart,
+  type DurationFormat,
+  type WeekStart,
+} from "@/server/time";
 
 import {
   distinctEmails,
@@ -24,7 +29,12 @@ import {
   isValidEmail,
   planInvitations,
 } from "./invitation-plan";
-import { workspaceRepository, type MembershipRow, type WorkspaceRow } from "./repository";
+import {
+  workspaceRepository,
+  type MembershipRow,
+  type WorkspaceRead,
+  type WorkspaceRow,
+} from "./repository";
 import {
   invitationMessages,
   type InvitationErrorCode,
@@ -57,6 +67,24 @@ export function weekStartOf(context: WorkspaceContext): WeekStart {
   return parseWeekStart(context.membership.weekStart);
 }
 
+/**
+ * D-WS2a-2: único lugar que aplica el valor por omisión. Sin fila, `compact`,
+ * sin crearla (WS-73); fuera de `DURATION_FORMATS`, lanza. Pura.
+ */
+export function resolveDurationFormat(value: string | null): DurationFormat {
+  if (value === null) {
+    // La sesión no se cae por un ajuste de presentación; el error de WS-73 es
+    // de la pantalla de configuración.
+    return "compact";
+  }
+  const known = DURATION_FORMATS.find((format) => format === value);
+  if (known === undefined) {
+    // El `check` de la base lo impide.
+    throw new RangeError(`Formato de duración fuera de lista: ${value}.`);
+  }
+  return known;
+}
+
 const DEFAULT_WORKSPACE_NAME = "Workspace";
 const DEFAULT_TIMEZONE = "America/Argentina/Buenos_Aires";
 const INVITATION_ENTITY = "invitation";
@@ -76,17 +104,17 @@ async function createMembership(
 }
 
 function contextOf(
-  current: WorkspaceRow,
+  current: WorkspaceRead,
   row: MembershipRow,
   userId: string,
 ): WorkspaceContext {
   return {
-    workspace: current,
-    settings: { durationFormat: "compact" },
+    workspace: current.workspace,
+    settings: { durationFormat: resolveDurationFormat(current.durationFormat) },
     membership: row,
     actor: {
       userId,
-      workspaceId: current.id,
+      workspaceId: current.workspace.id,
       role: row.role,
       status: row.status,
     },
@@ -135,10 +163,10 @@ async function membershipOf(
 /** El contexto con la membresía de quien pide en `current`, o `null` sin acceso. */
 async function joinedContext(
   tx: Transaction,
-  current: WorkspaceRow,
+  current: WorkspaceRead,
   user: { id: string; email: string },
 ): Promise<WorkspaceContext | null> {
-  const row = await membershipOf(tx, current.id, user);
+  const row = await membershipOf(tx, current.workspace.id, user);
   return row === undefined ? null : contextOf(current, row, user.id);
 }
 
@@ -166,7 +194,7 @@ async function bootstrapContext(
     timezone: DEFAULT_TIMEZONE,
   });
   // El rol `owner` nace solo con el workspace.
-  const row = await createMembership(tx, created.id, user.id, "owner");
+  const row = await createMembership(tx, created.workspace.id, user.id, "owner");
   return contextOf(created, row, user.id);
 }
 
@@ -431,7 +459,7 @@ export async function entryFactsOf(email: string): Promise<EntryFacts> {
  */
 export async function entryWorkspaceIdOf(tx: Transaction): Promise<string | null> {
   const current = await workspaceRepository.findFirstWorkspace(tx);
-  return current?.id ?? null;
+  return current?.workspace.id ?? null;
 }
 
 /**
