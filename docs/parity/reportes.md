@@ -1681,7 +1681,7 @@ first round the duration of each time entry, and then add them up.»
 Justificación: es pago. `workspace_settings.rounding_minutes` existía con
 `default` 0 y nadie lo escribía; el reporte del núcleo lo ignora (P-04).
 _Corregido el 2026-10-20, WS0_: decía «existe con `default` 0 y nadie lo
-escribe». La columna se borró con la migración `0019`
+escribe». La columna se borró con la migración `0018`
 ([contrato de WS0](../slices/fase2-ws0-columnas.md)).
 
 **RP-37 Crear factura desde el reporte** — `fuera de alcance`

@@ -183,7 +183,7 @@ Justificación: solo sirven a facturación y tarifas, que son de plan pago y no 
 relevan (P-32). Si alguna vez entran, la moneda vuelve con su consumidor.
 _Corregido el 2026-10-20, WS0_: decía «El workspace ya tiene su `currency` y
 alcanza (P-32).». `workspace.currency` no tenía uso y se borró con la migración
-`0019` ([contrato de WS0](../slices/fase2-ws0-columnas.md), workspace P-05).
+`0018` ([contrato de WS0](../slices/fase2-ws0-columnas.md), workspace P-05).
 
 ## 2. Proyecto
 
@@ -653,7 +653,7 @@ editable no va a la fase 2. Queda fija en `everyone`, como en Clockify Free,
 donde «This setting is set to Anyone and can not be changed on a Free plan.»,
 y la columna `who_creates_projects` se borra (workspace P-05).
 _Corregido el 2026-10-20, WS0_: decía que `whoCreatesProjects` «ya existe». La
-columna `who_creates_projects` se borró con la migración `0019`
+columna `who_creates_projects` se borró con la migración `0018`
 ([contrato de WS0](../slices/fase2-ws0-columnas.md)), y con ella el criterio 11
 del slice 9, que afirmaba su valor. La regla no cambia: la cumple `can()`, que
 da `project.create` y `client.create` a toda membresía activa.
@@ -1088,7 +1088,7 @@ Se dejan con su identificador porque los contratos de slice los citan.
 | P-32 | **Lo pago queda fuera de la fase 1** y sin fase asignada: tarifas, estimaciones, presupuesto, progreso, plantillas, edición masiva de proyectos, moneda y correos del cliente, campos personalizados. No se puede relevar y el equipo no lo pidió.                                                                                                                    |
 
 _Corregido el 2026-10-20, WS0_: P-18 dice que la columna se borra (workspace
-P-05). Se borró con la migración `0019`
+P-05). Se borró con la migración `0018`
 ([contrato de WS0](../slices/fase2-ws0-columnas.md)); `everyone` sigue siendo la
 regla, y `can()` la aplica sin leer ningún valor (PR-59).
 

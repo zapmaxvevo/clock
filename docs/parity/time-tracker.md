@@ -1484,7 +1484,7 @@ a los reportes, no a la entrada guardada. El campo `roundingMinutes` existía
 en `workspace_settings` pero el rastreador no lo usaba. Justificación:
 funcionalidad paga y, aun en Clockify, ajena a esta pantalla (P-03).
 _Corregido el 2026-10-20, WS0_: decía que el campo «ya existe». La columna
-`rounding_minutes` se borró con la migración `0019`
+`rounding_minutes` se borró con la migración `0018`
 ([contrato de WS0](../slices/fase2-ws0-columnas.md)).
 
 **TT-84 Campos obligatorios y forzar timer** — `fuera de alcance`
@@ -1494,7 +1494,7 @@ pago: no se pueden relevar en el workspace del equipo. En la fase 1 el
 rastreador los ignoraba y se comportaba como si estuvieran todos en falso.
 Justificación: pendiente P-01.
 _Corregido el 2026-10-20, WS0_: decía que los campos «existen» y que el
-rastreador «los ignora». Las columnas se borraron con la migración `0019`
+rastreador «los ignora». Las columnas se borraron con la migración `0018`
 ([contrato de WS0](../slices/fase2-ws0-columnas.md)); el rastreador se comporta
 igual, sin nada que ignorar.
 
@@ -2244,7 +2244,7 @@ que el 12 decide sin verificar es parte de TT-63 y está anotado ahí; lo del
 facturable no entra, por P-16 de [la paridad de proyectos](proyectos.md).
 _Corregido el 2026-10-20, WS0_: P-01 decía que los campos «existen en el
 esquema». Esas columnas, y la de P-03 (`rounding_minutes`), se borraron con la
-migración `0019` ([contrato de WS0](../slices/fase2-ws0-columnas.md)). Las
+migración `0018` ([contrato de WS0](../slices/fase2-ws0-columnas.md)). Las
 preguntas siguen como estaban: si alguno entra, la columna vuelve con su
 consumidor.
 

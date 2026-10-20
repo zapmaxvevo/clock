@@ -433,7 +433,7 @@ _Corregido el 2026-10-16, equipo EQ-72 (equipo P-09, workspace P-06)_: decía
 que iban a la fase 2 con el resto de la administración de equipo.
 _Corregido el 2026-10-20, WS0_: decía que `membership.weeklyCapacityMinutes`
 «ya existe» y que `weekly_capacity_minutes` «sigue sin uso». La columna se
-borró con la migración `0019`
+borró con la migración `0018`
 ([contrato de WS0](../slices/fase2-ws0-columnas.md)).
 
 ## 5. Formato de duración

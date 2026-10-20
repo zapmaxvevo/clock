@@ -227,7 +227,7 @@ necesidad que levantaría la divergencia.
 _No verificado_: si los «branded reports» con logo son de plan pago (la página
 de precios no lo resuelve) y qué formatos acepta Clockify (workspace P-09).
 _Corregido el 2026-10-20, WS0_: decía que la columna «existe, vacía, y se
-borra». Se borró con la migración `0019`
+borra». Se borró con la migración `0018`
 ([contrato de WS0](../slices/fase2-ws0-columnas.md)); si el logo entra, la
 columna vuelve con su consumidor.
 
@@ -271,7 +271,7 @@ pantalla de equipo de la fase 2 (perfil P-07), y
 2026-10-16 (workspace P-06, equipo P-09): la fase 2 no los trae, ni el valor del
 workspace ni el de cada persona (EQ-72), hasta que algo los consuma.
 _Corregido el 2026-10-20, WS0_: decía que la columna «existe sin ningún uso».
-Se borró con la migración `0019`
+Se borró con la migración `0018`
 ([contrato de WS0](../slices/fase2-ws0-columnas.md)).
 
 **WS-10 Proyectos facturables por defecto** — `fuera de alcance`
@@ -382,7 +382,7 @@ para «si alguien lo pide», y nadie lo pidió.
 `workspace_settings.timesheet_enabled` existía, en verdadero y sin efecto
 (sección 14).
 _Corregido el 2026-10-20, WS0_: decía que la columna «existe». Se borró con la
-migración `0019` ([contrato de WS0](../slices/fase2-ws0-columnas.md)).
+migración `0018` ([contrato de WS0](../slices/fase2-ws0-columnas.md)).
 
 **WS-19 Ocultar el rastreador** — `fuera de alcance`
 Documentado: «Hide time tracker view if you want team members to log time
@@ -413,7 +413,7 @@ Justificación: pago, no relevable (TT-84, P-01 del rastreador). **La fase 2 no
 lo habilita.** `require_project`, `require_task`, `require_description` y
 `require_tag` existían, en falso y sin efecto (sección 14).
 _Corregido el 2026-10-20, WS0_: decía que las columnas «existen». Se borraron
-con la migración `0019` ([contrato de WS0](../slices/fase2-ws0-columnas.md)).
+con la migración `0018` ([contrato de WS0](../slices/fase2-ws0-columnas.md)).
 
 **WS-23 Forzar timer y modo del rastreador** — `fuera de alcance`
 Documentado: «Force timer: Disables manual entry and editing of past time
@@ -427,7 +427,7 @@ Justificación: pago, no relevable (TT-84). **La fase 2 no lo habilita.** El
 conmutador entre timer y manual de la barra sigue siendo de cada navegador
 (TT-16), no del workspace. `force_timer` existía, en falso y sin efecto.
 _Corregido el 2026-10-20, WS0_: decía que la columna «existe». Se borró con la
-migración `0019` ([contrato de WS0](../slices/fase2-ws0-columnas.md)).
+migración `0018` ([contrato de WS0](../slices/fase2-ws0-columnas.md)).
 
 **WS-24 Redondeo en reportes** — `fuera de alcance`
 Documentado: «Round time in reports: Configures default rounding rules (such as
@@ -441,7 +441,7 @@ fase 2 no lo habilita.** `rounding_minutes` existía en cero y sin efecto, y
 `roundMinutes` de `src/server/time` solo redondea hacia arriba y no lo usa
 nadie fuera de su test.
 _Corregido el 2026-10-20, WS0_: decía que la columna «existe». Se borró con la
-migración `0019` ([contrato de WS0](../slices/fase2-ws0-columnas.md)).
+migración `0018` ([contrato de WS0](../slices/fase2-ws0-columnas.md)).
 
 **WS-25 Bloquear horas** — `fuera de alcance`
 Documentado: «Lock time and expenses: Sets a cutoff rule to prevent team
@@ -495,7 +495,7 @@ your workspace,» …, en la sección de finanzas y no en la general. Justificac
 la moneda solo sirve a tarifas e importes, que no existen (PR-11, P-32 de
 `proyectos.md`). `workspace.currency` existía, en `ARS` y sin ningún uso.
 _Corregido el 2026-10-20, WS0_: decía que la columna «existe». Se borró con la
-migración `0019` ([contrato de WS0](../slices/fase2-ws0-columnas.md)).
+migración `0018` ([contrato de WS0](../slices/fase2-ws0-columnas.md)).
 
 **WS-32 Formato de números y de moneda** — `fuera de alcance`
 Documentado: «Number format: Selects how numerical values and decimal
@@ -565,7 +565,7 @@ uno en `can()` por rol, y tres columnas de `workspace_settings` guardaban
 valores sin efecto (sección 14).
 _Corregido el 2026-10-20, WS0_: decía que las tres «guardan» valores. Dos de
 ellas, `who_creates_projects` y `who_sees_rates`, se borraron con la migración
-`0019` ([contrato de WS0](../slices/fase2-ws0-columnas.md)); queda
+`0018` ([contrato de WS0](../slices/fase2-ws0-columnas.md)); queda
 `who_sees_all_entries`, congelada en `admins` y sin efecto (WS-42).
 
 **WS-39 Quién crea proyectos y clientes** — `replicar`
@@ -583,7 +583,7 @@ relevar. Decidido el 2026-10-16 (workspace P-03): **queda fija**, como en
 Clockify Free, y la pantalla no la muestra. Sin valor que leer,
 `who_creates_projects` se borró (workspace P-05).
 _Corregido el 2026-10-20, WS0_: decía que la columna «se borra». Se borró con la
-migración `0019` ([contrato de WS0](../slices/fase2-ws0-columnas.md)); la regla
+migración `0018` ([contrato de WS0](../slices/fase2-ws0-columnas.md)); la regla
 fija la cumple `can()` sin leer ningún valor (PR-59).
 
 **WS-40 Quién crea tareas** — `replicar`
@@ -623,7 +623,7 @@ view» … Justificación: tarifas e importes no existen; el facturable es dise�
 propio y cada persona lo cambia en sus entradas (TT-14). `who_sees_rates`
 existía, en `admins` y sin efecto.
 _Corregido el 2026-10-20, WS0_: decía que la columna «existe». Se borró con la
-migración `0019` ([contrato de WS0](../slices/fase2-ws0-columnas.md)).
+migración `0018` ([contrato de WS0](../slices/fase2-ws0-columnas.md)).
 
 **WS-44 Quién edita horas de otros** — `fuera de alcance`
 Documentado: en Free, «Users can edit only their own time entries (the "Who can
@@ -794,17 +794,17 @@ Varias nunca tuvieron efecto, y el ADR 0009 dice por qué eso es un problema:
 | Columna                                                                 | Hoy                             | Con este documento                                   |
 | ----------------------------------------------------------------------- | ------------------------------- | ---------------------------------------------------- |
 | `workspace.name`                                                        | Se muestra; nadie la cambia     | Se cambia desde la pantalla (WS-05)                  |
-| `workspace.logo_url`                                                    | Borrada en WS0 (`0019`)         | Se borra (WS-07, workspace P-01 y P-05)              |
-| `workspace.currency`                                                    | Borrada en WS0 (`0019`)         | Se borra (WS-31, workspace P-05)                     |
+| `workspace.logo_url`                                                    | Borrada en WS0 (`0018`)         | Se borra (WS-07, workspace P-01 y P-05)              |
+| `workspace.currency`                                                    | Borrada en WS0 (`0018`)         | Se borra (WS-31, workspace P-05)                     |
 | `workspace.timezone`                                                    | Día del cron (PF-05)            | Igual; no se muestra (WS-12)                         |
 | `workspace.owner_id`                                                    | El owner                        | Lo cambia la transferencia (EQ-57), no esta pantalla |
 | `workspace_settings.who_sees_all_entries`                               | `admins`, sin efecto (ADR 0020) | Igual (WS-42)                                        |
-| `workspace_settings.who_sees_rates`                                     | Borrada en WS0 (`0019`)         | Se borra (WS-43, workspace P-05)                     |
-| `workspace_settings.who_creates_projects`                               | Borrada en WS0 (`0019`)         | Se borra (WS-39, workspace P-03 y P-05)              |
-| `require_project`, `require_task`, `require_description`, `require_tag` | Borrada en WS0 (`0019`)         | Se borra (WS-22, workspace P-05)                     |
-| `workspace_settings.force_timer`                                        | Borrada en WS0 (`0019`)         | Se borra (WS-23, workspace P-05)                     |
-| `workspace_settings.timesheet_enabled`                                  | Borrada en WS0 (`0019`)         | Se borra (WS-18, workspace P-05)                     |
-| `workspace_settings.rounding_minutes`                                   | Borrada en WS0 (`0019`)         | Se borra (WS-24, workspace P-05)                     |
+| `workspace_settings.who_sees_rates`                                     | Borrada en WS0 (`0018`)         | Se borra (WS-43, workspace P-05)                     |
+| `workspace_settings.who_creates_projects`                               | Borrada en WS0 (`0018`)         | Se borra (WS-39, workspace P-03 y P-05)              |
+| `require_project`, `require_task`, `require_description`, `require_tag` | Borrada en WS0 (`0018`)         | Se borra (WS-22, workspace P-05)                     |
+| `workspace_settings.force_timer`                                        | Borrada en WS0 (`0018`)         | Se borra (WS-23, workspace P-05)                     |
+| `workspace_settings.timesheet_enabled`                                  | Borrada en WS0 (`0018`)         | Se borra (WS-18, workspace P-05)                     |
+| `workspace_settings.rounding_minutes`                                   | Borrada en WS0 (`0018`)         | Se borra (WS-24, workspace P-05)                     |
 | _Falta_: formato de duración                                            | —                               | Columna nueva, compacto por defecto (WS-15)          |
 | _Falta_: primer día por defecto                                         | —                               | Columna nueva (WS-08, workspace P-02)                |
 
@@ -816,7 +816,7 @@ logo y con la regla fija, las dos quedan sin efecto.
 _Corregido el 2026-10-20, WS0_: la columna «Hoy» de las ocho filas que dicen
 «Se borra» daba el valor de cada una y que no tenía efecto —«Vacía, sin uso»,
 «`ARS`, sin uso» y, en las demás, su `default` con «sin efecto»—. Las once
-columnas se borraron con la migración `0019`
+columnas se borraron con la migración `0018`
 ([contrato de WS0](../slices/fase2-ws0-columnas.md)), junto con
 `membership.weekly_capacity_minutes` (workspace P-06, equipo P-09).
 `who_sees_all_entries` no se borra (WS-42).
@@ -893,7 +893,7 @@ Sugerencia, no decisión. Cada uno es vertical y se despliega solo.
 El cambio de `task.create` de WS-40, aprobado en workspace P-04, no es de esta
 pantalla: va con el primer slice de administración de proyectos de la fase 2.
 Quitar las columnas sin efecto, aprobado en workspace P-05, fue una migración
-sola: la `0019` de WS0.
+sola: la `0018` de WS0.
 _Corregido el 2026-10-20, WS0_: decía que era «una migración que puede ir sola o
 con WS1». Fue sola, con el slice WS0
 ([contrato de WS0](../slices/fase2-ws0-columnas.md)).
@@ -919,7 +919,7 @@ porque el cuerpo del documento y los contratos de slice los citan.
 | P-08 | **Se aceptan las propuestas de diseño** de este documento, que no son paridad: la ruta y el rótulo «Configuración» (WS-01), dos secciones (WS-03), el guardado por control (WS-04), proyectos siempre públicos al nacer sin interruptor (WS-11), la zona horaria del cron fuera de la pantalla (WS-12) y los textos de WS-50 a WS-62.                       |
 
 _Corregido el 2026-10-20, WS0_: P-05 está cumplida. Las once columnas se
-borraron con la migración `0019`
+borraron con la migración `0018`
 ([contrato de WS0](../slices/fase2-ws0-columnas.md)), y con ellas
 `membership.weekly_capacity_minutes`, que quedó sin destino con P-06 (decisión
 1 del §7 del [mapa de la fase 2](../slices/fase2-mapa.md)). Si una vuelve a
