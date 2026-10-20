@@ -35,6 +35,9 @@ const localServerEnv = {
   // se registra y la suite con sesión responde 404.
   ALLOW_TEST_SESSION: "true",
   E2E_TEST_SESSION_SECRET: TEST_SESSION_SECRET,
+  // La suite prueba el MCP encendido: sin la variable, `/api/mcp`, `/conectar`
+  // y las rutas OAuth responden 404 y `e2e/mcp.spec.ts` no tiene contra qué correr.
+  MCP_ENABLED: "true",
 };
 
 export default defineConfig({
