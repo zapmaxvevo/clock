@@ -52,6 +52,7 @@ export type ProjectResource = {
  * lugar.
  */
 type ResourceByAction = {
+  // WS-02, WS-49: ver y cambiar todo lo que ofrece `/configuracion`, también el nombre.
   "workspace.settings.update": WorkspaceResource;
   "workspace.transfer": WorkspaceResource;
   "workspace.delete": WorkspaceResource;

@@ -418,19 +418,26 @@ contrato de WS0.
 ### WS1 — Configuración: la pantalla y el nombre
 
 Cubre WS-01 … WS-06, WS-49 … WS-55, WS-58, WS-61 … WS-63, WS-64 (el nombre),
-WS-65 y WS-71 … WS-73. Sin cambios de tablas. `workspace.settings.update` ya
+WS-65, WS-71 y WS-72. Sin cambios de tablas. `workspace.settings.update` ya
 existe con owner y admin, y nadie la usa.
 
-**Va acá por el orden del usuario**; no depende de equipo. Deja armado el módulo
-`workspace` con su `schema.ts`, sus actions y sus componentes, que hoy no tiene,
-y las dos secciones de la pantalla (WS-03): «General» con el nombre y
-«Registro de tiempo», que llena WS2b.
+**Va acá por el orden del usuario**; no depende de equipo. Le suma al módulo
+`workspace` sus componentes, y a la pantalla una sola sección (WS-03):
+«General» con el nombre.
 
 Riesgos:
 
 - **El nombre está en el encabezado del shell**: cambiarlo revalida el layout,
   no solo `/configuracion` (WS-64).
-- **WS-73**: la pantalla no crea la fila de ajustes si falta.
+
+_Corregido el 2026-10-20, WS1 (D-WS1-7 del
+[contrato de WS1](fase2-ws1-configuracion.md))_: decía que cubría WS-73, que
+dejaba armado el módulo «con su `schema.ts`, sus actions y sus componentes, que
+hoy no tiene», y que traía «las dos secciones de la pantalla (WS-03): «General»
+con el nombre y «Registro de tiempo», que llena WS2b». Desde E1a el módulo tiene
+`schema.ts` y `actions.ts`; solo `components/` es nuevo. «Registro de tiempo»
+sin su selector es la sección vacía que WS-03 descarta, y WS1 no lee
+`workspace_settings`: la sección y WS-73 pasan a WS2b.
 
 ### WS2a — Formato de duración: el dato y sus lectores
 
@@ -464,12 +471,15 @@ WS2a.
 
 ### WS2b — Formato de duración: el selector y el reporte
 
-Cubre WS-14, WS-15, WS-56, WS-62, WS-64 (el formato), WS-69, y PF-02, PF-20 y
-PF-31 de `perfil.md` (el perfil muestra el valor del workspace en solo
+Cubre WS-14, WS-15, WS-56, WS-62, WS-64 (el formato), WS-69, WS-73, y PF-02,
+PF-20 y PF-31 de `perfil.md` (el perfil muestra el valor del workspace en solo
 lectura). Sin cambios de esquema.
 
-Trae el selector de «Registro de tiempo», el reporte y las columnas de duración
-de las exportaciones con el formato; «Horas» sigue en decimal (D-R6-9). **Con
+Trae la segunda sección de `/configuracion`, «Registro de tiempo», con su
+selector y el `error.tsx` de la pantalla, que llegan con la primera lectura de
+`workspace_settings` desde la pantalla (WS-73); el reporte y las columnas de
+duración de las exportaciones con el formato; «Horas» sigue en decimal
+(D-R6-9). **Con
 WS2b desplegado, el owner pone producción en completo** (P-07); si conviene una
 migración de datos en lugar del selector, lo decide el contrato.
 
@@ -480,6 +490,13 @@ Riesgos:
 - **Los e2e** que leen duraciones siguen con el compacto por omisión; los del
   completo siembran el ajuste en una base propia, porque cambiarlo en la base
   común cambia lo que ven los demás specs.
+
+_Corregido el 2026-10-20, WS1 (D-WS1-7 del
+[contrato de WS1](fase2-ws1-configuracion.md))_: suma WS-73 y la sección
+«Registro de tiempo», que el mapa ponía en WS1, y el `error.tsx` de
+`/configuracion`. WS1 dibuja solo «General» y no lee la base desde la pantalla; WS2b es el
+primer slice que lee la fila desde `/configuracion`, y con esa lectura llegan
+el error inesperado de WS-73 y la pantalla que lo muestra.
 
 ### E3 — Transferir la propiedad
 
@@ -493,8 +510,19 @@ Depende de E1b, que deja `WORKSPACE_OWNER_EMAIL` solo para el arranque (EQ-30,
 EQ-113): sin eso, la variable podría crear un segundo owner. Depende de E2 por el
 menú de la fila y porque transferir a una inactiva responde EQ-86.
 
-Riesgos: **quién lee `owner_id`**. El script de importación lo usa como autor
-del catálogo y exige que tenga membresía; el contrato enumera los lectores.
+Riesgos:
+
+- **Quién lee `owner_id`**. El script de importación lo usa como autor del
+  catálogo y exige que tenga membresía; el contrato enumera los lectores.
+- **El orden de los bloqueos: las membresías primero y después el workspace.**
+  WS1 toma la membresía de quien actúa `for share` y después el workspace
+  `for no key update`. Si E3 bloquea el workspace antes que las membresías, un
+  renombre y una transferencia del mismo admin se esperan en círculo, y
+  Postgres corta uno con un error de interbloqueo que llega como `unexpected`.
+
+_Corregido el 2026-10-20, WS1 (D-WS1-3 del
+[contrato de WS1](fase2-ws1-configuracion.md))_: suma el orden de los bloqueos.
+Hasta WS1 nadie bloqueaba la fila de `workspace`.
 
 ### E4 — El primer día de la semana
 

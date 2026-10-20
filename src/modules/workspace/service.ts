@@ -9,7 +9,13 @@ import { recordAudit, recordAudits, type AuditEntry } from "@/server/audit";
 import { db, type Transaction } from "@/server/db";
 import type { InvitationStatus } from "@/server/db/schema";
 import { env } from "@/server/env";
-import { can, type Actor, type MembershipStatus, type Role } from "@/server/permissions";
+import {
+  can,
+  ForbiddenError,
+  type Actor,
+  type MembershipStatus,
+  type Role,
+} from "@/server/permissions";
 import { parseWeekStart, type WeekStart } from "@/server/time";
 
 import {
@@ -28,6 +34,9 @@ import {
   type MemberStatus,
   type RevokeInvitationInput,
   type RevokeInvitationResult,
+  type UpdateWorkspaceNameInput,
+  type UpdateWorkspaceNameResult,
+  type WorkspaceSettingsView,
 } from "./schema";
 
 export type WorkspaceContext = {
@@ -238,6 +247,28 @@ async function assertCanInviteLocked(tx: Transaction, actor: Actor): Promise<voi
   );
   if (own === undefined || !canInvite({ ...actor, role: own.role, status: own.status })) {
     throw new InvitationError("forbidden", invitationMessages.forbidden);
+  }
+}
+
+/**
+ * D-WS1-2: la autoridad de quien actúa, releída bajo `for share`, como
+ * `assertCanInviteLocked`. Espera a un cambio de rol o a una desactivación en
+ * curso y lee lo que confirmaron.
+ */
+async function assertCanUpdateSettingsLocked(
+  tx: Transaction,
+  actor: Actor,
+): Promise<void> {
+  const own = await workspaceRepository.lockActorMembership(
+    tx,
+    actor.workspaceId,
+    actor.userId,
+  );
+  if (
+    own === undefined ||
+    !canUpdateWorkspaceSettings({ ...actor, role: own.role, status: own.status })
+  ) {
+    throw new ForbiddenError("workspace.settings.update");
   }
 }
 
@@ -505,4 +536,63 @@ export async function entryMembershipStatusLocked(
   }
   const own = await workspaceRepository.lockActorMembership(tx, workspaceId, userId);
   return own?.status ?? null;
+}
+
+/** WS-02, WS-49: `can(actor, "workspace.settings.update", workspace)`: el enlace, la vista y la puerta de la mutación. */
+export function canUpdateWorkspaceSettings(actor: Actor): boolean {
+  return can(actor, "workspace.settings.update", {
+    kind: "workspace",
+    workspaceId: actor.workspaceId,
+  });
+}
+
+/** D-WS1-5: sin consultas; el nombre es el de la sesión. */
+export function getWorkspaceSettingsView(
+  context: WorkspaceContext,
+): WorkspaceSettingsView {
+  if (!canUpdateWorkspaceSettings(context.actor)) {
+    return {
+      kind: "forbidden",
+      reason: context.actor.status === "active" ? "role" : "inactive",
+    };
+  }
+  return { kind: "ready", name: context.workspace.name };
+}
+
+/**
+ * WS-04, WS-05, WS-65, WS-71: D-WS1-2 y D-WS1-3. El mismo nombre no escribe.
+ * Deja `workspace.updateName` con el anterior y el nuevo.
+ */
+export async function updateWorkspaceName(
+  actor: Actor,
+  input: UpdateWorkspaceNameInput,
+): Promise<UpdateWorkspaceNameResult> {
+  if (!canUpdateWorkspaceSettings(actor)) {
+    throw new ForbiddenError("workspace.settings.update");
+  }
+  return db.transaction(async (tx) => {
+    // Primero la membresía y después el workspace: E3 toma los dos en el mismo
+    // orden (D-WS1-3).
+    await assertCanUpdateSettingsLocked(tx, actor);
+    const previous = await workspaceRepository.lockWorkspaceName(tx, actor.workspaceId);
+    if (previous === undefined) {
+      throw new Error("El workspace de la sesión no está.");
+    }
+    const result = { name: input.name };
+    // WS-04, WS-71: también lo que hace inofensivo reintentar (WS-62).
+    if (previous === input.name) {
+      return result;
+    }
+    await workspaceRepository.updateWorkspaceName(tx, actor.workspaceId, input.name);
+    await recordAudit(tx, {
+      workspaceId: actor.workspaceId,
+      actorId: actor.userId,
+      action: "workspace.updateName",
+      entity: "workspace",
+      entityId: actor.workspaceId,
+      previousValue: { name: previous },
+      nextValue: { name: input.name },
+    });
+    return result;
+  });
 }

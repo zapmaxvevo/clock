@@ -7,11 +7,16 @@ import {
   invitationMessages,
   inviteInput,
   revokeInvitationInput,
+  updateWorkspaceNameInput,
+  workspaceSettingsMessages,
   type InvitationErrorCode,
   type InviteInput,
   type InviteResult,
   type RevokeInvitationInput,
   type RevokeInvitationResult,
+  type UpdateWorkspaceNameInput,
+  type UpdateWorkspaceNameResult,
+  type WorkspaceSettingsErrorCode,
 } from "./schema";
 
 // El permiso lo consulta el service: la autoridad se vuelve a leer bajo el
@@ -49,5 +54,26 @@ export async function revokeInvitation(
         unexpected: invitationMessages.unexpectedRevoke,
       },
     },
+  );
+}
+
+// Todo el árbol: el nombre está en el encabezado del shell (WS-64, D-WS1-4). El
+// permiso lo consulta el service, que relee la autoridad bajo el bloqueo
+// (D-WS1-2).
+const settingsOptions = {
+  paths: [{ path: "/", type: "layout" }],
+  messages: {
+    forbidden: workspaceSettingsMessages.forbidden,
+    unexpected: workspaceSettingsMessages.unexpected,
+  },
+} as const;
+
+export async function updateWorkspaceName(
+  input: UpdateWorkspaceNameInput,
+): Promise<ActionResult<UpdateWorkspaceNameResult, WorkspaceSettingsErrorCode>> {
+  return handle(
+    async (session) =>
+      service.updateWorkspaceName(session.actor, updateWorkspaceNameInput.parse(input)),
+    settingsOptions,
   );
 }

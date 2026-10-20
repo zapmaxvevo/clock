@@ -17,14 +17,26 @@ const items = [
 /** D-R8-2: solo con `team.manage`, que decide el layout. */
 const teamItem = { href: "/equipo", label: "Equipo" } as const;
 
+/** WS-01: al final, solo con `workspace.settings.update`, que decide el layout. */
+const settingsItem = { href: "/configuracion", label: "Configuración" } as const;
+
 type AppNavProps = {
   /** `canManageTeam` de quien mira. */
   readonly showTeam: boolean;
+  /**
+   * `canUpdateWorkspaceSettings` de quien mira. Hoy coincide con `showTeam`,
+   * pero son dos acciones de `can()`.
+   */
+  readonly showSettings: boolean;
 };
 
-export function AppNav({ showTeam }: AppNavProps) {
+export function AppNav({ showTeam, showSettings }: AppNavProps) {
   const pathname = usePathname();
-  const shown = showTeam ? [...items, teamItem] : items;
+  const shown = [
+    ...items,
+    ...(showTeam ? [teamItem] : []),
+    ...(showSettings ? [settingsItem] : []),
+  ];
 
   return (
     <nav aria-label="Principal">
