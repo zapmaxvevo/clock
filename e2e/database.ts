@@ -1112,3 +1112,21 @@ export async function seedNumberedEntries(
     }
   });
 }
+
+/**
+ * El nombre del workspace de los e2e, el que muestra el encabezado del shell
+ * (WS-06). Los recorridos de `/configuracion` lo cambian, así que nadie lo da
+ * por sabido: se lee acá.
+ */
+export async function workspaceNameOf(): Promise<string> {
+  return withDatabase(async (client) => {
+    const result = await client.query<{ name: string }>(
+      `select name from workspace where id = ${FIRST_WORKSPACE}`,
+    );
+    const row = result.rows.at(0);
+    if (row === undefined) {
+      throw new Error("No hay ningún workspace del que leer el nombre.");
+    }
+    return row.name;
+  });
+}
