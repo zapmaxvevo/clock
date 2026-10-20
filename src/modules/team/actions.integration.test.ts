@@ -461,24 +461,6 @@ describe("changeStatus (§4.10, criterio 23)", () => {
     expect(await membershipOf(seeded.workspaceId, seeded.ownerId)).toEqual(owner);
   });
 
-  it("reactivar sin account responde no_account con EQ-114 sin escribir", async () => {
-    await signInAs("admin");
-    const target = await seedTarget("member", "inactive");
-
-    const result = await actions.changeStatus({
-      membershipId: target.id,
-      status: "active",
-    });
-
-    expect(result).toEqual({
-      ok: false,
-      code: "no_account",
-      message: teamMessages.noAccount,
-    });
-    expect(await membershipOf(seeded.workspaceId, target.userId)).toEqual(target);
-    expect(mocks.revalidated).toEqual([wholeTree]);
-  });
-
   it("un error de la base responde unexpected con su texto y revalida", async () => {
     await signInAs("admin");
     const target = await seedTarget("member");

@@ -383,6 +383,8 @@ export async function entryFactsOf(email: string): Promise<EntryFacts> {
     bootstrap: facts.workspaceId === null,
     invitation: facts.invitation,
     membership: facts.membership,
+    // E2b: la marca la lee `entryFacts` cuando exista la columna (D-E2b-2).
+    accountLink: false,
   };
 }
 

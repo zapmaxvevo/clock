@@ -444,6 +444,10 @@ function expectedRow(
     status: "active",
     hasAccount: false,
     statusChange: "deactivate",
+    link: null,
+    linkActions: [],
+    registersExternal: false,
+    canReleaseEmail: false,
     ...rest,
   };
 }
@@ -1094,21 +1098,6 @@ describe("changeStatus: lo que no está (criterio 8, EQ-82)", () => {
 });
 
 describe("changeStatus: sin cuenta (criterio 9, D-E2-7)", () => {
-  it("reactivar a una inactiva sin account responde no_account sin escribir; con seedAccount, reactiva", async () => {
-    const seeded = await seedWorkspace();
-    const target = await seedPerson(seeded.workspaceId, "member", "inactive");
-    const before = await statusWrites();
-
-    const error = await failureOf(reactivate(ownerOf(seeded), target.membershipId));
-
-    expect([error.code, error.message]).toEqual(["no_account", teamMessages.noAccount]);
-    expect(await statusWrites()).toEqual(before);
-
-    await seedAccount(target.userId);
-    await reactivate(ownerOf(seeded), target.membershipId);
-    expect((await statusOf(target.membershipId))?.status).toBe("active");
-  });
-
   it("desactivar a quien no tiene account no la pide", async () => {
     const seeded = await seedWorkspace();
     const target = await seedPerson(seeded.workspaceId, "member");

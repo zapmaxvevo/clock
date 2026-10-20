@@ -1,4 +1,5 @@
 import { compareNames } from "@/lib/text";
+import { ACCOUNT_LINK_TTL_DAYS } from "@/server/access";
 import { DomainError } from "@/server/errors";
 import { recordAudit } from "@/server/audit";
 import { deleteSessionsOf, hasAccount } from "@/server/auth-records";
@@ -139,6 +140,11 @@ function toTeamMember(actor: Actor, row: TeamMemberRow): TeamMember {
     status: row.status,
     hasAccount: row.hasAccount,
     statusChange: statusChangeOf(actor, row),
+    // E2b: la vinculación y la liberación las arma el service (D-E2b-4).
+    link: null,
+    linkActions: [],
+    registersExternal: false,
+    canReleaseEmail: false,
   };
 }
 
@@ -158,6 +164,7 @@ export async function getTeamView(actor: Actor): Promise<TeamView> {
   return {
     kind: "ready",
     members: rows.map((row) => toTeamMember(actor, row)).sort(compareMembers),
+    linkTtlDays: ACCOUNT_LINK_TTL_DAYS,
   };
 }
 
@@ -318,7 +325,8 @@ export async function changeStatus(
     }
     // 8. D-E2-7: sin `account` no podría volver a entrar; lo levanta E2b.
     if (input.status === "active" && !(await hasAccount(tx, target.userId))) {
-      throw new TeamError("no_account", teamMessages.noAccount);
+      // E2b: reactivar sin cuenta pasa a pedir la vinculación (D-E2b-5).
+      throw new TeamError("forbidden", teamMessages.linkAdminOwnerOnly);
     }
     await writeStatus(tx, actor, target, {
       previous: target.status,
