@@ -313,11 +313,7 @@ vacío del owner y `renewWorkspace` se corta.
        existe); lo arregla el MCP con `npx -y auth@1.7.10 generate …`.
      - **E2b implementado, sin revisar** (`clock-e2b`): tipos `bdb5025`, backend `53a4005`,
        frontend `e945bb6`, tests `a11ed39`, registro `ea7108b`, e2e `b787628`/`06b1a60`/`ce54849`
-       (suite 242/242 en base nueva y reusada). Al cortar, `e2b-back` corría su verificación
-       final sin mandar informe. Desvío aceptado: las fechas de la vinculación las resuelve
-       `TeamScreen` (servidor) en la zona y el formato de quien mira (ADR 0012); la página pasa
-       `timeSettingsOf(session)` (enmendar §5.1). **Sigue:** confirmar lint/typecheck/test:all,
-       lanzar parity-analyst (§7: EQ-115…EQ-122, «seis»→«tres» en `fase2-mapa.md`) y las seis
+       (suite 242/242 en base nueva y reusada). `e2b-back` cerró en verde sobre `ea7108b`: lint, typecheck, unidad 2407 + 305 e integración 1945. La migración es `0017_membership_account_link.sql`; 19 mutaciones, y una sola no la detecta su test (el 13 sin `for no key update` en `lockMembershipOf`; la cubre el 14). Siete desvíos chicos, en el registro. No llama a `deleteGrantsOf`, porque el MCP no está en `main`. Desvío aceptado: las fechas de la vinculación las resuelve `TeamScreen` (servidor) en la zona y el formato de quien mira (ADR 0012); la página pasa `timeSettingsOf(session)` (enmendar §5.1). **Sigue:** lanzar parity-analyst (§7: EQ-115…EQ-122, «seis»→«tres» en `fase2-mapa.md`) y las seis
        revisiones, correcciones, corrida final, consulta y migración en producción (la `0017`;
        renumera si el MCP mergea antes) y merge. Avisos de e2e: un flake no reproducido (el menú
        no cerró con Escape tras cancelar) y `/equipo` lento con ~1.100 membresías (preexistente).
