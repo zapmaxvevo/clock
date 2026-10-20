@@ -303,6 +303,36 @@ vacío del owner y `renewWorkspace` se corta.
        `architect`.
      - Deuda: `npm audit` da 9 high en dependencias de desarrollo (también en `main`); es del
        usuario decidir (control de seguridad de CI).
+     - **Decisiones del usuario (2026-10-19, tarde):** ADR 0026 y 0027 **aceptados**. MCP: clientes
+       de Claude **y de OpenAI** (ChatGPT, Codex); el resto de §11 como lo recomendó el
+       contrato. E2b: owner **y admins** (sobre no admins) vinculan y liberan; la vinculación
+       vence a 7 días. Better Auth a 1.7.10, sola y primero.
+     - **Better Auth 1.7.10 en `main` y en producción** (merge `be15763`, CI verde; registro
+       `mejoras-better-auth-1710.md`). Falta que el usuario confirme el humo: cerrar sesión y
+       volver a entrar con Google. `npm run auth:schema` está roto (llama a un binario que no
+       existe); lo arregla el MCP con `npx -y auth@1.7.10 generate …`.
+     - **E2b implementado, sin revisar** (`clock-e2b`): tipos `bdb5025`, backend `53a4005`,
+       frontend `e945bb6`, tests `a11ed39`, registro `ea7108b`, e2e `b787628`/`06b1a60`/`ce54849`
+       (suite 242/242 en base nueva y reusada). Al cortar, `e2b-back` corría su verificación
+       final sin mandar informe. Desvío aceptado: las fechas de la vinculación las resuelve
+       `TeamScreen` (servidor) en la zona y el formato de quien mira (ADR 0012); la página pasa
+       `timeSettingsOf(session)` (enmendar §5.1). **Sigue:** confirmar lint/typecheck/test:all,
+       lanzar parity-analyst (§7: EQ-115…EQ-122, «seis»→«tres» en `fase2-mapa.md`) y las seis
+       revisiones, correcciones, corrida final, consulta y migración en producción (la `0017`;
+       renumera si el MCP mergea antes) y merge. Avisos de e2e: un flake no reproducido (el menú
+       no cerró con Escape tras cancelar) y `/equipo` lento con ~1.100 membresías (preexistente).
+     - **MCP en implementación** (`clock-mcp`, con `node_modules` propio): tipos `d03965b`,
+       backend parcial `839de45`, frontend `0781654` y `fadb0a0`, e2e `0079109`. Al cortar,
+       `mcp-back` arreglaba un bug que encontró la e2e: «Conectar» siempre falla porque
+       `submitConsent` (`mcp-context.ts:176`) llama a `auth.api.oauth2Consent` sin `Request`
+       (`authorize-dkOG8GqZ.mjs:5643`); falta además el handler y `/api/mcp`. `mcp-tests`
+       (integración) esperaba ese código. **Sigue:** terminar backend, integración y e2e en
+       verde, el **preview con el usuario** para cerrar V-7 (conectar claude.ai, ChatGPT y Codex:
+       direcciones de vuelta, cuerpos de registro, `resource`), revisiones con security-auditor,
+       migración y merge con `MCP_ENABLED` apagado.
+     - Worktrees que se pueden borrar: `clock-c1`, `clock-e2`, `clock-ba`. Los agentes de esta
+       sesión no siguen en la próxima: si un informe no llegó, leer el registro y el `git log`
+       del worktree.
 
      **Decimocuarta sesión** (2026-10-16, tarde): el usuario pidió seguir el roadmap sin
      frenar («E1b y después lo que siga») y dio permiso para desplegar.
