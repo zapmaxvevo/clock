@@ -52,3 +52,15 @@ primer ingreso, y una de `seedMember`. Leídas con SQL: el workspace con
 `weekly_capacity_minutes` `2400`. El archivo se borró después de la corrida.
 
 La e2e (§9.1) es de `e2e-tester`.
+
+## e2e con A
+
+Commit `608a000` (A), sin B, contra `clock_ws0_e2e`, una base nueva migrada
+hasta la `0016`, con las doce columnas presentes. Sin cambios en `e2e/`.
+
+| Corrida                                                        | Resultado              |
+| -------------------------------------------------------------- | ---------------------- |
+| `DATABASE_URL=…/clock_ws0_e2e npm run test:e2e` (suite entera) | 235 en verde (1,9 min) |
+
+Sin fallos ni flakes: ningún spec se repitió. Ruido sin fallos, el de siempre:
+18 `Error: The destination stream closed early.` de Next en el log del servidor.
