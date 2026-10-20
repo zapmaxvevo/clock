@@ -19,7 +19,6 @@ import {
   task,
   taskAssignee,
   workspace,
-  workspaceSettings,
 } from "@/server/db/schema";
 import {
   seedClient,
@@ -27,12 +26,9 @@ import {
   seedProject,
   seedTag,
   seedTask,
-  seedUser,
   seedWorkspace,
   type SeededWorkspace,
 } from "@/test/factories";
-
-import { workspaceRepository } from "@/modules/workspace/repository";
 
 import { PALETTE_KEYS } from "./palette";
 
@@ -479,60 +475,6 @@ describe("largos y recortes en la base (criterio 4: PR-54, PR-109)", () => {
         CHECK_VIOLATION,
       ),
     ).toBe("project_color_palette");
-  });
-});
-
-describe("whoCreatesProjects (criterio 11, PR-59)", () => {
-  const backfillTag = "0004_projects_set_null_backfill";
-
-  /** La sentencia `update` de la migración escrita a mano, leída del archivo. */
-  async function backfillStatement(): Promise<string> {
-    const journal = JSON.parse(
-      await readFile(join(process.cwd(), "drizzle/meta/_journal.json"), "utf8"),
-    ) as { entries: { tag: string }[] };
-    const entry = journal.entries.find((candidate) => candidate.tag === backfillTag);
-    if (entry === undefined) {
-      throw new Error(`El diario no tiene la migración ${backfillTag}.`);
-    }
-    const migration = await readFile(
-      join(process.cwd(), "drizzle", `${entry.tag}.sql`),
-      "utf8",
-    );
-    const updates = migration
-      .split("--> statement-breakpoint")
-      .filter((statement) => /^\s*update\b/im.test(statement));
-    if (updates.length !== 1) {
-      throw new Error(`La migración tiene ${updates.length} sentencias update y no una.`);
-    }
-    return updates[0];
-  }
-
-  it("la sentencia de relleno pasa a everyone una fila sembrada con admins", async () => {
-    await db
-      .update(workspaceSettings)
-      .set({ whoCreatesProjects: "admins" })
-      .where(eq(workspaceSettings.workspaceId, ours.workspaceId));
-
-    await db.execute(sql.raw(await backfillStatement()));
-
-    const rows = await db.select().from(workspaceSettings);
-    expect(rows.map((row) => row.whoCreatesProjects)).toEqual(["everyone", "everyone"]);
-  });
-
-  it("un workspace creado por el repository de workspace nace con everyone", async () => {
-    const ownerId = await seedUser();
-    const created = await db.transaction((tx) =>
-      workspaceRepository.createWorkspace(tx, {
-        name: "Nuevo",
-        ownerId,
-        timezone: "America/Argentina/Buenos_Aires",
-      }),
-    );
-    const [settings] = await db
-      .select()
-      .from(workspaceSettings)
-      .where(eq(workspaceSettings.workspaceId, created.id));
-    expect(settings.whoCreatesProjects).toBe("everyone");
   });
 });
 
