@@ -283,6 +283,29 @@ vacío del owner y `renewWorkspace` se corta.
      `backend-dev` probó dos veces en el árbol compartido; repetir en cada encargo que las
      pruebas descartables y los mutantes van en un worktree. Bases que se pueden borrar:
      `clock_r6a_*`, `clock_r6b_*`, `clock_r10a_*`, `clock_r10b_final_*`.
+     **Decimosexta sesión** (2026-10-20, con el usuario por remote control):
+     - **E2b listo para mergear** (`clock-e2b`, HEAD `9f0c874`). Paridad actualizada
+       (`0c20de1`: EQ-115…EQ-122, PF-47, P-11 cerrado, «tres» en el mapa). Seis revisiones:
+       frontend, backend, seguridad y paridad aprobadas; clean code y tests con cambios,
+       corregidos (`2cbe74c`, `36fd524`, `b22de43`, `551eac2`, `9594398`). Corrida final
+       con el árbol quieto: lint, typecheck, prettier, unidad 2409 + 305, integración 1947
+       en base nueva, e2e 242/242 en base nueva y en reusada. Registro en
+       `correcciones-fase2-e2b-revisiones.md`. **Falta, del usuario:** la consulta previa
+       de §6.1, la `0017` en producción con el control de §6.2, el pedido de merge en local
+       y el push; después la verificación de humo de §6.4.
+     - **Para el que integre segundo (E2b o MCP):** regenerar la migración (no
+       renombrarla: con el `when` viejo Drizzle la saltea sin avisar) y comprobar que su
+       `when` supere el último `created_at` de `drizzle.__drizzle_migrations` en prod;
+       sumar `deleteGrantsOf` en `bindGoogleAccount` y `releaseEmailOf` con su test
+       (hallazgo condicional de security).
+     - Decidido por el team-lead: el recién llegado con una dirección reciclada de una
+       inactiva sigue viendo EQ-92 (D-E2b-10), no EQ-122.
+     - **MCP:** commit temporal de captura de V-7 (`baa4c66`, se revierte antes del merge).
+       El force-push de `mejoras/mcp` lo bloqueó el clasificador: el usuario elige entre
+       pushearlo él o usar la rama `mejoras/mcp-preview`. Después, el preview de §6.6.
+     - Postgres local tardó ~20 min en arrancar (fsync de ~100 bases, 2,1 GB). El
+       clasificador bloquea `drop database`: el usuario decide si limpiarlas.
+
      **Decimoquinta sesión** (2026-10-19): se retomaron C1 y E2.
      - **C1 en `main` y en producción** (merge `78820d8`, CI verde). Tres revisiones con
        cambios: el e2e no cubría el ancla de la selección (se aprieta a 08:40), el rótulo de la
