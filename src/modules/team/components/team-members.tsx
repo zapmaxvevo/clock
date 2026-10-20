@@ -46,6 +46,7 @@ import {
   revokeLeavesTable,
   rowActionsId,
   rowHeaderId,
+  statusChangedOf,
   TEAM_HEADING_ID,
   visibleInvitations,
   visibleMembers,
@@ -130,8 +131,6 @@ export function TeamMembers({
   const revokeTarget = useRef("");
   /** El estado del último pedido de `changeStatus`, para el título de su falla. */
   const statusTarget = useRef<MemberStatus>("inactive");
-  /** Si el último pedido de `changeStatus` reactiva a quien no tiene cuenta (D-E2b-5). */
-  const statusLinks = useRef(false);
   /** Lo pedido en el último `setAccountLink`, para el título de su falla. */
   const linkTarget = useRef(true);
   const [deactivating, setDeactivating] = useState<TeamMember | null>(null);
@@ -177,12 +176,7 @@ export function TeamMembers({
   const status = useAction(actions.changeStatus, {
     unreachableMessage: teamMessages.unexpectedStatus,
     onSuccess: (data) => {
-      setOutcome({
-        kind: "statusChanged",
-        name: target.current,
-        status: data.status,
-        linkRequested: statusLinks.current,
-      });
+      setOutcome(statusChangedOf(target.current, data));
       setLastRow({
         membershipId: data.membershipId,
         reached: (row) => row.status === data.status,
@@ -348,10 +342,8 @@ export function TeamMembers({
   }
 
   function sendStatus(input: ChangeStatusInput): void {
-    const row = members.find((member) => member.membershipId === input.membershipId);
-    target.current = row?.name ?? "";
+    target.current = nameOf(input.membershipId);
     statusTarget.current = input.status;
-    statusLinks.current = input.status === "active" && row?.hasAccount === false;
     setKept((current) => new Set(current).add(input.membershipId));
     resetOutcome();
     status.run(input);

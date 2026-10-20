@@ -11,10 +11,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-import { returnFocusTarget } from "./deactivate-dialog";
 import { teamLabels } from "./labels";
 import {
   linkConfirmationOf,
+  returnFocusTarget,
   type LinkConfirmation,
   type LinkRequest,
 } from "./team-members-model";

@@ -11,8 +11,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-import { returnFocusTarget } from "./deactivate-dialog";
 import { teamLabels } from "./labels";
+import { returnFocusTarget } from "./team-members-model";
 
 type ReleaseEmailDialogProps = {
   /** La persona que se confirma; se conserva mientras el diálogo se cierra. */

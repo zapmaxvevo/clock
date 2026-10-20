@@ -3,6 +3,7 @@ import {
   type ChangeableRole,
   type ChangeRoleInput,
   type ChangeStatusInput,
+  type ChangeStatusResult,
   type MemberStatus,
   type ReleaseEmailInput,
   type SetAccountLinkInput,
@@ -30,6 +31,19 @@ export function rowHeaderId(membershipId: string): string {
 /** El menú de una fila, adonde vuelve el foco al cerrar la confirmación (§5.4). */
 export function rowActionsId(membershipId: string): string {
   return `acciones-${membershipId}`;
+}
+
+/**
+ * Adónde vuelve el foco al cerrar una confirmación de la fila: el menú de la
+ * fila; si la fila ya no lo tiene, su encabezado, y si la fila ya no está, el
+ * título. La usan también las de vincular y de liberar el correo.
+ */
+export function returnFocusTarget(membershipId: string): HTMLElement | null {
+  return (
+    document.getElementById(rowActionsId(membershipId)) ??
+    document.getElementById(rowHeaderId(membershipId)) ??
+    document.getElementById(TEAM_HEADING_ID)
+  );
 }
 
 /** D-E2-8: adónde lleva elegir un filtro. «Activas» es la URL sin parámetro. */
@@ -418,6 +432,20 @@ export type TeamOutcome =
       readonly code: InvitationErrorCode;
       readonly message: string;
     };
+
+/**
+ * El desenlace de un `changeStatus` que salió bien. Si pidió la vinculación lo
+ * dice el resultado, decidido bajo el bloqueo, y no la fila de la vista, que
+ * puede estar vieja (D-E2b-5).
+ */
+export function statusChangedOf(name: string, result: ChangeStatusResult): TeamOutcome {
+  return {
+    kind: "statusChanged",
+    name,
+    status: result.status,
+    linkRequested: result.linkRequested,
+  };
+}
 
 /** El aviso de la tabla (§5.6). */
 export type TeamFeedback = {

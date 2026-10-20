@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 
 import { teamLabels } from "./labels";
-import { rowActionsId, rowHeaderId, TEAM_HEADING_ID } from "./team-members-model";
+import { returnFocusTarget } from "./team-members-model";
 
 type DeactivateDialogProps = {
   /** La persona que se confirma; se conserva mientras el diálogo se cierra. */
@@ -21,19 +21,6 @@ type DeactivateDialogProps = {
   readonly onOpenChange: (open: boolean) => void;
   readonly onConfirm: () => void;
 };
-
-/**
- * Adónde vuelve el foco al cerrar una confirmación de la fila: el menú de la
- * fila; si la fila ya no lo tiene, su encabezado, y si la fila ya no está, el
- * título. La usan también las de vincular y de liberar el correo.
- */
-export function returnFocusTarget(membershipId: string): HTMLElement | null {
-  return (
-    document.getElementById(rowActionsId(membershipId)) ??
-    document.getElementById(rowHeaderId(membershipId)) ??
-    document.getElementById(TEAM_HEADING_ID)
-  );
-}
 
 /**
  * EQ-46: desactivar se confirma, con la forma de la de revocar. Al cerrar, el

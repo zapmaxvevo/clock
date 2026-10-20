@@ -1,10 +1,10 @@
+import { timeSettingsOf } from "@/modules/profile/service";
 import {
   changeRole,
   changeStatus,
   releaseEmail,
   setAccountLink,
 } from "@/modules/team/actions";
-import { timeSettingsOf } from "@/modules/profile/service";
 import { TeamScreen } from "@/modules/team/components/team-screen";
 import { teamSearchParams } from "@/modules/team/schema";
 import { getTeamView } from "@/modules/team/service";

@@ -25,6 +25,7 @@ import {
   revokeLeavesTable,
   rowNoteOf,
   rowNotesOf,
+  statusChangedOf,
   visibleInvitations,
   visibleMembers,
   type MenuEntry,
@@ -649,6 +650,32 @@ describe("feedbackOf con un cambio de estado", () => {
       title: "Reactivaste a Fede. Su cuenta de Google se vincula en su próximo ingreso.",
       retry: false,
     });
+  });
+
+  it("D-E2b-5: el aviso de la vinculación sigue al resultado aunque la vista diga que tenía cuenta", () => {
+    const fede = memberOf({ name: "Fede", status: "inactive", hasAccount: true });
+    expect(
+      feedbackOf(
+        statusChangedOf(fede.name, {
+          membershipId: fede.membershipId,
+          status: "active",
+          linkRequested: true,
+        }),
+      )?.title,
+    ).toBe("Reactivaste a Fede. Su cuenta de Google se vincula en su próximo ingreso.");
+  });
+
+  it("D-E2b-5: sin `linkRequested` en el resultado, ningún aviso de vinculación aunque la vista diga que no tenía cuenta", () => {
+    const fede = memberOf({ name: "Fede", status: "inactive", hasAccount: false });
+    expect(
+      feedbackOf(
+        statusChangedOf(fede.name, {
+          membershipId: fede.membershipId,
+          status: "active",
+          linkRequested: false,
+        }),
+      )?.title,
+    ).toBe("Reactivaste a Fede.");
   });
 
   it.each([
