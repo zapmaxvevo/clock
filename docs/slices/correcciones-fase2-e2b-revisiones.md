@@ -252,6 +252,16 @@ constancia), aplicada en el árbol sin commitear y revertida: el test nuevo
 falla en la primera afirmación de cuentas (quedó la del `sub` nuevo en lugar
 de la de siempre). Con el código real, pasa.
 
+### Frontend
+
+En `9594398`, de `frontend-dev`:
+
+- Clean code 1, la pantalla: `onSuccess` de `changeStatus` arma el desenlace con `statusChangedOf(name, result)` de `team-members-model.ts`, que toma `linkRequested` del resultado; se borró el ref `statusLinks`. Sin entorno de DOM en `npm test`, los dos tests nuevos van en `team-members-model.test.ts`: el aviso sale con `linkRequested: true` aunque la fila tenga cuenta, y no sale con `false` aunque no la tenga.
+- `returnFocusTarget` pasa de `deactivate-dialog.tsx` a `team-members-model.ts`, junto a `rowActionsId` y `rowHeaderId`; los tres diálogos la importan de ahí.
+- `equipo/page.tsx`: el import de `@/modules/profile/service` va antes de `@/modules/team/actions`.
+
+Corridas sobre `9594398`: `npm run lint` y `npm run typecheck` en verde; `npm test`, 97 archivos y 2409 tests, y zona de Buenos Aires, 2 archivos y 305. Verde.
+
 ### Documentos
 
 En el contrato, notas fechadas el 2026-10-20 en §5.1 (la página pasa
