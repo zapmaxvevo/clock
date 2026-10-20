@@ -71,7 +71,7 @@ export function ManualBar({
   addRef,
 }: ManualBarProps) {
   const tooShortId = useId();
-  const { time } = useDisplayFormats();
+  const { time, duration } = useDisplayFormats();
 
   const minutes = draftDuration(draft);
   const extraDays = draftExtraDays(draft);
@@ -151,10 +151,10 @@ export function ManualBar({
           />
 
           <ClockField
-            value={formatDuration(minutes * 60, "compact")}
+            value={formatDuration(minutes * 60, duration)}
             onCommit={(text) =>
               commit(withDuration(draft, text), (next) =>
-                formatDuration(draftDuration(next) * 60, "compact"),
+                formatDuration(draftDuration(next) * 60, duration),
               )
             }
             label="Duración"

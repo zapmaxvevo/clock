@@ -131,7 +131,7 @@ export function CalendarGrid({
   onSelectRange,
   onGestureChange,
 }: CalendarGridProps) {
-  const { time } = useDisplayFormats();
+  const { time, duration } = useDisplayFormats();
   const scrollRef = useRef<HTMLDivElement>(null);
   const scale = minuteHeight(zoom);
   const dates = state.days.map((day) => day.date);
@@ -152,10 +152,10 @@ export function CalendarGrid({
 
   const displayed: Displayed = (entry) => {
     if (preview?.kind === "entry" && preview.entryId === entry.id) {
-      return movedView(entry, preview.times, time);
+      return movedView(entry, preview.times, { time, duration });
     }
     if (movingTimes !== null && movingTimes.id === entry.id) {
-      return movedView(entry, movingTimes, time);
+      return movedView(entry, movingTimes, { time, duration });
     }
     return entry;
   };

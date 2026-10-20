@@ -514,7 +514,7 @@ function TimesFields({
   onCommit,
   onSubmit,
 }: TimesFieldsProps) {
-  const { time } = useDisplayFormats();
+  const { time, duration } = useDisplayFormats();
   const extraDays = draftExtraDays(times);
 
   return (
@@ -566,11 +566,11 @@ function TimesFields({
           )}
         </span>
         <ClockField
-          value={durationLabel ?? formatDuration(draftDuration(times) * 60, "compact")}
+          value={durationLabel ?? formatDuration(draftDuration(times) * 60, duration)}
           onCommit={(text) =>
             onCommit(
               (current) => withDuration(current, text),
-              (next) => formatDuration(draftDuration(next) * 60, "compact"),
+              (next) => formatDuration(draftDuration(next) * 60, duration),
             )
           }
           onSubmit={onSubmit}

@@ -243,6 +243,20 @@ describe("CalendarBlock, los segmentos (CAL-26, CAL-76)", () => {
     expect(render(running)).toContain("00:00 – en curso · 12:00");
   });
 
+  it("el transcurrido del timer va con el formato de duración, no con el del contador (D-WS2a-7)", () => {
+    // 100 segundos antes del `serverNow`.
+    const recent = {
+      ...running,
+      startedAt: "2026-10-02T14:58:20.000Z",
+      startLabel: "11:58",
+    };
+
+    expect(render(recent)).toContain("11:58 – en curso · 0:01");
+    expect(render(recent, { formats: { ...H24, duration: "full" } })).toContain(
+      "11:58 – en curso · 00:01:40",
+    );
+  });
+
   it("solo el segmento del día de inicio lleva el horario", () => {
     expect(render(overnight)).toMatch(/22:00 – 02:00<sup[^>]*>\+1<\/sup>/);
     const later = render(overnight, {

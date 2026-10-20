@@ -341,6 +341,26 @@ describe("EntryDialogContent: los modos según el permiso y el sujeto (CAL-05, C
     expect(markup).not.toContain("Acciones de la entrada");
   });
 
+  it("un trío que no es el de la entrada muestra su duración con el formato del workspace (TT-97, ADR 0029)", () => {
+    const subject = {
+      kind: "add",
+      draft: { date: "2026-09-30", start: "10:00", end: "11:30" },
+      opener: "slot",
+    } as const;
+
+    expect(controlNamed(renderContent(subject), "Duración")).toContain('value="1:30"');
+    expect(
+      controlNamed(
+        renderContent(subject, true, {
+          time: "24h",
+          date: "dd/MM/yyyy",
+          duration: "full",
+        }),
+        "Duración",
+      ),
+    ).toContain('value="01:30:00"');
+  });
+
   it("un alta de duración cero deja «Agregar» inactivo con el motivo asociado (TT-73)", () => {
     const markup = renderContent({
       kind: "add",

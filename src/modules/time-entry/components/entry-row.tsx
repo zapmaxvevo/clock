@@ -128,7 +128,7 @@ export function EntryRow({
   focusTimesOnMount,
   onTimesFocused,
 }: EntryRowProps) {
-  const { time } = useDisplayFormats();
+  const { time, duration } = useDisplayFormats();
   const [editing, setEditing] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -220,7 +220,7 @@ export function EntryRow({
   const durationLabel =
     shownTimes === null
       ? entry.durationLabel
-      : formatDuration(draftDuration(shownTimes) * 60, "compact");
+      : formatDuration(draftDuration(shownTimes) * 60, duration);
   const timesText = `${timesLabel}${extraDays > 0 ? ` +${extraDays}${extraDaysText(extraDays)}` : ""}`;
 
   return (

@@ -656,7 +656,11 @@ describe("movedView (ADR 0012)", () => {
   it("dibuja la entrada con el trío nuevo, en el formato de la persona", () => {
     const original = closedEntry("2026-09-30", "10:00", "11:00");
     expect(
-      movedView(original, { date: "2026-10-01", start: "23:00", end: "00:30" }, "12h"),
+      movedView(
+        original,
+        { date: "2026-10-01", start: "23:00", end: "00:30" },
+        { time: "12h", duration: "compact" },
+      ),
     ).toEqual({
       ...original,
       dayDate: "2026-10-01",
@@ -668,6 +672,19 @@ describe("movedView (ADR 0012)", () => {
       durationSeconds: 5_400,
       durationLabel: "1:30",
     });
+  });
+
+  it("la duración va con el formato del workspace, en minutos enteros (ADR 0029)", () => {
+    const original = closedEntry("2026-09-30", "10:00", "11:00");
+    const times = { date: "2026-09-30", start: "10:00", end: "11:30" };
+
+    expect(movedView(original, times, { time: "24h", duration: "full" })).toMatchObject({
+      durationSeconds: 5_400,
+      durationLabel: "01:30:00",
+    });
+    expect(
+      movedView(original, times, { time: "24h", duration: "compact" }).durationLabel,
+    ).toBe("1:30");
   });
 });
 
