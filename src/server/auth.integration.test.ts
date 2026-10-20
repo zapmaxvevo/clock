@@ -38,6 +38,7 @@ import {
   seedUser,
   seedWorkspace,
 } from "@/test/factories";
+import { grantRowsOf, seedGrant, seedOAuthClient } from "@/test/oauth-grants";
 
 /**
  * El handler real de Better Auth. La sesión de prueba se habilita antes de
@@ -1103,9 +1104,10 @@ describe("la vinculación por el callback de Google (E2b, D-E2b-3)", () => {
     expect(await accountIdsOf(person.userId)).toEqual([sub]);
   });
 
-  it("un fallo después de bindGoogleAccount deja las cuentas, las sesiones, la marca y las constancias como estaban (criterio 22)", async () => {
+  it("un fallo después de bindGoogleAccount deja las cuentas, las sesiones, las autorizaciones, la marca y las constancias como estaban (criterio 22)", async () => {
     const person = await seedLinkable({ withAccount: true });
     const sessionId = await seedSession(person.userId);
+    await seedGrant(person.userId, await seedOAuthClient(), { sessionId });
     await seedAccountLink(person.membershipId, person.ownerId, "1 day");
     const mark = await markOf(person.membershipId);
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -1128,6 +1130,11 @@ describe("la vinculación por el callback de Google (E2b, D-E2b-3)", () => {
     expect((await sessionUsersOf(person.userId)).map((row) => row.id)).toEqual([
       sessionId,
     ]);
+    expect(await grantRowsOf(person.userId)).toEqual({
+      consents: 1,
+      refresh: 1,
+      access: 1,
+    });
     expect(await markOf(person.membershipId)).toEqual(mark);
     expect(await db.select().from(auditLog)).toEqual([]);
   });

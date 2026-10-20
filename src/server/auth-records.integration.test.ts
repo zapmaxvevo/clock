@@ -6,6 +6,7 @@ import { db } from "@/server/db";
 import { account, auditLog, membership, session, user } from "@/server/db/schema";
 import type { Actor } from "@/server/permissions";
 import { seedAccount, seedMember, seedSession, seedWorkspace } from "@/test/factories";
+import { grantRowsOf, seedGrant, seedOAuthClient } from "@/test/oauth-grants";
 
 import {
   bindGoogleAccount,
@@ -19,7 +20,8 @@ import {
 
 /**
  * Las tablas de Better Auth fuera del login (ADR 0025, D-E2-2, D-E2-5, D-E2-7,
- * D-E2b-3, D-E2b-9).
+ * D-E2b-3, D-E2b-9), con las autorizaciones de los asistentes que borran
+ * (D-MCP-5).
  */
 
 let workspaceId: string;
@@ -239,6 +241,37 @@ describe("bindGoogleAccount (D-E2b-3)", () => {
       ["account.link", JSON.stringify({ accounts: 0 })],
     ]);
   });
+
+  it("borra los tokens y los consentimientos del plugin de la persona, no los de otra, y deja mcp.revokeAll con la persona como autora (D-MCP-5)", async () => {
+    const personId = await seedMember(workspaceId, "member");
+    const person: Actor = {
+      userId: personId,
+      workspaceId,
+      role: "member",
+      status: "active",
+    };
+    const other = await seedMember(workspaceId, "member");
+    const clientId = await seedOAuthClient();
+    await seedGrant(personId, clientId, { sessionId: await seedSession(personId) });
+    await seedGrant(personId, await seedOAuthClient());
+    await seedGrant(other, clientId);
+
+    await db.transaction((tx) => bindGoogleAccount(tx, person, "sub-nuevo"));
+
+    expect(await grantRowsOf(personId)).toEqual({ consents: 0, refresh: 0, access: 0 });
+    expect(await grantRowsOf(other)).toEqual({ consents: 1, refresh: 1, access: 1 });
+    expect((await audits()).filter((row) => row.action === "mcp.revokeAll")).toEqual([
+      {
+        workspaceId,
+        actorId: personId,
+        action: "mcp.revokeAll",
+        entity: "user",
+        entityId: personId,
+        previousValue: JSON.stringify({ clients: 2 }),
+        nextValue: null,
+      },
+    ]);
+  });
 });
 
 describe("userEmailOf (D-E2b-6, D-E2b-9)", () => {
@@ -297,6 +330,32 @@ describe("releaseEmailOf (D-E2b-9)", () => {
         entityId: person,
         previousValue: JSON.stringify({ email: "ana@empresa.com", accounts: 1 }),
         nextValue: JSON.stringify({ email: releasedEmailOf(person) }),
+      },
+    ]);
+  });
+
+  it("borra los tokens y los consentimientos del plugin de la persona, no los de otra, y deja mcp.revokeAll con quien actúa (D-MCP-5)", async () => {
+    const person = await seedMember(workspaceId, "member", "inactive", {
+      email: "ana@empresa.com",
+    });
+    const other = await seedMember(workspaceId, "member");
+    const clientId = await seedOAuthClient();
+    await seedGrant(person, clientId, { sessionId: await seedSession(person) });
+    await seedGrant(other, clientId);
+
+    await db.transaction((tx) => releaseEmailOf(tx, actor, person, "ana@empresa.com"));
+
+    expect(await grantRowsOf(person)).toEqual({ consents: 0, refresh: 0, access: 0 });
+    expect(await grantRowsOf(other)).toEqual({ consents: 1, refresh: 1, access: 1 });
+    expect((await audits()).filter((row) => row.action === "mcp.revokeAll")).toEqual([
+      {
+        workspaceId,
+        actorId: actor.userId,
+        action: "mcp.revokeAll",
+        entity: "user",
+        entityId: person,
+        previousValue: JSON.stringify({ clients: 1 }),
+        nextValue: null,
       },
     ]);
   });
