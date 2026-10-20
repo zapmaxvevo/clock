@@ -174,9 +174,22 @@ export function fullWeekdayLabel(civil: CivilDay, today: CivilDay): string {
     : `${weekday} ${date}/${civil.year}`;
 }
 
-/** Una fecha con el formato por omisión de PF-12, con el año: «28/09/2026». */
-export function numericDateLabel({ year, month, day }: CivilDay): string {
-  return `${pad(day)}/${pad(month)}/${year}`;
+/** Los formatos de fecha de PF-12, como los guarda `user_preference.date_format`. */
+export type DateFormat = "dd/MM/yyyy" | "dd-MM-yyyy" | "yyyy-MM-dd" | "MM/dd/yyyy";
+
+/** Una fecha con año en un formato de PF-12: «28/09/2026» o «2026-09-28». */
+export function dateLabel({ year, month, day }: CivilDay, format: DateFormat): string {
+  const [dd, mm, yyyy] = [pad(day), pad(month), String(year)];
+  switch (format) {
+    case "dd/MM/yyyy":
+      return `${dd}/${mm}/${yyyy}`;
+    case "dd-MM-yyyy":
+      return `${dd}-${mm}-${yyyy}`;
+    case "yyyy-MM-dd":
+      return `${yyyy}-${mm}-${dd}`;
+    case "MM/dd/yyyy":
+      return `${mm}/${dd}/${yyyy}`;
+  }
 }
 
 /** El día como lo escribe la URL en `desde`: «2026-09-28». */

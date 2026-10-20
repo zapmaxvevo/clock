@@ -10,8 +10,13 @@ import { randomUUID } from "node:crypto";
 
 import { expect, type Locator, type Page } from "@playwright/test";
 
-import { ACCOUNT_LINK_TTL_DAYS, type AccountLink, setRole } from "./database";
-import { dayOfInstantIn, numericDateLabel } from "./days";
+import {
+  ACCOUNT_LINK_TTL_DAYS,
+  type AccountLink,
+  type DateDisplay,
+  setRole,
+} from "./database";
+import { dateLabel, dayOfInstantIn } from "./days";
 import { OWNER_EMAIL, TEST_EMAIL_DOMAIN } from "./environment";
 import { escapeRegExp, isTextStruck, trackerBar } from "./tracker-page";
 
@@ -497,19 +502,20 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Las dos fechas de la nota de una vinculación, el pedido y el vencimiento,
- * en la zona de quien mira y con su formato, con el año (PF-12). Quien mira
- * en los recorridos no tiene preferencias: la zona es `PERSON_TIMEZONE` y el
- * formato, el de omisión.
- * Vence `ACCOUNT_LINK_TTL_DAYS` días después del pedido (D-E2b-11).
+ * en la zona de quien mira y con su formato de fecha, con el año (PF-12, ADR
+ * 0012). Vence `ACCOUNT_LINK_TTL_DAYS` días después del pedido (D-E2b-11).
  */
 export function linkNoteDates(
   link: AccountLink,
-  timeZone: string,
+  viewer: DateDisplay,
 ): { readonly requested: string; readonly expires: string } {
   const expiresAt = new Date(link.requestedAt.getTime() + ACCOUNT_LINK_TTL_DAYS * DAY_MS);
   return {
-    requested: numericDateLabel(dayOfInstantIn(link.requestedAt, timeZone)),
-    expires: numericDateLabel(dayOfInstantIn(expiresAt, timeZone)),
+    requested: dateLabel(
+      dayOfInstantIn(link.requestedAt, viewer.timeZone),
+      viewer.dateFormat,
+    ),
+    expires: dateLabel(dayOfInstantIn(expiresAt, viewer.timeZone), viewer.dateFormat),
   };
 }
 

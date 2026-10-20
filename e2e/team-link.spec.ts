@@ -4,18 +4,20 @@ import {
   accountCountOf,
   type AccountLink,
   accountLinkOf,
+  dateDisplayOf,
+  type DateDisplay,
   ensureOwnerGoogleAccount,
   invitationStatusOf,
   membershipStatusOf,
   seedExpiredAccountLink,
   seedGoogleAccount,
   seedPerson,
+  setDateDisplay,
   setDisplayName,
   setRole,
   userEmailOfMember,
   userIdOf,
 } from "./database";
-import { PERSON_TIMEZONE } from "./calendar-page";
 import { OWNER_EMAIL } from "./environment";
 import {
   ACCOUNT_NOT_LINKED,
@@ -101,6 +103,17 @@ async function seedLinkPerson(
 /** El dominio de un externo: fuera de `TEST_EMAIL_DOMAIN`, como en `invitations.spec.ts`. */
 const EXTERNAL_DOMAIN = "externo-e2e.test";
 
+/**
+ * La zona y el formato de fecha de un admin de los recorridos (PF-12): lejos
+ * de los predeterminados, para que las fechas de la nota prueben que son las
+ * de quien mira (ADR 0012). Tokio le lleva doce horas a Buenos Aires, así que
+ * buena parte del día el día civil es otro.
+ */
+const ADMIN_DATE_DISPLAY: DateDisplay = {
+  timeZone: "Asia/Tokyo",
+  dateFormat: "yyyy-MM-dd",
+};
+
 /** La vinculación de una persona, que el recorrido acaba de dejar: sin ella, se corta. */
 async function requestedLinkOf(email: string): Promise<AccountLink> {
   const link = await accountLinkOf(email);
@@ -161,7 +174,7 @@ test("el owner reactiva a una persona sin cuenta, que confirma y le pide la vinc
   expect(await membershipStatusOf(person)).toBe("active");
   const link = await requestedLinkOf(person);
   expect(link).toMatchObject({ valid: true, requestedBy: OWNER_EMAIL });
-  const dates = linkNoteDates(link, PERSON_TIMEZONE);
+  const dates = linkNoteDates(link, await dateDisplayOf(OWNER_EMAIL));
   await expect(
     rowNote(row, linkPendingFirstNote(dates.requested, dates.expires)),
   ).toBeVisible();
@@ -181,6 +194,7 @@ test("un admin pide otra cuenta de Google para un member con cuenta y la cancela
   const name = `Benjamín ${uniqueSuffix()}`;
   const person = await seedLinkPerson(name);
   await seedGoogleAccount(person);
+  await setDateDisplay(email, ADMIN_DATE_DISPLAY);
   await enterTeamAsAdmin(page, email);
   const row = memberRow(page, name);
 
@@ -206,7 +220,7 @@ test("un admin pide otra cuenta de Google para un member con cuenta y la cancela
   // D-E2b-6: la marca vigente, pedida por el admin; la nota del reemplazo.
   const link = await requestedLinkOf(person);
   expect(link).toMatchObject({ valid: true, requestedBy: email });
-  const dates = linkNoteDates(link, PERSON_TIMEZONE);
+  const dates = linkNoteDates(link, ADMIN_DATE_DISPLAY);
   await expect(
     rowNote(row, linkPendingReplaceNote(dates.requested, dates.expires)),
   ).toBeVisible();
@@ -235,11 +249,16 @@ test("una vinculación vencida se ve en la fila y volver a pedirla la deja vigen
   await seedExpiredAccountLink(person);
   const expired = await requestedLinkOf(person);
   expect(expired.valid).toBe(false);
+  const viewer: DateDisplay = {
+    timeZone: ADMIN_DATE_DISPLAY.timeZone,
+    dateFormat: "MM/dd/yyyy",
+  };
+  await setDateDisplay(email, viewer);
   await enterTeamAsAdmin(page, email);
   const row = memberRow(page, name);
 
   // D-E2b-11, §5.2: la fila dice cuándo se pidió y cuándo venció.
-  const old = linkNoteDates(expired, PERSON_TIMEZONE);
+  const old = linkNoteDates(expired, viewer);
   await expect(rowNote(row, linkExpiredNote(old.requested, old.expires))).toBeVisible();
 
   // §4.6: vencida, el menú ofrece volver a pedirla y cancelarla.
@@ -260,7 +279,7 @@ test("una vinculación vencida se ve en la fila y volver a pedirla la deja vigen
   const renewed = await requestedLinkOf(person);
   expect(renewed).toMatchObject({ valid: true, requestedBy: email });
   expect(renewed.requestedAt.getTime()).toBeGreaterThan(expired.requestedAt.getTime());
-  const fresh = linkNoteDates(renewed, PERSON_TIMEZONE);
+  const fresh = linkNoteDates(renewed, viewer);
   await expect(
     rowNote(row, linkPendingFirstNote(fresh.requested, fresh.expires)),
   ).toBeVisible();

@@ -9,7 +9,7 @@ import { Client } from "pg";
 
 import type { InvitationStatus } from "@/server/db/schema";
 
-import { dayKeyOf, type CivilDay } from "./days";
+import { dayKeyOf, type CivilDay, type DateFormat } from "./days";
 import { OWNER_EMAIL, PERSON_NAME, testDatabaseUrl } from "./environment";
 
 /**
@@ -526,6 +526,66 @@ export async function setDisplayName(email: string, name: string): Promise<void>
        returning user_id as id`,
       [email, name],
     );
+  });
+}
+
+/** La zona y el formato de fecha con que una persona ve las fechas (PF-12). */
+export type DateDisplay = {
+  readonly timeZone: string;
+  readonly dateFormat: DateFormat;
+};
+
+/** Los predeterminados de P-03, para quien no eligió: la zona y el formato. */
+const DEFAULT_DATE_DISPLAY: DateDisplay = {
+  timeZone: "America/Argentina/Buenos_Aires",
+  dateFormat: "dd/MM/yyyy",
+};
+
+/**
+ * Le pone a una persona su zona y su formato de fecha, como los guarda
+ * `/perfil` (PF-12). Nunca al owner, que es de toda la suite.
+ */
+export async function setDateDisplay(email: string, display: DateDisplay): Promise<void> {
+  if (email === OWNER_EMAIL) {
+    throw new Error("Las preferencias del owner son de toda la suite: no se cambian.");
+  }
+  await withDatabase(async (client) => {
+    await insertOneRow(
+      client,
+      `insert into user_preference (user_id, timezone, date_format)
+       select id, $2, $3 from "user" where email = $1
+       on conflict (user_id) do update
+         set timezone = excluded.timezone,
+             date_format = excluded.date_format,
+             updated_at = now()
+       returning user_id as id`,
+      [email, display.timeZone, display.dateFormat],
+    );
+  });
+}
+
+/**
+ * La zona y el formato de fecha con que ve una persona: los suyos, o los
+ * predeterminados de P-03 en lo que no eligió. Es lo que lee el owner, cuyas
+ * preferencias la suite no fija.
+ */
+export async function dateDisplayOf(email: string): Promise<DateDisplay> {
+  return withDatabase(async (client) => {
+    const result = await client.query<{
+      timezone: string | null;
+      date_format: DateFormat | null;
+    }>(
+      `select user_preference.timezone, user_preference.date_format
+         from "user"
+         left join user_preference on user_preference.user_id = "user".id
+        where "user".email = $1`,
+      [email],
+    );
+    const row = result.rows.at(0);
+    return {
+      timeZone: row?.timezone ?? DEFAULT_DATE_DISPLAY.timeZone,
+      dateFormat: row?.date_format ?? DEFAULT_DATE_DISPLAY.dateFormat,
+    };
   });
 }
 
