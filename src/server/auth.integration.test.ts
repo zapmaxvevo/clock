@@ -6,9 +6,11 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 import { sql } from "drizzle-orm";
 
-import { changeStatus, setAccountLink } from "@/modules/team/service";
+import { changeStatus, releaseEmail, setAccountLink } from "@/modules/team/service";
 import { workspaceRepository } from "@/modules/workspace/repository";
+import { inviteMembers } from "@/modules/workspace/service";
 import * as authRecords from "@/server/auth-records";
+import { releasedEmailOf } from "@/lib/email";
 import { db } from "@/server/db";
 import {
   account,
@@ -16,11 +18,13 @@ import {
   invitation,
   membership,
   session,
+  timeEntry,
   user,
 } from "@/server/db/schema";
 import type { Actor } from "@/server/permissions";
 import {
   fulfilledValue,
+  holdBarrier,
   queueBehindBarrier,
   waitForBlockedBackends,
 } from "@/test/concurrency";
@@ -812,6 +816,9 @@ describe("la vinculación por el callback de Google (E2b, D-E2b-3)", () => {
     expect(await accountIdsOf(person.userId)).toEqual([sub]);
     expect(await sessionUsersOf(person.userId)).toHaveLength(1);
     expect(await usersWith(person.email)).toEqual([{ id: person.userId }]);
+    expect(
+      await db.select().from(timeEntry).where(eq(timeEntry.userId, person.userId)),
+    ).toHaveLength(1);
   });
 
   it.each([
@@ -861,40 +868,35 @@ describe("la vinculación por el callback de Google (E2b, D-E2b-3)", () => {
 
   it("una marca que vence mientras el ingreso espera el bloqueo no se usa (criterio 6)", async () => {
     const person = await seedLinkable();
-    await seedAccountLink(person.membershipId, person.ownerId, "7 days -2 seconds");
+    await seedAccountLink(person.membershipId, person.ownerId, "7 days -5 seconds");
     const mark = await markOf(person.membershipId);
     const ofPerson = eq(membership.id, person.membershipId);
 
-    let release = () => {};
-    const released = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let holding = () => {};
-    const held = new Promise<void>((resolve) => {
-      holding = resolve;
-    });
     // La barrera toma la membresía sin escribir, como una desactivación en curso.
-    const barrier = db.transaction(async (tx) => {
-      await tx.select().from(membership).where(ofPerson).for("no key update");
-      holding();
-      await released;
-    });
-    await held;
+    const barrier = await holdBarrier((tx) =>
+      tx.select().from(membership).where(ofPerson).for("no key update"),
+    );
     const signIn = signInAs(person.email, randomUUID());
-    await waitForBlockedBackends({ count: 1 });
-    // Se suelta recién cuando la marca venció, sin una espera fija.
-    for (;;) {
-      const result = await db.execute<{ expired: boolean }>(sql`
-        select account_link_requested_at <= clock_timestamp() - interval '7 days' as expired
-        from membership where id = ${person.membershipId}
-      `);
-      if (result.rows[0]?.expired === true) {
-        break;
+    try {
+      await waitForBlockedBackends({ count: 1 });
+      // Se suelta recién cuando la marca venció, sin una espera fija.
+      const deadline = Date.now() + 10_000;
+      for (;;) {
+        const result = await db.execute<{ expired: boolean }>(sql`
+          select account_link_requested_at <= clock_timestamp() - interval '7 days' as expired
+          from membership where id = ${person.membershipId}
+        `);
+        if (result.rows[0]?.expired === true) {
+          break;
+        }
+        if (Date.now() > deadline) {
+          throw new Error("La marca no venció a tiempo.");
+        }
+        await new Promise((resolve) => setImmediate(resolve));
       }
-      await new Promise((resolve) => setImmediate(resolve));
+    } finally {
+      await barrier.open();
     }
-    release();
-    await barrier;
     const response = await signIn;
 
     expect(
@@ -936,15 +938,16 @@ describe("la vinculación por el callback de Google (E2b, D-E2b-3)", () => {
       ],
     );
 
-    const locations = outcomes.map((outcome) => {
+    const responses = outcomes.map((outcome) => {
       const response = fulfilledValue(outcome);
       return response instanceof Response
-        ? new URL(response.headers.get("location") ?? "", origin).searchParams.get(
-            "error",
-          )
+        ? [response.status, response.headers.get("location")]
         : "sin respuesta";
     });
-    expect(locations).toEqual([null, "account_not_linked"]);
+    expect(responses).toEqual([
+      [302, "/"],
+      [302, deniedLocation("account_not_linked")],
+    ]);
     expect(await accountIdsOf(person.userId)).toHaveLength(1);
   });
 
@@ -1051,6 +1054,27 @@ describe("la vinculación por el callback de Google (E2b, D-E2b-3)", () => {
     expect(registered.status).toBe("accepted");
   });
 
+  it("el correo liberado se invita y entra otra persona con una fila nueva; la liberada no cambia (criterio 17)", async () => {
+    const person = await seedLinkable({
+      email: `${randomUUID()}@gmail.com`,
+      status: "inactive",
+      withAccount: true,
+    });
+    await releaseEmail(person.owner, { membershipId: person.membershipId });
+    const invited = await inviteMembers(person.owner, { emails: [person.email] });
+    expect(invited.outcomes.map((outcome) => outcome.result)).toEqual(["invited"]);
+
+    const response = await signInAs(person.email, randomUUID());
+
+    expect([response.status, response.headers.get("location")]).toEqual([302, "/"]);
+    const users = await usersWith(person.email);
+    expect(users).toHaveLength(1);
+    expect(users[0]?.id).not.toBe(person.userId);
+    const [released] = await db.select().from(user).where(eq(user.id, person.userId));
+    expect(released.email).toBe(releasedEmailOf(person.userId));
+    expect(await accountIdsOf(person.userId)).toEqual([]);
+  });
+
   it("si la vinculación falla, el callback redirige a vinculacion_fallida sin escribir nada; el reintento vincula (criterio 21)", async () => {
     const person = await seedLinkable();
     await seedAccountLink(person.membershipId, person.ownerId, "1 day");
@@ -1077,5 +1101,34 @@ describe("la vinculación por el callback de Google (E2b, D-E2b-3)", () => {
 
     expect(retried.headers.get("location")).toBe("/");
     expect(await accountIdsOf(person.userId)).toEqual([sub]);
+  });
+
+  it("un fallo después de bindGoogleAccount deja las cuentas, las sesiones, la marca y las constancias como estaban (criterio 22)", async () => {
+    const person = await seedLinkable({ withAccount: true });
+    const sessionId = await seedSession(person.userId);
+    await seedAccountLink(person.membershipId, person.ownerId, "1 day");
+    const mark = await markOf(person.membershipId);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const realBind = authRecords.bindGoogleAccount;
+    const bind = vi
+      .spyOn(authRecords, "bindGoogleAccount")
+      .mockImplementationOnce(async (...args) => {
+        await realBind(...args);
+        throw new Error("Fallo inyectado después de vincular.");
+      });
+
+    const failed = await signInAs(person.email, randomUUID());
+
+    expect(bind).toHaveBeenCalledOnce();
+    expect([failed.status, failed.headers.get("location")]).toEqual([
+      302,
+      deniedLocation("vinculacion_fallida"),
+    ]);
+    expect(await accountIdsOf(person.userId)).toEqual([person.sub]);
+    expect((await sessionUsersOf(person.userId)).map((row) => row.id)).toEqual([
+      sessionId,
+    ]);
+    expect(await markOf(person.membershipId)).toEqual(mark);
+    expect(await db.select().from(auditLog)).toEqual([]);
   });
 });

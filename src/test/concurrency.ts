@@ -71,10 +71,10 @@ export async function waitForBlockedBackends({
 
 /**
  * Una tercera conexión que toma un bloqueo con `hold` y lo sostiene hasta
- * `release`; ahí lo suelta con `rollback`, para que lo que haya escrito no
- * quede. `held` resuelve cuando el bloqueo está tomado.
+ * `open`; ahí lo suelta con `rollback`, para que lo que haya escrito no quede.
+ * Resuelve cuando el bloqueo está tomado.
  */
-async function holdBarrier(hold: (tx: Transaction) => Promise<unknown>) {
+export async function holdBarrier(hold: (tx: Transaction) => Promise<unknown>) {
   let holding = () => {};
   const held = new Promise<void>((resolve) => {
     holding = resolve;
