@@ -510,7 +510,7 @@ describe("listWorkspacePeople (RP-62, RP-64; criterio 17 de R4)", () => {
     // La membresía cambia después de crearse: `updated_at` se mueve y `created_at` no.
     await db
       .update(membership)
-      .set({ weeklyCapacityMinutes: 1200 })
+      .set({ weekStart: 0 })
       .where(eq(membership.workspaceId, workspaceId));
     const stored = await db
       .select({

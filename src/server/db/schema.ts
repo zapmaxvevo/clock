@@ -1,11 +1,9 @@
 import { relations, sql } from "drizzle-orm";
 import {
   boolean,
-  char,
   check,
   foreignKey,
   index,
-  integer,
   pgEnum,
   pgTable,
   primaryKey,
@@ -46,8 +44,6 @@ export const visibilityScope = pgEnum("visibility_scope", [
 export const workspace = pgTable("workspace", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
-  logoUrl: text("logo_url"),
-  currency: char("currency", { length: 3 }).notNull().default("ARS"),
   ownerId: text("owner_id")
     .notNull()
     .references(() => user.id, { onDelete: "restrict" }),
@@ -70,23 +66,6 @@ export const workspaceSettings = pgTable("workspace_settings", {
    * no por `Actor`: ADR 0009 y ADR 0020.
    */
   whoSeesAllEntries: visibilityScope("who_sees_all_entries").notNull().default("admins"),
-  whoSeesRates: visibilityScope("who_sees_rates").notNull().default("admins"),
-  /**
-   * Sin efecto en la fase 1: crea proyectos y clientes cualquier membresía
-   * activa (P-18). Cuando lo tenga, entra en `can()` por el recurso de
-   * `project.create` y `client.create`, no por `Actor`: ADR 0009.
-   */
-  whoCreatesProjects: visibilityScope("who_creates_projects")
-    .notNull()
-    .default("everyone"),
-  requireProject: boolean("require_project").notNull().default(false),
-  requireTask: boolean("require_task").notNull().default(false),
-  requireDescription: boolean("require_description").notNull().default(false),
-  requireTag: boolean("require_tag").notNull().default(false),
-  forceTimer: boolean("force_timer").notNull().default(false),
-  timesheetEnabled: boolean("timesheet_enabled").notNull().default(true),
-  /** Minutos a los que se redondea en reportes. 0 = sin redondeo. */
-  roundingMinutes: integer("rounding_minutes").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
@@ -106,7 +85,6 @@ export const membership = pgTable(
       .references(() => user.id, { onDelete: "cascade" }),
     role: workspaceRole("role").notNull().default("member"),
     status: membershipStatus("status").notNull().default("active"),
-    weeklyCapacityMinutes: integer("weekly_capacity_minutes").notNull().default(2400),
     /** Primer día de la semana de la persona: 0 domingo … 6 sábado, como `WeekStart`. */
     weekStart: smallint("week_start").notNull().default(1),
     /**

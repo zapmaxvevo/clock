@@ -353,13 +353,11 @@ describe("el relleno de la 0013 (criterio 8, R1-D3)", () => {
     expect(forU).toMatchObject({
       role: "member",
       status: "inactive",
-      weeklyCapacityMinutes: 2400,
       weekStart: 1,
     });
     expect(forOwner).toMatchObject({
       role: "owner",
       status: "active",
-      weeklyCapacityMinutes: 2400,
       weekStart: 1,
     });
 

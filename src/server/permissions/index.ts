@@ -85,8 +85,9 @@ type ResourceByAction = {
   // `timeEntry.others.view` declara un recurso propio (ADR 0009).
   "timeEntry.others.view": WorkspaceResource;
   "report.view": WorkspaceResource;
-  // En la fase 1 `whoCreatesProjects` no entra en la decisión (P-18). Cuando
-  // entre, estas dos declaran un recurso propio que lo lleva: ADR 0009.
+  // Crean proyectos y clientes todas las membresías activas (P-18, workspace
+  // P-03). Si vuelve a ser configurable, la columna vuelve y estas dos declaran
+  // un recurso propio que la lleva: ADR 0009.
   "client.create": WorkspaceResource;
   "project.create": WorkspaceResource;
   "project.view": ProjectResource;
