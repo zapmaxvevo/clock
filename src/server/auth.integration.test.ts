@@ -4,14 +4,33 @@ import { handleOAuthUserInfo } from "better-auth/oauth2";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
+import { sql } from "drizzle-orm";
+
+import { changeStatus, setAccountLink } from "@/modules/team/service";
 import { workspaceRepository } from "@/modules/workspace/repository";
+import * as authRecords from "@/server/auth-records";
 import { db } from "@/server/db";
-import { account, membership, session, user } from "@/server/db/schema";
-import { fulfilledValue, queueBehindBarrier } from "@/test/concurrency";
+import {
+  account,
+  auditLog,
+  invitation,
+  membership,
+  session,
+  user,
+} from "@/server/db/schema";
+import type { Actor } from "@/server/permissions";
+import {
+  fulfilledValue,
+  queueBehindBarrier,
+  waitForBlockedBackends,
+} from "@/test/concurrency";
 import {
   seedAccount,
+  seedAccountLink,
   seedInvitation,
   seedMember,
+  seedSession,
+  seedTimeEntry,
   seedUser,
   seedWorkspace,
 } from "@/test/factories";
@@ -293,97 +312,130 @@ describe("una cuenta de Google se enlaza solo a la fila que creó (criterio 16)"
   });
 });
 
+/** La parte `nombre=valor` de cada `set-cookie`, como la manda el navegador. */
+function cookiesOf(response: Response): string {
+  return response.headers
+    .getSetCookie()
+    .map((value) => value.split(";")[0])
+    .join("; ");
+}
+
+function base64url(value: unknown): string {
+  return Buffer.from(JSON.stringify(value)).toString("base64url");
+}
+
+/**
+ * Un `id_token` sin firmar: el callback lo decodifica sin verificar la firma
+ * (`decodeJwt` en `getUserInfo` de `google.mjs`). Si una versión nueva la
+ * verifica, este test falla.
+ */
+function idToken(claims: Record<string, unknown>): string {
+  const now = Math.floor(Date.now() / 1000);
+  return [
+    base64url({ alg: "RS256", typ: "JWT", kid: "prueba" }),
+    base64url({
+      iss: "https://accounts.google.com",
+      aud: process.env.GOOGLE_CLIENT_ID,
+      iat: now,
+      exp: now + 3600,
+      email_verified: true,
+      name: "Nombre de Google",
+      ...claims,
+    }),
+    "firma",
+  ].join(".");
+}
+
+/**
+ * El `id_token` que responde el endpoint de token simulado para cada `code`. Lo
+ * llena `signInWithGoogle` y se vacía después de cada test.
+ */
+const idTokensByCode = new Map<string, string>();
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  idTokensByCode.clear();
+});
+
+/**
+ * Un solo reemplazo de `fetch` por test, que responde el `id_token` según el
+ * `code` del pedido al endpoint de token: dos ingresos a la vez no se pisan
+ * (§9.2 de E2b). Es el único I/O externo del camino.
+ */
+function mockGoogleTokenEndpoint() {
+  if (vi.isMockFunction(globalThis.fetch)) {
+    return;
+  }
+  const realFetch = globalThis.fetch;
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    const target = input instanceof Request ? input.url : String(input);
+    if (!target.startsWith("https://oauth2.googleapis.com/token")) {
+      return realFetch(input, init);
+    }
+    const code = new URLSearchParams(String(init?.body ?? "")).get("code") ?? "";
+    const token = idTokensByCode.get(code);
+    if (token === undefined) {
+      return Response.json({ error: "invalid_grant" }, { status: 400 });
+    }
+    return Response.json({
+      access_token: "token-de-prueba",
+      token_type: "Bearer",
+      expires_in: 3600,
+      scope: "openid email profile",
+      id_token: token,
+    });
+  });
+}
+
+/**
+ * El recorrido entero por `auth.handler`: el pedido de ingreso, y el callback
+ * con el `state` y la cookie que dejó, con su propio `code`.
+ */
+async function signInWithGoogle(claims: {
+  readonly email: string;
+  readonly sub: string;
+  readonly hd?: string;
+  readonly email_verified?: boolean;
+}) {
+  mockGoogleTokenEndpoint();
+  const started = await post("/sign-in/social", {
+    provider: "google",
+    callbackURL: "/",
+  });
+  expect(started.status).toBe(200);
+  const { url } = (await started.json()) as { url: string };
+  const authorization = new URL(url);
+  const state = authorization.searchParams.get("state");
+  const nonce = authorization.searchParams.get("nonce");
+  expect(state).not.toBeNull();
+  const code = randomUUID();
+  idTokensByCode.set(code, idToken({ ...claims, ...(nonce === null ? {} : { nonce }) }));
+
+  return auth.handler(
+    new Request(
+      `${origin}/api/auth/callback/google?code=${code}&state=${encodeURIComponent(state ?? "")}`,
+      { headers: { cookie: cookiesOf(started) } },
+    ),
+  );
+}
+
+function deniedLocation(reason: string) {
+  return `${new URL("/login", origin).toString()}?error=${reason}`;
+}
+
+async function usersWith(email: string) {
+  return db.select({ id: user.id }).from(user).where(eq(user.email, email));
+}
+
+async function sessionsWith(email: string) {
+  const [created] = await usersWith(email);
+  return db.select().from(session).where(eq(session.userId, created.id));
+}
+
 describe("el callback de Google termina en /login con el motivo (criterio 25, D-E1a-14)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
-
-  /** La parte `nombre=valor` de cada `set-cookie`, como la manda el navegador. */
-  function cookiesOf(response: Response): string {
-    return response.headers
-      .getSetCookie()
-      .map((value) => value.split(";")[0])
-      .join("; ");
-  }
-
-  function base64url(value: unknown): string {
-    return Buffer.from(JSON.stringify(value)).toString("base64url");
-  }
-
-  /**
-   * Un `id_token` sin firmar: el callback lo decodifica sin verificar la firma
-   * (`decodeJwt` en `getUserInfo` de `google.mjs`). Si una versión nueva la
-   * verifica, este test falla.
-   */
-  function idToken(claims: Record<string, unknown>): string {
-    const now = Math.floor(Date.now() / 1000);
-    return [
-      base64url({ alg: "RS256", typ: "JWT", kid: "prueba" }),
-      base64url({
-        iss: "https://accounts.google.com",
-        aud: process.env.GOOGLE_CLIENT_ID,
-        iat: now,
-        exp: now + 3600,
-        email_verified: true,
-        name: "Nombre de Google",
-        ...claims,
-      }),
-      "firma",
-    ].join(".");
-  }
-
-  /**
-   * El recorrido entero por `auth.handler`: el pedido de ingreso, y el callback
-   * con el `state` y la cookie que dejó, con el endpoint de token de Google
-   * simulado. Es el único I/O externo del camino.
-   */
-  async function signInWithGoogle(claims: { email: string; sub: string; hd?: string }) {
-    const started = await post("/sign-in/social", {
-      provider: "google",
-      callbackURL: "/",
-    });
-    expect(started.status).toBe(200);
-    const { url } = (await started.json()) as { url: string };
-    const authorization = new URL(url);
-    const state = authorization.searchParams.get("state");
-    const nonce = authorization.searchParams.get("nonce");
-    expect(state).not.toBeNull();
-
-    const realFetch = globalThis.fetch;
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      const target = input instanceof Request ? input.url : String(input);
-      if (!target.startsWith("https://oauth2.googleapis.com/token")) {
-        return realFetch(input, init);
-      }
-      return Response.json({
-        access_token: "token-de-prueba",
-        token_type: "Bearer",
-        expires_in: 3600,
-        scope: "openid email profile",
-        id_token: idToken({ ...claims, ...(nonce === null ? {} : { nonce }) }),
-      });
-    });
-
-    return auth.handler(
-      new Request(
-        `${origin}/api/auth/callback/google?code=codigo&state=${encodeURIComponent(state ?? "")}`,
-        { headers: { cookie: cookiesOf(started) } },
-      ),
-    );
-  }
-
-  function deniedLocation(reason: string) {
-    return `${new URL("/login", origin).toString()}?error=${reason}`;
-  }
-
-  async function usersWith(email: string) {
-    return db.select({ id: user.id }).from(user).where(eq(user.email, email));
-  }
-
-  async function sessionsWith(email: string) {
-    const [created] = await usersWith(email);
-    return db.select().from(session).where(eq(session.userId, created.id));
-  }
 
   it("un externo sin invitación recibe 302 a /login con sin_invitacion y no queda fila user", async () => {
     await seedWorkspace();
@@ -584,5 +636,446 @@ describe("el gancho session.create.after cierra la carrera con una desactivació
     expect(await db.select().from(session).where(eq(session.userId, personId))).toEqual(
       [],
     );
+  });
+});
+
+describe("la vinculación por el callback de Google (E2b, D-E2b-3)", () => {
+  /** Una persona en el workspace del ingreso, con o sin cuenta, y la membresía. */
+  async function seedLinkable(
+    options: {
+      readonly role?: "member" | "admin";
+      readonly status?: "active" | "inactive";
+      readonly email?: string;
+      readonly withAccount?: boolean;
+    } = {},
+  ) {
+    const { workspaceId, ownerId } = await seedWorkspace();
+    const email = options.email ?? `${randomUUID()}@empresa.com`;
+    const userId = await seedMember(
+      workspaceId,
+      options.role ?? "member",
+      options.status ?? "active",
+      { email },
+    );
+    const sub = options.withAccount === true ? await seedAccount(userId) : null;
+    const [row] = await db.select().from(membership).where(eq(membership.userId, userId));
+    const owner: Actor = {
+      userId: ownerId,
+      workspaceId,
+      role: "owner",
+      status: "active",
+    };
+    return { workspaceId, ownerId, owner, userId, email, sub, membershipId: row.id };
+  }
+
+  const hd = (email: string) =>
+    email.endsWith("@empresa.com") ? "empresa.com" : undefined;
+
+  function signInAs(email: string, sub: string) {
+    return signInWithGoogle({ email, sub, hd: hd(email) });
+  }
+
+  async function accountIdsOf(userId: string) {
+    const rows = await db
+      .select({ accountId: account.accountId })
+      .from(account)
+      .where(eq(account.userId, userId));
+    return rows.map((row) => row.accountId);
+  }
+
+  async function sessionUsersOf(userId: string) {
+    return db.select().from(session).where(eq(session.userId, userId));
+  }
+
+  async function markOf(membershipId: string) {
+    const [row] = await db
+      .select({
+        requestedAt: membership.accountLinkRequestedAt,
+        requestedById: membership.accountLinkRequestedById,
+      })
+      .from(membership)
+      .where(eq(membership.id, membershipId));
+    return row;
+  }
+
+  async function auditActions() {
+    const rows = await db
+      .select({
+        actorId: auditLog.actorId,
+        action: auditLog.action,
+        entityId: auditLog.entityId,
+        previousValue: auditLog.previousValue,
+        nextValue: auditLog.nextValue,
+      })
+      .from(auditLog);
+    return rows.sort((left, right) => left.action.localeCompare(right.action));
+  }
+
+  it("la cuenta de siempre sigue entrando con una marca pedida, y la marca queda (criterio 1)", async () => {
+    const person = await seedLinkable({ withAccount: true });
+    await setAccountLink(person.owner, { membershipId: person.membershipId, link: true });
+    const mark = await markOf(person.membershipId);
+
+    const response = await signInAs(person.email, person.sub ?? "");
+
+    expect([response.status, response.headers.get("location")]).toEqual([302, "/"]);
+    expect(await accountIdsOf(person.userId)).toEqual([person.sub]);
+    expect(await markOf(person.membershipId)).toEqual(mark);
+  });
+
+  it("un sub nuevo con una marca vigente entra a la fila: una sola cuenta, sin sesiones viejas, la marca limpia y sus constancias (criterio 2)", async () => {
+    const person = await seedLinkable({ withAccount: true });
+    const oldSession = await seedSession(person.userId);
+    await seedAccountLink(person.membershipId, person.ownerId, "1 day");
+    const newSub = randomUUID();
+
+    const response = await signInAs(person.email, newSub);
+
+    expect([response.status, response.headers.get("location")]).toEqual([302, "/"]);
+    expect(cookiesOf(response)).toMatch(/better-auth\.session_token=/);
+    expect(await accountIdsOf(person.userId)).toEqual([newSub]);
+    const sessions = await sessionUsersOf(person.userId);
+    expect(sessions.map((row) => row.id)).not.toContain(oldSession);
+    expect(sessions).toHaveLength(1);
+    expect(await markOf(person.membershipId)).toEqual({
+      requestedAt: null,
+      requestedById: null,
+    });
+    expect(await auditActions()).toEqual([
+      {
+        actorId: person.userId,
+        action: "account.link",
+        entityId: person.userId,
+        previousValue: JSON.stringify({ accounts: 1 }),
+        nextValue: null,
+      },
+      {
+        actorId: person.userId,
+        action: "membership.linkUse",
+        entityId: person.membershipId,
+        previousValue: null,
+        nextValue: JSON.stringify({ requestedById: person.ownerId }),
+      },
+      {
+        actorId: person.userId,
+        action: "session.revokeAll",
+        entityId: person.userId,
+        previousValue: JSON.stringify({ sessions: 1 }),
+        nextValue: null,
+      },
+    ]);
+    const [stored] = await db.select().from(user).where(eq(user.id, person.userId));
+    expect(stored.email).toBe(person.email);
+  });
+
+  it("la regla va primero: sin hd o sin verificar no vincula y la marca queda (criterio 3)", async () => {
+    const person = await seedLinkable();
+    await seedAccountLink(person.membershipId, person.ownerId, "1 day");
+    const mark = await markOf(person.membershipId);
+
+    const withoutHd = await signInWithGoogle({ email: person.email, sub: randomUUID() });
+    const unverified = await signInWithGoogle({
+      email: person.email,
+      sub: randomUUID(),
+      hd: "empresa.com",
+      email_verified: false,
+    });
+
+    expect([
+      withoutHd.headers.get("location"),
+      unverified.headers.get("location"),
+    ]).toEqual([
+      deniedLocation("dominio_no_habilitado"),
+      deniedLocation("email_no_verificado"),
+    ]);
+    expect(await db.select().from(account)).toEqual([]);
+    expect(await markOf(person.membershipId)).toEqual(mark);
+  });
+
+  it("reactivar sin cuenta deja entrar a un sub cualquiera con ese correo, con sus entradas (criterio 4)", async () => {
+    const person = await seedLinkable({ role: "admin", status: "inactive" });
+    await seedTimeEntry({
+      workspaceId: person.workspaceId,
+      userId: person.userId,
+      startedAt: "2026-10-02T11:00:00Z",
+      endedAt: "2026-10-02T12:00:00Z",
+    });
+    await changeStatus(person.owner, {
+      membershipId: person.membershipId,
+      status: "active",
+    });
+    const sub = randomUUID();
+
+    const response = await signInAs(person.email, sub);
+
+    expect([response.status, response.headers.get("location")]).toEqual([302, "/"]);
+    expect(await accountIdsOf(person.userId)).toEqual([sub]);
+    expect(await sessionUsersOf(person.userId)).toHaveLength(1);
+    expect(await usersWith(person.email)).toEqual([{ id: person.userId }]);
+  });
+
+  it.each([
+    ["una activa sin cuenta y sin marca", false],
+    ["una activa con cuenta y sin marca", true],
+  ])(
+    "%s con un sub nuevo termina en account_not_linked, sin cuenta ni sesión nuevas (criterio 5)",
+    async (_label, withAccount) => {
+      const person = await seedLinkable({ withAccount });
+      const before = await accountIdsOf(person.userId);
+
+      const response = await signInAs(person.email, randomUUID());
+
+      expect(response.status).toBe(302);
+      const location = new URL(response.headers.get("location") ?? "");
+      expect(location.searchParams.get("error")).toBe("account_not_linked");
+      expect(await accountIdsOf(person.userId)).toEqual(before);
+      expect(await sessionUsersOf(person.userId)).toEqual([]);
+    },
+  );
+
+  it("una marca de hace ocho días no se usa y queda; una de hace seis se usa (criterio 6)", async () => {
+    const expired = await seedLinkable();
+    await seedAccountLink(expired.membershipId, expired.ownerId, "8 days");
+    const mark = await markOf(expired.membershipId);
+
+    const denied = await signInAs(expired.email, randomUUID());
+
+    expect(new URL(denied.headers.get("location") ?? "").searchParams.get("error")).toBe(
+      "account_not_linked",
+    );
+    expect(await accountIdsOf(expired.userId)).toEqual([]);
+    expect(await markOf(expired.membershipId)).toEqual(mark);
+
+    await db
+      .update(membership)
+      .set({
+        accountLinkRequestedAt: sql`now() - interval '6 days'`,
+      })
+      .where(eq(membership.id, expired.membershipId));
+    const sub = randomUUID();
+    const allowed = await signInAs(expired.email, sub);
+
+    expect([allowed.status, allowed.headers.get("location")]).toEqual([302, "/"]);
+    expect(await accountIdsOf(expired.userId)).toEqual([sub]);
+  });
+
+  it("una marca que vence mientras el ingreso espera el bloqueo no se usa (criterio 6)", async () => {
+    const person = await seedLinkable();
+    await seedAccountLink(person.membershipId, person.ownerId, "7 days -2 seconds");
+    const mark = await markOf(person.membershipId);
+    const ofPerson = eq(membership.id, person.membershipId);
+
+    let release = () => {};
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let holding = () => {};
+    const held = new Promise<void>((resolve) => {
+      holding = resolve;
+    });
+    // La barrera toma la membresía sin escribir, como una desactivación en curso.
+    const barrier = db.transaction(async (tx) => {
+      await tx.select().from(membership).where(ofPerson).for("no key update");
+      holding();
+      await released;
+    });
+    await held;
+    const signIn = signInAs(person.email, randomUUID());
+    await waitForBlockedBackends({ count: 1 });
+    // Se suelta recién cuando la marca venció, sin una espera fija.
+    for (;;) {
+      const result = await db.execute<{ expired: boolean }>(sql`
+        select account_link_requested_at <= clock_timestamp() - interval '7 days' as expired
+        from membership where id = ${person.membershipId}
+      `);
+      if (result.rows[0]?.expired === true) {
+        break;
+      }
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    release();
+    await barrier;
+    const response = await signIn;
+
+    expect(
+      new URL(response.headers.get("location") ?? "").searchParams.get("error"),
+    ).toBe("account_not_linked");
+    expect(await db.select().from(account)).toEqual([]);
+    expect(await markOf(person.membershipId)).toEqual(mark);
+  });
+
+  it("un sub con cuenta no se vincula: el de la fila entra y la marca queda; el de otra fila no se inserta (criterio 12)", async () => {
+    const person = await seedLinkable({ withAccount: true });
+    await seedAccountLink(person.membershipId, person.ownerId, "1 day");
+    const mark = await markOf(person.membershipId);
+    const otherId = await seedMember(person.workspaceId, "member", "active");
+    const otherSub = await seedAccount(otherId);
+
+    const own = await signInAs(person.email, person.sub ?? "");
+    const foreign = await signInAs(person.email, otherSub);
+
+    expect([own.headers.get("location"), foreign.headers.get("location")]).toEqual([
+      "/",
+      "/",
+    ]);
+    expect(await accountIdsOf(person.userId)).toEqual([person.sub]);
+    expect(await accountIdsOf(otherId)).toEqual([otherSub]);
+    expect(await markOf(person.membershipId)).toEqual(mark);
+  });
+
+  it("dos ingresos a la vez con dos sub: uno vincula y el otro termina en account_not_linked; queda una cuenta (criterio 13)", async () => {
+    const person = await seedLinkable();
+    await seedAccountLink(person.membershipId, person.ownerId, "1 day");
+    const ofPerson = eq(membership.id, person.membershipId);
+
+    const outcomes = await queueBehindBarrier(
+      (tx) => tx.select().from(membership).where(ofPerson).for("no key update"),
+      [
+        () => signInAs(person.email, randomUUID()),
+        () => signInAs(person.email, randomUUID()),
+      ],
+    );
+
+    const locations = outcomes.map((outcome) => {
+      const response = fulfilledValue(outcome);
+      return response instanceof Response
+        ? new URL(response.headers.get("location") ?? "", origin).searchParams.get(
+            "error",
+          )
+        : "sin respuesta";
+    });
+    expect(locations).toEqual([null, "account_not_linked"]);
+    expect(await accountIdsOf(person.userId)).toHaveLength(1);
+  });
+
+  it("si la desactivación bloquea primero, el ingreso no vincula y termina en membresia_inactiva (criterio 14)", async () => {
+    const person = await seedLinkable();
+    await seedAccountLink(person.membershipId, person.ownerId, "1 day");
+    const ofPerson = eq(membership.id, person.membershipId);
+
+    const [deactivation, signIn] = await queueBehindBarrier(
+      (tx) => tx.select().from(membership).where(ofPerson).for("no key update"),
+      [
+        () =>
+          changeStatus(person.owner, {
+            membershipId: person.membershipId,
+            status: "inactive",
+          }),
+        () => signInAs(person.email, randomUUID()),
+      ],
+    );
+
+    expect(deactivation.status).toBe("fulfilled");
+    const response = fulfilledValue(signIn);
+    expect(response instanceof Response && response.headers.get("location")).toBe(
+      deniedLocation("membresia_inactiva"),
+    );
+    expect(await db.select().from(account)).toEqual([]);
+    expect(await sessionUsersOf(person.userId)).toEqual([]);
+  });
+
+  it("si el ingreso bloquea primero, vincula; la desactivación espera y confirma, y la persona termina sin sesión (criterio 14)", async () => {
+    const person = await seedLinkable();
+    await seedAccountLink(person.membershipId, person.ownerId, "1 day");
+    const ofPerson = eq(membership.id, person.membershipId);
+    const sub = randomUUID();
+
+    const [signIn, deactivation] = await queueBehindBarrier(
+      (tx) => tx.select().from(membership).where(ofPerson).for("no key update"),
+      [
+        () => signInAs(person.email, sub),
+        () =>
+          changeStatus(person.owner, {
+            membershipId: person.membershipId,
+            status: "inactive",
+          }),
+      ],
+    );
+
+    expect([signIn.status, deactivation.status]).toEqual(["fulfilled", "fulfilled"]);
+    expect(await accountIdsOf(person.userId)).toEqual([sub]);
+    const [row] = await db
+      .select({ status: membership.status })
+      .from(membership)
+      .where(ofPerson);
+    expect(row.status).toBe("inactive");
+    expect(await sessionUsersOf(person.userId)).toEqual([]);
+  });
+
+  it("un externo con la vinculación pedida queda registrado, entra por el callback y vincula (criterio 15)", async () => {
+    const person = await seedLinkable({ email: `${randomUUID()}@gmail.com` });
+    await setAccountLink(person.owner, { membershipId: person.membershipId, link: true });
+    const sub = randomUUID();
+
+    const response = await signInAs(person.email, sub);
+
+    expect([response.status, response.headers.get("location")]).toEqual([302, "/"]);
+    expect(await accountIdsOf(person.userId)).toEqual([sub]);
+    const [registered] = await db
+      .select({ status: invitation.status })
+      .from(invitation)
+      .where(eq(invitation.email, person.email));
+    expect(registered.status).toBe("accepted");
+  });
+
+  it("un externo activo con cuenta y la invitación revocada entra con su cuenta apenas se pide la vinculación, y sigue después de cancelarla (criterio 15)", async () => {
+    const person = await seedLinkable({
+      email: `${randomUUID()}@gmail.com`,
+      withAccount: true,
+    });
+    await seedInvitation({
+      workspaceId: person.workspaceId,
+      email: person.email,
+      status: "revoked",
+    });
+    const sub = person.sub ?? "";
+
+    const before = await signInAs(person.email, sub);
+    await setAccountLink(person.owner, { membershipId: person.membershipId, link: true });
+    const requested = await signInAs(person.email, sub);
+    await setAccountLink(person.owner, {
+      membershipId: person.membershipId,
+      link: false,
+    });
+    const cancelled = await signInAs(person.email, sub);
+
+    expect([
+      before.headers.get("location"),
+      requested.headers.get("location"),
+      cancelled.headers.get("location"),
+    ]).toEqual([deniedLocation("sin_invitacion"), "/", "/"]);
+    const [registered] = await db
+      .select({ status: invitation.status })
+      .from(invitation)
+      .where(eq(invitation.email, person.email));
+    expect(registered.status).toBe("accepted");
+  });
+
+  it("si la vinculación falla, el callback redirige a vinculacion_fallida sin escribir nada; el reintento vincula (criterio 21)", async () => {
+    const person = await seedLinkable();
+    await seedAccountLink(person.membershipId, person.ownerId, "1 day");
+    const mark = await markOf(person.membershipId);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const bind = vi
+      .spyOn(authRecords, "bindGoogleAccount")
+      .mockRejectedValueOnce(new Error("Fallo inyectado al vincular."));
+    const sub = randomUUID();
+
+    const failed = await signInAs(person.email, sub);
+
+    expect(bind).toHaveBeenCalledOnce();
+    expect([failed.status, failed.headers.get("location")]).toEqual([
+      302,
+      deniedLocation("vinculacion_fallida"),
+    ]);
+    expect(await db.select().from(account)).toEqual([]);
+    expect(await sessionUsersOf(person.userId)).toEqual([]);
+    expect(await db.select().from(auditLog)).toEqual([]);
+    expect(await markOf(person.membershipId)).toEqual(mark);
+
+    const retried = await signInAs(person.email, sub);
+
+    expect(retried.headers.get("location")).toBe("/");
+    expect(await accountIdsOf(person.userId)).toEqual([sub]);
   });
 });

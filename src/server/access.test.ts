@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   accessDenialMessage,
+  ACCOUNT_LINK_TTL_DAYS,
+  callbackErrorMessage,
   decideGoogleAccess,
   decideStoredEmail,
   decideStoredIdentity,
@@ -11,6 +13,7 @@ import {
   type AccessPolicy,
   type EntryFacts,
   type GoogleProfile,
+  usesAccountLink,
   verifiedEmailOf,
 } from "./access";
 
@@ -537,5 +540,64 @@ describe("loginErrorMessage (criterio 24 de E1a)", () => {
 
   it("no da ningún aviso sin parámetro", () => {
     expect(loginErrorMessage(undefined)).toBeNull();
+  });
+});
+
+describe("loginErrorMessage con los códigos de E2b (D-E2b-10, criterio 20)", () => {
+  it("account_not_linked da el texto de EQ-122, que es el de callbackErrorMessage", () => {
+    expect(loginErrorMessage("account_not_linked")).toBe(
+      "Ya hay una persona en Clock con ese correo. Pedile a quien administra el equipo que revise tu acceso.",
+    );
+    expect(loginErrorMessage("account_not_linked")).toBe(
+      callbackErrorMessage.account_not_linked,
+    );
+  });
+
+  it("vinculacion_fallida da el genérico", () => {
+    expect(loginErrorMessage("vinculacion_fallida")).toBe(
+      "No se pudo iniciar sesión. Volvé a intentar.",
+    );
+  });
+
+  it("un motivo sigue dando su texto y uno desconocido, el genérico", () => {
+    expect(loginErrorMessage("membresia_inactiva")).toBe(
+      accessDenialMessage.membresia_inactiva,
+    );
+    expect(loginErrorMessage("account_not_linked_")).toBe(
+      "No se pudo iniciar sesión. Volvé a intentar.",
+    );
+  });
+});
+
+describe("usesAccountLink (D-E2b-3)", () => {
+  const statuses = ["active", "inactive", "invited", null] as const;
+
+  it("solo con la regla que deja entrar, la membresía activa y la marca vigente", () => {
+    const decisions = [
+      allowed,
+      notInvited,
+      { allowed: false, reason: "dominio_no_habilitado" },
+      { allowed: false, reason: "membresia_inactiva" },
+    ] as const;
+    const uses: unknown[] = [];
+    for (const decision of decisions) {
+      for (const membership of statuses) {
+        for (const accountLink of [true, false]) {
+          if (usesAccountLink(decision, facts({ membership, accountLink }))) {
+            uses.push([decision, membership, accountLink]);
+          }
+        }
+      }
+    }
+    expect(uses).toEqual([[allowed, "active", true]]);
+  });
+
+  it("NO_ENTRY_FACTS no tiene marca", () => {
+    expect(NO_ENTRY_FACTS.accountLink).toBe(false);
+    expect(usesAccountLink(allowed, NO_ENTRY_FACTS)).toBe(false);
+  });
+
+  it("los días de la vinculación son siete (D-E2b-11)", () => {
+    expect(ACCOUNT_LINK_TTL_DAYS).toBe(7);
   });
 });

@@ -14,6 +14,7 @@ import {
 import type { Actor } from "@/server/permissions";
 import { outcomeWhileHeld, warmPool, waitForBlockedBackends } from "@/test/concurrency";
 import {
+  seedAccountLink,
   seedInvitation,
   seedMember,
   seedPreferences,
@@ -27,9 +28,12 @@ import { actorIn } from "@/test/time-entry";
 import { workspaceRepository } from "./repository";
 import {
   ensureWorkspaceContext,
+  entryFactsOf,
   entryMembershipStatusLocked,
+  entryWorkspaceIdOf,
   isMembershipActiveLocked,
   listWorkspacePeople,
+  registerExternalMember,
   weekStartOf,
   type WorkspaceContext,
 } from "./service";
@@ -642,5 +646,151 @@ describe("las lecturas con bloqueo de E2 (D-E2-2, D-E2-6)", () => {
         db.transaction((tx) => entryMembershipStatusLocked(tx, userId)),
       ),
     ).toBe("blocked");
+  });
+});
+
+describe("entryFactsOf con la vinculación (D-E2b-3, D-E2b-11)", () => {
+  async function seedMarked(age?: string) {
+    const { workspaceId, ownerId } = await seedWorkspace();
+    const userId = await seedMember(workspaceId, "member", "active", {
+      email: " Ana@Empresa.com",
+    });
+    const own = await db.select().from(membership).where(eq(membership.userId, userId));
+    if (age !== undefined) {
+      await seedAccountLink(own[0]?.id ?? "", ownerId, age);
+    }
+    return { workspaceId, userId };
+  }
+
+  it.each([
+    ["vigente", "1 day", true],
+    ["vencida", "8 days", false],
+    ["sin marca", undefined, false],
+  ] as const)("con una marca %s da accountLink %s", async (_label, age, expected) => {
+    await seedMarked(age);
+
+    expect(await entryFactsOf("ana@empresa.com")).toEqual({
+      bootstrap: false,
+      invitation: null,
+      membership: "active",
+      accountLink: expected,
+    });
+  });
+
+  it("con dos `user` del mismo correo normalizado da accountLink false, aunque una tenga la marca", async () => {
+    await seedMarked("1 day");
+    await seedUser("ana@empresa.com");
+
+    expect(await entryFactsOf("ana@empresa.com")).toMatchObject({
+      membership: null,
+      accountLink: false,
+    });
+  });
+
+  it("solo mira la marca del workspace más viejo", async () => {
+    const { userId } = await seedMarked();
+    const { workspaceId: newer, ownerId } = await seedWorkspace();
+    const [row] = await db
+      .insert(membership)
+      .values({ workspaceId: newer, userId, role: "member" })
+      .returning();
+    await seedAccountLink(row?.id ?? "", ownerId, "1 day");
+
+    expect((await entryFactsOf("ana@empresa.com")).accountLink).toBe(false);
+  });
+});
+
+describe("entryWorkspaceIdOf (D-E2b-3)", () => {
+  it("el workspace más viejo, o null sin workspace", async () => {
+    expect(await db.transaction((tx) => entryWorkspaceIdOf(tx))).toBeNull();
+
+    const { workspaceId: oldest } = await seedWorkspace();
+    await seedWorkspace();
+
+    expect(await db.transaction((tx) => entryWorkspaceIdOf(tx))).toBe(oldest);
+  });
+});
+
+describe("registerExternalMember (D-E2b-8, criterio 15 de E2b)", () => {
+  function register(actor: Actor, email: string) {
+    return db.transaction((tx) => registerExternalMember(tx, actor, email));
+  }
+
+  it("sin invitación inserta una accepted con quien actúa, con el correo normalizado, y deja invitation.register", async () => {
+    const { workspaceId, ownerId } = await seedWorkspace();
+    const actor = actorIn(workspaceId, ownerId, { role: "owner" });
+
+    expect(await register(actor, " Ana@Gmail.com ")).toBe(true);
+
+    const row = await invitationOf(workspaceId, "ana@gmail.com");
+    expect(row).toMatchObject({
+      status: "accepted",
+      invitedById: ownerId,
+      revokedAt: null,
+      revokedById: null,
+    });
+    expect(row?.acceptedAt).toBeInstanceOf(Date);
+    expect(await auditFor("invitation")).toMatchObject([
+      {
+        workspaceId,
+        actorId: ownerId,
+        action: "invitation.register",
+        entityId: row?.id,
+        previousValue: null,
+        nextValue: JSON.stringify({ status: "accepted" }),
+      },
+    ]);
+  });
+
+  it("con una revoked la pasa a accepted, sin la revocación, y deja invitation.register", async () => {
+    const { workspaceId, ownerId } = await seedWorkspace();
+    const actor = actorIn(workspaceId, ownerId, { role: "owner" });
+    const revoked = await seedInvitation({
+      workspaceId,
+      email: "ana@gmail.com",
+      status: "revoked",
+      invitedById: ownerId,
+    });
+    await db
+      .update(invitation)
+      .set({ revokedById: ownerId })
+      .where(eq(invitation.id, revoked.id));
+
+    expect(await register(actor, "ana@gmail.com")).toBe(true);
+
+    expect(await invitationOf(workspaceId, "ana@gmail.com")).toMatchObject({
+      id: revoked.id,
+      status: "accepted",
+      revokedAt: null,
+      revokedById: null,
+    });
+    expect(await auditFor("invitation")).toMatchObject([
+      {
+        action: "invitation.register",
+        entityId: revoked.id,
+        previousValue: JSON.stringify({ status: "revoked" }),
+      },
+    ]);
+  });
+
+  it.each(["pending", "accepted"] as const)("con una %s no escribe", async (status) => {
+    const { workspaceId, ownerId } = await seedWorkspace();
+    const actor = actorIn(workspaceId, ownerId, { role: "owner" });
+    const before = await seedInvitation({ workspaceId, email: "ana@gmail.com", status });
+
+    expect(await register(actor, "ana@gmail.com")).toBe(false);
+
+    expect(await invitationOf(workspaceId, "ana@gmail.com")).toEqual(before);
+    expect(await auditFor("invitation")).toEqual([]);
+  });
+
+  it("un correo de los dominios no escribe", async () => {
+    const { workspaceId, ownerId } = await seedWorkspace();
+    const actor = actorIn(workspaceId, ownerId, { role: "owner" });
+
+    expect(await register(actor, "Ana@Empresa.com")).toBe(false);
+
+    expect(await invitationOf(workspaceId, "ana@empresa.com")).toBeUndefined();
+    expect(await auditFor("invitation")).toEqual([]);
   });
 });
