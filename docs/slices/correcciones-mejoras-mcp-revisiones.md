@@ -193,7 +193,8 @@ con host que el plugin sí registra, y con una aserción sobre el destino
 
 ## Corridas
 
-Base `clock_mcp_back` en `clock-pg`, migrada con `0017_mcp`.
+Base `clock_mcp_back` en `clock-pg`, migrada con `0017_mcp` (desde el
+2026-10-20, `0018_mcp`: ver «Rebase sobre E2b»).
 
 - `npm run lint`: limpio.
 - `npm run typecheck`: limpio.
@@ -206,3 +207,60 @@ Base `clock_mcp_back` en `clock-pg`, migrada con `0017_mcp`.
   `.well-known`, dinámicos.
 - `npm run auth:schema` sin `MCP_ENABLED` y con `MCP_ENABLED=true`: sin cambios
   en `auth-schema.ts`; `db:generate`: «No schema changes».
+
+## Rebase sobre E2b (2026-10-20)
+
+`mejoras/mcp` rebasada en local sobre `main` en `80e2f6c` (merge de E2b, con la
+`0017_membership_account_link` aplicada en producción). El commit temporal de
+V-7 se queda en la rama para el preview.
+
+**Conflictos y cómo quedaron:**
+
+- `e2e/database.ts`: las funciones de E2b (`ensureOwnerGoogleAccount`,
+  `accountCountOf`, la vinculación) y `grantCountOf` del MCP, todas.
+- `team/service.ts`: los imports de los dos; el comentario de `writeStatus`
+  junta la cancelación de la vinculación (D-E2b-7) y el borrado de las
+  autorizaciones (D-MCP-6), con el orden de bloqueos del MCP.
+- `workspace/service.ts` y `auth-records.ts`: los imports de los dos y, en
+  `auth-records`, las funciones de E2b junto a `findSessionUser`.
+- `team/service.integration.test.ts`: los dos `vi.mock` y las cuatro banderas
+  de fallo inyectado.
+- Las constancias que E2b arma con un `Actor` (`membership.linkRequest`,
+  `membership.linkCancel`, `invitation.register`, `account.link`,
+  `user.releaseEmail`) pasan a `auditActorOf`, como pide D-MCP-12.
+  `membership.linkUse` e `invitation.accept` se arman en el ingreso, sin actor,
+  y quedan como estaban.
+
+**La migración.** La `0017_mcp` de la rama se descartó (con su instantánea y
+su entrada del diario, que quedan las de E2b) y se regeneró en el mismo commit
+del servidor con `npm run db:generate -- --name mcp` sobre el esquema rebasado:
+sale **`0018_mcp`**, `when` `1792501602020` (mayor que el `1792456513460` de la
+`0017`). El SQL es idéntico byte a byte al de la `0017_mcp` anterior: solo las
+tablas del plugin, `mcp_call_window` y `audit_log.oauth_client_id`. La
+instantánea `0018` tiene `prevId` igual al `id` de la `0017` de E2b, y se
+diferencia de ella solo en las tablas del MCP y en `audit_log`. Un
+`db:generate` después: «No schema changes». En `clock_mcp_rb_a`, una base nueva,
+`db:migrate` aplica las 19, de la `0000` a la `0018`. El mensaje del commit del
+servidor (`1af26c5`) todavía dice `0017_mcp`: el rebase no lo reescribe.
+
+**El hallazgo condicional de security de E2b** (§1, el MCP mergea segundo):
+`bindGoogleAccount` llama a `deleteGrantsOf(tx, person, person.userId)` y
+`releaseEmailOf` a `deleteGrantsOf(tx, actor, userId)`, las dos justo después
+de `deleteSessionsOf`. La firma de `deleteGrantsOf` ya era
+`(tx, actor, userId)`. Tests:
+
+- `auth-records.integration.test.ts`: después de vincular y de liberar, la
+  persona no tiene consentimientos, refresh ni tokens de acceso; los de otra
+  persona con el mismo cliente quedan; hay un `mcp.revokeAll` con la cantidad
+  de clientes y el autor de cada caso.
+- Los dos todo o nada del criterio 22 de E2b (`auth.integration.test.ts` y
+  `team/service.integration.test.ts`) suman una autorización y la encuentran
+  entera después del fallo.
+- **Mutante**: sin las dos llamadas, fallan los dos casos nuevos de
+  `auth-records.integration.test.ts` (2 de 13); revertido sin commitear.
+
+**Corridas** (base `clock_mcp_rb_a`):
+
+- `npm run lint` y `npm run typecheck`: limpios.
+- `npm test`: 109 archivos, 2520 tests; `test:time-ar`, 2 archivos, 305 tests.
+- `npm run test:integration`: 39 archivos, 2111 tests.

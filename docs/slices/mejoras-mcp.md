@@ -697,10 +697,18 @@ toca lo mismo en tres lugares:
   `auth-records.integration.test.ts` y en los criterios de todo o nada de E2b.
   Si mergea primero, lo anota en el registro de E2b para que lo sume E2b.
 
+> **Nota del 2026-10-20.** E2b mergeó primero (`80e2f6c`). Con el rebase de
+> `mejoras/mcp` sobre `main`, la migración del MCP es **`0018_mcp`**,
+> regenerada con `db:generate -- --name mcp` sobre el esquema rebasado (el SQL
+> es el mismo de la `0017_mcp` anterior), y `bindGoogleAccount` y
+> `releaseEmailOf` llaman a `deleteGrantsOf` después de `deleteSessionsOf`
+> (detalle en el registro, «Rebase sobre E2b»).
+
 ## 2. Esquema y migración
 
-Una migración, `0017_mcp` (o la que siga, §1), con `npm run auth:schema` y
-después `npm run db:generate`. Todo es aditivo.
+Una migración, `0018_mcp` (era `0017_mcp` antes del rebase sobre E2b; nota
+del 2026-10-20 en §1), con `npm run auth:schema` y después
+`npm run db:generate`. Todo es aditivo.
 
 - **Las tablas del plugin**, generadas en `src/server/db/auth-schema.ts` por
   `npm run auth:schema` con el plugin y `jwt` configurados: los modelos
@@ -2109,7 +2117,7 @@ usuario en §6.6 y §6.7; el límite de frecuencia, el tamaño del cuerpo, el
 - **Una pestaña abierta no ve lo que cargó el asistente** hasta navegar o
   recargar (D-MCP-7), como con otro dispositivo.
 - **El merge con E2b**: dos migraciones `0017` y `writeStatus` editada en los
-  dos (§1).
+  dos (§1). Resuelto el 2026-10-20: la del MCP pasó a `0018_mcp` (§1).
 - **Las variables de producción**: encender sin volver a desplegar no hace
   nada (§6.3).
 
