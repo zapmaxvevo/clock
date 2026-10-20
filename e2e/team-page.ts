@@ -497,7 +497,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Las dos fechas de la nota de una vinculación, el pedido y el vencimiento,
- * en la zona de quien mira y con su formato, el de omisión en la suite.
+ * en la zona de quien mira y con su formato, con el año (PF-12). Quien mira
+ * en los recorridos no tiene preferencias: la zona es `PERSON_TIMEZONE` y el
+ * formato, el de omisión.
  * Vence `ACCOUNT_LINK_TTL_DAYS` días después del pedido (D-E2b-11).
  */
 export function linkNoteDates(

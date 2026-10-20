@@ -14,8 +14,8 @@ import {
   setRole,
   userEmailOfMember,
   userIdOf,
-  workspaceTimeZone,
 } from "./database";
+import { PERSON_TIMEZONE } from "./calendar-page";
 import { OWNER_EMAIL } from "./environment";
 import {
   ACCOUNT_NOT_LINKED,
@@ -161,7 +161,7 @@ test("el owner reactiva a una persona sin cuenta, que confirma y le pide la vinc
   expect(await membershipStatusOf(person)).toBe("active");
   const link = await requestedLinkOf(person);
   expect(link).toMatchObject({ valid: true, requestedBy: OWNER_EMAIL });
-  const dates = linkNoteDates(link, await workspaceTimeZone());
+  const dates = linkNoteDates(link, PERSON_TIMEZONE);
   await expect(
     rowNote(row, linkPendingFirstNote(dates.requested, dates.expires)),
   ).toBeVisible();
@@ -206,7 +206,7 @@ test("un admin pide otra cuenta de Google para un member con cuenta y la cancela
   // D-E2b-6: la marca vigente, pedida por el admin; la nota del reemplazo.
   const link = await requestedLinkOf(person);
   expect(link).toMatchObject({ valid: true, requestedBy: email });
-  const dates = linkNoteDates(link, await workspaceTimeZone());
+  const dates = linkNoteDates(link, PERSON_TIMEZONE);
   await expect(
     rowNote(row, linkPendingReplaceNote(dates.requested, dates.expires)),
   ).toBeVisible();
@@ -237,10 +237,9 @@ test("una vinculación vencida se ve en la fila y volver a pedirla la deja vigen
   expect(expired.valid).toBe(false);
   await enterTeamAsAdmin(page, email);
   const row = memberRow(page, name);
-  const timeZone = await workspaceTimeZone();
 
   // D-E2b-11, §5.2: la fila dice cuándo se pidió y cuándo venció.
-  const old = linkNoteDates(expired, timeZone);
+  const old = linkNoteDates(expired, PERSON_TIMEZONE);
   await expect(rowNote(row, linkExpiredNote(old.requested, old.expires))).toBeVisible();
 
   // §4.6: vencida, el menú ofrece volver a pedirla y cancelarla.
@@ -261,7 +260,7 @@ test("una vinculación vencida se ve en la fila y volver a pedirla la deja vigen
   const renewed = await requestedLinkOf(person);
   expect(renewed).toMatchObject({ valid: true, requestedBy: email });
   expect(renewed.requestedAt.getTime()).toBeGreaterThan(expired.requestedAt.getTime());
-  const fresh = linkNoteDates(renewed, timeZone);
+  const fresh = linkNoteDates(renewed, PERSON_TIMEZONE);
   await expect(
     rowNote(row, linkPendingFirstNote(fresh.requested, fresh.expires)),
   ).toBeVisible();
