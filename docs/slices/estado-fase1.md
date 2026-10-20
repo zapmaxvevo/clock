@@ -318,17 +318,26 @@ vacío del owner y `renewWorkspace` se corta.
        renumera si el MCP mergea antes) y merge. Avisos de e2e: un flake no reproducido (el menú
        no cerró con Escape tras cancelar) y `/equipo` lento con ~1.100 membresías (preexistente).
      - **MCP en implementación** (`clock-mcp`, con `node_modules` propio): tipos `d03965b`,
-       backend parcial `839de45`, frontend `0781654` y `fadb0a0`, e2e `0079109`. Al cortar,
-       `mcp-back` arreglaba un bug que encontró la e2e: «Conectar» siempre falla porque
-       `submitConsent` (`mcp-context.ts:176`) llama a `auth.api.oauth2Consent` sin `Request`
-       (`authorize-dkOG8GqZ.mjs:5643`); falta además el handler y `/api/mcp`. `mcp-tests` cerró la integración en `48d7c49`: 106 tests propios en verde, `test:integration` completo en 1989, y 33 mutaciones detectadas. Para las revisiones deja estos puntos:
+       backend parcial `839de45`, frontend `0781654` y `fadb0a0`, e2e `0079109`. `mcp-back` cerró en verde, con commits `839de45`, `a467ec6`, `481c5d2` y `938576b`: unidad 2399 + 305, integración 1999, build, y 15 de 15 mutaciones detectadas. Registro en `correcciones-mejoras-mcp-revisiones.md`.
+       - **Arreglos:** «Conectar» funciona: `submitConsent` ahora pasa un `Request`. «Cancelar» de la vista forbidden también anda. `auth:schema` usa `npx auth@1.7.10`.
+       - **V-8 cerrada.** El SDK valida la forma; una herramienta desconocida da `isError` y no un error JSON-RPC, así que hay que enmendar §4.17.
+       - **V-7, cerrada por documentación salvo lo que se ve en el preview:**
+         - claude.ai vuelve a `https://claude.ai/api/mcp/auth_callback`; claude.com no aparece y salió de la lista.
+         - Claude Code y Codex usan loopback.
+         - ChatGPT vuelve a `connector_platform_oauth_redirect` (RFC 9207, que el plugin cumple).
+         - Todos registran por DCR, así que el script de §4.16 no hace falta.
+         - En el preview quedan por capturar los cuerpos reales del registro, el `Origin` y qué hace cada cliente con `destructiveHint`.
+       - **Desvíos:** las funciones puras pasaron a `src/lib/oauth.ts`. Las tablas son snake_case y tienen `on delete cascade` hacia `user`, así que la consulta de §6.5 usa `oauth_consent` y `user_id`. `/admin/oauth2/resources` va a `disabledPaths`.
+       - **Para security:** los metadatos anuncian `introspection_endpoint`, que responde 404. Un token con `cnf` (DPoP) sirve como portador. `destructiveHint` queda en true por omisión en create, start y stop. `oauth_resource` se siembra aun con el MCP apagado.
+       - **La migración es `0017_mcp`.** E2b trae otra `0017`, y el que mergee segundo renumera.
+         `mcp-tests` cerró la integración en `48d7c49`: 106 tests propios en verde, `test:integration` completo en 1989, y 33 mutaciones detectadas. Para las revisiones deja estos puntos:
        - El 429 del registro solo se prueba con el limitador encendido en el test.
        - Para security: el plugin limita por IP `/oauth2/token` a 20 cada 60 s y `/oauth2/authorize` a 30 cada 60 s (`authorize-dkOG8GqZ.mjs:5371-5414`). Con conectores remotos, toda la empresa sale por las IP del proveedor, y D-MCP-13 no lo nombra.
        - El contrato no coincide en dos puntos: §2 dice «sin cascada», pero las tablas generadas tienen `on delete cascade` hacia `user`; y §4.17 dice que una herramienta desconocida da error JSON-RPC, pero el SDK responde `isError`.
        - Los cuerpos de registro de claude.ai y de ChatGPT hay que reemplazarlos por los capturados en el preview.
-       - La prueba de `auth:schema` sin `MCP_ENABLED` queda pendiente.
-         **Sigue:** terminar backend, integración y e2e en
-         verde, el **preview con el usuario** para cerrar V-7 (conectar claude.ai, ChatGPT y Codex:
+       - La prueba de `auth:schema` sin `MCP_ENABLED` la hizo `mcp-back`: no cambia el esquema.
+       - **Sigue:** e2e del MCP contra HEAD (`mcp-e2e` esperaba el arreglo de «Conectar», ya en
+         `a467ec6`), el **preview con el usuario** para cerrar V-7 (conectar claude.ai, ChatGPT y Codex:
          direcciones de vuelta, cuerpos de registro, `resource`), revisiones con security-auditor,
          migración y merge con `MCP_ENABLED` apagado.
      - Worktrees que se pueden borrar: `clock-c1`, `clock-e2`, `clock-ba`. Los agentes de esta
