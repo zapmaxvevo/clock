@@ -16,7 +16,6 @@ import {
   formatDecimalHours,
   formatDuration,
   formatElapsed,
-  roundMinutes,
   truncatedHours,
   addDaysToKey,
   clockDifferenceMinutes,
@@ -881,17 +880,6 @@ describe("formatDecimalHours (D-R6-6, D-R6-9; criterio 1 de R6)", () => {
 
   it("da 0,00 con un valor negativo, como formatDuration", () => {
     expect(formatDecimalHours(-5)).toBe("0,00");
-  });
-});
-
-describe("roundMinutes", () => {
-  it("redondea hacia arriba al paso configurado", () => {
-    expect(roundMinutes(1, 15)).toBe(15);
-    expect(roundMinutes(16, 15)).toBe(30);
-  });
-
-  it("deja la duración intacta con paso 0", () => {
-    expect(roundMinutes(17, 0)).toBe(17);
   });
 });
 

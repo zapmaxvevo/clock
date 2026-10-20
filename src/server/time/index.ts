@@ -87,14 +87,6 @@ export function formatDecimalHours(minutes: number): string {
   return truncatedHours(minutes).toFixed(2).replace(".", ",");
 }
 
-/** Redondeo de reportes. 0 minutos deja la duración como está. */
-export function roundMinutes(minutes: number, step: number): number {
-  if (step <= 0) {
-    return minutes;
-  }
-  return Math.ceil(minutes / step) * step;
-}
-
 /** Inicio del día local en que cae el instante: su primer instante real. */
 export function startOfLocalDay(instant: Date, timeZone: string): Date {
   return startOfDayKey(dayKey(instant, timeZone), timeZone);
