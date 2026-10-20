@@ -64,3 +64,13 @@ hasta la `0016`, con las doce columnas presentes. Sin cambios en `e2e/`.
 
 Sin fallos ni flakes: ningún spec se repitió. Ruido sin fallos, el de siempre:
 18 `Error: The destination stream closed early.` de Next en el log del servidor.
+
+## Correcciones de las revisiones de A
+
+- `afae472`: sale `roundMinutes` de `src/server/time/index.ts`, con su
+  `describe` y su import en `time.test.ts`. Sin `rounding_minutes` quedaba sin
+  llamador, y su comentario «Redondeo de reportes» describía algo que no existe
+  (menor de clean code; lo decidió el team-lead). `npm run lint`,
+  `npm run typecheck` y `npm test` en verde: 95 archivos y 2286 tests, y 2 y 303
+  en `TZ=America/Argentina/Buenos_Aires`; los dos tests menos de cada corrida
+  son los del `describe`.
