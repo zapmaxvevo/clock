@@ -634,6 +634,125 @@ describe("team.admin.setStatus sobre una membresía admin (E2, D-E2-4, P-07)", (
   });
 });
 
+describe.each(["team.account.link", "team.email.release"] as const)(
+  "%s sobre una membresía (E2b, D-E2b-4)",
+  (action) => {
+    const roles = [
+      "owner",
+      "admin",
+      "project_manager",
+      "team_manager",
+      "member",
+    ] as const;
+    const member = {
+      kind: "membership",
+      workspaceId,
+      userId: "u2",
+      role: "member",
+    } as const;
+    const ownerMembership = { ...member, role: "owner" } as const;
+
+    it("el owner y el admin activos lo hacen sobre un member; el resto, no", () => {
+      expect(roles.map((role) => [role, can(actor(role), action, member)])).toEqual([
+        ["owner", true],
+        ["admin", true],
+        ["project_manager", false],
+        ["team_manager", false],
+        ["member", false],
+      ]);
+    });
+
+    it("sobre la membresía del owner, solo el owner, también la propia", () => {
+      expect([
+        can(actor("owner"), action, ownerMembership),
+        can(actor("owner"), action, { ...ownerMembership, userId: "u1" }),
+        can(actor("admin"), action, ownerMembership),
+      ]).toEqual([true, true, false]);
+    });
+
+    it("no mira si la fila es admin: eso lo pide `team.admin.account`", () => {
+      expect(can(actor("admin"), action, { ...member, role: "admin" })).toBe(true);
+    });
+
+    it("un owner o un admin inactive o invited no lo hacen sobre nadie", () => {
+      for (const role of ["owner", "admin"] as const) {
+        for (const status of ["inactive", "invited"] as const) {
+          expect([role, status, can(actor(role, { status }), action, member)]).toEqual([
+            role,
+            status,
+            false,
+          ]);
+        }
+      }
+    });
+
+    it("el owner no lo hace sobre una membresía de otro workspace", () => {
+      expect(
+        can(actor("owner"), action, {
+          ...member,
+          workspaceId: "22222222-2222-2222-2222-222222222222",
+        }),
+      ).toBe(false);
+    });
+
+    it("niega un recurso workspace, aunque actúe el owner", () => {
+      // @ts-expect-error: la acción pide un recurso membership.
+      expect(can(actor("owner"), action, workspace)).toBe(false);
+    });
+  },
+);
+
+describe("team.admin.account sobre una membresía admin (E2b, D-E2b-4, P-07)", () => {
+  const otherAdmin = {
+    kind: "membership",
+    workspaceId,
+    userId: "u2",
+    role: "admin",
+  } as const;
+  const ownAdmin = { ...otherAdmin, userId: "u1" } as const;
+
+  it("solo el owner activo, sobre otro admin", () => {
+    expect(
+      (["owner", "admin", "project_manager", "team_manager", "member"] as const).map(
+        (role) => [role, can(actor(role), "team.admin.account", otherAdmin)],
+      ),
+    ).toEqual([
+      ["owner", true],
+      ["admin", false],
+      ["project_manager", false],
+      ["team_manager", false],
+      ["member", false],
+    ]);
+  });
+
+  it("un admin no lo hace sobre sí mismo", () => {
+    expect(can(actor("admin"), "team.admin.account", ownAdmin)).toBe(false);
+  });
+
+  it("un owner inactive o invited no lo hace sobre nadie", () => {
+    for (const status of ["inactive", "invited"] as const) {
+      expect([
+        status,
+        can(actor("owner", { status }), "team.admin.account", otherAdmin),
+      ]).toEqual([status, false]);
+    }
+  });
+
+  it("el owner no lo hace sobre un admin de otro workspace", () => {
+    expect(
+      can(actor("owner"), "team.admin.account", {
+        ...otherAdmin,
+        workspaceId: "22222222-2222-2222-2222-222222222222",
+      }),
+    ).toBe(false);
+  });
+
+  it("niega un recurso workspace, aunque actúe el owner", () => {
+    // @ts-expect-error: team.admin.account pide un recurso membership.
+    expect(can(actor("owner"), "team.admin.account", workspace)).toBe(false);
+  });
+});
+
 describe("assertCan", () => {
   it("lanza ForbiddenError cuando can devuelve false", () => {
     expect(() => assertCan(actor("member"), "team.manage", workspace)).toThrow(

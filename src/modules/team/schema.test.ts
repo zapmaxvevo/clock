@@ -6,6 +6,8 @@ import type { z } from "zod";
 import {
   changeRoleInput,
   changeStatusInput,
+  releaseEmailInput,
+  setAccountLinkInput,
   teamMessages,
   teamSearchParams,
   teamView,
@@ -29,6 +31,10 @@ function member(overrides: Partial<TeamMember> = {}): TeamMember {
     status: "active",
     hasAccount: true,
     statusChange: "deactivate",
+    link: null,
+    linkActions: [],
+    registersExternal: false,
+    canReleaseEmail: false,
     ...overrides,
   };
 }
@@ -163,6 +169,58 @@ describe("teamSearchParams (D-E2-8)", () => {
   });
 });
 
+describe("setAccountLinkInput (D-E2b-6)", () => {
+  it.each([true, false])("acepta link %s con un uuid", (link) => {
+    const result = setAccountLinkInput.safeParse({ membershipId, link });
+    expect(result.success && result.data).toEqual({ membershipId, link });
+  });
+
+  it.each([
+    ["un id que no es uuid", "abc"],
+    ["un id vacío", ""],
+    ["un id numérico", 1],
+  ])("rechaza %s con EQ-82", (_label, id) => {
+    expect(
+      messageOf(setAccountLinkInput.safeParse({ membershipId: id, link: true })),
+    ).toBe(teamMessages.notFound);
+  });
+
+  it.each([
+    ["un texto", "true"],
+    ["un número", 1],
+    ["un nulo", null],
+    ["la ausencia", undefined],
+  ])(
+    "rechaza `link` con %s con «Esa vinculación no está disponible.»",
+    (_label, link) => {
+      expect(messageOf(setAccountLinkInput.safeParse({ membershipId, link }))).toBe(
+        teamMessages.linkUnavailable,
+      );
+    },
+  );
+
+  it("rechaza un pedido que no es un objeto con «Esa vinculación no está disponible.»", () => {
+    expect(messageOf(setAccountLinkInput.safeParse(null))).toBe(
+      teamMessages.linkUnavailable,
+    );
+  });
+});
+
+describe("releaseEmailInput (D-E2b-9)", () => {
+  it("acepta un uuid", () => {
+    const result = releaseEmailInput.safeParse({ membershipId });
+    expect(result.success && result.data).toEqual({ membershipId });
+  });
+
+  it.each([
+    ["un id que no es uuid", { membershipId: "abc" }],
+    ["la ausencia del id", {}],
+    ["un pedido que no es un objeto", null],
+  ])("rechaza %s con EQ-82", (_label, input) => {
+    expect(messageOf(releaseEmailInput.safeParse(input))).toBe(teamMessages.notFound);
+  });
+});
+
 describe("teamView", () => {
   it("admite la vista sin permiso con sus dos motivos", () => {
     for (const reason of ["inactive", "role"] as const) {
@@ -176,6 +234,7 @@ describe("teamView", () => {
   it("admite la lista con una fila de cada uno de los cinco roles", () => {
     const view = {
       kind: "ready",
+      linkTtlDays: 7,
       members: [
         member({ role: "owner", change: null, isSelf: true, statusChange: null }),
         member({ role: "admin", change: "demote" }),
@@ -194,10 +253,53 @@ describe("teamView", () => {
     expect(teamView.parse(view)).toEqual(view);
   });
 
+  it("admite la vinculación, el correo liberado y las entradas de E2b", () => {
+    const requestedAt = new Date("2026-10-19T12:00:00Z");
+    const expiresAt = new Date("2026-10-26T12:00:00Z");
+    const view = {
+      kind: "ready",
+      linkTtlDays: 7,
+      members: [
+        member({
+          link: { requestedAt, expiresAt, expired: false },
+          linkActions: ["cancel"],
+          registersExternal: true,
+        }),
+        member({
+          link: { requestedAt, expiresAt, expired: true },
+          linkActions: ["request", "cancel"],
+        }),
+        member({
+          status: "inactive",
+          change: null,
+          statusChange: "reactivate",
+          canReleaseEmail: true,
+        }),
+        member({
+          status: "inactive",
+          change: null,
+          email: null,
+          hasAccount: false,
+          statusChange: null,
+        }),
+      ],
+    };
+    expect(teamView.parse(view)).toEqual(view);
+  });
+
+  it("rechaza la lista sin `linkTtlDays`", () => {
+    expect(teamView.safeParse({ kind: "ready", members: [member()] }).success).toBe(
+      false,
+    );
+  });
+
   it("rechaza un rol que no existe", () => {
     expect(
-      teamView.safeParse({ kind: "ready", members: [{ ...member(), role: "guest" }] })
-        .success,
+      teamView.safeParse({
+        kind: "ready",
+        linkTtlDays: 7,
+        members: [{ ...member(), role: "guest" }],
+      }).success,
     ).toBe(false);
   });
 
@@ -207,7 +309,11 @@ describe("teamView", () => {
     ["la ausencia", undefined],
   ])("rechaza %s en `change`", (_label, change) => {
     expect(
-      teamView.safeParse({ kind: "ready", members: [{ ...member(), change }] }).success,
+      teamView.safeParse({
+        kind: "ready",
+        linkTtlDays: 7,
+        members: [{ ...member(), change }],
+      }).success,
     ).toBe(false);
   });
 
@@ -217,10 +323,19 @@ describe("teamView", () => {
     ["otra acción", "statusChange", "remove"],
     ["la ausencia de la acción", "statusChange", undefined],
     ["la ausencia de la cuenta", "hasAccount", undefined],
+    ["la ausencia del correo", "email", undefined],
+    ["la ausencia de la marca", "link", undefined],
+    ["otra entrada de vinculación", "linkActions", ["renew"]],
+    ["la ausencia de las entradas", "linkActions", undefined],
+    ["la ausencia del registro externo", "registersExternal", undefined],
+    ["la ausencia de liberar", "canReleaseEmail", undefined],
   ])("rechaza %s", (_label, key, value) => {
     expect(
-      teamView.safeParse({ kind: "ready", members: [{ ...member(), [key]: value }] })
-        .success,
+      teamView.safeParse({
+        kind: "ready",
+        linkTtlDays: 7,
+        members: [{ ...member(), [key]: value }],
+      }).success,
     ).toBe(false);
   });
 });

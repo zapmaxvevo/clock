@@ -415,7 +415,12 @@ describe("getInvitationsView", () => {
 });
 
 describe("entryFactsOf (D-E1b-1, criterio 20)", () => {
-  const none = { bootstrap: false, invitation: null, membership: null };
+  const none = {
+    bootstrap: false,
+    invitation: null,
+    membership: null,
+    accountLink: false,
+  };
 
   it("da el estado de la invitación del correo, en cada estado", async () => {
     for (const status of ["pending", "accepted", "revoked"] as const) {
@@ -436,6 +441,7 @@ describe("entryFactsOf (D-E1b-1, criterio 20)", () => {
       bootstrap: false,
       invitation: "accepted",
       membership: "inactive",
+      accountLink: false,
     });
   });
 
@@ -479,6 +485,7 @@ describe("entryFactsOf sin workspace", () => {
       bootstrap: true,
       invitation: null,
       membership: null,
+      accountLink: false,
     });
   });
 });

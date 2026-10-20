@@ -21,6 +21,9 @@ export type AccessPolicy = {
   readonly bootstrapOwnerEmail: string;
 };
 
+/** D-E2b-11: los días que vale una vinculación desde que se pide. */
+export const ACCOUNT_LINK_TTL_DAYS = 7;
+
 /** Lo que la base sabe de un correo, en el workspace más viejo (ADR 0024, decisión 3). */
 export type EntryFacts = {
   /** Todavía no hay workspace: el arranque (D-E1b-3). */
@@ -33,6 +36,11 @@ export type EntryFacts = {
    * cualquier otro estado responde `membresia_inactiva` (D-E2-1, P-05).
    */
   readonly membership: MembershipStatus | null;
+  /**
+   * D-E2b-3: si la membresía de `membership` tiene una marca vigente
+   * (D-E2b-11). `false` sin membresía o con más de una fila `user` con ese correo.
+   */
+  readonly accountLink: boolean;
 };
 
 /** Sin nada en la base. `entry.ts` lo pasa cuando el perfil no trae correo verificado y no consulta. */
@@ -40,6 +48,7 @@ export const NO_ENTRY_FACTS: EntryFacts = {
   bootstrap: false,
   invitation: null,
   membership: null,
+  accountLink: false,
 };
 
 export type AccessDenialReason =
@@ -185,6 +194,14 @@ export function decideStoredEmail(
   return identity.allowed ? decideAccess(email, policy, facts) : identity;
 }
 
+/**
+ * D-E2b-3: si el ingreso intenta usar la vinculación: la regla deja entrar por
+ * una membresía activa con una marca vigente.
+ */
+export function usesAccountLink(decision: AccessDecision, facts: EntryFacts): boolean {
+  return decision.allowed && facts.membership === "active" && facts.accountLink;
+}
+
 export const accessDenialMessage: Record<AccessDenialReason, string> = {
   sin_email: "La cuenta de Google no expone un email.",
   email_no_verificado: "El email de la cuenta de Google no está verificado.",
@@ -195,6 +212,15 @@ export const accessDenialMessage: Record<AccessDenialReason, string> = {
     "Tu acceso al workspace está desactivado. Pedile a quien administra el equipo que te vuelva a activar.",
 };
 
+/**
+ * D-E2b-10: los códigos del callback de Better Auth que `/login` explica. No son
+ * motivos de la regla de ingreso.
+ */
+export const callbackErrorMessage: Readonly<Record<"account_not_linked", string>> = {
+  account_not_linked:
+    "Ya hay una persona en Clock con ese correo. Pedile a quien administra el equipo que revise tu acceso.",
+};
+
 /** D-E1a-14: lo que ve `/login` con un código que no es un motivo propio. */
 const UNKNOWN_LOGIN_ERROR = "No se pudo iniciar sesión. Volvé a intentar.";
 
@@ -202,14 +228,23 @@ function isAccessDenialReason(code: string): code is AccessDenialReason {
   return Object.hasOwn(accessDenialMessage, code);
 }
 
+function isCallbackErrorCode(code: string): code is keyof typeof callbackErrorMessage {
+  return Object.hasOwn(callbackErrorMessage, code);
+}
+
 /**
- * D-E1a-14: el texto de `/login` para el parámetro `error`. `null` sin
- * parámetro; el de `accessDenialMessage` para un motivo conocido; un texto
- * genérico para cualquier otro. Nunca devuelve el parámetro.
+ * D-E1a-14, D-E2b-10: el texto de `/login` para el parámetro `error`. `null` sin
+ * parámetro; el de `accessDenialMessage` para un motivo conocido; el de
+ * `callbackErrorMessage` para un código del callback que se explica; un texto
+ * genérico para cualquier otro, también `vinculacion_fallida`. Nunca devuelve el
+ * parámetro.
  */
 export function loginErrorMessage(code: string | undefined): string | null {
   if (code === undefined) {
     return null;
   }
-  return isAccessDenialReason(code) ? accessDenialMessage[code] : UNKNOWN_LOGIN_ERROR;
+  if (isAccessDenialReason(code)) {
+    return accessDenialMessage[code];
+  }
+  return isCallbackErrorCode(code) ? callbackErrorMessage[code] : UNKNOWN_LOGIN_ERROR;
 }

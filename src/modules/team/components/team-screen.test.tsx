@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { teamView, type TeamActions, type TeamFilter } from "@/modules/team/schema";
 import type { InvitationActions, InvitationsView } from "@/modules/workspace/schema";
+import type { TimeSettings } from "@/server/time";
 import { bodyRows, buttonsOf, textOf } from "@/test/markup";
 
 import { TEAM_HEADING_ID } from "./team-members-model";
@@ -15,10 +16,21 @@ const actions: TeamActions & InvitationActions = {
   changeRole: () => Promise.resolve({ ok: false, code: "unexpected", message: "doble" }),
   changeStatus: () =>
     Promise.resolve({ ok: false, code: "unexpected", message: "doble" }),
+  setAccountLink: () =>
+    Promise.resolve({ ok: false, code: "unexpected", message: "doble" }),
+  releaseEmail: () =>
+    Promise.resolve({ ok: false, code: "unexpected", message: "doble" }),
   inviteMembers: () =>
     Promise.resolve({ ok: false, code: "unexpected", message: "doble" }),
   revokeInvitation: () =>
     Promise.resolve({ ok: false, code: "unexpected", message: "doble" }),
+};
+
+/** Quien mira, en Buenos Aires y con el día primero (PF-11, PF-12). */
+const SETTINGS: TimeSettings = {
+  timezone: "America/Argentina/Buenos_Aires",
+  weekStart: 1,
+  formats: { time: "24h", date: "dd/MM/yyyy" },
 };
 
 const noInvitations: InvitationsView = {
@@ -47,6 +59,7 @@ const withInvitations: InvitationsView = {
 /** Quien mira, solo en el equipo (EQ-93). */
 const alone = teamView.parse({
   kind: "ready",
+  linkTtlDays: 7,
   members: [
     {
       membershipId: "0e5c7d1a-8f42-4c4b-9a51-1d2f3e4a5b61",
@@ -58,6 +71,10 @@ const alone = teamView.parse({
       status: "active",
       hasAccount: true,
       statusChange: null,
+      link: null,
+      linkActions: [],
+      registersExternal: false,
+      canReleaseEmail: false,
     },
   ],
 });
@@ -68,6 +85,7 @@ const alone = teamView.parse({
  */
 const ready = teamView.parse({
   kind: "ready",
+  linkTtlDays: 7,
   members: [
     {
       membershipId: "0e5c7d1a-8f42-4c4b-9a51-1d2f3e4a5b61",
@@ -79,6 +97,10 @@ const ready = teamView.parse({
       status: "active",
       hasAccount: true,
       statusChange: null,
+      link: null,
+      linkActions: [],
+      registersExternal: false,
+      canReleaseEmail: false,
     },
     {
       membershipId: "1f6d8e2b-9a53-4d5c-8b62-2e3a4f5b6c72",
@@ -90,6 +112,10 @@ const ready = teamView.parse({
       status: "active",
       hasAccount: true,
       statusChange: null,
+      link: null,
+      linkActions: [],
+      registersExternal: false,
+      canReleaseEmail: false,
     },
     {
       membershipId: "2a7e9f3c-ab64-4e6d-9c73-3f4b5a6c7d83",
@@ -101,6 +127,10 @@ const ready = teamView.parse({
       status: "active",
       hasAccount: true,
       statusChange: null,
+      link: null,
+      linkActions: [],
+      registersExternal: false,
+      canReleaseEmail: false,
     },
     {
       membershipId: "3b8fa04d-bc75-4f7e-8d84-4a5c6b7d8e94",
@@ -112,6 +142,10 @@ const ready = teamView.parse({
       status: "active",
       hasAccount: true,
       statusChange: null,
+      link: null,
+      linkActions: [],
+      registersExternal: false,
+      canReleaseEmail: false,
     },
     {
       membershipId: "4c9ab15e-cd86-4a8f-9e95-5b6d7c8e9fa5",
@@ -123,6 +157,10 @@ const ready = teamView.parse({
       status: "active",
       hasAccount: true,
       statusChange: null,
+      link: null,
+      linkActions: [],
+      registersExternal: false,
+      canReleaseEmail: false,
     },
   ],
 });
@@ -130,6 +168,7 @@ const ready = teamView.parse({
 /** Como la ve un admin: ningún admin tiene control, tampoco el propio (D-R8-5). */
 const readyForAdmin = teamView.parse({
   kind: "ready",
+  linkTtlDays: 7,
   members: [
     {
       membershipId: "1f6d8e2b-9a53-4d5c-8b62-2e3a4f5b6c72",
@@ -141,6 +180,10 @@ const readyForAdmin = teamView.parse({
       status: "active",
       hasAccount: true,
       statusChange: null,
+      link: null,
+      linkActions: [],
+      registersExternal: false,
+      canReleaseEmail: false,
     },
     {
       membershipId: "5dabc26f-de97-4b9a-8fa6-6c7e8d9fab16",
@@ -152,6 +195,10 @@ const readyForAdmin = teamView.parse({
       status: "active",
       hasAccount: true,
       statusChange: null,
+      link: null,
+      linkActions: [],
+      registersExternal: false,
+      canReleaseEmail: false,
     },
     {
       membershipId: "2a7e9f3c-ab64-4e6d-9c73-3f4b5a6c7d83",
@@ -163,6 +210,10 @@ const readyForAdmin = teamView.parse({
       status: "active",
       hasAccount: true,
       statusChange: null,
+      link: null,
+      linkActions: [],
+      registersExternal: false,
+      canReleaseEmail: false,
     },
   ],
 });
@@ -177,6 +228,7 @@ function render(
       view={teamView.parse(view)}
       invitations={invitations}
       filter={filter}
+      settings={SETTINGS}
       actions={actions}
     />,
   );
@@ -188,6 +240,7 @@ function render(
  */
 const withInactive = teamView.parse({
   kind: "ready",
+  linkTtlDays: 7,
   members: [
     {
       membershipId: "0e5c7d1a-8f42-4c4b-9a51-1d2f3e4a5b61",
@@ -199,6 +252,10 @@ const withInactive = teamView.parse({
       status: "active",
       hasAccount: true,
       statusChange: null,
+      link: null,
+      linkActions: [],
+      registersExternal: false,
+      canReleaseEmail: false,
     },
     {
       membershipId: "5dabc26f-de97-4b9a-8fa6-6c7e8d9fab16",
@@ -210,6 +267,10 @@ const withInactive = teamView.parse({
       status: "inactive",
       hasAccount: false,
       statusChange: null,
+      link: null,
+      linkActions: [],
+      registersExternal: false,
+      canReleaseEmail: false,
     },
     {
       membershipId: "2a7e9f3c-ab64-4e6d-9c73-3f4b5a6c7d83",
@@ -221,6 +282,10 @@ const withInactive = teamView.parse({
       status: "active",
       hasAccount: true,
       statusChange: "deactivate",
+      link: null,
+      linkActions: [],
+      registersExternal: false,
+      canReleaseEmail: false,
     },
     {
       membershipId: "4c9ab15e-cd86-4a8f-9e95-5b6d7c8e9fa5",
@@ -232,6 +297,10 @@ const withInactive = teamView.parse({
       status: "inactive",
       hasAccount: true,
       statusChange: "reactivate",
+      link: null,
+      linkActions: [],
+      registersExternal: false,
+      canReleaseEmail: false,
     },
   ],
 });
@@ -287,7 +356,7 @@ describe("TeamScreen", () => {
     expect(markup).toContain(`<h1 id="${TEAM_HEADING_ID}"`);
     expect(markup).toContain(`<table aria-labelledby="${TEAM_HEADING_ID}"`);
     expect(textOf(markup)).toContain(
-      "Un administrador ve las horas de todas las personas en los reportes y puede hacer administradoras a otras personas. Solo el propietario quita el rol de administrador, y el suyo no se cambia. Solo el propietario desactiva o reactiva a un administrador.",
+      "Un administrador ve las horas de todas las personas en los reportes y puede hacer administradoras a otras personas. Solo el propietario quita el rol de administrador, y el suyo no se cambia. Solo el propietario desactiva, reactiva, vincula la cuenta o libera el correo de un administrador.",
     );
     const head = markup.slice(markup.indexOf("<thead"), markup.indexOf("</thead>"));
     expect(head.match(/<th scope="col"[^>]*>(.*?)<\/th>/g)?.map(textOf)).toEqual([
@@ -491,6 +560,7 @@ describe("TeamScreen", () => {
   it("EQ-93: una inactiva cuenta como otra persona, aunque «Activas» muestre solo a quien mira", () => {
     const onlyInactive = teamView.parse({
       kind: "ready",
+      linkTtlDays: 7,
       members: [
         ...(alone.kind === "ready" ? alone.members : []),
         ...(withInactive.kind === "ready"
@@ -507,6 +577,39 @@ describe("TeamScreen", () => {
   it("sin la vista de team, sin selector", () => {
     expect(render({ kind: "forbidden", reason: "role" }, null)).not.toContain(
       ">Estado</label>",
+    );
+  });
+
+  it("§5.2 de E2b: la nota de la fila, con el día y el formato de quien mira", () => {
+    const linked = teamView.parse({
+      kind: "ready",
+      linkTtlDays: 7,
+      members: [
+        {
+          membershipId: "0e5c7d1a-8f42-4c4b-9a51-1d2f3e4a5b61",
+          name: "Olga",
+          email: "olga@empresa.com",
+          role: "owner",
+          isSelf: true,
+          change: null,
+          status: "active",
+          hasAccount: true,
+          statusChange: null,
+          // 01:30 UTC del 13 es la noche del 12 en Buenos Aires.
+          link: {
+            requestedAt: new Date("2026-10-13T01:30:00.000Z"),
+            expiresAt: new Date("2026-10-20T01:30:00.000Z"),
+            expired: false,
+          },
+          linkActions: ["cancel"],
+          registersExternal: false,
+          canReleaseEmail: false,
+        },
+      ],
+    });
+
+    expect(textOf(rowOf(render(linked), "Olga"))).toContain(
+      "Vinculación pedida el 12/10/2026, vence el 19/10/2026: la próxima cuenta de Google nueva con este correo reemplaza a la actual.",
     );
   });
 });

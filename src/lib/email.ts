@@ -34,3 +34,16 @@ export function parseDomainList(value: string): string[] {
     .map(normalizeEmail)
     .filter((domain) => domain.length > 0);
 }
+
+/** D-E2b-9: el dominio de un correo liberado. `.invalid` no se resuelve (RFC 2606). */
+export const RELEASED_EMAIL_DOMAIN = "liberado.invalid";
+
+/** D-E2b-9: el correo que reemplaza al de `userId` al liberarlo: `<userId>@liberado.invalid`. */
+export function releasedEmailOf(userId: string): string {
+  return `${userId}@${RELEASED_EMAIL_DOMAIN}`;
+}
+
+/** D-E2b-9: si el correo es uno liberado, sin distinguir mayúsculas ni blancos. */
+export function isReleasedEmail(email: string): boolean {
+  return domainOf(normalizeEmail(email)) === RELEASED_EMAIL_DOMAIN;
+}

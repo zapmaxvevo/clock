@@ -10,8 +10,14 @@ import { randomUUID } from "node:crypto";
 
 import { expect, type Locator, type Page } from "@playwright/test";
 
-import { setRole } from "./database";
-import { TEST_EMAIL_DOMAIN } from "./environment";
+import {
+  ACCOUNT_LINK_TTL_DAYS,
+  type AccountLink,
+  type DateDisplay,
+  setRole,
+} from "./database";
+import { dateLabel, dayOfInstantIn } from "./days";
+import { OWNER_EMAIL, TEST_EMAIL_DOMAIN } from "./environment";
 import { escapeRegExp, isTextStruck, trackerBar } from "./tracker-page";
 
 export const TEAM_PATH = "/equipo";
@@ -74,6 +80,16 @@ export function memberRow(page: Page, name: string): Locator {
         name: new RegExp(`^${escapeRegExp(name)}(?:\\s|$)`),
       }),
     });
+}
+
+/**
+ * La fila del owner de la suite. Su nombre no lo fija la suite, así que se la
+ * busca por el correo de su encabezado de fila.
+ */
+export function ownerRow(page: Page): Locator {
+  return teamTable(page)
+    .getByRole("row")
+    .filter({ has: page.getByRole("rowheader").filter({ hasText: OWNER_EMAIL }) });
 }
 
 /** El encabezado de fila de una persona: el nombre, «(vos)» y el email. */
@@ -362,21 +378,69 @@ export function rowActionsButton(page: Page, name: string): Locator {
   });
 }
 
-/** E2, §5.3: las dos entradas del menú de una fila. */
+/** El menú de una fila, para la del owner, cuyo nombre la suite no fija. */
+export function rowMenuButton(row: Locator): Locator {
+  return row.getByRole("button", { name: /^Acciones de / });
+}
+
+/** E2, §5.3: las dos entradas del menú de una fila que cambian el estado. */
 export const DEACTIVATE = "Desactivar";
 export const REACTIVATE = "Reactivar";
 export type StatusAction = typeof DEACTIVATE | typeof REACTIVATE;
 
+/**
+ * E2b, §5.3: las entradas de la vinculación. Pedirla se rotula según la fila:
+ * «otra» con cuenta, «una» sin cuenta y «Volver a pedir» con una marca vencida.
+ */
+export const REQUEST_LINK = "Vincular una cuenta de Google";
+export const REQUEST_OTHER_LINK = "Vincular otra cuenta de Google";
+export const RENEW_LINK = "Volver a pedir la vinculación";
+export const CANCEL_LINK = "Cancelar la vinculación";
+export type LinkAction =
+  | typeof REQUEST_LINK
+  | typeof REQUEST_OTHER_LINK
+  | typeof RENEW_LINK
+  | typeof CANCEL_LINK;
+
+/** E2b, §5.3: la entrada de una inactiva con el correo sin liberar (D-E2b-9). */
+export const RELEASE_EMAIL = "Liberar el correo";
+
+export type RowAction = StatusAction | LinkAction | typeof RELEASE_EMAIL;
+
 /** Una entrada del menú abierto, que vive en un portal. */
-export function menuItem(page: Page, action: StatusAction): Locator {
+export function menuItem(page: Page, action: RowAction): Locator {
   return page.getByRole("menuitem", { name: action, exact: true });
+}
+
+/**
+ * Las entradas del menú abierto, para afirmarlas todas y en su orden (§5.3 de
+ * E2b) con `toHaveText`. Hay un solo menú abierto a la vez.
+ */
+export function menuItems(page: Page): Locator {
+  return page.getByRole("menu").getByRole("menuitem");
+}
+
+/** Abre el menú de una fila y espera sus entradas, en su orden; lo deja abierto. */
+export async function expectRowActions(
+  page: Page,
+  name: string,
+  actions: readonly RowAction[],
+): Promise<void> {
+  await rowActionsButton(page, name).click();
+  await expect(menuItems(page)).toHaveText([...actions]);
+}
+
+/** Cierra el menú abierto sin elegir nada. */
+export async function closeMenu(page: Page): Promise<void> {
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toHaveCount(0);
 }
 
 /** Abre el menú de una fila y elige una entrada. */
 export async function chooseRowAction(
   page: Page,
   name: string,
-  action: StatusAction,
+  action: RowAction,
 ): Promise<void> {
   await rowActionsButton(page, name).click();
   await menuItem(page, action).click();
@@ -417,3 +481,126 @@ export const UNEXPECTED_BODY = "Revisá la conexión y volvé a intentar.";
 
 /** TT-89: el botón del aviso de una falla de red. */
 export const RETRY = "Reintentar";
+
+/**
+ * E2b, §5.2: la nota de una fila con una vinculación. Las fechas, con el
+ * formato de fecha de quien mira (PF-12): las arma `linkNoteDates`.
+ */
+export function linkPendingFirstNote(requested: string, expires: string): string {
+  return `Vinculación pedida el ${requested}, vence el ${expires}: falta su primer ingreso con Google.`;
+}
+
+export function linkPendingReplaceNote(requested: string, expires: string): string {
+  return `Vinculación pedida el ${requested}, vence el ${expires}: la próxima cuenta de Google nueva con este correo reemplaza a la actual.`;
+}
+
+export function linkExpiredNote(requested: string, expires: string): string {
+  return `La vinculación pedida el ${requested} venció el ${expires}.`;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Las dos fechas de la nota de una vinculación, el pedido y el vencimiento,
+ * en la zona de quien mira y con su formato de fecha, con el año (PF-12, ADR
+ * 0012). Vence `ACCOUNT_LINK_TTL_DAYS` días después del pedido (D-E2b-11).
+ */
+export function linkNoteDates(
+  link: AccountLink,
+  viewer: DateDisplay,
+): { readonly requested: string; readonly expires: string } {
+  const expiresAt = new Date(link.requestedAt.getTime() + ACCOUNT_LINK_TTL_DAYS * DAY_MS);
+  return {
+    requested: dateLabel(
+      dayOfInstantIn(link.requestedAt, viewer.timeZone),
+      viewer.dateFormat,
+    ),
+    expires: dateLabel(dayOfInstantIn(expiresAt, viewer.timeZone), viewer.dateFormat),
+  };
+}
+
+/** Una nota de la fila, debajo del correo, por su texto completo. */
+export function rowNote(row: Locator, text: string): Locator {
+  return memberHeader(row).getByText(text, { exact: true });
+}
+
+/**
+ * Cualquier nota de vinculación de la fila, para afirmar que no queda ninguna.
+ * Las tres empiezan igual salvo por el artículo.
+ */
+export function anyLinkNote(row: Locator): Locator {
+  return memberHeader(row).getByText(/^(?:La v|V)inculación pedida el /);
+}
+
+/** E2b, §5.2: en lugar del correo, en una fila liberada (D-E2b-9). */
+export const RELEASED_EMAIL = "Correo liberado";
+
+export function releasedEmailNote(row: Locator): Locator {
+  return rowNote(row, RELEASED_EMAIL);
+}
+
+/** E2b, §5.4: las confirmaciones de reactivar sin cuenta y de pedir una vinculación. */
+export function reactivateDialog(page: Page, name: string): Locator {
+  return page.getByRole("dialog", { name: `¿Reactivar a ${name}?`, exact: true });
+}
+
+export function requestLinkDialog(page: Page, name: string): Locator {
+  return page.getByRole("dialog", {
+    name: `¿Vincular una cuenta de Google a ${name}?`,
+    exact: true,
+  });
+}
+
+export function requestOtherLinkDialog(page: Page, name: string): Locator {
+  return page.getByRole("dialog", {
+    name: `¿Vincular otra cuenta de Google a ${name}?`,
+    exact: true,
+  });
+}
+
+/** El botón que confirma una vinculación; reactivar confirma con «Reactivar». */
+export const LINK_CONFIRM = "Vincular";
+
+/** El texto de la confirmación sin cuenta: la próxima cuenta es la primera. */
+export function linkFirstWarning(email: string, name: string): string {
+  return `En los próximos ${ACCOUNT_LINK_TTL_DAYS} días, la próxima cuenta de Google que entre con ${email} va a quedar vinculada a ${name}, con su rol y sus horas. Hacelo solo si ese correo sigue siendo suyo.`;
+}
+
+/** El texto de la confirmación con cuenta: la próxima cuenta nueva reemplaza a la actual. */
+export function linkReplaceWarning(email: string, name: string): string {
+  return `En los próximos ${ACCOUNT_LINK_TTL_DAYS} días, la próxima cuenta de Google nueva que entre con ${email} va a reemplazar a la actual, con el rol y las horas de ${name}. Hasta entonces, la cuenta actual sigue entrando. Hacelo solo si ese correo sigue siendo suyo.`;
+}
+
+/** El párrafo que suma la confirmación cuando pedirla registra a un externo (D-E2b-8). */
+export function externalLinkWarning(email: string, name: string): string {
+  return `${email} queda registrado como invitado externo, y sigue registrado aunque después canceles la vinculación o venza. Si ${name} ya tiene una cuenta de Google vinculada, vuelve a entrar con ella desde ahora.`;
+}
+
+/** E2b, §5.4: la confirmación de liberar el correo. */
+export function releaseEmailDialog(page: Page, name: string): Locator {
+  return page.getByRole("dialog", {
+    name: `¿Liberar el correo de ${name}?`,
+    exact: true,
+  });
+}
+
+export function releaseEmailWarning(email: string, name: string): string {
+  return `${email} deja de ser de ${name} y lo vas a poder invitar para otra persona. ${name} queda inactiva, con sus horas, y no va a poder volver a entrar ni reactivarse. No se puede deshacer.`;
+}
+
+/** E2b, §5.5: los avisos de la tabla después de un pedido que salió bien. */
+export function reactivatedWithLinkMessage(name: string): string {
+  return `Reactivaste a ${name}. Su cuenta de Google se vincula en su próximo ingreso.`;
+}
+
+export function linkRequestedMessage(name: string): string {
+  return `Pediste vincular una cuenta de Google a ${name}.`;
+}
+
+export function linkCancelledMessage(name: string): string {
+  return `Cancelaste la vinculación de ${name}.`;
+}
+
+export function emailReleasedMessage(name: string): string {
+  return `Liberaste el correo de ${name}.`;
+}

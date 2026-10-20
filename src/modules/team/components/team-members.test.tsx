@@ -3,14 +3,23 @@ import { describe, expect, it } from "vitest";
 
 import { teamView, type TeamMember } from "@/modules/team/schema";
 import type { PendingInvitation } from "@/modules/workspace/schema";
+import type { TimeSettings } from "@/server/time";
 import { bodyRows, buttonsOf, textOf } from "@/test/markup";
 
 import { TeamMembersView } from "./team-members";
-import type { TeamFeedback } from "./team-members-model";
+import { rowNotesOf, type TeamFeedback } from "./team-members-model";
+
+/** Quien mira, en Buenos Aires y con el día primero (PF-11, PF-12). */
+const SETTINGS: TimeSettings = {
+  timezone: "America/Argentina/Buenos_Aires",
+  weekStart: 1,
+  formats: { time: "24h", date: "dd/MM/yyyy" },
+};
 
 /** Como la ve el owner: un member con `promote` y un admin ajeno con `demote`. */
 const view = teamView.parse({
   kind: "ready",
+  linkTtlDays: 7,
   members: [
     {
       membershipId: "0e5c7d1a-8f42-4c4b-9a51-1d2f3e4a5b61",
@@ -22,6 +31,10 @@ const view = teamView.parse({
       status: "active",
       hasAccount: true,
       statusChange: null,
+      link: null,
+      linkActions: [],
+      registersExternal: false,
+      canReleaseEmail: false,
     },
     {
       membershipId: "1f6d8e2b-9a53-4d5c-8b62-2e3a4f5b6c72",
@@ -33,6 +46,10 @@ const view = teamView.parse({
       status: "active",
       hasAccount: true,
       statusChange: null,
+      link: null,
+      linkActions: [],
+      registersExternal: false,
+      canReleaseEmail: false,
     },
   ],
 });
@@ -54,16 +71,18 @@ function render(
   rows: readonly PendingInvitation[] = invitations,
   people: readonly TeamMember[] = members,
   empty: string | null = null,
+  notes: Readonly<Record<string, string>> = rowNotesOf(people, SETTINGS),
 ): string {
   return renderToStaticMarkup(
     <TeamMembersView
       members={people}
       invitations={rows}
+      notes={notes}
       pending={pending}
       feedback={feedback}
       empty={empty}
       onActivate={() => undefined}
-      onChooseStatus={() => undefined}
+      onChooseEntry={() => undefined}
       onRevoke={() => undefined}
       onRetry={() => undefined}
     />,
@@ -76,6 +95,7 @@ function render(
  */
 const statusView = teamView.parse({
   kind: "ready",
+  linkTtlDays: 7,
   members: [
     {
       membershipId: "2a7e9f3c-ab64-4e6d-9c73-3f4b5a6c7d83",
@@ -87,6 +107,10 @@ const statusView = teamView.parse({
       status: "active",
       hasAccount: true,
       statusChange: "deactivate",
+      link: null,
+      linkActions: [],
+      registersExternal: false,
+      canReleaseEmail: false,
     },
     {
       membershipId: "3b8fa04d-bc75-4f7e-8d84-4a5c6b7d8e94",
@@ -98,6 +122,10 @@ const statusView = teamView.parse({
       status: "inactive",
       hasAccount: true,
       statusChange: "reactivate",
+      link: null,
+      linkActions: [],
+      registersExternal: false,
+      canReleaseEmail: false,
     },
     {
       membershipId: "4c9ab15e-cd86-4a8f-9e95-5b6d7c8e9fa5",
@@ -109,6 +137,10 @@ const statusView = teamView.parse({
       status: "inactive",
       hasAccount: false,
       statusChange: null,
+      link: null,
+      linkActions: [],
+      registersExternal: false,
+      canReleaseEmail: false,
     },
   ],
 });
@@ -263,7 +295,7 @@ describe("TeamMembersView", () => {
     ]);
   });
 
-  it("D-E2-9: el menú solo con `statusChange`, a la derecha del botón de rol, nombrado con la persona", () => {
+  it("D-E2-9: el menú solo con alguna entrada, a la derecha del botón de rol, nombrado con la persona", () => {
     const markup = render(false, null, [], statusMembers);
 
     const dora = buttonsOf(rowOf(markup, "Dora"));
@@ -317,5 +349,197 @@ describe("TeamMembersView", () => {
       markup.indexOf("No hay invitaciones pendientes."),
     );
     expect(markup).toMatch(/<p[^>]*>No hay invitaciones pendientes\.<\/p>/);
+  });
+});
+
+/**
+ * Como la ve el owner con E2b. Las fechas son de la noche en Buenos Aires: el
+ * día de quien mira es el anterior al de UTC.
+ */
+const linkView = teamView.parse({
+  kind: "ready",
+  linkTtlDays: 7,
+  members: [
+    {
+      membershipId: "0e5c7d1a-8f42-4c4b-9a51-1d2f3e4a5b61",
+      name: "Olga",
+      email: "olga@empresa.com",
+      role: "owner",
+      isSelf: true,
+      change: null,
+      status: "active",
+      hasAccount: true,
+      statusChange: null,
+      link: null,
+      linkActions: ["request"],
+      registersExternal: false,
+      canReleaseEmail: false,
+    },
+    {
+      membershipId: "7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+      name: "Gabi",
+      email: "gabi@empresa.com",
+      role: "member",
+      isSelf: false,
+      change: "promote",
+      status: "active",
+      hasAccount: false,
+      statusChange: "deactivate",
+      link: {
+        requestedAt: new Date("2026-10-12T02:00:00.000Z"),
+        expiresAt: new Date("2026-10-19T02:00:00.000Z"),
+        expired: false,
+      },
+      linkActions: ["cancel"],
+      registersExternal: false,
+      canReleaseEmail: false,
+    },
+    {
+      membershipId: "8b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d5e",
+      name: "Hugo",
+      email: "hugo@empresa.com",
+      role: "member",
+      isSelf: false,
+      change: "promote",
+      status: "active",
+      hasAccount: true,
+      statusChange: "deactivate",
+      link: {
+        requestedAt: new Date("2026-10-12T02:00:00.000Z"),
+        expiresAt: new Date("2026-10-19T02:00:00.000Z"),
+        expired: false,
+      },
+      linkActions: ["cancel"],
+      registersExternal: false,
+      canReleaseEmail: false,
+    },
+    {
+      membershipId: "9c3d4e5f-6a7b-4c8d-8e9f-1a2b3c4d5e6f",
+      name: "Inés",
+      email: "ines@empresa.com",
+      role: "member",
+      isSelf: false,
+      change: "promote",
+      status: "active",
+      hasAccount: true,
+      statusChange: "deactivate",
+      link: {
+        requestedAt: new Date("2026-10-01T02:00:00.000Z"),
+        expiresAt: new Date("2026-10-08T02:00:00.000Z"),
+        expired: true,
+      },
+      linkActions: ["request", "cancel"],
+      registersExternal: false,
+      canReleaseEmail: false,
+    },
+    {
+      membershipId: "be5f6a7b-8c9d-4e0f-8a1b-3c4d5e6f7a8b",
+      name: "Karen",
+      email: "karen@empresa.com",
+      role: "member",
+      isSelf: false,
+      change: null,
+      status: "inactive",
+      hasAccount: false,
+      statusChange: "reactivate",
+      link: null,
+      linkActions: [],
+      registersExternal: false,
+      canReleaseEmail: true,
+    },
+    {
+      membershipId: "cf6a7b8c-9d0e-4f1a-9b2c-4d5e6f7a8b9c",
+      name: "Luis",
+      email: null,
+      role: "member",
+      isSelf: false,
+      change: null,
+      status: "inactive",
+      hasAccount: false,
+      statusChange: null,
+      link: null,
+      linkActions: [],
+      registersExternal: false,
+      canReleaseEmail: false,
+    },
+  ],
+});
+const linkMembers: readonly TeamMember[] =
+  linkView.kind === "ready" ? linkView.members : [];
+
+describe("TeamMembersView con E2b", () => {
+  it("§5.2: las notas debajo del correo, con el día y el formato de quien mira", () => {
+    expect(bodyRows(render(false, null, [], linkMembers))).toEqual([
+      ["Olga (vos)olga@empresa.com", "Propietario", ""],
+      [
+        "Gabigabi@empresa.comVinculación pedida el 11/10/2026, vence el 18/10/2026: falta su primer ingreso con Google.",
+        "Miembro",
+        "Hacer administrador",
+      ],
+      [
+        "Hugohugo@empresa.comVinculación pedida el 11/10/2026, vence el 18/10/2026: la próxima cuenta de Google nueva con este correo reemplaza a la actual.",
+        "Miembro",
+        "Hacer administrador",
+      ],
+      [
+        "Inésines@empresa.comLa vinculación pedida el 30/09/2026 venció el 07/10/2026.",
+        "Miembro",
+        "Hacer administrador",
+      ],
+      ["Karen (inactiva)karen@empresa.comSin cuenta de Google vinculada.", "Miembro", ""],
+      ["Luis (inactiva)Correo liberado", "Miembro", ""],
+    ]);
+  });
+
+  it("la nota va en gris, en su propia línea debajo del correo", () => {
+    expect(rowOf(render(false, null, [], linkMembers), "Inés")).toMatch(
+      /ines@empresa\.com<\/span><span class="text-muted-foreground">La vinculación pedida el 30\/09\/2026 venció el 07\/10\/2026\.<\/span>/,
+    );
+  });
+
+  it("D-E2b-9: «Correo liberado» en gris en lugar del correo, sin nota, tachada y sin menú", () => {
+    const row = rowOf(render(false, null, [], linkMembers), "Luis");
+
+    expect(row).toMatch(
+      /<span class="text-muted-foreground">Correo liberado<\/span><\/span>/,
+    );
+    expect(row).toContain('<span class="line-through">Luis</span>');
+    expect(textOf(row)).not.toContain("Sin cuenta de Google vinculada.");
+    expect(buttonsOf(row)).toEqual([]);
+  });
+
+  it("§5.3: la fila propia del owner tiene menú aunque no tenga estado que cambiar", () => {
+    const olga = buttonsOf(rowOf(render(false, null, [], linkMembers), "Olga"));
+
+    expect(olga).toHaveLength(1);
+    expect(olga[0]).toContain('aria-label="Acciones de Olga"');
+    expect(olga[0]).toContain('id="acciones-0e5c7d1a-8f42-4c4b-9a51-1d2f3e4a5b61"');
+  });
+
+  it("§5.5: con un pedido en curso, los botones de rol y todos los menús en aria-disabled, ninguno disabled", () => {
+    const buttons = buttonsOf(render(true, null, invitations, linkMembers));
+
+    // Olga: menú; Gabi, Hugo e Inés: rol y menú; Karen: menú; Luis: nada; dos invitadas.
+    expect(buttons).toHaveLength(10);
+    for (const button of buttons) {
+      expect(button).toContain('aria-disabled="true"');
+      expect(button).not.toMatch(/\sdisabled(=|\s|>)/);
+    }
+  });
+
+  it("§5.5: el aviso de una vinculación es de estado, encima de la tabla", () => {
+    const markup = render(
+      false,
+      {
+        tone: "info",
+        title: "Pediste vincular una cuenta de Google a Gabi.",
+        retry: false,
+      },
+      [],
+      linkMembers,
+    );
+
+    expect(markup).toContain('role="status"');
+    expect(markup.indexOf("Pediste vincular")).toBeLessThan(markup.indexOf("<table"));
   });
 });

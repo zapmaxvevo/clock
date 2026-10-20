@@ -15,6 +15,13 @@ export const MEMBERSHIP_INACTIVE =
 /** D-E1b-2: el texto para `dominio_no_habilitado`. */
 export const DOMAIN_DENIED = "La cuenta no es la de Google Workspace de la empresa.";
 
+/**
+ * EQ-122: el texto para `account_not_linked`, el rechazo de Better Auth a una
+ * cuenta de Google nueva con un correo en uso (D-E2b-10 de E2b).
+ */
+export const ACCOUNT_NOT_LINKED =
+  "Ya hay una persona en Clock con ese correo. Pedile a quien administra el equipo que revise tu acceso.";
+
 /** D-E1a-14: el texto para un motivo que no conoce. */
 export const LOGIN_FAILED = "No se pudo iniciar sesión. Volvé a intentar.";
 

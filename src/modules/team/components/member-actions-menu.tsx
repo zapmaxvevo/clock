@@ -13,27 +13,27 @@ import {
 import type { TeamMember } from "@/modules/team/schema";
 
 import { teamLabels } from "./labels";
-import { rowActionsId } from "./team-members-model";
+import { rowActionsId, type MenuEntry } from "./team-members-model";
 
 type MemberActionsMenuProps = {
   readonly member: TeamMember;
-  /** La entrada del menú; la fila sin `statusChange` no tiene menú (D-E2-9). */
-  readonly action: "deactivate" | "reactivate";
+  /** Las entradas de `menuEntriesOf`; la fila sin ninguna no tiene menú (D-E2-9). */
+  readonly entries: readonly MenuEntry[];
   /** Un pedido de la tabla en curso, de esta fila o de otra. */
   readonly pending: boolean;
-  /** Elegir la entrada; que no mande con un pedido en curso lo decide `chooseStatusChange`. */
-  readonly onChoose: (member: TeamMember) => void;
+  /** Elegir una entrada; que no mande con un pedido en curso lo decide `chooseMenuEntry`. */
+  readonly onChoose: (member: TeamMember, entry: MenuEntry) => void;
 };
 
 /**
  * D-E2-9: el menú «Acciones de {nombre}», como el de una entrada del
  * rastreador. Con un pedido en curso no abre, pero el disparador no se
  * deshabilita: queda en `aria-disabled` y conserva el foco, que vuelve a él al
- * cerrar la confirmación de «Desactivar» (§5.4).
+ * cerrar una confirmación (§5.4).
  */
 export function MemberActionsMenu({
   member,
-  action,
+  entries,
   pending,
   onChoose,
 }: MemberActionsMenuProps) {
@@ -51,11 +51,32 @@ export function MemberActionsMenu({
         <EllipsisVerticalIcon aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-auto min-w-40">
-        {/* El menú puede quedar abierto si otro pedido de la tabla arranca. */}
-        <DropdownMenuItem disabled={pending} onClick={() => onChoose(member)}>
-          {action === "deactivate" ? teamLabels.deactivate : teamLabels.reactivate}
-        </DropdownMenuItem>
+        <MemberActionsMenuItems
+          member={member}
+          entries={entries}
+          pending={pending}
+          onChoose={onChoose}
+        />
       </DropdownMenuContent>
     </DropdownMenu>
   );
+}
+
+/** Las entradas, en el orden recibido; aparte para dibujarlas sin el portal del menú. */
+export function MemberActionsMenuItems({
+  member,
+  entries,
+  pending,
+  onChoose,
+}: MemberActionsMenuProps) {
+  return entries.map((entry) => (
+    // El menú puede quedar abierto si otro pedido de la tabla arranca.
+    <DropdownMenuItem
+      key={entry}
+      disabled={pending}
+      onClick={() => onChoose(member, entry)}
+    >
+      {teamLabels[entry]}
+    </DropdownMenuItem>
+  ));
 }

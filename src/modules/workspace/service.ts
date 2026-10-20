@@ -1,8 +1,13 @@
-import { normalizeEmail } from "@/lib/email";
+import { isCompanyEmail, normalizeEmail } from "@/lib/email";
 import { DomainError, RejectedError } from "@/server/errors";
-import { isBootstrapOwner, type EntryFacts } from "@/server/access";
+import {
+  ACCOUNT_LINK_TTL_DAYS,
+  isBootstrapOwner,
+  type EntryFacts,
+} from "@/server/access";
 import { recordAudit, recordAudits, type AuditEntry } from "@/server/audit";
 import { db, type Transaction } from "@/server/db";
+import type { InvitationStatus } from "@/server/db/schema";
 import { env } from "@/server/env";
 import { can, type Actor, type MembershipStatus, type Role } from "@/server/permissions";
 import { parseWeekStart, type WeekStart } from "@/server/time";
@@ -378,12 +383,91 @@ export async function revokeInvitation(
  * actor: no hay sesión todavía. `email` ya normalizado.
  */
 export async function entryFactsOf(email: string): Promise<EntryFacts> {
-  const facts = await workspaceRepository.entryFacts(email);
+  const facts = await workspaceRepository.entryFacts(email, ACCOUNT_LINK_TTL_DAYS);
   return {
     bootstrap: facts.workspaceId === null,
     invitation: facts.invitation,
     membership: facts.membership,
+    accountLink: facts.accountLink,
   };
+}
+
+/**
+ * D-E2b-3: el id del workspace del ingreso, el más viejo (ADR 0024, decisión 3),
+ * o `null`. Solo lee, con `tx` (ADR 0010).
+ */
+export async function entryWorkspaceIdOf(tx: Transaction): Promise<string | null> {
+  const current = await workspaceRepository.findFirstWorkspace(tx);
+  return current?.id ?? null;
+}
+
+/**
+ * D-E2b-8: si `registerExternalMember` registraría `email`, con el estado de la
+ * invitación de su correo normalizado, o `null` sin invitación: fuera de los
+ * dominios y sin una `pending` o `accepted`. Pura: la usan `registerExternalMember`
+ * y la vista de `team`, que avisa antes de pedir la vinculación (ADR 0010).
+ */
+export function registersAsExternal(
+  email: string,
+  invitationStatus: InvitationStatus | null,
+): boolean {
+  return (
+    !isCompanyEmail(email, env().GOOGLE_WORKSPACE_DOMAINS) &&
+    invitationStatus !== "pending" &&
+    invitationStatus !== "accepted"
+  );
+}
+
+/**
+ * D-E2b-8, ADR 0025: deja `email` registrado como externo, con una invitación
+ * `accepted`, si `registersAsExternal` lo decide con la invitación bloqueada:
+ * inserta la fila, o pasa una `revoked` a `accepted`, y deja
+ * `invitation.register` con `actor`. Si no, no escribe. No se deshace al cancelar
+ * la vinculación. No consulta permisos: la usa `team` al pedir una vinculación.
+ * Devuelve si escribió.
+ */
+export async function registerExternalMember(
+  tx: Transaction,
+  actor: Actor,
+  email: string,
+): Promise<boolean> {
+  const normalized = normalizeEmail(email);
+  // Sin bloquear: uno de los dominios no registra con ninguna invitación.
+  if (!registersAsExternal(normalized, null)) {
+    return false;
+  }
+  const [current] = await workspaceRepository.lockInvitationsByEmail(
+    tx,
+    actor.workspaceId,
+    [normalized],
+  );
+  if (!registersAsExternal(normalized, current?.status ?? null)) {
+    return false;
+  }
+  const entry = {
+    workspaceId: actor.workspaceId,
+    actorId: actor.userId,
+    action: "invitation.register",
+    entity: INVITATION_ENTITY,
+    nextValue: { status: "accepted" },
+  } as const;
+  if (current === undefined) {
+    const id = await workspaceRepository.insertAccepted(
+      tx,
+      actor.workspaceId,
+      normalized,
+      actor.userId,
+    );
+    await recordAudit(tx, { ...entry, entityId: id });
+    return true;
+  }
+  await workspaceRepository.acceptRevoked(tx, actor.workspaceId, current.id);
+  await recordAudit(tx, {
+    ...entry,
+    entityId: current.id,
+    previousValue: { status: current.status },
+  });
+  return true;
 }
 
 /**
@@ -415,11 +499,10 @@ export async function entryMembershipStatusLocked(
   tx: Transaction,
   userId: string,
 ): Promise<MembershipStatus | null> {
-  // El workspace más viejo, como `entryFactsOf` (ADR 0024, decisión 3).
-  const current = await workspaceRepository.findFirstWorkspace(tx);
-  if (current === undefined) {
+  const workspaceId = await entryWorkspaceIdOf(tx);
+  if (workspaceId === null) {
     return null;
   }
-  const own = await workspaceRepository.lockActorMembership(tx, current.id, userId);
+  const own = await workspaceRepository.lockActorMembership(tx, workspaceId, userId);
   return own?.status ?? null;
 }

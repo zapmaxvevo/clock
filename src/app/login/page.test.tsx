@@ -62,6 +62,23 @@ describe("LoginPage", () => {
     expect(textOf(markup)).toContain("Entrar con Google");
   });
 
+  it("con account_not_linked, el texto de EQ-122 en un aviso encima del botón (D-E2b-10)", async () => {
+    const markup = await render("account_not_linked");
+
+    expect(textOf(alertOf(markup))).toBe(
+      "Ya hay una persona en Clock con ese correo. Pedile a quien administra el equipo que revise tu acceso.",
+    );
+    expect(markup.indexOf('role="alert"')).toBeLessThan(markup.indexOf("<button"));
+    expect(textOf(markup)).not.toContain("account_not_linked");
+  });
+
+  it("con vinculacion_fallida, el texto genérico y nunca el código (D-E2b-3)", async () => {
+    const markup = await render("vinculacion_fallida");
+
+    expect(textOf(alertOf(markup))).toBe("No se pudo iniciar sesión. Volvé a intentar.");
+    expect(textOf(markup)).not.toContain("vinculacion_fallida");
+  });
+
   it("con un código que no conoce, el texto genérico", async () => {
     const markup = await render("state_not_found");
 

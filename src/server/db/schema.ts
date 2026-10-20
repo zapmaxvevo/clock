@@ -109,6 +109,18 @@ export const membership = pgTable(
     weeklyCapacityMinutes: integer("weekly_capacity_minutes").notNull().default(2400),
     /** Primer día de la semana de la persona: 0 domingo … 6 sábado, como `WeekStart`. */
     weekStart: smallint("week_start").notNull().default(1),
+    /**
+     * D-E2b-2: la vinculación pedida desde la fila; la usa el próximo ingreso con
+     * el correo de la persona mientras esté vigente (D-E2b-3, D-E2b-11). Columnas
+     * de `team` (ADR 0025).
+     */
+    accountLinkRequestedAt: timestamp("account_link_requested_at", {
+      withTimezone: true,
+    }),
+    accountLinkRequestedById: text("account_link_requested_by_id").references(
+      () => user.id,
+      { onDelete: "set null" },
+    ),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
@@ -119,6 +131,10 @@ export const membership = pgTable(
     unique("membership_workspace_user_unq").on(table.workspaceId, table.userId),
     index("membership_workspace_idx").on(table.workspaceId),
     check("membership_week_start_range", sql`${table.weekStart} between 0 and 6`),
+    check(
+      "membership_account_link_active",
+      sql`${table.accountLinkRequestedAt} is null or ${table.status} = 'active'`,
+    ),
   ],
 );
 

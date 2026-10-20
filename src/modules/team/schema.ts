@@ -49,12 +49,28 @@ export const teamMessages = {
   selfStatusLocked: "No podés desactivar tu propia membresía.",
   /** EQ-85, D-E2-4: un admin que pide desactivar o reactivar a otro admin. */
   adminStatusOwnerOnly: "Solo el propietario desactiva o reactiva a un administrador.",
-  /** EQ-114, D-E2-7. */
-  noAccount:
-    "Esa persona no tiene una cuenta de Google vinculada: todavía no se puede reactivar.",
   statusUnavailable: "Ese estado no está disponible.",
   unexpectedStatus:
     "No se pudo cambiar el estado. Revisá la conexión y volvé a intentar.",
+  /** EQ-117, D-E2b-4. */
+  linkAdminOwnerOnly:
+    "Solo el propietario vincula la cuenta de Google de un administrador o del propietario.",
+  /** EQ-118, D-E2b-6. */
+  linkInactive: "Esa persona está desactivada: reactivala para vincular su cuenta.",
+  /** EQ-119, D-E2b-4. */
+  releaseAdminOwnerOnly:
+    "Solo el propietario libera el correo de un administrador o del propietario.",
+  /** EQ-120, D-E2b-9. */
+  releaseActive: "Desactivá a esa persona antes de liberar su correo.",
+  /** EQ-121, D-E2b-9. */
+  emailReleased: "El correo de esa persona se liberó: no se puede reactivar ni vincular.",
+  linkUnavailable: "Esa vinculación no está disponible.",
+  /** TT-89. */
+  unexpectedLink:
+    "No se pudo cambiar la vinculación. Revisá la conexión y volvé a intentar.",
+  /** TT-89. */
+  unexpectedRelease:
+    "No se pudo liberar el correo. Revisá la conexión y volvé a intentar.",
 } as const;
 
 export type TeamErrorCode =
@@ -62,7 +78,8 @@ export type TeamErrorCode =
   | "role_locked"
   | "inactive_membership"
   | "status_locked"
-  | "no_account";
+  | "active_membership"
+  | "email_released";
 
 /** Un cambio por pedido. El workspace sale de la sesión, nunca de acá (D-R8-6). */
 export const changeRoleInput = z.object(
@@ -94,13 +111,47 @@ export type ChangeStatusInput = z.infer<typeof changeStatusInput>;
 export type ChangeStatusResult = {
   readonly membershipId: string;
   readonly status: MemberStatus;
+  /**
+   * D-E2b-5: si el pedido reactivó a quien no tiene cuenta y pidió además su
+   * vinculación, según lo leído bajo el bloqueo. `false` si no escribió.
+   */
+  readonly linkRequested: boolean;
 };
+
+/** D-E2b-6: pedir o renovar (`true`), o cancelar (`false`), una vinculación. */
+export const setAccountLinkInput = z.object(
+  {
+    membershipId: z.uuid({ error: teamMessages.notFound }),
+    link: z.boolean({ error: teamMessages.linkUnavailable }),
+  },
+  { error: teamMessages.linkUnavailable },
+);
+export type SetAccountLinkInput = z.infer<typeof setAccountLinkInput>;
+
+/** Si quedó una marca vigente, también si ya estaba así. */
+export type SetAccountLinkResult = {
+  readonly membershipId: string;
+  readonly linkPending: boolean;
+};
+
+/** D-E2b-9. */
+export const releaseEmailInput = z.object(
+  { membershipId: z.uuid({ error: teamMessages.notFound }) },
+  { error: teamMessages.notFound },
+);
+export type ReleaseEmailInput = z.infer<typeof releaseEmailInput>;
+export type ReleaseEmailResult = { readonly membershipId: string };
+
+/** D-E2b-6: lo que el menú ofrece sobre la vinculación de una activa. */
+export const LINK_ACTIONS = ["request", "cancel"] as const;
+export type LinkAction = (typeof LINK_ACTIONS)[number];
 
 const teamMember = z.object({
   membershipId: z.uuid(),
   /** `displayNameOf`: el editado o el de Google. */
   name: z.string(),
-  email: z.string(),
+  /** D-E2b-9: `null` si se liberó; la fila muestra «Correo liberado». */
+  email: z.string().nullable(),
   role: z.enum(ROLE_VALUES),
   /** La fila de quien mira: «(vos)». */
   isSelf: z.boolean(),
@@ -111,20 +162,49 @@ const teamMember = z.object({
    */
   change: z.enum(["promote", "demote"]).nullable(),
   status: z.enum(MEMBER_STATUSES),
-  /** D-E2-7: si tiene una fila de `account`; sin ella no se reactiva hasta E2b. */
+  /**
+   * D-E2-7: si tiene una fila de `account`. `reactivate` en una inactiva con
+   * cuenta, o sin cuenta si vincularla no está fuera del alcance de quien mira
+   * (`isAccountActionLocked`, D-E2b-5); nunca en una con el correo liberado.
+   */
   hasAccount: z.boolean(),
   /**
-   * D-E2-3, D-E2-4: `deactivate` en una activa, `reactivate` en una inactiva con
-   * cuenta, si `can()` y las reglas lo dejan; `null` sin control.
+   * D-E2-3, D-E2-4: `deactivate` en una activa, si `can()` y las reglas lo
+   * dejan; `reactivate` en una inactiva con cuenta, o sin cuenta si vincularla
+   * no está fuera del alcance de quien mira (`isAccountActionLocked`, D-E2b-5);
+   * nunca en una con el correo liberado. `null` sin control.
    */
   statusChange: z.enum(["deactivate", "reactivate"]).nullable(),
+  /** D-E2b-2, D-E2b-11: la marca, con su pedido, su vencimiento y si ya venció; `null` sin marca. */
+  link: z
+    .object({ requestedAt: z.date(), expiresAt: z.date(), expired: z.boolean() })
+    .nullable(),
+  /**
+   * D-E2b-4, D-E2b-6: lo que el menú ofrece sobre la vinculación de una activa,
+   * si `isAccountActionLocked` no la deja fuera de alcance: `["request"]` sin
+   * marca, `["cancel"]` con una vigente, `["request", "cancel"]` con una vencida;
+   * `[]` sin control.
+   */
+  linkActions: z.array(z.enum(LINK_ACTIONS)),
+  /** D-E2b-8: si pedir la vinculación registra el correo como externo. */
+  registersExternal: z.boolean(),
+  /** D-E2b-4, D-E2b-9: si se ofrece «Liberar el correo». */
+  canReleaseEmail: z.boolean(),
 });
 
 export const teamView = z.discriminatedUnion("kind", [
   /** Sin `team.manage`: no se leyó nada. `inactive` si la membresía no está activa. */
   z.object({ kind: z.literal("forbidden"), reason: z.enum(["inactive", "role"]) }),
-  /** Las membresías activas e inactivas, en el orden de `compareNames`. */
-  z.object({ kind: z.literal("ready"), members: z.array(teamMember) }),
+  /**
+   * Las membresías activas e inactivas, en el orden de `compareNames`.
+   * `linkTtlDays`: `ACCOUNT_LINK_TTL_DAYS`, para los textos de las confirmaciones
+   * (D-E2b-11, §5.4).
+   */
+  z.object({
+    kind: z.literal("ready"),
+    members: z.array(teamMember),
+    linkTtlDays: z.number().int().positive(),
+  }),
 ]);
 
 export type TeamMember = z.infer<typeof teamMember>;
@@ -138,4 +218,10 @@ export type TeamActions = {
   readonly changeStatus: (
     input: ChangeStatusInput,
   ) => Promise<ActionResult<ChangeStatusResult, TeamErrorCode>>;
+  readonly setAccountLink: (
+    input: SetAccountLinkInput,
+  ) => Promise<ActionResult<SetAccountLinkResult, TeamErrorCode>>;
+  readonly releaseEmail: (
+    input: ReleaseEmailInput,
+  ) => Promise<ActionResult<ReleaseEmailResult, TeamErrorCode>>;
 };

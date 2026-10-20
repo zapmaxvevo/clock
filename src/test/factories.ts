@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import { eq, sql } from "drizzle-orm";
+
 import { db } from "@/server/db";
 import {
   account,
@@ -316,4 +318,24 @@ export async function seedSession(userId: string): Promise<string> {
     updatedAt: new Date(),
   });
   return id;
+}
+
+/**
+ * D-E2b-2: la marca de vinculación de `membershipId`, escrita directo contra la
+ * tabla con `now()` menos `age`, un intervalo de Postgres (`8 days`, `7 days -5
+ * seconds`); sin `age`, ahora. La membresía tiene que estar activa: el
+ * `check` lo exige.
+ */
+export async function seedAccountLink(
+  membershipId: string,
+  requestedById: string | null,
+  age = "0 seconds",
+): Promise<void> {
+  await db
+    .update(membership)
+    .set({
+      accountLinkRequestedAt: sql`now() - ${age}::interval`,
+      accountLinkRequestedById: requestedById,
+    })
+    .where(eq(membership.id, membershipId));
 }

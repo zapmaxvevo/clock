@@ -1,0 +1,4 @@
+ALTER TABLE "membership" ADD COLUMN "account_link_requested_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "membership" ADD COLUMN "account_link_requested_by_id" text;--> statement-breakpoint
+ALTER TABLE "membership" ADD CONSTRAINT "membership_account_link_requested_by_id_user_id_fk" FOREIGN KEY ("account_link_requested_by_id") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "membership" ADD CONSTRAINT "membership_account_link_active" CHECK ("membership"."account_link_requested_at" is null or "membership"."status" = 'active');

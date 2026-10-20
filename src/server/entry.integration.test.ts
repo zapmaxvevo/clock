@@ -4,9 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { workspaceRepository } from "@/modules/workspace/repository";
 import { accessDenialMessage } from "@/server/access";
 import { db } from "@/server/db";
-import { auditLog, session } from "@/server/db/schema";
+import { account, auditLog, membership, session } from "@/server/db/schema";
 import { env } from "@/server/env";
 import {
+  seedAccount,
+  seedAccountLink,
   seedInvitation,
   seedMember,
   seedSession,
@@ -15,6 +17,7 @@ import {
 } from "@/test/factories";
 
 import {
+  bindRequestedAccount,
   decideProfileEntry,
   decideSessionIdentity,
   decideStoredEmailEntry,
@@ -35,8 +38,8 @@ const notInvited = { allowed: false, reason: "sin_invitacion" };
 const inactive = { allowed: false, reason: "membresia_inactiva" };
 
 /** Un perfil de Google verificado, sin `hd` salvo que se pase. */
-function profile(email: string, hd?: string) {
-  return { email, email_verified: true, hd: hd ?? null };
+function profile(email: string, hd?: string, sub = "google-sub-nuevo") {
+  return { email, email_verified: true, hd: hd ?? null, sub };
 }
 
 /** Las dos decisiones del mismo correo: la del perfil y la del correo guardado. */
@@ -191,7 +194,11 @@ describe("con el workspace", () => {
       await seedInvitation({ workspaceId, email: "ana@gmail.com" });
 
       expect(
-        await decideProfileEntry({ email: "ana@gmail.com", email_verified: false }),
+        await decideProfileEntry({
+          email: "ana@gmail.com",
+          email_verified: false,
+          sub: "google-sub-nuevo",
+        }),
       ).toEqual({ allowed: false, reason: "email_no_verificado" });
     });
   });
@@ -213,7 +220,9 @@ describe("con el workspace", () => {
     it("sin correo o sin verificar no lee los hechos", async () => {
       const entryFacts = vi.spyOn(workspaceRepository, "entryFacts");
 
-      expect(await decideProfileEntry({ email_verified: true })).toEqual({
+      expect(
+        await decideProfileEntry({ email_verified: true, sub: "google-sub-nuevo" }),
+      ).toEqual({
         allowed: false,
         reason: "sin_email",
       });
@@ -222,6 +231,7 @@ describe("con el workspace", () => {
           email: "ana@empresa.com",
           email_verified: false,
           hd: "empresa.com",
+          sub: "google-sub-nuevo",
         }),
       ).toEqual({ allowed: false, reason: "email_no_verificado" });
       expect(entryFacts).not.toHaveBeenCalled();
@@ -233,7 +243,11 @@ describe("con el workspace", () => {
       await decideProfileEntry(profile(" Ana@Empresa.com", "empresa.com"));
       await decideStoredEmailEntry("ANA@empresa.com ");
 
-      expect(entryFacts.mock.calls).toEqual([["ana@empresa.com"], ["ana@empresa.com"]]);
+      // Con los días de la vinculación (D-E2b-11).
+      expect(entryFacts.mock.calls).toEqual([
+        ["ana@empresa.com", 7],
+        ["ana@empresa.com", 7],
+      ]);
     });
   });
 });
@@ -354,6 +368,12 @@ describe("los rechazos hacia /login (D-E1a-14)", () => {
     );
   });
 
+  it("loginErrorUrl acepta vinculacion_fallida (D-E2b-3)", () => {
+    expect(loginErrorUrl("vinculacion_fallida")).toBe(
+      `${new URL("/login", process.env.BETTER_AUTH_URL).toString()}?error=vinculacion_fallida`,
+    );
+  });
+
   it("sessionEntryError es FORBIDDEN con el motivo como código y su texto", () => {
     const error = sessionEntryError("sin_invitacion");
 
@@ -362,5 +382,117 @@ describe("los rechazos hacia /login (D-E1a-14)", () => {
       code: "sin_invitacion",
       message: accessDenialMessage.sin_invitacion,
     });
+  });
+});
+
+describe("bindRequestedAccount (D-E2b-3)", () => {
+  /** Una persona del dominio con su membresía; la marca, si se pide su edad. */
+  async function seedMarked(
+    options: { readonly age?: string; readonly status?: "active" | "inactive" } = {},
+  ) {
+    const { workspaceId, ownerId } = await seedWorkspace();
+    const userId = await seedMember(workspaceId, "member", "active", {
+      email: "ana@empresa.com",
+    });
+    const [row] = await db.select().from(membership).where(eq(membership.userId, userId));
+    if (options.age !== undefined) {
+      await seedAccountLink(row.id, ownerId, options.age);
+    }
+    if (options.status === "inactive") {
+      // La marca no puede quedar en una inactiva (D-E2b-2): se escribe sin ella.
+      await db
+        .update(membership)
+        .set({ status: "inactive" })
+        .where(eq(membership.id, row.id));
+    }
+    return { workspaceId, ownerId, userId, membershipId: row.id };
+  }
+
+  async function markOf(membershipId: string) {
+    const [row] = await db
+      .select({ at: membership.accountLinkRequestedAt })
+      .from(membership)
+      .where(eq(membership.id, membershipId));
+    return row.at;
+  }
+
+  function accountsOf(userId: string) {
+    return db
+      .select({ accountId: account.accountId })
+      .from(account)
+      .where(eq(account.userId, userId));
+  }
+
+  it("con una marca vigente: linked, la cuenta de sub y la marca limpia", async () => {
+    const person = await seedMarked({ age: "1 day" });
+
+    expect(await bindRequestedAccount("ana@empresa.com", "sub-nuevo")).toBe("linked");
+
+    expect(await accountsOf(person.userId)).toEqual([{ accountId: "sub-nuevo" }]);
+    expect(await markOf(person.membershipId)).toBeNull();
+  });
+
+  it.each([
+    ["vencida", "8 days"],
+    ["sin marca", undefined],
+  ])("con una marca %s: skipped, sin escribir", async (_label, age) => {
+    const person = await seedMarked({ age });
+    const mark = await markOf(person.membershipId);
+
+    expect(await bindRequestedAccount("ana@empresa.com", "sub-nuevo")).toBe("skipped");
+
+    expect(await accountsOf(person.userId)).toEqual([]);
+    expect(await markOf(person.membershipId)).toEqual(mark);
+    expect(await db.select().from(auditLog)).toEqual([]);
+  });
+
+  it("con un sub que ya es la cuenta de una fila: skipped, sin escribir y con la marca", async () => {
+    const person = await seedMarked({ age: "1 day" });
+    const other = await seedMember(person.workspaceId, "member");
+    await seedAccount(other, "sub-ajeno");
+    const mark = await markOf(person.membershipId);
+
+    expect(await bindRequestedAccount("ana@empresa.com", "sub-ajeno")).toBe("skipped");
+
+    expect(await accountsOf(person.userId)).toEqual([]);
+    expect(await accountsOf(other)).toEqual([{ accountId: "sub-ajeno" }]);
+    expect(await markOf(person.membershipId)).toEqual(mark);
+  });
+
+  it("con la membresía inactiva: inactive, sin escribir", async () => {
+    const person = await seedMarked({ status: "inactive" });
+
+    expect(await bindRequestedAccount("ana@empresa.com", "sub-nuevo")).toBe("inactive");
+
+    expect(await accountsOf(person.userId)).toEqual([]);
+    expect(await db.select().from(auditLog)).toEqual([]);
+  });
+
+  it("sin workspace: skipped", async () => {
+    await seedUser("ana@empresa.com");
+
+    expect(await bindRequestedAccount("ana@empresa.com", "sub-nuevo")).toBe("skipped");
+    expect(await db.select().from(account)).toEqual([]);
+  });
+
+  it("con dos filas user del mismo correo normalizado y una sola membresía con la marca: skipped, sin cuenta y con la marca", async () => {
+    const person = await seedMarked({ age: "1 day" });
+    // La segunda fila no tiene membresía: contar membresías elegiría la primera.
+    await seedUser(" Ana@Empresa.com");
+    const mark = await markOf(person.membershipId);
+
+    expect(await bindRequestedAccount("ana@empresa.com", "sub-nuevo")).toBe("skipped");
+
+    expect(await db.select().from(account)).toEqual([]);
+    expect(await markOf(person.membershipId)).toEqual(mark);
+  });
+
+  it("decideProfileEntry con la marca vigente vincula y deja entrar", async () => {
+    const person = await seedMarked({ age: "1 day" });
+
+    expect(
+      await decideProfileEntry(profile("ana@empresa.com", "empresa.com", "sub-nuevo")),
+    ).toEqual(allowed);
+    expect(await accountsOf(person.userId)).toEqual([{ accountId: "sub-nuevo" }]);
   });
 });

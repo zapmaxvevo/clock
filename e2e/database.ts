@@ -9,7 +9,7 @@ import { Client } from "pg";
 
 import type { InvitationStatus } from "@/server/db/schema";
 
-import { dayKeyOf, type CivilDay } from "./days";
+import { dayKeyOf, type CivilDay, type DateFormat } from "./days";
 import { OWNER_EMAIL, PERSON_NAME, testDatabaseUrl } from "./environment";
 
 /**
@@ -529,6 +529,66 @@ export async function setDisplayName(email: string, name: string): Promise<void>
   });
 }
 
+/** La zona y el formato de fecha con que una persona ve las fechas (PF-12). */
+export type DateDisplay = {
+  readonly timeZone: string;
+  readonly dateFormat: DateFormat;
+};
+
+/** Los predeterminados de P-03, para quien no eligió: la zona y el formato. */
+const DEFAULT_DATE_DISPLAY: DateDisplay = {
+  timeZone: "America/Argentina/Buenos_Aires",
+  dateFormat: "dd/MM/yyyy",
+};
+
+/**
+ * Le pone a una persona su zona y su formato de fecha, como los guarda
+ * `/perfil` (PF-12). Nunca al owner, que es de toda la suite.
+ */
+export async function setDateDisplay(email: string, display: DateDisplay): Promise<void> {
+  if (email === OWNER_EMAIL) {
+    throw new Error("Las preferencias del owner son de toda la suite: no se cambian.");
+  }
+  await withDatabase(async (client) => {
+    await insertOneRow(
+      client,
+      `insert into user_preference (user_id, timezone, date_format)
+       select id, $2, $3 from "user" where email = $1
+       on conflict (user_id) do update
+         set timezone = excluded.timezone,
+             date_format = excluded.date_format,
+             updated_at = now()
+       returning user_id as id`,
+      [email, display.timeZone, display.dateFormat],
+    );
+  });
+}
+
+/**
+ * La zona y el formato de fecha con que ve una persona: los suyos, o los
+ * predeterminados de P-03 en lo que no eligió. Es lo que lee el owner, cuyas
+ * preferencias la suite no fija.
+ */
+export async function dateDisplayOf(email: string): Promise<DateDisplay> {
+  return withDatabase(async (client) => {
+    const result = await client.query<{
+      timezone: string | null;
+      date_format: DateFormat | null;
+    }>(
+      `select user_preference.timezone, user_preference.date_format
+         from "user"
+         left join user_preference on user_preference.user_id = "user".id
+        where "user".email = $1`,
+      [email],
+    );
+    const row = result.rows.at(0);
+    return {
+      timeZone: row?.timezone ?? DEFAULT_DATE_DISPLAY.timeZone,
+      dateFormat: row?.date_format ?? DEFAULT_DATE_DISPLAY.dateFormat,
+    };
+  });
+}
+
 /**
  * La membresía de una persona en el workspace de los e2e, que no es la del
  * owner: el rol y el estado los cambia el recorrido sobre su propia persona,
@@ -621,6 +681,135 @@ export async function sessionCountOf(email: string): Promise<number> {
       [email],
     );
     return result.rows.at(0)?.count ?? 0;
+  });
+}
+
+/**
+ * Le da al owner de la suite una fila de `account` de Google si no tiene
+ * ninguna: la sesión de prueba no la crea, y su fila propia ofrece «Vincular
+ * otra cuenta de Google» solo con una (§5.3 de E2b). Como el workspace, es de
+ * toda la suite, así que no suma una por corrida en una base que se reusa.
+ */
+export async function ensureOwnerGoogleAccount(): Promise<void> {
+  await withDatabase(async (client) => {
+    await client.query(
+      `insert into account (id, account_id, provider_id, user_id, updated_at)
+       select $2, $3, 'google', "user".id, now()
+         from "user"
+        where "user".email = $1
+          and not exists (select 1 from account where account.user_id = "user".id)`,
+      [OWNER_EMAIL, randomUUID(), randomUUID()],
+    );
+  });
+}
+
+/** Cuántas filas de `account` tiene una persona, por su id: liberar el correo las borra (D-E2b-9). */
+export async function accountCountOf(userId: string): Promise<number> {
+  return withDatabase(async (client) => {
+    const result = await client.query<{ count: number }>(
+      `select count(*)::int as count from account where user_id = $1`,
+      [userId],
+    );
+    return result.rows.at(0)?.count ?? 0;
+  });
+}
+
+/** D-E2b-11: los días que vale una vinculación desde que se pide. */
+export const ACCOUNT_LINK_TTL_DAYS = 7;
+
+/** La vinculación pedida para una persona (D-E2b-2). */
+export type AccountLink = {
+  readonly requestedAt: Date;
+  /** Si no pasaron los días de D-E2b-11, con el reloj de la base. */
+  readonly valid: boolean;
+  /** El correo de quien la pidió, o `null` si la pidió una sentencia SQL. */
+  readonly requestedBy: string | null;
+};
+
+/**
+ * La vinculación de la membresía de una persona en el workspace de los e2e, o
+ * `null` si no tiene marca. Lo que pasa después de pedirla lo hace el ingreso
+ * por Google, que no corre en el navegador de pruebas: los recorridos lo
+ * afirman en la base (§9.3 de E2b).
+ */
+export async function accountLinkOf(email: string): Promise<AccountLink | null> {
+  return withDatabase(async (client) => {
+    const result = await client.query<{
+      requested_at: Date | null;
+      valid: boolean | null;
+      requested_by: string | null;
+    }>(
+      `select membership.account_link_requested_at as requested_at,
+              membership.account_link_requested_at
+                > now() - make_interval(days => $2) as valid,
+              requester.email as requested_by
+         from membership
+         join "user" on "user".id = membership.user_id
+         left join "user" requester
+           on requester.id = membership.account_link_requested_by_id
+        where membership.workspace_id = ${FIRST_WORKSPACE}
+          and lower(btrim("user".email)) = lower(btrim($1))`,
+      [email, ACCOUNT_LINK_TTL_DAYS],
+    );
+    const row = result.rows.at(0);
+    if (result.rows.length !== 1 || row === undefined) {
+      throw new Error(
+        `Se esperaba una membresía de ${email} y fueron ${result.rows.length}.`,
+      );
+    }
+    if (row.requested_at === null) {
+      return null;
+    }
+    return {
+      requestedAt: row.requested_at,
+      valid: row.valid === true,
+      requestedBy: row.requested_by,
+    };
+  });
+}
+
+/**
+ * Le pone a una persona activa una vinculación que pidió el owner un día
+ * después de lo que vale (D-E2b-11): vencida, la marca queda hasta que se la
+ * renueva o se la cancela, y la pantalla no puede pedir una con fecha vieja.
+ */
+export async function seedExpiredAccountLink(email: string): Promise<void> {
+  await updateOne(
+    `update membership
+        set account_link_requested_at =
+              now() - make_interval(days => ${ACCOUNT_LINK_TTL_DAYS + 1}),
+            account_link_requested_by_id =
+              (select owner_id from workspace where id = ${FIRST_WORKSPACE}),
+            updated_at = now()
+      where ${OWN_MEMBERSHIP}`,
+    [email],
+  );
+}
+
+/**
+ * El correo guardado de la persona del workspace de los e2e con ese nombre
+ * editado, tal como está: liberarlo lo reemplaza (D-E2b-9), así que después
+ * ya no se la encuentra por el anterior. Los nombres llevan el sufijo del
+ * recorrido, así que otra cantidad que una es un error del test.
+ */
+export async function userEmailOfMember(name: string): Promise<string> {
+  return withDatabase(async (client) => {
+    const result = await client.query<{ email: string }>(
+      `select "user".email
+         from "user"
+         join membership on membership.user_id = "user".id
+         join user_preference on user_preference.user_id = "user".id
+        where membership.workspace_id = ${FIRST_WORKSPACE}
+          and user_preference.display_name = $1`,
+      [name],
+    );
+    const row = result.rows.at(0);
+    if (result.rows.length !== 1 || row === undefined) {
+      throw new Error(
+        `Se esperaba una persona llamada ${name} y fueron ${result.rows.length}.`,
+      );
+    }
+    return row.email;
   });
 }
 

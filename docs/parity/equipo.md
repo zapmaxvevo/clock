@@ -342,6 +342,18 @@ _Desde E1b_: `EXTERNAL_INVITE_EMAILS` ya no se lee. Un correo de otro dominio
 entra solo con su invitación en la base
 ([ADR 0024](../adr/0024-donde-vive-una-invitacion-y-donde-se-corta-el-ingreso.md),
 decisión 3; EQ-32).
+_Desde E2b_ (D-E2b-8 del [contrato de E2b](../slices/fase2-e2b-sin-cuenta.md)):
+una `accepted` también nace cuando quien administra pide la vinculación de un
+externo sin invitación abierta (EQ-115), también al reactivarlo sin cuenta
+(EQ-47): sin ella, su vinculación nunca se usaría. Una `revoked` pasa a
+`accepted`. Queda con quien la pidió como autor y con `invitation.register` en
+el audit log, que la distingue de la que dejó un ingreso por invitación
+(`invitation.accept`), y no se deshace al cancelar la vinculación, al dejarla
+vencer ni al usarla. Un externo activo con cuenta y sin invitación abierta
+vuelve a entrar con su cuenta desde ese momento; para cortarlo, se lo desactiva
+(EQ-39). La confirmación de la vinculación lo avisa. Es la decisión 8 del
+[ADR 0027](../adr/0027-una-fila-user-sin-cuenta-de-google.md), que cambia lo que
+significa una `accepted` en el ADR 0024. Sin equivalente relevado en Clockify.
 
 **EQ-23 Revocar una invitación** — `replicar`
 Documentado: «Choose Revoke invite option» y «Once you confirm the action, the
@@ -498,6 +510,12 @@ acción propia, como dejó dicho el ADR 0023 («si Clockify exceptúa algo más,
 entra como otra acción propia, no como una regla por rol dentro de
 `team.manage`»). Editar el primer día de un admin sigue en `team.manage`, porque
 «Owners and Admins can edit users’ profile.» (perfiles) no exceptúa a nadie.
+_Desde E2b_ (D-E2b-4 del [contrato de E2b](../slices/fase2-e2b-sin-cuenta.md)),
+decidido por el usuario el 2026-10-19: la misma frontera vale para vincular una
+cuenta de Google (EQ-115) y para liberar el correo (EQ-116). Los hacen el owner
+y los admins, y sobre un admin o sobre el owner, solo el owner, con la acción
+propia `team.admin.account`. Un admin no vincula su propia fila, como no la
+desactiva; el owner sí puede pedir la suya.
 
 ## 5. Desactivar y reactivar
 
@@ -600,6 +618,16 @@ menú de la fila de una inactiva, sin confirmación; vuelve `active` con su rol
 excepción de EQ-38.
 _Desde E2_: una inactiva sin cuenta de Google no se reactiva hasta E2b
 (EQ-110, EQ-114).
+_Desde E2b_ (D-E2b-5 del [contrato de E2b](../slices/fase2-e2b-sin-cuenta.md)):
+reactivar a una persona sin cuenta de Google es reactivarla y pedir la
+vinculación (EQ-115), en una transacción, y **pide confirmación**: «¿Reactivar
+a {nombre}?», con el texto de la vinculación, y «Cancelar» y «Reactivar»; al
+terminar, «Reactivaste a {nombre}. Su cuenta de Google se vincula en su próximo
+ingreso.». Quién, como siempre: owner y admin, con la excepción de EQ-38.
+Reactivar a quien tiene cuenta sigue sin confirmación, y a una persona con el
+correo liberado no se la reactiva (EQ-121). EQ-114 queda sin uso.
+Justificación de la confirmación: la próxima cuenta de Google con ese correo
+queda atada a la fila, con su rol y sus horas.
 
 **EQ-48 Reactivar no avisa** — `replicar`
 Documentado: «Inactive users won't receive an email notification when they are
@@ -612,6 +640,67 @@ includes a mix of active and inactive statuses.» (desactivar en masa). Ninguna
 página dice en qué plan está. Justificación: la página la justifica con los
 asientos y el tope del plan, que Clock no tiene, y las personas se van de a
 una. Se agrega después sin tocar el modelo, como todo o nada (ADR 0011).
+
+**EQ-115 Vincular una cuenta de Google** — `adaptar`
+Sin equivalente relevado en Clockify, donde la identidad es la cuenta de
+CAKE.com (EQ-75) y no una cuenta de Google atada a la fila. Acá, en el menú de
+la fila de una persona activa: «Vincular una cuenta de Google» si no tiene
+cuenta, «Vincular otra cuenta de Google» si tiene, «Volver a pedir la
+vinculación» si la anterior venció, y «Cancelar la vinculación» con una pedida,
+sin confirmación. Pedirla confirma: «¿Vincular una cuenta de Google a
+{nombre}?» con «En los próximos {días} días, la próxima cuenta de Google que
+entre con {correo} va a quedar vinculada a {nombre}, con su rol y sus horas.
+Hacelo solo si ese correo sigue siendo suyo.», o, con cuenta, «¿Vincular otra
+cuenta de Google a {nombre}?» con el texto que dice que la nueva reemplaza a la
+actual y que hasta entonces la actual sigue entrando; con «Cancelar» y
+«Vincular». Con un externo sin invitación abierta, la confirmación suma el
+registro de EQ-22.
+La regla: la piden el owner y los admins; sobre un admin o sobre el owner, solo
+el owner (EQ-38, EQ-117), y el owner puede pedir la suya. **Vence a los siete
+días**, sin cron, y **vale una vez**: el primer ingreso con ese correo, dentro
+del plazo y con una cuenta de Google que no esté vinculada a ninguna fila, la
+deja como la única cuenta de la persona, borra sus otras cuentas y sus
+sesiones, y limpia la marca. Solo una membresía activa la tiene: a una inactiva
+se la reactiva (EQ-47, EQ-118), y desactivar la cancela. Pedirla con una
+vigente es éxito sin escribir; con una vencida, la renueva. Mientras está
+pedida, la fila dice debajo del correo «Vinculación pedida el {pedido}, vence
+el {vencimiento}: falta su primer ingreso con Google.» o, con cuenta, «…: la
+próxima cuenta de Google nueva con este correo reemplaza a la actual.»;
+vencida, «La vinculación pedida el {pedido} venció el {vencimiento}.». Los
+avisos: «Pediste vincular una cuenta de Google a {nombre}.» y «Cancelaste la
+vinculación de {nombre}.».
+Justificación: con el enlace implícito apagado (PF-47), es la forma de
+devolverle la entrada a la persona correcta —las importadas sin cuenta (EQ-110)
+o la misma persona con otra cuenta (EQ-109)— sin dársela a cualquiera que
+traiga ese correo. Es D-E2b-1, D-E2b-3, D-E2b-6, D-E2b-7 y D-E2b-11 del
+[contrato de E2b](../slices/fase2-e2b-sin-cuenta.md), con el
+[ADR 0027](../adr/0027-una-fila-user-sin-cuenta-de-google.md); el plazo y la
+frontera los decidió el usuario el 2026-10-19.
+
+**EQ-116 Liberar el correo de una persona inactiva** — `adaptar`
+Sin equivalente relevado en Clockify, donde el correo lo cambia la persona en
+su cuenta de CAKE.com (EQ-75). Acá: «Liberar el correo» en el menú de la fila de
+una inactiva, con confirmación: «¿Liberar el correo de {nombre}?», «{correo}
+deja de ser de {nombre} y lo vas a poder invitar para otra persona. {nombre}
+queda inactiva, con sus horas, y no va a poder volver a entrar ni reactivarse.
+No se puede deshacer.», con «Cancelar» y «Liberar el correo»; al terminar,
+«Liberaste el correo de {nombre}.». El correo guardado pasa a uno que no es de
+nadie (`<id>@liberado.invalid`), se borran sus cuentas de Google y sus
+sesiones, y la fila muestra «Correo liberado» en lugar del correo, sin nota.
+Quedan el nombre, la membresía inactiva con su rol, las horas, los proyectos y
+el audit log, que guarda el correo anterior; el reporte la sigue mostrando por
+su nombre (RP-61). La dirección queda libre: invitarla ya no responde EQ-79, y
+quien la tenga entra con una fila nueva (EQ-17).
+La regla: la misma frontera que EQ-115 (EQ-38, EQ-119); una activa no se libera
+(EQ-120); liberar una ya liberada es éxito sin escribir; a una liberada no se la
+reactiva ni se le pide una vinculación (EQ-121). No se deshace desde la
+pantalla: volver atrás es una corrección a mano con el correo del audit log.
+Justificación: es la salida de la dirección reciclada (EQ-109, P-11 de
+`perfil.md`), y vincular no sirve ahí porque le daría a la persona nueva las
+horas de la anterior. Solo a una inactiva, porque liberarle el correo a una
+activa la dejaría afuera; si la empresa le cambia la dirección, sigue siendo
+una corrección a mano (PF-48 de `perfil.md`). Es D-E2b-9 del
+[contrato de E2b](../slices/fase2-e2b-sin-cuenta.md).
 
 ## 6. Quitar del workspace
 
@@ -839,7 +928,13 @@ redacción por causa de `time-tracker.md`.
 | EQ-90  | Sin permiso                                        | «No tenés permiso para hacer esto.» (TT-79)                                                             | `replicar`         |
 | EQ-91  | Ingreso sin invitación (EQ-29)                     | «Tu cuenta no tiene una invitación a Clock. Pedísela a quien administra el equipo.»                     | `adaptar`          |
 | EQ-92  | Ingreso de una inactiva (EQ-42)                    | «Tu acceso al workspace está desactivado. Pedile a quien administra el equipo que te vuelva a activar.» | `adaptar`          |
-| EQ-114 | Reactivar a una persona sin cuenta de Google       | «Esa persona no tiene una cuenta de Google vinculada: todavía no se puede reactivar.»                   | `adaptar`          |
+| EQ-114 | Reactivar sin cuenta de Google: sin uso desde E2b  | —                                                                                                       | `fuera de alcance` |
+| EQ-117 | Un admin vincula a un admin o al owner (EQ-115)    | «Solo el propietario vincula la cuenta de Google de un administrador o del propietario.»                | `adaptar`          |
+| EQ-118 | Vincular a una persona inactiva (EQ-115)           | «Esa persona está desactivada: reactivala para vincular su cuenta.»                                     | `adaptar`          |
+| EQ-119 | Un admin libera el correo de un admin o del owner  | «Solo el propietario libera el correo de un administrador o del propietario.»                           | `adaptar`          |
+| EQ-120 | Liberar el correo de una persona activa (EQ-116)   | «Desactivá a esa persona antes de liberar su correo.»                                                   | `adaptar`          |
+| EQ-121 | Reactivar o vincular con el correo liberado        | «El correo de esa persona se liberó: no se puede reactivar ni vincular.»                                | `adaptar`          |
+| EQ-122 | Cuenta de Google nueva, correo en uso (PF-47)      | «Ya hay una persona en Clock con ese correo. Pedile a quien administra el equipo que revise tu acceso.» | `adaptar`          |
 
 - **Idempotencia**: desactivar a una inactiva o reactivar a una activa responde
   éxito sin escribir, como pedir el rol que ya tiene en R8 (D-R8-7).
@@ -864,6 +959,30 @@ redacción por causa de `time-tracker.md`.
   equivalente relevado en Clockify. Justificación: con el enlace implícito
   apagado (PF-47), reactivarla dejaría una fila activa que no puede entrar; lo
   levanta E2b (EQ-110).
+  _Sin uso desde E2b_ (D-E2b-5 del
+  [contrato de E2b](../slices/fase2-e2b-sin-cuenta.md)), como EQ-80: decía
+  «Esa persona no tiene una cuenta de Google vinculada: todavía no se puede
+  reactivar.», con la marca `adaptar`. Quien puede reactivar puede vincular, así
+  que reactivar a una persona sin cuenta pide la vinculación (EQ-47, EQ-115) y
+  no hay quién reciba el rechazo. El identificador se conserva; el texto salió
+  de `teamMessages` y su código, de los de error. Justificación del
+  `fuera de alcance`: el caso dejó de existir.
+- **EQ-117 … EQ-122**, agregados el 2026-10-20 con E2b (§4.1 y §4.6 del
+  [contrato de E2b](../slices/fase2-e2b-sin-cuenta.md)), sin equivalente
+  relevado en Clockify, que no tiene este ingreso. EQ-117 … EQ-121 son textos de
+  `teamMessages`; EQ-117 y EQ-119 son la lectura de EQ-38 para vincular y para
+  liberar, como EQ-85 para desactivar. **EQ-122** lo muestra `/login` para el
+  `account_not_linked` de Better Auth —una cuenta de Google nueva con el correo
+  de una fila que tiene otra cuenta, o ninguna, y sin vinculación vigente—, que
+  no es un motivo de la regla de ingreso (`callbackErrorMessage` de
+  `src/server/access.ts`). Es neutro porque el mismo código llega por la misma
+  persona con otra cuenta, que se vincula, y por otra persona con una dirección
+  reciclada, que se invita después de liberar el correo: quien administra
+  pregunta y decide (EQ-109). Remite a quien administra, como EQ-91 y EQ-92,
+  porque los admins también vinculan y liberan. Con la fila inactiva, el
+  ingreso responde antes EQ-92. Un error al usar la vinculación vuelve a
+  `/login` con el genérico «No se pudo iniciar sesión. Volvé a intentar.», sin
+  escribir (D-E2b-3).
 
 ## 11. Estados vacíos
 
@@ -931,8 +1050,8 @@ demás pantallas.
 | EQ-106 | Dos admins invitan el mismo correo a la vez                                                     | Una sola invitación por workspace y correo, con su índice único; el segundo pedido la cuenta como hecha (EQ-19).                                                                                                     |
 | EQ-107 | La invitada entra en el mismo instante en que la revocan                                        | El ingreso lee la invitación bajo bloqueo; gana la transacción que llega primero, y si gana el ingreso, la persona queda activa y se la desactiva (EQ-39).                                                           |
 | EQ-108 | Invitar el correo de una persona quitada (EQ-51) que vuelve con la misma cuenta de Google       | La invitación crea la membresía nueva al entrar; su `user` y su `account` siguen ahí.                                                                                                                                |
-| EQ-109 | La misma dirección con otra cuenta de Google                                                    | No entra (PF-47); la pantalla de equipo no lo resuelve. Es P-11 de `perfil.md`, que sigue abierto.                                                                                                                   |
-| EQ-110 | Reactivar a alguien desactivado con el procedimiento SQL del núcleo                             | Ese procedimiento borró su `account` y, reactivada, no podría entrar (PF-47): la fila no ofrece «Reactivar», muestra «Sin cuenta de Google vinculada.» y un pedido armado responde EQ-114. Lo resuelve E2b (D-E2-7). |
+| EQ-109 | La misma dirección con otra cuenta de Google                                                    | No entra (PF-47). Si es la misma persona, se pide una vinculación (EQ-115); si la dirección pasó a otra persona, se libera el correo de la inactiva (EQ-116) y se lo invita. Lo decide quien administra (EQ-122).    |
+| EQ-110 | Reactivar a alguien desactivado con el procedimiento SQL del núcleo                             | Ese procedimiento borró su `account` (PF-47). Desde E2b, quien puede reactivarla la reactiva y, a la vez, pide la vinculación, con confirmación (D-E2b-5); su próximo ingreso con Google deja esa cuenta en la fila. |
 | EQ-111 | Se saca un dominio de `GOOGLE_WORKSPACE_DOMAINS`                                                | Deja de entrar quien entró sin invitación (antes de E1b); quien tiene una `accepted` sigue entrando, como externa, y se la corta desactivándola (EQ-39). Decidido el 2026-10-16 (P-11).                              |
 | EQ-112 | El owner pide transferirse a sí mismo con un pedido armado                                      | Éxito sin escribir; su fila no tiene el control.                                                                                                                                                                     |
 | EQ-113 | La membresía de `WORKSPACE_OWNER_EMAIL` se quita después de una transferencia y vuelve a entrar | Con EQ-30 entra como cualquiera, por invitación y como `member`; nunca crea un segundo owner.                                                                                                                        |
@@ -953,6 +1072,21 @@ timer que nadie detiene: relee la membresía propia `for share` antes de tocar
 responde TT-79 sin escribir; si la lectura llegó primero, la desactivación
 espera y detiene el timer recién abierto (EQ-43).
 
+**EQ-109** — _Corregido el 2026-10-20, E2b (D-E2b-6, D-E2b-9 y D-E2b-10 del
+[contrato de E2b](../slices/fase2-e2b-sin-cuenta.md))_: decía «No entra
+(PF-47); la pantalla de equipo no lo resuelve. Es P-11 de `perfil.md`, que
+sigue abierto.». La cuenta nueva no entra porque Better Auth no la enlaza a la
+fila (PF-47), y esa misma respuesta llega por dos causas con salidas opuestas.
+La misma persona con otra cuenta se resuelve con una vinculación (EQ-115): la
+próxima cuenta nueva con ese correo reemplaza a la actual, y hasta entonces la
+actual sigue entrando. Otra persona con una dirección reciclada se resuelve
+liberando el correo de la anterior (EQ-116) e invitándolo, con una fila nueva:
+vincular le daría las horas de la anterior. Por eso el texto que ve quien
+entra, EQ-122, no sugiere ninguna de las dos: quien administra pregunta y
+decide. Si la fila de ese correo está inactiva, el ingreso responde antes EQ-92
+(D-E2-1); si la persona anterior sigue activa, primero se la desactiva
+(EQ-120).
+
 **EQ-110** — _Corregido el 2026-10-19, E2 (D-E2-7)_: decía «Hace falta una
 corrección a mano o que `architect` defina la salida». El contrato de E2 impide
 reactivar sin cuenta hasta E2b: dejaría una fila activa que no puede entrar y
@@ -962,6 +1096,16 @@ se desactive con el procedimiento antes de que E2 llegue a producción (EQ-39).
 Tampoco tienen salida por EQ-21: invitar su correo responde EQ-79. Quien se
 desactiva desde la pantalla conserva `account` (EQ-41) y se reactiva sin este
 problema.
+_Corregido el 2026-10-20, E2b (D-E2b-5 del
+[contrato de E2b](../slices/fase2-e2b-sin-cuenta.md))_: la tabla decía «la fila
+no ofrece «Reactivar», muestra «Sin cuenta de Google vinculada.» y un pedido
+armado responde EQ-114. Lo resuelve E2b (D-E2-7).». Desde E2b la fila de una
+inactiva sin cuenta ofrece «Reactivar» —con confirmación, que pide la
+vinculación (EQ-47, EQ-115)— y «Liberar el correo» (EQ-116), y sigue mostrando
+«Sin cuenta de Google vinculada.» debajo del correo hasta que se la reactive.
+Un admin ve esas entradas en la fila de un member; en la de un admin, solo el
+owner (EQ-38). Es la salida de las tres importadas, antes de reactivar a
+cualquiera de ellas. EQ-114 queda sin uso.
 
 **EQ-111** — `adaptar`, decidido por el usuario el 2026-10-16 (P-11): la opción
 (a) de la §11 del [contrato de E1b](../slices/fase2-e1b-ingreso.md), D-E1b-13.
@@ -993,6 +1137,10 @@ _Aplicadas el 2026-10-19, con E2_: RP-60 y RP-63 en `reportes.md`, TT-92 en
 `time-tracker.md` y el retiro del procedimiento en la §5 del mapa del núcleo
 (D-E2-12), cada una con su nota fechada.
 
+_Aplicadas el 2026-10-20, con E2b_: PF-47, PF-48 y P-11 en `perfil.md`, y en el
+[mapa de la fase 2](../slices/fase2-mapa.md) la fila del ADR 0027 y la cuenta de
+las inactivas importadas, tres y no seis, cada una con su nota fechada.
+
 - **RP-61 y RP-62 (`reportes.md`)**: RP-61 cita «…but you won’t be able to filter
   reports by them.». El 2026-10-16, en la página de invitar personas, «won’t be
   able to filter» dio NOT FOUND, y la página dice ahora «You can still filter
@@ -1020,18 +1168,22 @@ _Aplicadas el 2026-10-19, con E2_: RP-60 y RP-63 en `reportes.md`, TT-92 en
 - El ingreso: EQ-29 … EQ-33.
 - Roles: EQ-34, EQ-35 (hecho), EQ-37, EQ-38.
 - Desactivar y reactivar: EQ-39 … EQ-48. Con esto entran RP-60 y RP-63, que
-  `reportes.md` dejó para la fase 2.
+  `reportes.md` dejó para la fase 2. Con E2b, EQ-115 y EQ-116.
 - Quitar: EQ-50 como regla y EQ-51.
 - Transferir: EQ-55 … EQ-59 (`workspace.transfer`, que R8 dejó para la fase 2).
 - Grupos: EQ-60 … EQ-65, EQ-67, EQ-68 (según P-10 para el plan).
 - Perfil desde el equipo: EQ-70, EQ-71, EQ-75.
 - Validaciones, vacíos, errores, recarga y bordes: EQ-76 … EQ-79,
-  EQ-81 … EQ-114.
+  EQ-81 … EQ-113 y EQ-117 … EQ-122.
 
 **Fase 3**: EQ-66.
 
 **Fuera de alcance**: EQ-09, EQ-10, EQ-15, EQ-27, EQ-28, EQ-36, EQ-49, EQ-52,
-EQ-53, EQ-54, EQ-69, EQ-72, EQ-73, EQ-74, y EQ-80, sin uso desde P-03.
+EQ-53, EQ-54, EQ-69, EQ-72, EQ-73, EQ-74; EQ-80, sin uso desde P-03, y EQ-114,
+sin uso desde E2b.
+
+_Actualizado el 2026-10-20, E2b_: suma EQ-115 … EQ-122 y pasa EQ-114 de
+«Validaciones» a fuera de alcance.
 
 ## 17. Orden de slices (sugerencia, no decisión)
 
@@ -1097,3 +1249,8 @@ workspace (E4, según la §12 del [contrato de E1b](../slices/fase2-e1b-ingreso.
 el contrato que la toque lee las dos especificaciones.
 _Actualizado el 2026-10-19, E2_: la acción de EQ-38 es `team.admin.setStatus`,
 solo del owner (D-E2-4 del [contrato de E2](../slices/fase2-e2-desactivar.md)).
+_Actualizado el 2026-10-20, E2b_: la salida para EQ-110 es la vinculación
+(EQ-115), con el [ADR 0027](../adr/0027-una-fila-user-sin-cuenta-de-google.md);
+las acciones de `can()` de E2b son `team.account.link`, `team.email.release` y
+`team.admin.account`, esta solo del owner (D-E2b-4 del
+[contrato de E2b](../slices/fase2-e2b-sin-cuenta.md)).
