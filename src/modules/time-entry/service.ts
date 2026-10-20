@@ -4,7 +4,7 @@ import { normalizedIds, sameTagIds } from "@/lib/tag-ids";
 import { compareNames, sortedByName } from "@/lib/text";
 import { DomainError, RejectedError, type Rejection } from "@/server/errors";
 import { db, type Transaction } from "@/server/db";
-import { recordAudit, recordAudits } from "@/server/audit";
+import { auditActorOf, recordAudit, recordAudits } from "@/server/audit";
 import { createOnce, type ConflictOutcome } from "@/server/create-once";
 import { can, type Action, type Actor } from "@/server/permissions";
 import {
@@ -62,6 +62,7 @@ import {
 } from "./repository";
 import { cellWrite, type CellEntry, type CellWrite } from "./timesheet-cell";
 import {
+  ENTRIES_OF_PERIOD_MAX,
   TAGS_MAX,
   timeEntryMessages,
   TRACKER_WINDOW_DAYS,
@@ -80,6 +81,8 @@ import {
   type DeleteEntryInput,
   type DeleteEntryResult,
   type DayGroupView,
+  type EntriesOfPeriod,
+  type EntriesPeriodValues,
   type DiscardTimerInput,
   type DiscardTimerResult,
   type DuplicateEntryInput,
@@ -309,8 +312,7 @@ async function closeRunning(
     return undefined;
   }
   await recordAudit(tx, {
-    workspaceId: actor.workspaceId,
-    actorId: actor.userId,
+    ...auditActorOf(actor),
     action: "timeEntry.stop",
     entity: AUDIT_ENTITY,
     entityId: stopped.id,
@@ -592,8 +594,7 @@ export async function startTimer(
       },
     });
     await recordAudit(tx, {
-      workspaceId: actor.workspaceId,
-      actorId: actor.userId,
+      ...auditActorOf(actor),
       action: "timeEntry.start",
       entity: AUDIT_ENTITY,
       entityId: opened.running.id,
@@ -629,8 +630,7 @@ export async function continueEntry(
     await assertTaggable(tx, actor, fields.tagIds);
     const opened = await closeAndOpen(tx, actor, { id: input.id, fields });
     await recordAudit(tx, {
-      workspaceId: actor.workspaceId,
-      actorId: actor.userId,
+      ...auditActorOf(actor),
       action: "timeEntry.continue",
       entity: AUDIT_ENTITY,
       entityId: opened.running.id,
@@ -720,8 +720,7 @@ export async function duplicateEntry(
       ...duplicateTimes(source),
     });
     await recordAudit(tx, {
-      workspaceId: actor.workspaceId,
-      actorId: actor.userId,
+      ...auditActorOf(actor),
       action: "timeEntry.duplicate",
       entity: AUDIT_ENTITY,
       entityId: created.id,
@@ -777,8 +776,7 @@ export async function updateDescription(
       throw new TimeEntryError("not_found", timeEntryMessages.notFound);
     }
     await recordAudit(tx, {
-      workspaceId: actor.workspaceId,
-      actorId: actor.userId,
+      ...auditActorOf(actor),
       action: "timeEntry.updateDescription",
       entity: AUDIT_ENTITY,
       entityId: next.id,
@@ -822,8 +820,7 @@ export async function updateEntryProject(
           ? pairOf(written)
           : { ...pairOf(written), billable: written.billable };
       await recordAudit(tx, {
-        workspaceId: actor.workspaceId,
-        actorId: actor.userId,
+        ...auditActorOf(actor),
         action: "timeEntry.updateProject",
         entity: AUDIT_ENTITY,
         entityId: next.id,
@@ -846,8 +843,7 @@ export async function deleteEntry(
       throw new TimeEntryError("not_found", timeEntryMessages.notFound);
     }
     await recordAudit(tx, {
-      workspaceId: actor.workspaceId,
-      actorId: actor.userId,
+      ...auditActorOf(actor),
       action: "timeEntry.delete",
       entity: AUDIT_ENTITY,
       entityId: removed.id,
@@ -892,8 +888,7 @@ export async function discardTimer(
       throw new TimeEntryError("already_stopped", timeEntryMessages.alreadyStopped);
     }
     await recordAudit(tx, {
-      workspaceId: actor.workspaceId,
-      actorId: actor.userId,
+      ...auditActorOf(actor),
       action: "timeEntry.discard",
       entity: AUDIT_ENTITY,
       entityId: removed.id,
@@ -974,8 +969,7 @@ export async function createManualEntry(
       ...times,
     });
     await recordAudit(tx, {
-      workspaceId: actor.workspaceId,
-      actorId: actor.userId,
+      ...auditActorOf(actor),
       action: "timeEntry.createManual",
       entity: AUDIT_ENTITY,
       entityId: created.id,
@@ -1136,8 +1130,7 @@ export async function updateEntryTimes(
       throw new TimeEntryError("timer_running", timeEntryMessages.runningEntryTimes);
     }
     await recordAudit(tx, {
-      workspaceId: actor.workspaceId,
-      actorId: actor.userId,
+      ...auditActorOf(actor),
       action: "timeEntry.updateTimes",
       entity: AUDIT_ENTITY,
       entityId: updated.id,
@@ -1205,8 +1198,7 @@ export async function updateRunningStart(
       throw new TimeEntryError("already_stopped", timeEntryMessages.alreadyStopped);
     }
     await recordAudit(tx, {
-      workspaceId: actor.workspaceId,
-      actorId: actor.userId,
+      ...auditActorOf(actor),
       action: "timeEntry.updateStart",
       entity: AUDIT_ENTITY,
       entityId: next.id,
@@ -1394,8 +1386,7 @@ async function writeEntryEdit<Fields extends RunningEntryFields>(
     throw lost();
   }
   await recordAudit(tx, {
-    workspaceId: actor.workspaceId,
-    actorId: actor.userId,
+    ...auditActorOf(actor),
     action: "timeEntry.update",
     entity: AUDIT_ENTITY,
     entityId: written.id,
@@ -1651,8 +1642,7 @@ export async function bulkEditEntries(
       await recordAudits(
         tx,
         changed.map(({ row, fields }) => ({
-          workspaceId: actor.workspaceId,
-          actorId: actor.userId,
+          ...auditActorOf(actor),
           action: "timeEntry.bulkEdit",
           entity: AUDIT_ENTITY,
           entityId: row.id,
@@ -1719,8 +1709,7 @@ async function deleteLockedEntries(
   await recordAudits(
     tx,
     removed.map((row) => ({
-      workspaceId: actor.workspaceId,
-      actorId: actor.userId,
+      ...auditActorOf(actor),
       action,
       entity: AUDIT_ENTITY,
       entityId: row.id,
@@ -1991,6 +1980,65 @@ export async function getTrackerState(
   };
 }
 
+/**
+ * D-MCP-8: las cerradas propias con inicio en el período y el timer, en un
+ * snapshot. Cada entrada cuenta entera en el día en que empieza, como en el
+ * rastreador y la planilla. Con más de `ENTRIES_OF_PERIOD_MAX`, devuelve las
+ * primeras y lo dice.
+ */
+export async function listEntriesOfPeriod(
+  actor: Actor,
+  workspace: TrackerWorkspace,
+  period: EntriesPeriodValues,
+): Promise<EntriesOfPeriod> {
+  const timeZone = workspace.timezone;
+  const from = startOfDayKey(period.from, timeZone);
+  const to = startOfDayKey(addDaysToKey(period.to, 1), timeZone);
+  const { running, closed } = await db.transaction(
+    async (tx) => {
+      const current = await timeEntryRepository.findRunning(
+        actor.workspaceId,
+        actor.userId,
+        tx,
+      );
+      // Una de más para saber si el tope cortó la lista.
+      const entries = await timeEntryRepository.listClosedStartingIn(
+        actor.workspaceId,
+        actor.userId,
+        from,
+        to,
+        ENTRIES_OF_PERIOD_MAX + 1,
+        tx,
+      );
+      return { running: current, closed: entries };
+    },
+    { isolationLevel: "repeatable read" },
+  );
+  const entries = closed
+    .slice(0, ENTRIES_OF_PERIOD_MAX)
+    .map((row) => toView(row, workspace));
+  return {
+    from: period.from,
+    to: period.to,
+    entries,
+    running: running === undefined ? null : toView(running, workspace),
+    closedSeconds: entries.reduce(
+      (total, entry) => total + (entry.durationSeconds ?? 0),
+      0,
+    ),
+    truncated: closed.length > ENTRIES_OF_PERIOD_MAX,
+  };
+}
+
+/** D-MCP-8: el timer que corre, o `null`. Sin bloqueo. */
+export async function getRunningEntry(
+  actor: Actor,
+  workspace: TrackerWorkspace,
+): Promise<TimeEntryView | null> {
+  const running = await timeEntryRepository.findRunning(actor.workspaceId, actor.userId);
+  return running === undefined ? null : toView(running, workspace);
+}
+
 export type CalendarRequest = {
   readonly mode: CalendarMode;
   /** El `semana` de la URL ya validado, o `null`. */
@@ -2221,8 +2269,7 @@ async function insertFromCell(
     endedAt: creation.endedAt,
   });
   await recordAudit(tx, {
-    workspaceId: actor.workspaceId,
-    actorId: actor.userId,
+    ...auditActorOf(actor),
     action: "timeEntry.createFromCell",
     entity: AUDIT_ENTITY,
     entityId: created.id,
@@ -2258,8 +2305,7 @@ async function setEndFromCell(
     throw new Error(`La entrada ${row.id} bloqueada y cerrada no se pudo escribir.`);
   }
   await recordAudit(tx, {
-    workspaceId: actor.workspaceId,
-    actorId: actor.userId,
+    ...auditActorOf(actor),
     action: "timeEntry.updateFromCell",
     entity: AUDIT_ENTITY,
     entityId: updated.id,

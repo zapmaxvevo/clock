@@ -629,6 +629,33 @@ export const timeEntryRepository = {
   },
 
   /**
+   * D-MCP-8: las entradas cerradas cuyo inicio cae en `[from, to)`, por inicio
+   * ascendente y después por id, hasta `limit`.
+   */
+  async listClosedStartingIn(
+    workspaceId: string,
+    userId: string,
+    from: Date,
+    to: Date,
+    limit: number,
+    tx: Executor = db,
+  ): Promise<readonly EntryWithRefs[]> {
+    const rows = await selectWithRefs(
+      tx,
+      and(
+        eq(timeEntry.workspaceId, workspaceId),
+        eq(timeEntry.userId, userId),
+        isNotNull(timeEntry.endedAt),
+        gte(timeEntry.startedAt, from),
+        lt(timeEntry.startedAt, to),
+      ),
+    )
+      .orderBy(asc(timeEntry.startedAt), asc(timeEntry.id))
+      .limit(limit);
+    return rows.map(toEntryWithRefs);
+  },
+
+  /**
    * Las entradas cerradas de la persona que se superponen con `[from, to)`:
    * empiezan antes de `to` y terminan después de `from`, o empiezan justo en
    * `from`, así una de duración cero en ese instante entra. Una que empezó antes
