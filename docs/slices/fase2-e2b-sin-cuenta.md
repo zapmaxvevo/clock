@@ -1118,6 +1118,11 @@ admin, y la frontera va antes que el estado.
 Pasa a `TeamScreen` las seis actions: las cuatro de E2, `setAccountLink` y
 `releaseEmail`. Nada más cambia.
 
+**Nota del 2026-10-20 (revisiones).** Las fechas de la vinculación —la de la
+marca y su vencimiento— las da formato `TeamScreen` con la zona y el formato de
+quien mira, así que la página le pasa además `settings={timeSettingsOf(session)}`.
+Es un desvío ya aceptado; el resto de la página no cambia.
+
 ### 5.2 La fila de una persona
 
 - **El correo**: el de la vista, o, si es `null`, «Correo liberado» en gris.
@@ -1791,6 +1796,15 @@ days' - '5 seconds'`; la barrera toma la membresía `for no key update` sin
   `lockMembershipOf`; al abrir, uno vincula y el otro termina en
   `account_not_linked`. Se verifica que falla sin el bloqueo (quedan dos
   cuentas).
+
+  **Nota del 2026-10-20 (revisiones).** El 13 no falla sin el bloqueo: la
+  condición de vigencia del `update` de `consumeAccountLink` alcanza, porque el
+  segundo ingreso, al conseguir la fila, la vuelve a evaluar (READ COMMITTED) y
+  ya no encuentra la marca. Falla solo sin el bloqueo y sin esa condición. El
+  `for no key update` de `lockMembershipOf` lo cubre el 14, en el orden «la
+  desactivación primero». El 13 afirma estado y destino de los dos ingresos:
+  `302` a `/` y `302` a `/login?error=account_not_linked`.
+
 - **Criterio 14**, con la misma barrera y `changeStatus` como corredor en los
   dos órdenes, como el criterio 26 de E2; en el primero, el ingreso termina en
   `membresia_inactiva`.

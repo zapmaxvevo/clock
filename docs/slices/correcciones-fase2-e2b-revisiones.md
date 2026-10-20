@@ -205,3 +205,67 @@ Sobre `a11ed39`, con la pantalla de `frontend-dev` sin commitear en el árbol:
 | `npm run typecheck`                                | verde                                                                 |
 | `npm test`                                         | 97 archivos, 2407 tests; zona de Buenos Aires: 2 archivos, 305. Verde |
 | `npm run test:integration` contra `clock_e2b_back` | 30 archivos, 1945 tests, verde                                        |
+
+## Revisiones
+
+Veredictos: **frontend**, aprobado; **clean code**, con cambios; **tests**, con
+cambios; **backend** y **seguridad**, aprobados; **paridad**, pendiente. Los
+hallazgos de clean code y de tests que siguen los decidió el team-lead el
+2026-10-20 y los aplicó `backend-dev`.
+
+| Commit    | Qué                                                   |
+| --------- | ----------------------------------------------------- |
+| `2cbe74c` | Clean code 2, 3, 4, 6 y 7                             |
+| `36fd524` | Clean code 1: `linkRequested` en `ChangeStatusResult` |
+| `b22de43` | Tests T1 a T5                                         |
+
+### Clean code
+
+| Hallazgo                                                                           | Qué se hizo                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1. `team-members.tsx` deduce en el cliente si la reactivación pidió la vinculación | `ChangeStatusResult` suma `linkRequested: boolean`; `changeStatus` lo devuelve con lo que decidió bajo el bloqueo (paso 9, `hasAccount(tx, …)`): `true` solo al reactivar sin cuenta, `false` al desactivar y en los idempotentes. Lo afirman los tests de `changeStatus` del service y de la action, incluida una activa sin cuenta que pide `active` (el cliente habría deducido `true`). El componente compila sin cambios; usar el campo es de `frontend-dev`. |
+| 2. `registersExternalOf` repite la regla de `registerExternalMember`               | `workspace/service.ts` exporta `registersAsExternal(email, invitationStatus)`, pura. `registerExternalMember` la usa dos veces —sin invitación, para no bloquear con un correo de los dominios, y con la invitación bloqueada— y `registersExternalOf` de `team` la usa después de descartar una liberada (ADR 0010).                                                                                                                                              |
+| 3. `consumeAccountLink` pierde `ttlDays`                                           | Usa `ACCOUNT_LINK_TTL_DAYS`, como `linkValid`. El parámetro de `entryFacts` de `workspace` queda: es el desvío ya aceptado.                                                                                                                                                                                                                                                                                                                                        |
+| 4. `releaseEmailOf` relee el correo                                                | Recibe `previousEmail`, el que `releaseEmail` leyó con `userEmailOf` para el paso 4.                                                                                                                                                                                                                                                                                                                                                                               |
+| 6. `EntryMembership.linkValid` no lo usa nadie                                     | Se quitó del tipo y de la sentencia de `lockMembershipOf`.                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 7. `accountLockOf` devuelve `true` fuera de alcance                                | Pasa a `isAccountActionLocked`. Es privada del service: ningún componente la usa.                                                                                                                                                                                                                                                                                                                                                                                  |
+
+**Desvíos de §4.7 que dejan estos cambios.** `lockMembershipOf` devuelve `id`,
+`role` y `status`, sin el `linkValid` «solo para describir»; la vigencia la
+decide solo `consumeAccountLink`, que pasa a `consumeAccountLink(tx,
+membershipId)`, sin `ttlDays`. `releaseEmailOf` de §4.3 pasa a `(tx, actor,
+userId, previousEmail)`.
+
+### Tests
+
+| Hallazgo                                                       | Qué se hizo                                                                                                                                                                                                                                                                               |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T1. Criterio 22: falta un fallo después de `bindGoogleAccount` | `auth.integration.test.ts`: una persona con una cuenta, una sesión y la marca; `vi.spyOn(authRecords, "bindGoogleAccount").mockImplementationOnce` llama a la real y lanza. El callback responde `302` a `vinculacion_fallida`; cuentas, sesión, marca y `audit_log` quedan como estaban. |
+| T2. Criterio 17 por el callback                                | Liberar a una inactiva con cuenta (correo externo), invitar su correo anterior (`invited`), entrar con un `sub` nuevo: `302` a `/`, una sola fila `user` con ese correo y otro id; la liberada conserva `releasedEmailOf(id)` y no tiene cuentas.                                         |
+| T3. Criterio 6, la marca que vence durante la espera           | Sembrada con `7 days -5 seconds`, como §9.2; la barrera es `holdBarrier`, que `src/test/concurrency.ts` pasa a exportar, y se suelta en un `finally`; la espera del vencimiento tiene un tope de 10 s.                                                                                    |
+| T4. Criterio 13 afirma solo el `error`                         | Afirma `[status, location]`: `[302, "/"]` y `[302, deniedLocation("account_not_linked")]`.                                                                                                                                                                                                |
+| T5. Criterio 4 no cuenta las entradas                          | Cuenta las `time_entry` de `person.userId` después del ingreso: una.                                                                                                                                                                                                                      |
+
+**La mutación de T1.** `bindGoogleAccount` con `db` en lugar de `tx` en sus
+cuatro escrituras (borrar cuentas, borrar sesiones, insertar la cuenta y la
+constancia), aplicada en el árbol sin commitear y revertida: el test nuevo
+falla en la primera afirmación de cuentas (quedó la del `sub` nuevo en lugar
+de la de siempre). Con el código real, pasa.
+
+### Documentos
+
+En el contrato, notas fechadas el 2026-10-20 en §5.1 (la página pasa
+`timeSettingsOf(session)` y `TeamScreen` resuelve las fechas de la vinculación)
+y en §9.2 (el 13 no falla sin el bloqueo; el bloqueo de `lockMembershipOf` lo
+cubre el 14).
+
+### Corridas
+
+Sobre `b22de43`, contra `clock_e2b_fix_back`:
+
+| Corrida                                                                   | Resultado                                                             |
+| ------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `npm run lint`                                                            | verde                                                                 |
+| `npm run typecheck`                                                       | verde                                                                 |
+| `npm test`                                                                | 97 archivos, 2407 tests; zona de Buenos Aires: 2 archivos, 305. Verde |
+| Integración de `src/server`, `src/modules/team` y `src/modules/workspace` | 12 archivos, 394 tests, verde                                         |
