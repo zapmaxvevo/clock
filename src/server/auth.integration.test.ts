@@ -312,7 +312,8 @@ describe("el callback de Google termina en /login con el motivo (criterio 25, D-
 
   /**
    * Un `id_token` sin firmar: el callback lo decodifica sin verificar la firma
-   * (`google.mjs:119`). Si una versión nueva la verifica, este test falla.
+   * (`decodeJwt` en `getUserInfo` de `google.mjs`). Si una versión nueva la
+   * verifica, este test falla.
    */
   function idToken(claims: Record<string, unknown>): string {
     const now = Math.floor(Date.now() / 1000);

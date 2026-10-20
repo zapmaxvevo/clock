@@ -11,13 +11,21 @@ necesita `clientRegistrationDefaultApplicationType: "infer"`, que existe desde 1
 
 ## Qué se subió
 
-| Paquete                | Antes | Después | En `package.json`               |
-| ---------------------- | ----- | ------- | ------------------------------- |
-| `better-auth`          | 1.7.7 | 1.7.10  | `1.7.10` exacto (era `^1.7.7`)  |
-| `@better-auth/core`    | 1.7.7 | 1.7.10  | `1.7.10` exacto (nueva directa) |
-| `better-call`          | 1.4.0 | 1.4.2   | no: transitiva, la fija el lock |
-| `@better-auth/utils`   | 0.4.2 | 0.5.0   | no: transitiva, la fija el lock |
-| adaptadores, telemetry | 1.7.7 | 1.7.10  | no: transitivas                 |
+| Paquete                                         | Antes | Después | En `package.json`               |
+| ----------------------------------------------- | ----- | ------- | ------------------------------- |
+| `better-auth`                                   | 1.7.7 | 1.7.10  | `1.7.10` exacto (era `^1.7.7`)  |
+| `@better-auth/core`                             | 1.7.7 | 1.7.10  | `1.7.10` exacto (nueva directa) |
+| `better-call`                                   | 1.4.0 | 1.4.2   | no: transitiva, la fija el lock |
+| `@better-auth/utils`                            | 0.4.2 | 0.5.0   | no: transitiva, la fija el lock |
+| `@better-auth/drizzle-adapter`                  | 1.7.7 | 1.7.10  | no: transitiva                  |
+| los otros adaptadores, `@better-auth/telemetry` | 1.7.7 | 1.7.10  | no: transitivas                 |
+
+**El adaptador de Drizzle** suma `customTransformInput` con `toDriverDate` y pasa
+`customTransformOutput` a `fromDriverDate` (`drizzle-adapter/dist/index.mjs:552`,
+`dist/relations-v2/index.mjs:536`). No nos toca: `toDriverDate` solo convierte en columnas de
+texto, y `auth-schema.ts` usa `timestamp()` en modo Date; `fromDriverDate` de un `Date` da lo
+mismo que el `new Date(data)` de 1.7.7, así que la comparación de `expiresAt` no cambia.
+`@better-auth/telemetry` 1.7.10 sale idéntico a 1.7.7 salvo el `package.json`.
 
 `better-call` y `@better-auth/utils` no son dependencias directas de Clock (ningún archivo las
 importa), así que quedan en el lock: `better-auth@1.7.10` declara `better-call` 1.4.2 y
