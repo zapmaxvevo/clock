@@ -148,3 +148,17 @@ La e2e corrió contra `next start -p 3117` con el build de arriba, `E2E_BASE_URL
 `E2E_DATABASE_URL` y un secreto de sesión de prueba generado para la corrida. El log del
 servidor trae 13 `Error: The destination stream closed early.` de Next, sin marcos de Better
 Auth; por la forma, respuestas que el navegador corta al navegar, no errores del ingreso.
+
+`backend-reviewer` lo comparó contra `main` con la e2e completa, una corrida tras otra:
+`main` (1.7.7) dio 235/235 con 18 mensajes y la rama (1.7.10), 235/235 con 16. Todos llevan
+el mismo `digest` y solo marcos ignorados; ninguno nombra a Better Auth ni a `/api/auth`. Ya
+estaban en `main`: no los trae la subida.
+
+## Revisiones
+
+`security-auditor` y `backend-reviewer` aprobaron sin bloqueantes ni mayores. Los dos menores
+de documentación (la fila del adaptador de Drizzle y la cita por función en el comentario de
+`auth.integration.test.ts`) están en `7b80fd0`. Las cookies de sesión y de state salen
+idénticas byte a byte entre 1.7.7 y 1.7.10, con http y con https; el ingreso (redirección
+`FOUND`, `disableIdTokenSignIn`, `disabledPaths`, rate limit y la sesión de prueba) responde
+igual en las dos versiones.
