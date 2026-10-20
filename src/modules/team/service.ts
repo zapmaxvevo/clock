@@ -2,13 +2,14 @@ import { isReleasedEmail } from "@/lib/email";
 import { compareNames } from "@/lib/text";
 import { ACCOUNT_LINK_TTL_DAYS } from "@/server/access";
 import { DomainError } from "@/server/errors";
-import { recordAudit } from "@/server/audit";
+import { auditActorOf, recordAudit } from "@/server/audit";
 import {
   deleteSessionsOf,
   hasAccount,
   releaseEmailOf,
   userEmailOf,
 } from "@/server/auth-records";
+import { deleteGrantsOf } from "@/server/oauth-records";
 import { db, type Transaction } from "@/server/db";
 import {
   can,
@@ -342,8 +343,7 @@ export async function changeRole(
     }
     await teamRepository.updateRole(tx, actor.workspaceId, target.id, input.role);
     await recordAudit(tx, {
-      workspaceId: actor.workspaceId,
-      actorId: actor.userId,
+      ...auditActorOf(actor),
       action: AUDIT_ACTION,
       entity: AUDIT_ENTITY,
       entityId: target.id,
@@ -373,8 +373,7 @@ async function requestAccountLink(
     actor.userId,
   );
   await recordAudit(tx, {
-    workspaceId: actor.workspaceId,
-    actorId: actor.userId,
+    ...auditActorOf(actor),
     action: "membership.linkRequest",
     entity: AUDIT_ENTITY,
     entityId: target.id,
@@ -391,8 +390,7 @@ async function cancelAccountLink(
 ): Promise<void> {
   await teamRepository.updateAccountLink(tx, actor.workspaceId, target.id, null);
   await recordAudit(tx, {
-    workspaceId: actor.workspaceId,
-    actorId: actor.userId,
+    ...auditActorOf(actor),
     action: "membership.linkCancel",
     entity: AUDIT_ENTITY,
     entityId: target.id,
@@ -403,10 +401,17 @@ async function cancelAccountLink(
 
 /**
  * La membresía con su estado nuevo y el mismo rol (EQ-37), con su constancia.
- * Desactivar además cancela la vinculación pedida (D-E2b-7), detiene el timer y
- * borra las sesiones (D-E2-5, EQ-41, EQ-43); reactivar no pone en marcha nada
- * (EQ-47). Las escrituras ajenas son funciones de su dueño, que no consultan
- * `can()` (ADR 0025).
+ * Desactivar además cancela la vinculación pedida (D-E2b-7), detiene el timer,
+ * borra las sesiones (D-E2-5, EQ-41, EQ-43) y las autorizaciones de los
+ * asistentes (D-MCP-6); reactivar no pone en marcha nada (EQ-47). Las
+ * escrituras ajenas son funciones de su dueño, que no consultan `can()`
+ * (ADR 0025).
+ *
+ * Orden de bloqueos: la membresía, la fila del timer, las de `session` y, por
+ * la misma sentencia, las de los tokens del plugin, que apuntan a `session` con
+ * `on delete set null`; después `deleteGrantsOf` borra esos tokens y los
+ * consentimientos. Nada toma una membresía ni una `session` después de una fila
+ * del plugin, y verificar un token no bloquea.
  */
 async function writeStatus(
   tx: Transaction,
@@ -420,8 +425,7 @@ async function writeStatus(
   }
   await teamRepository.updateStatus(tx, actor.workspaceId, target.id, change.next);
   await recordAudit(tx, {
-    workspaceId: actor.workspaceId,
-    actorId: actor.userId,
+    ...auditActorOf(actor),
     action: STATUS_AUDIT_ACTION[change.next],
     entity: AUDIT_ENTITY,
     entityId: target.id,
@@ -434,6 +438,7 @@ async function writeStatus(
       userId: target.userId,
     });
     await deleteSessionsOf(tx, actor, target.userId);
+    await deleteGrantsOf(tx, actor, target.userId);
   }
 }
 

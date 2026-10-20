@@ -12,6 +12,7 @@ import {
   sessionEntryError,
 } from "@/server/entry";
 import { env } from "@/server/env";
+import { mcpAuthMiddleware, mcpAuthPlugins, mcpDisabledPaths } from "@/server/mcp-auth";
 import {
   assertTestSessionNotInProduction,
   testSessionPlugins,
@@ -45,12 +46,26 @@ export const auth = betterAuth({
   // esto, cualquier sesión los reescribe y llegan al avatar. La aplicación
   // tampoco enlaza ni desenlaza cuentas: quién entra a qué fila lo decide solo
   // el ingreso por Google, sin enlace implícito.
-  disabledPaths: ["/update-user", "/link-social", "/unlink-account"],
+  //
+  // D-MCP-2, D-MCP-14: del servidor de autorización de los asistentes quedan
+  // abiertos `/oauth2/authorize`, `/oauth2/token`, `/oauth2/register`,
+  // `/oauth2/consent`, `/oauth2/revoke` y `/jwks`, y solo con `MCP_ENABLED`.
+  disabledPaths: [
+    "/update-user",
+    "/link-social",
+    "/unlink-account",
+    ...mcpDisabledPaths(),
+  ],
   // D-E1a-14: el rechazo del gancho de sesión, con su código, y los errores
   // propios del callback terminan en `/login`, que muestra solo los motivos que
   // conoce.
   onAPIError: { errorURL: new URL("/login", env().BETTER_AUTH_URL).toString() },
-  plugins: testSessionPlugins(),
+  // D-MCP-14: `jwt` y `oauthProvider` se cargan siempre; el interruptor actúa en
+  // `disabledPaths` y en las rutas propias.
+  plugins: [...mcpAuthPlugins(), ...testSessionPlugins()],
+  // D-MCP-2: la lista de redirecciones al registrar; D-MCP-4: autorizar y
+  // consentir exigen lo mismo que un pedido.
+  hooks: { before: mcpAuthMiddleware },
   socialProviders: {
     google: {
       clientId: env().GOOGLE_CLIENT_ID,

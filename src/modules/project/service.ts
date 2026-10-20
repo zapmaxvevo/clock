@@ -1,7 +1,7 @@
 import { normalizedIds } from "@/lib/tag-ids";
 import { sortedByName } from "@/lib/text";
 import { DomainError, type ActionErrorCode } from "@/server/errors";
-import { recordAudit } from "@/server/audit";
+import { auditActorOf, recordAudit } from "@/server/audit";
 import { createOnce } from "@/server/create-once";
 import { db, type Transaction } from "@/server/db";
 import {
@@ -139,8 +139,7 @@ export async function createClient(
               createdBy: actor.userId,
             });
             await recordAudit(tx, {
-              workspaceId: actor.workspaceId,
-              actorId: actor.userId,
+              ...auditActorOf(actor),
               action: "client.create",
               entity: "client",
               entityId: created.id,
@@ -208,8 +207,7 @@ export async function createProject(
               isManager: true,
             });
             await recordAudit(tx, {
-              workspaceId: actor.workspaceId,
-              actorId: actor.userId,
+              ...auditActorOf(actor),
               action: "project.create",
               entity: "project",
               entityId: created.id,
@@ -277,8 +275,7 @@ export async function createTask(
               createdBy: actor.userId,
             });
             await recordAudit(tx, {
-              workspaceId: actor.workspaceId,
-              actorId: actor.userId,
+              ...auditActorOf(actor),
               action: "task.create",
               entity: "task",
               entityId: created.id,
@@ -323,8 +320,7 @@ export async function createTag(
               createdBy: actor.userId,
             });
             await recordAudit(tx, {
-              workspaceId: actor.workspaceId,
-              actorId: actor.userId,
+              ...auditActorOf(actor),
               action: "tag.create",
               entity: "tag",
               entityId: created.id,

@@ -5,7 +5,7 @@ import {
   isBootstrapOwner,
   type EntryFacts,
 } from "@/server/access";
-import { recordAudit, recordAudits, type AuditEntry } from "@/server/audit";
+import { auditActorOf, recordAudit, recordAudits, type AuditEntry } from "@/server/audit";
 import { db, type Transaction } from "@/server/db";
 import type { InvitationStatus } from "@/server/db/schema";
 import { env } from "@/server/env";
@@ -339,8 +339,7 @@ export async function inviteMembers(
     );
     const audits: AuditEntry[] = [
       ...plan.toReinvite.map((row) => ({
-        workspaceId: actor.workspaceId,
-        actorId: actor.userId,
+        ...auditActorOf(actor),
         action: "invitation.reinvite",
         entity: INVITATION_ENTITY,
         entityId: row.id,
@@ -348,8 +347,7 @@ export async function inviteMembers(
         nextValue: { status: "pending" },
       })),
       ...inserted.map((row) => ({
-        workspaceId: actor.workspaceId,
-        actorId: actor.userId,
+        ...auditActorOf(actor),
         action: "invitation.create",
         entity: INVITATION_ENTITY,
         entityId: row.id,
@@ -396,8 +394,7 @@ export async function revokeInvitation(
       case "pending":
         await workspaceRepository.revoke(tx, actor.workspaceId, row.id, actor.userId);
         await recordAudit(tx, {
-          workspaceId: actor.workspaceId,
-          actorId: actor.userId,
+          ...auditActorOf(actor),
           action: "invitation.revoke",
           entity: INVITATION_ENTITY,
           entityId: row.id,
@@ -476,8 +473,7 @@ export async function registerExternalMember(
     return false;
   }
   const entry = {
-    workspaceId: actor.workspaceId,
-    actorId: actor.userId,
+    ...auditActorOf(actor),
     action: "invitation.register",
     entity: INVITATION_ENTITY,
     nextValue: { status: "accepted" },
@@ -585,8 +581,7 @@ export async function updateWorkspaceName(
     }
     await workspaceRepository.updateWorkspaceName(tx, actor.workspaceId, input.name);
     await recordAudit(tx, {
-      workspaceId: actor.workspaceId,
-      actorId: actor.userId,
+      ...auditActorOf(actor),
       action: "workspace.updateName",
       entity: "workspace",
       entityId: actor.workspaceId,
