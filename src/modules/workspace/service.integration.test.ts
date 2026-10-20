@@ -518,6 +518,15 @@ describe("el formato de duración en la sesión (D-WS2a-2, criterio 5)", () => {
       workspace: { id: oldest },
       durationFormat: "full",
     });
+
+    // Sin su fila, el más viejo no toma la del otro.
+    await db.delete(workspaceSettings).where(eq(workspaceSettings.workspaceId, oldest));
+    await setDurationFormat(newer, "full");
+
+    expect(await workspaceRepository.findFirstWorkspace()).toMatchObject({
+      workspace: { id: oldest },
+      durationFormat: null,
+    });
   });
 });
 
