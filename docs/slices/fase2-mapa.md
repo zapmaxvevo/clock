@@ -462,12 +462,18 @@ Riesgos:
   `perfil.md` y los usos de `formatDuration`— y prueba cada pantalla con los dos
   valores sembrados.
 - **La regla del compacto (WS-16, WS-68)**: una entrada con segundos se muestra
-  en minutos y el total suma segundos. El ADR fija si el formato solo cambia lo
-  que se muestra o también cómo se suma, y la escribe en `workspace.md`.
+  en minutos y el total suma segundos. El ADR 0029 fija que el formato solo
+  cambia lo que se muestra: toda suma es de segundos exactos y cada rótulo
+  trunca una vez. Está escrita en WS-16 y WS-68 de `workspace.md`.
 
 ADR: **el formato de duración es del workspace**, que extiende el 0012 con un
 formato que no es de la persona y fija la regla de WS-16. Con el contrato de
 WS2a.
+
+_Corregido el 2026-10-20, WS2a_: el riesgo de la regla del compacto decía que
+el ADR iba a fijarla. La fija el
+[ADR 0029](../adr/0029-el-formato-de-duracion-es-del-workspace-y-solo-cambia-lo-que-se-muestra.md),
+propuesto con el [contrato de WS2a](fase2-ws2a-formato.md) (D-WS2a-5).
 
 ### WS2b — Formato de duración: el selector y el reporte
 

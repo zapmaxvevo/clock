@@ -449,9 +449,12 @@ Documentados, con el ejemplo de la propia documentación para el valor `2`:
 
 El decimal **requiere plan pago**: no se puede relevar en el workspace del
 equipo y queda `fuera de alcance` por decisión del equipo del 2026-10-02.
-Quedan completo y compacto, con **compacto como predeterminado**, que es lo que
-hoy devuelve `formatDuration`. Justificación del `adaptar`: se implementan dos
-de los tres formatos.
+Quedan completo y compacto, con **compacto como predeterminado**: es el valor
+por omisión de `workspace_settings.duration_format` desde WS2a
+([ADR 0029](../adr/0029-el-formato-de-duracion-es-del-workspace-y-solo-cambia-lo-que-se-muestra.md)).
+Justificación del `adaptar`: se implementan dos de los tres formatos.
+_Corregido el 2026-10-20, WS2a_: decía que el compacto era «lo que hoy devuelve
+`formatDuration`», que desde WS2a recibe el formato.
 
 **PF-21 El formato decide también cómo se interpreta lo que se teclea** —
 `replicar`

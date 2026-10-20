@@ -789,10 +789,17 @@ _Corregido el 2026-10-08, slice 13b_: no decía adónde va el foco al borrar
 desde el menú ni qué pasa con la fila que se queda sin entradas.
 
 **TS-36 Escribir lo mismo no escribe nada** — `adaptar`
-Si lo que queda en la celda al perder el foco, ya interpretado, es igual a lo
-que la celda mostraba, no sale ningún pedido. Una celda de `1:30:42` que se
-muestra `1:30` y se confirma sin tocar conserva sus segundos. Justificación: el
-redondeo de la vista no puede convertirse en una escritura.
+Si lo que queda en la celda al perder el foco, ya interpretado, tiene los mismos
+minutos que la celda —la suma exacta de sus entradas, truncada al minuto—, no
+sale ningún pedido, con los dos formatos de duración. Una celda de `1:30:42` que
+se confirma sin tocar, o en la que se teclea `1:30`, conserva sus segundos: con
+el compacto se muestra `1:30`; con el completo, `01:30:42`, y el campo vuelve a
+ese rótulo, no a uno armado con lo tecleado. Justificación: el redondeo de la
+vista no puede convertirse en una escritura, y el servidor también decide en
+minutos (TS-34).
+_Corregido el 2026-10-20, WS2a_: decía «igual a lo que la celda mostraba», que
+con el completo no vale: `1:30` no es `01:30:42`, y no se escribe igual
+([contrato de WS2a](../slices/fase2-ws2a-formato.md), D-WS2a-8).
 
 **TS-37 Escribir una celda se puede reintentar** — `adaptar`
 Como el pedido es «dejar la celda en `V`», repetirlo deja el mismo estado: si
@@ -1525,7 +1532,7 @@ No llevan marca propia: heredan la del comportamiento que citan.
 | TS-102 | Entrada que cruza la medianoche                                     | Cuenta entera en la celda del día de su `start` (TT-95); la celda puede pasar de 24 horas.                                                              |
 | TS-103 | Entrada que cruza el fin de semana                                  | Cuenta entera en la semana de su `start` (TT-96).                                                                                                       |
 | TS-104 | Celda de una sola entrada de más de 24 horas                        | Se muestra con su total. Escribir un valor la achica (TS-33); no se puede agrandar desde la celda por TS-26.                                            |
-| TS-105 | Escribir `1:30` sobre una entrada del timer de `1:30:42`            | Es igual a lo que se ve: no se escribe nada (TS-36).                                                                                                    |
+| TS-105 | Escribir `1:30` sobre una entrada del timer de `1:30:42`            | Son los mismos minutos: no se escribe nada (TS-36). Con el completo, el campo vuelve a `01:30:42`.                                                      |
 | TS-106 | Escribir `2:00` sobre esa misma entrada                             | El inicio se conserva con sus segundos y el fin pasa a inicio más dos horas: la celda muestra `2:00` (TS-32, TS-33).                                    |
 | TS-107 | Escribir en una celda de un día con cambio de horario               | La celda muestra lo escrito: el fin es inicio más duración (TS-32). Las horas de pared de la entrada pueden no cuadrar con la resta visual, como TT-97. |
 | TS-108 | Escribir en una celda de un día futuro                              | Se acepta (TS-11, TT-76).                                                                                                                               |
@@ -1554,6 +1561,8 @@ entrada a otro día», con «Cambia de celda; si el día queda fuera de la seman
 sale de la grilla y la fila puede quedar sin entradas y desaparecer.», sin el
 cambio de par, sin distinguir la fila agregada en esta carga y sin decir adónde
 va el foco.
+_Corregido el 2026-10-20, WS2a_: TS-105 decía «Es igual a lo que se ve», que
+con el completo no vale (TS-36).
 
 ## 20. Divergencias que este documento registra
 
