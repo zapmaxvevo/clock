@@ -567,6 +567,7 @@ from workspace w
 left join workspace_settings s on s.workspace_id = w.id
 order by w.created_at, w.id;
 
+-- 2b. La capacidad: otra sentencia, que también se guarda (D-WS0-9).
 select weekly_capacity_minutes, count(*) as membresias
 from membership
 group by 1
@@ -589,8 +590,10 @@ Lo esperado y qué se hace si no:
 - **La 1**: doce filas. **Menos de doce** frena: alguien borró una a mano, y la
   migración fallaría en esa sentencia; se averigua antes de seguir.
 - **La 2**: un workspace, con `logo_url` nula, `currency` `ARS`, `admins`,
-  `everyone`, cuatro `false`, `false`, `true` y `0`; y una sola fila de
-  capacidad, `2400`, con todas las membresías. **Otro valor** no frena
+  `everyone`, cuatro `false`, `false`, `true` y `0`. **La 2b**: una sola fila de
+  capacidad, `2400`, con todas las membresías (_corregido el 2026-10-20_: la 2b
+  iba sin número dentro de la 2, y en un editor que corre una sentencia por vez
+  se podía saltear). **Otro valor** en la 2 o la 2b no frena
   (D-WS0-9): se anota en el registro. **Un workspace sin fila de ajustes**
   (nulos en las columnas de `s`) no frena: WS0 no la crea (WS-73).
 - **La 3**: los conteos se guardan.
