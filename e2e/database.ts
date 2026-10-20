@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 
 import type { InvitationStatus } from "@/server/db/schema";
+import type { DurationFormat } from "@/server/time";
 
 import { dayKeyOf, type CivilDay, type DateFormat } from "./days";
 import { OWNER_EMAIL, PERSON_NAME, testDatabaseUrl } from "./environment";
@@ -129,6 +130,38 @@ export async function workspaceTimeZone(): Promise<string> {
       throw new Error("No hay ningún workspace del que leer la zona horaria.");
     }
     return row.timezone;
+  });
+}
+
+/**
+ * Pone el formato de duración del workspace de los e2e, como lo va a guardar
+ * el selector de WS2b (D-WS2a-12 de WS2a). Es de todo el workspace y cambia lo
+ * que leen todos los specs: solo lo llaman el setup, que lo deja en `compact`,
+ * y el setup y el teardown del proyecto `duration-full`, que corre después de
+ * la suite. Sin la fila de ajustes, se corta.
+ */
+export async function setDurationFormat(format: DurationFormat): Promise<void> {
+  await updateOne(
+    `update workspace_settings
+        set duration_format = $1, updated_at = now()
+      where workspace_id = ${FIRST_WORKSPACE}`,
+    [format],
+  );
+}
+
+/** El formato de duración del workspace de los e2e (criterio 14 de WS2a). */
+export async function durationFormatOf(): Promise<DurationFormat> {
+  return withDatabase(async (client) => {
+    const result = await client.query<{ duration_format: DurationFormat }>(
+      `select duration_format
+         from workspace_settings
+        where workspace_id = ${FIRST_WORKSPACE}`,
+    );
+    const row = result.rows.at(0);
+    if (row === undefined) {
+      throw new Error("El workspace de los e2e no tiene fila de ajustes.");
+    }
+    return row.duration_format;
   });
 }
 

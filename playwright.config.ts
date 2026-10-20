@@ -58,9 +58,37 @@ export default defineConfig({
     },
     {
       name: "chromium",
-      testIgnore: /workspace\.setup\.ts$/,
+      testIgnore: [
+        /workspace\.setup\.ts$/,
+        /duration-full\.(setup|teardown)\.ts$/,
+        /\.full\.spec\.ts$/,
+      ],
       use: { ...devices["Desktop Chrome"] },
       dependencies: ["setup"],
+    },
+    /*
+     * El formato de duración es de todo el workspace, y los specs de
+     * `chromium` corren en paralelo sobre uno solo afirmando el compacto: el
+     * completo se prueba después de toda la suite, sobre la misma base
+     * (D-WS2a-12 de WS2a). Filtrar un spec de `chromium` no lo dispara, y
+     * filtrar uno del completo no corre su setup: la receta para iterar está
+     * en §9.4 del contrato de WS2a.
+     */
+    {
+      name: "duration-full-setup",
+      testMatch: /duration-full\.setup\.ts$/,
+      dependencies: ["chromium"],
+      teardown: "duration-full-teardown",
+    },
+    {
+      name: "duration-full-teardown",
+      testMatch: /duration-full\.teardown\.ts$/,
+    },
+    {
+      name: "duration-full",
+      testMatch: /\.full\.spec\.ts$/,
+      use: { ...devices["Desktop Chrome"] },
+      dependencies: ["duration-full-setup"],
     },
   ],
   webServer:
