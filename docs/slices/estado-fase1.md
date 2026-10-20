@@ -321,11 +321,16 @@ vacío del owner y `renewWorkspace` se corta.
        backend parcial `839de45`, frontend `0781654` y `fadb0a0`, e2e `0079109`. Al cortar,
        `mcp-back` arreglaba un bug que encontró la e2e: «Conectar» siempre falla porque
        `submitConsent` (`mcp-context.ts:176`) llama a `auth.api.oauth2Consent` sin `Request`
-       (`authorize-dkOG8GqZ.mjs:5643`); falta además el handler y `/api/mcp`. `mcp-tests`
-       (integración) esperaba ese código. **Sigue:** terminar backend, integración y e2e en
-       verde, el **preview con el usuario** para cerrar V-7 (conectar claude.ai, ChatGPT y Codex:
-       direcciones de vuelta, cuerpos de registro, `resource`), revisiones con security-auditor,
-       migración y merge con `MCP_ENABLED` apagado.
+       (`authorize-dkOG8GqZ.mjs:5643`); falta además el handler y `/api/mcp`. `mcp-tests` cerró la integración en `48d7c49`: 106 tests propios en verde, `test:integration` completo en 1989, y 33 mutaciones detectadas. Para las revisiones deja estos puntos:
+       - El 429 del registro solo se prueba con el limitador encendido en el test.
+       - Para security: el plugin limita por IP `/oauth2/token` a 20 cada 60 s y `/oauth2/authorize` a 30 cada 60 s (`authorize-dkOG8GqZ.mjs:5371-5414`). Con conectores remotos, toda la empresa sale por las IP del proveedor, y D-MCP-13 no lo nombra.
+       - El contrato no coincide en dos puntos: §2 dice «sin cascada», pero las tablas generadas tienen `on delete cascade` hacia `user`; y §4.17 dice que una herramienta desconocida da error JSON-RPC, pero el SDK responde `isError`.
+       - Los cuerpos de registro de claude.ai y de ChatGPT hay que reemplazarlos por los capturados en el preview.
+       - La prueba de `auth:schema` sin `MCP_ENABLED` queda pendiente.
+         **Sigue:** terminar backend, integración y e2e en
+         verde, el **preview con el usuario** para cerrar V-7 (conectar claude.ai, ChatGPT y Codex:
+         direcciones de vuelta, cuerpos de registro, `resource`), revisiones con security-auditor,
+         migración y merge con `MCP_ENABLED` apagado.
      - Worktrees que se pueden borrar: `clock-c1`, `clock-e2`, `clock-ba`. Los agentes de esta
        sesión no siguen en la próxima: si un informe no llegó, leer el registro y el `git log`
        del worktree.
