@@ -21,8 +21,8 @@ columnas, y después la migración que las borra.
   correcciones están aplicadas.
 - **Decisiones de arquitectura:**
   - **[ADR 0028](../adr/0028-borrar-columnas-primero-el-codigo-despues-la-migracion.md),
-    nuevo, propuesto**: borrar columnas, primero el código y después la
-    migración. Lo aprueba el usuario (§12).
+    nuevo, aceptado por el usuario el 2026-10-20**: borrar columnas, primero
+    el código y después la migración (§12).
   - El [ADR 0009](../adr/0009-la-configuracion-del-workspace-viaja-en-el-recurso.md)
     es el criterio del borrado y no cambia: si `who_creates_projects` vuelve a
     ser configurable, la columna vuelve con ese ADR.
@@ -165,17 +165,21 @@ no cambia nada que se ejecute: el código de B es el de A.
 a mano.**
 
 - **Cuándo**: cerradas las revisiones de A (D-WS0-2), sobre la rama rebasada en
-  el `main` que trae E2b y el MCP mergeados (§0), y **de nuevo, con el
+  el `main` que trae E2b mergeado (§0), y **de nuevo, con el
   procedimiento de D-WS0-2, si `main` suma otra migración antes del merge de
   A**. No se renombra un archivo generado antes: el `when` de su entrada en
   `drizzle/meta/_journal.json` tiene que superar el `created_at` de la última
   migración aplicada en producción, o `drizzle-kit migrate` la saltea sin aviso
   (ADR 0028, «Contexto»).
 - **Cómo**: `npm run db:generate -- --name drop_unused_columns`. En `main` la
-  última es la `0016`; E2b trae `0017_membership_account_link` y el MCP
-  `0017_mcp`, y el que mergee segundo regenera la suya como `0018`. **La de WS0
-  sale `0019_drop_unused_columns`**; si el diario dice otro número, vale el del
+  última es la `0017_membership_account_link`, de E2b. **La de WS0 sale
+  `0018_drop_unused_columns`**; si el diario dice otro número, vale el del
   diario.
+  _Corregido el 2026-10-20_: decía «La de WS0 sale `0019_drop_unused_columns`»,
+  con E2b y el MCP mergeados antes. El MCP se postergó y WS0 entra antes que
+  él: con `0017_membership_account_link` de E2b en `main`, la de WS0 es la
+  `0018_drop_unused_columns`, y el MCP regenera la suya como `0019`. Las citas
+  a la `0019` de WS0 en este contrato pasaron a `0018`.
 - **Lo que tiene que traer**, y nada más (lo comprueba quien la genera, lo
   vuelve a mirar la revisión de backend, y queda en el registro):
   1. Doce sentencias `ALTER TABLE … DROP COLUMN`, una por columna de D-WS0-1, en
@@ -322,7 +326,7 @@ script viejo; **desde la migración**, solo el rebasado.
   vuelve a crear las columnas (§2.3), se corre en producción, y recién después
   se despliega el código que las nombre, si hace falta. La aplicación de A
   funciona con y sin las columnas, así que la migración de vuelta se corre sin
-  tocar el código. **Nunca** `git revert` del merge de B (borraría la `0019` y su
+  tocar el código. **Nunca** `git revert` del merge de B (borraría la `0018` y su
   entrada del diario con la base ya migrada, como advierte §6.6 de E2b), y
   **nunca** Instant Rollback a un deployment anterior a A.
 - **Lo que la reversión no devuelve**: los valores. Las columnas vuelven con su
@@ -364,8 +368,9 @@ slice (son un código de moneda, banderas y números: nada personal).
 
 ## 0. Precondición de arranque
 
-- **E2b y el MCP mergeados en `main`**, con sus migraciones (`0017` y `0018`)
-  corridas en producción. La rama de WS0 se rebasa sobre ese `main` antes de
+- **E2b mergeado en `main`**, con su migración (`0017`) corrida en producción.
+  _Corregido el 2026-10-20_: decía «E2b y el MCP», con la `0017` y la `0018`; el
+  MCP se postergó y va después de WS0 (D-WS0-4). La rama de WS0 se rebasa sobre ese `main` antes de
   empezar; las citas de abajo son de `eb2ba2d`, y si el rebase movió alguna
   línea, `backend-dev` lo anota en el registro.
 - **El ADR 0028, aceptado** por el usuario (§12).
@@ -425,7 +430,7 @@ Queda afuera: §13.
 | `src/modules/project/schema.integration.test.ts`         | Sale el `describe` del criterio 11 del slice 9, y los imports que queden sin uso          | el archivo                                   |
 | `src/modules/workspace/service.integration.test.ts`      | El `update` de `:507-510` escribe `weekStart`                                             | el test de `joinedAt` (D-R9-2)               |
 | `src/modules/time-entry/person-keys.integration.test.ts` | Los `toMatchObject` del relleno de la `0013` sin `weeklyCapacityMinutes`                  | el test del relleno                          |
-| `drizzle/` (solo en B)                                   | `0019_drop_unused_columns.sql`, su instantánea y su entrada del diario                    | `db:migrate` sobre una base con datos (§9.3) |
+| `drizzle/` (solo en B)                                   | `0018_drop_unused_columns.sql`, su instantánea y su entrada del diario                    | `db:migrate` sobre una base con datos (§9.3) |
 | `src/server/db/schema.integration.test.ts` (nuevo, en B) | Las doce columnas no están; `who_sees_all_entries` sí (§9.2)                              | el archivo                                   |
 
 - **Los tipos `WorkspaceRow` y `MembershipRow`** (`workspace/repository.ts:17-18`)
@@ -471,7 +476,7 @@ Los `…` son las definiciones de hoy, sin cambio. Las relaciones
 
 ### 2.2 La migración de B
 
-`drizzle/0019_drop_unused_columns.sql`, con lo que fija D-WS0-4. **Una instancia
+`drizzle/0018_drop_unused_columns.sql`, con lo que fija D-WS0-4. **Una instancia
 de A** no nombra las columnas, así que la migración corre con A atendiendo sin
 romper nada. Las doce sentencias van en la transacción de `drizzle-kit migrate`:
 cada `DROP COLUMN` toma un bloqueo exclusivo de su tabla hasta el `commit`, que
@@ -531,7 +536,8 @@ Ninguna. Nada visible cambia en ninguna pantalla, antes ni después de migrar.
 Hechos que el contrato da por dados: Vercel despliega `main` a producción en
 cada push y el build no corre migraciones; las migraciones las corre el usuario
 con `!`. **WS0 es el primer borrado**: la migración va después del push de B, no
-antes (ADR 0028). E2b y el MCP están en producción con sus migraciones.
+antes (ADR 0028). E2b está en producción con su migración (_corregido el
+2026-10-20_: decía también el MCP, que va después de WS0).
 
 ### 6.1 La consulta previa
 
@@ -561,6 +567,7 @@ from workspace w
 left join workspace_settings s on s.workspace_id = w.id
 order by w.created_at, w.id;
 
+-- 2b. La capacidad: otra sentencia, que también se guarda (D-WS0-9).
 select weekly_capacity_minutes, count(*) as membresias
 from membership
 group by 1
@@ -583,13 +590,16 @@ Lo esperado y qué se hace si no:
 - **La 1**: doce filas. **Menos de doce** frena: alguien borró una a mano, y la
   migración fallaría en esa sentencia; se averigua antes de seguir.
 - **La 2**: un workspace, con `logo_url` nula, `currency` `ARS`, `admins`,
-  `everyone`, cuatro `false`, `false`, `true` y `0`; y una sola fila de
-  capacidad, `2400`, con todas las membresías. **Otro valor** no frena
+  `everyone`, cuatro `false`, `false`, `true` y `0`. **La 2b**: una sola fila de
+  capacidad, `2400`, con todas las membresías (_corregido el 2026-10-20_: la 2b
+  iba sin número dentro de la 2, y en un editor que corre una sentencia por vez
+  se podía saltear). **Otro valor** en la 2 o la 2b no frena
   (D-WS0-9): se anota en el registro. **Un workspace sin fila de ajustes**
   (nulos en las columnas de `s`) no frena: WS0 no la crea (WS-73).
 - **La 3**: los conteos se guardan.
 - **La 4**: la primera fila tiene el `created_at` igual al `when` de la última
-  entrada del diario de `main` antes de B (la `0018`). **Otro** frena:
+  entrada del diario de `main` antes de B (la `0017`; _corregido el 2026-10-20_:
+  decía la `0018`, D-WS0-4). **Otro** frena:
   producción no está al día con `main`, y se resuelve antes de migrar, porque
   `db:migrate` correría también lo que falte.
 
@@ -638,12 +648,12 @@ order by ordinal_position;
 select typname from pg_type where typname = 'visibility_scope';
 
 -- La 3 de §6.1 otra vez: los mismos conteos.
--- La 4 de §6.1 otra vez: la primera fila, con el `created_at` igual al `when` de la `0019`.
+-- La 4 de §6.1 otra vez: la primera fila, con el `created_at` igual al `when` de la `0018`.
 ```
 
 Lo esperado: la 1 vacía; en la 5, `workspace_id`, `who_sees_all_entries`,
 `created_at` y `updated_at`; en la 6, una fila; los conteos de antes; y la
-`0019` aplicada. **Si la 1 todavía trae las doce** y la 4 no muestra la `0019`,
+`0018` aplicada. **Si la 1 todavía trae las doce** y la 4 no muestra la `0018`,
 `drizzle-kit` la salteó por el `when` (D-WS0-4): no se toca nada a mano; se
 avisa al team-lead, que regenera B sobre `main` con un `when` posterior.
 
@@ -663,7 +673,7 @@ avisa al team-lead, que regenera B sobre `main` con un `when` posterior.
   corrida en producción con `!`, y después el push de su commit. La aplicación
   de A no cambia. **No** `git revert` del merge de B y **no** Instant Rollback
   a un deployment anterior al merge de A: los dos dejan la aplicación nombrando
-  columnas que no están, o el diario sin la `0019` con la base migrada.
+  columnas que no están, o el diario sin la `0018` con la base migrada.
 - **Lo que no vuelve**: los valores de la consulta 2, si no eran los `default`.
 
 ### 6.8 Previews y la base local
@@ -706,7 +716,7 @@ con bases propias.
 ### parity-analyst
 
 Correcciones fechadas, «_Corregido el <fecha>, WS0_», que dicen que la columna
-se borró con la `0019`:
+se borró con la `0018`:
 
 - `workspace.md`: la tabla de la §14 (la columna «Hoy» de las doce filas pasa a
   «Borrada en WS0») y P-05.
@@ -794,7 +804,7 @@ los tres tests, `src/components/`, `src/app/`, `CLAUDE.md`, `.github/` y los ADR
 
 `src/server/db/schema.integration.test.ts`, nuevo, con una lectura de
 `information_schema.columns` y `pg_type` (criterio 5). Tiene que poder fallar:
-se verifica quitando una sentencia de la `0019` en una copia y corriendo la
+se verifica quitando una sentencia de la `0018` en una copia y corriendo la
 tanda contra una base nueva; el test falla nombrando esa columna.
 
 ### 9.3 Con B
@@ -898,8 +908,9 @@ Verificado contra `eb2ba2d` y `drizzle-orm` 0.45.3:
   (EQ-72, P-09, `:41`), y `proyectos.md` PR-11 que la `currency` del workspace
   «alcanza». La decisión 1 del §7 del mapa los supera; los corrige
   `parity-analyst` (§7).
-- **El mapa no da el número de la migración**: con E2b y el MCP mergeados antes,
-  es la `0019` (D-WS0-4).
+- **El mapa no da el número de la migración**: con E2b mergeado antes, es la
+  `0018` (D-WS0-4; _corregido el 2026-10-20_: decía la `0019`, con el MCP
+  antes).
 
 ## 12. Preguntas para el usuario
 
@@ -907,7 +918,8 @@ Verificado contra `eb2ba2d` y `drizzle-orm` 0.45.3:
    correr la migración antes del push: en WS0 se corre **después del push de
    B**, con A ya atendiendo, desde `main`. **Recomendación: aceptarlo.** Es lo
    que evita dejar la aplicación caída mientras Vercel cambia de versión, y
-   deja la regla de siempre para todo lo que agrega.
+   deja la regla de siempre para todo lo que agrega. **Respuesta**: el usuario
+   lo aceptó el 2026-10-20.
 
 ## 13. Fuera de alcance
 

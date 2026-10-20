@@ -422,15 +422,19 @@ los reportes. No mueve ninguna entrada: solo cambia dónde corta la semana.
 
 **PF-19 Días laborables y capacidad semanal** — `fuera de alcance`
 El mismo endpoint de perfil de miembro acepta `workingDays` con el mismo enum
-de días, y `membership.weeklyCapacityMinutes` ya existe en nuestro esquema sin
+de días, y `membership.weeklyCapacityMinutes` existía en nuestro esquema sin
 ningún uso. Justificación, decidida por el equipo el 2026-10-02: alimentan
 objetivos, capacidad y planificación, y Clockify los administra desde la
 pantalla de equipo, igual que el primer día de la semana. No van a la pantalla
 de perfil, y tampoco a la de equipo: quedan fuera hasta que algo los consuma, y
-`weekly_capacity_minutes` sigue sin uso (EQ-72, WS-09). Se nombran acá solo
+`weekly_capacity_minutes` se borró en WS0 (EQ-72, WS-09). Se nombran acá solo
 porque viajan en el mismo payload que PF-16.
 _Corregido el 2026-10-16, equipo EQ-72 (equipo P-09, workspace P-06)_: decía
 que iban a la fase 2 con el resto de la administración de equipo.
+_Corregido el 2026-10-20, WS0_: decía que `membership.weeklyCapacityMinutes`
+«ya existe» y que `weekly_capacity_minutes` «sigue sin uso». La columna se
+borró con la migración `0018`
+([contrato de WS0](../slices/fase2-ws0-columnas.md)).
 
 ## 5. Formato de duración
 
