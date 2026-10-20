@@ -35,6 +35,7 @@ import {
   ADMIN_STATUS_OWNER_ONLY,
   chooseRowAction,
   chooseStatusFilter,
+  closeMenu,
   DEACTIVATE,
   DEACTIVATE_WARNING,
   deactivateDialog,
@@ -44,6 +45,7 @@ import {
   dialogButton,
   domainEmail,
   enterTeamAsAdmin,
+  expectRowActions,
   inactiveMark,
   invitationRow,
   isNameStruck,
@@ -53,9 +55,11 @@ import {
   memberRow,
   menuItem,
   noAccountNote,
+  ownerRow,
   PROMOTE,
   REACTIVATE,
   reactivatedMessage,
+  RELEASE_EMAIL,
   RETRY,
   roleButton,
   roleCell,
@@ -96,16 +100,6 @@ function timerButton(page: Page, name: "Iniciar" | "Detener"): Locator {
   return trackerBar(page).getByRole("button", { name, exact: true });
 }
 
-/**
- * La fila del owner de la suite. Su nombre no lo fija la suite, así que se la
- * busca por el correo de su encabezado de fila.
- */
-function ownerRow(page: Page): Locator {
-  return teamTable(page)
-    .getByRole("row")
-    .filter({ has: page.getByRole("rowheader").filter({ hasText: OWNER_EMAIL }) });
-}
-
 test("el owner desactiva a una persona con un timer en curso y la deja afuera en el acto", async ({
   browser,
 }) => {
@@ -115,7 +109,8 @@ test("el owner desactiva a una persona con un timer en curso y la deja afuera en
   const person = domainEmail("desactivar");
 
   // P entra, que es lo que le crea la membresía, y tiene su cuenta de Google:
-  // sin ella la fila no ofrecería «Reactivar» después (D-E2-7).
+  // sin ella la fila inactiva tendría la nota de D-E2-7, y reactivarla
+  // pediría la vinculación (D-E2b-5 de E2b).
   const personPage = await openSecondTab(browser, person);
   await expect(trackerBar(personPage)).toBeVisible();
   await setDisplayName(person, name);
@@ -125,7 +120,9 @@ test("el owner desactiva a una persona con un timer en curso y la deja afuera en
   await expect(timerButton(personPage, "Detener")).toBeVisible();
   expect(await sessionCountOf(person)).toBe(1);
 
-  // EQ-03: el owner ve el menú de la fila de P, que ofrece solo «Desactivar».
+  // EQ-03: el owner ve el menú de la fila de P, que ofrece «Desactivar» y no
+  // «Reactivar»; con cuenta, también «Vincular otra cuenta de Google» (§5.3 de
+  // E2b).
   const ownerPage = await openSecondTab(browser, OWNER_EMAIL, TEAM_PATH);
   await expect(statusFilter(ownerPage)).toContainText("Activas");
   const row = memberRow(ownerPage, name);
@@ -156,7 +153,8 @@ test("el owner desactiva a una persona con un timer en curso y la deja afuera en
 
   // EQ-11, §5.4: la fila se queda en «Activas», tachada, con «(inactiva)», el
   // mismo rol sin botón (EQ-37), el aviso con el nombre y el foco en su menú,
-  // que ahora ofrece «Reactivar».
+  // que ahora ofrece «Reactivar» y no «Desactivar»; también «Liberar el
+  // correo» (§5.3 de E2b).
   await expect(teamFeedback(ownerPage)).toContainText(deactivatedMessage(name));
   await expect(inactiveMark(row)).toBeVisible();
   expect(await isNameStruck(row, name)).toBe(true);
@@ -288,14 +286,18 @@ test("el filtro de estado vive en la URL", async ({ page, email }) => {
   // §5.2: la página nueva no le quita el foco al selector.
   await expect(statusFilter(page)).toBeFocused();
 
-  // EQ-05, D-E2-7: la inactiva sin cuenta, tachada, con la nota y sin menú;
-  // ni la activa ni la invitada.
+  // EQ-05, D-E2-7: la inactiva sin cuenta, tachada y con la nota; ni la
+  // activa ni la invitada.
   await expect(inactiveMark(inactiveRow)).toBeVisible();
   expect(await isNameStruck(inactiveRow, inactive)).toBe(true);
   await expect(noAccountNote(inactiveRow)).toBeVisible();
-  await expect(rowButtons(inactiveRow)).toHaveCount(0);
   await expect(activeRow).toHaveCount(0);
   await expect(invitedRow).toHaveCount(0);
+
+  // D-E2b-4: es un member, así que el admin que mira ve su menú, con
+  // «Reactivar» y «Liberar el correo». Hasta E2 no tenía menú (D-E2-7).
+  await expectRowActions(page, inactive, [REACTIVATE, RELEASE_EMAIL]);
+  await closeMenu(page);
 
   // EQ-100: recargar conserva el filtro.
   await page.reload();

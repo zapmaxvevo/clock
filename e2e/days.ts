@@ -37,16 +37,26 @@ const WEEKDAYS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
 function partsIn(
   timeZone: string,
   options: Intl.DateTimeFormatOptions,
+  instant = new Date(),
 ): (type: Intl.DateTimeFormatPartTypes) => number {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone, ...options }).formatToParts(
-    new Date(),
+    instant,
   );
   return (type) => Number(parts.find((candidate) => candidate.type === type)?.value);
 }
 
 /** Hoy en una zona horaria, que no tiene por qué ser la del proceso. */
 export function todayIn(timeZone: string): CivilDay {
-  const part = partsIn(timeZone, { year: "numeric", month: "numeric", day: "numeric" });
+  return dayOfInstantIn(new Date(), timeZone);
+}
+
+/** El día de un instante en una zona horaria: el de una fecha que guarda la base. */
+export function dayOfInstantIn(instant: Date, timeZone: string): CivilDay {
+  const part = partsIn(
+    timeZone,
+    { year: "numeric", month: "numeric", day: "numeric" },
+    instant,
+  );
   return { year: part("year"), month: part("month"), day: part("day") };
 }
 
@@ -162,6 +172,11 @@ export function fullWeekdayLabel(civil: CivilDay, today: CivilDay): string {
   return civil.year === today.year
     ? `${weekday} ${date}`
     : `${weekday} ${date}/${civil.year}`;
+}
+
+/** Una fecha con el formato por omisión de PF-12, con el año: «28/09/2026». */
+export function numericDateLabel({ year, month, day }: CivilDay): string {
+  return `${pad(day)}/${pad(month)}/${year}`;
 }
 
 /** El día como lo escribe la URL en `desde`: «2026-09-28». */
