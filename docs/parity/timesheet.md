@@ -509,9 +509,13 @@ decimal. Verificado en el workspace (2026-10-07), respuestas 5 y A: `1` da
 y media. Coincide con la tabla de la página del Timesheet —con el formato de
 duración en minutos y horas, «1» se vuelve 1 minuto— y con PF-21: para ocho
 horas se escribe `8h`, `8:00` u `8,0`. Decisión del equipo del 2026-10-07.
+Por TT-19 acepta también `h:mm:ss`, con los dos formatos de duración: `1:30:00`
+y `01:30:45` son una hora y media, con los segundos truncados.
 _Corregido el 2026-10-07, P-12_: era `adaptar` por la coma decimal y estaba sin
 verificar qué hacía `8` en una celda, porque la página de creación de entradas
 se leía como si fueran ocho horas.
+_Corregido el 2026-10-20, WS2a_: no aceptaba `h:mm:ss`
+([ADR 0029](../adr/0029-el-formato-de-duracion-es-del-workspace-y-solo-cambia-lo-que-se-muestra.md)).
 
 **TS-26 Tope de lo que se escribe en una celda** — `adaptar`
 La celda acepta menos de 24 horas, el mismo tope de `parseDurationInput` en la
@@ -722,6 +726,15 @@ la suma en segundos, una celda con dos entradas que suman `1:30:42`, llevada a
 `1:31`, agregaría una entrada de 18 segundos, contra TT-73. Decisión del
 contrato del slice 13 (D13-3), aceptada por el team-lead.
 
+**Con el formato completo, los segundos sueltos quedan a la vista.** La regla
+no cambia con el formato: `S` y `V` siguen en minutos, así que una celda con
+varias entradas conserva al escribirla los segundos que no llegan al minuto.
+Una que suma `02:13:27`, llevada a `2:15`, queda en `02:15:27`; con el compacto
+se ve `2:15`. Mientras viaja la escritura, la celda muestra lo que va a dejar el
+servidor. Quitar esos segundos cambiaría lo que escribe una celda: queda
+pendiente de decisión del usuario, como pregunta 3 del
+[contrato de WS2a](../slices/fase2-ws2a-formato.md) (D-WS2a-8).
+
 En todos los rechazos la celda vuelve al valor anterior con el aviso.
 Decisión del equipo del 2026-10-07 (timesheet P-03 y P-13). Justificación del
 `adaptar`: es la regla de Clockify salvo dos casos que en el workspace no se
@@ -746,6 +759,8 @@ otro día mandaba «a editar desde el detalle de la celda (TS-42)»; subir no
 decía que pasa por las validaciones de un alta; `S` era «la suma de las
 entradas cerradas de la celda», sin decir en qué unidad; y el desempate decía
 que los ids son «elegidos por el cliente (ADR 0007)».
+_Corregido el 2026-10-20, WS2a_: no decía qué se ve con el formato completo en
+una celda con varias entradas que tienen segundos.
 
 **TS-35 Vaciar una celda o escribir cero** — `replicar`
 Vaciar la celda, escribir `0` o escribir menos de un minuto no borra nada y no

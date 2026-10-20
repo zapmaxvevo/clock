@@ -312,15 +312,22 @@ En el segmento del día de inicio, en este orden: la descripción, o «Sin
 descripción» en gris (TT-50); el proyecto, o «Proyecto: Tarea», con su punto de
 color, si lo hay; y el horario `{inicio} – {fin}` con el superíndice de días
 (TT-51) y la duración, con las horas en el formato de la persona (PF-13). El
-timer muestra «{inicio} – en curso» y el transcurrido en `h:mm`. Los otros
-segmentos de la misma entrada muestran solo la descripción (CAL-26). Un bloque
-que no tiene alto para todo muestra lo que entra, en ese orden, recortado. Con
-el slice 11 se suma el ícono de facturable. Justificación: el contenido exacto
-no está documentado; es el de la fila del rastreador (TT-49).
+timer muestra «{inicio} – en curso» y el transcurrido como la duración de los
+demás bloques, con el formato de duración del workspace (WS-17): `h:mm` con el
+compacto y `hh:mm:ss` con el completo, que avanza cada segundo. No es el
+contador del timer, que sigue en `h:mm:ss` (PF-22). Los otros segmentos de la
+misma entrada muestran solo la descripción (CAL-26). Un bloque que no tiene
+alto para todo muestra lo que entra, en ese orden, recortado. Con el slice 11
+se suma el ícono de facturable. Justificación: el contenido exacto no está
+documentado; es el de la fila del rastreador (TT-49).
 _Corregido el 2026-10-04, slice 8_: decía que el horario iba `HH:mm – HH:mm`,
 que un bloque sin alto mostraba solo la descripción y que el proyecto y la
 tarea se sumaban con el slice 10, que ya estaba en `main`. No decía qué
 muestran los otros segmentos ni el bloque del timer.
+_Corregido el 2026-10-20, WS2a_: decía que el transcurrido del timer iba siempre
+en `h:mm`. Sigue el formato de duración del workspace
+([ADR 0029](../adr/0029-el-formato-de-duracion-es-del-workspace-y-solo-cambia-lo-que-se-muestra.md);
+[contrato de WS2a](../slices/fase2-ws2a-formato.md), D-WS2a-7).
 
 _Agregado el 2026-10-05_. Diseño propio, fijado en el
 [contrato del slice 11](../slices/fase1-slice11-etiquetas-y-facturable.md): el

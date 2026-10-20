@@ -392,9 +392,14 @@ duración mueve la hora de fin; editar inicio o fin recalcula la duración.
 **TT-19 Formatos aceptados en el campo de duración** — `adaptar`
 Clockify acepta `30` → 30 m, `2h`, `2:00`, `2.75` → 2 h 45 m, `1h30m1s`. Se
 replican todos y además se acepta la coma decimal (`2,75`). Justificación:
-teclado y convención en español. La tabla de equivalencias depende del formato
-de duración del workspace; está explicado en PF-21 de
-[la paridad del perfil](perfil.md).
+teclado y convención en español. También se acepta `h:mm:ss`, con los dos
+formatos de duración: `1:30:00` y `01:30:45` son 1 h 30 m, con los segundos
+truncados, como en `1h30m1s`. Es la forma que muestra el formato completo, y un
+campo no puede rechazar su propio valor
+([ADR 0029](../adr/0029-el-formato-de-duracion-es-del-workspace-y-solo-cambia-lo-que-se-muestra.md)).
+La tabla de equivalencias depende del formato de duración del workspace; está
+explicado en PF-21 de [la paridad del perfil](perfil.md).
+_Corregido el 2026-10-20, WS2a_: no aceptaba `h:mm:ss`.
 
 **TT-20 Formatos aceptados en los campos de hora** — `adaptar`
 Clockify acepta `0345` → 03:45, `9.45` → 9:45, `1pm` → 13:00, `1` → 01:00. Se

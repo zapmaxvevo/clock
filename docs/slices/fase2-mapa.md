@@ -488,8 +488,13 @@ Riesgos:
 - **El PDF** (R7): `hh:mm:ss` es más ancho que `h:mm`, y los anchos de columna
   de `pdf-layout.ts` están medidos. Se mide de nuevo con el completo.
 - **Los e2e** que leen duraciones siguen con el compacto por omisión; los del
-  completo siembran el ajuste en una base propia, porque cambiarlo en la base
-  común cambia lo que ven los demás specs.
+  completo corren en el proyecto `duration-full` de Playwright que trae WS2a,
+  después de toda la suite y sobre la misma base, y no en una base propia:
+  cambiar el ajuste en medio de la suite cambiaría lo que ven los demás specs.
+
+_Corregido el 2026-10-20, WS2a_: decía que los e2e del completo sembraban el
+ajuste en una base propia. El [contrato de WS2a](fase2-ws2a-formato.md)
+(D-WS2a-12) lo resuelve sin otra base ni otro servidor, y WS2b reusa el proyecto.
 
 _Corregido el 2026-10-20, WS1 (D-WS1-7 del
 [contrato de WS1](fase2-ws1-configuracion.md))_: suma WS-73 y la sección
@@ -739,7 +744,7 @@ desde 0026 al escribirse.
 | 0025, escrituras entre módulos                              | E1a   | Aceptar la invitación, timer, sesiones y `owner_id`; extiende el 0010 |
 | 0027, una fila `user` sin cuenta de Google                  | E2b   | La salida de EQ-110, de las tres importadas y de P-11 de `perfil`     |
 | Borrar columnas: primero el código, después la migración    | WS0   | El orden de despliegue de un borrado                                  |
-| El formato de duración es del workspace                     | WS2a  | Extiende el 0012 y fija la regla del compacto (WS-16)                 |
+| 0029, el formato de duración es del workspace               | WS2a  | Extiende el 0012 y fija la regla del compacto (WS-16)                 |
 | Crea tareas quien ve el proyecto                            | P4    | El cambio de `task.create` (WS-40, PR-40, PR-58)                      |
 | Los asignados de una tarea en `can()`                       | P7    | El recurso de tarea                                                   |
 | La pertenencia por grupo en el recurso del proyecto         | P9    | Cómo llega el grupo al `ProjectResource`                              |
@@ -751,6 +756,9 @@ D-R8-7.
 _Actualizado el 2026-10-20, E2b_: la fila de E2b nombra el
 [ADR 0027](../adr/0027-una-fila-user-sin-cuenta-de-google.md), aceptado por el
 usuario el 2026-10-19, y cuenta tres importadas en lugar de seis (§2).
+_Corregido el 2026-10-20, WS2a_: la fila de WS2a nombra el
+[ADR 0029](../adr/0029-el-formato-de-duracion-es-del-workspace-y-solo-cambia-lo-que-se-muestra.md),
+propuesto con el [contrato de WS2a](fase2-ws2a-formato.md).
 
 ## 5. Antes del primer contrato
 
