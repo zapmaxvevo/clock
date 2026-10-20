@@ -714,6 +714,24 @@ export async function accountCountOf(userId: string): Promise<number> {
   });
 }
 
+/**
+ * Cuántos asistentes tiene autorizados una persona: los clientes con algún
+ * consentimiento suyo, como los lista «Asistentes conectados» (D-MCP-5).
+ * Desconectar y desactivarla los borran (D-MCP-5, D-MCP-6).
+ */
+export async function grantCountOf(email: string): Promise<number> {
+  return withDatabase(async (client) => {
+    const result = await client.query<{ count: number }>(
+      `select count(distinct oauth_consent.client_id)::int as count
+         from oauth_consent
+         join "user" on "user".id = oauth_consent.user_id
+        where "user".email = $1`,
+      [email],
+    );
+    return result.rows.at(0)?.count ?? 0;
+  });
+}
+
 /** D-E2b-11: los días que vale una vinculación desde que se pide. */
 export const ACCOUNT_LINK_TTL_DAYS = 7;
 
