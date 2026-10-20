@@ -195,3 +195,25 @@ en una de dos sentencias de Drizzle que nombran `logo_url` y `currency`: el
 `ensureWorkspaceContext` (`column "logo_url" does not exist`). Vitest agrupa
 los errores iguales: son 45 bloques para 47 tests. El worktree se borró
 después.
+
+## e2e con B
+
+Commit `a37fcfb` (B), sin cambios en `e2e/`: es el de `main` (`143f92c`), que
+con la e2e de WS1 suma siete tests a los 235 de A.
+
+| Corrida                                                                             | Resultado              |
+| ----------------------------------------------------------------------------------- | ---------------------- |
+| `DATABASE_URL=…/clock_ws0_e2e_b npm run test:e2e`, base nueva, de la 0000 a la 0018 | 242 en verde (1,8 min) |
+| `DATABASE_URL=…/clock_ws0_b_upgrade npm run test:e2e`, la base de la subida         | 242 en verde (1,7 min) |
+
+Antes de la segunda, `DATABASE_URL=…/clock_ws0_b_upgrade npm run db:migrate`
+no aplicó nada: siguen 19 filas en `drizzle.__drizzle_migrations`, la última
+con `created_at` `1792502701085` (la `0018`), y ninguna de las doce columnas en
+`information_schema.columns`. La base llegó sin filas en `workspace`,
+`membership` ni `time_entry`: la vació la integración del paso 3 de §9.3
+(`src/test/database.ts:11`), así que la e2e la sembró de cero sobre el esquema
+subido, no sobre los datos del volumen.
+
+Sin fallos ni flakes: ningún spec se repitió. Ruido sin fallos, el de siempre:
+17 y 14 `Error: The destination stream closed early.` de Next en el log del
+servidor.
