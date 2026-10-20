@@ -336,8 +336,9 @@ vacío del owner y `renewWorkspace` se corta.
        - El contrato no coincide en dos puntos: §2 dice «sin cascada», pero las tablas generadas tienen `on delete cascade` hacia `user`; y §4.17 dice que una herramienta desconocida da error JSON-RPC, pero el SDK responde `isError`.
        - Los cuerpos de registro de claude.ai y de ChatGPT hay que reemplazarlos por los capturados en el preview.
        - La prueba de `auth:schema` sin `MCP_ENABLED` la hizo `mcp-back`: no cambia el esquema.
-       - **Sigue:** e2e del MCP contra HEAD (`mcp-e2e` esperaba el arreglo de «Conectar», ya en
-         `a467ec6`), el **preview con el usuario** para cerrar V-7 (conectar claude.ai, ChatGPT y Codex:
+       - e2e del MCP sobre `23b8c25`: `mcp.spec.ts` dio 3 corridas seguidas en verde. La suite completa dio 239/240: con el MCP encendido falla
+         `profile.spec.ts:180`, que cuenta los textbox de todo `main`. Hecho en `57d73cb`: `MCP_ENABLED: "true"` en `playwright.config.ts` y el test de perfil cuenta los textbox de «Datos de la cuenta». La suite completa da 240/240 sobre una base reusada; falta correrla en una base nueva (criterio 21). La dirección de vuelta de Claude Code en `e2e/mcp.ts` es `127.0.0.1`; si V-7 cierra con `localhost`, hay que cambiarla.
+       - **Sigue:** el **preview con el usuario** para cerrar V-7 (conectar claude.ai, ChatGPT y Codex:
          direcciones de vuelta, cuerpos de registro, `resource`), revisiones con security-auditor,
          migración y merge con `MCP_ENABLED` apagado.
      - Worktrees que se pueden borrar: `clock-c1`, `clock-e2`, `clock-ba`. Los agentes de esta
