@@ -29,6 +29,24 @@ describe("can", () => {
     }
   });
 
+  it("no deja cambiar la configuración a un owner ni a un admin inactivos (WS-51)", () => {
+    for (const role of ["owner", "admin"] as const) {
+      expect(
+        can(actor(role, { status: "inactive" }), "workspace.settings.update", workspace),
+      ).toBe(false);
+    }
+  });
+
+  it("no deja cambiar la configuración de otro workspace", () => {
+    const other = {
+      kind: "workspace",
+      workspaceId: "22222222-2222-2222-2222-222222222222",
+    } as const;
+    for (const role of ["owner", "admin"] as const) {
+      expect(can(actor(role), "workspace.settings.update", other)).toBe(false);
+    }
+  });
+
   it("reserva transferir y eliminar el workspace para el owner", () => {
     expect(can(actor("owner"), "workspace.delete", workspace)).toBe(true);
     expect(can(actor("admin"), "workspace.delete", workspace)).toBe(false);

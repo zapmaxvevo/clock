@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 
+import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { db } from "@/server/db";
-import { membership } from "@/server/db/schema";
-import type { Role } from "@/server/permissions";
+import { membership, workspace } from "@/server/db/schema";
+import type { MembershipStatus, Role } from "@/server/permissions";
 import {
   seedInvitation,
   seedMember,
@@ -14,7 +15,7 @@ import {
 } from "@/test/factories";
 import { auditFor, emailOf, invitationOf, invitationsOf } from "@/test/queries";
 
-import { INVITE_LIMIT, invitationMessages } from "./schema";
+import { INVITE_LIMIT, invitationMessages, workspaceSettingsMessages } from "./schema";
 import { workspaceRepository } from "./repository";
 
 /**
@@ -79,12 +80,12 @@ let seeded: SeededWorkspace;
  * Una sesión en el único workspace sembrado, con la membresía ya creada con el
  * rol del caso: `ensureWorkspaceContext` la encuentra y no crea otra.
  */
-async function signInAs(role: Role) {
+async function signInAs(role: Role, status: MembershipStatus = "active") {
   const email = `${randomUUID()}@empresa.com`;
   const id = await seedUser(email);
   await db
     .insert(membership)
-    .values({ workspaceId: seeded.workspaceId, userId: id, role });
+    .values({ workspaceId: seeded.workspaceId, userId: id, role, status });
   mocks.sessionUser = { id, email };
   return id;
 }
@@ -323,5 +324,149 @@ describe("revokeInvitation", () => {
     expect((await invitationOf(seeded.workspaceId, "ana@gmail.com"))?.status).toBe(
       "pending",
     );
+  });
+});
+
+describe("updateWorkspaceName (WS1, §4.5)", () => {
+  async function workspaceRow() {
+    const [row] = await db
+      .select()
+      .from(workspace)
+      .where(eq(workspace.id, seeded.workspaceId));
+    return row;
+  }
+
+  async function nameAudits() {
+    return auditFor("workspace", seeded.workspaceId);
+  }
+
+  it("sin sesión manda al login sin escribir", async () => {
+    const before = await workspaceRow();
+
+    await expect(
+      actions.updateWorkspaceName({ name: "Estudio Norte" }),
+    ).rejects.toBeInstanceOf(RedirectError);
+
+    expect(mocks.redirects).toEqual(["/login"]);
+    expect(await workspaceRow()).toEqual(before);
+    expect(await nameAudits()).toEqual([]);
+  });
+
+  it("el éxito responde el recortado y revalida el árbol entero (criterio 8, WS-64)", async () => {
+    const adminId = await signInAs("admin");
+
+    const result = await actions.updateWorkspaceName({ name: "  Estudio Norte  " });
+
+    expect(result).toEqual({ ok: true, data: { name: "Estudio Norte" } });
+    expect((await workspaceRow()).name).toBe("Estudio Norte");
+    expect(await nameAudits()).toEqual([
+      expect.objectContaining({ action: "workspace.updateName", actorId: adminId }),
+    ]);
+    expect(mocks.revalidated).toEqual([{ path: "/", type: "layout" }]);
+  });
+
+  it("el mismo nombre con espacios alrededor responde éxito sin escribir", async () => {
+    await signInAs("owner");
+    await actions.updateWorkspaceName({ name: "Estudio Norte" });
+    const saved = await workspaceRow();
+
+    const result = await actions.updateWorkspaceName({ name: " Estudio Norte " });
+
+    expect(result).toEqual({ ok: true, data: { name: "Estudio Norte" } });
+    expect(await workspaceRow()).toEqual(saved);
+    expect(await nameAudits()).toHaveLength(1);
+  });
+
+  it.each([
+    ["vacío", { name: "" }, workspaceSettingsMessages.nameRequired],
+    ["solo espacios", { name: "   " }, workspaceSettingsMessages.nameRequired],
+    ["un número", { name: 42 }, workspaceSettingsMessages.nameRequired],
+    ["un objeto sin name", {}, workspaceSettingsMessages.nameRequired],
+    [
+      "101 caracteres después de recortar",
+      { name: ` ${"a".repeat(101)} ` },
+      workspaceSettingsMessages.nameTooLong,
+    ],
+    [
+      "el carácter nulo",
+      { name: "Estudio\u0000Norte" },
+      workspaceSettingsMessages.nameNullCharacter,
+    ],
+  ])(
+    "%s responde validation sin escribir (criterio 3)",
+    async (_case, input, message) => {
+      await signInAs("owner");
+      const before = await workspaceRow();
+
+      const result = await actions.updateWorkspaceName(input as never);
+
+      expect(result).toEqual({ ok: false, code: "validation", message });
+      expect(await workspaceRow()).toEqual(before);
+      expect(await nameAudits()).toEqual([]);
+    },
+  );
+
+  it("100 caracteres con espacios alrededor responden éxito (WS-71)", async () => {
+    await signInAs("owner");
+    const name = "a".repeat(100);
+
+    const result = await actions.updateWorkspaceName({ name: `  ${name}  ` });
+
+    expect(result).toEqual({ ok: true, data: { name } });
+    expect((await workspaceRow()).name).toBe(name);
+  });
+
+  it.each([
+    ["un member", "member", "active"],
+    ["un admin inactivo", "admin", "inactive"],
+  ] as const)(
+    "%s responde forbidden con WS-58, sin escribir, y revalida (criterio 8)",
+    async (_case, role, status) => {
+      await signInAs(role, status);
+      const before = await workspaceRow();
+
+      const result = await actions.updateWorkspaceName({ name: "Estudio Norte" });
+
+      expect(result).toEqual({
+        ok: false,
+        code: "forbidden",
+        message: workspaceSettingsMessages.forbidden,
+      });
+      expect(await workspaceRow()).toEqual(before);
+      expect(await nameAudits()).toEqual([]);
+      expect(mocks.revalidated).toEqual([{ path: "/", type: "layout" }]);
+    },
+  );
+
+  it("una falla inesperada responde unexpected con su texto y no escribe", async () => {
+    await signInAs("owner");
+    const before = await workspaceRow();
+    vi.spyOn(workspaceRepository, "updateWorkspaceName").mockRejectedValueOnce(
+      new Error("se cayó la base"),
+    );
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const result = await actions.updateWorkspaceName({ name: "Estudio Norte" });
+
+    expect(result).toEqual({
+      ok: false,
+      code: "unexpected",
+      message: workspaceSettingsMessages.unexpected,
+    });
+    expect(await workspaceRow()).toEqual(before);
+    expect(await nameAudits()).toEqual([]);
+  });
+
+  it("reintentar después de una respuesta perdida responde éxito y deja una constancia (criterio 12, WS-62)", async () => {
+    await signInAs("admin");
+
+    const first = await actions.updateWorkspaceName({ name: "Estudio Norte" });
+    const retried = await actions.updateWorkspaceName({ name: "Estudio Norte" });
+
+    expect(first).toEqual({ ok: true, data: { name: "Estudio Norte" } });
+    expect(retried).toEqual({ ok: true, data: { name: "Estudio Norte" } });
+    expect(
+      (await nameAudits()).filter((row) => row.action === "workspace.updateName"),
+    ).toHaveLength(1);
   });
 });
