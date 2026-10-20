@@ -7,10 +7,11 @@ import type { DisplayFormats } from "@/server/time";
 const DisplayFormatsContext = createContext<DisplayFormats | null>(null);
 
 /**
- * Los formatos de quien mira (ADR 0012). El layout monta el de base; cada
- * pantalla que muestra horas o fechas monta el suyo con su propia lectura,
- * porque una navegación del cliente conserva el layout con los formatos que
- * tenía.
+ * Los formatos de quien mira (ADR 0012): la hora y la fecha son suyas; la
+ * duración, del workspace (ADR 0029). El layout monta el de base; cada
+ * pantalla que muestra horas, fechas o duraciones monta el suyo con su propia
+ * lectura, porque una navegación del cliente conserva el layout con los
+ * formatos que tenía.
  */
 export function DisplayFormatsProvider({
   formats,

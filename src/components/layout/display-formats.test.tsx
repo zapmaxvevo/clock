@@ -7,12 +7,12 @@ import { DisplayFormatsProvider, useDisplayFormats } from "./display-formats";
 
 /** Dibuja lo que devuelve el hook, para leerlo en el marcado. */
 function FormatsProbe() {
-  const { time, date } = useDisplayFormats();
-  return <output>{`${time} ${date}`}</output>;
+  const { time, date, duration } = useDisplayFormats();
+  return <output>{`${time} ${date} ${duration}`}</output>;
 }
 
 const base: DisplayFormats = { time: "24h", date: "dd/MM/yyyy", duration: "compact" };
-const screen: DisplayFormats = { time: "12h", date: "yyyy-MM-dd", duration: "compact" };
+const screen: DisplayFormats = { time: "12h", date: "yyyy-MM-dd", duration: "full" };
 
 describe("useDisplayFormats", () => {
   it("lanza sin proveedor", () => {
@@ -28,7 +28,7 @@ describe("useDisplayFormats", () => {
       </DisplayFormatsProvider>,
     );
 
-    expect(markup).toBe("<output>12h yyyy-MM-dd</output>");
+    expect(markup).toBe("<output>12h yyyy-MM-dd full</output>");
   });
 
   it("con dos proveedores anidados gana el más cercano", () => {
@@ -41,6 +41,8 @@ describe("useDisplayFormats", () => {
       </DisplayFormatsProvider>,
     );
 
-    expect(markup).toBe("<output>24h dd/MM/yyyy</output><output>12h yyyy-MM-dd</output>");
+    expect(markup).toBe(
+      "<output>24h dd/MM/yyyy compact</output><output>12h yyyy-MM-dd full</output>",
+    );
   });
 });

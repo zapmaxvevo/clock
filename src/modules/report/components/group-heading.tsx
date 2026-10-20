@@ -19,6 +19,8 @@ import { reportLabels } from "./labels";
  * la suma de lo que muestran las filas queda en o debajo del total (§5.3).
  */
 export function durationLabel(seconds: number): string {
+  // Fijo en el compacto hasta que el reporte reciba el formato del workspace,
+  // con WS2b (D-WS2a-9).
   return formatDuration(seconds, "compact");
 }
 
