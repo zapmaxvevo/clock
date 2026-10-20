@@ -171,6 +171,13 @@ fijo (workspace P-03), y que cualquier miembro cree tareas es un cambio de
 secciones configuran módulos que Clock no tiene o ajustes de plan pago
 (secciones 4 a 6); una sección vacía o llena de controles bloqueados es
 configuración que no configura nada.
+_Corregido el 2026-10-20, WS1 (D-WS1-7 del
+[contrato de WS1](../slices/fase2-ws1-configuracion.md))_: las dos secciones no
+llegan juntas. WS1 trae solo «General», con el nombre, porque «Registro de
+tiempo» sin su selector sería la sección vacía que este punto descarta; la
+segunda llega con WS2b y su selector de formato. La pantalla queda armada como
+una lista de secciones, cada una con su título, para que WS2b sume la segunda y
+E4 un control a la primera.
 _No verificado_: cómo se ven en un workspace Free las secciones y los ajustes
 que el plan no habilita —ocultos, bloqueados con candado o con un aviso para
 mejorar el plan— (workspace P-09).
@@ -701,10 +708,19 @@ como `/equipo` con su «No podés administrar el equipo.».
 
 **WS-52 Perder el rol con la pantalla abierta** — `replicar`
 Si el owner le quita el rol de admin a alguien que tiene la pantalla abierta, lo
-dibujado queda hasta el pedido siguiente, como en RP-02: el próximo cambio
-responde «No tenés permiso para hacer esto.» y el control vuelve a su valor; al
-recargar ve WS-50. Lo mismo para un owner que transfirió la propiedad, que pasa
-a admin (EQ-57) y sigue entrando.
+dibujado queda hasta el pedido siguiente, como en RP-02. El próximo cambio se
+rechaza, y la respuesta ya trae la pantalla de WS-50: «No tenés permiso para
+cambiar la configuración del workspace.» en lugar de la pantalla, sin el enlace
+«Configuración» en la navegación y sin esperar a recargar. El aviso del campo se
+va con la pantalla; el texto de WS-50 es la explicación. Lo mismo para una
+membresía desactivada con la pantalla abierta, que pasa a WS-51. Un owner que
+transfirió la propiedad pasa a admin (EQ-57) y sigue entrando.
+_Corregido el 2026-10-20, WS1 (D-WS1-6 del
+[contrato de WS1](../slices/fase2-ws1-configuracion.md))_: decía «el próximo
+cambio responde «No tenés permiso para hacer esto.» y el control vuelve a su
+valor; al recargar ve WS-50». La action revalida también cuando falla, así que
+la respuesta del rechazo llega con el árbol nuevo y WS-50 aparece con ella. Los
+textos aceptados en P-08 no cambian; cambia en qué pedido aparece WS-50.
 
 ## 9. Validaciones y mensajes
 
@@ -736,6 +752,10 @@ navegador.
 Todos los ajustes tienen valor siempre: la fila de `workspace_settings` se crea
 con el workspace (`src/modules/workspace/repository.ts`), así que la pantalla
 nunca está vacía. Sin logo, el encabezado muestra solo el nombre, como hoy.
+_Corregido el 2026-10-20, WS1 (D-WS1-7 del
+[contrato de WS1](../slices/fase2-ws1-configuracion.md))_: en WS1 la pantalla
+tiene solo «General» (WS-03) y no lee `workspace_settings`, porque el nombre es
+de `workspace`; la lectura de la fila llega con «Registro de tiempo» en WS2b.
 
 ## 11. Estados de error
 
@@ -784,6 +804,13 @@ los formatos de la persona por `useDisplayFormats`
 **WS-65 … WS-73** — `adaptar`. Justificación: Clockify no documenta ninguno; son
 consecuencias de WS-04, WS-16, WS-17 y PF-22 escritas para que el contrato y
 Playwright las prueben.
+_Corregido el 2026-10-20, WS1 (D-WS1-7 del
+[contrato de WS1](../slices/fase2-ws1-configuracion.md))_: **WS-73 se prueba en
+WS2b**, el primer slice que lee la fila de `workspace_settings` desde
+`/configuracion`, junto con el `error.tsx` de la pantalla. En WS1 se cumple
+porque nada la crea, pero la página no lee la base y no hay error que mostrar.
+WS2a la lee antes en la sesión; lo que WS-73 describe es el error de la
+pantalla.
 
 ## 14. Lo que ya existe en el esquema
 
@@ -873,9 +900,12 @@ Sugerencia, no decisión. Cada uno es vertical y se despliega solo.
 1. **WS1 — La pantalla y el nombre.** `/configuracion`, el enlace de la
    navegación, `workspace.settings.update`, los estados de WS-50 y WS-51, el
    nombre editable con sus validaciones, el guardado de WS-04 con audit log y la
-   revalidación del shell. Es chico y deja armado el módulo `workspace` con su
-   `schema.ts`, sus actions y sus componentes, que hoy no tiene. No depende de
-   la pantalla de equipo.
+   revalidación del shell. Es chico y le suma al módulo `workspace` sus
+   componentes. No depende de la pantalla de equipo.
+   _Corregido el 2026-10-20, WS1_: decía «deja armado el módulo `workspace` con
+   su `schema.ts`, sus actions y sus componentes, que hoy no tiene». Desde E1a
+   el módulo tiene `schema.ts` y `actions.ts`; lo único nuevo de WS1 es
+   `components/`.
 2. **WS2 — El formato de duración.** La columna con su migración, el valor en
    la sesión, `formatDuration` con el formato, y todos sus consumidores:
    rastreador, planilla, calendario, reporte y exportaciones, en el servidor y
