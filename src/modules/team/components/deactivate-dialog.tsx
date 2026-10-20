@@ -23,10 +23,11 @@ type DeactivateDialogProps = {
 };
 
 /**
- * Adónde vuelve el foco al cerrar: el menú de la fila; si la fila ya no lo
- * tiene, su encabezado, y si la fila ya no está, el título.
+ * Adónde vuelve el foco al cerrar una confirmación de la fila: el menú de la
+ * fila; si la fila ya no lo tiene, su encabezado, y si la fila ya no está, el
+ * título. La usan también las de vincular y de liberar el correo.
  */
-function returnFocusTarget(membershipId: string): HTMLElement | null {
+export function returnFocusTarget(membershipId: string): HTMLElement | null {
   return (
     document.getElementById(rowActionsId(membershipId)) ??
     document.getElementById(rowHeaderId(membershipId)) ??

@@ -12,7 +12,7 @@ export const teamLabels = {
   /** El título visible, que también nombra la tabla. */
   heading: "Equipo",
   intro:
-    "Un administrador ve las horas de todas las personas en los reportes y puede hacer administradoras a otras personas. Solo el propietario quita el rol de administrador, y el suyo no se cambia. Solo el propietario desactiva o reactiva a un administrador.",
+    "Un administrador ve las horas de todas las personas en los reportes y puede hacer administradoras a otras personas. Solo el propietario quita el rol de administrador, y el suyo no se cambia. Solo el propietario desactiva, reactiva, vincula la cuenta o libera el correo de un administrador.",
   /** D-R8-2: un member, un `project_manager` o un `team_manager` activos. */
   forbiddenRole: "No tenés permiso para administrar el equipo.",
   /** RP-07: el cuerpo del aviso de membresía desactivada, propio de esta pantalla. */
@@ -34,8 +34,17 @@ export const teamLabels = {
   self: "(vos)",
   /** EQ-05: después del nombre tachado, sin tachar; el estado no depende del tachado. */
   inactiveMark: "(inactiva)",
-  /** D-E2-7: debajo del correo de una inactiva que no se puede reactivar hasta E2b. */
+  /** D-E2-7, §5.2 de E2b: debajo del correo de quien no tiene cuenta ni vinculación pedida. */
   noAccount: "Sin cuenta de Google vinculada.",
+  /** D-E2b-9: en lugar del correo, que se liberó; la fila no lleva nota. */
+  releasedEmail: "Correo liberado",
+  /** §5.2 de E2b: la nota de una vinculación vigente, sin cuenta y con cuenta, y la de una vencida. */
+  linkPendingFirst: (requested: string, expires: string) =>
+    `Vinculación pedida el ${requested}, vence el ${expires}: falta su primer ingreso con Google.`,
+  linkPendingReplace: (requested: string, expires: string) =>
+    `Vinculación pedida el ${requested}, vence el ${expires}: la próxima cuenta de Google nueva con este correo reemplaza a la actual.`,
+  linkExpired: (requested: string, expires: string) =>
+    `La vinculación pedida el ${requested} venció el ${expires}.`,
   promote: "Hacer administrador",
   demote: "Quitar administrador",
   /** D-R8-10: la misma acción se repite en cada fila, así que el nombre suma la persona. */
@@ -56,8 +65,41 @@ export const teamLabels = {
   deactivateConfirm: "Desactivar",
   deactivated: (name: string) => `Desactivaste a ${name}.`,
   reactivated: (name: string) => `Reactivaste a ${name}.`,
+  /** D-E2b-5: reactivar a quien no tiene cuenta también pide la vinculación. */
+  reactivatedWithLink: (name: string) =>
+    `Reactivaste a ${name}. Su cuenta de Google se vincula en su próximo ingreso.`,
   deactivateFailed: (name: string) => `No se pudo desactivar a ${name}.`,
   reactivateFailed: (name: string) => `No se pudo reactivar a ${name}.`,
+  /** §5.3 de E2b: las entradas del menú sobre la vinculación y el correo. */
+  requestLink: "Vincular una cuenta de Google",
+  requestOtherLink: "Vincular otra cuenta de Google",
+  renewLink: "Volver a pedir la vinculación",
+  cancelLink: "Cancelar la vinculación",
+  releaseEmail: "Liberar el correo",
+  /** §5.4 de E2b: la confirmación de vincular, también la de reactivar sin cuenta. */
+  reactivateTitle: (name: string) => `¿Reactivar a ${name}?`,
+  linkFirstTitle: (name: string) => `¿Vincular una cuenta de Google a ${name}?`,
+  linkOtherTitle: (name: string) => `¿Vincular otra cuenta de Google a ${name}?`,
+  linkFirstBody: (days: number, email: string, name: string) =>
+    `En los próximos ${days} días, la próxima cuenta de Google que entre con ${email} va a quedar vinculada a ${name}, con su rol y sus horas. Hacelo solo si ese correo sigue siendo suyo.`,
+  linkOtherBody: (days: number, email: string, name: string) =>
+    `En los próximos ${days} días, la próxima cuenta de Google nueva que entre con ${email} va a reemplazar a la actual, con el rol y las horas de ${name}. Hasta entonces, la cuenta actual sigue entrando. Hacelo solo si ese correo sigue siendo suyo.`,
+  /** D-E2b-8: el párrafo que suma la confirmación cuando el pedido registra a un externo. */
+  linkExternalBody: (email: string, name: string) =>
+    `${email} queda registrado como invitado externo, y sigue registrado aunque después canceles la vinculación o venza. Si ${name} ya tiene una cuenta de Google vinculada, vuelve a entrar con ella desde ahora.`,
+  linkConfirm: "Vincular",
+  /** D-E2b-9: liberar se confirma y no se deshace. */
+  releaseTitle: (name: string) => `¿Liberar el correo de ${name}?`,
+  releaseBody: (email: string, name: string) =>
+    `${email} deja de ser de ${name} y lo vas a poder invitar para otra persona. ${name} queda inactiva, con sus horas, y no va a poder volver a entrar ni reactivarse. No se puede deshacer.`,
+  releaseConfirm: "Liberar el correo",
+  /** §5.5 de E2b: los avisos de la vinculación y del correo. */
+  linkRequested: (name: string) => `Pediste vincular una cuenta de Google a ${name}.`,
+  linkCancelled: (name: string) => `Cancelaste la vinculación de ${name}.`,
+  emailReleased: (name: string) => `Liberaste el correo de ${name}.`,
+  linkFailed: (name: string) => `No se pudo vincular una cuenta de Google a ${name}.`,
+  cancelLinkFailed: (name: string) => `No se pudo cancelar la vinculación de ${name}.`,
+  releaseFailed: (name: string) => `No se pudo liberar el correo de ${name}.`,
   /** EQ-93: quien mira está solo y no hay invitadas. */
   emptyInvitations: "Todavía no invitaste a nadie.",
   /** EQ-94: el filtro no deja ninguna fila; el párrafo va en lugar de la tabla. */

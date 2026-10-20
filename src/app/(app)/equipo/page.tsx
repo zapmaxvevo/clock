@@ -1,4 +1,10 @@
-import { changeRole, changeStatus } from "@/modules/team/actions";
+import {
+  changeRole,
+  changeStatus,
+  releaseEmail,
+  setAccountLink,
+} from "@/modules/team/actions";
+import { timeSettingsOf } from "@/modules/profile/service";
 import { TeamScreen } from "@/modules/team/components/team-screen";
 import { teamSearchParams } from "@/modules/team/schema";
 import { getTeamView } from "@/modules/team/service";
@@ -21,7 +27,15 @@ export default async function TeamPage({ searchParams }: PageProps<"/equipo">) {
       view={view}
       invitations={invitations}
       filter={filter}
-      actions={{ changeRole, changeStatus, inviteMembers, revokeInvitation }}
+      settings={timeSettingsOf(session)}
+      actions={{
+        changeRole,
+        changeStatus,
+        setAccountLink,
+        releaseEmail,
+        inviteMembers,
+        revokeInvitation,
+      }}
     />
   );
 }

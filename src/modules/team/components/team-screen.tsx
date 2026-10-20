@@ -1,10 +1,11 @@
 import { InactiveMembershipNotice } from "@/components/inactive-membership-notice";
 import type { TeamActions, TeamFilter, TeamView } from "@/modules/team/schema";
 import type { InvitationActions, InvitationsView } from "@/modules/workspace/schema";
+import type { TimeSettings } from "@/server/time";
 
 import { teamLabels } from "./labels";
 import { TeamMembers } from "./team-members";
-import { TEAM_HEADING_ID } from "./team-members-model";
+import { rowNotesOf, TEAM_HEADING_ID } from "./team-members-model";
 
 type TeamScreenProps = {
   /** Sin `team.manage`, el service no leyó ninguna membresía (D-R8-2). */
@@ -17,6 +18,8 @@ type TeamScreenProps = {
   readonly invitations: InvitationsView | null;
   /** El filtro de `?estado=`, ya parseado por la página (D-E2-8). */
   readonly filter: TeamFilter;
+  /** La zona y los formatos de quien mira, de `timeSettingsOf`: las fechas de las notas (§5.2 de E2b). */
+  readonly settings: TimeSettings;
   /**
    * Las actions de `team` y de `workspace` llegan por props desde `page.tsx`,
    * el único que importa los `actions.ts` (D-E1a-1).
@@ -27,11 +30,18 @@ type TeamScreenProps = {
 /**
  * `/equipo`: las membresías activas e inactivas, con el botón que pasa una de
  * `member` a `admin` y de vuelta (D-R8-3) y el menú que la desactiva o la
- * reactiva (E2), y las invitaciones pendientes, con «Invitar» y «Revocar
+ * reactiva (E2), pide o cancela la vinculación de su cuenta de Google y libera
+ * su correo (E2b), y las invitaciones pendientes, con «Invitar» y «Revocar
  * invitación» (E1a), según el filtro de estado. Una vista `ready` nunca está
  * vacía: tiene, al menos, la fila de quien mira.
  */
-export function TeamScreen({ view, invitations, filter, actions }: TeamScreenProps) {
+export function TeamScreen({
+  view,
+  invitations,
+  filter,
+  settings,
+  actions,
+}: TeamScreenProps) {
   // Con `tabIndex={-1}`: recibe el foco cuando una revocación saca la fila (§5.4).
   const heading = (
     <h1
@@ -51,6 +61,9 @@ export function TeamScreen({ view, invitations, filter, actions }: TeamScreenPro
           members={view.members}
           invitations={invitations?.kind === "ready" ? invitations : null}
           filter={filter}
+          linkTtlDays={view.linkTtlDays}
+          // ADR 0012: la zona es del servidor; este componente lo es.
+          notes={rowNotesOf(view.members, settings)}
           actions={actions}
         />
       ) : (
