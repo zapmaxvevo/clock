@@ -485,6 +485,10 @@ export const timeEntryView = z.object({
   /** Superíndice de días del cruce de medianoche. 0 en una entrada que corre. */
   extraDays: z.number().int().min(0),
   durationSeconds: z.number().int().min(0).nullable(),
+  /**
+   * `durationSeconds` con el formato de duración del workspace (ADR 0029), o
+   * `null` mientras corre.
+   */
   durationLabel: z.string().nullable(),
   /**
    * El trío de la vista, interpretado con la regla de `updateEntryTimes`, vuelve

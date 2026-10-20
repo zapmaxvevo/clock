@@ -22,6 +22,7 @@ import {
   formatClock,
   instantFromLocal,
   shiftClock,
+  type DurationFormat,
 } from "@/server/time";
 import {
   queueBehindBarrier,
@@ -40,6 +41,7 @@ import {
   seedTask,
   seedTimeEntry,
   seedWorkspace,
+  setDurationFormat,
 } from "@/test/factories";
 import { allTimeEntries, auditFor, timeEntriesOf, timeEntryById } from "@/test/queries";
 import {
@@ -61,6 +63,7 @@ import {
   type ProfileContext,
 } from "@/modules/profile/service";
 import { workspaceRepository } from "@/modules/workspace/repository";
+import { resolveDurationFormat } from "@/modules/workspace/service";
 
 import { timeEntryRepository } from "./repository";
 import {
@@ -85,6 +88,7 @@ import {
   discardTimer,
   duplicateEntry,
   getCalendarState,
+  getTimesheetState,
   getTrackerState,
   startTimer,
   stopRunningTimerOf,
@@ -4086,8 +4090,8 @@ async function profileContextFor(userId: string): Promise<ProfileContext> {
     throw new Error("Falta el workspace o la membresía sembrados.");
   }
   return {
-    workspace: row,
-    settings: { durationFormat: "compact" },
+    workspace: row.workspace,
+    settings: { durationFormat: resolveDurationFormat(row.durationFormat) },
     membership: member,
     actor: actorFor(userId),
     preferences: (await profileOf(userId)).preferences,
@@ -9074,5 +9078,124 @@ describe("abrir un timer lee la membresía propia bajo bloqueo (D-E2-6)", () => 
     );
     expect(await timeEntriesOf(workspaceId, person.userId)).toHaveLength(2);
     expect(await auditFor("time_entry")).toEqual([]);
+  });
+});
+
+describe("S1: durationLabel con el formato de duración del workspace (D-WS2a-4, criterios 7 y 8)", () => {
+  /** Las 12:00 del viernes 2 de octubre de 2026 en Buenos Aires. */
+  const now = new Date("2026-10-02T15:00:00Z");
+
+  function withDuration(format: DurationFormat): TrackerWorkspace {
+    return {
+      ...workspaceOf(buenosAires),
+      formats: { ...defaultFormats, duration: format },
+    };
+  }
+
+  /** Dos entradas de 100 segundos del 2 de octubre: `0:01` cada una y `0:03` el día. */
+  async function seedTwoOf100Seconds() {
+    const first = await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      description: "primera",
+      startedAt: "2026-10-02T11:00:00Z",
+      endedAt: "2026-10-02T11:01:40Z",
+    });
+    await seedTimeEntry({
+      workspaceId,
+      userId: actor.userId,
+      description: "segunda",
+      startedAt: "2026-10-02T12:00:00Z",
+      endedAt: "2026-10-02T12:01:40Z",
+    });
+    return first;
+  }
+
+  it.each([
+    ["compact", "0:01"],
+    ["full", "00:01:40"],
+  ] as const)(
+    "con %s, la fila del rastreador, el calendario y la planilla dan %s; los totales siguen en segundos",
+    async (format, label) => {
+      await seedTwoOf100Seconds();
+      const workspace = withDuration(format);
+
+      const tracker = await getTrackerState(actor, workspace, { from: null }, now);
+      const calendar = await getCalendarState(
+        actor,
+        workspace,
+        { mode: "week", day: "2026-10-02" },
+        now,
+      );
+      const timesheet = await getTimesheetState(
+        actor,
+        workspace,
+        { day: "2026-10-02" },
+        now,
+      );
+
+      expect(daysOf(tracker)[0].entries.map((entry) => entry.durationLabel)).toEqual([
+        label,
+        label,
+      ]);
+      expect(daysOf(tracker)[0].closedSeconds).toBe(200);
+      expect(calendar.entries.map((entry) => entry.durationLabel)).toEqual([
+        label,
+        label,
+      ]);
+      expect(timesheet.entries.map((entry) => entry.durationLabel)).toEqual([
+        label,
+        label,
+      ]);
+      expect(timesheet.closedSeconds).toBe(200);
+    },
+  );
+
+  it("una action que devuelve la entrada la rotula con el formato que recibe", async () => {
+    const first = await seedTwoOf100Seconds();
+
+    const compact = await updateDescription(actor, withDuration("compact"), {
+      id: first.id,
+      description: "otra",
+    });
+    const full = await updateDescription(actor, withDuration("full"), {
+      id: first.id,
+      description: "otra más",
+    });
+
+    expect(compact.entry.durationLabel).toBe("0:01");
+    expect(full.entry.durationLabel).toBe("00:01:40");
+    expect(full.entry.durationSeconds).toBe(100);
+  });
+
+  it("una entrada que corre no tiene rótulo con ningún formato", async () => {
+    await seedRunning();
+
+    for (const format of ["compact", "full"] as const) {
+      const state = await getTrackerState(
+        actor,
+        withDuration(format),
+        { from: null },
+        now,
+      );
+      expect(state.running?.durationLabel).toBeNull();
+    }
+  });
+
+  it("el formato llega de la base por la sesión, no de las preferencias", async () => {
+    await seedTwoOf100Seconds();
+    await setDurationFormat(workspaceId, "full");
+
+    const state = await getTrackerState(
+      actor,
+      await trackerWorkspaceFor(actor.userId),
+      { from: null },
+      now,
+    );
+
+    expect(daysOf(state)[0].entries.map((entry) => entry.durationLabel)).toEqual([
+      "00:01:40",
+      "00:01:40",
+    ]);
   });
 });
