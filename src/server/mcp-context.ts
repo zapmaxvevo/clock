@@ -172,10 +172,18 @@ export async function submitConsent(
   const headers = new Headers(requestHeaders);
   // Así el plugin responde `{ redirect: true, url }` en lugar de lanzar un `FOUND`.
   headers.set("accept", "application/json");
+  const body = { accept, oauth_query: oauthQuery };
   try {
     const response: unknown = await auth.api.oauth2Consent({
-      body: { accept, oauth_query: oauthQuery },
+      body,
       headers,
+      // El `authorize` interno que emite el código exige el pedido.
+      request: new Request(`${mcpIssuer()}/oauth2/consent`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      }),
+      asResponse: false,
     });
     return { redirectTo: consentRedirect.parse(response).url };
   } catch (error) {

@@ -164,6 +164,8 @@ const withResource = z.object({
   resource: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),
 });
 
+const accepted = z.object({ accept: z.literal(true) });
+
 /** D-MCP-3, D-MCP-4: el motivo por el que la persona no autoriza, o `null` si puede. */
 async function denialOf(user: SessionUser): Promise<AccessDenialReason | null> {
   const read = await readUserContext(user);
@@ -193,6 +195,11 @@ export const mcpAuthMiddleware = createAuthMiddleware(async (ctx) => {
   // solo se exige que esté. Ningún rechazo redirige a un `redirect_uri`, que
   // todavía no se validó contra el registro del cliente.
   const isAuthorize = ctx.path === AUTHORIZE_PATH;
+  // Cancelar no da nada: devuelve `access_denied` a la redirección firmada, y es
+  // la única salida de quien perdió el acceso en `/conectar`.
+  if (!isAuthorize && !accepted.safeParse(ctx.body).success) {
+    return;
+  }
   if (isAuthorize && !withResource.safeParse(ctx.query).success) {
     throw new APIError("BAD_REQUEST", {
       error: "invalid_request",
