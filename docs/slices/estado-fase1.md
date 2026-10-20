@@ -303,6 +303,25 @@ vacío del owner y `renewWorkspace` se corta.
      - **MCP:** commit temporal de captura de V-7 (`baa4c66`, se revierte antes del merge).
        El force-push de `mejoras/mcp` lo bloqueó el clasificador: el usuario elige entre
        pushearlo él o usar la rama `mejoras/mcp-preview`. Después, el preview de §6.6.
+     - **E2b en `main` y en producción** (merge `80e2f6c`, CI verde, deploy OK). El usuario
+       corrió la consulta previa (las tres inactivas; la 2 y la 3 vacías) y, lejos de la
+       compu, aplicó la `0017` con un bloque `do $$ … $$` en el editor SQL de Neon (los
+       `ALTER` de la migración más la fila de `drizzle.__drizzle_migrations` con el mismo
+       hash y `when`; probado en local: `db:migrate` después no hace nada). Control `2|2|0`.
+       Falta su humo de §6.4. Generador del bloque:
+       `scratchpad/tools/do-block.cjs <dir drizzle> <idx desde>` (copiarlo si se reusa).
+     - **MCP rebasado sobre E2b** (`475d465`, migración `0018_mcp`, `deleteGrantsOf` en
+       vincular y liberar con test) y pusheado a la rama nueva `mejoras/mcp-preview`. **El
+       usuario postergó la prueba del preview.** Como WS0 entra antes, el MCP regenera su
+       migración como `0019` al retomarlo.
+     - **WS1** (`clock-ws1`, rama `fase2/ws1-configuracion`): contrato con una ronda de
+       architecture-reviewer, implementado, seis revisiones (tests con cambios, corregidos en
+       `d8cc35d`) y corrida final verde (unidad 2432 + 305, integración 1986, e2e 249/249 en
+       base nueva y reusada). Sin migración. Su §0 pide WS0 A en `main` antes del merge.
+       Pregunta al usuario: los `check` de `workspace.name` en la migración de WS2a.
+     - **WS0** (`clock-ws0`): contrato y ADR 0028 (propuesto, falta que el usuario lo
+       apruebe), commit A con tres revisiones aprobadas y e2e 235/235; `roundMinutes`
+       borrado. En curso: rebase sobre `main` y commit B (`0018`).
      - Postgres local tardó ~20 min en arrancar (fsync de ~100 bases, 2,1 GB). El
        clasificador bloquea `drop database`: el usuario decide si limpiarlas.
 
