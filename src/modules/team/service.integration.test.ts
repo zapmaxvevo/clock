@@ -2138,11 +2138,12 @@ describe("la vista de la vinculación (criterio 18 de E2b)", () => {
 });
 
 describe("todo o nada (criterio 22 de E2b, ADR 0025)", () => {
-  it("un fallo después de liberar el correo deja el correo, las cuentas y las sesiones como estaban", async () => {
+  it("un fallo después de liberar el correo deja el correo, las cuentas, las sesiones y las autorizaciones como estaban", async () => {
     const seeded = await seedWorkspace();
     const target = await seedPerson(seeded.workspaceId, "member", "inactive");
     await seedAccount(target.userId);
     await seedSession(target.userId);
+    await seedGrant(target.userId, await seedOAuthClient());
     const before = await accountWrites();
     injected.failAfterRelease = true;
 
@@ -2151,6 +2152,11 @@ describe("todo o nada (criterio 22 de E2b, ADR 0025)", () => {
     );
 
     expect(await accountWrites()).toEqual(before);
+    expect(await grantRowsOf(target.userId)).toEqual({
+      consents: 1,
+      refresh: 1,
+      access: 1,
+    });
   });
 
   it("un fallo después de registrar al externo deja la invitación y la marca como estaban", async () => {
