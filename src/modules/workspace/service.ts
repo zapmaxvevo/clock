@@ -250,6 +250,28 @@ async function assertCanInviteLocked(tx: Transaction, actor: Actor): Promise<voi
   }
 }
 
+/**
+ * D-WS1-2: la autoridad de quien actúa, releída bajo `for share`, como
+ * `assertCanInviteLocked`. Espera a un cambio de rol o a una desactivación en
+ * curso y lee lo que confirmaron.
+ */
+async function assertCanUpdateSettingsLocked(
+  tx: Transaction,
+  actor: Actor,
+): Promise<void> {
+  const own = await workspaceRepository.lockActorMembership(
+    tx,
+    actor.workspaceId,
+    actor.userId,
+  );
+  if (
+    own === undefined ||
+    !canUpdateWorkspaceSettings({ ...actor, role: own.role, status: own.status })
+  ) {
+    throw new ForbiddenError("workspace.settings.update");
+  }
+}
+
 /** Sin `member.invite`, `forbidden` sin leer. */
 export async function getInvitationsView(actor: Actor): Promise<InvitationsView> {
   if (!canInvite(actor)) {
@@ -549,19 +571,9 @@ export async function updateWorkspaceName(
     throw new ForbiddenError("workspace.settings.update");
   }
   return db.transaction(async (tx) => {
-    // D-WS1-2: la autoridad, releída bajo `for share`. Primero la membresía y
-    // después el workspace: E3 toma los dos en el mismo orden (D-WS1-3).
-    const own = await workspaceRepository.lockActorMembership(
-      tx,
-      actor.workspaceId,
-      actor.userId,
-    );
-    if (
-      own === undefined ||
-      !canUpdateWorkspaceSettings({ ...actor, role: own.role, status: own.status })
-    ) {
-      throw new ForbiddenError("workspace.settings.update");
-    }
+    // Primero la membresía y después el workspace: E3 toma los dos en el mismo
+    // orden (D-WS1-3).
+    await assertCanUpdateSettingsLocked(tx, actor);
     const previous = await workspaceRepository.lockWorkspaceName(tx, actor.workspaceId);
     if (previous === undefined) {
       throw new Error("El workspace de la sesión no está.");

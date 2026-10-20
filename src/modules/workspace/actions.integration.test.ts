@@ -365,18 +365,6 @@ describe("updateWorkspaceName (WS1, §4.5)", () => {
     expect(mocks.revalidated).toEqual([{ path: "/", type: "layout" }]);
   });
 
-  it("el mismo nombre con espacios alrededor responde éxito sin escribir", async () => {
-    await signInAs("owner");
-    await actions.updateWorkspaceName({ name: "Estudio Norte" });
-    const saved = await workspaceRow();
-
-    const result = await actions.updateWorkspaceName({ name: " Estudio Norte " });
-
-    expect(result).toEqual({ ok: true, data: { name: "Estudio Norte" } });
-    expect(await workspaceRow()).toEqual(saved);
-    expect(await nameAudits()).toHaveLength(1);
-  });
-
   it.each([
     ["vacío", { name: "" }, workspaceSettingsMessages.nameRequired],
     ["solo espacios", { name: "   " }, workspaceSettingsMessages.nameRequired],
@@ -457,16 +445,18 @@ describe("updateWorkspaceName (WS1, §4.5)", () => {
     expect(await nameAudits()).toEqual([]);
   });
 
-  it("reintentar después de una respuesta perdida responde éxito y deja una constancia (criterio 12, WS-62)", async () => {
+  it("reintentar después de una respuesta perdida, también con espacios alrededor, responde éxito sin volver a escribir (criterio 12, WS-62)", async () => {
     await signInAs("admin");
 
     const first = await actions.updateWorkspaceName({ name: "Estudio Norte" });
-    const retried = await actions.updateWorkspaceName({ name: "Estudio Norte" });
+    const saved = await workspaceRow();
+    const retried = await actions.updateWorkspaceName({ name: " Estudio Norte " });
 
     expect(first).toEqual({ ok: true, data: { name: "Estudio Norte" } });
     expect(retried).toEqual({ ok: true, data: { name: "Estudio Norte" } });
-    expect(
-      (await nameAudits()).filter((row) => row.action === "workspace.updateName"),
-    ).toHaveLength(1);
+    expect(await workspaceRow()).toEqual(saved);
+    expect(await nameAudits()).toEqual([
+      expect.objectContaining({ action: "workspace.updateName" }),
+    ]);
   });
 });

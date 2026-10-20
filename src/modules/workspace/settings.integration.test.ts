@@ -12,6 +12,7 @@ import { buenosAires, seedMember, seedWorkspace } from "@/test/factories";
 import { auditFor } from "@/test/queries";
 import { actorIn, workspaceOf } from "@/test/time-entry";
 
+import { workspaceRepository } from "./repository";
 import {
   ensureWorkspaceContext,
   getWorkspaceSettingsView,
@@ -61,13 +62,9 @@ async function contextOf(userId: string) {
   return context;
 }
 
-/** `for no key update` sobre el workspace: lo que toma `lockWorkspaceName`. */
+/** El bloqueo del workspace que toma `updateWorkspaceName` (D-WS1-3). */
 function holdWorkspace(tx: Transaction) {
-  return tx
-    .select({ id: workspace.id })
-    .from(workspace)
-    .where(eq(workspace.id, workspaceId))
-    .for("no key update");
+  return workspaceRepository.lockWorkspaceName(tx, workspaceId);
 }
 
 /** `for no key update` sobre la membresía de la persona: lo que toma un cambio de rol. */
@@ -140,6 +137,17 @@ describe("quién (criterio 4, WS-02, WS-49, WS-51)", () => {
     ).rejects.toBeInstanceOf(ForbiddenError);
 
     expect(await workspaceRow()).toEqual(before);
+    expect(await auditFor("workspace", workspaceId)).toEqual([]);
+  });
+
+  it("un member recibe ForbiddenError sin esperar a una membresía tomada (§4.3, paso 1)", async () => {
+    const memberId = await seedMember(workspaceId, "member");
+
+    const outcome = await outcomeWhileHeld(holdMembership(memberId), () =>
+      updateWorkspaceName(actorFor(memberId, "member"), { name: "Estudio Norte" }),
+    );
+
+    expect(outcome).toBeInstanceOf(ForbiddenError);
     expect(await auditFor("workspace", workspaceId)).toEqual([]);
   });
 
