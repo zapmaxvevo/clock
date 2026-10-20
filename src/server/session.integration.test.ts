@@ -51,6 +51,7 @@ vi.mock("@/server/auth", () => ({
 }));
 
 const { currentSession, requireSession } = await import("./session");
+const { readUserContext } = await import("./user-context");
 
 let workspaceId: string;
 
@@ -276,5 +277,64 @@ describe("la sesión abierta de una membresía inactiva sigue en TT-92 (D-E2-2, 
 
     expect([context.actor.status, context.user.email]).toEqual(["inactive", email]);
     expect(mocks.redirect).not.toHaveBeenCalled();
+  });
+});
+
+describe("readUserContext decide lo mismo que la sesión (D-MCP-3, D-MCP-4)", () => {
+  async function bothFor(person: { id: string; email: string }) {
+    mocks.user = person;
+    const read = await readUserContext({
+      id: person.id,
+      email: person.email,
+      name: "Persona de prueba",
+      image: null,
+    });
+    return { read, session: await currentSession() };
+  }
+
+  it("con acceso, el mismo contexto", async () => {
+    const person = mocks.user;
+    if (person === null) {
+      throw new Error("Sin persona sembrada.");
+    }
+
+    const { read, session } = await bothFor(person);
+
+    expect(read).toEqual({ kind: "ready", context: session });
+  });
+
+  it("sin membresía ni invitación, denied sin_invitacion, y la sesión null", async () => {
+    const email = `${randomUUID()}@empresa.com`;
+
+    const { read, session } = await bothFor({ id: await seedUser(email), email });
+
+    expect(read).toEqual({ kind: "denied", reason: "sin_invitacion" });
+    expect(session).toBeNull();
+  });
+
+  it("una externa con la invitación revocada, lo mismo", async () => {
+    const email = `${randomUUID()}@gmail.com`;
+    await seedInvitation({ workspaceId, email, status: "revoked" });
+
+    const { read, session } = await bothFor({ id: await seedUser(email), email });
+
+    expect(read).toEqual({ kind: "denied", reason: "sin_invitacion" });
+    expect(session).toBeNull();
+  });
+
+  it("una membresía inactiva, el contexto con status inactive en los dos", async () => {
+    const person = mocks.user;
+    if (person === null) {
+      throw new Error("Sin persona sembrada.");
+    }
+    await db
+      .update(membership)
+      .set({ status: "inactive" })
+      .where(eq(membership.userId, person.id));
+
+    const { read, session } = await bothFor(person);
+
+    expect(read).toEqual({ kind: "ready", context: session });
+    expect(session?.actor.status).toBe("inactive");
   });
 });
