@@ -324,6 +324,32 @@ vacío del owner y `renewWorkspace` se corta.
        borrado. En curso: rebase sobre `main` y commit B (`0018`).
      - Postgres local tardó ~20 min en arrancar (fsync de ~100 bases, 2,1 GB). El
        clasificador bloquea `drop database`: el usuario decide si limpiarlas.
+     - **Cierre de la decimosexta (2026-10-20 ~23:10 UTC).** La sesión se compactó sola a
+       las 15:00 UTC sin el corte del 40 %: el usuario lo marcó y pasa a una sesión nueva.
+       - **E2b cerrado:** el usuario hizo el humo de §6.4 y dio todo bien. Pregunta abierta:
+         no le gusta el texto de EQ-122 («Ya hay una persona en Clock con ese correo…»)
+         porque cree que revela que el correo existe. El team-lead recomendó dejarlo: solo
+         lo ve quien Google ya confirmó como dueño de esa dirección, y la URL no lleva el
+         correo. Ofreció un texto neutro («No pudimos completar el ingreso. Pedile a quien
+         administra el equipo que revise tu acceso.») si lo prefiere. Falta su respuesta.
+       - **WS0:** A en producción, humo de §6.3 OK. **B mergeado y pusheado** (`b91c4b8`,
+         15:59 UTC): lint, typecheck y unidad 2407 + 303. **Falta, del usuario, §6.1 y
+         §6.5:** la consulta previa (1, 2, 2b, 3, 4) de a una sentencia, el bloque `do` de
+         la `0018` y el control. El bloque está en `/home/maxi/program/clock-ops/ws0-0018-do.sql`
+         (exige `max(created_at)` = 1792456513460 y registra 1792502701085). Probado en
+         local desde la `0017`: borra las doce, `db:migrate` después no hace nada y una
+         segunda corrida frena. Después, §6.6: logs de Vercel sin «does not exist» por
+         15 min, humo otra vez y las bases compartidas (D-WS0-8).
+       - **WS1 rebasado sobre `main` con B** (`clock-ws1`, 11 commits, sin pushear): lint,
+         typecheck, prettier, unidad 2430 + 303, integración 1989, e2e 249/249 en base nueva
+         y reusada (`clock_ws1_conb_*`). Se mergea y pushea cuando el control de §6.5 dé
+         bien.
+       - Herramientas fuera del scratchpad, en `/home/maxi/program/clock-ops/`:
+         `do-block.cjs <dir drizzle> <idx desde>` y `migrar.mjs <url> <dir drizzle>`. La e2e
+         no migra su base: `DATABASE_URL=<base> npm run db:migrate` antes de la primera
+         corrida.
+       - Siguiente en el roadmap: WS2a (contrato), con la pregunta de los `check` de
+         `workspace.name`.
 
      **Decimoquinta sesión** (2026-10-19): se retomaron C1 y E2.
      - **C1 en `main` y en producción** (merge `78820d8`, CI verde). Tres revisiones con
