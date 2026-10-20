@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { noNullCharacter } from "@/lib/text";
 import type { ActionResult } from "@/server/action";
 import type { ActionErrorCode } from "@/server/errors";
 import type { MembershipStatus } from "@/server/permissions";
@@ -135,4 +136,56 @@ export type InvitationActions = {
   readonly revokeInvitation: (
     input: RevokeInvitationInput,
   ) => Promise<ActionResult<RevokeInvitationResult, InvitationErrorCode>>;
+};
+
+/** El largo máximo del nombre del workspace (WS-05, WS-54): el de los nombres de PR-54 y PF-35. */
+export const WORKSPACE_NAME_MAX = 100;
+
+/** Textos de la configuración que la interfaz muestra tal cual (WS-53 … WS-55, WS-58). */
+export const workspaceSettingsMessages = {
+  forbidden: "No tenés permiso para hacer esto.",
+  unexpected: "No se pudo guardar. Revisá la conexión y volvé a intentar.",
+  nameRequired: "Escribí un nombre.",
+  nameTooLong: "El nombre no puede superar los 100 caracteres.",
+  nameNullCharacter: "El nombre tiene un carácter que no se puede guardar.",
+} as const;
+
+/** WS-05, WS-53 … WS-55, WS-71: recortado, entre 1 y 100, sin el carácter nulo. */
+export const updateWorkspaceNameInput = z.object(
+  {
+    name: z
+      .string({ error: workspaceSettingsMessages.nameRequired })
+      .trim()
+      .min(1, workspaceSettingsMessages.nameRequired)
+      .max(WORKSPACE_NAME_MAX, workspaceSettingsMessages.nameTooLong)
+      .refine(noNullCharacter, workspaceSettingsMessages.nameNullCharacter),
+  },
+  { error: workspaceSettingsMessages.nameRequired },
+);
+export type UpdateWorkspaceNameInput = z.infer<typeof updateWorkspaceNameInput>;
+
+/** El nombre que quedó, recortado, también si ya era ese (WS-04). */
+export type UpdateWorkspaceNameResult = { readonly name: string };
+
+/** D-WS1-2: sin código propio; `forbidden` sale de `ForbiddenError`. */
+export type WorkspaceSettingsErrorCode = ActionErrorCode;
+
+/**
+ * D-WS1-5: la pantalla de `/configuracion`. Sin `workspace.settings.update` no
+ * hay ajustes: `inactive` si la membresía no está activa (WS-51), `role` si no
+ * (WS-50).
+ */
+export type WorkspaceSettingsView =
+  | { readonly kind: "forbidden"; readonly reason: "inactive" | "role" }
+  | {
+      readonly kind: "ready";
+      /** `workspace.name`, de la sesión (WS-63). */
+      readonly name: string;
+    };
+
+/** Las actions, como las recibe la pantalla por props desde `page.tsx`. */
+export type WorkspaceSettingsActions = {
+  readonly updateWorkspaceName: (
+    input: UpdateWorkspaceNameInput,
+  ) => Promise<ActionResult<UpdateWorkspaceNameResult, WorkspaceSettingsErrorCode>>;
 };

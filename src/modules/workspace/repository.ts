@@ -445,4 +445,30 @@ export const workspaceRepository = {
       accountLink: row?.accountLink ?? false,
     };
   },
+
+  /**
+   * D-WS1-3: el nombre del workspace, `for no key update`. Pone en fila a dos
+   * renombres y no choca con el `for key share` de las altas que apuntan al
+   * workspace. `undefined` si no está.
+   */
+  async lockWorkspaceName(
+    tx: Transaction,
+    workspaceId: string,
+  ): Promise<string | undefined> {
+    const rows = await tx
+      .select({ name: workspace.name })
+      .from(workspace)
+      .where(eq(workspace.id, workspaceId))
+      .for("no key update");
+    return rows.at(0)?.name;
+  },
+
+  /** WS-05: el nombre, ya validado y recortado. `updated_at` lo pone `$onUpdate`. */
+  async updateWorkspaceName(
+    tx: Transaction,
+    workspaceId: string,
+    name: string,
+  ): Promise<void> {
+    await tx.update(workspace).set({ name }).where(eq(workspace.id, workspaceId));
+  },
 };
