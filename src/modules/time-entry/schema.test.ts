@@ -13,6 +13,7 @@ import {
   deleteEntryInput,
   discardTimerInput,
   duplicateEntryInput,
+  entriesPeriodInput,
   removeTimesheetRowInput,
   setTimesheetCellInput,
   startTimerInput,
@@ -1403,5 +1404,47 @@ describe("los textos de la planilla", () => {
     expect(timeEntryMessages.rowTooManyEntries).toBe(
       "Esta fila tiene más de 200 entradas en la semana; borralas por partes desde el rastreador.",
     );
+  });
+});
+
+describe("entriesPeriodInput (D-MCP-8, D-MCP-13)", () => {
+  function messagesOf(input: unknown): string[] {
+    const parsed = entriesPeriodInput.safeParse(input);
+    return parsed.success ? [] : parsed.error.issues.map((issue) => issue.message);
+  }
+
+  it("acepta un día solo y 31 días", () => {
+    expect(messagesOf({ from: "2026-10-19", to: "2026-10-19" })).toEqual([]);
+    expect(messagesOf({ from: "2026-10-01", to: "2026-10-31" })).toEqual([]);
+  });
+
+  it("cuenta los días del calendario, también sobre febrero y el cambio de año", () => {
+    expect(messagesOf({ from: "2028-02-01", to: "2028-03-02" })).toEqual([]);
+    expect(messagesOf({ from: "2026-12-15", to: "2027-01-14" })).toEqual([]);
+    expect(messagesOf({ from: "2026-12-15", to: "2027-01-15" })).toEqual([
+      timeEntryMessages.periodTooLong,
+    ]);
+  });
+
+  it("rechaza 32 días con periodTooLong", () => {
+    expect(messagesOf({ from: "2026-10-01", to: "2026-11-01" })).toEqual([
+      timeEntryMessages.periodTooLong,
+    ]);
+    expect(timeEntryMessages.periodTooLong).toBe("El período puede tener hasta 31 días.");
+  });
+
+  it("rechaza un período invertido con periodInverted", () => {
+    expect(messagesOf({ from: "2026-10-19", to: "2026-10-18" })).toEqual([
+      timeEntryMessages.periodInverted,
+    ]);
+  });
+
+  it("rechaza un día que no existe con invalidDate, sin otro motivo", () => {
+    expect(messagesOf({ from: "2026-02-30", to: "2026-03-01" })).toEqual([
+      timeEntryMessages.invalidDate,
+    ]);
+    expect(messagesOf({ from: "2026-10-01", to: "ayer" })).toEqual([
+      timeEntryMessages.invalidDate,
+    ]);
   });
 });
