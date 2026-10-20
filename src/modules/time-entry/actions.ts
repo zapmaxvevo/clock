@@ -3,23 +3,19 @@
 import { handle, type ActionResult } from "@/server/action";
 import { assertCan } from "@/server/permissions";
 
+import * as operations from "./operations";
 import * as service from "./service";
 import { ownTimeEntryResource, TimeEntryError, trackerWorkspaceOf } from "./service";
 import {
   bulkDeleteEntriesInput,
   bulkEditEntriesInput,
   continueEntryInput,
-  createManualEntryInput,
-  deleteEntryInput,
   discardTimerInput,
   duplicateEntryInput,
   removeTimesheetRowInput,
   setTimesheetCellInput,
-  startTimerInput,
-  stopTimerInput,
   timeEntryMessages,
   updateDescriptionInput,
-  updateEntryInput,
   updateEntryProjectInput,
   updateEntryTimesInput,
   updateRunningStartInput,
@@ -75,19 +71,11 @@ const options = {
 type Result<T> = Promise<ActionResult<T, TimeEntryErrorCode>>;
 
 export async function startTimer(input: StartTimerInput): Result<StartTimerResult> {
-  return handle(async (session) => {
-    const values = startTimerInput.parse(input);
-    assertCan(session.actor, "timeEntry.own.create", ownTimeEntryResource(session.actor));
-    return service.startTimer(session.actor, trackerWorkspaceOf(session), values);
-  }, options);
+  return handle((session) => operations.startTimer(session, input), options);
 }
 
 export async function stopTimer(input: StopTimerInput): Result<StopTimerResult> {
-  return handle(async (session) => {
-    const values = stopTimerInput.parse(input);
-    assertCan(session.actor, "timeEntry.own.update", ownTimeEntryResource(session.actor));
-    return service.stopTimer(session.actor, trackerWorkspaceOf(session), values);
-  }, options);
+  return handle((session) => operations.stopTimer(session, input), options);
 }
 
 export async function updateDescription(
@@ -111,21 +99,13 @@ export async function updateEntryProject(
 }
 
 export async function deleteEntry(input: DeleteEntryInput): Result<DeleteEntryResult> {
-  return handle(async (session) => {
-    const values = deleteEntryInput.parse(input);
-    assertCan(session.actor, "timeEntry.own.delete", ownTimeEntryResource(session.actor));
-    return service.deleteEntry(session.actor, values);
-  }, options);
+  return handle((session) => operations.deleteEntry(session, input), options);
 }
 
 export async function createManualEntry(
   input: CreateManualEntryInput,
 ): Result<CreateManualEntryResult> {
-  return handle(async (session) => {
-    const values = createManualEntryInput.parse(input);
-    assertCan(session.actor, "timeEntry.own.create", ownTimeEntryResource(session.actor));
-    return service.createManualEntry(session.actor, trackerWorkspaceOf(session), values);
-  }, options);
+  return handle((session) => operations.createManualEntry(session, input), options);
 }
 
 export async function updateEntryTimes(
@@ -150,11 +130,7 @@ export async function updateRunningStart(
 
 /** El «Guardar» del diálogo de una entrada: los grupos tocados, todo o nada (ADR 0013). */
 export async function updateEntry(input: UpdateEntryInput): Result<UpdateEntryResult> {
-  return handle(async (session) => {
-    const values = updateEntryInput.parse(input);
-    assertCan(session.actor, "timeEntry.own.update", ownTimeEntryResource(session.actor));
-    return service.updateEntry(session.actor, trackerWorkspaceOf(session), values);
-  }, options);
+  return handle((session) => operations.updateEntry(session, input), options);
 }
 
 export async function continueEntry(

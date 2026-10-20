@@ -653,12 +653,34 @@ export const auditLog = pgTable(
     entityId: text("entity_id").notNull(),
     previousValue: text("previous_value"),
     nextValue: text("next_value"),
+    /**
+     * D-MCP-12: el cliente OAuth si el cambio vino por MCP; nulo desde la
+     * aplicación. Sin clave foránea: la constancia queda aunque el cliente se borre.
+     */
+    oauthClientId: text("oauth_client_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     index("audit_log_workspace_created_idx").on(table.workspaceId, table.createdAt),
     index("audit_log_entity_idx").on(table.entity, table.entityId),
   ],
+);
+
+/**
+ * D-MCP-13: el minuto en curso de pedidos al MCP, una fila por persona. Sin
+ * `workspace_id`: es una tabla técnica de la cuenta, como `user_preference`, y
+ * filtra por el `user_id` del token.
+ */
+export const mcpCallWindow = pgTable(
+  "mcp_call_window",
+  {
+    userId: text("user_id")
+      .primaryKey()
+      .references(() => user.id, { onDelete: "cascade" }),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+    calls: integer("calls").notNull(),
+  },
+  (table) => [check("mcp_call_window_calls_positive", sql`${table.calls} > 0`)],
 );
 
 export const workspaceRelations = relations(workspace, ({ one, many }) => ({

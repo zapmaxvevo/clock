@@ -1,5 +1,6 @@
 import { auditLog } from "@/server/db/schema";
 import type { Transaction } from "@/server/db";
+import type { Actor } from "@/server/permissions";
 
 export type AuditEntry = {
   readonly workspaceId: string;
@@ -9,7 +10,24 @@ export type AuditEntry = {
   readonly entityId: string;
   readonly previousValue?: unknown;
   readonly nextValue?: unknown;
+  /** D-MCP-12: el cliente OAuth si el cambio vino por MCP; nulo desde la aplicación. */
+  readonly oauthClientId?: string | null;
 };
+
+/**
+ * D-MCP-12: quién escribe una constancia, tomado del actor. Toda constancia que
+ * se arma con un `Actor` pasa por acá, así una escritura por MCP queda marcada
+ * con su cliente sin que el service lo sepa.
+ */
+export function auditActorOf(
+  actor: Actor,
+): Pick<AuditEntry, "workspaceId" | "actorId" | "oauthClientId"> {
+  return {
+    workspaceId: actor.workspaceId,
+    actorId: actor.userId,
+    oauthClientId: actor.oauthClientId ?? null,
+  };
+}
 
 function serialize(value: unknown): string | null {
   return value === undefined ? null : JSON.stringify(value);
@@ -24,6 +42,7 @@ function rowOf(entry: AuditEntry) {
     entityId: entry.entityId,
     previousValue: serialize(entry.previousValue),
     nextValue: serialize(entry.nextValue),
+    oauthClientId: entry.oauthClientId ?? null,
   };
 }
 

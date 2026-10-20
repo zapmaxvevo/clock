@@ -10,8 +10,8 @@ import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 
 import { releasedEmailOf } from "@/lib/email";
-import { recordAudit } from "@/server/audit";
-import type { Transaction } from "@/server/db";
+import { auditActorOf, recordAudit } from "@/server/audit";
+import { db, type Transaction } from "@/server/db";
 import { account, session, user } from "@/server/db/schema";
 import type { Actor } from "@/server/permissions";
 
@@ -39,8 +39,7 @@ export async function deleteSessionsOf(
   }
   // Solo la cantidad: la constancia nunca guarda tokens ni ids de sesión.
   await recordAudit(tx, {
-    workspaceId: actor.workspaceId,
-    actorId: actor.userId,
+    ...auditActorOf(actor),
     action: "session.revokeAll",
     entity: "user",
     entityId: userId,
@@ -117,8 +116,7 @@ export async function bindGoogleAccount(
   });
   // Solo la cantidad: la constancia nunca guarda tokens ni ids de cuenta.
   await recordAudit(tx, {
-    workspaceId: person.workspaceId,
-    actorId: person.userId,
+    ...auditActorOf(person),
     action: "account.link",
     entity: "user",
     entityId: person.userId,
@@ -160,12 +158,32 @@ export async function releaseEmailOf(
   const accounts = await deleteAccountsOf(tx, userId);
   await deleteSessionsOf(tx, actor, userId);
   await recordAudit(tx, {
-    workspaceId: actor.workspaceId,
-    actorId: actor.userId,
+    ...auditActorOf(actor),
     action: "user.releaseEmail",
     entity: "user",
     entityId: userId,
     previousValue: { email: previousEmail, accounts },
     nextValue: { email: released },
   });
+}
+
+/**
+ * D-MCP-3, paso 5: la persona de un token, como la guarda `user`, o `undefined`
+ * si la fila ya no existe. Solo lee, sin transacción.
+ */
+export async function findSessionUser(userId: string): Promise<
+  | {
+      readonly id: string;
+      readonly email: string;
+      readonly name: string;
+      readonly image: string | null;
+    }
+  | undefined
+> {
+  const rows = await db
+    .select({ id: user.id, email: user.email, name: user.name, image: user.image })
+    .from(user)
+    .where(eq(user.id, userId))
+    .limit(1);
+  return rows.at(0);
 }
