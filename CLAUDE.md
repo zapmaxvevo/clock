@@ -40,13 +40,17 @@ src/
     (app)/             shell con sesión obligatoria; un route.ts no lo hereda
       reportes/exportar/ descargas, una carpeta por formato (Route Handlers)
     login/             pantalla de acceso
+    conectar/          consentimiento de un asistente (ADR 0026)
     api/auth/[...all]/ handler de Better Auth
     api/cron/daily/    único trabajo programado
+    api/mcp/           servidor MCP sin estado; autentica por token (ADR 0026)
+    .well-known/       metadatos OAuth del recurso y del servidor de autorización
   modules/<modulo>/
     schema.ts          esquemas Zod de entrada y salida
     service.ts         reglas de negocio
     repository.ts      consultas Drizzle, único lugar con acceso a datos
     actions.ts         server actions del módulo
+    operations.ts      Zod, can() y service de una operación que comparten action y herramienta MCP
     components/        interfaz del módulo
     *.test.ts
   server/
@@ -55,17 +59,22 @@ src/
     access.ts          regla de dominio e invitados, función pura
     entry.ts           el ingreso: arma access.ts con la política y los hechos de la base (ADR 0024)
     session.ts         sesión, contexto de workspace y preferencias
+    user-context.ts    el armado de un pedido desde la persona, para la sesión y el token
+    mcp-auth.ts        servidor de autorización de los asistentes: plugins, rutas cerradas y gancho
+    mcp-context.ts     del token del MCP al actor, y el consentimiento de /conectar
+    oauth-records.ts   lo que la aplicación lee y borra de las tablas OAuth (ADR 0025)
     db/                esquema y cliente
     permissions/       can(actor, action, resource)
     time/              zonas horarias, semanas, duración, formatos, redondeo
     audit.ts
     errors.ts          DomainError, RejectedError, Rejection y ActionErrorCode (ADR 0011)
-    action.ts          ActionResult, failure y handle de las actions
+    action.ts          ActionResult y handle de las actions
+    failure.ts         failureOf: la traducción de errores de las actions y las herramientas
     create-once.ts     altas idempotentes con el id que elige el cliente (ADR 0007)
     env.ts             variables de entorno validadas con Zod
   components/          piezas de interfaz que comparten los módulos; `ui/` es la salida de shadcn
   hooks/               hooks de cliente que comparten los módulos: useAction, useNewId
-  lib/                 utilidades puras que comparten servidor y navegador; `email.ts` normaliza y valida correos
+  lib/                 utilidades puras que comparten servidor y navegador; `email.ts` normaliza y valida correos; `oauth.ts`, las redirecciones y consultas de una autorización
 scripts/               operaciones de una vez que corre el usuario con `--dry-run` y `--apply`
 e2e/                   Playwright
 drizzle/               migraciones SQL versionadas
@@ -82,6 +91,10 @@ docs/adr/              decisiones de arquitectura
 4. Llama al service, que aplica las reglas de negocio.
 5. El service usa el repository dentro de una transacción y escribe el audit log.
 6. La action revalida las rutas afectadas y devuelve un resultado tipado.
+
+Una herramienta del MCP sigue el mismo recorrido: el token reemplaza a la
+sesión (`readMcpContext`) y la operación compartida de `operations.ts` hace el
+resto.
 
 Las lecturas van por el service desde Server Components. Una descarga es
 un Route Handler de `(app)/reportes/exportar/<formato>/`, que no hereda el
