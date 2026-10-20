@@ -1,6 +1,6 @@
 # 0026. El servidor MCP autoriza con OAuth de Better Auth y atiende sin estado
 
-Fecha: 2026-10-19. Estado: **Propuesto** (lo aprueba el usuario).
+Fecha: 2026-10-19. Estado: **Aceptado el 2026-10-19 por el usuario.**
 Origen: el contrato de [`mejoras-mcp.md`](../slices/mejoras-mcp.md), mejora 3 de
 [`mejoras-pedidas.md`](../mejoras-pedidas.md), corregido por las dos rondas de
 revisión de `architecture-reviewer` del 2026-10-19, que bajó y leyó el plugin.
@@ -12,18 +12,20 @@ del servidor de autorización son de Better Auth).
 
 ## Contexto
 
-El usuario pidió el 2026-10-19 que un asistente —Claude u otro cliente MCP—
-pueda ver, cargar y editar horas en Clock **con la cuenta de quien lo usa**, y
-que funcione **desde claude.ai como conector remoto** (web, escritorio, móvil) y
-**desde Claude Code**. Eso fija la autenticación: la especificación de
-autorización de MCP (revisión `2025-11-25`, la última que trae el SDK oficial,
+El usuario pidió el 2026-10-19 que un asistente pueda ver, cargar y editar horas
+en Clock **con la cuenta de quien lo usa**, y decidió ese mismo día qué
+asistentes: **los de Anthropic** —claude.ai como conector remoto (web,
+escritorio, móvil) y Claude Code— **y los de OpenAI** —ChatGPT como conector
+remoto y los clientes MCP de OpenAI que autorizan con OAuth, como Codex—. Eso
+fija la autenticación: la especificación de autorización de MCP (revisión
+`2025-11-25`, la última que trae el SDK oficial,
 `node_modules/@modelcontextprotocol/sdk/dist/esm/types.js:2-4`) pide que el
 servidor MCP sea un **servidor de recursos OAuth 2.1**: publica sus metadatos de
 recurso protegido (RFC 9728), responde 401 con `WWW-Authenticate` apuntando a
 ellos, y acepta tokens de acceso emitidos para él por un servidor de
 autorización que publica los suyos (RFC 8414), con PKCE, indicadores de recurso
 (RFC 8707) y registro de clientes. Un token personal pegado a mano no sirve:
-claude.ai no lo ofrece para un conector remoto.
+ni claude.ai ni ChatGPT lo ofrecen para un conector remoto.
 
 Lo que ya está fijado:
 
@@ -81,7 +83,7 @@ en Vercel.
    del lado del recurso, porque el proveedor no la conoce.
 4. **Google como servidor de autorización**, aceptando sus tokens. Google no
    ofrece registro dinámico ni tokens con audiencia del recurso (RFC 8707), y
-   claude.ai no tendría cómo registrarse.
+   los asistentes no tendrían cómo registrarse.
 
 ### `@better-auth/mcp` o `oauthProvider` configurado a mano
 
@@ -128,12 +130,14 @@ en Vercel.
 1. **Better Auth emite los tokens, con `@better-auth/oauth-provider` configurado
    a mano y el plugin `jwt`** (opción 1 de la primera lista y opción 2 de la
    segunda).
-   - **Better Auth se fija exacto en 1.7.10**, sin `^`: `better-auth`,
-     `@better-auth/core` y `@better-auth/oauth-provider` en 1.7.10, con
-     `better-call` 1.4.2 y `@better-auth/utils` 0.5.0. Es la versión con
+   - **Better Auth se fija exacto en 1.7.10**, sin `^`: `better-auth` y
+     `@better-auth/core` en 1.7.10, con `better-call` 1.4.2 y
+     `@better-auth/utils` 0.5.0. Es la versión con
      `clientRegistrationDefaultApplicationType: "infer"`, sin la cual Claude
-     Code no se registra, publicada hace más de un día. La actualización va en
-     un commit propio, antes del MCP, y se prueba sola: el ingreso entero.
+     Code no se registra, publicada hace más de un día. **La actualización va
+     sola y primero**, fuera del slice del MCP, mergeada y desplegada antes; el
+     MCP arranca sobre `main` con 1.7.10 ya fijado y suma
+     `@better-auth/oauth-provider` 1.7.10.
    - **Las tablas del plugin son de Better Auth** y, por el ADR 0025, del código
      de `src/server/` que configura el ingreso: las lee y escribe
      `src/server/oauth-records.ts`, con la transacción de quien llama.
@@ -144,14 +148,18 @@ en Vercel.
      llevan parámetros en el camino se cierran con los privilegios del plugin.
      Solo se conceden `authorization_code` y `refresh_token`.
    - **Toda redirección tiene que estar en una lista**, al registrar y al
-     autorizar: las de `MCP_REDIRECT_URIS` (por omisión, las de claude.ai) y
-     cualquier dirección de loopback (`http://localhost`, `http://127.0.0.1`,
-     RFC 8252), que es la de Claude Code. Al autorizar, la dirección tiene que
-     ser además una de las que el cliente registró. Es lo que impide que alguien
-     registre un cliente con el nombre «Claude» y su propio destino, y le pase a
-     una persona de Clock un enlace para autorizarlo. Clientes públicos y
-     confidenciales se aceptan por igual: la amenaza es el destino, no el
-     secreto.
+     autorizar: las de `MCP_REDIRECT_URIS` (por omisión, las de claude.ai,
+     claude.com y ChatGPT) y cualquier dirección de loopback
+     (`http://localhost`, `http://127.0.0.1`, RFC 8252), que es la de Claude
+     Code y la de los clientes de línea de comandos de OpenAI. Al autorizar, la
+     dirección tiene que ser además una de las que el cliente registró. Es lo
+     que impide que alguien registre un cliente con el nombre de un asistente
+     conocido y su propio destino, y le pase a una persona de Clock un enlace
+     para autorizarlo. Clientes públicos y confidenciales se aceptan por igual:
+     la amenaza es el destino, no el secreto.
+   - **Un cliente que no se registra solo** entra por un script que corre el
+     usuario, que lo crea con una redirección de la lista; el registro abierto
+     no cambia.
 
 2. **El token de acceso es un JWT, verificado en el proceso** (opción 2 de la
    tercera lista), con emisor `<BETTER_AUTH_URL>/api/auth`, audiencia la
@@ -185,7 +193,8 @@ en Vercel.
    Cualquiera que falle responde 401 con `WWW-Authenticate`. Por eso un token
    nunca da más que una sesión: decide lo mismo, con los mismos hechos, en cada
    pedido, y las herramientas son un subconjunto de lo que la pantalla deja
-   hacer, por el mismo `can()` y los mismos services.
+   hacer, por el mismo `can()` y los mismos services. Vale igual para cualquier
+   cliente: nada de la regla mira cuál es.
 
 5. **Autorizar exige lo mismo que el pedido.** El plugin solo pide una sesión de
    Better Auth para autorizar y consentir, y una sesión puede seguir viva para
@@ -219,10 +228,10 @@ en Vercel.
 ## Consecuencias
 
 - **Dependencias**: Better Auth pasa de `^1.7.7` a `1.7.10` exacto, con sus
-  pares, en un commit propio que vuelve a probar el ingreso entero antes de que
-  entre el MCP. Se suman `@better-auth/oauth-provider` 1.7.10 y
-  `@modelcontextprotocol/sdk`. El SDK arrastra `express` y `hono`, que el
-  servidor no importa: el Route Handler carga solo `server/mcp` y
+  pares, en un cambio propio que se mergea y despliega antes que el MCP y
+  vuelve a probar el ingreso entero. El MCP suma `@better-auth/oauth-provider`
+  1.7.10 y `@modelcontextprotocol/sdk`. El SDK arrastra `express` y `hono`, que
+  el servidor no importa: el Route Handler carga solo `server/mcp` y
   `server/webStandardStreamableHttp`.
 - **Tablas nuevas de Better Auth** (clientes, recursos, tokens de acceso y de
   refresh, consentimientos, aserciones de cliente y las claves de `jwt`),
@@ -251,8 +260,8 @@ en Vercel.
 - **Las operaciones que comparten la pantalla y el MCP** se escriben una vez:
   la validación, el permiso y la llamada al service de cada una viven en un
   archivo del módulo que llaman la action y la herramienta.
-- **Un cliente nuevo fuera de Claude** se habilita sumando su redirección a
-  `MCP_REDIRECT_URIS`, sin código; sacarla corta también a los clientes ya
-  registrados con ella, en la autorización siguiente.
+- **Un cliente nuevo fuera de Anthropic y OpenAI** se habilita sumando su
+  redirección a `MCP_REDIRECT_URIS`, sin código; sacarla corta también a los
+  clientes ya registrados con ella, en la autorización siguiente.
 - **Una actualización futura de Better Auth** sube los cuatro paquetes juntos y
   vuelve a probar el ingreso y el flujo OAuth.
