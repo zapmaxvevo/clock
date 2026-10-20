@@ -217,3 +217,70 @@ subido, no sobre los datos del volumen.
 Sin fallos ni flakes: ningún spec se repitió. Ruido sin fallos, el de siempre:
 17 y 14 `Error: The destination stream closed early.` de Next en el log del
 servidor.
+
+## El script de importación (D-WS0-6, §9.4)
+
+En su worktree (`.claude/worktrees/agent-ae2123e9f2a6adc04`), rama
+`ops/importar-clockify`, que no tiene ref remota: el rebase no pide push.
+
+1. **Respaldo**: `ops/importar-clockify-respaldo-2026-10-20`, en `dae5193`, la
+   cabeza de antes. No se borra.
+2. **Rebase** sobre `main` en `143f92c` (el merge de A). Un conflicto, en
+   `vitest.config.ts`: `main` ya incluye `scripts/**/*.test.ts` y excluye
+   `**/*.integration.test.ts`; quedó la línea de `main`. `package.json` entró
+   sin conflicto, con `import:clockify`. `npm ci`. Los dos commits del script
+   son ahora `85ed377` y `45d4f7c`.
+3. **El ajuste a `main`**: ninguno. `npm run typecheck` pasó sin tocar el
+   script: las firmas que usa (`recordAudit`, `nextPaletteColor`,
+   `durationSeconds`, `formatElapsed`) no cambiaron, y el `select()` de
+   `soleWorkspace` y el `insert` de membresías siguen al esquema de A.
+4. **D-E1b-10**, `3f15137`: `newMembership` ya no existe. La decisión es
+   `planAccount` (`input.ts`), pura: con `user` y membresía, se carga; con
+   `user` sin membresía, pendiente («tiene `user` sin membresía: se carga cuando
+   entre por invitación»); activa sin `user`, pendiente; inactiva sin `user`,
+   `user` y membresía `inactive`, salvo con una invitación `pending` de su
+   correo, que la deja pendiente. La corrida en seco dice el motivo de cada
+   pendiente. El script no escribe en `invitation`.
+
+**La prueba**, con `entradas.json` y `personas.json` de
+`/home/maxi/program/clock-importacion-clockify/` (11 personas en las entradas:
+4 activas y 7 inactivas en Clockify). Solo conteos.
+
+- `npm run typecheck` sin errores; `npx eslint scripts/import-clockify` sin
+  errores; `npx vitest run scripts/import-clockify`: 43 en verde, 9 de ellos de
+  `planAccount`.
+- Tres bases nuevas con la siembra mínima (un owner con un correo que no está en
+  `personas.json`, el workspace, su fila de ajustes y la membresía `owner`):
+  `clock_ws0_import_a`, migrada hasta la `0017`; `clock_ws0_import_b` y
+  `clock_ws0_import_c`, hasta la `0018`.
+
+| Corrida                         | Se cargan | Pendientes | Entradas que carga      | Termina                                                   |
+| ------------------------------- | --------- | ---------- | ----------------------- | --------------------------------------------------------- |
+| `import_a`, `--dry-run`         | 7         | 4          | 228 (211 sep., 17 oct.) | sin error                                                 |
+| `import_b`, `--dry-run`         | 7         | 4          | 228                     | sin error                                                 |
+| `import_b`, `--apply`           | 7         | 4          | 228                     | «Importado y verificado»: 211 / 690:08:49 y 17 / 54:54:55 |
+| `import_b`, segundo `--dry-run` | 0         | 4          | —                       | «No hay personas nuevas para cargar»; 7 ya importadas     |
+
+Las 7 que se cargan son las inactivas, con `user` y membresía `inactive`
+nuevos; las 4 pendientes, las activas sin `user`. Las corridas validan los
+totales del informe (572 y 52 entradas) antes de planificar, así que terminar
+sin error es también esa comprobación.
+
+**D-E1b-10 contra datos**: `clock_ws0_import_c` con, además, una activa con
+`user` y membresía `active`, una activa y una inactiva con `user` sin
+membresía, y una inactiva sin `user` con una invitación `pending`. En seco y con
+`--apply`: se cargan 6 (1 «encontrada con membresía active» y 5 «se crean el
+usuario y la membresía inactive»), 213 entradas, «Importado y verificado»; 5
+pendientes: 2 «tiene `user` sin membresía», 1 «sin fila `user`, con invitación
+pendiente» y 2 activas sin `user`. Después del `--apply`: 9 filas `user` (4 + 5),
+membresías `active` 2 e `inactive` 5, las dos `user` sin membresía siguen sin
+ella, y la invitación sigue `pending`. Un segundo `--dry-run`: 0 nuevas, 6 ya
+importadas.
+
+**El script viejo** (`dae5193`, la rama de respaldo, en un worktree temporal)
+contra `clock_ws0_import_b` después del `--apply`: `--dry-run` y `--apply` salen
+con código 1 en la primera sentencia, el `select()` de `soleWorkspace`
+(«Failed query: select "id", "name", "logo_url", "currency", …»; la misma
+sentencia en `psql` da `42703: column "logo_url" does not exist`). Las filas de
+`user`, `membership`, `time_entry` y `audit_log` (8, 8, 228, 1) no cambiaron. El
+worktree se borró después.
