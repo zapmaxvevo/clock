@@ -103,7 +103,7 @@ export function CalendarBlock({
   const start = entry.startLabel;
   const end = entry.endLabel;
   const duration = running
-    ? formatDuration(Math.floor(elapsed / 60))
+    ? formatDuration(elapsed, "compact")
     : (entry.durationLabel ?? "");
   const label = calendarLabels.blockLabel({
     name,

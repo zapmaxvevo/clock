@@ -4045,7 +4045,10 @@ describe("los rótulos y las marcas del gráfico (D-R5-5; criterio 7 de R5)", ()
       owner,
       { range },
       {
-        settings: { ...settings, formats: { time: "24h", date: "yyyy-MM-dd" } },
+        settings: {
+          ...settings,
+          formats: { time: "24h", date: "yyyy-MM-dd", duration: "compact" },
+        },
       },
     );
     expect(chartOf(isoDates).bars[0]?.tick).toBe("09-30");

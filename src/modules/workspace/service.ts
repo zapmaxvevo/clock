@@ -16,7 +16,7 @@ import {
   type MembershipStatus,
   type Role,
 } from "@/server/permissions";
-import { parseWeekStart, type WeekStart } from "@/server/time";
+import { parseWeekStart, type DurationFormat, type WeekStart } from "@/server/time";
 
 import {
   distinctEmails,
@@ -39,8 +39,12 @@ import {
   type WorkspaceSettingsView,
 } from "./schema";
 
+/** Los ajustes del workspace que se leen en cada pedido (ADR 0029). */
+export type WorkspaceSettings = { readonly durationFormat: DurationFormat };
+
 export type WorkspaceContext = {
   readonly workspace: WorkspaceRow;
+  readonly settings: WorkspaceSettings;
   readonly membership: MembershipRow;
   readonly actor: Actor;
 };
@@ -78,6 +82,7 @@ function contextOf(
 ): WorkspaceContext {
   return {
     workspace: current,
+    settings: { durationFormat: "compact" },
     membership: row,
     actor: {
       userId,

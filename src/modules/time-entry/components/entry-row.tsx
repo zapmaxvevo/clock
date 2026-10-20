@@ -218,7 +218,9 @@ export function EntryRow({
   // La de la vista es la del servidor, que mide instantes: en un día con cambio
   // de horario no coincide con la resta de las horas (TT-97).
   const durationLabel =
-    shownTimes === null ? entry.durationLabel : formatDuration(draftDuration(shownTimes));
+    shownTimes === null
+      ? entry.durationLabel
+      : formatDuration(draftDuration(shownTimes) * 60, "compact");
   const timesText = `${timesLabel}${extraDays > 0 ? ` +${extraDays}${extraDaysText(extraDays)}` : ""}`;
 
   return (

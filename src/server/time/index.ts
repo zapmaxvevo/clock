@@ -19,8 +19,19 @@ export const DATE_FORMATS = [
 ] as const;
 export type DateFormat = (typeof DATE_FORMATS)[number];
 
-/** Cómo ve las horas quien mira (PF-12, PF-13). */
-export type DisplayFormats = { readonly time: TimeFormat; readonly date: DateFormat };
+export const DURATION_FORMATS = ["compact", "full"] as const;
+/** Cómo se muestra una duración (PF-20, WS-15). Es del workspace (ADR 0029). */
+export type DurationFormat = (typeof DURATION_FORMATS)[number];
+
+/**
+ * Cómo ve el tiempo quien mira: la hora y la fecha son suyas (PF-12, PF-13); la
+ * duración, del workspace (WS-14, ADR 0029). Lo junta `timeSettingsOf`.
+ */
+export type DisplayFormats = {
+  readonly time: TimeFormat;
+  readonly date: DateFormat;
+  readonly duration: DurationFormat;
+};
 
 /** Todo lo que hace falta para cortar y rotular el tiempo de una persona. */
 export type TimeSettings = {
@@ -60,12 +71,20 @@ export function durationMinutes(start: Date, end: Date | null, now: Date): numbe
   return Math.max(0, Math.round((closing.getTime() - start.getTime()) / 60_000));
 }
 
-/** Formato h:mm, el que usa Clockify en totales. */
-export function formatDuration(minutes: number): string {
-  const safe = Math.max(0, Math.round(minutes));
-  const hours = Math.floor(safe / 60);
-  const rest = safe % 60;
-  return `${hours}:${rest.toString().padStart(2, "0")}`;
+/**
+ * Una duración de `seconds` segundos como se muestra: compacto `h:mm`, con los
+ * segundos truncados; completo `hh:mm:ss`. Un total se formatea una sola vez,
+ * sobre la suma exacta (ADR 0029). Un negativo da cero. No es el contador del
+ * timer, que es `formatElapsed`.
+ */
+export function formatDuration(seconds: number, format: DurationFormat): string {
+  const safe = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  if (format === "compact") {
+    return `${hours}:${pad(minutes)}`;
+  }
+  return `${pad(hours)}:${pad(minutes)}:${pad(safe % 60)}`;
 }
 
 /**

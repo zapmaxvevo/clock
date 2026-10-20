@@ -19,7 +19,7 @@ import { xlsxBytesOf } from "./xlsx";
 const settings: TimeSettings = {
   timezone: "America/Argentina/Buenos_Aires",
   weekStart: 1,
-  formats: { time: "24h", date: "dd/MM/yyyy" },
+  formats: { time: "24h", date: "dd/MM/yyyy", duration: "compact" },
 };
 
 const ANA = "aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY";
@@ -263,7 +263,7 @@ describe("exportDocumentOf: la cabecera (D-R6-8)", () => {
     expect(
       headerRows({}, "Generado", {
         ...settings,
-        formats: { time: "12h", date: "MM/dd/yyyy" },
+        formats: { time: "12h", date: "MM/dd/yyyy", duration: "compact" },
       }),
     ).toEqual([["Generado", "10/12/2026 2:05 PM"]]);
     expect(

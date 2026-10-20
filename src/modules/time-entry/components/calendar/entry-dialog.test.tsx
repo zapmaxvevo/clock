@@ -108,7 +108,7 @@ const running: TimeEntryView = {
 
 function render(
   entry: TimeEntryView,
-  formats: DisplayFormats = { time: "24h", date: "dd/MM/yyyy" },
+  formats: DisplayFormats = { time: "24h", date: "dd/MM/yyyy", duration: "compact" },
 ): string {
   return renderToStaticMarkup(
     <DisplayFormatsProvider formats={formats}>
@@ -154,7 +154,7 @@ describe("EntryDialogBody (CAL-65, CAL-66)", () => {
     const fields = fieldsOf(
       render(
         { ...closed, startLabel: "9:00 AM", endLabel: "10:30 AM" },
-        { time: "12h", date: "dd/MM/yyyy" },
+        { time: "12h", date: "dd/MM/yyyy", duration: "compact" },
       ),
     );
     expect(fields).toContainEqual(["Hora de inicio", "9:00 AM"]);
@@ -214,7 +214,7 @@ const noop = () => undefined;
 function renderContent(
   subject: DialogSubject,
   canTrack = true,
-  formats: DisplayFormats = { time: "24h", date: "dd/MM/yyyy" },
+  formats: DisplayFormats = { time: "24h", date: "dd/MM/yyyy", duration: "compact" },
 ): string {
   return renderToStaticMarkup(
     <DisplayFormatsProvider formats={formats}>
@@ -294,6 +294,7 @@ describe("EntryDialogContent: los modos según el permiso y el sujeto (CAL-05, C
     const markup = renderContent({ kind: "entry", entry: closed }, true, {
       time: "12h",
       date: "dd/MM/yyyy",
+      duration: "compact",
     });
     expect(controlNamed(markup, "Hora de inicio")).toContain('value="9:00 AM"');
     expect(controlNamed(markup, "Hora de fin")).toContain('value="10:30 AM"');

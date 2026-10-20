@@ -566,11 +566,11 @@ function TimesFields({
           )}
         </span>
         <ClockField
-          value={durationLabel ?? formatDuration(draftDuration(times))}
+          value={durationLabel ?? formatDuration(draftDuration(times) * 60, "compact")}
           onCommit={(text) =>
             onCommit(
               (current) => withDuration(current, text),
-              (next) => formatDuration(draftDuration(next)),
+              (next) => formatDuration(draftDuration(next) * 60, "compact"),
             )
           }
           onSubmit={onSubmit}

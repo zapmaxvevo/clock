@@ -216,7 +216,7 @@ function toView(row: EntryWithRefs, workspace: TrackerWorkspace): TimeEntryView 
     endClock,
     extraDays: endedAt === null ? 0 : extraDays(row.startedAt, endedAt, timeZone),
     durationSeconds: seconds,
-    durationLabel: seconds === null ? null : formatDuration(Math.floor(seconds / 60)),
+    durationLabel: seconds === null ? null : formatDuration(seconds, "compact"),
     editableTimes: hasEditableTimes(row, timeZone),
     project: row.project === null ? null : projectRefOf(row.project),
     task: row.task === null ? null : { id: row.task.id, name: row.task.name },

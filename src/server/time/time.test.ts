@@ -844,10 +844,10 @@ describe("durationMinutes", () => {
 
 describe("formatDuration", () => {
   it("usa el formato h:mm", () => {
-    expect(formatDuration(0)).toBe("0:00");
-    expect(formatDuration(5)).toBe("0:05");
-    expect(formatDuration(90)).toBe("1:30");
-    expect(formatDuration(600)).toBe("10:00");
+    expect(formatDuration(0 * 60, "compact")).toBe("0:00");
+    expect(formatDuration(5 * 60, "compact")).toBe("0:05");
+    expect(formatDuration(90 * 60, "compact")).toBe("1:30");
+    expect(formatDuration(600 * 60, "compact")).toBe("10:00");
   });
 });
 

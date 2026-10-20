@@ -68,6 +68,7 @@ async function contextFor(id: string): Promise<ProfileContext> {
   }
   return {
     workspace: row,
+    settings: { durationFormat: "compact" },
     membership: member,
     actor: { userId: id, workspaceId, role: member.role, status: member.status },
     preferences: (await profileOf(id)).preferences,

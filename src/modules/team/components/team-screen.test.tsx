@@ -30,7 +30,7 @@ const actions: TeamActions & InvitationActions = {
 const SETTINGS: TimeSettings = {
   timezone: "America/Argentina/Buenos_Aires",
   weekStart: 1,
-  formats: { time: "24h", date: "dd/MM/yyyy" },
+  formats: { time: "24h", date: "dd/MM/yyyy", duration: "compact" },
 };
 
 const noInvitations: InvitationsView = {

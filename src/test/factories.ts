@@ -29,7 +29,11 @@ import type { DisplayFormats } from "@/server/time";
 export const buenosAires = "America/Argentina/Buenos_Aires";
 
 /** Los formatos de quien no eligió ninguno (P-03). */
-export const defaultFormats: DisplayFormats = { time: "24h", date: "dd/MM/yyyy" };
+export const defaultFormats: DisplayFormats = {
+  time: "24h",
+  date: "dd/MM/yyyy",
+  duration: "compact",
+};
 
 export type SeededWorkspace = {
   readonly workspaceId: string;

@@ -34,7 +34,5 @@ export function useGroupTotalLabel({
   const removedSeconds = entries
     .filter((entry) => removedIds.includes(entry.id))
     .reduce((total, entry) => total + (entry.durationSeconds ?? 0), 0);
-  return formatDuration(
-    Math.floor((Math.max(0, closedSeconds - removedSeconds) + elapsed) / 60),
-  );
+  return formatDuration(Math.max(0, closedSeconds - removedSeconds) + elapsed, "compact");
 }

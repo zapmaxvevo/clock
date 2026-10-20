@@ -13,7 +13,7 @@ import { rowNotesOf, type TeamFeedback } from "./team-members-model";
 const SETTINGS: TimeSettings = {
   timezone: "America/Argentina/Buenos_Aires",
   weekStart: 1,
-  formats: { time: "24h", date: "dd/MM/yyyy" },
+  formats: { time: "24h", date: "dd/MM/yyyy", duration: "compact" },
 };
 
 /** Como la ve el owner: un member con `promote` y un admin ajeno con `demote`. */

@@ -11,8 +11,8 @@ function FormatsProbe() {
   return <output>{`${time} ${date}`}</output>;
 }
 
-const base: DisplayFormats = { time: "24h", date: "dd/MM/yyyy" };
-const screen: DisplayFormats = { time: "12h", date: "yyyy-MM-dd" };
+const base: DisplayFormats = { time: "24h", date: "dd/MM/yyyy", duration: "compact" };
+const screen: DisplayFormats = { time: "12h", date: "yyyy-MM-dd", duration: "compact" };
 
 describe("useDisplayFormats", () => {
   it("lanza sin proveedor", () => {

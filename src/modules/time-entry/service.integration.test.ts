@@ -4087,6 +4087,7 @@ async function profileContextFor(userId: string): Promise<ProfileContext> {
   }
   return {
     workspace: row,
+    settings: { durationFormat: "compact" },
     membership: member,
     actor: actorFor(userId),
     preferences: (await profileOf(userId)).preferences,
@@ -5478,7 +5479,7 @@ describe("la zona y los formatos de la persona (slice 7)", () => {
     expect(timeSettingsOf(context)).toEqual({
       timezone: tokyo,
       weekStart: 0,
-      formats: { time: "12h", date: "MM/dd/yyyy" },
+      formats: { time: "12h", date: "MM/dd/yyyy", duration: "compact" },
     });
   });
 
@@ -7007,7 +7008,10 @@ describe("getCalendarState: zona, formatos y días (criterios 7, 10, 11 y 15)", 
     const plain = await getCalendarState(actor, workspaceOf(buenosAires), week, now);
     const american = await getCalendarState(
       actor,
-      { ...workspaceOf(buenosAires), formats: { time: "12h", date: "MM/dd/yyyy" } },
+      {
+        ...workspaceOf(buenosAires),
+        formats: { time: "12h", date: "MM/dd/yyyy", duration: "compact" },
+      },
       week,
       now,
     );

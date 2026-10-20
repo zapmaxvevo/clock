@@ -18,8 +18,8 @@ const catalog: TrackingCatalog = {
   tags: [],
 };
 const serverNow = "2026-10-02T15:00:00.000Z";
-const H24: DisplayFormats = { time: "24h", date: "dd/MM/yyyy" };
-const H12: DisplayFormats = { time: "12h", date: "dd/MM/yyyy" };
+const H24: DisplayFormats = { time: "24h", date: "dd/MM/yyyy", duration: "compact" };
+const H12: DisplayFormats = { time: "12h", date: "dd/MM/yyyy", duration: "compact" };
 
 const morning: TimeEntryView = {
   id: "8d0f7a52-4c1e-4b8e-9a43-2f6a1c3e5b70",
@@ -150,7 +150,11 @@ describe("CalendarBlock, el nombre accesible (CAL-75)", () => {
 
   it("el día sale con el formato de fecha de la persona", () => {
     expect(
-      nameOf(render(morning, { formats: { time: "24h", date: "MM/dd/yyyy" } })),
+      nameOf(
+        render(morning, {
+          formats: { time: "24h", date: "MM/dd/yyyy", duration: "compact" },
+        }),
+      ),
     ).toBe("Informe, mié, 09/30, de 09:00 a 10:30, 1:30");
   });
 

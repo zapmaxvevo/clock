@@ -110,7 +110,7 @@ type RowSource = {
 
 function totalOf(seconds: number): GridTotal {
   const minutes = Math.floor(seconds / 60);
-  return { label: formatDuration(minutes), zero: minutes === 0 };
+  return { label: formatDuration(seconds, "compact"), zero: minutes === 0 };
 }
 
 function sumSeconds(cells: readonly GridCell[]): number {
@@ -244,7 +244,7 @@ function gridRow(
       key,
       date: day.date,
       minutes,
-      label: minutes === null ? "" : formatDuration(minutes),
+      label: minutes === null ? "" : formatDuration(minutes * 60, "compact"),
       seconds: written === undefined ? (server?.closedSeconds ?? 0) : written * 60,
       writable: state.canTrack && !day.beforeFloor && (server !== null || trackable),
       name: cellLabel(name, day.fullLabel),
@@ -352,7 +352,7 @@ export function cellCommit(text: string, shown: number | null): CellCommit {
   if (minutes === null || minutes === 0) {
     return { kind: "rejected" };
   }
-  const label = formatDuration(minutes);
+  const label = formatDuration(minutes * 60, "compact");
   return minutes === shown
     ? { kind: "unchanged", label }
     : { kind: "write", minutes, label };

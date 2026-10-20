@@ -151,10 +151,10 @@ export function ManualBar({
           />
 
           <ClockField
-            value={formatDuration(minutes)}
+            value={formatDuration(minutes * 60, "compact")}
             onCommit={(text) =>
               commit(withDuration(draft, text), (next) =>
-                formatDuration(draftDuration(next)),
+                formatDuration(draftDuration(next) * 60, "compact"),
               )
             }
             label="Duración"

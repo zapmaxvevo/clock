@@ -19,7 +19,7 @@ import { reportLabels } from "./labels";
  * la suma de lo que muestran las filas queda en o debajo del total (§5.3).
  */
 export function durationLabel(seconds: number): string {
-  return formatDuration(Math.floor(seconds / 60));
+  return formatDuration(seconds, "compact");
 }
 
 /** `ReactElement` y no `ReactNode`, que admite `undefined`: un `kind` sin caso no compila. */

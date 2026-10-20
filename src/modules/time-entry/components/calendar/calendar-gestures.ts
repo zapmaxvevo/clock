@@ -311,7 +311,7 @@ export function movedView(
     startLabel: clockLabel(times.start, format),
     endLabel: clockLabel(times.end, format),
     durationSeconds: minutes * 60,
-    durationLabel: formatDuration(minutes),
+    durationLabel: formatDuration(minutes * 60, "compact"),
   };
 }
 

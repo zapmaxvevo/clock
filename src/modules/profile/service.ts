@@ -132,7 +132,8 @@ export function themeClassOf(
 /**
  * Zona, formatos y primer día de la semana con que quien pide ve el tiempo.
  * Única lectura de `context.preferences` para mostrar; el primer día sale de
- * `weekStartOf`, nunca de la membresía directo. Pura, como `weekStartOf`.
+ * `weekStartOf`, nunca de la membresía directo; el formato de duración es del
+ * workspace, de `context.settings` (ADR 0029). Pura, como `weekStartOf`.
  */
 export function timeSettingsOf(context: ProfileContext): TimeSettings {
   return {
@@ -141,6 +142,8 @@ export function timeSettingsOf(context: ProfileContext): TimeSettings {
     formats: {
       time: context.preferences.timeFormat,
       date: context.preferences.dateFormat,
+      // Del workspace, no de la persona (WS-14, ADR 0029).
+      duration: context.settings.durationFormat,
     },
   };
 }
