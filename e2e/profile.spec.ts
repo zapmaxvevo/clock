@@ -177,7 +177,10 @@ test("el menú de la cuenta lleva al perfil, que muestra la identidad y los pred
   await expect(
     main.getByText("La foto y el correo salen de tu cuenta de Google."),
   ).toBeVisible();
-  await expect(main.getByRole("textbox")).toHaveCount(1);
+  // Se cuentan los de la identidad: con el MCP encendido, «Asistentes conectados»
+  // suma su dirección para copiar, en solo lectura.
+  const identity = page.getByRole("region", { name: "Datos de la cuenta", exact: true });
+  await expect(identity.getByRole("textbox")).toHaveCount(1);
 
   // Criterio 15 y PF-37: los tres controles de hora y fecha con los predeterminados. La zona
   // elegida es la opción equivalente a la de omisión, con su desplazamiento.
