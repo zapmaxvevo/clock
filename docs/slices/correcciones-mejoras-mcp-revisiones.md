@@ -143,6 +143,14 @@ Lo que esto cambia o confirma:
   `revocation_endpoint`; introspect está en `disabledPaths` y responde 404.
 - `verifyJwsAccessToken` no rechaza un token con `cnf` (DPoP): uno así sirve
   como portador. No baja de la seguridad de un token sin DPoP.
+- Hallazgo de `mcp-tests`: el plugin trae por omisión límites por IP de 20
+  pedidos cada 60 s en `/oauth2/token` y 30 en `/oauth2/authorize`
+  (`authorize-dkOG8GqZ.mjs:5371-5414`), que D-MCP-13 no nombra. Con conectores
+  remotos, los canjes y las renovaciones de toda la empresa llegan desde las IP
+  del proveedor; el limitador es en memoria y por instancia, como el del
+  registro.
+- `truncateAll` vacía también `oauth_client` (`dba7e14`): un cliente registrado
+  sin sesión no tiene `user_id` y sobrevivía entre tests.
 - El plugin siembra la fila de `oauth_resource` de `mcpResourceUrl()` en su
   `init`, también con el MCP apagado (`seedResourcesOnce`, solo inserta). Sin
   la migración, lo registra como error y sigue; producción migra antes del
