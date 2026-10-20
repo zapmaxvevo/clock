@@ -45,6 +45,9 @@ Lo que ya existe y este documento no reabre:
   `external_invite` (migración `0015`;
   [ADR 0024](../adr/0024-donde-vive-una-invitacion-y-donde-se-corta-el-ingreso.md),
   decisión 1); desde E1b la variable no se lee (EQ-32).
+  _Corregido el 2026-10-20, WS0_: `weekly_capacity_minutes` ya no existe; se
+  borró con la migración `0019` (P-09,
+  [contrato de WS0](../slices/fase2-ws0-columnas.md)).
 - **Una persona con horas no se borra** (P-09 de `reportes.md`, RP-65,
   [ADR 0020](../adr/0020-nucleo-de-reportes-antes-de-la-fase-2.md)): las claves
   de `time_entry` hacia `user` y hacia `membership` son `restrict`.
@@ -879,13 +882,18 @@ R8; el valor inválido responde «Ese día no existe.» (PF-35).
 Documentado: «Daily capacity and working days can be edited regardless of the
 number of workspaces that the user has.» (perfiles). Plan _no verificado_:
 «capacity» NOT FOUND en la lista de funciones pagas. PF-19 los mandó a la
-pantalla de equipo de la fase 2, y `membership.weekly_capacity_minutes` existe
+pantalla de equipo de la fase 2, y `membership.weekly_capacity_minutes` existía
 sin uso (semanal; la de Clockify es diaria). Decidido el 2026-10-16 (P-09, y
 workspace P-06 para el valor del workspace): quedan fuera hasta que exista algo
-que los use, y la columna sigue sin uso. Justificación: nada en Clock la
+que los use, y la columna se borró en WS0. Justificación: nada en Clock la
 consume —los objetivos, la planificación y los recordatorios no existen—, y un
 dato guardado sin efecto invita a creer que tiene uno, el mismo criterio del
 ADR 0020 con `who_sees_all_entries`.
+_Corregido el 2026-10-20, WS0_: decía que la columna «existe sin uso» y que
+«sigue sin uso». La decisión 1 del §7 del
+[mapa de la fase 2](../slices/fase2-mapa.md) la sumó a WS0, que la borró con la
+migración `0019` ([contrato de WS0](../slices/fase2-ws0-columnas.md)). Si la
+capacidad entra, la columna vuelve con su consumidor.
 
 **EQ-73 Identificador, tipo de empleo y campos de usuario** —
 `fuera de alcance`
@@ -1230,6 +1238,12 @@ sesiones van en la misma transacción (D-E2-5 del
 cambia, y lo que esa redacción no nombraba —un ingreso que se cruza con una
 desactivación— lo cierra el contrato con el gancho `session.create.after`
 (D-E2-2, EQ-42).
+
+_Corregido el 2026-10-20, WS0_: P-09 dice que la columna
+`weekly_capacity_minutes` «queda sin uso». La decisión 1 del §7 del
+[mapa de la fase 2](../slices/fase2-mapa.md) la borró, y WS0 la quitó con la
+migración `0019` ([contrato de WS0](../slices/fase2-ws0-columnas.md)). La
+decisión no cambia: la capacidad y los días laborables siguen fuera de alcance.
 
 ### Abierto
 

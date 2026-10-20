@@ -1480,16 +1480,23 @@ avisar, es el pendiente P-04.
 
 **TT-83 Redondeo** — `fuera de alcance`
 El redondeo de Clockify es de plan pago y, según la documentación, solo afecta
-a los reportes, no a la entrada guardada. El campo `roundingMinutes` ya existe
-en `workspace_settings` pero el rastreador no lo usa. Justificación:
+a los reportes, no a la entrada guardada. El campo `roundingMinutes` existía
+en `workspace_settings` pero el rastreador no lo usaba. Justificación:
 funcionalidad paga y, aun en Clockify, ajena a esta pantalla (P-03).
+_Corregido el 2026-10-20, WS0_: decía que el campo «ya existe». La columna
+`rounding_minutes` se borró con la migración `0019`
+([contrato de WS0](../slices/fase2-ws0-columnas.md)).
 
 **TT-84 Campos obligatorios y forzar timer** — `fuera de alcance`
 `requireProject`, `requireTask`, `requireDescription`, `requireTag` y
-`forceTimer` existen en `workspace_settings` pero son funcionalidades de plan
+`forceTimer` existían en `workspace_settings` pero son funcionalidades de plan
 pago: no se pueden relevar en el workspace del equipo. En la fase 1 el
-rastreador los ignora y se comporta como si estuvieran todos en falso.
+rastreador los ignoraba y se comportaba como si estuvieran todos en falso.
 Justificación: pendiente P-01.
+_Corregido el 2026-10-20, WS0_: decía que los campos «existen» y que el
+rastreador «los ignora». Las columnas se borraron con la migración `0019`
+([contrato de WS0](../slices/fase2-ws0-columnas.md)); el rastreador se comporta
+igual, sin nada que ignorar.
 
 ## 8. Estados vacíos
 
@@ -2209,7 +2216,7 @@ pero necesitan una decisión.
 
 | ID   | Punto                                                                                                                                                                                                       |
 | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P-01 | Campos obligatorios (`requireProject`, `requireTask`, `requireDescription`, `requireTag`) y `forceTimer`: existen en el esquema pero son de plan pago. ¿Se implementan, y con qué reglas?                   |
+| P-01 | Campos obligatorios (`requireProject`, `requireTask`, `requireDescription`, `requireTag`) y `forceTimer`: existían en el esquema pero son de plan pago. ¿Se implementan, y con qué reglas?                  |
 | P-02 | Aprobaciones y bloqueo de períodos: definen cuándo una entrada deja de ser editable. Sin ellas no hay bloqueo.                                                                                              |
 | P-03 | Redondeo (`roundingMinutes`): en Clockify es pago y solo afecta reportes. ¿Se mantiene fuera del rastreador?                                                                                                |
 | P-04 | Entradas superpuestas: ¿se permiten en silencio, se avisa o se rechazan?                                                                                                                                    |
@@ -2235,6 +2242,11 @@ en bloque con la misma condición. La página de edición masiva, consultada ese
 día, sigue sin nombrar ningún plan (TT-63). P-14 no suma identificadores: lo
 que el 12 decide sin verificar es parte de TT-63 y está anotado ahí; lo del
 facturable no entra, por P-16 de [la paridad de proyectos](proyectos.md).
+_Corregido el 2026-10-20, WS0_: P-01 decía que los campos «existen en el
+esquema». Esas columnas, y la de P-03 (`rounding_minutes`), se borraron con la
+migración `0019` ([contrato de WS0](../slices/fase2-ws0-columnas.md)). Las
+preguntas siguen como estaban: si alguno entra, la columna vuelve con su
+consumidor.
 
 ### Cerrados
 

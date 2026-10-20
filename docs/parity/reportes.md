@@ -1678,8 +1678,11 @@ acá: es RP-07.
 Documentado: «Rounding only affects the reports, meaning that the rounded
 values will only be displayed in the reports and exports.» y «Clockify will
 first round the duration of each time entry, and then add them up.»
-Justificación: es pago. `workspace_settings.rounding_minutes` existe con
-`default` 0 y nadie lo escribe; el reporte del núcleo lo ignora (P-04).
+Justificación: es pago. `workspace_settings.rounding_minutes` existía con
+`default` 0 y nadie lo escribía; el reporte del núcleo lo ignora (P-04).
+_Corregido el 2026-10-20, WS0_: decía «existe con `default` 0 y nadie lo
+escribe». La columna se borró con la migración `0019`
+([contrato de WS0](../slices/fase2-ws0-columnas.md)).
 
 **RP-37 Crear factura desde el reporte** — `fuera de alcance`
 Justificación: las facturas no se pidieron y cuelgan de tarifas.
