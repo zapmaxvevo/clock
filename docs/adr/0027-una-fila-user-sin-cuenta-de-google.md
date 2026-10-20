@@ -1,10 +1,10 @@
 # 0027. Una fila `user` sin cuenta de Google
 
-Fecha: 2026-10-19. Estado: Propuesto.
+Fecha: 2026-10-19. Estado: Aceptado el 2026-10-19 por el usuario.
 Origen: el contrato de E2b
 ([`fase2-e2b-sin-cuenta.md`](../slices/fase2-e2b-sin-cuenta.md)), con el
 [mapa de la fase 2](../slices/fase2-mapa.md) (§2 grupo 2, E2b, §4, §5 y §7),
-[`equipo.md`](../parity/equipo.md) (EQ-109, EQ-110, EQ-114, P-05) y
+[`equipo.md`](../parity/equipo.md) (EQ-109, EQ-110, EQ-114, P-05, P-07) y
 [`perfil.md`](../parity/perfil.md) (PF-47, PF-48, P-11).
 
 ## Contexto
@@ -70,8 +70,9 @@ Lo que fija la librería:
   único por esa clave (`src/server/db/auth-schema.ts:36-58`), y la tabla la
   regenera `npm run auth:schema`.
 
-En la 1.7.10, que trae el MCP, esto se sostiene con otras líneas en `google.mjs`
-e `internal-adapter.mjs`; el contrato las lista (§0).
+En la 1.7.10, que se sube en un slice propio antes de E2b, esto se sostiene con
+otras líneas en `google.mjs` e `internal-adapter.mjs`; el contrato las lista
+(§0).
 
 ## Opciones
 
@@ -90,17 +91,17 @@ e `internal-adapter.mjs`; el contrato las lista (§0).
    de invitar, pero rompe dos invariantes de E1a y E2: una pendiente es de un
    correo sin membresía, y la membresía gana sobre la invitación (D-E2-1). La
    confianza es la misma que la de la opción 4: quien tenga la dirección.
-4. **Una vinculación que pide el owner y usa el próximo ingreso**: una marca en
-   la membresía activa, visible en la fila, cancelable y con vencimiento, que el
-   próximo ingreso con ese correo usa una sola vez para dejar su `sub` como la
-   cuenta de la fila. La escribe `mapProfileToUser` después de decidir la regla
-   de ingreso y antes de la búsqueda de Better Auth, que después encuentra la
-   cuenta y entra por el camino normal.
-5. **La opción 4 con un código de un solo uso**: el owner le pasa a la persona
-   un código que acompaña el ingreso. Ata la fila a quien recibió el código y no
-   solo a quien tiene la dirección, pero pide una pantalla previa al ingreso y
-   llevar el código por el `state` de OAuth hasta `mapProfileToUser`, que no
-   recibe el pedido.
+4. **Una vinculación que se pide desde la fila y usa el próximo ingreso**: una
+   marca en la membresía activa, visible en la fila, cancelable y con
+   vencimiento, que el próximo ingreso con ese correo usa una sola vez para
+   dejar su `sub` como la cuenta de la fila. La escribe `mapProfileToUser`
+   después de decidir la regla de ingreso y antes de la búsqueda de Better
+   Auth, que después encuentra la cuenta y entra por el camino normal.
+5. **La opción 4 con un código de un solo uso**: quien la pide le pasa a la
+   persona un código que acompaña el ingreso. Ata la fila a quien recibió el
+   código y no solo a quien tiene la dirección, pero pide una pantalla previa al
+   ingreso y llevar el código por el `state` de OAuth hasta `mapProfileToUser`,
+   que no recibe el pedido.
 6. **Rehacer la fila**: dejar que Better Auth cree un `user` nuevo y mover la
    membresía, las horas, los proyectos y el audit log a él. Toca todas las
    tablas con `user_id` y la clave `restrict` de `time_entry`.
@@ -125,12 +126,16 @@ estas reglas:
    [ADR 0025](0025-un-modulo-escribe-en-otro-por-su-service.md) («lo que la
    fase 2 sume para administrar personas»). Un `check` la ata a una membresía
    `active`: solo una membresía activa recupera la entrada (P-05).
-2. **La pide solo el owner**, con una acción propia de `can()`,
-   `team.account.link`, como las excepciones del
-   [ADR 0023](0023-quitar-el-rol-de-admin-es-una-accion-propia.md). Reactivar a
-   una persona sin cuenta es reactivar y pedir la vinculación en una
-   transacción, y por eso también es solo del owner. El owner puede pedirla
-   para su propia fila.
+2. **La piden el owner y los admins**, con una acción de `can()`,
+   `team.account.link`, con la misma frontera que desactivar (P-07): **sobre un
+   admin o sobre el owner, solo el owner**, con una acción propia que se
+   consulta solo sobre una fila `admin`, `team.admin.account`, como las
+   excepciones del
+   [ADR 0023](0023-quitar-el-rol-de-admin-es-una-accion-propia.md). Un admin no
+   la pide para su propia fila, que es la de un admin; el owner sí, porque nadie
+   más puede actuar sobre la suya. Reactivar a una persona sin cuenta es
+   reactivar y pedir la vinculación en una transacción: quien puede reactivarla
+   puede vincularla.
 3. **La usa el próximo ingreso que pasa la regla de ingreso**, con el correo de
    esa fila y mientras la marca esté vigente, si su `sub` no es la cuenta de
    ninguna fila y el correo es de una sola fila `user`. **La regla se decide
@@ -143,49 +148,54 @@ estas reglas:
    rechazado. Si la transacción falla, no escribe nada y el ingreso termina en
    `/login` con el texto genérico; si la membresía resulta inactiva bajo el
    bloqueo, con el motivo de una inactiva.
-4. **Vence**: la marca vale un plazo desde que se pide (el contrato propone
-   siete días y lo deja como pregunta al usuario), sin cron. Las lecturas lo
-   calculan para describir la fila y decidir si vale la pena intentar; **lo
-   decide la escritura que limpia la marca**, con la hora del reloj y no con la
-   del inicio de la transacción, para que una marca que vence mientras el
-   ingreso espera el bloqueo no se use. Vencida, no se usa; el owner la vuelve
-   a pedir.
+4. **Vence a los siete días** desde que se pide, sin cron (decisión del usuario
+   del 2026-10-19). Las lecturas lo calculan para describir la fila y decidir si
+   vale la pena intentar; **lo decide la escritura que limpia la marca**, con la
+   hora del reloj y no con la del inicio de la transacción, para que una marca
+   que vence mientras el ingreso espera el bloqueo no se use. Vencida, no se
+   usa; se vuelve a pedir.
 5. **Desactivar la cancela**, en la misma transacción.
-6. **Liberar el correo es otra acción solo del owner**, `team.email.release`,
-   sobre una membresía inactiva. El correo pasa a una dirección que no se
-   resuelve (`<id>@liberado.invalid`), y la fila pierde sus cuentas, sus
-   sesiones y sus autorizaciones de MCP. No se deshace desde la aplicación; el
-   audit log guarda el correo anterior.
+6. **Liberar el correo** es otra acción de `can()`, `team.email.release`, del
+   owner y los admins, con la misma frontera (`team.admin.account` sobre una
+   fila `admin`), y solo sobre una membresía inactiva. El correo pasa a una
+   dirección que no se resuelve (`<id>@liberado.invalid`), y la fila pierde sus
+   cuentas, sus sesiones y sus autorizaciones de MCP. No se deshace desde la
+   aplicación; el audit log guarda el correo anterior.
 7. **El rechazo de Better Auth tiene texto propio**: `/login` explica
-   `account_not_linked` con un texto neutro, que no sugiere vincular ni
-   liberar: el owner decide cuál de las dos corresponde (perfil P-11).
+   `account_not_linked` con un texto neutro, que remite a quien administra el
+   equipo y no sugiere vincular ni liberar: quien administra decide cuál de las
+   dos corresponde (perfil P-11).
 8. **Pedir la vinculación de un externo sin invitación abierta lo registra**,
    con una invitación `accepted`. Cambia lo que significa una `accepted` en la
-   decisión 3 del ADR 0024: además de «entró por una invitación», puede ser «el
-   owner la registró al pedir una vinculación». El registro se hace al pedir y
-   no se deshace al cancelar ni al vencer la vinculación: un externo activo con
-   cuenta y sin invitación abierta vuelve a entrar con esa cuenta apenas se
-   pide, y conserva la entrada aunque la vinculación se cancele.
+   decisión 3 del ADR 0024: además de «entró por una invitación», puede ser
+   «quien administra la registró al pedir una vinculación». El registro se hace
+   al pedir y no se deshace al cancelar ni al vencer la vinculación: un externo
+   activo con cuenta y sin invitación abierta vuelve a entrar con esa cuenta
+   apenas se pide, y conserva la entrada aunque la vinculación se cancele.
 9. **El enlace implícito sigue apagado** y la aplicación sigue sin exponer
    `/link-social` ni `/unlink-account`. Ningún camino escribe una cuenta sin una
-   marca vigente que pidió el owner.
+   marca vigente que pidió el owner o un admin.
 
 Se descartan la 1 porque abre filas que nadie eligió y no cubre EQ-109; la 2
 porque el dato no existe; la 3 porque mezcla dos estados con reglas opuestas sin
-sumar seguridad; la 5 por costo, frente a un riesgo que el owner ya controla al
-pedir la vinculación (queda como pregunta del contrato); y la 6 por el alcance
-de la escritura.
+sumar seguridad; la 5 por costo, frente a un riesgo que quien pide la
+vinculación ya controla (el usuario la descartó el 2026-10-19); y la 6 por el
+alcance de la escritura.
 
 ## Consecuencias
 
 - **El riesgo de PF-47 vuelve, acotado**: mientras una vinculación está
   vigente, quien tenga esa dirección y pase la regla de ingreso entra a la
-  fila. Lo acotan que la pida el owner, que se vea en la fila, que se cancele,
-  que venza, que valga una vez y solo con la membresía activa. Para el dominio
-  de la empresa, la dirección la controla la empresa con el claim `hd`.
+  fila. Lo acotan que la pida el owner o un admin, que se vea en la fila, que se
+  cancele, que venza, que valga una vez y solo con la membresía activa. Para el
+  dominio de la empresa, la dirección la controla la empresa con el claim `hd`.
+- **Un admin puede entregar la fila de un member**, con sus horas, a quien tenga
+  su dirección, y liberar el correo de un member inactivo sin vuelta atrás. Las
+  filas de los admins y la del owner quedan solo para el owner. El audit log
+  guarda quién lo pidió.
 - **`mapProfileToUser` escribe**: hasta acá solo leía. Si el ingreso falla
   después del `commit` de la vinculación, la cuenta queda vinculada, que es lo
-  que el owner pidió; el reintento entra por el camino normal.
+  que se pidió; el reintento entra por el camino normal.
 - **Una actualización de Better Auth puede mover el punto**: si `getUserInfo`
   dejara de correr antes de `handleOAuthUserInfo`, o si un camino nuevo llamara
   a `getUserInfo` sin la regla de ingreso, la vinculación llegaría tarde o por
@@ -198,12 +208,13 @@ de la escritura.
 - **Una `accepted` ya no dice cómo nació**: el audit log la distingue
   (`invitation.accept` o `invitation.register`).
 - **El script de importación identifica por correo**: una corrida después de
-  liberar un correo no encuentra a la persona vieja. El contrato pide una
-  consulta antes de cada corrida.
+  liberar un correo no encuentra a la persona vieja. El script no cambia
+  (decisión del usuario del 2026-10-19); el contrato pide una consulta antes de
+  cada corrida.
 - **No resuelve PF-48** (la empresa cambia la dirección de una persona activa):
   sigue siendo una corrección a mano.
 - **Si el owner pierde su cuenta de Google sin una vinculación pedida**, nadie
   puede pedirla desde la aplicación; la salida es una sentencia SQL que escribe
   la marca, en el contrato.
-- **E2 cambia**: D-E2-7 se levanta y EQ-114 pasa a ser el rechazo de un admin
-  que pide reactivar a una persona sin cuenta.
+- **E2 cambia**: D-E2-7 se levanta y EQ-114 queda sin uso: desde E2b, quien
+  puede reactivar a una persona puede pedir su vinculación.
