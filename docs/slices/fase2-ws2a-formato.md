@@ -4,10 +4,11 @@ Contrato del slice WS2a de la fase 2. **Suma el formato de duración del
 workspace** —una columna de `workspace_settings`, compacta por omisión— y hace
 que **todo lo que muestra una duración en el rastreador, la planilla y el
 calendario la respete**, en el servidor y en el navegador. El contador del timer
-sigue en `h:mm:ss`. **Sin selector y sin cambio visible en producción**: nadie
-puede elegir el completo hasta WS2b, que trae el selector junto con el reporte,
-las exportaciones y el perfil. Una migración que agrega, la `0019`, que se corre
-en producción antes del push.
+sigue en `h:mm:ss`. **Sin selector y sin cambio de formato en producción**:
+nadie puede elegir el completo hasta WS2b, que trae el selector junto con el
+reporte, las exportaciones y el perfil. Lo único que producción puede notar son
+dos detalles de la edición (D-WS2a-6, D-WS2a-8). Una migración que agrega, la
+`0019`, que se corre en producción antes del push.
 
 - **Fuente:** [`workspace.md`](../parity/workspace.md), WS-14 … WS-17, WS-66 …
   WS-68, §14 y P-07; [`perfil.md`](../parity/perfil.md), PF-20 … PF-22 y la
@@ -19,6 +20,8 @@ en producción antes del push.
 - **Lugar en el plan:** después de WS0 (el árbol: arranca desde un `main` con la
   `0018`, ADR 0028, regla 2) y en paralelo con WS1, que no está en `main`
   (§0). WS2b depende de este y de WS1.
+- **Revisión:** `architecture-reviewer` lo aprobó con cambios; los diez están
+  aplicados.
 - **Decisiones de arquitectura:**
   - **[ADR 0029](../adr/0029-el-formato-de-duracion-es-del-workspace-y-solo-cambia-lo-que-se-muestra.md),
     nuevo, propuesto**: el formato de duración es del workspace, viaja en la
@@ -97,8 +100,17 @@ Pasa a recibir **segundos** y el formato:
 **El cambio de unidad es la trampa**, y lo que la cubre es que el formato sea
 obligatorio: todo llamador deja de compilar hasta que se lo visita, y cada
 consumidor se prueba con un valor que tiene segundos (100 s: `0:01` y
-`00:01:40`), así uno que siga pasando minutos falla. Los llamadores que tienen
-minutos enteros —borradores, la planilla, el arrastre— pasan `minutes * 60`.
+`00:01:40`), así uno que siga pasando minutos falla. Cada llamador de hoy queda
+así:
+
+- **Los que tienen segundos los pasan enteros, sin dividir**: `toView`
+  (`formatDuration(seconds, …)` en lugar de `Math.floor(seconds / 60)`), el
+  total de grupo, el bloque del timer y los totales de la planilla, y
+  `report/components/group-heading.tsx:22`, que pasa a
+  `formatDuration(seconds, "compact")`.
+- **Los que tienen minutos enteros pasan `minutes * 60`**: los borradores, la
+  celda de la planilla, el arrastre y `report/export/cell-text.ts:20`, que pasa
+  a `formatDuration(cell.minutes * 60, "compact")`.
 
 **D-WS2a-5 — La regla del compacto: el formato solo cambia lo que se muestra
 (WS-16, WS-68, ADR 0029).** Toda suma es de segundos exactos y cada rótulo
@@ -116,9 +128,9 @@ de horas y dos partes de una o dos cifras, minutos y segundos entre 0 y 59, con
 los segundos truncados —los campos de duración escriben minutos enteros, como ya
 pasa con `1h30m1s`—, y el mismo tope de menos de 24 horas (TS-26). Sin esto, un
 campo que muestra `01:30:00` rechaza su propio valor en cuanto se lo edita. Vale
-con los dos formatos: **es el único cambio que se puede observar en
-producción**, y es una forma más que se acepta, no una que cambia de
-significado.
+con los dos formatos: **es uno de los dos cambios que se pueden observar en
+producción** —el otro es el de D-WS2a-8, mientras viaja la escritura de una
+celda—, y es una forma más que se acepta, no una que cambia de significado.
 
 | Texto                      | Minutos |
 | -------------------------- | ------- |
@@ -167,8 +179,16 @@ toca. Lo que cambia es lo que la celda muestra:
   `minutos × 60` si tenía cero o una entrada cerrada —crea, o mueve el fin de la
   única desde su inicio—, y en `segundos + (minutos − minutos de la foto) × 60`
   si tenía varias —agrega o achica la que empieza más tarde por la diferencia en
-  minutos (TS-34)—. Esa cuenta es `writtenSeconds` (§4.5). Con el compacto da
-  el mismo rótulo que hoy, porque el resto de segundos nunca llega al minuto.
+  minutos (TS-34)—. Esa cuenta es `writtenSeconds` (§4.5). Con el compacto, el
+  rótulo de la celda es el de hoy, porque el resto de segundos nunca llega al
+  minuto.
+- **Con el compacto, los totales mientras viaja la escritura cambian, y
+  mejoran.** Hoy los totales suman `escrito × 60` por la celda en vuelo, sin el
+  resto de segundos que el servidor conserva; con WS2a suman lo que va a dejar
+  el servidor. Ejemplo, en una fila con la celda A (entradas de 100 s y 60 s,
+  `0:02`) y la B (100 s y 100 s, `0:03`): al escribir `5` en A, hoy la fila
+  muestra `0:08` y salta a `0:09` cuando llega la foto; con WS2a muestra `0:09`
+  desde el principio. Es el segundo cambio que producción puede notar (§6.4).
 - **«Sin cambios» se decide en minutos**, como hoy y como el servidor (TS-36):
   con el completo, teclear `2:13` sobre `02:13:27` no manda nada, y el campo
   vuelve a mostrar `02:13:27`, el rótulo de la celda, no uno armado con lo
@@ -206,10 +226,16 @@ completo antes de que todo lo respete. Lo mismo vale para un preview, salvo que
 alguien ponga `full` por SQL en la rama `preview` de Neon: ahí se vería el
 reporte en compacto, y es esperado.
 
-En el código, **los dos llamadores del reporte pasan el literal `"compact"`**
-—`group-heading.tsx` y `cell-text.ts`—, con un comentario que remite a WS2b; la
-búsqueda de §5.6 los encuentra. `pdf-layout.ts`, `document.ts` y `xlsx.ts` no
-llaman a `formatDuration` y no se tocan.
+En el código, **los dos llamadores del reporte pasan el literal `"compact"`**,
+con un comentario que remite a WS2b, y la búsqueda de §5.6 los encuentra:
+
+- `report/components/group-heading.tsx:22`: `formatDuration(seconds,
+"compact")`, sin el `Math.floor(seconds / 60)` de hoy;
+- `report/export/cell-text.ts:20`: `formatDuration(cell.minutes * 60,
+"compact")`.
+
+`pdf-layout.ts`, `document.ts` y `xlsx.ts` no llaman a `formatDuration` y no se
+tocan.
 
 **D-WS2a-10 — Los `check` de `workspace.name`, como parte opcional de la `0019`
 (pregunta 2, §11).** `char_length(name) between 1 and 100` y `name =
@@ -284,6 +310,12 @@ contrato lo resuelve sin otra base, sin otro servidor y sin tocar CI:
   workspace: una corrida cortada en medio del proyecto del completo no deja la
   siguiente en `full`.
 
+Lo que hace Playwright 1.63 con esto, verificado en la revisión: un proyecto
+que es dependencia corre entero aunque se filtre por archivo; filtrar un spec de
+`chromium` no dispara `duration-full-setup`; y `--no-deps` saltea el setup y el
+teardown. Por eso la iteración en local sobre el spec del completo tiene su
+propia receta (§9.4).
+
 WS2b reusa el proyecto para el reporte y las exportaciones con el completo.
 `parity-analyst` corrige la línea del mapa (§7).
 
@@ -303,11 +335,22 @@ WS2b reusa el proyecto para el reporte y las exportaciones con el completo.
   suma al final. El segundo en entrar resuelve los conflictos de líneas
   vecinas. WS1 no lee `context.settings`, y su `getWorkspaceSettingsView` arma
   la vista con `context.workspace.name`, que no cambia de lugar.
-- **El MCP puede entrar antes o después** (D-WS2a-11). Sus herramientas
+- **El MCP puede entrar antes o después.** Comparte con WS2a la numeración de
+  la migración (D-WS2a-11) y, como WS1, archivos donde los cambios son de líneas
+  vecinas, no de las mismas:
+  - `playwright.config.ts`: el MCP suma `MCP_ENABLED` a `localServerEnv`; WS2a,
+    los proyectos del completo y los `testIgnore` de `chromium`;
+  - `e2e/database.ts`: los dos suman funciones;
+  - `workspace/service.ts`, `profile/service.ts` y `time-entry/service.ts`: el
+    MCP pasa sus constancias a `auditActorOf`; WS2a cambia `WorkspaceContext` y
+    `contextOf`, `timeSettingsOf` y `toView`.
+
+  El segundo en entrar resuelve los conflictos. Las herramientas del MCP
   devuelven números (`durationMinutes`, `totalMinutes`:
   `clock-mcp/src/modules/mcp/tools.ts:63-64`, `:201`), no rótulos: **no es un
   consumidor del formato**. Su `readUserContext` arma el contexto con
   `ensureWorkspaceContext`, así que recibe `settings` sin cambios.
+
 - Las citas son del árbol de `clock-ws2a` en `c08369d`.
 
 ### Supuestos sobre el árbol, con archivo y línea en `c08369d`
@@ -324,6 +367,7 @@ WS2b reusa el proyecto para el reporte y las exportaciones con el completo.
 | `entryWorkspaceIdOf` lee el workspace para el ingreso                                                                               | `workspace/service.ts:399-402`                                                                                                                                                         |
 | `readSession` arma el contexto una vez por pedido                                                                                   | `src/server/session.ts:50-81`                                                                                                                                                          |
 | `workspace_settings` tiene `workspace_id`, `who_sees_all_entries` y fechas; los formatos de `user_preference` son texto con `check` | `src/server/db/schema.ts:59-74`, `:148-169`                                                                                                                                            |
+| El test de WS0 afirma la lista exacta de columnas de `workspace_settings`                                                           | `src/server/db/schema.integration.test.ts:40-47`                                                                                                                                       |
 | Los `check` de nombre de las otras tablas                                                                                           | `schema.ts:271-272`, `:327-328`, `:383-384`, `:420-421`                                                                                                                                |
 | La fila del servidor: `durationLabel` con los segundos truncados                                                                    | `src/modules/time-entry/service.ts:197-223` (`:216`)                                                                                                                                   |
 | Los totales de grupo suman segundos y formatean una vez                                                                             | `time-entry/components/use-group-total.ts:20-40`; `day-group.tsx:288-323`; `week-group.tsx:47-69`; `calendar/calendar-grid.tsx:278`; `calendar/calendar-toolbar.tsx:142`               |
@@ -339,6 +383,7 @@ WS2b reusa el proyecto para el reporte y las exportaciones con el completo.
 | La lista de proyectos no muestra duraciones                                                                                         | ninguna coincidencia de duración en `src/modules/project/`                                                                                                                             |
 | Los tests de componente renderizan con `renderToStaticMarkup` y un `DisplayFormatsProvider`                                         | `time-entry/components/entry-row.test.tsx:1-10`                                                                                                                                        |
 | `timeSettingsOf` y el workspace se prueban en integración (sus módulos importan la base)                                            | `profile/service.integration.test.ts`; `workspace/service.integration.test.ts`                                                                                                         |
+| Los literales `formats: { time, date }` de los tests (§7, backend-dev, paso 1)                                                      | los de la lista de §7                                                                                                                                                                  |
 | Los formatos de prueba y el `TrackerWorkspace` de los tests                                                                         | `src/test/factories.ts:31-32`, `:53-65`; `src/test/time-entry.ts:28-34`                                                                                                                |
 | Las actions de integración pasan por la sesión real con la base                                                                     | `time-entry/actions.integration.test.ts:60-95`                                                                                                                                         |
 | Los e2e: un workspace, specs en paralelo, el setup lo crea y lo renueva                                                             | `playwright.config.ts:40-62`; `e2e/workspace.setup.ts:26-48`; `e2e/database.ts:16-19`                                                                                                  |
@@ -370,26 +415,30 @@ Queda afuera: §12.
 
 ### Consecuencias sobre código ya entregado
 
-| Archivo                                                                           | Qué cambia                                                                                                                             | Qué hay que volver a probar                                              |
-| --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `src/server/db/schema.ts`                                                         | `durationFormat` y su `check` en `workspaceSettings`; los `check` de `workspace` si entran                                             | `npm run typecheck`; `src/server/db/schema.integration.test.ts`          |
-| `drizzle/`                                                                        | `0019_workspace_duration_format.sql`, su instantánea y su entrada del diario                                                           | `db:migrate` sobre una base con datos (§9.3)                             |
-| `src/server/time/index.ts`                                                        | `DURATION_FORMATS`, `DurationFormat`, `DisplayFormats.duration`, `formatDuration(seconds, format)`, `parseDurationInput` con `h:mm:ss` | `time.test.ts` entero                                                    |
-| `src/modules/workspace/repository.ts`, `service.ts`                               | `findFirstWorkspace` y `createWorkspace` con el formato; `WorkspaceContext.settings`; `resolveDurationFormat`                          | `workspace/service.integration.test.ts`; todo lo que arma una sesión     |
-| `src/modules/profile/service.ts`                                                  | `timeSettingsOf` suma `duration`                                                                                                       | `profile/service.integration.test.ts`                                    |
-| `src/modules/time-entry/service.ts`, `schema.ts`                                  | `toView` con el formato; el comentario de `durationLabel`                                                                              | `service.integration.test.ts`, `actions.integration.test.ts`             |
-| `src/components/layout/display-formats.tsx`                                       | El comentario: la duración es del workspace                                                                                            | `display-formats.test.tsx`                                               |
-| Los consumidores de §5.2                                                          | Formatean con el formato                                                                                                               | sus tests (§9.1)                                                         |
-| `report/components/group-heading.tsx`, `report/export/cell-text.ts`               | `formatDuration(…, "compact")`                                                                                                         | los tests del reporte y de las exportaciones, sin cambiar lo que afirman |
-| `src/test/factories.ts`, `src/test/time-entry.ts`                                 | `defaultFormats` con `duration: "compact"`; `setDurationFormat`                                                                        | —                                                                        |
-| Los tests que arman `DisplayFormats`, `WorkspaceContext` o `TimeEntryView` a mano | Suman `duration` o `settings`; `durationLabel` sale de `formatDuration` con segundos                                                   | sin cambiar lo que afirman                                               |
-| `playwright.config.ts`, `e2e/workspace.setup.ts`, `e2e/database.ts`               | Los proyectos del completo; `compact` al arrancar; `setDurationFormat`, `durationFormatOf`                                             | la e2e entera                                                            |
+| Archivo                                                                      | Qué cambia                                                                                                                             | Qué hay que volver a probar                                              |
+| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `src/server/db/schema.ts`                                                    | `durationFormat` y su `check` en `workspaceSettings`; los `check` de `workspace` si entran                                             | `npm run typecheck`; `src/server/db/schema.integration.test.ts`          |
+| `src/server/db/schema.integration.test.ts`                                   | La lista de columnas de `workspace_settings` suma `duration_format` (`:40-47`)                                                         | el archivo                                                               |
+| `drizzle/`                                                                   | `0019_workspace_duration_format.sql`, su instantánea y su entrada del diario                                                           | `db:migrate` sobre una base con datos (§9.3)                             |
+| `src/server/time/index.ts`                                                   | `DURATION_FORMATS`, `DurationFormat`, `DisplayFormats.duration`, `formatDuration(seconds, format)`, `parseDurationInput` con `h:mm:ss` | `time.test.ts` entero                                                    |
+| `src/modules/workspace/repository.ts`, `service.ts`                          | `findFirstWorkspace` y `createWorkspace` con el formato; `WorkspaceContext.settings`; `resolveDurationFormat`                          | `workspace/service.integration.test.ts`; todo lo que arma una sesión     |
+| `src/modules/profile/service.ts`                                             | `timeSettingsOf` suma `duration`                                                                                                       | `profile/service.integration.test.ts`                                    |
+| `src/modules/time-entry/service.ts`, `schema.ts`                             | `toView` con el formato; el comentario de `durationLabel`                                                                              | `service.integration.test.ts`, `actions.integration.test.ts`             |
+| `src/components/layout/display-formats.tsx`                                  | El comentario: la duración es del workspace                                                                                            | `display-formats.test.tsx`                                               |
+| Los consumidores de §5.2                                                     | Formatean con el formato                                                                                                               | sus tests (§9.1)                                                         |
+| `report/components/group-heading.tsx`, `report/export/cell-text.ts`          | `formatDuration(…, "compact")` (D-WS2a-9)                                                                                              | los tests del reporte y de las exportaciones, sin cambiar lo que afirman |
+| `src/test/factories.ts`, `src/test/time-entry.ts`                            | `defaultFormats` con `duration: "compact"`; `setDurationFormat`                                                                        | —                                                                        |
+| Los tests con un literal `formats: { time, date }` (§7, backend-dev, paso 1) | Suman `duration: "compact"`                                                                                                            | sin cambiar lo que afirman                                               |
+| Los tests que arman `WorkspaceContext` o `TimeEntryView` a mano              | Suman `settings`; `durationLabel` sale de `formatDuration` con segundos                                                                | sin cambiar lo que afirman                                               |
+| `playwright.config.ts`, `e2e/workspace.setup.ts`, `e2e/database.ts`          | Los proyectos del completo; `compact` al arrancar; `setDurationFormat`, `durationFormatOf`                                             | la e2e entera                                                            |
 
-- **Sin cambio**: `can()` y `src/server/permissions/`; `team`; `project`; el
-  `service.ts`, el `repository.ts` y las vistas del reporte; `pdf-layout.ts`,
-  `document.ts`, `xlsx.ts`; `elapsed-counter.tsx`, `timer-bar.tsx`;
-  `time-entry/timesheet-cell.ts` (el servidor de la celda); `src/server/session.ts`
-  (el contexto llega armado de `ensureWorkspaceContext`); las actions.
+- **Sin cambio**: `can()` y `src/server/permissions/`; `team`, salvo sus tests,
+  y en ellos solo el literal de formatos; `project`; el `service.ts`, el
+  `repository.ts` y las vistas del reporte (sus tests, solo el literal);
+  `pdf-layout.ts`, `document.ts`, `xlsx.ts`; `elapsed-counter.tsx`,
+  `timer-bar.tsx`; `time-entry/timesheet-cell.ts` (el servidor de la celda);
+  `src/server/session.ts` (el contexto llega armado de
+  `ensureWorkspaceContext`); las actions.
 - **Ninguna e2e existente cambia lo que afirma**: corren con el compacto, que
   da el mismo texto que hoy (criterio 2).
 
@@ -445,6 +494,10 @@ el push:
 - Los `check` de `workspace.name` los cumplen el único escritor de hoy
   («Workspace») y, si WS1 está, su action (D-WS2a-10).
 
+Lo único del código anterior que no la tolera es un test, a propósito:
+`src/server/db/schema.integration.test.ts:40-47` afirma la lista exacta de
+columnas de `workspace_settings` (criterio 12).
+
 Postgres no reescribe la tabla por una columna con `default` constante. Cada
 `ADD CONSTRAINT … CHECK` recorre su tabla con un bloqueo exclusivo: una fila.
 La migración corre en la transacción de `drizzle-kit migrate`: si una sentencia
@@ -456,12 +509,22 @@ falla —un nombre que no cumple, una columna que ya estaba—, no queda nada.
   `main` no la nombra. No se toca la base. Si WS2a se abandona, la columna se
   borra con una migración que solo la quita: ningún código desplegado la nombra,
   así que el orden de ADR 0028 no hace falta.
-- **Después del push**: se revierte **solo el código**,
-  `git revert -m 1 --no-commit <merge>`, `git checkout HEAD -- drizzle/` y
-  `git commit`: el diario y la base siguen coincidiendo (ADR 0028, regla 7: nunca
-  se revierte el commit de una migración aplicada). El código anterior funciona
-  con la columna. **Instant Rollback a un deployment anterior es seguro**, al
-  revés que en WS0: el código viejo no nombra la columna.
+- **Después del push**: se revierte **solo el código**, conservando la
+  migración y el esquema que la generó:
+
+  ```
+  git revert -m 1 --no-commit <merge>
+  git checkout HEAD -- drizzle/ src/server/db/schema.ts
+  git commit
+  ```
+
+  El diario y la base siguen coincidiendo (ADR 0028, regla 7: nunca se revierte
+  el commit de una migración aplicada), y el esquema sigue coincidiendo con la
+  instantánea: si `schema.ts` volviera sin la columna y la instantánea la
+  tuviera, el próximo `db:generate` emitiría un `DROP COLUMN`. El código
+  anterior compila con la columna en el esquema, porque no la nombra. **Instant
+  Rollback a un deployment anterior es seguro**, al revés que en WS0: el código
+  viejo no nombra la columna.
 
 ## 3. Permisos
 
@@ -798,16 +861,21 @@ avisa al team-lead, que la regenera (D-WS2a-11).
 
 ### 6.4 El push y la verificación de humo
 
-El team-lead pushea; Vercel despliega. **Nada visible cambia**, así que el humo
-compara con lo que el owner ya conoce:
+El team-lead pushea; Vercel despliega. **Ningún formato cambia**, así que el
+humo compara con lo que el owner ya conoce:
 
 1. **`/`**: las filas, el total del día y el de la semana en `h:mm`, como antes;
    con un timer corriendo, el contador en `h:mm:ss` y el total de su día
    subiendo en `h:mm`.
 2. **La barra manual**: el campo «Duración» muestra el borrador en `h:mm`;
-   teclear `1:30:00` y salir lo deja en `1:30` (D-WS2a-6, lo único nuevo). Sin
+   teclear `1:30:00` y salir lo deja en `1:30` (D-WS2a-6, nuevo). Sin
    «Agregar»: no se crea nada.
 3. **`/planilla`** y **`/calendario`**: celdas, bloques y totales en `h:mm`.
+   **El otro cambio que se puede notar** (D-WS2a-8): escribir una celda que
+   tiene varias entradas con segundos sueltos muestra los totales de fila, de
+   día y de semana con el valor final mientras viaja la escritura, sin el salto
+   de un minuto que hoy se ve al llegar la foto. No hace falta provocarlo en
+   producción: lo prueban `timesheet-model.test.ts` y la e2e.
 4. **`/reportes`** y **`/perfil`**: sin cambios.
 5. **Los logs de Runtime** de producción en Vercel, quince minutos, sin errores
    nuevos; en particular, ningún `RangeError` de `resolveDurationFormat`.
@@ -818,8 +886,9 @@ en compacto hasta WS2b (D-WS2a-9). Producción pasa al completo con WS2b
 
 ### 6.5 Reversión
 
-La de §2.3. Si el humo falla después del push: el revert del código, sin tocar
-`drizzle/`, y push; o Instant Rollback, que acá es seguro.
+La de §2.3. Si el humo falla después del push: el revert del código con
+`git checkout HEAD -- drizzle/ src/server/db/schema.ts` antes del commit, y
+push; o Instant Rollback, que acá es seguro.
 
 ### 6.6 Previews y las bases compartidas
 
@@ -841,16 +910,37 @@ La de §2.3. Si el humo falla después del push: el revert del código, sin toca
 
 ### backend-dev
 
-- **Primero fija** y avisa a `frontend-dev` y a `e2e-tester`: `DURATION_FORMATS`,
-  `DurationFormat`, `DisplayFormats.duration`, la firma de `formatDuration`,
+- **Primero, el commit del paso 1 del orden**, y avisa a `frontend-dev` y a
+  `e2e-tester`. Fija `DURATION_FORMATS`, `DurationFormat`,
+  `DisplayFormats.duration`, la firma de `formatDuration`,
   `WorkspaceContext.settings` y `defaultFormats` con `duration: "compact"`.
-  Hasta ese commit, el árbol no compila para nadie.
+  Hasta ese commit, el árbol no compila para nadie. **Es el dueño de sumar
+  `duration: "compact"` a los literales `formats: { time, date }` que dejan de
+  compilar**, en tests de todos los módulos, sin cambiar lo que afirman:
+  - `src/modules/report/period.test.ts:12`;
+  - `src/modules/report/export/pdf-layout.test.ts:66`;
+  - `src/modules/report/export/document.test.ts:22`, `:266`;
+  - `src/modules/report/service.integration.test.ts:4048`;
+  - `src/modules/team/components/team-members-model.test.ts:1048`;
+  - `src/modules/team/components/team-screen.test.tsx:33`;
+  - `src/modules/team/components/team-members.test.tsx:16`;
+  - `src/modules/time-entry/components/calendar/calendar-block.test.tsx:21-22`;
+  - `src/modules/time-entry/components/calendar/entry-dialog.test.tsx:111`,
+    `:157`, `:217`, `:295`;
+  - `src/modules/time-entry/components/entry-row.test.tsx:58`, `:134`;
+  - `src/components/layout/display-formats.test.tsx:14-15`.
+
+  Si `tsc` encuentra otro, va en el mismo commit. Los casos nuevos de esos tests
+  (§9.1) son de quien tiene el consumidor.
+
 - `src/server/time/index.ts` y `time.test.ts` (§4.1, D-WS2a-4, D-WS2a-6).
 - `src/server/db/schema.ts` (§2.1); la migración (D-WS2a-11), **una vez**, con
   la respuesta de la pregunta 2 y la consulta 4, sobre el último `main`; pega el
   SQL y el diff de la instantánea en el registro.
-- `src/server/db/schema.integration.test.ts` (de WS0): la columna, su `default`,
-  su `check` y, si entran, los del nombre (§9.2).
+- `src/server/db/schema.integration.test.ts` (de WS0): el `it` de `:40-47` pasa a
+  `[workspace_id, who_sees_all_entries, created_at, updated_at,
+duration_format]`; y suma la columna, su `default`, su `check` y, si entran,
+  los del nombre (§9.2).
 - `src/modules/workspace/repository.ts`, `service.ts` y
   `service.integration.test.ts`, con `resolveDurationFormat` (§4.2).
 - `src/modules/profile/service.ts` y `service.integration.test.ts` (§4.3).
@@ -859,21 +949,24 @@ La de §2.3. Si el humo falla después del push: el revert del código, sin toca
 - `src/modules/report/export/cell-text.ts` (D-WS2a-9).
 - `src/test/factories.ts` (`defaultFormats`, `setDurationFormat(workspaceId,
 format)`) y `src/test/time-entry.ts`.
-- Los tests de integración que arman `TimeEntryView`, `WorkspaceContext` o
-  `DisplayFormats` a mano, y los dos que llaman a `findFirstWorkspace`.
+- Los tests de integración que arman `TimeEntryView` o `WorkspaceContext` a
+  mano, y los dos que llaman a `findFirstWorkspace`.
 - Las pruebas de §9.3.
 - **El registro del slice**: `docs/slices/correcciones-fase2-ws2a-revisiones.md`.
 
 ### frontend-dev
 
-- `src/components/layout/display-formats.tsx` (el comentario) y su test.
+- `src/components/layout/display-formats.tsx` (el comentario) y su test, más
+  allá del literal del paso 1.
 - C1 … C9 (§5.2) con sus tests (§9.1): `use-group-total.ts`, `entry-row.tsx`,
   `manual-bar.tsx`, `calendar/calendar-gestures.ts`, `calendar/calendar-grid.tsx`,
   `calendar/calendar-block.tsx`, `calendar/entry-dialog.tsx`,
   `timesheet/timesheet-model.ts`, `timesheet/timesheet-view.tsx`,
   `timesheet/timesheet-cell.tsx`.
+- Los tests nuevos de §9.1: `manual-bar.test.tsx`, `elapsed-counter.test.tsx` y,
+  si hace falta, `use-group-total.test.tsx`.
 - `src/modules/report/components/group-heading.tsx` (D-WS2a-9).
-- Los tests de componente que arman `DisplayFormats` o `TimeEntryView` a mano.
+- Los tests de componente que arman `TimeEntryView` a mano.
 
 ### e2e-tester
 
@@ -897,9 +990,11 @@ Correcciones fechadas, «_Corregido el <fecha>, WS2a_»:
   verificación que la puede cambiar), **WS-68** (la regla escrita, con el
   ejemplo de `0:01` + `0:01` = `0:03`), **WS-67** (`h:mm:ss` se acepta con los
   dos formatos), **WS-17** (el bloque del timer en el calendario sigue el
-  formato; el reporte y las exportaciones, con WS2b), la fila «_Falta_: formato
-  de duración» de la §14 («Columna desde WS2a, `0019`, compacta») y el punto 2 de
-  la §16.
+  formato; el reporte y las exportaciones, con WS2b), **WS-73** (sin la fila de
+  ajustes, la sesión muestra el compacto —ADR 0029— y solo la pantalla de
+  configuración de WS2b responde con el error inesperado), la fila «_Falta_:
+  formato de duración» de la §14 («Columna desde WS2a, `0019`, compacta») y el
+  punto 2 de la §16.
 - `perfil.md`: las filas de `formatDuration` y de `use-group-total.ts` de la
   tabla de la §10 (recibe segundos y el formato; el formato llega por
   `useDisplayFormats`), y PF-21 (el intérprete acepta `h:mm:ss`, con los dos
@@ -918,18 +1013,21 @@ Correcciones fechadas, «_Corregido el <fecha>, WS2a_»:
 
 ### Lo que no toca nadie
 
-`src/server/permissions/`, `src/server/session.ts`, las actions, `team`,
-`project`, `time-entry/timesheet-cell.ts`, `elapsed-counter.tsx`,
-`timer-bar.tsx`, el resto de `report/` (service, repository, `pdf-layout.ts`,
-`document.ts`, `xlsx.ts`, las vistas), `profile/components/`, `.github/` y
-`CLAUDE.md`.
+`src/server/permissions/`, `src/server/session.ts`, las actions, `project`,
+`time-entry/timesheet-cell.ts`, `elapsed-counter.tsx`, `timer-bar.tsx`,
+`profile/components/`, `.github/` y `CLAUDE.md`. **`team` y el resto de
+`report/`** (service, repository, `pdf-layout.ts`, `document.ts`, `xlsx.ts`, las
+vistas) tampoco, salvo sus tests, y en ellos solo el literal de formatos del
+paso 1.
 
 ### Orden
 
-1. `backend-dev`: los tipos y firmas de §4.1, `WorkspaceContext.settings` y
-   `defaultFormats`, en un commit que compila: los llamadores de
-   `formatDuration` pasan un `"compact"` provisorio, que el paso 2 reemplaza.
-   Avisa.
+1. `backend-dev`: los tipos y firmas de §4.1, `WorkspaceContext.settings`,
+   `defaultFormats` y los literales de la lista de arriba, en un commit que
+   compila. Los llamadores de `formatDuration` pasan segundos —`seconds`, o
+   `minutes * 60` donde tienen minutos (D-WS2a-4)— y un `"compact"` provisorio,
+   que el paso 2 reemplaza por el formato; así, entre los pasos 1 y 2, S1 no
+   muestra `0:00`. Avisa.
 2. En paralelo: `backend-dev` con el esquema, la sesión, `toView` y sus tests;
    `frontend-dev` con C1 … C9; `e2e-tester` con el arnés y el spec;
    `parity-analyst` con las correcciones.
@@ -956,8 +1054,9 @@ Correcciones fechadas, «_Corregido el <fecha>, WS2a_»:
    `compact` y la fila sigue sin existir; un `update` a `decimal` falla con
    `23514` nombrando `workspace_settings_duration_format_known`.
 6. **De la base al rótulo**: con el workspace en `full`, una action del
-   rastreador que devuelve una entrada de 100 segundos —editar la descripción de una
-   entrada sembrada— responde `durationLabel` `00:01:40`; en `compact`, `0:01`.
+   rastreador que devuelve una entrada de 100 segundos —editar la descripción
+   de una entrada sembrada— responde `durationLabel` `00:01:40`; en `compact`,
+   `0:01`.
 7. **Cada consumidor con los dos valores**: S1 y C1 … C9 muestran, para una
    duración de 100 segundos (o el valor con segundos que corresponda), el texto
    compacto y el completo; C5 avanza cada segundo con el completo; el contador
@@ -966,19 +1065,27 @@ Correcciones fechadas, «_Corregido el <fecha>, WS2a_»:
    día muestran `0:01`, `0:01` y `0:03` con el compacto, y `00:01:40`,
    `00:01:40` y `00:03:20` con el completo, en el rastreador, la planilla y el
    calendario.
-9. **La planilla con el completo** (D-WS2a-8): una celda con dos entradas que
-   suman `00:03:20` muestra `00:05:20` al escribir `5`, mientras viaja y
-   después; una con una sola entrada de `00:01:40` queda en `00:05:00`; teclear
-   `3` sobre `00:03:20` no manda nada y el campo vuelve a `00:03:20`; un total de
-   30 segundos no es gris con el completo y sí con el compacto.
+9. **La planilla** (D-WS2a-8):
+   - con el completo, una celda con dos entradas que suman `00:03:20` muestra
+     `00:05:20` al escribir `5`, mientras viaja y después; una con una sola
+     entrada de `00:01:40` queda en `00:05:00`; teclear `3` sobre `00:03:20` no
+     manda nada y el campo vuelve a `00:03:20`;
+   - con el compacto, en la fila del ejemplo de D-WS2a-8 (A con 100 s y 60 s, B
+     con 100 s y 100 s), escribir `5` en A muestra la fila en `0:09` mientras
+     viaja, no en `0:08`;
+   - un total de 30 segundos no es gris con el completo y sí con el compacto.
 10. **El reporte, las exportaciones y el perfil no cambian** (D-WS2a-9): sus
-    tests de hoy pasan sin cambios, y la búsqueda de §5.6 da exactamente los dos
-    `"compact"` del reporte.
+    tests pasan sin cambiar lo que afirman —el único cambio en ellos es el
+    literal de formatos del paso 1—, y la búsqueda de §5.6 da exactamente los
+    dos `"compact"` del reporte.
 11. **La migración** (D-WS2a-11): trae lo que dice la lista y nada más; corre
     sobre una base con datos sin cambiar ningún conteo; con los `check` del
     nombre, un `update` a `''`, a `' x'` o a 101 caracteres falla con `23514`.
 12. **Compatible con el código anterior** (§2.2): la integración entera del
-    árbol de `c08369d` pasa contra una base migrada con la `0019`.
+    árbol de `c08369d` pasa contra una base migrada con la `0019`, **salvo una
+    falla esperada**: el `it` de `src/server/db/schema.integration.test.ts:40-47`,
+    que afirma la lista exacta de columnas de `workspace_settings` y encuentra
+    `duration_format` de más. Cualquier otra falla frena.
 13. **Las consultas de §6** corren sin error contra una base local sembrada,
     antes y después de la `0019`, y dan lo que dice su comentario.
 14. **La e2e del completo** (D-WS2a-12): el proyecto `duration-full` corre
@@ -992,7 +1099,8 @@ Correcciones fechadas, «_Corregido el <fecha>, WS2a_»:
 Cada test nuevo tiene que poder fallar: se verifica con una mutación en una
 copia —un llamador que pase minutos en lugar de segundos, `timeSettingsOf` que
 devuelva `"compact"` fijo, el `left join` cambiado por `inner join`, `cellCommit`
-que devuelva el rótulo de lo tecleado—, como en los slices anteriores.
+que devuelva el rótulo de lo tecleado, `writtenSeconds` que devuelva
+`minutes × 60` siempre—, como en los slices anteriores.
 
 ### 9.1 Unidad
 
@@ -1011,21 +1119,24 @@ que devuelva el rótulo de lo tecleado—, como en los slices anteriores.
     un borrador de 90 minutos, `1:30` y `01:30:00`.
   - C6: `entry-dialog.test.tsx`, el campo «Duración» con un trío distinto del de
     la entrada.
-  - C7 … C9: `timesheet-model.test.ts` (criterio 9 sobre el modelo: los
-    totales, `zero`, `closedTotal`, `writtenSeconds` con cero, una y varias
-    entradas, `cellCommit` en sus tres resultados) y `timesheet-cell.test.tsx`
-    (la celda en reposo con los dos).
-  - El contador: `elapsed-counter.test.tsx`, nuevo, con el proveedor en `full`:
-    `0:01:40`.
+  - C7 … C9: `timesheet-model.test.ts` —el criterio 9 sobre el modelo, con los
+    dos formatos: los totales, `zero`, `closedTotal`, `writtenSeconds` con
+    cero, una y varias entradas, `cellCommit` en sus tres resultados, y **el
+    caso del compacto de D-WS2a-8**, la fila con A y B que muestra `0:09`
+    mientras viaja la escritura de `5` en A— y `timesheet-cell.test.tsx` (la
+    celda en reposo con los dos).
+  - El contador: `elapsed-counter.test.tsx`, nuevo (`frontend-dev`), con el
+    proveedor en `full`: `0:01:40`.
 - **Lo que solo aparece con interacción** —C2 mientras se edita el trío, lo que
   C3 y C6 muestran al confirmar, el campo de la celda después de C9— lo cubre la
   e2e del completo (§9.4); el compacto, la e2e de hoy.
 
 ### 9.2 Integración (Postgres)
 
-- `src/server/db/schema.integration.test.ts`: la columna (`text`, `not null`,
-  `default 'compact'`), su `check` (`23514` con `decimal`) y, si entran, los del
-  nombre (criterio 11).
+- `src/server/db/schema.integration.test.ts`: el `it` de `:40-47` con la lista
+  `[workspace_id, who_sees_all_entries, created_at, updated_at,
+duration_format]`; la columna (`text`, `not null`, `default 'compact'`), su
+  `check` (`23514` con `decimal`) y, si entran, los del nombre (criterio 11).
 - `workspace/service.integration.test.ts`: `resolveDurationFormat` con `null`,
   `compact`, `full` y un valor desconocido; el criterio 5, con
   `setDurationFormat` y un `delete` de la fila de ajustes; el arranque en
@@ -1037,7 +1148,8 @@ que devuelva el rótulo de lo tecleado—, como en los slices anteriores.
   `TrackerWorkspace` con `formats.duration` (criterio 7, servidor).
 - `time-entry/actions.integration.test.ts`: criterio 6, con el workspace
   sembrado en cada valor y la sesión real.
-- Los tests del reporte y de las exportaciones, sin cambios (criterio 10).
+- Los tests del reporte y de las exportaciones, sin cambiar lo que afirman
+  (criterio 10).
 
 ### 9.3 La migración y la compatibilidad
 
@@ -1051,8 +1163,10 @@ En este orden, con bases propias:
 2. **El código anterior contra la base nueva** (criterio 12): un worktree
    temporal en `c08369d`, y su integración entera con
    `TEST_DATABASE_URL=…/clock_ws2a_compat`, una base nueva migrada con la rama
-   (con la `0019`); `global-setup` no tiene nada que aplicar. El worktree se
-   borra después.
+   (con la `0019`); `global-setup` no tiene nada que aplicar. **Falla un solo
+   caso, el esperado**: el `it` de `src/server/db/schema.integration.test.ts:40-47`,
+   por `duration_format`. El registro guarda la salida con esa falla y nada más.
+   El worktree se borra después.
 3. **La suite entera con la `0019`**: `test:all` y la e2e contra bases nuevas,
    y la e2e otra vez contra una que se reusa.
 
@@ -1086,6 +1200,23 @@ contador donde aparece:
 El resto de la suite, en `chromium` con el compacto, es la otra mitad de «cada
 pantalla con los dos valores» (criterio 2).
 
+**La receta para iterar en local sobre el spec del completo** es el ciclo normal
+de trabajo, no un atajo: filtrar el archivo no dispara `duration-full-setup`
+(D-WS2a-12), y correr el proyecto con sus dependencias corre la suite entera.
+
+1. Poner el workspace de los e2e en `full` con `psql` contra la base de la e2e
+   (`clock_ws2a_e2e`):
+   `update workspace_settings set duration_format = 'full' where workspace_id = (select id from workspace order by created_at, id limit 1);`
+2. `npx playwright test --project duration-full --no-deps`, las veces que haga
+   falta. `--no-deps` saltea el setup y el teardown, así que el workspace queda
+   en `full` entre corridas.
+3. La corrida siguiente de la suite —o de cualquier spec de `chromium`— lo
+   vuelve a `compact` en `workspace.setup.ts`. Hasta entonces, los specs de
+   `chromium` corridos con `--no-deps` contra esa base ven el completo.
+
+La corrida que vale para el registro es la entera, sin `--no-deps` (criterio
+14).
+
 ### 9.5 Lo que no se prueba
 
 - Cambiar el formato con las pantallas abiertas (WS-64, WS-66 en vivo, WS-67,
@@ -1101,24 +1232,34 @@ pantalla con los dos valores» (criterio 2).
   `01:30:00`. Lo cubren la búsqueda de §5.6 y el spec del completo. En
   producción no se ve hasta WS2b, que es cuando alguien puede elegir el
   completo.
+- **Los tests que dejan de compilar** con `DisplayFormats.duration` obligatorio
+  están en módulos que WS2a no toca (`report`, `team`): su dueño es el commit
+  del paso 1 (§7), y solo cambia el literal.
 - **El rebase con WS1 y con el MCP**: conflictos de líneas vecinas en
-  `workspace/service.ts`, `repository.ts` y `e2e/database.ts`, y la numeración
-  de la migración, que resuelve D-WS2a-11 regenerando y nunca renombrando.
+  `workspace/service.ts`, `repository.ts`, `profile/service.ts`,
+  `time-entry/service.ts`, `playwright.config.ts` y `e2e/database.ts` (§0), y la
+  numeración de la migración, que resuelve D-WS2a-11 regenerando y nunca
+  renombrando.
 - **Una base compartida que recibe la `0019` antes de tiempo** puede saltear la
   migración del MCP regenerada con un `when` anterior. Lo evita §6.6: bases
   propias hasta producción.
 - **El proyecto del completo depende de toda la suite**: si un test de
   `chromium` falla, Playwright no corre `duration-full`. CI ya está en rojo en
-  ese caso; `--project duration-full --no-deps` lo corre solo, en local, con el
-  workspace puesto en `full` a mano.
-- **La e2e cortada en medio de `duration-full`** deja el workspace en `full`.
-  Lo vuelve a `compact` el setup de la corrida siguiente (D-WS2a-12).
+  ese caso. En local, iterar sobre el spec del completo es siempre la receta de
+  §9.4 —`full` con `psql` y `--project duration-full --no-deps`—: es el ciclo
+  normal, porque filtrar el archivo no corre el setup.
+- **La e2e cortada en medio de `duration-full`**, o la receta de §9.4, dejan el
+  workspace en `full`. Lo vuelve a `compact` el setup de la corrida siguiente
+  (D-WS2a-12).
 - **La planilla con el completo conserva los segundos sueltos** al escribir una
   celda con varias entradas (D-WS2a-8). Es una regla, y se ve recién con WS2b;
   pregunta 3.
 - **Un borrador en minutos enteros** muestra `hh:mm:00` con el completo hasta
   la respuesta (ADR 0029, «Consecuencias»): pasa hoy con el compacto, más
   difícil de ver.
+- **Revertir después del push sin conservar `schema.ts`** deja el esquema sin
+  la columna y la instantánea con ella, y el próximo `db:generate` emitiría un
+  `DROP COLUMN`. Lo evita la receta de §2.3.
 - **Los `check` del nombre con una fila que no cumple**: la migración entera
   falla y no queda nada. Lo evita la consulta 4, corrida antes de generar.
 
