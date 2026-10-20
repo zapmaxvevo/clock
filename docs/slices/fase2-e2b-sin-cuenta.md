@@ -2,36 +2,38 @@
 
 Contrato del slice E2b de la fase 2. **Devuelve la entrada a una persona con
 `user` y membresía activa pero sin la cuenta de Google con que entra**, sin
-volver a encender el enlace implícito que PF-47 apagó: el owner pide una
-**vinculación** en la fila de la persona, y el próximo ingreso con ese correo,
-dentro del plazo, la usa una vez para dejar su cuenta de Google como la de esa
-fila. Reactivar a una persona sin cuenta pasa a ser reactivar y pedir la
+volver a encender el enlace implícito que PF-47 apagó: el owner o un admin pide
+una **vinculación** en la fila de la persona, y el próximo ingreso con ese
+correo, dentro del plazo, la usa una vez para dejar su cuenta de Google como la
+de esa fila. Reactivar a una persona sin cuenta pasa a ser reactivar y pedir la
 vinculación. Cubre además P-11 de `perfil.md`: **liberar el correo** de una
 persona inactiva, para que la dirección se pueda invitar para otra, y un texto
 propio en `/login` cuando una cuenta de Google nueva choca con un correo en uso.
 
-- **Fuente:** [`equipo.md`](../parity/equipo.md), §5 (EQ-41, EQ-47), §10
+- **Fuente:** [`equipo.md`](../parity/equipo.md), §5 (EQ-38, EQ-41, EQ-47), §10
   (EQ-79, EQ-114), §14 (EQ-108 … EQ-110) y §18 (P-05, P-07);
   [`perfil.md`](../parity/perfil.md), PF-45, PF-47, PF-48 y P-11; el
   [mapa de la fase 2](fase2-mapa.md), §2 (grupo 2), §3 «Lo que vale para todos»
-  y «E2b», §4, §5 y §7; el [contrato de E2](fase2-e2-desactivar.md), D-E2-2,
-  D-E2-3, D-E2-5 … D-E2-7 y §6; el contrato del MCP
-  (`mejoras-mcp.md`, D-MCP-5), que se escribe en paralelo.
-- **Lugar en el plan:** cuarto slice de la fase 2. Depende de E1b y de E2, los
-  dos en `main` (`27774d6`). Va **antes de reactivar a cualquiera de las tres
-  inactivas que creó la importación**; mientras tanto, E2 ya lo impide
-  (D-E2-7).
+  y «E2b», §4, §5 y §7; el [contrato de E2](fase2-e2-desactivar.md), D-E2-2 …
+  D-E2-7 y §6; el contrato del MCP (`mejoras-mcp.md`, D-MCP-5), que se escribe
+  en paralelo.
+- **Lugar en el plan:** cuarto slice de la fase 2. Depende de E1b y de E2, en
+  `main` desde `27774d6`, y del slice que sube Better Auth a 1.7.10, que se
+  mergea antes que E2b y que el MCP (§0). Va **antes de reactivar a cualquiera
+  de las tres inactivas que creó la importación**; mientras tanto, E2 ya lo
+  impide (D-E2-7).
 - **Revisión:** `architecture-reviewer` lo aprobó con cambios en dos rondas; las
   doce correcciones de la primera y las cinco de la segunda están aplicadas.
+  Las decisiones del usuario del 2026-10-19 (§11) también.
 - **Decisiones de arquitectura:** el
   [ADR 0027](../adr/0027-una-fila-user-sin-cuenta-de-google.md), **una fila
-  `user` sin cuenta de Google**, en estado «Propuesto»: la vinculación pendiente
-  (D-E2b-1 … D-E2b-3, D-E2b-11), liberar el correo (D-E2b-9) y lo que pasa a
-  significar una invitación `accepted` (D-E2b-8). El resto cae dentro de ADR
-  aceptados:
-  - [ADR 0023](../adr/0023-quitar-el-rol-de-admin-es-una-accion-propia.md):
-    vincular y liberar son acciones propias de `can()`, solo del owner
-    (D-E2b-4).
+  `user` sin cuenta de Google**, aceptado el 2026-10-19 por el usuario: la
+  vinculación pendiente (D-E2b-1 … D-E2b-4, D-E2b-11), liberar el correo
+  (D-E2b-9) y lo que pasa a significar una invitación `accepted` (D-E2b-8). El
+  resto cae dentro de ADR aceptados:
+  - [ADR 0023](../adr/0023-quitar-el-rol-de-admin-es-una-accion-propia.md): la
+    excepción del owner sobre las filas `admin` es una acción propia de `can()`,
+    `team.admin.account` (D-E2b-4).
   - [ADR 0024](../adr/0024-donde-vive-una-invitacion-y-donde-se-corta-el-ingreso.md):
     la vinculación se usa en `mapProfileToUser`, que sigue siendo el corte del
     ingreso (decisión 4), y solo después de que la regla deja entrar.
@@ -46,28 +48,28 @@ propio en `/login` cuando una cuenta de Google nueva choca con un correo en uso.
 
 Decisiones del usuario que el contrato da por tomadas: una persona inactiva no
 entra (P-05, 2026-10-16); solo el owner desactiva o reactiva a un admin (P-07);
-P-11 de `perfil.md` entra con E2b (mapa §7, 2026-10-16). Lo que queda para el
-usuario está en §11.
+P-11 de `perfil.md` entra con E2b (mapa §7, 2026-10-16); y las del 2026-10-19
+sobre este contrato (§11).
 
 ## Decisiones del contrato
 
-**D-E2b-1 — La salida es una vinculación que pide el owner y usa el próximo
-ingreso con ese correo (ADR 0027).** Se compararon cinco salidas:
+**D-E2b-1 — La salida es una vinculación que se pide desde la fila y usa el
+próximo ingreso con ese correo (ADR 0027).** Se compararon cinco salidas:
 
-| Salida                                                                     | Quién queda atado a la fila                            | Por qué no, o por qué sí                                                                                                                                                                                                       |
-| -------------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Enlace implícito para las filas activas sin cuenta; reactivar autoriza     | quien tenga la dirección                               | No cubre a quien ya tiene una cuenta (EQ-109). No se ve ni se cancela. Toda fila activa sin cuenta que exista al desplegar queda abierta sin que nadie lo decida.                                                              |
-| El `sub` de Google conocido                                                | la cuenta exacta                                       | El dato no existe: Clockify no lo exporta, el procedimiento SQL lo borró y la persona no lo ve en ningún lado.                                                                                                                 |
-| Una invitación nueva que ata la fila                                       | quien tenga la dirección                               | La misma confianza que la vinculación, pero rompe dos invariantes: una `pending` es de un correo sin membresía (E1a) y la membresía gana sobre la invitación (D-E2-1). Invitar a una persona existente responde EQ-20 o EQ-79. |
-| **Una vinculación del owner, en la membresía, que usa el próximo ingreso** | quien tenga la dirección, **cuando el owner lo pidió** | **Elegida.** Se ve en la fila, se cancela, vence, vale una vez y solo con la membresía activa. Cubre a las importadas, a las del procedimiento y a quien necesita otra cuenta.                                                 |
-| La vinculación con un código de un solo uso                                | quien recibió el código                                | Más fuerte, pero pide una pantalla previa al ingreso y llevar el código por el `state` de OAuth hasta `mapProfileToUser`, que no recibe el pedido. Queda para el usuario (§11, pregunta 3).                                    |
+| Salida                                                                 | Quién queda atado a la fila                      | Por qué no, o por qué sí                                                                                                                                                                                                       |
+| ---------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Enlace implícito para las filas activas sin cuenta; reactivar autoriza | quien tenga la dirección                         | No cubre a quien ya tiene una cuenta (EQ-109). No se ve ni se cancela. Toda fila activa sin cuenta que exista al desplegar queda abierta sin que nadie lo decida.                                                              |
+| El `sub` de Google conocido                                            | la cuenta exacta                                 | El dato no existe: Clockify no lo exporta, el procedimiento SQL lo borró y la persona no lo ve en ningún lado.                                                                                                                 |
+| Una invitación nueva que ata la fila                                   | quien tenga la dirección                         | La misma confianza que la vinculación, pero rompe dos invariantes: una `pending` es de un correo sin membresía (E1a) y la membresía gana sobre la invitación (D-E2-1). Invitar a una persona existente responde EQ-20 o EQ-79. |
+| **Una vinculación pedida desde la fila, que usa el próximo ingreso**   | quien tenga la dirección, **cuando se la pidió** | **Elegida.** Se ve en la fila, se cancela, vence, vale una vez y solo con la membresía activa. Cubre a las importadas, a las del procedimiento y a quien necesita otra cuenta.                                                 |
+| La vinculación con un código de un solo uso                            | quien recibió el código                          | Más fuerte, pero pide una pantalla previa al ingreso y llevar el código por el `state` de OAuth hasta `mapProfileToUser`, que no recibe el pedido. Descartada por el usuario el 2026-10-19 (§11).                              |
 
 Rehacer la fila —dejar que Better Auth cree un `user` nuevo y mover la
 membresía, las horas y los proyectos— se descartó por el alcance: toca toda
 tabla con `user_id` y la clave `restrict` de `time_entry`.
 
 **Para el dominio de la empresa** la dirección la controla la empresa, con el
-claim `hd` que exige `decideGoogleAccess`; el riesgo que queda es que el owner
+claim `hd` que exige `decideGoogleAccess`; el riesgo que queda es que alguien
 pida la vinculación de una dirección que la empresa ya le dio a otra persona. Lo
 cubren el texto de la confirmación (§5.4), que pide hacerlo solo si el correo
 sigue siendo de esa persona, y el vencimiento (D-E2b-11).
@@ -116,7 +118,7 @@ para Google es `profile.sub` (`google.mjs:56`; `callback.mjs:137`;
 - los `databaseHooks` de `account` no corren: Better Auth no crea una cuenta
   para un correo que ya tiene fila (`link-account.mjs:134-145`).
 
-Las líneas son de la 1.7.7; las de la 1.7.10 están en §0.
+Las líneas son de la 1.7.7; las que cambian en la 1.7.10 están en §0.
 
 **Cuándo.** `decideProfileEntry` decide la regla como hoy, **primero**: un
 correo del dominio sin `hd`, un correo sin verificar, un externo sin invitación
@@ -236,44 +238,70 @@ después `invitation` (D-E2b-8); liberar, las membresías, después `user`,
   `account_not_linked`. Queda una cuenta.
 
 **Si algo falla después del `commit`** —la sesión, por ejemplo—, la cuenta queda
-vinculada: es lo que el owner pidió, y el reintento entra por el camino normal.
+vinculada: es lo que se pidió, y el reintento entra por el camino normal.
 
-**D-E2b-4 — Vincular y liberar son dos acciones propias de `can()`, solo del
-owner.** `team.account.link` y `team.email.release`, con la forma de
-`team.admin.setStatus` (ADR 0023): `MembershipResource`, `["membership"]` en
-`resourceKinds` y `["owner"]` en `allowedRoles`. El cuerpo de `can()` no cambia.
+**D-E2b-4 — Vinculan y liberan el owner y los admins; sobre un admin o sobre el
+owner, solo el owner (decisión del usuario del 2026-10-19).** Es la frontera de
+desactivar (P-07, EQ-38, D-E2-3, D-E2-4), con tres acciones de `can()`:
 
-- **Por qué solo el owner**: vincular le da a quien tenga una dirección la fila
-  entera de otra persona, con su rol y sus horas; es la operación que reabre
-  PF-47. Liberar es irreversible desde la aplicación. Las dos son raras y las
-  decide quien conoce a las personas. Es la misma razón que E6 («Quitar del
-  equipo», solo del owner, P-08). La alternativa —owner y admin, con las filas
-  `admin` solo del owner— queda para el usuario (§11, pregunta 1).
-- **La fila propia**: `can()` deja al owner actuar sobre su membresía, así que
-  **el owner puede pedir una vinculación para sí mismo**. Sirve si sabe que va a
-  cambiar de cuenta. Liberar la propia no llega a pasar: la fila del owner está
-  activa (D-E2b-9, paso 5).
+| Acción               | Roles            | Se consulta                                                                                             |
+| -------------------- | ---------------- | ------------------------------------------------------------------------------------------------------- |
+| `team.account.link`  | `owner`, `admin` | pedir, renovar o cancelar una vinculación; reactivar a una persona sin cuenta (D-E2b-5)                 |
+| `team.email.release` | `owner`, `admin` | liberar el correo de una inactiva                                                                       |
+| `team.admin.account` | `owner`          | **solo sobre una fila `admin`**, además de una de las dos anteriores; `can()` no mira el rol de la fila |
+
+Las tres con `MembershipResource` y `["membership"]` en `resourceKinds`. El
+cuerpo de `can()` no cambia: su regla de que la membresía del owner solo la toca
+el owner ya deja la fila del owner fuera del alcance de un admin. La excepción
+sobre las filas `admin` es una acción propia, como pide el ADR 0023, y no una
+regla por rol dentro de `team.account.link`.
+
+**`accountLockOf(actor, row)`**, en el service de `team`, decide la frontera
+para vincular y para liberar, en la vista y en las mutaciones, como
+`statusLockOf` para desactivar:
+
+- sin la acción pedida sobre la fila (`team.account.link` o
+  `team.email.release`): `forbidden`. Con los roles de hoy pasa solo con la fila
+  del owner pedida por un admin;
+- la fila es `admin` y falta `team.admin.account`: `forbidden`.
+
+En los dos casos, el texto es el de la acción: EQ-117 para vincular, EQ-119 para
+liberar.
+
+- **La fila propia**: un admin no vincula la suya, porque es la de un admin; se
+  la pide al owner, como con desactivar. **El owner sí puede pedir una
+  vinculación para sí mismo**: nadie más puede actuar sobre su fila, y le sirve
+  si sabe que va a cambiar de cuenta. Liberar la propia no llega a pasar: la
+  fila de quien actúa está activa (D-E2b-9, paso 5).
+- **La autoridad se relee bajo el bloqueo** con `freshActorOf`, como en
+  `changeStatus` (D-R8-7): un admin que perdió el rol entre la sesión y el
+  bloqueo recibe EQ-90.
 - **El owner que ya perdió su cuenta** no puede pedirla desde la aplicación; la
   salida es la sentencia de §6.8.
+- Lo que la frontera nueva deja abierto está en §10.
 
 **D-E2b-5 — Reactivar a una persona sin cuenta es reactivar y pedir la
 vinculación, en una transacción. Levanta D-E2-7.** El paso 8 de D-E2-3 cambia:
 
-- **Sin cuenta, con `team.account.link`** (el owner): la membresía pasa a
-  `active` y recibe la marca, con `membership.reactivate` y
-  `membership.linkRequest`, y el registro del externo de D-E2b-8. Reactivar sin
-  la marca dejaría una fila activa que no puede entrar, que es lo que D-E2-7
-  evitaba.
-- **Sin cuenta, sin `team.account.link`** (un admin): `forbidden` con EQ-114,
-  que cambia de texto: «Solo el propietario reactiva a una persona sin cuenta de
-  Google vinculada.». La fila no le ofrece «Reactivar», como hoy.
+- **Quien puede reactivarla puede vincularla.** Los pasos 3 a 6 de D-E2-3
+  (`team.manage`, la propia, la del owner, `team.admin.setStatus` sobre un
+  admin) ya ponen la misma frontera que D-E2b-4: un admin reactiva a un member
+  sin cuenta, y solo el owner a un admin. La membresía pasa a `active` y recibe
+  la marca, con `membership.reactivate` y `membership.linkRequest`, y el registro
+  del externo de D-E2b-8. Reactivar sin la marca dejaría una fila activa que no
+  puede entrar, que es lo que D-E2-7 evitaba.
+- **El servicio igual pregunta `accountLockOf`** antes de escribir la marca: con
+  los roles de hoy no rechaza nada que los pasos 3 a 6 no hayan rechazado, pero
+  si alguna vez las dos fronteras se separan, la de vincular manda, con
+  `forbidden` y EQ-117.
+- **EQ-114 queda sin uso.** Era el rechazo de reactivar sin cuenta (D-E2-7), y
+  desde E2b no hay quién lo reciba. El identificador se conserva, como EQ-80.
+  `noAccount` sale de `teamMessages` y `no_account` de `TeamErrorCode`.
 - **Con el correo liberado**: `email_released` con EQ-121, para cualquiera. Una
   fila liberada no vuelve (D-E2b-9).
 - **Reactivar sin cuenta pide confirmación**, a diferencia de EQ-47: dice que la
   próxima cuenta de Google con ese correo queda atada a la fila (§5.4).
   Reactivar a quien tiene cuenta sigue sin confirmación.
-- `no_account` sale de `TeamErrorCode`: la regla es de permiso y responde
-  `forbidden`.
 
 **D-E2b-6 — Pedir, renovar y cancelar la vinculación de una persona activa:
 `setAccountLink`, idempotente.** `{ membershipId, link: boolean }`, como
@@ -283,8 +311,10 @@ las dos membresías (`lockForChange`, D-E2-6), en este orden:
 1. La membresía pedida no está, es de otro workspace o es `invited`:
    `not_found`, EQ-82.
 2. La membresía de quien actúa no está: `forbidden`, EQ-90.
-3. Sin `team.manage` con la autoridad releída: `forbidden`, EQ-90.
-4. Sin `team.account.link` sobre la fila: `forbidden`, EQ-117.
+3. Sin `team.manage` con la autoridad releída (`freshActorOf`): `forbidden`,
+   EQ-90.
+4. `accountLockOf` con `team.account.link`: un admin sobre otro admin, sobre sí
+   mismo o sobre el owner, `forbidden`, EQ-117.
 5. **Cancelar** (`link: false`): sin marca, éxito sin escribir; con una, vigente
    o vencida, la limpia y deja `membership.linkCancel`.
 6. **Pedir** (`link: true`), con el correo de la fila (`userEmailOf`):
@@ -323,7 +353,7 @@ llama a **`registerExternalMember(tx, actor, email)`**, del service de
 - con una `revoked`: la pasa a `accepted`;
 - deja `invitation.register` en los dos últimos casos.
 
-Lo que eso implica, y lo que el owner tiene que saber al confirmar (§5.4):
+Lo que eso implica, y lo que quien la pide tiene que saber al confirmar (§5.4):
 
 - **El registro no se deshace** al cancelar la vinculación, al dejarla vencer
   ni al usarla. Es el registro de un externo con membresía, como el de todo
@@ -334,8 +364,8 @@ Lo que eso implica, y lo que el owner tiene que saber al confirmar (§5.4):
   vieja**, sin usar la marca, y conserva la entrada aunque la vinculación se
   cancele o venza. Para cortarla, se la desactiva (EQ-39).
 - **Cambia lo que significa una `accepted`** (ADR 0024, decisión 3): además de
-  «entró por una invitación», puede ser «el owner la registró al pedir una
-  vinculación». Lo distingue el audit log (`invitation.accept` o
+  «entró por una invitación», puede ser «quien administra la registró al pedir
+  una vinculación». Lo distingue el audit log (`invitation.accept` o
   `invitation.register`). Es la decisión 8 del ADR 0027.
 
 El ingreso, la identidad por pedido (D-E2-2) y la marca «Externa» de la lista
@@ -351,11 +381,12 @@ idempotente, con el mismo bloqueo que D-E2b-6, en este orden:
 1. La membresía pedida no está, es de otro workspace o es `invited`:
    `not_found`, EQ-82.
 2. La membresía de quien actúa no está, o perdió `team.manage` bajo el
-   bloqueo: `forbidden`, EQ-90.
-3. Sin `team.email.release` sobre la fila: `forbidden`, EQ-119.
+   bloqueo (`freshActorOf`): `forbidden`, EQ-90.
+3. `accountLockOf` con `team.email.release`: un admin sobre otro admin, sobre sí
+   mismo o sobre el owner, `forbidden`, EQ-119.
 4. El correo ya está liberado: éxito sin escribir.
-5. La membresía está activa: `active_membership`, EQ-120. Incluye la propia y la
-   del owner, que están activas.
+5. La membresía está activa: `active_membership`, EQ-120. Incluye la propia del
+   owner, que está activa.
 6. **`releaseEmailOf(tx, actor, userId)`** (`auth-records`): cambia `user.email`
    por `releasedEmailOf(userId)`, borra sus filas de `account` y sus sesiones
    (`deleteSessionsOf`) y, **con el MCP en `main`**, sus autorizaciones
@@ -391,25 +422,29 @@ cuenta, o ninguna, y sin marca vigente, termina en `handleOAuthUserInfo` con
 `onAPIError.errorURL` con `error=account_not_linked` (`callback.mjs:195-198`,
 `:35`; `auth.ts:52`). Hoy `/login` muestra el genérico «No se pudo iniciar
 sesión. Volvé a intentar.», que invita a reintentar algo que no va a cambiar.
-Desde E2b muestra EQ-122: «Ya hay una persona en Clock con ese correo. Pedile al
-propietario del workspace que revise tu acceso.».
+Desde E2b muestra EQ-122: «Ya hay una persona en Clock con ese correo. Pedile a
+quien administra el equipo que revise tu acceso.».
 
 - **Por qué neutro**: el mismo código llega por dos causas con salidas opuestas.
   La misma persona con otra cuenta se resuelve vinculando; otra persona con una
   dirección reciclada, liberando el correo e invitándolo, y vincular ahí le daría
   las horas de la anterior. El texto no sugiere ninguna de las dos ni dice «otra
-  cuenta de Google», que es falso cuando la fila no tiene ninguna: el owner
-  pregunta y decide.
+  cuenta de Google», que es falso cuando la fila no tiene ninguna: quien
+  administra pregunta y decide.
+- **«Quien administra el equipo»** y no «el propietario»: desde D-E2b-4 los
+  admins vinculan y liberan, y es la forma de EQ-91 y EQ-92. Si la fila es la
+  de un admin, el admin le pasa el pedido al owner.
 - `loginErrorMessage` suma el código en un mapa propio,
   `callbackErrorMessage`, que no es un `AccessDenialReason`: no lo produce la
   regla de ingreso sino Better Auth.
 - Una inactiva sin cuenta sigue viendo EQ-92: `mapProfileToUser` la corta antes
   (D-E2-1).
 
-**D-E2b-11 — La vinculación vence a los siete días.** Una vinculación no es una
-invitación: abre una fila con rol y horas, así que la comparación con EQ-25 no
-alcanza. Siete días bastan para que el owner coordine el ingreso con la persona
-y acotan cuánto tiempo una dirección reasignada podría entrar a la fila.
+**D-E2b-11 — La vinculación vence a los siete días (decisión del usuario del
+2026-10-19).** Una vinculación no es una invitación: abre una fila con rol y
+horas, así que la comparación con EQ-25 no alcanza. Siete días bastan para
+coordinar el ingreso con la persona y acotan cuánto tiempo una dirección
+reasignada podría entrar a la fila.
 
 - **`ACCOUNT_LINK_TTL_DAYS = 7`**, en `src/server/access.ts`, al lado de
   `EntryFacts`: es parte de la regla del ingreso.
@@ -422,12 +457,10 @@ y acotan cuánto tiempo una dirección reasignada podría entrar a la fila.
   momento, porque `now()` es la del inicio de la transacción y una marca que
   vence mientras el ingreso espera el bloqueo se usaría igual. Ningún código de
   TypeScript suma días a una fecha.
-- **Vencida, la marca queda** hasta que el owner la renueva, la cancela o
+- **Vencida, la marca queda** hasta que se la renueva, se la cancela o se
   desactiva a la persona (D-E2b-6, D-E2b-7). No se usa: un ingreso con un `sub`
   nuevo termina en `account_not_linked`.
 - **La fila muestra la fecha del pedido** y la del vencimiento (§5.2).
-- Si el usuario prefiere que no venza, es la pregunta 2 de §11: sale la
-  constante y la condición de vigencia, y la nota pierde el vencimiento.
 
 **D-E2b-12 — Lo que E2b no resuelve.**
 
@@ -442,17 +475,12 @@ y acotan cuánto tiempo una dirección reasignada podría entrar a la fila.
 
 ## 0. Precondición de arranque
 
-- **`main` en `27774d6`**, con E1a, E1b y E2 mergeados. Las citas de abajo son
-  de ese árbol y de `node_modules` con `better-auth` 1.7.7.
-- **El ADR 0027 aceptado** y las preguntas de §11 respondidas, antes de
-  implementar.
-- **La consulta de §6.1 corrida en producción** antes de migrar, no antes de
-  implementar.
-- **Si `main` ya trae Better Auth 1.7.10** (la sube el MCP), los seis puntos de
-  abajo tienen que sostenerse en esa versión. **`architecture-reviewer` ya los
-  verificó** sobre el paquete de la 1.7.10 (`npm pack`) contra la 1.7.7, y ese
-  es el punto de partida de `backend-dev`, que **solo confirma** sobre el árbol
-  real y deja el resultado en el registro del slice:
+- **`main` con el slice que sube Better Auth a 1.7.10 mergeado**, después de
+  `27774d6` (E1a, E1b y E2). Ese slice va antes que E2b y que el MCP; E2b
+  arranca sobre ese árbol.
+- **Los seis puntos de Better Auth, confirmados sobre ese árbol** por
+  `backend-dev` antes de implementar, con archivo y línea en el registro del
+  slice:
   1. que el `getUserInfo` de Google siga llamando a `mapProfileToUser` antes de
      que el callback llame a `resolveOAuthAccountKey` y a `handleOAuthUserInfo`;
   2. que `handleOAuthUserInfo` siga buscando por la clave de la cuenta antes que
@@ -466,19 +494,26 @@ y acotan cuánto tiempo una dirección reasignada podría entrar a la fila.
      `getUserInfo`, o a `handleOAuthUserInfo` con `selectedUser`;
   6. que `disableIdTokenSignIn` se siga respetando en `/sign-in/social`.
 
-  Lo que encontró el revisor en la 1.7.10: `callback.mjs`, `link-account.mjs`,
-  `account-key.mjs` y `account.mjs` son idénticos a los de la 1.7.7; en
+  **El punto de partida es lo que `architecture-reviewer` ya verificó** sobre el
+  paquete de la 1.7.10 (`npm pack`) contra la 1.7.7: `callback.mjs`,
+  `link-account.mjs`, `account-key.mjs` y `account.mjs` son idénticos; en
   `google.mjs`, `decodeJwt` pasa a la línea 120 y la llamada a
   `mapProfileToUser` a la 125; en `internal-adapter.mjs`,
   `findAccountOwnerByKey` pasa a la 557 y su lanzamiento con claves repetidas a
   la 570; `disableIdTokenSignIn` se evalúa en
   `@better-auth/core/dist/oauth2/verify-id-token.mjs:23` y `:39`; el plugin de
   OAuth no llama a `getUserInfo`, a `handleOAuthUserInfo` ni usa `selectedUser`.
-  Los seis puntos se sostienen. Si la confirmación de `backend-dev` da otra
-  cosa, el contrato vuelve a `architect` antes de seguir.
+  Los seis puntos se sostienen. Si la confirmación da otra cosa, el contrato
+  vuelve a `architect` antes de seguir.
 
-- **Las citas de `auth-schema.ts`** se corren si el MCP regenera ese archivo
-  (`npm run auth:schema`); lo que dicen no cambia.
+- **Las citas de `src/`** de la tabla de abajo son de `27774d6`. Si el slice de
+  la subida movió alguna línea, `backend-dev` anota la corrida en el registro;
+  lo que dicen no cambia. Lo mismo con `auth-schema.ts` si alguien lo regenera
+  (`npm run auth:schema`).
+- **Las decisiones del usuario de §11**, tomadas el 2026-10-19, y el ADR 0027,
+  aceptado.
+- **La consulta de §6.1 corrida en producción** antes de migrar, no antes de
+  implementar.
 
 ### Supuestos sobre el árbol, con archivo y línea en `27774d6`
 
@@ -502,6 +537,8 @@ y acotan cuánto tiempo una dirección reasignada podría entrar a la fila.
 | `membership` e `invitation`                                                                                                                             | `src/server/db/schema.ts:97-123`, `:190-231`                                                 |
 | `can()`: la forma de `team.admin.setStatus`; la membresía del owner solo la toca el owner                                                               | `src/server/permissions/index.ts:64-67`, `:106`, `:138`, `:214-221`                          |
 | D-E2-7 en el service: la vista no ofrece reactivar sin cuenta; `changeStatus` responde `no_account`                                                     | `src/modules/team/service.ts:121-129`, `:319-322`                                            |
+| `statusLockOf`: la propia, la del owner, un admin sin `team.admin.setStatus`                                                                            | `team/service.ts:91-114`                                                                     |
+| `freshActorOf` relee la autoridad bajo el bloqueo                                                                                                       | `team/service.ts:169-186`                                                                    |
 | `writeStatus`: estado, constancia, timer y sesiones                                                                                                     | `team/service.ts:258-281`                                                                    |
 | La lista y el bloqueo de `team`                                                                                                                         | `src/modules/team/repository.ts:46-70`, `:83-106`, `:124-136`                                |
 | Textos, códigos, la fila y las actions de `team`                                                                                                        | `src/modules/team/schema.ts:34-65`, `:99-121`, `:134-141`; `team/actions.ts:17-51`           |
@@ -516,7 +553,7 @@ arriba (1.7.10).
 
 ## 1. Alcance
 
-Cubre EQ-109 y EQ-110 (`equipo.md`), EQ-114 con su texto nuevo, y P-11 de
+Cubre EQ-109 y EQ-110 (`equipo.md`), deja EQ-114 sin uso, y cubre P-11 de
 `perfil.md` (PF-47 con D-E2b-10). Propone a `parity-analyst` EQ-115 … EQ-122
 (§7).
 
@@ -528,7 +565,7 @@ Entra:
   (D-E2b-8) y el vencimiento (D-E2b-11).
 - **Liberar el correo** (D-E2b-9).
 - **El texto de `account_not_linked`** en `/login` (D-E2b-10).
-- **Dos acciones de `can()`** (D-E2b-4).
+- **Tres acciones de `can()`** (D-E2b-4).
 - **La pantalla**: las notas de la fila, las entradas nuevas del menú, dos
   confirmaciones y los avisos (§5).
 - **La migración** y las consultas de §6.
@@ -538,19 +575,19 @@ Queda afuera: §12.
 
 ### Consecuencias sobre código ya entregado
 
-| Archivo                                                                   | Qué cambia                                                                                                                                                 | Qué hay que volver a probar                                                                    |
-| ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `src/server/db/schema.ts`, `drizzle/`                                     | Las dos columnas y el `check` (§2)                                                                                                                         | `db:generate` y `db:migrate` en una base con datos                                             |
-| `src/server/access.ts`, `access.test.ts`                                  | `EntryFacts.accountLink`; `usesAccountLink`; `ACCOUNT_LINK_TTL_DAYS`; `callbackErrorMessage`                                                               | `access.test.ts` entero                                                                        |
-| `src/server/entry.ts`, `auth.ts` y sus tests de integración               | `decideProfileEntry` recibe `sub`, usa la vinculación y atrapa su error; `bindRequestedAccount`; `loginErrorUrl` con un código más                         | `entry.integration.test.ts`, `auth.integration.test.ts`                                        |
-| `src/server/auth-records.ts`, `auth-records.integration.test.ts`          | `googleAccountOwnerOf`, `bindGoogleAccount`, `userEmailOf`, `releaseEmailOf`                                                                               | el archivo                                                                                     |
-| `src/lib/email.ts`                                                        | `releasedEmailOf`, `isReleasedEmail`                                                                                                                       | su test                                                                                        |
-| `src/server/permissions/index.ts`, `permissions.test.ts`                  | `team.account.link` y `team.email.release`                                                                                                                 | la tabla entera                                                                                |
-| `src/modules/workspace/service.ts`, `repository.ts`                       | `entryFacts` con la marca vigente; `entryWorkspaceIdOf`; `registerExternalMember`                                                                          | `workspace/service.integration.test.ts`                                                        |
-| `src/modules/team/schema.ts`, `repository.ts`, `service.ts`, `actions.ts` | La fila con la vinculación, el correo liberado y el registro externo; `setAccountLink`, `releaseEmail`, `claimAccountLink`; `changeStatus` y `writeStatus` | `team/*.test.ts` y `team/*.integration.test.ts`; el criterio 9 de E2 se invierte para el owner |
-| `src/modules/team/components/*`, `src/app/(app)/equipo/page.tsx`          | Las notas, el menú con varias entradas, dos confirmaciones                                                                                                 | los tests de componente y de modelo de `team`                                                  |
-| `src/app/login/page.test.tsx`                                             | Los casos de `account_not_linked` y `vinculacion_fallida`                                                                                                  | el archivo                                                                                     |
-| `e2e/team-page.ts`, `e2e/database.ts`, `e2e/team-status.spec.ts`          | Los localizadores nuevos; la marca, el correo y las cuentas de una persona                                                                                 | `team-status.spec.ts` sin cambiar lo que afirma; `team.spec.ts`                                |
+| Archivo                                                                   | Qué cambia                                                                                                                                                                  | Qué hay que volver a probar                                                                       |
+| ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `src/server/db/schema.ts`, `drizzle/`                                     | Las dos columnas y el `check` (§2)                                                                                                                                          | `db:generate` y `db:migrate` en una base con datos                                                |
+| `src/server/access.ts`, `access.test.ts`                                  | `EntryFacts.accountLink`; `usesAccountLink`; `ACCOUNT_LINK_TTL_DAYS`; `callbackErrorMessage`                                                                                | `access.test.ts` entero                                                                           |
+| `src/server/entry.ts`, `auth.ts` y sus tests de integración               | `decideProfileEntry` recibe `sub`, usa la vinculación y atrapa su error; `bindRequestedAccount`; `loginErrorUrl` con un código más                                          | `entry.integration.test.ts`, `auth.integration.test.ts`                                           |
+| `src/server/auth-records.ts`, `auth-records.integration.test.ts`          | `googleAccountOwnerOf`, `bindGoogleAccount`, `userEmailOf`, `releaseEmailOf`                                                                                                | el archivo                                                                                        |
+| `src/lib/email.ts`                                                        | `releasedEmailOf`, `isReleasedEmail`                                                                                                                                        | su test                                                                                           |
+| `src/server/permissions/index.ts`, `permissions.test.ts`                  | `team.account.link`, `team.email.release` y `team.admin.account`                                                                                                            | la tabla entera                                                                                   |
+| `src/modules/workspace/service.ts`, `repository.ts`                       | `entryFacts` con la marca vigente; `entryWorkspaceIdOf`; `registerExternalMember`                                                                                           | `workspace/service.integration.test.ts`                                                           |
+| `src/modules/team/schema.ts`, `repository.ts`, `service.ts`, `actions.ts` | La fila con la vinculación, el correo liberado y el registro externo; `accountLockOf`; `setAccountLink`, `releaseEmail`, `claimAccountLink`; `changeStatus` y `writeStatus` | `team/*.test.ts` y `team/*.integration.test.ts`; el criterio 9 de E2 se reemplaza por el 4 de E2b |
+| `src/modules/team/components/*`, `src/app/(app)/equipo/page.tsx`          | Las notas, el menú con varias entradas, dos confirmaciones                                                                                                                  | los tests de componente y de modelo de `team`                                                     |
+| `src/app/login/page.test.tsx`                                             | Los casos de `account_not_linked` y `vinculacion_fallida`                                                                                                                   | el archivo                                                                                        |
+| `e2e/team-page.ts`, `e2e/database.ts`, `e2e/team-status.spec.ts`          | Los localizadores nuevos; la marca, el correo y las cuentas de una persona; el recorrido del filtro de E2                                                                   | `team-status.spec.ts`, con el cambio de abajo; `team.spec.ts`                                     |
 
 - **Sin cambio**: `report`, `project`, `profile`, `time-entry`,
   `src/server/session.ts`, `src/server/test-session.ts`, `/login` (el código; su
@@ -558,10 +595,14 @@ Queda afuera: §12.
   `decideGoogleAccess`, `decideStoredEmail` y `decideStoredIdentity` no
   cambian).
 - **El criterio 9 de E2** («reactivar a una inactiva sin `account` responde
-  `no_account`») pasa a valer para un admin, con `forbidden` y EQ-114; para el
-  owner, reactiva y pide la vinculación (criterio 4).
-- **`e2e/team-status.spec.ts:291-296`** sigue valiendo: la mira un admin, que no
-  tiene «Reactivar» ni «Liberar el correo» en esa fila.
+  `no_account`») deja de valer para todos: quien puede reactivar a una persona
+  sin cuenta la reactiva y pide la vinculación (criterio 4).
+- **`e2e/team-status.spec.ts:291-296` cambia lo que afirma**, por la decisión
+  del usuario: la mira un admin, y la inactiva sin cuenta es un member, así que
+  el admin ahora ve su menú, con «Reactivar» y «Liberar el correo». Se
+  reemplaza `rowButtons(inactiveRow)).toHaveCount(0)` por esas dos entradas, con
+  una nota que remite a D-E2b-4. La nota «Sin cuenta de Google vinculada.» y el
+  tachado siguen.
 
 ### El MCP, en paralelo
 
@@ -590,9 +631,9 @@ una migración, el número es el siguiente: se genera después de rebasar.
 ```ts
 // En `membership`, después de `weekStart`:
 /**
- * D-E2b-2: la vinculación que pidió el owner; la usa el próximo ingreso con el
- * correo de la persona mientras esté vigente (D-E2b-3, D-E2b-11). Columnas de
- * `team` (ADR 0025).
+ * D-E2b-2: la vinculación pedida desde la fila; la usa el próximo ingreso con
+ * el correo de la persona mientras esté vigente (D-E2b-3, D-E2b-11). Columnas
+ * de `team` (ADR 0025).
  */
 accountLinkRequestedAt: timestamp("account_link_requested_at", { withTimezone: true }),
 accountLinkRequestedById: text("account_link_requested_by_id").references(() => user.id, {
@@ -605,7 +646,7 @@ check(
 ),
 ```
 
-- **Sin relleno**: ninguna membresía nace con la marca; la pide el owner.
+- **Sin relleno**: ninguna membresía nace con la marca; se pide desde la fila.
 - **Una instancia vieja** no nombra las columnas (`select()` nombra las de su
   esquema), así que la migración corre antes del push sin romper nada.
 - **La reversión** es una migración hacia adelante que borra el `check` y las
@@ -617,24 +658,29 @@ check(
 
 ## 3. Permisos
 
-**Dos acciones nuevas**, en la unión `Action` y en sus dos tablas:
+**Tres acciones nuevas**, en la unión `Action` y en sus dos tablas, todas sobre
+`MembershipResource` (D-E2b-4):
 
-| Acción               | Recurso              | Roles       | Se consulta                                                                             |
-| -------------------- | -------------------- | ----------- | --------------------------------------------------------------------------------------- |
-| `team.account.link`  | `MembershipResource` | `["owner"]` | pedir, renovar o cancelar una vinculación; reactivar a una persona sin cuenta (D-E2b-5) |
-| `team.email.release` | `MembershipResource` | `["owner"]` | liberar el correo de una inactiva                                                       |
+| Acción               | Roles                | Se consulta                                                                             |
+| -------------------- | -------------------- | --------------------------------------------------------------------------------------- |
+| `team.account.link`  | `["owner", "admin"]` | pedir, renovar o cancelar una vinculación; reactivar a una persona sin cuenta (D-E2b-5) |
+| `team.email.release` | `["owner", "admin"]` | liberar el correo de una inactiva                                                       |
+| `team.admin.account` | `["owner"]`          | solo sobre una fila `admin`, además de una de las dos anteriores                        |
 
 Con comentarios como el de `team.admin.setStatus`:
 
-- `team.account.link`: «D-E2b-4, ADR 0027: solo el owner pide que el próximo
-  ingreso con el correo de una persona quede atado a su fila. Se consulta para
-  pedir, renovar o cancelar una vinculación y para reactivar a quien no tiene
-  cuenta.».
-- `team.email.release`: «D-E2b-4, D-E2b-9: solo el owner libera el correo de
-  una persona inactiva.».
+- `team.account.link`: «D-E2b-4, ADR 0027: pedir que el próximo ingreso con el
+  correo de una persona quede atado a su fila. Se consulta para pedir, renovar o
+  cancelar una vinculación y para reactivar a quien no tiene cuenta. Sobre un
+  admin, además `team.admin.account`.».
+- `team.email.release`: «D-E2b-4, D-E2b-9: liberar el correo de una persona
+  inactiva. Sobre un admin, además `team.admin.account`.».
+- `team.admin.account`: «D-E2b-4, P-07: solo el owner vincula la cuenta o libera
+  el correo de un admin. Se consulta solo sobre una membresía `admin`: `can()`
+  no mira el rol de la membresía para esta acción.».
 
 **El ingreso no pasa por `can()`** (ADR 0024): `bindRequestedAccount` no tiene
-actor de sesión, y la decisión ya la tomó el owner al pedir la vinculación.
+actor de sesión, y la decisión ya la tomó quien pidió la vinculación.
 
 ## 4. Contrato
 
@@ -672,7 +718,7 @@ export const callbackErrorMessage: Readonly<Record<"account_not_linked", string>
 
 - `NO_ENTRY_FACTS` suma `accountLink: false`.
 - `callbackErrorMessage.account_not_linked`: EQ-122, «Ya hay una persona en
-  Clock con ese correo. Pedile al propietario del workspace que revise tu
+  Clock con ese correo. Pedile a quien administra el equipo que revise tu
   acceso.».
 - `loginErrorMessage(code)`: un motivo, su texto; `account_not_linked`, el de
   `callbackErrorMessage`; cualquier otro —también `vinculacion_fallida`—, el
@@ -881,35 +927,34 @@ link: z
   .object({ requestedAt: z.date(), expiresAt: z.date(), expired: z.boolean() })
   .nullable(),
 /**
- * D-E2b-6: lo que el menú ofrece sobre la vinculación, si `can()` deja
- * `team.account.link` en una activa: `["request"]` sin marca, `["cancel"]` con
- * una vigente, `["request", "cancel"]` con una vencida; `[]` sin control.
+ * D-E2b-4, D-E2b-6: lo que el menú ofrece sobre la vinculación de una activa,
+ * si `accountLockOf` deja: `["request"]` sin marca, `["cancel"]` con una
+ * vigente, `["request", "cancel"]` con una vencida; `[]` sin control.
  */
 linkActions: z.array(z.enum(["request", "cancel"])),
 /** D-E2b-8: si pedir la vinculación registra el correo como externo. */
 registersExternal: z.boolean(),
-/** D-E2b-9: si se ofrece «Liberar el correo». */
+/** D-E2b-4, D-E2b-9: si se ofrece «Liberar el correo». */
 canReleaseEmail: z.boolean(),
 ```
 
 y los comentarios de `hasAccount` y `statusChange` dicen: «`reactivate` en una
-inactiva con cuenta, o sin cuenta con `team.account.link` (D-E2b-5); nunca en una
-con el correo liberado». El `ready` de **`teamView`** suma `linkTtlDays`, el
-valor de `ACCOUNT_LINK_TTL_DAYS`, para los textos de §5.4.
+inactiva con cuenta, o sin cuenta si `accountLockOf` deja vincularla (D-E2b-5);
+nunca en una con el correo liberado». El `ready` de **`teamView`** suma
+`linkTtlDays`, el valor de `ACCOUNT_LINK_TTL_DAYS`, para los textos de §5.4.
 
-**`teamMessages`** cambia `noAccount` y suma:
+**`teamMessages`** saca `noAccount` (EQ-114 queda sin uso, D-E2b-5) y suma:
 
-| Clave               | Texto                                                                        | Fuente |
-| ------------------- | ---------------------------------------------------------------------------- | ------ |
-| `noAccount`         | «Solo el propietario reactiva a una persona sin cuenta de Google vinculada.» | EQ-114 |
-| `linkOwnerOnly`     | «Solo el propietario vincula una cuenta de Google.»                          | EQ-117 |
-| `linkInactive`      | «Esa persona está desactivada: reactivala para vincular su cuenta.»          | EQ-118 |
-| `releaseOwnerOnly`  | «Solo el propietario libera un correo.»                                      | EQ-119 |
-| `releaseActive`     | «Desactivá a esa persona antes de liberar su correo.»                        | EQ-120 |
-| `emailReleased`     | «El correo de esa persona se liberó: no se puede reactivar ni vincular.»     | EQ-121 |
-| `linkUnavailable`   | «Esa vinculación no está disponible.»                                        | propio |
-| `unexpectedLink`    | «No se pudo cambiar la vinculación. Revisá la conexión y volvé a intentar.»  | TT-89  |
-| `unexpectedRelease` | «No se pudo liberar el correo. Revisá la conexión y volvé a intentar.»       | TT-89  |
+| Clave                   | Texto                                                                                    | Fuente |
+| ----------------------- | ---------------------------------------------------------------------------------------- | ------ |
+| `linkAdminOwnerOnly`    | «Solo el propietario vincula la cuenta de Google de un administrador o del propietario.» | EQ-117 |
+| `linkInactive`          | «Esa persona está desactivada: reactivala para vincular su cuenta.»                      | EQ-118 |
+| `releaseAdminOwnerOnly` | «Solo el propietario libera el correo de un administrador o del propietario.»            | EQ-119 |
+| `releaseActive`         | «Desactivá a esa persona antes de liberar su correo.»                                    | EQ-120 |
+| `emailReleased`         | «El correo de esa persona se liberó: no se puede reactivar ni vincular.»                 | EQ-121 |
+| `linkUnavailable`       | «Esa vinculación no está disponible.»                                                    | propio |
+| `unexpectedLink`        | «No se pudo cambiar la vinculación. Revisá la conexión y volvé a intentar.»              | TT-89  |
+| `unexpectedRelease`     | «No se pudo liberar el correo. Revisá la conexión y volvé a intentar.»                   | TT-89  |
 
 **`TeamActions`** suma `setAccountLink` y `releaseEmail`, con la forma de
 `changeStatus`.
@@ -940,10 +985,6 @@ null }` si limpió la marca, o `undefined` si no había una vigente en ese
 null)`**, nueva: con un id, `account_link_requested_at = now()` y
   `account_link_requested_by_id`; con `null`, las dos en nulo. La sentencia de
   §6.8 no pasa por acá: es SQL a mano.
-
-`lockByEmail`, que la versión anterior del contrato nombraba, no existe: contaba
-membresías en lugar de filas `user`, y no se puede bloquear el lado nulable de
-un `left join`.
 
 ### 4.8 Service (`src/modules/team/service.ts`)
 
@@ -982,18 +1023,25 @@ export async function claimAccountLink(
 ): Promise<ClaimedAccountLink>;
 ```
 
+- **`accountLockOf(actor, row, action)`**, privada, con `action` en
+  `"team.account.link" | "team.email.release"`: `true` si la fila queda fuera de
+  alcance —sin `action` sobre su `MembershipResource`, o fila `admin` sin
+  `team.admin.account`—. La usan la vista, con el `Actor` de la sesión, y las
+  mutaciones, con el releído por `freshActorOf` (D-E2b-4).
 - **`setAccountLink`**: antes de la transacción, `canManageTeam(actor)`; si no,
   `forbidden` con `forbiddenAction`. En la transacción, `lockForChange`,
-  `freshActorOf` y los pasos de D-E2b-6, con `userEmailOf` para el paso 6 y
-  `registerExternalMember` antes de `updateAccountLink`. Constancias, con quien
-  actúa como actor: `membership.linkRequest` (`previousValue: {
-linkRequestedAt: <anterior o null> }`, `nextValue: { linkRequestedAt: <nueva>
-}`) y `membership.linkCancel` (`previousValue: { linkRequestedAt }`,
-  `nextValue: { linkRequestedAt: null }`).
-- **`releaseEmail`**: la misma entrada; los pasos de D-E2b-9 con `userEmailOf` e
-  `isReleasedEmail`, y `releaseEmailOf(tx, actor, target.userId)`.
-- **`changeStatus`**: el paso 8 de D-E2-3 pasa a ser, para reactivar: 8. correo liberado (`userEmailOf`, `isReleasedEmail`): `email_released`; 9. sin cuenta (`hasAccount`) y sin `team.account.link` con la autoridad
-  releída: `forbidden` con `noAccount`; 10. escribe (`writeStatus`) y, si no tenía cuenta, `registerExternalMember` y
+  `freshActorOf` y los pasos de D-E2b-6, con `accountLockOf` en el paso 4,
+  `userEmailOf` para el paso 6 y `registerExternalMember` antes de
+  `updateAccountLink`. Constancias, con quien actúa como actor:
+  `membership.linkRequest` (`previousValue: { linkRequestedAt: <anterior o null>
+}`, `nextValue: { linkRequestedAt: <nueva> }`) y `membership.linkCancel`
+  (`previousValue: { linkRequestedAt }`, `nextValue: { linkRequestedAt: null }`).
+- **`releaseEmail`**: la misma entrada; los pasos de D-E2b-9 con `accountLockOf`
+  en el paso 3, `userEmailOf` e `isReleasedEmail`, y `releaseEmailOf(tx, actor,
+target.userId)`.
+- **`changeStatus`**: el paso 8 de D-E2-3 pasa a ser, para reactivar: 8. correo liberado (`userEmailOf`, `isReleasedEmail`): `email_released`; 9. sin cuenta (`hasAccount`): `accountLockOf` con `team.account.link` sobre el
+  `Actor` releído; si rechaza, `forbidden` con `linkAdminOwnerOnly` (con los
+  roles de hoy, los pasos 3 a 6 ya rechazaron antes, D-E2b-5); 10. escribe (`writeStatus`) y, si no tenía cuenta, `registerExternalMember` y
   `updateAccountLink` con quien actúa, con `membership.linkRequest`.
 - **`writeStatus`**, al desactivar: si la fila tiene `linkPending`,
   `updateAccountLink(…, null)` y `membership.linkCancel` **antes** de
@@ -1006,15 +1054,17 @@ linkRequestedAt: <anterior o null> }`, `nextValue: { linkRequestedAt: <nueva>
 - **`getTeamView`**: cada fila suma `email` (`null` si `isReleasedEmail`),
   `link`, `linkActions` (`linkActionsOf`), `registersExternal` y
   `canReleaseEmail` (`releaseOf`):
-  - `linkActionsOf(actor, row)`: `[]` si no está activa o si
-    `can(actor, "team.account.link", recurso)` no deja; si no, según la marca
-    (§4.6). La fila propia del owner la tiene.
+  - `linkActionsOf(actor, row)`: `[]` si no está activa o si `accountLockOf`
+    con `team.account.link` rechaza; si no, según la marca (§4.6). El owner la
+    tiene en su propia fila y en todas; un admin, en las filas que no son
+    `admin` ni del owner.
   - `registersExternal`: el correo no es de `GOOGLE_WORKSPACE_DOMAINS`
     (`isCompanyEmail`) y `invitationStatus` no es `pending` ni `accepted`.
-  - `releaseOf(actor, row)`: inactiva, con el correo sin liberar y
-    `can(actor, "team.email.release", recurso)`.
+  - `releaseOf(actor, row)`: inactiva, con el correo sin liberar, y
+    `accountLockOf` con `team.email.release` no rechaza.
   - `statusChangeOf`: una inactiva con el correo liberado no tiene
-    `reactivate`; una sin cuenta, solo con `team.account.link`.
+    `reactivate`; una sin cuenta lo tiene si además `accountLockOf` con
+    `team.account.link` deja.
 - **Importa** `registerExternalMember` y `entryWorkspaceIdOf` de `workspace`,
   `userEmailOf` y `releaseEmailOf` de `auth-records`, `ACCOUNT_LINK_TTL_DAYS` de
   `@/server/access` (el repository y la vista) e `isReleasedEmail` e
@@ -1040,23 +1090,26 @@ Las dos revalidan `/` como layout, como `changeStatus` (D-E2-11).
 
 ### 4.10 Las respuestas
 
-| Situación                                                      | Código                             | Mensaje                                | Reintentar |
-| -------------------------------------------------------------- | ---------------------------------- | -------------------------------------- | ---------- |
-| Pidió, renovó, canceló o liberó                                | ok                                 | —                                      | —          |
-| Ya estaba así                                                  | ok, sin escribir                   | —                                      | —          |
-| Id que no está, de otro workspace o `invited`                  | `not_found`                        | EQ-82                                  | no         |
-| Id que no es uuid, o `link` que no es booleano                 | `validation`                       | EQ-82 o `linkUnavailable`              | no         |
-| Sin `team.manage`, o lo perdió bajo el bloqueo                 | `forbidden`                        | EQ-90                                  | no         |
-| Un admin pide o cancela una vinculación                        | `forbidden`                        | EQ-117                                 | no         |
-| Un admin reactiva a una persona sin cuenta                     | `forbidden`                        | EQ-114                                 | no         |
-| Un admin libera un correo                                      | `forbidden`                        | EQ-119                                 | no         |
-| Pedir la vinculación de una inactiva                           | `inactive_membership`              | EQ-118                                 | no         |
-| Liberar el correo de una activa, también la propia             | `active_membership`                | EQ-120                                 | no         |
-| Reactivar o pedir la vinculación de una con el correo liberado | `email_released`                   | EQ-121                                 | no         |
-| Red o servidor                                                 | `unexpected`                       | `unexpectedLink` o `unexpectedRelease` | sí         |
-| Cuenta de Google nueva con un correo en uso, sin marca vigente | `/login?error=account_not_linked`  | EQ-122                                 | —          |
-| El ingreso pierde la carrera con una desactivación             | `/login?error=membresia_inactiva`  | EQ-92                                  | —          |
-| La vinculación falla antes de confirmar                        | `/login?error=vinculacion_fallida` | el genérico                            | sí         |
+| Situación                                                                    | Código                             | Mensaje                                | Reintentar |
+| ---------------------------------------------------------------------------- | ---------------------------------- | -------------------------------------- | ---------- |
+| Pidió, renovó, canceló o liberó                                              | ok                                 | —                                      | —          |
+| Ya estaba así                                                                | ok, sin escribir                   | —                                      | —          |
+| Id que no está, de otro workspace o `invited`                                | `not_found`                        | EQ-82                                  | no         |
+| Id que no es uuid, o `link` que no es booleano                               | `validation`                       | EQ-82 o `linkUnavailable`              | no         |
+| Sin `team.manage`, o lo perdió bajo el bloqueo                               | `forbidden`                        | EQ-90                                  | no         |
+| Un admin pide o cancela la vinculación de un admin, la propia o la del owner | `forbidden`                        | EQ-117                                 | no         |
+| Un admin reactiva a un admin sin cuenta                                      | `forbidden`                        | EQ-85 (paso 6 de D-E2-3)               | no         |
+| Un admin libera el correo de un admin o del owner                            | `forbidden`                        | EQ-119                                 | no         |
+| Pedir la vinculación de una inactiva                                         | `inactive_membership`              | EQ-118                                 | no         |
+| Liberar el correo de una activa, también la propia del owner                 | `active_membership`                | EQ-120                                 | no         |
+| Reactivar o pedir la vinculación de una con el correo liberado               | `email_released`                   | EQ-121                                 | no         |
+| Red o servidor                                                               | `unexpected`                       | `unexpectedLink` o `unexpectedRelease` | sí         |
+| Cuenta de Google nueva con un correo en uso, sin marca vigente               | `/login?error=account_not_linked`  | EQ-122                                 | —          |
+| El ingreso pierde la carrera con una desactivación                           | `/login?error=membresia_inactiva`  | EQ-92                                  | —          |
+| La vinculación falla antes de confirmar                                      | `/login?error=vinculacion_fallida` | el genérico                            | sí         |
+
+Un admin que pide liberar su propio correo recibe EQ-119: su fila es la de un
+admin, y la frontera va antes que el estado.
 
 ## 5. Pantalla
 
@@ -1080,7 +1133,9 @@ Pasa a `TeamScreen` las seis actions: las cuatro de E2, `setAccountLink` y
   - sin cuenta y con el correo sin liberar: «Sin cuenta de Google vinculada.»
     (D-E2-7, sin cambio).
 
-  Una fila liberada no tiene nota: «Correo liberado» ya lo dice.
+  Una fila liberada no tiene nota: «Correo liberado» ya lo dice. Las notas las
+  ven el owner y los admins por igual, también en las filas sobre las que no
+  pueden actuar.
 
 ### 5.3 El menú
 
@@ -1094,9 +1149,14 @@ orden, y la fila sin ninguna no tiene menú (D-E2-9):
 3. «Liberar el correo» (`canReleaseEmail`).
 
 La lista sale de una función pura de `team-members-model.ts`
-(`menuEntriesOf(member)`). Con lo que deja `can()` hoy, el owner ve el menú en su
-propia fila, con «Vincular otra cuenta de Google»; un admin no ve ninguna
-entrada nueva.
+(`menuEntriesOf(member)`). Con lo que deja `can()` hoy:
+
+- **El owner** ve las entradas en todas las filas, y en la propia, «Vincular
+  otra cuenta de Google».
+- **Un admin** las ve en las filas que no son `admin` ni del owner: en un member
+  activo, «Desactivar» y «Vincular otra cuenta de Google» (o «Vincular una
+  cuenta de Google»); en un member inactivo, «Reactivar» y «Liberar el correo».
+  Su propia fila, la de otro admin y la del owner siguen sin menú.
 
 ### 5.4 Las confirmaciones
 
@@ -1151,18 +1211,19 @@ En el aviso de la tabla (`status`), como E2:
 Suma los rótulos de §5.2 a §5.5: `releasedEmail`, `linkPendingFirst`,
 `linkPendingReplace`, `linkExpired`, `requestLink`, `requestOtherLink`,
 `renewLink`, `cancelLink`, `releaseEmail`, los de los dos diálogos con el
-párrafo del externo, los cuatro de éxito y los tres de error. `intro` suma «Solo
-el propietario vincula una cuenta de Google y libera un correo.». Los mensajes de
+párrafo del externo, los cuatro de éxito y los tres de error. La frase de `intro`
+de E2 sobre los admins pasa a «Solo el propietario desactiva, reactiva,
+vincula la cuenta o libera el correo de un administrador.». Los mensajes de
 error salen de `teamMessages`.
 
 ## 6. La transición en producción
 
 Hechos que el contrato da por dados: Vercel despliega `main` a producción en
 cada push y el build no corre migraciones; las migraciones las corre el usuario
-con `!` antes del push del merge que las necesita. E2 está en producción. **E2b
-trae una migración** (§2). La consulta de producción del 2026-10-19 dio **diez
-membresías activas, todas con cuenta, y tres inactivas sin cuenta**, las que
-creó la importación.
+con `!` antes del push del merge que las necesita. E2 y el slice de Better Auth
+1.7.10 están en producción. **E2b trae una migración** (§2). La consulta de
+producción del 2026-10-19 dio **diez membresías activas, todas con cuenta, y
+tres inactivas sin cuenta**, las que creó la importación.
 
 Todo correo, como `lower(btrim(email))` (D-E1b-1).
 
@@ -1209,11 +1270,12 @@ Lo esperado: la 1 con las tres inactivas, ninguna activa, y en cada una
   correo normalizado y escribe la cuenta antes de que Better Auth busque por
   correo, así que entra igual. Se anota.
 - **Una activa en la 1**: no frena. No puede entrar hoy y E2b no la abre sola:
-  el owner le pide la vinculación desde la fila (D-E2b-6).
+  se le pide la vinculación desde la fila (D-E2b-6).
 - **Una fila en la 2**: esa persona no se puede vincular (D-E2b-12). Se resuelve
   a mano antes de reactivarla, y no frena el despliegue.
 - **Una fila en la 3**: ya rompe hoy el ingreso de esa cuenta
-  (`internal-adapter.mjs:555`). Se borra la fila repetida a mano; no frena.
+  (`internal-adapter.mjs`, el lanzamiento con claves repetidas). Se borra la
+  fila repetida a mano; no frena.
 
 ### 6.2 La migración
 
@@ -1245,8 +1307,8 @@ versión vieja sigue atendiendo: no nombra las columnas.
 
 Mientras Vercel cambia de versión, una instancia vieja que desactive a una
 persona a la que la nueva le acaba de pedir una vinculación choca con el `check`
-y responde `unexpected`; reintentar en la versión nueva funciona. Pide que el
-owner pida una vinculación en esos segundos.
+y responde `unexpected`; reintentar en la versión nueva funciona. Pide que
+alguien pida una vinculación en esos segundos.
 
 ### 6.4 La verificación de humo
 
@@ -1261,7 +1323,8 @@ owner pida una vinculación en esos segundos.
 
 ### 6.5 La primera reactivación
 
-Es el uso real, y lo hace el owner cuando quiera, con una persona a la vez:
+Es el uso real, y lo hace el owner o un admin cuando quiera, con una persona a
+la vez:
 
 1. **Confirma con la persona** que la dirección sigue siendo suya y que va a
    entrar en los próximos siete días.
@@ -1292,18 +1355,19 @@ order by created_at;
 
 Lo esperado antes de que entre: `active`, `vinculacion_pedida` con fecha,
 `vigente` verdadero, cero cuentas, cero sesiones, las mismas `entradas` que en
-§6.1, y `membership.reactivate` y `membership.linkRequest` con el owner como
-actor (`invitation.register` sobre la invitación si es externa). Después:
-`vinculacion_pedida` nula, una cuenta, al menos una sesión, las mismas
+§6.1, y `membership.reactivate` y `membership.linkRequest` con quien la
+reactivó como actor (`invitation.register` sobre la invitación si es externa).
+Después: `vinculacion_pedida` nula, una cuenta, al menos una sesión, las mismas
 `entradas`, y `membership.linkUse` y `account.link` con la persona como actor.
 
 Si la persona ve EQ-122 en lugar de entrar, entró con una cuenta cuyo correo no
 es ese, su `sub` ya tenía cuenta, o la marca venció (`vigente` falso): la marca
-sigue, y el owner la renueva si hace falta.
+sigue, y se la renueva si hace falta.
 
 ### 6.6 Reversión
 
-Volver a desplegar E2, **conservando la migración en el diario**:
+Volver a desplegar E2 sobre Better Auth 1.7.10, **conservando la migración en el
+diario**:
 
 1. **La lista de lo que se pierde**: las marcas, que la reversión borra.
 
@@ -1336,7 +1400,7 @@ Volver a desplegar E2, **conservando la migración en el diario**:
    se generaría con el número de la `0017` (como §6.5 de E1b).
 
 4. **Repetir la limpieza del paso 2 con el revert ya desplegado**: entre la
-   primera limpieza y el despliegue, el owner pudo pedir una vinculación con la
+   primera limpieza y el despliegue, alguien pudo pedir una vinculación con la
    versión de E2b, y esa marca haría chocar con el `check` cualquier
    desactivación de E2. La consulta del paso 1 da cero después.
 5. **La migración hacia adelante** que borra el `check` y las columnas,
@@ -1347,15 +1411,17 @@ Volver a desplegar E2, **conservando la migración en el diario**:
 válidas para E2 (la persona entra y se desactiva y reactiva como cualquiera).
 Los correos liberados quedan liberados: la lista de E2 los muestra con
 `<id>@liberado.invalid`, sin cuenta y sin «Reactivar» (D-E2-7). Las invitaciones
-`accepted` que registró D-E2b-8 quedan; son las de un externo con membresía.
+`accepted` que registró D-E2b-8 quedan; son las de un externo con membresía. El
+revert de E2b no toca la subida de Better Auth.
 
 ### 6.7 El script de importación y los correos liberados
 
-El script (`ops/importar-clockify`) identifica a las personas por correo. Una
-corrida después de liberar un correo no encuentra a la persona vieja por él: o
-crea otra fila con ese correo, que lo vuelve a ocupar, o, si la persona nueva ya
-entró, le carga las horas de Clockify de la anterior. **Antes de cada corrida**,
-el usuario lista los correos liberados y los saca de `personas.json`:
+El script (`ops/importar-clockify`) identifica a las personas por correo, y no
+cambia (decisión del usuario del 2026-10-19). Una corrida después de liberar un
+correo no encuentra a la persona vieja por él: o crea otra fila con ese correo,
+que lo vuelve a ocupar, o, si la persona nueva ya entró, le carga las horas de
+Clockify de la anterior. **Antes de cada corrida**, el usuario lista los correos
+liberados y los saca de `personas.json`:
 
 ```sql
 select previous_value, created_at
@@ -1364,16 +1430,17 @@ where action = 'user.releaseEmail'
 order by created_at;
 ```
 
-Y **solo libera el correo de una persona cuya importación terminó**. Si el
-usuario prefiere que el script lo resuelva solo, es la pregunta 4 de §11.
+Y **solo se libera el correo de una persona cuya importación terminó**. Como
+desde D-E2b-4 los admins también liberan, el owner se lo avisa a los admins.
 
 ### 6.8 Una vinculación sin la aplicación
 
 Si el owner perdió su cuenta de Google sin haber pedido una vinculación, nadie
-puede pedirla desde la pantalla (D-E2b-4). Esta sentencia la escribe sobre una
-membresía activa, con su constancia sin actor; la persona entra después, en los
-siete días que siguen, con su cuenta nueva y la usa como cualquiera (D-E2b-3).
-Sirve para cualquier persona activa, no solo para el owner.
+puede pedirla desde la pantalla: su fila es solo suya (D-E2b-4). Esta sentencia
+la escribe sobre una membresía activa, con su constancia sin actor; la persona
+entra después, en los siete días que siguen, con su cuenta nueva y la usa como
+cualquiera (D-E2b-3). Sirve para cualquier persona activa, no solo para el
+owner.
 
 ```sql
 with ws as (select id from workspace order by created_at, id limit 1),
@@ -1438,8 +1505,8 @@ de E2b: el usuario la corre con `!` contra esa rama. La base local la recibe con
 
 ### backend-dev
 
-- La confirmación de §0 si `main` trae Better Auth 1.7.10, en el registro del
-  slice.
+- La confirmación de los seis puntos de §0 sobre `main` con Better Auth 1.7.10,
+  en el registro del slice.
 - `src/server/db/schema.ts` y la migración generada (§2).
 - `src/server/access.ts` y `access.test.ts` (§4.1).
 - `src/server/entry.ts`, `auth.ts` (§4.2), `entry.integration.test.ts` y
@@ -1484,10 +1551,11 @@ days'`, `'7 days' - '5 seconds'`).
   `accountCountOf(userId)`.
 - `e2e/team-link.spec.ts`, nuevo, con los recorridos de §9.3; confirma que
   fallan antes de la implementación.
-- `team-status.spec.ts`, `team.spec.ts`, `invitations.spec.ts` y
-  `entry.spec.ts` siguen en verde sin cambiar lo que afirman; los comentarios
-  de `team-status.spec.ts` que dicen «ofrece solo Desactivar» se ajustan a las
-  entradas nuevas.
+- `e2e/team-status.spec.ts:291-296`: el admin ve el menú de la inactiva sin
+  cuenta con «Reactivar» y «Liberar el correo» (§1); los comentarios que dicen
+  «ofrece solo Desactivar» se ajustan a las entradas nuevas. `team.spec.ts`,
+  `invitations.spec.ts` y `entry.spec.ts` siguen en verde sin cambiar lo que
+  afirman.
 
 ### parity-analyst
 
@@ -1495,24 +1563,28 @@ days'`, `'7 days' - '5 seconds'`).
   - **EQ-109**: deja de remitir a P-11; la misma persona con otra cuenta se
     resuelve con una vinculación (EQ-115) y otra persona con una dirección
     reciclada, liberando el correo (EQ-116) e invitándolo. El texto que ve la
-    persona es neutro (EQ-122) porque el owner decide cuál corresponde.
-  - **EQ-110**: lo resuelve E2b; el owner la reactiva y pide la vinculación
-    (D-E2b-5).
-  - **EQ-47**: reactivar a una persona sin cuenta pide confirmación y es solo del
-    owner.
-  - **EQ-114**: el texto nuevo, para el admin.
+    persona es neutro (EQ-122) porque quien administra decide cuál corresponde.
+  - **EQ-110**: lo resuelve E2b; quien puede reactivarla la reactiva y pide la
+    vinculación (D-E2b-5).
+  - **EQ-47**: reactivar a una persona sin cuenta pide confirmación; quién, con
+    la excepción de EQ-38, como siempre.
+  - **EQ-114**: queda sin uso desde E2b, con su identificador, como EQ-80: quien
+    puede reactivar puede vincular (D-E2b-5).
+  - **EQ-38**: la frontera de los admins vale también para vincular y liberar
+    (D-E2b-4).
   - **EQ-22 o EQ-32**: una `accepted` también nace al pedir la vinculación de un
     externo sin invitación abierta, y queda (D-E2b-8).
   - **Nuevos**, `adaptar`, sin equivalente relevado en Clockify: EQ-115
-    «Vincular una cuenta de Google» (regla, §5: la pide el owner, vence a los
-    siete días, vale una vez); EQ-116 «Liberar el correo de una persona
-    inactiva» (regla, §5); y en la §10, EQ-117 … EQ-121 con los textos de §4.6 y
+    «Vincular una cuenta de Google» (regla, §5: la piden el owner y los admins,
+    sobre un admin o el owner solo el owner, vence a los siete días, vale una
+    vez); EQ-116 «Liberar el correo de una persona inactiva» (regla, §5, con la
+    misma frontera); y en la §10, EQ-117 … EQ-121 con los textos de §4.6 y
     EQ-122 con el de §4.1, «Ya hay una persona en Clock con ese correo. Pedile
-    al propietario del workspace que revise tu acceso.».
+    a quien administra el equipo que revise tu acceso.».
 - `perfil.md`: **PF-47** (el rechazo termina en `/login` con EQ-122, no en la
-  página de error de Better Auth, desde D-E1a-14 y E2b; el owner decide si
-  vincula o libera); **P-11** pasa a cerrados con D-E2b-6, D-E2b-9 y D-E2b-10;
-  **PF-48** sigue siendo una corrección a mano (D-E2b-12).
+  página de error de Better Auth, desde D-E1a-14 y E2b; quien administra decide
+  si vincula o libera); **P-11** pasa a cerrados con D-E2b-6, D-E2b-9 y
+  D-E2b-10; **PF-48** sigue siendo una corrección a mano (D-E2b-12).
 - El [mapa de la fase 2](fase2-mapa.md): la fila del ADR en la §4 nombra el
   0027, y «seis» pasa a «tres» donde habla de las inactivas importadas, con su
   nota fechada (consulta de producción del 2026-10-19): líneas 83, 337, 346,
@@ -1553,8 +1625,9 @@ days'`, `'7 days' - '5 seconds'`).
    marca intacta; uno con `email_verified: false`, en `email_no_verificado`,
    igual. Falla si `bindRequestedAccount` se llama antes de
    `decideGoogleAccess`.
-4. **Reactivar sin cuenta** (D-E2b-5): el owner reactiva a una inactiva sin
-   cuenta; queda `active` con la marca, con `membership.reactivate` y
+4. **Reactivar sin cuenta** (D-E2b-5): el owner reactiva a una admin inactiva
+   sin cuenta y un admin reactiva a un member inactivo sin cuenta; los dos
+   quedan `active` con la marca, con `membership.reactivate` y
    `membership.linkRequest`. Un `sub` cualquiera con ese correo entra a esa
    fila, con sus entradas (mismo `user_id`, misma cantidad).
 5. **Sin vinculación**: una activa sin cuenta y sin marca, con un `sub` nuevo,
@@ -1577,11 +1650,18 @@ days'`, `'7 days' - '5 seconds'`).
 9. **Desactivar la cancela** (D-E2b-7): desactivar a una persona con la marca la
    limpia, con `membership.linkCancel` del que desactiva, y hace todo lo de
    D-E2-5.
-10. **Quién** (D-E2b-4): un admin recibe `forbidden` con EQ-117 al pedir o
-    cancelar, con EQ-114 al reactivar a una inactiva sin cuenta (sin escribir) y
-    con EQ-119 al liberar; un member, EQ-90; el owner pide la vinculación de su
-    propia fila; liberar el correo de una activa, también la propia, responde
-    `active_membership` con EQ-120.
+10. **Quién** (D-E2b-4), con la autoridad releída bajo el bloqueo:
+    - **un admin sobre un member**: pide, renueva y cancela la vinculación,
+      reactiva sin cuenta y libera el correo;
+    - **un admin sobre otro admin, sobre sí mismo o sobre el owner**: pedir o
+      cancelar responde `forbidden` con EQ-117; liberar, con EQ-119; reactivar a
+      un admin sin cuenta, con EQ-85 (D-E2-3, paso 6). Ninguno escribe;
+    - **el owner**: actúa sobre todos, también sobre un admin, y pide la
+      vinculación de su propia fila; liberar su propio correo responde
+      `active_membership` con EQ-120;
+    - **un member**: EQ-90;
+    - **un admin que perdió el rol** entre la sesión y el bloqueo: EQ-90, sin
+      escribir.
 11. **Idempotencia** (EQ-97): pedir con una marca vigente, cancelar sin marca y
     liberar un correo ya liberado responden éxito sin escribir ninguna fila,
     tampoco de `audit_log`.
@@ -1602,27 +1682,29 @@ days'`, `'7 days' - '5 seconds'`).
     revocada** entra con su cuenta apenas se pide la vinculación, y sigue
     entrando después de cancelarla; la `accepted` queda. La vista trae
     `registersExternal` verdadero antes del pedido y falso después.
-16. **Liberar** (D-E2b-9): el owner libera el correo de una inactiva con una
-    cuenta y una sesión sembrada; `user.email` es `releasedEmailOf(userId)`; sin
-    cuentas ni sesiones; consta `user.releaseEmail` con el correo anterior; la
-    membresía, su rol, sus entradas y sus filas de `project_member` siguen. La
-    vista la trae con `email: null`, sin `reactivate`, con `linkActions` vacío y
-    sin `canReleaseEmail`. Con el MCP en `main`, queda además sin autorizaciones
-    de MCP.
+16. **Liberar** (D-E2b-9): un admin libera el correo de un member inactivo con
+    una cuenta y una sesión sembrada; `user.email` es `releasedEmailOf(userId)`;
+    sin cuentas ni sesiones; consta `user.releaseEmail` con el correo anterior y
+    el admin como actor; la membresía, su rol, sus entradas y sus filas de
+    `project_member` siguen. La vista la trae con `email: null`, sin
+    `reactivate`, con `linkActions` vacío y sin `canReleaseEmail`. Con el MCP en
+    `main`, queda además sin autorizaciones de MCP.
 17. **El correo liberado se invita y entra otra persona**: invitar ese correo
     responde `invited`; un `sub` nuevo con ese correo entra por la invitación con
     una fila nueva, y la liberada no cambia. Reactivar o pedir la vinculación de
     la liberada responde `email_released` con EQ-121.
-18. **La vista** (§4.8): `link`, `linkActions`, `registersExternal` y
-    `canReleaseEmail` para el owner y para un admin en una activa con y sin
-    cuenta, una con una marca vigente, una con una vencida, una inactiva con y
-    sin cuenta, una liberada y la fila propia; `statusChange` de una inactiva
-    sin cuenta, `reactivate` para el owner y `null` para un admin.
+18. **La vista** (§4.8): `link`, `linkActions`, `registersExternal`,
+    `canReleaseEmail` y `statusChange` para el owner y para un admin, sobre un
+    member activo con y sin cuenta, uno con una marca vigente, uno con una
+    vencida, un member inactivo con y sin cuenta, una admin activa e inactiva
+    sin cuenta, una liberada, la fila del owner y la propia. Un admin tiene los
+    controles en las filas de members y ninguno en las de admins, la del owner
+    ni la propia; el owner, en todas, y en la propia solo `linkActions`.
 19. **La pantalla** (§5): las notas de la fila con sus fechas; las entradas del
-    menú y su orden; los textos de confirmación, con el párrafo del externo
-    cuando corresponde; reactivar con cuenta y cancelar sin confirmar; los
-    avisos de éxito y de error con el nombre; «Reintentar» solo con
-    `unexpected`; un pedido a la vez; el foco.
+    menú y su orden, para el owner y para un admin; los textos de confirmación,
+    con el párrafo del externo cuando corresponde; reactivar con cuenta y
+    cancelar sin confirmar; los avisos de éxito y de error con el nombre;
+    «Reintentar» solo con `unexpected`; un pedido a la vez; el foco.
 20. **`/login`** (D-E2b-10): `?error=account_not_linked` muestra EQ-122;
     `?error=vinculacion_fallida` y un código desconocido muestran el genérico;
     ninguno muestra el parámetro.
@@ -1649,7 +1731,8 @@ days'`, `'7 days' - '5 seconds'`).
     no escribe. `backend-dev` pega la salida en el registro del slice, con la
     siembra.
 26. **La e2e entera en verde**, en una base nueva y en una que se reusa; los
-    recorridos de R8, E1a, E1b y E2 sin cambiar lo que afirman.
+    recorridos de R8, E1a, E1b y E2 sin cambiar lo que afirman, salvo
+    `team-status.spec.ts:291-296` (§1).
 
 ## 9. Plan de tests
 
@@ -1660,8 +1743,9 @@ days'`, `'7 days' - '5 seconds'`).
   `vinculacion_fallida`, un motivo y uno desconocido (criterio 20).
 - `src/lib/email.test.ts`: `releasedEmailOf` e `isReleasedEmail`, con mayúsculas
   y blancos, y que un correo de la empresa no es liberado.
-- `permissions.test.ts`: las dos acciones con cada rol, con un actor inactivo,
-  sobre otro workspace y sobre la membresía del owner.
+- `permissions.test.ts`: las tres acciones con cada rol, con un actor inactivo,
+  sobre otro workspace y sobre la membresía del owner; `team.admin.account`
+  solo para el owner.
 - `team/schema.test.ts`: `setAccountLinkInput` (uuid, `link` booleano) y
   `releaseEmailInput`.
 - `team-members-model.test.ts`: `menuEntriesOf` con cada combinación de §5.3,
@@ -1726,9 +1810,12 @@ days' - '5 seconds'`; la barrera toma la membresía `for no key update` sin
   `registerExternalMember` en sus cuatro casos (criterio 15).
 - **`team/service.integration.test.ts`**: criterios 1, 4, 6 (la vista y la
   renovación), 7 a 11, 15 (la vista), 16 a 18 y 22. El 7, con un `update`
-  directo que choca con el `check`. El 22, con un fallo inyectado después de
-  cada función ajena. `consumeAccountLink` con una marca vigente, una vencida y
-  sin marca.
+  directo que choca con el `check`. **El 10, con cada fila de su lista**, y un
+  caso de autoridad perdida: el owner baja a la admin A a member entre la sesión
+  y el bloqueo de un pedido de A, que recibe EQ-90 sin escribir; se verifica que
+  falla decidiendo con el `Actor` de la sesión en lugar del de `freshActorOf`.
+  El 22, con un fallo inyectado después de cada función ajena.
+  `consumeAccountLink` con una marca vigente, una vencida y sin marca.
 - **`team/actions.integration.test.ts`**: cada fila de §4.10 de
   `setAccountLink` y `releaseEmail` con su código y su texto; con éxito,
   `revalidatePath("/", "layout")` (criterio 23); sin sesión, a `/login` sin
@@ -1746,27 +1833,30 @@ afirmar sobre la tabla entera ni sobre un vacío de la base común. El ingreso p
 Google no corre en el navegador de pruebas: lo que pasa después de pedir la
 vinculación se afirma en la base. `e2e/team-link.spec.ts`:
 
-1. **Reactivar sin cuenta**: con una persona sembrada inactiva sin cuenta, el
-   owner (`OWNER_EMAIL`, en una pestaña) elige «Inactivas», abre su menú, ve
-   «Reactivar» y «Liberar el correo», elige «Reactivar», lee la confirmación y
-   confirma. El aviso dice «Reactivaste a {nombre}. Su cuenta de Google se
-   vincula en su próximo ingreso.», la fila queda sin tachar con «Vinculación
-   pedida el …, vence el …: falta su primer ingreso con Google.», y
+1. **El owner reactiva sin cuenta**: con una persona sembrada inactiva sin
+   cuenta, el owner (`OWNER_EMAIL`, en una pestaña) elige «Inactivas», abre su
+   menú, ve «Reactivar» y «Liberar el correo», elige «Reactivar», lee la
+   confirmación y confirma. El aviso dice «Reactivaste a {nombre}. Su cuenta de
+   Google se vincula en su próximo ingreso.», la fila queda sin tachar con
+   «Vinculación pedida el …, vence el …: falta su primer ingreso con Google.», y
    `accountLinkOf` trae la marca vigente pedida por el owner.
-2. **Pedir y cancelar en una activa con cuenta** (`seedGoogleAccount`): «Vincular
-   otra cuenta de Google» confirma con su texto; la nota de reemplazo aparece;
-   «Cancelar la vinculación» la quita sin confirmar; `accountLinkOf` sin marca.
+2. **Un admin pide y cancela en un member activo con cuenta**
+   (`seedGoogleAccount`): «Vincular otra cuenta de Google» confirma con su
+   texto; la nota de reemplazo aparece; `accountLinkOf` trae la marca pedida por
+   el admin; «Cancelar la vinculación» la quita sin confirmar.
 3. **Una marca vencida** (`seedExpiredAccountLink`): la fila dice «La
    vinculación pedida el … venció el ….»; el menú ofrece «Volver a pedir la
    vinculación» y «Cancelar la vinculación»; volver a pedirla confirma y deja la
    marca vigente.
-4. **Liberar**: con una inactiva con cuenta, «Liberar el correo» confirma con su
-   texto; la fila muestra «Correo liberado», sigue tachada y su menú ya no
-   existe; `userEmailOfMember` termina en `@liberado.invalid` y
+4. **Un admin libera**: con un member inactivo con cuenta, «Liberar el correo»
+   confirma con su texto; la fila muestra «Correo liberado», sigue tachada y su
+   menú ya no existe; `userEmailOfMember` termina en `@liberado.invalid` y
    `accountCountOf` es cero. Después, invitar el correo anterior desde la misma
    pantalla responde «invitada».
-5. **Un admin** ve, en la misma inactiva sin cuenta, la nota y ningún menú; en
-   una activa, el menú sin «Vincular» (solo «Desactivar»).
+5. **La frontera de un admin**: en la fila de otra admin, activa o inactiva sin
+   cuenta, no hay menú; tampoco en la del owner ni en la propia. En la fila
+   propia del owner, mirada por el owner, el menú tiene «Vincular otra cuenta de
+   Google».
 6. **`/login?error=account_not_linked`** muestra EQ-122.
 
 Y la suite entera corre en una base nueva y en una que se reusa (criterio 26).
@@ -1774,25 +1864,44 @@ Y la suite entera corre en una base nueva y en una que se reusa (criterio 26).
 ### 9.4 Lo que no se prueba en e2e
 
 El ingreso por Google con la vinculación (integración, por el handler,
-criterios 2 a 6, 12 a 15 y 21); las carreras (integración); la migración y las
-consultas de §6 (a mano).
+criterios 2 a 6, 12 a 15 y 21); las carreras y la autoridad perdida bajo el
+bloqueo (integración); la migración y las consultas de §6 (a mano).
 
 ## 10. Riesgos
 
 - **El riesgo de PF-47 vuelve, acotado** (D-E2b-1, ADR 0027): mientras una
   marca está vigente, quien tenga la dirección y pase la regla de ingreso entra
-  a la fila, con su rol y sus horas. Lo acotan que la pida el owner, que se vea,
-  que se cancele, que venza a los siete días, que valga una vez, que la regla se
-  decida antes (criterio 3) y que solo valga con la membresía activa. Lo que
-  queda: una dirección que la empresa reasigna entre el pedido y el ingreso, y,
-  para un externo de un dominio que no es Google Workspace, una segunda cuenta
-  de Google creada con ese correo. La pregunta 3 de §11 lo cerraría con un
-  código.
+  a la fila, con su rol y sus horas. Lo acotan que la pida el owner o un admin,
+  que se vea, que se cancele, que venza a los siete días, que valga una vez, que
+  la regla se decida antes (criterio 3) y que solo valga con la membresía
+  activa. Lo que queda: una dirección que la empresa reasigna entre el pedido y
+  el ingreso, y, para un externo de un dominio que no es Google Workspace, una
+  segunda cuenta de Google creada con ese correo. El usuario decidió no sumar un
+  código de un solo uso (§11).
+- **Lo que abre que los admins vinculen y liberen** (D-E2b-4):
+  - **Más personas pueden equivocarse de dirección**: un admin que vincula a un
+    member cuya dirección la empresa ya reasignó le entrega a otra persona la
+    fila, con sus horas y la posibilidad de editarlas como si fuera la dueña.
+    Antes de E2b un admin veía esas horas pero no podía cargarlas como ella.
+    Lo acotan el texto de la confirmación, el vencimiento, la nota visible en la
+    fila para el owner y el audit log con quien la pidió.
+  - **Liberar es irreversible desde la aplicación, y ahora también lo hace un
+    admin** sobre un member inactivo: un error deja a esa persona sin vuelta
+    atrás salvo una corrección a mano con el correo del audit log. No abre la
+    entrada a nadie: el correo liberado no pasa la identidad, y la dirección
+    queda libre solo para una invitación nueva, que un admin ya podía hacer.
+  - **Liberar y el script de importación** (§6.7): un admin que libera el correo
+    de una persona cuya importación no terminó rompe la corrida siguiente. Lo
+    cubren la consulta previa y el aviso del owner a los admins.
+  - **No abre un camino hacia las filas de los admins ni la del owner**: las dos
+    siguen siendo solo del owner (`team.admin.account` y la regla de `can()`
+    sobre la membresía del owner), y un admin no vincula la suya. Un admin
+    comprometido no puede atar su fila a otra cuenta ni la de otro admin.
 - **Pedir la vinculación de un externo le devuelve la entrada a su cuenta
   vieja** si la tenía (D-E2b-8), y no se deshace al cancelar. El diálogo lo
   dice; para cortarla, se la desactiva.
 - **`mapProfileToUser` escribe**: si el ingreso falla después del `commit`, la
-  cuenta queda vinculada (D-E2b-3). Aceptado: es lo que el owner pidió. Antes del
+  cuenta queda vinculada (D-E2b-3). Aceptado: es lo que se pidió. Antes del
   `commit`, el error vuelve como `vinculacion_fallida` (criterio 21).
 - **Una versión de Better Auth que mueva `getUserInfo`** después de la búsqueda
   deja la vinculación sin efecto: el criterio 2, por el handler, lo frena, y §0
@@ -1816,13 +1925,8 @@ consultas de §6 (a mano).
 - **El nombre cambia en el primer ingreso**: Better Auth escribe el de Google
   (PF-45), y una importada pasa del nombre de Clockify al de Google en el
   reporte, salvo que tenga uno editado. Es lo que le pasa a cualquiera.
-- **El script de importación y los correos liberados** (§6.7): una corrida que
-  no saque los liberados vuelve a ocupar el correo o le carga horas ajenas a la
-  persona nueva. Lo cubre la consulta previa; la pregunta 4 de §11.
 - **Un correo liberado en `user.email`**: un lector futuro que lo muestre tiene
   que pasar por `isReleasedEmail`. Hoy solo la lista de equipo lo muestra.
-- **Liberar no se deshace desde la aplicación** (D-E2b-9): la confirmación lo
-  dice y el audit log guarda el correo anterior.
 - **El owner que se vincula a sí mismo** cierra sus otras sesiones al entrar con
   la cuenta nueva (D-E2b-3). Aceptado.
 - **El número de la migración** choca con el del MCP si mergean a la vez: se
@@ -1833,33 +1937,27 @@ consultas de §6 (a mano).
 - **La e2e común acumula correos liberados** y personas con la marca: ningún
   recorrido afirma sobre su cantidad.
 
-## 11. Para decidir el usuario
+## 11. Decidido el 2026-10-19
 
-1. **¿Quién vincula y libera?** Recomendado: **solo el owner** (D-E2b-4).
-   Vincular le da a quien tenga una dirección la fila entera de otra persona, y
-   liberar no se deshace; son raras y las decide quien conoce a las personas.
-   Alternativa: owner y admin, con las filas `admin` solo del owner, como
-   desactivar (P-07). Con la alternativa, un admin también reactiva a una
-   persona `member` sin cuenta.
-2. **¿La vinculación vence?** Recomendado: **sí, a los siete días**, sin cron,
-   con la fecha del pedido y la del vencimiento en la fila (D-E2b-11). Una
-   vinculación abre una fila con rol y horas; siete días alcanzan para coordinar
-   el ingreso y acotan la exposición. Alternativas: otro plazo, que es cambiar
-   la constante; o que no venza, como una invitación (EQ-25), y se cancele a
-   mano.
-3. **¿Un código de un solo uso además del correo?** Recomendado: **no**
-   (D-E2b-1). El owner confirma, al pedirla, que la dirección sigue siendo de
-   esa persona, la marca vence, y para el dominio la dirección la controla la
-   empresa. El código ata la fila a quien lo recibió y no solo a quien tiene la
-   dirección, a costa de una pantalla previa al ingreso y de llevar el código
-   por el `state` de OAuth.
-4. **¿El script de importación aprende a saltear los correos liberados?**
-   Recomendado: **no**; se resuelve con la consulta de §6.7 antes de cada
-   corrida y liberando solo a quien ya terminó de importarse. El script es de
-   una sola vez y vive en otra rama. Alternativa: que lea `audit_log` y saltee
-   esos correos, en `ops/importar-clockify`.
-5. **El ADR 0027**, en «Propuesto»: aceptarlo. Su decisión 8 cambia lo que
-   significa una invitación `accepted` del ADR 0024.
+El usuario respondió las preguntas del contrato:
+
+1. **Vinculan y liberan el owner y los admins; sobre un admin o sobre el owner,
+   solo el owner.** No era la recomendación (solo el owner): la frontera es la
+   de desactivar (P-07, D-E2-3), con `team.admin.account` para las filas
+   `admin` (D-E2b-4). Un admin no vincula su propia fila; el owner sí. Lo que
+   arrastra: D-E2b-5 (quien reactiva vincula, EQ-114 sin uso), EQ-122 remite a
+   quien administra el equipo, el menú de los admins (§5.3) y los riesgos de
+   §10.
+2. **La vinculación vence a los siete días**, sin cron (D-E2b-11), como se
+   recomendó.
+3. **Sin código de un solo uso** (D-E2b-1), como se recomendó.
+4. **El script de importación no aprende a saltear los correos liberados**; se
+   resuelve con la consulta de §6.7 antes de cada corrida, como se recomendó.
+5. **El ADR 0027, aceptado.** Su decisión 8 cambia lo que significa una
+   invitación `accepted` del ADR 0024.
+
+Y una del plan: **Better Auth 1.7.10 se sube en un slice propio**, mergeado
+antes que E2b y que el MCP; E2b confirma los seis puntos de §0 sobre ese árbol.
 
 ## 12. Fuera de alcance
 
@@ -1867,13 +1965,14 @@ consultas de §6 (a mano).
   una corrección a mano (D-E2b-12).
 - **P-10 de `perfil.md`** (volver a seguir el nombre de Google): fuera de la fase
   2 (mapa §7).
+- **La subida de Better Auth a 1.7.10**: un slice propio, antes de E2b (§0).
 - **Un índice único por `(provider_id, account_id)`** en `account`: la tabla la
   regenera `npm run auth:schema`; lo cuida `googleAccountOwnerOf`.
 - **Deshabilitar `/account-info`**: no vincula (§10), y cerrarlo es endurecer
   otra cosa.
 - **Deshacer una liberación** desde la pantalla, y deshacer el registro de un
   externo al cancelar una vinculación (D-E2b-8).
-- **El código de un solo uso**, salvo que el usuario elija la alternativa (§11).
+- **El código de un solo uso** (§11).
 - **Quitar del equipo** (EQ-51): E6. Una persona quitada conserva su `user` y su
   cuenta (EQ-108); si su dirección pasa a otra persona, la salida es liberar el
   correo antes de quitarla, porque liberar pide la membresía.
