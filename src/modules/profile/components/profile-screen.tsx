@@ -1,9 +1,9 @@
 import { InactiveMembershipNotice } from "@/components/inactive-membership-notice";
-import type { ProfileActions } from "@/modules/profile/schema";
+import { NameField } from "@/components/name-field";
+import { NAME_MAX, profileMessages, type ProfileActions } from "@/modules/profile/schema";
 import type { ProfileView } from "@/modules/profile/service";
 
-import { dayNames, profileLabels } from "./labels";
-import { NameField } from "./name-field";
+import { dayNames, failureTitles, profileLabels } from "./labels";
 import { FixedSetting, PreferenceField } from "./preference-field";
 import { UserAvatar } from "./user-avatar";
 
@@ -34,9 +34,14 @@ export function ProfileScreen({ view, actions }: ProfileScreenProps) {
           <UserAvatar image={identity.image} initials={identity.initials} size="lg" />
           <div className="flex min-w-0 flex-1 flex-col gap-4">
             <NameField
+              save={actions.updateName}
               value={identity.name}
-              canEdit={canEdit}
-              updateName={actions.updateName}
+              label={profileLabels.name}
+              maxLength={NAME_MAX}
+              autoComplete="name"
+              failureTitle={failureTitles.name}
+              unreachableMessage={profileMessages.unexpected}
+              readOnly={!canEdit}
             />
             <FixedSetting label={profileLabels.email} value={identity.email} />
           </div>

@@ -6,21 +6,31 @@ import { ActionFeedback } from "@/components/action-feedback";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { retryHandlerOf, useAction } from "@/hooks/use-action";
-import { NAME_MAX, profileMessages, type ProfileActions } from "@/modules/profile/schema";
-
-import { failureTitles, profileLabels } from "./labels";
+import type { ActionResult } from "@/server/action";
 
 type NameFieldProps = {
-  readonly updateName: ProfileActions["updateName"];
-  /** El nombre resuelto de la vista: el editado o el de Google. */
+  /** La action del módulo: recibe y devuelve el nombre recortado. */
+  readonly save: (input: {
+    readonly name: string;
+  }) => Promise<ActionResult<{ readonly name: string }, string>>;
+  /** El nombre guardado, de la vista. */
   readonly value: string;
-  /** Sin permiso el nombre se ve y no se cambia (PF-46). */
-  readonly canEdit: boolean;
+  readonly label: string;
+  /** El largo del esquema del módulo: el campo corta en el mismo. */
+  readonly maxLength: number;
+  readonly autoComplete: string;
+  /** TT-90: el título del aviso nombra lo que no se cambió. */
+  readonly failureTitle: string;
+  /** El `unexpected` del módulo, para cuando la action no llega a responder. */
+  readonly unreachableMessage: string;
+  /** Sin permiso se ve y no se cambia, con `readOnly` (PF-46). Por omisión, falso. */
+  readonly readOnly?: boolean;
 };
 
 /**
- * El nombre editable (PF-07, PF-32): guarda al salir o con Enter si el texto
- * recortado no es el guardado, y Esc descarta lo escrito sin pedido.
+ * Un nombre editable, el de una persona (PF-07, PF-32) o el del workspace
+ * (WS-04): guarda al salir o con Enter si el texto recortado no es el
+ * guardado, y Esc descarta lo escrito sin pedido.
  *
  * Mientras se escribe, lo tecleado vive en `draft` y ninguna revalidación lo
  * pisa. Guardar vacía el borrador, así que el campo pasa a la vista: la
@@ -31,14 +41,23 @@ type NameFieldProps = {
  * Nunca usa `disabled`, por lo mismo que `PreferenceField`: sin permiso es
  * `readOnly` y el foco no se pierde.
  */
-export function NameField({ updateName, value, canEdit }: NameFieldProps) {
+export function NameField({
+  save,
+  value,
+  label,
+  maxLength,
+  autoComplete,
+  failureTitle,
+  unreachableMessage,
+  readOnly = false,
+}: NameFieldProps) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const [shown, show] = useOptimistic<string, string>(value, (_, next) => next);
   /** Lo tecleado desde el último guardado, o `null` si el campo sigue a la vista. */
   const [draft, setDraft] = useState<string | null>(null);
-  const save = useAction(updateName, {
-    unreachableMessage: profileMessages.unexpected,
+  const saving = useAction(save, {
+    unreachableMessage,
     optimistic: (input) => show(input.name.trim()),
   });
 
@@ -47,13 +66,13 @@ export function NameField({ updateName, value, canEdit }: NameFieldProps) {
       return;
     }
     setDraft(null);
-    if (!canEdit || draft.trim() === shown) {
+    if (readOnly || draft.trim() === shown) {
       return;
     }
-    save.run({ name: draft });
+    saving.run({ name: draft });
   }
 
-  const retry = retryHandlerOf(save);
+  const retry = retryHandlerOf(saving);
   const onRetry =
     retry === undefined
       ? undefined
@@ -65,16 +84,16 @@ export function NameField({ updateName, value, canEdit }: NameFieldProps) {
 
   return (
     <div className="grid gap-2">
-      <Label htmlFor={inputId}>{profileLabels.name}</Label>
+      <Label htmlFor={inputId}>{label}</Label>
       <Input
         ref={inputRef}
         id={inputId}
         type="text"
         value={draft ?? shown}
-        readOnly={!canEdit}
-        autoComplete="name"
-        // PF-35: el campo corta en el mismo largo que valida el esquema.
-        maxLength={NAME_MAX}
+        readOnly={readOnly}
+        autoComplete={autoComplete}
+        // PF-35, WS-54: el campo corta en el mismo largo que valida el esquema.
+        maxLength={maxLength}
         className="h-9 w-full sm:w-80"
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
@@ -90,10 +109,10 @@ export function NameField({ updateName, value, canEdit }: NameFieldProps) {
           }
         }}
       />
-      {save.failure !== null && (
+      {saving.failure !== null && (
         <ActionFeedback
-          title={failureTitles.name}
-          message={save.failure.message}
+          title={failureTitle}
+          message={saving.failure.message}
           onRetry={onRetry}
         />
       )}
