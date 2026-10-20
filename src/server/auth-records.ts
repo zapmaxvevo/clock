@@ -142,8 +142,9 @@ export async function userEmailOf(tx: Transaction, userId: string): Promise<stri
 }
 
 /**
- * D-E2b-9, ADR 0025: cambia el correo de `userId` por `releasedEmailOf(userId)`,
- * borra sus filas de `account` y sus sesiones (`deleteSessionsOf`), y deja
+ * D-E2b-9, ADR 0025: cambia el correo de `userId`, `previousEmail` tal como lo
+ * leyó quien llama con `userEmailOf`, por `releasedEmailOf(userId)`, borra sus
+ * filas de `account` y sus sesiones (`deleteSessionsOf`), y deja
  * `user.releaseEmail` (`entity: "user"`, `previousValue: { email, accounts: n }`,
  * `nextValue: { email: <liberado> }`) con `actor` como autor. No consulta
  * permisos: la usa `releaseEmail` de `team`, que ya los decidió.
@@ -152,8 +153,8 @@ export async function releaseEmailOf(
   tx: Transaction,
   actor: Actor,
   userId: string,
+  previousEmail: string,
 ): Promise<void> {
-  const previousEmail = await userEmailOf(tx, userId);
   const released = releasedEmailOf(userId);
   await tx.update(user).set({ email: released }).where(eq(user.id, userId));
   const accounts = await deleteAccountsOf(tx, userId);

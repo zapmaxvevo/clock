@@ -63,8 +63,6 @@ export type EntryMembership = {
   readonly id: string;
   readonly role: Role;
   readonly status: MembershipStatus;
-  /** Solo para describir: la vigencia la decide `consumeAccountLink`. */
-  readonly linkValid: boolean;
 };
 
 /** D-E2b-11: la marca vence `ACCOUNT_LINK_TTL_DAYS` días después de pedirse. */
@@ -210,7 +208,7 @@ export const teamRepository = {
 
   /**
    * D-E2b-3: la membresía de `userId` en `workspaceId`, `for no key update`;
-   * `undefined` si no tiene. `linkValid` solo describe.
+   * `undefined` si no tiene. La vigencia de la marca la decide `consumeAccountLink`.
    */
   async lockMembershipOf(
     tx: Transaction,
@@ -222,7 +220,6 @@ export const teamRepository = {
         id: membership.id,
         role: membership.role,
         status: membership.status,
-        linkValid,
       })
       .from(membership)
       .where(and(eq(membership.workspaceId, workspaceId), eq(membership.userId, userId)))
@@ -231,15 +228,14 @@ export const teamRepository = {
   },
 
   /**
-   * D-E2b-3: limpia la marca de `membershipId` si está vigente en el momento de
-   * escribir. `clock_timestamp()` y no `now()`: `now()` es la hora de inicio de
+   * D-E2b-3, D-E2b-11: limpia la marca de `membershipId` si está vigente en el
+   * momento de escribir, con `ACCOUNT_LINK_TTL_DAYS` como `linkValid`. `clock_timestamp()` y no `now()`: `now()` es la hora de inicio de
    * la transacción, y una marca que vence mientras el ingreso espera el bloqueo
    * se usaría igual. Devuelve quién la pidió, o `undefined` si no limpió nada.
    */
   async consumeAccountLink(
     tx: Transaction,
     membershipId: string,
-    ttlDays: number,
   ): Promise<{ readonly requestedById: string | null } | undefined> {
     // `returning` da la fila nueva; el `from` con la misma fila deja leer la anterior.
     const result = await tx.execute<{ requested_by_id: string | null }>(sql`
@@ -251,7 +247,7 @@ export const teamRepository = {
         where id = ${membershipId}
       ) previous
       where ${membership.id} = previous.id
-        and ${membership.accountLinkRequestedAt} > clock_timestamp() - make_interval(days => ${ttlDays})
+        and ${membership.accountLinkRequestedAt} > clock_timestamp() - make_interval(days => ${ACCOUNT_LINK_TTL_DAYS})
       returning previous.requested_by_id
     `);
     const row = result.rows.at(0);

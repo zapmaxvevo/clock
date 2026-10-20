@@ -159,15 +159,15 @@ const teamMember = z.object({
   status: z.enum(MEMBER_STATUSES),
   /**
    * D-E2-7: si tiene una fila de `account`. `reactivate` en una inactiva con
-   * cuenta, o sin cuenta si `accountLockOf` deja vincularla (D-E2b-5); nunca en
-   * una con el correo liberado.
+   * cuenta, o sin cuenta si vincularla no está fuera del alcance de quien mira
+   * (`isAccountActionLocked`, D-E2b-5); nunca en una con el correo liberado.
    */
   hasAccount: z.boolean(),
   /**
    * D-E2-3, D-E2-4: `deactivate` en una activa, si `can()` y las reglas lo
-   * dejan; `reactivate` en una inactiva con cuenta, o sin cuenta si
-   * `accountLockOf` deja vincularla (D-E2b-5); nunca en una con el correo
-   * liberado. `null` sin control.
+   * dejan; `reactivate` en una inactiva con cuenta, o sin cuenta si vincularla
+   * no está fuera del alcance de quien mira (`isAccountActionLocked`, D-E2b-5);
+   * nunca en una con el correo liberado. `null` sin control.
    */
   statusChange: z.enum(["deactivate", "reactivate"]).nullable(),
   /** D-E2b-2, D-E2b-11: la marca, con su pedido, su vencimiento y si ya venció; `null` sin marca. */
@@ -176,8 +176,9 @@ const teamMember = z.object({
     .nullable(),
   /**
    * D-E2b-4, D-E2b-6: lo que el menú ofrece sobre la vinculación de una activa,
-   * si `accountLockOf` deja: `["request"]` sin marca, `["cancel"]` con una
-   * vigente, `["request", "cancel"]` con una vencida; `[]` sin control.
+   * si `isAccountActionLocked` no la deja fuera de alcance: `["request"]` sin
+   * marca, `["cancel"]` con una vigente, `["request", "cancel"]` con una vencida;
+   * `[]` sin control.
    */
   linkActions: z.array(z.enum(LINK_ACTIONS)),
   /** D-E2b-8: si pedir la vinculación registra el correo como externo. */

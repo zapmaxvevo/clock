@@ -2064,7 +2064,7 @@ describe("claimAccountLink y consumeAccountLink (D-E2b-3)", () => {
     const before = await markOf(target.membershipId);
 
     const result = await db.transaction((tx) =>
-      teamRepository.consumeAccountLink(tx, target.membershipId, 7),
+      teamRepository.consumeAccountLink(tx, target.membershipId),
     );
 
     expect(result).toEqual(consumed ? { requestedById: seeded.ownerId } : undefined);
@@ -2078,7 +2078,7 @@ describe("claimAccountLink y consumeAccountLink (D-E2b-3)", () => {
     const target = await seedPerson(seeded.workspaceId, "member");
 
     const result = await db.transaction((tx) =>
-      teamRepository.consumeAccountLink(tx, target.membershipId, 7),
+      teamRepository.consumeAccountLink(tx, target.membershipId),
     );
 
     expect(result).toBeUndefined();

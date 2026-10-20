@@ -1,4 +1,4 @@
-import { isCompanyEmail, isReleasedEmail } from "@/lib/email";
+import { isReleasedEmail } from "@/lib/email";
 import { compareNames } from "@/lib/text";
 import { ACCOUNT_LINK_TTL_DAYS } from "@/server/access";
 import { DomainError } from "@/server/errors";
@@ -10,7 +10,6 @@ import {
   userEmailOf,
 } from "@/server/auth-records";
 import { db, type Transaction } from "@/server/db";
-import { env } from "@/server/env";
 import {
   can,
   type Actor,
@@ -19,7 +18,11 @@ import {
 } from "@/server/permissions";
 import { displayNameOf } from "@/modules/profile/service";
 import { stopRunningTimerOf } from "@/modules/time-entry/service";
-import { entryWorkspaceIdOf, registerExternalMember } from "@/modules/workspace/service";
+import {
+  entryWorkspaceIdOf,
+  registerExternalMember,
+  registersAsExternal,
+} from "@/modules/workspace/service";
 
 import { teamRepository, type LockedMembership, type TeamMemberRow } from "./repository";
 import {
@@ -127,7 +130,7 @@ const STATUS_LOCK_ERROR: Record<StatusLock, () => TeamError> = {
   adminOwnerOnly: () => new TeamError("forbidden", teamMessages.adminStatusOwnerOnly),
 };
 
-/** Las dos acciones que pasan por la frontera de `accountLockOf`. */
+/** Las dos acciones que pasan por la frontera de `isAccountActionLocked`. */
 type AccountAction = "team.account.link" | "team.email.release";
 
 /**
@@ -136,7 +139,7 @@ type AccountAction = "team.account.link" | "team.email.release";
  * sobre una fila `admin`. La comparten la vista, con el `Actor` de la sesión, y
  * las mutaciones, con el releído bajo el bloqueo.
  */
-function accountLockOf(
+function isAccountActionLocked(
   actor: Actor,
   row: { readonly workspaceId: string; readonly userId: string; readonly role: Role },
   action: AccountAction,
@@ -156,8 +159,8 @@ function rowResource(actor: Actor, row: TeamMemberRow) {
 /**
  * D-E2-3, D-E2-7, D-E2b-5: los pasos 4 a 6 y 8 a 9 de `changeStatus` sobre el
  * `Actor` de la sesión; el 3, `team.manage`, ya lo decidió `getTeamView`. Una
- * inactiva con el correo liberado no se reactiva; una sin cuenta, si
- * `accountLockOf` deja vincularla.
+ * inactiva con el correo liberado no se reactiva; una sin cuenta, si vincularla
+ * no está fuera de alcance (`isAccountActionLocked`).
  */
 function statusChangeOf(actor: Actor, row: TeamMemberRow): TeamMember["statusChange"] {
   if (statusLockOf(actor, rowResource(actor, row)) !== null) {
@@ -172,7 +175,7 @@ function statusChangeOf(actor: Actor, row: TeamMemberRow): TeamMember["statusCha
   if (row.hasAccount) {
     return "reactivate";
   }
-  return accountLockOf(actor, rowResource(actor, row), "team.account.link")
+  return isAccountActionLocked(actor, rowResource(actor, row), "team.account.link")
     ? null
     : "reactivate";
 }
@@ -196,7 +199,7 @@ function linkOf(row: TeamMemberRow): TeamMember["link"] {
 function linkActionsOf(actor: Actor, row: TeamMemberRow): LinkAction[] {
   if (
     row.status !== "active" ||
-    accountLockOf(actor, rowResource(actor, row), "team.account.link")
+    isAccountActionLocked(actor, rowResource(actor, row), "team.account.link")
   ) {
     return [];
   }
@@ -207,18 +210,12 @@ function linkActionsOf(actor: Actor, row: TeamMemberRow): LinkAction[] {
 }
 
 /**
- * D-E2b-8: si pedir la vinculación registra el correo como externo: fuera de los
- * dominios y sin una invitación `pending` o `accepted`. Una fila liberada no se
- * vincula, así que no registra.
+ * D-E2b-8: si pedir la vinculación registra el correo como externo, con la regla
+ * de `workspace`. Una fila liberada no se vincula, así que no registra.
  */
 function registersExternalOf(row: TeamMemberRow): boolean {
-  if (isReleasedEmail(row.email)) {
-    return false;
-  }
   return (
-    !isCompanyEmail(row.email, env().GOOGLE_WORKSPACE_DOMAINS) &&
-    row.invitationStatus !== "pending" &&
-    row.invitationStatus !== "accepted"
+    !isReleasedEmail(row.email) && registersAsExternal(row.email, row.invitationStatus)
   );
 }
 
@@ -227,7 +224,7 @@ function releaseOf(actor: Actor, row: TeamMemberRow): boolean {
   return (
     row.status === "inactive" &&
     !isReleasedEmail(row.email) &&
-    !accountLockOf(actor, rowResource(actor, row), "team.email.release")
+    !isAccountActionLocked(actor, rowResource(actor, row), "team.email.release")
   );
 }
 
@@ -488,7 +485,7 @@ export async function changeStatus(
     // 9. D-E2b-5: sin `account` no podría volver a entrar; reactivarla es además
     // pedir la vinculación, con la frontera de vincular.
     const withoutAccount = !(await hasAccount(tx, target.userId));
-    if (withoutAccount && accountLockOf(fresh, target, "team.account.link")) {
+    if (withoutAccount && isAccountActionLocked(fresh, target, "team.account.link")) {
       throw new TeamError("forbidden", teamMessages.linkAdminOwnerOnly);
     }
     // 10.
@@ -540,7 +537,7 @@ export async function setAccountLink(
   return db.transaction(async (tx) => {
     const { target, fresh } = await lockAccountTarget(tx, actor, input.membershipId);
     // 4. D-E2b-4.
-    if (accountLockOf(fresh, target, "team.account.link")) {
+    if (isAccountActionLocked(fresh, target, "team.account.link")) {
       throw new TeamError("forbidden", teamMessages.linkAdminOwnerOnly);
     }
     // 5. Cancelar: idempotente sin marca (EQ-97).
@@ -577,11 +574,12 @@ export async function releaseEmail(
     const { target, fresh } = await lockAccountTarget(tx, actor, input.membershipId);
     const result = { membershipId: target.id };
     // 3. D-E2b-4: la frontera va antes que el estado.
-    if (accountLockOf(fresh, target, "team.email.release")) {
+    if (isAccountActionLocked(fresh, target, "team.email.release")) {
       throw new TeamError("forbidden", teamMessages.releaseAdminOwnerOnly);
     }
     // 4. Idempotente (EQ-97).
-    if (isReleasedEmail(await userEmailOf(tx, target.userId))) {
+    const email = await userEmailOf(tx, target.userId);
+    if (isReleasedEmail(email)) {
       return result;
     }
     // 5.
@@ -589,7 +587,7 @@ export async function releaseEmail(
       throw new TeamError("active_membership", teamMessages.releaseActive);
     }
     // 6.
-    await releaseEmailOf(tx, actor, target.userId);
+    await releaseEmailOf(tx, actor, target.userId, email);
     return result;
   });
 }
@@ -632,11 +630,7 @@ export async function claimAccountLink(
   if (own.status !== "active") {
     return { kind: "inactive" };
   }
-  const consumed = await teamRepository.consumeAccountLink(
-    tx,
-    own.id,
-    ACCOUNT_LINK_TTL_DAYS,
-  );
+  const consumed = await teamRepository.consumeAccountLink(tx, own.id);
   if (consumed === undefined) {
     return { kind: "none" };
   }

@@ -7,6 +7,7 @@ import {
 } from "@/server/access";
 import { recordAudit, recordAudits, type AuditEntry } from "@/server/audit";
 import { db, type Transaction } from "@/server/db";
+import type { InvitationStatus } from "@/server/db/schema";
 import { env } from "@/server/env";
 import { can, type Actor, type MembershipStatus, type Role } from "@/server/permissions";
 import { parseWeekStart, type WeekStart } from "@/server/time";
@@ -401,9 +402,26 @@ export async function entryWorkspaceIdOf(tx: Transaction): Promise<string | null
 }
 
 /**
+ * D-E2b-8: si `registerExternalMember` registraría `email`, con el estado de la
+ * invitación de su correo normalizado, o `null` sin invitación: fuera de los
+ * dominios y sin una `pending` o `accepted`. Pura: la usan `registerExternalMember`
+ * y la vista de `team`, que avisa antes de pedir la vinculación (ADR 0010).
+ */
+export function registersAsExternal(
+  email: string,
+  invitationStatus: InvitationStatus | null,
+): boolean {
+  return (
+    !isCompanyEmail(email, env().GOOGLE_WORKSPACE_DOMAINS) &&
+    invitationStatus !== "pending" &&
+    invitationStatus !== "accepted"
+  );
+}
+
+/**
  * D-E2b-8, ADR 0025: deja `email` registrado como externo, con una invitación
- * `accepted`, si es de fuera de los dominios y no tiene una `pending` o
- * `accepted`: inserta la fila, o pasa una `revoked` a `accepted`, y deja
+ * `accepted`, si `registersAsExternal` lo decide con la invitación bloqueada:
+ * inserta la fila, o pasa una `revoked` a `accepted`, y deja
  * `invitation.register` con `actor`. Si no, no escribe. No se deshace al cancelar
  * la vinculación. No consulta permisos: la usa `team` al pedir una vinculación.
  * Devuelve si escribió.
@@ -414,7 +432,8 @@ export async function registerExternalMember(
   email: string,
 ): Promise<boolean> {
   const normalized = normalizeEmail(email);
-  if (isCompanyEmail(normalized, env().GOOGLE_WORKSPACE_DOMAINS)) {
+  // Sin bloquear: uno de los dominios no registra con ninguna invitación.
+  if (!registersAsExternal(normalized, null)) {
     return false;
   }
   const [current] = await workspaceRepository.lockInvitationsByEmail(
@@ -422,7 +441,7 @@ export async function registerExternalMember(
     actor.workspaceId,
     [normalized],
   );
-  if (current?.status === "pending" || current?.status === "accepted") {
+  if (!registersAsExternal(normalized, current?.status ?? null)) {
     return false;
   }
   const entry = {

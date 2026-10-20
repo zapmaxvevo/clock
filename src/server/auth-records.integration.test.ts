@@ -266,7 +266,7 @@ describe("releaseEmailOf (D-E2b-9)", () => {
     const otherSession = await seedSession(other);
     const memberships = await db.select().from(membership).orderBy(membership.id);
 
-    await db.transaction((tx) => releaseEmailOf(tx, actor, person));
+    await db.transaction((tx) => releaseEmailOf(tx, actor, person, "ana@empresa.com"));
 
     const [released] = await db.select().from(user).where(eq(user.id, person));
     expect(released?.email).toBe(releasedEmailOf(person));
