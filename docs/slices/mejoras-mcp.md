@@ -1,40 +1,34 @@
 # Mejora 3: un servidor MCP para cargar horas
 
 Contrato del slice de la mejora 3 de
-[`mejoras-pedidas.md`](../mejoras-pedidas.md). **Un asistente —Claude u otro
-cliente MCP— ve, carga, edita y borra las horas de una persona con la cuenta de
-esa persona**: desde claude.ai como conector remoto (web, escritorio, móvil) y
-desde Claude Code. La persona conecta el asistente pegando una dirección, entra
-con Google como siempre, autoriza en una pantalla de Clock y, desde su perfil,
-ve y desconecta lo que conectó. Cada herramienta pasa por los mismos services,
-el mismo `can()` y el mismo audit log que la pantalla.
+[`mejoras-pedidas.md`](../mejoras-pedidas.md). **Un asistente ve, carga, edita
+y borra las horas de una persona con la cuenta de esa persona**: los de
+Anthropic —claude.ai como conector remoto (web, escritorio, móvil) y Claude
+Code— y los de OpenAI —ChatGPT como conector remoto y los clientes MCP de
+OpenAI que autorizan con OAuth, como Codex—. La persona conecta el asistente
+pegando una dirección, entra con Google como siempre, autoriza en una pantalla
+de Clock y, desde su perfil, ve y desconecta lo que conectó. Cada herramienta
+pasa por los mismos services, el mismo `can()` y el mismo audit log que la
+pantalla.
 
-- **Fuente:** el pedido del usuario del 2026-10-19 (tres decisiones: OAuth según
-  la especificación de autorización de MCP, uso desde claude.ai y desde Claude
-  Code, y la autorización con el login de Google de Clock). **No es paridad con
+- **Fuente:** el pedido del usuario del 2026-10-19 (OAuth según la
+  especificación de autorización de MCP, la autorización con el login de Google
+  de Clock) y sus decisiones del mismo día sobre §11. **No es paridad con
   Clockify**: no pasa por `parity-analyst` y no tiene identificadores de
   paridad. Los textos de interfaz son propios.
 - **Lugar en el plan:** fuera del mapa de la fase 2, como las otras mejoras
-  pedidas. Depende de E2 (en `main` desde `27774d6`): la regla de ingreso exige
-  una membresía activa y desactivar borra las sesiones. Corre en paralelo con
-  E2b (§1, «Coordinación con E2b»).
+  pedidas. Depende de E2 (en `main` desde `27774d6`) y de **la actualización de
+  Better Auth a 1.7.10**, que va sola, mergeada y desplegada antes (§0). Corre en
+  paralelo con E2b (§1, «Coordinación con E2b»).
 - **Revisión:** `architecture-reviewer` aprobó con cambios dos veces el
   2026-10-19, después de bajar y leer `@better-auth/oauth-provider` 1.7.7,
-  1.7.10 y 1.7.11. Los cambios de las dos rondas están aplicados. La primera:
-  la versión fijada, el token JWT, el corte al autorizar, la continuación del
-  login, el interruptor con el plugin siempre cargado, el alcance del 401, sin
-  la regla de clientes públicos, las opciones del plugin y los menores. La
-  segunda: `validateRedirectUri` sobre la coincidencia del plugin, `jwt` sin la
-  cabecera de sesión, `rotate-keys` cerrado, la respuesta JSON del
-  consentimiento, el `resource` del gancho, el gancho en la retoma, los
-  `grantTypes`, `typ` en la verificación y la renovación sin transacción.
-  Pendiente de `security-reviewer` antes del merge.
+  1.7.10 y 1.7.11. Los cambios de las dos rondas están aplicados. Pendiente de
+  `security-reviewer` antes del merge.
 - **Decisiones de arquitectura:**
   - **[ADR 0026](../adr/0026-el-servidor-mcp-autoriza-con-oauth-de-better-auth-y-atiende-sin-estado.md),
-    propuesto**: quién emite los tokens y con qué forma, cómo un token se vuelve
-    un actor, el corte al autorizar, el transporte sin estado, la columna del
-    audit log y el interruptor. **El slice no arranca hasta que el usuario lo
-    acepte.**
+    aceptado el 2026-10-19 por el usuario**: quién emite los tokens y con qué
+    forma, cómo un token se vuelve un actor, el corte al autorizar, el
+    transporte sin estado, la columna del audit log y el interruptor.
   - [ADR 0025](../adr/0025-un-modulo-escribe-en-otro-por-su-service.md): las
     tablas del plugin son de Better Auth y las escribe `src/server/` con la
     transacción de quien llama (D-MCP-5); desactivar revoca por una función de
@@ -50,11 +44,17 @@ el mismo `can()` y el mismo audit log que la pantalla.
     D-MCP-8).
 
 Decisiones del usuario que el contrato da por tomadas (2026-10-19): OAuth y no
-tokens personales; claude.ai y Claude Code como clientes que tienen que
-funcionar; cada persona autoriza con su login de Google de Clock. Decisiones del
-team-lead sobre la revisión (2026-10-19): Better Auth fijo en 1.7.10, token JWT,
-el plugin cargado siempre, sin la regla de clientes públicos. Lo que queda para
-el usuario está en §11.
+tokens personales; cada persona autoriza con su login de Google de Clock; el
+ADR 0026; los clientes de Anthropic y de OpenAI; y las demás de §11, todas
+decididas. Decisiones del team-lead sobre la revisión (2026-10-19): Better Auth
+fijo en 1.7.10, en un cambio aparte y previo; token JWT; el plugin cargado
+siempre; sin la regla de clientes públicos.
+
+**Nada del slice depende de que el cliente sea uno en particular.** La regla de
+acceso, las herramientas, los textos de las pantallas, los límites y las
+anotaciones son los mismos para cualquiera. Lo único que cambia por cliente es
+la lista de redirecciones y de `Origin` (D-MCP-2, D-MCP-7), y cómo se registra
+uno que no lo hace solo (D-MCP-2).
 
 ## Decisiones del contrato
 
@@ -64,16 +64,11 @@ el plugin `jwt` (ADR 0026, decisión 1).**
 - **La versión.** En 1.7.7, un registro sin `application_type` se toma como
   `web` y rechaza las redirecciones `http` de loopback: Claude Code no se
   registra. `clientRegistrationDefaultApplicationType: "infer"` existe desde
-  1.7.8 (en 1.7.10, `authorize-dkOG8GqZ.mjs:1718-1722`). **Se fija exacto, sin
-  `^`, en 1.7.10** (publicada el 2026-10-15): `better-auth`,
-  `@better-auth/core` y `@better-auth/oauth-provider` en 1.7.10, y los pares
-  exactos de esa versión, `better-call` 1.4.2 y `@better-auth/utils` 0.5.0. No
-  1.7.11, que salió hoy.
-- **La actualización es un commit propio, antes de cualquier código del MCP**
-  (§1, «La actualización de Better Auth»): fija las versiones, corre
-  `npm run auth:schema` sin el plugin y vuelve a probar el ingreso entero. El
-  diff de `auth-schema.ts` de ese commit no puede tocar `user`, `session`,
-  `account` ni `verification`.
+  1.7.8 (en 1.7.10, `authorize-dkOG8GqZ.mjs:1718-1722`). Better Auth se fija
+  exacto, sin `^`, en 1.7.10, con `better-call` 1.4.2 y `@better-auth/utils`
+  0.5.0. **La actualización no es parte de este slice**: va sola y primero
+  (§0). Este slice arranca sobre `main` con 1.7.10 fijado y suma
+  `@better-auth/oauth-provider` 1.7.10 exacto, sin `^`.
 - **`oauthProvider` a mano y no `@better-auth/mcp`.** `mcp()` arma el mismo
   plugin con `resources`, los metadatos del recurso y
   `refreshTokenReuseInterval: 30`. Clock necesita además la validación de
@@ -107,6 +102,8 @@ el plugin `jwt` (ADR 0026, decisión 1).**
   que es la que corresponde— y en `/.well-known/oauth-authorization-server`, con
   el cuerpo de `oauthProviderAuthServerMetadata(auth)`. Next 16 sirve rutas en
   `.well-known` (`node_modules/next/dist/docs/01-app/02-guides/backend-for-frontend.md:113-118`).
+  Si V-7 muestra que ChatGPT exige un campo que no publicamos (por ejemplo,
+  `/.well-known/openid-configuration`), se suma ahí.
 - **Dos alcances**: `clock` —«ver, cargar, editar y borrar tus horas, y leer tus
   proyectos, tareas y etiquetas»— y `offline_access`, que el plugin exige para
   emitir el refresh token. **El 401 pide los dos** (`scope="clock
@@ -123,18 +120,24 @@ offline_access"`): un cliente que autoriza con los alcances del 401 recibe
 - **Registro dinámico abierto** (`allowDynamicClientRegistration` y
   `allowUnauthenticatedClientRegistration`), con
   `clientRegistrationDefaultApplicationType: "infer"`. La especificación lo
-  prevé así para que claude.ai y Claude Code se registren solos. El plugin
-  rechaza `skip_consent` en un registro dinámico. **Se aceptan clientes
-  públicos y confidenciales por igual**: la amenaza es el destino de la
-  redirección, que cubre la lista.
+  prevé así para que los asistentes se registren solos. El plugin rechaza
+  `skip_consent` en un registro dinámico. **Se aceptan clientes públicos y
+  confidenciales por igual**: la amenaza es el destino de la redirección, que
+  cubre la lista.
 - **Toda redirección tiene que estar en la lista**, al registrar y al
   autorizar:
-  - las de `MCP_REDIRECT_URIS`, comparadas exactas; por omisión,
-    `https://claude.ai/api/mcp/auth_callback` y
-    `https://claude.com/api/mcp/auth_callback` (V-7);
+  - las de `MCP_REDIRECT_URIS`, comparadas exactas. Por omisión:
+    - `https://claude.ai/api/mcp/auth_callback` (claude.ai);
+    - `https://claude.com/api/mcp/auth_callback` (claude.ai, dominio nuevo);
+    - `https://chatgpt.com/connector_platform_oauth_redirect` (conectores de
+      ChatGPT).
+      **Las tres son a confirmar** en V-7, contra la documentación de cada
+      proveedor y contra el registro real en el preview; ninguna se mergea sin
+      esa confirmación;
   - cualquier dirección de loopback: esquema `http`, host `localhost` o
     `127.0.0.1`, cualquier puerto y cualquier camino (RFC 8252, §7.3). Es la de
-    Claude Code.
+    Claude Code y la de los clientes de línea de comandos de OpenAI, como Codex
+    (V-7 lo confirma).
 
   **Al registrar**, el gancho `hooks.before` del camino de registro rechaza con
   400 `invalid_redirect_uri` un cuerpo con alguna dirección fuera de la lista,
@@ -145,10 +148,21 @@ env().MCP_REDIRECT_URIS)`: exige **las dos cosas**, que la dirección sea una
   por su cuenta) y que siga en la lista. Devolver solo `isAllowedRedirect`
   aceptaría una dirección permitida que el cliente nunca registró. Así, achicar
   la lista corta también a los clientes ya registrados. **Por qué la lista**:
-  sin ella, cualquiera registra un cliente llamado «Claude» con su propio
-  destino y le manda a una persona de Clock un enlace para autorizarlo; el
-  código iría a ese destino.
+  sin ella, cualquiera registra un cliente con el nombre de un asistente
+  conocido y su propio destino, y le manda a una persona de Clock un enlace
+  para autorizarlo; el código iría a ese destino.
 
+- **Un cliente que no se registra solo** —si V-7 muestra que ChatGPT, u otro,
+  necesita un cliente creado de antemano o confidencial— entra **sin abrir el
+  registro**: `scripts/oauth-client/main.ts`, que corre el usuario con
+  `--dry-run` y `--apply` como los demás scripts, crea el cliente del lado del
+  servidor con la API del plugin (`auth.api`, donde `disabledPaths` no aplica,
+  como con `getJwks`), con un nombre y redirecciones que tienen que pasar
+  `isAllowedRedirect`, y muestra una sola vez el `client_id` y, si es
+  confidencial, el secreto, para pegarlos en la configuración del conector. El
+  cliente pasa por la misma autorización, el mismo consentimiento y el mismo
+  `validateRedirectUri` que cualquier otro. Se escribe solo si V-7 lo pide; el
+  contrato no lo da por necesario.
 - **Quedan abiertos** `/oauth2/authorize`, `/oauth2/token`, `/oauth2/register`,
   `/oauth2/consent` y `/oauth2/revoke`, más `/jwks` del plugin `jwt`, que
   publica las claves públicas que anuncian los metadatos.
@@ -193,7 +207,7 @@ plugin `jwt` (sale JWT porque toda autorización lleva `resource`,
   pasados los 14 días de la sesión sin abrir Clock cada token nuevo nacería
   inactivo y el asistente dejaría de andar sin motivo visible. El token de
   acceso y el refresh siguen sirviendo después de cerrar la sesión web y con la
-  sesión vencida (criterio 10).
+  sesión vencida (criterio 10; decisión del usuario, §11).
 - **El paso 4 es el corte de revocación**: un JWT no se puede anular antes de
   que venza, y desconectar desde `/perfil` o desactivar borra el
   consentimiento; el pedido siguiente no pasa. Es una lectura por índice.
@@ -217,9 +231,10 @@ oauthClientId: azp }` (D-MCP-12). Mismo `userId`, mismo `workspaceId` (el de
   la base, nunca de la entrada), mismo rol y estado, y la zona horaria y el
   primer día de la semana del perfil, por `trackerWorkspaceOf(context)`.
 - **Por qué un token nunca da más que una sesión**: decide lo mismo con los
-  mismos hechos en cada pedido, y las herramientas son operaciones que la
-  pantalla ya ofrece, por el mismo `can()` y el mismo service. No hay ninguna
-  herramienta sobre datos de otra persona ni de administración.
+  mismos hechos en cada pedido, para cualquier cliente, y las herramientas son
+  operaciones que la pantalla ya ofrece, por el mismo `can()` y el mismo
+  service. No hay ninguna herramienta sobre datos de otra persona ni de
+  administración.
 
 **D-MCP-4 — Autorizar exige lo mismo que el pedido (ADR 0026, decisión 5).**
 `/oauth2/authorize` y `/oauth2/consent` solo piden una sesión de Better Auth, y
@@ -240,7 +255,9 @@ sobre esos dos caminos, en este orden:
   **después** de validar la redirección contra el registro del cliente y la
   lista (`validateRedirectUri`). El gancho no redirige nunca a un
   `redirect_uri`: uno que solo pasó la lista, sin la coincidencia con el
-  registro, no es un destino seguro para un error.
+  registro, no es un destino seguro para un error. Si V-7 muestra que un cliente
+  de la lista no manda `resource`, el gancho lo completa con `mcpResourceUrl()`
+  en `context.query` en lugar de responder 400.
 - **Cada motivo es el de `/login`**: un externo revocado o un correo fuera de
   los dominios sin invitación ven `sin_invitacion`; una persona sin contexto,
   `sin_invitacion` (D-E1b-5). Una membresía inactiva con sesión viva —solo el
@@ -260,7 +277,8 @@ sobre esos dos caminos, en este orden:
   `better-auth/api` y decide con `readUserContext` de
   `src/server/user-context.ts`, que tampoco lo importa (§4.6).
 
-**D-MCP-5 — La vida de los tokens y la revocación.**
+**D-MCP-5 — La vida de los tokens y la revocación (decidido por el usuario,
+§11).**
 
 - **Token de acceso: 1 hora. Refresh token: 30 días, con rotación** —cada uso
   emite uno nuevo y el plugin invalida la familia si uno viejo se reusa—, con
@@ -304,7 +322,7 @@ borró alguno, deja `mcp.revokeAll` con la cantidad de clientes.
   que la desactivación borró los de la persona y confirmó, queda una fila de
   refresh sin consentimiento. **Es inocuo**: el token de acceso que sale con
   ella no pasa el paso 4 de D-MCP-3, y la siguiente renovación tampoco sirve
-  para nada. La consulta de §6.6 la muestra; no hace falta borrarla.
+  para nada. La consulta de §6.5 la muestra; no hace falta borrarla.
 - **Reactivar no devuelve nada** (EQ-47 sigue igual): la persona vuelve a
   conectar su asistente.
 - **E6** (quitar del equipo) y **E2b** (reemplazar una cuenta, liberar un
@@ -323,14 +341,17 @@ borró alguno, deja `mcp.revokeAll` con la cantidad de clientes.
   `maxRequestBodySize: 65536`, `connect` y `handleRequest(request, { authInfo })`.
   No queda nada en memoria entre pedidos.
 - **`GET` y `DELETE` responden 405** con `Allow: POST`: no hay flujo SSE del
-  servidor ni sesiones que cerrar.
+  servidor ni sesiones que cerrar. Si V-7 muestra que un cliente de la lista
+  exige un flujo SSE o sesiones, se para y vuelve al arquitecto.
 - **`Origin`**: si el pedido lo trae y no es el de `BETTER_AUTH_URL` ni uno de
-  `MCP_ALLOWED_ORIGINS` (por omisión `https://claude.ai,https://claude.com`),
-  403 (protección contra DNS rebinding que la especificación exige). Sin
-  `Origin`, como llegan los pedidos de servidor a servidor, pasa (V-7).
-- **Sin CORS en `/api/mcp`**: claude.ai llama desde sus servidores y Claude Code
-  desde un proceso local. Los metadatos de §4.13 sí llevan
-  `Access-Control-Allow-Origin: *`: son públicos.
+  `MCP_ALLOWED_ORIGINS` —por omisión `https://claude.ai`, `https://claude.com` y
+  `https://chatgpt.com`, a confirmar en V-7—, 403 (protección contra DNS
+  rebinding que la especificación exige). Sin `Origin`, como llegan los pedidos
+  de servidor a servidor, pasa.
+- **Sin CORS en `/api/mcp`**: los conectores remotos llaman desde los servidores
+  de su proveedor y los clientes de línea de comandos desde un proceso local.
+  Los metadatos de §4.13 sí llevan `Access-Control-Allow-Origin: *`: son
+  públicos.
 - **Sin revalidación**: las páginas de Clock leen la sesión en cada pedido y no
   hay caché del servidor que invalidar. Una pestaña abierta ve los cambios del
   asistente al navegar o recargar, como los de otro dispositivo.
@@ -357,11 +378,16 @@ qué es «hoy» ni en qué zona escribe las horas.
   `handle`, y la herramienta dentro de `runTool`. **Alternativa descartada**:
   que la herramienta repita las tres líneas de la action; es la copia que se
   desincroniza.
+- **Borrar entra**, por decisión del usuario (§11), con `destructiveHint`. Las
+  anotaciones son del protocolo y no de un cliente: cada uno decide qué hace con
+  ellas, y uno que las respeta pide confirmación antes de borrar. V-7 anota qué
+  hacen claude.ai y ChatGPT; Clock no depende de eso, porque la constancia
+  guarda la fila entera (TT-61).
 - **Las que no entran** (§12): continuar, duplicar, descartar el timer, las
   masivas, la planilla, crear proyectos o etiquetas y todo lo que no es de la
   propia persona.
-- **Las descripciones van en español**, como los textos de interfaz, y dicen lo
-  que el asistente necesita: que las horas son de pared en la zona de
+- **Las descripciones van en español**, como los textos de interfaz, y no
+  nombran a ningún asistente: dicen que las horas son de pared en la zona de
   `get_context`, que `start_timer` cierra el timer que corría, que un `id`
   repetido no crea dos veces, que `delete_entry` no se deshace.
 
@@ -430,7 +456,8 @@ proyectos, tareas y etiquetas, y cada service ya los resuelve así:
   cae junto con el cambio); un contexto por `AsyncLocalStorage` que lea
   `recordAudit` (estado de módulo que la convención no admite).
 
-**D-MCP-13 — Los límites.**
+**D-MCP-13 — Los límites.** Son por persona y por IP, nunca por cliente: valen
+igual para cualquier asistente.
 
 | Límite                     | Valor          | Dónde                                       | Respuesta                                     |
 | -------------------------- | -------------- | ------------------------------------------- | --------------------------------------------- |
@@ -445,13 +472,16 @@ proyectos, tareas y etiquetas, y cada service ya los resuelve así:
   `mcp_call_window` (§2), con un `insert … on conflict do update` que suma o
   reinicia según el minuto de `now()`. Una sentencia por pedido; sin estado en
   memoria. Cuenta todo `POST` autenticado (`initialize` y `tools/list`
-  incluidos): cualquier asistente queda lejos de 120 por minuto.
+  incluidos): cualquier asistente queda lejos de 120 por minuto, también una
+  persona con dos conectados a la vez.
 - **El del registro** guarda en memoria por instancia, como el limitador de
   Better Auth (`node_modules/better-auth/dist/api/rate-limiter/index.mjs:213-231`):
-  en Vercel es un freno parcial. Pasarlo a la base cambia el límite de todos los
-  endpoints de Better Auth, también el del ingreso, que con la oficina detrás de
-  una sola IP dejaría afuera a quien entre cuarto en diez segundos. No se
-  cambia; el riesgo está en §10.
+  en Vercel es un freno parcial. Los registros de un conector remoto llegan
+  desde las IP de su proveedor, compartidas por todos sus usuarios: 5 cada 60 s
+  por instancia alcanza para una empresa que conecta de a uno. Pasarlo a la base
+  cambia el límite de todos los endpoints de Better Auth, también el del
+  ingreso, que con la oficina detrás de una sola IP dejaría afuera a quien entre
+  cuarto en diez segundos. No se cambia; el riesgo está en §10.
 
 **D-MCP-14 — El interruptor `MCP_ENABLED`, con el plugin siempre cargado
 (ADR 0026, decisión 8).** Por omisión `false`.
@@ -472,7 +502,7 @@ proyectos, tareas y etiquetas, y cada service ya los resuelve así:
   `/oauth2/client/rotate-keys`, vale encendido y apagado.
 - **Las tablas están igual**, y las autorizaciones vuelven a servir al
   encenderlo. Producción se despliega apagada y se enciende después de la
-  prueba en un preview (§6).
+  prueba en un preview (§6; decisión del usuario, §11).
 
 **D-MCP-15 — El consentimiento es una página de Clock, y el login lo retoma el
 plugin.**
@@ -482,7 +512,9 @@ plugin.**
   Recibe la consulta firmada de la autorización (`client_id`, `scope`,
   `redirect_uri`, `state`, `code_challenge`, `resource`, `exp`, `ba_iat`,
   `ba_param`, `sig`), la verifica con `verifyOAuthQueryParams` y su vencimiento,
-  y muestra quién pide, qué y adónde vuelve (§5.1).
+  y muestra quién pide, qué y adónde vuelve (§5.1). Ningún texto nombra a un
+  asistente: el nombre es el que declaró el cliente y el destino, el host del
+  `redirect_uri` firmado.
 - **Aceptar o cancelar** es una action del módulo `mcp` que hace
   `POST /oauth2/consent { accept, oauth_query }` con la sesión del pedido **y
   `accept: application/json`**: así el plugin responde `{ redirect: true, url }`
@@ -506,34 +538,69 @@ https://accounts.google.com` (`next.config.ts:17`), y un navegador la aplica
 
 ## 0. Precondición de arranque
 
-- **`main` en `27774d6`**, con E2 mergeado. Las citas de abajo son de ese árbol.
-  El worktree `clock-mcp` no tiene `node_modules`: las citas de paquetes son del
-  checkout principal, con `better-auth` 1.7.7 y `@modelcontextprotocol/sdk`
-  1.32.0, y las del plugin y de Better Auth 1.7.10, de la lectura de
-  `architecture-reviewer`.
-- **El ADR 0026, aceptado** por el usuario.
-- **Las preguntas de §11**, respondidas.
-- **La actualización de Better Auth** (§1) en su propio commit, con el ingreso
-  en verde, antes de cualquier código del MCP.
+- **`main` con Better Auth 1.7.10 fijado y desplegado** (abajo, «La
+  actualización de Better Auth»), sobre E2 (`27774d6`). La hace otro agente, en
+  su worktree, antes de que este slice arranque.
+- **El ADR 0026, aceptado** el 2026-10-19, y **§11, decidido** el 2026-10-19.
 - **Las verificaciones abiertas** (V-7 y V-8), hechas por `backend-dev` antes
   de escribir el código del MCP, con el resultado en el registro del slice
-  (`docs/slices/correcciones-mejoras-mcp-revisiones.md`). Una que falle
-  detiene el slice y vuelve al arquitecto.
+  (`docs/slices/correcciones-mejoras-mcp-revisiones.md`). V-7 se completa en el
+  preview (§6.6). Una que falle detiene el slice y vuelve al arquitecto.
+- Las citas de abajo son del árbol en `27774d6`. El worktree `clock-mcp` no
+  tiene `node_modules`: las citas de paquetes son del checkout principal, con
+  `better-auth` 1.7.7 y `@modelcontextprotocol/sdk` 1.32.0, y las del plugin y
+  de Better Auth 1.7.10, de la lectura de `architecture-reviewer`. Con la
+  actualización en `main`, `backend-dev` confirma que las de `better-auth`
+  siguen en el mismo lugar.
+
+### La actualización de Better Auth (fuera del slice, va primero)
+
+Decisión del usuario (2026-10-19): **va sola y primero**, mergeada y desplegada
+antes que el MCP, en su propio worktree. Esta sección es su especificación.
+
+- **`package.json`**: `better-auth` y `@better-auth/core` en `1.7.10` exacto,
+  sin `^`, con `better-call` 1.4.2 y `@better-auth/utils` 0.5.0 exactos (V-9).
+  No instala `@better-auth/oauth-provider`: lo suma el MCP.
+- **`npm run auth:schema`** con 1.7.10: el diff de `auth-schema.ts` **no puede
+  tocar `user`, `session`, `account` ni `verification`**. Si los toca, se para y
+  se avisa. No trae migración.
+- **Lo que se vuelve a probar del ingreso**, sin cambiar lo que afirman los
+  tests:
+  - `mapProfileToUser` y su redirección `FOUND` a `/login?error=…`
+    (`auth.ts:77-89`);
+  - `session.create.before` y `session.create.after` con
+    `dropSessionOfInactive` (`auth.ts:106-134`);
+  - `user.update.before`, que no deja cambiar el correo (`auth.ts:93-104`);
+  - `accountLinking.disableImplicitLinking`;
+  - `disabledPaths` (`/update-user`, `/link-social`, `/unlink-account`);
+  - la sesión de prueba (`test-session.ts`);
+  - `onAPIError.errorURL`.
+
+  Las suites: `auth.integration.test.ts`, `session.integration.test.ts`,
+  `entry.integration.test.ts` y los e2e de ingreso y de equipo
+  (`invitations.spec.ts`, `entry.spec.ts`, `team.spec.ts`,
+  `team-status.spec.ts`).
+
+- **Despliegue**: sin migración. Después del push, el humo del ingreso: entrar
+  con Google con una cuenta del dominio y ver `/`; en una ventana privada,
+  `/login?error=membresia_inactiva` muestra EQ-92.
+- **Coordinación**: el MCP y E2b arrancan o rebasan sobre `main` con la
+  actualización ya mergeada.
 
 ### Verificaciones
 
-| Id   | Qué                                                                                                                                                                                                                                                                                                                                                      | Estado                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| V-1  | El plugin existe y es compatible                                                                                                                                                                                                                                                                                                                         | **Cerrada**: `@better-auth/oauth-provider@1.7.7` existe; se fija 1.7.10 con `better-call` 1.4.2, `@better-auth/core` 1.7.10 y `@better-auth/utils` 0.5.0 (D-MCP-1).                                                                                                                                                                                                                                                                                                                                      |
-| V-2  | Registro dinámico, PKCE, RFC 8707, rotación, revocación, consentimiento, metadatos                                                                                                                                                                                                                                                                       | **Cerrada**: todo está (ADR 0026, «Contexto»).                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| V-3  | Los endpoints del plugin                                                                                                                                                                                                                                                                                                                                 | **Cerrada**: la lista de D-MCP-2.                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| V-4  | La página de consentimiento                                                                                                                                                                                                                                                                                                                              | **Cerrada**: consulta firmada; `POST /oauth2/consent { accept, oauth_query }` con `accept: application/json` responde `{ redirect: true, url }`, y sin esa cabecera lanza un `FOUND` (`authorize-*.mjs:5471-5479`); `verifyOAuthQueryParams` (D-MCP-15).                                                                                                                                                                                                                                                 |
-| V-5  | Cómo sigue la autorización después del login                                                                                                                                                                                                                                                                                                             | **Corregida**: `oauth_query` en `/sign-in/social` y el gancho `after` del plugin; `oauthContinuationOf` se quitó (D-MCP-15). La retoma pasa por `hooks.before` (`dispatch.mjs:209-210`).                                                                                                                                                                                                                                                                                                                 |
-| V-6  | Cómo verifica el recurso un token, y las tablas                                                                                                                                                                                                                                                                                                          | **Corregida**: JWT con `verifyJwsAccessToken` (D-MCP-3); las tablas de §2.                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| V-7  | **Abierta.** Las direcciones de vuelta de claude.ai y claude.com en la documentación de Anthropic; **los cuerpos reales del registro de claude.ai y de Claude Code**, capturados contra el servidor local o el preview; si claude.ai registra por RFC 7591 o por documento de metadatos del cliente; si manda `resource`; si sus pedidos traen `Origin`. | Se corrigen los valores por omisión de las dos variables y los cuerpos del criterio 2. Si claude.ai no manda `resource`, se cambia el 400 de D-MCP-4 por inyectar `mcpResourceUrl()` en `context.query`.                                                                                                                                                                                                                                                                                                 |
-| V-8  | **Abierta.** En el SDK 1.32.0: cómo responde un argumento que no cumple el `inputSchema`, y que con `isError: true` no valida `structuredContent` contra el `outputSchema`.                                                                                                                                                                              | `runTool` parsea él mismo y registra el esquema solo para el descubrimiento.                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| V-9  | Las opciones de §4.2 en 1.7.10, la firma de `verifyJwsAccessToken`, los claims, el JWT con `resource`, `getJwks` con `/jwks` cerrado                                                                                                                                                                                                                     | **Cerrada**: las opciones existen en 1.7.10 con los mismos nombres (`"infer"` en `authorize-dkOG8GqZ.mjs:1718-1722`); `verifyJwsAccessToken(token, { jwksFetch, jwksCacheKey?, verifyOptions: { issuer, audience } })` (`core/dist/oauth2/verify.d.mts:95`); el JWT trae `sub`, `azp`, `client_id`, `scope`, `sid`, `jti`, `aud`, `iss` y `typ: "at+jwt"`; sale JWT con `resource` (`introspect-BVm_zFQC.mjs:1807`); `auth.api.getJwks()` anda con `/jwks` en `disabledPaths` (`api/index.mjs:166-168`). |
-| V-10 | El chequeo de origen de Better Auth con pedidos de servidor a servidor                                                                                                                                                                                                                                                                                   | **Cerrada**: `validateOrigin` solo exige `Origin` cuando hay cookies (`origin-check.mjs:96-111`); el registro y el token entre servidores pasan sin excepción en `auth.ts`.                                                                                                                                                                                                                                                                                                                              |
+| Id   | Qué                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Estado                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| V-1  | El plugin existe y es compatible                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | **Cerrada**: `@better-auth/oauth-provider@1.7.7` existe; el MCP suma 1.7.10 sobre la actualización (D-MCP-1).                                                                                                                                                                                                                                                                                                                                                                                            |
+| V-2  | Registro dinámico, PKCE, RFC 8707, rotación, revocación, consentimiento, metadatos                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | **Cerrada**: todo está (ADR 0026, «Contexto»).                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| V-3  | Los endpoints del plugin                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | **Cerrada**: la lista de D-MCP-2.                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| V-4  | La página de consentimiento                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | **Cerrada**: consulta firmada; `POST /oauth2/consent { accept, oauth_query }` con `accept: application/json` responde `{ redirect: true, url }`, y sin esa cabecera lanza un `FOUND` (`authorize-*.mjs:5471-5479`); `verifyOAuthQueryParams` (D-MCP-15).                                                                                                                                                                                                                                                 |
+| V-5  | Cómo sigue la autorización después del login                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | **Corregida**: `oauth_query` en `/sign-in/social` y el gancho `after` del plugin; `oauthContinuationOf` se quitó (D-MCP-15). La retoma pasa por `hooks.before` (`dispatch.mjs:209-210`).                                                                                                                                                                                                                                                                                                                 |
+| V-6  | Cómo verifica el recurso un token, y las tablas                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | **Corregida**: JWT con `verifyJwsAccessToken` (D-MCP-3); las tablas de §2.                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| V-7  | **Abierta. Los clientes reales**, capturados en el preview (§6.6) y contra la documentación de cada proveedor. **Anthropic** (claude.ai, claude.com, Claude Code) y **OpenAI** (ChatGPT como conector remoto; Codex y los demás clientes MCP de OpenAI que autorizan con OAuth). Por cada uno: (a) la dirección de vuelta real; (b) si registra por RFC 7591, por documento de metadatos del cliente o necesita un cliente creado de antemano, y el cuerpo del registro; (c) `application_type` y `token_endpoint_auth_method`; (d) si manda `resource` y PKCE `S256`; (e) los alcances que pide; (f) si sus pedidos al recurso traen `Origin`, y cuál; (g) si exige algo de los metadatos que hoy no publicamos (`openid-configuration`, `code_challenge_methods_supported`, `registration_endpoint`, otro campo); (h) si usa `GET` o sesiones en el transporte; (i) qué hace con `destructiveHint`. | Se corrigen los valores por omisión de `MCP_REDIRECT_URIS` y `MCP_ALLOWED_ORIGINS` y los cuerpos del criterio 2. Si un cliente no manda `resource`, el gancho lo completa (D-MCP-4). Si uno necesita un cliente creado de antemano, se escribe el script de D-MCP-2. Si uno exige un campo de metadatos, se suma. Si uno exige SSE o sesiones, se para.                                                                                                                                                  |
+| V-8  | **Abierta.** En el SDK 1.32.0: cómo responde un argumento que no cumple el `inputSchema`, y que con `isError: true` no valida `structuredContent` contra el `outputSchema`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | `runTool` parsea él mismo y registra el esquema solo para el descubrimiento.                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| V-9  | Las opciones de §4.2 en 1.7.10, la firma de `verifyJwsAccessToken`, los claims, el JWT con `resource`, `getJwks` con `/jwks` cerrado                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | **Cerrada**: las opciones existen en 1.7.10 con los mismos nombres (`"infer"` en `authorize-dkOG8GqZ.mjs:1718-1722`); `verifyJwsAccessToken(token, { jwksFetch, jwksCacheKey?, verifyOptions: { issuer, audience } })` (`core/dist/oauth2/verify.d.mts:95`); el JWT trae `sub`, `azp`, `client_id`, `scope`, `sid`, `jti`, `aud`, `iss` y `typ: "at+jwt"`; sale JWT con `resource` (`introspect-BVm_zFQC.mjs:1807`); `auth.api.getJwks()` anda con `/jwks` en `disabledPaths` (`api/index.mjs:166-168`). |
+| V-10 | El chequeo de origen de Better Auth con pedidos de servidor a servidor                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | **Cerrada**: `validateOrigin` solo exige `Origin` cuando hay cookies (`origin-check.mjs:96-111`); el registro y el token entre servidores pasan sin excepción en `auth.ts`.                                                                                                                                                                                                                                                                                                                              |
 
 `.well-known` en el App Router: **cerrada**,
 `node_modules/next/dist/docs/01-app/02-guides/backend-for-frontend.md:113-118`.
@@ -572,7 +639,6 @@ https://accounts.google.com` (`next.config.ts:17`), y un navegador la aplica
 
 Entra:
 
-- **La actualización de Better Auth a 1.7.10**, en su propio commit (abajo).
 - **El servidor de autorización**: el plugin y `jwt` en `auth.ts`, el gancho del
   registro y el de autorizar y consentir, `disabledPaths`, los privilegios y el
   interruptor (D-MCP-1, D-MCP-2, D-MCP-4, D-MCP-14).
@@ -584,62 +650,29 @@ Entra:
 - **Desactivar revoca** (D-MCP-6).
 - **Las pantallas**: el consentimiento, «Asistentes conectados» en `/perfil` y
   `/login` con `oauthProviderClient` (§5).
+- **Si V-7 lo pide**, el script de un cliente creado de antemano (D-MCP-2).
 - **Tests** de unidad, integración y e2e (§9).
 
-Queda afuera: §12.
-
-### La actualización de Better Auth (primer commit)
-
-- **`package.json`**: `better-auth`, `@better-auth/core` y
-  `@better-auth/oauth-provider` en `1.7.10` exacto, sin `^`, con `better-call`
-  1.4.2 y `@better-auth/utils` 0.5.0 exactos (V-9). El plugin entra instalado
-  pero no configurado: la configuración es del segundo commit.
-- **`npm run auth:schema`** con 1.7.10 y sin el plugin: el diff de
-  `auth-schema.ts` **no puede tocar `user`, `session`, `account` ni
-  `verification`**. Si los toca, se para y se avisa.
-- **Lo que se vuelve a probar del ingreso**, sin cambiar lo que afirman los
-  tests:
-  - `mapProfileToUser` y su redirección `FOUND` a `/login?error=…`
-    (`auth.ts:77-89`);
-  - `session.create.before` y `session.create.after` con
-    `dropSessionOfInactive` (`auth.ts:106-134`);
-  - `user.update.before`, que no deja cambiar el correo (`auth.ts:93-104`);
-  - `accountLinking.disableImplicitLinking`;
-  - `disabledPaths` (`/update-user`, `/link-social`, `/unlink-account`);
-  - la sesión de prueba (`test-session.ts`);
-  - `onAPIError.errorURL`.
-
-  Las suites: `auth.integration.test.ts`, `session.integration.test.ts`,
-  `entry.integration.test.ts` y los e2e de ingreso y de equipo
-  (`invitations.spec.ts`, `entry.spec.ts`, `team.spec.ts`,
-  `team-status.spec.ts`).
-
-- **En el segundo commit**, con `jwt` configurado, se suma a
-  `auth.integration.test.ts` la prueba de que `GET /api/auth/get-session` con
-  una sesión **no trae la cabecera `set-auth-jwt`**, con el MCP encendido y
-  apagado (D-MCP-14, criterio 16).
-- **El team-lead decide** si el primer commit se mergea y despliega solo, antes
-  del MCP. Recomiendo que sí: el humo del ingreso en producción queda separado
-  del MCP.
+Queda afuera: la actualización de Better Auth (§0) y §12.
 
 ### Consecuencias sobre código ya entregado
 
-| Archivo                                                           | Qué cambia                                                                                          | Qué hay que volver a probar                                                                |
-| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `package.json`, `package-lock.json`                               | Better Auth 1.7.10 exacto; `@better-auth/oauth-provider`; `@modelcontextprotocol/sdk`               | el ingreso entero (arriba); `npm run build`                                                |
-| `src/server/auth.ts`                                              | El plugin y `jwt`, los dos ganchos, `disabledPaths`                                                 | `auth.integration.test.ts` entero (el ingreso no cambia); `get-session` sin `set-auth-jwt` |
-| `src/server/session.ts`, `user-context.ts` nuevo                  | `readUserContext` y sus tipos se mudan; `readSession` la usa                                        | `session.integration.test.ts` sin cambios en lo que afirma                                 |
-| `src/lib/auth-client.ts`                                          | `oauthProviderClient()`                                                                             | los e2e de ingreso                                                                         |
-| `src/app/login/page.tsx`                                          | Con sesión y una consulta de autorización, no redirige                                              | `login/page.test.tsx`                                                                      |
-| `src/server/action.ts`, `failure.ts` nuevo                        | `failure` se muda como `failureOf`                                                                  | los `actions.integration.test.ts` de todos los módulos                                     |
-| `src/server/permissions/index.ts`                                 | `mcp.connect`, `mcp.grant.revoke`; `Actor.oauthClientId`                                            | `permissions.test.ts` entero                                                               |
-| `src/server/audit.ts` y cada constancia armada con un `Actor`     | `auditActorOf`; `oauthClientId` en la fila                                                          | los tests de audit de cada módulo (deben seguir verdes sin cambiar)                        |
-| `src/server/env.ts`                                               | Tres variables opcionales                                                                           | `env.test.ts` si existe; el arranque sin ellas                                             |
-| `src/modules/time-entry/actions.ts`, `operations.ts` nuevo        | Cinco actions delegan en `operations.ts`                                                            | `time-entry/actions.integration.test.ts`                                                   |
-| `src/modules/time-entry/service.ts`, `repository.ts`, `schema.ts` | `listEntriesOfPeriod`, `getRunningEntry`, `listClosedStartingIn`, `entriesPeriodInput` y dos textos | `time-entry/service.integration.test.ts`                                                   |
-| `src/modules/team/service.ts`                                     | `writeStatus` llama a `deleteGrantsOf`                                                              | `team/service.integration.test.ts`, criterios 1 y 17 de E2                                 |
-| `src/app/(app)/perfil/page.tsx`                                   | Compone la sección de `mcp`                                                                         | los e2e de perfil                                                                          |
-| `CLAUDE.md`, «Estructura» y «Recorrido de una mutación»           | Las líneas nuevas (§7)                                                                              | —                                                                                          |
+| Archivo                                                           | Qué cambia                                                                                          | Qué hay que volver a probar                                                                                      |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `package.json`, `package-lock.json`                               | `@better-auth/oauth-provider` 1.7.10 exacto; `@modelcontextprotocol/sdk`                            | `npm run build`                                                                                                  |
+| `src/server/auth.ts`                                              | El plugin y `jwt`, los dos ganchos, `disabledPaths`                                                 | `auth.integration.test.ts` entero (el ingreso no cambia con el plugin cargado); `get-session` sin `set-auth-jwt` |
+| `src/server/session.ts`, `user-context.ts` nuevo                  | `readUserContext` y sus tipos se mudan; `readSession` la usa                                        | `session.integration.test.ts` sin cambios en lo que afirma                                                       |
+| `src/lib/auth-client.ts`                                          | `oauthProviderClient()`                                                                             | los e2e de ingreso                                                                                               |
+| `src/app/login/page.tsx`                                          | Con sesión y una consulta de autorización, no redirige                                              | `login/page.test.tsx`                                                                                            |
+| `src/server/action.ts`, `failure.ts` nuevo                        | `failure` se muda como `failureOf`                                                                  | los `actions.integration.test.ts` de todos los módulos                                                           |
+| `src/server/permissions/index.ts`                                 | `mcp.connect`, `mcp.grant.revoke`; `Actor.oauthClientId`                                            | `permissions.test.ts` entero                                                                                     |
+| `src/server/audit.ts` y cada constancia armada con un `Actor`     | `auditActorOf`; `oauthClientId` en la fila                                                          | los tests de audit de cada módulo (deben seguir verdes sin cambiar)                                              |
+| `src/server/env.ts`                                               | Tres variables opcionales                                                                           | `env.test.ts` si existe; el arranque sin ellas                                                                   |
+| `src/modules/time-entry/actions.ts`, `operations.ts` nuevo        | Cinco actions delegan en `operations.ts`                                                            | `time-entry/actions.integration.test.ts`                                                                         |
+| `src/modules/time-entry/service.ts`, `repository.ts`, `schema.ts` | `listEntriesOfPeriod`, `getRunningEntry`, `listClosedStartingIn`, `entriesPeriodInput` y dos textos | `time-entry/service.integration.test.ts`                                                                         |
+| `src/modules/team/service.ts`                                     | `writeStatus` llama a `deleteGrantsOf`                                                              | `team/service.integration.test.ts`, criterios 1 y 17 de E2                                                       |
+| `src/app/(app)/perfil/page.tsx`                                   | Compone la sección de `mcp`                                                                         | los e2e de perfil                                                                                                |
+| `CLAUDE.md`, «Estructura» y «Recorrido de una mutación»           | Las líneas nuevas (§7)                                                                              | —                                                                                                                |
 
 - **Sin cambio**: `access.ts`, `entry.ts`, `test-session.ts`,
   `google-sign-in-button.tsx`, `workspace/` y `report/` (salvo sus
@@ -706,7 +739,7 @@ después `npm run db:generate`. Todo es aditivo.
 - **Reversión**: una migración hacia adelante que borra las tablas nuevas y la
   columna. Se pierden las autorizaciones (la persona vuelve a conectar) y la
   marca de cliente de las constancias escritas mientras tanto. **No hace
-  falta para apagar el MCP**: alcanza con `MCP_ENABLED=false` (§6.5).
+  falta para apagar el MCP**: alcanza con `MCP_ENABLED=false` (§6.4).
 
 ## 3. Permisos
 
@@ -724,6 +757,8 @@ Dos acciones nuevas, en la unión `Action`, en `resourceKinds` y en
 - Comentario de `mcp.grant.revoke`: «D-MCP-5: desconectar un asistente propio.
   `ProfileResource`: la autorización es de la cuenta, y `can()` ya exige que
   sea la propia.».
+- **Ninguna acción para ver o desconectar asistentes ajenos**: decisión del
+  usuario (§11).
 - **`Actor.oauthClientId?: string`**, con el comentario «D-MCP-12: el cliente
   OAuth por el que llegó el pedido, si vino por MCP. `can()` no lo mira; lo
   usa `auditActorOf`.». El cuerpo de `can()` no cambia.
@@ -747,17 +782,27 @@ const urlList = z
 
 /** D-MCP-14: el servidor MCP y la autorización de asistentes. Apagado por omisión. */
 MCP_ENABLED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
-/** D-MCP-2: las redirecciones HTTPS que se aceptan al registrar y al autorizar, exactas. */
+/**
+ * D-MCP-2: las redirecciones HTTPS que se aceptan al registrar y al autorizar,
+ * exactas. Las de los conectores remotos de Anthropic y de OpenAI (V-7).
+ */
 MCP_REDIRECT_URIS: urlList.default([
   "https://claude.ai/api/mcp/auth_callback",
   "https://claude.com/api/mcp/auth_callback",
+  "https://chatgpt.com/connector_platform_oauth_redirect",
 ]),
-/** D-MCP-7: los `Origin` que acepta `/api/mcp` además del propio. */
-MCP_ALLOWED_ORIGINS: urlList.default(["https://claude.ai", "https://claude.com"]),
+/** D-MCP-7: los `Origin` que acepta `/api/mcp` además del propio (V-7). */
+MCP_ALLOWED_ORIGINS: urlList.default([
+  "https://claude.ai",
+  "https://claude.com",
+  "https://chatgpt.com",
+]),
 ```
 
 Las tres son opcionales: un entorno que no las declara arranca igual, con el MCP
-apagado. Los valores por omisión de las dos listas los confirma V-7.
+apagado. **Los valores por omisión de las dos listas son a confirmar en V-7**, y
+el merge espera esa confirmación; un cliente más se suma con la variable, sin
+código.
 
 ### 4.2 Better Auth (`src/server/auth.ts`)
 
@@ -871,7 +916,8 @@ export async function deleteGrantsOf(
 - `deleteGrant` filtra por `actor.userId`: nunca borra lo de otra persona,
   aunque el `clientId` exista.
 - Los registros de clientes **no se borran** al revocar: un cliente sin
-  consentimiento no puede usar nada, y Claude Code reusa su registro.
+  consentimiento no puede usar nada, y los clientes de línea de comandos
+  reusan su registro.
 
 ### 4.4 La configuración del servidor de autorización (`src/server/mcp-auth.ts`, nuevo)
 
@@ -1294,7 +1340,8 @@ export type ToolEntry = {
 
 `content` lleva siempre un bloque de texto: el JSON de `structuredContent`, o
 el mensaje si es un error. `totalMinutes` es `Math.floor(closedSeconds / 60)`.
-Cada herramienta declara su `outputSchema` (V-8).
+Cada herramienta declara su `outputSchema` (V-8). Un cliente que solo lee
+`content` recibe lo mismo que uno que lee `structuredContent`.
 
 **Las pantallas:**
 
@@ -1407,6 +1454,7 @@ herramienta responde 500 con un JSON-RPC `-32603` y `console.error`.
 - `oauth-authorization-server/api/auth/route.ts` y
   `oauth-authorization-server/route.ts`: `GET` con
   `oauthProviderAuthServerMetadata(auth)`.
+- Lo que V-7 pida además para un cliente de la lista.
 - Todos: 404 con el MCP apagado; `Access-Control-Allow-Origin: *`;
   `Cache-Control: public, max-age=300`.
 
@@ -1481,7 +1529,16 @@ target.userId)`: `deleteGrantsOf(tx, actor, target.userId)` (D-MCP-6). El
 comentario suma la cuarta escritura y el orden de bloqueos, con el `set null`
 de los tokens.
 
-### 4.16 Las respuestas
+### 4.16 El script de un cliente creado de antemano (`scripts/oauth-client/main.ts`, solo si V-7 lo pide)
+
+- `--dry-run` muestra el cliente que crearía (nombre, redirecciones, si es
+  público o confidencial) y si cada redirección pasa `isAllowedRedirect`;
+  `--apply` lo crea con la API del plugin del lado del servidor y muestra una
+  sola vez el `client_id` y el secreto, que no se guardan en ningún archivo.
+- Una redirección que no pasa `isAllowedRedirect` corta antes de crear.
+- No crea consentimientos: la persona autoriza como con cualquier cliente.
+
+### 4.17 Las respuestas
 
 | Situación                                                          | Respuesta                                                                             |
 | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
@@ -1508,6 +1565,9 @@ de los tokens.
 
 ## 5. Pantallas
 
+Ningún texto nombra a un asistente ni a un proveedor: el nombre es el que
+declaró el cliente y el destino sale de la redirección firmada.
+
 ### 5.1 El consentimiento (`src/app/conectar/page.tsx`)
 
 `ConnectPage({ searchParams }: PageProps<"/conectar">)`: `MCP_ENABLED` o
@@ -1520,9 +1580,9 @@ vista y `decideConsent`. Misma caja que `/login` (centrada, `max-w-sm`).
   - Texto: «{clientName} va a poder ver, cargar, editar y borrar tus horas, y
     leer tus proyectos, tareas y etiquetas, con tu cuenta ({email}).».
   - Una línea en gris: «Vuelve a: {returnsTo}». `returnsTo` sale del
-    `redirect_uri` de la consulta firmada: el host (`claude.ai`) o «esta
-    computadora» para loopback. **El nombre lo declara el cliente; el destino
-    firmado es lo que se puede creer**, y por eso va siempre.
+    `redirect_uri` de la consulta firmada: el host (`claude.ai`, `chatgpt.com`)
+    o «esta computadora» para loopback. **El nombre lo declara el cliente; el
+    destino firmado es lo que se puede creer**, y por eso va siempre.
   - «Podés desconectarlo cuando quieras desde tu perfil.».
   - Botones «Cancelar» (secundario) y «Conectar» (primario).
 - **`forbidden`**: el texto de `consentForbidden` y solo «Cancelar».
@@ -1578,23 +1638,17 @@ Los de §5.1 y §5.3. Los de error salen de `mcpMessages`.
 Hechos que el contrato da por dados: Vercel despliega `main` a producción en
 cada push y el build no migra; el usuario migra producción con `!` antes del
 push del merge que lo necesita. Previews públicos, con la rama `preview` de
-Neon y `BETTER_AUTH_URL` declarada por rama.
+Neon y `BETTER_AUTH_URL` declarada por rama. **La actualización de Better Auth
+ya está en producción** (§0).
 
-### 6.1 La actualización de Better Auth
-
-Si el team-lead la mergea sola (§1): no trae migración (el diff de
-`auth-schema.ts` no toca tablas). Después del push, el humo del ingreso: entrar
-con Google con una cuenta del dominio, ver `/`; en una ventana privada,
-`/login?error=membresia_inactiva` muestra EQ-92.
-
-### 6.2 Antes del push del MCP
+### 6.1 Antes del push del MCP
 
 1. **El usuario migra producción** (`npm run db:migrate` con la URL de
    producción). La migración solo suma: el código de `main` sigue igual.
 2. **No toca las variables de producción**: sin `MCP_ENABLED`, el MCP queda
    apagado.
 
-### 6.3 El despliegue
+### 6.2 El despliegue
 
 El team-lead mergea y pushea. Con el MCP apagado, lo único visible es que nada
 cambió: `/perfil` sin sección, `/api/mcp` y las rutas OAuth en 404, y
@@ -1604,32 +1658,33 @@ cambió: `/perfil` sin sección, `/api/mcp` y las rutas OAuth en 404, y
 `oauthProviderClient` en el login (sin consulta no agrega nada) y la
 desactivación con `deleteGrantsOf` (que borra cero filas).
 
-### 6.4 Encenderlo
+### 6.3 Encenderlo
 
-Después de §6.7 en un preview:
+Después de §6.6 en un preview (decisión del usuario, §11):
 
 1. El usuario pone `MCP_ENABLED=true` en el entorno de producción de Vercel
    (y, si V-7 lo pidió, `MCP_REDIRECT_URIS` y `MCP_ALLOWED_ORIGINS`) y
    **vuelve a desplegar** el último despliegue: una variable nueva no llega a
    uno ya hecho.
-2. **Humo**, con la cuenta del owner: en claude.ai, «Agregar conector
-   personalizado» con `https://<producción>/api/mcp`; conectar, entrar con
-   Google, ver `/conectar` con «Vuelve a: claude.ai», conectar; pedir «¿qué
-   horas cargué esta semana?» (`get_context` y `list_entries`). En `/perfil`,
-   la fila de Claude. Desconectar, y el pedido siguiente del asistente pide
-   volver a conectar. **No se cargan horas de prueba en producción**: lo de
-   escribir lo cubren la integración, la e2e y el preview.
+2. **Humo**, con la cuenta del owner, una vez en claude.ai y una en ChatGPT:
+   agregar un conector personalizado con `https://<producción>/api/mcp`;
+   conectar, entrar con Google, ver `/conectar` con «Vuelve a: claude.ai» o
+   «Vuelve a: chatgpt.com», conectar; pedir «¿qué horas cargué esta semana?»
+   (`get_context` y `list_entries`). En `/perfil`, las dos filas. Desconectar
+   las dos, y el pedido siguiente de cada asistente pide volver a conectar.
+   **No se cargan horas de prueba en producción**: lo de escribir lo cubren la
+   integración, la e2e y el preview.
 
-### 6.5 Apagar y revertir
+### 6.4 Apagar y revertir
 
 - **Apagar**: `MCP_ENABLED=false` y volver a desplegar. Las autorizaciones
   quedan en la base y vuelven a servir al encenderlo.
 - **Revertir el MCP**: `git revert -m 1 <merge>` y push. El código anterior no
   lee las tablas nuevas ni la columna; no hace falta la migración de reversión
   de §2, que solo se corre si se quiere borrar todo. La actualización de Better
-  Auth se revierte aparte, si hiciera falta.
+  Auth queda: es otro cambio.
 
-### 6.6 Después
+### 6.5 Después
 
 La consulta, sin urgencia, que muestra que ninguna persona inactiva conserva
 autorizaciones (tiene que dar cero filas; el nombre de la tabla de
@@ -1648,9 +1703,9 @@ where m.status <> 'active'
 group by u.email, m.status;
 ```
 
-### 6.7 Preview
+### 6.6 Preview
 
-Para probar claude.ai contra un preview de `mejoras/mcp`, el usuario:
+Para probar los conectores contra un preview de `mejoras/mcp`, el usuario:
 
 1. Declara en Vercel, entorno Preview, rama `mejoras/mcp`:
    `BETTER_AUTH_URL=https://<dirección del preview de la rama>` (sin ella,
@@ -1658,23 +1713,29 @@ Para probar claude.ai contra un preview de `mejoras/mcp`, el usuario:
 2. Suma `https://<preview>/api/auth/callback/google` al cliente OAuth de
    Google, como en las otras ramas con `BETTER_AUTH_URL` propia.
 3. Migra la rama `preview` de Neon.
-4. En claude.ai, un conector personalizado con `https://<preview>/api/mcp`, con
-   una cuenta que tenga membresía activa en esa base (datos sintéticos).
-5. Captura los cuerpos del registro y de la autorización de claude.ai (V-7),
-   con un `console.info` temporal del gancho que no llega al merge, o con los
-   logs del preview.
+4. Conecta, con una cuenta que tenga membresía activa en esa base (datos
+   sintéticos): claude.ai, ChatGPT y, si se puede desde la máquina del usuario,
+   Codex, cada uno como conector o servidor MCP con
+   `https://<preview>/api/mcp`.
+5. Captura para V-7 los cuerpos del registro y de la autorización de cada uno y
+   los `Origin` de sus pedidos, con un `console.info` temporal de los ganchos y
+   del recurso que no llega al merge, o con los logs del preview. Anota qué hace
+   cada cliente con `destructiveHint` al pedirle borrar una entrada sintética.
+6. Si un cliente falla por algo que V-7 prevé (redirección, `Origin`,
+   `resource`, un campo de metadatos, un cliente creado de antemano), se
+   corrige y se repite antes del merge.
 
-### 6.8 En local, con Claude Code
+### 6.7 En local, con Claude Code o Codex
 
 1. `docker compose up -d`, `npm run db:migrate`, `.env.local` con
    `MCP_ENABLED=true` y `BETTER_AUTH_URL=http://localhost:3000` (la
    especificación admite `http` para `localhost`).
 2. `npm run dev`.
-3. `claude mcp add --transport http clock-local http://localhost:3000/api/mcp`.
-4. En Claude Code, `/mcp`, elegir `clock-local` y autenticar: abre el
-   navegador, Google con la cuenta de siempre (el cliente de Google de
-   desarrollo ya tiene el callback de `localhost`), `/conectar` con «Vuelve a:
-   esta computadora», «Conectar».
+3. `claude mcp add --transport http clock-local http://localhost:3000/api/mcp`
+   (o el comando equivalente de Codex para un servidor MCP por HTTP con OAuth).
+4. Autenticar desde el cliente: abre el navegador, Google con la cuenta de
+   siempre (el cliente de Google de desarrollo ya tiene el callback de
+   `localhost`), `/conectar` con «Vuelve a: esta computadora», «Conectar».
 5. Pedirle «¿qué cargué hoy?» y «cargá 9 a 10 en {proyecto}». La entrada
    aparece en `http://localhost:3000/`.
 
@@ -1683,14 +1744,17 @@ navegador antes del paso 4, como en los e2e.
 
 ## 7. Reparto de archivos
 
+La actualización de Better Auth no está en este reparto: la hace otro agente
+antes (§0).
+
 ### backend-dev
 
-- **Primero, la actualización de Better Auth** (§1), en su commit, con las
-  suites del ingreso en verde y el diff de `auth-schema.ts` revisado.
-- **Después, V-7 y V-8** (§0), con el resultado en el registro. Fija y avisa a
-  `frontend-dev` y a `e2e-tester`: `GrantsView`, `ConsentView`, los inputs y
-  resultados de las dos actions, `McpErrorCode`, `mcpMessages` e
-  `isOAuthLoginQuery`.
+- **Primero, V-7 y V-8** (§0); V-7 se cierra en el preview (§6.6), con el
+  usuario. Fija y avisa a `frontend-dev` y a `e2e-tester`: `GrantsView`,
+  `ConsentView`, los inputs y resultados de las dos actions, `McpErrorCode`,
+  `mcpMessages` e `isOAuthLoginQuery`.
+- `package.json`: `@better-auth/oauth-provider` 1.7.10 exacto y
+  `@modelcontextprotocol/sdk`.
 - `src/server/env.ts` (§4.1); `src/server/auth.ts` y la regeneración de
   `auth-schema.ts` (§4.2, §2); `src/server/oauth-records.ts` (§4.3);
   `src/server/mcp-auth.ts` (§4.4); `src/server/mcp-context.ts` (§4.5);
@@ -1707,6 +1771,7 @@ navegador antes del paso 4, como en los e2e.
   §4.13).
 - `src/modules/team/service.ts` (§4.15) y, si el MCP mergea después de E2b,
   `bindGoogleAccount` y `releaseEmailOf` (§1).
+- `scripts/oauth-client/`, solo si V-7 lo pide (§4.16).
 - `src/app/login/page.tsx` y `src/app/conectar/page.tsx`: las páginas, que
   componen; las pantallas son de `frontend-dev`.
 - `CLAUDE.md`: en «Estructura», `api/mcp/`, `.well-known/`, `conectar/`,
@@ -1732,9 +1797,9 @@ navegador antes del paso 4, como en los e2e.
 
 ### e2e-tester
 
-- `e2e/mcp.ts`: el cliente de prueba (registro con el cuerpo real de Claude
-  Code según V-7, PKCE, `resource`, autorización en el navegador con la sesión
-  de prueba, intercambio del código, `tools/call`).
+- `e2e/mcp.ts`: el cliente de prueba (registro con los cuerpos reales de V-7,
+  PKCE, `resource`, autorización en el navegador con la sesión de prueba,
+  intercambio del código, `tools/call`).
 - `e2e/mcp.spec.ts` con los recorridos de §9.3; confirma que fallan antes de la
   implementación.
 - `e2e/database.ts`: `grantCountOf(email)`.
@@ -1742,7 +1807,8 @@ navegador antes del paso 4, como en los e2e.
 ### security-reviewer
 
 Revisa D-MCP-2 a D-MCP-5, D-MCP-7, D-MCP-14 y D-MCP-15 contra la
-especificación de autorización de MCP y contra el código, antes del merge.
+especificación de autorización de MCP y contra el código, antes del merge, y el
+script de §4.16 si existe.
 
 ### Lo que no toca nadie
 
@@ -1752,15 +1818,17 @@ el cron.
 
 ### Orden
 
-1. `backend-dev`: la actualización de Better Auth, con su commit. Si el ingreso
-   no queda en verde, se para.
-2. `backend-dev`: V-7 y V-8. Si algo falla, se para.
-3. `backend-dev`: los tipos y textos de §4.10 e `isOAuthLoginQuery`; avisa.
-4. En paralelo: `backend-dev` con el servidor; `frontend-dev` con las pantallas;
+0. **Precondición**: la actualización de Better Auth, mergeada y desplegada
+   (§0). El worktree del MCP arranca o rebasa sobre ese `main`.
+1. `backend-dev`: V-8, y lo que se pueda de V-7 contra la documentación de cada
+   proveedor. Si algo falla, se para.
+2. `backend-dev`: los tipos y textos de §4.10 e `isOAuthLoginQuery`; avisa.
+3. En paralelo: `backend-dev` con el servidor; `frontend-dev` con las pantallas;
    `e2e-tester` con el arnés y el spec; `test-engineer` con el helper y las
    matrices.
+4. Preview (§6.6) con el usuario: se cierra V-7 y se corrige lo que haga falta.
 5. Revisiones, con `security-reviewer`; correcciones; la e2e en una base nueva
-   y en una que se reusa; la prueba de §6.7 con claude.ai, que hace el usuario.
+   y en una que se reusa.
 
 ## 8. Criterios de aceptación
 
@@ -1774,18 +1842,19 @@ offline_access"`; esa dirección y la raíz devuelven `resource`,
    `refresh_token`.
 2. **Registro con lista**, con los cuerpos reales capturados en V-7: el de Claude
    Code, **sin `application_type`** y con `http://127.0.0.1:<puerto>/callback`,
-   se crea; el de claude.ai, con su callback, se crea; uno con
-   `https://evil.example/cb`, o con una lista que mezcle una permitida y una
-   no, responde 400 sin fila. El sexto registro en 60 segundos desde la misma IP
-   responde 429.
+   se crea; los de claude.ai y ChatGPT, con sus redirecciones, se crean (o, si
+   V-7 mostró que ChatGPT necesita un cliente creado de antemano, el script de
+   §4.16 lo crea y la autorización anda); uno con `https://evil.example/cb`, o
+   con una lista que mezcle una permitida y una no, responde 400 sin fila. El
+   sexto registro en 60 segundos desde la misma IP responde 429.
 3. **El recorrido completo**: registro; autorización con PKCE, `resource` y los
    alcances del 401; sin sesión, `/login` con la consulta firmada, ingreso que
    retoma la autorización por `oauth_query`; `/conectar` con el nombre y «Vuelve
    a» del `redirect_uri` firmado; «Conectar», que con `accept:
 application/json` recibe `{ redirect: true, url }` y sigue el `url`; código;
    **token de acceso JWT con `typ: "at+jwt"` y refresh token**; `initialize`,
-   `tools/list` con las ocho, `tools/call`. Funciona con Claude Code en local y
-   con claude.ai en el preview (§6.7, lo verifica el usuario).
+   `tools/list` con las ocho, `tools/call`. Funciona con Claude Code en local, y
+   con claude.ai y ChatGPT en el preview (§6.6, lo verifica el usuario).
 4. **Cancelar**: el cliente recibe `access_denied` y no queda autorización.
 5. **Autorizar exige acceso** (D-MCP-4), cada caso sin código:
    - con sesión viva, un externo con la invitación revocada y un correo cuyo
@@ -1817,9 +1886,10 @@ application/json` recibe `{ redirect: true, url }` y sigue el `url`; código;
    `id` dos veces dejan una fila y una constancia; sin `id`, dos llamadas
    crean dos.
 9. **El audit log**: cada constancia que deja una herramienta tiene
-   `actor_id` de la persona y `oauth_client_id` del cliente; las de la
-   pantalla, nulo. Todas las constancias que dejan los tests de integración de
-   la pantalla siguen iguales.
+   `actor_id` de la persona y `oauth_client_id` del cliente que la pidió —uno
+   distinto para dos clientes de la misma persona—; las de la pantalla, nulo.
+   Todas las constancias que dejan los tests de integración de la pantalla
+   siguen iguales.
 10. **El token no depende de la sesión web** (D-MCP-3): después de cerrar la
     sesión web (`/sign-out`) y con la sesión vencida por SQL
     (`expires_at` en el pasado), el token de acceso sigue respondiendo y el
@@ -1832,9 +1902,10 @@ application/json` recibe `{ redirect: true, url }` y sigue el `url`; código;
     `GOOGLE_WORKSPACE_DOMAINS` sin invitación. Sin el alcance `clock`, 403.
 12. **Desconectar** (D-MCP-5): desde `/perfil`, la fila se va, queda
     `mcp.revoke`, el token de acceso vigente recibe 401 en el pedido siguiente y
-    el refresh token no emite otro. Desconectar otra vez responde éxito sin
-    constancia. Un `clientId` de otra persona no borra nada. Dos
-    consentimientos del mismo cliente se ven como una fila y se borran juntos.
+    el refresh token no emite otro; otro cliente de la misma persona sigue
+    andando. Desconectar otra vez responde éxito sin constancia. Un `clientId`
+    de otra persona no borra nada. Dos consentimientos del mismo cliente se ven
+    como una fila y se borran juntos.
 13. **Desactivar revoca** (D-MCP-6): el owner desactiva a P con dos asistentes
     conectados: cero consentimientos y tokens de P, `mcp.revokeAll` con
     `{ clients: 2 }`, y el criterio 1 de E2 sigue valiendo. Si algo falla
@@ -1842,8 +1913,8 @@ application/json` recibe `{ redirect: true, url }` y sigue el `url`; código;
     tokens. Un refresh insertado después de la desactivación da un token que
     responde 401. Reactivar no devuelve autorizaciones.
 14. **Límite por persona**: el pedido 121 del minuto responde 429 con
-    `Retry-After`; el primero del minuto siguiente pasa; otra persona no se
-    entera.
+    `Retry-After`, sume los de uno o de dos clientes de la misma persona; el
+    primero del minuto siguiente pasa; otra persona no se entera.
 15. **Transporte**: `GET` y `DELETE` responden 405; un cuerpo de 70 KiB, 413;
     un `Origin: https://evil.example`, 403; uno de `MCP_ALLOWED_ORIGINS` y uno
     ausente pasan; ninguna respuesta lleva `Mcp-Session-Id`.
@@ -1851,7 +1922,8 @@ application/json` recibe `{ redirect: true, url }` y sigue el `url`; código;
     `/conectar` y las cinco rutas OAuth responden 404, y `/perfil` no tiene la
     sección. **`npm run auth:schema` sin la variable no cambia
     `auth-schema.ts`.** **`get-session` no trae `set-auth-jwt`**, con el MCP
-    encendido y apagado. El resto de la aplicación igual.
+    encendido y apagado. Con el plugin cargado, las suites del ingreso siguen en
+    verde sin cambiar lo que afirman. El resto de la aplicación igual.
 17. **Los endpoints cerrados**: cada camino de la lista fija de D-MCP-2, con
     `/oauth2/client/rotate-keys`, responde 404 con el MCP encendido; crear,
     editar o listar clientes y recursos por las rutas `/admin/oauth2/…` con
@@ -1863,10 +1935,10 @@ application/json` recibe `{ redirect: true, url }` y sigue el `url`; código;
 19. **Las pantallas**: `/conectar` en sus tres estados con sus textos, con un
     parámetro repetido que se conserva y una firma alterada que da `invalid`;
     «Asistentes conectados» con la dirección para copiar, la lista, el vacío,
-    la confirmación, el aviso y el foco de §5.3.
-20. **La actualización de Better Auth**: las suites del ingreso de §1 en verde
-    sin cambiar lo que afirman, y el diff de `auth-schema.ts` sin cambios en
-    `user`, `session`, `account` ni `verification`.
+    la confirmación, el aviso y el foco de §5.3. Ningún texto nombra a un
+    asistente.
+20. **V-7 cerrada**: el registro del slice tiene, por cada cliente de §0, lo que
+    V-7 pide, y los valores por omisión de §4.1 coinciden con lo capturado.
 21. **La e2e entera en verde**, en una base nueva y en una que se reusa; los
     recorridos de ingreso, perfil y equipo sin cambiar lo que afirman.
 
@@ -1874,9 +1946,10 @@ application/json` recibe `{ redirect: true, url }` y sigue el `url`; código;
 
 ### 9.1 Unidad
 
-- `mcp-auth.test.ts`: `isAllowedRedirect` (exacta, loopback con y sin puerto,
-  `localhost` con `https`, `127.0.0.2`, `localhost.evil.example`, mayúsculas,
-  barra final); `isOAuthLoginQuery`; `oauthQueryOf` con parámetros repetidos;
+- `mcp-auth.test.ts`: `isAllowedRedirect` (cada dirección por omisión, exacta;
+  loopback con y sin puerto, `localhost` con `https`, `127.0.0.2`,
+  `localhost.evil.example`, `chatgpt.com.evil.example`, mayúsculas, barra
+  final); `isOAuthLoginQuery`; `oauthQueryOf` con parámetros repetidos;
   `protectedResourceMetadata`; `mcpDisabledPaths` encendido y apagado, con
   `rotate-keys` en los dos.
 - `mcp-context.test.ts`: `mcpAuthErrorResponse` con cada caso.
@@ -1889,7 +1962,8 @@ application/json` recibe `{ redirect: true, url }` y sigue el `url`; código;
 - `time-entry/schema.test.ts`: `entriesPeriodInput` (invertido, 31 y 32 días,
   día inválido).
 - `mcp/schema.test.ts` y `tools.test.ts`: los esquemas de entrada; el mapeo de
-  `update_entry` a `changes`; `toolEntryOf`.
+  `update_entry` a `changes`; `toolEntryOf`; el texto de `content` igual a
+  `structuredContent`.
 - Los tests de componente de `consent-screen`, `assistant-grants` y
   `revoke-grant-dialog`; `login/page.test.tsx` con y sin consulta de
   autorización.
@@ -1897,40 +1971,39 @@ application/json` recibe `{ redirect: true, url }` y sigue el `url`; código;
 ### 9.2 Integración (Postgres)
 
 - **`src/test/mcp.ts`**, el helper de `test-engineer`: `issueTestGrant(email,
-{ redirectUri })` corre registro, autorización (que con la cookie de la sesión
-  de prueba redirige a `/conectar` con la consulta firmada), `POST
-/oauth2/consent` con esa consulta y `accept: application/json`, y el canje
-  del código, contra `auth.handler`; devuelve el JWT de acceso, el refresh y el
-  `clientId`. `resumeWithTestSession(email, oauthQuery)` hace
-  `POST /test-session/sign-in` con `oauth_query` en el cuerpo y devuelve la
-  respuesta de la retoma. `callMcp(token, body)` llama a `handleMcpRequest` con
-  un `Request` armado.
+{ registration })` corre registro (con uno de los cuerpos reales de V-7),
+  autorización (que con la cookie de la sesión de prueba redirige a `/conectar`
+  con la consulta firmada), `POST /oauth2/consent` con esa consulta y `accept:
+application/json`, y el canje del código, contra `auth.handler`; devuelve el
+  JWT de acceso, el refresh y el `clientId`. `resumeWithTestSession(email,
+oauthQuery)` hace `POST /test-session/sign-in` con `oauth_query` en el cuerpo
+  y devuelve la respuesta de la retoma. `callMcp(token, body)` llama a
+  `handleMcpRequest` con un `Request` armado.
 - **`mcp/handler.integration.test.ts`**: criterios 1, 10, 11 (cada fila), 14 y
-  15, por `handleMcpRequest`. El 14 con `MCP_CALLS_PER_MINUTE` pedidos seguidos;
-  el cambio de minuto, escribiendo `window_start` un minuto atrás. Los tokens de
-  otro emisor, de otra audiencia, con otro `typ` y con la firma alterada se
-  firman en el test con una clave propia o con las de `jwks`, o se alteran byte
-  a byte.
+  15, por `handleMcpRequest`. El 14 con `MCP_CALLS_PER_MINUTE` pedidos seguidos,
+  repartidos entre dos clientes; el cambio de minuto, escribiendo
+  `window_start` un minuto atrás. Los tokens de otro emisor, de otra audiencia,
+  con otro `typ` y con la firma alterada se firman en el test con una clave
+  propia o con las de `jwks`, o se alteran byte a byte.
 - **`mcp/tools.integration.test.ts`**: criterios 6 a 9 por `tools/call`: cada
   herramienta, sus errores y las constancias con `oauth_client_id`. El 9 cuenta
-  las filas nuevas de `audit_log` de cada llamada y afirma el cliente en todas.
+  las filas nuevas de `audit_log` de cada llamada y afirma el cliente en todas,
+  con dos clientes.
 - **`mcp-auth.integration.test.ts`**: criterios 2, 5, 16 y 17 por
   `auth.handler`: el registro con cada cuerpo, el gancho de autorizar y
   consentir con cada caso —también en la retoma con `resumeWithTestSession`—,
   `validateRedirectUri` con una dirección permitida que el cliente no registró,
-  el interruptor, `get-session` sin `set-auth-jwt`, los endpoints cerrados y
-  `client_credentials`.
+  el interruptor, `get-session` sin `set-auth-jwt`, las suites del ingreso con
+  el plugin cargado, los endpoints cerrados y `client_credentials`.
 - **`mcp/service.integration.test.ts`**: `getGrantsView` (dos consentimientos
-  del mismo cliente, una fila), `revokeGrant` (criterio 12, también con el
-  `clientId` de otra persona), `getConsentView` en sus tres estados (firma
-  alterada, vencida, parámetro repetido), `consumeCall`.
+  del mismo cliente, una fila; dos clientes, dos filas), `revokeGrant`
+  (criterio 12, también con el `clientId` de otra persona), `getConsentView` en
+  sus tres estados (firma alterada, vencida, parámetro repetido), `consumeCall`.
 - **`mcp/actions.integration.test.ts`**: `revokeGrant` y `decideConsent` con
-  cada fila de §4.16 que les toca; sin sesión, a `/login` sin escribir.
+  cada fila de §4.17 que les toca; sin sesión, a `/login` sin escribir.
 - **`oauth-records.integration.test.ts`**: `listGrantsOf`, `hasGrant`,
   `deleteGrant` y `deleteGrantsOf` borran solo lo de la persona, dejan su
   constancia y no la dejan sin filas.
-- **`auth.integration.test.ts`**: el ingreso por Google sin cambios con 1.7.10
-  (criterio 20).
 - **`team/service.integration.test.ts`**: criterio 13, con `issueTestGrant`
   dos veces para P; el fallo inyectado de E2 después de `deleteGrantsOf`; el
   refresh suelto, insertando una fila de refresh de P después de desactivarla y
@@ -1940,6 +2013,9 @@ application/json` recibe `{ redirect: true, url }` y sigue el `url`; código;
   `getRunningEntry`.
 - **`session.integration.test.ts`**: `readUserContext` da lo mismo que
   `readSession` para los casos que ya prueba.
+- **`scripts/oauth-client`**, si existe: `--dry-run` no escribe; una
+  redirección fuera de la lista corta; `--apply` crea un cliente que
+  `issueTestGrant` puede usar sin registro.
 
 Cada test nuevo tiene que poder fallar: se verifica con una mutación en una
 copia, como en los slices anteriores. En particular: sin el paso 4 de D-MCP-3
@@ -1974,24 +2050,34 @@ Con correos y nombres únicos, sin afirmar sobre la base entera.
 ### 9.4 Lo que no se prueba en e2e
 
 El ingreso con Google (como siempre; la retoma que dispara se prueba con la
-sesión de prueba, e2e 4); claude.ai y Claude Code, que prueba el usuario en
-§6.7 y §6.8; el límite de frecuencia, el tamaño del cuerpo, el `Origin`, los
-casos del gancho de autorizar y el refresh (integración).
+sesión de prueba, e2e 4); claude.ai, ChatGPT, Claude Code y Codex, que prueba el
+usuario en §6.6 y §6.7; el límite de frecuencia, el tamaño del cuerpo, el
+`Origin`, los casos del gancho de autorizar y el refresh (integración).
 
 ## 10. Riesgos
 
+- **Las direcciones de vuelta y los `Origin` por omisión no están confirmados**
+  (V-7): las de claude.ai y ChatGPT salen de lo que se sabe hoy de cada
+  proveedor, y un proveedor las puede cambiar. Con una equivocada, ese cliente
+  no se conecta, pero ningún otro gana acceso. Se corrigen con la variable, sin
+  código. El merge espera V-7.
+- **Un cliente de la lista que no se registre solo** (V-7): entra por el script
+  de §4.16, que no abre el registro.
 - **Better Auth fijo**: sin `^`, una corrección de seguridad de Better Auth no
   entra sola. Una actualización sube los cuatro paquetes juntos y vuelve a
-  probar el ingreso y el flujo OAuth (§1).
+  probar el ingreso y el flujo OAuth.
 - **Phishing de consentimiento con un cliente de la lista**: alguien registra un
-  cliente llamado «Clock oficial» con la redirección de claude.ai; el código iría
-  a claude.ai, no al atacante, así que no le sirve. Con loopback, el código va a
-  la computadora de la persona: un atacante tendría que estar corriendo en ella.
-  La pantalla muestra el destino firmado.
+  cliente con el nombre de un asistente conocido y la redirección de claude.ai o
+  de ChatGPT; el código iría a ese proveedor, no al atacante, así que no le
+  sirve. Con loopback, el código va a la computadora de la persona: un atacante
+  tendría que estar corriendo en ella. La pantalla muestra el destino firmado.
 - **Registros de clientes que nadie usa**: el registro es abierto y el límite
   del plugin es por instancia (D-MCP-13). Cada registro es una fila sin acceso a
   nada. Si crecen, una limpieza de clientes sin consentimiento de más de un día
   entra en el cron; no se hace ahora.
+- **El límite del registro por IP con conectores remotos**: los registros de
+  claude.ai o de ChatGPT llegan desde las IP de su proveedor. Si muchas personas
+  conectan en el mismo minuto, alguna recibe 429 y vuelve a intentar.
 - **Un refresh suelto** de una renovación cruzada con una desactivación
   (D-MCP-6): queda una fila sin consentimiento que no da acceso. Inocuo.
 - **Borrar una fila de `user`** falla con autorizaciones: los tokens no tienen
@@ -2000,9 +2086,12 @@ casos del gancho de autorizar y el refresh (integración).
 - **Cambiar `BETTER_AUTH_SECRET`** deja ilegibles las claves privadas de `jwks`
   y, con ellas, todos los tokens: cada persona vuelve a conectar. Igual que hoy
   con las sesiones.
-- **Si claude.ai no manda `resource`** (V-7), el 400 de D-MCP-4 lo dejaría
-  afuera: V-7 lo detecta en el preview, y la salida es inyectar
+- **Si un cliente no manda `resource`** (V-7), el 400 de D-MCP-4 lo dejaría
+  afuera: V-7 lo detecta en el preview, y la salida es completar
   `mcpResourceUrl()` en la consulta en el mismo gancho.
+- **Un cliente que ignora `destructiveHint`** borra sin pedir confirmación: es
+  la decisión del usuario (§11) y la constancia guarda la fila entera (TT-61),
+  como en la pantalla.
 - **Una herramienta futura que escriba sin `auditActorOf`** perdería la marca:
   el criterio 9 cuenta las constancias de cada llamada, y una herramienta nueva
   suma su caso.
@@ -2017,46 +2106,42 @@ casos del gancho de autorizar y el refresh (integración).
 - **El modelo escribe horas en una zona equivocada** si no llama a
   `get_context`: las descripciones lo piden y la respuesta de cada entrada trae
   la hora de pared y el instante ISO.
-- **Borrar es irreversible**: `delete_entry` lleva `destructiveHint`, y
-  claude.ai pide confirmación antes de usarla. La constancia guarda la fila
-  entera (TT-61), como en la pantalla.
 - **Una pestaña abierta no ve lo que cargó el asistente** hasta navegar o
   recargar (D-MCP-7), como con otro dispositivo.
 - **El merge con E2b**: dos migraciones `0017` y `writeStatus` editada en los
   dos (§1).
 - **Las variables de producción**: encender sin volver a desplegar no hace
-  nada (§6.4).
+  nada (§6.3).
 
-## 11. Para decidir el usuario
+## 11. Decidido el 2026-10-19
 
-1. **¿Aceptás el ADR 0026?** Trae Better Auth fijo en 1.7.10 (hoy `^1.7.7`) y
+Decisiones del usuario, todas cerradas:
+
+1. **El ADR 0026, aceptado**, con Better Auth fijo en 1.7.10 (hoy `^1.7.7`) y
    dos dependencias de producción nuevas (`@better-auth/oauth-provider` y
-   `@modelcontextprotocol/sdk`). Recomiendo sí.
-2. **¿Qué clientes se pueden conectar?** Recomiendo **solo Claude** al
-   principio: las redirecciones de claude.ai y claude.com, y loopback para
-   Claude Code. Otro cliente (ChatGPT, Cursor) se habilita sumando su
-   redirección a `MCP_REDIRECT_URIS`, sin código. La alternativa —aceptar
-   cualquier redirección— abre el phishing de §10 con un destino del atacante.
-3. **¿La vida de los tokens?** Recomiendo acceso de 1 hora y refresh de 30
-   días con rotación: mientras se use una vez por mes, la persona no vuelve a
-   autorizar, y desconectar o desactivar corta al instante igual (D-MCP-3, paso
-   4). Más corto obliga a reconectar seguido en el móvil.
-4. **¿Está bien que el asistente siga conectado después de cerrar la sesión
-   web?** Es lo que hace el JWT (D-MCP-3): cerrar la sesión en Clock no
-   desconecta a Claude; se desconecta desde `/perfil`. Recomiendo sí, y la
-   sección lo dice.
-5. **¿Encender en producción después del preview**, con `MCP_ENABLED` apagado
-   por omisión? Recomiendo sí (§6.4).
-6. **¿Puede el asistente borrar entradas?** El pedido decía «cargar, ver y
-   editar»; el team-lead sumó borrar al mínimo. Recomiendo dejarla, con
-   `destructiveHint`, que hace que claude.ai pida confirmación.
-7. **¿Owner y admin necesitan ver o desconectar los asistentes de otras
-   personas, o apagar el MCP para el workspace?** Recomiendo que no en este
-   slice: desactivar a alguien ya los corta, y el interruptor es de entorno. Si
-   hace falta, es un slice aparte con su permiso.
+   `@modelcontextprotocol/sdk`). La actualización de Better Auth va sola y
+   primero, fuera del slice (§0).
+2. **Los clientes: los de Anthropic y los de OpenAI.** claude.ai (y
+   claude.com), Claude Code, ChatGPT como conector remoto, y Codex y los demás
+   clientes MCP de OpenAI que autorizan con OAuth. `MCP_REDIRECT_URIS` y
+   `MCP_ALLOWED_ORIGINS` traen por omisión los de los dos proveedores, a
+   confirmar en V-7; loopback cubre los de línea de comandos. Otro cliente se
+   suma con la variable, sin código; uno que no se registre solo, con el script
+   de §4.16. Cambia la recomendación anterior de «solo Claude».
+3. **La vida de los tokens**: acceso de 1 hora y refresh de 30 días con
+   rotación (D-MCP-5).
+4. **El asistente sigue conectado aunque se cierre la sesión web**: se
+   desconecta desde `/perfil`, y la sección lo dice (D-MCP-3, D-MCP-5).
+5. **Se enciende en producción después del preview**, con `MCP_ENABLED`
+   apagado por omisión (D-MCP-14, §6.3).
+6. **El asistente puede borrar entradas**, con `destructiveHint` (D-MCP-8).
+7. **Sin vista de owner o admin sobre asistentes ajenos** ni interruptor por
+   workspace: desactivar a alguien ya los corta, y el interruptor es de entorno
+   (§3, §12).
 
 ## 12. Fuera de alcance
 
+- **La actualización de Better Auth a 1.7.10**: va sola y primero (§0).
 - **Más herramientas**: continuar, duplicar, descartar el timer, las masivas,
   la planilla, crear clientes, proyectos, tareas o etiquetas, el reporte y
   cualquier dato de otra persona.
@@ -2064,10 +2149,15 @@ casos del gancho de autorizar y el refresh (integración).
 - **`@better-auth/mcp`** (D-MCP-1).
 - **`client_credentials`** y cualquier cliente que actúe sin una persona
   (D-MCP-2).
+- **Un servidor MCP llamado desde una API de un proveedor con un token que pega
+  un desarrollador** (por ejemplo, la herramienta MCP remota de la API de
+  OpenAI): no hay persona que autorice en el navegador, y tomar un token de
+  `/perfil` sería un token personal, que el usuario descartó.
 - **Que owner o admin vean o revoquen autorizaciones ajenas**, y un interruptor
-  por workspace (§11, pregunta 7).
+  por workspace (§11, decisión 7).
 - **Registro por documento de metadatos del cliente** (`client_id` como URL),
-  salvo que V-7 muestre que claude.ai lo exige y el plugin lo ofrezca.
+  salvo que V-7 muestre que un cliente de la lista lo exige y el plugin lo
+  ofrezca.
 - **Notificaciones del servidor, recursos y prompts de MCP.**
 - **La limpieza de clientes sin consentimiento** en el cron (§10).
 - **E6 (quitar del equipo)** llama a `deleteGrantsOf` cuando llegue: lo anota
