@@ -65,6 +65,18 @@ type ResourceByAction = {
   // solo sobre una membresía `admin`: `can()` no mira el rol de la membresía
   // para esta acción.
   "team.admin.setStatus": MembershipResource;
+  // D-E2b-4, ADR 0027: pedir que el próximo ingreso con el correo de una persona
+  // quede atado a su fila. Se consulta para pedir, renovar o cancelar una
+  // vinculación y para reactivar a quien no tiene cuenta. Sobre un admin, además
+  // `team.admin.account`.
+  "team.account.link": MembershipResource;
+  // D-E2b-4, D-E2b-9: liberar el correo de una persona inactiva. Sobre un admin,
+  // además `team.admin.account`.
+  "team.email.release": MembershipResource;
+  // D-E2b-4, P-07: solo el owner vincula la cuenta o libera el correo de un
+  // admin. Se consulta solo sobre una membresía `admin`: `can()` no mira el rol
+  // de la membresía para esta acción.
+  "team.admin.account": MembershipResource;
   "member.invite": WorkspaceResource;
   "timeEntry.own.create": TimeEntryResource;
   "timeEntry.own.update": TimeEntryResource;
@@ -104,6 +116,9 @@ const resourceKinds = {
   "team.manage": ["workspace", "membership"],
   "team.admin.revoke": ["membership"],
   "team.admin.setStatus": ["membership"],
+  "team.account.link": ["membership"],
+  "team.email.release": ["membership"],
+  "team.admin.account": ["membership"],
   "member.invite": ["workspace"],
   "timeEntry.own.create": ["timeEntry"],
   "timeEntry.own.update": ["timeEntry"],
@@ -136,6 +151,9 @@ const allowedRoles: Record<Action, readonly Role[]> = {
   "team.manage": ["owner", "admin"],
   "team.admin.revoke": ["owner"],
   "team.admin.setStatus": ["owner"],
+  "team.account.link": ["owner", "admin"],
+  "team.email.release": ["owner", "admin"],
+  "team.admin.account": ["owner"],
   "member.invite": ["owner", "admin"],
   "timeEntry.own.create": everyone,
   "timeEntry.own.update": everyone,

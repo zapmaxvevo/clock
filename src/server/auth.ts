@@ -74,11 +74,17 @@ export const auth = betterAuth({
       // D-E1a-14: el rechazo es una redirección a `/login` con el motivo. Better
       // Auth llama a esta función fuera de todo `try` del callback: un error
       // sin cabeceras saldría como un JSON 403.
+      //
+      // D-E2b-3: corre antes de que Better Auth busque la cuenta por `sub`. Con
+      // una vinculación vigente, la decisión escribe la cuenta de `sub` en la
+      // fila antes de devolver, y Better Auth la encuentra como ya enlazada. Un
+      // error de esa escritura vuelve como el código `vinculacion_fallida`.
       mapProfileToUser: async (profile) => {
         const decision = await decideProfileEntry({
           email: profile.email,
           email_verified: profile.email_verified,
           hd: "hd" in profile && typeof profile.hd === "string" ? profile.hd : null,
+          sub: profile.sub,
         });
         if (!decision.allowed) {
           throw new APIError("FOUND", undefined, {

@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { domainOf, isCompanyEmail, normalizeEmail, parseDomainList } from "./email";
+import {
+  domainOf,
+  isCompanyEmail,
+  isReleasedEmail,
+  normalizeEmail,
+  parseDomainList,
+  RELEASED_EMAIL_DOMAIN,
+  releasedEmailOf,
+} from "./email";
 
 describe("normalizeEmail (EQ-105)", () => {
   it("recorta y pasa a minúsculas", () => {
@@ -49,5 +57,28 @@ describe("parseDomainList", () => {
 
   it("da una lista vacía con la cadena vacía", () => {
     expect(parseDomainList("")).toEqual([]);
+  });
+});
+
+describe("releasedEmailOf e isReleasedEmail (D-E2b-9)", () => {
+  it("arma `<userId>@liberado.invalid`", () => {
+    expect(releasedEmailOf("u-123")).toBe("u-123@liberado.invalid");
+    expect(RELEASED_EMAIL_DOMAIN).toBe("liberado.invalid");
+  });
+
+  it("reconoce el correo que arma, sin distinguir mayúsculas ni blancos", () => {
+    expect(isReleasedEmail(releasedEmailOf("u-123"))).toBe(true);
+    expect(isReleasedEmail("  U-123@Liberado.INVALID \n")).toBe(true);
+  });
+
+  it("no reconoce un correo de la empresa, uno externo ni un subdominio", () => {
+    expect(isReleasedEmail("ana@empresa.com")).toBe(false);
+    expect(isReleasedEmail("ana@gmail.com")).toBe(false);
+    expect(isReleasedEmail("ana@otro.liberado.invalid")).toBe(false);
+    expect(isReleasedEmail("liberado.invalid")).toBe(false);
+  });
+
+  it("un correo liberado no es de ningún dominio de la empresa", () => {
+    expect(isCompanyEmail(releasedEmailOf("u-123"), ["empresa.com"])).toBe(false);
   });
 });

@@ -322,6 +322,55 @@ export const workspaceRepository = {
     return rows.at(0)?.id;
   },
 
+  /**
+   * D-E2b-8: una invitación `accepted` nueva para `email`, con quién la registró.
+   * `email` ya normalizado. Devuelve su id.
+   */
+  async insertAccepted(
+    tx: Transaction,
+    workspaceId: string,
+    email: string,
+    invitedById: string,
+  ): Promise<string> {
+    const rows = await tx
+      .insert(invitation)
+      .values({
+        workspaceId,
+        email,
+        status: "accepted",
+        invitedById,
+        acceptedAt: sql`now()`,
+      })
+      .returning({ id: invitation.id });
+    const row = rows.at(0);
+    if (row === undefined) {
+      throw new Error("El insert de la invitación no devolvió la fila.");
+    }
+    return row.id;
+  },
+
+  /**
+   * D-E2b-8: la revocada `(workspaceId, id)` pasa a `accepted`; limpia la
+   * revocación, como piden los `check` de `invitation`.
+   */
+  async acceptRevoked(tx: Transaction, workspaceId: string, id: string): Promise<void> {
+    await tx
+      .update(invitation)
+      .set({
+        status: "accepted",
+        acceptedAt: sql`now()`,
+        revokedAt: null,
+        revokedById: null,
+      })
+      .where(
+        and(
+          eq(invitation.workspaceId, workspaceId),
+          eq(invitation.id, id),
+          eq(invitation.status, "revoked"),
+        ),
+      );
+  },
+
   /** Las `pending` de `workspaceId`, `order by email`. */
   async listPending(workspaceId: string): Promise<readonly InvitationRow[]> {
     return db
@@ -343,11 +392,20 @@ export const workspaceRepository = {
    *
    * `lower(btrim(user.email))` no usa el índice único de `user`, como
    * `membersByEmail`; la tabla tiene decenas de filas.
+   *
+   * D-E2b-3: `accountLink` es si esa única membresía tiene una marca vigente
+   * según `now()` (D-E2b-11); `false` en cualquier otro caso. Solo decide si el
+   * ingreso intenta usarla: la vigencia final la decide `consumeAccountLink` de
+   * `team`, con la hora del momento.
    */
-  async entryFacts(email: string): Promise<{
+  async entryFacts(
+    email: string,
+    linkTtlDays: number,
+  ): Promise<{
     readonly workspaceId: string | null;
     readonly invitation: InvitationStatus | null;
     readonly membership: MembershipStatus | null;
+    readonly accountLink: boolean;
   }> {
     const rows = await db
       .select({
@@ -361,6 +419,16 @@ export const workspaceRepository = {
             and ${membership.workspaceId} = ${workspace.id}
           where ${normalizedUserEmail} = ${email}
         )`,
+        accountLink: sql<boolean>`coalesce((
+          select case when count(*) = 1 then bool_or(
+            ${membership.accountLinkRequestedAt} > now() - make_interval(days => ${linkTtlDays})
+          ) end
+          from ${user}
+          left join ${membership}
+            on ${membership.userId} = ${user.id}
+            and ${membership.workspaceId} = ${workspace.id}
+          where ${normalizedUserEmail} = ${email}
+        ), false)`,
       })
       .from(workspace)
       .leftJoin(
@@ -374,6 +442,7 @@ export const workspaceRepository = {
       workspaceId: row?.workspaceId ?? null,
       invitation: row?.invitation ?? null,
       membership: row?.membership ?? null,
+      accountLink: row?.accountLink ?? false,
     };
   },
 };

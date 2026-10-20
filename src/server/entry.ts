@@ -1,6 +1,7 @@
 import { APIError } from "better-auth/api";
 
 import { isCompanyEmail, normalizeEmail } from "@/lib/email";
+import { claimAccountLink } from "@/modules/team/service";
 import { entryFactsOf, entryMembershipStatusLocked } from "@/modules/workspace/service";
 import {
   accessDenialMessage,
@@ -12,9 +13,14 @@ import {
   type AccessDenialReason,
   type AccessPolicy,
   type GoogleProfile,
+  usesAccountLink,
   verifiedEmailOf,
 } from "@/server/access";
-import { deleteSession } from "@/server/auth-records";
+import {
+  bindGoogleAccount,
+  deleteSession,
+  googleAccountOwnerOf,
+} from "@/server/auth-records";
 import { db } from "@/server/db";
 import { env } from "@/server/env";
 
@@ -33,15 +39,77 @@ function policy(): AccessPolicy {
 }
 
 /**
- * D-E1b-1: el ingreso desde el perfil de Google. Sin correo o sin verificar,
- * la decisión no lee los hechos y no se consulta la base.
+ * D-E2b-3: los códigos con que el ingreso desde el perfil vuelve a `/login`.
+ * `vinculacion_fallida` no es un motivo de la regla: `/login` muestra el genérico.
+ */
+export type EntryDenialCode = AccessDenialReason | "vinculacion_fallida";
+
+export type ProfileEntryDecision =
+  | { readonly allowed: true }
+  | { readonly allowed: false; readonly reason: EntryDenialCode };
+
+/**
+ * D-E1b-1, D-E2b-3: el ingreso desde el perfil de Google. Decide la regla
+ * primero; si deja entrar por una membresía activa con una marca vigente, usa
+ * la vinculación antes de devolver. `inactive` responde `membresia_inactiva`; un
+ * error se registra y responde `vinculacion_fallida`, sin escribir. Sin correo
+ * o sin verificar, la decisión no lee los hechos y no se consulta la base.
  */
 export async function decideProfileEntry(
-  profile: GoogleProfile,
-): Promise<AccessDecision> {
+  profile: GoogleProfile & { readonly sub: string },
+): Promise<ProfileEntryDecision> {
   const verified = verifiedEmailOf(profile);
   const facts = verified.verified ? await entryFactsOf(verified.email) : NO_ENTRY_FACTS;
-  return decideGoogleAccess(profile, policy(), facts);
+  const decision = decideGoogleAccess(profile, policy(), facts);
+  if (!verified.verified || !usesAccountLink(decision, facts)) {
+    return decision;
+  }
+  // Better Auth llama a `mapProfileToUser` fuera de todo `try`: un error de la
+  // vinculación saldría como un 500 en JSON. La transacción no confirmó, así que
+  // la marca queda y reintentar vuelve a intentarla.
+  try {
+    const outcome = await bindRequestedAccount(verified.email, profile.sub);
+    return outcome === "inactive"
+      ? { allowed: false, reason: "membresia_inactiva" }
+      : decision;
+  } catch (error) {
+    console.error(error);
+    return { allowed: false, reason: "vinculacion_fallida" };
+  }
+}
+
+/** D-E2b-3: lo que hizo `bindRequestedAccount`. */
+export type AccountLinkOutcome = "linked" | "skipped" | "inactive";
+
+/**
+ * D-E2b-3: en una transacción, si `sub` no es la cuenta de ninguna fila,
+ * `claimAccountLink` (team) toma la marca del correo y `bindGoogleAccount`
+ * deja `sub` como la única cuenta de la persona. Devuelve `skipped` si `sub` ya
+ * tiene cuenta o si `claimAccountLink` devuelve `none`, e `inactive` si devuelve
+ * `inactive`; los dos sin escribir. `email` ya normalizado. Lanza si la base
+ * falla; no atrapa.
+ */
+export async function bindRequestedAccount(
+  email: string,
+  sub: string,
+): Promise<AccountLinkOutcome> {
+  return db.transaction(async (tx) => {
+    // Nunca dos filas de `account` con la misma clave: `findAccountOwnerByKey`
+    // de Better Auth lanza en todo ingreso de esa cuenta.
+    if ((await googleAccountOwnerOf(tx, sub)) !== null) {
+      return "skipped";
+    }
+    const claimed = await claimAccountLink(tx, email);
+    switch (claimed.kind) {
+      case "none":
+        return "skipped";
+      case "inactive":
+        return "inactive";
+      case "claimed":
+        await bindGoogleAccount(tx, claimed.person, sub);
+        return "linked";
+    }
+  });
 }
 
 /** En cada inicio de sesión, con el correo guardado. */
@@ -88,8 +156,8 @@ export async function dropSessionOfInactive(session: {
   });
 }
 
-/** D-E1a-14: `<BETTER_AUTH_URL>/login?error=<motivo>`, absoluta. */
-export function loginErrorUrl(reason: AccessDenialReason): string {
+/** D-E1a-14: `<BETTER_AUTH_URL>/login?error=<código>`, absoluta. */
+export function loginErrorUrl(reason: EntryDenialCode): string {
   const url = new URL("/login", env().BETTER_AUTH_URL);
   url.searchParams.set("error", reason);
   return url.toString();

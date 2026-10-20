@@ -35,8 +35,8 @@ const notInvited = { allowed: false, reason: "sin_invitacion" };
 const inactive = { allowed: false, reason: "membresia_inactiva" };
 
 /** Un perfil de Google verificado, sin `hd` salvo que se pase. */
-function profile(email: string, hd?: string) {
-  return { email, email_verified: true, hd: hd ?? null };
+function profile(email: string, hd?: string, sub = "google-sub-nuevo") {
+  return { email, email_verified: true, hd: hd ?? null, sub };
 }
 
 /** Las dos decisiones del mismo correo: la del perfil y la del correo guardado. */
@@ -191,7 +191,11 @@ describe("con el workspace", () => {
       await seedInvitation({ workspaceId, email: "ana@gmail.com" });
 
       expect(
-        await decideProfileEntry({ email: "ana@gmail.com", email_verified: false }),
+        await decideProfileEntry({
+          email: "ana@gmail.com",
+          email_verified: false,
+          sub: "google-sub-nuevo",
+        }),
       ).toEqual({ allowed: false, reason: "email_no_verificado" });
     });
   });
@@ -213,7 +217,9 @@ describe("con el workspace", () => {
     it("sin correo o sin verificar no lee los hechos", async () => {
       const entryFacts = vi.spyOn(workspaceRepository, "entryFacts");
 
-      expect(await decideProfileEntry({ email_verified: true })).toEqual({
+      expect(
+        await decideProfileEntry({ email_verified: true, sub: "google-sub-nuevo" }),
+      ).toEqual({
         allowed: false,
         reason: "sin_email",
       });
@@ -222,6 +228,7 @@ describe("con el workspace", () => {
           email: "ana@empresa.com",
           email_verified: false,
           hd: "empresa.com",
+          sub: "google-sub-nuevo",
         }),
       ).toEqual({ allowed: false, reason: "email_no_verificado" });
       expect(entryFacts).not.toHaveBeenCalled();

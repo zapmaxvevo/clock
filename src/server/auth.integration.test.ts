@@ -448,8 +448,18 @@ describe("el callback de Google termina en /login con el motivo (criterio 25, D-
     const sub = randomUUID();
     // Invitada al pasar `mapProfileToUser`, revocada al llegar al gancho.
     vi.spyOn(workspaceRepository, "entryFacts")
-      .mockResolvedValueOnce({ workspaceId, invitation: "pending", membership: null })
-      .mockResolvedValueOnce({ workspaceId, invitation: "revoked", membership: null });
+      .mockResolvedValueOnce({
+        workspaceId,
+        invitation: "pending",
+        membership: null,
+        accountLink: false,
+      })
+      .mockResolvedValueOnce({
+        workspaceId,
+        invitation: "revoked",
+        membership: null,
+        accountLink: false,
+      });
 
     const response = await signInWithGoogle({ email, sub });
 
@@ -495,14 +505,16 @@ describe("el callback de Google termina en /login con el motivo (criterio 25, D-
     const person = await seedGooglePerson("active");
     // `mapProfileToUser` lee la membresía activa; antes del gancho, pasa a inactiva.
     const entryFacts = workspaceRepository.entryFacts.bind(workspaceRepository);
-    vi.spyOn(workspaceRepository, "entryFacts").mockImplementationOnce(async (email) => {
-      const facts = await entryFacts(email);
-      await db
-        .update(membership)
-        .set({ status: "inactive" })
-        .where(eq(membership.userId, person.id));
-      return facts;
-    });
+    vi.spyOn(workspaceRepository, "entryFacts").mockImplementationOnce(
+      async (email, linkTtlDays) => {
+        const facts = await entryFacts(email, linkTtlDays);
+        await db
+          .update(membership)
+          .set({ status: "inactive" })
+          .where(eq(membership.userId, person.id));
+        return facts;
+      },
+    );
 
     const response = await signInWithGoogle({
       email: person.email,

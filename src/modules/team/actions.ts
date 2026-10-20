@@ -6,11 +6,17 @@ import * as service from "./service";
 import {
   changeRoleInput,
   changeStatusInput,
+  releaseEmailInput,
+  setAccountLinkInput,
   teamMessages,
   type ChangeRoleInput,
   type ChangeRoleResult,
   type ChangeStatusInput,
   type ChangeStatusResult,
+  type ReleaseEmailInput,
+  type ReleaseEmailResult,
+  type SetAccountLinkInput,
+  type SetAccountLinkResult,
   type TeamErrorCode,
 } from "./schema";
 
@@ -45,6 +51,38 @@ export async function changeStatus(
       messages: {
         forbidden: teamMessages.forbiddenAction,
         unexpected: teamMessages.unexpectedStatus,
+      },
+    },
+  );
+}
+
+export async function setAccountLink(
+  input: SetAccountLinkInput,
+): Promise<ActionResult<SetAccountLinkResult, TeamErrorCode>> {
+  return handle(
+    async (session) =>
+      service.setAccountLink(session.actor, setAccountLinkInput.parse(input)),
+    {
+      paths,
+      messages: {
+        forbidden: teamMessages.forbiddenAction,
+        unexpected: teamMessages.unexpectedLink,
+      },
+    },
+  );
+}
+
+export async function releaseEmail(
+  input: ReleaseEmailInput,
+): Promise<ActionResult<ReleaseEmailResult, TeamErrorCode>> {
+  return handle(
+    async (session) =>
+      service.releaseEmail(session.actor, releaseEmailInput.parse(input)),
+    {
+      paths,
+      messages: {
+        forbidden: teamMessages.forbiddenAction,
+        unexpected: teamMessages.unexpectedRelease,
       },
     },
   );
