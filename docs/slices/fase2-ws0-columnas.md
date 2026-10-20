@@ -17,7 +17,8 @@ columnas, y después la migración que las borra.
 - **Lugar en el plan:** primer slice de configuración de la fase 2. No depende
   de ningún slice; **va antes de WS2a y de E4**, que suman columnas a
   `workspace_settings` (mapa, «WS0»).
-- **Revisión:** pendiente de `architecture-reviewer`.
+- **Revisión:** `architecture-reviewer` lo aprobó con cambios; las seis
+  correcciones están aplicadas.
 - **Decisiones de arquitectura:**
   - **[ADR 0028](../adr/0028-borrar-columnas-primero-el-codigo-despues-la-migracion.md),
     nuevo, propuesto**: borrar columnas, primero el código y después la
@@ -61,7 +62,7 @@ de `membership_status` (deuda del mapa, §6); y el resto de `workspace` y
 `membership`. Ninguna fila se borra ni cambia.
 
 **D-WS0-2 — Dos commits, dos merges, y la migración después del segundo push
-(ADR 0028).** La rama `fase2/ws0-columnas` termina con dos commits, en este
+(ADR 0028).** La rama `fase2/ws0-columnas` lleva dos commits de código, en este
 orden:
 
 - **A, el código**: `src/server/db/schema.ts` sin las doce columnas, los
@@ -69,11 +70,34 @@ orden:
 - **B, la migración**: lo que genera `npm run db:generate` desde el esquema de A
   (D-WS0-4) y el test que comprueba el resultado (§9.2). Nada más.
 
-El team-lead los lleva a `main` en dos merges: **primero A**, con
+**La regla del orden**: todo commit que toque `src/` va antes del primero que
+toque `drizzle/`; A es el último commit anterior a B —las correcciones de las
+revisiones de A son parte de A o van antes—; los commits de `docs/` pueden ir
+en cualquier lugar. **B se genera después de cerrar las revisiones de A** y se
+revisa aparte, con la lista de D-WS0-4.
+
+**Regenerar B** —porque una corrección toca `src/` después de B, porque la
+revisión de B la rechaza, o porque `main` sumó una migración antes del merge de
+A— se hace en **una rama nueva desde A**: `git switch -c fase2/ws0-b <A>` (con
+la corrección de `src/` encima, si la hay, que pasa a ser el A nuevo); si `main`
+cambió, `git rebase main` en esa rama; los commits de `docs/` posteriores al B
+viejo, con `git cherry-pick`; y `db:generate` otra vez. Desde ahí la rama del
+slice es `fase2/ws0-b`, y la vieja queda sin mergear. **No** `git reset --hard`,
+que está prohibido en este repo. Se elige la rama nueva y no un `git revert` del
+B viejo para que B siga siendo un solo commit que se revisa entero y el diario
+no arrastre una entrada agregada y quitada.
+
+El team-lead lleva los commits a `main` en dos merges: **primero A**, con
 `git merge --no-ff <A>`, y push; **B**, con el merge de la rama, solo después de
 la comprobación de D-WS0-5. La migración la corre el usuario en producción
-**después del push de B**, desde `main` (§6.5). Entre los dos merges no entra a
-`main` otra migración (ADR 0028, regla 2). Los dos merges van el mismo día.
+**después del push de B**, desde `main` (§6.5). Los dos merges van el mismo día.
+
+**Mientras un árbol tenga A sin B, nadie corre `db:generate` en él** (ADR 0028,
+regla 2): `main` entre los dos merges, la rama del slice antes de B y todo
+worktree rebasado sobre ese `main`. El esquema ya no tiene las columnas y la
+última instantánea sí, así que generaría el borrado otra vez. Por eso entre los
+dos merges no entra a `main` otra migración, y **WS2a y E4 arrancan desde un
+`main` con B**.
 
 **Por qué después del push y no antes desde la rama**: así `main` tiene la
 migración antes que producción, y producción nunca tiene una migración que
@@ -140,12 +164,13 @@ no cambia nada que se ejecute: el código de B es el de A.
 **D-WS0-4 — La migración se genera en la rama rebasada, con nombre, y se revisa
 a mano.**
 
-- **Cuándo**: después de rebasar la rama sobre el `main` que trae E2b y el MCP
-  mergeados (§0), con A ya hecho, y **de nuevo si `main` suma otra migración
-  antes del merge de B**. No se renombra un archivo generado antes: el `when`
-  de su entrada en `drizzle/meta/_journal.json` tiene que superar el
-  `created_at` de la última migración aplicada en producción, o
-  `drizzle-kit migrate` la saltea sin aviso (ADR 0028, «Contexto»).
+- **Cuándo**: cerradas las revisiones de A (D-WS0-2), sobre la rama rebasada en
+  el `main` que trae E2b y el MCP mergeados (§0), y **de nuevo, con el
+  procedimiento de D-WS0-2, si `main` suma otra migración antes del merge de
+  A**. No se renombra un archivo generado antes: el `when` de su entrada en
+  `drizzle/meta/_journal.json` tiene que superar el `created_at` de la última
+  migración aplicada en producción, o `drizzle-kit migrate` la saltea sin aviso
+  (ADR 0028, «Contexto»).
 - **Cómo**: `npm run db:generate -- --name drop_unused_columns`. En `main` la
   última es la `0016`; E2b trae `0017_membership_account_link` y el MCP
   `0017_mcp`, y el que mergee segundo regenera la suya como `0018`. **La de WS0
@@ -187,26 +212,45 @@ a mano.**
   las migraciones que agregan. Los valores quedan en la salida de la consulta
   previa (D-WS0-9).
 
-**D-WS0-5 — Que no quede una versión anterior a A se comprueba en Vercel, y se
-confirma después de migrar en los logs.** Antes del merge de B, el team-lead
-comprueba:
+**D-WS0-5 — Que no quede una versión anterior a A se comprueba en CI y en
+Vercel, y se confirma después de migrar en los logs.** Antes del merge de B, el
+team-lead comprueba, en orden:
 
-1. **El deployment de producción actual es el del merge de A**, en estado
-   `success`:
+0. **La corrida de CI del merge de A terminó en `success`**, con `integration` y
+   `e2e`:
 
    ```
-   gh api 'repos/zapmaxvevo/clock/deployments?environment=Production&per_page=3' \
+   gh run list --workflow CI --branch main --json databaseId,headSha,conclusion
+   gh run view <databaseId> --json jobs --jq '.jobs[] | {name, conclusion}'
+   ```
+
+   La corrida cuyo `headSha` es el merge de A tiene `conclusion` `success`, y
+   sus tres jobs también. **Hasta que esa corrida termine no se pushea nada a
+   `main`**: `ci.yml` tiene `cancel-in-progress: true` por ref
+   (`.github/workflows/ci.yml:8-10`), y un push la cancelaría. Es la prueba de
+   A contra la base con las columnas (ADR 0028, «Consecuencias»).
+
+1. **El último deployment de producción contiene A**, en estado `success`:
+
+   ```
+   gh api 'repos/zapmaxvevo/clock/deployments?environment=Production&per_page=5' \
      --jq '.[] | {id, sha, created_at}'
    gh api repos/zapmaxvevo/clock/deployments/<id>/statuses --jq '.[0] | {state, created_at}'
+   git fetch origin && git merge-base --is-ancestor <A> <sha>
    ```
 
-   El primero tiene el `sha` del merge de A y su último estado es `success`. El
-   usuario lo puede confirmar en el tablero de Vercel: ese deployment tiene la
-   marca «Current».
+   El primero de la lista tiene un `sha` del que A es ancestro (el `merge-base`
+   sale con código 0) y su último estado es `success`. No hace falta que sea el
+   merge de A: entre los dos merges se pushean commits de `docs/` a `main`, y
+   cada push despliega. Vercel crea el deployment de GitHub solo cuando el build
+   termina bien, así que un build fallido no aparece en la lista: el primero es
+   siempre uno que atiende. El usuario lo puede confirmar en el tablero de
+   Vercel: ese deployment tiene la marca «Current».
 
-2. **Pasaron diez minutos desde ese `success`**: el dominio de producción ya va
-   al deployment de A, y las invocaciones que el anterior tenía en curso
-   terminaron —su duración máxima es de minutos—.
+2. **Pasaron diez minutos desde el `success` del primer deployment que contiene
+   A** —el más viejo de la lista con A como ancestro—: desde ahí el dominio de
+   producción va a una versión sin las columnas, y las invocaciones que la
+   anterior tenía en curso terminaron —su duración máxima es de minutos—.
 3. **La verificación de humo de §6.3** pasa con A contra la base con las
    columnas.
 4. **El script rebasado** está commiteado y probado (D-WS0-6).
@@ -240,7 +284,8 @@ Con la base migrada, **el script viejo falla en la primera sentencia** con
 importación a quien entre después, hasta el rebase.
 
 **Quién y cuándo**: `backend-dev`, cuando el team-lead se lo pida, **después del
-merge de A** y antes de la migración de producción. No va en la rama de WS0.
+merge de A** y antes de la migración de producción. No va en la rama de WS0. El
+script no corre `db:generate`: su árbol tiene A sin B (D-WS0-2).
 
 1. **Una rama de respaldo** en la cabeza de hoy, que no se borra:
    `git branch ops/importar-clockify-antes-de-ws0 ops/importar-clockify`. La
@@ -284,8 +329,9 @@ script viejo; **desde la migración**, solo el rebasado.
   `default`; si la consulta previa mostró otro, su salida es la única copia
   (D-WS0-9).
 
-**D-WS0-8 — Las bases que comparten varios árboles reciben B al final.** Con B
-aplicada, un árbol sin A falla contra esa base, en la integración y en la e2e:
+**D-WS0-8 — Las bases que comparten varios árboles reciben B después de
+producción.** Con B aplicada, un árbol sin A falla contra esa base, en la
+integración y en la e2e:
 
 - **Los agentes de WS0 prueban con bases propias**, nunca con `clock` ni con
   `clock_test`:
@@ -295,13 +341,19 @@ aplicada, un árbol sin A falla contra esa base, en la integración y en la e2e:
   e2e, más las de §9. La integración migra sola su base al arrancar
   (`src/test/global-setup.ts:11-14`): correrla contra `clock_test` desde la
   rama le aplicaría B.
-- **Las bases locales comunes** reciben B cuando alguien migra desde `main` con
-  B. Desde ahí, todo worktree abierto se rebasa sobre `main` antes de probar
-  contra ellas.
-- **La rama `preview` de Neon** recibe B con `!`, después de producción. Desde
-  ahí, el preview de una rama sin A falla; las ramas con preview se rebasan
-  antes. Si una rama de preview no se puede rebasar todavía, la migración de
-  `preview` espera.
+- **Las bases locales comunes (`clock`, `clock_test`) y la rama `preview` de
+  Neon se migran recién después de §6.5**, no con el merge de B. Entre el push
+  de B (§6.4) y la migración de producción, `main` ya tiene B: **si hay que
+  correr la suite desde `main` en ese intervalo, va con `TEST_DATABASE_URL`
+  hacia una base propia** —`global-setup.ts` migraría `clock_test` solo— y la
+  e2e con `DATABASE_URL` hacia otra propia.
+- **Después de §6.5**, la base local `clock` recibe B con `npm run db:migrate`
+  desde `main`, y `clock_test` en la primera tanda que corra desde `main`. Desde
+  ahí, todo worktree abierto se rebasa sobre `main` antes de probar contra ellas.
+- **La rama `preview` de Neon** recibe B con `!`, después de §6.5. Desde ahí, el
+  preview de una rama sin A falla; las ramas con preview se rebasan antes. Si
+  una rama de preview no se puede rebasar todavía, la migración de `preview`
+  espera.
 
 **D-WS0-9 — Lo que se pierde se copia antes, y no frena.** Las columnas no
 tienen lector, así que lo que guardan no tiene efecto (workspace P-05, ADR
@@ -339,8 +391,8 @@ slice (son un código de moneda, banderas y números: nada personal).
 | El comentario de `client.create` y `project.create` remite a la columna                                      | `src/server/permissions/index.ts:76-79`                                                                                                             |
 | Los tres tests que nombran columnas                                                                          | `project/schema.integration.test.ts:485-537`; `workspace/service.integration.test.ts:507-510`; `time-entry/person-keys.integration.test.ts:353-364` |
 | Las fábricas y las consultas de test no nombran las columnas                                                 | `src/test/factories.ts:54-61`, `:76`; `src/test/queries.ts:35-50`                                                                                   |
-| La integración migra su base al arrancar; la base se elige con `TEST_DATABASE_URL`                           | `src/test/global-setup.ts:11-14`; `src/test/database-url.ts:1-3`                                                                                    |
-| CI corre la integración y la e2e contra bases nuevas migradas desde el árbol                                 | `.github/workflows/ci.yml:43-68`, `:70-102`                                                                                                         |
+| La integración migra su base al arrancar; la base se elige con `TEST_DATABASE_URL`; cada test trunca         | `src/test/global-setup.ts:11-14`; `src/test/database-url.ts:1-3`; `src/test/database.ts:11`                                                         |
+| CI cancela la corrida en curso de la misma ref; corre la integración y la e2e contra bases nuevas            | `.github/workflows/ci.yml:8-10`, `:43-68`, `:70-102`                                                                                                |
 | La e2e y el volumen del reporte nombran sus columnas en SQL, ninguna de las doce                             | `e2e/database.ts:429`; `scripts/report-volume/seed.sql:44-68`                                                                                       |
 | El cron no toca la base; la aplicación no deja conexiones abiertas entre invocaciones                        | `src/app/api/cron/daily/route.ts:13-22`; `src/server/db/index.ts:10-22`                                                                             |
 | El script: `select()` del workspace, lecturas nombradas e `insert` de membresías; su árbol llega a la `0014` | `scripts/import-clockify/main.ts:193-199`, `:232-239`, `:470-482`, `:491-519`; su `drizzle/` (rama `ops/importar-clockify`)                         |
@@ -545,12 +597,15 @@ Lo esperado y qué se hace si no:
 
 El team-lead mergea A (`git merge --no-ff <A>`) y pushea. Vercel despliega.
 **No hay migración que correr.** Mientras Vercel cambia de versión no hay
-ventana: las dos versiones funcionan con las columnas.
+ventana: las dos versiones funcionan con las columnas. **Hasta que la corrida de
+CI de ese push termine, no se pushea nada más a `main`** (D-WS0-5, paso 0).
 
 ### 6.3 La comprobación de A en producción
 
-1. **D-WS0-5, pasos 1 y 2**: el deployment de A es el actual, desde hace diez
-   minutos.
+1. **D-WS0-5, pasos 0 a 2**: la corrida de CI del merge de A en `success` con
+   sus tres jobs; el último deployment de producción contiene A y está en
+   `success`; y pasaron diez minutos desde el `success` del primero que lo
+   contuvo.
 2. **La verificación de humo**: el owner entra a `/`, `/planilla`,
    `/calendario`, `/reportes`, `/equipo` y `/perfil`, y todas cargan con sus
    datos. A no cambia nada visible: el humo prueba que A atiende contra la base
@@ -562,7 +617,8 @@ Si algo falla acá, la reversión es la de antes de migrar (§6.7).
 ### 6.4 El merge y el push de B
 
 El team-lead mergea la rama (B) y pushea. Vercel despliega de nuevo, con el
-mismo código. **Recién ahora** la migración está en `main`.
+mismo código. **Recién ahora** la migración está en `main`. Las bases
+compartidas todavía no la reciben (D-WS0-8).
 
 ### 6.5 La migración
 
@@ -596,7 +652,8 @@ avisa al team-lead, que regenera B sobre `main` con un `when` posterior.
 1. **Los logs de Runtime de producción** en Vercel, filtrados por
    `does not exist`, sin resultados durante quince minutos (D-WS0-5).
 2. **La verificación de humo** de §6.3 otra vez.
-3. **La rama `preview` de Neon**, con `!`, cuando se cumpla D-WS0-8.
+3. **Las bases compartidas**: la local `clock`, `clock_test` y la rama `preview`
+   de Neon, con lo que pide D-WS0-8.
 
 ### 6.7 Reversión
 
@@ -611,10 +668,15 @@ avisa al team-lead, que regenera B sobre `main` con un `when` posterior.
 
 ### 6.8 Previews y la base local
 
-- **La rama `preview` de Neon** recibe B después de producción (D-WS0-8). Un
-  preview de la rama de WS0 funciona con y sin B.
-- **La base local `clock`** recibe B con `npm run db:migrate` desde `main`,
-  cuando B está en `main`. Desde ahí, los worktrees abiertos se rebasan.
+- **Hasta §6.5**, ninguna base compartida tiene B. Una suite que corra desde
+  `main` entre §6.4 y §6.5 usa `TEST_DATABASE_URL` y `DATABASE_URL` hacia bases
+  propias (D-WS0-8).
+- **La rama `preview` de Neon** recibe B con `!` después de §6.5, con las ramas
+  de preview rebasadas (D-WS0-8). Un preview de la rama de WS0 funciona con y
+  sin B.
+- **La base local `clock`** recibe B con `npm run db:migrate` desde `main`
+  después de §6.5, y `clock_test`, en la primera tanda desde `main` después de
+  §6.5. Desde ahí, los worktrees abiertos se rebasan.
 
 ## 7. Reparto de archivos
 
@@ -622,12 +684,13 @@ avisa al team-lead, que regenera B sobre `main` con un `when` posterior.
 
 - **Commit A**: `src/server/db/schema.ts` (§2.1),
   `src/server/permissions/index.ts` (§3) y los tres tests de D-WS0-3. Corre la
-  búsqueda de D-WS0-3 y la suite de §9.1 contra bases propias (D-WS0-8).
-- **Commit B**, después de A y del rebase sobre `main`:
-  `npm run db:generate -- --name drop_unused_columns` y
+  búsqueda de D-WS0-3 y la suite de §9.1 contra bases propias (D-WS0-8). Las
+  correcciones de las revisiones de A van como commits antes de B.
+- **Commit B**, cerradas las revisiones de A y con la rama rebasada sobre
+  `main`: `npm run db:generate -- --name drop_unused_columns` y
   `src/server/db/schema.integration.test.ts` (§9.2). Revisa la migración con la
   lista de D-WS0-4 y pega el SQL y la diferencia de la instantánea en el
-  registro.
+  registro. Si hay que regenerarla, con el procedimiento de D-WS0-2.
 - **Las pruebas de §9.3**, con su salida en el registro.
 - **El script** (D-WS0-6, §9.4), en su worktree y su rama, cuando el team-lead
   lo pida, después del merge de A: el respaldo, el rebase, el ajuste, el commit
@@ -664,13 +727,16 @@ los tres tests, `src/components/`, `src/app/`, `CLAUDE.md`, `.github/` y los ADR
 
 ### Orden
 
-1. `backend-dev`: A, con la suite verde contra una base sin B.
-2. `backend-dev`: el rebase de la rama sobre `main`, si `main` cambió, y B.
-3. Las revisiones (backend, clean code, tests); la de backend repite la lista de
-   D-WS0-4 sobre el SQL. `e2e-tester`, las corridas finales. `parity-analyst`,
-   en paralelo.
-4. El merge de A, la comprobación de §6.3, el script (`backend-dev`), el merge de
-   B y la migración (§6).
+1. `backend-dev`: A, con la suite verde contra una base sin B (§9.1).
+2. **Las revisiones de A** (backend, clean code, tests) y la e2e de
+   `e2e-tester` con A. Sus correcciones son commits que tocan `src/`, antes de
+   B. `parity-analyst`, en paralelo, en cualquier momento.
+3. **Cerradas las revisiones de A**: el rebase sobre `main`, si cambió, y B
+   (D-WS0-4).
+4. **La revisión de B**, aparte: la de backend, con la lista de D-WS0-4 sobre el
+   SQL y la instantánea; `backend-dev` con §9.3 y `e2e-tester` con la e2e de B.
+5. El merge de A, la comprobación de §6.3 (D-WS0-5, pasos 0 a 3), el script
+   (`backend-dev`), el merge de B y la migración (§6).
 
 ## 8. Criterios de aceptación
 
@@ -685,7 +751,9 @@ los tres tests, `src/components/`, `src/app/`, `CLAUDE.md`, `.github/` y los ADR
    quedan con el `default` en las columnas borradas, leído con SQL.
 4. **B trae solo el borrado**: el SQL tiene las doce sentencias de D-WS0-4 y
    nada más; la instantánea difiere de la anterior solo en esas doce columnas;
-   la entrada del diario es la última, con el `when` mayor.
+   la entrada del diario es la última, con el `when` mayor. En la rama, ningún
+   commit posterior al primero que toca `drizzle/` toca `src/` fuera del test
+   de B.
 5. **B deja lo que dice D-WS0-1**: el test nuevo afirma que las doce columnas no
    están, que `workspace_settings` tiene `workspace_id`, `who_sees_all_entries`,
    `created_at` y `updated_at`, y que `visibility_scope` existe.
@@ -696,7 +764,8 @@ los tres tests, `src/components/`, `src/app/`, `CLAUDE.md`, `.github/` y los ADR
 7. **La suite entera con B**, en una base nueva y en la del criterio 6.
 8. **El orden importa** (evidencia del ADR): con el árbol anterior a A y la base
    del criterio 6 ya migrada, `ensureWorkspaceContext` falla con `42703`
-   nombrando una de las columnas. Se corre una vez y queda en el registro.
+   nombrando una de las columnas. Se corre una vez, **al final**, después de
+   los criterios 6, 7 y 10, y queda en el registro.
 9. **El script rebasado** (D-WS0-6): su `typecheck` y sus tests pasan; contra una
    base migrada con B, `--dry-run` y `--apply` terminan con los totales del
    informe, y un segundo `--dry-run` no tiene a nadie nuevo; contra una base sin
@@ -730,16 +799,23 @@ tanda contra una base nueva; el test falla nombrando esa columna.
 
 ### 9.3 Con B
 
-- La suite entera (`test:all` y la e2e) contra bases nuevas
-  (`clock_ws0_test_b`, `clock_ws0_e2e_b`).
-- **La subida con datos** (criterio 6): `clock_ws0_upgrade`, migrada desde el
-  árbol de A, sembrada con el `seed.sql` del volumen del reporte o con las
-  fábricas, y después `npm run db:migrate` desde B. Las consultas de §6.1 antes
-  y las de §6.5 después (criterio 10), y la integración y la e2e contra ella.
-- **El orden importa** (criterio 8): un worktree temporal en el commit anterior
-  a A, con `DATABASE_URL` en `clock_ws0_upgrade`, y una llamada a
-  `ensureWorkspaceContext` (o la integración de `workspace/service`): falla con
-  `42703`. El worktree se borra después.
+En este orden:
+
+1. La suite entera (`test:all` y la e2e) contra bases nuevas
+   (`clock_ws0_test_b`, `clock_ws0_e2e_b`).
+2. **La subida con datos** (criterios 6 y 10): `clock_ws0_upgrade`, migrada
+   desde el árbol de A, sembrada con el `seed.sql` del volumen del reporte o con
+   las fábricas; las consultas de §6.1; `npm run db:migrate` desde B; las de
+   §6.5.
+3. **La suite contra esa base** (criterios 6 y 7): la e2e con
+   `DATABASE_URL=…/clock_ws0_upgrade` y la integración con
+   `TEST_DATABASE_URL=…/clock_ws0_upgrade`.
+4. **El orden importa** (criterio 8), al final: un worktree temporal en el
+   commit anterior a A, y la integración de `workspace/service` con
+   `TEST_DATABASE_URL=…/clock_ws0_upgrade`. Falla con `42703`. Va última porque
+   la integración trunca las tablas (`src/test/database.ts:11`) y su
+   `global-setup` no tiene nada que aplicar sobre una base más nueva. El
+   worktree se borra después.
 
 ### 9.4 El script
 
@@ -760,25 +836,30 @@ En su worktree, después del rebase y del commit de D-E1b-10:
 
 ### 9.5 Lo que no se prueba
 
-La comprobación de Vercel de D-WS0-5 y los logs de §6.6: son de producción y
-los hace el team-lead o el usuario en el momento. Ninguna pantalla cambia, así
-que no hay e2e nueva.
+La comprobación de CI y de Vercel de D-WS0-5 y los logs de §6.6: son de
+producción y los hace el team-lead o el usuario en el momento. Ninguna pantalla
+cambia, así que no hay e2e nueva.
 
 ## 10. Riesgos
 
 - **Migrar antes de que A atienda** deja caída la aplicación: todo pedido con
   sesión falla con `42703` hasta que A atienda. Lo evitan D-WS0-2 (la migración
   no está en `main` hasta el merge de B) y D-WS0-5.
+- **Un push a `main` antes de que termine la corrida de CI de A** la cancela, y
+  la prueba de A contra la base con las columnas no queda hecha. Lo evita el
+  paso 0 de D-WS0-5.
 - **Instant Rollback a un deployment anterior a A**, después de migrar, deja la
   aplicación caída. La salida es §6.7. El usuario lo sabe por el ADR 0028.
 - **Una migración salteada por el `when`**: si B se generó antes de una
   migración que ya corrió, `db:migrate` no la aplica y no avisa. Lo detecta la
   consulta 4 de §6.5; lo evita D-WS0-4.
-- **Un `db:generate` entre los dos merges** repetiría el borrado en otra
-  migración. Lo acota D-WS0-2: los dos merges el mismo día y nada con migración
-  en el medio.
+- **Un `db:generate` en un árbol con A sin B** repetiría el borrado en otra
+  migración. Lo evita D-WS0-2: nadie lo corre ahí, nada con migración entre los
+  dos merges, y WS2a y E4 arrancan desde un `main` con B.
 - **Una base compartida migrada antes de tiempo** rompe los árboles sin A
-  (D-WS0-8): la rama `preview` de Neon, `clock` y `clock_test`.
+  (D-WS0-8): la rama `preview` de Neon, `clock` y `clock_test`. Una tanda de
+  integración desde `main` entre §6.4 y §6.5 sin `TEST_DATABASE_URL` le aplicaría
+  B a `clock_test`.
 - **El rebase del script atraviesa seis slices** y puede chocar en
   `package.json` y en las firmas que usa; lo cubre el `typecheck` y la prueba de
   §9.4. Sin el rebase, el script viejo falla sin escribir: nadie pierde horas,
@@ -834,7 +915,8 @@ Verificado contra `eb2ba2d` y `drizzle-orm` 0.45.3:
 - **El valor `invited` de `membership_status`**: deuda del mapa (§6); quitar un
   valor de un enum pide recrear el tipo.
 - **Las columnas nuevas de `workspace_settings`**: el formato de duración (WS2a)
-  y el primer día por defecto (E4), cada una con su slice.
+  y el primer día por defecto (E4), cada una con su slice, desde un `main` con
+  B.
 - **El logo** (WS-07, workspace P-01) y **la capacidad y los días laborables**
   (EQ-72, WS-09, P-09 y P-06): si algún día entran, sus columnas vuelven con su
   consumidor.

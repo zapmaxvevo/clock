@@ -83,13 +83,21 @@ antes que otra que ya corrió se saltea sin aviso.
 1. **Dos commits en la rama del slice.** El primero, **el código**: el esquema
    sin las columnas, los lectores que las nombran y sus tests, sin migración. El
    segundo, **la migración**: lo que genera `npm run db:generate` desde ese
-   esquema, y el test que comprueba su resultado. Nada más.
+   esquema, y el test que comprueba su resultado. Nada más. **Todo commit que
+   toque `src/` va antes del primero que toque `drizzle/`**, y el del código es
+   el último anterior a la migración; los commits de `docs/` pueden ir en
+   cualquier lugar. La migración se genera cuando cerraron las revisiones del
+   código, y se revisa aparte.
 2. **Dos merges a `main`.** El del código primero. El de la migración, solo
-   cuando el deployment del primero es el actual de producción y pasaron diez
-   minutos desde que lo es, para que terminen las invocaciones del anterior.
-   **Entre los dos merges no entra a `main` ninguna otra migración**: el esquema
-   ya no tiene las columnas y la última instantánea de `drizzle/meta/` sí, así
-   que un `db:generate` en ese intervalo volvería a generar el borrado.
+   cuando la corrida de CI del merge del código terminó en `success` —con la
+   integración y la e2e—, el último deployment de producción contiene ese merge
+   y pasaron diez minutos desde el primero que lo contuvo, para que terminen las
+   invocaciones del anterior. **Ningún árbol que tenga el código sin la
+   migración corre `db:generate`**: el esquema ya no tiene las columnas y la
+   última instantánea de `drizzle/meta/` sí, así que generaría el borrado otra
+   vez. Por eso entre los dos merges no entra a `main` ninguna otra migración, y
+   los slices que suman columnas arrancan desde un `main` que ya tiene la
+   migración del borrado.
 3. **La migración se corre después del push de su merge**, desde `main`: es el
    orden inverso al de una que agrega, que se corre antes. Así `main` tiene la
    migración antes que cualquier base, y una base nunca tiene una migración que
@@ -97,16 +105,15 @@ antes que otra que ya corrió se saltea sin aviso.
 4. **Antes de migrar, todo lector de fuera de la aplicación** que use el esquema
    viejo se pasa al nuevo y se prueba contra una base migrada. Mientras no está,
    no se migra.
-5. **Una base compartida recibe la migración** solo cuando todos los árboles que
-   la usan tienen el commit del código: la rama `preview` de Neon, cuando las
-   ramas con preview están rebasadas; las bases locales comunes, nunca desde la
-   rama del slice, que prueba con bases propias.
-6. **La migración se genera después de rebasar** sobre el último `main`, para
-   que su `when` supere el de toda migración aplicada, y **se revisa a mano**:
-   solo `DROP COLUMN` de las columnas pedidas, sin tipos ni restricciones de
-   más. `drizzle-kit` pregunta por un renombre solo cuando una tabla pierde y
-   gana columnas en el mismo diff; si pregunta, el diff trae algo que no es el
-   borrado, y se para.
+5. **Las bases compartidas reciben la migración después de producción**, y solo
+   cuando todos los árboles que las usan tienen el commit del código: la rama
+   `preview` de Neon, cuando las ramas con preview están rebasadas; las bases
+   locales comunes, desde `main`. La rama del slice prueba con bases propias.
+6. **La migración se genera sobre el último `main`**, para que su `when` supere
+   el de toda migración aplicada, y **se revisa a mano**: solo `DROP COLUMN` de
+   las columnas pedidas, sin tipos ni restricciones de más. `drizzle-kit`
+   pregunta por un renombre solo cuando una tabla pierde y gana columnas en el
+   mismo diff; si pregunta, el diff trae algo que no es el borrado, y se para.
 7. **La reversión** depende de si la migración corrió:
    - **antes**, se revierte el merge del código; la base todavía tiene las
      columnas;
@@ -131,12 +138,15 @@ P-05; y la 6 por costo.
 - **La regla de operación tiene dos formas**: una migración que agrega se corre
   antes del push; una que borra, después del push de su merge y con el código
   ya atendiendo. Cada contrato que borra dice cuál es la suya.
-- **CI prueba la ventana sin trabajo extra**: el push del commit del código
-  corre la integración y la e2e contra una base nueva migrada con las
+- **CI prueba la ventana, si esa corrida termina verde**: el push del merge del
+  código corre la integración y la e2e contra una base nueva migrada con las
   migraciones de ese árbol, que todavía tienen las columnas (CI, jobs
   `integration` y `e2e`). Es la versión que atiende mientras la base no migró.
+  Como CI cancela la corrida en curso de la misma rama con cada push, no se
+  pushea nada a `main` hasta que esa termine.
 - **Hay un intervalo con el esquema y la instantánea desparejos** en `main`,
-  entre los dos merges. Lo acota la regla 2.
+  entre los dos merges, y en todo árbol con el código sin la migración. Lo acota
+  la regla 2.
 - **Después de migrar, Instant Rollback a un deployment anterior al código deja
   la aplicación caída.** La salida es la reversión de la regla 7.
 - **Un lector de fuera de la aplicación tiene que seguir al esquema**: el script
