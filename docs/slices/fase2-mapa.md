@@ -80,7 +80,7 @@ parciales (`ops/importar-clockify`). Hoy hay cuatro grupos:
 
 1. **Quien ya entró**: tiene `user`, `account` y una membresía `active` que creó
    `ensureWorkspaceContext`. El owner está acá.
-2. **Las seis desactivadas en Clockify**: la importación les creó `user` sin
+2. **Las tres desactivadas en Clockify**: la importación les creó `user` sin
    `account` y una membresía `inactive`, con sus horas.
 3. **Las activas en Clockify que todavía no entraron**: sin `user`, sin
    membresía y sin horas cargadas. Sus horas las carga la corrida del script que
@@ -88,6 +88,12 @@ parciales (`ops/importar-clockify`). Hoy hay cuatro grupos:
    estar en `EXTERNAL_INVITE_EMAILS`.
 4. **Los invitados externos de la variable** `EXTERNAL_INVITE_EMAILS`, con
    membresía o sin ella.
+
+_Corregido el 2026-10-20, E2b_: el grupo 2 decía «Las seis desactivadas en
+Clockify». La consulta de producción del 2026-10-19 (§6 del
+[contrato de E2b](fase2-e2b-sin-cuenta.md)) dio tres inactivas sin cuenta, las
+que creó la importación, y diez activas, todas con cuenta. La misma cuenta se
+corrigió en E2b (§3), en su fila de la §4 y en la §5.
 
 Si el ingreso pasa a exigir invitación en el mismo despliegue que trae la
 pantalla de invitar, el grupo 3 queda afuera hasta que alguien lo invite, y en
@@ -334,7 +340,7 @@ Riesgos:
 ### E2b — Volver a entrar sin `account`
 
 Cubre EQ-110: una persona con `user` y membresía pero sin `account` no puede
-entrar, porque el enlace implícito está apagado (PF-47). Son las seis que creó
+entrar, porque el enlace implícito está apagado (PF-47). Son las tres que creó
 la importación y quien se desactive con el procedimiento SQL antes de E2. Cubre
 además P-11 de `perfil.md` (un correo ocupado no se libera), por decisión del
 usuario (§7).
@@ -343,16 +349,21 @@ usuario (§7).
 `disableImplicitLinking`, no la pantalla de desactivar. Depende de E1b, que
 decide quién pasa la regla de ingreso, y de E2, que trae la exigencia de
 membresía activa (P-05): **restituye la entrada solo a una membresía activa**.
-Desplegado antes de E2, les devolvería la entrada a las seis inactivas y a
+Desplegado antes de E2, les devolvería la entrada a las tres inactivas y a
 quien se desactive con el procedimiento SQL, el mismo agujero de P-05 que
-cierra la §5. Va **antes de reactivar a cualquiera de las seis**.
+cierra la §5. Va **antes de reactivar a cualquiera de las tres**.
 
 Riesgo: **reabrir lo que PF-47 cerró**. Sin enlace implícito, una cuenta de
 Google nueva con una dirección reciclada no entra a la fila de otra persona.
 La salida tiene que devolverle la entrada a la persona correcta sin dársela a
 cualquiera que traiga ese correo.
 
-ADR: **una fila `user` sin cuenta de Google**, con el contrato de E2b.
+ADR: **una fila `user` sin cuenta de Google**, el
+[ADR 0027](../adr/0027-una-fila-user-sin-cuenta-de-google.md), con el contrato
+de E2b; aceptado por el usuario el 2026-10-19.
+
+_Corregido el 2026-10-20, E2b_: decía «las seis» inactivas importadas; son tres
+(§2).
 
 ### WS0 — Las columnas sin efecto
 
@@ -698,7 +709,7 @@ desde 0026 al escribirse.
 | ----------------------------------------------------------- | ----- | --------------------------------------------------------------------- |
 | 0024, dónde vive una invitación y dónde se corta el ingreso | E1a   | Externos, invitaciones, `invited`, el corte, la aceptada y el 0007    |
 | 0025, escrituras entre módulos                              | E1a   | Aceptar la invitación, timer, sesiones y `owner_id`; extiende el 0010 |
-| Una fila `user` sin cuenta de Google                        | E2b   | La salida de EQ-110, de las seis importadas y de P-11 de `perfil`     |
+| 0027, una fila `user` sin cuenta de Google                  | E2b   | La salida de EQ-110, de las tres importadas y de P-11 de `perfil`     |
 | Borrar columnas: primero el código, después la migración    | WS0   | El orden de despliegue de un borrado                                  |
 | El formato de duración es del workspace                     | WS2a  | Extiende el 0012 y fija la regla del compacto (WS-16)                 |
 | Crea tareas quien ve el proyecto                            | P4    | El cambio de `task.create` (WS-40, PR-40, PR-58)                      |
@@ -708,6 +719,10 @@ desde 0026 al escribirse.
 No necesitan ADR: la acción del owner para desactivar a un admin (E2) y la de
 quitar del equipo (E6) siguen el 0023; transferir (E3) sigue el bloqueo de
 D-R8-7.
+
+_Actualizado el 2026-10-20, E2b_: la fila de E2b nombra el
+[ADR 0027](../adr/0027-una-fila-user-sin-cuenta-de-google.md), aceptado por el
+usuario el 2026-10-19, y cuenta tres importadas en lugar de seis (§2).
 
 ## 5. Antes del primer contrato
 
@@ -720,10 +735,10 @@ No son slices:
   gancho de sesión): una persona inactiva con `account` abre una sesión nueva al
   instante y ve sus horas (TT-92), que es lo que EQ-42 descartó. Borrar
   `account` es lo único que hace cumplir P-05 antes de E2. El costo es EQ-110
-  —reactivada, no vuelve a entrar—, que E2b resuelve igual para las seis
+  —reactivada, no vuelve a entrar—, que E2b resuelve igual para las tres
   importadas y cubre también a quien se desactive mientras tanto. Con E2, la
   pantalla borra solo `session` (EQ-41). Es lo que dice el §5 del mapa del
-  núcleo.
+  núcleo. _Corregido el 2026-10-20, E2b_: decía «las seis importadas» (§2).
 - **La sesión del usuario en Clockify** verifica P-10 de `equipo.md` antes del
   contrato de E7.
 - **Timesheet P-15** se responde antes del contrato de T2.

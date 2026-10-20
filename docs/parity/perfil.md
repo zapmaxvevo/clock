@@ -744,8 +744,8 @@ anticipó.
 | PF-44 | Persona sin foto en Google                       | Se muestran las iniciales: las primeras letras de las dos primeras palabras del nombre, en mayúsculas, o la primera del correo si el nombre está vacío. También cuando la foto no viene de `lh3.googleusercontent.com` (PF-09). `image` ya es nulable en la sesión.                                                                                                                                                                                                                  |
 | PF-45 | El nombre cambia en Google                       | Si la persona nunca lo editó, llega el de Google en el siguiente inicio de sesión. Si lo editó, gana el editado (PF-08).                                                                                                                                                                                                                                                                                                                                                             |
 | PF-46 | Membresía desactivada                            | La pantalla de perfil queda en solo lectura y los valores se siguen viendo: la zona pasa a texto, con su desplazamiento, y los dos formatos no abren. Arriba de las preferencias, un aviso con el título de TT-92, «Tu acceso al workspace está desactivado.», y una línea propia: «Podés ver tu perfil, pero no cambiarlo. Pedile a quien administra el workspace que vuelva a activar tu membresía.» Un pedido que llega igual recibe «No tenés permiso para hacer esto.» (PF-35). |
-| PF-47 | Una cuenta de Google nueva con un correo en uso  | No entra: el ingreso termina en la página de error de Better Auth con `account_not_linked`, sin texto propio, y la cuenta nueva no se enlaza a esa persona. La cuenta de Google que la creó sigue entrando. Pasa con una dirección reciclada o con la misma persona y otra cuenta de Google; no hay pantalla para liberar el correo ni para enlazar la cuenta nueva (perfil P-11).                                                                                                   |
-| PF-48 | El correo cambia en Google                       | La persona sigue entrando, porque se la reconoce por su cuenta de Google y no por el correo, y conserva el correo con que se creó (PF-06): el perfil y el menú muestran el viejo. Si la empresa cambia la dirección de una persona, la fila queda con la vieja hasta una corrección a mano (perfil P-11).                                                                                                                                                                            |
+| PF-47 | Una cuenta de Google nueva con un correo en uso  | Sin una vinculación vigente no entra: la cuenta nueva no se enlaza a esa persona, y el ingreso vuelve a `/login` (D-E1a-14) con el texto de equipo EQ-122, no a la página de error de Better Auth. La cuenta de Google que la creó sigue entrando. Pasa con una dirección reciclada o con la misma persona y otra cuenta de Google; quien administra decide si pide una vinculación (equipo EQ-115) o libera el correo (equipo EQ-116).                                              |
+| PF-48 | El correo cambia en Google                       | La persona sigue entrando, porque se la reconoce por su cuenta de Google y no por el correo, y conserva el correo con que se creó (PF-06): el perfil y el menú muestran el viejo. Si la empresa cambia la dirección de una persona, la fila queda con la vieja hasta una corrección a mano, también después de E2b (D-E2b-12).                                                                                                                                                       |
 
 _Corregido el 2026-10-04, slice 7_: PF-46 remitía al aviso de TT-92, cuya
 segunda línea habla de cargar y modificar entradas; el perfil usa el título de
@@ -764,6 +764,22 @@ correo encendido, una dirección reciclada entraba a la cuenta de la persona
 anterior, con su rol y sus horas. PF-47 y PF-48 dejan la deuda de perfil P-11.
 _No verificado_: qué hace Clockify en PF-45, PF-47 y PF-48.
 
+_Corregido el 2026-10-20, E2b_: PF-47 decía que el ingreso terminaba «en la
+página de error de Better Auth con `account_not_linked`, sin texto propio», y
+que no había «pantalla para liberar el correo ni para enlazar la cuenta nueva
+(perfil P-11)». Desde D-E1a-14 el error vuelve a `/login`, que hasta E2b
+mostraba el genérico «No se pudo iniciar sesión. Volvé a intentar.»; desde E2b
+muestra EQ-122 de [`equipo.md`](equipo.md), «Ya hay una persona en Clock con
+ese correo. Pedile a quien administra el equipo que revise tu acceso.». Es
+neutro porque el mismo código llega por dos causas con salidas opuestas: la
+misma persona con otra cuenta se resuelve con una vinculación, y otra persona
+con una dirección reciclada, liberando el correo e invitándola; quien
+administra pregunta y decide (D-E2b-10 del
+[contrato de E2b](../slices/fase2-e2b-sin-cuenta.md)). Si la fila de ese correo
+está inactiva, el ingreso se corta antes, con EQ-92 (D-E2-1). PF-48 remitía a
+perfil P-11: E2b no lo resuelve, y sigue siendo una corrección a mano
+(D-E2b-12).
+
 ## Pendientes de definición del equipo
 
 Numeración propia de este documento. Para no confundirla con la del rastreador,
@@ -771,11 +787,10 @@ se cita como `perfil P-nn`.
 
 ### Abiertos
 
-| ID   | Punto                                                                                                                                                                                                                                                                                                               |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P-09 | La lista de verificación contra el workspace real. Está abajo, entera, para resolverla en una sentada.                                                                                                                                                                                                              |
-| P-10 | Volver a seguir el nombre de Google una vez editado (PF-08). Hoy no hay forma desde la pantalla: escribir el de Google lo guarda como editado. Si hace falta, es un «Usar el de Google» que guarda nulo, en un slice aparte. Falta decidir si hace falta.                                                           |
-| P-11 | Un correo ocupado no se libera (PF-47, PF-48): una cuenta de Google nueva con la dirección de una persona existente no entra, y hoy la salida es una corrección a mano en la base. Falta decidir cómo lo cubre la pantalla de equipo de la fase 2, y si la página de error de Better Auth necesita un texto propio. |
+| ID   | Punto                                                                                                                                                                                                                                                     |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P-09 | La lista de verificación contra el workspace real. Está abajo, entera, para resolverla en una sentada.                                                                                                                                                    |
+| P-10 | Volver a seguir el nombre de Google una vez editado (PF-08). Hoy no hay forma desde la pantalla: escribir el de Google lo guarda como editado. Si hace falta, es un «Usar el de Google» que guarda nulo, en un slice aparte. Falta decidir si hace falta. |
 
 _Corregido el 2026-10-04, slice 8_: P-02 decía que quedaba apuntado al slice
 del calendario, «que es quien lo va a necesitar». El slice 8 no lo cerró: dejó
@@ -784,6 +799,10 @@ _Agregado el 2026-10-05, slice 7b_: P-10 y P-11, las dos deudas del slice 7b
 que se ven desde la pantalla o desde el ingreso.
 _Corregido el 2026-10-07, timesheet P-12_: P-02 estaba abierto, atado a la
 respuesta de CAL-14 en calendario P-07. Pasó a cerrados.
+_Corregido el 2026-10-20, E2b_: P-11 estaba abierto: «Un correo ocupado no se
+libera (PF-47, PF-48)», con la salida a mano en la base, y faltaba decidir cómo
+lo cubría la pantalla de equipo de la fase 2 y si la página de error de Better
+Auth necesitaba un texto propio. Pasó a cerrados.
 
 ### P-09, la lista de verificación
 
@@ -846,6 +865,7 @@ Se dejan con su identificador porque el documento y los contratos los citan.
 | P-06 | El contador del timer sigue en `h:mm:ss`; el formato manda en los totales y en las filas (PF-22). Decidido el 2026-10-02, con la suposición anotada porque no se pudo verificar.                                                                                                                                                |
 | P-07 | Días laborables y capacidad semanal quedan fuera del perfil y van a la pantalla de equipo, en la fase 2 (PF-19). Decidido el 2026-10-02.                                                                                                                                                                                        |
 | P-08 | `workspace.timezone` se queda y pasa a tener un solo trabajo: fijar el día de los trabajos de cron. La zona horaria de la interfaz sale de la persona (PF-05). Decidido el 2026-10-02.                                                                                                                                          |
+| P-11 | Un correo ocupado lo cubre la pantalla de equipo desde E2b: para la misma persona con otra cuenta, una vinculación (equipo EQ-115, D-E2b-6); para una dirección reciclada, liberar el correo de la inactiva (equipo EQ-116, D-E2b-9); y en `/login`, un texto neutro (equipo EQ-122, D-E2b-10). Cerrado el 2026-10-19 con E2b.  |
 
 _Corregido el 2026-10-04, slice 7 (decisión del equipo)_: P-03 decía «zona
 horaria la del workspace». Leída como vínculo, cambiar la zona del cron movería
@@ -855,3 +875,8 @@ workspace.
 _Corregido el 2026-10-16, equipo EQ-72 (equipo P-09, workspace P-06)_: P-07
 mandaba los días laborables y la capacidad semanal a la pantalla de equipo de
 la fase 2. Quedan fuera de alcance hasta que algo los consuma (PF-19).
+_Agregado el 2026-10-20, E2b_: P-11, con D-E2b-6, D-E2b-9 y D-E2b-10 del
+[contrato de E2b](../slices/fase2-e2b-sin-cuenta.md), que lo cubre por decisión
+del usuario del 2026-10-16 (§7 del [mapa de la fase 2](../slices/fase2-mapa.md)).
+Lo que P-11 decía de PF-48 —la empresa cambia la dirección de una persona
+activa— no lo resuelve E2b: sigue siendo una corrección a mano (D-E2b-12).
