@@ -842,12 +842,49 @@ describe("durationMinutes", () => {
   });
 });
 
+/** La función anterior a WS2a, en minutos: la referencia del criterio 1. */
+function formatMinutesBeforeWs2a(minutes: number): string {
+  const safe = Math.max(0, Math.round(minutes));
+  const hours = Math.floor(safe / 60);
+  const rest = safe % 60;
+  return `${hours}:${rest.toString().padStart(2, "0")}`;
+}
+
 describe("formatDuration", () => {
-  it("usa el formato h:mm", () => {
-    expect(formatDuration(0 * 60, "compact")).toBe("0:00");
+  it("el compacto usa el formato h:mm", () => {
+    expect(formatDuration(0, "compact")).toBe("0:00");
     expect(formatDuration(5 * 60, "compact")).toBe("0:05");
     expect(formatDuration(90 * 60, "compact")).toBe("1:30");
     expect(formatDuration(600 * 60, "compact")).toBe("10:00");
+    expect(formatDuration(100, "compact")).toBe("0:01");
+  });
+
+  it("el compacto da el texto de antes con los minutos truncados (criterio 1)", () => {
+    for (let minutes = 0; minutes <= 6000; minutes += 1) {
+      const before = formatMinutesBeforeWs2a(minutes);
+      for (let seconds = 0; seconds < 60; seconds += 1) {
+        const now = formatDuration(minutes * 60 + seconds, "compact");
+        if (now !== before) {
+          expect([minutes, seconds, now]).toEqual([minutes, seconds, before]);
+        }
+      }
+    }
+    expect(formatDuration(-1, "compact")).toBe(formatMinutesBeforeWs2a(-1));
+    expect(formatDuration(-90, "compact")).toBe("0:00");
+  });
+
+  it("el completo usa hh:mm:ss, cada parte con dos cifras como mínimo (criterio 3)", () => {
+    expect(formatDuration(0, "full")).toBe("00:00:00");
+    expect(formatDuration(100, "full")).toBe("00:01:40");
+    expect(formatDuration(5400, "full")).toBe("01:30:00");
+    expect(formatDuration(86_399, "full")).toBe("23:59:59");
+    expect(formatDuration(360_000, "full")).toBe("100:00:00");
+    expect(formatDuration(-5, "full")).toBe("00:00:00");
+  });
+
+  it("trunca los decimales en los dos", () => {
+    expect(formatDuration(119.9, "compact")).toBe("0:01");
+    expect(formatDuration(100.9, "full")).toBe("00:01:40");
   });
 });
 
@@ -1412,6 +1449,26 @@ describe("parseDurationInput", () => {
       ["25h", null],
       ["-1", null],
       ["ab", null],
+    ];
+    for (const [text, expected] of table) {
+      expect([text, parseDurationInput(text)]).toEqual([text, expected]);
+    }
+  });
+
+  it("acepta h:mm:ss con los segundos truncados (D-WS2a-6, PF-21)", () => {
+    const table: ReadonlyArray<readonly [string, number | null]> = [
+      ["1:30:00", 90],
+      ["01:30:45", 90],
+      ["1:30:5", 90],
+      ["0:00:59", 0],
+      ["23:59:59", 1439],
+      ["24:00:00", null],
+      ["1:60:00", null],
+      ["1:30:60", null],
+      ["1::30", null],
+      [":30:00", null],
+      ["1:30:", null],
+      ["100:00:00", null],
     ];
     for (const [text, expected] of table) {
       expect([text, parseDurationInput(text)]).toEqual([text, expected]);

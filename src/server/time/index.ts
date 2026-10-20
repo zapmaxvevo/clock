@@ -759,6 +759,8 @@ function buildMeridiemClock(parts: ClockParts | null, afternoon: boolean): strin
 /**
  * Lo que la persona teclea en el campo de duración, en minutos enteros. La
  * barra manual no expresa 24 horas o más, porque su fin es una hora de pared.
+ * Acepta `h:mm:ss`, lo que muestra el formato completo, con los dos formatos
+ * (PF-21, D-WS2a-6).
  */
 export function parseDurationInput(text: string): number | null {
   const clean = text.trim().toLowerCase().replace(",", ".");
@@ -770,6 +772,15 @@ export function parseDurationInput(text: string): number | null {
   if (separated !== null) {
     const minutes = Number(separated[2]);
     return minutes > 59 ? null : bounded(Number(separated[1]) * 60 + minutes);
+  }
+
+  const full = /^(\d{1,2}):(\d{1,2}):(\d{1,2})$/.exec(clean);
+  if (full !== null) {
+    const minutes = Number(full[2]);
+    // Los segundos se truncan, como en `1h30m1s`: el campo es de minutos.
+    return minutes > 59 || Number(full[3]) > 59
+      ? null
+      : bounded(Number(full[1]) * 60 + minutes);
   }
 
   const decimal = /^(\d+)\.(\d+)$/.exec(clean);
