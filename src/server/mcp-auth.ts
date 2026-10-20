@@ -17,6 +17,7 @@ import type { AccessDenialReason } from "@/server/access";
 import { loginErrorUrl, sessionEntryError } from "@/server/entry";
 import { env } from "@/server/env";
 import { can } from "@/server/permissions";
+import { captureAuthRequest } from "@/server/mcp-v7-capture";
 import { readUserContext, type SessionUser } from "@/server/user-context";
 
 function originOf(url: string): string {
@@ -184,6 +185,7 @@ async function denialOf(user: SessionUser): Promise<AccessDenialReason | null> {
  * consentimiento. Sobre cualquier otro camino no hace nada.
  */
 export const mcpAuthMiddleware = createAuthMiddleware(async (ctx) => {
+  captureAuthRequest(ctx);
   if (ctx.path === REGISTER_PATH) {
     assertRegistrationRedirects(ctx.body);
     return;
