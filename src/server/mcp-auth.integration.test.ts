@@ -366,6 +366,34 @@ describe("autorizar exige acceso (criterio 5)", () => {
     },
   );
 
+  it.each(losesAccess)(
+    "cancelar de $name pasa y el cliente recibe access_denied sin código",
+    async ({ seed, revoke }) => {
+      const person = await seed();
+      const client = await registeredClient(registrations.claudeCode());
+      const cookie = await signInCookie(person.email);
+      const { params } = authorizeParamsOf(client);
+      const consentPage = locationOf(
+        await authorize({ ...params, state: "estado-3" }, cookie),
+      );
+
+      const restore = await revoke(person);
+      try {
+        const denied = await redirectUrlOf(
+          await consent(cookie, consentPage.search.slice(1), false),
+        );
+
+        expect(`${denied.origin}${denied.pathname}`).toBe(client.redirectUri);
+        expect(denied.searchParams.get("error")).toBe("access_denied");
+        expect(denied.searchParams.get("state")).toBe("estado-3");
+        expect(denied.searchParams.get("code")).toBeNull();
+        expect(await consentsOf(client.clientId)).toEqual([]);
+      } finally {
+        restore();
+      }
+    },
+  );
+
   it("la retoma de una persona sin acceso no entra ni deja código", async () => {
     const { workspaceId } = await seedWorkspace();
     const email = `${randomUUID()}@empresa.com`;
