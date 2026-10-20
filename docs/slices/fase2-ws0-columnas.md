@@ -21,8 +21,8 @@ columnas, y después la migración que las borra.
   correcciones están aplicadas.
 - **Decisiones de arquitectura:**
   - **[ADR 0028](../adr/0028-borrar-columnas-primero-el-codigo-despues-la-migracion.md),
-    nuevo, propuesto**: borrar columnas, primero el código y después la
-    migración. Lo aprueba el usuario (§12).
+    nuevo, aceptado por el usuario el 2026-10-20**: borrar columnas, primero
+    el código y después la migración (§12).
   - El [ADR 0009](../adr/0009-la-configuracion-del-workspace-viaja-en-el-recurso.md)
     es el criterio del borrado y no cambia: si `who_creates_projects` vuelve a
     ser configurable, la columna vuelve con ese ADR.
@@ -915,7 +915,8 @@ Verificado contra `eb2ba2d` y `drizzle-orm` 0.45.3:
    correr la migración antes del push: en WS0 se corre **después del push de
    B**, con A ya atendiendo, desde `main`. **Recomendación: aceptarlo.** Es lo
    que evita dejar la aplicación caída mientras Vercel cambia de versión, y
-   deja la regla de siempre para todo lo que agrega.
+   deja la regla de siempre para todo lo que agrega. **Respuesta**: el usuario
+   lo aceptó el 2026-10-20.
 
 ## 13. Fuera de alcance
 

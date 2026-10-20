@@ -4,7 +4,7 @@ Rama `fase2/ws0-columnas` desde `main` en `eb2ba2d`, en el worktree
 `/home/maxi/program/clock-ws0` (fuera del repositorio). Contrato:
 [`fase2-ws0-columnas.md`](fase2-ws0-columnas.md); ADR
 [0028](../adr/0028-borrar-columnas-primero-el-codigo-despues-la-migracion.md),
-propuesto.
+aceptado por el usuario el 2026-10-20.
 
 ## Commit A
 

@@ -1,6 +1,6 @@
 # 0028. Borrar columnas: primero el código, después la migración
 
-Fecha: 2026-10-20. Estado: Propuesto.
+Fecha: 2026-10-20. Estado: Aceptado (2026-10-20, por el usuario).
 Origen: el contrato de WS0
 ([`fase2-ws0-columnas.md`](../slices/fase2-ws0-columnas.md)), con el
 [mapa de la fase 2](../slices/fase2-mapa.md) (WS0, §4 y §7) y
