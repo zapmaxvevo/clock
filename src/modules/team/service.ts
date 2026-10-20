@@ -469,7 +469,11 @@ export async function changeStatus(
       throw STATUS_LOCK_ERROR[lock]();
     }
     // 7. Idempotente por el estado pedido (EQ-97, EQ-98).
-    const result = { membershipId: target.id, status: input.status };
+    const result = {
+      membershipId: target.id,
+      status: input.status,
+      linkRequested: false,
+    };
     if (target.status === input.status) {
       return result;
     }
@@ -493,7 +497,7 @@ export async function changeStatus(
     if (withoutAccount) {
       await requestAccountLink(tx, actor, target, email);
     }
-    return result;
+    return { ...result, linkRequested: withoutAccount };
   });
 }
 

@@ -298,7 +298,7 @@ describe("changeStatus (§4.10, criterio 23)", () => {
 
     expect(result).toEqual({
       ok: true,
-      data: { membershipId: target.id, status: "inactive" },
+      data: { membershipId: target.id, status: "inactive", linkRequested: false },
     });
     expect((await membershipOf(seeded.workspaceId, target.userId)).status).toBe(
       "inactive",
@@ -318,7 +318,7 @@ describe("changeStatus (§4.10, criterio 23)", () => {
 
     expect(result).toEqual({
       ok: true,
-      data: { membershipId: target.id, status: "active" },
+      data: { membershipId: target.id, status: "active", linkRequested: false },
     });
     expect(mocks.revalidated).toEqual([wholeTree]);
   });
@@ -334,7 +334,7 @@ describe("changeStatus (§4.10, criterio 23)", () => {
 
     expect(result).toEqual({
       ok: true,
-      data: { membershipId: target.id, status: "inactive" },
+      data: { membershipId: target.id, status: "inactive", linkRequested: false },
     });
     expect(await membershipOf(seeded.workspaceId, target.userId)).toEqual(target);
     expect(await auditFor("membership")).toEqual([]);
@@ -698,7 +698,7 @@ describe("changeStatus sin cuenta (§4.10 de E2b, D-E2b-5)", () => {
 
     expect(result).toEqual({
       ok: true,
-      data: { membershipId: target.id, status: "active" },
+      data: { membershipId: target.id, status: "active", linkRequested: true },
     });
     expect((await markOf(target.id)).by).toBe(adminId);
     expect(mocks.revalidated).toEqual([wholeTree]);

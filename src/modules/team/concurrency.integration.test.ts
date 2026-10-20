@@ -261,7 +261,10 @@ describe("desactivar contra abrir un timer (criterio 13, D-E2-6)", () => {
     ]);
 
     expect(outcomes).toEqual([
-      { status: "fulfilled", value: { membershipId: pMembership, status: "inactive" } },
+      {
+        status: "fulfilled",
+        value: { membershipId: pMembership, status: "inactive", linkRequested: false },
+      },
       { status: "rejected", reason: expect.any(TimeEntryError) },
     ]);
     expect(outcomes[1]).toMatchObject({
@@ -336,7 +339,7 @@ describe("dos sobre la misma fila (criterio 15, EQ-98)", () => {
       () => deactivateAs(admin, "admin", mMembership),
     ]);
 
-    const done = { membershipId: mMembership, status: "inactive" };
+    const done = { membershipId: mMembership, status: "inactive", linkRequested: false };
     expect(outcomes).toEqual([
       { status: "fulfilled", value: done },
       { status: "fulfilled", value: done },

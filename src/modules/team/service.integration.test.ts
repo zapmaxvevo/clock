@@ -829,7 +829,11 @@ describe("changeStatus: desactivar (criterio 1, EQ-39, EQ-41, EQ-43)", () => {
 
     const result = await deactivate(ownerOf(seeded), target.membershipId);
 
-    expect(result).toEqual({ membershipId: target.membershipId, status: "inactive" });
+    expect(result).toEqual({
+      membershipId: target.membershipId,
+      status: "inactive",
+      linkRequested: false,
+    });
     expect(await statusOf(target.membershipId)).toEqual({
       role: "member",
       status: "inactive",
@@ -918,7 +922,11 @@ describe("changeStatus: reactivar (criterio 3, EQ-37, EQ-47)", () => {
 
     const result = await reactivate(ownerOf(seeded), target.membershipId);
 
-    expect(result).toEqual({ membershipId: target.membershipId, status: "active" });
+    expect(result).toEqual({
+      membershipId: target.membershipId,
+      status: "active",
+      linkRequested: false,
+    });
     expect(await statusOf(target.membershipId)).toEqual({
       role: "admin",
       status: "active",
@@ -954,18 +962,26 @@ describe("changeStatus: idempotente por el estado pedido (criterio 4, EQ-97, EQ-
       status,
     });
 
-    expect(result).toEqual({ membershipId: target.membershipId, status });
+    expect(result).toEqual({
+      membershipId: target.membershipId,
+      status,
+      linkRequested: false,
+    });
     expect(await statusWrites()).toEqual(before);
   });
 
-  it("reactivar a una activa sin account responde éxito sin escribir: el paso 7 va antes del 8", async () => {
+  it("reactivar a una activa sin account responde éxito sin escribir ni pedir la vinculación: el paso 7 va antes del 8", async () => {
     const seeded = await seedWorkspace();
     const target = await seedPerson(seeded.workspaceId, "member");
     const before = await statusWrites();
 
     const result = await reactivate(ownerOf(seeded), target.membershipId);
 
-    expect(result).toEqual({ membershipId: target.membershipId, status: "active" });
+    expect(result).toEqual({
+      membershipId: target.membershipId,
+      status: "active",
+      linkRequested: false,
+    });
     expect(await statusWrites()).toEqual(before);
   });
 });
@@ -1485,7 +1501,11 @@ describe("reactivar sin cuenta (criterio 4 de E2b, D-E2b-5)", () => {
 
       const result = await reactivate(actor, target.membershipId);
 
-      expect(result).toEqual({ membershipId: target.membershipId, status: "active" });
+      expect(result).toEqual({
+        membershipId: target.membershipId,
+        status: "active",
+        linkRequested: true,
+      });
       expect(await statusOf(target.membershipId)).toEqual({
         role: targetRole,
         status: "active",

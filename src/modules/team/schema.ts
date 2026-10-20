@@ -111,6 +111,11 @@ export type ChangeStatusInput = z.infer<typeof changeStatusInput>;
 export type ChangeStatusResult = {
   readonly membershipId: string;
   readonly status: MemberStatus;
+  /**
+   * D-E2b-5: si el pedido reactivó a quien no tiene cuenta y pidió además su
+   * vinculación, según lo leído bajo el bloqueo. `false` si no escribió.
+   */
+  readonly linkRequested: boolean;
 };
 
 /** D-E2b-6: pedir o renovar (`true`), o cancelar (`false`), una vinculación. */
