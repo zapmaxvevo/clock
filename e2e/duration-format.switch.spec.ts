@@ -192,6 +192,9 @@ test("el selector muestra lo elegido mientras viaja, vuelve si falla y Reintenta
 
   await restoreRequests();
   await withServerAction(page, () => retry.click());
+  // El campo pasa el foco al disparador antes de reintentar, porque el aviso
+  // con el botón desaparece (D-WS2b-6).
+  await expect(control).toBeFocused();
   await expect(notice).toBeHidden();
   await expect(control).toHaveText(DURATION_FORMAT_TEXTS.full);
   expect(await durationFormatOf()).toBe("full");
@@ -208,6 +211,7 @@ test("el selector muestra lo elegido mientras viaja, vuelve si falla y Reintenta
 
   await restoreResponses();
   await withServerAction(page, () => retry.click());
+  await expect(control).toBeFocused();
   await expect(notice).toBeHidden();
   await expect(control).toHaveText(DURATION_FORMAT_TEXTS.compact);
   expect(await durationFormatOf()).toBe("compact");
