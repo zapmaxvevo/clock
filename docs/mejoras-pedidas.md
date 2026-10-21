@@ -36,3 +36,15 @@ se arrancan solos: cuando el usuario elija uno, pasa por el pipeline de siempre
    repetido dentro del lote y si las superposiciones entre entradas del mismo
    lote se validan igual que contra las ya cargadas. Va después del merge de
    `mejoras/mcp`; `create_entry` queda para las cargas sueltas.
+
+## Anotadas el 2026-10-21
+
+5. **MCP: que owner y admin vean las horas de los demás.** Hoy ninguna
+   herramienta recibe `userId` y todas filtran por la persona del token
+   (D-MCP-11 de `docs/slices/mejoras-mcp.md`), así que un administrador solo ve
+   sus propias entradas desde el asistente. El pedido, del usuario después de
+   probar el MCP en producción: que un owner o admin pueda consultar las horas
+   de otras personas del workspace, como ya puede hacerlo en la aplicación. Por
+   ahora solo ver, no editar. Queda por decidir qué regla de `can()` se reusa
+   (la de los reportes de equipo), si es un filtro de `list_entries` o una
+   herramienta nueva de resumen, y cómo se nombra a la persona (correo o id).
