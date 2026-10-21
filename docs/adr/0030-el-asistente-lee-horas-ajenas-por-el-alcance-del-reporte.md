@@ -34,6 +34,9 @@ Lo que ya está fijado:
   que no está en su catálogo (D-R4-5): la URL armada a mano no rompe la
   página. Con el filtro de personas vacío, el alcance `everyone` lee a todo el
   equipo.
+- **El correo de otra persona** solo se ve hoy en `/equipo`, detrás de
+  `team.manage` (`getTeamView` y `toTeamMember` de `team/service.ts`). El
+  reporte muestra nombres, no correos.
 - **El token da lo mismo que una sesión** (ADR 0026, decisión 4): las
   herramientas son un subconjunto de lo que la pantalla deja hacer, por el
   mismo `can()` y los mismos services.
@@ -58,8 +61,8 @@ un id que no corresponde, y si una autorización existente alcanza.
    (P-07).
 2. **Herramientas nuevas sobre el service de `report`**: el resumido de la
    página, con sus niveles, sus filtros y su alcance, y el catálogo de personas
-   que ofrece el filtro. Ninguna lectura nueva de la base: el mismo `scopeOf`,
-   el mismo `narrowedTo` y las mismas funciones del repository. El detalle por
+   que ofrece el filtro. Ninguna lectura nueva de horas: el mismo `scopeOf`, el
+   mismo `narrowedTo` y las mismas funciones del repository. El detalle por
    entrada (inicio y fin de cada una) no entra, como no entra en la página
    (RP-50 es de la fase 3); por descripción y por día sí.
 3. **Las dos**: la 2 y, para el detalle, un listado de entradas ajenas por el
@@ -102,8 +105,9 @@ un id que no corresponde, y si una autorización existente alcanza.
    de horas ajenas existe fuera del `ReportScope`.** Ninguna herramienta recibe
    `workspaceId`; `userIds` llega solo a `summarize_hours` y solo como filtro de
    un alcance que el servidor ya armó.
-2. **Sin permiso nuevo**: `report.view` para entrar y `timeEntry.others.view`
-   para ver a los demás, consultados donde ya se consultan.
+2. **Sin permiso nuevo**: `report.view` para entrar, `timeEntry.others.view`
+   para ver a los demás —los dos donde ya se consultan— y `team.manage` para
+   ver sus correos, con la misma regla que `/equipo`.
 3. **En el modo del asistente, los filtros son estrictos** (opción 2 de la
    segunda lista): un id que no está en su catálogo responde `not_found`, en la
    misma foto que la lectura; una persona ajena sin `timeEntry.others.view`,
@@ -123,12 +127,18 @@ un id que no corresponde, y si una autorización existente alcanza.
   línea de §12 de `mejoras-mcp.md` se leen con esta excepción. La revisión de
   seguridad de cada herramienta nueva sobre datos ajenos verifica que pase por
   el `ReportScope`, como pide el ADR 0020 para cada puerta de entrada.
-- **El service de `report` suma un modo**: filtros estrictos y un tope de filas
-  propio (500, contra 3000 de la página), que la página y las exportaciones no
-  usan. Sus tests no cambian.
-- **`WorkspacePerson` suma el correo**, que el catálogo del asistente muestra
-  (nulo si se liberó, como en `/equipo`); la pantalla del reporte no lo recibe,
-  porque `toPersonOptions` copia campo por campo.
+- **El service de `report` lee con un modo obligatorio**, sin valor por
+  omisión: el de la página, el de las exportaciones y el del asistente. El del
+  asistente tiene filtros estrictos, un tope de 500 filas (contra 3000 de la
+  página), el tope de 8 s por sentencia de las exportaciones y no lee el
+  gráfico. La página y las exportaciones eligen el suyo y deciden lo mismo que
+  hoy.
+- **El correo sigue a `team.manage`**: el catálogo del asistente lo muestra
+  solo a quien puede verlo en `/equipo`, y nulo si se liberó. `WorkspacePerson`
+  suma el correo; la pantalla del reporte no lo recibe, porque
+  `toPersonOptions` copia campo por campo. Ver horas ajenas no abre los
+  correos: si `timeEntry.others.view` y `team.manage` alguna vez se separan,
+  quien tenga solo la primera ve nombres.
 - **El asistente de un owner o un admin autorizado antes de este cambio** ve las
   horas del equipo sin haber leído la oración nueva del consentimiento. Es lo
   que esa persona ya ve en la aplicación; el usuario lo confirma (pregunta
