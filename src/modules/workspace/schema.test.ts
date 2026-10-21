@@ -6,6 +6,7 @@ import {
   invitationMessages,
   inviteInput,
   updateWorkspaceNameInput,
+  updateWorkspaceSettingInput,
   WORKSPACE_NAME_MAX,
   workspaceSettingsMessages,
 } from "./schema";
@@ -100,5 +101,33 @@ describe("updateWorkspaceNameInput (WS-05, WS-53 … WS-55, criterio 3)", () => 
     expect(nameMessage({ name: "Estudio\u0000Norte" })).toBe(
       workspaceSettingsMessages.nameNullCharacter,
     );
+  });
+});
+
+describe("updateWorkspaceSettingInput (WS-56, D-WS2b-2; criterio 3 de WS2b)", () => {
+  function settingMessage(input: unknown): string | undefined {
+    const result = updateWorkspaceSettingInput.safeParse(input);
+    return result.success ? undefined : result.error.issues.at(0)?.message;
+  }
+
+  it.each(["compact", "full"] as const)("acepta el formato %s", (value) => {
+    expect(
+      updateWorkspaceSettingInput.safeParse({ key: "durationFormat", value }),
+    ).toEqual({ success: true, data: { key: "durationFormat", value } });
+  });
+
+  it.each([
+    ["el decimal, que no está en la lista", { key: "durationFormat", value: "decimal" }],
+    ["un valor vacío", { key: "durationFormat", value: "" }],
+    ["un número", { key: "durationFormat", value: 1 }],
+    ["un valor nulo", { key: "durationFormat", value: null }],
+    ["sin valor", { key: "durationFormat" }],
+    ["el primer día, que todavía no es un ajuste", { key: "weekStart", value: 1 }],
+    ["una clave que no existe", { key: "foo", value: "full" }],
+    ["sin clave", { value: "full" }],
+    ["algo que no es un objeto", "full"],
+    ["un pedido nulo", null],
+  ])("%s responde formatUnavailable", (_case, input) => {
+    expect(settingMessage(input)).toBe(workspaceSettingsMessages.formatUnavailable);
   });
 });

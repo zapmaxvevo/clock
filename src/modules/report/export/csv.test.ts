@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import type { DurationFormat } from "@/server/time";
+
 import { csvBytesOf } from "./csv";
 import type { ExportCell, ExportDocument } from "./types";
 
@@ -15,11 +17,11 @@ function text(value: string): ExportCell {
 }
 
 /** El campo de una celda sola en una fila, sin el BOM ni el fin de línea. */
-function fieldOf(cell: ExportCell): string {
+function fieldOf(cell: ExportCell, durationFormat: DurationFormat = "compact"): string {
   const document: ExportDocument = {
     header: [[cell]],
     chart: null,
-    durationFormat: "compact",
+    durationFormat,
     sections: [],
   };
   return textOf(csvBytesOf(document)).slice(1, -2);
@@ -104,6 +106,26 @@ describe("csvBytesOf (D-R6-9; criterio 8 de R6)", () => {
     expect(fieldOf(text("a=b"))).toBe('"a=b"');
     expect(fieldOf(text(" =x"))).toBe('" =x"');
     expect(fieldOf(text("'x"))).toBe(`"'x"`);
+  });
+
+  it("con el completo, la duración en `hh:mm:ss` y las horas iguales (D-WS2b-9)", () => {
+    expect(fieldOf({ kind: "duration", seconds: 100 })).toBe('"0:01"');
+    expect(fieldOf({ kind: "duration", seconds: 100 }, "full")).toBe('"00:01:40"');
+    expect(fieldOf({ kind: "hours", minutes: 1 }, "full")).toBe('"0,01"');
+  });
+
+  it("el formato del documento vale para la cabecera y para cada sección", () => {
+    const duration: ExportCell = { kind: "duration", seconds: 100 };
+    const document: ExportDocument = {
+      header: [[text("Total"), duration]],
+      chart: null,
+      durationFormat: "full",
+      sections: [{ title: "Resumen", rows: [[text("Ana"), duration]] }],
+    };
+
+    expect(textOf(csvBytesOf(document))).toBe(
+      '\uFEFF"Total";"00:01:40"\r\n\r\n"Resumen"\r\n"Ana";"00:01:40"\r\n',
+    );
   });
 
   it("escribe cada tipo de celda", () => {
