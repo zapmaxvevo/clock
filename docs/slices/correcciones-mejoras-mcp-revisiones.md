@@ -433,7 +433,8 @@ cascade` hacia `user` en §2 y §10 (la migración lo pone desde el principio;
   `oauth_consent c … c.user_id`; §4.17 y D-MCP-9, una herramienta desconocida
   da 200 con `isError` (V-8) y un JSON inválido, 400 `-32700`.
 - **§5.3** (`mcp-rev-parity` y `mcp-rev-front`): «`Dialog`, como la de revocar
-  una invitación». El desvío lo anota `mcp-fix-front`.
+  una invitación». **Desvío**: la confirmación de Desconectar es `Dialog`, como
+  las demás confirmaciones destructivas; el proyecto no tiene `AlertDialog`.
 - **Lo que sigue bloqueando el merge**, sin cambios acá: V-7 abierta (criterio 20) y el commit temporal de la captura, hoy `14c78ac` (era `191cc09`), que se
   revierte después del preview.
 
