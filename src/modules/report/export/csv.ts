@@ -1,6 +1,6 @@
-import { cellText } from "./cell-text";
 import type { DurationFormat } from "@/server/time";
 
+import { cellText } from "./cell-text";
 import type { ExportCell, ExportDocument, ExportRow } from "./types";
 
 /** RFC 4180: también al final de la última línea. */

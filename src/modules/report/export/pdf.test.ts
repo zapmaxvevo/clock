@@ -4,12 +4,11 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import type { DurationFormat } from "@/server/time";
 import { PAGE_MARGIN, pdfFacts, pdfPageTexts } from "@/test/pdf";
 import { octoberByDay } from "@/test/report";
 
 import { pdfBytesOf } from "./pdf";
-import type { DurationFormat } from "@/server/time";
-
 import type { ExportCell, ExportDocument, ExportRow } from "./types";
 
 /** D-R7-5: el SHA-256 de Noto Sans Regular 2.015 sin hinting. */
