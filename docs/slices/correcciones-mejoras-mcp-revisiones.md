@@ -264,3 +264,52 @@ de `deleteSessionsOf`. La firma de `deleteGrantsOf` ya era
 - `npm run lint` y `npm run typecheck`: limpios.
 - `npm test`: 109 archivos, 2520 tests; `test:time-ar`, 2 archivos, 305 tests.
 - `npm run test:integration`: 39 archivos, 2111 tests.
+
+## Rebase sobre WS0 y WS1 (2026-10-20)
+
+`mejoras/mcp` rebasada en local sobre `main` en `2dc1452` (merge de WS1, con
+WS0 A y B; la `0018_drop_unused_columns` de B, aplicada en producción con `when`
+`1792502701085`, borra doce columnas de `workspace`, `workspace_settings` y
+`membership`). El commit temporal de V-7 se queda en la rama para el preview.
+
+**Conflictos y cómo quedaron:**
+
+- Los únicos con marcas, en el commit del servidor: `drizzle/meta/_journal.json`
+  y `drizzle/meta/0018_snapshot.json` (alta en los dos lados). Quedan los de
+  WS0; ver «La migración».
+- `src/server/db/schema.ts` se fusionó solo pero sin compilar: WS0 sacó
+  `integer` de los imports de `drizzle-orm/pg-core` porque se fue su última
+  columna, y `mcp_call_window` lo usa. Vuelve el import; sin él, `db:generate`
+  corta con `ReferenceError: integer is not defined`.
+- La constancia que WS1 arma con un `Actor` (`workspace.updateName`, en
+  `updateWorkspaceName`) pasa a `auditActorOf`, como pide D-MCP-12. WS0 no
+  suma constancias.
+- El resto se fusionó solo: `e2e/database.ts` (las funciones de WS1 y
+  `grantCountOf`), `workspace/service.ts` (los imports de los dos),
+  `permissions/index.ts` y `schema.ts` (las columnas que borra WS0 y las tablas
+  del MCP). Nada del MCP lee las columnas borradas: `typecheck` limpio.
+
+**La migración.** La `0018_mcp` de la rama se descartó (con su instantánea y su
+entrada del diario, que quedan las de WS0) y se regeneró en el mismo commit del
+servidor con `npm run db:generate -- --name mcp` sobre el esquema rebasado:
+sale **`0019_mcp`**, `when` `1792540623295` (mayor que el `1792502701085` de la
+`0018`). El SQL es idéntico byte a byte al de la `0018_mcp` anterior: solo las
+tablas del plugin, `mcp_call_window` y `audit_log.oauth_client_id`. La
+instantánea `0019` tiene `prevId` igual al `id` de la `0018` de WS0 y se
+diferencia de ella solo en las nueve tablas del MCP y en `audit_log`; los enums,
+iguales. Un `db:generate` después: «No schema changes». En `clock_mcp_rb_b`, una
+base nueva, `db:migrate` aplica las 20, de la `0000` a la `0019`. El mensaje del
+commit del servidor todavía dice `0017_mcp`: el rebase no lo reescribe.
+
+**Corridas** (bases nuevas `clock_mcp_rb_b` para la e2e y `clock_mcp_rb_b_test`
+para la integración):
+
+- `npm run lint`, `npm run typecheck` y `npx prettier --check .`: limpios.
+- `npm test`: 111 archivos, 2541 tests; `test:time-ar`, 2 archivos, 303 tests
+  (WS0 borra dos casos de `time.test.ts`).
+- `npm run test:integration`: 41 archivos, 2153 tests.
+- `npm run build`, con los valores de relleno del CI: compila; `/api/mcp`,
+  `/conectar`, los cuatro `.well-known` y `/configuracion`, dinámicos.
+- `npm run test:e2e` entera, con `DATABASE_URL` en `clock_mcp_rb_b` migrada:
+  254 pasan, ninguna falla ni se saltea; las cinco de `mcp.spec.ts` y las de
+  `workspace-settings.spec.ts` entre ellas.
