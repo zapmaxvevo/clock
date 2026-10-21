@@ -96,6 +96,95 @@ falta como `compact` a propósito (D-WS2a-2), y por eso la vista no puede
 leerla: la mutación «la vista con el formato de la sesión» la mata el
 criterio 8.
 
+## Frontend
+
+| Commit    | Qué                                                                                                                                           |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `42dbeaf` | `ChoiceSelect` pasa a `src/components/choice-select.tsx`, sin cambios de marcado; el perfil lo importa (§5.4)                                 |
+| `de87191` | La sección «Registro de tiempo», `DurationFormatField`, los textos de §5.6 y `configuracion/error.tsx`; el test de la pantalla, dos secciones |
+| `4823416` | El perfil con `durationFormatText(view.durationFormat)`; se borra `profileLabels.durationValue` (D-WS2b-7)                                    |
+| `016c3af` | El reporte con el formato por props; se borra `durationLabel`; `durationColumnWidth` (D-WS2b-8)                                               |
+
+### Lo que decide la implementación
+
+- **El ancho del disparador** se exporta de `choice-select.tsx` como
+  `choiceTriggerWidth`, y `TimeZonePicker` lo importa: un solo lugar (§5.4).
+- **Los textos** son los de la respuesta a la pregunta 2: «Completo
+  (hh:mm:ss)» y «Compacto (h:mm)», sin el ejemplo de una hora y media.
+
+### La medida de la columna «Duración» (D-WS2b-8)
+
+Medida en Chromium (Playwright) contra el build de la rama, con Geist
+cargada, `text-sm` y `tabular-nums`, en una celda `px-3` de una tabla
+`table-fixed` como la del reporte:
+
+| Texto         | Ancho del texto |
+| ------------- | --------------- |
+| `99999:59:59` | 87 px           |
+| `10080:00:00` | 87 px           |
+| `1000:00:00`  | 78 px           |
+| `00:00:00`    | 60 px           |
+| `10080:00`    | 66 px           |
+
+`w-24` deja 72 px de contenido (96 − 2 × 12) y `1000:00:00` ya no entra;
+`w-28` deja 88 px, y `99999:59:59` entra en una línea, con 1 px de sobra.
+`durationColumnWidth` da `w-28` con el completo y `w-24` con el compacto,
+donde el texto más largo de cinco cifras (`10080:00`) mide 66 px. La celda
+mide 36 px de alto con cualquiera de los textos: una línea. La e2e «con más
+de diez mil horas la duración entra en un renglón» pasa con `w-28`.
+
+### Mutaciones
+
+Sobre `016c3af`, cada una sola, con `vitest` de `report/components`,
+`profile` y `workspace/components`; todas mueren:
+
+| Mutación                                           | La mata                                                                 |
+| -------------------------------------------------- | ----------------------------------------------------------------------- |
+| `ReportTreeRows` con `"compact"` fijo              | `report-tree.test.tsx` (3) y `report-view.test.tsx`, con el completo    |
+| El total de `ReportView` con `"compact"` fijo      | `report-view.test.tsx`, «con el full, las filas, el total…»             |
+| La escala del gráfico con `"compact"` fijo         | `report-chart.test.tsx`, «los rótulos de la escala en hh:mm:ss»         |
+| La tabla de datos del gráfico con `"compact"` fijo | `report-chart.test.tsx` y `report-view.test.tsx`                        |
+| `ReportView` pasa `"compact"` a `ReportChart`      | `report-view.test.tsx`, la tabla de datos con el completo               |
+| `durationColumnWidth` con `w-24` en el completo    | `report-view.test.tsx`, el ancho y las dos tablas                       |
+| La tabla del gráfico con `w-24` fijo               | `report-chart.test.tsx` y `report-view.test.tsx`                        |
+| El perfil con `durationFormatText("compact")`      | `profile-screen.test.tsx`, PF-31                                        |
+| El campo con el valor fijo                         | `duration-format-field.test.tsx` y `workspace-settings-screen.test.tsx` |
+| `DURATION_FORMAT_ORDER` con el compacto primero    | `duration-format-field.test.tsx`, WS-15                                 |
+| La pantalla sin «Registro de tiempo»               | `workspace-settings-screen.test.tsx` (3)                                |
+
+La del campo sin `optimistic` (§9) la mata §9.5.3 en la e2e.
+
+### La búsqueda de §9.6, en `016c3af`
+
+Fuera de las carpetas exceptuadas da los llamadores de WS2a que lista la
+búsqueda de backend, `cell-text.ts:21`, la excepción
+`clock-field.tsx:177` y los seis del reporte con el formato recibido:
+`report-view.tsx:88`, `:94`; `report-chart.tsx:37`, `:52`, `:86`;
+`report-tree.tsx:69`. **Ningún `durationLabel(`** ni otro `"compact"` o
+`"full"` literal.
+
+### Corridas
+
+| Corrida                  | Resultado                                          |
+| ------------------------ | -------------------------------------------------- |
+| `npm run lint`           | sin errores                                        |
+| `npm run typecheck`      | sin errores                                        |
+| `npx prettier --check .` | todo con formato                                   |
+| `npm test`               | unidad 119 archivos, 2641 tests; `time-ar` 2 y 309 |
+
+**E2e**, con un build propio de `016c3af` en un worktree aparte y `next start`
+en `:3427`, sobre `clock_ws2b_front_e2e` (nueva, migrada con el `drizzle/`
+de la rama). Filtrar por archivo no recorta `chromium`, que corrió entero:
+
+- `setup`, `chromium` (con `workspace-settings.spec.ts`), `duration-full-setup`,
+  `duration-full` (con `reports-duration.full.spec.ts` y
+  `duration-format.full.spec.ts`) y `duration-full-teardown`: 268 verdes.
+- `duration-switch`: **el primer test falla por el spec**: entra como admin, y
+  el total del reporte de un admin suma las horas de todo el workspace
+  («69:19:17» en lugar de «00:03:20»). Avisado a `e2e-tester`. Los otros
+  cuatro, que el modo serial salteó, pasan con `--no-deps` y
+  `--grep-invert`: 4 verdes.
+
 ## Comprobaciones del árbol
 
 **Los supuestos de backend de la tabla de §0**, en `0ce8fc6` (WS2a ya en
