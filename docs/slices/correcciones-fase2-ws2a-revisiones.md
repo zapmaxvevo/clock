@@ -578,3 +578,95 @@ En `977f469`, con las correcciones de los tres agentes, más este registro:
 
 El `build` y la e2e final en base nueva quedan para después del rebase sobre
 el MCP.
+
+## Rebase sobre el MCP y corrida final
+
+El 2026-10-21, `git rebase main` con `main` en `34ed2b5`, que trae el merge
+del MCP (`5d92b19`) con su `0019_mcp`. Mientras corría, `main` sumó dos
+commits de docs (`6db205e`, `8547b76`, solo `docs/mejoras-pedidas.md` y
+`docs/slices/estado-fase1.md`), y la rama se volvió a rebasar sin conflictos:
+**la base es `8547b76`**.
+
+Pararon los dos commits que tocaban la migración, en `drizzle/meta/` (el
+diario y la instantánea `0019`, agregados de los dos lados) y, en el segundo,
+el SQL. En los dos quedaron el diario y las instantáneas de `main`, y salió el
+`.sql` de la vieja `0019_workspace_duration_format`: `16f1ddf` deja solo la
+columna en `schema.ts` y `2fab900`, los `check` del nombre en `schema.ts` y
+su test. Entre ellos y `9bfec25` el esquema nombra la columna sin migración:
+esos commits no pasan la integración sueltos. Nada más tuvo conflicto; los
+archivos que tocan los dos lados (`e2e/database.ts`, `playwright.config.ts`,
+`e2e/profile.spec.ts`, `profile/service.ts`, `workspace/service.ts`,
+`time-entry/`, `server/time/`) se fusionaron solos. El MCP arma su contexto
+con `ensureWorkspaceContext` (`src/server/user-context.ts`), así que un
+pedido por token también lleva `settings.durationFormat`; ninguna herramienta
+del MCP formatea duraciones.
+
+**La migración** (`9bfec25`): `npm run db:generate -- --name
+workspace_duration_format` sobre el diario de `main`.
+
+- Sale **`0020_workspace_duration_format`**, con `when` **`1792584289697`**,
+  mayor que el `1792540623295` de la `0019_mcp`; la instantánea `0020` tiene
+  de `prevId` el `id` de la `0019` de `main`.
+- El SQL es **idéntico byte a byte** al de la vieja `0019` (`diff` contra
+  `e41bb75`): la columna, su `check` y los dos `check` de `workspace.name`
+  (D-WS2a-10). Ninguno está escrito a mano, así que no hubo nada que reponer.
+  Mismo sha256: `abaf2a27d1c00e7a1a8e3f87902325d2fbf13b19c05bbdbad6a89fe0f2abf3c2`.
+- Un segundo `db:generate` da «No schema changes, nothing to migrate».
+- `9861640` cambia «0019» por «0020» en tres títulos de
+  `src/server/db/schema.integration.test.ts`. El contrato sigue diciendo
+  `0019`: es lo que preveía D-WS2a-11, que ya nombra la `0020`.
+
+**La subida**, en `clock_ws2a_r2_upgrade`, nueva: migrada con el `drizzle/`
+de `8547b76` (un worktree temporal; 20 filas, la última `1792540623295`) y
+sembrada con `scripts/report-volume/seed.sql`.
+
+- La consulta previa de `clock-ops/ws2a-0020-previa-control.sql` da
+  `1792540623295 | 20 | 1 | 0 | 0 | 0`.
+- `npm run db:migrate` desde la rama aplica solo la `0020`: 21 filas, la
+  última con `1792584289697` y el sha256 del archivo.
+- El control da `text`, `'compact'::text`, `NO`, las tres restricciones y
+  `compact:1`. Los conteos (`workspace` 1, `workspace_settings` 1,
+  `membership` 31, `time_entry` 187 685) no cambian.
+- Un segundo `db:migrate` no aplica nada (siguen 21 filas).
+
+**El bloque para Neon** (`clock-ops/ws2a-0020-do.sql`, de `do-block.cjs` con
+`drizzle/` de la rama desde el `idx` 20), en `clock_ws2a_r2_doblock`, una copia
+de la base sembrada antes de migrarla: la previa da lo mismo; el bloque corre
+y el control da lo mismo que con `db:migrate`, con los conteos iguales; un
+`db:migrate` después no aplica nada (21 filas), y el bloque otra vez falla con
+«la última migración aplicada no es la 0019_mcp» sin tocar nada. Sobre esa
+base, `duration_format = 'decimal'`, `name = ''`, `name = ' x'` y
+`name = repeat('a', 101)` fallan con su `check`.
+
+**Las corridas**, en `9861640` (las de código; el árbol de `src/`, `e2e/` y
+`drizzle/` es el de la punta, que solo suma este registro):
+
+| Corrida                    | Resultado                                                                   |
+| -------------------------- | --------------------------------------------------------------------------- |
+| `npm ci`                   | hizo falta: `@better-auth/oauth-provider` llega con el MCP                  |
+| `npm run lint`             | sin errores                                                                 |
+| `npm run typecheck`        | sin errores                                                                 |
+| `npx prettier --check .`   | todo con formato                                                            |
+| `npm test`                 | unidad 118 archivos, 2589 tests; `time-ar` 2 y 309                          |
+| `npm run test:integration` | 41 archivos, 2187 tests, en `clock_ws2a_r2_int` (nueva), 4,6 min; 21 filas  |
+| `npm run build`            | sin `.next`, con las variables de relleno del `ci`: compila, 21 rutas       |
+| e2e 1, base nueva          | `clock_ws2a_r2_e2e`: 262 pasaron (1/253/1/6/1), 1,8 min; `compact` al final |
+| e2e 2, la misma base       | 262 pasaron (1/253/1/6/1), 1,9 min, sin flakes; `compact` al final          |
+
+Por proyecto: `setup` / `chromium` / `duration-full-setup` / `duration-full`
+/ `duration-full-teardown`. Los 5 tests más que antes de este rebase (257) son
+los de `e2e/mcp.spec.ts`. La base de la e2e se creó vacía y se migró desde la
+rama con `db:migrate`, como en las corridas del criterio 14; terminó con 289
+membresías en la primera y 577 en la segunda. No falló ningún spec de
+`/equipo`.
+
+Dos cosas del registro del servidor, ninguna de WS2a:
+
+- **El `build`** registra 19 veces `oauth-provider: could not seed
+resources at startup; retrying on first resource access`: el plugin del MCP
+  consulta `oauth_resource` al cargar, y con las variables de relleno no hay
+  base. No corta el `build` (sale con 0). Se le avisa al team-lead: en Vercel
+  el `build` corre con la `DATABASE_URL` de cada entorno.
+- **La e2e** registra 15 veces `Error: The destination stream closed early.`
+  del `[WebServer]`: los specs que cortan la respuesta a propósito («la
+  respuesta se perdió»), que pasan.
