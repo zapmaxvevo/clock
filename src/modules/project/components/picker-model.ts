@@ -2,6 +2,7 @@ import { sameId, samePair, type ProjectPair } from "@/lib/project-pair";
 import { normalizeSearch } from "@/lib/text";
 import type {
   ClientView,
+  ProjectRef,
   ProjectSelection,
   TaskView,
   TrackingCatalog,
@@ -225,4 +226,35 @@ export function sameSelection(a: ProjectSelection, b: ProjectSelection): boolean
 /** Los ids que viajan a la action: la selección sin sus nombres ni su color. */
 export function selectionIds(selection: ProjectSelection): ProjectPair {
   return { projectId: selection.project?.id ?? null, taskId: selection.task?.id ?? null };
+}
+
+/** TT-09 en un selector: el alta abierta y el proyecto creado que espera al catálogo. */
+export type PickerCreation = {
+  /** El nombre con que se abrió «Nuevo proyecto»; `null` sin diálogo. */
+  readonly creating: string | null;
+  /** D-P1-11: el proyecto creado, hasta que el catálogo lo trae. */
+  readonly created: ProjectRef | null;
+};
+
+export const NO_CREATION: PickerCreation = { creating: null, created: null };
+
+/**
+ * Lo que queda de TT-09 en un render del selector. En solo lectura (TT-92) no
+ * queda nada: el diálogo volvería a abrirse y la selección pendiente se
+ * entregaría al volver a la escritura. Con el valor cambiado por otro lado, la
+ * selección pendiente ya no corresponde. Sin cambios, el mismo objeto.
+ */
+export function remainingCreation(
+  creation: PickerCreation,
+  context: { readonly readOnly: boolean; readonly valueChanged: boolean },
+): PickerCreation {
+  if (context.readOnly) {
+    return creation.creating === null && creation.created === null
+      ? creation
+      : NO_CREATION;
+  }
+  if (context.valueChanged && creation.created !== null) {
+    return { ...creation, created: null };
+  }
+  return creation;
 }

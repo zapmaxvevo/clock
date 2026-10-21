@@ -34,7 +34,9 @@ import { projectLabels, projectTaskLabel } from "./labels";
 import { NewProjectFromPicker } from "./new-project-from-picker";
 import {
   catalogEntryOf,
+  NO_CREATION,
   pickerView,
+  remainingCreation,
   sameSelection,
   type PickerEmpty,
   type PickerItem,
@@ -149,10 +151,7 @@ export function ProjectPicker({
   const catalog = useTrackingCatalog();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  /** TT-09: el nombre con que se abrió «Nuevo proyecto»; `null` sin diálogo. */
-  const [creating, setCreating] = useState<string | null>(null);
-  /** D-P1-11: el proyecto creado, hasta que el catálogo lo trae. */
-  const [created, setCreated] = useState<ProjectRef | null>(null);
+  const [creation, setCreation] = useState(NO_CREATION);
   /** La selección que el catálogo ya trae; el efecto la entrega una sola vez. */
   const [delivery, setDelivery] = useState<ProjectSelection | null>(null);
   const delivered = useRef<ProjectSelection | null>(null);
@@ -166,20 +165,24 @@ export function ProjectPicker({
     [triggerRef],
   );
 
-  // El valor cambió por otro lado: la selección pendiente ya no corresponde.
-  if (!sameValue(seenValue, value)) {
+  const valueChanged = !sameValue(seenValue, value);
+  if (valueChanged) {
     setSeenValue(value);
-    setCreated(null);
+  }
+  const remaining = remainingCreation(creation, { readOnly, valueChanged });
+  if (remaining !== creation) {
+    setCreation(remaining);
   }
 
   // D-P1-11: quien recibe `onChange` busca el proyecto en el catálogo (el
   // facturable por defecto, el par de la planilla). Se entrega cuando el
   // catálogo, que llega con la revalidación del alta, ya lo trae.
+  const { created } = remaining;
   if (created !== null) {
     const entry = catalogEntryOf(catalog, { projectId: created.id, taskId: null });
     if (entry !== null) {
       const { id, name, color } = entry.project;
-      setCreated(null);
+      setCreation({ ...remaining, created: null });
       setDelivery({ project: { id, name, color }, task: null });
     }
   }
@@ -211,7 +214,7 @@ export function ProjectPicker({
       return;
     }
     if (next) {
-      setCreated(null);
+      setCreation((current) => ({ ...current, created: null }));
     }
     setOpen(next);
     onOpenChange?.(next);
@@ -224,7 +227,7 @@ export function ProjectPicker({
     // TT-09: no es una selección; abre el alta con la búsqueda.
     if (option.kind === "create") {
       changeOpen(false);
-      setCreating(option.name);
+      setCreation((current) => ({ ...current, creating: option.name }));
       return;
     }
     if (value !== null && sameSelection(option.selection, value)) {
@@ -287,12 +290,14 @@ export function ProjectPicker({
           <PickerOptions view={view} />
         </ComboboxContent>
       </Combobox>
-      {creating !== null && (
+      {creation.creating !== null && (
         <NewProjectFromPicker
-          name={creating}
+          name={creation.creating}
           finalFocus={() => trigger.current}
-          onCreated={setCreated}
-          onClosed={() => setCreating(null)}
+          onCreated={(project) =>
+            setCreation((current) => ({ ...current, created: project }))
+          }
+          onClosed={() => setCreation((current) => ({ ...current, creating: null }))}
         />
       )}
     </>

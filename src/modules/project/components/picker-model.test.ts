@@ -9,7 +9,9 @@ import type {
 import {
   catalogEntryOf,
   isTrackablePair,
+  NO_CREATION,
   pickerView,
+  remainingCreation,
   sameSelection,
   selectionIds,
   type PickerView,
@@ -502,5 +504,43 @@ describe("selectionIds", () => {
       projectId: null,
       taskId: null,
     });
+  });
+});
+
+describe("remainingCreation (TT-09, D-P1-11, TT-92)", () => {
+  const created = { id: "p-nuevo", name: "Nuevo", color: "blue" } as const;
+  const both = { creating: "Nuevo", created };
+
+  it("en solo lectura no queda ni el alta abierta ni la selección pendiente", () => {
+    expect(remainingCreation(both, { readOnly: true, valueChanged: false })).toEqual(
+      NO_CREATION,
+    );
+    expect(
+      remainingCreation(
+        { creating: "Nuevo", created: null },
+        {
+          readOnly: true,
+          valueChanged: false,
+        },
+      ),
+    ).toEqual(NO_CREATION);
+  });
+
+  it("con el valor cambiado por otro lado se descarta la selección pendiente, no el alta", () => {
+    expect(remainingCreation(both, { readOnly: false, valueChanged: true })).toEqual({
+      creating: "Nuevo",
+      created: null,
+    });
+  });
+
+  it("sin nada que descartar devuelve el mismo objeto", () => {
+    for (const creation of [both, NO_CREATION]) {
+      expect(remainingCreation(creation, { readOnly: false, valueChanged: false })).toBe(
+        creation,
+      );
+    }
+    expect(remainingCreation(NO_CREATION, { readOnly: true, valueChanged: true })).toBe(
+      NO_CREATION,
+    );
   });
 });
