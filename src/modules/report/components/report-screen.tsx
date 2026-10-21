@@ -38,7 +38,7 @@ export async function ReportScreen({ actor, settings, request }: ReportScreenPro
         </h1>
         <ReportToolbar state={state} />
       </div>
-      <ReportView state={state} />
+      <ReportView state={state} durationFormat={settings.formats.duration} />
     </div>
   );
 }

@@ -5,6 +5,7 @@ import type {
   ReportChart as ReportChartState,
   ReportChartBar,
 } from "@/modules/report/schema";
+import type { DurationFormat } from "@/server/time";
 import { bodyRows } from "@/test/markup";
 
 import { ReportChart } from "./report-chart";
@@ -25,8 +26,13 @@ function dayBars(...seconds: number[]): ReportChartBar[] {
   });
 }
 
-function render(chart: ReportChartState): string {
-  return renderToStaticMarkup(<ReportChart chart={chart} />);
+function render(
+  chart: ReportChartState,
+  durationFormat: DurationFormat = "compact",
+): string {
+  return renderToStaticMarkup(
+    <ReportChart chart={chart} durationFormat={durationFormat} />,
+  );
 }
 
 /** Las columnas: el elemento con `role="img"`, sus atributos y lo que tiene adentro. */
@@ -279,5 +285,49 @@ describe("ReportChart (D-R5-7 a D-R5-9)", () => {
     for (const column of two) {
       expect(column.className).not.toContain("max-w-12");
     }
+  });
+});
+
+describe("ReportChart con el formato del workspace (D-WS2b-8, WS-17)", () => {
+  it.each<[DurationFormat, string, string]>([
+    ["compact", "0:01", "0:00"],
+    ["full", "00:01:40", "00:00:00"],
+  ])(
+    "con el %s, el nombre de cada barra y la tabla de datos",
+    (format, hundred, zero) => {
+      const markup = render({ granularity: "date", bars: dayBars(100, 0) }, format);
+      expect(columns(markup).map(({ name }) => name)).toEqual([
+        `día 01/10: ${hundred}`,
+        `día 02/10: ${zero}`,
+      ]);
+      expect(bodyRows(markup.slice(markup.indexOf("<details")))).toEqual([
+        ["día 01/10", hundred],
+        ["día 02/10", zero],
+      ]);
+    },
+  );
+
+  it("con el completo, los rótulos de la escala en hh:mm:ss", () => {
+    const markup = render(
+      { granularity: "date", bars: dayBars(HOUR, 7.5 * HOUR) },
+      "full",
+    );
+    expect(scaleLabels(markup)).toEqual([
+      "00:00:00",
+      "02:00:00",
+      "04:00:00",
+      "06:00:00",
+      "08:00:00",
+    ]);
+  });
+
+  it.each<[DurationFormat, string]>([
+    ["compact", "w-24"],
+    ["full", "w-28"],
+  ])("con el %s, «Duración» de la tabla de datos lleva %s", (format, width) => {
+    const markup = render({ granularity: "date", bars: dayBars(HOUR) }, format);
+    const names =
+      /<th scope="col" class="([^"]*)">Duración<\/th>/.exec(markup)?.[1].split(" ") ?? [];
+    expect(names.filter((name) => /^w-/.test(name))).toEqual([width]);
   });
 });

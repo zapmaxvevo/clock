@@ -10,19 +10,8 @@ import type {
   ReportProjectGroup,
   ReportTaskGroup,
 } from "@/modules/report/schema";
-import { formatDuration } from "@/server/time";
 
 import { reportLabels } from "./labels";
-
-/**
- * Cada cifra se trunca al minuto por separado, la de cada fila y la del total:
- * la suma de lo que muestran las filas queda en o debajo del total (§5.3).
- */
-export function durationLabel(seconds: number): string {
-  // Fijo en el compacto hasta que el reporte reciba el formato del workspace,
-  // con WS2b (D-WS2a-9).
-  return formatDuration(seconds, "compact");
-}
 
 /** `ReactElement` y no `ReactNode`, que admite `undefined`: un `kind` sin caso no compila. */
 export function GroupHeading({ group }: { readonly group: ReportGroup }): ReactElement {

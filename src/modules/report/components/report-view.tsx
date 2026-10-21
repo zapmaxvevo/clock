@@ -9,15 +9,30 @@ import {
   reportLevelsOf,
   type ReportReadyState,
 } from "@/modules/report/schema";
+import { formatDuration, type DurationFormat } from "@/server/time";
 
 import { groupByLabels, reportLabels } from "./labels";
 import { reportHref } from "./report-href";
-import { durationLabel } from "./group-heading";
 import { ReportChart } from "./report-chart";
 import { ReportTree } from "./report-tree";
 
 /** El `h1` de la pantalla, que nombra la tabla. */
 export const REPORT_HEADING_ID = "reporte-titulo";
+
+/**
+ * D-WS2b-8: el ancho de la columna «Duración», de esta tabla y de la del
+ * gráfico. Con el completo, `99999:59:59` entra en una línea con `text-sm` y
+ * cifras tabulares (medido en el navegador); con el compacto, el de siempre.
+ */
+const DURATION_COLUMN_WIDTH = {
+  compact: "w-24",
+  full: "w-28",
+} as const satisfies Record<DurationFormat, string>;
+
+/** `w-24` con el compacto; con el completo, la medida de D-WS2b-8. */
+export function durationColumnWidth(format: DurationFormat): string {
+  return DURATION_COLUMN_WIDTH[format];
+}
 
 /**
  * El alcance y la zona (D-R2a-2, D-R2a-5), el aviso de la suma por etiqueta
@@ -26,8 +41,19 @@ export const REPORT_HEADING_ID = "reporte-titulo";
  * Las del cuerpo las dibuja `ReportTree`. Sin grupos, el vacío de R2a o, con
  * filtros, el segundo (D-R4-7). Si no entra ni el primer nivel, una fila que lo
  * dice en lugar de las filas (D-R10-10).
+ *
+ * Las duraciones salen con el formato del workspace, que llega de la misma
+ * lectura que el estado (D-WS2b-8). Cada cifra se trunca por separado, la de
+ * cada fila y la del total: la suma de lo que muestran las filas queda en o
+ * debajo del total (§5.3 de R2a).
  */
-export function ReportView({ state }: { readonly state: ReportReadyState }) {
+export function ReportView({
+  state,
+  durationFormat,
+}: {
+  readonly state: ReportReadyState;
+  readonly durationFormat: DurationFormat;
+}) {
   const requested = reportLevelsOf(state);
   const shown = requested.slice(0, state.levelsShown);
   const firstLevelCut = state.levelsShown === 0;
@@ -59,18 +85,24 @@ export function ReportView({ state }: { readonly state: ReportReadyState }) {
         <div className="flex flex-col">
           <dt className="text-muted-foreground text-sm">{reportLabels.total}</dt>
           <dd className="text-lg font-semibold tabular-nums">
-            {durationLabel(state.totalSeconds)}
+            {formatDuration(state.totalSeconds, durationFormat)}
           </dd>
         </div>
         <div className="flex flex-col">
           <dt className="text-muted-foreground text-sm">{reportLabels.billable}</dt>
           <dd className="text-lg font-semibold tabular-nums">
-            {durationLabel(state.billableSeconds)}
+            {formatDuration(state.billableSeconds, durationFormat)}
           </dd>
         </div>
       </dl>
 
-      {state.chart !== null && <ReportChart key={requestKey} chart={state.chart} />}
+      {state.chart !== null && (
+        <ReportChart
+          key={requestKey}
+          chart={state.chart}
+          durationFormat={durationFormat}
+        />
+      )}
 
       {!firstLevelCut && shown.length < requested.length && (
         <p className="text-sm">{reportLabels.rowLimit(REPORT_MAX_ROWS)}</p>
@@ -88,7 +120,13 @@ export function ReportView({ state }: { readonly state: ReportReadyState }) {
               <th scope="col" className="px-3 py-2 text-left font-medium">
                 {headed.map((level) => groupByLabels[level]).join(" / ")}
               </th>
-              <th scope="col" className="w-24 px-3 py-2 text-right font-medium">
+              <th
+                scope="col"
+                className={cn(
+                  durationColumnWidth(durationFormat),
+                  "px-3 py-2 text-right font-medium",
+                )}
+              >
                 {reportLabels.duration}
               </th>
             </tr>
@@ -99,7 +137,11 @@ export function ReportView({ state }: { readonly state: ReportReadyState }) {
             ) : state.groups.length === 0 ? (
               <EmptyRow state={state} />
             ) : (
-              <ReportTree key={requestKey} groups={state.groups} />
+              <ReportTree
+                key={requestKey}
+                groups={state.groups}
+                durationFormat={durationFormat}
+              />
             )}
           </tbody>
         </table>
