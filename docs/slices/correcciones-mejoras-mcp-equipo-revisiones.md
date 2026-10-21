@@ -154,3 +154,31 @@ Punta `f8f1b16`, con el árbol quieto, cada cosa en una base nueva:
 | `npm run build`              | una copia de `f8f1b16` (`git archive`) con `cp -al` de `node_modules`              | en verde                                                                               |
 | e2e entera, base nueva       | la copia, `next start` en el puerto 3541, base `clock_mcpe_fin_e2e` recién migrada | 264 pasan (1,7 min)                                                                    |
 | e2e entera, reusando la base | lo mismo, sobre la base de la corrida anterior                                     | 264 pasan (1,8 min)                                                                    |
+
+## Rebase sobre WS2b
+
+`mejoras/mcp-equipo` rebasada sobre `main` `9a6eb0b` (el merge de WS2b), desde
+`8466e94`: los 16 commits se aplicaron sin conflictos de texto y
+`npm run typecheck` no muestra choques de tipos. WS2b suma al final de
+`workspace/repository.ts` y `service.ts` sus funciones de ajustes; las de este
+slice (`listPeople`, `listWorkspacePeople`, `WorkspacePerson`) conviven sin
+cambios. `npm ci` después del rebase.
+
+**La búsqueda de §9.6 de WS2b**
+(`rg -n 'formatDuration\(|durationLabel\(|"compact"|"full"' src scripts --glob '!**/*.test.*'`)
+da las mismas 29 líneas en la rama que en `main` `9a6eb0b`, y el diff de la
+rama contra `main` no suma ningún `"compact"`, `"full"`, `formatDuration(` ni
+`durationLabel(`, tampoco en los tests.
+
+Corrida sobre la punta rebasada `6b97cdb`, cada cosa en una base nueva:
+
+| Corrida                      | Dónde                                                                               | Resultado                                                                              |
+| ---------------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `npm run lint`               | el worktree                                                                         | sin errores ni advertencias                                                            |
+| `npm run typecheck`          | el worktree                                                                         | limpio                                                                                 |
+| `npx prettier --check .`     | el worktree                                                                         | limpio                                                                                 |
+| `npm test`                   | el worktree                                                                         | `test:unit` 119 archivos y 2673 tests; `test:time-ar` 2 archivos y 309 tests; en verde |
+| `npm run test:integration`   | el worktree, base `clock_mcpe_fin2_int`                                             | 41 archivos y 2303 tests, en verde                                                     |
+| `npm run build`              | una copia de `6b97cdb` (`git archive`) con `cp -al` de `node_modules`               | en verde                                                                               |
+| e2e entera, base nueva       | la copia, `next start` en el puerto 3541, base `clock_mcpe_fin2_e2e` recién migrada | 275 pasan (1,8 min)                                                                    |
+| e2e entera, reusando la base | lo mismo, sobre la base de la corrida anterior                                      | 275 pasan (1,9 min)                                                                    |
