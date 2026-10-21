@@ -217,6 +217,11 @@ export type WorkspacePerson = {
   readonly accountName: string;
   /** `user_preference.display_name`, o `null`: el nombre lo arma `displayNameOf` (ADR 0021). */
   readonly displayName: string | null;
+  /**
+   * `user.email`, tal cual: la traducción del correo liberado y el permiso son
+   * de quien lo muestra (D-MCPE-2).
+   */
+  readonly email: string;
   readonly status: MemberStatus;
   /**
    * `membership.created_at`: desde cuándo existe la membresía (D-R9-2). La
@@ -235,15 +240,19 @@ export type WorkspacePerson = {
  * únicamente con el alcance `everyone`, que ya respondió
  * `timeEntry.others.view` en `scopeOf` (D-R4-4): otro llamador que ofrezca el
  * catálogo como filtro de horas (la exportación de R6) pasa por ese alcance.
+ * El catálogo del asistente la llama con el alcance `everyone`, o con solo la
+ * persona propia en `userIds` con `self`, y muestra el correo solo con
+ * `team.manage` (D-MCPE-2).
  */
 export async function listWorkspacePeople(
   tx: Transaction,
   actor: Actor,
+  userIds?: readonly string[],
 ): Promise<readonly WorkspacePerson[]> {
   if (!can(actor, "team.view", { kind: "workspace", workspaceId: actor.workspaceId })) {
     return [];
   }
-  return workspaceRepository.listPeople(tx, actor.workspaceId);
+  return workspaceRepository.listPeople(tx, actor.workspaceId, userIds);
 }
 
 /** Error de dominio de las invitaciones. La action lo traduce a un resultado tipado. */

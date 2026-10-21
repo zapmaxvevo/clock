@@ -6,6 +6,13 @@ import type { McpContext } from "@/server/mcp-context";
 import { dayKey, weekStartKey, wholeMinutes } from "@/server/time";
 import { timeSettingsOf } from "@/modules/profile/service";
 import { getTrackingCatalog } from "@/modules/project/service";
+import * as reportOperations from "@/modules/report/operations";
+import {
+  reportMessages,
+  type PeopleCatalog,
+  type ReportGroup,
+  type ReportReadyState,
+} from "@/modules/report/schema";
 import * as operations from "@/modules/time-entry/operations";
 import {
   timeEntryMessages,
@@ -21,20 +28,26 @@ import {
   getContextToolOutput,
   listEntriesToolInput,
   listEntriesToolOutput,
+  listPeopleToolOutput,
   listProjectsToolOutput,
   mcpMessages,
   startTimerToolInput,
   startTimerToolOutput,
   stopTimerToolInput,
   stopTimerToolOutput,
+  summarizeHoursToolInput,
+  summarizeHoursToolOutput,
   updateEntryToolInput,
   type DeleteEntryToolOutput,
   type EntryToolOutput,
   type GetContextToolOutput,
   type ListEntriesToolOutput,
+  type ListPeopleToolOutput,
   type ListProjectsToolOutput,
   type StartTimerToolOutput,
   type StopTimerToolOutput,
+  type SummarizeHoursToolOutput,
+  type SummaryGroup,
   type ToolEntry,
   type UpdateEntryToolInput,
 } from "./schema";
@@ -48,6 +61,16 @@ const entryMessages: ActionMessages = {
 /** Los de las lecturas que no son de entradas. */
 const contextMessages: ActionMessages = {
   forbidden: mcpMessages.grantForbidden,
+  unexpected: mcpMessages.unexpected,
+};
+
+/**
+ * D-MCPE-4: los de las lecturas del reporte. El `forbidden` de un
+ * `ForbiddenError` solo puede venir de `report.view`; el de horas ajenas, el
+ * `not_found` y el `timeout` son `ReportError` y traen su texto.
+ */
+export const reportToolMessages: ActionMessages = {
+  forbidden: reportMessages.viewForbidden,
   unexpected: mcpMessages.unexpected,
 };
 
@@ -74,6 +97,106 @@ export function toolEntryOf(view: TimeEntryView): ToolEntry {
     task: view.task,
     billable: view.billable,
     tags: view.tags,
+  };
+}
+
+/** D-MCPE-5: lo que dice un grupo de sí mismo, sin el nivel de abajo. */
+function summaryFieldsOf(group: ReportGroup): Omit<SummaryGroup, "children"> {
+  const minutes = wholeMinutes(group.seconds);
+  switch (group.kind) {
+    case "person":
+      return {
+        kind: group.kind,
+        key: group.userId,
+        name: group.name,
+        minutes,
+        inactive: group.inactive,
+      };
+    case "project":
+      return {
+        kind: group.kind,
+        key: group.project?.id ?? null,
+        name: group.project?.name ?? null,
+        minutes,
+        client: group.client?.name ?? null,
+      };
+    case "client":
+      return {
+        kind: group.kind,
+        key: group.client?.id ?? null,
+        name: group.client?.name ?? null,
+        minutes,
+      };
+    case "task":
+      return {
+        kind: group.kind,
+        key: group.task?.id ?? null,
+        name: group.task?.name ?? null,
+        minutes,
+        project: group.project?.name ?? null,
+      };
+    case "tag":
+      return {
+        kind: group.kind,
+        key: group.tag?.id ?? null,
+        name: group.tag?.name ?? null,
+        minutes,
+      };
+    case "date":
+      return { kind: group.kind, key: group.dayKey, name: group.dayKey, minutes };
+    case "week":
+      return { kind: group.kind, key: group.weekStart, name: group.weekStart, minutes };
+    case "month":
+      return { kind: group.kind, key: group.monthStart, name: group.monthStart, minutes };
+    case "description":
+      return {
+        kind: group.kind,
+        key: group.description?.id ?? null,
+        name: group.description?.text ?? null,
+        minutes,
+        truncated: group.description?.truncated ?? false,
+      };
+  }
+}
+
+/**
+ * D-MCPE-5: un grupo del reporte como lo ve el asistente, con los de abajo si
+ * la vista los trae. Sin rótulos de pantalla ni colores.
+ */
+export function summaryGroupOf(group: ReportGroup): SummaryGroup {
+  const fields = summaryFieldsOf(group);
+  return group.children === undefined
+    ? fields
+    : { ...fields, children: group.children.map(summaryGroupOf) };
+}
+
+/** D-MCPE-5: el resumido en minutos enteros, sin el gráfico. */
+export function summaryOf(report: ReportReadyState): SummarizeHoursToolOutput {
+  return {
+    timezone: report.timeZone,
+    from: report.range.first,
+    to: report.range.last,
+    scope: report.scope,
+    groupBy: report.groupBy,
+    subgroups: report.subgroups,
+    levelsShown: report.levelsShown,
+    totalMinutes: wholeMinutes(report.totalSeconds),
+    billableMinutes: wholeMinutes(report.billableSeconds),
+    groups: report.groups.map(summaryGroupOf),
+  };
+}
+
+/** D-MCPE-2: el catálogo de personas, campo por campo. */
+export function peopleListOf(catalog: PeopleCatalog): ListPeopleToolOutput {
+  return {
+    scope: catalog.scope,
+    people: catalog.people.map(({ id, name, email, inactive, self }) => ({
+      id,
+      name,
+      email,
+      inactive,
+      self,
+    })),
   };
 }
 
@@ -121,9 +244,10 @@ export async function runTool<T, Out extends Record<string, unknown>>(
 }
 
 /**
- * D-MCP-8, D-MCP-9: registra las ocho herramientas sobre `server`, con el contexto
- * del pedido. Cada una mapea su entrada a la del módulo, llama a `operations` o a
- * `getTrackingCatalog`, y devuelve el resultado de `runTool`.
+ * D-MCP-8, D-MCP-9, D-MCPE-1: registra las diez herramientas sobre `server`, con
+ * el contexto del pedido. Cada una mapea su entrada a la del módulo, llama a
+ * `operations`, a `reportOperations` o a `getTrackingCatalog`, y devuelve el
+ * resultado de `runTool`.
  */
 export function registerTools(server: McpServer, context: McpContext): void {
   server.registerTool(
@@ -190,7 +314,7 @@ export function registerTools(server: McpServer, context: McpContext): void {
     "list_entries",
     {
       title: "Entradas de un período",
-      description: `Las entradas propias que empiezan entre from y to, los dos incluidos, hasta 31 días; cada una cuenta entera en el día en que empieza. Trae aparte el timer que corre y el total en minutos de las cerradas. Con truncated en true hay más de las que se devolvieron: pedí un período más corto. ${WALL_CLOCK}`,
+      description: `Las entradas propias que empiezan entre from y to, los dos incluidos, hasta 31 días; cada una cuenta entera en el día en que empieza. Trae aparte el timer que corre y el total en minutos de las cerradas. Con truncated en true hay más de las que se devolvieron: pedí un período más corto. ${WALL_CLOCK} Para las horas de otras personas, summarize_hours.`,
       inputSchema: listEntriesToolInput,
       outputSchema: listEntriesToolOutput,
       annotations: { readOnlyHint: true },
@@ -208,6 +332,41 @@ export function registerTools(server: McpServer, context: McpContext): void {
           truncated: period.truncated,
         }),
         entryMessages,
+      ),
+  );
+
+  server.registerTool(
+    "list_people",
+    {
+      title: "Personas del equipo",
+      description:
+        "Las personas cuyas horas puede consultar la persona con summarize_hours, con el id que pide userIds, el nombre, si está inactiva y cuál es ella misma. El correo viene solo si la persona administra el equipo y no se liberó; si no, null. Con scope everyone son todas las del workspace, activas e inactivas; con scope self, solo ella.",
+      outputSchema: listPeopleToolOutput,
+      annotations: { readOnlyHint: true },
+    },
+    () =>
+      runTool(
+        () => reportOperations.listPeople(context),
+        peopleListOf,
+        reportToolMessages,
+      ),
+  );
+
+  server.registerTool(
+    "summarize_hours",
+    {
+      title: "Resumen de horas",
+      description:
+        "Las horas cerradas que empiezan entre from y to, los dos incluidos, hasta 366 días, sumadas en minutos y agrupadas en hasta tres niveles, como el reporte de Clock. Con scope everyone se ve a todo el workspace y se puede filtrar por userIds de list_people; con scope self, solo lo propio. El timer que corre no cuenta. Cada grupo redondea sus minutos hacia abajo por separado. Para saber qué hizo alguien cada día, agrupá por person, date y description. La respuesta tiene un tope de 500 grupos entre todos los niveles: si levelsShown es menor que los niveles pedidos, no entraron todos; volvé a pedir con userIds de una o pocas personas, o con dos niveles en lugar de tres, o con un período más corto. Los días se cortan en la zona de la persona que devuelve get_context.",
+      inputSchema: summarizeHoursToolInput,
+      outputSchema: summarizeHoursToolOutput,
+      annotations: { readOnlyHint: true },
+    },
+    (input) =>
+      runTool(
+        () => reportOperations.summarizeHours(context, input),
+        summaryOf,
+        reportToolMessages,
       ),
   );
 

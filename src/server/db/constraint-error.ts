@@ -9,6 +9,8 @@ export const FOREIGN_KEY_VIOLATION = "23503";
  * `on delete restrict`. Hasta la 17 salía como `FOREIGN_KEY_VIOLATION`.
  */
 export const RESTRICT_VIOLATION = "23001";
+/** Postgres: sentencia cancelada, también por `statement_timeout`. */
+export const QUERY_CANCELED = "57014";
 
 type DriverError = { code?: unknown; constraint?: unknown; cause?: unknown };
 
