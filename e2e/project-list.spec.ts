@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 
 import { archiveProject, makeProjectManager, seedProject } from "./database";
-import { requestsDuring } from "./network";
+import { holdRefreshes, requestsDuring } from "./network";
 import {
   archivedMark,
   chooseProjectFilter,
@@ -12,6 +12,7 @@ import {
   newTaskButton,
   openProjects,
   PROJECT_COLUMNS,
+  PROJECTS_PATH,
   projectRow,
   projectRows,
   projectSearchField,
@@ -212,4 +213,45 @@ test("al volver atrás, el buscador y la tabla siguen la búsqueda de esa entrad
   await page.goBack();
   await expectListState(page, "Activos", first);
   await expectRowNames(page, [first]);
+});
+
+test("escribir mientras viaja el filtro no lo cancela: la URL queda con el filtro y la búsqueda nueva, y volver atrás vuelve al anterior", async ({
+  page,
+}) => {
+  const suffix = uniqueSuffix();
+  const active = `Activo ${suffix}z`;
+  const archived = `Archivado ${suffix}z`;
+  const typed = `${suffix}z`;
+  await seedProject({ name: active });
+  await seedProject({ name: archived });
+  await archiveProject(archived);
+
+  await openProjects(page);
+  await searchProjects(page, suffix);
+  await expectRowNames(page, [active]);
+
+  // La página de «Archivados» se retiene: el filtro está en vuelo, y ya se ve
+  // elegido, cuando llega la tecla.
+  const release = await holdRefreshes(page, isProjectsPage);
+  await projectStatusFilter(page).click();
+  await page.getByRole("option", { name: "Archivados", exact: true }).click();
+  await expect(projectStatusFilter(page)).toContainText("Archivados");
+  await projectSearchField(page).press("End");
+  await projectSearchField(page).press("z");
+  await expect(projectSearchField(page)).toHaveValue(typed);
+  release();
+
+  // D-P1-6, PR-95: el filtro llega, con la búsqueda que se escribió.
+  await expect(page).toHaveURL(isProjectsUrl("Archivados", typed));
+  await expectListState(page, "Archivados", typed);
+  await expectRowNames(page, [archived]);
+
+  // El filtro sumó su entrada al historial: volver atrás vuelve a «Activos»,
+  // dentro de `/proyectos`.
+  await page.goBack();
+  await expect(page).toHaveURL(
+    (url) => url.pathname === PROJECTS_PATH && url.searchParams.get("estado") === null,
+  );
+  await expect(projectStatusFilter(page)).toContainText("Activos");
+  await expectRowNames(page, [active]);
 });
