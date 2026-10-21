@@ -486,9 +486,15 @@ Trae la segunda sección de `/configuracion`, «Registro de tiempo», con su
 selector y el `error.tsx` de la pantalla, que llegan con la primera lectura de
 `workspace_settings` desde la pantalla (WS-73); el reporte y las columnas de
 duración de las exportaciones con el formato; «Horas» sigue en decimal
-(D-R6-9). **Con
-WS2b desplegado, el owner pone producción en completo** (P-07); si conviene una
-migración de datos en lugar del selector, lo decide el contrato.
+(D-R6-9). **Con WS2b desplegado, el owner pone producción en completo con el
+selector** (P-07), no con una migración de datos: el cambio deja constancia de
+quién y cuándo, se deshace eligiendo el compacto, y una migración correría en
+toda base que se migre y cambiaría lo que esperan los e2e y los tests de
+integración.
+
+**El MCP no cambia**: sus herramientas devuelven minutos enteros y no rótulos,
+y el formato solo decide cómo se le muestra una duración a una persona (ADR
+0029).
 
 Riesgos:
 
@@ -498,6 +504,10 @@ Riesgos:
   completo corren en el proyecto `duration-full` de Playwright que trae WS2a,
   después de toda la suite y sobre la misma base, y no en una base propia:
   cambiar el ajuste en medio de la suite cambiaría lo que ven los demás specs.
+  **Los que cambian el formato desde la pantalla** corren en otro proyecto,
+  `duration-switch`, que depende de `duration-full` y corre solo, después de
+  él; el setup de los e2e restituye la fila de ajustes si una corrida cortada
+  la dejó borrada.
 
 _Corregido el 2026-10-20, WS2a_: decía que los e2e del completo sembraban el
 ajuste en una base propia. El [contrato de WS2a](fase2-ws2a-formato.md)
@@ -509,6 +519,12 @@ _Corregido el 2026-10-20, WS1 (D-WS1-7 del
 `/configuracion`. WS1 dibuja solo «General» y no lee la base desde la pantalla; WS2b es el
 primer slice que lee la fila desde `/configuracion`, y con esa lectura llegan
 el error inesperado de WS-73 y la pantalla que lo muestra.
+
+_Corregido el 2026-10-21, WS2b_: dejaba al contrato elegir entre el selector y
+una migración de datos para P-07, y no decía dónde corren los e2e que escriben
+el formato ni qué pasa con el MCP
+([contrato de WS2b](fase2-ws2b-selector.md), D-WS2b-10, D-WS2b-11 y
+D-WS2b-12).
 
 ### E3 — Transferir la propiedad
 
