@@ -9,8 +9,10 @@ nuevo; el slice cae dentro del
 
 ## Respuestas del usuario
 
-Pendientes de registrar por el team-lead: la pregunta 2 (§11, los textos del
-selector) frena a `frontend-dev`; la pregunta 1 (el MCP) no frena nada.
+El 2026-10-21, las dos como la recomendación (anotadas en el contrato, en
+`0b8ef69`): el MCP sigue devolviendo minutos enteros (pregunta 1), y las
+opciones dicen «Completo (hh:mm:ss)» y «Compacto (h:mm)», sin el ejemplo de
+una hora y media (pregunta 2).
 
 ## Backend
 
@@ -67,8 +69,8 @@ Lo cubren `schema.test.ts` (cada caso con su mensaje) y
 
 - **`SettingsRead` y `SettingsColumn`** (`repository.ts`), como
   `PreferenceColumn` del perfil: la fila como la guarda la base y la columna
-  que escribe el pedido. E4 suma `weekStart` a los dos y a
-  `settingsColumnOf` (`service.ts`).
+  que escribe el pedido. E4 suma `weekStart` a los dos y su caso a
+  `settingChangeOf` (`service.ts`, desde `60026e9`; ver «Revisiones»).
 - **El ancho de la columna de Excel**: 13 caracteres, en toda columna de una
   hoja con al menos una celda `duration` (en el documento real, la B de la
   cabecera y la «Duración» de cada tabla). `99999:59:59` son 11; las otras
@@ -250,3 +252,73 @@ rama:
 | `npx prettier --check .`   | todo con formato                                      |
 | `npm test`                 | unidad 118 archivos, 2618 tests; `time-ar` 2 y 309    |
 | `npm run test:integration` | 41 archivos, 2232 tests, en `clock_ws2b_back` (nueva) |
+
+## E2E
+
+Las corridas de la e2e que el registro no tenía (revisión de tests, hallazgo
+1), las de `e2e-tester` y las de la revisión de tests sobre `60bbb8f`, en
+`clock_ws2b_rev_test` con `next start` en `:3514`:
+
+- **La suite entera, sin `--no-deps`, en una base nueva**: 273 verdes. El
+  orden fue `duration-full`, `duration-switch` y `duration-full-teardown`
+  (criterio 15).
+- **La misma suite en la base reusada**, con la fila de ajustes borrada por
+  `psql` antes: 273 verdes; el setup restituyó la fila (D-WS2b-12) y
+  `duration_format` quedó en `compact`.
+- **La mutación del campo sin `optimistic`** (§9), en un build aparte: la mata
+  §9.5.3, `duration-format.switch.spec.ts:199`, que espera «Compacto (h:mm)»
+  mientras la respuesta está retenida y recibe «Completo (hh:mm:ss)».
+
+Las corridas finales, después de las revisiones, están en «Corridas finales».
+
+## Revisiones (2026-10-21)
+
+Seis revisiones sobre `60bbb8f`: frontend, paridad, seguridad, backend, clean
+code y tests. Todas aprobadas o aprobadas con cambios, sin bloqueantes ni
+mayores. Se aplicaron todos los hallazgos; ninguno se rechazó.
+
+| Hallazgo                                                                                                                                      | Revisión                             | Qué se hizo                                                                                                                                                                                                        |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `report-chart.tsx` y `report-view.tsx` se importan entre sí por `durationColumnWidth`                                                         | frontend 1, paridad 1, clean code 1  | `7f86901`: `durationColumnWidth` y su tabla en `report/components/duration-column.ts`, que importan la vista, el gráfico y `report-view.test.tsx`. Se aparta de §5.7, que la ponía en `report-view.tsx`            |
+| Ningún test afirma el foco en el disparador después de «Reintentar»                                                                           | frontend 2                           | `2f5e246`: `toBeFocused()` después de los dos «Reintentar» de §9.5.3. Sin `triggerRef.current?.focus()`, en un build aparte, el test falla en `:197` (`Received: inactive`)                                        |
+| `updateWorkspaceSetting` compara, deja constancia y responde siempre sobre `durationFormat`; con `weekStart`, E4 compararía contra el formato | seguridad 1, backend 2, clean code 3 | `60026e9`: `settingChangeOf`, un `switch` exhaustivo sobre `input.key`, arma la columna de antes, la de después y si cambia; la comparación, la constancia y el resultado (`{ ...current, ...next }`) salen de ahí |
+| El reexport `export type { WorkspaceSettings }` del service no lo usa nadie                                                                   | clean code 2                         | `60026e9`: borrado                                                                                                                                                                                                 |
+| `csv.ts` y `pdf.test.ts`: el import de `@/server/time` entre dos relativos                                                                    | backend 1, clean code 10, tests 3    | `ed517f5`: en el grupo `@/`. Ningún otro archivo del slice tenía un import `@/` después de uno relativo                                                                                                            |
+| `xlsx.ts` fija el ancho en cada celda `duration` de cada fila, y `DURATION_COLUMN_WIDTH` se llama como la clase de la pantalla                | clean code 8                         | `fece2c2`: `durationColumnsOf` junta las columnas con una duración de la cabecera y la sección, y el ancho se fija una vez por columna y hoja; la constante pasa a `DURATION_COLUMN_CHARS`                         |
+| `handler.integration.test.ts`: el Excel en completo solo afirma que las celdas son `Date`                                                     | tests 2                              | `65fbb7f`: afirma el número de serie de cada celda (`200`, `0`, `100` y `100` segundos sobre 86 400). Con los minutos truncados en el completo, falla                                                              |
+| Las dos `<section>` de `/configuracion` repiten el marcado                                                                                    | clean code 9                         | `f8ff23a`: `SettingsSection({ id, title, children })` local, con el mismo marcado                                                                                                                                  |
+| `src/test/factories.ts`: el comentario de `setDurationFormat` dice «el selector de WS2b»                                                      | clean code 10                        | `94fe6f1`: «como lo guarda el selector de `/configuracion`»                                                                                                                                                        |
+| `workspace.setup.ts`: `ensureWorkspaceSettings()` y `setDurationFormat("compact")` hacen lo que `restoreWorkspaceSettings("compact")`         | clean code 4                         | `3ded11e`: el setup llama a `restoreWorkspaceSettings("compact")` y `ensureWorkspaceSettings` se borra. D-WS2b-12 del contrato nombra `ensureWorkspaceSettings()`: el mecanismo es el mismo, con otra función      |
+| `COUNTER`, `FULL_TOTAL`, los márgenes, `today()` y `skipNearMidnight()` copiados en los dos specs del formato                                 | clean code 5                         | `60bbd2d`: en `e2e/duration-format.ts`, que importan los dos. No es un spec: ningún `testMatch` lo toma                                                                                                            |
+| `workspace-settings.spec.ts` rearma la expresión de `durationFormatControl`                                                                   | clean code 6                         | `f382a6a`: `durationFormatControl` acepta la región, y el spec la llama con `timeTrackingSection(page)`; `DURATION_FORMAT` deja de exportarse                                                                      |
+| Exports que solo se usan en su archivo: `DURATION_NOT_SAVED`, `SETTINGS_LOAD_FAILED`, `cellTextLayout`, `CellTextLayout`                      | clean code 7                         | `f382a6a` (los dos de `settings-page.ts`) y `223f98c` (los dos de `reports-page.ts`): sin `export`                                                                                                                 |
+| El registro no tiene las corridas de la e2e ni la mutación del campo sin `optimistic`                                                         | tests 1                              | La sección «E2E», con las corridas de la revisión, y las de «Corridas finales»                                                                                                                                     |
+| `clock_ws2b_rev_sec` y `clock_ws2b_rev_back` pueden haber quedado sin borrar                                                                  | seguridad 2, backend (nota)          | Nada que hacer: al aplicar las revisiones ninguna de las dos existía en `clock-pg`                                                                                                                                 |
+
+**Una mutación más**, después de `60026e9`: `unchanged` siempre falso. La
+matan el criterio 2 en `settings.integration.test.ts` y en
+`actions.integration.test.ts`, y el reintento de WS-62 (tres tests).
+
+**Lo que dice la revisión de tests sobre `scratchpad/tree/`** (un `git
+archive` encima de la carpeta de otro agente) no es de esta rama: queda para
+el team-lead.
+
+## Corridas finales
+
+En `2f5e246`, con el árbol quieto, en un worktree aparte y limpio con
+`node_modules` en enlaces duros, y cada cosa en una base nueva propia:
+
+| Corrida                    | Resultado                                                                                                           |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `npm run lint`             | sin errores                                                                                                         |
+| `npm run typecheck`        | sin errores                                                                                                         |
+| `npx prettier --check .`   | todo con formato                                                                                                    |
+| `npm test`                 | unidad 119 archivos, 2641 tests; `time-ar` 2 y 309                                                                  |
+| `npm run test:integration` | 41 archivos, 2232 tests, en `clock_ws2b_fin_int`                                                                    |
+| `npm run build`            | compila, 21 rutas, con las variables de relleno del `ci`                                                            |
+| E2e, base nueva            | 273 verdes, en `clock_ws2b_fin_e2e` con `next start` propio en `:3521` (build con las variables del servidor local) |
+| E2e, base reusada          | 273 verdes, con la fila de ajustes borrada por `psql` antes; al terminar, `duration_format` en `compact`            |
+
+El `build` con las variables del `ci` deja en el log los errores de Better
+Auth al sembrar `oauth_resource` contra la base de relleno (`password
+authentication failed`), y termina con código 0.
