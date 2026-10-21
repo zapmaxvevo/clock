@@ -733,23 +733,24 @@ report.groups.map(summaryGroupOf)`. No lee `chart`.
 
 ### 4.8 Las respuestas
 
-| Situación                                                                   | Resultado                                                                      |
-| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `list_people` de un owner o admin                                           | `scope: "everyone"`, todas las activas e inactivas, sin invitadas, con correos |
-| `list_people` de cualquier otro rol                                         | `scope: "self"`, una fila, `self: true`, `email: null`                         |
-| `list_people` sin `team.manage` (por `permissionOverrides`)                 | los correos en `null`                                                          |
-| `summarize_hours` sin filtros de un owner o admin                           | todo el workspace, `scope: "everyone"`                                         |
-| `summarize_hours` de otro rol                                               | lo propio, `scope: "self"`                                                     |
-| `userIds` con otra persona, sin `timeEntry.others.view`                     | `isError`, `forbidden`, `othersForbidden`; sin leer                            |
-| Sin `report.view` (guarda; una membresía activa lo tiene)                   | `isError`, `forbidden`, `viewForbidden`                                        |
-| `userIds` con un id que no está en el catálogo                              | `isError`, `not_found`, `peopleNotFound`                                       |
-| `projectIds` o `clientIds` con un id que no está en el catálogo             | `isError`, `not_found`, `projectsNotFound` o `clientsNotFound`                 |
-| Período invertido, de más de 366 días o con un día que no existe            | `isError`, `validation`, el texto de `rangeProblem`                            |
-| Niveles repetidos, más de dos `subgroups`, filtros de más de 50 o repetidos | `isError`, `validation` (del SDK o del módulo, V-8)                            |
-| Una sentencia que pasa los 8 s                                              | `isError`, `timeout`, `summaryTooSlow`                                         |
-| Más filas que el tope                                                       | éxito, `levelsShown` menor que los niveles pedidos                             |
-| `includePeopleWithoutTime` con otro `groupBy` o con `scope: "self"`         | éxito, sin personas en cero (D-R9-5, como la página)                           |
-| Cualquiera de las dos, en `audit_log`                                       | ninguna fila                                                                   |
+| Situación                                                                                           | Resultado                                                                                                               |
+| --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `list_people` de un owner o admin                                                                   | `scope: "everyone"`, todas las activas e inactivas, sin invitadas, con correos                                          |
+| `list_people` de cualquier otro rol                                                                 | `scope: "self"`, una fila, `self: true`, `email: null`                                                                  |
+| `list_people` sin `team.manage` (por `permissionOverrides`)                                         | los correos en `null`                                                                                                   |
+| `summarize_hours` sin filtros de un owner o admin                                                   | todo el workspace, `scope: "everyone"`                                                                                  |
+| `summarize_hours` de otro rol                                                                       | lo propio, `scope: "self"`                                                                                              |
+| `userIds` con otra persona, sin `timeEntry.others.view`                                             | `isError`, `forbidden`, `othersForbidden`; sin leer                                                                     |
+| Sin `report.view` (guarda; una membresía activa lo tiene)                                           | `isError`, `forbidden`, `viewForbidden`                                                                                 |
+| `userIds` con un id que no está en el catálogo                                                      | `isError`, `not_found`, `peopleNotFound`                                                                                |
+| `projectIds` o `clientIds` con un id que no está en el catálogo                                     | `isError`, `not_found`, `projectsNotFound` o `clientsNotFound`                                                          |
+| Período invertido, de más de 366 días o con un día que no existe                                    | `isError`, `validation`, el texto de `rangeProblem`                                                                     |
+| Niveles repetidos, más de dos `subgroups`, filtros de más de 50 o repetidos                         | `isError`, `validation` (del SDK o del módulo, V-8)                                                                     |
+| Un id de persona con otro formato que `PERSON_ID`, o un uuid de proyecto o de cliente en mayúsculas | `isError`, `validation`, `peopleNotFound`, `projectsNotFound` o `clientsNotFound`: un id así no está en ningún catálogo |
+| Una sentencia que pasa los 8 s                                                                      | `isError`, `timeout`, `summaryTooSlow`                                                                                  |
+| Más filas que el tope                                                                               | éxito, `levelsShown` menor que los niveles pedidos                                                                      |
+| `includePeopleWithoutTime` con otro `groupBy` o con `scope: "self"`                                 | éxito, sin personas en cero (D-R9-5, como la página)                                                                    |
+| Cualquiera de las dos, en `audit_log`                                                               | ninguna fila                                                                                                            |
 
 ## 5. Reparto de archivos
 

@@ -217,6 +217,7 @@ describe("el token de acceso (criterio 3)", () => {
       result: {
         tools: {
           name: string;
+          description?: string;
           annotations?: Record<string, unknown>;
           outputSchema?: { type?: unknown };
         }[];
@@ -231,6 +232,11 @@ describe("el token de acceso (criterio 3)", () => {
       expect(tool?.annotations).toEqual({ readOnlyHint: true });
       expect(tool?.outputSchema?.type).toBe("object");
     }
+    // D-MCPE-1, D-MCPE-5: lo que le dice al asistente adónde ir y cómo achicar.
+    const descriptionOf = (name: string) =>
+      result.tools.find((candidate) => candidate.name === name)?.description;
+    expect(descriptionOf("list_entries")).toContain("summarize_hours");
+    expect(descriptionOf("summarize_hours")).toContain("levelsShown");
   });
 });
 

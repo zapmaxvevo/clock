@@ -1309,6 +1309,16 @@ describe("summarize_hours valida el pedido (§4.8)", () => {
       { ...WEEK, groupBy: "person", subgroups: ["date", "person"] },
       reportMessages.levelsRepeated,
     ],
+    [
+      "un id de persona con otro formato",
+      { ...WEEK, userIds: ["con espacio"] },
+      reportMessages.peopleNotFound,
+    ],
+    [
+      "un uuid de proyecto en mayúsculas",
+      { ...WEEK, projectIds: ["8C4F2A9E-3B1D-4C6E-9F0A-1B2C3D4E5F60"] },
+      reportMessages.projectsNotFound,
+    ],
   ])("%s responde validation sin leer", async (_, args, message) => {
     const team = await seedTeam();
 

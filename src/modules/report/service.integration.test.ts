@@ -5618,11 +5618,17 @@ describe("el resumido del asistente (D-MCPE-1, D-MCPE-5, D-MCPE-6; criterios 4, 
     const { anaId, web } = await seedTeam();
     const other = await seedWorkspace(buenosAires);
     const otherProject = (await seedProject({ workspaceId: other.workspaceId })).id;
-    const foreign: ReportFilters[] = [
-      { ...NO_REPORT_FILTERS, people: [anaId, other.ownerId] },
-      { ...NO_REPORT_FILTERS, projects: [web, otherProject] },
+    const foreign: [ReportFilters, string][] = [
+      [
+        { ...NO_REPORT_FILTERS, people: [anaId, other.ownerId] },
+        reportMessages.peopleNotFound,
+      ],
+      [
+        { ...NO_REPORT_FILTERS, projects: [web, otherProject] },
+        reportMessages.projectsNotFound,
+      ],
     ];
-    for (const filters of foreign) {
+    for (const [filters, message] of foreign) {
       const known: ReportFilters = {
         ...filters,
         people: filters.people.filter((id) => id === anaId),
@@ -5634,7 +5640,11 @@ describe("el resumido del asistente (D-MCPE-1, D-MCPE-5, D-MCPE-6; criterios 4, 
       const exported = await readyExport(owner, { range: lastWeek, filters });
       expect(exported.report).toEqual(page);
 
-      await expect(summaryOf(owner, { filters })).rejects.toBeInstanceOf(ReportError);
+      const error: unknown = await summaryOf(owner, { filters }).catch(
+        (rejected: unknown) => rejected,
+      );
+      expect(error).toBeInstanceOf(ReportError);
+      expect(error).toMatchObject({ code: "not_found", message });
     }
   });
 
