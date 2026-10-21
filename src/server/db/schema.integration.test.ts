@@ -40,7 +40,7 @@ describe("las columnas sin efecto, borradas en la 0018 (WS0, criterio 5)", () =>
     expect(columns.filter((column) => dropped.includes(column))).toEqual([]);
   });
 
-  it("workspace_settings queda con su clave, who_sees_all_entries, las fechas y duration_format (0019)", async () => {
+  it("workspace_settings queda con su clave, who_sees_all_entries, las fechas y duration_format (0020)", async () => {
     expect(await columnsOf("workspace_settings")).toEqual([
       "workspace_id",
       "who_sees_all_entries",
@@ -80,7 +80,7 @@ async function durationFormatOf(workspaceId: string): Promise<string | undefined
   return rows.at(0)?.durationFormat;
 }
 
-describe("workspace_settings.duration_format, de la 0019 (WS2a, criterios 5 y 11)", () => {
+describe("workspace_settings.duration_format, de la 0020 (WS2a, criterios 5 y 11)", () => {
   it("es text, not null y compact por omisión", async () => {
     const result = await db.execute(
       sql`select data_type, column_default, is_nullable
@@ -124,7 +124,7 @@ describe("workspace_settings.duration_format, de la 0019 (WS2a, criterios 5 y 11
   });
 });
 
-describe("los check de workspace.name, de la 0019 (WS2a, D-WS2a-10, criterio 11)", () => {
+describe("los check de workspace.name, de la 0020 (WS2a, D-WS2a-10, criterio 11)", () => {
   async function nameOf(workspaceId: string): Promise<string | undefined> {
     const rows = await db
       .select({ name: workspace.name })
