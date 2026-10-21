@@ -313,3 +313,166 @@ para la integración):
 - `npm run test:e2e` entera, con `DATABASE_URL` en `clock_mcp_rb_b` migrada:
   254 pasan, ninguna falla ni se saltea; las cinco de `mcp.spec.ts` y las de
   `workspace-settings.spec.ts` entre ellas.
+
+## Revisiones (2026-10-21)
+
+Seis revisiones sobre `0ac018c` (antes del rebase sobre `467e730`):
+`mcp-rev-back` y `mcp-rev-front` aprobaron, `mcp-rev-sec` aprobó con un
+hallazgo, y `mcp-rev-clean`, `mcp-rev-tests` y `mcp-rev-parity` pidieron
+cambios. Las correcciones de backend van en `bcdd978` (`mcp-fix-back`); las de
+frontend, en los commits de `mcp-fix-front`.
+
+### Seguridad
+
+- **S1, DPoP** (`mcp-rev-sec`). Un token con `cnf.jkt`, que el plugin emite si
+  el canje trae la cabecera `DPoP`, pasaba como portador (RFC 9449 §7.2 lo
+  prohíbe). **Quedó**: `claims` lleva `cnf: z.never().optional()`, así
+  cualquier `cnf` da `invalid_token`. `z.undefined()`, la forma que proponía la
+  revisión, en Zod 4 exige la clave y rechazaba todos los tokens; lo mostró la
+  integración. Caso nuevo en `mcp-auth.integration.test.ts`: un canje con una
+  prueba DPoP firmada en el test da `token_type: "DPoP"` y `/api/mcp` responde
+  401 `invalid_token`.
+- **S2, los límites del plugin** (`mcp-rev-sec`, sugerencia).
+  `rateLimit.token` (20/60 s) y `rateLimit.authorize` (30/60 s) quedan escritos
+  en `mcpAuthPlugins()`, con los mismos valores que el plugin trae por omisión,
+  y nombrados en D-MCP-13 y en §4.2 del contrato.
+
+### Backend
+
+- **B1, el `catch {}` de `verifiedClaims`** (`mcp-rev-back`). **Quedó**: una
+  cabecera que `decodeProtectedHeader` no lee, o un `JOSEError` de jose, dan
+  `null`; las tres fallas de las claves que el plugin también relanza
+  (`JWKSTimeout`, `JWKSInvalid`, `JWKSMultipleMatchingKeys`) y cualquier otro
+  error se relanzan, y `handleMcpRequest` responde 500 `-32603` con
+  `console.error`. La cabecera se decodifica antes de verificar para no tener
+  que reconocer el `TypeError` que lanza jose. `jose` pasa a dependencia
+  directa, fija en la 6.2.12 que ya resolvía (sin cambios en el árbol de
+  `node_modules`). Tests: `mcp-context.test.ts` (un token que no verifica con
+  las claves da `invalid_token`; si `getJwks` rechaza, `readMcpContext`
+  rechaza con ese error) y `mcp/handler.test.ts`, nuevo (si `readMcpContext`
+  rechaza, 500 `-32603` sin `id`, `no-store` y `console.error`).
+- **B2, `Bearer` con mayúsculas** (`mcp-rev-back`). La regex lleva la bandera
+  `i`; `mcp-context.test.ts` prueba `Bearer`, `bearer` y `BEARER`, y que otro
+  esquema da `invalid_request`.
+
+### Clean code (`mcp-rev-clean`)
+
+- **C1.** Sin `McpGrant` ni `grant` en `ready`; `handler.ts` llama a
+  `consumeCall(read.context.actor.userId)`. `claims` ya no lee `exp`, que
+  verifica jose.
+- **C2.** `runTool<T, Out extends Record<string, unknown>>` con
+  `present: (value: T) => Out`, y cada `present` anotado con su `*ToolOutput`.
+  Se borraron los cinco `*ToolInput` sin uso y `McpToolName`; `MCP_TOOL_NAMES`
+  vive en `handler.integration.test.ts`, el único que la usaba.
+- **C3.** `readAssistantContext(user)` en `mcp-auth.ts`, `{ kind: "ready",
+context } | { kind: "denied", reason }` con `membresia_inactiva` sin
+  `mcp.connect`. La usan `denialOf` y `readMcpContext`; `mcp-context.ts` ya no
+  importa `can` ni `readUserContext`.
+- **C4.** `stop_timer` sin id pasa a `time-entry`:
+  `operations.stopRunningTimer(context, { id? })` con `stopRunningTimerInput`,
+  y `service.stopTimer` recibe `{ id?: string }` y sin `id` lee el timer propio
+  con `findRunning` en su transacción. Sin timer, `TimeEntryError("not_found",
+timeEntryMessages.noRunningTimer)`; el texto sale de `mcpMessages`. Las
+  actions de la pantalla siguen con `stopTimer` y su `id` obligatorio. Casos
+  nuevos en `time-entry/service.integration.test.ts`: sin id cierra el propio y
+  no el de otra persona del workspace; sin timer propio, `noRunningTimer` sin
+  tocar el ajeno.
+- **C5.** Los comentarios nombran `mcpAuthMiddleware` y `readAssistantContext`.
+- **C6.** `readUserContext` devuelve `Exclude<SessionRead, { kind: "anonymous" }>`;
+  la rama inalcanzable se fue con C3.
+- **C7.** `wholeMinutes(seconds)` en `src/server/time` (trunca; un negativo da
+  0), con su test, en `toolEntryOf` y en `totalMinutes`.
+- **C8.** `findSessionUser` devuelve `Promise<SessionUser | undefined>`, con
+  `import type`.
+- **C9.** `GrantRow` sin `scopes` (la pantalla no lo usaba; su test, ajustado);
+  `workspaceResource` exportada de `mcp/service.ts` y usada en `actions.ts`;
+  `resourceMetadataUrl` en `mcp-auth.ts` con `originOf`.
+
+### Tests (`mcp-rev-tests`)
+
+- **Criterio 18, `/login` con sesión** (mayor): `mcp-fix-front`, `dd708a3`.
+- **T2, criterio 16, `/conectar` apagado** (mayor). `getConsentView` devuelve
+  `{ kind: "disabled" }` con el MCP apagado (`ConsentRead`, tipo nuevo), con su
+  caso en `service.integration.test.ts`, y la página responde `notFound()` con
+  ese resultado. La página conserva además su corte antes de `requireSession`:
+  sin él, un anónimo con el MCP apagado recibiría 307 a `/login` en vez del 404
+  del criterio. El test de la página es de `mcp-fix-front` (`0a88123`).
+- **T3, criterio 17, clientes por `auth.api`** (mayor). `clientPrivileges`
+  pasa a `() => false`: el plugin solo lo consulta con sesión
+  (`assertClientPrivileges`, y en el registro `if (session)`), así que el
+  registro dinámico anónimo sigue creando y `adminCreateOAuthClient` y
+  `adminUpdateOAuthClient` responden 401. Efecto de borde: un `/oauth2/register`
+  que llegue con la cookie de una sesión también recibe 401; ningún cliente de
+  V-7 registra desde el navegador. Tests nuevos: el alta por `auth.api` con la
+  sesión de un member responde 401 y no suma filas a `oauth_client`; la edición
+  de un cliente **propio** (sembrado con `userId`, porque el plugin rechaza a
+  quien no es dueño antes de mirar los privilegios) responde 401 y deja sus
+  `redirect_uris`. `CLOSED_PATHS` ya no tiene los dos casos HTTP de
+  `/admin/oauth2/…`, con la nota de que son `SERVER_ONLY`; siguen en
+  `ALWAYS_DISABLED_PATHS`, donde no estorban. El registro de los criterios 2 y
+  3 sigue en verde.
+- **T4, criterio 5** (menor). Las dos redirecciones rechazadas afirman
+  `/login?error=invalid_redirect` en el origen propio y que no queda
+  consentimiento.
+- **T5, `e2e/profile.spec.ts`** (menor): `mcp-fix-front`, `f45b0c3`.
+- **T6, criterio 8** (menor). `it.each` con `create_entry` y `start_timer` sin
+  id: dos llamadas dejan dos filas y la primera queda cerrada.
+
+### Frontend (`mcp-rev-front`)
+
+- `/perfil/error.tsx`: `mcp-fix-front`, `b9c4b8e`. El criterio 18 y el orden
+  del import de `/login`: `mcp-fix-front`. El `Dialog` de «Desconectar»: ver
+  abajo.
+
+### Paridad y contrato (`mcp-rev-parity`)
+
+- **El contrato** (`mejoras-mcp.md`): `0019_mcp` en §1, §2 y §10; `on delete
+cascade` hacia `user` en §2 y §10 (la migración lo pone desde el principio;
+  borrar una persona se lleva sus autorizaciones sin constancia, por eso quien
+  borre llama antes a `deleteGrantsOf`); la consulta de §6.5 sobre
+  `oauth_consent c … c.user_id`; §4.17 y D-MCP-9, una herramienta desconocida
+  da 200 con `isError` (V-8) y un JSON inválido, 400 `-32700`.
+- **§5.3** (`mcp-rev-parity` y `mcp-rev-front`): «`Dialog`, como la de revocar
+  una invitación». El desvío lo anota `mcp-fix-front`.
+- **Lo que sigue bloqueando el merge**, sin cambios acá: V-7 abierta (criterio 20) y el commit temporal de la captura, hoy `14c78ac` (era `191cc09`), que se
+  revierte después del preview.
+
+El contrato suma, además, lo que estas correcciones cambian: D-MCP-2 y §4.2
+(`clientPrivileges`), D-MCP-4 (`readAssistantContext`), D-MCP-13 (los tres
+límites del plugin), §4.3 a §4.6, §4.9 a §4.12 y §4.14 (las firmas nuevas),
+§5.1 (los dos cortes de `/conectar`), el criterio 17 y §9.
+
+### Mutantes (en una copia del árbol, base `clock_mcp_fix_back_test`)
+
+Cada una hace fallar el test nuevo; revertidas sin commitear.
+
+| Mutante                                   | Falla                                                |
+| ----------------------------------------- | ---------------------------------------------------- |
+| S1: sin `cnf` en `claims`                 | el canje con `DPoP` da un token que pasa             |
+| B1: el `catch` vuelve a tragarse todo     | «una falla al leer las claves se relanza»            |
+| B2: sin la bandera `i`                    | `bearer` y `BEARER` (2 de 3)                         |
+| T3: `clientPrivileges` deja `create`      | el alta por `auth.api`                               |
+| T3: `clientPrivileges` deja `update`      | la edición del cliente propio                        |
+| T2: sin el corte en `getConsentView`      | «apagado, disabled aunque la consulta firmada valga» |
+| C4: sin `id` no busca el timer            | «sin id, cierra el timer propio»                     |
+| C4: `findRunning` sin filtrar por persona | los dos casos sin `id` de `time-entry`               |
+| T6: `start_timer` sin `id` con un id fijo | «start_timer sin id dos veces crea dos entradas»     |
+| C7: `wholeMinutes` redondea               | «trunca al minuto entero»                            |
+
+La primera versión del test de edición de T3 usaba un cliente registrado sin
+sesión y pasaba con la mutante de `update`: el plugin lo rechaza por no ser
+del dueño. Se reescribió con un cliente propio. T4 solo ajusta aserciones: no
+lleva mutante.
+
+### Corridas (bases nuevas `clock_mcp_fix_back` y `clock_mcp_fix_back_test`)
+
+- `npm run lint`, `npm run typecheck` y `npx prettier --check .`: limpios.
+- `npm test`: 113 archivos, 2555 tests; `test:time-ar`, 2 archivos, 305 tests.
+- `npm run test:integration`: 41 archivos, 2158 tests.
+- `npm run build`, con los valores de relleno del CI: compila; `/api/mcp`,
+  `/conectar`, los cuatro `.well-known`, `/configuracion` y `/perfil`,
+  dinámicos. El log trae el aviso del plugin de que no pudo sembrar
+  `resources` sin base: sale de `resources` en la configuración, que estas
+  correcciones no tocan.
+- `npm audit --omit=dev --audit-level=high`: solo moderados; `jose` no suma
+  avisos.
