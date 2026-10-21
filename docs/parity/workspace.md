@@ -1051,7 +1051,7 @@ tiempo» y no con una migración de datos
 desplegado, el owner elige el completo en `/configuracion`, y queda la
 constancia `workspace.updateSetting` de quién y cuándo. Volver atrás es elegir
 el compacto, sin migración inversa. Cambia la fila del workspace de la sesión,
-el más viejo; producción tiene uno solo. Fecha del cambio en producción: _pendiente_; la anota el registro del
+el más viejo; producción tiene uno solo. Fecha del cambio en producción: 2026-10-21, 15:22 UTC; la anota el registro del
 slice después de la verificación de §6.3 del contrato.
 
 ### Abierto

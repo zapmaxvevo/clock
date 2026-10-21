@@ -322,3 +322,19 @@ En `2f5e246`, con el árbol quieto, en un worktree aparte y limpio con
 El `build` con las variables del `ci` deja en el log los errores de Better
 Auth al sembrar `oauth_resource` contra la base de relleno (`password
 authentication failed`), y termina con código 0.
+
+## Producción (2026-10-21)
+
+- **Migración:** la `0020` de WS2a, corrida por el usuario en Neon `main` con el
+  bloque `do`. La previa dio `1792540623295 | 20 | 1 | 0 | 0 | 0`, con un solo
+  workspace: «run0km» y «soybot» son dominios de correo, no workspaces. El
+  control dio `1792584289697 | 21 | abaf2a27… | text | 'compact'::text | NO | 3 | compact:1`.
+- **Despliegue:** Vercel no recibió el aviso de GitHub de los pushes `a65f717`
+  y `096aa21`, y no creó ningún deploy. El usuario desplegó `096aa21` a mano
+  desde el panel. Ese deploy trae WS2a, WS2b y el MCP para owner y admin. El
+  humo en compacto dio OK.
+- **P-07:** el owner eligió «Completo (hh:mm:ss)» el 2026-10-21 a las
+  15:22:26 UTC. La fila de ajustes del workspace «RunOne» quedó en `full`. Las
+  pantallas y el CSV, según el usuario, OK: «Horas» idéntica. El resultado de
+  la consulta de la constancia `workspace.updateSetting` no se pegó en la
+  conversación.
