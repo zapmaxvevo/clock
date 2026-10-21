@@ -107,3 +107,50 @@ En `/home/maxi/program/clock-mcp-equipo`, punta `3c917cd`, base
 - `npm test`: `test:unit`, 118 archivos y 2621 tests; `test:time-ar`, 2 archivos y
   309 tests; en verde.
 - `npm run test:integration`: 41 archivos, 2255 tests, en verde.
+
+## Revisiones
+
+Seis revisiones sobre `c108b31`: frontend, backend y paridad aprobaron sin
+hallazgos; clean code y tests, con menores; seguridad pidió cambios por un
+mayor.
+
+### Seguridad
+
+| Hallazgo                                                                                                                                                                                                            | Lo que se hizo                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Mayor.** Un lote JSON-RPC esquivaba el tope de 120 llamadas por minuto: el transporte del SDK 1.32.0 acepta hasta 100 mensajes por `POST` y corre los `tools/call` en paralelo, y `consumeCall` cuenta un `POST`. | `82410d5`. `handleMcpRequest` lee una copia del cuerpo con `readRequestBody` del SDK y el mismo tope de 64 KiB; un arreglo responde 400 con JSON-RPC `-32600` y `mcpMessages.batchUnsupported`, antes de `consumeCall`. Un cuerpo que no entra o no es JSON lo sigue respondiendo el transporte. Test en `handler.integration.test.ts`: un lote de dos `create_entry` responde 400, no escribe ni consume del tope, y un mensaje suelto después pasa y cuenta uno. Sin la guarda, el test cae (200 en lugar de 400). El contrato saca `handler.ts` de «Sin cambio» de §1, con el motivo, y lo dice en D-MCPE-6.                                   |
+| menor. El tope de 8 s es por sentencia, y un resumido corre unas siete.                                                                                                                                             | `682fda2`, **sin `transaction_timeout`**. Postgres local: **18.6**, que lo soporta, pero al vencer no cancela con `57014`: termina la conexión con `FATAL 25P04` («terminating connection due to transaction timeout»). Con una sonda por drizzle y node-postgres, lo que llega es el fallo del `rollback` («Failed query: rollback», con causa «Connection terminated unexpectedly» y sin `code`), que no se puede traducir a `timeout`, y el cliente de `pg` emite además una excepción no atrapada. D-MCPE-6 dice que la cota es por sentencia y por qué; una cota total, si hace falta, es un plazo en la aplicación. Avisado al coordinador. |
+
+### Clean code
+
+| Hallazgo                                              | Lo que se hizo                                                                                                        |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| 1. La línea de `operations.ts` en `CLAUDE.md`         | `97ba9b7`: «Zod, can() y service de la operación de una herramienta MCP, compartida con la action si la hay».         |
+| 2. La copia de `workspaceResource` en `operations.ts` | `8526b7a`: `report/service.ts` la exporta y `operations.ts` la usa.                                                   |
+| 3. `ReadPlan` copiaba los campos del modo             | `8526b7a`: `readonly mode: ReadMode`.                                                                                 |
+| 4. El comentario de `strictFilters`                   | `8526b7a`: nombra las dos reglas de D-MCPE-4, `checkOwnPeople` y `checkStrictFilters`.                                |
+| 5. El comentario de `peopleListOf`                    | `97ba9b7`: una lista blanca, para que un campo nuevo del catálogo no llegue al asistente sin un cambio en `tools.ts`. |
+| 6. `kind` y el alcance en `mcp/schema.ts`             | `97ba9b7`: `kind: groupBy` y una sola constante, `summaryScope`, en las dos salidas.                                  |
+
+### Tests
+
+| Hallazgo                                                                        | Lo que se hizo                                                                                                                                                                |
+| ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Las descripciones de `tools/list`                                            | `f8f1b16`: la de `list_entries` contiene `summarize_hours` y la de `summarize_hours`, `levelsShown`.                                                                          |
+| 2. Los ids mal formados por `tools/call`                                        | `f8f1b16`: `userIds: ["con espacio"]` da `validation` con `peopleNotFound`, y un uuid en mayúsculas en `projectIds`, `validation` con `projectsNotFound`. Fila nueva en §4.8. |
+| 3. El `not_found` del criterio 14 en `service.integration` solo miraba la clase | `f8f1b16`: `toMatchObject({ code, message })`, con `peopleNotFound` y `projectsNotFound`.                                                                                     |
+
+### Corrida final
+
+Punta `f8f1b16`, con el árbol quieto, cada cosa en una base nueva:
+
+| Corrida                      | Dónde                                                                              | Resultado                                                                              |
+| ---------------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `npm run lint`               | el worktree                                                                        | sin errores ni advertencias                                                            |
+| `npm run typecheck`          | el worktree                                                                        | limpio                                                                                 |
+| `npx prettier --check .`     | el worktree                                                                        | limpio                                                                                 |
+| `npm test`                   | el worktree                                                                        | `test:unit` 118 archivos y 2621 tests; `test:time-ar` 2 archivos y 309 tests; en verde |
+| `npm run test:integration`   | el worktree, base `clock_mcpe_fin_int`                                             | 41 archivos y 2258 tests, en verde                                                     |
+| `npm run build`              | una copia de `f8f1b16` (`git archive`) con `cp -al` de `node_modules`              | en verde                                                                               |
+| e2e entera, base nueva       | la copia, `next start` en el puerto 3541, base `clock_mcpe_fin_e2e` recién migrada | 264 pasan (1,7 min)                                                                    |
+| e2e entera, reusando la base | lo mismo, sobre la base de la corrida anterior                                     | 264 pasan (1,8 min)                                                                    |
