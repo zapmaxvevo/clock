@@ -300,7 +300,9 @@ vacío del owner y `renewWorkspace` se corta.
        `d2b1ca7`; `p2-back` y `p2-e2e` trabajando al cierre (puede quedar trabajo sin
        commit en el árbol). Sin migración. Sigue: terminar backend y e2e, seis revisiones,
        final, merge. Ya al cierre, `p2-front` informó el frontend terminado (`d2b1ca7`): unidad
-       2817 + 309 y e2e 309/309 en su copia, con los commits de backend `907f0b5` y `134b8f8`.
+       2817 + 309 y e2e 309/309 en su copia, con los commits de backend `907f0b5` y `134b8f8`. La e2e de P2 (`134b8f8`) da 309/309 contra `d2b1ca7`, en base nueva
+       y reusada; cambia una aserción de P1 (`project-edit.spec.ts:605`, ahora un botón: el menú).
+       Falta el informe final de `p2-back`.
      - Decisiones del usuario hoy: P1 todo en `/proyectos` (sin ADR 0032), sin columna de
        tiempo, «Crear proyecto» reemplaza a «Ir a Proyectos», archivado no se edita. TT-13
        (crear etiqueta desde el selector) fuera de alcance: preguntarle con P5.
