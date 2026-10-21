@@ -176,13 +176,19 @@ test("escribir en el buscador filtra sin pedir nada al servidor y deja la búsqu
   await seedProject({ name: project });
   await openProjects(page);
 
-  // D-P1-6: tecla por tecla, sin navegar ni revalidar.
+  // D-P1-6: tecla por tecla, sin navegar ni revalidar. Cuando la URL deja de
+  // ser `/proyectos`, Next precarga el enlace «Proyectos» de la navegación:
+  // ese pedido lleva `next-router-prefetch` y no es de la búsqueda. Un
+  // `router.replace` sí pediría la página, sin esa cabecera.
   const sent = await requestsDuring(page, isProjectsPage, async () => {
     await projectSearchField(page).pressSequentially(suffix);
     await expect(page).toHaveURL(isProjectsUrl("Activos", suffix));
     await expectRowNames(page, [project]);
   });
-  expect(sent.map((request) => request.url())).toEqual([]);
+  const searchRequests = sent.filter(
+    (request) => request.headers()["next-router-prefetch"] === undefined,
+  );
+  expect(searchRequests.map((request) => request.url())).toEqual([]);
 });
 
 test("al volver atrás, el buscador y la tabla siguen la búsqueda de esa entrada del historial", async ({
