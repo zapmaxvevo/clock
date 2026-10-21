@@ -26,17 +26,17 @@ salen sin `$ref` y sin depender de cómo el SDK pasa un esquema recursivo.
 
 ## Lo hecho
 
-- `c4e556f`, **tipos y textos** (§4.1, §4.5, `seesTeam`): `HOURS_SUMMARY_MAX_ROWS`,
+- `08a33ab`, **tipos y textos** (§4.1, §4.5, `seesTeam`): `HOURS_SUMMARY_MAX_ROWS`,
   los textos nuevos de `reportMessages`, `ReportErrorCode`, `hoursSummaryInput`,
   `HoursSummaryValues`, `PeopleCatalog`; `ReportError`; las entradas y salidas
   de las dos herramientas; `ConsentView.ready.seesTeam`, que `getConsentView`
   arma con `can(timeEntry.others.view)`.
-- `721b6b3`, **service y herramientas** (§4.2 a §4.4, §4.6): el modo de lectura
+- `c2dfb72`, **service y herramientas** (§4.2 a §4.4, §4.6): el modo de lectura
   obligatorio (`PAGE_READ`, `EXPORT_READ`, `ASSISTANT_READ`), `getHoursSummary`,
   `getPeopleCatalog`, `report/operations.ts`, `QUERY_CANCELED`, el correo y el
   filtro de personas de `listWorkspacePeople`, el registro de `list_people` y
   `summarize_hours` y la oración de `list_entries`.
-- `3c917cd`, **tests** de unidad e integración de §7.1 y §7.2 que son de
+- `ac21bcc`, **tests** de unidad e integración de §7.1 y §7.2 que son de
   `backend-dev`: `report/schema.test.ts`, `mcp/schema.test.ts`,
   `mcp/tools.test.ts`, `report/scope.integration.test.ts`,
   `report/service.integration.test.ts`, `workspace/service.integration.test.ts`,
@@ -77,7 +77,7 @@ salen sin `$ref` y sin depender de cómo el SDK pasa un esquema recursivo.
 
 ## Mutaciones
 
-En una copia descartable de `3c917cd` (`git worktree add --detach`), con la
+En una copia descartable de `3c917cd` (antes del rebase sobre WS2b; hoy `ac21bcc`, `git worktree add --detach`), con la
 base `clock_mcpe_mut`. Cada mutante corre la unidad de `report` y `mcp` (634
 tests) y la integración de `report/scope`, `report/service`, `report/export` y
 `mcp/tools.integration` (420 tests, con los de `test-engineer`).
@@ -98,7 +98,7 @@ tests) y la integración de `report/scope`, `report/service`, `report/export` y
 
 ## Corridas
 
-En `/home/maxi/program/clock-mcp-equipo`, punta `3c917cd`, base
+En `/home/maxi/program/clock-mcp-equipo`, punta `3c917cd` (antes del rebase sobre WS2b), base
 `clock_mcpe_back`:
 
 - `npm run lint`: sin errores ni advertencias.
@@ -110,7 +110,7 @@ En `/home/maxi/program/clock-mcp-equipo`, punta `3c917cd`, base
 
 ## Revisiones
 
-Seis revisiones sobre `c108b31`: frontend, backend y paridad aprobaron sin
+Seis revisiones sobre `c108b31` (antes del rebase sobre WS2b; hoy `21f6189`): frontend, backend y paridad aprobaron sin
 hallazgos; clean code y tests, con menores; seguridad pidió cambios por un
 mayor.
 
@@ -118,31 +118,31 @@ mayor.
 
 | Hallazgo                                                                                                                                                                                                            | Lo que se hizo                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Mayor.** Un lote JSON-RPC esquivaba el tope de 120 llamadas por minuto: el transporte del SDK 1.32.0 acepta hasta 100 mensajes por `POST` y corre los `tools/call` en paralelo, y `consumeCall` cuenta un `POST`. | `82410d5`. `handleMcpRequest` lee una copia del cuerpo con `readRequestBody` del SDK y el mismo tope de 64 KiB; un arreglo responde 400 con JSON-RPC `-32600` y `mcpMessages.batchUnsupported`, antes de `consumeCall`. Un cuerpo que no entra o no es JSON lo sigue respondiendo el transporte. Test en `handler.integration.test.ts`: un lote de dos `create_entry` responde 400, no escribe ni consume del tope, y un mensaje suelto después pasa y cuenta uno. Sin la guarda, el test cae (200 en lugar de 400). El contrato saca `handler.ts` de «Sin cambio» de §1, con el motivo, y lo dice en D-MCPE-6.                                   |
-| menor. El tope de 8 s es por sentencia, y un resumido corre unas siete.                                                                                                                                             | `682fda2`, **sin `transaction_timeout`**. Postgres local: **18.6**, que lo soporta, pero al vencer no cancela con `57014`: termina la conexión con `FATAL 25P04` («terminating connection due to transaction timeout»). Con una sonda por drizzle y node-postgres, lo que llega es el fallo del `rollback` («Failed query: rollback», con causa «Connection terminated unexpectedly» y sin `code`), que no se puede traducir a `timeout`, y el cliente de `pg` emite además una excepción no atrapada. D-MCPE-6 dice que la cota es por sentencia y por qué; una cota total, si hace falta, es un plazo en la aplicación. Avisado al coordinador. |
+| **Mayor.** Un lote JSON-RPC esquivaba el tope de 120 llamadas por minuto: el transporte del SDK 1.32.0 acepta hasta 100 mensajes por `POST` y corre los `tools/call` en paralelo, y `consumeCall` cuenta un `POST`. | `26a1076`. `handleMcpRequest` lee una copia del cuerpo con `readRequestBody` del SDK y el mismo tope de 64 KiB; un arreglo responde 400 con JSON-RPC `-32600` y `mcpMessages.batchUnsupported`, antes de `consumeCall`. Un cuerpo que no entra o no es JSON lo sigue respondiendo el transporte. Test en `handler.integration.test.ts`: un lote de dos `create_entry` responde 400, no escribe ni consume del tope, y un mensaje suelto después pasa y cuenta uno. Sin la guarda, el test cae (200 en lugar de 400). El contrato saca `handler.ts` de «Sin cambio» de §1, con el motivo, y lo dice en D-MCPE-6.                                   |
+| menor. El tope de 8 s es por sentencia, y un resumido corre unas siete.                                                                                                                                             | `ac6d91c`, **sin `transaction_timeout`**. Postgres local: **18.6**, que lo soporta, pero al vencer no cancela con `57014`: termina la conexión con `FATAL 25P04` («terminating connection due to transaction timeout»). Con una sonda por drizzle y node-postgres, lo que llega es el fallo del `rollback` («Failed query: rollback», con causa «Connection terminated unexpectedly» y sin `code`), que no se puede traducir a `timeout`, y el cliente de `pg` emite además una excepción no atrapada. D-MCPE-6 dice que la cota es por sentencia y por qué; una cota total, si hace falta, es un plazo en la aplicación. Avisado al coordinador. |
 
 ### Clean code
 
 | Hallazgo                                              | Lo que se hizo                                                                                                        |
 | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| 1. La línea de `operations.ts` en `CLAUDE.md`         | `97ba9b7`: «Zod, can() y service de la operación de una herramienta MCP, compartida con la action si la hay».         |
-| 2. La copia de `workspaceResource` en `operations.ts` | `8526b7a`: `report/service.ts` la exporta y `operations.ts` la usa.                                                   |
-| 3. `ReadPlan` copiaba los campos del modo             | `8526b7a`: `readonly mode: ReadMode`.                                                                                 |
-| 4. El comentario de `strictFilters`                   | `8526b7a`: nombra las dos reglas de D-MCPE-4, `checkOwnPeople` y `checkStrictFilters`.                                |
-| 5. El comentario de `peopleListOf`                    | `97ba9b7`: una lista blanca, para que un campo nuevo del catálogo no llegue al asistente sin un cambio en `tools.ts`. |
-| 6. `kind` y el alcance en `mcp/schema.ts`             | `97ba9b7`: `kind: groupBy` y una sola constante, `summaryScope`, en las dos salidas.                                  |
+| 1. La línea de `operations.ts` en `CLAUDE.md`         | `b758430`: «Zod, can() y service de la operación de una herramienta MCP, compartida con la action si la hay».         |
+| 2. La copia de `workspaceResource` en `operations.ts` | `3673e74`: `report/service.ts` la exporta y `operations.ts` la usa.                                                   |
+| 3. `ReadPlan` copiaba los campos del modo             | `3673e74`: `readonly mode: ReadMode`.                                                                                 |
+| 4. El comentario de `strictFilters`                   | `3673e74`: nombra las dos reglas de D-MCPE-4, `checkOwnPeople` y `checkStrictFilters`.                                |
+| 5. El comentario de `peopleListOf`                    | `b758430`: una lista blanca, para que un campo nuevo del catálogo no llegue al asistente sin un cambio en `tools.ts`. |
+| 6. `kind` y el alcance en `mcp/schema.ts`             | `b758430`: `kind: groupBy` y una sola constante, `summaryScope`, en las dos salidas.                                  |
 
 ### Tests
 
 | Hallazgo                                                                        | Lo que se hizo                                                                                                                                                                |
 | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1. Las descripciones de `tools/list`                                            | `f8f1b16`: la de `list_entries` contiene `summarize_hours` y la de `summarize_hours`, `levelsShown`.                                                                          |
-| 2. Los ids mal formados por `tools/call`                                        | `f8f1b16`: `userIds: ["con espacio"]` da `validation` con `peopleNotFound`, y un uuid en mayúsculas en `projectIds`, `validation` con `projectsNotFound`. Fila nueva en §4.8. |
-| 3. El `not_found` del criterio 14 en `service.integration` solo miraba la clase | `f8f1b16`: `toMatchObject({ code, message })`, con `peopleNotFound` y `projectsNotFound`.                                                                                     |
+| 1. Las descripciones de `tools/list`                                            | `abe6fd0`: la de `list_entries` contiene `summarize_hours` y la de `summarize_hours`, `levelsShown`.                                                                          |
+| 2. Los ids mal formados por `tools/call`                                        | `abe6fd0`: `userIds: ["con espacio"]` da `validation` con `peopleNotFound`, y un uuid en mayúsculas en `projectIds`, `validation` con `projectsNotFound`. Fila nueva en §4.8. |
+| 3. El `not_found` del criterio 14 en `service.integration` solo miraba la clase | `abe6fd0`: `toMatchObject({ code, message })`, con `peopleNotFound` y `projectsNotFound`.                                                                                     |
 
 ### Corrida final
 
-Punta `f8f1b16`, con el árbol quieto, cada cosa en una base nueva:
+Punta `f8f1b16` (antes del rebase sobre WS2b; hoy `abe6fd0`), con el árbol quieto, cada cosa en una base nueva:
 
 | Corrida                      | Dónde                                                                              | Resultado                                                                              |
 | ---------------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
@@ -156,6 +156,9 @@ Punta `f8f1b16`, con el árbol quieto, cada cosa en una base nueva:
 | e2e entera, reusando la base | lo mismo, sobre la base de la corrida anterior                                     | 264 pasan (1,8 min)                                                                    |
 
 ## Rebase sobre WS2b
+
+Los hashes de las secciones anteriores son los de después del rebase, salvo las
+puntas de las corridas, que dicen dónde se corrieron.
 
 `mejoras/mcp-equipo` rebasada sobre `main` `9a6eb0b` (el merge de WS2b), desde
 `8466e94`: los 16 commits se aplicaron sin conflictos de texto y
