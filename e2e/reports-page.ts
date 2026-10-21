@@ -598,7 +598,7 @@ export function expandButton(page: Page, name: string): Locator {
 }
 
 /** Cómo queda el texto de una celda: en cuántos renglones y si entra en su ancho. */
-export type CellTextLayout = {
+type CellTextLayout = {
   readonly lines: number;
   readonly textWidth: number;
   readonly contentWidth: number;
@@ -610,7 +610,7 @@ export type CellTextLayout = {
  * sin cortes que no entra no salta de renglón: se sale de la celda. Las dos
  * cosas se miden.
  */
-export async function cellTextLayout(cell: Locator): Promise<CellTextLayout> {
+async function cellTextLayout(cell: Locator): Promise<CellTextLayout> {
   return cell.evaluate((element) => {
     const range = document.createRange();
     range.selectNodeContents(element);
