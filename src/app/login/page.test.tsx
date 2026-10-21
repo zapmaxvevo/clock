@@ -1,18 +1,42 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { textOf } from "@/test/markup";
 
 import LoginPage from "./page";
 
-// Sin sesión: la página muestra el acceso. La sesión real carga la base y Better Auth.
-vi.mock("@/server/session", () => ({ currentSession: () => Promise.resolve(null) }));
+// Sin sesión salvo que el caso la abra. La sesión real carga la base y Better Auth.
+const session = vi.hoisted(() => ({ current: null as object | null }));
+vi.mock("@/server/session", () => ({
+  currentSession: () => Promise.resolve(session.current),
+}));
+
+// Como el de Next, `redirect` corta el render: lanza con el destino.
+const redirect = vi.hoisted(() =>
+  vi.fn((to: string): never => {
+    throw new Error(`redirect:${to}`);
+  }),
+);
+vi.mock("next/navigation", () => ({ redirect }));
+
+afterEach(() => {
+  session.current = null;
+  redirect.mockClear();
+});
+
+type Query = Record<string, string | string[]>;
+
+async function renderQuery(query: Query): Promise<string> {
+  return renderToStaticMarkup(
+    await LoginPage({
+      params: Promise.resolve({}),
+      searchParams: Promise.resolve(query),
+    }),
+  );
+}
 
 async function render(error?: string | string[]): Promise<string> {
-  const searchParams = Promise.resolve(error === undefined ? {} : { error });
-  return renderToStaticMarkup(
-    await LoginPage({ params: Promise.resolve({}), searchParams }),
-  );
+  return renderQuery(error === undefined ? {} : { error });
 }
 
 /** El aviso de error, desde su apertura hasta el botón. */
@@ -100,5 +124,41 @@ describe("LoginPage", () => {
       "El email de la cuenta de Google no está verificado.",
     );
     expect(textOf(markup)).not.toContain("Texto armado");
+  });
+});
+
+describe("LoginPage con la sesión abierta (criterio 18)", () => {
+  /** La consulta firmada que manda el servidor de autorización con `prompt=login`. */
+  const oauthQuery: Query = {
+    response_type: "code",
+    client_id: "cliente-de-prueba",
+    redirect_uri: "http://127.0.0.1:33418/callback",
+    scope: "openid offline_access",
+    prompt: "login",
+    exp: "1792540800",
+    sig: "firma-de-prueba",
+  };
+
+  it("sin consulta, redirige a /", async () => {
+    session.current = { user: { id: "u-1" } };
+
+    await expect(render()).rejects.toThrow("redirect:/");
+    expect(redirect).toHaveBeenCalledExactlyOnceWith("/");
+  });
+
+  it("con solo `error`, redirige a /", async () => {
+    session.current = { user: { id: "u-1" } };
+
+    await expect(render("dominio_no_habilitado")).rejects.toThrow("redirect:/");
+    expect(redirect).toHaveBeenCalledExactlyOnceWith("/");
+  });
+
+  it("con la consulta firmada, muestra el botón y no redirige", async () => {
+    session.current = { user: { id: "u-1" } };
+
+    const markup = await renderQuery(oauthQuery);
+
+    expect(redirect).not.toHaveBeenCalled();
+    expect(textOf(markup)).toContain("Entrar con Google");
   });
 });

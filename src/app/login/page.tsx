@@ -3,8 +3,8 @@ import { redirect } from "next/navigation";
 
 import { GoogleSignInButton } from "@/components/layout/google-sign-in-button";
 import { Alert, AlertTitle } from "@/components/ui/alert";
-import { loginErrorMessage } from "@/server/access";
 import { isOAuthLoginQuery } from "@/lib/oauth";
+import { loginErrorMessage } from "@/server/access";
 import { currentSession } from "@/server/session";
 
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
