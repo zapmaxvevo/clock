@@ -284,7 +284,30 @@ vacío del owner y `renewWorkspace` se corta.
      pruebas descartables y los mutantes van en un worktree. Bases que se pueden borrar:
      `clock_r6a_*`, `clock_r6b_*`, `clock_r10a_*`, `clock_r10b_final_*`.
      **Decimoctava sesión** (2026-10-21):
-     **Cierre (2026-10-21 ~15:40 UTC):**
+     **Cierre de la tarde (2026-10-21 ~20:25 UTC):**
+     - **P1 mergeado en `main` en local** (`66f9c5e`), sin migración, **sin pushear**: falta
+       `! git push origin main` del usuario y mirar en Vercel que el deploy aparezca (los
+       avisos de GitHub llegaron tarde hoy; prod quedó un rato en `a65f717`).
+     - **E3** (`clock-e3`, rama `fase2/e3-propiedad`, punta `693f737`): contrato revisado,
+       §11 respondida (las tres «sí»), paridad (`ebd54b4`), frontend (`f6daf4d`), e2e
+       (`b2ec71f`, 275/276 sin backend). `e3-back` repetía las mutaciones M1-M13 al cierre
+       (su copia `scratchpad/mut` la pisó un revisor de P1 y la restauró). Sigue: informe de
+       `e3-back` (migración `0021`, `clock-ops/e3-0021-do.sql` y previa/control), rebase sobre
+       `main` con P1 (choque en `project/actions.integration.test.ts`), seis revisiones,
+       final, `0021` en prod, merge y push.
+     - **P2** (`clock-p2`, rama `fase2/p2-archivar`): contrato revisado; ADR 0031 aceptado;
+       casilla de tareas sí (`14f81ef`). Tipos `a00bb11`, paridad `662df46`, frontend
+       `d2b1ca7`; `p2-back` y `p2-e2e` trabajando al cierre (puede quedar trabajo sin
+       commit en el árbol). Sin migración. Sigue: terminar backend y e2e, seis revisiones,
+       final, merge.
+     - Decisiones del usuario hoy: P1 todo en `/proyectos` (sin ADR 0032), sin columna de
+       tiempo, «Crear proyecto» reemplaza a «Ir a Proyectos», archivado no se edita. TT-13
+       (crear etiqueta desde el selector) fuera de alcance: preguntarle con P5.
+     - Postgres local: se borraron ~200 bases viejas; quedan `clock`, `clock_test` y las de
+       E3/P2. Cada agente usa carpetas descartables propias (`scratchpad/<agente>-*`) y puertos
+       propios (E3 3551, P1 3561-3611, P2 3621/3631).
+     - Pendiente aparte: el menú de navegación desborda a 390 px (lo vio la paridad de P1).
+       **Cierre (2026-10-21 ~15:40 UTC):**
      - **En producción** (`096aa21`, desplegado a mano por el usuario: Vercel no recibió
        el aviso de GitHub de los pushes `a65f717` y `096aa21`; revisar en Settings → Git
        que el repo siga conectado): WS2a (`0020` aplicada, control OK), WS2b y el MCP para
