@@ -3,19 +3,24 @@ import { randomUUID } from "node:crypto";
 import { and, eq, isNull, notInArray } from "drizzle-orm";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
+import { releasedEmailOf } from "@/lib/email";
+import { reportMessages } from "@/modules/report/schema";
 import { createManualEntry } from "@/modules/time-entry/service";
 import { timeEntryMessages } from "@/modules/time-entry/schema";
 import { projectMessages } from "@/modules/project/schema";
 import { db } from "@/server/db";
-import { auditLog, timeEntry, timeEntryTag } from "@/server/db/schema";
+import { auditLog, membership, timeEntry, timeEntryTag } from "@/server/db/schema";
+import type { MembershipStatus, Role } from "@/server/permissions";
 import {
   seedClient,
+  seedInvitation,
   seedMember,
   seedPreferences,
   seedProject,
   seedTag,
   seedTask,
   seedTimeEntry,
+  seedUser,
   seedWorkspace,
 } from "@/test/factories";
 import {
@@ -27,9 +32,10 @@ import {
 } from "@/test/mcp";
 import { restoreEnv } from "@/test/mcp-env";
 import { timeEntryById } from "@/test/queries";
+import { descriptionIdOf } from "@/test/report";
 import { actorIn, workspaceOf } from "@/test/time-entry";
 
-import type { ToolEntry } from "./schema";
+import type { ListPeopleToolOutput, SummarizeHoursToolOutput, ToolEntry } from "./schema";
 
 /**
  * §9.2, `tools.integration`: criterios 6 a 9 por `tools/call`, con tokens reales.
@@ -669,5 +675,765 @@ describe("el audit log dice por qué cliente llegó (criterio 9)", () => {
         .from(auditLog)
         .where(and(eq(auditLog.actorId, seeded.userId), isNull(auditLog.oauthClientId))),
     ).toHaveLength(1);
+  });
+});
+
+// Mejora 5, §7.2 de `mejoras-mcp-equipo.md`: `list_people` y `summarize_hours`
+// por `tools/call`, criterios 2, 4 a 6, 10 a 13. La aplicación arma el contexto
+// con el primer workspace (`ensureWorkspaceContext`): el equipo se siembra
+// primero y el otro workspace, que nadie puede abrir, solo aporta datos.
+
+/** Una persona del equipo, con el correo con que entra. */
+type TeamPerson = { readonly id: string; readonly email: string };
+
+type Team = Awaited<ReturnType<typeof seedTeam>>;
+
+/**
+ * El equipo de un workspace con horas en la semana del 12 al 18 de octubre de
+ * 2026: owner en Nueva York (su perfil), el resto en Buenos Aires (el
+ * workspace). Una inactiva con horas, una inactiva con el correo liberado, una
+ * invitada con cuenta y sin alta, y otro workspace con su owner y sus horas.
+ *
+ * | Persona         | Minutos | Facturables |
+ * | --------------- | ------- | ----------- |
+ * | owner (Olga)    | 60      | 60          |
+ * | member (Marta)  | 165     | 90          |
+ * | inactive (Inés) | 20      | 0           |
+ * | pm (Pablo)      | 10      | 0           |
+ */
+async function seedTeam() {
+  const { workspaceId, ownerId } = await seedWorkspace();
+  const owner: TeamPerson = { id: ownerId, email: `${ownerId}@empresa.com` };
+  await seedPreferences(ownerId, { timezone: NEW_YORK, displayName: "Olga" });
+  async function person(
+    role: Role,
+    displayName: string,
+    status: MembershipStatus = "active",
+  ): Promise<TeamPerson> {
+    const email = `${randomUUID()}@empresa.com`;
+    const id = await seedMember(workspaceId, role, status, { email });
+    await seedPreferences(id, { displayName });
+    return { id, email };
+  }
+  const admin = await person("admin", "Ana");
+  const member = await person("member", "Marta");
+  const pm = await person("project_manager", "Pablo");
+  const tm = await person("team_manager", "Teo");
+  const inactive = await person("member", "Inés", "inactive");
+  const releasedId = randomUUID();
+  await seedMember(workspaceId, "member", "inactive", {
+    id: releasedId,
+    email: releasedEmailOf(releasedId),
+  });
+  const inviteeEmail = `${randomUUID()}@gmail.com`;
+  const inviteeId = await seedUser(inviteeEmail);
+  const invitation = await seedInvitation({
+    workspaceId,
+    email: inviteeEmail,
+    invitedById: ownerId,
+  });
+  // D-R9-2: miembros desde antes del período, para que las sin horas cuenten.
+  await db
+    .update(membership)
+    .set({ createdAt: new Date("2026-01-01T00:00:00Z") })
+    .where(eq(membership.workspaceId, workspaceId));
+
+  const customer = await seedClient({ workspaceId });
+  const billed = await seedProject({ workspaceId, clientId: customer.id });
+  const internal = await seedProject({ workspaceId });
+  const hidden = await seedProject({ workspaceId, isPublic: false });
+
+  const entry = (
+    userId: string,
+    startedAt: string,
+    endedAt: string,
+    values: { description?: string; projectId?: string; billable?: boolean } = {},
+  ) => seedTimeEntry({ workspaceId, userId, startedAt, endedAt, ...values });
+  await entry(owner.id, "2026-10-13T13:00:00Z", "2026-10-13T14:00:00Z", {
+    description: "Planificación",
+    projectId: billed.id,
+    billable: true,
+  });
+  await entry(member.id, "2026-10-13T14:00:00Z", "2026-10-13T15:30:00Z", {
+    description: "Revisión",
+    projectId: billed.id,
+    billable: true,
+  });
+  await entry(member.id, "2026-10-14T13:00:00Z", "2026-10-14T13:45:00Z", {
+    description: "Revisión",
+  });
+  // 23:30 del 14 en Nueva York, 00:30 del 15 en Buenos Aires (criterio 10).
+  await entry(member.id, "2026-10-15T03:30:00Z", "2026-10-15T04:00:00Z", {
+    description: "Cierre",
+  });
+  // Fuera del período.
+  await entry(member.id, "2026-10-19T13:00:00Z", "2026-10-19T14:00:00Z");
+  await entry(inactive.id, "2026-10-13T15:00:00Z", "2026-10-13T15:20:00Z", {
+    description: "Soporte",
+    projectId: internal.id,
+  });
+  await entry(pm.id, "2026-10-16T13:00:00Z", "2026-10-16T13:10:00Z");
+
+  const elsewhere = await seedWorkspace();
+  const foreignClient = await seedClient({ workspaceId: elsewhere.workspaceId });
+  const foreignProject = await seedProject({
+    workspaceId: elsewhere.workspaceId,
+    clientId: foreignClient.id,
+  });
+  await seedTimeEntry({
+    workspaceId: elsewhere.workspaceId,
+    userId: elsewhere.ownerId,
+    startedAt: "2026-10-13T13:00:00Z",
+    endedAt: "2026-10-13T14:40:00Z",
+    projectId: foreignProject.id,
+    billable: true,
+  });
+
+  return {
+    workspaceId,
+    owner,
+    admin,
+    member,
+    pm,
+    tm,
+    inactive,
+    releasedId,
+    inviteeId,
+    invitationId: invitation.id,
+    customer,
+    billed,
+    internal,
+    hidden,
+    elsewhere: {
+      ownerId: elsewhere.ownerId,
+      clientId: foreignClient.id,
+      projectId: foreignProject.id,
+    },
+  };
+}
+
+const WEEK = { from: "2026-10-12", to: "2026-10-18" } as const;
+
+/** Los roles que ven a todo el equipo y los que solo ven lo propio (P-02). */
+const SEES_TEAM = ["owner", "admin"] as const;
+const SEES_SELF = ["member", "pm", "tm"] as const;
+
+function personOf(
+  team: Team,
+  role: (typeof SEES_TEAM)[number] | (typeof SEES_SELF)[number],
+) {
+  return team[role];
+}
+
+async function tokenOf(person: TeamPerson): Promise<string> {
+  return (await issueTestGrant(person.email)).accessToken;
+}
+
+async function summarize(token: string, args: Record<string, unknown> = {}) {
+  return contentOf<SummarizeHoursToolOutput>(
+    await callTool(token, "summarize_hours", { ...WEEK, ...args }),
+  );
+}
+
+async function listPeople(token: string) {
+  return contentOf<ListPeopleToolOutput>(await callTool(token, "list_people"));
+}
+
+/** Un grupo de cualquier nivel, con lo que el árbol compara. */
+type AnyGroup = {
+  readonly key: string | null;
+  readonly minutes: number;
+  readonly children?: readonly AnyGroup[];
+};
+
+type Tree = {
+  readonly [key: string]: { readonly minutes: number; readonly children?: Tree };
+};
+
+/** Los grupos por `key` (`"null"` en los «Sin …»), con sus minutos y sus hijos. */
+function treeOf(groups: readonly AnyGroup[]): Tree {
+  return Object.fromEntries(
+    groups.map((group) => [
+      String(group.key),
+      group.children === undefined
+        ? { minutes: group.minutes }
+        : { minutes: group.minutes, children: treeOf(group.children) },
+    ]),
+  );
+}
+
+/**
+ * Un error de herramienta sin nada más: ni grupos ni personas en la respuesta,
+ * que es lo que se puede observar de «sin leer».
+ */
+function expectBareError(result: ToolResult, code: string, message: string) {
+  expect(result.isError).toBe(true);
+  expect(result.structuredContent).toEqual({ code, message });
+  expect(result.content).toEqual([{ type: "text", text: message }]);
+}
+
+describe("list_people (criterio 2)", () => {
+  it.each(SEES_TEAM)(
+    "%s recibe everyone: activas e inactivas, sin la invitada ni el otro workspace, con correos y el liberado en null",
+    async (role) => {
+      const team = await seedTeam();
+      const viewer = personOf(team, role);
+
+      const listed = await listPeople(await tokenOf(viewer));
+
+      const row = (person: TeamPerson, name: string, inactive = false) => ({
+        id: person.id,
+        name,
+        email: person.email,
+        inactive,
+        self: person.id === viewer.id,
+      });
+      expect(listed).toEqual({
+        scope: "everyone",
+        people: [
+          row(team.admin, "Ana"),
+          row(team.inactive, "Inés", true),
+          row(team.member, "Marta"),
+          row(team.owner, "Olga"),
+          row(team.pm, "Pablo"),
+          {
+            id: team.releasedId,
+            name: "Persona de prueba",
+            email: null,
+            inactive: true,
+            self: false,
+          },
+          row(team.tm, "Teo"),
+        ],
+      });
+    },
+  );
+
+  it.each(SEES_SELF)(
+    "%s recibe self: solo su fila, con self y sin correo",
+    async (role) => {
+      const team = await seedTeam();
+      const viewer = personOf(team, role);
+
+      const listed = await listPeople(await tokenOf(viewer));
+
+      expect(listed.scope).toBe("self");
+      expect(listed.people).toEqual([
+        expect.objectContaining({
+          id: viewer.id,
+          email: null,
+          inactive: false,
+          self: true,
+        }),
+      ]);
+    },
+  );
+});
+
+describe("summarize_hours de owner y admin (criterio 4)", () => {
+  it.each(SEES_TEAM)(
+    "%s sin filtros resume a todo el workspace por persona, con la inactiva marcada",
+    async (role) => {
+      const team = await seedTeam();
+
+      const summary = await summarize(await tokenOf(personOf(team, role)));
+
+      expect(summary).toMatchObject({
+        from: WEEK.from,
+        to: WEEK.to,
+        scope: "everyone",
+        groupBy: "person",
+        subgroups: [],
+        levelsShown: 1,
+        totalMinutes: 255,
+        billableMinutes: 150,
+      });
+      expect(treeOf(summary.groups)).toEqual({
+        [team.owner.id]: { minutes: 60 },
+        [team.member.id]: { minutes: 165 },
+        [team.inactive.id]: { minutes: 20 },
+        [team.pm.id]: { minutes: 10 },
+      });
+      expect(summary.groups.find((group) => group.key === team.member.id)).toMatchObject({
+        kind: "person",
+        name: "Marta",
+        inactive: false,
+      });
+      expect(
+        summary.groups.find((group) => group.key === team.inactive.id),
+      ).toMatchObject({ name: "Inés", inactive: true });
+    },
+  );
+
+  it("por persona y proyecto, con el cliente del proyecto y el «Sin proyecto»", async () => {
+    const team = await seedTeam();
+
+    const summary = await summarize(await tokenOf(team.owner), {
+      subgroups: ["project"],
+    });
+
+    expect(summary.levelsShown).toBe(2);
+    expect(treeOf(summary.groups)).toEqual({
+      [team.owner.id]: { minutes: 60, children: { [team.billed.id]: { minutes: 60 } } },
+      [team.member.id]: {
+        minutes: 165,
+        children: { [team.billed.id]: { minutes: 90 }, null: { minutes: 75 } },
+      },
+      [team.inactive.id]: {
+        minutes: 20,
+        children: { [team.internal.id]: { minutes: 20 } },
+      },
+      [team.pm.id]: { minutes: 10, children: { null: { minutes: 10 } } },
+    });
+    const ownerProjects = summary.groups.find((group) => group.key === team.owner.id);
+    expect(ownerProjects?.children).toEqual([
+      expect.objectContaining({
+        kind: "project",
+        name: team.billed.name,
+        client: team.customer.name,
+      }),
+    ]);
+  });
+
+  it("por persona, fecha y descripción, con los días cortados en la zona de quien pide (criterio 10)", async () => {
+    const team = await seedTeam();
+
+    const summary = await summarize(await tokenOf(team.owner), {
+      userIds: [team.member.id],
+      subgroups: ["date", "description"],
+    });
+
+    expect(summary.timezone).toBe(NEW_YORK);
+    expect(summary.levelsShown).toBe(3);
+    // El cierre empieza a las 23:30 del 14 en Nueva York y a las 00:30 del 15
+    // en la zona de Marta: cuenta el 14.
+    expect(treeOf(summary.groups)).toEqual({
+      [team.member.id]: {
+        minutes: 165,
+        children: {
+          "2026-10-13": {
+            minutes: 90,
+            children: { [descriptionIdOf("Revisión")]: { minutes: 90 } },
+          },
+          "2026-10-14": {
+            minutes: 75,
+            children: {
+              [descriptionIdOf("Revisión")]: { minutes: 45 },
+              [descriptionIdOf("Cierre")]: { minutes: 30 },
+            },
+          },
+        },
+      },
+    });
+    const [person] = summary.groups;
+    const day = person?.children?.find((group) => group.key === "2026-10-14");
+    expect(day).toMatchObject({ kind: "date", name: "2026-10-14" });
+    expect(day?.children).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "description",
+          name: "Cierre",
+          truncated: false,
+        }),
+      ]),
+    );
+  });
+
+  it("con userIds de una persona, solo ella; con la inactiva, sus horas marcadas", async () => {
+    const team = await seedTeam();
+    const token = await tokenOf(team.admin);
+
+    const one = await summarize(token, { userIds: [team.member.id] });
+    expect(one).toMatchObject({
+      scope: "everyone",
+      totalMinutes: 165,
+      billableMinutes: 90,
+    });
+    expect(treeOf(one.groups)).toEqual({ [team.member.id]: { minutes: 165 } });
+
+    const gone = await summarize(token, { userIds: [team.inactive.id] });
+    expect(gone.totalMinutes).toBe(20);
+    expect(gone.groups).toEqual([
+      expect.objectContaining({ key: team.inactive.id, minutes: 20, inactive: true }),
+    ]);
+  });
+
+  it("los filtros de proyecto, sin proyecto y cliente eligen sus entradas", async () => {
+    const team = await seedTeam();
+    const token = await tokenOf(team.owner);
+
+    const byProject = await summarize(token, { projectIds: [team.billed.id] });
+    expect(treeOf(byProject.groups)).toEqual({
+      [team.owner.id]: { minutes: 60 },
+      [team.member.id]: { minutes: 90 },
+    });
+
+    const withoutProject = await summarize(token, { withoutProject: true });
+    expect(treeOf(withoutProject.groups)).toEqual({
+      [team.member.id]: { minutes: 75 },
+      [team.pm.id]: { minutes: 10 },
+    });
+
+    const byClient = await summarize(token, { clientIds: [team.customer.id] });
+    expect(byClient.totalMinutes).toBe(150);
+
+    // Un privado sin miembros está en el catálogo de un owner.
+    const hidden = await summarize(token, { projectIds: [team.hidden.id] });
+    expect(hidden).toMatchObject({ totalMinutes: 0, groups: [] });
+  });
+
+  it("includePeopleWithoutTime suma en 0 a las activas sin horas, no a las inactivas ni a la invitada", async () => {
+    const team = await seedTeam();
+    const token = await tokenOf(team.owner);
+
+    const summary = await summarize(token, { includePeopleWithoutTime: true });
+
+    expect(treeOf(summary.groups)).toEqual({
+      [team.owner.id]: { minutes: 60 },
+      [team.member.id]: { minutes: 165 },
+      [team.inactive.id]: { minutes: 20 },
+      [team.pm.id]: { minutes: 10 },
+      [team.admin.id]: { minutes: 0 },
+      [team.tm.id]: { minutes: 0 },
+    });
+
+    // Con otro primer nivel no hay personas en cero (D-R9-5).
+    const byProject = await summarize(token, {
+      groupBy: "project",
+      includePeopleWithoutTime: true,
+    });
+    expect(byProject.groups.every((group) => group.kind === "project")).toBe(true);
+  });
+
+  it("el timer que corre no cuenta en ningún total (criterio 11)", async () => {
+    const { workspaceId, ownerId } = await seedWorkspace();
+    await seedPreferences(ownerId, { timezone: NEW_YORK });
+    const email = `${randomUUID()}@empresa.com`;
+    const userId = await seedMember(workspaceId, "member", "active", { email });
+    const now = Date.now();
+    await seedTimeEntry({
+      workspaceId,
+      userId,
+      startedAt: new Date(now - 50 * 60_000),
+      endedAt: new Date(now - 20 * 60_000),
+    });
+    await seedTimeEntry({ workspaceId, userId, startedAt: new Date(now - 10 * 60_000) });
+    const dayInNewYork = (instant: number) =>
+      new Intl.DateTimeFormat("en-CA", { timeZone: NEW_YORK }).format(instant);
+    const period = { from: dayInNewYork(now - 24 * 60 * 60_000), to: dayInNewYork(now) };
+
+    for (const token of [
+      (await issueTestGrant(`${ownerId}@empresa.com`)).accessToken,
+      (await issueTestGrant(email)).accessToken,
+    ]) {
+      const summary = await summarize(token, period);
+      expect(summary.totalMinutes).toBe(30);
+      expect(treeOf(summary.groups)).toEqual({ [userId]: { minutes: 30 } });
+    }
+  });
+});
+
+describe("summarize_hours de los demás roles (criterio 5)", () => {
+  /** Lo propio de cada rol en la semana: sus minutos y facturables. */
+  const own = {
+    member: { totalMinutes: 165, billableMinutes: 90 },
+    pm: { totalMinutes: 10, billableMinutes: 0 },
+    tm: { totalMinutes: 0, billableMinutes: 0 },
+  } as const;
+
+  it.each(SEES_SELF)(
+    "%s resume solo lo propio con scope self; con userIds del propio id, lo mismo",
+    async (role) => {
+      const team = await seedTeam();
+      const viewer = personOf(team, role);
+      const token = await tokenOf(viewer);
+
+      const summary = await summarize(token);
+      expect(summary).toMatchObject({ scope: "self", ...own[role] });
+      expect(treeOf(summary.groups)).toEqual(
+        own[role].totalMinutes === 0
+          ? {}
+          : { [viewer.id]: { minutes: own[role].totalMinutes } },
+      );
+
+      expect(await summarize(token, { userIds: [viewer.id] })).toEqual(summary);
+      // Con scope self no hay personas en cero.
+      expect(await summarize(token, { includePeopleWithoutTime: true })).toEqual(summary);
+    },
+  );
+});
+
+describe("IDOR en summarize_hours (criterio 6)", () => {
+  it.each(SEES_SELF)(
+    "%s con un id que no es el propio responde forbidden con othersForbidden",
+    async (role) => {
+      const team = await seedTeam();
+      const viewer = personOf(team, role);
+      const token = await tokenOf(viewer);
+
+      for (const userIds of [
+        [team.owner.id],
+        [viewer.id, team.member.id === viewer.id ? team.owner.id : team.member.id],
+        [team.elsewhere.ownerId],
+        [randomUUID()],
+      ]) {
+        expectBareError(
+          await callTool(token, "summarize_hours", { ...WEEK, userIds }),
+          "forbidden",
+          reportMessages.othersForbidden,
+        );
+      }
+    },
+  );
+
+  it.each(SEES_TEAM)(
+    "%s con una persona de otro workspace, inexistente o invitada responde el mismo not_found",
+    async (role) => {
+      const team = await seedTeam();
+      const token = await tokenOf(personOf(team, role));
+
+      for (const userIds of [
+        [team.elsewhere.ownerId],
+        [randomUUID()],
+        [team.inviteeId],
+        [team.invitationId],
+        // Una ajena junto a una propia no se reduce a la propia.
+        [team.member.id, team.elsewhere.ownerId],
+      ]) {
+        expectBareError(
+          await callTool(token, "summarize_hours", { ...WEEK, userIds }),
+          "not_found",
+          reportMessages.peopleNotFound,
+        );
+      }
+    },
+  );
+
+  it("un proyecto de otro workspace o inexistente responde not_found, también junto a uno propio", async () => {
+    const team = await seedTeam();
+    const token = await tokenOf(team.owner);
+
+    for (const projectIds of [
+      [team.elsewhere.projectId],
+      [randomUUID()],
+      [team.billed.id, team.elsewhere.projectId],
+    ]) {
+      expectBareError(
+        await callTool(token, "summarize_hours", { ...WEEK, projectIds }),
+        "not_found",
+        reportMessages.projectsNotFound,
+      );
+    }
+  });
+
+  it("un member con un proyecto privado ajeno responde not_found de proyectos", async () => {
+    const team = await seedTeam();
+
+    expectBareError(
+      await callTool(await tokenOf(team.member), "summarize_hours", {
+        ...WEEK,
+        projectIds: [team.hidden.id],
+      }),
+      "not_found",
+      reportMessages.projectsNotFound,
+    );
+  });
+
+  it("un cliente de otro workspace o inexistente responde not_found de clientes", async () => {
+    const team = await seedTeam();
+    const token = await tokenOf(team.admin);
+
+    for (const clientIds of [
+      [team.elsewhere.clientId],
+      [randomUUID()],
+      [team.customer.id, team.elsewhere.clientId],
+    ]) {
+      expectBareError(
+        await callTool(token, "summarize_hours", { ...WEEK, clientIds }),
+        "not_found",
+        reportMessages.clientsNotFound,
+      );
+    }
+  });
+
+  it("con varias listas fuera del catálogo responde la primera: personas, proyectos, clientes", async () => {
+    const team = await seedTeam();
+    const token = await tokenOf(team.owner);
+    const all = {
+      userIds: [team.elsewhere.ownerId],
+      projectIds: [team.elsewhere.projectId],
+      clientIds: [team.elsewhere.clientId],
+    };
+
+    expectBareError(
+      await callTool(token, "summarize_hours", { ...WEEK, ...all }),
+      "not_found",
+      reportMessages.peopleNotFound,
+    );
+    expectBareError(
+      await callTool(token, "summarize_hours", {
+        ...WEEK,
+        projectIds: all.projectIds,
+        clientIds: all.clientIds,
+      }),
+      "not_found",
+      reportMessages.projectsNotFound,
+    );
+  });
+
+  it("un member con su id y un proyecto de otro workspace responde not_found, no forbidden", async () => {
+    const team = await seedTeam();
+
+    expectBareError(
+      await callTool(await tokenOf(team.member), "summarize_hours", {
+        ...WEEK,
+        userIds: [team.member.id],
+        projectIds: [team.elsewhere.projectId],
+      }),
+      "not_found",
+      reportMessages.projectsNotFound,
+    );
+  });
+});
+
+describe("summarize_hours valida el pedido (§4.8)", () => {
+  it.each([
+    [
+      "un período invertido",
+      { from: "2026-10-18", to: "2026-10-12" },
+      reportMessages.endBeforeStart,
+    ],
+    ["367 días", { from: "2026-01-01", to: "2027-01-02" }, reportMessages.rangeTooLong],
+    [
+      "niveles repetidos",
+      { ...WEEK, groupBy: "person", subgroups: ["date", "person"] },
+      reportMessages.levelsRepeated,
+    ],
+  ])("%s responde validation sin leer", async (_, args, message) => {
+    const team = await seedTeam();
+
+    expectBareError(
+      await callTool(await tokenOf(team.owner), "summarize_hours", args),
+      "validation",
+      message,
+    );
+  });
+});
+
+describe("el tope de 500 filas (criterio 7)", () => {
+  /** Una persona con `count` descripciones distintas el 13 de octubre, un minuto cada una. */
+  async function seedDescriptions(count: number) {
+    const { workspaceId, ownerId } = await seedWorkspace();
+    const start = Date.parse("2026-10-13T13:00:00Z");
+    await db.insert(timeEntry).values(
+      Array.from({ length: count }, (_, index) => ({
+        workspaceId,
+        userId: ownerId,
+        description: `Tarea ${index}`,
+        startedAt: new Date(start + index * 60_000),
+        endedAt: new Date(start + (index + 1) * 60_000),
+      })),
+    );
+    return {
+      ownerId,
+      token: await tokenOf({ id: ownerId, email: `${ownerId}@empresa.com` }),
+    };
+  }
+
+  const levels = { subgroups: ["date", "description"] } as const;
+
+  it("con 500 filas entre los tres niveles los muestra todos", async () => {
+    const { token } = await seedDescriptions(498);
+
+    const summary = await summarize(token, levels);
+
+    expect(summary.levelsShown).toBe(3);
+    expect(summary.groups[0]?.children?.[0]?.children).toHaveLength(498);
+  });
+
+  it("con 501 filas muestra dos niveles, con los grupos de los que entraron y el total entero", async () => {
+    const { ownerId, token } = await seedDescriptions(499);
+
+    const summary = await summarize(token, levels);
+
+    expect(summary).toMatchObject({
+      subgroups: ["date", "description"],
+      levelsShown: 2,
+      totalMinutes: 499,
+    });
+    expect(treeOf(summary.groups)).toEqual({
+      [ownerId]: { minutes: 499, children: { "2026-10-13": { minutes: 499 } } },
+    });
+  });
+});
+
+describe("sin constancias (criterio 12)", () => {
+  it("list_people y summarize_hours, con y sin error, no escriben en audit_log ni en time_entry", async () => {
+    const team = await seedTeam();
+    const ownerToken = await tokenOf(team.owner);
+    const memberToken = await tokenOf(team.member);
+    const before = await writes();
+
+    await listPeople(ownerToken);
+    await summarize(ownerToken, { subgroups: ["project", "date"] });
+    await listPeople(memberToken);
+    await summarize(memberToken);
+    await callTool(memberToken, "summarize_hours", { ...WEEK, userIds: [team.owner.id] });
+    await callTool(ownerToken, "summarize_hours", { ...WEEK, userIds: [randomUUID()] });
+
+    expect(await writes()).toEqual(before);
+  });
+});
+
+describe("el permiso se decide en cada llamada (criterio 13)", () => {
+  async function setRole(team: Team, person: TeamPerson, role: Role) {
+    await db
+      .update(membership)
+      .set({ role })
+      .where(
+        and(
+          eq(membership.workspaceId, team.workspaceId),
+          eq(membership.userId, person.id),
+        ),
+      );
+  }
+
+  it("un owner pasado a member ve solo lo propio con el mismo token, y no puede pedir a otra persona", async () => {
+    const team = await seedTeam();
+    const token = await tokenOf(team.owner);
+    expect((await listPeople(token)).scope).toBe("everyone");
+    expect((await summarize(token)).scope).toBe("everyone");
+
+    await setRole(team, team.owner, "member");
+
+    const listed = await listPeople(token);
+    expect(listed).toEqual({
+      scope: "self",
+      people: [
+        { id: team.owner.id, name: "Olga", email: null, inactive: false, self: true },
+      ],
+    });
+    const summary = await summarize(token);
+    expect(summary).toMatchObject({ scope: "self", totalMinutes: 60 });
+    expect(treeOf(summary.groups)).toEqual({ [team.owner.id]: { minutes: 60 } });
+    expectBareError(
+      await callTool(token, "summarize_hours", { ...WEEK, userIds: [team.member.id] }),
+      "forbidden",
+      reportMessages.othersForbidden,
+    );
+  });
+
+  it("un member pasado a admin ve a todo el equipo con el mismo token", async () => {
+    const team = await seedTeam();
+    const token = await tokenOf(team.member);
+    expect((await summarize(token)).scope).toBe("self");
+
+    await setRole(team, team.member, "admin");
+
+    expect((await listPeople(token)).scope).toBe("everyone");
+    expect(await summarize(token)).toMatchObject({
+      scope: "everyone",
+      totalMinutes: 255,
+    });
   });
 });
