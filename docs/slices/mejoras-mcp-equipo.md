@@ -960,6 +960,10 @@ Los casos de IDOR, los topes, el correo sin `team.manage` y los cambios de rol
 
 ## 10. Preguntas abiertas para el usuario
 
+**Respondidas por el usuario el 2026-10-21, las cuatro como la recomendación:**
+sin detalle por entrada por ahora, las autorizaciones anteriores siguen
+sirviendo, sin constancia en `audit_log` y el ADR 0030 aceptado.
+
 1. **¿Hace falta ya el detalle por entrada de otra persona** (hora de inicio y
    fin de cada entrada)? Este contrato da totales por persona, día y
    descripción, que es lo que muestra la página. El detalle es una tercera

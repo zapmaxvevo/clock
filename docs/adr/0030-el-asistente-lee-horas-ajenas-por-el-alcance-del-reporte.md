@@ -1,6 +1,6 @@
 # 0030. El asistente lee horas ajenas por el alcance del reporte
 
-Fecha: 2026-10-21. Estado: **Propuesto.**
+Fecha: 2026-10-21. Estado: **Aceptado** (por el usuario, 2026-10-21).
 Origen: el contrato de
 [`mejoras-mcp-equipo.md`](../slices/mejoras-mcp-equipo.md), mejora 5 de
 [`mejoras-pedidas.md`](../mejoras-pedidas.md). Acota D-MCP-11, la última viñeta
