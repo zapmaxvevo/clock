@@ -26,6 +26,7 @@ import {
   startTimer,
   todayGroup,
   trackerBar,
+  trackerWeek,
 } from "./tracker-page";
 
 /**
@@ -38,11 +39,6 @@ import {
 
 /** El total de una semana o de un día: la etiqueta y el valor. */
 const TOTAL = /^Total \d+:\d{2}$/;
-
-/** La franja de una semana, por su rótulo (TT-47). */
-function weekGroup(page: Page, start: CivilDay, today: CivilDay): Locator {
-  return page.getByRole("region", { name: weekLabel(start, today), exact: true });
-}
 
 /** El encabezado de una semana, que recibe el foco después de «Cargar más». */
 function weekHeading(page: Page, start: CivilDay, today: CivilDay): Locator {
@@ -231,14 +227,14 @@ test("la lista agrupa por semana, cada una con su rótulo y su total, y los día
     "Semana anterior",
   ]);
 
-  const current = weekGroup(page, thisWeek, today);
+  const current = trackerWeek(page, thisWeek, today);
   await expect(weekTotal(current)).toHaveText("Total 0:01");
   await expect(current.getByRole("heading", { level: 3 })).toHaveText(["Hoy"]);
   await expect(entryRow(todayGroup(page), "entrada de hoy")).toBeVisible();
 
   // La semana anterior: el total suma sus dos días, y los días van del más
   // reciente al más viejo, cada uno como `h3` dentro de ella.
-  const previous = weekGroup(page, lastWeek, today);
+  const previous = trackerWeek(page, lastWeek, today);
   await expect(weekTotal(previous)).toHaveText("Total 2:30");
   await expect(previous.getByRole("heading", { level: 3 })).toHaveText([
     dayLabel(lastSunday, today),
@@ -282,8 +278,8 @@ test("el total de esta semana sube junto con el contador del timer y el de la an
   await startTimerAndSettle(page, "timer que suma a la semana");
   const counter = elapsedCounter(trackerBar(page));
 
-  const current = weekGroup(page, weekStartOf(today), today);
-  const previous = weekGroup(page, lastWeek, today);
+  const current = trackerWeek(page, weekStartOf(today), today);
+  const previous = trackerWeek(page, lastWeek, today);
   await expect(weekTotal(current)).toHaveText("Total 0:01");
   await expect(weekTotal(previous)).toHaveText("Total 1:00");
 
@@ -359,7 +355,7 @@ test("Cargar más salta a la próxima semana con entradas, le da el foco y desap
 
   // La semana cargada está entera: su primer y su último día, y el total de
   // los dos.
-  const loaded = weekGroup(page, fiveWeeksAgo, today);
+  const loaded = trackerWeek(page, fiveWeeksAgo, today);
   await expect(weekTotal(loaded)).toHaveText("Total 3:00");
   await expect(loaded.getByRole("heading", { level: 3 })).toHaveText([
     dayLabel(addDays(fiveWeeksAgo, 6), today),
@@ -399,7 +395,7 @@ test("lo cargado sobrevive a la edición de una entrada vieja, a la revalidació
   const loadMore = loadMoreLink(page);
   await expect(loadMore).toHaveAttribute("href", `/?desde=${dayKeyOf(fiveWeeksAgo)}`);
   await followLoadMore(page, loadMore, fiveWeeksAgo);
-  const loaded = weekGroup(page, fiveWeeksAgo, today);
+  const loaded = trackerWeek(page, fiveWeeksAgo, today);
   await expect(editDescriptionButton(loaded, "informe viejo")).toBeVisible();
 
   // Criterio 9: la edición revalida la página, y la revalidación vuelve a

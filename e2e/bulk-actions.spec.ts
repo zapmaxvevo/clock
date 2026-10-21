@@ -45,6 +45,7 @@ import {
   pickDate,
   setClock,
   startTimer,
+  timesButton,
   todayGroup,
   trackerBar,
 } from "./tracker-page";
@@ -118,11 +119,6 @@ function dayCheckboxBehindDialog(group: Locator, label: string): Locator {
     exact: true,
     includeHidden: true,
   });
-}
-
-/** Las horas de una fila editable, un botón que abre el editor del horario. */
-function timesButton(row: Locator, start: string, end: string): Locator {
-  return row.getByRole("button", { name: `${start} – ${end} — editar el horario` });
 }
 
 /** Todas las filas con una descripción, en cualquier día. */

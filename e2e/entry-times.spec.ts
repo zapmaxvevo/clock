@@ -25,6 +25,7 @@ import {
   pickDate,
   setClock,
   startTimer,
+  timesButton,
   todayGroup,
   trackerBar,
 } from "./tracker-page";
@@ -50,14 +51,6 @@ function isTrackerPage(url: URL): boolean {
 
 function isAction(request: Request): boolean {
   return request.headers()["next-action"] !== undefined;
-}
-
-/**
- * Las horas de una fila editable son un botón que abre el editor del horario;
- * su nombre es el texto visible más lo que hace.
- */
-function timesButton(row: Locator, start: string, end: string): Locator {
-  return row.getByRole("button", { name: `${start} – ${end} — editar el horario` });
 }
 
 /** El botón de fecha de la fila, que abre el editor con el calendario abierto. */

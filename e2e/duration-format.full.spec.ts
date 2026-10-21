@@ -1,4 +1,4 @@
-import type { Locator, Page } from "@playwright/test";
+import type { Locator } from "@playwright/test";
 
 import {
   BODY_GRIP_PX,
@@ -20,14 +20,7 @@ import {
   PERSON_TIMEZONE,
 } from "./calendar-page";
 import { seedPersonEntries, seedProject, seedRunningEntry } from "./database";
-import {
-  addDays,
-  minuteOfDayIn,
-  todayIn,
-  weekLabel,
-  weekStartOf,
-  type CivilDay,
-} from "./days";
+import { addDays, minuteOfDayIn, todayIn, weekStartOf, type CivilDay } from "./days";
 import { holdActionResponses, recordActions, withServerAction } from "./network";
 import { expect, test } from "./session";
 import {
@@ -60,8 +53,10 @@ import {
   isTrackerPage,
   pickDate,
   setClock,
+  timesButton,
   todayGroup,
   trackerBar,
+  trackerWeek,
   uniqueSuffix,
 } from "./tracker-page";
 
@@ -117,19 +112,9 @@ function totalOf(scope: Locator): Locator {
   return scope.getByText(FULL_TOTAL).first();
 }
 
-/** La franja de una semana del rastreador, por su rótulo (TT-47). */
-function trackerWeek(page: Page, start: CivilDay, now: CivilDay): Locator {
-  return page.getByRole("region", { name: weekLabel(start, now), exact: true });
-}
-
 /** La duración de una fila del rastreador, por su texto entero. */
 function rowDuration(row: Locator, duration: string): Locator {
   return row.getByText(duration, { exact: true });
-}
-
-/** Las horas de una fila son el botón que abre el editor del horario (TT-54). */
-function timesButton(row: Locator, start: string, end: string): Locator {
-  return row.getByRole("button", { name: `${start} – ${end} — editar el horario` });
 }
 
 test("el rastreador muestra las filas y los totales en el completo, y el contador sigue sin relleno", async ({
@@ -305,8 +290,10 @@ test("la planilla muestra celdas y totales en el completo y escribe minutos sin 
   expect(sent).toHaveLength(1);
   expect(isCellWriteFor(monday)(sent[0])).toBe(true);
 
-  // Con una sola entrada, la celda queda en los minutos escritos.
-  await writeCell(page, one, "5");
+  // Con una sola entrada, la celda queda en los minutos escritos. Con Enter el
+  // foco sigue en el campo, que no toma la foto: lo que se ve es el rótulo que
+  // armó la celda al confirmar.
+  await writeCell(page, one, "5", "Enter");
   await expect(one).toHaveValue("00:05:00");
   await expect(rowTotal(page, project)).toHaveText("00:10:20");
   await expect(sheetDayTotal(page, week, tuesday)).toHaveText("00:05:00");
@@ -386,7 +373,9 @@ test("el calendario muestra bloques, totales, el diálogo y el arrastre en el co
   await expect(totalOf(calendarRegion(page))).toHaveText("Total 01:03:40");
 
   // C6: el campo «Duración» del diálogo muestra el rótulo del servidor y,
-  // con el trío cambiado, el del borrador. «Cancelar» no guarda nada.
+  // con el trío cambiado, el del borrador. Teclear la misma duración no cambia
+  // el borrador: el campo muestra el rótulo que arma al confirmar. «Cancelar»
+  // no guarda nada.
   await first.click();
   const dialog = entryDialog(page, "Editar entrada");
   await expect(dialogDescription(dialog)).toHaveValue("Bloque uno");
@@ -394,6 +383,9 @@ test("el calendario muestra bloques, totales, el diálogo y el arrastre en el co
   await expect(duration).toHaveValue("00:01:40");
   await dialogClock(dialog, "Hora de fin").fill("10:30");
   await dialogClock(dialog, "Hora de fin").press("Tab");
+  await expect(duration).toHaveValue("00:30:00");
+  await duration.fill("30");
+  await duration.press("Tab");
   await expect(duration).toHaveValue("00:30:00");
   await dialogButton(dialog, "Cancelar").click();
   await expect(dialog).toBeHidden();
