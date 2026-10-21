@@ -27,7 +27,7 @@ export const GENERAL_SECTION = "General";
 export const TIME_TRACKING_SECTION = "Registro de tiempo";
 
 /** §5.6 de WS2b, WS-15: el rótulo del selector del formato. */
-export const DURATION_FORMAT = "Formato de duración";
+const DURATION_FORMAT = "Formato de duración";
 
 /**
  * D-WS2b-6, PF-31: cómo se nombra cada formato, en el disparador, en la lista
@@ -46,10 +46,10 @@ export const DURATION_FORMAT_OPTIONS = [
 ] as const;
 
 /** WS-62: el título del aviso de un formato que no se cambió. */
-export const DURATION_NOT_SAVED = "No se pudo cambiar el formato de duración.";
+const DURATION_NOT_SAVED = "No se pudo cambiar el formato de duración.";
 
 /** WS-73: el error de la pantalla, sin la fila de ajustes. */
-export const SETTINGS_LOAD_FAILED = "No se pudo cargar la configuración.";
+const SETTINGS_LOAD_FAILED = "No se pudo cargar la configuración.";
 
 /** §5.5: el rótulo del campo del nombre (WS-05). */
 export const WORKSPACE_NAME = "Nombre del workspace";
@@ -122,11 +122,12 @@ export function sectionHeadings(page: Page): Locator {
 }
 
 /**
- * El disparador del selector del formato (WS-15). Su nombre empieza con el
- * rótulo y sigue con el valor, como los de las preferencias del perfil.
+ * El disparador del selector del formato (WS-15), en la página o dentro de
+ * `scope`. Su nombre empieza con el rótulo y sigue con el valor, como los de
+ * las preferencias del perfil.
  */
-export function durationFormatControl(page: Page): Locator {
-  return page.getByRole("combobox", { name: new RegExp(`^${DURATION_FORMAT}`) });
+export function durationFormatControl(scope: Page | Locator): Locator {
+  return scope.getByRole("combobox", { name: new RegExp(`^${DURATION_FORMAT}`) });
 }
 
 /** Las opciones de la lista abierta, que va en un portal. */

@@ -12,7 +12,6 @@ import {
 import { reportsNavLink } from "./reports-page";
 import { expect, test } from "./session";
 import {
-  DURATION_FORMAT,
   DURATION_FORMAT_OPTIONS,
   DURATION_FORMAT_TEXTS,
   durationFormatControl,
@@ -139,9 +138,7 @@ test("un admin ve «Registro de tiempo» con el formato del workspace, y elegir 
     GENERAL_SECTION,
     TIME_TRACKING_SECTION,
   ]);
-  const control = timeTrackingSection(page).getByRole("combobox", {
-    name: new RegExp(`^${DURATION_FORMAT}`),
-  });
+  const control = durationFormatControl(timeTrackingSection(page));
   await expect(control).toHaveText(DURATION_FORMAT_TEXTS.compact);
 
   // WS-15: las dos opciones, el completo primero.
