@@ -1,4 +1,5 @@
 import type { ReportChart } from "@/modules/report/schema";
+import type { DurationFormat } from "@/server/time";
 
 /** D-R6-6: qué es cada celda; cómo se escribe lo decide cada formato. */
 export type ExportCell =
@@ -9,9 +10,9 @@ export type ExportCell =
   | { readonly kind: "day"; readonly dayKey: string }
   /** Una hora de reloj de 24 h, «09:30». */
   | { readonly kind: "clock"; readonly clock: string }
-  /** Una duración en minutos enteros, ya truncada: «Duración». */
-  | { readonly kind: "duration"; readonly minutes: number }
-  /** La misma duración, como horas: «Horas». */
+  /** Una duración en segundos enteros: «Duración», en el formato del documento. */
+  | { readonly kind: "duration"; readonly seconds: number }
+  /** La misma duración, como horas de sus minutos truncados: «Horas». */
   | { readonly kind: "hours"; readonly minutes: number }
   | { readonly kind: "empty" };
 
@@ -30,6 +31,8 @@ export type ExportDocument = {
   readonly chart: ReportChart | null;
   /** El resumen y, si se leyeron, las entradas, en ese orden (D-R7-3). */
   readonly sections: readonly ExportSection[];
+  /** El del workspace (ADR 0029): cómo escribe cada formato la celda `duration`. */
+  readonly durationFormat: DurationFormat;
 };
 
 /** D-R6-6, D-R6-13, D-R7-3: cómo se sirve y se escribe un formato. */

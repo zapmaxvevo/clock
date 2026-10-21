@@ -8,6 +8,7 @@ import {
   inviteInput,
   revokeInvitationInput,
   updateWorkspaceNameInput,
+  updateWorkspaceSettingInput,
   workspaceSettingsMessages,
   type InvitationErrorCode,
   type InviteInput,
@@ -16,6 +17,8 @@ import {
   type RevokeInvitationResult,
   type UpdateWorkspaceNameInput,
   type UpdateWorkspaceNameResult,
+  type UpdateWorkspaceSettingInput,
+  type UpdateWorkspaceSettingResult,
   type WorkspaceSettingsErrorCode,
 } from "./schema";
 
@@ -57,9 +60,10 @@ export async function revokeInvitation(
   );
 }
 
-// Todo el árbol: el nombre está en el encabezado del shell (WS-64, D-WS1-4). El
-// permiso lo consulta el service, que relee la autoridad bajo el bloqueo
-// (D-WS1-2).
+// Todo el árbol: el nombre está en el encabezado del shell (WS-64, D-WS1-4) y
+// el formato de duración, en todas las pantallas que muestran horas (WS-64,
+// D-WS2b-5). El permiso lo consulta el service, que relee la autoridad bajo el
+// bloqueo (D-WS1-2).
 const settingsOptions = {
   paths: [{ path: "/", type: "layout" }],
   messages: {
@@ -74,6 +78,19 @@ export async function updateWorkspaceName(
   return handle(
     async (session) =>
       service.updateWorkspaceName(session.actor, updateWorkspaceNameInput.parse(input)),
+    settingsOptions,
+  );
+}
+
+export async function updateWorkspaceSetting(
+  input: UpdateWorkspaceSettingInput,
+): Promise<ActionResult<UpdateWorkspaceSettingResult, WorkspaceSettingsErrorCode>> {
+  return handle(
+    async (session) =>
+      service.updateWorkspaceSetting(
+        session.actor,
+        updateWorkspaceSettingInput.parse(input),
+      ),
     settingsOptions,
   );
 }

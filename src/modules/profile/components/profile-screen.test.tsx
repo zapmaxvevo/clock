@@ -30,6 +30,7 @@ const view: ProfileView = {
   },
   timezoneOption: "America/Buenos_Aires",
   weekStart: 1,
+  durationFormat: "compact",
   canEdit: true,
   options: {
     timezones: [

@@ -7,6 +7,7 @@ import {
 } from "@/modules/report/components/chart-model";
 import { chartCaptions } from "@/modules/report/components/labels";
 import type { ReportChart } from "@/modules/report/schema";
+import type { DurationFormat } from "@/server/time";
 
 import { cellText } from "./cell-text";
 import type { ExportCell, ExportDocument, ExportRow, ExportSection } from "./types";
@@ -106,6 +107,12 @@ function drawable(codePoint: number, covers: GlyphCoverage): boolean {
   return covers(codePoint);
 }
 
+/** Lo que escribe el texto de cada celda: la fuente y el formato de las duraciones. */
+type CellWriter = {
+  readonly covers: GlyphCoverage;
+  readonly durationFormat: DurationFormat;
+};
+
 /** D-R7-6: qué va en cada página, sin medidas de la biblioteca. Pura. */
 export function pdfLayoutOf(document: ExportDocument, covers: GlyphCoverage): PdfLayout {
   const titleRow = document.header.at(0);
@@ -113,29 +120,31 @@ export function pdfLayoutOf(document: ExportDocument, covers: GlyphCoverage): Pd
   if (titleRow?.length !== 1) {
     throw new RangeError("La cabecera del documento no empieza con el título.");
   }
+  const writer: CellWriter = { covers, durationFormat: document.durationFormat };
   return {
-    title: pdfCellText(titleRow[0], covers),
+    title: pdfCellText(titleRow[0], writer),
     header: document.header
       .slice(1)
-      .map((row) => row.map((cell) => pdfCellText(cell, covers))),
-    chart: document.chart === null ? null : chartOf(document.chart, covers),
-    sections: document.sections.map((section) => sectionOf(section, covers)),
+      .map((row) => row.map((cell) => pdfCellText(cell, writer))),
+    chart: document.chart === null ? null : chartOf(document.chart, writer),
+    sections: document.sections.map((section) => sectionOf(section, writer)),
   };
 }
 
 /**
  * D-R7-12: lo que arma `ReportChart` de la pantalla, sin importar ese `.tsx`:
  * la escala, las alturas y las marcas salen de `chart-model.ts`; el rótulo de
- * cada línea es el texto de `durationLabel`, la duración truncada al minuto.
+ * cada línea es el texto de `formatDuration` con el formato del documento.
  */
-function chartOf(chart: ReportChart, covers: GlyphCoverage): PdfChart {
+function chartOf(chart: ReportChart, writer: CellWriter): PdfChart {
+  const { covers } = writer;
   const scale = chartScaleOf(chart.bars);
   // Las siete de `tickIndexesOf`: el ancho del A4 alcanza, sin las de la pantalla angosta.
   const ticks = new Set(tickIndexesOf(chart.bars.length));
   return {
     caption: pdfTextOf(chartCaptions[chart.granularity], covers),
     scale: scale.lines.map((seconds) => ({
-      label: pdfCellText({ kind: "duration", minutes: Math.floor(seconds / 60) }, covers),
+      label: pdfCellText({ kind: "duration", seconds }, writer),
       height: barHeightPercent(seconds, scale) / 100,
     })),
     bars: chart.bars.map((bar, index) => ({
@@ -148,16 +157,16 @@ function chartOf(chart: ReportChart, covers: GlyphCoverage): PdfChart {
 }
 
 /** D-R7-6: el texto del CSV, sin el `'`, con lo que la fuente no dibuja reemplazado. */
-function pdfCellText(cell: ExportCell, covers: GlyphCoverage): string {
-  return pdfTextOf(cellText(cell), covers);
+function pdfCellText(cell: ExportCell, writer: CellWriter): string {
+  return pdfTextOf(cellText(cell, writer.durationFormat), writer.covers);
 }
 
 /** Una sola fila de una sola celda de texto es un aviso; lo demás, una tabla. */
-function sectionOf(section: ExportSection, covers: GlyphCoverage): PdfSection {
-  const title = pdfTextOf(section.title, covers);
+function sectionOf(section: ExportSection, writer: CellWriter): PdfSection {
+  const title = pdfTextOf(section.title, writer.covers);
   const only = section.rows.length === 1 ? section.rows[0] : undefined;
   if (only?.length === 1 && only[0].kind === "text") {
-    return { kind: "note", title, text: pdfCellText(only[0], covers) };
+    return { kind: "note", title, text: pdfCellText(only[0], writer) };
   }
   const headings = section.rows.at(0);
   const rows = section.rows.slice(1);
@@ -169,8 +178,8 @@ function sectionOf(section: ExportSection, covers: GlyphCoverage): PdfSection {
   return {
     kind: "table",
     title,
-    columns: columnsOf(headings, first, covers),
-    rows: rows.map((row) => rowOf(row, covers)),
+    columns: columnsOf(headings, first, writer),
+    rows: rows.map((row) => rowOf(row, writer)),
   };
 }
 
@@ -181,7 +190,7 @@ function sectionOf(section: ExportSection, covers: GlyphCoverage): PdfSection {
 function columnsOf(
   headings: ExportRow,
   first: ExportRow,
-  covers: GlyphCoverage,
+  writer: CellWriter,
 ): readonly PdfColumn[] {
   const fixed = headings.map((_, index) => {
     const cell = first.at(index);
@@ -192,7 +201,7 @@ function columnsOf(
   return headings.map((heading, index) => {
     const width = fixed[index];
     return {
-      label: pdfCellText(heading, covers),
+      label: pdfCellText(heading, writer),
       width: width ?? shared,
       align: width === undefined ? "left" : "right",
     };
@@ -200,7 +209,7 @@ function columnsOf(
 }
 
 /** Los rótulos de las columnas 1 a `level - 1` son los antepasados (D-R7-6). */
-function rowOf(row: ExportRow, covers: GlyphCoverage): PdfRow {
+function rowOf(row: ExportRow, writer: CellWriter): PdfRow {
   const levelCell = row.at(0);
   if (levelCell?.kind !== "integer") {
     throw new RangeError("Una fila del resumen no empieza con su nivel.");
@@ -209,7 +218,7 @@ function rowOf(row: ExportRow, covers: GlyphCoverage): PdfRow {
   return {
     level,
     cells: row.map((cell, index) => ({
-      text: pdfCellText(cell, covers),
+      text: pdfCellText(cell, writer),
       muted: cell.kind === "text" && index >= 1 && index < level,
     })),
   };

@@ -19,6 +19,7 @@ const document: ExportDocument = {
     [text("Zona horaria"), text("America/Argentina/Buenos_Aires")],
   ],
   chart: null,
+  durationFormat: "compact",
   sections: [
     {
       title: "Resumen",
@@ -27,7 +28,7 @@ const document: ExportDocument = {
         [
           { kind: "integer", value: 1 },
           text("=1+1"),
-          { kind: "duration", minutes: 90 },
+          { kind: "duration", seconds: 5400 },
           { kind: "hours", minutes: 89 },
         ],
       ],
@@ -156,6 +157,7 @@ describe("xlsxBytesOf (D-R6-12; criterio 16 de R6)", () => {
     const workbook = await readBack({
       header: [[text("Total"), { kind: "hours", minutes: 3 }]],
       chart: null,
+      durationFormat: "compact",
       sections: [
         {
           title: "Entradas",
@@ -174,6 +176,7 @@ describe("xlsxBytesOf (D-R6-12; criterio 16 de R6)", () => {
     const workbook = await readBack({
       header: [],
       chart: null,
+      durationFormat: "compact",
       sections: [
         {
           title: "Entradas",

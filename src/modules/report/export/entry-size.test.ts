@@ -13,6 +13,7 @@ describe("entriesMinBytes (S1, S2 de las revisiones de R6a, B4)", () => {
     const document: ExportDocument = {
       header: [],
       chart: null,
+      durationFormat: "compact",
       sections: [
         {
           title: "",
@@ -29,7 +30,7 @@ describe("entriesMinBytes (S1, S2 de las revisiones de R6a, B4)", () => {
               { kind: "empty" },
               { kind: "empty" },
               text("No"),
-              { kind: "duration", minutes: 0 },
+              { kind: "duration", seconds: 0 },
               { kind: "hours", minutes: 0 },
             ],
           ],

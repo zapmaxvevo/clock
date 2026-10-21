@@ -3,7 +3,8 @@
  * 13 celdas de `entryCellsOf` (`document.ts`) van entre comillas (26 bytes),
  * con 12 `;` y `\r\n` (2): 40. Las dos fechas, `yyyy-MM-dd` (20); las dos
  * horas, `HH:mm` (10); «No» (2) o «Sí» (3); «Duración» y «Horas», al menos
- * «0:00» y «0,00» (8). En total, 80.
+ * «0:00» y «0,00» (8). En total, 80. Con el completo, «Duración» es al menos
+ * «00:00:00», más larga: la cota sigue debajo del CSV escrito.
  */
 const ENTRY_LINE_FIXED_BYTES = 80;
 

@@ -11,6 +11,7 @@ import {
   workspaceSettings,
 } from "@/server/db/schema";
 import type { MembershipStatus, Role } from "@/server/permissions";
+import type { DurationFormat } from "@/server/time";
 
 import { MEMBER_STATUSES, memberStatusOf, type MemberStatus } from "./schema";
 
@@ -22,6 +23,12 @@ export type WorkspaceRead = {
   readonly workspace: WorkspaceRow;
   readonly durationFormat: string | null;
 };
+
+/** La fila de ajustes del workspace, como la guarda la base. */
+export type SettingsRead = { readonly durationFormat: string };
+
+/** Una columna de la fila de ajustes con su valor nuevo, ya validado. E4 suma `weekStart`. */
+export type SettingsColumn = { readonly durationFormat: DurationFormat };
 
 /** Una persona del workspace con los dos nombres, que solo se muestran (ADR 0010). */
 export type PersonRow = {
@@ -483,5 +490,45 @@ export const workspaceRepository = {
     name: string,
   ): Promise<void> {
     await tx.update(workspace).set({ name }).where(eq(workspace.id, workspaceId));
+  },
+
+  /**
+   * D-WS2b-4: la fila de ajustes del workspace, sin bloqueo, para la pantalla de
+   * configuración. `undefined` si falta (WS-73).
+   */
+  async findWorkspaceSettings(workspaceId: string): Promise<SettingsRead | undefined> {
+    const rows = await db
+      .select({ durationFormat: workspaceSettings.durationFormat })
+      .from(workspaceSettings)
+      .where(eq(workspaceSettings.workspaceId, workspaceId));
+    return rows.at(0);
+  },
+
+  /**
+   * D-WS2b-3: la fila de ajustes, `for no key update`, como `lockWorkspaceName`.
+   * Pone en fila a dos cambios de ajustes. `undefined` si falta (WS-73).
+   */
+  async lockWorkspaceSettings(
+    tx: Transaction,
+    workspaceId: string,
+  ): Promise<SettingsRead | undefined> {
+    const rows = await tx
+      .select({ durationFormat: workspaceSettings.durationFormat })
+      .from(workspaceSettings)
+      .where(eq(workspaceSettings.workspaceId, workspaceId))
+      .for("no key update");
+    return rows.at(0);
+  },
+
+  /** D-WS2b-3: una columna de la fila, ya validada. `updated_at` lo pone `$onUpdate`. */
+  async updateWorkspaceSettings(
+    tx: Transaction,
+    workspaceId: string,
+    values: SettingsColumn,
+  ): Promise<void> {
+    await tx
+      .update(workspaceSettings)
+      .set(values)
+      .where(eq(workspaceSettings.workspaceId, workspaceId));
   },
 };

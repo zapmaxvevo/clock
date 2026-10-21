@@ -296,6 +296,7 @@ describe("pdfLayoutOf (D-R7-6; criterio 7 de R7)", () => {
         [text("Período"), text("28/09/2026 → 04/10/2026")],
       ],
       chart: null,
+      durationFormat: "compact",
       sections: [
         {
           title: "Resumen →",
@@ -304,7 +305,7 @@ describe("pdfLayoutOf (D-R7-6; criterio 7 de R7)", () => {
             [
               { kind: "integer", value: 1 },
               text("Дмитрий"),
-              { kind: "duration", minutes: 90 },
+              { kind: "duration", seconds: 5400 },
               { kind: "hours", minutes: 90 },
             ],
           ],
@@ -334,6 +335,7 @@ describe("pdfLayoutOf (D-R7-6; criterio 7 de R7)", () => {
     const entries = (rows: ExportCell[][]): ExportDocument => ({
       header: [[{ kind: "text", text: "Reporte resumido" }]],
       chart: null,
+      durationFormat: "compact",
       sections: [{ title: "Entradas", rows: [headings, ...rows] }],
     });
     expect(() =>
@@ -351,9 +353,12 @@ describe("pdfLayoutOf (D-R7-6; criterio 7 de R7)", () => {
   });
 
   it("una cabecera sin el título es un `RangeError`", () => {
-    expect(() => pdfLayoutOf({ header: [], chart: null, sections: [] }, covers)).toThrow(
-      RangeError,
-    );
+    expect(() =>
+      pdfLayoutOf(
+        { header: [], chart: null, sections: [], durationFormat: "compact" },
+        covers,
+      ),
+    ).toThrow(RangeError);
   });
 });
 

@@ -13,13 +13,19 @@ import { WorkspaceSettingsScreen } from "./workspace-settings-screen";
 const actions: WorkspaceSettingsActions = {
   updateWorkspaceName: () =>
     Promise.resolve({ ok: false, code: "unexpected", message: "doble" }),
+  updateWorkspaceSetting: () =>
+    Promise.resolve({ ok: false, code: "unexpected", message: "doble" }),
 };
 
 function render(view: WorkspaceSettingsView): string {
   return renderToStaticMarkup(<WorkspaceSettingsScreen view={view} actions={actions} />);
 }
 
-const ready: WorkspaceSettingsView = { kind: "ready", name: "Estudio Norte" };
+const ready: WorkspaceSettingsView = {
+  kind: "ready",
+  name: "Estudio Norte",
+  durationFormat: "compact",
+};
 
 /** Las secciones de la pantalla, cada una con su apertura y su contenido. */
 function sectionsOf(markup: string): string[] {

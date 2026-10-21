@@ -82,7 +82,7 @@ function input(
  */
 function texts(rows: readonly ExportRow[]): string[][] {
   const csv = new TextDecoder().decode(
-    csvBytesOf({ header: rows, chart: null, sections: [] }),
+    csvBytesOf({ header: rows, chart: null, sections: [], durationFormat: "compact" }),
   );
   return csv
     .split("\r\n")
@@ -143,7 +143,7 @@ describe("exportDocumentOf: la cabecera (D-R6-8)", () => {
     expect(rows[0]).toEqual([{ kind: "text", text: "Reporte resumido" }]);
     expect(rows[5]).toEqual([
       { kind: "text", text: "Total" },
-      { kind: "duration", minutes: 59 },
+      { kind: "duration", seconds: 3599 },
       { kind: "hours", minutes: 59 },
     ]);
   });
@@ -397,7 +397,7 @@ describe("exportDocumentOf con las personas sin horas (D-R9-10; criterio 15 de R
       { kind: "integer", value: 1 },
       { kind: "text", text: "Bruno" },
       { kind: "empty" },
-      { kind: "duration", minutes: 0 },
+      { kind: "duration", seconds: 0 },
       { kind: "hours", minutes: 0 },
     ]);
   });
@@ -501,7 +501,7 @@ describe("exportDocumentOf: el resumen (D-R6-7)", () => {
       { kind: "text", text: "Ana" },
       { kind: "empty" },
       { kind: "empty" },
-      { kind: "duration", minutes: 600 },
+      { kind: "duration", seconds: 36_059 },
       { kind: "hours", minutes: 600 },
     ]);
   });
@@ -780,7 +780,7 @@ describe("exportDocumentOf: las entradas (D-R6-3)", () => {
       { kind: "empty" },
       { kind: "empty" },
       { kind: "text", text: "No" },
-      { kind: "duration", minutes: 1 },
+      { kind: "duration", seconds: 60 },
       { kind: "hours", minutes: 1 },
     ]);
   });

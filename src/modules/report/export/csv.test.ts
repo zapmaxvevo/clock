@@ -19,6 +19,7 @@ function fieldOf(cell: ExportCell): string {
   const document: ExportDocument = {
     header: [[cell]],
     chart: null,
+    durationFormat: "compact",
     sections: [],
   };
   return textOf(csvBytesOf(document)).slice(1, -2);
@@ -32,11 +33,12 @@ describe("csvBytesOf (D-R6-9; criterio 8 de R6)", () => {
         [text("Zona horaria"), text("America/Argentina/Buenos_Aires")],
         [
           text("Total"),
-          { kind: "duration", minutes: 90 },
+          { kind: "duration", seconds: 5400 },
           { kind: "hours", minutes: 90 },
         ],
       ],
       chart: null,
+      durationFormat: "compact",
       sections: [
         {
           title: "Resumen",
@@ -45,7 +47,7 @@ describe("csvBytesOf (D-R6-9; criterio 8 de R6)", () => {
             [
               { kind: "integer", value: 1 },
               text("Ana"),
-              { kind: "duration", minutes: 90 },
+              { kind: "duration", seconds: 5400 },
               { kind: "hours", minutes: 90 },
             ],
           ],
@@ -105,8 +107,8 @@ describe("csvBytesOf (D-R6-9; criterio 8 de R6)", () => {
   });
 
   it("escribe cada tipo de celda", () => {
-    expect(fieldOf({ kind: "duration", minutes: 90 })).toBe('"1:30"');
-    expect(fieldOf({ kind: "duration", minutes: 120_000 })).toBe('"2000:00"');
+    expect(fieldOf({ kind: "duration", seconds: 5400 })).toBe('"1:30"');
+    expect(fieldOf({ kind: "duration", seconds: 7_200_000 })).toBe('"2000:00"');
     expect(fieldOf({ kind: "hours", minutes: 89 })).toBe('"1,48"');
     expect(fieldOf({ kind: "hours", minutes: 1 })).toBe('"0,01"');
     expect(fieldOf({ kind: "day", dayKey: "2026-10-01" })).toBe('"2026-10-01"');

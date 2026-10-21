@@ -29,7 +29,7 @@ function row(level: number, labels: readonly string[]): ExportRow {
       const label = labels[index];
       return label === undefined ? empty : text(label);
     }),
-    { kind: "duration", minutes: 90 },
+    { kind: "duration", seconds: 5400 },
     { kind: "hours", minutes: 90 },
   ];
 }
@@ -46,15 +46,20 @@ function documentOf(rows: readonly ExportRow[]): ExportDocument {
       [text("Zona horaria"), text("America/Argentina/Buenos_Aires")],
       [text("Alcance"), text("Todas las personas del workspace")],
       [text("Agrupado por"), text("Persona / Proyecto / Fecha")],
-      [text("Total"), { kind: "duration", minutes: 59 }, { kind: "hours", minutes: 59 }],
+      [
+        text("Total"),
+        { kind: "duration", seconds: 3540 },
+        { kind: "hours", minutes: 59 },
+      ],
       [
         text("Facturable"),
-        { kind: "duration", minutes: 30 },
+        { kind: "duration", seconds: 1800 },
         { kind: "hours", minutes: 30 },
       ],
       [text("Generado"), text("08/10/2026 12:00")],
     ],
     chart: null,
+    durationFormat: "compact",
     sections: [
       {
         title: "Resumen",

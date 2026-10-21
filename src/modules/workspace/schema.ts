@@ -4,6 +4,7 @@ import { noNullCharacter } from "@/lib/text";
 import type { ActionResult } from "@/server/action";
 import type { ActionErrorCode } from "@/server/errors";
 import type { MembershipStatus } from "@/server/permissions";
+import { DURATION_FORMATS, type DurationFormat } from "@/server/time";
 
 /**
  * Los estados de quien está en el workspace; `invited` todavía no (RP-64). Los
@@ -148,6 +149,8 @@ export const workspaceSettingsMessages = {
   nameRequired: "Escribí un nombre.",
   nameTooLong: "El nombre no puede superar los 100 caracteres.",
   nameNullCharacter: "El nombre tiene un carácter que no se puede guardar.",
+  /** WS-56: un formato fuera de la lista, o un ajuste que no existe (PF-35). */
+  formatUnavailable: "Ese formato no está disponible.",
 } as const;
 
 /** WS-05, WS-53 … WS-55, WS-71: recortado, entre 1 y 100, sin el carácter nulo. */
@@ -181,6 +184,8 @@ export type WorkspaceSettingsView =
       readonly kind: "ready";
       /** `workspace.name`, de la sesión (WS-63). */
       readonly name: string;
+      /** `workspace_settings.duration_format`, leído por la vista (D-WS2b-4, WS-63). */
+      readonly durationFormat: DurationFormat;
     };
 
 /** Las actions, como las recibe la pantalla por props desde `page.tsx`. */
@@ -188,4 +193,34 @@ export type WorkspaceSettingsActions = {
   readonly updateWorkspaceName: (
     input: UpdateWorkspaceNameInput,
   ) => Promise<ActionResult<UpdateWorkspaceNameResult, WorkspaceSettingsErrorCode>>;
+  readonly updateWorkspaceSetting: (
+    input: UpdateWorkspaceSettingInput,
+  ) => Promise<ActionResult<UpdateWorkspaceSettingResult, WorkspaceSettingsErrorCode>>;
+};
+
+/** Los ajustes del workspace que se leen en cada pedido (ADR 0029). */
+export type WorkspaceSettings = { readonly durationFormat: DurationFormat };
+
+/**
+ * D-WS2b-2: un ajuste de `workspace_settings` por pedido (WS-04, WS-65). Una
+ * clave desconocida responde lo mismo que un valor desconocido (WS-56). E4
+ * suma `weekStart` con WS-57.
+ */
+export const updateWorkspaceSettingInput = z.discriminatedUnion(
+  "key",
+  [
+    z.object({
+      key: z.literal("durationFormat"),
+      value: z.enum(DURATION_FORMATS, {
+        error: workspaceSettingsMessages.formatUnavailable,
+      }),
+    }),
+  ],
+  { error: workspaceSettingsMessages.formatUnavailable },
+);
+export type UpdateWorkspaceSettingInput = z.infer<typeof updateWorkspaceSettingInput>;
+
+/** Los ajustes que quedaron, también si ya eran esos (WS-04). */
+export type UpdateWorkspaceSettingResult = {
+  readonly settings: WorkspaceSettings;
 };
