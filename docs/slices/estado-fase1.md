@@ -283,7 +283,30 @@ vacío del owner y `renewWorkspace` se corta.
      `backend-dev` probó dos veces en el árbol compartido; repetir en cada encargo que las
      pruebas descartables y los mutantes van en un worktree. Bases que se pueden borrar:
      `clock_r6a_*`, `clock_r6b_*`, `clock_r10a_*`, `clock_r10b_final_*`.
-     **Decimosexta sesión** (2026-10-20, con el usuario por remote control):
+     **Decimoséptima sesión** (2026-10-20/21). **Cierre (2026-10-21 ~02:15 UTC):**
+     - **En producción:** la `0018` de WS0 (control OK), WS1 (`2dc1452`) y `npm audit fix`
+       (`467e730`, vite 8.3.4, CI verde). Falta del usuario la §6.6 de WS0: logs de Runtime
+       sin «does not exist» por 15 min y humo.
+     - **MCP mergeado en `main` en local** (`5d92b19`, sobre `35a1d54`), **sin pushear**.
+       Antes del push el usuario corre en Neon (rama `main`) la consulta previa
+       (`1792502701085 | 19 | 0 | 0`), el bloque `/home/maxi/program/clock-ops/mcp-0019-do.sql`
+       y el control (`1792540623295 | 20 | fcf1b85b… | 9 | 1 | 0`); las tres están en
+       «Cierre para el merge» de `correcciones-mejoras-mcp-revisiones.md` y en
+       `mejoras-mcp.md`. Seis revisiones y correcciones hechas; V-7 cerrada con Claude Code en
+       el preview `mejoras/mcp-preview-3`; claude.ai y ChatGPT se prueban después, en
+       producción, con `MCP_ENABLED=true` (decisión del usuario). En prod el MCP entra apagado.
+       El preview tiene Vercel Authentication: el secreto de bypass quedó en `~/.claude.json`
+       (`clock-preview`) y en la conversación; rotarlo.
+     - **WS2a** (`clock-ws2a`, rama `fase2/ws2a-formato`, punta `e41bb75`, rebasado sobre
+       `467e730`): contrato y ADR 0029 (aceptado), paridad, implementación, seis revisiones y
+       correcciones; registro en `correcciones-fase2-ws2a-revisiones.md`. Respuestas del usuario:
+       `check` de `workspace.name` sí (en la migración), segundos sueltos de la planilla no se
+       tocan, EQ-122 se deja. **Sigue:** con el MCP en `main`, rebasar WS2a, regenerar su
+       migración como `0020` (con `db:generate`, nunca renombrar; `when` mayor que
+       `1792540623295`), corrida final completa (build y e2e en base nueva y reusada), consulta
+       previa y bloque `do` en prod, merge y push.
+     - Bases locales que se pueden borrar: `clock_ws2a_*`, `clock_mcp_*` (salvo que se retome).
+       **Decimosexta sesión** (2026-10-20, con el usuario por remote control):
      - **E2b listo para mergear** (`clock-e2b`, HEAD `9f0c874`). Paridad actualizada
        (`0c20de1`: EQ-115…EQ-122, PF-47, P-11 cerrado, «tres» en el mapa). Seis revisiones:
        frontend, backend, seguridad y paridad aprobadas; clean code y tests con cambios,
