@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { changedProjectFields, previousOf } from "./changes";
+import { changedProjectFields, valuesOf } from "./changes";
 import type { ProjectSettings } from "./schema";
 
 const id = "6f1c2a4e-3b5d-4e7f-8a9b-0c1d2e3f4a5b";
@@ -81,21 +81,21 @@ describe("changedProjectFields (D-P1-3)", () => {
   });
 });
 
-describe("previousOf (§4.5)", () => {
-  it("trae el valor guardado de cada campo que cambia, y nada más", () => {
-    expect(previousOf(stored, { name: "App", billableByDefault: true })).toEqual({
+describe("valuesOf (§4.5)", () => {
+  it("trae el valor de la fila en cada campo que cambia, y nada más", () => {
+    expect(valuesOf(stored, { name: "App", billableByDefault: true })).toEqual({
       name: "Web",
       billableByDefault: false,
     });
-    expect(previousOf(stored, { clientId: null })).toEqual({ clientId: acme });
-    expect(previousOf(stored, { color: "red", note: "" })).toEqual({
+    expect(valuesOf(stored, { clientId: null })).toEqual({ clientId: acme });
+    expect(valuesOf(stored, { color: "red", note: "" })).toEqual({
       color: "teal",
       note: "Sitio",
     });
   });
 
-  it("el cliente anterior nulo también se nombra", () => {
-    expect(previousOf({ ...stored, clientId: null }, { clientId: acme })).toEqual({
+  it("el cliente nulo también se nombra", () => {
+    expect(valuesOf({ ...stored, clientId: null }, { clientId: acme })).toEqual({
       clientId: null,
     });
   });

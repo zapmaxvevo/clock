@@ -2008,6 +2008,21 @@ describe("updateProject (P1: D-P1-3, D-P1-4, PR-12, PR-15, PR-21, PR-30, PR-55 �
       });
     });
 
+    it("un cliente en mayúsculas queda en la constancia y en el resultado como lo guardó la base", async () => {
+      const { acme, globex, web } = await seedEditable();
+      const result = await updateProject(
+        owner,
+        patch({ id: web.id, clientId: globex.id.toUpperCase() }),
+      );
+      expect(result.project.clientId).toBe(globex.id);
+      expect(await updatesOf(web.id)).toEqual([
+        expect.objectContaining({
+          previousValue: { clientId: acme.id },
+          nextValue: { clientId: globex.id },
+        }),
+      ]);
+    });
+
     it("pasar a «Sin cliente» funciona y la constancia guarda el anterior", async () => {
       const { acme, web } = await seedEditable();
       const result = await updateProject(owner, patch({ id: web.id, clientId: null }));

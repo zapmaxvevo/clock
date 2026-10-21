@@ -2,7 +2,10 @@ import { sameId } from "@/lib/project-pair";
 
 import type { ProjectSettings, UpdateProjectValues } from "./schema";
 
-/** Lo que un parche cambia de un proyecto, con las claves del esquema de Drizzle. */
+/**
+ * Lo que cambia de un proyecto: lo que el parche escribe y lo que nombra la
+ * constancia, con las claves del esquema de Drizzle (D-P1-3, §4.5).
+ */
 export type ProjectSettingsChanges = Partial<Omit<ProjectSettings, "id">>;
 
 /**
@@ -29,8 +32,11 @@ export function changedProjectFields(
   };
 }
 
-/** Los valores anteriores de los campos que cambian, para la constancia (§4.5). */
-export function previousOf(
+/**
+ * Los valores de `row` en los campos que cambian: con la fila de antes es el
+ * `previousValue` de la constancia, y con la guardada, su `nextValue` (§4.5).
+ */
+export function valuesOf(
   row: ProjectSettings,
   changes: ProjectSettingsChanges,
 ): ProjectSettingsChanges {

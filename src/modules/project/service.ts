@@ -13,7 +13,7 @@ import {
   type WorkspaceResource,
 } from "@/server/permissions";
 
-import { changedProjectFields, previousOf } from "./changes";
+import { changedProjectFields, valuesOf } from "./changes";
 import { nextPaletteColor, paletteKeyOf } from "./palette";
 import {
   projectRepository,
@@ -82,8 +82,10 @@ function toTagRef(row: TagRow): TagRef {
 }
 
 /**
- * El nombre repetido que deja salir `createOnce` (PR-91): ya comprobó que la
- * fila propia no existe, así que el choque es con la fila de otro pedido.
+ * Traduce el choque con el índice de nombre de un alta o de una edición al
+ * mensaje del módulo (PR-91). En un alta, `createOnce` ya comprobó que la fila
+ * propia no existe, así que el choque es con la fila de otro pedido; en una
+ * edición, con otro proyecto del mismo cliente (PR-77).
  */
 async function translatingNameTaken<Result>(
   isNameTaken: (error: unknown) => boolean,
@@ -280,15 +282,18 @@ export async function updateProject(
           row.id,
           changes,
         );
+        const saved = settingsOf(updated);
         await recordAudit(tx, {
           ...auditActorOf(actor),
           action: "project.update",
           entity: "project",
           entityId: row.id,
-          previousValue: previousOf(current, changes),
-          nextValue: changes,
+          previousValue: valuesOf(current, changes),
+          // De la fila guardada y no de la entrada: la base escribe el id del
+          // cliente en minúsculas.
+          nextValue: valuesOf(saved, changes),
         });
-        return { project: settingsOf(updated) };
+        return { project: saved };
       }),
   );
 }
