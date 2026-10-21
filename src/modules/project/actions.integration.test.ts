@@ -19,7 +19,7 @@ import {
 import { auditFor } from "@/test/queries";
 
 import { projectRepository } from "./repository";
-import { projectMessages } from "./schema";
+import { projectMessages, updateProjectInput } from "./schema";
 
 /** D-P1-5: el alta y la edición de un proyecto revalidan el árbol entero. */
 const tree = { path: "/", type: "layout" } as const;
@@ -511,13 +511,16 @@ describe("updateProject (§4.6, criterio 11 de P1)", () => {
     },
   );
 
-  it("un color fuera de la paleta o null responde validation, sin escribir", async () => {
+  it("un color fuera de la paleta o null responde validation con el primer problema del ZodError, sin escribir", async () => {
     const { web } = await seedManaged();
     for (const color of ["magenta", null]) {
+      const parsed = updateProjectInput.safeParse({ id: web.id, color });
+      const message = parsed.error?.issues.at(0)?.message;
+      expect(message).toEqual(expect.any(String));
       expect(
         // @ts-expect-error: un pedido armado a mano, con un color que no es clave.
         await actions.updateProject({ id: web.id, color }),
-      ).toMatchObject({ ok: false, code: "validation" });
+      ).toEqual({ ok: false, code: "validation", message });
     }
     expect(await updatesOf(web.id)).toEqual([]);
   });
