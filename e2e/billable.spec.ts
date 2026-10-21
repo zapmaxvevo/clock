@@ -21,7 +21,13 @@ import {
   recordActions,
   withServerAction,
 } from "./network";
-import { nameField, openProjects, saveButton } from "./projects-page";
+import {
+  columnCell,
+  nameField,
+  openProjects,
+  projectRow,
+  saveButton,
+} from "./projects-page";
 import { expect, test } from "./session";
 import {
   addManualEntry,
@@ -70,7 +76,7 @@ const BILLABLE_BY_DEFAULT_HINT =
 /**
  * Crea un proyecto sin cliente desde «Nuevo proyecto», con «Facturable por
  * defecto» marcado (PR-21), y espera que el diálogo se cierre con el foco de
- * vuelta en su botón y el proyecto en «Sin cliente».
+ * vuelta en su botón y la fila del proyecto con «Sin cliente».
  */
 async function createBillableProject(page: Page, name: string): Promise<void> {
   await openProjects(page);
@@ -91,11 +97,9 @@ async function createBillableProject(page: Page, name: string): Promise<void> {
   await withServerAction(page, () => saveButton(dialog).click());
   await expect(dialog).toBeHidden();
   await expect(trigger).toBeFocused();
-  await expect(
-    page
-      .getByRole("region", { name: "Sin cliente", exact: true })
-      .getByRole("heading", { level: 3, name, exact: true }),
-  ).toBeVisible();
+  const row = projectRow(page, name);
+  await expect(row).toBeVisible();
+  await expect(columnCell(row, "Cliente")).toHaveText("Sin cliente");
 }
 
 test("un proyecto creado facturable por defecto hace facturable el timer que lo elige, y detener deja la barra no facturable", async ({

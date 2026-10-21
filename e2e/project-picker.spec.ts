@@ -12,6 +12,8 @@ import {
   addManualEntry,
   backgroundRgb,
   continueButton,
+  CREATE_PROJECT,
+  createProjectOption,
   descriptionInput,
   elapsedCounter,
   entryRow,
@@ -22,6 +24,7 @@ import {
   projectPicker,
   projectPopup,
   projectSearch,
+  selectionOptions,
   startTimer,
   stopTimer,
   taskOption,
@@ -85,14 +88,17 @@ test("la barra busca sin acentos, elige una tarea con su proyecto y el timer la 
   // TT-07: parte del nombre de la tarea, sin acento y en mayúsculas. Una
   // tarea que coincide trae su proyecto con solo esa tarea; el proyecto
   // suelto del recorrido no coincide, y «Sin proyecto» solo va con la
-  // búsqueda vacía.
+  // búsqueda vacía. TT-09: «Crear proyecto» va al final y no es una
+  // selección, así que no cuenta.
   await openProjectPicker(page, bar);
   await projectSearch(page).fill(`ISENO ${suffix}`);
   const popup = projectPopup(page);
   await expect(popup.getByRole("group", { name: client })).toBeVisible();
   await expect(projectOption(page, web)).toBeVisible();
   await expect(projectOption(page, taskOption(web, design))).toBeVisible();
-  await expect(popup.getByRole("option")).toHaveCount(2);
+  await expect(selectionOptions(page)).toHaveCount(2);
+  await expect(createProjectOption(page)).toBeVisible();
+  await expect(popup.getByRole("option").last()).toHaveAccessibleName(CREATE_PROJECT);
   await expect(projectOption(page, loose)).toHaveCount(0);
   await expect(projectOption(page, NO_PROJECT)).toHaveCount(0);
 
@@ -388,7 +394,7 @@ test("el selector de la barra es accesible por teclado y sus letras no disparan 
   await expect(search).toBeFocused();
   await search.fill(task);
   const option = projectOption(page, taskOption(project, task));
-  await expect(projectPopup(page).getByRole("option")).toHaveCount(2);
+  await expect(selectionOptions(page)).toHaveCount(2);
   const optionId = await option.getAttribute("id");
   expect(optionId).not.toBeNull();
   await search.press("ArrowDown");

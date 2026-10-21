@@ -293,6 +293,27 @@ export function projectOption(page: Page, name: string): Locator {
   return projectPopup(page).getByRole("option", { name, exact: true });
 }
 
+/** TT-09: el texto de la opción que crea un proyecto desde el selector. */
+export const CREATE_PROJECT = "Crear proyecto";
+
+/**
+ * TT-09: «Crear proyecto», la última opción del selector abierto para quien
+ * tiene `project.create` (D-P1-10). No es una selección.
+ */
+export function createProjectOption(page: Page): Locator {
+  return projectOption(page, CREATE_PROJECT);
+}
+
+/**
+ * Las opciones de selección del selector abierto: los proyectos, sus tareas y
+ * «Sin proyecto», sin «Crear proyecto» (§9.3 de P1).
+ */
+export function selectionOptions(page: Page): Locator {
+  return projectPopup(page)
+    .getByRole("option")
+    .filter({ hasNotText: new RegExp(`^${CREATE_PROJECT}$`) });
+}
+
 /** Abre el selector de `scope` y espera el foco en el buscador. */
 export async function openProjectPicker(page: Page, scope: Locator): Promise<void> {
   await projectPicker(scope).click();
