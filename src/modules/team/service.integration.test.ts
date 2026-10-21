@@ -1796,11 +1796,11 @@ describe("quién vincula y libera (criterio 10 de E2b, D-E2b-4)", () => {
       const before = await accountWrites();
 
       for (const work of [
-        requestLink(viewer.actor, active.membershipId),
-        cancelLink(viewer.actor, active.membershipId),
-        release(viewer.actor, inactive.membershipId),
+        () => requestLink(viewer.actor, active.membershipId),
+        () => cancelLink(viewer.actor, active.membershipId),
+        () => release(viewer.actor, inactive.membershipId),
       ]) {
-        const error = await failureOf(work);
+        const error = await failureOf(work());
         expect([error.code, error.message]).toEqual([
           "forbidden",
           teamMessages.forbiddenAction,
@@ -1823,10 +1823,10 @@ describe("quién vincula y libera (criterio 10 de E2b, D-E2b-4)", () => {
     const before = await accountWrites();
 
     for (const work of [
-      requestLink(admin.actor, active.membershipId),
-      release(admin.actor, inactive.membershipId),
+      () => requestLink(admin.actor, active.membershipId),
+      () => release(admin.actor, inactive.membershipId),
     ]) {
-      const error = await failureOf(work);
+      const error = await failureOf(work());
       expect([error.code, error.message]).toEqual([
         "forbidden",
         teamMessages.forbiddenAction,
@@ -2053,10 +2053,10 @@ describe("el correo liberado (criterio 17 de E2b, D-E2b-9)", () => {
     ]);
     const before = await accountWrites();
     for (const work of [
-      reactivate(ownerOf(seeded), target.membershipId),
-      requestLink(ownerOf(seeded), target.membershipId),
+      () => reactivate(ownerOf(seeded), target.membershipId),
+      () => requestLink(ownerOf(seeded), target.membershipId),
     ]) {
-      const error = await failureOf(work);
+      const error = await failureOf(work());
       expect([error.code, error.message]).toEqual([
         "email_released",
         teamMessages.emailReleased,
