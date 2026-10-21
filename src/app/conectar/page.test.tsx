@@ -71,4 +71,13 @@ describe("ConnectPage", () => {
     expect(text).toContain("Vuelve a: esta computadora");
     expect(text).toContain("persona@empresa.com");
   });
+
+  it("si la vista llega `disabled`, también corta con notFound", async () => {
+    stubServerEnv({ MCP_ENABLED: "true" });
+    requireSession.mockResolvedValue(SESSION);
+    getConsentView.mockResolvedValue({ kind: "disabled" });
+
+    await expect(render()).rejects.toThrow("notFound");
+    expect(notFound).toHaveBeenCalledOnce();
+  });
 });
