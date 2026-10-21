@@ -1,8 +1,14 @@
 "use client";
 
-import { FolderIcon, SearchIcon } from "lucide-react";
-import Link from "next/link";
-import { useEffect, useState, type ReactNode, type Ref } from "react";
+import { FolderIcon, PlusIcon, SearchIcon } from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type Ref,
+} from "react";
 
 import { preventTypeahead } from "@/components/combobox-typeahead";
 import { buttonVariants } from "@/components/ui/button";
@@ -15,6 +21,7 @@ import {
   ComboboxItem,
   ComboboxLabel,
   ComboboxList,
+  ComboboxSeparator,
   ComboboxTrigger,
 } from "@/components/ui/combobox";
 import { InputGroupAddon } from "@/components/ui/input-group";
@@ -24,12 +31,15 @@ import { paletteColor } from "@/modules/project/palette";
 import type { ProjectRef, ProjectSelection } from "@/modules/project/schema";
 
 import { projectLabels, projectTaskLabel } from "./labels";
+import { NewProjectFromPicker } from "./new-project-from-picker";
 import {
+  catalogEntryOf,
   pickerView,
   sameSelection,
   type PickerEmpty,
-  type PickerGroup,
+  type PickerItem,
   type PickerOption,
+  type PickerView,
 } from "./picker-model";
 import { useTrackingCatalog } from "./tracking-catalog";
 
@@ -58,6 +68,23 @@ type ProjectPickerProps = PickerCommonProps &
         readonly placeholder: string;
       }
   );
+
+/** Lo que la primitiva recibe: todos los ítems van agrupados. */
+type ItemGroup = { readonly key: string; readonly items: readonly PickerItem[] };
+
+/** El mismo valor, o los dos sin valor (la edición masiva sin cambios). */
+function sameValue(a: ProjectSelection | null, b: ProjectSelection | null): boolean {
+  return a === null || b === null ? a === b : sameSelection(a, b);
+}
+
+/** Asigna el disparador a la referencia que pasa quien usa el selector. */
+function assignRef<T>(ref: Ref<T> | undefined, node: T | null): void {
+  if (typeof ref === "function") {
+    ref(node);
+  } else if (ref !== null && ref !== undefined) {
+    ref.current = node;
+  }
+}
 
 /** Lo que nombra una opción y lo que muestra el disparador con selección. */
 function selectionLabel({ project, task }: ProjectSelection): string {
@@ -122,6 +149,48 @@ export function ProjectPicker({
   const catalog = useTrackingCatalog();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  /** TT-09: el nombre con que se abrió «Nuevo proyecto»; `null` sin diálogo. */
+  const [creating, setCreating] = useState<string | null>(null);
+  /** D-P1-11: el proyecto creado, hasta que el catálogo lo trae. */
+  const [created, setCreated] = useState<ProjectRef | null>(null);
+  /** La selección que el catálogo ya trae; el efecto la entrega una sola vez. */
+  const [delivery, setDelivery] = useState<ProjectSelection | null>(null);
+  const delivered = useRef<ProjectSelection | null>(null);
+  const [seenValue, setSeenValue] = useState(value);
+  const trigger = useRef<HTMLButtonElement | null>(null);
+  const setTrigger = useCallback(
+    (node: HTMLButtonElement | null) => {
+      trigger.current = node;
+      assignRef(triggerRef, node);
+    },
+    [triggerRef],
+  );
+
+  // El valor cambió por otro lado: la selección pendiente ya no corresponde.
+  if (!sameValue(seenValue, value)) {
+    setSeenValue(value);
+    setCreated(null);
+  }
+
+  // D-P1-11: quien recibe `onChange` busca el proyecto en el catálogo (el
+  // facturable por defecto, el par de la planilla). Se entrega cuando el
+  // catálogo, que llega con la revalidación del alta, ya lo trae.
+  if (created !== null) {
+    const entry = catalogEntryOf(catalog, { projectId: created.id, taskId: null });
+    if (entry !== null) {
+      const { id, name, color } = entry.project;
+      setCreated(null);
+      setDelivery({ project: { id, name, color }, task: null });
+    }
+  }
+
+  useEffect(() => {
+    if (delivery === null || delivered.current === delivery) {
+      return;
+    }
+    delivered.current = delivery;
+    onChange(delivery);
+  }, [delivery, onChange]);
 
   if (readOnly) {
     return (
@@ -136,109 +205,160 @@ export function ProjectPicker({
   }
 
   const view = pickerView(catalog, search, excluded);
-  // «Sin proyecto» va en un grupo propio solo para la primitiva, que pide que
-  // todos los ítems estén agrupados; se dibuja sin grupo.
-  const items: readonly PickerGroup[] =
-    view.none === null
-      ? view.groups
-      : [{ key: "none", client: null, items: [view.none] }, ...view.groups];
-  const current: PickerOption | null =
-    value === null ? null : { key: "current", selection: value };
 
   function changeOpen(next: boolean): void {
     if (next && pending) {
       return;
     }
+    if (next) {
+      setCreated(null);
+    }
     setOpen(next);
     onOpenChange?.(next);
   }
 
-  function choose(option: PickerOption | null): void {
-    if (option === null || (value !== null && sameSelection(option.selection, value))) {
+  function choose(option: PickerItem | null): void {
+    if (option === null) {
+      return;
+    }
+    // TT-09: no es una selección; abre el alta con la búsqueda.
+    if (option.kind === "create") {
+      changeOpen(false);
+      setCreating(option.name);
+      return;
+    }
+    if (value !== null && sameSelection(option.selection, value)) {
       return;
     }
     onChange(option.selection);
   }
 
   return (
-    <Combobox<PickerOption>
-      items={items}
-      filter={null}
-      value={current}
-      onValueChange={choose}
-      isItemEqualToValue={(item, selected) =>
-        sameSelection(item.selection, selected.selection)
-      }
-      itemToStringLabel={(option) => selectionLabel(option.selection)}
-      inputValue={search}
-      onInputValueChange={setSearch}
-      open={open}
-      onOpenChange={changeOpen}
-    >
-      <ComboboxTrigger
-        ref={triggerRef}
-        aria-label={label}
-        aria-disabled={pending || undefined}
-        // Sin el typeahead un proyecto no cambia sin abrir el selector. Los
-        // atajos del rastreador escuchan en el documento y no se ven afectados.
-        onKeyDown={preventTypeahead}
-        className={cn(
-          buttonVariants({ variant: "ghost", size: "sm" }),
-          "max-w-64 min-w-0 justify-start font-normal aria-disabled:opacity-60",
-        )}
+    <>
+      <Combobox<PickerItem>
+        {...pickerComboboxProps(view, value)}
+        filter={null}
+        onValueChange={choose}
+        inputValue={search}
+        onInputValueChange={setSearch}
+        open={open}
+        onOpenChange={changeOpen}
       >
-        {value === null ? (
-          <EmptyText text={placeholder} />
-        ) : value.project === null && variant === "bar" ? (
-          <EmptyText text={projectLabels.pickerEmpty} />
-        ) : (
-          <SelectionText selection={value} />
-        )}
-      </ComboboxTrigger>
-      <ComboboxContent className="w-80">
-        <ComboboxInput
-          showTrigger={false}
-          aria-label={projectLabels.pickerSearch}
-          placeholder={projectLabels.pickerSearch}
-        >
-          <InputGroupAddon>
-            <SearchIcon aria-hidden="true" />
-          </InputGroupAddon>
-        </ComboboxInput>
-        <StatusRegion>
-          {view.empty !== null && <EmptyMessage empty={view.empty} />}
-        </StatusRegion>
-        {/*
-          Sin `Combobox.Empty` montado, con la lista vacía la primitiva deja
-          pasar `Escape` y cierra también el diálogo del calendario. Los vacíos
-          no van adentro: el de TT-87 se ve con «Sin proyecto» en la lista, y
-          `Combobox.Empty` solo dibuja con la lista vacía.
-        */}
-        <ComboboxEmpty hidden />
-        <ComboboxList>
-          {view.none !== null && (
-            <ComboboxItem value={view.none} className="text-muted-foreground">
-              {projectLabels.noProject}
-            </ComboboxItem>
+        <ComboboxTrigger
+          ref={setTrigger}
+          aria-label={label}
+          aria-disabled={pending || undefined}
+          // Sin el typeahead un proyecto no cambia sin abrir el selector. Los
+          // atajos del rastreador escuchan en el documento y no se ven afectados.
+          onKeyDown={preventTypeahead}
+          className={cn(
+            buttonVariants({ variant: "ghost", size: "sm" }),
+            "max-w-64 min-w-0 justify-start font-normal aria-disabled:opacity-60",
           )}
-          {view.groups.map((group) => (
-            <ComboboxGroup key={group.key}>
-              <ComboboxLabel>
-                {group.client?.name ?? projectLabels.noClient}
-              </ComboboxLabel>
-              {group.items.map((option) => (
-                <PickerItem key={option.key} option={option} />
-              ))}
-            </ComboboxGroup>
+        >
+          {value === null ? (
+            <EmptyText text={placeholder} />
+          ) : value.project === null && variant === "bar" ? (
+            <EmptyText text={projectLabels.pickerEmpty} />
+          ) : (
+            <SelectionText selection={value} />
+          )}
+        </ComboboxTrigger>
+        <ComboboxContent className="w-80">
+          <ComboboxInput
+            showTrigger={false}
+            aria-label={projectLabels.pickerSearch}
+            placeholder={projectLabels.pickerSearch}
+          >
+            <InputGroupAddon>
+              <SearchIcon aria-hidden="true" />
+            </InputGroupAddon>
+          </ComboboxInput>
+          <StatusRegion>
+            {view.empty !== null && <PickerEmptyMessage empty={view.empty} />}
+          </StatusRegion>
+          {/*
+            Sin `Combobox.Empty` montado, con la lista vacía la primitiva deja
+            pasar `Escape` y cierra también el diálogo del calendario. Los
+            vacíos no van adentro: el de TT-87 se ve con «Sin proyecto» en la
+            lista, y `Combobox.Empty` solo dibuja con la lista vacía.
+          */}
+          <ComboboxEmpty hidden />
+          <PickerOptions view={view} />
+        </ComboboxContent>
+      </Combobox>
+      {creating !== null && (
+        <NewProjectFromPicker
+          name={creating}
+          finalFocus={() => trigger.current}
+          onCreated={setCreated}
+          onClosed={() => setCreating(null)}
+        />
+      )}
+    </>
+  );
+}
+
+/**
+ * Lo que la primitiva recibe de la vista y del valor. «Sin proyecto» y «Crear
+ * proyecto» van en grupos propios solo para ella, que pide que todos los
+ * ítems estén agrupados; se dibujan sin grupo. «Crear proyecto» no es una
+ * selección: nunca compara igual al valor (D-P1-10).
+ */
+export function pickerComboboxProps(view: PickerView, value: ProjectSelection | null) {
+  const items: readonly ItemGroup[] = [
+    ...(view.none === null ? [] : [{ key: "none", items: [view.none] }]),
+    ...view.groups,
+    ...(view.create === null ? [] : [{ key: "create", items: [view.create] }]),
+  ];
+  const current: PickerItem | null =
+    value === null ? null : { kind: "selection", key: "current", selection: value };
+  return {
+    items,
+    value: current,
+    isItemEqualToValue: (item: PickerItem, selected: PickerItem) =>
+      item.kind === "selection" &&
+      selected.kind === "selection" &&
+      sameSelection(item.selection, selected.selection),
+    itemToStringLabel: (option: PickerItem) =>
+      option.kind === "create"
+        ? projectLabels.pickerCreateProject
+        : selectionLabel(option.selection),
+  };
+}
+
+/** La lista: «Sin proyecto», los proyectos por cliente y, al final, «Crear proyecto». */
+export function PickerOptions({ view }: { readonly view: PickerView }) {
+  return (
+    <ComboboxList>
+      {view.none !== null && (
+        <ComboboxItem value={view.none} className="text-muted-foreground">
+          {projectLabels.noProject}
+        </ComboboxItem>
+      )}
+      {view.groups.map((group) => (
+        <ComboboxGroup key={group.key}>
+          <ComboboxLabel>{group.client?.name ?? projectLabels.noClient}</ComboboxLabel>
+          {group.items.map((option) => (
+            <SelectionItem key={option.key} option={option} />
           ))}
-        </ComboboxList>
-      </ComboboxContent>
-    </Combobox>
+        </ComboboxGroup>
+      ))}
+      {view.create !== null && (
+        <>
+          <ComboboxSeparator />
+          <ComboboxItem value={view.create}>
+            <PlusIcon aria-hidden="true" />
+            {projectLabels.pickerCreateProject}
+          </ComboboxItem>
+        </>
+      )}
+    </ComboboxList>
   );
 }
 
 /** Un proyecto con su punto, o una tarea con sangría debajo de su proyecto. */
-function PickerItem({ option }: { readonly option: PickerOption }) {
+function SelectionItem({ option }: { readonly option: PickerOption }) {
   const { project, task } = option.selection;
   if (project === null) {
     return null;
@@ -284,24 +404,13 @@ function StatusRegion({ children }: { readonly children: ReactNode }) {
   );
 }
 
-function EmptyMessage({ empty }: { readonly empty: PickerEmpty }) {
+export function PickerEmptyMessage({ empty }: { readonly empty: PickerEmpty }) {
   if (empty.kind === "noMatches") {
     return <p className="py-2">{projectLabels.pickerNoMatches}</p>;
   }
   if (empty.kind === "allUsed") {
     return <p className="py-2">{projectLabels.pickerAllUsed}</p>;
   }
-  return (
-    <div className="flex flex-col items-center gap-1 py-2">
-      <p>{projectLabels.pickerNoProjects}</p>
-      {empty.canCreateProject && (
-        <Link
-          href="/proyectos"
-          className={buttonVariants({ variant: "link", size: "sm" })}
-        >
-          {projectLabels.pickerGoToProjects}
-        </Link>
-      )}
-    </div>
-  );
+  // TT-87, TS-88: «Crear proyecto» va en la lista, debajo de «Sin proyecto».
+  return <p className="py-2">{projectLabels.pickerNoProjects}</p>;
 }

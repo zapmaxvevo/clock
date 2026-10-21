@@ -11,6 +11,7 @@ import type {
 
 /** Una opción del selector: «Sin proyecto», un proyecto o una tarea de un proyecto. */
 export type PickerOption = {
+  readonly kind: "selection";
   readonly key: string;
   readonly selection: ProjectSelection;
   /**
@@ -19,6 +20,17 @@ export type PickerOption = {
    */
   readonly inactive?: true;
 };
+
+/** D-P1-10: la opción de TT-09. No es una selección. */
+export type PickerCreateOption = {
+  readonly kind: "create";
+  readonly key: "create";
+  /** La búsqueda recortada: el nombre con que arranca el diálogo. */
+  readonly name: string;
+};
+
+/** Lo que ofrece la lista del selector: una selección o «Crear proyecto». */
+export type PickerItem = PickerOption | PickerCreateOption;
 
 /** Las opciones de un cliente. `client` nulo es «Sin cliente». */
 export type PickerGroup = {
@@ -29,7 +41,7 @@ export type PickerGroup = {
 
 /** TT-87, TT-07 y TS-18: los vacíos se distinguen. */
 export type PickerEmpty =
-  | { readonly kind: "noProjects"; readonly canCreateProject: boolean }
+  | { readonly kind: "noProjects" }
   | { readonly kind: "noMatches" }
   /** Con proyectos y la búsqueda vacía, todo lo que hay ya está en `excluded`. */
   | { readonly kind: "allUsed" };
@@ -39,12 +51,14 @@ export type PickerView = {
   readonly none: PickerOption | null;
   readonly groups: readonly PickerGroup[];
   readonly empty: PickerEmpty | null;
+  /** D-P1-10: la última opción, con `canCreateProject`; si no, `null`. */
+  readonly create: PickerCreateOption | null;
 };
 
 /** «Sin proyecto»: el par de una entrada sin proyecto ni tarea (TT-93). */
 export const NO_SELECTION: ProjectSelection = { project: null, task: null };
 
-const NONE: PickerOption = { key: "none", selection: NO_SELECTION };
+const NONE: PickerOption = { kind: "selection", key: "none", selection: NO_SELECTION };
 
 const NONE_PAIR: ProjectPair = { projectId: null, taskId: null };
 
@@ -74,10 +88,12 @@ function projectOptions(
       : tasks.filter((task) => matches(task.name, query))
   ).filter((task) => !isExcluded(excluded, { projectId: project.id, taskId: task.id }));
   const taskOptions = shownTasks.map((task) => ({
+    kind: "selection" as const,
     key: `task:${task.id}`,
     selection: { project: ref, task },
   }));
   const projectOption: PickerOption = {
+    kind: "selection",
     key: `project:${project.id}`,
     selection: { project: ref, task: null },
   };
@@ -125,13 +141,14 @@ export function pickerView(
 ): PickerView {
   const query = normalizeSearch(search);
   const none = query === "" && !isExcluded(excluded, NONE_PAIR) ? NONE : null;
+  // TT-09: con cualquier búsqueda y aunque todo esté excluido; un proyecto
+  // nuevo nunca lo está.
+  const create: PickerCreateOption | null = catalog.canCreateProject
+    ? { kind: "create", key: "create", name: search.trim() }
+    : null;
   // TS-88: sin proyectos gana el vacío de TT-87, aunque todo esté excluido.
   if (catalog.groups.length === 0) {
-    return {
-      none,
-      groups: [],
-      empty: { kind: "noProjects", canCreateProject: catalog.canCreateProject },
-    };
+    return { none, groups: [], empty: { kind: "noProjects" }, create };
   }
   const groups = catalog.groups
     .map((group) => ({
@@ -140,9 +157,10 @@ export function pickerView(
       items: groupOptions(group, query, excluded),
     }))
     .filter((group) => group.items.length > 0);
-  return { none, groups, empty: emptyOf(query, none, groups) };
+  return { none, groups, empty: emptyOf(query, none, groups), create };
 }
 
+/** La opción de crear no cuenta: el vacío se ve con ella debajo (D-P1-10). */
 function emptyOf(
   query: string,
   none: PickerOption | null,

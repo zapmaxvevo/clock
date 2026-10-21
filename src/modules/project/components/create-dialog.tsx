@@ -20,22 +20,19 @@ import type { ActionFailure } from "@/hooks/use-action";
 import { projectLabels } from "./labels";
 import { useProjectNotices, useSurvivingNotice } from "./project-notices";
 
-type CreateDialogProps = {
-  /**
-   * Identifica el diálogo ante `ProjectNoticesProvider`; es la misma clave con
-   * la que su `onFailure` reporta el aviso.
-   */
-  readonly noticeKey: string;
-  /** El texto del botón de apertura, que es también el título del diálogo. */
+type CreateDialogFrameProps = {
+  /** El título del diálogo. */
   readonly title: string;
-  /** El nombre accesible del botón de apertura, si el texto solo no alcanza. */
-  readonly triggerName?: string;
-  readonly triggerIcon?: ReactNode;
-  readonly triggerVariant?: "default" | "outline" | "ghost";
-  /** Lo que el alta ya trae fijo, como el proyecto de una tarea. */
+  /** Lo que el formulario ya trae fijo, como el proyecto de una tarea. */
   readonly description?: string;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
+  /** Adónde vuelve el foco al cerrarse, por éxito o por la persona. */
+  readonly finalFocus: () => HTMLElement | null;
+  /** El botón que lo abre, si tiene uno; va dentro de la raíz del diálogo. */
+  readonly trigger?: ReactNode;
+  /** Al terminar de cerrarse, con su animación. */
+  readonly onClosed?: () => void;
   readonly pending: boolean;
   readonly failure: ActionFailure | null;
   /** Nombra la operación que no se hizo (TT-90). */
@@ -43,45 +40,37 @@ type CreateDialogProps = {
   /** Solo con `unexpected` (TT-89, PR-90). */
   readonly onRetry: (() => void) | undefined;
   readonly onSave: () => void;
-  /** Los campos del alta. */
+  /** Los campos del formulario. */
   readonly children: ReactNode;
 };
 
 /**
- * El marco común de los cuatro diálogos de alta: el botón que los abre, el
- * formulario, el aviso arriba de «Guardar» y el foco de vuelta al botón al
- * cerrarse, por éxito o por la persona.
+ * El marco común de los diálogos de alta y de edición: el formulario, el aviso
+ * arriba de «Guardar» con «Reintentar» y la regla de no cerrar mientras el
+ * pedido viaja. Controlado por `open`; el foco final lo decide quien lo usa.
  */
-export function CreateDialog({
-  noticeKey,
+export function CreateDialogFrame({
   title,
-  triggerName,
-  triggerIcon,
-  triggerVariant = "default",
   description,
   open,
   onOpenChange,
+  finalFocus,
+  trigger,
+  onClosed,
   pending,
   failure,
   failureTitle,
   onRetry,
   onSave,
   children,
-}: CreateDialogProps) {
-  const triggerRef = useRef<HTMLButtonElement>(null);
+}: CreateDialogFrameProps) {
   const saveRef = useRef<HTMLButtonElement>(null);
-  const { dismiss, focusTargetFor } = useProjectNotices();
-  useSurvivingNotice(noticeKey, failure !== null);
 
   function handleOpenChange(next: boolean): void {
     // Con un pedido en vuelo el diálogo no se cierra: la respuesta tardía
     // cerraría el diálogo que se abriera después o volvería a armar su id.
     if (!next && pending) {
       return;
-    }
-    // Abrir un diálogo es una operación nueva: baja el aviso de la pantalla.
-    if (next) {
-      dismiss();
     }
     onOpenChange(next);
   }
@@ -97,20 +86,19 @@ export function CreateDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger
-        ref={triggerRef}
-        render={<Button variant={triggerVariant} size="sm" />}
-        aria-label={triggerName}
-      >
-        {triggerIcon}
-        {title}
-      </DialogTrigger>
+    <Dialog
+      open={open}
+      onOpenChange={handleOpenChange}
+      onOpenChangeComplete={(next) => {
+        if (!next) {
+          onClosed?.();
+        }
+      }}
+    >
+      {trigger}
       {/* PR-54: con una dirección o nota larga, «Guardar» y el aviso siguen al alcance. */}
       <DialogContent
-        // Si el diálogo sale del árbol con su aviso, el disparador ya no está y
-        // el foco sigue al aviso, a la región de la pantalla.
-        finalFocus={() => triggerRef.current ?? focusTargetFor(noticeKey)}
+        finalFocus={finalFocus}
         className="max-h-[calc(100dvh-2rem)] overflow-y-auto"
         showCloseButton={false}
       >
@@ -180,5 +168,71 @@ export function CreateDialog({
         </DialogClose>
       </DialogContent>
     </Dialog>
+  );
+}
+
+type CreateDialogProps = Omit<
+  CreateDialogFrameProps,
+  "finalFocus" | "trigger" | "onClosed"
+> & {
+  /**
+   * Identifica el diálogo ante `ProjectNoticesProvider`; es la misma clave con
+   * la que su `onFailure` reporta el aviso.
+   */
+  readonly noticeKey: string;
+  /** El texto del botón de apertura; sin él, el botón dice el título. */
+  readonly triggerLabel?: string;
+  /** El nombre accesible del botón de apertura, si el texto solo no alcanza. */
+  readonly triggerName?: string;
+  readonly triggerIcon?: ReactNode;
+  readonly triggerVariant?: "default" | "outline" | "ghost";
+};
+
+/**
+ * Los diálogos de `/proyectos`: el marco con el botón que los abre, el foco de
+ * vuelta al botón al cerrarse y el aviso que sobrevive si el diálogo sale del
+ * árbol.
+ */
+export function CreateDialog({
+  noticeKey,
+  title,
+  triggerLabel = title,
+  triggerName,
+  triggerIcon,
+  triggerVariant = "default",
+  onOpenChange,
+  failure,
+  ...frame
+}: CreateDialogProps) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const { dismiss, focusTargetFor } = useProjectNotices();
+  useSurvivingNotice(noticeKey, failure !== null);
+
+  return (
+    <CreateDialogFrame
+      {...frame}
+      title={title}
+      failure={failure}
+      onOpenChange={(next) => {
+        // Abrir un diálogo es una operación nueva: baja el aviso de la pantalla.
+        if (next) {
+          dismiss();
+        }
+        onOpenChange(next);
+      }}
+      // Si el diálogo sale del árbol con su aviso, el disparador ya no está y
+      // el foco sigue al aviso, a la región de la pantalla.
+      finalFocus={() => triggerRef.current ?? focusTargetFor(noticeKey)}
+      trigger={
+        <DialogTrigger
+          ref={triggerRef}
+          render={<Button variant={triggerVariant} size="sm" />}
+          aria-label={triggerName}
+        >
+          {triggerIcon}
+          {triggerLabel}
+        </DialogTrigger>
+      }
+    />
   );
 }

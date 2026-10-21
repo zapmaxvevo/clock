@@ -158,7 +158,7 @@ describe("pickerView", () => {
     expect(view.empty).toEqual({ kind: "noMatches" });
   });
 
-  it("el catálogo sin proyectos da el vacío de TT-87, con el enlace según canCreateProject", () => {
+  it("el catálogo sin proyectos da el vacío de TT-87, con permiso o sin él (TT-87, D-P1-10)", () => {
     const empty: TrackingCatalog = {
       canCreateProject: true,
       clients: [],
@@ -167,18 +167,11 @@ describe("pickerView", () => {
       groups: [],
     };
 
-    expect(pickerView(empty, "").empty).toEqual({
-      kind: "noProjects",
-      canCreateProject: true,
-    });
+    expect(pickerView(empty, "").empty).toEqual({ kind: "noProjects" });
     expect(pickerView({ ...empty, canCreateProject: false }, "").empty).toEqual({
       kind: "noProjects",
-      canCreateProject: false,
     });
-    expect(pickerView(empty, "web").empty).toEqual({
-      kind: "noProjects",
-      canCreateProject: true,
-    });
+    expect(pickerView(empty, "web").empty).toEqual({ kind: "noProjects" });
   });
 
   it("el catálogo sin proyectos sigue ofreciendo «Sin proyecto», para quitar uno archivado", () => {
@@ -273,7 +266,12 @@ describe("pickerView con `excluded` (TS-18, D13-9)", () => {
     ]);
     expect(
       pickerView(catalog, "desarr", [pair("p-web"), pair("p-web", "p-web-t1")]),
-    ).toEqual({ none: null, groups: [], empty: { kind: "noMatches" } });
+    ).toEqual({
+      none: null,
+      groups: [],
+      empty: { kind: "noMatches" },
+      create: { kind: "create", key: "create", name: "desarr" },
+    });
   });
 
   it("con proyectos, la búsqueda vacía y todo usado, el vacío es `allUsed`", () => {
@@ -293,6 +291,7 @@ describe("pickerView con `excluded` (TS-18, D13-9)", () => {
       none: null,
       groups: [],
       empty: { kind: "allUsed" },
+      create: { kind: "create", key: "create", name: "" },
     });
     expect(pickerView(catalog, "web", everything).empty).toEqual({ kind: "noMatches" });
   });
@@ -326,9 +325,81 @@ describe("pickerView con `excluded` (TS-18, D13-9)", () => {
     expect(pickerView(empty, "", [none])).toEqual({
       none: null,
       groups: [],
-      empty: { kind: "noProjects", canCreateProject: true },
+      empty: { kind: "noProjects" },
+      create: { kind: "create", key: "create", name: "" },
     });
     expect(pickerView(empty, "", []).none).not.toBeNull();
+  });
+});
+
+describe("pickerView, «Crear proyecto» (TT-09, D-P1-10)", () => {
+  const emptyCatalog: TrackingCatalog = { ...catalog, groups: [] };
+  const none = { projectId: null, taskId: null };
+  const pair = (projectId: string, taskId: string | null = null) => ({
+    projectId,
+    taskId,
+  });
+
+  it("con `canCreateProject`, la opción lleva la búsqueda recortada como nombre", () => {
+    expect(pickerView(catalog, "").create).toEqual({
+      kind: "create",
+      key: "create",
+      name: "",
+    });
+    expect(pickerView(catalog, "  Nuevo sitio  ").create).toEqual({
+      kind: "create",
+      key: "create",
+      name: "Nuevo sitio",
+    });
+  });
+
+  it("aparece con coincidencias, sin coincidencias y con el catálogo vacío, sin cambiar el vacío", () => {
+    const withMatches = pickerView(catalog, "web");
+    const noMatches = pickerView(catalog, "zzz");
+    const noProjects = pickerView(emptyCatalog, "");
+
+    expect(withMatches.groups).not.toEqual([]);
+    expect(withMatches.create?.name).toBe("web");
+    expect(noMatches.empty).toEqual({ kind: "noMatches" });
+    expect(noMatches.create?.name).toBe("zzz");
+    expect(noProjects.empty).toEqual({ kind: "noProjects" });
+    expect(noProjects.none).not.toBeNull();
+    expect(noProjects.create).not.toBeNull();
+  });
+
+  it("aparece con todo excluido en la planilla (TS-18): un proyecto nuevo nunca lo está", () => {
+    const view = pickerView(catalog, "", [
+      none,
+      pair("p-web"),
+      pair("p-web", "p-web-t0"),
+      pair("p-web", "p-web-t1"),
+      pair("p-app"),
+      pair("p-app", "p-app-t0"),
+      pair("p-soporte"),
+      pair("p-soporte", "p-soporte-t0"),
+      pair("p-interno"),
+    ]);
+
+    expect(view.empty).toEqual({ kind: "allUsed" });
+    expect(view.create).not.toBeNull();
+  });
+
+  it("sin `canCreateProject` no hay opción, con catálogo o sin él", () => {
+    expect(pickerView({ ...catalog, canCreateProject: false }, "web").create).toBeNull();
+    expect(
+      pickerView({ ...emptyCatalog, canCreateProject: false }, "").create,
+    ).toBeNull();
+  });
+
+  it('las opciones de selección llevan `kind: "selection"`', () => {
+    const view = pickerView(catalog, "");
+
+    expect(view.none?.kind).toBe("selection");
+    expect(
+      view.groups
+        .flatMap((group) => group.items)
+        .every((item) => item.kind === "selection"),
+    ).toBe(true);
   });
 });
 

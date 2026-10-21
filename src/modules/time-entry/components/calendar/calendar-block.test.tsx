@@ -3,13 +3,17 @@ import { describe, expect, it } from "vitest";
 
 import { DisplayFormatsProvider } from "@/components/layout/display-formats";
 import { TrackingCatalogProvider } from "@/modules/project/components/tracking-catalog";
-import type { TrackingCatalog } from "@/modules/project/schema";
+import type { ProjectActions, TrackingCatalog } from "@/modules/project/schema";
 import type { TimeEntryView } from "@/modules/time-entry/schema";
 import type { DisplayFormats } from "@/server/time";
 
 import { CalendarBlock } from "./calendar-block";
 import { NO_GESTURES, type SegmentGestures } from "./calendar-gestures";
 import type { Segment } from "./calendar-layout";
+
+/** D-P1-13: el doble de la action del alta; el marcado inicial no la llama. */
+const createProject: ProjectActions["createProject"] = () =>
+  Promise.resolve({ ok: false, code: "unexpected", message: "doble" });
 
 const catalog: TrackingCatalog = {
   canCreateProject: false,
@@ -110,7 +114,7 @@ function render(
 ): string {
   return renderToStaticMarkup(
     <DisplayFormatsProvider formats={options.formats ?? H24}>
-      <TrackingCatalogProvider catalog={catalog}>
+      <TrackingCatalogProvider catalog={catalog} createProject={createProject}>
         <CalendarBlock
           entry={entry}
           segment={options.segment ?? segmentOf(entry)}
