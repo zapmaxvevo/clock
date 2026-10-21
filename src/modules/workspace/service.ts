@@ -1,4 +1,5 @@
 import { isCompanyEmail, normalizeEmail } from "@/lib/email";
+import { knownChoice } from "@/lib/known-choice";
 import { DomainError, RejectedError } from "@/server/errors";
 import {
   ACCOUNT_LINK_TTL_DAYS,
@@ -16,7 +17,12 @@ import {
   type MembershipStatus,
   type Role,
 } from "@/server/permissions";
-import { parseWeekStart, type WeekStart } from "@/server/time";
+import {
+  DURATION_FORMATS,
+  parseWeekStart,
+  type DurationFormat,
+  type WeekStart,
+} from "@/server/time";
 
 import {
   distinctEmails,
@@ -24,7 +30,12 @@ import {
   isValidEmail,
   planInvitations,
 } from "./invitation-plan";
-import { workspaceRepository, type MembershipRow, type WorkspaceRow } from "./repository";
+import {
+  workspaceRepository,
+  type MembershipRow,
+  type WorkspaceRead,
+  type WorkspaceRow,
+} from "./repository";
 import {
   invitationMessages,
   type InvitationErrorCode,
@@ -39,8 +50,12 @@ import {
   type WorkspaceSettingsView,
 } from "./schema";
 
+/** Los ajustes del workspace que se leen en cada pedido (ADR 0029). */
+export type WorkspaceSettings = { readonly durationFormat: DurationFormat };
+
 export type WorkspaceContext = {
   readonly workspace: WorkspaceRow;
+  readonly settings: WorkspaceSettings;
   readonly membership: MembershipRow;
   readonly actor: Actor;
 };
@@ -51,6 +66,16 @@ export type WorkspaceContext = {
  */
 export function weekStartOf(context: WorkspaceContext): WeekStart {
   return parseWeekStart(context.membership.weekStart);
+}
+
+/**
+ * D-WS2a-2: único lugar que aplica el valor por omisión. Sin fila, `compact`,
+ * sin crearla: la sesión no se cae por un ajuste de presentación, y el error de
+ * WS-73 es de la pantalla de configuración. Fuera de `DURATION_FORMATS`, lanza.
+ * Pura.
+ */
+export function resolveDurationFormat(value: string | null): DurationFormat {
+  return knownChoice(DURATION_FORMATS, value, "compact");
 }
 
 const DEFAULT_WORKSPACE_NAME = "Workspace";
@@ -72,16 +97,17 @@ async function createMembership(
 }
 
 function contextOf(
-  current: WorkspaceRow,
+  current: WorkspaceRead,
   row: MembershipRow,
   userId: string,
 ): WorkspaceContext {
   return {
-    workspace: current,
+    workspace: current.workspace,
+    settings: { durationFormat: resolveDurationFormat(current.durationFormat) },
     membership: row,
     actor: {
       userId,
-      workspaceId: current.id,
+      workspaceId: current.workspace.id,
       role: row.role,
       status: row.status,
     },
@@ -130,10 +156,10 @@ async function membershipOf(
 /** El contexto con la membresía de quien pide en `current`, o `null` sin acceso. */
 async function joinedContext(
   tx: Transaction,
-  current: WorkspaceRow,
+  current: WorkspaceRead,
   user: { id: string; email: string },
 ): Promise<WorkspaceContext | null> {
-  const row = await membershipOf(tx, current.id, user);
+  const row = await membershipOf(tx, current.workspace.id, user);
   return row === undefined ? null : contextOf(current, row, user.id);
 }
 
@@ -161,7 +187,7 @@ async function bootstrapContext(
     timezone: DEFAULT_TIMEZONE,
   });
   // El rol `owner` nace solo con el workspace.
-  const row = await createMembership(tx, created.id, user.id, "owner");
+  const row = await createMembership(tx, created.workspace.id, user.id, "owner");
   return contextOf(created, row, user.id);
 }
 
@@ -426,7 +452,7 @@ export async function entryFactsOf(email: string): Promise<EntryFacts> {
  */
 export async function entryWorkspaceIdOf(tx: Transaction): Promise<string | null> {
   const current = await workspaceRepository.findFirstWorkspace(tx);
-  return current?.id ?? null;
+  return current?.workspace.id ?? null;
 }
 
 /**

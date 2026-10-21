@@ -509,9 +509,13 @@ decimal. Verificado en el workspace (2026-10-07), respuestas 5 y A: `1` da
 y media. Coincide con la tabla de la página del Timesheet —con el formato de
 duración en minutos y horas, «1» se vuelve 1 minuto— y con PF-21: para ocho
 horas se escribe `8h`, `8:00` u `8,0`. Decisión del equipo del 2026-10-07.
+Por TT-19 acepta también `h:mm:ss`, con los dos formatos de duración: `1:30:00`
+y `01:30:45` son una hora y media, con los segundos truncados.
 _Corregido el 2026-10-07, P-12_: era `adaptar` por la coma decimal y estaba sin
 verificar qué hacía `8` en una celda, porque la página de creación de entradas
 se leía como si fueran ocho horas.
+_Corregido el 2026-10-20, WS2a_: no aceptaba `h:mm:ss`
+([ADR 0029](../adr/0029-el-formato-de-duracion-es-del-workspace-y-solo-cambia-lo-que-se-muestra.md)).
 
 **TS-26 Tope de lo que se escribe en una celda** — `adaptar`
 La celda acepta menos de 24 horas, el mismo tope de `parseDurationInput` en la
@@ -722,6 +726,15 @@ la suma en segundos, una celda con dos entradas que suman `1:30:42`, llevada a
 `1:31`, agregaría una entrada de 18 segundos, contra TT-73. Decisión del
 contrato del slice 13 (D13-3), aceptada por el team-lead.
 
+**Con el formato completo, los segundos sueltos quedan a la vista.** La regla
+no cambia con el formato: `S` y `V` siguen en minutos, así que una celda con
+varias entradas conserva al escribirla los segundos que no llegan al minuto.
+Una que suma `02:13:27`, llevada a `2:15`, queda en `02:15:27`; con el compacto
+se ve `2:15`. Mientras viaja la escritura, la celda muestra lo que va a dejar el
+servidor. Quitar esos segundos cambiaría lo que escribe una celda: queda
+pendiente de decisión del usuario, como pregunta 3 del
+[contrato de WS2a](../slices/fase2-ws2a-formato.md) (D-WS2a-8).
+
 En todos los rechazos la celda vuelve al valor anterior con el aviso.
 Decisión del equipo del 2026-10-07 (timesheet P-03 y P-13). Justificación del
 `adaptar`: es la regla de Clockify salvo dos casos que en el workspace no se
@@ -746,6 +759,8 @@ otro día mandaba «a editar desde el detalle de la celda (TS-42)»; subir no
 decía que pasa por las validaciones de un alta; `S` era «la suma de las
 entradas cerradas de la celda», sin decir en qué unidad; y el desempate decía
 que los ids son «elegidos por el cliente (ADR 0007)».
+_Corregido el 2026-10-20, WS2a_: no decía qué se ve con el formato completo en
+una celda con varias entradas que tienen segundos.
 
 **TS-35 Vaciar una celda o escribir cero** — `replicar`
 Vaciar la celda, escribir `0` o escribir menos de un minuto no borra nada y no
@@ -774,10 +789,17 @@ _Corregido el 2026-10-08, slice 13b_: no decía adónde va el foco al borrar
 desde el menú ni qué pasa con la fila que se queda sin entradas.
 
 **TS-36 Escribir lo mismo no escribe nada** — `adaptar`
-Si lo que queda en la celda al perder el foco, ya interpretado, es igual a lo
-que la celda mostraba, no sale ningún pedido. Una celda de `1:30:42` que se
-muestra `1:30` y se confirma sin tocar conserva sus segundos. Justificación: el
-redondeo de la vista no puede convertirse en una escritura.
+Si lo que queda en la celda al perder el foco, ya interpretado, tiene los mismos
+minutos que la celda —la suma exacta de sus entradas, truncada al minuto—, no
+sale ningún pedido, con los dos formatos de duración. Una celda de `1:30:42` que
+se confirma sin tocar, o en la que se teclea `1:30`, conserva sus segundos: con
+el compacto se muestra `1:30`; con el completo, `01:30:42`, y el campo vuelve a
+ese rótulo, no a uno armado con lo tecleado. Justificación: el redondeo de la
+vista no puede convertirse en una escritura, y el servidor también decide en
+minutos (TS-34).
+_Corregido el 2026-10-20, WS2a_: decía «igual a lo que la celda mostraba», que
+con el completo no vale: `1:30` no es `01:30:42`, y no se escribe igual
+([contrato de WS2a](../slices/fase2-ws2a-formato.md), D-WS2a-8).
 
 **TS-37 Escribir una celda se puede reintentar** — `adaptar`
 Como el pedido es «dejar la celda en `V`», repetirlo deja el mismo estado: si
@@ -1510,7 +1532,7 @@ No llevan marca propia: heredan la del comportamiento que citan.
 | TS-102 | Entrada que cruza la medianoche                                     | Cuenta entera en la celda del día de su `start` (TT-95); la celda puede pasar de 24 horas.                                                              |
 | TS-103 | Entrada que cruza el fin de semana                                  | Cuenta entera en la semana de su `start` (TT-96).                                                                                                       |
 | TS-104 | Celda de una sola entrada de más de 24 horas                        | Se muestra con su total. Escribir un valor la achica (TS-33); no se puede agrandar desde la celda por TS-26.                                            |
-| TS-105 | Escribir `1:30` sobre una entrada del timer de `1:30:42`            | Es igual a lo que se ve: no se escribe nada (TS-36).                                                                                                    |
+| TS-105 | Escribir `1:30` sobre una entrada del timer de `1:30:42`            | Son los mismos minutos: no se escribe nada (TS-36). Con el completo, el campo vuelve a `01:30:42`.                                                      |
 | TS-106 | Escribir `2:00` sobre esa misma entrada                             | El inicio se conserva con sus segundos y el fin pasa a inicio más dos horas: la celda muestra `2:00` (TS-32, TS-33).                                    |
 | TS-107 | Escribir en una celda de un día con cambio de horario               | La celda muestra lo escrito: el fin es inicio más duración (TS-32). Las horas de pared de la entrada pueden no cuadrar con la resta visual, como TT-97. |
 | TS-108 | Escribir en una celda de un día futuro                              | Se acepta (TS-11, TT-76).                                                                                                                               |
@@ -1539,6 +1561,8 @@ entrada a otro día», con «Cambia de celda; si el día queda fuera de la seman
 sale de la grilla y la fila puede quedar sin entradas y desaparecer.», sin el
 cambio de par, sin distinguir la fila agregada en esta carga y sin decir adónde
 va el foco.
+_Corregido el 2026-10-20, WS2a_: TS-105 decía «Es igual a lo que se ve», que
+con el completo no vale (TS-36).
 
 ## 20. Divergencias que este documento registra
 

@@ -32,7 +32,7 @@ import {
   seedWorkspace,
   type SeededWorkspace,
 } from "@/test/factories";
-import { timeEntryById } from "@/test/queries";
+import { timeEntryById, rejection } from "@/test/queries";
 
 /**
  * Las claves de R1 del núcleo de reportes (P-09, ADR 0020): a una persona con
@@ -50,16 +50,6 @@ const membershipKey = "time_entry_membership_fk";
 const userKey = "time_entry_user_id_user_id_fk";
 const backfillTag = "0013_time_entry_people_backfill";
 const restrictTag = "0014_time_entry_people_restrict";
-
-/** El error de una escritura que la base tiene que rechazar. */
-async function rejection(work: Promise<unknown>): Promise<unknown> {
-  try {
-    await work;
-  } catch (error) {
-    return error;
-  }
-  throw new Error("La base aceptó la escritura.");
-}
 
 /** Las sentencias de una migración, leída del archivo que nombra el diario. */
 async function migrationStatements(migrationTag: string): Promise<string[]> {

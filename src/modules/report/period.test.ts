@@ -9,7 +9,10 @@ import type { ReportRange } from "./schema";
 const today = "2026-10-08";
 
 function settingsWith(weekStart: WeekStart = 1) {
-  return { weekStart, formats: { time: "24h", date: "dd/MM/yyyy" } } as const;
+  return {
+    weekStart,
+    formats: { time: "24h", date: "dd/MM/yyyy", duration: "compact" },
+  } as const;
 }
 
 const monday = settingsWith(1);

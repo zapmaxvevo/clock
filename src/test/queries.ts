@@ -94,3 +94,13 @@ export async function emailOf(userId: string): Promise<string> {
   }
   return row.email;
 }
+
+/** El error de una escritura que la base tiene que rechazar. */
+export async function rejection(work: Promise<unknown>): Promise<unknown> {
+  try {
+    await work;
+  } catch (error) {
+    return error;
+  }
+  throw new Error("La base aceptó la escritura.");
+}

@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { useDisplayFormats } from "@/components/layout/display-formats";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import type { TimeFormat } from "@/server/time";
+import type { DurationFormat, TimeFormat } from "@/server/time";
 
 /** Cuánto dura la marca del valor que no se pudo interpretar (TT-21). */
 const REJECTED_FLASH_MS = 1_200;
@@ -22,10 +23,11 @@ type ClockFieldProps = {
   readonly onCommit: (text: string) => string | null;
   readonly label: string;
   /**
-   * El formato de la hora que muestra; sin él, el campo es de duración. Con
-   * 12 h el teclado de un teléfono tiene que dejar escribir `am` y `pm`
-   * (PF-14), y el campo, mostrar «12:00 AM» entero; con 24 h y en la
-   * duración bastan el numérico y el ancho de «23:59».
+   * El formato de la hora que muestra; sin él, el campo es de duración, en el
+   * formato del workspace. Con 12 h el teclado de un teléfono tiene que dejar
+   * escribir `am` y `pm` (PF-14), y el campo, mostrar «12:00 AM» entero; con
+   * 24 h y en la duración compacta bastan el numérico y el ancho de «23:59», y
+   * la completa necesita el de «23:59:59».
    */
   readonly format?: TimeFormat;
   /** Lo que se ve con el campo vacío, donde vacío quiere decir algo. */
@@ -76,6 +78,7 @@ export function ClockField({
   const [rejected, setRejected] = useState(false);
   const [focused, setFocused] = useState(false);
   const flash = useRef<number | null>(null);
+  const { duration } = useDisplayFormats();
 
   function changeText(next: string): void {
     setText(next);
@@ -140,7 +143,7 @@ export function ClockField({
       aria-busy={busy || undefined}
       className={cn(
         "text-center tabular-nums aria-busy:opacity-60",
-        format === "12h" ? "w-26" : "w-20",
+        fieldWidth(format, duration),
       )}
       onChange={(event) => changeText(event.target.value)}
       onFocus={() => setFocused(true)}
@@ -164,4 +167,12 @@ export function ClockField({
       }}
     />
   );
+}
+
+/** El ancho que muestra entero el valor más largo del formato. */
+function fieldWidth(format: TimeFormat | undefined, duration: DurationFormat): string {
+  if (format === "12h") {
+    return "w-26";
+  }
+  return format === undefined && duration === "full" ? "w-24" : "w-20";
 }

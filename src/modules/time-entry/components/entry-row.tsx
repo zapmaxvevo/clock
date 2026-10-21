@@ -128,7 +128,7 @@ export function EntryRow({
   focusTimesOnMount,
   onTimesFocused,
 }: EntryRowProps) {
-  const { time } = useDisplayFormats();
+  const { time, duration } = useDisplayFormats();
   const [editing, setEditing] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -218,7 +218,9 @@ export function EntryRow({
   // La de la vista es la del servidor, que mide instantes: en un día con cambio
   // de horario no coincide con la resta de las horas (TT-97).
   const durationLabel =
-    shownTimes === null ? entry.durationLabel : formatDuration(draftDuration(shownTimes));
+    shownTimes === null
+      ? entry.durationLabel
+      : formatDuration(draftDuration(shownTimes) * 60, duration);
   const timesText = `${timesLabel}${extraDays > 0 ? ` +${extraDays}${extraDaysText(extraDays)}` : ""}`;
 
   return (

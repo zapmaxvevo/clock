@@ -1,5 +1,6 @@
 "use client";
 
+import { useDisplayFormats } from "@/components/layout/display-formats";
 import type { TimeEntryView } from "@/modules/time-entry/schema";
 import { formatDuration } from "@/server/time";
 
@@ -18,10 +19,10 @@ export type GroupTotal = {
 };
 
 /**
- * El total de un grupo de la lista, de día o de semana, en `h:mm`. El del
- * grupo del timer activo suma el transcurrido y sube junto con el contador
- * (TT-45, TT-46); la suma es en segundos y se formatea una sola vez, así no
- * acumula el truncamiento de cada fila.
+ * El total de un grupo de la lista, de día o de semana, con el formato de
+ * duración del workspace. El del grupo del timer activo suma el transcurrido y
+ * sube junto con el contador (TT-45, TT-46); la suma es en segundos y se
+ * formatea una sola vez, así no acumula el truncamiento de cada fila (ADR 0029).
  */
 export function useGroupTotalLabel({
   closedSeconds,
@@ -30,11 +31,10 @@ export function useGroupTotalLabel({
   runningStartedAt,
   serverNow,
 }: GroupTotal): string {
+  const { duration } = useDisplayFormats();
   const elapsed = useElapsedSeconds(runningStartedAt, serverNow);
   const removedSeconds = entries
     .filter((entry) => removedIds.includes(entry.id))
     .reduce((total, entry) => total + (entry.durationSeconds ?? 0), 0);
-  return formatDuration(
-    Math.floor((Math.max(0, closedSeconds - removedSeconds) + elapsed) / 60),
-  );
+  return formatDuration(Math.max(0, closedSeconds - removedSeconds) + elapsed, duration);
 }

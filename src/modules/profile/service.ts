@@ -1,3 +1,4 @@
+import { knownChoice } from "@/lib/known-choice";
 import { initialsOf } from "@/lib/text";
 import { auditActorOf, recordAudit } from "@/server/audit";
 import { db } from "@/server/db";
@@ -59,22 +60,6 @@ function resolveTimeZone(value: string | null): string {
   return value !== null && isUsableTimeZone(value) ? value : PREFERENCE_DEFAULTS.timezone;
 }
 
-/** El `check` de la base impide un valor fuera de lista; si llega, lanza. */
-function knownChoice<Choice extends string>(
-  choices: readonly Choice[],
-  value: string | null,
-  fallback: Choice,
-): Choice {
-  if (value === null) {
-    return fallback;
-  }
-  const known = choices.find((choice) => choice === value);
-  if (known === undefined) {
-    throw new RangeError(`Valor fuera de lista: ${value}.`);
-  }
-  return known;
-}
-
 /** Único lugar que aplica los predeterminados, columna por columna. */
 export function resolvePreferences(row: UserPreferenceRow | undefined): Preferences {
   return {
@@ -132,7 +117,8 @@ export function themeClassOf(
 /**
  * Zona, formatos y primer día de la semana con que quien pide ve el tiempo.
  * Única lectura de `context.preferences` para mostrar; el primer día sale de
- * `weekStartOf`, nunca de la membresía directo. Pura, como `weekStartOf`.
+ * `weekStartOf`, nunca de la membresía directo; el formato de duración es del
+ * workspace, de `context.settings` (ADR 0029). Pura, como `weekStartOf`.
  */
 export function timeSettingsOf(context: ProfileContext): TimeSettings {
   return {
@@ -141,6 +127,7 @@ export function timeSettingsOf(context: ProfileContext): TimeSettings {
     formats: {
       time: context.preferences.timeFormat,
       date: context.preferences.dateFormat,
+      duration: context.settings.durationFormat,
     },
   };
 }

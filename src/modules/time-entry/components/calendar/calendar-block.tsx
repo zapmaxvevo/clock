@@ -93,7 +93,7 @@ export function CalendarBlock({
   dragging,
   onGestureStart,
 }: CalendarBlockProps) {
-  const { date } = useDisplayFormats();
+  const { date, duration: durationFormat } = useDisplayFormats();
   /** El timer que corre termina «en curso» (CAL-38). */
   const running = entry.endClock === null;
   const elapsed = useElapsedSeconds(running ? entry.startedAt : null, serverNow);
@@ -103,7 +103,7 @@ export function CalendarBlock({
   const start = entry.startLabel;
   const end = entry.endLabel;
   const duration = running
-    ? formatDuration(Math.floor(elapsed / 60))
+    ? formatDuration(elapsed, durationFormat)
     : (entry.durationLabel ?? "");
   const label = calendarLabels.blockLabel({
     name,

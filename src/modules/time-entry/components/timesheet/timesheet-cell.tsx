@@ -1,5 +1,6 @@
 "use client";
 
+import { useDisplayFormats } from "@/components/layout/display-formats";
 import { cn } from "@/lib/utils";
 
 import { ClockField } from "../clock-field";
@@ -39,8 +40,10 @@ export function TimesheetCell({
   onSubmit,
   onMenu,
 }: TimesheetCellProps) {
+  const { duration } = useDisplayFormats();
+
   function handleCommit(text: string): string | null {
-    const result = cellCommit(text, cell.minutes);
+    const result = cellCommit(text, cell, duration);
     if (result.kind === "rejected") {
       return null;
     }

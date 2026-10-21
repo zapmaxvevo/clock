@@ -17,6 +17,12 @@ import { MEMBER_STATUSES, memberStatusOf, type MemberStatus } from "./schema";
 export type WorkspaceRow = typeof workspace.$inferSelect;
 export type MembershipRow = typeof membership.$inferSelect;
 
+/** El workspace y su formato de duración; `null` si falta la fila de ajustes (WS-73). */
+export type WorkspaceRead = {
+  readonly workspace: WorkspaceRow;
+  readonly durationFormat: string | null;
+};
+
 /** Una persona del workspace con los dos nombres, que solo se muestran (ADR 0010). */
 export type PersonRow = {
   readonly userId: string;
@@ -60,14 +66,17 @@ export const workspaceRepository = {
   /**
    * El workspace más viejo. El orden es explícito porque «el primero» sin
    * criterio es una lectura que puede cambiar entre dos peticiones; el `id`
-   * desempata para que no dependa del segundo en que se crearon.
+   * desempata para que no dependa del segundo en que se crearon. Trae su
+   * formato de duración en la misma consulta, con un `left join`: sin la fila
+   * de ajustes, `null` (ADR 0029).
    */
   async findFirstWorkspace(
     tx: Transaction | typeof db = db,
-  ): Promise<WorkspaceRow | undefined> {
+  ): Promise<WorkspaceRead | undefined> {
     const rows = await tx
-      .select()
+      .select({ workspace, durationFormat: workspaceSettings.durationFormat })
       .from(workspace)
+      .leftJoin(workspaceSettings, eq(workspaceSettings.workspaceId, workspace.id))
       .orderBy(asc(workspace.createdAt), asc(workspace.id))
       .limit(1);
     return rows.at(0);
@@ -86,13 +95,17 @@ export const workspaceRepository = {
     return rows.at(0);
   },
 
+  /** El workspace y su fila de ajustes, con el formato que le dio la base. */
   async createWorkspace(
     tx: Transaction,
     values: { name: string; ownerId: string; timezone: string },
-  ): Promise<WorkspaceRow> {
+  ): Promise<WorkspaceRead> {
     const [created] = await tx.insert(workspace).values(values).returning();
-    await tx.insert(workspaceSettings).values({ workspaceId: created.id });
-    return created;
+    const [settings] = await tx
+      .insert(workspaceSettings)
+      .values({ workspaceId: created.id })
+      .returning({ durationFormat: workspaceSettings.durationFormat });
+    return { workspace: created, durationFormat: settings.durationFormat };
   },
 
   /**

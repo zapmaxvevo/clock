@@ -55,7 +55,9 @@ type Options = {
 function render(options: Options = {}): string {
   return renderToStaticMarkup(
     <DisplayFormatsProvider
-      formats={options.formats ?? { time: "24h", date: "dd/MM/yyyy" }}
+      formats={
+        options.formats ?? { time: "24h", date: "dd/MM/yyyy", duration: "compact" }
+      }
     >
       <TrackingCatalogProvider catalog={catalog}>
         <EntryRow
@@ -131,7 +133,9 @@ describe("EntryRow", () => {
   });
 
   it("las horas del nombre siguen el formato de la persona", () => {
-    const checkbox = checkboxOf(render({ formats: { time: "12h", date: "dd/MM/yyyy" } }));
+    const checkbox = checkboxOf(
+      render({ formats: { time: "12h", date: "dd/MM/yyyy", duration: "compact" } }),
+    );
 
     expect(checkbox).toContain('aria-label="Seleccionar «Informe», 9:00 AM – 10:30 AM"');
   });

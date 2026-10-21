@@ -17,7 +17,9 @@ export function cellText(cell: ExportCell): string {
     case "clock":
       return cell.clock;
     case "duration":
-      return formatDuration(cell.minutes);
+      // Fijo en el compacto hasta WS2b, que trae el formato del workspace a las
+      // exportaciones junto con el selector (D-WS2a-9).
+      return formatDuration(cell.minutes * 60, "compact");
     case "hours":
       return formatDecimalHours(cell.minutes);
     case "empty":

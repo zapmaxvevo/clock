@@ -1,6 +1,6 @@
 import { expect, test as setup } from "@playwright/test";
 
-import { activeMembershipCount, renewWorkspace } from "./database";
+import { activeMembershipCount, renewWorkspace, setDurationFormat } from "./database";
 import { OWNER_EMAIL } from "./environment";
 import { signIn } from "./session";
 
@@ -30,6 +30,10 @@ setup("el workspace existe antes de los tests", async ({ page }) => {
   await expect(page.getByRole("region", { name: "Rastreador" })).toBeVisible();
 
   await renewWorkspace();
+  // Los specs de `chromium` afirman el compacto. Una corrida cortada en medio
+  // del proyecto del completo, o su receta a mano, dejan el workspace en
+  // `full`: se vuelve acá, antes del paralelo (D-WS2a-12 de WS2a).
+  await setDurationFormat("compact");
 
   const active = await activeMembershipCount();
   if (active > MAX_ACTIVE_MEMBERSHIPS) {

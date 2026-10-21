@@ -8,7 +8,13 @@ import { randomUUID } from "node:crypto";
 
 import { expect, type Locator, type Page } from "@playwright/test";
 
-import { calendarDayName, dayLabel, monthsBetween, type CivilDay } from "./days";
+import {
+  calendarDayName,
+  dayLabel,
+  monthsBetween,
+  weekLabel,
+  type CivilDay,
+} from "./days";
 import { withServerAction } from "./network";
 
 /** Lo que pide el rastreador: sus server actions y sus revalidaciones. */
@@ -33,6 +39,11 @@ export function todayGroup(page: Page): Locator {
   return page.getByRole("region", { name: "Hoy" });
 }
 
+/** La franja de una semana, por su rótulo (TT-47). */
+export function trackerWeek(page: Page, start: CivilDay, today: CivilDay): Locator {
+  return page.getByRole("region", { name: weekLabel(start, today), exact: true });
+}
+
 export function entryRow(scope: Locator, description: string): Locator {
   return scope.getByRole("listitem").filter({ hasText: description });
 }
@@ -40,6 +51,11 @@ export function entryRow(scope: Locator, description: string): Locator {
 /** La descripción de una fila es un botón que la vuelve editable (TT-54). */
 export function editDescriptionButton(scope: Locator, description: string): Locator {
   return scope.getByRole("button", { name: `${description} — editar la descripción` });
+}
+
+/** Las horas de una fila son el botón que abre el editor del horario (TT-54). */
+export function timesButton(row: Locator, start: string, end: string): Locator {
+  return row.getByRole("button", { name: `${start} – ${end} — editar el horario` });
 }
 
 /** El «Total» del encabezado del grupo, que lleva la etiqueta y el valor. */

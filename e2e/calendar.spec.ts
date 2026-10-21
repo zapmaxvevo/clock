@@ -65,6 +65,7 @@ import {
   startTimer,
   todayGroup,
   trackerBar,
+  trackerWeek,
 } from "./tracker-page";
 
 /**
@@ -116,10 +117,7 @@ async function addEntry(
  * su encabezado, antes que los días, así que es el primero de la franja.
  */
 function trackerWeekTotal(page: Page, start: CivilDay, today: CivilDay): Locator {
-  return page
-    .getByRole("region", { name: weekLabel(start, today), exact: true })
-    .getByText(TOTAL)
-    .first();
+  return trackerWeek(page, start, today).getByText(TOTAL).first();
 }
 
 /** Los minutos de un total «Total h:mm» o «h:mm». */

@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
+import { DisplayFormatsProvider } from "@/components/layout/display-formats";
 import { TrackingCatalogProvider } from "@/modules/project/components/tracking-catalog";
 import type { TrackingCatalog } from "@/modules/project/schema";
 import type {
@@ -8,6 +9,7 @@ import type {
   TimesheetDayView,
   TimesheetState,
 } from "@/modules/time-entry/schema";
+import type { DurationFormat } from "@/server/time";
 
 import { TimesheetToolbar } from "./timesheet-toolbar";
 import { TimesheetView } from "./timesheet-view";
@@ -135,11 +137,16 @@ const state: TimesheetState = {
   ],
 };
 
-function render(overrides: Partial<TimesheetState> = {}): string {
+function render(
+  overrides: Partial<TimesheetState> = {},
+  duration: DurationFormat = "compact",
+): string {
   return renderToStaticMarkup(
-    <TrackingCatalogProvider catalog={catalog}>
-      <TimesheetView state={{ ...state, ...overrides }} />
-    </TrackingCatalogProvider>,
+    <DisplayFormatsProvider formats={{ time: "24h", date: "dd/MM/yyyy", duration }}>
+      <TrackingCatalogProvider catalog={catalog}>
+        <TimesheetView state={{ ...state, ...overrides }} />
+      </TrackingCatalogProvider>
+    </DisplayFormatsProvider>,
   );
 }
 
@@ -198,6 +205,17 @@ describe("TimesheetView, la grilla (§5.4)", () => {
     expect(footer).toMatch(/<th scope="row"[^>]*>Total<\/th>/);
     expect(textOf(footer)).toBe("Total0:000:001:300:000:000:000:001:30");
     expect(footer.match(/text-muted-foreground/g)).toHaveLength(6);
+  });
+
+  it("la celda y los totales siguen el formato de duración del proveedor (ADR 0029)", () => {
+    const markup = render({}, "full");
+    const footer = /<tfoot>.*<\/tfoot>/.exec(markup)?.[0] ?? "";
+
+    expect(markup).toContain('value="01:30:00"');
+    expect(markup).toMatch(/>01:30:00<\/td>/);
+    expect(textOf(footer)).toBe(
+      "Total00:00:0000:00:0001:30:0000:00:0000:00:0000:00:0000:00:0001:30:00",
+    );
   });
 
   it("la fila con entradas tiene su X nombrada por la fila (TS-52) y su total", () => {

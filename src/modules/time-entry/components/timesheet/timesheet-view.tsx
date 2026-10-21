@@ -3,6 +3,7 @@
 import { PlusIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { useDisplayFormats } from "@/components/layout/display-formats";
 import { Button } from "@/components/ui/button";
 import { samePair, type ProjectPair } from "@/lib/project-pair";
 import { selectionIds } from "@/modules/project/components/picker-model";
@@ -54,6 +55,7 @@ type PendingFocus =
 export function TimesheetView({ state }: { readonly state: TimesheetState }) {
   useTrackerRefresh();
   const catalog = useTrackingCatalog();
+  const { duration } = useDisplayFormats();
   const writes = useCellWrites(state);
   const changes = useEntryChanges(state, settleDetail);
   const storedRows = useStoredRows(state.storageKey);
@@ -119,6 +121,7 @@ export function TimesheetView({ state }: { readonly state: TimesheetState }) {
     removing: removals.removing,
     shown: writes.shown,
     changing: changes.changing,
+    format: duration,
   });
   const busy = new Set([...writes.busy, ...changes.changing]);
   const canAddRow = state.canTrack && state.days.some((day) => !day.beforeFloor);

@@ -23,13 +23,17 @@ import {
 } from "@/server/db/schema";
 import type { PaletteKey } from "@/modules/project/palette";
 import type { MembershipStatus, Role } from "@/server/permissions";
-import type { DisplayFormats } from "@/server/time";
+import type { DisplayFormats, DurationFormat } from "@/server/time";
 
 /** Zona horaria de los workspaces de prueba. */
 export const buenosAires = "America/Argentina/Buenos_Aires";
 
 /** Los formatos de quien no eligió ninguno (P-03). */
-export const defaultFormats: DisplayFormats = { time: "24h", date: "dd/MM/yyyy" };
+export const defaultFormats: DisplayFormats = {
+  time: "24h",
+  date: "dd/MM/yyyy",
+  duration: "compact",
+};
 
 export type SeededWorkspace = {
   readonly workspaceId: string;
@@ -62,6 +66,20 @@ export async function seedWorkspace(timezone = buenosAires): Promise<SeededWorks
     .insert(membership)
     .values({ workspaceId: created.id, userId: ownerId, role: "owner" });
   return { workspaceId: created.id, ownerId };
+}
+
+/**
+ * Pone el formato de duración del workspace, como lo haría el selector de
+ * WS2b: un `update` de su fila de ajustes (ADR 0029).
+ */
+export async function setDurationFormat(
+  workspaceId: string,
+  format: DurationFormat,
+): Promise<void> {
+  await db
+    .update(workspaceSettings)
+    .set({ durationFormat: format })
+    .where(eq(workspaceSettings.workspaceId, workspaceId));
 }
 
 /**

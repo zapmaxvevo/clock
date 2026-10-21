@@ -340,17 +340,22 @@ Los dos de PF-20: «Completo (hh:mm:ss)» y «Compacto (h:mm)», en ese orden, e
 selector rotulado «Formato de duración», cada opción con su ejemplo de la
 duración de una hora y media: `01:30:00` y `1:30`. El decimal queda fuera: es
 de plan pago (PF-20, perfil P-01). El valor inicial es compacto (perfil P-01,
-P-03). Hoy no hay columna: `formatDuration` fija `h:mm`
-(`src/server/time/index.ts`) y el perfil lo muestra en solo lectura como
-«Compacto (h:mm)» con «Lo define el workspace.» (PF-31).
+P-03). Desde WS2a el valor vive en `workspace_settings.duration_format`,
+compacto por omisión (migración `0019`), y `formatDuration` lo recibe
+([ADR 0029](../adr/0029-el-formato-de-duracion-es-del-workspace-y-solo-cambia-lo-que-se-muestra.md)).
+Hasta WS2b no hay selector, y el perfil lo muestra en solo lectura como
+«Compacto (h:mm)» con «Lo define el workspace.» (PF-31), un texto fijo que pasa
+a mostrar el valor del workspace con WS2b.
 Justificación del `adaptar`: se implementan dos de los tres formatos.
 Dato del workspace del equipo: la planilla muestra `06:00:00` (timesheet,
 respuesta 13), que es el completo. El predeterminado no se reabre. Decidido el
 2026-10-16 (workspace P-07): el workspace de producción arranca con el formato
 completo (`06:00:00`), el que el equipo veía en Clockify.
+_Corregido el 2026-10-20, WS2a_: decía que no había columna y que
+`formatDuration` fijaba `h:mm`.
 
 **WS-16 El formato decide también cómo se calcula** — `replicar`, con la regla
-pendiente de workspace P-09
+como decisión del equipo (ADR 0029)
 Documentado: del completo, «Time calculations use the exact, full duration of
 tracked time across all modules.»; del compacto, «Time calculations use compact
 rounded durations across all modules.» La documentación no dice cuál es el
@@ -359,10 +364,24 @@ redondeo del compacto. La descripción de la API lo asocia a
 Acá la pregunta es concreta: una entrada del timer tiene segundos, la fila la
 muestra en minutos y el reporte suma segundos (`entrySeconds`,
 `src/modules/report/repository.ts`). Con compacto, un total puede ser la suma
-de las filas redondeadas o el redondeo de la suma, y dan distinto. **El
-contrato del slice fija una regla y la escribe acá**; hasta verificarlo es
-decisión del equipo y no paridad. La interpretación de lo que se teclea no
-cambia entre los dos formatos (PF-21).
+de las filas redondeadas o el redondeo de la suma, y dan distinto.
+**La regla: el formato solo cambia lo que se muestra**
+([ADR 0029](../adr/0029-el-formato-de-duracion-es-del-workspace-y-solo-cambia-lo-que-se-muestra.md)).
+Toda suma es de segundos exactos y cada rótulo trunca una sola vez, en la unidad
+de su formato: el minuto con el compacto, el segundo con el completo. Una fila
+muestra sus segundos truncados; un total, la suma exacta truncada, y no la suma
+de las filas truncadas. Con el compacto, un total puede pasar lo que suman sus
+filas en menos de un minuto por fila (WS-68); con el completo, cierran al
+segundo. Cambiar el formato no cambia ningún número: ni los totales, ni lo que
+agrega el reporte, ni lo que escribe una celda de la planilla, ni «Horas» de las
+exportaciones. Es decisión del equipo y no paridad: la verificación es el punto
+7 de workspace P-09, y si muestra que Clockify redondea cada entrada con el
+compacto, cambiar la regla es un ADR nuevo. La interpretación de lo que se
+teclea no cambia entre los dos formatos (PF-21, WS-67).
+_Corregido el 2026-10-20, WS2a_: la regla estaba pendiente de workspace P-09, y
+el texto decía que la fijaba el contrato del slice. La fija el ADR 0029, con el
+[contrato de WS2a](../slices/fase2-ws2a-formato.md) (D-WS2a-5); el usuario
+aceptó el ADR el 2026-10-20 (pregunta 1 de ese contrato).
 
 **WS-17 Dónde se aplica** — `replicar`
 Documentado: «Your time will be displayed in full formatting across the entire
@@ -375,8 +394,18 @@ duración de las exportaciones. **El contador del timer corriendo sigue en
 `h:mm:ss`** (PF-22, perfil P-06). La columna «Horas» de las exportaciones sigue
 en decimal (D-R6-9 del núcleo de reportes): es una cantidad para planillas de
 cálculo, no una duración que se lee.
+El bloque del timer en el calendario muestra su transcurrido como la duración de
+los demás bloques, con el formato (CAL-21); el contador en `h:mm:ss` es el de la
+barra del timer y el de «Fin: en curso» del diálogo del calendario. WS2a lleva el
+formato a todo lo anterior salvo el reporte y las columnas de duración de las
+exportaciones, que quedan en compacto hasta WS2b, junto con el texto del perfil
+(PF-31). Como nadie puede elegir el completo antes de WS2b, producción no ve
+formatos mezclados.
 _No verificado_: si la columna de tiempo imputado de la lista de proyectos de
 Clockify es la excepción «Projects» (workspace P-09).
+_Corregido el 2026-10-20, WS2a_: no decía que el bloque del timer del calendario
+sigue el formato ni que el reporte y las exportaciones lo siguen recién con WS2b
+([contrato de WS2a](../slices/fase2-ws2a-formato.md), D-WS2a-7 y D-WS2a-9).
 
 ### 3.2 Lo demás de la sección
 
@@ -789,17 +818,17 @@ los formatos de la persona por `useDisplayFormats`
 
 ## 13. Casos borde
 
-| ID    | Caso                                                            | Comportamiento esperado                                                                                                                                                                          |
-| ----- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| WS-65 | Dos admins cambian el mismo ajuste a la vez                     | Gana el último en llegar. Cada ajuste se escribe solo, así que cambiar el nombre no pisa el formato que otro cambió. El audit log guarda los dos cambios.                                        |
-| WS-66 | Cambiar el formato de duración con un timer corriendo           | El contador sigue en `h:mm:ss` (PF-22). Cambian las filas y los totales. El timer no se toca.                                                                                                    |
-| WS-67 | Cambiar el formato con un borrador de duración a medio escribir | Lo tecleado se interpreta igual con los dos formatos (PF-21). El borrador se muestra con el formato nuevo cuando la pantalla recibe el valor.                                                    |
-| WS-68 | Entrada del timer con segundos, con formato compacto            | Regla del contrato (WS-16). Lo que no puede pasar es que la fila, el total del día y el reporte muestren totales que no cierran entre sí sin una regla escrita.                                  |
-| WS-69 | Cambiar el formato con un reporte abierto o exportado           | Lo abierto queda hasta el pedido siguiente (WS-64). Un archivo ya descargado no cambia. La exportación nueva usa el formato nuevo en sus columnas de duración; «Horas» sigue en decimal (WS-17). |
-| WS-70 | Cambiar el primer día por defecto (WS-08)                       | Ninguna membresía cambia. La persona que entra después nace con el valor nuevo. _No verificado_ contra Clockify (WS-08).                                                                         |
-| WS-71 | Nombre con espacios al principio o al final                     | Se recortan antes de validar y de guardar. Si el recortado es igual al guardado, no se escribe.                                                                                                  |
-| WS-72 | Un owner o admin con la membresía desactivada                   | Ve WS-51 y no cambia nada (WS-58).                                                                                                                                                               |
-| WS-73 | Falta la fila de `workspace_settings`                           | No pasa: se crea con el workspace. Si pasara, la pantalla responde con el error inesperado y no la crea por su cuenta; un ajuste que aparece con valores de omisión ocultaría el problema.       |
+| ID    | Caso                                                            | Comportamiento esperado                                                                                                                                                                                                                                                                                                    |
+| ----- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| WS-65 | Dos admins cambian el mismo ajuste a la vez                     | Gana el último en llegar. Cada ajuste se escribe solo, así que cambiar el nombre no pisa el formato que otro cambió. El audit log guarda los dos cambios.                                                                                                                                                                  |
+| WS-66 | Cambiar el formato de duración con un timer corriendo           | El contador sigue en `h:mm:ss` (PF-22). Cambian las filas y los totales. El timer no se toca.                                                                                                                                                                                                                              |
+| WS-67 | Cambiar el formato con un borrador de duración a medio escribir | Lo tecleado se interpreta igual con los dos formatos (PF-21), y los dos aceptan `h:mm:ss`, la forma que muestra el completo, con los segundos truncados (TT-19). El borrador se muestra con el formato nuevo cuando la pantalla recibe el valor.                                                                           |
+| WS-68 | Entrada del timer con segundos, con formato compacto            | Regla de WS-16 (ADR 0029): toda suma es de segundos exactos y cada rótulo trunca una vez. Dos entradas de 1 minuto 40 segundos el mismo día se muestran `0:01` cada una y el total del día, `0:03`; con el completo, `00:01:40`, `00:01:40` y `00:03:20`. La fila, el total del día y el reporte siguen la misma regla.    |
+| WS-69 | Cambiar el formato con un reporte abierto o exportado           | Lo abierto queda hasta el pedido siguiente (WS-64). Un archivo ya descargado no cambia. La exportación nueva usa el formato nuevo en sus columnas de duración; «Horas» sigue en decimal (WS-17).                                                                                                                           |
+| WS-70 | Cambiar el primer día por defecto (WS-08)                       | Ninguna membresía cambia. La persona que entra después nace con el valor nuevo. _No verificado_ contra Clockify (WS-08).                                                                                                                                                                                                   |
+| WS-71 | Nombre con espacios al principio o al final                     | Se recortan antes de validar y de guardar. Si el recortado es igual al guardado, no se escribe.                                                                                                                                                                                                                            |
+| WS-72 | Un owner o admin con la membresía desactivada                   | Ve WS-51 y no cambia nada (WS-58).                                                                                                                                                                                                                                                                                         |
+| WS-73 | Falta la fila de `workspace_settings`                           | No pasa: se crea con el workspace. Si pasara, la sesión muestra el compacto sin crear la fila (ADR 0029): un ajuste de presentación no la tira abajo. La pantalla de configuración responde con el error inesperado y no la crea por su cuenta (WS2b); un ajuste que aparece con valores de omisión ocultaría el problema. |
 
 **WS-65 … WS-73** — `adaptar`. Justificación: Clockify no documenta ninguno; son
 consecuencias de WS-04, WS-16, WS-17 y PF-22 escritas para que el contrato y
@@ -811,6 +840,11 @@ WS2b**, el primer slice que lee la fila de `workspace_settings` desde
 porque nada la crea, pero la página no lee la base y no hay error que mostrar.
 WS2a la lee antes en la sesión; lo que WS-73 describe es el error de la
 pantalla.
+_Corregido el 2026-10-20, WS2a_: WS-67 no decía que se acepta `h:mm:ss`; WS-68
+remitía a una regla que el contrato de su slice iba a fijar, y la fija el ADR
+0029 (WS-16); WS-73 no decía qué hace la sesión sin la fila
+([contrato de WS2a](../slices/fase2-ws2a-formato.md), D-WS2a-2, D-WS2a-5 y
+D-WS2a-6).
 
 ## 14. Lo que ya existe en el esquema
 
@@ -818,22 +852,22 @@ pantalla.
 Varias nunca tuvieron efecto, y el ADR 0009 dice por qué eso es un problema:
 «un dato que viaja sin efecto es una invitación a creer que tiene uno».
 
-| Columna                                                                 | Hoy                             | Con este documento                                   |
-| ----------------------------------------------------------------------- | ------------------------------- | ---------------------------------------------------- |
-| `workspace.name`                                                        | Se muestra; nadie la cambia     | Se cambia desde la pantalla (WS-05)                  |
-| `workspace.logo_url`                                                    | Borrada en WS0 (`0018`)         | Se borra (WS-07, workspace P-01 y P-05)              |
-| `workspace.currency`                                                    | Borrada en WS0 (`0018`)         | Se borra (WS-31, workspace P-05)                     |
-| `workspace.timezone`                                                    | Día del cron (PF-05)            | Igual; no se muestra (WS-12)                         |
-| `workspace.owner_id`                                                    | El owner                        | Lo cambia la transferencia (EQ-57), no esta pantalla |
-| `workspace_settings.who_sees_all_entries`                               | `admins`, sin efecto (ADR 0020) | Igual (WS-42)                                        |
-| `workspace_settings.who_sees_rates`                                     | Borrada en WS0 (`0018`)         | Se borra (WS-43, workspace P-05)                     |
-| `workspace_settings.who_creates_projects`                               | Borrada en WS0 (`0018`)         | Se borra (WS-39, workspace P-03 y P-05)              |
-| `require_project`, `require_task`, `require_description`, `require_tag` | Borrada en WS0 (`0018`)         | Se borra (WS-22, workspace P-05)                     |
-| `workspace_settings.force_timer`                                        | Borrada en WS0 (`0018`)         | Se borra (WS-23, workspace P-05)                     |
-| `workspace_settings.timesheet_enabled`                                  | Borrada en WS0 (`0018`)         | Se borra (WS-18, workspace P-05)                     |
-| `workspace_settings.rounding_minutes`                                   | Borrada en WS0 (`0018`)         | Se borra (WS-24, workspace P-05)                     |
-| _Falta_: formato de duración                                            | —                               | Columna nueva, compacto por defecto (WS-15)          |
-| _Falta_: primer día por defecto                                         | —                               | Columna nueva (WS-08, workspace P-02)                |
+| Columna                                                                 | Hoy                                  | Con este documento                                   |
+| ----------------------------------------------------------------------- | ------------------------------------ | ---------------------------------------------------- |
+| `workspace.name`                                                        | Se muestra; nadie la cambia          | Se cambia desde la pantalla (WS-05)                  |
+| `workspace.logo_url`                                                    | Borrada en WS0 (`0018`)              | Se borra (WS-07, workspace P-01 y P-05)              |
+| `workspace.currency`                                                    | Borrada en WS0 (`0018`)              | Se borra (WS-31, workspace P-05)                     |
+| `workspace.timezone`                                                    | Día del cron (PF-05)                 | Igual; no se muestra (WS-12)                         |
+| `workspace.owner_id`                                                    | El owner                             | Lo cambia la transferencia (EQ-57), no esta pantalla |
+| `workspace_settings.who_sees_all_entries`                               | `admins`, sin efecto (ADR 0020)      | Igual (WS-42)                                        |
+| `workspace_settings.who_sees_rates`                                     | Borrada en WS0 (`0018`)              | Se borra (WS-43, workspace P-05)                     |
+| `workspace_settings.who_creates_projects`                               | Borrada en WS0 (`0018`)              | Se borra (WS-39, workspace P-03 y P-05)              |
+| `require_project`, `require_task`, `require_description`, `require_tag` | Borrada en WS0 (`0018`)              | Se borra (WS-22, workspace P-05)                     |
+| `workspace_settings.force_timer`                                        | Borrada en WS0 (`0018`)              | Se borra (WS-23, workspace P-05)                     |
+| `workspace_settings.timesheet_enabled`                                  | Borrada en WS0 (`0018`)              | Se borra (WS-18, workspace P-05)                     |
+| `workspace_settings.rounding_minutes`                                   | Borrada en WS0 (`0018`)              | Se borra (WS-24, workspace P-05)                     |
+| `workspace_settings.duration_format`                                    | Columna desde WS2a, `0019`, compacta | Se elige con el selector de WS2b (WS-15)             |
+| _Falta_: primer día por defecto                                         | —                                    | Columna nueva (WS-08, workspace P-02)                |
 
 Decidido el 2026-10-16 (workspace P-05): las columnas sin efecto que dicen «Se
 borra» se quitan con una migración, con el criterio del ADR 0009. Entre ellas
@@ -847,6 +881,10 @@ columnas se borraron con la migración `0018`
 ([contrato de WS0](../slices/fase2-ws0-columnas.md)), junto con
 `membership.weekly_capacity_minutes` (workspace P-06, equipo P-09).
 `who_sees_all_entries` no se borra (WS-42).
+_Corregido el 2026-10-20, WS2a_: la fila del formato de duración decía
+«_Falta_». La columna existe desde la migración `0019` de WS2a, compacta por
+omisión, y la lee la sesión en cada pedido
+([ADR 0029](../adr/0029-el-formato-de-duracion-es-del-workspace-y-solo-cambia-lo-que-se-muestra.md)).
 
 ## 15. Qué es de la fase 2
 
@@ -906,13 +944,19 @@ Sugerencia, no decisión. Cada uno es vertical y se despliega solo.
    su `schema.ts`, sus actions y sus componentes, que hoy no tiene». Desde E1a
    el módulo tiene `schema.ts` y `actions.ts`; lo único nuevo de WS1 es
    `components/`.
-2. **WS2 — El formato de duración.** La columna con su migración, el valor en
-   la sesión, `formatDuration` con el formato, y todos sus consumidores:
-   rastreador, planilla, calendario, reporte y exportaciones, en el servidor y
-   en el navegador. Es el más grande y el único que toca pantallas ya
-   construidas. Necesita decidir antes la regla de WS-16 y WS-68, y
-   probablemente un ADR que extienda el 0012 con un formato que es del
-   workspace y no de la persona.
+2. **WS2 — El formato de duración**, en dos slices. **WS2a**, el dato y sus
+   lectores: la columna con su migración, el valor en la sesión,
+   `formatDuration` con el formato y sus consumidores del rastreador, la
+   planilla y el calendario, en el servidor y en el navegador, sin selector ni
+   cambio visible. **WS2b**: el selector, el reporte, las columnas de duración
+   de las exportaciones y el perfil. Es el único que toca pantallas ya
+   construidas. La regla de WS-16 y WS-68 la fija el
+   [ADR 0029](../adr/0029-el-formato-de-duracion-es-del-workspace-y-solo-cambia-lo-que-se-muestra.md),
+   que extiende el 0012 con un formato que es del workspace y no de la persona.
+   _Corregido el 2026-10-20, WS2a_: era un slice solo, y decía que necesitaba
+   decidir antes la regla de WS-16 y WS-68 y «probablemente un ADR». El
+   [mapa de la fase 2](../slices/fase2-mapa.md) lo partió en WS2a y WS2b, y el
+   ADR es el 0029.
 3. **WS3 — El primer día por defecto**, aprobado en workspace P-02. Una
    columna, un selector y la lectura en `ensureWorkspaceContext`. Conviene
    después del slice de equipo que edite el primer día por persona (EQ-71), para

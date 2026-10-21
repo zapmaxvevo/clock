@@ -12,6 +12,7 @@ import {
   workspaceSettings,
 } from "@/server/db/schema";
 import type { Actor } from "@/server/permissions";
+import { DURATION_FORMATS } from "@/server/time";
 import { outcomeWhileHeld, warmPool, waitForBlockedBackends } from "@/test/concurrency";
 import {
   seedAccountLink,
@@ -21,6 +22,7 @@ import {
   seedTimeEntry,
   seedUser,
   seedWorkspace,
+  setDurationFormat,
 } from "@/test/factories";
 import { auditFor, invitationOf } from "@/test/queries";
 import { actorIn } from "@/test/time-entry";
@@ -34,6 +36,7 @@ import {
   isMembershipActiveLocked,
   listWorkspacePeople,
   registerExternalMember,
+  resolveDurationFormat,
   weekStartOf,
   type WorkspaceContext,
 } from "./service";
@@ -424,6 +427,118 @@ describe("weekStartOf", () => {
     expect(() =>
       weekStartOf({ ...context, membership: { ...context.membership, weekStart: 7 } }),
     ).toThrow(RangeError);
+  });
+});
+
+describe("resolveDurationFormat (D-WS2a-2)", () => {
+  it("sin fila de ajustes da compact", () => {
+    expect(resolveDurationFormat(null)).toBe("compact");
+  });
+
+  it("devuelve cada valor de la lista", () => {
+    expect(resolveDurationFormat("compact")).toBe("compact");
+    expect(resolveDurationFormat("full")).toBe("full");
+  });
+
+  it("lanza con un valor fuera de lista", () => {
+    expect(() => resolveDurationFormat("decimal")).toThrow(RangeError);
+    expect(() => resolveDurationFormat("FULL")).toThrow(RangeError);
+  });
+});
+
+/** Las filas de ajustes del workspace: una, o ninguna si se borró. */
+async function settingsRowsOf(workspaceId: string) {
+  return db
+    .select({ durationFormat: workspaceSettings.durationFormat })
+    .from(workspaceSettings)
+    .where(eq(workspaceSettings.workspaceId, workspaceId));
+}
+
+describe("el formato de duración en la sesión (D-WS2a-2, criterio 5)", () => {
+  it("el arranque deja el workspace en compact, en la fila y en el contexto", async () => {
+    const userId = await seedUser("owner@empresa.com");
+
+    const context = await enter(userId, "owner@empresa.com");
+
+    expect(context.settings).toEqual({ durationFormat: "compact" });
+    expect(await settingsRowsOf(context.workspace.id)).toEqual([
+      { durationFormat: "compact" },
+    ]);
+  });
+
+  it("trae el valor escrito en la base", async () => {
+    const { workspaceId, ownerId } = await workspaceWithOwner();
+    await setDurationFormat(workspaceId, "full");
+
+    const context = await enter(ownerId, "owner@empresa.com");
+
+    expect(context.settings).toEqual({ durationFormat: "full" });
+  });
+
+  it("el check de la base acepta cada valor de DURATION_FORMATS, y la sesión lo trae", async () => {
+    const { workspaceId, ownerId } = await workspaceWithOwner();
+
+    // Al revés, para que la primera escritura cambie el `compact` de omisión.
+    for (const format of [...DURATION_FORMATS].reverse()) {
+      await setDurationFormat(workspaceId, format);
+      const context = await enter(ownerId, "owner@empresa.com");
+      expect(context.settings).toEqual({ durationFormat: format });
+    }
+  });
+
+  it("cada persona del workspace recibe el mismo formato", async () => {
+    const { workspaceId } = await workspaceWithOwner();
+    await seedInvitation({ workspaceId, email: "ana@empresa.com" });
+    const anaId = await seedUser("ana@empresa.com");
+    await setDurationFormat(workspaceId, "full");
+
+    const ana = await enter(anaId, "ana@empresa.com");
+
+    expect(ana.actor.role).toBe("member");
+    expect(ana.settings).toEqual({ durationFormat: "full" });
+  });
+
+  it("sin la fila de ajustes trae compact, del mismo workspace, sin crearla (WS-73)", async () => {
+    const { workspaceId, ownerId } = await workspaceWithOwner();
+    await db
+      .delete(workspaceSettings)
+      .where(eq(workspaceSettings.workspaceId, workspaceId));
+    const before = await writes();
+
+    const context = await enter(ownerId, "owner@empresa.com");
+
+    expect(context.workspace.id).toBe(workspaceId);
+    expect(context.settings).toEqual({ durationFormat: "compact" });
+    expect(await settingsRowsOf(workspaceId)).toEqual([]);
+    expect(await writes()).toEqual(before);
+  });
+
+  it("lee los ajustes del workspace más viejo, no los de otro", async () => {
+    const { workspaceId: oldest } = await seedWorkspace();
+    const { workspaceId: newer } = await seedWorkspace();
+    await setDurationFormat(newer, "full");
+
+    expect(await workspaceRepository.findFirstWorkspace()).toMatchObject({
+      workspace: { id: oldest },
+      durationFormat: "compact",
+    });
+
+    await setDurationFormat(oldest, "full");
+    await setDurationFormat(newer, "compact");
+
+    expect(await workspaceRepository.findFirstWorkspace()).toMatchObject({
+      workspace: { id: oldest },
+      durationFormat: "full",
+    });
+
+    // Sin su fila, el más viejo no toma la del otro.
+    await db.delete(workspaceSettings).where(eq(workspaceSettings.workspaceId, oldest));
+    await setDurationFormat(newer, "full");
+
+    expect(await workspaceRepository.findFirstWorkspace()).toMatchObject({
+      workspace: { id: oldest },
+      durationFormat: null,
+    });
   });
 });
 

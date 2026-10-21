@@ -42,37 +42,61 @@ export const visibilityScope = pgEnum("visibility_scope", [
   "admins",
 ]);
 
-export const workspace = pgTable("workspace", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  name: text("name").notNull(),
-  ownerId: text("owner_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "restrict" }),
-  /** Zona horaria del owner. Fija el día en que corren los trabajos de cron. */
-  timezone: text("timezone").notNull().default("America/Argentina/Buenos_Aires"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .defaultNow()
-    .$onUpdate(() => new Date()),
-});
+export const workspace = pgTable(
+  "workspace",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    /** Zona horaria del owner. Fija el día en que corren los trabajos de cron. */
+    timezone: text("timezone").notNull().default("America/Argentina/Buenos_Aires"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    check("workspace_name_len", sql`char_length(${table.name}) between 1 and 100`),
+    check("workspace_name_trimmed", sql`${table.name} = btrim(${table.name})`),
+  ],
+);
 
-export const workspaceSettings = pgTable("workspace_settings", {
-  workspaceId: uuid("workspace_id")
-    .primaryKey()
-    .references(() => workspace.id, { onDelete: "cascade" }),
-  /**
-   * Sin efecto: ven horas ajenas owner y admin, por rol (P-01). Si la fase 2 la
-   * vuelve editable, entra en `can()` por el recurso de `timeEntry.others.view`,
-   * no por `Actor`: ADR 0009 y ADR 0020.
-   */
-  whoSeesAllEntries: visibilityScope("who_sees_all_entries").notNull().default("admins"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .defaultNow()
-    .$onUpdate(() => new Date()),
-});
+export const workspaceSettings = pgTable(
+  "workspace_settings",
+  {
+    workspaceId: uuid("workspace_id")
+      .primaryKey()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    /**
+     * Sin efecto: ven horas ajenas owner y admin, por rol (P-01). Si la fase 2 la
+     * vuelve editable, entra en `can()` por el recurso de `timeEntry.others.view`,
+     * no por `Actor`: ADR 0009 y ADR 0020.
+     */
+    whoSeesAllEntries: visibilityScope("who_sees_all_entries")
+      .notNull()
+      .default("admins"),
+    /**
+     * Cómo se muestran las duraciones a todas las personas del workspace
+     * (WS-14, WS-15): `compact` o `full`. Solo cambia lo que se muestra (ADR
+     * 0029). Lo lee la sesión en cada pedido.
+     */
+    durationFormat: text("duration_format").notNull().default("compact"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    check(
+      "workspace_settings_duration_format_known",
+      sql`${table.durationFormat} in ('compact', 'full')`,
+    ),
+  ],
+);
 
 export const membership = pgTable(
   "membership",

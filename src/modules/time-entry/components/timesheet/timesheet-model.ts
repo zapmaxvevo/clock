@@ -15,7 +15,7 @@ import type {
   TimesheetRowView,
   TimesheetState,
 } from "@/modules/time-entry/schema";
-import { formatDuration, parseDurationInput } from "@/server/time";
+import { formatDuration, parseDurationInput, type DurationFormat } from "@/server/time";
 
 import { cellKeyOf, rowKeyOf } from "./cell-writes";
 import { cellLabel } from "./labels";
@@ -27,13 +27,18 @@ export type GridCell = {
   /** `día|proyecto|tarea`, la de `cell-writes.ts`. */
   readonly key: string;
   readonly date: string;
-  /** Los minutos que muestra; `null` si está vacía (TS-24). */
+  /**
+   * Sus minutos, truncados, o los de la escritura que todavía no está en la
+   * foto; `null` si está vacía (TS-24). Con ellos se decide «sin cambios»
+   * (TS-36).
+   */
   readonly minutes: number | null;
-  /** Vacío sin entradas; `0:00` con una de cero minutos (TS-118). */
+  /** Vacío sin entradas; el de cero con una de cero minutos (TS-118). */
   readonly label: string;
   /**
-   * Lo que suma a los totales: exacto de la foto, o los minutos de la
-   * escritura que todavía no está en ella. Se formatea una vez, en el total.
+   * Exacto de la foto, o en lo que la deja la escritura que todavía no está
+   * en ella (`writtenSeconds`). Lo que muestra y lo que suma a los totales,
+   * que lo formatean una vez (ADR 0029).
    */
   readonly seconds: number;
   readonly writable: boolean;
@@ -97,6 +102,8 @@ export type TimesheetGridInput = {
   readonly shown: ReadonlyMap<string, number>;
   /** Las celdas con un pedido del detalle que todavía no está en la foto (13b, §5.3). */
   readonly changing: ReadonlySet<string>;
+  /** `useDisplayFormats().duration` de la pantalla. */
+  readonly format: DurationFormat;
 };
 
 /** Lo que una fila trae antes de armar sus celdas. */
@@ -108,13 +115,32 @@ type RowSource = {
   readonly server: TimesheetRowView | null;
 };
 
-function totalOf(seconds: number): GridTotal {
-  const minutes = Math.floor(seconds / 60);
-  return { label: formatDuration(minutes), zero: minutes === 0 };
+/** Gris si su rótulo es el de cero: con el compacto, menos de un minuto (TS-45). */
+function totalOf(seconds: number, format: DurationFormat): GridTotal {
+  const label = formatDuration(seconds, format);
+  return { label, zero: label === formatDuration(0, format) };
 }
 
 function sumSeconds(cells: readonly GridCell[]): number {
   return cells.reduce((sum, cell) => sum + cell.seconds, 0);
+}
+
+/**
+ * D-WS2a-8: los segundos en que queda la celda si se escriben `minutes`, como
+ * los deja el servidor (TS-29, TS-33, TS-34): con cero o una entrada cerrada,
+ * `minutes × 60`; con varias, la suma exacta de sus `durationSeconds` más la
+ * diferencia en minutos con los minutos truncados de esa suma.
+ */
+export function writtenSeconds(
+  entries: readonly TimeEntryView[],
+  minutes: number,
+): number {
+  const closed = entries.filter((entry) => entry.endedAt !== null);
+  if (closed.length < 2) {
+    return minutes * 60;
+  }
+  const seconds = closed.reduce((sum, entry) => sum + (entry.durationSeconds ?? 0), 0);
+  return seconds + (minutes - Math.floor(seconds / 60)) * 60;
 }
 
 /** La celda de una entrada: su día y su par, la regla que arma las celdas (TS-07). */
@@ -231,24 +257,29 @@ function gridRow(
   source: RowSource,
   entries: ReadonlyMap<string, readonly TimeEntryView[]>,
 ): GridRow {
-  const { state, catalog, shown, changing } = input;
+  const { state, catalog, shown, changing, format } = input;
   const name = rowNameOf(source.project, source.task);
   const trackable = isTrackablePair(catalog, source.pair);
   const cells = state.days.map((day): GridCell => {
     const key = cellKeyOf({ date: day.date, ...source.pair });
     const server = source.server?.cells.find((cell) => cell.date === day.date) ?? null;
     const written = shown.get(key);
+    const cellEntries = entries.get(key) ?? [];
     const minutes =
       written ?? (server === null ? null : Math.floor(server.closedSeconds / 60));
+    const seconds =
+      written === undefined
+        ? (server?.closedSeconds ?? 0)
+        : writtenSeconds(cellEntries, written);
     return {
       key,
       date: day.date,
       minutes,
-      label: minutes === null ? "" : formatDuration(minutes),
-      seconds: written === undefined ? (server?.closedSeconds ?? 0) : written * 60,
+      label: minutes === null ? "" : formatDuration(seconds, format),
+      seconds,
       writable: state.canTrack && !day.beforeFloor && (server !== null || trackable),
       name: cellLabel(name, day.fullLabel),
-      entries: entries.get(key) ?? [],
+      entries: cellEntries,
       pending: written !== undefined || changing.has(key),
     };
   });
@@ -260,14 +291,14 @@ function gridRow(
     client: source.client,
     name,
     cells,
-    total: totalOf(sumSeconds(cells)),
+    total: totalOf(sumSeconds(cells), format),
     entryIds: source.server?.entryIds ?? [],
-    closedTotal: totalOf(source.server?.closedSeconds ?? 0).label,
+    closedTotal: totalOf(source.server?.closedSeconds ?? 0, format).label,
     writing: cells.some((cell) => cell.pending),
   };
 }
 
-function newGridRow(state: TimesheetState): GridRow {
+function newGridRow(state: TimesheetState, format: DurationFormat): GridRow {
   return {
     key: "new",
     pair: null,
@@ -286,9 +317,9 @@ function newGridRow(state: TimesheetState): GridRow {
       entries: [],
       pending: false,
     })),
-    total: totalOf(0),
+    total: totalOf(0, format),
     entryIds: [],
-    closedTotal: totalOf(0).label,
+    closedTotal: totalOf(0, format).label,
     writing: false,
   };
 }
@@ -299,23 +330,23 @@ function newGridRow(state: TimesheetState): GridRow {
  * los pares que el selector excluye.
  */
 export function timesheetGrid(input: TimesheetGridInput): TimesheetGrid {
-  const { state, removing } = input;
+  const { state, removing, format } = input;
   const sources = rowSources(input);
   const entries = entriesByCell(state.entries);
   const rows = sources
     .filter((source) => !hasPair(removing, source.pair))
     .map((source) => gridRow(input, source, entries));
   if (input.newRow && state.canTrack) {
-    rows.push(newGridRow(state));
+    rows.push(newGridRow(state, format));
   }
   const dayTotals = state.days.map((_, index) =>
-    totalOf(sumSeconds(rows.map((row) => row.cells[index]))),
+    totalOf(sumSeconds(rows.map((row) => row.cells[index])), format),
   );
   const weekSeconds = sumSeconds(rows.flatMap((row) => row.cells));
   return {
     rows,
     dayTotals,
-    weekTotal: totalOf(weekSeconds),
+    weekTotal: totalOf(weekSeconds, format),
     excluded: [...sources.map((source) => source.pair), ...removing],
   };
 }
@@ -346,14 +377,27 @@ export type CellCommit =
   | { readonly kind: "unchanged"; readonly label: string }
   | { readonly kind: "write"; readonly minutes: number; readonly label: string };
 
-/** Lo que hace el `onCommit` de una celda con el texto confirmado (§5.5). */
-export function cellCommit(text: string, shown: number | null): CellCommit {
+/**
+ * Lo que hace el `onCommit` de una celda con el texto confirmado (§5.5).
+ * «Sin cambios» se decide en minutos, como el servidor (TS-36), y deja el
+ * rótulo de la celda; una escritura muestra lo que va a dejar el servidor
+ * (D-WS2a-8).
+ */
+export function cellCommit(
+  text: string,
+  cell: Pick<GridCell, "minutes" | "label" | "entries">,
+  format: DurationFormat,
+): CellCommit {
   const minutes = parseDurationInput(text);
   if (minutes === null || minutes === 0) {
     return { kind: "rejected" };
   }
-  const label = formatDuration(minutes);
-  return minutes === shown
-    ? { kind: "unchanged", label }
-    : { kind: "write", minutes, label };
+  if (minutes === cell.minutes) {
+    return { kind: "unchanged", label: cell.label };
+  }
+  return {
+    kind: "write",
+    minutes,
+    label: formatDuration(writtenSeconds(cell.entries, minutes), format),
+  };
 }

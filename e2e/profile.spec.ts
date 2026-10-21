@@ -23,6 +23,7 @@ import {
   pickDate,
   preferenceControl,
   setClock,
+  timesButton,
   todayGroup,
   trackerBar,
 } from "./tracker-page";
@@ -91,11 +92,6 @@ function isoDayLabel(civil: CivilDay, today: CivilDay): string {
 /** El grupo de un día por el rótulo exacto de su encabezado. */
 function dayGroup(page: Page, label: string): Locator {
   return page.getByRole("region", { name: label, exact: true });
-}
-
-/** Las horas de una fila son un botón que abre el editor del horario. */
-function timesButton(row: Locator, start: string, end: string): Locator {
-  return row.getByRole("button", { name: `${start} – ${end} — editar el horario` });
 }
 
 /** La duración de la fila, por su texto entero. */

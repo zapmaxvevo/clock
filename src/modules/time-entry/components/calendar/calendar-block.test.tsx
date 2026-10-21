@@ -18,8 +18,8 @@ const catalog: TrackingCatalog = {
   tags: [],
 };
 const serverNow = "2026-10-02T15:00:00.000Z";
-const H24: DisplayFormats = { time: "24h", date: "dd/MM/yyyy" };
-const H12: DisplayFormats = { time: "12h", date: "dd/MM/yyyy" };
+const H24: DisplayFormats = { time: "24h", date: "dd/MM/yyyy", duration: "compact" };
+const H12: DisplayFormats = { time: "12h", date: "dd/MM/yyyy", duration: "compact" };
 
 const morning: TimeEntryView = {
   id: "8d0f7a52-4c1e-4b8e-9a43-2f6a1c3e5b70",
@@ -150,7 +150,11 @@ describe("CalendarBlock, el nombre accesible (CAL-75)", () => {
 
   it("el día sale con el formato de fecha de la persona", () => {
     expect(
-      nameOf(render(morning, { formats: { time: "24h", date: "MM/dd/yyyy" } })),
+      nameOf(
+        render(morning, {
+          formats: { time: "24h", date: "MM/dd/yyyy", duration: "compact" },
+        }),
+      ),
     ).toBe("Informe, mié, 09/30, de 09:00 a 10:30, 1:30");
   });
 
@@ -237,6 +241,20 @@ describe("CalendarBlock, los segmentos (CAL-26, CAL-76)", () => {
   it("el timer muestra desde cuándo, en curso, y el transcurrido en h:mm", () => {
     // De las 03:00 a las 15:00 UTC del `serverNow`.
     expect(render(running)).toContain("00:00 – en curso · 12:00");
+  });
+
+  it("el transcurrido del timer va con el formato de duración, no con el del contador (D-WS2a-7)", () => {
+    // 100 segundos antes del `serverNow`.
+    const recent = {
+      ...running,
+      startedAt: "2026-10-02T14:58:20.000Z",
+      startLabel: "11:58",
+    };
+
+    expect(render(recent)).toContain("11:58 – en curso · 0:01");
+    expect(render(recent, { formats: { ...H24, duration: "full" } })).toContain(
+      "11:58 – en curso · 00:01:40",
+    );
   });
 
   it("solo el segmento del día de inicio lleva el horario", () => {

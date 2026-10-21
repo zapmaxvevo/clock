@@ -4,11 +4,11 @@ import {
   clockDifferenceMinutes,
   clockLabel,
   clockToMinutes,
+  type DisplayFormats,
   formatDuration,
   MINUTES_PER_DAY,
   minutesToClock,
   shiftClock,
-  type TimeFormat,
 } from "@/server/time";
 
 import { draftDuration, draftExtraDays, fromView, type TimeDraft } from "../time-draft";
@@ -299,7 +299,7 @@ export function candidateAt(
 export function movedView(
   entry: TimeEntryView,
   times: TimeDraft,
-  format: TimeFormat,
+  formats: Pick<DisplayFormats, "time" | "duration">,
 ): TimeEntryView {
   const minutes = draftDuration(times);
   return {
@@ -308,10 +308,10 @@ export function movedView(
     startClock: times.start,
     endClock: times.end,
     extraDays: draftExtraDays(times),
-    startLabel: clockLabel(times.start, format),
-    endLabel: clockLabel(times.end, format),
+    startLabel: clockLabel(times.start, formats.time),
+    endLabel: clockLabel(times.end, formats.time),
     durationSeconds: minutes * 60,
-    durationLabel: formatDuration(minutes),
+    durationLabel: formatDuration(minutes * 60, formats.duration),
   };
 }
 

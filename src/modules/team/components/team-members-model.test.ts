@@ -1045,7 +1045,7 @@ describe("rowNotesOf", () => {
     const notes = rowNotesOf([activeMember, pendingLink, inactiveReactivable, released], {
       timezone: "Asia/Tokyo",
       weekStart: 1,
-      formats: { time: "24h", date: "yyyy-MM-dd" },
+      formats: { time: "24h", date: "yyyy-MM-dd", duration: "compact" },
     });
 
     expect(notes).toEqual({

@@ -108,7 +108,7 @@ const running: TimeEntryView = {
 
 function render(
   entry: TimeEntryView,
-  formats: DisplayFormats = { time: "24h", date: "dd/MM/yyyy" },
+  formats: DisplayFormats = { time: "24h", date: "dd/MM/yyyy", duration: "compact" },
 ): string {
   return renderToStaticMarkup(
     <DisplayFormatsProvider formats={formats}>
@@ -154,7 +154,7 @@ describe("EntryDialogBody (CAL-65, CAL-66)", () => {
     const fields = fieldsOf(
       render(
         { ...closed, startLabel: "9:00 AM", endLabel: "10:30 AM" },
-        { time: "12h", date: "dd/MM/yyyy" },
+        { time: "12h", date: "dd/MM/yyyy", duration: "compact" },
       ),
     );
     expect(fields).toContainEqual(["Hora de inicio", "9:00 AM"]);
@@ -214,7 +214,7 @@ const noop = () => undefined;
 function renderContent(
   subject: DialogSubject,
   canTrack = true,
-  formats: DisplayFormats = { time: "24h", date: "dd/MM/yyyy" },
+  formats: DisplayFormats = { time: "24h", date: "dd/MM/yyyy", duration: "compact" },
 ): string {
   return renderToStaticMarkup(
     <DisplayFormatsProvider formats={formats}>
@@ -294,6 +294,7 @@ describe("EntryDialogContent: los modos según el permiso y el sujeto (CAL-05, C
     const markup = renderContent({ kind: "entry", entry: closed }, true, {
       time: "12h",
       date: "dd/MM/yyyy",
+      duration: "compact",
     });
     expect(controlNamed(markup, "Hora de inicio")).toContain('value="9:00 AM"');
     expect(controlNamed(markup, "Hora de fin")).toContain('value="10:30 AM"');
@@ -338,6 +339,26 @@ describe("EntryDialogContent: los modos según el permiso y el sujeto (CAL-05, C
     expect(controlNamed(markup, "Duración")).toContain('value="1:00"');
     expect(textOf(markup)).toContain("Agregar");
     expect(markup).not.toContain("Acciones de la entrada");
+  });
+
+  it("un trío que no es el de la entrada muestra su duración con el formato del workspace (TT-97, ADR 0029)", () => {
+    const subject = {
+      kind: "add",
+      draft: { date: "2026-09-30", start: "10:00", end: "11:30" },
+      opener: "slot",
+    } as const;
+
+    expect(controlNamed(renderContent(subject), "Duración")).toContain('value="1:30"');
+    expect(
+      controlNamed(
+        renderContent(subject, true, {
+          time: "24h",
+          date: "dd/MM/yyyy",
+          duration: "full",
+        }),
+        "Duración",
+      ),
+    ).toContain('value="01:30:00"');
   });
 
   it("un alta de duración cero deja «Agregar» inactivo con el motivo asociado (TT-73)", () => {

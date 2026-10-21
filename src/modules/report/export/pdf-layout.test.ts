@@ -63,7 +63,7 @@ describe("pdfTextOf (D-R7-5; criterio 6 de R7)", () => {
 const settings: TimeSettings = {
   timezone: "America/Argentina/Buenos_Aires",
   weekStart: 1,
-  formats: { time: "24h", date: "dd/MM/yyyy" },
+  formats: { time: "24h", date: "dd/MM/yyyy", duration: "compact" },
 };
 
 const ANA = "aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY";

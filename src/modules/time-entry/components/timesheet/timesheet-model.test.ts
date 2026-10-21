@@ -12,6 +12,7 @@ import { cellKeyOf } from "./cell-writes";
 import {
   nextWritableCell,
   timesheetGrid,
+  writtenSeconds,
   type TimesheetGrid,
   type TimesheetGridInput,
 } from "./timesheet-model";
@@ -138,6 +139,7 @@ function grid(overrides: Partial<TimesheetGridInput> = {}): TimesheetGrid {
     removing: [],
     shown: new Map(),
     changing: new Set(),
+    format: "compact",
     ...overrides,
   });
 }
@@ -546,5 +548,133 @@ describe("timesheetGrid, lo que la foto todavía no trae (13b, D13b-5, §5.3)", 
 
     expect(view.rows.at(-1)?.writing).toBe(false);
     expect(view.rows.at(-1)?.cells.some((cell) => cell.pending)).toBe(false);
+  });
+});
+
+describe("timesheetGrid, los dos formatos de duración (ADR 0029, D-WS2a-5)", () => {
+  const sums = {
+    ...state,
+    rows: [row(app, null, { "2026-09-28": 90, "2026-09-29": 90 }), noProjectRow],
+  };
+
+  it("la celda muestra sus segundos con el formato: 30 segundos son `0:00` o `00:00:30`", () => {
+    expect(grid().rows[1].cells[1].label).toBe("0:00");
+    expect(grid({ format: "full" }).rows[1].cells[1].label).toBe("00:00:30");
+  });
+
+  it("los totales suman segundos exactos y truncan una vez, en la unidad del formato", () => {
+    const compact = grid({ state: sums });
+    const full = grid({ state: sums, format: "full" });
+
+    expect(compact.rows[0].total.label).toBe("0:03");
+    expect(full.rows[0].total.label).toBe("00:03:00");
+    expect(full.dayTotals[1].label).toBe("00:02:00");
+    expect(full.weekTotal.label).toBe("00:33:30");
+  });
+
+  it("un total de 30 segundos es gris con el compacto y no con el completo (TS-45)", () => {
+    const thirty = { ...state, rows: [row(app, null, { "2026-10-01": 30 })] };
+
+    expect(grid({ state: thirty }).dayTotals[3]).toEqual({ label: "0:00", zero: true });
+    expect(grid({ state: thirty, format: "full" }).dayTotals[3]).toEqual({
+      label: "00:00:30",
+      zero: false,
+    });
+    expect(grid({ state: thirty, format: "full" }).dayTotals[0]).toEqual({
+      label: "00:00:00",
+      zero: true,
+    });
+  });
+
+  it("el diálogo de quitar la fila usa el formato (TS-53)", () => {
+    expect(grid({ format: "full" }).rows[1].closedTotal).toBe("00:30:30");
+    expect(grid({ format: "full", newRow: true }).rows.at(-1)?.closedTotal).toBe(
+      "00:00:00",
+    );
+  });
+});
+
+describe("writtenSeconds (D-WS2a-8)", () => {
+  function closed(id: string, seconds: number): TimeEntryView {
+    return {
+      ...entry(id, "2026-09-28", "2026-09-28T12:00:00.000Z", app),
+      durationSeconds: seconds,
+    };
+  }
+
+  it("sin entradas o con una cerrada, la celda queda en los minutos escritos (TS-29, TS-33)", () => {
+    expect(writtenSeconds([], 5)).toBe(300);
+    expect(writtenSeconds([closed("a", 100)], 5)).toBe(300);
+    expect(writtenSeconds([closed("a", 100)], 1)).toBe(60);
+  });
+
+  it("con varias conserva el resto de segundos y mueve la diferencia en minutos (TS-34)", () => {
+    const two = [closed("a", 100), closed("b", 100)];
+
+    expect(writtenSeconds(two, 5)).toBe(320);
+    expect(writtenSeconds(two, 2)).toBe(140);
+    expect(writtenSeconds(two, 3)).toBe(200);
+  });
+
+  it("solo cuenta las cerradas, como el servidor", () => {
+    const running = { ...closed("r", 100), endedAt: null, durationSeconds: null };
+
+    expect(writtenSeconds([closed("a", 100), running], 5)).toBe(300);
+  });
+});
+
+describe("timesheetGrid, lo que muestra una escritura en vuelo (D-WS2a-8)", () => {
+  const monday = cellKeyOf({ date: "2026-09-28", ...pairOf(app) });
+
+  function at(id: string, dayDate: string, seconds: number): TimeEntryView {
+    return {
+      ...entry(id, dayDate, `${dayDate}T12:00:00.000Z`, app),
+      durationSeconds: seconds,
+    };
+  }
+
+  it("con el compacto, la fila suma lo que va a dejar el servidor: `0:09`, no `0:08`", () => {
+    // A: 100 s y 60 s, `0:02`; B: 100 s y 100 s, `0:03`.
+    const example: TimesheetState = {
+      ...state,
+      rows: [row(app, null, { "2026-09-28": 160, "2026-09-29": 200 })],
+      entries: [
+        at("a1", "2026-09-28", 100),
+        at("a2", "2026-09-28", 60),
+        at("b1", "2026-09-29", 100),
+        at("b2", "2026-09-29", 100),
+      ],
+    };
+    const view = grid({ state: example, shown: new Map([[monday, 5]]) });
+
+    expect(view.rows[0].cells[0]).toMatchObject({
+      minutes: 5,
+      label: "0:05",
+      seconds: 340,
+    });
+    expect(view.rows[0].total.label).toBe("0:09");
+    expect(view.weekTotal.label).toBe("0:09");
+  });
+
+  it("con el completo, una celda de dos entradas queda en `00:05:20` y una de una en `00:05:00`", () => {
+    const two: TimesheetState = {
+      ...state,
+      rows: [row(app, null, { "2026-09-28": 200 })],
+      entries: [at("a1", "2026-09-28", 100), at("a2", "2026-09-28", 100)],
+    };
+    const one: TimesheetState = {
+      ...state,
+      rows: [row(app, null, { "2026-09-28": 100 })],
+      entries: [at("a1", "2026-09-28", 100)],
+    };
+    const writing = { shown: new Map([[monday, 5]]), format: "full" } as const;
+
+    expect(grid({ state: two, format: "full" }).rows[0].cells[0].label).toBe("00:03:20");
+    const twoView = grid({ state: two, ...writing });
+    expect(twoView.rows[0].cells[0].label).toBe("00:05:20");
+    expect(twoView.rows[0].total.label).toBe("00:05:20");
+    expect(twoView.dayTotals[0].label).toBe("00:05:20");
+    expect(twoView.weekTotal.label).toBe("00:05:20");
+    expect(grid({ state: one, ...writing }).rows[0].cells[0].label).toBe("00:05:00");
   });
 });

@@ -15,6 +15,7 @@ import {
   seedTimeEntry,
   seedUser,
   seedWorkspace,
+  setDurationFormat,
   type SeededWorkspace,
 } from "@/test/factories";
 import { allTimeEntries, timeEntryById } from "@/test/queries";
@@ -2500,4 +2501,33 @@ describe("setTimesheetCell y removeTimesheetRow (criterio 18 del 13)", () => {
     });
     expect(mocks.revalidated).toEqual(revalidatedFor(2));
   });
+});
+
+describe("de la base al rótulo: el formato de duración del workspace (D-WS2a-2, criterio 6)", () => {
+  it.each([
+    ["compact", "0:01"],
+    ["full", "00:01:40"],
+  ] as const)(
+    "con el workspace en %s, editar la descripción responde durationLabel %s",
+    async (format, label) => {
+      const { workspaceId } = await signInOn();
+      await setDurationFormat(workspaceId, format);
+      const entry = await seedTimeEntry({
+        workspaceId,
+        userId: sessionUserId(),
+        description: "sembrada",
+        startedAt: "2026-10-01T12:00:00Z",
+        endedAt: "2026-10-01T12:01:40Z",
+      });
+
+      const result = await actions.updateDescription({
+        id: entry.id,
+        description: "editada",
+      });
+
+      if (!result.ok) throw new Error(result.message);
+      expect(result.data.entry.durationSeconds).toBe(100);
+      expect(result.data.entry.durationLabel).toBe(label);
+    },
+  );
 });

@@ -6,6 +6,7 @@ import { CHECK_VIOLATION, constraintOf } from "@/server/db/constraint-error";
 import { user, userPreference } from "@/server/db/schema";
 import { DATE_FORMATS, TIME_FORMATS } from "@/server/time";
 import { seedUser } from "@/test/factories";
+import { rejection } from "@/test/queries";
 
 import { NAME_MAX, THEMES } from "./schema";
 
@@ -13,16 +14,6 @@ import { NAME_MAX, THEMES } from "./schema";
  * La tabla, escrita de forma directa y sin pasar por el service: lo que tiene
  * que aceptar o rechazar aunque el service se equivoque (criterio 1).
  */
-
-/** El error de una escritura que la base tiene que rechazar. */
-async function rejection(work: Promise<unknown>): Promise<unknown> {
-  try {
-    await work;
-  } catch (error) {
-    return error;
-  }
-  throw new Error("La base aceptó la escritura.");
-}
 
 async function violatedCheck(work: Promise<unknown>): Promise<string | null> {
   return constraintOf(await rejection(work), CHECK_VIOLATION);
