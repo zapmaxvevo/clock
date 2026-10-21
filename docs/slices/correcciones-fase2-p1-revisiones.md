@@ -106,3 +106,15 @@ Corrida sobre `76772d3`, con el árbol de `frontend-dev` y `e2e-tester` ya
 commiteado: `lint`, `typecheck` y `prettier --check .` en verde; `npm test`,
 122 archivos y 2772 casos, más 309 de `test:time-ar`; `npm run
 test:integration` en `clock_p1_back`, 41 archivos y 2344 casos.
+
+### Correcciones de las revisiones (backend, clean code y tests)
+
+| Commit    | Hallazgo                                                                                                                                                                                                                                                    |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `73a1911` | Backend: `nextValue` sale de la fila guardada, no de la entrada; un id de cliente en mayúsculas quedaba así en la constancia. `previousOf` pasa a `valuesOf`, que arma las dos mitades. El comentario de `translatingNameTaken` nombra el alta y la edición |
+| `232284d` | Clean code: un solo tipo para lo que cambia de un proyecto, `ProjectSettingsChanges` de `changes.ts`; se va `ProjectChanges` del repository                                                                                                                 |
+| `5c76c6f` | Clean code: `readVisibleTags` y `tasksByProject`, que usan `getProjectList` y `readCatalog`                                                                                                                                                                 |
+| `44e6273` | Tests: el color fuera de paleta o `null` afirma también `message`, el primer problema del `ZodError`                                                                                                                                                        |
+
+El caso nuevo del cliente en mayúsculas (criterio 6) se verificó con la
+mutación `nextValue: changes` en un worktree descartable: muere.
