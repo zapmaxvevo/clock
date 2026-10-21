@@ -20,14 +20,20 @@ completo con el selector (workspace P-07, D-WS2b-11).
   está en `main` (§0). Es el último slice de configuración que toca el formato;
   E4 suma después el primer día por defecto a «General» y a la misma action
   (D-WS2b-2).
-- **Revisión:** pendiente de `architecture-reviewer`.
+- **Revisión:** `architecture-reviewer` lo aprobó con cambios (`507da74`); los
+  siete están aplicados.
 - **Decisiones de arquitectura: ningún ADR nuevo.** Lo que el slice decide cae
   dentro de ADR aceptados:
   - [ADR 0029](../adr/0029-el-formato-de-duracion-es-del-workspace-y-solo-cambia-lo-que-se-muestra.md)
     (aceptado el 2026-10-20): el formato es del workspace y solo cambia lo que se
     muestra. De ahí salen que «Horas» no cambie (D-WS2b-9), que una celda de
     Excel guarde lo que muestra, y que el MCP, que no muestra nada, siga
-    devolviendo números (D-WS2b-10).
+    devolviendo números (D-WS2b-10). **Su decisión 3** —«ninguna pantalla lee
+    `context.settings` ni la columna directo»— rige el formateo de duraciones:
+    toda duración se formatea con lo que arma `timeSettingsOf`. El editor del
+    ajuste, `/configuracion`, lee su propia fila para mostrarla y para ver si
+    falta (D-WS2b-4), y no formatea ninguna duración con ella. Es lo que prevén
+    las «Consecuencias» del ADR: el error de WS-73 «es de esa pantalla (WS2b)».
   - [ADR 0012](../adr/0012-un-solo-juego-de-formatos.md): el reporte recibe el
     formato de su propia lectura, no del layout (D-WS2b-8).
   - [ADR 0009](../adr/0009-la-configuracion-del-workspace-viaja-en-el-recurso.md):
@@ -90,7 +96,11 @@ update`, como D-WS1-3: nadie apunta a `workspace_settings`, pero es la forma
    (`findFirstWorkspace`, `left join` sin bloqueo) no espera.
 3. **Sin fila** (WS-73): `throw new Error("Falta la fila de ajustes del
 workspace.")`, que sale como `unexpected`. No la crea: un ajuste que aparece
-   con valores de omisión ocultaría el problema (WS-73).
+   con valores de omisión ocultaría el problema (WS-73). **Con la pantalla
+   abierta, quien elige un valor no ve el aviso del campo**: `handle` revalida
+   `"/"` también con error, la respuesta trae la página otra vez, la vista lanza
+   por la misma fila que falta (D-WS2b-4), y lo que se ve es el `error.tsx` de
+   `/configuracion`, con «No se pudo cargar la configuración.» y «Reintentar».
 4. **El mismo valor** no escribe ni deja constancia (WS-04); es lo que hace
    inofensivo «Reintentar» después de una respuesta perdida (WS-62).
 5. Si no, `update workspace_settings set duration_format = $1` (`updated_at` lo
@@ -120,6 +130,15 @@ falta como `compact` (D-WS2a-2, ADR 0029), a propósito, para que nadie se quede
 sin pantallas por un ajuste de presentación. La pantalla de configuración es la
 única que tiene que ver la falta, y para eso lee la fila. Cuesta una consulta
 por clave primaria, solo en `/configuracion` y solo para owner y admin.
+
+**Cómo encaja con la decisión 3 del ADR 0029**, que dice que ninguna pantalla
+lee `context.settings` ni la columna directo: esa decisión rige el formateo de
+duraciones, para que todas salgan de `timeSettingsOf` y no haya dos lecturas
+del formato con que se muestra una duración. `/configuracion` no formatea
+ninguna duración: lee el valor del ajuste que edita, para mostrarlo en el
+selector y para responder WS-73, como el perfil lee las preferencias que edita.
+Las «Consecuencias» del mismo ADR dejan el error de WS-73 a esta pantalla. No
+hace falta un ADR nuevo; el registro del slice lo anota al lado del ADR.
 
 **D-WS2b-5 — Revalidación: el árbol entero; la caché no guarda el formato
 (WS-64, WS-69).** La action usa las opciones del nombre, `{ path: "/", type:
@@ -201,7 +220,10 @@ total salgan de lecturas distintas.
   (`report-view.tsx:62`, `:68`), las filas (`report-tree.tsx:54`), y en el
   gráfico el nombre de cada barra, las líneas de la escala y la tabla de datos
   (`report-chart.tsx:28`, `:43`, `:71`). El comentario de truncado por cifra
-  (§5.3 de R2a) pasa a `ReportView`.
+  (§5.3 de R2a) pasa a `ReportView`. **Los dos comentarios que la nombran**
+  —`export/document.ts:121` («truncados como `durationLabel`») y
+  `export/pdf-layout.ts:129` («el texto de `durationLabel`»)— pasan a nombrar
+  `formatDuration` con el formato del documento.
 - **El ancho de la columna «Duración»** (`w-24` en `report-view.tsx:91` y
   `report-chart.tsx:59`) deja `72 px` de contenido. Con `text-sm` y cifras
   tabulares, `1000:00:00` ya no entra, y un reporte anual de producción pasa las
@@ -230,7 +252,7 @@ duración lleva segundos; «Horas» no cambia (WS-17, WS-69, D-R6-9, ADR 0029).*
   comentario de D-WS2a-9. `csvBytesOf` pasa el formato del documento a cada
   campo.
 - **Excel** (`xlsx.ts:62-63`): con el compacto, lo de hoy —`floor(seconds / 60)
-  / 1440` con `[h]:mm`—; con el completo, `seconds / 86400` con `[hh]:mm:ss`. La
+/ 1440` con `[h]:mm`—; con el completo, `seconds / 86400` con `[hh]:mm:ss`. La
   celda guarda lo que muestra, como pide D-R6-6. **Cada columna con una celda
   `duration` en su hoja lleva un ancho que entra `99999:59:59`**: con el ancho
   por omisión (8,43), Excel muestra `####` en un número que no entra, y con el
@@ -269,6 +291,12 @@ de datos (P-07).** El mapa lo deja al contrato. Con el selector:
   los e2e y los tests de integración que esperan el compacto por omisión, y
   pediría su propia transición. Para una fila, no compensa.
 
+**Producción tiene dos workspaces**, «run0km» y «soybot»
+(`correcciones-fase2-ws2a-revisiones.md:17-20`), y la sesión usa solo el más
+viejo (`findFirstWorkspace`, `workspace/repository.ts:73-83`). El selector
+cambia la fila de ese, que es el de la sesión del owner; la del otro no la lee
+nadie y queda en `compact`. Las consultas de §6 filtran por el más viejo.
+
 **D-WS2b-12 — Los e2e que cambian el formato corren en un proyecto propio,
 `duration-switch`, después del completo y solos.** El formato es de todo el
 workspace de los e2e (D-WS2a-12): cambiarlo desde la pantalla mientras corren
@@ -281,9 +309,16 @@ otros specs cambia lo que leen. Por eso:
   «Completo».
 - **`duration-switch`**, nuevo, con `dependencies: ["duration-full"]` y
   `testMatch: /\.switch\.spec\.ts$/`, prueba lo que escribe: cambiar desde la
-  pantalla, la red, perder el rol y WS-73. Un solo archivo,
+  pantalla, la vista optimista, la red, perder el rol y WS-73. Un solo archivo,
   `e2e/duration-format.switch.spec.ts`, en `mode: "serial"`. `chromium` y
   `duration-full` lo ignoran.
+- **`workspace.setup.ts` restituye la fila de ajustes** antes de poner el
+  compacto: `insert into workspace_settings (workspace_id) values (…) on
+conflict do nothing` sobre el workspace de los e2e, con
+  `ensureWorkspaceSettings()` de `e2e/database.ts`. Si una corrida se corta
+  entre el `delete` de WS-73 (§9.5.5) y su `finally`, la base reusada queda sin
+  fila, y `setDurationFormat("compact")` (`workspace.setup.ts:36`, un
+  `updateOne`) lanzaría en la corrida siguiente.
 
 **Lo que hace Playwright 1.63 con esto**, leído en
 `node_modules/playwright/lib/runner/index.js`: las fases se arman con las
@@ -305,6 +340,11 @@ la corrida entera (criterio 15).
   team-lead mergea WS2a en `main`** y la rama de WS2b se rebasa sobre ese
   `main`; no hace falta que WS2a esté en producción para implementar. Este
   contrato puede revisarse antes.
+- **La respuesta del usuario a la pregunta 2 (§11), antes del primer paso de
+  `frontend-dev`**: decide los textos de `workspace/components/labels.ts`
+  (§5.6), que usan el selector y el perfil, y lo que afirman sus tests y los
+  e2e. La pregunta 1 no frena la implementación: con la recomendación, el MCP no
+  se toca.
 - **WS2b no corre `db:generate` ni trae migración.** Sus bases de prueba se
   migran con el `drizzle/` del árbol, que trae la `0019` del MCP y la `0020` de
   WS2a: bases propias (§6.5).
@@ -318,31 +358,36 @@ la corrida entera (criterio 15).
 
 ### Supuestos sobre el árbol
 
-| Supuesto                                                                                                                        | Dónde                                                                                                                                                                         |
-| ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `workspace_settings.duration_format`, `text not null default 'compact'`, con `check`; `updated_at` con `$onUpdate`              | `src/server/db/schema.ts:67-99`                                                                                                                                               |
-| `DURATION_FORMATS = ["compact", "full"]`; `formatDuration(seconds, format)`                                                     | `src/server/time/index.ts:22`, `:80`                                                                                                                                          |
-| `WorkspaceContext.settings`; `resolveDurationFormat` es el único lugar del valor por omisión                                    | `workspace/service.ts:53-61`, `:77-79`                                                                                                                                        |
-| La sesión lee el formato con el workspace, `left join`, sin bloqueo; `createWorkspace` crea la fila                             | `workspace/repository.ts:73-83`, `:99-109`                                                                                                                                    |
-| `canUpdateWorkspaceSettings`, `getWorkspaceSettingsView` (sin consultas) y `updateWorkspaceName` con la relectura y el bloqueo  | `workspace/service.ts:284-299`, `:563-619`                                                                                                                                    |
-| `lockActorMembership` (`for share`) y `lockWorkspaceName` (`for no key update`)                                                 | `workspace/repository.ts:175-186`, `:467-477`                                                                                                                                 |
-| Los textos, la vista y las actions de la configuración                                                                          | `workspace/schema.ts:141-191`; `workspace/actions.ts:60-79`                                                                                                                   |
-| La pantalla dibuja solo «General»; su test afirma una sola sección                                                              | `workspace/components/workspace-settings-screen.tsx:25-55`; `workspace-settings-screen.test.tsx:30-38`                                                                        |
-| La página no espera la vista; no hay `error.tsx` en `/configuracion`                                                            | `src/app/(app)/configuracion/page.tsx:6-15`                                                                                                                                   |
-| `timeSettingsOf` toma la duración de `context.settings`; `getProfileView` no consulta                                           | `profile/service.ts:123-133`, `:184-218`                                                                                                                                      |
-| El perfil muestra «Compacto (h:mm)» fijo                                                                                        | `profile/components/labels.ts:30-33`; `profile-screen.tsx:93-97`; `profile-screen.test.tsx:169`; `e2e/profile.spec.ts:197`                                                   |
-| `PreferenceField`, `ChoiceSelect` (privado) y `FixedSetting`                                                                    | `profile/components/preference-field.tsx:79-179`, `:189-197`, `:204-286`                                                                                                      |
-| El reporte: `durationLabel` en `"compact"`; sus llamadores; `ReportScreen` recibe `settings`; las columnas `w-24`               | `report/components/group-heading.tsx:21-25`; `report-view.tsx:62`, `:68`, `:91`; `report-chart.tsx:28`, `:43`, `:59`, `:71`; `report-tree.tsx:54`; `report-screen.tsx:10-20` |
-| Las exportaciones: la celda `duration` en minutos; `cellText` en `"compact"`; Excel con `[h]:mm`; el ancho fijo del PDF; la escala del gráfico | `export/types.ts:13-15`; `document.ts:124-130`; `cell-text.ts:19-22`; `xlsx.ts:19`, `:62-66`; `pdf-layout.ts:78-82`, `:137-140`                               |
-| La descarga lee `timeSettingsOf(session)` en cada pedido y responde `no-store`; el tope mide el CSV escrito                     | `export/handler.ts:43`, `:77-87`, `:118-152`                                                                                                                                  |
-| La cota de bytes cuenta `0:00`                                                                                                  | `export/entry-size.ts:1-8`                                                                                                                                                    |
-| El MCP devuelve minutos enteros                                                                                                 | `clock-ws2b/src/modules/mcp/tools.ts:59-78`, `:207`; `mcp/schema.ts:124`, `:163`                                                                                              |
-| Las pantallas del rastreador montan su proveedor; el layout, el de base                                                         | `tracker-screen.tsx:49-51`; `calendar-screen.tsx:48-50`; `timesheet-screen.tsx:51-53`; `src/app/(app)/layout.tsx:29`                                                         |
-| `handle` revalida también con error; un `ZodError` responde el mensaje de su primer problema                                    | `src/server/action.ts`; `src/server/failure.ts:48-51`                                                                                                                         |
-| Sin caché de datos en `src/`                                                                                                    | ninguna coincidencia de `use cache`, `unstable_cache` ni `revalidateTag`                                                                                                      |
-| Los proyectos de Playwright del completo; `setDurationFormat` y `durationFormatOf`                                               | `playwright.config.ts:53-93`; `e2e/database.ts:143`, `:153`                                                                                                                   |
-| Los e2e leen descargas: CSV, `.xlsx` con `exceljs` y el texto del PDF                                                           | `e2e/reports-page.ts:307`, `:424-458`; `src/test/pdf`                                                                                                                         |
-| `PERIOD_TOTAL` del calendario solo reconoce el compacto (nota de la revisión de paridad de WS2a)                                | `e2e/calendar-page.ts:77`                                                                                                                                                     |
+| Supuesto                                                                                                                                       | Dónde                                                                                                                                                                        |
+| ---------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `workspace_settings.duration_format`, `text not null default 'compact'`, con `check`; `updated_at` con `$onUpdate`                             | `src/server/db/schema.ts:67-99`                                                                                                                                              |
+| `DURATION_FORMATS = ["compact", "full"]`; `formatDuration(seconds, format)`                                                                    | `src/server/time/index.ts:22`, `:80`                                                                                                                                         |
+| `WorkspaceContext.settings`; `resolveDurationFormat` es el único lugar del valor por omisión                                                   | `workspace/service.ts:53-61`, `:77-79`                                                                                                                                       |
+| La sesión lee el formato del workspace más viejo, `left join`, sin bloqueo; `createWorkspace` crea la fila                                     | `workspace/repository.ts:73-83`, `:99-109`                                                                                                                                   |
+| `canUpdateWorkspaceSettings`, `getWorkspaceSettingsView` (sin consultas) y `updateWorkspaceName` con la relectura y el bloqueo                 | `workspace/service.ts:284-299`, `:563-619`                                                                                                                                   |
+| `lockActorMembership` (`for share`) y `lockWorkspaceName` (`for no key update`)                                                                | `workspace/repository.ts:175-186`, `:467-477`                                                                                                                                |
+| Los textos, la vista y las actions de la configuración                                                                                         | `workspace/schema.ts:141-191`; `workspace/actions.ts:60-79`                                                                                                                  |
+| La pantalla dibuja solo «General»; su test afirma una sola sección                                                                             | `workspace/components/workspace-settings-screen.tsx:25-55`; `workspace-settings-screen.test.tsx:30-38`                                                                       |
+| La página no espera la vista; no hay `error.tsx` en `/configuracion`                                                                           | `src/app/(app)/configuracion/page.tsx:6-15`                                                                                                                                  |
+| `timeSettingsOf` toma la duración de `context.settings`; `getProfileView` no consulta                                                          | `profile/service.ts:123-133`, `:184-218`                                                                                                                                     |
+| El perfil muestra «Compacto (h:mm)» fijo                                                                                                       | `profile/components/labels.ts:30-33`; `profile-screen.tsx:93-97`; `profile-screen.test.tsx:169`; `e2e/profile.spec.ts:197`                                                   |
+| `PreferenceField`, `ChoiceSelect` (privado) y `FixedSetting`                                                                                   | `profile/components/preference-field.tsx:79-179`, `:189-197`, `:204-286`                                                                                                     |
+| El reporte: `durationLabel` en `"compact"`; sus llamadores; `ReportScreen` recibe `settings`; las columnas `w-24`                              | `report/components/group-heading.tsx:21-25`; `report-view.tsx:62`, `:68`, `:91`; `report-chart.tsx:28`, `:43`, `:59`, `:71`; `report-tree.tsx:54`; `report-screen.tsx:10-20` |
+| Dos comentarios de las exportaciones nombran `durationLabel`                                                                                   | `export/document.ts:121`; `export/pdf-layout.ts:129`                                                                                                                         |
+| Las exportaciones: la celda `duration` en minutos; `cellText` en `"compact"`; Excel con `[h]:mm`; el ancho fijo del PDF; la escala del gráfico | `export/types.ts:13-15`; `document.ts:124-130`; `cell-text.ts:19-22`; `xlsx.ts:19`, `:62-66`; `pdf-layout.ts:78-82`, `:137-140`                                              |
+| La descarga lee `timeSettingsOf(session)` en cada pedido y responde `no-store`; el tope mide el CSV escrito                                    | `export/handler.ts:43`, `:77-87`, `:118-152`                                                                                                                                 |
+| La cota de bytes cuenta `0:00`                                                                                                                 | `export/entry-size.ts:1-8`                                                                                                                                                   |
+| El MCP devuelve minutos enteros                                                                                                                | `clock-ws2b/src/modules/mcp/tools.ts:59-78`, `:207`; `mcp/schema.ts:124`, `:163`                                                                                             |
+| Las pantallas del rastreador montan su proveedor; el layout, el de base                                                                        | `tracker-screen.tsx:49-51`; `calendar-screen.tsx:48-50`; `timesheet-screen.tsx:51-53`; `src/app/(app)/layout.tsx:29`                                                         |
+| El ancho del campo de duración mira `"full"` (WS2a)                                                                                            | `time-entry/components/clock-field.tsx:177`                                                                                                                                  |
+| `handle` revalida también con error; un `ZodError` responde el mensaje de su primer problema                                                   | `src/server/action.ts`; `src/server/failure.ts:48-51`                                                                                                                        |
+| La constancia guarda `JSON.stringify` del valor en una columna de texto                                                                        | `src/server/audit.ts:33`, `:43-44`; `src/server/db/schema.ts:657-658`                                                                                                        |
+| Sin caché de datos en `src/`                                                                                                                   | ninguna coincidencia de `use cache`, `unstable_cache` ni `revalidateTag`                                                                                                     |
+| Los proyectos de Playwright del completo; `setDurationFormat` (un `updateOne`) y `durationFormatOf`; el setup pone el compacto                 | `playwright.config.ts:53-93`; `e2e/database.ts:143`, `:153`; `e2e/workspace.setup.ts:32-36`                                                                                  |
+| Los ayudantes de red de los e2e                                                                                                                | `e2e/network.ts:27` (`recordActions`), `:77` (`dropActionRequests`), `:98` (`loseActionResponses`), `:120` (`holdActionResponses`)                                           |
+| Los e2e leen descargas: CSV, `.xlsx` con `exceljs` y el texto del PDF                                                                          | `e2e/reports-page.ts:307`, `:424-458`; `src/test/pdf`                                                                                                                        |
+| Sin biblioteca de DOM en los tests de unidad: los componentes se prueban con `renderToStaticMarkup`                                            | `package.json`; `time-entry/components/entry-row.test.tsx:1-10`                                                                                                              |
+| `PERIOD_TOTAL` del calendario solo reconoce el compacto (nota de la revisión de paridad de WS2a)                                               | `e2e/calendar-page.ts:77`                                                                                                                                                    |
 
 ## 1. Alcance
 
@@ -362,7 +407,8 @@ Entra:
 - **El perfil** con el valor del workspace (D-WS2b-7).
 - **El reporte en pantalla** y **las tres exportaciones** con el formato
   (D-WS2b-8, D-WS2b-9).
-- **El proyecto `duration-switch`** y los specs (D-WS2b-12).
+- **El proyecto `duration-switch`**, la restitución de la fila en el setup y los
+  specs (D-WS2b-12).
 - **El paso a completo de producción** y su verificación (§6).
 - **Las correcciones de paridad** (§7).
 
@@ -370,17 +416,18 @@ Queda afuera: §12.
 
 ### Consecuencias sobre código ya entregado
 
-| Archivo                                                                                                                                         | Qué cambia                                                                                                                                      | Qué hay que volver a probar                                                                                       |
-| ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `workspace/schema.ts`, `repository.ts`, `service.ts`, `actions.ts`                                                                              | Lo de §4, al final de cada archivo; `getWorkspaceSettingsView` pasa a `async` y suma `durationFormat`                                           | los tests del módulo; `settings.integration.test.ts`                                                              |
-| `src/app/(app)/configuracion/page.tsx`                                                                                                          | `await` de la vista; la action nueva en `actions`                                                                                               | la e2e de WS1                                                                                                     |
-| `workspace/components/workspace-settings-screen.tsx`, su test, `labels.ts`                                                                      | La segunda sección; el test de WS1 que afirma **una** sección pasa a afirmar dos, en orden                                                      | `workspace-settings-screen.test.tsx`; `e2e/workspace-settings.spec.ts`                                            |
-| `profile/components/preference-field.tsx`                                                                                                       | Importa `ChoiceSelect` de `src/components/`                                                                                                     | `profile-screen.test.tsx`, `e2e/profile.spec.ts`, sin cambiar lo que afirman                                      |
-| `profile/service.ts`, `profile/components/profile-screen.tsx`, `labels.ts`                                                                      | `ProfileView.durationFormat`; el texto del workspace; se borra `durationValue`                                                                  | `profile-screen.test.tsx`: el caso de `:169` sigue igual con `compact`                                            |
-| `report/components/group-heading.tsx`, `report-view.tsx`, `report-chart.tsx`, `report-tree.tsx`, `report-screen.tsx`                           | Sin `durationLabel`; el formato por props; el ancho de la columna                                                                               | sus tests, más los casos del completo                                                                             |
-| `report/export/types.ts`, `document.ts`, `cell-text.ts`, `csv.ts`, `xlsx.ts`, `pdf-layout.ts`, `entry-size.ts`                                  | La celda en segundos; `ExportDocument.durationFormat`; `[hh]:mm:ss` y el ancho de columna en Excel; la escala del PDF; el comentario de la cota | sus tests (los del compacto, sin cambiar lo que afirman salvo la forma de la celda); `handler.integration.test.ts` |
-| `report/export/document.test.ts`                                                                                                                | Importa `durationLabel` (`:4`, `:527-532`): pasa a `formatDuration`                                                                             | el archivo                                                                                                        |
-| `playwright.config.ts`                                                                                                                          | El proyecto `duration-switch`; `testIgnore` de `chromium` y de `duration-full`                                                                  | la e2e entera                                                                                                     |
+| Archivo                                                                                                              | Qué cambia                                                                                                                                                                                    | Qué hay que volver a probar                                                                                        |
+| -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `workspace/schema.ts`, `repository.ts`, `service.ts`, `actions.ts`                                                   | Lo de §4, al final de cada archivo; `getWorkspaceSettingsView` pasa a `async` y suma `durationFormat`                                                                                         | los tests del módulo; `settings.integration.test.ts`                                                               |
+| `src/app/(app)/configuracion/page.tsx`                                                                               | `await` de la vista; la action nueva en `actions`                                                                                                                                             | la e2e de WS1                                                                                                      |
+| `workspace/components/workspace-settings-screen.tsx`, su test, `labels.ts`                                           | La segunda sección; el test de WS1 que afirma **una** sección pasa a afirmar dos, en orden                                                                                                    | `workspace-settings-screen.test.tsx`; `e2e/workspace-settings.spec.ts`                                             |
+| `profile/components/preference-field.tsx`                                                                            | Importa `ChoiceSelect` de `src/components/`                                                                                                                                                   | `profile-screen.test.tsx`, `e2e/profile.spec.ts`, sin cambiar lo que afirman                                       |
+| `profile/service.ts`, `profile/components/profile-screen.tsx`, `labels.ts`                                           | `ProfileView.durationFormat`; el texto del workspace; se borra `durationValue`                                                                                                                | `profile-screen.test.tsx`: el caso de `:169` sigue igual con `compact`                                             |
+| `report/components/group-heading.tsx`, `report-view.tsx`, `report-chart.tsx`, `report-tree.tsx`, `report-screen.tsx` | Sin `durationLabel`; el formato por props; el ancho de la columna                                                                                                                             | sus tests, más los casos del completo                                                                              |
+| `report/export/types.ts`, `document.ts`, `cell-text.ts`, `csv.ts`, `xlsx.ts`, `pdf-layout.ts`, `entry-size.ts`       | La celda en segundos; `ExportDocument.durationFormat`; `[hh]:mm:ss` y el ancho de columna en Excel; la escala del PDF; los comentarios de `document.ts:121`, `pdf-layout.ts:129` y de la cota | sus tests (los del compacto, sin cambiar lo que afirman salvo la forma de la celda); `handler.integration.test.ts` |
+| `report/export/document.test.ts`                                                                                     | Importa `durationLabel` (`:4`, `:527-532`): pasa a `formatDuration`                                                                                                                           | el archivo                                                                                                         |
+| `playwright.config.ts`                                                                                               | El proyecto `duration-switch`; `testIgnore` de `chromium` y de `duration-full`                                                                                                                | la e2e entera                                                                                                      |
+| `e2e/workspace.setup.ts`, `e2e/database.ts`                                                                          | `ensureWorkspaceSettings()` antes de `setDurationFormat("compact")` (D-WS2b-12)                                                                                                               | la e2e entera, en una base nueva y en una que se reusa                                                             |
 
 - **Sin cambio**: `can()` y `src/server/permissions/`; `src/server/db/` y
   `drizzle/`; `src/server/session.ts`; `src/server/time/`; el service, el
@@ -546,12 +593,14 @@ comentario de `settingsOptions` suma que el formato se ve en todas las pantallas
 
 ### 4.5 Auditoría
 
-| Acción                    | `entity`             | `entityId`        | `previousValue`                   | `nextValue`                       | Cuándo                       |
-| ------------------------- | -------------------- | ----------------- | --------------------------------- | --------------------------------- | ---------------------------- |
-| `workspace.updateSetting` | `workspace_settings` | id del workspace  | `{ durationFormat: <anterior> }`  | `{ durationFormat: <nuevo> }`     | solo si el valor cambia      |
+| Acción                    | `entity`             | `entityId`       | `previousValue`                  | `nextValue`                   | Cuándo                  |
+| ------------------------- | -------------------- | ---------------- | -------------------------------- | ----------------------------- | ----------------------- |
+| `workspace.updateSetting` | `workspace_settings` | id del workspace | `{ durationFormat: <anterior> }` | `{ durationFormat: <nuevo> }` | solo si el valor cambia |
 
 Con `...auditActorOf(actor)`, que suma `oauthClientId` si algún día la llama el
-MCP (hoy no la llama).
+MCP (hoy no la llama). `recordAudit` guarda cada valor con `JSON.stringify` en
+una columna de texto (`audit.ts:33`, `schema.ts:657-658`): en la base queda
+`{"durationFormat":"compact"}`, sin espacios.
 
 ### 4.6 Las respuestas
 
@@ -562,9 +611,16 @@ MCP (hoy no la llama).
 | Un formato fuera de la lista, o que no es texto               | `validation`           | WS-56, «Ese formato no está disponible.»                     | no         |
 | Una clave que no existe, o un pedido que no es un objeto      | `validation`           | WS-56                                                        | no         |
 | Sin permiso, o lo perdió bajo el bloqueo; membresía no activa | `forbidden`            | WS-58, «No tenés permiso para hacer esto.»                   | no         |
-| Falta la fila de ajustes (WS-73)                              | `unexpected`           | `unexpected`                                                 | sí         |
+| Falta la fila de ajustes (WS-73)                              | `unexpected`           | ver abajo                                                    | ver abajo  |
 | Red o servidor                                                | `unexpected`           | «No se pudo guardar. Revisá la conexión y volvé a intentar.» | sí         |
 | Sin sesión                                                    | redirección a `/login` | —                                                            | —          |
+
+**Falta la fila con la pantalla abierta** (D-WS2b-3, paso 3): la action
+responde `unexpected`, pero `handle` revalida `"/"` también con error, y la
+respuesta trae la página otra vez: la vista lanza por la misma fila que falta y
+se ve el `error.tsx` de `/configuracion`, con «No se pudo cargar la
+configuración.» y su «Reintentar», no el aviso del campo. La fila sigue sin
+existir.
 
 ## 5. Contrato de frontend
 
@@ -598,7 +654,8 @@ durationFormatNames[value]}` y `canEdit` en verdadero (la vista `ready` ya es
   de quien puede cambiarlo).
 - `useOptimistic` con el valor elegido; `useAction(save, { unreachableMessage:
 workspaceSettingsMessages.unexpected, optimistic })`; `run({ key:
-"durationFormat", value })`.
+"durationFormat", value })`. Mientras viaja el pedido, el disparador muestra
+  el valor elegido.
 - Con falla, el control vuelve al valor anterior (la transición descarta la
   vista optimista) y aparece `ActionFeedback` con «No se pudo cambiar el formato
   de duración.» y el mensaje; «Reintentar» solo con `unexpected`, con el foco al
@@ -621,6 +678,8 @@ comentario de `profileLabels` sobre PF-02 («hoy tiene un solo valor») se
 corrige.
 
 ### 5.6 Textos (`workspace/components/labels.ts`)
+
+Con la respuesta a la pregunta 2 (§0, §11):
 
 | Clave                                    | Texto                                        | Fuente       |
 | ---------------------------------------- | -------------------------------------------- | ------------ |
@@ -673,6 +732,8 @@ export function cellText(cell: ExportCell, durationFormat: DurationFormat): stri
 
 Hechos que el contrato da por dados: Vercel despliega `main` a producción en
 cada push y el build no corre migraciones; las corre el usuario con `!`.
+**Producción tiene dos workspaces** (D-WS2b-11): toda consulta de esta sección
+mira solo el más viejo, el de la sesión.
 
 ### 6.1 Condiciones antes del push de WS2b
 
@@ -680,16 +741,19 @@ cada push y el build no corre migraciones; las corre el usuario con `!`.
    controles (§6 del contrato de WS2a), y **el código de WS2a desplegado** o en
    el mismo push. WS2b no suma ninguna condición de base: sin migración, el push
    de WS2b puede ser el mismo que el de WS2a si las dos migraciones ya están.
-2. **La consulta previa**, con `!`, la misma de WS2a (§6.3, la 6), que ahora
-   tiene que dar `compact`:
+2. **La consulta previa**, con `!`:
 
    ```sql
-   select workspace_id, duration_format, updated_at from workspace_settings;
+   select w.name, s.duration_format, s.updated_at
+   from workspace_settings s
+   join workspace w on w.id = s.workspace_id
+   where s.workspace_id = (select id from workspace order by created_at, id limit 1);
    ```
 
-   Una fila por workspace, en `compact`. **Una fila en `full`** no frena el push,
-   pero se avisa al team-lead: alguien puso el completo a mano antes de WS2b y
-   producción está mostrando el reporte en compacto.
+   Una fila, con el nombre del workspace de la sesión, en `compact`. **En
+   `full`** no frena el push, pero se avisa al team-lead: alguien puso el
+   completo a mano antes de WS2b y producción está mostrando el reporte en
+   compacto. **Ninguna fila** es WS-73: se frena y se avisa.
 
 ### 6.2 El push y el humo, todavía en compacto
 
@@ -714,21 +778,28 @@ Con el humo de §6.2 en verde, el mismo día (D-WS2b-11):
 2. **La base**, con `!`:
 
    ```sql
-   select duration_format, updated_at from workspace_settings;
+   select w.name, s.duration_format, s.updated_at
+   from workspace_settings s
+   join workspace w on w.id = s.workspace_id
+   where s.workspace_id = (select id from workspace order by created_at, id limit 1);
 
-   select a.action, a.entity, a.previous_value, a.next_value, u.email, a.created_at
+   select w.name, a.action, a.entity, a.previous_value, a.next_value, u.email, a.created_at
    from audit_log a
+   join workspace w on w.id = a.workspace_id
    join "user" u on u.id = a.actor_id
    where a.action = 'workspace.updateSetting'
+     and a.workspace_id = (select id from workspace order by created_at, id limit 1)
    order by a.created_at desc
    limit 1;
    ```
 
-   Lo esperado: `full`, con el `updated_at` del cambio; una constancia
-   `workspace.updateSetting` sobre `workspace_settings`, de `{"durationFormat":
-"compact"}` a `{"durationFormat": "full"}`, con el correo del owner.
-   **Otra cosa** frena: se vuelve a «Compacto» con el selector y se avisa al
-   team-lead.
+   Lo esperado, para esa fila y solo para ella: `full`, con el `updated_at` del
+   cambio; una constancia `workspace.updateSetting` sobre `workspace_settings`,
+   con `previous_value` `{"durationFormat":"compact"}` y `next_value`
+   `{"durationFormat":"full"}`, literales y sin espacios (§4.5), y el correo del
+   owner. La fila del otro workspace no se mira: nadie la lee. **Otra cosa**
+   frena: se vuelve a «Compacto» con el selector y se avisa al team-lead.
+
 3. **Las pantallas**, con la sesión del owner:
    - `/`: las filas y los totales del día y de la semana en `hh:mm:ss`; con un
      timer corriendo, el contador sigue en `h:mm:ss` sin relleno y el total de su
@@ -756,7 +827,16 @@ datos.
   revierte WS2b con el workspace en `full`, el código de WS2a muestra el
   rastreador en completo y el reporte, las exportaciones y el perfil en compacto,
   que es el formato mezclado que el mapa quiere evitar. Si la pantalla no
-  responde, con `!`: `update workspace_settings set duration_format = 'compact';`.
+  responde, con `!`:
+
+  ```sql
+  update workspace_settings
+  set duration_format = 'compact', updated_at = now()
+  where workspace_id = (select id from workspace order by created_at, id limit 1);
+  ```
+
+  Una fila actualizada. Sin constancia: se anota en el registro.
+
 - Después, `git revert -m 1 <merge de WS2b>` y push, o Instant Rollback al
   deployment anterior: no hay migración, así que los dos son seguros. Las
   constancias quedan.
@@ -791,18 +871,23 @@ datos.
   `actions.integration.test.ts` (§4.4, §9.2).
 - `src/modules/profile/service.ts` (`ProfileView.durationFormat`) y su test de
   integración.
-- `src/modules/report/export/`: `types.ts`, `document.ts`, `cell-text.ts`,
-  `csv.ts`, `xlsx.ts`, `pdf-layout.ts`, `entry-size.ts` (el comentario) y sus
-  tests; `handler.integration.test.ts` con el completo (D-WS2b-9).
+- `src/modules/report/export/`: `types.ts`, `document.ts` (con el comentario de
+  `:121`), `cell-text.ts`, `csv.ts`, `xlsx.ts`, `pdf-layout.ts` (con el
+  comentario de `:129`), `entry-size.ts` (el comentario) y sus tests;
+  `handler.integration.test.ts` con el completo (D-WS2b-9).
 - **El registro del slice**:
-  `docs/slices/correcciones-fase2-ws2b-revisiones.md`.
+  `docs/slices/correcciones-fase2-ws2b-revisiones.md`, con la nota de la
+  decisión 3 del ADR 0029 (D-WS2b-4).
 
 ### frontend-dev
+
+Arranca con la pregunta 2 respondida (§0).
 
 - `src/components/choice-select.tsx`, nuevo, y
   `profile/components/preference-field.tsx` (§5.4).
 - `src/modules/workspace/components/`: `labels.ts`, `duration-format-field.tsx`
-  (nuevo), `workspace-settings-screen.tsx` y su test (§5.2, §5.3, §5.6).
+  y `duration-format-field.test.tsx` (nuevos), `workspace-settings-screen.tsx`
+  y su test (§5.2, §5.3, §5.6, §9.1).
 - `src/app/(app)/configuracion/page.tsx` y `error.tsx` (nuevo) (§5.1).
 - `src/modules/profile/components/profile-screen.tsx`, `labels.ts` y
   `profile-screen.test.tsx` (§5.5).
@@ -816,8 +901,10 @@ datos.
 
 - `playwright.config.ts`: el proyecto `duration-switch` y los `testIgnore` de
   `chromium` y de `duration-full` (D-WS2b-12).
-- `e2e/settings-page.ts`: la sección, el selector, sus opciones y el aviso del
-  formato.
+- `e2e/workspace.setup.ts` y `e2e/database.ts`: `ensureWorkspaceSettings()`,
+  llamada antes de `setDurationFormat("compact")` (D-WS2b-12).
+- `e2e/settings-page.ts`: la sección, el selector, sus opciones, el aviso del
+  formato y el texto de `error.tsx`.
 - `e2e/database.ts`: `deleteWorkspaceSettings()` y
   `restoreWorkspaceSettings(format)` para WS-73, sobre `FIRST_WORKSPACE`;
   `lastWorkspaceSettingAudit()` si el spec lee la constancia.
@@ -838,9 +925,10 @@ Correcciones fechadas, «_Corregido el <fecha>, WS2b_»:
   truncados con los dos formatos); **WS-61** y **WS-63** (la pantalla lee la
   fila de ajustes: una consulta, D-WS2b-4); **WS-73** (probado en WS2b: la
   sesión ve el compacto y la pantalla, el error inesperado con «No se pudo
-  cargar la configuración.»); la fila «_Falta_: formato de duración» de la §14
-  (columna de WS2a; la cambia la pantalla desde WS2b); **P-07** en la §17
-  (cumplida con el selector, D-WS2b-11; la fecha la pone el registro después de
+  cargar la configuración.», también si falta la fila con la pantalla abierta);
+  la fila «_Falta_: formato de duración» de la §14 (columna de WS2a; la cambia
+  la pantalla desde WS2b); **P-07** en la §17 (cumplida con el selector en el
+  workspace de la sesión, D-WS2b-11; la fecha la pone el registro después de
   §6.3).
 - `perfil.md`: **PF-31** (el perfil muestra el formato del workspace, «Completo
   (hh:mm:ss)» o «Compacto (h:mm)»); **PF-02** y **PF-20** solo si el texto
@@ -859,6 +947,7 @@ Correcciones fechadas, «_Corregido el <fecha>, WS2b_»:
 
 ### Orden
 
+0. La respuesta a la pregunta 2 (§0).
 1. `backend-dev`: los tipos y las firmas, en un commit que compila. Avisa.
 2. En paralelo: `backend-dev` con el service, la action y las exportaciones;
    `frontend-dev` con el selector, el perfil y el reporte; `e2e-tester` con el
@@ -871,8 +960,9 @@ Correcciones fechadas, «_Corregido el <fecha>, WS2b_»:
 1. **Cambiar el formato** (WS-14, WS-04): un admin pide `{ key:
 "durationFormat", value: "full" }`; la fila queda en `full`, `updated_at`
    avanza y hay una constancia `workspace.updateSetting` sobre
-   `workspace_settings`, con el id del workspace, `{ durationFormat: "compact"
-}`, `{ durationFormat: "full" }` y el admin como actor. El owner, igual.
+   `workspace_settings`, con el id del workspace, `previous_value`
+   `{"durationFormat":"compact"}`, `next_value` `{"durationFormat":"full"}` y el
+   admin como actor. El owner, igual.
 2. **El mismo valor no escribe** (WS-04): con `full` guardado, pedir `full`
    responde éxito con `{ settings: { durationFormat: "full" } }`, sin tocar la
    fila y sin constancia.
@@ -895,8 +985,10 @@ update`, `ensureWorkspaceContext` y un alta de horas terminan sin esperar.
 8. **WS-73**: sin la fila de ajustes, `updateWorkspaceSetting` responde
    `unexpected` y la fila sigue sin existir; `getWorkspaceSettingsView` lanza
    para owner y admin, y devuelve `forbidden` sin consultar para los demás; la
-   página muestra «No se pudo cargar la configuración.» con «Reintentar»; el
-   resto de la aplicación sigue en compacto.
+   página muestra «No se pudo cargar la configuración.» con «Reintentar»; **con
+   la pantalla abierta, elegir un valor lleva a esa misma página de error**, no
+   al aviso del campo (§4.6); el resto de la aplicación sigue en compacto; la
+   corrida siguiente de la e2e arranca con la fila restituida (D-WS2b-12).
 9. **Revalidación** (WS-64, D-WS2b-5): la action llama a `revalidatePath("/",
 "layout")` con éxito y con error.
 10. **Las exportaciones** (D-WS2b-9, WS-17, WS-69): con el compacto, CSV, PDF y
@@ -916,32 +1008,45 @@ update`, `ensureWorkspaceContext` y un alta de horas terminan sin esperar.
     ese orden; el selector «Formato de duración» con el valor guardado y las dos
     opciones en el orden de WS-15; los estados sin permiso, sin ninguna de las
     dos secciones.
-14. **El selector** (WS-04, WS-62, WS-64, WS-66): elegir el otro valor guarda y
-    las pantallas siguientes muestran el formato nuevo; elegir el mismo no manda
-    pedido; un pedido que no llega vuelve al valor anterior y muestra
-    «Reintentar», que guarda; con un timer corriendo, el contador sigue en
-    `h:mm:ss`.
+14. **El selector** (WS-04, WS-62, WS-64, WS-66): elegir el otro valor lo
+    muestra en el disparador mientras viaja el pedido, guarda, y las pantallas
+    siguientes muestran el formato nuevo; elegir el mismo no manda pedido; un
+    pedido que no llega vuelve al valor anterior y muestra «Reintentar», que
+    guarda; con un timer corriendo, el contador sigue en `h:mm:ss`.
 15. **La e2e**: `duration-switch` corre después de `duration-full` y antes del
     teardown, solo, en una base nueva y en una que se reusa; al terminar,
     `durationFormatOf()` es `compact`.
-16. **La búsqueda de §9.6** da exactamente lo que dice.
+16. **La búsqueda de §9.6** da exactamente lo que dice, con sus excepciones.
 17. **Las correcciones de paridad** de §7 están, fechadas.
 
 ## 9. Plan de tests
 
 Cada test nuevo tiene que poder fallar: se verifica con una mutación en una
-copia, como en los slices anteriores. Las de este slice, como mínimo:
-`updateWorkspaceSetting` sin la relectura bajo bloqueo; sin
-`lockWorkspaceSettings`; que cree la fila si falta; la vista con el formato de
-la sesión en lugar de la fila; `cellText` con `"compact"` fijo; la celda de
-Excel con minutos con el completo; `ReportTree` (y por separado `ReportView` y
-`ReportChart`) con `"compact"` fijo; el perfil con el texto fijo; el campo sin
-la vista optimista.
+copia, como en los slices anteriores. Las de este slice, como mínimo, con el
+test que la mata:
+
+| Mutación                                                        | La mata                                                   |
+| --------------------------------------------------------------- | --------------------------------------------------------- |
+| `updateWorkspaceSetting` sin la relectura bajo bloqueo          | §9.2, criterio 5                                          |
+| Sin `lockWorkspaceSettings`                                     | §9.2, criterio 6                                          |
+| Crear la fila si falta                                          | §9.2, criterio 8                                          |
+| La vista con el formato de la sesión en lugar de la fila        | §9.2, criterio 8 (sin fila, la vista no lanza)            |
+| `cellText` con `"compact"` fijo                                 | §9.1, `cell-text.test.ts` y `csv.test.ts` con el completo |
+| La celda de Excel con minutos con el completo                   | §9.1, `xlsx.test.ts`                                      |
+| `ReportTree`, `ReportView` o `ReportChart` con `"compact"` fijo | §9.1, el test de cada uno con el completo                 |
+| El perfil con el texto fijo                                     | §9.1, `profile-screen.test.tsx` con `full`                |
+| El campo sin la vista optimista (`run` sin `optimistic`)        | §9.5.3, el disparador mientras la respuesta está retenida |
 
 ### 9.1 Unidad
 
 - `workspace/schema.test.ts`: el criterio 3, cada caso con su mensaje; los dos
   valores válidos.
+- `workspace/components/duration-format-field.test.tsx`, nuevo, con
+  `renderToStaticMarkup` (los tests de unidad no tienen DOM): con cada valor, el
+  rótulo «Formato de duración» asociado al disparador por `htmlFor` e `id`, el
+  texto del disparador («Completo (hh:mm:ss)» o «Compacto (h:mm)») y ningún
+  aviso. Lo que solo pasa con interacción —la vista optimista, el aviso y
+  «Reintentar»— lo prueba §9.5.3.
 - `workspace-settings-screen.test.tsx`: el criterio 13 con
   `renderToStaticMarkup`, con `compact` y con `full`; **reemplaza** el caso de
   WS1 que afirma una sola sección (`:30-38`) por el de dos, en orden.
@@ -964,7 +1069,9 @@ la vista optimista.
 
 - **`workspace/settings.integration.test.ts`**, un `describe` nuevo:
   - Criterios 1 a 4 y 8 sobre el service, con `seedWorkspace`, `seedMember`,
-    `setDurationFormat` y `auditFor("workspace_settings", workspaceId)`.
+    `setDurationFormat` y `auditFor("workspace_settings", workspaceId)`. El
+    criterio 1 afirma `previous_value` y `next_value` tal como quedan en la
+    columna, `{"durationFormat":"compact"}` y `{"durationFormat":"full"}`.
   - **Criterio 5**, con `queueBehindBarrier`: la barrera toma la membresía del
     admin `for no key update`; el corredor 1 le cambia el rol (y otro caso, el
     estado) y confirma; el corredor 2, `updateWorkspaceSetting`. Al abrir, el
@@ -984,10 +1091,10 @@ la vista optimista.
   - **Criterio 8**: un `delete` de la fila; la action, la vista con owner y con
     member, y que la fila siga sin existir.
 - **`workspace/actions.integration.test.ts`**, un `describe` nuevo: cada fila de
-  §4.6 con su código y su texto; `revalidatePath("/", "layout")` con éxito y con
-  `forbidden` (criterio 9); sin sesión, a `/login` sin escribir; el reintento de
-  una respuesta perdida —la action dos veces con `full`— deja **una**
-  constancia.
+  §4.6 con su código y su texto; `revalidatePath("/", "layout")` con éxito, con
+  `forbidden` y con la fila que falta (criterio 9); sin sesión, a `/login` sin
+  escribir; el reintento de una respuesta perdida —la action dos veces con
+  `full`— deja **una** constancia.
 - `profile/service.integration.test.ts`: `getProfileView` toma el formato de
   `context.settings` (dos contextos con las mismas preferencias y formatos
   distintos).
@@ -1036,17 +1143,32 @@ corre solo— y entra con un admin propio (`setRole`).
 2. **Con un timer corriendo** (WS-66): con un timer sembrado, cambiar a
    compacto; en `/`, el contador sigue en `0:0…:…` sin relleno y el total del
    día pasa a `h:mm`.
-3. **La red** (criterio 14, WS-62): con `dropActionRequests`, elegir
-   «Compacto»: el selector vuelve a «Completo», el aviso trae «No se pudo
-   cambiar el formato de duración.», el mensaje y «Reintentar»; al soltar,
-   «Reintentar» guarda. Con `loseActionResponses`, «Reintentar» responde éxito
-   y `durationFormatOf()` es el pedido.
+3. **La vista optimista y la red** (criterio 14, WS-62):
+   - con `holdActionResponses`, desde «Completo», elegir «Compacto (h:mm)»: el
+     disparador muestra «Compacto (h:mm)» mientras la respuesta está retenida
+     (la vista optimista ya cambió); al soltarla, sigue en «Compacto (h:mm)» y
+     `durationFormatOf()` es `compact`. Mata la mutación del campo sin
+     `optimistic`, que deja el disparador en «Completo» hasta la respuesta;
+   - con `dropActionRequests`, elegir el otro valor: el selector vuelve al
+     anterior, el aviso trae «No se pudo cambiar el formato de duración.», el
+     mensaje y «Reintentar»; al soltar, «Reintentar» guarda;
+   - con `loseActionResponses`, «Reintentar» responde éxito y
+     `durationFormatOf()` es el pedido.
 4. **Perder el rol con la pantalla abierta** (WS-52): `setRole(email,
 "member")`, elegir otro valor: la pantalla muestra WS-50, el enlace ya no
    está y `durationFormatOf()` no cambió.
-5. **WS-73** (criterio 8): `deleteWorkspaceSettings()`; `/configuracion`
-   muestra «No se pudo cargar la configuración.» con «Reintentar»; `/` sigue
-   entrando, en compacto. En `finally`, `restoreWorkspaceSettings("full")`.
+5. **WS-73** (criterio 8), en un `try` con `restoreWorkspaceSettings("full")`
+   en el `finally`:
+   - **con la pantalla abierta**: abrir `/configuracion`,
+     `deleteWorkspaceSettings()` y elegir «Compacto (h:mm)»: se ve «No se pudo
+     cargar la configuración.» con «Reintentar», no el aviso del campo, y la
+     fila sigue sin existir;
+   - **al entrar**: `/configuracion` muestra lo mismo; `/` sigue entrando, en
+     compacto.
+
+   Si la corrida se corta antes del `finally`, la siguiente restituye la fila
+   en `workspace.setup.ts` (D-WS2b-12). `e2e-tester` lo prueba una vez: borrar
+   la fila por `psql` en la base reusada y correr la suite; el setup pasa.
 
 **La receta para iterar en local** es la de §9.4 de WS2a con este proyecto:
 `setDurationFormat` por `psql` y `npx playwright test --project duration-switch
@@ -1058,15 +1180,26 @@ corre solo— y entra con un admin propio (`setRole`).
 Después de cada rebase, y va al registro:
 
 ```
-rg -n 'formatDuration\(|durationLabel|"compact"|"full"' src scripts --glob '!**/*.test.*'
+rg -n 'formatDuration\(|durationLabel\(|"compact"|"full"' src scripts --glob '!**/*.test.*'
 ```
+
+`durationLabel\(`, con el paréntesis: el campo `durationLabel` de
+`TimeEntryView` (time-entry) no es la función del reporte y no se busca.
 
 Fuera de `src/server/time/`, `src/server/db/schema.ts`,
 `src/modules/workspace/` y `src/test/factories.ts`, tiene que dar
-**exactamente** los llamadores de WS2a (S1, C1 … C9 de su §5.6, con el formato
-de `TimeSettings` o de `useDisplayFormats()`) más los del reporte y las
-exportaciones de este slice con el formato recibido. **Ningún `durationLabel`,
-y ningún `"compact"` ni `"full"` literal** fuera de esos lugares.
+**exactamente**:
+
+- los llamadores de WS2a (S1, C1 … C9 de su §5.6), con el formato de
+  `TimeSettings` o de `useDisplayFormats()`;
+- los del reporte y las exportaciones de este slice, con el formato recibido;
+- **una excepción**: el `"full"` de `time-entry/components/clock-field.tsx:177`,
+  el ancho del campo de duración de WS2a, que compara el formato del proveedor y
+  no formatea.
+
+**Ningún `durationLabel(`, y ningún otro `"compact"` ni `"full"` literal.** Los
+comentarios de `export/document.ts:121` y `export/pdf-layout.ts:129` no los
+encuentra la búsqueda; los comprueba la revisión de backend (D-WS2b-8).
 
 ### 9.7 Lo que no se prueba
 
@@ -1087,6 +1220,10 @@ y ningún `"compact"` ni `"full"` literal** fuera de esos lugares.
 - **El selector cambia lo que ven los demás specs**: lo evita D-WS2b-12. Un spec
   futuro que cambie el formato va a `duration-switch`, nunca a `chromium` ni a
   `duration-full`.
+- **Una corrida cortada en WS-73** deja la base reusada sin fila: la restituye
+  `workspace.setup.ts` (D-WS2b-12).
+- **Las consultas de producción sin filtro** mirarían también el workspace que
+  la sesión no usa: §6 filtra por el más viejo.
 - **Una columna que no entra con el completo**: la de la pantalla del reporte
   (D-WS2b-8), la de Excel (`####`) y la del PDF (D-WS2b-9). Cada una con su
   criterio.
@@ -1121,7 +1258,7 @@ y ningún `"compact"` ni `"full"` literal** fuera de esos lugares.
    (PF-31) y los de la ayuda de Clockify. **Recomendación: sí, sin el ejemplo**
    (D-WS2b-6). La alternativa es «Completo (01:30:00)» y «Compacto (1:30)», como
    «24 horas (13:00)» del formato de hora, y cambiar también el texto del
-   perfil.
+   perfil. **Hace falta antes del primer paso de `frontend-dev`** (§0).
 
 ## 12. Fuera de alcance
 
@@ -1132,6 +1269,8 @@ y ningún `"compact"` ni `"full"` literal** fuera de esos lugares.
 - **El MCP con el formato o con segundos**: pregunta 1.
 - **Los segundos sueltos de una celda de la planilla con el completo**:
   decidido en WS2a que no se tocan.
+- **La fila de ajustes del workspace que la sesión no usa**: no se lee ni se
+  cambia (D-WS2b-11).
 - **La verificación contra el workspace de Clockify** (workspace P-09, puntos 6
   a 8): no es de este slice; si cambia la regla del compacto, es un ADR nuevo
   (ADR 0029, «Consecuencias»).
