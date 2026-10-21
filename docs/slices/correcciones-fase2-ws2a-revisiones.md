@@ -6,6 +6,10 @@ Rama `fase2/ws2a-formato` desde `main` en `c08369d`, en el worktree
 [0029](../adr/0029-el-formato-de-duracion-es-del-workspace-y-solo-cambia-lo-que-se-muestra.md),
 aceptado por el usuario el 2026-10-20 (`636a898`).
 
+El 2026-10-21 la rama se rebasó sobre `main` en `467e730`, con WS1 (ver
+«Rebase sobre `main`»). Hasta «Corridas finales», los hashes son los de antes
+del rebase; la tabla de esa sección da los nuevos.
+
 ## Respuestas del usuario
 
 El 2026-10-20, por el team-lead:
@@ -227,7 +231,8 @@ desde la rama, con la integración en `clock_ws2a_b2_int`, nueva (ver
   revert quita. §2.3 y §6.5 necesitan un paso más: después del `checkout`,
   agregar `"duration_format"` a la lista del `it` de
   `src/server/db/schema.integration.test.ts:40-47` antes del `git commit`. El
-  contrato no se tocó; lo decide el team-lead.
+  contrato no se tocó; lo decide el team-lead. Se corrigió después de las revisiones, por
+  otro camino: ver «La reversión de §2.3, otra vez».
 
 **El bloque `do` de §6.2**, para el editor SQL de Neon, generado con
 `/home/maxi/program/clock-ops/do-block.cjs drizzle 19`:
@@ -293,3 +298,257 @@ El `build` corrió en un worktree aparte con `node_modules` en enlaces duros:
 `ws2a-e2e2` tenía un `next start` sobre el `.next` del worktree de la rama, y
 Turbopack rechaza un `node_modules` que es un enlace simbólico fuera de la
 raíz.
+
+## Mutaciones
+
+Cada mutación de §9, más las que sumaron las revisiones, en una copia de la
+rama en `29db1b1` (después del rebase y de las correcciones del backend), con
+un solo cambio por vez. La unidad corrió entera (`vitest run`, 2463 tests). La
+integración corrió con los cuatro archivos que leen el formato
+(`workspace/service`, `profile/service`, `time-entry/service` y
+`time-entry/actions`, 659 tests), en `clock_ws2a_fix_back_mut`, nueva. La
+e2e corrió con `--project duration-full --no-deps` contra `next start`, con el
+workspace en `full` por `psql` (§9.4). En la tabla va el test que mata cada
+mutación, o el primero si son varios.
+
+| Mutación                                                                      | La mata                                                                                                                                                         |
+| ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C1 en minutos (`use-group-total.ts:39`, la suma `/ 60`)                       | `use-group-total.test.tsx`, los 3 casos, y `calendar-toolbar.test.tsx`, «el total del período … va con el formato de duración del workspace»                    |
+| C1 en `"compact"` fijo                                                        | Los mismos 4                                                                                                                                                    |
+| C2 en minutos (`entry-row.tsx:223`, sin `* 60`)                               | Ningún test de unidad (§9.1: lo cubre la e2e del completo). La e2e: ver abajo                                                                                   |
+| C3, el valor inicial en `"compact"` fijo (`manual-bar.tsx:154`)               | `manual-bar.test.tsx`, «muestra el borrador de 90 minutos con el formato del workspace»                                                                         |
+| C3 al confirmar, en `"compact"` fijo (`manual-bar.tsx:157`)                   | Ningún test de unidad (§9.1). La e2e: ver abajo                                                                                                                 |
+| C4 en minutos (`calendar-gestures.ts:314`)                                    | `calendar-gestures.test.ts`, «la duración va con el formato del workspace, en minutos enteros» y «dibuja la entrada con el trío nuevo»                          |
+| C5 en `"compact"` fijo (`calendar-block.tsx:106`)                             | `calendar-block.test.tsx`, «el transcurrido del timer va con el formato de duración, no con el del contador (D-WS2a-7)»                                         |
+| C6 en minutos (`entry-dialog.tsx:569`)                                        | `entry-dialog.test.tsx`, «un trío que no es el de la entrada muestra su duración con el formato del workspace» y «el alta lleva el trío propuesto»              |
+| C6 al confirmar, en `"compact"` fijo (`entry-dialog.tsx:573`)                 | Ningún test de unidad. La e2e, desde `0bff31c`: `duration-format.full.spec.ts:389`, la afirmación después de `duration.fill("30")` y Tab                        |
+| C7, los totales en minutos (`timesheet-model.ts:120`)                         | 13 tests: los de los totales de `timesheet-model.test.ts` (TS-44 … TS-47, los dos formatos, D-WS2a-8) y 3 de `timesheet-view.test.tsx`                          |
+| C7, `zero` como `seconds < 60` (`:121`)                                       | `timesheet-model.test.ts`, «un total de 30 segundos es gris con el compacto y no con el completo (TS-45)»                                                       |
+| C8, la celda rotulada con sus minutos (`:278`)                                | `timesheet-model.test.ts`, «la celda muestra sus segundos con el formato» y «con el completo, una celda de dos entradas queda en `00:05:20`»                    |
+| C9, `cellCommit` con el rótulo de lo tecleado (`:401`)                        | `timesheet-cell.test.tsx`, «con varias entradas conserva los segundos sueltos, como el servidor (TS-34)»                                                        |
+| `writtenSeconds` que devuelve `minutes × 60` siempre (`:139`)                 | 4 tests: el de `timesheet-cell.test.tsx` de arriba, «writtenSeconds … con varias conserva el resto» y los dos de la escritura en vuelo de D-WS2a-8              |
+| C9 en la celda, `cellCommit(text, cell, "compact")` (`timesheet-cell.tsx:46`) | Ningún test de unidad. La e2e, desde `0bff31c`: `duration-format.full.spec.ts:297`, con `writeCell(page, one, "5", "Enter")`. Con Tab sobrevivía                |
+| La vista de la planilla con `format: "compact"` (`timesheet-view.tsx:124`)    | `timesheet-view.test.tsx`, «la celda y los totales siguen el formato de duración del proveedor»                                                                 |
+| S1, `toView` en `"compact"` fijo (`time-entry/service.ts:217`)                | 3 de «S1: durationLabel con el formato de duración del workspace» en `time-entry/service.integration.test.ts`, y el criterio 6 de `actions.integration.test.ts` |
+| `timeSettingsOf` en `"compact"` fijo (`profile/service.ts`)                   | «timeSettingsOf con el formato de duración (D-WS2a-3)», los dos de `profile/service.integration.test.ts`, y el criterio 6                                       |
+| El `left join` cambiado por `inner join` (`workspace/repository.ts:79`)       | `workspace/service.integration.test.ts`, «sin la fila de ajustes trae compact … (WS-73)» y «lee los ajustes del workspace más viejo, no los de otro»            |
+| `left join … on true`                                                         | «lee los ajustes del workspace más viejo, no los de otro», desde `d0516d8` (antes sobrevivía)                                                                   |
+| `contextOf` en `"compact"` fijo (`workspace/service.ts`)                      | «trae el valor escrito en la base», «cada persona del workspace recibe el mismo formato», «el check de la base acepta cada valor…» y el criterio 6              |
+| El valor por omisión en `"full"` (`resolveDurationFormat`)                    | «resolveDurationFormat … sin fila de ajustes da compact» y «sin la fila de ajustes trae compact … (WS-73)»                                                      |
+
+Las cuatro que la unidad no mata son las de §9.1, «lo que solo aparece con
+interacción». Las mutaciones e2e de C6 y C9 las corrió `ws2a-fix-e2e` sobre
+`0bff31c`, con el resto del spec del completo en verde. Antes de `0bff31c`
+sobrevivían las dos, como encontró la revisión de tests.
+
+## Rebase sobre `main`
+
+El 2026-10-21, `git rebase main` con `main` en `467e730`, que trae WS1 (la
+pantalla `/configuracion` y el nombre del workspace) y el arreglo de vite. Dos
+commits pararon con conflicto, en los archivos que preveía §0:
+
+- **`src/modules/workspace/service.ts`**, en `a9d5258` (paso 1) y en `1046a24`
+  (la sesión), solo en los imports: `main` trae `ForbiddenError` de
+  `@/server/permissions`, y la rama suma `DurationFormat` y después
+  `DURATION_FORMATS` de `@/server/time`. Quedaron las dos cosas. El cambio de
+  `WorkspaceRow` a `WorkspaceRead` en `contextOf`, `joinedContext`,
+  `bootstrapContext` y `entryWorkspaceIdOf` entró sin conflicto, y
+  `canUpdateWorkspaceSettings` y el re-chequeo con bloqueo de WS1
+  (`assertCanUpdateSettingsLocked`) siguen como en `main`: ninguno lee
+  `findFirstWorkspace`.
+- **`docs/parity/workspace.md`**, en `cb67d1b`, en dos lugares:
+  - la nota de WS-65 … WS-73: quedaron las dos correcciones, la de WS1 (WS-73
+    se prueba en WS2b) y después la de WS2a;
+  - §16, el orden de slices: el punto 1 (WS1) es el de `main`, con su
+    corrección, y el punto 2 (WS2) es el de la rama, partido en WS2a y WS2b.
+
+La `0019` sigue siendo la `0019`: `main` no trae otra migración. Después del
+rebase, `npm run db:generate` da «No schema changes, nothing to migrate»;
+`npm ci`, `npm run typecheck` y `npm test` (102 archivos y 2457 tests; `time-ar`
+2 y 307) en verde, y `npm run test:integration` en `clock_ws2a_fix_rebase`,
+nueva: 32 archivos, 2016 tests, en verde.
+
+| Antes     | Después   | Commit                                                    |
+| --------- | --------- | --------------------------------------------------------- |
+| `789592e` | `757dfca` | docs: contrato y ADR 0029 (propuesto)                     |
+| `1eab1e3` | `550466a` | docs: los diez cambios de architecture-reviewer           |
+| `a9d5258` | `1942cfa` | paso 1                                                    |
+| `9e55d48` | `dad6512` | `parseDurationInput` con `h:mm:ss`                        |
+| `94faef9` | `32c1aa8` | la primera `0019`                                         |
+| `cb67d1b` | `8d23a7b` | docs: correcciones de paridad                             |
+| `4964ecd` | `3020ae6` | docs: paridad, los textos desactualizados                 |
+| `84c3526` | `935fc84` | e2e: el proyecto `duration-full`                          |
+| `1046a24` | `5a50c23` | el formato viaja en la sesión                             |
+| `b2072e3` | `4e635c3` | `toView` con el formato del workspace                     |
+| `d70fd6e` | `7ffd3be` | `cell-text.ts` remite a WS2b                              |
+| `68b11cd` | `d516d69` | e2e: el spec del completo                                 |
+| `b13cc1f` | `1aa4eb5` | el rastreador y el calendario                             |
+| `f5c4c9c` | `d6fe7c7` | la planilla                                               |
+| `5b871ec` | `7042a06` | el proveedor de formatos; el reporte, fijo en compacto    |
+| `d0516d8` | `76a0257` | el test del `join` con un workspace más viejo sin ajustes |
+| `3c7187f` | `d951a1f` | la `0019` regenerada con los `check` de `workspace.name`  |
+| `636a898` | `35dff08` | docs: el usuario acepta el ADR 0029                       |
+| `8f34945` | `a59eab9` | docs: el registro con §9.3                                |
+
+## Revisiones (2026-10-21)
+
+Las seis, sobre `8f34945`, antes del rebase. Las correcciones las hicieron
+`ws2a-fix-back` (backend y registro), `ws2a-fix-front` y `ws2a-fix-e2e` en el
+mismo árbol, después del rebase.
+
+| Revisión   | Veredicto          |
+| ---------- | ------------------ |
+| Backend    | cambios requeridos |
+| Clean code | aprobado           |
+| Frontend   | aprobado           |
+| Paridad    | aprobado           |
+| Seguridad  | aprobado           |
+| Tests      | cambios requeridos |
+
+### Backend
+
+1. **Mayor: la reversión de §2.3 y §6.5 dejaba la integración en rojo.** Es
+   el desvío que este registro ya anotaba. Se corrigió en `29db1b1` y en el
+   contrato:
+   - (a) `src/server/db/schema.integration.test.ts` importa solo lo que el
+     revert conserva: `db`, `schema`, `constraint-error` y `seedWorkspace`. El
+     formato se escribe con un `db.update(workspaceSettings)` local y recorre
+     `["full", "compact"]`. La guarda «el `check` acepta cada valor de
+     `DURATION_FORMATS`» pasó a `workspace/service.integration.test.ts`, que
+     además comprueba que la sesión trae cada valor.
+   - (b) En §2.3 y §6.5 del contrato, el `checkout` es
+     `git checkout HEAD -- drizzle/ src/server/db/schema.ts src/server/db/schema.integration.test.ts`,
+     y §2.3 explica por qué ese archivo se conserva.
+   - (c) La simulación, repetida: ver «La reversión de §2.3, otra vez».
+   - La nota menor: el comentario de `durationFormat` en `schema.ts` dice
+     «`compact` o `full`» y ya no nombra `DURATION_FORMATS`.
+   - Lo que pedía para el merge, los dos conflictos de `git merge-tree`, está
+     en «Rebase sobre `main`».
+
+### Clean code
+
+1. **`knownChoice` duplicada en `resolveDurationFormat`.** Corregido en
+   `29db1b1`: pasó de `profile/service.ts` a `src/lib/known-choice.ts`, pura y
+   con `known-choice.test.ts`. La usan los dos services, y
+   `resolveDurationFormat` queda en
+   `return knownChoice(DURATION_FORMATS, value, "compact");`, con la firma de
+   D-WS2a-2. El comentario que explicaba por qué la sesión no se cae sin la
+   fila pasó al docstring. El mensaje del error es el de `knownChoice`
+   («Valor fuera de lista: …»); ningún test afirmaba el anterior.
+2. **El comentario repetido de `timeSettingsOf`** (`profile/service.ts:145`).
+   Corregido en `29db1b1`: se borró y quedó el docstring.
+3. **`timesButton` y `trackerWeek` duplicados en la e2e.** Corregido en
+   `0bff31c` (`ws2a-fix-e2e`): se exportan de `e2e/tracker-page.ts`, y el spec
+   del completo, `bulk-actions.spec.ts`, `entry-times.spec.ts` y
+   `week-and-pagination.spec.ts` los importan de ahí. En este último,
+   `weekGroup` pasó a llamarse `trackerWeek`.
+4. **`rejection` repetido en los tests de integración.** Corregido en
+   `29db1b1`, con un desvío que aprobó el team-lead: el helper se exporta una
+   vez desde `src/test/queries.ts` y lo usan las otras cinco copias (los
+   `schema.integration.test.ts` de `profile`, `workspace`, `time-entry` y
+   `project`, y `time-entry/person-keys.integration.test.ts`).
+   `src/server/db/schema.integration.test.ts` conserva su copia local, con un
+   comentario que explica por qué: la reversión de §2.3 conserva ese archivo y
+   quita el export, así que importarlo dejaría el árbol revertido sin compilar.
+
+### Frontend
+
+1. **Con el formato completo, el campo de duración quedaba angosto.**
+   Corregido en `72aee90` (`ws2a-fix-front`). Sin `format`, `ClockField` lee
+   `useDisplayFormats().duration`, y `fieldWidth` da `w-24` con `full`, `w-20`
+   con `compact` (producción no cambia) y `w-26` con 12 h. El comentario de
+   `format` se actualizó. `clock-field.test.tsx` suma un caso: con `full` lleva
+   `w-24` y no `w-20`, con `compact` lo contrario, y un campo de hora no mira
+   la duración. Con `full`, la columna de la planilla crece 16 px por día. El
+   ancho se calculó, no se midió en un navegador: `w-24` deja 74 px de
+   contenido (96 px, menos 2 × 10 de relleno y 2 de borde).
+2. **Un import fuera de su grupo** (`timesheet-view.test.tsx:15`). Corregido
+   en `72aee90`: pasó al bloque de `@/`.
+
+### Paridad
+
+Sin hallazgos. La nota sobre `PERIOD_TOTAL` (`e2e/calendar-page.ts:77`), que
+solo reconoce el compacto, no es de este slice: el spec del completo no lo
+usa. Queda para WS2b, si reusa ese helper con `full`.
+
+### Seguridad
+
+1. **Menor, ajeno a WS2a: `npm audit --audit-level=high` falla también en
+   `main`** por `braces`, que llega por `shadcn` y `eslint-config-next`, las
+   dos de desarrollo; `--omit=dev` da 0 altas. Queda fuera del slice: la regla
+   del CI de seguridad la decide el usuario. La rama no toca `package.json` ni
+   `package-lock.json`, y después del rebase hereda el arreglo de vite de
+   `main`.
+   - La nota para el merge, mantener `canUpdateWorkspaceSettings` y
+     `assertCanUpdateSettingsLocked`, se cumplió en el rebase.
+
+### Tests
+
+1. **Mayor: C6 al confirmar no tenía un test que pudiera fallar.** Corregido
+   en `0bff31c`: `duration-format.full.spec.ts:387-389` escribe `30` en
+   «Duración», confirma con Tab y espera `00:30:00`. La mutación la mata (ver
+   «Mutaciones»).
+2. **Mayor: C9 en la celda no tenía un test que pudiera fallar.** Corregido en
+   `0bff31c`: `duration-format.full.spec.ts:296` confirma con Enter. Con Tab la
+   mutación sobrevive, porque el valor nuevo del campo pisa el rótulo; con
+   Enter el foco queda en el campo y `ClockField` no toma la foto.
+3. **Mayor: faltaban las mutaciones y las corridas del criterio 14.**
+   Corregido: ver «Mutaciones» y «El criterio 14».
+
+## La reversión de §2.3, otra vez
+
+Simulada en un worktree temporal sobre `29db1b1`, con la receta nueva: un
+merge `--no-ff` de la rama sobre `main` (`467e730`) en `HEAD` suelto, y
+después `git revert -m 1 --no-commit <merge>`,
+`git checkout HEAD -- drizzle/ src/server/db/schema.ts src/server/db/schema.integration.test.ts`
+y `git commit`.
+
+- El diff contra `main` queda en cinco archivos: la `0019`, su instantánea,
+  el diario, `schema.ts` (la columna con su comentario y los tres `check`) y
+  `schema.integration.test.ts`. En el árbol revertido no queda ningún
+  `DURATION_FORMATS`, `setDurationFormat` ni `known-choice`.
+- `db:generate`: «No schema changes, nothing to migrate».
+- `lint`, `typecheck` y `npx prettier --check .`, sin errores; `npm test`, en
+  verde (99 archivos y 2430 tests; `time-ar` 2 y 303).
+- **`npm run test:integration`, en verde**: 32 archivos, 1999 tests, en
+  `clock_ws2a_fix_rev`, nueva. `global-setup` la migró con el `drizzle/` del
+  árbol: 20 filas en `drizzle.__drizzle_migrations`, la última con
+  `1792540808202`, y `workspace_settings` con `duration_format`.
+
+El worktree se borró después.
+
+## El criterio 14
+
+Las corrió `ws2a-fix-e2e` sobre `0bff31c`, en una copia limpia, con la suite
+entera y sin `--no-deps`. Por proyecto: `setup` / `chromium` /
+`duration-full-setup` / `duration-full` / `duration-full-teardown`.
+
+| Corrida                                                                       | Resultado                          | `durationFormatOf()`            |
+| ----------------------------------------------------------------------------- | ---------------------------------- | ------------------------------- |
+| 1. Base nueva, `clock_ws2a_fix_e2e`                                           | 257 pasaron (1/248/1/6/1), 1,7 min | `compact` al terminar           |
+| 2. La misma base, reusada                                                     | 257 pasaron (1/248/1/6/1), 1,8 min | `compact` al terminar           |
+| 3. Workspace en `full` a mano (el `update` de §9.4), en `clock_ws2a_fix_e2e3` | 257 pasaron (1/248/1/6/1), 1,7 min | `full` antes, `compact` después |
+
+En la 3, `chromium` pasa entero con el compacto: `workspace.setup.ts` lo
+volvió a `compact` al arrancar. Para crear el workspace antes de ponerlo en
+`full`, se corrió solo `--project setup` sobre la base nueva.
+
+La corrida 3 se intentó antes tres veces sobre `clock_ws2a_fix_e2e`, ya en su
+tercer uso. Las tres fallaron en `chromium`, siempre en specs de equipo, así
+que `duration-full` no corrió («7 did not run»). En las tres, la suite dejó el
+workspace en `compact`. Ningún fallo es de WS2a:
+
+- `team-link.spec.ts:291`: el clic en «Liberar el correo» no abrió el diálogo.
+  No se reproduce: `--repeat-each 5` pasa 5 de 5.
+- 9 fallos en `team-link`, `team-status` y `team`, siempre el aviso de
+  `/equipo` que no llega en 5 s, con la carga de la máquina en 35 (el vitest
+  de otro agente) y 1131 membresías en la base.
+- Con la carga en 10, 2 más del mismo tipo (`team-status:382`, `team:164`) y
+  `tags.spec.ts:300`, con `ECONNRESET` en `/api/auth/test-session/sign-in`,
+  con 1407 membresías.
+
+Es la lentitud de `/equipo` con unas 1100 membresías, que ya figuraba como
+preexistente, agravada por la carga.
+
+Las tres corridas son anteriores a `72aee90` y `29db1b1`, el ancho del campo y
+las correcciones del backend: el `build` de la e2e no las incluye.

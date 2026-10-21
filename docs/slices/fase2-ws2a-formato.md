@@ -514,7 +514,7 @@ falla —un nombre que no cumple, una columna que ya estaba—, no queda nada.
 
   ```
   git revert -m 1 --no-commit <merge>
-  git checkout HEAD -- drizzle/ src/server/db/schema.ts
+  git checkout HEAD -- drizzle/ src/server/db/schema.ts src/server/db/schema.integration.test.ts
   git commit
   ```
 
@@ -525,6 +525,15 @@ falla —un nombre que no cumple, una columna que ya estaba—, no queda nada.
   anterior compila con la columna en el esquema, porque no la nombra. **Instant
   Rollback a un deployment anterior es seguro**, al revés que en WS0: el código
   viejo no nombra la columna.
+
+  `schema.integration.test.ts` se conserva por lo mismo: prueba el esquema de
+  la base, que sobrevive al revert. Vuelto a su versión anterior, su lista de
+  columnas de `workspace_settings` no tendría `duration_format`, y la
+  integración del CI, que migra con el `drizzle/` del árbol, quedaría en rojo.
+  Por eso importa solo lo que había antes de WS2a. _Corregido el 2026-10-21,
+  revisión de backend_: el `checkout` no lo nombraba (ver el
+  [registro](correcciones-fase2-ws2a-revisiones.md), «Revisiones
+  (2026-10-21)»).
 
 ## 3. Permisos
 
@@ -887,8 +896,8 @@ en compacto hasta WS2b (D-WS2a-9). Producción pasa al completo con WS2b
 ### 6.5 Reversión
 
 La de §2.3. Si el humo falla después del push: el revert del código con
-`git checkout HEAD -- drizzle/ src/server/db/schema.ts` antes del commit, y
-push; o Instant Rollback, que acá es seguro.
+`git checkout HEAD -- drizzle/ src/server/db/schema.ts src/server/db/schema.integration.test.ts`
+antes del commit, y push; o Instant Rollback, que acá es seguro.
 
 ### 6.6 Previews y las bases compartidas
 
