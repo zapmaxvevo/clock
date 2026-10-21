@@ -21,11 +21,13 @@ esquema y sin migración.** Una acción nueva en `can()`, `project.update`.
   tocan `/proyectos` y el módulo `project` (D-P1-1). Corre en paralelo con E3
   (`clock-e3`), que toca `team` y `workspace`; P1 no toca ninguno de los dos,
   pero comparte un archivo de tests con él (§10).
-- **Revisión:** `architecture-reviewer` (`p1-arch-review`) aprobó con cambios la
-  versión `70711f9`: tres mayores y siete menores. Después, el usuario respondió
-  las cuatro preguntas (§11) y dos cambiaron el diseño: no hay página propia por
-  proyecto ni columna de tiempo. Esta versión aplica los hallazgos que siguen
-  valiendo; el detalle está en «Hallazgos de la revisión», al final.
+- **Revisión:** `architecture-reviewer` (`p1-arch-review`) aprobó con cambios
+  dos veces. La primera, sobre `70711f9`, con tres mayores y siete menores;
+  después, el usuario respondió las cuatro preguntas (§11), y dos cambiaron el
+  diseño: no hay página propia por proyecto ni columna de tiempo. La segunda,
+  sobre `2dd775d`, con un mayor y cinco menores. Esta versión aplica los
+  hallazgos que siguen valiendo; el detalle está en «Hallazgos de la revisión»,
+  al final.
 - **Decisiones de arquitectura: ningún ADR nuevo.** El ADR 0032 (una página por
   proyecto), propuesto con la versión anterior, quedó rechazado por el usuario
   el 2026-10-21. Lo que el slice decide cae dentro de ADR aceptados:
@@ -178,6 +180,9 @@ read` todos los proyectos del workspace con la fila de miembro de quien pide
 "project.view", …)` (PR-61, PR-93), como `readCatalog`. **El orden es
   alfabético y plano**, con `compareNames` (`lib/text.ts:27`), sin grupos por
   cliente: el cliente es una columna.
+- **Lo que viaja al navegador de cada fila** es lo que la tabla muestra. La nota
+  y el facturable por defecto, que solo usa el diálogo de edición, viajan **solo
+  con `canUpdate`**, en `settings` (§4.1); sin permiso, `settings` es `null`.
 - **Las columnas**, en este orden:
   - «Nombre»: el punto de color y el nombre. Con «Todos», un archivado lleva
     «Archivado» al lado del nombre.
@@ -197,11 +202,18 @@ read` todos los proyectos del workspace con la fila de miembro de quien pide
   historial, y el botón de volver lo deshace (PR-95).
 - **El buscador**: busca por nombre de proyecto y de cliente, sin distinguir
   mayúsculas ni acentos (`normalizeSearch`, como TT-07), en el parámetro
-  `buscar`. Escribir **reemplaza** la URL con `window.history.replaceState`:
-  no hace ningún pedido al servidor ni suma una entrada de historial por tecla.
-  Next sincroniza `useSearchParams` con la API nativa
+  `buscar`. **No busca por nombre de tarea**, como dice PR-31 (decisión del
+  coordinador): el selector de TT-07 sí busca por tarea, porque ahí se elige
+  una tarea; acá se busca un proyecto. Escribir **reemplaza** la URL con
+  `window.history.replaceState`: no hace ningún pedido al servidor ni suma una
+  entrada de historial por tecla. Next sincroniza `useSearchParams` con la API
+  nativa
   (`node_modules/next/dist/docs/01-app/01-getting-started/04-linking-and-navigating.md:345-347`).
   Al recargar, lo escrito se conserva (PR-95).
+- **El campo sigue a la URL**: su valor sale de `useSearchParams().get("buscar")`,
+  o de un estado local que se resincroniza cuando ese parámetro cambia por otro
+  camino. Volver atrás o adelante en el historial deja en el campo la búsqueda
+  de esa entrada, y la tabla filtrada con ella.
 - **Cada parámetro inválido se ignora por separado** (ADR 0008, como
   `teamSearchParams`). Un `estado` desconocido o repetido es «Activos»; un
   `buscar` repetido o de más de 100 caracteres es vacío. **Uno no arrastra al
@@ -235,21 +247,26 @@ solo lectura.**
   `canUpdate` y `canCreateTask` son falsos con el archivado (§4.3). P2 suma ahí
   sus acciones.
 
-**D-P1-8 — Editar es un diálogo desde la fila.** «Editar» abre «Editar
-proyecto», con el nombre del proyecto como descripción y los campos de D-P1-9 en
-su forma de edición, con los valores de la fila. Usa el marco de las altas
+**D-P1-8 — Editar es un diálogo desde la fila.** El botón dice «Editar», con el
+nombre accesible «Editar «X»», y abre un diálogo titulado «Editar proyecto»,
+con el nombre del proyecto como descripción y los campos de D-P1-9 en su forma
+de edición, con los valores de la fila. Usa el marco de las altas
 (`CreateDialog`, `create-dialog.tsx:55-184`), con su disparador, el aviso con
 «Reintentar» solo por red (TT-89, PR-90), la regla de no cerrar mientras viaja y
-`useSurvivingNotice`. Su nombre (`CreateDialog` o `FormDialog`) lo decide
-`frontend-dev`.
+`useSurvivingNotice`. **El marco recibe aparte el título del diálogo y el texto
+del botón** (§5.4), porque acá no coinciden. Su nombre (`CreateDialog` o
+`FormDialog`) lo decide `frontend-dev`.
 
 - **«Guardar» manda el parche**: solo los campos que difieren de la fila
   (D-P1-3). **Si no cambió nada, cierra sin mandar.**
 - **Con éxito**, el diálogo se cierra, la fila muestra los valores nuevos con la
   revalidación de la misma respuesta (D-P1-5), y la pantalla anuncia «Proyecto
   «{nombre}» guardado» en una región `status`, como el alta de un cliente. El
-  foco vuelve a «Editar» de la fila. Si la fila ya no se muestra (porque el
-  nombre nuevo no coincide con la búsqueda), el foco va al buscador.
+  foco vuelve a «Editar» de la fila.
+- **Si la fila deja de verse** porque el nombre nuevo no coincide con la
+  búsqueda, **el foco lo mueve la pantalla al buscador**: con el éxito, si
+  `projectListRows` ya no trae el id editado, la pantalla enfoca el campo de
+  búsqueda. El diálogo no puede hacerlo: sale del árbol con su fila.
 - **Con falla**, el diálogo queda abierto con lo escrito y el aviso «No se
   pudieron guardar los cambios.», con la causa.
 - **El aviso que sobrevive** (`project-notices.tsx:56-123`), con la clave
@@ -269,10 +286,10 @@ formularios, con estas diferencias:
 - **Alta** (en la cabecera de `/proyectos` y en TT-09): el color empieza sin
   elegir, con la ayuda «Si no elegís uno, se asigna automáticamente.», y el
   facturable empieza sin marcar.
-- **Edición**: los campos arrancan con los valores guardados. El color está
-  siempre elegido y **no** lleva esa ayuda. El selector de cliente ofrece «Sin
-  cliente», los clientes activos y, si el proyecto tiene un cliente archivado,
-  ese mismo con «(archivado)» después del nombre (D-P1-4).
+- **Edición**: los campos arrancan con los valores guardados de `settings`. El
+  color está siempre elegido y **no** lleva esa ayuda. El selector de cliente
+  ofrece «Sin cliente», los clientes activos y, si el proyecto tiene un cliente
+  archivado, ese mismo con «(archivado)» después del nombre (D-P1-4).
 
 **D-P1-10 — TT-09: «Crear proyecto» es la última opción de la lista del
 selector, para quien tiene `project.create`, y abre el alta en un diálogo.**
@@ -396,33 +413,34 @@ desde los slices 9 y 11a, y `audit_log` guarda cualquier acción. P1 no corre
 
 Las citas son del árbol de `clock-p1` en `380ef3b`.
 
-| Supuesto                                                                                                               | Dónde                                                                                                 |
-| ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `project` con nombre, cliente, color, `is_public`, `billable_by_default`, nota, `archived_at`; su índice y su `check`  | `src/server/db/schema.ts:303-360`                                                                     |
-| La unión `Action`, la tabla de clases de recurso, la de roles y `allowsOnProject`                                      | `src/server/permissions/index.ts:59-114`, `:124-151`, `:161-188`, `:198-216`                          |
-| Las altas, `translatingNameTaken`, `readCatalog`, `getProjectCatalog` y `getTrackingCatalog`                           | `src/modules/project/service.ts:98-111`, `:160-233`, `:474-523`, `:526-540`, `:551-567`               |
-| `findProject`, `findClient`, `listClients`, `listAllProjects`, `listActiveTasks` e `isProjectNameTaken`                | `src/modules/project/repository.ts:79-90`, `:173-187`, `:258-260`, `:279-285`, `:288-304`, `:364-366` |
-| Bloquear en una sentencia y releer las referencias en otra                                                             | `src/modules/time-entry/repository.ts:381-399` (`findByIdForUpdate`)                                  |
-| Los esquemas, `ProjectCatalog`, `TrackingCatalog`, `CreateProjectResult` y `ProjectActions`                            | `src/modules/project/schema.ts:58-67`, `:115-126`, `:175-184`, `:189`, `:196-207`                     |
-| Las cuatro actions revalidan `"/proyectos"`                                                                            | `src/modules/project/actions.ts:22-28`                                                                |
-| La pantalla agrupa por cliente, con las tareas y «Nueva tarea» en cada proyecto                                        | `src/modules/project/components/projects-screen.tsx:30-129`; `src/app/(app)/proyectos/page.tsx:11-21` |
-| El marco de los diálogos de alta, con su disparador y el aviso que sobrevive                                           | `components/create-dialog.tsx:55-184`; `components/project-notices.tsx:56-123`                        |
-| Los campos del alta de proyecto; `ColorField` con la ayuda fija                                                        | `components/new-project-dialog.tsx:61-173`; `components/color-field.tsx:21-57`                        |
-| El selector: `items` con «Sin proyecto» en su grupo, `choose`, el vacío con «Ir a Proyectos» y el modo de solo lectura | `components/project-picker.tsx:126-161`, `:287-307`                                                   |
-| El modelo del selector: `PickerOption`, `PickerEmpty`, `pickerView` y `catalogEntryOf`                                 | `components/picker-model.ts:13-42`, `:121-155`, `:168-189`                                            |
-| El proveedor del catálogo                                                                                              | `components/tracking-catalog.tsx:16-33`                                                               |
-| Los seis usos del selector y las tres pantallas que montan el proveedor                                                | D-P1-13                                                                                               |
-| `withSelection` busca el facturable en el catálogo                                                                     | `src/modules/time-entry/components/entry-fields.ts:43-75`                                             |
-| `useAction` corre `onSuccess` en una transición                                                                        | `src/hooks/use-action.ts:60-86`                                                                       |
-| `handle` revalida también cuando hay error                                                                             | `src/server/action.ts:37-54`                                                                          |
-| `list_projects` copia el catálogo campo por campo                                                                      | `src/modules/mcp/tools.ts:286-315`                                                                    |
-| El filtro de `/equipo` navega con `router.push`; `teamSearchParams`                                                    | `src/modules/team/components/status-filter.tsx:31-46`; `src/modules/team/schema.ts:29-31`             |
-| `normalizeSearch`, `compareNames` y `sortedByName`                                                                     | `src/lib/text.ts:14`, `:27`, `:42`                                                                    |
-| Las barreras de concurrencia de los tests                                                                              | `src/test/concurrency.ts:113` (`outcomeWhileHeld`), `:178` (`queueBehindBarrier`)                     |
-| Un test de actions siembra un segundo owner inactivo                                                                   | `src/modules/project/actions.integration.test.ts:284-285`                                             |
-| Dos e2e del selector cuentan las opciones                                                                              | `e2e/project-picker.spec.ts:95`, `:391`                                                               |
-| Los e2e de `/proyectos`: los grupos, «Nueva tarea» en el proyecto y sus avisos                                         | `e2e/projects.spec.ts:66-80`, `:243`, `:293`, `:323`, `:345`; `e2e/projects-page.ts`                  |
-| Los tests de unidad no tienen biblioteca de DOM: usan `renderToStaticMarkup`                                           | `src/modules/project/components/projects-screen.test.tsx`; `project-picker.test.tsx`                  |
+| Supuesto                                                                                                                 | Dónde                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `project` con nombre, cliente, color, `is_public`, `billable_by_default`, nota, `archived_at`; su índice y su `check`    | `src/server/db/schema.ts:303-360`                                                                     |
+| La unión `Action`, la tabla de clases de recurso, la de roles y `allowsOnProject`                                        | `src/server/permissions/index.ts:59-114`, `:124-151`, `:161-188`, `:198-216`                          |
+| Las altas, `translatingNameTaken`, `readCatalog`, `getProjectCatalog` y `getTrackingCatalog`                             | `src/modules/project/service.ts:98-111`, `:160-233`, `:474-523`, `:526-540`, `:551-567`               |
+| `findProject`, `findClient`, `listClients`, `listAllProjects`, `listActiveTasks` e `isProjectNameTaken`                  | `src/modules/project/repository.ts:79-90`, `:173-187`, `:258-260`, `:279-285`, `:288-304`, `:364-366` |
+| Bloquear en una sentencia y releer las referencias en otra                                                               | `src/modules/time-entry/repository.ts:381-399` (`findByIdForUpdate`)                                  |
+| Los esquemas, `ProjectCatalog`, `TrackingCatalog`, `CreateProjectResult` y `ProjectActions`                              | `src/modules/project/schema.ts:58-67`, `:115-126`, `:175-184`, `:189`, `:196-207`                     |
+| Las cuatro actions revalidan `"/proyectos"`                                                                              | `src/modules/project/actions.ts:22-28`                                                                |
+| La pantalla agrupa por cliente, con las tareas y «Nueva tarea» en cada proyecto                                          | `src/modules/project/components/projects-screen.tsx:30-129`; `src/app/(app)/proyectos/page.tsx:11-21` |
+| El marco de los diálogos de alta, con su disparador y el aviso que sobrevive; un solo `title` para el botón y el diálogo | `components/create-dialog.tsx:55-184`; `components/project-notices.tsx:56-123`                        |
+| Los campos del alta de proyecto; `ColorField` con la ayuda fija                                                          | `components/new-project-dialog.tsx:61-173`; `components/color-field.tsx:21-57`                        |
+| El selector: `items` con «Sin proyecto» en su grupo, `choose`, el vacío con «Ir a Proyectos» y el modo de solo lectura   | `components/project-picker.tsx:126-161`, `:287-307`                                                   |
+| El modelo del selector: `PickerOption`, `PickerEmpty`, `pickerView` y `catalogEntryOf`                                   | `components/picker-model.ts:13-42`, `:121-155`, `:168-189`                                            |
+| El proveedor del catálogo                                                                                                | `components/tracking-catalog.tsx:16-33`                                                               |
+| Los seis usos del selector y las tres pantallas que montan el proveedor                                                  | D-P1-13                                                                                               |
+| `withSelection` busca el facturable en el catálogo                                                                       | `src/modules/time-entry/components/entry-fields.ts:43-75`                                             |
+| `useAction` corre `onSuccess` en una transición                                                                          | `src/hooks/use-action.ts:60-86`                                                                       |
+| `handle` revalida también cuando hay error                                                                               | `src/server/action.ts:37-54`                                                                          |
+| `list_projects` copia el catálogo campo por campo                                                                        | `src/modules/mcp/tools.ts:286-315`                                                                    |
+| El filtro de `/equipo` navega con `router.push`; `teamSearchParams`                                                      | `src/modules/team/components/status-filter.tsx:31-46`; `src/modules/team/schema.ts:29-31`             |
+| `normalizeSearch`, `compareNames` y `sortedByName`                                                                       | `src/lib/text.ts:14`, `:27`, `:42`                                                                    |
+| Las barreras de concurrencia de los tests                                                                                | `src/test/concurrency.ts:113` (`outcomeWhileHeld`), `:178` (`queueBehindBarrier`)                     |
+| Un test de actions siembra un segundo owner inactivo                                                                     | `src/modules/project/actions.integration.test.ts:284-285`                                             |
+| Dos e2e del selector cuentan las opciones                                                                                | `e2e/project-picker.spec.ts:95`, `:391`                                                               |
+| Los e2e de `/proyectos`: los grupos, «Nueva tarea» en el proyecto y sus avisos                                           | `e2e/projects.spec.ts:66-80`, `:243`, `:293`, `:323`, `:345`; `e2e/projects-page.ts`                  |
+| El alta facturable del 11a busca el proyecto en la región «Sin cliente» con un `h3`                                      | `e2e/billable.spec.ts:94-98` (`createBillableProject`)                                                |
+| Los tests de unidad no tienen biblioteca de DOM: usan `renderToStaticMarkup`                                             | `src/modules/project/components/projects-screen.test.tsx`; `project-picker.test.tsx`                  |
 
 ## 1. Alcance
 
@@ -459,19 +477,20 @@ Lo que queda afuera está en §12.
 
 ### Consecuencias sobre código ya entregado
 
-| Archivo                                                                                                                                                                                                                                                                                       | Qué cambia                                                                                                                                                                                               | Qué hay que volver a probar                                                                                              |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `src/server/permissions/index.ts`                                                                                                                                                                                                                                                             | `project.update` en las tres tablas y en `allowsOnProject`                                                                                                                                               | `permissions.test.ts`                                                                                                    |
-| `project/schema.ts`                                                                                                                                                                                                                                                                           | Lo de §4.1. Se van `ProjectCatalog`, `ProjectGroupView` y `ProjectView`; cambia `CreateProjectResult`; se suma `TrackingCatalog.clients`                                                                 | `schema.test.ts`                                                                                                         |
-| `project/repository.ts`, `service.ts`, `actions.ts`                                                                                                                                                                                                                                           | Lo de §4.2 a §4.4. `getProjectCatalog` se reemplaza; `createProject` revalida el árbol (D-P1-5)                                                                                                          | `service.integration.test.ts` (los casos de `getProjectCatalog` pasan a `getProjectList`), `actions.integration.test.ts` |
-| `project/components/projects-screen.tsx` y su test                                                                                                                                                                                                                                            | La tabla, el filtro, el buscador y «Editar»; sin grupos                                                                                                                                                  | `projects-screen.test.tsx`, reescrito                                                                                    |
-| `project/components/new-project-dialog.tsx`, `create-dialog.tsx`, `color-field.tsx`                                                                                                                                                                                                           | Usan `ProjectFields` y el marco partido; la ayuda del color va solo en el alta                                                                                                                           | los tests de la pantalla; `e2e/projects.spec.ts`, sin cambiar lo que afirma de las altas                                 |
-| `project/components/project-picker.tsx`, `picker-model.ts`, `tracking-catalog.tsx`, `labels.ts`                                                                                                                                                                                               | TT-09, la opción de crear, la selección pendiente y el proveedor con la action; `PickerEmpty.noProjects` pierde `canCreateProject`                                                                       | `picker-model.test.ts`, `project-picker.test.tsx`, `tag-picker.test.tsx`                                                 |
-| `time-entry/components/tracker-screen.tsx`, `calendar/calendar-screen.tsx`, `timesheet/timesheet-screen.tsx`                                                                                                                                                                                  | Pasan `createProject` al proveedor                                                                                                                                                                       | sus e2e, sin cambiar lo que afirman                                                                                      |
-| Los tests que arman un `TrackingCatalog` o montan el proveedor: `entry-row.test.tsx`, `entry-fields.test.ts`, `calendar/calendar-block.test.tsx`, `calendar/entry-dialog.test.tsx`, `timesheet/timesheet-view.test.tsx`, `timesheet/stored-rows.test.ts`, `timesheet/timesheet-model.test.ts` | `clients: []` en el catálogo y un doble de `createProject` en el proveedor                                                                                                                               | los mismos, sin cambiar lo que afirman                                                                                   |
-| `src/app/(app)/proyectos/page.tsx`                                                                                                                                                                                                                                                            | Parsea `estado` y `buscar`; pasa `updateProject`                                                                                                                                                         | la e2e                                                                                                                   |
-| `e2e/project-picker.spec.ts`                                                                                                                                                                                                                                                                  | `:95` y `:391` esperan 2 opciones, y la suite corre como owner, que tiene `project.create`: pasan a contar solo las opciones de selección (§9.3)                                                         | el archivo                                                                                                               |
-| `e2e/projects.spec.ts`, `e2e/projects-page.ts`                                                                                                                                                                                                                                                | Los localizadores de grupo y de proyecto (`:66-80`) pasan a la tabla; el caso de los grupos (`:243`) pasa al orden de la tabla; los de «Nueva tarea» (`:293`, `:323`, `:345`) buscan el botón en la fila | la e2e entera                                                                                                            |
+| Archivo                                                                                                                                                                                                                                                                                       | Qué cambia                                                                                                                                                                                                                                                   | Qué hay que volver a probar                                                                                              |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| `src/server/permissions/index.ts`                                                                                                                                                                                                                                                             | `project.update` en las tres tablas y en `allowsOnProject`                                                                                                                                                                                                   | `permissions.test.ts`                                                                                                    |
+| `project/schema.ts`                                                                                                                                                                                                                                                                           | Lo de §4.1. Se van `ProjectCatalog`, `ProjectGroupView` y `ProjectView`; cambia `CreateProjectResult`; se suma `TrackingCatalog.clients`                                                                                                                     | `schema.test.ts`                                                                                                         |
+| `project/repository.ts`, `service.ts`, `actions.ts`                                                                                                                                                                                                                                           | Lo de §4.2 a §4.4. `getProjectCatalog` se reemplaza; `createProject` revalida el árbol (D-P1-5)                                                                                                                                                              | `service.integration.test.ts` (los casos de `getProjectCatalog` pasan a `getProjectList`), `actions.integration.test.ts` |
+| `project/components/projects-screen.tsx` y su test                                                                                                                                                                                                                                            | La tabla, el filtro, el buscador y «Editar»; sin grupos                                                                                                                                                                                                      | `projects-screen.test.tsx`, reescrito                                                                                    |
+| `project/components/new-project-dialog.tsx`, `create-dialog.tsx`, `color-field.tsx`                                                                                                                                                                                                           | Usan `ProjectFields` y el marco partido, con el título del diálogo aparte del texto del botón; la ayuda del color va solo en el alta                                                                                                                         | los tests de la pantalla; `e2e/projects.spec.ts`, sin cambiar lo que afirma de las altas                                 |
+| `project/components/project-picker.tsx`, `picker-model.ts`, `tracking-catalog.tsx`, `labels.ts`                                                                                                                                                                                               | TT-09, la opción de crear, la selección pendiente y el proveedor con la action; `PickerEmpty.noProjects` pierde `canCreateProject`                                                                                                                           | `picker-model.test.ts`, `project-picker.test.tsx`, `tag-picker.test.tsx`                                                 |
+| `time-entry/components/tracker-screen.tsx`, `calendar/calendar-screen.tsx`, `timesheet/timesheet-screen.tsx`                                                                                                                                                                                  | Pasan `createProject` al proveedor                                                                                                                                                                                                                           | sus e2e, sin cambiar lo que afirman                                                                                      |
+| Los tests que arman un `TrackingCatalog` o montan el proveedor: `entry-row.test.tsx`, `entry-fields.test.ts`, `calendar/calendar-block.test.tsx`, `calendar/entry-dialog.test.tsx`, `timesheet/timesheet-view.test.tsx`, `timesheet/stored-rows.test.ts`, `timesheet/timesheet-model.test.ts` | `clients: []` en el catálogo y un doble de `createProject` en el proveedor                                                                                                                                                                                   | los mismos, sin cambiar lo que afirman                                                                                   |
+| `src/app/(app)/proyectos/page.tsx`                                                                                                                                                                                                                                                            | Parsea `estado` y `buscar`; pasa `updateProject`                                                                                                                                                                                                             | la e2e                                                                                                                   |
+| `e2e/project-picker.spec.ts`                                                                                                                                                                                                                                                                  | `:95` y `:391` esperan 2 opciones, y la suite corre como owner, que tiene `project.create`: pasan a contar solo las opciones de selección (§9.3)                                                                                                             | el archivo                                                                                                               |
+| `e2e/projects.spec.ts`, `e2e/projects-page.ts`                                                                                                                                                                                                                                                | Los localizadores de grupo y de proyecto (`:66-80`) pasan a la tabla, con `projectRow(page, name)` en `projects-page.ts`; el caso de los grupos (`:243`) pasa al orden de la tabla; los de «Nueva tarea» (`:293`, `:323`, `:345`) buscan el botón en la fila | la e2e entera                                                                                                            |
+| `e2e/billable.spec.ts`                                                                                                                                                                                                                                                                        | `createBillableProject` (`:94-98`) busca el proyecto creado en la región «Sin cliente» con un `h3`, que con la tabla no existen: pasa a `projectRow(page, name)`, sin cambiar lo que afirma                                                                  | el archivo                                                                                                               |
 
 - **No cambian**: `src/server/db/` y `drizzle/`; `src/server/session.ts`,
   `access.ts` y `entry.ts`; `src/server/time/`; en `time-entry`, el service,
@@ -511,11 +530,11 @@ rechaza un color fuera de lista. `drizzle/` no se toca.
       return isWorkspaceAdmin(actor) || project.viewer?.isManager === true;
 ```
 
-| Acción           | Recurso             | Quién                                      | Dónde se consulta                                                                                     |
-| ---------------- | ------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
-| `project.update` | `ProjectResource`   | owner, admin y el responsable del proyecto | `updateProject` (después de ver el proyecto y su archivado) y `getProjectList` (`canUpdate` por fila) |
-| `project.view`   | `ProjectResource`   | sin cambios                                | `getProjectList`, además de lo de hoy                                                                 |
-| `project.create` | `WorkspaceResource` | sin cambios                                | además, para `clients` del catálogo del rastreador (TT-09)                                            |
+| Acción           | Recurso             | Quién                                      | Dónde se consulta                                                                                                  |
+| ---------------- | ------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `project.update` | `ProjectResource`   | owner, admin y el responsable del proyecto | `updateProject` (después de ver el proyecto y su archivado) y `getProjectList` (`canUpdate` y `settings` por fila) |
+| `project.view`   | `ProjectResource`   | sin cambios                                | `getProjectList`, además de lo de hoy                                                                              |
+| `project.create` | `WorkspaceResource` | sin cambios                                | además, para `clients` del catálogo del rastreador (TT-09)                                                         |
 
 ## 4. Contrato de backend
 
@@ -567,8 +586,8 @@ export const projectsSearchParams = z.object({
   buscar: z.string().max(NAME_MAX).optional().catch(undefined),
 });
 
-/** Una fila de la lista (PR-31, D-P1-7). */
-export type ProjectListItem = ProjectSettings & {
+/** Una fila de la lista (PR-31, D-P1-7): lo que la tabla muestra. */
+export type ProjectListItem = ProjectRef & {
   /** `null` es «Sin cliente». */
   readonly client: (ClientView & { readonly archived: boolean }) | null;
   readonly isPublic: boolean;
@@ -579,6 +598,11 @@ export type ProjectListItem = ProjectSettings & {
   readonly canUpdate: boolean;
   /** `task.create` y no archivado. */
   readonly canCreateTask: boolean;
+  /**
+   * D-P1-6: lo que el diálogo de edición arranca, con la nota y el facturable
+   * por defecto. Solo con `canUpdate`; sin él, `null`.
+   */
+  readonly settings: ProjectSettings | null;
 };
 
 /** `/proyectos`: reemplaza a `ProjectCatalog`. */
@@ -702,8 +726,9 @@ cliente de cada uno, con su archivado, de los clientes leídos en la misma foto,
 como `clientOf` (`service.ts:442-455`), que ya lanza si falta. Las tareas van
 agrupadas por proyecto y ordenadas con `sortedByName`, y los proyectos también.
 `canUpdate` y `canCreateTask` se calculan con `can()` y con `row.archivedAt ===
-null`; los `canCreate*` de la cabecera, como hoy. `readCatalog` queda solo
-para `getTrackingCatalog`, y su parámetro `access` puede quedar fijo en
+null`; `settings` es `settingsOf(row)` con `canUpdate`, y `null` sin él. Los
+`canCreate*` de la cabecera, como hoy. `readCatalog` queda solo para
+`getTrackingCatalog`, y su parámetro `access` puede quedar fijo en
 `project.track` (lo decide `backend-dev`).
 
 **`createProject`**: las reglas no cambian. Su `attempt` y su `replayed`
@@ -781,14 +806,20 @@ createProject, createTask, createTag, updateProject }`. La página solo compone.
   «Proyectos» y las columnas de D-P1-6, en ese orden. En «Nombre», el punto
   (con el nombre del color, como hoy, `colorDotLabel`) y el nombre, y con
   «Todos», «Archivado». En «Tareas», la lista de D-P1-7. En la última columna,
-  «Editar» (`EditProjectDialog`) y «Nueva tarea» (`NewTaskDialog`, sin
-  cambios), según `canUpdate` y `canCreateTask`. En pantallas angostas, la
-  tabla se desplaza en horizontal dentro de su contenedor.
-- **El estado**: `search` vive en estado local, inicializado con el de la
-  página. Al escribir, filtra y llama a `window.history.replaceState` con
-  `projectsHref`. Al elegir un estado, llama a `router.push(projectsHref({
-filter, search }))` en una transición con el valor optimista, como
-  `StatusFilter`.
+  «Editar» (`EditProjectDialog`, con la fila y su `settings`) y «Nueva tarea»
+  (`NewTaskDialog`, sin cambios), según `canUpdate` y `canCreateTask`. En
+  pantallas angostas, la tabla se desplaza en horizontal dentro de su
+  contenedor.
+- **La búsqueda sigue a la URL** (D-P1-6). El campo toma su valor de
+  `useSearchParams().get("buscar")` o de un estado local que se resincroniza
+  cuando ese valor cambia. Al escribir, filtra y llama a
+  `window.history.replaceState` con `projectsHref`. Al elegir un estado, llama a
+  `router.push(projectsHref({ filter, search }))` en una transición con el
+  valor optimista, como `StatusFilter`.
+- **El foco después de editar** (D-P1-8): `ProjectList` recibe del diálogo el
+  id editado con el éxito. Si `projectListRows` con la lista nueva ya no lo
+  trae, enfoca el buscador. Si lo trae, el foco vuelve a «Editar» de esa fila,
+  que hace el diálogo.
 - **La sección de etiquetas** sigue debajo, sin cambios (hasta P5).
 
 ### 5.3 El modelo de la lista (`project/components/project-list-model.ts`, nuevo)
@@ -813,14 +844,15 @@ export function projectsHref(state: {
 ```
 
 - **La búsqueda** recorta lo escrito, lo normaliza con `normalizeSearch` y busca
-  por subcadena en el nombre del proyecto y en el del cliente.
+  por subcadena en el nombre del proyecto y en el del cliente. **No mira los
+  nombres de las tareas** (D-P1-6).
 - **El vacío se decide en este orden**: sin ningún proyecto, `none` (PR-85); con
   búsqueda y sin filas, `noMatches`; sin búsqueda y sin filas, `noActive` o
   `noArchived` según el filtro. Con «Todos» y algún proyecto, nunca hay vacío.
 - **`projectsHref`** codifica `buscar` con `URLSearchParams` y omite `estado`
   con «Activos».
 
-### 5.4 TT-09 en el selector
+### 5.4 TT-09 en el selector y el marco de los diálogos
 
 **`picker-model.ts`**:
 
@@ -873,14 +905,20 @@ children })`. `useCreateProjectAction()` lanza fuera del proveedor, como
 `useTrackingCatalog`.
 
 **El marco de los diálogos** (`create-dialog.tsx`) se parte en dos, sin cambiar
-lo que se ve en `/proyectos`:
+lo que se ve en las altas de `/proyectos`:
 
 - `CreateDialogFrame` es el contenido de hoy (el formulario, el aviso con
   «Reintentar», «Cancelar», «Guardar» y la X), controlado por `open` y
   `onOpenChange`, con la regla de no cerrar mientras viaja
-  (`create-dialog.tsx:76-87`) y un `finalFocus` que recibe por prop.
-- `CreateDialog` es el marco más el disparador y `useSurvivingNotice`, como
-  hoy. Lo usan las altas de `/proyectos` y la edición (D-P1-8).
+  (`create-dialog.tsx:76-87`) y un `finalFocus` que recibe por prop. Recibe el
+  **título del diálogo** (`title`) y, opcional, su descripción.
+- `CreateDialog` es el marco más el disparador y `useSurvivingNotice`. **El
+  texto del botón** (`triggerLabel`) y su nombre accesible (`triggerName`,
+  como hoy) van **aparte del título**: hoy `title` es las dos cosas
+  (`create-dialog.tsx:29-30`, `:107`, `:119`). Sin `triggerLabel`, el botón
+  dice el título, así que las cuatro altas no cambian. La edición pasa
+  `triggerLabel` «Editar», `triggerName` «Editar «X»» y `title` «Editar
+  proyecto» (D-P1-8).
 
 El diálogo de TT-09 usa solo el marco, sin `useSurvivingNotice` (D-P1-10), con
 `finalFocus` al disparador del selector.
@@ -893,10 +931,12 @@ mode, archivedClient })`, con `mode: "create" | "update"`. Tiene los campos de
   en `create`). El selector de cliente arma sus opciones con «Sin cliente»
   primero, después los `clients` y, en `update` y con `archivedClient`, ese
   cliente con `archivedClientLabel(name)`.
-- **`edit-project-dialog.tsx`, nuevo**: D-P1-8. Usa `useAction(updateProject,
-…)` y un aviso con la clave `edit:<id>`. Al enviar arma el parche con los
-  campos que difieren de la fila, y si no hay ninguno, cierra sin llamar a la
-  action.
+- **`edit-project-dialog.tsx`, nuevo**: D-P1-8. Se dibuja solo con `canUpdate`,
+  y arranca su borrador de `settings`, que en ese caso no es `null`. Usa
+  `useAction(updateProject, …)` y un aviso con la clave `edit:<id>`. Al enviar
+  arma el parche con los campos que difieren de `settings`, y si no hay
+  ninguno, cierra sin llamar a la action. Con el éxito avisa a `ProjectList` el
+  id editado (§5.2).
 
 ### 5.6 Textos (`project/components/labels.ts`)
 
@@ -912,9 +952,9 @@ mode, archivedClient })`, con `mode: "create" | "update"`. Tiene los campos de
 | `projectLabels.noActiveHint`        | «Elegí «Archivados» o «Todos» en el estado para verlos.»           | PR-89         |
 | `projectLabels.noArchived`          | «No hay proyectos archivados»                                      | D-P1-6        |
 | `projectLabels.pickerNoMatches`     | sin cambios; la lista lo reusa                                     | TT-07, D-P1-6 |
-| `projectLabels.edit`                | «Editar»                                                           | D-P1-7        |
-| `editProjectLabel(name)`            | «Editar «{nombre}»»                                                | D-P1-7        |
-| `projectLabels.editProject`         | «Editar proyecto»                                                  | D-P1-8        |
+| `projectLabels.edit`                | «Editar» (el texto del botón)                                      | D-P1-7        |
+| `editProjectLabel(name)`            | «Editar «{nombre}»» (su nombre accesible)                          | D-P1-7        |
+| `projectLabels.editProject`         | «Editar proyecto» (el título del diálogo)                          | D-P1-8        |
 | `projectSavedLabel(name)`           | «Proyecto «{nombre}» guardado»                                     | D-P1-8        |
 | `projectLabels.projectNotSaved`     | «No se pudieron guardar los cambios.»                              | TT-90         |
 | `projectLabels.pickerCreateProject` | «Crear proyecto»                                                   | TT-09         |
@@ -996,8 +1036,7 @@ local: la e2e alcanza.
 - `src/modules/project/components/`: `projects-screen.tsx` y su test;
   `project-list.tsx`, `project-list-model.ts`, `edit-project-dialog.tsx` y
   `project-fields.tsx`, nuevos, con sus tests; `new-project-dialog.tsx`,
-  `create-dialog.tsx`, `color-field.tsx` y `labels.ts` (§5.2, §5.3, §5.5,
-  §5.6).
+  `create-dialog.tsx`, `color-field.tsx` y `labels.ts` (§5.2 … §5.6).
 - `picker-model.ts`, `project-picker.tsx`, `new-project-from-picker.tsx`
   (nuevo), `tracking-catalog.tsx` y sus tests (§5.4).
 - `src/modules/time-entry/components/tracker-screen.tsx`,
@@ -1007,11 +1046,14 @@ local: la e2e alcanza.
 
 ### e2e-tester
 
-- `e2e/projects-page.ts`: la tabla, sus filas y columnas, el buscador, el
-  filtro y el diálogo de edición.
+- `e2e/projects-page.ts`: la tabla, el buscador, el filtro y el diálogo de
+  edición, y **`projectRow(page, name)`**, la fila de un proyecto por su
+  nombre, que usan `projects.spec.ts` y `billable.spec.ts`.
 - `e2e/projects.spec.ts`: los localizadores y los cuatro casos de §1
   («Consecuencias»), sin cambiar lo que afirman de las altas ni de «Nueva
   tarea».
+- `e2e/billable.spec.ts`: `createBillableProject` (`:94-98`) con `projectRow`,
+  sin cambiar lo que afirma.
 - `e2e/project-picker.spec.ts`: `:95` y `:391` (§9.3).
 - `e2e/database.ts`: lo que haga falta para sembrar un cliente archivado y para
   leer las constancias `project.update` de un proyecto. Los ayudantes nuevos
@@ -1042,11 +1084,13 @@ Correcciones fechadas, con la forma «_Corregido el <fecha>, P1_»:
     archivado no se edita.
   - **PR-31**: lo construido. Las columnas, sin tiempo imputado (decisión del
     usuario del 2026-10-21); las tareas por nombre en lugar de la cantidad
-    (D-P1-7); el filtro; el orden plano.
+    (D-P1-7); el buscador por proyecto y cliente, no por tarea; el filtro; el
+    orden plano.
   - **PR-55** y **PR-56**: `project.update`.
   - **PR-85**: el vacío del selector.
   - **PR-89**: los textos.
-  - **PR-95**: `estado` con historial y `buscar` sin pedido.
+  - **PR-95**: `estado` con historial, `buscar` sin pedido, y el campo que sigue
+    a la URL al volver atrás.
   - **§14.1**: los identificadores de la fase 2 que entrega P1.
 - `fase2-mapa.md`:
   - En «P1»: el riesgo «Dónde vive la administración de un proyecto» queda
@@ -1066,7 +1110,7 @@ Correcciones fechadas, con la forma «_Corregido el <fecha>, P1_»:
 
 ### Orden
 
-0. `npm ci` en el worktree (§0) y la revisión de esta versión del contrato.
+0. `npm ci` en el worktree (§0).
 1. `backend-dev`: los tipos y las firmas, en un commit que compila. Avisa.
 2. En paralelo: `backend-dev` con permisos, service y actions; `frontend-dev`
    con la tabla, la edición y el selector; `e2e-tester` con el arnés y los
@@ -1124,26 +1168,34 @@ note, billableByDefault, clientId }` con valores nuevos. La fila queda con
     archivados que `project.view` deja ver, en el orden de `compareNames`, con
     su cliente (y el archivado del cliente), sus tareas activas (también las de
     un proyecto archivado), `canUpdate` y `canCreateTask`. Un archivado los
-    trae en falso. Un privado ajeno no está para un member y sí está para owner
-    y admin. Una membresía no activa no ve ninguno.
+    trae en falso. **`settings` viene con `canUpdate` y es `null` sin él**: un
+    member que no es responsable no recibe la nota ni el facturable por
+    defecto. Un privado ajeno no está para un member y sí está para owner y
+    admin. Una membresía no activa no ve ninguno.
 13. **Las columnas** (PR-31, D-P1-7): «Nombre» con el punto, «Cliente» con «Sin
     cliente», «Acceso», «Tareas» con los nombres y la columna de acciones con
-    «Editar «X»» y «Nueva tarea» según los permisos. No hay columna de tiempo.
+    «Editar» (nombre accesible «Editar «X»») y «Nueva tarea» según los
+    permisos. No hay columna de tiempo.
 14. **El filtro y la búsqueda** (PR-31, PR-89, PR-95): «Activos» es el filtro
     por omisión. «Archivados» y «Todos» muestran los archivados con
     «Archivado» en la fila. La búsqueda encuentra por proyecto y por cliente,
-    sin acentos ni mayúsculas. Recargar conserva los dos; volver atrás deshace
-    el último filtro; escribir no hace pedidos al servidor. Un `estado`
-    inválido muestra «Activos» **y conserva la búsqueda**.
+    sin acentos ni mayúsculas, y **no por tarea**. Recargar conserva los dos;
+    volver atrás deshace el último filtro y **deja en el campo la búsqueda de
+    esa entrada del historial**; escribir no hace pedidos al servidor. Un
+    `estado` inválido muestra «Activos» **y conserva la búsqueda**.
 15. **Los vacíos** (PR-85, PR-89): sin proyectos, «Todavía no hay proyectos».
     Con «Activos» y todo archivado, «No hay proyectos activos» con la
     sugerencia. Con «Archivados» y ninguno, «No hay proyectos archivados».
     Búsqueda sin coincidencias, «Ningún proyecto coincide con la búsqueda.».
 16. **El diálogo de edición** (D-P1-8, D-P1-9):
+    - el botón dice «Editar», su nombre accesible es «Editar «X»» y el diálogo
+      se titula «Editar proyecto»;
     - arranca con los valores de la fila;
     - «Guardar» manda solo lo cambiado y, sin cambios, cierra sin mandar;
     - con éxito, cierra, la fila muestra lo nuevo, se anuncia «Proyecto
       «{nombre}» guardado» y el foco vuelve a «Editar»;
+    - **con éxito y un nombre nuevo que ya no coincide con la búsqueda**, la
+      fila deja de verse y el foco queda en el buscador;
     - con falla de red, conserva lo escrito y ofrece «Reintentar», que guarda;
     - con PR-77, no ofrece «Reintentar»;
     - el cliente archivado del proyecto aparece con «(archivado)»;
@@ -1169,7 +1221,8 @@ note, billableByDefault, clientId }` con valores nuevos. La fila queda con
     hay proyectos todavía», con «Sin proyecto» y «Crear proyecto», y sin «Ir a
     Proyectos». El selector de etiquetas vacío sigue con «Ir a Proyectos».
 20. **Los e2e que cuentan opciones del selector** (`project-picker.spec.ts:95`,
-    `:391`) siguen afirmando las mismas dos opciones de selección.
+    `:391`) siguen afirmando las mismas dos opciones de selección, y
+    `billable.spec.ts` sigue afirmando lo mismo sobre la tabla.
 21. **Lo que ya estaba** (PR-101 … PR-103): renombrar un proyecto con entradas,
     cambiarle el color y el cliente se ve en sus filas del rastreador y en el
     reporte, pasadas incluidas.
@@ -1201,9 +1254,14 @@ slice, con el test que mata a cada una:
 | `projectsSearchParams` sin `.catch` por campo                                                | §9.1, `schema.test.ts`: `estado` inválido con `buscar` válido                                                                   |
 | `getProjectList` solo con activos, o sin las tareas de los archivados                        | §9.2, criterio 12                                                                                                               |
 | `canUpdate` sin mirar el archivado                                                           | §9.2, criterio 12                                                                                                               |
+| `settings` siempre presente, sin mirar `canUpdate`                                           | §9.2, criterio 12: el member no responsable recibe `settings: null`                                                             |
 | `projectListRows` sin buscar en el cliente, o sin `normalizeSearch`                          | §9.1, `project-list-model.test.ts`                                                                                              |
+| `projectListRows` que busca también por tarea                                                | §9.1, `project-list-model.test.ts`: un nombre de tarea no trae su proyecto                                                      |
 | `projectListRows` con `noActive` antes de `noMatches`                                        | §9.1, el orden de los vacíos                                                                                                    |
 | La búsqueda con `router.replace` (pide al servidor)                                          | §9.3.2: ningún pedido a `/proyectos` al escribir                                                                                |
+| El campo de búsqueda con estado local sin resincronizar                                      | §9.3.2: después de `goBack()`, el campo coincide con `buscar`                                                                   |
+| Sin el foco al buscador cuando la fila editada deja de verse                                 | §9.3.1: el renombre que sale de la búsqueda deja el foco en el buscador                                                         |
+| El marco con un solo `title` para el botón y el diálogo                                      | §9.1, `projects-screen.test.tsx`: el botón dice «Editar» y el diálogo, «Editar proyecto»; §9.3.1                                |
 | El diálogo manda la fila entera en lugar del parche                                          | §9.3.1: la constancia de una edición de la nota nombra solo `note`                                                              |
 | `pickerView` ofrece la opción de crear sin `canCreateProject`                                | §9.1, `picker-model.test.ts`                                                                                                    |
 | La opción de crear compara igual a «Sin proyecto» (sin `kind` en `isItemEqualToValue`)       | §9.1, `project-picker.test.tsx`: con «Sin proyecto» elegido, la opción de crear no está marcada                                 |
@@ -1225,11 +1283,13 @@ slice, con el test que mata a cada una:
   `backend-dev`): cada campo igual y distinto, y el cliente en mayúsculas igual
   al guardado.
 - `project-list-model.test.ts`: §5.3, cada vacío y su orden, la búsqueda por
-  cliente y sin acentos, y `projectsHref` con cada combinación.
+  cliente y sin acentos, **un nombre de tarea que no trae su proyecto**, y
+  `projectsHref` con cada combinación.
 - `projects-screen.test.tsx` (reescrito, con `renderToStaticMarkup`): la tabla
   con sus encabezados y sin columna de tiempo, las tareas por nombre,
-  «Archivado» con «Todos», «Editar» y «Nueva tarea» según los permisos y nunca
-  en un archivado, cada vacío, las altas según permiso y las etiquetas.
+  «Archivado» con «Todos», «Editar» (texto «Editar», nombre accesible «Editar
+  «X»») y «Nueva tarea» según los permisos y nunca en un archivado, cada vacío,
+  las altas según permiso (con su texto de hoy) y las etiquetas.
 - `project-fields.test.tsx`: `create` con la ayuda del color, `update` sin ella,
   y el cliente archivado con «(archivado)».
 - `picker-model.test.ts`: la opción de crear al final con y sin búsqueda, con
@@ -1259,7 +1319,8 @@ slice, con el test que mata a cada una:
       `resolved`. Con `for update` en `lockProject`, quedan `blocked`.
   - Los casos de `getProjectCatalog` (el criterio 9 del slice 9: PR-61, PR-62,
     PR-93 y el vacío) pasan a `getProjectList`, junto con los archivados, las
-    tareas de un archivado, `canUpdate` y `canCreateTask` (criterio 12).
+    tareas de un archivado, `canUpdate`, `canCreateTask` y `settings` según
+    `canUpdate` (criterio 12).
   - `getTrackingCatalog`: `clients` con `project.create` y vacío sin él. Los
     `toEqual` de hoy (`:1044`, `:1055`) suman el campo.
   - `createProject`: el resultado nuevo, en el alta y en el reintento.
@@ -1275,18 +1336,26 @@ slice, con el test que mata a cada una:
 
 El workspace es compartido y la base persiste: todo nombre lleva el sufijo del
 recorrido (`uniqueSuffix`), y el buscador de la lista se usa para aislar las
-filas del recorrido.
+filas del recorrido. Las filas se buscan con `projectRow(page, name)` de
+`projects-page.ts`.
 
-0. **`project-picker.spec.ts:95` y `:391`** cuentan solo las opciones de
-   selección: `popup.getByRole("option")` sin la de nombre «Crear proyecto»
-   (por ejemplo, con `.filter({ hasNotText: "Crear proyecto" })`), y siguen
-   esperando 2. Un caso suma que la última opción es «Crear proyecto».
+0. **Lo que cambia en specs de hoy**:
+   - `project-picker.spec.ts:95` y `:391` cuentan solo las opciones de
+     selección: `popup.getByRole("option")` sin la de nombre «Crear proyecto»
+     (por ejemplo, con `.filter({ hasNotText: "Crear proyecto" })`), y siguen
+     esperando 2. Un caso suma que la última opción es «Crear proyecto»;
+   - `billable.spec.ts:94-98` busca el proyecto creado con `projectRow`;
+   - `projects.spec.ts`, con los localizadores de la tabla (§1).
 1. **La edición** (`project-edit.spec.ts`):
-   - un owner abre «Editar «X»» desde la fila, cambia nombre, cliente, color,
-     nota y facturable, y guarda. Se anuncia «Proyecto «…» guardado», la fila
-     muestra lo nuevo, y en `/` la fila de una entrada sembrada tiene el nombre
-     y el punto nuevos (PR-101 … PR-103, criterio 21); el reporte agrupa por el
-     cliente nuevo;
+   - un owner abre «Editar «X»» desde la fila (el botón dice «Editar» y el
+     diálogo se titula «Editar proyecto»), cambia nombre, cliente, color, nota
+     y facturable, y guarda. Se anuncia «Proyecto «…» guardado», la fila
+     muestra lo nuevo, el foco está en «Editar» de la fila, y en `/` la fila de
+     una entrada sembrada tiene el nombre y el punto nuevos (PR-101 … PR-103,
+     criterio 21); el reporte agrupa por el cliente nuevo;
+   - **el renombre que sale de la búsqueda**: con la búsqueda en el sufijo de
+     un proyecto, renombrarlo a algo que no lo contiene y guardar: la fila deja
+     de verse y el foco queda en el buscador;
    - editar solo la nota deja una constancia con solo `note`;
    - un member responsable edita el suyo; un member que no lo es no ve
      «Editar»; un admin edita uno ajeno;
@@ -1300,12 +1369,16 @@ filas del recorrido.
    - un archivado sembrado, con «Todos», no tiene «Editar» ni «Nueva tarea».
 2. **La lista** (`project-list.spec.ts`):
    - la tabla con sus columnas para tres proyectos del recorrido, y su orden;
-     buscar por el nombre de un cliente; «Archivados» y «Todos» con un
-     archivado sembrado; recargar conserva el filtro y la búsqueda;
-     `page.goBack()` deshace el filtro; `?estado=x&buscar=<sufijo>` muestra
-     «Activos» con la búsqueda;
+     buscar por el nombre de un cliente; buscar por el nombre de una tarea no
+     trae su proyecto; «Archivados» y «Todos» con un archivado sembrado;
+     recargar conserva el filtro y la búsqueda; `page.goBack()` deshace el
+     filtro; `?estado=x&buscar=<sufijo>` muestra «Activos» con la búsqueda;
    - **escribir no pide al servidor**: con la página cargada, escribir en el
      buscador no dispara ningún pedido a `/proyectos`, y la URL tiene `buscar`;
+   - **el campo sigue a la URL al volver atrás**: escribir una búsqueda, elegir
+     «Todos», escribir otra búsqueda y `page.goBack()`: el filtro vuelve a
+     «Activos», el campo tiene la primera búsqueda, que es la de `buscar` en la
+     URL, y la tabla está filtrada con ella;
    - el caso de `projects.spec.ts:243` (el orden) pasa a la tabla.
 3. **TT-09** (`project-from-picker.spec.ts`):
    - en la barra: buscar un nombre nuevo, flecha hasta «Crear proyecto», Enter.
@@ -1365,12 +1438,16 @@ filas del recorrido.
   fila. El contenido se monta solo al abrir, como «Nueva tarea» hoy.
 - **La fila que se va con el diálogo abierto**: un renombre que deja de
   coincidir con la búsqueda, o un archivado con «Activos». El primer caso lo
-  cubre el foco al buscador (D-P1-8); el segundo, el aviso que sobrevive.
+  cubre la pantalla, que mueve el foco al buscador (D-P1-8); el segundo, el
+  aviso que sobrevive.
+- **Más specs de hoy dependen de la forma de `/proyectos`** que los que se
+  cambian acá: el arreglo de §9.3.0 los lleva a `projectRow`, para que el
+  próximo cambio de la tabla toque un solo lugar. `e2e-tester` busca con `rg`
+  en `e2e/` los usos de la región por cliente y del `h3` de proyecto antes de
+  dar el arnés por terminado.
 - **La lista en la base de los e2e** acumula cientos de proyectos de corridas
   anteriores (deuda del slice 9 hasta P2): los specs se aíslan con el buscador,
   y la tabla los dibuja todos.
-- **Los e2e de `/proyectos` cambian de localizadores**: los cuatro casos tienen
-  que afirmar lo mismo que antes, sobre la tabla.
 - **P2 … P7 van en serie sobre la misma fila**: cada uno suma su acción a la
   columna de acciones. Cuando lleguen tres o más acciones por fila, el contrato
   que las sume decide si pasan a un menú.
@@ -1410,12 +1487,15 @@ No quedan preguntas abiertas.
   pregunta 2).
 - **Una página por proyecto**: fuera, por decisión del usuario (§11, pregunta
   1).
+- **Buscar en la lista por nombre de tarea**: fuera, como PR-31 (D-P1-6).
 - **Filtros de la lista por cliente o por acceso, orden por otra columna y
   paginación**: PR-31 los deja _no verificados_ y no están pedidos.
 - **El MCP**: crear o editar proyectos desde el asistente (D-P1-14).
 - **La edición masiva de proyectos** (PR-32): es de plan pago.
 
 ## Hallazgos de la revisión
+
+### Primera pasada
 
 De `p1-arch-review` sobre `70711f9` («aprobado con cambios»). Las líneas que
 cita son de esa versión.
@@ -1436,3 +1516,17 @@ cita son de esa versión.
 También quedó sin efecto la nota de que la página de un proyecto con
 `loading.tsx` respondía el 404 con estado 200: con el cambio de diseño no hay
 página de proyecto.
+
+### Segunda pasada
+
+De `p1-arch-review` sobre `2dd775d` («aprobado con cambios»), con la decisión
+del coordinador sobre el buscador.
+
+| #   | Hallazgo                                                                                      | Qué se hizo                                                                                                                                                      |
+| --- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Mayor: `billable.spec.ts:94-98` busca la región «Sin cliente» y un `h3`, y con la tabla falla | Aplicado: el archivo está en «Consecuencias» y en `e2e-tester`; `projectRow(page, name)` en `projects-page.ts`, que usan los dos specs (§7, §9.3.0, criterio 20) |
+| 2   | Menor: el buscador se desincroniza de la URL al volver atrás                                  | Aplicado: el campo sigue a `useSearchParams()` (D-P1-6, §5.2), con el caso escribir, filtrar, escribir y `goBack()` en §9.3.2 (criterio 14)                      |
+| 3   | Menor: quién mueve el foco cuando un renombre saca la fila de la búsqueda                     | Aplicado: lo hace la pantalla, si `projectListRows` ya no trae el id (D-P1-8, §5.2), con su caso en §9.3.1 (criterio 16)                                         |
+| 4   | Menor: decisión del coordinador, el buscador no busca por tarea                               | Aplicado: explícito en D-P1-6 y §5.3, con su caso en `project-list-model.test.ts` y en la e2e (criterio 14, §12)                                                 |
+| 5   | Menor: la nota y el facturable por defecto viajaban al navegador sin permiso                  | Aplicado: `settings: ProjectSettings                                                                                                                             | null`, solo con `canUpdate` (D-P1-6, §4.1, §4.3, criterio 12) |
+| 6   | Menor: el marco usaba el mismo texto para el botón y el título del diálogo                    | Aplicado: `triggerLabel` aparte de `title` (D-P1-8, §5.4); botón «Editar», nombre accesible «Editar «X»», título «Editar proyecto» (criterio 16)                 |
